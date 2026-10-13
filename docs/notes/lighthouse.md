@@ -503,3 +503,162 @@ lantern from the well".
 - **`placeOnIsle` hung the page** when called before the island had loaded:
   `fortWallsStep` returns false for ever on a site that is not `ready`, and
   the wall loop spun. Both loops are guarded by `ISLE_SITE.ready`.
+
+## 2026-10-13 (third pass) — the stair's own treads, solid trees, the drawbridge on stone
+
+The owner: "you ruined the steps to the jetty very badly i just want them
+functional and not be able to clip through them … i got stuck on them. i
+should[n't] clip through the trees on the lighthouse section either … make
+the drawbridge look better too the bridge support doesn't even connect to the
+land its floating."
+
+- **THE STAIR RAMP WAS A GUESS, AND WRONG AT THE TOP.** Raycast straight down
+  the flight (x −16.6): fifteen treads of 1.01 m over 0.70–0.80 m, tops 0.80,
+  1.81 … 14.94, the landing 15.65 with its nose at z −1148.05; the flight is
+  x −18.0 … −15.2. The old ramp ran 0.75 → 15.65 over z −1137.3 … −1149.3,
+  so at the landing's nose it was 1.86 m UNDER the landing (the eye in its
+  stone) and carried on 1.25 m beneath it, where the step up was three times
+  a step: the walker was stuck at the head. `ISLE_STAIR_NOSE` holds the
+  measured noses; `ISLE_STAIR_PROF` runs through each tread's middle 0.3 over
+  its top (`isleRampY`), so the feet are at most ~0.23 under the next tread at
+  its nose and never in it.
+- **ON THE FLIGHT YOU ARE SLID, NOT STOPPED** (`rampHold`): the old `flank`
+  refused any stride ending within 0.25 of an edge, so a body that came on at
+  the foot near a side could not move at all. Now on the ramp x is clamped to
+  0.32 inside its edges; `flank` only stops you coming ON over a side. The
+  slope pace floor is 0.72 (0.55 was a crawl).
+  Measured: up and down the middle, both edges, pushes sideways held at
+  −15.52/−17.68; max frame change in eye speed 5.1 cm, 0 over 7.
+- **BARK IS ITS OWN GRID** (`isleFindBark`, `isleBarkPush`). The trunk discs
+  covered 11 trunks; 105 cells of bark between knee and head height had no
+  collider (a fallen trunk, low boughs, leaning trunks). Every bark face is
+  sampled every 12 cm and a 20 cm cell is marked where a sample is 0.3–1.85
+  over `ISLE_M.floorAt` (≥ 2 samples, the stair and the drawbridge left
+  clear): 588 cells. A body is pushed out from the NEAREST marked cell's centre
+  to r + 0.1, three passes — round, so it slides along a row and never
+  catches (the wall index still skips Bark: its twigs trapped the walker).
+  Walked into eight trees: held 0.34–0.36 off; bridge → terrace → stair head
+  → jetty and → the tower door still walk; 10 random walks, none trapped.
+- **THE DRAWBRIDGE'S SUPPORT** (`ISLE_BR_PIER`): the struts ran to
+  (10.55, 17.1) and the island's east face is a near-sheer wall at x 9.3–11.5
+  from the deck down to 9 m (further out to the north; horizontal raycasts at
+  dz −1.6 … +1.6) — 0.75 m of air. Now a buttress of XIII's brick
+  (`acmat_4` at XIII's own scale) is extruded under the rock end: top 19.63
+  under the cross beams, back x 7.6 buried in the rock, front 11.3 battered
+  back to a knee (11.0, 17.6) and on to its foot (9.0, 10.5), inside the
+  face. The struts land on its face (`strutTo(y)`, a hair inside it) on iron
+  shoes; the tower end sits on a two-step stone corbel. The frame (stringers,
+  cross beams, posts, rails, struts) is older timber, half the boards'
+  colour, heavier rails; the chains are links (a torus every 7.8 cm,
+  alternate ones turned, a slight sag), not rods.
+
+## 2026-10-13 (fourth pass) — the end of the road, lit; the crate; the posts
+
+The owner: "make the lighthouse scene way more breathtaking its the end of the
+game so it should look magical the view from the top should be a spectacle …
+take out the crate on the jetty steps and make sure the light posts aren't
+floating either."
+
+- **`updateIsleMagic`** (called first thing in `updateIsle`) eases
+  `isleMagicK` to 1 over ~4 s while `onIsle` (or high over the rock), and
+  `isleTopK` on the gallery (0.25 in the tower). Both are declared up by
+  `moodTint` because the mood reads them: `clearW` takes `isleMagicK` (the
+  cloud goes), the fog × (1 − 0.62 k − 0.28 top), the tone a little brighter
+  and colder (kept small — at +26 % blue the rock read as ice), the beam's
+  `uI` × (1 + 0.55 k).
+- **`isleMagicG`** (one group, compiled with the boot chain by a top-level
+  `warmStep('isle magic')`, all additive, no lights, `fog: false`):
+  - a dome r 3000 on the camera, `renderOrder` −1: horizon airglow; the
+    Milky Way (a great circle, normal (0.42, 0.40, 0.81), clumps and dust
+    lanes off `imF`, a warm core); fine stars (a hash per cell of d × 380,
+    denser in the band, each twinkling); the aurora — three `curtain`
+    layers over the sea (masked ±1.85 rad round west, az = −π/2), feet at
+    sin-elevation 0.05–0.20 wandering by ±0.08, folds, soft rays, green at
+    the foot to violet up, thinning unevenly going up, and the sky under it
+    lit green. FIRST PASS LESSONS: a narrow foot (0.016) and full-contrast
+    rays read as a hard line with bars; the violet at 0.55/0.16/0.85 was a
+    wall of purple.
+  - a halo sprite (glowTex, 1400) on the moon's direction.
+  - Points (`isleMagicPoints`, size in metres off `projectionMatrix[1][1]`):
+    150 fireflies anchored on `isleTrunks` and every ninth bark cell, 520
+    sparks on the water 14–164 m round the axis (`waterSurfaceAt` each frame,
+    dropped where `ISLE_M.floorAt` or `!inWater` — east of the rock is the
+    beach), 210 lanterns over the sea to the west (45 % within 26–156 m,
+    rising 0.9–2.2 m/s from the water, gone by 420 m, respawned). Lanterns at
+    first were 1.1 m and a 1.5 px floor: five dim pixels; now 3.0 m, 5 px
+    floor, a bright paper body.
+  - a falling star (a two-point Line, every 5–14 s, faster from the top).
+  - the wind at the top: looped brown noise through a wandering band-pass,
+    gain 0.55 × top × gusts, on `sfxOut()`.
+- **The sea goes glass** (`oceanUniforms.uCalm` = k): crests × 0.15, the
+  steep facets × 0.3 (from forty metres up they were blots once the fog
+  thinned), the water × 0.72, and at a grazing angle it holds the aurora's
+  green to the west.
+- **`isleTidyPlan`** runs on the model's pieces before the merge: drops the
+  crate on the stair-head landing (−17.0, −1150.0; it stood 0.23 off the
+  stone) and the one buried in the flight's side (−18.2, −1139.5), and sets
+  every lamp post (a `props` piece over 3 m tall and under 0.45 across) with
+  its foot and its glass down onto the floor raycast under it (0.24 m at the
+  stair head, 0.59 on the terrace path, 0.09 by the house) — never up.
+
+## 2026-10-13 (fifth pass) — the postern is the throne room's door, on the real wall
+
+The owner: "fix the door to the drawbridge make it match the throne room exit
+door please and its clipped through the wall fix it."
+
+- **XIII's west tower face is 9.4° off the bridge** (horizontal raycasts at
+  seven heights: x 18.36 at z −1151.2 → 19.09 at −1155.6). The postern, the
+  chain eyes, the corbel and the tower braces were all square to the bridge,
+  so the frame stood inside the stone on one side and off it on the other.
+  `ISLE_WALL`, `isleWallX(z)`, `ISLE_WALL_N` (out of the face) and
+  `ISLE_WALL_YAW` place them on the face; the deck now ends at x 18.15
+  (`ISLE_BR.x1`), the postern's step.
+- **`isleFitThroneDoor`**: the throne model's `Doors.001` triangles of its
+  +x lattice door (centroids x 5.6–7.0, y 2.4–6.4, z −3.4 … −0.5 of the hall;
+  the door itself x 6.10–6.51, y 2.68–6.05, z −2.99 … −0.96), baked through
+  `matrixWorld`, moved to its back/foot/middle (6.51, 2.68, −1.975),
+  rotated +90° about y (the hall's −x → the postern's +Z) and 4 cm into the
+  stone, on the hall's own material. The bridge's stone surround
+  (`BR.surround`) is hidden then; the lantern, its light and its glow sprite
+  move out 0.2 and up 0.6 past the door's post.
+- `loadIsle` now calls `loadThrone()` so the door is in before you can see it
+  (and a checkpoint's black waits for it). TRAP: `isleWorld.userData` is
+  REASSIGNED a few lines after the bridge is built — anything stored on it
+  before that is lost; `BR` is in the object literal.
+- Walked: the deck stops you at x 18.20, "Use Lift" in reach.
+
+## 2026-10-13 (sixth pass) — mist and rays at the lighthouse
+
+The owner: "make the lighting more misty and gorgeous with rays of light at
+the lighthouse it should be incredible."
+
+- **Sea mist: the keep's own layer** (`FOG_KEEP`/`FOG_KEEP2`,
+  `bwMistDepth`/`bwMistCol` in the fog chunk) laid on the sea at the island:
+  `FOG_KEEP.w = isleMagicK × ISLE_MIST.on`, the moon's direction, the sea's
+  height, scale height `ISLE_MIST.h` 4.2 m, density `ISLE_MIST.d` 0.020
+  (breathing ±25 %). The keep's branch now sets `FOG_KEEP2.z/w` back to its
+  own 2.9/0.13 — the island writes them. The keep's lit-fog glow toward its
+  moon was on at full whenever `w > 0`; it is × `min(w, 1)` now (the keep is
+  1, unchanged), or it popped in on the first frame of the island's fade.
+  First try (5.5 m, 0.032) with the rays at full blew the look up the stair
+  toward the moon to white.
+- **Haze back in the air**: the island's fog factor is
+  1 − 0.30 k − 0.12 top (was 0.62 / 0.28 — the owner wanted it misty).
+- **The screen's own shafts** (`beachRays` in the sharpen pass: the moon and
+  the lantern): at the island the moon's × (1 + 1.3 k), radius + 0.06 H,
+  threshold −0.02, silver; the lantern's × (1 + 0.8 k), radius + 0.04 H,
+  threshold −0.08, warm. (2.4 / 0.22 H washed the frame.)
+- **The beam**: `uI` × (1 + 1.25 k); the beam's shader takes `uT`/`uPow` and
+  a slow drifting "dust" along it; a second cone, `beamPivot.userData.haze`
+  (r 1.2 → 190, `uPow` 1.1, cool white, `uI` 0.055 k), so it stands in a sheet
+  of lit air.
+- **Lamp halos**: a 5.5 m glow sprite on every island lamp
+  (`isleLampHalos`), 0.20 k.
+- **Moonbeams** (`isleBeams`, 10): open cones r 7 → 15, 190 m, leaning 24–37°
+  toward the moon, standing on the sea 70–450 m round the rock (mostly west
+  and the moon's side); soft at their silhouettes (|N·V|^1.7), fading into
+  the sky above and the mist below, dust in them, faded out within 45 m of
+  you; each breathes in and out over 22–48 s and stands somewhere else.
+  Strength 0.09–0.17: at 0.02–0.04 they did not show at all.
+- `tools/isleshot2.js` → `__isle.sheetPost`: the sheet with `sharpenFrame()`
+  run after each view — the rays are in that pass, a bare render has none.

@@ -1122,9 +1122,10 @@ function beachRays(W, H) {
     const off = Math.max(Math.abs(_rayV.x), Math.abs(_rayV.y));
     const k = THREE.MathUtils.smoothstep(face, 0.05, 0.5) * (1 - THREE.MathUtils.smoothstep(off, 1.05, 1.9));
     if (k > 0.001) {
-      u.set((_rayV.x * 0.5 + 0.5) * W, (_rayV.y * 0.5 + 0.5) * H, BEACH_RAY_MOON * k * (1 + wsSect * (0.5 + 1.4 * wsR) + wfMoonK), H * (0.36 + 0.12 * wsSect + 0.14 * Math.min(1, wfMoonK)));
-      sharpMat.uniforms.uRayCol.value.setRGB(0.52, 0.60, 0.80);
-      sharpMat.uniforms.uRayT.value = 0.16;
+      const im = isleMagicK;   // at the lighthouse the moon pours through the mist: much stronger, wider, silver, from dimmer air
+      u.set((_rayV.x * 0.5 + 0.5) * W, (_rayV.y * 0.5 + 0.5) * H, BEACH_RAY_MOON * k * (1 + wsSect * (0.5 + 1.4 * wsR) + wfMoonK + 1.3 * im), H * (0.36 + 0.12 * wsSect + 0.14 * Math.min(1, wfMoonK) + 0.06 * im));
+      sharpMat.uniforms.uRayCol.value.setRGB(0.52 + 0.12 * im, 0.60 + 0.12 * im, 0.80 + 0.14 * im);
+      sharpMat.uniforms.uRayT.value = 0.16 - 0.02 * im;
     }
   }
   const u2 = sharpMat.uniforms.uRay2.value;
@@ -1158,7 +1159,9 @@ function beachRays(W, H) {
   const off = Math.max(Math.abs(_rayV.x), Math.abs(_rayV.y));
   const k = THREE.MathUtils.smoothstep(faceL, 0.2, 0.6) * (1 - THREE.MathUtils.smoothstep(off, 1.0, 1.6)) * sweep;
   if (k <= 0.001) return;
-  u2.set((_rayV.x * 0.5 + 0.5) * W, (_rayV.y * 0.5 + 0.5) * H, BEACH_RAY_LAMP * k, H * (0.10 + 0.22 * Math.min(1, 300 / d)));
+  const im = isleMagicK;   // and the lantern over your head throws its own through the rails and the mist
+  if (im > 0) { sharpMat.uniforms.uRay2T.value = 0.30 - 0.08 * im; sharpMat.uniforms.uRay2Col.value.setRGB(1.0, 0.86, 0.62); }
+  u2.set((_rayV.x * 0.5 + 0.5) * W, (_rayV.y * 0.5 + 0.5) * H, BEACH_RAY_LAMP * k * (1 + 0.8 * im), H * (0.10 + 0.22 * Math.min(1, 300 / d) + 0.04 * im));
 }
 const BEACH_RAY_MOON = 0.9, BEACH_RAY_LAMP = 1.3;
 // Give every canvas texture the era-correct filtering: no smoothing, no
@@ -1407,7 +1410,7 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 	if ( fogKeep.w > 0.0 ) {
 		vec3 fogDirK = normalize( ( vec4( vFogView, 0.0 ) * viewMatrix ).xyz );
 		float fogCK = max( dot( fogDirK, fogKeep.xyz ), 0.0 );
-		fogCol += vec3( 0.20, 0.17, 0.30 ) * ( 0.7 * pow( fogCK, 10.0 ) + 0.3 * pow( fogCK, 3.0 ) );
+		fogCol += min( fogKeep.w, 1.0 ) * vec3( 0.20, 0.17, 0.30 ) * ( 0.7 * pow( fogCK, 10.0 ) + 0.3 * pow( fogCK, 3.0 ) );
 	}
 	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogCol, fogFactor );
 	if ( fogGround.w > 0.0 ) {
@@ -2347,6 +2350,12 @@ const MOOD_TONE = 0.30;             // how much of the mood's hue the shadows ta
 /* what the mood tints, and how much of the tint each takes: the air and the
  * sky whole, the night's ambient whole, the sea most of the way, the moon half */
 let MOOD_BASE = null;
+let isleMagicK = 0, isleTopK = 0;
+/* the lighthouse's sea mist: the keep's own layer (`FOG_KEEP`, `bwMistDepth`) laid on the sea round the
+ * island — its height over the water, its scale height (it thins to nothing by about four times this), its
+ * density at the water — so the jetty and the foot of the rock stand in drifting moonlit banks and the
+ * tower stands up out of them */
+const ISLE_MIST = { on: 1, sea: 0.0, h: 4.2, d: 0.020 };   // the lighthouse's night (`updateIsleMagic`): read by the mood below, so declared here
 function moodTint(c, base, T, k) { c.setRGB(base.r * (1 + (T.x - 1) * k), base.g * (1 + (T.y - 1) * k), base.b * (1 + (T.z - 1) * k)); }
 const _moodT = new THREE.Vector3();
 function updateMood() {
@@ -2393,7 +2402,7 @@ function updateMood() {
   const fcd = Math.hypot(camera.position.x - (FORT_X + FORT_MID.x), camera.position.z - (FORT_Z + FORT_MID.z));
   const clear = Math.max(THREE.MathUtils.smoothstep(430 - twr, 0, 260), 0.85 * wsR * THREE.MathUtils.smoothstep(260 - wbd, 0, 120), THREE.MathUtils.smoothstep(110 - fcd, 0, 50));      // clearing from 430 m out, clear inside 170; over the whale only once it has been seen
   if (nearK === 14) near *= 0.25;                                   // and the air round it stays clear rather than closing in
-  const clearW = Math.max(clear, wfSkyK, inC13 ? 0.9 : 0);
+  const clearW = Math.max(clear, wfSkyK, inC13 ? 0.9 : 0, isleMagicK);   // (and over the island, the cloud is gone)
   moodClear = clearW;
   skyUniforms.uSqB.value.w = clearW;
   const S = 0.55 + 0.30 * near;                              // how much of each mood is let through, stronger at the set piece
@@ -2418,6 +2427,8 @@ function updateMood() {
    * every window lights its own air: the haze over its courts and the shadows
    * in them go amber, the one place on the walk where the night is not blue. */
   if (inC13) { T.x = T.x * 0.4 + 1.24 * 0.6; T.y = T.y * 0.4 + 1.04 * 0.6; T.z = T.z * 0.4 + 0.84 * 0.6; }
+  /* AND ON THE LIGHTHOUSE'S ROCK THE NIGHT IS SILVER: a little brighter and colder, more again at the top */
+  if (isleMagicK > 0) { const k = isleMagicK * (1 + 0.4 * isleTopK); T.x *= 1 + 0.02 * k; T.y *= 1 + 0.06 * k; T.z *= 1 + 0.13 * k; }
   FOG_TINT.x = T.x; FOG_TINT.y = T.y; FOG_TINT.z = T.z;
   sharpMat.uniforms.uTone.value.set(T.x, T.y, T.z, MOOD_TONE);
   const breathe = 1 + 0.05 * Math.sin(tn * 0.071) + 0.035 * Math.sin(tn * 0.029 + 1.3);
@@ -2429,6 +2440,7 @@ function updateMood() {
   if (wellAirK > 0) scene.fog.density = THREE.MathUtils.lerp(scene.fog.density, WELL_FOG_D * (1 + 0.22 * wellDread), wellAirK);   // the well's fog
   if (inFort) scene.fog.density *= 0.55;
   if (inC13) scene.fog.density *= 0.9;          // a slight haze over the courts, lit amber by `FOG_TINT` above (the owner: "slight mist")
+  if (isleMagicK > 0) scene.fog.density *= 1 - 0.30 * isleMagicK - 0.12 * isleTopK;   // the air over the island is clearer than the beach's, and still a haze (the owner, 2026-10-13: "more misty")
   const B = MOOD_BASE || (MOOD_BASE = [
     [skyUniforms.uHorizon.value, 1.0], [skyUniforms.uTop.value, 0.6], [skyAmbient.color, 1.0], [skyHemi.color, 1.0],
     [moonLight.color, 0.5], [oceanUniforms.uDeep.value, 0.7], [oceanUniforms.uShallow.value, 0.7],
@@ -2998,6 +3010,7 @@ const oceanUniforms = THREE.UniformsUtils.merge([
   THREE.UniformsLib.fog,
   { uTime: { value: 0 }, uOffset: { value: new THREE.Vector2() }, uCamPos: { value: new THREE.Vector3() },
     uMoonDir: { value: MOON_DIR },
+    uCalm: { value: 0 },
     uDeep: { value: new THREE.Color(0x123f66) },
     uShallow: { value: new THREE.Color(0x2f8ec2) },
     uCrest: { value: new THREE.Color(0xaad9ec) },
@@ -4661,7 +4674,7 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
   beamGeo.translate(0, -BEAM_L / 2, 0); beamGeo.rotateX(Math.PI / 2); beamGeo.rotateX(0.042);
   const beamMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false,
-    uniforms: { uI: { value: 0.2 }, uCol: { value: new THREE.Color(1.0, 0.90, 0.74) }, uL: { value: BEAM_L } },
+    uniforms: { uI: { value: 0.2 }, uCol: { value: new THREE.Color(1.0, 0.90, 0.74) }, uL: { value: BEAM_L }, uT: { value: 0 }, uPow: { value: 3.0 } },
     vertexShader: /* glsl */`
       uniform float uL; varying float vT; varying vec3 vN; varying vec3 vW;
       void main(){
@@ -4671,20 +4684,32 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: /* glsl */`
-      uniform float uI; uniform vec3 uCol; varying float vT; varying vec3 vN; varying vec3 vW;
+      uniform float uI; uniform vec3 uCol; uniform float uT; uniform float uPow; varying float vT; varying vec3 vN; varying vec3 vW;
       void main(){
         vec3 V = normalize(cameraPosition - vW);
         float f = abs(dot(normalize(vN), V));
-        float core = pow(f, 3.0);
+        float core = pow(f, uPow);
         float along = pow(1.0 - vT, 1.25) * smoothstep(0.0, 0.008, vT);
         float near = smoothstep(4.0, 60.0, length(cameraPosition - vW));   // never a wall of light in your face
-        gl_FragColor = vec4(uCol * core * along * near * uI, 1.0);
+        // the air it lights is not even: slow drifting thickenings along it, the mist the beam is made of
+        float dust = 0.72 + 0.28 * sin(vW.x * 0.045 + vW.y * 0.11 + uT * 0.35) * sin(vW.z * 0.052 - uT * 0.27 + vW.y * 0.07);
+        gl_FragColor = vec4(uCol * core * along * near * uI * dust, 1.0);
       }`,
   });
   const beam = new THREE.Mesh(beamGeo, beamMat);
   // ONE beam. Two back to back read as two rays crossing the sky whenever you
   // saw the lamp side on, which is most of the walk.
   beamPivot.add(beam); beamPivot.userData.beam = beam;
+  /* AND IN THE LIGHTHOUSE'S MIST, ITS HAZE (2026-10-13, the owner: "more misty and gorgeous with rays of
+   * light"): a second, much wider cone round the beam with a soft edge, lit only over the island, so the
+   * beam stands in a sheet of lit air rather than as a rod */
+  {
+    const hg = new THREE.CylinderGeometry(1.2, 190, BEAM_L, 28, 8, true);
+    hg.translate(0, -BEAM_L / 2, 0); hg.rotateX(Math.PI / 2); hg.rotateX(0.05);
+    const hm = beamMat.clone(); hm.uniforms.uI.value = 0; hm.uniforms.uPow.value = 1.1; hm.uniforms.uCol.value = new THREE.Color(0.80, 0.86, 1.0);
+    const haze = new THREE.Mesh(hg, hm); haze.visible = false; haze.frustumCulled = false;
+    beamPivot.add(haze); beamPivot.userData.haze = haze;
+  }
   /* THE SKIN LANDS BEHIND THE TITLE CARD. `warmStep` runs it before the
    * walk begins; the maps are two million pixels of drawn stone and are
    * not a thing to make while the module is being evaluated. The name is
@@ -6775,6 +6800,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     #include <fog_pars_fragment>
     uniform float uTime; uniform vec3 uCamPos; uniform vec3 uMoonDir;
     uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uCrest; uniform vec3 uSky;
+    uniform float uCalm;   // the lighthouse's night: a glassy sea that holds the aurora
     uniform vec4 uRipples[8];
     uniform float uShipHalf; uniform vec2 uShipC; uniform float uShipHW[17];          // xz = origin, z = start time, w = strength
     uniform float uSkyT;
@@ -6907,14 +6933,22 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
 
       // tilted facets catch a pale edge — reads as low-poly wave faces
       float steep = clamp((1.0 - n.y) * 3.0, 0.0, 1.0);
-      steep *= smoothstep(300.0, 8.0, dist);
+      steep *= smoothstep(300.0, 8.0, dist) * (1.0 - 0.7 * uCalm);
       col = mix(col, uCrest, steep * 0.22);
 
       // crest highlight on the up-facing tops of the swell
       float wh = oceanWave(vec2(vWorld.x, vWorld.z), uTime);
       float crest = smoothstep(0.30, 0.80, wh) * smoothstep(0.55, 0.95, n.y);
       crest = mix(crest, smoothstep(0.35, 0.55, crest), 0.6);
-      col = mix(col, uCrest, crest * 0.5);
+      col = mix(col, uCrest, crest * 0.5 * (1.0 - 0.85 * uCalm));
+      /* AND OVER THE LIGHTHOUSE'S NIGHT THE SEA IS GLASS: the crests and the pale facets
+       * laid down (from forty metres up they were blots), the water darker, and at a grazing
+       * angle it holds the aurora's green toward the west and the sky's blue elsewhere */
+      if (uCalm > 0.0) {
+        col *= 1.0 - 0.28 * uCalm;
+        float west = smoothstep(0.1, -0.9, -viewDir.x);
+        col += (vec3(0.010, 0.085, 0.050) * west + vec3(0.012, 0.020, 0.045)) * fres * uCalm * 4.0;
+      }
 
       // moon glitter road
       vec3 hv = normalize(uMoonDir + viewDir);
@@ -7769,27 +7803,83 @@ function warmOwed() {
   return !!(warmSteps.length || warmBlock || !drainWarmed || !mushWarmed || !bunkerWarmed || (!shrineWarmed && shrineReady)
     || (!ufoWarmed && ufoWarm) || (!ucWarmed && ucWarm) || (!ntarWarmed && ntarWarm));
 }        // ms of black at most — a checkpoint should be back fast; what is left warms behind you
-const BOOT_FADE = 0.3;
+const BOOT_FADE = 0.6;   // (a load comes up out of the black, it does not cut in)
 /* AND THE DEADLINE IS THE WALL CLOCK, NOT ACCUMULATED FRAME TIME. The chain
  * drains a step a FRAME, so a tab that is not being drawn drains it at one
  * step a second — and a cap counted in dt then waits eighty real seconds for
  * its four. A load screen's cap is four seconds of somebody's life. */
+/* AND IT WAITS FOR EVERYTHING, NOT FOR A CLOCK (2026-10-13, the owner: "the
+ * lag between loading checkpoints needs to be smoother. i shouldnt be playing
+ * if it needs to load things it should just do it before im back in the game.
+ * i keep seeing things generate and lag before my eyes"). The hold lifted at
+ * 1.6 s whatever was left (6.5 for the rooms' warms), and it never asked about
+ * the downloads, the parses or the texture uploads at all — so a checkpoint
+ * came back into a beach still being built in front of you. Now the black
+ * holds until the whole boot's queue is empty (`startLeft`, what START waits
+ * for on a first load), the restore and any room restore are done, the
+ * warms are run, a look round from where you stand has been drawn under it
+ * (`startLookWarm`), and thirty frames in a row have come in under 34 ms —
+ * capped at thirty seconds of wall clock, so a lost download can never keep
+ * you out. A hairline across the black says it is working. While it holds
+ * you cannot walk and the creatures' grace (`chaseGraceUntil`) is held open,
+ * so it starts when you can see. */
+const BOOT_HOLD_ALL_MAX = 30000;
+let bootLookDone = false, bootSmoothN = 0, bootPrevT = 0, bootIdleSince = 0;
+const bootHoldBar = (() => {
+  const el = document.getElementById('blackout'); if (!el) return null;
+  const bar = document.createElement('div');
+  bar.style.cssText = 'position:absolute;left:50%;bottom:9vh;width:22vw;height:1px;margin-left:-11vw;background:rgba(255,255,255,0.10);opacity:0;transition:opacity 0.8s';
+  const fill = document.createElement('i');
+  fill.style.cssText = 'display:block;height:100%;width:100%;background:rgba(230,226,214,0.55);transform-origin:left;transform:scaleX(0.02);transition:transform 0.4s';
+  bar.appendChild(fill); el.appendChild(bar);
+  return { bar, fill, total: 1, shown: 0 };
+})();
+function startLookWarm() {
+  // the six looks round from where you stand, and every texture in reach of them put on the card
+  const tex = new Set(), _p = new THREE.Vector3();
+  for (const o of scene.children) {
+    if (!o.visible) continue;
+    o.traverse((c) => {
+      if (!c.isMesh || !c.visible) return;
+      c.getWorldPosition(_p);
+      if (_p.distanceToSquared(camera.position) > 260 * 260) return;
+      const ms = Array.isArray(c.material) ? c.material : [c.material];
+      for (const m of ms) if (m) for (const k in m) { const v = m[k]; if (v && v.isTexture && v.image) tex.add(v); }
+    });
+  }
+  roomWarm = { tex: [...tex], i: 0, view: -1, t0: performance.now() };
+}
 function updateBootHold(dt) {
   if (bootHold <= 0) return;
-  if (!bootHoldT) bootHoldT = performance.now();
+  const now = performance.now();
+  if (!bootHoldT) { bootHoldT = now; bootLookDone = false; bootSmoothN = 0; bootPrevT = 0; bootIdleSince = 0; }
   updateRoomWarm();
-  /* AND IT WAITS FOR THE BIG WARMS TOO, NOT ONLY THE CHAIN. The rooms'
-   * whole-room warms (the drain, the pavilion, the bunker, the hall, the
-   * saucer, the church, the boss) run after the chain, one a frame, and on a
-   * checkpoint load every one of them was still owed when the black lifted at
-   * the cap — so they landed on the player a second later as frames of 80,
-   * 80 and 267 ms (measured on the save at the church's tunnel exit). While
-   * the black is up they run flat out (`animateFrame`), and the black waits
-   * for them, to a cap of its own. */
-  const el = performance.now() - bootHoldT;
-  if (roomWarm || (el < BOOT_HOLD_MAX && (warmSteps.length || warmBlock)) || (el < BOOT_HOLD_WARM_MAX && warmOwed())) {
-    blackoutEl.style.opacity = '1'; return;
+  const el = now - bootHoldT, capped = el > BOOT_HOLD_ALL_MAX;
+  const left = startLeft();
+  if (left > 0 || roomRestore || restore || warmBlock) bootIdleSince = 0; else bootIdleSince = bootIdleSince || now;
+  const queueDone = bootIdleSince && now - bootIdleSince > 500;
+  let hold = !capped && (roomWarm || !queueDone || warmOwed());
+  if (!hold && !capped && !bootLookDone) { bootLookDone = true; updateFarProps(); startLookWarm(); hold = true; }
+  if (!hold && !capped) {
+    // and the frames have settled: thirty in a row under 34 ms, drawn under the black
+    const fr = bootPrevT ? now - bootPrevT : 99;
+    bootSmoothN = fr < 34 ? bootSmoothN + 1 : 0;
+    if (bootSmoothN < 30) hold = true;
   }
+  bootPrevT = now;
+  if (bootHoldBar) {
+    const B = bootHoldBar, n = left + (roomWarm ? 3 : 0) + (warmOwed() ? 2 : 0) + (bootLookDone ? 0 : 1) + Math.max(0, 30 - bootSmoothN) / 10;
+    B.total = Math.max(B.total, n);
+    B.shown = Math.max(B.shown, Math.min(1, 1 - n / B.total));
+    B.fill.style.transform = 'scaleX(' + Math.max(0.02, B.shown).toFixed(3) + ')';
+    B.bar.style.opacity = hold && el > 400 ? '1' : '0';
+  }
+  if (hold) {
+    blackoutEl.style.opacity = '1';
+    chaseGraceUntil = Math.max(chaseGraceUntil, now + CHASE_GRACE);
+    return;
+  }
+  if (capped) console.warn('[boot] the checkpoint black lifted at its cap with', left, 'still queued');
   /* AND THE SONG THAT WAS PLAYING WHEN IT WAS WRITTEN. The save outside the
    * church's far door is written as the passing theme comes up; loading it
    * without the song is loading a different moment. */
@@ -8984,6 +9074,7 @@ function setPrompt(html, mid) {
 }
 function updateHover() {
   if (peeking) { hovered = null; return; }       // the peek owns the prompt
+  if (wellClinch.on) { hovered = null; return; }  // the hold owns the prompt
   if (wellLook.on && wellLook.quiet && wellLook.phase === 'peer') { hovered = null; setPrompt(kbd('E') + 'Step back'); return; }
   if (frozen() || (!locked && !fallbackLook)) {
     hovered = null; crosshair.className = ''; setPrompt(''); return;
@@ -9083,6 +9174,7 @@ function updateHover() {
  * through to interact, so a bare-handed player who clicks on a thing is not
  * left clicking at nothing. */
 function primaryAction() {                       // E / F
+  if (wellClinch.on) { wellStruggle(); return; }   // held by the man from the well: every press is a wrench to get loose
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
   if (held) { dropHeld(); return; }
@@ -9100,6 +9192,7 @@ function primaryAction() {                       // E / F
   if (equipped && equipped.onPull) equipped.onPull();
 }
 function attackAction() {                        // left mouse
+  if (wellClinch.on) { wellStruggle(); return; }
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
   /* THE PLANK IS PUT DOWN, NOT THROWN (2026-10-12, the owner): it is a bridge
@@ -26741,34 +26834,77 @@ scene.add(mushHouse.group);
  * the paperbacks, turned to the head of the stair so it is the first thing on
  * the table you see as you come up. Its own map breathes a little, as the
  * room's things do, so it reads in the moonlight. */
+/* AND IT CAN BE TAKEN (2026-10-13, the owner: "make the portrait of the well
+ * zombie be able to be picked up and inspected as an item and this can be
+ * sold for 4 jars"). One model — the frame on its strut, upright, its foot at
+ * 0 — is the copy on the table, the one in your hand and the pack's Inspect;
+ * "Take the photograph" lifts it off the table into the pack, the save keeps
+ * that it is gone (`wellPhotoTaken`), and the trader gives four jars for it,
+ * as he does for the orc's. */
+const wellPhotoModel = new THREE.Group(); wellPhotoModel.name = 'wellPhotoModel';
+const WELL_PHOTO_TEX = new THREE.TextureLoader().load('assets/well-portrait.jpg');
+WELL_PHOTO_TEX.colorSpace = THREE.SRGBColorSpace; WELL_PHOTO_TEX.anisotropy = 4;
+{
+  const tilt = new THREE.Group(); tilt.rotation.x = -0.2; wellPhotoModel.add(tilt);   // leaning back on its strut
+  const W = 0.19, H = 0.256, B = 0.016;                                          // a cabinet card in its frame (the card's own 512 × 690)
+  const wood = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.55, metalness: 0, emissive: 0x070403 });
+  for (const [w, h, x, y] of [[W + B * 2, B, 0, H + B * 1.5], [W + B * 2, B, 0, B / 2], [B, H, -(W + B) / 2, H / 2 + B], [B, H, (W + B) / 2, H / 2 + B]]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.016), wood); m.position.set(x, y, 0); tilt.add(m);
+  }
+  const back = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.006), wood); back.position.set(0, H / 2 + B, -0.006); tilt.add(back);
+  const photo = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.004, H - 0.004),
+    new THREE.MeshStandardMaterial({ map: WELL_PHOTO_TEX, roughness: 0.6, metalness: 0, emissive: 0xffffff, emissiveMap: WELL_PHOTO_TEX, emissiveIntensity: 0.22 }));
+  photo.position.set(0, H / 2 + B, 0.0035); tilt.add(photo);
+  // the strut behind, from the frame's back down to the table — all of it BEHIND the back (it stood through the face)
+  const sh = 0.2, lean = 0.42, sTop = sh * Math.cos(lean), backZ = -Math.sin(0.2) * sTop - 0.02;
+  const strut = new THREE.Mesh(new THREE.BoxGeometry(0.022, sh, 0.006), wood);
+  strut.position.set(0, sTop / 2, backZ - Math.sin(lean) * sh / 2); strut.rotation.x = lean; wellPhotoModel.add(strut);
+}
+// the pack's icon: the card in its frame, drawn from the photograph once it is in (a plain frame until then)
+function wellPhotoIcon(img) {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.fillStyle = '#2a1c12'; g.fillRect(9, 3, 30, 42);
+  if (img) g.drawImage(img, 12, 6, 24, 36); else { g.fillStyle = '#8a8378'; g.fillRect(12, 6, 24, 36); }
+  return c.toDataURL();
+}
+const wellPhotoItem = {
+  id: 'wellPhoto', name: 'Photograph of the well man', icon: wellPhotoIcon(null), clickInspect: true,
+  desc: 'A cabinet card in a dark frame. He was smiling, once',
+  use: () => toggleEquip(wellPhotoItem),
+};
+new THREE.ImageLoader().load('assets/well-portrait.jpg', (img) => { wellPhotoItem.icon = wellPhotoIcon(img); try { renderHotbar(); renderPack(); } catch (e) { /* before the pack is up */ } });
+holdable(wellPhotoItem, wellPhotoModel, { scale: 1.35, pos: [0, -0.1, 0], rot: [0.12, 0.0, 0.0] });
+let wellPhotoTaken = false, wellPhotoOnTable = null;
+function wellPhotoGone() {
+  const fr = wellPhotoOnTable; if (!fr) return;
+  removeInteractable(fr); fr.removeFromParent(); wellPhotoOnTable = null;
+  if (hovered === fr) hovered = null;
+}
 {
   const T = MUSH.TABLE;
   if (T) {
-    const fr = new THREE.Group(); fr.name = 'wellPortrait';
+    const fr = wellPhotoModel.clone(true); fr.name = 'wellPortrait';
     const fx = T.x + 0.06, fz = T.z + 0.27;
     fr.position.set(fx, T.y, fz);
     const [tx, tz] = [Math.sin(MUSH.TOP_ANG) * 2.4, Math.cos(MUSH.TOP_ANG) * 2.4];
     fr.rotation.y = Math.atan2(tx - fx, tz - fz);
-    const tilt = new THREE.Group(); tilt.rotation.x = -0.2; fr.add(tilt);          // leaning back on its strut
-    const W = 0.19, H = 0.256, B = 0.016;                                          // a cabinet card in its frame (the card's own 512 × 690)
-    const wood = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.55, metalness: 0, emissive: 0x070403 });
-    for (const [w, h, x, y] of [[W + B * 2, B, 0, H + B * 1.5], [W + B * 2, B, 0, B / 2], [B, H, -(W + B) / 2, H / 2 + B], [B, H, (W + B) / 2, H / 2 + B]]) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.016), wood); m.position.set(x, y, 0); tilt.add(m);
-    }
-    const back = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.006), wood); back.position.set(0, H / 2 + B, -0.006); tilt.add(back);
-    const tex = new THREE.TextureLoader().load('assets/well-portrait.jpg');
-    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-    const photo = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.004, H - 0.004),
-      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.22 }));
-    photo.position.set(0, H / 2 + B, 0.0035); tilt.add(photo);
-    // the strut behind, from the frame's back down to the table — all of it BEHIND the back (it stood through the face)
-    const sh = 0.2, lean = 0.42, sTop = sh * Math.cos(lean), backZ = -Math.sin(0.2) * sTop - 0.02;
-    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.022, sh, 0.006), wood);
-    strut.position.set(0, sTop / 2, backZ - Math.sin(lean) * sh / 2); strut.rotation.x = lean; fr.add(strut);
+    const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.36, 0.22), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.set(0, 0.15, 0); fr.add(proxy);
     mushHouse.group.add(fr);
+    wellPhotoOnTable = fr;
+    addInteractable(fr, 'Take the photograph', 'inventory', {
+      keepSize: true,
+      onActivate: () => {
+        wellPhotoTaken = true;
+        wellPhotoGone();
+        sfxPaperRustle(1);
+        addToInventory(wellPhotoItem);
+      },
+    });
   }
 }
-window.__bwMushBake = bakeStatic(mushHouse.group, (o) => o === mushHouse.gate.pivot);
+window.__bwMushBake = bakeStatic(mushHouse.group, (o) => o === mushHouse.gate.pivot || o.name === 'wellPortrait');   // (his photograph can be taken)
 farProps.push({ obj: mushHouse.group, z: MUSH_Z, d: 320 });
 /* ---- WHAT HAS GROWN BACK -------------------------------------------------
  * Concrete left alone for fifty years does not stay empty. Every joint in
@@ -34432,6 +34568,8 @@ function updateMutantUnit(u, dt) {
           const dtp = (performance.now() - blockStart) / 1000;
           if (dtp <= PARRY_WINDOW * (u.kind.parryK || 1) && parryCool <= 0) parryMutant(u);
           else blockMutant(u);
+        } else if (A.grab && u.kind.onGrab) {
+          u.kind.onGrab(u, A);                // a blow that is a hold: the kind takes it from here
         } else {
           mutLandBlow(u, (u.kind.swDmg && u.kind.swDmg[u.st.swing]) || A.dmg || u.kind.dmg);
           if (Math.random() < 0.5) sfxMutLaugh(dist, u.kind.voice);   // it is enjoying this
@@ -40066,7 +40204,7 @@ function update(dt, rawDt = dt) {
    * of a body half inside a wall, and hand it back to you when you stand up.
    */
   if (peeking) camera.position.copy(_peekHome);
-  const canMove = (locked || fallbackLook) && !frozen();
+  const canMove = (locked || fallbackLook) && !frozen() && !wellClinch.on && bootHold <= 0;   // (not under a load's black)
   const mx = canMove ? (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0) : 0;
   const mz = canMove ? (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0) : 0;
   const move = new THREE.Vector2(mx, mz);
@@ -40460,7 +40598,8 @@ function update(dt, rawDt = dt) {
   lampCore.scale.setScalar(1 + flash * 2.2);
   lighthouse.userData.glow.material.opacity = 0.45 + flash * 0.5;
   lighthouse.userData.halo.material.opacity = 0.10 + flash * 0.22;
-  beamPivot.userData.beam.material.uniforms.uI.value = 0.20 + flash * 0.25;
+  beamPivot.userData.beam.material.uniforms.uI.value = (0.20 + flash * 0.25) * (1 + 1.25 * isleMagicK);   // (the beam stands in the island's mist)
+  if (beamPivot.userData.haze) { const H = beamPivot.userData.haze; H.visible = isleMagicK > 0.003; H.material.uniforms.uI.value = 0.055 * isleMagicK * (1 + flash * 0.8); H.material.uniforms.uT.value = beamPivot.userData.beam.material.uniforms.uT.value = performance.now() * 0.001; }
   const cll = city.userData.lights;
   if (cll) cll.material.opacity = 0.30 + 0.05 * Math.sin(oceanUniforms.uTime.value * 2.3);
 
@@ -40479,6 +40618,7 @@ function update(dt, rawDt = dt) {
   updateCrab(dt);
   updateMutant(dt);
   wellManClear(dt);          // after the chase has moved him: the well is solid to him
+  if (wellUnit && wellUnit.g.visible) wellManAir(wellUnit);   // and the pounce's flight on top of where it put him
   updateCrusader(dt);       // and the flail knight's chain, after whatever moved his arm
   updateThroneBoss(dt);     // and the marauder on his throne, on the hall's floor
   updateDante(dt);          // and the beast at the foot of his dais, and its chain
@@ -40703,6 +40843,7 @@ function saveCheckpoint(spot) {
       spliffs: spliffItem.count || 0, glows: glowstickItem.count || 0, spliffBuff: Math.round(spliffBuffT),
       keepCrate: keepCrateBroken, keepSpliff: keepSpliffTaken,
       grammy: grammyState, grammyAt,
+      wellPhoto: wellPhotoTaken,
       // the whale's artifact: not yet given, lying in the belly, or yours — and what it is set in
       whaleArt: artState, artOn: artAttachedTo(), artAt: art.spot || null, flameOn: flameAttachedTo(), tavChest: tavChestTaken, c13Arch: c13ArchOpen,
     },
@@ -40858,6 +40999,7 @@ function beginRestoreQuiet() {
   keepCrateBroken = !!f.keepCrate; keepSpliffTaken = !!f.keepSpliff;
   // a photo on the floor is put back on the floor when the tavern is built; one in your pack comes back by name
   grammyState = f.grammy || 0; grammyAt = f.grammyAt || null;
+  wellPhotoTaken = !!f.wellPhoto; if (wellPhotoTaken) wellPhotoGone();
   artRestore(f);
   if (grammyState === 1 && !grammyAt) grammyState = 0;
   if (f.whaleGone && !wbGone) { wbGone = true; wbRemoveForGood(); }
@@ -41064,7 +41206,7 @@ function packByName(name) {
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
                     syringeItem, waterBottleItem, headItem, fishingRodItem, magnumItem, shotgunItem, fangItem, oldRingItem,
-                    spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem, flameArtItem, beachMapItem, pavKeyItem]) {
+                    spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem, flameArtItem, beachMapItem, pavKeyItem, wellPhotoItem]) {
     if (it && (it.name === name || (it.was && it.was.includes(name)))) return it;   // `was`: what a save made before a rename calls it
   }
   return null;
@@ -41899,12 +42041,13 @@ function animateFrame() {
   settleMounds();
   updateUmbraFire();
   FOG_MOON.w = inRoom() ? 0 : 1;
-  FOG_KEEP.w = inKeep ? 1 : 0;
+  FOG_KEEP.w = inKeep ? 1 : isleMagicK * ISLE_MIST.on;   // and the lighthouse's sea mist (`ISLE_MIST`)
   FOG_GROUND.w = inDojo ? 0.50 : inRoom() ? 0 : GROUND_MIST * (1 + 2.4 * wsM) * (1 + 3.2 * wellMistK); FOG_GROUND.x = performance.now() * 0.00055;
   FOG_GROUND.y = inDojo ? DOJO_Y + (dojoArenaY || 0) - 0.05 : -0.10;     // in the dojo the mist lies on the courtyard's own stones
   skyUniforms.uMoonDir.value = inDojo ? DOJO_MOON : MOON_DIR;
   updateDojoSky();   // the dojo has a night of its own now; the beach's sky is hidden while it is up
-  if (inKeep) { FOG_KEEP2.x = performance.now() * 0.001; FOG_KEEP2.y = KEEP_Y + KEEP_SEA; FOG_KEEP.x = KEEP_MOON.x; FOG_KEEP.y = KEEP_MOON.y; FOG_KEEP.z = KEEP_MOON.z; }
+  if (inKeep) { FOG_KEEP2.x = performance.now() * 0.001; FOG_KEEP2.y = KEEP_Y + KEEP_SEA; FOG_KEEP2.z = 2.9; FOG_KEEP2.w = 0.13; FOG_KEEP.x = KEEP_MOON.x; FOG_KEEP.y = KEEP_MOON.y; FOG_KEEP.z = KEEP_MOON.z; }
+  else if (isleMagicK > 0) { FOG_KEEP2.x = performance.now() * 0.001; FOG_KEEP2.y = OCEAN_Y + ISLE_MIST.sea; FOG_KEEP2.z = ISLE_MIST.h; FOG_KEEP2.w = ISLE_MIST.d * (1 + 0.25 * Math.sin(performance.now() * 0.00011)); FOG_KEEP.x = MOON_DIR.x; FOG_KEEP.y = MOON_DIR.y; FOG_KEEP.z = MOON_DIR.z; }
   updateCritters();
   updateTribe();
   updateLightning();
@@ -49408,6 +49551,9 @@ const SELL_ROWS = [
   { key: 'grammy', item: () => grammyItem, name: 'Memory of grammy orc', price: 4, sum: 'The orc\'s old photograph',
     count: () => (inventory.includes(grammyItem) ? 1 : 0),
     desc: 'He unfolds it, looks at her for longer than he means to, and folds it back up. Four jars.' },
+  { key: 'wellPhoto', item: () => wellPhotoItem, name: 'Photograph of the well man', price: 4, sum: 'A cabinet card in a frame',
+    count: () => (inventory.includes(wellPhotoItem) ? 1 : 0),
+    desc: 'He holds it at arm\'s length, then closer, then turns it face down on the counter. Four jars.' },
   { key: 'shovel', item: () => shovelItem, name: 'Sand shovel', price: 2, sum: 'A plastic beach spade',
     count: () => (inventory.includes(shovelItem) ? 1 : 0),
     desc: "He turns it over and snorts at the plastic. Two jars, and he'll dig his own holes." },
@@ -49458,6 +49604,10 @@ function traderSell(key) {
     removeFromInventory(grammyItem);
     gainJar(r.price);
     traderSaid = "Somebody's grandmother. Four jars, and don't tell me about her.";
+  } else if (key === 'wellPhoto') {
+    removeFromInventory(wellPhotoItem);
+    gainJar(r.price);
+    traderSaid = "I know that face. Four jars. Don't bring me anything else from that well.";
   } else if (key === 'shovel') {
     removeFromInventory(shovelItem);
     gainJar(r.price);
@@ -76678,6 +76828,7 @@ function loadFort() {
     buildFortLife();
     buildFarmDoors();
     fortReady = true;
+    buildCastleLink();             // (if XIII is in: the passage is built of both castles' stone)
     /* and every program it needs is compiled now, off the driver's own thread,
      * rather than on the frame it first comes over the horizon */
     warmStep('castle compile', () => warmCompile([fortWorld], FORT_X - 8, 1.7, FORT_Z + 70, FORT_X - 8, 4, FORT_Z));
@@ -77595,43 +77746,106 @@ function planarUV(geo, k) {
   return geo;
 }
 let castleLink = null;
+/* IN THE CASTLES' OWN STONE (2026-10-13, the owner: "the textures dont match
+ * the castle it just looks like ai slop make it better"). The first passage
+ * was a grey ashlar box under a slate roof — the lighthouse's stone, at its
+ * own scale, on neither castle. It is built now of what the two castles are
+ * built of, at the scale they are drawn at (measured off their faces: XIII's
+ * brick, `acmat_4`, repeats every 11.8 m along a wall and 23.4 m up it; the
+ * first castle's rubble, `acmat_8`, every 5.3 m and 3.4 m): XIII's brick
+ * walls on a battered footing of the first castle's rubble, which carries on
+ * as the string course, the merlon caps, the slit dressings and a tower's
+ * quoins — a curtain wall the two castles share, battlemented both sides,
+ * with a square gate tower half way along. The same material objects as the
+ * castles' own, so the night grade and the fog are theirs. */
+function planarUV2(geo, ku, kv) {
+  const P = geo.attributes.position, N = geo.attributes.normal, uv = new Float32Array(P.count * 2);
+  for (let i = 0; i < P.count; i++) {
+    const nx = Math.abs(N.getX(i)), ny = Math.abs(N.getY(i)), nz = Math.abs(N.getZ(i));
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+    if (ny >= nx && ny >= nz) { uv[i * 2] = x / ku; uv[i * 2 + 1] = z / ku; }
+    else if (nx >= nz) { uv[i * 2] = z / ku; uv[i * 2 + 1] = y / kv; }
+    else { uv[i * 2] = x / ku; uv[i * 2 + 1] = y / kv; }
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return geo;
+}
+function linkCastleMat(W, name) {
+  let m = null;
+  if (W) W.traverse((o) => { if (!m && o.isMesh && o.material && o.material.name === name && o.material.map) m = o.material; });
+  return m;
+}
 function buildCastleLink() {
-  if (castleLink) return;
+  if (castleLink || !c13World || !c13World.children.length || !fortReady) return;
+  const brickMt = linkCastleMat(c13World, 'acmat_4'), rubbleMt = linkCastleMat(fortWorld, 'acmat_8') || brickMt;
+  if (!brickMt) return;
   const A = CASTLE_LINK.a, B = CASTLE_LINK.b, dx = B.x - A.x, dz = B.z - A.z, L = Math.hypot(dx, dz);
   const G = new THREE.Group(); G.name = 'castleLink';
   G.position.set(A.x, 0, A.z); G.rotation.y = Math.atan2(dx, dz);     // local +Z from the first castle to XIII
   const ground = (t) => 3.58 + 0.42 * t;                              // the bluff's top along it (measured)
-  const walls = [], roofs = [], dark = [];
-  const box = (out, w, h, d, x, y, z, rx = 0, rz = 0) => { const g = new THREE.BoxGeometry(w, h, d); if (rx) g.rotateX(rx); if (rz) g.rotateZ(rz); g.translate(x, y, z); out.push(g); };
-  const N = 7, seg = L / N, W = CASTLE_LINK.w, H = CASTLE_LINK.h;
-  for (let i = 0; i < N; i++) {
-    const t = (i + 0.5) / N, z = (i + 0.5) * seg, base = ground(t) - 0.9;
+  const brick = [], rubble = [], dark = [];
+  const box = (out, w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); out.push(g); return g; };
+  // a battered footing: wider at the foot, so it reads as built up out of the bluff
+  const batter = (out, w0, w1, h, d, x, y, z) => {
+    const g = new THREE.BoxGeometry(1, h, d), P = g.attributes.position;
+    for (let i = 0; i < P.count; i++) P.setX(i, P.getX(i) * (P.getY(i) < 0 ? w0 : w1));
+    g.computeVertexNormals(); g.translate(x, y + h / 2, z); out.push(g); return g;
+  };
+  const W = CASTLE_LINK.w, H = CASTLE_LINK.h, T = 0.6, y0 = ground(0) - 1.2, foot = ground(1) + 1.1, top = ground(1) + H;
+  const tz = L / 2, TW = 4.6;                                          // the gate tower, half way along
+  // the footing and the walls, both sides, broken where the tower stands
+  for (const [z0, z1] of [[0, tz - TW / 2], [tz + TW / 2, L]]) {
+    const len = z1 - z0, zc = (z0 + z1) / 2;
+    batter(rubble, W + 1.5, W + 0.5, foot - y0, len, 0, y0, zc);
     for (const s of [-1, 1]) {
-      box(walls, 0.55, H + 0.9, seg + 0.02, s * (W / 2), base + (H + 0.9) / 2, z);                      // the wall
-      box(dark, 0.08, 0.85, 0.16, s * (W / 2 + 0.28), base + 0.9 + 2.0, z);                              // its slit
+      box(brick, T, top - foot, len, s * (W / 2 - T / 2 + 0.25), (foot + top) / 2, zc);           // the curtain
+      box(rubble, T + 0.24, 0.22, len, s * (W / 2 - T / 2 + 0.25), top + 0.11, zc);               // its string course
+      box(brick, T * 0.75, 0.55, len, s * (W / 2 - T * 0.375 + 0.25), top + 0.22 + 0.275, zc);    // the parapet
+      // merlons, each with a rubble cap
+      for (let z = z0 + 0.55; z < z1 - 0.4; z += 1.25) {
+        box(brick, T * 0.75, 0.7, 0.65, s * (W / 2 - T * 0.375 + 0.25), top + 0.77 + 0.35, z + 0.32);
+        box(rubble, T * 0.85, 0.1, 0.75, s * (W / 2 - T * 0.375 + 0.25), top + 1.52, z + 0.32);
+      }
+      // slits, dressed in the rubble
+      for (let z = z0 + 1.6; z < z1 - 1.0; z += 3.2) {
+        const x = s * (W / 2 + 0.25 + 0.01);
+        box(dark, 0.04, 1.0, 0.16, x, foot + 1.55, z);
+        box(rubble, 0.08, 0.16, 0.5, x, foot + 2.12, z); box(rubble, 0.08, 0.16, 0.5, x, foot + 0.98, z);
+        for (const e of [-1, 1]) box(rubble, 0.08, 1.3, 0.14, x, foot + 1.55, z + e * 0.15);
+      }
     }
-    // the roof: two slopes from the wall heads to the ridge, overhanging
-    const top = base + 0.9 + H, rise = 1.15, half = W / 2 + 0.45, slope = Math.atan2(rise, half), len = Math.hypot(rise, half);
-    for (const s of [-1, 1]) box(roofs, len + 0.1, 0.12, seg + 0.04, s * half / 2, top + rise / 2, z, 0, -s * slope);
-    box(walls, 0.3, 0.3, seg + 0.04, 0, top + rise + 0.05, z);                                            // the ridge piece
+    // the walk's roof between the parapets, below their line
+    box(brick, W - 0.2, 0.25, len, 0, top - 0.05, zc);
   }
-  // buttresses at the joints, stepping down outward
-  for (let i = 0; i <= N; i++) {
-    const t = i / N, z = i * seg, base = ground(Math.min(1, t)) - 0.9;
+  // the gate tower: brick, rubble quoins and footing, battlemented, a lit window either side
+  {
+    const th = top + 3.6, half = TW / 2;
+    batter(rubble, TW + 1.4, TW + 0.4, foot - y0, TW + 0.6, 0, y0, tz);
+    box(brick, TW, th - foot, TW, 0, (foot + th) / 2, tz);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) for (let y = foot; y < th - 0.3; y += 0.9)
+      box(rubble, 0.42 + (Math.round(y / 0.9) % 2) * 0.2, 0.42, 0.42 + ((Math.round(y / 0.9) + 1) % 2) * 0.2, sx * (half - 0.15), y + 0.21, tz + sz * (half - 0.15));
+    box(rubble, TW + 0.3, 0.24, TW + 0.3, 0, th + 0.12, tz);
+    for (const [ex, ez, along] of [[0, -1, 'x'], [0, 1, 'x'], [-1, 0, 'z'], [1, 0, 'z']]) {
+      for (let k = -half + 0.35; k < half - 0.3; k += 1.15) {
+        const mx = along === 'x' ? k + 0.3 : ex * (half - 0.25), mz = along === 'z' ? tz + k + 0.3 : tz + ez * (half - 0.25);
+        box(brick, along === 'x' ? 0.6 : 0.5, 0.75, along === 'x' ? 0.5 : 0.6, mx, th + 0.24 + 0.375, mz);
+        box(rubble, along === 'x' ? 0.7 : 0.6, 0.1, along === 'x' ? 0.6 : 0.7, mx, th + 1.04, mz);
+      }
+    }
     for (const s of [-1, 1]) {
-      box(walls, 0.8, 3.4, 0.8, s * (W / 2 + 0.55), base + 1.7, z);
-      box(walls, 0.6, 1.3, 0.6, s * (W / 2 + 0.45), base + 3.9, z);
+      const x = s * (half + 0.01);
+      box(dark, 0.04, 1.1, 0.55, x, foot + 3.0, tz);
+      box(rubble, 0.1, 0.18, 0.95, x, foot + 3.64, tz); box(rubble, 0.1, 0.14, 0.95, x, foot + 2.38, tz);
+      for (const e of [-1, 1]) box(rubble, 0.1, 1.4, 0.18, x, foot + 3.0, tz + e * 0.36);
     }
   }
-  const ash = lhAshlarMaps(), slate = lhSlateMaps();
-  const wallMt = new THREE.MeshStandardMaterial({ map: ash.map, normalMap: ash.normalMap, roughness: 0.95, metalness: 0 });
-  fortDress(wallMt);
-  const roofMt = new THREE.MeshStandardMaterial({ map: slate.map, normalMap: slate.normalMap, roughness: 0.9, metalness: 0, color: 0x9a9690 });
-  const merge = (gs, k) => planarUV(mergeGeometries(gs.map((g) => g.toNonIndexed()), false), k);
-  G.add(new THREE.Mesh(merge(walls, 1 / 1.6), wallMt));
-  G.add(new THREE.Mesh(merge(roofs, 1 / 1.4), roofMt));
-  G.add(new THREE.Mesh(mergeGeometries(dark.map((g) => g.toNonIndexed()), false), new THREE.MeshBasicMaterial({ color: 0x0a0806 })));
-  // a lamp over each end, so it is seen at night from the rock
+  const merge = (gs) => mergeGeometries(gs.map((g) => (g.index ? g.toNonIndexed() : g)), false);
+  G.add(new THREE.Mesh(planarUV2(merge(brick), 11.76, 23.37), brickMt));
+  G.add(new THREE.Mesh(planarUV2(merge(rubble), 5.30, 3.36), rubbleMt));
+  G.add(new THREE.Mesh(merge(dark), new THREE.MeshBasicMaterial({ color: 0x0a0806 })));
+  // the tower's windows lit from inside, like the castles' own, and a lamp over each end, so it is seen at night from the rock
+  const winMt = new THREE.MeshBasicMaterial({ color: 0xffa25a, fog: true });
+  for (const s of [-1, 1]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.9, 0.38), winMt); w.position.set(s * (TW / 2 + 0.035), foot + 3.0, tz); G.add(w); }
   for (const [z, t] of [[0.9, 0], [L - 0.9, 1]]) {
     const y = ground(t) + 2.6;
     for (const s of [-1, 1]) {
@@ -82370,9 +82584,9 @@ const wellStoneTex = (() => {
  * how far under the rim it is, AFTER the game's fog (which up here is a
  * pale grey and would light the deep), so the rope thins into it a metre at
  * a time and the bucket goes into it and is gone. */
-const WELL_MURK = new THREE.Vector3(0.014, 0.016, 0.020);
+const WELL_MURK = new THREE.Vector3(0.005, 0.006, 0.008);   // (darker, 2026-10-13: lighter than the deep walls, a thing going down it stood out as a grey shape until it was switched off)
 const WELL_MURK_U = { value: 0 };                     // the rim's world height, set once the well has one
-function wellMurkPatch(mat, k = 0.36) {
+function wellMurkPatch(mat, k = 0.5) {
   if (mat.userData.wellMurk) return;
   mat.userData.wellMurk = true;
   const prev = mat.onBeforeCompile;
@@ -82632,7 +82846,7 @@ function wellBoreLining(o, mt) {
   lg.setIndex(idx); lg.computeVertexNormals();
   // the model's own map, unlit: lit stone down a forty-metre tube picks up the material's grazing rim and goes pale
   const lmat = new THREE.MeshBasicMaterial({ map: mt.map, vertexColors: true, side: THREE.DoubleSide, fog: false });
-  wellMurkPatch(lmat, 0.22);
+  wellMurkPatch(lmat, 0.45);
   const lining = new THREE.Mesh(lg, lmat); lining.name = 'wellBoreLining'; lining.userData.bwGhost = true; lining.raycast = () => {};
   // the floor of it, black
   const cap = new THREE.Mesh(new THREE.CircleGeometry(0.45, 24), new THREE.MeshBasicMaterial({ color: 0x000000, fog: false, side: THREE.DoubleSide }));
@@ -82640,7 +82854,7 @@ function wellBoreLining(o, mt) {
   o.add(lining);
   o.updateMatrixWorld(true);
   const cw = new THREE.Vector3(CX, Y0, CZ).applyMatrix4(o.matrixWorld);
-  wellBorePatch(mt, 0.30, cw.x, cw.z);          // the tube itself: the fog kept out of it, the murk in
+  wellBorePatch(mt, 0.9, cw.x, cw.z);          // the tube itself: the fog kept out of it, the murk in
   // and the old cylinder, a third wider, is not drawn: the lining is the tube now
   if (wellShaft.children[0]) wellShaft.children[0].visible = false;
 }
@@ -82658,7 +82872,7 @@ function wellBorePatch(mat, k = 0.30, cx = WELL_X, cz = WELL_Z) {
       .replace('#include <project_vertex>', '#include <project_vertex>\n  vWellB = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWellB;\nuniform float uWellRim;\nuniform vec2 uWellC;')
       // inside the bore the well's grey fog does not reach: the stone goes into the murk instead, from its own colour
-      .replace('#include <fog_fragment>', 'vec3 wellPre = gl_FragColor.rgb;\n#include <fog_fragment>\n  { float inb = (1.0 - smoothstep(' + R + ', ' + R + ' + 0.06, distance(vWellB.xz, uWellC))) * smoothstep(uWellRim + 0.05, uWellRim - 0.25, vWellB.y); float wk = exp(-max(0.0, uWellRim - 0.3 - vWellB.y) * ' + k.toFixed(3) + '); vec3 deep = mix(vec3(' + WELL_MURK.x + ', ' + WELL_MURK.y + ', ' + WELL_MURK.z + '), wellPre, wk); gl_FragColor.rgb = mix(gl_FragColor.rgb, deep, inb); }');
+      .replace('#include <fog_fragment>', 'vec3 wellPre = gl_FragColor.rgb;\n#include <fog_fragment>\n  { float inb = (1.0 - smoothstep(' + R + ', ' + R + ' + 0.06, distance(vWellB.xz, uWellC))) * smoothstep(uWellRim + 0.05, uWellRim - 0.25, vWellB.y); float wk = exp(-max(0.0, uWellRim - 0.05 - vWellB.y) * ' + k.toFixed(3) + '); vec3 deep = mix(vec3(' + WELL_MURK.x + ', ' + WELL_MURK.y + ', ' + WELL_MURK.z + '), wellPre, wk); gl_FragColor.rgb = mix(gl_FragColor.rgb, deep, inb); }');
   };
   const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
   mat.customProgramCacheKey = () => key() + '|wellBore' + mat.uuid;
@@ -82689,8 +82903,35 @@ MUT_ATTACKS.wA1 = { wind: 0.63, strike: 0.10, recover: 0.75, hit: 0.46, reach: 2
 MUT_ATTACKS.wA2 = { wind: 0.60, strike: 0.10, recover: 0.60, hit: 0.50, reach: 2.10, lunge: 1.5, chain: 'wA3', chainP: 0.60, w: 0.30, dmg: 1, guardK: 1.1, limbs: [0], stop: 1.45, rate: 1.6 };
 /* the second swipe again, from further out and harder: he throws himself the last two metres into it */
 MUT_ATTACKS.wA3 = { wind: 0.55, strike: 0.10, recover: 0.70, hit: 0.50, reach: 2.9, lunge: 3.0, chain: 'wA1', chainP: 0.70, w: 0.25, dmg: 2, guardK: 1.4, limbs: [0], stop: 1.35, rate: 1.75, landSlop: 0.3 };
+/* AND MORE OF HIM (2026-10-13, the owner: "make him have more animations and
+ * attacks that are interesting but fun to fight"). Still nothing on all fours.
+ *  - THE POUNCE (`wLeap`): from three and a half metres or more he stops, sinks
+ *    and goes — off the ground, two thirds of a metre at the top, across five
+ *    metres, and the swipe comes down as he lands (`wellManAir`). It is the
+ *    longest tell he has; step sideways out from under it and he lands on
+ *    nothing with a long recovery.
+ *  - THE HOLD (`wGrab`): a quick reach with both hands from close. If it lands
+ *    he has you — you cannot walk, the lens is pulled onto his face, and every
+ *    eight tenths of a second he bites. Mash the attack button or E (six
+ *    wrenches) and you tear loose and shove him off balance into an opening;
+ *    take two bites and he throws you down the sand (`wellClinch`). Guard it
+ *    or parry it like any blow.
+ *  - THE DART (`dodgeClip`): when you wind up he breaks sideways at a sprint,
+ *    out of the arc, and — sometimes — comes straight back in at you from the
+ *    side with the lunging swipe (`wellMind`).
+ *  - THE SCREAM: between strings, now and then, from out of reach, he throws
+ *    his head back and screams (`idle02`, the stand he roared from), and comes. */
+MUT_ATTACKS.wLeap = { wind: 0.95, strike: 0.14, recover: 0.85, hit: 0.50, reach: 5.6, lunge: 4.8, chain: 'wA1', chainP: 0.45, w: 0.16, dmg: 2, hold: true, minDist: 3.4, guardK: 1.7, limbs: [0, 1], stop: 1.4, rate: 1.25, landSlop: 0.35 };
+MUT_ATTACKS.wGrab = { wind: 0.52, strike: 0.12, recover: 0.70, hit: 0.46, reach: 2.2, lunge: 1.6, chain: null, chainP: 0, w: 0.18, dmg: 1, grab: true, guardK: 1.2, limbs: [0, 1], stop: 1.2, rate: 1.9 };
 MUT_KINDS.wellman = {
-  glb: 'assets/wellman.glb', solo: true, skin: null, bones: null, faceFix: 0, natural: true, deathClip: true,
+  glb: 'assets/wellman.glb', solo: true, skin: null, bones: null, faceFix: 0, natural: true,
+  /* AND HE GOES DOWN LIKE EVERYTHING ELSE (2026-10-13, the owner: "GIVE the well
+   * zombie ragdoll physics like the other enemies"). He died on his own `death`
+   * clip (`deathClip`), the one body on the beach that did not fall where the
+   * blow sent it. He has always carried a name map (`rag`), so he takes the
+   * Verlet body and the boss's rarer odds of coming apart (`bossDeath`): killed
+   * once, thrown by the blow that did it. */
+  bossDeath: true,
   hideMeshes: ['Object_75'],             // the teeth: a separate mesh of 289 vertices, yellow pegs in the open mouth (the owner: "too corny")
   death: { BUCKLE: 1.2, DROP: 2.0, TAIL: 2.6, QUIET: 3.4 },
   h: 1.92, hp: 36, dmg: 1, bleedRes: 1.1, hitR: 0.85, body: 0.55, lungeStop: 1.35, landSlop: 0.22, limbR: 0.26, lungeLead: 0.3, lungeK: 1.0,
@@ -82702,7 +82943,10 @@ MUT_KINDS.wellman = {
    * `caution` (his crouch) and `eat` (the bite from it) are all on hands and knees — measured off the
    * clips — and none of them is played: two swipes and the lunging second one, the freeze is the
    * stand held dead still, and the roar is the stand. */
-  use: { wA1: 0.36, wA2: 0.36, wA3: 0.28 },
+  use: { wA1: 0.30, wA2: 0.30, wA3: 0.22, wLeap: 0.18, wGrab: 0.17 },
+  dodgeClip: 'run', dodgeRate: 2.3, dodgeSide: 6.8, dodgeT: 0.30,   // the dart: out of the arc at a sprint
+  mind: true, mindFn: (u, dt, dist) => wellMind(u, dt, dist),
+  onGrab: (u) => wellGrab(u),
   circle: 0.15, step: 0.26, feint: 0.08, sizeUp: 0.0, smart: 1, reacts: true, restless: true,
   turnMax: 9.0, fade: 0.09,
   poise: 14, poiseBack: 2.5, poiseWait: 0.6, parryK: 0.9, recoilK: 0.55, stunK: 0.9,
@@ -82724,9 +82968,9 @@ MUT_KINDS.wellman = {
   anim: { idle: 'idle01', walk: 'walk01', run: 'run', roar: 'idle02', die: 'death', back: 'walk02', rate: 1.0, lean: 0.0, strafeK: 1.0 },
   gaits: { walk: ['walk01', 'walk02'], run: ['run'], idle: ['idle01', 'idle02'], strafeL: ['walk01'], strafeR: ['walk01'] },
   alias: { idle2: 'idle02', walk2: 'walk02', run2: 'run', roar2: 'idle02', die2: 'death', calm: 'idle02',
-           hit: 'damage', hitBig: 'down', hitSide: 'damage', hitBack: 'damage', hitHead: 'damage', parry: 'down',
-           strafeL: 'walk01', strafeR: 'walk01', wA1: 'attack01', wA2: 'attack02', wA3: 'attack02' },
-  stunClip: 'down', first: 'idle01', sleepIdle: 'idle01',
+           hit: 'damage', hitBig: 'damage', hitSide: 'damage', hitBack: 'damage', hitHead: 'damage', parry: 'damage',   // (`down` is a fall flat on his face: the owner, 2026-10-13, "stop making the well zombie fall forward")
+           strafeL: 'walk01', strafeR: 'walk01', wA1: 'attack01', wA2: 'attack02', wA3: 'attack02', wLeap: 'attack02', wGrab: 'attack01' },
+  stunClip: 'damage', first: 'idle01', sleepIdle: 'idle01',
   provoke: (u) => wellCharge(u),
   voice: { f: 1.35, growl: 0.5, rasp: 1.9 },
 };
@@ -82744,6 +82988,137 @@ function wellCharge(u) {
   u.st.sprint = Math.max(u.st.sprint || 0, 0.7);
   wellStalk.t = 0; wellStalk.next = 2.5 + Math.random() * 5.0;
   if (!applyingSave && !replaying && mutVoiceOK()) sfxMutRoar(Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z), u.kind.voice);
+  // out of a freeze or a scream with ground between you, as often as not he comes through the air
+  if (wellPhase >= 2 && Math.random() < 0.6) { wellMindS.leapNow = true; wellMindS.leapCool = 0; u.st.cool = 0; }
+}
+/* HIS MIND, a frame at a time, before the fight's own: the dart that comes
+ * back in, and the scream between strings. */
+const wellMindS = { dart: false, dartSeen: false, screamCool: 6 };
+function wellMind(u, dt, dist) {
+  const M = wellMindS;
+  M.screamCool = Math.max(0, M.screamCool - dt);
+  // a dart ends: half the time he comes straight back in from the side
+  if (u.st.evade > 0 && !M.dartSeen) { M.dartSeen = true; M.dart = Math.random() < 0.55; }
+  if ((u.st.evade || 0) <= 0 && M.dartSeen) {
+    M.dartSeen = false;
+    if (M.dart && u.st.atk < 0 && dist < 4.2) { u.st.forceSwing = 'wA3'; u.st.cool = 0; if (dist > 3.6) M.leapCool = 0; }   // (further out, the pounce below takes it)
+    M.dart = false;
+  }
+  /* the pounce is his own decision: the fight only draws a swing once you are inside his longest reach
+   * (2.9 m), and a pounce needs room (`minDist` 3.4), so the draw never reaches it */
+  M.leapCool = Math.max(0, (M.leapCool ?? 2) - dt);
+  if (M.leapCool <= 0 && u.st.atk < 0 && (u.st.evade || 0) <= 0 && (u.st.stun || 0) <= 0 && u.st.cool <= 0 && dist > 3.6 && dist < 6.2
+      && (!mutToken || mutToken === u) && !wellClinch.on && (M.leapNow || Math.random() < dt * 2.4)) {
+    M.leapNow = false;
+    M.leapCool = 4 + Math.random() * 4; mutToken = u;
+    u.st.swing = 'wLeap'; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0; u.st.landed = false; u.st.feint = 0;
+    sfxMutTell(dist, u.atk.wLeap.wind, u.kind.voice);
+    return;
+  }
+  // the scream: out of reach, between strings, not often — held like his freeze (`wellStalk`), and the charge after it
+  if (M.screamCool <= 0 && u.st.atk < 0 && (u.st.evade || 0) <= 0 && u.st.stun <= 0 && dist > 4.5 && dist < 11 && !wellClinch.on && Math.random() < dt * 0.5) {
+    M.screamCool = 9 + Math.random() * 7;
+    u.st.awake = false; u.holdAnim = true;
+    const a = mutPlay(u, 'idle02', false); if (a) { a.timeScale = 1.7; a.time = 0.35; }
+    wellStalk.hold = 1.25;
+    if (!applyingSave && !replaying && mutVoiceOK()) sfxMutRoar(dist, u.kind.voice);
+    addTrauma(Math.max(0, 0.25 - dist * 0.015));
+  }
+}
+/* THE POUNCE'S FLIGHT: his clips have no air in them, so the body is lifted
+ * along the arc the swing's own timing gives (the coil, then `LEAP_AIR` up and
+ * down onto the contact frame), and lands with a thud. Run after his chase. */
+function wellManAir(u) {
+  const p = u.g.position;
+  p.y -= u.wHop || 0;
+  let hop = 0;
+  const A = u.st.atk >= 0 && u.st.swing === 'wLeap' ? u.atk.wLeap : null;
+  if (A && u.st.alive && !u.rag) {
+    const t = u.st.atk, t1 = A.wind, t0 = t1 - LEAP_AIR;
+    if (t < t0 && t > t0 - 0.35) hop = -0.16 * Math.sin(((t - (t0 - 0.35)) / 0.35) * Math.PI * 0.5);   // sinking into it
+    else if (t >= t0 && t < t1) hop = 0.68 * Math.sin(((t - t0) / LEAP_AIR) * Math.PI);
+    if (t >= t1 && !u.wLanded) {
+      u.wLanded = true;
+      const d = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+      try { sfxKillThud(0.55); } catch (e) { /* a sound is never fatal */ }
+      addTrauma(Math.max(0, 0.32 - d * 0.04));
+    }
+    if (t < t0) u.wLanded = false;
+    u.st.feint = 0;                              // a pounce is never a feint: he is in the air
+  } else if ((u.wHop || 0) > 0.01) hop = u.wHop * 0.72;   // broken off in the air (he thought better of it): he comes down, he does not drop through a frame
+  p.y += hop; u.wHop = hop;
+}
+/* THE HOLD. He has you: the walk is his, the lens is on his face, and the
+ * bites come until you tear loose (mash attack or E) or he throws you. */
+const wellClinch = { on: false, t: 0, got: 0, need: 6, bite: 0, bites: 0, x: 0, z: 0, cool: 0, u: null, last: 0 };
+function wellGrab(u) {
+  const C = wellClinch;
+  if (C.on || C.cool > 0 || dying || !u.st.alive) { mutLandBlow(u, 1); return; }
+  C.on = true; C.t = 0; C.got = 0; C.need = 6; C.bite = 0.55; C.bites = 0; C.u = u; C.last = 0;
+  C.x = camera.position.x; C.z = camera.position.z;
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.chainN = 0;
+  u.st.awake = false; u.holdAnim = true;
+  const a = mutPlay(u, 'attack01', true); if (a) a.timeScale = 0.55;
+  cineHold = true; dialogFov = 64;
+  dialogHead = (u.model && u.model.getObjectByName('head_014_16')) || null;
+  dialogTarget = new THREE.Vector3(u.g.position.x, u.g.position.y + 1.6, u.g.position.z);
+  addTrauma(0.4);
+  if (mutVoiceOK()) sfxMutRoar(0.5, u.kind.voice);
+  sfxPaperRustle(0.4);
+}
+function wellStruggle() {
+  const C = wellClinch; if (!C.on) return;
+  if (C.t - C.last < 0.06) return;                  // a held key's repeat is not a wrench
+  C.last = C.t; C.got++;
+  addTrauma(0.06); camera.rotation.z += (Math.random() - 0.5) * 0.04;
+  if (C.got >= C.need) wellClinchEnd(true);
+}
+function wellClinchEnd(broke) {
+  const C = wellClinch, u = C.u; if (!C.on) return;
+  C.on = false; C.cool = 7.0;              // (and not again straight away: a landed reach in that time is a plain blow)
+  setPrompt('');
+  if (cineHold && dialogHead && dialogHead.name === 'head_014_16') { cineHold = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV; }
+  if (!u) return;
+  const dx = u.g.position.x - camera.position.x, dz = u.g.position.z - camera.position.z, d = Math.hypot(dx, dz) || 1;
+  u.holdAnim = false; u.st.awake = true; mutDrop(u);
+  if (broke) {
+    // torn loose: he goes back on his heels, open
+    u.g.position.x += dx / d * 1.1; u.g.position.z += dz / d * 1.1;
+    u.st.stun = Math.max(u.st.stun || 0, 1.15); u.st.cool = 1.0;
+    knockback.set(-dx / d * 3.5, 0, -dz / d * 3.5);
+    try { sfxMutHit(u.kind.voice); } catch (e) { /* a sound is never fatal */ }
+  } else {
+    // thrown: down the sand away from him
+    knockback.set(-dx / d * 9.5, 0, -dz / d * 9.5);
+    addTrauma(0.5);
+    u.st.cool = 0.6;
+  }
+}
+function updateWellClinch(dt) {
+  const C = wellClinch;
+  C.cool = Math.max(0, C.cool - dt);
+  if (!C.on) return;
+  const u = C.u;
+  if (!u || !u.st.alive || u.retired || u.rag || dying || wellLook.on) { wellClinchEnd(true); return; }
+  C.t += dt;
+  // held where he caught you, and him a forearm in front of you, facing you
+  camera.position.x = C.x; camera.position.z = C.z; velocity.set(0, 0, 0);
+  const p = u.g.position, dx = p.x - C.x, dz = p.z - C.z, d = Math.hypot(dx, dz) || 1;
+  const want = 0.82;
+  p.x = C.x + dx / d * want; p.z = C.z + dz / d * want;
+  u.g.rotation.y = Math.atan2(-dx, -dz);
+  u.mixer.update(dt);
+  C.bite -= dt;
+  if (C.bite <= 0) {
+    C.bite = 0.8; C.bites++;
+    const a = mutPlay(u, 'attack02', false); if (a) a.timeScale = 1.8;
+    setTimeout(() => { if (C.on && C.u === u) { const b = mutPlay(u, 'attack01', true); if (b) b.timeScale = 0.55; } }, 380);
+    mutLandBlow(u, 1);
+    addTrauma(0.3);
+    if (C.bites >= 2) { wellClinchEnd(false); return; }
+  }
+  setPrompt(kbd('E') + 'Break free ' + '▮'.repeat(C.got) + '▯'.repeat(Math.max(0, C.need - C.got)));
 }
 /* ---- THE LOOK, THE CHOICE, THE CLIMB, THE REVEAL ------------------- */
 const wellLook = { on: false, phase: '', t: 0, home: new THREE.Vector3(), homeQ: new THREE.Quaternion(), to: new THREE.Vector3(), toQ: new THREE.Quaternion(), stride: 0, strides: 0, nextStride: 0, holdFor: 0, air: null };
@@ -82926,7 +83301,7 @@ function updateWell(dt) {
   }
 }
 function wellSetBucket(depth) {
-  for (const k of ['bucket', 'handle', 'bolts']) { const o = wellParts[k]; if (o) { if (o.userData.y0 === undefined) o.userData.y0 = o.position.y; o.position.y = o.userData.y0 - depth; o.visible = depth < 5.2; } }
+  for (const k of ['bucket', 'handle', 'bolts']) { const o = wellParts[k]; if (o) { if (o.userData.y0 === undefined) o.userData.y0 = o.position.y; o.position.y = o.userData.y0 - depth; o.visible = depth < 6.0; } }   // (by 5 m down the murk has all of it: it goes out, it is not switched off)
   const r = wellParts.myRope; if (!r) return;
   const top = 0.26, bottom = WELL_BUCKET_Y0 - depth;
   r.scale.y = Math.max(0.001, top - bottom); r.position.y = (top + bottom) / 2;
@@ -82973,10 +83348,18 @@ function wellReveal() {
 const wellStalk = { stare: 0, t: 0, next: 0, hold: 0 };
 function updateWellMan(dt) {
   const u = wellUnit;
+  updateWellClinch(dt);
+  if (wellClinch.on) return;
   if (!u.st.alive || u.retired || u.st.struck) {
     if (cineHold && dialogHead && dialogHead.name === 'head_014_16') { cineHold = false; dialogTarget = null; dialogHead = null; }
     // and when he is down, what he had in his fist is on the sand beside him
-    if (wellKey.state === 0) { wellKey.t = (wellKey.t || 0) + dt; if (wellKey.t > 1.7) wellKeyLie(u.g.position.x + 0.35, u.g.position.z + 0.25, false); }
+    if (wellKey.state === 0) {
+      wellKey.t = (wellKey.t || 0) + dt;
+      // beside where the body came to rest (the ragdoll takes it a stride or two from where he stood)
+      const hp = u.rag && u.rag.byName && (u.rag.byName.Character1_Hips || u.rag.byName.Character1_Spine);
+      const kx = hp ? hp.p.x : u.g.position.x, kz = hp ? hp.p.z : u.g.position.z;
+      if (wellKey.t > 1.7) wellKeyLie(kx + 0.35, kz + 0.25, false);
+    }
     return;
   }
   if (wellStalk.stare > 0) {
@@ -83557,6 +83940,58 @@ function isleFindTrunks(barkMeshes) {
     isleTrunks.push({ x, z, r: THREE.MathUtils.clamp(ds[Math.floor(ds.length * 0.8)], 0.12, 0.55) });
   }
 }
+/* AND EVERY BOUGH AT BODY HEIGHT (2026-10-13, the owner: "i shouldnt clip
+ * through the trees on the lighthouse section either"). The discs found
+ * eleven trunks; raycast, 105 cells of bark between knee and head height had
+ * none — the fallen trunk by the stair head, low boughs, the trees whose
+ * trunks lean too far to cluster. Bark is still kept out of the WALL index
+ * (its twigs snag a segment test and the walker was trapped inside a ring of
+ * it), so it is its own grid: every bark face sampled every 12 cm, a 20 cm
+ * cell marked where a sample stands 0.3–1.85 m over the floor under it, and a
+ * body is pushed out from the NEAREST marked cell (`isleBarkPush`) — a round
+ * push, which slides along a row of cells rather than catching on it. The
+ * cliff stair and the drawbridge are left clear. */
+let isleBark = null;
+const ISLE_BARK_C = 0.2;
+const isleBarkKey = (i, j) => (i + 2000) * 100000 + (j + 20000);
+function isleFindBark(barkMeshes) {
+  const n = new Map(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const C = ISLE_BARK_C, step = 0.12;
+  for (const o of barkMeshes) {
+    o.updateMatrixWorld(true);
+    const P = o.geometry.attributes.position, I = o.geometry.index, cnt = I ? I.count : P.count;
+    for (let t = 0; t < cnt; t += 3) {
+      a.fromBufferAttribute(P, I ? I.getX(t) : t).applyMatrix4(o.matrixWorld); b.fromBufferAttribute(P, I ? I.getX(t + 1) : t + 1).applyMatrix4(o.matrixWorld); c.fromBufferAttribute(P, I ? I.getX(t + 2) : t + 2).applyMatrix4(o.matrixWorld);
+      const m = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)), k = Math.min(40, Math.max(1, Math.ceil(m / step)));
+      for (let u = 0; u <= k; u++) for (let v = 0; v <= k - u; v++) {
+        const wu = u / k, wv = v / k, wa = 1 - wu - wv;
+        const x = a.x * wa + b.x * wu + c.x * wv, y = a.y * wa + b.y * wu + c.y * wv, z = a.z * wa + b.z * wu + c.z * wv;
+        if (isleRampAt(x, z) !== null || (x > ISLE_BR.x0 - 0.5 && Math.abs(z - ISLE_BR.z) < ISLE_BR.w)) continue;
+        const f = ISLE_M.floorAt(x, z); if (f === null || y < f + 0.3 || y > f + 1.85) continue;
+        const key = isleBarkKey(Math.floor(x / C), Math.floor(z / C));
+        n.set(key, (n.get(key) || 0) + 1);
+      }
+    }
+  }
+  isleBark = new Set();
+  for (const [key, cnt] of n) if (cnt >= 2) isleBark.add(key);
+}
+function isleBarkPush(p, r) {
+  if (!isleBark || !isleBark.size) return;
+  const C = ISLE_BARK_C, R = r + 0.1;
+  for (let it = 0; it < 3; it++) {
+    let bx = 0, bz = 0, bd = R;
+    const i0 = Math.floor((p.x - R) / C), i1 = Math.floor((p.x + R) / C), j0 = Math.floor((p.z - R) / C), j1 = Math.floor((p.z + R) / C);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      if (!isleBark.has(isleBarkKey(i, j))) continue;
+      const cx = (i + 0.5) * C, cz = (j + 0.5) * C, d = Math.hypot(p.x - cx, p.z - cz);
+      if (d < bd) { bd = d; bx = cx; bz = cz; }
+    }
+    if (bd >= R) return;
+    if (bd < 1e-4) { p.x += R; continue; }
+    p.x = bx + (p.x - bx) / bd * R; p.z = bz + (p.z - bz) / bd * R;
+  }
+}
 // out of every trunk you stand in, the castles' disc push
 function isleTrunkPush(p, r) {
   for (const T of isleTrunks) {
@@ -83682,7 +84117,7 @@ function isleBuildCells(meshes, rockMeshes) {
   for (const R of ISLE_RAMPS) for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
     const x = X0 + (i + 0.5) * cell, z = Z0 + (j + 0.5) * cell;
     if (z < R.z0 - 0.4 || z > R.z1 + 0.2 || (x >= R.x0 && x <= R.x1) || x < R.x0 - 3 || x > R.x1 + 3) continue;
-    const ry = R.yLo + (R.yHi - R.yLo) * THREE.MathUtils.clamp((R.z1 - z) / (R.z1 - R.z0), 0, 1);
+    const ry = isleRampY(R, THREE.MathUtils.clamp(z, R.z0, R.z1));
     const e = raw.get(j * gw + i); if (!e) continue;
     const t = top(e); if (t !== null && t < ry - 0.8 && t > 1.2) raw.set(j * gw + i, [t, 0]);   // (the jetty, under 1.2, stays)
   }
@@ -83757,16 +84192,53 @@ ISLE_M.floorAt = (x, z) => {
  * bluff) onto the lip of the terrace. The throne room's lattice door comes
  * out of that postern onto the boards; the postern from the boards goes back
  * in to the lattice door. */
-const ISLE_BR = { x0: 6.7, x1: 18.5, z: -1153.4, y: 20.05, w: 1.5 };   // the deck, world: from the terrace's lip to the tower's face
+const ISLE_BR = { x0: 6.7, x1: 18.15, z: -1153.4, y: 20.05, w: 1.5 };   // (x1: the deck stops at the postern's step, not inside the wall: 2026-10-13)   // the deck, world: from the terrace's lip to the tower's face
 const ISLE_BR_DOOR = { x: 18.62, z: -1153.4 };            // the postern, on the tower's face
+/* THE TOWER'S FACE IS NOT SQUARE TO THE BRIDGE (2026-10-13, the owner: "its
+ * clipped through the wall fix it"). Raycast across it at seven heights, XIII's
+ * west tower face here is a plane running from x 18.36 at z −1151.2 to 19.09 at
+ * −1155.6 — 9.4° off the bridge's line — and everything at the tower end was
+ * built square to the bridge at x 18.5–18.6: the postern's frame stood inside
+ * the stone on its north side and off it on its south, the chain eyes and the
+ * braces the same. They are all set on the measured face now (`isleWallX`,
+ * turned by `ISLE_WALL_YAW`), and the deck stops at the postern's step. */
+const ISLE_WALL = { x0: 18.36, z0: -1151.2, x1: 19.09, z1: -1155.6 };
+const isleWallX = (z) => ISLE_WALL.x0 + (z - ISLE_WALL.z0) * (ISLE_WALL.x1 - ISLE_WALL.x0) / (ISLE_WALL.z1 - ISLE_WALL.z0);
+const ISLE_WALL_N = (() => { const tx = ISLE_WALL.x1 - ISLE_WALL.x0, tz = ISLE_WALL.z1 - ISLE_WALL.z0, l = Math.hypot(tx, tz); return { x: tz / l, z: -tx / l }; })();   // out of the face, toward the island
+const ISLE_WALL_YAW = Math.atan2(ISLE_WALL_N.x, ISLE_WALL_N.z);   // a group turned by this has local +Z out of the face
+const ISLE_BR_PIER = { back: 7.6, front: 11.3, top: 19.63, knee: { x: 11.0, y: 17.6 }, foot: 10.5, w: 2.4 };   // the buttress under the rock end, world x/y (its foot x is knee − 2)
 const ISLE_ARRIVE = { x: 16.9, z: -1153.4 };              // where the throne room's door puts you: a stride out of it, on the boards
 /* THE CLIFF STAIR IS A RAMP TO THE WALK. The model's flight down the sea face
  * has treads a metre high at this scale (measured off the plan: 0.7, 1.8,
  * 2.8, 3.8 … a riser every 0.8 m) — drawn for a diorama, not for feet. It is
  * drawn as it is; the walk reads its footprint as one steady slope from the
  * jetty to the landing, and its risers are left out of the wall index. */
-const ISLE_RAMPS = [{ x0: -18.1, x1: -15.1, z0: -1149.3, z1: -1137.3, yLo: 0.75, yHi: 15.65 }];   // yLo at z1 (the jetty end), yHi at z0 (the landing)
-const isleRampAt = (x, z) => { for (const R of ISLE_RAMPS) if (x >= R.x0 && x <= R.x1 && z >= R.z0 && z <= R.z1) return R.yLo + (R.yHi - R.yLo) * (R.z1 - z) / (R.z1 - R.z0); return null; };
+/* AND THE SLOPE IS THE TREADS' OWN (2026-10-13, the owner: "you ruined the
+ * steps to the jetty very badly … i got stuck on them"). The first ramp was a
+ * straight line from 0.75 to 15.65 over z −1137.3 … −1149.3 — guessed, and
+ * wrong at the top: raycast down the flight, the treads are fifteen of 1.01 m
+ * over 0.7 m (x −18.0 … −15.2) and the landing's nose is at −1148.05, so at
+ * the head the line ran 1.9 m UNDER the landing — the eye under its stone —
+ * and on for a metre and a quarter beneath it, where the step up off it was
+ * three times a step: stuck. The slope now runs through each tread's middle
+ * 0.3 over its top (the noses, measured), so the feet are never more than a
+ * hand under the next tread and never in one, and it meets the landing at
+ * its nose. */
+const ISLE_STAIR_NOSE = [-1137.15, -1137.85, -1138.55, -1139.25, -1140.05, -1140.75, -1141.45, -1142.15, -1142.95, -1143.65, -1144.35, -1145.15, -1145.85, -1146.55, -1147.25, -1148.05];
+const ISLE_STAIR_PROF = (() => {
+  const N = ISLE_STAIR_NOSE, P = [[N[0], 0.80]];
+  for (let k = 0; k < N.length - 1; k++) P.push([(N[k] + N[k + 1]) / 2, 0.80 + 1.01 * k + 0.3]);
+  P.push([N[N.length - 1], 15.65]);
+  return P;                                       // z falling, y rising
+})();
+const ISLE_RAMPS = [{ x0: -18.0, x1: -15.2, z0: -1148.05, z1: -1137.15, prof: ISLE_STAIR_PROF }];   // z1 the jetty end, z0 the landing's nose
+const isleRampY = (R, z) => {
+  const P = R.prof;
+  if (z >= P[0][0]) return P[0][1];
+  for (let i = 1; i < P.length; i++) if (z >= P[i][0]) return P[i - 1][1] + (P[i][1] - P[i - 1][1]) * (P[i - 1][0] - z) / (P[i - 1][0] - P[i][0]);
+  return P[P.length - 1][1];
+};
+const isleRampAt = (x, z) => { for (const R of ISLE_RAMPS) if (x >= R.x0 && x <= R.x1 && z >= R.z0 && z <= R.z1) return isleRampY(R, z); return null; };
 function isleBridge(woodMat) {
   const B = ISLE_BR, geos = [], iron = [], L = B.x1 - B.x0, cx = (B.x0 + B.x1) / 2;
   const box = (out, w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); out.push(g); return g; };
@@ -83787,32 +84259,86 @@ function isleBridge(woodMat) {
     const g = new THREE.BoxGeometry(0.26, 0.06, B.w * (0.97 + rnd() * 0.05));
     g.rotateY((rnd() - 0.5) * 0.03); g.translate(x, B.y - 0.03 + (rnd() - 0.5) * 0.012, B.z + (rnd() - 0.5) * 0.03); geos.push(g);
   }
-  // two stringers under them, the cross beams under those
-  for (const s of [-1, 1]) box(geos, L, 0.22, 0.14, cx, B.y - 0.17, B.z + s * 0.55);
-  for (let x = B.x0 + 0.5; x < B.x1; x += 2.3) box(geos, 0.16, 0.14, B.w + 0.3, x, B.y - 0.35, B.z);
+  // two stringers under them, the cross beams under those — the frame in older, darker timber than the boards (`timber`)
+  const timber = [];
+  for (const s of [-1, 1]) box(timber, L, 0.24, 0.16, cx, B.y - 0.18, B.z + s * 0.55);
+  for (let x = B.x0 + 0.5; x < B.x1; x += 2.3) box(timber, 0.18, 0.15, B.w + 0.34, x, B.y - 0.36, B.z);
   // posts, a top rail and a middle one, each side
   const posts = [];
   for (let x = B.x0 + 0.3; x <= B.x1 - 0.35; x += (B.x1 - 0.35 - B.x0 - 0.3) / 5) posts.push(x);
   for (const s of [-1, 1]) {
     const z = B.z + s * (B.w / 2 + 0.03);
-    for (const x of posts) box(geos, 0.11, 1.1, 0.11, x, B.y + 0.5, z);
-    box(geos, L - 0.5, 0.07, 0.08, cx, B.y + 1.02, z);
-    box(geos, L - 0.5, 0.05, 0.05, cx, B.y + 0.52, z);
+    for (const x of posts) { box(timber, 0.14, 1.12, 0.14, x, B.y + 0.5, z); box(timber, 0.18, 0.06, 0.18, x, B.y + 1.1, z); }
+    box(timber, L - 0.5, 0.1, 0.11, cx, B.y + 1.02, z);
+    box(timber, L - 0.5, 0.07, 0.07, cx, B.y + 0.52, z);
   }
-  // under the rock end: two raking struts from the deck down to the stone at its lip
-  for (const s of [-1, 1]) beam(geos, 0.16, B.x0 + 6.4, B.y - 0.3, B.z + s * 0.55, 10.55, 17.1, B.z + s * 0.75);
-  // and under the tower end, a brace each side into the wall below the door
-  for (const s of [-1, 1]) beam(geos, 0.16, B.x1 - 1.5, B.y - 0.3, B.z + s * 0.55, B.x1 + 0.05, B.y - 1.9, B.z + s * 0.62);
+  /* WHAT IT STANDS ON (2026-10-13, the owner: "make the drawbridge look
+   * better too the bridge support doesn't even connect to the land its
+   * floating"). The struts ran to (10.55, 17.1), and raycast, the island's
+   * east face is a near-sheer wall at x 9.3–11.5 from the deck down to nine
+   * metres (further out to the north) — the struts ended three quarters of a
+   * metre in front of it, in the air. Now the deck's rock end sits on a
+   * buttress of XIII's brick built out of that face (`ISLE_BR_PIER`): its top
+   * under the cross beams, its back buried in the rock, its face battered
+   * back into the cliff by its foot so it grows out of the stone; the struts
+   * land on its face on iron shoes, and the tower end sits on a stepped stone
+   * corbel out of the tower with its own pair into the wall. */
+  const pier = [], ironShoe = [];
+  {
+    const P = ISLE_BR_PIER, sh = new THREE.Shape();
+    sh.moveTo(P.back, P.foot); sh.lineTo(P.knee.x - 2.0, P.foot); sh.lineTo(P.knee.x, P.knee.y); sh.lineTo(P.front, P.top); sh.lineTo(P.back, P.top); sh.closePath();
+    const g = new THREE.ExtrudeGeometry(sh, { depth: P.w, bevelEnabled: false, steps: 1 });
+    g.translate(0, 0, B.z - P.w / 2); pier.push(g);
+    // a cap course a little proud of it, and the tower's corbel in two steps
+    box(pier, P.front - P.back + 0.3, 0.22, P.w + 0.24, (P.front + P.back) / 2 + 0.05, P.top - 0.11, B.z);
+    // the corbel the deck's tower end sits on, in two steps out of the face, turned to it
+    const wallBox = (w, h, d, y) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(0, 0, d / 2 - 0.12); g.rotateY(ISLE_WALL_YAW); g.translate(isleWallX(B.z), y, B.z); pier.push(g); };
+    wallBox(B.w + 0.7, 0.42, 0.95, B.y - 0.56);
+    wallBox(B.w + 0.4, 0.4, 0.62, B.y - 0.97);
+  }
+  // the buttress's face at a height (above its knee the steep top, below it the batter back to its foot), a hair inside it
+  const strutTo = (y) => { const P = ISLE_BR_PIER, k = P.knee; return (y >= k.y ? k.x + (y - k.y) * (P.front - k.x) / (P.top - k.y) : k.x - (k.y - y) * 2.0 / (k.y - P.foot)) - 0.06; };
+  for (const s of [-1, 1]) {
+    // the rock end: a long rake from a third of the span to the buttress, and a knee nearer in
+    beam(timber, 0.2, 14.4, B.y - 0.36, B.z + s * 0.55, strutTo(16.9), 16.9, B.z + s * 0.55);
+    beam(timber, 0.17, 12.6, B.y - 0.36, B.z + s * 0.55, strutTo(18.5), 18.5, B.z + s * 0.55);
+    box(ironShoe, 0.1, 0.34, 0.26, strutTo(16.9) + 0.04, 16.9, B.z + s * 0.55);
+    box(ironShoe, 0.1, 0.3, 0.24, strutTo(18.5) + 0.04, 18.5, B.z + s * 0.55);
+    // the tower end: into the wall under the corbel
+    beam(timber, 0.19, B.x1 - 2.4, B.y - 0.36, B.z + s * 0.55, isleWallX(B.z + s * 0.55) + 0.1, B.y - 2.5, B.z + s * 0.55);
+  }
+  // a walk-plate where the deck lands on the buttress, and a sill where it meets the rock
+  box(geos, 0.3, 0.12, B.w + 0.5, ISLE_BR_PIER.front - 0.2, ISLE_BR_PIER.top + 0.04, B.z);
   const mesh = new THREE.Mesh(mergeGeometries(geos.map((g) => g.toNonIndexed()), false), woodMat);
   mesh.name = 'isleBridge';
-  // THE CHAINS: it is a drawbridge let down from the tower, and they hold it there
+  const timberMt = woodMat.clone(); timberMt.color.multiplyScalar(0.5); if (timberMt.emissive) timberMt.emissive.multiplyScalar(0.5); timberMt.metalness = 0; timberMt.roughness = 1;
+  const frameMesh = new THREE.Mesh(mergeGeometries(timber.map((g) => g.toNonIndexed()), false), timberMt);
+  frameMesh.name = 'isleBridgeFrame';
+  mesh.add(frameMesh);
+  const stoneMt = (c13World && c13World.children.length && linkCastleMat(c13World, 'acmat_4')) || new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 1, metalness: 0, emissive: 0x0f0d0b, flatShading: true });
+  const pierMesh = new THREE.Mesh(planarUV2(mergeGeometries(pier.map((g) => (g.index ? g.toNonIndexed() : g)), false), 11.76, 23.37), stoneMt);
+  pierMesh.name = 'isleBridgePier';
+  mesh.add(pierMesh);
+  // THE CHAINS: it is a drawbridge let down from the tower, and they hold it there — links, not rods
   const ironMt = new THREE.MeshStandardMaterial({ color: 0x232220, roughness: 0.55, metalness: 0, emissive: 0x070707, flatShading: true });
   const hang = posts[3];
+  const linkG = new THREE.TorusGeometry(0.05, 0.014, 4, 8); linkG.scale(0.62, 1, 1);
+  const _ln = new THREE.Vector3(), _lq = new THREE.Quaternion(), _lu = new THREE.Vector3(0, 1, 0);
+  const chain = (ax, ay, az, bx, by, bz) => {
+    _ln.set(bx - ax, by - ay, bz - az); const len = _ln.length(); _ln.normalize(); _lq.setFromUnitVectors(_lu, _ln);
+    const n = Math.floor(len / 0.078);
+    for (let i = 0; i <= n; i++) {
+      const g = linkG.clone(); if (i % 2) g.rotateY(Math.PI / 2);
+      g.applyQuaternion(_lq); const t = i / n; g.translate(ax + (bx - ax) * t, ay + (by - ay) * t + Math.sin(t * Math.PI) * -0.12, az + (bz - az) * t); iron.push(g);
+    }
+  };
   for (const s of [-1, 1]) {
-    rod(iron, 0.035, B.x1 + 0.02, B.y + 4.7, B.z + s * 0.95, hang, B.y + 1.08, B.z + s * (B.w / 2 + 0.03));
-    box(iron, 0.3, 0.3, 0.22, B.x1 + 0.08, B.y + 4.7, B.z + s * 0.95);          // the eye in the wall it runs out of
+    const ex = isleWallX(B.z + s * 0.95);
+    chain(ex - 0.12, B.y + 4.7, B.z + s * 0.95, hang, B.y + 1.08, B.z + s * (B.w / 2 + 0.03));
+    box(iron, 0.3, 0.3, 0.22, ex - 0.04, B.y + 4.7, B.z + s * 0.95);          // the eye in the wall it runs out of
     box(iron, 0.16, 0.16, 0.16, hang, B.y + 1.08, B.z + s * (B.w / 2 + 0.03));   // and its shackle on the post
   }
+  iron.push(...ironShoe);
   // the hinge the deck turns on, across the foot of the door
   rod(iron, 0.07, B.x1 - 0.1, B.y - 0.08, B.z - B.w / 2 - 0.1, B.x1 - 0.1, B.y - 0.08, B.z + B.w / 2 + 0.1);
   const chains = new THREE.Mesh(mergeGeometries(iron.map((g) => g.toNonIndexed()), false), ironMt);
@@ -83821,18 +84347,19 @@ function isleBridge(woodMat) {
   const D = ISLE_BR_DOOR, W = 0.62, H = 2.3, depth = 0.7;
   const stone = new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 1, metalness: 0, emissive: 0x0f0d0b, flatShading: true });
   const frame = new THREE.Group(); frame.name = 'isleBridgeDoor';
-  frame.position.set(D.x, B.y, D.z); frame.rotation.y = -Math.PI / 2;          // local +Z out of the wall, toward the island
-  for (const sx of [-1, 1]) { const j = new THREE.Mesh(new THREE.BoxGeometry(0.34, H + 0.3, depth), stone); j.position.set(sx * (W + 0.17), (H + 0.3) / 2, -depth / 2 + 0.12); frame.add(j); }
-  const lintel = new THREE.Mesh(new THREE.BoxGeometry(W * 2 + 0.9, 0.36, depth), stone); lintel.position.set(0, H + 0.3, -depth / 2 + 0.12); frame.add(lintel);
-  const key = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.46, depth + 0.06), stone); key.position.set(0, H + 0.36, -depth / 2 + 0.15); frame.add(key);
-  const sill = new THREE.Mesh(new THREE.BoxGeometry(W * 2 + 0.7, 0.1, depth + 0.1), stone); sill.position.set(0, -0.03, -depth / 2 + 0.14); frame.add(sill);
-  const back = new THREE.Mesh(new THREE.BoxGeometry(W * 2, H, 0.1), new THREE.MeshBasicMaterial({ color: 0x050403 })); back.position.set(0, H / 2, -depth + 0.12); frame.add(back);
+  frame.position.set(isleWallX(D.z), B.y, D.z); frame.rotation.y = ISLE_WALL_YAW;   // local +Z out of the face, toward the island (the face is 9.4° off the bridge)
+  const surround = new THREE.Group(); surround.name = 'isleBridgeSurround'; frame.add(surround);   // (given way to the throne room's own door when its model is in: `isleFitThroneDoor`)
+  for (const sx of [-1, 1]) { const j = new THREE.Mesh(new THREE.BoxGeometry(0.34, H + 0.3, depth), stone); j.position.set(sx * (W + 0.17), (H + 0.3) / 2, -depth / 2 + 0.12); surround.add(j); }
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(W * 2 + 0.9, 0.36, depth), stone); lintel.position.set(0, H + 0.3, -depth / 2 + 0.12); surround.add(lintel);
+  const key = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.46, depth + 0.06), stone); key.position.set(0, H + 0.36, -depth / 2 + 0.15); surround.add(key);
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(W * 2 + 0.7, 0.1, depth + 0.1), stone); sill.position.set(0, -0.03, -depth / 2 + 0.14); surround.add(sill);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(W * 2, H, 0.1), new THREE.MeshBasicMaterial({ color: 0x050403 })); back.position.set(0, H / 2, -depth + 0.12); surround.add(back);
   const plank = new THREE.MeshStandardMaterial({ color: 0x3a2c20, roughness: 0.95, metalness: 0, emissive: 0x110b07, flatShading: true });
   const n = 6, pw = (W * 2) / n;
-  for (let i = 0; i < n; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(pw - 0.014, H - 0.03, 0.08), plank); p.position.set(-W + pw * (i + 0.5), H / 2, -0.08); frame.add(p); }
-  for (const h of [0.4, H / 2, H - 0.45]) { const s = new THREE.Mesh(new THREE.BoxGeometry(W * 1.9, 0.07, 0.03), ironMt); s.position.set(0, h, -0.03); frame.add(s); }
-  for (const sx of [-1, 1]) for (const h of [0.4, H / 2, H - 0.45]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.03), ironMt); b.position.set(sx * W * 0.8, h, -0.01); frame.add(b); }
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.012, 5, 12), ironMt); ring.position.set(W * 0.55, 1.05, 0.0); frame.add(ring);
+  for (let i = 0; i < n; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(pw - 0.014, H - 0.03, 0.08), plank); p.position.set(-W + pw * (i + 0.5), H / 2, -0.08); surround.add(p); }
+  for (const h of [0.4, H / 2, H - 0.45]) { const s = new THREE.Mesh(new THREE.BoxGeometry(W * 1.9, 0.07, 0.03), ironMt); s.position.set(0, h, -0.03); surround.add(s); }
+  for (const sx of [-1, 1]) for (const h of [0.4, H / 2, H - 0.45]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.03), ironMt); b.position.set(sx * W * 0.8, h, -0.01); surround.add(b); }
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.012, 5, 12), ironMt); ring.position.set(W * 0.55, 1.05, 0.0); surround.add(ring);
   // a lantern on a bracket beside it: the one warm light at this end, so the door is seen from the terrace
   const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.42), ironMt); arm.position.set(W + 0.62, H + 0.05, 0.12); frame.add(arm);
   const cage = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.28, 0.2), ironMt); cage.position.set(W + 0.62, H - 0.16, 0.3); frame.add(cage);
@@ -83846,7 +84373,7 @@ function isleBridge(woodMat) {
   // the floor the walk reads: the deck, one slab, never drawn
   const slab = new THREE.Mesh(new THREE.BoxGeometry(L + 0.2, 0.04, B.w).translate(cx, B.y - 0.02, B.z));
   frame.updateMatrixWorld(true);
-  return { mesh, chains, frame, proxy, slab, lantern: frame.localToWorld(cage.position.clone()) };
+  return { mesh, chains, frame, surround, proxy, slab, lantern: frame.localToWorld(cage.position.clone()) };
 }
 
 /* ---- THE TOWER'S INSIDE. Whitewashed brick on the bore, a stone floor, a
@@ -83993,6 +84520,45 @@ function isleBuildDoor(G) {
   return { leaf, proxy, frame };
 }
 
+/* ---- TIDYING THE MODEL (2026-10-13, the owner: "take out the crate on the
+ * jetty steps and make sure the light posts aren't floating either"). Measured
+ * off the model's own pieces, raycast down onto its rock, boards and deck:
+ * the lamp post at the stair head stood 0.24 m off the landing, the one on the
+ * terrace path 0.59, another 0.09 — so every post, its foot and its glass are
+ * set down onto what is under them (never raised: the sunk ones are planted).
+ * The crate on the landing at the head of the cliff stair (1.04 × 1.15 × 0.94,
+ * itself 0.23 off the stone, where you step off the flight) is taken out, and
+ * the one buried in the flight's side with it. Done on the pieces before the
+ * merge, so the walk, the walls and the lamp lights all see the tidied model. */
+const ISLE_DROP_PROPS = [{ x: -17.0, z: -1150.0, y: 16.4 }, { x: -18.2, z: -1139.5, y: 1.66 }];
+function isleTidyPlan(root) {
+  const drop = new Set(), dy = new Map(), floors = [], pieces = [];
+  const bb = new THREE.Box3(), c = new THREE.Vector3(), sz = new THREE.Vector3();
+  root.traverse((o) => {
+    if (!o.isMesh || ISLE_DROP.test(o.name)) return;
+    const nm = (o.material && o.material.name) || '';
+    if (/Island|walkway|house/.test(nm)) floors.push(o);
+    if (nm !== 'props' && nm !== 'lamp') return;
+    bb.setFromObject(o); bb.getCenter(c); bb.getSize(sz);
+    pieces.push({ o, nm, x: c.x, y: c.y, z: c.z, bot: bb.min.y, top: bb.max.y, sx: sz.x, sy: sz.y, sz: sz.z });
+  });
+  for (const P of pieces) for (const D of ISLE_DROP_PROPS) if (Math.hypot(P.x - D.x, P.z - D.z) < 0.4 && Math.abs(P.y - D.y) < 0.6 && P.sy > 0.6) drop.add(P.o);
+  const rc = new THREE.Raycaster(), down = new THREE.Vector3(0, -1, 0), from = new THREE.Vector3();
+  for (const post of pieces) {
+    if (post.nm !== 'props' || post.sy < 3 || post.sx > 0.45 || post.sz > 0.45) continue;
+    const group = pieces.filter((q) => Math.hypot(q.x - post.x, q.z - post.z) < 0.3);
+    const bot = Math.min(...group.map((q) => q.bot));
+    let fl = -1e9;
+    for (const [ox, oz] of [[0, 0], [0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]]) {
+      rc.set(from.set(post.x + ox, bot + 0.6, post.z + oz), down); rc.far = 3;
+      const h = rc.intersectObjects(floors, false)[0];
+      if (h && h.point.y > fl) fl = h.point.y;
+    }
+    if (fl < -1e8 || bot - fl < 0.03) continue;                      // planted, or nothing under it to stand on
+    for (const q of group) dy.set(q.o, fl - bot - 0.02);
+  }
+  return { drop, dy };
+}
 function loadIsle() {
   if (isleWorld) return;
   isleWorld = new THREE.Group(); isleWorld.name = 'isle';
@@ -84005,8 +84571,9 @@ function loadIsle() {
     const byMat = new Map(), keep = [];
     let towerMesh = null, galleryMesh = null;
     const lampHeads = [];
+    const tidy = isleTidyPlan(root);
     root.traverse((o) => {
-      if (!o.isMesh || ISLE_DROP.test(o.name)) return;
+      if (!o.isMesh || ISLE_DROP.test(o.name) || tidy.drop.has(o)) return;
       const mt = o.material, nm = mt.name || '';
       if (!mt.userData.isle) {
         mt.userData.isle = true;
@@ -84022,6 +84589,7 @@ function loadIsle() {
         mt.needsUpdate = true;
       }
       const g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      { const dy = tidy.dy.get(o); if (dy) g.translate(0, dy, 0); }   // a lamp post set down on what it stands on
       g.computeBoundingBox();
       if (o.name === 'main_tower_lighthouse_0') { towerMesh = { g, mt }; return; }
       if (o.name === 'group2_pCylinder13_lighthouse_0') { galleryMesh = { g, mt }; return; }
@@ -84084,19 +84652,24 @@ function loadIsle() {
     const woodMt = [...byMat.values()].find((e) => /walkway/.test(e.mt.name));
     const BR = isleBridge(woodMt ? woodMt.mt : new THREE.MeshStandardMaterial({ color: 0x4a3e30 }));
     isleWorld.add(BR.mesh, BR.chains, BR.frame); floorMeshes.push(BR.slab);
+    isleWorld.userData.BR = BR;
+    loadThrone();                      // its door is the postern's (`isleFitThroneDoor`): in before you can see it
     // the lamps on their posts: a warm light and a glow at each head
     const glowT = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,214,160,0.9)'); gr.addColorStop(0.25, 'rgba(255,180,110,0.3)'); gr.addColorStop(1, 'rgba(255,150,80,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
     for (const c of lampHeads) {
       const l = new THREE.PointLight(0xffc98e, 6, 9, 1.6); l.position.copy(c); isleWorld.add(l);
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowT, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7, fog: false }));
       s.position.copy(c); s.scale.setScalar(1.6); s.userData.bwGhost = true; isleWorld.add(s);
+      // and its light in the mist round it: a wide halo, lit with the island's night
+      const hs = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowT, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
+      hs.position.copy(c); hs.scale.setScalar(5.5); hs.userData.bwGhost = true; isleWorld.add(hs); isleLampHalos.push(hs);
     }
     // the inside, the gallery, the door
     const inner = new THREE.Group(); inner.name = 'isleInner'; isleWorld.add(inner);
     const IN = isleBuildInterior(inner);
     const GAL = isleBuildGallery(isleWorld);
     const DOOR = isleBuildDoor(isleWorld);
-    isleWorld.userData = { inner, IN, GAL, DOOR };
+    isleWorld.userData = { inner, IN, GAL, DOOR, BR };
     inner.traverse((o) => { o.userData.bwGhost = true; });             // the walk outside never meets the inside
     DOOR.leaf.traverse((o) => { o.userData.bwGhost = true; });         // nor the door: whether it is open is asked of the door (the index was built with it shut)
     for (const o of isleWorld.children) if (o.isMesh && /Ring|Torus/.test(o.geometry.type)) o.userData.bwGhost = true;
@@ -84109,12 +84682,13 @@ function loadIsle() {
       onActivate: () => startThrone(1, 'isle'),
     });
     { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowT, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.75, fog: false }));
-      s.position.copy(BR.lantern); s.scale.setScalar(1.4); s.userData.bwGhost = true; isleWorld.add(s); }
+      s.position.copy(BR.lantern); s.scale.setScalar(1.4); s.userData.bwGhost = true; isleWorld.add(s); BR.glow = s; }
     // the plan, for the walk
     inner.updateMatrixWorld(true);
     const C = isleBuildCells([...floorMeshes, towerM, galM, inner.userData.floor], rockMeshes);
     ISLE_SITE.walk = C.walk; ISLE_SITE.cells = C.cells; ISLE_SITE.ready = true;
     isleFindTrunks(barkMeshes);
+    isleFindBark(barkMeshes);
     isleMoveLight();
     // its shaders built now, off the walk, rather than on the frame it first comes out of the fog
     try { if (renderer.compileAsync) renderer.compileAsync(isleWorld, camera, scene); else renderer.compile(isleWorld, camera, scene); } catch (e) {}
@@ -84221,10 +84795,402 @@ function placeOnIsle() {
   lhBeamFind();
 }
 
+/* ---- THE END OF THE ROAD, LIT (2026-10-13, the owner: "make the lighthouse
+ * scene way more breathtaking its the end of the game so it should look
+ * magical the view from the top should be a spectacle i need the most
+ * immersive atmosphere ever … do your best work ever"). Everything on the
+ * walk until here is fog, cloud and a low moon; the island is where the night
+ * opens. Stepping out of XIII's postern onto the drawbridge the air clears over
+ * four seconds (`isleMagicK`): the cloud goes, the fog thins to a few per cent
+ * of the beach's, the light goes silver and cold-bright, and the sky behind
+ * the cloud is there — an aurora hung in curtains over the sea, the Milky Way
+ * across the top of the sky with its dust lanes, the fine stars the beach
+ * never had, a green-blue airglow on the horizon, and a wide halo round the
+ * moon. Fireflies drift in the trees; the sea round the rock sparks blue-green
+ * where it moves; and out over the water, paper lanterns are going up — a few
+ * from the terrace, all of them from the top. On the gallery (`isleTopK`) the
+ * fog is all but gone, the lanterns are everywhere, a star falls now and
+ * then, and a wind comes round the lantern. All of it is drawn additively with
+ * no lights of its own (a light entering the scene recompiles every material),
+ * and compiled at boot, so the first frame you see it is not the frame it is
+ * built in. */
+const isleMagicG = new THREE.Group(); isleMagicG.name = 'isleMagic'; isleMagicG.visible = false;
+scene.add(isleMagicG);
+const ISLE_MAGIC_U = { uK: { value: 0 }, uTop: { value: 0 }, uTime: { value: 0 }, uPR: PIXEL_RATIO_U };
+const ISLE_MAGIC_NOISE = /* glsl */`
+  float imH(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+  float imH3(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
+  float imN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(imH(i), imH(i + vec2(1, 0)), f.x), mix(imH(i + vec2(0, 1)), imH(i + vec2(1, 1)), f.x), f.y); }
+  float imF(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * imN(p); p = p * 2.03 + 17.1; a *= 0.5; } return s; }`;
+// the sky behind the cloud: one dome, additive, over the beach's own
+{
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.BackSide, fog: false,
+    uniforms: ISLE_MAGIC_U,
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vDir; uniform float uK; uniform float uTop; uniform float uTime;
+      ${ISLE_MAGIC_NOISE}
+      // a curtain of the aurora: its foot wanders in height along the sky, its folds brighten and fade, rays run up it
+      float curtain(float x, float e, float t, float off, float base, float hgt) {
+        float path = base + 0.16 * (imF(vec2(x * 0.42 + t * 0.020, off)) - 0.5) + 0.05 * (imN(vec2(x * 1.7 - t * 0.03, off + 2.0)) - 0.5);
+        float fold = imF(vec2(x * 2.2 + t * 0.045, off * 1.7 + t * 0.01));
+        fold = pow(smoothstep(0.26, 0.78, fold), 1.2);
+        float rays = 0.68 + 0.32 * imN(vec2(x * 38.0 + t * 0.35, off));
+        rays *= 0.85 + 0.15 * imN(vec2(x * 120.0 - t * 0.8, off));
+        float de = e - path;
+        float foot = smoothstep(-0.03, 0.025, de);
+        return foot * exp(-max(de, 0.0) / hgt) * fold * rays;
+      }
+      void main() {
+        vec3 d = normalize(vDir);
+        float e = d.y;
+        if (e < -0.03) discard;
+        float t = uTime;
+        float az = atan(d.x, d.z);
+        vec3 col = vec3(0.0);
+        // the airglow on the horizon: a band of cold green-blue, over the sea most
+        col += vec3(0.020, 0.090, 0.085) * exp(-max(e, 0.0) * 9.0) * (0.55 + 0.45 * smoothstep(0.0, -1.0, d.x));
+        // the Milky Way: a great circle tilted across the top of the sky, clumped, cut by its dust lanes, a warm core
+        vec3 N = normalize(vec3(0.42, 0.40, 0.81));
+        vec3 T1 = normalize(cross(N, vec3(0.0, 1.0, 0.0))), T2 = cross(N, T1);
+        float b = dot(d, N), along = atan(dot(d, T2), dot(d, T1));
+        float band = exp(-b * b * 26.0);
+        float cl = imF(vec2(along * 5.0, b * 16.0));
+        float dust = imF(vec2(along * 8.0 + 3.1, b * 30.0 + 1.7));
+        float lane = smoothstep(0.42, 0.70, dust) * exp(-b * b * 110.0);
+        float mw = band * (0.30 + 0.95 * cl) * (1.0 - 0.80 * lane) * smoothstep(-0.02, 0.18, e);
+        col += vec3(0.15, 0.18, 0.27) * mw * 1.25;
+        col += vec3(0.20, 0.15, 0.10) * exp(-b * b * 80.0) * smoothstep(0.35, 0.95, cl) * smoothstep(0.0, 0.25, e) * 0.9;
+        // the fine stars: one in a cell now and then, more in the band, each with its own twinkle
+        vec3 sp = d * 380.0, cell = floor(sp);
+        float hs = imH3(cell);
+        float thr = 0.982 - 0.020 * band;
+        if (hs > thr) {
+          vec3 o = vec3(imH3(cell + 1.7), imH3(cell + 4.3), imH3(cell + 9.1)) * 0.6 + 0.2;
+          float r = length(fract(sp) - o);
+          float tw = 0.55 + 0.45 * sin(t * (1.5 + hs * 6.0) + hs * 91.0);
+          float mag = (hs - thr) / (1.0 - thr);
+          vec3 sc = mix(vec3(0.75, 0.82, 1.0), vec3(1.0, 0.86, 0.70), fract(hs * 37.0));
+          col += sc * smoothstep(0.42, 0.0, r) * (0.25 + 1.4 * mag * mag) * tw * smoothstep(-0.01, 0.10, e);
+        }
+        // the aurora: curtains over the sea (west), two layers, green at the foot going to violet up them
+        float dw = abs(atan(sin(az + 1.5708), cos(az + 1.5708)));
+        float mask = smoothstep(1.85, 0.55, dw);
+        if (mask > 0.0 && e > 0.0) {
+          float x = az * 2.6;
+          float a1 = curtain(x, e, t, 0.0, 0.085, 0.17);
+          float a2 = curtain(x + 7.3, e, t * 0.8, 5.0, 0.20, 0.20) * 0.8;
+          float a3 = curtain(x * 1.6 - 2.0, e, t * 1.2, 11.0, 0.05, 0.07) * 0.7;
+          vec3 g = vec3(0.10, 0.95, 0.48), v = vec3(0.34, 0.12, 0.62), c2 = vec3(0.10, 0.55, 0.80);
+          float up1 = smoothstep(0.14, 0.46, e), up2 = smoothstep(0.26, 0.60, e);
+          // and the curtains thin out going up, unevenly, rather than standing as bars
+          float thin = 0.45 + 0.55 * imF(vec2(x * 1.3 + t * 0.03, e * 6.0));
+          vec3 au = (a1 * mix(g, v, up1) + a2 * mix(c2, v, up2)) * mix(1.0, thin, up1) + a3 * g;
+          float breath = 0.80 + 0.20 * sin(t * 0.21) * sin(t * 0.13 + 1.0);
+          col += au * mask * breath * (1.25 + 0.45 * uTop);
+          // and the sky under it lit green, the way the real thing lights the air it hangs in
+          col += vec3(0.010, 0.060, 0.035) * mask * smoothstep(0.0, 0.08, e) * exp(-max(e - 0.10, 0.0) * 5.0) * breath;
+        }
+        gl_FragColor = vec4(col * uK, 1.0);
+      }`,
+  });
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(3000, 64, 32), mat);
+  dome.frustumCulled = false; dome.renderOrder = -1; dome.userData.bwGhost = true; dome.raycast = () => {};
+  isleMagicG.add(dome); isleMagicG.userData.dome = dome;
+  // the halo round the moon, wide and soft
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x9fb8e8, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, opacity: 0 }));
+  halo.scale.setScalar(1400); halo.frustumCulled = false; isleMagicG.add(halo); isleMagicG.userData.halo = halo;
+}
+// points that glow: fireflies, the sea's sparks, the lanterns — one material each, size in metres
+function isleMagicPoints(n, col, sizeM, kind) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  geo.setAttribute('aB', new THREE.BufferAttribute(new Float32Array(n), 1));
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { ...ISLE_MAGIC_U, uCol: { value: new THREE.Color(col) }, uS: { value: sizeM } },
+    vertexShader: /* glsl */`
+      attribute float aB; varying float vB; uniform float uS; uniform float uPR;
+      void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; vB = aB;
+        gl_PointSize = clamp(uS * uPR * projectionMatrix[1][1] * 300.0 / max(0.5, -mv.z), ${kind === 'lantern' ? '5.0' : '1.5'}, 48.0); }`,
+    fragmentShader: kind === 'lantern' ? /* glsl */`
+      varying float vB; uniform vec3 uCol; uniform float uK;
+      void main() { vec2 c = gl_PointCoord - 0.5; c.y *= 0.8; float r = length(c);
+        float body = smoothstep(0.16, 0.06, max(abs(c.x) * 1.1, abs(c.y + 0.03)));      // the paper, lit from inside
+        float halo = exp(-r * r * 22.0);
+        vec3 col = uCol * (halo * 1.5 + body * 2.6) + vec3(1.0, 0.88, 0.62) * body * 1.2;
+        gl_FragColor = vec4(col * vB * uK, 1.0); }` : /* glsl */`
+      varying float vB; uniform vec3 uCol; uniform float uK;
+      void main() { float r = length(gl_PointCoord - 0.5); float a = exp(-r * r * 26.0) + smoothstep(0.12, 0.0, r);
+        gl_FragColor = vec4(uCol * a * vB * uK, 1.0); }`,
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false; pts.userData.bwGhost = true; pts.raycast = () => {};
+  isleMagicG.add(pts);
+  return pts;
+}
+/* MOONBEAMS (2026-10-13, the owner: "make the lighting more misty and gorgeous with rays of light at the
+ * lighthouse it should be incredible"). The screen's own shafts only show looking at the moon or the lamp;
+ * these stand in the mist wherever you look: soft cones of light leaning down out of the sky onto the sea
+ * round the rock — leaning toward the moon, as if it were breaking through cloud there — each lit for half
+ * a minute and gone, and lit again somewhere else. Their light is dust in the air: brightest at the edge of
+ * the cone you see through most of, fading into the sky above and into the mist at the water, never a
+ * wall when you stand in one. */
+const ISLE_BEAMS = 10;
+const isleBeams = [];
+{
+  const H = 190;
+  const geo = new THREE.CylinderGeometry(7, 15, H, 24, 1, true); geo.translate(0, H / 2, 0);
+  const mk = () => new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    uniforms: { uK: ISLE_MAGIC_U.uK, uTime: ISLE_MAGIC_U.uTime, uA: { value: 0 }, uH: { value: H } },
+    vertexShader: /* glsl */`
+      uniform float uH; varying float vH; varying vec3 vW; varying vec3 vN;
+      void main() { vH = position.y / uH; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: /* glsl */`
+      uniform float uK; uniform float uTime; uniform float uA; varying float vH; varying vec3 vW; varying vec3 vN;
+      void main() {
+        vec3 V = normalize(cameraPosition - vW);
+        float f = abs(dot(normalize(vN), V));
+        float edge = pow(f, 1.7);
+        float along = smoothstep(0.0, 0.10, vH) * (1.0 - smoothstep(0.45, 1.0, vH));
+        float dust = 0.62 + 0.38 * sin(vW.y * 0.21 + vW.x * 0.05 + uTime * 0.31) * sin(vW.z * 0.07 - uTime * 0.23 + vW.y * 0.09);
+        float near = smoothstep(10.0, 45.0, length(cameraPosition - vW));
+        gl_FragColor = vec4(vec3(0.55, 0.66, 0.95) * edge * along * dust * near * uA * uK, 1.0);
+      }`,
+  });
+  for (let i = 0; i < ISLE_BEAMS; i++) {
+    const m = new THREE.Mesh(geo, mk()); m.frustumCulled = false; m.userData.bwGhost = true; m.raycast = () => {};
+    isleMagicG.add(m);
+    isleBeams.push({ m, t: 0, T: 1, x: 0, z: 0 });
+  }
+}
+function isleBeamPlace(B, rnd = Math.random, first = false) {
+  // out on the sea round the rock, more of them toward the moon's side and the west
+  const a = -Math.PI / 2 + (rnd() - 0.5) * 3.6, r = 70 + Math.pow(rnd(), 0.8) * 380;
+  B.x = ISLE_AXIS.x + Math.sin(a) * r; B.z = ISLE_AXIS.z + Math.cos(a) * r;
+  B.T = 22 + rnd() * 26; B.t = first ? rnd() * B.T : 0;
+  const lean = 0.42 + rnd() * 0.22;                                       // leaning toward the moon
+  const mx = MOON_DIR.x, mz = MOON_DIR.z, ml = Math.hypot(mx, mz);
+  const ax = new THREE.Vector3(mx / ml * Math.sin(lean), Math.cos(lean), mz / ml * Math.sin(lean)).normalize();
+  B.m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), ax);
+  B.m.position.set(B.x, OCEAN_Y - 2, B.z);
+  const sc = 0.7 + rnd() * 0.8; B.m.scale.set(sc, 0.85 + rnd() * 0.4, sc);
+  B.w = 0.09 + rnd() * 0.08;   // (0.02–0.04 was invisible; measured in the pane, 0.16 reads as moonlight standing on the sea)
+}
+{ const rnd = mulberry32(9917); for (const B of isleBeams) isleBeamPlace(B, rnd, true); }
+const ISLE_FLIES = 150, ISLE_SPARKS = 520, ISLE_LANTERNS = 210;
+const isleFlies = isleMagicPoints(ISLE_FLIES, 0xd8f070, 0.10, 'fly');
+const isleSparks = isleMagicPoints(ISLE_SPARKS, 0x30f0d0, 0.16, 'spark');
+const isleLanterns = isleMagicPoints(ISLE_LANTERNS, 0xff9a40, 3.0, 'lantern');
+const isleMagicS = {
+  flies: null, sparks: [], lanterns: [], star: null, nextStar: 4, wind: null, built: false,
+};
+// where things are: sparks on the water round the rock, lanterns out over the sea, fireflies in the trees once the island is in
+{
+  const rnd = mulberry32(77031);
+  for (let i = 0; i < ISLE_SPARKS; i++) {
+    const a = rnd() * Math.PI * 2, r = 14 + Math.pow(rnd(), 0.7) * 150;
+    isleMagicS.sparks.push({ x: ISLE_AXIS.x + Math.sin(a) * r, z: ISLE_AXIS.z + Math.cos(a) * r, ph: rnd() * 100, w: 0.25 + rnd() * 0.7, dry: false });
+  }
+  for (let i = 0; i < ISLE_LANTERNS; i++) {
+    const L = { y: 0, vy: 0, x: 0, z: 0, ph: rnd() * 6.28, sw: 0.3 + rnd() * 0.6 };
+    isleLanternSpawn(L, rnd, true);
+    isleMagicS.lanterns.push(L);
+  }
+}
+function isleLanternSpawn(L, rnd = Math.random, any = false) {
+  // out over the sea to the west and round the rock, a few from close in
+  const band = rnd(), near = band < 0.45, mid = !near && band < 0.85;
+  L.x = ISLE_AXIS.x - (near ? 26 + rnd() * 130 : mid ? 160 + rnd() * 300 : 460 + rnd() * 600);
+  L.z = ISLE_AXIS.z + (rnd() - 0.5) * (near ? 220 : mid ? 800 : 1500);
+  L.y = any ? 3 + rnd() * (near ? 160 : 380) : 1 + rnd() * 4;
+  L.vy = 0.9 + rnd() * 1.3;
+  L.ph = rnd() * 6.28;
+}
+function isleFliesPlace() {
+  if (isleMagicS.flies || !ISLE_SITE.cells) return;
+  const rnd = mulberry32(5150), F = [];
+  const anchors = [];
+  for (const T of isleTrunks) anchors.push([T.x, T.z]);
+  if (isleBark) { let k = 0; for (const key of isleBark) { if ((k++ % 9) === 0) anchors.push([((Math.floor(key / 100000) - 2000) + 0.5) * ISLE_BARK_C, (((key % 100000) - 20000) + 0.5) * ISLE_BARK_C]); } }
+  if (!anchors.length) return;
+  for (let i = 0; i < ISLE_FLIES; i++) {
+    const A = anchors[Math.floor(rnd() * anchors.length)];
+    const x = A[0] + (rnd() - 0.5) * 5, z = A[1] + (rnd() - 0.5) * 5;
+    const f = ISLE_M.floorAt(x, z); if (f === null) { i--; if (F.length + 1000 < i) break; continue; }
+    F.push({ x, z, y: f + 0.5 + rnd() * 2.6, ph: rnd() * 100, a: 0.25 + rnd() * 0.5, w: 0.6 + rnd() * 1.4 });
+  }
+  isleMagicS.flies = F;
+}
+// compiled with the boot's chain, behind the loading screen
+warmStep('isle magic', () => { isleMagicG.visible = true; warmCompile([isleMagicG], ISLE_AXIS.x - 30, 22, ISLE_AXIS.z + 30, ISLE_AXIS.x, 40, ISLE_AXIS.z); isleMagicG.visible = isleMagicK > 0.003; });
+function updateIsleMagic(dt) {
+  const p = camera.position;
+  const near = !inRoom() && !inFort && !inC13 && (onIsle || (p.z < -1110 && p.z > -1210 && p.x > -60 && p.x < 30 && p.y > 8));
+  const want = near ? 1 : 0, wantTop = near && isleOnGallery ? 1 : near && insideTower ? 0.25 : 0;
+  isleMagicK += (want - isleMagicK) * Math.min(1, dt * (want > isleMagicK ? 0.55 : 1.5));
+  isleTopK += (wantTop - isleTopK) * Math.min(1, dt * 0.6);
+  if (isleMagicK < 0.003) { isleMagicK = 0; oceanUniforms.uCalm.value = 0; if (isleMagicG.visible) isleMagicG.visible = false; isleMagicWind(0); return; }
+  const k = isleMagicK, top = isleTopK, t = performance.now() * 0.001;
+  isleMagicG.visible = true;
+  ISLE_MAGIC_U.uK.value = k; ISLE_MAGIC_U.uTop.value = top; ISLE_MAGIC_U.uTime.value = t;
+  oceanUniforms.uCalm.value = k;
+  const G = isleMagicG.userData;
+  G.dome.position.copy(p);
+  G.halo.position.copy(p).addScaledVector(MOON_DIR, 2800); G.halo.material.opacity = 0.32 * k;
+  // the fireflies, in the trees: a slow wander round where each was let go, and a blink
+  isleFliesPlace();
+  const F = isleMagicS.flies, fa = isleFlies.geometry.attributes;
+  if (F) {
+    for (let i = 0; i < F.length; i++) {
+      const f = F[i], s = t * f.a + f.ph;
+      fa.position.setXYZ(i, f.x + Math.sin(s * 1.3) * 0.9 + Math.sin(s * 0.37) * 1.4, f.y + Math.sin(s * 0.9 + 1.1) * 0.35, f.z + Math.cos(s * 1.1) * 0.9 + Math.cos(s * 0.29) * 1.4);
+      const bl = Math.pow(Math.max(0, Math.sin(t * f.w + f.ph)), 5);
+      fa.aB.setX(i, (0.15 + 1.1 * bl) * (1 - 0.6 * top));
+    }
+    fa.position.needsUpdate = true; fa.aB.needsUpdate = true;
+  }
+  // the sea's sparks: on the water where it moves, now and then
+  const S = isleMagicS.sparks, sa = isleSparks.geometry.attributes;
+  for (let i = 0; i < S.length; i++) {
+    const s = S[i];
+    if (!s.checked && ISLE_SITE.cells) { s.checked = true; s.dry = ISLE_M.floorAt(s.x, s.z) !== null || !inWater(s.x, s.z); }   // (on the sea, not the rock or the beach)
+    const ph = t * s.w + s.ph, bl = Math.pow(Math.max(0, Math.sin(ph)), 9);
+    const dx = s.x + Math.sin(ph * 0.31) * 0.6, dz = s.z + Math.cos(ph * 0.27) * 0.6;
+    sa.position.setXYZ(i, dx, waterSurfaceAt(dx, dz) + 0.04, dz);
+    sa.aB.setX(i, s.dry ? 0 : bl * (0.6 + 0.6 * top));
+  }
+  sa.position.needsUpdate = true; sa.aB.needsUpdate = true;
+  // the lanterns: going up, swaying, lit, gone into the stars
+  const L = isleMagicS.lanterns, la = isleLanterns.geometry.attributes, show = 0.45 + 0.55 * top;
+  for (let i = 0; i < L.length; i++) {
+    const l = L[i];
+    l.y += l.vy * dt * (1 + 0.15 * Math.sin(t * 0.3 + l.ph));
+    if (l.y > 420) isleLanternSpawn(l);
+    const sw = Math.sin(t * l.sw + l.ph);
+    la.position.setXYZ(i, l.x + sw * 1.2, l.y, l.z + Math.cos(t * l.sw * 0.7 + l.ph) * 1.2);
+    const fl = 0.80 + 0.20 * Math.sin(t * 7.0 + l.ph * 3.0) * Math.sin(t * 3.1 + l.ph);
+    la.aB.setX(i, fl * THREE.MathUtils.smoothstep(l.y, 0.5, 8) * (1 - THREE.MathUtils.smoothstep(l.y, 300, 420)) * (i % 3 === 0 ? 1 : show));
+  }
+  la.position.needsUpdate = true; la.aB.needsUpdate = true;
+  for (let j = 0; j < isleLampHalos.length; j++) isleLampHalos[j].material.opacity = 0.20 * k * (0.9 + 0.1 * Math.sin(t * 2.3 + j * 1.7));   // the lamps' light in the mist
+  // the moonbeams: each breathes in and out over its own half minute, then stands somewhere else
+  for (const B of isleBeams) {
+    B.t += dt;
+    if (B.t >= B.T) isleBeamPlace(B);
+    const u = B.t / B.T, a = Math.pow(Math.sin(u * Math.PI), 2);
+    B.m.material.uniforms.uA.value = B.w * a * (1 + 0.6 * top);
+  }
+  // a star falls, now and then, more often from the top
+  isleShootingStar(dt, k, top, t);
+  isleMagicWind(top * k);
+}
+const isleLampHalos = [];
+let isleStarLine = null;
+function isleShootingStar(dt, k, top, t) {
+  const S = isleMagicS;
+  if (!isleStarLine) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array([1, 1, 1, 0, 0, 0]), 3));
+    isleStarLine = new THREE.Line(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    isleStarLine.frustumCulled = false; isleStarLine.visible = false; isleMagicG.add(isleStarLine);
+  }
+  S.nextStar -= dt * (0.35 + 1.4 * top) * k;
+  if (!S.star && S.nextStar <= 0) {
+    S.nextStar = 5 + Math.random() * 9;
+    const az = -Math.PI / 2 + (Math.random() - 0.5) * 2.6, el = 0.35 + Math.random() * 0.55;
+    const d0 = new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+    const v = new THREE.Vector3(Math.cos(az), -0.45 - Math.random() * 0.4, -Math.sin(az)).multiplyScalar(Math.random() < 0.5 ? 1 : -1);
+    v.y = -Math.abs(v.y); v.normalize().multiplyScalar(0.30 + Math.random() * 0.2);
+    S.star = { d0, v, t: 0, len: 0.55 + Math.random() * 0.4 };
+  }
+  const st = S.star;
+  if (!st) { isleStarLine.visible = false; return; }
+  st.t += dt;
+  const u = st.t / st.len;
+  if (u >= 1) { S.star = null; isleStarLine.visible = false; return; }
+  const R = 2600, P = isleStarLine.geometry.attributes.position, C = isleStarLine.geometry.attributes.color;
+  const head = st.d0.clone().addScaledVector(st.v, st.t).normalize().multiplyScalar(R).add(camera.position);
+  const tail = st.d0.clone().addScaledVector(st.v, Math.max(0, st.t - 0.16)).normalize().multiplyScalar(R).add(camera.position);
+  P.setXYZ(0, head.x, head.y, head.z); P.setXYZ(1, tail.x, tail.y, tail.z); P.needsUpdate = true;
+  const a = Math.sin(u * Math.PI) * k;
+  C.setXYZ(0, 0.9 * a, 0.95 * a, 1.0 * a); C.needsUpdate = true;
+  isleStarLine.visible = true;
+}
+// the wind round the lantern at the top: brown noise through a slow, wandering band
+let isleWind = null;
+function isleMagicWind(k) {
+  const ctx = audioCtx;
+  if (!ctx) return;
+  if (!isleWind) {
+    if (k < 0.01) return;
+    const len = ctx.sampleRate * 6, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    let b = 0; for (let i = 0; i < len; i++) { b = 0.992 * b + (Math.random() * 2 - 1) * 0.06; d[i] = b; }
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.8;
+    const g = ctx.createGain(); g.gain.value = 0.0001;
+    src.connect(bp).connect(g).connect(sfxOut()); src.start();
+    isleWind = { src, bp, g };
+  }
+  const t = ctx.currentTime, gust = 0.6 + 0.4 * Math.sin(t * 0.23) * Math.sin(t * 0.41 + 1.3);
+  isleWind.g.gain.setTargetAtTime(Math.max(0.0001, 0.55 * k * gust), t, 0.4);
+  isleWind.bp.frequency.setTargetAtTime(320 + 260 * gust, t, 0.6);
+}
+/* THE POSTERN IS THE THRONE ROOM'S OWN DOOR (2026-10-13, the owner: "fix the
+ * door to the drawbridge make it match the throne room exit door"). The lift
+ * runs between the two, so the door you step out of onto the boards is the
+ * door you stepped into in the hall: the throne model's own lattice door —
+ * the studded, cross-strapped leaf behind its pale grille between dark posts,
+ * the `Doors.001` triangles of its +x door (x 6.10–6.51, y 2.68–6.05, z
+ * −2.99 … −0.96 of the hall), copied, turned to face out (+90° about y: the
+ * hall's −x is the postern's +Z) and set with its back on the tower's face.
+ * Its material is the hall's. The stone surround built with the bridge stays
+ * only until the throne model is in, which the island now asks for itself. */
+let islePosternDone = false;
+function isleFitThroneDoor() {
+  const BR = isleWorld && isleWorld.userData.BR;
+  if (islePosternDone || !BR || !thrReady || !thrWorld) return;
+  islePosternDone = true;
+  let src = null;
+  thrWorld.traverse((o) => { if (!src && o.isMesh && o.material && o.material.name === 'Doors.001') src = o; });
+  if (!src) return;
+  thrWorld.updateMatrixWorld(true);
+  const g0 = (src.geometry.index ? src.geometry.toNonIndexed() : src.geometry.clone()).applyMatrix4(src.matrixWorld);
+  const P = g0.attributes.position, keep = [];
+  for (let i = 0; i < P.count; i += 3) {
+    const cx = (P.getX(i) + P.getX(i + 1) + P.getX(i + 2)) / 3 - THR_X, cy = (P.getY(i) + P.getY(i + 1) + P.getY(i + 2)) / 3 - THR_Y, cz = (P.getZ(i) + P.getZ(i + 1) + P.getZ(i + 2)) / 3 - THR_Z;
+    if (cx > 5.6 && cx < 7.0 && cz > -3.4 && cz < -0.5 && cy > 2.4 && cy < 6.4) keep.push(i, i + 1, i + 2);
+  }
+  if (!keep.length) return;
+  const g = new THREE.BufferGeometry();
+  for (const k of ['position', 'normal', 'uv']) {
+    const A = g0.attributes[k]; if (!A) continue;
+    const arr = new Float32Array(keep.length * A.itemSize);
+    keep.forEach((vi, j) => { for (let c = 0; c < A.itemSize; c++) arr[j * A.itemSize + c] = A.array[vi * A.itemSize + c]; });
+    g.setAttribute(k, new THREE.BufferAttribute(arr, A.itemSize));
+  }
+  g.translate(-(THR_X + 6.51), -(THR_Y + 2.68), -(THR_Z - 1.975));   // its back, its foot, its middle
+  g.rotateY(Math.PI / 2);                                              // the hall's −x (into the hall) is out of the tower's face
+  g.translate(0, 0, -0.04);                                            // the back a hand into the stone
+  const door = new THREE.Mesh(g, src.material); door.name = 'islePosternDoor';
+  door.userData.bwGhost = true; door.raycast = () => {};
+  BR.surround.visible = false;
+  BR.frame.add(door);
+  // the lantern beside it moved out past its post, and up to its middle
+  for (const o of BR.frame.children) if (o !== door && o !== BR.surround && !o.isPointLight && o.name !== 'hitProxy') { o.position.x += 0.2; o.position.y += 0.6; }
+  for (const o of BR.frame.children) if (o.isPointLight) { o.position.x += 0.2; o.position.y += 0.6; }
+  if (BR.glow) { BR.frame.updateMatrixWorld(true); const cage = BR.frame.children.find((o) => o.isMesh && o.geometry.type === 'BoxGeometry' && Math.abs(o.geometry.parameters.width - 0.2) < 1e-3); if (cage) cage.getWorldPosition(BR.glow.position); }
+}
 /* ---- THE WALK. On the island: the castle's walk on the island's site.
  * Near it on the sand: the rock is in the way. In the tower: the stair. On
  * the gallery: a ring round the light. */
 function updateIsle(dt) {
+  updateIsleMagic(dt);
+  if (!islePosternDone) isleFitThroneDoor();
   /* THE FRAME'S GROUND STARTS AT THE BEACH. The generated tower's walk set it
    * to the headland every frame whether you were near it or not, and every
    * later system only RAISES it (rocks, mounds, the rooms after); with that
@@ -84340,13 +85306,33 @@ function updateIsle(dt) {
       const f2 = keepFloorAt(fx, fz, st.f + 0.6, 1.2, S);
       return !!f2 && Math.abs(f2.f - st.f) / 0.8 > ISLE_MAX_SLOPE;
     };
-    // the cliff stair is a corridor: on and off it only at its two ends, never over its sides
+    /* the cliff stair is a corridor: on and off it only at its two ends, never over its sides. ON it you
+     * are SLID along it, not stopped (`rampHold`): the first rule refused any stride that ended within
+     * 0.25 of an edge, so a body that came on at the foot near a side could not take a stride at all. */
+    const onRamp = (x, z, m = 0) => ISLE_RAMPS.find((R) => x >= R.x0 - m && x <= R.x1 + m && z >= R.z0 - 0.02 && z <= R.z1 + 0.02);
     const flank = (x, z) => ISLE_RAMPS.some((R) => {
       if (z > R.z1 - 0.35 || z < R.z0 + 0.35) return false;                       // its foot and its head are open
-      const was = _preMove.x >= R.x0 && _preMove.x <= R.x1 && _preMove.z <= R.z1 && _preMove.z >= R.z0;
-      const now = x >= R.x0 + 0.05 && x <= R.x1 - 0.05;
-      return was ? (x < R.x0 + 0.25 || x > R.x1 - 0.25) : now;
+      if (onRamp(_preMove.x, _preMove.z, 0.05)) return false;                      // on it: `rampHold` keeps you inside
+      return x >= R.x0 + 0.05 && x <= R.x1 - 0.05;
     });
+    const rampHold = () => {
+      const R = onRamp(_preMove.x, _preMove.z, 0.05);
+      if (!R || p.z > R.z1 - 0.35 || p.z < R.z0 + 0.35) return;
+      p.x = THREE.MathUtils.clamp(p.x, R.x0 + 0.32, R.x1 - 0.32);
+    };
+    rampHold();
+    /* AND THE DRAWBRIDGE IS BETWEEN ITS RAILS. The rails were never walls — the wall test is at the
+     * knee, the waist and the head, and both rails run between those — and the deck's edge held you only
+     * while nothing lay past it; the cross beams' ends and the buttress's cap do. A stride that starts on
+     * the boards, or anywhere past the rock's lip, is kept 0.28 inside the rails. */
+    const bridgeHold = () => {
+      const B = ISLE_BR, half = B.w / 2 - 0.28;
+      const onDeck = (x, z) => x > B.x0 + 0.2 && x < B.x1 + 0.3 && Math.abs(z - B.z) < B.w / 2 + 0.05;
+      if (feet < B.y - 1.2 || !(onDeck(_preMove.x, _preMove.z) || (p.x > 9.6 && p.x < B.x1 + 0.3 && Math.abs(p.z - B.z) < 1.6))) return;
+      if (p.x < B.x0 + 0.2) return;                     // off its end onto the terrace
+      p.z = THREE.MathUtils.clamp(p.z, B.z - half, B.z + half);
+    };
+    bridgeHold();
     const legal = (x, z) => { const st = keepFloorAt(x, z, feet, up, S); return nextTo(st) && !hits(_preMove.x, _preMove.z, x, z) && !tower(x, z) && !steep(x, z, st) && !flank(x, z) ? st : null; };
     let st = legal(p.x, p.z);
     if (!st) {
@@ -84370,7 +85356,7 @@ function updateIsle(dt) {
         const a = isleFloorSmooth(_preMove.x, _preMove.z, feet, up), b = isleFloorSmooth(p.x, p.z, feet, up);
         const g = a && b ? Math.abs(b.f - a.f) / ml : 0;
         if (g > 0.5) {
-          const k = Math.max(0.55, Math.min(1, 1.12 / Math.sqrt(1 + g * g)));
+          const k = Math.max(0.72, Math.min(1, 1.12 / Math.sqrt(1 + g * g)));   // (0.55 was a crawl up the flight)
           const nx = _preMove.x + mx * k, nz = _preMove.z + mz * k, s2 = legal(nx, nz);
           if (s2) { p.x = nx; p.z = nz; st = s2; }
         }
@@ -84378,6 +85364,8 @@ function updateIsle(dt) {
     }
     keepWallPush(p, FORT_BODY, feet, S, up);
     isleTrunkPush(p, FORT_BODY);
+    isleBarkPush(p, FORT_BODY);
+    rampHold(); bridgeHold();
     st = keepFloorAt(p.x, p.z, feet, up, S);
     if (!nextTo(st) || tower(p.x, p.z) || flank(p.x, p.z)) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
     if (!nextTo(st)) { p.x = isleLastSpot.x; p.z = isleLastSpot.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
@@ -89631,7 +90619,7 @@ Object.assign(window.__bw, { crusaderShieldTick, crusaderChain, farmCobble, farm
   setCatFloor: (v) => { catLastFloor = v; }, BEN_NPC,
   audioNodes: () => ({ waveBusGain, forestBed, masterGain, benBr }),
   audioDbg: () => ({ forest: forestBed && +forestBed.g.gain.value.toFixed(4), ben: benBr && benBr.g && +benBr.g.gain.value.toFixed(4), sand: (sampleBanks.sandStep || []).filter(Boolean).length, benBuf: (sampleBanks.benBreath || []).filter(Boolean).length, bedK: beachBedK() }),
-  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), wellLookStart, wellLetUp, wellLeave, WELL_X, WELL_Z, wellG, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
+  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, isleBarkS: () => isleBark, isleBarkPush, isleRampAt, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), wellLookStart, wellLetUp, wellLeave, WELL_X, WELL_Z, wellG, wellSetBucket, sharpenFrame, isleMagicS: () => ({ k: isleMagicK, top: isleTopK, fog: scene.fog.density, keep: FOG_KEEP.w }), wellPartsS: () => wellParts, WELL_RIM_Y, wellClinch, wellGrab, wellMindS, wellPhotoItem, wellPhotoS: () => ({ taken: wellPhotoTaken, onTable: !!wellPhotoOnTable }), traderSell, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
   c13State: () => ({ inC13, ready: c13Ready, walls: !!c13Walls, life: !!c13Life, torches: !!(c13Life && c13Life.torches), mask: !!C13_M.data,
     thrive: c13Thrive && { done: c13Thrive.done, jobs: c13Jobs.length, torches: (c13Thrive.torchAt || []).length, banners: c13Thrive.banners.length, lanterns: c13Thrive.lanterns.length, stalls: c13Thrive.stalls.length, towers: (c13Thrive.towers || []).length, lines: (c13Thrive.lines || []).length, windows: (c13Thrive.windows || []).length, fountain: c13Thrive.fountain && [c13Thrive.fountain.x, c13Thrive.fountain.z], door: c13Thrive.door, solids: c13Solids.length, flowers: c13Thrive.flowers, snd: c13Snd && { fountain: !!c13Snd.fsrc, fg: c13Snd.fg && +c13Snd.fg.gain.value.toFixed(3), lute: c13Snd.playing, lg: +c13Snd.lute.gain.value.toFixed(3) } } }),
   c13Thrive: () => c13Thrive, c13Solids, c13Open, c13RunJobs, placeInC13, C13_SITE, C13_X, C13_Y, C13_Z,

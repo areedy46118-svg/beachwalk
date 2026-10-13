@@ -346,7 +346,8 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   light-pollution wash that lifts over the cliff ridge.
 - **The castles are one road, and the lighthouse is its end** — in at the
   first castle's gate (the farmers' fight), out of its back door and through
-  a covered stone passage across the bluff into Castle XIII's north court,
+  a battlemented curtain wall across the bluff into Castle XIII's north court
+  (XIII's own brick on the first castle's rubble, a gate tower half way along),
   through XIII to its throne room, and from the throne room's lattice doors
   either side of the dais ("Use Lift") up XIII's west tower and out over the
   drawbridge onto the lighthouse island. Going back is the same road the
@@ -367,15 +368,29 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   down on two chains from a postern high in XIII's west tower: out of the
   throne room you come out of that door onto the boards, the terrace and its
   trees ahead of you, the tower over your left shoulder; and the beam comes
-  round and stops on you. Its walk is made for a hill: you never drop through
+  round and stops on you. The drawbridge's island end sits on a brick
+  buttress built out of the cliff face, its struts landing on it, its tower end
+  on a stone corbel, hung on two iron chains. Its walk is made for a hill: you never drop through
   a crack in the boards or off an edge (a stride may take you down a little
   over a metre at most), the slopes are blended so the eye glides rather than
-  stepping, the steep cliff stair is walked at a slower pace, and a tree is
-  its trunk — you slide round it, not snag in its boughs. Open the door in
+  stepping, the cliff stair down to the jetty follows its own treads (you
+  slide along it, never into its steps or stuck at its head), and the trees
+  are solid — trunk, fallen trunk and low bough — and you slide round them
+  rather than snag. Open the door in
   the tower's foot and the lighthouse track begins: inside, a brick shaft with
   a red iron stair wound round a steel pole, three lamps up it, a ladder at
   the top — and out onto a railed gallery round the light, the island and
   both castles below you. Put your hand on the light to end the walk.
+  It is the one place the night opens. Stepping onto the drawbridge the cloud
+  and the fog clear over a few seconds and the light goes silver: an aurora
+  hangs in green and violet curtains over the sea, held in the water under
+  it; the Milky Way crosses the top of the sky with its dust lanes; the fine
+  stars come out, and now and then one falls. Fireflies drift in the
+  island's trees, the sea round the rock sparks blue-green where it moves,
+  and out over the water paper lanterns are going up. From the gallery the
+  air is clearest, the lanterns are everywhere, and the wind comes round the
+  lantern. The crate on the stair-head landing is gone, and the lamp posts
+  stand on the ground.
 - **Detailed low-poly ground** — procedural sand (mottling, ripples, grit,
   pebbles, shell flecks) with a self-illuminating emissive map.
 - **Livelier ocean** — layered swell/chop/ripples, animated micro-normals,
@@ -584,9 +599,13 @@ Dying puts you back there with all of it. The settings menu has **Restart
 from last checkpoint** (greyed out until you have one) and **Restart game**,
 which clears the checkpoint and gives you the first morning again.
 
-Coming back to a checkpoint is instant — no title card, no opening line, no
-opening music. You are standing at the pavilion before you have finished
-reading the button you pressed; the first click takes the mouse back.
+Coming back to a checkpoint skips the title card, the opening line and the
+opening music. It comes up out of black only once the world is built: every
+model, texture and shader is loaded and compiled under the black (a thin bar
+across it shows how far along it is), a look round from where you stand has
+been drawn, and the frames have settled — so nothing appears or hitches in
+front of you once you can move (capped at thirty seconds). Nothing can reach
+you while it loads; the first click takes the mouse back.
 
 ## Layout
 
@@ -1149,15 +1168,23 @@ thought he'd fetch a few coins; the bartender is a good friend of his, name
 of Stanley; nobody deserves this; and no, you shouldn't trust him. The lines
 are the owner's own recording, played up the shaft. Every answer leaves you
 the choice to LET HIM UP, or you can walk away. Let him up and the crank turns, the bucket goes down
-on its rope until the dark has it, and stops. Then the rope jerks, as if
+on its rope, fading into the dark as it goes, and stops. Then the rope jerks, as if
 taken, and something climbs it: strides on a rope, a creak at every one,
 louder, for long enough to be sure. Black. And he is standing between you and
 the well, the sea behind him, the lens on his face as if he had something to
 say. He has nothing to say. He stands. Then he comes, faster than anything on
-this beach, and he fights fast — two swipes and a lunging third, never on
-all fours — and every few seconds, if he is not on you, he stops dead in his
-tracks, stands dead still, and comes again. On the table in the pavilion stands his photograph as he was: an old cabinet
-card of a gaunt bald man in a white shirt, smiling. Once he is out, the well is only a well: "Look inside" leans you over the rim
+this beach, and he fights fast — never on all fours: two swipes and a
+lunging third; a pounce from four or five metres off, off the ground and
+down onto you with the swipe; a two-handed reach that, if it lands, HOLDS
+you — you cannot walk, and he bites until you mash attack or E six times to
+tear loose (which leaves him open) or he throws you down the sand; a dart
+sideways out of your swing that comes straight back in from the side; and
+now and then, out of reach, a scream before he comes. Every few seconds, if
+he is not on you, he stops dead in his tracks, stands dead still, and comes
+again. Killed, he goes down on the ragdoll like everything else. On the
+table in the pavilion stands his photograph as he was: an old cabinet card
+of a gaunt bald man in a white shirt, smiling. "Take the photograph" and it
+is yours to hold and inspect — and the trader gives four jars for it. Once he is out, the well is only a well: "Look inside" leans you over the rim
 and down the black bore again — nobody calls up it now — until you press E.
 Kill
 him and what he had in his fist is on the sand: the Pavilion key, which opens

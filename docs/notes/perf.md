@@ -1109,3 +1109,23 @@ which `sfxMutSever` ×6 was ~14 (noise buffers, audio.md), `bakeLimb` ×7 ~7.6,
 `shared` so `updateGibs`/`sleepGib` never dispose it) instead of 40–60 new
 geometries and GPU buffers a body. 4 kills: ~30 ms in `sgFire` once warm, the
 render after it 16 ms; the very first blast kill of a session ~65 ms (JIT).
+
+## 2026-10-13 — a checkpoint comes back only when the world is built
+
+The owner: "the lag between loading checkpoints needs to be smoother. i
+shouldnt be playing if it needs to load things … i keep seeing things
+generate and lag before my eyes when loading back in".
+
+- `updateBootHold` lifted the black at 1.6 s (6.5 s for the rooms' warms)
+  whatever was still queued, and never asked about downloads, parses or the
+  texture uploads at all. Now it holds until: `startLeft()` (the whole boot
+  queue START waits for on a first load) and `roomRestore`, `restore`,
+  `warmBlock` have been empty for 0.5 s; `warmOwed()` is false; `roomWarm`
+  is done; then once, `updateFarProps()` and `startLookWarm()` (six looks
+  round from where you stand drawn under the black, and every texture within
+  260 m put on the card); then thirty frames in a row under 34 ms. Capped at
+  `BOOT_HOLD_ALL_MAX` 30 s of wall clock (a warning names what was left).
+- While it holds: a hairline progress bar on the black (forward-only),
+  `canMove` is false, and `chaseGraceUntil` is pushed on so the creatures'
+  grace starts when you can see. `BOOT_FADE` 0.6 (was 0.3): the world comes
+  up out of the black.

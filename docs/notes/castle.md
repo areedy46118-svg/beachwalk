@@ -751,3 +751,26 @@ fills x 29–36; the bluff between the castles is a plateau at 3.58 → 4.0.
   stride inside it facing into the court (yaw 0), so the fort's back door,
   XIII's restore ('c13In') and its way out all use it. The east tower door is
   only a door now.
+
+## 2026-10-13 — the passage between the castles, in their own stone
+
+The owner: "make the connection of the castles you added blend more too the
+textures dont match the castle it just looks like ai slop make it better."
+
+- The first passage used the lighthouse's ashlar (`lhAshlarMaps`) at 0.8 m
+  blocks and a slate roof: neither castle's stone. `buildCastleLink` now uses
+  the castles' own MATERIAL OBJECTS (`linkCastleMat`): XIII's wall brick
+  `acmat_4` and the first castle's rubble `acmat_8` — so the night grade
+  (`fortDress`) and the fog are theirs.
+- **Their scale, measured off their faces** (median world length per uv unit
+  over horizontal / vertical edges): XIII `acmat_4` 11.76 m along a wall,
+  23.37 m up it; the first castle's `acmat_8` 5.30 / 3.36. `planarUV2(geo,
+  ku, kv)` lays uv by face normal at those. (Both maps repeat; `acmat_4` has
+  four material instances in XIII — any one serves.)
+- The shape: a battered rubble footing, XIII brick curtain walls both sides
+  with a rubble string course, a brick parapet and merlons with rubble caps,
+  rubble-dressed slits, a flat walk roof below the parapet, and a square gate
+  tower half way (rubble quoins, battlements, a lit window each side). The
+  lamps at the ends stay.
+- It needs BOTH castles in: `buildCastleLink` returns until `fortReady` and
+  XIII's model are both there, and is called from both loaders.

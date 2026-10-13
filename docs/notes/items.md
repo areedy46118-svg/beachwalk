@@ -1030,3 +1030,14 @@ ISLE_SITE, beach only). The island is in the `bunkerFloorAt` chain, so
 anything thrown there lands on its rock and boards. Measured in the tavern:
 17 bottles thrown at 16 m/s in every direction from the hall, 17 shattered
 on the drawn stone, 0 crossed a face.
+
+## 2026-10-13 — his photograph, taken
+
+- `wellPhotoModel` (the frame on its strut, upright, foot at 0) is the
+  pavilion table's copy (`wellPortrait`, a clone), the held one (`holdable`,
+  scale 1.35, pos [0, −0.1, 0]) and the Inspect model. `bakeStatic` on the
+  pavilion keeps `wellPortrait` out of the bake, or it could not be lifted.
+- "Take the photograph" → `wellPhotoTaken` (saved as `wellPhoto`; a restore
+  removes the table copy, `wellPhotoGone`), `addToInventory(wellPhotoItem)`.
+  Its icon is drawn from the jpg once it loads. `packByName` lists it.
+- Sold to the trader for 4 jars (`SELL_ROWS` `wellPhoto`, `traderSell`).

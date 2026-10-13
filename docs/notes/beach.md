@@ -1806,3 +1806,22 @@ The paragraphs above about it are history.
   black (`devIsleWait`, in `updateIsle`) until the island has loaded, and put
   where the lift puts you (`placeOnIsle`): the drawbridge, (16.9, 20.05,
   −1153.4). Measured: on the island in 4 frames when it was loaded.
+
+## 2026-10-13 — the well, darker, and the bucket into the dark
+
+The owner: "make the well look darker when looking in … blend them a little
+better and make the rope/bucket slowly disappear into the darkness it just
+clips out of sight right now."
+
+- THE MURK WAS LIGHTER THAN THE DEEP WALLS. `WELL_MURK` (mixed in AFTER the
+  colour-space conversion, so it is a screen value) was (0.014, 0.016, 0.020)
+  and the lining's own shade fifteen metres down is darker than that, so a
+  thing going down tended toward a grey shape on black — until
+  `wellSetBucket` switched it off at 5.2 model units. Now (0.005, 0.006,
+  0.008); the mechanism and the rope murk at 0.5 a metre (was 0.36), gone by
+  ~7 m, and the bucket is hidden only at 6.0 units (9.3 m, exp(−4.65)).
+  Rendered down the bore: plain at 1.6 m, faint at 2.8, gone by 4–5.
+- The tube's bore patch (`wellBorePatch`) is 0.9 a metre from 5 cm under the
+  rim (was 0.30 from 30 cm), and the lining's murk 0.45 (was 0.22), so the
+  stone goes down into the dark on one gradient and the join at the tube's
+  foot has nothing to show.

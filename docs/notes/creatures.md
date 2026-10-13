@@ -3330,3 +3330,63 @@ lunge at rate 1.75; the freeze is `idle01` at timeScale 0.04; roar is
 `idle02`. The teeth are their own mesh (`Object_75`, 289 verts): new kind key
 `hideMeshes: [names]` hides a part of any solo scan in the material traverse.
 hp 36. Dev mode stops every mutant swinging — test fights with it off.
+
+## 2026-10-13 — the man from the well: ragdoll, pounce, hold, dart, scream
+
+The owner: "GIVE the well zombie ragdoll physics like the other enemies and
+make him have more animations and attacks that are interesting but fun to
+fight."
+
+- **Ragdoll**: `deathClip` sent him down his own `death` clip through
+  `startWardenDeath`. He always had a `rag` name map, so `bossDeath: true`
+  (and no `deathClip`) puts him on the Verlet body at the boss's rarer odds:
+  19 parts, settled on the sand. His key drops beside the ragdoll's hips
+  (`u.rag.byName.Character1_Hips.p`), not where he stood.
+- **DEV MODE STOPS SWINGS.** The fight AI's "at reach with its breath back"
+  branch is `u.st.cool <= 0 && !settings.devMode` — in dev mode a creature
+  only swings out of a dash or a step-back. `__sgBoot` turns dev mode ON; set
+  `settings.devMode = false` and `heal()` to test a fight.
+- **The pounce** `wLeap` (hold, minDist 3.4, reach 5.6, lunge 4.8): his clips
+  have no air, so `wellManAir` (after `wellManClear`) lifts `g.position.y`
+  along the swing's own timing — a 0.16 dip over 0.35 s, then 0.68 m at the
+  top across `LEAP_AIR` onto the contact frame, a thud and trauma on landing.
+  It undoes last frame's lift first (`u.wHop`), so it works whether or not
+  the chase rewrites y. Feints are cleared on it; broken off in the air
+  (`canBreak` reaches into the flight) it eases down × 0.72 a frame.
+  Measured: lands 1.33–1.38 m from you.
+- **The hold** `wGrab` (`grab: true`): the runner's landing branch now hands
+  a `grab` swing to `kind.onGrab` instead of `mutLandBlow`. `wellGrab` →
+  `wellClinch`: `canMove` is false while it holds (in `update()`), the
+  position is pinned, he stands 0.82 m in front facing you, the dialog lens
+  (`cineHold` + `dialogHead`) is on his head; a bite every 0.8 s
+  (`mutLandBlow`), two and he throws you (knockback 9.5); six presses of
+  attack or E (`wellStruggle`, hooked at the top of `primaryAction` and
+  `attackAction`, 60 ms between) tear you loose — he is shoved 1.1 m and
+  stunned 1.15 s. 7 s before he may hold again (a landed reach then is a
+  plain blow). `updateHover` returns while it holds (it owns the prompt).
+  A block or parry answers it like any blow.
+- **The dart**: `dodgeClip: 'run'` (rate 2.3, 6.8 m/s, 0.30 s) — the
+  `reacts` break-out of your wind-up goes sideways; `wellMind` (`kind.mind`)
+  then sets `st.forceSwing` to `wA3` (or `wLeap` past 3.4 m) 55 % of the
+  time. Measured: 1.93 m sideways, the lunge 0.4 s after.
+- **The scream**: `wellMind`, out of reach (4.5–11 m), every 9–16 s at most:
+  `idle02` at 1.7 from 0.35 s, the roar, held as his freeze is
+  (`st.awake = false`, `holdAnim`, `wellStalk.hold` 1.25 s), then
+  `wellCharge`.
+- 30 s against a player standing still and stepping back: wA1 ×3, wA2 ×1,
+  wA3 ×2, wGrab ×3 (before its cooldown went in).
+- **A `minDist` swing is never DRAWN for a kind whose longest plain reach is
+  under its minDist.** The draw happens only when `near` (dist ≤ `maxReach`,
+  which leaves `minDist` swings out — 2.9 m for him) and then filters
+  `dist < minDist` out: 45 s of fighting, no pounce. `wellMind` starts it
+  itself, 3.6–6.2 m out, cool and turn free, every 4–8 s at most (taking
+  `mutToken`, `st.swing`/`st.atk = 0`, `sfxMutTell`). `st.forceSwing` is no
+  good for it either: it is only read inside that same draw, so it fires from
+  close.
+- The bark grid, the stair and the bridge holds on the island are in
+  `lighthouse.md`.
+- **His `down` clip is a fall flat on his face** (rendered: kneeling at 0.3,
+  face down by 0.6). It was `hitBig`, `parry` and `stunClip`, so a parry, a
+  heavy, and tearing loose from his hold all dropped him on his face — the
+  owner: "stop making the well zombie fall forward". All three are `damage`
+  (a standing stagger) now; nothing of his plays `down`.
