@@ -313,3 +313,193 @@ at 2.0 s, released at 6.2 s.
 lookX, lookY, lookZ, fov, label]…])`; y null = eye height over `headlandAt`.
 A camera BELOW the ground is inside the grass, and the grass fills the lens
 as "floating black shapes" — three of the first sheet's faults were that.
+
+
+## THE LIGHTHOUSE IS AN ISLAND NOW (2026-10-12; the owner: "use this model to replace the lighthouse completely … dont treat this like a diorama")
+
+Jake.Hatt's "Lighthouse Diorama" (`assets/lighthouse-isle.glb`, 9.4 MB) is the
+lighthouse; the generated tower, its headland, lane and cottage are retired.
+Section "The lighthouse island" (near the well's). Harness: `tools/isleshot.js`
+(`__isle.boot()`, `__isle.sheet(views)`, `__isle.goto(x, z, secs)`), and
+`__bw.isleS()`, `isleReset()`, `placeOnIsle()`, `isleStartCut('up'|'down')`.
+- **Placement**: the model at 0.15, turned half round (`isleW(mx, my, mz)` =
+  (ISLE_X − mx, ISLE_Y + my, ISLE_Z − mz)), ISLE (−1, 22, −1164): terrace toward
+  the first castle, stair and jetty to the sea, jetty deck 1 m over the swell,
+  terrace ~19.5, top deck ~26.9, gallery 41.0. Castle XIII's walls are east of
+  it (x ≥ 14). Left out: water, ring, fish, flying birds, and ONE tree
+  (`OptimizedTree__12_`) that stood between every good terrace spot and the tower.
+- **The old tower's light is kept and moved** (`isleMoveLight`): the burner,
+  glow, halo, lamp, beam pivot and the "put your hand on the light" proxy stay
+  in the `lighthouse` group, which is moved so they sit in this lantern; every
+  other child is REMOVED (hidden ones came back: the fog cull splits the group
+  into units and shows a unit in range), `lhLights` removed, its far-props
+  dropped, and every interactable under the group but the proxy taken off.
+  `lhBeamStep` aims from `lighthouse.position`. `headlandAt` returns 0;
+  `updateTower` is not called — `updateIsle` replaces it and MUST reset
+  `groundY = 0` first (the old walk did, every frame, and everything after only
+  raises it).
+- **The tower's profile was measured about the LANTERN's axis**, not the
+  shaft's vertex centroid (a window's extra vertices drag that 0.36 m off; the
+  first profile read 1.98 and the brick stood OUTSIDE the skin): foot 2.58 →
+  2.02, a ledge, 1.61 up to the cap, inner face 1.33. Bore = outer − 0.30, so
+  1.31 up the shaft: tread 1.22, rail 1.14, pole 0.07, and the body inside is
+  `ISLE_BODY_R` 0.25 (the beach's 0.4 left 55 cm to climb in).
+- **The doorway is cut by subdivision** (`isleCutGeo`): every triangle near
+  the opening split on its longest edge to 10 cm, then those with middles
+  inside dropped; the model's inner shell is stripped (r < outer − 0.15). A
+  stone frame and a plank door over it; the door's leaf is `bwGhost` (the wall
+  index is built with it shut — it was a permanent wall).
+- **The floor is the deck, not the flare**: the boards round the tower are at
+  model 4.88; the flare's foot is 0.9 m lower under them.
+- **Inside**: lathe of the bore (left open at the door), COOL brick 0x8f98a8
+  and near-white lamps (warm went one red, as the old notes said), instanced
+  treads and balusters, one tube rail, a ladder from the top tread (2.15 m
+  under the ceiling) to a lit hatch. "Climb up to the light" / "Climb back
+  down" are cuts (`isleStartCut`): the model's lantern is a metre across and
+  full of lamp. The gallery is the model's disc widened by a grating ring to
+  2.6 m with an iron rail, clamped r 1.37–2.28.
+- **The walk is a SITE** (`ISLE_SITE`) like the castles': floors rasterised
+  from upward faces at load (`isleBuildCells`, 20 cm, rock cells written empty
+  = walls), walls from drawn faces (`fortWallsStep`). Traps found:
+  - a crack between planks is a row of floorless cells = an invisible wall; a
+    hole whose opposite neighbours have floors is filled, and the boardwalk
+    has a hidden walk slab;
+  - the model's cliff stair has 1 m risers at this scale: its footprint is a
+    RAMP in the plan (`ISLE_RAMPS`) and every triangle OVERLAPPING it (not
+    centroid — a beam across the flight had its middle outside) is cut from the
+    walls (`cutTri`); the island's step is 0.62;
+  - the cut down the ladder sets the walk's last spot on the stair: leaving by
+    the door resets it to the doorstep, or the walk snapped you back inside.
+- **(The boardwalk from the sand is gone — 2026-10-13, see below.)**
+- **Arrival** (2026-10-12): `placeOnIsle()` at `ISLE_SPAWN` (model −5, −9.5),
+  found by raycasting the terrace for: the lamp at the stair head clear, canopy
+  overhead, the tower clear over the shoulder. Superseded on 10-13: the
+  throne room's lattice door puts you on the drawbridge (`ISLE_ARRIVE`).
+- **Saves**: a position on the island restores through `isleRestoreAt` (the
+  stair and the gallery too); before the model lands it is held (`isleHold`).
+- The music cues within 7 m of the door at deck height (`doorHeard`).
+- Rock: its map is pale; with the scans' lift it read as ice from the sea —
+  colour 0.62 and no lift.
+
+
+## 2026-10-13 — one road, the drawbridge, and a walk made for a hill
+
+The owner: "i left the second half of the castle to go back to the first and
+ended up at the light house … it should go the first castle with the farmer
+fight, then to the x111 part of the castle, to the throne room, then to the
+lighthouse this should never change … the same in reverse order … the
+lighthouse sections is insanely laggy i fall through the floor and when
+changing elevations i stutter like the catacombs did … the stone stairs …
+very laggy … dont make the water cover that pier section … remove the
+lantern from the well".
+
+- **WHY XIII LED TO THE ISLAND.** XIII's way out was `startFort(-1, 'back')`
+  → `placeOutOfFort('back')`, the first castle's back-door EXIT — and on
+  10-12 that exit was given to the island. One placement shared by two doors
+  changed both. **Every door now names its own destination**:
+  fort gate ↔ beach; fort back door → `startFort(1, 'c13')` only (c13Ready);
+  XIII "Back to the first castle" → `startFort(1, 'fromC13')` →
+  `placeInFort(fortBackInside())`; XIII's arch → throne; throne near door →
+  XIII court (`placeOutOfThrone`, its !c13Ready fallback is the fort's back
+  door now); throne lattice door → `startThrone(-1, 'lh')` →
+  `placeOutOfThroneToLighthouse()` → `placeOnIsle()` (the black HOLDS while
+  `!isleReady`, re-pinning `thrT`); island postern → `startThrone(1, 'isle')`
+  → `placeInThrone(true)` at `THR_EXIT` − 1.7 m, facing down the hall.
+  `placeOutOfFort('back')` has no caller; the postern outside the fort's back
+  wall is "The door is barred from inside." (`bare`), so nothing on the
+  beach goes round the castles.
+- **THE DRAWBRIDGE** (`ISLE_BR`, `isleBridge`): the boardwalk from the sand is
+  gone; the island's only link is a deck from the terrace lip (x 6.7, the
+  rock there 20.0–20.4) to XIII's west tower face — measured by raycasting
+  XIII from the island: a flat face x 18.3–19.0 across z −1155.5 … −1151.3,
+  4 → 26 m high — at y 20.05, z −1153.4. Planks, stringers, posts and two
+  rails; raking struts to the rock's lip (x 10.55, y 17.1); braces into the
+  wall; two chains from eyes 4.7 m up the tower to the fourth posts; a stone
+  postern (frame `rotation.y` −π/2, local +Z → −x) with a plank door and a
+  caged lantern (point light 5.5 / 9 m + glow sprite). The walk reads only
+  its hidden slab (`BR.slab`); the rails and the closed door are walls; past
+  the slab's end there is no floor, so the tower face needs no collider.
+- **THE FALL THROUGH THE FLOOR was two things.** (1) The walk allowed any
+  drop under 2.6 m (`ledge`), and a cell in a crack between boards over the
+  rock was NOT empty — the rock was in it — so the old fill (empty cells only)
+  never touched it and the walk read the rock a metre or two down as a step
+  you may take. Now a stride may only go `ISLE_FALL` (1.1 m) below the LAST
+  floor stood on (`isleLastFloor`, not the feet — mid-jump the feet are high),
+  and the fill tests the TOP floor: a cell lower by > 0.25 than both of its
+  neighbours across it (1 or 2 cells away, agreeing within 0.35) gets their
+  floor, three passes. (2) The wall index was built 5 ms a frame AFTER you
+  arrived, and until it existed the walk held your floor and let you walk
+  anywhere — off the rock into the air. `placeOnIsle` and `isleRestoreAt`
+  finish it behind the black (`while (!fortWallsStep(1e9, ISLE_SITE))`).
+  The beach exit (`toBeach`) and the beach-side step-on are gone too.
+- **THE STUTTER** was the catacombs' (`docs/notes/perf.md`, "THE SLOPES SHOOK
+  BECAUSE THE GRID IS TREADS"): `isleFloorSmooth` blends the cell toward its
+  x, z AND diagonal neighbours (true bilinear, so a slope across the grid is a
+  plane), only toward one within a step; legality reads the raw cell. In
+  `update()`, `onIsle` joins the whale and the keep: on the ground going down
+  ≤ 0.7 m the eye is EASED down (snap under 8 cm, else 16/s with a 2.4 m/s
+  floor), and a step up over 8 cm is eased at 16/s. The cliff stair (a 51°
+  ramp, 15 m over 12) is walked at `1.12/√(1+g²)` of the stride (≥ 0.55) when
+  the blended rise over the stride is > 0.5.
+  Measured on the fake clock (`__isle.track`): bridge → terrace → walkway →
+  tower door: frame-to-frame change in the eye's vertical speed max 4.9 cm,
+  0 over 7; down the stair to the jetty: two over 7 cm, both the 0.7 m step
+  off the stair's side onto the jetty. 36 random walks, 9,927 frames: no
+  fall over 0.9 m, never off the island, 13 frames over 7 cm (all eased
+  ledges, worst 19 cm).
+- **"LAGGY" WAS NOT THE FRAME.** Measured with `Date.now` (the harness fakes
+  `performance.now` — 16.7 ms a `__cadv` whatever happens): the walk ≤ 0.9 ms
+  a frame; the render 6.7 ms in the pane with 588k triangles / 226 calls, of
+  which the island 2.6 ms and the two castles behind it 3.4. It was the walk.
+- **A TREE IS ITS TRUNK** (`isleFindTrunks`, `isleTrunkPush`): `Bark` is
+  skipped by the wall index. The terrace's big tree spread body-height boughs
+  2 m round it, and its leaning, half-cut trunk was a ring with gaps — the
+  test walker went INSIDE it and could not leave. Trunks are discs: bark
+  triangles whose lowest point is within 0.5 m of the floor and which reach
+  0.9 over it, their vertices under 1.1 m clustered at 0.9 m, the radius
+  holding 80 % (0.12–0.55). 11 found; the big tree is two discs.
+- **THE JETTY STAYS DRY** (`ISLE_LEE`, read by `waveHeightJS` and spliced
+  into `waveGLSL` as numbers — it is declared at line ~2900, long before the
+  island's constants): the swell × 0.10 within 22 m of (−15, −1150), all of
+  it by 52. Over 200 s of swell the water at five jetty points peaked at
+  −0.07 against boards at 0.41–0.73; out at sea 1.8–1.9.
+- **THE ROOMS' FLOOR IN A CUT.** `updateIsle` zeroed `groundY` every frame,
+  and the throne room's walk skips the frames its door's black comes down
+  (`thrBusy && !thrCutDone`), so the eye sank 2 m through the hall floor as
+  the screen went dark. The zero is only applied out on the beach now
+  (`!inRoom() && !inFort && !inC13`): measured 0.004 after.
+- `loadIsle` now logs a load failure: `bwGlb` swallows a throw in its
+  callback unless it is given an `onError`, and the island simply never
+  became ready.
+
+## 2026-10-13 (later) — the lift, the passage, the stair as a corridor
+
+- **"USE LIFT".** The throne room's way out is both lattice doors either side
+  of the dais (x ±6.45, z −2), labelled "Use Lift"; the island's postern says
+  it too. The cut is longer for the lift (`thrTo` 'lh' / 'isle': HOLD 1.9 s,
+  197 frames in all) under `sfxLift(up)` — the gate dragged, the cage's
+  lurch, chain over a sheave with the drum's grind rising or falling, the
+  clunk, the gate. Back from the island you come out of the marauder's
+  RIGHT-hand door (x −4.5) — unless the beast still stands chained on that
+  side (`danteAlive()`), then the other. NOTE for tests: arriving with the
+  beast alive starts his chain cut (`thrCut`), and `startThrone` refuses while
+  it plays (`frozen()`) — 225 frames; that is the scene, not a bug.
+- **THE STAIR IS A CORRIDOR.** The owner's two screenshots were taken from
+  BESIDE the flight: the rock either side climbs at 40° (0.8 slope) on the
+  jetty side, under the step of 0.62 a cell, so you walked up next to the
+  stair and looked at its side or into it. Three things:
+  - `isleBuildCells`: within 3 m of the flight, ground more than 0.8 m below
+    the stair at the same z (and over 1.2, so the jetty stays) is written as
+    rock, not floor;
+  - `flank(x, z)` in the walk: on the ramp you stay 0.25 inside its edges, off
+    it you cannot come onto it over a side — only at its foot (z1 − 0.35) and
+    head (z0 + 0.35); checked after the push-out too;
+  - `ISLE_MAX_SLOPE` 1.15 (~49°), measured over the 0.8 m ahead, up or down,
+    the ramp exempt: the step alone let you up 70° faces. The rock path from
+    the terrace to the stair head runs at up to 0.75 and still walks.
+  Measured: bridge → terrace → stair head → down → jetty; "beside L" stops
+  on the jetty; stepping off the flight's sides is held at x −15.35/−17.85;
+  up again; max frame-to-frame change in the eye's vertical speed 3.6 cm.
+- **`placeOnIsle` hung the page** when called before the island had loaded:
+  `fortWallsStep` returns false for ever on a site that is not `ready`, and
+  the wall loop spun. Both loops are guarded by `ISLE_SITE.ready`.

@@ -762,3 +762,10 @@ for twinkles harder and FLARES (`st.flare`) on the blink's old irregular count;
 the others shimmer faintly. Two things measured: dips deeper than about half
 read as blinking again (`sc` floored at 0.55), and at the retro scale thin
 half-alpha spikes become a dot, so they are drawn bold.
+
+**BILLY WANTS TO BE TALKED TO (2026-10-12: play testers missed him).** Prompt
+"Talk to the fish" (was "Fish?"); a motion sensor like the toy's — within
+6.5 m and not yet spoken to, his head swings out at you (frame 2 + the kick)
+every 8–14 s with a gearmotor whirr (`sfxBillyWhirr`); and a "…" speech-bubble
+sprite (`billy.bubble`) bobs by the plaque, fading in near, out far. Both stop
+once `billy.talked`.

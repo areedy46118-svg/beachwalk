@@ -485,6 +485,7 @@ function buildInterior(K) {
     for (const [x, z, ry, y, c] of [[-0.12, -0.2, 0.3, 0.44, 1], [-0.1, -0.2, 0.52, 0.462, 3]]) { const b = part(top, roundBox(0.13, 0.022, 0.19, 0.004), bookMs[c], x, y, z); b.rotation.y = ry; }
     part(top, new THREE.CylinderGeometry(0.035, 0.03, 0.09, 16, 1, true), clear, 0.27, 0.47, 0.18);
     room(tabX, tabZ, 0.56, 0.5);
+    M.TABLE = { x: tabX, y: F + 0.425, z: tabZ, r: 0.52 };     // its top, for what the game stands on it (the well man's photograph)
   }
   /* TWO LOUNGE CHAIRS in cracked leather, on swivel feet, turned in at the
    * table across the rug from the sofa. A tub is a lathe with the front

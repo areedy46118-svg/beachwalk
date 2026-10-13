@@ -268,3 +268,18 @@ bring it back. Batch checks into fewer reloads; prefer re-running a harness on
 the live page over reloading for it.
 
 **THE SAWN-OFF (2026-10-09).** `tools/sgglb.js`: `await import('/tools/sgglb.js'); await __sgG.load()` loads `assets/sawnoff.glb` into its own lit scene; `__sgG.sheet([[t, cx, cy, cz, lx, ly, lz, fov, label], …])` renders the clip at time `t` from a camera (metres, the scan scaled 0.01) into a padded sheet; `__sgG.pos(name)` / `__sgG.at(t)`. The game's harness exposes `sgG` (root, mixer, actions, parts), `sgRig`, `SG_HOLD_HIP`/`SG_HOLD_ADS` (edit the arrays in place and step a frame), `SG_KICK`, `itemIcon` and `shells2IconItem` (so a shop icon can be rendered without opening the shop). `__sgSheet` from `tools/sgtest.js` returns bare base64 (no `data:` prefix) — the scratchpad decoder takes both. The hotbar's icons are `#hotbar img` data URLs, readable without a screenshot.
+
+
+## 2026-10-13 — island harness
+
+- `tools/isleshot.js`: `__isle.boot()` takes 40–60 s of WALL time on the fake
+  clock (the 10 MB parse is chained behind `bwTurn`) — poll `__bootS`, never
+  await it in one call. `__isle.track(x, z, secs)` walks to a point and
+  tallies frame-to-frame changes in the eye's vertical speed in `__isle.trk`.
+- `sgtest.js` FAKES `performance.now` (16.7 ms a `__cadv`, + 0.01 a call):
+  time anything with `Date.now`, and finish a render with a 1-pixel
+  `readPixels` before reading the clock.
+- `__bw.c13Dbg()` carries whole objects (the arch): never `JSON.stringify` it
+  (33 MB came back). Read its fields.
+- A batch of 60 random walks timed the tool out ("Internal error") — split
+  it into calls of ~14 and keep the state on `window`.

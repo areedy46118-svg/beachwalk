@@ -3320,3 +3320,13 @@ with the burst; a blow wakes him too (`provoke` = `wellCharge`). Note
 `st.atk < 0`. Measured before the speed change: from 9.7 m on you in 3.5 s
 at 5.7 m/s; 19 swings in 30 s, all four used, every one landing on a player
 standing still.
+
+**THE MAN FROM THE WELL: NOTHING ON ALL FOURS, NO TEETH (2026-10-12).** In
+RINONO's scan `caution` (his crouch), `eat` (the bite) and every
+`on_all_four_*` are on hands and knees — rendered side-on with
+`tools/glbsheet.js` — so "take away the crawl" meant all of them, not just
+`wA4`. Attacks are wA1/wA2 and wA3 = attack02 again from 2.9 m with a 3 m
+lunge at rate 1.75; the freeze is `idle01` at timeScale 0.04; roar is
+`idle02`. The teeth are their own mesh (`Object_75`, 289 verts): new kind key
+`hideMeshes: [names]` hides a part of any solo scan in the material traverse.
+hp 36. Dev mode stops every mutant swinging — test fights with it off.

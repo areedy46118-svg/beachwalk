@@ -712,3 +712,42 @@ takes the WHOLE bank as the pool at the clip's own pitch (±2 %), and a role
 the map leaves out falls back to the synthesised throat. The chain take plays
 scream 1 through `playSampleAt` at him as he rears (`C.raged`), the synth roar
 only if the bank has not landed.
+
+
+## 2026-10-13 — every door names where it goes
+
+XIII's "Leave the castle" sent you through `placeOutOfFort('back')`, the
+first castle's back-door EXIT, which the lighthouse island had taken over the
+day before, so the owner left XIII for the first castle and stood on the
+island. The castles are one road now, and each door names its own
+destination (details in `docs/notes/lighthouse.md`, 2026-10-13): fort gate ↔
+beach, fort back door → XIII only, XIII "Back to the first castle" →
+`startFort(1, 'fromC13')` → inside the fort's back door facing the gate
+(`fortBackInside`), XIII arch → throne, throne near door → XIII court, throne
+lattice door → island drawbridge, island postern → throne lattice door. The
+postern outside the fort's back wall is barred (`bare`). **A placement shared
+by two doors is a trap: change it for one and the other goes there too.**
+The beach map numbers the four and draws the road between them in red.
+
+## 2026-10-13 (later) — the passage between the castles, XIII's north door
+
+The owner: "make the castles look like they connect from the doors used when
+you look from the lighthouse island". The first castle's back door is at
+world (21, −1115.3) — its doorway is open in the back wall's outer face
+(−1118) at x 20–22 — and XIII put you in at its EAST tower door (122, −1174),
+a hundred metres off with nothing between. Measured by raycasting: XIII's
+north wall's outer face at z ≈ −1134 for x 28–50 (receding to −1149 at x 20,
+the north-west corner), its inner face at −1136.25 (x 39), the wall 16 m tall
+(top 20.4); the court just inside is open at x 37–40 (floor 3.94), a tower
+fills x 29–36; the bluff between the castles is a plateau at 3.58 → 4.0.
+- `buildCastleLink` (called when XIII lands): a covered gallery from
+  `CASTLE_LINK.a` (21, −1117.6) to `.b` (39, −1134.5), seven 3.4 m bays
+  stepping up the plateau, ashlar walls (`lhAshlarMaps`, `fortDress`) with
+  planar uvs (`planarUV`, a block 0.8 m), arrow slits, buttresses, a slate
+  roof (`lhSlateMaps`) and a pair of lamps at each end. No colliders: it is
+  past `CLIFF_BLOCK_X`, out of reach on foot; walked by the cut.
+- `C13_NDOOR` (world 39, −1136.25): a plank door in an ashlar frame on the
+  north wall's inner face, "Back to the first castle". `C13_SPAWN` is a
+  stride inside it facing into the court (yaw 0), so the fort's back door,
+  XIII's restore ('c13In') and its way out all use it. The east tower door is
+  only a door now.

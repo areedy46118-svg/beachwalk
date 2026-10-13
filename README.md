@@ -344,18 +344,38 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The city** — pushed far back and heavily fogged so you can only just make
   out rooflines and a scattering of lit windows, under a faint sodium
   light-pollution wash that lifts over the cliff ridge.
-- **The lighthouse** — a lime-rendered rubble tower, its whitewash flaked and
-  streaked with a century of rust and weather, a bitumen band round its foot,
-  cut-stone sills and quoins and a corbelled gallery under a black lantern — the
-  brightest thing on the headland. It stands on a rock promontory: a scarp of
-  boulders into the surf on one side, heath and a keeper's cottage with one lit
-  window on the other, and a lane of stone steps and chain up its back from
-  the castle's postern. Coming out of the castle, the beam comes round and
-  stops on you. Inside, a round brick shaft with a slim
-  red cast-iron spiral stair wound round a central steel pole, standing free
-  of the wall: thin diamond-plate treads, one continuous red handrail on the
-  outside, oil lamps on the brick every half turn, moonlight standing in the
-  windows and washing down from the lantern glass. Climb it, and put your hand on the light to end the walk.
+- **The castles are one road, and the lighthouse is its end** — in at the
+  first castle's gate (the farmers' fight), out of its back door and through
+  a covered stone passage across the bluff into Castle XIII's north court,
+  through XIII to its throne room, and from the throne room's lattice doors
+  either side of the dais ("Use Lift") up XIII's west tower and out over the
+  drawbridge onto the lighthouse island. Going back is the same road the
+  other way: the lift from the island's postern comes down into the throne
+  room at the marauder's right-hand door, the throne room's near door goes
+  into XIII's court, XIII's north door back through the passage into the
+  first castle, and its gate onto the beach. From the island you can see the
+  whole road: the drawbridge to XIII's tower, and the passage between the
+  castles, lamps at either end. No door goes anywhere else, and nothing on the
+  beach leads round them. The fisherman's chart draws it: the four numbered,
+  the road between them in red, "one road in, the same road out".
+- **The lighthouse** — an island of rock at the foot of the bluff Castle XIII
+  stands on, twenty metres out of the sea: a wooded terrace, a stair down its
+  sea face to a jetty, a climbing path, and on the top deck the keeper's red
+  house and a striped tower (Jake.Hatt's "Lighthouse Diorama", fitted to the
+  beach rather than shown as a diorama — its water is our sea, calmed in the
+  lee of the rock so the jetty stays dry). You reach it over a drawbridge let
+  down on two chains from a postern high in XIII's west tower: out of the
+  throne room you come out of that door onto the boards, the terrace and its
+  trees ahead of you, the tower over your left shoulder; and the beam comes
+  round and stops on you. Its walk is made for a hill: you never drop through
+  a crack in the boards or off an edge (a stride may take you down a little
+  over a metre at most), the slopes are blended so the eye glides rather than
+  stepping, the steep cliff stair is walked at a slower pace, and a tree is
+  its trunk — you slide round it, not snag in its boughs. Open the door in
+  the tower's foot and the lighthouse track begins: inside, a brick shaft with
+  a red iron stair wound round a steel pole, three lamps up it, a ladder at
+  the top — and out onto a railed gallery round the light, the island and
+  both castles below you. Put your hand on the light to end the walk.
 - **Detailed low-poly ground** — procedural sand (mottling, ripples, grit,
   pebbles, shell flecks) with a self-illuminating emissive map.
 - **Livelier ocean** — layered swell/chop/ripples, animated micro-normals,
@@ -681,6 +701,15 @@ shotgun in your hands and its one clip (`assets/sawnoff.glb`; its arms are hidde
 packed by `tools/gltfpack.py … --tex 1024 --normal-tex 1024`, 1.75 MB). The
 game cuts the clip into the shot, the two reloads, the draw, the idle and the
 carry at a run, and places the whole rig in the eye's frame itself.
+
+This work is based on ["Lighthouse Diorama"](https://sketchfab.com/3d-models/lighthouse-diorama-de9ba38a375e42619370264a94bdd218)
+by [Jake.Hatt](https://sketchfab.com/Jake.Hatt) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the lighthouse, its
+island, the keeper's house, its trees, lamps, stair and jetty
+(`assets/lighthouse-isle.glb`, packed by `tools/gltfpack.py … --tex 2048
+--normal-tex 1024 --drop-mr` without its water, display ring, fish and flying
+birds, 9.4 MB). The tower's inside, its door, the gallery's grating and rail,
+and the drawbridge to Castle XIII are the game's.
 
 This work is based on ["Old Forest Well"](https://sketchfab.com/3d-models/old-forest-well-d1c0a5293ff94b5c8edd62cd4d1ef902)
 by [Adam Glachan](https://sketchfab.com/acesapien) licensed under
@@ -1101,16 +1130,20 @@ own. Its crack is the owner's .44 recording, pitched down, under a synthesised
 blast. (The double built in code before it is still in `models/shotgun.js` for
 the viewer.)
 
-**The well** — on the dry sand beside the tall one, a little toward the wall,
-and he stands over it looking in until you are close enough to see what he
-is; then he bolts for the sea as he always did. It is a place of its own: from
+**The well** — on the dry sand a little toward the wall, and the tall one
+stands on its sea side looking into it, until you are close enough to see
+what he is; then he bolts for the sea, flat out, faster than anything else on
+the beach.
+It is a place of its own: from
 seventy metres out the air closes in, and inside twenty-five there is nothing
 but grey fog, banks of it drifting past, the moon and the sky gone, the sea
 gone quiet under a low moan of wind, and the well standing dark in the middle
-of it, a wall's height at the rim and the roof over your head (`WELL_S` 1.5,
+of it, 2.4 m across, a wall's height at the rim and the roof over your head (`WELL_S` 1.9 / `WELL_SY` 1.55,
 `WELL_FOG_D`, `wellFog`, `wellBanks`). Walk up and the prompt is
-"Look inside": you lean over the rim and down a bore that goes from wet stone
-into black, further than the moon reaches — and a voice: "Hey, I
+"Look inside": you lean over the rim and down a round shaft of laid stone
+that goes from moonlight into black, and for a while there is only the
+shaft — the air in it, water dripping a long way down, grit falling — and
+then a voice, up the stone: "Hey, I
 fell." He fell coming back from the tavern, he says, couldn't pay his tab and
 thought he'd fetch a few coins; the bartender is a good friend of his, name
 of Stanley; nobody deserves this; and no, you shouldn't trust him. The lines
@@ -1121,10 +1154,15 @@ taken, and something climbs it: strides on a rope, a creak at every one,
 louder, for long enough to be sure. Black. And he is standing between you and
 the well, the sea behind him, the lens on his face as if he had something to
 say. He has nothing to say. He stands. Then he comes, faster than anything on
-this beach, and he fights fast — two swipes and a bite from the crouch, no
-crawling — and every few seconds, if he is not on you, he stops dead in his
-crouch, holds, and comes again. Once he is up he stays up until you kill him;
-the checkpoint is written as he rises.
+this beach, and he fights fast — two swipes and a lunging third, never on
+all fours — and every few seconds, if he is not on you, he stops dead in his
+tracks, stands dead still, and comes again. On the table in the pavilion stands his photograph as he was: an old cabinet
+card of a gaunt bald man in a white shirt, smiling. Once he is out, the well is only a well: "Look inside" leans you over the rim
+and down the black bore again — nobody calls up it now — until you press E.
+Kill
+him and what he had in his fist is on the sand: the Pavilion key, which opens
+the pavilion's gate as the snorkeler's does. Once he is up he stays up until
+you kill him; the checkpoint is written as the tall one goes under the sea, before you have touched the well, so a death to the man from the well puts you back there.
 
 **Skull Key** — what lies between the candles in the catacombs' lower vault,
 and the only thing that opens the barred door out of them.

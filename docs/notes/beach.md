@@ -1609,3 +1609,200 @@ crawl").**
   with it off and `heal(99)` each frame. And calling `wellLetUp()` directly
   leaves the dialog open (frozen) — `endDialog()` after.
 - Harness: `tools/wellview.js` (`__wv.sheet` of views offset from the well).
+
+**THE WELL, THIRD PASS (2026-10-12).**
+- **Scale is non-uniform**: `WELL_S` 1.9 across, `WELL_SY` 1.55 up — the ring
+  2.4 m over, bore 93 cm, roof 3.1 m, and the rim still 1.0 m (uniform 1.9
+  put it at the chest). `wellY` uses `WELL_SY`; bore, collider, lean use `WELL_S`.
+- **Maps at `reexpose` 0.50** (mechanism 0.62): at the rocks' 0.62 it was still
+  a near-black block in the grey.
+- **The shaft is a textured stone lining from the rim down** (`wellStoneTex`,
+  drawn: squared, chamfered blocks in courses — an ELLIPSE per stone left the
+  joints as wide as the stones and read as pale pebbles), r 0.99 of the bore,
+  tapering to 0.92, a tile per 1.5 m, unlit, vertex light 0.30·e^(−0.6d) +
+  0.08·e^(−0.2d). Matches the owner's photograph: lit courses closing to black.
+- **The lantern** (`wellLantern`, `updateWellLantern`): tin cage, glass, a
+  flame, an additive halo sprite that grows with distance (it is the fog
+  that is lit), a pooled point light 1.35 at 7.5 m. On the rim's dune side
+  (`WELL_LANTERN_A` 1.75) — under the lean it flooded the near rim orange.
+  It dies over the last 1.4 s of the climb, is out in the black, stays out
+  at `wellPhase` 2.
+- **The tall one** stands at `SMILE_STAND` (WELL + 1.8, −1.2), facing across
+  the mouth toward its near side, head bowed (`smileBow`: Bone003 rotX −0.22,
+  Bone004 rotY −0.45 / rotZ −0.12 after the mixer — axes found by rotating
+  each bone and watching the head end move). `SMILE_X/Z` are the STRETCH'S
+  ANCHOR (the pavilion is `SMILE_Z − 90`, the mood keys off it) and must not
+  move. Anywhere behind the roof's width (±1.15 m) the roof hid him from the
+  approach. `SMILE_SEE` 6.5: the fog only gives him up at ~12 m.
+- **The look**: `in` → `peer` (5.6 s of shaft only, the lean easing 7 cm
+  further; the voice at 4.2) → `hold` (the dialog). The first line is no
+  longer played at `wellLookStart`.
+- Harness: choices only exist once the node's text is up — wait for
+  `button.choice` with `offsetParent` before clicking.
+- **THE LANTERN MOVED TO THE SAND (2026-10-12, "not floating or hanging").**
+  On the rim it read as hung off the post. Now at the ring's foot
+  (`WELL_LANTERN_A` 0.62, r = ring + 0.20), `beachGroundAt` − 1.5 cm, tilted,
+  ×1.3: a hurricane lantern built from lathes (dented fount, burner, globe,
+  sooted hood), tube guard wires and rings, the two side air tubes, a fallen
+  bail. The globe's map is a soot gradient used as its own `emissiveMap`, so
+  the clean band glows and the crown stays black. Flame = additive teardrop +
+  core + an inner glow sprite; the halo sprite is centred 0.34 up (at 0.16
+  half of it was depth-tested into the sand). The pooled lamp peaks at 7.5,
+  decay 1.6, 8 m — **intensities here are physical: the other lamps are 9–14
+  and 2 was invisible**. Gutters (`dip`, sometimes with `sfxLanternSpit`) and
+  stutters (`spit`). Harness: `__bw.wellLantern.userData` (zero `dip`/`spit`
+  for a steady still).
+
+**THE WELL, FOURTH PASS (2026-10-12).**
+- **The shaft is the PARAPET'S width.** The base has two inward faces: the
+  stone parapet at r 0.43 and a narrow tube at 0.245 inside it. The lining
+  followed the tube and read as a pipe standing up inside the parapet (the
+  owner's "doesn't match up"). The tube and everything with all three
+  vertices inside r 0.40 are cut from the base's index at load; `WELL_BORE_L`
+  0.425; the sand/cliff hole follows it.
+- **Its stone is the well's own**: the grey cobble panel of the base atlas
+  (u 0.745–0.902, v 0.345–0.640 — between that column's dark bands), cropped
+  from the loaded map, mirrored-repeat both ways, at the model's density
+  (0.219 of the map per model metre, scaled by WELL_S / WELL_SY). The mixed
+  UVs on the parapet's own face (two atlas columns) are not reused.
+- **The murk** (`wellMurkPatch`): lining, rope (`myRope`) and the mechanism
+  material (bucket, handle) are mixed toward `WELL_MURK` by depth under
+  `WELL_MURK_U` (the rim) AFTER `fog_fragment` (the game's fog is pale here
+  and would light the deep); k 0.36, lining 0.22. Each patched material gets
+  its own `customProgramCacheKey` (uuid) — what ran before it differs.
+- **Checkpoint** moved: `removeSmile` sets `smileSavePending` (live only);
+  `updateWell` writes it the first frame you are free with `wellPhase` 0.
+  The saves at LET HIM UP and at the reveal are gone; one more is written
+  1.5 s after his key drops.
+- **The tall one** bolts at `SMILE_SEE` 11 (was 6.5). The bow was REMOVED:
+  rotations added after the mixer to bones the idle does not animate
+  accumulate every frame — his arm swung round.
+- "Hey" / "I fell" in `well-guy1.m4a`: the gap widened from 0.38 to 1.0 s
+  (ffmpeg concat with 0.62 s of silence at 0.70 s); the dialog opens at 6.0 s
+  of the peer (1.8 s after the voice) so the words do not run ahead of it.
+
+
+## 2026-10-13 — the well's lantern removed
+
+The owner: "remove the lantern from the well as well." `wellLantern`,
+`WELL_LANTERN_A`, `updateWellLantern`, `sfxLanternSpit` and the `__bw` export
+are gone; the shaft lining's comment no longer counts it as a light at the lip.
+The paragraphs above about it are history.
+
+## 2026-10-13 — the well: the man kept out of it, the speck, the portrait
+
+- **HE WALKED THROUGH THE WELL** — nothing on the beach is solid to a unit,
+  and the chase steers straight at you. `wellManClear(dt)` runs after
+  `updateMutant(dt)`: he is held at `WELL_MAN_CLEAR` 1.72 m from the axis (the
+  parapet is 1.25 m out, the crank's handle 1.43, measured off the drawn
+  faces, and his body a little over 0.4), and when you are behind the well
+  from him he is walked round it the nearer way at up to 4.5 m/s. Measured:
+  started on the far side, he went round, never nearer than 1.72, and was on
+  you in 1.9 s.
+- **THE SPECK WAS THREE THINGS, ONE BEHIND ANOTHER** (found by hiding
+  every mesh in turn and reading a 7×7 block of pixels, then bisecting the
+  index with `setDrawRange` to the one triangle):
+  1. the base's floor cut read the index captured BEFORE the tube cut and
+     wrote it back whole — the inner tube had never been cut at all, its foot
+     a metre down inside the bore, moonlit. It reads `g.index` now, and the
+     tube cut goes by each triangle's MIDDLE (< `WELL_BORE_L` − 0.012), not
+     "all three corners inside", which kept every face straddling the line;
+  2. with the tube gone the parapet's own inner face (r 0.42–0.44) showed,
+     lit at full: the depth shading stopped at r 0.40. It runs to 0.47;
+  3. the shaft's black cap at 40 m was turned face DOWN (rotation +π/2), so
+     from the lip it was culled, the shaft's foot was open, and the fog's
+     44 m shell round your eye showed through it dead in the middle. −π/2,
+     double-sided.
+- **THE PORTRAIT** (`assets/well-portrait.jpg`, 512×690, 44 KB, made by
+  `tools/wellportrait.js`): his own scan, shot in a studio of its own
+  (`__wp.studio(600, 800, __wp.SIT)`) in a smooth clay skin, the jaw shut on
+  its hinge — the jaw bone's LOCAL Y, −0.55 (x and z only slew it) — then
+  painted over in 2D: the mouth's slit and torn corners diffused shut
+  (`_inpaint`, Jacobi from the edges), the sockets and cheek hollows eased,
+  the lower face softened into one surface with its grain put back, ears, a
+  cropped fringe, brows, lids/irises/catchlights over the scan's own
+  eyeballs, crow's feet, a parted smile on the upper teeth, a nose, a wing
+  collar, tie, waistcoat, watch chain and black coat; then toned silver,
+  soft, grained, vignetted, foxed, scratched, creased, on a buff card
+  ("J. Abernethy & Son · Portraits") with worn corners. The bald egg of a
+  skull, the wide-set deep eyes and the wide mouth are what make it him.
+
+## 2026-10-13 (later) — the empty well, the portrait remade
+
+- **"Look inside" once he is out** (`wellEmptyLookIt`, `wellLookStart(true)`):
+  the same lean over the rim and down the bore, no voice and no dialog; held
+  in 'peer' until a key or a click AFTER the press that started it has been
+  let go (`armed`), then 'out'. The prompt "E Step back" is put up by
+  `updateHover` while it holds. Offered from the reveal on (and on a load
+  past it), not while he is awake within 12 m of you.
+- **THE PORTRAIT, AGAIN** (the owner: "the clothing … looks horribly fake …
+  hyper realistic"): `__wp.sit2` shoots his head on the BARMAN'S BODY — Wong
+  (`assets/wong.glb`) is a Character Creator scan in a white shirt, grey
+  waistcoat and patterned tie, with a separate head (Std_Skin_Head, eyes,
+  teeth, brows, cap: hidden). Wong's arms come down off the T-pose
+  (`CC_Base_L/R_Upperarm` about local z, ∓1.25); the well man is scaled so
+  head-to-neck matches Wong's ×1.35, his neck bone stood on Wong's
+  (`CC_Base_NeckTwist01`), his `shoulder_L/R` and thighs scaled to nothing
+  and his chest narrowed (×0.6 in x/z, the neck given it back) so nothing of
+  him shows through the cloth; his face wears a tile of real skin (`skinTile`:
+  a patch of Wong's forehead map, mirrored, ×5) over white. Wong has no
+  morphs and no lip bones — his face cannot smile, and would have been the
+  barman's face anyway. The 2D face painting is the first version's, carried
+  onto the new shot by `compose(raw, { map: [1.333, 50, −25.6], body: true,
+  crop: [90, 120, 720, 960], lift: 0.28 })`.
+
+- (then: "make his shirt all white no tie") `sit2(…, { shirtOnly: true })`
+  hides `FS_Tie` and `FS_waistcoat` too; Wong's shirt is whole under them
+  (no culled faces), so it is just the white shirt, buttoned, collar open.
+
+## 2026-10-13 (last) — the well's inside put back, the tall one put back
+
+- **"You ruined the textures looking into the well."** The tube cut (by
+  triangle middle) took out the inner tube the lining's texture was matched
+  to — the cut had never actually run before (the floor cut rebuilt the
+  index from the copy taken before it), so the well the lining was fitted to
+  always had its tube. The tube is kept; the inward-face darkening is back to
+  r < 0.40; only the tube's last course (y < −0.8, r < 0.31 — lit by its
+  map's glow whatever the vertex shade says) goes with the floor disc. The
+  speck that mattered was the shaft's open foot (its cap, flipped face up).
+- **The tall one** is back at `SMILE_X, SMILE_Z` — the sea side of the well,
+  a stride off the rim, turned INTO it (`atan2(WELL_X − x, WELL_Z − z) + π`),
+  as he stood in 7f2b1b0. `SMILE_RUN` 12.5 (was 8.5; measured 12.8 m/s),
+  `SMILE_STEP` 0.12, the run clip's rate scaled with it.
+
+## 2026-10-13 (night) — the shaft carries the tube on down; his photograph on the table
+
+- **THE LINING IS THE TUBE, EXTRUDED** (`wellBoreLining`). Measured off the
+  Well_base mesh: the bore tube is a CIRCLE of r 0.3405 about (−0.0945, 0) of
+  the model — not about its origin, which is why "r from the origin" read it
+  as an oval and a filter on that radius found only the near half (a C-shaped
+  lining, and the fog showing through the gap). Its wall carries one strip of
+  the atlas: u 0.737 at its foot (y −0.873) → 0.905 at y −0.374 (0.337 a unit),
+  v round it, with the strip's seam at about −104°. The lining is that foot
+  ring's 33 vertices carried straight down 26 model units (40 m), each column
+  keeping its v, u mirrored on down at the same rate; a black cap at its foot
+  (centred on the tube, not the origin). The old wider cylinder is hidden.
+  - LIT, it went pale: the model's material picks up its grazing rim down a
+    long tube. It is a `MeshBasicMaterial` on the model's own map, vertex
+    shade `WELL_LINE_K0` falling away (0.7·e^−0.9t + 0.3·e^−0.25t), murked
+    (`wellMurkPatch` 0.22), tinted `WELL_LINE_TINT` (0.099, 0.165, 0.308) —
+    measured so the lining's top matches the tube just above the join in a
+    render (tube 12.0/14.8/18.6, lining 15.1/16.7/19.6). The factors are
+    LINEAR: a tint of 0.35 moved the screen value only to 0.62 of itself.
+  - the tube itself (the base's material) gets `wellBorePatch`: inside the
+    bore (within 0.36·WELL_S of the TUBE's centre, below the rim) the well's
+    grey fog is replaced by the murk mixed from the pre-fog colour, so the
+    tube does not go to a grey bowl; and its far wall is shaded by depth
+    about the tube's own centre too.
+- **His photograph** (`wellPortrait`, main.js after `makeMushroomHouse`):
+  `MUSH.TABLE` (exported by the model: the table top's x, y, z, r) + (0.06,
+  0.27), turned to the stair head (`TOP_ANG`, r 2.4), 0.19 × 0.256 in a dark
+  frame leaning back 0.2 on a strut that stays BEHIND its back (the first
+  strut stood through his face), the card's map emissive at 0.22. Added
+  before `bakeStatic`, so it is baked with the room.
+- **Teleport to lighthouse (dev)** (settings menu, `m-isle`,
+  `devTeleportIsle`): every room left (`devLeaveRooms`, shared with the shop
+  teleports), the walk's once-only events marked passed, then held in the
+  black (`devIsleWait`, in `updateIsle`) until the island has loaded, and put
+  where the lift puts you (`placeOnIsle`): the drawbridge, (16.9, 20.05,
+  −1153.4). Measured: on the island in 4 frames when it was loaded.

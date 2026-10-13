@@ -176,6 +176,7 @@ const ASSET_REACH = {
   'assets/smile.glb': 390,
   'assets/well.glb': 388,             // the well he stands over
   'assets/wellman.glb': 392,          // and what is at the bottom of it
+  'assets/lighthouse-isle.glb': 1060, // the lighthouse's island, behind the first castle
   'assets/mutant.glb': 610,
   'assets/fang.glb': 612,             // one in three of them leaves a tooth
   'assets/rockmouth.glb': 636,        // the rock at the foot of the sand wall, past the mutants
@@ -656,6 +657,8 @@ const REACH = 3.2;
 
 const LH_X = 2;
 const LH_Z = -1200;
+// the generated tower is retired (2026-10-12): the lighthouse is the island (its section, near the well's); its light is all that is kept
+const LH_RETIRED = true;
 const END_Z = LH_Z + 55;
 
 // The tower you can walk into. Every figure here is measured off the scanned
@@ -2861,6 +2864,7 @@ const FORT_U = { uFortMask: { value: null }, uFortM: { value: new THREE.Vector4(
   uFortMask2: { value: null }, uFortM2: { value: new THREE.Vector4(0, 0, 0, 0) } };
 // the second castle (Castle XIII, past the lighthouse) cuts the beach the same way
 const C13_M = { data: null, gw: 0, gh: 0, x0: 0, z0: 0, cell: 0.2, floorAt: null };
+const ISLE_M = { floorAt: null };      // the lighthouse island's ground, once its plan is built (see the island's section)
 function maskAt(M, x, z) {
   if (!M.data) return false;
   const i = Math.floor((x - M.x0) / M.cell), j = Math.floor((z - M.z0) / M.cell);
@@ -2883,11 +2887,8 @@ function inWater(x, z) {
   if (Math.abs(x) >= 1500 || Math.abs(z) >= 2500) return false;   // a room's water is its own (see roomSubmersion)
   if (fortMaskAt(x, z)) return false;           // the castle's courtyard is paved, whatever the tide does outside it
   if (onHeadland(x, z)) return false;           // the ridge stands clear of it
-  // The trodden lane up to the lighthouse door is dry ground, even at the
-  // mouth where it meets the sand and a high swash can wash across x = LH_X.
-  // Kept as a plain box here so it needs nothing that's declared further down.
-  const pz = z - LH_Z;
-  if (pz > -3 && pz < 34 && Math.abs(x - LH_X) < 4.6) return false;
+  // the lighthouse island's rock, decks and jetty are dry, whatever the sea is doing under them
+  if (ISLE_M.floorAt && ISLE_M.floorAt(x, z) !== null) return false;
   return x < shoreLineJS(z, oceanUniforms.uTime.value) + 0.25;
 }
 
@@ -2896,6 +2897,14 @@ function inWater(x, z) {
  * inside the waterline gets sunk to this, otherwise it stands on top of the
  * sea like a table. Keep in lockstep with waveGLSL. */
 const OCEAN_Y = -0.34;
+/* THE LEE OF THE LIGHTHOUSE'S ROCK (2026-10-13, the owner: "dont make the
+ * water cover that pier section in the lighthouse when waves come"). The
+ * island's jetty is three quarters of a metre over the mean and the swell out
+ * there peaks near three, so every big set walked over its boards. The sea is
+ * calmed round the stack — a tenth of its height within 22 m of the jetty's
+ * middle, all of it again by 52 — the way water lies behind a rock. Numbers,
+ * not the island's constants: this is read long before they are declared. */
+const ISLE_LEE = { x: -15, z: -1150, r0: 22, r1: 52, k: 0.10 };
 // GLSL semantics: works when e0 > e1, which THREE.MathUtils.smoothstep does not
 const gsmooth = (e0, e1, x) => {
   const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
@@ -2917,6 +2926,7 @@ function waveHeightJS(x, z, t) {
   const nearBand = gsmooth(-55.0, -2.0, x);
   w += Math.sin(x * 0.62 + z * 0.44 - t * 3.0) * 0.12 * nearBand;
   w += Math.sin(z * 0.78 - x * 0.36 + t * 2.5) * 0.09 * nearBand;
+  w *= ISLE_LEE.k + (1 - ISLE_LEE.k) * gsmooth(ISLE_LEE.r0, ISLE_LEE.r1, Math.hypot(x - ISLE_LEE.x, z - ISLE_LEE.z));
   return OCEAN_Y + w;
 }
 // Ring buffer of surface disturbances, fed to the ocean shader. Anything
@@ -4008,7 +4018,7 @@ function lhBeamStep(dt) {
   const S = lhSearch;
   if (!S) { beamPivot.rotation.y += dt * LH_BEAM_RATE; return; }
   S.t += dt;
-  const want = Math.atan2(-(camera.position.x - LH_X), -(camera.position.z - LH_Z));   // the beam points local -Z
+  const want = Math.atan2(-(camera.position.x - lighthouse.position.x), -(camera.position.z - lighthouse.position.z));   // the beam points local -Z (from wherever the light is: the island's lantern now)
   let dy = want - beamPivot.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
   const HOLD0 = 2.4, HOLD1 = 6.2;
   if (S.t < HOLD0) beamPivot.rotation.y += THREE.MathUtils.clamp(dy, -1.0 * dt, 1.0 * dt);   // it comes round, no faster than it ever turns twice over
@@ -4679,7 +4689,7 @@ const lhWindows = [];          // {y, ang} — cut through the scan, framed belo
    * walk begins; the maps are two million pixels of drawn stone and are
    * not a thing to make while the module is being evaluated. The name is
    * off the reach table, so it runs with the first of the warm's work. */
-  warmStep('lhskin maps', () => {
+  if (!LH_RETIRED) warmStep('lhskin maps', () => {    // two million pixels of drawn stone for a tower nobody sees now
     const w = lhWallMaps(), a = lhAshlarMaps();
     { const r = hlRockMaps(), gr = hlGrassMaps(); if (lhParts.hlMaps) { lhParts.hlMaps.uRock.value = r.map; lhParts.hlMaps.uGrass.value = gr.map; } }
     if (lhParts.slateMat) { const sl = lhSlateMaps(); const mt = lhParts.slateMat; mt.map = sl.map; mt.normalMap = sl.normalMap; mt.normalScale = new THREE.Vector2(0.8, 0.8); mt.emissive.setHex(0xffffff); mt.emissiveMap = sl.map; mt.emissiveIntensity = 0.12; mt.color.setHex(0xb0b8c4); mt.needsUpdate = true; }
@@ -4803,8 +4813,8 @@ if (lhStair) {
    * the worst frame in the game at 504 ms, and the five behind it were free
    * — which is what a slice that is too coarse looks like from the outside.
    * Twenty-four. */
-  warmStep('lh stair compile', () => warmCompile([lhStair, lhLights], _sx, _sy, _sz, LH_X, HL_CREST + 14, LH_Z));
-  for (let k = 0; k < 24; k++) {
+  if (!LH_RETIRED) warmStep('lh stair compile', () => warmCompile([lhStair, lhLights], _sx, _sy, _sz, LH_X, HL_CREST + 14, LH_Z));
+  for (let k = 0; k < (LH_RETIRED ? 0 : 24); k++) {
     warmStep('lh stair', () => warmView([lhStair, lhLights], _sx, _sy, _sz, LH_X, HL_CREST + 14, LH_Z, [k, 24]));
   }
 }
@@ -4852,6 +4862,11 @@ function onPath(x, z, margin = 0) {
  * metres over the beach; every piece on it asks this function. */
 const HL_PLAT = 8.5;                 // the level top reaches this far on the land side; the sea side breaks off at 5.5
 function headlandAt(wx, wz) {
+  /* THE HEADLAND IS GONE (2026-10-12): the lighthouse is an island of rock
+   * now (its section, near the well's), and the ridge it stood on, its lane
+   * and its slabs are hidden with the generated tower. Everything that asks
+   * here gets the beach. */
+  return 0;
   const z = wz - LH_Z;                      // +Z is back toward the beach
   if (z < -34 || z > HL_RUN) return 0;
   const x = wx - LH_X - pathBend(Math.max(0, Math.min(z, 44))) * 0.35;
@@ -5537,6 +5552,7 @@ function beachGroundAt(x, z) {
   const b = wbBermAt(x, z); if (b > y) y = b;
   const d = driftAt(x, z); if (d > y) y = d;
   const h = headlandAt(x, z); if (h > y) y = h;
+  if (ISLE_M.floorAt) { const f = ISLE_M.floorAt(x, z); if (f !== null && f > y) y = f; }   // the lighthouse island's rock and decks
   return y;
 }
 function beachRestY(x, z, sink) {
@@ -6716,6 +6732,8 @@ const waveGLSL = `
     float nearBand = smoothstep(-55.0, -2.0, p.x);
     w += sin(p.x * 0.62 + p.y * 0.44 - t * 3.0) * 0.12 * nearBand;
     w += sin(p.y * 0.78 - p.x * 0.36 + t * 2.5) * 0.09 * nearBand;
+    // the lee of the lighthouse's rock (ISLE_LEE)
+    w *= mix(${ISLE_LEE.k.toFixed(3)}, 1.0, smoothstep(${ISLE_LEE.r0.toFixed(1)}, ${ISLE_LEE.r1.toFixed(1)}, length(p - vec2(${ISLE_LEE.x.toFixed(1)}, ${ISLE_LEE.z.toFixed(1)}))));
     return w;
   }
 `;
@@ -8515,9 +8533,8 @@ const devShopBusy = () => hatchBusy || ucBusy || abductCut || portalCut || sailB
  * trader on the sand sixteen metres short of the first castle's gate. The
  * walk's once-only events between here and there are marked as passed the
  * way a restore past them marks them (`applySavedInventoryInner`). */
-function devTeleportShop(which = 1) {
-  if (inShrine || devShopBusy()) return false;
-  const TX = which === 2 ? TRADER2_X : TRADER_X, TZ = which === 2 ? TRADER2_Z : TRADER_Z;
+// out of whatever room you are in, the way each one's own door takes you out
+function devLeaveRooms() {
   if (held) dropHeld();
   if (inBunker) placeOnBeach();
   if (inDojo) placeBackAtPortal();
@@ -8529,6 +8546,33 @@ function devTeleportShop(which = 1) {
   if (inFort) { inFort = false; fortCalmBoss(); }
   if (inC13) { inC13 = false; }
   if (inThrone) { inThrone = false; if (thrWorld) thrWorld.visible = false; throneLeave(); }
+}
+/* AND THE LIGHTHOUSE (the owner: "a teleport to lighthouse in the settings
+ * that brings me to exactly when i enter the lighthouse section"): out of
+ * XIII's lift onto the drawbridge, the way the throne room's lattice door
+ * puts you there (`placeOnIsle`). Everything once-only on the walk is marked
+ * passed the way the castle merchant's teleport marks it; if the island has
+ * not been fetched yet, the black holds until it has (`devIsleWait`, minded in
+ * `updateIsle`). */
+let devIsleWait = false;
+function devTeleportIsle() {
+  if (inShrine || devShopBusy()) return false;
+  devLeaveRooms();
+  if (packPhase < 2) { packPhase = 2; packCut = false; }
+  if (mutPhase < 2) { mutPhase = 2; mutCut = false; mutCutOut = 0; }
+  checkpointDone = true; wreckSaveDone = true;
+  removeSmile(); caveDone = true; wsDone = true;
+  camera.position.set(8, beachGroundAt(8, -1090) + playerEye(), -1090);    // near enough for the island to be fetched
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  if (!isleWorld) loadIsle();
+  devIsleWait = true; blackoutEl.style.opacity = '1';
+  catchBreath();
+  return true;
+}
+function devTeleportShop(which = 1) {
+  if (inShrine || devShopBusy()) return false;
+  const TX = which === 2 ? TRADER2_X : TRADER_X, TZ = which === 2 ? TRADER2_Z : TRADER_Z;
+  devLeaveRooms();
   const z = TZ;
   if (packPhase < 2 && z < PACK_Z + PACK_TRIGGER) { packPhase = 2; packCut = false; }
   if (mutPhase < 2 && z < MUT_Z + MUT_TRIGGER) { mutPhase = 2; mutCut = false; mutCutOut = 0; }
@@ -8555,6 +8599,8 @@ const mShopBtn = document.getElementById('m-shop');
 mShopBtn.addEventListener('click', () => { if (devTeleportShop()) closeMenu(); });
 const mShop2Btn = document.getElementById('m-shop2');
 mShop2Btn.addEventListener('click', () => { if (devTeleportShop(2)) closeMenu(); });
+const mIsleBtn = document.getElementById('m-isle');
+mIsleBtn.addEventListener('click', () => { if (devTeleportIsle()) closeMenu(); });
 applySettings();
 syncMenuInputs();
 
@@ -8564,6 +8610,7 @@ function openMenu() {
   mCheckpointBtn.disabled = !hasCheckpoint();
   mShopBtn.disabled = inShrine || devShopBusy();
   mShop2Btn.disabled = mShopBtn.disabled;
+  mIsleBtn.disabled = mShopBtn.disabled;
   menuReturnLock = !fallbackLook && started;
   if (locked) document.exitPointerLock();
   if (held) dropHeld();
@@ -8937,6 +8984,7 @@ function setPrompt(html, mid) {
 }
 function updateHover() {
   if (peeking) { hovered = null; return; }       // the peek owns the prompt
+  if (wellLook.on && wellLook.quiet && wellLook.phase === 'peer') { hovered = null; setPrompt(kbd('E') + 'Step back'); return; }
   if (frozen() || (!locked && !fallbackLook)) {
     hovered = null; crosshair.className = ''; setPrompt(''); return;
   }
@@ -9054,7 +9102,11 @@ function primaryAction() {                       // E / F
 function attackAction() {                        // left mouse
   if (peeking) { endPeek(); return; }
   if (frozen()) return;
-  if (held) { throwHeld(); return; }
+  /* THE PLANK IS PUT DOWN, NOT THROWN (2026-10-12, the owner): it is a bridge
+   * you lay across a gap, and a click hurled it down the hall. A click with
+   * the plank in your hands does what E does — `dropHeld`, which lays it or
+   * props it against a ledge; anything else in your hands is still thrown. */
+  if (held) { if (held === tavPlankProp) dropHeld(); else throwHeld(); return; }
   // the press already pulled the trigger; the click that follows it is the
   // same press and must not fire a second round
   if (magHeld()) return;
@@ -9210,7 +9262,7 @@ class PhysProp {
     /* AND A ROOM OF DRAWN STONE IS NOT A BOX EITHER — `wall` is a body's own
      * push-out, and `onUnpin` is what a thing that was laid down as a floor
      * has to undo when you pick it back up. */
-    this.wall = opts.wall || null;
+    this.wall = opts.wall || worldPropWall;          // every body has walls: a room's own, or the castles' and the island's drawn faces
     this.onUnpin = opts.onUnpin || null;
     /* AND A PLANK IS NOT A PEBBLE. Everything else in this game is a body
      * small enough that a point and a radius describe it; a board three
@@ -9288,7 +9340,40 @@ class PhysProp {
       return;
     }
     this.vel.y -= GRAV * dt;
-    p.addScaledVector(this.vel, dt);
+    /* SUB-STEPPED, SO NOTHING THROWN GOES THROUGH ANYTHING (2026-10-12, the
+     * owner: "throwing glass at the walls in the tavern they clip through …
+     * throwing anything should never clip through anything"). A throw is
+     * 16 m/s — 27 cm a frame — and a tavern bottle is 7.5 cm across, so the
+     * one push-out after the move found the bottle already on the far side
+     * of a pier, where the face pushed it on OUT. The move is cut into
+     * steps no longer than most of the body's radius and every one asks the
+     * walls and the solids; where a step is pushed back the body bounces off
+     * the face and it is an impact (glass breaks on a wall, it does not
+     * slide down it), at the speed it arrived with. */
+    {
+      const travel = this.vel.length() * dt, stepLen = Math.max(0.035, this.radius * 0.7);
+      const n = Math.min(24, Math.max(1, Math.ceil(travel / stepLen)));
+      this._wallHit = 0;
+      for (let k = 0; k < n; k++) {
+        const sx = this.vel.x * dt / n, sz = this.vel.z * dt / n;
+        _psw.copy(p);
+        p.x += sx; p.y += this.vel.y * dt / n; p.z += sz;
+        let ox = p.x, oz = p.z;
+        if (this.wall) this.wall(p, this.radius, this.restH, this.vel);
+        _pp.copy(p);
+        const sd = pushOutOfSolids(_pp, p.y, this.radius);
+        if (sd && !sd.castle) { p.x = _pp.x; p.z = _pp.z; }
+        const nx = p.x - ox, nz = p.z - oz, L = Math.hypot(nx, nz);
+        if (L > 1e-5) {
+          const ux = nx / L, uz = nz / L, into = this.vel.x * ux + this.vel.z * uz;
+          if (into < 0) {
+            this._wallHit = Math.max(this._wallHit, this.vel.length());
+            this._wallMat = sd && !sd.castle ? (sd.mat || 'rock') : 'rock';
+            this.vel.x -= ux * into * (1 + this.bounce); this.vel.z -= uz * into * (1 + this.bounce);
+          }
+        }
+      }
+    }
     if (dockHitMeshes && dockHitBox.containsPoint(p)) dockThrowHit(this, dt);
     if (this.confine) {
       const c = this.confine, r = this.radius * 0.6;
@@ -9330,7 +9415,7 @@ class PhysProp {
      * same drawn-face push the walk itself is held by — so a plank thrown
      * down the hall stops where you can see it stop. */
     if (this.wall) this.wall(p, this.radius, this.restH, this.vel);
-    const incoming = this.vel.length();          // speed going into any contact
+    const incoming = Math.max(this.vel.length(), this._wallHit || 0);   // speed going into any contact (a wall's is the speed it arrived with)
     /* AND A BODY MAY NOT STAND ON ITSELF. The plank publishes its own top
      * surface as a floor, which is what makes it walkable — and the floor
      * lookup a body does for ITSELF then finds it, rests on it, and climbs
@@ -9338,6 +9423,7 @@ class PhysProp {
     _selfProp = this;
     let struck = false, surface = 'sand';
     if (this._dockStruck) { struck = true; surface = 'wood'; this._dockStruck = false; }
+    if (this._wallHit) { struck = true; surface = this._wallMat || 'rock'; }
     /* What is under it. A body used to know one ground — the sand — so a
      * bottle set down on the pier fell straight through the boards to the
      * beach two metres below, and one thrown at a rock went through it. It
@@ -9357,7 +9443,7 @@ class PhysProp {
      * is gone by the next line so it can never be the thing you land on. */
     const bf = bunkerFloorAt(p.x, p.z, p.y);
     // and what a room's floor is made of: the bunker is steel plate, the keep timber and rock (and its own sea), the tavern and the catacombs stone
-    if (bf !== null) { rest = bf + this.restH; surface = inKeep ? (sub > 0.5 ? 'water' : 'wood') : (inTavern || inCat || inUndercroft) ? 'rock' : 'metal'; }
+    if (bf !== null) { rest = bf + this.restH; surface = inKeep ? (sub > 0.5 ? 'water' : 'wood') : (inTavern || inCat || inUndercroft || (ISLE_M.floorAt && ISLE_M.floorAt(p.x, p.z) !== null)) ? 'rock' : 'metal'; }
     if (this.floorAt) {
       const pf = this.floorAt(p.x, p.z, p.y);
       if (pf !== null && pf !== undefined && pf + this.restH > rest) { rest = pf + this.restH; surface = 'metal'; }
@@ -9485,6 +9571,23 @@ class PhysProp {
       this.asleep = true; this.slStill = 0; this.slAwake = 0;
       this.vel.set(0, 0, 0); this.angVel.set(0, 0, 0);
       if (this.onSleep) this.onSleep(this);
+    }
+  }
+}
+const _psw = new THREE.Vector3();
+/* the walls a body meets where no room gives it its own: the drawn faces of
+ * the two castles and of the lighthouse island (each answers only once its
+ * index exists, and only on the beach) */
+function worldPropWall(p, r, half) {
+  if (inRoom()) return;
+  for (const S of [ISLE_SITE, FORT_SITE, C13_SITE]) {
+    if (!S || !S.walls) continue;
+    for (let k = 0; k < 4; k++) {
+      const h = keepWallNear(p.x, p.z, r, p.y - Math.max(0.12, half), p.y + 0.45, S);
+      if (!h) break;
+      const ox = p.x - h.x, oz = p.z - h.z, L = Math.hypot(ox, oz);
+      if (L < 1e-5) break;
+      p.x += (ox / L) * (h.depth + 0.002); p.z += (oz / L) * (h.depth + 0.002);
     }
   }
 }
@@ -11889,7 +11992,12 @@ function updateCastle() {
 const shovelWorld = makeShovel();
 shovelWorld.position.set(CASTLE_X + 0.16, 0.98, CASTLE_Z + 0.12);   // stuck in the keep's flank
 shovelWorld.rotation.set(0.55, 0.4, -0.4);
-addItemShine(shovelWorld, { size: 0.7, height: 0.45, strength: 0.8 });
+/* AND IT HAS TO BE SEEN (2026-10-12: play testers walked past it). A red toy
+ * at night is a dark lump on a dark heap: its red lit from inside, a glint
+ * twice the size and three times as strong, and the faint second sprite that
+ * shows through the castle's own sand when you come at it from behind. */
+shovelWorld.traverse((o) => { if (o.isMesh && o.material && o.material.emissive && o.material.color && o.material.color.r > 0.6) o.material.emissive.setHex(0x8a1a10); });
+addItemShine(shovelWorld, { size: 1.5, height: 0.5, strength: 2.6, through: 1 });
 {
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.position.y = 0.3; proxy.name = 'hitProxy'; proxy.visible = false;
@@ -24573,7 +24681,28 @@ const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth
       if (i === 0) { mat.map = t; mat.emissiveMap = t; mat.needsUpdate = true;
         if (t.userData.aspect) billy.spanX = m.scale.x = (BILLY_H * t.userData.aspect) / BILLY_W; }
     }, undefined, () => {}));
-  addInteractable(m, 'Fish?', 'default', { onActivate: () => startDialog('start', BILLY_NPC), far: 3.4 });
+  addInteractable(m, 'Talk to the fish', 'default', { onActivate: () => { billy.talked = true; startDialog('start', BILLY_NPC); }, far: 3.4 });
+  /* HE WANTS TO BE TALKED TO (2026-10-12: play testers walked past him). A
+   * Billy Bass has a motion sensor, and so does this one: come near and his
+   * head swings off the board at you with the motor's whirr, every so often
+   * until you have spoken to him — and a speech bubble with three dots hangs
+   * by the plaque, bobbing, so it reads as a thing that talks before it
+   * says anything. Both stop the moment you have. */
+  {
+    const c = document.createElement('canvas'); c.width = 96; c.height = 72;
+    const g = c.getContext('2d');
+    g.fillStyle = 'rgba(245,242,232,0.95)'; g.strokeStyle = 'rgba(30,24,18,0.9)'; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(14, 6); g.lineTo(82, 6); g.quadraticCurveTo(92, 6, 92, 16); g.lineTo(92, 40); g.quadraticCurveTo(92, 50, 82, 50);
+    g.lineTo(34, 50); g.lineTo(18, 66); g.lineTo(22, 50); g.lineTo(14, 50); g.quadraticCurveTo(4, 50, 4, 40); g.lineTo(4, 16); g.quadraticCurveTo(4, 6, 14, 6); g.closePath();
+    g.fill(); g.stroke();
+    g.fillStyle = '#1e1812'; for (const x of [30, 48, 66]) { g.beginPath(); g.arc(x, 28, 5, 0, Math.PI * 2); g.fill(); }
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, opacity: 0 }));
+    sp.scale.set(0.34, 0.255, 1); sp.raycast = () => {};
+    sp.position.set(m.position.x - 0.05, m.position.y + BILLY_H * 0.55, m.position.z + BILLY_W * 0.45);
+    scene.add(sp);
+    billy.bubble = sp; billy.bubbleY = sp.position.y; billy.sense = 0;
+  }
 }
 /* HE CYCLES WHILE HE IS TALKING, and hangs dead still when he is not —
  * which is the whole of the joke: a plastic fish on a plank that comes to
@@ -24618,9 +24747,22 @@ function updateBilly(dt) {
   const m = billy.mesh;
   if (billy.baseY === undefined) billy.baseY = m.position.y;
   const on = dialogOpen && dialogScript === BILLY_SCRIPT;
+  const near = camera.position.distanceTo(m.position) < 6.5 && !billy.talked && !dialogOpen;
+  if (billy.bubble) {
+    const want = near ? 1 : 0, sp = billy.bubble;
+    sp.material.opacity += (want - sp.material.opacity) * Math.min(1, dt * 4);
+    sp.visible = sp.material.opacity > 0.01;
+    sp.position.y = billy.bubbleY + Math.sin(performance.now() * 0.0028) * 0.025;
+  }
   if (!on) {
     billy.out = false; billy.phase = 0; billy.t = 0; billy.wait = 0;
-    billy.setFrame(0);
+    // the motion sensor: a swing at you as you come in, and again every so often while you hang about
+    if (near) {
+      billy.sense -= dt;
+      if (billy.sense <= 0) { billy.sense = 8 + Math.random() * 6; billy.twitch = 0.9; billy.kick = 1; sfxBillyWhirr(camera.position.distanceTo(m.position)); }
+    } else billy.sense = Math.min(billy.sense, 0.4);
+    if (billy.twitch > 0) { billy.twitch -= dt; if (billy.twitch <= 0) billy.kick = 0.55; }
+    billy.setFrame(billy.twitch > 0 ? 2 : 0);
   } else {
     billy.t += dt;
     /* EVERY NEW LINE, HE LOOKS AT YOU. The owner's word, one round on from
@@ -24648,6 +24790,17 @@ function updateBilly(dt) {
   m.scale.x = billy.spanX * (1 - k * ring * 0.03);
   m.rotation.z = k * ring * 0.055 + hum * 0.005;
   m.position.y = billy.baseY + k * ring * 0.012 + hum * 0.003;
+}
+// the toy's gearmotor: a short whine up and a click, as the head comes off the board
+function sfxBillyWhirr(d) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime + 0.01, out = sfxOut(), lvl = 0.05 / (1 + d / 3);
+  const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(140, t); o.frequency.linearRampToValueAtTime(260, t + 0.22); o.frequency.linearRampToValueAtTime(180, t + 0.32);
+  const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 1.5;
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(lvl, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+  o.connect(f).connect(g).connect(out); o.start(t); o.stop(t + 0.36);
+  const n = noiseBurst(0.02, (x) => 1 - x), nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 2600; nf.Q.value = 3;
+  const ng = ctx.createGain(); ng.gain.value = lvl * 1.4; n.connect(nf).connect(ng).connect(out); n.start(t + 0.24);
 }
 const BILLY_SCRIPT = {
   start: {
@@ -26070,6 +26223,26 @@ const lostKeyItem = {
   use: () => toggleEquip(lostKeyItem),
 };
 holdable(lostKeyItem, lostKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
+/* THE PAVILION KEY: what the man from the well had in his fist (2026-10-12,
+ * the owner). The same scan as every key here, black with the well's wet on
+ * it; the pavilion's gate takes it as it takes the snorkeler's. */
+const pavKeyModel = new THREE.Group();
+function fillPavKey() {
+  if (pavKeyModel.children.length || !keyModel.children.length) return false;
+  const src = keyModel.children[0];
+  const m = new THREE.Mesh(src.geometry, src.material.clone());
+  m.material.emissive = new THREE.Color(0x5e6466); m.material.emissiveIntensity = 0.75;   // cold iron, a little green at the wards
+  m.scale.copy(src.scale);
+  pavKeyModel.add(m);
+  return true;
+}
+const pavKeyItem = {
+  id: 'pavKey', name: 'Pavilion key', desc: 'It was in his fist when he went down. Wet, and as cold as the well. The pavilion’s gate.', icon: makeKeyIcon(),
+  use: () => toggleEquip(pavKeyItem),
+};
+holdable(pavKeyItem, pavKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
+// the gate's key: either will turn it (his first, so the snorkeler's is kept if you have both)
+function gateKeyIn() { return inventory.includes(pavKeyItem) ? pavKeyItem : inventory.includes(lostKeyItem) ? lostKeyItem : null; }
 /* THE STOREROOM KEY: the tavern's locked room is opened with this, found on
  * the floor at the far end of the hall where the owner pointed. The same
  * scan as every key here, dulled to old iron rather than bleached brass. */
@@ -26327,14 +26500,19 @@ function updateSnorkLaugh(dt) {
  * (`idle`, `run`). The model's front is -Z, like the crab's, so
  * `atan2(dx, dz) + PI` faces it at you. It is one skinned mesh, so ONE of
  * it — no clone(). */
-const SMILE_X = 8.7, SMILE_Z = CAMP_Z - 120;   // far enough past the snorkeler that you cannot see one from the other; a little toward the sand wall now, at the well (2026-10-10)
+const SMILE_X = 8.7, SMILE_Z = CAMP_Z - 120;   // the stretch's anchor (the pavilion and the mood are placed off it — it does not move)
+/* BACK WHERE HE STOOD (2026-10-13, the owner: "put the tall man back where
+ * he was looking at the well"): on the sea side of it, a stride off the rim,
+ * turned to the well and looking in. (On 10-12 he was moved round to its far
+ * side to face the way you come; that is undone.) */
+const SMILE_STAND = { x: SMILE_X, z: SMILE_Z };
 const SMILE_H = 2.75;                  // taller than a man by a head and a half
-const SMILE_SEE = 9;                   // how close you get before it goes: close enough to see the face
-const SMILE_RUN = 8.5;                 // m/s, flat out
-const SMILE_STEP = 0.17;               // seconds between its footfalls at that speed
+const SMILE_SEE = 11;                  // how close you get before it goes (the owner: "make him run earlier" — at the edge of what the well's fog gives up)
+const SMILE_RUN = 12.5;                // m/s, flat out (the owner: "make him run faster away" — it was 8.5)
+const SMILE_STEP = 0.12;               // seconds between its footfalls at that speed
 const smile = new THREE.Group();
 smile.visible = false;
-smile.position.set(SMILE_X, 0, SMILE_Z);
+smile.position.set(SMILE_STAND.x, 0, SMILE_STAND.z);
 scene.add(smile);
 farProps.push({ obj: smile, z: SMILE_Z, d: 260 });
 let smileMixer = null, smileClips = {}, smilePhase = 0, smileT = 0, smileCur = null, smileStepT = 0;
@@ -26422,16 +26600,20 @@ function sfxSmileStep(dist) {
   const og = ctx.createGain(); og.gain.setValueAtTime(g0 * 0.8, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
   o.connect(og); og.connect(out); o.start(t); o.stop(t + 0.16);
 }
+const smileBow = { nk: null, hd: null };
 const _smileTurn = (cur, want) => { let d = want - cur; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 function updateSmile(dt) {
   if (!smileMixer || smilePhase === 2) return;
-  smileMixer.update(dt * (smilePhase === 1 ? 2.0 : 1));
+  smileMixer.update(dt * (smilePhase === 1 ? 2.0 * SMILE_RUN / 8.5 : 1));   // the run clip kept to the ground going by
   const p = smile.position;
   if (smilePhase === 0) {
+    /* (a bow into the bore was tried — extra rotations on two of the rig's bones after the mixer — and
+     * those bones are not animated by the idle, so the turn added up frame on frame and swung his arm
+     * round: the owner saw it. He stands as the scan stands.) */
     /* IT STANDS LOOKING INTO THE WELL (2026-10-10): its face is down over the
      * rim, not on you — you see what it is looking at before you see it. */
     const dx = camera.position.x - p.x, dz = camera.position.z - p.z;
-    const want = Math.atan2(WELL_X - p.x, WELL_Z - p.z) + Math.PI;
+    const want = Math.atan2(WELL_X - p.x, WELL_Z - p.z) + Math.PI;          // into the well
     smile.rotation.y += _smileTurn(smile.rotation.y, want) * Math.min(1, dt * 1.4);
     if (introDone && !dying && !ended && Math.hypot(dx, dz) < SMILE_SEE) {
       smilePhase = 1; smileT = 0; smileStepT = 0;
@@ -26467,9 +26649,16 @@ function updateSmile(dt) {
  * the rest of the game. Out of the scene and out of the list, he cannot come
  * back; and it is one function because a CHECKPOINT has to be able to say
  * the same thing without watching him run. */
+/* THE WELL'S CHECKPOINT IS HIS GOING (2026-10-12, the owner: "have the well
+ * save point be right after the tall man leaves, not the start of the fight").
+ * Written the first moment after he is under the sea that you are free and
+ * have not touched the well; a death to what comes up out of it puts you back
+ * here, the well untouched, him gone. */
+let smileSavePending = false;
 function removeSmile() {
   if (smilePhase === 2) return;
   smilePhase = 2;
+  if (!applyingSave && !replaying) smileSavePending = true;
   scene.remove(smile);
   const fi = farProps.findIndex((f) => f.obj === smile);
   if (fi >= 0) farProps.splice(fi, 1);
@@ -26545,6 +26734,40 @@ scene.add(mushHouse.group);
 /* 583 meshes for 9,700 triangles, and the gate kept out of it because it
  * swings. Done here, before the cracks and the grass are hung on the group
  * below, so those stay their own objects. */
+/* HIS PHOTOGRAPH ON THE TABLE (2026-10-13, the owner: "put the portrait on
+ * the table in the pavilion"). The man from the well as he was — an old
+ * cabinet card (`assets/well-portrait.jpg`, made by tools/wellportrait.js) in
+ * a dark wooden frame on a strut, stood among the lantern, the ashtray and
+ * the paperbacks, turned to the head of the stair so it is the first thing on
+ * the table you see as you come up. Its own map breathes a little, as the
+ * room's things do, so it reads in the moonlight. */
+{
+  const T = MUSH.TABLE;
+  if (T) {
+    const fr = new THREE.Group(); fr.name = 'wellPortrait';
+    const fx = T.x + 0.06, fz = T.z + 0.27;
+    fr.position.set(fx, T.y, fz);
+    const [tx, tz] = [Math.sin(MUSH.TOP_ANG) * 2.4, Math.cos(MUSH.TOP_ANG) * 2.4];
+    fr.rotation.y = Math.atan2(tx - fx, tz - fz);
+    const tilt = new THREE.Group(); tilt.rotation.x = -0.2; fr.add(tilt);          // leaning back on its strut
+    const W = 0.19, H = 0.256, B = 0.016;                                          // a cabinet card in its frame (the card's own 512 × 690)
+    const wood = new THREE.MeshStandardMaterial({ color: 0x2a1c12, roughness: 0.55, metalness: 0, emissive: 0x070403 });
+    for (const [w, h, x, y] of [[W + B * 2, B, 0, H + B * 1.5], [W + B * 2, B, 0, B / 2], [B, H, -(W + B) / 2, H / 2 + B], [B, H, (W + B) / 2, H / 2 + B]]) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.016), wood); m.position.set(x, y, 0); tilt.add(m);
+    }
+    const back = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.006), wood); back.position.set(0, H / 2 + B, -0.006); tilt.add(back);
+    const tex = new THREE.TextureLoader().load('assets/well-portrait.jpg');
+    tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    const photo = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.004, H - 0.004),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.22 }));
+    photo.position.set(0, H / 2 + B, 0.0035); tilt.add(photo);
+    // the strut behind, from the frame's back down to the table — all of it BEHIND the back (it stood through the face)
+    const sh = 0.2, lean = 0.42, sTop = sh * Math.cos(lean), backZ = -Math.sin(0.2) * sTop - 0.02;
+    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.022, sh, 0.006), wood);
+    strut.position.set(0, sTop / 2, backZ - Math.sin(lean) * sh / 2); strut.rotation.x = lean; fr.add(strut);
+    mushHouse.group.add(fr);
+  }
+}
 window.__bwMushBake = bakeStatic(mushHouse.group, (o) => o === mushHouse.gate.pivot);
 farProps.push({ obj: mushHouse.group, z: MUSH_Z, d: 320 });
 /* ---- WHAT HAS GROWN BACK -------------------------------------------------
@@ -26804,13 +27027,14 @@ function updateGate(dt) {
   MGATE.pivot.add(proxy);
   /* AND IT IS LOCKED until you have the snorkeler's Lost key: turned once in
    * the padlock, which keeps it (a key that has done its job is gone). */
-  addInteractable(proxy, () => !mushGateUnlocked ? (inventory.includes(lostKeyItem) ? 'Unlock the gate' : 'The gate is locked.') : gateOpen ? 'Close the gate' : 'Open the gate', undefined, {
-    bare: () => !mushGateUnlocked && !inventory.includes(lostKeyItem),
+  addInteractable(proxy, () => !mushGateUnlocked ? (gateKeyIn() ? 'Unlock the gate' : 'The gate is locked.') : gateOpen ? 'Close the gate' : 'Open the gate', undefined, {
+    bare: () => !mushGateUnlocked && !gateKeyIn(),
     onActivate: () => {
       if (!mushGateUnlocked) {
-        if (!inventory.includes(lostKeyItem)) { sfxGateRattle(); return; }
-        keyUsed(lostKeyItem);
-        removeInventoryKey(lostKeyItem);
+        const k = gateKeyIn();
+        if (!k) { sfxGateRattle(); return; }
+        keyUsed(k);
+        removeInventoryKey(k);
         mushGateUnlocked = true;
         setTimeout(() => { if (!gateOpen) toggleGate(); }, 900);
         return;
@@ -28497,6 +28721,7 @@ function dressMutant(u, gltf) {
   if (u.kind.pre) u.kind.pre(u, gltf);
   m.traverse((o) => {
     if (!(o.isMesh || o.isSkinnedMesh)) return;
+    if (u.kind.hideMeshes && u.kind.hideMeshes.includes(o.name)) { o.visible = false; return; }   // a part of the scan the game does without
     o.frustumCulled = false;                 // a skinned bounding box is the bind pose
     const mat = o.material;
     if (!mat) return;
@@ -35989,7 +36214,8 @@ function drawBeachMap() {
     g.beginPath(); g.moveTo(x - w, y); g.quadraticCurveTo(x - w / 2, y - 4, x, y); g.quadraticCurveTo(x + w / 2, y - 4, x + w, y); g.stroke();
   }
   // THE WAY: his dotted path up the sand
-  g.setLineDash([2.2, 6]); ink([[mapX(7), 1440], [mapX(7.5), 1100], [mapX(6.5), 700], [mapX(7), 420], [mapX(5), 220]], 1.1, 0.55); g.setLineDash([]);
+  // (it ends at the castle's gate: past that the way is the castles' own, drawn with them below)
+  g.setLineDash([2.2, 6]); ink([[mapX(7), 1440], [mapX(7.5), 1100], [mapX(6.5), 700], [mapX(8.5), 420], [mapX(10), mapY(FORT_Z + fk(34.15)) + 6]], 1.1, 0.55); g.setLineDash([]);
   /* THE PLACES — small drawings in the same pen, each shaded with a few
    * strokes on its lee side so it stands off the paper */
   const at = (x, z) => [mapX(x), mapY(z)];
@@ -36070,9 +36296,34 @@ function drawBeachMap() {
   put(fire, TRIBE_X, TRIBE_Z, 'five at a fire', 24, 0, 18);
   put(fence, 6, FENCE_Z, 'fence', 78, 0, 16);
   put(coin, TRADER2_X - 2, TRADER2_Z, 'trader', 16, 0, 17);
-  put(castle, 10, FORT_Z + 20, 'the castle', 44);
-  put((x, y) => castle(x, y, 0.72), 30, FORT_Z - 18, 'XIII', 30, 0, 17);
-  put(lighthouse, LH_X - 6, LH_Z, 'the light', 26);
+  /* THE CASTLES ARE ONE ROAD (2026-10-13, the owner: "make this translate
+   * visually on the map"): in at the first castle's gate, through it to its
+   * back door, into XIII, up to its throne room, out over the drawbridge to
+   * the light — and the same road back. Numbered in his hand, the route
+   * between them in red with the way marked on it. */
+  const crown = (x, y) => {
+    curve(() => { g.moveTo(x - 11, y + 6); g.lineTo(x - 12, y - 6); g.lineTo(x - 6, y); g.lineTo(x, y - 9); g.lineTo(x + 6, y); g.lineTo(x + 12, y - 6); g.lineTo(x + 11, y + 6); g.closePath(); }, 1.2, 0.9, INK, 'rgba(200,160,70,0.45)');
+    for (const dx of [-12, 0, 12]) { g.fillStyle = RED(0.85); g.beginPath(); g.arc(x + dx, y - (dx ? 7 : 10), 1.8, 0, 6.283); g.fill(); }
+  };
+  put(castle, 10, FORT_Z + 20, 'i. the castle', 44);
+  put((x, y) => castle(x, y, 0.72), 30, FORT_Z - 18, 'ii. XIII', 30, 4, 17);
+  const thr = [mapX(30) + 2, mapY(FORT_Z - 18) - 64];           // over XIII's keep: the throne room is up in it
+  crown(thr[0], thr[1]); label('iii. the throne', thr[0] + 18, thr[1] - 2, 16, 0.85);
+  const lh = at(ISLE_AXIS.x, ISLE_AXIS.z);
+  lighthouse(lh[0], lh[1]); label('iv. the light', lh[0] - 18, lh[1] + 30, 18, 0.88, { align: 'right' });
+  {
+    const gate = at(10, FORT_Z + fk(34.15)), back = at(FORT_X + FORT_DOOR.x, FORT_Z + FORT_DOOR.z);
+    const xiii = at(30, FORT_Z - 18);
+    const road = [[gate[0], gate[1] + 4], [gate[0] + 2, back[1] + 2], [xiii[0] - 30, xiii[1] + 12], [xiii[0] + 4, xiii[1] + 10],
+      [xiii[0] + 32, xiii[1] - 12], [thr[0] + 16, thr[1] + 8], [thr[0] - 18, thr[1] - 4], [lh[0] + 16, lh[1] - 26]];
+    g.setLineDash([5, 4]); ink(road, 1.3, 0.8, RED); g.setLineDash([]);
+    // the way along it: a small barb at the middle of each leg
+    for (let i = 0; i + 1 < road.length; i++) {
+      const [ax, ay] = road[i], [bx, by] = road[i + 1], mx = (ax + bx) / 2, my = (ay + by) / 2, a = Math.atan2(by - ay, bx - ax);
+      ink([[mx - Math.cos(a - 0.5) * 7, my - Math.sin(a - 0.5) * 7], [mx, my], [mx - Math.cos(a + 0.5) * 7, my - Math.sin(a + 0.5) * 7]], 1.3, 0.85, RED);
+    }
+    label('one road in, the same road out', mapX(19), mapY(FORT_Z + 20) + 46, 14, 0.8, { col: RED, align: 'left' });
+  }
   // the sea keep offshore: its rock, its walls, and the tavern under it; my boat's course out to it
   {
     const kx = 160, ky = mapY(-560);
@@ -39895,12 +40146,12 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
+  if (!insideTower && !insideDrain && !inBunker && !inShrine && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
   updateCastle();           // before the push-out, so you walk through what you just flattened
-  updateTower(dt);
+  updateIsle(dt);           // the lighthouse island: its walk, its tower's stair, its gallery (the generated tower's updateTower is retired with it)
   updateMushroom(dt);
   updateFarProps();
   // Rocks are solid: walk into one and you're pushed out, clear its lip and
@@ -39999,7 +40250,14 @@ function update(dt, rawDt = dt) {
    * on the ground simply stays on it. */
   if (inWhale && onGround && vy <= 0.5 && camBaseY > floorLimit && camBaseY < floorLimit + 0.5) {
     camBaseY = floorLimit; vy = 0;
-  } else if (inKeep && onGround && camBaseY < floorLimit - 0.2 && camBaseY > floorLimit - 1.0) {
+  } else if (onIsle && onGround && vy <= 0.5 && camBaseY > floorLimit && camBaseY < floorLimit + 0.7) {
+    /* AND ON THE ISLAND'S ROCK AND STAIRS THE SAME: down a slope or off a
+     * step you walk, eased onto the lower floor in a few frames, not dropped
+     * onto it under gravity a tread at a time (the owner's "stutter") */
+    const d = camBaseY - floorLimit;
+    camBaseY = d < 0.08 ? floorLimit : camBaseY - Math.max(d * Math.min(1, dt * 16), Math.min(d, 2.4 * dt));
+    vy = 0;
+  } else if ((inKeep || onIsle) && onGround && camBaseY < floorLimit - (onIsle ? 0.08 : 0.2) && camBaseY > floorLimit - 1.0) {
     camBaseY += (floorLimit - camBaseY) * Math.min(1, dt * 16); vy = 0;
   } else if (camBaseY <= floorLimit) {
     // A JUMP ONTO A PEW IS A FALL OF A FOOT OR SO — far under the hard
@@ -40220,6 +40478,7 @@ function update(dt, rawDt = dt) {
   updateBleedRig(dt);
   updateCrab(dt);
   updateMutant(dt);
+  wellManClear(dt);          // after the chase has moved him: the well is solid to him
   updateCrusader(dt);       // and the flail knight's chain, after whatever moved his arm
   updateThroneBoss(dt);     // and the marauder on his throne, on the hall's floor
   updateDante(dt);          // and the beast at the foot of his dais, and its chain
@@ -40387,6 +40646,7 @@ function saveCheckpoint(spot) {
       // he went into the sea and he does not come back out of it
       smileGone: smilePhase === 2, smileWatch: smileWatch === 2 ? 2 : 0,
       well: wellPhase,                  // 0 untouched, 1 the bucket is down and he is coming, 2 he is up
+      wellKey: wellKey.state, wellKeyAt: [+wellKey.x.toFixed(2), +wellKey.z.toFixed(2)],   // his key: 0 not dropped, 1 on the sand where he fell, 2 taken
       caveDone,
       whaleSighted: wsDone,
       whaleGone: wbGone,
@@ -40549,6 +40809,7 @@ function beginRestoreQuiet() {
       camera.position.set(P[0], P[1], P[2]);
       camBaseY = P[1]; groundY = P[1] - playerEye(); vy = 0; onGround = true;
       velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+      isleRestoreAt(P[0], P[1], P[2]);          // a save on the lighthouse island: its walk, its stair or its gallery
     };
     put();
     armRestoreGuard(put);
@@ -40803,7 +41064,7 @@ function packByName(name) {
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
                     syringeItem, waterBottleItem, headItem, fishingRodItem, magnumItem, shotgunItem, fangItem, oldRingItem,
-                    spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem, flameArtItem, beachMapItem]) {
+                    spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem, flameArtItem, beachMapItem, pavKeyItem]) {
     if (it && (it.name === name || (it.was && it.was.includes(name)))) return it;   // `was`: what a save made before a rename calls it
   }
   return null;
@@ -76794,6 +77055,12 @@ function fortPosternSpot() {
   for (let k = 0; k < 80 && (fortMaskAt(x, z) || fortWallsTooNear(x, z, 0)); k++) z -= 0.25;
   return { x, z: z - 0.8 };
 }
+/* where XIII's way out puts you: inside the first castle's back door, a
+ * stride into the street, facing down it to the gate — the way home */
+function fortBackInside() {
+  const d = fortW(FORT_DOOR.x, FORT_DOOR.z);
+  return { x: d.x, z: d.z + 1.5, yaw: Math.PI - 0.1 };
+}
 function fortWallsTooNear(x, z, feet) {
   return !!(fortWalls && keepWallNear(x, z, 0.45, feet + 0.46, feet + 1.8, FORT_SITE));
 }
@@ -76820,6 +77087,7 @@ function updateFortCut(dt) {
     fortCutDone = true;
     while (!fortWallsStep(1e9)) {}
     if (fortTo === 'c13') { while (!fortWallsStep(1e9, C13_SITE)) {} placeInC13(); autosaveNow('c13In'); }
+    else if (fortTo === 'fromC13') { placeInFort(fortBackInside()); autosaveNow('fortIn'); }
     else if (fortDir > 0) { placeInFort(fortTo); autosaveNow('fortIn'); }
     else { placeOutOfFort(fortTo); autosaveNow(); }
   }
@@ -76850,7 +77118,7 @@ function buildFortDoors() {
     when: () => inFort && !fortBusy,
     /* THE BACK DOOR GOES ON INTO THE NEXT CASTLE (the owner's word): Castle
      * XIII, the same builder's, a little way down the coast past the tower */
-    onActivate: () => { if (!fortBackBarred()) startFort(1, c13Ready ? 'c13' : 'back'); },
+    onActivate: () => { if (!fortBackBarred() && c13Ready) startFort(1, 'c13'); },
   });
   // and the gate from the beach, for anyone who reaches for E rather than walking into it
   addInteractable(mk(FORT_GATE.x, FORT_FLOOR + fk(1.7), FORT_GATE.z + 0.35, fk(3.0), fk(3.4), 0.6), 'Enter the castle', 'default', {
@@ -77109,13 +77377,12 @@ function buildFortPostern() {
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
   p.position.set(wx - FORT_X, floorY + 1.7, wz - FORT_Z - 0.4); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
   fortWorld.add(p);
-  addInteractable(p, 'Enter the castle', 'default', {
-    mid: true, far: 3.6,
+  /* barred from the inside now: the castles are walked one way in and the
+   * same way out, and the way into the first one is its gate */
+  addInteractable(p, 'The door is barred from inside.', 'default', {
+    mid: true, far: 3.6, bare: () => true,
     when: () => !inFort && !fortBusy && !inRoom(),
-    onActivate: () => {
-      const d = fortW(FORT_DOOR.x, FORT_DOOR.z);
-      startFort(1, { x: d.x, z: d.z + 1.5, yaw: Math.PI - 0.1 });
-    },
+    onActivate: () => {},
   });
 }
 
@@ -77153,7 +77420,16 @@ const ck = (v) => v * C13_K;
 const C13_X = 18 + ck(37.08), C13_Y = 3.25, C13_Z = -1131 - ck(20.5);
 const C13_FLOOR = ck(0.2);                                   // its paving, in its own metres
 const C13_DOOR = { x: ck(32.6), z: ck(-8.11), nx: -1, nz: 0 };   // the east tower's door (the third screenshot), local; n points into the court
-const C13_SPAWN = { x: ck(28.0), z: ck(-8.0), yaw: 1.75 };      // the second screenshot: down the east court, the door at your back
+/* THROUGH THE PASSAGE FROM THE FIRST CASTLE (2026-10-13, the owner: "make the
+ * castles look like they connect from the doors used when you look from the
+ * lighthouse island"). You came in at the east tower's door, a hundred metres
+ * from the first castle's back door, with nothing between the two that a
+ * body could have walked. A covered passage now runs across the bluff from
+ * that back door to a door in XIII's north wall (`buildCastleLink`), and that
+ * door is where you come in and where you leave: just inside it, in the west
+ * end of the north court, facing into the castle. */
+const C13_NDOOR = { x: 39 - C13_X, z: -1136.25 - C13_Z };        // the north door, on the wall's inner face (world 39, −1136.25; the outer face is at −1134.2), local
+const C13_SPAWN = { x: 39 - C13_X, z: -1137.9 - C13_Z, yaw: 0.0 };   // a stride inside it, facing into the court (−z)
 let c13World = null, c13Ready = false, c13Walk = null, c13Cells = null, c13Walls = null;
 let c13LastFloor = null; const c13LastSpot = { x: 0, z: 0 };
 const C13_SITE = {
@@ -77194,6 +77470,7 @@ function loadC13() {
     fixFlatUV(root);
     buildC13Mask();
     buildC13Doors();
+    buildCastleLink();
     buildC13Arch();
     buildC13ThroneDoor();
     c13Ready = true;
@@ -77263,16 +77540,109 @@ function placeInC13() {
   fortCalmBoss();
 }
 function buildC13Doors() {
-  const D = C13_DOOR;
-  const p = new THREE.Mesh(new THREE.BoxGeometry(1.0, 3.0, 1.9),
+  const D = C13_NDOOR;
+  // the door itself, on the wall's inner face: a dressed stone frame round planks, the passage behind it
+  const ash = lhAshlarMaps();
+  const stone = new THREE.MeshStandardMaterial({ map: ash.map, normalMap: ash.normalMap, roughness: 1, metalness: 0 });
+  fortDress(stone);
+  const sbox = (w, h, d) => planarUV(new THREE.BoxGeometry(w, h, d).toNonIndexed(), 1 / 1.6);
+  const plank = new THREE.MeshStandardMaterial({ color: 0x3a2c20, roughness: 0.95, metalness: 0, emissive: 0x0d0906, flatShading: true });
+  const iron = new THREE.MeshStandardMaterial({ color: 0x232220, roughness: 0.55, metalness: 0, emissive: 0x060606, flatShading: true });
+  const W = 0.85, H = 2.9, depth = 0.8;
+  const fr = new THREE.Group(); fr.name = 'c13NorthDoor';
+  const floor = c13PaveAt(D.x, D.z - 0.8);
+  fr.position.set(D.x, floor, D.z); fr.rotation.y = Math.PI;          // local +Z into the court (−z)
+  for (const sx of [-1, 1]) { const j = new THREE.Mesh(sbox(0.42, H + 0.4, depth), stone); j.position.set(sx * (W + 0.21), (H + 0.4) / 2, -depth / 2 + 0.16); fr.add(j); }
+  const lintel = new THREE.Mesh(sbox(W * 2 + 1.0, 0.46, depth), stone); lintel.position.set(0, H + 0.4, -depth / 2 + 0.16); fr.add(lintel);
+  const n = 6, pw = (W * 2) / n;
+  for (let i = 0; i < n; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(pw - 0.016, H - 0.03, 0.09), plank); p.position.set(-W + pw * (i + 0.5), H / 2, -0.05); fr.add(p); }
+  for (const h of [0.45, H / 2, H - 0.5]) { const s = new THREE.Mesh(new THREE.BoxGeometry(W * 1.9, 0.08, 0.03), iron); s.position.set(0, h, 0.0); fr.add(s); }
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.014, 5, 12), iron); ring.position.set(W * 0.55, 1.15, 0.03); fr.add(ring);
+  c13World.add(fr);
+  const p = new THREE.Mesh(new THREE.BoxGeometry(W * 2 + 0.3, H, 0.8),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
-  p.position.set(D.x + D.nx * 0.35, C13_FLOOR + 1.5, D.z + D.nz * 0.35); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
-  c13World.add(p);
-  addInteractable(p, 'Leave the castle', 'default', {
+  p.position.set(0, H / 2, 0.3); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
+  fr.add(p);
+  /* BACK THE WAY YOU CAME: through the passage into the first castle by its
+   * back door, and never anywhere else (it went out through that castle's
+   * back-door exit, which was the island's by then — the owner left XIII for
+   * the first castle and stood on the lighthouse's rock) */
+  addInteractable(p, 'Back to the first castle', 'default', {
     mid: true, far: 3.8,
     when: () => inC13 && !fortBusy,
-    onActivate: () => startFort(-1, 'back'),
+    onActivate: () => startFort(1, 'fromC13'),
   });
+}
+/* ---- THE PASSAGE BETWEEN THE CASTLES. From the first castle's back door
+ * (world 21, −1118, its doorway open in the back wall) across the top of the
+ * bluff to XIII's north door (39, −1134.2): a covered gallery of the same
+ * ashlar, buttressed, slit-windowed, under a slate roof that steps up with the
+ * ground, a lamp over each end. It is walked by the cut, not by the feet — it
+ * is there so that what you see from the lighthouse's rock is the way you
+ * came. Its faces carry planar uvs (a block of ashlar 0.8 m) so the stone
+ * keeps its size on every piece. */
+const CASTLE_LINK = { a: { x: 21.0, z: -1117.6 }, b: { x: 39.0, z: -1134.5 }, w: 3.0, h: 4.3 };
+function planarUV(geo, k) {
+  const P = geo.attributes.position, N = geo.attributes.normal, uv = new Float32Array(P.count * 2);
+  for (let i = 0; i < P.count; i++) {
+    const nx = Math.abs(N.getX(i)), ny = Math.abs(N.getY(i)), nz = Math.abs(N.getZ(i));
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+    if (ny >= nx && ny >= nz) { uv[i * 2] = x * k; uv[i * 2 + 1] = z * k; }
+    else if (nx >= nz) { uv[i * 2] = z * k; uv[i * 2 + 1] = y * k; }
+    else { uv[i * 2] = x * k; uv[i * 2 + 1] = y * k; }
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return geo;
+}
+let castleLink = null;
+function buildCastleLink() {
+  if (castleLink) return;
+  const A = CASTLE_LINK.a, B = CASTLE_LINK.b, dx = B.x - A.x, dz = B.z - A.z, L = Math.hypot(dx, dz);
+  const G = new THREE.Group(); G.name = 'castleLink';
+  G.position.set(A.x, 0, A.z); G.rotation.y = Math.atan2(dx, dz);     // local +Z from the first castle to XIII
+  const ground = (t) => 3.58 + 0.42 * t;                              // the bluff's top along it (measured)
+  const walls = [], roofs = [], dark = [];
+  const box = (out, w, h, d, x, y, z, rx = 0, rz = 0) => { const g = new THREE.BoxGeometry(w, h, d); if (rx) g.rotateX(rx); if (rz) g.rotateZ(rz); g.translate(x, y, z); out.push(g); };
+  const N = 7, seg = L / N, W = CASTLE_LINK.w, H = CASTLE_LINK.h;
+  for (let i = 0; i < N; i++) {
+    const t = (i + 0.5) / N, z = (i + 0.5) * seg, base = ground(t) - 0.9;
+    for (const s of [-1, 1]) {
+      box(walls, 0.55, H + 0.9, seg + 0.02, s * (W / 2), base + (H + 0.9) / 2, z);                      // the wall
+      box(dark, 0.08, 0.85, 0.16, s * (W / 2 + 0.28), base + 0.9 + 2.0, z);                              // its slit
+    }
+    // the roof: two slopes from the wall heads to the ridge, overhanging
+    const top = base + 0.9 + H, rise = 1.15, half = W / 2 + 0.45, slope = Math.atan2(rise, half), len = Math.hypot(rise, half);
+    for (const s of [-1, 1]) box(roofs, len + 0.1, 0.12, seg + 0.04, s * half / 2, top + rise / 2, z, 0, -s * slope);
+    box(walls, 0.3, 0.3, seg + 0.04, 0, top + rise + 0.05, z);                                            // the ridge piece
+  }
+  // buttresses at the joints, stepping down outward
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, z = i * seg, base = ground(Math.min(1, t)) - 0.9;
+    for (const s of [-1, 1]) {
+      box(walls, 0.8, 3.4, 0.8, s * (W / 2 + 0.55), base + 1.7, z);
+      box(walls, 0.6, 1.3, 0.6, s * (W / 2 + 0.45), base + 3.9, z);
+    }
+  }
+  const ash = lhAshlarMaps(), slate = lhSlateMaps();
+  const wallMt = new THREE.MeshStandardMaterial({ map: ash.map, normalMap: ash.normalMap, roughness: 0.95, metalness: 0 });
+  fortDress(wallMt);
+  const roofMt = new THREE.MeshStandardMaterial({ map: slate.map, normalMap: slate.normalMap, roughness: 0.9, metalness: 0, color: 0x9a9690 });
+  const merge = (gs, k) => planarUV(mergeGeometries(gs.map((g) => g.toNonIndexed()), false), k);
+  G.add(new THREE.Mesh(merge(walls, 1 / 1.6), wallMt));
+  G.add(new THREE.Mesh(merge(roofs, 1 / 1.4), roofMt));
+  G.add(new THREE.Mesh(mergeGeometries(dark.map((g) => g.toNonIndexed()), false), new THREE.MeshBasicMaterial({ color: 0x0a0806 })));
+  // a lamp over each end, so it is seen at night from the rock
+  for (const [z, t] of [[0.9, 0], [L - 0.9, 1]]) {
+    const y = ground(t) + 2.6;
+    for (const s of [-1, 1]) {
+      const l = new THREE.PointLight(0xffa860, 4.5, 9, 1.8); l.position.set(s * (W / 2 + 0.75), y, z); G.add(l);
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.26, 0.18), new THREE.MeshBasicMaterial({ color: 0xffbf7a, fog: false })); glass.position.copy(l.position); G.add(glass);
+    }
+  }
+  G.traverse((o) => { o.userData.bwGhost = true; if (o.isMesh) o.raycast = () => {}; });
+  scene.add(G);
+  farProps.push({ obj: G, z: (A.z + B.z) / 2, d: 700 });
+  castleLink = G;
 }
 // a wall along a line from a point, on this castle's own stone
 function c13WallAlong(x, z, dx, dz, y, max) {
@@ -80146,7 +80516,7 @@ function crusaderChain(u, dt) {
  * ===================================================================== */
 const THR_X = 17000, THR_Y = 600, THR_Z = 17000;
 const THR_SPAWN = { x: 0, z: 18.6, yaw: 0 };              // the far end, facing the throne (-z)
-const THR_EXIT = { x: 6.2, z: -2.0 };                      // the lattice door on the throne's right
+const THR_EXIT = { x: 6.2, z: -2.0 };                      // the lattice doors either side of the dais (±x): the lift
 const THR_FOG = { color: new THREE.Color(0x17100c), density: 0.015 };   // a little more light in the hall, on the owner's word
 let thrWorld = null, thrReady = false, thrWalk = null, thrCells = null, thrWalls = null, thrLamps = [];
 let inThrone = false, thrBusy = false, thrT = 0, thrDir = 1, thrCutDone = false, _thrFogSaved = null;
@@ -80218,20 +80588,23 @@ function loadThrone() {
     // and the moon through the great window behind the throne
     { const L = new THREE.PointLight(0x9fb4ff, 8.5, 17, 1.6); L.position.set(0, 7, -11); L.userData.lpAlways = 24; thrWorld.add(L); thrLamps.push({ L, base: 8.5, ph: 0, steady: true }); }
     for (const o of keepFirePoints(fires)) thrWorld.add(o);
-    // the way out: the lattice door at the foot of the dais
-    const p = new THREE.Mesh(new THREE.BoxGeometry(0.8, 3.2, 2.4),
-      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
-    p.position.set(THR_EXIT.x, 3.8, THR_EXIT.z); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
-    thrWorld.add(p);
-    /* THE LATTICE DOOR GOES OUT TOWARD THE LIGHTHOUSE (the owner's word: it
-     * put him back at the castle's entrance). It opens onto the sand behind
-     * the first castle, at the foot of its back wall, facing the tower — the
-     * way on. The door you came in by is still the way back into the court. */
-    addInteractable(p, 'Go out toward the lighthouse', 'default', {
-      mid: true, far: 4.2,
-      when: () => inThrone && !thrBusy,
-      onActivate: () => startThrone(-1, 'lh'),
-    });
+    /* THE WAY OUT IS THE LIFT, BEHIND THE LATTICE DOORS EITHER SIDE OF THE
+     * DAIS (2026-10-13, the owner: "make the way out of the throne room be to
+     * the door to the right of the marauder and have it say 'Use Lift'"). The
+     * lift goes up XIII's west tower to the postern and the drawbridge to the
+     * lighthouse. Both doors say it — the marauder's right (x −6.9) is the one
+     * you come back out of; his left (+6.9) was the old way out and still is. */
+    for (const sx of [-1, 1]) {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(0.8, 3.4, 2.6),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      p.position.set(sx * 6.45, 3.8, THR_EXIT.z); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
+      thrWorld.add(p);
+      addInteractable(p, 'Use Lift', 'default', {
+        mid: true, far: 4.2,
+        when: () => inThrone && !thrBusy,
+        onActivate: () => startThrone(-1, 'lh'),
+      });
+    }
     // and the door you came in by, at the hall's near end behind where you arrive: it goes back out the same way
     const q = new THREE.Mesh(new THREE.BoxGeometry(2.4, 3.2, 0.8),
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
@@ -80461,17 +80834,49 @@ function startThrone(dir, to) {
   if (dir > 0 && !thrReady) { loadThrone(); return; }
   thrBusy = true; thrDir = dir; thrT = 0; thrCutDone = false; thrTo = to || null;
   blocking = false;
-  try { sfxTavernDoor(); } catch (e) {}
+  try { if (thrTo === 'lh' || thrTo === 'isle') sfxLift(dir < 0); else sfxTavernDoor(); } catch (e) {}
+}
+/* THE LIFT: the gate dragged across, iron on iron; the cage taking the weight
+ * with a lurch; three seconds of chain running over a sheave with the drum's
+ * low grind under it, rising or falling; the stop, and the gate again. */
+function sfxLift(up) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime + 0.05, out = sfxOut();
+  const gate = (at) => {
+    const n = noiseBurst(0.55, (x) => Math.sin(x * Math.PI) * (0.55 + 0.45 * Math.sin(x * 90)));
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1700; bp.Q.value = 3.5;
+    const g = ctx.createGain(); g.gain.value = 0.22; n.connect(bp).connect(g).connect(out); n.start(at); n.stop(at + 0.6);
+    for (let k = 0; k < 3; k++) { const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 820 + k * 517 + Math.random() * 60;
+      const og = ctx.createGain(); og.gain.setValueAtTime(0.06, at + 0.5); og.gain.exponentialRampToValueAtTime(0.0001, at + 1.2); o.connect(og).connect(out); o.start(at + 0.5); o.stop(at + 1.25); }
+  };
+  gate(t);
+  // the run: chain links over the sheave, a grinding drum, the pitch climbing going up and sinking going down
+  const run0 = t + 0.9, run = 2.9;
+  const n = noiseBurst(run, (x) => Math.min(1, x * 8) * Math.min(1, (1 - x) * 6) * (0.6 + 0.4 * Math.sin(x * run * 38)));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.2;
+  bp.frequency.setValueAtTime(up ? 420 : 620, run0); bp.frequency.linearRampToValueAtTime(up ? 620 : 380, run0 + run);
+  const g = ctx.createGain(); g.gain.value = 0.3; n.connect(bp).connect(g).connect(out); n.start(run0); n.stop(run0 + run);
+  const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(up ? 38 : 46, run0); o.frequency.linearRampToValueAtTime(up ? 46 : 34, run0 + run);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160;
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, run0); og.gain.linearRampToValueAtTime(0.16, run0 + 0.3); og.gain.setValueAtTime(0.16, run0 + run - 0.4); og.gain.linearRampToValueAtTime(0.0001, run0 + run);
+  o.connect(lp).connect(og).connect(out); o.start(run0); o.stop(run0 + run + 0.05);
+  // the stop: a heavy clunk
+  const s = ctx.createOscillator(); s.type = 'sine'; s.frequency.setValueAtTime(90, run0 + run); s.frequency.exponentialRampToValueAtTime(40, run0 + run + 0.25);
+  const sg = ctx.createGain(); sg.gain.setValueAtTime(0.4, run0 + run); sg.gain.exponentialRampToValueAtTime(0.0001, run0 + run + 0.4); s.connect(sg).connect(out); s.start(run0 + run); s.stop(run0 + run + 0.45);
+  gate(run0 + run + 0.25);
 }
 function updateThroneCut(dt) {
   if (!thrBusy) return;
   thrT += dt;
-  const OUT = 0.55, HOLD = 0.45, IN = 0.9, D = OUT + HOLD + IN, t = thrT;
+  const lift = thrTo === 'lh' || thrTo === 'isle';                  // the lift: a longer black, the cage running under it
+  const OUT = 0.55, HOLD = lift ? 1.9 : 0.45, IN = 0.9, D = OUT + HOLD + IN, t = thrT;
   const black = t < OUT ? smooth01(0.04, OUT, t) : t < OUT + HOLD ? 1 : 1 - smooth01(OUT + HOLD, D, t);
   blackoutEl.style.opacity = black.toFixed(3);
-  if (!thrCutDone && t >= OUT + 0.05) {
+  // the island has to be there to be put on: the black holds until it is (it is fetched from half way down the beach)
+  if (!thrCutDone && t >= OUT + 0.05 && thrDir < 0 && thrTo === 'lh' && !isleReady) { loadIsle(); thrT = OUT + 0.05; }
+  else if (!thrCutDone && t >= OUT + 0.05) {
     thrCutDone = true;
-    if (thrDir > 0) { placeInThrone(); autosaveNow('thrIn'); }
+    if (thrDir > 0) { placeInThrone(thrTo === 'isle'); autosaveNow('thrIn'); }
     else if (thrTo === 'lh') { placeOutOfThroneToLighthouse(); autosaveNow(); }
     else { placeOutOfThrone(); autosaveNow(inC13 ? 'c13In' : undefined); }
   }
@@ -80491,18 +80896,22 @@ function throneLeave() {
   }
   setSkyDuck(0);
 }
-function placeInThrone() {
-  inC13 = false; inFort = false;
+function placeInThrone(atExit) {
+  inC13 = false; inFort = false; onIsle = false; insideTower = false; isleOnGallery = false;
   inThrone = true;
   thrWorld.visible = true;
   throneEnter();
   try { renderer.compile(thrWorld, camera, scene); } catch (e) { /* a warm is never fatal */ }
-  const o = thrW(THR_SPAWN.x, THR_SPAWN.z);
+  /* back in from the island: through the lattice door you went out by, a
+   * stride into the hall, the length of it in front of you down to the door
+   * into XIII's court */
+  const exSide = typeof danteAlive === 'function' && danteAlive() ? 1 : -1;   // out of the marauder's right-hand door — unless the beast still stands chained on that side
+  const o = atExit ? thrW(exSide * (THR_EXIT.x - 1.7), THR_EXIT.z + 0.4) : thrW(THR_SPAWN.x, THR_SPAWN.z);
   const f = thrFloorNear(o.x, o.z) ?? (THR_Y + 2.2);
   groundY = f; thrLastFloor = f; thrLastSpot.x = o.x; thrLastSpot.z = o.z;
   camera.position.set(o.x, f + playerEye(), o.z);
   camBaseY = camera.position.y; vy = 0; onGround = true;
-  lookEuler.set(0.02, THR_SPAWN.yaw, 0, lookEuler.order);
+  lookEuler.set(0.02, atExit ? Math.PI - exSide * 0.3 : THR_SPAWN.yaw, 0, lookEuler.order);
   camera.quaternion.setFromEuler(lookEuler);
   velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
   _preMove.set(camera.position.x, 0, camera.position.z);
@@ -80516,17 +80925,24 @@ function placeInThrone() {
  * throne room's door, facing away from it, so turning round shows you the
  * door and the keep's wall it is cut in. The beach is through the castle's
  * own way out. */
+/* AND THE LATTICE DOOR GOES ON TO THE LIGHTHOUSE, AND ONLY THERE (2026-10-13,
+ * the owner: "first castle … XIII … the throne room, then to the lighthouse
+ * this should never change"): out of XIII's west postern onto the drawbridge
+ * to the island. It went through the first castle's back-door exit, which
+ * the island had taken over — so leaving XIII by ITS door put you on the
+ * island too. Every door now names where it goes. */
 function placeOutOfThroneToLighthouse() {
   inThrone = false;
   if (thrWorld) thrWorld.visible = false;
   throneLeave();
-  placeOutOfFort('back');          // the sand at the foot of the first castle's back wall, facing the tower
+  placeOnIsle();
+  fortCalmBoss();
 }
 function placeOutOfThrone() {
   inThrone = false;
   if (thrWorld) thrWorld.visible = false;
   throneLeave();
-  if (!c13Ready) { placeOutOfFort('back'); return; }
+  if (!c13Ready) { placeInFort(fortBackInside()); return; }
   while (!fortWallsStep(1e9, C13_SITE)) {}
   placeInC13();                    // the court's own flags and clamps
   const d = (c13Thrive && c13Thrive.door) || { x: C13_THR_DOOR.x, z: C13_THR_DOOR.z, nx: 1, nz: 0 };
@@ -81746,8 +82162,12 @@ const WELL_SINK = 0.12;                // into the sand
  * ornament. Half as big again: the rim at a wall's height (0.96), the roof
  * at 2.8, a bore a man could go down. The model's own y −1 (the foot of the
  * base) sits on the sand; `wellY` turns a model height into a world one. */
-const WELL_S = 1.5;
-const wellY = (yl) => -WELL_SINK + WELL_S * (1 + yl);
+/* AND BIGGER AGAIN, WIDER MORE THAN TALLER (2026-10-12, the owner: "make
+ * the model bigger"). 1.9 across and 1.55 up: a ring 2.4 m over with a bore
+ * of 93 cm, the roof at 3.1 m — and the rim still at a height you can lean
+ * over (1.0 m), which a uniform 1.9 would have put at your chest. */
+const WELL_S = 1.9, WELL_SY = 1.55;
+const wellY = (yl) => -WELL_SINK + WELL_SY * (1 + yl);
 const WELL_RIM_L = -0.28, WELL_RIM_Y = wellY(WELL_RIM_L);   // the top of the base's ring, model and world
 let wellPhase = 0;                     // 0 untouched; 1 the bucket is down and he is coming; 2 he is up (or was)
 let wellMistK = 0, wellDread = 0;      // what the mood reads: the damp round it, and the extra while he is coming
@@ -81860,45 +82280,137 @@ function updateWellAir(dt) {
     // the fog's own colour as the chunk builds it (base + the lit-air lift, through the mood's tint), a shade paler
     U.uCol.value.setRGB((scene.fog.color.r + 0.0090) * FOG_TINT.x, (scene.fog.color.g + 0.0195) * FOG_TINT.y, (scene.fog.color.b + 0.0480) * FOG_TINT.z).multiplyScalar(2.0);
   }
-  sfxWellDrone(k);
+  sfxWellDrone(k, dt);
 }
 const wellG = new THREE.Group();
 wellG.position.set(WELL_X, wellY(0), WELL_Z);
-wellG.scale.setScalar(WELL_S);
+wellG.scale.set(WELL_S, WELL_SY, WELL_S);
 wellG.rotation.set(0.025, 0.6, -0.015);   // settled a shade, and turned so the crank is toward the sea
 scene.add(wellG);
 farProps.push({ obj: wellG, z: WELL_Z, d: 260 });
 const wellParts = { bucket: null, handle: null, bolts: null, crank: null, rope: null, myRope: null };
 const WELL_BUCKET_LIFT = 0.44;         // the bucket wound up to the axle (authored, it hung in the mouth)
 const WELL_BUCKET_Y0 = -0.17 + WELL_BUCKET_LIFT;   // its bottom, where it hangs
-const WELL_BORE_L = 0.245;            // the ring's own bore, model units (measured: every inward face of it is at r 0.245)
+/* THE SHAFT IS THE PARAPET'S WIDTH (2026-10-12). The ring has two inward
+ * faces: its stone parapet at r 0.43 and, inside that, a narrow tube at
+ * 0.245 that the first lining followed — so the shaft read as a smaller pipe
+ * standing up inside the parapet, the owner's "doesn't match up". The tube
+ * and its floor are cut out of the model at load, and the bore is the
+ * parapet's own face, carried on down. */
+const WELL_BORE_L = 0.425;            // the parapet's inner face, model units (its vertices at 0.43–0.44; a 16-gon's face sits a hair inside them)
 const WELL_SHAFT_R = WELL_BORE_L * WELL_S * 0.99, WELL_SHAFT_D = 40;
-/* THE SHAFT: stone at the mouth, nothing four metres down. Vertex colours
- * because the game's fog would LIFT the dark (fog is a brightening here),
- * and the one thing the shaft must do is stay black. */
+/* THE SHAFT IS DRY STONE, ALL THE WAY DOWN, AND THE LIGHT GIVES OUT
+ * (2026-10-12, the owner's photograph: a round shaft of fieldstone looked
+ * down from the lip, the courses lit at the top, closing to a black eye).
+ * A lining of laid stones (`wellStoneTex`, drawn here: rough rounded
+ * blocks in courses, deep mortar, a damp green low on each) from the rim
+ * down forty metres, so the bore is one continuous wall, and how much of it
+ * you see is the light: vertex colours fall off with depth — the moon at
+ * the lip, half gone by two metres, nothing by eight — then
+ * black. Unlit and unfogged on purpose: the game's fog is a BRIGHTENING and
+ * would lift the dark; the one thing the bottom must do is stay black. */
+const wellStoneTex = (() => {
+  const W = 512, c = document.createElement('canvas'); c.width = c.height = W;
+  const g = c.getContext('2d');
+  g.fillStyle = '#26241f'; g.fillRect(0, 0, W, W);              // the joints: dark, packed with old mortar and dirt
+  // flat fieldstones laid in rough courses, tight, every one a different shape and grey
+  const stone = (cx, cy, rx, ry, L, tilt) => {
+    for (const ox of [-W, 0, W]) for (const oy of [-W, 0, W]) {   // wrapped both ways: the shaft goes round, and down
+      g.save(); g.translate(cx + ox, cy + oy); g.rotate(tilt);
+      g.beginPath();
+      // a squared block that fills its place in the course: corners knocked off by a random chamfer,
+      // the long faces bowed a little in or out (an ellipse left the joints as wide as the stones — measured)
+      const ch = () => (0.10 + Math.random() * 0.24), bow = () => 0.95 + Math.random() * 0.10;
+      const cx1 = ch() * rx, cy1 = ch() * ry, cx2 = ch() * rx, cy2 = ch() * ry, cx3 = ch() * rx, cy3 = ch() * ry, cx4 = ch() * rx, cy4 = ch() * ry;
+      const sh = () => (Math.random() - 0.5) * rx * 0.3;
+      const P = [
+        [-rx, -ry + cy1], [-rx + cx1, -ry], [sh(), -ry * bow()],          // top-left corner, along the top
+        [rx - cx2, -ry], [rx, -ry + cy2], [rx * bow(), sh() * ry / rx],    // top-right, down the right
+        [rx, ry - cy3], [rx - cx3, ry], [sh(), ry * bow()],                // bottom-right, along the bottom
+        [-rx + cx4, ry], [-rx, ry - cy4], [-rx * bow(), sh() * ry / rx],   // bottom-left, up the left
+      ];
+      g.moveTo(P[0][0], P[0][1]);
+      for (let k = 1; k < P.length; k++) g.lineTo(P[k][0], P[k][1]);
+      g.closePath();
+      g.lineJoin = 'round';
+      const gr = g.createLinearGradient(0, -ry, 0, ry);
+      const w = (Math.random() - 0.5) * 8;
+      gr.addColorStop(0, `rgb(${L + 16 + w | 0},${L + 15 | 0},${L + 12 - w | 0})`);
+      gr.addColorStop(0.6, `rgb(${L + w | 0},${L - 1 | 0},${L - 4 - w | 0})`);
+      gr.addColorStop(1, `rgb(${L * 0.62 | 0},${L * 0.62 | 0},${L * 0.58 | 0})`);
+      g.fillStyle = gr; g.fill();
+      g.lineWidth = 2; g.strokeStyle = 'rgba(10,9,8,0.45)'; g.stroke();
+      g.restore();
+    }
+  };
+  let y = 0;
+  while (y < W) {
+    const h = 44 + Math.random() * 36;
+    let x = -Math.random() * 80;
+    while (x < W) {
+      const w = 60 + Math.random() * 90;
+      stone(x + w / 2, y + h / 2 + (Math.random() - 0.5) * 6, w / 2 - 2.5, h / 2 - 2.5, 62 + Math.random() * 46, (Math.random() - 0.5) * 0.10);
+      x += w;
+    }
+    y += h - 4;
+  }
+  // wet running down it, and grit over everything
+  for (let i = 0; i < 12; i++) { const x = Math.random() * W, w = 6 + Math.random() * 18; const gr = g.createLinearGradient(0, 0, 0, W); gr.addColorStop(0, 'rgba(20,24,18,0)'); gr.addColorStop(0.5, 'rgba(20,24,18,0.18)'); gr.addColorStop(1, 'rgba(20,24,18,0)'); g.fillStyle = gr; g.fillRect(x, 0, w, W); }
+  const id = g.getImageData(0, 0, W, W), d = id.data;
+  for (let i = 0; i < d.length; i += 4) { const n = (Math.random() - 0.5) * 22; d[i] += n; d[i + 1] += n; d[i + 2] += n; }
+  g.putImageData(id, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+})();
+/* AND THE DEEP IS FOGGY (2026-10-12, the owner: "it should be foggy in the
+ * well deep so the rope slowly disappears as it's lowered"). Everything down
+ * the bore — the lining, the rope, the bucket — is mixed toward one murk by
+ * how far under the rim it is, AFTER the game's fog (which up here is a
+ * pale grey and would light the deep), so the rope thins into it a metre at
+ * a time and the bucket goes into it and is gone. */
+const WELL_MURK = new THREE.Vector3(0.014, 0.016, 0.020);
+const WELL_MURK_U = { value: 0 };                     // the rim's world height, set once the well has one
+function wellMurkPatch(mat, k = 0.36) {
+  if (mat.userData.wellMurk) return;
+  mat.userData.wellMurk = true;
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    sh.uniforms.uWellRim = WELL_MURK_U;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vWellY;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\n  vWellY = (modelMatrix * vec4(transformed, 1.0)).y;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWellY;\nuniform float uWellRim;')
+      .replace('#include <fog_fragment>', '#include <fog_fragment>\n  { float wk = exp(-max(0.0, uWellRim - vWellY) * ' + k.toFixed(3) + '); gl_FragColor.rgb = mix(vec3(' + WELL_MURK.x + ', ' + WELL_MURK.y + ', ' + WELL_MURK.z + '), gl_FragColor.rgb, wk); }');
+  };
+  mat.customProgramCacheKey = () => 'wellMurk' + k + mat.uuid;   // its own program: what ran before it differs from material to material
+  mat.needsUpdate = true;
+}
 const wellShaft = (() => {
-  const g = new THREE.CylinderGeometry(WELL_SHAFT_R, WELL_SHAFT_R * 1.15, WELL_SHAFT_D, 24, 28, true);
+  const g = new THREE.CylinderGeometry(WELL_SHAFT_R, WELL_SHAFT_R * 0.92, WELL_SHAFT_D, 36, 120, true);
   g.translate(0, -WELL_SHAFT_D / 2, 0);
   const pos = g.attributes.position, col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
-    const depth = -pos.getY(i), a = Math.atan2(pos.getZ(i), pos.getX(i));
-    const stone = 0.55 + 0.45 * bwNoiseJS(a * 2.3 + depth * 1.7);
-    /* an unlit colour is what it GLOWS, under the same tone curve as the
-     * moonlit sand round it: 0.3 read as a lit grey cone (measured); the
-     * stone at the mouth is a hair over the sand's own value, and gone by
-     * three metres */
-    const k = Math.exp(-depth * 0.9) * stone;
-    col[i * 3] = 0.016 * k; col[i * 3 + 1] = 0.016 * k; col[i * 3 + 2] = 0.018 * k;   // (0.06 when it began at the rim: a pale tube standing in front of the ring's own stones)
+    const depth = -pos.getY(i);
+    // how much light gets down: a quick fall off the lip, then a long one, then nothing
+    const k = 0.42 * Math.exp(-depth * 0.55) + 0.10 * Math.exp(-depth * 0.20);
+    col[i * 3] = k; col[i * 3 + 1] = k * 0.98; col[i * 3 + 2] = k * 0.96;
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false }));
-  const cap = new THREE.Mesh(new THREE.CircleGeometry(WELL_SHAFT_R * 1.2, 24), new THREE.MeshBasicMaterial({ color: 0x000000, fog: false }));
-  cap.rotation.x = Math.PI / 2; cap.position.y = -WELL_SHAFT_D + 0.01; m.add(cap);
+  const circ = 2 * Math.PI * WELL_SHAFT_R;
+  wellStoneTex.repeat.set(Math.max(1, Math.round(circ / 1.5)), WELL_SHAFT_D / 1.5);   // a texture tile is 1.5 m of wall: stones a hand to a forearm long
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: wellStoneTex, vertexColors: true, side: THREE.BackSide, fog: false }));
+  wellMurkPatch(m.material, 0.22);
+  /* the floor of it, black. (It was turned face DOWN — rotation +π/2 — so
+   * from the lip it was its culled back: the shaft's foot stood open, and
+   * the fog's shell 44 m round your eye showed through it as a grey speck
+   * dead in the middle of the dark, the owner's "speck in the bottom".) */
+  const cap = new THREE.Mesh(new THREE.CircleGeometry(WELL_SHAFT_R * 1.2, 24), new THREE.MeshBasicMaterial({ color: 0x000000, fog: false, side: THREE.DoubleSide }));
+  cap.rotation.x = -Math.PI / 2; cap.position.y = -WELL_SHAFT_D + 0.01; m.add(cap);
   const grp = new THREE.Group(); grp.add(m);
-  /* IT BEGINS WHERE THE STONEWORK ENDS. The ring's own bore (darkened
-   * downward at load) is the top of the shaft, rim to foot; the lining goes on
-   * from its foot, already nearly black. */
-  grp.position.set(WELL_X, wellY(-1) + 0.03, WELL_Z);
+  // from just under the rim: the ring's own bore is behind it (r 0.99 of it), so it is one wall
+  grp.position.set(WELL_X, WELL_RIM_Y - 0.025, WELL_Z);
   /* AND THE BEACH HAS A HOLE IN IT. The sand is one opaque sheet at y 0, so
    * all but the top metre of the bore was sand seen down the ring — a grey
    * disc of ground mist where the dark should be (measured, after the well
@@ -81926,13 +82438,14 @@ const wellShaft = (() => {
   const gr = g.createRadialGradient(64, 64, 10, 64, 64, 64);
   gr.addColorStop(0, 'rgba(10,9,8,0.62)'); gr.addColorStop(0.45, 'rgba(14,12,10,0.34)'); gr.addColorStop(1, 'rgba(14,12,10,0)');
   g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
-  g.globalCompositeOperation = 'destination-out'; g.beginPath(); g.arc(64, 64, 64 * 1.1 / 2.3, 0, 6.3); g.fill(); g.globalCompositeOperation = 'source-over';   // nothing over the bore: a fogged decal there was a grey lid on the dark
-  for (let i = 0; i < 140; i++) { const a = Math.random() * 6.3, r = 26 + Math.random() * 36; g.fillStyle = `rgba(0,0,0,${(0.08 + Math.random() * 0.12).toFixed(2)})`; g.fillRect(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, 2, 2); }
+  g.globalCompositeOperation = 'destination-out'; g.beginPath(); g.arc(64, 64, 64 * (0.63 * WELL_S + 0.05) / 2.9, 0, 6.3); g.fill(); g.globalCompositeOperation = 'source-over';   // nothing over the bore: a fogged decal there was a grey lid on the dark
+  for (let i = 0; i < 140; i++) { const a = Math.random() * 6.3, r = 30 + Math.random() * 32; g.fillStyle = `rgba(0,0,0,${(0.08 + Math.random() * 0.12).toFixed(2)})`; g.fillRect(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, 2, 2); }
   const t = new THREE.CanvasTexture(c);
-  const d = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 4.6), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  const d = new THREE.Mesh(new THREE.PlaneGeometry(5.8, 5.8), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   d.rotation.x = -Math.PI / 2; d.position.set(WELL_X, 0.012, WELL_Z); d.renderOrder = 1;
   scene.add(d); farProps.push({ obj: d, z: WELL_Z, d: 200 });
 }
+/* (the lantern that stood at its foot is gone: the owner, 2026-10-13, "remove the lantern from the well") */
 // the ring is solid: you walk round it, you do not walk through it
 rockColliders.push({ x: WELL_X, z: WELL_Z, r: 0.63 * WELL_S, top: WELL_RIM_Y, mat: 'rock' });
 let wellLookIt = null;
@@ -81954,7 +82467,10 @@ bwGlb('assets/well.glb', (gltf) => {
     if (!mt.userData.wellDim) {
       mt.userData.wellDim = true; mt.roughness = 1;
       const mech = /mechanism/i.test(mt.name);
-      reexpose(mt, mech ? 0.78 : 0.62, mech ? [0.035, 0.045, 0.07] : [0.050, 0.066, 0.098]);
+      /* AND LIFTED FURTHER (2026-10-12, "too dark … should read better but blend in"): the rocks'
+       * own lift was still a near-black well in the grey; gamma 0.5 brings the stone up to the
+       * fog's own value, so it reads as stone and sits in the air rather than cutting a hole */
+      reexpose(mt, mech ? 0.62 : 0.50, mech ? [0.040, 0.050, 0.075] : [0.060, 0.072, 0.098]);
     }
     if (/Bucket_handleBolts/.test(nm)) wellParts.bolts = o.parent;
     else if (/Bucket_handle/.test(nm)) wellParts.handle = o.parent;
@@ -81967,6 +82483,14 @@ bwGlb('assets/well.glb', (gltf) => {
      * bottom is a disc inside r 0.36 at its own y −1; its triangles are cut. */
     if (/Well_base/.test(nm)) {
       const g = o.geometry, P = g.attributes.position, idx = g.index;
+      /* THE INNER TUBE STAYS (2026-10-13, the owner: "you ruined the textures
+       * looking into the well make them actually fit"). Its faces are the
+       * strip of the atlas the shaft's lining was matched to (see below); cut
+       * out, the look down showed the parapet's own inner face against a
+       * lining measured off the tube, and nothing met. (The cut that was here
+       * never ran — the floor cut below rebuilt the index from the copy taken
+       * before it — so the well the lining was fitted to always had its tube.
+       * The speck was the shaft's open foot: see its cap.) */
       /* AND THE INSIDE OF THE RING GOES DARK DOWNWARD: a face turned in
        * toward the bore is shaded by how far under the rim it is, black by
        * the foot of the ring, so the mouth opens straight into the shaft's
@@ -81977,22 +82501,61 @@ bwGlb('assets/well.glb', (gltf) => {
         const x = P.getX(i), y = P.getY(i), z = P.getZ(i), r = Math.hypot(x, z) || 1;
         const inward = N ? -(N.getX(i) * x + N.getZ(i) * z) / r : 0;
         let k = 1;
-        if (r < 0.40 && inward > 0.2) k = 0.04 + 0.96 * Math.exp(-(WELL_RIM_L - y) * 3.6);   // the top courses seen, going into the dark
+        const rc = Math.hypot(x + 0.0945, z) || 1, inc = N ? -(N.getX(i) * (x + 0.0945) + N.getZ(i) * z) / rc : 0;   // about the tube's own centre (it is off the model's origin)
+        if ((r < 0.40 && inward > 0.2) || (rc < 0.385 && inc > 0.5 && y < WELL_RIM_L - 0.02)) k = 0.04 + 0.96 * Math.exp(-(WELL_RIM_L - y) * 3.6);   // the top courses seen, going into the dark
         else if (r < 0.34 && y < WELL_RIM_L - 0.05) k = 0.05;
         col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
       }
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       mt.vertexColors = true; mt.needsUpdate = true;
-      if (idx) {
-        const keep = [];
-        const low = (i) => Math.abs(P.getY(i) + 1.0) < 0.1 && Math.hypot(P.getX(i), P.getZ(i)) < 0.36;
-        for (let k = 0; k < idx.count; k += 3) { const a = idx.getX(k), b = idx.getX(k + 1), c = idx.getX(k + 2); if (!(low(a) && low(b) && low(c))) keep.push(a, b, c); }
+      if (g.index) {
+        const keep = [], ix = g.index;
+        /* and the tube's last course with it — its foot, y below −0.8, lit by its own map's glow whatever the
+         * vertex shade says (the emissive is not shaded by the colours) and so a pale lip down in the black */
+        const low = (i) => (Math.abs(P.getY(i) + 1.0) < 0.1 && Math.hypot(P.getX(i), P.getZ(i)) < 0.36) || (P.getY(i) < -0.8 && Math.hypot(P.getX(i), P.getZ(i)) < 0.31);
+        for (let k = 0; k < ix.count; k += 3) { const a = ix.getX(k), b = ix.getX(k + 1), c = ix.getX(k + 2); if (!(low(a) && low(b) && low(c))) keep.push(a, b, c); }
         g.setIndex(keep);
       }
+      wellBoreLining(o, mt);
     }
   });
+  /* THE BORE IS THE RING'S OWN STONE, ALL THE WAY DOWN (2026-10-12, the
+   * owner: "the inside of the well doesn't match up … it should be perfectly
+   * fit"). The drawn lining was its own stone, smaller and greyer, starting
+   * where the ring's big courses stopped. The ring's bore is one strip of its
+   * atlas — u up the wall, v round it (measured off the inward faces: u
+   * 0.15–0.395 over the ring's height, v 0.192–0.738 round it, 0.22 of the map
+   * a metre both ways) — so that strip is cut out, turned upright, and laid on
+   * the lining once round and at the same height per tile, mirrored down the
+   * shaft so its top and bottom edges meet without a band. The lining starts
+   * at the rim and covers the ring's own bore, so it is one wall, one stone. */
+  {
+    let baseMat = null;
+    m.traverse((o) => { if (o.isMesh && o.parent && /Well_base/.test(o.parent.name)) baseMat = o.material; });
+    const img = baseMat && baseMat.map && baseMat.map.image;
+    if (img && img.width) {
+      const IW = img.width, IH = img.height, src = document.createElement('canvas'); src.width = IW; src.height = IH;
+      const sg = src.getContext('2d', { willReadFrequently: true }); sg.drawImage(img, 0, 0);
+      // the parapet's grey cobble, the middle panel of its column (between the dark bands), upright: courses round the shaft
+      const U0 = 0.745, U1 = 0.902, V0 = 0.345, V1 = 0.640;
+      const x0 = Math.round(U0 * IW), x1 = Math.round(U1 * IW), y0 = Math.round(V0 * IH), y1 = Math.round(V1 * IH);
+      const out = document.createElement('canvas'); out.width = x1 - x0; out.height = y1 - y0;
+      out.getContext('2d').drawImage(src, x0, y0, x1 - x0, y1 - y0, 0, 0, x1 - x0, y1 - y0);
+      const t = new THREE.CanvasTexture(out);
+      t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping; t.anisotropy = 4;
+      // at the model's own density (0.22 of the map a metre, measured on the ring), scaled with it
+      const perM = 0.219 / WELL_S, wM = (U1 - U0) / perM, hM = (V1 - V0) / (0.219 / WELL_SY);
+      t.repeat.set(Math.max(1, Math.round((2 * Math.PI * WELL_SHAFT_R) / wM)), WELL_SHAFT_D / hM);
+      const lin = wellShaft.children[0].material;
+      lin.map = t; lin.needsUpdate = true;
+    }
+    WELL_MURK_U.value = WELL_RIM_Y;
+    // the bucket, its handle and the rope go into the murk as they go down (the mechanism's material: the crank above the rim is untouched)
+    m.traverse((o) => { if (o.isMesh && o.material && /mechanism/i.test(o.material.name)) wellMurkPatch(o.material); });
+  }
   // our own rope, the one the bucket hangs from: it pays out as the bucket goes down
   const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 1, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0x5a4a34, roughness: 1 }));
+  wellMurkPatch(rope.material);
   rope.position.set(-0.08, 0.26, -0.02); rope.scale.y = 0.001; rope.visible = false;
   m.add(rope); wellParts.myRope = rope;
   wellG.add(m);
@@ -82001,8 +82564,114 @@ bwGlb('assets/well.glb', (gltf) => {
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.75, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
   proxy.name = 'hitProxy'; proxy.position.y = -0.1; wellG.add(proxy);
   if (wellPhase === 0) wellLookIt = addInteractable(wellG, 'Look inside', 'look', { onActivate: () => wellLookStart() });
-  else wellBucketDown();
+  else { wellBucketDown(); wellEmptyLookIt(); }
 });
+/* THE SHAFT IS THE TUBE, CARRIED ON DOWN (2026-10-13, the owner: "match the
+ * textures better in the well … should look like the stone of the 3d model
+ * seamlessly all the way down"). The model's bore is an oval tube (r 0.245
+ * across x, 0.31 across z, measured) whose wall carries ONE strip of the
+ * atlas — u 0.737 at its foot (y −0.873) to 0.905 at the rim course (y −0.374),
+ * 0.337 of u a unit up, and v round it. The lining was a cylinder of its own a
+ * third wider, with that panel cropped and laid at its own scale, so nothing
+ * met at the foot of the tube. Now the lining IS the tube: the tube's own foot
+ * ring of vertices, carried straight down twenty-six units of the model
+ * (forty metres) in the model's own material, each column keeping its vertex's
+ * v and the u strip mirrored on down at the same rate — the same stones, the
+ * same size, the same oval, from the rim to the black. The depth is the
+ * material's vertex shade (the ring's own formula, carried on) and a murk
+ * mixed in by depth INSIDE the bore only (`wellBorePatch`), so the outside of
+ * the ring is untouched. */
+let WELL_LINE_K0 = 0.30;              // the lining's shade at the tube's foot
+/* and its colour: matched to the tube's own just above the join, off a render of the look down — the tube
+ * there (12.0, 14.8, 18.6), the untinted lining (34.4, 33.7, 32.1), tinted (15.1, 16.7, 19.6). The factors are
+ * LINEAR (the screen's values go as their 1/2.2 power): the moon's blue on dark stone */
+const WELL_LINE_TINT = [0.099, 0.165, 0.308];
+function wellBoreLining(o, mt) {
+  const g = o.geometry, P = g.attributes.position, U = g.attributes.uv, N = g.attributes.normal;
+  if (!U || !N) return;
+  // (the tube is a circle of r 0.34 about (−0.095, 0) of the model, not about its origin: measured off its foot ring)
+  const Y0 = -0.8725, CX = -0.0945, CZ = 0, RT = 0.3405, ring = [];
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i), dx = x - CX, dz = z - CZ, r = Math.hypot(dx, dz);
+    if (Math.abs(y - Y0) > 0.006 || Math.abs(r - RT) > 0.045) continue;
+    const inw = -(N.getX(i) * dx + N.getZ(i) * dz) / r;
+    if (inw < 0.5 || U.getX(i) < 0.6) continue;
+    const a = Math.atan2(dz, dx), v = U.getY(i);
+    if (ring.some((q) => Math.abs(q.a - a) < 1e-3 && Math.abs(q.v - v) < 1e-3)) continue;
+    ring.push({ a, x, z, v, u: U.getX(i) });
+  }
+  if (ring.length < 8) return;
+  ring.sort((p, q) => p.a - q.a);
+  // where two share a corner (the strip's seam), the one that carries on from the column before goes first
+  for (let i = 1; i < ring.length; i++) {
+    if (Math.abs(ring[i].a - ring[i - 1].a) < 1e-3 && i >= 2 && Math.abs(ring[i].v - ring[i - 2].v) < Math.abs(ring[i - 1].v - ring[i - 2].v)) { const t = ring[i]; ring[i] = ring[i - 1]; ring[i - 1] = t; }
+  }
+  const D = WELL_SHAFT_D / WELL_SY, dy = 0.125, rows = Math.ceil(D / dy), C = ring.length;
+  const u0 = 0.737, uSpan = 0.905 - 0.737, rate = 0.337;
+  const pos = new Float32Array((rows + 1) * C * 3), uv = new Float32Array((rows + 1) * C * 2), col = new Float32Array((rows + 1) * C * 3), idx = [];
+  for (let j = 0; j <= rows; j++) {
+    const t = j * dy, y = Y0 - t;
+    let s = (t * rate) % (2 * uSpan); if (s > uSpan) s = 2 * uSpan - s;      // mirrored down the shaft: each tile's foot meets the next tile's foot
+    const k = WELL_LINE_K0 * (0.7 * Math.exp(-t * 0.9) + 0.3 * Math.exp(-t * 0.25));   // the light the tube's foot has, falling away down the shaft (t in the model's units)
+    for (let i = 0; i < C; i++) {
+      const n = j * C + i, q = ring[i];
+      pos[n * 3] = q.x; pos[n * 3 + 1] = y; pos[n * 3 + 2] = q.z;
+      uv[n * 2] = u0 + s; uv[n * 2 + 1] = q.v;
+      col[n * 3] = k * WELL_LINE_TINT[0]; col[n * 3 + 1] = k * WELL_LINE_TINT[1]; col[n * 3 + 2] = k * WELL_LINE_TINT[2];
+    }
+  }
+  for (let j = 0; j < rows; j++) for (let i = 0; i < C; i++) {
+    const i2 = (i + 1) % C;
+    const a = j * C + i, b = j * C + i2, c = (j + 1) * C + i, d = (j + 1) * C + i2;
+    idx.push(a, c, b, b, c, d);
+  }
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  lg.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  lg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  lg.setIndex(idx); lg.computeVertexNormals();
+  // the model's own map, unlit: lit stone down a forty-metre tube picks up the material's grazing rim and goes pale
+  const lmat = new THREE.MeshBasicMaterial({ map: mt.map, vertexColors: true, side: THREE.DoubleSide, fog: false });
+  wellMurkPatch(lmat, 0.22);
+  const lining = new THREE.Mesh(lg, lmat); lining.name = 'wellBoreLining'; lining.userData.bwGhost = true; lining.raycast = () => {};
+  // the floor of it, black
+  const cap = new THREE.Mesh(new THREE.CircleGeometry(0.45, 24), new THREE.MeshBasicMaterial({ color: 0x000000, fog: false, side: THREE.DoubleSide }));
+  cap.rotation.x = -Math.PI / 2; cap.position.set(CX, Y0 - D + 0.02, CZ); lining.add(cap);
+  o.add(lining);
+  o.updateMatrixWorld(true);
+  const cw = new THREE.Vector3(CX, Y0, CZ).applyMatrix4(o.matrixWorld);
+  wellBorePatch(mt, 0.30, cw.x, cw.z);          // the tube itself: the fog kept out of it, the murk in
+  // and the old cylinder, a third wider, is not drawn: the lining is the tube now
+  if (wellShaft.children[0]) wellShaft.children[0].visible = false;
+}
+// the deep's murk on the ring's own material, inside the bore only: by depth under the rim, within the bore's radius of the axis
+function wellBorePatch(mat, k = 0.30, cx = WELL_X, cz = WELL_Z) {
+  if (mat.userData.wellBore) return;
+  mat.userData.wellBore = true;
+  const prev = mat.onBeforeCompile;
+  const R = (0.36 * WELL_S).toFixed(3);
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    sh.uniforms.uWellRim = WELL_MURK_U;
+    sh.uniforms.uWellC = { value: new THREE.Vector2(cx, cz) };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWellB;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\n  vWellB = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWellB;\nuniform float uWellRim;\nuniform vec2 uWellC;')
+      // inside the bore the well's grey fog does not reach: the stone goes into the murk instead, from its own colour
+      .replace('#include <fog_fragment>', 'vec3 wellPre = gl_FragColor.rgb;\n#include <fog_fragment>\n  { float inb = (1.0 - smoothstep(' + R + ', ' + R + ' + 0.06, distance(vWellB.xz, uWellC))) * smoothstep(uWellRim + 0.05, uWellRim - 0.25, vWellB.y); float wk = exp(-max(0.0, uWellRim - 0.3 - vWellB.y) * ' + k.toFixed(3) + '); vec3 deep = mix(vec3(' + WELL_MURK.x + ', ' + WELL_MURK.y + ', ' + WELL_MURK.z + '), wellPre, wk); gl_FragColor.rgb = mix(gl_FragColor.rgb, deep, inb); }');
+  };
+  const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
+  mat.customProgramCacheKey = () => key() + '|wellBore' + mat.uuid;
+  mat.needsUpdate = true;
+}
+// the look into the empty well: offered once he is up, and not while he is on you
+function wellEmptyLookIt() {
+  if (wellLookIt || !wellG) return;
+  wellLookIt = addInteractable(wellG, 'Look inside', 'look', {
+    when: () => wellPhase >= 2 && (!wellUnit || !wellUnit.st.alive || wellUnit.retired || !wellUnit.st.awake || Math.hypot(camera.position.x - wellUnit.g.position.x, camera.position.z - wellUnit.g.position.z) > 12),
+    onActivate: () => wellLookStart(true),
+  });
+}
 // the bucket at the bottom (a save past the choice): nothing on the rope, the rope paid out into the dark
 function wellBucketDown() {
   for (const k of ['bucket', 'handle', 'bolts']) if (wellParts[k]) wellParts[k].visible = false;
@@ -82018,16 +82687,22 @@ function wellBucketDown() {
  * furthest forward, measured off the clip (`tools/glbsheet.js`). */
 MUT_ATTACKS.wA1 = { wind: 0.63, strike: 0.10, recover: 0.75, hit: 0.46, reach: 2.05, lunge: 1.5, chain: 'wA2', chainP: 0.72, w: 0.30, dmg: 1, guardK: 1.1, limbs: [1], stop: 1.45, rate: 1.5 };
 MUT_ATTACKS.wA2 = { wind: 0.60, strike: 0.10, recover: 0.60, hit: 0.50, reach: 2.10, lunge: 1.5, chain: 'wA3', chainP: 0.60, w: 0.30, dmg: 1, guardK: 1.1, limbs: [0], stop: 1.45, rate: 1.6 };
-MUT_ATTACKS.wA3 = { wind: 0.30, strike: 0.08, recover: 0.55, hit: 0.35, reach: 1.75, lunge: 2.2, chain: 'wA1', chainP: 0.65, w: 0.20, dmg: 2, guardK: 1.4, limbs: [0, 1], stop: 1.25, rate: 1.3, landSlop: 0.3 };
+/* the second swipe again, from further out and harder: he throws himself the last two metres into it */
+MUT_ATTACKS.wA3 = { wind: 0.55, strike: 0.10, recover: 0.70, hit: 0.50, reach: 2.9, lunge: 3.0, chain: 'wA1', chainP: 0.70, w: 0.25, dmg: 2, guardK: 1.4, limbs: [0], stop: 1.35, rate: 1.75, landSlop: 0.3 };
 MUT_KINDS.wellman = {
-  glb: 'assets/wellman.glb', solo: true, skin: null, bones: null, faceFix: 0, natural: true, deathClip: true, wellBody: true,
+  glb: 'assets/wellman.glb', solo: true, skin: null, bones: null, faceFix: 0, natural: true, deathClip: true,
+  hideMeshes: ['Object_75'],             // the teeth: a separate mesh of 289 vertices, yellow pegs in the open mouth (the owner: "too corny")
   death: { BUCKLE: 1.2, DROP: 2.0, TAIL: 2.6, QUIET: 3.4 },
-  h: 1.92, hp: 44, dmg: 1, bleedRes: 1.1, hitR: 0.85, body: 0.55, lungeStop: 1.35, landSlop: 0.22, limbR: 0.26, lungeLead: 0.3, lungeK: 1.0,
+  h: 1.92, hp: 36, dmg: 1, bleedRes: 1.1, hitR: 0.85, body: 0.55, lungeStop: 1.35, landSlop: 0.22, limbR: 0.26, lungeLead: 0.3, lungeK: 1.0,
   /* QUICK: 1.5 of the pale one's pace is 6.9 m/s at a run, his clips allowed
    * to play at up to three times their stride so the feet keep up, and a
    * burst (`st.sprint`) on every charge that takes him past ten for a moment. */
   speedK: 1.45, windK: 1.0, reachK: 1.0, aggr: 4.6, press: 0.98, chainMax: 3,   // 6.7 m/s flat out; the charge's burst puts it past eleven for a breath
-  use: { wA1: 0.38, wA2: 0.37, wA3: 0.25 },   // no wA4: the drop to all fours is gone (the owner: "take away the zombie crawl move")
+  /* NOTHING ON ALL FOURS (2026-10-12, the owner, twice: "the zombie still crawls"). `on_all_four_*`,
+   * `caution` (his crouch) and `eat` (the bite from it) are all on hands and knees — measured off the
+   * clips — and none of them is played: two swipes and the lunging second one, the freeze is the
+   * stand held dead still, and the roar is the stand. */
+  use: { wA1: 0.36, wA2: 0.36, wA3: 0.28 },
   circle: 0.15, step: 0.26, feint: 0.08, sizeUp: 0.0, smart: 1, reacts: true, restless: true,
   turnMax: 9.0, fade: 0.09,
   poise: 14, poiseBack: 2.5, poiseWait: 0.6, parryK: 0.9, recoilK: 0.55, stunK: 0.9,
@@ -82046,11 +82721,11 @@ MUT_KINDS.wellman = {
          Character1_RightUpLeg: 'thigh_R_038_58', Character1_RightLeg: 'shin_R_039_59', Character1_RightFoot: 'foot_R_040_60', Character1_RightToeBase: 'toe_R_041_61',
          Character1_LeftUpLeg: 'thigh_L_034_54', Character1_LeftLeg: 'shin_L_035_55', Character1_LeftFoot: 'foot_L_036_56', Character1_LeftToeBase: 'toe_L_037_57' },
   emis: 0.10, rim: [0.08, 0.09, 0.11], gamma: 0.92,
-  anim: { idle: 'idle01', walk: 'walk01', run: 'run', roar: 'caution', die: 'death', back: 'walk02', rate: 1.0, lean: 0.0, strafeK: 1.0 },
+  anim: { idle: 'idle01', walk: 'walk01', run: 'run', roar: 'idle02', die: 'death', back: 'walk02', rate: 1.0, lean: 0.0, strafeK: 1.0 },
   gaits: { walk: ['walk01', 'walk02'], run: ['run'], idle: ['idle01', 'idle02'], strafeL: ['walk01'], strafeR: ['walk01'] },
-  alias: { idle2: 'idle02', walk2: 'walk02', run2: 'run', roar2: 'caution', die2: 'death', calm: 'idle02',
+  alias: { idle2: 'idle02', walk2: 'walk02', run2: 'run', roar2: 'idle02', die2: 'death', calm: 'idle02',
            hit: 'damage', hitBig: 'down', hitSide: 'damage', hitBack: 'damage', hitHead: 'damage', parry: 'down',
-           strafeL: 'walk01', strafeR: 'walk01', wA1: 'attack01', wA2: 'attack02', wA3: 'eat' },
+           strafeL: 'walk01', strafeR: 'walk01', wA1: 'attack01', wA2: 'attack02', wA3: 'attack02' },
   stunClip: 'down', first: 'idle01', sleepIdle: 'idle01',
   provoke: (u) => wellCharge(u),
   voice: { f: 1.35, growl: 0.5, rasp: 1.9 },
@@ -82081,9 +82756,7 @@ const wellMark = new THREE.Object3D(); wellMark.position.set(WELL_X, -2.4, WELL_
  * to look in, before the words come. */
 function wellSay(i) {
   if (applyingSave || replaying) return;
-  // down the shaft: dull, and a hair of itself back off the stone
-  playSampleAt('wellGuy', WELL_X, WELL_Z, { gain: 0.9, ref: 2.5, far: 36, rate: 1, jitter: 0, lpNear: 2300, lpFar: 700, pick: i });
-  playSampleAt('wellGuy', WELL_X, WELL_Z, { gain: 0.22, ref: 2.5, far: 36, rate: 1, jitter: 0, lpNear: 1100, lpFar: 500, delay: 0.085, pick: i });
+  wellVoice(i);                                // up the shaft, through its own reverb (see the sounds)
 }
 const WELL_UP = { label: 'Let him up', to: 'up', act: () => wellLetUp() };
 const WELL_SCRIPT = {
@@ -82120,8 +82793,14 @@ const WELL_SCRIPT = {
 };
 const WELL_NPC = { name: 'From the well', script: WELL_SCRIPT, sprite: wellMark, fov: 52 };
 const _wlM = new THREE.Matrix4();
-function wellLookStart() {
-  if (wellLook.on || wellPhase !== 0 || frozen()) return;
+/* AND ONCE HE IS OUT IT IS ONLY A WELL (2026-10-13, the owner: "once the
+ * zombie is out of the well i can hit e to look in"). `quiet` is the same
+ * lean over the rim and down the bore — nobody calls up it now — held until
+ * you press anything (E, a click, a step), then back. */
+function wellLookStart(quiet) {
+  if (wellLook.on || frozen() || (quiet ? wellPhase < 2 : wellPhase !== 0)) return;
+  wellLook.quiet = !!quiet; wellLook.armed = false; wellLook.click = false;
+  if (quiet) window.addEventListener('mousedown', () => { wellLook.click = true; }, { once: true });
   wellLook.on = true; wellLook.phase = 'in'; wellLook.t = 0;
   wellLook.home.copy(camera.position); wellLook.homeQ.copy(camera.quaternion);
   // over the rim on your own side of it, head under the roof, looking straight down the bore
@@ -82133,7 +82812,7 @@ function wellLookStart() {
   hovered = null; crosshair.className = ''; crosshair.style.display = 'none';
   setPrompt('');
   sfxWellAir(true);
-  wellSay(0);                                  // "Hey, I fell" — before the words
+  wellLook.called = false;                     // he does not speak at once: you look, and listen, first
 }
 function wellLeave() {
   if (!wellLook.on) return;
@@ -82149,14 +82828,18 @@ function wellLetUp() {
   if (wellLookIt) { removeInteractable(wellG); wellLookIt = null; }
   wellLook.phase = 'crank'; wellLook.t = 0; wellLook.strides = 0; wellLook.nextStride = 0;
   if (wellParts.myRope) { wellParts.myRope.visible = true; }
-  autosaveNow();
+  // (no checkpoint here any more: the well's is written as the tall one goes, before any of this — the owner's word)
 }
 const WELL_CRANK_T = 7.5;              // the bucket takes this long to go out of sight
 const WELL_CRANK_DEPTH = 6.5;          // metres down when it stops: the shaft is black past four
 function updateWell(dt) {
   updateWellAir(dt);
+  if (smileSavePending) {
+    if (wellPhase !== 0) smileSavePending = false;
+    else if (!frozen() && !wellLook.on && !inRoom()) { smileSavePending = false; autosaveNow(); }
+  }
   if (wellPhase >= 2 && wellUnit) updateWellMan(dt);
-  wellDread += ((wellLook.on && wellLook.phase !== 'in' && wellLook.phase !== 'out' && wellLook.phase !== 'hold' ? 1 : wellPhase === 2 && wellStalk.stare > 0 ? 1 : 0) - wellDread) * Math.min(1, dt * 0.6);
+  wellDread += ((wellLook.on && wellLook.phase !== 'in' && wellLook.phase !== 'out' && wellLook.phase !== 'hold' && wellLook.phase !== 'peer' ? 1 : wellPhase === 2 && wellStalk.stare > 0 ? 1 : 0) - wellDread) * Math.min(1, dt * 0.6);
   if (!wellLook.on) return;
   const L = wellLook; L.t += dt;
   const ease = (x) => x * x * (3 - 2 * x);
@@ -82164,7 +82847,28 @@ function updateWell(dt) {
     const k = ease(Math.min(1, L.t / 1.15));
     camera.position.lerpVectors(L.home, L.to, k); camera.quaternion.slerpQuaternions(L.homeQ, L.toQ, k);
     camera.position.y += Math.sin(k * Math.PI) * 0.22;        // up and over the rim, not through it
-    if (L.t >= 1.15) { L.phase = 'hold'; L.t = 0; startDialog('start', WELL_NPC); }
+    if (L.t >= 1.15) { L.phase = 'peer'; L.t = 0; }
+    return;
+  }
+  /* LOOKING, BEFORE ANYTHING (2026-10-12, the owner: the dialog "after you
+   * are looking in for a little bit"). Four seconds of nothing but the
+   * shaft: the air in it, the water far down, your own lean easing a little
+   * further over. Then the voice — "Hey, I fell" — and a beat after it, the
+   * words. */
+  if (L.phase === 'peer') {
+    const k = Math.min(1, L.t / 4.5);
+    camera.position.copy(L.to); camera.position.y -= 0.07 * k * k * (3 - 2 * k);
+    camera.position.x += Math.sin(L.t * 1.3) * 0.003;
+    camera.quaternion.copy(L.toQ);
+    if (L.quiet) {
+      // the empty well: held until a key or a click, once the press that leant you over has been let go
+      const any = keys['KeyE'] || keys['KeyF'] || keys['KeyW'] || keys['KeyA'] || keys['KeyS'] || keys['KeyD'] || keys['Space'] || keys['Escape'];
+      if (!L.armed) { if (!any && L.t > 0.3) { L.armed = true; L.click = false; } }
+      else if (any || L.click) { L.to.copy(camera.position); wellLeave(); }
+      return;
+    }
+    if (!L.called && L.t >= 4.2) { L.called = true; wellSay(0); }
+    if (L.t >= 6.0) { L.phase = 'hold'; L.t = 0; L.to.copy(camera.position); startDialog('start', WELL_NPC); }
     return;
   }
   if (L.phase === 'hold') { camera.position.copy(L.to); if (!dialogOpen && wellPhase === 0) wellLeave(); return; }
@@ -82238,6 +82942,7 @@ const WELL_STAND = { man: 2.0, you: 4.4 };
 function wellReveal() {
   wellPhase = 2;
   wellBucketDown();
+  wellEmptyLookIt();
   const x = WELL_X + WELL_STAND.you, z = WELL_Z;
   camera.position.set(x, beachGroundAt(x, z) + playerEye(), z);
   camBaseY = camera.position.y; vy = 0; onGround = true;
@@ -82261,7 +82966,6 @@ function wellReveal() {
   wellStalk.stare = 3.6 + Math.random() * 3.4;       // how long he stands before he comes
   wellStalk.t = 0; wellStalk.next = 0;
   sfxWellWind();
-  if (!applyingSave) autosaveNow();
 }
 /* WHILE HE STARES, and after: the stare ends in the charge; then every few
  * seconds, if he is not on you, he stops dead where he is — the crouch,
@@ -82269,7 +82973,12 @@ function wellReveal() {
 const wellStalk = { stare: 0, t: 0, next: 0, hold: 0 };
 function updateWellMan(dt) {
   const u = wellUnit;
-  if (!u.st.alive || u.retired) { if (cineHold && dialogHead && dialogHead.name === 'head_014_16') { cineHold = false; dialogTarget = null; dialogHead = null; } return; }
+  if (!u.st.alive || u.retired || u.st.struck) {
+    if (cineHold && dialogHead && dialogHead.name === 'head_014_16') { cineHold = false; dialogTarget = null; dialogHead = null; }
+    // and when he is down, what he had in his fist is on the sand beside him
+    if (wellKey.state === 0) { wellKey.t = (wellKey.t || 0) + dt; if (wellKey.t > 1.7) wellKeyLie(u.g.position.x + 0.35, u.g.position.z + 0.25, false); }
+    return;
+  }
   if (wellStalk.stare > 0) {
     u.mixer.update(dt);
     wellStalk.stare -= dt;
@@ -82291,17 +83000,74 @@ function updateWellMan(dt) {
   const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
   if (wellStalk.t > wellStalk.next && d > 1.2 && u.st.atk < 0 && !frozen()) {      // (`st.swing` keeps the LAST swing's name; `atk` < 0 is idle) — in close too: the freeze is the opening you get
     u.st.awake = false; u.holdAnim = true;
-    const a = mutPlay(u, 'caution', true); if (a) a.timeScale = 0.6;
+    const a = mutPlay(u, 'idle01', true); if (a) a.timeScale = 0.04;   // stopped dead, upright, staring (the crouch was on all fours)
     wellStalk.hold = 0.9 + Math.random() * 1.9;
     wellStalk.t = 0; wellStalk.next = 2.5 + Math.random() * 5.0;
   }
 }
+/* AND THE WELL IS SOLID TO HIM (2026-10-13, the owner: "dont let the well
+ * zombie clip through the well when fighting"). The chase steers straight at
+ * you and nothing on the beach is solid to a unit, so with the well between
+ * you he walked through its stones. He is held outside a ring round it — the
+ * parapet is 1.25 m out and the crank's handle 1.43, measured off the drawn
+ * faces, and his body a little over 0.4 — and when you are on the far side
+ * he is walked round it the shorter way, at his own pace, rather than
+ * pressed against it. */
+const WELL_MAN_CLEAR = 1.72;
+function wellManClear(dt) {
+  const u = wellUnit;
+  if (!u || !u.g.visible || !u.st.alive || u.retired || wellPhase < 2) return;
+  const p = u.g.position, dx = p.x - WELL_X, dz = p.z - WELL_Z, d = Math.hypot(dx, dz);
+  if (d >= WELL_MAN_CLEAR + 0.05) return;
+  const nx = d > 1e-4 ? dx / d : 1, nz = d > 1e-4 ? dz / d : 0;
+  p.x = WELL_X + nx * WELL_MAN_CLEAR; p.z = WELL_Z + nz * WELL_MAN_CLEAR;
+  // you behind it from him: round it, the side nearer you
+  const px = camera.position.x - WELL_X, pz = camera.position.z - WELL_Z;
+  if (u.st.awake && px * nx + pz * nz < 0.5 * Math.hypot(px, pz)) {
+    const s = Math.sign(nx * pz - nz * px) || 1;            // which way round turns toward you
+    const step = Math.min(4.5 * dt, 0.2);
+    const a = Math.atan2(nz, nx) + s * step / WELL_MAN_CLEAR;
+    p.x = WELL_X + Math.cos(a) * WELL_MAN_CLEAR; p.z = WELL_Z + Math.sin(a) * WELL_MAN_CLEAR;
+  }
+}
+/* HIS KEY (`pavKeyItem`): dropped where he falls, with a glint, and taken
+ * like every key on the sand. Saved as `wellKey` 0/1/2 and where it lies. */
+const wellKey = { state: 0, x: 0, z: 0, t: 0, world: null };
+function wellKeyLie(x, z, quiet) {
+  // the key's scan may not be in yet on a restore: the group goes down now, and is filled when it lands
+  const fill = () => { if (!pavKeyModel.children.length && !fillPavKey()) setTimeout(fill, 1500); };
+  fill();
+  wellKey.x = x; wellKey.z = z; wellKey.state = 1;
+  const W = wellKey.world || (wellKey.world = new THREE.Group());
+  if (!W.children.includes(pavKeyModel)) W.add(pavKeyModel);
+  pavKeyModel.rotation.set(Math.PI / 2, 0, 2.2); pavKeyModel.position.set(0, 0, 0);
+  W.position.set(x, beachGroundAt(x, z) + 0.012, z);
+  if (!W.parent) scene.add(W);
+  if (!W.getObjectByName('hitProxy')) {
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; W.add(hit);
+    addItemShine(W, { size: 1.2, height: 0.45, strength: 2.8 });
+  }
+  addInteractable(W, 'Take the Pavilion key', 'inventory', {
+    onActivate: () => {
+      scene.remove(W); removeInteractable(W); hovered = null;
+      wellKey.state = 2;
+      addToInventory(pavKeyItem);
+      sfxThud(0.03);
+    },
+  });
+  if (!quiet) { spawnPuffs(x, z, 3, 0, -1, 0.06); try { playSample('sandHit', 0.4, 0.1, 1.5); } catch (e) {} setTimeout(() => { if (!dying) autosaveNow(); }, 1500); }   // and he is dead: that is kept
+}
 function wellRestore(f) {
   wellPhase = f.well || 0;
+  wellKey.state = f.wellKey || 0;
+  if (wellKey.state === 1 && f.wellKeyAt) wellKeyLie(f.wellKeyAt[0], f.wellKeyAt[1], true);
+  else if (wellKey.state === 0 && deadUnitKeys.has('wellman')) wellKeyLie(WELL_X + WELL_STAND.man, WELL_Z + 0.3, true);   // a save from before he carried it
   if (wellPhase === 1) wellPhase = 2;                 // a save with the bucket down: he is up by the time you load
   if (wellPhase >= 2) {
     wellBucketDown();
     if (wellLookIt) { removeInteractable(wellG); wellLookIt = null; }
+    wellEmptyLookIt();
     const u = wellUnit;
     if (u && u.st.alive && !deadUnitKeys.has('wellman')) {
       // up and about, standing where he stood, awake the moment you are close
@@ -82310,111 +83076,1337 @@ function wellRestore(f) {
     }
   }
 }
-/* ---- ITS SOUNDS: all made here, small and dry, the way the rest of this
- * file's are. The air in the shaft, the crank's pawl, the rope taken, each
- * stride up it, the wind at the reveal, his breath. */
-let wellAirNodes = null, wellCrankAcc = 0, wellDroneNodes = null;
-/* THE WELL'S AIR, out in the fog round it: the surf ducked away (`beachBedK`)
- * and in its place a low moan of wind that rises and falls on its own slow
- * clock, a bowed hum under it that never quite settles on a note, and
- * nothing else. It comes up as the fog does. */
-function sfxWellDrone(k) {
+/* ---- ITS SOUNDS (rebuilt 2026-10-12, the owner: "the well sound effects are
+ * horrible … make it eerie and mysterious, hyper realistic"). The first set
+ * were bare oscillators and filtered noise played straight at you — a well
+ * with no well in them. What makes a well sound like a well is the SHAFT:
+ * a stone tube a metre across and twenty-odd deep, so everything that
+ * happens down it comes back as a flutter (the round trip across the bore,
+ * 5 ms, a hollow ring), a long dark tail, and the slap off the water at the
+ * bottom a seventh of a second later, again and again, duller each time.
+ * That is `wellIR`, made once, and every sound from inside the well goes
+ * through it (`wellSend`), placed at the well and panned as you turn.
+ * The sources are modelled on the real thing rather than tones:
+ *  - a drip is the bubble a drop pulls under: a sine that sweeps UP, 30 ms,
+ *    with a tick of impact (`wellDrip`);
+ *  - a creak is stick-slip — a rope or an axle catching and letting go
+ *    a hundred times a second, the period wandering — through the body's
+ *    resonances (`wellCreakSrc`);
+ *  - the pawl is a knock of hardwood on iron: an impulse rung through a few
+ *    narrow inharmonic modes;
+ *  - the air is the tube itself sounding: noise through its first modes,
+ *    the seashell, breathing slowly (`sfxWellAir`). */
+let wellAirNodes = null, wellCrankAcc = 0, wellDroneNodes = null, wellAud = null, wellRopeNodes = null;
+function wellIR(ctx) {
+  const sr = ctx.sampleRate, len = Math.floor(sr * 4.6), b = ctx.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch);
+    // the diffuse tail: dark and long, the highs gone first (stone and water eat them)
+    let lo = 0, hi = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / sr, w = Math.random() * 2 - 1;
+      lo += (w - lo) * 0.06; hi += (w - hi) * 0.32;
+      d[i] = Math.min(1, t / 0.015) * (lo * 2.6 * Math.exp(-t * 1.35) + hi * 0.45 * Math.exp(-t * 5.0));
+    }
+    // the flutter: the bore ringing across itself
+    const across = 2 * 0.93 / 343 * (ch ? 1.012 : 0.991);
+    for (let k = 1; k < 90; k++) { const i = Math.floor((0.003 + k * across) * sr); if (i < len) d[i] += 0.32 * Math.pow(0.93, k) * (k % 2 ? 1 : -0.7); }
+    // the water: a slap back up the shaft, and again, duller each time
+    const down = 2 * 23 / 343;
+    for (let k = 1; k <= 7; k++) {
+      const c = Math.floor((k * down + (ch ? 0.0011 : 0)) * sr), amp = 0.75 * Math.pow(0.58, k - 1), sm = Math.floor(sr * (0.004 + k * 0.003));
+      let f = 0;
+      for (let j = 0; j < sm * 4 && c + j < len; j++) { f += ((Math.random() * 2 - 1) - f) * (0.5 / k); d[c + j] += amp * f * Math.exp(-j / sm); }
+    }
+  }
+  return b;
+}
+// the well's own place in the mix: a dry path and a path through the shaft, both panned to where it is
+function wellA() {
+  const ctx = audioCtx; if (!ctx) return null;
+  if (wellAud && wellAud.ctx === ctx) return wellAud;
+  const out = ctx.createGain(); out.gain.value = 0;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 12000;
+  const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
+  pan.connect(lp).connect(out).connect(sfxBusGain || ctx.destination);
+  const verb = ctx.createConvolver(); verb.buffer = wellIR(ctx);
+  const vg = ctx.createGain(); vg.gain.value = 1.4;
+  verb.connect(vg).connect(pan);
+  wellAud = { ctx, out, lp, pan, verb };
+  return wellAud;
+}
+// placed every frame: at the well, louder and brighter as you near it, all round you when you are over it
+function wellAudPlace() {
+  const A = wellAud; if (!A) return;
+  const t = A.ctx.currentTime;
+  const d = Math.hypot(camera.position.x - WELL_X, camera.position.z - WELL_Z);
+  const over = wellLook.on && wellLook.phase !== 'reveal';
+  const g = sfxHush || replaying || applyingSave ? 0 : over ? 1 : 1 / (1 + Math.max(0, d - 1) / 3.2);
+  A.out.gain.setTargetAtTime(d > 60 && !over ? 0 : g, t, 0.15);
+  A.lp.frequency.setTargetAtTime(over ? 12000 : 1200 + 10000 / (1 + d / 6), t, 0.2);
+  if (A.pan.pan) A.pan.pan.setTargetAtTime(over ? 0 : THREE.MathUtils.clamp(panTo(WELL_X, WELL_Z) * 0.8, -1, 1), t, 0.08);
+}
+function wellSend(node, dry, wet) {
+  const A = wellA(); if (!A) return;
+  if (dry > 0) { const g = A.ctx.createGain(); g.gain.value = dry; node.connect(g).connect(A.pan); }
+  if (wet > 0) { const g = A.ctx.createGain(); g.gain.value = wet; node.connect(g).connect(A.verb); }
+}
+// stick-slip: impulses at a wandering period (ms, from p0 to p1), each a tiny ringing click
+function wellCreakSrc(dur, p0, p1, rough = 0.3) {
+  const ctx = audioCtx, sr = ctx.sampleRate, len = Math.max(1, Math.floor(sr * dur)), b = ctx.createBuffer(1, len, sr), d = b.getChannelData(0);
+  let t = 0, wob = Math.random() * 6;
+  while (t < dur) {
+    const k = t / dur, p = (p0 + (p1 - p0) * k) * (1 + 0.25 * Math.sin(wob + k * 9)) * (1 + (Math.random() - 0.5) * rough) / 1000;
+    const i0 = Math.floor(t * sr), amp = Math.pow(Math.sin(Math.PI * Math.min(1, k * 1.15)), 0.5) * (0.55 + 0.45 * Math.random());
+    const n = Math.floor(sr * 0.0014);
+    for (let j = 0; j < n && i0 + j < len; j++) d[i0 + j] += amp * Math.exp(-j / (sr * 0.0003)) * (j ? (Math.random() * 2 - 1) * 0.6 : 1);
+    t += Math.max(0.0007, p);
+  }
+  const s = ctx.createBufferSource(); s.buffer = b; return s;
+}
+function wellCreak(dest, t, dur, p0, p1, gain, body = [[340, 5], [820, 6], [1600, 8], [2900, 10]]) {
+  const ctx = audioCtx, s = wellCreakSrc(dur, p0, p1), g = ctx.createGain(); g.gain.value = gain;
+  for (const [f, q] of body) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f * (0.95 + Math.random() * 0.1); bp.Q.value = q; s.connect(bp).connect(g); }
+  g.connect(dest); s.start(t);
+  return g;
+}
+// a knock: an impulse rung through narrow modes (wood: low and broad; iron: high and narrow)
+function wellKnock(t, modes, gain, decay = 0.012) {
+  const ctx = audioCtx, n = noiseBurst(0.004, (x) => 1 - x), g = ctx.createGain();
+  g.gain.setValueAtTime(gain, t); g.gain.exponentialRampToValueAtTime(0.0001, t + decay * 8);
+  for (const [f, q, a] of modes) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q; const ga = ctx.createGain(); ga.gain.value = a; n.connect(bp).connect(ga).connect(g); }
+  n.start(t);
+  return g;
+}
+// a drop into the water far down: the bubble's upward chirp and the tick of it landing
+function wellDrip(deep = 1, gain = 1) {
+  const A = wellA(); if (!A) return;
+  const ctx = A.ctx, t = ctx.currentTime + 0.02, f0 = 650 + Math.random() * 900;
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * (1.8 + Math.random() * 0.8), t + 0.028 + Math.random() * 0.02);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16 * gain, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05 + Math.random() * 0.04);
+  const tk = noiseBurst(0.005, (x) => 1 - x), tf = ctx.createBiquadFilter(); tf.type = 'bandpass'; tf.frequency.value = 2400 + Math.random() * 1500; tf.Q.value = 1.5;
+  const tg = ctx.createGain(); tg.gain.value = 0.05 * gain;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 4200 - deep * 2400;
+  o.connect(g).connect(lp); tk.connect(tf).connect(tg).connect(lp);
+  o.start(t); o.stop(t + 0.12); tk.start(t);
+  wellSend(lp, 0.12 * (1 - deep) + 0.015, 1.0);
+}
+// grit off the wall, falling: a few clicks, spaced like a pebble bouncing down a long way, gone into the tail
+function wellPebbles(deep = 0.6, gain = 1) {
+  const A = wellA(); if (!A) return;
+  const ctx = A.ctx, out = ctx.createGain(); out.gain.value = gain;
+  let t = ctx.currentTime + 0.03, gap = 0.12 + Math.random() * 0.1;
+  for (let i = 0; i < 4 + (Math.random() * 4 | 0); i++) {
+    wellKnock(t, [[2600 + Math.random() * 1800, 9, 1], [5200, 12, 0.4]], 0.10 * Math.pow(0.8, i), 0.004).connect(out);
+    t += gap; gap *= 0.82 + Math.random() * 0.25;
+  }
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5000 - deep * 2600;
+  out.connect(lp);
+  wellSend(lp, 0.08, 0.9);
+  setTimeout(() => wellDrip(1, 0.5), (t - ctx.currentTime) * 1000 + 160);    // and it finds the water
+}
+/* THE SHAFT'S BREATH, while you look in: the bore's own modes (the seashell),
+ * a draught over the mouth that comes and goes, a low weight of air, and
+ * the water talking to itself a long way down — drips, and now and then a
+ * trickle of grit off the wall. */
+function sfxWellAir(on) {
   const ctx = audioCtx; if (!ctx) return;
+  if (!on) {
+    if (wellAirNodes) { const t = ctx.currentTime, n = wellAirNodes; wellAirNodes = null; n.g.gain.setTargetAtTime(0.0001, t, 0.6); setTimeout(() => { for (const o of n.all) try { o.stop(); } catch (e) {} }, 3000); }
+    return;
+  }
+  if (wellAirNodes || !wellA()) return;
+  const g = ctx.createGain(); g.gain.value = 0.0001;
+  const all = [];
+  const src = noiseBurst(7, () => 1); src.loop = true; all.push(src);
+  // the tube sounding: its first modes, narrow, each breathing on its own clock
+  for (const [f, q, a, r] of [[186, 26, 0.55, 0.071], [372, 30, 0.32, 0.113], [561, 34, 0.18, 0.089], [93, 12, 0.35, 0.047]]) {
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+    const ga = ctx.createGain(); ga.gain.value = a;
+    const l = ctx.createOscillator(); l.frequency.value = r; const lg = ctx.createGain(); lg.gain.value = a * 0.8; l.connect(lg).connect(ga.gain); l.start(); all.push(l);
+    src.connect(bp).connect(ga).connect(g);
+  }
+  // the draught over the lip, gusting
+  const dr = ctx.createBiquadFilter(); dr.type = 'bandpass'; dr.frequency.value = 650; dr.Q.value = 0.8;
+  const dg = ctx.createGain(); dg.gain.value = 0.05;
+  const gl = ctx.createOscillator(); gl.frequency.value = 0.09; const gg = ctx.createGain(); gg.gain.value = 0.045; gl.connect(gg).connect(dg.gain); gl.start(); all.push(gl);
+  src.connect(dr).connect(dg).connect(g);
+  // the weight of the air
+  const lo = ctx.createBiquadFilter(); lo.type = 'lowpass'; lo.frequency.value = 110;
+  const log = ctx.createGain(); log.gain.value = 0.6; src.connect(lo).connect(log).connect(g);
+  src.start();
+  wellSend(g, 0.55, 0.30);
+  g.gain.setTargetAtTime(0.32, ctx.currentTime, 1.2);
+  const tick = () => {
+    if (!wellAirNodes || wellAirNodes.g !== g) return;
+    if (Math.random() < 0.14) wellPebbles(0.7, 0.8);
+    else { wellDrip(0.85 + Math.random() * 0.15, 0.7 + Math.random() * 0.5); if (Math.random() < 0.3) setTimeout(() => wellDrip(1, 0.5), 180 + Math.random() * 260); }
+    setTimeout(tick, 1100 + Math.random() * 3600);
+  };
+  wellAirNodes = { g, all };
+  setTimeout(tick, 900);
+}
+/* THE WINDLASS: the pawl dropping over the ratchet (hardwood on iron), the
+ * axle creaking under the load when it catches, the rope paying out over the
+ * drum, and the bucket knocking the wall on its way down, further down and
+ * more of the shaft in it each time. */
+function sfxWellCrank(dt, k) {
+  const ctx = audioCtx; if (!ctx) return;
+  const A = wellA(); if (!A) return;
+  if (k >= 1) { if (wellRopeNodes) { const n = wellRopeNodes; wellRopeNodes = null; n.g.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.1); setTimeout(() => { try { n.s.stop(); } catch (e) {} }, 600); } return; }
+  if (!wellRopeNodes) {
+    // the rope over the drum: fibres on wood, a dry grainy hiss
+    const s = noiseBurst(3, (x) => 0.55 + 0.45 * Math.abs(Math.sin(x * 260 + Math.sin(x * 37) * 3))); s.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 0.7;
+    const g = ctx.createGain(); g.gain.value = 0.0001; s.connect(bp).connect(g); s.start();
+    wellSend(g, 0.6, 0.15);
+    g.gain.setTargetAtTime(0.05, ctx.currentTime, 0.3);
+    wellRopeNodes = { s, g };
+  }
+  wellCrankAcc += dt;
+  const per = 0.21;
+  if (wellCrankAcc < per) return;
+  wellCrankAcc -= per;
+  const t = ctx.currentTime + 0.01;
+  const pawl = wellKnock(t, [[2350 + Math.random() * 200, 18, 1], [3900, 22, 0.5], [760, 6, 0.8], [5600, 25, 0.25]], 0.22, 0.010);
+  wellSend(pawl, 0.9, 0.12);
+  if (Math.random() < 0.45) { const cg = ctx.createGain(); wellCreak(cg, t + 0.02, 0.28 + Math.random() * 0.35, 6 + Math.random() * 4, 9 + Math.random() * 6, 0.06); wellSend(cg, 0.85, 0.1); }
+  if (Math.random() < 0.16 && k > 0.08) {
+    const deep = Math.min(1, k * 1.3);
+    const kn = wellKnock(t + 0.08, [[480 + Math.random() * 80, 5, 1], [1250, 7, 0.6], [2100, 9, 0.3]], 0.25 * (1 - 0.5 * deep), 0.018);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3200 - 2200 * deep;
+    kn.connect(lp); wellSend(lp, 0.4 * (1 - deep) + 0.03, 0.9);
+  }
+}
+/* TAKEN: the bucket hits the water and something takes the rope. A deep
+ * dull thud up the shaft, water slopping off the bucket, and at the top the
+ * whole frame groaning as the rope comes taut and the axle takes a weight
+ * that is not a bucket's. */
+function sfxWellGrab() {
+  const ctx = audioCtx; if (!ctx) return;
+  const A = wellA(); if (!A) return;
+  const t = ctx.currentTime + 0.02;
+  const th = noiseBurst(0.22, (x) => Math.exp(-x * 6)); const tf = ctx.createBiquadFilter(); tf.type = 'lowpass'; tf.frequency.value = 260;
+  const tg = ctx.createGain(); tg.gain.value = 0.9; th.connect(tf).connect(tg); th.start(t);
+  wellSend(tg, 0.05, 1.2);
+  const sl = noiseBurst(0.5, (x) => Math.pow(1 - x, 2) * (0.5 + 0.5 * Math.random())); const sf = ctx.createBiquadFilter(); sf.type = 'bandpass'; sf.frequency.value = 900; sf.Q.value = 0.9;
+  const sg = ctx.createGain(); sg.gain.value = 0.18; sl.connect(sf).connect(sg); sl.start(t + 0.12);
+  const slp = ctx.createBiquadFilter(); slp.type = 'lowpass'; slp.frequency.value = 1500; sg.connect(slp); wellSend(slp, 0.02, 1.0);
+  // the frame takes it: a long low groan, the period stretching as it loads
+  const fg = ctx.createGain(); wellCreak(fg, t + 0.35, 1.6, 4, 11, 0.16, [[150, 4], [310, 5], [640, 6], [1300, 8]]); wellSend(fg, 0.9, 0.15);
+  const rg = ctx.createGain(); wellCreak(rg, t + 0.4, 0.9, 7, 5, 0.07); wellSend(rg, 0.8, 0.1);
+  addTrauma(0.12);
+}
+/* EACH PULL UP THE ROPE: at the top the rope creaks over the drum under his
+ * weight; from down the shaft a wet hand slapping the stones, a foot
+ * scraping for a hold, grit coming loose — and, as he nears, breath. All of
+ * it from inside the tube: far and drowned in it at first, closer and drier
+ * each time. */
+function sfxWellStride(prog) {
+  const ctx = audioCtx; if (!ctx) return;
+  const A = wellA(); if (!A) return;
+  const t = ctx.currentTime + 0.01;
+  const dry = 0.04 + 0.75 * prog * prog, wet = 1.1 - 0.55 * prog, lpF = 900 + 4200 * prog;
+  const cg = ctx.createGain(); wellCreak(cg, t, 0.32 + Math.random() * 0.2, 5 + Math.random() * 2, 8 + Math.random() * 5, 0.05 + 0.06 * prog); wellSend(cg, 0.9, 0.12);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpF;
+  const lvl = 0.5 + 0.7 * prog;
+  // the hand: a wet slap on stone
+  const sl = noiseBurst(0.04, (x) => Math.pow(1 - x, 3)); const sf = ctx.createBiquadFilter(); sf.type = 'bandpass'; sf.frequency.value = 1500 + Math.random() * 600; sf.Q.value = 1.1;
+  const sg = ctx.createGain(); sg.gain.value = 0.32 * lvl; sl.connect(sf).connect(sg).connect(lp); sl.start(t + 0.18);
+  // the foot finding a hold: a gritty scrape
+  const sc = noiseBurst(0.26, (x) => Math.sin(x * Math.PI) * (0.4 + 0.6 * Math.random()) * (0.6 + 0.4 * Math.sin(x * 90)));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.setValueAtTime(800, t + 0.4); cf.frequency.linearRampToValueAtTime(1900, t + 0.66); cf.Q.value = 1.4;
+  const cgn = ctx.createGain(); cgn.gain.value = 0.16 * lvl; sc.connect(cf).connect(cgn).connect(lp); sc.start(t + 0.4);
+  wellSend(lp, dry, wet);
+  if (Math.random() < 0.3) setTimeout(() => wellPebbles(1 - prog * 0.6, 0.6 + 0.4 * prog), 450);
+  // and breath, as he comes: ragged, wet, through an open mouth
+  if (prog > 0.3 && Math.random() < 0.55 + 0.4 * prog) {
+    const br = noiseBurst(0.8, (x) => Math.pow(Math.sin(x * Math.PI), 1.4) * (0.55 + 0.45 * Math.sin(x * 70 + Math.sin(x * 9) * 4)));
+    const bo = ctx.createGain(); bo.gain.value = 0.10 * prog;
+    for (const [f, q, a] of [[560, 5, 1], [1150, 7, 0.6], [2500, 9, 0.35]]) { const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q; const ga = ctx.createGain(); ga.gain.value = a; br.connect(bp).connect(ga).connect(bo); }
+    const blp = ctx.createBiquadFilter(); blp.type = 'lowpass'; blp.frequency.value = lpF; bo.connect(blp);
+    br.start(t + 0.55);
+    wellSend(blp, dry * 1.2, wet * 0.8);
+  }
+  addTrauma(0.02 + 0.06 * prog);
+}
+/* AT THE REVEAL, wind over open sand: a low roar that swells and drops on
+ * gusts that never repeat, a thin whistle riding the strongest of them, and
+ * sand hissing along the ground under it. Not through the shaft — out here. */
+function sfxWellWind() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime + 0.3, out = sfxOut(), D = 10, sr = ctx.sampleRate, n = Math.floor(sr * D);
+  const b = ctx.createBuffer(2, n, sr);
+  // gusts: a few slow random curves, summed
+  const G = new Float32Array(64); for (let i = 0; i < 64; i++) G[i] = Math.random();
+  const gust = (x) => { const p = x * 13, i = Math.floor(p), f = p - i, a = G[i % 64], c = G[(i + 1) % 64]; return a + (c - a) * f * f * (3 - 2 * f); };
+  for (let ch = 0; ch < 2; ch++) {
+    const d = b.getChannelData(ch); let br = 0;
+    for (let i = 0; i < n; i++) {
+      const x = i / n; br = br * 0.985 + (Math.random() * 2 - 1) * 0.15;
+      const env = Math.min(1, x * 5) * Math.min(1, (1 - x) * 3);
+      d[i] = br * env * (0.35 + 0.65 * gust(x + ch * 0.003));
+    }
+  }
+  const s = ctx.createBufferSource(); s.buffer = b;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+  const curve = new Float32Array(48); for (let i = 0; i < 48; i++) curve[i] = 260 + 900 * gust(i / 48);
+  lp.frequency.setValueCurveAtTime(curve, t, D);
+  const g = ctx.createGain(); g.gain.value = 0.55;
+  s.connect(lp).connect(g).connect(out);
+  const wh = ctx.createBiquadFilter(); wh.type = 'bandpass'; wh.Q.value = 16;
+  const wc = new Float32Array(48); for (let i = 0; i < 48; i++) wc[i] = 620 + 520 * gust(i / 48 + 0.02);
+  wh.frequency.setValueCurveAtTime(wc, t, D);
+  const wg = ctx.createGain(); wg.gain.value = 0.10; s.connect(wh).connect(wg).connect(out);
+  const hs = ctx.createBiquadFilter(); hs.type = 'highpass'; hs.frequency.value = 3800;
+  const hg = ctx.createGain(); hg.gain.value = 0.10; s.connect(hs).connect(hg).connect(out);
+  s.start(t);
+}
+/* HIS BREATH, while he stares: two long wet ones through an open mouth, near,
+ * from where he stands — the air catching in a throat that has been full of
+ * water. */
+function sfxWellBreath() {
+  const ctx = audioCtx; if (!ctx || !wellUnit) return;
+  const p = wellUnit.g.position;
+  let out = sfxOut();
+  if (ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(p.x, p.z) * 0.7, -1, 1); sp.connect(out); out = sp; }
+  for (let i = 0; i < 2; i++) {
+    const t = ctx.currentTime + 0.05 + i * 1.5, inh = i === 0;
+    const n = noiseBurst(1.1, (x) => Math.pow(Math.sin(x * Math.PI), inh ? 1.8 : 1.2) * (0.5 + 0.5 * Math.sin(x * (inh ? 55 : 38) + Math.sin(x * 7) * 5)));
+    const g = ctx.createGain(); g.gain.value = 0.16;
+    for (const [f, q, a] of [[inh ? 480 : 400, 5, 1], [inh ? 1350 : 1050, 7, 0.55], [2600, 10, 0.3]]) {
+      const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = q; bp.frequency.setValueAtTime(f * (inh ? 0.9 : 1.05), t); bp.frequency.linearRampToValueAtTime(f * (inh ? 1.1 : 0.9), t + 1.0);
+      const ga = ctx.createGain(); ga.gain.value = a; n.connect(bp).connect(ga).connect(g);
+    }
+    g.connect(out); n.start(t);
+  }
+}
+/* OUT IN THE FOG ROUND IT: the surf ducked away (`beachBedK`), and in its
+ * place a low wind moaning over the sand on a slow clock of its own, the
+ * well itself sounding faintly as the draught crosses its mouth, and, now
+ * and then, from inside it, a drip, or grit going down — the well is not
+ * empty, and you can hear that before you get there. It comes up as the fog
+ * does. */
+function sfxWellDrone(k, dt = 1 / 60) {
+  const ctx = audioCtx; if (!ctx) return;
+  wellAudPlace();
   if (k <= 0.001 && !wellDroneNodes) return;
   if (!wellDroneNodes) {
     const out = sfxOut(), g = ctx.createGain(); g.gain.value = 0.0001; g.connect(out);
-    const src = noiseBurst(6, () => 1); src.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 230; bp.Q.value = 3.2;
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07; const lg = ctx.createGain(); lg.gain.value = 120; lfo.connect(lg).connect(bp.frequency);
-    const wg = ctx.createGain(); wg.gain.value = 0.9;
-    const lfo2 = ctx.createOscillator(); lfo2.frequency.value = 0.043; const lg2 = ctx.createGain(); lg2.gain.value = 0.55; lfo2.connect(lg2).connect(wg.gain);
-    src.connect(bp).connect(wg).connect(g);
-    const hum = ctx.createGain(); hum.gain.value = 0.10;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260;
-    const oscs = [55, 55.7, 82.6].map((f) => { const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.connect(lp); return o; });
-    lp.connect(hum).connect(g);
-    const all = [src, lfo, lfo2, ...oscs];
+    const src = noiseBurst(8, () => 1); src.loop = true;
+    const all = [src];
+    // the moan: brown-ish noise through a band that wanders, swelling on gusts
+    const lo = ctx.createBiquadFilter(); lo.type = 'lowpass'; lo.frequency.value = 420;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 190; bp.Q.value = 2.4;
+    const l1 = ctx.createOscillator(); l1.frequency.value = 0.051; const l1g = ctx.createGain(); l1g.gain.value = 70; l1.connect(l1g).connect(bp.frequency);
+    const wg = ctx.createGain(); wg.gain.value = 0.8;
+    const l2 = ctx.createOscillator(); l2.frequency.value = 0.033; const l2g = ctx.createGain(); l2g.gain.value = 0.6; l2.connect(l2g).connect(wg.gain);
+    src.connect(lo).connect(bp).connect(wg).connect(g);
+    all.push(l1, l2);
+    // the well's mouth sounding in the draught: its first mode, faint, through the well's own place
+    const mbp = ctx.createBiquadFilter(); mbp.type = 'bandpass'; mbp.frequency.value = 186; mbp.Q.value = 30;
+    const mg = ctx.createGain(); mg.gain.value = 0.5;
+    const l3 = ctx.createOscillator(); l3.frequency.value = 0.061; const l3g = ctx.createGain(); l3g.gain.value = 0.45; l3.connect(l3g).connect(mg.gain);
+    src.connect(mbp).connect(mg); wellSend(mg, 0.6, 0.4);
+    all.push(l3);
     for (const n of all) n.start();
-    wellDroneNodes = { g, all };
+    wellDroneNodes = { g, mg, all, next: 3 + Math.random() * 5 };
   }
-  const t = ctx.currentTime;
-  wellDroneNodes.g.gain.setTargetAtTime(Math.max(0.0001, 0.11 * k * (1 + 0.5 * wellDread)), t, 0.6);
+  const t = ctx.currentTime, N = wellDroneNodes;
+  N.g.gain.setTargetAtTime(Math.max(0.0001, 0.16 * k * (1 + 0.5 * wellDread)), t, 0.6);
+  N.mg.gain.setTargetAtTime(0.5 * k, t, 0.6);
+  // what the well does on its own while you are near and not looking in
+  if (k > 0.5 && !wellLook.on && wellPhase === 0 && !applyingSave && !replaying) {
+    N.next -= dt;
+    if (N.next <= 0) { N.next = 4 + Math.random() * 9; if (Math.random() < 0.3) wellPebbles(0.8, 0.9); else wellDrip(0.9, 1.1); }
+  }
   if (k <= 0.001) {
-    const n = wellDroneNodes; wellDroneNodes = null;
-    n.g.gain.setTargetAtTime(0.0001, t, 0.3);
-    setTimeout(() => { for (const o of n.all) try { o.stop(); } catch (e) {} }, 1500);
+    wellDroneNodes = null;
+    N.g.gain.setTargetAtTime(0.0001, t, 0.3); N.mg.gain.setTargetAtTime(0.0001, t, 0.3);
+    setTimeout(() => { for (const o of N.all) try { o.stop(); } catch (e) {} }, 1500);
   }
 }
-function sfxWellAir(on) {
+/* HIS VOICE, up the shaft (louder, 2026-10-12): the owner's lines, a touch
+ * dulled, through the well's own place — a strong dry voice with the shaft
+ * ringing round it, so it is a man down there and not a radio. */
+function wellVoice(i) {
   const ctx = audioCtx; if (!ctx) return;
-  if (!on) { if (wellAirNodes) { const t = ctx.currentTime; wellAirNodes.g.gain.setTargetAtTime(0.0001, t, 0.25); const n = wellAirNodes; setTimeout(() => { try { n.src.stop(); } catch (e) {} }, 900); wellAirNodes = null; } return; }
-  if (wellAirNodes) return;
-  const src = noiseBurst(4, () => 1); src.loop = true;
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 160; bp.Q.value = 1.8;
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
-  const g = ctx.createGain(); g.gain.value = 0.0001;
-  src.connect(bp).connect(lp).connect(g).connect(sfxOut());
-  src.start();
-  g.gain.setTargetAtTime(0.09, ctx.currentTime, 0.8);
-  // and a drip, now and then, a long way down
-  const drip = () => { if (!wellAirNodes) return; const t = ctx.currentTime + 0.05; const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(1900 + Math.random() * 600, t); o.frequency.exponentialRampToValueAtTime(700, t + 0.09); const dg = ctx.createGain(); dg.gain.setValueAtTime(0.0001, t); dg.gain.exponentialRampToValueAtTime(0.03, t + 0.004); dg.gain.exponentialRampToValueAtTime(0.0001, t + 0.35); const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1400; o.connect(dg).connect(f).connect(sfxOut()); o.start(t); o.stop(t + 0.4); setTimeout(drip, 2500 + Math.random() * 4000); };
-  setTimeout(drip, 1500);
-  wellAirNodes = { src, g };
+  const bank = (sampleBanks.wellGuy || []).filter(Boolean);
+  if (!bank.length || !wellA()) return;
+  const src = ctx.createBufferSource(); src.buffer = bank[i % bank.length];
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 110;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3600;
+  const pk = ctx.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 900; pk.Q.value = 1.1; pk.gain.value = 4;   // the boxy middle a tube gives a voice
+  src.connect(hp).connect(pk).connect(lp);
+  wellSend(lp, 2.8, 0.9);                      // about three times the old level: the lines sat under the shaft's own air
+  src.start(ctx.currentTime + 0.02);
 }
-function sfxWellCrank(dt, k) {
-  const ctx = audioCtx; if (!ctx || k >= 1) return;
-  wellCrankAcc += dt;
-  const per = 0.19;                                  // the pawl, five times a second
-  if (wellCrankAcc < per) return;
-  wellCrankAcc -= per;
-  const t = ctx.currentTime + 0.01, out = sfxOut();
-  const n = noiseBurst(0.05, (x) => Math.exp(-x * 9)); const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1500 + Math.random() * 500; f.Q.value = 2.5;
-  const g = ctx.createGain(); g.gain.value = 0.05; n.connect(f).connect(g).connect(out); n.start(t);
-  // under it the axle's creak: a slow bowed tone that leans on every third click
-  if (Math.random() < 0.4) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(95 + Math.random() * 30, t); o.frequency.linearRampToValueAtTime(120 + Math.random() * 40, t + 0.3); const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.028, t + 0.08); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.38); const of = ctx.createBiquadFilter(); of.type = 'lowpass'; of.frequency.value = 700; o.connect(og).connect(of).connect(out); o.start(t); o.stop(t + 0.4); }
-}
-function sfxWellGrab() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime + 0.02, out = sfxOut();
-  // the rope goes taut: a dull thud a long way down and the creak of the whole frame taking a weight
-  const th = noiseBurst(0.18, (x) => Math.exp(-x * 7)); const tf = ctx.createBiquadFilter(); tf.type = 'lowpass'; tf.frequency.value = 220; const tg = ctx.createGain(); tg.gain.value = 0.22; th.connect(tf).connect(tg).connect(out); th.start(t);
-  const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(70, t + 0.1); o.frequency.exponentialRampToValueAtTime(140, t + 0.9); o.frequency.exponentialRampToValueAtTime(88, t + 1.5);
-  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t + 0.1); og.gain.exponentialRampToValueAtTime(0.06, t + 0.3); og.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
-  const of = ctx.createBiquadFilter(); of.type = 'lowpass'; of.frequency.value = 520; o.connect(og).connect(of).connect(out); o.start(t); o.stop(t + 1.7);
-  addTrauma(0.12);
-}
-function sfxWellStride(prog) {
-  const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime + 0.01, out = sfxOut(), lvl = 0.05 + 0.17 * prog, lp = 500 + 1900 * prog;   // nearer: louder and brighter
-  // the rope's creak under a hand's weight
-  const o = ctx.createOscillator(); o.type = 'sawtooth'; const f0 = 80 + Math.random() * 40;
-  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * (1.5 + Math.random() * 0.5), t + 0.22); o.frequency.exponentialRampToValueAtTime(f0 * 1.1, t + 0.42);
-  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(lvl, t + 0.05); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.46);
-  const of = ctx.createBiquadFilter(); of.type = 'lowpass'; of.frequency.value = lp; o.connect(og).connect(of).connect(out); o.start(t); o.stop(t + 0.5);
-  // the scrape of a foot on the stones
-  const n = noiseBurst(0.16, (x) => Math.sin(x * Math.PI) * (0.5 + 0.5 * Math.sin(x * 40))); const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 700 + 900 * prog; nf.Q.value = 1.2;
-  const ng = ctx.createGain(); ng.gain.value = lvl * 0.7; n.connect(nf).connect(ng).connect(out); n.start(t + 0.12);
-  // the frame knocks
-  if (prog > 0.5 && Math.random() < 0.5) { const k = noiseBurst(0.06, (x) => Math.exp(-x * 12)); const kf = ctx.createBiquadFilter(); kf.type = 'lowpass'; kf.frequency.value = 300; const kg = ctx.createGain(); kg.gain.value = lvl * 0.9; k.connect(kf).connect(kg).connect(out); k.start(t + 0.3 + Math.random() * 0.2); }
-  addTrauma(0.02 + 0.06 * prog);
-}
-function sfxWellWind() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime + 0.3, out = sfxOut();
-  // gusts over the sand for the length of the stare, low and dry
-  const n = noiseBurst(9, (x) => (0.35 + 0.65 * Math.pow(Math.max(0, Math.sin(x * Math.PI * 2.3 + 0.4)), 1.5)) * Math.sin(Math.min(1, x * 6) * Math.PI / 2) * (1 - Math.pow(Math.max(0, x - 0.8) / 0.2, 2)));
-  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(260, t); f.frequency.linearRampToValueAtTime(640, t + 4); f.frequency.linearRampToValueAtTime(300, t + 9);
-  const g = ctx.createGain(); g.gain.value = 0.16; n.connect(f).connect(g).connect(out); n.start(t);
-}
-function sfxWellBreath() {
-  const ctx = audioCtx; if (!ctx) return;
-  const out = sfxOut();
-  for (let i = 0; i < 2; i++) {
-    const t = ctx.currentTime + 0.05 + i * 1.1;
-    const n = noiseBurst(0.7, (x) => Math.sin(x * Math.PI) * (0.6 + 0.4 * Math.sin(x * 70)));
-    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.setValueAtTime(380, t); f.frequency.linearRampToValueAtTime(260, t + 0.7); f.Q.value = 1.4;
-    const g = ctx.createGain(); g.gain.value = 0.06; n.connect(f).connect(g).connect(out); n.start(t);
+
+// ------------------------------------------------------------------
+// The lighthouse island
+// ------------------------------------------------------------------
+/* THE LIGHTHOUSE IS AN ISLAND OF ROCK NOW (2026-10-12, the owner: "use this
+ * model to replace the lighthouse completely … on the cliff overlooking the
+ * water … you should see the castle behind you … dont treat this like a
+ * diorama"). Jake.Hatt's "Lighthouse Diorama" (Sketchfab, CC-BY-4.0;
+ * `assets/lighthouse-isle.glb`, gltfpack at 2048/1024 with its water, its
+ * display ring, its fish and its flying birds left out) stands behind the
+ * first castle, at the foot of the bluff Castle XIII is on: a stack of rock
+ * twenty metres out of the sea with a wooded terrace on it, a stair down
+ * its sea face to a jetty, a climbing path, and on the top deck the keeper's
+ * red house and the striped tower. Its own water is our water: the jetty is
+ * a metre over the swell.
+ *
+ * It is placed by the numbers measured off the model (`ISLE_*`, the model
+ * at 0.15 and turned half round, so its terrace is toward the castle and its
+ * stair and jetty face the sea). It is not the generated tower any more:
+ * that group, its headland, its lane and its cottage are hidden, and only its
+ * light is kept — the optic's burner, its glow, the beam and the hand on the
+ * light — moved up into this tower's lantern, so the end of the walk and
+ * the beam that has turned over the whole of it are the same things.
+ *
+ * You walk it the way you walk a castle: a SITE (`ISLE_SITE`) whose floors
+ * are rasterised from the model's own upward faces at load and whose walls
+ * are its drawn faces (`fortWallsStep`) — the rock, the house, the rails,
+ * the crates and the trunks are in the way because they are drawn. A
+ * boardwalk on piles runs from the sand at the castle's back wall round the
+ * island's tail to the jetty, so the island is a place you can walk to and
+ * back from; the castle's back door puts you up on the terrace under the
+ * trees, looking at the lamp at the stair head (the owner's first picture),
+ * with the tower over your left shoulder (the second) and Castle XIII on its
+ * bluff behind you. */
+const ISLE_S = 0.15, ISLE_X = -1, ISLE_Y = 22, ISLE_Z = -1164;
+// a point measured on the model (at 0.15, unturned) to the world: half a turn about Y
+const isleW = (mx, my, mz) => new THREE.Vector3(ISLE_X - mx, ISLE_Y + my, ISLE_Z - mz);
+const ISLE_AXIS = isleW(3.5, 0, 11.05);              // the tower's axis (the lantern's centre: the shaft's own centroid leans)
+const ISLE_FLOOR = ISLE_Y + 4.88;                    // the deck at the tower's foot, world (the boards round it, measured: the flare goes on down below them)
+const ISLE_GALLERY = ISLE_Y + 19.02;                 // the model's gallery disc, world
+const ISLE_LAMP_Y = ISLE_Y + 19.8;                   // the middle of its lamp
+/* the shaft's outer face, measured about the lantern's axis (about the shaft's own vertex centroid, which a
+ * window's extra vertices drag 0.36 m off, it read 1.98 and the brick stood OUTSIDE the skin): a flared foot
+ * 2.58 → 2.02, a ledge, then 1.61 the rest of the way, with the wall's own inner face at 1.33 */
+const ISLE_TOWER_R = (y) => { const m = y - ISLE_Y; return m < 3.75 ? 2.58 : m < 7.0 ? 2.58 - (m - 3.75) * 0.1723 : m < 8.5 ? 2.02 - (m - 7.0) * 0.273 : 1.61; };
+const ISLE_BORE = (y) => ISLE_TOWER_R(y) - 0.30;     // and the brick inside it
+const ISLE_DOOR_A = Math.PI / 2 + 0.25;              // the door faces the deck's land arm (world angle, atan2(dx, dz))
+const ISLE_DOOR_W = 0.55, ISLE_DOOR_H = 2.1;
+const ISLE_RISE = 3.6, ISLE_PER_TURN = 18, ISLE_STEP = ISLE_RISE / ISLE_PER_TURN, ISLE_TREAD_T = 0.07;
+const ISLE_CEIL = ISLE_GALLERY - 0.45;               // the ceiling under the lantern floor
+const ISLE_TOP = ISLE_CEIL - ISLE_FLOOR - 2.15;      // the climb: the last tread a man's height under the ceiling, where the ladder goes up
+const ISLE_TREAD_R = 1.22, ISLE_RAIL_R = 1.14, ISLE_POLE_R = 0.07;
+const ISLE_BODY_R = 0.25;                            // a body in a 1.3 m bore: the beach's 0.4 left a band of 55 cm to climb in
+const ISLE_HATCH_A = ((ISLE_DOOR_A - (ISLE_TOP / ISLE_RISE) * Math.PI * 2) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+const ISLE_GAL_R0 = 1.05, ISLE_GAL_R1 = 2.6;         // the gallery you walk: the model's disc widened with a grating ring
+const isleAng = (x, z) => Math.atan2(x - ISLE_AXIS.x, z - ISLE_AXIS.z);
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+// where the castle's back door puts you: on the terrace, under the trees, the stair head's lamp in front (measured on the model)
+/* (found by raycasting the terrace for a spot under the canopy with the lamp and the landing's boards in front
+ * AND the tower clear over the shoulder: one tree stood in that line from everywhere worth standing, and it is
+ * left out — `OptimizedTree__12_`; the canopy overhead is the trees round it) */
+const ISLE_SPAWN = isleW(-5, 0, -9.5), ISLE_SPAWN_LOOK = isleW(9.4, -2.6, -13.5);
+const ISLE_DROP = /^OptimizedTree__12__/;
+let isleWorld = null, isleReady = false, onIsle = false, isleWallsT = 0;
+let isleDoorOpen = false, isleDoorSwing = 0, isleOnGallery = false, isleCut = null;
+const isleLastSpot = { x: 0, z: 0 };
+let isleLastFloor = null;
+const ISLE_SITE = {
+  X: 0, Y: 0, Z: 0, step: 0.62, ready: false,       // the cliff stair is fifty degrees: at the beach's stride the riser two ahead was a wall
+  get group() { return isleWorld; }, walk: null, cells: null, walls: null,
+  skip: (mn) => /Leaf|Bark/i.test(mn || ''),        // a leaf is not a wall, and a tree is its trunk (`isleTrunks`), not its drawn bark
+  // nor anything standing in the footprint of the stair the walk reads as a ramp (overlap, not centroid: a beam across the flight had its middle outside it)
+  cutTri: (o, a, b, c) => ISLE_RAMPS.some((R) => Math.max(a.x, b.x, c.x) > R.x0 + 0.15 && Math.min(a.x, b.x, c.x) < R.x1 - 0.15 && Math.max(a.z, b.z, c.z) > R.z0 + 0.15 && Math.min(a.z, b.z, c.z) < R.z1 - 0.15)
+,
+  extra: () => [],
+  sea: null,                                         // a cell never written is not ground
+};
+/* A TREE IS ITS TRUNK (2026-10-13). Read off its drawn bark, a tree was a
+ * wall of every bough at body height — the big one on the terrace spread them
+ * two metres round itself, and you stuck in them a stride from the bark — and
+ * its leaning, half-cut trunk was a ring with gaps in it, so a body that found
+ * one stood INSIDE the tree and could not leave. Each trunk is a disc now:
+ * the bark that rises out of the ground (its lowest point within half a metre
+ * of the floor under it), its vertices below a man's waist clustered into
+ * trunks, each a centre and the radius that holds four in five of them. A
+ * disc is round, so you slide off it. */
+let isleTrunks = [];
+function isleFindTrunks(barkMeshes) {
+  const pts = [], a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (const o of barkMeshes) {
+    o.updateMatrixWorld(true);
+    const P = o.geometry.attributes.position, I = o.geometry.index, cnt = I ? I.count : P.count;
+    for (let t = 0; t < cnt; t += 3) {
+      a.fromBufferAttribute(P, I ? I.getX(t) : t).applyMatrix4(o.matrixWorld); b.fromBufferAttribute(P, I ? I.getX(t + 1) : t + 1).applyMatrix4(o.matrixWorld); c.fromBufferAttribute(P, I ? I.getX(t + 2) : t + 2).applyMatrix4(o.matrixWorld);
+      const f = ISLE_M.floorAt((a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3); if (f === null) continue;
+      if (Math.min(a.y, b.y, c.y) > f + 0.5 || Math.max(a.y, b.y, c.y) < f + 0.9) continue;
+      for (const v of [a, b, c]) if (v.y < f + 1.1) pts.push(v.x, v.z);
+    }
   }
+  const cl = [];
+  for (let i = 0; i < pts.length; i += 2) {
+    const x = pts[i], z = pts[i + 1];
+    let k = cl.find((q) => Math.hypot(q.sx / q.n - x, q.sz / q.n - z) < 0.9);
+    if (!k) { k = { sx: 0, sz: 0, n: 0, p: [] }; cl.push(k); }
+    k.sx += x; k.sz += z; k.n++; k.p.push(x, z);
+  }
+  isleTrunks = [];
+  for (const k of cl) {
+    if (k.n < 6) continue;
+    const x = k.sx / k.n, z = k.sz / k.n, ds = [];
+    for (let i = 0; i < k.p.length; i += 2) ds.push(Math.hypot(k.p[i] - x, k.p[i + 1] - z));
+    ds.sort((p, q) => p - q);
+    isleTrunks.push({ x, z, r: THREE.MathUtils.clamp(ds[Math.floor(ds.length * 0.8)], 0.12, 0.55) });
+  }
+}
+// out of every trunk you stand in, the castles' disc push
+function isleTrunkPush(p, r) {
+  for (const T of isleTrunks) {
+    const dx = p.x - T.x, dz = p.z - T.z, d = Math.hypot(dx, dz), m = T.r + r;
+    if (d >= m) continue;
+    if (d < 1e-4) { p.x += m; continue; }
+    p.x = T.x + dx / d * m; p.z = T.z + dz / d * m;
+  }
+}
+/* ---- SUBDIVIDE, THEN CUT. A doorway in a shaft of 720 triangles cannot be
+ * cut by dropping whole triangles — one is three metres tall — so every
+ * triangle near the opening is split on its longest edge until it is small,
+ * and then the ones whose middles are inside are dropped. The edge comes out
+ * as square as the subdivision is fine, and a frame goes over it. */
+function isleCutGeo(geo, near, inside, maxEdge = 0.12) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv;
+  const oP = [], oN = [], oU = [];
+  const vtx = (i) => [P.getX(i), P.getY(i), P.getZ(i), N ? N.getX(i) : 0, N ? N.getY(i) : 1, N ? N.getZ(i) : 0, U ? U.getX(i) : 0, U ? U.getY(i) : 0];
+  const mid = (a, b) => a.map((v, k) => (v + b[k]) / 2);
+  const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+  const emit = (a, b, c) => { for (const v of [a, b, c]) { oP.push(v[0], v[1], v[2]); oN.push(v[3], v[4], v[5]); oU.push(v[6], v[7]); } };
+  const tri = (a, b, c, depth) => {
+    if (!near(a, b, c)) { emit(a, b, c); return; }
+    const ab = d2(a, b), bc = d2(b, c), ca = d2(c, a), m = Math.max(ab, bc, ca);
+    if (m > maxEdge * maxEdge && depth < 14) {
+      if (m === ab) { const p = mid(a, b); tri(a, p, c, depth + 1); tri(p, b, c, depth + 1); }
+      else if (m === bc) { const p = mid(b, c); tri(a, b, p, depth + 1); tri(a, p, c, depth + 1); }
+      else { const p = mid(c, a); tri(a, b, p, depth + 1); tri(p, b, c, depth + 1); }
+      return;
+    }
+    if (inside((a[0] + b[0] + c[0]) / 3, (a[1] + b[1] + c[1]) / 3, (a[2] + b[2] + c[2]) / 3)) return;
+    emit(a, b, c);
+  };
+  for (let i = 0; i < P.count; i += 3) tri(vtx(i), vtx(i + 1), vtx(i + 2), 0);
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(oP, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(oN, 3));
+  if (U) out.setAttribute('uv', new THREE.Float32BufferAttribute(oU, 2));
+  return out;
+}
+// a box of world space a triangle may touch (cheap: its bounding box against the box)
+const isleNearBox = (x0, y0, z0, x1, y1, z1) => (a, b, c) =>
+  Math.max(a[0], b[0], c[0]) >= x0 && Math.min(a[0], b[0], c[0]) <= x1 &&
+  Math.max(a[1], b[1], c[1]) >= y0 && Math.min(a[1], b[1], c[1]) <= y1 &&
+  Math.max(a[2], b[2], c[2]) >= z0 && Math.min(a[2], b[2], c[2]) <= z1;
+/* ---- THE FLOOR PLAN: every upward face of the rock, the decks, the stair,
+ * the jetty, the props and the boardwalk, rasterised into 20 cm cells as the
+ * castles' packs are — floors ascending, each with the next surface over it
+ * as its ceiling. A cell the rock covers but nobody can stand on is written
+ * empty, so it is a wall and not the sea. */
+function isleBuildCells(meshes, rockMeshes) {
+  const cell = 0.2, X0 = -32, X1 = 21, Z0 = -1188, Z1 = -1123;
+  const gw = Math.ceil((X1 - X0) / cell), gh = Math.ceil((Z1 - Z0) / cell);
+  const raw = new Map();                               // cell -> [y, up?, ...]
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), ab = new THREE.Vector3(), ac = new THREE.Vector3(), n = new THREE.Vector3();
+  const put = (o, rock) => {
+    const g = o.geometry, P = g.attributes.position, I = g.index, cnt = I ? I.count : P.count;
+    for (let t = 0; t < cnt; t += 3) {
+      a.fromBufferAttribute(P, I ? I.getX(t) : t).applyMatrix4(o.matrixWorld); b.fromBufferAttribute(P, I ? I.getX(t + 1) : t + 1).applyMatrix4(o.matrixWorld); c.fromBufferAttribute(P, I ? I.getX(t + 2) : t + 2).applyMatrix4(o.matrixWorld);
+      ab.subVectors(b, a); ac.subVectors(c, a); n.crossVectors(ab, ac);
+      const L = n.length(); if (L < 1e-9) continue;
+      const ny = n.y / L;
+      if (Math.abs(ny) < 0.05 && !rock) continue;
+      const D = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z); if (Math.abs(D) < 1e-9) continue;
+      const i0 = Math.max(0, Math.floor((Math.min(a.x, b.x, c.x) - X0) / cell)), i1 = Math.min(gw - 1, Math.floor((Math.max(a.x, b.x, c.x) - X0) / cell));
+      const j0 = Math.max(0, Math.floor((Math.min(a.z, b.z, c.z) - Z0) / cell)), j1 = Math.min(gh - 1, Math.floor((Math.max(a.z, b.z, c.z) - Z0) / cell));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const px = X0 + (i + 0.5) * cell, pz = Z0 + (j + 0.5) * cell;
+        const l1 = ((b.z - c.z) * (px - c.x) + (c.x - b.x) * (pz - c.z)) / D, l2 = ((c.z - a.z) * (px - c.x) + (a.x - c.x) * (pz - c.z)) / D, l3 = 1 - l1 - l2;
+        if (l1 < -1e-3 || l2 < -1e-3 || l3 < -1e-3) continue;
+        const k = j * gw + i; let e = raw.get(k); if (!e) { e = []; raw.set(k, e); }
+        e.push(l1 * a.y + l2 * b.y + l3 * c.y, ny > 0.55 ? 1 : 0);
+      }
+    }
+  };
+  for (const o of [...rockMeshes, ...meshes]) o.updateMatrixWorld(true);
+  for (const o of rockMeshes) put(o, true);
+  for (const o of meshes) put(o, false);
+  /* AND A GAP BETWEEN TWO PLANKS IS NOT A HOLE. The boards are laid with a
+   * crack between them and the cells are 20 cm, so every few rows a line of
+   * cells fell in a crack, got no floor, and was "not the island" — a wall
+   * across the boardwalk you could not see (measured: stuck at x −3.6). A
+   * cell with nothing in it whose neighbours on two opposite sides have
+   * floors gets theirs, twice over.
+   * AND A CRACK OVER ROCK IS THE SAME CRACK (2026-10-13, the owner: "i fall
+   * through the floor"). A cell that is NOT empty — the rock under the deck
+   * is in it, a metre or two down — was never filled, and the walk read the
+   * rock: you stepped into the crack and dropped through the boards. So the
+   * test is the TOP floor, not "anything at all": a cell lower than both of
+   * its neighbours across it, one cell or two away, by more than a lip, gets
+   * their floor laid over whatever it has. */
+  const top = (e) => { let t = null; if (e) for (let m = 0; m < e.length; m += 2) if (e[m + 1] && (t === null || e[m] > t)) t = e[m]; return t; };
+  for (let pass = 0; pass < 3; pass++) {
+    const add = [];
+    for (let j = 2; j < gh - 2; j++) for (let i = 2; i < gw - 2; i++) {
+      const k = j * gw + i, t = top(raw.get(k));
+      let f = null;
+      for (const d of [1, 2]) {
+        for (const s of [d, d * gw]) {
+          const l = top(raw.get(k - s)), r = top(raw.get(k + s));
+          if (l === null || r === null || Math.abs(l - r) > 0.35) continue;
+          const m = (l + r) / 2;
+          if ((t === null || m - t > 0.25) && (f === null || m > f)) f = m;
+        }
+        if (f !== null) break;
+      }
+      if (f !== null) add.push([k, f]);
+    }
+    for (const [k, f] of add) { let e = raw.get(k); if (!e) { e = []; raw.set(k, e); } e.push(f, 1); }
+  }
+  // the ramps: their footprint is the slope and nothing else
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    const y = isleRampAt(X0 + (i + 0.5) * cell, Z0 + (j + 0.5) * cell);
+    if (y !== null) raw.set(j * gw + i, [y, 1]);
+  }
+  /* AND NOBODY STANDS BESIDE THE FLIGHT (2026-10-13, the owner's screenshots:
+   * "fix clipping through these stairs … it is very bad"). The rock either side
+   * of the cliff stair climbs at forty degrees, under the step, so you could
+   * walk up it beside the flight and stand with your eye in the stair's side
+   * or under its treads. Within three metres of the flight, ground more than
+   * 0.8 m below the stair at the same z is written empty: rock, not floor. */
+  for (const R of ISLE_RAMPS) for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    const x = X0 + (i + 0.5) * cell, z = Z0 + (j + 0.5) * cell;
+    if (z < R.z0 - 0.4 || z > R.z1 + 0.2 || (x >= R.x0 && x <= R.x1) || x < R.x0 - 3 || x > R.x1 + 3) continue;
+    const ry = R.yLo + (R.yHi - R.yLo) * THREE.MathUtils.clamp((R.z1 - z) / (R.z1 - R.z0), 0, 1);
+    const e = raw.get(j * gw + i); if (!e) continue;
+    const t = top(e); if (t !== null && t < ry - 0.8 && t > 1.2) raw.set(j * gw + i, [t, 0]);   // (the jetty, under 1.2, stays)
+  }
+  const cells = new Map();
+  for (const [k, e] of raw) {
+    const ys = [], fl = [];
+    for (let m = 0; m < e.length; m += 2) ys.push(e[m]);
+    ys.sort((p, q) => p - q);
+    const floors = [];
+    for (let m = 0; m < e.length; m += 2) if (e[m + 1]) floors.push(e[m]);
+    floors.sort((p, q) => p - q);
+    const fd = [];
+    for (const f of floors) if (!fd.length || f - fd[fd.length - 1] > 0.12) fd.push(f); else fd[fd.length - 1] = f;
+    for (const f of fd) {
+      let ceil = 99;
+      for (const y of ys) if (y > f + 0.25) { ceil = y; break; }
+      fl.push(f, 0, ceil);
+    }
+    cells.set(k, fl);
+  }
+  return { walk: { x0: X0, z0: Z0, cell, gw, gh }, cells };
+}
+// the highest floor under a body at feet, from the island's plan (null where it has none)
+function isleFloorAt(x, z, feet, up = ISLE_SITE.step) {
+  if (!ISLE_SITE.cells) return null;
+  const st = keepFloorAt(x, z, feet, up, ISLE_SITE);
+  return st ? st.f : null;
+}
+/* the most a stride may take you DOWN from the floor you were last on: a step
+ * off a deck onto the rock is under it, a crack in the boards or the edge of
+ * the stack is over it (see the walk) */
+const ISLE_FALL = 1.1;
+const ISLE_MAX_SLOPE = 1.15;   // ~49°: the rock path down from the terrace to the stair head runs at up to 0.75, the faces beside the flight at 0.8–2.3
+/* THE FLOOR THE EYE FOLLOWS: the cell under you blended toward its neighbours
+ * by where in it you stand, and only toward a neighbour within a step — the
+ * catacombs' `catFloorSmooth` on the island's site. The legality tests read
+ * the raw cell; this is only what the camera rides. */
+function isleFloorSmooth(x, z, feet, up = ISLE_SITE.step) {
+  const S = ISLE_SITE, st = keepFloorAt(x, z, feet, up, S);
+  if (!st || !S.walk) return st;
+  const w = S.walk, cs = w.cell;
+  const gx = (x - w.x0) / cs, gz = (z - w.z0) / cs;
+  const fx = gx - Math.floor(gx) - 0.5, fz = gz - Math.floor(gz) - 0.5;
+  const nb = (dx, dz) => keepFloorAt(x + dx, z + dz, st.f, S.step, S);
+  const sx = nb(Math.sign(fx || 1) * cs, 0), sz = nb(0, Math.sign(fz || 1) * cs);
+  const dx = sx && Math.abs(sx.f - st.f) < S.step ? sx.f - st.f : 0, dz = sz && Math.abs(sz.f - st.f) < S.step ? sz.f - st.f : 0;
+  let f = st.f + Math.abs(fx) * dx + Math.abs(fz) * dz;
+  // and the diagonal, so a slope taken across the grid is a plane and not a fold
+  if (dx && dz) {
+    const sd = nb(Math.sign(fx || 1) * cs, Math.sign(fz || 1) * cs);
+    if (sd && Math.abs(sd.f - st.f) < S.step) f += Math.abs(fx) * Math.abs(fz) * (sd.f - st.f - dx - dz);
+  }
+  return { f, s: st.s, c: st.c };
+}
+// for things that fall or are put down: the island's ground under a point, not its roofs
+ISLE_M.floorAt = (x, z) => {
+  if (!ISLE_SITE.cells || x < -32 || x > 21 || z < -1188 || z > -1123) return null;
+  const fl = keepCellAt(x, z, ISLE_SITE); if (!fl || !fl.length) return null;
+  let best = null;
+  for (let k = 0; k < fl.length; k += 3) if (fl[k] < ISLE_Y + 6.2 && (best === null || fl[k] > best)) best = fl[k];
+  return best;
+};
+
+/* ---- THE DRAWBRIDGE TO CASTLE XIII (2026-10-13, the owner: "it should go
+ * the first castle with the farmer fight, then to the XIII part of the
+ * castle, to the throne room, then to the lighthouse this should never
+ * change … the same in reverse order"). The island is the END of the castles,
+ * not a place off the beach: the boardwalk from the sand behind the first
+ * castle is gone, and the only way on or off it is this — a drawbridge let
+ * down on two chains from a postern high in XIII's west tower (its face
+ * measured at x 18.3–19.0 across z −1155.5 … −1151.3, twenty metres up the
+ * bluff) onto the lip of the terrace. The throne room's lattice door comes
+ * out of that postern onto the boards; the postern from the boards goes back
+ * in to the lattice door. */
+const ISLE_BR = { x0: 6.7, x1: 18.5, z: -1153.4, y: 20.05, w: 1.5 };   // the deck, world: from the terrace's lip to the tower's face
+const ISLE_BR_DOOR = { x: 18.62, z: -1153.4 };            // the postern, on the tower's face
+const ISLE_ARRIVE = { x: 16.9, z: -1153.4 };              // where the throne room's door puts you: a stride out of it, on the boards
+/* THE CLIFF STAIR IS A RAMP TO THE WALK. The model's flight down the sea face
+ * has treads a metre high at this scale (measured off the plan: 0.7, 1.8,
+ * 2.8, 3.8 … a riser every 0.8 m) — drawn for a diorama, not for feet. It is
+ * drawn as it is; the walk reads its footprint as one steady slope from the
+ * jetty to the landing, and its risers are left out of the wall index. */
+const ISLE_RAMPS = [{ x0: -18.1, x1: -15.1, z0: -1149.3, z1: -1137.3, yLo: 0.75, yHi: 15.65 }];   // yLo at z1 (the jetty end), yHi at z0 (the landing)
+const isleRampAt = (x, z) => { for (const R of ISLE_RAMPS) if (x >= R.x0 && x <= R.x1 && z >= R.z0 && z <= R.z1) return R.yLo + (R.yHi - R.yLo) * (R.z1 - z) / (R.z1 - R.z0); return null; };
+function isleBridge(woodMat) {
+  const B = ISLE_BR, geos = [], iron = [], L = B.x1 - B.x0, cx = (B.x0 + B.x1) / 2;
+  const box = (out, w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); out.push(g); return g; };
+  // a beam between two points, square in section
+  const beam = (out, s, ax, ay, az, bx, by, bz) => {
+    const len = Math.hypot(bx - ax, by - ay, bz - az);
+    const g = new THREE.BoxGeometry(s, s, len); g.lookAt(new THREE.Vector3(bx - ax, by - ay, bz - az));
+    g.translate((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2); out.push(g);
+  };
+  const rod = (out, r, ax, ay, az, bx, by, bz) => {
+    const len = Math.hypot(bx - ax, by - ay, bz - az);
+    const g = new THREE.CylinderGeometry(r, r, len, 6, 1); g.rotateX(Math.PI / 2); g.lookAt(new THREE.Vector3(bx - ax, by - ay, bz - az));
+    g.translate((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2); out.push(g);
+  };
+  const rnd = mulberry32(1153);
+  // the planks across, a finger apart, each a little off true
+  for (let x = B.x0 + 0.13; x < B.x1 - 0.1; x += 0.29) {
+    const g = new THREE.BoxGeometry(0.26, 0.06, B.w * (0.97 + rnd() * 0.05));
+    g.rotateY((rnd() - 0.5) * 0.03); g.translate(x, B.y - 0.03 + (rnd() - 0.5) * 0.012, B.z + (rnd() - 0.5) * 0.03); geos.push(g);
+  }
+  // two stringers under them, the cross beams under those
+  for (const s of [-1, 1]) box(geos, L, 0.22, 0.14, cx, B.y - 0.17, B.z + s * 0.55);
+  for (let x = B.x0 + 0.5; x < B.x1; x += 2.3) box(geos, 0.16, 0.14, B.w + 0.3, x, B.y - 0.35, B.z);
+  // posts, a top rail and a middle one, each side
+  const posts = [];
+  for (let x = B.x0 + 0.3; x <= B.x1 - 0.35; x += (B.x1 - 0.35 - B.x0 - 0.3) / 5) posts.push(x);
+  for (const s of [-1, 1]) {
+    const z = B.z + s * (B.w / 2 + 0.03);
+    for (const x of posts) box(geos, 0.11, 1.1, 0.11, x, B.y + 0.5, z);
+    box(geos, L - 0.5, 0.07, 0.08, cx, B.y + 1.02, z);
+    box(geos, L - 0.5, 0.05, 0.05, cx, B.y + 0.52, z);
+  }
+  // under the rock end: two raking struts from the deck down to the stone at its lip
+  for (const s of [-1, 1]) beam(geos, 0.16, B.x0 + 6.4, B.y - 0.3, B.z + s * 0.55, 10.55, 17.1, B.z + s * 0.75);
+  // and under the tower end, a brace each side into the wall below the door
+  for (const s of [-1, 1]) beam(geos, 0.16, B.x1 - 1.5, B.y - 0.3, B.z + s * 0.55, B.x1 + 0.05, B.y - 1.9, B.z + s * 0.62);
+  const mesh = new THREE.Mesh(mergeGeometries(geos.map((g) => g.toNonIndexed()), false), woodMat);
+  mesh.name = 'isleBridge';
+  // THE CHAINS: it is a drawbridge let down from the tower, and they hold it there
+  const ironMt = new THREE.MeshStandardMaterial({ color: 0x232220, roughness: 0.55, metalness: 0, emissive: 0x070707, flatShading: true });
+  const hang = posts[3];
+  for (const s of [-1, 1]) {
+    rod(iron, 0.035, B.x1 + 0.02, B.y + 4.7, B.z + s * 0.95, hang, B.y + 1.08, B.z + s * (B.w / 2 + 0.03));
+    box(iron, 0.3, 0.3, 0.22, B.x1 + 0.08, B.y + 4.7, B.z + s * 0.95);          // the eye in the wall it runs out of
+    box(iron, 0.16, 0.16, 0.16, hang, B.y + 1.08, B.z + s * (B.w / 2 + 0.03));   // and its shackle on the post
+  }
+  // the hinge the deck turns on, across the foot of the door
+  rod(iron, 0.07, B.x1 - 0.1, B.y - 0.08, B.z - B.w / 2 - 0.1, B.x1 - 0.1, B.y - 0.08, B.z + B.w / 2 + 0.1);
+  const chains = new THREE.Mesh(mergeGeometries(iron.map((g) => g.toNonIndexed()), false), ironMt);
+  chains.name = 'isleBridgeIron';
+  // THE POSTERN it comes out of: a dressed stone frame round a door of planks, set in the tower's face
+  const D = ISLE_BR_DOOR, W = 0.62, H = 2.3, depth = 0.7;
+  const stone = new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 1, metalness: 0, emissive: 0x0f0d0b, flatShading: true });
+  const frame = new THREE.Group(); frame.name = 'isleBridgeDoor';
+  frame.position.set(D.x, B.y, D.z); frame.rotation.y = -Math.PI / 2;          // local +Z out of the wall, toward the island
+  for (const sx of [-1, 1]) { const j = new THREE.Mesh(new THREE.BoxGeometry(0.34, H + 0.3, depth), stone); j.position.set(sx * (W + 0.17), (H + 0.3) / 2, -depth / 2 + 0.12); frame.add(j); }
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(W * 2 + 0.9, 0.36, depth), stone); lintel.position.set(0, H + 0.3, -depth / 2 + 0.12); frame.add(lintel);
+  const key = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.46, depth + 0.06), stone); key.position.set(0, H + 0.36, -depth / 2 + 0.15); frame.add(key);
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(W * 2 + 0.7, 0.1, depth + 0.1), stone); sill.position.set(0, -0.03, -depth / 2 + 0.14); frame.add(sill);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(W * 2, H, 0.1), new THREE.MeshBasicMaterial({ color: 0x050403 })); back.position.set(0, H / 2, -depth + 0.12); frame.add(back);
+  const plank = new THREE.MeshStandardMaterial({ color: 0x3a2c20, roughness: 0.95, metalness: 0, emissive: 0x110b07, flatShading: true });
+  const n = 6, pw = (W * 2) / n;
+  for (let i = 0; i < n; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(pw - 0.014, H - 0.03, 0.08), plank); p.position.set(-W + pw * (i + 0.5), H / 2, -0.08); frame.add(p); }
+  for (const h of [0.4, H / 2, H - 0.45]) { const s = new THREE.Mesh(new THREE.BoxGeometry(W * 1.9, 0.07, 0.03), ironMt); s.position.set(0, h, -0.03); frame.add(s); }
+  for (const sx of [-1, 1]) for (const h of [0.4, H / 2, H - 0.45]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.03), ironMt); b.position.set(sx * W * 0.8, h, -0.01); frame.add(b); }
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.012, 5, 12), ironMt); ring.position.set(W * 0.55, 1.05, 0.0); frame.add(ring);
+  // a lantern on a bracket beside it: the one warm light at this end, so the door is seen from the terrace
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.42), ironMt); arm.position.set(W + 0.62, H + 0.05, 0.12); frame.add(arm);
+  const cage = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.28, 0.2), ironMt); cage.position.set(W + 0.62, H - 0.16, 0.3); frame.add(cage);
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.22, 0.21), new THREE.MeshBasicMaterial({ color: 0xffc27a, fog: false })); glass.position.copy(cage.position); frame.add(glass);
+  const glassB = new THREE.Mesh(new THREE.BoxGeometry(0.21, 0.22, 0.16), glass.material); glassB.position.copy(cage.position); frame.add(glassB);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.14, 4), ironMt); cap.rotation.y = Math.PI / 4; cap.position.set(W + 0.62, H + 0.05, 0.3); frame.add(cap);
+  const lamp = new THREE.PointLight(0xffb46a, 5.5, 9, 1.7); lamp.position.set(W + 0.62, H - 0.2, 0.55); frame.add(lamp);
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(W * 2 + 0.2, H, 0.5), new THREE.MeshBasicMaterial({ visible: false }));
+  proxy.name = 'hitProxy'; proxy.userData.bwGhost = true; proxy.position.set(0, H / 2, 0.2); frame.add(proxy);
+  for (const o of [glass, glassB, lamp]) o.userData.bwGhost = true;
+  // the floor the walk reads: the deck, one slab, never drawn
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(L + 0.2, 0.04, B.w).translate(cx, B.y - 0.02, B.z));
+  frame.updateMatrixWorld(true);
+  return { mesh, chains, frame, proxy, slab, lantern: frame.localToWorld(cage.position.clone()) };
+}
+
+/* ---- THE TOWER'S INSIDE. Whitewashed brick on the bore, a stone floor, a
+ * red iron stair wound round a steel pole and standing free of the wall,
+ * three lamps up it, and at the top the ladder to the light. */
+function isleBuildInterior(G) {
+  const brickT = makeBrickTexture(); brickT.repeat.set(9, 14);
+  // COOL brick and near-white lamps: warm light on red iron in a brick tube goes one red (the old tower's lesson, measured again here)
+  const brick = new THREE.MeshStandardMaterial({ map: brickT, color: 0x8f98a8, roughness: 1, metalness: 0, side: THREE.BackSide, emissive: 0x0c0d10 });
+  // the bore: a lathe of the shaft's own profile, brought in by the wall's thickness, and left open at the door
+  const pts = [];
+  for (let y = ISLE_FLOOR - 0.05; y <= ISLE_GALLERY - 0.45; y += 0.25) pts.push(new THREE.Vector2(ISLE_BORE(y), y - ISLE_FLOOR));
+  const lower = [], upper = [];
+  for (const p of pts) (p.y <= ISLE_DOOR_H + 0.05 ? lower : upper).push(p);
+  upper.unshift(new THREE.Vector2(ISLE_BORE(ISLE_FLOOR + ISLE_DOOR_H), ISLE_DOOR_H));
+  lower.push(new THREE.Vector2(ISLE_BORE(ISLE_FLOOR + ISLE_DOOR_H), ISLE_DOOR_H));
+  // three's lathe measures phi from +Z the way the game measures angles: start just past the door, run round to just before it
+  const gap = (ISLE_DOOR_W + 0.06) / ISLE_BORE(ISLE_FLOOR);
+  const lowG = new THREE.LatheGeometry(lower, 40, ISLE_DOOR_A + gap, Math.PI * 2 - gap * 2);
+  const upG = new THREE.LatheGeometry(upper, 40);
+  for (const g of [lowG, upG]) { g.translate(ISLE_AXIS.x, ISLE_FLOOR, ISLE_AXIS.z); G.add(new THREE.Mesh(g, brick)); }
+  // the floor: big worn flags
+  const flagT = makeTreadTexture(); flagT.repeat.set(3, 3);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(ISLE_BORE(ISLE_FLOOR) + 0.05, 28), new THREE.MeshStandardMaterial({ map: flagT, color: 0x9a948a, roughness: 1, metalness: 0, emissive: 0x100e0c }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(ISLE_AXIS.x, ISLE_FLOOR + 0.01, ISLE_AXIS.z); G.add(floor); G.userData.floor = floor;
+  // the ceiling under the lantern floor, with the hatch the ladder goes up through
+  const ceilY = ISLE_CEIL;
+  const ceil = new THREE.Mesh(new THREE.RingGeometry(0.0, ISLE_BORE(ceilY) + 0.05, 28), new THREE.MeshStandardMaterial({ color: 0x3a342e, roughness: 1, metalness: 0, side: THREE.DoubleSide }));
+  ceil.rotation.x = Math.PI / 2; ceil.position.set(ISLE_AXIS.x, ceilY, ISLE_AXIS.z); G.add(ceil);
+  // the stair: wedge treads, one shared shape, instanced; a nose under each; a baluster on each; one rail
+  const iron = new THREE.MeshStandardMaterial({ color: 0x7a2a22, roughness: 0.75, metalness: 0, emissive: 0x1a0806 });
+  const ironDark = new THREE.MeshStandardMaterial({ color: 0x4a1a16, roughness: 0.8, metalness: 0, emissive: 0x0e0504 });
+  const da = (Math.PI * 2) / ISLE_PER_TURN;
+  const sh = new THREE.Shape();
+  const a0 = -da * 0.56, a1 = da * 0.56;
+  sh.moveTo(Math.cos(a0) * ISLE_POLE_R, Math.sin(a0) * ISLE_POLE_R);
+  sh.lineTo(Math.cos(a0) * ISLE_TREAD_R, Math.sin(a0) * ISLE_TREAD_R);
+  sh.absarc(0, 0, ISLE_TREAD_R, a0, a1, false);
+  sh.lineTo(Math.cos(a1) * ISLE_POLE_R, Math.sin(a1) * ISLE_POLE_R);
+  const tg = new THREE.ExtrudeGeometry(sh, { depth: ISLE_TREAD_T, bevelEnabled: false, curveSegments: 4 });
+  tg.rotateX(-Math.PI / 2); tg.translate(0, -ISLE_TREAD_T, 0);       // top face at y 0, centreline along local +X
+  const nT = Math.ceil(ISLE_TOP / ISLE_STEP) + 1;
+  const treads = new THREE.InstancedMesh(tg, iron, nT);
+  const bal = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.014, 0.014, 0.92, 5), ironDark, nT);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  const railPts = [];
+  for (let k = 0; k < nT; k++) {
+    // tread k carries you over climb [k, k+1) steps: centred half a step on, its top at the stepped height
+    const a = ISLE_DOOR_A - (k + 0.5) * da;
+    const top = ISLE_FLOOR + Math.min(ISLE_TOP, k * ISLE_STEP) + ISLE_TREAD_T / 2;
+    e.set(0, a - Math.PI / 2, 0); q.setFromEuler(e);          // local +X out along the game angle a
+    m4.compose(v.set(ISLE_AXIS.x, top, ISLE_AXIS.z), q, one); treads.setMatrixAt(k, m4);
+    const bx = ISLE_AXIS.x + Math.sin(a) * ISLE_RAIL_R, bz = ISLE_AXIS.z + Math.cos(a) * ISLE_RAIL_R;
+    m4.compose(v.set(bx, top + 0.46, bz), q.identity(), one); bal.setMatrixAt(k, m4);
+    railPts.push(new THREE.Vector3(bx, top + 0.92, bz));
+  }
+  treads.instanceMatrix.needsUpdate = true; bal.instanceMatrix.needsUpdate = true;
+  treads.frustumCulled = bal.frustumCulled = false;
+  G.add(treads, bal);
+  const rail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(railPts), nT * 3, 0.025, 6), iron);
+  G.add(rail);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(ISLE_POLE_R, ISLE_POLE_R, ISLE_GALLERY - ISLE_FLOOR, 10), new THREE.MeshStandardMaterial({ color: 0x5a5c60, roughness: 0.6, metalness: 0, emissive: 0x0c0c0e }));
+  pole.position.set(ISLE_AXIS.x, (ISLE_FLOOR + ISLE_GALLERY) / 2, ISLE_AXIS.z); G.add(pole);
+  // the ladder up into the lantern, over the stair's last tread
+  const la = ISLE_HATCH_A, lr = 0.95;
+  const lx = ISLE_AXIS.x + Math.sin(la) * lr, lz = ISLE_AXIS.z + Math.cos(la) * lr, ly0 = ISLE_FLOOR + ISLE_TOP;
+  const ladder = new THREE.Group(); ladder.position.set(lx, ly0, lz); ladder.rotation.y = la;
+  const LH = ISLE_CEIL - ly0 + 0.1;
+  for (const sx of [-0.22, 0.22]) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.05, LH, 0.05), ironDark); s.position.set(sx, LH / 2, 0); ladder.add(s); }
+  for (let r = 0; r * 0.27 + 0.2 < LH; r++) { const s = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.44, 5), ironDark); s.rotation.z = Math.PI / 2; s.position.set(0, 0.2 + r * 0.27, 0); ladder.add(s); }
+  // and the hatch it goes up through: a dark square in the ceiling with a light round its edge
+  const hatch = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.62), new THREE.MeshBasicMaterial({ color: 0xffe3b8, fog: false }));
+  hatch.rotation.x = Math.PI / 2; hatch.position.set(lx, ISLE_CEIL - 0.01, lz); G.add(hatch);
+  G.add(ladder);
+  const hatchProxy = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.4, 0.9), new THREE.MeshBasicMaterial({ visible: false }));
+  hatchProxy.name = 'hitProxy'; hatchProxy.position.set(lx, ly0 + 1.2, lz); G.add(hatchProxy);
+  // the lamps up the stair: a bracket, a caged bulb, and a warm light that keeps the brick from going red
+  const lampG = new THREE.Group();
+  const bulbM = new THREE.MeshBasicMaterial({ color: 0xffe2b8, fog: false });
+  for (const [h, a] of [[2.2, ISLE_DOOR_A + 2.2], [7.2, ISLE_DOOR_A + 0.4], [12.0, ISLE_DOOR_A - 2.0]]) {
+    const y = ISLE_FLOOR + h, r = ISLE_BORE(y) - 0.06;
+    const x = ISLE_AXIS.x + Math.sin(a) * r, z = ISLE_AXIS.z + Math.cos(a) * r;
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), bulbM); b.position.set(x, y, z); lampG.add(b);
+    const br = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.16), ironDark); br.position.set(ISLE_AXIS.x + Math.sin(a) * (r + 0.07), y + 0.05, ISLE_AXIS.z + Math.cos(a) * (r + 0.07)); br.rotation.y = a; lampG.add(br);
+    const l = new THREE.PointLight(0xffeedd, 5.5, 7.5, 1.6); l.position.set(ISLE_AXIS.x + Math.sin(a) * (r - 0.25), y, ISLE_AXIS.z + Math.cos(a) * (r - 0.25)); lampG.add(l);
+  }
+  G.add(lampG);
+  return { hatchProxy, ladder };
+}
+
+/* ---- THE GALLERY: the model's disc is a step round a lantern a metre
+ * across, so a grating ring widens it to a walk you can turn round on, with
+ * an iron rail at its edge; and a low door in the lantern's base is the way
+ * back down. */
+function isleBuildGallery(G) {
+  const y = ISLE_GALLERY + 0.015;
+  const grateC = document.createElement('canvas'); grateC.width = grateC.height = 64;
+  { const g = grateC.getContext('2d'); g.fillStyle = '#26282b'; g.fillRect(0, 0, 64, 64); g.fillStyle = '#4a4d52'; for (let i = 0; i < 64; i += 8) { g.fillRect(i, 0, 3, 64); g.fillRect(0, i, 64, 2); } }
+  const grateT = retroTex(new THREE.CanvasTexture(grateC)); grateT.repeat.set(10, 2);
+  const deck = new THREE.Mesh(new THREE.RingGeometry(ISLE_GAL_R0 + 0.95, ISLE_GAL_R1, 40, 1), new THREE.MeshStandardMaterial({ map: grateT, color: 0x8a8e94, roughness: 0.8, metalness: 0, emissive: 0x0b0c0e, side: THREE.DoubleSide }));
+  deck.rotation.x = -Math.PI / 2; deck.position.set(ISLE_AXIS.x, y, ISLE_AXIS.z); G.add(deck);
+  const ironM = new THREE.MeshStandardMaterial({ color: 0x1e2022, roughness: 0.7, metalness: 0, emissive: 0x08090a });
+  const R = ISLE_GAL_R1 - 0.06, iron = [];      // one mesh: the rail, its posts and the brackets under the grating
+  for (const h of [0.55, 1.05]) { const t = new THREE.TorusGeometry(R, 0.022, 5, 48); t.rotateX(Math.PI / 2); t.translate(ISLE_AXIS.x, y + h, ISLE_AXIS.z); iron.push(t); }
+  for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; const p = new THREE.BoxGeometry(0.035, 1.07, 0.035); p.translate(ISLE_AXIS.x + Math.sin(a) * R, y + 0.53, ISLE_AXIS.z + Math.cos(a) * R); iron.push(p); }
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + 0.2; const b = new THREE.BoxGeometry(0.06, 0.5, 0.6); b.rotateY(a); b.translate(ISLE_AXIS.x + Math.sin(a) * 2.25, y - 0.28, ISLE_AXIS.z + Math.cos(a) * 2.25); iron.push(b); }
+  const ironMesh = new THREE.Mesh(mergeGeometries(iron.map((g) => (g.index ? g.toNonIndexed() : g)), false), ironM);
+  ironMesh.userData.bwGhost = true; G.add(ironMesh);
+  // the little door in the lantern's base, facing where the stair arrives
+  const da = ISLE_HATCH_A, dr = ISLE_GAL_R0 + 0.02;
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.04), new THREE.MeshStandardMaterial({ color: 0x2c2420, roughness: 0.9, metalness: 0, emissive: 0x0a0806 }));
+  door.position.set(ISLE_AXIS.x + Math.sin(da) * dr, y + 0.38, ISLE_AXIS.z + Math.cos(da) * dr); door.rotation.y = da; G.add(door);
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.0, 0.5), new THREE.MeshBasicMaterial({ visible: false }));
+  proxy.name = 'hitProxy'; proxy.position.copy(door.position); proxy.rotation.y = da; G.add(proxy);
+  return { downProxy: proxy };
+}
+
+/* ---- THE DOOR: planks on strap hinges in a stone surround, at the foot of
+ * the shaft, facing the deck's land arm. */
+function isleBuildDoor(G) {
+  const r0 = ISLE_TOWER_R(ISLE_FLOOR + 1) + 0.04;
+  const surround = new THREE.MeshStandardMaterial({ color: 0x5a5852, roughness: 1, metalness: 0, emissive: 0x0e0e0d });
+  const frame = new THREE.Group();
+  frame.position.set(ISLE_AXIS.x + Math.sin(ISLE_DOOR_A) * r0, ISLE_FLOOR, ISLE_AXIS.z + Math.cos(ISLE_DOOR_A) * r0);
+  frame.rotation.y = ISLE_DOOR_A;                        // local +Z out of the wall
+  const depth = 0.55;
+  for (const sx of [-1, 1]) { const j = new THREE.Mesh(new THREE.BoxGeometry(0.22, ISLE_DOOR_H + 0.18, depth), surround); j.position.set(sx * (ISLE_DOOR_W + 0.11), (ISLE_DOOR_H + 0.18) / 2, -depth / 2 + 0.06); frame.add(j); }
+  const lintel = new THREE.Mesh(new THREE.BoxGeometry(ISLE_DOOR_W * 2 + 0.6, 0.24, depth), surround); lintel.position.set(0, ISLE_DOOR_H + 0.12, -depth / 2 + 0.06); frame.add(lintel);
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(ISLE_DOOR_W * 2 + 0.5, 0.08, depth + 0.2), surround); sill.position.set(0, 0.0, -depth / 2 + 0.12); frame.add(sill);
+  const soffit = new THREE.Mesh(new THREE.BoxGeometry(ISLE_DOOR_W * 2, 0.06, depth), surround); soffit.position.set(0, ISLE_DOOR_H, -depth / 2 + 0.06); frame.add(soffit);
+  G.add(frame);
+  const leaf = new THREE.Group(); leaf.position.set(-ISLE_DOOR_W, 0, -0.06); frame.add(leaf);
+  const plank = new THREE.MeshStandardMaterial({ color: 0x3e3226, roughness: 0.95, metalness: 0, emissive: 0x120d08, flatShading: true });
+  const strap = new THREE.MeshStandardMaterial({ color: 0x1c1b1a, roughness: 0.6, metalness: 0, emissive: 0x060606 });
+  const n = 5, w = (ISLE_DOOR_W * 2) / n;
+  for (let i = 0; i < n; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(w - 0.012, ISLE_DOOR_H - 0.02, 0.06), plank); p.position.set(w * (i + 0.5), ISLE_DOOR_H / 2, 0); leaf.add(p); }
+  for (const h of [0.35, ISLE_DOOR_H - 0.4]) { const s = new THREE.Mesh(new THREE.BoxGeometry(ISLE_DOOR_W * 1.6, 0.06, 0.075), strap); s.position.set(ISLE_DOOR_W * 0.8, h, 0.01); leaf.add(s); }
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.008, 5, 12), strap); ring.position.set(ISLE_DOOR_W * 1.75, 1.0, 0.05); leaf.add(ring);
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(ISLE_DOOR_W * 2, ISLE_DOOR_H, 0.4), new THREE.MeshBasicMaterial({ visible: false }));
+  proxy.name = 'hitProxy'; proxy.position.set(0, ISLE_DOOR_H / 2, 0.1); frame.add(proxy);
+  // a lamp over it, the one warm thing on the deck by the tower
+  const l = new THREE.PointLight(0xffc890, 4.5, 6, 1.7); l.position.set(0, ISLE_DOOR_H + 0.45, 0.5); frame.add(l);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffdcae, fog: false })); bulb.position.set(0, ISLE_DOOR_H + 0.42, 0.22); frame.add(bulb);
+  return { leaf, proxy, frame };
+}
+
+function loadIsle() {
+  if (isleWorld) return;
+  isleWorld = new THREE.Group(); isleWorld.name = 'isle';
+  scene.add(isleWorld);
+  bwGlb('assets/lighthouse-isle.glb', (gltf) => {
+    const root = gltf.scene;
+    root.scale.setScalar(ISLE_S); root.rotation.y = Math.PI; root.position.set(ISLE_X, ISLE_Y, ISLE_Z);
+    root.updateMatrixWorld(true);
+    // the materials: night on a bright little model, the way every scan on this beach is exposed
+    const byMat = new Map(), keep = [];
+    let towerMesh = null, galleryMesh = null;
+    const lampHeads = [];
+    root.traverse((o) => {
+      if (!o.isMesh || ISLE_DROP.test(o.name)) return;
+      const mt = o.material, nm = mt.name || '';
+      if (!mt.userData.isle) {
+        mt.userData.isle = true;
+        mt.metalness = 0; mt.envMapIntensity = 0; mt.roughness = 1;          // METALNESS IS A TRAP
+        if (/Leaf/.test(nm)) { mt.transparent = false; mt.alphaTest = 0.42; mt.depthWrite = true; mt.side = THREE.DoubleSide; reexpose(mt, 0.72, [0.03, 0.045, 0.06]); }
+        else if (/Bark/.test(nm)) { mt.color.setHex(0x5a4e44); reexpose(mt, 0.7, null); }
+        else if (nm === 'lamp') { mt.color.setHex(0xffe0b0); mt.emissive = new THREE.Color(0xffd29a); mt.emissiveIntensity = 1.0; }
+        else if (/lambert/.test(nm)) { mt.color.setHex(0x3a332c); }
+        /* THE ROCK IS DARK WET STONE AT NIGHT. Its map is a pale grey; given the beach scans' lift it read as ice from
+         * the sea (measured). Left at its own exposure and brought down a third, it is the same rock as the bluff. */
+        else if (/Island/.test(nm)) { mt.color.setRGB(0.62, 0.64, 0.66); reexpose(mt, 1.0, [0.03, 0.04, 0.06]); }
+        else reexpose(mt, /house/.test(nm) ? 0.62 : /lighthouse/.test(nm) ? 0.6 : 0.62, [0.05, 0.066, 0.098]);
+        mt.needsUpdate = true;
+      }
+      const g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+      g.computeBoundingBox();
+      if (o.name === 'main_tower_lighthouse_0') { towerMesh = { g, mt }; return; }
+      if (o.name === 'group2_pCylinder13_lighthouse_0') { galleryMesh = { g, mt }; return; }
+      if (nm === 'lamp' && !/Cylinder__1_/.test(o.name)) { const c = g.boundingBox.getCenter(new THREE.Vector3()); lampHeads.push(c); }
+      const key = mt.uuid;
+      if (!byMat.has(key)) byMat.set(key, { mt, geos: [], names: [] });
+      byMat.get(key).geos.push(g); byMat.get(key).names.push(o.name);
+    });
+    // merged by material: ninety meshes down to a dozen draws
+    const rockMeshes = [], floorMeshes = [], barkMeshes = [];
+    for (const { mt, geos, names } of byMat.values()) {
+      // only the attributes every piece shares, or the merge refuses
+      const common = ['position', 'normal', 'uv'].filter((a) => geos.every((g) => g.attributes[a]));
+      const prep = geos.map((g) => { const h = g.index ? g.toNonIndexed() : g; for (const k of Object.keys(h.attributes)) if (!common.includes(k)) h.deleteAttribute(k); return h; });
+      let merged = null; try { merged = mergeGeometries(prep, false); } catch (e) { merged = null; }
+      const parts = merged ? [merged] : prep;
+      for (const p of parts) {
+        const m = new THREE.Mesh(p, mt); m.name = 'isle_' + (mt.name || 'mat');
+        isleWorld.add(m);
+        if (/Island/.test(mt.name)) rockMeshes.push(m);
+        else if (/Bark/.test(mt.name)) barkMeshes.push(m);
+        else if (!/Leaf/.test(mt.name)) floorMeshes.push(m);
+      }
+    }
+    // the tower: its inside stripped (the model carries an inner shell where the brick has to go) and the doorway cut
+    const T = ISLE_AXIS;
+    const dX = T.x + Math.sin(ISLE_DOOR_A) * 2.3, dZ = T.z + Math.cos(ISLE_DOOR_A) * 2.3;
+    let tg = isleCutGeo(towerMesh.g,
+      isleNearBox(dX - 1.6, ISLE_FLOOR - 0.3, dZ - 1.6, dX + 1.6, ISLE_FLOOR + ISLE_DOOR_H + 0.3, dZ + 1.6),
+      (x, y, z) => {
+        const r = Math.hypot(x - T.x, z - T.z);
+        return r > 1.0 && y > ISLE_FLOOR - 0.2 && y < ISLE_FLOOR + ISLE_DOOR_H && Math.abs(angDiff(Math.atan2(x - T.x, z - T.z), ISLE_DOOR_A)) * r < ISLE_DOOR_W;
+      }, 0.1);
+    // and the inner shell out: anything well inside the outer face and not a cap
+    {
+      const P = tg.attributes.position, keepIdx = [];
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3(), ab = new THREE.Vector3(), ac = new THREE.Vector3();
+      for (let i = 0; i < P.count; i += 3) {
+        a.fromBufferAttribute(P, i); b.fromBufferAttribute(P, i + 1); c.fromBufferAttribute(P, i + 2);
+        const cx = (a.x + b.x + c.x) / 3, cy = (a.y + b.y + c.y) / 3, cz = (a.z + b.z + c.z) / 3;
+        ab.subVectors(b, a); ac.subVectors(c, a); n.crossVectors(ab, ac).normalize();
+        const r = Math.hypot(cx - T.x, cz - T.z);
+        const inner = r < ISLE_TOWER_R(cy) - 0.15 && Math.abs(n.y) < 0.6 && cy > ISLE_FLOOR + 0.05 && cy < ISLE_GALLERY - 0.3;
+        if (!inner) keepIdx.push(i, i + 1, i + 2);
+      }
+      const src = tg; const out = new THREE.BufferGeometry();
+      for (const k of Object.keys(src.attributes)) {
+        const A = src.attributes[k], sz = A.itemSize, arr = new Float32Array(keepIdx.length * sz);
+        keepIdx.forEach((vi, j) => { for (let s = 0; s < sz; s++) arr[j * sz + s] = A.array[vi * sz + s]; });
+        out.setAttribute(k, new THREE.BufferAttribute(arr, sz));
+      }
+      tg = out;
+    }
+    const towerM = new THREE.Mesh(tg, towerMesh.mt); towerM.name = 'isle_tower';
+    // the shaft is seen from inside through the door, and from the stair: both faces drawn
+    towerMesh.mt.side = THREE.DoubleSide;
+    isleWorld.add(towerM);
+    const galM = new THREE.Mesh(galleryMesh.g, galleryMesh.mt); galM.name = 'isle_gallery'; isleWorld.add(galM);
+    // the drawbridge to XIII, in the jetty's own timber
+    const woodMt = [...byMat.values()].find((e) => /walkway/.test(e.mt.name));
+    const BR = isleBridge(woodMt ? woodMt.mt : new THREE.MeshStandardMaterial({ color: 0x4a3e30 }));
+    isleWorld.add(BR.mesh, BR.chains, BR.frame); floorMeshes.push(BR.slab);
+    // the lamps on their posts: a warm light and a glow at each head
+    const glowT = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,214,160,0.9)'); gr.addColorStop(0.25, 'rgba(255,180,110,0.3)'); gr.addColorStop(1, 'rgba(255,150,80,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+    for (const c of lampHeads) {
+      const l = new THREE.PointLight(0xffc98e, 6, 9, 1.6); l.position.copy(c); isleWorld.add(l);
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowT, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7, fog: false }));
+      s.position.copy(c); s.scale.setScalar(1.6); s.userData.bwGhost = true; isleWorld.add(s);
+    }
+    // the inside, the gallery, the door
+    const inner = new THREE.Group(); inner.name = 'isleInner'; isleWorld.add(inner);
+    const IN = isleBuildInterior(inner);
+    const GAL = isleBuildGallery(isleWorld);
+    const DOOR = isleBuildDoor(isleWorld);
+    isleWorld.userData = { inner, IN, GAL, DOOR };
+    inner.traverse((o) => { o.userData.bwGhost = true; });             // the walk outside never meets the inside
+    DOOR.leaf.traverse((o) => { o.userData.bwGhost = true; });         // nor the door: whether it is open is asked of the door (the index was built with it shut)
+    for (const o of isleWorld.children) if (o.isMesh && /Ring|Torus/.test(o.geometry.type)) o.userData.bwGhost = true;
+    addInteractable(DOOR.proxy, () => (isleDoorOpen ? 'Close the door' : 'Open the door'), 'action', { onActivate: () => { isleDoorOpen = !isleDoorOpen; sfxTavernDoor(); } });
+    addInteractable(IN.hatchProxy, 'Climb up to the light', 'action', { onActivate: () => isleStartCut('up') });
+    addInteractable(GAL.downProxy, 'Climb back down', 'action', { onActivate: () => isleStartCut('down') });
+    addInteractable(BR.proxy, 'Use Lift', 'default', {
+      mid: true, far: 3.6,
+      when: () => onIsle && !thrBusy && !isleCut,
+      onActivate: () => startThrone(1, 'isle'),
+    });
+    { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowT, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.75, fog: false }));
+      s.position.copy(BR.lantern); s.scale.setScalar(1.4); s.userData.bwGhost = true; isleWorld.add(s); }
+    // the plan, for the walk
+    inner.updateMatrixWorld(true);
+    const C = isleBuildCells([...floorMeshes, towerM, galM, inner.userData.floor], rockMeshes);
+    ISLE_SITE.walk = C.walk; ISLE_SITE.cells = C.cells; ISLE_SITE.ready = true;
+    isleFindTrunks(barkMeshes);
+    isleMoveLight();
+    // its shaders built now, off the walk, rather than on the frame it first comes out of the fog
+    try { if (renderer.compileAsync) renderer.compileAsync(isleWorld, camera, scene); else renderer.compile(isleWorld, camera, scene); } catch (e) {}
+    isleReady = true;
+  }, (e) => console.error('lighthouse island:', e));
+}
+/* ---- THE OLD TOWER'S LIGHT, CARRIED UP. Everything of the generated
+ * lighthouse is hidden but its optic's burner, glow, halo, lamp, the beam's
+ * pivot and the proxy you put your hand on; the group is moved so those sit
+ * in this tower's lantern, and every other interactable that hung on it (the
+ * old door) is taken off the list. */
+function isleMoveLight() {
+  if (!lampCore || !beamPivot) return;
+  const keepSet = new Set([lampCore, beamPivot, lighthouse.userData.glow, lighthouse.userData.halo, lhParts.lampProxy]);
+  // taken OUT, not hidden: the fog cull splits this group into units and shows a unit again when it is in range
+  for (const ch of lighthouse.children.slice()) {
+    const isLamp = ch.isPointLight && Math.abs(ch.position.y - lampCore.position.y) < 0.01;
+    if (isLamp) { ch.intensity = 8; ch.distance = 9; continue; }
+    if (!keepSet.has(ch)) lighthouse.remove(ch);
+  }
+  if (lhLights.parent) lhLights.parent.remove(lhLights);
+  for (const it of interactables.slice()) {
+    if (it.root === lhParts.lampProxy) continue;
+    let p = it.root, under = false; while (p) { if (p === lighthouse) { under = true; break; } p = p.parent; }
+    if (under) removeInteractable(it.root);
+  }
+  lighthouse.position.set(ISLE_AXIS.x, ISLE_LAMP_Y - lampCore.position.y, ISLE_AXIS.z);
+  lampCore.scale.setScalar(0.8);
+  lighthouse.userData.glow.scale.setScalar(4.5);
+  lighthouse.userData.halo.scale.setScalar(18);
+  if (lhParts.lampProxy) lhParts.lampProxy.scale.set(1.5, 0.8, 1.5);
+  for (let i = farProps.length - 1; i >= 0; i--) if (farProps[i].obj === lhLights || farProps[i].obj === lhStair) farProps.splice(i, 1);
+}
+
+/* ---- UP THE LADDER AND DOWN IT: a short black, the way every door in this
+ * game is a cut — the lantern floor is the model's, a metre across and full
+ * of lamp, and nobody can climb into it. Up puts you on the gallery facing
+ * out to sea; down puts you on the stair's top tread. */
+function isleStartCut(dir) {
+  if (isleCut || frozen()) return;
+  isleCut = { dir, t: 0, done: false };
+}
+function updateIsleCut(dt) {
+  const C = isleCut; if (!C) return;
+  C.t += dt;
+  blackoutEl.style.opacity = (C.t < 0.4 ? C.t / 0.4 : C.t < 0.7 ? 1 : Math.max(0, 1 - (C.t - 0.7) / 0.5)).toFixed(3);
+  if (!C.done && C.t >= 0.45) {
+    C.done = true;
+    if (C.dir === 'up') {
+      const a = ISLE_HATCH_A, r = (ISLE_GAL_R0 + ISLE_GAL_R1) / 2 + 0.1;
+      isleOnGallery = true; insideTower = false;
+      const x = ISLE_AXIS.x + Math.sin(a) * r, z = ISLE_AXIS.z + Math.cos(a) * r;
+      islePlace(x, ISLE_GALLERY + 0.02, z, a + Math.PI);
+    } else {
+      isleOnGallery = false; insideTower = true;
+      stairTurns = ISLE_TOP / ISLE_RISE - 0.06; lastStairA = ISLE_HATCH_A; stairY = null;
+      const a = ISLE_HATCH_A + 0.25, r = 0.85;
+      islePlace(ISLE_AXIS.x + Math.sin(a) * r, ISLE_FLOOR + ISLE_TOP - 0.2, ISLE_AXIS.z + Math.cos(a) * r, a + Math.PI / 2);
+    }
+    sfxTavernDoor();
+  }
+  if (C.t >= 1.2) { isleCut = null; blackoutEl.style.opacity = '0'; }
+}
+function islePlace(x, feet, z, yaw) {
+  groundY = feet;
+  camera.position.set(x, feet + playerEye(), z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(-0.05, yaw, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
+  _preMove.set(x, 0, z);
+  isleLastSpot.x = x; isleLastSpot.z = z; isleLastFloor = feet;
+}
+/* and what lands on the island lands on its rock and its boards: a thrown
+ * bottle, a gib, a body — the highest floor of its plan under the point */
+const _floorBeforeIsle = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => {
+  if (ISLE_SITE.cells && !inRoom() && x > -32 && x < 21 && z > -1188 && z < -1123) {
+    const fl = keepCellAt(x, z, ISLE_SITE);
+    if (fl && fl.length) {
+      const st = keepFloorAt(x, z, y === undefined ? ISLE_Y + 8 : y + 0.3, 0.5, ISLE_SITE);
+      if (st) return st.f;
+    }
+  }
+  return _floorBeforeIsle(x, z, y);
+};
+/* the throne room's lattice door comes out here, and only it: out of XIII's
+ * postern onto the drawbridge, the terrace and its trees in front of you,
+ * the lamp at the stair head beyond them and the tower over your left
+ * shoulder. Its wall index is finished behind the black — walking it while
+ * it was still being built a few hundred faces a frame had no walls and a
+ * floor held at the height you arrived at, which is how you walked off the
+ * rock into the air. */
+function placeOnIsle() {
+  inFort = false; inC13 = false;
+  insideTower = false; isleOnGallery = false;
+  if (ISLE_SITE.ready && !ISLE_SITE.walls) while (!fortWallsStep(1e9, ISLE_SITE)) { /* behind the black (and only once it is there to build: a loop on a site not yet loaded never ends) */ }
+  const p = ISLE_ARRIVE, l = ISLE_SPAWN_LOOK;
+  const f = isleFloorAt(p.x, p.z, ISLE_BR.y + 0.3, 0.5) ?? ISLE_BR.y;
+  islePlace(p.x, f, p.z, Math.atan2(-(l.x - p.x), -(l.z - p.z)));
+  lookEuler.x = 0.02; camera.quaternion.setFromEuler(lookEuler);
+  onIsle = true;
+  if (isleWorld) isleWorld.visible = true;
+  lhBeamFind();
+}
+
+/* ---- THE WALK. On the island: the castle's walk on the island's site.
+ * Near it on the sand: the rock is in the way. In the tower: the stair. On
+ * the gallery: a ring round the light. */
+function updateIsle(dt) {
+  /* THE FRAME'S GROUND STARTS AT THE BEACH. The generated tower's walk set it
+   * to the headland every frame whether you were near it or not, and every
+   * later system only RAISES it (rocks, mounds, the rooms after); with that
+   * walk retired nothing lowered it, and leaving the island would have left
+   * you standing on its height. The beach is 0, as the headland now is. */
+  const prevGround = groundY;
+  /* (and only out on the beach: a room's walk sets its own floor every frame
+   * and skips the frames its door's black is coming down, and a 0 here in
+   * those frames dropped you two metres through the throne room's floor while
+   * the screen went dark) */
+  if (!inRoom() && !inFort && !inC13) groundY = 0;
+  const p = camera.position;
+  const near = p.z < -1110 && p.z > -1200 && p.x > -40 && p.x < 30 && !inRoom();
+  if (!isleWorld && (p.z < -700 || inFort || inC13 || inThrone)) loadIsle();   // ten megabytes: fetched well before the castle's back door can want it
+  // the settings' teleport: held in the black where it left you until the island is there to be put on
+  if (devIsleWait) {
+    blackoutEl.style.opacity = '1'; velocity.set(0, 0, 0);
+    if (!isleReady) { p.x = 8; p.z = -1090; return; }
+    devIsleWait = false; placeOnIsle(); fortCalmBoss();
+    blackoutEl.style.opacity = '0';
+    return;
+  }
+  if (isleWorld) isleWorld.visible = !inRoom() && Math.abs(p.z - ISLE_Z) < 1600;
+  updateIsleCut(dt);
+  // a restore onto the island before its model has landed: held where it was saved until it has
+  if (!isleReady && isleHold && !inRoom()) { p.x = isleHold.x; p.z = isleHold.z; groundY = isleHold.f; onIsle = true; return; }
+  if (isleReady && isleHold) { const h = isleHold; isleHold = null; isleRestoreAt(h.x, h.f + playerEye(), h.z); }
+  if (!isleReady || inRoom() || inFort || inC13) { onIsle = false; return; }
+  if (!ISLE_SITE.walls && Math.abs(p.z - ISLE_Z) < 200) fortWallsStep(5, ISLE_SITE);
+  // the door swings
+  isleDoorSwing += ((isleDoorOpen ? 1 : 0) - isleDoorSwing) * Math.min(1, dt * 4);
+  const D = isleWorld.userData.DOOR; if (D) D.leaf.rotation.y = -isleDoorSwing * 1.75;
+  const dx = p.x - ISLE_AXIS.x, dz = p.z - ISLE_AXIS.z, d = Math.hypot(dx, dz), ang = Math.atan2(dx, dz);
+  const feet0 = camBaseY - playerEye();
+  // the track cues once, as you come up to the door
+  if (!doorHeard && started && introDone && d < 7 && Math.abs(feet0 - ISLE_FLOOR) < 2 && Math.abs(angDiff(ang, ISLE_DOOR_A)) < 1.2) { doorHeard = true; startLighthouseTrack(); }
+  /* ON THE GALLERY: round the lantern and inside the rail, at the lantern floor's height */
+  if (isleOnGallery) {
+    const lo = ISLE_GAL_R0 + 0.32, hi = ISLE_GAL_R1 - 0.32;
+    const r = THREE.MathUtils.clamp(d, lo, hi);
+    if (d > 1e-4 && r !== d) { p.x = ISLE_AXIS.x + dx / d * r; p.z = ISLE_AXIS.z + dz / d * r; }
+    groundY = ISLE_GALLERY + 0.02; onIsle = true;
+    return;
+  }
+  /* IN THE TOWER: the stair gains a rise for every turn you wind round the pole */
+  const throughDoor = isleDoorSwing > 0.55 && Math.abs(angDiff(ang, ISLE_DOOR_A)) * Math.max(d, 1) < ISLE_DOOR_W - 0.12 && feet0 < ISLE_FLOOR + 0.6;
+  if (insideTower) {
+    const climb = Math.max(0, prevGround - ISLE_FLOOR);
+    const onStair = climb > 0.6;
+    const outer = (onStair ? Math.min(ISLE_BORE(ISLE_FLOOR + climb + 1), ISLE_RAIL_R + 0.18) : ISLE_BORE(ISLE_FLOOR + climb)) - ISLE_BODY_R;
+    let lim = null;
+    if (d > outer && !(throughDoor && !onStair)) lim = outer;
+    if (lim === null && d < ISLE_POLE_R + ISLE_BODY_R) lim = ISLE_POLE_R + ISLE_BODY_R;
+    if (lim !== null && d > 1e-4) { p.x = ISLE_AXIS.x + dx / d * lim; p.z = ISLE_AXIS.z + dz / d * lim; }
+    if (d > ISLE_TOWER_R(ISLE_FLOOR) + 0.3) {
+      // out of the door: the walk outside picks up from the doorstep (the cut down the ladder left its own last spot up on the stair)
+      insideTower = false; stairTurns = 0; stairY = null;
+      isleLastSpot.x = p.x; isleLastSpot.z = p.z; isleLastFloor = ISLE_FLOOR; groundY = ISLE_FLOOR;
+    }
+    else {
+      if (d > 0.25) {
+        let w = lastStairA - ang; w = Math.atan2(Math.sin(w), Math.cos(w));
+        stairTurns = THREE.MathUtils.clamp(stairTurns + w / (Math.PI * 2), 0, ISLE_TOP / ISLE_RISE);
+      }
+      lastStairA = ang;
+      const raw = Math.min(ISLE_TOP, stairTurns * ISLE_RISE);
+      const stepped = Math.min(ISLE_TOP, Math.floor(raw / ISLE_STEP + 1e-4) * ISLE_STEP) + ISLE_TREAD_T / 2;
+      stairY = stairY === null ? stepped : stairY + (stepped - stairY) * Math.min(1, dt * 18);
+      groundY = ISLE_FLOOR + stairY;
+      onIsle = true;
+      return;
+    }
+  }
+  // stepping in at the door
+  if (!insideTower && throughDoor && d < ISLE_BORE(ISLE_FLOOR) - 0.25) { insideTower = true; stairTurns = 0; stairY = null; lastStairA = ang; groundY = ISLE_FLOOR; onIsle = true; return; }
+  if (!ISLE_SITE.walls) { onIsle = onIsle && isleLastFloor !== null; if (onIsle) groundY = isleLastFloor; return; }
+  const S = ISLE_SITE;
+  if (onIsle) {
+    /* ON IT: the castles' walk, made for a hill rather than a hall
+     * (2026-10-13, the owner: "insanely laggy i fall through the floor and
+     * when changing elevations i stutter like the catacombs did … the stone
+     * stairs up to the lighthouse … are very laggy too"). Four things:
+     *   * A FLOOR IS ONLY YOURS IF IT IS NEXT TO THE ONE YOU WERE ON. The walk
+     *     let you walk off anything under 2.6 m, so stepping into a crack in
+     *     the boards read the rock under them as "a drop you may take" and
+     *     put you through the deck. The next floor must be within
+     *     `ISLE_FALL` of the LAST floor you stood on — a gap, a crack or a
+     *     sheer edge is a ledge, never a way down — and an edge of the rock
+     *     is never a way onto the beach or into the sea.
+     *   * THE FLOOR THE EYE FOLLOWS IS BLENDED (`isleFloorSmooth`, the
+     *     catacombs' `catFloorSmooth` on this site): a slope in 20 cm cells is
+     *     a staircase of treads, and the cliff stair — read as a ramp of
+     *     fifty degrees — was a quarter-metre riser every cell.
+     *   * A STEEP WAY IS WALKED SLOWER: up or down the cliff stair at the
+     *     beach's stride was an elevator, a metre and three quarters a second
+     *     straight up; the stride is cut to keep the pace along the slope.
+     *   * and the eye is EASED onto a step and HELD to the ground going down,
+     *     in `update()` with the whale's and the keep's (`onIsle`). */
+    let feet = feet0;
+    if (isleLastFloor !== null && feet < isleLastFloor) feet = isleLastFloor;
+    const ref = isleLastFloor ?? feet;
+    const up = !onGround ? FORT_AIR : S.step;
+    const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80, S) || keepHitsWall(x0, z0, x1, z1, feet + 1.25, S) || keepHitsWall(x0, z0, x1, z1, feet + 1.68, S);
+    const tower = (x, z) => !throughDoor && Math.hypot(x - ISLE_AXIS.x, z - ISLE_AXIS.z) < ISLE_TOWER_R(feet + 0.5) + 0.3 && feet < ISLE_GALLERY - 2;
+    const nextTo = (st) => st && st.f > ref - ISLE_FALL;
+    /* and no face of rock steeper than ISLE_MAX_SLOPE, up it or down it: the step is 0.62 a 20 cm cell, which
+     * by itself lets you walk up seventy degrees. Measured over the 0.8 m ahead (a deck's edge is a step, not
+     * a slope); the cliff stair's ramp is the one steep way and is let be. */
+    const steep = (x, z, st) => {
+      if (!onGround || isleRampAt(x, z) !== null) return false;
+      const mx = x - _preMove.x, mz = z - _preMove.z, ml = Math.hypot(mx, mz); if (ml < 1e-4) return false;
+      const fx = x + mx / ml * 0.8, fz = z + mz / ml * 0.8; if (isleRampAt(fx, fz) !== null) return false;
+      const f2 = keepFloorAt(fx, fz, st.f + 0.6, 1.2, S);
+      return !!f2 && Math.abs(f2.f - st.f) / 0.8 > ISLE_MAX_SLOPE;
+    };
+    // the cliff stair is a corridor: on and off it only at its two ends, never over its sides
+    const flank = (x, z) => ISLE_RAMPS.some((R) => {
+      if (z > R.z1 - 0.35 || z < R.z0 + 0.35) return false;                       // its foot and its head are open
+      const was = _preMove.x >= R.x0 && _preMove.x <= R.x1 && _preMove.z <= R.z1 && _preMove.z >= R.z0;
+      const now = x >= R.x0 + 0.05 && x <= R.x1 - 0.05;
+      return was ? (x < R.x0 + 0.25 || x > R.x1 - 0.25) : now;
+    });
+    const legal = (x, z) => { const st = keepFloorAt(x, z, feet, up, S); return nextTo(st) && !hits(_preMove.x, _preMove.z, x, z) && !tower(x, z) && !steep(x, z, st) && !flank(x, z) ? st : null; };
+    let st = legal(p.x, p.z);
+    if (!st) {
+      const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
+      let took = false;
+      if (ml > 1e-4) {
+        const base = Math.atan2(mx, mz);
+        for (const off of [0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4]) {
+          const k = Math.cos(off) * ml, a = base + off;
+          const nx = _preMove.x + Math.sin(a) * k, nz = _preMove.z + Math.cos(a) * k;
+          const s2 = legal(nx, nz); if (!s2) continue;
+          p.x = nx; p.z = nz; st = s2; took = true; break;
+        }
+      }
+      if (!took) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+    }
+    // the slope's pace: the rise over the stride, from the blended floors at both ends
+    if (st && onGround) {
+      const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
+      if (ml > 1e-3) {
+        const a = isleFloorSmooth(_preMove.x, _preMove.z, feet, up), b = isleFloorSmooth(p.x, p.z, feet, up);
+        const g = a && b ? Math.abs(b.f - a.f) / ml : 0;
+        if (g > 0.5) {
+          const k = Math.max(0.55, Math.min(1, 1.12 / Math.sqrt(1 + g * g)));
+          const nx = _preMove.x + mx * k, nz = _preMove.z + mz * k, s2 = legal(nx, nz);
+          if (s2) { p.x = nx; p.z = nz; st = s2; }
+        }
+      }
+    }
+    keepWallPush(p, FORT_BODY, feet, S, up);
+    isleTrunkPush(p, FORT_BODY);
+    st = keepFloorAt(p.x, p.z, feet, up, S);
+    if (!nextTo(st) || tower(p.x, p.z) || flank(p.x, p.z)) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+    if (!nextTo(st)) { p.x = isleLastSpot.x; p.z = isleLastSpot.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+    if (st) { isleLastFloor = st.f; isleLastSpot.x = p.x; isleLastSpot.z = p.z; }
+    const sm = st ? isleFloorSmooth(p.x, p.z, feet, up) : null;
+    groundY = sm ? sm.f : (isleLastFloor ?? groundY);
+    return;
+  }
+  /* ON THE SAND BESIDE IT: the rock is in the way. There is no way up from
+   * the beach — the island is the far end of the castles, reached only over
+   * the drawbridge from XIII. */
+  if (!near) return;
+  const feet = feet0;
+  const blocked = (x, z) => { const fl = keepCellAt(x, z, S); return (fl && (!fl.length || fl[fl.length - 3] > beachGroundAt(x, z) + 0.3)) || keepHitsWall(_preMove.x, _preMove.z, x, z, feet + 0.8, S) || keepHitsWall(_preMove.x, _preMove.z, x, z, feet + 1.4, S); };
+  if (blocked(p.x, p.z)) { p.x = _preMove.x; p.z = _preMove.z; }
+  keepWallPush(p, FORT_BODY, feet, S, S.step);
+}
+// a restore that lands you up there: the walk has to know before its first frame
+let isleHold = null;
+function isleRestoreAt(x, y, z) {
+  if (z > -1120 || z < -1192 || x < -34 || x > 22) return;
+  const feet = y - playerEye();
+  if (feet < 2) return;
+  if (!isleReady) { isleHold = { x, z, f: feet }; onIsle = true; return; }
+  if (ISLE_SITE.ready && !ISLE_SITE.walls) while (!fortWallsStep(1e9, ISLE_SITE)) { /* behind the black */ }
+  const d = Math.hypot(x - ISLE_AXIS.x, z - ISLE_AXIS.z);
+  if (feet > ISLE_GALLERY - 0.5 && d < ISLE_GAL_R1 + 0.5) { isleOnGallery = true; onIsle = true; return; }
+  if (d < ISLE_BORE(ISLE_FLOOR) && feet >= ISLE_FLOOR - 0.3) { insideTower = true; stairTurns = THREE.MathUtils.clamp((feet - ISLE_FLOOR) / ISLE_RISE, 0, ISLE_TOP / ISLE_RISE); lastStairA = Math.atan2(x - ISLE_AXIS.x, z - ISLE_AXIS.z); onIsle = true; return; }
+  onIsle = true; isleLastFloor = feet; isleLastSpot.x = x; isleLastSpot.z = z;
 }
 
 let danteUnit = null;
@@ -87639,7 +89631,7 @@ Object.assign(window.__bw, { crusaderShieldTick, crusaderChain, farmCobble, farm
   setCatFloor: (v) => { catLastFloor = v; }, BEN_NPC,
   audioNodes: () => ({ waveBusGain, forestBed, masterGain, benBr }),
   audioDbg: () => ({ forest: forestBed && +forestBed.g.gain.value.toFixed(4), ben: benBr && benBr.g && +benBr.g.gain.value.toFixed(4), sand: (sampleBanks.sandStep || []).filter(Boolean).length, benBuf: (sampleBanks.benBreath || []).filter(Boolean).length, bedK: beachBedK() }),
-  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), wellLookStart, wellLetUp, wellLeave, WELL_X, WELL_Z, wellG, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
+  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), wellLookStart, wellLetUp, wellLeave, WELL_X, WELL_Z, wellG, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
   c13State: () => ({ inC13, ready: c13Ready, walls: !!c13Walls, life: !!c13Life, torches: !!(c13Life && c13Life.torches), mask: !!C13_M.data,
     thrive: c13Thrive && { done: c13Thrive.done, jobs: c13Jobs.length, torches: (c13Thrive.torchAt || []).length, banners: c13Thrive.banners.length, lanterns: c13Thrive.lanterns.length, stalls: c13Thrive.stalls.length, towers: (c13Thrive.towers || []).length, lines: (c13Thrive.lines || []).length, windows: (c13Thrive.windows || []).length, fountain: c13Thrive.fountain && [c13Thrive.fountain.x, c13Thrive.fountain.z], door: c13Thrive.door, solids: c13Solids.length, flowers: c13Thrive.flowers, snd: c13Snd && { fountain: !!c13Snd.fsrc, fg: c13Snd.fg && +c13Snd.fg.gain.value.toFixed(3), lute: c13Snd.playing, lg: +c13Snd.lute.gain.value.toFixed(3) } } }),
   c13Thrive: () => c13Thrive, c13Solids, c13Open, c13RunJobs, placeInC13, C13_SITE, C13_X, C13_Y, C13_Z,

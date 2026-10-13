@@ -562,3 +562,26 @@ the one table of lengths and shapes that the sounds AND the warm-up read
 (`noise(key)`, `thumpNoise(len)`); `sgWarmAudio()` builds them one per 16 ms
 task from the draw. `sfxMutSever` plays at most three per 50 ms and
 `sfxSgGore` one per shot. A 4-kill shot: 97–120 ms → ~30 ms.
+
+**THE WELL'S SOUNDS ARE A SHAFT (2026-10-12, "horrible … make it eerie and
+hyper realistic").** `wellIR` builds a stereo impulse response once: a dark
+4.6 s tail (two one-pole noises, the bright one dying 4× faster), a flutter
+comb at the bore's round trip (2·0.93/343 s, ±1 % per channel), and seven
+slaps off the water at 2·23/343 s, each smeared and duller. `wellA()` is the
+well's place in the mix — dry and convolved paths into one panner + lowpass +
+gain to `sfxBusGain`, placed every frame by `wellAudPlace` (1/(1 + (d−1)/3.2),
+lowpass opening as you near, centred and full while you lean in).
+`wellSend(node, dry, wet)` routes anything into it. Sources modelled, not
+toned: `wellDrip` (a sine sweeping UP ×1.8–2.6 in 30 ms — the bubble — plus
+an impact tick), `wellPebbles` (clicks at a shrinking gap, then a drip),
+`wellCreakSrc` (stick-slip: decaying micro-impulses at a wandering 4–15 ms
+period through body bandpasses — rope, axle, frame), `wellKnock` (an impulse
+rung through narrow modes: pawl = hardwood on iron 760/2350/3900/5600 Hz).
+`sfxWellAir` is the tube sounding (noise through its modes 93/186/372/561 Hz,
+Q 12–34, each breathing on its own LFO) + a gusting draught + drips and grit.
+The voice (`wellVoice`) goes through it too: highpass 110, +4 dB at 900,
+lowpass 3.6 k, dry 2.8 / wet 0.9 — the lines peak ~1.0 in the files and the
+effects bus is 0.12 at defaults, so there is headroom. The drone's moan is
+noise through a wandering band (no oscillators — the triangle hum was the
+"synthetic" in it), plus the well's mouth mode through `wellA`, and on its
+own a drip or grit from the well every 4–13 s while you are near.

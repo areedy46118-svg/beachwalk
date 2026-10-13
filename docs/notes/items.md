@@ -1006,3 +1006,27 @@ are a strong glowing green (`#stamina.buff`).
 → `drainHeldCrab()`, the drink's door in `attackAction`/`primaryAction`: with a
 syringe in the pack it runs `startExtraction`; without one it says "You need a
 syringe" (`sayInventoryFull(text)` takes a message now).
+
+**THE PAVILION KEY (`pavKeyItem`, 2026-10-12).** Dropped where the man from the
+well falls (1.7 s after `st.struck`, `wellKeyLie`), a cold-iron clone of
+`keyModel` with a glint; "Take the Pavilion key". The pavilion gate takes it
+or the Lost key (`gateKeyIn()`, his first). Saved as `wellKey` 0/1/2 +
+`wellKeyAt`; a save with him dead and no `wellKey` lays it by the well. On a
+restore the key scan may not be loaded yet — `wellKeyLie` retries the fill.
+In `itemByName`'s list.
+
+**THE SAND SHOVEL IS SEEN (2026-10-12: play testers missed it).** Its red
+emissive 0x8a1a10 (a dark lump at night before), and its shine size 1.5,
+strength 2.6, `through` (the faint sprite that shows through the castle's
+sand).
+
+**NOTHING THROWN GOES THROUGH ANYTHING (2026-10-12).** `PhysProp.step`
+sub-steps the free move (steps ≤ 0.7 of the radius, max 24) and asks the
+body's `wall` and `pushOutOfSolids` at each step; where a step is pushed
+back the velocity reflects off the face and it is an impact at the arrival
+speed (`_wallHit`) — glass shatters ON the wall. Every body has a wall now:
+its room's, or `worldPropWall` (the drawn faces of FORT_SITE, C13_SITE,
+ISLE_SITE, beach only). The island is in the `bunkerFloorAt` chain, so
+anything thrown there lands on its rock and boards. Measured in the tavern:
+17 bottles thrown at 16 m/s in every direction from the hall, 17 shattered
+on the drawn stone, 0 crossed a face.

@@ -320,3 +320,14 @@ shadow + ink rubbed off, and worn spots where the folds cross. Concentric
 "hills" read as rings — taken out. The full-screen view gets a PNG through
 `toBlob` (the sheet is big); the inspect model is two faces, the chart in
 front and the blank paper behind.
+
+## 2026-10-13 — the chart draws the castles as one road
+
+`drawBeachMap`: his dotted way up the sand now ends at the first castle's
+gate; from there the castles are numbered in his hand — i. the castle, ii.
+XIII, iii. the throne (a crown over XIII's keep), iv. the light (drawn at
+`ISLE_AXIS`, the island, not the old `LH_X`/`LH_Z`) — with the road between
+them dashed in red and a barb at the middle of each leg, and "one road in,
+the same road out" under the castle. Labels near the right edge run off the
+1024-wide sheet: the crown sits over XIII and the note under the castle so
+nothing is clipped.

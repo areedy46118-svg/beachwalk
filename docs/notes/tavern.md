@@ -1052,3 +1052,7 @@ a fixed 12.5 cm off the spine bone was INSIDE him (the bone sits behind the
 body's middle — hence the ray); a MeshPhysicalMaterial (clearcoat) on the
 plate drew nothing on him in the tavern though the examine view drew it —
 MeshStandardMaterial draws — but BLACK (6/255, measured with a 48 px render target on him): the torches barely reach his chest and the cast only reads because `dressMutant` lifts their maps with an emissive; the badge's own map is its emissive at 0.7. The man in the well calls the barman Stanley.
+
+**A CLICK PUTS THE PLANK DOWN (2026-10-12, the owner).** `attackAction` with the
+plank held (`held === tavPlankProp`) calls `dropHeld` — E's lay-or-prop — not
+`throwHeld`; everything else held is still thrown by a click.
