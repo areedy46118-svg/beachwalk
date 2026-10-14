@@ -226,3 +226,151 @@ disc on bare floor (`onFloor` at its centre and rim), clear of colliders, inside
 every disc already down. A jar on its side is centred on its spot, axis level, body on the floor (`JR`/`JL`
 measured off the model's box); a standing one on its heel. All 22 jars and 18 syringes still fit.
 `window.__bwPavJars` / `__bwPavDiscs` for the harness.
+
+## The dungeon behind the yard, and Henry (2026-10-14)
+The owner, from the yard (feet 19.40, 0.40, −479.80, looking +x): a door here to lumoize's "Castle Dungeon",
+the model's own door; no empty walls; the barred window closed; Henry sat in the cell, mouth moving as he
+talks, eyes blinking, dark enough that you cannot really tell what he looks like, dirty; his lines given.
+- **Where:** `DUN_DOOR_ANG` π/2 — the yard wall's cliff side, opposite the column's door. `placeDunDoor` rays
+  out from the column to find the wall (5.55 m), stands the dungeon's +z door (cut out of the model's pair by
+  `dunPart`) against it with a dark reveal behind, the wood given an emissive off its own map (lit for
+  torches it was a black slab under the moon). "Open the door" → `startDungeon(1)`.
+- **The room:** a room like the others (`DUN_X/Y/Z` 21000/700/21000), the throne room's pattern line for
+  line — `DUN_SITE` walk off the packer's `bw_walk`, `updateDungeon` / `dunClampPlayer` / `updateDungeonCut`,
+  `ROOM_BACK.dun`, `saveRoom` 'dun', and `inDun` added to `inRoom`, `indoors`, the hall-hide key (9),
+  `clearRoomFlags` (both copies), `dropTargets`, the beach clamp, both footstep lists, the where-am-I readout,
+  `frozen()` and the menu's busy list (`dunBusy`), and `bunkerFloorAt`. The bars are a wall (`dunKeepOut`:
+  the corridor's x 0.79 + body .. 2.77, its ends 0.4 short of the doors). Leave by the door you came in by.
+- **Out again:** to r = door − 1.1 facing the column, `mushWhere` 'out' AND `mushInYard` true — without the
+  second the beach's cliff clamp ran first and took you to x 14.2, inside the column (mushWhere 'stair').
+- **No empty walls:** the corridor's outer wall (x 2.77) and the vault over everything are built in the model's
+  `wALLS` with the uv of the model's own back wall — the affine (z, y) → uv off its biggest triangle
+  (`stoneUV`), so the same bricks at the same size; a measured "uv per metre" came out streaked. The window
+  gets a shutter of the `Door` wood behind its bars. Metalness 0 everywhere (iron included), and a small
+  emissive off each map so a wall the torches do not reach is dark stone, not a hole.
+- **The dark:** a guttering orange light at the far door (7.5), a weaker one by the way in (2.4), and in the
+  cell only a cold low one behind Henry at the shutter's side (2.6, range 3): an edge on a shape.
+- **Henry:** `tools/henry_pack.py` — NOT Blender: Blender's glTF re-export lost the rig's joint offsets (the
+  source's bones are in cm under a scaled root; every leg and arm bone came out at the origin, so turning one
+  turned nothing). The repack keeps the source's node tree and skin, keeps the head's and eyelashes' targets
+  16/17 (the blinks, found by measuring which shapes pull the upper lids down) and 117 (lips apart), drops
+  the eye overlays and the clip, turns spec-gloss into metal-rough, and washes/darkens/grimes the colour maps
+  at 512. 6 MB (most of it his hair cards). The file carries a SECOND, empty copy of the rig under the same
+  names: bones come from the skinned mesh's `skeleton.bones`, never by name from the tree.
+- **His pose** (`henryPose`, `HENRY_POSE`): each limb aimed at a direction in his own frame (`henryAim`,
+  world-space, so the rig's local axes do not matter), the pelvis then lowered onto the stone; on top, a
+  breath, the blink (both lids, 0.14 s, a fifth of the time twice), and while `typeFull` (his line typing)
+  the jaw bone turns (`rotateZ` 0.26 — tested: the jaw opens the mouth, teeth and tongue follow) with the lip
+  shape at 0.55 of it on a run of syllables; his head comes up toward you while the box is open.
+- **His lines:** `HENRY_SCRIPT`, the owner's exactly; "Prisoner" on the card, fov 24 on his head bone. Talked
+  to from the corridor (`far` 4.6, through the bars: the hover ray only tests his proxy sphere).
+- `tools/dunshot.js`: `__dunBoot`, `__dunEnter`, `__dunLeave`, `__dunSheet` (room-local views).
+
+## Henry let out (2026-10-14)
+The cell's gate (`Entrance`) is put on a pivot at its far end (`buildDunGate`, `DUN_GATE` x 0.70, z −2.92 …
+−0.95) — the far end so its leaf swings clear of his path. "The cell is locked." (bare) / "Unlock the cell"
+with `cellKeyItem`: `keyUsed`, the key eaten, `sfxLockOpen`, the gate swings 1.75 rad in 1.1 s, and `henry.free`
+runs (`updateHenryFree`): wait 0.9 s → 'up' (1.8 s, every bone slerped sat → stood, the pelvis raised to
+`standY`, his soles on the stone) → 'walk' (1.25 m/s: inside the gate, through it, then to a metre short of
+you in the corridor) → 'talk' (`startDialog('found')`, "YOU FOUND IT!", click to go on; `HENRY_FREE_NPC.onLeave`)
+→ 'run' (3.6 m/s to the +z door) → the door's sound and he is gone, `henryFree` 2 on the save. He has no clips:
+standing, walking and running are `henryStandAims(phase, gait)` on top of his stood pose, written once from the
+rig's rest (`henryPoses`; `henry.rest` taken at load before he is sat). While he walks the face still blinks
+and talks; the sat-only breath/neck layer is off.
+
+**THE CELL GATE SWINGS FROM THE LOCK END, AND THE CELL IS WALKABLE (2026-10-14).**
+The padlock is at `DUN_GATE.z0`, so the pivot is at `z1` and +1.75 rad swings the
+lock end in: measured, the open leaf lies inside the cell along its front, x
+-1.28…0.67, z -1.04…-0.61, with no wall within 3 m on that side. Once the swing
+reaches 1, `DUN_SITE.skip` drops the `Entrance` material from the wall index,
+`DUN_SITE.extra` adds the gateway's floor box, `dunMinX()` lets x go to the back
+wall (-2.53 + body), and `dunWalls = null` forces the rebuild (restores too).
+Measured with W held from the corridor: 2.1 m into the cell. Henry's walk legs
+go round the open leaf: (-1.75,-1.35), (0.15,-2.0), (1.35,-2.0), then you.
+**His last lines wait for a click**: `rush`, `no` and `yes` have `end: false`
+and `hint: 'click to leave'`.
+
+## Henry on the jetty, and the eagle (2026-10-14)
+The owner: Henry, once out, at the sea end of the lighthouse's jetty "staring into the ocean"; talked to, he
+turns round — "Hey!, its you again. I cant thank you enough for saving me." / "No problem" / "You know, they say a
+lot of bad things about this beach … it feels good to just..." — and the click that ends that line has an eagle
+"swoop down fast as hell" and carry him high out over the water, drop him from very high up, a splash far away; his
+scream fading with the distance; a hyper-real sound on the snatch.
+- **Where:** `HJ_SPOT` (-24.2, 0.41, -1160.3), measured by raycasting the deck from the owner's screenshot
+  (feet -23.60, 0.41, -1151.22, look 0.81): the jetty is x -26.5..-22, z -1140..-1161.3, top 0.41; its lamp post
+  is at (-26.0, -1160.6) (`HJ_LAMP`). He faces -z (`HJ_FACE` π), toward the moon.
+- **A second Henry:** `loadJettyHenry` parses henry.glb again (bwFetch caches the bytes, bwGlb parses fresh,
+  so it is a separate scene), once `henryFree` is 2 and you are past z -800. The pose helpers take the copy
+  now: `henryAim(…, h)`, `henryStandAims(ph, g, amt, h)`, `henryMorph(name, v, h)`, and the blink/mouth are
+  `henryFace(h, dt, talking)` (the cell's `updateHenry` calls it too). His materials get fog off, and a fifth of
+  his own map as emissive — the moon is behind him from anywhere on the jetty and his face was a black hole.
+  You cannot walk through him (a 0.5 m push, kept on the boards).
+- **The talk:** `HENRY_JETTY_SCRIPT`, card "Henry". He turns over 1.1 s (feet shuffling, `henryStandAims` at
+  0.32) and keeps facing you. The last node's `say` sets `hjSaid`; `onLeave` (`hjLeave`) snatches only if it was
+  said — walking off earlier turns him back to the sea, and he can be talked to again.
+- **The eagle:** WildPoly3D's (CC-BY-NC-4.0 — non-commercial!), packed from glTF by joining its .bin into a .glb
+  and shortening its clip names (`flapping fly gliding idle landing leap lookaround sleep`). Faces +z, rests
+  perched; 6.2 m across the wings in flight at scale 1, 1.1 here. Its root motion is under 0.6 m: none stripped.
+  Vertex colours only; colour 0.42, emissive 0x0a0908, fog off. Compiled on load with `visible` set true for the
+  call (`compileAsync` walks only visible objects).
+- **The take (`hjCut`, `updateHenrySnatch`):** keyed flight `HJ_KEYS` [t, along f (you → him), sea side, up],
+  a time-keyed Hermite (`hjFly`), then free flight toward `out` climbing 10 m/s. It comes down out of the sky
+  BEHIND him where you are looking — the first version came from behind YOU and was in frame for 0.05 s, since
+  a tight dialog lens only sees a thing within a metre and a half of his head. Grab at 0.75 s ('landing' clip
+  from 0.3 for the flare, then 'fly' ×1.3). Then it swings up and back out the way it came (carried on across
+  it went into the island's rock). His hands are put on its feet every frame (`hjEagleFeet`, `hjHandsMid`),
+  swinging with its change of speed; legs running (`hjPoseAir`). Let go at 7.4 s carried, ~75 m up; he falls
+  ballistic and tumbling about his pelvis; under the sea line the splash. `out` is bent seaward until where he
+  will land is 0.22 rad off the lamp post's bearing from you — the first splash landed behind the post.
+- **The lens:** `cineHold` with `dialogHead` null and `dialogTarget` driven every frame (him, the pair, him
+  falling, the splash); `dialogFov` = 2·atan(R/d) clamped 14..55. `frozen()` has `hjCut`. At the end the look is
+  re-read from the camera (`lookEuler.setFromQuaternion`).
+- **The splash:** the whale's spray (`wfBuildFx`/`wfSplash`): a column and a crown at sizes 5.5/4.5 — its points
+  are sized `uPx * aS / depth`, blind to the lens, so through a 14° lens at 150 m the whale's 1.6 is a sprinkle.
+  `wfUpdateFx` is run by this take, and 7 s on after it, then every drop is put out (`hjSprayOut`, the whale's
+  lesson). `sfxWhaleSplash(…, 0.55)` is the boom, late by its distance.
+- **The sound:** the stoop's air is a live chain on the bird (looped noise → bandpass → lowpass → gain → pan):
+  pitch (320 + 26·speed)·Doppler, level 0.85·(speed/40)^1.6·3/d; measured it rises 0.06 → 0.26 as it comes in and
+  pitches 2.2 kHz → 1 kHz as it brakes. `sfxSnatch`: sub thump, cloth slap, three talon clicks, a tear, the
+  hardest wing beat. A wing beat on every wrap of the 'fly' clip, late by d/343. The scream (`henryScream`, the
+  owner's file, the 0.085 s of silence in front cut) on its own live chain following his pelvis: 1.5/(1+d/6) and
+  a lowpass closing to 600 Hz at 180 m — measured 0.83 at 5 m, 0.1 at 84 m; a second, fainter one from 0.9 s into
+  the file as he falls, cut when the SOUND of the splash arrives (d/343), not before it.
+- **Saved:** `henryJetty` (`hjTaken`), set the moment it starts. `isleRestoreAt` refused any feet under 2 m —
+  a save on the jetty (0.41) restored onto the beach at WADE_X. The jetty's box (x -27..-21.5, z -1161.6..-1139.5,
+  feet > 0.2) is let through: it is out at sea where no beach is. Measured: a checkpoint load on the jetty
+  stands you on it.
+- `tools/hjshot.js`: `__hjBoot`, `__hjStand`, `__hjTalk`, `__hjClick`, `__hjChoose`, `__hjSheet`, `__hjTrack`.
+  A frame of the take costs enough in the pane that a 16-still sheet runs past the tool's 45 s: four at a time,
+  stored on `window`, read back in the next call.
+
+**HENRY IS ON MOTION CAPTURE (2026-10-14, "make henry move more natural his limbs are all stiff").** `henryMocap(h)`
+retargets Wong's idle (8.3 s), walk and run (`wongMoves`, the farmers' walk) onto his CC rig through `ntarRetarget`
+with a fake unit `{ kind: { rag }, clipSpeed… }`: `HENRY_RAG` maps Mixamo onto CC (Hips → CC_Base_Hip, Spine →
+Waist, Spine1/2 → Spine01/02, Neck → NeckTwist01, shoulders → Clavicle, …; his Pelvis and NeckTwist02 ride their
+parents), `bind` is captured at load (`h.bind`), hipUp/hipPos read at the bind as `poseRig` reads them. Measured
+on his rig: walk 1.48 m/s, run 3.74 — played at `speed / clipSpeed` so the feet do not skate. **The mixer is rooted
+on the skinned mesh** (`new AnimationMixer(h.sk)`): the file's second, empty rig has the same names, and three's
+`PropertyBinding.findNode` looks a name up through `root.skeleton` first. 18 skinned meshes share the one set of
+bones. The cell: his stood pose is the idle's first frame (`henrySample`), getting up slerps sat → that and lerps the
+hip's position, then walk/talk/run are the clips. The jetty: idle from a random point; turning, the walk at 0.55;
+carried and falling, the run at 1.45/1.9 with the arms aimed on top after the mixer; the face after that. The sat
+head-lift (`NeckTwist01 rotateX -0.2`) came off the standing copy — standing, it turned his face up at the sky.
+**He is on the jetty only once freed:** `updateHenryJetty` does nothing (and loads nothing) unless `henryFree` is 2,
+which only his run out of the door or a save written after it sets.
+
+**HENRY'S GOLD RING (2026-10-14).** `found` now runs on (`next: 'gift'`) to the owner's line, and the dialog's
+`onLeave` is `henryOffer`: phase 'offer' — the idle, facing you, and `henryHoldOut(h, k)` on top over 0.7 s (the
+right upper arm and forearm aimed out and down, then the hand turned about its own length until the palm's
+normal — cross(wrist → Mid1, Index1 → Pinky1), `HENRY_PALM_SIGN` +1, measured palm up — points at the sky). The
+ring (`goldRing`, in `henryRingWorld` in world) lies at 80 % wrist → middle knuckle, 5.8 cm off the bone along that
+normal (3.5 was half sunk in the skin, 55 % at the heel of the hand in his cuff); a small glint (the key's full one
+whited it out; no column through the vault) and `ringDrop`, the octopus ring's sting, as the arm comes out.
+"Take ring" (`takeHenryRing`, kind 'default' so the pickup replay never sees it): into the pack, and 'run'.
+Saved as `henryRing`; a save from before you took it has `henryFree` 2 (1 is saved as 2), so the restore OWES it
+(`henryRingOwed`, granted in `finishRestore` after the pack is put back, `addToInventory(…, true)`).
+
+**ROUND 3:** his run out of the door is the OLD aimed stride again ("make henrys run out … the old way he did it"; the
+walk stays on the capture), and the jetty fall is the old aimed flail (`hjPoseAir` uses the mocap run only while he is
+carried). The ring line reads "all I had left, but it’s my way…", and the jetty's lines got their apostrophes
+("Hey! It’s you again. I can’t…", "…but it’s still beautiful to me. After being trapped for so long, it…").

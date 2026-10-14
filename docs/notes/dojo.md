@@ -584,3 +584,12 @@ offsets are now re-read once off a raw stamp of the idle (`fkIdle`, the same sav
 spine, no elbow under 40°; the fight unchanged (23 swings, 44 damage a minute). Round H's `samUpright`
 (straightening the stoop) and its guard changes (fists out 0.60, lerp 0.62, poles ±0.85) are reverted: the
 straightening turned his spine under roots that kept the clip's turn, and was worse.
+
+## His arms between the cuts (2026-10-14, "his arms look too stiff sometimes")
+Measured per frame: in every swing both elbows move, but the walk clip holds them at one angle for the whole
+stride (L 108°, R 78°, 44-frame runs) — the take carries the sword in a fixed hold. `samArmLife` (the kind's
+`postClip`, in the clip pass so the forest roots carry it): between swings only (weight eases to 0 the moment
+`st.atk >= 0`), the upper arms swing about his right in time with the gait clip (two strokes a clip) and the
+forearms after them, smaller when he stands (a breath). After: no held-elbow runs in 1,500 frames; walk L
+92–135°, R 78–86°. The fight sample: 18 swings / 49 damage a minute (sampling noise against 23 / 44: nothing
+here touches the AI or the blows).

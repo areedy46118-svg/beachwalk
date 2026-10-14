@@ -3424,3 +3424,13 @@ at 3.2–4.6 m/s 8 of 26, every hit within 1.69 m of his feet; running straight
 off at 4.4 m/s he catches you, 19 of 21, the pounce landing at 1.46 m.
 Harness: `__bw.endDialog` exposed; set dev mode during the setup or he kills
 the test player and the page reloads.
+
+## Health, 2026-10-14 (the owner, one message)
+The Dealer 36 → 50, the man from the well 36 → 50, the undercroft's knight 44 → 60. The eight beach mutant kinds
+a little harder AGAIN — note there were already two passes stacked (+1, then ×1.4 hp, ×1.15 aggr, ×0.94 wind):
+this one is ×1.2 hp (pale 8 → 10, red 11 → 14, dark 7 → 9, hulk 18 → 22), ×1.08 aggr, ×0.96 wind. Read the
+stack before adding a fourth.
+
+**THE MUTANTS, HARDER AND WIDER (2026-10-14).** hp ×1.45, aggr ×1.08, windK ×0.96. They spread out: `MUT_SEP` 3.2 (was 2.6), their
+own `MUT_SLOT_ANG` 1.3 (the crabs keep `CRAB_SLOT_ANG` 1.15), and the circling
+ring is `base - 0.5` (was -0.9), so they hold off more instead of stacking.

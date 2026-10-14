@@ -846,3 +846,20 @@ HEAD and measuring with `tools/catnav.js` + `tools/contact.js`:
   (the recorded baseline is 37–42 %). **Harness trap**: `__roomBoot('cat')`
   leaves you on a ledge 1.85 m over his floor and him in his lair, where
   `blowWalled` is true in every direction — use `__catSetup` + `__nav` first.
+
+## Falling out, the restore that flashed, and the bite that missed (2026-10-14)
+- **"I just fell out of the map."** Nothing in `updateCatacombs` caught a body that had left its floor: in the air
+  the feet are not lifted to `catLastFloor`, so over a gap the lookup takes the next storey down. A drop is LEGAL
+  here (the entry platform stands 3.3 m over the main floor; the walk is one connected component of 118,427
+  storeys, −7 … 14.5 m, and 185 tiny ones), so a "too far down" test walls you in — tried, it fired 1,662 times in
+  a random walk. The test is the FALL: off the floor more than 1.05 s (a 3.3 m drop at `P_GRAV` 15 lands in
+  0.66), feet below CAT_Y − 7.8, or non-finite numbers → put back on `catGroundSpot` (the last floor you STOOD on).
+  4,000 frames of sprinting/jumping about: 0 catches; a body pushed below the room: caught in one frame.
+- **"I restarted my checkpoint and my screen was flashing."** A save is the CAMERA (mid-jump, mid-step off a
+  ledge, the bob); restored in the air over a lower floor the body fell > 2.5 m, the restore guard put it back,
+  it fell again — up to three teleports as the black lifted. `ROOM_BACK.cat.seat` now stands the save on the floor
+  under it (`keepFloorAt(…, 0.6)`) and seeds `catGroundSpot`. Tested with a save edited 3 m into the air: seated
+  on the floor, no guard redo.
+- **The hunter's bite** (`zBite`) hurt with his head 0.83–1.07 m short of your face (body 2.56 m off). `stop`
+  2.7 → 2.05, `headR` 1.15 → 0.6: bites now land with the head 0.28–0.45 m from you. His swipes were honest
+  (claw 0.23 m, median).

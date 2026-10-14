@@ -1100,3 +1100,47 @@ r .62 g .76 b .81 there: it passes. So every emptied jar lost its glass and beca
 cap floating in the air (the pavilion's scattered jars, the drained jar on the Dealer's bench). The
 model now tags its fluid meshes `userData.jarFluid = true` (models/blood-jar.js, after `parts`) and
 `jarEmpty` hides only those. Any colour test on a three material: remember it is linear.
+
+## Keys you fought for are marked; a held crab says it can be drained (2026-10-14)
+- `addItemShine(..., { beacon })`: a thin additive column (r 0.035–0.075, 2.6 m, fading up, breathing at
+  0.09–0.17 opacity) stood in the WORLD at the root's position each frame (`updateShines`) so a tumbling key's
+  column stays upright; hidden once the thing is taken. On the Pavilion key (the well man's) and the Cell key
+  (the Dealer's). The Pavilion key's own lift went 0x5e6466 × 0.75 → 0xa7b0b2 × 1.0 and its glint 1.2/2.8 →
+  2/4.2 with a through-mark: "brighter and more noticeable after the well guy fight".
+- Holding the horseshoe crab with a syringe in the pack: "LMB Click to drain" (`updateHover`, the `onDrain`
+  branch; the click already drained — nothing said so).
+
+## One artifact to a weapon; nothing sold into a full pack (2026-10-14)
+- `attachArtifact` onto a weapon that already holds one is REFUSED ("One artifact to a weapon" + the banner "<weapon>
+  already holds <artifact> — take it off first"). It used to put the old one back into the pack before the new
+  one left it, ignoring `addToInventory`'s refusal: with a full pack the old artifact vanished from the save.
+- The shop: `shopNeedsSlot`/`shopPackFull` — gun, shotgun, ring, glowstick, and water/spliff when not already
+  stacked — refuse a full pack BEFORE the jars are spent ("Your pack is full…", `sayInventoryFull`), and the row
+  reads "Inventory full". The .44 a full pack swallowed (paid, sold out, never in the pack) is put back in his
+  stock on `openShop`. The 6 rounds were already the castle merchant's, once (`TRADER_STOCK.ammo` 1); the row says
+  "once only" and needs the .44 in the pack.
+
+**EVERY HORSESHOE CRAB LIES FLAT: `crabRimSeat(w, relic, groundY)` (2026-10-14).**
+Levels the crab (yaw only), then seats it by its RIM: the vertices beyond 55 %
+of the radius, sorted by height, and the one a third of the way up goes to
+ground − 0.01. Its legs and tail go into the sand; the box's bottom would have
+stood it on them. It retries every 500 ms until the scan has meshes. Used by
+the mound crabs (`beachGroundAt + 0.05`), the drain crab (the raycast hit, rock
+apron or sand), and the hold crab.
+
+**EVERY DROP SHINES LIKE THE CELL KEY: `DROP_SHINE`** (declared before
+`addItemShine`): size 2.0, strength 4.2, lift 1.6, through 0.7, beacon 1. Spread
+it and override only `height`: `{ ...DROP_SHINE, height: 0.3 }`. On every
+dropped or earned item (mound relic and water, jars, keys, ring, fang, spliff,
+grammy, horn, captain's head, artifact, G-drops, the wedding ring, the crate
+glowstick). Where a caller passes its own shine, spread that FIRST so
+`DROP_SHINE` wins.
+
+**THE STACK COUNT IS BIGGER.** `.slot/.islot/.rslot .count` bold 1.15rem with a
+heavier shadow; the hotbar's is 1.3rem (index.html).
+
+**THE GOLD RING (`goldRingItem`, `assets/gold-ring.glb`, CC-BY-ND — never modified).** "Regain stamina on a
+successful parry.": `goldRingParry()` is called by `parryCrab`, `parryMutant` and `parryShuriken` and gives back
+`GOLD_PARRY_STAM` 0.15 of the bar, capped at `stamMax()` — under half of one blocked blow (`BLOCK_COST` 0.34).
+Measured worn: 0.30 → 0.45; 0.95 → 1.0. An unlit scan (`KHR_materials_unlit`), so no `ringEnv`. In `packByName`.
+**The Military Shovel's glint is `DROP_SHINE`** now (the cell key's, with its column), at height 0.3.

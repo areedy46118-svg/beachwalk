@@ -1085,3 +1085,13 @@ planes — a dashed bright line down the hinge side. Both leaves now run into th
 stone (`W = xr − xl + 0.03`; the keep door's `HW = halfW + 0.012`), where the
 wall hides the edge; running them short of it leaves a slot of light. The diff
 went 979 → 552 pixels, the rest being ordinary silhouette edges.
+
+## "I lag walking into the chest room … like something blocks me" (2026-10-14)
+Measured with real key input (`fallbackLook`, a W keydown) into the opened storeroom: straight in from the
+door's middle it is smooth (6–10 ms frames, stopped by the chest's table at z 10.73). On a slant from the right
+you stopped DEAD at x −6.15, z 8.34 — against the wall beside the jamb, 0.54 m short of the opening, for good.
+The turn found the slide along the wall; the wall push then took back the hand's breadth the slant had pressed
+in; and the no-reversal test compared the result with the SLANT the frame asked for — slide plus push points
+away from it — so the whole frame was thrown out, every frame. The test is now made against the slide once
+one is taken (`_tavWant` set to it), in the tavern and in the three walks built on it (`_fortWant`, `_c13Want`,
+`_thrWant`). After: slants from either side slide into the storeroom, zero reversals.

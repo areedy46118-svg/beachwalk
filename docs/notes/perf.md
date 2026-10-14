@@ -1129,3 +1129,21 @@ generate and lag before my eyes when loading back in".
   `canMove` is false, and `chaseGraceUntil` is pushed on so the creatures'
   grace starts when you can see. `BOOT_FADE` 0.6 (was 0.3): the world comes
   up out of the black.
+
+## 2026-10-14 — nothing is built on the walk ("i see the light house island spawn in when walking to the first merchant and it lags")
+- **The island was asked for at z -700** (`updateIsle`), 430 m off and on the skyline at the trader's stretch: its
+  9.4 MB parsed (410 ms span) and built on a frame of the walk and it appeared in front of you. Now it, `loadKeep`,
+  `loadTavern`, `loadDungeon`, `loadThrone` and `loadJettyHenry` (Henry's jetty copy and the eagle; hidden until he
+  is out) are asked for in the `bootRoomsAsked` block with the dojo and the catacombs. `startLeft` counts the whole
+  queue, so START — and a checkpoint's black — waits for them. The old distance triggers stay as fallbacks.
+- **The castle's torches were an 85 ms frame at z -837**, found with the JS sampling profiler (below): the wall index
+  is sliced a frame at a time as you approach, and the frame it completed `buildFortTorches` → `fortWallAlong`
+  walked each torch's wall in 5 cm steps of `keepWallNear`. `loadFort` queues `warmStep('castle walls', …)`: the
+  whole index, then the torches and the dressing, behind the loading screen.
+- Measured after, frames driven by hand (the pane was hidden): START ready at 12.7–15 s with the queue empty; the walk
+  spawn → z -1088 in 2 m steps, NO frame over 35 ms (it was 91 ms at -837 and once 152 at -320); the castle's
+  courtyard and the island, a full turn each: none over 35 ms.
+- **Profiling a one-off spike in the pane:** `new Profiler({ sampleInterval: 1, maxBufferSize: 400000 })` round the
+  loop (serve.py sends the policy header), keep each slow frame's start and length, then count the trace's samples
+  inside that window by every frame name up their stack — the top of the list (after `update`/`animateFrame`/
+  `frame`) is the culprit. `__bw.bootLeft()` says what START is still waiting on (queue, parses, warm steps, uploads).

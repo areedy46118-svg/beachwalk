@@ -1973,3 +1973,11 @@ island wait, the crab cut and `html.resuming`, finishes a stuck crawl (placing
 it if it never placed) and clears the black. Tested by forcing opacity 1:
 released at 8 s with "black screen released by the guard". The original
 cause was not reproduced (the crawl works in every test).
+
+**THE EXIT BORE ENDS AT THE CRAWL OUT (2026-10-14, "the exit tunnel of the church i can walk passed where to climb
+out … should have an option to crawl out that you cant walk passed").** Measured on the walk: the bore's floor runs
+dead straight on the church's axis (z 0.14) to x 126, then flares sideways to z +6 and on to x 131; the old "To
+climb out" was at `spots.exit` (130.5, z 5.3), the last floored column in the flare's corner. `updateUndercroft`
+now clamps `_ucL.x` to `ucExitStop()` = `spots.exit.x - UC_EXIT_BACK` (4.2) = 126.32, and the proxy (1.2 × 2.6 × 3.2)
+stands just past it on the axis, "To crawl out". Measured: W held from x 120, straight and at 0.6 rad, stops at
+126.32; the prompt reads "E To crawl out" there.

@@ -18,7 +18,7 @@ game belongs in this file, and this file should stay under ~25 KB.
 | beach: sand, sea, sky, fog, mist, caches, snorkeler, camp, rocks, intro | `docs/notes/beach.md` |
 | the wreck, Billy the fish | `docs/notes/wreck.md` |
 | the dock, the fisherman | `docs/notes/dock.md` |
-| the pavilion (mushroom house) | `docs/notes/pavilion.md` |
+| the pavilion (mushroom house), the dungeon behind its yard, Henry | `docs/notes/pavilion.md` |
 | the lighthouse, the headland | `docs/notes/lighthouse.md` |
 | the drainage tunnel home, the face in the pipe | `docs/notes/drain.md` |
 | the bunker, the Dealer | `docs/notes/bunker.md` |
@@ -113,7 +113,7 @@ Tiny props carry an invisible `hitProxy` sphere so they're easy to aim at.
 `primaryAction()` (click / `E` / `F`) routes grab / throw / take / dig.
 
 **Rooms are far-off places, not scenes.** Every interior (bunker, undercroft,
-catacombs, dojo, keep, tavern, whale, throne room) stands
+catacombs, dojo, keep, tavern, whale, throne room, the dungeon behind the pavilion) stands
 thousands of metres out on the same scene, entered by a cut behind black.
 `inRoom()`, `indoors()`, `clearRoomFlags`, `cullWorldInHall`, `bunkerFloorAt`
 and the cliff clamp all have to know about every room. Rooms are placed at

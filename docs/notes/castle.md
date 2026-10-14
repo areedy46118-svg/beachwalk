@@ -808,3 +808,31 @@ onto the flags from the pose the clip ended in. Measured: 22 parts, the body
 lying at the floor (hips 0.7 m, hands and feet 0.6 over the hall's 602.2) and
 staying there. **The marauder looks at you through the chain cut too**
 (`thrHeadToCamera` after the mixer in the `chain` take).
+
+**THE FARMERS LOST THEIR POSTER COLOURS (2026-10-14, "the farmers look too
+cartoonish make them match the style better").** `farmGrit`'s map_fragment now
+starts by washing the albedo halfway to its own luminance and raising it to
+the 1.12 power (1.22 was too dark: the faces went to silhouettes against the
+cobbles); the emissive lift gets the same 50 % desaturation before `fgMul`.
+Cache key `farmGrit3` — bump it whenever the injected GLSL changes, or the old
+program is reused. Judge it in the courtyard (`tools/farmlook.js`,
+`__farmLine`), not in a studio: the point is that they match the stone.
+
+**THE MARAUDER'S RISE TAKE NEVER PLAYED.** A hit while he sat on the throne
+went through `umbraProvoke`, which woke him straight off the seat and skipped
+the take. Now, while `thrSeat` and `thrScene.phase < 5`, a provoke only starts
+`startThrCutRise()` (if phase 3, no cut running, `uRiseSlow` loaded) and
+otherwise returns. Leaving the throne room mid-take puts phase 4 back to 3
+(and 1 back to 0 for the chain take), so it plays in full the next time.
+Measured: a hit while seated leaves him seated; after the beast dies the rise
+plays (phase 3 → 4, 3.4 s, → 5).
+
+**THE FARMERS HOLD THEIR TOOLS, AND THE FOLDS ARE IN THE LIGHT (2026-10-14, round 3).** Measured from the front and the
+side INSIDE a frame (see harness.md — the life layer's curl is undone after the render): every handle lay across the
+outside of half-bent fingers, the rake's under the wrist. The handle went through `palm` (62 % wrist → middle
+knuckle, the flat of the palm) and the curl was 1.2 a joint. Now `FARM_FIST` 1.5, and `farmSeatTool` closes the right
+hand's fingers by it, takes the mean of the four fingers' joints 1-4 (the hole the fist makes) and moves the tool
+there, in the hand's frame (`u.farmPalm` is where `farmArm` put it). Detail: `farmGrit` puts the file's AO into the
+COLOUR (`texture2D(aoMap, vAoMapUv)`, squared, 60 %) and into the emissive lift — three's aoMap darkens only ambient
+light and these men are lit by direct light, so every fold and seam was being thrown away; relief at a 3 mm grain and
+in long hanging folds; normalScale 2.1; a roughness floor of 0.58 (0.25 was a plastic sheen). Cache key `farmGrit4`.

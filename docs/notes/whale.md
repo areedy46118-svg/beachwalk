@@ -593,3 +593,35 @@ hit slides towards you after they hit and does damage").**
 - **Still to do**: their feet slip 1–3 m/s while circling (the strafe clips'
   own speed against the ring's tangential speed) — the next thing for their
   animation.
+
+## The demons, 2026-10-14 ("they never attack they slide … they just stand there like they are dumb")
+Why (measured/read): 3 of 7 allowed to press; a chase capped at ~walking pace (`gaitMax` 1.35 × a 2.65 m/s run);
+a failed `demonFrenzyOK` cost a 0.5–1.3 s circle; `restless: 0` (the statue); the wind-up walk-in skated at
+3.7 m/s on a planted attack clip; waiting demons circled on the knight's borrowed strafes whose feet travel
+FORWARD. Now: four press (`nPress`), pincer roll 0.15 → 0.45, `bursts` 3, `pressT` 9, `gaitMax` 1.8 (a chase over
+your walk, under your sprint), `lungeK` 0.45 + `lungeMax` 3.6, `windWalkK` 0.3, `restless: 1`, `waitSide` 0.35,
+`anim.walk`/`gaits.walk` = `walkB` (the 0.33 m/s `walk` out), and `prowl: 0.85` — a holder walks its arc FACING
+where it goes on its own walk, stopping to face you between legs; a circling presser goes at that pace too. The
+shared hurt gate 340 → 750 ms (four pressing: each landed blow is one you can read). Measured 40 s: standing
+69 swings / 51 hurts; walking a 3 m circle without fighting back 81 swings / 32 hurts (all belly creatures).
+Foot slip while circling is still ~2.2 m/s on the strafes — the remaining fix is real side-step clips.
+
+**THE SPLASH WAS STILL THERE FROM THE LIGHTHOUSE (2026-10-14).** `wfFinish` now
+zeroes every `F.SP` life, clears the spray's `aA` attribute, and hides `F.spray`
+and `F.wake`. From the
+gallery's height the leftover spray was in view.
+
+**ROUND 3 ON THE DEMONS ("still not doing enough fighting").** Measured (`__bellyRun`, 20 s standing): five pressed
+but three of the seven were NEVER within reach (2.05 m) — `MUT_SEP` had gone to 3.2 for the beach pack (creatures.md)
+and it is global, so at 3.2 m apart only two fit round you inside reach. `mutSeparate` now takes `kind.sep` (the
+smaller of the two), and the demons stand at 1.7. Also: `nPress` 5, `demonFrenzyOK` lets a second in at 0.8 (was
+0.45) and a third at 0.25, `aggr` 2.2, `press` 0.95, `windK` 1.22, `chainMax` 3, `bursts` 4, `pressT` 12, `holdR`
+4.0, `gaitMax` 2.2, `circle` 0.12, `feint` 0.04, `sizeUp` 0, `waitSide` 0.2. Result: 19–26 swings in 20 s with 3–4 of
+them fighting → 47 with six; damage taken ~1.1 a second, as before (the 750 ms hurt gate paces it).
+
+**ROUND 4: SPREAD ROUND YOU, AND HARDER ("the demons need to spread out more and are way to easy you can hit them all
+with one swipe").** `sep` 1.7 had packed the pressers into one arc in front of you. Now `sep` 2.5; the pressers are
+walked along the circle round you toward their own `pk.slotA` as they close (`updateDemonPack`, ≤ 0.6 rad of error ×
+1.6 m/s, not mid-blow), so they arrive from all sides; a cleave through a second body does `cleaveK` 0.45 of the blow
+(`bladeHitMutant`, the first body full); `hp` 10 → 14, `poise` 4 → 5. Measured, 20 s standing: 4.84 in reach on
+average, but the most inside any one 110° arc is 2–3 (mean 2.27; never 4+); 37 swings, 17 hits landed.

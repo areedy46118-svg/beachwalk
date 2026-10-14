@@ -620,3 +620,34 @@ flight of its own, as the demons do: `ragK 2.0, ragVmax 16, ragTravel 12, ragLif
 only until he lands; the glitch cap and leash are back after). Measured in the bunker's open middle
 (7.5 m of floor behind him, `tools/dealerfly.js`): P 0.6 → 4.9 m and 0.73 m up; P 1.0 → 5.3 m, 0.55 m
 up, heels over head, down short of the wall.
+
+## The Dealer: 50 health, and he carries Henry's cell key (2026-10-14)
+`hp` 36 → 50. `dealerDropsCellKey()` runs where `dealerWon` is first set by a live kill (a restore sets it from
+the save first, so never there): `cellKeyLie` tosses the key off his hips (`PhysProp`, `tossDrop`) to the
+octopus ring's `ringDrop` sting, with the big glint (`size 2, strength 4.2, through 0.7`) and the new `beacon`
+column (`addItemShine`). Saved as `cellKey` 0/1/2 and `cellKeyAt` (world, y included); a save that has
+`dealerWon` and no key state lays it where he is. `cellKeyItem` is in `packByName`'s list.
+
+**TWO RUNGS UNDER THE HATCH (2026-10-14, "two steps of a ladder to show the way
+out… above your head").** In the `bunkerHome` onLoad after `bunkerLadderProxy`:
+two rails from 2.3 m to the roof and rungs at 2.5 and 2.85, at the shaft's
+`L.z1` edge. They are added after the walk grid is read from the file, so they
+are not in it, and their meshes have `raycast = () => {}`, so nothing aims at,
+drops onto or is stopped by them. Dirty iron (0x2e2a25, emissive 0x070605): at
+0x5e5a52 they read as clean plastic under the cage lamps.
+
+**THE LADDER HANGS FROM THE HATCH NOW (2026-10-14, round 2: "the ladder is floating and looks bad put it where my
+cursor is make it hyper realistic and blend into the scene").** His screenshot (feet 11.00, -40.00, -540.76, look 0.73,
+looking steeply up) was rebuilt in the pane — pitch ≈ 0.8 at his 105° lens matches — and the ray from the centre hits
+the model's own hatch: `ExitpolySurface429` is the hatch frame (local x -1.54..-0.56, z -4.12..-2.99, at the roof
+3.94), 428 a bar on it and 430 a thin piece at its corner; the curved grey thing under the hatch is a DUCT, not a rail.
+The first two rungs stood off the hatch's far edge in front of that duct, held by nothing. `bunkerLadder(roofY)` is
+placed off 429's own box (`HB.min.x + 0.12`, its z middle): flat-bar rails 65×14 mm 0.43 apart, round rungs every
+0.3 m from 2.45, two angle brackets and bolt heads to the frame, the rails on 0.7 m up the shaft. Its canvas maps
+(`bunkerLadderTex`): olive paint, chips to steel with rust run down from each, rust at the cut foot, the rungs bare
+steel across the middle. Material colour 0x5c5d57 — the map at white read as cream plastic under the cage lamps.
+
+**HIS QUESTION HAS TWO ANSWERS NOW (2026-10-14).** `DEALER_SCRIPT.start`: "*Kill him*" → `startDealerPickup()` at once
+(the old "…"); "Give me the key or else" → `threat`, "You think a plastic shovel scares me? I’ll make this quick."
+(`end: false`), and the click off it is `DEALER_NPC.onLeave` → the bar. Measured: both choices shown, the line, the
+bar in his hand after the click.

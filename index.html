@@ -873,15 +873,16 @@
   /* A STACK'S COUNT, on whichever slot the icon was drawn into — the hotbar,
      the pack grid or a ring. Bottom right, over the icon, in the HUD's own
      square monospace so it reads as a quantity and not as a label. */
-  #hotbar .slot .count { font-size: 0.9rem; right: 5px; bottom: 3px; }
+  /* (bigger, 2026-10-14: "make the number of stacked items bigger" — 0.9/0.78 rem were lost on the icons) */
+  #hotbar .slot .count { font-size: 1.3rem; right: 5px; bottom: 2px; }
   .slot .count, .islot .count, .rslot .count {
     position: absolute;
-    right: 4px;
-    bottom: 2px;
-    font: bold 0.78rem/1 Georgia, "Times New Roman", serif;
+    right: 5px;
+    bottom: 3px;
+    font: bold 1.15rem/1 Georgia, "Times New Roman", serif;
     letter-spacing: 0.02em;
     color: #ffffff;
-    text-shadow: 0 1px 4px #000, 0 0 8px #000;
+    text-shadow: 0 1px 3px #000, 0 0 6px #000, 0 0 10px #000;
     pointer-events: none;
   }
 

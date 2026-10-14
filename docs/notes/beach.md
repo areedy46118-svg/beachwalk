@@ -1915,3 +1915,24 @@ through the ocean material's `uTime` (high tide at t ≈ 34.9 + 139.6 n).
 first find (not on a replay, not in dev mode, within 45 m) the loner
 (`crabUnit`, out at (−7.5, −20)) gets `called`, which lets it past its wake
 radius: measured, it woke and came from 21 m to 6 m in three seconds.
+
+## The wall behind the drain: rock gaps filled, and a crab on its ledge (2026-10-14)
+- "I shouldn't clip through the far right side of the big rock near the sewer drain." Each mass has ONE
+  cylinder of its half-width, and a turned, squashed scan is not round: mapped on a half-metre grid, the
+  front of the big rock's sea-side flank (x -2.5 … 1, z 56-57.5) and the wall's seaward end (x ≈ -6) were
+  stone with no collider. `fillRockGaps()` (end of the rocks loader) samples every rock from above and,
+  wherever its stone stands > 0.5 m over the sand round it (aprons included) and no collider covers it,
+  adds a small one (r 0.42, `fill: true`) at that height. 117 on the beach; 811 rock cells, 0 uncovered.
+  Walked into that corner: stopped at z 55.24, sliding along it.
+- Still true and NOT fixed: a mass's cylinder has a flat top at its crown, so on the wall you walk on an
+  invisible floor over the real stone (7.72 m over a groove whose floor is 3.1 m). The owner stood on it
+  at feet 8.32 for the screenshot.
+- "Put a horseshoe crab right here": `placeRockCrab()`, `ROCK_CRAB_AT` (7.5, 59.0) — the ledge between the
+  two big masses his crosshair was on, ~7.1 m up; laid along the averaged normal of the stone under it
+  (one facet at the lip was 75° and stood it on its side), takeable (`far` 4.2) like a mound's crab, saved
+  as `rockCrab`. An earlier try in the narrow groove (3.05, 59.3) buried it in the groove's walls.
+- (2026-10-14, round 2) "On the sand right where my cursor was, not on the rocks": the screenshot's blue floor
+  was SAND between the masses. His look, steeply down (pitch ≈ −1.3) from (9.77, eye 10.02, 54.64), lands on the
+  apron sand at (8.0, 0.42, 56.7), a stride short of the rock's foot — `ROCK_CRAB_AT` (8.2, 56.4), seated on
+  whatever is uppermost there (apron or `beachGroundAt`), ordinary reach. Rendered from beside it, the frame
+  is his screenshot: the big rock left, the mossy one right, the crab on the sand between.

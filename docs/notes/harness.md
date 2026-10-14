@@ -291,3 +291,9 @@ the live page over reloading for it.
 `u.mixer.update = u.mixer.rawUpdate` the life layer and forest roots. `tools/wakeshot.js` — the morning
 after the Great Crab Call (see lighthouse.md). Remember: with dev mode OFF between calls the samurai kills
 the test player and the page reloads — the helpers switch it off only inside a call.
+
+**A LIFE-LAYER POSE IS ONLY ON THE BONES DURING THE FRAME'S OWN RENDER.** `lifeApply` (breath, look, the fingers'
+curl, `life.grip`) is applied before the render and put back after it, so a still rendered by hand after `frame()`
+shows the clip WITHOUT it — the farmers' hands looked open when they were not. Render through the frame instead,
+with your own camera: `const orig = R.render.bind(R); R.render = (sc) => orig(sc, myCam); try { b.frame(1); } finally
+{ R.render = orig; }`, then draw the canvas. A HemisphereLight added from the harness (not a point light) does light.

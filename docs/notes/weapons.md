@@ -2603,3 +2603,10 @@ like call of duty or half life 2 aim and gun control."
   `window.dispatchEvent(new PointerEvent('pointermove', { buttons: 2,
   pointerType: 'mouse' }))` holds the right button; `__bw.magAiming = true`
   is overwritten the next frame.
+
+## The sawn-off held level (2026-10-14, "the shotguns aim should be more straight it tilts")
+`SG_HOLD_HIP` roll 0.10 → 0; `SG_KICK.roll` 1.1 → 0.35 (it kicks up, it does not keel over); the arm rig's
+look-lag roll (`vmLagY * 0.45`) at 15% while the sawn-off is equipped. ADS roll was already 0.
+
+**A SWING COSTS A LITTLE STAMINA IN A FIGHT (2026-10-14).** `startDig`: `SWING_STAM` 0.04 + `SWING_STAM_HEAVY` 0.04 ×
+power, only while `inCombat()` (something awake within 10 m) — digging the beach is free, and it never refuses a swing.

@@ -753,6 +753,39 @@ by [RINONO](https://sketchfab.com/Jguyfioy) licensed under
 bottom of the well (`assets/wellman.glb`, packed by `tools/gltfpack.py …
 --tex 1024`, 2.8 MB), on his own sixteen clips.
 
+This work is based on ["Castle Dungeon"](https://sketchfab.com/3d-models/castle-dungeon-8ebe42e0151a4403aabc429025f5f998)
+by [lumoize](https://sketchfab.com/lumoize) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the dungeon behind the
+door in the pavilion yard's wall (`assets/dungeon.glb`, with its walk grid, packed
+by `tools/undercroft_pack.py tavern … --tex 512 --scale 1.15`, 1.3 MB). Its
+corridor's outer wall, the vault and the shutter on the cell window are built in
+the game in the model's own stone and wood, and its door is copied into the yard.
+
+This work is based on ["Henry (Animated Cartoon Character)"](https://sketchfab.com/3d-models/henry-animated-cartoon-character-1aeed15974ab4fc2b819e30df6347334)
+by [Jungle Jim](https://sketchfab.com/jungle_jim) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the prisoner in the
+dungeon's cell (`assets/henry.glb`, repacked by `tools/henry_pack.py`: three of his
+face shapes kept, his clip dropped, textures resized, washed and grimed; the
+modified model is shared under the same licence). His seated pose, his blinking
+and his talking are the game's.
+
+This work is based on ["Gold Ring"](https://sketchfab.com/3d-models/gold-ring-e896e1ea2c694f4983309e577d9b5a18)
+by [Qlone](https://sketchfab.com/Qlone) licensed under
+[CC-BY-ND-4.0](http://creativecommons.org/licenses/by-nd/4.0/) — the gold ring Henry
+gives you (`assets/gold-ring.glb`: the file's own mesh and texture packed into one
+binary, UNCHANGED, 2.5 MB). **No derivatives: never decimate, re-texture or repack
+it lossy.**
+
+This work is based on ["Eagle - Animated Low Poly"](https://sketchfab.com/3d-models/eagle-animated-low-poly-7011d40dc85b42269ca961e098f6f236)
+by [WildPoly3D](https://sketchfab.com/WildPoly3D) licensed under
+[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/) — the eagle that
+takes Henry off the lighthouse's jetty (`assets/eagle.glb`, the file's glTF
+packed into one binary with its clips' names shortened, 1.5 MB). **Non-commercial
+only: it cannot ship in a game that is sold.** Its flight is the game's. Henry's
+scream as it carries him off is the owner's "Man Screaming Sound Effect"
+(`assets/henry-scream.m4a`, the silence in front of it cut); the bird's sounds are
+synthesised.
+
 The flail knight in Castle XIII's west court is the owner's "Crusader tank"
 (a flail and a heater shield, fourteen of its own animations), packed by
 `tools/crusader_pack.py` into `assets/crusader.glb`. **No licence came with the

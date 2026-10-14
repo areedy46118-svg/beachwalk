@@ -814,3 +814,32 @@ syringe and a pale horseshoe crab beside you; fade to black; the end. Never stan
 - Sound: surf (looped brown noise through a lowpass, slow swell) and a ringing that fades in 9 s; the
   lighthouse track is faded out. HUD hidden by `body.wake-cine` (index.html).
 - `tools/wakeshot.js`: `__wakeBoot()`, `__wakeSheet([t…])` draws the take with its blur and black.
+- (same day) The black between the crab's last shot and the morning is 3.0 s (`CRAB_T.card` 31.0, was
+  29.4 = 1.4 s) — the owner: "a little longer". Measured on the fake clock: black from 28.01, wake at 31.00.
+- (same day) The morning's crab "should not be floating": set down by its box it stood on its legs and
+  tail, the shell's rim 7 cm up on average with daylight under it. Now level (no tilt) and seated by the
+  RIM — every vertex past 55% of its radius; that set's lower third 1 cm into the sand (measured after:
+  rim 5/33/50/90 % at −0.05/−0.01/0.01/0.06 m), the legs under.
+
+**THE HORN BLOWS FROM ANYWHERE ON THE TOP (2026-10-14).** In `primaryAction`,
+after `canWearHeld`: `atLighthouseTop() && inventory.includes(hornItem) && !ended`
+→ `startCrabCut()`, with no need to aim at the lamp. `updateHover` shows
+"E Blow the Great Crab Call" in the same situation, unless the held item has an
+`onPull`.
+
+**A SAVE ON THE JETTY RESTORES ON THE JETTY (2026-10-14).** `isleRestoreAt` returned at once for feet under
+2 m — the beach-height guard — and the jetty's deck is 0.41, so a checkpoint there stood you on the beach at
+WADE_X. The jetty's own box (x -27..-21.5, z -1161.6..-1139.5, feet > 0.2) is let through; it is out at sea.
+Henry stands at its sea end once he is out of the dungeon (pavilion.md, "Henry on the jetty").
+A harness teleport onto the isle must go through it too: `isleReset()`, set the camera, `isleRestoreAt(x, y, z)`
+— a bare camera move is undone by the walk (a stride in a tick) or, off the isle, clamped to WADE_X.
+
+**THE CALL ANSWERED IS NOT A CUTSCENE (2026-10-14, "make me see the great horseshoe crab from on top of the lighthouse
+when it emerges dont make it a cutscene … black for 5 seconds instead of 3").** `CRAB_T` is now horn 3.4, black 4.0
+(the fog cleared, the rise's sound), rise0 5, rise1 21.5, cut 28, card 33. Until `cut` the game is yours:
+`frozen()` holds only once `crabCut.t >= CRAB_T.cut`, the lens chain and the view-model's hide likewise, the start
+no longer hides the crosshair or zeroes you, and the three shots (gallery long lens, the jetty, the crane) and the
+horn's turn of the head are gone. The shake is `trauma` (0.42 at its height): the camera IS the player now, and the
+old jitter of `camera.position` would have walked you. At `cut` the black, the crosshair off, the look re-read from
+the camera; five seconds; `startWakeCut`. Measured: walked 1.2 m mid-rise; the shell seen from the gallery; black
+28.4 → 32.9, the morning at 33.07.

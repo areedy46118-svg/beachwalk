@@ -581,6 +581,7 @@ function updateWhereAmI() {
   else if (inWhale) { room = 'whale'; ox = WHALE_X; oy = WHALE_Y; oz = WHALE_Z; group = whale && whale.G; }
   else if (inC13) { room = 'castle13'; ox = C13_X; oy = C13_Y; oz = C13_Z; }
   else if (inThrone) { room = 'throne'; ox = THR_X; oy = THR_Y; oz = THR_Z; group = thrWorld; }
+  else if (inDun) { room = 'dungeon'; ox = DUN_X; oy = DUN_Y; oz = DUN_Z; group = dunWorld; }
   else if (inFort || fortMaskAt(p.x, p.z + 3) || fortMaskAt(p.x, p.z - 3)) { room = inFort ? 'castle' : 'castle (outside)'; ox = FORT_X; oy = FORT_Y; oz = FORT_Z; }   // its own frame; no aim (a raycast is 300k triangles)
   const feet = camBaseY - playerEye();
   let aim = '';
@@ -3660,7 +3661,11 @@ const glowTex = makeGlowTexture();
 // it separates from the sand without turning into a video-game waypoint.
 // ------------------------------------------------------------------
 const shinies = [];
-function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1, through = 0 } = {}) {
+/* EVERY DROPPED THING IS MARKED LIKE THE DEALER'S KEY (2026-10-14, the owner: "make all dropped items be as noticeable as
+ * the dealers cell key"): the big glint, its through-mark and the column of light — on whatever falls off a body, out of
+ * a crate or a mound, or out of your hand (each keeps its own height). */
+const DROP_SHINE = { size: 2.0, height: 0.5, strength: 4.2, lift: 1.6, through: 0.7, beacon: 1 };
+function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1, through = 0, beacon = 0 } = {}) {
   if (shinies.some((s) => s.root === root)) return;   // never twice on one thing
   const glint = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex, color: 0xbcd6ff, transparent: true, opacity: 0.0,
@@ -3706,7 +3711,24 @@ function addItemShine(root, { size = 0.55, height = 0.12, strength = 1, lift = 1
       mats.push({ m, base: m.emissive.clone() });
     }
   });
-  shinies.push({ root, glint, ghost, mats, strength, lift, through, height, phase: Math.random() * 6.28 });
+  /* AND A KEY YOU HAVE WON IS A MARK ON THE NIGHT (2026-10-14, the owner: "make the key look brighter and more
+   * noticeable after the well guy fight … make the dealer drop the key … make it noticeable"). `beacon` stands
+   * a soft column of warm light up out of the thing — two metres and a half, fading upward, breathing — the one
+   * waypoint this game allows itself, for the things a fight was for. It stands in the world beside the root,
+   * not on it, so a tumbling key's column stays upright, and goes when the thing is taken. */
+  let col = null;
+  if (beacon) {
+    const c = document.createElement('canvas'); c.width = 4; c.height = 64;
+    const g = c.getContext('2d'), gr = g.createLinearGradient(0, 64, 0, 0);
+    gr.addColorStop(0, 'rgba(255,226,160,1)'); gr.addColorStop(0.18, 'rgba(255,214,140,0.55)'); gr.addColorStop(1, 'rgba(255,200,120,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 4, 64);
+    const tex = new THREE.CanvasTexture(c);
+    col = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.075, 2.6, 10, 1, true).translate(0, 1.3, 0),
+      new THREE.MeshBasicMaterial({ map: tex, color: 0xffd79a, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: true }));
+    col.raycast = () => {}; col.renderOrder = 11;
+    scene.add(col);
+  }
+  shinies.push({ root, glint, ghost, col, beacon, mats, strength, lift, through, height, phase: Math.random() * 6.28 });
 }
 /* A SHINE IS A MARK IN THE AIR ABOVE A THING, NOT A DECORATION BOLTED TO
  * IT. The sprite is a child of the root and sat at a local +Y — which is
@@ -3731,9 +3753,16 @@ function updateShines(t) {
        * pickup left at the height of its last pulse wore that pale wash for
        * the rest of the game (the gem ring's "bright shade"). Put back once. */
       if (!s.restored) { s.restored = true; for (const e of s.mats) e.m.emissive.copy(e.base); }
+      if (s.col) s.col.visible = false;
       continue;
     }
     s.restored = false;
+    if (s.col) {
+      s.col.visible = true;
+      s.root.getWorldPosition(s.col.position);
+      const kb = 0.5 + 0.5 * Math.sin(t * 1.1 + s.phase);
+      s.col.material.opacity = (0.09 + 0.08 * kb) * s.beacon;
+    }
     if (s.height) {
       s.root.getWorldQuaternion(_shineQ).invert();
       s.root.getWorldScale(_shineS);
@@ -5793,8 +5822,80 @@ bwGlb('assets/rocks.glb', (gltf) => {
       rockGroup.add(apron);
     }
   }
+  fillRockGaps();
+  placeRockCrab();
   buildRockSurf();
 });
+/* A ROCK IS NOT A CIRCLE (2026-10-14, the owner: "i shouldnt clip through the far right side of the big rock
+ * near the sewer drain"). Each mass is given one cylinder of its half-width, and a scan turned and squashed
+ * is not round: its corners stand out past the cylinder, and there you walked into stone — measured on the
+ * wall behind the drain, the foot of the big rock's sea-side flank (x -2.5 … 1, z 56-57.5) and the wall's
+ * seaward end. So once every formation is down, each rock is sampled on a half-metre grid from above, and
+ * wherever its stone stands more than half a metre over the sand round it (the aprons included) with no
+ * collider over it, a small one goes in at that height — you walk round it, or step up on it, as on the rest. */
+function fillRockGaps() {
+  rockGroup.updateMatrixWorld(true);
+  const stone = [], sandy = [];
+  for (const o of rockGroup.children) if (o.isMesh) (o.material === sandMat ? sandy : stone).push(o);
+  const ray = new THREE.Raycaster(), dn = new THREE.Vector3(0, -1, 0), at = new THREE.Vector3(), bb = new THREE.Box3();
+  const add = [];
+  for (const m of stone) {
+    bb.setFromObject(m);
+    if (bb.max.y < 0.9) continue;                       // a chunk in the sand: scenery (`placeMass`)
+    for (let x = Math.ceil(bb.min.x * 2) / 2; x <= bb.max.x; x += 0.5) for (let z = Math.ceil(bb.min.z * 2) / 2; z <= bb.max.z; z += 0.5) {
+      ray.set(at.set(x, bb.max.y + 1, z), dn); ray.far = bb.max.y + 3;
+      const h = ray.intersectObject(m, false)[0]; if (!h) continue;
+      ray.set(at.set(x, bb.max.y + 1, z), dn);
+      const g = ray.intersectObjects(sandy, false)[0], ground = Math.max(0, g ? g.point.y : 0);
+      const y = h.point.y;
+      if (y - ground < 0.5) continue;
+      if (rockColliders.some((c) => c.top >= y - 0.25 && solidDepth(c, x, z) > 0.05) || add.some((c) => Math.hypot(c.x - x, c.z - z) < 0.3 && c.top >= y - 0.25)) continue;
+      add.push({ x, z, r: 0.42, top: y, fill: true });
+    }
+  }
+  for (const c of add) rockColliders.push(c);
+  window.__bwRockFill = add.length;
+}
+/* AND ONE WASHED UP THE ROCKS (2026-10-14, the owner, from the top of the wall behind the drain: "put a
+ * horshoe crab right here"). On the ledge between the two big masses where his crosshair was — the line
+ * from where he stood (9.77, 54.64, eye 10.0) along his look, ~6.7 m up and nearly level — laid along the
+ * stone and a finger into it. Takeable like a mound's crab, from the wall's top a metre above (`far` covers
+ * the stoop). Saved as taken (`rockCrabTaken`). */
+let rockCrabTaken = false, rockCrabW = null;
+const ROCK_CRAB_AT = [8.2, 56.4];   // ON THE SAND (2026-10-14, round 2: "on the sand right where my cursor was not on the rocks"): his look, steeply down, lands on the sand just short of the rock's foot
+function placeRockCrab() {
+  if (rockCrabTaken || rockCrabW) return;
+  // whatever is uppermost there — the rock's sand apron, or the beach itself
+  const stone = rockGroup.children.filter((o) => o.isMesh);
+  const ray = new THREE.Raycaster(new THREE.Vector3(ROCK_CRAB_AT[0], 30, ROCK_CRAB_AT[1]), new THREE.Vector3(0, -1, 0), 0, 40);
+  let h = ray.intersectObjects(stone, false)[0];
+  const gy = beachGroundAt(ROCK_CRAB_AT[0], ROCK_CRAB_AT[1]);
+  if (!h || h.point.y < gy) h = { point: new THREE.Vector3(ROCK_CRAB_AT[0], gy, ROCK_CRAB_AT[1]), face: { normal: new THREE.Vector3(0, 1, 0) }, object: scene };
+  const w = new THREE.Group(), relic = makeCrabRelic();
+  w.add(relic);
+  w.rotation.set(0, 2.2, 0);                       // level, like every crab (round 3: "lay flat like the rest")
+  w.position.copy(h.point);
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.12; w.add(hit);
+  scene.add(w); rockCrabW = w;
+  // seated by its own box, along its own up (the scan is centred on its middle, and may land late)
+  crabRimSeat(w, relic, h.point.y);
+  addItemShine(w, { size: 0.8, height: 0.14 });
+  let entry = null;
+  addInteractable(w, 'Take the horseshoe crab', 'inventory', {
+    onActivate: () => {
+      if (rockCrabTaken) return;
+      rockCrabTaken = true;
+      sfxThud(0.04);
+      scene.remove(w);
+      hovered = null;
+      gainCrab();
+    },
+    alt: () => (equipped === syringeItem ? 'Draw the blue blood' : null),
+    onAttack: () => bleedOnTheSand(entry),
+  });
+  entry = interactables[interactables.length - 1];
+}
 
 /* ---- THE STONE EVERY HEAP IN THIS GAME IS MADE OF --------------------
  *
@@ -6169,7 +6270,7 @@ function cullWorldInHall() {
    * door opens straight into the tavern, six kilometres away, and nothing
    * passes a beach frame between them, so whatever of the tavern's the keep
    * had switched off (its lamps, its cast) stayed off for the whole visit. */
-  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : 0;
+  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : inDun ? 9 : 0;
   if (hallHid && hk !== hallKey) { for (const o of hallHid) o.visible = true; hallHid = null; }
   hallKey = hk;
   if (hk) {
@@ -7625,7 +7726,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return !!crabCut || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || thrBusy || !!wbSw || roomRestore || dying || ended || !introDone; }
+function frozen() { return (!!crabCut && crabCut.t >= CRAB_T.cut) || !!hjCut || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -7841,7 +7942,7 @@ document.addEventListener('pointerlockchange', () => {
     softLook = true;
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !keyCut && !thrCut && !wbFareCut && !mutCut && !portalCut && !hatchBusy && !ucBusy && !wbSw && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !keyCut && !thrCut && !wbFareCut && !hjCut && !mutCut && !portalCut && !hatchBusy && !ucBusy && !wbSw && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -8805,7 +8906,7 @@ mCheckpointBtn.addEventListener('click', () => { if (hasCheckpoint()) reloadInto
  * the trader, facing him. It refuses in the middle of a cut, and in the hall
  * in the saucer, whose fight is a sequence with no exit but winning it. */
 const devShopBusy = () => hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy
-  || catBusy || whaleBusy || thrBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!thrCut || !!wbFareCut || dying || ended || !introDone;
+  || catBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!thrCut || !!wbFareCut || dying || ended || !introDone;
 /* AND THE CASTLE'S MERCHANT (the owner's word): the same, to the second
  * trader on the sand sixteen metres short of the first castle's gate. The
  * walk's once-only events between here and there are marked as passed the
@@ -8823,6 +8924,7 @@ function devLeaveRooms() {
   if (inFort) { inFort = false; fortCalmBoss(); }
   if (inC13) { inC13 = false; }
   if (inThrone) { inThrone = false; if (thrWorld) thrWorld.visible = false; throneLeave(); }
+  if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
 }
 /* AND THE LIGHTHOUSE (the owner: "a teleport to lighthouse in the settings
  * that brings me to exactly when i enter the lighthouse section"): out of
@@ -9312,6 +9414,13 @@ function updateHover() {
   } else if (canWearHeld(equipped)) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Put it on');
+  } else if (atLighthouseTop() && inventory.includes(hornItem) && !ended && !(equipped && equipped.onPull)) {
+    crosshair.className = 'active';
+    setPrompt(kbd('E') + 'Blow the Great Crab Call');
+  } else if (equipped && equipped.onDrain && inventory.includes(syringeItem) && (equipped.count || 0) > 0) {
+    // (2026-10-14, the owner: "while holding a horsehoe crab make it say 'click to drain' if you have a syringe on you")
+    crosshair.className = 'active';
+    setPrompt(kbd('LMB') + 'Click to drain');
   } else if (equipped && equipped.onListen) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + (listening ? 'Take it down' : 'Hold it to your ear'));
@@ -9378,6 +9487,8 @@ function primaryAction() {                       // E / F
     return;
   }
   if (canWearHeld(equipped)) { wearRing(equipped); return; }
+  // ANYWHERE ON TOP OF THE LIGHTHOUSE, the horn in the pack: E blows it (2026-10-14, "not just looking at the light")
+  if (atLighthouseTop() && inventory.includes(hornItem) && !ended) { startCrabCut(); return; }
   if (equipped && equipped.onListen) { if (listening) stopListening(true); else listenToShell(); }
   if (equipped && equipped.onDrink) drinkWater();
   if (equipped && equipped.onSmoke) smokeSpliff();
@@ -9992,6 +10103,7 @@ function dropItem(item, jitter = 0) {
   const stacked = (item.count | 0) > 1;
   if (stacked) { item.count--; refreshUI(); if (invOpen) renderPack(); }
   else removeFromInventory(item);
+  addItemShine(m, { ...DROP_SHINE, height: 0.35 });   // what you put down is marked like everything dropped
   addInteractable(m, 'Take the ' + (item.name || 'item').toLowerCase(), 'inventory', {
     onActivate: () => {
       scene.remove(m); removeInteractable(m); hovered = null;
@@ -10043,7 +10155,7 @@ function groundUnder(x, z, atY) {
  * So the ray is cast at whatever room you are standing in, the floor comes
  * from `bunkerFloorAt` (which every room answers), and the beach's two walls
  * are only applied when you are on the beach. */
-const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone;
+const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone || inDun;
 function dropTargets() {
   if (inUndercroft) return [undercroft];
   if (inBunker) return bunkers.map((b) => b.group).filter(Boolean);
@@ -10053,6 +10165,7 @@ function dropTargets() {
   if (inCat) return catWorld ? [catWorld] : [];
   if (inWhale) return whale ? [whale.floor] : [];
   if (inThrone) return thrWorld ? [thrWorld] : [];
+  if (inDun) return dunWorld ? [dunWorld] : [];
   return [sand, dock, DOCK_STEPS, driftGroup, rockGroup];
 }
 function dropPoint() {
@@ -12595,7 +12708,7 @@ militaryWorld.rotation.set(-Math.PI / 2, 0, 0.45);
 // bunker has loaded (`buildMilCrate`), and until then it is nowhere
 // its own glint, added first so makeNoticeable() does not add the stock one:
 // a scan this dark is swamped by the stock lift
-addItemShine(militaryWorld, { size: 0.9, height: 0.3, strength: 0.7, lift: 0.55 });   // lifted a little more now that it lies in a case
+addItemShine(militaryWorld, { ...DROP_SHINE, height: 0.3 });   // the Dealer's cell key's own glint and column (2026-10-14: "give the military shovel drop the same glow as the dealer key")
 /* THE KATANA. brandon_grey's "Gothic Katana Sword [Dark] | Persephone's
  * Leaf" (CC-BY-4.0), the blade only — the scabbard stays in the download —
  * through `gltfpack.py` at 2048 with its normal and metal-rough maps kept,
@@ -13071,6 +13184,10 @@ const PARRY_COOLDOWN = 0.55;
  * learning the tell. When the bar goes, so does the guard, and you hear
  * yourself run out. */
 const BLOCK_COST = 0.34;                 // of a full bar, per blow stopped
+/* AND A SWING IN A FIGHT COSTS A LITTLE BREATH (2026-10-14, the owner: "make attacking take a little stamina as well
+ * but not much"): a twenty-fifth of the bar for a click, up to a twelfth for a full wind-up, and only while
+ * something that can hit you is awake and near (`inCombat`) — digging the beach is free. It never stops a swing. */
+const SWING_STAM = 0.04, SWING_STAM_HEAVY = 0.04;
 /* A COST YOU CANNOT SEE IS NOT A COST. Every block took a third of the bar
  * and nothing said so until the bar was empty and the guard dropped; the
  * bar FLASHES on the blow now — a white tick the height of the strip and a
@@ -13793,6 +13910,7 @@ function startDig(power = 0, fromPose = null, chained = false) {
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
+  if (inCombat()) stamina = Math.max(0, stamina - (SWING_STAM + SWING_STAM_HEAVY * digPower));
   // a charged release keeps whatever it was wound as; a plain click never is
   /* AND THE STRING'S LAST BLOW IS AN OVERHEAD, which is decided here rather
    * than by the button: `pegFinish()` is already true by the time the swing
@@ -13992,7 +14110,8 @@ function bladeHitMutant(u, P, main) {
   if (main && equipped === militaryItem && !heavy) playSample('milLight', 1.0, 0.05);
   hitFlesh = true;
   blade.hits.add(u);
-  hurtMutant(u, toolDmg(heavy), P);
+  // a cleave through a second body is lighter in damage too where the kind says so (`cleaveK`: the demons, who come at you as a pack)
+  hurtMutant(u, toolDmg(heavy) * (main ? 1 : (u.kind.cleaveK ?? 1)), P);
   if (main && heavy) flameBurn(u);                 // the Artifact of the Flame: a burning heavy leaves it burning
 }
 function digImpact() {
@@ -15052,7 +15171,8 @@ function updateViewmodel(dt) {
   const blkX = bH * vmCamera.aspect * BA.x, blkY = bH * BA.y;
   armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EP[0] + sipTilt + blk * BP[0] + ring;
   armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EP[2] + blk * BP[2];
-  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK + ear * EP[3] + blk * BP[3] - ring;
+  // (the sawn-off is held level: the look-lag's roll is the arm's, not the barrel's — 2026-10-14)
+  armRig.rotation.z = 0.10 + _pose[3] + vmLagY * 0.45 * lagK * (equipped === shotgunItem ? 0.15 : 1) + ear * EP[3] + blk * BP[3] - ring;
   armRig.rotation.y += ring * 0.55;      // and it is knocked ACROSS you, not only up
   armRig.position.set(
     ARM_BASE.x + bx + _pose[5] * vmHalfW + vmLagY * 0.16 + ear * (earX - ARM_BASE.x) + blk * (blkX - ARM_BASE.x),
@@ -16058,6 +16178,24 @@ function makeCrabRelic() {
   else hcrabCopies.push(g);
   return g;
 }
+/* A HORSESHOE CRAB LIES ON THE RIM OF ITS SHELL (2026-10-14, the owner: "no horshoe should be floating it should be on
+ * the ground perfect"). Seated by its box, a crab stands on the tips of its legs and tail with its shell's edge up to
+ * 7 cm off the ground and daylight under it, and tipped it shows its belly. Level, and set down so the lower third of
+ * the RIM (every vertex out past 55% of its radius) is a centimetre into whatever it lies on; the legs go under. The
+ * scan may land late: it waits for it. */
+function crabRimSeat(w, relic, groundY, tries = 40) {
+  let has = false; relic.traverse((o) => { if (o.isMesh) has = true; });
+  if (!has) { if (tries > 0) setTimeout(() => crabRimSeat(w, relic, groundY, tries - 1), 500); return; }
+  w.rotation.x = 0; w.rotation.z = 0; w.position.y = groundY; w.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(relic);
+  const c = b.getCenter(new THREE.Vector3()), R = Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, v = new THREE.Vector3(), rim = [];
+  relic.traverse((o) => { if (!o.isMesh) return; const P = o.geometry.attributes.position;
+    for (let i = 0; i < P.count; i += 2) { v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); if (Math.hypot(v.x - c.x, v.z - c.z) > 0.55 * R) rim.push(v.y); } });
+  rim.sort((a, b2) => a - b2);
+  const lie = rim.length ? rim[Math.floor(rim.length * 0.33)] : b.min.y;
+  w.position.y += groundY - lie - 0.01;
+  w.updateMatrixWorld(true);
+}
 function placeMoundCrab(relic, x, z) {
   const w = new THREE.Group();
   relic.visible = true; relic.position.set(0, 0, 0); relic.rotation.set(0, 0, 0);
@@ -16066,21 +16204,13 @@ function placeMoundCrab(relic, x, z) {
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy'; hit.visible = false; w.add(hit);
   w.position.set(x, 0.05, z);
-  w.rotation.set(0.18, Math.random() * Math.PI * 2, -0.12);   // tipped out of the hole, not set down
+  w.rotation.set(0, Math.random() * Math.PI * 2, 0);           // level on the heap (`crabRimSeat`; it was tipped and stood on its legs)
   scene.add(w);
   /* SEAT IT ON THE SAND BY ITS OWN BOX. The scan is centred on its own
    * middle, so placed at the sand's height half the animal was under it —
    * measured, its lowest point 0.25 m down. A thing turned up by a shovel
    * lies ON the heap, a finger into it. And the scan may land after this runs. */
-  const seat = (tries) => {
-    let has = false;
-    relic.traverse((o) => { if (o.isMesh) has = true; });
-    if (!has) { if (tries > 0) setTimeout(() => seat(tries - 1), 500); return; }
-    w.updateMatrixWorld(true);
-    const b = new THREE.Box3().setFromObject(relic);
-    w.position.y += 0.02 - b.min.y;
-  };
-  seat(40);
+  crabRimSeat(w, relic, beachGroundAt(x, z) + 0.05);
   addItemShine(w, { size: 0.8, height: 0.14 });
   let taken = false, entry = null;
   addInteractable(w, 'Take the horseshoe crab', 'inventory', {
@@ -16181,7 +16311,7 @@ function revealMoundNear(x, z, fwdX = 0, fwdZ = -1) {
    * past people. Everything a mound gives up now carries the same shine
    * every other takeable does, at a good size, so there is something
    * standing where you dug once the sand settles. */
-  addItemShine(relic, { size: 0.85, height: 0.16, strength: 1.5 });
+  addItemShine(relic, { ...DROP_SHINE, height: 0.16 });
   addInteractable(relic, second ? 'Take the CD' : 'Take the buried object', 'inventory', {
     onActivate: () => {
       sfxThud(0.04);
@@ -16218,7 +16348,7 @@ function placeMoundWater(b, x, z) {
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.y = 0.12; b.add(proxy);
   scene.add(b);
-  addItemShine(b, { size: 0.85, height: 0.16, strength: 1.5, lift: 0.3 });
+  addItemShine(b, { ...DROP_SHINE, height: 0.16 });
   addInteractable(b, 'Take the bottle of water', 'inventory', {
     gives: waterBottleItem,
     onActivate: () => {
@@ -16245,7 +16375,7 @@ function dropJar(sx, sz, sy = 0.02, shine = null, pre = null) {
    * BLUE: at the full lift the glass, the blood and the label all came up
    * together and what stood in the sand was a pale bottle. The sprite is
    * what finds it in the dark; the lift only has to keep it off black. */
-  addItemShine(jar, { size: 0.85, height: 0.18, strength: 1.5, lift: 0.3, ...(shine || {}) });
+  addItemShine(jar, { ...(shine || {}), ...DROP_SHINE, height: 0.18 });
   if (shine && shine.lamp) {
     const l = new THREE.PointLight(0x9fc4ff, 1.5, 2.8, 2);
     l.position.y = 0.22; jar.add(l);
@@ -17131,7 +17261,7 @@ function updateGibs(dt) {
  * the opening. Everything here is about making the timing feel worth it. */
 const CRAB_STUN = 1.7;
 function parryCrab(u = crabs[0]) {
-  pegParryHaste();
+  pegParryHaste(); goldRingParry();
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);   // steel meeting the claw, under the ring
   parryCool = 0;                         // landing one costs you nothing
   u.st.atk = -1;
@@ -18423,6 +18553,7 @@ function dropGlowstick(c) {
   scene.add(g);
   g.updateMatrixWorld(true);
   placeGroundGlow(g);
+  addItemShine(g, { ...DROP_SHINE, height: 0.3 });
   addInteractable(g, 'Take the glowstick', 'inventory', {
     gives: glowstickItem,
     onActivate: () => {
@@ -18812,6 +18943,7 @@ function dropWedRing(sx, sy, sz, tries = 0) {
    * because the copy in your hand is cloned at that moment and would
    * otherwise carry it (the Military Shovel's own scar). */
   wedRing.traverse((o) => { if (o.isMesh && !o.material.emissiveMap && o.material.emissive) o.material.emissive.setHex(0x6a7280); });
+  addItemShine(wedWorld, { ...DROP_SHINE, height: 0.3 });
   addInteractable(wedWorld, 'Take the ring', 'inventory', {
     onActivate: () => {
       wedRing.traverse((o) => { if (o.isMesh && !o.material.emissiveMap && o.material.emissive) o.material.emissive.setHex(0x000000); });
@@ -18947,6 +19079,48 @@ const oldRingItem = {
 };
 holdable(oldRingItem, oldRing, { scale: 2.2, pos: [0, -0.02, 0], rot: [0.9, 0.3, 0.15] });
 maxHp = () => MAX_HP + (rings.includes(oldRingItem) ? OLD_HP : 0);
+/* HENRY'S GOLD RING, given out of his own hand when he is let out (2026-10-14, the owner: "make this ring an exact
+ * replica and have it say. Regain stamina on a successful parry. make this good but not game breaking it should only
+ * regain some stamina"). Qlone's "Gold Ring" (CC-BY-ND-4.0, `assets/gold-ring.glb`): EXACT — the file's own 33,546
+ * vertices and its 2048 photo-scan map, packed into one binary and nothing else touched; NO-DERIVATIVES, so it must
+ * never be decimated, re-textured or repacked lossy. It is an unlit scan (`KHR_materials_unlit`), lit already in
+ * its own colours, so it wears no environment. Worn, a parry gives back GOLD_PARRY_STAM of the bar — under half of
+ * what one stopped blow costs (`BLOCK_COST` 0.34), so it pays for timing and does not make the guard free. */
+const GOLD_PARRY_STAM = 0.15;
+const goldRing = new THREE.Group();
+bwGlb('assets/gold-ring.glb', (gltf) => {
+  gltf.scene.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+  gltf.scene.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.material.fog = true; } });
+  const inner = new THREE.Group();
+  inner.add(gltf.scene);
+  gltf.scene.position.sub(mid);
+  inner.scale.setScalar(0.055 / Math.max(size.x, size.y, size.z));     // the other rings' size; its hole is along +Y, so it lies flat as it stands
+  goldRing.add(inner);
+});
+function makeGoldRingIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d');
+  g.strokeStyle = '#d9a640'; g.lineWidth = 5;
+  g.beginPath(); g.arc(24, 28, 13, 0, Math.PI * 2); g.stroke();
+  g.fillStyle = '#e8bd5a'; g.beginPath(); g.ellipse(24, 14, 9, 6, 0, 0, Math.PI * 2); g.fill();   // the signet
+  g.fillStyle = '#a97a22'; g.beginPath(); g.ellipse(24, 14, 5, 3, 0, 0, Math.PI * 2); g.fill();
+  return c.toDataURL();
+}
+const goldRingItem = {
+  id: 'goldring', name: 'Gold Ring', icon: makeGoldRingIcon(), ring: true,
+  desc: 'Regain stamina on a successful parry.',
+  use: () => toggleEquip(goldRingItem),
+  inspectOpts: () => ({
+    rotX: 0.85, rotY: 0.30,
+    equipLabel: (inventory.includes(goldRingItem) && rings.length < RING_SLOTS) ? 'Put it on' : null,
+    onEquip: () => { if (wearRing(goldRingItem)) closeInspect(); },
+  }),
+};
+holdable(goldRingItem, goldRing, { scale: 2.2, pos: [0, -0.02, 0], rot: [0.9, 0.3, 0.15] });
+// every parry calls this, whatever was parried
+function goldRingParry() { if (rings.includes(goldRingItem)) stamina = Math.min(stamMax(), stamina + GOLD_PARRY_STAM); }
 
 /* IT IS LYING IN THE BOX, NOT ON THE FLOOR. `MUSH.JEWEL` is where the
  * velvet is, in the house's own frame, so the ring is placed off the
@@ -19103,7 +19277,7 @@ function dropSkullKey(sx, sy, sz, yaw, tries = 0) {
    * `inventory` hands every takeable the stock glint through
    * `makeNoticeable`, and `addItemShine` REFUSES a second one on the same
    * root — so a bigger one asked for afterwards is silently a no-op. */
-  addItemShine(skullWorld, { size: 1.05, height: 0.16, strength: 2.4, lift: 0.9, through: 1 });
+  addItemShine(skullWorld, { ...DROP_SHINE, height: 0.16 });
   addInteractable(skullWorld, 'Take the key', 'inventory', {
     onActivate: () => {
       lift(0x000000);                                  // the copy in your hand is cloned at this moment
@@ -19187,7 +19361,7 @@ function dropKey(c) {
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; keyWorld.add(hit);
   scene.add(keyWorld);
-  addItemShine(keyWorld, { size: 1.1, height: 0.45, strength: 2.6 });
+  addItemShine(keyWorld, { ...DROP_SHINE, height: 0.45 });
   addInteractable(keyWorld, 'Take the chest key', 'inventory', {
     onActivate: () => {
       scene.remove(keyWorld);
@@ -19239,7 +19413,7 @@ function dropRing(sx = CRATE_X, sy = CRATE_H * 0.55, sz = crateZ, toss = 1.6) {
    * through — the one case `through` exists for: a second, fainter sprite
    * that ignores depth, so a plank across the ring dims the mark instead of
    * deleting it. */
-  addItemShine(ringWorld, { size: 1.3, height: 0.5, strength: 3.2, through: true });
+  addItemShine(ringWorld, { ...DROP_SHINE, height: 0.5 });
   // and the metal itself catches the moon while it lies out here — a 20 mm
   // ring with the inspect view's emissive is invisible on night sand
   ring.traverse((o) => { if (o.isMesh && o.material.emissive) o.material.emissive.setHex(0x8e8a80); });
@@ -19385,7 +19559,7 @@ function dropFang(sx, sy, sz) {
    * on the sand round it (the lamps are pooled, so one more costs nothing).
    * The shine goes on first — `addItemShine` refuses a second on one thing,
    * so the stock one `addInteractable` would add never lands. */
-  addItemShine(w, { size: 1.5, height: 0.42, strength: 3.2, lift: 0.5, through: true });
+  addItemShine(w, { ...DROP_SHINE, height: 0.42 });
   // its reach is what the POOL ranks by: a lamp only lights anything while the camera is inside its range
   const lamp = new THREE.PointLight(0xbfd6ff, 2.6, 14, 2);
   lamp.position.set(0, 0.35, 0);
@@ -19550,7 +19724,7 @@ function placeSpliffPickup(w, x, y, z, onTake) {
   proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.y = 0.04;
   w.add(proxy);
   if (!w.parent) scene.add(w);
-  addItemShine(w, { size: 0.8, height: 0.14, strength: 1.6, lift: 0.35 });
+  addItemShine(w, { ...DROP_SHINE, height: 0.14 });
   addInteractable(w, 'Take the Wax Spliff', 'inventory', {
     keepSize: true,
     onActivate: () => {
@@ -20141,7 +20315,7 @@ function grammyPickup(w) {
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; proxy.visible = false;
   w.add(proxy);
-  addItemShine(w, { size: 0.7, height: 0.1, strength: 1.5, lift: 0.25, through: true });
+  addItemShine(w, { ...DROP_SHINE, height: 0.1 });
   addInteractable(w, 'Take the photograph', 'inventory', {
     keepSize: true,
     onActivate: () => {
@@ -20627,7 +20801,7 @@ function updateDialogCam(dt) {
   const wantFov = (mutCutFov > 0 ? mutCutFov
     : keyCut ? keyCut.fov
     : thrCut ? thrCut.fov
-    : crabCut ? crabCut.fov
+    : (crabCut && crabCut.t >= CRAB_T.cut) ? crabCut.fov
     : wbFareCut ? wbFareCut.fov
     : peeking && !peekLeaving ? PEEK_FOV
     : (dialogOpen || cineHold) ? Math.min(settings.fov, dialogFov) : settings.fov) + fovKick
@@ -20962,6 +21136,7 @@ const SAMPLES = {
   danteChain: ['assets/dante-chain1.m4a', 'assets/dante-chain2.m4a'],
   danteDeath: ['assets/dante-death.m4a'],
   danteHit: Array.from({ length: DANTE_HIT_N }, (_, i) => `assets/dante-hit${i + 1}.m4a`),
+  henryScream: ['assets/henry-scream.m4a'],   // the owner's "Man Screaming" (6.4 s, the silence in front of it cut): Henry, carried off the jetty
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -23912,8 +24087,9 @@ function sfxLockerOpen() {
   holdCrabWorld.add(hit);
   const [cx, cy, cz] = SN.crabSpot || [SN.HOLD_X0 + 2.6, SN.HOLD_Y + 0.03, -1.3];
   holdCrabWorld.position.set(SHIP_X + cx, cy, SHIP_Z + cz);
-  holdCrabWorld.rotation.set(0.04, 2.1, 0.03);
+  holdCrabWorld.rotation.set(0, 2.1, 0);
   scene.add(holdCrabWorld);
+  crabRimSeat(holdCrabWorld, holdCrab, cy - 0.025);   // (cy is the hold floor + 0.03)
   addItemShine(holdCrabWorld, { size: 0.8, height: 0.14 });
   let taken = false, entry = null;
   addInteractable(holdCrabWorld, 'Take the horseshoe crab', 'inventory', {
@@ -24265,7 +24441,7 @@ if (shipHead) {
     boatKey.position.set(0.002, -0.052, 0.091);
     boatKey.rotation.set(0.06, 0, 0.12);
     shipHead.add(boatKey);
-    addItemShine(shipHead, { size: 0.34, height: 0.0, strength: 0.35, lift: 0.3 });
+    addItemShine(shipHead, { ...DROP_SHINE, height: 0.0 });
   }, undefined, () => {});
   bwGlb('assets/key.glb', (gltf) => {
     gltf.scene.updateMatrixWorld(true);
@@ -26773,7 +26949,7 @@ function fillPavKey() {
   if (pavKeyModel.children.length || !keyModel.children.length) return false;
   const src = keyModel.children[0];
   const m = new THREE.Mesh(src.geometry, src.material.clone());
-  m.material.emissive = new THREE.Color(0x5e6466); m.material.emissiveIntensity = 0.75;   // cold iron, a little green at the wards
+  m.material.emissive = new THREE.Color(0xa7b0b2); m.material.emissiveIntensity = 1.0;   // cold iron, a little green at the wards — lifted hard (2026-10-14: "brighter and more noticeable")
   m.scale.copy(src.scale);
   pavKeyModel.add(m);
   return true;
@@ -26812,7 +26988,7 @@ function lostKeyLie(x, z, quiet) {
   if (!W.parent) scene.add(W);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; W.add(hit);
-  addItemShine(W, { size: 1.2, height: 0.45, strength: 2.8 });
+  addItemShine(W, { ...DROP_SHINE, height: 0.45 });
   addInteractable(W, 'Take the Lost key', 'inventory', {
     onActivate: () => {
       scene.remove(W); removeInteractable(W); hovered = null;
@@ -28176,7 +28352,7 @@ function mutKnockdown(u) {
 const MUT_HIT_STOP = 0.09;
 const MUT_HEAVY = 0.85;                    // a swing wound past this takes two
 const MUT_STRAFE = 1.7;                    // how fast they circle you at reach
-const MUT_SEP = 2.6;                       // and how far off each other they stay
+const MUT_SEP = 3.2;                       // and how far off each other they stay (2.6 until 2026-10-14: "spread out a little more while fighting")
 /* NOT IN A LINE. Three of them coming straight at you arrive in a file, one
  * behind the other, and fight from there — which the owner saw. Each has a
  * SLOT round you: the one with the turn is AHEAD, and the others take the
@@ -28185,7 +28361,7 @@ const MUT_SEP = 2.6;                       // and how far off each other they st
  * slots hang off the pack's centre. Crabs use the same rule with their own
  * angle. `flankDir` bends an approach toward the slot while there is room
  * to; `flankSide` picks which way to circle so the circling spreads them. */
-const MUT_SLOT_ANG = 1.05, CRAB_SLOT_ANG = 1.15;
+const MUT_SLOT_ANG = 1.3, CRAB_SLOT_ANG = 1.15;   // (1.05 until 2026-10-14: the ones without the turn stand wider of the one with it)
 function slotAngle(u, list, token, slotAng) {
   const cx = camera.position.x, cz = camera.position.z;
   const angU = Math.atan2(u.g.position.x - cx, u.g.position.z - cz);
@@ -28590,7 +28766,7 @@ const MUT_KINDS = {
            * down where they were only compensating and up where they now
            * mean something: he is FASTER on his feet than you are, his
            * recovery is shorter, and his health is the health of a boss. */
-          h: 2.05, hp: 36, dmg: 1,   /* hp 24 until 2026-10-14 (the owner: "give the dealer more health") */  speedK: 1.30, windK: 0.92, reachK: 1.00, aggr: 2.20,
+          h: 2.05, hp: 50, dmg: 1,   /* hp 24 → 36 → 50 (2026-10-14, the owner twice: "give the dealer more health") */  speedK: 1.30, windK: 0.92, reachK: 1.00, aggr: 2.20,
           /* AND THE STAGGER IS SHORTER THAN THE BEACH'S. Rocking him is the
            * prize and it still is, but a third of a second of him standing
            * there was two free swings; `recoilK` gives you one. */
@@ -30369,7 +30545,7 @@ function nearestFoe(pos) {
 const mutDrop = (u) => { if (mutToken === u) mutToken = null; };
 
 function parryMutant(u) {
-  pegParryHaste();
+  pegParryHaste(); goldRingParry();
   if (u.kind.smart) { const pr = u.st.parried || (u.st.parried = {}); pr[u.st.swing] = (pr[u.st.swing] || 0) + 1; }
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
   parryCool = 0;                             // landing one costs you nothing
@@ -30582,7 +30758,7 @@ function mutLandBlow(u, dmg) {
    * be frightening, not a death you could not have seen. */
   if (u.kind.whaleBody || u.kind.farmer) {
     const now = performance.now();
-    if (now - demonLastLand < (u.kind.farmer ? 1050 : 340)) { grazePlayer(u); return; }   // (520 until 2026-10-13: a pincer from two demons is two blows)
+    if (now - demonLastLand < (u.kind.farmer ? 1050 : 750)) { grazePlayer(u); return; }   // (520 → 340 on 2026-10-13; 750 on 2026-10-14: four press now and swing far more — each landed blow is one you can read, not three on one frame)
     demonLastLand = now;
   }
   damagePlayer(dmg, u);
@@ -32309,7 +32485,10 @@ function mutSeparate(u, dt) {
     /* TWO CREATURES FIGHTING EACH OTHER STAND AT ARM'S LENGTH, not at the
      * pack's polite two and a half metres — which is outside both their
      * reaches, and measured, left the tavern's two swinging at the air. */
-    const sep = (u.st.foe === o || o.st.foe === u) ? 1.05 : MUT_SEP;
+    /* AND A KIND MAY STAND CLOSER (`kind.sep`). MUT_SEP went to 3.2 for the beach pack and it held the demons apart too:
+     * measured, five pressing in the belly and three never once within reach of you (2.05 m) — at 3.2 m apart only two
+     * fit round a man inside that. A pack that surrounds you stands shoulder to shoulder. */
+    const sep = (u.st.foe === o || o.st.foe === u) ? 1.05 : Math.min(u.kind.sep || MUT_SEP, o.kind.sep || MUT_SEP);
     if (d > sep || d < 1e-4) continue;
     const push = (sep - d) * dt * 5.0;
     u.g.position.x += (dx / d) * push;
@@ -34222,7 +34401,7 @@ function updateMutantUnit(u, dt) {
     }
     if (t < A.wind * 0.8 && dist > A.reach * 0.75 && !A.hold && !u.kind.planted) {
       u.dir.set(dx / dist, 0, dz / dist);
-      p.addScaledVector(u.dir, MUT_SPEED * u.kind.speedK * 0.66 * dt);
+      p.addScaledVector(u.dir, MUT_SPEED * u.kind.speedK * 0.66 * (u.kind.windWalkK ?? 1) * dt);   // (a wind-up on a planted clip is a skate: `windWalkK`)
     }
     /* A FEINT. It throws the startup, gets most of the way through it and
      * does not swing — then comes straight back with a real one. There is no
@@ -34495,7 +34674,7 @@ function updateMutantUnit(u, dt) {
        * the distance and watch you; orbiting at the fighting ring while
        * "backing off" is the two halves of it arguing. */
       const base = (u.kind.restless && u.ring ? u.ring : A.reach);
-      const want = u.st.sizing ? base + 1.0 : base - 0.9;
+      const want = u.st.sizing ? base + 1.0 : base - 0.5;   // (−0.9 until 2026-10-14: a little less crowding in while they wait)
       const r = THREE.MathUtils.clamp((dist - want) * 1.6, -1, 1);
       /* AND THE GROUND GOES UNDER HIM AS FAST AS THE CLIP SAYS. The step
        * clip covers three metres in eight tenths of a second; walked at the
@@ -34503,7 +34682,8 @@ function updateMutantUnit(u, dt) {
        * covered a third of it, which is the oldest bug in this file. */
       const stepSp = (u.st.sideStep > 0 && u.kind.stepClip
         && u.clipSpeed[u.kind.stepClip[u.st.side < 0 ? 0 : 1]]) || 0;
-      const sw = stepSp || MUT_STRAFE * u.kind.anim.strafeK * (u.st.sizing ? 1.15 : 1);
+      // (a demon's borrowed side-steps carry their feet forward: it circles at the prowl's pace, so they slip at half the rate)
+      const sw = stepSp || (u.kind.prowl ? u.kind.prowl : MUT_STRAFE * u.kind.anim.strafeK * (u.st.sizing ? 1.15 : 1));
       p.x += (tx * u.st.side * sw + (dx / dist) * r * 1.5) * dt;
       p.z += (tz * u.st.side * sw + (dz / dist) * r * 1.5) * dt;
       mutClampX(u, p, dt);
@@ -34738,7 +34918,7 @@ function updateMutantUnit(u, dt) {
         u.st.back = u.kind.baitBack || 0.42;   // it keeps the turn through the step
       } else {
         u.st.side = flankSide(u, mutants, mutToken, MUT_SLOT_ANG);   // and the circling spreads them
-        u.st.sideT = 0.5 + Math.random() * 0.8;
+        u.st.sideT = (0.5 + Math.random() * 0.8) * (u.kind.waitSide || 1);   // (a demon waiting for its turn circles a beat, not a second)
       }
     } else if (u.kind.restless && u.st.atk < 0 && u.st.recoil <= 0 && u.st.stun <= 0 && u.st.roar <= 0) {
       /* ---- AND THERE WAS NO BRANCH AT ALL FOR "AT REACH, CATCHING MY
@@ -36961,6 +37141,7 @@ function clampPlayerToRoom() {
   if (fortClampPlayer()) return;
   if (c13ClampPlayer()) return;          // the castle's stone answers a knockback in its courtyard
   if (thrClampPlayer()) return;
+  if (dunClampPlayer()) return;
   /* AND WHATEVER MOVES THE PLAYER LAST MUST RE-RUN THE ROOM'S CLAMP — the
    * bunker's own lesson, and the courtyard never got it. `updateDojo` reverts
    * a step that leaves the walk, and the samurai's KNOCKBACK is applied from
@@ -37298,6 +37479,30 @@ const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
     setTimeout(() => warmBunker(g), 0);
     g.add(bunkerLadderProxy);
     bunkerLadderProxy.updateMatrixWorld(true);       // the room is hidden until you enter, and a hover raycast wants a fresh matrix
+    /* AND THE LADDER HANGS FROM THE HATCH (2026-10-14, the owner, round 1: "add like two steps of a ladder to show the
+     * way out of the bunker but dont make it effect the fight or be able to be run into just make it above your head";
+     * round 2, from under it: "the ladder is floating and looks bad put it where my cursor is make it hyper realistic and
+     * blend into the scene"). His crosshair was on the hatch's near edge — the model's own hatch frame,
+     * `ExitpolySurface429`, local x -1.54..-0.56, z -4.12..-2.99 at the roof; the first two rungs stood off its far
+     * edge in front of the duct, held by nothing. The ladder now hangs in the plane just inside that near edge,
+     * bolted to the frame, and runs on up the shaft: painted steel worn to bare metal where hands go, chipped, rust
+     * run down from the chips and heaviest at the cut ends (`bunkerLadder`). Its foot is at 2.32 m — over the
+     * tallest the eye goes (the ceiling clamp holds it under 3.17 only on the stairs; on this floor 1.7) — it is not in
+     * the walk grid (that is read from the file), and its meshes have no raycast, so nothing aims at it, drops onto it
+     * or is stopped by it. */
+    {
+      let hm = null; g.traverse((o) => { if (!hm && o.isMesh && /^ExitpolySurface429/.test(o.name)) hm = o; });
+      const HB = new THREE.Box3();
+      if (hm) {
+        g.updateMatrixWorld(true);
+        const inv = g.matrixWorld.clone().invert(), P = hm.geometry.attributes.position, v = new THREE.Vector3();
+        for (let i = 0; i < P.count; i++) HB.expandByPoint(v.fromBufferAttribute(P, i).applyMatrix4(hm.matrixWorld).applyMatrix4(inv));
+      } else HB.set(new THREE.Vector3(L.x0, S.nav.room.h, L.z0), new THREE.Vector3(L.x1, S.nav.room.h, L.z1));
+      const lad = bunkerLadder(HB.min.y);
+      lad.position.set(HB.min.x + 0.12, 0, (HB.min.z + HB.max.z) / 2);
+      lad.traverse((o) => { if (o.isMesh) { o.raycast = () => {}; o.userData.noBake = true; } });
+      g.add(lad);
+    }
     /* The shaft's own centre, in world, so the gate is a distance and not a
      * guess: `LADDER_SPOT` is where you stand to leave. */
     const lcx = (L.x0 + L.x1) / 2, lcz = (L.z0 + L.z1) / 2;
@@ -37393,9 +37598,13 @@ const DEALER_POST = { x: dealer.g.position.x, z: dealer.g.position.z, yaw: Math.
 const DEALER_SCRIPT = {
   start: {
     text: 'How did you get down here?',
-    // there is nothing to say to that, and saying nothing is what starts it
-    choices: [{ label: '…', act: () => startDealerPickup() }],
+    /* TWO WAYS TO ANSWER HIM (2026-10-14, the owner: "make the players replies to the dealer be *Kill him* which
+     * instantly starts the fight … or 'Give me the key or else' his reply should be 'You think a plastic shovel scares
+     * me? I'll make this quick.' then he grabs the crowbar"). Either way it ends with the bar in his hand: the one at
+     * once, the other after his line (a click on it, or walking out on him, is `onLeave`, which takes the bar). */
+    choices: [{ label: '*Kill him*', act: () => startDealerPickup() }, { label: 'Give me the key or else', to: 'threat' }],
   },
+  threat: { text: 'You think a plastic shovel scares me? I’ll make this quick.', choices: [], end: false, hint: 'click to go on' },
 };
 // close on the mask: a tighter lens than anyone else gets, held on the head
 // bone rather than on the spot he was standing when he started talking
@@ -39663,7 +39872,7 @@ function updateDealer(dt) {
     unstickDealer(dt, Math.hypot(dealer.g.position.x - camera.position.x, dealer.g.position.z - camera.position.z));
     dealer.prevPos = { x: dealer.g.position.x, z: dealer.g.position.z };
   }
-  if (!dealerWon && !dealer.st.alive && dealer.st.deadT > 0.5) dealerWon = true;
+  if (!dealerWon && !dealer.st.alive && dealer.st.deadT > 0.5) { dealerWon = true; dealerDropsCellKey(); }
 }
 
 /* THE FIRST LOOK MUST NOT COST A SECOND. Four hundred meshes and seventeen
@@ -39683,6 +39892,63 @@ function updateDealer(dt) {
  * the fill at nothing and keeps the clear inside the box, so the frame the
  * player is looking at is untouched. */
 let bunkerWarmed = false;
+/* THE BUNKER'S LADDER, built: two flat-bar rails 65 x 14 mm, round rungs at 300 mm, standoff brackets bolted to the
+ * hatch's frame. In its own frame: the climbing face is +x, the rails at z ±0.215, its foot at y 2.32, the roof at
+ * `roofY` and the rails on 0.7 past it up the shaft. Painted a dull olive, the paint chipped to dark steel, rust run
+ * down from every chip and gathered at the cut ends; the rungs worn bright across their middle. */
+function bunkerLadderTex(rung) {
+  const c = document.createElement('canvas'); c.width = rung ? 64 : 32; c.height = rung ? 64 : 256;
+  const x = c.getContext('2d'), R = mulberry32(rung ? 71 : 37), W = c.width, H = c.height;
+  const paint = [74, 77, 68], steel = [44, 41, 38], rust = [96, 58, 33];
+  const img = x.createImageData(W, H), d = img.data;
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const n = (R() - 0.5) * 14, k = (j * W + i) * 4;
+    let c0 = paint;
+    // the rungs: bare, polished steel across the middle of their length, where every hand and boot has been
+    if (rung && j > H * 0.3 && j < H * 0.7) c0 = [104 + R() * 18, 102 + R() * 16, 96 + R() * 14];
+    d[k] = c0[0] + n; d[k + 1] = c0[1] + n; d[k + 2] = c0[2] + n; d[k + 3] = 255;
+  }
+  x.putImageData(img, 0, 0);
+  // chips to the steel, and rust run down from each (the canvas's top is the rail's top)
+  for (let i = 0; i < (rung ? 14 : 46); i++) {
+    const cx = R() * W, cy = R() * H, w = 1 + R() * (rung ? 5 : 4), h = 1 + R() * (rung ? 3 : 6);
+    x.fillStyle = `rgb(${steel[0]},${steel[1]},${steel[2]})`; x.fillRect(cx, cy, w, h);
+    const run = rung ? 0 : 6 + R() * 40;
+    const gr = x.createLinearGradient(0, cy + h, 0, cy + h + run);
+    gr.addColorStop(0, `rgba(${rust[0]},${rust[1]},${rust[2]},0.75)`); gr.addColorStop(1, `rgba(${rust[0]},${rust[1]},${rust[2]},0)`);
+    x.fillStyle = gr; x.fillRect(cx, cy + h, Math.max(1, w * 0.6), run);
+  }
+  if (!rung) {
+    // the cut foot, where the wet runs to: rust over the last of it, and grime
+    const gr = x.createLinearGradient(0, H, 0, H * 0.8);
+    gr.addColorStop(0, `rgba(${rust[0] - 20},${rust[1] - 18},${rust[2] - 10},0.9)`); gr.addColorStop(1, 'rgba(60,40,25,0)');
+    x.fillStyle = gr; x.fillRect(0, H * 0.8, W, H * 0.2);
+  }
+  return retroTex(new THREE.CanvasTexture(c));
+}
+function bunkerLadder(roofY) {
+  const lad = new THREE.Group();
+  // (the map at full white read as cream plastic under the cage lamps a metre off: taken down to the ducts' own grey)
+  const mat = (map) => new THREE.MeshStandardMaterial({ map, color: 0x5c5d57, roughness: 0.86, metalness: 0, flatShading: true });
+  const railM = mat(bunkerLadderTex(false)), rungM = mat(bunkerLadderTex(true));
+  const bot = 2.32, top = roofY + 0.7, half = 0.215;
+  for (const sz of [-1, 1]) {
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.065, top - bot, 0.014), railM);
+    r.position.set(0, (top + bot) / 2, sz * half); lad.add(r);
+    // the standoff to the frame: an angle bracket and its two bolt heads
+    const br = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.05, 0.05), railM);
+    br.position.set(-0.06, roofY - 0.05, sz * (half + 0.03)); lad.add(br);
+    for (const by of [-0.012, 0.012]) {
+      const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.012, 6), rungM);
+      bolt.rotation.x = Math.PI / 2; bolt.position.set(-0.03, roofY - 0.05 + by, sz * (half + 0.058)); lad.add(bolt);
+    }
+  }
+  for (let y = bot + 0.13; y < top - 0.05; y += 0.3) {
+    const g2 = new THREE.Mesh(new THREE.CylinderGeometry(0.0125, 0.0125, half * 2, 8), rungM);
+    g2.rotation.x = Math.PI / 2; g2.position.set(0, y, 0); lad.add(g2);
+  }
+  return lad;
+}
 function warmBunker(group) {
   const g = group || (bunkerHome && bunkerHome.group);
   if (bunkerWarmed || !g || !g.userData.bunker.ready) return;
@@ -40303,7 +40569,7 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
+  if (!insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inDun && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -40340,7 +40606,8 @@ function update(dt, rawDt = dt) {
   updateTavern(dt);         // and the hall behind its door
   updateCatacombs(dt);      // and the catacombs under the sand past the stones
   tickFort(dt);             // and the castle across the beach at the headland's foot: solid outside, walked inside
-  updateC13Arch(dt); updateThrone(dt);   // the arched door in Castle XIII, and the throne room behind it
+  updateC13Arch(dt); updateThrone(dt); updateDungeon(dt);   // the arched door in Castle XIII, and the throne room behind it
+  updateHenryJetty(dt);     // and Henry, once he is out, at the sea end of the lighthouse's jetty
   updateWhale(dt);          // and the whale's gut behind the door near the lighthouse
   updateSamurai(dt);        // and the man who wants his sword back
   updateUndercroft(dt);     // the cave's floor and the church's, off the grids the packer wrote
@@ -40435,7 +40702,7 @@ function update(dt, rawDt = dt) {
         else if (inCat) sfxStepCat();
         else if (inTavern) sfxStepTav();
         else if (inWhale) sfxStepWhale();
-        else if (inFort || inC13 || inThrone) sfxStepCat();
+        else if (inFort || inC13 || inThrone || inDun) sfxStepCat();
         else sfxStep();
       });
     }
@@ -40561,7 +40828,7 @@ function update(dt, rawDt = dt) {
         sfxStepTav();                      // flags, boards or a rug: whatever is under the boot
       } else if (inWhale) {
         sfxStepWhale();                    // flesh gives underfoot; the fluid is a wade
-      } else if (inFort || inC13 || inThrone) {
+      } else if (inFort || inC13 || inThrone || inDun) {
         sfxStepCat();                      // the courtyard's cobbles: stone, and no print
       } else {
         stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
@@ -40731,7 +40998,7 @@ const _saveV = new THREE.Vector3();
  * table (`updateRoomRestore`) rather than one special case. */
 const saveRoom = () => (inKeep ? 'keep' : inTavern ? 'tav' : inCat ? 'cat'
   : inDojo ? 'dojo' : inUndercroft ? 'uc' : inBunker ? 'bunker' : inWhale ? 'whale'
-  : inThrone ? 'thr' : inC13 ? 'c13' : inFort ? 'fort' : null);
+  : inThrone ? 'thr' : inDun ? 'dun' : inC13 ? 'c13' : inFort ? 'fort' : null);
 /* AND THE TWO CASTLES ARE PLACES TOO. They stand on the beach, not in a room,
  * so a save inside one used to be a position on the sand — and restored as
  * one, the castle's footprint is a wall from outside, so the body came back
@@ -40813,6 +41080,7 @@ function saveCheckpoint(spot) {
       // he went into the sea and he does not come back out of it
       smileGone: smilePhase === 2, smileWatch: smileWatch === 2 ? 2 : 0,
       well: wellPhase,                  // 0 untouched, 1 the bucket is down and he is coming, 2 he is up
+      cellKey: cellKey.state, cellKeyAt: [+cellKey.x.toFixed(2), +cellKey.y.toFixed(2), +cellKey.z.toFixed(2)], henryFree: henryFree === 1 ? 2 : henryFree, henryJetty: hjTaken ? 1 : 0, henryRing: henryRingTaken ? 1 : 0,   // the Dealer's key to Henry's cell; Henry let out; Henry off the jetty
       wellKey: wellKey.state, wellKeyAt: [+wellKey.x.toFixed(2), +wellKey.z.toFixed(2)],   // his key: 0 not dropped, 1 on the sand where he fell, 2 taken
       caveDone,
       whaleSighted: wsDone,
@@ -40831,6 +41099,7 @@ function saveCheckpoint(spot) {
       catPiles: [...catPilesGone],
       chest: !shipChestLocked,        // a lock you have turned does not lock itself again
       bleedJars: bleedJarsTaken,      // the three jars off the Dealer's bleeding bench (a bit each)
+      rockCrab: rockCrabTaken,        // the crab in the groove of the wall behind the drain
       // and the young one, once it has run, is gone for good
       catBaby: catBabyGone,
       // Ben Ali's sword: in the thing's back, on the floor where it fell, or yours; and he is dead once he has spoken
@@ -41002,6 +41271,14 @@ function beginRestoreQuiet() {
   for (const u of mutants) if (u.saveKey && deadUnitKeys.has(u.saveKey)) retireUnit(u);
   if (crusaderUnit && [...deadUnitKeys].some((k) => k.startsWith('crusader@'))) retireUnit(crusaderUnit);   // his key moves with the court's dressing
   if (f.dealerWon) dealerWon = true;
+  henryFree = f.henryFree || 0;
+  hjTaken = !!f.henryJetty; if (hj && hjTaken) hj.w.visible = false;
+  henryRingTaken = !!f.henryRing; henryRingOwed = henryFree === 2 && !henryRingTaken;   // a save from before he gave it, with him gone: it is yours
+  if (henry && henryFree === 2) { henry.w.visible = false; henry.free = null; }
+  if (dunGate && henryFree === 2) { dunGate.open = true; dunGate.swing = 1; dunGate.pivot.rotation.y = 1.75; dunWalls = null; }
+  cellKey.state = f.cellKey || 0;
+  if (cellKey.state === 1 && f.cellKeyAt) cellKeyLie(f.cellKeyAt[0], f.cellKeyAt[1], f.cellKeyAt[2], true);
+  else if (cellKey.state === 0 && f.dealerWon) cellKeyLie(dealer.g.position.x, dealer.g.position.y, dealer.g.position.z, true);   // a save from before he carried it
   if (f.tavFight) { tavScene.started = true; tavScene.phase = 9; }
   if (f.castleBroken && !castleBroken) breakCastle(CASTLE_X, CASTLE_Z);
   crabBled = !!f.crabBled; hcrabTaken = !!f.hcrabTaken;
@@ -41164,6 +41441,7 @@ function updateRestore(dt) {
   if (Array.isArray(f.catPiles)) for (const i of f.catPiles) catPilesGone.add(i);   // broken when the room lands (`catApplyPiles`)
   if (f.chest) shipChestLocked = false;
   if (f.bleedJars) bleedJarsTaken = f.bleedJars;
+  if (f.rockCrab) { rockCrabTaken = true; if (rockCrabW) { scene.remove(rockCrabW); removeInteractable(rockCrabW); } }
   if (f.fangDrops != null) fangDrops = f.fangDrops;   // four across the eight, however many times you load
   if (f.catBaby) catBabyGone = true;
   if (f.bb) restoreBackSword(f.bb, f.bbAt);
@@ -41226,7 +41504,7 @@ function packByName(name) {
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
                     syringeItem, waterBottleItem, headItem, fishingRodItem, magnumItem, shotgunItem, fangItem, oldRingItem,
-                    spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem, flameArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem]) {
+                    spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem, flameArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem, cellKeyItem, goldRingItem]) {
     if (it === beachMapItem && !BEACH_MAP_ON) continue;                            // the chart is out for now
     if (it && (it.name === name || (it.was && it.was.includes(name)))) return it;   // `was`: what a save made before a rename calls it
   }
@@ -41245,6 +41523,7 @@ function finishRestore() {
   const d = restore; restore = null;
   if (!d) return;
   applySavedInventory(d, true, true);
+  if (henryRingOwed) { henryRingOwed = false; henryRingTaken = true; if (!inventory.includes(goldRingItem) && !rings.includes(goldRingItem)) { ringsFound = true; addToInventory(goldRingItem, true); renderRings(); } }
   catchBreath();                     // after the rings are back on, which may raise the bar's top
 }
 function applySavedInventory(d, loud, hand) {
@@ -41396,7 +41675,7 @@ function applySavedInventoryInner(d, loud, hand) {
  * of a swell rolling every eleven seconds is a thing you hear, and the owner
  * does. Inside a room the bed is nothing; only the drain's mouth, which is
  * open to the sea, keeps a little of it near the outfall. */
-function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inWhale || inThrone; }
+function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inWhale || inThrone || inDun; }
 function beachBedK() {
   if (indoors()) return 0;
   return (1 - 0.97 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 - 0.72 * wellAirK);   // in the well's fog the sea goes a long way off
@@ -42129,6 +42408,17 @@ function animateFrame() {
   if (!bootRoomsAsked && performance.now() > 3000) {
     bootRoomsAsked = true;
     try { loadDojo(); loadCatacombs(); } catch (e) { console.warn('[bw] boot rooms', e); }
+    /* AND EVERYTHING ELSE THAT WAITED FOR YOU TO WALK UP TO IT (2026-10-14, the owner: "i see the light house island
+     * spawn in when walking to the first merchant and it lags … i dont want to watch locations spawn in it should feel
+     * like they are always there"). The island was asked for at z -700 — the trader's stretch, 430 m off and on the
+     * skyline — so its ten megabytes parsed and built on a frame of the walk and it appeared in front of you. It and
+     * the rest that were asked for by distance (the keep at the dock, the tavern at its door, the dungeon at the
+     * pavilion, the throne room at XIII, Henry's jetty copy and the eagle) are asked for here with the rest of the
+     * boot: `startLeft` counts the queue, so START (and a checkpoint's black) waits for them and nothing parses
+     * on the walk. Henry's jetty copy stays hidden until he is out (`updateHenryJetty`). */
+    for (const f of [loadIsle, loadKeep, loadTavern, loadDungeon, loadThrone, loadJettyHenry]) {
+      try { f(); } catch (e) { console.warn('[bw] boot rooms', f.name, e); }
+    }
   }
   let dt = Math.min(clock.getDelta(), 0.05);
   // a beat of near-frozen time on a solid hit, drained in real seconds
@@ -42159,7 +42449,7 @@ function animateFrame() {
    * the rest of the frame goes on. */
   try { update(dt, rawDt); } catch (e) { bwFrameErr(e); }
   updateHatch(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -42192,7 +42482,7 @@ function animateFrame() {
   if (hRoll) camera.rotateZ(-hRoll);
   renderer.autoClear = false;
   // a film has nobody's hands in it: the whale's farewell is shown without what you are holding
-  if (viewmodel.visible && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t > CRAB_T.horn)) {
+  if (viewmodel.visible && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t >= CRAB_T.cut)) {
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);
   }
@@ -43445,7 +43735,7 @@ MUT_KINDS.knight = {
    * you may stand, and at 0.95 it was wider than his own arm is long (0.89
    * from his origin at full extension, measured) — so he could never put a
    * fist on you whatever the aim did. He is tall, not broad. */
-  h: 2.85, hp: 44, dmg: 1, hitR: 1.15, body: 0.78, uc: true, lungeStop: 1.18,   // 38 → 44: a little harder, by the owner's word
+  h: 2.85, hp: 70, dmg: 1, hitR: 1.15, body: 0.78, uc: true, lungeStop: 1.18,   // 38 → 44 → 60 → 70 (2026-10-14: "make the knight have more health", then "a little more")
   /* MORE AGGRESSIVE, on the owner's word, and NOT in the startups: those are
    * where the fairness lives and this file has paid for shortening them. */
   speedK: 1.28, windK: 1.00, reachK: 1.00, aggr: 3.90, press: 0.96,
@@ -44604,12 +44894,13 @@ function armUndercroft(S) {
               pick(cave, 0.0) || sp.exit, pick(cave, 0.72) || sp.exit,                   // the old cave's own bulbs: the first is the one at its mouth, so the hole in the apse shows a lit floor going in
               lift(clAt(0.08)), lift(clAt(0.36)), lift(clAt(0.64)), lift(clAt(0.94))];
   at.forEach((p, i) => { if (p && ucLamps[i]) ucLamps[i].position.set(UC_X + p.x, UC_Y + p.y - 0.3, UC_Z + p.z); });
-  // the way out, behind the altar
-  const proxy = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.6, 2.4), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  // the way out, behind the altar: at the end of the exit bore, on its line, where the walk stops you (`ucExitStop`)
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.6, 3.2), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; proxy.visible = false;
-  proxy.position.set(sp.exit.x, sp.exit.y + 1.3, sp.exit.z);
+  const exZ = sp.altar ? sp.altar.z : sp.entry.z, exX = sp.exit.x - UC_EXIT_BACK + 0.9, exF = UC.floorAt ? UC.floorAt(exX, exZ) : null;
+  proxy.position.set(exX, (exF != null ? exF : sp.exit.y) + 1.3, exZ);
   undercroft.add(proxy);
-  addInteractable(proxy, 'To climb out', 'default', { far: 3.2, mid: true, onActivate: () => leaveUndercroft('far'), when: () => inUndercroft && !ucBusy });
+  addInteractable(proxy, 'To crawl out', 'default', { far: 3.2, mid: true, onActivate: () => leaveUndercroft('far'), when: () => inUndercroft && !ucBusy });
   /* AND THE WAY YOU CAME IN IS A WAY OUT. At the passage's start, a step
    * short of where you are set down, "Climb out" takes you back to the sand
    * in front of the rock — the owner's word, and a tunnel three hundred
@@ -45318,6 +45609,12 @@ function updateUndercroft(dt) {
       }
     }
   }
+  /* AND THE EXIT BORE ENDS WHERE YOU CRAWL OUT (2026-10-14, the owner: "the exit tunnel of the church i can walk passed
+   * where to climb out make this not happen the end of that tunnel should have an option to crawl out. that you cant
+   * walk passed"). Measured: the bore's floor runs dead straight on the church's axis to x 126 and there flares out
+   * sideways to z +6 and on to 131 — and the old "To climb out" stood in that flare's far corner (`spots.exit`, the
+   * last floored column), so you walked on past the way out. A wall where the bore ends, and the crawl out at it. */
+  if (UC.spots.exit && _ucL.x > ucExitStop()) _ucL.x = ucExitStop();
   /* YOU HIT YOUR HEAD, AND IT STOPS YOU. A step into a stretch of tunnel
    * you cannot stand up in is REFUSED — the frame's movement is reverted,
    * the way the pier's deck reverts it — and you are told with a knock on
@@ -45417,6 +45714,8 @@ function stompWorkTable() {
   landDip = Math.max(landDip, 0.12);
   addTrauma(0.35);
 }
+const UC_EXIT_BACK = 4.2;                 // the stop, this far short of the exit spot's x (the bore's end, where its flare begins)
+function ucExitStop() { return UC.spots.exit.x - UC_EXIT_BACK; }
 function ucInChurch() {
   const x = camera.position.x - UC_X;
   return inUndercroft && UC.ready && UC.spots && x > UC.spots.mouth.x + 1.0 && x < UC.spots.exitEdge + 0.5;
@@ -45654,6 +45953,17 @@ function spendJars(n) {
   bloodPulse = 1;
   updateBloodReadout();
 }
+/* A THING THAT TAKES A SLOT IS NOT SOLD INTO A FULL PACK (2026-10-14, the owner: "it should tell me my inventory
+ * is full if i try and purchase a new item i just bought the pistol with a full inventory and it never showed up").
+ * `addToInventory` refuses a full pack and returned false into nothing, AFTER the jars were spent and the stock
+ * taken: the gun was paid for, sold out and nowhere. Asked first now, and the row says so (`shopState`). */
+function shopNeedsSlot(what) {
+  if (what === 'gun' || what === 'shotgun' || what === 'ring' || what === 'glow') return true;
+  if (what === 'water') return !inventory.includes(waterBottleItem);
+  if (what === 'spliff') return !inventory.includes(spliffItem);
+  return false;
+}
+const shopPackFull = (what) => shopNeedsSlot(what) && inventory.length >= INV_MAX;
 function traderBuy(what) {
   const price = TRADER_PRICE[what];
   if (price === undefined) return;          // nothing he sells (the box of six, from an old row): never spend NaN jars
@@ -45663,6 +45973,7 @@ function traderBuy(what) {
       : `${price} jars. Come back when you can count.`;
     return;
   }
+  if (shopPackFull(what)) { traderSaid = 'Your pack is full. Make room, then pay me.'; sayInventoryFull(); return; }
   if (what === 'gun') {
     if (inventory.includes(magnumItem)) { traderSaid = 'You have one. One is plenty.'; return; }
     spendJars(price); TRADER_STOCK.gun--;
@@ -45772,7 +46083,7 @@ const SHOP_ROWS = [
     stack: () => (inventory.includes(shotgunItem) ? sgSpare : 0) },
   { key: 'gun', item: () => magnumItem, name: '.44 Magnum', sum: 'Revolver · 3 rounds loaded',
     desc: 'Six chambers, three in it. Right click aims, left click fires, R reloads.' },
-  { key: 'ammo', item: () => ammoIconItem, name: '6 Rounds', sum: '.44 · six into the pack',
+  { key: 'ammo', item: () => ammoIconItem, name: '6 Rounds', sum: '.44 · six into the pack · once only',
     desc: 'A box of six for the revolver, and the only one he has. They go in the pack; R loads them.', needs: () => inventory.includes(magnumItem),
     stack: () => (inventory.includes(magnumItem) ? magSpare : 0) },
   { key: 'glow', item: () => glowstickItem, name: 'Glowstick', sum: 'A light you can carry',
@@ -46067,6 +46378,7 @@ function shopState(r) {
   if (shopHad(r)) return { ok: false, label: 'Owned', chip: 'owned', dim: true };
   if (shopOut(r)) return { ok: false, label: 'Sold out', chip: 'sold out', dim: true };
   if (r.needs && !r.needs()) return { ok: false, label: r.needsLabel || 'Needs the .44', chip: jarsTxt(price), dim: true };
+  if (shopPackFull(r.key)) return { ok: false, label: 'Inventory full', chip: jarsTxt(price), poor: true };
   if (bloodJars < price) { const need = price - bloodJars; return { ok: false, label: `Need ${need} more ${need === 1 ? 'jar' : 'jars'}`, chip: jarsTxt(price), poor: true }; }
   return { ok: true, label: 'Buy · ' + jarsTxt(price), chip: jarsTxt(price) };
 }
@@ -46135,6 +46447,8 @@ function openShop(at = 1) {
   if (shopOpen || ended || dying || !introDone) return;
   shopOpen = true; shopAt = at;
   shopReturnLock = locked;
+  // a .44 that a full pack swallowed (paid for, sold out, never in the pack — it cannot be sold back): his again to sell
+  if (TRADER_STOCK.gun <= 0 && !inventory.includes(magnumItem) && equipped !== magnumItem) TRADER_STOCK.gun = 1;
   // the lock is KEPT: a cursor of our own does the clicking (`vcActive`)
   if (held) dropHeld();
   if (invOpen) closePack();
@@ -47571,7 +47885,7 @@ const shotgunItem = {
  * bores lie along the view axis pitched up the four degrees that put the
  * bead on the crosshair from an eye three centimetres over the rib — then
  * `sgSights` pins the bead exactly, at any window shape. */
-const SG_HOLD_HIP = [0.08, -0.15, -0.40, 0.03, 0.02, 0.10];
+const SG_HOLD_HIP = [0.08, -0.15, -0.40, 0.03, 0.02, 0.0];   // (roll 0.10 until 2026-10-14 — "the shotguns aim should be more straight it tilts": held level now)
 const SG_HOLD_ADS = [0.0, -0.112, -0.297, 0.0737, 0, 0];
 const _sgM = new THREE.Matrix4(), _sgBase = new THREE.Matrix4(), _sgE = new THREE.Euler(), _sgPos = new THREE.Vector3(), _sgQ2 = new THREE.Quaternion(), _sgOne = new THREE.Vector3(1, 1, 1);
 function sgPlace() {
@@ -47593,7 +47907,7 @@ function sgPlace() {
  * arm rig's pivot. A sawn-off has no stock to speak of and both barrels are
  * eight inches long: it comes up HARD, back into you, and across a little —
  * never quite the same way twice. (The owner: "make the recoil a lot".) */
-const SG_KICK = { pitch: 0.46, lift: 0.05, push: 0.17, roll: 1.1, yaw: 0.07, up: 0.27, upAds: 0.07 };
+const SG_KICK = { pitch: 0.46, lift: 0.05, push: 0.17, roll: 0.35, yaw: 0.07, up: 0.27, upAds: 0.07 };   // roll 1.1 → 0.35: it kicks UP, it does not keel over
 let sgKickYaw = 0;
 function sgPose(out) {
   for (let i = 0; i < 6; i++) out[i] = 0;
@@ -52912,6 +53226,13 @@ MUT_KINDS.samurai = {
   voice: { f: 1.0, growl: 0.5, rasp: 0.7, throat: 'mask', human: true },
   dojo: true,                         // his world is the dojo, not the beach
 };
+/* AND A LITTLE HARDER AGAIN (2026-10-14, the owner: "make the mutants a little harder too"). On top of the two
+ * passes above (+1 and ×1.4): a fifth more to put down (pale 8 → 10, red 11 → 14, dark 7 → 9, hulk 18 → 22),
+ * a little more pressure, wind-ups 4% quicker. Their blows are unchanged. */
+for (const k of ['pale', 'red', 'dark', 'hulk', 'spindle', 'runt', 'crooked', 'bloat']) {
+  const K = MUT_KINDS[k]; if (!K) continue;
+  K.hp = Math.round(K.hp * 1.45); K.aggr = (K.aggr || 1) * 1.08; K.windK = (K.windK || 1) * 0.96;   // (×1.2 → ×1.45 the same day: "mutants need more health" — pale 12, red 16, dark 10, hulk 26)
+}
 /* HE MOVES LIKE THE MAN IN THE CAPTURE, NOT A MARIONETTE (2026-10-13; the
  * owner: "the samurais body and arms during his animations look very weird and
  * unnatural but the fight is good"). Measured off the clips and the code: his
@@ -52936,6 +53257,39 @@ MUT_KINDS.samurai = {
   MUT_ATTACKS.gChop.clipRate = 1.25; MUT_ATTACKS.gChop.recover += 0.2;
   for (const k of ['sSpin', 'sStab']) { MUT_ATTACKS[k].noAim = true; MUT_ATTACKS[k].clipRate = 1.05; }
 }
+/* HIS ARMS ARE ALIVE BETWEEN THE CUTS (2026-10-14, the owner: "fix samurais arms they look too stiff sometimes").
+ * Measured over 1,500 fight frames: through every swing the elbows move, but in the walk clip both hold one angle
+ * for the whole stride (left 108°, right 78°, 44 frames at a time) — the take carries the sword in a fixed hold.
+ * Between swings only (it fades out the moment a cut starts, so no blow is touched), the sword arm takes a small
+ * swing in time with his feet — the upper arm about his right, the forearm after it — and a slow breath when he
+ * stands; the left hand follows the hilt as ever (`samTwoHand`). In the clip pass, so the roots carry it. */
+const _saR = new THREE.Vector3(), _saQ = new THREE.Quaternion(), _saA = new THREE.Vector3();
+function samArmLife(u, saved) {
+  if (!u.st || !u.st.alive || u.rag) return;
+  const L = u.armLife || (u.armLife = { w: 0, B: (() => { const B = {}; u.model.traverse((o) => { if (o.isBone) B[o.name] = o; }); return B; })() });
+  const swinging = u.st.atk >= 0;
+  L.w += ((swinging ? 0 : 1) - L.w) * Math.min(1, (swinging ? 14 : 3) * (u.lastDt || 0.016));
+  if (L.w < 0.01) return;
+  const c = u.cur && u.cur.getClip ? u.cur.getClip() : null, nm = c ? c.name : '';
+  const gait = /walk|strafe|run|back/i.test(nm);
+  const ph = gait && c ? (u.cur.time / Math.max(0.3, c.duration)) * Math.PI * 4 : performance.now() * 0.0011;
+  const ry = u.g.rotation.y; _saR.set(Math.cos(ry), 0, -Math.sin(ry));
+  const turn = (b, ang) => {
+    if (!b || Math.abs(ang) < 1e-4) return;
+    saved.push({ b, q: b.quaternion.clone() });
+    b.parent.getWorldQuaternion(_saQ).invert();
+    _saA.copy(_saR).applyQuaternion(_saQ).normalize();
+    b.quaternion.premultiply(_saQ.setFromAxisAngle(_saA, ang));
+    b.updateMatrixWorld(true);
+  };
+  const amp = gait ? 1 : 0.35, w = L.w;
+  u.model.updateMatrixWorld(true);
+  turn(L.B['DEF-upper_armR'], -0.12 * amp * Math.sin(ph) * w);
+  turn(L.B['DEF-forearmR'], (0.10 * amp * Math.sin(ph + 0.7) + 0.04 * Math.sin(ph * 0.5)) * w);
+  turn(L.B['DEF-upper_armL'], 0.08 * amp * Math.sin(ph) * w);
+  turn(L.B['DEF-forearmL'], -0.07 * amp * Math.sin(ph + 0.7) * w);
+}
+{ const K = MUT_KINDS.samurai; K.postClip = (u, saved) => samArmLife(u, saved); }
 /* (2026-10-14: `samUpright`, a straightening of his stoop in the guard, is GONE — it turned his spine while
  * his shoulders, which are roots, kept the clip's turn, and it looked worse. The folding was the forest
  * roots carried at their BIND-pose offsets; see `fkIdle` in `installLife`.) */
@@ -53660,6 +54014,7 @@ function updateShuriken(dt) {
   }
 }
 function parryShuriken(b) {
+  goldRingParry();
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
   parryCool = 0;
   b.back = true; b.t = 0;
@@ -53971,6 +54326,7 @@ const CAT_X = 9000, CAT_Y = 400, CAT_Z = 9000;
  * measured in the old file is the same spot times the factor. */
 const CAT_SCALE = 2.2;
 const CAT_STEP = 0.55, CAT_AIR = 0.72, CAT_BODY = 0.26;
+let catAirT = 0; const catGroundSpot = { x: 0, z: 0, f: null };   // how long you have been off the floor, and where you last stood on it (`updateCatacombs`)
 const CAT_LAND = { x: 7.0 * CAT_SCALE, z: -12.5 * CAT_SCALE, yaw: 0.445 };              // the crypt room's floor (0.36), 2.5 m from the big green tomb and facing it — searched: the room is aisles 1.2 m wide between tombs, and the first spot was boxed in on three sides
 const CAT_HUNT = { x: 0.2 * CAT_SCALE, z: -1.5 * CAT_SCALE, f: 0.0 };                     // where he starts: the pillared room ten metres from where you land, with walls between (the upper room was 2.4 m over your head and he heard you through its floor)
 const CAT_DOOR = { x: 8.75 * CAT_SCALE, f: 4.33 * CAT_SCALE, z: -14.4 * CAT_SCALE };                 // the barred door on the upper room's +x wall (measured: the wall is at 8.84)
@@ -55029,6 +55385,28 @@ function updateCatacombs(dt) {
   if (catDoorBlocks(p.x, p.z, feet)) {                         // whatever put you there, the leaf is a wall
     p.x = Math.min(p.x, CAT_X + CAT_DOOR.x - 0.47);
     st = keepFloorAt(p.x, p.z, feet, up, S) || st;
+  }
+  /* AND YOU NEVER FALL OUT OF IT (2026-10-14, the owner: "i just fell out of the map in the catacombs this should
+   * never happen"). Nothing down here caught a body that had left its floor: in the air the feet are not lifted
+   * to the last floor, so over a gap the lookup takes whatever storey is next underneath, and a gap over the
+   * void or under the model let you fall through it. A drop is legal here — the platforms stand three metres
+   * over the main floor and you step off them (measured: one connected walk of 118,000 storeys, −7 to 14.5 m)
+   * — so the test is not "how far down" but the FALL: in the air for more than a second (a three-metre drop
+   * lands in 0.6), below the lowest floor there is, or numbers that are not numbers, and you are put back on
+   * the last floor you stood on, where you stood. */
+  {
+    if (onGround) { catGroundSpot.x = p.x; catGroundSpot.z = p.z; catGroundSpot.f = catLastFloor; catAirT = 0; }
+    else catAirT += dt;
+    const lost = !Number.isFinite(p.x) || !Number.isFinite(p.z) || !Number.isFinite(camBaseY)
+      || camBaseY - playerEye() < CAT_Y - 7.8 || catAirT > 1.05;
+    if (lost && catGroundSpot.f !== null) {
+      window.__catCaught = (window.__catCaught || 0) + 1;   // (for the harness)
+      p.x = catGroundSpot.x; p.z = catGroundSpot.z;
+      st = keepFloorAt(p.x, p.z, catGroundSpot.f + 0.05, CAT_STEP, S) || { f: catGroundSpot.f };
+      camBaseY = st.f + playerEye(); vy = 0; onGround = true; catAirT = 0;
+      knockback.set(0, 0, 0); velocity.set(0, 0, 0);
+      _preMove.set(p.x, 0, p.z);
+    }
   }
   if (st) { catLastFloor = st.f; catLastSpot.x = p.x; catLastSpot.z = p.z; }
   // the floor the CAMERA follows is the blended one: a ramp, not the grid's treads
@@ -59281,6 +59659,15 @@ function wfFinish(skipped) {
   wfRay.k = 0;
   const F = wfFx;
   if (F) { F.beam.visible = F.pool.visible = F.ring.visible = F.motes.visible = false; }
+  /* AND THE SPRAY GOES WITH IT (2026-10-14, the owner: "make the whales splash disappear i can see it from the lighthouse").
+   * `wfUpdateFx` runs only while the take does, and the take ends 4.4 s after the slam with the tail's splash 1.5 s old and
+   * its mist living 3.5–6.5 s: every drop still in the air froze there for good, unfogged, and stood out at sea for the rest
+   * of the game. They are put out with the take. */
+  if (F) {
+    if (F.SP) for (const P of F.SP) P.life = 0;
+    if (F.spray) { const aa = F.spray.geometry.attributes.aA; if (aa) { aa.array.fill(0); aa.needsUpdate = true; } F.spray.visible = false; }
+    if (F.wake) F.wake.visible = false;
+  }
   if (C.harp && !C.harp.rest) { C.harp.rest = true; C.harp.H.position.y = beachGroundAt(C.harp.H.position.x, C.harp.H.position.z) + 0.12; C.harp.H.rotation.set(Math.PI / 2, 0, 0); }
   flashEl.style.opacity = '0'; blackoutEl.style.opacity = '0';
   wbRemoveForGood();
@@ -62796,7 +63183,11 @@ function authorCrawlerRest(u, m, into) {
  * cranks. */
 MUT_ATTACKS.zSwipeR = { wind: 0.44, strike: 0.13, recover: 0.36, hit: 0.55, reach: 3.85, lunge: 1.9, chain: 'zSwipeL', chainP: 0.60, w: 0.24, guardK: 1.0, limbs: [0], stop: 2.95, ease: true };
 MUT_ATTACKS.zSwipeL = { wind: 0.44, strike: 0.13, recover: 0.36, hit: 0.55, reach: 3.85, lunge: 2.15, chain: 'zBite', chainP: 0.55, w: 0.22, guardK: 1.0, limbs: [1], stop: 2.85, ease: true };   // measured: its claw finished 0.86 m off against the right's 0.48, so it comes in nearer
-MUT_ATTACKS.zBite   = { wind: 0.40, strike: 0.12, recover: 0.38, hit: 0.55, reach: 3.45, lunge: 2.3, chain: 'zSwipeR', chainP: 0.45, w: 0.20, guardK: 1.15, plain: true, headR: 1.15, stop: 2.7, ease: true, flat: true };   // measured: with the trunk carried high the head passed 1.82 m from the chest; dropping the posture for the bite brings it down
+MUT_ATTACKS.zBite   = { wind: 0.40, strike: 0.12, recover: 0.38, hit: 0.55, reach: 3.45, lunge: 2.3, chain: 'zSwipeR', chainP: 0.45, w: 0.20, guardK: 1.15, plain: true, headR: 0.6, stop: 2.05, ease: true, flat: true };   // measured: with the trunk carried high the head passed 1.82 m from the chest; dropping the posture for the bite brings it down
+/* AND A BITE IS THE JAWS ON YOU (2026-10-14, the owner: "make the monsters hits look more accurate and readable its such a bad
+ * feeling fight"). Measured on every bite that hurt: his head 0.83–1.07 m short of your face, his body 2.56 m off — a
+ * metre of air that took your health. He comes in closer for it now (stop 2.7 → 2.05) and it lands only with the head
+ * within 0.6 m of you (headR 1.15 → 0.6). His swipes were already honest (the claw 0.23 m off you, median). */
 MUT_ATTACKS.zLunge  = { wind: 0.62, strike: 0.15, recover: 0.48, hit: 0.55, reach: 5.25, lunge: 3.7, chain: 'zBite', chainP: 0.55, w: 0.24, dmg: 2, guardK: 1.35, hold: true, twoHanded: true, limbs: [0, 1], stop: 3.0, ease: true };   // two of your four: the blow you have to step
 MUT_ATTACKS.zPounce = { wind: 0.90, strike: 0.16, recover: 0.44, hit: 0.50, reach: 8.35, lunge: 6.6, chain: 'zSwipeR', chainP: 0.60, w: 0.10, dmg: 2, guardK: 1.60, hold: true, minDist: 4.9, twoHanded: true, limbs: [0, 1], stop: 3.35, ease: true };
 /* THE STANDING TWO. Rising is the wind-up and the hang is the tell; both take
@@ -67808,6 +68199,7 @@ function clearRoomFlags() {
   inUndercroft = false; inBunker = null;
   if (inWhale) { inWhale = false; if (whale) whale.G.visible = false; whaleLeave(); }
   if (inThrone) { inThrone = false; if (thrWorld) thrWorld.visible = false; throneLeave(); }
+  if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
 }
 const ROOM_BACK = {
   /* `spots` are the doors a save can be written at, and each is the SAME
@@ -67826,7 +68218,17 @@ const ROOM_BACK = {
           seat: (p) => { tavLastFloor = p[1] - playerEye(); },
           spots: { tavIn: () => {} } },
   cat:  { grp: () => catWorld, at: () => [CAT_X, CAT_Z], ready: () => catReady, load: () => loadCatacombs(), place: () => placeInCatacombs(),
-          seat: (p) => { catLastFloor = p[1] - playerEye(); catLastSpot.x = p[0]; catLastSpot.z = p[2]; },
+          /* ON THE FLOOR UNDER THE SAVE, NOT WHERE THE CAMERA HAPPENED TO BE (2026-10-14, the owner: "i restarted my
+           * checkpoint in the catacombs and my screen was flashing"). A save is the camera — mid-jump, mid-step off a
+           * ledge, the bob in it — and set down in the air a body over a lower floor fell more than the restore
+           * guard allows, was put back, fell again: three teleports through the black's lifting. Seated on the
+           * floor that is really under the saved spot. */
+          seat: (p) => {
+            const fl = keepFloorAt(p[0], p[2], p[1] - playerEye(), 0.6, CAT_SITE);
+            if (fl) p[1] = fl.f + playerEye();
+            catLastFloor = p[1] - playerEye(); catLastSpot.x = p[0]; catLastSpot.z = p[2];
+            catGroundSpot.x = p[0]; catGroundSpot.z = p[2]; catGroundSpot.f = catLastFloor; catAirT = 0;
+          },
           spots: { catIn: () => {}, catDoorIn: () => placeInsideCatDoor() } },
   dojo: { grp: () => dojoWorld, at: () => [DOJO_X, DOJO_Z], ready: () => dojoReady, load: () => loadDojo(), place: () => placeInDojo(),
           seat: (p) => { dojoLastFloor = p[1] - playerEye(); dojoLastStand = { x: p[0], z: p[2] }; dojoSafe = { x: p[0], z: p[2] }; },
@@ -67865,6 +68267,10 @@ const ROOM_BACK = {
   thr:  { grp: () => thrWorld, at: () => [THR_X, THR_Z], ready: () => thrReady, load: () => { loadC13(); loadThrone(); bwSoon('assets/throne.glb'); },
           place: () => placeInThrone(), seat: (p) => { thrLastFloor = p[1] - playerEye(); thrLastSpot.x = p[0]; thrLastSpot.z = p[2]; },
           spots: { thrIn: () => {} } },
+  // the dungeon behind the pavilion's yard
+  dun:  { grp: () => dunWorld, at: () => [DUN_X, DUN_Z], ready: () => dunReady, load: () => loadDungeon(),
+          place: () => placeInDungeon(), seat: (p) => { dunLastFloor = p[1] - playerEye(); dunLastSpot.x = p[0]; dunLastSpot.z = p[2]; },
+          spots: {} },
 };
 /* AND A RESTORE IS WATCHED FOR THREE SECONDS AFTER IT LANDS. Every way this
  * has failed the owner — a stale room flag, a room that was not really
@@ -70575,7 +70981,15 @@ function updateTavern(dt) {
         const k = Math.cos(off) * ml, a = base + off;
         const nx = _preMove.x + Math.sin(a) * k, nz = _preMove.z + Math.cos(a) * k;
         if (!legal(nx, nz)) continue;
-        p.x = nx; p.z = nz; took = true; break;
+        p.x = nx; p.z = nz; took = true;
+        /* AND THE SLIDE IS WHAT WAS ASKED (2026-10-14, the owner: "i lag walking into the tavern chest room …
+         * like something blocks me"). Walking at the storeroom's wall on a slant, the turn found the slide
+         * along it, the wall's push then put back the hand's breadth the slant had pressed in, and the
+         * no-reversal test below compared the result with the SLANT: slide plus push points away from it,
+         * so the whole frame was thrown out and you stood dead against the wall beside the door (measured:
+         * stopped at x −6.15, 0.54 m short of the jamb, for good). It is measured against the slide now. */
+        _tavWant.set(nx - _preMove.x, 0, nz - _preMove.z);
+        break;
       }
     }
     if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
@@ -73191,6 +73605,15 @@ function umbraMind(u, dt, dist) {
 }
 function umbraProvoke(u) {
   if (u.st.awake) return;
+  /* AND ON HIS THRONE A BLOW DOES NOT SKIP HIS SCENE (2026-10-14, the owner: "the marauders stand up cutscene just didnt
+   * work"). Measured: one hit on him while he sat — a stray swing in the beast's fight, a shot — and he was up at once
+   * on the short roar, the beast still alive beside him, and the take (`startThrCutRise`) never played at all. While the
+   * scene has not reached his fight he does not get up for a blow: with the beast dead it starts his take there and
+   * then, and before that he sits and watches. */
+  if (u.st.thrSeat && inThrone && thrScene.phase < 5) {
+    if (thrScene.phase === 3 && !thrCut && !thrBusy && u.clips && u.clips.uRiseSlow && !frozen()) startThrCutRise();
+    return;
+  }
   u.st.awake = true; u.st.roar = 1.5; u.st.roarClip = 'uStance'; u.st.cool = 0.25; u.st.step = 0;
   u.holdAnim = false;
   /* ON HIS THRONE HE STANDS UP FIRST: the rise is the roar, he does not turn
@@ -73364,6 +73787,11 @@ function loadFort() {
     /* and every program it needs is compiled now, off the driver's own thread,
      * rather than on the frame it first comes over the horizon */
     warmStep('castle compile', () => warmCompile([fortWorld], FORT_X - 8, 1.7, FORT_Z + 70, FORT_X - 8, 4, FORT_Z));
+    /* AND ITS WALL INDEX, ITS TORCHES AND ITS DRESSING ARE BUILT BEHIND THE LOADING SCREEN (2026-10-14, "fix all lag").
+     * The index was built a slice a frame as you came up the beach, and the frame it finished `buildFortTorches` walked
+     * each torch's wall at 5 cm steps — measured with the profiler, a 91 ms frame at z -837, on the walk past the trader.
+     * As a warm step it runs before START (`startLeft` counts the steps). */
+    warmStep('castle walls', () => { while (!fortWallsStep(1e9)) { /* behind the black */ } buildFortTorches(); buildFortDress(); });
   }, undefined, () => {});
 }
 loadFort();                   // queued at its reach like everything else, so it is down and built long before the walk gets there
@@ -73881,7 +74309,7 @@ function updateFort(dt) {
         const k = Math.cos(off) * ml, a = base + off;
         const nx = _preMove.x + Math.sin(a) * k, nz = _preMove.z + Math.cos(a) * k;
         if (!legal(nx, nz)) continue;
-        p.x = nx; p.z = nz; took = true; break;
+        p.x = nx; p.z = nz; took = true; _fortWant.set(nx - _preMove.x, 0, nz - _preMove.z); break;   // (the slide is what was asked: see `updateTavern`)
       }
     }
     if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
@@ -74451,7 +74879,7 @@ function updateC13(dt) {
         const k = Math.cos(off) * ml, a = base + off;
         const nx = _preMove.x + Math.sin(a) * k, nz = _preMove.z + Math.cos(a) * k;
         if (!legal(nx, nz)) continue;
-        p.x = nx; p.z = nz; took = true; break;
+        p.x = nx; p.z = nz; took = true; _c13Want.set(nx - _preMove.x, 0, nz - _preMove.z); break;   // (the slide is what was asked: see `updateTavern`)
       }
     }
     if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
@@ -77763,7 +78191,7 @@ function updateThrone(dt) {
         const k = Math.cos(off) * ml, a = base + off;
         const nx = _preMove.x + Math.sin(a) * k, nz = _preMove.z + Math.cos(a) * k;
         if (!legal(nx, nz)) continue;
-        p.x = nx; p.z = nz; took = true; break;
+        p.x = nx; p.z = nz; took = true; _thrWant.set(nx - _preMove.x, 0, nz - _preMove.z); break;   // (the slide is what was asked: see `updateTavern`)
       }
     }
     if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
@@ -77799,6 +78227,1319 @@ function thrClampPlayer() {
   pushOutOfThrFurn(p, FORT_BODY, feet);
   if (!keepFloorAt(p.x, p.z, feet, FORT_STEP, THR_SITE)) { p.x = thrLastSpot.x; p.z = thrLastSpot.z; }
   return true;
+}
+
+/* =====================================================================
+ * THE DUNGEON BEHIND THE PAVILION (2026-10-14, the owner: "add a door that leads to this castle dungeon
+ * right where this screenshot is make it look like the door used in the 3d model … there should be no
+ * empty walls or textures also cover up the barred window so it is closed. put this character henry in
+ * the cell sitting down and make his mouth move while talking and eyes blink. make it dark and mysterious
+ * like you cant really tell what he looks like … he can be dirty cuz he was a prisoner").
+ * lumoize's "Castle Dungeon" (CC-BY-4.0, `assets/dungeon.glb`, `tools/undercroft_pack.py tavern … --tex 512
+ * --scale 1.15`: a cell behind bars down one side of a corridor with an arched door at each end) and Jungle
+ * Jim's "Henry" (CC-BY-4.0, `assets/henry.glb`: a Character Creator rig, repacked by `tools/henry_pack.py` with
+ * its own node tree and skin — 148 face shapes down to the two blinks and one lip part, the clip and the eye
+ * overlays dropped, spec-gloss made metal-rough, textures 512 and washed, darkened and grimed).
+ * The door is in the pavilion yard's wall on the cliff side (`DUN_DOOR_ANG`, opposite the way in), the
+ * dungeon's own door copied out of the model. The model is a stage set: its corridor has no outer wall,
+ * nothing has a roof and the cell's window opens on the void — the wall and the vault are built in the
+ * model's own stone, the window gets a shutter of its own door's wood behind the bars.
+ * ===================================================================== */
+const DUN_X = 21000, DUN_Y = 700, DUN_Z = 21000;
+const DUN_SPAWN = { x: 1.75, z: 2.55, yaw: 0 };          // inside the +z door, the corridor in front of you (-z), the cell on your left
+const DUN_FOG = { color: new THREE.Color(0x07080a), density: 0.07 };
+const DUN_DOOR_ANG = Math.PI / 2;                         // the pavilion yard's wall, the cliff side
+const DUN_HENRY = { x: -2.17, z: 1.25 };                  // against the cell's back wall (its face at -2.53), beside the window
+let dunWorld = null, dunReady = false, dunWalk = null, dunCells = null, dunWalls = null, dunLamps = [], dunDoorOut = null;
+let inDun = false, dunBusy = false, dunT = 0, dunDir = 1, dunCutDone = false, _dunFogSaved = null;
+let dunLastFloor = null; const dunLastSpot = { x: 0, z: 0 };
+let henry = null;
+const DUN_SITE = {
+  X: DUN_X, Y: DUN_Y, Z: DUN_Z, step: FORT_STEP,
+  get group() { return dunWorld; }, get walk() { return dunWalk; }, get cells() { return dunCells; },
+  get walls() { return dunWalls; }, set walls(v) { dunWalls = v; },
+  get ready() { return dunReady; },
+  // the gate leaves the wall index once it is open, and its threshold is floor (2026-10-14: "make player able to walk in the cell after opening")
+  skip: (mn) => !!(dunGate && dunGate.open && dunGate.swing >= 1 && mn === 'Entrance'),
+  extra: () => (dunGate && dunGate.open ? [{ x0: DUN_X + 0.45, x1: DUN_X + 1.05, z0: DUN_Z - 2.85, z1: DUN_Z - 1.02, top: DUN_Y - 1.265 + 0.005 }] : []),
+  sea: null,
+};
+const dunW = (lx, lz) => ({ x: DUN_X + lx, z: DUN_Z + lz });
+function dunFloorNear(x, z) {
+  const fl = keepCellAt(x, z, DUN_SITE); if (!fl) return null;
+  let best = null;
+  for (let k = 0; k < fl.length; k += 3) if (best === null || fl[k] < best) best = fl[k];
+  return best === null ? null : DUN_Y + best;
+}
+// a triangle-filtered copy of a mesh: the one door of the model's two, say
+function dunPart(mesh, keep) {
+  const src = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const P = src.attributes.position, n = P.count / 3, out = [];
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (let t = 0; t < n; t++) {
+    a.fromBufferAttribute(P, t * 3); b.fromBufferAttribute(P, t * 3 + 1); c.fromBufferAttribute(P, t * 3 + 2);
+    if (keep((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3, (a.z + b.z + c.z) / 3)) out.push(t);
+  }
+  const g = new THREE.BufferGeometry();
+  for (const name of Object.keys(src.attributes)) {
+    const A = src.attributes[name], k = A.itemSize, arr = new A.array.constructor(out.length * 3 * k);
+    out.forEach((t, i) => { for (let v = 0; v < 3; v++) for (let q = 0; q < k; q++) arr[(i * 3 + v) * k + q] = A.array[(t * 3 + v) * k + q]; });
+    g.setAttribute(name, new THREE.BufferAttribute(arr, k));
+  }
+  return g;
+}
+function loadDungeon() {
+  if (dunWorld) return;
+  dunWorld = new THREE.Group(); dunWorld.name = 'dungeon';
+  dunWorld.position.set(DUN_X, DUN_Y, DUN_Z);
+  dunWorld.visible = false;
+  scene.add(dunWorld);
+  bwGlb('assets/dungeon.glb', (gltf) => {
+    const root = gltf.scene;
+    let ex = null;
+    root.traverse((o) => { if (!ex && o.userData && o.userData.bw_walk) ex = o.userData.bw_walk; });
+    if (ex) {
+      dunWalk = typeof ex === 'string' ? JSON.parse(ex) : ex;
+      dunCells = new Map();
+      for (const c of dunWalk.cells) dunCells.set(c[1] * dunWalk.gw + c[0], c[2]);
+    }
+    const mats = {};
+    root.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      const m = o.material;
+      if (!mats[m.name]) {
+        mats[m.name] = m;
+        // METALNESS IS A TRAP: nothing here to reflect, so iron is a rough dark dielectric like the stone
+        m.metalness = 0; m.roughness = Math.max(0.8, m.roughness || 0); m.metalnessMap = null;
+        if (m.color) m.color.multiplyScalar(0.85);
+        // and a floor of its own under the torchlight, off its own map, so a wall a torch does not reach is
+        // dark stone and not a hole
+        if (m.map) { m.emissive = new THREE.Color(0x3a3530); m.emissiveMap = m.map; m.emissiveIntensity = 0.32; }
+        m.needsUpdate = true;
+      }
+    });
+    dunWorld.add(root);
+    dunWorld.updateMatrixWorld(true);
+    const stone = mats.wALLS, wood = mats.Door;
+    /* THE MASONRY'S OWN MAPPING. Off one big triangle of the cell's back wall, its uv as an affine function
+     * of (z, y) — the Jacobian and an origin — so the new corridor wall and the vault carry the same stones at
+     * the same size and the same way up, not a guess at a repeat. */
+    let J = null;
+    root.traverse((o) => {
+      if (!o.isMesh || o.material !== stone || J) return;
+      const g = o.geometry, P = g.attributes.position, U = g.attributes.uv, I = g.index;
+      const tri = I ? (k) => I.getX(k) : (k) => k, n = (I ? I.count : P.count) / 3;
+      const A = new THREE.Vector3(), Bv = new THREE.Vector3(), Cv = new THREE.Vector3(), nr = new THREE.Vector3();
+      let best = 0;
+      for (let t = 0; t < n; t++) {
+        const i0 = tri(t * 3), i1 = tri(t * 3 + 1), i2 = tri(t * 3 + 2);
+        A.fromBufferAttribute(P, i0); Bv.fromBufferAttribute(P, i1); Cv.fromBufferAttribute(P, i2);
+        nr.subVectors(Bv, A).cross(Cv.clone().sub(A));
+        const area = nr.length() / 2;
+        if (area < 0.2 || Math.abs(nr.normalize().x) < 0.97 || A.x > -2.0 || area < best) continue;
+        const e1z = Bv.z - A.z, e1y = Bv.y - A.y, e2z = Cv.z - A.z, e2y = Cv.y - A.y, det = e1z * e2y - e2z * e1y;
+        if (Math.abs(det) < 1e-6) continue;
+        const du1 = U.getX(i1) - U.getX(i0), dv1 = U.getY(i1) - U.getY(i0), du2 = U.getX(i2) - U.getX(i0), dv2 = U.getY(i2) - U.getY(i0);
+        // [du/dz du/dy; dv/dz dv/dy] = [du1 du2; dv1 dv2] · inverse([e1z e2z; e1y e2y])
+        const iz = [e2y / det, -e1y / det], iy = [-e2z / det, e1z / det];
+        J = { uz: du1 * iz[0] + du2 * iz[1], uy: du1 * iy[0] + du2 * iy[1], vz: dv1 * iz[0] + dv2 * iz[1], vy: dv1 * iy[0] + dv2 * iy[1],
+          u0: U.getX(i0), v0: U.getY(i0), z0: A.z, y0: A.y };
+        best = area;
+      }
+    });
+    if (!J) J = { uz: 0.5, uy: 0, vz: 0, vy: 0.5, u0: 0, v0: 0, z0: 0, y0: 0 };
+    const stoneUV = (geo, f) => {          // f(vertex) -> the (z, y) it is mapped by
+      const P = geo.attributes.position, uv = geo.attributes.uv, v = new THREE.Vector3();
+      for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); const [z, y] = f(v); uv.setXY(i, J.u0 + J.uz * (z - J.z0) + J.uy * (y - J.y0), J.v0 + J.vz * (z - J.z0) + J.vy * (y - J.y0)); }
+      uv.needsUpdate = true;
+    };
+    const bb = new THREE.Box3().setFromObject(root), inv = dunWorld.matrixWorld.clone().invert();
+    bb.applyMatrix4(inv);
+    const F = -1.265, TOP = bb.max.y, X0 = bb.min.x, X1 = bb.max.x, Z0 = bb.min.z, Z1 = bb.max.z;
+    // the corridor's outer wall, which the model never had
+    { const g = new THREE.PlaneGeometry(Z1 - Z0, TOP - F + 0.1); g.rotateY(-Math.PI / 2); g.translate(X1 - 0.01, (F + TOP) / 2, (Z0 + Z1) / 2);
+      stoneUV(g, (v) => [v.z, v.y]); dunWorld.add(new THREE.Mesh(g, stone)); }
+    // and the vault over everything, a little dropped so it meets every wall's top
+    { const g = new THREE.PlaneGeometry(X1 - X0 + 0.2, Z1 - Z0 + 0.2); g.rotateX(Math.PI / 2); g.translate((X0 + X1) / 2, TOP - 0.02, (Z0 + Z1) / 2);
+      stoneUV(g, (v) => [v.z, v.x]); dunWorld.add(new THREE.Mesh(g, stone)); }
+    // the window: a shutter of the door's own boards, shut behind the bars
+    root.traverse((o) => {
+      if (!o.isMesh || o.material !== mats.Window_Bars) return;
+      const wb = new THREE.Box3().setFromObject(o).applyMatrix4(inv);
+      const sh = new THREE.Mesh(new THREE.BoxGeometry(0.05, wb.max.y - wb.min.y + 0.12, wb.max.z - wb.min.z + 0.12), wood);
+      sh.position.set(wb.min.x - 0.06, (wb.min.y + wb.max.y) / 2, (wb.min.z + wb.max.z) / 2);
+      dunWorld.add(sh);
+    });
+    // the dark: a guttering light at the far end of the corridor, and almost nothing in the cell
+    { const L = new THREE.PointLight(0xff8a3a, 7.5, 11, 1.5); L.position.set(2.25, 0.85, -3.2); L.userData.lpAlways = 12; dunWorld.add(L); dunLamps.push({ L, base: 7.5, ph: 0 }); }
+    { const L = new THREE.PointLight(0xff9a50, 2.4, 6, 1.6); L.position.set(2.3, 1.1, 3.0); L.userData.lpAlways = 7; dunWorld.add(L); dunLamps.push({ L, base: 2.4, ph: 2.1 }); }
+    // and the cell's only light, cold, low and behind him, through the shutter's cracks: an edge round a shape, not a face
+    { const L = new THREE.PointLight(0x7f93b8, 2.6, 3.0, 1.6); L.position.set(-2.25, 0.25, 2.35); L.userData.lpAlways = 5; dunWorld.add(L); dunLamps.push({ L, base: 2.6, ph: 0, steady: true }); }
+    // the way out: the door you came in by
+    const q = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.4, 0.5), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+    q.position.set(1.62, F + 1.2, Z1 - 0.75); q.name = 'hitProxy'; q.visible = false; q.userData.bwGhost = true;
+    dunWorld.add(q);
+    addInteractable(q, 'Leave', 'default', { mid: true, far: 3.4, when: () => inDun && !dunBusy, onActivate: () => startDungeon(-1) });
+    // the door itself, for the pavilion: the one at +z, cut out of the pair and stood on its own
+    root.traverse((o) => {
+      if (!o.isMesh || o.material !== wood || dunDoorOut) return;
+      o.updateMatrixWorld(true);
+      const M = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+      const g = dunPart(o, (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(M).z > 0);
+      g.applyMatrix4(M);
+      g.computeBoundingBox();
+      const c = g.boundingBox.getCenter(new THREE.Vector3());
+      g.translate(-c.x, -g.boundingBox.min.y, -c.z);
+      dunDoorOut = { geo: g, mat: wood, size: g.boundingBox.getSize(new THREE.Vector3()) };
+    });
+    placeDunDoor();
+    buildDunGate(root, mats);
+    loadHenry();
+    dunReady = true;
+    warmStep('dungeon compile', () => warmCompile([dunWorld], DUN_X + DUN_SPAWN.x, DUN_Y + 0.5, DUN_Z + DUN_SPAWN.z, DUN_X, DUN_Y, DUN_Z - 3));
+  }, undefined, () => {});
+}
+/* THE DOOR IN THE PAVILION'S YARD. The dungeon's own door, flat against the yard wall's inside at the cliff
+ * side (the wall is found by a ray out from the column, so the door sits on the plaster, not in it). */
+let dunDoorMesh = null;
+function placeDunDoor() {
+  if (dunDoorMesh || !dunDoorOut) return;
+  const D = dunDoorOut, g = mushHouse.group;
+  g.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(), dir = new THREE.Vector3(Math.sin(DUN_DOOR_ANG), 0, Math.cos(DUN_DOOR_ANG));
+  const o = new THREE.Vector3(MUSH_X + dir.x * (MUSH.COL_R + 0.4), MUSH.PLAT_TOP + 1.2, MUSH_Z + dir.z * (MUSH.COL_R + 0.4));
+  ray.set(o, dir); ray.far = 8;
+  const ms = []; g.traverse((m) => { if (m.isMesh && m.name !== 'hitProxy') ms.push(m); });
+  const h = ray.intersectObjects(ms, false)[0];
+  const r = h ? h.distance + MUSH.COL_R + 0.4 : MUSH.WALL_R;
+  const w = new THREE.Group();
+  // the yard is lit by the moon and nothing else: the wood carries a little of its own map as glow, as the
+  // pavilion's scans do (a dungeon door lit for a dungeon's torches is a black slab out here)
+  const dm = D.mat.clone(); dm.emissive = new THREE.Color(0x6e5a48); dm.emissiveMap = dm.map; dm.emissiveIntensity = 0.55;
+  const door = new THREE.Mesh(D.geo, dm);
+  // the model's door faces along x; it is turned to face into the yard (toward the column)
+  door.rotation.y = D.size.x < D.size.z ? 0 : Math.PI / 2;
+  w.add(door);
+  // a dark reveal BEHIND it, a hand wider all round, so it reads as set into the wall
+  const thick = Math.min(D.size.x, D.size.z), wide = Math.max(D.size.x, D.size.z);
+  const rv = new THREE.Mesh(new THREE.BoxGeometry(0.04, D.size.y + 0.14, wide + 0.14), new THREE.MeshStandardMaterial({ color: 0x0d0c0b, roughness: 1, metalness: 0 }));
+  rv.position.set(thick / 2 + 0.03, (D.size.y + 0.14) / 2 - 0.07, 0); w.add(rv);
+  w.position.set(MUSH_X + dir.x * (r - Math.min(D.size.x, D.size.z) / 2 - 0.08), MUSH.PLAT_TOP - 0.02, MUSH_Z + dir.z * (r - Math.min(D.size.x, D.size.z) / 2 - 0.08));
+  w.rotation.y = Math.atan2(dir.x, dir.z) - Math.PI / 2;      // its +x out into the wall, its face to the yard
+  scene.add(w); dunDoorMesh = w;
+  farProps.push({ obj: w, z: MUSH_Z, d: 320 });
+  const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.3, 1.5), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  p.position.set(-0.2, 1.15, 0); p.name = 'hitProxy'; p.visible = false; w.add(p);
+  addInteractable(p, 'Open the door', 'default', { mid: true, far: 3.2, when: () => !inRoom() && !dunBusy, onActivate: () => startDungeon(1) });
+  dunDoorMesh.userData.r = r;
+}
+let dunTo = null;
+function startDungeon(dir) {
+  if (dunBusy || frozen()) return;
+  if (dir > 0 && !dunReady) { loadDungeon(); return; }
+  dunBusy = true; dunDir = dir; dunT = 0; dunCutDone = false;
+  blocking = false;
+  try { sfxTavernDoor(); } catch (e) {}
+}
+function updateDungeonCut(dt) {
+  if (!dunBusy) return;
+  dunT += dt;
+  const OUT = 0.55, HOLD = 0.5, IN = 0.9, D = OUT + HOLD + IN, t = dunT;
+  const black = t < OUT ? smooth01(0.04, OUT, t) : t < OUT + HOLD ? 1 : 1 - smooth01(OUT + HOLD, D, t);
+  blackoutEl.style.opacity = black.toFixed(3);
+  if (!dunCutDone && t >= OUT + 0.05) {
+    dunCutDone = true;
+    if (dunDir > 0) placeInDungeon(); else placeOutOfDungeon();
+    autosaveNow();
+  }
+  if (t >= D) { dunBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
+}
+function dungeonEnter() {
+  if (!_dunFogSaved) {
+    _dunFogSaved = { color: scene.fog.color.clone(), density: scene.fog.density, sky: sky.visible || !!(hallHid && hallHid.includes(sky)) };
+    scene.fog.color.copy(DUN_FOG.color); scene.fog.density = DUN_FOG.density; sky.visible = false;
+  }
+  setSkyDuck(0.85);
+}
+function dungeonLeave() {
+  if (_dunFogSaved) {
+    scene.fog.color.copy(_dunFogSaved.color); scene.fog.density = _dunFogSaved.density; sky.visible = _dunFogSaved.sky;
+    _dunFogSaved = null;
+  }
+  setSkyDuck(0);
+}
+function placeInDungeon() {
+  inC13 = false; inFort = false; onIsle = false; insideTower = false; isleOnGallery = false;
+  mushWhere = 'out'; mushInYard = false;
+  inDun = true;
+  dunWorld.visible = true;
+  dungeonEnter();
+  try { renderer.compile(dunWorld, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  const o = dunW(DUN_SPAWN.x, DUN_SPAWN.z);
+  const f = dunFloorNear(o.x, o.z) ?? (DUN_Y - 1.265);
+  groundY = f; dunLastFloor = f; dunLastSpot.x = o.x; dunLastSpot.z = o.z;
+  camera.position.set(o.x, f + playerEye(), o.z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(0.0, DUN_SPAWN.yaw, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
+  _preMove.set(camera.position.x, 0, camera.position.z);
+  if (!dunWalls) while (!fortWallsStep(1e9, DUN_SITE)) { /* behind the black */ }
+}
+// back out into the pavilion's yard, a stride in front of the door, facing the column
+function placeOutOfDungeon() {
+  inDun = false;
+  if (dunWorld) dunWorld.visible = false;
+  dungeonLeave();
+  const r = ((dunDoorMesh && dunDoorMesh.userData.r) || MUSH.WALL_R) - 1.1;
+  const x = MUSH_X + Math.sin(DUN_DOOR_ANG) * r, z = MUSH_Z + Math.cos(DUN_DOOR_ANG) * r;
+  mushWhere = 'out'; mushInYard = true;     // (the yard stands past the cliff line: without this the beach's clamp takes you to x 14.2, inside the column)
+  groundY = MUSH.PLAT_TOP;
+  camera.position.set(x, MUSH.PLAT_TOP + playerEye(), z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(-0.02, Math.atan2(Math.sin(DUN_DOOR_ANG), Math.cos(DUN_DOOR_ANG)), 0, lookEuler.order);   // (facing back toward the column)
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
+  _preMove.set(camera.position.x, 0, camera.position.z);
+}
+const _dunWant = new THREE.Vector3();
+function updateDungeon(dt) {
+  if (!dunWorld) {
+    // fetched from the pavilion's reach: it is the pavilion's back room
+    if (Math.abs(camera.position.z - MUSH_Z) < 160 && Math.abs(camera.position.x - MUSH_X) < 120) loadDungeon();
+    return;
+  }
+  dunWorld.visible = inDun;
+  if (henry) updateHenry(dt);
+  if (!inDun || !dunReady) return;
+  const t = performance.now() * 0.001;
+  for (const l of dunLamps) l.L.intensity = l.steady ? l.base : l.base * (0.78 + 0.12 * Math.sin(t * 6.3 + l.ph) + 0.1 * Math.sin(t * 13.1 + l.ph * 2));
+  if (dunBusy && !dunCutDone) return;
+  if (!dunWalls) { fortWallsStep(1e9, DUN_SITE); return; }
+  const p = camera.position, S = DUN_SITE;
+  _dunWant.set(p.x - _preMove.x, 0, p.z - _preMove.z);
+  let feet = camBaseY - playerEye();
+  if (onGround && dunLastFloor !== null && feet < dunLastFloor) feet = dunLastFloor;
+  const up = !onGround ? FORT_AIR : FORT_STEP;
+  const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80, S)
+    || keepHitsWall(x0, z0, x1, z1, feet + 1.25, S) || keepHitsWall(x0, z0, x1, z1, feet + 1.68, S);
+  const legal = (x, z) => keepFloorAt(x, z, feet, up, S) && !hits(_preMove.x, _preMove.z, x, z) && dunOpen(x, z);
+  let st = legal(p.x, p.z);
+  if (!st) {
+    const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
+    let took = false;
+    if (ml > 1e-4) {
+      const base = Math.atan2(mx, mz);
+      for (const off of [0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4]) {
+        const k = Math.cos(off) * ml, a = base + off;
+        const nx = _preMove.x + Math.sin(a) * k, nz = _preMove.z + Math.cos(a) * k;
+        if (!legal(nx, nz)) continue;
+        p.x = nx; p.z = nz; took = true; break;
+      }
+    }
+    if (!took) { p.x = _preMove.x; p.z = _preMove.z; }
+    st = keepFloorAt(p.x, p.z, feet, up, S);
+  }
+  pushOutOfKeep(p, FORT_BODY, feet, up, S);
+  keepWallPush(p, FORT_BODY, feet, S, up);
+  dunKeepOut(p);
+  st = keepFloorAt(p.x, p.z, feet, up, S) || st;
+  if (!st) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+  if (st) { dunLastFloor = st.f; dunLastSpot.x = p.x; dunLastSpot.z = p.z; }
+  else if (Math.hypot(p.x - dunLastSpot.x, p.z - dunLastSpot.z) > 0.6) { p.x = dunLastSpot.x; p.z = dunLastSpot.z; }
+  groundY = st ? st.f : (dunLastFloor === null ? DUN_Y - 1.265 : dunLastFloor);
+}
+/* THE BARS ARE A WALL. The cell is behind them (x < 0.79 in the room's frame) and you are in the corridor:
+ * whatever the walk grid makes of a row of thin bars, the corridor's side of them is as far as you go. */
+const DUN_BARS_X = 0.79 + FORT_BODY;
+const dunMinX = () => (dunGate && dunGate.open && dunGate.swing >= 1 ? -2.53 + FORT_BODY : DUN_BARS_X);   // the cell, once its gate is open
+const dunOpen = (x, z) => x - DUN_X >= dunMinX() - 0.02 && x - DUN_X <= 2.77 - FORT_BODY && Math.abs(z - DUN_Z) <= 4.16 - FORT_BODY;
+function dunKeepOut(p) {
+  const lx = p.x - DUN_X, lz = p.z - DUN_Z;
+  p.x = DUN_X + THREE.MathUtils.clamp(lx, dunMinX(), 2.77 - FORT_BODY);
+  p.z = DUN_Z + THREE.MathUtils.clamp(lz, -4.16 + FORT_BODY + 0.4, 4.16 - FORT_BODY - 0.4);
+}
+function dunClampPlayer() {
+  if (!inDun || !dunWalls) return false;
+  const p = camera.position;
+  let feet = camBaseY - playerEye();
+  if (dunLastFloor !== null && feet < dunLastFloor) feet = dunLastFloor;
+  pushOutOfKeep(p, FORT_BODY, feet, FORT_STEP, DUN_SITE);
+  keepWallPush(p, FORT_BODY, feet, DUN_SITE, FORT_STEP);
+  dunKeepOut(p);
+  if (!keepFloorAt(p.x, p.z, feet, FORT_STEP, DUN_SITE)) { p.x = dunLastSpot.x; p.z = dunLastSpot.z; }
+  return true;
+}
+/* ---- HENRY, IN THE CELL ------------------------------------------------
+ * Sat on the stone against the back wall, knees up, forearms over them, head down. His pose is put on his
+ * bones once (aimed limb by limb in his own frame, so it does not matter how the rig's axes run) and kept;
+ * on top of it he breathes, he blinks (both lids, now and then twice), and while his line is being typed
+ * his jaw works and his lips part on a run of syllables, and his head comes up a little toward you. Lit
+ * by almost nothing: the corridor's light a cell away and a cold breath of it from the shutter's side. */
+const HENRY_SCRIPT = {
+  start: {
+    text: 'HEY! HELP!',
+    choices: [{ label: 'Who did this?', to: 'who' }, { label: 'Help yourself, I’m in a rush.', to: 'rush' }],
+  },
+  rush: { text: 'CANT YOU SEE IM TRAPPED?! FUCK YOU THEN!', choices: [], hint: 'click to leave', end: false },
+  who: {
+    text: 'Some freak injecting himself with horseshoe crab blood. He keeps rambling on about it making him immortal.',
+    choices: [{ label: 'Where is he?', to: 'where' }],
+  },
+  where: {
+    text: 'He said he was going to the tavern but what does that matter LET ME OUT!',
+    choices: [{ label: 'How would I know where the key is?', to: 'key' }],
+  },
+  key: {
+    text: 'He was actually such a dumb ass he told me. He said he gave a key to his dealer. Who knows where he is but please search for him before I end up like the others. But before you go, you aren’t like them are you? Collecting jars of that shit?',
+    choices: [{ label: 'No (Lie)', to: 'no' }, { label: 'Yes', to: 'yes' }],
+  },
+  no: { text: 'Thank god, I’ve watched him take this stuff everyday until his skin changed color and peeled off. At least some of us are smarter than that.', choices: [], hint: 'click to leave', end: false },
+  yes: { text: 'It won’t help you. Nothing will. You’ll wither away just like him.', choices: [], hint: 'click to leave', end: false },
+};
+const HENRY_NPC = { name: 'Prisoner', script: HENRY_SCRIPT, sprite: null, headY: 0, fov: 24 };
+function loadHenry() {
+  if (henry) return;
+  bwGlb('assets/henry.glb', (gltf) => {
+    const H = gltf.scene, w = new THREE.Group(), stand = new THREE.Group();
+    // (the file stands him up itself — its own root's turn — facing +z, his left at +x)
+    stand.add(H); w.add(stand);
+    w.rotation.y = Math.PI / 2;              // and turned to face the bars (+x)
+    w.position.set(DUN_HENRY.x, -1.265, DUN_HENRY.z);
+    dunWorld.add(w);
+    const B = {}, morph = [];
+    // the bones of the skeleton the body is skinned to — the file carries a second, empty copy of the rig
+    // under the same names (the FBX's own armature), every bone of it at the origin
+    let sk = null; H.traverse((o) => { if (o.isSkinnedMesh && !sk) sk = o; });
+    if (sk) for (const bn of sk.skeleton.bones) B[bn.name.replace(/_\d+$/, '')] = bn;
+    H.traverse((o) => {
+      if (o.isMesh) {
+        o.frustumCulled = false;
+        const m = o.material;
+        if (m) { m.metalness = 0; m.roughness = Math.max(0.75, m.roughness || 0); if (m.color) m.color.multiplyScalar(0.82); m.envMapIntensity = 0; m.needsUpdate = true; }
+        if (o.morphTargetDictionary) morph.push(o);
+      }
+    });
+    henry = { w, H, B, morph, t: 0, blink: 2 + Math.random() * 2, blinkT: -1, syl: 0, jaw0: B.CC_Base_JawRoot ? B.CC_Base_JawRoot.quaternion.clone() : null, head: B.CC_Base_Head, talk: 0 };
+    henry.bones = sk ? sk.skeleton.bones.slice() : [];
+    henry.rest = new Map(henry.bones.map((b) => [b, b.quaternion.clone()]));
+    henry.bind = new Map(henry.bones.map((b) => [b, { q: b.quaternion.clone(), p: b.position.clone() }])); henry.sk = sk;   // for the mocap (`henryMocap`)
+    HENRY_NPC.head = B.CC_Base_Head || null;
+    henryPose();
+    if (henryFree === 2) w.visible = false;
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    p.name = 'hitProxy'; p.visible = false; p.position.set(0, 0.6, 0.15);
+    const pg = new THREE.Group(); pg.add(p); w.add(pg);        // (aimed at by the sphere alone: a skinned body is not raycast every frame)
+    addInteractable(pg, 'Talk to the prisoner', 'default', {
+      mid: true, far: 4.6,
+      when: () => inDun && !dunBusy && !dialogOpen && henryFree === 0,
+      onActivate: () => { HENRY_NPC.sprite = henry.head || w; startDialog('start', HENRY_NPC); },
+    });
+  }, undefined, () => {});
+}
+/* HENRY MOVES LIKE A MAN (2026-10-14, the owner: "make henry move more natural his limbs are all stiff make him move
+ * better and improve his animations"). Getting up, walking, running and standing were poses aimed on his bones by
+ * hand, and a pose aimed by hand is a mannequin: straight limbs swinging from the joints, nothing in the trunk, no
+ * weight. He is on Wong's Male Locomotion Pack now — the same motion capture the farmers walk on — retargeted onto
+ * his Character Creator rig by `ntarRetarget` (the rotation each bone has UNDERGONE, applied to his own bind): the
+ * pack's 8.3 s standing idle (weight shifting, breathing, the head going round), its walk and its run. The map is
+ * Mixamo's naming onto CC's; his rig has a pelvis under the hip and a second neck twist, which ride their parents.
+ * The mixer is rooted on his SKINNED MESH: the file carries a second, empty copy of the rig under the same names,
+ * and a binding resolved by name from the scene finds whichever comes first — off a skinned root, three resolves
+ * through `skeleton.getBoneByName`, the real bones. The face (blink, jaw) is laid on after the mixer each frame. */
+const HENRY_RAG = { Hips: 'Hip', Spine: 'Waist', Spine1: 'Spine01', Spine2: 'Spine02', Neck: 'NeckTwist01', Head: 'Head',
+  LeftShoulder: 'L_Clavicle', LeftArm: 'L_Upperarm', LeftForeArm: 'L_Forearm', LeftHand: 'L_Hand',
+  RightShoulder: 'R_Clavicle', RightArm: 'R_Upperarm', RightForeArm: 'R_Forearm', RightHand: 'R_Hand',
+  LeftUpLeg: 'L_Thigh', LeftLeg: 'L_Calf', LeftFoot: 'L_Foot', LeftToeBase: 'L_ToeBase',
+  RightUpLeg: 'R_Thigh', RightLeg: 'R_Calf', RightFoot: 'R_Foot', RightToeBase: 'R_ToeBase' };
+function henryMocap(h) {
+  if (h.mixer) return true;
+  if (!wongMoves || !wongMoves.clips || !h.sk || !h.bind) return false;
+  const bones = h.bones, nm = {};
+  for (const b of bones) nm[b.name.replace(/_\d+$/, '')] = b.name;
+  const rag = {};
+  for (const mx in HENRY_RAG) { const n = nm['CC_Base_' + HENRY_RAG[mx]]; if (n) rag['Character1_' + mx] = n; }
+  const hip = h.B.CC_Base_Hip; if (!hip) return false;
+  // at his bind: the hip's place, and the world's up in its parent's frame per metre (as `poseRig` reads them)
+  const held = new Map(bones.map((b) => [b, { q: b.quaternion.clone(), p: b.position.clone() }]));
+  for (const b of bones) { const k = h.bind.get(b); b.quaternion.copy(k.q); b.position.copy(k.p); }
+  h.w.updateMatrixWorld(true);
+  const hipPos = hip.position.clone(), pq = (hip.parent || hip).getWorldQuaternion(new THREE.Quaternion()).invert(), ps = new THREE.Vector3();
+  (hip.parent || hip).getWorldScale(ps);
+  const hipUp = new THREE.Vector3(0, 1, 0).applyQuaternion(pq).normalize().divideScalar(Math.max(1e-6, ps.y));
+  for (const [b, k] of held) { b.quaternion.copy(k.q); b.position.copy(k.p); }
+  h.w.updateMatrixWorld(true);
+  const u = { kind: { rag }, clipSpeed: {}, clipTravel: {}, clipAz: {} };
+  const W = wongMoves.clips, pk = { fps: wongMoves.fps, clips: { hIdle: W.idle, hWalk: W.walk, hRun: W.run } };
+  let clips;
+  try { clips = ntarRetarget(u, h.H, bones, h.bind, { hip }, hipUp, hipPos, pk); } catch (e) { console.warn('henry mocap', e); return false; }
+  h.mixer = new THREE.AnimationMixer(h.sk); h.A = {};
+  for (const c of clips) h.A[c.name] = h.mixer.clipAction(c);
+  h.clipSpeed = u.clipSpeed; h.cur = null;
+  return true;
+}
+// cross-fade his mixer onto `name`, at `ts`
+function henryPlay(h, name, fade = 0.35, ts = 1) {
+  const a = h.A && h.A[name]; if (!a) return null;
+  a.timeScale = ts;
+  if (h.cur === a) return a;
+  a.reset(); a.setEffectiveWeight(1); a.play();
+  if (h.cur) h.cur.crossFadeTo(a, fade, false);
+  h.cur = a;
+  return a;
+}
+// the pose a clip holds at time t, read off the bones (mixer stopped after)
+function henrySample(h, name, t = 0) {
+  const a = h.A && h.A[name]; if (!a) return null;
+  h.mixer.stopAllAction(); a.reset(); a.play(); a.time = t; h.mixer.update(0);
+  const Q = new Map(h.bones.map((b) => [b, b.quaternion.clone()]));
+  const P = h.B.CC_Base_Hip.position.clone();
+  h.mixer.stopAllAction(); h.cur = null;
+  return { Q, P };
+}
+// aim a bone so the line to its child points along `dir` (in Henry's own frame: +z forward, +y up, +x his left)
+const _hpA = new THREE.Vector3(), _hpB = new THREE.Vector3(), _hpQ = new THREE.Quaternion(), _hpP = new THREE.Quaternion(), _hpW = new THREE.Quaternion();
+function henryAim(bone, child, dir, h = henry) {
+  if (!bone || !child) return;
+  h.w.updateMatrixWorld(true);
+  bone.getWorldPosition(_hpA); child.getWorldPosition(_hpB);
+  const cur = _hpB.sub(_hpA).normalize();
+  const want = dir.clone().normalize().applyQuaternion(h.w.getWorldQuaternion(_hpW));
+  _hpQ.setFromUnitVectors(cur, want);
+  bone.getWorldQuaternion(_hpW); _hpW.premultiply(_hpQ);
+  bone.parent.getWorldQuaternion(_hpP).invert();
+  bone.quaternion.copy(_hpP.multiply(_hpW));
+  bone.updateMatrixWorld(true);
+}
+const HENRY_POSE = {
+  thigh: [0.13, 0.42, 0.9], calf: [0.04, -0.78, 0.62],
+  spine: [0, 0.99, -0.1], neck: [0, 0.82, 0.57],     // the back on the wall, the head hung
+  upper: [0.18, -0.62, 0.76], fore: [-0.42, -0.25, 0.87],
+};
+function henryPose() {
+  const h = henry, B = h.B, V = (a, sx = 1) => new THREE.Vector3(a[0] * sx, a[1], a[2]);
+  for (const [s, sx] of [['L', 1], ['R', -1]]) {
+    henryAim(B[`CC_Base_${s}_Thigh`], B[`CC_Base_${s}_Calf`], V(HENRY_POSE.thigh, sx));
+    henryAim(B[`CC_Base_${s}_Calf`], B[`CC_Base_${s}_Foot`], V(HENRY_POSE.calf, sx));
+  }
+  henryAim(B.CC_Base_Spine01, B.CC_Base_Spine02, V(HENRY_POSE.spine));
+  henryAim(B.CC_Base_Spine02, B.CC_Base_NeckTwist01, V(HENRY_POSE.spine));
+  henryAim(B.CC_Base_NeckTwist01, B.CC_Base_Head, V(HENRY_POSE.neck));
+  for (const [s, sx] of [['L', 1], ['R', -1]]) {
+    henryAim(B[`CC_Base_${s}_Upperarm`], B[`CC_Base_${s}_Forearm`], V(HENRY_POSE.upper, sx));
+    henryAim(B[`CC_Base_${s}_Forearm`], B[`CC_Base_${s}_Hand`], V(HENRY_POSE.fore, sx));
+  }
+  // sat on the floor: the pelvis lowered onto the stone
+  h.w.updateMatrixWorld(true);
+  const pv = (B.CC_Base_Pelvis || B.CC_Base_Hip).getWorldPosition(new THREE.Vector3());
+  const lp = dunWorld.worldToLocal(pv.clone());
+  h.w.position.y += (-1.265 + 0.14) - lp.y;
+  h.neck0 = B.CC_Base_NeckTwist01 ? B.CC_Base_NeckTwist01.quaternion.clone() : null;
+  h.head0 = B.CC_Base_Head ? B.CC_Base_Head.quaternion.clone() : null;
+  h.spine0 = B.CC_Base_Spine02 ? B.CC_Base_Spine02.quaternion.clone() : null;
+}
+const _hnX = new THREE.Vector3(1, 0, 0), _hnQ = new THREE.Quaternion();
+function henryMorph(name, v, h = henry) { for (const m of h.morph) { const i = m.morphTargetDictionary[name]; if (i !== undefined) m.morphTargetInfluences[i] = v; } }
+// the face, on any copy of him (the cell's, the jetty's)
+function henryFace(h, dt, talking) {
+  // the blink: both lids, a little over a tenth of a second, sometimes twice
+  h.blink -= dt;
+  if (h.blink <= 0 && h.blinkT < 0) { h.blinkT = 0; h.blink = 1.8 + Math.random() * 3.6; h.twice = Math.random() < 0.2; }
+  let lid = 0;
+  if (h.blinkT >= 0) {
+    h.blinkT += dt;
+    const T = 0.14; lid = Math.sin(Math.PI * Math.min(1, h.blinkT / T));
+    if (h.blinkT > T) { if (h.twice) { h.twice = false; h.blinkT = -0.08; } else h.blinkT = -1; }
+  } else if (h.blinkT < -0.5) { /* idle */ } else if (h.blinkT < 0 && h.blinkT > -1) { h.blinkT += dt; if (h.blinkT >= 0) h.blinkT = 0; }
+  henryMorph('blinkL', lid, h); henryMorph('blinkR', lid, h);
+  // the mouth: a run of syllables while the line types, shut between
+  if (talking) { h.syl += dt * (7 + 3 * Math.sin(h.t * 1.7)); }
+  const open = talking ? Math.max(0, Math.sin(h.syl)) * (0.55 + 0.45 * Math.sin(h.syl * 0.37 + 1.3)) : 0;
+  h.open = (h.open || 0) + (open - (h.open || 0)) * Math.min(1, dt * 18);
+  if (h.jaw0 && h.B.CC_Base_JawRoot) { h.B.CC_Base_JawRoot.quaternion.copy(h.jaw0); h.B.CC_Base_JawRoot.rotateZ(0.26 * h.open); }
+  henryMorph('lips', 0.55 * h.open, h);
+}
+function updateHenry(dt) {
+  const h = henry; if (!inDun) return;
+  h.t += dt;
+  const freeDrives = h.free ? updateHenryFree(dt) : (henryFree === 2);
+  const talking = dialogOpen && dialogScript === HENRY_SCRIPT && !!typeFull;
+  h.talk += ((dialogOpen && dialogScript === HENRY_SCRIPT ? 1 : 0) - h.talk) * Math.min(1, dt * 3);
+  henryFace(h, dt, talking);
+  // breath, and the head lifting toward you while he speaks (sat in the cell only: on his feet the walk owns the body)
+  if (freeDrives || h.free) return;
+  const br = Math.sin(h.t * 1.35);
+  if (h.spine0) { h.B.CC_Base_Spine02.quaternion.copy(h.spine0); h.B.CC_Base_Spine02.rotateX(0.025 * br); }
+  if (h.neck0) { h.B.CC_Base_NeckTwist01.quaternion.copy(h.neck0); h.B.CC_Base_NeckTwist01.rotateX(-0.38 * h.talk + 0.03 * Math.sin(h.t * 0.43)); }
+}
+
+/* ---- THE CELL KEY, AND HENRY LET OUT (2026-10-14, the owner: "make the dealer drop the key to henrys cell and
+ * use the drop sound/music we have for the octopus ring. make it noticeable … when you use the key on the cell
+ * door make henry stand up and walk over to you and go 'YOU FOUND IT!' after you skip that dialog he runs out
+ * the door to the beach and dissapears"). The Dealer gave it to him, Henry says, and it is on him: it comes off
+ * his body as the Pavilion key comes off the well man's — tossed, the octopus ring's sting, a big glint and a
+ * column of light. The cell's gate (`Entrance` in the model) swings on a hinge at its far end; Henry has no
+ * clips, so getting up, walking and running are poses driven on his bones (`henryAim`, the way he sits). */
+const cellKeyModel = new THREE.Group();
+function fillCellKey() {
+  if (cellKeyModel.children.length || !keyModel.children.length) return false;
+  const src = keyModel.children[0];
+  const m = new THREE.Mesh(src.geometry, src.material.clone());
+  m.material.emissive = new THREE.Color(0xc29a5c); m.material.emissiveIntensity = 1.0;   // old brass, lifted to be seen
+  m.scale.copy(src.scale);
+  cellKeyModel.add(m);
+  return true;
+}
+const cellKeyItem = {
+  id: 'cellKey', name: 'Cell key', desc: 'It was on the Dealer. Heavy brass, a long plain bit — a cell door, somewhere.', icon: makeKeyIcon(),
+  use: () => toggleEquip(cellKeyItem),
+};
+holdable(cellKeyItem, cellKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
+const cellKey = { state: 0, x: 0, y: 0, z: 0, world: null, prop: null };     // 0 on him, 1 lying where he fell, 2 taken
+function cellKeyLie(x, y, z, quiet, fromY) {
+  const fill = () => { if (!cellKeyModel.children.length && !fillCellKey()) setTimeout(fill, 1500); };
+  fill();
+  cellKey.x = x; cellKey.y = y; cellKey.z = z; cellKey.state = 1;
+  const W = cellKey.world || (cellKey.world = new THREE.Group());
+  if (!W.children.includes(cellKeyModel)) W.add(cellKeyModel);
+  cellKeyModel.rotation.set(Math.PI / 2, 0, 1.1); cellKeyModel.position.set(0, 0, 0);
+  const fl = bunkerFloorAt(x, z, y + 0.5);
+  W.position.set(x, (fl === null ? y : fl) + 0.012, z);
+  if (!W.parent) scene.add(W);
+  if (!quiet && fromY !== undefined) {
+    W.position.y = fromY;
+    const kp = new PhysProp(W, { radius: 0.05, restH: 0.015, bounce: 0.25, friction: 0.65 });
+    tossDrop(kp, 3.0, 0.35); kp.angVel.set(0, 5, 0);
+    kp.onImpact = () => { cellKey.x = W.position.x; cellKey.y = W.position.y; cellKey.z = W.position.z; };
+    cellKey.prop = kp;
+  }
+  if (!quiet && !applyingSave && !replaying) playSample('ringDrop', 1.0);       // the octopus ring's own sting
+  if (!W.getObjectByName('hitProxy')) {
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; W.add(hit);
+    addItemShine(W, { size: 2.0, height: 0.5, strength: 4.2, lift: 1.6, through: 0.7, beacon: 1 });
+  }
+  addInteractable(W, 'Take the Cell key', 'inventory', {
+    onActivate: () => {
+      if (cellKey.prop) { cellKey.prop.dead = true; cellKey.prop = null; }
+      scene.remove(W); removeInteractable(W); hovered = null;
+      cellKey.state = 2;
+      addToInventory(cellKeyItem);
+      sfxThud(0.03);
+      setTimeout(() => { if (!dying) autosaveNow(); }, 400);
+    },
+  });
+  if (!quiet) setTimeout(() => { if (!dying) autosaveNow(); }, 1500);
+}
+// off the Dealer's body, the moment he is down for good (never on a restore: `dealerWon` is set there first)
+function dealerDropsCellKey() {
+  if (cellKey.state !== 0) return;
+  let hip = null; if (dealer.model) dealer.model.traverse((o) => { if (!hip && o.isBone && /hips/i.test(o.name)) hip = o; });
+  const p = hip ? hip.getWorldPosition(new THREE.Vector3()) : dealer.g.position.clone().add(new THREE.Vector3(0, 1, 0));
+  cellKeyLie(p.x, p.y - 0.6, p.z, false, p.y + 0.3);
+}
+/* THE GATE, AND WHAT HAPPENS WHEN IT OPENS */
+let henryFree = 0;            // 0 in the cell, 1 the scene playing, 2 gone
+const DUN_GATE = { x: 0.70, z0: -2.92, z1: -0.95 };     // the cell's gate in the bars (room-local); the padlock is at z0, so it hangs at z1 and the LOCK end swings (2026-10-14: "it should open where the lock is")
+let dunGate = null;
+function buildDunGate(root, mats) {
+  let gm = null; root.traverse((o) => { if (!gm && o.isMesh && o.material === mats.Entrance) gm = o; });
+  if (!gm) return;
+  const pivot = new THREE.Group(); pivot.position.set(DUN_GATE.x, 0, DUN_GATE.z1); dunWorld.add(pivot);
+  pivot.updateMatrixWorld(true); pivot.attach(gm);
+  dunGate = { pivot, swing: 0, open: false };
+  if (henryFree === 2) { dunGate.open = true; dunGate.swing = 1; pivot.rotation.y = 1.75; dunWalls = null; }   // (a save from after he went)
+  const p = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.2, 1.9), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  p.position.set(DUN_GATE.x + 0.15, -1.265 + 1.1, (DUN_GATE.z0 + DUN_GATE.z1) / 2); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
+  dunWorld.add(p);
+  addInteractable(p, () => (inventory.includes(cellKeyItem) ? 'Unlock the cell' : 'The cell is locked.'), 'default', {
+    mid: true, far: 3.0,
+    bare: () => !inventory.includes(cellKeyItem),
+    when: () => inDun && !dunBusy && henryFree === 0 && !(dunGate && dunGate.open),
+    onActivate: () => {
+      if (!inventory.includes(cellKeyItem)) { try { sfxGateRattle && sfxGateRattle(); } catch (e) {} return; }
+      keyUsed(cellKeyItem); removeInventoryKey(cellKeyItem);
+      try { sfxLockOpen(); } catch (e) {}
+      dunGate.open = true; henryFree = 1; henry.free = { phase: 'wait', t: 0 };
+      autosaveNow();
+    },
+  });
+}
+const HENRY_FREE_NPC = { name: 'Prisoner', script: null, sprite: null, headY: 0, fov: 30, onLeave: () => henryOffer() };
+/* AND HE GIVES YOU HIS RING (2026-10-14, the owner: "after henry says 'you found it!' make him say 'Here, I managed to
+ * keep this gold ring. This ring was all i had left but its my way of thanking you.' have him hold out his hand with
+ * the ring shining in it after you click away from the dialog then have it say 'take ring'. once you take it he runs
+ * off"). 'talk' → (the dialog shut) 'offer': his right arm comes out to you over 0.7 s, palm up, the Gold Ring lying
+ * in it with its glint and the octopus ring's sting; "Take ring" → `goldRingItem`, and 'run'. */
+HENRY_SCRIPT.found = { text: 'YOU FOUND IT!', choices: [], next: 'gift', hint: 'click to go on' };
+HENRY_SCRIPT.gift = { text: 'Here, I managed to keep this gold ring. This ring was all I had left, but it’s my way of thanking you.', choices: [], end: false, hint: 'click to leave' };
+let henryRingTaken = false, henryRingOwed = false;     // saved (`henryRing`); owed: a save from before you took it, with him gone
+function henryRunOut() { if (henry && henry.free && (henry.free.phase === 'talk' || henry.free.phase === 'offer')) { henry.free.phase = 'run'; henry.free.t = 0; } }
+function henryOffer() {
+  const F = henry && henry.free; if (!F || F.phase !== 'talk') return;
+  if (henryRingTaken) { henryRunOut(); return; }
+  F.phase = 'offer'; F.t = 0; F.stung = false;
+  if (!henryRingWorld) {
+    henryRingWorld = new THREE.Group();
+    const hit = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hit.name = 'hitProxy'; hit.visible = false; henryRingWorld.add(hit);
+    addItemShine(henryRingWorld, { size: 0.45, height: 0.03, strength: 2.2, lift: 1.4, through: 0.4 });   // a glint on the gold; the key's full one whited the ring out at arm's length, and its column would go up through the vault
+    addInteractable(henryRingWorld, 'Take ring', 'default', {
+      mid: true, far: 3.2,
+      when: () => inDun && !dialogOpen && !!(henry && henry.free && henry.free.phase === 'offer' && henry.free.t > 0.6),
+      onActivate: () => takeHenryRing(),
+    });
+  }
+  henryRingWorld.add(goldRing); goldRing.position.set(0, 0, 0); goldRing.rotation.set(0, 0, 0);
+  scene.add(henryRingWorld);
+}
+function takeHenryRing() {
+  if (henryRingTaken) return;
+  if (inventory.length >= INV_MAX) { sayInventoryFull(); return; }
+  henryRingTaken = true;
+  if (henryRingWorld) { henryRingWorld.removeFromParent(); removeInteractable(henryRingWorld); }
+  hovered = null;
+  ringsFound = true;
+  addToInventory(goldRingItem);
+  renderRings();
+  sfxThud(0.03);
+  henryRunOut();
+  autosaveNow();
+}
+let henryRingWorld = null;
+// his right arm out to you, the elbow a little bent, the hand open and its palm turned to the sky; `k` 0..1 over what the mixer gave
+const _hoD = new THREE.Vector3(), _hoA = new THREE.Vector3(), _hoB = new THREE.Vector3(), _hoC = new THREE.Vector3(), _hoQ = new THREE.Quaternion();
+function henryHoldOut(h, k) {
+  const B = h.B, U = B.CC_Base_R_Upperarm, Fo = B.CC_Base_R_Forearm, H = B.CC_Base_R_Hand;
+  const M = B.CC_Base_R_Mid1, I = B.CC_Base_R_Index1, P = B.CC_Base_R_Pinky1;
+  if (!U || !Fo || !H || k <= 0) return null;
+  const q0 = [U.quaternion.clone(), Fo.quaternion.clone(), H.quaternion.clone()];
+  henryAim(U, Fo, _hoD.set(-0.14, -0.5, 0.86), h);
+  henryAim(Fo, H, _hoD.set(-0.03, -0.06, 1), h);
+  if (M && I && P) {
+    // palm up: turn the hand about its own length until the palm's normal points at the sky
+    h.w.updateMatrixWorld(true);
+    const hp = H.getWorldPosition(_hoA), len = M.getWorldPosition(_hoB).sub(hp).normalize();
+    const across = P.getWorldPosition(_hoC).sub(I.getWorldPosition(_hoD));
+    const n = new THREE.Vector3().crossVectors(len, across).normalize().multiplyScalar(HENRY_PALM_SIGN);
+    const up = new THREE.Vector3(0, 1, 0).addScaledVector(len, -len.y).normalize();
+    const nn = n.clone().addScaledVector(len, -n.dot(len)).normalize();
+    const ang = Math.atan2(new THREE.Vector3().crossVectors(nn, up).dot(len), nn.dot(up));
+    H.getWorldQuaternion(_hoQ);
+    const wq = new THREE.Quaternion().setFromAxisAngle(len, ang).multiply(_hoQ);
+    H.quaternion.copy(H.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(wq));
+  }
+  U.quaternion.copy(q0[0].slerp(U.quaternion, k)); Fo.quaternion.copy(q0[1].slerp(Fo.quaternion, k)); H.quaternion.copy(q0[2].slerp(H.quaternion, k));
+  h.w.updateMatrixWorld(true);
+  return true;
+}
+const HENRY_PALM_SIGN = 1;                             // which way cross(along the hand, index → pinky) faces OUT of the palm on his right hand
+// where the ring lies: the middle of the open palm, a finger's thickness off it
+function henryPalmPoint(h, out) {
+  const B = h.B, H = B.CC_Base_R_Hand, M = B.CC_Base_R_Mid1, I = B.CC_Base_R_Index1, P = B.CC_Base_R_Pinky1;
+  const hp = H.getWorldPosition(new THREE.Vector3()), mp = M.getWorldPosition(new THREE.Vector3());
+  const len = mp.clone().sub(hp).normalize(), across = P.getWorldPosition(new THREE.Vector3()).sub(I.getWorldPosition(new THREE.Vector3()));
+  const n = new THREE.Vector3().crossVectors(len, across).normalize().multiplyScalar(HENRY_PALM_SIGN);
+  return out.copy(hp).lerp(mp, 0.8).addScaledVector(n, 0.058);      // (at 0.55 it lay at the heel of the hand, half in his cuff; 3.5 cm off the BONE was half sunk in the skin)
+}
+// the standing pose and the sitting one, each written once from his rest
+function henryPoses() {
+  const h = henry, bones = h.bones;
+  const take = () => new Map(bones.map((b) => [b, b.quaternion.clone()]));
+  const rest = () => { for (const b of bones) b.quaternion.copy(h.rest.get(b)); h.w.updateMatrixWorld(true); };
+  const V = (a, sx = 1) => new THREE.Vector3(a[0] * sx, a[1], a[2]);
+  rest();
+  // stood: the mocap idle's first frame, so getting up ends where the idle begins (the aimed pose without it)
+  const S = henryMocap(h) ? henrySample(h, 'hIdle', 0) : null;
+  if (S) { for (const b of bones) b.quaternion.copy(S.Q.get(b)); h.B.CC_Base_Hip.position.copy(S.P); h.standP = S.P; h.w.updateMatrixWorld(true); }
+  else henryStandAims(0, 0);
+  h.standQ = take();
+  // stood: the soles on the stone
+  h.w.updateMatrixWorld(true);
+  const fy = Math.min(h.B.CC_Base_L_Foot.getWorldPosition(new THREE.Vector3()).y, h.B.CC_Base_R_Foot.getWorldPosition(new THREE.Vector3()).y);
+  h.standY = h.w.position.y + (dunWorld.position.y - 1.265 + 0.08 - fy);
+  void V;
+}
+// a stride (phase `ph`, 0 still) at gait `g` (0 walk, 1 run), aimed on top of the standing rest
+function henryStandAims(ph, g, amt = 1, h = henry) {
+  const B = h.B, sw = Math.sin(ph) * amt;
+  const A = (a, b, x, y, z) => henryAim(B[a], B[b], new THREE.Vector3(x, y, z), h);
+  A('CC_Base_Spine01', 'CC_Base_Spine02', 0, 1, 0.03 + 0.22 * g * amt);
+  A('CC_Base_Spine02', 'CC_Base_NeckTwist01', 0, 1, 0.05 + 0.2 * g * amt);
+  A('CC_Base_NeckTwist01', 'CC_Base_Head', 0, 1, 0.12);
+  for (const [s, sx, off] of [['L', 1, 0], ['R', -1, Math.PI]]) {
+    const q = Math.sin(ph + off) * amt, c = Math.cos(ph + off) * amt;
+    const st = 0.42 + 0.33 * g;                                  // how far the thigh swings
+    const tz = st * q;
+    A(`CC_Base_${s}_Thigh`, `CC_Base_${s}_Calf`, 0.07 * sx, -1, tz);
+    A(`CC_Base_${s}_Calf`, `CC_Base_${s}_Foot`, 0.05 * sx, -1, tz - (0.55 + 0.6 * g) * Math.max(0, c) - 0.05);
+    const az = -(0.34 + 0.3 * g) * q;
+    A(`CC_Base_${s}_Upperarm`, `CC_Base_${s}_Forearm`, 0.16 * sx, -1, az);
+    A(`CC_Base_${s}_Forearm`, `CC_Base_${s}_Hand`, 0.08 * sx, -1 + 0.6 * g, az + 0.18 + 0.7 * g);
+  }
+  void sw;
+}
+const _hfP = new THREE.Vector3();
+function updateHenryFree(dt) {
+  const h = henry, F = h.free; if (!F) return false;
+  F.t += dt;
+  // the gate swings in, a quarter turn and a little, into the cell
+  if (dunGate) { const was = dunGate.swing; dunGate.swing = Math.min(1, dunGate.swing + dt / 1.1); dunGate.pivot.rotation.y = 1.75 * (1 - Math.pow(1 - dunGate.swing, 3)); if (was < 1 && dunGate.swing >= 1) dunWalls = null; }
+  if (!h.standQ) henryPoses();
+  const lp = h.w.position, setQ = (Q) => { for (const [b, q] of Q) b.quaternion.copy(q); };
+  if (F.phase === 'wait') { if (F.t > 0.9) { F.phase = 'up'; F.t = 0; F.sitY = lp.y; F.sitQ = new Map(h.bones.map((b) => [b, b.quaternion.clone()])); F.sitP = h.B.CC_Base_Hip.position.clone(); } return true; }
+  if (F.phase === 'up') {                                       // up off the stone
+    const k = THREE.MathUtils.smoothstep(F.t, 0, 1.8);
+    for (const b of h.bones) b.quaternion.copy(F.sitQ.get(b)).slerp(h.standQ.get(b), k);
+    if (h.standP) h.B.CC_Base_Hip.position.copy(F.sitP).lerp(h.standP, k);
+    lp.y = F.sitY + (h.standY - F.sitY) * THREE.MathUtils.smoothstep(F.t, 0.25, 1.8);
+    if (F.t >= 1.9) { F.phase = 'walk'; F.t = 0; F.ph = 0; F.leg = 0; if (h.mixer) { henryPlay(h, 'hIdle', 0, 1); h.mixer.update(0); } }
+    return true;
+  }
+  // where he goes: out through the gate, then to you (in the corridor), then to the door
+  const me = dunWorld.worldToLocal(_hfP.copy(camera.position));
+  let tx, tz, speed, g;
+  if (F.phase === 'walk') {
+    // round the free end of the open leaf (it lies from the hinge at z1 into the cell), then out through the gap
+    if (F.leg === 0) { tx = -1.75; tz = -1.35; }
+    else if (F.leg === 1) { tx = 0.15; tz = -2.0; }
+    else if (F.leg === 2) { tx = 1.35; tz = -2.0; }
+    else { const mx = THREE.MathUtils.clamp(me.x, 1.05, 2.5), mz = me.z; const dx = mx - lp.x, dz = mz - lp.z, d = Math.hypot(dx, dz) || 1; tx = mx - dx / d * 1.05; tz = mz - dz / d * 1.05; }
+    speed = 1.25; g = 0;
+  } else if (F.phase === 'run') { tx = 1.9; tz = 3.25; speed = 3.6; g = 1; }
+  else if (F.phase === 'talk') {
+    if (h.mixer) { henryPlay(h, 'hIdle', 0.45, 1); h.mixer.update(dt); } else { setQ(h.standQ); henryStandAims(0, 0, 0); }
+    const dx = me.x - lp.x, dz = me.z - lp.z; h.w.rotation.y = Math.atan2(dx, dz);
+    if (!dialogOpen) henryOffer();
+    return false;                                               // (the mouth and the blink run as ever)
+  } else if (F.phase === 'offer') {
+    if (h.mixer) { henryPlay(h, 'hIdle', 0.45, 1); h.mixer.update(dt); } else { setQ(h.standQ); henryStandAims(0, 0, 0); }
+    const dx = me.x - lp.x, dz = me.z - lp.z; h.w.rotation.y = Math.atan2(dx, dz);
+    const k = THREE.MathUtils.smoothstep(F.t, 0, 0.7);
+    henryHoldOut(h, k);
+    if (henryRingWorld && h.B.CC_Base_R_Mid1) { henryPalmPoint(h, henryRingWorld.position); henryRingWorld.visible = inDun && k > 0.05; }
+    if (!F.stung && k > 0.6) { F.stung = true; playSample('ringDrop', 0.85); }     // the octopus ring's own sting
+    return false;
+  } else return true;
+  const dx = tx - lp.x, dz = tz - lp.z, d = Math.hypot(dx, dz);
+  const step = Math.min(d, speed * dt);
+  if (d > 0.02) { lp.x += dx / d * step; lp.z += dz / d * step; }
+  // he turns into where he is going, not snaps
+  const want = Math.atan2(dx, dz); let dy = want - h.w.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  h.w.rotation.y += dy * Math.min(1, dt * 8);
+  F.ph += dt * (g ? 10.5 : 6.2);
+  if (h.mixer && !g) {
+    // the capture's own stride, at the pace he is going (its own bob is in the hips). The RUN OUT is the old aimed
+    // stride (2026-10-14, the owner: "make henrys run out after the ring is grabbed the old way he did it")
+    const cn = 'hWalk';
+    henryPlay(h, cn, 0.3, speed / Math.max(0.3, h.clipSpeed[cn] || speed)); h.mixer.update(dt);
+    lp.y = h.standY;
+  } else {
+    setQ(h.standQ); h.w.updateMatrixWorld(true);
+    henryStandAims(F.ph, g, Math.min(1, F.t * 3));
+    lp.y = h.standY + Math.abs(Math.sin(F.ph)) * (g ? 0.06 : 0.025);
+  }
+  if (d < 0.08 || (F.phase === 'walk' && F.leg === 3 && d < 0.12)) {
+    if (F.phase === 'walk' && F.leg < 3) F.leg++;
+    else if (F.phase === 'walk') {
+      F.phase = 'talk'; F.t = 0;
+      HENRY_FREE_NPC.script = HENRY_SCRIPT; HENRY_FREE_NPC.head = h.B.CC_Base_Head; HENRY_FREE_NPC.sprite = h.B.CC_Base_Head;
+      startDialog('found', HENRY_FREE_NPC);
+    } else if (F.phase === 'run') {
+      // out of the door he came: gone
+      try { sfxTavernDoor(); } catch (e) {}
+      h.w.visible = false; henryFree = 2; h.free = null;
+      autosaveNow();
+    }
+  }
+  return true;
+}
+
+/* ---- HENRY ON THE JETTY, AND THE EAGLE (2026-10-14, the owner: "put henrys model right here on the jetty staring
+ * into the ocean. when you talk to him he turns around … as soon as you click off this dialog have this eagle swoop
+ * down fast as hell and grab henry flying him high into the sky in the distance over the water then drop him from
+ * super high up and have him splash into the water far away. he should be snatched abruptly right out of the dialog
+ * unexpected. make him do this scream but blend it into the scene the scream should fade as he gets further away …
+ * give a good sound effect when he is snatched up i want it hyper realistic"). Once he has run out of the dungeon
+ * (`henryFree` 2) he stands at the sea end of the lighthouse's jetty — a second copy of him (`hj`, his own parse of
+ * henry.glb), looking out along it at the moon. The eagle is WildPoly3D's "Eagle - Animated Low Poly"
+ * (CC-BY-NC-4.0, `assets/eagle.glb`, its own clips; 6.8 m across the wings in flight). The take (`hjCut`):
+ *   dive   the click that ends his line starts it: from high behind you, over your head, onto him in 0.7 s
+ *   carry  his hands on its feet and his legs going, out over the sea and up, the scream fading with the distance
+ *   fall   let go seventy-odd metres up, tumbling, into the sea far out; the splash heard late by its distance
+ * The lens stays on them (`cineHold`, `dialogTarget` driven here) and the body is held (`frozen`) until the sea has
+ * closed over him. He and the bird draw WITHOUT FOG: at the jetty's night density (0.0126) anything past 100 m is
+ * the fog's own colour, and against the sky they are silhouettes, which is how you see a bird at night. */
+const HJ_SPOT = { x: -24.2, y: 0.41, z: -1160.3 };   // the jetty's sea end beside its lamp (measured: deck x -26.5..-22, its end z -1161.3, top 0.41)
+const HJ_FACE = Math.PI;                              // out along the jetty (-z), toward the moon
+const HJ_T = { dive: 0.75, carry: 7.4, hold: 2.8 };  // the stoop (to the grab); how long it carries him before it lets go; the sea after
+const HJ_LAMP = { x: -26.0, z: -1160.6 };             // the jetty's lamp post: the splash must not land behind it from where you stand
+/* THE FLIGHT, in the frame of the moment you clicked: from Henry's head along f (you → him, on out to sea), s (the sea
+ * side, never the island's) and up. It comes down out of the sky BEHIND him, where you are looking and he is not — 59
+ * m/s on its first stretch, 25 on its last — takes him at 0.75 s, and with his weight on it swings up and back out
+ * the way it came, over the open water (carried on across, it went into the island's rock). Keys are [t, f, s, up]; between them a time-keyed Hermite
+ * (finite-difference tangents), and after the last one it flies itself (`out`, climbing). */
+const HJ_KEYS = [[0, 26, 16, 16], [0.45, 6, 4, 3.5], [0.75, 0, 0, 1.15], [1.3, 1.5, 1.0, 4.2], [2.4, 8, 5, 11], [3.8, 20, 9, 21]];
+let hjTaken = false;                                  // saved: the eagle has had him
+let hj = null, hjLoading = false, hjEagle = null, hjCut = null, hjSaid = false, hjNoise = null, hjSprayLeft = 0;
+const _hjV = new THREE.Vector3(), _hjW = new THREE.Vector3(), _hjD = new THREE.Vector3(), _hjA = new THREE.Vector3();
+const HENRY_JETTY_SCRIPT = {
+  start: { text: 'Hey! It’s you again. I can’t thank you enough for saving me.', choices: [{ label: 'No problem', to: 'just' }] },
+  just: { text: 'You know, they say a lot of bad things about this beach, but it’s still beautiful to me. After being trapped for so long, it feels good to just...',
+          choices: [], end: false, hint: '', say: () => { hjSaid = true; } },
+};
+const HENRY_JETTY_NPC = { name: 'Henry', script: HENRY_JETTY_SCRIPT, sprite: null, headY: 0, fov: 30, onLeave: () => hjLeave() };
+function loadJettyHenry() {
+  if (hj || hjLoading) return;
+  hjLoading = true;
+  bwGlb('assets/henry.glb', (gltf) => {
+    const H = gltf.scene, w = new THREE.Group(), stand = new THREE.Group();
+    stand.add(H); w.add(stand);
+    w.rotation.order = 'YXZ';
+    w.position.set(HJ_SPOT.x, HJ_SPOT.y, HJ_SPOT.z); w.rotation.y = HJ_FACE;
+    scene.add(w);
+    const B = {}, morph = [];
+    let sk = null; H.traverse((o) => { if (o.isSkinnedMesh && !sk) sk = o; });
+    if (sk) for (const bn of sk.skeleton.bones) B[bn.name.replace(/_\d+$/, '')] = bn;
+    H.traverse((o) => {
+      if (!o.isMesh) return;
+      o.frustumCulled = false; o.raycast = () => {};
+      for (const m of [].concat(o.material)) {
+        m.metalness = 0; m.roughness = Math.max(0.75, m.roughness || 0); if (m.color) m.color.multiplyScalar(0.9); m.envMapIntensity = 0; m.fog = false;
+        // the moon is behind him from anywhere on the jetty: a breath of his own colours back, or his face is a hole while he talks
+        if (m.map && m.emissive) { m.emissiveMap = m.map; m.emissive.setRGB(0.55, 0.6, 0.72); m.emissiveIntensity = 0.2; }
+        m.needsUpdate = true;
+      }
+      if (o.morphTargetDictionary) morph.push(o);
+    });
+    const h = hj = { w, H, B, morph, t: 0, blink: 2, blinkT: -1, syl: 0, open: 0, talkK: 0, mode: 'sea', turnT: 0, yaw0: HJ_FACE,
+      jaw0: B.CC_Base_JawRoot ? B.CC_Base_JawRoot.quaternion.clone() : null, head: B.CC_Base_Head };
+    h.bones = sk ? sk.skeleton.bones.slice() : [];
+    h.bind = new Map(h.bones.map((b) => [b, { q: b.quaternion.clone(), p: b.position.clone() }])); h.sk = sk;
+    // stood, from his rest, the soles on the boards
+    henryStandAims(0, 0, 1, h);
+    h.standQ = new Map(h.bones.map((b) => [b, b.quaternion.clone()]));
+    hjSeat(h);
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    p.name = 'hitProxy'; p.visible = false; p.position.set(0, 1.15, 0);
+    const pg = new THREE.Group(); pg.add(p); w.add(pg); h.pg = pg;
+    addInteractable(pg, 'Talk to Henry', 'default', {
+      mid: true, far: 3.6,
+      when: () => !!hj && hj.mode === 'sea' && !hjCut && !hjTaken && !dialogOpen && !inRoom(),
+      onActivate: () => hjTalk(),
+    });
+    w.visible = !hjTaken;
+    try { if (renderer.compileAsync) renderer.compileAsync(w, camera, scene).catch(() => {}); } catch (e) { /* a warm is never fatal */ }
+  }, () => { hjLoading = false; });
+  bwGlb('assets/eagle.glb', (gltf) => {
+    const m = gltf.scene, g = new THREE.Group();
+    g.add(m); g.rotation.order = 'YXZ'; g.scale.setScalar(1.1);
+    m.traverse((o) => {
+      if (!o.isMesh) return;
+      o.frustumCulled = false; o.raycast = () => {};
+      const mm = o.material;
+      // its own vertex colours, taken down off the file's flat poster brown and given nothing to shine with
+      mm.metalness = 0; mm.roughness = 1; mm.flatShading = true; mm.fog = false;
+      mm.color.setScalar(0.42); mm.emissive = new THREE.Color(0x0a0908); mm.needsUpdate = true;
+    });
+    const mixer = new THREE.AnimationMixer(m), A = {};
+    for (const c of gltf.animations) A[c.name] = mixer.clipAction(c);
+    if (A.landing) { A.landing.setLoop(THREE.LoopOnce); A.landing.clampWhenFinished = true; }
+    let sk = null; m.traverse((o) => { if (o.isSkinnedMesh && !sk) sk = o; });
+    const feet = sk ? sk.skeleton.bones.filter((b) => /^foot[lr]_/.test(b.name)) : [];
+    hjEagle = { g, m, mixer, A, feet, cur: null };
+    scene.add(g);
+    // compiled now, while nobody is looking: it is first drawn on the frame it comes out of the sky at you
+    g.visible = true;
+    try { if (renderer.compileAsync) renderer.compileAsync(g, camera, scene).catch(() => {}); } catch (e) { /* a warm is never fatal */ }
+    g.visible = false;
+  });
+}
+// his soles on the boards: off the mocap idle once it is on him (and it is started at a random point in its 8 s)
+function hjSeat(h) {
+  if (henryMocap(h) && !h.seated) {
+    const S = henrySample(h, 'hIdle', 0);
+    for (const b of h.bones) b.quaternion.copy(S.Q.get(b)); h.B.CC_Base_Hip.position.copy(S.P);
+    h.seated = true;
+    const a = henryPlay(h, 'hIdle', 0, 1); if (a) a.time = Math.random() * 8;
+  }
+  h.w.position.y = HJ_SPOT.y; h.w.updateMatrixWorld(true);
+  const fy = Math.min(h.B.CC_Base_L_Foot.getWorldPosition(_hjV).y, h.B.CC_Base_R_Foot.getWorldPosition(_hjW).y);
+  h.w.position.y += HJ_SPOT.y + 0.08 - fy;
+}
+function hjEaglePlay(name, fade = 0.15, ts = 1, at = null) {
+  const E = hjEagle, a = E && E.A[name]; if (!a || E.cur === a) return;
+  a.reset(); a.timeScale = ts; if (at !== null) a.time = at;
+  a.setEffectiveWeight(1); a.play();
+  if (E.cur && fade > 0) E.cur.crossFadeTo(a, fade, false); else if (E.cur) E.cur.stop();
+  E.cur = a;
+}
+function hjTalk() {
+  const h = hj; if (!h || h.mode !== 'sea') return;
+  h.mode = 'turn'; h.turnT = 0; h.yaw0 = h.w.rotation.y; hjSaid = false;
+  HENRY_JETTY_NPC.head = h.B.CC_Base_Head || null; HENRY_JETTY_NPC.sprite = h.B.CC_Base_Head || h.w;
+  startDialog('start', HENRY_JETTY_NPC);
+}
+// walked away before his last line: he goes back to the sea. After it: the bird.
+function hjLeave() {
+  const h = hj; if (!h) return;
+  if (hjSaid && hjEagle && !hjTaken) { startHenrySnatch(); return; }
+  h.mode = 'back'; h.turnT = 0; h.yaw0 = h.w.rotation.y;
+}
+// stood: the pose, a breath, the head up to you while you talk; turning, the feet shuffle round
+function hjPoseStand(h, dt, shuffle) {
+  if (!h.seated && henryMocap(h)) hjSeat(h);         // (the capture landed after he did)
+  const N = h.B.CC_Base_NeckTwist01;
+  if (h.mixer) {
+    // the capture's idle; turning, its walk, slowed, for the feet coming round
+    henryPlay(h, shuffle > 0.05 ? 'hWalk' : 'hIdle', 0.3, shuffle > 0.05 ? 0.55 : 1);
+    h.mixer.update(dt);
+    return;                                            // (standing, his head is level with yours: the sat lift turned his face up at the sky)
+  }
+  for (const [b, q] of h.standQ) b.quaternion.copy(q);
+  if (shuffle > 0.01) { h.ph = (h.ph || 0) + dt * 7; henryStandAims(h.ph, 0, shuffle, h); }
+  const S2 = h.B.CC_Base_Spine02;
+  if (S2) S2.rotateX(0.022 * Math.sin(h.t * 1.3));
+  if (N) N.rotateX(-0.2 * h.talkK);
+}
+// in the air: the legs going as if there were ground under them; the arms up on its feet, or (falling) thrown about
+function hjPoseAir(h, ph, flail, dt = 0) {
+  // the legs: the capture's run, faster than any man runs (there is nothing under them); without it, the aimed stride
+  // (falling, the old aimed flail: the capture's run read as a man running on air — the owner: "i like the old animation when henry falls")
+  if (h.mixer && !flail) { henryPlay(h, 'hRun', 0.15, 1.45); h.mixer.update(dt); }
+  else { for (const [b, q] of h.standQ) b.quaternion.copy(q); henryStandAims(ph, 1, 1, h); }
+  const B = h.B, A = (a, c, x, y, z) => henryAim(B[a], B[c], _hjD.set(x, y, z), h);
+  for (const [s, sx, o] of [['L', 1, 0], ['R', -1, 2.1]]) {
+    const wv = Math.sin(ph * 1.3 + o);
+    if (flail) {
+      A(`CC_Base_${s}_Upperarm`, `CC_Base_${s}_Forearm`, sx * (0.8 + 0.2 * wv), 0.3 + 0.6 * wv, 0.25 * Math.cos(ph + o));
+      A(`CC_Base_${s}_Forearm`, `CC_Base_${s}_Hand`, sx * 0.5, 0.7 + 0.3 * wv, 0.4);
+    } else {
+      A(`CC_Base_${s}_Upperarm`, `CC_Base_${s}_Forearm`, sx * 0.2, 1, 0.1 + 0.05 * wv);
+      A(`CC_Base_${s}_Forearm`, `CC_Base_${s}_Hand`, sx * 0.06, 1, 0.16);
+    }
+  }
+  A('CC_Base_NeckTwist01', 'CC_Base_Head', 0, 1, flail ? -0.25 : -0.35);     // the head back, at it / at the sky
+}
+// his mouth wide and his eyes open
+function hjScreamFace(h) {
+  if (h.jaw0 && h.B.CC_Base_JawRoot) { h.B.CC_Base_JawRoot.quaternion.copy(h.jaw0); h.B.CC_Base_JawRoot.rotateZ(0.25 + 0.025 * Math.sin(h.t * 23)); }
+  henryMorph('lips', 0.6, h); henryMorph('blinkL', 0, h); henryMorph('blinkR', 0, h);
+}
+function hjHandsMid(h, out) {
+  h.w.updateMatrixWorld(true);
+  return out.copy(h.B.CC_Base_L_Hand.getWorldPosition(_hjV)).add(h.B.CC_Base_R_Hand.getWorldPosition(_hjW)).multiplyScalar(0.5);
+}
+function hjPelvis(h, out) { h.w.updateMatrixWorld(true); return (h.B.CC_Base_Pelvis || h.B.CC_Base_Hip).getWorldPosition(out); }
+function hjEagleFeet(E, out) {
+  E.g.updateMatrixWorld(true); out.set(0, 0, 0);
+  for (const f of E.feet) out.add(f.getWorldPosition(_hjV));
+  return E.feet.length ? out.multiplyScalar(1 / E.feet.length) : out.copy(E.g.position);
+}
+function updateHenryJetty(dt) {
+  if (hjSprayLeft > 0) { hjSprayLeft -= dt; wfUpdateFx(dt); if (hjSprayLeft <= 0) hjSprayOut(); }
+  if (hjCut) { updateHenrySnatch(dt); return; }
+  if (henryFree !== 2 || hjTaken) { if (hj) hj.w.visible = false; return; }
+  const p = camera.position;
+  if (!hj) { if (!inRoom() && p.z < -800) loadJettyHenry(); return; }
+  const h = hj;
+  const near = !inRoom() && Math.abs(p.z - HJ_SPOT.z) < 260 && Math.abs(p.x - HJ_SPOT.x) < 260;
+  h.w.visible = near;
+  if (!near) return;
+  const d = Math.hypot(p.x - h.w.position.x, p.z - h.w.position.z);
+  if (d > 70 && h.mode === 'sea') return;          // too far off to see him breathe
+  h.t += dt;
+  let shuffle = 0;
+  if (h.mode === 'turn' || h.mode === 'back') {
+    h.turnT += dt;
+    const k = THREE.MathUtils.smoothstep(h.turnT, 0, 1.1);
+    const to = h.mode === 'turn' ? Math.atan2(p.x - h.w.position.x, p.z - h.w.position.z) : HJ_FACE;
+    let dy = to - h.yaw0; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    h.w.rotation.y = h.yaw0 + dy * k;
+    shuffle = 0.32 * Math.sin(Math.PI * Math.min(1, h.turnT / 1.1));
+    if (h.turnT >= 1.1) h.mode = h.mode === 'turn' ? 'talk' : 'sea';
+  } else if (h.mode === 'talk') {
+    const to = Math.atan2(p.x - h.w.position.x, p.z - h.w.position.z);
+    let dy = to - h.w.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    h.w.rotation.y += dy * Math.min(1, dt * 3);
+  }
+  const talking = dialogOpen && dialogScript === HENRY_JETTY_SCRIPT;
+  h.talkK += ((talking ? 1 : 0) - h.talkK) * Math.min(1, dt * 3);
+  hjPoseStand(h, dt, shuffle);
+  henryFace(h, dt, talking && !!typeFull);
+  // and you do not walk through him (kept on the boards: he stands a metre from the end)
+  if (!frozen()) {
+    const dx = p.x - h.w.position.x, dz = p.z - h.w.position.z, dd = Math.hypot(dx, dz);
+    if (dd < 0.5 && dd > 1e-4) { p.x = h.w.position.x + dx / dd * 0.5; p.z = Math.max(-1161.0, h.w.position.z + dz / dd * 0.5); }
+  }
+}
+function startHenrySnatch() {
+  const h = hj, E = hjEagle; if (!h || !E || hjCut) return;
+  hjTaken = true;
+  const cam = camera.position;
+  const head = h.B.CC_Base_Head.getWorldPosition(new THREE.Vector3());
+  const f = new THREE.Vector3(head.x - cam.x, 0, head.z - cam.z); if (f.lengthSq() < 1e-4) f.set(0, 0, -1); f.normalize();
+  const sd = new THREE.Vector3(-f.z, 0, f.x); if (sd.x > 0) sd.negate();      // the sea side, never the island's rock
+  const keys = HJ_KEYS.map(([t, a, b, c]) => ({ t, p: head.clone().addScaledVector(f, a).addScaledVector(sd, b).add(_hjA.set(0, c, 0)) }));
+  for (let i = 0; i < keys.length; i++) {
+    const A = keys[Math.max(0, i - 1)], B = keys[Math.min(keys.length - 1, i + 1)];
+    keys[i].m = B.p.clone().sub(A.p).multiplyScalar(1 / (B.t - A.t));
+  }
+  // out to sea: straight on, or bent seaward until where he will come down is clear of the lamp post
+  const last = keys[keys.length - 1].p, lampA = Math.atan2(HJ_LAMP.x - cam.x, HJ_LAMP.z - cam.z);
+  let out = f.clone();
+  for (let k = 0; k <= 12; k++) {
+    out.copy(f).addScaledVector(sd, k * 0.1).normalize();
+    const sx = last.x + out.x * 120 - cam.x, sz = last.z + out.z * 120 - cam.z;
+    if (Math.abs(angDiff(Math.atan2(sx, sz), lampA)) > 0.22) break;
+  }
+  hjCut = { t: 0, phase: 'dive', keys, out, pos: keys[0].p.clone(), vel: keys[0].m.clone(), look: head.clone(), fov: 55, ph: 0,
+            yaw: null, lastFly: 0, feetV: new THREE.Vector3(), handV: new THREE.Vector3(), pelV: new THREE.Vector3(), air: hjAirStart(), voice: null };
+  E.g.visible = true; E.g.position.copy(hjCut.pos); E.cur = null;
+  for (const a of Object.values(E.A)) a.stop();
+  hjEaglePlay('gliding', 0, 1);
+  h.mode = 'air';
+  removeInteractable(h.pg);
+  cineHold = true; dialogHead = null; dialogTarget = head.clone(); dialogFov = 55;
+  autosaveNow();
+}
+// the flight between its keys, at time t: position into `p`, velocity into `v`; false past the last key
+function hjFly(C, t, p, v) {
+  const K = C.keys; if (t >= K[K.length - 1].t) return false;
+  let i = 0; while (i < K.length - 2 && t > K[i + 1].t) i++;
+  const A = K[i], B = K[i + 1], hh = B.t - A.t, u = (t - A.t) / hh, u2 = u * u, u3 = u2 * u;
+  p.set(0, 0, 0).addScaledVector(A.p, 2 * u3 - 3 * u2 + 1).addScaledVector(A.m, (u3 - 2 * u2 + u) * hh)
+    .addScaledVector(B.p, -2 * u3 + 3 * u2).addScaledVector(B.m, (u3 - u2) * hh);
+  v.set(0, 0, 0).addScaledVector(A.p, (6 * u2 - 6 * u) / hh).addScaledVector(A.m, 3 * u2 - 4 * u + 1)
+    .addScaledVector(B.p, (-6 * u2 + 6 * u) / hh).addScaledVector(B.m, 3 * u2 - 2 * u);
+  return true;
+}
+function updateHenrySnatch(dt) {
+  const C = hjCut, h = hj, E = hjEagle, cam = camera.position;
+  C.t += dt; h.t += dt;
+  E.mixer.update(dt);
+  const keyed = hjFly(C, C.t, C.pos, C.vel);
+  if (C.phase === 'dive') {
+    // the last stretch: talons thrown forward and the wings up and open to stop
+    if (C.t > HJ_T.dive - 0.3 && !C.flare) { C.flare = true; hjEaglePlay('landing', 0.12, 1.4, 0.3); sfxWingBeat(C.pos, 1.6); }
+    hjPoseStand(h, dt, 0); henryFace(h, dt, false);
+    if (C.t >= HJ_T.dive) {
+      C.phase = 'carry'; C.t0 = C.t;
+      hjEaglePlay('fly', 0.22, 1.3); C.lastFly = 0;
+      sfxSnatch(C.pos);
+      C.voice = hjScream(false);
+      addTrauma(0.35);
+      h.swing = 0; C.ph = 0;
+    }
+  } else if (!keyed) {
+    const tt = C.t - C.keys[C.keys.length - 1].t, carrying = C.phase === 'carry';
+    _hjA.copy(C.out).multiplyScalar(carrying ? 13 : 17); _hjA.y = carrying ? 10 : 3.5 + 6.5 * Math.exp(-tt);
+    C.vel.lerp(_hjA, 1 - Math.exp(-dt * 1.2));
+    C.pos.addScaledVector(C.vel, dt);
+  }
+  // the bird: along its flight, nose up as it climbs, banked into the turn
+  E.g.position.copy(C.pos);
+  const yaw = Math.atan2(C.vel.x, C.vel.z), hz = Math.hypot(C.vel.x, C.vel.z);
+  let dyaw = C.yaw === null ? 0 : yaw - C.yaw; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw)); C.yaw = yaw;
+  E.g.rotation.set(THREE.MathUtils.clamp(-Math.atan2(C.vel.y, hz), -0.9, 0.9), yaw, THREE.MathUtils.clamp(-dyaw / Math.max(dt, 1e-3) * 0.3, -0.6, 0.6));
+  // a beat of the wings is a beat you hear
+  const fa = E.A.fly;
+  if (fa && E.cur === fa) { if (fa.time < C.lastFly) sfxWingBeat(C.pos, C.phase === 'carry' ? 1.25 : 0.9); C.lastFly = fa.time; }
+  hjAirTick(C.air, C.pos, C.vel);
+  // he goes with it: his hands on its feet, swinging under it
+  if (C.phase === 'carry') {
+    C.ph += dt * 11;
+    const swingTo = THREE.MathUtils.clamp((hz - (C.lastHz ?? hz)) / Math.max(dt, 1e-3) * 0.05, -0.45, 0.6) + 0.07 * Math.sin(h.t * 2.3);
+    C.lastHz = hz; h.swing += (swingTo - h.swing) * Math.min(1, dt * 3);
+    h.w.rotation.set(h.swing, yaw, 0.05 * Math.sin(h.t * 1.7));
+    hjPoseAir(h, C.ph, false, dt); hjScreamFace(h);
+    h.w.position.add(_hjD.copy(hjEagleFeet(E, C.feetV)).sub(hjHandsMid(h, C.handV)));
+    if (C.t - C.t0 >= HJ_T.carry) {
+      // let go
+      C.phase = 'away'; C.tr = C.t;
+      h.mode = 'fall'; h.fv = C.vel.clone(); h.fv.y *= 0.35; h.fc = hjPelvis(h, new THREE.Vector3());
+      h.rx = h.swing; h.ry = yaw; h.rz = 0;
+      hjEaglePlay('fly', 0.3, 1.0);
+      if (C.voice) hjVoiceStop(C.voice, 0, 0.4);
+      C.voice = hjScream(true);
+    }
+  } else if (C.phase === 'away') {
+    if (!C.glide && C.t - C.tr > 2.6) { C.glide = true; hjEaglePlay('gliding', 0.6, 1); }
+  }
+  if (h.mode === 'fall') {
+    h.fv.y -= 9.8 * dt; h.fv.multiplyScalar(Math.exp(-dt * 0.06));
+    h.fc.addScaledVector(h.fv, dt);
+    h.rx += dt * 2.1; h.rz += dt * 0.9 * Math.sin(h.t * 0.7);
+    h.w.rotation.set(h.rx, h.ry, h.rz);
+    C.ph += dt * 13; hjPoseAir(h, C.ph, true, dt); hjScreamFace(h);
+    h.w.position.add(_hjD.copy(h.fc).sub(hjPelvis(h, C.pelV)));
+    if (h.fc.y <= OCEAN_Y + 0.15) {
+      // into the sea
+      h.mode = 'gone'; h.w.visible = false;
+      C.splash = new THREE.Vector3(h.fc.x, OCEAN_Y, h.fc.z); C.ts = C.t;
+      /* a column and a crown. The spray's points are sized for the whale's wide shot (`uPx * aS / depth`, blind to the
+       * lens), and this one is seen down a 14° lens from 150 m: four times the size or it is a sprinkle */
+      wfBuildFx();
+      wfSplash(C.splash.x, OCEAN_Y, C.splash.z, 260, 19, 0.7, 5.5, 0.2);
+      wfSplash(C.splash.x, OCEAN_Y, C.splash.z, 200, 8, 2.2, 4.5, 0.55);
+      hjSprayLeft = 0;
+      sfxWhaleSplash(C.splash.x, C.splash.z, 0.55);
+      // and the voice stops when the sound of the splash arrives, not before it
+      if (C.voice) hjVoiceStop(C.voice, C.splash.distanceTo(cam) / 343, 0.02);
+      C.voice = null;
+    }
+  }
+  if (C.voice) hjVoiceTick(C.voice, h.mode === 'fall' ? h.fc : hjPelvis(h, C.pelV));
+  if (C.splash) wfUpdateFx(dt);
+  // the lens: on him, on the two of them, on him falling, on the sea where he went in
+  let T, R = null;
+  if (C.phase === 'dive') T = h.B.CC_Base_Head.getWorldPosition(_hjA);
+  else if (h.mode === 'air') { T = hjPelvis(h, _hjA).lerp(C.pos, 0.4); R = 6; }
+  else if (h.mode === 'fall') { T = _hjA.copy(h.fc); R = 9; }
+  else { T = _hjA.copy(C.splash); T.y += 3; R = 14; }
+  C.look.lerp(T, 1 - Math.exp(-dt * 7));
+  if (!dialogTarget) dialogTarget = new THREE.Vector3();
+  dialogTarget.copy(C.look); cineHold = true; dialogHead = null;
+  if (R) { const d = C.look.distanceTo(cam); C.fov += (THREE.MathUtils.clamp(2 * Math.atan(R / d) * 180 / Math.PI, 14, 55) - C.fov) * Math.min(1, dt * 2); }
+  dialogFov = C.fov;
+  if (C.ts !== undefined && C.t - C.ts > HJ_T.hold) hjEnd();
+}
+function hjEnd() {
+  const C = hjCut; if (!C) return;
+  hjCut = null;
+  cineHold = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV;
+  lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order); lookEuler.z = 0;
+  hjAirStop(C.air);
+  if (C.voice) hjVoiceStop(C.voice, 0, 0.1);
+  if (hjEagle) { hjEagle.g.visible = false; for (const a of Object.values(hjEagle.A)) a.stop(); hjEagle.cur = null; }
+  if (hj) hj.w.visible = false;
+  hjSprayLeft = 7;                                  // the mist off the splash lives up to six and a half seconds: run it out, then put it out
+  autosaveNow();
+}
+// the spray off the whale's own pool, put out once it is down (the whale's lesson: drops left alive froze in the air for good)
+function hjSprayOut() {
+  const F = wfFx; if (!F) return;
+  if (F.SP) for (const P of F.SP) P.life = 0;
+  if (F.spray) { const aa = F.spray.geometry.attributes.aA; if (aa) { aa.array.fill(0); aa.needsUpdate = true; } F.spray.visible = false; }
+}
+
+/* ---- ITS SOUND. Nothing here is a recording but the scream: the stoop's air is a live voice on the bird — its
+ * pitch carried up by its speed and Doppler-shifted by how fast it closes on you, its level by its speed and by the
+ * inverse of its distance, panned by its bearing — so it comes from behind you, tears over your head and is gone;
+ * the hit is the weight of a man taken at once (a sub thump, the cloth slapping, three talon clicks a few
+ * hundredths apart, the coat tearing under them); every downstroke is a heavy whump of thrown air with the
+ * primaries combing it over the top, late by its distance. The scream is the owner's (6.4 s), on a live chain that
+ * follows Henry: quieter and duller with every metre, and a second one, fainter, while he falls. */
+function hjNoiseBuf() {
+  if (hjNoise) return hjNoise;
+  const ctx = audioCtx, n = ctx.sampleRate * 2, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+  let lp = 0; for (let i = 0; i < n; i++) { lp += (Math.random() * 2 - 1 - lp) * 0.5; d[i] = lp * 1.4; }
+  return (hjNoise = b);
+}
+function hjAirStart() {
+  const ctx = audioCtx; if (!ctx) return null;
+  const src = ctx.createBufferSource(); src.buffer = hjNoiseBuf(); src.loop = true;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.75; bp.frequency.value = 600;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6000;
+  const g = ctx.createGain(); g.gain.value = 0;
+  const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+  src.connect(bp).connect(lp).connect(g);
+  if (pan) g.connect(pan).connect(sfxOut()); else g.connect(sfxOut());
+  src.start();
+  return { src, bp, lp, g, pan };
+}
+function hjAirTick(A, pos, vel) {
+  const ctx = audioCtx; if (!ctx || !A) return;
+  const t = ctx.currentTime, cam = camera.position, d = Math.max(1.2, pos.distanceTo(cam));
+  const vr = _hjW.copy(cam).sub(pos).multiplyScalar(1 / d).dot(vel), sp = vel.length();
+  const dop = 343 / THREE.MathUtils.clamp(343 - vr, 200, 500);
+  A.bp.frequency.setTargetAtTime(THREE.MathUtils.clamp((320 + sp * 26) * dop, 120, 4500), t, 0.03);
+  A.lp.frequency.setTargetAtTime(9000 * Math.pow(0.08, Math.min(1, d / 220)), t, 0.05);
+  A.g.gain.setTargetAtTime(Math.min(1.3, 0.85 * Math.pow(sp / 40, 1.6) * (3 / d)), t, 0.03);
+  if (A.pan) A.pan.pan.setTargetAtTime(THREE.MathUtils.clamp(panTo(pos.x, pos.z) * 0.9, -1, 1), t, 0.03);
+}
+function hjAirStop(A) {
+  const ctx = audioCtx; if (!ctx || !A) return;
+  const t = ctx.currentTime; A.g.gain.cancelScheduledValues(t); A.g.gain.setTargetAtTime(0, t, 0.15);
+  try { A.src.stop(t + 1); } catch (e) {}
+}
+function hjPanNode(x, z) {
+  const ctx = audioCtx, out = sfxOut();
+  if (!ctx.createStereoPanner) return out;
+  const p = ctx.createStereoPanner(); p.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.85, -1, 1); p.connect(out); return p;
+}
+function sfxWingBeat(pos, k = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const d = Math.max(1.5, pos.distanceTo(camera.position)), a = k * 2.4 / d;
+  if (a < 0.004) return;
+  const t = ctx.currentTime + d / 343, pan = hjPanNode(pos.x, pos.z);
+  // the air the wing throws down: a soft, heavy whump
+  const n = noiseBurst(0.34, (u) => Math.min(1, u * 12) * Math.pow(1 - u, 2.6));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520 * Math.pow(0.5, Math.min(1, d / 120));
+  const g = ctx.createGain(); g.gain.value = a * 1.3;
+  n.connect(lp).connect(g).connect(pan); n.start(t);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(72, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.2);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(a * 0.7 + 1e-4, t + 0.03); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+  o.connect(og).connect(pan); o.start(t); o.stop(t + 0.3);
+  // and the primaries, combing it: high and short over the top
+  const f = noiseBurst(0.2, (u) => Math.min(1, u * 25) * Math.pow(1 - u, 3) * (0.55 + 0.45 * Math.random()));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2400;
+  const fg = ctx.createGain(); fg.gain.value = a * 0.22 / (1 + d / 30);
+  f.connect(hp).connect(fg).connect(pan); f.start(t + 0.02);
+}
+function sfxSnatch(pos) {
+  const ctx = audioCtx; if (!ctx) return;
+  const d = Math.max(1.5, pos.distanceTo(camera.position)), a = Math.min(1.4, 5 / d);
+  const t = ctx.currentTime + d / 343, pan = hjPanNode(pos.x, pos.z);
+  // a man's weight taken all at once: a thud you feel more than hear
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(36, t + 0.24);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(a * 1.1, t + 0.008); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
+  o.connect(og).connect(pan); o.start(t); o.stop(t + 0.4);
+  // the coat and the body under it: a dull slap
+  const s = noiseBurst(0.13, (u) => Math.min(1, u * 60) * Math.pow(1 - u, 3));
+  const sb = ctx.createBiquadFilter(); sb.type = 'bandpass'; sb.frequency.value = 650; sb.Q.value = 0.8;
+  const sg = ctx.createGain(); sg.gain.value = a * 1.0;
+  s.connect(sb).connect(sg).connect(pan); s.start(t);
+  // the talons closing: three hard clicks a few hundredths apart
+  for (const [dl, k] of [[0.005, 1], [0.03, 0.7], [0.058, 0.5]]) {
+    const c = noiseBurst(0.012, (u) => Math.pow(1 - u, 4));
+    const ch = ctx.createBiquadFilter(); ch.type = 'highpass'; ch.frequency.value = 3200;
+    const cg = ctx.createGain(); cg.gain.value = a * 0.45 * k;
+    c.connect(ch).connect(cg).connect(pan); c.start(t + dl);
+  }
+  // and the cloth tearing under them
+  const r = noiseBurst(0.42, (u) => Math.min(1, u * 20) * Math.pow(1 - u, 1.4) * (Math.random() < 0.35 ? 1 : 0.25));
+  const rb = ctx.createBiquadFilter(); rb.type = 'bandpass'; rb.frequency.value = 2100; rb.Q.value = 1.2;
+  const rg = ctx.createGain(); rg.gain.value = a * 0.3;
+  r.connect(rb).connect(rg).connect(pan); r.start(t + 0.05);
+  // the wings thrown down to lift him: the hardest beat of all
+  sfxWingBeat(pos, 2.0);
+}
+function hjScream(second) {
+  const ctx = audioCtx; if (!ctx) return null;
+  const bank = (sampleBanks.henryScream || []).filter(Boolean); if (!bank.length) return null;
+  const src = ctx.createBufferSource(); src.buffer = bank[0]; src.playbackRate.value = second ? 0.96 : 1;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 9000;
+  const g = ctx.createGain(); g.gain.value = 0;
+  const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+  src.connect(lp).connect(g);
+  if (pan) g.connect(pan).connect(sfxOut()); else g.connect(sfxOut());
+  src.start(ctx.currentTime + (second ? 0 : 0.06), second ? 0.9 : 0);
+  return { src, lp, g, pan, live: true };
+}
+function hjVoiceTick(V, pos) {
+  const ctx = audioCtx; if (!ctx || !V || !V.live) return;
+  const t = ctx.currentTime, d = pos.distanceTo(camera.position);
+  V.g.gain.setTargetAtTime(1.5 / (1 + d / 6), t, 0.05);
+  V.lp.frequency.setTargetAtTime(9000 * Math.pow(600 / 9000, Math.min(1, d / 180)), t, 0.08);
+  if (V.pan) V.pan.pan.setTargetAtTime(THREE.MathUtils.clamp(panTo(pos.x, pos.z) * 0.85, -1, 1), t, 0.05);
+}
+function hjVoiceStop(V, delay, tc) {
+  const ctx = audioCtx; if (!ctx || !V) return;
+  V.live = false;
+  const t = ctx.currentTime + delay;
+  V.g.gain.cancelScheduledValues(ctx.currentTime); V.g.gain.setTargetAtTime(0, t, tc);
+  try { V.src.stop(t + tc * 8 + 0.05); } catch (e) {}
 }
 
 /* ---- THE ROOM'S OWN GRADE. Three things were wrong with how the hall read,
@@ -78158,6 +79899,11 @@ function thrBottleLand(g, sp) {
   }
 }
 // the room's floor, for anything thrown or falling in it
+const _floorBeforeDun = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => {
+  if (inDun && dunWalk && Math.abs(x - DUN_X) < 20 && Math.abs(z - DUN_Z) < 20) return DUN_Y - 1.265;
+  return _floorBeforeDun(x, z, y);
+};
 const _floorBeforeThrone = bunkerFloorAt;
 bunkerFloorAt = (x, z, y) => {
   if (inThrone && thrWalk && Math.abs(x - THR_X) < 40 && Math.abs(z - THR_Z) < 40) {
@@ -79527,7 +81273,7 @@ MUT_KINDS.wellman = {
   bossDeath: true,
   hideMeshes: ['Object_75'],             // the teeth: a separate mesh of 289 vertices, yellow pegs in the open mouth (the owner: "too corny")
   death: { BUCKLE: 1.2, DROP: 2.0, TAIL: 2.6, QUIET: 3.4 },
-  h: 1.92, hp: 36, dmg: 1, bleedRes: 1.1, hitR: 0.85, body: 0.55, lungeStop: 1.35, landSlop: 0.22, limbR: 0.26, lungeLead: 0.3, lungeK: 1.0,
+  h: 1.92, hp: 50, dmg: 1, bleedRes: 1.1,   /* 36 → 50 (2026-10-14: "give him more health") */ hitR: 0.85, body: 0.55, lungeStop: 1.35, landSlop: 0.22, limbR: 0.26, lungeLead: 0.3, lungeK: 1.0,
   /* QUICK: 1.5 of the pale one's pace is 6.9 m/s at a run, his clips allowed
    * to play at up to three times their stride so the feet keep up, and a
    * burst (`st.sprint`) on every charge that takes him past ten for a moment. */
@@ -80103,7 +81849,7 @@ function wellKeyLie(x, z, quiet, fromY) {
   if (!W.getObjectByName('hitProxy')) {
     const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
     hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; W.add(hit);
-    addItemShine(W, { size: 1.2, height: 0.45, strength: 2.8 });
+    addItemShine(W, { size: 2.0, height: 0.5, strength: 4.2, lift: 1.6, through: 0.7, beacon: 1 });   // (was 1.2 / 2.8 and nothing else: lost in the dark beside the body)
   }
   addInteractable(W, 'Take the Pavilion key', 'inventory', {
     onActivate: () => {
@@ -82236,7 +83982,7 @@ function hornLie(x, y, z, quiet) {
     hornProp.onImpact = (sp) => { if (!rang && sp > 1.0) { rang = true; try { sfxThud(0.06); } catch (e) { /* a sound is never fatal */ } } };
     playSample('ringDrop', 0.95);
   } else w.position.y += 0.03;
-  addItemShine(w, { size: 1.3, height: 0.5, strength: 3.0, through: true });
+  addItemShine(w, { ...DROP_SHINE, height: 0.5 });
   addInteractable(w, 'Take the Great Crab Call', 'inventory', {
     onActivate: () => {
       if (hornProp) hornProp.dead = true;
@@ -82288,7 +84034,14 @@ function blowCrabCall() {
 const CRAB_W = 1100, CRAB_TOP = 190;   // (at 210 its whole body cleared the sea and it showed its legs: the shell is what comes up)                    // its width, and how far its carapace stands out of the sea when it is up
 const CRAB_P = { x: ISLE_AXIS.x - 1100, z: ISLE_AXIS.z - 30, aim: ISLE_AXIS.x - 800, cx: null, cz: null };   // x is set from its own length when it is built: its head stops ~380 m short of the rock
 const CRAB_YAW_OFF = 0.45;                               // turned this far off head-on
-const CRAB_T = { horn: 3.4, black: 4.0, shot1: 4.4, rise0: 5.0, rise1: 21.5, shot2: 14.5, shot3: 20.5, cut: 28.0, card: 29.4 };
+/* AND IT IS NOT A CUTSCENE (2026-10-14, the owner: "make me see the great horseshoe crab from on top of the lighthouse
+ * when it emerges dont make it a cutscene actually then when it cuts to black have it go black for 5 seconds instead of
+ * 3"). The horn, and then you are still on the gallery with the game in your hands: look where you like, walk where
+ * you like, while the sea boils a kilometre out and the shell comes up (`rise0`..`rise1`), the air cleared for it
+ * and the ground shaking under you (the game's own shake, `trauma`: the camera IS the player now, and jittering its
+ * position would walk you). At `cut` the black, held five seconds, and the morning. The three shots (the gallery's
+ * long lens, the jetty, the crane over the lantern) are gone. */
+const CRAB_T = { horn: 3.4, black: 4.0, rise0: 5.0, rise1: 21.5, cut: 28.0, card: 33.0 };   // card: the morning (`startWakeCut`), five seconds of black after `cut`
 let crabCut = null, crabGiant = null, crabFoam = null, crabSpray = null, crabMist = null, isleMagicTicked = false;
 function crabSprayPoints(n) {
   const geo = new THREE.BufferGeometry();
@@ -82428,8 +84181,7 @@ function startCrabCut() {
   if (!inventory.includes(hornItem)) return;
   if (equipped !== hornItem) toggleEquip(hornItem);
   crabCut = { t: 0, fov: settings.fov, q0: camera.quaternion.clone(), p0: camera.position.clone(), snd: null, shake: 0 };
-  hovered = null; crosshair.style.display = 'none'; setPrompt('');
-  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  hovered = null; setPrompt('');
   sfxCrabHorn(1.0);
   crabBuildGiant();                                       // built now, compiled while the horn sounds and the black comes down
 }
@@ -82503,47 +84255,26 @@ function updateCrabCut(dt) {
   // the air is cleared for it — at the fog of the island it would be a kilometre of grey
   if (t > T.black) scene.fog.density = Math.min(scene.fog.density, 0.00062);
   ISLE_MAGIC_U.uTop.value = 1;
-  // the shots
-  const crown = G ? G.position.y : OCEAN_Y;
-  if (t < T.horn) {
-    // the horn at your lips, and your eyes going out over the sea to where it is going
-    const k = ease(Math.min(1, t / T.horn));
-    _gcA.set(CRAB_P.aim, OCEAN_Y + 60, CRAB_P.z);
-    _gcM.lookAt(C.p0, _gcA, camera.up); _gcQ.setFromRotationMatrix(_gcM);
-    camera.position.copy(C.p0); camera.quaternion.slerpQuaternions(C.q0, _gcQ, k * 0.85);
-    C.fov = settings.fov - (settings.fov - 70) * k;
-    blackoutEl.style.opacity = '0';
-  } else if (t < T.shot1) {
-    blackoutEl.style.opacity = Math.min(1, (t - T.horn) / (T.black - T.horn)).toFixed(3);
-  } else if (t < T.shot2) {
-    // from the gallery's sea side, the lens long, drifting in
-    blackoutEl.style.opacity = Math.max(0, 1 - (t - T.shot1) / 0.8).toFixed(3);
-    const s = (t - T.shot1) / (T.shot2 - T.shot1);
-    crabLook(A.x - 2.3, ISLE_GALLERY + 1.75, A.z + 0.4, CRAB_P.x + 120, OCEAN_Y + 40 + 60 * ease(s), CRAB_P.z - 60);
-    C.fov = 60 - 10 * s;                                  // the whole shell in it as it breaks the surface, then in on it
-  } else if (t < T.shot3) {
-    // low on the jetty, looking up at it
-    const s = (t - T.shot2) / (T.shot3 - T.shot2);
-    crabLook(-25.5, OCEAN_Y + 2.4 + 0.3 * s, -1149.5 + s * 0.6, CRAB_P.x + 120, crown * 0.55 + OCEAN_Y + 25, CRAB_P.z - 60);   // (clear of the jetty's piles)
-    C.fov = 64 - 6 * s;
-  } else if (t < T.cut) {
-    // over the lantern, the tower against it, rising
-    const s = (t - T.shot3) / (T.cut - T.shot3);
-    // a crane: up off the lantern and back, until the whole of it lies in the sea below you, the beam going out to it
-    const e3 = ease(s);
-    crabLook(A.x + 40 + 160 * e3, ISLE_GALLERY + 25 + 335 * e3, A.z + 20 + 100 * e3, (CRAB_P.cx ?? CRAB_P.x) + 100 * e3, OCEAN_Y + 60 - 60 * e3, CRAB_P.cz ?? CRAB_P.z);
-    C.fov = 82 - 12 * e3;
+  // no shots: you are looking with your own eyes until the black
+  if (t < T.cut) {
+    C.fov = settings.fov;
   } else {
+    if (!C.blacked) {
+      // the black comes down, and the game is taken off you from here
+      C.blacked = true; crosshair.style.display = 'none'; setPrompt(''); hovered = null;
+      velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+      lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order); lookEuler.z = 0;
+    }
     // nothing: black, and the card
     if (!wakeCut) blackoutEl.style.opacity = '1';    // (the wake-up has the black from here)
     if (C.snd && !C.sndStop) { C.sndStop = true; crabSoundStop(C.snd); }
     if (t >= T.cut + 0.2 && !wakeSet) buildWakeSet();   // built in the black, compiled before it is shown
     if (t >= T.card && !ended) startWakeCut();          // and then the morning (`startWakeCut`), and its end is the card
   }
-  // the ground shakes while it comes up
+  // the ground shakes while it comes up (the game's shake: the camera is the player)
   if (t > T.rise0 && t < T.cut) {
-    const sh = 0.05 * THREE.MathUtils.smoothstep(t, T.rise0, T.rise0 + 4) * (1 - THREE.MathUtils.smoothstep(t, T.rise1, T.rise1 + 3)) * (t >= T.shot3 ? 0.4 : 1);
-    camera.position.x += (Math.random() - 0.5) * sh; camera.position.y += (Math.random() - 0.5) * sh;
+    const sh = THREE.MathUtils.smoothstep(t, T.rise0, T.rise0 + 4) * (1 - THREE.MathUtils.smoothstep(t, T.rise1, T.rise1 + 3));
+    trauma = Math.max(trauma, 0.42 * sh);
   }
   if (!C.snd && t > T.black) C.snd = sfxCrabRise();
   if (!C.mus && t > T.horn) { C.mus = true; try { startLighthouseTrack(); } catch (e) { /* a sound is never fatal */ } }   // the lighthouse's music is the horn's (2026-10-13)
@@ -82704,7 +84435,7 @@ function buildWakeSet() {
   crab.traverse((o) => { if (o.isMesh && o.material) o.material = bleedPale(o.material, U); });
   const cw = new THREE.Group(); cw.add(crab); wakeScene.add(cw);
   const CRAB_AT = [-1.08, -0.56], SYR_AT = [-0.55, -0.80];
-  cw.position.set(CRAB_AT[0], 0, CRAB_AT[1]); cw.rotation.set(0.04, 2.3, -0.06);
+  cw.position.set(CRAB_AT[0], 0, CRAB_AT[1]); cw.rotation.set(0, 2.3, 0);
   // under each a soft dark of its own on the sand, or in full sun they float
   const blob = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
     const gr = g.createRadialGradient(32, 32, 4, 32, 32, 31); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
@@ -82713,11 +84444,20 @@ function buildWakeSet() {
   shade(CRAB_AT[0] + 0.03, CRAB_AT[1] + 0.02, 0.62, 0.48, 2.3);
   shade(SYR_AT[0], SYR_AT[1], 0.10, 0.36, -1.14);
   S.crab = cw;
-  const seat = () => {                       // by its own box, a finger into the sand (the scan can land late)
+  /* SEATED BY ITS SHELL'S RIM, NOT ITS LOWEST POINT (2026-10-14: "the end cutscene horshoe crab should
+   * not be floating"). Set down by its box, it stood on its legs and tail with the rim 7 cm up on average and
+   * daylight under it. The rim (every vertex out past 55% of its radius) is what a dead one lies on: its
+   * lower third is put a centimetre into the sand, and the legs go under. */
+  const seat = () => {
     cw.position.y = 0; cw.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(crab);
     if (b.isEmpty()) return false;
-    cw.position.y = sandY(CRAB_AT[0], CRAB_AT[1]) - b.min.y - 0.12;   // (its legs under the shell, in the sand: the rim of a dead one lies on it)
+    const c = b.getCenter(new THREE.Vector3()), R = Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, v = new THREE.Vector3(), rim = [];
+    crab.traverse((o) => { if (!o.isMesh) return; const p = o.geometry.attributes.position;
+      for (let i = 0; i < p.count; i += 2) { v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld); if (Math.hypot(v.x - c.x, v.z - c.z) > 0.55 * R) rim.push(v.y); } });
+    rim.sort((a, b2) => a - b2);
+    const lie = rim.length ? rim[Math.floor(rim.length * 0.33)] : b.min.y;
+    cw.position.y = sandY(CRAB_AT[0], CRAB_AT[1]) - lie - 0.01;
     return true;
   };
   S.seat = seat; S.seated = seat();
@@ -83050,7 +84790,9 @@ let isleHold = null;
 function isleRestoreAt(x, y, z) {
   if (z > -1120 || z < -1192 || x < -34 || x > 22) return;
   const feet = y - playerEye();
-  if (feet < 2) return;
+  // the jetty's deck is 0.41 up, under the beach-height guard, and out at sea where no beach is (2026-10-14: Henry is snatched off its end, and that saves there)
+  const jetty = x > -27 && x < -21.5 && z < -1139.5 && z > -1161.6 && feet > 0.2;
+  if (feet < 2 && !jetty) return;
   if (!isleReady) { isleHold = { x, z, f: feet }; onIsle = true; return; }
   if (ISLE_SITE.ready && !ISLE_SITE.walls) while (!fortWallsStep(1e9, ISLE_SITE)) { /* behind the black */ }
   const d = Math.hypot(x - ISLE_AXIS.x, z - ISLE_AXIS.z);
@@ -83387,7 +85129,7 @@ function updateThroneScene(dt) {
   stepThrChain(dt);
   if (D.chainRage > 0) D.chainRage -= dt;
   const C = thrCut; if (!C) return;
-  if (!inThrone) { thrCut = null; return; }
+  if (!inThrone) { if (thrCut && thrCut.kind === 'rise' && thrScene.phase === 4) thrScene.phase = 3; if (thrCut && thrScene.phase === 1) thrScene.phase = 0; thrCut = null; return; }   // (a take cut short by leaving plays again on the way back: it left phase 4 stuck and him seated for good)
   C.t += dt;
   updateWorldSparks();     // the sparks and the flash live in `update()`, which a take stops
   if (C.kind === 'chain') {
@@ -83595,21 +85337,21 @@ const DEMON_BASE = {
   /* THEIR FEET GO WHERE THEY GO (`velGait`), at a pace the stride can keep
    * (`gaitMax`), with no closing dash and only a little of each blow's lunge
    * (the clips carry none of it, so every metre of lunge is a metre of skate) */
-  velGait: true, gaitMax: 1.35, noDash: true, lungeK: 0.30,
+  velGait: true, gaitMax: 2.2, noDash: true, lungeK: 0.45, windWalkK: 0.3, lungeMax: 3.6,   // (2026-10-14: 1.35 / 0.30 — "they never attack they slide … they just stand there": a chase over your walk, the wind-up's skate cut to a third, the lunge capped at a stride's speed)
   facingRef: 'mixamo', faceFix: 0, headPop: true,
-  h: 2.25, hp: 10, dmg: 1, hitR: 0.85, body: 0.60, lungeStop: 1.15, landSlop: 0.26,   // at 0.95 they fought standing on your toes and filled the frame
+  h: 2.25, hp: 14, dmg: 1, hitR: 0.85, body: 0.60, lungeStop: 1.15, landSlop: 0.26,   // (10 until 2026-10-14: "way too easy")   // at 0.95 they fought standing on your toes and filled the frame
   /* A BLOW YOU CAN SEE LAND (the owner's word: too hard to read): only what
    * is actually touching you counts, the swing closes WITH the blow, and they
    * come in closer before they throw it rather than raking the air at arm's
    * length and being scored on the benefit of the doubt. */
   limbR: 0.40, bodyLow: 1.45, lungeLead: 0.26, aimDrop: 0.12,
-  speedK: 1.18, windK: 1.34, reachK: 1.0, aggr: 1.70, press: 0.84, chainMax: 2,   // a longer draw-back: closer blows land more, so the tell has to be easier to read
+  speedK: 1.18, windK: 1.22, reachK: 1.0, aggr: 2.20, press: 0.95, chainMax: 3,   // a longer draw-back: closer blows land more, so the tell has to be easier to read (2026-10-14, round 3: "still not doing enough fighting" — keener, a shorter draw, a third blow in a chain)
   // the pack: how long it stays in (swings), how far out it holds, how keen it is to come in
-  bursts: 2, holdR: 5.0, pressW: 1, pressT: 7,
+  bursts: 4, holdR: 4.0, pressW: 1, pressT: 12, sep: 2.5, cleaveK: 0.45,   // (sep 1.7 packed them into one swing's arc — "you can hit them all with one swipe"; 2.5 puts four round you a quarter-turn apart)
   use: { rdRake: 0.18, rdRake2: 0.13, rdBite: 0.17, rdNeck: 0.08, rdPunch: 0.14, rdFlurry: 0.09, rdKick: 0.09, rdKick2: 0.06, rdButt: 0.06 },
-  circle: 0.25, step: 0.30, smart: 1, feint: 0.08, sizeUp: 0.02, restless: 0, turnMax: 3.8,   // a body turned faster than its feet can step round is a body spun on a pin
+  circle: 0.12, step: 0.30, smart: 1, feint: 0.04, sizeUp: 0, restless: 1, waitSide: 0.2, prowl: 0.85, turnMax: 3.8,   // a body turned faster than its feet can step round is a body spun on a pin
   yawK: 0.8, fade: 0.22,
-  poise: 4, poiseBack: 1.6, poiseWait: 1.2, parryK: 1.1, recoilK: 0.50, stunK: 0.65, blockCost: 0.50, block: 0,
+  poise: 5, poiseBack: 1.6, poiseWait: 1.2, parryK: 1.1, recoilK: 0.50, stunK: 0.65, blockCost: 0.50, block: 0,
   fidgetK: 0.2, fidgetGap: 2.6,
   aimed: true, barLen: 0.22, aimK: 2.3,
   stunClip: 'hitBig', first: 'idle', sleepIdle: null, wakeAt: 0,
@@ -83628,8 +85370,8 @@ const DEMON_BASE = {
   matMore: demonRuneGlow,
   author: authorPickClips, pickJoints: DEMON_JOINTS,
   parSrc: [[() => demonMoves, '*'], [() => knightMoves, { dStrL: 'strafeL', dStrR: 'strafeR2', dStrL2: 'strafeL2', dStrR2: 'strafeR3' }]],
-  anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'roar', die: 'die', back: 'walkB', rate: 1.0, lean: 0.0, strafeK: 1.0 },
-  gaits: { walk: ['walkB', 'walk'], run: ['run'], idle: ['idle', 'idleB', 'idleC', 'idleD'], strafeL: ['dStrL', 'dStrL2'], strafeR: ['dStrR', 'dStrR2'] },   // (2026-10-13: walkC's 0.33 m/s lurch and runB — the run again — out of the pools)
+  anim: { idle: 'idle', walk: 'walkB', run: 'run', roar: 'roar', die: 'die', back: 'walkB', rate: 1.0, lean: 0.0, strafeK: 1.0 },
+  gaits: { walk: ['walkB'], run: ['run'], idle: ['idle', 'idleB', 'idleC', 'idleD'], strafeL: ['dStrL', 'dStrL2'], strafeR: ['dStrR', 'dStrR2'] },   // (2026-10-13: walkC's 0.33 m/s lurch and runB — the run again — out of the pools)
   alias: { idle2: 'idleB', walk2: 'walkB', run2: 'runB', roar2: 'roar', die2: 'die', back: 'walkB', calm: 'idle',
            strafeL: 'dStrL', strafeR: 'dStrR', hit: 'hit', hitSide: 'hit', hitBack: 'hitBig', hitHead: 'hit', parry: 'hitBig', block: 'hit', blockC: 'hit',
            rdRake: 'zAtk', rdRake2: 'zAtkB', rdBite: 'zBite', rdNeck: 'zNeck', rdPunch: 'zPunch', rdFlurry: 'zPunch2', rdKick: 'zKick', rdKick2: 'zKick2', rdButt: 'zButt' },
@@ -83791,7 +85533,9 @@ function demonFrenzyOK(u) {
   /* A PINCER IS TWO TELLS, NOT ONE. The second comes in a beat after the
    * first has committed (a third of a second into its swing) — never on the
    * same frame — so both can be read and one can be stepped. */
-  return n < 1 || (n === 1 && !fresh && Math.random() < 0.15);
+  // (0.15 until 2026-10-14, then 0.45; round 3, "the demons are still not doing enough fighting": measured, three of the
+  // seven swung in twenty seconds and four never did — two at once most of the time now, and now and then a third)
+  return n < 1 || (n === 1 && !fresh && Math.random() < 0.8) || (n === 2 && !fresh && Math.random() < 0.25);
 }
 /* ---- THE PACK. Seven that all come at you at once is noise; seven that
  * fight like a pack is a fight. Two or three PRESS — they have the ring
@@ -83836,7 +85580,7 @@ function updateDemonPack(dt, units = demonUnits) {
    * same arc in front of you, where one cleave took several. */
   const belly = !A[0].farm;
   const nPress = Math.min(A[0].kind.pressMax || 9, A[0].farm ? (A.length <= 2 ? A.length : A.length < 5 ? 2 : 3)
-    : Math.min(A.length, 3));
+    : Math.min(A.length, 5));          // (three until 2026-10-14: four of the seven on you; then five — "the demons are still not doing enough fighting")
   let press = 0;
   for (const u of A) {
     const pk = u.pk || (u.pk = { role: 'hold', since: Math.random() * 2, sw0: 0, t: 0, side: 0, sideT: 0, R: 0 });
@@ -83871,6 +85615,17 @@ function updateDemonPack(dt, units = demonUnits) {
     const ring = A.slice().sort((a, b) => ang(a) - ang(b));
     const a0 = ang(ring[0]), step = Math.PI * 2 / ring.length;
     ring.forEach((u, i) => { u.pk.slotA = a0 + i * step; });
+    /* AND THE ONES PRESSING COME AT YOU FROM THEIR OWN SIDE (2026-10-14, the owner: "the demons need to spread out more
+     * … you can hit them all with one swipe"). The slots were only the holders': every presser ran straight in down
+     * its own line, which from a pack in front of you is one arc, one cleave. A presser not in a blow is walked along
+     * the circle round you toward its slot as it closes, so they arrive from all round you. */
+    for (const u of A) {
+      if (u.pk.role !== 'press' || u.st.atk >= 0 || u.st.stun > 0 || u.st.recoil > 0 || u.rag || !u.st.alive) continue;
+      const p = u.g.position, dx = p.x - camera.position.x, dz = p.z - camera.position.z, d = Math.hypot(dx, dz);
+      if (d < 1.0 || d > 9) continue;
+      const a = Math.atan2(dx, dz), v = THREE.MathUtils.clamp(angDiff(u.pk.slotA, a), -0.6, 0.6) * 1.6 * dt * Math.min(1, d / 2.5);
+      p.x += Math.cos(a) * v; p.z -= Math.sin(a) * v;            // along the circle (d/da of (sin a, cos a))
+    }
   }
 }
 const _dhV = new THREE.Vector3();
@@ -83907,17 +85662,31 @@ function demonHold(u, dt) {
       if (Math.abs(da) > 0.12) pk.side = da > 0 ? 1 : -1;
     }
     const radial = THREE.MathUtils.clamp((d - pk.R) * 1.0, -1.3, 1.3);   // + toward you (and never faster than a side-step or a back-step can carry)
+    /* AND A DEMON WAITING ITS TURN PROWLS, IT DOES NOT SKATE (2026-10-14, the owner: "they slide"). It circled on the
+     * knight's borrowed strafes, whose feet travel FORWARD while the body went sideways — 2.3 m/s of slip,
+     * measured. A demon (`prowl`) now walks its arc facing where it goes, at the pace its own walk carries
+     * (`walkB`, 0.52 m/s at up to 1.8×), and between legs of it stops dead and turns to face you. */
+    if (u.kind.prowl) {
+      if (!pk.walkT || (pk.walkT -= dt) <= 0) { pk.paused = !pk.paused; pk.walkT = pk.paused ? 0.5 + Math.random() * 0.9 : 1.1 + Math.random() * 1.5; }
+      const tang = pk.paused ? 0 : u.kind.prowl;
+      const rad = Math.abs(radial) < 0.35 ? 0 : THREE.MathUtils.clamp(radial, -u.kind.prowl, u.kind.prowl);
+      tx = (-dz / d) * pk.side * tang + (dx / d) * rad;
+      tz = (dx / d) * pk.side * tang + (dz / d) * rad;
+      spd = 1; st.side = 0; st.back = 0;
+      pk.prowling = Math.hypot(tx, tz) > 0.1;
+    } else {
     const tang = MUT_STRAFE * (u.kind.anim.strafeK || 1) * 0.72;
     tx = (-dz / d) * pk.side * tang + (dx / d) * radial;
     tz = (dx / d) * pk.side * tang + (dz / d) * radial;
     spd = 1;
     st.side = Math.abs(radial) < tang * 1.2 ? pk.side : 0;
     st.back = radial < -0.6 ? 0.05 : 0;
+    }
   }
   p.x += tx * spd * dt; p.z += tz * spd * dt;
   mutClampX(u, p, dt);
-  // face you, at a body's pace
-  const want = Math.atan2(dx, dz);
+  // face you, at a body's pace — or, prowling, where it is going
+  const want = pk.role !== 'press' && pk.prowling && u.kind.prowl ? Math.atan2(tx, tz) : Math.atan2(dx, dz);
   let dr = want - u.g.rotation.y; dr = Math.atan2(Math.sin(dr), Math.cos(dr));
   const cap = (u.kind.turnMax || 6) * dt;
   u.g.rotation.y += THREE.MathUtils.clamp(dr, -cap, cap);
@@ -85528,7 +87297,7 @@ const FARM_GRIT_GLSL = `
 function farmGrit(mm, u) {
   if (u.kind.tint) mm.color.lerp(new THREE.Color(0x9e978e), 0.65);   // off the cold grade: the castle is lit by fire
   mm.aoMapIntensity = 1.55;
-  if (mm.normalScale) mm.normalScale.set(1.6, 1.6);
+  if (mm.normalScale) mm.normalScale.set(2.1, 2.1);
   const rnd = mulberry32((u.saveKey || u.kind.name || 'farm').split('').reduce((a, ch) => a * 31 + ch.charCodeAt(0) | 0, 7));
   const U = { uFgSeed: { value: rnd() * 40 }, uFgBlood: { value: 0.35 + rnd() * 0.65 } };
   mm.userData.fgU = U;
@@ -85539,6 +87308,11 @@ function farmGrit(mm, u) {
     sh.vertexShader = 'varying vec3 vFgP;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vFgP = position;');
     sh.fragmentShader = FARM_GRIT_GLSL + '\n' + sh.fragmentShader
       .replace('#include <map_fragment>', `#include <map_fragment>
+        /* AND THE PACK'S POSTER COLOURS GO (2026-10-14, the owner: "the farmers look too cartoonish make them match the
+         * style better"): the flat bright albedo of a low-poly pack washed most of the way to grey and its darks pushed
+         * down, so the cloth and skin read as worn things under firelight and not as painted toys. */
+        { float fgL0 = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+          diffuseColor.rgb = pow(mix(vec3(fgL0), diffuseColor.rgb, 0.5), vec3(1.12)); }
         vec3 fgP = vFgP * 0.01 + uFgSeed;
         float fgMot = fgF(fgP * 7.0), fgBig = fgF(fgP * 1.9 + 4.0), fgFine = fgN(fgP * 85.0);
         float fgHt = clamp(vFgP.y / 182.0, 0.0, 1.0);
@@ -85553,15 +87327,27 @@ function farmGrit(mm, u) {
         /* DRIED blood: nearly black, a little brown — at a wet red it read as
          * orange paint dots under the fires */
         fgMul *= mix(vec3(1.0), vec3(0.34, 0.12, 0.10), clamp(fgBl * 0.75 + fgSp * 0.7, 0.0, 1.0) * uFgBlood);
-        diffuseColor.rgb *= fgMul;`)
+        diffuseColor.rgb *= fgMul;
+        /* AND THE FOLDS IN DIRECT LIGHT (round 3: "give the farmers more detail they look too cartoonish still"). The
+         * occlusion map the file ships darkens only AMBIENT light in three, and these men are lit by the moon and the
+         * fires — direct light — so every fold, seam and crease in it was thrown away and the cloth read as flat
+         * painted plastic. Some of it is put into the colour itself. */
+        #ifdef USE_AOMAP
+          float fgAO = texture2D(aoMap, vAoMapUv).r;
+          diffuseColor.rgb *= mix(1.0, fgAO * fgAO, 0.6);
+          fgMul *= mix(1.0, fgAO, 0.5);
+        #endif`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { float fgL1 = dot(totalEmissiveRadiance, vec3(0.299, 0.587, 0.114)); totalEmissiveRadiance = mix(vec3(fgL1), totalEmissiveRadiance, 0.5); }
         totalEmissiveRadiance *= fgMul;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = clamp(roughnessFactor + fgMud * 0.12 - fgBl * uFgBlood * 0.30, 0.25, 1.0);`)
+        roughnessFactor = clamp(roughnessFactor + fgMud * 0.12 - fgBl * uFgBlood * 0.30, 0.58, 1.0);   // (a floor of 0.25 put a plastic sheen on cloth and skin)`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-        normal = fgBump(-vViewPosition, normal, (fgFine * 0.0007 + fgMot * 0.0016 + fgMud * 0.0012));`);
+        // relief at three scales: the mottle, a weave/pore grain of a few millimetres, and long folds that hang down the body
+        float fgGrain = fgN(fgP * 340.0), fgFold = fgN(vec3(fgP.x * 38.0, fgP.y * 9.0, fgP.z * 38.0));
+        normal = fgBump(-vViewPosition, normal, (fgFine * 0.0007 + fgMot * 0.0016 + fgMud * 0.0012 + fgGrain * 0.00022 + fgFold * 0.0014));`);
   };
-  mm.customProgramCacheKey = () => 'farmGrit' + (mm.isMeshStandardMaterial ? 's' : 'b');
+  mm.customProgramCacheKey = () => 'farmGrit4' + (mm.isMeshStandardMaterial ? 's' : 'b');
 }
 const FARM_TEX = {};                        // material name -> the maps the first copy uploaded
 const FARM_TOOLS = {};                      // 'axe' | 'rake' | 'hammer' -> the tool, measured in the model's own units
@@ -85670,7 +87456,8 @@ function authorFarmerClips(u, m) {
   }
   farmArm(u, m);
   installLife(u, m, J);
-  if (u.life) u.life.grip = u.farmTool ? 1.2 : null;          // a fist round the handle; a bare hand is the claws' fist
+  if (u.life) u.life.grip = u.farmTool ? FARM_FIST : null;     // a fist round the handle; a bare hand is the claws' fist
+  if (u.farmTool) farmSeatTool(u, m, FARM_FIST);
   u.packList = u.packList || farmUnits;
   const mc = farmMocap(u, R0);
   if (!mc) u.parLate = () => {
@@ -85756,8 +87543,30 @@ function farmArm(u, m) {
   hand.matrixWorld.clone().invert().multiply(Mw).decompose(mesh.position, mesh.quaternion, mesh.scale);
   hand.add(mesh);
   const tip = new THREE.Object3D(); tip.position.copy(want.c).addScaledVector(want.ax, want.hi); mesh.add(tip);
-  u.farmTool = mesh;
+  u.farmTool = mesh; u.farmPalm = palm.clone();
   u.bones = u.bones || {}; u.bones.tip = tip; u.limbs = null;
+}
+/* AND THE HANDLE IS IN THE FIST (round 3: "make the farmers actually hold there weapons"). The handle went through
+ * `palm` — 62 % of the way from the wrist to the middle knuckle, which is the flat of the palm itself — and the life
+ * layer's curl of 1.2 a joint closed the fingers into a hook in front of it: measured from the front and the side,
+ * every tool lay across the outside of half-bent fingers, the rake's under the wrist. The fist now closes harder
+ * (`FARM_FIST`), and with it closed the handle is moved to where the fingers wrap — the middle of the four fingers'
+ * joints, knuckle to tip — so they close round it. */
+const FARM_FIST = 1.5;
+function farmSeatTool(u, m, G) {
+  const S = u.life, mesh = u.farmTool, hand = mesh && mesh.parent;
+  if (!S || !mesh || !hand || !u.farmPalm) return;
+  const fs = S.fingers.filter((f) => f.R), keep = fs.map((f) => f.b.quaternion.clone());
+  for (const f of fs) f.b.quaternion.multiply(_lfQ.setFromAxisAngle(f.ax || _lfX, f.sign * G * f.k));
+  m.updateMatrixWorld(true);
+  const c = new THREE.Vector3(), v = new THREE.Vector3(); let n = 0;
+  m.traverse((b) => { if (b.isBone && /RightHand(Index|Middle|Ring|Pinky)[1-4]_/.test(b.name)) { c.add(b.getWorldPosition(v)); n++; } });
+  fs.forEach((f, i) => f.b.quaternion.copy(keep[i]));
+  m.updateMatrixWorld(true);
+  if (!n) return;
+  c.multiplyScalar(1 / n);
+  const inv = hand.matrixWorld.clone().invert();
+  mesh.position.add(c.applyMatrix4(inv).sub(u.farmPalm.clone().applyMatrix4(inv)));
 }
 /* ---- THE DOORS. The castle's doors are one merged mesh (`acmat_16`), 22
  * islands: every door a 186-triangle plank slab with its two handles. The
@@ -86775,9 +88584,17 @@ function stickArtifacts() {
 function attachArtifact(a, w) {
   if (!a || !isArtWeapon(w) || !inventory.includes(w)) return false;
   if (w.artifact === a) return true;
+  /* ONE ARTIFACT TO A WEAPON, AND YOU TAKE THE FIRST ONE OFF YOURSELF (2026-10-14, the owner: "make it tell you
+   * you cant have two artifacts on a weapon it shouldnt make an artifact disappear when you stack them"). The old
+   * one used to be put back into the pack BEFORE the new one left it, its refusal unread — with the pack full it
+   * went nowhere and the save forgot it. Now it is refused, and you are told how. */
+  if (w.artifact) {
+    sayInventoryFull('One artifact to a weapon');
+    artBanner(`${w.name} already holds ${w.artifact.name} — take it off first`);
+    try { sfxGateRattle && sfxGateRattle(); } catch (e) {}
+    return false;
+  }
   settleRestore();
-  // one artifact to a weapon: whatever was there comes out into the pack
-  if (w.artifact) { const old = w.artifact; w.artifact = null; old.on = null; addToInventory(old); }
   for (const it of inventory) if (it !== w && it.artifact === a) it.artifact = null;
   if (inventory.includes(a)) {
     const i = inventory.indexOf(a); inventory.splice(i, 1); clearSlot(a);
@@ -87359,7 +89176,7 @@ function artSpawnWorld(rise, at = null) {
   w.add(lamp); w.userData.lamp = lamp;
   scene.add(w);
   art.world = w; art.rise = rise ? 0 : 1;
-  addItemShine(w, at ? { size: 0.45, height: 0.3, strength: 0.55, lift: 0, through: true } : { size: 0.9, height: 1.25, strength: 1.4, lift: 0, through: true });
+  addItemShine(w, at ? { ...DROP_SHINE, height: 0.3 } : { ...DROP_SHINE, height: 1.25 });   // (a drop: the cell key's mark — 2026-10-14)
   addInteractable(w, 'Take the Artifact of the Whale', 'inventory', {
     keepSize: true, mid: true,
     when: () => (w.userData.beach ? (art.drop || 0) >= 1 && !wbFareCut : art.rise > 0.7),
@@ -88088,7 +89905,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* AND THE WARM CHAIN, THE FAR-CULL AND EVERY WALL-CLOCK CUT LIVE IN
@@ -88417,7 +90234,7 @@ Object.assign(window.__bw, { crusaderShieldTick, crusaderChain, farmCobble, farm
   setCatFloor: (v) => { catLastFloor = v; }, BEN_NPC,
   audioNodes: () => ({ waveBusGain, forestBed, masterGain, benBr }),
   audioDbg: () => ({ forest: forestBed && +forestBed.g.gain.value.toFixed(4), ben: benBr && benBr.g && +benBr.g.gain.value.toFixed(4), sand: (sampleBanks.sandStep || []).filter(Boolean).length, benBuf: (sampleBanks.benBreath || []).filter(Boolean).length, bedK: beachBedK() }),
-  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, isleBarkS: () => isleBark, isleBarkPush, isleRampAt, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), wellLookStart, wellLetUp, wellLeave, endDialog, WELL_X, WELL_Z, wellG, wellSetBucket, sharpenFrame, startCrabCut, hornItem, hornLie, startWakeCut, wakeS: () => ({ t: wakeCut ? +wakeCut.t.toFixed(2) : -1, built: !!wakeSet, seated: wakeSet ? wakeSet.seated : null, ended }), wakeG: () => ({ scene: wakeScene, cam: wakeCam, set: wakeSet }), WAKE_T, crabS: () => ({ t: crabCut ? +crabCut.t.toFixed(2) : -1, giant: !!crabGiant, y: crabGiant ? +crabGiant.position.y.toFixed(1) : null, horn: hornState, ended }), CRAB_T, thrHeadToCamera, isleMagicS: () => ({ k: isleMagicK, top: isleTopK, fog: scene.fog.density, keep: FOG_KEEP.w }), wellPartsS: () => wellParts, rockSurfS: () => rockSurfList, crabUnit, WELL_RIM_Y, wellClinch, wellGrab, wellMindS, wellPhotoItem, wellPhotoS: () => ({ taken: wellPhotoTaken, onTable: !!wellPhotoOnTable }), traderSell, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
+  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, isleBarkS: () => isleBark, isleBarkPush, isleRampAt, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), wellLookStart, wellLetUp, wellLeave, endDialog, WELL_X, WELL_Z, wellG, wellSetBucket, sharpenFrame, startCrabCut, hornItem, hornLie, startWakeCut, wakeS: () => ({ t: wakeCut ? +wakeCut.t.toFixed(2) : -1, built: !!wakeSet, seated: wakeSet ? wakeSet.seated : null, ended }), wakeG: () => ({ scene: wakeScene, cam: wakeCam, set: wakeSet }), WAKE_T, crabS: () => ({ t: crabCut ? +crabCut.t.toFixed(2) : -1, giant: !!crabGiant, y: crabGiant ? +crabGiant.position.y.toFixed(1) : null, horn: hornState, ended }), CRAB_T, thrHeadToCamera, isleMagicS: () => ({ k: isleMagicK, top: isleTopK, fog: scene.fog.density, keep: FOG_KEEP.w }), wellPartsS: () => wellParts, rockSurfS: () => rockSurfList, crabUnit, cellKeyS: () => ({ ...cellKey, world: !!cellKey.world, prop: !!cellKey.prop }), henryFreeS: () => ({ henryFree, phase: henry && henry.free ? henry.free.phase : null, ring: henryRingTaken, t: henry && henry.free ? +henry.free.t.toFixed(2) : -1 }), henryRingW: () => henryRingWorld, takeHenryRing, goldRingItem, hjS: () => ({ taken: hjTaken, loaded: !!hj, eagle: !!hjEagle, mode: hj ? hj.mode : null, cut: hjCut ? hjCut.phase : null, t: hjCut ? +hjCut.t.toFixed(2) : -1 }), hjG: () => ({ hj, eagle: hjEagle, cut: hjCut }), loadJettyHenry, hjTalk, startHenrySnatch, isleRestoreAt, bootLeft: () => ({ n: startLeft(), open: bwOpen, waiting: bwWaiting.map((j) => j.url.split('/').pop()), parsing: bwParsing, warm: warmSteps.map((w) => w[0]).slice(0, 12), nWarm: warmSteps.length, tex: (texUp.q.length + texUp.wait.length), drain: drainWarmed, mush: mushWarmed, bunker: bunkerWarmed, rooms: bootRoomsAsked }), henryMocap, henryPlay, henrySample, setHenryFree: (v) => { henryFree = v; }, HJ_SPOT, cellKeyItem, cellKeyLie, dealerDropsCellKey, dunS: () => ({ ready: dunReady, inDun, busy: dunBusy, door: !!dunDoorMesh, doorR: dunDoorMesh ? dunDoorMesh.userData.r : null, henry: !!henry, walls: !!dunWalls }), dunG: () => ({ world: dunWorld, door: dunDoorMesh, henry, HENRY_POSE }), startDungeon, loadDungeon, henryPose, DUN_X, DUN_Y, DUN_Z, rockCrabS: () => ({ taken: rockCrabTaken, at: rockCrabW ? rockCrabW.position.toArray().map((v) => +v.toFixed(2)) : null, fill: window.__bwRockFill }), WELL_RIM_Y, wellClinch, wellGrab, wellMindS, wellPhotoItem, wellPhotoS: () => ({ taken: wellPhotoTaken, onTable: !!wellPhotoOnTable }), traderSell, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
   c13State: () => ({ inC13, ready: c13Ready, walls: !!c13Walls, life: !!c13Life, torches: !!(c13Life && c13Life.torches), mask: !!C13_M.data,
     thrive: c13Thrive && { done: c13Thrive.done, jobs: c13Jobs.length, torches: (c13Thrive.torchAt || []).length, banners: c13Thrive.banners.length, lanterns: c13Thrive.lanterns.length, stalls: c13Thrive.stalls.length, towers: (c13Thrive.towers || []).length, lines: (c13Thrive.lines || []).length, windows: (c13Thrive.windows || []).length, fountain: c13Thrive.fountain && [c13Thrive.fountain.x, c13Thrive.fountain.z], door: c13Thrive.door, solids: c13Solids.length, flowers: c13Thrive.flowers, snd: c13Snd && { fountain: !!c13Snd.fsrc, fg: c13Snd.fg && +c13Snd.fg.gain.value.toFixed(3), lute: c13Snd.playing, lg: +c13Snd.lute.gain.value.toFixed(3) } } }),
   c13Thrive: () => c13Thrive, c13Solids, c13Open, c13RunJobs, placeInC13, C13_SITE, C13_X, C13_Y, C13_Z,
