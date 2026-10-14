@@ -542,3 +542,45 @@ stop was tried at 1.15 and put back: at that range the aim fought the cut and
 the fists flicked out and back on the contact frame, 10.8 a minute.
 **Measure every change to his limbs against hits as well as smoothness** — the
 first clean version was smooth and landed half as often.
+
+**HE MOVES LIKE THE CAPTURE NOW (2026-10-13; "his body and arms … look very weird
+and unnatural but the fight is good").** Patched after `MUT_KINDS.samurai`: the
+mocap cuts (`gCutC`, `gCutD`, `sDown`, `sSide`) at `clipRate` 1.08 (were
+1.25–1.40, ~1.45x overall with four fifths of each follow-through dropped) with
++0.25 s recovery so the follow-through plays; `gChop` 1.25 (+0.2); the kicks
+`noAim` (the aim could turn his STANDING thigh) at 1.05; `aimK` 1.4 → 0.8,
+`yawK` 1.6 → 0.6 (the whole model yawed up to 64° — feet swivelling), `aimFrom`
+0.72; `stagger` as `hit`/`hitBig`/`stunClip` (he had none, so a parry froze his
+swing for the whole stun); `anim.lean` 0. Wind-ups untouched. **Measured with
+`tools/contact.js` (`__contact`, 40 s standing still): 22 blows landed, the
+blade 0.25 m median / 0.44 max from you** — the hits still connect.
+
+**HE STANDS UP IN HIS GUARD (2026-10-14, the owner: "his arms fold in and his
+neck stretches weird … dont change the fight only looks").** Filmed from
+beside him with `tools/samrun.js` (frames picked where `samIK.g` > 0.8):
+mid-cut he stands well; in the guard (idle, strafes, walk) the stance clips
+stoop him ~30° with the head out in front, and the guard held both fists at
+the belly, elbows in. `kind.postClip(u, saved)` — a new hook in
+`installLife`'s mixer wrap, after `lifeApply` and BEFORE the `forestFK` roots
+are carried (so shoulders and arms follow and the collar does not stretch) —
+runs `samUpright`: weighted by `samIK.g` (which eases out as a cut starts),
+`SAM_UPRIGHT` 0.55 of the hips→spine004 lean taken out at `DEF-spine001`,
+`SAM_HEAD_UP` 0.6 of the head's lean at `DEF-spine005`; pushed on `saved` so
+the next clip pass starts clean. Guard: `SAM_GUARD_OUT` 0.46 → 0.60, the fist
+0.62 of the way navel → chest (was 0.35), elbow poles ±0.85 out (were 0.5).
+Fight measured hands-off after: 22.5 swings and 40.5 damage a minute, every
+swing type thrown.
+
+## THE SAMURAI "FOLDING IN" WAS HIS FOREST ROOTS CARRIED AT THE BIND POSE (2026-10-14, round 3)
+"His neck and arms are still moving all weird … it looks even worse now." Measured over 1,200 fight
+frames (`tools/samform.js`, `__samMeasure`): the upper arm came to 0.09 m from the base of his neck and
+the elbow to 0.04 m off his spine line; the clips alone (`mixer.rawUpdate`, `window.__samRaw = true`
+turns the post-mixer layers off) keep them 0.21+ and 0.23+. Cause: `installLife` read the `forestFK`
+offsets at install, before any clip had stamped the rig — the BIND pose — and every one of his own clips
+has the upper arm (0.07, 0.50, -0.07) off its shoulder where the bind has (-0.28, 0.38, -0.20); shoulders
+and breast plates 0.14 m back. Carried there every frame, the arms were dragged into his chest. The
+offsets are now re-read once off a raw stamp of the idle (`fkIdle`, the same save/stamp/restore as
+`pinSamuraiSword`'s grip). After: shoulders 0.28-0.37 m from the neck base, elbows 0.41-0.71 m off the
+spine, no elbow under 40°; the fight unchanged (23 swings, 44 damage a minute). Round H's `samUpright`
+(straightening the stoop) and its guard changes (fists out 0.60, lerp 0.62, poles ±0.85) are reverted: the
+straightening turned his spine under roots that kept the clip's turn, and was worse.

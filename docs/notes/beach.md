@@ -1825,3 +1825,93 @@ clips out of sight right now."
   rim (was 0.30 from 30 cm), and the lining's murk 0.45 (was 0.22), so the
   stone goes down into the dark on one gradient and the join at the tube's
   foot has nothing to show.
+
+**THE FIRST MOUND SAYS IT CAN BE DUG (2026-10-13; the owner: "show the controls
+to dig mound when you see the first one").** "Dig up the mound" only ever came
+up with a dig tool out, so a player walking past the first cache bare-handed
+never learned what a mound was. Two things: `updateDigTip` puts one line in
+`#digtip` (the fight tip's own CSS) the first time an untaken mound is within
+10 m and near the middle of the view (dot > 0.82) — "Mound in the sand ·
+something is buried · Shovel out + click / Find a shovel" — for 8 s or until a
+mound is dug; once a game, `digTipDone` on the save (inferred past z −60 like
+`fightTipDone`). And `updateHover` names a mound under the crosshair without a
+dig tool out ("Something is buried here · take out a shovel to dig" / "you need
+a shovel to dig"); `moundUnderCrosshair` only casts at the sand when a mound is
+within reach + 2 m, because `crosshairGroundPoint` raycasts the whole plane.
+
+**THE BEACH IS SHUT BEHIND YOU BY A SECOND WALL (2026-10-13).** The saucer was
+the only thing that stopped a walk back past the drainage tunnel home; with it
+gone, THE WALL's recipe is built again at `BACK_ROCK_Z` (60) in the rocks
+loader — its own seed (20261013), the three carrying masses the other way
+round (largest against the cliff) and staggered on a slant, two riding on top,
+everything shed and the aprons down its −Z face, the side you walk up to. Its
+colliders overlap from beyond `WADE_X` to beyond `CLIFF_BLOCK_X`. `moodKeys`
+had `UFO_Z` as a key; it is the literal 58 now.
+
+**THE CAMP, REDONE (2026-10-13; the owner: "make the cd player not shine like
+an item also make the towel and everything there with the cd player look more
+real it looks like ai").** What read as generated: colour-quantised clip-art
+maps, every loose thing at 1.6–2.3× life (a 32 cm Discman) and item glints on
+things that are not items. Now: near life size (Discman 1.15×, cans 1.15×,
+goggles 1.2×), lit materials with drawn maps and a little of their own map as
+emissive, no glints on any of it. The towel is a 512×288 terry map (a loop per
+cell, pile noise, a sun-fade, four uneven navy/cream/coral stripes, sand ground
+in at the ends and edges, a damp patch where wet feet stood, a hem, and the
+fringe CUT OUT with `alphaTest`), a normal map off the same loops, and a
+displaced 84×44 sheet bedded into the sand at its edges with a kicked-up
+corner. `towelY(x, z)` is its height in its own frame, and `onTowel` puts a
+thing on it — the Discman's cable is laid along it point by point. **A folded
+end was tried and taken out**: the turned-back flap's hem read as a rung across
+the towel. The tote is a box pushed halfway to its ellipsoid and slumped,
+plain-weave canvas, straps flopped down the side, a rolled towel in its mouth.
+Flip-flops are an extruded sole outline with the heel and ball worn darker.
+The Discman is a lathe body with a brushed lid map printed "DIGITAL MEGA BASS /
+ESP", five rubber keys, a dead LCD and a jack; foam headphones on a steel band.
+`artCanvas` is a CONST declared sixty thousand lines below the camp, so the
+camp builds its canvases itself (`cv`); `artNoise2`/`artFbm`/`artNormalFrom`
+are function declarations and hoist.
+
+**THE SNORKELER LAUGHS THE FIRST TIME YOU STEP ON HIS TOWEL (2026-10-13).**
+`snorkFirstLaughed` (on the save, inferred 40 m past the camp): the first frame
+the camera is over the towel (|dx| < 1.2, |dz| < 0.75 of `CAMP_X/Z`) sets the
+visit going with `L.next` ≈ 0, so the laugh is now; after it the visit's own
+15–32 s clock runs as before.
+
+**THE PACK IS A LITTLE HARDER (2026-10-13; "now that you can hit them all at
+once").** After the kinds are defined, the eight `mutant.glb` kinds get hp × 1.4
+(rounded), aggr × 1.15 and windK × 0.94 — one blade arc hurts everything in it,
+so a pack went down in half the blows it was tuned for.
+
+## 2026-10-14 — the bottle out, the towel's sand, Bradley's line
+
+- **THE MESSAGE IN A BOTTLE IS OUT** (the owner: "take out the bottle on the
+  beach with the note in it"). The prop, its break and the note it dropped are
+  deleted; `bottleProp` (null) and `bottleBroken` stay as names for the
+  harness, and `__bw.bottle` is null. `openNote` is still there, unused.
+- **SAND SHOWED THROUGH THE TOWEL** — z-fighting, not the map: the cloth lay
+  3–13 mm over a beach at y = 0 and `towelY` bedded its edges BELOW it, so at
+  any distance the depth buffer could not separate the two and the sand ate
+  a corner. It rides 3 cm up now (edges still dip, to about 1.8 cm), with a
+  polygon offset (−2, −4). Everything on it asks `towelY`, so it rose with
+  it. The sand grains drawn into the terry were thinned too (threshold 0.86,
+  blend 0.18–0.40): a heavy speckle reads as beach through the cloth.
+- Bradley's rumour line says "a giant horseshoe crab", not "great".
+
+**SURF ON THE ROCKS (2026-10-14, the owner: "make the waves interact more
+real with the rocks this looks bad like ai slop").** The sea's 9 m facets cut
+straight across a boulder. Every formation stone (`surfRocks`, filled by
+`placeMass`; 35 of them with x in −30 … 10.5) gets a ring of foam in ONE mesh
+(`buildRockSurf`, called at the end of the rocks loader): it lies on the
+FACET the ocean draws — the same grid (2200/240, origin `uOffset` − 1100),
+the same diagonal (a,b,d)/(b,c,d), `oceanWave` at the corners, interpolated —
+so it neither floats nor sinks; thickest at the stone, broken by two noises,
+running out and back on a per-stone phase, discarded landward of `shoreLine`.
+`updateRockSurf` throws spray (`spawnPuffs`, pale) as a wash peaks against a
+stone within 40 m. **The rings are wound facing down: DoubleSide**, or nothing
+draws (a forced red fragment found it). The sea's clock can be set for a test
+through the ocean material's `uTime` (high tide at t ≈ 34.9 + 139.6 n).
+
+**THE FIRST DIG CALLS THE FIRST CRAB (2026-10-14).** `revealMoundNear`: on the
+first find (not on a replay, not in dev mode, within 45 m) the loner
+(`crabUnit`, out at (−7.5, −20)) gets `called`, which lets it past its wake
+radius: measured, it woke and came from 21 m to 6 m in three seconds.

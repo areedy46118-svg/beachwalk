@@ -813,3 +813,36 @@ as the torches there make it) with a 3.2 kHz sift at ~0.02. Under him is often
 ROCK, not your room: the spot is the first stretch of YOUR ceiling on the line
 from him to you. A spread of 0.22 m read as snow; 0.07 with a few strays reads
 as a stream out of a joint.
+
+**HE IS AS AGGRESSIVE AS HE WAS, AND HIS BLOWS LAND WHERE YOU SEE THEM
+(2026-10-13; the owner: "got stuck … go back to how aggressive he was … his hits
+… dont even touch me … he swing but sits still then his hand does damage … hit
+through walls … lag less").** Found by diffing `catWander`/`catSteer` against
+HEAD and measuring with `tools/catnav.js` + `tools/contact.js`:
+- **Aggression back to HEAD**: a sighting inside 8 m (or any within 40 s of a
+  fight) is a charge; the stalk's trip-wire is `seenT > 0.18 || dP < 6 ||
+  peeks >= 3 || tries > 3 || stalkT > 45` (plus a noise); the far-gaze freeze is
+  off; prowl 0.82 of hunt speed and the crawl at 1.15; one leg in three upright.
+- **The fight stall**: the grind net (`catGrind > 0.7` → `catNoLine` + a route)
+  fired at his own stopping distance, where he barely moves; a creature with a
+  route cannot swing, so he stopped attacking for two seconds at a time. It only
+  counts out of reach now (`dist > maxReach + 1`).
+- **Readable blows**: `lungeLead` 0.26 (the lunge began ON the contact frame:
+  he stood through the wind-up, then skated in and the claw arrived up to 0.15 s
+  late); stops 3.05–3.35 → 2.7–3.0; `stepBack` 3.2 (from closer than his stop
+  he backs off through the wind-up — his blows had landed with his origin
+  0.6–1.0 m from you, standing in you); `parryK` 0.62 → 0.85; `fade` 0.22 →
+  0.13; `catSolid` no longer turns him while he swings.
+- **The bite** (`plain`) went through `plainLands`: a swing with `headR` (1.15)
+  lands only while his HEAD is within that of you across the strike, with no
+  wall between (`blowWalled`). It was scored at 4.15 m from his feet, through
+  stone, on one frame.
+- **Lag**: `catSees` and the straight-line `clear()` in `catSteer` six times a
+  second (cached), not every frame; `catSoundField` rebuilt at most every
+  0.7 s (was 0.25); `catSqueeze` measures every third frame.
+- **Measured**: 30 s standing still after a chase — 32–35 swings, 24–29 hits,
+  his origin 2.7 m from you at the blow (was ~1.0). Chases: 15 run, all
+  reached, one 8 s stall (seed 7's first, not reproduced), body-in-stone 35 %
+  (the recorded baseline is 37–42 %). **Harness trap**: `__roomBoot('cat')`
+  leaves you on a ledge 1.85 m over his floor and him in his lair, where
+  `blowWalled` is true in every direction — use `__catSetup` + `__nav` first.

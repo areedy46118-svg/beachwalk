@@ -662,3 +662,155 @@ the lighthouse it should be incredible."
   Strength 0.09–0.17: at 0.02–0.04 they did not show at all.
 - `tools/isleshot2.js` → `__isle.sheetPost`: the sheet with `sharpenFrame()`
   run after each view — the rays are in that pass, a bare render has none.
+
+## 2026-10-13 (seventh pass) — the Great Crab Call and what it calls
+
+The owner: "make him drop this exact model … call it 'The Great Crab Call' …
+blown on top of the lighthouse instead of touching the light … a giant
+horseshoe crab (use our model) and have its shell slowly emerge from the water
+… so big that its crazy and spectacular … cut to black and … 'Walk Again'".
+
+- The horn: the museum's scan (1.07 M verts) → `gltfpack.py --decimate 12000
+  --keep-uv --tex 1024 --drop-mr` → `tools/glbcompact.py` (NEW: the decimate
+  leaves the merged vertex arrays whole — 125k verts for 24k used, 4.4 MB →
+  1.1 MB). Laid along X, 0.34 m. `hornItem` (`onPull` → `blowCrabCall`).
+  `hornState` 0/1/2 + `hornAt` on the save; `hornThroneTick` (from
+  `updateThroneScene`) drops it 1.4 s after he dies off his ragdoll's hips
+  with `playSample('ringDrop')`, or lays it quietly by the throne for a save
+  that killed him. Dev mode now grants it and `pavKeyItem` (not the katana or
+  the skull key).
+- The lamp's interactable: "Blow the Great Crab Call" with it, else "Put your
+  hand on the light" → a line, no ending.
+- `startCrabCut` / `updateCrabCut` (in `animateFrame` and `__bw.step`, beside
+  the throne's): `crabCut` is in `frozen()`, its FOV in the camera's chain,
+  the held horn hidden after the horn shot. `update()` stops under a take, so
+  the cut ticks `updateIsleMagic` itself (`isleMagicTicked`, so never twice a
+  frame). Timeline `CRAB_T`: the horn (`sfxCrabHorn`, 3.4 s, your look easing
+  out to sea) → black → the gallery shot (long lens) → the jetty, low → over
+  the lantern → hard black at 28 s with `crabSoundStop` → `showEnd({ bare })`
+  ("Walk Again" only; `#end.bare`).
+- The giant: `hcrabSrcScene` (the limule as loaded) cloned, scaled to
+  `CRAB_W` 720 m across, its crown at the group's origin, head toward the
+  island, 1150 m west; risen from 30 m under to `CRAB_TOP` 150 m over the sea
+  (smootherstep, 5 → 21.5 s). A foam ring (`crabFoam`) at the waterline's
+  radius on the dome, 1400 spray points falling from where the shell stands
+  out of the water. The fog is held at 0.00062 for the take (the island's
+  would make a kilometre of grey). `sfxCrabRise`: 31/43.5/62 Hz groan and a
+  brown roar opening up.
+- The marauder's head in the rise take: `thrHeadToCamera` after the clip has
+  posed him — the head's face axis measured once off the bind pose
+  (`skel.pose()`, restored), the head turned by the smallest rotation onto
+  the camera, the neck a third of it.
+- The well man's key now lands to the octopus ring's sting too.
+
+**THE ISLAND'S LIGHTS DO NOT POP ON (2026-10-13; the owner: "the lighthouse
+lights should always be on not blinking as i get close").** Two things read as
+blinking. (1) `lampReach` scores a lamp 0 once the camera is past its falloff,
+so each lamp post's pool of light (9 m), the postern lantern, the tower door
+lamp and the lantern's own `lampLight` (14 m) snapped on as you came within
+reach. They carry `lpAlways = ISLE_LAMP_ALWAYS` (90) now (`lampLight` a literal
+90: it is built at line ~4650, long before the constant). (2) The burner's
+flash — `lampCore` swelling and the glow jumping whenever the beam faces you —
+sweeps past you fast and near under the tower; it is scaled by
+`1 - lhSteady` (`isleMagicK × 1.6`), and on the island the glow rests a little
+brighter instead.
+
+**THE CALL, THE SEA AND THE MUSIC (2026-10-13; the owner: "make the scene of
+the great horsehoe crab look more real and have the sea on the horizon look
+endless … make the splashes look more real … lighthouse music play only after
+the horn is blown … horn … anywhere at the very top … better more majestic
+lighting … breathtaking").**
+- **The sea does not end**: `oceanFar`, a ring (1–4.7 km) that is a CHILD of the
+  ocean tile with the SAME material — the wave is taken from local position +
+  `uOffset`, so a child is the same water — 0.2 m under it; visible on/near the
+  island and in the take. From the crane (360 m up) the true horizon is under the
+  eye, so a wall (`oceanFar.userData.skirt`) stands at the ring's edge from the
+  sea to the eye's height, shaded from the far sea's blue to the sky's horizon
+  colour. **The frame's grade takes ~20 levels off the dark end**: the wall's
+  colours sit that much over the colours they land on (measured off the frame:
+  sea 12/30/68, sky 5/33/50); at the fog's own colour it read as a black band.
+- **The shell**: roughness 0.24, its own map through a 0.22 cold lift (it was a
+  0.55 blue glow over the whole of it), and a Fresnel rim of the aurora's colour
+  (pow 5, 0.55). A pow-2.6 rim at 1.1 turned the whole low-angle view white.
+- **The water off it**: `crabSprayPoints` (2600, alpha-blended clumps of drops,
+  moonlit, per-drop size 4–20 m, fogged) and `crabMistSprites` (46 billows
+  rising off the waterline and thinning); the foam ring alpha, not additive.
+- **Light**: `crabCut.lightK` brings `moonLight` ×2 and `skyHemi` ×1.35 up over
+  the rise, and `beachRays` adds 1.6× to the moon's shafts.
+- **Music**: the tower-door cue (both the old tower's and the island's) is gone;
+  `startLighthouseTrack()` runs when the horn has sounded (`CRAB_T.horn`).
+- **The horn at the top**: `atLighthouseTop()` = `isleOnGallery` or feet over
+  `ISLE_GALLERY − 1.4`; `hornItem.pullLabel` says "Blow the Great Crab Call"
+  there ("Blow the horn" elsewhere) — the held prompt used to read "Pull the key
+  out of his mouth" (an `onPull` default).
+
+**THE STEPS' SEA-SIDE ENDS HAD NO STONE (2026-10-13).** The model maps the
+jetty flight from its front, so its side faces (x −18.11) had one uv constant —
+a single texel smeared over each. `isleStairSideUV` (on the merged, non-indexed
+walkway) adds the run along the flight (z × 0.023, the risers' density) to the
+dead coordinate for side triangles whose u or v span is under 0.003.
+
+## 2026-10-14 — the stair's land side, the house's floor, two pockets, the shafts, the view
+
+- **THE JETTY FLIGHT HAD NO LAND-SIDE FACE**: rays from inside the flight
+  left through x −15.2 to rock 1.5–3.2 m off at every height, and at the foot
+  the jetty runs on under the treads (the owner stuck there, and saw through
+  the steps from the top). `isleStairWall(walkway)`: a stringer, one block per
+  tread from 0.4 under the jetty to that tread's top, 0.18 thick, along the
+  landing too; its stone a tile cut out of the walkway atlas (u 0.183–0.249,
+  v 0.805–0.841, glTF maps are not flipped), mirrored. **A clone of an island
+  material drops its compile hook (the lift) — copy `onBeforeCompile` and the
+  cache key or it renders black.** In `isleBuildCells` the wall's cells
+  (x1 … x1 + 0.2) are rock and so is any floor in x1 … x1 + 2.6 more than
+  1.6 m under the tread over it. The wall index takes the wall (it is in
+  `isleWorld` before the walls build).
+- **THE HOUSE (`isle_house`) floor is single-sided and half holes** (a 0.4 m
+  probe for board at 26.34 found it under barely half the footprint), and the
+  rock falls two metres under its front. Its footprint: a ~9.4 m square turned
+  −0.237 about (−6.9, −1166.95) (`ISLE_HOUSE`). `isleHouseFloor`: a plank slab
+  (top 26.31, into `floorMeshes`) and a skirt of boards on all four sides from
+  26.0 down to 21 (the wall index makes it solid). Planks at the pale posts'
+  colour (0xc4ad92): darker read as a black hole under the house.
+- **TRAP SCAN**: stand a body on every floor cell at 1.5 m and press forward
+  four ways for 12 frames; < 0.25 m in all four is trapped. Found two:
+  outside the ramp's handrail at x 2.0 (deck to x 3.2, posts, a 2 m drop) and
+  a 0.8 m ledge on the house's east side 1 m over the ramp. `ISLE_NOWALK`
+  boxes write them as rock (the first from x 1.95, or a 0.2 m sliver by the
+  rail stays).
+- **THE SHAFTS**: `uRayT` on the beach 0.34 + 0.30 · `isleMagicK` (was
+  0.16 − 0.02 · im). The pass gathers every pixel over the threshold near the
+  moon's screen place, and the moonlit ground was over it — "moonlight
+  through the ground".
+- **THE VIEW** (`buildVista`/`updateVista`, built the first time the camera
+  is south of `VISTA_Z` −1050, shown only there): the island's air drowns
+  anything past ~200 m (fog ~0.008 at the top, FogExp2), so the near is
+  geometry and the far is light: a hamlet at x 14–44, z −1215 … −1300 (eight
+  cottages, some of two storeys, lit windows with glow points, lamps, boats
+  on the sand, a fire with its own pooled light, a jetty at z −1300 with two
+  boats riding the swell and a green harbour light), dunes and 230 pines
+  (x 38–72 behind it, and along XIII's plateau's south edge); past the fog, a
+  town's lights down the shore, boats' lights at sea, a lighthouse at
+  (28, 32, −2750) flashing every six seconds. Cottages carry colliders.
+
+## The morning after the call (2026-10-14) — `startWakeCut`, `updateWakeCut`, `buildWakeSet`
+The owner: after the Great Crab scene's cut to black, wake up on an empty beach in the day, on your back
+under blue sky and clouds, everything blurred; lift your head, look round, and as the blur lifts find a
+syringe and a pale horseshoe crab beside you; fade to black; the end. Never stand up.
+- `updateCrabCut`'s black branch builds the set at `T.cut + 0.2` and calls `startWakeCut` at `T.card`
+  (where `showEnd` was); the wake's end (`WAKE_T.card`, 26.6 s) calls `showEnd({ bare: true })`.
+  `crabCut` stays set the whole time, so `frozen()` holds `update` and `blackGuard` exempts it.
+- A SCENE OF ITS OWN (`wakeScene`, `wakeCam`), drawn in `animateFrame` in place of the world (before
+  the inspect branch; no viewmodel, no blood-jar corner, no `sharpenFrame` — its moon shafts). Nothing
+  of the night (lights, fogs, recentring tiles, ocean shader) can reach it.
+- The set: sky dome (gradient, FBM cumulus drifting, sun at `WAKE_SUN`), sand plane (falls to the sea on
+  −x, dunes, a cliff at x > 42 capped at 16 m — uncapped it was hundreds of metres and filled the sky
+  shot), a shader sea (glitter, foam edge, rolling lines), driftwood, a weed line; the crab is
+  `makeCrabRelic` through `bleedPale` at U 1, seated by its box 0.12 into the sand (on its legs it
+  floated), and a blob shadow under it and the syringe (full sun, no shadows otherwise).
+- You lie head at the origin, feet toward −z: pitch +88° (top of view past your head), then the head
+  comes up (eye 0.15 → 0.44, `WAKE_EYE_TOP`), left 62° and down onto the crab, right 115° along the beach.
+- Eyes: `blackoutEl` opens over 2.6 s with one blink; the blur is a CSS filter on the canvas (16 px,
+  brightness up to 1.55) that clears exactly as the crab comes into view (`left0`→`left1`); cleared at the end.
+- Sound: surf (looped brown noise through a lowpass, slow swell) and a ringing that fades in 9 s; the
+  lighthouse track is faded out. HUD hidden by `body.wake-cine` (index.html).
+- `tools/wakeshot.js`: `__wakeBoot()`, `__wakeSheet([t…])` draws the take with its blur and black.

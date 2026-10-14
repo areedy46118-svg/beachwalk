@@ -3390,3 +3390,37 @@ fight."
   heavy, and tearing loose from his hold all dropped him on his face — the
   owner: "stop making the well zombie fall forward". All three are `damage`
   (a standing stagger) now; nothing of his plays `down`.
+
+**THE MAN FROM THE WELL, TAMED A LITTLE (2026-10-13; "less damage … should not
+slide as much … his hits are hitting me when he is far away").** He was not
+`aimed`, so a blow was scored on `dist < A.reach + 0.7` at the first active
+frame — 3.6 m on the lunging swipe, 6.3 on the pounce — whatever his hands were
+doing. `aimed: true` puts him on `blowLands` (the swinging limb's own polyline
+through you; `aimBar` reaches his arm at you on the way in): measured over a
+45 s fight standing still, 26 blows landed, every one with his hand 0.04–0.26 m
+from the body (the hold's bites are the head, 0.8 m). Every blow is 1 now (the
+far swipe and the pounce were 2). The swipes' lunges 1.5 → 0.9 (far one 3.0 →
+2.0, reach 2.9 → 2.5), `smoothMove`, `speedK` 1.45 → 1.3 (rage 1.7 → 1.5), the
+dart 6.8 → 5.2 m. His voice: `kind.voice` is the pale one's with `vol: 0.68`,
+and `mutVox` multiplies by `V.vol`. **Only the mutants throw sand**: the throw
+asks the kind's `glb` is `mutant.glb` (the fang drop's own test).
+
+**THE WELL MAN: BACK AS HE WAS, WITH A HITBOX IN THE MIDDLE (2026-10-14, the
+owner: "now the well mans hits never connect make it like how the fight was
+… take out the bite grab … fast and aggressive like he was just better combat
+hitboxes … still make him hit for 1 health").** `aimed` (the arm has to pass
+through you, `blowLands`) missed nearly every swipe — his clips sweep past a
+body. Restored from before 10-13's round: speedK 1.45 (rage 1.7), lunges 1.5 /
+1.5 / 3.0 (wA3 reach 2.9), dodgeSide 6.8. Kept: dmg 1 on everything,
+`smoothMove`. `wGrab` is out of `use` and its attack deleted (`wellGrab`,
+`wellClinch` still exist, unreachable). New kind hooks: `landFn(u, A, dist,
+was)` replaces the blow test, `landExtra` lengthens the strike window for a
+non-aimed kind, and `aimArm` runs `aimBar` (the arm bent onto you) without the
+aimed scoring. `wellLands`: facing, height, body ≤ 2.8 m, and the swinging
+hand or forearm within 0.75 m of you (1.0 while his body is within 2.05).
+Measured (`tools/contact.js` `__contact`, 40 s each): standing still 24 hits
+of 25 swings, arm-to-torso median 0.38 m, worst 0.53, stand-off 1.26; circling
+at 3.2–4.6 m/s 8 of 26, every hit within 1.69 m of his feet; running straight
+off at 4.4 m/s he catches you, 19 of 21, the pounce landing at 1.46 m.
+Harness: `__bw.endDialog` exposed; set dev mode during the setup or he kills
+the test player and the page reloads.

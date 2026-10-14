@@ -1056,3 +1056,32 @@ MeshStandardMaterial draws — but BLACK (6/255, measured with a 48 px render ta
 **A CLICK PUTS THE PLANK DOWN (2026-10-12, the owner).** `attackAction` with the
 plank held (`held === tavPlankProp`) calls `dropHeld` — E's lay-or-prop — not
 `throwHeld`; everything else held is still thrown by a click.
+
+**THE KEEP DOOR, REDONE (2026-10-13; the owner: "the tavern doors textures are
+blinking fix it make the door look more real and blend in the scene").** The
+blinking was the TEXTURE: `tavOakTex` was a 48 × 160 canvas through `retroTex`
+(nearest, no mipmaps) and every plank squeezed all of it into 15 cm, so the
+grain aliased and crawled with every step; the ledger boards behind also
+overlapped their neighbours by 2 mm on one plane. `makeTavDoor` is the
+storeroom door's work now: `tavPlankMaps`/`tavIronMaps` (mipmapped, lit
+standard materials with 0.36 of their own map as emissive), uneven planks per
+leaf, each plank a box whose four top corners are moved to `topAt(x)` — the
+measured `A.tops` interpolated — so the heads follow the arch as one curve
+instead of steps; a dark backing cut edge to edge and 6 cm under the heads;
+forged straps with fishtail ends and clout nails, ring pulls on lozenge plates.
+**Traps hit:** a box built at the origin has to have its x MOVED to the plank's
+place (the first build stacked every plank at x 0); and a board map's random
+v-offset must not wrap — the grime at the board's foot came up over the heads
+as black notches. `tavOakTex` is gone.
+
+**BOTH DOORS FLICKERED FOR THE SAME TWO REASONS (2026-10-13, the storeroom
+door).** Measured by rendering two frames 4 mm apart and diffing: (1) the
+board map's late-wood lines were a pixel or two wide every 15 px, which crawls
+on a 20 px plank at the retro scale even mipmapped — `tavPlankMaps` now has
+bands three times as broad at half the contrast (`x * 0.15`, pow 3, −0.17),
+fewer and fainter scratches and a normal strength of 1.3; (2) each leaf was cut
+to the measured opening EXACTLY, so its outer edges lay in the jambs' own
+planes — a dashed bright line down the hinge side. Both leaves now run into the
+stone (`W = xr − xl + 0.03`; the keep door's `HW = halfW + 0.012`), where the
+wall hides the edge; running them short of it leaves a slot of light. The diff
+went 979 → 552 pixels, the rest being ordinary silhouette edges.

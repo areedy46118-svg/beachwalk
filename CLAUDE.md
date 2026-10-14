@@ -24,7 +24,7 @@ game belongs in this file, and this file should stay under ~25 KB.
 | the bunker, the Dealer | `docs/notes/bunker.md` |
 | the undercroft: tunnel, church, knight, idol | `docs/notes/undercroft.md` |
 | the catacombs, the hunter, Ben Ali | `docs/notes/catacombs.md` |
-| the abduction, saucer hall, crash, fence | `docs/notes/shrine.md` |
+| the abduction, saucer hall, crash, fence (all REMOVED 2026-10-13; history, and the rock wall that replaced it) | `docs/notes/shrine.md` |
 | the portal, the dojo, the samurai | `docs/notes/dojo.md` |
 | the sea keep | `docs/notes/keep.md` |
 | the tavern | `docs/notes/tavern.md` |
@@ -113,7 +113,7 @@ Tiny props carry an invisible `hitProxy` sphere so they're easy to aim at.
 `primaryAction()` (click / `E` / `F`) routes grab / throw / take / dig.
 
 **Rooms are far-off places, not scenes.** Every interior (bunker, undercroft,
-catacombs, dojo, keep, tavern, whale, shrine hall, throne room) stands
+catacombs, dojo, keep, tavern, whale, throne room) stands
 thousands of metres out on the same scene, entered by a cut behind black.
 `inRoom()`, `indoors()`, `clearRoomFlags`, `cullWorldInHall`, `bunkerFloorAt`
 and the cliff clamp all have to know about every room. Rooms are placed at

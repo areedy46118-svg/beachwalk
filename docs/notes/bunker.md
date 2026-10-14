@@ -548,3 +548,75 @@ at exactly 0. Nearly all of that is the texture re-encode, not the geometry.
 them itself. Run it on `git show HEAD:assets/bunker.glb`, never on its own
 output.
 
+
+**THE BUNKER IS PAST THE PAVILION NOW (2026-10-13; the owner: "move the bunker
+after the pavillon but before the mutant fight").** `HATCH_Z = MUSH_Z - 62`
+(−542): past the pavilion's mood band (`MUSH_Z − 40`) and `SCP_Z` (−15 from the
+house), 38 m short of where the mutants wake (`MUT_Z + MUT_TRIGGER`, −580). It
+was `SNORK_Z − 58`, between the snorkeler and the tall one. Everything about the
+room, the Dealer, the crowbar, the return spot, the map and the restore's
+`roomBeachZ` is written off `HATCH_X/Z`, so the move is the one line.
+
+**THE BLEEDING BENCH (2026-10-14, the owner: "move the dealers horseshoe
+dissecting machine right here and make it look better have 3 horseshoes on it
+with 3 jars to grab … pale like they have been sucked dry").** The shelf under
+the reel-to-reel is gone; `buildBleedRig(g)` builds a bench of its own at
+room-local x −0.40 against the +z wall (face measured at z 5.62 = world
+−533.08; the AC unit overhangs from 1.79 m up within 0.4 m of the wall, so
+nothing is taller than 1.47). Its own frame, `R.rotation.y = π` (+z out of
+the wall). `BLEED` holds the numbers. Stainless lab table (lip, apron, legs,
+shelf) with a painted pump cabinet on its back edge: three peristaltic heads
+(`rotors`, turning), a gauge (`needle`), a blinking red `lamp`, a switch,
+vents, mains cable; three tilted trays, a crab in each (`makeCrabRelic` at
+0.60) with the syringe in its hinge (same `_hinge`/`sRot` as before), a line
+up into the pump and out, down and along the tray into a jar on the front
+edge. Canvas maps (`bleedMaterials`), uv in metres (`bleedBox`).
+- **Pale**: `bleedPale(m)` — a clone of the scan's material with the map
+  desaturated and lifted toward chalk in `map_fragment`; swapped in by
+  `updateBleedRig` once the scan has meshes (`B.pale`).
+- **Straps** are laid then too: rays down the TRAY's own −y (it is tilted
+  0.30 — world-down rays landed 15 cm off and the straps went under the
+  shell) across two lines, a tube through the hits.
+- **Jars**: `bleedJarsTaken` is three bits now. `keepSize: true` on their
+  `addInteractable` — without it a pickup is blown up 3× for the sand, and
+  the jars came out wider than the crabs.
+- **Solid**: `closeNavBox(g, B)` (the counterpart of `openNavBox`) writes
+  '1' into the walk grid over its footprint. The floor monitor at (−0.35,
+  4.45) in `BUNKER_PROP_SPOTS` is gone (it stood where the bench is).
+- The Dealer's hp 24 → 36 ("give the dealer more health").
+
+**THE BENCH AT THE GAME'S JAR SIZE, AND THE VALVE (2026-10-14, later).** "Make
+the jars … actual size … stop making them smaller. scale up the machine to
+match … make one of the jars empty with a regular colored crab which you have
+to turn the valve … until it turns and fades white … take out the jars on the
+bottom". The jar the player knows is the one on the sand, which
+`makeNoticeable` lifts to `ITEM_MIN_SIZE` — ×3.04 for this model — so
+`BLEED.jarS` 3.04 and the bench grew: W 2.9, D 1.45, top 0.90 (a lab table's
+height, not scaled), cabinet 0.74 tall (top 1.67, under the AC's 1.79),
+heads r 0.12, trays 0.84 × 0.56 for crabs at the scan's size (`CK` 1.0),
+straps across x ±0.25. The shelf is bare. `bleedPale(m, U)`: one shader, the
+dimmed own colour at `U.value` 0 and chalk at 1. Crab `BLEED_DRAIN_K` (2)
+starts at 0 with an empty jar (`jarEmpty`, locked); "Turn the valve" (a red
+handwheel beside its head) runs `B.drain` over `BLEED_DRAIN_T` 7 s: the wheel
+2.5 turns, the head flat out, the jar to 0.72, `U` to 1, then
+`bleedJarTakeable`. Saved as bit 3 (`BLEED_DRAINED`, 8) of `bleedJarsTaken`.
+Measured: U 0.05 → 0.37 → 0.77 → 1.0 over the run, take-jar interactables 3 → 4.
+
+## The bleeding bench made smaller and measured into the room (2026-10-14, round 2)
+At 2.9 m its right end stood 12 cm into the slatted rack (`polySurface425`), and its front reached his
+chair (`Chair2_TVsNshit_0`) and the desk. Clear wall, by rays in the rig's own frame (+x along the wall,
+which is room −x): −1.15 … +1.33 m about the OLD centre (room x −0.40), free out to 1.05 m from the wall;
+the AC's underside is 1.83 up, the control panel overhangs only past −1.4. Now `BLEED` x −0.35, W 2.3,
+D 1.0, CK 0.75, `SLOT` 0.74: each slot is tray (offset −0.13) + jar (+0.23, still ×3.04 — a jar is 0.26
+across at that size, which is what sets the slot), the pump head over the slot, the valve to the head's
+LEFT (over crab 2, clear of the gauge). Cabinet 0.62, dish on the cabinet, power lead down the left end
+stopping short of the chair's leg. Checked by casting across the bench's box in x, y and z: no hit.
+
+## The Dealer flies on the kill again (2026-10-14)
+"Make the dealer fly far like he used to when hit for the kill." He stopped when `RAG_VMAX` came down
+14 → 6.5 m/s (the corpse-glitch fix): the cap scales the WHOLE velocity, so his ~9 m/s death throw and
+its lift were cut — measured, his hips went 1.95 m along the floor, 0.09 m up. His kind now has a first
+flight of its own, as the demons do: `ragK 2.0, ragVmax 16, ragTravel 12, ragLift 1.9` (`ragVmax` holds
+only until he lands; the glitch cap and leash are back after). Measured in the bunker's open middle
+(7.5 m of floor behind him, `tools/dealerfly.js`): P 0.6 → 4.9 m and 0.73 m up; P 1.0 → 5.3 m, 0.55 m
+up, heels over head, down short of the wall.

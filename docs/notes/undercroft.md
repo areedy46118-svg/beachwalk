@@ -1950,3 +1950,26 @@ once a page, so if you went back in (to finish the knight, say) and came out
 again, the sand was silent. Being underground re-arms it (`passPlayed = false`
 while `inUndercroft`).
 
+
+**THE TUNNEL IS NEVER A BLACK SCREEN (2026-10-14, the owner: "my screen went
+black while stepping into the church tunnel fix this it will ruin the
+game").** The crawl worked; the cave simply has no lamps (by design: "the only
+light in it is what you carry"), and the owner went in with no glowstick out —
+measured, no point light within 60 m and a frame of near-black with one candle
+far off. `darkEyes` (by `heldGlow`): a cold fill riding at the eye, 8 over
+10 m, faded up at 2.5/s whenever `inUndercroft` and the glowstick's glow is
+under 1. Under ~6 the rock maps do not answer at all (rendered at 1.9, 6, 14).
+The cave floor ahead stays near-black; the walls read.
+
+**…AND OUT AGAIN, AND THE BLACK GUARD.** The owner: "make the church tunnel
+dark again thats not what i meant i meant the screen was completely black and
+i could even see the menu i had to restart". `darkEyes` is deleted. What he
+hit was a black that never lifted: the menu draws over `#blackout` (z 13 over
+11) but `pointerlockchange` will not open it while a cut flag is up, and the
+crawl's watchdog waited D + 10 s. Now D + 3, and `blackGuard()` (top of
+`animateFrame`): 8 s of real time at opacity ≥ 0.95, outside the intro, a
+death, the ending, a room restore / restore guard, the boot hold, the dev
+island wait, the crab cut and `html.resuming`, finishes a stuck crawl (placing
+it if it never placed) and clears the black. Tested by forcing opacity 1:
+released at 8 s with "black screen released by the guard". The original
+cause was not reproduced (the crawl works in every test).

@@ -534,3 +534,33 @@ runs `updateFarProps`, which in a room built the hide list AT THE WARM'S Z:
 the dojo's own lanterns (`dojoLights`, a top-level group) were switched off
 for the whole fight, every fight. A list made during a warm is undone.
 
+
+## THE WHOLE SCENE IS GONE (2026-10-13)
+
+The owner: "take out the ufo and put the rock we used to block going past the
+church tunnel to block that way … take all the ufo scene models and take them
+out so we have more space." Removed: the abduction, the saucer, the hall, its
+three waves, the beast, the drones and bolts, the crash, the witness, and the
+fence (`FENCE_ON` had kept it out of the scene but it was still BUILT at module
+time and still drawn on the beach map). About 4,460 lines of `main.js`, and
+seven files — `ufo.glb`, `shrine.glb`, `reptilian.glb`, `drone.glb`,
+`alienbeast.glb`, `ntar.glb` and `monster.glb` (the unused `warden` kind's) —
+24.9 MB. **What stayed, because it only LIVED in this section:**
+- `ntar-moves.json`, its fetch and `ntarRetarget` — the tavern's cast fights
+  with those clips, and the file's `knock` writes `NTAR_KNOCK`, which is
+  every creature's knockdown timing (`knockOf`).
+- `poseRig` (fifteen creatures pose with it), `warmThrough` (the dojo warms
+  through it; `SHRINE_X/Y/Z` survive as its three numbers), `flashEl` (the
+  blue flash), the warden death (`startWardenDeath`, `updateWardenDeath`,
+  `sfxWardenDie`, `sfxWardenFall` — Dante's `deathClip` death), the catacombs
+  avoidance inside `mutClampX` and `ucWarmed`/`ucWarm`.
+- `mutClampX`'s beach clamp is unconditional now (`kind.ring` is set by no
+  kind). `cullWorldInHall`/`hallHid` stay — every room uses them.
+**The way back past the drain is THE WALL again** (`BACK_ROCK_Z` 60, see
+beach.md / the rocks loader): measured, walks at x −2, 3, 6, 10, 14 heading +Z
+stop between z 54.2 and 57.4, and a sweep of the colliders from `WADE_X` to
+`CLIFF_BLOCK_X` finds no gap. Old saves still carry `abductDone`/`shrineWon`/
+`crashDone`; nothing reads them. The cut was made by line ranges into a copy
+and every name the deleted text declared was then searched for in what was
+left — that list is what found the harness getters, the save flags, the warm
+chain, the map's fence and `roomFlags`' shorthand `inShrine`.

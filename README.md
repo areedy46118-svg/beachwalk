@@ -617,6 +617,7 @@ you while it loads; the first click takes the mouse back.
 | `assets/backrooms.m4a` | Opening music (mono AAC, converted from the source WAV) |
 | `assets/keep-intro.m4a` | The sea keep's intro, played on arriving at its pier (AAC, converted from the owner's WAV) |
 | `assets/catacombs-fall.m4a` | The landing in the catacombs, played the moment you hit the stone (AAC, converted from the owner's WAV) |
+| `assets/well-rope.m4a` | The rope creaking as the man from the well climbs it: 13.8 s cut from the owner's "Rope Creaking Holding Weight" sound effect, normalised (+40 dB) and faded, AAC |
 | `vendor/three/` | three.js r160 (vendored, offline-safe) |
 | `serve.py` | Tiny static server |
 
@@ -666,10 +667,12 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 
 ## Credits
 
-Three of the red alien's moves — the compass kick, the side handspring and
-the knockdown — are Mixamo animations (Adobe), retargeted onto his rig by
 - `assets/church-step*.m4a` — eleven footfalls cut from "Steps in corridor" by freesound_community (via Pixabay, Pixabay Content License), normalised and faded.
-`tools/ntar_moves.py` into `assets/ntar-moves.json`.
+
+The compass kick, the side handspring and the knockdown in `assets/ntar-moves.json`
+are Mixamo animations (Adobe), retargeted by `tools/ntar_moves.py`. They were
+written for the saucer's witness, who is gone with the UFO; the tavern's cast
+still fights with them and every creature's knockdown is timed off the knockdown.
 
 This work is based on ["Cave 5.0"](https://sketchfab.com/3d-models/cave-50-7c4df6d7354b4ed39b50db47d66f96f8)
 by [Valsev](https://sketchfab.com/Valsev) licensed under
@@ -729,6 +732,13 @@ island, the keeper's house, its trees, lamps, stair and jetty
 --normal-tex 1024 --drop-mr` without its water, display ring, fish and flying
 birds, 9.4 MB). The tower's inside, its door, the gallery's grating and rail,
 and the drawbridge to Castle XIII are the game's.
+
+This work is based on ["Pelgrimshoorn | pilgrim's horn (1425-1525)"](https://sketchfab.com/3d-models/pelgrimshoorn-pilgrims-horn-1425-1525-229695dbc19f4d9e947cbc360d82801c)
+by [Archeologiemuseum Huis van Hilde](https://sketchfab.com/huis_van_hilde) licensed under
+[CC-BY-SA-4.0](http://creativecommons.org/licenses/by-sa/4.0/) — the Great Crab Call
+(`assets/crab-call.glb`: the museum's scan decimated to 12,000 triangles with its
+own albedo at 1024, by `tools/gltfpack.py` and `tools/glbcompact.py`; the modified
+model is shared under the same licence).
 
 This work is based on ["Old Forest Well"](https://sketchfab.com/3d-models/old-forest-well-d1c0a5293ff94b5c8edd62cd4d1ef902)
 by [Adam Glachan](https://sketchfab.com/acesapien) licensed under
@@ -1191,6 +1201,15 @@ him and what he had in his fist is on the sand: the Pavilion key, which opens
 the pavilion's gate as the snorkeler's does. Once he is up he stays up until
 you kill him; the checkpoint is written as the tall one goes under the sea, before you have touched the well, so a death to the man from the well puts you back there.
 
+**The Great Crab Call** — a pilgrim's horn of fired clay, dropped by the
+marauder in the throne room when he dies (to the octopus ring's own sting). It
+is the end of the walk: blow it from the lighthouse's gallery (hold it and
+click, or use the light) and the call goes out over the sea, the water a
+kilometre out begins to boil, and a horseshoe crab seven hundred metres across
+lifts its shell out of the sea, the water pouring off it, the aurora behind it.
+Then black, and "Walk Again". Blown anywhere else, it carries over the water
+and nothing comes.
+
 **Skull Key** — what lies between the candles in the catacombs' lower vault,
 and the only thing that opens the barred door out of them.
 
@@ -1339,4 +1358,4 @@ metallic map is dropped, because a metal has no diffuse term and this game has
 no environment map; and its occlusion is multiplied into its albedo, because
 one directional light that is somewhere else entirely never shades a crease.
 Its file ships six locomotion clips and NOT ONE SWING — the fight is authored
-in code on the stance its own idle carries, the way the witness's is.
+in code on the stance its own idle carries.

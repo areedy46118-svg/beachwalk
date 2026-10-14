@@ -2580,3 +2580,26 @@ the red; the thrown hull is dark red in the air.
   with health pinned, every case reads right: [2,2]+2 → SS, both thrown, LL;
   [2,2]+1 → one thrown, LS (the hull stays, sooted); [2,1] → SL → LL with the
   live one never leaving; [1,2] → the thrown mesh is the left's, LL.
+
+## 2026-10-13 — down the sights the gun is still
+
+The owner: "the guns should not wobble around like that when aiming make it
+like call of duty or half life 2 aim and gun control."
+
+- `magSights`/`sgSights` put the rear sight on the crosshair by TRANSLATING
+  the arm — they never correct how the gun is TURNED — so the view model's
+  walk bob (`bx`, `by`), the follow-through of a turn (`vmLagX/Y`) and the
+  shotgun's idle clip all swung the barrel across the crosshair while aimed.
+- `adsSteady()` (next to `magAim`: eased aim, guns only) fades them as the
+  sights come up: the walk bob × (1 − 0.92 a), the lag's intake
+  × (1 − 0.88 a) and its settle twice as fast, `G.actIdle.timeScale`
+  1 − a (the breathing held still), and the camera's own head bob
+  × (1 − 0.8 a). The recoil is untouched — it is the gun's, and it springs
+  back onto the sights.
+- Measured on the .44, walking and turning (±0.35 rad yaw, ±0.08 pitch) for
+  4 s: the rear sight's screen position range 0.0000 (hip 0.069), the
+  barrel's direction range 0.31° (hip 17°).
+- HARNESS: aiming reads `mouseBtns`, set only by POINTER events —
+  `window.dispatchEvent(new PointerEvent('pointermove', { buttons: 2,
+  pointerType: 'mouse' }))` holds the right button; `__bw.magAiming = true`
+  is overwritten the next frame.

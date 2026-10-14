@@ -283,3 +283,11 @@ the live page over reloading for it.
   (33 MB came back). Read its fields.
 - A batch of 60 random walks timed the tool out ("Internal error") — split
   it into calls of ~14 and keep the state on `window`.
+
+## Two more harness files (2026-10-14)
+`tools/samform.js` — `__samFormBoot()` (the dojo, the samurai, the katana taken, dev mode on),
+`__samFilm(n, every, yaw, d)`, `__samMeasure(N)` (elbow angles, upper arm to neck base, elbow to spine);
+`window.__samRaw = true` turns off `samTwoHand` / `samSmoothPose` / `samKeepClear`, and
+`u.mixer.update = u.mixer.rawUpdate` the life layer and forest roots. `tools/wakeshot.js` — the morning
+after the Great Crab Call (see lighthouse.md). Remember: with dev mode OFF between calls the samurai kills
+the test player and the page reloads — the helpers switch it off only inside a call.

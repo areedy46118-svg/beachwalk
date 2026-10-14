@@ -80,6 +80,10 @@
   /* black intro card — the opening line fades in over it, then it lifts */
   /* the hatch's cut: driven per frame from main.js, no transition of its own */
   #blackout { position: fixed; inset: 0; z-index: 11; background: #000; opacity: 0; pointer-events: none; }
+  /* the morning after the Great Crab Call (`startWakeCut`): nothing of the game on the screen but the sky */
+  body.wake-cine #hud, body.wake-cine #vitals, body.wake-cine #stamwrap, body.wake-cine #crosshair, body.wake-cine #promptmid, body.wake-cine #prompt,
+  body.wake-cine #blood, body.wake-cine #ehp, body.wake-cine #fighttip, body.wake-cine #digtip, body.wake-cine #hotbar, body.wake-cine #rings,
+  body.wake-cine #health, body.wake-cine #ammo, body.wake-cine #gear, body.wake-cine #autosave, body.wake-cine #dread, body.wake-cine #hurt, body.wake-cine #hurt-blood { opacity: 0 !important; }
   #intro {
     position: fixed;
     inset: 0;
@@ -503,21 +507,23 @@
     background: radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(4,0,0,0.55) 72%, rgba(0,0,0,0.95) 100%);
   }
   /* the first crab fight's controls: one row along the bottom, over the stamina strip */
-  #fighttip {
+  #fighttip, #digtip {
     position: fixed; left: 50%; bottom: 118px; transform: translateX(-50%);
     pointer-events: none; z-index: 6;
     display: flex; gap: 2.4em; justify-content: center;
-    font: 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
-    letter-spacing: 0.14em; text-transform: uppercase;
-    color: rgba(226, 234, 246, 0.72);
+    font: 16px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;   /* (11px until 2026-10-13: "make tutorial text bigger") */
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: rgba(232, 238, 248, 0.86);
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
     opacity: 0; transition: opacity 0.6s ease;
     white-space: nowrap;
   }
-  #fighttip.show { opacity: 1; }
+  #fighttip.show, #digtip.show { opacity: 1; }
+  #digtip b { font-weight: 600; color: #ffffff; margin-right: 0.7em; }
+  @media (max-width: 1100px) { #fighttip, #digtip { font-size: 13px; gap: 1.6em; } }
   #fighttip b { font-weight: 600; color: #ffffff; margin-right: 0.7em; }
-  @media (max-width: 760px) { #fighttip { gap: 1.2em; font-size: 9px; } }
-  @media (max-width: 620px) { #fighttip { flex-wrap: wrap; width: 94vw; row-gap: 0.2em; } }
+  @media (max-width: 760px) { #fighttip, #digtip { gap: 1.2em; font-size: 11px; } }
+  @media (max-width: 620px) { #fighttip, #digtip { flex-wrap: wrap; width: 94vw; row-gap: 0.2em; } }
   #prompt .key, #promptmid .key {
     display: inline-block;
     min-width: 1.5em;
@@ -1177,19 +1183,22 @@
   #pack-leave:hover, #shop-leave:hover { background: rgba(255, 255, 255, 0.12); border-color: #ffffff; }
   /* the pack's way out sits in its own header row, beside the title, so the
      two can never meet whatever the window */
-  #invpanel #pack-leave { position: static; flex: none; margin-right: 1.4rem; align-self: center; }
+  #invpanel #pack-leave, #shoppanel #shop-leave { position: static; flex: none; margin-right: 1.4rem; align-self: center; }
+  /* THE SHOP IS THE PACK'S SIZE (2026-10-14, the owner: "make the shop menu the size of the tab menu so it
+     seems more cohesive … have the leave around the same area"): the same width, the same fixed body
+     height (the list scrolls inside it), and Leave at the head of the row, beside the title, as in the pack */
   #shoppanel .panel {
-    width: min(94vw, 1180px);
+    width: min(94vw, 1280px);
     border-top: 1px solid rgba(255, 255, 255, 0.3);
     border-bottom: 1px solid rgba(255, 255, 255, 0.3);
     padding: 1.5rem 0 1.3rem;
   }
   #shoppanel .head {
     display: flex;
-    justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     padding: 0 0.2rem;
   }
+  #shoppanel .head .jars { margin-left: auto; }
   #shoppanel h2 {
     font-weight: 400;
     letter-spacing: 0.4em;
@@ -1230,11 +1239,12 @@
   }
   #shoppanel .body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 36%);
-    gap: 1.8rem;
+    grid-template-columns: minmax(0, 1fr) minmax(290px, 30%);
+    gap: 2.2rem;
     align-items: stretch;
+    height: calc(clamp(300px, 54vh, 640px) + 133px);   /* + what the pack's rings row adds less the shop's "say" line: the two panels the same height, so Leave lands in the same place */
   }
-  #shoppanel .list { align-content: start; border-right: 1px solid rgba(255, 255, 255, 0.14); padding-right: 1.6rem; min-width: 0; }
+  #shoppanel .list { align-content: start; border-right: 1px solid rgba(255, 255, 255, 0.14); padding-right: 1.6rem; min-width: 0; min-height: 0; overflow-y: auto; }
   #shoppanel .row {
     display: flex;
     align-items: center;
@@ -1271,7 +1281,8 @@
   #shoppanel .row.flash { animation: shopFlash 0.7s ease-out; }
   @keyframes shopFlash { 0% { background: rgba(160, 205, 255, 0.45); } 100% { background: rgba(255, 255, 255, 0.09); } }
   #shoppanel .list .empty { padding: 1.2rem 0.5rem; color: rgba(255, 255, 255, 0.4); font-size: 0.8rem; }
-  #shoppanel .detail { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
+  #shoppanel .detail { display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; min-height: 0; overflow-y: auto; }
+  #shoppanel .detail > * { flex: none; }
   #shoppanel .detail .pic {
     width: 100%;
     aspect-ratio: 1 / 1;
@@ -1562,6 +1573,8 @@
     transition: opacity 2s ease;
   }
   #end.show { opacity: 1; pointer-events: auto; }
+  #end.bare h1, #end.bare p { display: none; }   /* the Great Crab Call's end: black, and the way back */
+  #end.bare { background: #000; }
   #end h1 {
     font-size: clamp(2rem, 6vw, 3.4rem);
     font-weight: 400;
@@ -1598,6 +1611,7 @@
   <div id="keyused"></div>
   <div id="ehp"></div>
   <div id="dread"></div>
+  <div id="digtip"></div>
   <div id="fighttip">
     <div><b>Click</b>light hit</div>
     <div><b>Hold click</b>heavy</div>
@@ -1682,9 +1696,9 @@
        does. It wears the pack's own language, because it is the same idea
        (your things, big, on a black screen) one step further out. -->
   <div id="shoppanel">
-    <button id="shop-leave" type="button">Leave</button>
     <div class="panel">
       <div class="head">
+        <button id="shop-leave" type="button">Leave</button>
         <div class="tabs"><h2 class="tab on" data-m="buy">Buy</h2><h2 class="tab" data-m="upgrades">Upgrades</h2><h2 class="tab" data-m="sell">Sell</h2></div>
         <span class="jars"><span class="jarico"></span><b id="shop-jars">0</b> blood jars to spend</span>
       </div>

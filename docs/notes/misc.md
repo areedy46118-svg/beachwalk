@@ -91,3 +91,54 @@ you down 2.3 m seaward of the second trader (`TRADER2_X/Z`, 16 m short of the
 first castle's gate), facing him, and marks the walk's once-only events
 before it as passed (the pack, the horde, both autosaves, the smiling one,
 the cave's fall, the whale sighting) the way a restore past them does.
+
+## 2026-10-13 — Bradley Beach has more to say, then leaves
+
+- `BRADLY_SCRIPT`: after the water line, three more exchanges (the owner's
+  lines; the player's replies are the choices): `needle` ("Why are you even
+  here?"), `blood` ("What are you talking about?"), `rumours` ("What else do
+  they say about this beach?"). The last node's `say` arms `bradlyScurry`;
+  `endDialog` starts it however the box is closed (click, timeout at 7 s,
+  Escape), so reaching the last line is what decides it.
+- `updateBradlyScurry`: 1.9 s — 6.5 m +x over the cliff top (and 1.2 −z),
+  bobbing |sin 15t| × 0.14 with the sprite rocking ±0.09 rad, dropping 2.6 m
+  behind the lip over the second half — then `bradlyVanish` (hidden, off the
+  interactables). Saved as `bradlyGone`; a restore vanishes him.
+- Walked in the pane: every line in order, each reply a choice; after the
+  last he goes 15.6 → 22.1 and is hidden, not hoverable.
+
+**BRADLEY GOES WHEN YOU CLICK AWAY, NOT ON A TIMER (2026-10-13).** The last
+node (`rumours`) had `end: 7000`, so the box closed itself and he ran off while
+you were still reading. A last-word node may say `end: false` now and
+`showDialogNode` sets no `dialogEndTimer` for it; its hint reads "click to
+leave", and the click (or Esc) is `endDialog`, which starts `bradlyScurry`.
+
+**THE WELL'S CLIMB: SHORTER, THE ROPE, AND HIS HAND (2026-10-13).** Crank 7.5
+→ 6.0 s, wait 1.6 → 1.0, grab 2.2 → 1.6, the climb 11–14 → 8–9.5 s: about 17 s
+from "let him up" to the black instead of 24. `wellRopeStart` loops the owner's
+rope recording (`assets/well-rope.m4a` — the source peaks at −42 dBFS, so the
+13.8 s cut was normalised +40 dB) through `wellSend`; `wellRopeTick(prog)` takes
+its gain 0.22 → 1.7 and its lowpass 1.1 → 6.3 kHz on prog², and it is stopped
+under the sting. The sting (`wellRise`) 0.95 → 1.9; his lines through
+`wellVoice` 2.8/0.9 → 2.0/0.7. **The hand** (`makeWellHand`): capsules — a
+flattened palm on the rope's lens side, four fingers wrapped round it in three
+segments each with black nails, a thumb the other way, the forearm and upper
+arm going down and out into the shaft — in his own skin map through
+`wellMurkPatch(0.8)`, built during the crank and parked 14 m down so its
+programs compile in the murk. `WELL_HAND_T` (1.9 s) before the black it comes
+up from 2.7 m to 1.5 m on the rope's own line (the rope sways), turned back-of-
+hand to the lens, and the climb's jolt fires as it grips. **Measured: with only
+the bore's lamps it read 0 — nothing lights that shaft — so it carries its map
+through the emissive at 0.3**, which is a pale shape the dark half gives up.
+
+**THE WELL'S CLIMB: THE CRANK, AND NO HAND (2026-10-14).** "The crank keeps
+blocking my face": the scan's `Well_crank` node is pivoted 0.3 (local) UNDER
+its axle — the drum's vertices run at local y 0.295, z 0 — so turning it
+swung the whole axle and handle round a circle down through the lens over the
+rim (measured: the crank's box went from y 1.42–1.97 to 1.04–1.50 mid-turn).
+The load re-pivots it (children moved onto the axle, node up by as much,
+found from the middle 60 % of the axle's length so the handle does not skew
+it): it stands where it did and turns in place; a 20-frame sheet of the crank
+and climb has nothing in front of the lens. His hand coming up onto the rope
+(`makeWellHand`, `wellHandTick`, `WELL_HAND_T`) is DELETED — "take seeing his
+hand out of the well it looks bad". The climb is the rope and its sound.

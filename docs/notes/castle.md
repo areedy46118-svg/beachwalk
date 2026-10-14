@@ -774,3 +774,37 @@ textures dont match the castle it just looks like ai slop make it better."
   lamps at the ends stay.
 - It needs BOTH castles in: `buildCastleLink` returns until `fortReady` and
   XIII's model are both there, and is called from both loaders.
+
+**XIII: IN BY THE EAST COURT AGAIN, AND THE NORTH DOOR IS OUT (2026-10-13; the
+owner: "after the farmer fight … the door to XIII needs to spawn you here [the
+east court street] then the door with the red carpet leads to the throne room.
+take out that door you added. dont change the position of the castles just the
+doors").** `C13_SPAWN` is HEAD's again (`ck(28), ck(-8)`, yaw 1.75: down the
+east court, the arch ahead) — just inside the north door it put you 4.5 m from
+the red-carpet door, past the arch and the knight. `buildC13Doors` is the
+invisible proxy at the east tower door (`C13_DOOR`) again, now "Back to the
+first castle" → `startFort(1, 'fromC13')` (NOT HEAD's `startFort(-1,
+'back')`, the island's exit by now). `C13_NDOOR` and the `c13NorthDoor` frame
+are gone; `buildCastleLink`'s gallery stands, as scenery.
+
+**THE THRONE ROOM'S END WALL HAD HOLES (2026-10-13, "THE THRONE ROOM IS MISSING
+WALLS").** `buildThroneFill` builds the end wall (the model stops at z 20.96)
+from a run of the left wall's bays turned a quarter round — and dropped any
+triangle with a corner outside the run. SketchUp fans a wall off far corners, so
+the bottom 3 m across the whole width, full-height strips at both sides and the
+upper corners were open onto `thrEndBack`'s black (55 wall, 33 window, 30 beam
+triangles). Each triangle is now CLIPPED to the run (Sutherland–Hodgman against
+z = BAY ± 6.55 and y = 15.75), position, normal and all three uv sets
+interpolated on its own plane, so the stone carries on seamlessly; and a plain
+`Wall_Base` plane (`thrEndPlain`, the lunette's uv recipe) stands 6 cm behind
+the bays, so nothing can show black again. Rendered from mid-hall: the whole end
+reads as wall.
+
+**DANTE GOES LIMP AT THE END OF HIS FALL (2026-10-13).** His `rag` map is the
+whole biped now (Bip01_* → Character1_*). `updateDante`, on the last frame of
+his `death` clip, calls `mutRagdoll(D, 0, 0, 0)` and sets every particle's
+previous position to its current one — no throw — so the arms and head settle
+onto the flags from the pose the clip ended in. Measured: 22 parts, the body
+lying at the floor (hips 0.7 m, hands and feet 0.6 over the hall's 602.2) and
+staying there. **The marauder looks at you through the chain cut too**
+(`thrHeadToCamera` after the mixer in the `chain` take).

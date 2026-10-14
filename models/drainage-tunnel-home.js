@@ -917,12 +917,28 @@ export function makeDrainageTunnelHome(opts = {}) {
        * which is the whole of what the gate is for. Its material is BackSide,
        * so from anywhere but the bore itself it does not draw at all. */
       const THROAT_LEN = 8.0;
+      /* AND YOU CANNOT SEE THE END OF IT. Everything down the bore is darkened
+       * by its distance from the eye, after lighting, so the joints and the
+       * water run away into black a few metres in and the cap never shows:
+       * at the peek's 0.78 m back, 3 m down reads a quarter, 6 m a twentieth,
+       * the far end nothing. A pipe with a visible end is a recess. */
+      const PIPE_MURK = 0.62, PIPE_CLEAR = 1.3;
+      const murk = (m) => {
+        m.onBeforeCompile = (sh) => {
+          sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>',
+            '#include <opaque_fragment>\n  gl_FragColor.rgb *= exp(-max(0.0, length(vViewPosition) - ' +
+            PIPE_CLEAR.toFixed(2) + ') * ' + PIPE_MURK.toFixed(2) + ');');
+        };
+        m.customProgramCacheKey = () => 'pipeMurk';
+        return m;
+      };
       const thTex = throatTex();
       thTex.repeat.set(1, THROAT_LEN / 2.0);         // a joint ring every ~0.5 m
       const throatMat = new THREE.MeshStandardMaterial({
         map: thTex, color: 0x3a4048, roughness: 0.82, metalness: 0.05,
-        emissive: 0x0c1014, emissiveMap: thTex, side: THREE.BackSide,
+        emissive: 0x080b0e, emissiveMap: thTex, side: THREE.BackSide,
       });
+      murk(throatMat);
       const throat = new THREE.Mesh(
         new THREE.CylinderGeometry(0.30, 0.30, THROAT_LEN, 24, 6, true), throatMat);
       throat.rotation.x = Math.PI / 2;
@@ -936,6 +952,8 @@ export function makeDrainageTunnelHome(opts = {}) {
       // this length they read as spikes growing out of the pipe
       const drool = new THREE.MeshStandardMaterial({
         color: 0x1d2a20, roughness: 1, metalness: 0, emissive: 0x080d0a, flatShading: true });
+      murk(drool);
+      const ribMat = murk(M.dark.clone());
       for (let i = 0; i < 9; i++) {
         const z = -(0.5 + rnd(i * 5.1) * (THROAT_LEN - 1.2));
         const a = (rnd(i * 2.3) - 0.5) * 2.2;                 // near the crown
@@ -952,7 +970,7 @@ export function makeDrainageTunnelHome(opts = {}) {
       for (let i = 1; i <= 11; i++) {
         const rz = -(0.35 + i * 0.72);
         if (-rz > THROAT_LEN) break;
-        const rib = new THREE.Mesh(new THREE.TorusGeometry(0.292, 0.016, 4, 18), M.dark);
+        const rib = new THREE.Mesh(new THREE.TorusGeometry(0.292, 0.016, 4, 18), ribMat);
         rib.position.z = rz;
         F.add(rib);
       }
@@ -961,9 +979,9 @@ export function makeDrainageTunnelHome(opts = {}) {
        * but it has to stay NARROW and DIM: full bore width it climbs over
        * the ribs and the whole shaft reads as a flight of stairs. */
       const invert = new THREE.Mesh(new THREE.PlaneGeometry(0.20, THROAT_LEN - 0.2),
-        new THREE.MeshStandardMaterial({
+        murk(new THREE.MeshStandardMaterial({
           color: 0x16202a, roughness: 0.12, metalness: 0.35, emissive: 0x0b1219,
-        }));
+        })));
       invert.rotation.x = -Math.PI / 2;
       invert.position.set(0, -0.262, -(THROAT_LEN / 2 + 0.02));
       F.add(invert);

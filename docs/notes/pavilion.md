@@ -162,3 +162,67 @@ last few steps and those points stood in the open mouth of the well with
 nothing behind them — the floating piece of railing. `RAIL_TOP` caps it
 (and its brackets) at the floor, and the end is turned back into the wall.
 
+
+**THE STAIR: FEET ON THE TREADS (2026-10-13; the owner: "i sometimes float on
+the pavilion steps or sink into them").** Five causes, measured: the height was
+a ramp through flat treads (+7/−9 cm), eased behind you (4–19 cm of lag, worse
+near the newel and running); the way down was free-fall under gravity (4–28 cm
+bobs); and — the big one — `mushTurns` was CLAMPED at both ends while nothing
+stopped you walking on round the well, so turning back put you half a metre per
+radian of overshoot above or below the flight for the rest of it (the room-side
+entry could start it 0.33 m off the same way). Now: the count runs free and at
+either end the BODY is stopped (put back round the column to the flight's end
+angle, `TURNS + 0.45/TREADS` and `TURN_MIN`), entry from the room is unclamped;
+the floor is the top face of the tread under you (`PLAT_TOP + i*STEP + 0.012`,
+blended only across the middle third of each riser), with no ease; and
+`update`'s walk-down and step-up ease (the island's) now include
+`mushWhere === 'stair'`, the step-up at 28/s. Measured with `tools/mushwalk.js`
+plus a ray down at the treads each step: feet-to-tread median −1 cm up / 0 down,
+p10–p90 within −11..0 cm up (the step-up ease) and ±4 cm down; both walks
+complete with no stall.
+
+**2026-10-14: THE PILLOWS SIT UP, AND THE ROOM IS LITTERED.** The two throw
+pillows were slabs built flat (`roundBox(0.42, 0.13, 0.40)`) tipped by a
+guess and turned 0.4 off the sofa's heading, so they stuck out through the
+seat and back cushions ("they face the wrong ways and clip"). Now upright
+(0.42 × 0.40 × 0.11, plumped by a bulge on z), +z to the axis (yaw a + π,
+order YXZ), leant back 0.30/0.36 with the foot on the seat top (F + 0.55)
+and the back's top corner on the back cushion's face (r 4.59 + 0.14 per
+metre of height — the back is lathed with a skew). Measured in a lit render:
+nothing through anything. In main.js, before the bake: 18 spent syringes and
+22 drained jars on the terrazzo (seeded, `mulberry32(51014)`), kept off the
+bore and the furniture (the room's colliders); clones of two syringes and one
+jar with their names cleared so `bakeStatic` folds them into a few draws; the
+jar's beach glow cut to 0.12. Not takeable.
+
+**THE PORTRAIT SHINES LIKE AN ITEM.** Its glint stood at 0.2, in the middle
+of the photograph, so the frame cut it through, and the lift greyed the dark
+frame to a flat blue. Glint at 0.42 (over the frame), `through` 0.5, and the
+shine's `mats` filtered to the photograph alone; the photo's 0.22 moved from
+`emissiveIntensity` into the emissive colour, because the shine adds to the
+colour and on white × 0.22 it did nothing.
+
+**THE JARS ARE EMPTY AND JAR-SIZED (2026-10-14, later).** At fill 0 a jar still
+carries its blue silt, froth, crust and bubbles. `jarEmpty(jar, true, hard)`
+hides every blue mesh (b > 1.25 r and > 1.05 g — not the glass, the label or
+the foil) and, `hard`, removes them, because `bakeStatic` ignores `visible`.
+×3.04 (the sand's size). Their glass is cloned to 0.55 opacity with a faint
+emissive (`userData.lifted`, kept out of the dimming pass): at 0.30 an empty
+jar at night was a label lying on the floor.
+
+## The scattered jars (2026-10-14, round 2)
+"The pavilion jars look like floating labels": the glass had been removed with the blood (see items.md,
+`jarEmpty` by tag). The glass is the beach jar's own now — no opacity/emissive lift. The scatter keeps a
+list of what it has put down (`put`, a jar 0.24 + 0.24 from the next, a syringe 0.1) and a spot must
+ray down onto the FLOOR itself at its centre and six points round its pad (`onFloor`): the side table
+has no collider and a jar had been dropped on it. All 22 jars and 18 syringes still find room.
+
+## The scattered jars, round 3 (2026-10-14): footprints, and only upright or flat
+"Don't make the jars clip through anything or each other … only on their side or standing up." A jar's
+origin is the middle of its BASE: on its side it ran 0.38 m off its spot, so spacing by spot let it lie
+into the next. Each thing is now a row of discs along its real length (`fits`, `row`): a standing jar one
+disc, a jar on its side five down its axis, a syringe five along its z (−0.15 … +0.23 m at ×1.6); every
+disc on bare floor (`onFloor` at its centre and rim), clear of colliders, inside the room, and clear of
+every disc already down. A jar on its side is centred on its spot, axis level, body on the floor (`JR`/`JL`
+measured off the model's box); a standing one on its heel. All 22 jars and 18 syringes still fit.
+`window.__bwPavJars` / `__bwPavDiscs` for the harness.

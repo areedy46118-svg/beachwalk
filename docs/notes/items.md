@@ -1041,3 +1041,62 @@ on the drawn stone, 0 crossed a face.
   removes the table copy, `wellPhotoGone`), `addToInventory(wellPhotoItem)`.
   Its icon is drawn from the jpg once it loads. `packByName` lists it.
 - Sold to the trader for 4 jars (`SELL_ROWS` `wellPhoto`, `traderSell`).
+
+**A DROP OFF A BODY IS TOSSED UP AND LANDS ON TOP (2026-10-13; the owner:
+"items drop by enemies should fly up in the air a little so they are visible
+instantly upon death then fall on top of whatever is beneath them").**
+`tossDrop(prop, up, side)` gives a drop's PhysProp a mostly-upward velocity
+(3–3.8 m/s, a few tenths sideways) and `floorAt = corpseTopAt`, which is the
+top of any ragdoll part under the point (for parts no more than 0.3 m above
+it), so it comes down on the body rather than beside it and, as the body
+settles, settles with it. Used by the fang, the knight's ring (`dropRing` with
+`toss` 0), the horn (now 0.25 s after Umbra dies, not 1.4) and the well man's
+key (0.25 s, not 1.7, and off his hips rather than beside them; it is now a
+PhysProp too and `wellKey.x/z` follow it). The orc's photograph flutters UP
+first (vy 2.4, falling at full gravity until it turns) and its floor also asks
+`corpseTopAt`. **The portrait in the pavilion shines** like every takeable
+(`addItemShine` before its interactable). **The fisherman's chart is out for
+now**: `BEACH_MAP_ON = false` — `giveBeachMap` does nothing, his line drops the
+chart, `packByName` skips it so an old save does not bring it back.
+
+**AN ARTIFACT IS KEPT THROUGH A CHECKPOINT (2026-10-13; "i just lost my
+flame").** The save carried `flameOn`/`artOn` correctly; what lost it was that
+the flame comes out of a chest in a room with no checkpoint, so dying on the way
+back loaded a save from before the chest. `stickArtifacts()` rewrites the
+STORED checkpoint the moment an artifact is taken (chest, whale) or set or taken
+out (`attachArtifact`/`detachArtifact`): set in a weapon that save's pack holds,
+else in the pack (and a free slot), with `tavChest` / `whaleArt: 2` set. It is
+refused during a restore or a replay.
+
+**THE SPLIFF ENDS ON THE WALL CLOCK, AND THE SAVE CARRIES THE END (2026-10-13;
+"the spliff should only last 4 minutes no matter what … i see it forever after
+getting a checkpoint").** The countdown was already wall-clock, but the save
+carried `spliffBuff` — the seconds LEFT — so every load gave back whatever was
+left when the checkpoint was written, and dying near a save made it last for
+ever. `spliffEndAt` (Date.now ms) is set when you inhale and is what the save
+carries (`spliffEnd`); `spliffBuffT` is read off it every frame in
+`animateFrame`, and a restore clamps it to at most four minutes from now. An
+old save's `spliffBuff` is ignored.
+
+**SMALL ONES (2026-10-13).** The portrait is "Homeowners Portrait" (`was`
+keeps old saves finding it). The trader buys glowsticks at a jar each (`glow`
+row, `sellFromStack`), and lists WORN rings with the carried ones — selling one
+takes it off your finger (`rings.splice`). Fangs drop at 0.5 (was 0.26), up to
+8 a game (was 4).
+
+**A DROPPED THING LIES ON THE GROUND, NOT IN IT (2026-10-13).** `visBox(obj)`
+is the world box of an object's DRAWN meshes (no hit proxy, no glint).
+`dropItem` lays anything much taller than wide on its side (`YXZ`: a random yaw,
+then over) and lifts it so its lowest point is on the drop point — models are
+centred on themselves, so half of each was under the sand. A PhysProp that says
+`fitRest` (every `tossDrop`, every ring) measures itself once it has stopped
+and moves its `restH` so the mesh's lowest point is on the floor; it measures
+again after it is moving fast.
+
+## An empty blood jar loses its fluid by TAG, not by colour (2026-10-14)
+`jarEmpty` used to pick out the blood, silt, froth and bubbles as "bluer than red ×1.25 and green ×1.05".
+That test runs on `material.color`, which three keeps in LINEAR space, and the glass (0xcfe2e8) is
+r .62 g .76 b .81 there: it passes. So every emptied jar lost its glass and became a label and a foil
+cap floating in the air (the pavilion's scattered jars, the drained jar on the Dealer's bench). The
+model now tags its fluid meshes `userData.jarFluid = true` (models/blood-jar.js, after `parts`) and
+`jarEmpty` hides only those. Any colour test on a three material: remember it is linear.

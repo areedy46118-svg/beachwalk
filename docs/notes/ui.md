@@ -690,3 +690,22 @@ has): orange border and glow, breathing on a 1.6 s alternate animation
 (`fireb`). The classes are set where `art` is (`renderHotbar`, `renderPack`),
 keyed on `item.artifact === flameArtItem || item === flameArtItem`; the CSS
 sits after the `.art` rules so it wins.
+
+**THE TUTORIAL TIPS ARE BIGGER (2026-10-13, "make tutorial text bigger").**
+`#fighttip, #digtip` 11 → 16 px (13 under 1100 px wide, 11 under 760), a touch
+brighter.
+
+**THE DIG TIP IS THE FIGHT TIP'S ROW, AND STAYS LIKE IT (2026-10-14, the owner:
+"make digging the mound the first crab attack too").** `#digtip` is three
+entries in the `#fighttip` layout (Mound / Shovel out (or Find a shovel) /
+Click the mound), sharing its narrow-screen rules, and it is up for as long
+as the first crab fight's row is: until that mound (or any) is dug, a minute,
+or you are 22 m from it (`digTip.m`), not eight seconds.
+
+## The shop is the pack's size (2026-10-14)
+"Make the shop menu the size of the tab menu … have the leave around the same area." `#shoppanel .panel`
+is `min(94vw, 1280px)` like the pack; Leave moved INTO the shop's head row (as the pack's is), styled by
+the shared `#invpanel #pack-leave, #shoppanel #shop-leave` rule; the body has a fixed height
+`calc(clamp(300px, 54vh, 640px) + 133px)` — the pack's body plus what its rings row adds less the shop's
+"say" line — and its list and detail scroll inside. Measured at 1762×1354: both panels (241, 222,
+1280×910), both Leave buttons at (244, 247). If the pack gains or loses a row, re-measure the 133.

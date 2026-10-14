@@ -445,11 +445,30 @@ function buildInterior(K) {
       lathe(rrProf(rIn + 0.03, rOut - 0.27, F + 0.36, F + 0.55, 0.07), a0, a1, i === 1 ? sofaM : sofaM);
       lathe(rrProf(rOut - 0.47, rOut - 0.27, F + 0.52, F + 0.86, 0.08, 0.14), a0, a1, sofaM);
     }
-    // the cushion in the middle has been sat in for forty years: squashed, and dusty where nobody sat
-    for (const [a, r, y, rx, ry, rz, mm] of [[S0 + 0.12, 4.52, F + 0.66, 0.35, 0, 0.25, mustM], [S1 - 0.18, 4.45, F + 0.62, 0.95, 0, -0.3, mustM]]) {
+    /* TWO THROW PILLOWS, SITTING UP (2026-10-14, the owner: "fix the pillows on the couch too they face
+     * the wrong ways and clip"). They were slabs built lying flat and tipped up by a guess, turned
+     * 0.4 off the sofa's own heading, so they stuck out sideways through the seat and the back
+     * cushions. Now each is built upright (thin through its face), plumped in the middle, faced
+     * straight out into the room (local +z toward the axis), leant back onto the back cushion's
+     * face (r 4.59 at the seat, leaning 0.14 m per metre) with its foot on the seat (F + 0.55). */
+    const pillow = () => {
+      const geo = roundBox(0.42, 0.40, 0.11, 0.05), P = geo.attributes.position;
+      for (let i = 0; i < P.count; i++) {
+        const x = P.getX(i) / 0.21, y = P.getY(i) / 0.20, z = P.getZ(i);
+        const b = Math.max(0, 1 - x * x) * Math.max(0, 1 - y * y);
+        P.setZ(i, z + Math.sign(z) * 0.045 * b);        // full in the middle, thin at the seams
+      }
+      return smoothNormals(geo);
+    };
+    for (const [a, lean, roll, yaw] of [[S0 + 0.15, 0.30, 0.06, 0.10], [S1 - 0.16, 0.36, -0.09, -0.12]]) {
+      const T = 0.10, H = 0.40;                          // half its plumped thickness, its height
+      const yc = F + 0.55 + (H / 2) * Math.cos(lean) + T * Math.sin(lean);
+      const backR = 4.59 + 0.14 * (yc - (F + 0.52));
+      const r = backR - T * Math.cos(lean) - (H / 2) * Math.sin(lean) + 0.01;
       const [x, z] = at(a, r);
-      const pw = mesh(roundBox(0.42, 0.13, 0.40, 0.06), mm, x, y, z);
-      pw.rotation.set(rx, a + 0.4, rz); tiled(pw, 0.4);
+      const pw = mesh(pillow(), mustM, x, yc, z);
+      pw.rotation.order = 'YXZ';
+      pw.rotation.set(-lean, a + Math.PI + yaw, roll); tiled(pw, 0.4);
     }
     for (let i = 0; i < 6; i++) {
       const a = S0 - 0.02 + (S1 - S0 + 0.04) * (i % 3) / 2, r = i < 3 ? rIn + 0.1 : rOut - 0.1;

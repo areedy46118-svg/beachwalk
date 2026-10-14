@@ -341,6 +341,9 @@ export function makeBloodJar() {
     rebuildBlood(0.006 + t * (H - 0.012));
   };
   jar.userData.parts = { cap, blood: bloodMesh, foam: foamMesh, label };
+  // what an EMPTY jar loses (`jarEmpty` in main.js): tagged here, because by colour the pale-blue glass
+  // passes for blood in linear space and went with it, leaving a label and a cap in the air
+  for (const o of [bloodMesh, siltMesh, foamMesh, ...bub.children]) o.userData.jarFluid = true;
   jar.userData.setFill(0.86);
 
   return jar;

@@ -214,3 +214,14 @@ level you could argue yourself out of.
   down the pipe, 1.3 s held, then back down over 2.4 s drifting away to 4.8.
   Once a game, on `eyesSeen`, which the save has always carried.
 
+
+**THE PIPE HAS NO END NOW, AND HE IS DIMMER (2026-10-13; the owner: "tunnel
+monsters face can be seen less make it darker in there like you cant see the
+end").** Every material down the bore (`throatMat`, the drool, the ribs — a
+CLONE of `M.dark`, which the rest of the drain shares — and the invert) carries
+a `murk` patch after `opaque_fragment`: `rgb *= exp(-max(0, |viewPos| -
+PIPE_CLEAR) * PIPE_MURK)` (1.3 m, 0.62), so from the peek's 0.78 m back the
+bore reads a quarter at 3 m, a twentieth at 6 m and nothing at the cap. It is
+distance from the EYE, not depth down the pipe, so it costs nothing to place
+and darkens the pipe further still from the room. `FACE_PEAK` 0.2 → 0.12; the
+throat's own emissive came down 0x0c1014 → 0x080b0e.

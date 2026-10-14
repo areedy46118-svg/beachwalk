@@ -566,3 +566,30 @@ textures in the space of the cuts") — gone; a cut is a discard and what shows
 through it is the sky dome (`whaleEnter` keeps it visible), moon, stars and
 clouds. And the pale band of cut blubber round each hole was a white outline:
 it is darker and half as wide now, a torn edge rather than a frame.
+
+**THE BELLY FIGHT, PUSHED (2026-10-13; "the parasite and demons fight is not fun
+… make their hits better … make it harder … spread more … the parasites' jump
+hit slides towards you after they hit and does damage").**
+- **The pounce**: `A.air` is a swing's own flight time; the lunge runs from
+  `wind − air` and stops ON the contact frame (no `strike + 0.12` tail), closing
+  exactly the gap that is there. `paPounce` hit 0.49 / air 1.05 (off the knight's
+  jump clip: off the floor at 0.53 s, fists down at 1.60–1.67 of 3.33 — the
+  knight's 0.64 was measured at his double speed); `pbLeap` 0.51 / 0.65.
+  Measured from 5.2 m: 5.2 → 1.9 m in the air, damage at 1.67 s against a
+  1.63 s contact, no slide after.
+- **Parasites**: `lungeLead` 0.25; their cuts at `rate` 1.2 (natural swings —
+  `windK` never reached them); wait at 5.5–7.5 m (was 8–11.5), first raid after
+  1.5–3 s, again after 2–4 (was 3.5–8.5), 2–3 swings a raid, and both at once
+  with three or fewer demons left. B walks the Mutant walk/run (it had two
+  plain human walks and a sideways run). Late clips reset `_gaitMeasured`.
+- **Demons**: three press down to the last three; a holder that is hit, or that
+  you come within 3 m of, presses; holders take EVEN slots round you
+  (`pk.slotA`, steering `pk.side` toward theirs) rather than one arc in front of
+  you; `holdR` × 0.75; the shared hurt gate 520 → 340 ms; walkC and runB out of
+  the gait pools. **A `gaitLo` 0.6 floor was tried and taken out**: A/B on
+  `__bellyRun`, foot slip 1.64 → 1.97 m/s.
+- **Measured** (`tools/bellyrun.js`, 40 s standing still): demons 53 swings,
+  parasites 30, 50 damage taken.
+- **Still to do**: their feet slip 1–3 m/s while circling (the strafe clips'
+  own speed against the ring's tangential speed) — the next thing for their
+  animation.
