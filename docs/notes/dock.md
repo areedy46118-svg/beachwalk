@@ -331,3 +331,127 @@ them dashed in red and a barb at the middle of each leg, and "one road in,
 the same road out" under the castle. Labels near the right edge run off the
 1024-wide sheet: the crown sits over XIII and the note under the castle so
 nothing is clipped.
+
+## 2026-10-14 — his lucky rod, his old spot, the lamps
+
+- **The rod is the scan** (`assets/fishing-rod.glb`, Ergin ERYILDIR, CC-BY-4.0; loader right under
+  `holdable(fishingRodItem, …)`). Its blank and line are SKINNED to a ten-bone chain and its one clip is one
+  frame, and a skinned mesh does not survive `holdable`'s `clone(true)`, so `rodBake` bakes every part flat
+  (positions through `getVertexPosition`, normals through the blended bone matrices — the whale's `wbBake`)
+  and the whole rod is put in the built rod's frame: +Y up the blank (butt→tip measured off the blank's
+  extreme vertices along (-1, 0.83, 0)), the GRIP at y 0 (the reel foot's centre projected onto the axis),
+  the reel hanging on -Z, 1.9 m. `ROD_TIP_Y` is a `let` measured from it. The crank (`rod03`) is a pivot named
+  `reel` on its axle (the 8 % of its vertices nearest the rod's plane), so `rodArmPose`'s `reel.rotation.x`
+  turns it. Materials: metalness 0 (METALNESS IS A TRAP), emissive lift 0.07 (0.18 made the white blank glow).
+  `fishingRod` starts EMPTY so the icon waits for the scan; `ICON_CACHE_V` v8. `iconRot.flip`, tip up-right.
+- **Hold to reel** (`rodHeld`: left button, or E/F held): a press with the float down starts `reel`, and
+  `updateRod` drops back to `down` the frame it is let go — the float stops where it is. Measured: cast lands
+  ~21 m out; 0.67 s held reels 5 m; released it stays put; held again it comes home. Prompt "Hold to reel in".
+- **His lines** (the `rod` node, then `farUp`): "Take these. It's my lucky fishing rod and a map of my old
+  fishing spot. …" → "Thanks" → "I don't go that far up the beach anymore."
+- **The map is back** (`BEACH_MAP_ON` true) and has NOTHING on it but coast, cliff, sand, sea marks, the rose,
+  the cartouche, the scale, the folds — the owner: "take all landmarks off the map just show the big rocks but
+  dont label them". The rocks come off `rockColliders` (a stone: has `r`, top 1.2–12, no `mat`, not castle,
+  whale or `fill`), each a lump inked in plan (the sheet is ~10× tighter along the beach than across it).
+  The big red X is at `(TRIBE_X - 3, TRIBE_Z - 10)`, past the five's fire, where the owner will put the tree.
+- **The dock lamps hold their pool slots from 300 m** (`lpAlways`): a pooled lamp otherwise only wins a slot
+  inside its own falloff (14 m / 9 m), so they faded on as you walked up — "i see them turn on when i get close".
+
+## 2026-10-14 — the spot itself: the X, the tree, the fish; the chart made old
+
+- **The X moved straight left, into the water** (`FISH_SPOT`, declared with the tree after `TRIBE_X`): world
+  x -10 at the same z (`TRIBE_Z - 10`). At x -6 it sat in the worn hole where the chart's centre fold crosses the
+  first third (`mapX(-6)` ≈ 503, the fold at 512, `mapY(-846)` ≈ 512 = `MAP_H / 3`). The chart is drawn on first
+  use, so a constant declared at 60k is fine there.
+- **Nothing written on it, no compass**: the rhumb lines, the rose, the cartouche and the scale are gone. **Made
+  old and folded**: each of the 4 × 3 panels is shaded as a plane of its own (mountain and valley folds alternate,
+  so the light gradient flips at every crease), each crease is a dark line with a rubbed pale ridge, cracked in
+  runs with fibres, split in from both edges; worn-through holes where folds cross; a tide-marked water stain on
+  the lower right with the ink faded inside it; thumb grime at the edges. Cracks were first drawn at 0.85 alpha
+  and read as white dashed lines — 0.35–0.6 now.
+- **The tree** (EFX, CC-BY-4.0, `assets/tree.glb`, 8.3 MB at `--tex 1024`; 13.8 MB at 2048): a windswept pine
+  skinned to ~450 bones with a 2.5 s sway. Its roots are measured off the trunk's (the one unskinned mesh)
+  lowest vertices; `TREE_SPOT` (5.4, `TRIBE_Z - 10.5`), yaw -0.31 turns its lean (root → crown (-3.6, +1.15)
+  in its file) straight out to sea, scale 1.8 (~11 m), sunk 0.18. The surf there runs x -2.6 … +7.5
+  (`shoreLineJS`), so the roots are wet now and then, which is how such a tree stands. Needles alpha-tested
+  (0.42, depth-written — the blended cards re-sort per frame, Henry's hair again), metalness 0, emissive lift
+  0.12. Every mesh `frustumCulled = false` (skinned bounds are the bind pose). Its mixer runs only within
+  `FISH_FAR` (150 m) and out of rooms. Trunk colliders: half-metre columns of trunk vertices whose lowest point is
+  under 1.6 m (so you walk under the high part of the lean).
+- **The fish** (stand-ins until the owner's model: `fishSchoolGeo`): three schools 7–11 m beyond the X (~20 m off
+  the water's edge, where a cast lands), one InstancedMesh of 86, each fish milling round its school's drifting
+  centre, backs and fins at the surface (the sea is opaque — measured, sunk 2–14 cm they were invisible), a silver
+  flash as one turns, one jumping clear every 1.2–4 s with a splash and a ring, and rings over them every 0.18 s.
+  From the tide line over the swell that was still a few dark specks, so each fish also stirs two sparks of the
+  sea's own light (additive Points, BIO colour) — the patch you see and cast at. Built and both programs compiled
+  at load, hidden until within 150 m.
+
+## 2026-10-14 — the chart is paper; the rod points out and winds on the button
+
+- **The chart is a lit sheet of paper** (`mapSheetGeo`, `mapSheetMesh`, `renderBeachMapSheet`; the owner: "make the
+  map icon way better too hyper realistic … it just looks like a png"). A 0.42 × 0.63 m plane at 96 × 144 cut along
+  the 4 × 3 panels (so every crease is a vertex line), each panel displaced as a plane — mountain and valley folds
+  alternate (`A` across, `B` down) — plus a handled crinkle and a lift at the edges; the chart and its blank back
+  as two faces, a fibre bump map (`mapPaperBump`), warm-tinted. Full screen it is rendered ONCE (1200 × 1760, a
+  warm key low from the upper left so each panel takes the light at its own angle, alpha background so the CSS
+  drop-shadow follows the sheet) and shown as the image. The pack's icon is the same sheet folded half up
+  (`beachMapIconModel`, through `itemIcon`); `makeMapIcon` (the drawn 64 px icon) is gone; `ICON_CACHE_V` v9.
+- **The rod points forward** (`holdable` rot [-1.10, 0, 0.15]: a pitch stands +Y out in front ~30° up, the roll
+  leans it in toward the middle; the crank is on the scan's local -X, which the pitch leaves on your LEFT —
+  measured, crank vertices average x -0.041). pos y 0.05 so the reel and crank are in the frame.
+- **"The reel in is not working"**: the left-click verb (`attackAction`) runs on the canvas's `click`, i.e. when the
+  button comes back UP — so the reel `onCast` started had already lost its held button and stopped on its first
+  frame. The winding is read off `rodHeld()` in `updateRod` now: a FRESH press (`rod.wasHeld`) with the float down
+  starts it, letting go stops it, `onCast` only casts, and a hold that winds the float all the way home sets
+  `rod.noCast` so its own release-click does not cast again. Measured with real pointer events: 0.75 s held reels
+  5.6 m, released it sits, held again it comes home, and the release after does not cast.
+- **The reel's sound**: a gear whirr while you wind (`rodWhirStart/Stop`: looped noise through two bands, beaten at
+  6.2 Hz, faded in and out), ratchet ticks as modelled foley (`GF.reelTick`, replacing the swept triangle), and the
+  float knocking home on the tip (`GF.reelStop`). The crank turns only while winding (a spinning reel's line peels
+  off the spool on a cast; it used to spin backwards). No rod bend yet — the owner's word: wait for the catch model.
+
+## 2026-10-14 — hold to cock the cast; the rod up more; the rocks always on the chart
+
+- **The rod stands ~40° up** (`holdable` rot x -0.86, was -1.10 ≈ 27°).
+- **Hold to cock, let go to cast** (`ROD_COCK_T` 1.3 s). Read off the button in `updateRod` like the reel: a fresh press
+  with the line home sets `rod.arm = 'charge'`; `rodArmPose` draws it back by `cockNow` (0.35 at once, easing to 1.25
+  at the full draw, a small tremble at the top) along `RC` per unit of draw — pitch 0.42, yaw -0.20, roll -0.30, lift
+  0.08, push 0.05: back toward upright and out over the right shoulder. A straight pitch of 0.62+ took the whole rod
+  off the top of the frame (measured: tip NDC (4.1, 3.3), the reel a dark stub in the corner). Letting go stores the
+  pose (`cockPose`) and starts the cast at its WHIP (`armT = ROD_WIND`), which runs from that pose, and `launchFloat`
+  throws at 7 + 12·k m/s (rooms 4 + 3·k), k = draw. Measured: a 0.1 s flick lands 9.4 m out, 0.67 s 17.7 m, the full
+  draw 30.4 m. `onCast` (the button-up click) only clears `noCast` now; `castRod` is gone. Prompts "Hold to cast" /
+  "Release to cast".
+- **The rocks were missing when the chart was drawn early** — it is drawn the first time it is wanted, which since the
+  sheet became the pack icon is the moment it enters the pack or a checkpoint's first frames, before the rock
+  formation's scan has filled `rockColliders`. `beachMapRockN` counts what was drawn; `mapChartTextures` (and
+  `openBeachMap` through it) redraws the chart and re-renders the reading whenever `mapRocksNow()` finds more. The
+  lumps are bolder too (ink 0.95, fill 0.5, six hatches, at least 12 × 8 px).
+
+## 2026-10-14 — the spot glows; the fish are gone
+
+"Make the fishing area in the water a glowing area … noticeable but natural for the game i don't like the school of
+fish idea." The schools (`FISH_SCHOOLS`, `fishSchoolGeo`, the instanced fish and their sparks) are deleted. In their
+place `uFishSea` (x, z, radius, strength) in the OCEAN SHADER — beside the farewell's `uGlowSea`, but its own, since
+that one is driven by the whale's take — lights a patch at `FISH_GLOW` (`FISH_SPOT.x - 9`, r 10, ~20 m off the water's
+edge, where a cast lands) in the sea's own `BIO_COL`: an irregular edge (angular + positional noise, never a disc),
+drifting cells (two noises multiplied), a slow breath, pinpricks, and a paler heart. Strength 1 inside 220 m, faded to 0
+by 320 m, 0 in rooms. Over it stands `fishHaze`, a soft additive fogged billboard 24 × 8 m with its core 2.4 m above the
+water (at 1.4 the core was under the surface and hidden): from the beach the patch itself is a foreshortened line behind
+the nearer swell, and the haze is what reads. Measured: a clear cyan patch from under the tree and from the water, a
+small glow on the horizon from 30 m up the beach.
+
+**The hold-to-cock cast is OUT again** ("the cast is not working and stops me when moving … put the cast back to how
+it was but keep the tilt"): `ROD_COCK_T`, the `charge` arm, `cockPose` and the draw-scaled throw are deleted; `onCast`
+(the click) throws the full cast (15.5 m/s, rooms 7) as before; holding with the float out still reels; the rod keeps
+its −0.86 tilt. Measured: walking 3.5 m/s straight through a click-cast, the float 20 m out.
+
+## The gifts on his table (2026-10-14)
+
+"make both items appear on the table after being gave them by the fisherman and play the item drop music". `giveFishingRod`
+lays the rod (a clone of the baked scan, flat along z, the reel on its side) and `mapSheetMesh` on the shed's `Table`
+(top y 2.585) at `FISH_TABLE`, each with `addItemShine` (beacon) and an 'inventory' interactable, and plays `ringDrop`
+once for the pair. `fishGift` [rod, map] — 0 not given, 1 on the table, 2 taken — is on the save; a save from before
+the table (`pegReturned`) restores rod 2 and map `mapGiven ? 2 : 1`. The rod waits (800 ms retries) if the scan is not
+in. To photograph it: hide `__bw.fisherman` and stand at (10.0, 3.75, -217.6) looking at (10.05, 2.6, -219.4) — the
+floor is 1.77.

@@ -3434,3 +3434,22 @@ stack before adding a fourth.
 **THE MUTANTS, HARDER AND WIDER (2026-10-14).** hp ×1.45, aggr ×1.08, windK ×0.96. They spread out: `MUT_SEP` 3.2 (was 2.6), their
 own `MUT_SLOT_ANG` 1.3 (the crabs keep `CRAB_SLOT_ANG` 1.15), and the circling
 ring is `base - 0.5` (was -0.9), so they hold off more instead of stacking.
+
+**THE BEACH MUTANTS' HEALTH, ABOUT DOUBLED (2026-10-14, the owner: "the mutants are way too easy to kill give them
+more health").** `MUT_KINDS`: pale 5 → 11, red 7 → 15, dark 4 → 9, hulk 12 → 26, spindle 6 → 13, runt 5 → 11,
+crooked 7 → 15, bloat 10 → 22. (The demons, the Dealer and the farmers are their own kinds and were not touched.)
+
+**NOTHING CAN BE CLICKED TO DEATH (`MUT_SPAM_N` 2, `MUT_SPAM_WIN` 4 s, in `hurtMutantCore`; 2026-10-14, the owner:
+"you can just spam light hits and they never get attack i cant have any enemy able to be spammed like that").** A
+kind with no poise pool (every beach mutant) reeled on every click that was not late in its own startup (`committed`,
+past 55 % of the wind), and the reel throws away the swing it is winding — clicks faster than its recovery was a
+creature that never got a turn. Now a LIGHT blow (P < `MUT_HEAVY`, not an overhead, not a riposte) may rock it at most
+twice in four seconds (`u.st.lightStag`, times of the light staggers); past that the click still cuts, bleeds, flashes
+and takes health but does not reel it, and if it is not already swinging it swings back at once:
+`revengeUntil` (1.4 s) makes `maySwing` true whoever holds the pack's token, forces `wantSwing`, and skips the size-up.
+Charged blows, parries and ripostes still rock it every time. It is on the shared machinery, so it covers demons,
+farmers, the knight and every other `mutants` kind. Measured on a beach mutant spammed every 0.3 s for 10 s: 34 hits,
+4 staggers, 5 swings started (before: a stagger on nearly every hit and no swings).
+
+**The Dealer flies a little further on the kill**: `ragK 2.5, ragVmax 18, ragTravel 14, ragLift 2.1` (was 2.0 / 16 /
+12 / 1.9). `tools/dealerfly.js` at P 0.6: 5.83 m and 0.74 m up (was 4.9 m and 0.73).

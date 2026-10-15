@@ -843,3 +843,46 @@ horn's turn of the head are gone. The shake is `trauma` (0.42 at its height): th
 old jitter of `camera.position` would have walked you. At `cut` the black, the crosshair off, the look re-read from
 the camera; five seconds; `startWakeCut`. Measured: walked 1.2 m mid-rise; the shell seen from the gallery; black
 28.4 → 32.9, the morning at 33.07.
+
+## 2026-10-14 — stuck beside the house (`ISLE_BLOCK`)
+The owner's readout: feet (−0.44, 24.28, −1165.16), on the ramp's left edge beside the house. The ledge on the house's
+east side (x −1.0 … −0.15, ~1 m over the ramp) overhangs the ramp, and the grid has ramp under it; a body there was
+inside the ledge's face at chest height and `keepWallPush` threw it west and back down the ramp (−0.04, +0.04 … −0.09,
++0.15 a frame) as fast as it walked up — seven of twelve headings went nowhere. `ISLE_BLOCK` (x −1.1 … −0.12, z −1167.7
+… −1164.1, feet 23–26.2) is refused in the walk's `legal` and after the pushes, and a body already in it is put back out
+at its east edge first. Measured: twelve headings all move (0.75–2.5 m in 0.67 s); walks up the ramp from x −0.3, 0.3
+and 1.2 all climb 16 m to z −1179 with no backward frame.
+
+## The gulls, the walls a blade meets, the light on the map (2026-10-14)
+
+- **Gulls**: the diorama's sitting gulls are 372-vertex islands merged into `isle_props`. `isleBirdsExtract` (in the
+  isle loader after `isleMoveLight`) welds vertices by position, flood-fills (union-find), lifts each 372 into its own
+  `isle_gull` mesh and collapses those triangles in the merged mesh — 12 birds. `isleBirdStrike(P)` (first thing in
+  `digImpactCore`, only `onIsle`) hides the one the aim line passes near and bursts 34–48 white feathers
+  (`featherBurst`/`updateFeathers`, one 140-instance pool) with a gull cry. The feathers need emissive c4c4c8 × 0.62
+  or at night they read grey. One sits on the jetty's post at (-25.98, 2.49, -1160.64), handy for a test.
+- **Blade on any wall**: `nearestSolidHit` now walks the aim ray through each active site's `S.walls` grid
+  (`siteBladeHit`, Möller–Trumbore) — keep, tavern, catacombs, throne room, dungeon, C13, and the island when on it
+  or within 90 m. `siteSurface(materialName)` gives wood/metal/rock (glass → metal, soft → wood). Probed: the
+  stuck-spot stair answers wood at 0.3–1.2 m, the island floor rock, the jetty wood.
+- **On the map**: the tower at `ISLE_AXIS` (tapered, red bands, lantern, rays, the island's rock with water lines),
+  no word on it.
+
+## The shed, the crates, the roof: free to climb and to jump down (2026-10-15)
+
+"i should freely be able to jump on the crates near the lighthouse shed and jump on top of the shed to hit the seagulls
+then jump off the shed wherever i want … without getting stuck or falling off the island." Measured heights (top
+storeys): deck 26.3, crates 26.9 / 27.1 / the stack 28.0 (−6, −1164), the shed's roof 29.0 (eave, z −1165) – 29.7,
+the house behind it 30.6–32.2. Three rules changed in the island walk:
+- **`nextTo`**: a floor up to `ISLE_LEAP` 4.0 under the last one is a fall you may take, if it is over 1.5 (never the
+  sea's level; the island's outer rock is ~20 m over the sea, so its rim still holds). It was `ISLE_FALL` 1.1 —
+  every roof and stack edge was a wall.
+- **`steep`**: only UP a face (a drop is `nextTo`'s to judge).
+- **Mantle** (`ISLE_MANTLE` 1.2): in the air, a flat top within 1.2 over your feet, with the walls asked from ITS
+  height (0.35 / 1.0 / 1.6 over it), is climbed onto; `update`'s step-up eases the eye. The shed's wall runs to its
+  eave, so a jump from the stack met stone at the knee and fell back.
+Measured with real keys: deck → crate (27.11) → stack (27.99) → roof (29.61), along the roof, off the back to the
+deck (26.34), off the side to the rock (25.88). 25 random walks with random jumps: lowest 21.7 (never off the
+island). Stops left standing are real: the deck's 3.5 m stone edge from the rock below, a 6 m rock face over the
+stair-head landing, the chasm to the sea at (−12, −1159). NB a scripted walk must jump from ON the stack — walking
+toward the roof it steps off the 0.8 m stack first.

@@ -1584,6 +1584,10 @@
     color: #e6edfb;
   }
   #end p { font-size: 0.9rem; letter-spacing: 0.1em; opacity: 0.7; max-width: 32ch; line-height: 1.8; }
+  /* the tally, above the way back */
+  #end-stats { display: grid; gap: 0.55rem; min-width: min(20rem, 80vw); font-size: 0.95rem; letter-spacing: 0.12em; }
+  #end-stats .row { display: flex; justify-content: space-between; gap: 2.5rem; border-bottom: 1px solid rgba(140, 162, 200, 0.14); padding-bottom: 0.35rem; }
+  #end-stats .row span:last-child { color: #e6edfb; font-variant-numeric: tabular-nums; }
   #end button {
     margin-top: 1rem;
     padding: 0.7rem 1.6rem;
@@ -1811,6 +1815,7 @@
   <div id="end">
     <h1>The Lighthouse</h1>
     <p>You reach the light at the end of the beach. The rest is another walk.</p>
+    <div id="end-stats"></div>
     <button id="end-restart">Walk again</button>
   </div>
 

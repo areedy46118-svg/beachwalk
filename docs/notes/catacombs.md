@@ -863,3 +863,13 @@ HEAD and measuring with `tools/catnav.js` + `tools/contact.js`:
 - **The hunter's bite** (`zBite`) hurt with his head 0.83–1.07 m short of your face (body 2.56 m off). `stop`
   2.7 → 2.05, `headR` 1.15 → 0.6: bites now land with the head 0.28–0.45 m from you. His swipes were honest
   (claw 0.23 m, median).
+
+## He stays down now (2026-10-15)
+
+The owner: "make the catacombs creature not get back up after the first death". `catPutDown` keeps the fall and
+the body on the flags exactly as before, and for `crawlerUnit` sets `u.catDead`, `C.t = Infinity` (so
+`catDownStep` never reaches the get-up), puts his `saveKey` in `deadUnitKeys` (a load retires him — he is gone, not
+lying there) and adds him to the end's kill tally (`statKill` skips `undying`, so it is added by hand there).
+`catHunterReset` (run on every fall into the catacombs) returns for a dead or retired one. `kind.undying` is left
+on: it is what routes his first death into the lie-down rather than the generic death. `statKillTotal` +1.
+Measured: killed, 75 s of frames later still `mode 'down'`, key in the save's `deadUnits` and `stats.kill`.

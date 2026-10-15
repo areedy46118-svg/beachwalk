@@ -1144,3 +1144,23 @@ successful parry.": `goldRingParry()` is called by `parryCrab`, `parryMutant` an
 `GOLD_PARRY_STAM` 0.15 of the bar, capped at `stamMax()` — under half of one blocked blow (`BLOCK_COST` 0.34).
 Measured worn: 0.30 → 0.45; 0.95 → 1.0. An unlit scan (`KHR_materials_unlit`), so no `ringEnv`. In `packByName`.
 **The Military Shovel's glint is `DROP_SHINE`** now (the cell key's, with its column), at height 0.3.
+
+**THE AMMO TILES ARE STUDIO-LIT METAL (`ammoStudio`, `makeIconRound`, `makeIconShell`, 2026-10-14).** The
+owner put a product shot of a shotgun shell and a pistol round beside the shop's tiles: "make the bullet
+icons look way better". The tiles had been the night materials (a yellow dielectric with emissive lift reads
+as plastic). They are built for the tile alone: true metals (`metalness` 1) over a PMREM'd float studio of
+three soft boxes (key high left, a strip down the right, a rim), tarnish/scratch canvases as map and
+roughness, 72–168-segment lathes, a round-nose jacketed .44 with a cannelure, and a 12-bore with a tall brass
+head, a red hull pushed in along 28 ribs and a six-fold crimp (`Math.min(1, r)` there — at the rim r came out
+a hair over 1 and `(1 - r) ** 0.8` was NaN, which made the whole icon blank). The view model's speedloader and
+the spent cases keep `AMMO_MATS`. `ammoIconItem.iconRot` was `{x, y}`, which `renderItemIcon` never read; it
+is `{rotX, rotY}` now. `ICON_CACHE_V` v7.
+
+## Dropped jars keep their blue (2026-10-15)
+
+"make the really lit up dropped jars still look the same blue color as the others." `dropJar` spread
+`DROP_SHINE` OVER the caller's shine, so every dropped jar (mounds, dojo, catacombs, the tavern bore) got lift 1.6 at
+strength 4.2: an emissive whitening of ~6.7 on all its materials — a pale bottle. The jars that lie in their own blue
+(the Dealer's bench, the tavern grille) are lifted 1.1 x 0.3 = 0.33. Dropped jars now pass `lift: 0.08` (4.2 x 0.08
+= 0.34) after the spread; the beacon and the glint are untouched, and the catacombs' `lamp` is 0x2f6dff at 1.2 (was
+a pale 0x9fc4ff at 1.5). Rendered side by side: white before, the same blue after.

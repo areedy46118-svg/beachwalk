@@ -709,3 +709,42 @@ the shared `#invpanel #pack-leave, #shoppanel #shop-leave` rule; the body has a 
 `calc(clamp(300px, 54vh, 640px) + 133px)` — the pack's body plus what its rings row adds less the shop's
 "say" line — and its list and detail scroll inside. Measured at 1762×1354: both panels (241, 222,
 1280×910), both Leave buttons at (244, 247). If the pack gains or loses a row, re-measure the 133.
+
+## The end screen's tally (2026-10-14)
+
+The owner: "when the game ends give a total of 'Mounds dug 0/ however many there is in the game' same for Kills,
+Keys found, weapons found, rings found, jars found make these all spot on accurate. then below all that have WALK
+AGAIN". `renderEndStats()` fills `#end-stats` from `statLines()` on `showEnd`; it shows in the bare (Great Crab Call)
+end too. The button reads "Walk again" (CSS upper-cases it).
+
+- **Nothing can be read back off the pack at the end.** Shovels and rings get sold, keys go into their locks, the peg
+  goes home. So `endStats = { kill: Set, item: Set }` (declared beside `bloodJars`, early, because `addToInventory`
+  runs at load) is written WHERE THE THING HAPPENS — `statItem` in `addToInventory` and `wearRingAt`, `statKill` at
+  the top of `finishMutant`, `mutBleedOut` and `finishCrab` — and rides the save as `flags.stats`.
+- **Never on a load or a replay** (`applyingSave`, `replaying`), never for `devGrantWeapons` (`statHush`), and never
+  before the module has run to its end (`statReady`, set on the LAST line of main.js — `addToInventory` is called at
+  load, before the item lists exist, and `started` is NOT a safe stand-in: the harness's `beginGame` leaves it false).
+- A kill is yours only: `lastHitMine === false` (the tavern brawl) and `kind.undying` (the catacombs crawler) do not
+  count; a `retired` unit (fled, put away on a restore) never reaches the three death doors. Crabs have no save key:
+  `crab#<index in crabs>`. Crab deaths are not otherwise saved, so a reload brings them back — the Set keeps a
+  second kill of the same crab from counting twice.
+- Totals are from the lists the world is BUILT from (most rooms make their people and jars on first entry):
+  `statKillTotal()` = MUT_SPOTS + CAT_FOES + Dealer, knight, samurai, the crawler's young, crusader, Umbra, the well
+  man, Dante + 7 demons + PAR_SPOTS + Wong/drunk/orc + TAV_DRINK_FROM + FARM_ROSTER + 1 + PACK_SPOTS = 56. SCP-096 is
+  retired at boot and not counted. Keys 7, weapons 7, rings 5 (`STAT_KEYS/WEAPONS/RINGS`, function declarations so
+  they are hoisted). Jars = mounds whose `moundRole` is 'jar' + dojo 1 + catacombs 2 + tavern bore 2 + grille 1 +
+  the Dealer's bench 3 = 12; found = `takenPickups` ids starting "Take the jar@". Add a jar or a unit anywhere and
+  these totals must be told.
+- `statHad(item)` also accepts the flags a save from before the tally carried (`boatKeyTaken`, `catDoorOpen`,
+  `TRADER_STOCK.gun === 0`, `henryRingTaken`, `tookLabel(...)` …), and a save without `stats` seeds the kills from
+  `deadUnits` minus SCP and minus the young one if it fled (`f.catBaby`).
+
+**"Jars obtained" (2026-10-15, the owner: "so it includes any made during the game not just found").** The last row
+is a plain count, no total: `endStats.jars`, added in `gainJar` — the one door every jar comes through (pickups,
+the syringe on a crab, the trader's price for what you sell) — and never on a replay or a load (`replaying`,
+`applyingSave`; measured, a reload into a save of 3 shows 3). On the save as `stats.jars`; a save from before it
+counts its jar pickups (`d.took`). `statJarTotal` is gone. Dev mode's hundred is set straight into `bloodJars` and
+is not counted.
+
+**The mound tip is one line** (2026-10-15): "CLICK WITH SHOVEL TO DIG UP MOUNDS", whatever you carry.
+**Dev mode gives the skull key and the bigger pack** too (`devGrantWeapons`: `INV_MAX` 14, the trader's one then sold).

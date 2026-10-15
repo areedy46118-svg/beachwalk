@@ -374,3 +374,136 @@ Saved as `henryRing`; a save from before you took it has `henryFree` 2 (1 is sav
 walk stays on the capture), and the jetty fall is the old aimed flail (`hjPoseAir` uses the mocap run only while he is
 carried). The ring line reads "all I had left, but it’s my way…", and the jetty's lines got their apostrophes
 ("Hey! It’s you again. I can’t…", "…but it’s still beautiful to me. After being trapped for so long, it…").
+
+**THE WHALE TAKES HENRY SIX SECONDS AFTER THE SPLASH (`hjwTick`, `HJW_T`, 2026-10-14).** The take no longer
+lets go 2.8 s after he hits the water. At `HJW_T.surface` (2.2 s) he comes up, chest out, thrashing
+(`hjPoseAir` flail, `hjScreamFace`, the fainter scream on its live chain) and the lens creeps in to a 4.5 m
+half-height (min fov 3.5). At 6.0 s a whale comes up through him: 0.5 s rise to ~9 m with its jaws wide, he
+rides the floor of its lower jaw (`hjwJawAt`, the shader's own hinge), the jaws slam at 0.6 s (`sfxWhaleJaw`;
+the scream is cut when that sound would arrive), and it drops back into its own splash; gone at 2.2 s, the
+cut ends 1.6 s later. Measured: max frame 9 ms through the lunge (its programs are compiled when it is built).
+- **IT IS THE BEACHED WHALE'S BAKE, THROUGH ITS OWN UNIFORMS** (`hjwBuild`, called at the end of
+  `buildWhaleBeach`): the same `B.geo`, mouth and baleen geometries, `wbSkinMat/wbMouthMat/wbBaleenMat(L)`
+  with `L.U` a clone of `wbU` — wounds closed (`uHeal` 1), eyes open, `uExK` (new: scales the moon rim/sheen/
+  drops) — and `HJW_GLSL`, `WB_GLSL` with the hinge's constants swapped for `uOpenUp`/`uOpenDn` (0.55/0.45:
+  a lunge-feeder's gape, where the beached one only lifts its head). Separate `customProgramCacheKey`
+  (`-lunge`) — same GLSL text would otherwise share a program with the wrong hinge.
+- **AT 120 M LOOKING AT THE MOON IT WAS THE SEA'S LAVENDER WHATEVER THE SKIN DID.** A black skin with no
+  emissive and every light off read the same pixel: the global fog chunk's ground mist and moon-lit air read
+  `vFogView`'s LENGTH, not `vFogDepth`, so the beached whale's `vFogDepth *= 0.66*uWbFog` thinning does nothing
+  to them. The lunge variant scales `vFogView` too (`uWbFog` 0.35); then it is a dark wet mass.
+- **Side on** (`C.wYaw = toCam + 1.5`, swept 0.3/0.95/1.5/2.2): the jaws read apart with the red between.
+- **He rides the swell**: `waterSurfaceAt` (it is a metre and more out there); at OCEAN_Y he was under it.
+  Everything of the whale's is measured off the sea's height at S the second it starts (`C.wS.y`).
+- Harness: `tools/hjshot.js` `__hjToSea()` runs to the splash and returns its time; `__bw.hjW`, `__bw.hjCut`.
+
+**HENRY'S FLICKER WAS HIS MATERIALS (`henryCutout`, 2026-10-14).** "When talking to henry in the dungeon he shakes
+and flickers a lot." Measured frame to frame in the dialogue: head 0.1–0.3 mm, lens 0.01–0.5°, lights smooth —
+nothing jumps. His hair (`Hair_Transparency`, 20,062 verts), scalp, lashes and `material` (brows) were
+`transparent` with depthWrite off, so their triangles re-sorted every frame the camera moved (the hair boiled under
+the 24° dialogue lens), and his corneas (`Std_Cornea_L/R`) are OPAQUE double-sided shells over the eyes,
+z-fighting the iris. Cards are alpha-tested now (0.45, depth-written, alpha-to-coverage) and the corneas hidden,
+on both copies (dungeon and jetty).
+
+**The lunge whale's mouth has no web** (the owner, with a photo of a humpback's open jaws: "the cheeks should not
+be webbed like that with the pink part"). In `wbMouthMat(L)` the cheek strips (`aE` 12) are discarded where
+front-facing (the near side), and the far one, seen from inside, is shaded as the dark interior with baleen
+striations (`vWbP.z * 25`), darker toward the throat. The mouth's emissive is 0.12 (0.5 lit a red fan).
+**And then no web at all** (the owner, again: "the whale mouth should have no webbing at all"): both cheek strips
+are discarded in the lunge variant; the dark far-cheek shading is gone. The jaws stand apart with the sky between.
+**The beached whale has no web either** ("the whale on the beach mouth should have no webbing either"): the cheek
+discard in `wbMouthMat` is unconditional now, and the saliva strands (`whaleSaliva`, `wbMucusGeo`) are hidden — strung
+across the gape they read as webbing too.
+
+**NO YANKS IN THE PAVILION (`clampSoft`, `MUSH_LEAN` 0.06; 2026-10-14, "i keep getting lagged back … passing this wall in
+the pavilion same with the top of the steps").** Two causes, measured with a walk that counts frames moving back along
+the heading and the biggest single-frame move:
+- **The door took you as you walked past.** Out on the platform, the stair claimed anyone inside the door's angle and
+  within `COL_R + PLAYER_R + 0.3` — a line past the column's west side qualifies — and on the stair the bore clamp
+  then pulled you in 0.47 m in one frame. Entry now wants the door's middle (`DOOR_HALF · 0.75`) AND the frame's
+  movement heading at the axis (inward component > 0.7 of the step): a straight line past the door gets NEARER the
+  axis until it passes, so "nearer" was not enough.
+- **The top tread's end-stop** put you on the top tread in one frame coming in through the rail's gap (0.79 m round
+  the well), and the stair's and room's radius limits snapped on and off with the gap and the door's angle.
+  All of those are now leans: at most `MUSH_LEAN` a frame (the end-stop as an angle at that arc length). The column's
+  outside wall, met from the sand, is still a hard clamp.
+Measured: past the door both ways and along the owner's heading — stays outside, biggest frame 0.057 m (a walking
+step); in through the door and in through the gap still take you onto the stair, biggest frame 0.057.
+
+## Henry, round J (2026-10-14)
+
+- **The mouth says the line as it types.** `henryFace` reads the last character of `dialogTextEl.textContent` while
+  `typeFull` is set (only while a line is typing): a vowel opens the jaw 0.85 (with a fast flutter), a consonant 0.32,
+  a space 0.08, punctuation shuts it; lerp `dt*26`. Measured on the jetty: the jaw follows letter by letter and stops
+  with the text. Both copies of him (cell and jetty) use it.
+- **The clothes flicker** was cloth over skin z-fighting on the motion capture: `henryCutout` gives the sweater,
+  trousers and turtleneck `polygonOffset` (-2, -4). Do NOT hide `Std_Skin_Body` to fix it: his sweater stops short of
+  his trousers and the sea shows through his middle (rendered both ways). With the offset, three moments of the walk
+  render clean.
+- The cell's cold light behind him (a 2.6 lamp, r 3, at -2.25, 0.25, 2.35 on the back wall) is gone — the owner
+  saw it as a glow next to his head.
+- **The whale take**: `HJW_T.at` 9 (was 6), so he treads water ~6.8 s. No zoom: `hjwTick` returns a HELD lens
+  (`T` = where he came up, +2 m; `R: null`, so the fov never changes) from the moment he surfaces to the end. A null
+  lens fell back to the splash +3 at R 14, which left him a speck at the frame's edge. He rides higher (pelvis at
+  sea + 0.1): from the jetty down a 14° lens a crest hid him ~45% of the time at sea - 0.12, which read as nothing
+  there.
+
+## The doorway is a hole in the wall (2026-10-15)
+
+"the pavillon entrance colliders are even worse i still snap back make the entrance easy to walk through." The 10-14
+fix (the door takes you only from its middle with a step aimed at the axis) left the column's wall clamped ACROSS
+the doorway for everything else: 9 of 25 approaches stood pushing at an opening. Now, in `updateMushroom`'s 'out'
+branch:
+- the column's skin (`COL_R + PLAYER_R`) holds only OUTSIDE the door's arc (`DOOR_HALF` 0.32 rad, 1.3 m);
+- across it are two JAMBS (`mushJambs`): faces from `BORE` out to `COL_R` at `DOOR_ANG ± DOOR_HALF`, a body put off
+  the nearest point of each by `JAMB_R` 0.25 (a shoulder; the 0.4 ring left half a metre to thread). Used on the
+  stair side of the doorway too, at platform height;
+- `mushFunnel`: walking AT the door from in front (step's inward part ≥ half of it, within 1.2 m of its axis) eases
+  you toward the middle by up to 0.7 of the inward step;
+- the stair takes you when you are THROUGH: middle inside the column's skin (`COL_R − 0.05`) inside the arc. A
+  line walked past the door never gets there.
+Measured with real key input, steering at the doorway each frame (as a player looks at the door): 27/27 in from
+−80° … +80° off its axis with ±12° of aim error, 0 frames moving backward, biggest frame 0.079 m (a step and the
+nudge). Walked past at 2.6/2.9/3.3 m both ways: stays out, 0.057. In and back out: smooth, 0.057. Up the stair from
+the door: 0.41 → 5.2 m, 0.056. NB a fixed-heading walk aimed in FRONT of the door from 60–70° slides along the wall
+and across the doorway without going in — that is the walk-past case, and correct.
+
+## Henry, round K (2026-10-15)
+
+- **Named** "Henry" in the cell and when freed (`HENRY_NPC`, `HENRY_FREE_NPC`; they said "Prisoner").
+- **The flicker when freed was the LAMPS**: with his pose frozen his face went 11.3 → 16.8 mean brightness in under
+  a second — `dunLamps` flickered ±22 % at 6.3 and 13.1 Hz, a strobe through the talk's 30° lens. Now 0.95 ± 0.05
+  over 1.3 and 2.7 Hz: measured swing 4.7 %. (His maps are mipmapped and linear; the clothes' polygon offset stays.)
+- **The mouth talks in syllables**: a 4.4 Hz beat (±15 %) while the line types, open 0.85 on a vowel / 0.55 else,
+  shut on a stop, eased at dt·12 (letter-by-letter was 36 shapes a second). Measured ~3 opens a second.
+- **The jetty take ends on the splash** ("i want the player to still be looking for henry with their own control"):
+  `C.released` — out of `frozen()` and the lock-loss guard, `cineHold` off, the lens back (eases 14° → your FOV in
+  ~2 s); the take's clock runs on for the bird flying off and for the whale, which comes up at the splash
+  (`C.hp = C.splash`) at `HJW_T.at` 9 s exactly as before. He no longer surfaces (the tread block is gone). Measured:
+  released at the splash, Henry visible 0 frames after it, the whale up at 8.9 s.
+- `tools/dunshot.js` now creeps its fake clock (a frozen one can hang the warm loop).
+
+## The real snag at the foot of the stair (2026-10-15)
+
+"I SHOULD NOT BE GETTING STUCK ON THE PAVILLION ENTRANCE TO THE STEPS." Tested as a player this time — from the sand
+through the yard gate (opened with `__bw.openPavGate()`; with it shut the gate stops you, by design) to the door:
+every approach, walking and running, in, no stops. The snag was INSIDE: turning left at the foot of the flight
+(away from it), held dead at 23° past the door by `TURN_MIN` (−0.159) for 3.3 s under a flight 2.7 m overhead; at a
+run it slipped through (the end-stop was a 6 cm/frame lean, a run is 9.5) and round under the whole stair. The bottom
+stop is now where the turn above leaves you headroom (`(playerHeight() + 0.25) / RISE − 1` ≈ −0.33: ~86° past the
+door; seen from there, the treads' undersides cross the view at head height) and it is HARD at the bottom (the lean
+stays at the top). Measured: 86° walking and running, then stopped by stone; the centre post; up the flight; out.
+
+## Out through the door (2026-10-15)
+"walking out of the area with the steps the door … pulls you back if you are even close to the walls." The stair let
+you out only 0.9 m past the skin and inside 95 % of the door's angle; drift toward a jamb and its bore clamp leaned you
+in — and RUNNING out on a slant crossed the skin at a jamb's edge, stayed 'stair', and was leaned back toward the
+column from the sand (measured: 4.4 m out, still 'stair'). Now: past `COL_R + 0.05` at the foot of the flight you are
+out at any angle (the door is the only way through the wall); the doorway's depth inside the door's angle is never
+pulled on; the jambs and the column's skin both hold a body 0.3 off (`JAMB_R`, `SKIN_R`), so there is no step where
+they meet. Measured: walking and running out at 0 / ±1.2 / ±1.8 m to the side — out in 21–35 frames, 0 pulls once
+outside; in from −70° … +70°, walking and running, 10/10, 0 back.
+- **Henry's whale is seen again** ("i couldn't see the whale at all … it should still look how it used to"): the
+  splash still hands the controls back, but the take's long lens (`C.fov`, ~14°) is HELD (`C.lensHold`, read in
+  `updateDialogCam`'s `wantFov`) until the whale is down and the take ends; then it eases back. Measured: 14° through
+  the whale (up at 8.9 s), back to 104° by 1.2 s after.

@@ -297,3 +297,14 @@ curl, `life.grip`) is applied before the render and put back after it, so a stil
 shows the clip WITHOUT it — the farmers' hands looked open when they were not. Render through the frame instead,
 with your own camera: `const orig = R.render.bind(R); R.render = (sc) => orig(sc, myCam); try { b.frame(1); } finally
 { R.render = orig; }`, then draw the canvas. A HemisphereLight added from the harness (not a point light) does light.
+
+## A frozen clock hangs the page behind the title (2026-10-14)
+
+Overriding `performance.now` to a constant between `__adv` steps can lock the tab for good (navigate times out, a new
+tab is the only way out). Behind the title (`!introStarted || bootHold > 0`) the loop runs the warm chain flat out —
+`while (performance.now() - t0 < 55 && warmRunStep())` — and `warmRunStep` returns true while a `warmBlock` (a
+parallel shader compile) has not landed and `performance.now() < warmBlockT`. The compile cannot land while the
+thread spins, and a frozen clock never reaches 55 ms or the deadline. Make the fake clock creep on every read
+(`performance.now = () => base + (off += 0.002)`, as `tools/hjshot.js` now does). Real play is unaffected.
+Also: `__hjTalk` only opens the dialog when `introDone` — reload with `beachwalk.skipIntro` set, or `startDialog`
+silently refuses and leaves Henry stuck in mode 'talk' (reset `hjG().hj.mode = 'sea'` to try again).

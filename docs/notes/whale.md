@@ -625,3 +625,15 @@ walked along the circle round you toward their own `pk.slotA` as they close (`up
 1.6 m/s, not mid-blow), so they arrive from all sides; a cleave through a second body does `cleaveK` 0.45 of the blow
 (`bladeHitMutant`, the first body full); `hp` 10 → 14, `poise` 4 → 5. Measured, 20 s standing: 4.84 in reach on
 average, but the most inside any one 110° arc is 2–3 (mean 2.27; never 4+); 37 swings, 17 hits landed.
+
+## The beached whale moved 20 m toward the castle (2026-10-15)
+
+"push the hurt whale intro scene a little closer towards the castle … i don't want the whale scenes music to play
+when you are close to the tree they should be different parts." `WB_Z = CAT_OUT_Z − 195` (−995; it was −975): its
+far side (z −1019) is 37 m short of the castle's gate (−1057) and 21 m short of the trader (−1040). Everything hung on
+`WB_Z` moves with it; the two absolute copies were updated (`ROOM_Z.whale` 995 in `BW_FROM`, `whale.glb`'s reach
+980). `WS_Z0 = WB_Z + 127` (the sighting track's start, 127 m short of the snout as before: −868). `WB_SONG_FAR`
+180 → 150, so the whale's own calls are first heard ~31 m past the fishing tree. A mound at (12.6, −987.7) now sits
+by its head: `settleMounds` moves mounds off solids, and the whale's colliders are solids.
+- (later the same day) `WB_SONG_FAR` back to 180: the sighting track starts where `1 − (d − NEAR)/(FAR − NEAR) > 0.2`
+  — the song's range — and at 150 the track started ~24 m later and the fog's clearing came off the music's swell.

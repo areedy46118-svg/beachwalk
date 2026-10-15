@@ -142,3 +142,17 @@ it): it stands where it did and turns in place; a 20-frame sheet of the crank
 and climb has nothing in front of the lens. His hand coming up onto the rope
 (`makeWellHand`, `wellHandTick`, `WELL_HAND_T`) is DELETED — "take seeing his
 hand out of the well it looks bad". The climb is the rope and its sound.
+
+## Dev mode opens every door (2026-10-15)
+
+The owner: "make every door unlock while dev mode is on". `devKeys()` (next to `DEV_JARS`) is asked beside the key at
+each lock: the wheelhouse door (`holdDoor`), the ship's chest (`chestKeyIn`), the pavilion gate (`gateKeyIn`), the
+catacombs' skull door (`catKeyIn`) and its door in the dune (`startCatReturn` without `catDoorOpen`), the tavern
+storeroom (`buildTavStore`), Henry's cell, and the throne room door that `crusaderAlive()` bars. The label reads
+"Unlock …"/"Enter …", the lock still makes its sound, and a key you DO carry is still used and taken (`keyUsed` plays
+`sfxLockOpen` itself, so the no-key branch calls `sfxLockOpen()` directly; the cell already played it unconditionally).
+Left alone: the "barred from inside" door (one-way by design, no action), the Dealer's locked case (a crate, opened by
+winning his game), the C13 arch and `fortBackBarred` (already open / already dev-aware). Measured in the pane: with dev
+on and no keys, the hold door opened (850 ms timer), chest and gate unlocked, `henryFreeS()` went to 1/'wait'.
+Note `statHad(boatKeyItem)` falls back to `holdDoorOpen`, so a dev-opened door counts that key in the end stats — dev
+mode only.

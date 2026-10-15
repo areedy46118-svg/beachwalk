@@ -717,3 +717,23 @@ the breakables' door. Four things it cost, all general:
 (`keepGroundAt`, while `inKeep`); **a harness's copy of `bunkerFloorAt` is a
 snapshot of the first no-op** and always reads null.
 
+
+**A FLOOR THAT IS DRAWN IS A FLOOR; NOTHING UP THERE IS A DROP BUT THE SHAFT (2026-10-14).** The owner fell
+through "next to the entry door" (his screenshot: the terrace at the top of the hoist). Mapped at 16.1, 0.1 m
+cells round `KEEP_DOOR` (drawn non-steep face within a step of the feet vs the grid's floor): a strip of planking
+beside the door and slivers on the terrace's far edge were DRAWN at 15.7–16.1 over a grid floor ten metres down
+(271 such cells) — `repairKeepStoreys` only puts back a level its neighbours carry. Two rules:
+- `keepFloorAt` asks `keepDrawnFloor` whenever the grid's answer is more than 0.6 m under the feet (or absent),
+  and a drawn face within a step wins. Every caller (the walk's `legal`, the push-out, gibs) sees the same floor.
+  After: 1 such cell; 16 hands-off walks from the door, 4 s each, never lower than 15.96. The tavern shares it
+  (`TAV_SITE`); 16 walks from its spawn by the entry door never dropped at all.
+- `updateKeep`'s `dropBad`: on the ground and above `KEEP_Y + 12`, a move onto a floor more than a metre under
+  the feet is refused unless it is the hoist's shaft (`keepLiftBox` ± 0.5), and a wall push that ends over one
+  is undone (to the post-move spot, else `_preMove`). The island's rocks below drop you as before.
+- The audit is in this session's harness only: `keepDrawnFloor(x, z, feet - 0.6, feet + 0.35)` against
+  `keepFloorAt(x, z, feet + 0.05, 0.35)` over a grid; note the walls only exist after `buildKeepIsland`, which
+  needs `keepWalk` — call `placeInKeep()` again once `keepState().walk`.
+
+**`trustDrawn` — the drawn-floor rule is the keep's and the tavern's ONLY.** `keepFloorAt` is also the island's, the
+castles', the catacombs', the throne room's and the dungeon's floor, and the rule went into all of them; it is now
+behind `S.trustDrawn`, set on `KEEP_SITE` and `TAV_SITE`.

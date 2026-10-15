@@ -12,7 +12,7 @@
     b.beginGame(); b.settings.devMode = true;
     window.requestAnimationFrame = () => 0;
     const real = performance.now.bind(performance), base = real(); let off = 0;
-    performance.now = () => base + off;
+    performance.now = () => base + (off += 0.002);   // creeps on every read: a frozen clock hangs the title's warm loop (it waits 55 ms for a compile that cannot land)
     window.__adv = (k, ms = 16.7) => { for (let i = 0; i < k; i++) { off += ms; b.frame(1); } };
     b.loadIsle();
     for (let i = 0; i < 200 && !b.isleS().ready; i++) { window.__adv(1); await new Promise((r) => setTimeout(r, 120)); }
@@ -52,3 +52,14 @@
     return T;
   };
 })();
+/* THE WHALE THAT TAKES HIM, after the splash:
+ *   await __hjToSea()            boots, talks, and runs the take to the splash; returns the splash's time on the take's clock
+ *   __hjSheet([__hjTs + 6.2, ...]) then draws it */
+window.__hjToSea = async () => {
+  const b = window.__bw;
+  for (let i = 0; i < 60 && !b.hjW; i++) { window.__adv(1); await new Promise((r) => setTimeout(r, 250)); }
+  window.__hjTalk();
+  for (let i = 0; i < 8; i++) { const c = document.querySelectorAll('#dialog .choice'); if (c.length) window.__hjChoose(0); else window.__hjClick(); if (b.hjS().cut) break; }
+  for (let n = 0; n < 3000 && b.hjCut && b.hjCut.ts === undefined; n++) window.__adv(1);
+  return (window.__hjTs = b.hjCut ? b.hjCut.ts : null);
+};

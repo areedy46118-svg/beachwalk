@@ -786,6 +786,28 @@ scream as it carries him off is the owner's "Man Screaming Sound Effect"
 (`assets/henry-scream.m4a`, the silence in front of it cut); the bird's sounds are
 synthesised.
 
+This work is based on ["Fishing Rod, Rigged and Animated"](https://sketchfab.com/3d-models/fishing-rod-rigged-and-animated-78991bf44cf54acb8660bef317d72c7a)
+by [Ergin ERYILDIR](https://sketchfab.com/ergin3d.com) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the fisherman's rod
+(`assets/fishing-rod.glb`, `tools/gltfpack.py --tex 1024`, 1.6 MB; its skinned blank
+and line are baked flat at load and its crank turns on its own pivot).
+
+This work is based on ["Rigged, Animated Cinematic Quality Tree 3"](https://sketchfab.com/3d-models/rigged-animated-cinematic-quality-tree-3-d35c71d2253c48aba9c45020c763d98e)
+by [EFX](https://sketchfab.com/evan4129) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the windswept pine
+leaning over the water at the fisherman's old spot, past the five's fire
+(`assets/tree.glb`, `tools/gltfpack.py --tex 1024`, 8.3 MB, its own sway played as
+it comes; its needles alpha-tested rather than blended).
+
+This work is based on ["Pliosaur (Jurassic Sea Predator) - Animated"](https://sketchfab.com/3d-models/pliosaur-jurassic-sea-predator-animated-01dfc9e28ce5494181caec4b7d8baa3b)
+by [Animal Animator](https://sketchfab.com/animalanimator) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the thing on the end of the
+fisherman's line, met in the deep (`assets/pliosaur.glb`, `tools/plio_pack.py`, 3.9 MB:
+colour maps only, normals and weights quantised; its own four clips).
+
+"Deep Sea Monster Sounds Terrifying Under Water Ambience" — the owner's file, the bed under the deep
+(`assets/deep-ambience.m4a`, AAC 64 kbps, 1.8 MB). **No licence came with it — confirm it before a release.**
+
 The flail knight in Castle XIII's west court is the owner's "Crusader tank"
 (a flail and a heater shield, fourteen of its own animations), packed by
 `tools/crusader_pack.py` into `assets/crusader.glb`. **No licence came with the
@@ -1057,10 +1079,12 @@ lathe profile cannot carry. Which end is the foot and which is the broken top
 is measured off the model rather than guessed, and the hand closes on the top
 so that what arrives at the crosshair is the carved foot.
 
-The **fishing rod** the Old Fisherman gives you for bringing it back is built,
-in `models/fishing-rod.js`: a two-section tapered blank with whipped guides,
-cork grips, a brass reel seat and a centrepin reel, with the line running
-through the guides.
+The **fishing rod** the Old Fisherman gives you for bringing it back (with his map
+of his old fishing spot, a red X in the water past the five's fire, under the
+leaning tree, where the fish school) is a scan — see the credit
+below. Click to cast; hold the button to reel the float in, let go and it stops
+where it is. (`models/fishing-rod.js`, the rod that was built before it, is no
+longer used.)
 
 
 The **katana's swing, block, hit, draw and parry sounds** are the owner's own

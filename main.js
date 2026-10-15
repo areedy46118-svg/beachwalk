@@ -14,7 +14,6 @@ import { makeUndergroundBunker } from './models/underground-bunker.js';
 import { makeKatana, KAT_TIP, KAT_POMMEL } from './models/katana.js';
 import { fitSparePeg, sparePegCopy, PEG_TIP } from './models/spare-peg.js';
 import { makeUndercroft } from './models/undercroft.js';
-import { makeFishingRod, makeFishingRodIcon, ROD_LEN, ROD_GRIP } from './models/fishing-rod.js';
 import { makeShell, SHELL_R } from './models/shotgun.js';   // the built double is history: the shell is the fallback until the scan lands
 
 /* ------------------------------------------------------------------ *
@@ -132,7 +131,7 @@ const BW_FROM = (() => {
     if (sessionStorage.getItem('beachwalk.load') !== 'checkpoint') return null;
     const d = JSON.parse(localStorage.getItem('beachwalk.save') || 'null');
     if (!d || !d.pos) return null;
-    const ROOM_Z = { keep: 215, tav: 215, uc: 640, dojo: 742, cat: 745, bunker: 333, whale: 975 };
+    const ROOM_Z = { keep: 215, tav: 215, uc: 640, dojo: 742, cat: 745, bunker: 333, whale: 995 };
     const ROOM_FILES = {
       keep: ['keep.glb', 'dock.glb'],
       tav: ['tavern.glb', 'keep.glb', 'dock.glb', 'wong.glb', 'drunk.glb', 'orc.glb', 'wedding-ring.glb'],
@@ -152,6 +151,9 @@ const ASSET_REACH = {
   'assets/skyline.glb': 14,           // the city over the sand wall is in view from the spawn
   'assets/shell.glb': 15,             // the first of the three is at z = -12
   'assets/military-shovel.glb': 70,   // under the cliff past the drain
+  'assets/tree.glb': 814,
+  'assets/pliosaur.glb': 814,         // on the end of the fisherman's line, at the tree             // the tree over the fisherman's old spot, past the five's fire
+  'assets/fishing-rod.glb': 96,       // the fisherman's, at the dock
   'assets/octopus-ring.glb': 647,   // the knight drops it, so it is wanted where he is
   'assets/rocks.glb': 80,             // the formation below Bradly
   'assets/rocks-mossy.glb': 154,      // the stone against the wreck, and the heaps in the dojo
@@ -194,7 +196,7 @@ const ASSET_REACH = {
   'assets/courtyard.glb': 742,         // and what is on the other side of it
   'assets/samurai.glb': 744,           // and who is waiting in there
   'assets/catacombs.glb': 745,
-  'assets/whale.glb': 960,             // the whale on the sand past the five         // what is under the sand past the stones
+  'assets/whale.glb': 980,             // the whale on the sand past the five         // what is under the sand past the stones
   'assets/demon.glb': 965,             // and the seven in its belly
   'assets/demon-moves.json': 966,      // and how they move
   'assets/parasite.glb': 967,          // and the two that came in with something it ate
@@ -3039,7 +3041,8 @@ oceanUniforms.uSqO = { value: new THREE.Vector4(0, 0, 1, 0) };
 oceanUniforms.uBlood = { value: new THREE.Vector4(0, 0, 1, 0) };
 // the whale's healing on the sea: a ring of light going out across it (x, z, radius, strength), and a glow round the healed whale (x, z, radius, strength)
 oceanUniforms.uHealSea = { value: new THREE.Vector4(0, 0, 1, 0) };
-oceanUniforms.uGlowSea = { value: new THREE.Vector4(0, 0, 1, 0) };   // blood in the water: (x, z, radius, strength), the whale's   // a squall on the water: (x, z, radius, strength)          // the clouds' clock, for their shadows (shared, not merged: merge clones)
+oceanUniforms.uGlowSea = { value: new THREE.Vector4(0, 0, 1, 0) };
+oceanUniforms.uFishSea = { value: new THREE.Vector4(0, 0, 1, 0) };   // the fisherman's old spot, glowing: (x, z, radius, strength) — `updateFishSpot`   // blood in the water: (x, z, radius, strength), the whale's   // a squall on the water: (x, z, radius, strength)          // the clouds' clock, for their shadows (shared, not merged: merge clones)
 
 // ------------------------------------------------------------------
 // Sand texture
@@ -6270,14 +6273,14 @@ function cullWorldInHall() {
    * door opens straight into the tavern, six kilometres away, and nothing
    * passes a beach frame between them, so whatever of the tavern's the keep
    * had switched off (its lamps, its cast) stayed off for the whole visit. */
-  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : inDun ? 9 : 0;
+  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : inDun ? 9 : inDeep ? 10 : 0;
   if (hallHid && hk !== hallKey) { for (const o of hallHid) o.visible = true; hallHid = null; }
   hallKey = hk;
   if (hk) {
     if (!hallHid) {
       hallHid = [];
       for (const o of scene.children) {
-        if (!o.visible || o.isLight || o.isInstancedMesh || (inDojo && (o === sky || o === dojoNightSky)) || (inWhale && o === sky)) continue;   // the dojo keeps its night sky
+        if (!o.visible || o.isLight || o.isInstancedMesh || (inDojo && (o === sky || o === dojoNightSky)) || (inWhale && o === sky) || o === deepWorldRef) continue;   // the dojo keeps its night sky
         o.getWorldPosition(_hcP);
         if (_hcP.distanceTo(camera.position) > 1500) { o.visible = false; hallHid.push(o); }
       }
@@ -6952,7 +6955,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     uniform vec4 uSqO;
     uniform vec4 uSh[4]; uniform vec4 uSh2[4];
     uniform vec4 uBlood;
-    uniform vec4 uHealSea, uGlowSea;
+    uniform vec4 uHealSea, uGlowSea, uFishSea;
     varying vec3 vWorld;
     ${CLOUD_SHADE_T}
 
@@ -7213,6 +7216,26 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
         float gn = skN(vWorld.xz * 0.45 + vec2(-uTime * 0.2, uTime * 0.3));
         col += mix(${BIO_COL}, vec3(0.55, 0.85, 1.0), 0.5) * smoothstep(uGlowSea.z, uGlowSea.z * 0.15, gd) * (0.35 + 0.65 * gn) * uGlowSea.w;
       }
+      /* THE FISHERMAN'S OLD SPOT: the sea's own light, gathered where the fish are thick (2026-10-14, the owner: "make
+       * the fishing area in the water a glowing area in the water that looks noticeable but natural for the game").
+       * The same blue-green the surf sparks with, so it belongs to this sea: an irregular patch (its edge wanders with
+       * slow noise, never a disc), lit from inside in drifting cells that brighten and fade on their own counts, a
+       * paler heart, the whole of it breathing slowly, and pinpricks winking in it where something turns under it. */
+      if (uFishSea.w > 0.0) {
+        vec2 fq = vWorld.xz - uFishSea.xy;
+        float fd = length(fq);
+        if (fd < uFishSea.z * 1.5) {
+          float fa = atan(fq.y, fq.x);
+          float fe = uFishSea.z * (0.72 + 0.42 * skN(vec2(cos(fa), sin(fa)) * 1.6 + vec2(uTime * 0.04, 3.0)) + 0.12 * skN(vWorld.xz * 0.35 + uTime * 0.05));
+          float fbody = smoothstep(fe, fe * 0.25, fd);
+          float fc1 = skN(vWorld.xz * 0.55 + vec2(uTime * 0.10, -uTime * 0.07));
+          float fc2 = skN(vWorld.xz * 1.6 + vec2(-uTime * 0.26, uTime * 0.19));
+          float fbr = 0.82 + 0.18 * sin(uTime * 0.65) + 0.08 * sin(uTime * 1.9 + fc1 * 4.0);
+          float fsp = smoothstep(0.80, 0.97, skN(vWorld.xz * 4.5 + vec2(uTime * 0.7, uTime * 0.45))) * smoothstep(0.3, 0.8, fc2);
+          col += ${BIO_COL} * fbody * (0.9 + 2.4 * fc1 * fc2 * 1.5 + 1.5 * fsp) * fbr * uFishSea.w;
+          col += vec3(0.55, 0.95, 1.0) * fbody * fbody * fbody * 0.5 * fbr * uFishSea.w;
+        }
+      }
 
       gl_FragColor = vec4(col, 1.0);
       #include <fog_fragment>
@@ -7400,6 +7423,15 @@ const bloodUnitEl = document.getElementById('blood-unit');
  * the corner counts jars and the little jar beside the number is an icon of
  * one rather than a gauge of a number nobody was reading. */
 let bloodJars = 0, bloodSeen = false;
+/* WHAT THE WALK ADDS UP TO, for the end screen: every kill and every key,
+ * weapon and ring you came by, by name. Written where the thing happens and
+ * carried on the save (`stats`), because the end cannot read it back off the
+ * pack: shovels and rings get sold, keys go into their locks, the peg goes
+ * home. Never on a load or a replay, and never for dev mode's handout. */
+const endStats = { kill: new Set(), item: new Set(), jars: 0 };   // jars: every one that ever came to you, found, bled or paid
+// THE DEEP's flags (its section is near the end): read by `frozen()`, `inRoom()` and the gates long before it is declared
+let inDeep = false, deepLock = false, deepNoHands = false, deepCutOn = false, deepDone = false, deepRodOn = false, deepReelSpin = null, deepBend = 0, deepWorldRef = null, deepLive = false;   // live: its section has run (frames run while the module is still being read)
+let statHush = false, statReady = false;     // ready: the module has run to its end, every item exists
 
 let started = false, locked = false, fallbackLook = false, dragging = false;
 let packCut = false;            // the three coming in: the player watches
@@ -7726,7 +7758,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return (!!crabCut && crabCut.t >= CRAB_T.cut) || !!hjCut || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone; }
+function frozen() { return (!!crabCut && crabCut.t >= CRAB_T.cut) || (!!hjCut && !hjCut.released) || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone || deepCutOn; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -7942,7 +7974,7 @@ document.addEventListener('pointerlockchange', () => {
     softLook = true;
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !keyCut && !thrCut && !wbFareCut && !hjCut && !mutCut && !portalCut && !hatchBusy && !ucBusy && !wbSw && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !keyCut && !thrCut && !wbFareCut && !(hjCut && !hjCut.released) && !mutCut && !portalCut && !hatchBusy && !ucBusy && !wbSw && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -8145,9 +8177,15 @@ function updateBootHold(dt) {
   const left = startLeft();
   if (left > 0 || roomRestore || restore || warmBlock) bootIdleSince = 0; else bootIdleSince = bootIdleSince || now;
   const queueDone = bootIdleSince && now - bootIdleSince > 500;
-  let hold = !capped && (roomWarm || !queueDone || warmOwed());
-  if (!hold && !capped && !bootLookDone) { bootLookDone = true; updateFarProps(); startLookWarm(); hold = true; }
-  if (!hold && !capped) {
+  /* AND ONCE THE BLACK HAS STARTED TO LIFT IT DOES NOT COME BACK (2026-10-15, the owner: "reloading the checkpoint in
+   * the catacombs still was making my screen flash"). Measured on the real clock: the fade ran 1 → 0.26, then a hold
+   * condition came true again for a second (a download joining the queue, a warm owed, a frame over 34 ms) and the
+   * black was slammed back to 1, then let go at 0.2 — a flash, every time. The hold is asked only BEFORE the fade
+   * begins; whatever is still owed after that is paid in the open. */
+  const fading = bootHold < 1;
+  let hold = !fading && !capped && (roomWarm || !queueDone || warmOwed());
+  if (!fading && !hold && !capped && !bootLookDone) { bootLookDone = true; updateFarProps(); startLookWarm(); hold = true; }
+  if (!fading && !hold && !capped) {
     // and the frames have settled: thirty in a row under 34 ms, drawn under the black
     const fr = bootPrevT ? now - bootPrevT : 99;
     bootSmoothN = fr < 34 ? bootSmoothN + 1 : 0;
@@ -8644,8 +8682,8 @@ window.addEventListener('keydown', (e) => {
     if (inspecting) { if (inspectEquip) inspectEquip(); return; }
     primaryAction();
   }
-  else if (e.code === 'KeyG') { if (held) dropHeld(); else if (equipped) dropEquipped(); }
-  else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped) toggleEquip(equipped); }
+  else if (e.code === 'KeyG') { if (deepLock) { /* nothing leaves your hands down there */ } else if (held) dropHeld(); else if (equipped) dropEquipped(); }
+  else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped && !deepNoHands) toggleEquip(equipped); }
   else if (e.code === 'KeyR') magReload();          // and six of them go back in
   else if (/^Digit[1-7]$/.test(e.code)) { if (+e.code.slice(5) <= hotbarN()) useSlot(+e.code.slice(5) - 1); }
   else if (e.code === 'Digit8') toggleFastWalk();
@@ -8842,12 +8880,22 @@ S_DEV.addEventListener('change', () => {
  * and `addToInventory` refuses a duplicate by identity, so finding it
  * afterwards cannot give you two. */
 const DEV_JARS = 100;                 // what dev mode puts in the corner
+/* AND IN DEV MODE EVERY DOOR UNLOCKS (2026-10-15, the owner): each lock asks this as well as its key — the wheelhouse
+ * door, the ship's chest, the pavilion's gate, the catacombs' door (and its door in the dune), the tavern's storeroom,
+ * Henry's cell, and the throne room's door the crusader bars. The lock still turns with its own sound; a key you do
+ * carry is still used, and one you do not is not asked for. */
+function devKeys() { return !!settings.devMode; }
 function devGrantWeapons() {
-  // (the owner, 2026-10-13: the well man's key and the Great Crab Call, not the katana and the skull key)
-  for (const it of [shovelItem, militaryItem, bloodItem, pegItem, pavKeyItem, hornItem]) {
-    if (!it || inventory.includes(it)) continue;
-    addToInventory(it);
-  }
+  // (the owner, 2026-10-13: the well man's key and the Great Crab Call, not the katana; 2026-10-15: and the skull key, and
+  // the bigger pack — four more pockets, as the trader sells them, and his one is then sold)
+  if (INV_MAX <= 10) { INV_MAX = 14; TRADER_STOCK.packSpace = 0; renderPack(); renderHotbar(); }
+  statHush = true;
+  try {
+    for (const it of [shovelItem, militaryItem, bloodItem, pegItem, pavKeyItem, hornItem, skullKeyItem]) {
+      if (!it || inventory.includes(it)) continue;
+      addToInventory(it);
+    }
+  } finally { statHush = false; }
   if (!equipped && inventory.includes(shovelItem)) toggleEquip(shovelItem);
   /* AND A HUNDRED JARS TO SPEND, the owner's word: the shops are to be tried,
    * not saved up for. Topped up to the hundred, never cut down to it. Not
@@ -8925,6 +8973,7 @@ function devLeaveRooms() {
   if (inC13) { inC13 = false; }
   if (inThrone) { inThrone = false; if (thrWorld) thrWorld.visible = false; throneLeave(); }
   if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
+  if (inDeep) placeOutOfDeep();
 }
 /* AND THE LIGHTHOUSE (the owner: "a teleport to lighthouse in the settings
  * that brings me to exactly when i enter the lighthouse section"): out of
@@ -10035,7 +10084,7 @@ function dropHeld() {
 const _dropDir = new THREE.Vector3();
 function dropEquipped() { if (equipped) dropItem(equipped); }
 function dropItem(item, jitter = 0) {
-  if (!item) return;
+  if (!item || deepLock) return;                 // (THE DEEP: nothing is dropped from the bite to the sand)
   let m = null;
   const hasMesh = (g) => { let any = false; g.traverse((o) => { if (o.isMesh || o.isSkinnedMesh) any = true; }); return any; };
   if (item.worldFactory) {
@@ -10155,7 +10204,7 @@ function groundUnder(x, z, atY) {
  * So the ray is cast at whatever room you are standing in, the floor comes
  * from `bunkerFloorAt` (which every room answers), and the beach's two walls
  * are only applied when you are on the beach. */
-const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone || inDun;
+const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone || inDun || inDeep;
 function dropTargets() {
   if (inUndercroft) return [undercroft];
   if (inBunker) return bunkers.map((b) => b.group).filter(Boolean);
@@ -10570,6 +10619,7 @@ function wearRingAt(item, i) {
   if (!off && rings.length >= RING_SLOTS) return false;
   removeFromInventory(item);
   if (off) { rings[i] = item; addToInventory(off); } else rings.push(item);
+  statItem(item);
   renderRings(); renderHotbar(); renderPack();
   sfxRingOn();
   // a ring that does something the moment it goes on (the old ring fills its own new bar); never on a load, which puts back what you had
@@ -10612,6 +10662,7 @@ function addToInventory(item, over = false) {
    * be lost for it, so a full pack grows a slot for it rather than refusing. */
   if (inventory.length >= INV_MAX && !over) return false;
   inventory.push(item);
+  statItem(item);
   placeInSlot(item, -1, Math.max(INV_MAX, inventory.length));
   renderHotbar();
   renderPack();
@@ -10898,7 +10949,7 @@ function iconDrawable(model) {
  * your hands. Every icon this browser has ever rendered is kept (it is the
  * same picture every time: the same model through the same lens), so a load
  * draws them at once. `ICON_CACHE_V` goes up whenever the icon rig changes. */
-const ICON_CACHE_V = 'v6';     // v6: the shotgun and its shells are the scan's
+const ICON_CACHE_V = 'v9';     // v7: the ammo tiles are studio-lit metal (`ammoStudio`); v8: the rod is the scan; v9: the map is a lit folded sheet
 const iconCacheKey = (item) => 'beachwalk.icon.' + ICON_CACHE_V + '.' + (item.id || item.name);
 function itemIcon(item) {
   if (item._icon) return item._icon;
@@ -11003,7 +11054,7 @@ function commitWheel() {
   const item = i >= 0 ? packSlots[i] : null;
   /* frozen (a take, a word, the examine screen): the cursor WAITS rather than
    * snapping back to what you held, which read as the strip reverting */
-  if (item && item !== equipped && frozen()) return;
+  if (item && item !== equipped && (frozen() || deepNoHands)) return;
   wheelCursor = -1;
   if (item && item !== equipped) {
     if (item.viewmodel) toggleEquip(item);
@@ -11111,7 +11162,7 @@ window.addEventListener('wheel', (e) => {
 function useSlot(i) {
   if (wheelCursor >= 0) wheelCursor = -1;   // a digit or a click is a choice now, not the wheel's
   const item = packSlots[i];
-  if (!item || menuOpen || ended) return;
+  if (!item || menuOpen || ended || deepNoHands) return;
   if (noteOpen) { closeNote(); return; }
   item.use();
 }
@@ -11441,13 +11492,14 @@ window.addEventListener('pointerup', (e) => {
    * down into the pack and something holdable came up into its place, that
    * is in your hand instead. */
   const H = hotbarN();
-  if ((to < H || target === equipped) && item.viewmodel) { if (equipped !== item) toggleEquip(item); }   // into the strip, or onto the thing in your hand
+  if (deepNoHands) { /* the rod is in your hands and stays there */ }
+  else if ((to < H || target === equipped) && item.viewmodel) { if (equipped !== item) toggleEquip(item); }   // into the strip, or onto the thing in your hand
   else if (equipped === item && to >= H && target && from < H && target.viewmodel) toggleEquip(target);
   renderHotbar(); renderPack();
 });
 
 function openPack() {
-  if (invOpen || ended || dying || !introDone) return;
+  if (invOpen || ended || dying || !introDone || deepNoHands) return;
   invOpen = true;
   packReturnLock = locked;
   // the lock is KEPT: a cursor of our own does the clicking (`vcActive`)
@@ -12071,6 +12123,7 @@ tipGlint.scale.setScalar(0.09); tipGlint.visible = false; tipGlint.renderOrder =
 vmScene.add(tipGlint);
 let glintK = 0, glintN = 0, glintT = 0, glintPop = 0, glintPopAt = 0.5, glintWas = 0;
 const GLINT_SWEEP = 0.26;                   // the light runs the length of the edge in this
+const GLINT_FROM = 0.4;                     // how far into a charge the glint comes in (a hold past this is plainly a heavy)
 const _glintP = new THREE.Vector3(), _glintR = new THREE.Vector3(), _glintC = new THREE.Vector3(), _glintN = new THREE.Vector3(), _glintS = new THREE.Vector3(), _glintE = new THREE.Vector3();
 /* AND IT MOVES LIKE ONE. The first version sat on the tip and jittered — a
  * lamp with a loose contact. Now, the moment the charge tops out, the light
@@ -12082,8 +12135,16 @@ const _glintP = new THREE.Vector3(), _glintR = new THREE.Vector3(), _glintC = ne
  * because a regular one is a beacon. */
 function updateGlint(dt) {
   if (pegHaste > 0) pegHaste = Math.max(0, pegHaste - dt);
-  const want = (winding && windFull) || (pegHaste > 0 && equipped && equipped.rapier) ? 1 : 0;
+  /* AND IT COMES IN WITH THE HEAVY, NOT ONLY AT THE TOP OF IT (2026-10-14, the owner: "i dont see the glint on
+   * shovel heavies"). It was there — measured on both shovels, on the lip, at the cock and the overhead — but only
+   * once the charge was FULL, a whole second of holding, and a heavy is any hold past a tap: thrown at half a second
+   * it never showed. Now it runs up the edge as soon as a hold is clearly a heavy (`GLINT_FROM` of the charge),
+   * grows with it, and at the top it POPS and stays at full — the creak (`sfxWindFull`) is still the full mark. */
+  const ch = winding ? windT / WIND_FULL : 0;
+  const want = (pegHaste > 0 && equipped && equipped.rapier) || windFull && winding ? 1
+    : winding && ch >= GLINT_FROM ? 0.45 + 0.35 * THREE.MathUtils.smoothstep(ch, GLINT_FROM, 1) : 0;
   if (want && !glintWas) { glintT = 0; glintPop = 0; glintPopAt = 0.35; }
+  if (want === 1 && glintWas && glintWas < 1) { glintPop = 1; glintPopAt = 0.4; }      // the top: a flare
   glintWas = want;
   glintK += (want - glintK) * Math.min(1, dt * (want ? 18 : 10));
   if (glintK < 0.01) { tipGlint.visible = false; return; }
@@ -12159,7 +12220,7 @@ function updateGlint(dt) {
    * blade at the corner of the frame. Anything without a blade's length of
    * edge gets a floor that reads. */
   const minS = equipped && equipped.glintSpan ? 0.10 : 0.26;
-  tipGlint.scale.setScalar(THREE.MathUtils.clamp(len * 1.15, minS, 0.46) * (0.86 + 0.14 * f));
+  tipGlint.scale.setScalar(THREE.MathUtils.clamp(len * 1.15, minS, 0.46) * (0.86 + 0.14 * f) * (0.7 + 0.3 * glintK));
 }
 
 function updateTrail(dt, recording) {
@@ -14135,6 +14196,8 @@ function digImpactCore() {
   const P = digPower;
   // THE BLADE TOUCHED SOMETHING: that is the blow, wherever on the screen it was (`bladeSweep`)
   if (blade.first) { const u = blade.first; blade.first = null; if (u.st.alive) { bladeHitMutant(u, P, true); return true; } }
+  if (isleBirdStrike(P)) return true;          // a gull on the island: feathers
+  if (plioStrike(P)) return true;              // the thing in the deep
   if (castleStrike(P)) return true;            // the blade went through the castle
   if (crateStrike(P)) return true;             // the blade is on the crate, not the sand
   if (glassStrike()) return true;              // or on something that shatters
@@ -14238,6 +14301,10 @@ function digImpactCore() {
         spawnSparks(surface === 'metal' ? 8 + Math.round(P * 7) : surface === 'concrete' ? 4 : 5, 0.4 + P * 0.5);
       }
       sfxPropHit(surface, 7 + P * 6);
+      gfPlay(surface === 'wood' ? 'hitWood' : surface === 'metal' ? 'hitMetal' : 'hitStone', 0, 0.7 + P * 0.5);
+      // and the recorded steel-on-solid under it where the tool is steel: the blades ring, the spade lands
+      if (isBlade()) playSample(surface === 'metal' ? 'katBlock' : 'katHit', 0.55, 0.06, 1.1);
+      else if (equipped === militaryItem) playSample(surface === 'metal' ? 'blockMil' : 'milHeavy', 0.75, 0.05);
       sfxDigImpact(P * 0.4);
       const pt = solidHit.point;
       // chips the colour of what you hit, thrown back along the normal
@@ -14348,7 +14415,166 @@ function nearestSolidHit() {
   const near = (x, z, d) => Math.abs(camera.position.x - x) < d && Math.abs(camera.position.z - z) < d;
   if (near(MUSH_X, MUSH_Z, 14)) test(mushHouse.group, 'rock');
   if (insideDrain || near(DRAIN_X, DRAIN_Z, 16)) test(drainTunnel, 'rock');
+  for (const S of activeHitSites()) { const h = siteBladeHit(S); if (h && (!best || h.distance < best.distance)) best = h; }   // and everything drawn where there is a wall index
   return best;
+}
+/* ---- THE GULLS ON THE ISLAND CAN BE HIT (2026-10-14, the owner: "make these bird models in the screenshot able to be hit
+ * then they poof into white feathers and disappear"). They are the diorama's own sitting gulls — on the stair head's
+ * posts, the roofs, the gallery — merged by material into `isle_props`, each one piece of 372 vertices (the crates are
+ * 132, the barrels 600). `isleBirdsExtract` floods the mesh's pieces, lifts every 372 into its own mesh (the same
+ * material, the same frame) and collapses its triangles out of the merged one. A blow whose line passes near one
+ * (`isleBirdStrike`, before the walls in `digImpactCore`) puts it out in a burst of white feathers that drift down
+ * and fade (`featherBurst`), with a startled gull's cry and the thump of the blow. */
+const isleBirds = [];
+function isleBirdsExtract() {
+  if (isleBirds.length) return;
+  let M = null; isleWorld.traverse((o) => { if (o.isMesh && o.name === 'isle_props') M = o; });
+  if (!M) return;
+  if (M.geometry.index) M.geometry = M.geometry.toNonIndexed();
+  const g = M.geometry, P = g.attributes.position, n = P.count;
+  const rep = new Int32Array(n), seen = new Map();
+  for (let i = 0; i < n; i++) { const k = Math.round(P.getX(i) * 1000) + ',' + Math.round(P.getY(i) * 1000) + ',' + Math.round(P.getZ(i) * 1000); let r = seen.get(k); if (r === undefined) { r = i; seen.set(k, i); } rep[i] = r; }
+  const par = new Int32Array(n).map((_, i) => i), f = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+  for (let t = 0; t < n; t += 3) { const a = f(rep[t]); par[f(rep[t + 1])] = a; par[f(rep[t + 2])] = a; }
+  const cnt = new Map(); for (let i = 0; i < n; i++) { const r = f(rep[i]); cnt.set(r, (cnt.get(r) || 0) + 1); }
+  const tris = new Map();
+  for (let t = 0; t < n; t += 3) { const r = f(rep[t]); if (cnt.get(r) !== 372) continue; let L = tris.get(r); if (!L) tris.set(r, L = []); L.push(t); }
+  const names = Object.keys(g.attributes);
+  M.updateMatrixWorld(true);
+  for (const L of tris.values()) {
+    const geo = new THREE.BufferGeometry();
+    for (const nm of names) {
+      const A = g.attributes[nm], sz = A.itemSize, out = new Float32Array(L.length * 3 * sz);
+      L.forEach((t, k) => { for (let v = 0; v < 3; v++) for (let c = 0; c < sz; c++) out[(k * 3 + v) * sz + c] = A.array[(t + v) * sz + c]; });
+      geo.setAttribute(nm, new THREE.BufferAttribute(out, sz, A.normalized));
+    }
+    geo.computeBoundingSphere();
+    const bm = new THREE.Mesh(geo, M.material); bm.name = 'isle_gull'; M.add(bm);
+    for (const t of L) for (let v = 1; v < 3; v++) P.setXYZ(t + v, P.getX(t), P.getY(t), P.getZ(t));   // gone from the merged mesh
+    const c = geo.boundingSphere.center.clone().applyMatrix4(M.matrixWorld);
+    isleBirds.push({ m: bm, c, r: Math.max(0.25, geo.boundingSphere.radius) });
+  }
+  P.needsUpdate = true; g.computeBoundingSphere();
+}
+const _brdP = new THREE.Vector3();
+function isleBirdStrike(P) {
+  if (!isleBirds.length || !onIsle) return false;
+  aimRay(P);
+  let best = null, bestT = Infinity;
+  for (const B of isleBirds) {
+    if (!B.m.visible) continue;
+    const t = _brdP.copy(B.c).sub(_aimO).dot(_aimD);
+    if (t < 0.2 || t > digRay.far + 0.4 || t >= bestT) continue;
+    const miss = B.c.distanceTo(_brdP.copy(_aimO).addScaledVector(_aimD, t));
+    if (miss < B.r + 0.18 + P * 0.15) { bestT = t; best = B; }
+  }
+  if (!best) return false;
+  best.m.visible = false;
+  hitConnect(P, 0.45);
+  featherBurst(best.c, 34 + Math.round(P * 14));
+  sfxGull(panTo(best.c.x, best.c.z), 0.05);
+  sfxThud(0.02);
+  return true;
+}
+/* White feathers: small curved quads, thrown out of the bird and then drifting down on the air — rocking, turning,
+ * falling slowly, as a feather does — and fading out. One pool. */
+const FEATHER_N = 140;
+let feathers = null;
+function featherBurst(c, n) {
+  if (!feathers) {
+    const geo = new THREE.PlaneGeometry(0.11, 0.035, 2, 1); geo.translate(0.04, 0, 0);
+    const p = geo.attributes.position; for (let i = 0; i < p.count; i++) p.setZ(i, Math.pow(p.getX(i) - 0.04, 2) * 1.6);   // a little curve
+    geo.computeVertexNormals();
+    const m = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0xf2f0ea, roughness: 0.9, metalness: 0, side: THREE.DoubleSide, emissive: 0xc4c4c8, emissiveIntensity: 0.62 }), FEATHER_N);   // (lit from within a little: at night, a lit-only white read grey)
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.frustumCulled = false; m.raycast = () => {}; m.count = 0;
+    scene.add(m);
+    feathers = { m, F: Array.from({ length: FEATHER_N }, () => ({ life: 0, p: new THREE.Vector3(), v: new THREE.Vector3(), ph: 0, sp: 0, s: 1 })), next: 0 };
+  }
+  for (let i = 0; i < n; i++) {
+    const F = feathers.F[feathers.next]; feathers.next = (feathers.next + 1) % FEATHER_N;
+    const a = Math.random() * Math.PI * 2, e = Math.random() * 1.2 - 0.2, sp = 1.2 + Math.random() * 2.6;
+    F.p.copy(c); F.v.set(Math.cos(a) * Math.cos(e) * sp, Math.sin(e) * sp + 1.0, Math.sin(a) * Math.cos(e) * sp);
+    F.life = 3.5 + Math.random() * 2.5; F.max = F.life; F.ph = Math.random() * 6.3; F.sp = 2 + Math.random() * 3; F.s = 0.7 + Math.random() * 0.7;
+  }
+}
+const _ftM = new THREE.Matrix4(), _ftQ = new THREE.Quaternion(), _ftE = new THREE.Euler(), _ftSc = new THREE.Vector3();
+function updateFeathers(dt) {
+  if (!feathers) return;
+  let k = 0;
+  for (const F of feathers.F) {
+    if (F.life <= 0) continue;
+    F.life -= dt; F.ph += dt * F.sp;
+    F.v.multiplyScalar(Math.exp(-dt * 2.6));                       // the air takes it at once
+    F.v.y = Math.max(F.v.y - dt * 2.2, -0.55);                     // and it falls slowly
+    F.p.addScaledVector(F.v, dt);
+    F.p.x += Math.sin(F.ph) * dt * 0.35; F.p.z += Math.cos(F.ph * 0.8) * dt * 0.25;   // rocking side to side on the way down
+    _ftE.set(Math.sin(F.ph) * 0.9, F.ph * 0.6, Math.cos(F.ph * 1.3) * 0.7);
+    _ftQ.setFromEuler(_ftE); _ftSc.setScalar(F.s * Math.min(1, F.life / 1.2));
+    _ftM.compose(F.p, _ftQ, _ftSc); feathers.m.setMatrixAt(k++, _ftM);
+  }
+  feathers.m.count = k; feathers.m.instanceMatrix.needsUpdate = true;
+}
+
+/* ---- ANYTHING YOU CAN SEE, YOU CAN HIT (2026-10-14, the owner: "make any visible texture able to be hit and make sound
+ * too some i swing at and there is no collision like at new places like the lighthouse"). `nearestSolidHit` raycast
+ * the dock, the rocks, the wreck, the pavilion and the drain, and marched the bunker and the castle; the island, the
+ * keep, the tavern, the catacombs, the throne room and the dungeon answered nothing, so a blade went through their
+ * stone. Each of those already has its drawn faces in a 1 m grid (`S.walls`, every wall and every floor, with the
+ * material each came from), so the aim ray is walked through that grid cell by cell and tested against the faces in
+ * each (Möller–Trumbore) — no scene raycast, a few hundred triangles a swing. What it met is told by its material's
+ * name: timber, iron, glass or (most of these places) stone. */
+const _sbO = new THREE.Vector3(), _sbE1 = new THREE.Vector3(), _sbE2 = new THREE.Vector3(), _sbH = new THREE.Vector3(), _sbS = new THREE.Vector3(), _sbQ = new THREE.Vector3();
+function siteSurface(mn) {
+  const s = (mn || '').toLowerCase();
+  if (/wood|plank|table|walkway|bench|banc|door|bark|crate|barrel|house|timber|beam|chair|shelf|bed|cart|boat|deck|tav/.test(s)) return 'wood';
+  if (/metal|iron|steel|chain|lamp|bars|grate|gate|cannon/.test(s)) return 'metal';
+  if (/glass|window|bottle/.test(s)) return 'glass';
+  if (/leaf|grass|foliage|plant|cloth|curtain|rug|fabric/.test(s)) return 'soft';
+  return 'rock';
+}
+function siteBladeHit(S) {
+  const W = S && S.walls; if (!W) return null;
+  const O = _aimO, D = _aimD, far = digRay.far, v = W.v, cell = W.cell, done = new Set();
+  let best = null, bestT = far;
+  const N = Math.ceil(far / (cell * 0.5)) + 1;
+  for (let s = 0; s <= N; s++) {
+    const t0 = Math.min(far, s * cell * 0.5);
+    const px = O.x + D.x * t0, pz = O.z + D.z * t0;
+    for (const [di, dj] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const k = W.key(Math.floor((px - S.X) / cell) + di, Math.floor((pz - S.Z) / cell) + dj);
+      if (done.has(k)) continue; done.add(k);
+      const list = W.map.get(k); if (!list) continue;
+      for (let m = 0; m < list.length; m++) {
+        const id = list[m], o = id * 9;
+        _sbE1.set(v[o + 3] - v[o], v[o + 4] - v[o + 1], v[o + 5] - v[o + 2]);
+        _sbE2.set(v[o + 6] - v[o], v[o + 7] - v[o + 1], v[o + 8] - v[o + 2]);
+        _sbH.crossVectors(D, _sbE2); const a = _sbE1.dot(_sbH); if (a > -1e-7 && a < 1e-7) continue;
+        const fi = 1 / a; _sbS.set(O.x - v[o], O.y - v[o + 1], O.z - v[o + 2]);
+        const u = fi * _sbS.dot(_sbH); if (u < 0 || u > 1) continue;
+        _sbQ.crossVectors(_sbS, _sbE1); const w = fi * D.dot(_sbQ); if (w < 0 || u + w > 1) continue;
+        const t = fi * _sbE2.dot(_sbQ); if (t < 0.15 || t >= bestT) continue;
+        bestT = t; best = id;
+      }
+    }
+    if (best !== null && bestT < t0 - cell) break;              // nothing further on can be nearer
+  }
+  if (best === null) return null;
+  const o = best * 9;
+  _sbE1.set(v[o + 3] - v[o], v[o + 4] - v[o + 1], v[o + 5] - v[o + 2]); _sbE2.set(v[o + 6] - v[o], v[o + 7] - v[o + 1], v[o + 8] - v[o + 2]);
+  const n = new THREE.Vector3().crossVectors(_sbE1, _sbE2).normalize(); if (n.dot(D) > 0) n.negate();
+  const sf = siteSurface(W.mat[best]);
+  return { point: O.clone().addScaledVector(D, bestT), distance: bestT, surface: sf === 'soft' || sf === 'glass' ? (sf === 'glass' ? 'metal' : 'wood') : sf, n, siteMat: W.mat[best] };
+}
+function activeHitSites() {
+  const L = [];
+  if (inKeep) L.push(KEEP_SITE);
+  if (inTavern) L.push(TAV_SITE);
+  if (inCat) L.push(CAT_SITE);
+  if (inThrone) L.push(THR_SITE);
+  if (inDun) L.push(DUN_SITE);
+  if (!inRoom() && (onIsle || Math.hypot(camera.position.x - ISLE_AXIS.x, camera.position.z - ISLE_AXIS.z) < 90)) L.push(ISLE_SITE);
+  if (inC13) L.push(C13_SITE);
+  return L;
 }
 /* The mark it leaves. A small dark scar laid flat on the face you struck,
  * offset a hair along its normal so it never z-fights, and pooled like the
@@ -15180,6 +15406,7 @@ function updateViewmodel(dt) {
     ARM_BASE.z + _pose[4] + ear * (AT.z - ARM_BASE.z) + blk * (BA.z - ARM_BASE.z)
   );
   if (equipped && equipped.onCast) rodArmPose(dt);   // the rod's cast and reel, on top of its carry
+  if (inDeep) deepVmPose(dt);                       // and in the deep, whatever you hold swims
   if (equipped === headItem) headSway(dt);           // the captain swings from your fist
   if (equipped === spliffItem) {
     /* the flick: once it is down from the mouth the hand snaps forward and
@@ -16375,9 +16602,14 @@ function dropJar(sx, sz, sy = 0.02, shine = null, pre = null) {
    * BLUE: at the full lift the glass, the blood and the label all came up
    * together and what stood in the sand was a pale bottle. The sprite is
    * what finds it in the dark; the lift only has to keep it off black. */
-  addItemShine(jar, { ...(shine || {}), ...DROP_SHINE, height: 0.18 });
+  /* (2026-10-15, the owner: "make the really lit up dropped jars still look the same blue color as the others".
+   * `DROP_SHINE` was spread OVER the jar's own lift, so every dropped jar was lifted 4.2 x 1.6 — a whitening of
+   * ~6.7 on the glass, the blood and the label together, against the 0.33 of the jars that lie in their own
+   * blue at the grille and the bench. The beacon and the glint still find it; the jar itself is lifted the same
+   * 0.33 as theirs, and the catacombs' lamp is the blood's own blue, not a white that bleaches it.) */
+  addItemShine(jar, { ...(shine || {}), ...DROP_SHINE, height: 0.18, lift: 0.08 });
   if (shine && shine.lamp) {
-    const l = new THREE.PointLight(0x9fc4ff, 1.5, 2.8, 2);
+    const l = new THREE.PointLight(0x2f6dff, 1.2, 2.8, 2);
     l.position.y = 0.22; jar.add(l);
   }
   addInteractable(jar, 'Take the jar', 'inventory', {
@@ -17470,6 +17702,7 @@ function hurtCrab(u, dmg, P = 0) {
   return false;
 }
 function finishCrab(u = crabs[0]) {
+  statKill(u);
   u.st.alive = false;
   u.st.struck = false;
   u.st.deadT = 0;
@@ -17543,10 +17776,7 @@ function updateDigTip(dt) {
     if (d > 10 || d < 0.5) continue;
     if ((dx * _dtF.x + dz * _dtF.z) / d < 0.82) continue;     // in front of you, near the middle of the view
     digTip = { t: 0, m }; digTipDone = true;
-    const tool = inventory.some((i) => i && i.onDig);
-    digTipEl.innerHTML = tool
-      ? '<div><b>Mound</b>something is buried</div><div><b>Shovel out</b>hold it in hand</div><div><b>Click the mound</b>dig it up</div>'
-      : '<div><b>Mound</b>something is buried</div><div><b>Find a shovel</b>then hold it in hand</div><div><b>Click the mound</b>dig it up</div>';
+    digTipEl.innerHTML = '<div>CLICK WITH SHOVEL TO DIG UP MOUNDS</div>';   // (2026-10-15, the owner's words, and only them)
     digTipEl.classList.add('show');
     return;
   }
@@ -17926,6 +18156,7 @@ function updateBloodReadout() {
 function gainJar(n = 1) {
   settleRestore();
   bloodJars += n;
+  if (statReady && !replaying && !applyingSave) endStats.jars += n;   // the end's "Jars obtained" (a load's replay is not a new jar)
   bloodSeen = true;
   bloodPulse = 1;
   hudJar.userData.setFill(0.86);       // a jar is a jar: the icon is always full
@@ -20804,10 +21035,11 @@ function updateDialogCam(dt) {
     : (crabCut && crabCut.t >= CRAB_T.cut) ? crabCut.fov
     : wbFareCut ? wbFareCut.fov
     : peeking && !peekLeaving ? PEEK_FOV
+    : hjCut && hjCut.released && hjCut.lensHold ? Math.min(settings.fov, hjCut.fov)
     : (dialogOpen || cineHold) ? Math.min(settings.fov, dialogFov) : settings.fov) + fovKick
     - settings.fov * (equipped && equipped.shotgun ? SG_ZOOM : MAG_ZOOM) * magAim;
   // and it arrives at a gun's pace, not a conversation's
-  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -20818,7 +21050,7 @@ function updateDialogCam(dt) {
     if (dialogHead) dialogHead.getWorldPosition(dialogTarget);
     _lookM.lookAt(camera.position, dialogTarget, camera.up);
     _lookQ.setFromRotationMatrix(_lookM);
-    camera.quaternion.slerp(_lookQ, Math.min(1, dt * 3.2));
+    camera.quaternion.slerp(_lookQ, Math.min(1, dt * (hjCut && hjCut.lookRate || 3.2)));
   }
 }
 
@@ -22610,11 +22842,90 @@ function sfxBloodGained() {
 // ------------------------------------------------------------------
 // End of the walk
 // ------------------------------------------------------------------
+/* THE TALLY. A total is counted from the lists the world is built from, not
+ * from what has loaded, because most rooms only make their people and their
+ * jars the first time you walk in. What you HAVE is the stats sets above,
+ * joined with the flags a save from before them already carried. */
+function STAT_KEYS() { return [keyItem, boatKeyItem, skullKeyItem, lostKeyItem, pavKeyItem, storeKeyItem, cellKeyItem]; }
+function STAT_WEAPONS() { return [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, magnumItem, shotgunItem]; }
+function STAT_RINGS() { return [ringItem, weddingItem, gemItem, oldRingItem, goldRingItem]; }
+const statName = (it) => it && (it.id || it.name);
+function statItem(it) {
+  if (!statReady || !it || applyingSave || replaying || statHush) return;   // (the pack is filled at load, before the lists below exist)
+  if (![...STAT_KEYS(), ...STAT_WEAPONS(), ...STAT_RINGS()].includes(it)) return;
+  endStats.item.add(statName(it));
+}
+/* A kill is yours: a man the tavern brawl finished was not, and the thing in
+ * the catacombs gets back up. Crabs have no save key of their own. */
+function statKill(u) {
+  if (!u || applyingSave || replaying || u.retired) return;
+  if (u.kind && u.kind.undying) return;
+  if (u.lastHitMine === false) return;
+  const k = u.saveKey || (crabs.includes(u) ? 'crab#' + crabs.indexOf(u) : null);
+  if (k) endStats.kill.add(k);
+}
+function statKillTotal() {
+  return MUT_SPOTS.length + CAT_FOES.length       // the beach's three, the camp's five
+    + 1 + 1 + 1 + 1 + 1                           // the Dealer, the knight, the samurai, the crawler's young, the crusader
+    + 1 + 1 + 1                                   // Umbra, the well man, Dante
+    + 7 + PAR_SPOTS.length                        // the whale's demons and its parasites
+    + 3 + TAV_DRINK_FROM.length                   // Wong, the drunk and the orc; the drinkers
+    + FARM_ROSTER.length                          // the castle's farmers
+    + 1 + PACK_SPOTS.length                       // the crab on its own, and the pack
+    + 1                                           // the thing in the deep
+    + 1;                                          // the thing in the catacombs (he stays down now)
+}
+function statHad(it) {
+  if (endStats.item.has(statName(it)) || inventory.includes(it) || rings.includes(it)) return true;
+  // what a save from before the tally already knew
+  switch (it) {
+    case keyItem: return !shipChestLocked || tookLabel('Take the chest key');
+    case boatKeyItem: return boatKeyTaken || holdDoorOpen;
+    case skullKeyItem: return catDoorOpen;
+    case lostKeyItem: return snorkKey.state === 2;
+    case pavKeyItem: return wellKey.state === 2;
+    case storeKeyItem: return tavStoreOpen || tookLabel('Take the storeroom key');
+    case cellKeyItem: return cellKey.state === 2;
+    case shovelItem: return tookLabel('Take the sand shovel');
+    case militaryItem: return tookLabel('Take the military shovel');
+    case katanaItem: return heroSwordTaken;
+    case bloodItem: return bbState === 2;
+    case pegItem: return pegTaken || pegReturned;
+    case magnumItem: return TRADER_STOCK.gun === 0;
+    case shotgunItem: return TRADER_STOCK.shotgun === 0;
+    case oldRingItem: return TRADER_STOCK.ring === 0;
+    case goldRingItem: return henryRingTaken;
+  }
+  return false;
+}
+function statLines() {
+  const tally = (list) => list.filter(statHad).length;
+  return [
+    ['Mounds dug', mounds.filter((m) => m.taken).length, mounds.length],
+    ['Kills', endStats.kill.size, statKillTotal()],
+    ['Keys found', tally(STAT_KEYS()), STAT_KEYS().length],
+    ['Weapons found', tally(STAT_WEAPONS()), STAT_WEAPONS().length],
+    ['Rings found', tally(STAT_RINGS()), STAT_RINGS().length],
+    ['Jars obtained', endStats.jars, null],                 // found, bled from crabs and paid at the trader: no total, it has no ceiling
+  ].map(([n, a, b]) => [n, b == null ? a : Math.min(a, b), b]);
+}
+function renderEndStats() {
+  const el = document.getElementById('end-stats');
+  if (!el) return;
+  el.textContent = '';
+  for (const [n, a, b] of statLines()) {
+    const row = document.createElement('div'); row.className = 'row';
+    const l = document.createElement('span'); l.textContent = n;
+    const r = document.createElement('span'); r.textContent = b == null ? `${a}` : `${a}/${b}`;
+    row.append(l, r); el.append(row);
+  }
+}
 function showEnd(opt = {}) {
   if (ended) return;
   ended = true;
+  renderEndStats();
   // the Great Crab Call's end: only black and the way back (another take will go here)
-  if (opt.bare) { endEl.classList.add('bare'); const bt = document.getElementById('end-restart'); if (bt) bt.textContent = 'Walk Again'; }
+  if (opt.bare) endEl.classList.add('bare');
   if (held) dropHeld();
   if (locked) document.exitPointerLock();
   menuEl.classList.remove('show');
@@ -24652,7 +24963,7 @@ if (holdDoor) {
   holdDoor.add(hit);
   const relabel = () => {
     if (holdDoorOpen) return;
-    const has = inventory.includes(boatKeyItem);
+    const has = inventory.includes(boatKeyItem) || devKeys();
     holdDoor.userData.label = has ? 'Unlock the door' : 'The door is locked.';
     holdDoor.userData.bare = !has;
   };
@@ -24662,8 +24973,8 @@ if (holdDoor) {
     bare: () => { relabel(); return holdDoor.userData.bare; },
     onActivate: () => {
       if (holdDoorOpen || holdDoorUnlocking) return;
-      if (!inventory.includes(boatKeyItem)) { sfxThud(0.02); return; }
-      keyUsed(boatKeyItem);
+      if (!inventory.includes(boatKeyItem) && !devKeys()) { sfxThud(0.02); return; }
+      if (inventory.includes(boatKeyItem)) keyUsed(boatKeyItem); else sfxLockOpen();
       holdDoorUnlocking = true;
       setTimeout(() => { holdDoorUnlocking = false; holdDoorOpen = true; sfxLockerOpen(); }, 850);
       // it has done its one job: it goes into the lock and stays there
@@ -24707,7 +25018,7 @@ function updateHoldDoor(dt) {
  * one-way passage, so there is no reason it should only ever open once. */
 const shipChest = shipwreck.userData.chest;
 let shipChestOpen = false, shipChestSwing = 0, shipChestLocked = true, pegTaken = false, shipChestBusy = false;
-const chestKeyIn = () => inventory.includes(keyItem);
+const chestKeyIn = () => inventory.includes(keyItem) || devKeys();
 if (shipChest) {
   /* THE PEG IS IN IT, LYING ON THE DIAGONAL. It is 0.97 m of turned ash in a
    * chest 0.92 by 0.64, so the only way it goes in is corner to corner — and
@@ -24759,7 +25070,7 @@ if (shipChest) {
         shipChestLocked = false;
         // A KEY THAT HAS DONE ITS JOB IS GONE, by the owner's word: it stays
         // in the lock. `chest` is on the save, so a restore cannot hand it back.
-        keyUsed(keyItem);
+        if (inventory.includes(keyItem)) keyUsed(keyItem); else sfxLockOpen();
         if (equipped === keyItem) toggleEquip(keyItem);
         removeFromInventory(keyItem);
         // the lid comes up once the bolt has gone back, not over it
@@ -27899,14 +28210,13 @@ function updateGate(dt) {
   MGATE.pivot.add(proxy);
   /* AND IT IS LOCKED until you have the snorkeler's Lost key: turned once in
    * the padlock, which keeps it (a key that has done its job is gone). */
-  addInteractable(proxy, () => !mushGateUnlocked ? (gateKeyIn() ? 'Unlock the gate' : 'The gate is locked.') : gateOpen ? 'Close the gate' : 'Open the gate', undefined, {
-    bare: () => !mushGateUnlocked && !gateKeyIn(),
+  addInteractable(proxy, () => !mushGateUnlocked ? (gateKeyIn() || devKeys() ? 'Unlock the gate' : 'The gate is locked.') : gateOpen ? 'Close the gate' : 'Open the gate', undefined, {
+    bare: () => !mushGateUnlocked && !gateKeyIn() && !devKeys(),
     onActivate: () => {
       if (!mushGateUnlocked) {
         const k = gateKeyIn();
-        if (!k) { sfxGateRattle(); return; }
-        keyUsed(k);
-        removeInventoryKey(k);
+        if (!k && !devKeys()) { sfxGateRattle(); return; }
+        if (k) { keyUsed(k); removeInventoryKey(k); } else sfxLockOpen();
         mushGateUnlocked = true;
         setTimeout(() => { if (!gateOpen) toggleGate(); }, 900);
         return;
@@ -28073,6 +28383,7 @@ function mushLantern() {
   L.flame.scale.set(1, 2.3 * (0.9 + 0.12 * k), 1);
   L.glow.material.opacity = 0.28 + 0.1 * k;
 }
+const MUSH_LEAN = 0.06;                     // how far a frame the pavilion's inside limits move you (`clampSoft`)
 function updateMushroom(dt) {
   const M = MUSH;
   updateGate(dt);
@@ -28081,6 +28392,42 @@ function updateMushroom(dt) {
   const ang = Math.atan2(dx, dz);
   const feet = camBaseY - playerEye();
   const clampTo = (r) => { if (d > 0.001) { camera.position.x = MUSH_X + (dx / d) * r; camera.position.z = MUSH_Z + (dz / d) * r; d = r; } };
+  /* A CLAMP INSIDE THE BUILDING IS A LEAN, NOT A YANK (2026-10-14, the owner: "i keep getting lagged back … passing
+   * this wall in the pavilion same with the top of the steps"). The stair's and the room's radius limits snapped the
+   * body to them in one frame, and they switch on and off with where you stand — the doorway's angle, the gap in
+   * the well rail — so a step along the column past the door, or a turn on the top tread, was a half-metre jump
+   * (measured: 0.47 m in one frame passing the door). Inside, the body is brought to the limit at most `MUSH_LEAN`
+   * a frame; the column's outside wall, approached from the sand, stays a wall. */
+  const clampSoft = (r) => clampTo(d > r ? Math.max(r, d - MUSH_LEAN) : Math.min(r, d + MUSH_LEAN));
+  // the doorway's two jambs: faces from the bore out to the column's skin; a body is put off the nearest point of each
+  /* (a body is narrower than its collision ring: the door is 1.3 m and a 0.4 m ring left half a metre to thread it,
+   * which read as a wall. The jambs keep you 0.25 m off, a shoulder's width.) */
+  const JAMB_R = 0.3, SKIN_R = 0.3;      // the jambs and the column's skin hold a body off by the same, so there is no step where one meets the other
+  const mushJambs = () => {
+    for (const sgn of [-1, 1]) {
+      const ja = M.DOOR_ANG + sgn * M.DOOR_HALF, ux = Math.sin(ja), uz = Math.cos(ja);
+      const px = camera.position.x - MUSH_X, pz = camera.position.z - MUSH_Z;
+      const t = THREE.MathUtils.clamp(px * ux + pz * uz, M.BORE, M.COL_R);
+      const ex = px - ux * t, ez = pz - uz * t, e = Math.hypot(ex, ez);
+      if (e < JAMB_R && e > 1e-4) { camera.position.x = MUSH_X + ux * t + ex / e * JAMB_R; camera.position.z = MUSH_Z + uz * t + ez / e * JAMB_R; }
+    }
+    d = Math.hypot(camera.position.x - MUSH_X, camera.position.z - MUSH_Z);
+  };
+  /* AND THE DOOR MEETS YOU HALFWAY: walking at it from in front, you are eased toward its middle — a few centimetres
+   * a frame, only while your step is going in toward the column — so a door a little to one side of where you aimed
+   * still takes you. A walk past it is not going in and is left alone. */
+  const mushFunnel = () => {
+    const ux = Math.sin(M.DOOR_ANG), uz = Math.cos(M.DOOR_ANG);
+    const px = camera.position.x - MUSH_X, pz = camera.position.z - MUSH_Z;
+    const along = px * ux + pz * uz, lx = px - ux * along, lz = pz - uz * along, lat = Math.hypot(lx, lz);
+    if (along < M.BORE || along > M.COL_R + 1.8 || lat < 0.03 || lat > 1.2) return;
+    const mvx = camera.position.x - _preMove.x, mvz = camera.position.z - _preMove.z, mvl = Math.hypot(mvx, mvz);
+    const inward = -(mvx * ux + mvz * uz);
+    if (mvl < 0.004 || inward < 0.5 * mvl) return;
+    const k = Math.min(lat, inward * 0.7);
+    camera.position.x -= lx / lat * k; camera.position.z -= lz / lat * k;
+    d = Math.hypot(camera.position.x - MUSH_X, camera.position.z - MUSH_Z);
+  };
   /* AND THE STATE MUST NOT REACH ACROSS THE BEACH. `mushWhere` is sticky by
    * design — it is what stops one step off the top tread putting the room's
    * floor back under you — but on the stair the walk clamps you to the
@@ -28099,14 +28446,35 @@ function updateMushroom(dt) {
     /* The wall clamp parks you at EXACTLY COL_R + PLAYER_R, so an entry test
      * of "closer than that" was never true: you could stand in the doorway
      * pushing and never be inside. The door takes you from further out. */
-    if (d < M.COL_R + PLAYER_R + 0.3 && doorOk && feet < M.PLAT_TOP + 1.7) {
+    /* and only a body GOING IN is taken in: walking past the doorway along the column put you inside its angle
+     * and close enough, and the stair took you and pulled you in to its bore. It wants the door's middle and a
+     * step toward the axis this frame. */
+    // (heading in, not just getting nearer: a straight line past the door gets nearer the axis too, until it passes)
+    /* THE DOORWAY IS A HOLE IN THE WALL (2026-10-15, the owner: "the pavillon entrance colliders are even worse i
+     * still snap back make the entrance easy to walk through"). The door took you only with the door's middle and a
+     * step aimed at the axis; anything else met the column's wall clamped across the doorway itself — measured, 9 of
+     * 25 approaches (every one at 30°) stood pushing at a wall that is not there. Now the wall is a wall only round
+     * the column OUTSIDE the door's arc; across it there is nothing but the two jambs, each a face from the bore out
+     * to the column's skin, which a body slides along (pushed off the nearest point of it, never thrown); and the
+     * stair takes you when you are THROUGH — your middle inside the column's skin, inside the arc — which a line
+     * walked past the door never is. */
+    const inSpan = Math.abs(_angDiff(ang, M.DOOR_ANG)) < M.DOOR_HALF;
+    if (feet < M.PLAT_TOP + 1.7) mushFunnel();
+    mushJambs();
+    const angNow = Math.atan2(camera.position.x - MUSH_X, camera.position.z - MUSH_Z);
+    const through = Math.abs(_angDiff(angNow, M.DOOR_ANG)) < M.DOOR_HALF && d < M.COL_R - 0.05;
+    if (through && feet < M.PLAT_TOP + 1.7) {
       /* THE COUNT STARTS AT THE DOOR, or the first frame inside credits you
        * with the angle from wherever it last was to the doorway. */
-      mushWhere = 'stair'; mushLastA = ang;
-      mushTurns = THREE.MathUtils.clamp(_angDiff(M.A0, ang) / (Math.PI * 2), M.TURN_MIN, M.TURNS);
+      mushWhere = 'stair'; mushLastA = angNow;
+      mushTurns = THREE.MathUtils.clamp(_angDiff(M.A0, angNow) / (Math.PI * 2), M.TURN_MIN, M.TURNS);
       mushStairY = null;
     } else {
-      if (d < M.COL_R + PLAYER_R) clampTo(M.COL_R + PLAYER_R);
+      // the column's skin, everywhere but the doorway (a body already in the doorway's depth is held by the jambs)
+      if (!inSpan && d < M.COL_R + SKIN_R && d >= M.COL_R - 0.05) {
+        const ex = camera.position.x - MUSH_X, ez = camera.position.z - MUSH_Z, r = M.COL_R + SKIN_R;
+        if (Math.abs(_angDiff(angNow, M.DOOR_ANG)) >= M.DOOR_HALF) { camera.position.x = MUSH_X + ex / d * r; camera.position.z = MUSH_Z + ez / d * r; }
+      }
       return;
     }
   }
@@ -28114,9 +28482,9 @@ function updateMushroom(dt) {
   if (mushWhere === 'floor') {                            // the round room
     groundY = Math.max(groundY, M.H_ROOM);
     mushLastA = ang;
-    if (d > outer) { clampTo(outer); return; }
+    if (d > outer) { clampSoft(outer); return; }
     if (d >= M.BORE + 0.15) return;
-    if (!atGap) { clampTo(M.BORE + 0.15); return; }       // the rail round the well
+    if (!atGap) { clampSoft(M.BORE + 0.15); return; }       // the rail round the well
     if (d > inner) return;                                // on the lip, at the head of the stair
     /* and the count starts at the TREAD YOU STEPPED ONTO, the same rule as
      * the door: TURNS flat would credit you with the angle between the top
@@ -28138,12 +28506,21 @@ function updateMushroom(dt) {
    * the angle the end of the flight is at. */
   if (d > 0.3) mushTurns += _angDiff(mushLastA, ang) / (Math.PI * 2);
   {
-    const hi = M.TURNS + 0.45 / M.TREADS, lo = M.TURN_MIN;
+    /* THE BOTTOM STOP IS THE STAIR'S UNDERSIDE, NOT A NUMBER (2026-10-15, the owner: "I SHOULD NOT BE GETTING STUCK ON
+     * THE PAVILLION ENTRANCE TO THE STEPS"). Measured, walking in and turning left (away from the flight): held dead at
+     * 23° past the door for 3.3 s by `TURN_MIN`, under a flight 2.7 m overhead — and at a run, slipped through it
+     * (the lean below is 6 cm a frame, a run is 9.5) and round under the whole staircase. You may go round under the
+     * flight as far as it leaves you headroom (the turn above you, less a tread's depth, over your head: ~86° past the
+     * door), and there you are stopped HARD — it is a body against stone every frame, never a jump. */
+    const hi = M.TURNS + 0.45 / M.TREADS, lo = Math.min(M.TURN_MIN, (playerHeight() + 0.25) / M.RISE - 1);
     const over = mushTurns > hi && !(atGap && d > M.BORE - 0.1) ? mushTurns - hi : mushTurns < lo ? mushTurns - lo : 0;
     if (over !== 0) {
-      const a = ang + over * Math.PI * 2;             // the count rises as the angle falls: back the way you came
+      // (a lean at the top: the end-stop there is where you come onto the stair through the rail's gap, and it put you
+      // on the top tread in one frame — measured, 0.79 m sideways round the well)
+      const lim = over < 0 ? Infinity : MUSH_LEAN / Math.max(0.5, d) / (Math.PI * 2), ov = THREE.MathUtils.clamp(over, -lim, lim);
+      const a = ang + ov * Math.PI * 2;               // the count rises as the angle falls: back the way you came
       camera.position.x = MUSH_X + Math.sin(a) * d; camera.position.z = MUSH_Z + Math.cos(a) * d;
-      mushTurns -= over;
+      mushTurns -= ov;
     }
   }
   mushLastA = Math.atan2(camera.position.x - MUSH_X, camera.position.z - MUSH_Z);
@@ -28152,13 +28529,23 @@ function updateMushroom(dt) {
   if (atTop && d > M.BORE) {                              // stepped off onto the floor ring
     mushWhere = 'floor'; mushStairY = M.H_ROOM;
     groundY = Math.max(groundY, M.H_ROOM);
-    if (d > outer) clampTo(outer);
+    if (d > outer) clampSoft(outer);
     return;
   }
-  if (atDoor && d > M.COL_R + 0.9 && feet < M.PLAT_TOP + 1.2) {   // out through the door
+  /* OUT THROUGH THE DOOR AS SOON AS YOU ARE THROUGH IT (2026-10-15, the owner: "walking out of the area with the steps
+   * the door … pulls you back if you are even close to the walls"). It took you out only 0.9 m past the column's skin
+   * and only inside 95 % of the door's angle; drift toward a jamb before that and the stair's own bore clamp leaned you
+   * back in. The doorway — its whole depth — is never pulled on, and you are
+   * out the moment your middle is past the skin (the way in takes you 5 cm inside it: a 10 cm hysteresis). */
+  const aNow = Math.atan2(camera.position.x - MUSH_X, camera.position.z - MUSH_Z);
+  const inDoorway = feet < M.PLAT_TOP + 1.2 && mushTurns * M.RISE < 0.6 && d > M.BORE - 0.25 && Math.abs(_angDiff(aNow, M.DOOR_ANG)) < M.DOOR_HALF;   // (the door's own angle: the jambs keep a body inside it, and beside it the bore IS a wall)
+  // (and past the skin at the foot of the flight you are out, at ANY angle: the door is the only way through the wall, and
+  // running out on a slant crossed the skin at a jamb's edge, stayed 'stair', and was leaned back in from the sand)
+  if (feet < M.PLAT_TOP + 1.2 && mushTurns * M.RISE < 0.6 && d > M.COL_R + 0.05) {
     mushWhere = 'out'; mushTurns = 0; mushStairY = null; return;
   }
-  if (!atTop && !atDoor && d > inner) clampTo(inner);
+  if (!atTop && !atDoor && !inDoorway && d > inner) clampSoft(inner);
+  if (feet < M.PLAT_TOP + 1.7 && d > M.BORE - PLAYER_R && Math.abs(_angDiff(Math.atan2(camera.position.x - MUSH_X, camera.position.z - MUSH_Z), M.DOOR_ANG)) < M.DOOR_HALF + 0.5) mushJambs();   // in the doorway's depth from inside too
   if (d < M.NEWEL + PLAYER_R) clampTo(M.NEWEL + PLAYER_R);          // the newel up the middle
   /* A TREAD IS CENTRED ON ITS ANGLE, SO THE ONE YOU ARE ON IS THE NEAREST —
    * NOT THE ONE BEHIND YOU. `models/` lays tread i at angle `A0 - i*stepA`
@@ -28243,6 +28630,7 @@ const MUT_SPEED = 4.6;                     // the pale one's; each kind scales o
 const MUT_DASH = 8.0;                      // the closing burst, faster than you can run
 const MUT_STUN = 2.1;                      // what landing a parry buys you
 const MUT_RECOIL = 0.32;                   // how long a survived hit rocks it
+const MUT_SPAM_N = 2, MUT_SPAM_WIN = 4.0;     // light blows that may rock it in a window: past that it shrugs them off and swings back
 /* ON HIS BACK. The three beats of a knockdown, and they are a clip's beats:
  * `fall` is the reel's own length (the file overwrites it with the real
  * one), `lie` is the beat he is down and you are standing over him, and
@@ -28588,10 +28976,13 @@ for (const side of ['L', 'R', 'front', 'Back'])
   for (let i = 1; i <= 3; i++) PETALS.push('Head_pt_' + side + '_0' + i);
 const petalScale = (k) => { const o = {}; for (const n of PETALS) o[n] = k; return o; };
 
+/* THEIR HEALTH WAS ABOUT DOUBLED (2026-10-14, the owner: "the mutants are way too easy to kill give them more
+ * health"): pale 5 → 11, red 7 → 15, dark 4 → 9, hulk 12 → 26, spindle 6 → 13, runt 5 → 11, crooked 7 → 15,
+ * bloat 10 → 22. */
 const MUT_KINDS = {
   /* the pale one: the fight you learn the language on. Long in the forearm,
    * otherwise the shape the sculpt came in. Run01, nearly upright. */
-  pale: { skin: null, headPop: true, h: 2.30, hp: 5, dmg: 1, speedK: 1.00, windK: 1.00, reachK: 1.05, aggr: 1.10,
+  pale: { skin: null, headPop: true, h: 2.30, hp: 11, dmg: 1, speedK: 1.00, windK: 1.00, reachK: 1.05, aggr: 1.10,
           use: { attack: 0.20, attackM: 0.14, attack2: 0.16, attack2M: 0.14, attack3: 0.18, attack4: 0.18, attack4M: 0.10 },
           circle: 0.20, step: 0.30, chainMax: 1, feint: 0.10,
           bones: Object.assign({ Character1_LeftForeArm: 1.32, Character1_RightForeArm: 1.32,
@@ -28604,7 +28995,7 @@ const MUT_KINDS = {
    * thrown wide, thick in the arm and the thigh, and it HITS FOR TWO — you
    * have three. Fair only because its startups are the longest thing in the
    * fight and its recovery the most punishable. Run02 at four fifths: a plod. */
-  red:  { skin: 'assets/mutant-red.jpg', headPop: true, h: 2.74, hp: 7, dmg: 2, speedK: 0.95, windK: 1.24, reachK: 1.20, aggr: 1.00,
+  red:  { skin: 'assets/mutant-red.jpg', headPop: true, h: 2.74, hp: 15, dmg: 2, speedK: 0.95, windK: 1.24, reachK: 1.20, aggr: 1.00,
           use: { attack: 0.24, attackM: 0.16, attack3: 0.20, attack3M: 0.16, attack4: 0.28, attack2M: 0.10 },
           circle: 0.10, step: 0.38, chainMax: 1, feint: 0.04,
           bones: Object.assign({ Character1_Head: 1.48, Character1_Spine2: 1.14,
@@ -28617,7 +29008,7 @@ const MUT_KINDS = {
    * should be and shins to match — it is all reach and no weight. Four
    * health, chains three swings together, and runs Run02 at nearly twice
    * speed bent right over, which is faster than you can sprint. */
-  dark: { skin: 'assets/mutant-dark.jpg', headPop: true, h: 2.02, hp: 4, dmg: 1, speedK: 1.32, windK: 0.72, reachK: 1.00, aggr: 1.60,
+  dark: { skin: 'assets/mutant-dark.jpg', headPop: true, h: 2.02, hp: 9, dmg: 1, speedK: 1.32, windK: 0.72, reachK: 1.00, aggr: 1.60,
           use: { attack2: 0.26, attack2M: 0.24, attack4: 0.18, attack4M: 0.16, attack: 0.12, attackM: 0.10 },
           circle: 0.34, step: 0.22, chainMax: 2, feint: 0.20,
           bones: Object.assign({ Character1_Head: 0.62, Character1_Neck: 1.25,
@@ -28646,7 +29037,7 @@ const MUT_KINDS = {
    * creature simply set down on the sand would sleep through you walking
    * into it. */
   hulk: { skin: 'assets/mutant-red.jpg', headPop: true, solo: true, wakeAt: 24, author: (u, m, g) => authorMutComfort(u, m, g),
-          h: 3.05, hp: 12, dmg: 2, speedK: 0.86, windK: 1.30, reachK: 1.26, aggr: 0.90,
+          h: 3.05, hp: 26, dmg: 2, speedK: 0.86, windK: 1.30, reachK: 1.26, aggr: 0.90,
           use: { attack: 0.26, attack3: 0.26, attack3M: 0.18, attack4: 0.30 },
           circle: 0.06, step: 0.44, chainMax: 1, feint: 0.04,
           tint: 0xc4b0a4,
@@ -28663,7 +29054,7 @@ const MUT_KINDS = {
    * they should be on a body that is barely there. It is faster than a walk
    * and its swing arrives from further out than anything else on the sand. */
   spindle: { skin: null, headPop: true, solo: true, wakeAt: 24, author: (u, m, g) => authorMutComfort(u, m, g),
-          h: 3.20, hp: 6, dmg: 1, speedK: 1.24, windK: 0.86, reachK: 1.34, aggr: 1.45,
+          h: 3.20, hp: 13, dmg: 1, speedK: 1.24, windK: 0.86, reachK: 1.34, aggr: 1.45,
           use: { attack2: 0.28, attack2M: 0.22, attack4: 0.22, attack4M: 0.16, attack: 0.12 },
           circle: 0.32, step: 0.26, chainMax: 2, feint: 0.18,
           tint: 0xa9b6c2,
@@ -28680,7 +29071,7 @@ const MUT_KINDS = {
    * anything else here. Short in every limb, and the head is a third too big
    * for it, which is what you see coming at knee height. */
   runt: { skin: 'assets/mutant-dark.jpg', headPop: true, solo: true, wakeAt: 24, author: (u, m, g) => authorMutComfort(u, m, g),
-          h: 1.58, hp: 5, dmg: 1, speedK: 1.46, windK: 0.66, reachK: 0.86, aggr: 1.85,
+          h: 1.58, hp: 11, dmg: 1, speedK: 1.46, windK: 0.66, reachK: 0.86, aggr: 1.85,
           use: { attack2: 0.30, attack2M: 0.26, attackM: 0.18, attack4M: 0.16, attack: 0.10 },
           circle: 0.40, step: 0.18, chainMax: 3, feint: 0.24,
           tint: 0xa6b3a2,
@@ -28697,7 +29088,7 @@ const MUT_KINDS = {
    * again as long as the right, so its guard is lopsided and the side you
    * circle to decides how far its swing reaches. */
   crooked: { skin: null, headPop: true, solo: true, wakeAt: 24, author: (u, m, g) => authorMutComfort(u, m, g),
-          h: 2.52, hp: 7, dmg: 1, speedK: 1.04, windK: 0.96, reachK: 1.12, aggr: 1.25,
+          h: 2.52, hp: 15, dmg: 1, speedK: 1.04, windK: 0.96, reachK: 1.12, aggr: 1.25,
           use: { attack: 0.22, attack3: 0.22, attack2: 0.20, attack4M: 0.20, attackM: 0.16 },
           circle: 0.26, step: 0.30, chainMax: 2, feint: 0.14,
           tint: 0xbeb2a6,
@@ -28711,7 +29102,7 @@ const MUT_KINDS = {
   /* and the last is nearly all head: a skull twice the size with every flap
    * of it thrown wide, carried on a short thick body that cannot hurry. */
   bloat: { skin: 'assets/mutant-red.jpg', headPop: true, solo: true, wakeAt: 24, author: (u, m, g) => authorMutComfort(u, m, g),
-          h: 2.36, hp: 10, dmg: 2, speedK: 0.92, windK: 1.16, reachK: 1.02, aggr: 1.00,
+          h: 2.36, hp: 22, dmg: 2, speedK: 0.92, windK: 1.16, reachK: 1.02, aggr: 1.00,
           use: { attack3: 0.28, attack3M: 0.20, attack: 0.24, attack4: 0.28 },
           circle: 0.10, step: 0.36, chainMax: 1, feint: 0.06,
           tint: 0xc9a79e,
@@ -28776,7 +29167,7 @@ const MUT_KINDS = {
            * on the whole velocity, so his ~9 m/s death throw was cut to 6.5 and the lift with it — measured,
            * his hips went 1.95 m along the floor and 0.09 m up. A first flight of his own, as the demons have
            * (`ragVmax` holds only until he lands; then the glitch cap is back), thrown harder and higher. */
-          ragK: 2.0, ragVmax: 16, ragTravel: 12, ragLift: 1.9,
+          ragK: 2.5, ragVmax: 18, ragTravel: 14, ragLift: 2.1,   // (2.0 / 16 / 12 / 1.9 until 2026-10-14: "make dealers body fly a little further")
           /* NO MIRRORED SWINGS FOR HIM. The pack's mirrors work because a
            * mutant's hands are both empty; his bar is SKINNED TO THE RIGHT
            * HAND, so a mirrored swing had the empty left hand do the swinging
@@ -30225,6 +30616,7 @@ function updateMutFlee(u, dt, foe) {
 /* And it goes down where it is: no blow, no freeze, no shake — the legs go
  * and the body keeps the way it was running. */
 function mutBleedOut(u) {
+  statKill(u);
   const st = u.st;
   st.flee = null;
   st.alive = false; st.struck = false; st.deadT = 0;
@@ -31205,6 +31597,27 @@ function hurtMutantCore(u, dmg, P = 0, from = null) {
     if (mine) camera.getWorldDirection(_hitC); else _hitC.copy(_hitFrom); sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 8, 0.8);
     return false;
   }
+  /* AND NOTHING CAN BE CLICKED TO DEATH (2026-10-14, the owner: "the mutants are too easy to stun with light hits.
+   * you can just spam light hits and they never get attack i cant have any enemy able to be spammed like that").
+   * A kind with no poise pool reeled on EVERY click that was not late in its own startup, and the reel threw away
+   * the swing it was winding — so clicks faster than its recovery was a creature that never got a turn. Now a light
+   * blow staggers it at most `MUT_SPAM_N` times in `MUT_SPAM_WIN` seconds; past that the clicks still cut, bleed and
+   * flash, but it does not reel: it shrugs them off and swings back at once (`revengeUntil` takes the turn whoever
+   * holds it and skips the size-up). A charged blow, a parry and a riposte still rock it every time — only the
+   * plain click is rationed, so spamming it is how you get hit. Every creature on this machinery: mutants, demons,
+   * farmers, the knight and the rest. */
+  if (P < MUT_HEAVY && !OH && !riposte) {
+    const now = performance.now() / 1000, L = u.st.lightStag || (u.st.lightStag = []);
+    while (L.length && now - L[0] > MUT_SPAM_WIN) L.shift();
+    if (L.length >= MUT_SPAM_N) {
+      flashMats(u.g); sfxMutHit(u.kind.voice); bleedMutant(u, 8, 0.35); mine && addTrauma(0.18);
+      if (mine) camera.getWorldDirection(_hitC); else _hitC.copy(_hitFrom);
+      sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.55, u.g.position.z, _hitC.x, _hitC.z, 12, 0.9);
+      if (u.st.atk < 0) { u.st.cool = 0; u.st.revengeUntil = now + 1.4; }
+      return false;
+    }
+    L.push(now);
+  }
   u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.chainN = 0;
   u.st.stun = 0;
   u.st.side = 0; u.st.back = 0;
@@ -31308,6 +31721,7 @@ function hurtMutantCore(u, dmg, P = 0, from = null) {
  * this is a body, and a body goes down and stays down — the `die` clip runs
  * out and it lies on the sand for the rest of the walk. */
 function finishMutant(u) {
+  statKill(u);
   u.st.alive = false;
   u.st.struck = false;
   u.st.deadT = 0;
@@ -34644,7 +35058,8 @@ function updateMutantUnit(u, dt) {
      * tells at once is not three times the fight, it is no fight at all,
      * because there is nothing to read. Whoever is nearest and ready takes
      * the token; a creature that cannot have it holds its range instead. */
-    const maySwing = !(u.pk && u.pk.role === 'hold') && (mutToken === u || !!u.st.foe || (u.kind.frenzy && demonFrenzyOK(u)) || (u.kind.ownTurn && parasiteSwingOK(u)));   // a creature fighting another creature takes no turn from you; the seven in the whale take two
+    const revenge = performance.now() / 1000 < (u.st.revengeUntil || 0);   // shrugged off your clicks: it swings back now, turn or no turn (`hurtMutantCore`)
+    const maySwing = revenge || (!(u.pk && u.pk.role === 'hold') && (mutToken === u || !!u.st.foe || (u.kind.frenzy && demonFrenzyOK(u)) || (u.kind.ownTurn && parasiteSwingOK(u))));   // a creature fighting another creature takes no turn from you; the seven in the whale take two
     // if the straight line is shut, he walks round — and drops it when it opens
     if (u.kind.uc) ucSteer(u, dt, dist);
     if (u.kind.dojo) dojoSteer(u, dt, dist);
@@ -34804,7 +35219,7 @@ function updateMutantUnit(u, dt) {
        * spent two fifths of every opening walking sideways — measured, twelve
        * swings in forty-five seconds while the arithmetic of his own timings
        * allows thirty-six. `press` is that number, per kind. */
-      let wantSwing = u.st.swings === 0 || roll < (u.kind.press || 0.62);
+      let wantSwing = u.st.swings === 0 || roll < (u.kind.press || 0.62) || revenge;
       /* AND THE BEAT WHERE HE DOES NOT. A kind that presses nearly every
        * opening never reaches the leftover branches at all — measured, the
        * size-up fired ONCE in ninety seconds — so it cannot be what is left
@@ -34819,7 +35234,7 @@ function updateMutantUnit(u, dt) {
        * you have to do something about him, which with the guard draining
        * stamina you shortly do. */
       const sizeP = (u.kind.sizeUp || 0) * (u.kind.smart && blocking ? 1.7 : 1);
-      if (maySwing && u.kind.sizeUp && u.st.swings > 1 && (u.st.sinceSize || 0) >= 2
+      if (maySwing && !revenge && u.kind.sizeUp && u.st.swings > 1 && (u.st.sinceSize || 0) >= 2
           && dist < A.reach + 1.2 && Math.random() < sizeP) {
         u.st.sizing = true;
         wantSwing = false;
@@ -35610,6 +36025,11 @@ bwGlb('assets/dock.glb', (gltf) => {
   const door = dock.localToWorld(new THREE.Vector3(-1.94, 1.03, -0.93));
   const l1 = new THREE.PointLight(0xffb478, 11, 14, 1.6); l1.position.copy(post); scene.add(l1);
   const l2 = new THREE.PointLight(0xffb478, 7, 9, 1.7); l2.position.copy(door); scene.add(l2);
+  /* AND THEY ARE LIT FROM AS FAR AS YOU CAN SEE THE DOCK (2026-10-14, the owner: "the light on the dock should always
+   * be lit i see them turn on when i get close"). They are in the light pool (`updateLightPool`) and a pooled lamp only
+   * wins a slot inside its own falloff — 14 m and 9 m — so walking up the beach they faded in as you arrived.
+   * `lpAlways` holds their slots from anywhere the boards are drawn (the dock far-culls at 300 m). */
+  l1.userData.lpAlways = 300; l2.userData.lpAlways = 300;
   farProps.push({ obj: dock, z: DOCK_Z, d: 300 });
   /* AND THE TWO LAMPS ARE NOT IN THAT LIST ANY MORE. They were, and it is
    * the last copy of the trap this file already names three times: EVERY
@@ -35832,10 +36252,9 @@ const FISH_TUB_H = 0.58;
  * already in your pack. The shell door's own rule: a thing you have already
  * done does not un-happen when you load. */
 let pegReturned = false;
-const fishingRod = makeFishingRod();
+const fishingRod = new THREE.Group();          // filled when the scan lands (`assets/fishing-rod.glb`, below)
 const fishingRodItem = {
-  id: 'fishingrod', name: 'Fishing rod', desc: "The Old Fisherman's",
-  icon: makeFishingRodIcon(),
+  id: 'fishingrod', name: 'Fishing rod', desc: "The Old Fisherman's · his lucky one", iconRot: { flip: true },
   use: () => toggleEquip(fishingRodItem),
 };
 /* A 1.72 m rod at true scale is a plank across the whole picture, so the copy
@@ -35861,7 +36280,116 @@ const fishingRodItem = {
  * luminance against a frame of 16.3 with nothing over 200 — the brightest
  * thing on the rod, which a polished reel under a moon should be, and not
  * blown. */
-holdable(fishingRodItem, fishingRod, { scale: 0.70, pos: [0, 0.05, 0], rot: [-0.20, -0.90, 0.45] });
+/* POINTED FORWARD (2026-10-14, the owner: "the fishing rod should be facing forward and the crank on the left"): the rod
+ * stands out in front of you thirty-odd degrees up, the way you hold one with a line in, a little in toward the middle
+ * of the picture (the roll is a lean, applied before the pitch); the reel hangs under it and its crank is on its
+ * local -X, which a pitch alone leaves on your left. */
+holdable(fishingRodItem, fishingRod, { scale: 0.70, pos: [0, 0.05, 0], rot: [-0.86, 0, 0.15] });   // ~40° up (was -1.10, ~27°: "tilt up a little more")   // lifted so the reel and its crank are in the picture
+
+/* THE ROD IS THE SCAN NOW (2026-10-14, the owner: "make this the fishing rod the fisherman gives you").
+ * Ergin ERYILDIR's "Fishing Rod, Rigged and Animated" (CC-BY-4.0, `assets/fishing-rod.glb`, `gltfpack.py
+ * --tex 1024`): a spinning rod, the reel hanging under the blank with its crank out to one side. Its blank
+ * and line are SKINNED to a ten-bone chain and its one clip is a single frame, so both are baked flat once
+ * (a skinned mesh does not survive `holdable`'s clone) and the whole thing is put into the built rod's own
+ * frame, which everything downstream already speaks: +Y up the blank, the GRIP at y = 0 (where the reel's
+ * foot meets the blank: a hand closes round the stem), the reel hanging on local -Z, and a 1.9 m rod. The
+ * crank is its own pivot named `reel`, turned about local X by `rodArmPose` exactly as the old spool was. */
+const ROD_SCAN_LEN = 1.9;
+let ROD_TIP_Y = 1.6;                            // the tip ring, in the rod's own frame (measured when the scan lands)
+/* AND IT BENDS when something is on it (THE DEEP): every part of the scan is bowed toward the reel's side by
+ * `deepBend`, the tip most and the butt not at all — a quadratic along the blank, done in the vertex shader. */
+const rodBendU = { value: 0 }, rodTipU = { value: 1.6 };
+const rodBendInject = (m) => {
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uRodBend = rodBendU; sh.uniforms.uRodTip = rodTipU;
+    sh.vertexShader = 'uniform float uRodBend, uRodTip;\n' + sh.vertexShader.replace('#include <begin_vertex>',
+      '#include <begin_vertex>\n  { float bu = clamp(transformed.y / uRodTip, 0.0, 1.0); transformed.z -= uRodBend * uRodTip * 0.42 * bu * bu; transformed.y -= uRodBend * uRodTip * 0.1 * bu * bu * bu; }');
+  };
+  m.customProgramCacheKey = () => 'rodbend';
+};
+function rodBake(o) {
+  const g = o.geometry, n = g.attributes.position.count, P = new Float32Array(n * 3), N = new Float32Array(n * 3);
+  const v = new THREE.Vector3(), nn = new THREE.Vector3(), nm = new THREE.Matrix3();
+  if (o.isSkinnedMesh) {
+    o.skeleton.update();
+    const bm = o.skeleton.boneMatrices, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, acc = new THREE.Matrix4(), tot = new THREE.Matrix4();
+    for (let i = 0; i < n; i++) {
+      o.getVertexPosition(i, v); v.applyMatrix4(o.matrixWorld); P.set([v.x, v.y, v.z], i * 3);
+      const e = acc.elements; e.fill(0);
+      for (let k = 0; k < 4; k++) { const w = sw.getComponent(i, k); if (!w) continue; const j = si.getComponent(i, k) * 16; for (let q = 0; q < 16; q++) e[q] += w * bm[j + q]; }
+      tot.copy(o.matrixWorld).multiply(o.bindMatrixInverse).multiply(acc).multiply(o.bindMatrix);
+      nm.getNormalMatrix(tot); nn.fromBufferAttribute(g.attributes.normal, i).applyMatrix3(nm).normalize(); N.set([nn.x, nn.y, nn.z], i * 3);
+    }
+  } else {
+    nm.getNormalMatrix(o.matrixWorld);
+    for (let i = 0; i < n; i++) {
+      v.fromBufferAttribute(g.attributes.position, i).applyMatrix4(o.matrixWorld); P.set([v.x, v.y, v.z], i * 3);
+      nn.fromBufferAttribute(g.attributes.normal, i).applyMatrix3(nm).normalize(); N.set([nn.x, nn.y, nn.z], i * 3);
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+  if (g.attributes.uv) out.setAttribute('uv', g.attributes.uv.clone());
+  if (g.index) out.setIndex(g.index.clone());
+  return out;
+}
+bwGlb('assets/fishing-rod.glb', (gltf) => {
+  const root = gltf.scene; root.updateMatrixWorld(true);
+  const parts = {};
+  root.traverse((o) => { if (o.isMesh) parts[o.name] = { geo: rodBake(o), mat: o.material }; });
+  // the blank (the longest part) gives the axis: butt to tip
+  const blank = parts.Object_9 || Object.values(parts).sort((a, b) => b.geo.attributes.position.count - a.geo.attributes.position.count)[0];
+  const bp = blank.geo.attributes.position, d0 = new THREE.Vector3(-1, 0.83, 0).normalize(), v = new THREE.Vector3();
+  let lo = Infinity, hi = -Infinity; const butt = new THREE.Vector3(), tip = new THREE.Vector3();
+  for (let i = 0; i < bp.count; i++) { v.fromBufferAttribute(bp, i); const t = v.dot(d0); if (t < lo) { lo = t; butt.copy(v); } if (t > hi) { hi = t; tip.copy(v); } }
+  const ax = tip.clone().sub(butt), L = ax.length(); ax.normalize();
+  // the grip: where the reel's foot meets the blank; the reel hangs off it the other way
+  const foot = parts.Object001_rod06_0 || parts.Rod02_rod06_0;
+  foot.geo.computeBoundingBox();
+  const fc = foot.geo.boundingBox.getCenter(new THREE.Vector3());
+  const grip = butt.clone().addScaledVector(ax, fc.clone().sub(butt).dot(ax));
+  const hang = fc.clone().sub(grip).normalize();
+  const Y = ax, Z = hang.clone().negate(), X = new THREE.Vector3().crossVectors(Y, Z).normalize();
+  const k = ROD_SCAN_LEN / L;
+  const M = new THREE.Matrix4().makeBasis(X, Y, Z).transpose()                 // world → rod frame
+    .multiply(new THREE.Matrix4().makeTranslation(-grip.x, -grip.y, -grip.z));
+  M.premultiply(new THREE.Matrix4().makeScale(k, k, k));
+  const nM = new THREE.Matrix3().getNormalMatrix(M);
+  const R = new THREE.Group(); R.name = 'fishingRodScan';
+  for (const [name, p] of Object.entries(parts)) {
+    p.geo.applyMatrix4(M);
+    const mats = [].concat(p.mat);
+    for (const m of mats) {
+      // METALNESS IS A TRAP: there is no environment here, and a metal reel with nothing to reflect is a black hole in your hand
+      m.metalness = 0; m.roughness = Math.max(0.45, m.roughness || 0.5); m.envMapIntensity = 0;
+      if (m.map && m.emissive) { m.emissiveMap = m.map; m.emissive.setRGB(0.55, 0.6, 0.72); m.emissiveIntensity = 0.07; }
+      rodBendInject(m);
+      m.needsUpdate = true;
+    }
+    p.mesh = new THREE.Mesh(p.geo, p.mat); p.mesh.name = name; p.mesh.frustumCulled = false;
+    p.mesh.castShadow = false; p.mesh.receiveShadow = false;
+  }
+  // the crank: its own pivot, turned about local X on the axle where its stub goes into the housing
+  const crank = parts.rod03_rod06_0;
+  if (crank) {
+    const cp = crank.geo.attributes.position; let xs = [];
+    for (let i = 0; i < cp.count; i++) xs.push(Math.abs(cp.getX(i)));
+    const cut = xs.slice().sort((a, b) => a - b)[Math.floor(xs.length * 0.08)];
+    const piv = new THREE.Vector3(); let c = 0;
+    for (let i = 0; i < cp.count; i++) if (xs[i] <= cut) { piv.add(v.fromBufferAttribute(cp, i)); c++; }
+    piv.multiplyScalar(1 / Math.max(1, c)); piv.x = 0;
+    crank.geo.translate(-piv.x, -piv.y, -piv.z);
+    const reel = new THREE.Group(); reel.name = 'reel'; reel.position.copy(piv); reel.add(crank.mesh);
+    R.add(reel);
+  }
+  for (const [name, p] of Object.entries(parts)) if (p !== crank) R.add(p.mesh);
+  ROD_TIP_Y = (L - grip.clone().sub(butt).length()) * k; rodTipU.value = ROD_TIP_Y;
+  while (fishingRod.children.length) fishingRod.remove(fishingRod.children[0]);
+  fishingRod.add(R);
+  if (fishingRodItem.viewmodel) fishingRodItem.viewmodel.userData.make();
+  fishingRodItem._icon = null; iconsPending = true;
+}, (e) => console.warn('[bw] fishing rod', e));
 
 /* ---- AND IT CASTS -------------------------------------------------------
  * A rod you can only carry is a stick. Click with it in your hand and it is
@@ -35887,7 +36415,6 @@ holdable(fishingRodItem, fishingRod, { scale: 0.70, pos: [0, 0.05, 0], rot: [-0.
  * by its SCREEN position: projected by the view camera, unprojected by the
  * main one at the same depth, so the line leaves the rod exactly where the
  * rod is drawn at any field of view. */
-const ROD_TIP_Y = ROD_LEN - ROD_GRIP;        // the tip ring, in the rod's own frame
 const ROD_WIND = 0.30, ROD_WHIP = 0.14, ROD_SETTLE = 0.34;
 const ROD_RELEASE = ROD_WIND + ROD_WHIP * 0.55;
 const ROD_REEL_SPEED = 7.5;                 // metres a second, across the water
@@ -35934,7 +36461,7 @@ function rodTipWorld(out) {
   }
   m.updateWorldMatrix(true, false);
   vmCamera.updateMatrixWorld(true);
-  _rodTip.set(0, ROD_TIP_Y, 0);
+  _rodTip.set(0, ROD_TIP_Y * (1 - 0.1 * deepBend), -0.42 * deepBend * ROD_TIP_Y);   // (where the bent tip is: `rodBendU`)
   m.localToWorld(_rodTip);                    // in the view model's scene
   const depth = -_rodTip.clone().applyMatrix4(vmCamera.matrixWorldInverse).z;
   _rodTip.project(vmCamera);
@@ -35955,21 +36482,31 @@ function rodGroundAt(x, z, y) {
   if (inWater(x, z)) return { y: waterSurfaceAt(x, z), wet: true };
   return { y: beachGroundAt(x, z), wet: false };
 }
-function castRod() {
-  if (rod.st !== 'home' || rod.arm) return;
-  rod.arm = 'cast'; rod.armT = 0;
-}
+/* HOLD TO REEL (2026-10-14, the owner: "click to cast then hold click to reel back in"). The winding is read off
+ * the BUTTON, every frame, not off a click: the game's left-click verb fires on the button coming back UP, so a
+ * reel started there stopped on the very frame it began ("the reel in is not working"). A fresh press with the
+ * float down starts it (`updateRod`), it goes on while the button (or E/F) is held, and let go the float stops
+ * where it is. A press that reels the float all the way home does not cast again when it comes up. */
+const rodHeld = () => !!(mouseBtns & 1) || !!keys.KeyE || !!keys.KeyF;
 function reelRod() {
-  if (rod.st === 'home' || rod.st === 'reel') return;
-  rod.st = 'reel'; rod.reelT = 0;
-  rod.arm = 'reel'; rod.armT = 0;
+  if (rod.st !== 'down') return;
+  rod.st = 'reel'; rod.reelT = 0; rod.arm = null;
+  rodWhirStart();
 }
 function rodHome() {
+  rodWhirStop();
   rod.st = 'home'; rod.arm = null;
   rodFloat.visible = false; rodLine.visible = false;
 }
-fishingRodItem.onCast = () => { if (rod.st === 'home') castRod(); else reelRod(); };
-fishingRodItem.castLabel = () => (rod.st === 'home' ? (rod.arm ? '' : 'Cast') : rod.st === 'reel' ? '' : 'Reel in');
+/* CLICK TO CAST (back, 2026-10-14: the hold-to-cock draw was taken out at the owner's word — "the cast is not working
+ * and stops me when moving … put the cast back to how it was but keep the tilt"). A click with the line home throws the
+ * full cast; holding the button with the float out still winds it in (`updateRod`). */
+fishingRodItem.onCast = () => {
+  if (deepLock || inDeep) return;              // (the line is gone, or something has it)
+  if (rod.noCast) { rod.noCast = false; return; }
+  if (rod.st === 'home' && !rod.arm) { rod.arm = 'cast'; rod.armT = 0; }
+};
+fishingRodItem.castLabel = () => (rod.st === 'home' ? (rod.arm ? '' : 'Cast') : rod.st === 'down' ? 'Hold to reel in' : '');
 function launchFloat() {
   rodTipWorld(rod.pos);
   camera.getWorldDirection(_rodF);
@@ -35984,6 +36521,7 @@ function launchFloat() {
   sfxRodWhip();
 }
 function landFloat(g) {
+  deep.spotT = 0;
   rod.st = 'down'; rod.wet = g.wet; rod.surface = g.y; rod.bobT = 0; rod.nibWait = 5 + Math.random() * 9;
   rod.pos.y = g.y;
   if (g.wet) {
@@ -35995,6 +36533,7 @@ function landFloat(g) {
 /* the float, the line and the reel — from `update()`, so it runs whether or
  * not the hands are drawn */
 function updateRod(dt) {
+  if (deepRodOn) return;                        // something has the line: THE DEEP runs it
   // put the rod away, or take a cut into another room, and the line comes in with it
   if (equipped !== fishingRodItem || rod.room !== inRoom()) {
     if (rod.st !== 'home' || rod.arm) { rodHome(); rod.outK = 0; }
@@ -36002,7 +36541,10 @@ function updateRod(dt) {
     if (equipped !== fishingRodItem) return;
   }
   if (rod.arm === 'cast' && rod.armT >= ROD_RELEASE && rod.st === 'home') launchFloat();
-  if (rod.st === 'home') return;
+  const held = rodHeld(), free = !frozen() && !dialogOpen && !inspecting && !noteOpen;
+  if (rod.st === 'down' && held && !rod.wasHeld && free) reelRod();                         // a fresh press winds it in
+  rod.wasHeld = held;
+  if (rod.st === 'home') { rodWhirStop(); return; }
   if (rod.st === 'fly') {
     rod.flyT += dt;
     rod.vel.y -= 9.8 * dt;
@@ -36012,7 +36554,7 @@ function updateRod(dt) {
     if (rod.pos.y <= g.y || rod.flyT > 4) landFloat(g);
     // the reel pays out: clicks as fast as the line is going
     rod.tick -= dt * Math.min(40, 10 + rod.vel.length() * 2);
-    if (rod.tick <= 0 && rod.st === 'fly') { rod.tick = 1; sfxReelClick(0.6); }
+    if (rod.tick <= 0 && rod.st === 'fly') { rod.tick = 1; gfPlay('reelTick', 0, 0.45); }
   } else if (rod.st === 'down') {
     rod.bobT += dt;
     const g = rodGroundAt(rod.pos.x, rod.pos.z, rod.pos.y + 0.4);
@@ -36033,13 +36575,18 @@ function updateRod(dt) {
       rod.ring = (rod.ring || 0) - dt;
       if (rod.ring <= 0) { rod.ring = 1.1 + Math.random() * 0.9; addRipple(rod.pos.x, rod.pos.z, 0.32); }
     }
+    deepHookTick(dt);                          // lying in the fisherman's spot: something down there is counting
     rod.surface = rod.pos.y = y;
+  } else if (rod.st === 'reel' && !rodHeld()) {
+    // let go: it stops where it is and lies there
+    rod.st = 'down'; rod.bobT = 0; rod.nib = 0; rod.nibWait = 4 + Math.random() * 6;
+    rodWhirStop();
   } else if (rod.st === 'reel') {
     rod.reelT += dt;
     rodTipWorld(_rodTip);
     _rodA.set(_rodTip.x - rod.pos.x, 0, _rodTip.z - rod.pos.z);
     const d = _rodA.length();
-    if (d < 1.1 || rod.reelT > 8) { rodHome(); sfxReelClick(1); sfxThud(0.02); }
+    if (d < 1.1) { rodHome(); rodWhirStop(); gfPlay('reelStop'); if (rodHeld()) rod.noCast = true; }
     else {
       _rodA.multiplyScalar(Math.min(d, ROD_REEL_SPEED * dt) / d);
       rod.pos.add(_rodA);
@@ -36050,7 +36597,7 @@ function updateRod(dt) {
       if (g.wet && Math.random() < dt * 9) addRipple(rod.pos.x, rod.pos.z, 0.35);
       if (g.wet && Math.random() < dt * 5) spawnSplash(rod.pos.x, rod.pos.z, 1, 0, 0, 0.15, g.y);
       rod.tick -= dt * 22;
-      if (rod.tick <= 0) { rod.tick = 1; sfxReelClick(1); }
+      if (rod.tick <= 0) { rod.tick = 1; gfPlay('reelTick', 0, 0.8 + Math.random() * 0.4); }
     }
   }
   if (rod.st === 'home') return;
@@ -36120,14 +36667,47 @@ function rodArmPose(dt) {
   // the reel turns: backwards and fast while the float flies, forwards while you wind
   const reel = fishingRodItem.viewmodel.getObjectByName('reel');
   if (reel) {
-    const spin = rod.st === 'fly' ? -Math.min(40, rod.vel.length() * 2.2) : rod.st === 'reel' ? 16 : 0;
+    const spin = deepReelSpin !== null ? deepReelSpin : rod.st === 'reel' ? 15 : 0;          // a spinning reel's crank only turns while you wind: the line peels off the spool on a cast (THE DEEP drives it backwards, line running out)
     reel.rotation.x += spin * dt;
+  }
+  // something on the end: the rod hauled down toward it and shaking in your hands
+  rodBendU.value = deepBend;
+  if (deepRodOn) {
+    const w = performance.now() * 0.001;
+    pitch -= 0.28 * deepBend; push -= 0.07 * deepBend; lift -= 0.03 * deepBend;
+    roll += Math.sin(w * 31) * 0.018 * deepBend; yaw += Math.sin(w * 23) * 0.012 * deepBend;
   }
   armRig.rotation.x += pitch;
   armRig.rotation.y += yaw;
   armRig.rotation.z += roll;
   armRig.position.y += lift;
   armRig.position.z += push;
+}
+/* THE REEL WINDING, while it is held: the gears in the body turning — a soft band of noise with the crank's own beat
+ * in it (one turn is about a third of a second, and the rotor's two arms pass the bail twice a turn), and over it the
+ * ratchet's ticks (`reelTick`, in `updateRod`). It fades in and out rather than starting on a click. */
+let rodWhir = null;
+function rodWhirStart() {
+  const ctx = audioCtx; if (!ctx || rodWhir) return;
+  const t = ctx.currentTime, n = ctx.sampleRate, buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+  let lp = 0; for (let i = 0; i < n; i++) { lp += (Math.random() * 2 - 1 - lp) * 0.6; d[i] = lp; }
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 2.2;
+  const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 4300; hp.Q.value = 3.5;
+  const am = ctx.createGain(); am.gain.value = 0.5;
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 6.2; const lg = ctx.createGain(); lg.gain.value = 0.45; lfo.connect(lg).connect(am.gain);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.09, t + 0.08);
+  const g2 = ctx.createGain(); g2.gain.value = 0.35;
+  src.connect(bp).connect(am); src.connect(hp).connect(g2).connect(am); am.connect(g).connect(sfxOut());
+  src.start(t); lfo.start(t);
+  rodWhir = { src, lfo, g };
+}
+function rodWhirStop() {
+  const W = rodWhir, ctx = audioCtx; if (!W || !ctx) return;
+  rodWhir = null;
+  const t = ctx.currentTime;
+  W.g.gain.cancelScheduledValues(t); W.g.gain.setValueAtTime(Math.max(0.0001, W.g.gain.value), t); W.g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  try { W.src.stop(t + 0.15); W.lfo.stop(t + 0.15); } catch (e) {}
 }
 /* SOUNDS. All small: a line is a quiet thing. */
 function sfxRodWhip() {
@@ -36169,18 +36749,56 @@ function givePegBack() {
   removeFromInventory(pegItem);
   sfxThud(0.05);
 }
+/* HE PUTS THEM ON HIS TABLE (2026-10-14, the owner: "make both items appear on the table after being gave them by the
+ * fisherman and play the item drop music we've been using"). The rod and his map are laid on the table in his shed (the
+ * dock model's own `Table`, top measured at 2.585, x 9.45–10.86, z −220.72…−218.73) with the octopus ring's sting
+ * (`ringDrop`) and the big glint the dropped keys have, and you take them off it. `fishGift` [rod, map] — 0 not given,
+ * 1 on the table, 2 taken — is on the save. */
+const FISH_TABLE = { y: 2.585, rod: { x: 10.32, z: -219.06 }, map: { x: 9.78, z: -219.75 } };
+const fishGift = [0, 0];
+const fishGiftW = [null, null];
+function fishGiftLay(k, quiet) {
+  if (fishGiftW[k]) return;
+  if (k === 0 && !fishingRod.children.length) { setTimeout(() => fishGiftLay(k, quiet), 800); return; }   // the scan is not in yet
+  const W = new THREE.Group(), T = FISH_TABLE;
+  if (k === 0) {
+    const m = fishingRod.clone(true);
+    // flat along the table, the reel on its side and the tip toward the far end
+    m.rotation.set(-Math.PI / 2, Math.PI / 2, 0); m.position.y = 0.035;
+    W.add(m); W.position.set(T.rod.x, T.y, T.rod.z);
+  } else {
+    const m = mapSheetMesh(0.02, 0.012, 0.004); m.rotation.set(-Math.PI / 2, 0, 0.35); m.scale.setScalar(0.85); m.position.y = 0.012;
+    W.add(m); W.position.set(T.map.x, T.y, T.map.z);
+  }
+  W.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(k === 0 ? 0.45 : 0.32, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.set(0, 0.08, k === 0 ? -0.6 : 0); W.add(hit);
+  scene.add(W); fishGiftW[k] = W;
+  addItemShine(W, { size: 2.0, height: 0.3, strength: 4.2, lift: 1.2, through: 0.7, beacon: 1 });
+  addInteractable(W, k === 0 ? 'Take the fishing rod' : 'Take the map', 'inventory', {
+    onActivate: () => {
+      scene.remove(W); removeInteractable(W); hovered = null; fishGiftW[k] = null;
+      fishGift[k] = 2;
+      if (k === 0) { if (!inventory.includes(fishingRodItem)) addToInventory(fishingRodItem); }
+      else giveBeachMap();
+      sfxThud(0.03);
+      setTimeout(() => { if (!dying) autosaveNow(); }, 400);
+    },
+  });
+  if (!quiet && !applyingSave && !replaying && k === 1) playSample('ringDrop', 1.0);       // one sting for the pair
+}
 function giveFishingRod() {
-  if (!inventory.includes(fishingRodItem)) addToInventory(fishingRodItem);
-  giveBeachMap();
+  for (let k = 0; k < 2; k++) if (fishGift[k] === 0) { fishGift[k] = 1; fishGiftLay(k, false); }
   sfxThud(0.03);
+  setTimeout(() => { if (!dying) autosaveNow(); }, 1500);
 }
 // and his chart of the shore with it, once
 /* THE CHART IS OUT FOR NOW (2026-10-13, the owner: "take out the fishermans
  * map for now leave the fishing rod"). One switch: he hands over the rod and
  * says nothing about a chart, nothing grants it, and a save that carried it
  * does not bring it back (`packByName` skips it). Everything else is kept. */
-const BEACH_MAP_ON = false;
-let beachMapGiven = false, mapGrantPending = false;
+const BEACH_MAP_ON = true;              // back (2026-10-14): his old fishing spot, X marked
+let beachMapGiven = false;
 function giveBeachMap() {
   if (!BEACH_MAP_ON || beachMapGiven) return;
   beachMapGiven = true;
@@ -36198,7 +36816,7 @@ function giveBeachMap() {
  *
  * It is READ, not held: USE opens it full-screen the way the bottle's note
  * opens; the pack's inspect turns the paper itself over. */
-let beachMapCanvas = null, beachMapTex = null;
+let beachMapCanvas = null;
 const MAP_W = 1024, MAP_H = 1536;
 const MAP_Z0 = 70, MAP_Z1 = -1235;                       // the bottom and the top of the sheet, in world z
 const mapY = (z) => 150 + (z - MAP_Z1) / (MAP_Z0 - MAP_Z1) * 1250;   // z = MAP_Z0 at the foot (y 1400), MAP_Z1 at the head (y 150)
@@ -36256,6 +36874,15 @@ function mapEdge(g, CW, CH, K, seed) {
   g.globalCompositeOperation = 'destination-in'; path(); g.fillStyle = '#000'; g.fill();
   g.restore();
 }
+/* THE ROCKS GO ON THE CHART AS THEY STAND (2026-10-14, the owner: "bring the rocks back on the map"). They come off
+ * `rockColliders`, which the rock formation fills only when its scan lands — and the chart is drawn the first time it
+ * is wanted, which since the sheet became its pack icon is the moment it goes into your pack, or a checkpoint's very
+ * first frames: drawn then, it had no rocks on it and kept none. It counts what it drew (`beachMapRockN`), and
+ * `mapChartTextures` draws it again (and the full-screen reading with it) whenever more of them exist now. */
+let beachMapRockN = -1;
+const mapRockOK = (c) => !(c.r === undefined || c.r < 1.2 || c.top < 1.2 || c.top > 12 || c.mat || c.castle || c.whale || c.fill)
+  && c.z <= MAP_Z0 && c.z >= MAP_Z1 && Math.abs(c.x) <= 60;
+function mapRocksNow() { let n = 0; for (const c of rockColliders) if (mapRockOK(c)) n++; return n; }
 function drawBeachMap() {
   if (beachMapCanvas) return beachMapCanvas;
   const K = 1.5, CW = MAP_W * K, CH = MAP_H * K;
@@ -36306,14 +36933,6 @@ function drawBeachMap() {
   g.beginPath(); g.moveTo(MAP_W + 40, 0); cliff.forEach(([x, y]) => g.lineTo(x + 6, y)); g.lineTo(MAP_W + 40, MAP_H); g.closePath(); g.fillStyle = 'rgba(140,116,70,0.15)'; g.fill();
   g.beginPath(); cliff.forEach(([x, y], i) => (i ? g.lineTo(x + 16, y) : g.moveTo(x + 16, y))); g.strokeStyle = 'rgba(120,92,52,0.18)'; g.lineWidth = 30; g.stroke();
   g.filter = 'none'; g.restore();
-  // RHUMB LINES across the sea from the rose, the way a pilot's chart is ruled
-  const RX = 205, RY = 1120;
-  for (let k = 0; k < 32; k++) {
-    const a = k / 32 * Math.PI * 2, L = 1400;
-    g.strokeStyle = k % 8 === 0 ? 'rgba(54,34,18,0.16)' : k % 4 === 0 ? 'rgba(126,34,22,0.10)' : 'rgba(54,34,18,0.07)'; g.lineWidth = k % 4 === 0 ? 0.9 : 0.6;
-    g.save(); g.beginPath(); g.moveTo(-60, -60); coast.forEach(([x, y]) => g.lineTo(x - 10, y)); g.lineTo(-60, MAP_H + 60); g.closePath(); g.clip();
-    g.beginPath(); g.moveTo(RX, RY); g.lineTo(RX + Math.cos(a) * L, RY + Math.sin(a) * L); g.stroke(); g.restore();
-  }
   /* WATER-LINING: the old engraver's way of drawing a shore, a run of lines
    * following the coast out to sea, each fainter and wider-spaced than the last */
   for (let k = 1; k <= 11; k++) {
@@ -36349,183 +36968,117 @@ function drawBeachMap() {
     g.strokeStyle = INK(0.28 + rnd() * 0.2); g.lineWidth = 0.8;
     g.beginPath(); g.moveTo(x - w, y); g.quadraticCurveTo(x - w / 2, y - 4, x, y); g.quadraticCurveTo(x + w / 2, y - 4, x + w, y); g.stroke();
   }
-  // THE WAY: his dotted path up the sand
-  // (it ends at the castle's gate: past that the way is the castles' own, drawn with them below)
-  g.setLineDash([2.2, 6]); ink([[mapX(7), 1440], [mapX(7.5), 1100], [mapX(6.5), 700], [mapX(8.5), 420], [mapX(10), mapY(FORT_Z + fk(34.15)) + 6]], 1.1, 0.55); g.setLineDash([]);
-  /* THE PLACES — small drawings in the same pen, each shaded with a few
-   * strokes on its lee side so it stands off the paper */
-  const at = (x, z) => [mapX(x), mapY(z)];
-  const hatchL = (x0, y0, x1, y1, n) => { for (let i = 0; i < n; i++) { const t = (i + 0.5) / n; g.strokeStyle = INK(0.45); g.lineWidth = 0.6; g.beginPath(); g.moveTo(x0, y0 + (y1 - y0) * t); g.lineTo(x1, y0 + (y1 - y0) * t - 1.5); g.stroke(); } };
-  const ship = (x, y, wreck) => {
-    curve(() => { g.moveTo(x - 30, y - 2); g.quadraticCurveTo(x - 24, y + 12, x - 4, y + 13); g.lineTo(x + 22, y + 12); g.quadraticCurveTo(x + 30, y + 4, x + 32, y - 4); g.lineTo(x - 30, y - 2); }, 1.5, 0.9, INK, 'rgba(70,46,26,0.28)');
-    for (let i = 0; i < 5; i++) ink([[x - 22 + i * 10, y + 1], [x - 21 + i * 10, y + 10]], 0.6, 0.5);
-    if (wreck) { ink([[x - 6, y - 2], [x + 4, y - 30]], 1.4); ink([[x + 4, y - 30], [x + 16, y - 20]], 1.0); ink([[x + 12, y - 2], [x + 22, y - 14]], 1.2); }
-    else {
-      ink([[x - 2, y - 2], [x - 2, y - 40]], 1.2); ink([[x + 14, y - 2], [x + 14, y - 30]], 1.1);
-      curve(() => { g.moveTo(x - 14, y - 36); g.quadraticCurveTo(x - 1, y - 30, x + 10, y - 36); g.lineTo(x + 10, y - 12); g.quadraticCurveTo(x - 1, y - 6, x - 14, y - 12); g.closePath(); }, 1.0, 0.85, INK, 'rgba(240,228,200,0.6)');
-      curve(() => { g.moveTo(x + 6, y - 27); g.quadraticCurveTo(x + 15, y - 23, x + 22, y - 27); g.lineTo(x + 22, y - 9); g.quadraticCurveTo(x + 15, y - 5, x + 6, y - 9); g.closePath(); }, 0.9, 0.85, INK, 'rgba(240,228,200,0.6)');
+  /* NOTHING ON IT BUT THE ROCKS AND HIS SPOT (2026-10-14, the owner: "take all landmarks off the map just
+   * show the big rocks but dont label them … put a big red X on the map near the 5 mutants camp"). The
+   * rocks are the beach's own big stones (`rockColliders`: a stone, not a wall, a castle, the whale or the
+   * headland), drawn where they stand — the sheet is ten times tighter along the beach than across it, so each
+   * is a lump inked in plan with a few strokes of shade on its lee, and a formation's stones run together
+   * into one mass as they do on the sand. And the X, in red, past the five's fire, where the tree will be. */
+  const lump = (cx, cy, rx, ry, seed) => {
+    const r2 = mulberry32(seed), pts = [];
+    for (let a = 0; a < 6.2832; a += 0.35) { const k = 0.78 + r2() * 0.34; pts.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k]); }
+    curve(() => { pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); }, 1.7, 0.95, INK, 'rgba(84,72,58,0.50)');
+    for (let i = 0; i < 6; i++) { const t = (i + 0.5) / 6; g.strokeStyle = INK(0.6); g.lineWidth = 0.8; g.beginPath(); g.moveTo(cx + rx * 0.1, cy - ry * 0.6 + ry * 1.2 * t); g.lineTo(cx + rx * 0.85, cy - ry * 0.6 + ry * 1.2 * t - 1.4); g.stroke(); }
+  };
+  /* AND THE LIGHT (2026-10-14, the owner: "mark the lighthouse on the map too actually"): the tower on its island,
+   * drawn where `ISLE_AXIS` stands — no word on it, like everything else here — a tapered tower in the same pen with
+   * its red bands, the lantern, a few rays off it, and the island's rock round its foot with the water-lines out. */
+  {
+    const x = mapX(ISLE_AXIS.x), y = mapY(ISLE_AXIS.z);
+    curve(() => { g.moveTo(x - 46, y + 20); g.bezierCurveTo(x - 40, y + 2, x + 34, y - 2, x + 50, y + 16); g.bezierCurveTo(x + 26, y + 34, x - 24, y + 36, x - 46, y + 20); }, 1.4, 0.9, INK, 'rgba(110,96,80,0.30)');
+    for (let k = 1; k <= 4; k++) { g.strokeStyle = INK(0.4 * Math.pow(0.72, k)); g.lineWidth = 0.7; g.beginPath(); g.ellipse(x + 2, y + 20, 50 + k * 6, 18 + k * 4, 0, 0, 6.283); g.stroke(); }
+    const ty = y + 16;
+    curve(() => { g.moveTo(x - 11, ty); g.lineTo(x - 6, ty - 50); g.lineTo(x + 6, ty - 50); g.lineTo(x + 11, ty); g.closePath(); }, 1.5, 0.92, INK, 'rgba(240,228,200,0.65)');
+    for (let k = 0; k < 3; k++) { const yy = ty - 38 + k * 14, w = 6.6 + k * 1.6; curve(() => { g.moveTo(x - w, yy); g.lineTo(x + w, yy); g.lineTo(x + w + 0.8, yy + 6); g.lineTo(x - w - 0.8, yy + 6); g.closePath(); }, 0.6, 0.6, RED, RED(0.6)); }
+    curve(() => g.rect(x - 6, ty - 62, 12, 12), 1.2, 0.9, INK, 'rgba(255,220,140,0.55)');
+    curve(() => { g.moveTo(x - 8, ty - 62); g.lineTo(x, ty - 70); g.lineTo(x + 8, ty - 62); }, 1.2, 0.9);
+    for (const a of [-0.5, -0.2, 0.1, Math.PI + 0.5, Math.PI + 0.2, Math.PI - 0.1]) { g.strokeStyle = INK(0.38); g.lineWidth = 0.7; g.beginPath(); g.moveTo(x + Math.cos(a) * 10, ty - 56 + Math.sin(a) * 10); g.lineTo(x + Math.cos(a) * 36, ty - 56 + Math.sin(a) * 36); g.stroke(); }
+    for (let i = 0; i < 12; i++) { const t = (i + 0.5) / 12; g.strokeStyle = INK(0.45); g.lineWidth = 0.6; g.beginPath(); g.moveTo(x + 2, ty - 48 + 46 * t); g.lineTo(x + 6 + 4 * t, ty - 48 + 46 * t - 1.2); g.stroke(); }
+  }
+  beachMapRockN = 0;
+  rockColliders.forEach((c, i) => {
+    if (!mapRockOK(c)) return;
+    const rx = Math.min(40, Math.max(12, c.r * 9.5 * 0.85)), ry = Math.min(18, Math.max(8, rx * 0.45));
+    lump(mapX(c.x), mapY(c.z), rx, ry, 9000 + i);
+    beachMapRockN++;
+  });
+  {
+    const [x, y] = [mapX(FISH_SPOT.x), mapY(FISH_SPOT.z)], S = 34;     // (moved straight left into the water, 2026-10-14: the tree hangs over it)
+    g.save(); g.filter = 'blur(2.5px)'; g.strokeStyle = RED(0.28); g.lineWidth = 16; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x - S, y - S); g.lineTo(x + S, y + S); g.moveTo(x - S, y + S); g.lineTo(x + S, y - S); g.stroke(); g.restore();
+    ink([[x - S, y - S], [x - S * 0.1, y - S * 0.05], [x + S, y + S]], 7, 0.92, RED);
+    ink([[x - S, y + S], [x + S * 0.05, y - S * 0.08], [x + S, y - S]], 7, 0.92, RED);
+  }
+  /* THE FOLDS (2026-10-14, the owner: "make it look more hyper realistic like an old folded map"). It has lived
+   * folded in four down and three across, so it does not lie flat: each panel is a little plane of its own, tilted
+   * by the folds either side of it — a valley fold and a mountain fold alternate — so the light falls across each
+   * one as a soft gradient and changes at every crease. A crease is a hard dark line on its shadow side and a pale
+   * ridge on its lit side where the ink has rubbed off; it has cracked along most of its length (fibres showing,
+   * the paper gone pale and furred), and where it meets the edge the sheet has split a little way in. */
+  const FX = [0, MAP_W / 4, MAP_W / 2, MAP_W * 3 / 4, MAP_W], FY = [0, MAP_H / 3, MAP_H * 2 / 3, MAP_H];
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
+    const x0 = FX[i], x1 = FX[i + 1], y0 = FY[j], y1 = FY[j + 1];
+    const sx = i % 2 ? 1 : -1, sy = j % 2 ? 1 : -1;                     // which way this panel tilts
+    const gx = g.createLinearGradient(sx > 0 ? x0 : x1, 0, sx > 0 ? x1 : x0, 0);
+    gx.addColorStop(0, 'rgba(255,246,222,0.13)'); gx.addColorStop(0.55, 'rgba(255,246,222,0)'); gx.addColorStop(1, 'rgba(60,38,16,0.16)');
+    g.fillStyle = gx; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+    const gy = g.createLinearGradient(0, sy > 0 ? y0 : y1, 0, sy > 0 ? y1 : y0);
+    gy.addColorStop(0, 'rgba(255,246,222,0.08)'); gy.addColorStop(0.6, 'rgba(255,246,222,0)'); gy.addColorStop(1, 'rgba(60,38,16,0.10)');
+    g.fillStyle = gy; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  }
+  const crease = (x0, y0, x1, y1, seed) => {
+    const v = x0 === x1, ox = v ? 1 : 0, oy = v ? 0 : 1, L = v ? y1 - y0 : x1 - x0, r2 = mulberry32(seed);
+    g.save(); g.filter = 'blur(6px)'; g.strokeStyle = 'rgba(70,46,22,0.16)'; g.lineWidth = 16; g.beginPath(); g.moveTo(x0 + ox * 7, y0 + oy * 7); g.lineTo(x1 + ox * 7, y1 + oy * 7); g.stroke(); g.restore();
+    g.strokeStyle = 'rgba(238,226,196,0.6)'; g.lineWidth = 3.4; g.beginPath(); g.moveTo(x0 - ox * 1.5, y0 - oy * 1.5); g.lineTo(x1 - ox * 1.5, y1 - oy * 1.5); g.stroke();   // the ridge, ink rubbed off
+    g.strokeStyle = 'rgba(64,40,18,0.42)'; g.lineWidth = 1.0; g.beginPath(); g.moveTo(x0 + ox * 0.6, y0 + oy * 0.6); g.lineTo(x1 + ox * 0.6, y1 + oy * 0.6); g.stroke();
+    // cracked along it: runs of broken paper, pale and furred, with fibres standing out of the break
+    for (let t = 0; t < L;) {
+      const run = 20 + r2() * 90; if (r2() < 0.62) {
+        const a0 = t, a1 = Math.min(L, t + run);
+        g.strokeStyle = `rgba(246,236,212,${0.35 + r2() * 0.25})`; g.lineWidth = 0.9 + r2() * 0.8; g.beginPath();
+        for (let u = a0; u <= a1; u += 3) { const w = (r2() - 0.5) * 1.6; v ? g.lineTo(x0 + w, y0 + u) : g.lineTo(x0 + u, y0 + w); }
+        g.stroke();
+        for (let k = 0; k < run / 6; k++) { const u = a0 + r2() * (a1 - a0), l = 1.5 + r2() * 3.5, s = r2() < 0.5 ? -1 : 1;
+          g.strokeStyle = 'rgba(245,236,214,0.42)'; g.lineWidth = 0.5; g.beginPath();
+          if (v) { g.moveTo(x0, y0 + u); g.lineTo(x0 + s * l, y0 + u + (r2() - 0.5) * 2); } else { g.moveTo(x0 + u, y0); g.lineTo(x0 + u + (r2() - 0.5) * 2, y0 + s * l); }
+          g.stroke(); }
+      }
+      t += run;
     }
-    for (let i = 0; i < 3; i++) ink([[x - 34 - i * 7, y + 6 + i * 2], [x - 26 - i * 7, y + 6 + i * 2]], 0.6, 0.4);
-  };
-  const pier = (x, y) => {
-    for (let k = 0; k < 9; k++) ink([[x - 4 - k * 8, y - 5], [x - 4 - k * 8, y + 5]], 1.0, 0.8);
-    ink([[x, y - 5], [x - 72, y - 5]], 1.2); ink([[x, y + 5], [x - 72, y + 5]], 1.2);
-    curve(() => { g.rect(x + 6, y - 14, 24, 20); }, 1.3, 0.9, INK, 'rgba(70,46,26,0.2)');
-    curve(() => { g.moveTo(x + 2, y - 14); g.lineTo(x + 18, y - 26); g.lineTo(x + 34, y - 14); }, 1.3, 0.9);
-    hatchL(x + 22, y - 12, x + 29, y + 5, 6);
-  };
-  const tent = (x, y) => { curve(() => { g.moveTo(x - 20, y + 12); g.lineTo(x, y - 16); g.lineTo(x + 20, y + 12); g.closePath(); }, 1.4, 0.9, INK, 'rgba(70,46,26,0.15)'); ink([[x, y - 16], [x - 3, y + 12]], 0.9); hatchL(x + 2, y - 8, x + 14, y + 10, 7); ink([[x - 26, y + 14], [x + 28, y + 14]], 0.7, 0.5); };
-  const hatch = (x, y) => { curve(() => g.rect(x - 11, y - 9, 22, 18), 1.4, 0.9, INK, 'rgba(70,46,26,0.25)'); ink([[x - 11, y], [x + 11, y]], 0.8); g.fillStyle = INK(0.9); g.beginPath(); g.arc(x + 6, y - 4, 1.8, 0, 6.283); g.fill(); };
-  const mush = (x, y) => {
-    curve(() => { g.moveTo(x - 26, y - 6); g.bezierCurveTo(x - 24, y - 34, x + 24, y - 34, x + 26, y - 6); g.quadraticCurveTo(x, y - 2, x - 26, y - 6); }, 1.5, 0.9, INK, 'rgba(126,34,22,0.25)');
-    curve(() => g.rect(x - 8, y - 4, 16, 20), 1.3, 0.9, INK, 'rgba(240,228,200,0.5)');
-    for (const [dx, dy, r] of [[-12, -18, 3], [2, -24, 3.5], [14, -14, 2.5], [-2, -12, 2]]) { g.fillStyle = 'rgba(240,228,200,0.85)'; g.beginPath(); g.arc(x + dx, y + dy, r, 0, 6.283); g.fill(); }
-    hatchL(x + 2, y - 2, x + 7, y + 15, 6);
-  };
-  const crossed = (x, y) => { ink([[x - 14, y - 12], [x + 14, y + 12]], 1.8, 0.9, RED); ink([[x - 14, y + 12], [x + 14, y - 12]], 1.8, 0.9, RED); for (const [a, b] of [[-14, -12], [14, 12], [-14, 12], [14, -12]]) { g.fillStyle = RED(0.85); g.beginPath(); g.arc(x + a, y + b, 2.6, 0, 6.283); g.fill(); } };
-  const stones = (x, y) => {
-    for (const [dx, h, w] of [[-16, 22, 8], [-3, 32, 10], [11, 26, 9], [22, 16, 7]]) {
-      curve(() => { g.moveTo(x + dx - w / 2, y + 10); g.lineTo(x + dx - w / 2 + 1, y + 10 - h); g.quadraticCurveTo(x + dx, y + 8 - h - 4, x + dx + w / 2 - 1, y + 10 - h); g.lineTo(x + dx + w / 2, y + 10); }, 1.2, 0.9, INK, 'rgba(110,96,80,0.25)');
-      hatchL(x + dx + 1, y + 12 - h, x + dx + w / 2, y + 9, Math.round(h / 4));
+    // and split in from the edge, both ends: a ragged slit with the paper either side lifted and dark
+    for (const end of [0, 1]) {
+      const n = 14 + r2() * 26, ex = v ? x0 : (end ? x1 : x0), ey = v ? (end ? y1 : y0) : y0, d = end ? -1 : 1;
+      g.fillStyle = 'rgba(40,24,10,0.55)'; g.beginPath();
+      if (v) { g.moveTo(ex - 2.2, ey); g.lineTo(ex + (r2() - 0.5) * 2, ey + d * n); g.lineTo(ex + 2.2, ey); }
+      else { g.moveTo(ex, ey - 2.2); g.lineTo(ex + d * n, ey + (r2() - 0.5) * 2); g.lineTo(ex, ey + 2.2); }
+      g.closePath(); g.fill();
     }
-    ink([[x - 28, y + 11], [x + 32, y + 11]], 0.7, 0.45);
   };
-  const torii = (x, y) => {
-    curve(() => { g.moveTo(x - 26, y - 20); g.quadraticCurveTo(x, y - 25, x + 26, y - 20); g.lineTo(x + 24, y - 16); g.quadraticCurveTo(x, y - 20, x - 24, y - 16); g.closePath(); }, 1.3, 0.9, INK, RED(0.55));
-    ink([[x - 18, y - 10], [x + 18, y - 10]], 1.8, 0.9, RED); ink([[x - 14, y - 18], [x - 15, y + 14]], 2.2, 0.9, RED); ink([[x + 14, y - 18], [x + 15, y + 14]], 2.2, 0.9, RED);
-  };
-  const fire = (x, y) => {
-    curve(() => { g.moveTo(x - 8, y + 6); g.quadraticCurveTo(x - 13, y - 6, x - 2, y - 18); g.quadraticCurveTo(x, y - 9, x + 4, y - 12); g.quadraticCurveTo(x + 12, y - 2, x + 8, y + 6); g.closePath(); }, 1.1, 0.9, RED, 'rgba(200,110,40,0.35)');
-    ink([[x - 14, y + 10], [x + 14, y + 6]], 1.6); ink([[x - 14, y + 6], [x + 14, y + 10]], 1.6);
-    for (let k = 0; k < 5; k++) { const a = Math.PI * 2 * k / 5; g.fillStyle = INK(0.6); g.beginPath(); g.arc(x + Math.cos(a) * 24, y + 6 + Math.sin(a) * 8, 2.2, 0, 6.283); g.fill(); }
-  };
-  const castle = (x, y, s = 1) => {
-    const T = (tx, w, h) => { curve(() => g.rect(x + tx * s, y - h * s, w * s, (h + 14) * s), 1.3 * s, 0.9, INK, 'rgba(110,96,80,0.2)');
-      for (let k = 0; k < 3; k++) curve(() => g.rect(x + (tx + k * w / 3) * s, y - (h + 5) * s, (w / 3 - 1.5) * s, 5 * s), 0.9 * s, 0.85);
-      hatchL(x + (tx + w * 0.55) * s, y - (h - 2) * s, x + (tx + w - 1) * s, y + 12 * s, Math.round(h / 3)); };
-    curve(() => g.rect(x - 24 * s, y - 14 * s, 48 * s, 28 * s), 1.4 * s, 0.9, INK, 'rgba(110,96,80,0.15)');
-    T(-34, 14, 34); T(20, 14, 34); T(-7, 14, 46);
-    curve(() => { g.moveTo(x - 6 * s, y + 14 * s); g.lineTo(x - 6 * s, y + 5 * s); g.arc(x, y + 5 * s, 6 * s, Math.PI, 0); g.lineTo(x + 6 * s, y + 14 * s); }, 1.1 * s, 0.9, INK, INK(0.5));
-    ink([[x, y - 51 * s], [x, y - 66 * s]], 1 * s); curve(() => { g.moveTo(x, y - 66 * s); g.lineTo(x + 13 * s, y - 62 * s); g.lineTo(x, y - 58 * s); }, 0.9 * s, 0.9, RED, RED(0.6));
-  };
-  const lighthouse = (x, y) => {
-    curve(() => { g.moveTo(x - 11, y + 18); g.lineTo(x - 6, y - 32); g.lineTo(x + 6, y - 32); g.lineTo(x + 11, y + 18); g.closePath(); }, 1.4, 0.9, INK, 'rgba(240,228,200,0.6)');
-    for (let k = 0; k < 3; k++) { const yy = y - 18 + k * 14, w = 7 + k * 1.6; curve(() => { g.moveTo(x - w, yy); g.lineTo(x + w, yy); g.lineTo(x + w + 0.8, yy + 6); g.lineTo(x - w - 0.8, yy + 6); g.closePath(); }, 0.6, 0.6, RED, RED(0.55)); }
-    curve(() => g.rect(x - 6, y - 44, 12, 12), 1.2, 0.9, INK, 'rgba(255,220,140,0.5)'); curve(() => { g.moveTo(x - 8, y - 44); g.lineTo(x, y - 52); g.lineTo(x + 8, y - 44); }, 1.2, 0.9);
-    for (const a of [-0.55, -0.25, 0.05, Math.PI + 0.55, Math.PI + 0.25, Math.PI - 0.05]) { g.strokeStyle = INK(0.35); g.lineWidth = 0.7; g.beginPath(); g.moveTo(x + Math.cos(a) * 10, y - 38 + Math.sin(a) * 10); g.lineTo(x + Math.cos(a) * 34, y - 38 + Math.sin(a) * 34); g.stroke(); }
-    hatchL(x + 2, y - 30, x + 9, y + 16, 12);
-  };
-  const coin = (x, y) => { curve(() => g.arc(x, y, 9, 0, 6.283), 1.3, 0.9, INK, 'rgba(200,160,70,0.35)'); curve(() => g.arc(x, y, 6, 0, 6.283), 0.6, 0.6); };
-  const pipe = (x, y) => { curve(() => g.arc(x, y, 12, 0, 6.283), 1.5, 0.9, INK, 'rgba(110,96,80,0.25)'); curve(() => g.arc(x, y, 6.5, 0, 6.283), 1, 0.9, INK, INK(0.75)); for (let k = 0; k < 3; k++) ink([[x - 18 - k * 4, y + 4 + k * 3], [x - 12 - k * 4, y + 4 + k * 3]], 0.6, 0.4); };
-  const put = (fn, x, z, name, dx = 34, dy = 0, size = 20) => { const [px, py] = at(x, z); fn(px, py); if (name) label(name, px + dx, py + dy, size, 0.88, { align: dx < 0 ? 'right' : 'left' }); };
-  put(pipe, 8, DRAIN_Z, 'the drain', 24);
-  put((x, y) => ship(x, y, true), SHIP_X - 5, SHIP_Z, 'wreck of the Limulus', 42);
-  put(pier, DOCK_X, DOCK_Z, 'my dock', 40, -2);
-  put(tent, CAMP_X, CAMP_Z, 'camp', 30);
-  put(hatch, HATCH_X, HATCH_Z, 'a hatch, sand over it', 22, 0, 17);
-  put(mush, MUSH_X - 6, MUSH_Z, 'the mushroom house', 34);
-  put(crossed, MUT_X, MUT_Z, 'they hunt here', 24, 0, 18);
-  put(stones, 8, ROCK_Z, 'the stones', 36);
-  put(coin, TRADER_X + 2, TRADER_Z + 12, 'trader', 16, 0, 17);
-  put(torii, PORTAL_X - 3, PORTAL_Z - 4, 'the gate', -30);
-  put(fire, TRIBE_X, TRIBE_Z, 'five at a fire', 24, 0, 18);
-  put(coin, TRADER2_X - 2, TRADER2_Z, 'trader', 16, 0, 17);
-  /* THE CASTLES ARE ONE ROAD (2026-10-13, the owner: "make this translate
-   * visually on the map"): in at the first castle's gate, through it to its
-   * back door, into XIII, up to its throne room, out over the drawbridge to
-   * the light — and the same road back. Numbered in his hand, the route
-   * between them in red with the way marked on it. */
-  const crown = (x, y) => {
-    curve(() => { g.moveTo(x - 11, y + 6); g.lineTo(x - 12, y - 6); g.lineTo(x - 6, y); g.lineTo(x, y - 9); g.lineTo(x + 6, y); g.lineTo(x + 12, y - 6); g.lineTo(x + 11, y + 6); g.closePath(); }, 1.2, 0.9, INK, 'rgba(200,160,70,0.45)');
-    for (const dx of [-12, 0, 12]) { g.fillStyle = RED(0.85); g.beginPath(); g.arc(x + dx, y - (dx ? 7 : 10), 1.8, 0, 6.283); g.fill(); }
-  };
-  put(castle, 10, FORT_Z + 20, 'i. the castle', 44);
-  put((x, y) => castle(x, y, 0.72), 30, FORT_Z - 18, 'ii. XIII', 30, 4, 17);
-  const thr = [mapX(30) + 2, mapY(FORT_Z - 18) - 64];           // over XIII's keep: the throne room is up in it
-  crown(thr[0], thr[1]); label('iii. the throne', thr[0] + 18, thr[1] - 2, 16, 0.85);
-  const lh = at(ISLE_AXIS.x, ISLE_AXIS.z);
-  lighthouse(lh[0], lh[1]); label('iv. the light', lh[0] - 18, lh[1] + 30, 18, 0.88, { align: 'right' });
-  {
-    const gate = at(10, FORT_Z + fk(34.15)), back = at(FORT_X + FORT_DOOR.x, FORT_Z + FORT_DOOR.z);
-    const xiii = at(30, FORT_Z - 18);
-    const road = [[gate[0], gate[1] + 4], [gate[0] + 2, back[1] + 2], [xiii[0] - 30, xiii[1] + 12], [xiii[0] + 4, xiii[1] + 10],
-      [xiii[0] + 32, xiii[1] - 12], [thr[0] + 16, thr[1] + 8], [thr[0] - 18, thr[1] - 4], [lh[0] + 16, lh[1] - 26]];
-    g.setLineDash([5, 4]); ink(road, 1.3, 0.8, RED); g.setLineDash([]);
-    // the way along it: a small barb at the middle of each leg
-    for (let i = 0; i + 1 < road.length; i++) {
-      const [ax, ay] = road[i], [bx, by] = road[i + 1], mx = (ax + bx) / 2, my = (ay + by) / 2, a = Math.atan2(by - ay, bx - ax);
-      ink([[mx - Math.cos(a - 0.5) * 7, my - Math.sin(a - 0.5) * 7], [mx, my], [mx - Math.cos(a + 0.5) * 7, my - Math.sin(a + 0.5) * 7]], 1.3, 0.85, RED);
-    }
-    label('one road in, the same road out', mapX(19), mapY(FORT_Z + 20) + 46, 14, 0.8, { col: RED, align: 'left' });
-  }
-  // the sea keep offshore: its rock, its walls, and the tavern under it; my boat's course out to it
-  {
-    const kx = 160, ky = mapY(-560);
-    curve(() => { g.moveTo(kx - 64, ky + 20); g.bezierCurveTo(kx - 50, ky + 2, kx + 40, ky - 2, kx + 66, ky + 18); g.bezierCurveTo(kx + 30, ky + 34, kx - 30, ky + 36, kx - 64, ky + 20); }, 1.4, 0.9, INK, 'rgba(110,96,80,0.25)');
-    for (let k = 1; k <= 5; k++) { g.strokeStyle = INK(0.4 * Math.pow(0.75, k)); g.lineWidth = 0.7; g.beginPath(); g.ellipse(kx, ky + 20, 66 + k * 6, 20 + k * 4, 0, 0, 6.283); g.stroke(); }
-    castle(kx, ky + 4, 0.85);
-    label('THE SEA KEEP', kx, ky + 64, 17, 0.9, { caps: true, align: 'center', rot: 0 });
-    label('and the tavern under it', kx, ky + 84, 15, 0.7, { align: 'center', rot: 0 });
-    g.setLineDash([2.5, 6]); ink([[mapX(DOCK_X) - 76, mapY(DOCK_Z)], [380, mapY(-360)], [kx + 70, ky + 26]], 1.0, 0.55); g.setLineDash([]);
-    ship(350, mapY(-430), false);
-  }
-  // his warnings, in red, in a hurried hand
-  label('do not stop here after dark', mapX(-8), mapY(ROCK_Z + 36), 16, 0.85, { col: RED, align: 'right' });
-  /* THE ROSE: thirty-two points, each main point half filled and half open,
-   * a ring of degrees, and a fleur-de-lis for north */
-  {
-    const cx = RX, cy = RY, R = 92;
-    curve(() => g.arc(cx, cy, R, 0, 6.283), 1.1, 0.85); curve(() => g.arc(cx, cy, R - 9, 0, 6.283), 0.8, 0.75);
-    for (let k = 0; k < 64; k++) { const a = k / 64 * 6.283, l = k % 8 === 0 ? 9 : k % 2 === 0 ? 5 : 3; g.strokeStyle = INK(0.7); g.lineWidth = 0.6; g.beginPath(); g.moveTo(cx + Math.cos(a) * (R - 9), cy + Math.sin(a) * (R - 9)); g.lineTo(cx + Math.cos(a) * (R - 9 + l), cy + Math.sin(a) * (R - 9 + l)); g.stroke(); }
-    const point = (a, L, w, fillL, fillR) => {
-      const tx = cx + Math.cos(a) * L, ty = cy + Math.sin(a) * L, lx = cx + Math.cos(a - Math.PI / 2) * w, ly = cy + Math.sin(a - Math.PI / 2) * w, rx = cx + Math.cos(a + Math.PI / 2) * w, ry = cy + Math.sin(a + Math.PI / 2) * w;
-      g.beginPath(); g.moveTo(tx, ty); g.lineTo(lx, ly); g.lineTo(cx, cy); g.closePath(); g.fillStyle = fillL; g.fill(); g.strokeStyle = INK(0.85); g.lineWidth = 0.8; g.stroke();
-      g.beginPath(); g.moveTo(tx, ty); g.lineTo(rx, ry); g.lineTo(cx, cy); g.closePath(); g.fillStyle = fillR; g.fill(); g.stroke();
-    };
-    for (let k = 0; k < 16; k++) if (k % 2) point(k / 16 * 6.283 - Math.PI / 2, R * 0.48, 5, 'rgba(240,228,200,0.9)', INK(0.55));
-    for (let k = 0; k < 8; k++) if (k % 2) point(k / 8 * 6.283 - Math.PI / 2, R * 0.66, 8, 'rgba(240,228,200,0.95)', RED(0.65));
-    for (let k = 0; k < 4; k++) point(k / 4 * 6.283 - Math.PI / 2, R - 12, 11, 'rgba(245,235,210,1)', INK(0.85));
-    curve(() => g.arc(cx, cy, 5, 0, 6.283), 1, 0.9, INK, RED(0.8));
-    // the fleur at the north point
-    const fy = cy - R - 6;
-    curve(() => { g.moveTo(cx, fy - 22); g.bezierCurveTo(cx + 7, fy - 14, cx + 6, fy - 6, cx, fy); g.bezierCurveTo(cx - 6, fy - 6, cx - 7, fy - 14, cx, fy - 22); }, 1, 0.9, INK, RED(0.6));
-    curve(() => { g.moveTo(cx - 2, fy - 6); g.bezierCurveTo(cx - 14, fy - 10, cx - 18, fy - 2, cx - 12, fy + 2); }, 1, 0.9);
-    curve(() => { g.moveTo(cx + 2, fy - 6); g.bezierCurveTo(cx + 14, fy - 10, cx + 18, fy - 2, cx + 12, fy + 2); }, 1, 0.9);
-    ink([[cx - 9, fy - 2], [cx + 9, fy - 2]], 1.2);
-  }
-  /* THE CARTOUCHE: a ribbon scroll with its ends rolled, the title in it */
-  {
-    const x = 270, y = 1400, w = 420, h = 74;
-    curve(() => { g.moveTo(x - w / 2, y - h / 2); g.bezierCurveTo(x - w / 4, y - h / 2 - 8, x + w / 4, y - h / 2 + 6, x + w / 2, y - h / 2); g.lineTo(x + w / 2, y + h / 2); g.bezierCurveTo(x + w / 4, y + h / 2 + 6, x - w / 4, y + h / 2 - 8, x - w / 2, y + h / 2); g.closePath(); }, 1.5, 0.9, INK, 'rgba(244,232,204,0.75)');
-    for (const sx of [-1, 1]) {
-      const ex = x + sx * w / 2;
-      curve(() => { g.moveTo(ex, y - h / 2); g.bezierCurveTo(ex + sx * 26, y - h / 2 - 4, ex + sx * 30, y + 10, ex + sx * 12, y + 14); g.bezierCurveTo(ex + sx * 2, y + 16, ex - sx * 2, y + 6, ex + sx * 8, y + 2); }, 1.3, 0.9, INK, 'rgba(220,200,160,0.7)');
-    }
-    curve(() => { g.moveTo(x - w / 2 + 12, y - h / 2 + 9); g.bezierCurveTo(x - w / 4, y - h / 2 + 2, x + w / 4, y - h / 2 + 14, x + w / 2 - 12, y - h / 2 + 9); }, 0.6, 0.6);
-    curve(() => { g.moveTo(x - w / 2 + 12, y + h / 2 - 9); g.bezierCurveTo(x - w / 4, y + h / 2 - 16, x + w / 4, y + h / 2 - 2, x + w / 2 - 12, y + h / 2 - 9); }, 0.6, 0.6);
-    label('The Shore', x, y - 8, 38, 0.92, { align: 'center', rot: 0 });
-    label('AS FISHED, AND AS WALKED', x, y + 22, 12, 0.75, { caps: true, align: 'center', rot: 0 });
-  }
-  // the scale, in paces, with alternate bars filled
-  {
-    const x0 = 640, y0 = 1452, step = 25 / 1305 * 1250;
-    for (let k = 0; k < 4; k++) curve(() => g.rect(x0 + k * step, y0 - 3, step, 6), 0.8, 0.85, INK, k % 2 ? 'rgba(244,232,204,0.8)' : INK(0.7));
-    label('0', x0, y0 - 14, 12, 0.7, { align: 'center', rot: 0 }); label('100 paces', x0 + 4 * step, y0 - 14, 12, 0.7, { align: 'center', rot: 0 });
-  }
-  /* THE FOLDS: the sheet has lived folded in four down and three across. A
-   * crease is a fine dark line with a pale ridge beside it, a soft shadow
-   * to one side, and the ink worn off along it */
-  for (const [x0, y0, x1, y1] of [[MAP_W / 2, 0, MAP_W / 2, MAP_H], [MAP_W / 4, 0, MAP_W / 4, MAP_H], [MAP_W * 3 / 4, 0, MAP_W * 3 / 4, MAP_H], [0, MAP_H / 3, MAP_W, MAP_H / 3], [0, MAP_H * 2 / 3, MAP_W, MAP_H * 2 / 3]]) {
-    const v = x0 === x1, ox = v ? 1 : 0, oy = v ? 0 : 1;
-    g.save(); g.filter = 'blur(5px)'; g.strokeStyle = 'rgba(90,64,36,0.10)'; g.lineWidth = 12; g.beginPath(); g.moveTo(x0 + ox * 6, y0 + oy * 6); g.lineTo(x1 + ox * 6, y1 + oy * 6); g.stroke(); g.restore();
-    g.strokeStyle = 'rgba(232,218,186,0.55)'; g.lineWidth = 3; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();       // the ink rubbed off the ridge
-    g.strokeStyle = 'rgba(80,55,30,0.22)'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x0 - ox, y0 - oy); g.lineTo(x1 - ox, y1 - oy); g.stroke();
-    g.strokeStyle = 'rgba(255,248,228,0.35)'; g.lineWidth = 0.8; g.beginPath(); g.moveTo(x0 + ox * 1.6, y0 + oy * 1.6); g.lineTo(x1 + ox * 1.6, y1 + oy * 1.6); g.stroke();
-  }
-  // where the folds cross, the paper has worn through to a pale bruise
+  crease(MAP_W / 2, 0, MAP_W / 2, MAP_H, 71); crease(MAP_W / 4, 0, MAP_W / 4, MAP_H, 72); crease(MAP_W * 3 / 4, 0, MAP_W * 3 / 4, MAP_H, 73);
+  crease(0, MAP_H / 3, MAP_W, MAP_H / 3, 74); crease(0, MAP_H * 2 / 3, MAP_W, MAP_H * 2 / 3, 75);
+  // where the folds cross, the paper has worn right through: a pale ragged hole in the sheet, browned round it
   for (const x of [MAP_W / 4, MAP_W / 2, MAP_W * 3 / 4]) for (const y of [MAP_H / 3, MAP_H * 2 / 3]) {
-    const gr = g.createRadialGradient(x, y, 0, x, y, 9); gr.addColorStop(0, 'rgba(250,242,222,0.6)'); gr.addColorStop(0.6, 'rgba(160,120,70,0.18)'); gr.addColorStop(1, 'rgba(160,120,70,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, 9, 0, 6.283); g.fill();
+    const r2 = mulberry32(Math.round(x * 7 + y)), R = 4 + r2() * 4;
+    const gr = g.createRadialGradient(x, y, 0, x, y, R * 2.4); gr.addColorStop(0, 'rgba(90,58,24,0.35)'); gr.addColorStop(1, 'rgba(90,58,24,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, R * 2.4, 0, 6.283); g.fill();
+    g.fillStyle = 'rgba(252,246,230,0.92)'; g.beginPath();
+    for (let a = 0; a < 6.283; a += 0.5) { const rr = R * (0.45 + r2() * 0.6); a ? g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr) : g.moveTo(x + rr, y); }
+    g.closePath(); g.fill();
+  }
+  // water damage: a big tide-marked stain across a corner, and the ink run and faded inside it
+  {
+    const r2 = mulberry32(4480), cx = MAP_W * 0.82, cy = MAP_H * 0.86, pts = [];
+    for (let a = 0; a <= 6.2832; a += 0.06) { const rr = 230 * (0.75 + artFbm(nz, Math.cos(a) * 2.2, Math.sin(a) * 2.2 + 5, 4) * 0.55); pts.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.8]); }
+    const path = () => { g.beginPath(); pts.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); };
+    path(); g.fillStyle = 'rgba(232,218,180,0.20)'; g.fill();                       // the ink faded under it
+    path(); g.fillStyle = 'rgba(140,96,40,0.08)'; g.fill();
+    g.save(); g.filter = 'blur(1.5px)'; path(); g.strokeStyle = 'rgba(110,70,26,0.35)'; g.lineWidth = 3.2; g.stroke(); g.restore();
+    g.save(); g.filter = 'blur(3px)'; path(); g.strokeStyle = 'rgba(110,70,26,0.15)'; g.lineWidth = 12; g.stroke(); g.restore();
+    void r2;
+  }
+  // thumb grime along the edges where it has been held open, and a few small burns of age
+  for (const [x, y, r] of [[40, MAP_H * 0.52, 90], [MAP_W - 40, MAP_H * 0.45, 80], [MAP_W * 0.5, MAP_H - 30, 100]]) {
+    const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(70,46,20,0.18)'); gr.addColorStop(1, 'rgba(70,46,20,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
   }
   // and age over all of it: a warm grime, deeper at the corners
   { const gr = g.createRadialGradient(MAP_W / 2, MAP_H / 2, MAP_H * 0.25, MAP_W / 2, MAP_H / 2, MAP_H * 0.75); gr.addColorStop(0, 'rgba(120,80,30,0)'); gr.addColorStop(1, 'rgba(110,70,25,0.22)'); g.fillStyle = gr; g.fillRect(0, 0, MAP_W, MAP_H); }
@@ -36549,39 +37102,96 @@ function drawBeachMapBack() {
   mapEdge(g, CW, CH, K, 4474);
   return (beachMapBack = c);
 }
-let beachMapGroup = null;
-function beachMapModel() {
-  if (beachMapGroup) return beachMapGroup;
-  const geo = new THREE.PlaneGeometry(0.42, 0.63, 24, 36);
-  const p = geo.attributes.position;
-  for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i); p.setZ(i, Math.pow(Math.abs(x) / 0.21, 2) * 0.03 + Math.sin(y * 7) * 0.004); }
-  geo.computeVertexNormals();
-  /* TWO FACES: the chart on the front and NOTHING on the back (the owner) —
-   * the same paper, folds showing through, no ink */
-  const blank = (side) => new THREE.MeshStandardMaterial({ color: 0xd8c496, roughness: 0.95, metalness: 0, side, emissive: 0x3a3020, emissiveIntensity: 1 });
-  const front = new THREE.Mesh(geo, blank(THREE.FrontSide)), back = new THREE.Mesh(geo, blank(THREE.BackSide));
-  // the drawings are made the first time the paper is looked at
-  front.onBeforeRender = () => {
-    if (beachMapTex) return;
-    const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
-    beachMapTex = mk(drawBeachMap());
-    const backTex = mk(drawBeachMapBack());
-    front.material = new THREE.MeshStandardMaterial({ map: beachMapTex, roughness: 0.95, metalness: 0, side: THREE.FrontSide, transparent: true, alphaTest: 0.5, emissive: new THREE.Color(0xffffff), emissiveMap: beachMapTex, emissiveIntensity: 0.25 });
-    back.material = new THREE.MeshStandardMaterial({ map: backTex, roughness: 0.95, metalness: 0, side: THREE.BackSide, transparent: true, alphaTest: 0.5, emissive: new THREE.Color(0xffffff), emissiveMap: backTex, emissiveIntensity: 0.25 });
-  };
-  beachMapGroup = new THREE.Group(); beachMapGroup.add(front, back);
-  return beachMapGroup;
+/* THE CHART IS A SHEET OF PAPER, NOT A PICTURE OF ONE (2026-10-14, the owner: "make the map icon way better too hyper
+ * realistic make the map look better too it just looks like a png"). Drawn flat it was a flat image however much fold
+ * it had painted on. So the paper is BUILT: a sheet the chart's own size (0.42 × 0.63 m) cut into its four-by-three
+ * panels, each a plane of its own — the creases alternate mountain and valley the way a sheet folded in four and then
+ * in three does, the panels tilted against each other a little, with a crinkle of the paper over all of it — and LIT:
+ * a warm lamp low from the upper left grazes it, so each panel takes the light at its own angle and every crease is a
+ * real edge of light and shade, with the fibres of the paper standing up in it (`mapPaperBump`). Three uses:
+ *   - reading it: the sheet nearly open, rendered once to a picture (`renderBeachMapSheet`) and shown full screen;
+ *   - the pack's icon and inspect: the same sheet folded half up, a packet you would pull out of a coat. */
+const MAP_SW = 0.42, MAP_SH = 0.63;
+let mapPaperBumpTex = null, mapChartTex = null, mapBackTex = null;
+function mapPaperBump() {
+  if (mapPaperBumpTex) return mapPaperBumpTex;
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), r = mulberry32(4490), img = g.createImageData(S, S), nz = artNoise2(4491);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const v = 128 + (artFbm(nz, x / 40, y / 40, 4) - 0.5) * 70 + (r() - 0.5) * 26;
+    const o = (y * S + x) * 4; img.data[o] = img.data[o + 1] = img.data[o + 2] = v; img.data[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  for (let i = 0; i < 1800; i++) {                                    // fibres laid in the sheet
+    const x = r() * S, y = r() * S, a = r() * Math.PI, l = 3 + r() * 12;
+    g.strokeStyle = r() < 0.5 ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'; g.lineWidth = 0.6;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  mapPaperBumpTex = new THREE.CanvasTexture(c); mapPaperBumpTex.wrapS = mapPaperBumpTex.wrapT = THREE.RepeatWrapping; mapPaperBumpTex.repeat.set(2, 3);
+  return mapPaperBumpTex;
 }
-function makeMapIcon() {
-  const c = document.createElement('canvas'); c.width = c.height = 64;
-  const x = c.getContext('2d');
-  x.translate(32, 32); x.rotate(-0.18);
-  x.fillStyle = '#d8c294'; x.fillRect(-20, -24, 40, 48);
-  x.strokeStyle = '#5a3e22'; x.lineWidth = 2; x.strokeRect(-20, -24, 40, 48);
-  x.strokeStyle = 'rgba(70,46,24,0.9)'; x.lineWidth = 2; x.beginPath(); x.moveTo(-4, 22); x.bezierCurveTo(-10, 8, 2, -6, -6, -22); x.stroke();
-  x.setLineDash([2, 3]); x.beginPath(); x.moveTo(6, 20); x.lineTo(4, -18); x.stroke(); x.setLineDash([]);
-  x.fillStyle = '#80201a'; x.beginPath(); x.arc(8, -12, 3, 0, 6.283); x.fill();
-  return c.toDataURL();
+function mapChartTextures() {
+  if (!mapChartTex) {
+    const mk = (cv) => { const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t; };
+    mapChartTex = mk(drawBeachMap()); mapBackTex = mk(drawBeachMapBack());
+  } else if (beachMapRockN < mapRocksNow()) {
+    // the rocks were not in when it was first drawn: draw it again, and let the reading of it be rendered again too
+    beachMapCanvas = null; mapChartTex.image = drawBeachMap(); mapChartTex.needsUpdate = true;
+    if (mapEl) delete mapEl.dataset.drawn;
+  }
+  return [mapChartTex, mapBackTex];
+}
+// the sheet: fold depths A (across, the four panels) and B (down, the three), and a crinkle
+function mapSheetGeo(A, B, curl = 0) {
+  const geo = new THREE.PlaneGeometry(MAP_SW, MAP_SH, 96, 144), p = geo.attributes.position, nz = artNoise2(4492);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), u = x / MAP_SW + 0.5, v = y / MAP_SH + 0.5;
+    const pi = Math.min(3, Math.floor(u * 4)), fu = u * 4 - pi, pj = Math.min(2, Math.floor(v * 3)), fv = v * 3 - pj;
+    let z = A * (pi % 2 ? fu : 1 - fu) + B * (pj % 2 ? fv : 1 - fv);
+    z += (artFbm(nz, u * 9, v * 13, 3) - 0.5) * 0.0026 + (artFbm(nz, u * 40 + 7, v * 60, 2) - 0.5) * 0.0006;   // the paper has been handled
+    z += curl * (Math.pow(Math.abs(u - 0.5) * 2, 3) + Math.pow(Math.abs(v - 0.5) * 2, 3) * 0.6);              // and its edges lift
+    p.setZ(i, z);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+function mapSheetMesh(A, B, curl) {
+  const [front, back] = mapChartTextures(), bump = mapPaperBump(), geo = mapSheetGeo(A, B, curl);
+  const mat = (map, side) => new THREE.MeshStandardMaterial({ map, side, color: 0xfff1dc, roughness: 0.93, metalness: 0, bumpMap: bump, bumpScale: 1.1, alphaTest: 0.5,
+    emissive: 0xffe8c8, emissiveMap: map, emissiveIntensity: 0.05 });
+  const G = new THREE.Group();
+  G.add(new THREE.Mesh(geo, mat(front, THREE.FrontSide)), new THREE.Mesh(geo, mat(back, THREE.BackSide)));
+  return G;
+}
+let beachMapGroup = null, beachMapIconGroup = null;
+function beachMapModel() { return beachMapGroup || (beachMapGroup = mapSheetMesh(0.018, 0.010, 0.006)); }
+// the icon: folded half up, a packet, turned to the light
+function beachMapIconModel() {
+  if (beachMapIconGroup) return beachMapIconGroup;
+  const G = mapSheetMesh(0.11, 0.06, 0.012); G.rotation.set(-0.42, 0.32, -0.12);
+  beachMapIconGroup = new THREE.Group(); beachMapIconGroup.add(G);
+  return beachMapIconGroup;
+}
+// reading it: the sheet nearly open on the dark, under a warm lamp low from the upper left, rendered once
+function renderBeachMapSheet() {
+  const W = 1200, H = 1760;
+  const sc = new THREE.Scene();
+  const key = new THREE.DirectionalLight(0xffdcae, 3.4); key.position.set(-0.75, 0.8, 0.32);       // low: it grazes, so every panel and crease shows
+  const fill = new THREE.DirectionalLight(0x9fb2d0, 0.55); fill.position.set(0.7, -0.3, 0.8);
+  sc.add(key, fill, new THREE.AmbientLight(0xfff0d8, 0.32));
+  const sheet = mapSheetMesh(0.03, 0.017, 0.006); sheet.rotation.x = -0.12; sc.add(sheet);
+  const cam = new THREE.PerspectiveCamera(24, W / H, 0.05, 10);
+  cam.position.set(0, -0.03, (MAP_SH * 0.5 * 1.04) / Math.tan(THREE.MathUtils.degToRad(12))); cam.lookAt(0, 0, 0);
+  const rt = new THREE.WebGLRenderTarget(W, H, { samples: 4 }); rt.texture.colorSpace = THREE.SRGBColorSpace;
+  const prevT = renderer.getRenderTarget(), prevC = renderer.getClearColor(new THREE.Color()), prevA = renderer.getClearAlpha();
+  renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(sc, cam);
+  const buf = new Uint8Array(W * H * 4); renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+  renderer.setRenderTarget(prevT); renderer.setClearColor(prevC, prevA);
+  rt.dispose();
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'), img = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) img.data.set(buf.subarray((H - 1 - y) * W * 4, (H - y) * W * 4), y * W * 4);
+  g.putImageData(img, 0, 0);
+  return c;
 }
 // the reading of it: full-screen, the way the bottle's note opens, and a click puts it away
 let mapEl = null;
@@ -36600,7 +37210,8 @@ function openBeachMap() {
     document.body.appendChild(mapEl);
     mapEl.addEventListener('click', closeNote);
   }
-  if (!mapEl.dataset.drawn) { mapEl.dataset.drawn = '1'; drawBeachMap().toBlob((bl) => { if (bl) mapEl.querySelector('img').src = URL.createObjectURL(bl); }, 'image/png'); }
+  mapChartTextures();                  // (redraws the chart first if the rocks have come in since)
+  if (!mapEl.dataset.drawn) { mapEl.dataset.drawn = '1'; renderBeachMapSheet().toBlob((bl) => { if (bl) mapEl.querySelector('img').src = URL.createObjectURL(bl); }, 'image/png'); }
   noteOpen = true;
   mapEl.classList.add('show');
   promptEl.classList.remove('show');
@@ -36609,9 +37220,9 @@ function openBeachMap() {
   refreshUI();
 }
 beachMapItem = {
-  id: 'beachMap', name: 'Old Map of the Beach', icon: makeMapIcon(),
-  desc: "The fisherman's chart of the shore · Use to read it",
-  get inspectModel() { return beachMapModel(); }, iconRot: { x: -0.3, y: 0.2 },
+  id: 'beachMap', name: 'Old Map of the Beach',
+  desc: "The fisherman's chart of his old spot · Use to read it",
+  get inspectModel() { return beachMapModel(); }, get iconModel() { return beachMapIconModel(); }, iconRot: { rotX: 0.15, rotY: 0.1 },
   use: () => openBeachMap(),
 };
 
@@ -36655,8 +37266,12 @@ const FISHERMAN_SCRIPT = {
   rod: {
     /* And he gives something back, which is the whole of why the leg is
      * worth carrying two hundred metres up a beach. */
-    text: () => (BEACH_MAP_ON ? "Then you'll take this. She's older than you and she still catches. Mind the tip. And this — my chart of the shore. Sixty years of it. Don't stop where I've marked."
-      : "Then you'll take this. She's older than you and she still catches. Mind the tip."),
+    // (2026-10-14, the owner's lines, punctuated)
+    text: "Take these. It's my lucky fishing rod and a map of my old fishing spot. It's right under one of the only trees on the beach, so it's hard to miss. I once caught a 20-pound sea bass right there.",
+    choices: [{ label: 'Thanks', to: 'farUp' }],
+  },
+  farUp: {
+    text: "I don't go that far up the beach anymore.",
     choices: [],
   },
   key: {
@@ -40489,7 +41104,7 @@ function update(dt, rawDt = dt) {
    * of a body half inside a wall, and hand it back to you when you stand up.
    */
   if (peeking) camera.position.copy(_peekHome);
-  const canMove = (locked || fallbackLook) && !frozen() && !wellClinch.on && bootHold <= 0;   // (not under a load's black)
+  const canMove = (locked || fallbackLook) && !frozen() && !wellClinch.on && bootHold <= 0 && !deepLock;   // (the deep carries you itself)   // (not under a load's black)
   const mx = canMove ? (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0) : 0;
   const mz = canMove ? (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0) : 0;
   const move = new THREE.Vector2(mx, mz);
@@ -40569,7 +41184,7 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inDun && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
+  if (!deepLock && !inDeep && !insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inDun && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -40608,6 +41223,8 @@ function update(dt, rawDt = dt) {
   tickFort(dt);             // and the castle across the beach at the headland's foot: solid outside, walked inside
   updateC13Arch(dt); updateThrone(dt); updateDungeon(dt);   // the arched door in Castle XIII, and the throne room behind it
   updateHenryJetty(dt);     // and Henry, once he is out, at the sea end of the lighthouse's jetty
+  updateFishSpot(dt);       // the fisherman's old spot: the tree's sway and the fish out past it
+  updateFeathers(dt);       // a gull's, drifting down
   updateWhale(dt);          // and the whale's gut behind the door near the lighthouse
   updateSamurai(dt);        // and the man who wants his sword back
   updateUndercroft(dt);     // the cave's floor and the church's, off the grids the packer wrote
@@ -41039,7 +41656,7 @@ function calmChasers() {
   for (const c of crabs) if (c.st.alive && c.st.awake) { c.st.awake = false; c.st.atk = -1; c.st.cool = 0; }
 }
 function autosaveNow(spot) {
-  if (!introDone || dying || ended) return;
+  if (!introDone || dying || ended || deepLock) return;     // (nothing is saved between the bite and the sand)
   saveCheckpoint(spot);
 }
 function saveCheckpoint(spot) {
@@ -41074,6 +41691,7 @@ function saveCheckpoint(spot) {
       // the takes you have already sat through, and the last of the beach you stood on
       packDone: packPhase === 2, mutDone: mutPhase === 2,
       // everything you have killed, by name (the thing in the catacombs does not stay dead)
+      stats: { kill: [...endStats.kill], item: [...endStats.item], jars: endStats.jars },
       deadUnits: [...new Set([...deadUnitKeys, ...mutants.filter((u) => !u.st.alive && u.saveKey && !u.kind.undying).map((u) => u.saveKey)])],
       dealerWon, tavFight: tavScene.phase >= 9,
       beachZ: +(inRoom() ? lastBeachZ : camera.position.z).toFixed(2),
@@ -41127,7 +41745,7 @@ function saveCheckpoint(spot) {
        * is the beach you left.) */
       crates: crates.map((c, i) => (c.broken ? i : -1)).filter((i) => i >= 0),
       // the leg you carried back to the man it belongs to, and what he gave for it
-      pegReturned, mapGiven: beachMapGiven, pegFound: pegTaken,
+      pegReturned, mapGiven: beachMapGiven, pegFound: pegTaken, fishGift: fishGift.slice(), deepDone, needle: deepNeedle ? [+deepNeedle.position.x.toFixed(2), +deepNeedle.position.z.toFixed(2)] : null,
       /* THE SPLIFFS: how many you carry (a stack, like the fangs), how long
        * the last one has left to run, the crate on the keep's pier and the
        * one that was in it; and the orc's photograph — in his pocket, on the
@@ -41268,6 +41886,9 @@ function beginRestoreQuiet() {
   wreckSaveDone = bz <= WRECK_SAVE_Z + 1;
   fortSaveDone = bz <= FORT_Z + FORT_GATE.z + 14.5;          // the castle's gate: a save made there, or past it, is that save
   for (const k of f.deadUnits || []) deadUnitKeys.add(k);
+  if (f.stats) { for (const k of f.stats.kill || []) endStats.kill.add(k); for (const k of f.stats.item || []) endStats.item.add(k); }
+  else for (const k of f.deadUnits || []) if (k !== scp096.saveKey && !(k === babyUnit.saveKey && f.catBaby)) endStats.kill.add(k);   // a save from before the tally
+  endStats.jars = f.stats && f.stats.jars != null ? f.stats.jars : (d.took || []).filter((id) => /^Take the jar[@#]/.test(id)).length;   // (a save from before the count: what it had picked up)
   for (const u of mutants) if (u.saveKey && deadUnitKeys.has(u.saveKey)) retireUnit(u);
   if (crusaderUnit && [...deadUnitKeys].some((k) => k.startsWith('crusader@'))) retireUnit(crusaderUnit);   // his key moves with the court's dressing
   if (f.dealerWon) dealerWon = true;
@@ -41378,7 +41999,10 @@ function updateRestore(dt) {
   pegTaken = f.pegFound ?? !!f.chest;
   /* the chart came with the rod; a save from before there was a chart, with the leg already given, is owed one */
   beachMapGiven = !!f.mapGiven;
-  if (f.pegReturned && !f.mapGiven) mapGrantPending = true;
+  if (f.deepDone) { deepDone = true; if (f.needle) needlePlace(f.needle[0], f.needle[1]); else needlePlace(); }   // (and the needle is still lying where you washed up)
+  if (f.fishGift) { fishGift[0] = f.fishGift[0]; fishGift[1] = f.fishGift[1]; }
+  else if (f.pegReturned) { fishGift[0] = 2; fishGift[1] = f.mapGiven ? 2 : 1; }   // a save from before the table: the rod was handed over
+  for (let k = 0; k < 2; k++) if (fishGift[k] === 1) fishGiftLay(k, true);
   // the wheel, if it was turned: he has to fall before he can be taken
   if (f.star && helmStar && helmStar.g && !helmStar.solved) { helmStar.solved = true; dropShipHead(); }
   // the pickups, as they arrive
@@ -41675,7 +42299,7 @@ function applySavedInventoryInner(d, loud, hand) {
  * of a swell rolling every eleven seconds is a thing you hear, and the owner
  * does. Inside a room the bed is nothing; only the drain's mouth, which is
  * open to the sea, keeps a little of it near the outfall. */
-function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inWhale || inThrone || inDun; }
+function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inWhale || inThrone || inDun || inDeep; }
 function beachBedK() {
   if (indoors()) return 0;
   return (1 - 0.97 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 - 0.72 * wellAirK);   // in the well's fog the sea goes a long way off
@@ -42341,7 +42965,7 @@ function updateDojoAtmos(dt, t) {
 let blackSince = 0;
 function blackGuard() {
   const op = parseFloat(blackoutEl.style.opacity || '0');
-  const exempt = !introDone || dying || ended || roomRestore || restoreGuard || bootHold > 0 || devIsleWait || !!crabCut || document.documentElement.classList.contains('resuming');
+  const exempt = !introDone || dying || ended || roomRestore || restoreGuard || bootHold > 0 || devIsleWait || !!crabCut || deepLock || document.documentElement.classList.contains('resuming');
   if (op < 0.95 || exempt) { blackSince = 0; return; }
   const now = performance.now();
   if (!blackSince) { blackSince = now; return; }
@@ -42449,7 +43073,7 @@ function animateFrame() {
    * the rest of the frame goes on. */
   try { update(dt, rawDt); } catch (e) { bwFrameErr(e); }
   updateHatch(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -46187,22 +46811,172 @@ function makeAmmoSix() {
   }
   return g;
 }
-const ammoIconItem = { id: 'ammo6', name: '6 Rounds', inspectModel: makeAmmoSix(), iconRot: { x: 0.55, y: 0.5 }, icon: (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 256;
-  const g = c.getContext('2d');
-  const bg = g.createRadialGradient(128, 110, 10, 128, 128, 190);
-  bg.addColorStop(0, '#1c1f26'); bg.addColorStop(1, '#07080b');
-  g.fillStyle = bg; g.fillRect(0, 0, 256, 256);
-  for (let r = 0; r < 2; r++) for (let q = 0; q < 3; q++) {
-    const x = 70 + q * 58 + r * 29, y = 70 + r * 66;
-    const br = g.createLinearGradient(x - 14, 0, x + 14, 0);
-    br.addColorStop(0, '#6b4e1c'); br.addColorStop(0.45, '#e2b95a'); br.addColorStop(1, '#5a3f14');
-    g.fillStyle = br; g.fillRect(x - 13, y + 18, 26, 44);
-    g.fillStyle = '#8a8f98'; g.beginPath(); g.moveTo(x - 12, y + 18); g.quadraticCurveTo(x - 12, y - 6, x, y - 12); g.quadraticCurveTo(x + 12, y - 6, x + 12, y + 18); g.fill();
-    g.fillStyle = '#3a2c12'; g.fillRect(x - 14, y + 58, 28, 5);
+/* THE ROUNDS' OWN STUDIO. The shop's two ammo tiles were the game's night
+ * materials under the icon lights — brass that is a yellow dielectric with an
+ * emissive lift reads as plastic, and the owner put a product shot beside it:
+ * "make the bullet icons look way better". Brass and copper are METALS, and
+ * a metal is nothing but what it reflects, so these are built for the tile
+ * alone (the view model's speedloader and the spent cases keep `AMMO_MATS`,
+ * which are right at night): true metals over a studio of soft boxes — a big
+ * key high on the left, a tall strip on the right, a rim behind — so every
+ * case carries a bright streak down one side and a dark core, the look of a
+ * photographed round. Worn, not new: tarnish blotches and fine scratches along
+ * the case, and the hull's plastic is ribbed, scuffed and a little glossy. */
+let ammoStudioTex = null;
+function ammoStudio() {
+  if (ammoStudioTex) return ammoStudioTex;
+  const W = 256, H = 128, data = new Float32Array(W * H * 4), d = new THREE.Vector3();
+  const boxes = [[new THREE.Vector3(-0.55, 0.75, 0.55).normalize(), 0.42, 0.30, 7.0],   // the key: wide and soft
+                 [new THREE.Vector3(0.95, 0.15, 0.25).normalize(), 0.16, 0.62, 4.2],     // the strip down the right
+                 [new THREE.Vector3(0.15, 0.35, -1).normalize(), 0.30, 0.22, 3.0]];      // the rim
+  const up = new THREE.Vector3(0, 1, 0), u = new THREE.Vector3(), v = new THREE.Vector3();
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const phi = (y / (H - 1)) * Math.PI, th = (x / (W - 1)) * Math.PI * 2;
+    d.set(Math.sin(phi) * Math.cos(th), Math.cos(phi), Math.sin(phi) * Math.sin(th));
+    let e = 0.035 + 0.07 * Math.max(0, d.y) + (d.y < 0 ? 0.02 * (1 + d.y) : 0);
+    for (const [c, w, h, k] of boxes) {
+      if (d.dot(c) <= 0) continue;
+      u.crossVectors(up, c).normalize(); v.crossVectors(c, u);
+      const a = Math.abs(d.dot(u)) / w, b = Math.abs(d.dot(v)) / h, r = Math.max(a, b);
+      e += k * THREE.MathUtils.smoothstep(1.0, 0.7, r);
+    }
+    const i = (y * W + x) * 4;
+    data[i] = e; data[i + 1] = e * 0.98; data[i + 2] = e * 0.95; data[i + 3] = 1;
   }
-  return c.toDataURL();
-})() };
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
+  tex.mapping = THREE.EquirectangularReflectionMapping; tex.needsUpdate = true;
+  const pm = new THREE.PMREMGenerator(renderer);
+  ammoStudioTex = pm.fromEquirectangular(tex).texture;
+  pm.dispose(); tex.dispose();
+  return ammoStudioTex;
+}
+// wear on metal, in the lathe's own uv (u round the case, v along it): tarnish clouds and scratches along the length
+function ammoWearTex(seed, scuffs = 1) {
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), r = mulberry32(seed);
+  g.fillStyle = '#fff'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 26; i++) {
+    const x = r() * S, y = r() * S, rad = 10 + r() * 40, a = 0.05 + r() * 0.12;
+    const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, `rgba(70,48,20,${a})`); gr.addColorStop(1, 'rgba(70,48,20,0)');
+    g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  g.lineWidth = 1;
+  for (let i = 0; i < 70 * scuffs; i++) {
+    const x = r() * S, y = r() * S, l = 6 + r() * 40;
+    g.strokeStyle = r() < 0.5 ? `rgba(255,255,255,${0.15 + r() * 0.25})` : `rgba(60,40,20,${0.08 + r() * 0.12})`;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(x + (r() - 0.5) * 3, y + l); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+// the same blotches as roughness: tarnish is dull, the scratches bright
+function ammoRoughTex(seed) {
+  const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d'), r = mulberry32(seed);
+  g.fillStyle = 'rgb(80,80,80)'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 30; i++) {
+    const x = r() * S, y = r() * S, rad = 6 + r() * 22, k = r() < 0.6 ? 150 : 40;
+    const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, `rgba(${k},${k},${k},0.5)`); gr.addColorStop(1, `rgba(${k},${k},${k},0)`);
+    g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+let ammoIconMatsC = null;
+function ammoIconMats() {
+  if (ammoIconMatsC) return ammoIconMatsC;
+  const env = ammoStudio(), rough = ammoRoughTex(41);
+  const metal = (color, roughness, seed, scuffs) => new THREE.MeshStandardMaterial({ color, metalness: 1, roughness, envMap: env, envMapIntensity: 1.0,
+    map: ammoWearTex(seed, scuffs), roughnessMap: rough });
+  // the hull: a red plastic that has been in a pocket, ribbed (the ribs are geometry), with a little gloss on top
+  const hc = document.createElement('canvas'); hc.width = hc.height = 256;
+  { const g = hc.getContext('2d'), r = mulberry32(77); g.fillStyle = '#fff'; g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 160; i++) { const x = r() * 256, y = r() * 256; g.fillStyle = r() < 0.5 ? `rgba(255,235,230,${0.10 + r() * 0.2})` : `rgba(40,0,0,${0.06 + r() * 0.12})`; g.fillRect(x, y, 1 + r() * 2, 2 + r() * 14); } }
+  const ht = new THREE.CanvasTexture(hc); ht.colorSpace = THREE.SRGBColorSpace;
+  ammoIconMatsC = {
+    brass: metal(0xd2ad68, 0.30, 11, 1), copper: metal(0xd07a4c, 0.34, 12, 0.6), primer: metal(0xcfccc4, 0.36, 13, 0.3),
+    brassHead: metal(0xd0a963, 0.28, 14, 1.4),
+    hull: new THREE.MeshPhysicalMaterial({ color: 0x780a10, map: ht, roughness: 0.5, metalness: 0, clearcoat: 0.25, clearcoatRoughness: 0.45, envMap: env, envMapIntensity: 0.6 }),
+    crimp: new THREE.MeshPhysicalMaterial({ color: 0x640810, roughness: 0.58, metalness: 0, clearcoat: 0.15, envMap: env, envMapIntensity: 0.5 }),
+  };
+  return ammoIconMatsC;
+}
+const AV = (x, y) => new THREE.Vector2(x, y);
+// a lathe, smooth and fine: the tile is 256 px and a 22-sided case shows its facets there
+const ammoLathe = (pts, mat, seg = 72) => { const m = new THREE.Mesh(new THREE.LatheGeometry(pts, seg), mat); return m; };
+/* ONE .44 ROUND FOR THE TILE: the rimmed case with a cannelure crimped in at
+ * the mouth, a nickel primer, and a jacketed round nose — the shape a bullet
+ * is drawn as, which a semi-wadcutter is not. Metres, nose up +Y. */
+function makeIconRound() {
+  const M = ammoIconMats(), g = new THREE.Group(), L = AMMO_L;
+  const rimR = 0.0066, bodyR = 0.0058, mouthR = 0.0057;
+  g.add(ammoLathe([AV(0, 0.0003), AV(0.0024, 0.0003), AV(0.0025, 0), AV(rimR - 0.0003, 0), AV(rimR, 0.0003), AV(rimR, 0.0012), AV(rimR - 0.0004, 0.0015),
+    AV(bodyR + 0.0001, 0.0018), AV(bodyR, 0.006), AV(mouthR, L - 0.0035), AV(mouthR - 0.00035, L - 0.0028), AV(mouthR, L - 0.0021), AV(mouthR, L), AV(mouthR - 0.0004, L)], M.brass));
+  g.add(ammoLathe([AV(0, 0.00028), AV(0.0023, 0.00028), AV(0.0024, 0.0001), AV(0, 0.0001)], M.primer, 40));
+  const bR = mouthR - 0.0003, y0 = L - 0.001, pts = [AV(0, y0), AV(bR, y0), AV(bR, L + 0.0022)];
+  for (let i = 1; i <= 14; i++) {
+    const t = i / 14, ph = t * Math.PI / 2;
+    pts.push(AV(Math.max(0.0012, bR * Math.cos(ph) ** 0.85), L + 0.0022 + (AMMO_NOSE - 0.0018) * Math.sin(ph)));
+  }
+  pts.push(AV(0.0008, L + AMMO_NOSE + 0.0003), AV(0, L + AMMO_NOSE + 0.00035));
+  g.add(ammoLathe(pts, M.copper));
+  return g;
+}
+/* ONE TWELVE-BORE SHELL FOR THE TILE: a tall brass head with its rim, its
+ * primer and the step where the hull goes in, and a red hull ribbed down its
+ * length with a six-point fold crimp closing the top. 70 mm, metres, +Y up. */
+const SHELL_IC = { L: 0.070, R: 0.0103, rimR: 0.0113, head: 0.021 };
+function makeIconShell() {
+  const M = ammoIconMats(), S = SHELL_IC, g = new THREE.Group();
+  g.add(ammoLathe([AV(0, 0.0004), AV(0.0028, 0.0004), AV(0.0030, 0), AV(S.rimR - 0.0003, 0), AV(S.rimR, 0.0004), AV(S.rimR, 0.0014), AV(S.R + 0.0003, 0.0018),
+    AV(S.R + 0.0002, S.head - 0.0012), AV(S.R + 0.00045, S.head - 0.0008), AV(S.R + 0.00045, S.head), AV(S.R - 0.0002, S.head)], M.brassHead, 80));
+  g.add(ammoLathe([AV(0, 0.00035), AV(0.0027, 0.00035), AV(0.0028, 0.0001), AV(0, 0.0001)], M.primer, 40));
+  // the hull, ribbed: a lathe pushed in along twenty-eight grooves
+  const top = S.L - 0.0012, hp = [AV(S.R - 0.0002, S.head - 0.004)];
+  for (let i = 0; i <= 24; i++) hp.push(AV(S.R, S.head + (top - S.head) * i / 24));
+  hp.push(AV(S.R - 0.0004, S.L - 0.0003), AV(S.R - 0.0012, S.L));
+  const hg = new THREE.LatheGeometry(hp, 168), pa = hg.attributes.position;
+  for (let i = 0; i < pa.count; i++) {
+    const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i), r = Math.hypot(x, z); if (r < 1e-6 || y < S.head - 0.0005) continue;
+    const th = Math.atan2(z, x), groove = Math.pow(0.5 + 0.5 * Math.cos(th * 28), 6) * 0.00022 * THREE.MathUtils.smoothstep(y, S.head, S.head + 0.002);
+    const k = (r - groove) / r; pa.setX(i, x * k); pa.setZ(i, z * k);
+  }
+  hg.computeVertexNormals();
+  g.add(new THREE.Mesh(hg, M.hull));
+  // the crimp: six folds pressed down into a shallow dish
+  const cg = new THREE.CircleGeometry(S.R - 0.0011, 96, 0, Math.PI * 2), ca = cg.attributes.position;
+  for (let i = 0; i < ca.count; i++) {
+    const x = ca.getX(i), y = ca.getY(i), r = Math.min(1, Math.hypot(x, y) / (S.R - 0.0011)), th = Math.atan2(y, x);
+    ca.setZ(i, -0.0022 * Math.pow(1 - r, 0.8) + 0.0006 * Math.cos(th * 6) * r * (1 - r) * 4);
+  }
+  cg.computeVertexNormals();
+  const cm = new THREE.Mesh(cg, M.crimp); cm.rotation.x = -Math.PI / 2; cm.position.y = S.L; g.add(cm);
+  return g;
+}
+// six rounds standing in two staggered rows, the box's own way of holding them
+function makeIconRoundsSix() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 6; i++) {
+    const c = makeIconRound(), row = i > 2 ? 1 : 0;
+    c.position.set(((i % 3) - 1) * 0.0142 + row * 0.0071, 0, row ? -0.0125 : 0);
+    c.rotation.y = i * 1.7;
+    g.add(c);
+  }
+  return g;
+}
+function makeIconShellPair() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 2; i++) {
+    const s = makeIconShell();
+    s.rotation.set(0, i * 2.2, 0);
+    s.position.set((i - 0.5) * 0.0215, i ? 0.006 : 0, i ? -0.012 : 0);
+    g.add(s);
+  }
+  return g;
+}
+const ammoIconItem = { id: 'ammo6', name: '6 Rounds', inspectModel: makeIconRoundsSix(), iconRot: { rotX: 0.52, rotY: 0.62 } };
 // one shell off the sawn-off scan, real-sized (filled when it lands; the built shell until then)
 const sgShellSrc = new THREE.Group();  // one shell off the scan, real-sized
 const sgShellFill = [];
@@ -46210,24 +46984,7 @@ function sgShellClone(spent = false) {
   if (!sgShellSrc.children.length) return makeShell(spent);
   return sgShellSrc.children[0].clone();
 }
-/* TWELVE-BORE SHELLS LYING TOGETHER, off the scan: the shell in the sawn-off's
- * own chambers (`sgShellClone`), laid side by side. The scan lands after this
- * is built, so the group fills when it does (`sgShellFill`); the icon waits
- * for a mesh (`iconDrawable`) and renders from the real thing. */
-function makeShellSix(n = 6) {
-  const g = new THREE.Group();
-  const fill = () => {
-    for (let i = 0; i < n; i++) {
-      const s = sgShellClone(false);
-      s.rotation.set((i % 2 ? 0.06 : -0.05), Math.PI / 2 + (i - (n - 1) / 2) * 0.09, 0);
-      s.position.set((i - (n - 1) / 2) * 0.024, (i % 2 ? 0.002 : -0.002), (i % 2 ? 0.006 : -0.006));
-      g.add(s);
-    }
-  };
-  if (sgShellSrc.children.length) fill(); else sgShellFill.push(fill);
-  return g;
-}
-const shells2IconItem = { id: 'shells2', name: '2 Shells', inspectModel: makeShellSix(2), iconRot: { rotX: -0.55, rotY: 0.35 } };   // rendered from the scan's shell, never drawn
+const shells2IconItem = { id: 'shells2', name: '2 Shells', inspectModel: makeIconShellPair(), iconRot: { rotX: 0.3, rotY: 0.4 } };   // the tile's own shells (`makeIconShell`), studio-lit
 const ringSlotIconItem = { name: 'Extra Ring Slot', icon: drawUpgradeIcon('ring') };
 const UPGRADE_ROWS = [
   { key: 'packSpace', item: () => packSpaceIconItem, name: 'Bigger Pack', sum: '+4 inventory slots (10 → 14)',
@@ -47265,6 +48022,7 @@ function magTrace(dir) {
     const h = u.kind.h || 1.8;
     magBody(u, h * 0.12, h * 0.94, Math.max(0.42, (u.kind.hitR || 0.85) * 0.72), h * 0.74);
   }
+  if (inDeep) { const ph = plioRayHit(_mgO, _mgD, MAG_RANGE, 0.1); if (ph && (!magBest || ph.t < magBest.t)) magBest = { t: ph.t, kind: 'plio', point: ph.p }; }
   // and what is behind them: the same ray the solids and the sand are asked with
   digRay.set(_mgO, _mgD); digRay.far = MAG_RANGE;
   const solid = nearestSolidHit();
@@ -47374,6 +48132,7 @@ function magFire() {
 
   const h = magTrace(_mgSp);
   if (!h) return;
+  if (h.kind === 'plio') { plioHurt(MAG_DMG * PLIO_GUN_K, 0.5, h.point); hitstop = Math.max(hitstop, 0.07); return; }
   if (h.kind === 'foe') {
     /* AND A ROUND THROUGH THE HEAD IS NOT A BLOW YOU SHRUG OFF. Everything
      * else in this game goes through `hurtMutant`, which is right — it is
@@ -47490,20 +48249,11 @@ function updateBrass(dt) {
 }
 // the ejector rod slapped home and six cases coming out and tinking off each other and the floor
 function sfxMagEject() {
+  gfPlay('magEject');
+  // and on the floor, a beat later, as many as were fired: rung out on stone and boards, a whisper in sand
   const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime, out = sfxOut();
-  const n = noiseBurst(0.04, (x) => Math.pow(1 - x, 3));
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 2;
-  const g = ctx.createGain(); g.gain.value = 0.5;
-  n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.05);
-  for (let i = 0; i < 9; i++) {
-    const at = t + 0.03 + i * 0.045 + Math.random() * 0.06, f = 3800 + Math.random() * 2600;
-    for (const [mul, gg, d] of [[1, 0.05, 0.10], [2.71, 0.025, 0.06]]) {
-      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * mul;
-      const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, at); og.gain.exponentialRampToValueAtTime(gg * (i < 6 ? 1 : 0.6), at + 0.002); og.gain.exponentialRampToValueAtTime(0.0001, at + d);
-      o.connect(og).connect(out); o.start(at); o.stop(at + d + 0.01);
-    }
-  }
+  const n = Math.max(1, Math.min(MAG_CAP, MAG_CAP - magAmmo)), hard = gfHardFloor();
+  for (let i = 0; i < n; i++) gfPlay(hard ? 'brassHard' : 'brassSand', ctx.currentTime + 0.40 + i * 0.045 + Math.random() * 0.06, 0.8 + Math.random() * 0.4);
 }
 function magReload() {
   if (equipped && equipped.shotgun) return sgReload();
@@ -47512,6 +48262,148 @@ function magReload() {
   magRel = 0; magRelFed = false; magRelShut = false; magRelOut = false; magRelEject = false;
 }
 
+/* ---- GUN FOLEY, MODELLED. The reloads were square and triangle waves swept
+ * down in pitch, and the owner heard what they were: "they sound fake and AI
+ * generated". A swept oscillator is a laser, not a part. What a struck piece
+ * of steel actually is: a handful of INHARMONIC partials, each ringing and
+ * dying at its own rate, started by a strike that is a millisecond of
+ * broadband noise; a heavy part has a low body thump under that; and two parts
+ * dragged over each other are a stick-slip of tiny catches heard through the
+ * band they ring in. So every sound here is a short score of those (`GF`),
+ * rendered once into buffers — four takes, each partial a few per cent off in
+ * pitch and decay, every phase and every grain of noise new, the way two real
+ * takes differ — played one at random with a hair of rate. And it is heard
+ * somewhere: a gun is a foot from your ear, so two very early reflections (your
+ * hands and chest, then the ground) go under it, and a room adds its walls. */
+const gfCLICK = (t, g = 1, f = 1) => ({ t, g, click: [0.35, 9500, 0.7], m: [[4300 * f, 0.5, 0.010], [6150 * f, 0.36, 0.007], [7950 * f, 0.24, 0.005], [2870 * f, 0.22, 0.013]] });
+const gfCLACK = (t, g = 1, f = 1, body = 1) => ({ t, g, click: [0.6, 7000, 0.9], body: [190 * Math.sqrt(f), 0.026, 0.65 * body],
+  m: [[1150 * f, 0.5, 0.032], [1870 * f, 0.45, 0.027], [2640 * f, 0.4, 0.021], [3710 * f, 0.3, 0.015], [5230 * f, 0.2, 0.010], [760 * f, 0.3, 0.042]] });
+const gfBRASS = (t, g = 1, tj = 0.004) => ({ t, g, tj, fj: 0.14, click: [0.25, 9000, 0.4], m: [[3800, 0.4, 0.013], [5900, 0.3, 0.009], [2500, 0.25, 0.011]] });
+const gfTINK = (t, g = 1, tj = 0.004) => ({ t, g, tj, fj: 0.12, click: [0.2, 12000, 0.3], m: [[5200, 0.5, 0.11], [8350, 0.3, 0.075], [3400, 0.18, 0.06], [11400, 0.14, 0.04]] });
+const gfHULL = (t, g = 1, tj = 0.003) => ({ t, g, tj, click: [0.8, 4200, 0.5], body: [260, 0.012, 0.4], m: [[980, 0.5, 0.018], [1650, 0.35, 0.014], [2700, 0.2, 0.010]] });
+const gfRUB = (t, len, fc, q, a, rate, att = 0.3, g = 1) => ({ t, g, rub: [len, fc, q, a, rate, att], len });
+const gfTHUD = (t, g = 1, lp = 1000) => ({ t, g, click: [2.5, lp, 0.7], body: [150, 0.02, 0.55] });
+const GF = {
+  // .44: the thumb on the latch, the crane swinging out on its pin, and the hard stop when it is open
+  magOpen: { gain: 0.26, s: [gfCLICK(0, 0.8), gfRUB(0.012, 0.05, 3200, 2.5, 0.9, 900, 0.2), gfCLACK(0.068, 1, 1.25, 0.7), { t: 0.07, m: [[6800, 0.12, 0.05], [9100, 0.07, 0.035]] }] },
+  // the palm on the ejector rod, the star kicking the cases, and the six of them knocking each other on the way out
+  magEject: { gain: 0.30, s: [gfTHUD(0, 0.9, 1100), gfCLACK(0.004, 0.55, 1.7, 0.4), gfRUB(0.006, 0.035, 4500, 3, 0.7, 1500, 0.15),
+    ...[0, 1, 2, 3, 4].map((i) => ({ ...gfTINK(0.022 + i * 0.012, 0.35 - i * 0.04, 0.008), m: [[5200, 0.5, 0.03], [8350, 0.3, 0.02], [3400, 0.18, 0.02]] }))] },
+  // the speedloader: the noses into the chambers, six cases going home at once, the knob turned and the loader drawn off
+  magFeed: { gain: 0.24, s: [gfRUB(0, 0.035, 3600, 2, 0.9, 1200, 0.5), ...[0, 1, 2, 3, 4, 5].map((i) => gfBRASS(0.03 + i * 0.006, 0.8 - i * 0.06, 0.004)),
+    { t: 0.05, click: [1.2, 2500, 0.45], body: [220, 0.012, 0.3] }, gfCLICK(0.16, 0.6, 0.92), gfRUB(0.17, 0.06, 2400, 1.5, 0.4, 600, 0.2)] },
+  // the cylinder flicked home: the crane in, the frame taking it, the latch snapping and the pawl settling it a notch
+  magShut: { gain: 0.34, s: [gfRUB(0, 0.03, 2600, 2, 0.5, 800, 0.6), gfCLACK(0.03, 1, 1.0, 1.25), gfCLICK(0.036, 0.85), { ...gfCLICK(0.09, 0.3, 1.2), click: [0.3, 9000, 0.25] }, { ...gfCLICK(0.135, 0.18, 1.2), click: [0.3, 9000, 0.2] }] },
+  // a hammer falling on nothing: the sear, then the hammer
+  magDry: { gain: 0.24, s: [gfCLICK(0, 0.45, 0.8), gfCLACK(0.012, 0.8, 1.6, 0.5)] },
+  // one spent case landing: on stone or boards it rings and bounces, on sand it is barely there
+  brassHard: { gain: 0.13, s: [gfTINK(0, 1, 0.002), gfTINK(0.085, 0.45, 0.02), gfTINK(0.14, 0.2, 0.02), gfRUB(0.16, 0.18, 4800, 3, 0.12, 300, 0.1)] },
+  brassSand: { gain: 0.07, s: [{ t: 0, click: [1.6, 1400, 0.6], body: [320, 0.008, 0.2] }, { t: 0.004, m: [[5200, 0.08, 0.02]] }] },
+  // the double: the thumb on the top lever, its spring, and the lever's travel ending
+  sgLever: { gain: 0.24, s: [gfCLICK(0, 0.9, 0.78), gfRUB(0.005, 0.04, 2200, 2, 0.6, 700, 0.3), gfCLACK(0.035, 0.35, 1.9, 0.3)] },
+  // the barrels let go and drop open on the hinge pin: a heavy chunk and the tubes ringing after it
+  sgBreak: { gain: 0.40, s: [gfRUB(0, 0.07, 1600, 1.6, 0.8, 600, 0.5), gfCLACK(0.06, 1, 0.72, 1.6), { t: 0.065, m: [[420, 0.35, 0.09], [1330, 0.15, 0.07]] }] },
+  // the extractor's spring and a hull going: hollow plastic on a brass head
+  sgEject: { gain: 0.26, s: [gfCLACK(0, 0.45, 2.0, 0.3), gfRUB(0.004, 0.025, 2000, 2, 0.6, 900, 0.2), gfHULL(0.026, 0.7)] },
+  // a hull on the floor: a hollow knock, the brass base, two bounces and a roll
+  hullHard: { gain: 0.15, s: [gfHULL(0, 1), { t: 0.002, m: [[3600, 0.2, 0.04], [5900, 0.12, 0.03]] }, gfHULL(0.11, 0.5, 0.015), gfHULL(0.18, 0.25, 0.015), gfRUB(0.2, 0.22, 1200, 1.5, 0.3, 300, 0.1)] },
+  hullSand: { gain: 0.09, s: [gfTHUD(0, 0.8, 700), { t: 0.002, m: [[980, 0.15, 0.012]] }, gfTHUD(0.09, 0.25, 600)] },
+  // a shell pushed down the bore: plastic dragged along steel, rising as it goes
+  sgSlide: { gain: 0.16, s: [gfRUB(0, 0.11, 1500, 1.3, 1.0, 500, 0.65), gfRUB(0, 0.11, 3800, 2.5, 0.35, 1200, 0.65)] },
+  // and home: the rim on the breech face, the thumb behind it
+  sgSeat: { gain: 0.24, s: [gfHULL(0, 0.7), { t: 0.001, click: [0.4, 7000, 0.4], m: [[2900, 0.3, 0.02], [4600, 0.2, 0.012]] }, gfTHUD(0.004, 0.5, 800)] },
+  // slammed shut: the barrels into the action, the bolts going home, the top lever snapping back to centre
+  sgShut: { gain: 0.48, s: [gfRUB(0, 0.03, 1800, 1.5, 0.5, 700, 0.7), gfCLACK(0.025, 1, 0.68, 1.8), gfCLACK(0.031, 0.55, 1.1, 0.4), gfCLICK(0.05, 0.9, 0.85),
+    { t: 0.052, m: [[2100, 0.22, 0.07], [3150, 0.16, 0.055]] }] },
+  sgDry: { gain: 0.24, s: [gfCLICK(0, 0.5, 0.8), gfCLACK(0.01, 0.8, 1.5, 0.6)] },
+  // the rod's reel: one tooth of the anti-reverse ratchet going past the dog, and the float knocking home on the tip ring
+  reelTick: { gain: 0.07, s: [{ t: 0, click: [0.25, 9000, 0.5], m: [[3300, 0.4, 0.006], [5100, 0.3, 0.004], [7300, 0.15, 0.003]] }] },
+  reelStop: { gain: 0.16, s: [gfCLICK(0, 0.7, 1.1), gfTHUD(0.012, 0.4, 1400)] },
+  /* A BLADE ON THE WORLD, by what it met (2026-10-14, "take realistic sound effects we have now for each material hit"):
+   * timber is a dead knock with a hollow body under it, stone a hard bright crack that dies at once over a low thud,
+   * iron a clang that rings. Under the recorded hit for the tool (`playSample`) where there is one. */
+  hitWood: { gain: 0.42, s: [{ t: 0, click: [1.2, 3800, 0.8], body: [140, 0.05, 1.0], m: [[310, 0.5, 0.05], [520, 0.4, 0.035], [890, 0.3, 0.025], [1460, 0.18, 0.015]] }, gfRUB(0.004, 0.05, 1800, 1.2, 0.25, 500, 0.1)] },
+  hitStone: { gain: 0.42, s: [{ t: 0, click: [0.5, 9000, 1.0], body: [95, 0.04, 0.8], m: [[1250, 0.4, 0.012], [2130, 0.35, 0.009], [3420, 0.3, 0.007], [5100, 0.2, 0.005]] }, gfRUB(0.006, 0.12, 2600, 0.9, 0.35, 900, 0.05)] },
+  hitMetal: { gain: 0.38, s: [{ t: 0, click: [0.4, 9000, 0.8], body: [120, 0.03, 0.5], m: [[640, 0.4, 0.35], [1530, 0.35, 0.28], [2410, 0.3, 0.2], [3770, 0.25, 0.15], [5260, 0.15, 0.1]] }] },
+};
+// a constant-peak band-pass, run in place: the friction's grains heard through the band the parts ring in
+function gfBand(x, fc, q, sr) {
+  const w0 = 2 * Math.PI * fc / sr, al = Math.sin(w0) / (2 * q), a0 = 1 + al;
+  const b0 = al / a0, b2 = -al / a0, a1 = -2 * Math.cos(w0) / a0, a2 = (1 - al) / a0;
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) { const y = b0 * x[i] + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x[i]; y2 = y1; y1 = y; x[i] = y; }
+}
+function gfRender(score, seed) {
+  const ctx = audioCtx, sr = ctx.sampleRate, r = mulberry32(seed);
+  let dur = 0; for (const L of score) dur = Math.max(dur, L.t + (L.len || 0) + 0.3);
+  const n = Math.ceil(sr * dur), d = new Float32Array(n);
+  for (const L of score) {
+    const i0 = Math.max(0, Math.floor((L.t + (r() - 0.5) * (L.tj ?? 0.003)) * sr)), g = L.g ?? 1, fj = 1 + (r() - 0.5) * (L.fj || 0);
+    if (L.m) for (const [f0, a, tau] of L.m) {
+      const w = 2 * Math.PI * f0 * fj * (1 + (r() - 0.5) * 0.06) / sr, ph = r() * 6.2832, k = Math.exp(-1 / (tau * (0.85 + r() * 0.3) * sr));
+      let e = a * g * (0.8 + r() * 0.4);
+      for (let i = i0, j = 0; i < n && e > 1e-5; i++, j++) { d[i] += e * Math.sin(ph + w * j) * Math.min(1, j / (sr * 0.00025)); e *= k; }
+    }
+    if (L.body) {
+      const [f0, tau, a] = L.body, k = Math.exp(-1 / (tau * sr)); let e = a * g, ph = 0;
+      for (let i = i0, j = 0; i < n && e > 1e-5; i++, j++) { ph += 2 * Math.PI * f0 * (0.65 + 0.35 * Math.exp(-j / (sr * tau * 0.5))) / sr; d[i] += e * Math.sin(ph) * Math.min(1, j / (sr * 0.0008)); e *= k; }
+    }
+    if (L.click) {
+      const [ms, lp, a] = L.click, m = sr * ms / 1000, al = 1 - Math.exp(-2 * Math.PI * lp / sr); let y = 0;
+      for (let i = i0, j = 0; i < n && j < m * 7; i++, j++) { y += ((r() * 2 - 1) - y) * al; d[i] += y * a * g * Math.exp(-j / m); }
+    }
+    if (L.rub) {
+      const [len, fc, q, a, rate, att] = L.rub, m = Math.floor(len * sr), x = new Float32Array(m), kc = Math.exp(-1 / (0.0015 * sr));
+      let c = 0;
+      for (let j = 0; j < m; j++) {
+        const u = j / m, env = u < att ? u / att : Math.pow((1 - u) / (1 - att), 1.4);
+        if (r() < rate / sr) c = 0.5 + r() * 0.8;         // a catch: the stick before the slip
+        c *= kc;
+        x[j] = (r() * 2 - 1) * (0.2 + c) * env;
+      }
+      gfBand(x, fc, q, sr);
+      for (let j = 0; j < m && i0 + j < n; j++) d[i0 + j] += x[j] * a * g * Math.sqrt(q) * 1.6;
+    }
+  }
+  let pk = 0; for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(d[i]));
+  if (pk > 0) for (let i = 0; i < n; i++) d[i] *= 0.9 / pk;
+  const b = ctx.createBuffer(1, n, sr); b.copyToChannel(d, 0);
+  return b;
+}
+const gfBufs = {};
+function gfTakes(name) {
+  if (gfBufs[name] && gfBufs[name].ctx === audioCtx) return gfBufs[name].b;
+  const S = GF[name], b = [];
+  let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  for (let k = 0; k < 4; k++) b.push(gfRender(S.s, h + k * 7919));
+  gfBufs[name] = { ctx: audioCtx, b };
+  return b;
+}
+// all of them rendered behind a draw, a few a frame, so the first reload in a fight costs nothing
+function gfWarm() {
+  if (!audioCtx || gfWarm.done) return; gfWarm.done = true;
+  const names = Object.keys(GF);
+  const next = () => { const k = names.shift(); if (!k) return; try { gfTakes(k); } catch (e) {} setTimeout(next, 20); };
+  setTimeout(next, 60);
+}
+function gfPlay(name, at = 0, gain = 1) {
+  const ctx = audioCtx; if (!ctx || !GF[name]) return;
+  const takes = gfTakes(name), t = Math.max(ctx.currentTime, at || 0);
+  const src = ctx.createBufferSource(); src.buffer = takes[Math.floor(Math.random() * takes.length)];
+  src.playbackRate.value = 1 + (Math.random() - 0.5) * 0.05;
+  const g = ctx.createGain(); g.gain.value = GF[name].gain * gain / 0.9;
+  const out = sfxOut();
+  src.connect(g).connect(out);
+  const refl = indoors() && !inWhale ? [[0.0045, 0.26, 5200], [0.011, 0.15, 2600], [0.023, 0.13, 3000], [0.041, 0.08, 1900]] : [[0.0045, 0.26, 5200], [0.011, 0.13, 2400]];
+  for (const [dl, k, lp] of refl) {
+    const dn = ctx.createDelay(0.06); dn.delayTime.value = dl * (0.9 + Math.random() * 0.2);
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp;
+    const kg = ctx.createGain(); kg.gain.value = k;
+    g.connect(dn).connect(f).connect(kg).connect(out);
+  }
+  src.start(t);
+}
+const gfHardFloor = () => indoors() && !inWhale;
 /* THE CYLINDER, THE BRASS AND THE SNAP. No recording was supplied for any of
  * these — the owner's file is the SHOT — so they are synthesised, and what
  * they have to be is small and dry: a latch, a crane swinging out, six
@@ -47637,54 +48529,10 @@ function sfxMagBlast() {
   const rg = ctx.createGain(); rg.gain.value = room ? 0.36 : 0.29;
   rs.connect(rlp).connect(rg).connect(out); rs.start(t + 0.05); rs.stop(t + 0.05 + rl / ctx.sampleRate);
 }
-function sfxMagOpen() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime;
-  const o = ctx.createOscillator(); o.type = 'square';
-  o.frequency.setValueAtTime(1500, t); o.frequency.exponentialRampToValueAtTime(420, t + 0.045);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.10, t); g.gain.exponentialRampToValueAtTime(0.0002, t + 0.06);
-  o.connect(g).connect(sfxOut()); o.start(t); o.stop(t + 0.07);
-  const len = Math.floor(ctx.sampleRate * 0.16), b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.4) * (Math.random() < 0.18 ? 1 : 0.16);
-  const s = ctx.createBufferSource(); s.buffer = b;
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 1.4;
-  const g2 = ctx.createGain(); g2.gain.value = 0.16;
-  s.connect(bp).connect(g2).connect(sfxOut()); s.start(t + 0.05); s.stop(t + 0.22);
-}
-function sfxMagFeed() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime;
-  for (let i = 0; i < 6; i++) {           // six rounds seating, close together and not quite even
-    const at = t + i * 0.028 + Math.random() * 0.012;
-    const o = ctx.createOscillator(); o.type = 'triangle';
-    o.frequency.setValueAtTime(760 + Math.random() * 380, at);
-    o.frequency.exponentialRampToValueAtTime(250, at + 0.035);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.055, at); g.gain.exponentialRampToValueAtTime(0.0002, at + 0.05);
-    o.connect(g).connect(sfxOut()); o.start(at); o.stop(at + 0.06);
-  }
-}
-function sfxMagShut() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime;
-  const o = ctx.createOscillator(); o.type = 'square';
-  o.frequency.setValueAtTime(300, t); o.frequency.exponentialRampToValueAtTime(96, t + 0.075);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.16, t); g.gain.exponentialRampToValueAtTime(0.0002, t + 0.11);
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
-  o.connect(lp).connect(g).connect(sfxOut()); o.start(t); o.stop(t + 0.12);
-}
-function sfxMagDry() {
-  const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime;
-  const o = ctx.createOscillator(); o.type = 'square';
-  o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(240, t + 0.03);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.09, t); g.gain.exponentialRampToValueAtTime(0.0002, t + 0.05);
-  o.connect(g).connect(sfxOut()); o.start(t); o.stop(t + 0.06);
-}
-
+function sfxMagOpen() { gfPlay('magOpen'); }
+function sfxMagFeed() { gfPlay('magFeed'); }
+function sfxMagShut() { gfPlay('magShut'); }
+function sfxMagDry() { gfPlay('magDry'); }
 /* HOW MANY ARE LEFT, IN THE HUD'S OWN HAND. It is positioned ABSOLUTELY off
  * the strip rather than given a place in it: `#hud` is a flex row centred as
  * a whole, so anything added to it re-centres the stamina bar — the one
@@ -47695,6 +48543,7 @@ let ammoShown = '', ammoOn = false;
 function updateAmmoReadout() {
   if (!ammoEl) return;
   const on = magHeld() && !held && !inspecting;
+  if (on) gfWarm();                  // a gun in the hand: its foley is rendered now, not on the first reload
   const sg = on && equipped.shotgun;
   const s = !on ? '' : sg ? `${sgLoaded()}<i>/${sgSpare}</i>` : `${magAmmo}<i>/${magSpare}</i>`;
   if (s !== ammoShown) { ammoShown = s; ammoEl.innerHTML = s; }
@@ -48208,6 +49057,7 @@ function sgFire() {
   _sgRt.crossVectors(fwd, camera.up).normalize();
   _sgUp.crossVectors(_sgRt, fwd).normalize();
   const foes = new Map(), bodies = new Map(), props = new Set(), boxes = new Set();
+  let plioSg = 0, plioPt = null;
   let scars = 0, solid = null, solidT = Infinity;
   for (let k = 0; k < SG_PELLETS; k++) {
     const a = Math.random() * Math.PI * 2, r = k === 0 ? 0 : spread * Math.sqrt(0.15 + Math.random() * 0.85);
@@ -48251,8 +49101,9 @@ function sgFire() {
       if (H.t < solidT) { solidT = H.t; solid = H; }
     } else if (H.kind === 'sand') {
       spawnPuffs(H.point.x, H.point.z, 2, -_sgP.x, -_sgP.z, Math.max(0.05, H.point.y), null);
-    }
+    } else if (H.kind === 'plio') { plioSg += SG_PELLET_DMG * sgFall(H.t); plioPt = H.point; }
   }
+  if (plioSg > 0) plioHurt(plioSg * PLIO_GUN_K, 0.6, plioPt);
   sgWave(fwd, foes);
   for (const [u, A] of foes) sgHitFoe(u, A, fwd);
   for (const B of bodies.values()) sgBlastCorpse(B.u, B.q, B.n, fwd);
@@ -48411,15 +49262,7 @@ function sfxSgBlast() {
   const rg = ctx.createGain(); rg.gain.value = room ? 0.44 : 0.36;
   rs.connect(rlp).connect(rg).connect(out); rs.start(t + 0.04); rs.stop(t + 0.04 + rLen);
 }
-// a short metallic tick: the building block of every click and clack below
-function sgTick(at, f0, f1, len, gain, type = 'square', lpF = 3000) {
-  const ctx = audioCtx; if (!ctx) return;
-  const o = ctx.createOscillator(); o.type = type;
-  o.frequency.setValueAtTime(f0, at); o.frequency.exponentialRampToValueAtTime(f1, at + len * 0.8);
-  const g = ctx.createGain(); g.gain.setValueAtTime(gain, at); g.gain.exponentialRampToValueAtTime(0.0002, at + len);
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpF;
-  o.connect(lp).connect(g).connect(sfxOut()); o.start(at); o.stop(at + len + 0.01);
-}
+// a dull knock off the cached thump noise (the draw and the gore still use it)
 function sgThump(at, f, len, gain) {
   const ctx = audioCtx; if (!ctx) return;
   const s = thumpNoise(len);
@@ -48427,33 +49270,16 @@ function sgThump(at, f, len, gain) {
   const g = ctx.createGain(); g.gain.value = gain;
   s.connect(lp).connect(g).connect(sfxOut()); s.start(at); s.stop(at + len + 0.01);
 }
-function sfxSgLever() { const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime; sgTick(t, 2400, 900, 0.04, 0.07); sgTick(t + 0.02, 1500, 600, 0.05, 0.05); }
-function sfxSgBreak() {
-  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime;
-  sgTick(t, 900, 260, 0.09, 0.14);                       // the bolts letting go
-  sgThump(t + 0.01, 900, 0.10, 0.30);                    // the barrels dropping on the hinge
-  sgTick(t + 0.06, 420, 160, 0.12, 0.10, 'triangle', 1400);
-}
+function sfxSgLever() { gfPlay('sgLever'); }
+function sfxSgBreak() { gfPlay('sgBreak'); }
 function sfxSgEject(n) {
-  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime;
-  for (let i = 0; i < n; i++) {
-    const at = t + i * 0.035;
-    sgThump(at, 2200, 0.05, 0.22);                       // the ejector's spring
-    sgTick(at + 0.005, 1900, 700, 0.06, 0.06, 'triangle', 2600);   // and the hull leaving: hollow plastic
-  }
+  const ctx = audioCtx; if (!ctx) return;
+  for (let i = 0; i < n; i++) gfPlay('sgEject', ctx.currentTime + i * 0.035);
 }
-function sfxSgShellLand(at) {
-  // a plastic hull on the floor: two hollow knocks and a little roll
-  for (const [d, f, g] of [[0, 820, 0.07], [0.09, 660, 0.04], [0.16, 560, 0.025]]) { sgTick(at + d, f, f * 0.55, 0.05, g, 'triangle', 1800); sgThump(at + d, 1600, 0.03, 0.08); }
-}
-function sfxSgSlide() { const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime; sgThump(t, 2600, 0.09, 0.10); sgTick(t + 0.04, 700, 420, 0.06, 0.05, 'triangle', 1600); }
-function sfxSgSeat() { const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime; sgThump(t, 700, 0.07, 0.28); sgTick(t, 520, 180, 0.07, 0.08, 'triangle', 1200); }
-function sfxSgShut() {
-  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime;
-  sgThump(t, 1200, 0.12, 0.55);                          // the barrels slammed up into the action
-  sgTick(t, 640, 150, 0.14, 0.22, 'square', 2200);       // the bolts going home
-  sgTick(t + 0.018, 2600, 1100, 0.05, 0.08);             // and the lever snapping back to centre
-}
+function sfxSgShellLand(at) { gfPlay(gfHardFloor() ? 'hullHard' : 'hullSand', at); }
+function sfxSgSlide() { gfPlay('sgSlide'); }
+function sfxSgSeat() { gfPlay('sgSeat'); }
+function sfxSgShut() { gfPlay('sgShut'); }
 // the draw: the hands and the sling on the walnut, and the weight of it arriving in the shoulder
 function sfxSgDraw() {
   const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime;
@@ -48462,9 +49288,9 @@ function sfxSgDraw() {
   const g = ctx.createGain(); g.gain.value = 0.10;
   n.connect(bp).connect(g).connect(sfxOut()); n.start(t); n.stop(t + 0.23);
   sgThump(t + 0.30, 500, 0.08, 0.20);
-  sgTick(t + 0.31, 2400, 1700, 0.014, 0.035, 'square', 3500);   // the lever's small rattle
+  gfPlay('sgLever', t + 0.31, 0.3);                               // the lever's small rattle
 }
-function sfxSgDry() { const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime; sgTick(t, 1100, 300, 0.04, 0.10); sgTick(t + 0.05, 900, 260, 0.04, 0.06); }
+function sfxSgDry() { gfPlay('sgDry'); }
 // what a charge does to a body at the range it was made for: wet, heavy, and more than one of it
 let _sgGoreT = -1;
 function sfxSgGore(k) {
@@ -54573,17 +55399,17 @@ function loadCatacombs() {
      * every key in this game. Locked, the door says so and carries no verb
      * at all (`bare`), so the prompt is the thing that sends you back down
      * for it; with the key in the pack it turns, once, and stays open. */
-    const catKeyIn = () => catDoorOpen || inventory.includes(skullKeyItem);
+    const catKeyIn = () => catDoorOpen || inventory.includes(skullKeyItem) || devKeys();
     addInteractable(proxy, 'The door is locked.', 'default', {
       far: 4.6, mid: true,
-      label: () => (catDoorOpen ? 'Open the door' : inventory.includes(skullKeyItem) ? 'Unlock the door' : 'The door is locked.'),
+      label: () => (catDoorOpen ? 'Open the door' : inventory.includes(skullKeyItem) || devKeys() ? 'Unlock the door' : 'The door is locked.'),
       bare: () => !catKeyIn(),
       when: () => inCat && !catBusy && !caveBusy,
       onActivate: () => {
         if (!catKeyIn()) { sfxThud(0.02); return; }
         if (catDoorTurning) return;
         if (!catDoorOpen) {                        // the key stays in the lock
-          catDoorOpen = true; keyUsed(skullKeyItem);
+          catDoorOpen = true; if (inventory.includes(skullKeyItem)) keyUsed(skullKeyItem); else sfxLockOpen();
           if (equipped === skullKeyItem) toggleEquip(skullKeyItem);
           removeFromInventory(skullKeyItem);
           // the bolt goes back before the door does: you hear it, then go through
@@ -56110,10 +56936,10 @@ function buildCatSandDoor() {
   catWallDoor.add(proxy);
   addInteractable(proxy, 'Enter the catacombs', 'default', {
     far: 4.4, mid: true,
-    label: () => (catDoorOpen ? 'Enter the catacombs' : 'The door is locked.'),
-    bare: () => !catDoorOpen,
+    label: () => (catDoorOpen || devKeys() ? 'Enter the catacombs' : 'The door is locked.'),
+    bare: () => !catDoorOpen && !devKeys(),
     when: () => !inCat && !catBusy && !caveBusy && catSandDoorFitted,
-    onActivate: () => { if (catDoorOpen) startCatReturn(); else sfxThud(0.02); },
+    onActivate: () => { if (catDoorOpen || devKeys()) startCatReturn(); else sfxThud(0.02); },
   });
   fitCatSandDoor();
 }
@@ -57465,7 +58291,7 @@ bunkerFloorAt = (x, z, y) => {
  * upper gum, a tongue on the floor of the jaw, the cheeks stretched between
  * the lips and a throat going to black — all riding the same deformation.
  * --------------------------------------------------------------------- */
-const WB_Z = CAT_OUT_Z - 175, WB_SNOUT_X = 10.2, WB_LEN = 32;
+const WB_Z = CAT_OUT_Z - 195, WB_SNOUT_X = 10.2, WB_LEN = 32;   // (−975 until 2026-10-15, the owner: "push the hurt whale intro scene a little closer towards the castle": its far side is 37 m short of the castle's gate)
 const WB_DIR = new THREE.Vector3(1, 0, 0.12).normalize();          // tail to head: straight up the beach out of the sea, so you walk up on its whole flank
 const WB_YAW = Math.atan2(WB_DIR.x, WB_DIR.z), WB_PITCH = 0.055;    // and the head is up the slope, the tail down in the sea
 const WB_S = WB_LEN / 1439, WB_Z0 = 643;                           // the model's units to metres, and where its snout is
@@ -57481,7 +58307,8 @@ const WB_OPEN_UP = 0.33, WB_OPEN_DN = 0.035;                       // how far th
 const WB_BERM_LIFT = 6.0;                    // metres up the beach per metre of berm over the water, for the swash
 const WB_BERM_WL = -0.28;                    // the water's level against the berm: the sea plane is -0.34
 const WB_BERM_SHEET = 0.14;                  // the bottom of the heap over the water wears the sea's thin sheet, so its edge meets the water with no shelf
-const WB_SONG_FAR = 180, WB_SONG_NEAR = 16, WB_SONG_LEVEL = 1.7;
+const WB_SONG_FAR = 180,   // (150 for a day, 2026-10-15: the sighting track's start is read off this range, and the fog's clearing came loose from the music's swell — the owner: "keep that the same as it was")
+      WB_SONG_NEAR = 16, WB_SONG_LEVEL = 1.7;
 const wbU = {
   uJaw: { value: 0 }, uBreath: { value: 0 }, uTail: { value: 0 }, uBlink: { value: 0 }, uT: { value: 0 },
   uEyeR: { value: new THREE.Vector3() }, uEyeL: { value: new THREE.Vector3() }, uEyeRad: { value: 0.3 },
@@ -57492,6 +58319,7 @@ const wbU = {
   uEyeRotR: { value: new THREE.Matrix3() }, uEyeRotL: { value: new THREE.Matrix3() },
   // THE FAREWELL (`updateWhaleFarewell`): the wounds closing, the light running down it, and how far its fog reaches
   uHeal: { value: 0 }, uHealGlow: { value: 0 }, uGlow: { value: 0 }, uGlowZ: { value: -40 }, uGlowK: { value: 0 }, uWbFog: { value: 1 },
+  uExK: { value: 1 },                // the moon's rim, sheen and drops on the skin (the lunge whale, seen against the moon, takes less)
 };
 // the lip line, measured off the file (model units, +x side; the snout's midline first, the corner last)
 const WB_LIP = [[630, 96.7, 0], [622, 96.2, 20], [603, 97.4, 37], [569, 97.1, 55], [532, 95.2, 69], [489, 96.1, 83], [452, 96.1, 96],
@@ -58020,20 +58848,24 @@ function wbBaleenTex() {
   const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
-function wbInject(mat, frag) {
+// L: the lunge whale's own uniforms (`hjwBuild`), through its own gape (`HJW_GLSL`); without it, the one on the sand
+function wbInject(mat, frag, L) {
   mat.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, wbU);
+    Object.assign(sh.uniforms, L ? L.U : wbU);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\n' + WB_GLSL + '\nuniform float uWbFog;')
+      .replace('#include <common>', '#include <common>\n' + (L ? HJW_GLSL : WB_GLSL) + '\nuniform float uWbFog;')
       .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n  vec3 wbP = position; wbDeform(wbP, objectNormal);')
       .replace('#include <begin_vertex>', 'vec3 transformed = wbP; vWbP = wbP; vWbE = aE; vWbWY = (modelMatrix * vec4(wbP, 1.0)).y;')
       // the fog on it is thinned: a thing this size is a silhouette against the moon from a long way up the beach
-      .replace('#include <fog_vertex>', '#include <fog_vertex>\n#ifdef USE_FOG\n  vFogDepth *= 0.66 * uWbFog;\n#endif');
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\n#ifdef USE_FOG\n  vFogDepth *= 0.66 * uWbFog;\n' + (L ? '  vFogView *= 0.66 * uWbFog;\n' : '') + '#endif');
+      /* (and the lunge whale's whole view ray is shortened, not just its depth: the ground mist and the moon's lit air
+       * read the ray's LENGTH (`vFogView`), and at a hundred and twenty metres, low, looking at the moon, that sheet
+       * alone turned it the sea's own lavender whatever its skin was doing — measured: a black skin read the same) */
     frag(sh);
   };
-  mat.customProgramCacheKey = () => 'whale-beach-' + (mat.userData.wbKind || '');
+  mat.customProgramCacheKey = () => 'whale-beach-' + (mat.userData.wbKind || '') + (L ? '-lunge' : '');
 }
-function wbSkinMat(src) {
+function wbSkinMat(src, L) {
   const m = new THREE.MeshStandardMaterial({
     map: src.map, normalMap: src.normalMap, roughnessMap: src.roughnessMap, aoMap: src.aoMap,
     color: 0xc8d2e0, roughness: 0.62, metalness: 0,                     // METALNESS IS A TRAP; wet skin is a dielectric that shines
@@ -58043,7 +58875,7 @@ function wbSkinMat(src) {
   m.userData.wbKind = 'skin';
   wbInject(m, (sh) => {
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\n' + WB_FRAG_HEAD + `\n  const vec3 WB_BIO = ${BIO_COL};\n  uniform float uHeal, uHealGlow, uGlow, uGlowZ, uGlowK;`)
+      .replace('#include <common>', '#include <common>\n' + WB_FRAG_HEAD + `\n  const vec3 WB_BIO = ${BIO_COL};\n  uniform float uHeal, uHealGlow, uGlow, uGlowZ, uGlowK, uExK;`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         float wbRaw, wbRim, wbBl, wbDeep; wbWounds(vWbP, wbRaw, wbRim, wbBl, wbDeep);
         // the wounds as they were, for the light that closes them; and then closed by it
@@ -58108,7 +58940,7 @@ function wbSkinMat(src) {
           vec3 qb = vWbP * 8.0; float hb = wbH(floor(qb) + 7.0);
           ex += WB_BIO * step(0.972, hb) * smoothstep(0.30, 0.05, length(fract(qb) - 0.5)) * (0.4 + 0.6 * sin(uT * 1.1 + hb * 60.0))
                 * smoothstep(1.3, 0.1, vWbP.y) * 0.55;
-          outgoingLight += ex * mix(0.3, 1.0, wbAO);
+          outgoingLight += ex * mix(0.3, 1.0, wbAO) * uExK;
           /* THE HEALING: a band of light running the length of it, head to tail
            * and back, a cold aura at its edges, and gold IN the wounds as they
            * close. Unlit, and not held down by the sand's shadow: it is light. */
@@ -58122,10 +58954,10 @@ function wbSkinMat(src) {
           }
         }
         #include <opaque_fragment>`);
-  });
+  }, L);
   return m;
 }
-function wbMouthMat() {
+function wbMouthMat(L) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.34, metalness: 0, side: THREE.DoubleSide,
     emissive: 0x5a1414, emissiveIntensity: 0.05 });
   m.userData.wbKind = 'mouth';
@@ -58139,6 +58971,8 @@ function wbMouthMat() {
          * swollen and pitted where the baleen comes out of them, the throat
          * ringed, the cheeks folded — and veins under all of it. */
         float wbTy = vWbE; vec3 q = vWbP; float mh = 0.0; vec3 tint = vec3(1.0);
+        // no cheeks on either whale: the jaws open clean apart (the owner: "no webbing at all", and then "the whale on the beach mouth should have no webbing either")
+        if (wbTy > 11.5 && wbTy < 12.5) discard;
         float fine = 1.0 - smoothstep(4.0, 14.0, length(vViewPosition));        // the finest detail only close up, or it shimmers at this resolution
         float veins = smoothstep(0.90, 0.985, 1.0 - abs(wbN(q.xz * 5.0 + q.y) * 2.0 - 1.0)) * (0.5 + 0.5 * wbN(q.zx * 1.7));
         if (wbTy > 7.5 && wbTy < 8.5) {                        // the roof of the mouth
@@ -58191,14 +59025,14 @@ function wbMouthMat() {
           outgoingLight *= smoothstep(0.0, 0.25, uJaw);                               // nothing of it shows while the mouth is shut
         }
         #include <opaque_fragment>`);
-  });
+  }, L);
   return m;
 }
-function wbBaleenMat() {
+function wbBaleenMat(L) {
   const m = new THREE.MeshStandardMaterial({ map: wbBaleenTex(), color: 0xffffff, roughness: 0.55, metalness: 0, side: THREE.DoubleSide,
     alphaTest: 0.5, emissive: 0x281f22, emissiveIntensity: 0.3 });
   m.userData.wbKind = 'baleen';
-  wbInject(m, (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + WB_FRAG_HEAD); });
+  wbInject(m, (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + WB_FRAG_HEAD); }, L);
   return m;
 }
 
@@ -58295,6 +59129,7 @@ function buildWhaleBeach(gltf) {
   G.add(baleen);
   const mucus = new THREE.Mesh(wbMucusGeo(), wbMucusMat()); mucus.name = 'whaleSaliva'; mucus.raycast = () => {}; mucus.userData.bwGhost = true; mucus.renderOrder = 3;
   G.add(mucus);
+  mucus.visible = false;   // no strands across the gape either (2026-10-14, the owner: "the whale on the beach mouth should have no webbing either")
   { const h = wbBend(new THREE.Vector3(0, 78 * WB_S, (345 - WB_Z0) * WB_S)); wbU.uHinge.value.set(h.y, h.z); }
   const eR = B.eyeData[0], eL = B.eyeData[1] || B.eyeData[0];
   wbU.uEyeR.value.copy(eR.cen); wbU.uEyeL.value.copy(eL.cen); wbU.uEyeRad.value = eR.rad * 1.12;
@@ -58611,6 +59446,7 @@ function buildWhaleBeach(gltf) {
     if (best) (side > 0 ? wbU.uFlipPR : wbU.uFlipPL).value.copy(best);
   }
   wb.drips = wbMakeDrips(); scene.add(wb.drips.pts);
+  hjwBuild(B, mouth.geometry, baleen.geometry);         // the one that takes Henry off the jetty: its own uniforms, cloned from these
   if (wbGone) wbRemoveForGood();                       // a save from after it swam away
   // the programs now, behind the start cover, not on the frame you first see it
   try { renderer.compile(G, camera, scene); } catch (e) { /* a warm is never fatal */ }
@@ -59860,7 +60696,7 @@ function sfxWhaleSquelch() {
  * it anyway (`wsR` rises inside 55 m), and one who arrives near is started
  * part way in, so the swell is still ahead of them.
  * --------------------------------------------------------------------- */
-const WS_Z0 = CAT_OUT_Z - 48;                  // just past the five's fire (TRIBE_Z is declared below this)
+const WS_Z0 = WB_Z + 127;                      // 127 m short of its snout, as it always was — and 54 m past the tree: the fishing spot and the whale are different stretches of beach (2026-10-15, the owner: "i don't want the whale scenes music to play when you are close to the tree")
 const WS_BANKS = 56, WS_MOTES = 260, WS_BEAMS = 11;
 const WS_SWELL = 15.0;                          // seconds into the track that the whale is seen
 const WS_S = { on: false, t0: 0, off: 0, wall: 0, buf: null, loading: false };
@@ -60135,6 +60971,89 @@ function updateSightingFx(dt) {
  * together, a beat apart by how far they are from it: the whole camp, not
  * whoever happened to be near. */
 const TRIBE_X = 11.4, TRIBE_Z = CAT_OUT_Z - 36;
+/* ---- HIS OLD FISHING SPOT (2026-10-14, the owner: "put the x on the map in the water to the left semi close to the
+ * shore … add this tree exactly how it is but blend in with the game hanging over the water right near this x … have
+ * visual schools of small fish right in the water further out from where this tree hangs this is where the rod will
+ * be casted"). The X on the fisherman's chart is `FISH_SPOT`, in the water a few metres off the sand ten metres past
+ * the five's fire; the tree stands on the sand just above the wash (the surf there runs from x -2.6 to +7.5) and
+ * leans out over the water toward it; the fish are further out, where a cast lands.
+ *
+ * The tree is EFX's "Rigged, Animated Cinematic Quality Tree 3" (CC-BY-4.0, `assets/tree.glb`, `gltfpack.py --tex
+ * 1024`): a windswept pine, skinned to 450 bones with its own 2.5 s sway, played as it comes. Only three things
+ * about it are changed: its needles are cut out rather than blended (a blended card is drawn in whatever order its
+ * triangles come, and twelve thousand of them re-sort every frame the camera moves — Henry's hair's lesson), no
+ * metal (there is nothing here for metal to reflect), and a little of its own colour lifted so it reads at night. */
+const FISH_SPOT = { x: -10, z: TRIBE_Z + 22.5 };            // the X: in the water, a few metres past the tree's crown (and clear of the chart's fold-crossing at x -6: drawn on it the X sat in the worn hole)
+const TREE_SPOT = { x: 5.4, z: TRIBE_Z + 22, yaw: -0.31, k: 1.8 };     // its roots, on the sand above the wash; leaning out to sea — 22 m short of the five's fire (it stood 10.5 m past it until 2026-10-15: "move the tree with the fishing spot a little before the campfire")
+const FISH_FAR = 150;                                    // nothing here moves past this
+let treeG = null, treeMixer = null;
+bwGlb('assets/tree.glb', (gltf) => {
+  const T = gltf.scene, G = new THREE.Group(); G.name = 'fishTree';
+  G.add(T); T.updateMatrixWorld(true);
+  // the roots: the trunk's lowest vertices, in the file's own frame
+  let trunk = null; T.traverse((o) => { if (o.isMesh && !o.isSkinnedMesh) trunk = o; });
+  const root = new THREE.Vector3(0, 0, 0);
+  if (trunk) {
+    const p = trunk.geometry.attributes.position, v = new THREE.Vector3(); let lo = Infinity; const acc = new THREE.Vector3(); let n = 0;
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(trunk.matrixWorld); if (v.y < lo) lo = v.y; }
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(trunk.matrixWorld); if (v.y < lo + 0.25) { acc.add(v); n++; } }
+    root.copy(acc.multiplyScalar(1 / Math.max(1, n))); root.y = lo;
+  }
+  T.traverse((o) => {
+    if (!o.isMesh) return;
+    o.frustumCulled = false;                             // a skinned body's bounds are its bind pose, not its sway
+    for (const m of [].concat(o.material)) {
+      m.metalness = 0; m.roughness = Math.max(0.8, m.roughness || 0.8); m.envMapIntensity = 0;
+      if (m.transparent || m.alphaMode === 'BLEND' || /Needle/i.test(m.name)) { m.transparent = false; m.alphaTest = 0.42; m.depthWrite = true; m.alphaToCoverage = true; m.side = THREE.DoubleSide; }
+      if (m.map && m.emissive) { m.emissiveMap = m.map; m.emissive.setRGB(0.5, 0.56, 0.68); m.emissiveIntensity = 0.12; }
+      m.needsUpdate = true;
+    }
+  });
+  G.rotation.y = TREE_SPOT.yaw; G.scale.setScalar(TREE_SPOT.k);
+  const r = root.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), TREE_SPOT.yaw).multiplyScalar(TREE_SPOT.k);
+  G.position.set(TREE_SPOT.x - r.x, -r.y - 0.18, TREE_SPOT.z - r.z);     // its roots a hand into the sand
+  scene.add(G); G.updateMatrixWorld(true);
+  treeG = G;
+  if (gltf.animations.length) { treeMixer = new THREE.AnimationMixer(T); treeMixer.clipAction(gltf.animations[0]).play(); }
+  farProps.push({ obj: G, z: TREE_SPOT.z, d: 320 });
+  // SOLID where it is low enough to walk into: the trunk measured in half-metre columns, each as tall as the wood in it
+  if (trunk) {
+    const p = trunk.geometry.attributes.position, v = new THREE.Vector3(), cols = new Map();
+    for (let i = 0; i < p.count; i += 2) {
+      v.fromBufferAttribute(p, i).applyMatrix4(trunk.matrixWorld);
+      const k = Math.round(v.x / 0.5) + ',' + Math.round(v.z / 0.5);
+      let c = cols.get(k); if (!c) cols.set(k, c = { x: 0, z: 0, n: 0, lo: 9, hi: -9 });
+      c.x += v.x; c.z += v.z; c.n++; c.lo = Math.min(c.lo, v.y); c.hi = Math.max(c.hi, v.y);
+    }
+    for (const c of cols.values()) if (c.lo < 1.6 && c.n > 6) rockColliders.push({ x: c.x / c.n, z: c.z / c.n, r: 0.3, top: Math.max(0.5, c.hi), mat: 'wood' });
+  }
+  try { if (renderer.compileAsync) renderer.compileAsync(G, camera, scene).catch(() => {}); } catch (e) { /* a warm is never fatal */ }
+}, (e) => console.warn('[bw] tree', e));
+
+/* THE SPOT ITSELF: a patch of the sea's own light out past the tree, where a cast lands (`uFishSea`, in the ocean
+ * shader). It replaced three schools of stand-in fish — "i don't like the school of fish idea" — and costs nothing
+ * away from it: its strength is zero past `FISH_FAR`. */
+const FISH_GLOW = { x: FISH_SPOT.x - 9, z: FISH_SPOT.z + 1, r: 10 };        // ~20 m off the water's edge
+/* AND THE AIR OVER IT TAKES A LITTLE OF THE LIGHT. Seen from the beach the patch is a thin line foreshortened behind
+ * the nearer swell, so a faint haze of its colour stands over it — a soft billboard, additive and fogged, the way
+ * light off water hangs in sea mist — which is what reads from up the beach without looking like a lamp. */
+const fishHaze = (() => {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+  const x = c.getContext('2d'), gr = x.createRadialGradient(64, 46, 2, 64, 46, 60);
+  gr.addColorStop(0, 'rgba(140,255,240,1)'); gr.addColorStop(0.35, 'rgba(70,230,210,0.45)'); gr.addColorStop(1, 'rgba(40,200,190,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 128, 64);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.35, fog: true }));
+  sp.scale.set(24, 8, 1); sp.position.set(FISH_GLOW.x, OCEAN_Y + 2.4, FISH_GLOW.z);   // its bright core a little over the water, not under it sp.renderOrder = 2; sp.raycast = () => {};
+  scene.add(sp); return sp;
+})();
+function updateFishSpot(dt) {
+  if (treeG && treeMixer && treeG.visible && !inRoom() && Math.abs(camera.position.z - TREE_SPOT.z) < FISH_FAR) treeMixer.update(dt);
+  // the glow: full inside a couple of hundred metres, faded beyond, off in a room (the sea there is another sea)
+  const d = Math.hypot(camera.position.x - FISH_GLOW.x, camera.position.z - FISH_GLOW.z);
+  const k = inRoom() ? 0 : 1 - THREE.MathUtils.smoothstep(d, 220, 320);
+  oceanUniforms.uFishSea.value.set(FISH_GLOW.x, FISH_GLOW.z, FISH_GLOW.r, k);
+  fishHaze.visible = k > 0.01; fishHaze.material.opacity = 0.95 * k * (0.85 + 0.15 * Math.sin(performance.now() * 0.00065));
+}
 const CAT_FOES = [
   [11.0, TRIBE_Z + 10, 'crooked', 'watch', 0],              // the lookout, facing up the beach
   [9.9, TRIBE_Z + 2.6, 'runt', 'dig', Math.PI / 2],          // digging a pit beside the fire, facing the dune
@@ -61187,7 +62106,7 @@ function sfxDreadBeat(g) {
   }
 }
 function catHunterReset() {
-  const u = crawlerUnit; if (!u) return;
+  const u = crawlerUnit; if (!u || u.catDead || u.retired) return;     // (dead is dead: falling in again does not raise him)
   u.g.position.set(CAT_X + CAT_HUNT.x, CAT_Y + CAT_HUNT.f, CAT_Z + CAT_HUNT.z);
   /* ON A NODE, NOT NEAR ONE. Set down beside the graph he found the storey
    * UNDER the one he was meant for (the floor lookup drops), and from a
@@ -62052,6 +62971,14 @@ function catPutDown(u) {
   const C = u.cat || (u.cat = {});
   C.mode = 'down'; C.t = CAT_DOWN[0] + Math.random() * (CAT_DOWN[1] - CAT_DOWN[0]);
   u.catDown = 1;
+  /* AND HE STAYS DOWN (2026-10-15, the owner: "make the catacombs creature not get back up after the first death").
+   * The fall and the body on the flags are as they were; the getting up is gone. He is dead on the save (his key in
+   * `deadUnitKeys`, so a load does not bring him back) and a kill on the end's tally. */
+  if (u === crawlerUnit) {
+    u.catDead = true; C.t = Infinity;
+    if (u.saveKey) deadUnitKeys.add(u.saveKey);
+    if (!replaying && !applyingSave && u.saveKey) endStats.kill.add(u.saveKey);
+  }
   u.g.position.addScaledVector(u.hitDir, 0.9);       // the blow still throws him, and he falls there
 }
 function catDownStep(u, dt) {
@@ -66280,6 +67207,20 @@ function keepFloorAt(x, z, feet, up = KEEP_STEP, S = KEEP_SITE) {
   } else {
     best = S.sea ? S.sea() : null;                // never written: the sea at the keep, a wall indoors
   }
+  /* AND A FLOOR THAT IS DRAWN IS A FLOOR (2026-10-14, the owner: "i just fell through the tavern next to the entry
+   * door i should not clip through rocks walls or anything ever"). Mapped at the terrace's height round the keep's
+   * door, 0.1 m cells: a strip of planking beside the door and slivers along the terrace's far edge are DRAWN at
+   * your feet (15.7–16.1) while the grid's highest floor under them is the cliff ten metres down — the packer
+   * landed no triangle in those cells at that storey, and `repairKeepStoreys` only puts back a level its
+   * neighbours carry, which a strip at its own height never is. So where the grid's answer is well under your
+   * feet the drawn faces are asked: a non-steep face within a step of them is what you stand on. */
+  /* (ONLY on the two sites it was measured on, `trustDrawn`: the same function walks the island, the castles, the
+   * catacombs, the throne room and the dungeon, and there a drawn face at the feet is as often a beam, a roof or a
+   * house's skirt — the owner got stuck beside the lighthouse's house the round it went in everywhere) */
+  if (S.trustDrawn && S.walls && (!best || best.f < feet - 0.6)) {
+    const dr = keepDrawnFloor(x, z, feet - 0.6, feet + Math.max(up, 0.2), S);
+    if (dr !== null && (!best || dr > best.f + 0.3)) best = { f: dr, s: false, c: S.Y + 99 };
+  }
   // and the two floors that are not the island: what is tied up at the pier
   // and what the lever sends up and down
   for (const b of S.extra()) {
@@ -66371,6 +67312,7 @@ let keepWalls = null;
  * the floors laid after the pack (the boat, the hoist), and `sea` what a
  * cell that was never written means — water at the keep, a wall indoors. */
 const KEEP_SITE = {
+  trustDrawn: true,                  // a floor that is drawn is a floor (`keepFloorAt`)
   X: KEEP_X, Y: KEEP_Y, Z: KEEP_Z, step: KEEP_STEP,
   get group() { return keepWorld; }, get walk() { return keepWalk; }, get cells() { return keepCells; },
   get walls() { return keepWalls; }, set walls(v) { keepWalls = v; },
@@ -67582,10 +68524,16 @@ function updateKeep(dt) {
   const underCar = (x, z) => !!LB && x > LB.x0 - KEEP_BODY && x < LB.x1 + KEEP_BODY && z > LB.z0 - KEEP_BODY && z < LB.z1 + KEEP_BODY
     && feet < LB.top - Math.max(up, LB.stepUp || 0) - 0.02 && feet + 1.75 > LB.top - (LB.under || 0.55);
   const wasUnder = underCar(_preMove.x, _preMove.z);
+  /* AND NOTHING UP THERE IS A DROP BUT THE SHAFT. The terrace and the keep's upper storey are walled all round
+   * except where the hoist's car runs, so a step that would put a body standing up there more than a metre over
+   * whatever is under it is a hole in the grid or the gap a wall's push-out found, never a ledge — refused, and a
+   * push that ends over one is undone. The island's own rocks below are left to drop you as they always did. */
+  const inShaft = (x, z) => !!LB && x > LB.x0 - 0.5 && x < LB.x1 + 0.5 && z > LB.z0 - 0.5 && z < LB.z1 + 0.5;
+  const dropBad = (s, x, z) => onGround && feet > KEEP_Y + 12 && (!s || s.f < feet - 1.0) && !inShaft(x, z);
   const legal = (x, z) => {
     const s = keepStandable(x, z, feet, up);
     return s && (wasWet || !wet(s)) && !hits(_preMove.x, _preMove.z, x, z) && !keepBlockCrossed(_preMove.x, _preMove.z, x, z)
-      && (wasUnder || !underCar(x, z)) ? s : null;
+      && (wasUnder || !underCar(x, z)) && !dropBad(s, x, z) ? s : null;
   };
   let st = legal(p.x, p.z);
   if (!st) {
@@ -67619,6 +68567,10 @@ function updateKeep(dt) {
   // and whatever the push left you standing on still has to hold you up, so
   // the height falls back to the plain floor when you are being ejected
   st = keepStandable(p.x, p.z, feet, up) || keepFloorAt(p.x, p.z, feet, up) || st;
+  if (dropBad(keepStandable(p.x, p.z, feet, up), p.x, p.z)) {
+    if (!dropBad(keepStandable(rx, rz, feet, up), rx, rz)) { p.x = rx; p.z = rz; } else { p.x = _preMove.x; p.z = _preMove.z; }
+    st = keepStandable(p.x, p.z, feet, up) || st;
+  }
   /* AND THE DRAWN WORLD ENDS. Past the shelf there is nothing under the
    * water but the sky sphere's rim, so the wade stops at the rim — the
    * beach's own WADE_X, on a round island. */
@@ -68200,6 +69152,7 @@ function clearRoomFlags() {
   if (inWhale) { inWhale = false; if (whale) whale.G.visible = false; whaleLeave(); }
   if (inThrone) { inThrone = false; if (thrWorld) thrWorld.visible = false; throneLeave(); }
   if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
+  if (inDeep) placeOutOfDeep();
 }
 const ROOM_BACK = {
   /* `spots` are the doors a save can be written at, and each is the SAME
@@ -68469,6 +69422,7 @@ let tavStoreOpen = false;   // the storeroom's door, turned once with its key: o
 let _tavFogSaved = null, tavLastFloor = null;
 const tavTables = [], tavChairs = [];
 const TAV_SITE = {
+  trustDrawn: true,                  // a floor that is drawn is a floor (`keepFloorAt`)
   X: TAV_X, Y: TAV_Y, Z: TAV_Z, step: TAV_STEP,
   get group() { return tavWorld; }, get walk() { return tavWalk; }, get cells() { return tavCells; },
   get walls() { return tavWalls; }, set walls(v) { tavWalls = v; },
@@ -71696,14 +72650,13 @@ function buildTavStore() {
    * pack, the key eaten, the bolt heard first and the leaf swinging after. */
   addInteractable(proxy, 'The door is locked.', 'default', {
     far: 3.0,
-    label: () => (inventory.includes(storeKeyItem) ? 'Unlock the door' : 'The door is locked.'),
-    bare: () => !inventory.includes(storeKeyItem),
+    label: () => (inventory.includes(storeKeyItem) || devKeys() ? 'Unlock the door' : 'The door is locked.'),
+    bare: () => !inventory.includes(storeKeyItem) && !devKeys(),
     when: () => inTavern && !tavBusy && !tavStoreOpen,
     onActivate: () => {
       if (tavStoreOpen) return;
-      if (!inventory.includes(storeKeyItem)) { sfxGateRattle && sfxGateRattle(); return; }
-      keyUsed(storeKeyItem);
-      removeInventoryKey(storeKeyItem);
+      if (!inventory.includes(storeKeyItem) && !devKeys()) { sfxGateRattle && sfxGateRattle(); return; }
+      if (inventory.includes(storeKeyItem)) { keyUsed(storeKeyItem); removeInventoryKey(storeKeyItem); } else sfxLockOpen();
       tavStoreOpen = true; hovered = null;
       setTimeout(() => openTavStore(false), 900);
     },
@@ -75210,11 +76163,11 @@ function buildC13ThroneDoor() {
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
   p.position.set(D.x, C13_FLOOR + 1.8, D.z); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
   c13World.add(p);
-  addInteractable(p, () => crusaderAlive() ? 'The door is barred.' : 'Enter the throne room', 'default', {
+  addInteractable(p, () => crusaderAlive() && !devKeys() ? 'The door is barred.' : 'Enter the throne room', 'default', {
     mid: true, far: 4.2,
-    bare: () => crusaderAlive(),            // while the knight who holds this court lives, it does not open
+    bare: () => crusaderAlive() && !devKeys(),            // while the knight who holds this court lives, it does not open (dev mode: it does)
     when: () => inC13 && !fortBusy && !thrBusy,
-    onActivate: () => { if (!crusaderAlive()) startThrone(1); },
+    onActivate: () => { if (!crusaderAlive() || devKeys()) startThrone(1); },
   });
 }
 
@@ -78373,8 +79326,8 @@ function loadDungeon() {
     // the dark: a guttering light at the far end of the corridor, and almost nothing in the cell
     { const L = new THREE.PointLight(0xff8a3a, 7.5, 11, 1.5); L.position.set(2.25, 0.85, -3.2); L.userData.lpAlways = 12; dunWorld.add(L); dunLamps.push({ L, base: 7.5, ph: 0 }); }
     { const L = new THREE.PointLight(0xff9a50, 2.4, 6, 1.6); L.position.set(2.3, 1.1, 3.0); L.userData.lpAlways = 7; dunWorld.add(L); dunLamps.push({ L, base: 2.4, ph: 2.1 }); }
-    // and the cell's only light, cold, low and behind him, through the shutter's cracks: an edge round a shape, not a face
-    { const L = new THREE.PointLight(0x7f93b8, 2.6, 3.0, 1.6); L.position.set(-2.25, 0.25, 2.35); L.userData.lpAlways = 5; dunWorld.add(L); dunLamps.push({ L, base: 2.6, ph: 0, steady: true }); }
+    // (the cell's cold light behind him is gone — 2026-10-14, the owner: "take out the glow next to his head too on the
+    // wall in the cell": a 2.6 lamp three metres across, low on the back wall beside him, was a pool of light on the stone)
     // the way out: the door you came in by
     const q = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.4, 0.5), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
     q.position.set(1.62, F + 1.2, Z1 - 0.75); q.name = 'hitProxy'; q.visible = false; q.userData.bwGhost = true;
@@ -78513,7 +79466,11 @@ function updateDungeon(dt) {
   if (henry) updateHenry(dt);
   if (!inDun || !dunReady) return;
   const t = performance.now() * 0.001;
-  for (const l of dunLamps) l.L.intensity = l.steady ? l.base : l.base * (0.78 + 0.12 * Math.sin(t * 6.3 + l.ph) + 0.1 * Math.sin(t * 13.1 + l.ph * 2));
+  /* A LAMP BREATHES; IT DOES NOT STROBE (2026-10-15, the owner: "henrys textures still wiggle around and flicker when
+   * he talks to you after you free him"). Measured with his pose frozen: his face went 11.3 → 16.8 mean in under a
+   * second — the lamps were ±22 % at 6.3 and 13.1 Hz, and through the talk's 30° lens that is a strobe on a face. The
+   * catacombs' rule: a few per cent, slow. */
+  for (const l of dunLamps) l.L.intensity = l.steady ? l.base : l.base * (0.95 + 0.035 * Math.sin(t * 1.3 + l.ph) + 0.015 * Math.sin(t * 2.7 + l.ph * 2));
   if (dunBusy && !dunCutDone) return;
   if (!dunWalls) { fortWallsStep(1e9, DUN_SITE); return; }
   const p = camera.position, S = DUN_SITE;
@@ -78597,7 +79554,7 @@ const HENRY_SCRIPT = {
   no: { text: 'Thank god, I’ve watched him take this stuff everyday until his skin changed color and peeled off. At least some of us are smarter than that.', choices: [], hint: 'click to leave', end: false },
   yes: { text: 'It won’t help you. Nothing will. You’ll wither away just like him.', choices: [], hint: 'click to leave', end: false },
 };
-const HENRY_NPC = { name: 'Prisoner', script: HENRY_SCRIPT, sprite: null, headY: 0, fov: 24 };
+const HENRY_NPC = { name: 'Henry', script: HENRY_SCRIPT, sprite: null, headY: 0, fov: 24 };
 function loadHenry() {
   if (henry) return;
   bwGlb('assets/henry.glb', (gltf) => {
@@ -78617,6 +79574,7 @@ function loadHenry() {
         o.frustumCulled = false;
         const m = o.material;
         if (m) { m.metalness = 0; m.roughness = Math.max(0.75, m.roughness || 0); if (m.color) m.color.multiplyScalar(0.82); m.envMapIntensity = 0; m.needsUpdate = true; }
+        henryCutout(o);
         if (o.morphTargetDictionary) morph.push(o);
       }
     });
@@ -78652,6 +79610,24 @@ const HENRY_RAG = { Hips: 'Hip', Spine: 'Waist', Spine1: 'Spine01', Spine2: 'Spi
   RightShoulder: 'R_Clavicle', RightArm: 'R_Upperarm', RightForeArm: 'R_Forearm', RightHand: 'R_Hand',
   LeftUpLeg: 'L_Thigh', LeftLeg: 'L_Calf', LeftFoot: 'L_Foot', LeftToeBase: 'L_ToeBase',
   RightUpLeg: 'R_Thigh', RightLeg: 'R_Calf', RightFoot: 'R_Foot', RightToeBase: 'R_ToeBase' };
+/* HE FLICKERED WHILE HE TALKED (2026-10-14, the owner: "when talking to henry in the dungeon he shakes and
+ * flickers a lot"). Nothing in his motion jumps (measured frame to frame: the head moves 0.1–0.3 mm, the lens
+ * 0.01–0.5°). It was his MATERIALS, which the dialogue's 24° lens puts across the whole screen: his hair (20,062
+ * vertices), scalp, lashes and brows are `transparent` with depth-writing off, so their triangles are drawn in
+ * whatever order they come and re-sort against each other every frame the camera moves — the hair boiled; and his
+ * corneas are OPAQUE, double-sided shells a hair over each eye, z-fighting with the iris under them. Cards are cut
+ * out instead (alpha-tested, depth-written: no sorting at all) and the corneas are not drawn. Both copies of him. */
+function henryCutout(o) {
+  const m = o.material; if (!m) return;
+  if (/Cornea/i.test(m.name)) { o.visible = false; return; }
+  /* AND HIS CLOTHES SIT A HAIR OFF HIS SKIN, which is what still flickered once he was up and walking ("henrys textures
+   * still flicker when he is released and talking"): the sweater and the trousers are shells a few millimetres over
+   * the body, the arms and the legs, and on the motion capture the two cross back and forth — z-fighting in patches
+   * as he moves. The cloth wins every tie now (polygon offset). (The torso under it stays drawn: his sweater stops
+   * short of his trousers, and without the skin there is a band of sky through his middle.) */
+  if (/sweater|pants|turtleneck|slim_fit/i.test(m.name)) { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -4; m.needsUpdate = true; }
+  if (m.transparent && m.map) { m.transparent = false; m.alphaTest = 0.45; m.depthWrite = true; m.alphaToCoverage = true; m.needsUpdate = true; }
+}
 function henryMocap(h) {
   if (h.mixer) return true;
   if (!wongMoves || !wongMoves.clips || !h.sk || !h.bind) return false;
@@ -78752,10 +79728,23 @@ function henryFace(h, dt, talking) {
     if (h.blinkT > T) { if (h.twice) { h.twice = false; h.blinkT = -0.08; } else h.blinkT = -1; }
   } else if (h.blinkT < -0.5) { /* idle */ } else if (h.blinkT < 0 && h.blinkT > -1) { h.blinkT += dt; if (h.blinkT >= 0) h.blinkT = 0; }
   henryMorph('blinkL', lid, h); henryMorph('blinkR', lid, h);
-  // the mouth: a run of syllables while the line types, shut between
-  if (talking) { h.syl += dt * (7 + 3 * Math.sin(h.t * 1.7)); }
-  const open = talking ? Math.max(0, Math.sin(h.syl)) * (0.55 + 0.45 * Math.sin(h.syl * 0.37 + 1.3)) : 0;
-  h.open = (h.open || 0) + (open - (h.open || 0)) * Math.min(1, dt * 18);
+  /* THE MOUTH SAYS THE LINE AS IT TYPES (2026-10-14, the owner: "make henrys mouth move faster as the dialog actually
+   * types out as if he's saying everything … now it looks like he says two words"). It was a slow sine — one
+   * opening every three-quarters of a second, three or four over a whole line. It reads the line now: the letter
+   * the typewriter has just put up opens the jaw for a vowel, half for a consonant, and shuts it on a space or a
+   * stop, so the jaw goes letter by letter with the text and stops when the text does. */
+  /* (2026-10-15: "henrys mouth now moves way too fast make it a normal talking speed". Letter by letter was 36 shapes a
+   * second. A mouth says SYLLABLES — four or five a second: it opens and closes on that beat while the line types,
+   * wider when the text under it is a vowel, shut on a stop, and eased, not snapped.) */
+  let open = 0;
+  if (talking) {
+    h.syl = (h.syl || 0) + dt * 4.4 * Math.PI * 2 * (0.85 + 0.3 * Math.sin(h.t * 0.9));
+    const tx = dialogTextEl.textContent, c = tx.length ? tx[tx.length - 1].toLowerCase() : ' ';
+    const stop = /[.,!?;:\u2014]/.test(c);
+    const beat = Math.max(0, Math.sin(h.syl));
+    open = stop ? 0 : beat * (/[aeiouy]/.test(c) ? 0.85 : 0.55);
+  }
+  h.open = (h.open || 0) + (open - (h.open || 0)) * Math.min(1, dt * 12);
   if (h.jaw0 && h.B.CC_Base_JawRoot) { h.B.CC_Base_JawRoot.quaternion.copy(h.jaw0); h.B.CC_Base_JawRoot.rotateZ(0.26 * h.open); }
   henryMorph('lips', 0.55 * h.open, h);
 }
@@ -78852,20 +79841,20 @@ function buildDunGate(root, mats) {
   const p = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.2, 1.9), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
   p.position.set(DUN_GATE.x + 0.15, -1.265 + 1.1, (DUN_GATE.z0 + DUN_GATE.z1) / 2); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
   dunWorld.add(p);
-  addInteractable(p, () => (inventory.includes(cellKeyItem) ? 'Unlock the cell' : 'The cell is locked.'), 'default', {
+  addInteractable(p, () => (inventory.includes(cellKeyItem) || devKeys() ? 'Unlock the cell' : 'The cell is locked.'), 'default', {
     mid: true, far: 3.0,
-    bare: () => !inventory.includes(cellKeyItem),
+    bare: () => !inventory.includes(cellKeyItem) && !devKeys(),
     when: () => inDun && !dunBusy && henryFree === 0 && !(dunGate && dunGate.open),
     onActivate: () => {
-      if (!inventory.includes(cellKeyItem)) { try { sfxGateRattle && sfxGateRattle(); } catch (e) {} return; }
-      keyUsed(cellKeyItem); removeInventoryKey(cellKeyItem);
+      if (!inventory.includes(cellKeyItem) && !devKeys()) { try { sfxGateRattle && sfxGateRattle(); } catch (e) {} return; }
+      if (inventory.includes(cellKeyItem)) { keyUsed(cellKeyItem); removeInventoryKey(cellKeyItem); }
       try { sfxLockOpen(); } catch (e) {}
       dunGate.open = true; henryFree = 1; henry.free = { phase: 'wait', t: 0 };
       autosaveNow();
     },
   });
 }
-const HENRY_FREE_NPC = { name: 'Prisoner', script: null, sprite: null, headY: 0, fov: 30, onLeave: () => henryOffer() };
+const HENRY_FREE_NPC = { name: 'Henry', script: null, sprite: null, headY: 0, fov: 30, onLeave: () => henryOffer() };
 /* AND HE GIVES YOU HIS RING (2026-10-14, the owner: "after henry says 'you found it!' make him say 'Here, I managed to
  * keep this gold ring. This ring was all i had left but its my way of thanking you.' have him hold out his hand with
  * the ring shining in it after you click away from the dialog then have it say 'take ring'. once you take it he runs
@@ -79104,6 +80093,7 @@ function loadJettyHenry() {
     H.traverse((o) => {
       if (!o.isMesh) return;
       o.frustumCulled = false; o.raycast = () => {};
+      henryCutout(o);
       for (const m of [].concat(o.material)) {
         m.metalness = 0; m.roughness = Math.max(0.75, m.roughness || 0); if (m.color) m.color.multiplyScalar(0.9); m.envMapIntensity = 0; m.fog = false;
         // the moon is behind him from anywhere on the jetty: a breath of his own colours back, or his face is a hole while he talks
@@ -79387,22 +80377,39 @@ function updateHenrySnatch(dt) {
       // and the voice stops when the sound of the splash arrives, not before it
       if (C.voice) hjVoiceStop(C.voice, C.splash.distanceTo(cam) / 343, 0.02);
       C.voice = null;
+      /* AND THE TAKE ENDS HERE (2026-10-15, the owner: "the cutscene should end when he lands in the water the whale
+       * part should just happen after not apart of the cutscene i want the player to still be looking for henry with
+       * their own control"). The lens and the controls are handed back on the splash; the clock runs on behind them
+       * (`released`: not in `frozen()`, no hold on the camera) for the bird flying off and for the whale, which comes
+       * up where he went in exactly as it did. He does not come back up ("dont show henry in the water"). */
+      C.released = true; C.hp = C.splash.clone();
+      /* (and the LENS stays — 2026-10-15, the owner: "i couldn't see the whale at all … it should still look how it
+       * used to when it was a cutscene": at your own field of view a whale 150 m off is a speck. The take's long lens
+       * is held, pointed where he went in, until the whale has gone back down; the look is yours the whole time.) */
+      C.lensHold = true;
+      cineHold = false; dialogTarget = null; dialogHead = null;
+      lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order); lookEuler.z = 0; camera.quaternion.setFromEuler(lookEuler);
     }
   }
+  // after the splash: him in the water, and then the whale (`hjwTick`)
+  const lens = C.ts !== undefined ? hjwTick(C, h, dt, C.t - C.ts) : null;
   if (C.voice) hjVoiceTick(C.voice, h.mode === 'fall' ? h.fc : hjPelvis(h, C.pelV));
   if (C.splash) wfUpdateFx(dt);
-  // the lens: on him, on the two of them, on him falling, on the sea where he went in
-  let T, R = null;
+  // the lens: on him, on the two of them, on him falling — and from the splash it is yours again
+  if (!C.released) {
+  let T, R = null, minF = 14, fk = 2;
   if (C.phase === 'dive') T = h.B.CC_Base_Head.getWorldPosition(_hjA);
   else if (h.mode === 'air') { T = hjPelvis(h, _hjA).lerp(C.pos, 0.4); R = 6; }
   else if (h.mode === 'fall') { T = _hjA.copy(h.fc); R = 9; }
+  else if (lens) { T = _hjA.copy(lens.T); R = lens.R; minF = lens.min; fk = lens.k; }
   else { T = _hjA.copy(C.splash); T.y += 3; R = 14; }
-  C.look.lerp(T, 1 - Math.exp(-dt * 7));
+  C.look.lerp(T, 1 - Math.exp(-dt * (C.lookRate ? 14 : 7)));
   if (!dialogTarget) dialogTarget = new THREE.Vector3();
   dialogTarget.copy(C.look); cineHold = true; dialogHead = null;
-  if (R) { const d = C.look.distanceTo(cam); C.fov += (THREE.MathUtils.clamp(2 * Math.atan(R / d) * 180 / Math.PI, 14, 55) - C.fov) * Math.min(1, dt * 2); }
+  if (R) { const d = C.look.distanceTo(cam); C.fov += (THREE.MathUtils.clamp(2 * Math.atan(R / d) * 180 / Math.PI, minF, 55) - C.fov) * Math.min(1, dt * fk); }
   dialogFov = C.fov;
-  if (C.ts !== undefined && C.t - C.ts > HJ_T.hold) hjEnd();
+  }
+  if (C.ts !== undefined && C.t - C.ts > (hjW ? HJW_T.at + HJW_T.gone + HJW_T.after : HJ_T.hold)) hjEnd();
 }
 function hjEnd() {
   const C = hjCut; if (!C) return;
@@ -79413,6 +80420,7 @@ function hjEnd() {
   if (C.voice) hjVoiceStop(C.voice, 0, 0.1);
   if (hjEagle) { hjEagle.g.visible = false; for (const a of Object.values(hjEagle.A)) a.stop(); hjEagle.cur = null; }
   if (hj) hj.w.visible = false;
+  if (hjW) { hjW.on = false; hjW.G.visible = false; }
   hjSprayLeft = 7;                                  // the mist off the splash lives up to six and a half seconds: run it out, then put it out
   autosaveNow();
 }
@@ -79421,6 +80429,150 @@ function hjSprayOut() {
   const F = wfFx; if (!F) return;
   if (F.SP) for (const P of F.SP) P.life = 0;
   if (F.spray) { const aa = F.spray.geometry.attributes.aA; if (aa) { aa.array.fill(0); aa.needsUpdate = true; } F.spray.visible = false; }
+}
+
+/* ---- AND THEN THE SEA TAKES HIM. The owner: "6 seconds after henry lands in
+ * the water abruptly make the whale's head shoot up mouth open and swallow
+ * him then disappear into the water — make it fast and jarring". So the take
+ * does not let go at the splash. He comes up (`HJW_T.surface`), small and far
+ * off down a long lens, struggling and crying out, and the lens creeps in on
+ * him; and on the sixth second a whale comes up THROUGH him — straight up,
+ * its jaws wide, lifting him with it — the jaws slam on him at the top, and
+ * it falls back into its own splash and is gone. Two seconds of it.
+ *
+ * It is the beached whale's own skin, baked once (`wbBake`), and the same
+ * deformation (`WB_GLSL`) through its own uniforms, so it is never in step with
+ * the one on the sand: its wounds are closed (`uHeal`), its eyes open, and its
+ * gape is a lunge-feeder's — the jaw drops as far as the head lifts, which the
+ * beached one, lying on its jaw, never does (`HJW_GLSL`). Its programs are
+ * compiled when it is built, behind the start cover. */
+const HJW_K = 1.15;                                            // a thirty-seven metre animal
+const HJW_T = { surface: 2.2, at: 9.0, rise: 0.5, shut: 0.6, top: 0.82, gone: 2.2, after: 1.6 };
+const HJW_ZM = 480;                                            // where along its mouth he is taken (model z)
+const HJW_GLSL = (() => {
+  const a = `-${WB_OPEN_UP.toFixed(3)} * aG : -${WB_OPEN_DN.toFixed(3)} * aG`;
+  if (!WB_GLSL.includes(a)) console.warn('[bw] lunge whale: the hinge line moved');
+  return WB_GLSL.replace(a, '-uOpenUp * aG : -uOpenDn * aG').replace('uniform float uJaw,', 'uniform float uOpenUp, uOpenDn;\n  uniform float uJaw,');
+})();
+let hjW = null;
+function hjwBuild(B, mouthGeo, baleenGeo) {
+  if (hjW) return;
+  const U = {};
+  for (const [k, u] of Object.entries(wbU)) U[k] = { value: u.value && u.value.clone ? u.value.clone() : u.value };
+  U.uHeal.value = 1; U.uBlink.value = 0; U.uJaw.value = 1; U.uWbFog.value = 0.35; U.uTongue.value = 0;
+  U.uEyeRotR.value.identity(); U.uEyeRotL.value.identity();
+  U.uOpenUp = { value: 0.55 }; U.uOpenDn = { value: 0.45 };
+  const L = { U }, G = new THREE.Group();
+  G.name = 'lungeWhale'; G.rotation.order = 'YXZ'; G.scale.setScalar(HJW_K);
+  const mm = wbMouthMat(L); mm.emissiveIntensity = 0.12;       // dark inside, as a real one is from the side: the gape reads by the jaws, not by a lit red fan
+  // and the outside is a dark wet mass against the sea's sheen, not the lit flank of the one on the sand with its key light on it
+  const sk = wbSkinMat(B.mat, L); sk.color.setHex(0x5a6372); sk.emissiveIntensity = 0.05;
+  for (const [geo, mat] of [[B.geo, sk], [mouthGeo, mm], [baleenGeo, wbBaleenMat(L)]]) {
+    const m = new THREE.Mesh(geo, mat); m.frustumCulled = false; m.raycast = () => {}; m.userData.bwGhost = true; G.add(m);
+  }
+  scene.add(G);
+  hjW = { G, U, on: false };
+  try { renderer.compile(G, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  G.visible = false;
+}
+// the floor of its lower jaw at a station along the mouth, open by j, in its own metres: where he is when it takes him
+function hjwJawAt(zm, j, out) {
+  const p = wbBend(out.set(0, (wbLipY(zm) - 16) * WB_S, (zm - WB_Z0) * WB_S));
+  const hz = hjW.U.uHinge.value, a = hjW.U.uOpenDn.value * j * THREE.MathUtils.smoothstep(p.z, -8.6, -5.9);
+  const dy = p.y - hz.x, dz = p.z - hz.y, c = Math.cos(a), s = Math.sin(a);
+  p.y = hz.x + dy * c - dz * s; p.z = hz.y + dy * s + dz * c;
+  return p;
+}
+const _hjwP = new THREE.Vector3(), _hjwQ = new THREE.Vector3();
+// the jaws slamming on him, from where it happened: a wet, enormous knock, late by the distance
+function sfxWhaleJaw(x, z) {
+  const ctx = audioCtx; if (!ctx) return;
+  const d = Math.hypot(x - camera.position.x, z - camera.position.z), t = ctx.currentTime + d / 343, k = 1.8 / (1 + d / 45);
+  const pan = ctx.createStereoPanner(); pan.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.7, -1, 1); pan.connect(sfxOut());
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(96, t); o.frequency.exponentialRampToValueAtTime(34, t + 0.45);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(1.2 * k, t + 0.012); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+  o.connect(og).connect(pan); o.start(t); o.stop(t + 0.75);
+  const n = noiseBurst(0.5, (u) => Math.min(1, u * 60) * Math.pow(1 - u, 3));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900 * (0.4 + 0.6 / (1 + d / 60));
+  const ng = ctx.createGain(); ng.gain.value = 1.0 * k;
+  n.connect(lp).connect(ng).connect(pan); n.start(t); n.stop(t + 0.5);
+  playSampleAt('splash', x, z, { gain: 1.6, ref: 40, far: 400, rate: 0.5, lpFar: 600, delay: d / 343 + 0.03 });
+}
+/* The part of the take after the splash: him in the water, then the whale. `st` is seconds since he went in.
+ * Returns where the lens wants to be and how wide, or null to leave it on the splash. */
+function hjwTick(C, h, dt, st) {
+  const W = hjW;
+  if (!W) return null;
+  const cam = camera.position;
+  // (he used to come up here, treading water and screaming; he stays under now — the owner: "dont show henry in the
+  // water after he hits the water it should look still like it used to")
+  if (h.mode === 'tread' || h.mode === 'taken') {
+    C.ph += dt * (h.mode === 'taken' ? 16 : 9);
+    const yaw = Math.atan2(cam.x - C.hp.x, cam.z - C.hp.z);
+    h.w.rotation.set(h.mode === 'taken' ? -0.5 : 0.12, yaw, 0.08 * Math.sin(h.t * 1.9));
+    hjPoseAir(h, C.ph, true, dt); hjScreamFace(h);
+    // riding the swell out there (it is a metre and more), chest out of it: lower, and a crest hides him from a jetty two metres up
+    const sea = waterSurfaceAt(C.hp.x, C.hp.z);
+    let y = sea + 0.1 + 0.08 * Math.sin(h.t * 5.1);             // (chest well out: seen from the jetty down a 14° lens, lower was a crest more often than a man)
+    if (C.jawW) y = Math.max(y, C.jawW.y + 0.35);               // the jaw comes up under him and he goes with it
+    h.w.position.add(_hjD.set(C.hp.x, y, C.hp.z).sub(hjPelvis(h, C.pelV)));
+    if (h.mode === 'tread' && (C.nextSp -= dt) <= 0) { C.nextSp = 0.35 + Math.random() * 0.3; wfSplash(C.hp.x, sea, C.hp.z, 10, 2.6, 0.5, 2.2, 0.1); }
+  }
+  // (the lens stays where it was on the splash, the whole time: no creep in on him, no push out for the whale —
+  // 2026-10-14, the owner: "make henry stay in the water a little longer until the whale swallows him and don't zoom in
+  // on it just have it happen")
+  // Held still, on where he came up — not on the splash, which left him a speck at the edge — and not following him:
+  // the angle and the width never move, so the whale is simply there.
+  const hold = C.hp ? { T: _hjwQ.copy(C.hp).setY(C.hp.y + 2.0), R: null, min: 14, k: 0 } : null;
+  if (st < HJW_T.at) return hold;
+  // and it comes up through him
+  const tw = st - HJW_T.at, G = W.G, U = W.U;
+  if (!W.on && tw < HJW_T.gone) {
+    W.on = true; G.visible = true; C.fallSplash = false; C.shut = false;
+    const S = C.hp || C.splash;
+    C.wS = S.clone(); C.wS.y = waterSurfaceAt(S.x, S.z);       // the sea's own height there, this second: everything below is measured off it
+    // side on, so the jaws read apart against the sky with the red of the mouth between them (swept: 0.3, 0.95, 1.5, 2.2)
+    const toCam = Math.atan2(cam.x - S.x, cam.z - S.z);
+    C.wYaw = toCam + 1.5;
+    wfSplash(S.x, C.wS.y, S.z, 420, 24, 2.6, 3.4, 0.25);
+    wfSplash(S.x, C.wS.y, S.z, 200, 8, 6.0, 3.5, 0.6);
+    sfxWhaleSplash(S.x, S.z, 1.5);
+    addTrauma(0.25);
+    C.nextSp = 0;
+  }
+  if (!W.on) return hold;
+  const S = C.wS;
+  let hgt;
+  if (tw < HJW_T.rise) hgt = -11 + 20 * (1 - Math.pow(1 - tw / HJW_T.rise, 2.6));
+  else if (tw < HJW_T.top) hgt = 9 + 0.9 * (1 - Math.exp(-(tw - HJW_T.rise) * 6));
+  else { const f = tw - HJW_T.top; hgt = 9 + 0.9 * (1 - Math.exp(-(HJW_T.top - HJW_T.rise) * 6)) - 17 * f * f; }
+  const j = tw < HJW_T.shut ? 1 : Math.max(0, 1 - ((tw - HJW_T.shut) / 0.13) ** 2);
+  U.uJaw.value = j; U.uT.value += dt;
+  U.uMoonV.value.copy(MOON_DIR).transformDirection(camera.matrixWorldInverse);
+  G.rotation.set(-1.22 - 0.22 * THREE.MathUtils.smoothstep(tw, HJW_T.top, HJW_T.gone), C.wYaw, 0, 'YXZ');
+  G.position.set(0, 0, 0); G.updateMatrixWorld(true);
+  const pj = hjwJawAt(HJW_ZM, j, _hjwP).applyMatrix4(G.matrixWorld);   // the jaw's floor, with the group at the origin
+  G.position.set(S.x - pj.x, S.y + hgt - pj.y, S.z - pj.z);
+  G.updateMatrixWorld(true);
+  C.jawW = (C.jawW || new THREE.Vector3()).set(S.x, S.y + hgt, S.z);
+  if (h.mode === 'tread' && C.jawW.y > S.y - 0.45) h.mode = 'taken';
+  // the sea pouring off it as it climbs
+  if (tw < HJW_T.top && (C.nextSp -= dt) <= 0) { C.nextSp = 0.1; wfSplash(S.x, S.y, S.z, 18, 12, 3.8, 2.8, 0.2); }
+  // shut, on him
+  if (!C.shut && j < 0.4) {
+    C.shut = true; C.swallowed = true; h.mode = 'gone'; h.w.visible = false;
+    if (C.voice) { hjVoiceStop(C.voice, S.distanceTo(cam) / 343, 0.015); C.voice = null; }
+    sfxWhaleJaw(S.x, S.z); addTrauma(0.12);
+  }
+  // and down into its own splash
+  if (!C.fallSplash && tw > HJW_T.top && hgt < 3) {
+    C.fallSplash = true;
+    wfSplash(S.x, S.y, S.z, 380, 17, 4.5, 3.6, 0.45);
+    wfSplash(S.x, S.y, S.z, 160, 6, 8, 3.5, 0.7);
+    sfxWhaleSplash(S.x, S.z, 1.2);
+  }
+  if (tw >= HJW_T.gone) { W.on = false; G.visible = false; C.jawW = null; if (tw >= HJW_T.gone + 0.8) C.lensHold = false; }
+  return hold;
 }
 
 /* ---- ITS SOUND. Nothing here is a recording but the scream: the stoop's air is a live voice on the bird — its
@@ -82595,6 +83747,14 @@ function isleFloorAt(x, z, feet, up = ISLE_SITE.step) {
  * off a deck onto the rock is under it, a crack in the boards or the edge of
  * the stack is over it (see the walk) */
 const ISLE_FALL = 1.1;
+/* AND A ROOF OR A CRATE IS A PLACE YOU CAN JUMP DOWN FROM (2026-10-15, the owner: "i should freely be able to jump on the
+ * crates near the lighthouse shed and jump on top of the shed to hit the seagulls then jump off the shed wherever i want
+ * … allow more free will without getting stuck or falling off the island"). Measured: the deck 26.3, the crates 26.9 /
+ * 27.1 / the stack 28.0, the shed's roof 29.0–29.7 — and the walk let no floor be more than ISLE_FALL under the last one,
+ * so every edge up there was a wall. A drop of up to ISLE_LEAP onto a FLAT floor of the island is a fall you take now;
+ * the island's outer rock is twenty metres over the sea, so its rim still holds. */
+const ISLE_LEAP = 4.0;
+const ISLE_MANTLE = 1.2;          // how far over your feet, in the air, a flat top can be and still be pulled up onto
 const ISLE_MAX_SLOPE = 1.15;   // ~49°: the rock path down from the terrace to the stair head runs at up to 0.75, the faces beside the flight at 0.8–2.3
 /* THE FLOOR THE EYE FOLLOWS: the cell under you blended toward its neighbours
  * by where in it you stand, and only toward a neighbour within a step — the
@@ -82677,6 +83837,14 @@ const ISLE_STAIR_PROF = (() => {
   return P;                                       // z falling, y rising
 })();
 const ISLE_NOWALK = [{ x0: 1.95, x1: 3.15, z0: -1168.6, z1: -1163.3, above: 23.0 }, { x0: -1.0, x1: -0.15, z0: -1167.5, z1: -1164.3, above: 25.8 }];
+/* AND UNDER THAT LEDGE IS NOT A WAY THROUGH (2026-10-14, the owner: "i keep getting stuck right here at the lighthouse",
+ * feet (-0.44, 24.28, -1165.16)). The ledge on the house's east side overhangs the ramp's left edge a metre up, so the
+ * grid has ramp under it — and a body that drifted in under it was inside the ledge's own face at chest height:
+ * `keepWallPush` threw it west and back down the ramp a few centimetres a frame, as fast as it walked up. Measured
+ * there: seven of twelve headings went nowhere. The strip under it is refused outright (`isleBlocked`, in the walk's
+ * `legal` and after the pushes), so the ramp's edge is the ledge's face and a body slides up past it. */
+const ISLE_BLOCK = [{ x0: -1.1, x1: -0.12, z0: -1167.7, z1: -1164.1, y0: 23.0, y1: 26.2 }];
+const isleBlocked = (x, z, feet) => ISLE_BLOCK.some((B) => x > B.x0 && x < B.x1 && z > B.z0 && z < B.z1 && feet > B.y0 && feet < B.y1);
 const ISLE_RAMPS = [{ x0: -18.0, x1: -15.2, z0: -1148.05, z1: -1137.15, prof: ISLE_STAIR_PROF }];   // z1 the jetty end, z0 the landing's nose
 const isleRampY = (R, z) => {
   const P = R.prof;
@@ -83248,6 +84416,7 @@ function loadIsle() {
     isleFindTrunks(barkMeshes);
     isleFindBark(barkMeshes);
     isleMoveLight();
+    isleBirdsExtract();
     // its shaders built now, off the walk, rather than on the frame it first comes out of the fog
     try { if (renderer.compileAsync) renderer.compileAsync(isleWorld, camera, scene); else renderer.compile(isleWorld, camera, scene); } catch (e) {}
     isleReady = true;
@@ -84041,7 +85210,7 @@ const CRAB_YAW_OFF = 0.45;                               // turned this far off 
  * and the ground shaking under you (the game's own shake, `trauma`: the camera IS the player now, and jittering its
  * position would walk you). At `cut` the black, held five seconds, and the morning. The three shots (the gallery's
  * long lens, the jetty, the crane over the lantern) are gone. */
-const CRAB_T = { horn: 3.4, black: 4.0, rise0: 5.0, rise1: 21.5, cut: 28.0, card: 33.0 };   // card: the morning (`startWakeCut`), five seconds of black after `cut`
+const CRAB_T = { horn: 3.4, black: 4.0, rise0: 5.0, rise1: 21.5, cut: 28.0, card: 37.0 };   // card: the morning (`startWakeCut`), nine seconds of black after `cut` (five until 2026-10-14: "make the black screen until the last cutscene longer")
 let crabCut = null, crabGiant = null, crabFoam = null, crabSpray = null, crabMist = null, isleMagicTicked = false;
 function crabSprayPoints(n) {
   const geo = new THREE.BufferGeometry();
@@ -84697,7 +85866,7 @@ function updateIsle(dt) {
     const up = !onGround ? FORT_AIR : S.step;
     const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80, S) || keepHitsWall(x0, z0, x1, z1, feet + 1.25, S) || keepHitsWall(x0, z0, x1, z1, feet + 1.68, S);
     const tower = (x, z) => !throughDoor && Math.hypot(x - ISLE_AXIS.x, z - ISLE_AXIS.z) < ISLE_TOWER_R(feet + 0.5) + 0.3 && feet < ISLE_GALLERY - 2;
-    const nextTo = (st) => st && st.f > ref - ISLE_FALL;
+    const nextTo = (st) => st && (st.f > ref - ISLE_FALL || (st.f > ref - ISLE_LEAP && st.f > 1.5));   // (a hop down a rock step too; never to the sea's level)
     /* and no face of rock steeper than ISLE_MAX_SLOPE, up it or down it: the step is 0.62 a 20 cm cell, which
      * by itself lets you walk up seventy degrees. Measured over the 0.8 m ahead (a deck's edge is a step, not
      * a slope); the cliff stair's ramp is the one steep way and is let be. */
@@ -84706,7 +85875,7 @@ function updateIsle(dt) {
       const mx = x - _preMove.x, mz = z - _preMove.z, ml = Math.hypot(mx, mz); if (ml < 1e-4) return false;
       const fx = x + mx / ml * 0.8, fz = z + mz / ml * 0.8; if (isleRampAt(fx, fz) !== null) return false;
       const f2 = keepFloorAt(fx, fz, st.f + 0.6, 1.2, S);
-      return !!f2 && Math.abs(f2.f - st.f) / 0.8 > ISLE_MAX_SLOPE;
+      return !!f2 && (f2.f - st.f) / 0.8 > ISLE_MAX_SLOPE;          // UP a face only: down it is a drop, which `nextTo` judges
     };
     /* the cliff stair is a corridor: on and off it only at its two ends, never over its sides. ON it you
      * are SLID along it, not stopped (`rampHold`): the first rule refused any stride that ended within
@@ -84735,8 +85904,21 @@ function updateIsle(dt) {
       p.z = THREE.MathUtils.clamp(p.z, B.z - half, B.z + half);
     };
     bridgeHold();
-    const legal = (x, z) => { const st = keepFloorAt(x, z, feet, up, S); return nextTo(st) && !hits(_preMove.x, _preMove.z, x, z) && !tower(x, z) && !steep(x, z, st) && !flank(x, z) ? st : null; };
+    // a body already in under the ledge (a save, a fall) is put back out on the ramp first
+    for (const B of ISLE_BLOCK) if (isleBlocked(_preMove.x, _preMove.z, feet)) { _preMove.x = p.x = Math.max(p.x, B.x1 + 0.02); }
+    const legal = (x, z) => { const st = keepFloorAt(x, z, feet, up, S); return nextTo(st) && !hits(_preMove.x, _preMove.z, x, z) && !tower(x, z) && !steep(x, z, st) && !flank(x, z) && !isleBlocked(x, z, feet) ? st : null; };
     let st = legal(p.x, p.z);
+    /* AND IN THE AIR YOU CAN PULL YOURSELF UP (the shed: the stack of crates is a metre under its eave, and the wall
+     * runs up to the eave, so a jump met stone at the knee and fell back). A flat top within ISLE_MANTLE over your
+     * feet, with room over it for a body (the wall test asked from ITS height, not yours), is climbed onto; the eye
+     * is eased up the rest by `update`'s step-up. Only off the ground: walking at a wall is still walking at a wall. */
+    if (!st && !onGround) {
+      const m = keepFloorAt(p.x, p.z, feet + ISLE_MANTLE, ISLE_MANTLE, S);
+      if (m && !m.s && m.f > feet + up - 0.01 && m.f <= feet + ISLE_MANTLE && !tower(p.x, p.z) && !flank(p.x, p.z)
+        && !keepHitsWall(_preMove.x, _preMove.z, p.x, p.z, m.f + 0.35, S) && !keepHitsWall(_preMove.x, _preMove.z, p.x, p.z, m.f + 1.0, S) && !keepHitsWall(_preMove.x, _preMove.z, p.x, p.z, m.f + 1.6, S)) {
+        st = m; feet = m.f;
+      }
+    }
     if (!st) {
       const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
       let took = false;
@@ -84769,7 +85951,7 @@ function updateIsle(dt) {
     isleBarkPush(p, FORT_BODY);
     rampHold(); bridgeHold();
     st = keepFloorAt(p.x, p.z, feet, up, S);
-    if (!nextTo(st) || tower(p.x, p.z) || flank(p.x, p.z)) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
+    if (!nextTo(st) || tower(p.x, p.z) || flank(p.x, p.z) || (isleBlocked(p.x, p.z, feet) && !isleBlocked(_preMove.x, _preMove.z, feet))) { p.x = _preMove.x; p.z = _preMove.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
     if (!nextTo(st)) { p.x = isleLastSpot.x; p.z = isleLastSpot.z; st = keepFloorAt(p.x, p.z, feet, up, S); }
     if (st) { isleLastFloor = st.f; isleLastSpot.x = p.x; isleLastSpot.z = p.z; }
     const sm = st ? isleFloorSmooth(p.x, p.z, feet, up) : null;
@@ -89868,7 +91050,6 @@ flameArtItem = {
 let flameAttachPending = null;
 function flameAttachedTo() { for (const it of inventory) if (it.artifact === flameArtItem) return it.name; return null; }
 function flameRestoreTick() {
-  if (mapGrantPending && !restore) { mapGrantPending = false; giveBeachMap(); }
   if (!flameAttachPending) return;
   const w = packByName(flameAttachPending);
   if (w && inventory.includes(w)) {
@@ -89892,6 +91073,1174 @@ window.addEventListener('resize', () => {
 layoutViewmodel();
 
 // dev hook
+// ------------------------------------------------------------------
+// THE DEEP (2026-10-15, the owner): the float sits in the fisherman's glowing spot for fourteen seconds and something
+// takes it. The rod bends, the float goes under and stays under, the reel screams backwards and you are dragged down
+// the sand on your heels, into the surf, past anywhere you have ever been let go, and under — and then down, for
+// miles, into a sea with no light in it. You swim there. Something swims by in the murk; then it comes for you out of
+// the dark, again and again, and a parried bite stuns it. Kill it and it rolls over and sinks to the bottom. Then the
+// whale — the one from before it was hurt — comes up out of the black with its mouth open and takes you whole, and
+// spits you up on the sand under the tree. The rod stays in the sea.
+//
+// One clock (`deep.ph`, `deep.t`), driven from `animateFrame` after `update` (`updateDeep`). The deep itself is a room
+// like the others, far off (`DEEP`, inDeep): `inRoom()`, `indoors()`, the hall cull and the beach's clamp know it.
+// The flags (`inDeep`, `deepLock`, `deepNoHands`, `deepCutOn`, `deepDone`, `deepRodOn`, `deepReelSpin`, `deepBend`)
+// are declared with `bloodJars`, early, because `frozen()` and `inRoom()` read them.
+// ------------------------------------------------------------------
+const DEEP = { x: 25000, y: 2000, z: 25000, floor: -34, R: 80, top: 24 };
+const DEEP_HOOK_T = 14;                       // seconds in the spot before it takes
+const DEEP_DESC_T = 10.5;                     // the long pull down
+const PLIO_K = 1.6;                           // the file is a ten-metre animal: this one is sixteen
+const PLIO_HP = 80;                           // with the Bloody Blade, about five parries (measured: four cuts in a stun, riposte and bleed included, ~16)
+const PLIO_GUN_K = 0.3;                       // a revolver does not end it in three
+const PLIO_BITE_AT = 2.12;                    // Attack_Bite: the jaw slams shut here (measured: open from 1.6, wide at 2.0)
+const PLIO_BITE_FROM = 1.12;                  // and the head draws back from here — the tell inside the bite
+const DEEP_TOP_FOG = new THREE.Color(0x0b2c38), DEEP_BOT_FOG = new THREE.Color(0x04161a);   // (and thicker at the bottom: 0.042 — 2026-10-15, "more murky and mysterious")
+const deep = {
+  ph: null, t: 0, spotT: 0, hookP: new THREE.Vector3(), under: false, yank: 0, jerkT: 0, scrapeT: 0, stepT: 0,
+  v: new THREE.Vector3(), knock: new THREE.Vector3(), stroke: 0, strokeHit: 0, breathT: 3, noSwim: false,
+  descS: new THREE.Vector3(), descC: new THREE.Vector3(), descE: new THREE.Vector3(), snapped: false,
+  fogSaved: null, vmSaved: null, world: null, whale: null, spit: null, hint: false, sinkT: 0, after: 0,
+};
+const _dA = new THREE.Vector3(), _dB = new THREE.Vector3(), _dF = new THREE.Vector3(), _dR = new THREE.Vector3(), _dUP = new THREE.Vector3(0, 1, 0);
+const _dQ = new THREE.Quaternion(), _dM = new THREE.Matrix4();
+
+/* ---- the float in the spot: counted from `updateRod` while it lies there */
+function deepHookTick(dt) {
+  if (deepDone || deepLock || !rod.wet || inRoom() || !introDone || dialogOpen) { deep.spotT = 0; return; }
+  if (Math.hypot(rod.pos.x - FISH_GLOW.x, rod.pos.z - FISH_GLOW.z) > FISH_GLOW.r * 0.85) { deep.spotT = 0; return; }
+  deep.spotT += dt;
+  if (deep.spotT >= DEEP_HOOK_T) startDeepHook();
+}
+function startDeepHook() {
+  deepLock = true; deepNoHands = true; deepRodOn = true; deepBend = 0;
+  deep.ph = 'hook'; deep.t = 0; deep.under = false; deep.yank = 0; deep.jerkT = 0.5; deep.muffled = false; deep.hint = false;
+  deep.hookP.copy(rod.pos);
+  rodWhirStop();
+  plioLoad(); deepAmbLoad();
+  calmChasers(); deep.calmT = 0.5;              // the five's camp is a stone's throw away: nothing comes after you while this has you
+}
+
+/* ---- the rod's line while something has it: tip to where it goes into the water, taut */
+function deepRodLine(to, sag = 0) {
+  rodTipWorld(_rodTip);
+  const pa = rodLine.geometry.attributes.position, arr = pa.array;
+  for (let i = 0; i < ROD_LINE_N; i++) {
+    const u = i / (ROD_LINE_N - 1);
+    _rodA.lerpVectors(_rodTip, to, u); _rodA.y -= 4 * u * (1 - u) * sag;
+    arr[i * 3] = _rodA.x; arr[i * 3 + 1] = _rodA.y; arr[i * 3 + 2] = _rodA.z;
+  }
+  pa.needsUpdate = true; rodLine.visible = true;
+}
+
+/* ---- sound ------------------------------------------------------------------------------------------------------ */
+/* UNDER THE WATER EVERYTHING IS UNDER THE WATER. One lowpass between the master and the gate (`uwLP`), put in the
+ * first time it is wanted and left there wide open (20 kHz) the rest of the game; the deep closes it to ~520 Hz.
+ * Every effect, every voice, every footstep goes through the master, so all of it is heard through the water. */
+let uwLP = null, uwBed = null;
+function deepAudio(on, secs = 0.4) {
+  const ctx = audioCtx; if (!ctx || !masterGain || !gameAudioGate) return;
+  if (!uwLP) {
+    uwLP = ctx.createBiquadFilter(); uwLP.type = 'lowpass'; uwLP.frequency.value = 20000; uwLP.Q.value = 1.1;
+    try { masterGain.disconnect(gameAudioGate); } catch (e) { /* not connected that way: leave it */ }
+    masterGain.connect(uwLP).connect(gameAudioGate);
+  }
+  const t = ctx.currentTime;
+  holdParam(uwLP.frequency, t); uwLP.frequency.setTargetAtTime(on ? 520 : 20000, t, Math.max(0.02, secs / 3));
+  // and the deep's own sound: the pressure of it, a slow surge far below hearing's floor
+  if (on && !uwBed) {
+    const n = ctx.sampleRate * 4, buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+    let b = 0; for (let i = 0; i < n; i++) { b = (b + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = b * 3.2; }
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 140;
+    const g = ctx.createGain(); g.gain.value = 0;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07; const lg = ctx.createGain(); lg.gain.value = 0.08;
+    lfo.connect(lg).connect(g.gain);
+    const rush = ctx.createGain(); rush.gain.value = 0;      // the water going past you, by speed
+    const rlp = ctx.createBiquadFilter(); rlp.type = 'bandpass'; rlp.frequency.value = 380; rlp.Q.value = 0.6;
+    src.connect(lp).connect(g).connect(sfxOut());
+    src.connect(rlp).connect(rush).connect(sfxOut());
+    src.start(); lfo.start();
+    g.gain.setTargetAtTime(0.32, t, 1.2);
+    uwBed = { src, g, lfo, rush };
+  } else if (!on && uwBed) {
+    const B = uwBed; uwBed = null;
+    B.g.gain.setTargetAtTime(0, t, 0.3); B.rush.gain.setTargetAtTime(0, t, 0.2);
+    setTimeout(() => { try { B.src.stop(); B.lfo.stop(); } catch (e) { /* gone */ } }, 1500);
+  }
+}
+// air leaving: a run of small bubbles, each a sine chirp rising as it frees itself (a Minnaert bubble)
+function sfxBubbles(n = 8, gain = 0.5, spread = 0.5, low = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime;
+  for (let i = 0; i < n; i++) {
+    const t = t0 + Math.random() * spread, f = (260 + Math.random() * 700) * low, d = 0.03 + Math.random() * 0.06;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * (1.6 + Math.random()), t + d);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gain * (0.3 + Math.random() * 0.7) * 0.12, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g).connect(sfxOut()); o.start(t); o.stop(t + d + 0.02);
+  }
+}
+// the reel's drag giving line: a ratchet so fast it is a buzz, and a whine over it with the speed in it
+let deepScream = null;
+function deepScreamSet(k) {
+  const ctx = audioCtx; if (!ctx) return;
+  if (k > 0 && !deepScream) {
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 6;
+    const am = ctx.createOscillator(); am.type = 'square'; const amg = ctx.createGain(); amg.gain.value = 0.5;
+    const g = ctx.createGain(); g.gain.value = 0; const vca = ctx.createGain(); vca.gain.value = 0.5;
+    am.connect(amg).connect(vca.gain);
+    o.connect(bp).connect(vca).connect(g).connect(sfxOut());
+    o.start(); am.start();
+    deepScream = { o, bp, am, g };
+  }
+  if (!deepScream) return;
+  const t = ctx.currentTime, S = deepScream;
+  S.o.frequency.setTargetAtTime(220 + 900 * k, t, 0.05); S.bp.frequency.setTargetAtTime(1400 + 2600 * k, t, 0.05);
+  S.am.frequency.setTargetAtTime(12 + 70 * k, t, 0.05);
+  S.g.gain.setTargetAtTime(k > 0 ? 0.035 + 0.05 * k : 0, t, 0.06);
+  if (k <= 0) { deepScream = null; setTimeout(() => { try { S.o.stop(); S.am.stop(); } catch (e) { /* gone */ } }, 600); }
+}
+// the line parting: a hard pluck that drops, and the rod's own spring
+function sfxLineSnap() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(1900, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.35);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  o.connect(g).connect(sfxOut()); o.start(t); o.stop(t + 0.5);
+  sfxThud(0.04);
+}
+// a creature's voice in the deep: a slowed growl, low and wide, panned from where it is
+function sfxPlioVoice(x, z, kind = 'growl', k = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const d = Math.hypot(x - camera.position.x, z - camera.position.z), t = ctx.currentTime + d / 1480;   // sound is fast in water
+  const near = 1 / (1 + d / 18);
+  const pan = ctx.createStereoPanner(); pan.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.8, -1, 1); pan.connect(sfxOut());
+  const dur = kind === 'roar' ? 1.5 : kind === 'hurt' ? 0.55 : kind === 'die' ? 3.2 : kind === 'call' ? 2.6 : 1.4;
+  const f0 = kind === 'call' ? 46 : kind === 'hurt' ? 95 : kind === 'die' ? 70 : 58;
+  const o = ctx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f0, t);
+  if (kind === 'roar') o.frequency.linearRampToValueAtTime(f0 * 1.7, t + 0.35), o.frequency.linearRampToValueAtTime(f0 * 0.8, t + dur);
+  else if (kind === 'die') o.frequency.linearRampToValueAtTime(f0 * 1.5, t + 0.4), o.frequency.exponentialRampToValueAtTime(f0 * 0.35, t + dur);
+  else if (kind === 'call') o.frequency.linearRampToValueAtTime(f0 * 1.35, t + 1.2), o.frequency.linearRampToValueAtTime(f0 * 0.9, t + dur);
+  else o.frequency.linearRampToValueAtTime(f0 * (kind === 'hurt' ? 0.7 : 1.25), t + dur);
+  const wob = ctx.createOscillator(); wob.frequency.value = kind === 'growl' ? 23 : 31; const wg = ctx.createGain(); wg.gain.value = f0 * 0.18;
+  wob.connect(wg).connect(o.frequency);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = kind === 'hurt' ? 900 : 480; lp.Q.value = 4;
+  const g = ctx.createGain(); const peak = (kind === 'roar' || kind === 'die' ? 0.9 : kind === 'call' ? 0.55 : 0.5) * k * (0.35 + 0.65 * near);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + Math.min(0.25, dur * 0.2)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(lp).connect(g).connect(pan); o.start(t); o.stop(t + dur + 0.05); wob.start(t); wob.stop(t + dur + 0.05);
+  // the throat's rattle under it
+  const n = noiseBurst(dur, (u) => Math.min(1, u * 8) * Math.pow(1 - u, 1.5));
+  const nb = ctx.createBiquadFilter(); nb.type = 'bandpass'; nb.frequency.value = 220; nb.Q.value = 1.2;
+  const ng = ctx.createGain(); ng.gain.value = peak * 0.5;
+  n.connect(nb).connect(ng).connect(pan); n.start(t); n.stop(t + dur);
+}
+// the pressure wave in front of something enormous coming at you
+function sfxSurge(gain = 0.6, dur = 1.2) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const n = noiseBurst(dur, (u) => Math.pow(u, 2.2) * (u < 0.92 ? 1 : (1 - u) / 0.08));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.setValueAtTime(120, t); lp.frequency.exponentialRampToValueAtTime(900, t + dur);
+  const g = ctx.createGain(); g.gain.value = gain;
+  n.connect(lp).connect(g).connect(sfxOut()); n.start(t); n.stop(t + dur);
+}
+// a heart, heard from inside something
+function sfxHeartThud(gain = 0.6) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  for (const [dt, f, k] of [[0, 46, 1], [0.24, 38, 0.7]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f * 1.4, t + dt); o.frequency.exponentialRampToValueAtTime(f, t + dt + 0.08);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t + dt); g.gain.exponentialRampToValueAtTime(gain * k, t + dt + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.32);
+    o.connect(g).connect(sfxOut()); o.start(t + dt); o.stop(t + dt + 0.35);
+  }
+}
+
+/* ---- the deep's own things: the black, the motes, the bubbles, the blood, the floor -------------------------- */
+const DEEP_FX_N = 1100;
+let deepFx = null, deepSnow = null, deepBack = null;
+function deepSprite() {
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.5, 'rgba(255,255,255,0.45)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function buildDeep() {
+  if (deep.world) return;
+  const W = new THREE.Group(); W.name = 'deepWorld'; W.visible = false;
+  const cx = DEEP.x, cy = DEEP.y, cz = DEEP.z;
+  /* the black has a direction: a hair less black overhead, where the surface is, miles up */
+  const bm = new THREE.ShaderMaterial({
+    // the fog's own colour at the horizon and under it (anything far off melts into exactly this), lifting toward the surface
+    uniforms: { uFog: { value: new THREE.Color() }, uK: { value: 1 } },
+    vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: 'uniform vec3 uFog; uniform float uK; varying vec3 vD; void main(){ float h = max(vD.y, 0.0); vec3 c = uFog * (1.0 + uK * 2.2 * pow(h, 1.6)); gl_FragColor = vec4(c, 1.0);\n#include <colorspace_fragment>\n}',   // (no tone mapping: the fog it must meet is not tone-mapped either — measured, 3,17,26 both)
+    side: THREE.BackSide, depthWrite: false, fog: false,
+  });
+  deepBack = new THREE.Mesh(new THREE.SphereGeometry(300, 24, 16), bm); deepBack.renderOrder = -10; deepBack.frustumCulled = false;
+  W.add(deepBack);
+  /* the floor: grey ooze in long low swells, with the odd stone standing out of it */
+  const fg = new THREE.PlaneGeometry(460, 460, 92, 92); fg.rotateX(-Math.PI / 2);
+  const fp = fg.attributes.position;
+  for (let i = 0; i < fp.count; i++) {
+    const x = fp.getX(i), z = fp.getZ(i);
+    fp.setY(i, Math.sin(x * 0.045 + z * 0.02) * 1.6 + Math.sin(z * 0.09 - x * 0.03) * 0.8 + Math.sin(x * 0.21) * Math.sin(z * 0.17) * 0.35);
+  }
+  fg.computeVertexNormals();
+  const floor = new THREE.Mesh(fg, new THREE.MeshStandardMaterial({ color: 0x252b2e, roughness: 1, metalness: 0, flatShading: true, emissive: 0x081216, emissiveIntensity: 0.6 }));
+  floor.position.set(cx, cy + DEEP.floor, cz); W.add(floor);
+  const rm = new THREE.MeshStandardMaterial({ color: 0x1d2224, roughness: 1, metalness: 0, flatShading: true, emissive: 0x060d10, emissiveIntensity: 1 });
+  const rnd = mulberry32(25000);
+  for (let i = 0; i < 26; i++) {
+    const r = 1 + rnd() * 4.5, a = rnd() * Math.PI * 2, d = 12 + rnd() * 120;
+    const s = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), rm);
+    s.position.set(cx + Math.cos(a) * d, cy + DEEP.floor - r * 0.3, cz + Math.sin(a) * d);
+    s.scale.set(1 + rnd() * 0.8, 0.5 + rnd() * 0.7, 1 + rnd() * 0.8); s.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+    W.add(s);
+  }
+  /* marine snow: drifting specks wrapped round the camera in the shader, so they are everywhere and cost nothing */
+  const SN = 1600, sp = new Float32Array(SN * 3), ss = new Float32Array(SN);
+  for (let i = 0; i < SN; i++) { sp[i * 3] = Math.random() * 40; sp[i * 3 + 1] = Math.random() * 40; sp[i * 3 + 2] = Math.random() * 40; ss[i] = 0.5 + Math.random(); }
+  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); sg.setAttribute('aS', new THREE.BufferAttribute(ss, 1));
+  deepSnow = new THREE.Points(sg, new THREE.ShaderMaterial({
+    uniforms: { uCam: { value: new THREE.Vector3() }, uT: { value: 0 }, uPx: { value: 600 }, uMap: { value: deepSprite() }, uK: { value: 1 } },
+    vertexShader: `uniform vec3 uCam; uniform float uT, uPx; attribute float aS; varying float vA;
+      void main(){ vec3 o = position + vec3(sin(uT * 0.21 + aS * 9.0) * 0.6, -uT * 0.18 * aS, cos(uT * 0.17 + aS * 7.0) * 0.6);
+        vec3 p = uCam + mod(o - uCam + 20.0, 40.0) - 20.0;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0); float d = -mv.z;
+        vA = smoothstep(20.0, 6.0, d) * smoothstep(0.3, 1.2, d);
+        gl_PointSize = max(1.0, 0.045 * aS * uPx / d); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: 'uniform sampler2D uMap; uniform float uK; varying float vA; void main(){ float a = texture2D(uMap, gl_PointCoord).a; gl_FragColor = vec4(vec3(0.55, 0.68, 0.70), a * vA * 0.5 * uK);\n#include <colorspace_fragment>\n}',
+    transparent: true, depthWrite: false, fog: false,
+  }));
+  deepSnow.frustumCulled = false; W.add(deepSnow);
+  /* bubbles, blood and silt: one pool of points, each with its own colour, size and way of moving */
+  const P = new Float32Array(DEEP_FX_N * 3), C = new Float32Array(DEEP_FX_N * 3), S = new Float32Array(DEEP_FX_N), A = new Float32Array(DEEP_FX_N), K = new Float32Array(DEEP_FX_N);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(P, 3)); geo.setAttribute('aC', new THREE.BufferAttribute(C, 3));
+  geo.setAttribute('aS', new THREE.BufferAttribute(S, 1)); geo.setAttribute('aA', new THREE.BufferAttribute(A, 1)); geo.setAttribute('aK', new THREE.BufferAttribute(K, 1));
+  const pts = new THREE.Points(geo, new THREE.ShaderMaterial({
+    uniforms: { uPx: { value: 600 }, uMap: { value: deepSprite() }, uFog: { value: 0.05 } },
+    vertexShader: `uniform float uPx, uFog; attribute vec3 aC; attribute float aS, aA, aK; varying vec3 vC; varying float vA, vK;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); float d = max(0.05, -mv.z);
+        float f = exp(-pow(uFog * d, 2.0)); vC = aC; vA = aA * f; vK = aK;
+        gl_PointSize = clamp(aS * uPx / d, 1.0, 180.0); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D uMap; varying vec3 vC; varying float vA, vK;
+      void main(){ vec2 q = gl_PointCoord * 2.0 - 1.0; float r = length(q);
+        if (vK > 0.5) {            // a bubble: a bright rim, a clear middle, a glint up and to one side
+          float rim = smoothstep(0.62, 0.86, r) * smoothstep(1.0, 0.9, r);
+          float glint = smoothstep(0.32, 0.0, length(q - vec2(-0.32, 0.34)));
+          float a = rim * 0.85 + glint * 0.9 + (1.0 - r) * 0.08; if (r > 1.0) discard;
+          gl_FragColor = vec4(vC, a * vA);
+        } else {                    // a cloud: soft all through
+          float a = texture2D(uMap, gl_PointCoord).a; gl_FragColor = vec4(vC, a * vA);
+        }
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, fog: false,
+  }));
+  pts.frustumCulled = false; W.add(pts);
+  deepFx = { pts, P, C, S, A, K, v: new Float32Array(DEEP_FX_N * 3), life: new Float32Array(DEEP_FX_N), max: new Float32Array(DEEP_FX_N), s0: new Float32Array(DEEP_FX_N), ph: new Float32Array(DEEP_FX_N), next: 0 };
+  scene.add(W);
+  deep.world = W; deepWorldRef = W;
+}
+// kind 1 bubble, 0 blood, 2 silt
+function deepPuff(kind, x, y, z, n, spread = 0.3, vel = null, sz = 1) {
+  const F = deepFx; if (!F) return;
+  for (let k = 0; k < n; k++) {
+    const i = F.next; F.next = (F.next + 1) % DEEP_FX_N;
+    F.P[i * 3] = x + (Math.random() - 0.5) * spread; F.P[i * 3 + 1] = y + (Math.random() - 0.5) * spread; F.P[i * 3 + 2] = z + (Math.random() - 0.5) * spread;
+    const vx = vel ? vel.x : 0, vy = vel ? vel.y : 0, vz = vel ? vel.z : 0;
+    const j = kind === 1 ? 0.6 : kind === 0 ? 1.4 : 0.9;
+    F.v[i * 3] = vx + (Math.random() - 0.5) * j; F.v[i * 3 + 1] = vy + (Math.random() - 0.5) * j + (kind === 1 ? 0.4 : 0); F.v[i * 3 + 2] = vz + (Math.random() - 0.5) * j;
+    F.K[i] = kind === 1 ? 1 : 0;
+    if (kind === 1) { const c = 0.6 + Math.random() * 0.3; F.C.set([c * 0.75, c * 0.92, c], i * 3); F.s0[i] = (0.012 + Math.pow(Math.random(), 2.5) * 0.05) * sz; F.max[i] = F.life[i] = 3 + Math.random() * 3; }
+    else if (kind === 0) { F.C.set([0.085 + Math.random() * 0.04, 0.004, 0.006], i * 3); F.s0[i] = (0.25 + Math.random() * 0.5) * sz; F.max[i] = F.life[i] = 2.5 + Math.random() * 3.5; }   // (linear: a dark, murky red, not a glow)
+    else { const c = 0.16 + Math.random() * 0.06; F.C.set([c, c * 1.05, c * 1.02], i * 3); F.s0[i] = (0.6 + Math.random() * 1.2) * sz; F.max[i] = F.life[i] = 4 + Math.random() * 4; }
+    F.ph[i] = Math.random() * 6.28;
+  }
+}
+function updateDeepFx(dt) {
+  const F = deepFx; if (!F) return;
+  const T = performance.now() * 0.001;
+  for (let i = 0; i < DEEP_FX_N; i++) {
+    if (F.life[i] <= 0) { F.A[i] = 0; continue; }
+    F.life[i] -= dt;
+    const u = 1 - F.life[i] / F.max[i], b = i * 3;
+    if (F.K[i] > 0.5) {
+      F.v[b + 1] += 3.4 * dt;                                         // it floats up, faster the bigger it is
+      const dr = Math.exp(-2.2 * dt); F.v[b] *= dr; F.v[b + 1] *= Math.exp(-1.1 * dt); F.v[b + 2] *= dr;
+      const w = Math.sin(T * 9 + F.ph[i]) * 0.5 * dt;                  // and wobbles as it goes
+      F.P[b] += F.v[b] * dt + w; F.P[b + 1] += F.v[b + 1] * dt * (0.6 + F.s0[i] * 12); F.P[b + 2] += F.v[b + 2] * dt + Math.cos(T * 7 + F.ph[i]) * 0.4 * dt;
+      F.S[i] = F.s0[i] * (1 + u * 0.5); F.A[i] = Math.min(1, F.life[i] * 2) * Math.min(1, u * 20);
+    } else {
+      const dr = Math.exp(-1.6 * dt); F.v[b] *= dr; F.v[b + 1] *= dr; F.v[b + 2] *= dr;
+      if (F.C[b + 1] > 0.05) F.v[b + 1] -= 0.06 * dt;                   // silt settles (blood has next to no green)
+      F.P[b] += F.v[b] * dt; F.P[b + 1] += F.v[b + 1] * dt; F.P[b + 2] += F.v[b + 2] * dt;
+      F.S[i] = F.s0[i] * (1 + Math.sqrt(u) * 3.2); F.A[i] = Math.min(1, u * 8) * Math.pow(1 - u, 1.4) * 0.8;
+    }
+  }
+  const g = F.pts.geometry;
+  g.attributes.position.needsUpdate = true; g.attributes.aS.needsUpdate = true; g.attributes.aA.needsUpdate = true; g.attributes.aC.needsUpdate = true; g.attributes.aK.needsUpdate = true;
+}
+
+/* THE SEA'S OWN SOUND (2026-10-15, the owner's "Deep Sea Monster Sounds Terrifying Under Water Ambience", 4 min,
+ * `assets/deep-ambience.m4a`): looped the whole time you are down there, joined AFTER the water's lowpass — it is a
+ * recording made under water already, and the lowpass would take the life out of it. Faded in on the plunge, out as
+ * you go under for the last time. */
+const DEEP_AMB_LEVEL = 0.26;   // (0.85 for a day: "make the ambience i sent much lower in volume in the water")
+const deepAmb = { buf: null, loading: false, src: null, g: null };
+function deepAmbLoad() {
+  if (deepAmb.buf || deepAmb.loading || !audioCtx) return;
+  deepAmb.loading = true;
+  fetch('assets/deep-ambience.m4a').then((r) => r.arrayBuffer()).then((b) => audioCtx.decodeAudioData(b)).then((buf) => { deepAmb.buf = buf; })
+    .catch((e) => { deepAmb.loading = false; console.warn('[bw] deep ambience', e); });
+}
+function deepAmbSet(on, secs = 2) {
+  const ctx = audioCtx; if (!ctx || !gameAudioGate) return;
+  const t = ctx.currentTime;
+  if (on && !deepAmb.src && deepAmb.buf) {
+    const g = ctx.createGain(); g.gain.value = 0.0001; g.connect(gameAudioGate);
+    const src = ctx.createBufferSource(); src.buffer = deepAmb.buf; src.loop = true; src.connect(g);
+    src.start(t, Math.random() * deepAmb.buf.duration * 0.6);
+    g.gain.setTargetAtTime(settings.volume * DEEP_AMB_LEVEL, t, secs / 3);
+    deepAmb.src = src; deepAmb.g = g;
+  } else if (!on && deepAmb.src) {
+    const S = deepAmb.src, G = deepAmb.g; deepAmb.src = null; deepAmb.g = null;
+    G.gain.setTargetAtTime(0.0001, t, secs / 3);
+    setTimeout(() => { try { S.stop(); } catch (e) { /* gone */ } }, secs * 1000 + 600);
+  }
+}
+// something far off in the dark: a long call, or the groan of something enormous settling
+function sfxDeepFar() {
+  const a = Math.random() * Math.PI * 2, d = 80 + Math.random() * 60, x = camera.position.x + Math.sin(a) * d, z = camera.position.z + Math.cos(a) * d;
+  if (Math.random() < 0.55) { sfxPlioVoice(x, z, 'call', 0.32); return; }
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, dur = 3 + Math.random() * 2;
+  const pan = ctx.createStereoPanner(); pan.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.8, -1, 1); pan.connect(sfxOut());
+  const n = noiseBurst(dur, (u) => Math.sin(Math.min(1, u * 1.4) * Math.PI) * 0.9);
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 9; bp.frequency.setValueAtTime(140 + Math.random() * 80, t); bp.frequency.linearRampToValueAtTime(70 + Math.random() * 40, t + dur);
+  const g = ctx.createGain(); g.gain.value = 0.55;
+  n.connect(bp).connect(g).connect(pan); n.start(t); n.stop(t + dur);
+}
+// the murk on the lens: a darkness closing in from the edges, over the picture and under everything else
+let deepMurkEl = null;
+function deepMurk(k) {
+  if (!deepMurkEl) {
+    if (k <= 0) return;
+    deepMurkEl = document.createElement('div');
+    deepMurkEl.style.cssText = 'position:fixed;inset:0;z-index:9;pointer-events:none;opacity:0;background:radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 32%, rgba(1,9,11,0.55) 68%, rgba(0,4,5,0.92) 100%);';
+    document.body.appendChild(deepMurkEl);
+  }
+  deepMurkEl.style.opacity = String(THREE.MathUtils.clamp(k, 0, 1));
+}
+
+/* ---- in and out of the deep --------------------------------------------------------------------------------- */
+function deepEnter() {
+  buildDeep();
+  if (!deep.fogSaved) deep.fogSaved = { color: scene.fog.color.clone(), density: scene.fog.density, sky: sky.visible || !!(hallHid && hallHid.includes(sky)) };
+  scene.fog.color.copy(DEEP_TOP_FOG); scene.fog.density = 0.022; sky.visible = false;
+  setSkyDuck(1);
+  // the hands are lit by nothing down here either
+  if (!deep.vmSaved) { deep.vmSaved = []; for (const l of vmScene.children) if (l.isLight) deep.vmSaved.push([l, l.intensity, l.color.clone()]); }
+  for (const [l, i] of deep.vmSaved) { l.intensity = i * 0.2; l.color.setHex(0x6fa0b0); }
+}
+function deepLeave() {
+  if (deep.fogSaved) { scene.fog.color.copy(deep.fogSaved.color); scene.fog.density = deep.fogSaved.density; sky.visible = deep.fogSaved.sky; deep.fogSaved = null; }
+  setSkyDuck(0);
+  deepMurk(0); renderer.domElement.style.filter = '';
+  if (deep.vmSaved) { for (const [l, i, c] of deep.vmSaved) { l.intensity = i; l.color.copy(c); } deep.vmSaved = null; }
+}
+function placeInDeep() {
+  inC13 = false; inFort = false; onIsle = false; insideTower = false; isleOnGallery = false;
+  mushWhere = 'out'; mushInYard = false;
+  inDeep = true;
+  deepEnter();
+  deep.world.visible = true;
+  if (plio.g) plio.g.visible = false;
+  try { renderer.compile(deep.world, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  deep.descE.set(DEEP.x, DEEP.y, DEEP.z);
+  deep.descS.set(DEEP.x + 40, DEEP.y + 250, DEEP.z - 200);
+  deep.descC.set(DEEP.x + 10, DEEP.y + 30, DEEP.z - 140);
+  camera.position.copy(deep.descS);
+  camBaseY = camera.position.y; groundY = camBaseY - playerEye(); vy = 0; onGround = true;
+  lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order);
+  lookEuler.set(-0.75, Math.atan2(-(deep.descC.x - deep.descS.x), -(deep.descC.z - deep.descS.z)), 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
+  _preMove.set(camera.position.x, 0, camera.position.z);
+  deep.v.set(0, 0, 0); deep.knock.set(0, 0, 0);
+}
+function placeOutOfDeep() {
+  inDeep = false;
+  deepAmbSet(false, 1.5);                        // (and out of the water it is gone, however you left)
+  if (deep.world) deep.world.visible = false;
+  if (plio.g) plio.g.visible = false;
+  deepLeave();
+}
+// the veil: a sea-dark sheet over the picture for the plunge (its own element, so the black-screen guard is not asked)
+let deepVeilEl = null;
+function deepVeil(op, col = '#03141b') {
+  if (!deepVeilEl) {
+    deepVeilEl = document.createElement('div');
+    deepVeilEl.style.cssText = 'position:fixed;inset:0;z-index:10;pointer-events:none;opacity:0;';
+    document.body.appendChild(deepVeilEl);
+  }
+  deepVeilEl.style.background = col;
+  deepVeilEl.style.opacity = String(THREE.MathUtils.clamp(op, 0, 1));
+}
+
+/* ---- swimming --------------------------------------------------------------------------------------------- */
+/* WATER, NOT AIR. Nothing holds you up and nothing holds you down: you go where you look, in strokes — each one a
+ * push and then a glide, which is what moving through water feels like and what the hands in front of you do
+ * (`deepVmPose`). Space rises, Ctrl sinks, Shift is a harder stroke while you have the breath. The drag is heavy, so
+ * a turn is slow and a stop is soon. The arena is a sphere of dark eighty metres round, and the floor is the floor. */
+function deepSwim(dt) {
+  const cam = camera.position;
+  const can = (locked || fallbackLook) && !frozen() && !deep.noSwim;
+  crouching = false;
+  camera.getWorldDirection(_dF);
+  _dR.crossVectors(_dF, _dUP).normalize();
+  const mz = can ? (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0) : 0;
+  const mx = can ? (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0) : 0;
+  const my = can ? (keys.Space ? 1 : 0) - ((keys.ControlLeft || keys.ControlRight || keys.KeyC) ? 1 : 0) : 0;
+  _dA.set(0, 0, 0).addScaledVector(_dF, mz).addScaledVector(_dR, mx).addScaledVector(_dUP, my);
+  const moving = _dA.lengthSq() > 0.01;
+  if (_dA.lengthSq() > 1) _dA.normalize();
+  const hard = moving && (keys.ShiftLeft || keys.ShiftRight) && stamina > 0.08 && !exhausted;
+  if (hard) stamina = Math.max(0, stamina - dt * 0.22);
+  if (moving) {
+    deep.stroke += dt * (hard ? 1.25 : 0.9);
+    const ph = deep.stroke % 1, push = ph < 0.42 ? Math.sin(ph / 0.42 * Math.PI) : 0;   // the pull, then the glide
+    deep.v.addScaledVector(_dA, (2.2 + 9.5 * push) * (hard ? 1.45 : 1) * (deep.swimK ?? 1) * dt);
+    const k = Math.floor(deep.stroke);
+    if (k !== deep.strokeHit) {                                            // each stroke: the swish of it, and a little air
+      deep.strokeHit = k;
+      sfxSurge(0.12, 0.5);
+      if (Math.random() < 0.5) { camera.getWorldPosition(_dB); deepPuff(1, _dB.x + _dF.x * 0.6, _dB.y - 0.5, _dB.z + _dF.z * 0.6, 3, 0.4); }
+    }
+  } else deep.stroke = Math.ceil(deep.stroke - 0.001) - 0.0;
+  deep.v.multiplyScalar(Math.exp(-1.7 * dt));
+  deep.v.y += Math.sin(performance.now() * 0.0006) * 0.04 * dt;            // never quite still
+  cam.addScaledVector(deep.v, dt).addScaledVector(deep.knock, dt);
+  deep.knock.multiplyScalar(Math.exp(-3.2 * dt));
+  // the bounds: the dark gives back what you swim into it, the floor is hard
+  const dx = cam.x - DEEP.x, dz = cam.z - DEEP.z, r = Math.hypot(dx, dz);
+  if (r > DEEP.R) { const over = r - DEEP.R; deep.v.x -= (dx / r) * over * 2.5 * dt; deep.v.z -= (dz / r) * over * 2.5 * dt; if (over > 6) { cam.x = DEEP.x + dx / r * (DEEP.R + 6); cam.z = DEEP.z + dz / r * (DEEP.R + 6); } }
+  const fy = DEEP.y + DEEP.floor + 1.7 + deepFloorBump(cam.x, cam.z);
+  if (cam.y < fy) { cam.y = fy; if (deep.v.y < 0) deep.v.y *= -0.2; }
+  if (cam.y > DEEP.y + DEEP.top) { deep.v.y -= (cam.y - DEEP.y - DEEP.top) * 3 * dt; }
+  deepHold();
+  return moving;
+}
+const deepFloorBump = (x, z) => { const lx = x - DEEP.x, lz = z - DEEP.z; return Math.sin(lx * 0.045 + lz * 0.02) * 1.6 + Math.sin(lz * 0.09 - lx * 0.03) * 0.8; };
+// what `update` must believe about a body the deep is carrying: standing where it is, not falling
+function deepHold() {
+  camBaseY = camera.position.y; groundY = camBaseY - playerEye(); vy = 0; onGround = true;
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+}
+// the hands swim: each stroke takes the item out and round and back, and at rest it hangs and turns on the water
+function deepVmPose(dt) {
+  if (!inDeep || deep.ph === 'descent' || deepCutOn) return;
+  const moving = deep.v.length() > 0.6;
+  const s = deep.stroke * Math.PI * 2, T = performance.now() * 0.001;
+  const k = Math.min(1, deep.v.length() / 2.4);
+  deep.vmK = (deep.vmK || 0) + ((moving ? 1 : 0) - (deep.vmK || 0)) * Math.min(1, dt * 3);
+  const m = deep.vmK;
+  armRig.position.x += (Math.sin(s) * 0.035) * m + Math.sin(T * 0.7) * 0.008 * (1 - m);
+  armRig.position.y += (-Math.abs(Math.sin(s)) * 0.035 + 0.012) * m + Math.sin(T * 1.1) * 0.012 * (1 - m);
+  armRig.position.z += Math.cos(s) * 0.05 * m * k;
+  armRig.rotation.z += Math.sin(s) * 0.12 * m + Math.sin(T * 0.6) * 0.04 * (1 - m);
+  armRig.rotation.x += Math.cos(s) * 0.07 * m + Math.sin(T * 0.9) * 0.03 * (1 - m);
+}
+// breathing out: every few seconds a little cloud of air leaves you and climbs past your eyes
+function deepBreath(dt) {
+  deep.breathT -= dt;
+  if (deep.breathT > 0) return;
+  deep.breathT = 3.8 + Math.random() * 1.8;
+  camera.getWorldPosition(_dB); camera.getWorldDirection(_dF);
+  deepPuff(1, _dB.x + _dF.x * 0.32, _dB.y - 0.16, _dB.z + _dF.z * 0.32, 10 + (Math.random() * 8 | 0), 0.12, _dA.set(_dF.x * 0.3, 0.5, _dF.z * 0.3));
+  sfxBubbles(9, 0.6, 0.6);
+}
+
+/* ---- THE PLIOSAUR ------------------------------------------------------------------------------------------- */
+const plio = {
+  g: null, m: null, mixer: null, A: {}, cur: null, loading: false, ready: false,
+  alive: true, hp: PLIO_HP, st: 'off', t: 0, v: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, 1), speed: 0,
+  eyeMat: null, eyeK: 0, bones: [], head: null, jaw: null, hbT: 0, stun: 0, roll: 0, bit: false, roared: false,
+  flash: 0, mats: [], travel: 0, lurkT: 0, voiceT: 0, deadT: 0, settled: false, firstPass: false,
+};
+const PLIO_SPHERES = [['head_9', 0.8], ['neck_02_11', 0.7], ['neck_01_12', 0.75], ['spine_03_23', 1.0], ['spine_02_24', 1.1], ['spine_01_41', 1.05], ['COG_42', 0.95], ['tail_02_29', 0.7], ['tail_04_27', 0.45]];
+function plioLoad() {
+  if (plio.loading) return; plio.loading = true;
+  bwGlb('assets/pliosaur.glb', (gltf) => {
+    const m = gltf.scene, g = new THREE.Group(); g.name = 'pliosaur';
+    m.scale.setScalar(PLIO_K); m.position.set(0, -1.75 * PLIO_K, -0.4 * PLIO_K);   // its middle on the group's origin
+    plio.eyeMat = new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0, fog: false, depthWrite: true });
+    m.traverse((o) => {
+      if (!o.isMesh) return;
+      o.frustumCulled = false; o.raycast = () => {};
+      const mt = o.material;
+      if (/Eye/i.test(mt.name)) { o.material = plio.eyeMat; return; }
+      // METALNESS IS A TRAP; and in a sea with no light it is seen by its own faint grey, not by a key it does not have
+      mt.metalness = 0; mt.roughness = 0.75; mt.envMapIntensity = 0;
+      // (its own colour pulled toward the water's and its glow halved and tinted, so it sits IN the murk rather than lit over it)
+      if (mt.color) mt.color.multiply(new THREE.Color(0.78, 0.88, 0.9));
+      if (mt.map && mt.emissive) { mt.emissiveMap = mt.map; mt.emissive.setRGB(0.34, 0.52, 0.56); mt.emissiveIntensity = /Teeth/i.test(mt.name) ? 0.4 : 0.3; }
+      mt.needsUpdate = true; plio.mats.push(mt);
+    });
+    g.add(m);
+    plio.mixer = new THREE.AnimationMixer(m);
+    for (const c of gltf.animations) plio.A[c.name] = plio.mixer.clipAction(c);
+    if (plio.A.Attack_Bite) { plio.A.Attack_Bite.setLoop(THREE.LoopOnce); plio.A.Attack_Bite.clampWhenFinished = true; }
+    plio.bones = PLIO_SPHERES.map(([n, r]) => ({ b: m.getObjectByName(n), r: r * PLIO_K })).filter((s) => s.b);
+    plio.head = m.getObjectByName('head_9'); plio.jaw = m.getObjectByName('jaw_2');
+    plio.g = g; plio.m = m;
+    buildDeep(); deep.world.add(g);
+    plioPlay('Swim_Slow', 0);
+    plio.mixer.update(0.01);
+    // its programs, compiled here and not on the frame it first comes out of the dark
+    const wv = deep.world.visible; deep.world.visible = true; g.visible = true;
+    try { renderer.compile(g, camera, scene); } catch (e) { /* a warm is never fatal */ }
+    g.visible = false; deep.world.visible = wv;
+    plio.ready = true;
+  }, (e) => console.warn('[bw] pliosaur', e));
+}
+function plioPlay(name, fade = 0.35, ts = 1, at = null) {
+  const a = plio.A[name]; if (!a) { console.warn('[bw] pliosaur: no clip', name); return; }
+  a.timeScale = ts;
+  if (plio.cur === a) { if (at !== null) a.time = at; return; }
+  a.reset(); a.setEffectiveWeight(1); if (at !== null) a.time = at; a.play();
+  if (plio.cur && fade > 0) plio.cur.crossFadeTo(a, fade, false); else if (plio.cur) plio.cur.stop();
+  plio.cur = a;
+}
+const _pH = new THREE.Vector3(), _pM = new THREE.Vector3();
+function plioHeadPos(out) { return plio.head ? plio.head.getWorldPosition(out) : out.copy(plio.g.position); }
+function plioMouthPos(out) { plioHeadPos(out); _pM.copy(plio.dir); return out.addScaledVector(_pM, 0.9 * PLIO_K); }
+// face along its direction, banked into its turns
+function plioFace(dt, rate = 3) {
+  const g = plio.g;
+  _dM.lookAt(_dA.copy(g.position).add(plio.dir), g.position, _dUP);
+  _dQ.setFromRotationMatrix(_dM);
+  if (plio.roll) _dQ.multiply(new THREE.Quaternion().setFromAxisAngle(_dB.set(0, 0, 1), plio.roll));
+  g.quaternion.slerp(_dQ, Math.min(1, dt * rate));
+}
+function plioShow(on) { if (plio.g) plio.g.visible = on; }
+function plioPlace(p, dir) { plio.g.position.copy(p); plio.dir.copy(dir).normalize(); plioFace(1, 1e3); }
+// steer toward a point at a turn rate (radians a second)
+function plioSteer(target, rate, dt) {
+  _dA.copy(target).sub(plio.g.position).normalize();
+  const ang = plio.dir.angleTo(_dA);
+  if (ang > 1e-4) { const f = Math.min(1, rate * dt / ang); plio.dir.lerp(_dA, f).normalize(); }
+}
+function plioStartPass() {
+  camera.getWorldDirection(_dF); _dF.y = 0; _dF.normalize();
+  _dR.crossVectors(_dF, _dUP).normalize();
+  const c = camera.position.clone().addScaledVector(_dF, 34); c.y -= 5;
+  plioShow(true); plio.st = 'pass'; plio.t = 0; plio.travel = 0;
+  plioPlace(_dB.copy(c).addScaledVector(_dR, -52), _dR);
+  plio.speed = 6.8; plio.eyeK = 0.3;
+  plioPlay('Swim_Slow', 0, 1.25);
+  sfxPlioVoice(c.x, c.z, 'call', 0.6);
+}
+function plioLurk() {
+  plio.st = 'lurk'; plio.t = 0; plio.lurkT = 6 + Math.random() * 6; plio.roll = 0;
+  plio.circ = plio.circ || (Math.random() < 0.5 ? 1 : -1);
+  if (Math.random() < 0.3) plio.circ = -plio.circ;
+  plio.lurkR = Math.random() < 0.25 ? 30 + Math.random() * 4 : 40 + Math.random() * 8;    // gone into the dark between attacks (2026-10-15: "disappear into the darkness more"), and now and then round nearer: a shape, barely
+  plioPlay('Swim_Slow', 0.8, 1.2);
+}
+function plioTell() {
+  plio.st = 'tell'; plio.t = 0; plio.bit = false; plio.roared = false; plio.roll = 0;
+  plio.speed = Math.max(3, plio.speed * 0.6);
+  plioPlay('Swim_Slow', 0.3, 1.4);
+  sfxPlioVoice(plio.g.position.x, plio.g.position.z, 'growl', 1);
+}
+// the bite lands, or is turned
+function plioContact() {
+  plioMouthPos(_pH);
+  const d = _pH.distanceTo(camera.position);
+  if (d > 3.4) { sfxSurge(0.35, 0.5); return; }                         // it shut on water: past you
+  camera.getWorldDirection(_dF);
+  const facing = _dF.dot(_dA.copy(_pH).sub(camera.position).normalize()) > 0.3;
+  if (blocking && facing && equipped && equipped.onDig) {
+    const dtp = (performance.now() - blockStart) / 1000;
+    if (dtp <= PARRY_WINDOW * 1.5 && parryCool <= 0) { plioParried(); return; }
+    plioBlocked(); return;
+  }
+  // it has you
+  damagePlayer(1, { g: plio.g });                // a quarter of you: four missed parries, and a death down here is the whole way back from the spot
+  deep.knock.copy(plio.dir).multiplyScalar(11).addScaledVector(_dUP, 1.5);
+  deepPuff(0, camera.position.x + _dF.x * 0.6, camera.position.y - 0.2, camera.position.z + _dF.z * 0.6, 14, 0.8, null, 1.3);
+  spatterLens(1);
+  sfxWhaleJaw(_pH.x, _pH.z);
+}
+function plioParried() {
+  pegParryHaste(); goldRingParry();
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
+  parryCool = 0;
+  parryGlow = 0.5; guardShockV += 9; spawnSparks(18, 1.5);
+  sfxParry(); playSample('poise', 0.7);
+  addTrauma(0.75); fovKick = Math.max(fovKick, 10); vmImpulse(-1.6);
+  hitstop = Math.max(hitstop, 0.22);
+  setPrompt('<b>PARRY</b>'); setTimeout(() => { if (promptHTML.includes('PARRY')) setPrompt(''); }, 800);
+  plio.st = 'stun'; plio.t = 0; plio.stun = 2.2; plio.flash = 1; plio.riposted = false;
+  plio.v.copy(plio.dir).multiplyScalar(-4);                            // knocked back off the guard
+  plioPlay('Idle', 0.15, 0.3);
+  plioMouthPos(_pH); sfxPlioVoice(_pH.x, _pH.z, 'hurt', 1);
+  deepPuff(1, _pH.x, _pH.y, _pH.z, 26, 1.2, null, 1.6);
+  sfxBubbles(14, 0.8, 0.4, 0.6);
+}
+function plioBlocked() {
+  if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(); else sfxBlock();
+  stamina = Math.max(0, stamina - BLOCK_COST * 2.4); guardTick();
+  if (stamina <= 0.001) { exhausted = true; gaspOut(); damagePlayer(1, { g: plio.g }); }
+  flashMats(toolVM); guardShockV += 8; spawnSparks(16, 1.1); parryGlow = Math.max(parryGlow, 0.34);
+  fovKick = Math.max(fovKick, 7); addTrauma(0.7); vmImpulse(-1.6); hitstop = Math.max(hitstop, 0.09);
+  setPrompt('<b>BLOCKED</b>'); setTimeout(() => { if (promptHTML.includes('BLOCKED')) setPrompt(''); }, 420);
+  deep.knock.copy(plio.dir).multiplyScalar(11).addScaledVector(_dUP, 1);
+}
+function plioHurt(dmg, P, at, melee = false) {
+  if (!plio.alive || !plio.ready) return;
+  plio.hbT = performance.now();
+  if (plio.st === 'stun' && !plio.riposted) {    // the first blow on a parried one counts double; the rest are only blows
+    plio.riposted = true;
+    dmg *= 2;
+    setPrompt('<b>RIPOSTE</b>'); setTimeout(() => { if (promptHTML.includes('RIPOSTE')) setPrompt(''); }, 600);
+  }
+  plio.hp -= dmg; plio.flash = 1;
+  if (at) deepPuff(0, at.x, at.y, at.z, 6 + Math.round(dmg * 3), 0.5, null, 0.8 + dmg * 0.15);
+  /* THE BLOODY BLADE BLEEDS IT TOO, by the beach's own rule (`bleedBuild`/`bleedProc`): every cut builds it, a heavy
+   * one more, and when it fills the wound opens — a sixth of it, in a cloud of its own blood that hangs in the water */
+  if (melee && equipped && equipped.bloody && plio.hp > 0) {
+    plio.bleed = (plio.bleed || 0) + (P >= MUT_HEAVY || digOverhead ? 1.7 : 1.0);
+    if (plio.bleed >= 4.2 * (1 + 0.33 * (plio.bleedProcs || 0))) {
+      plio.bleed = 0; plio.bleedProcs = (plio.bleedProcs || 0) + 1;
+      plio.hp -= Math.max(3, Math.round(PLIO_HP * BLEED_PCT));
+      for (const s of plio.bones) if (Math.random() < 0.6) { s.b.getWorldPosition(_pM); deepPuff(0, _pM.x, _pM.y, _pM.z, 14, s.r, null, 2.4); }
+      addTrauma(0.3); hitstop = Math.max(hitstop, 0.06);
+      if (at) sfxPlioVoice(at.x, at.z, 'hurt', 1.1);
+    }
+  }
+  if (at && Math.random() < 0.7) sfxPlioVoice(at.x, at.z, 'hurt', 0.7);
+  if (plio.hp <= 0) plioDie();
+}
+function plioDie() {
+  plio.alive = false; plio.st = 'die'; plio.t = 0; plio.deadT = 0; plio.settled = false;
+  hitstop = Math.max(hitstop, 0.34); addTrauma(0.95);
+  plioMouthPos(_pH); sfxPlioVoice(_pH.x, _pH.z, 'die', 1.2);
+  deepPuff(0, _pH.x, _pH.y, _pH.z, 60, 3, null, 2.2);
+  plioPlay('Swim_Fast', 0.1, 2.6);
+  statKill({ saveKey: 'pliosaur' });
+}
+/* where a blow along the aim line meets it: the nearest of its spheres the line passes inside */
+function plioRayHit(O, D, far, pad) {
+  if (!plio.ready || !plio.g || !plio.g.visible || !plio.alive) return null;
+  let best = null;
+  for (const s of plio.bones) {
+    s.b.getWorldPosition(_pH);
+    const t = THREE.MathUtils.clamp(_pM.copy(_pH).sub(O).dot(D), 0, far);
+    const miss = _pH.distanceTo(_pM.copy(O).addScaledVector(D, t));
+    if (miss < s.r + pad && (!best || t < best.t)) best = { t, p: O.clone().addScaledVector(D, t) };
+  }
+  return best;
+}
+// a swing: through `digImpactCore`, before anything on the beach is asked
+function plioStrike(P) {
+  if (!inDeep || !plio.alive) return false;
+  aimRay(P);
+  const base = _aimD.clone();
+  let best = null;
+  const nd = sweepDirs(P);                     // (fills `_mswD`, the middle first, and says how many)
+  for (let k = 0; k < nd; k++) {
+    _aimD.copy(_mswD[k]);
+    const h = plioRayHit(_aimO, _aimD, digRay.far, 0.25 + P * 0.2);
+    if (h && (!best || h.t < best.t)) best = h;
+  }
+  _aimD.copy(base);
+  if (!best) return false;
+  const heavy = P >= MUT_HEAVY || digOverhead;
+  hitConnect(P, heavy ? 1.35 : 0.9);
+  bossHit(P, false, true);
+  if (isBlade()) playSample('katHit', 0.9, 0.05);
+  plioHurt(toolDmg(heavy), P, best.p, true);
+  return true;
+}
+
+/* the fight's clock */
+function updatePlio(dt) {
+  if (!plio.ready || !plio.g) return;
+  const g = plio.g, cam = camera.position;
+  plio.t += dt;
+  plio.flash = Math.max(0, plio.flash - dt * 4);
+  for (const m of plio.mats) m.emissiveIntensity = (/Teeth/i.test(m.name) ? 0.4 : 0.3) + plio.flash * 0.9;
+  if (plio.st === 'off') { plio.eyeK = 0; plio.eyeMat.opacity = 0; return; }
+  plioHeadPos(_pH);
+  const dHead = _pH.distanceTo(cam);
+  let want = plio.st === 'charge' || plio.st === 'tell' ? 1 : plio.st === 'stun' ? 0.25 : plio.st === 'die' ? 0 : plio.st === 'lurk' ? 0.08 : 0.3;
+  plio.eyeK += (want - plio.eyeK) * Math.min(1, dt * (want > plio.eyeK ? 3 : 1.2));
+  const murk = Math.exp(-Math.pow(scene.fog.density * dHead * 0.72, 2));        // the eyes come out of the black as the body does, a little before it
+  plio.eyeMat.opacity = plio.eyeK * murk; plio.eyeMat.color.setRGB(1, 0.85 - 0.25 * plio.eyeK, 0.55 - 0.3 * plio.eyeK);
+  switch (plio.st) {
+    case 'pass': {
+      g.position.addScaledVector(plio.dir, plio.speed * dt); plio.travel += plio.speed * dt;
+      plio.roll = Math.sin(plio.t * 0.5) * 0.08;
+      plioFace(dt, 2);
+      if (Math.random() < dt * 2) deepPuff(1, _pH.x, _pH.y, _pH.z, 2, 0.6);
+      if (plio.travel > 104) { plioLurk(); plio.lurkT = 5; }
+      break;
+    }
+    case 'lurk': {
+      // round you at the murk's edge: a shadow at most, its eyes all but shut
+      _dA.copy(g.position).sub(cam);
+      const bear = Math.atan2(_dA.x, _dA.z) + plio.circ * 0.5;
+      _dB.set(cam.x + Math.sin(bear) * plio.lurkR, Math.max(DEEP.y + DEEP.floor + 6, cam.y - 3 + Math.sin(plio.t * 0.25) * 6), cam.z + Math.cos(bear) * plio.lurkR);
+      plio.speed += (5.5 - plio.speed) * Math.min(1, dt);
+      plioSteer(_dB, 0.7, dt);
+      g.position.addScaledVector(plio.dir, plio.speed * dt);
+      plio.roll = -plio.circ * 0.12;
+      plioFace(dt, 2);
+      if (Math.random() < dt * 0.6) deepPuff(1, _pH.x, _pH.y, _pH.z, 2, 0.8);
+      plio.lurkT -= dt;
+      if (plio.lurkT <= 0) {
+        camera.getWorldDirection(_dF);
+        const seen = _dF.dot(_dA.normalize()) > Math.cos(1.75);           // in front of you or off to a side: never out of your back
+        if (seen || plio.lurkT < -8) plioTell();
+      }
+      break;
+    }
+    case 'tell': {
+      // swim on round you, and turn in: the eyes come up out of the black first
+      // from wherever it was: it turns in on you, slowly, and the eyes come up out of the black
+      plio.speed += (2.5 - plio.speed) * Math.min(1, dt * 2);
+      g.position.addScaledVector(plio.dir, plio.speed * dt);
+      plioSteer(cam, 2.2, dt);
+      plioFace(dt, 4);
+      if ((plio.t > 0.9 && plio.dir.angleTo(_dA.copy(cam).sub(g.position).normalize()) < 0.2) || plio.t > 2.4) {
+        plio.st = 'charge'; plio.t = 0; plio.speed = 5;
+        plioPlay('Swim_Fast', 0.25, 1.7);
+        sfxSurge(0.5, 1.6);
+      }
+      break;
+    }
+    case 'charge': {
+      plio.speed = Math.min(15, plio.speed + 13 * dt);
+      plioSteer(cam, dHead > 16 ? 2.6 : 0.55, dt);                         // straight at you out of the dark; only the last metres can be stepped aside from
+      g.position.addScaledVector(plio.dir, plio.speed * dt);
+      plioFace(dt, 5);
+      if (Math.random() < dt * 14) deepPuff(1, _pH.x, _pH.y, _pH.z, 2, 1.0, _dA.copy(plio.dir).multiplyScalar(-2));
+      if (!plio.roared && dHead < 15) { plio.roared = true; sfxPlioVoice(_pH.x, _pH.z, 'roar', 1); }
+      if (dHead < 12.5) {
+        plio.st = 'bite'; plio.t = 0; plio.bit = false;
+        plioPlay('Attack_Bite', 0.12, 1, PLIO_BITE_FROM);
+      }
+      if (plio.t > 7) { plio.st = 'flee'; plio.t = 0; }               // lost you: go round again
+      break;
+    }
+    case 'bite': {
+      const a = plio.A.Attack_Bite;
+      const left = Math.max(0.05, PLIO_BITE_AT - (a ? a.time : PLIO_BITE_AT));
+      // timed so the jaws arrive where you are as they close (the lunge in the clip carries the head ~3.5 m)
+      plio.speed = THREE.MathUtils.clamp((dHead - 4.2) / left, 1.5, 15);
+      if (!plio.bit) plioSteer(cam, 0.45, dt);
+      g.position.addScaledVector(plio.dir, plio.speed * dt);
+      plioFace(dt, 5);
+      if (!plio.bit && a && a.time >= PLIO_BITE_AT) { plio.bit = true; plioContact(); }
+      if (plio.st === 'bite' && a && a.time >= 2.9) { plio.st = 'flee'; plio.t = 0; plioPlay('Swim_Fast', 0.3, 1.5); }
+      break;
+    }
+    case 'stun': {
+      plio.stun -= dt;
+      plio.v.multiplyScalar(Math.exp(-1.5 * dt)); plio.v.y -= 0.4 * dt;
+      g.position.addScaledVector(plio.v, dt);
+      plio.roll += (0.55 - plio.roll) * Math.min(1, dt * 2);
+      plioFace(dt, 1.5);
+      if (Math.random() < dt * 5) { plioMouthPos(_pM); deepPuff(1, _pM.x, _pM.y, _pM.z, 3, 0.5); }
+      if (plio.stun <= 0) { plio.st = 'flee'; plio.t = 0; plio.roll = 0; plioPlay('Swim_Fast', 0.4, 1.4); sfxPlioVoice(_pH.x, _pH.z, 'growl', 0.8); }
+      break;
+    }
+    case 'flee': {
+      // away, out past you and up into the black, and round again from somewhere else
+      if (plio.t < 0.1) { _dA.copy(g.position).sub(cam); _dA.y = Math.abs(_dA.y) + 6; plio.fleeTo = _dB.copy(cam).addScaledVector(_dA.normalize(), 70).clone(); }
+      plio.speed = Math.max(6, Math.min(12, plio.speed + 6 * dt));
+      plioSteer(plio.fleeTo, 1.4, dt);
+      g.position.addScaledVector(plio.dir, plio.speed * dt);
+      plioFace(dt, 3);
+      if (plio.t > 1.6 && plio.cur === plio.A.Swim_Fast) plioPlay('Swim_Slow', 0.6, 1.5);
+      if (g.position.distanceTo(cam) > 52 || plio.t > 6) plioLurk();
+      break;
+    }
+    case 'die': {
+      plio.deadT += dt;
+      const T = plio.deadT;
+      if (T < 1.8) {                                                  // it thrashes
+        plio.dir.applyAxisAngle(_dUP, Math.sin(T * 13) * dt * 2.2).normalize();
+        plio.roll = Math.sin(T * 9) * 0.6;
+        g.position.addScaledVector(plio.dir, 2 * dt);
+        if (Math.random() < dt * 20) { plioMouthPos(_pM); deepPuff(0, _pM.x, _pM.y, _pM.z, 3, 1.5, null, 1.6); }
+        if (Math.random() < dt * 10) { plioMouthPos(_pM); deepPuff(1, _pM.x, _pM.y, _pM.z, 4, 1); }
+      } else {
+        // and stops, and turns over, and goes down
+        if (plio.cur === plio.A.Swim_Fast) plioPlay('Idle', 1.2, 0.35);
+        if (plio.cur) plio.cur.timeScale = Math.max(0, 0.35 - (T - 1.8) * 0.08);
+        plio.roll += (Math.PI * 0.9 - plio.roll) * Math.min(1, dt * 0.5);
+        plio.dir.y += (-0.22 - plio.dir.y) * Math.min(1, dt * 0.4); plio.dir.normalize();
+        const floorY = DEEP.y + DEEP.floor + 1.1 * PLIO_K + deepFloorBump(g.position.x, g.position.z);
+        if (!plio.settled) {
+          plio.v.y = Math.max(-3.4, plio.v.y - 0.9 * dt); plio.v.x *= Math.exp(-dt); plio.v.z *= Math.exp(-dt);
+          g.position.addScaledVector(plio.v, dt);
+          if (Math.random() < dt * 3) { plioMouthPos(_pM); deepPuff(1, _pM.x, _pM.y, _pM.z, 5, 0.6, null, 1.4); sfxBubbles(3, 0.25, 0.3, 0.5); }
+          if (Math.random() < dt * 4) deepPuff(0, g.position.x, g.position.y, g.position.z, 2, 3, null, 1.8);
+          if (g.position.y <= floorY) {
+            g.position.y = floorY; plio.settled = true; plio.v.set(0, 0, 0);
+            deepPuff(2, g.position.x, floorY - 1.2 * PLIO_K, g.position.z, 70, 9, null, 1.5);
+            sfxThud(0.06); sfxSurge(0.4, 1.4); addTrauma(0.25);
+          }
+        }
+      }
+      plioFace(dt, plio.deadT < 1.8 ? 6 : 0.8);
+      break;
+    }
+  }
+  // it does not swim through you: anything inside its body is put outside it
+  if (plio.alive) for (const s of plio.bones) {
+    s.b.getWorldPosition(_pM);
+    const d = _pM.distanceTo(cam), r = s.r + 0.7;
+    if (d < r && d > 1e-3) { _dA.copy(cam).sub(_pM).multiplyScalar((r - d) / d); cam.add(_dA); deep.v.addScaledVector(_dA, 4); }
+  }
+  plio.mixer.update(dt);
+}
+
+/* ---- the boss's bar: a long thin red line at the foot of the screen, from the first blow ---------------------- */
+let plioBarEl = null;
+function updatePlioBar() {
+  const on = inDeep && plio.alive && plio.hbT > 0 && !frozen();
+  if (!plioBarEl) {
+    if (!on) return;
+    plioBarEl = document.createElement('div');
+    plioBarEl.style.cssText = 'position:fixed;left:50%;bottom:9vh;width:min(46vw,520px);height:6px;transform:translateX(-50%);background:rgba(10,4,4,.65);border:1px solid rgba(160,60,50,.45);z-index:6;pointer-events:none;transition:opacity .4s;';
+    plioBarEl.innerHTML = '<div style="height:100%;width:100%;background:linear-gradient(#b8261c,#6a0f0a);transition:width .25s"></div>';
+    document.body.appendChild(plioBarEl);
+  }
+  plioBarEl.style.opacity = on ? '1' : '0';
+  plioBarEl.firstChild.style.width = (Math.max(0, plio.hp) / PLIO_HP * 100).toFixed(1) + '%';
+}
+
+/* ---- THE CLOCK ------------------------------------------------------------------------------------------------ */
+function updateDeep(rawDt) {
+  updatePlioBar();
+  if (!deepLock && !inDeep) return;
+  if (menuOpen || dying || ended) return;
+  const cut = deepCutOn || deep.ph === 'hook' || deep.ph === 'pull' || deep.ph === 'plunge' || deep.ph === 'descent' || deep.ph === 'drown' || deep.ph === 'black' || deep.ph === 'wash';
+  if (!cut && (invOpen || inspecting || noteOpen || dialogOpen)) return;   // the pack and the rest stop the world here as everywhere
+  const dt = Math.min(0.05, rawDt) * (hitstop > 0 ? 0.08 : 1);
+  deep.t += dt;
+  const T = deep.t, cam = camera.position;
+  if (deep.ph === 'hook' || deep.ph === 'pull' || deep.ph === 'plunge') { deep.calmT -= dt; if (deep.calmT <= 0) { deep.calmT = 0.5; calmChasers(); } }
+  switch (deep.ph) {
+    case 'hook': {
+      // the float: dips that come quicker and go deeper, and then it goes under and does not come back
+      const sea = waterSurfaceAt(deep.hookP.x, deep.hookP.z);
+      if (T < 4.2) {
+        const dip = Math.pow(Math.max(0, Math.sin(T * (2.2 + T * 1.9))), 6) * (0.03 + T * 0.035);
+        rod.pos.set(deep.hookP.x, sea + 0.015 - dip, deep.hookP.z);
+        rodFloat.position.copy(rod.pos); rodFloat.visible = true;
+        if (dip > 0.05 && Math.random() < dt * 8) addRipple(deep.hookP.x, deep.hookP.z, 0.45);
+        deepBend += ((0.04 + T * 0.045 + dip * 2.2) - deepBend) * Math.min(1, dt * 10);
+      } else if (!deep.under) {
+        deep.under = true; rodFloat.visible = false;
+        addRipple(deep.hookP.x, deep.hookP.z, 1.6);
+        spawnSplash(deep.hookP.x, deep.hookP.z, 6, 0, 0, 0.35, sea);
+        playSampleAt('wade', deep.hookP.x, deep.hookP.z, { gain: 0.9, ref: 7, far: 60, rate: 0.6, lpFar: 1200 });
+        addTrauma(0.15); vmImpulse(-0.7); deepBend = 0.45;
+      }
+      if (deep.under) { rod.pos.set(deep.hookP.x, sea - 0.3, deep.hookP.z); deepBend += (0.5 - deepBend) * Math.min(1, dt * 4); }
+      // you try to wind it in, and it does not come: the crank goes round slow and stiff
+      deepReelSpin = rodHeld() ? 3.5 : 0;
+      if (rodHeld()) { rodWhirStart(); } else rodWhirStop();
+      deepRodLine(rod.pos, deep.under ? 0 : 0.15);
+      deepHold();
+      if (T >= 5.4) { deep.ph = 'pull'; deep.t = 0; rodWhirStop(); deep.jerkT = 0.3; deep.scrapeT = 0; deep.pullX0 = cam.x; deep.pullY0 = cam.y; }
+      break;
+    }
+    case 'pull': {
+      // the line goes: the crank spins backwards, faster and faster, the drag screaming
+      const lineV = 3 + 22 * smooth01(0, 3.2, T);
+      deepReelSpin = -lineV * 4.2;
+      deepScreamSet(Math.min(1, lineV / 25));
+      // and it takes you with it, slow at first, then not
+      let v = 0.12 + 3.3 * Math.pow(smooth01(0.8, 11, T), 1.5);
+      if (keys.KeyS) v *= 0.6; else if (keys.KeyW) v *= 1.15;   // you can only lean back against it
+      deep.jerkT -= dt;
+      if (deep.jerkT <= 0) {
+        deep.jerkT = Math.max(0.35, 1.5 - T * 0.09) * (0.6 + Math.random() * 0.8);
+        deep.yank = 1; addTrauma(0.14 + Math.min(0.3, T * 0.025)); vmImpulse(-0.5 - Math.random() * 0.6);
+        gfPlay('reelTick', 0, 1.2);
+      }
+      deep.yank = Math.max(0, deep.yank - dt * 3);
+      v += deep.yank * 1.6;
+      // toward where the line goes into the sea, which runs away from you out to sea
+      deep.hookP.x -= lineV * 0.12 * dt;
+      _dA.set(deep.hookP.x - cam.x, 0, deep.hookP.z - cam.z);
+      if (_dA.length() < 16) { deep.hookP.x = cam.x - 16; _dA.set(deep.hookP.x - cam.x, 0, deep.hookP.z - cam.z); }
+      _dA.normalize();
+      const side = ((keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0)) * 0.5;
+      cam.x += (_dA.x * v - _dA.z * side) * dt; cam.z += (_dA.z * v + _dA.x * side) * dt;
+      // on your heels: the eye low and back, and in the sea the sea comes up you
+      // the bottom shelves away from where you were standing (or from the waterline, if that is further out)
+      const shore = Math.min(deep.pullX0, shoreLineJS(cam.z, oceanUniforms.uTime.value));
+      const depth = Math.max(0, shore - cam.x) * 0.13;
+      const stagger = Math.sin(T * 7.3) * 0.03 + Math.sin(T * 3.1) * 0.02;
+      cam.y = THREE.MathUtils.lerp(deep.pullY0, EYE_HEIGHT - 0.22, smooth01(0, 0.8, T)) - depth + stagger - deep.yank * 0.06;
+      const wet = inWater(cam.x, cam.z);
+      deep.scrapeT -= dt;
+      if (deep.scrapeT <= 0) {
+        deep.scrapeT = 0.11 + Math.random() * 0.06;
+        if (!wet) {
+          // heels dug in, the sand ploughed up in front of them
+          if (Math.random() < 0.45) playSampleAt('sandStep', cam.x, cam.z, { gain: 0.9, ref: 4, far: 30, rate: 0.7 + Math.random() * 0.3, jitter: 0.1 });
+        } else {
+          spawnSplash(cam.x + _dA.x * 0.5, cam.z + _dA.z * 0.5, 3, _dA.x, _dA.z, 0.5 + Math.min(1, depth), waterSurfaceAt(cam.x, cam.z));
+          if (Math.random() < 0.35) playSampleAt('wade', cam.x, cam.z, { gain: 1.0, ref: 4, far: 30, rate: 0.8 + Math.random() * 0.3 });
+        }
+      }
+      if (!wet && Math.random() < dt * 1.2) sfxWhaleDrag(cam.x, cam.z, 0.6);
+      // the line pulls your head round to it and down
+      lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order);
+      const yawTo = Math.atan2(-_dA.x, -_dA.z);
+      let dy = yawTo - lookEuler.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      lookEuler.y += dy * Math.min(1, dt * (0.7 + deep.yank * 2));
+      lookEuler.x += (-0.22 - lookEuler.x) * Math.min(1, dt * 0.35);
+      lookEuler.z = 0; camera.quaternion.setFromEuler(lookEuler);
+      deepBend += ((0.7 + Math.sin(T * 21) * 0.04 + deep.yank * 0.15) - deepBend) * Math.min(1, dt * 8);
+      rod.pos.set(deep.hookP.x, waterSurfaceAt(deep.hookP.x, deep.hookP.z), deep.hookP.z);
+      deepRodLine(rod.pos, 0);
+      deepHold();
+      // under
+      if (cam.y < waterSurfaceAt(cam.x, cam.z) + 0.05 || T > 26) {
+        deep.ph = 'plunge'; deep.t = 0; deep.plY = cam.y;
+        spawnSplash(cam.x, cam.z, 14, _dA.x, _dA.z, 1.6, waterSurfaceAt(cam.x, cam.z));
+        playSampleAt('splash', cam.x, cam.z, { gain: 1.4, ref: 6, far: 60, rate: 0.75 });
+        addTrauma(0.5);
+      }
+      break;
+    }
+    case 'plunge': {
+      deepVeil(smooth01(0, 0.22, T));
+      deep.plY -= dt * 2.5; cam.y = deep.plY;
+      if (T > 0.08 && !deep.muffled) { deep.muffled = true; deepAudio(true, 0.25); sfxBubbles(26, 1, 0.5, 0.7); sfxSurge(0.8, 0.8); deepAmbSet(true, 3); }
+      deepHold();
+      if (T >= 0.36) {
+        deepScreamSet(0);
+        placeInDeep();
+        deep.ph = 'descent'; deep.t = 0; deep.snapped = false;
+      }
+      break;
+    }
+    case 'descent': {
+      deepVeil(1 - smooth01(0.2, 1.6, T));
+      const u = 1 - Math.pow(1 - Math.min(1, T / DEEP_DESC_T), 1.7);
+      const a = 1 - u;
+      cam.set(a * a * deep.descS.x + 2 * a * u * deep.descC.x + u * u * deep.descE.x,
+        a * a * deep.descS.y + 2 * a * u * deep.descC.y + u * u * deep.descE.y,
+        a * a * deep.descS.z + 2 * a * u * deep.descC.z + u * u * deep.descE.z);
+      const sp = deep.descS.distanceTo(deep.descE) * 1.7 * Math.pow(a, 0.7) / DEEP_DESC_T;
+      if (uwBed) uwBed.rush.gain.setTargetAtTime(Math.min(0.5, sp / 60), audioCtx.currentTime, 0.2);
+      // the light goes as you go down
+      scene.fog.color.copy(DEEP_TOP_FOG).lerp(DEEP_BOT_FOG, u); scene.fog.density = 0.022 + 0.020 * u;
+      if (deepBack) deepBack.material.uniforms.uK.value = 1 - 0.6 * u;
+      // headfirst, on the line: the look is pulled along it (you can still turn against it)
+      _dA.set(2 * a * (deep.descC.x - deep.descS.x) + 2 * u * (deep.descE.x - deep.descC.x), 2 * a * (deep.descC.y - deep.descS.y) + 2 * u * (deep.descE.y - deep.descC.y), 2 * a * (deep.descC.z - deep.descS.z) + 2 * u * (deep.descE.z - deep.descC.z)).normalize();
+      if (!deep.snapped) {
+        lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order);
+        const yawTo = Math.atan2(-_dA.x, -_dA.z), pitchTo = Math.asin(THREE.MathUtils.clamp(_dA.y, -1, 1)) * 0.6;
+        let dy = yawTo - lookEuler.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        lookEuler.y += dy * Math.min(1, dt * 0.8); lookEuler.x += (pitchTo - lookEuler.x) * Math.min(1, dt * 0.6);
+        lookEuler.z = 0; camera.quaternion.setFromEuler(lookEuler);
+        deepBend += ((0.85 + Math.sin(T * 25) * 0.05) - deepBend) * Math.min(1, dt * 6);
+        deepReelSpin = -8; deepScreamSet(0.25 * (1 - u));
+        rodLine.visible = true; deepRodLine(_dB.copy(cam).addScaledVector(_dA, 40), 0);
+        if (Math.random() < dt * 6) addTrauma(0.05);
+        if (Math.random() < dt * 9) deepPuff(1, cam.x + (Math.random() - 0.5), cam.y - 0.4, cam.z + (Math.random() - 0.5), 3, 0.5, _dB.copy(_dA).multiplyScalar(-sp * 0.5));
+        if (T >= DEEP_DESC_T - 1.8) {
+          deep.snapped = true; deepRodOn = false; deepReelSpin = null; deepScreamSet(0);
+          rodLine.visible = false; rodFloat.visible = false; rod.st = 'home'; rod.arm = null; rod.outK = 0;
+          sfxLineSnap(); addTrauma(0.35); vmImpulse(1.2);
+        }
+      } else deepBend += (0 - deepBend) * Math.min(1, dt * 7);
+      deepHold();
+      if (T >= DEEP_DESC_T) {
+        deep.ph = 'silence'; deep.t = 0; deepNoHands = false; deepBend = 0; deep.v.copy(_dA).multiplyScalar(1.5);
+        if (uwBed) uwBed.rush.gain.setTargetAtTime(0, audioCtx.currentTime, 0.4);
+        if (!deep.hint) { deep.hint = true; setPrompt('<b>SPACE</b> rise · <b>CTRL</b> sink'); setTimeout(() => { if (promptHTML.includes('SPACE')) setPrompt(''); }, 5000); }
+      }
+      break;
+    }
+    case 'silence':
+    case 'fight':
+    case 'after': {
+      deepSwim(dt); deepBreath(dt);
+      deep.farT = (deep.farT ?? 9) - dt;
+      if (deep.farT <= 0) { deep.farT = 9 + Math.random() * 12; sfxDeepFar(); }
+      if (deep.ph === 'silence' && T > 11 && plio.ready) { deep.ph = 'fight'; deep.t = 0; plioStartPass(); }
+      if (deep.ph === 'fight' && !plio.alive && plio.settled) { deep.ph = 'after'; deep.t = 0; }
+      if (deep.ph === 'after' && deep.t > 4) startDrown();
+      break;
+    }
+    case 'drown': updateDrown(dt); break;
+    case 'black': {
+      blackoutEl.style.opacity = '1';
+      if (!deep.left) {
+        deep.left = true;
+        placeOutOfDeep(); deepAudio(false, 1.5);
+        removeFromInventory(fishingRodItem); rodHome();          // the rod is at the bottom of the sea
+        /* where the sea leaves you: on the wet sand just above the highest the waves run up in the next ten seconds
+         * (at high tide the waterline is metres up the beach, and lying under its surface is lying under nothing) */
+        { const z = TREE_SPOT.z + WASH.dz, t0 = oceanUniforms.uTime.value; let hi = -1e9;
+          for (let k = 0; k <= 20; k++) hi = Math.max(hi, shoreLineJS(z, t0 + k * 0.5));
+          deep.washX = Math.max(WASH.x, hi + 0.9); }
+        needlePlace(deep.washX + 0.6, TREE_SPOT.z + WASH.dz + 0.1);
+        washPose(0);                                             // already lying there behind the black, so the beach loads round you
+      } else washPose(0);
+      if (T >= WASH_BLACK) { deep.ph = 'wash'; deep.t = 0; }
+      break;
+    }
+    case 'wash': updateWash(dt); break;
+  }
+  if (!deep.ph) return;
+  // the murk on the lens, while you are down there
+  if (inDeep) {
+    const drowning = deep.ph === 'drown';
+    deepMurk(deep.ph === 'descent' ? smooth01(0.5, 4, T) * 0.8 : drowning ? 0.8 + 0.2 * smooth01(0, DROWN_T, T) : 0.8);
+    if (!drowning) renderer.domElement.style.filter = 'blur(0.5px) saturate(0.85)';
+    if (!deepAmb.src && (deep.ph === 'descent' || deep.ph === 'silence' || deep.ph === 'fight' || deep.ph === 'after')) deepAmbSet(true, 3);   // (only while you are down there: on the frame the black came down this started it again, and it played on up the beach)
+  }
+  if (inDeep) {
+    camera.updateMatrixWorld();
+    if (deepBack) { deepBack.position.copy(cam); deepBack.material.uniforms.uFog.value.copy(scene.fog.color); }
+    const px = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
+    if (deepSnow) { deepSnow.material.uniforms.uCam.value.copy(cam); deepSnow.material.uniforms.uT.value += dt; deepSnow.material.uniforms.uPx.value = px; }
+    if (deepFx) { deepFx.pts.material.uniforms.uPx.value = px; deepFx.pts.material.uniforms.uFog.value = scene.fog.density; }
+    updateDeepFx(dt);
+    updatePlio(dt);
+  }
+}
+
+/* ---- AND THEN YOUR AIR IS GONE (2026-10-15, the owner: "instead of the whale bringing you back to the beach make it so
+ * you start to drown then pass out fading to black you should then wash up on the beach and see an empty needle on the
+ * beach next to you foreshadowing the very end of the game"). It is quiet after it sinks; then the last of your breath
+ * goes out of you in one long run of bubbles, the strokes give out, the heart slows and gets louder, the water closes
+ * in from the edges and everything goes soft and dark. Black, and the surf. And you are lying in the wash below the
+ * pine with the sea running up round you, and there in the sand beside your face is a syringe. Empty. */
+const DROWN_T = 10, WASH_BLACK = 3.2, WASH_T = 8.2;
+const WASH = { x: 2.2, dz: 4 };                          // where the sea leaves you: a little out from the tree, on the wet sand
+function startDrown() {
+  deep.ph = 'drown'; deep.t = 0; deep.beat = 0.7; deep.gur = 0; deepNoHands = true;
+}
+function updateDrown(dt) {
+  const T = deep.t, cam = camera.position;
+  deep.swimK = 1 - smooth01(0, 4.5, T); deep.noSwim = T > 4.5;
+  deepSwim(dt);
+  if (T > 3) deep.v.y -= 0.3 * dt;                       // and you are going down
+  // the air: one long run of it, then less, then a mouthful
+  const gur = [0.6, 3.1, 5.4, 7.4];
+  if (deep.gur < gur.length && T >= gur[deep.gur]) {
+    const k = 1 - deep.gur / gur.length; deep.gur++;
+    camera.getWorldDirection(_dF);
+    deepPuff(1, cam.x + _dF.x * 0.3, cam.y - 0.15, cam.z + _dF.z * 0.3, Math.round(40 * k + 6), 0.25, _dA.set(_dF.x * 0.2, 0.6, _dF.z * 0.2), 1 + k);
+    sfxBubbles(Math.round(30 * k + 5), 0.9 * k + 0.2, 0.9 * k + 0.3, 0.55);
+    sfxSurge(0.25 * k + 0.08, 0.6);
+    addTrauma(0.12 * k);
+  }
+  // the heart: slower, and louder in your ears
+  deep.beat -= dt;
+  if (deep.beat <= 0) { deep.beat = 0.85 + T * 0.09; sfxHeartThud(0.45 + 0.45 * (T / DROWN_T)); }
+  // the water closes in, everything goes soft, and the sound goes with it
+  const k = smooth01(1.2, DROWN_T, T);
+  deepVeil(Math.pow(k, 1.3), '#000');
+  renderer.domElement.style.filter = `blur(${(0.5 + 3.5 * k).toFixed(2)}px) saturate(${(0.85 - 0.5 * k).toFixed(2)})`;
+  if (uwLP && audioCtx) { holdParam(uwLP.frequency, audioCtx.currentTime); uwLP.frequency.setTargetAtTime(520 - 360 * k, audioCtx.currentTime, 0.2); }
+  // and the head goes over
+  lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order);
+  lookEuler.z += (0.35 * k - lookEuler.z) * Math.min(1, dt * 1.5); lookEuler.x += (-0.35 * k - lookEuler.x) * Math.min(1, dt * 0.6 * k);
+  camera.quaternion.setFromEuler(lookEuler);
+  if (T >= DROWN_T) {
+    blackoutEl.style.opacity = '1'; deepVeil(0);
+    deepAmbSet(false, 2.5);
+    deep.ph = 'black'; deep.t = 0; deep.left = false; deepCutOn = true; deep.noSwim = true; deep.swimK = 1;
+  }
+}
+// the needle in the sand: the bleeding syringe's own model, emptied, its cap off, half sunk on its side
+let deepNeedle = null;
+function needlePlace(x = WASH.x + 0.6, z = TREE_SPOT.z + WASH.dz + 0.1) {
+  if (deepNeedle) return;
+  /* THE SAME SYRINGE AS THE END'S (2026-10-15, the owner: "make the syringe look exactly like the one in the last
+   * cutscene"): `buildWakeSet`'s — a trace of blood left in it (fill 0.06), the cap off, ×1.25, lying a little over
+   * (0.12), a centimetre and a half up, with the same soft dark under it. */
+  const s = makeSyringe(); s.userData.setFill(0.06); s.userData.parts.cap.visible = false; s.scale.setScalar(1.25);
+  s.position.set(x, 0.016, z);
+  s.rotation.set(0, 0.95, 0.12);
+  s.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.raycast = () => {}; } });
+  {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 4, 32, 32, 31); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(0.10, 0.36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, fog: true }));
+    sh.position.set(x, 0.006, z); sh.rotation.y = 0.95; sh.renderOrder = 1; sh.raycast = () => {};
+    scene.add(sh); s.userData.shade = sh;
+  }
+  scene.add(s); deepNeedle = s;
+}
+// lying in the wash: on your side with your face to the sand and the needle (u 0), sitting up over it, standing (u 1)
+function washPose(T) {
+  const L = _dB.set(deep.washX ?? WASH.x, 0, TREE_SPOT.z + WASH.dz);
+  const sit = smooth01(3.4, 5.6, T), up = smooth01(5.6, WASH_T - 0.4, T);
+  const eye = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.16, 0.85, sit), EYE_HEIGHT, up);
+  camera.position.set(L.x - 0.15 * (1 - sit), eye + Math.sin(T * 1.9) * 0.008 * (1 - up), L.z);
+  const pitch = THREE.MathUtils.lerp(THREE.MathUtils.lerp(-0.1, -0.86, sit), -0.5, up);
+  const roll = THREE.MathUtils.lerp(1.2, 0, sit) + Math.sin(T * 1.3) * 0.03 * (1 - up);
+  lookEuler.set(pitch, -Math.PI / 2 + 0.12 * (1 - sit), roll, lookEuler.order);       // facing up the sand, toward the tree
+  camera.quaternion.setFromEuler(lookEuler);
+  deepHold();
+}
+function updateWash(dt) {
+  const T = deep.t;
+  // out of the black, a blink, and the world coming back into focus
+  const blink = T > 2.0 && T < 2.4 ? Math.sin((T - 2.0) / 0.4 * Math.PI) : 0;
+  blackoutEl.style.opacity = String(Math.max(1 - smooth01(0, 1.4, T), blink * 0.9));
+  renderer.domElement.style.filter = `blur(${(4 * (1 - smooth01(0.5, WASH_T - 1, T))).toFixed(2)}px)`;
+  washPose(T);
+  // the sea running up round you
+  deep.swash = (deep.swash ?? 0.3) - dt;
+  if (deep.swash <= 0) {
+    deep.swash = 1.5 + Math.random() * 0.8;
+    const z = TREE_SPOT.z + WASH.dz + (Math.random() - 0.5) * 1.2;
+    const wx = (deep.washX ?? WASH.x) - 0.5;
+    spawnSplash(wx, z, 6, 1, 0, 0.35, 0.02);
+    playSampleAt('wade', wx, z, { gain: 1.1, ref: 3, far: 30, rate: 0.85 + Math.random() * 0.2 });
+  }
+  if (T > 1.0 && !deep.c1) { deep.c1 = true; sfxGasp(); }
+  if (T > 2.7 && !deep.c2) { deep.c2 = true; sfxGasp(); }
+  if (T >= WASH_T) endDeep();
+}
+function endDeep() {
+  renderer.domElement.style.filter = ''; blackoutEl.style.opacity = '0';
+  deepAmbSet(false, 1);
+  deep.ph = null; deep.t = 0; deep.noSwim = false; deep.swimK = 1;
+  deepLock = false; deepNoHands = false; deepCutOn = false; deepRodOn = false; deepReelSpin = null; deepBend = 0;
+  deepDone = true;
+  deepVeil(0);
+  lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order); lookEuler.z = 0; camera.quaternion.setFromEuler(lookEuler);
+  camera.position.y = EYE_HEIGHT; groundY = 0; camBaseY = EYE_HEIGHT; vy = 0; onGround = true;
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0);
+  _preMove.set(camera.position.x, 0, camera.position.z);
+  catchBreath();
+  autosaveNow();
+}
+
+plioLoad();                                    // queued by its reach: in by the time anyone reaches the tree
+deepLive = true;
+
 window.__bw = {
   /* One whole game tick, for a harness whose rAF is stalled. It has to drain
    * HITSTOP and scale dt exactly as animate() does, or nothing that hangs on
@@ -89905,7 +92254,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* AND THE WARM CHAIN, THE FAR-CULL AND EVERY WALL-CLOCK CUT LIVE IN
@@ -89991,7 +92340,7 @@ window.__bw = {
   crawlerUnit, CRAWL_X, CRAWL_Z, crawlerProvoke, startCaveIn, placeInCatacombs, placeOutsideCatDoor, startCatExit, startCatReturn, placeInsideCatDoor, fitCatSandDoor, catWallDoor, catRoute, catSees, catNodeAt, CAT_X, CAT_Y, CAT_Z, CAT_SITE, CAT_LAND, CAT_DOOR, CAVE_Z,
   TRADER_X, TRADER_Z, TRADER_H, TRADER_POSE, traderPose, TRADER_STOCK, traderBuy, TRADER_NPC, traderWorld, trader2World, TRADER2_X, TRADER2_Z, get shopAt() { return shopAt; }, get traderRig() { return traderRig; },
   magnumItem, magModel, magFire, magReload, magTrace, MAG_CAP,
-  shotgunItem, get sgG() { return sgG; }, sgRig, sgGunStatic, sgShellSrc, SG_HOLD_HIP, SG_HOLD_ADS, SG_KICK, itemIcon, shells2IconItem, sgFire, sgReload, sgParts, get sgCh() { return sgCh; }, set sgCh(v) { sgCh = v; }, get sgSpare() { return sgSpare; }, set sgSpare(v) { sgSpare = v; },
+  shotgunItem, get sgG() { return sgG; }, sgRig, sgGunStatic, sgShellSrc, SG_HOLD_HIP, SG_HOLD_ADS, SG_KICK, itemIcon, shells2IconItem, ammoIconItem, renderItemIcon, gfTakes, gfPlay, GF, rodS: () => ({ st: rod.st, x: +rod.pos.x.toFixed(2), y: +rod.pos.y.toFixed(2), z: +rod.pos.z.toFixed(2) }), fishingRodItem, get hjW() { return hjW; }, get hjCut() { return hjCut; }, sgFire, sgReload, sgParts, get sgCh() { return sgCh; }, set sgCh(v) { sgCh = v; }, get sgSpare() { return sgSpare; }, set sgSpare(v) { sgSpare = v; },
   get sgRel() { return sgRel; }, get sgKick() { return sgKick; }, get sgRelSeg() { return sgRelSeg; }, get sgFireT() { return sgFireT; }, SG_SEG, SG_BEATS,
   get magAmmo() { return magAmmo; }, set magAmmo(v) { magAmmo = v; },
   scrollHotbar, get wheelCursor() { return wheelCursor; }, get magSpare() { return magSpare; }, set magSpare(v) { magSpare = v; },
@@ -90087,6 +92436,10 @@ window.__bw = {
   get workTable() { return workTable; }, get tableBroken() { return tableBroken; }, smashWorkTable, TABLE_SPOT, TABLE_TOP, get tablePerched() { return tablePerched; },
   guardTick, get staminaEl() { return staminaEl; },
   // what a swing would meet, and what it would sound like when it met it
+  dropJar, openPavGate: () => { mushGateUnlocked = true; if (!gateOpen) toggleGate(); return gateOpen; },   // (the harness: the yard gate open, as with the key)
+  testGuard: (on) => { if (on) { mouseBtns |= 2; blocking = true; blockStart = performance.now(); parryCool = 0; } else { mouseBtns &= ~2; blocking = false; } },   // the harness cannot right-click
+  uwFreq: () => (uwLP ? +uwLP.frequency.value.toFixed(0) : null), setFallbackLook: (v) => { fallbackLook = !!v; },   // (the harness has no pointer lock: drag-look lets the keys move you)
+  deepS: () => deep, plioS: () => plio, startDeepHook, placeInDeep, plioTell, plioStartPass, plioHurt, startDrown, needleS: () => deepNeedle, get deepFlags() { return { inDeep, deepLock, deepNoHands, deepCutOn, deepDone, deepRodOn, deepBend, amb: !!deepAmb.src, ambBuf: !!deepAmb.buf }; },
   probeSolid: (P = 0) => { camera.getWorldDirection(_aimD); aimRay(P); const h = nearestSolidHit(); return h ? { surface: h.surface, d: +h.distance.toFixed(2) } : null; }, get dealerWon() { return dealerWon; }, set dealerWon(v) { dealerWon = v; },
   KAT_A0, KAT_A1, KAT_B0, get comboStep() { return comboStep; }, get digPower() { return digPower; },
   get dealerFight() { return dealerFight; }, get dealerMet() { return dealerMet; }, DEALER_X, DEALER_Z,
@@ -90101,7 +92454,7 @@ window.__bw = {
    * block below would be a snapshot, which `abductDone` paid for once. */
   get pegStage() { return pegStage; },
   get pegStab() { return PEG_STAB; }, set pegStab(v) { PEG_STAB = v; },
-  fishingRodItem, rodState: () => rod, castRod, reelRod, rodTipWorld, rodFloat, rodLine, billy,
+  fishingRodItem, rodState: () => rod, reelRod, rodTipWorld, rodFloat, rodLine, billy,
   get pegCoil() { return [PEG_COIL, PEG_COIL_ROT]; }, set pegCoil(v) { PEG_COIL = v[0]; PEG_COIL_ROT = v[1]; },
   get pegHigh() { return [PEG_HIGH, PEG_HIGH_ROT]; }, set pegHigh(v) { PEG_HIGH = v[0]; PEG_HIGH_ROT = v[1]; },
   get windOverhead() { return windOverhead; }, set windOverhead(v) { windOverhead = v; },
@@ -90353,4 +92706,4 @@ warmStep('view models', () => {
   vmScene.traverse((o) => { was.push([o, o.visible]); o.visible = true; });
   try { renderer.compile(vmScene, vmCamera); } finally { for (const [o, v] of was) o.visible = v; }
 });
-
+statReady = true;   // the last line: from here every pickup counts toward the end's tally

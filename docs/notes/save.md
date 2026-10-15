@@ -270,3 +270,20 @@ connections swallowed, daemon threads, `allow_reuse_address`. And a LOST WEBGL C
 page running with nothing drawn: it is asked for back, and the game reloads into the last
 checkpoint when it returns (or after four seconds).
 
+
+## The tally and the table on the save (2026-10-14)
+
+`flags.stats = { kill: [...], item: [...] }` (the end screen's counts, see ui.md) and `flags.fishGift` (the rod and
+map on the fisherman's table, see dock.md). Both are read in the restore beside `deadUnits`/`pegReturned`, with a
+fallback for saves from before them.
+
+## The black that came back (2026-10-15)
+
+"reloading the checkpoint in the catacombs still was making my screen flash." Not the restore guard this time
+(that was the 10-14 fix in catacombs.md). Measured on the REAL clock — frames driven by hand at ~12 ms with the true
+`performance.now`; the creeping fake clock never showed it: the boot hold's fade ran 1 → 0.26, a hold condition came
+true again (a download joining the queue, a warm owed, a frame over 34 ms) and `updateBootHold` slammed the black to 1
+for a second, then let it go at 0.2 — the fade's own value, carried on behind it. `updateBootHold` now asks the hold
+only before the fade begins (`fading = bootHold < 1`; only the two restores ever set it, and both to exactly 1).
+Twice after: one fade of 0.57–0.58 s, no rise, no jump in the picture after it. It applies to every restore, beach
+and room.

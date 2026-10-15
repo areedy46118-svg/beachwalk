@@ -2610,3 +2610,29 @@ look-lag roll (`vmLagY * 0.45`) at 15% while the sawn-off is equipped. ADS roll 
 
 **A SWING COSTS A LITTLE STAMINA IN A FIGHT (2026-10-14).** `startDig`: `SWING_STAM` 0.04 + `SWING_STAM_HEAVY` 0.04 ×
 power, only while `inCombat()` (something awake within 10 m) — digging the beach is free, and it never refuses a swing.
+
+**THE RELOADS ARE MODELLED FOLEY (`GF`, `gfRender`, `gfPlay`, 2026-10-14).** The owner: the reload sounds
+"sound fake and AI generated" — they were square/triangle oscillators swept down in pitch. Every reload
+sound is now a short score of struck parts: an impulse (`click`: ms, lowpass, level) into inharmonic
+decaying partials (`m`: [Hz, level, decay s]), a heavy part's falling body thump (`body`), and friction as
+stick-slip grains through a band-pass (`rub`). Building blocks `gfCLICK` (spring/latch), `gfCLACK` (steel on
+steel; `f` scales pitch, `body` its weight), `gfBRASS`, `gfTINK` (a case ringing on stone), `gfHULL` (hollow
+plastic), `gfTHUD` (a palm). Each score renders four takes once (pitch/decay/phase/noise re-rolled per take,
+78 ms for all of them, warmed the first frame a gun is in your hand via `updateAmmoReadout` → `gfWarm`),
+peaked to 0.9 and played at `GF[name].gain` with ±2.5 % rate and two early reflections (hands/chest, ground;
+two more indoors). Spent .44 cases now land a beat later, one per fired round, rung out on a hard floor and a
+whisper on sand (`gfHardFloor` = indoors and not the whale); the hulls likewise (`hullHard`/`hullSand`).
+`sgTick` is gone; `sgThump` stays for the draw and the gore.
+
+**THE GLINT COMES IN WITH THE HEAVY (`GLINT_FROM` 0.4; 2026-10-14, "i dont see the glint on shovel heavies").** It was
+working — measured on both shovels at the cock and the overhead, on the lip — but only at FULL charge (`WIND_FULL`,
+1.0 s), and a heavy is any hold past `WIND_TAP` (0.16 s), so a heavy thrown at half a second never showed one. Now it
+runs up the edge at 40 % of the charge (~0.45 s on a shovel), grows from 0.45 to 0.8 of full, and at the top it pops
+(`glintPop`) and holds at full; its size rides `glintK` too. The full mark is still the creak (`sfxWindFull`).
+
+## What a blade sounds like on the world (2026-10-14)
+
+The solid-hit branch plays `gfPlay('hitWood' | 'hitMetal' | 'hitStone')` (modal foley: a dead knock with a hollow
+body; a bright crack over a low thud; a ringing clang) under the tool's recorded hit — `katBlock`/`katHit` for
+blades, `blockMil`/`milHeavy` for the military shovel. Every walled site answers now (`siteBladeHit`, see
+lighthouse.md).

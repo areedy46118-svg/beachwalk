@@ -11,7 +11,7 @@
     b.beginGame(); b.settings.devMode = true;
     window.requestAnimationFrame = () => 0;
     const real = performance.now.bind(performance), base = real(); let off = 0;
-    performance.now = () => base + off;
+    performance.now = () => base + (off += 0.002);   // creeps on every read: a frozen clock can hang the warm loop
     window.__adv = (k) => { for (let i = 0; i < k; i++) { off += 16.7; b.frame(1); } };
     b.camera.position.set(19.4, 2.1, -479.8); b.look(-1.54, 0);
     for (let i = 0; i < 120 && !(b.dunS().door && b.dunS().henry); i++) { window.__adv(2); await new Promise((r) => setTimeout(r, 60)); }

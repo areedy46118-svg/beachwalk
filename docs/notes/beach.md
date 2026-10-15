@@ -1936,3 +1936,13 @@ radius: measured, it woke and came from 21 m to 6 m in three seconds.
   apron sand at (8.0, 0.42, 56.7), a stride short of the rock's foot — `ROCK_CRAB_AT` (8.2, 56.4), seated on
   whatever is uppermost there (apron or `beachGroundAt`), ordinary reach. Rendered from beside it, the frame
   is his screenshot: the big rock left, the mossy one right, the crab on the sand between.
+
+## The black before the morning (2026-10-14)
+
+`CRAB_T.card` 37 (was 33): nine seconds of black after the Great Crab Call's cut before `startWakeCut`.
+
+## The fishing tree is before the fire now (2026-10-15)
+
+`TREE_SPOT.z = TRIBE_Z + 22` (−814; it was 10.5 m PAST the fire), `FISH_SPOT.z = TRIBE_Z + 22.5`, `FISH_GLOW` and the
+chart's X follow. 12 m short of the camp's lookout (`TRIBE_Z + 10`), 54 m short of the whale's music (`WS_Z0`).
+The tree's and the pliosaur's reach are 814. The deep's spit lands you under it (`TREE_SPOT`), unchanged in code.

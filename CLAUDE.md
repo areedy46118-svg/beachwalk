@@ -29,6 +29,7 @@ game belongs in this file, and this file should stay under ~25 KB.
 | the sea keep | `docs/notes/keep.md` |
 | the tavern | `docs/notes/tavern.md` |
 | the whale (sand, belly, farewell) | `docs/notes/whale.md` |
+| the deep: the bite at the fishing spot, the drag, swimming, the pliosaur, the whale's swallow | `docs/notes/deep.md` |
 | the castles, farmers, flail knight, throne room | `docs/notes/castle.md` |
 | creatures in general: rigs, retargeting, clips, ragdolls, fight AI | `docs/notes/creatures.md` |
 | weapons, the view model, swings, guard, gun, rod | `docs/notes/weapons.md` |
@@ -172,7 +173,8 @@ cross the trigger, so the fight can be tested without the camera being taken.
 The crabs never wake in it either (`updateCrabUnit` returns before the wake,
 and an awake one never starts a swing), so they sit at their spawns — the
 pack stays out at `PACK_START_X`. The peek and the dialogues are
-player-initiated and are left alone. Off by default; it is for walking the
+player-initiated and are left alone. Every locked door also opens in it
+(`devKeys()` is asked beside each key; a key you hold is still used). Off by default; it is for walking the
 beach, not for playing it.
 
 ## Working in the Claude Code browser preview
