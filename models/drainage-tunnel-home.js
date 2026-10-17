@@ -313,6 +313,425 @@ function rustStainTex() {
   t.anisotropy = 1;
   return t;
 }
+/* WET RUST ON BRICK DARKENS IT (the owner, 2026-10-16: "the grate and the
+ * wall behind it have weird textures"). `rustStainTex` is drawn for grey
+ * concrete, where an ochre run is darker than the wall; over a red-brown
+ * brick the same orange at half opacity LIGHTENS it, and under the outlet it
+ * read as a pale curtain hung on the wall with square edges. This is what
+ * water out of an iron grate leaves on brick: a dark wet fan, widest at the
+ * foot, ragged at its edges, a green-black skin under the lip, and thin rust
+ * runs down the middle of it. Its own alpha does the fade, nothing square. */
+function brickBleedTex() {
+  const w = 96, h = 160;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, w, h);
+  // the fan: a stack of rows, each a little wider and fainter, its edges wandering
+  for (let y = 0; y < h; y++) {
+    const v = y / h, half = w * (0.18 + 0.24 * Math.pow(v, 0.7));
+    const cx = w / 2 + Math.sin(y * 0.11) * 2.5;
+    const jl = (Math.sin(y * 0.37) + Math.sin(y * 0.93 + 1.7)) * 2.6, jr = (Math.sin(y * 0.41 + 0.6) + Math.sin(y * 0.87 + 2.9)) * 2.6;
+    const a = 0.62 * (1 - Math.pow(v, 1.6));
+    for (let x = Math.max(0, Math.floor(cx - half + jl)); x < Math.min(w, Math.ceil(cx + half + jr)); x++) {
+      const e = Math.min(x - (cx - half + jl), cx + half + jr - x) / 6;           // feathered sides
+      g.fillStyle = `rgba(${26 + Math.round(Math.random() * 8)},${16 + Math.round(Math.random() * 6)},10,${(a * Math.min(1, e) * (0.85 + Math.random() * 0.15)).toFixed(3)})`;
+      g.fillRect(x, y, 1, 1);
+    }
+  }
+  // the runs: thin, darker, a few of them rust-brown
+  for (let i = 0; i < 22; i++) {
+    const x = w * 0.3 + Math.random() * w * 0.4, wd = 1 + Math.random() * 2, len = h * (0.3 + Math.random() * 0.65);
+    const col = Math.random() < 0.35 ? '92,44,16' : '20,12,8';
+    const gr = g.createLinearGradient(0, 0, 0, len);
+    gr.addColorStop(0, `rgba(${col},${0.45 + Math.random() * 0.3})`); gr.addColorStop(1, `rgba(${col},0)`);
+    g.fillStyle = gr; g.fillRect(x, 0, wd, len);
+  }
+  // and the slime skin under the lip
+  const cap = g.createLinearGradient(0, 0, 0, h * 0.12);
+  cap.addColorStop(0, 'rgba(22,30,14,0.7)'); cap.addColorStop(1, 'rgba(22,30,14,0)');
+  g.fillStyle = cap; g.fillRect(w * 0.3, 0, w * 0.4, h * 0.12);
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+  t.anisotropy = 1;
+  return t;
+}
+
+
+/* ---- THE SECOND PASS: SOMEBODY LIVES HERE -------------------------------
+ * The owner, as with the wreck: keep the geometry, change how it looks, so it
+ * fits the game as it has grown — lived in, and still dirty. Everything below
+ * was flat colour or a 128 px wash; each surface now gets its own painted map
+ * (`paint`, quantised and nearest-filtered like every texture in the game),
+ * and each interior material is lit off its OWN map (`liftOff`), because no
+ * moon reaches down here and an unlifted surface is a black shape. */
+function paint(w, h, draw, quant = 0xF0) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  draw(g, w, h);
+  const img = g.getImageData(0, 0, w, h), px = img.data;
+  for (let i = 0; i < px.length; i += 4) { px[i] &= quant; px[i + 1] &= quant; px[i + 2] &= quant; }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+  t.anisotropy = 1;
+  return t;
+}
+const R01 = (n) => Math.random() * n;
+function blot(g, x, y, r, rgb, a) {
+  const gr = g.createRadialGradient(x, y, 0, x, y, r);
+  gr.addColorStop(0, `rgba(${rgb},${a})`); gr.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+}
+function grit(g, w, h, n, lo, span, a = 0.4) {
+  for (let i = 0; i < n; i++) { const v = lo + R01(span) | 0; g.fillStyle = `rgba(${v},${v - 2},${v - 6},${a})`; g.fillRect(R01(w) | 0, R01(h) | 0, 1, 1); }
+}
+// the pipe: wet poured concrete, mineral bloom and rust weeping out of it, green-black where the water sits
+function pipeTex() {
+  /* On the bore this wraps with x AROUND the pipe and y ALONG it, so
+   * anything that runs down the wall is painted along x, not y. */
+  return paint(256, 256, (g, w, h) => {
+    g.fillStyle = '#464a46'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 140; i++) { const p = Math.random(); blot(g, R01(w), R01(h), 8 + R01(30), p < 0.5 ? '22,26,24' : p < 0.75 ? '78,82,74' : '48,58,44', 0.06 + R01(0.14)); }
+    const run = (x0, y, L, th, rgb, a) => {                          // a stain running round the wall
+      const gr = g.createLinearGradient(x0, 0, x0 + L, 0);
+      gr.addColorStop(0, `rgba(${rgb},${a})`); gr.addColorStop(1, `rgba(${rgb},0)`);
+      g.fillStyle = gr; g.fillRect(Math.min(x0, x0 + L), y, Math.abs(L), th);
+    };
+    for (let i = 0; i < 30; i++) run(R01(w), R01(h), (Math.random() < 0.5 ? 1 : -1) * (14 + R01(40)), 2 + R01(6), '176,178,162', 0.10 + R01(0.12));   // mineral bloom
+    for (let i = 0; i < 22; i++) run(R01(w), R01(h), (Math.random() < 0.5 ? 1 : -1) * (20 + R01(70)), 1 + R01(3), '118,62,24', 0.35 + R01(0.2));     // rust out of the reinforcement
+    for (let i = 0; i < 70; i++) blot(g, R01(w), R01(h), 3 + R01(10), '30,44,28', 0.08 + R01(0.2));   // wet growth
+    g.strokeStyle = 'rgba(18,18,16,0.55)';                          // hairline cracks
+    for (let i = 0; i < 9; i++) { g.lineWidth = 0.6 + R01(0.8); g.beginPath(); let x = R01(w), y = R01(h); g.moveTo(x, y); for (let k = 0; k < 7; k++) g.lineTo(x += R01(14) - 4, y += R01(22) - 11); g.stroke(); }
+    grit(g, w, h, 4200, 28, 90);
+  });
+}
+// the chamber's brick: old, sooted over the lamp, damp at the foot, salt where the wet comes through
+function brickTex2() {
+  return paint(256, 256, (g, w, h) => {
+    g.fillStyle = '#2c2621'; g.fillRect(0, 0, w, h);                // mortar, gone dark
+    const rows = 12, bh = h / rows, bw = 42;
+    for (let r = 0; r < rows; r++) {
+      const off = (r % 2) * bw / 2;
+      for (let bx = -bw; bx < w + bw; bx += bw) {
+        const v = Math.random(), burnt = Math.random() < 0.12;
+        const rr = burnt ? 44 + v * 18 : 92 + v * 40, gg = burnt ? 34 + v * 12 : 58 + v * 26, bb = burnt ? 30 + v * 10 : 44 + v * 18;
+        g.fillStyle = `rgb(${rr | 0},${gg | 0},${bb | 0})`;
+        g.fillRect(bx + off + 1.5, r * bh + 1.5, bw - 3, bh - 3);
+        g.fillStyle = 'rgba(255,240,220,0.06)'; g.fillRect(bx + off + 1.5, r * bh + 1.5, bw - 3, 1.5);   // a worn top edge
+        if (Math.random() < 0.18) blot(g, bx + off + R01(bw), r * bh + R01(bh), 3 + R01(6), '20,16,14', 0.35);  // a chip out of it
+      }
+    }
+    const soot = g.createLinearGradient(0, 0, 0, h * 0.55);        // years of a lamp under the ceiling
+    soot.addColorStop(0, 'rgba(10,8,6,0.62)'); soot.addColorStop(1, 'rgba(10,8,6,0)');
+    g.fillStyle = soot; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 18; i++) {                                  // salt coming through the joints
+      const x = R01(w), y = h * 0.3 + R01(h * 0.6);
+      for (let k = 0; k < 5; k++) blot(g, x + R01(10) - 5, y + k * 4, 3 + R01(7), '206,204,190', 0.08 + R01(0.12));
+    }
+    const dp = g.createLinearGradient(0, h, 0, h * 0.6);
+    dp.addColorStop(0, 'rgba(10,14,10,0.6)'); dp.addColorStop(1, 'rgba(10,14,10,0)');
+    g.fillStyle = dp; g.fillRect(0, 0, w, h);
+    grit(g, w, h, 2400, 30, 80, 0.3);
+  });
+}
+// the floor: poured concrete under a skin of silt, stained, and worn pale where somebody walks every day
+function floorTex() {
+  return paint(256, 256, (g, w, h) => {
+    g.fillStyle = '#48443d'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 120; i++) blot(g, R01(w), R01(h), 10 + R01(50), Math.random() < 0.5 ? '30,28,24' : '96,88,72', 0.08 + R01(0.18));
+    for (let i = 0; i < 40; i++) blot(g, R01(w), R01(h), 14 + R01(34), '92,74,50', 0.10 + R01(0.2));      // silt drifts
+    for (let i = 0; i < 5; i++) {                                   // rings where water stood and dried
+      const x = R01(w), y = R01(h), r = 8 + R01(26);
+      g.strokeStyle = `rgba(26,22,18,${0.10 + R01(0.12)})`; g.lineWidth = 1 + R01(1.5);
+      g.beginPath(); g.ellipse(x, y, r, r * (0.6 + R01(0.4)), R01(3), 0, TAU); g.stroke();
+    }
+    const worn = g.createLinearGradient(0, h * 0.35, 0, h * 0.65);  // a path worn pale down the middle
+    worn.addColorStop(0, 'rgba(150,140,120,0)'); worn.addColorStop(0.5, 'rgba(150,140,120,0.12)'); worn.addColorStop(1, 'rgba(150,140,120,0)');
+    g.fillStyle = worn; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(16,14,12,0.6)';
+    for (let i = 0; i < 7; i++) { g.lineWidth = 0.6 + R01(1); g.beginPath(); let x = R01(w), y = R01(h); g.moveTo(x, y); for (let k = 0; k < 8; k++) g.lineTo(x += R01(26) - 13, y += R01(26) - 13); g.stroke(); }
+    grit(g, w, h, 4000, 34, 80, 0.45);
+  });
+}
+// planks: grain, a knot or two, nail heads gone to rust, grime in the gaps
+function woodTex() {
+  return paint(128, 256, (g, w, h) => {
+    const planks = 4, pw = w / planks;
+    for (let p = 0; p < planks; p++) {
+      const v = Math.random();
+      g.fillStyle = `rgb(${70 + v * 26 | 0},${54 + v * 18 | 0},${36 + v * 12 | 0})`; g.fillRect(p * pw, 0, pw, h);
+      for (let k = 0; k < 14; k++) {                                // grain
+        const x = p * pw + R01(pw); g.strokeStyle = `rgba(30,20,12,${0.18 + R01(0.25)})`; g.lineWidth = 0.6 + R01(1);
+        g.beginPath(); g.moveTo(x, 0); for (let y = 0; y <= h; y += 16) g.lineTo(x + Math.sin(y * 0.05 + k) * 1.6, y); g.stroke();
+      }
+      if (Math.random() < 0.6) { const ky = R01(h); g.fillStyle = 'rgba(30,18,10,0.6)'; g.beginPath(); g.ellipse(p * pw + pw / 2, ky, 3, 6, 0, 0, TAU); g.fill(); }
+      g.fillStyle = 'rgba(12,8,6,0.75)'; g.fillRect(p * pw, 0, 1.5, h);   // the gap
+      for (const y of [12, h - 14]) { g.fillStyle = 'rgba(110,60,28,0.85)'; g.fillRect(p * pw + pw / 2 - 1.5, y, 3, 3); }
+    }
+    for (let i = 0; i < 30; i++) blot(g, R01(w), R01(h), 6 + R01(20), '16,12,8', 0.12 + R01(0.2));
+    grit(g, w, h, 900, 30, 60, 0.3);
+  });
+}
+// the mattress: ticking stripes gone grey, a tide-mark of stains, the quilting buttons
+function mattressTex() {
+  return paint(256, 128, (g, w, h) => {
+    g.fillStyle = '#9c968a'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 16) { g.fillStyle = 'rgba(52,64,86,0.55)'; g.fillRect(x, 0, 4, h); g.fillStyle = 'rgba(52,64,86,0.25)'; g.fillRect(x + 7, 0, 1.5, h); }
+    for (let i = 0; i < 9; i++) {                                   // stains with tide-marks
+      const x = R01(w), y = R01(h), r = 10 + R01(26);
+      blot(g, x, y, r, '120,96,52', 0.25 + R01(0.25));
+      g.strokeStyle = 'rgba(92,70,36,0.35)'; g.lineWidth = 1.5; g.beginPath(); g.ellipse(x, y, r * 0.8, r * 0.6, R01(3), 0, TAU); g.stroke();
+    }
+    for (let x = 16; x < w; x += 32) for (let y = 16; y < h; y += 32) { g.fillStyle = 'rgba(40,40,40,0.5)'; g.beginPath(); g.arc(x, y, 1.6, 0, TAU); g.fill(); }
+    blot(g, w * 0.25, h * 0.5, 50, '40,36,30', 0.35);               // where he sleeps
+    grit(g, w, h, 1200, 60, 80, 0.25);
+  });
+}
+// the linen and the rags: off-white gone grey, a weave you can just see, the dirt in it
+function linenTex() {
+  return paint(128, 128, (g, w, h) => {
+    g.fillStyle = '#8a857a'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 2) { g.fillStyle = 'rgba(0,0,0,0.06)'; g.fillRect(0, y, w, 1); }
+    for (let x = 0; x < w; x += 2) { g.fillStyle = 'rgba(255,255,255,0.04)'; g.fillRect(x, 0, 1, h); }
+    for (let i = 0; i < 16; i++) blot(g, R01(w), R01(h), 6 + R01(20), '70,58,40', 0.15 + R01(0.25));
+    grit(g, w, h, 500, 50, 70, 0.25);
+  });
+}
+// the blanket: a wool check in wine and brown, bobbled and worn thin in the middle
+function blanketTex() {
+  return paint(128, 128, (g, w, h) => {
+    g.fillStyle = '#4a2a2a'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < w; i += 32) { g.fillStyle = 'rgba(30,26,22,0.55)'; g.fillRect(i, 0, 12, h); g.fillRect(0, i, w, 12); }
+    for (let i = 0; i < w; i += 32) { g.fillStyle = 'rgba(150,120,80,0.25)'; g.fillRect(i + 20, 0, 2, h); g.fillRect(0, i + 20, w, 2); }
+    blot(g, w / 2, h / 2, 40, '90,70,60', 0.2);
+    grit(g, w, h, 1600, 40, 70, 0.35);
+  });
+}
+// rust: orange-brown and black, pitted
+function rustTex() {
+  return paint(128, 128, (g, w, h) => {
+    g.fillStyle = '#5e3a22'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) { const p = Math.random(); blot(g, R01(w), R01(h), 4 + R01(20), p < 0.4 ? '140,74,30' : p < 0.7 ? '28,18,12' : '96,90,80', 0.15 + R01(0.3)); }
+    for (let i = 0; i < 120; i++) { g.fillStyle = 'rgba(14,8,6,0.6)'; g.fillRect(R01(w) | 0, R01(h) | 0, 1 + (R01(2) | 0), 1); }
+  });
+}
+// cast and wrought iron gone to scale: near-black, blistered with rust, pitted — mottled, never grained
+function ironTex() {
+  return paint(128, 128, (g, w, h) => {
+    g.fillStyle = '#2c2420'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 90; i++) { const p = Math.random(); blot(g, R01(w), R01(h), 3 + R01(16), p < 0.45 ? '118,58,26' : p < 0.7 ? '74,44,28' : '16,12,10', 0.25 + R01(0.4)); }
+    for (let i = 0; i < 40; i++) blot(g, R01(w), R01(h), 1.5 + R01(3), '150,80,36', 0.6);          // fresh rust in the pits
+    for (let i = 0; i < 260; i++) { g.fillStyle = 'rgba(8,6,5,0.7)'; g.fillRect(R01(w) | 0, R01(h) | 0, 1 + (R01(2) | 0), 1 + (R01(2) | 0)); }
+  });
+}
+// silt and mud: soft brown-grey with ripples where the last flow left it
+function siltTex() {
+  /* wet mud, not planks: a dark grey-brown with clots and pocks and a sheen
+   * where water stands in it — no running lines (stretched, they were grain) */
+  return paint(128, 128, (g, w, h) => {
+    g.fillStyle = '#35322c'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) blot(g, R01(w), R01(h), 4 + R01(16), Math.random() < 0.5 ? '22,20,17' : '78,70,56', 0.15 + R01(0.25));
+    for (let i = 0; i < 14; i++) blot(g, R01(w), R01(h), 3 + R01(7), '120,124,118', 0.18);            // wet shine
+    for (let i = 0; i < 160; i++) { g.fillStyle = 'rgba(12,10,8,0.6)'; g.beginPath(); g.arc(R01(w), R01(h), 0.6 + R01(1.4), 0, TAU); g.fill(); }
+    grit(g, w, h, 900, 30, 70, 0.4);
+  });
+}
+// growth: dark wet moss, never the neon of a sign
+function mossTex() {
+  return paint(128, 128, (g, w, h) => {
+    g.fillStyle = '#2a3322'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 90; i++) blot(g, R01(w), R01(h), 3 + R01(12), Math.random() < 0.5 ? '18,24,14' : '64,80,44', 0.15 + R01(0.3));
+    grit(g, w, h, 700, 20, 60, 0.4);
+  });
+}
+// the rug in front of the bed: a cheap woven runner, its pattern almost walked out of it
+function rugTex() {
+  return paint(256, 160, (g, w, h) => {
+    g.fillStyle = '#5a2f2a'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(176,140,90,0.55)'; g.lineWidth = 5; g.strokeRect(12, 12, w - 24, h - 24);
+    g.strokeStyle = 'rgba(40,52,70,0.6)'; g.lineWidth = 3; g.strokeRect(22, 22, w - 44, h - 44);
+    for (let k = 0; k < 4; k++) {                                   // a row of diamonds
+      const cx = 44 + k * ((w - 88) / 3), cy = h / 2;
+      g.fillStyle = k % 2 ? 'rgba(176,140,90,0.5)' : 'rgba(40,52,70,0.55)';
+      g.beginPath(); g.moveTo(cx, cy - 34); g.lineTo(cx + 22, cy); g.lineTo(cx, cy + 34); g.lineTo(cx - 22, cy); g.closePath(); g.fill();
+    }
+    for (let x = 0; x < w; x += 4) { g.fillStyle = 'rgba(190,170,140,0.6)'; g.fillRect(x, 0, 2, 6); g.fillRect(x, h - 6, 2, 6); }   // fringe
+    blot(g, w * 0.55, h * 0.5, 70, '30,24,20', 0.45);               // walked out of it
+    for (let i = 0; i < 10; i++) blot(g, R01(w), R01(h), 8 + R01(20), '30,22,16', 0.2 + R01(0.2));
+    grit(g, w, h, 2400, 40, 80, 0.3);
+  });
+}
+// a photograph gone yellow: two figures on a beach, the sea behind them, a corner torn off
+function photoTex() {
+  return paint(64, 80, (g, w, h) => {
+    g.fillStyle = '#d8d0b6'; g.fillRect(0, 0, w, h);                // the white border
+    const sky = g.createLinearGradient(0, 6, 0, 46); sky.addColorStop(0, '#8e9a96'); sky.addColorStop(1, '#b4ae92');
+    g.fillStyle = sky; g.fillRect(5, 5, w - 10, 34);
+    g.fillStyle = '#5d6c70'; g.fillRect(5, 39, w - 10, 8);          // the sea
+    g.fillStyle = '#b8a47e'; g.fillRect(5, 47, w - 10, 13);         // the sand
+    g.fillStyle = '#2a2420';                                        // the two of them
+    for (const [x, s] of [[24, 1], [36, 0.82]]) { g.fillRect(x, 54 - 18 * s, 5 * s, 18 * s); g.beginPath(); g.arc(x + 2.5 * s, 51 - 18 * s, 3 * s, 0, TAU); g.fill(); }
+    blot(g, 48, 20, 22, '150,120,60', 0.35);                        // gone yellow
+    g.fillStyle = '#1a1714'; g.beginPath(); g.moveTo(w, h); g.lineTo(w - 14, h); g.lineTo(w, h - 12); g.closePath(); g.fill();   // torn
+    g.fillStyle = '#3a3a3a'; g.fillRect(w / 2 - 1, 1, 2, 2);        // the pin
+  }, 0xF8);
+}
+// a drawing on a torn-out page: the lighthouse and the moon, in pencil and something red
+function drawingTex() {
+  return paint(96, 96, (g, w, h) => {
+    g.fillStyle = '#c8c0a8'; g.fillRect(0, 0, w, h);
+    for (let y = 14; y < h; y += 9) { g.fillStyle = 'rgba(80,100,140,0.35)'; g.fillRect(0, y, w, 1); }   // ruled lines
+    g.strokeStyle = 'rgba(40,36,34,0.85)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(40, 82); g.lineTo(46, 30); g.lineTo(54, 30); g.lineTo(60, 82); g.stroke();   // the tower
+    g.strokeRect(44, 22, 12, 8);
+    g.beginPath(); g.moveTo(42, 22); g.lineTo(50, 14); g.lineTo(58, 22); g.stroke();
+    g.strokeStyle = 'rgba(150,40,30,0.8)'; g.beginPath(); g.moveTo(56, 26); g.lineTo(88, 20); g.moveTo(56, 26); g.lineTo(88, 32); g.stroke();   // its beam, in red
+    g.strokeStyle = 'rgba(40,36,34,0.7)'; g.beginPath(); g.arc(20, 22, 9, 0, TAU); g.stroke();             // the moon
+    g.beginPath(); for (let x = 4; x < w - 4; x += 6) g.lineTo(x, 84 + Math.sin(x * 0.5) * 2); g.stroke();  // the sea
+    g.fillStyle = '#1a1714'; g.fillRect(0, 0, 4, h);                // torn out of something
+    for (let y = 0; y < h; y += 6) g.fillRect(4, y, 2, 3);
+  }, 0xF8);
+}
+// chalk on the pipe wall: the way in, and the days
+function chalkTex() {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, 128, 64);
+  g.strokeStyle = 'rgba(220,218,206,0.75)'; g.lineWidth = 3; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(10, 32); g.lineTo(70, 32); g.moveTo(56, 20); g.lineTo(72, 32); g.lineTo(56, 44); g.stroke();   // an arrow, in
+  g.lineWidth = 2;
+  for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(84 + i * 7, 18); g.lineTo(84 + i * 7, 46); g.stroke(); }
+  g.beginPath(); g.moveTo(80, 40); g.lineTo(112, 22); g.stroke();                                                   // and the days
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter; t.anisotropy = 1;
+  return t;
+}
+// a puddle: wet floor darkening out from a glassy middle, a ragged edge, not a disc cut in the floor
+function puddleTex() {
+  return paint(128, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    for (let i = 0; i < 14; i++) {
+      const a = R01(TAU), d = R01(26);
+      blot(g, w / 2 + Math.cos(a) * d, h / 2 + Math.sin(a) * d, 20 + R01(22), '14,18,18', 0.35 + R01(0.25));
+    }
+    blot(g, w / 2, h / 2, 34, '34,38,36', 0.55);                   // the standing water itself
+    for (let i = 0; i < 5; i++) blot(g, w / 2 + R01(30) - 15, h / 2 + R01(30) - 15, 4 + R01(8), '92,96,90', 0.14);   // the sheen
+  }, 0xF8);
+}
+// damp running down a wall from the joists: dark, ragged at the bottom, never a painted-on slab
+function dampTex() {
+  return paint(64, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    for (let i = 0; i < 9; i++) {
+      const x = 8 + R01(w - 16), L = h * (0.4 + R01(0.55)), wd = 4 + R01(12);
+      const gr = g.createLinearGradient(0, 0, 0, L);
+      gr.addColorStop(0, 'rgba(14,16,14,0.55)'); gr.addColorStop(0.7, 'rgba(18,20,16,0.35)'); gr.addColorStop(1, 'rgba(18,20,16,0)');
+      g.fillStyle = gr; g.fillRect(x - wd / 2, 0, wd, L);
+      blot(g, x, L * 0.92, wd * 0.7, '30,28,20', 0.3);              // the tide-mark where it stops
+    }
+    const top = g.createLinearGradient(0, 0, 0, 24);                  // and the soak along the top
+    top.addColorStop(0, 'rgba(12,14,12,0.6)'); top.addColorStop(1, 'rgba(12,14,12,0)');
+    g.fillStyle = top; g.fillRect(0, 0, w, 24);
+  }, 0xF8);
+}
+// a row of paperbacks seen spine-on: swollen, sun-faded colours, the odd title
+function spinesTex() {
+  return paint(128, 64, (g, w, h) => {
+    g.fillStyle = '#1a1612'; g.fillRect(0, 0, w, h);
+    const cols = ['112,48,40', '52,70,92', '150,132,92', '60,84,58', '120,96,60', '84,60,80', '170,160,140'];
+    let x = 0;
+    while (x < w) {
+      const bw = 6 + R01(12), top = R01(14), c = cols[(R01(cols.length)) | 0];
+      g.fillStyle = `rgb(${c})`; g.fillRect(x, top, bw - 1, h - top);
+      g.fillStyle = 'rgba(230,220,190,0.35)'; g.fillRect(x + 1, top + 8 + R01(10), bw - 3, 2);   // a title band
+      blot(g, x + bw / 2, h - 6, bw, '20,16,12', 0.4);              // the damp has got into the bottoms
+      x += bw;
+    }
+    grit(g, w, h, 500, 20, 60, 0.25);
+  });
+}
+// tins: a paper label gone soft and faded, the steel rusting through above and below it
+function tinTex() {
+  return paint(64, 64, (g, w, h) => {
+    g.fillStyle = '#7a7c78'; g.fillRect(0, 0, w, h);
+    const bands = ['150,60,44', '196,180,140', '70,96,120', '170,120,50'];
+    for (let i = 0; i < 4; i++) { g.fillStyle = `rgb(${bands[i]})`; g.fillRect(i * 16, 10, 16, h - 20); }
+    g.fillStyle = 'rgba(240,230,200,0.5)'; for (let i = 0; i < 4; i++) g.fillRect(i * 16 + 3, 26, 10, 6);
+    for (let i = 0; i < 18; i++) blot(g, R01(w), R01(h), 3 + R01(8), Math.random() < 0.5 ? '110,60,26' : '40,30,20', 0.3);
+    for (let x = 0; x < w; x += 3) { g.fillStyle = 'rgba(30,30,30,0.3)'; g.fillRect(x, 4, 1, 2); g.fillRect(x, h - 6, 1, 2); }   // the ribs
+  });
+}
+// an interior surface lit off its own map: no moon reaches down here
+/* RELIEF OUT OF THE PICTURE. Every surface down here was a flat colour lit
+ * by its own glow, which is what reads as plastic (the owner's word). Each
+ * map now carries a normal map made from its own light and dark — a mortar
+ * joint is a groove, a crack is a crack, grit stands up — so the lamps rake
+ * across something. Sobel over the canvas's luminance, wrapped at the edges
+ * so it tiles, and it shares its map's repeat and offset. */
+const _nmCache = new Map();
+function normalFrom(map, k = 2.2) {
+  if (_nmCache.has(map)) return _nmCache.get(map);
+  const im = map.image; if (!im || !im.getContext) return null;
+  const w = im.width, h = im.height;
+  const src = im.getContext('2d').getImageData(0, 0, w, h).data;
+  const L = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) L[i] = (src[i * 4] * 0.3 + src[i * 4 + 1] * 0.59 + src[i * 4 + 2] * 0.11) / 255;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'), out = g.createImageData(w, h), o = out.data;
+  const at = (x, y) => L[((y + h) % h) * w + ((x + w) % w)];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x - 1, y) + at(x - 1, y + 1));
+    const dy = (at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x, y - 1) + at(x + 1, y - 1));
+    let nx = -dx * k, ny = dy * k, nz = 1; const n = Math.hypot(nx, ny, nz); nx /= n; ny /= n; nz /= n;
+    const i = (y * w + x) * 4;
+    o[i] = (nx * 0.5 + 0.5) * 255; o[i + 1] = (ny * 0.5 + 0.5) * 255; o[i + 2] = (nz * 0.5 + 0.5) * 255; o[i + 3] = 255;
+  }
+  g.putImageData(out, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.repeat = map.repeat; t.offset = map.offset;     // shared, so it can never drift off its picture
+  _nmCache.set(map, t);
+  return t;
+}
+/* AND DARKER (the owner: too bright). The glow every surface is lit by is
+ * cut by DIM across the board; what light there is comes from the lamps,
+ * spread softer and further so it fills the space rather than pooling. */
+/* 0.6 was the first pass's "darker"; the owner, again: "still too bright — lit
+ * faintly by a few lights and lanterns". The lift is what lit the walls where
+ * no lamp reaches, so it goes most of the way: what you see by now is the
+ * lanterns, the candles and the odd bulb in the pipe. */
+const DIM = 0.22;
+function liftOff(m, map, k, tint = 0xffffff, rep = null, bump = 1.0) {
+  m.map = map; m.emissiveMap = map; m.emissive = new THREE.Color(tint); m.emissiveIntensity = k * DIM;
+  if (rep) map.repeat.set(rep[0], rep[1]);
+  const nm = bump > 0 ? normalFrom(map) : null;
+  if (nm) { m.normalMap = nm; m.normalScale = new THREE.Vector2(bump, bump); }
+  m.metalness = 0;                                // no environment map here: a metal has no diffuse
+  m.needsUpdate = true;
+  return m;
+}
+/* STANDING WATER, NOT A SHEET OF PLASTIC: dark, near-black, glossy, and
+ * broken by a ripple normal map the game slides along (`waterMat`), so the
+ * lamps' highlights run and shiver on it. */
+function rippleNormalTex() {
+  const w = 128, h = 128, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'), img = g.createImageData(w, h), o = img.data;
+  const H = (x, y) => {
+    const u = x / w * Math.PI * 2, v = y / h * Math.PI * 2;
+    return Math.sin(u * 3 + Math.sin(v * 2) * 1.3) * 0.5 + Math.sin(v * 5 + u * 2) * 0.3 + Math.sin(u * 7 - v * 4 + 1.1) * 0.18 + Math.sin(u * 11 + v * 9) * 0.08;
+  };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = H(x + 1, y) - H(x - 1, y), dy = H(x, y + 1) - H(x, y - 1);
+    let nx = -dx * 2.2, ny = -dy * 2.2, nz = 1; const n = Math.hypot(nx, ny, nz);
+    const i = (y * w + x) * 4;
+    o[i] = (nx / n * 0.5 + 0.5) * 255; o[i + 1] = (ny / n * 0.5 + 0.5) * 255; o[i + 2] = (nz / n * 0.5 + 0.5) * 255; o[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(6, 2);
+  return t;
+}
 
 export function makeDrainageTunnelHome(opts = {}) {
   const T = new THREE.Group();
@@ -352,13 +771,65 @@ export function makeDrainageTunnelHome(opts = {}) {
     beaconOn:   new THREE.MeshBasicMaterial({ color: 0xff2418, fog: false }),
     beaconHalo: new THREE.MeshBasicMaterial({ color: 0xff2a12, fog: false, transparent: true, opacity: 0.26, depthWrite: false }),
     seaweed: new THREE.MeshStandardMaterial({ color: 0x2b3226, roughness: 1, metalness: 0, emissive: 0x0a0d08, flatShading: true }),
-    stain:   new THREE.MeshStandardMaterial({ map: rustStainTex(), transparent: true, roughness: 1, metalness: 0, emissive: 0x0b0602, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }),
+    stain:   new THREE.MeshStandardMaterial({ map: rustStainTex(), transparent: true, roughness: 1, metalness: 0, emissive: 0x0b0602, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide }),
+    bleed:   new THREE.MeshStandardMaterial({ map: brickBleedTex(), transparent: true, roughness: 0.55, metalness: 0, opacity: 1, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }),
     // The berms have to read as the same sand as the beach, so the game hands
     // in its own sand material; a bespoke flat colour reads as pale slabs.
     wetsand: opts.wetSandMat || new THREE.MeshStandardMaterial({ color: 0x5a6478, roughness: 0.9, metalness: 0.04, emissive: 0x1e2537, flatShading: true, side: THREE.DoubleSide }),
     drysand: opts.sandMat || new THREE.MeshStandardMaterial({ color: 0x6d7d99, roughness: 0.95, metalness: 0, emissive: 0x27324a, flatShading: true }),
     cobble:  new THREE.MeshStandardMaterial({ color: 0x55565e, roughness: 1, metalness: 0, emissive: 0x14161c, flatShading: true }),
   };
+
+  /* the second pass's maps on the first pass's materials: the colours below
+   * are what the map is multiplied by, and the lift is what reads in the dark */
+  liftOff(M.bore, pipeTex(), 0.30, 0xc8d0c8, [4, 6]); M.bore.color.set(0xb4b8b0);
+  // the collars and lips round the bore are outside under the moon as much as in: weathered concrete, barely lifted
+  liftOff(M.conc, pipeTex(), 0.08, 0xb8c0b8, [2, 1]); M.conc.color.set(0x8e9290);
+  // the chamber's own floor and ceiling: lived on, and lit off their own map
+  M.roomConc = liftOff(new THREE.MeshStandardMaterial({ roughness: 0.98, flatShading: true }), floorTex(), 0.26, 0xd0c8b8, [2, 2]);
+  M.roomConc.color.set(0xa8a298);
+  /* the brick's uv is laid in METRES by the game-side pass below (`brickUV`), one
+   * tile to 3.45 m by 2.7 — so the repeat is 1 and every wall, pier and patch
+   * round the outlet shows bricks the same size and continuous across seams */
+  liftOff(M.brickM, brickTex2(), 0.30, 0xffe4cc, [1, 1], 1.4); M.brickM.color.set(0xa89888);
+  liftOff(M.wood, woodTex(), 0.30, 0xffe0c0); M.wood.color.set(0xb09878);
+  liftOff(M.cloth, linenTex(), 0.22, 0xfff0dc); M.cloth.color.set(0xa8a294);
+  liftOff(M.blanket, blanketTex(), 0.34, 0xffd8c8); M.blanket.color.set(0xb89a90);
+  liftOff(M.rust, rustTex(), 0.26, 0xffd0a8); M.rust.color.set(0xb08868);
+  liftOff(M.steel, rustTex(), 0.18, 0xc0c8d0); M.steel.color.set(0x8a8e92); M.steel.roughness = 0.75;
+  // the shelves are 18 m by 0.7: square the tile, or it stretches into planks
+  liftOff(M.silt, siltTex(), 0.2, 0xc8c4b8, [24, 1], 1.6); M.silt.color.set(0x7c766a); M.silt.roughness = 0.6;
+  liftOff(M.algae, mossTex(), 0.16, 0xa0b890); M.algae.color.set(0x6a7a58); M.algae.roughness = 0.8;
+  liftOff(M.slime, mossTex(), 0.14, 0x98ac88); M.slime.color.set(0x5a6a4c);
+  // the grate's own iron, darker than the rust patches on it, and the precast round the hole
+  M.iron = liftOff(new THREE.MeshStandardMaterial({ roughness: 0.8, flatShading: true }), ironTex(), 0.22, 0xffd0b0, [3, 3], 1.8);
+  M.iron.color.set(0x9a8070);
+  liftOff(M.frame, ironTex(), 0.22, 0xffd0b0, [3, 3], 1.8); M.frame.color.set(0x9a8070); M.frame.roughness = 0.8;   // every bit of old iron down here, the same scale
+  M.surround = liftOff(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true }), pipeTex(), 0.22, 0xc8ccc4, null, 1.2);
+  M.surround.color.set(0x8c908a);
+  M.mattress = liftOff(new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), mattressTex(), 0.36, 0xfff0dc);
+  M.mattress.color.set(0xc4beb0);
+  // water that has stood a long time: dark, a little sheen, and never the blue of a hole in the floor
+  // (metalness 0: with no env map any metal goes black, and a black puddle is a hole in the floor)
+  M.water.color.set(0x141a1c); M.water.emissive.set(0x070b0c); M.water.metalness = 0; M.water.roughness = 0.08;
+  M.water.normalMap = rippleNormalTex(); M.water.normalScale = new THREE.Vector2(0.55, 0.55); M.water.needsUpdate = true;
+  T.userData.waterMat = M.water;
+  // decals — floor puddles and wall damp — feathered, so they sit IN the surface rather than on it
+  const decal = (map, color, emissive, rough) => new THREE.MeshStandardMaterial({ map, color, emissive, emissiveMap: map, emissiveIntensity: 0.5,
+    roughness: rough, metalness: 0, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  M.puddle = decal(puddleTex(), 0xffffff, 0x6e7470, 0.08);
+  M.damp = decal(dampTex(), 0xffffff, 0x000000, 1);
+  // the things on the shelves and the floor
+  M.spines = liftOff(new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), spinesTex(), 0.3, 0xfff0dc);
+  M.tin = liftOff(new THREE.MeshStandardMaterial({ roughness: 0.6, flatShading: true }), tinTex(), 0.22, 0xfff0dc);
+  M.jar = new THREE.MeshStandardMaterial({ color: 0x6a7a62, roughness: 0.22, metalness: 0, emissive: 0x1c2618, flatShading: true });
+  M.bottle = new THREE.MeshStandardMaterial({ color: 0x2c4a34, roughness: 0.2, metalness: 0, emissive: 0x0e1a10, flatShading: true });
+  M.leather = new THREE.MeshStandardMaterial({ color: 0x6a4c34, roughness: 0.8, metalness: 0, emissive: 0x22160c, flatShading: true });
+  M.coat = liftOff(new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), linenTex(), 0.14, 0xc8d0b8);
+  M.coat.color.set(0x4a5238);
+  M.jug = new THREE.MeshStandardMaterial({ color: 0x8e9a98, roughness: 0.5, metalness: 0, emissive: 0x1c2222, flatShading: true });
+  M.fairy = new THREE.MeshBasicMaterial({ color: 0xffb56a, fog: false });
+  M.wire = new THREE.MeshStandardMaterial({ color: 0x1c1c1a, roughness: 0.9, metalness: 0, emissive: 0x060606 });
 
   // ================= headwall — the weathered mass round the mouth =========
   // a chunky, rounded concrete/rock buttress the pipe pokes out of
@@ -517,13 +988,17 @@ export function makeDrainageTunnelHome(opts = {}) {
         L.add(hoop);
       }
       if (!dead) {
-        const pl = new THREE.PointLight(0xffd2a0, 1.8, 9.5, 1.6);
+        const pl = new THREE.PointLight(0xffc890, 0.46, 9, 1.1);      // a bulb in a pipe: a pool round it, and a softer fall-off into the murk between (2026-10-17: "more ambient")
         pl.position.set(x, y - 0.22, z * 0.85);
         T.add(pl);
         boreLights.push(pl);
       }
-      // conduit feeding it: thin, and tucked right against the pipe wall
-      L.add(slab(2.6, 0.022, 0.022, M.rust, 1.3, 0.012, 0));
+      /* conduit feeding it: thin, and tucked right against the pipe wall —
+       * and it STOPS in the bulkhead: 2.6 m off the last lamp (x 16.2) ran it
+       * on through the door's wall and 1.2 m into the room in the air, the
+       * owner's "little stick hanging out of the wall for no reason" */
+      const CL = Math.min(2.6, BORE_LEN - x);
+      L.add(slab(CL, 0.022, 0.022, M.rust, CL / 2, 0.012, 0));
     }
   }
 
@@ -568,6 +1043,28 @@ export function makeDrainageTunnelHome(opts = {}) {
     T.add(run);
   }
 
+  // ---- a string of bulbs he has hung for the last few metres ------------
+  // Hooked up near the crown and sagging between the hooks, a third of them
+  // gone. Emissive only — no light of their own; the bore lamps do the lighting.
+  {
+    const TH = 0.5, RR = BORE_R - 0.07, x0 = BORE_LEN - 7.2, x1 = BORE_LEN - 0.4;
+    const hy = PIPE_CY + RR * Math.cos(TH), hz = RR * Math.sin(TH);
+    const pts = [];
+    for (let x = x0; x <= x1 + 1e-3; x += 0.15) {
+      const f = ((x - x0) % 1.2) / 1.2;                               // a hook every 1.2 m
+      pts.push(new THREE.Vector3(x, hy - Math.sin(f * Math.PI) * 0.14, hz - Math.sin(f * Math.PI) * 0.05));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts);
+    T.add(new THREE.Mesh(new THREE.TubeGeometry(curve, pts.length * 2, 0.006, 3, false), M.wire));
+    for (let i = 0; i < 22; i++) {
+      const p = curve.getPointAt((i + 0.5) / 22);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 5, 4), rnd(i * 7.7) < 0.33 ? M.dark : M.fairy);
+      bulb.scale.y = 1.4; bulb.position.set(p.x, p.y - 0.03, p.z);
+      T.add(bulb);
+    }
+    for (let x = x0; x <= x1 + 1e-3; x += 1.2) T.add(slab(0.03, 0.05, 0.03, M.rust, x, hy + 0.02, hz + 0.01));   // the hooks
+  }
+
   // ---- the invert: silted flat floor with a wet channel down the middle ---
   {
     const IN = new THREE.Group();
@@ -589,13 +1086,29 @@ export function makeDrainageTunnelHome(opts = {}) {
         x, FLOOR_Y - 0.012, (rnd(i * 3.9) - 0.5) * 0.5);
       IN.add(patch);
     }
-    // slime creeping up the pipe walls at the waterline
+    // slime creeping up the pipe walls at the waterline: slices of cylinder at
+    // wall radius (a flat slab in a round pipe stands off the wall as a panel).
+    // Same angle rule as the stain run below: (y, z) = (sin t, cos t) * r.
+    const tFloor = Math.asin((FLOOR_Y - PIPE_CY) / BORE_R);           // where the silt meets the wall
     for (const s of [-1, 1])
       for (let i = 0; i < 14; i++) {
-        const x = 0.3 + rnd(i * 8.2 + s) * (BORE_LEN - 0.6);
-        const h = 0.12 + rnd(i * 4.4) * 0.3;
-        IN.add(slab(0.5 + rnd(i) * 0.7, h, 0.05, M.slime, x, FLOOR_Y + h / 2, s * 1.02, 0, 0, 0));
+        const x = 0.3 + rnd(i * 8.2 + s) * (BORE_LEN - 0.6), len = 0.5 + rnd(i) * 0.9;
+        const tTop = Math.asin((FLOOR_Y + 0.14 + rnd(i * 4.4) * 0.3 - PIPE_CY) / BORE_R);
+        const a0 = s > 0 ? tFloor : Math.PI - tTop, span = tTop - tFloor;
+        const sg = new THREE.CylinderGeometry(BORE_R - 0.012, BORE_R - 0.012, len, 4, 1, true, a0, span);
+        sg.rotateZ(Math.PI / 2);
+        const sl = new THREE.Mesh(sg, M.slime);
+        sl.position.set(x, PIPE_CY, 0);
+        IN.add(sl);
       }
+    // He has laid a dry way in over the wet for the last stretch: old boards
+    // two abreast on cross cleats, each length a little off true. Flat on the
+    // silt, so it is walked over, not around.
+    for (let x = 7.4, k = 0; x < BORE_LEN - 0.9; x += 1.26, k++) {
+      const yaw = (rnd(k * 3.3) - 0.5) * 0.06, zc = (rnd(k * 1.9) - 0.5) * 0.08;
+      for (const dz of [-0.13, 0.13]) IN.add(slab(1.18, 0.025, 0.2, M.wood, x + 0.6, FLOOR_Y + 0.03, zc + dz, 0, yaw, (rnd(k + dz) - 0.5) * 0.02));
+      for (const dx of [0.12, 1.08]) IN.add(slab(0.07, 0.03, 0.62, M.wood, x + dx, FLOOR_Y + 0.003, zc, 0, yaw, 0));
+    }
     // grit, pebbles and a stranded bit of driftwood on the shelves
     for (let i = 0; i < 22; i++) {
       const s = rnd(i * 11.1) < 0.5 ? -1 : 1;
@@ -607,6 +1120,25 @@ export function makeDrainageTunnelHome(opts = {}) {
     }
     const stick = slab(0.9, 0.05, 0.07, M.wood, 2.4, FLOOR_Y + 0.03, -0.85, 0, 0.5, 0.04);
     IN.add(stick);
+    /* WHAT THE FLOW HAS DUMPED: a tyre half in the silt, broken brick, bottles,
+     * a rag caught on a joint, a sodden board — things the water brought in
+     * and left where it slackened, against the walls and the joints. */
+    {
+      const tyre = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.09, 8, 16), M.dark);
+      tyre.position.set(5.2, FLOOR_Y + 0.3, 1.02); tyre.rotation.set(-Math.PI / 2 + 0.95, 0, 0.15); IN.add(tyre);   // leant up the curve of the wall, out of the walk
+      for (let i = 0; i < 9; i++) {
+        const bk = slab(0.2, 0.06, 0.1, M.brickM, 1.5 + rnd(i * 7.3) * 14, FLOOR_Y + 0.03, (rnd(i * 2.1) < 0.5 ? -1 : 1) * (0.55 + rnd(i * 5.5) * 0.3),
+          rnd(i) * 0.4, rnd(i * 3.1) * TAU, rnd(i * 4.2) * 0.3);
+        IN.add(bk);
+      }
+      for (let i = 0; i < 4; i++) {
+        const bt = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.035, 0.22, 7), M.water);
+        bt.position.set(3 + i * 3.4 + rnd(i) * 1.2, FLOOR_Y + 0.035, (rnd(i * 6.6) - 0.5) * 1.3);
+        bt.rotation.set(Math.PI / 2, rnd(i * 2.5) * TAU, 0); IN.add(bt);
+      }
+      for (const x of [3.55, 9.1]) IN.add(slab(0.32, 0.012, 0.22, M.cloth, x, FLOOR_Y + 0.01, (x > 5 ? -1 : 1) * 0.62, 0, 0.6, 0.05));
+      IN.add(slab(1.3, 0.035, 0.22, M.wood, 12.6, FLOOR_Y + 0.02, -0.7, 0, -0.35, 0.03));
+    }
     bakeScatter(IN);
   }
 
@@ -811,21 +1343,63 @@ export function makeDrainageTunnelHome(opts = {}) {
       b.position.set(-0.07, 0.18 + i * 0.47, sg * (OW + 0.06));
       DOOR.add(b);
     }
-    // the leaf sits back at z -2.15 so it stays clear of the walking line
-    const LZ = -2.15, LA = -0.42;
-    DOOR.add(slab(0.10, OH - 0.06, 1.9, M.steel, 0.62, OH / 2 - 0.02, LZ, 0, LA, 0));
-    DOOR.add(slab(0.03, 0.5, 1.7, M.rust, 0.69, 0.26, LZ, 0, LA, 0));     // kick plate
-    for (let i = 0; i < 3; i++)                                            // locking dogs
-      DOOR.add(slab(0.16, 0.09, 0.28, M.rust, 0.66, 0.45 + i * 0.7, LZ + 0.7, 0, LA, 0));
-    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.028, 5, 14), M.rust);
-    wheel.position.set(0.7, OH / 2, LZ - 0.35); wheel.rotation.set(0, LA, Math.PI / 2);
-    DOOR.add(wheel);
-    // hinges, still on the frame the leaf swung off
-    for (let i = 0; i < 3; i++) {
-      const h = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.17, 6), M.rust);
-      h.position.set(0.05, 0.3 + i * 0.78, -OW - 0.12);
-      DOOR.add(h);
+    /* THE LEAF, BUILT IN ITS OWN FRAME. Its kick plate, locking dogs and wheel
+     * were placed at offsets in the DOOR's axes and then turned about their
+     * own centres, so on a leaf standing at an angle they hung off it in the
+     * air (the owner's "the door has geometry floating"). Now the leaf is a
+     * frame turned once, every fitting is set on its face in that frame, and
+     * the whole is handed to DOOR with the turn baked in (so it still bakes). */
+    /* AND IT HANGS ON THE ROOM SIDE, OPEN AGAINST THE WALL (the owner,
+     * 2026-10-16: "the door is colliding through the wall"). It stood at 24
+     * degrees with its hinge end 23 cm inside the bulkhead (x 0.23 against a
+     * wall from -0.06 to 0.46), on hinges that were on the TUNNEL side of the
+     * frame. Now the hinge line is on the room side at the jamb (z -1.06), the
+     * leaf swung right round and resting ajar off the room's front wall
+     * (`LA` 0.12 rad), its fittings on the face you see, the dogs and the wheel
+     * at the latch edge, which is the free one.
+     * AND IT IS ON ITS HINGES (the owner, 2026-10-17: "the door is off its
+     * hinges"). The hinge line stood 18 cm out from the wall with nothing
+     * between, a leaf leaning in the air. The opening has a steel frame on the
+     * room side now (the wall's room face is at x 0.484 in this frame,
+     * measured), the pin is at that frame's corner, the knuckles are strapped
+     * to the frame on one side and across the leaf on the other, and the leaf
+     * rests open against its own frame, nearly flat to the wall. */
+    const WF = 0.484, PF = 0.08;                                            // the wall's room face; the frame's depth off it
+    for (const s of [-1, 1]) DOOR.add(slab(PF, OH + 0.1, 0.12, M.steel, WF + PF / 2, OH / 2 + 0.05, s * (OW + 0.06)));   // room-side jambs
+    DOOR.add(slab(PF, 0.12, OW * 2 + 0.24, M.steel, WF + PF / 2, OH + 0.1, 0));                                       // and its head
+    {
+      const TH = 0.10, LW = 1.9, LH = OH - 0.06, LA = 0.03;
+      const HX = WF + PF + 0.09, HZ = -OW - 0.03, D = LW / 2 + 0.03;        // the pin: off the frame by the fittings on the leaf's back
+      const L = new THREE.Group(); L.rotation.y = LA;
+      L.position.set(HX - D * Math.sin(LA), 0, HZ - D * Math.cos(LA));
+      L.add(slab(TH, LH, LW, M.steel, 0, LH / 2, 0));
+      // a lip round the edge, the way a watertight door is pressed
+      for (const s of [-1, 1]) L.add(slab(TH + 0.03, LH, 0.05, M.steel, 0, LH / 2, s * (LW / 2 - 0.025)));
+      L.add(slab(TH + 0.03, 0.05, LW, M.steel, 0, LH - 0.025, 0));
+      L.add(slab(TH + 0.03, 0.05, LW, M.steel, 0, 0.025, 0));
+      for (const side of [-1, 1]) {
+        const fx = side * (TH / 2 + 0.008);
+        L.add(slab(0.016, 0.48, LW - 0.2, M.rust, fx, 0.3, 0));                          // kick plate, both faces
+        for (let i = 0; i < 3; i++) L.add(slab(0.03, 0.2, 0.09, M.rust, fx + side * 0.012, 0.45 + i * 0.7, -LW / 2 + 0.12));  // dogs on the latch edge
+        for (let i = 0; i < 2; i++) L.add(slab(0.02, 0.05, LW - 0.4, M.rust, fx, 0.75 + i * 0.6, 0));    // stiffeners
+      }
+      const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.026, 6, 16), M.rust);
+      wheel.rotation.y = Math.PI / 2; wheel.position.set(TH / 2 + 0.09, OH / 2, -0.35); L.add(wheel);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.1, 8), M.rust);
+      hub.rotation.z = Math.PI / 2; hub.position.set(TH / 2 + 0.05, OH / 2, -0.35); L.add(hub);
+      for (let i = 0; i < 3; i++) { const sp = slab(0.02, 0.38, 0.02, M.rust, TH / 2 + 0.09, OH / 2, -0.35, i * Math.PI / 3, 0, 0); L.add(sp); }
+      // the knuckles on the pin, a strap across the leaf from each and a leaf of it back onto the frame
+      for (let i = 0; i < 3; i++) {
+        const y = 0.3 + i * 0.78;
+        const h = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.17, 8), M.rust);
+        h.position.set(0, y, D); L.add(h);
+        L.add(slab(0.014, 0.08, 0.5, M.rust, TH / 2 + 0.012, y, D - 0.25));            // strap over the leaf's face
+        L.add(slab(0.11, 0.08, 0.014, M.rust, -0.055, y, D + 0.035));                     // and back to the frame
+      }
+      L.updateMatrix();
+      for (const c of [...L.children]) { c.applyMatrix4(L.matrix); DOOR.add(c); }
     }
+    // (its hinges are on the leaf, on the room-side frame)
     // No spall chunks on the jamb: sitting proud of the wall with nothing
     // behind them they just read as debris floating in the doorway.
   }
@@ -837,9 +1411,12 @@ export function makeDrainageTunnelHome(opts = {}) {
   const rcx = (ROOM_X0 + ROOM_X1) / 2, rlen = ROOM_X1 - ROOM_X0;
   {
     // shell — brick walls, concrete floor and a joisted ceiling
-    R.add(slab(rlen, 0.2, ROOM_HZ * 2 + 0.4, M.conc, rcx, -0.1, 0));                     // floor
-    R.add(slab(rlen, ROOM_H + 0.4, 0.25, M.brickM, rcx, ROOM_H / 2, ROOM_HZ + 0.12));    // side walls
-    R.add(slab(rlen, ROOM_H + 0.4, 0.25, M.brickM, rcx, ROOM_H / 2, -ROOM_HZ - 0.12));
+    // floor and side walls run back 9 cm past ROOM_X0 to the bulkhead's face
+    // (DOOR_X + 0.46), or a slit opens along the foot and up both corners
+    const fx0 = DOOR_X + 0.44, flen = ROOM_X1 - fx0, fcx = (fx0 + ROOM_X1) / 2;
+    R.add(slab(flen, 0.2, ROOM_HZ * 2 + 0.4, M.roomConc, fcx, -0.1, 0));                 // floor
+    R.add(slab(flen, ROOM_H + 0.4, 0.25, M.brickM, fcx, ROOM_H / 2, ROOM_HZ + 0.12));    // side walls
+    R.add(slab(flen, ROOM_H + 0.4, 0.25, M.brickM, fcx, ROOM_H / 2, -ROOM_HZ - 0.12));
     // Back wall, built around a real opening for the outlet — a solid slab
     // leaves the pipe with no hole in it, just a dark ring pasted on brick.
     {
@@ -860,22 +1437,52 @@ export function makeDrainageTunnelHome(opts = {}) {
        * is centred on the player, shows through the open end of the throat. */
       R.add(slab(2.0, 1.5, 1.5, M.void, ROOM_X1 + 8.7, oy, oz));
     }
-    R.add(slab(rlen + 0.6, 0.22, ROOM_HZ * 2 + 0.5, M.conc, rcx, ROOM_H + 0.11, 0));     // ceiling slab
+    R.add(slab(rlen + 0.6, 0.22, ROOM_HZ * 2 + 0.5, M.roomConc, rcx, ROOM_H + 0.11, 0)); // ceiling slab
+    // The bulkhead's room side is the door's concrete, built for the pipe and
+    // dark as the pipe: from inside it read as a black fourth wall. Faced in
+    // the room's brick, its uv cut down so the courses match the side walls'
+    // (a box maps its whole texture onto every face, whatever the face's size).
+    {
+      const fx = DOOR_X + 0.46 + 0.012, OW = 1.0, OH = 2.12, sideW = ROOM_H + 0.4;
+      const veneer = (w, h, y, z) => {
+        const m = slab(0.024, h, w, M.brickM, fx, y, z);
+        const uv = m.geometry.getAttribute('uv');
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / rlen, uv.getY(i) * h / sideW);
+        R.add(m);
+      };
+      for (const s of [-1, 1]) veneer(ROOM_HZ - OW, ROOM_H, ROOM_H / 2, s * (OW + (ROOM_HZ - OW) / 2));
+      veneer(OW * 2, ROOM_H - OH - 0.11, (ROOM_H + OH + 0.11) / 2, 0);
+    }
 
     // exposed joists + conduit under the ceiling (photo 5)
     for (let i = 0; i < 9; i++) {
       const x = ROOM_X0 + 0.5 + i * (rlen - 1.0) / 8;
       R.add(slab(0.14, 0.24, ROOM_HZ * 2, M.wood, x, ROOM_H - 0.13, 0));
     }
+    /* the conduit runs tight under the joists, strapped to each one it
+     * crosses — it hung a few centimetres clear of them, on nothing */
     for (const z of [-1.6, -1.25, 1.9]) {
       const pipe = xCyl(0.06, 0.06, rlen - 0.4, 8, z > 0 ? M.rust : M.steel);
-      pipe.position.set(rcx, ROOM_H - 0.34, z);
+      pipe.position.set(rcx, ROOM_H - 0.31, z);
       R.add(pipe);
+      for (let i = 0; i < 9; i++) {
+        const x = ROOM_X0 + 0.5 + i * (rlen - 1.0) / 8;
+        R.add(slab(0.05, 0.03, 0.15, M.steel, x, ROOM_H - 0.385, z));          // the strap under it
+        for (const s of [-1, 1]) R.add(slab(0.05, 0.13, 0.012, M.steel, x, ROOM_H - 0.31, z + s * 0.068));
+      }
     }
-    // a fat soil pipe dropping into the corner and turning along the wall
-    const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.5, 9), M.rust);
-    drop.position.set(ROOM_X1 - 0.5, ROOM_H - 0.9, -ROOM_HZ + 0.35);
-    R.add(drop);
+    /* a fat soil pipe down the back corner from the ceiling to the floor,
+     * collared at its joints and bracketed to the wall, going into the floor
+     * through a cast shoe — it used to stop in mid-air at 1.2 m */
+    {
+      const sx = ROOM_X1 - 0.24, sz = -ROOM_HZ + 0.24;
+      R.add(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, ROOM_H, 10), M.rust).translateX(sx).translateY(ROOM_H / 2).translateZ(sz));
+      for (const y of [0.12, 1.15, 2.2]) R.add(new THREE.Mesh(new THREE.CylinderGeometry(0.135, 0.135, 0.09, 10), M.rust).translateX(sx).translateY(y).translateZ(sz));
+      for (const y of [0.7, 1.8]) {
+        R.add(slab(0.04, 0.05, 0.26, M.steel, sx + 0.12, y, sz));                // to the back wall
+        R.add(slab(0.26, 0.05, 0.04, M.steel, sx, y, sz - 0.12));                // and the side wall
+      }
+    }
 
     // ---- the outlet in the back wall, bleeding rust down the brick -------
     // (square rusted frame, round bore behind bars, ochre run below)
@@ -890,24 +1497,44 @@ export function makeDrainageTunnelHome(opts = {}) {
       // render panel the frame is bolted to, with the bore hole in it
       // Round hole, and wide enough to cover the corners of the square opening
       // cut in the brick — otherwise the hole reads square.
-      const panel = new THREE.Mesh(new THREE.RingGeometry(0.302, 0.62, 20, 1), M.conc);
-      panel.position.z = -0.02;
-      F.add(panel);
-      // the square frame, four rusted angles
+      /* a precast concrete surround set in the brick: a square slab with the
+       * round bore through it, standing a little proud of the wall, so the
+       * square cut in the brick never shows and the hole has an edge with depth
+       * (the flat ring it replaces read as a sticker on the wall) */
+      {
+        const sh = new THREE.Shape();
+        sh.moveTo(-0.5, -0.5); sh.lineTo(0.5, -0.5); sh.lineTo(0.5, 0.5); sh.lineTo(-0.5, 0.5); sh.closePath();
+        const hole = new THREE.Path(); hole.absarc(0, 0, 0.30, 0, Math.PI * 2, true); sh.holes.push(hole);
+        const sg = new THREE.ExtrudeGeometry(sh, { depth: 0.07, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 1, curveSegments: 20 });
+        const uv = sg.getAttribute('uv');                       // the extrude's uv is in metres already: one tile a metre
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.6, uv.getY(i) * 0.6);
+        const panel = new THREE.Mesh(sg, M.surround);
+        panel.position.z = -0.065;
+        F.add(panel);
+      }
+      /* THE GRATE COMES OFF NOW (the owner's word, 2026-10-15): its frame is
+       * held to the panel by four screws, one in each corner, and with the
+       * screwdriver they come out and the whole grate — frame, bars, flats
+       * and welds — lifts away as one piece. So it is its own group, `G`, and
+       * the screws are not built here: the game puts them on the spots in
+       * `grateScrews` (F's own frame, heads facing +Z, into the room), where
+       * the corner bolts used to be. */
+      const G = new THREE.Group();
+      G.name = 'grate';
+      G.userData.noBake = true;          // it moves: main.js's `bakeStatic` would melt it into the wall
+      F.add(G);
+      /* the square frame: four lengths of angle iron, a flange to the front
+       * and a web back into the hole, mitred at the corners, in rusted iron */
       const FW = 0.44, FT = 0.075;
       for (const [dx, dy, w, h] of [[0, FW, FW * 2 + FT, FT], [0, -FW, FW * 2 + FT, FT],
                                     [FW, 0, FT, FW * 2 + FT], [-FW, 0, FT, FW * 2 + FT]]) {
-        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.07), M.frame);
-        m.position.set(dx, dy, 0.025);
-        F.add(m);
+        G.add(slab(w, h, 0.014, M.iron, dx, dy, 0.052));                                  // the flange
+        const web = w > h ? slab(w - FT, 0.014, 0.07, M.iron, dx, dy - Math.sign(dy) * (FT / 2 - 0.007), 0.017)
+                          : slab(0.014, h - FT, 0.07, M.iron, dx - Math.sign(dx) * (FT / 2 - 0.007), dy, 0.017);
+        G.add(web);
       }
-      // corner bolts
-      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
-        const b = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.05, 6), M.frame);
-        b.rotation.x = Math.PI / 2;
-        b.position.set(sx * (FW - 0.02), sy * (FW - 0.02), 0.06);
-        F.add(b);
-      }
+      T.userData.grateScrews = [];
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) T.userData.grateScrews.push([sx * (FW - 0.02), sy * (FW - 0.02), 0.059]);
       // the bore: a lip, then a shaft running back into the dark
       const lip = new THREE.Mesh(new THREE.TorusGeometry(0.305, 0.04, 5, 16), M.conc);
       lip.position.z = -0.01;
@@ -987,23 +1614,24 @@ export function makeDrainageTunnelHome(opts = {}) {
       F.add(invert);
       // the grille: heavy bars in a welded frame, plus cross-flats behind.
       // This is the thing you try to get through and can't.
+      // round bars, a hair out of true, eaten thin in places
       for (let i = 0; i < 4; i++) {
-        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.032, FW * 1.8, 0.030), M.frame);
-        bar.position.set(-0.24 + i * 0.16, 0, 0.015);
-        bar.rotation.z = (rnd(i * 4.4) - 0.5) * 0.10;
-        F.add(bar);
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, FW * 1.84, 8), M.iron);
+        bar.position.set(-0.24 + i * 0.16, 0, 0.02);
+        bar.rotation.z = (rnd(i * 4.4) - 0.5) * 0.05;
+        G.add(bar);
+        const scab = new THREE.Mesh(new THREE.DodecahedronGeometry(0.022, 0), M.rust);   // a blister of rust on it
+        scab.position.set(-0.24 + i * 0.16, (rnd(i * 2.9) - 0.5) * 0.6, 0.025); scab.scale.set(0.9, 1.6, 0.7);
+        G.add(scab);
       }
+      // two flats across behind them, riveted where they cross
       for (let i = 0; i < 2; i++) {
-        const flat = new THREE.Mesh(new THREE.BoxGeometry(FW * 1.7, 0.030, 0.022), M.frame);
-        flat.position.set(0, -0.16 + i * 0.32, -0.01);
-        F.add(flat);
-      }
-      // weld blobs where the bars meet the flats
-      for (let i = 0; i < 4; i++) for (let k = 0; k < 2; k++) {
-        const wd = new THREE.Mesh(new THREE.SphereGeometry(0.022, 5, 4), M.frame);
-        wd.position.set(-0.24 + i * 0.16, -0.16 + k * 0.32, 0.008);
-        wd.scale.set(1, 1, 0.6);
-        F.add(wd);
+        G.add(slab(FW * 1.84, 0.04, 0.012, M.iron, 0, -0.16 + i * 0.32, -0.002));
+        for (let k = 0; k < 4; k++) {
+          const rv = new THREE.Mesh(new THREE.SphereGeometry(0.011, 6, 4, 0, Math.PI * 2, 0, Math.PI / 2), M.iron);
+          rv.rotation.x = Math.PI / 2; rv.position.set(-0.24 + k * 0.16, -0.16 + i * 0.32, 0.038);
+          G.add(rv);
+        }
       }
       // silt and scum caught against the bars at the bottom of the bore
       for (let i = 0; i < 5; i++) {
@@ -1024,97 +1652,247 @@ export function makeDrainageTunnelHome(opts = {}) {
       proxy.position.z = 0.05;
       F.add(proxy);
       T.userData.outlet = F;
+      T.userData.grate = G;
       // the bleed running down the wall below it
-      const bleed = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.5), M.stain);
-      bleed.position.set(ROOM_X1 - 0.06, OY - 1.02, OZ);
+      const bleed = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.5), M.bleed);
+      bleed.position.set(ROOM_X1 - 0.012, OY - 1.02, OZ);           // ON the wall: at 0.06 it hung five centimetres off it
       bleed.rotation.y = -Math.PI / 2;
       R.add(bleed);
       // and a wet patch where it lands
-      const pool = new THREE.Mesh(new THREE.CircleGeometry(0.55, 10), M.water);
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.1), M.puddle);
       pool.rotation.x = -Math.PI / 2;
-      pool.position.set(ROOM_X1 - 0.45, 0.014, OZ);
+      pool.position.set(ROOM_X1 - 0.5, 0.007, OZ);
       R.add(pool);
     }
 
     // damp blooms + puddles on the floor (photo 5)
+    // Feathered decals now, not discs: a flat dark polygon on a lit floor
+    // reads as a hole cut through it. Kept off the rug and out from under
+    // the furniture, so each one is somewhere water would actually stand.
     for (let i = 0; i < 9; i++) {
-      const s = 0.5 + rnd(i * 3.7) * 1.5;
-      const p = new THREE.Mesh(new THREE.CircleGeometry(s * 0.5, 9), M.water);
-      p.rotation.x = -Math.PI / 2;
-      p.position.set(ROOM_X0 + 0.6 + rnd(i * 9.1) * (rlen - 1.2), 0.012, (rnd(i * 5.3) - 0.5) * (ROOM_HZ * 1.7));
+      const s = 0.7 + rnd(i * 3.7) * 1.3;
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(s, s * (0.7 + rnd(i * 2.1) * 0.5)), M.puddle);
+      p.rotation.set(-Math.PI / 2, 0, rnd(i * 6.1) * TAU);
+      p.position.set(ROOM_X0 + 0.9 + rnd(i * 9.1) * (rlen - 1.8), 0.006, (rnd(i * 5.3) - 0.5) * (ROOM_HZ * 1.3));
       R.add(p);
     }
-    // damp running down the side walls
+    // damp running down the side walls from the joists
     for (let i = 0; i < 8; i++) {
-      const s = i % 2 ? 1 : -1;
-      R.add(slab(0.3 + rnd(i * 2.9) * 0.7, 1.1 + rnd(i * 4.1) * 1.3, 0.03, M.dark,
-        ROOM_X0 + 0.6 + rnd(i * 8.8) * (rlen - 1.2),
-        0.6 + rnd(i * 5.2) * 0.7, s * (ROOM_HZ - 0.015)));
+      const s = i % 2 ? 1 : -1, w = 0.6 + rnd(i * 2.9) * 0.9, h = 1.3 + rnd(i * 4.1) * 1.0;
+      const d = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M.damp);
+      d.position.set(ROOM_X0 + 0.6 + rnd(i * 8.8) * (rlen - 1.2), ROOM_H - 0.25 - h / 2, s * (ROOM_HZ - 0.006));
+      d.rotation.y = s > 0 ? Math.PI : 0;
+      R.add(d);
     }
   }
 
   // ---- somebody's home ---------------------------------------------------
+  // Built from parts, the way he would have: boards with gaps, posts, hoops.
+  // Everything goes straight into R so bakeScatter folds it down by material;
+  // `turned` builds a piece square in its own frame and hands each part to R
+  // with the turn baked in (a nested Group would escape the merge).
   {
-    const bx = ROOM_X1 - 1.5;
-    // pallet bed with a mattress and a heaped blanket
-    R.add(slab(1.9, 0.12, 1.0, M.wood, bx, 0.06, -ROOM_HZ + 0.75));
-    R.add(slab(1.8, 0.16, 0.92, M.cloth, bx, 0.2, -ROOM_HZ + 0.75));
-    R.add(slab(1.1, 0.16, 0.86, M.blanket, bx + 0.3, 0.33, -ROOM_HZ + 0.72, 0.04, 0.06, 0.02));
-    R.add(slab(0.42, 0.16, 0.34, M.cloth, bx - 0.68, 0.34, -ROOM_HZ + 0.7, 0, 0.2, 0.05));
+    const turned = (x, y, z, ry, build) => {
+      const F = new THREE.Group(); F.position.set(x, y, z); F.rotation.y = ry; build(F);
+      F.updateMatrix();
+      for (const c of [...F.children]) { c.applyMatrix4(F.matrix); R.add(c); }
+    };
+    const cyl = (rt, rb, h, seg, mat, x, y, z, open = false) => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg, 1, open), mat);
+      m.position.set(x, y, z); return m;
+    };
+    // a packing crate: a core with battens proud of it round every face and a brace across the sides
+    const crate = (F, w, h, d) => {
+      F.add(slab(w - 0.03, h - 0.03, d - 0.03, M.wood, 0, h / 2, 0));
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) F.add(slab(0.05, h, 0.05, M.wood, sx * (w / 2 - 0.025), h / 2, sz * (d / 2 - 0.025)));
+      for (const y of [0.03, h - 0.03]) for (const sz of [-1, 1]) F.add(slab(w, 0.05, 0.02, M.wood, 0, y, sz * (d / 2 - 0.005)));
+      for (const sz of [-1, 1]) F.add(slab(Math.hypot(w - 0.1, h - 0.1), 0.05, 0.02, M.wood, 0, h / 2, sz * (d / 2 - 0.005), 0, 0, sz * Math.atan2(h - 0.1, w - 0.1)));
+    };
 
-    // crate table with a lamp, a can and a bottle
-    R.add(slab(0.72, 0.62, 0.62, M.wood, ROOM_X1 - 1.2, 0.31, ROOM_HZ - 1.0, 0, 0.14, 0));
-    const lampBody = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.16, 8), M.rust);
-    lampBody.position.set(ROOM_X1 - 1.2, 0.70, ROOM_HZ - 1.0);
-    R.add(lampBody);
-    const lampGlass = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.16, 8), M.glow);
-    lampGlass.position.set(ROOM_X1 - 1.2, 0.86, ROOM_HZ - 1.0);
-    R.add(lampGlass);
-    const lampCap = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.1, 8), M.rust);
-    lampCap.position.set(ROOM_X1 - 1.2, 0.99, ROOM_HZ - 1.0);
-    R.add(lampCap);
+    const bx = ROOM_X1 - 1.5, bz = -ROOM_HZ + 0.75;
+    // the pallet: blocks, stringers, and the top boards with the gaps between them
+    for (const dx of [-0.85, 0, 0.85]) for (const dz of [-0.42, 0, 0.42])
+      R.add(slab(0.12, 0.07, 0.12, M.wood, bx + dx, 0.035, bz + dz));
+    for (const dz of [-0.42, 0, 0.42]) R.add(slab(1.9, 0.025, 0.12, M.wood, bx, 0.082, bz + dz));
+    for (let i = 0; i < 9; i++) R.add(slab(0.15, 0.022, 1.0, M.wood, bx - 0.86 + i * 0.215, 0.106, bz, 0, (rnd(i * 1.7) - 0.5) * 0.04, 0));
+    // the mattress, sagged where he lies; a pillow; the blanket thrown back and hanging off the side
+    R.add(slab(1.8, 0.16, 0.92, M.mattress, bx, 0.2, bz));
+    /* the head to the back wall (the owner's word): pillow at +X, the blanket
+     * thrown down toward the foot */
+    R.add(slab(0.7, 0.02, 0.7, M.mattress, bx + 0.1, 0.275, bz, 0, -0.1, 0));
+    R.add(slab(0.44, 0.1, 0.58, M.cloth, bx + 0.64, 0.33, bz - 0.02, 0, -0.12, -0.08));
+    R.add(slab(0.34, 0.06, 0.46, M.cloth, bx + 0.65, 0.38, bz - 0.02, 0, -0.16, -0.1));
+    R.add(slab(1.0, 0.1, 0.86, M.blanket, bx - 0.36, 0.32, bz - 0.03, 0.04, -0.06, -0.02));
+    R.add(slab(0.42, 0.07, 0.82, M.blanket, bx + 0.1, 0.33, bz + 0.01, 0.03, 0.05, 0.2));     // the turned-back fold
+    R.add(slab(0.95, 0.26, 0.03, M.blanket, bx - 0.34, 0.24, bz + 0.47, -0.16, -0.05, 0));    // over the edge
+    // a book left face-down by the pillow
+    R.add(slab(0.17, 0.03, 0.24, M.spines, bx + 0.3, 0.295, bz + 0.22, 0, 0.5, 0));
+
+    // the crate he eats off: slatted, dark inside between the slats
+    const cx0 = ROOM_X1 - 1.2, cz0 = ROOM_HZ - 1.0;
+    turned(cx0, 0, cz0, 0.14, (F) => {
+      F.add(slab(0.64, 0.56, 0.54, M.dark, 0, 0.3, 0));
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) F.add(slab(0.06, 0.6, 0.06, M.wood, sx * 0.33, 0.3, sz * 0.28));
+      for (let k = 0; k < 3; k++) {
+        const y = 0.1 + k * 0.2;
+        for (const sz of [-1, 1]) F.add(slab(0.72, 0.13, 0.02, M.wood, 0, y, sz * 0.31));
+        for (const sx of [-1, 1]) F.add(slab(0.02, 0.13, 0.62, M.wood, sx * 0.36, y, 0));
+      }
+      for (let k = 0; k < 4; k++) F.add(slab(0.17, 0.025, 0.66, M.wood, -0.27 + k * 0.18, 0.612, 0));
+      // what is on it: a tin plate and spoon, a mug, a bottle
+      F.add(cyl(0.11, 0.09, 0.014, 10, M.steel, -0.14, 0.632, -0.12));
+      F.add(slab(0.14, 0.008, 0.02, M.steel, -0.1, 0.643, -0.1, 0, 0.6, 0));
+      F.add(cyl(0.036, 0.032, 0.085, 8, M.steel, -0.24, 0.667, 0.12));
+      const mh = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.006, 3, 8), M.steel); mh.position.set(-0.28, 0.67, 0.12); F.add(mh);
+      F.add(cyl(0.032, 0.034, 0.16, 8, M.bottle, 0.2, 0.705, 0.17));
+      F.add(cyl(0.012, 0.03, 0.06, 8, M.bottle, 0.2, 0.815, 0.17));
+    });
+    // a hurricane lantern: tank, the glass, wire guards, the cap and its bail
+    {
+      const lx = cx0, lz = cz0, y0 = 0.625;
+      R.add(cyl(0.085, 0.095, 0.06, 10, M.rust, lx, y0 + 0.03, lz));
+      const gp = [new THREE.Vector2(0.05, 0), new THREE.Vector2(0.075, 0.05), new THREE.Vector2(0.072, 0.1), new THREE.Vector2(0.045, 0.15)];
+      const glass = new THREE.Mesh(new THREE.LatheGeometry(gp, 8), M.glow);
+      glass.position.set(lx, y0 + 0.06, lz); R.add(glass);
+      for (let k = 0; k < 4; k++) {
+        const a = k * TAU / 4 + 0.4;
+        R.add(slab(0.008, 0.17, 0.008, M.rust, lx + Math.cos(a) * 0.082, y0 + 0.14, lz + Math.sin(a) * 0.082));
+      }
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.06, 10), M.rust);
+      cap.position.set(lx, y0 + 0.24, lz); R.add(cap);
+      R.add(cyl(0.02, 0.02, 0.03, 6, M.rust, lx, y0 + 0.28, lz));
+      const bail = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.005, 3, 12, Math.PI), M.rust);
+      bail.position.set(lx, y0 + 0.2, lz); bail.rotation.y = 0.5; R.add(bail);
+    }
+    // the cans he has emptied, kicked under the table
     for (let i = 0; i < 5; i++) {
-      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.1, 7), M.rust);
-      can.position.set(ROOM_X1 - 1.6 + rnd(i * 2.1) * 0.9, 0.05, ROOM_HZ - 1.5 + rnd(i * 4.5) * 0.9);
-      can.rotation.z = rnd(i) < 0.4 ? Math.PI / 2 : 0;
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.1, 8), M.tin);
+      const lying = rnd(i) < 0.4;
+      can.position.set(ROOM_X1 - 1.6 + rnd(i * 2.1) * 0.9, lying ? 0.036 : 0.05, ROOM_HZ - 1.5 + rnd(i * 4.5) * 0.9);
+      can.rotation.set(0, rnd(i * 3.1) * TAU, lying ? Math.PI / 2 : 0);
       R.add(can);
     }
+    // a kitchen chair pulled up to the crate
+    turned(cx0 - 0.78, 0, cz0 - 0.2, 0.5, (F) => {
+      F.add(slab(0.42, 0.035, 0.4, M.wood, 0, 0.44, 0));
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) F.add(slab(0.035, 0.44, 0.035, M.wood, sx * 0.18, 0.22, sz * 0.17));
+      for (const sz of [-1, 1]) F.add(slab(0.36, 0.025, 0.025, M.wood, 0, 0.14, sz * 0.17));
+      for (const sz of [-1, 1]) F.add(slab(0.035, 0.46, 0.035, M.wood, -0.18, 0.69, sz * 0.17));
+      for (const y of [0.72, 0.86]) F.add(slab(0.025, 0.06, 0.38, M.wood, -0.18, y, 0));
+      F.add(slab(0.4, 0.012, 0.38, M.coat, 0.02, 0.464, 0, 0, 0, 0.03));   // a folded jumper for a cushion
+    });
+    // the stove in the corner behind it: a gas ring on a can of gas, the kettle on it
+    {
+      const sx = ROOM_X1 - 0.45, sz = ROOM_HZ - 0.45;
+      R.add(cyl(0.11, 0.11, 0.22, 10, M.tin, sx, 0.11, sz));
+      R.add(cyl(0.1, 0.1, 0.03, 10, M.rust, sx, 0.235, sz));
+      for (let k = 0; k < 3; k++) { const a = k * TAU / 3; R.add(slab(0.11, 0.015, 0.015, M.rust, sx + Math.cos(a) * 0.06, 0.255, sz + Math.sin(a) * 0.06, 0, -a, 0)); }
+      const kp = [new THREE.Vector2(0.001, 0), new THREE.Vector2(0.09, 0), new THREE.Vector2(0.1, 0.06), new THREE.Vector2(0.08, 0.13), new THREE.Vector2(0.03, 0.16), new THREE.Vector2(0.001, 0.165)];
+      const kettle = new THREE.Mesh(new THREE.LatheGeometry(kp, 10), M.steel);
+      kettle.position.set(sx, 0.263, sz); R.add(kettle);
+      const spout = cyl(0.012, 0.02, 0.12, 6, M.steel, sx - 0.1, 0.34, sz - 0.02);
+      spout.rotation.z = 0.9; R.add(spout);
+      const kh = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.008, 3, 10, Math.PI), M.leather);
+      kh.position.set(sx, 0.43, sz); kh.rotation.y = 0.3; R.add(kh);
+    }
 
-    // steel shelving against the wall (photo 6)
-    const shX = ROOM_X0 + 1.5;
-    for (let s = 0; s < 4; s++)
-      R.add(slab(1.5, 0.04, 0.42, M.steel, shX, 0.25 + s * 0.55, ROOM_HZ - 0.3));
-    for (const dx of [-0.72, 0.72]) for (const dz of [-0.19, 0.19])
-      R.add(slab(0.05, 1.9, 0.05, M.steel, shX + dx, 0.95, ROOM_HZ - 0.3 + dz));
-    for (let i = 0; i < 6; i++)
-      R.add(slab(0.2 + rnd(i) * 0.2, 0.22, 0.2, M.wood, shX - 0.6 + rnd(i * 3.4) * 1.2, 0.38 + ((i % 3) * 0.55), ROOM_HZ - 0.3, 0, rnd(i) * 0.6, 0));
+    // steel shelving against the wall (photo 6): angle-iron uprights, lipped shelves, an X-brace behind
+    const shX = ROOM_X0 + 1.5, shZ = ROOM_HZ - 0.3;
+    for (let s = 0; s < 4; s++) {
+      const y = 0.25 + s * 0.55;
+      R.add(slab(1.5, 0.03, 0.42, M.steel, shX, y, shZ));
+      R.add(slab(1.5, 0.05, 0.012, M.steel, shX, y + 0.01, shZ - 0.21));
+    }
+    for (const dx of [-0.72, 0.72]) for (const dz of [-0.19, 0.19]) {
+      R.add(slab(0.05, 1.95, 0.012, M.steel, shX + dx, 0.975, shZ + dz));
+      R.add(slab(0.012, 1.95, 0.05, M.steel, shX + dx - Math.sign(dx) * 0.019, 0.975, shZ + dz - Math.sign(dz) * 0.019));
+    }
+    for (const sg of [-1, 1]) R.add(slab(Math.hypot(1.44, 1.65), 0.025, 0.008, M.steel, shX, 1.075, shZ + 0.205, 0, 0, sg * Math.atan2(1.65, 1.44)));
+    // what he keeps on it
+    {
+      const top = (s) => 0.265 + s * 0.55;
+      // bottom: a water jug and a folded tarp
+      R.add(cyl(0.11, 0.11, 0.3, 8, M.jug, shX - 0.45, top(0) + 0.15, shZ));
+      R.add(cyl(0.025, 0.025, 0.04, 6, M.jug, shX - 0.45, top(0) + 0.32, shZ));
+      R.add(slab(0.04, 0.1, 0.03, M.jug, shX - 0.36, top(0) + 0.27, shZ));
+      for (let k = 0; k < 3; k++) R.add(slab(0.5 - k * 0.04, 0.05, 0.34, k % 2 ? M.blanket : M.coat, shX + 0.25, top(0) + 0.025 + k * 0.05, shZ, 0, (rnd(k * 2.2) - 0.5) * 0.15, 0));
+      // second: tins in a row and jars of something
+      for (let k = 0; k < 7; k++) {
+        const t = cyl(0.038, 0.038, 0.11, 8, M.tin, shX - 0.6 + k * 0.09, top(1) + 0.055, shZ - 0.06 + (k % 2) * 0.1);
+        t.rotation.y = rnd(k * 5.5) * TAU; R.add(t);
+      }
+      for (let k = 0; k < 3; k++) {
+        R.add(cyl(0.05, 0.05, 0.14, 8, M.jar, shX + 0.2 + k * 0.14, top(1) + 0.07, shZ));
+        R.add(cyl(0.052, 0.052, 0.025, 8, M.rust, shX + 0.2 + k * 0.14, top(1) + 0.152, shZ));
+      }
+      // third: the books, and a radio with its aerial up
+      R.add(slab(0.62, 0.22, 0.16, M.spines, shX - 0.36, top(2) + 0.11, shZ - 0.05));
+      R.add(slab(0.2, 0.05, 0.15, M.spines, shX - 0.36 + 0.3, top(2) + 0.025, shZ - 0.05, 0, 0.2, 0));
+      R.add(slab(0.3, 0.17, 0.11, M.leather, shX + 0.35, top(2) + 0.085, shZ - 0.04));
+      R.add(slab(0.12, 0.1, 0.01, M.steel, shX + 0.3, top(2) + 0.09, shZ - 0.096));
+      R.add(cyl(0.02, 0.02, 0.012, 8, M.steel, shX + 0.43, top(2) + 0.09, shZ - 0.1).rotateX(Math.PI / 2));
+      const aer = cyl(0.004, 0.004, 0.36, 4, M.steel, shX + 0.42, top(2) + 0.32, shZ - 0.02); aer.rotation.z = -0.35; R.add(aer);
+      // top: a crate of odds and ends and a coil of rope
+      turned(shX - 0.3, top(3), shZ, 0.08, (F) => crate(F, 0.42, 0.24, 0.32));
+      const rope = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.035, 5, 12), M.cloth);
+      rope.rotation.x = Math.PI / 2; rope.position.set(shX + 0.35, top(3) + 0.035, shZ); R.add(rope);
+    }
 
     // a barrel and a couple of crates by the door
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.86, 10), M.rust);
-    barrel.position.set(ROOM_X0 + 0.7, 0.43, -ROOM_HZ + 0.6);
-    R.add(barrel);
-    R.add(slab(0.55, 0.5, 0.55, M.wood, ROOM_X0 + 1.5, 0.25, -ROOM_HZ + 0.55, 0, 0.3, 0));
-    R.add(slab(0.5, 0.44, 0.5, M.wood, ROOM_X0 + 1.5, 0.72, -ROOM_HZ + 0.5, 0.03, -0.2, 0.02));
-
-    // a bucket left under the worst of the ceiling drips
-    const bkt = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.13, 0.26, 10, 1, true), M.steel);
-    bkt.position.set(ROOM_X0 + 2.0, 0.13, 1.42);
-    R.add(bkt);
-    R.add(new THREE.Mesh(new THREE.CircleGeometry(0.155, 10), M.water)
-      .rotateX(-Math.PI / 2).translateY(0.0).translateZ(0).translateX(0));
-    const bw = new THREE.Mesh(new THREE.CircleGeometry(0.15, 10), M.water);
-    bw.rotation.x = -Math.PI / 2; bw.position.set(ROOM_X0 + 2.0, 0.19, 1.42);
-    R.add(bw);
-    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.008, 3, 10, Math.PI), M.rust);
-    handle.position.set(ROOM_X0 + 2.0, 0.26, 1.42);
-    R.add(handle);
-
-    // boots and a book by the bed
-    for (let i = 0; i < 2; i++) {
-      R.add(slab(0.26, 0.11, 0.11, M.wood, bx - 1.15, 0.055, -ROOM_HZ + 0.45 + i * 0.17, 0, 0.2 - i * 0.4, 0));
-      R.add(slab(0.11, 0.16, 0.10, M.wood, bx - 1.26, 0.13, -ROOM_HZ + 0.45 + i * 0.17, 0, 0.2 - i * 0.4, 0));
+    {
+      const bpx = ROOM_X0 + 0.7, bpz = -ROOM_HZ + 0.6;
+      const bp = [];
+      for (let k = 0; k <= 6; k++) { const t = k / 6; bp.push(new THREE.Vector2(0.26 + Math.sin(t * Math.PI) * 0.035, t * 0.86)); }
+      const barrel = new THREE.Mesh(new THREE.LatheGeometry(bp, 12), M.rust);
+      barrel.position.set(bpx, 0, bpz); R.add(barrel);
+      const lid = new THREE.Mesh(new THREE.CircleGeometry(0.255, 12), M.rust);
+      lid.rotation.x = -Math.PI / 2; lid.position.set(bpx, 0.845, bpz); R.add(lid);
+      for (const y of [0.1, 0.32, 0.54, 0.76]) {
+        const r = 0.26 + Math.sin((y / 0.86) * Math.PI) * 0.035 + 0.006;
+        const hoop = new THREE.Mesh(new THREE.TorusGeometry(r, 0.012, 3, 14), M.steel);
+        hoop.rotation.x = Math.PI / 2; hoop.position.set(bpx, y, bpz); R.add(hoop);
+      }
+      R.add(cyl(0.03, 0.03, 0.015, 8, M.steel, bpx + 0.12, 0.86, bpz + 0.06));   // the bung
     }
-    R.add(slab(0.17, 0.035, 0.24, M.cloth, bx + 0.9, 0.14, -ROOM_HZ + 0.55, 0, 0.5, 0));
+    turned(ROOM_X0 + 1.5, 0, -ROOM_HZ + 0.55, 0.3, (F) => crate(F, 0.55, 0.5, 0.55));
+    turned(ROOM_X0 + 1.5, 0.5, -ROOM_HZ + 0.5, -0.2, (F) => crate(F, 0.5, 0.44, 0.5));
+
+    // a bucket left under the worst of the ceiling drips, a rim rolled round its top
+    {
+      const kx = ROOM_X0 + 2.0, kz = 1.42;
+      R.add(cyl(0.17, 0.13, 0.26, 10, M.steel, kx, 0.13, kz, true));
+      const base = new THREE.Mesh(new THREE.CircleGeometry(0.13, 10), M.steel);
+      base.rotation.x = -Math.PI / 2; base.position.set(kx, 0.005, kz); R.add(base);
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.01, 3, 12), M.steel);
+      rim.rotation.x = Math.PI / 2; rim.position.set(kx, 0.26, kz); R.add(rim);
+      const bw = new THREE.Mesh(new THREE.CircleGeometry(0.15, 10), M.water);
+      bw.rotation.x = -Math.PI / 2; bw.position.set(kx, 0.19, kz);
+      R.add(bw);
+      const handle = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.008, 3, 10, Math.PI), M.rust);
+      handle.position.set(kx, 0.26, kz); handle.rotation.y = 0.4;
+      R.add(handle);
+    }
+
+    // his boots by the bed, one fallen over: sole, foot, the shaft
+    for (let i = 0; i < 2; i++) {
+      turned(bx - 1.2, 0, -ROOM_HZ + 0.45 + i * 0.2, 0.2 - i * 0.5, (F) => {
+        const B = new THREE.Group(); if (i) { B.rotation.x = Math.PI / 2 - 0.1; B.position.y = 0.055; }
+        B.add(slab(0.29, 0.03, 0.11, M.leather, 0.02, 0.015, 0));
+        B.add(slab(0.2, 0.08, 0.1, M.leather, 0.05, 0.07, 0));
+        B.add(cyl(0.05, 0.05, 0.1, 8, M.leather, 0.15, 0.06, 0).rotateX(Math.PI / 2));
+        B.add(slab(0.11, 0.2, 0.1, M.leather, -0.07, 0.2, 0));
+        B.updateMatrix();
+        for (const c of [...B.children]) { c.applyMatrix4(B.matrix); F.add(c); }
+      });
+    }
+
+    // his coat on a peg by the door, against the bulkhead's own face (DOOR_X + 0.46, not ROOM_X0)
+    const wx = DOOR_X + 0.46;
+    R.add(slab(0.09, 0.03, 0.03, M.rust, wx + 0.045, 1.8, 1.55));
+    R.add(slab(0.06, 0.62, 0.42, M.coat, wx + 0.04, 1.44, 1.55, 0, 0, -0.03));
+    R.add(slab(0.05, 0.5, 0.11, M.coat, wx + 0.07, 1.38, 1.29, 0.08, 0, -0.04));   // a sleeve
+    R.add(slab(0.05, 0.5, 0.11, M.coat, wx + 0.07, 1.38, 1.81, -0.08, 0, -0.04));
+    R.add(slab(0.08, 0.08, 0.24, M.coat, wx + 0.05, 1.77, 1.55));                  // the collar
 
     // cobwebs strung across the corners
     for (let i = 0; i < 4; i++) {
@@ -1134,21 +1912,93 @@ export function makeDrainageTunnelHome(opts = {}) {
       R.add(line);
       R.add(slab(0.30, 0.42, 0.02, M.cloth, rx - 0.16, ROOM_H - 0.42, rz, 0, 0.12, 0.05));
       R.add(slab(0.24, 0.34, 0.02, M.cloth, rx + 0.34, ROOM_H - 0.38, rz, 0, -0.08, -0.04));
+      R.add(slab(0.2, 0.3, 0.02, M.coat, rx - 0.55, ROOM_H - 0.36, rz, 0, 0.05, 0.03));     // and a pair of socks' worth
     }
     // tally scratched by the bed
     for (let i = 0; i < 11; i++)
       R.add(slab(0.012, 0.2, 0.016, M.dark, bx - 0.7 + i * 0.055, 1.35, -ROOM_HZ + 0.02, 0, 0, i % 5 === 4 ? 0.9 : 0));
+
+    /* ---- AND THE THINGS THAT MAKE IT SOMEBODY'S: a rug walked thin in front
+     * of the bed, a photograph and a drawing pinned over it, candles on the
+     * crate he eats off, and chalk on the pipe wall that says which way home
+     * is and how long. All of it thin — planes and stubs — and none of it
+     * solid: it lies on or against what is already there. */
+    {
+      const rug = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.0),
+        liftOff(new THREE.MeshStandardMaterial({ roughness: 1 }), rugTex(), 0.34, 0xffe0cc));
+      rug.material.color.set(0xb8a090);
+      rug.rotation.x = -Math.PI / 2; rug.rotation.z = 0.06;
+      rug.position.set(bx - 0.1, 0.012, -ROOM_HZ + 1.85);
+      R.add(rug);
+      const pin = (tex, w, h, x, y, rz) => {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+          liftOff(new THREE.MeshStandardMaterial({ roughness: 1, side: THREE.DoubleSide }), tex, 0.26, 0xfff4e0));
+        m.position.set(x, y, -ROOM_HZ + 0.012); m.rotation.z = rz;
+        R.add(m);
+      };
+      pin(photoTex(), 0.16, 0.2, bx - 0.2, 1.55, 0.07);
+      pin(drawingTex(), 0.3, 0.3, bx + 0.32, 1.62, -0.05);
+      // three candles stuck in their own wax on the crate, and the light off them
+      const cx0 = ROOM_X1 - 1.2, cz0 = ROOM_HZ - 1.0;
+      const wax = new THREE.MeshStandardMaterial({ color: 0xd8ccb0, roughness: 0.9, emissive: 0x3a2a14, flatShading: true });
+      for (let i = 0; i < 3; i++) {
+        const hgt = 0.06 + rnd(i * 4.1) * 0.08, cx = cx0 + 0.16 + i * 0.07, cz = cz0 - 0.12 + rnd(i * 2.3) * 0.08;
+        const cd = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.02, hgt, 6), wax);
+        cd.position.set(cx, 0.62 + hgt / 2, cz); R.add(cd);
+        const fl = new THREE.Mesh(new THREE.ConeGeometry(0.008, 0.03, 4), M.glow);
+        fl.position.set(cx, 0.62 + hgt + 0.018, cz); R.add(fl);
+      }
+      const candle = new THREE.PointLight(0xff9a4a, 0.55, 3.0, 1.6);
+      candle.position.set(cx0 + 0.24, 0.85, cz0 - 0.08);
+      candle.userData.lpAlways = 9;               // seen lit from the door, not only from beside it (main.js `lampReach`)
+      R.add(candle);
+      // chalk on the pipe wall, a few metres short of the door
+      const chalk = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45),
+        new THREE.MeshStandardMaterial({ map: chalkTex(), transparent: true, depthWrite: false, roughness: 1, emissive: 0xffffff, emissiveIntensity: 0.18 }));
+      chalk.material.emissiveMap = chalk.material.map;
+      chalk.position.set(BORE_LEN - 3.2, PIPE_CY - 0.05, BORE_R - 0.04);
+      chalk.rotation.y = Math.PI;
+      T.add(chalk);
+    }
   }
 
   // ---- lights ------------------------------------------------------------
-  // the single dim tube over the room (photo 6)
-  const tube = slab(0.9, 0.05, 0.09, M.glow, rcx + 0.4, ROOM_H - 0.42, 0.4);
+  // the tube over the room (photo 6) — dead now: the room is his lanterns'
+  const tube = slab(0.9, 0.05, 0.09, M.dark, rcx + 0.4, ROOM_H - 0.42, 0.4);
   R.add(tube);
-  const lamp = new THREE.PointLight(0xffcf8e, 2.4, 9.5, 1.6);
-  lamp.position.set(rcx + 0.4, ROOM_H - 0.55, 0.4);
+  /* and what holds it up: a steel batten over the tube, end caps, and two
+   * rods to the ceiling — it hung in the air on nothing */
+  R.add(slab(1.0, 0.05, 0.15, M.steel, rcx + 0.4, ROOM_H - 0.37, 0.4));
+  for (const s of [-1, 1]) {
+    R.add(slab(0.03, 0.08, 0.13, M.steel, rcx + 0.4 + s * 0.47, ROOM_H - 0.41, 0.4));
+    R.add(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.36, 5), M.steel).translateX(rcx + 0.4 + s * 0.4).translateY(ROOM_H - 0.17).translateZ(0.4));
+  }
+  /* A HURRICANE LANTERN ON A JOIST, the room's main light now: a screw-eye in
+   * the joist, a wire, the bail, the cap and chimney, a warm globe in its
+   * wire guard, the fuel font. Hung above head height (its foot at 2.05 m,
+   * the eye at 1.7) so walking under it never puts the lens in it. */
+  const LX = ROOM_X0 + 0.5 + 4 * (rlen - 1.0) / 8, LZ = 0.3, JB = ROOM_H - 0.25;
+  {
+    const lglass = new THREE.MeshBasicMaterial({ color: 0xffa858, fog: false });
+    const eye = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 4, 8), M.steel);
+    eye.position.set(LX, JB - 0.02, LZ); R.add(eye);
+    R.add(new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.2, 4), M.steel).translateX(LX).translateY(JB - 0.13).translateZ(LZ));
+    const bail = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.005, 4, 12, Math.PI), M.rust);
+    bail.position.set(LX, JB - 0.29, LZ); R.add(bail);
+    R.add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.028, 0.06, 7), M.rust).translateX(LX).translateY(JB - 0.29).translateZ(LZ));   // chimney
+    R.add(new THREE.Mesh(new THREE.ConeGeometry(0.072, 0.05, 8), M.rust).translateX(LX).translateY(JB - 0.33).translateZ(LZ));             // cap
+    R.add(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.058, 0.13, 8), lglass).translateX(LX).translateY(JB - 0.425).translateZ(LZ));  // globe
+    for (let i = 0; i < 4; i++) {                                                                                                         // guard
+      const a = i * Math.PI / 2 + 0.4;
+      R.add(slab(0.006, 0.15, 0.006, M.rust, LX + Math.cos(a) * 0.066, JB - 0.425, LZ + Math.sin(a) * 0.066));
+    }
+    R.add(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.07, 0.055, 8), M.rust).translateX(LX).translateY(JB - 0.52).translateZ(LZ));  // font
+  }
+  const lamp = new THREE.PointLight(0xffa458, 0.8, 9.5, 1.2);
+  lamp.position.set(LX, JB - 0.43, LZ);
   R.add(lamp);
   // a warm scrap from the crate lantern
-  const lamp2 = new THREE.PointLight(0xffb367, 0.9, 3.4, 1.8);
+  const lamp2 = new THREE.PointLight(0xffb367, 0.6, 6, 1.3);
   lamp2.position.set(ROOM_X1 - 1.2, 0.9, ROOM_HZ - 1.0);
   R.add(lamp2);
   // The mouth used to have its own cold spill. The first bore lamp sits 2 m
@@ -1156,17 +2006,400 @@ export function makeDrainageTunnelHome(opts = {}) {
   // for everything, so it's one fewer.
   const mouthLight = null;
 
+  /* ================= past the grate: the overflow culvert =================
+   * The owner's (2026-10-15): the grate in the back wall comes off, and what
+   * the pipe behind it runs to is somewhere new. It is built here, in the
+   * tunnel's own frame, behind the room and past the end of the throat — a
+   * Victorian storm-overflow culvert, a brick barrel vault over a sunk channel
+   * with a raised walk either side — and it is reached by a cut (the pipe is
+   * sixty centimetres across: you crawl it behind black), so the game handles
+   * it the way it handles the room: `updateDrain` keeps you on its walks.
+   *
+   * IT STAYS UNDER THE CLIFF. The cliff's top is 3.2 m and the culvert runs
+   * in under it, so the crown of the vault is 3.05: nothing of it shows on the
+   * sand above. And the water stays above y = 0 — the beach's sand plane is
+   * drawn there wherever you stand, and a channel dug below it would be a
+   * channel full of sand — so it is the WALKS that are raised (`CIS_WALK`),
+   * not the channel that is sunk. */
+  const C = new THREE.Group();
+  C.name = 'culvert';
+  T.add(C);
+  const CIS_X0 = ROOM_X1 + 10.2, CIS_LEN = 17.0, CIS_X1 = CIS_X0 + CIS_LEN;
+  const CIS_HZ = 3.0, CIS_WALK = FLOOR_Y + 0.35, CIS_SPRING = 2.2, CIS_CROWN = 3.05;
+  const CH_Z0 = -1.9, CH_Z1 = -0.6;                       // the channel, off-centre: the pipe comes in over the wide walk
+  const CIS_BRX = CIS_X0 + 9.6, CIS_BRW = 1.3;            // the plank bridge over it
+  const ccx = (CIS_X0 + CIS_X1) / 2;
+  {
+    /* Brick tiled to the room's own brick: a box maps its whole texture onto
+     * every face whatever the face's size, so each face's uv is cut to its
+     * own metres — the room's side wall is 7.6 m by 3.25 under 2.2 by 1.2. */
+    const tile = (m, su, sv) => {
+      const uv = m.geometry.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+      return m;
+    };
+    const brick = (w, h, d, x, y, z, su, sv) => C.add(tile(slab(w, h, d, M.brickM, x, y, z), su, sv));
+    const conc = (w, h, d, x, y, z, mat = M.roomConc) => C.add(tile(slab(w, h, d, mat, x, y, z), w / 7.6, d / 6.7));
+
+    // the walks, and the channel's bed between them
+    conc(CIS_LEN, CIS_WALK + 0.2, CH_Z0 + CIS_HZ, ccx, (CIS_WALK - 0.2) / 2, (CH_Z0 - CIS_HZ) / 2);   // the narrow walk
+    conc(CIS_LEN, CIS_WALK + 0.2, CIS_HZ - CH_Z1, ccx, (CIS_WALK - 0.2) / 2, (CH_Z1 + CIS_HZ) / 2);   // the wide walk
+    C.add(tile(slab(CIS_LEN, 0.2, CH_Z1 - CH_Z0, M.silt, ccx, -0.09, (CH_Z0 + CH_Z1) / 2), CIS_LEN / 2, 1));
+    const water = slab(CIS_LEN - 0.02, 0.012, CH_Z1 - CH_Z0 - 0.02, M.water, ccx, 0.03, (CH_Z0 + CH_Z1) / 2);
+    C.add(water);
+    // stone kerbs along both lips of the channel, worn round
+    for (const z of [CH_Z0 + 0.06, CH_Z1 - 0.06]) conc(CIS_LEN, 0.06, 0.12, ccx, CIS_WALK - 0.02, z, M.conc);
+    // walls up to the springing, and the ends
+    brick(CIS_LEN, CIS_SPRING + 0.4, 0.3, ccx, CIS_SPRING / 2, CIS_HZ + 0.15, CIS_LEN / 7.6, (CIS_SPRING + 0.4) / 3.25);
+    brick(CIS_LEN, CIS_SPRING + 0.4, 0.3, ccx, CIS_SPRING / 2, -CIS_HZ - 0.15, CIS_LEN / 7.6, (CIS_SPRING + 0.4) / 3.25);
+    // the far end whole; the near end built round the pipe's opening, the room's own back-wall rule
+    brick(0.3, CIS_CROWN + 0.3, CIS_HZ * 2 + 0.6, CIS_X1 + 0.15, CIS_CROWN / 2 - 0.05, 0, (CIS_HZ * 2 + 0.6) / 7.6, (CIS_CROWN + 0.3) / 3.25);
+    {
+      const oz = 0.55, oy = FLOOR_Y + 1.62, oh = 0.35, y0 = -0.2, y1 = CIS_CROWN + 0.1, z0 = -CIS_HZ - 0.3, z1 = CIS_HZ + 0.3;
+      const ww = (yc, hh, zc, dd) => brick(0.3, hh, dd, CIS_X0 - 0.15, yc, zc, dd / 7.6, hh / 3.25);
+      ww((y0 + y1) / 2, y1 - y0, (z0 + oz - oh) / 2, (oz - oh) - z0);
+      ww((y0 + y1) / 2, y1 - y0, (oz + oh + z1) / 2, z1 - (oz + oh));
+      ww((y0 + oy - oh) / 2, (oy - oh) - y0, oz, oh * 2);
+      ww((oy + oh + y1) / 2, y1 - (oy + oh), oz, oh * 2);
+      // and a rendered ring over the square cut, so the hole reads round
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.30, 0.6, 20, 1), M.conc);
+      ring.position.set(CIS_X0 + 0.006, oy, oz); ring.rotation.y = Math.PI / 2; C.add(ring);
+    }
+    /* THE VAULT: a segment of one cylinder from wall to wall, springing at
+     * 2.2 and rising to the crown at 3.05. After rotateZ a point at angle t
+     * sits at (y, z) = (sin t, cos t) * r, so the arc over the top is centred
+     * on t = pi/2 (the slime's and the stain's rule). */
+    const rise = CIS_CROWN - CIS_SPRING, VR = (CIS_HZ * CIS_HZ + rise * rise) / (2 * rise), vcy = CIS_CROWN - VR;
+    const half = Math.asin(CIS_HZ / VR);
+    const vg = new THREE.CylinderGeometry(VR, VR, CIS_LEN, 18, 1, true, Math.PI / 2 - half, half * 2);
+    vg.rotateZ(Math.PI / 2);
+    /* seen from INSIDE the cylinder, so its brick is drawn on the back face */
+    if (!M.brickIn) { M.brickIn = M.brickM.clone(); M.brickIn.side = THREE.BackSide; }
+    const vault = tile(new THREE.Mesh(vg, M.brickIn), (VR * half * 2) / 3.8 * 2.2, CIS_LEN / 1.6 * 1.2);   // measured: at the walls' rate the vault's bricks came out twice the size
+    vault.position.set(ccx, vcy, 0);
+    C.add(vault);
+    // brick ribs under it every few metres, a hand proud of the vault, down the walls to the walk
+    for (let x = CIS_X0 + 1.7; x < CIS_X1 - 1.0; x += 3.4) {
+      const rg = new THREE.CylinderGeometry(VR - 0.06, VR - 0.06, 0.32, 18, 1, true, Math.PI / 2 - half, half * 2);
+      rg.rotateZ(Math.PI / 2);
+      const rib = tile(new THREE.Mesh(rg, M.brickIn), 1.4 * 2.2, 0.2 * 1.2);
+      rib.position.set(x, vcy, 0); C.add(rib);
+      for (const s of [-1, 1]) brick(0.32, CIS_SPRING - CIS_WALK, 0.1, x, (CIS_SPRING + CIS_WALK) / 2, s * (CIS_HZ - 0.05), 0.05, 0.6);
+    }
+    // the damp: down the walls and pooled on the walks
+    for (let i = 0; i < 12; i++) {
+      const s = i % 2 ? 1 : -1, w = 0.7 + rnd(i * 3.1) * 1.1, h = 1.1 + rnd(i * 5.7) * 0.7;
+      const d = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M.damp);
+      d.position.set(CIS_X0 + 0.8 + rnd(i * 8.3) * (CIS_LEN - 1.6), CIS_SPRING - h / 2 - 0.05, s * (CIS_HZ - 0.006));
+      d.rotation.y = s > 0 ? Math.PI : 0;
+      C.add(d);
+    }
+    for (let i = 0; i < 8; i++) {
+      const sz = 0.6 + rnd(i * 4.9) * 1.0;
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(sz, sz * 0.8), M.puddle);
+      p.rotation.set(-Math.PI / 2, 0, rnd(i * 2.2) * TAU);
+      p.position.set(CIS_X0 + 1.0 + rnd(i * 7.7) * (CIS_LEN - 2.0), CIS_WALK + 0.004, 0.2 + rnd(i * 1.3) * 2.2);
+      C.add(p);
+    }
+    // silt banked against the kerbs and scum where the water stands
+    for (let i = 0; i < 26; i++) {
+      const r = 0.04 + rnd(i * 2.9) * 0.09;
+      const st = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), M.silt);
+      st.position.set(CIS_X0 + 0.4 + rnd(i * 6.1) * (CIS_LEN - 0.8), 0.04, rnd(i) < 0.5 ? CH_Z0 + 0.1 : CH_Z1 - 0.1);
+      st.scale.y = 0.5; C.add(st);
+    }
+    for (let i = 0; i < 9; i++)
+      C.add(slab(0.4 + rnd(i * 3.3) * 1.2, 0.006, 0.12 + rnd(i * 1.9) * 0.4, M.algae,
+        CIS_X0 + 0.5 + rnd(i * 4.4) * (CIS_LEN - 1.0), 0.04, CH_Z0 + 0.2 + rnd(i * 2.6) * 0.9));
+
+    /* THE PIPE YOU CAME IN BY, on the west wall at the height it left the
+     * room, a concrete collar round it and a slope of silt washed out of it
+     * down onto the walk — the way you got down, and the way back up. */
+    const PIN = [CIS_X0, FLOOR_Y + 1.62, 0.55];
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.07, 6, 18), M.conc);
+    collar.position.set(PIN[0] + 0.02, PIN[1], PIN[2]); collar.rotation.y = Math.PI / 2; C.add(collar);
+    const mouth = xCyl(0.30, 0.30, 0.5, 18, M.throat, true);
+    mouth.position.set(PIN[0] - 0.23, PIN[1], PIN[2]); C.add(mouth);
+    const back = new THREE.Mesh(new THREE.CircleGeometry(0.30, 18), M.void);    // BackSide: it faces away, and is seen from the culvert
+    back.position.set(PIN[0] - 0.45, PIN[1], PIN[2]); back.rotation.y = -Math.PI / 2; C.add(back);
+    for (let i = 0; i < 7; i++) {
+      const r = 0.12 + rnd(i * 3.7) * 0.16;
+      const lump = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), M.silt);
+      lump.position.set(PIN[0] + 0.25 + i * 0.12 + rnd(i) * 0.08, CIS_WALK + 0.55 - i * 0.08, PIN[2] + (rnd(i * 2.1) - 0.5) * 0.5);
+      lump.scale.y = 0.55; C.add(lump);
+    }
+    const run = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 1.1), M.stain);
+    run.position.set(PIN[0] + 0.012, PIN[1] - 0.75, PIN[2]); run.rotation.y = Math.PI / 2; C.add(run);
+    // the hit target for the way back: the open end of the pipe
+    const pproxy = new THREE.Mesh(new THREE.CircleGeometry(0.42, 12),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    pproxy.name = 'hitProxy';
+    const PIPE = new THREE.Group(); PIPE.position.set(PIN[0] + 0.05, PIN[1], PIN[2]); PIPE.rotation.y = Math.PI / 2;
+    PIPE.add(pproxy); C.add(PIPE);
+    T.userData.culvertPipe = PIPE;
+
+    /* THE BRIDGE: three planks laid over the channel on two bearers, one of
+     * them gone at the end and patched with a fourth. */
+    for (const dx of [-0.42, 0.42]) C.add(slab(0.14, 0.12, CH_Z1 - CH_Z0 + 0.5, M.wood, CIS_BRX + dx, CIS_WALK - 0.07, (CH_Z0 + CH_Z1) / 2));
+    for (let i = 0; i < 4; i++)
+      C.add(slab(0.29, 0.04, CH_Z1 - CH_Z0 + 0.46, M.wood, CIS_BRX - 0.45 + i * 0.30, CIS_WALK + 0.012, (CH_Z0 + CH_Z1) / 2, 0, (rnd(i * 6.6) - 0.5) * 0.05, 0));
+
+    /* THE SLUICE AT THE FAR END: the culvert's own gate, iron in an iron frame
+     * across the channel's mouth, its wheel on a post on the wide walk. It is
+     * shut, and rusted shut; what is behind it is for another day. */
+    const SX = CIS_X1 - 0.12;
+    C.add(slab(0.18, CIS_SPRING - 0.1, 0.16, M.rust, SX, (CIS_SPRING - 0.1) / 2, CH_Z0 - 0.12));
+    C.add(slab(0.18, CIS_SPRING - 0.1, 0.16, M.rust, SX, (CIS_SPRING - 0.1) / 2, CH_Z1 + 0.12));
+    C.add(slab(0.18, 0.16, CH_Z1 - CH_Z0 + 0.4, M.rust, SX, CIS_SPRING - 0.15, (CH_Z0 + CH_Z1) / 2));
+    C.add(slab(0.06, CIS_SPRING - 0.6, CH_Z1 - CH_Z0, M.steel, SX - 0.06, (CIS_SPRING - 0.6) / 2 + 0.05, (CH_Z0 + CH_Z1) / 2));
+    for (let i = 0; i < 4; i++) C.add(slab(0.04, 0.06, CH_Z1 - CH_Z0 - 0.06, M.rust, SX - 0.1, 0.35 + i * 0.4, (CH_Z0 + CH_Z1) / 2));
+    const WHL = new THREE.Group();
+    WHL.position.set(CIS_X1 - 0.75, 0, CH_Z1 + 1.0);         // a stride off the channel's lip, so the walk goes by it
+    WHL.add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.0, 8), M.rust).translateY(CIS_WALK + 0.5));
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.025, 5, 16), M.rust);
+    wheel.position.y = CIS_WALK + 1.02; wheel.rotation.x = Math.PI / 2; WHL.add(wheel);
+    for (let i = 0; i < 3; i++) {
+      const sp = slab(0.46, 0.022, 0.022, M.rust, 0, CIS_WALK + 1.02, 0, 0, i * Math.PI / 3, 0); WHL.add(sp);
+    }
+    const wproxy = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    wproxy.name = 'hitProxy'; wproxy.position.y = CIS_WALK + 0.95; WHL.add(wproxy);
+    C.add(WHL);
+    T.userData.culvertWheel = WHL;
+
+    /* WHAT IS DOWN HERE: a crate gone soft, bottles, a length of chain off a
+     * ring in the vault — and, at the dark end, a little heap of small bones
+     * and grey feathers picked clean. Something comes and goes by the pipe. */
+    C.add(slab(0.6, 0.48, 0.5, M.wood, CIS_X0 + 3.2, CIS_WALK + 0.24, CIS_HZ - 0.45, 0.02, 0.3, 0.05));
+    C.add(slab(0.62, 0.05, 0.52, M.dark, CIS_X0 + 3.2, CIS_WALK + 0.49, CIS_HZ - 0.45, 0.0, 0.3, 0.08));
+    for (let i = 0; i < 5; i++) {
+      const bt = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.2, 7), M.water);
+      const lying = rnd(i * 3.3) < 0.6;
+      bt.position.set(CIS_X0 + 2.4 + rnd(i * 9.2) * 1.6, CIS_WALK + (lying ? 0.034 : 0.1), CIS_HZ - 0.4 - rnd(i * 4.1) * 0.9);
+      bt.rotation.set(lying ? Math.PI / 2 : 0, rnd(i) * TAU, 0);
+      C.add(bt);
+    }
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.012, 4, 10), M.rust);
+    ring.position.set(CIS_X0 + 6.8, CIS_CROWN - 0.04, 0.6); ring.rotation.x = Math.PI / 2; C.add(ring);
+    for (let i = 0; i < 6; i++) {                 // short of your head: the walk is raised and the vault is low
+      const lk = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.010, 3, 8), M.rust);
+      lk.position.set(CIS_X0 + 6.8, CIS_CROWN - 0.12 - i * 0.065, 0.6);
+      lk.rotation.set(0, i % 2 ? Math.PI / 2 : 0, 0); C.add(lk);
+    }
+    const BX = CIS_X1 - 2.3, BZ = CIS_HZ - 0.8;
+    for (let i = 0; i < 14; i++) {
+      const a = rnd(i * 2.7) * TAU, d = rnd(i * 5.1) * 0.32;
+      const bn = slab(0.09 + rnd(i * 1.7) * 0.12, 0.014, 0.014, M.cloth, BX + Math.cos(a) * d, CIS_WALK + 0.012 + i * 0.002, BZ + Math.sin(a) * d, 0, rnd(i * 3.9) * TAU, 0);
+      C.add(bn);
+    }
+    for (let i = 0; i < 6; i++) {
+      const fe = new THREE.Mesh(new THREE.PlaneGeometry(0.05, 0.13), M.web);
+      fe.rotation.set(-Math.PI / 2, 0, rnd(i * 8.1) * TAU);
+      fe.position.set(BX + (rnd(i * 4.3) - 0.5) * 0.9, CIS_WALK + 0.008, BZ + (rnd(i * 6.3) - 0.5) * 0.7);
+      C.add(fe);
+    }
+    // chalk on the wall by the pipe: his arrow, pointing back the way he came, and a line through it
+    const chalk2 = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.4),
+      new THREE.MeshStandardMaterial({ map: chalkTex(), transparent: true, depthWrite: false, roughness: 1, emissive: 0xffffff, emissiveIntensity: 0.16 }));
+    chalk2.material.emissiveMap = chalk2.material.map;
+    chalk2.position.set(CIS_X0 + 1.6, 1.25, CIS_HZ - 0.012); chalk2.rotation.y = Math.PI;
+    chalk2.scale.x = -1;                      // the arrow points west, at the pipe home
+    chalk2.userData.noBake = true;            // a mirrored mesh merged flat would turn its face away
+    C.add(chalk2);
+
+    /* THE LIGHT: two gratings in the crown to the dune above, with the moon
+     * coming through them in cold shafts (emissive only, additive, no cost
+     * but their own pixels), and ONE pooled lamp under the nearer one to
+     * light the walks by. The far end is left dark. */
+    /* soft, not a glass tube: bright under the grating and gone by the floor,
+     * and the pool it makes on the walk feathered out to nothing */
+    const fade = (radial) => {
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const g = c.getContext('2d');
+      const gr = radial ? g.createRadialGradient(32, 32, 2, 32, 32, 32) : g.createLinearGradient(0, 0, 0, 64);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(radial ? 0.45 : 0.55, 'rgba(255,255,255,0.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+      return new THREE.CanvasTexture(c);
+    };
+    const shaftMat = new THREE.MeshBasicMaterial({ color: 0x8fb0d4, map: fade(false), transparent: true, opacity: 0.14,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide, fog: false });   // front only: stood in, it is not a sheet over half the view
+    const poolMat = new THREE.MeshBasicMaterial({ color: 0x8fb0d4, map: fade(true), transparent: true, opacity: 0.16,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const gridMat = M.rust;
+    for (const gx of [CIS_X0 + 5.0, CIS_X0 + 12.4]) {
+      const gz = 0.8;
+      C.add(slab(0.7, 0.05, 0.7, M.dark, gx, CIS_CROWN - 0.035, gz));
+      for (let i = 0; i < 5; i++) C.add(slab(0.03, 0.04, 0.62, gridMat, gx - 0.24 + i * 0.12, CIS_CROWN - 0.07, gz));
+      const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.75, CIS_CROWN - CIS_WALK, 10, 1, true), shaftMat);
+      sh.position.set(gx, (CIS_CROWN + CIS_WALK) / 2, gz); sh.raycast = () => {};
+      sh.userData.noBake = true;              // and stays its own mesh, so it keeps not being hit by a blade
+      C.add(sh);
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(0.85, 16), poolMat);
+      pool.rotation.x = -Math.PI / 2; pool.position.set(gx, CIS_WALK + 0.006, gz); C.add(pool);
+    }
+    const cisLamp = new THREE.PointLight(0x9ab8dc, 0.6, 8.0, 1.4);
+    cisLamp.position.set(CIS_X0 + 5.0, CIS_CROWN - 0.4, 0.8);
+    cisLamp.userData.lpAlways = 12;
+    C.add(cisLamp);
+    const cisLamp2 = new THREE.PointLight(0x8aa8cc, 0.45, 7.0, 1.4);
+    cisLamp2.position.set(CIS_X0 + 12.4, CIS_CROWN - 0.4, 0.8);
+    cisLamp2.userData.lpAlways = 10;
+    C.add(cisLamp2);
+    T.userData.culvertLights = [cisLamp, cisLamp2];
+    T.userData.culvertIn = [CIS_X0 + 1.15, PIN[2] + 0.35];   // where you are put down out of the pipe
+  }
+
   // Solid props, as local-space AABBs [x0, z0, x1, z1] — the game pushes the
   // player out of these so you can't walk through the bed or the shelving.
   const bedX = ROOM_X1 - 1.5, shX = ROOM_X0 + 1.5;
   // Collapse the static shells by material as well. Nested Groups (the lamps,
   // the side connection, the outlet, the beacon) are left alone, so anything
   // that animates or needs its own raycast target survives.
+  /* BRICK IN METRES. A box maps its whole texture onto each face whatever the
+   * face's size, so the narrow piers left and right of the outlet and the
+   * strips over and under it came out with bricks a third the size of the
+   * wall's (the owner's "weird textures" round the grate). Every brick box is
+   * box-mapped here from its own corners in the tunnel's frame: the face's
+   * two in-plane axes, in metres, over one tile of 3.45 m by 2.7 — so every
+   * course runs straight on from one piece into the next. */
+  {
+    T.updateMatrixWorld(true);
+    const p = new THREE.Vector3(), nrm = new THREE.Vector3(), nm3 = new THREE.Matrix3();
+    T.traverse((o) => {
+      if (!o.isMesh || o.material !== M.brickM || o.geometry.type !== 'BoxGeometry') return;
+      const g = o.geometry, pos = g.getAttribute('position'), nor = g.getAttribute('normal'), uv = g.getAttribute('uv');
+      nm3.getNormalMatrix(o.matrixWorld);
+      for (let i = 0; i < pos.count; i++) {
+        p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        nrm.fromBufferAttribute(nor, i).applyMatrix3(nm3);
+        const ax = Math.abs(nrm.x), ay = Math.abs(nrm.y), az = Math.abs(nrm.z);
+        let u, v;
+        if (ax >= ay && ax >= az) { u = p.z; v = p.y; } else if (az >= ay) { u = p.x; v = p.y; } else { u = p.x; v = p.z; }
+        uv.setXY(i, u / 3.45, v / 2.7);
+      }
+      uv.needsUpdate = true;
+    });
+  }
   bakeScatter(HW);
   bakeScatter(BORE);
   bakeScatter(DOOR);
   bakeScatter(R);
+  bakeScatter(C);
   bakeScatter(T);
+
+  /* ---- THE AIR (the owner, 2026-10-17: "add some mist/fog in the sewer
+   * tunnel and ... make the lights more ambient and more ray traced feeling
+   * of a real nasty sewer"). The murk itself is the fog chunk's — the beach's
+   * ground mist laid on this floor and the scene's fog closed in and tinted
+   * sewer-green while you are in here (main.js `drainAir`) — so nothing here
+   * is a card of mist to walk through. What is here is the LIGHT IN IT:
+   *   - a soft halo round every lamp that burns, the bulb seen through wet air;
+   *   - a beam falling from each, a cone of lit air feathered at its edges by
+   *     the angle you see it at (a hard-edged cone is a lampshade) and gone by
+   *     the floor, so it never draws a line where it meets anything;
+   *   - dust and spray hanging in the pipe, lit by whichever lamp is nearest
+   *     and dark between them — a mote is only seen where the light is.
+   * All additive, unfogged (they fade with distance themselves), never hit by
+   * a ray, never baked. Each follows its lamp's flicker (`T.userData.air`). */
+  {
+    T.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(T.matrixWorld).invert();
+    const at = (o) => { o.updateMatrixWorld(true); return new THREE.Vector3().setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv); };
+    const soft = (() => {
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.18, 'rgba(255,255,255,0.55)');
+      gr.addColorStop(0.5, 'rgba(255,255,255,0.12)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+      return new THREE.CanvasTexture(c);
+    })();
+    const beamVS = `varying float vV; varying vec3 vN; varying vec3 vView;
+      void main() { vV = uv.y; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vView = -mv.xyz; gl_Position = projectionMatrix * mv; }`;
+    const beamFS = `uniform vec3 uCol; uniform float uK; varying float vV; varying vec3 vN; varying vec3 vView;
+      void main() {
+        float f = abs(dot(normalize(vN), normalize(vView)));
+        float a = pow(f, 2.2) * pow(vV, 1.6) * uK * exp(-length(vView) * 0.075);
+        gl_FragColor = vec4(uCol * a, 1.0);
+      }`;
+    const air = [];
+    const UP = new THREE.Vector3(0, 1, 0);
+    const lightUp = (pl, halo, beam) => {
+      const p = at(pl);
+      const col = pl.color.clone();
+      const hm = new THREE.SpriteMaterial({ map: soft, color: col.clone().multiplyScalar(halo.k), blending: THREE.AdditiveBlending,
+        transparent: true, depthWrite: false, fog: false });
+      const h = new THREE.Sprite(hm); h.scale.setScalar(halo.s); h.position.copy(p).add(halo.off || new THREE.Vector3());
+      h.raycast = () => {}; h.userData.noBake = true; h.name = 'drainHalo'; T.add(h);
+      let bm = null;
+      if (beam) {
+        const foot = beam.foot, dir = new THREE.Vector3().subVectors(p, foot), len = dir.length();
+        bm = new THREE.ShaderMaterial({ uniforms: { uCol: { value: col.clone() }, uK: { value: beam.k } }, vertexShader: beamVS, fragmentShader: beamFS,
+          blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, side: THREE.FrontSide });
+        const cone = new THREE.Mesh(new THREE.CylinderGeometry(beam.r0, beam.r1, len, 16, 1, true), bm);
+        cone.position.copy(p).add(foot).multiplyScalar(0.5);
+        cone.quaternion.setFromUnitVectors(UP, dir.normalize());
+        cone.raycast = () => {}; cone.userData.noBake = true; cone.name = 'drainBeam'; T.add(cone);
+      }
+      air.push({ light: pl, base: pl.intensity, halo: hm, haloK: halo.k, col, beam: bm, beamK: beam ? beam.k : 0 });
+      return p;
+    };
+    const lampsAt = [];
+    for (const pl of boreLights) {
+      const p = at(pl);
+      // the bulb is on the springline: its light falls down and out across the pipe, onto the invert
+      lampsAt.push(lightUp(pl, { s: 0.62, k: 0.42, off: new THREE.Vector3(0, 0.16, Math.sign(p.z) * 0.12) },
+        { foot: new THREE.Vector3(p.x + 0.15, FLOOR_Y + 0.05, -p.z * 0.25), r0: 0.07, r1: 0.95, k: 0.075 }));
+    }
+    // the hurricane lantern hung in the room: light all round it, the pool under it
+    lampsAt.push(lightUp(lamp, { s: 0.95, k: 0.36 }, { foot: (() => { const q = at(lamp); q.y = FLOOR_Y + 0.02; return q; })(), r0: 0.09, r1: 1.7, k: 0.05 }));
+    lampsAt.push(lightUp(lamp2, { s: 0.7, k: 0.3 }, null));
+    // the dust: hanging in the bore and the room, lit only near a lamp
+    const N = 520, P = new Float32Array(N * 3), S = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      let x, y, z;
+      if (i < 380) {
+        x = 0.6 + rnd(i * 1.13) * (BORE_LEN - 0.8);
+        const a = rnd(i * 2.71) * Math.PI * 2, r = Math.sqrt(rnd(i * 3.37)) * (BORE_R - 0.25);
+        y = Math.max(FLOOR_Y + 0.08, PIPE_CY + Math.sin(a) * r); z = Math.cos(a) * r;
+      } else {
+        x = ROOM_X0 + 0.3 + rnd(i * 1.13) * (ROOM_X1 - ROOM_X0 - 0.6);
+        y = FLOOR_Y + 0.1 + rnd(i * 2.71) * (ROOM_H - 0.4); z = (rnd(i * 3.37) - 0.5) * (ROOM_HZ * 2 - 0.6);
+      }
+      P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z; S[i] = rnd(i * 7.77);
+    }
+    const dg = new THREE.BufferGeometry();
+    dg.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    dg.setAttribute('aS', new THREE.BufferAttribute(S, 1));
+    const NL = 8, uL = [], uLC = [];
+    for (let k = 0; k < NL; k++) {
+      const e = air[k];
+      uL.push(e ? lampsAt[k].clone() : new THREE.Vector3(0, -99, 0));
+      uLC.push(e ? e.col.clone().multiplyScalar(e.base) : new THREE.Vector3());
+    }
+    const dustMat = new THREE.ShaderMaterial({
+      uniforms: { uT: { value: 0 }, uL: { value: uL }, uLC: { value: uLC.map((c) => c.isColor ? new THREE.Vector3(c.r, c.g, c.b) : c) } },
+      vertexShader: `uniform float uT; uniform vec3 uL[${NL}]; uniform vec3 uLC[${NL}]; attribute float aS; varying vec3 vC;
+        void main() {
+          vec3 p = position;
+          p.x += sin(uT * 0.11 + aS * 6.28) * 0.22;
+          p.y += sin(uT * 0.17 + aS * 11.0) * 0.12 + mod(uT * 0.012 * (0.5 + aS), 0.3) - 0.15;
+          p.z += cos(uT * 0.13 + aS * 4.1) * 0.18;
+          vec3 c = vec3(0.0);
+          for (int i = 0; i < ${NL}; i++) { float d = distance(p, uL[i]); c += uLC[i] / (1.0 + d * d * 2.4); }
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          float dist = -mv.z;
+          vC = c * exp(-dist * 0.09) * (0.6 + 0.4 * sin(uT * 1.7 + aS * 40.0));
+          gl_PointSize = clamp(4.5 / dist, 1.0, 4.0);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `varying vec3 vC;
+        void main() { float r = length(gl_PointCoord - 0.5) * 2.0; if (r > 1.0) discard; gl_FragColor = vec4(vC * (1.0 - r) * 0.55, 1.0); }`,
+      blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+    });
+    const dust = new THREE.Points(dg, dustMat);
+    dust.raycast = () => {}; dust.userData.noBake = true; dust.name = 'drainDust'; dust.frustumCulled = false;
+    T.add(dust);
+    T.userData.air = { lamps: air, dust: dustMat };
+  }
 
   T.userData.nav = {
     BORE_R, PIPE_CY, BORE_LEN, DOOR_X, ROOM_X0, ROOM_X1, ROOM_HZ, ROOM_H, FLOOR_Y,
@@ -1178,7 +2411,19 @@ export function makeDrainageTunnelHome(opts = {}) {
       [ROOM_X0 + 0.41, -ROOM_HZ + 0.31, ROOM_X0 + 0.99, -ROOM_HZ + 0.89], // barrel
       [ROOM_X0 + 1.22, -ROOM_HZ + 0.25, ROOM_X0 + 1.78, -ROOM_HZ + 0.85], // crates
       [ROOM_X0 + 1.82, 1.24, ROOM_X0 + 2.18, 1.60],                   // bucket
+      [ROOM_X1 - 2.25, ROOM_HZ - 1.47, ROOM_X1 - 1.71, ROOM_HZ - 0.93], // the chair at the crate
+      [ROOM_X1 - 0.6, ROOM_HZ - 0.6, ROOM_X1 - 0.3, ROOM_HZ - 0.3],    // the stove
+      [ROOM_X0, -3.0, ROOM_X0 + 0.42, -1.08],                         // the door leaf, open against the front wall (doorway half-width 1.0)
     ],
+    /* the culvert past the grate: its walks, the channel between them, the
+     * bridge over it and what stands on the walks (`updateDrain`) */
+    cis: {
+      X0: CIS_X0, X1: CIS_X1, HZ: CIS_HZ, WALK: CIS_WALK, CH_Z0, CH_Z1, BRX: CIS_BRX, BRW: CIS_BRW,
+      props: [
+        [CIS_X0 + 2.85, CIS_HZ - 0.8, CIS_X0 + 3.55, CIS_HZ - 0.1],     // the soft crate
+        [CIS_X1 - 0.95, CH_Z1 + 0.8, CIS_X1 - 0.55, CH_Z1 + 1.2],       // the sluice's wheel post
+      ],
+    },
   };
   T.userData.lights = { lamp, lamp2, tube, bore: boreLights };
   // where drips fall from — local points along the crown of the bore

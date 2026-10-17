@@ -38,6 +38,8 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Scroll wheel | Step through the hotbar, equipping as you go |
 | `Tab` | The pack. Click an item to select it, then **Inspect** or **Hold** in the pane (double-click inspects). Drag to reorder, drop one item on another to combine. `Tab` or `Esc` leaves |
 | Hold left-click | Wind up a heavy swing; release to land it |
+| Left-click / hold left-click (with the Spare Peg) | A click is one thrust; held, it runs the string — thrust, thrust, slash. Lighter than the shovel and quicker: three thrusts kill a crab, a charged lunge or the slash kills one outright. A thrust landed at the far end of its reach (the last metre) hits a little harder |
+| `Shift` + hold left-click (with the Spare Peg) | Coil for the charged lunge; release to drive in, carrying you up to two metres |
 | Hold right-click (examine view) | Turn the item over |
 | Left-click / scroll (examine view) | Put it away / zoom in |
 | `Q` | Holster the equipped tool · close the examine view |
@@ -60,7 +62,11 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **Title & opening** — the title card is just **BEACHWALK** + the controls.
   Clicking begin cuts *straight* to black (no glimpse of the world), the
   opening line fades in and out, then the world fades up. `INTRO_LINE` /
-  the timings in `beginGame()`.
+  the timings in `beginGame()`. **Start Game opens as soon as the opening
+  stretch of beach is loaded** (~13 s); the rest of the game loads under the
+  intro — quiet for a second before each moment the intro is timed to — and
+  the intro's last black holds until it is all in, so the walk opens with
+  nothing left to build.
 - **Opening music** — `assets/backrooms.m4a` swells in over ~7 s once the
   world appears, holds, then fades back out (~30 s total). Routed through a
   Web Audio gain chain so the volume slider still works. `MUSIC_*` consts.
@@ -323,17 +329,68 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   - Thirty-four health, and blocking is not free: hold the guard through a
     minute of him and eight gets through in the first phase and twenty in
     the second.
-- **The wreck's wheel** — one star out over the water blinks. Take the wheel,
-  drag her toward it and hold her there, and the captain's head comes off
-  the davit hook and drops through the hatch into the hold. The key is
-  clenched sideways across his teeth, so you can see it is a key before you
-  ever pick him up. Take him, open him in the examine screen — from the pack
-  or from your hand, either works — and pull the key out of his mouth; it
-  unlocks the shell door low in her far side, which is the only way off her.
-  Her whole deck walks: a clear lane down each waist between the wheelhouse
-  and the bulwark, round her bow and out onto the afterdeck, with her gear
-  stowed forward of the stair and aft of the house. A door you opened stays
-  open across a checkpoint.
+- **The wreck's wheel** — the captain's key hangs by its bow from the davit
+  hook out over the open hatch, out of reach, with a little shine on it so
+  you can pick it out from the deck and through the wheelhouse glass. One
+  star out over the water blinks. Take the wheel, drag her toward it and
+  hold her there, and the key lets go and drops into the basket in the hold
+  under the hook. Take it from there; it opens the sea chest in her
+  quarters, with the spare peg in it. The chest
+  gives off a little warm light of its own, so you can see it through the
+  gaps in the barricade before you can get to it. You come in
+  by the breach on her near side and go out through a second tear low in her
+  far side, past the foot of the companion ladder — too low to walk through:
+  crouch (`Ctrl`) to get out. Sand has blown in through it and the moon
+  shines in on the sand, so from across the hold the way out is a pale patch
+  at the foot of the far wall. Her whole deck
+  walks: a clear lane down each waist between the wheelhouse and the
+  bulwark, round her bow and out onto the afterdeck, with her gear stowed
+  forward of the stair and aft of the house. Press E again at the wheel (or
+  Esc, or click) to step away. Painted boards over the quarters door and the
+  foot of the ladder say QUARTERS and DECK. The key out of the crate by the
+  fisherman is a Rusted Key now, and opens nothing yet. She is built like a
+  boat: stanchions behind her bulwark, wales along her sides, ribs up the
+  inside of the hold and beams under her deck, the bulwark broken out a plank
+  at a time, and every surface rotted, mould-spotted, wormed and rust-streaked.
+  Now and then one of her timbers creaks, and rarely her hull groans; the
+  wind comes in through her holes with sand on it — you hear it hiss, and
+  see the grains blow in across the sole — and below decks you hear yourself
+  in a wooden box. Her sides have their thickness, a plank broken out here
+  and there; WHEELHOUSE is painted over its door, and her signs are old and
+  faded. The captain's key hangs on a forged cargo hook. Nothing on screen
+  tells you how to solve her. When she comes out of the
+  mist at 72 m her theme starts, faintly, and plays for about thirty seconds
+  as you walk up to her and in through the breach (on the music slider; not
+  again for four minutes).
+- **The walk up to the wreck** — from 130 m out the air goes cold and silver
+  and thickens, and she is a dark mass in it; at 72 m it clears and she stands
+  black against the moon right behind her bow, she groans, and a low swell
+  comes up under it. The lens draws in for a few seconds on the reveal and
+  gives you your own field of view back. The sky is left as it is. It plays
+  again if you walk well away and come back.
+- **The gulls over the wreck** — three wheel high over her. Step up onto her
+  weather deck and they come for you, one at a time: a gull stalls, wings
+  high, and shrieks, then stoops straight at your face — its shadow on the
+  deck darkens and closes as it comes, so you can read a dive from straight
+  overhead. Step out of its line,
+  block it (it glances off), or parry it and it is knocked tumbling out of the
+  sky onto the deck or the sand, stunned and in reach — a blow it survives
+  brings it down too. Crab-sized: two health, a charged swing or a riposte
+  kills, one point a strike. The beach's own distant flock keeps away from
+  her, so the three are the only birds there. They fly round her, never
+  through her, and nothing else either: circling, they look ahead and climb
+  over her house, mast and gear, and one that flies into a wall, the mast,
+  the rail, a boulder or the cliff anyway is knocked back off it and drops,
+  stunned and in reach, like a parried one. Brought down, a gull is a RAGDOLL — a body, two-jointed wings
+  and a head on sticks, each point finding its own floor (her deck, the hold
+  through the hatch, the wheelhouse roof, the sand) and stopped by her rail,
+  her house and her stowed gear, so nothing of it goes through anything: a
+  stunned one drops thrashing and lies beating a wing on the boards until it
+  gets up again, a dead one falls limp where it was thrown and stays there.
+  You hear them before you see them — the owner's own gull calls, quiet and
+  far as you walk up, more often once they have you — and a stoop starts
+  with a real gull's cry. They will not follow you below or off up the
+  beach. A dead one stays dead across a checkpoint.
 - **Footprints** — pre-stamped trail behind spawn, new prints as you go
   (toe pointing the right way), footstep sound; oldest recycle.
 - **The sand cliff** — a lofted eroded escarpment, scalloped lip, vertical
@@ -409,8 +466,66 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   *in* the beach rather than on it. Solid — you're pushed out of them and can
   climb them. The scans were baked in daylight, so `reexpose()` gamma-lifts
   the albedo for the moonlight.
+- **The body bag** — a corpse roped at the head and the feet
+  (`assets/corpse.glb`), on the high-water line thirty metres short of the
+  wreck, tipped on its side and settled into the sand, clear of the tide at
+  every state of it. You read it as a black bar long before you can tell what
+  it is. Solid; looking at it says one line and offers you nothing to do.
+  `CORPSE_X` / `CORPSE_Z`.
+- **The drainage tunnel home** — the storm drain in the dune and the room at
+  the end of it, kept the way he lives in it: wet weathered concrete with
+  mineral bloom and rust weeping down the pipe, a duckboard walkway he has
+  laid over the last of the silt, a string of bulbs half of which still
+  work, chalk on the wall. In the room, brick sooted over the lamp and damp
+  coming down from the joists, standing water on the floor, a pallet bed
+  with a mattress, pillow and thrown-back blanket, a slatted crate table with
+  a hurricane lantern, candles, a plate and a mug and a chair pulled up to
+  it, a gas ring and kettle in the corner, shelves of tins, jars, books and a
+  radio, his boots, his coat on a peg by the door, a rug, a photograph and a
+  drawing pinned over the bed. The furniture is solid, and you slide off it
+  rather than snag on it. It is dark and wet, lit by a hurricane lantern hung
+  from a joist, the lantern on his crate and his candles, and a bulb or two
+  in the pipe: black water with a moving ripple in the channel, brick with
+  its mortar sunk, the dead tube light on its batten, conduit and a soil pipe strapped to the walls,
+  the outlet's precast surround and angle-iron frame with a dark wet run down
+  the brick below it, a tyre and rubbish washed up in the bore. The pipe has
+  its own sound — the owner's sewer recording — and everything you do in
+  there rings down the concrete. The air in it is the sewer's: the fog closes
+  to a few metres and goes a murky green, vapour lies knee-deep off the water
+  in drifting banks, each lamp that still burns has a halo and a soft beam of
+  lit air falling from it, and dust hangs in the pipe, seen only where the
+  light is.
+- **Billy, on her wheelhouse wall** — the singing fish on the after bulkhead
+  talks. Ask him about the key on the hook ("Cap would always keep his key
+  hung up there so no one would go stealing. Only he knew how to get it
+  down."), where they were heading ("Captain always said to follow the stars.
+  I would always ask which ones?"), and "Which ones?" ("See for yourself.").
+  Once you have asked all of it a new question appears, starred: "Do you need
+  help?" — "I just miss my old crew." His plaque is held to the wall by four
+  screws, one in each corner; looked at with nothing to turn them they say
+  **I have nothing for this**. The **screwdriver** lies on the Very Old
+  Fisherman's table in the dock house. With it the screws back out and drop,
+  and with all four out you can take Billy off the wall and carry him.
+- **He glimmers.** Once she is revealed (the sting, the view widening) you
+  can catch a little star twinkling on Billy through her wheelhouse door — it
+  is what says there is something in there. It only shows where he can be
+  seen (through the door and the glass), and only while he is still on her
+  wall.
+- **Her stores break.** Every barrel and crate aboard her, and the stacks of
+  crab pots down her port side, come apart under the blade, a thrown thing, a
+  body or a landing — a barrel into its staves and heads, a crate or a pot
+  into its sides — and the way past them opens. A save remembers which.
+- **The captain's first mate** — the Very Old Fisherman was her captain. Carry
+  Billy into the dock house and **I found your fish** appears in his
+  conversation: the plaque goes up on the shed's back wall over the table,
+  and the old man says "I thought I lost you to the sea." and gives you the
+  **Ring of Connection**.
+- **The Ring of Connection** — worn like the other rings: every blow that
+  lands is worth 4 % more than the one before it, up to +12 % (the first as
+  it always was, then +4, +8, +12), and the run resets the moment anything
+  hits you.
 - **The stuck gate** — the barred outlet in the back wall of the drainage
-  tunnel home now says **Look inside**. Press `E` and you lean the last half
+  tunnel home says **Look inside**. Press `E` and you lean the last half
   metre onto the bars while the FOV squeezes to 24°, which is the zoom and is
   also what crops the lit room out of frame. Eight metres of ribbed pipe run
   back into the hill. Nothing is down there — and then, a second and a half
@@ -418,7 +533,19 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   Ethan's, knocked out to alpha — blinks at its own pace, drifts, creeps
   closer, and is gone again within a few seconds. Cave drone, far-off drips
   and the whisper track pushed down a delay so it reads as somebody muttering
-  to himself round a bend. `E` again backs you out.
+  to himself round a bend. `E` again backs you out. The grate's frame is
+  held by four screws in its corners (**I have nothing for this** without the
+  screwdriver). Take them out and the grate comes off and leans against the
+  wall, and the hole says **Crawl into the pipe**.
+- **The overflow culvert** — what the pipe behind the grate runs to: a
+  Victorian storm-overflow culvert under the cliff, behind the tunnel home.
+  The crawl is done behind black, and you come out on its wide walk. A brick
+  barrel vault over a channel of standing water, a raised walk either side and
+  a plank bridge across, two gratings in the crown letting the moon down in
+  thin shafts, a soft crate and some bottles, a chain off a ring in the vault,
+  chalk by the pipe, a heap of small picked bones at the dark end, and a
+  rusted-shut sluice gate (**It won't turn**) at the far end for whatever
+  comes later. **Crawl back through the pipe** takes you home.
 - **The enemy crab** — a bigger animal on a proper rig: eight two-bone legs
   walking an alternating-tripod gait, articulated claws that weave as it
   closes, gape when it rears and snap shut on the strike, eye stalks that
@@ -611,7 +738,9 @@ the door does.
 
 Dying puts you back there with all of it. The settings menu has **Restart
 from last checkpoint** (greyed out until you have one) and **Restart game**,
-which clears the checkpoint and gives you the first morning again.
+which clears the checkpoint and gives you the first morning again — without
+the opening, but behind the same "Loading n%" as a first start, so the walk
+does not open with the boot still running under it.
 
 Coming back to a checkpoint skips the title card, the opening line and the
 opening music. It comes up out of black only once the world is built: every
@@ -685,6 +814,19 @@ castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
 
 ## Credits
 
+This work is based on ["Pirate Ship Assets"](https://sketchfab.com/3d-models/pirate-ship-assets-8942520c4ea94574bb1eb024f4b9ebbf)
+by [Liaval](https://sketchfab.com/Liaval) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the wreck's stores:
+barrels, crates and sacks down her hold, her quarters and her deck
+(`assets/pirate-props.glb`, split, centred and its maps cut down by
+`tools/pirate_pack.py`). She is a crab boat, so the cannon, the shot, the
+cutlass, the treasure chest and the stocked anchor were left in the pack.
+
+The gulls' calls and cries (`assets/gull-call1–5.m4a`, `assets/gull-cry1–2.m4a`)
+are cut from the owner's own gull recording at its own silences.
+
+Three of the red alien's moves — the compass kick, the side handspring and
+the knockdown — are Mixamo animations (Adobe), retargeted onto his rig by
 - `assets/church-step*.m4a` — eleven footfalls cut from "Steps in corridor" by freesound_community (via Pixabay, Pixabay Content License), normalised and faded.
 
 The compass kick, the side handspring and the knockdown in `assets/ntar-moves.json`
@@ -1144,6 +1286,24 @@ normalised to -3 dBFS because AAC overshoots on decode, and mono at 32 kHz
 because there is no energy in it above 14 kHz. Check its own licence before
 redistributing. The synthesised bed stays behind it as the fallback.
 
+The **sewer**, the **wreck's timbers** and **her theme** are recordings the
+owner supplied on 2026-10-16, cut by
+`tools/sound_pack.py` (afconvert and plain Python): `sewer-bed.m4a` ("Sewer
+Sound Effect", one 54.9 s period of a take that repeats, crossfaded into its
+own continuation), `ship-creak-bed.m4a` ("Wood Creak On Old Ship Series", 48 s
+of it, played a creak at a time), `wreck-theme.m4a` (his "ash guitars bass
+loop reverse", its first 34 s faded into the lull it has there). The
+two effects are royalty-free sound effects — check their own licences before
+redistributing; the music is the owner's own and is not redistributable.
+
+**Ring of Connection** — `assets/connection-ring.glb`. This work is based on
+["Gold ring"](https://sketchfab.com/3d-models/gold-ring-d94897485aac4f09b7aab26353f97986)
+by [Bladeblend](https://sketchfab.com/Blend3drender) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/). Every vertex and
+triangle of it is kept; `tools/connection_ring_pack.py` only stores it smaller
+(positions and normals as 16-bit across their own range, 16-bit indices, the
+unused uvs dropped, gzipped): about 1 MB of source to 342 KB.
+
 The **three break sounds** — `table-break.m4a`, `camera-break.m4a` and
 `coat-break.m4a`, for the desk, the tripod camera and the coat stand — are
 the owner's own bounces as well, and are NOT redistributable either. Each
@@ -1346,7 +1506,9 @@ timing.
 [artofmickey](https://www.cgtrader.com/artofmickey), CGTrader free model.
 
 
-**Severed head** — the captain, on the hook over the wreck's hatch.
+**Severed head** — the captain, on the hook over the wreck's hatch. *No longer
+in the game (2026-10-15): only his key hangs there now. `assets/head.glb` and
+`tools/head_pack.py` are unused and can be deleted.*
 
 This work is based on ["Severed head"](https://sketchfab.com/3d-models/severed-head-65103457564048b7a89d177e550181ae)
 by [alexrmartinez](https://sketchfab.com/alexrmartinez) licensed under
@@ -1354,6 +1516,21 @@ by [alexrmartinez](https://sketchfab.com/alexrmartinez) licensed under
 this build is a personal one, and the licence does not allow the model in
 anything sold. `assets/head.glb` is the scan cut to 20k triangles by
 `tools/head_pack.py`.
+
+
+**Screwdriver** — the one on the Very Old Fisherman's table. "CC0 -
+Screwdriver" (Sketchfab), CC0 — public domain, no attribution required; the
+owner supplied it as `~/Desktop/Shipwreck/Screwdriver/`. `assets/screwdriver.glb`
+is the 1k version laid along +X at 21 cm with its maps cut to 512 JPEG by
+`tools/screwdriver_pack.py` (65 KB; the source is 2.4 MB).
+
+
+**Bird collection** — the gulls over the wreck. The gull (`gull_Figur`) out
+of a Cinema 4D bird-figurine collection the owner supplied
+(`bird+collection.obj` with its `textures.zip`); its source and licence were
+not recorded with it and should be filled in here. `assets/gull.glb` is that
+one bird cut to 1.8k triangles, 256 px, with wing-beat shape keys, by
+`tools/gull_pack.py`.
 
 
 **SCP-096 Reanimated** — the thing sitting on the lane in front of the

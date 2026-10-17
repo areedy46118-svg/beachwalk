@@ -3505,3 +3505,10 @@ asleep in the sea (submersion > 0.3 at its hips) is moved as one rigid piece —
 once drove floating bodies across the beach — toward the wave surface over its middle less 0.1 m (never more than 0.15
 under where it came to rest), eased at 2.2/s, so it rides the swell; a floating body is not woken by the tide rule
 (`r.flK`), or it would fall to the bed and float up again for ever.
+
+**THE GULLS OVER THE WRECK are their own small system, not a `MUT_KINDS` entry
+and not the drones** (see `docs/notes/wreck.md`, "THE GULLS"): the crab's
+numbers and turn-taking in the drone's shape, with a stall-and-shriek tell, a
+stoop at your face, and the bolt's guard rules on contact. A unit carries
+`gull: true`, which is what the gun's two fire paths dispatch on; health bars
+come from `updateEnemyBars` like the crabs'.

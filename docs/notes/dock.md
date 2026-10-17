@@ -455,3 +455,36 @@ once for the pair. `fishGift` [rod, map] — 0 not given, 1 on the table, 2 take
 the table (`pegReturned`) restores rod 2 and map `mapGiven ? 2 : 1`. The rod waits (800 ms retries) if the scan is not
 in. To photograph it: hide `__bw.fisherman` and stand at (10.0, 3.75, -217.6) looking at (10.05, 2.6, -219.4) — the
 floor is 1.77.
+
+## The captain, his fish, and the screwdriver (2026-10-15)
+
+- The Very Old Fisherman was the wreck's captain (owner's answer). `OFFER_FISH`
+  ("I found your fish") rides beside `OFFER_PEG` in all three hubs; the
+  reunion is three lines, the middle one Billy's — a dialogue node may carry
+  `speaker` (the card's name for that line) and `enter` (run as the line goes
+  up: the artifact is handed over on the line that hands it over).
+- Billy goes up on the shed's BACK wall over the table (`BILLY_HOME`, world
+  10.66, 3.30, -219.75, facing -X): the same mesh, so he talks there too
+  ('home' node), and `updateBilly` animates him for a line whose speaker is
+  'Billy' in somebody else's script.
+- The table top is at y 2.59, x 9.45-10.86, z -220.72..-218.73 (measured off
+  the `Table` mesh). The dock is built at 2.8x, so a real 21 cm screwdriver
+  looks small on it — left real-sized, `keepSize` (no pickup boost).
+
+**THE REUNION AND THE RING (2026-10-17).** The owner: "a reuniting scene with
+Billy Bass and the captain, happy and cute" and the reward is now the **Ring of
+Connection** (the Artifact of The Sea is gone, code and all — 291 lines).
+- `startReunion` / `updateReunion` (called from `updateBilly`, which runs during
+  dialogue): GLIDE 1.1 s from your hands to the captain's shoulder (on your side
+  of him, 0.56 m to his right as you look, 0.12 below his head — at 0.34 he
+  covered the beard), JOY 6.2 s wriggling and singing (frames 2/3, the mouth on
+  `dialogSpeakerNow === 'Billy'`), hearts (`reunionHeart`, pooled sprites, ≤ 24)
+  and a music-box tune (`sfxReunionTune`), LIFT 1.5 s onto `BILLY_HOME`, then
+  `mountBillyHome`. `billyState` is 2 from the first frame, so a save mid-way
+  restores him home.
+- **The merge of 2026-10-17 had dropped "I found your fish" from his opening
+  choices**: main had added a `wreck` node next to `start`, and git aligned this
+  branch's `OFFER_FISH` line into it. Restored; checked by clicking the real
+  choice button (a `startDialog` while a dialogue is open is ignored — drive it
+  through `#dialog .choice` and clicks on `#dialog`).
+- **Billy's three-dots bubble** (main's) is gone; his motion-sensor whirr stays.

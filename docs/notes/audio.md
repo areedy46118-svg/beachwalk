@@ -599,3 +599,98 @@ own a drip or grit from the well every 4–13 s while you are near.
   wavering), `sfxElvChime` (three detuned sines with inharmonic partials, on the porch), the swing's creak at each end of
   its arc, the music box upstairs (`updateElvMusicBox`, `ELV_BOX_TUNE`, runs down over three passes, half volume through
   the floor, stops when you lift the puppet), and the front door slam (`elvSlamFront`, 1.4 s after the pickup).
+
+**ROOM REVERB FOR THE DRAIN AND THE WRECK (2026-10-16).** Two more parallel
+convolver sends off the effects bus, the church's arrangement (`ucVerbGain`):
+`pipeVerbGain` (`makeSpaceIR(ctx, 2.3, {decay 3.6, dark 0.35, flutter 31 ms
+x14})` — a long, bright concrete pipe with a flutter echo) and `shipVerbGain`
+(`makeSpaceIR(ctx, 1.05, {decay 6.5, dark 0.9, flutter 11 ms x6})` — a short,
+dark wooden box). `updateSpaceAudio(dt)` drives them: the pipe at
+`drainMix * 0.62`, the ship at `shipMix * 0.55` where `shipEnclosure()` is 1 in
+the hold, 0.75 in the wheelhouse and 0.3 on deck. Aboard, `sfxShipCreak`
+(a sawtooth through a bandpass with a stick-slip square AM) every 1.4-5.6 s,
+`sfxHullGroan` every 16-38 s below decks, and a water slap bed
+(`startShipAmb`). Measured with the `spaceVerb` harness getter: beach 0 / 0,
+drain room pipe 0.62, deck ship 0.16, hold ship 0.545.
+
+**THE OWNER'S FOUR RECORDINGS (2026-10-16): the sewer, the creaks, the wreck's
+theme, the shop's.** Cut by `tools/sound_pack.py` — no ffmpeg or numpy here,
+so `afconvert` decodes/encodes and plain Python on 16-bit PCM does the rest
+(18 s for all four). What the cutting found:
+- **The sewer mp3 is one take repeated** (219.5 s; its 0.1 s envelope
+  autocorrelates at 54.9 s and 109.7). One period, crossfaded with the 2 s
+  that follow it, is a loop whose seam is the recording's own continuation
+  (seam RMS within 6 %).
+- **"Self Imposed" is 80 beats at 91 BPM (52.747 s) plus a chord's decay**;
+  its first sound is at 0.000 s and it peaks at full scale. The loop is the 80
+  beats with the decay ADDED over the head.
+- **The bass loop's music ends at ~58 s** in a reversed tail; it has a lull at
+  32-34.5 s, so its "thirty seconds" is 0.9-34.5 s with a fade baked into the lull.
+- Loops are padded a second each end with their own wrap and played on
+  `REC_PAD`..duration - `REC_PAD` (the forest's AAC-priming lesson).
+
+**NOT IN `SAMPLES`.** That bank is decoded whole when the context comes up.
+`lazyBuf(url)` fetches and decodes one the first time something near wants it
+(the sewer at `drainMix > 0`, the creaks at `shipMix > 0.02`, the wreck's
+theme from 192 m, the shop's from 40 m), returns null until it lands, and
+retries a failed fetch after 10 s rather than every frame. `recLoop` is a bed
+on its own gain from a random point inside the padding.
+
+**LEVELS, MEASURED** with an AnalyserNode on `masterGain` and on each node, at
+the owner's defaults (volume 50 %, effects 15 %, music 25 %). Beach surf
+total: -43.9 dB. Drain room before: -66 (all but silent). With the sewer bed
+(`SEWER_LEVEL` 0.55, lowpass 1.5 kHz, low shelf +4, rate 0.9): -45.7, as
+present as the surf. Ship hold: creaks at `SHIP_CREAK_LEVEL` 0.55 sat 14 dB
+under everything else — raised to 0.8 (rate 0.94, 70 Hz-2.6 kHz). The
+wreck's theme at 0.6 was -38.3, 5.6 dB OVER the surf it was meant to sit
+faintly under — 0.3 now. The shop's song opens soft (-22 dB for its first
+seconds against -10 to -12 in its body); 0.25 puts the body about level with
+the surf.
+
+**Wreck theme**: `startWreckTheme()` on the reveal frame (`d < WK.REVEAL`,
+72 m; measured starting at 71.8), once through, not again inside 240 s, cut by
+a room, started up to 6 s late if the file is still landing. **Shop theme**:
+`updateShopTheme` (beside `updateSpaceAudio`) — `smoothstep` from
+`SHOP_FAR` 16 m to `SHOP_NEAR` 5 m off EITHER trader (or 1 with the panel
+open), restarted from the top only after six seconds of silence. Measured:
+12 m 0.30, 7 m 0.91, 3 m 1.0, the same at the castle's trader.
+
+**TWO BEDS WERE ON `sfxOut()`** (the drain's and the wreck's water slap). A
+bed is built once and kept, and `sfxOut()` is the muted sink during a
+restore, so one built then is silent for the game. They connect to
+`sfxBusGain` now. The slap also multiplied by `settings.sfxVolume` on top of
+the bus that already does — gain 0.1 flat now.
+
+Harness: `__bw.recBufs()` (each lazy file: duration, 'loading', 'failed'),
+`audioNodes()` (now with `sfxBusGain`, `drainAudio`, `shipBed`, `wrTh`,
+`shopTh`), `shopThemeK()`, `startWreckTheme`, and **`__bw.started = true`**
+— the pane cannot lock, so a harnessed game is never `started` and the
+drain's audio (gated on it) never builds.
+
+**THE SECOND ROUND (2026-10-16).**
+- **The drain is his sewer recording and nothing else** (drain.md).
+- **Creaks: one at a time.** `SHIP_CREAKS` are the recording's own creaks
+  ([offset, length] in `ship-creak-bed.m4a`, cut where it falls to -80 dB);
+  `playShipCreak` plays ONE every 15-35 s at `shipMix * SHIP_CREAK_LEVEL`
+  (0.42), pitched 0.90-0.98, panned, 70 Hz-2.4 kHz. The synthesised creaks are
+  deleted; groans every 30-60 s at 0.6 (`sfxHullGroan(k)`).
+- **Wind and sand at her holes** (`updateShipWind`): pink noise through a
+  bandpass that whistles up with the gust (380-700 Hz) and a sand hiss
+  (3.8 kHz HP → 6.2 kHz BP, gust²), panned to the nearer hole, `smoothstep`
+  14 m → 2 m, through her reverb. The gust drives the grains too.
+- **Wreck theme 0.42** (from 0.3: "a little" up).
+- **The shop theme is a 14 s one-shot** from 2 beats before the drums (23.74 s:
+  a 10 ms onset in both the kick band and the hats out of a smooth swell) —
+  started once at `SHOP_START` 30 m, `(1 - smoothstep(d, 4, 34))^1.4`, panned
+  to him (`panTo`), re-armed past 50 m. Measured: starts at 29.9 m, 0.05 at
+  27 m, 0.51 at 15 m, 0.90 at 8 m; at 6 m it is 6.5 dB OVER everything else
+  (it was under the waves at 0.25); no restart while you stand there; plays
+  again after leaving to 58 m.
+- **The shop theme is the CASTLE trader's only** (2026-10-17): `shopThemeK`
+  reads `trader2World` alone, and an open panel counts only at `shopAt === 2`.
+  Measured: the Rude Trader at 5 m, 0; the castle's at 5 m, 0.99.
+- **The sand through her holes is 90 soft dots** (`SHIP_SAND_N`, a 16 px radial
+  map, `alphaTest` 0.35, size 0.022), 80 % at the low tear — 260 hard squares
+  read as pixel snow at the game's resolution.
+- **The shop theme is gone** (2026-10-17: "my collaborator already has one"):
+  code, `assets/shop-theme.m4a` and its section of `tools/sound_pack.py`.

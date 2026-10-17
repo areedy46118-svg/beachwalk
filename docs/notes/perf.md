@@ -1260,3 +1260,132 @@ The castle's own walls are still 4–5 ms a frame for ~30 frames (budgeted, by d
   animation accessors (the puppet's bones collapsed). Fixed (`carry(ai)`), and `--decimate-for REGEX=N` gives a
   per-mesh triangle budget (the face 5000, fingers 160…). Blender's own export of the puppet also collapsed its
   bones — pack the original gltf instead.
+
+**THE START GATE HUNG ON `img.decode()` (2026-10-14).** In the preview pane
+six images' `decode()` never settled, so `texUp.wait` never drained and Start
+always waited out its 40 s cap. Each decode now has a 1.5 s timeout behind it
+(`updateTexUpload`); the gate opened at 32.8 s with nothing left. And a
+zero-size pane (`camera.aspect` null) fakes everything: NaN rays made
+`updateHover` cost 19 ms and renders read as 1-2 s stalls — resize the pane
+and check `aspect` before measuring anything. With a real viewport the walk
+measured avg 8.3 ms, p95 9.5, p99 11.4.
+
+**THE START-OF-WALK HITCHES WERE FIRST DRAWS, NOT FIRST COMPILES
+(2026-10-14).** Measured from the spawn after the intro, 1280x760, a copy of
+main.js with every call in `update`/`animateFrame` timed and every GL call
+wrapped (scratch only, never the repo): 73 ms on frame 0, 112 on frame 3,
+116 at z -5, 193 at z -26, 219 at z -45. Every render hitch was ONE call,
+`getProgramInfoLog`, 37 to 170 ms — three's `onFirstUse` of a program that
+`compileAsync` had built and nothing had ever drawn with (the driver finishes
+it there, and the first draw builds its pipeline). `notReady` was 0 each
+time: "compiled" and "ready to draw" are not the same thing on this driver.
+- z -5 was the GULLS, drawn the moment the wreck is inside `GULL.FAR`; z -45
+  the well (bucket, rope, wheel, roof), the moment it came into range. The
+  texture pre-uploader (`texUp`) does not cover meshes or programs.
+- `warmBeachAll` only ever saw TOP-LEVEL hidden groups; a landmark the fog
+  cull had switched off inside a visible group was never compiled at all.
+  Now `warmBeachDrawCompile` + `warmBeachDraw` (`BEACH_DRAW_SLICES` = 8)
+  switch on every subtree of everything on the beach that is not a room
+  (`beachShown`, culling off), compile it off-thread, then DRAW it into the
+  four-pixel scissor a slice at a time. A light that was hidden under a
+  hidden group is held OFF while its group is shown (a light entering the
+  scene recompiles every material). ~1.5 s, behind START GAME, after the
+  last parse — so Start opens ~1.5 s later (35-36 s measured).
+- Frames 0 and 3 were `updateHeldWarm`, which only started at `introDone` and
+  only for what was in the pack: the starting syringe was built on frame 0
+  (+18 MB) and drawn on frame 3. It now runs from the title on, Start waits
+  for it (`heldWarmLeft`), and it takes every view model on `toolMount`; one
+  not carried is built for the warm and keeps its builder, so equipping it
+  later still takes a fresh copy (`vm.userData.item` lets it check the model
+  has landed).
+- The gulls also have their own draw warm ('gulls draw', after 'gulls').
+After, clean build: intro no frame over 40 ms; spawn to z -84 avg 8.8 ms,
+p95 9.9, p99 13.3, max 26.
+
+**THE PLAYTHROUGH'S OWN FINDINGS (2026-10-14), each measured in the pane.**
+- `updateLightning` took 60 ms on the frame a thunderclap arrived: five to
+  nine seconds of rumble written sample by sample at the context's rate.
+  Now `thunderData` is made in the warm chain at `RUMBLE_SR` (11025 — it is
+  all under 260 Hz) with the 48 kHz integrator's corner and spread matched
+  (`RUMBLE_P`, `RUMBLE_STEP`), four distances, the nearest picked and pitched
+  ±8 %. The crab pack's surge (`sfxPackSurge`) the same way.
+- "Restart game" (and a death with no checkpoint) reloads with `skipIntro`,
+  and `beginGame` let `skipIntro` past the loading gate: Start took you onto
+  the beach with the whole boot still to run, 600-800 ms frames in the first
+  minute. Only `instantStart` (a checkpoint load, whose black hold pays for
+  what is left) skips the gate now.
+- `heldWarmList` taking every view model was right behind the loading screen
+  and wrong in play: a model landing after Start was built and drawn on the
+  walk every 400 ms (120-490 ms frames, measured climbing her ladder). In
+  play it is what you carry, as it was. A view model with nothing in it is
+  marked warmed, or `heldWarmLeft` would hold Start to its cap.
+- The beach draw waited for the LAST parse and, on a slow load, ran into the
+  40 s cap; it is two passes now (`beachDrawn`): at 25 s or all-parsed, then
+  whatever landed after.
+- Still open: the walk allocates 35-55 MB/s of short-lived garbage (minor
+  GCs every ~18 frames). The per-call `usedJSHeapSize` deltas are too coarse
+  to attribute it (they land on whichever call is running when the counter
+  ticks — `vcSync`, which allocates nothing, "allocated" 4 MB/s); it needs a
+  real allocation profile, not this pane.
+
+**THE LOAD, REBUILT AROUND THE INTRO (2026-10-15).** The owner: "long time
+to load and freezing at start of game when loading world". Measured by
+driving the real boot -> Start -> intro -> play at 60 fps and logging every
+wall-clock gap over 100 ms (scratch `__bootm.js`, labelled from `__bw.lag()`
+and the timed copy): Start at 33-38 s, the title frozen 13-17 s of it (65-105
+freezes, worst 0.9 s), the intro HOLDING all loading for 30 s, a 285-554 ms
+freeze as the walk began. Three causes, three changes:
+- **The creatures and crabs blocked the parse chain.** They joined the ONE
+  chain when built and waited in it for their own downloads, which go out
+  nearest-first — so the castle's farmers, the whale's demons and every
+  mutant held it, and the opening's models queued behind them. Now a parse
+  joins only when its download has landed (`bwParseLater`), on one of two
+  chains: the first `BOOT_NEAR` metres', and the rest, which waits for the
+  opening to be in (`bwNearClear`). Far warm steps and the rooms' whole warms
+  wait for it too (`warmRunStep`, `bwNearPending`). The beach draw, the
+  gulls, the thunder and the pack surge have `WARM_REACH` past the opening.
+- **Start waited for the whole game.** Now `startGateLeft` is the opening
+  (`bootLeft`) — a restart with no intro still waits for everything — and
+  the parse chain, warm chain, uploads and held-item warms keep running UNDER
+  the intro (nothing of the world is drawn there; the song is on the audio
+  thread, the waves a video on the compositor), held only in a quiet window
+  from 2.2 s before to 0.3 s after each cue (`introHoldNow`: the drop, the
+  name going, the waves going) — a far model's parse runs to 2.2 s (a castle
+  farmer), so a narrower window let one start just before a cue. The intro's last black waits for everything
+  (`loadOwed`, capped at `REVEAL_WAIT_MAX` 20 s). Measured: the title lands
+  7.43 s after the waves come up (7.39 wanted), the name goes at 19.65 (19.6).
+- **`dressCrab` uploaded its maps with `initTexture`** on an undecoded image:
+  420-484 ms on the title. The uploader decodes off the thread; now 91 ms.
+After: Start at 13.3-13.6 s from the page (8.2 s after the world is built),
+the title frozen 4.2 s of that (28 freezes, worst 334 ms — the crab model
+parsed once per copy, ~330 ms each, because SkeletonUtils is not vendored),
+the intro ends on time with everything loaded, and the first 10 s of the walk
+has no frame over 100 ms. The module itself still takes ~5 s to build the
+world before anything can run (`BUILDING THIS WORLD`), which is the next thing.
+
+**THE GULL FIGHT, RE-MEASURED (2026-10-15).** GPU by timer query over a
+2,040-frame deck fight at 634×476: median 12.7 ms, p95 17, none over 25.
+CPU frame (update + render submit) avg 8-11 ms. No live gull was inside
+solid geometry on any frame (`gullSolidAt` checked after every frame). The
+remaining long frames were all inside `renderer.render` with nothing
+compiled or uploaded, and in a hidden pane — see harness.md before chasing
+them. The live JS heap is about 1 GB, which makes any major GC long; the
+game allocates 60-100 KB a frame (most of it in render), not the 35-55 MB/s
+the spin-yield harness suggested.
+- **OPEN LEAD, the first stun.** First-draw hooks on every world and view-model
+  mesh (re-hooked each frame for meshes made mid-fight) through a first deck
+  fight: the 277 ms frame at the FIRST STUN was the frame four unnamed
+  `MeshBasicMaterial` meshes were drawn for the first time — almost
+  certainly `gullFeathers`' burst, which neither 'gulls' nor 'gulls draw'
+  warms (they draw only the birds and their shadows). Next step: show a
+  feather burst in the 'gulls draw' warm, rerun a first fight, and confirm the
+  stun frame goes. The other first-fight spikes had no first draw on them.
+
+**FIGHTS RE-MEASURED AFTER THE DRAIN AND WRECK PASS (2026-10-16).** A walk
+from the start to the wreck: 1,558 frames, avg 9.7 ms, p95 11.8, the only
+long frames the intro's background warm (and one 265 ms frame at z -63 that a
+profiled rerun did not reproduce). A whole deck fight with the peg, walked up
+to (three gulls killed), under the JS self-profiler: no frame over 45 ms;
+frames avg 9-11 ms. **A teleport into the hold and back up onto the deck
+gave a 1.4 s frame on the first frame of a fight** — a harness artefact; a
+player never arrives that way. The first-stun lead above did not show.

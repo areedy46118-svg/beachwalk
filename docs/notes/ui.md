@@ -797,3 +797,25 @@ dealer's dialog was selectable (a drag highlighted it): `#dialog` is `user-selec
 - **The crosshair hides in a dialog; the dialog cursor starts on the box (2026-10-16).** `startDialog` adds
   `body.dialog-on` (`#crosshair` opacity 0), `endDialog` removes it. `vcSync` puts `#vcursor` over the dialog box when a
   dialog opens: at screen centre it sat on the speaker's mouth (the lens frames his face there).
+
+**A FLASHED PROMPT WAS NEVER DRAWN (`flashPrompt`, 2026-10-14).** Every prompt
+that says what just HAPPENED — PARRY, BLOCKED, RIPOSTE, OUT OF BREATH, DOWN,
+SAND, STEP, the crawl-hole's "Crouch (Ctrl) to get through" — was
+`setPrompt(x)` inside `update` with a `setTimeout` to clear it, and
+`updateHover` runs later in the same frame and clears the prompt whenever
+nothing is under the crosshair (and you are holding a tool: "HOW A WEAPON
+WORKS IS NOT A PROMPT"). Measured: "PARRY" on the element after the call,
+hidden one frame later, every time. `flashPrompt(html, ms)` sets it and holds
+it (`promptHold`) — the hover's own `setPrompt` is shadowed inside
+`updateHover` and waits the hold out — and clears it after `ms` if nothing
+replaced it. All eighteen call sites converted (they were all the same
+two-line idiom). The hover label comes back after the flash. The helm has its
+own owner flag (`helmOwnsPrompt`) for the same reason: at the wheel you look
+at the sea.
+
+**NO CALLOUTS FOR WHAT YOU JUST DID (2026-10-17, the owner: "get rid of it
+saying parry and riposte after you do them — things that are obvious don't
+need to be said").** Every `flashPrompt`/`setPrompt` of PARRY, BLOCKED,
+RIPOSTE, DOWN, SAND and STEP is gone (17 of them, every creature family).
+OUT OF BREATH (a state, not an act) and the deep's "SPACE rise · CTRL sink"
+(keys you could not guess) stay.

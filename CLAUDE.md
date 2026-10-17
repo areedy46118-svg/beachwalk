@@ -134,7 +134,8 @@ POSITIVE z because beach triggers are "z less than a line".
 - **`matrixWorld` is only written by a render** (of something visible).
   Call `updateMatrixWorld(true)` before measuring anything just added.
 - **A light entering or leaving the scene recompiles every material.** Point
-  lights are pooled (12 real ones); change intensity, never add/remove.
+  lights are pooled (6 real ones — every slot costs every lit pixel, lit or
+  not); change intensity, never add/remove.
 - **Declaration order matters** — `main.js` is one module of `const`s; a
   constant that reads a later one is a dead-zone crash that takes the page.
 - **A `three/addons/…` import must be added to BOTH import maps**

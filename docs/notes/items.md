@@ -1164,3 +1164,14 @@ strength 4.2: an emissive whitening of ~6.7 on all its materials — a pale bott
 (the Dealer's bench, the tavern grille) are lifted 1.1 x 0.3 = 0.33. Dropped jars now pass `lift: 0.08` (4.2 x 0.08
 = 0.34) after the spread; the beacon and the glint are untouched, and the catacombs' `lamp` is 0x2f6dff at 1.2 (was
 a pale 0x9fc4ff at 1.5). Rendered side by side: white before, the same blue after.
+
+**THE RING OF CONNECTION (2026-10-17).** `connRingItem`, worn like the gold
+ring (`ring: true`, `wearRing`). `toolDmg` is now `toolDmgBase × (1 +
+connBonus())` and counts one (`connStreak++`) — it is asked once per creature a
+blow lands on (mutants, crabs, gulls, the pliosaur), never for rocks, crates or
+glass, which is why the count lives there and not in `hitConnect`.
+`damagePlayer` zeroes it after the dodge check. Measured with the peg (0.75):
+0.750, 0.780, 0.810, 0.840, 0.840; after a hit taken, 0.750. Model:
+`tools/connection_ring_pack.py` (Bladeblend's "Gold ring", CC-BY-4.0), 342 KB,
+worst position error 7.6e-6 of the ring's size; it wears `ringEnv()` at 3.2. An
+old save with `seaArt >= 2` is given the ring instead.

@@ -225,3 +225,192 @@ bore reads a quarter at 3 m, a twentieth at 6 m and nothing at the cap. It is
 distance from the EYE, not depth down the pipe, so it costs nothing to place
 and darkens the pipe further still from the room. `FACE_PEAK` 0.2 → 0.12; the
 throat's own emissive came down 0x0c1014 → 0x080b0e.
+
+## The retexture and the lived-in pass (second look)
+
+- **SAME GEOMETRY, NEW SURFACES.** Like the wreck: every material in the `M`
+  table gets a painted 256² map through `liftOff(m, map, k, tint, rep)`, which
+  sets the map as both `map` and `emissiveMap` — nothing down here is reached
+  by the moon, so what you see of a surface is mostly its own lift. The
+  painters (`pipeTex`, `brickTex2`, `floorTex`, `woodTex`, `mattressTex`,
+  `rustTex`, `siltTex`, `mossTex`, `puddleTex`, `dampTex`, `spinesTex`,
+  `tinTex`…) sit together above `makeDrainageTunnelHome`, all through `paint()`
+  (quantised, nearest-filtered, repeat-wrapped).
+- **`M.conc` IS OUTSIDE AS WELL AS IN.** It is the collars and lips round the
+  bore AND the door's bulkhead. Lifted for the room it went pale beige under
+  the moon; it stays barely lifted (0.08) and the room got its own
+  `M.roomConc` for floor and ceiling. The bulkhead's room side is faced in
+  the room's brick (`veneer`), with its uv cut down so the courses match the
+  side walls — a box maps the WHOLE texture onto every face whatever its size.
+- **THE PIPE'S TEXTURE RUNS AROUND, NOT ALONG.** On the bore, texture x wraps
+  the circumference and y runs down the length. Streaks painted "down" in y
+  ran along the tunnel; anything that weeps down a wall is painted along x.
+  Same trap with a long thin box: the silt shelves are 18 m × 0.7 m, so a
+  [6, 1] repeat stretched 4:1 into wood grain — [24, 1] keeps it square.
+- **A DARK FLAT POLYGON ON A LIT FLOOR IS A HOLE.** The puddles were discs of
+  `M.water` and read as black holes cut in the floor; the damp down the walls
+  was `M.dark` slabs and read as doorways. Both are now feathered transparent
+  decals (`M.puddle`, `M.damp`: `depthWrite: false`, polygon offset) on
+  planes. `M.water` itself is metalness 0 — with no env map any metal is black.
+- **FLAT SLABS IN A ROUND PIPE STAND OFF THE WALL.** The slime at the
+  waterline was boxes at |z| 1.02, which the curve leaves floating as green
+  panels higher up. It is slices of cylinder at wall radius now, by the same
+  `(y, z) = (sin t, cos t) * r` rule as the stain run under the side outlet.
+- **FURNITURE IS BUILT, NOT BLOCKED.** Pallet (blocks, stringers, nine boards),
+  slatted crate table with a dark core between the slats, hurricane lantern
+  (lathe glass, guards, cap, bail), hooped lathe barrel, battened crates,
+  angle-iron shelving with tins, jars, books, a radio; a chair, a gas ring and
+  kettle, his coat on a peg, a duckboard walkway over the last ten metres of
+  the invert, and a string of dead-and-alive bulbs (emissive only, no light).
+  Everything is added straight to `R`/`T` so `bakeScatter` merges it by
+  material — a nested Group escapes the merge (and costs a draw call per
+  mesh), so a turned piece is built in a temp frame by `turned()` and each
+  part handed over with the turn baked in.
+- **THE ROOM'S FRONT WALL SNAPPED YOU INTO THE DOORWAY.** Between DOOR_X and
+  `ROOM_X0 + PLAYER_R` the clamp was "doorway: clamp z to the door's width",
+  so backing along the room's front wall at z -2 put you at z -0.6 in one
+  frame. Wide of the opening you can only have come from the room (the bore
+  funnels you to the door's width), so there it is the wall: back off it the
+  shorter way.
+- **PUSH-OUT HAS TO SEE EVERY BOX AT ONCE.** The barrel and the crates touch
+  once each is grown by `PLAYER_R`; the nearest face of one put you in the
+  other, and one-at-a-time passes bounced between them and left you inside.
+  `pushOutOfDrainProps` now searches: the ways out of the box you are in, and
+  from any that land in another box, that box's ways out, nearest clear spot
+  inside the walls wins. Swept on a 10 cm grid over the whole room: 0 of
+  3,520 spots end inside furniture or a wall. New props (chair, stove) are in
+  `nav.props`; anything new and solid has to be too.
+
+## The grate comes off, and the culvert behind it (2026-10-15)
+
+- **`bakeStatic(drainTunnel)` MERGES EVERY UNNAMED MESH** in the tunnel at
+  load, nested groups included, unless an ancestor has `userData.noBake`. The
+  grate was "lifted off" as an empty group while its bars stayed in the wall
+  in the merged mesh — `G.userData.noBake = true`. Anything in the tunnel that
+  will move later needs the same.
+- **The screws** replace the frame's corner bolts (`grateScrews`, the
+  outlet's own frame). `screwSet` is shared with Billy's plaque: label "I have
+  nothing for this" (bare) without the screwdriver, "Unscrew" with it; a
+  bitmask on the save; a screw already out on a load is laid where it would
+  have landed (`screwRestAt`). The last one out calls `liftGrate`, which
+  re-registers the outlet as "Crawl into the pipe" (the old interactable's
+  mesh list still held the grate's meshes).
+- **THE CULVERT is in the tunnel's own frame, not a far room.** A far room
+  would have meant ~64 `inRoom()` sites and a room flag everywhere; behind
+  the room it is the drain's: `updateDrain` asks by POSITION (inside its box =
+  on its walks, `insideDrain` true, so the beach clamps stand aside), and the
+  crawl (`startPipe`, the catacombs' cut timings) only moves you. Its crown is
+  3.05 under the cliff's 3.2, and the WALKS are raised (0.40) rather than the
+  channel sunk, because the beach's sand plane is drawn at y = 0 wherever you
+  stand. The vault is a cylinder slice seen from inside — `M.brickIn`
+  (BackSide) — and its uv is cut to the walls' brick (measured: at the walls'
+  rate the vault's bricks came out twice the size).
+- **Clamp order in `clampToCulvert`: walks, props, walks.** The walk's end
+  alone put you inside the sluice post's margin (x 52.45 -> 52.15). Swept on a
+  10 cm grid: 0 of 11,616 spots off the walks or inside a prop; the bridge
+  crosses both ways, and off it you stop at the channel's lip.
+- **Light shafts are front-face only**: double-sided, standing in one laid a
+  sheet over half the view.
+
+**THE THIRD PASS: PLASTIC, BRIGHT, FLOATING (the owner, 2026-10-16).** "Reads
+as plastic, especially the water", "too bright", the bed the wrong way, the
+ceiling light and the door "just floating", the grate and the wall behind it
+"weird textures", the sounds. What changed, in `models/drainage-tunnel-home.js`:
+- **Every lifted surface has a normal map now** (`normalFrom(map, k)`: a Sobel
+  normal off the colour canvas's luminance, sharing its repeat/offset).
+  A flat-shaded box with a painted brick is a plastic box; the same paint
+  with its mortar sunk catches the lamp. `liftOff(m, map, k, tint, rep, bump)`
+  sets it, and scales every lift by `DIM` (0.6) — the room was lit by its
+  emissive lift more than by its lamps, which is what "too bright" and
+  "plastic" were both describing.
+- **The water** is near-black (0x141a1c, emissive 0x070b0c), roughness 0.08,
+  with a ripple normal map (`rippleNormalTex`) that `updateDrain` scrolls
+  (`T.userData.waterMat`). Before, it was a lit blue-grey sheet.
+- **Bricks are box-mapped in world metres** before `bakeScatter` (3.45 x 2.7
+  m a repeat), so a course runs at one scale across every wall and round the
+  outlet — the "weird texture" behind the grate was the end wall's box UVs
+  stretched over a different size than its neighbours.
+- **Lamps**: bore 1.15/11/1.25, room tube 1.55/12/1.2, lamp2 0.6/4/1.6,
+  candle 0.55/3/1.6, cistern 1.15/11/1.25 and 0.75/9/1.3 (intensity /
+  distance / decay). Darker at the walls, the same pool under each light.
+- **Nothing floats.** The tube light hangs on a steel batten with end caps and
+  two rods to the joists; the conduit is strapped at every joist; a soil pipe
+  runs floor to ceiling in the corner on collars and brackets. The door leaf
+  is built in its OWN frame (group at (0.62, 0, -2.15), yaw -0.42) and then
+  flattened into the door with `applyMatrix4`, so its lip, kick plates, dogs,
+  stiffeners, wheel, hub and spokes all sit on the leaf they belong to — they
+  were placed in the room's frame and hung beside it.
+- **The bed** has its pillow at the wall end (bx + 0.64), the blanket and its
+  fold toward the room, and the book on the mattress.
+- **The outlet** is a precast concrete surround (an extruded square with a
+  round hole, `M.surround`), an angle-iron frame (flange and web, `ironTex`),
+  round bars with rust scabs and riveted flats, the screws on the frame face.
+- **Rust on brick DARKENS it** (`brickBleedTex`, `M.bleed`). The bleed under
+  the outlet used `rustStainTex` — drawn for grey concrete, where ochre is
+  darker than the wall — and over red-brown brick at half opacity it
+  LIGHTENED the wall into a pale curtain with square edges. Now a dark wet fan
+  with feathered, wandering edges, thin rust runs, a slime skin under the lip.
+- **The bore** has wet-mud silt (`siltTex`), and debris clear of the walk: a
+  tyre leaned on the wall at (5.2, FLOOR_Y + 0.3, 1.02), bricks, bottles, rags,
+  a board. Keep anything new out of the walk's band or the clamp walks into it.
+- **Sound**: the drain bed has a flow layer (420 Hz bandpassed noise on an
+  LFO) and a low moan (55 / 57.3 Hz triangles under a 160 Hz lowpass), a clank
+  somewhere in the pipe every 10-26 s, and everything you make in there goes
+  through the pipe's own reverb (audio.md, `pipeVerbGain`).
+
+**THE FOURTH PASS (the owner, 2026-10-16): the door, a stick, still too
+bright, only his sewer sound.**
+- **The door leaf hangs on the ROOM side, open against the front wall.** It
+  stood at 24° with its hinge end 23 cm inside the bulkhead (x 0.23 in a wall
+  from -0.06 to 0.46) on hinges that were on the tunnel side. Now the hinge
+  line is at the jamb on the room side (`HX` = ROOM_X0 - DOOR_X + 0.11, z
+  -1.06), the leaf ajar 0.12 rad off the wall, its dogs and wheel at the free
+  (latch) edge, the knuckles on the leaf. It has a prop box
+  `[ROOM_X0, -3.0, ROOM_X0 + 0.42, -1.08]`, clear of the doorway's clamp.
+- **The stick was the last bore lamp's conduit**: 2.6 m off a lamp at x 16.2
+  ran on through the bulkhead into the room. Each conduit is
+  `min(2.6, BORE_LEN - x)` now and ends in the bulkhead.
+- **Lit by a few lanterns.** `DIM` 0.6 → 0.22 (the lift was what lit the walls
+  where no lamp reaches). The ceiling tube is dead (`M.dark`); the room's light
+  is a hurricane lantern hung from joist 4 (screw-eye, wire, bail, chimney,
+  cap, a warm `MeshBasicMaterial` globe, guard wires, font; foot at 2.05 m),
+  `PointLight(0xffa458, 0.85, 7.5, 1.5)`, the crate lantern 0.7/4.5, the
+  candles. Bore bulbs 0.5/7/1.4, culvert 0.6/8 and 0.45/7.
+- **Sound: his recording only.** The pipe's sung note, the air, the mouth's
+  trickle, the flow, the moan and the clanks are deleted; `drainAudio.gain`
+  is kept for the drips (events) and the bed rides `drainMix * SEWER_LEVEL`.
+- **ON ITS HINGES (2026-10-17: "the door is off its hinges").** The hinge line
+  stood 18 cm out from the wall with nothing between. The doorway has a steel
+  frame on the ROOM side now (jambs and head, `PF` 0.08 deep off the wall's room
+  face, which is x 0.484 in the door's frame — measured by casting from the
+  room), the pin is at that frame's corner (`HX` = WF + PF + 0.09, `HZ` -1.03),
+  each knuckle has a strap across the leaf and a leaf back onto the frame, and
+  the leaf rests open against its own frame (`LA` +0.03), clear of the wall.
+
+**THE AIR (2026-10-17, the owner: "add some mist/fog in the sewer tunnel and
+... make the lights more ambient and more ray traced feeling of a real nasty
+sewer").**
+- **The drain breathed the beach's air.** It is not a far room, so `inRoom()`
+  is false in it and the fog chunk ran the beach's moonlit blue fog and ground
+  mist at y -0.10 all the way in. `drainAir()` (after `updateSquall` in
+  `animateFrame`, so it has the last word) takes it over by `drainMix`: the
+  density goes to `DRAIN_FOG_D` (0.085: half gone at ten metres), the colour to
+  `DRAIN_FOG_COL` (the base saved on the way in and put back when `drainMix`
+  reaches 0), `FOG_MOON.w` to 0, the tint down and green, and the ground mist
+  is laid on `DN.FLOOR_Y - 0.05` at `DRAIN_MIST_D`.
+- **`fogTint.w` is "how much moon lights the mist"** in the fog chunk: the
+  ground mist's moonlit terms and its blue lift are scaled by it (1 everywhere
+  but the drain). The dojo's mist has no moon in `FOG_MOON` but keeps its own
+  look because `w` stays 1 there.
+- **The light in the air is the model's** (`T.userData.air`, added after the
+  bakes, all `noBake`, `raycast` no-op, unfogged and fading with distance in
+  their own shaders): a halo sprite on each burning lamp; a beam (open cone,
+  ShaderMaterial, additive, FrontSide) whose alpha is `|N·V|^2.2` — feathered
+  at its silhouette, a hard-edged cone is a lampshade — times `v^1.6` so it is
+  gone before it meets the floor; 520 dust points lit by the eight nearest
+  lamps in the vertex shader (`uL`/`uLC`), dark between them.
+  `updateDrainFlicker` drives each halo and beam by its lamp's stutter
+  (`drainAirLamps`) and the dust's time.
+- **Softer lamps**: bore bulbs 0.46/9/1.1 (was 0.5/7/1.4), the hung lantern
+  0.8/9.5/1.2, the crate lantern 0.6/6/1.3: the same pools, falling off into
+  the murk instead of stopping.

@@ -769,3 +769,731 @@ half-alpha spikes become a dot, so they are drawn bold.
 every 8–14 s with a gearmotor whirr (`sfxBillyWhirr`); and a "…" speech-bubble
 sprite (`billy.bubble`) bobs by the plaque, fading in near, out far. Both stop
 once `billy.talked`.
+
+**HER SURFACES ARE REDRAWN, AND PAINTED BEHIND THE LOADING CARD
+(2026-10-10).** The owner's word on her was "AI slop": every surface was a
+small canvas of blotches multiplied down to brown, and from the sand she was a
+smudge. Eight maps now — `hullMaps` 2048x512, `deckMaps` 1024x512,
+`plankMaps` 1024x256, `paintMaps` / `innerMaps` / `soleMaps` 512,
+`woodMaps` / `metalMaps` 256 — each painted in FLOATS (`surface(w, h)`, a
+colour and a HEIGHT per texel), and the normal map is a Sobel of that float
+height written in the same pass (`S.paint`). What makes it read as a boat
+rather than a pattern:
+- **boards are COURSES** (`courses`), seamless on the phase, each board its
+  own tone and grain, the butts staggered — so the seams are the lines on her;
+- **the paint is FAILING, not drawn as blotches**: white topsides over the
+  planking, flaked where a noise field passes a threshold with a dark lip
+  round each flake, a boot-top stripe, antifouling under it, algae and a salt
+  line where the sea reached, frame nails with rust running out of each one,
+  barnacles and weed low on her;
+- **every field TILES** (`vnoise` / `field`): a map that does not tile is a
+  seam at every repeat, and the deck repeats.
+
+Painting floats at that size is not free (1755 ms inline), so
+`makeShipwreck({ deferPaint: true })` builds every texture BLANK — its own
+base tone and a flat normal, so no material recompiles when it is painted —
+and hands the painting to the boot's warm chain (`wreckPaintJobs()` →
+`warmStep('wreck paint <map> <k>')`), the hull in five steps. Measured:
+147 ms at module load, worst step 80 ms, all behind the card. **Allocating
+the float buffers per map put a garbage collection inside the NEXT step**
+(225-525 ms): one pair is pooled, owned by one map from its first draw step
+to its write-out (`_poolOwner`), and a map that finds it taken gets its own.
+
+**AND THE LIFTS CAME DOWN WITH IT.** A drawn map carries real darks and
+lights where the blotches were mid-tone, so at the old emissive levels the
+hold read half again brighter and orange. Interior lifts: inner 0.86 → 0.60,
+sole 0.54 → 0.40, deck 0.34 → 0.25, plank 0.28 → 0.22, paint 0.30 → 0.25.
+Mean screen luminance against the old build: hold aft 17.8 → 20.0, hold
+forward 12.6 → 15.4, deck 16.8 → 17.1, wheelhouse 23.9 → 25.5. The outside
+views move with the sky and the surf from one capture to the next (±3) and
+match within that.
+
+**A JUMP PUT YOU INSIDE THE WHEELHOUSE, THROUGH ITS WALL.** `inBridge` was
+set by "feet above the sole less 0.35, within a body's width of the walls",
+and a jump off the deck peaks at 3.82 against 3.75 — walk up to the house's
+front or back, jump, and you were standing on its floor. It wants the feet AT
+the sole (less 0.15) and the body INSIDE the walls now; the door is still the
+way in. Three more, all pops of a third to three quarters of a metre in one
+frame, all found by the sweep below:
+- **THE EDGE OF A HOLE PUSHED THE WRONG WAY.** The hatch coaming and the
+  ladder well's lip pushed anything in their ring OUT by the shallowest face
+  — right for a body walking on the deck, and wrong for a body already in the
+  hole: the deck is within a step of it, so a body falling near the edge was
+  lifted out onto the deck (0.43 m). `shipHoleEdge` asks where you were
+  BEFORE this frame's step (`_preMove`): in the hole, you stay in it (and the
+  floor under the new spot is asked again, or the frame lifts you anyway);
+  coming down from a jump, whichever side is nearer; walking, out. A jump CAN
+  clear the coaming into the hold — it is an open hatch, and the ladder is
+  there to climb back.
+- **THE RAMP OUT OF THE BREACH STARTED AT A FIXED 3.45** while her sole
+  narrows to 3.4 at the breach's forward end, leaving a strip with no floor —
+  and no floor inside her hull means "slide out of her": a step onto it threw
+  you out through her side (1.14 m). It starts where the hold's floor stops.
+  And a body leaving the breach at a slant crosses its forward EDGE still
+  inside her hull line, where the same rule threw it out through the plating
+  (0.73 m): the no-floor push now takes whichever is nearer, out through her
+  side or back into the breach (or the open shell door).
+- **THE WHEELHOUSE DOOR'S JAMBS.** A body entering the doorway at a slant
+  could slide out of the door's width while inside the wall's thickness and
+  be snapped into the room by a whole body radius (0.77 m). A body that was
+  in the wall's thickness last frame is held to the door's width instead.
+
+- **THE COMPANION LADDER'S SIDES.** Its "solid from below" box came in at a
+  full body's width the moment the treads rose past the knee, so walking
+  along its low end was a 0.33 m shove sideways. The side margin grows from
+  nothing to a body's width over the next 0.4 m of rise.
+
+- **THE LADDER AND THE DOOR STEPS HAVE RAILS, AND NOW THE WALK DOES.**
+  Climbed at a slant you stepped off the companion ladder's side through its
+  handrail 1.4 m up and dropped back into the hold, and the wheelhouse steps'
+  walkable floor ran 8 cm past their drawn rails. A body that was ON the
+  treads last frame (`_preMove`) is held between the rails; the ladder's
+  foot (the first treads) and head are open, and the steps' floor stops at
+  the door's half-width + 0.14.
+
+Measured after, the whole ship (`__shipSweepAll`): 1,646 walks from 207
+spots, nobody trapped, no body left standing on air; worst single-frame move
+0.06 m in the wheelhouse (was 0.42), 0.12 in the hold (was 1.14), and on deck
+0.09 everywhere but jumps into a crate wedged at the rail (0.23). A walking
+stride is 0.057.
+
+**`tools/shipsweep.js`** walks every spot on the deck, the wheelhouse or the
+hold into eight headings, jumping, and reports the worst single-frame move,
+walks that fall a metre through her, bodies left standing on air (a ray DOWN
+onto what is drawn — her station half-width is no test at the bow, whose
+raked planking runs past ±HALF), and trapped spots. Two traps in it: `onShip`
+and `inBridge` are sticky module state, so a teleport onto the deck from
+inside the wheelhouse is clamped straight back in — teleport off her first;
+and the walk carries its momentum across a `tp`, so let it die and put the
+body back. The green floats along her port bulwark have no collider on
+purpose: 0.4 m, stepped over.
+
+**THE WHEEL ANSWERS NOW (2026-10-13).** The puzzle gave almost nothing back:
+the only sign of progress was which star flared next, and a star you had set
+dropped straight back to the sky's level. Now:
+- **a set star STAYS LIT** — steady, bright and warmer than the sky — until a
+  wrong star puts it out, so the sequence so far reads at a glance from the
+  helm or the deck;
+- **each set star is a NOTE** (`sfxStarChime`: a struck bell, inharmonic
+  partials, rising a third a star), the last one under the old `sfxStarSet`;
+- **the star being asked for SWELLS while you hold the cap on it**, so holding
+  is something you watch work instead of a timer you guess at;
+- **a wrong star is answered**: with stars set, settling on an unlit wrong one
+  costs them — she groans (`sfxHullGroan`, the saucer crash's own), the deck
+  shifts (trauma 0.14) and the set stars GUTTER out over a second rather than
+  switching off. With none set it only creaks and the wrong star shrinks back.
+  `wrongFired` latches it once per settle.
+- **progress survives letting go of the wheel.** `begin()` reset the sequence
+  on every grab, which was invisible while nothing showed it and a punishment
+  once set stars stay lit. And a star already set is NOT a wrong answer —
+  looking back at it to check is not a mistake worth the sequence (the old
+  `justDid` forgiveness, extended to every set star).
+
+**AND AT THE HELM THE LENS LEANS IN (`HELM_FOV` 62, `helmFovK`).** The stars
+are 190 m out and at the walk's field of view of 105 each was three or four
+pixels — no bigger than the sky's own stars, so none of the above could be
+seen. Measured by projecting each star and reading the pixels: they WERE
+drawing, bright, glass or no glass; they were simply points. Gripping the
+wheel narrows the view to the windscreen and the sprites are a third bigger.
+`helmFovK` is its own variable declared above `updateDialogCam` — `helmT` is
+thousands of lines below it and the frame loop starts before the module has
+finished loading.
+
+**THE SHELL DOOR SAYS LOCKED FROM THE SIDE YOU MEET IT ON (`holdLock`).** You
+reach that door from INSIDE her, from the hold, long before you have a key —
+and every part of the lock the model draws (plate, keyhole, ring) is on its
+OUTBOARD face. From the hold it was a dark recess behind the ladder. The
+inside face now carries a chain from a staple on the latch jamb to a ring bolt
+on the leaf, with a brass padlock through the staple, a small cold pooled lamp
+off the door, and a glint on the padlock that CATCHES as you cross the hold:
+strongest on one bearing from the door (az -0.42 rad), which the walk from the
+breach to the ladder sweeps through — measured along that walk 0.28, 0.57,
+0.95, 0.54, 0.29, and 0.10 anywhere off it. With the key in your pack it
+pulses 0.5-0.95 from anywhere in the hold. On unlocking, the shackle pops on
+the lock sound's bolt (0.64 s), the chain slides off the ring bolt and swings
+down off the staple, and the lot drops on the boards, landing with
+`sfxChainDrop`'s heavy thump (~1.55 s). A restore lays it on the boards. Every
+piece is named and the group is `noBake`, or the wreck's merge eats it. **Three's
+`smoothstep(x, min, max)` wants its edges in order** — written (d, 15, 7) for
+a fade with distance it returned 0 everywhere and the glint never showed.
+
+**AND A RESTORED SHELL DOOR STOOD THROUGH HER SIDE.** The restore set the leaf
+to `rotation.y = -2.0`, the old outward swing that the note in
+`updateHoldDoor` says went through her plating; live it opens inward to +1.85.
+`holdDoorSwing` was restored as 1, so `updateHoldDoor` never moved it, and
+every load past the door showed it through the hull. It restores inward.
+
+**THE CAPTAIN LANDS IN A BASKET.** The hold's three baskets were rolls of `rnd`
+and two came up on the same spot, (-3.31, -0.57): two baskets inside each
+other, half a metre from where he lands when the wheel lets him go, so he hit
+the boards beside them. They are laid by hand now: the first square under the
+hook (`userData.catchBasket`), each on the LOWEST board under its own
+footprint (her sole is dished; at HOLD_Y + a height they floated) and each
+solid in the hold. `dropShipHead` measures how far his lowest point hangs
+under his middle at a scale of one — he is scaled up by `makeNoticeable` once
+he is takeable (1.15 measured) — and `updateShipHead` steers him to the
+basket's middle and sets him on its FLOOR, where the basket rocks and rattles.
+Measured: dead centre, his lowest point 3 cm over the basket's floor and his
+crown 13 cm over its rim. The route and the hold sweep round the new colliders
+are unchanged (worst step 0.09 m, nobody trapped).
+
+**THE SHELL DOOR IS GONE: HER FAR SIDE IS A SECOND TEAR (`FAR_X0..FAR_X1`,
+-2.2..0.9, top 2.3).** The owner's call: no door, a hole through to the other
+side, the captain's key opens the sea chest and the dock key opens nothing for
+now (it is the "Rusted Key" again; the fisherman keeps his "old chest key"
+line). `breached(x, y, sg)` takes the side and cuts both the skin and the hold
+lining for either tear, on its own wobble phase; `breachTopAt(x, sg)` lays the
+torn planking along both; the frames skip both. Sand heaps that land over the
+far tear are kept to a 0.32 m spill — six of them stood up to 1.6 m tall right
+in front of it. In main.js the floor, the null-floor fallback and the hold's
+lateral clamp ask `atBreachX` / `atFarX`, one place each. The leaf, frame,
+padlock (`holdLock`), its pooled lamp and `holdDoorOpen` are all gone. A save
+from the door's days (`f.holdDoor`) spent the key on it, so with the chest
+still shut the restore hands the key back; with `f.chest` it is spent. The
+tear is where the door was, so the companion ladder stands in front of its
+middle: you step round the ladder's foot (x < -1) to reach it, as you did to
+reach the door.
+
+**AND THE EDGE OF A HOLE IS A WALL.** Standing in either tear (out past the
+hold's own line) and stepping along her past the end of the hole put you back
+to the line: 0.32 m inward in a frame, measured at the far tear's forward
+edge. Coming from inside the hole (`_preMove`), x is held at the hole's end.
+
+**HER GEAR PUSHES YOU OUT BY THE NEAREST CLEAR WAY (`pushOutOfShipGear`).** A
+sweep of the quarters at 0.6 m (the old whole-ship sweep sampled x only to 6.4
+and never reached the aft end) found three failures of "the nearest face of
+the box you are in": the aft bunk stands 8 cm off the transom, so its nearest
+face was through the clamp (0.78 m jumps, and a body trapped behind a cask);
+the starboard bunk and the cask beside it stand 2 cm apart, so their grown
+boxes overlap and each pushed you into the other; and the bench's end and the
+quarters bulkhead make a crevice whose way out is a CORNER. Every face and
+corner of the boxes you are in is a candidate now, and the nearest one in no
+box and inside the room wins; a way out more than 0.35 m off is refused in
+favour of where you stood before the step. The aft starboard corner (chest,
+two casks, hull, transom) is a sealed pocket nobody can reach; the sweep was
+starting bodies in it, so it now skips starts inside any grown box. After:
+quarters worst 0.085 m, nothing big, nothing trapped.
+**And it runs twice: once in `updateShip`, and again after it (in `update`).**
+`updateShip` pushes you out of her gear and THEN clamps you to her sides, and
+a clamp can put you back into a box: the strip behind the long locker down the
+port bulwark narrows toward the bow, the deck-edge clamp walked you into the
+locker, and the next frame threw you out of its far end, 1.64 m. A candidate
+up to 8 cm past the room's edge is still allowed (the clamp takes the rest;
+refused outright it sent you to the far face), and the second pass sends a
+wedged body back to where it stood. Whole ship after: hold worst 0.107 (the
+ladder's side), house 0.058, deck 0.21 (a jump onto the hatch coaming), aft
+deck 0.089; the remaining "big" deck moves are bodies jumping down the hatch
+onto the hold's baskets, whose boxes stand room-high (2.65) like all the
+hold's gear, so a falling body is pushed off them sideways — as before.
+
+**THE QUARTERS: BUNK LADDERS AND CHAIRS.** The bunk model's ladder is its +X
+face (its rungs are the only geometry at x > 0.3, between z -0.8 and -0.6), so
+the open side of a berth is wherever its +X goes. The aft one stood at no turn
+and climbed into the transom; turned π it faces the room with the starboard
+one. A chair faces its own +Z (its back is the only part over 0.7 m, at
+z = -0.22): both mess chairs are turned `atan2(dx, dz)` onto the table's
+middle. Their solid boxes swap w/d to match.
+
+**SIGNS (`signMat`, `signBoard` in shipwreck.js).** Pale paint on dark oak,
+chipped, quantised, its own emissive lift off its own map (nothing in the hold
+is moonlit). QUARTERS on the hold side of the bulkhead over the barricaded
+door; DECK with an arrow each side, hung on two irons under the planking at the
+foot of the companion ladder, 2.4 m off the sole so you walk under it. The
+board faces -X: a plane turned -π/2 about Y reads left to right along +Z,
+which is your right looking aft.
+
+**E LETS GO OF THE WHEEL.** The window's capture-phase keydown already took
+Esc; it takes the interact keys (E, F, Enter) too, so the press that lets go is
+caught before `primaryAction` and can never take hold again, and a held key's
+auto-repeat is ignored so holding E to grab does not let go on the first
+repeat. The prompt says "E to step away".
+
+**THE GULLS (`GULL`, `updateGulls`, `gullStrike`, `hurtGull`).** Three, from
+the owner's bird collection (`tools/gull_pack.py`: the OBJ's `gull_Figur`,
+wings spread, 1.8k tris, 1.3 m span, grey mantle and black tips as vertex
+colours since the map is all white, shape keys `up`/`down` for the wing beat;
+faces +Z). They wheel at 12.5 m over her; the weather deck wakes them
+(`gullsAwake`, saved), and they hunt you while you are within 32 m of her
+middle and not in the hold or the wheelhouse. Crab numbers: `CRAB_HP`, one a
+strike, one at a time (`gullToken`) with a 2.0-3.8 s gap after each, and only
+one you can SEE may start (any, after 2.5 s with none in view). The tell is a
+0.62 s stall, wings high, with `sfxGullShriek`; the stoop is 10.5 m/s at your
+face, re-aimed over its first half and then committed. Contact is the bolt's
+hips-to-head segment at 0.85 m: guard facing it on the beat is a parry
+(knocked onto the boards, 1.7 s stunned, riposte doubles), guard otherwise a
+block (glances off and climbs), else `damagePlayer(1)`. A swing finds one by
+the crab's ray-to-body test (`gullStrike`, after the crab block in
+`digImpactCore`); the gun traces them in `magTrace` and both fire paths
+dispatch on `u.gull`. Floors are asked of `shipFloorAt` then `groundUnder`
+(`gullFloorAt`); the wheelhouse box is checked along a dive's line before one
+starts. Dev mode never wakes them, as it never wakes the crabs. Measured
+standing still on her deck: wind 0.6-0.7 s, stoop 0.7 s, a hit every ~4 s at
+the old [1.5, 3.1] gap; parried, it lies on the deck and a light riposte
+kills; a dead one lies at deck + 0.08, belly up.
+
+**THE WALK UP TO HER (`updateWreckApproach`, `WK`) — first build; see "SECOND PASS" below for what was taken out.** The moon is 6.6° up and
+15° to seaward of dead ahead, so from 20-40 m up the beach it stands right
+behind her bow on its own. `wkA` rises from 132 m to 90 m and fades from 34 m
+to 15 m, only on the up-beach side of her; `wkR` is the reveal, 3.5 s from the
+first time you are inside 72 m, re-armed past 170 m. It drives: her own mist
+banks and five moon shafts (the sighting's `mistBanks` and `moonShaft`, pulled
+out of the whale's IIFEs into shared builders), the sighting's motes
+(whichever wants more), a silver mood tint, the moon's disc (+32 %) and its
+rays, the sky clearing round her, the lens (`WK_FOV` 88, eased by `wkFovK`,
+off in a fight or on the sights), a low swell (three saws closed to 150 Hz on
+the effects bus) and two hull groans at the reveal. **The fog has to come
+DOWN for the reveal**: at the wreck's own density she was a fifth seen at
+fifty metres and gone at seventy, so before the reveal the air is up to 1.9×
+and at it the density is lerped back to the stock 0.014 (never under it —
+`cullBeyondFog`). Measured on the walk: 0.015 at 135 m, 0.046 at 75, 0.0145
+from 55 to 35, the wreck's own again by 15; the lens 105 → 90.6 → 103. **And
+she is darkened**: every surface of her carries an emissive lift and with it on
+she read beige and lit with the moon right behind her; `wkDarken` takes the
+lift down to 40 % under the reveal (glass excepted: the wheelhouse windows
+keep their dull glow). `wkA`/`wkR` are declared up with the mood's, `wkFovK`
+by `HELM_FOV`. `__bw.wk()` reads it, `__bw.wkSet(seen, t)` forces it.
+
+**SECOND PASS, AFTER THE OWNER PLAYED IT (2026-10-13).** "Super laggy, long to
+load, the fog is pixelated and blocky, don't mess with the sky box, give the
+FOV back, only three gulls, parry them out of the sky, and the exit is a
+crouch."
+- **The lag, measured at 1280x760.** In the first ~40 s after load the boot's
+  warm chain is still running (mound relics 1.3-1.4 s, crab dress 0.7-1.4 s,
+  cave.glb 0.7 s, "warm wreck paint hull 5" 0.9 s) and a fight there averaged
+  84 ms a frame with 0.9 s spikes — and my own whole-ship sweep was running in
+  the preview tab on the same machine while the owner played. After the chain
+  the fight is 16.9-17.5 ms a frame (p95 ~20), the walk up 16.7 (max 23).
+  Fixed what was ours: the gulls' morph + vertex-colour material is compiled
+  when the model lands (`warmStep('gulls')`, 28 ms) instead of on first sight,
+  and the hull map's write-out (2048x512, colour and normal) is four warm
+  steps (`paintColor`, `paintNormal` in thirds) — 914 ms became 21 + three
+  steps under the frame budget.
+- **The blocky fog was the sighting's mist banks.** Billboards at the beach's
+  pixel size stood behind her as a bright slab with a hard straight edge. The
+  wreck has none now, and no moon shafts: the approach is the scene's own fog
+  (x1.55 before the reveal, back to stock at it), a silver tint at half the
+  first build's strength, the motes, the swell, the groans and a hull lift
+  down by a third at most (was 60 %, which muddied her paint).
+- **The sky is not touched**: no clearing over her, no bigger moon, no extra
+  rays. `mistBanks` and `moonShaft` stay as shared builders; the whale still
+  has its 56 banks and 11 shafts (checked after the refactor).
+- **The lens is a beat, not a place (`WK_LENS`).** It drew in by distance, so
+  standing 20-34 m from her — where the gull fight spills onto the sand — it
+  stayed narrowed. Now it draws in for 2.2 s on the reveal, holds 2.8, gives
+  back over 3: measured 105 -> 91.4 -> 105 inside eight seconds, and 105 when
+  standing at 35 m after.
+- **Thirteen gulls, not three**: the beach's ambient flock (`critters`, ten
+  instanced birds) spawns round YOU, so it came to the wreck too. Hidden
+  within 110 m of her (`critters.hideNear`).
+- **Out of the sky.** The parry window for a gull is 0.34 s from the guard
+  going up (`GULL.PARRY`; the game's 0.20 is short for a stoop that is on you
+  a fifth of a second after it is readable) and the facing test is in 3D (the
+  flat bearing is noise with the bird overhead). A parry throws it back off
+  the guard, tumbling, onto whatever is under it, where it lies on its side
+  beating a wing for 2.6 s (`knockGullDown`); a blow it survives knocks it down
+  too (1.5 s); a blow on it there is a riposte. Measured: guard at 2.4-2.8 m ->
+  stun, lands on the deck in ~2 s at deck + 0.10 on its side, still down a
+  second later, a light blow kills, the body lies at deck + 0.08. Standing
+  still on her deck: a dive every ~4.3 s, every one lands.
+- **The far tear is a crouch.** -2.6..1.0, crown 1.7 (1.45 over her sole),
+  edge wobble a hand's width. `FAR_ROOF` samples `breachTopAt(x, -1)` once and
+  keeps the LOWEST edge within 0.3 m either side; the passage (`FAR_PX0..PX1`,
+  about -2.0..0.25) is where a crouched body (1.03) fits, and `atFarX` is that
+  passage for the floor, the clamps and the fallback. In the thickness of her
+  side (the hold's line to the plating's outside + a radius, `farSkin`) only a
+  body that fits may be: standing, you are put back on the side you came
+  from, with "Crouch (Ctrl) to get through"; inside it `headroomClear`
+  refuses the stand. **The null-floor fallback has to ask too**: offering the
+  tear as "back the way you came" to a standing body put it in the side of
+  her, and the next frame pulled it on into the hold — 2 of 15 standing walks
+  along her side got in that way. After: 0 of 30, worst step 0.2 at the
+  tear's ends; crouched out from the hold and in from the sand both pass; the
+  hold sweep round the tear is worst 0.13 (the ladder's side).
+
+**THE WAY OUT SHOWS, AND THE GULLS CAST SHADOWS (2026-10-14, the owner's
+"5 and 1").**
+- **Sand blown in and the moon on it** (shipwreck.js, after the sole). One
+  height function (`spill`) for a fan of sand pushed in through the far tear
+  and over her boards (2.5 m in) and, outside, the ramp of it down to the
+  beach — the walk's own apron (`outerZ` mirrors `shipFloorAt`), so the feet
+  and the sand agree. Its edges are buried under the boards and the beach, not
+  drawn as a rim. Inside it is her own wet sand (the beach's pale sand glowed
+  in the dark of the hold); outside, the beach's. On it lies a pool of
+  moonlight (`farMoonPool`): the moon is at -Z, the side this hole faces, low,
+  so it shines in and on a little toward +X. Per-vertex colour (smooth at the
+  beach's pixel size, no map), additive, **fog off** (an added colour fogged
+  adds the fog's own: its dark would show as a pale sheet from far off), and
+  faint — at 0.26/0.32/0.46 it was a white lamp; 0.075/0.09/0.135 is a cold
+  wash. **Two wrong turns, both measured on screen:** the light laid on the
+  floor hung in the air over the gouge torn in her boards just inside the hole
+  and ended on its cut edge in a hard straight line; masking it and the sand
+  away from the gouge carved the sand into a raised crescent. The answer was
+  to let the sand fill the gouge (wherever it shows, it is above the boards)
+  and lay the light only where the sand is thick (`F` > 0.2-0.45), so it is
+  always on one unbroken surface. From across the hold it is a soft pale patch
+  at the foot of the far wall; from outside it glows inside the hole.
+- **The hole's edge, close up.** Crawling up to it showed pale stair-steps
+  round it: the lip the hull grows on a cut, in her painted plating, and the
+  lining cut on 0.33 m cells. Now the far tear's planks go by ARC LENGTH round
+  the whole edge, up the ends from the sand (`pts`), thin enough to hang no
+  more than 8 cm into the crawl space; a strip of her inner timber
+  (`farReveal`) joins the lining to the plating round the edge, so the 0.7 m
+  between them is torn timber and not the inside of her paint; and the lining
+  is cut on 0.1 m cells (`holdSide` 152 x 33). The breach's own pale steps
+  are as they were — rendered with the old lining for comparison, they were
+  bigger then.
+- **A shadow under each gull (`updateGullShadow`).** A soft radial map
+  (64 px, linearly filtered) on a disc, stretched a span across and a body
+  along and turned to the bird's heading, on whatever is under it:
+  `gullShadeAt` is the wheelhouse ROOF (6.89) when it is over the house and
+  above it, else `gullFloorAt` (the deck, the hold through the hatch, the
+  sand). Strength 0.78 x k^2 with k = 1 - (h - 0.4) / 11.5 — measured 0.51 at
+  1.5 m up, 0.19 at the hunt's 5.6, none past ~11.5 — so a dive darkens and
+  tightens as it comes. None once the bird is down on the ground, stunned or
+  dead (`landed`, `landedDead`). Not the moon's shadow, which at 6.6 degrees
+  would land forty metres off. Warmed with the birds; a fight measured 8.2 ms
+  a frame with all three drawn.
+
+**A NEWCOMER'S PLAYTHROUGH, AND WHAT IT SMOOTHED (2026-10-14).** Walked from
+the spawn to the wreck, in by the breach, up the ladder, the gull fight with
+the sand shovel (timed swings only, no parry), the wheel, the head, the key,
+the barricade, the chest, the peg, and out on hands and knees. Frames on the
+ship 8-10 ms (p95 ~11); no errors. Found and fixed:
+- **The gulls' motion.** The stoop went from a stall to 10.5 m/s in one frame
+  — now `S.spd` ramps at 48 m/s^2 (full speed in ~0.2 s; the contact test
+  uses |v|^2, not DIVE_V^2). The folded stoop wings blend in and out
+  (`stoopK`) instead of switching. Knocked down or killed, a gull hits,
+  bounces once (`bounced`, a fifth of its speed), then EASES onto its side /
+  back (`gullEaseAngle`, wrap-aware: a tumble leaves it many turns round)
+  instead of snapping; getting up, its angles are wrapped and the flight
+  attitude rights it, from 4.5 m/s up, instead of a flip and a 7 m/s launch.
+  Turning is rate-capped (4.5 rad/s, 7 in the stall and the stoop): when a
+  course reversed it swung 0.6 rad in a frame. And it keeps clear of her
+  (`gullClearY`): above her rail over the hull, above the wheelhouse roof
+  rising smoothly within 1.5 m of it, and a dive's line is refused if it
+  passes through the hull or the house (`gullLineClear`) — measured, no gull
+  inside her in ~1,500 frames of a fight. A newcomer swinging on the stoop
+  killed two and left the third at one in 30 s, taking nothing.
+- **The helm.** Stepping up to the wheel moved the camera 0.23 m and 7
+  degrees in its first frame (an exponential ease is fastest at the start);
+  now `helmP` runs linearly over 0.55 s and `helmT` is its smootherstep —
+  0.000, 0.001, 0.002, 0.004 m on the first frames, 0.054 at most. The
+  instructions at the helm were never seen: looking out to sea nothing is
+  hovered and `updateHover` cleared the prompt on the first frame; the helm
+  owns the prompt now (`helmOwnsPrompt`). Solving it says "Something fell
+  into the hold · E to step away" instead of going blank.
+- **The crouch hint never showed** — the same clear; see ui.md, `flashPrompt`.
+
+**HER STORES ARE THE OWNER'S PIRATE-SHIP SET, AND SHE IS STILL A CRAB BOAT
+(2026-10-14).** `assets/pirate-props.glb` (`tools/pirate_pack.py`: the zip's
+one mesh split into loose parts, parts whose boxes touch clustered into
+pieces, each named, centred, based at 0, maps to 512 JPEG) replaces every
+stowed box or cylinder she had — the furniture set's casks, the deck's own
+casks and crate, two of the port pot stacks, the two loose hold baskets — and
+each piece stands where the thing it replaces stood and is solid where that
+was solid (`PIRATE` in shipwreck.js), so the swept walk is unchanged. **The
+owner's word: she is a crab boat.** The cannon, the shot, the cutlass, the
+treasure chest and the stocked anchor are left in the pack (an anchor was
+tried on the foredeck and cut), and three of the five port stacks are still
+her steel crab pots — the set has nothing like them and they are what says
+what she was. Lit like everything else of hers: each material cloned with a
+colour scalar per set (`K`), a cold cast on the wood (`TINT`), and an emissive
+lift off its own map, 0.26 on the deck and 0.55 below it where no moon
+reaches; metalness 0 (no environment map). Sweeps after: hold forward worst
+0.092, deck bow 0.142, quarters 0.104, nobody trapped.
+
+**`solid()` boxes are COLUMNS, 2.6 m of them, and carry a real `top` now.**
+A player box runs DECK_Y - 0.4 to + 2.2 whatever stands in it. The gull
+ragdoll took that as the gear's height, a gull that came down by the gaff's
+post started inside one, and the push out of it fired the bird 4 m across the
+deck in a quarter of a second. Each solid now takes an optional seventh value,
+where the thing really stops (the pirate pieces from their measured heights
+times scale, plus whatever is stacked on them; pots `0.03 + n * 0.36`; the
+coil 0.25; the netting 0.45). With no `top` (the mast, the gaff post) a
+ragdoll treats it as a column it is pushed out of and never lands on.
+
+**A GULL BROUGHT DOWN IS A RAGDOLL (2026-10-14, `gullRagdoll`).** The model
+is skinned at load (`gullSkin`, `GULL_BONES`: body, each wing in two, head;
+weights by |x| past the shoulder 0.09-0.15 and the wrist 0.34-0.42, the head
+past z 0.10-0.15 within 6 cm of the centreline). In the air the bones sit at
+rest and the shape keys flap it exactly as before. Knocked down or killed it
+becomes ten points (`GULL_RD`): a rigid five-point body (chest, tail, both
+shoulders, keel — the keel is what makes it 3-D rigid), a wrist and a tip
+each wing, a head; sticks for the bones and AT-LEAST limits for the joints (a
+wing to the vertical and not over its back, swept so far, the wrist folding to
+a right angle; the head lolls but cannot fold into the body). Position-based:
+gravity 14, feather drag (wings 2.0/s, so they trail a fall), 120 Hz substeps,
+four iterations; velocity is what the solve came to, clamped at 14, and a WALL
+PUSH ZEROES the pushed axis instead of becoming speed (`rd.w`). Each point's
+floor is `gullShadeAt` (deck, the hold through the hatch, the roof, sand),
+asked once a frame at y + 0.3; walls are the wheelhouse box, the bulwark from
+either side (`deckHalfAt` above DECK_Y - 0.35, the hull's own half less the
+lining below) and the props by `top`. `rdPose` reads the body's frame (x
+shoulder to shoulder, z tail to chest, against the rest frame `q0i`) onto the
+group and turns each bone from its rest direction. Stunned, it thrashes
+(zero-mean wing forces, so never a lift) and once down beats one wing against
+the boards in bursts; the stun counts from its landing, and getting up hands
+the frame to the flight code (`S.right` rights it at twice the bank rate for
+0.9 s) while the bones slerp back to rest (`bonesOff`). Dead, it sleeps once
+every point is under 0.06 m/s for 0.6 s. Measured: killed over the deck it
+rests with every point exactly on its floor (min clearance 0.000), thrown at
+the house it stops at the wall, thrown high it clears the rail and lands on
+the sand; stunned at 2.2 m it lands, struggles, gets up at 1.2 s and is
+hunting again in another second.
+
+**AND THEY HAVE THE OWNER'S VOICES.** `gullCall` (five calls) and `gullCry`
+(two cries) are cut from the owner's one gull take. Idle (`gullVoice`), each
+of the three calls every 6-15 s while wheeling and 3.5-8 s once hunting,
+`playSampleAt` from where it is, gain 0.24/0.34 falling off at 12 m and
+silent past 110 — about one call every 3 s across the three, faint from up
+the beach. The stoop's tell is a cry (`sfxGullShriek` plays `gullCry` when
+loaded, the synthesised shriek before), a hurt is a cry at 1.2x, a parry 1.12x,
+a death 0.84x. `sfxGull`, which every other gull on the beach uses, plays one
+or two of the real calls when they have loaded, duller with distance.
+
+**WHAT THE RAGDOLL'S STRESS TEST FOUND (2026-10-14).** Thirty throws at a
+time from random spots on her deck, half kills and half stuns, checked every
+frame for a point under its own floor, a point inside the deck's thickness,
+NaN, and speed. What it took to come back clean (30/30, worst speed the throw
+itself, ~10 m/s):
+- **The bulwark goes by the BODY's side** (`rd.out`, worked out once a step
+  from the five body points). Per point, a bird thrown just over the rail
+  hung outside her by a wing still lying on her deck, the stick through the
+  plank. Above the cap a point is free, onto the cap it lies on it.
+- **Her hold's bulkheads are walls** (`rd.hold`): a stunned bird slid through
+  the forward one and lay on the sand in her bow.
+- **A floor that jumps up more than 0.15 m in a step is a RISER** — the
+  wheelhouse's door steps from the side, the deck's edge from inside the
+  hatch — the point is put back and PINNED there for the step (`rd.pin`), or
+  the sticks drag it straight back in under the edge.
+- **`GULL_BOXES`**: what the player's walk handles its own way (the hatch's
+  coaming is `shipHoleEdge`, the ladder well's lip is walked into) or never
+  needed (the hatch boards, the second coil, the bucket), as boxes with real
+  tops. Pushed out by the face the point came IN through, so a 12 cm coaming
+  is not crossed by a point more than halfway into it.
+- **Stunned in the hold, it climbs out by the hatch** (`climb`): along under
+  her deck at DECK_Y - 0.7 to the hatch opening, then straight up; the
+  `gullClearY` lift is off for it. Before, it got up through the planking.
+- The house rule pushes a point that STARTS inside the wheelhouse by the
+  least depth, which is a metre in a frame — a test artifact only (no gull is
+  ever inside it), but it is why spawn points in a test avoid the house.
+Warmed, a fight with a stun and two kills: avg 7.5 ms, p95 8.7, max 14.7.
+
+**THE SWEEP'S "STANDING ON SOMETHING NOT UNDER YOU" FOUND THREE OLD THINGS.**
+The hold's two bulkheads were drawn a quarter-metre proud of her deck (a
+ridge right across her, abaft the house and forward of the hold) that nothing
+collided with — they stop under the planking now. And the floats and the
+netting bundles down the port side had no box out to the bulwark, so you
+stood inside them; both boxes run to the rail now (with real tops, 0.51 and
+0.45). Deck strips after: -8.4..-4.6 worst 0.401 (a spot on the hatch's
+coaming stepping into the hatch — a jump over the coaming still drops you into the
+hold), 6.8..11.4 worst 0.089, nothing outside, nobody trapped.
+
+## The chest through the barricade, and gulls that hit things
+
+- **THE CHEST GLOWS A LITTLE** so it can be seen through the barricade's gaps
+  from the deck: `dressChest` gives the chest's own materials a warm emissive
+  (0xffd9a8 at 0.62) and hangs a small pooled lamp in it (`lpAlways` 11, so it
+  is lit from the far side of the boards, not only beside it). Both breathe
+  together in `updateShipChest` off `shipwreck.userData.chestGlow`.
+- **A FLYING GULL HAS A SOLID WORLD NOW** (`gullSolidAt`): the sand cliff, the
+  boulders near her (`rockColliders` within 70 m, cached), her wheelhouse
+  below its roof, the mast and the gaff's post as columns, her hull and rail
+  from outside, and her stowed gear up to each thing's real top. Wheeling and
+  hunting it looks 0.35 s ahead and climbs over (`gullAvoid`); diving, passing
+  or glancing off a guard it does not, and what it flies into puts it back at
+  last frame's spot (`S.prev`) and knocks it down stunned (`bonkGull`).
+- **AND IT MUST BE ABLE TO GET UP AGAIN.** The ragdoll keeps its POINTS out of
+  the wheelhouse box grown by a point's radius; the flying bird keeps its
+  BODY out of the box grown by 0.17 + 0.18. A bird that came to rest against
+  the wall got up inside that wider margin, "flew into" the wall on its first
+  frame and was knocked straight back down — measured: pass at frame 0, stun
+  at frame 1, for ever. Getting up now carries `S.grace` 0.8 s, during which
+  there is no bonk and `gullUnstick` eases it out to the nearest clear side.
+
+## The key on the hook, and Billy off the wall (2026-10-15)
+
+- **THE HEAD IS GONE; THE KEY HANGS ALONE.** `boatKey` hangs from the gaff's
+  hook by its bow (`KEY_HANG`: a quarter turn about Y puts its flat to the
+  helm, a quarter about Z stands it on end — the bow came out on top, checked
+  in a render). At its own 13 cm it was a few dark pixels from the deck, so it
+  hangs at 1.4 and comes back to 1 when taken, with brass at emissive 1.5 and
+  a glint at strength 4.2 (2.4 peaked at 0.21 opacity and the night ate it).
+  `shipwreck.userData.head` (still built by the model) is taken off the hook.
+- **`dropShipKey` / `takeShipKey`.** The stars drop it into the catch basket
+  (`scene.attach` keeps where it hung); it is takeable from the moment it
+  lets go, so its pickup id is the hook's position on every load. Taken, it
+  loses its aim sphere and its glint (`dropShine`) — the examine screen
+  re-parents the world object, and a glint left on it shows there. A replay
+  from a save whose chest is open does not hand a spent key back.
+- **OLD SAVES** carry `headTaken`: `migrateHeadSave` turns a carried head
+  whose key was still in its teeth into the key, drops the head's pickup
+  from the replay (it would wait out the full eight seconds for nothing), and
+  marks the key taken so it is not also in the basket.
+- **BILLY'S LINES** are the owner's, verbatim; "Do you need help?" is offered
+  once key, heading and "which ones" are all asked (`billyAsked`, saved).
+- **THE PLAQUE'S SCREWS** are on the wood inside the scalloped corners in
+  both photographs (`BILLY_SCREW_UV`, checked by drawing them on both PNGs).
+  They ride a group that copies the plaque's position and rotation but NOT
+  its scale — `scale.x` carries the photo's aspect and would squash a screw.
+  Out, they lie on the wheelhouse sole (`SN.DECK_Y + SN.BR_STEP`).
+- **THE CAPTAIN IS THE VERY OLD FISHERMAN** (owner's answer). See dock.md.
+
+**SHE WAS PAPER (the owner, 2026-10-16): depth, rot, the bulwark, the gulls.**
+- **`rotPass(S, {k, rust, seed})`** runs after a map's draw jobs on every
+  surface that asks (`opts.rot` on hull, deck, plank, paint, inner, sole and
+  wood): rot patches that LOWER the height (so the normal map sinks them), mould
+  specks, rust discs with streaks running down, worm holes.
+- **HER TIMBERS** (shipwreck.js, before "the hold"): stanchions inside the
+  bulwark, two wales proud of her sides (lofted off `hullPt`, cut where she is
+  breached or holed), a rib every 0.9 m up the hold lining (seven segments
+  each, rotation x = +atan2(dz, dy) — the sign was measured), beams under the
+  deck clear of the hatch and the ladder well, the deck's thickness round both
+  openings, and carlins along the hatch.
+- **THE BULWARK BREAKS BY THE PLANK** (`bulwarkWear(x, sg)`, `COURSE` 0.17).
+  The old wear was a random dip at every 15 cm station and drew the rail's top
+  as a saw blade — the torn sheet in the owner's screenshot. Now whole courses
+  go out of a 1.45 m stretch, each lower course over a narrower span than the
+  one above (a stepped notch), the old full gaps are a stub of one or two
+  courses, and each station is a box of its own with end grain wherever the
+  next is lower. **The cap rail only runs where the planking under it is
+  whole** — it was placed at full height everywhere and floated over every
+  worn stretch. Stanchions outlive the planking; now and then one is snapped
+  off above the highest board left.
+- **A replace in this file must be bounded by the function, not the next
+  banner**: replacing from `bulwarkGeo` to "HER BULWARKS AND RAILS" took 500
+  lines with it once (restored from the preview mirror). Find the closing
+  `\n}\n` after the function's own line.
+- **GULLS THROUGH THE DECK, the last of it.** The deck-slab rule (a point in
+  the deck's thickness is kept in the hole it came from, or under the deck)
+  stopped bones crossing the planking, but a gull dead on the deck BESIDE the
+  hatch could drape a wing over the coaming and let it hang down inside —
+  shoulder on the planks, wrist at 2.76 m inside the hatch, the bone through
+  0.6 m of coaming. `rdCollide` now keeps every point below the coaming's top
+  on the side of it the CHEST (particle 0) is on; over the top it is free.
+  Forty random drops round the hatch: no point inside the deck, no wing
+  through the coaming.
+
+**THE FIFTH PASS (the owner, 2026-10-16, four screenshots).**
+- **"A strip of wood sticking out of the deck each side, the length of her"
+  was the HOLD LINING**, lofted to `DECK_Y + 0.35`: it stands inboard of her
+  side (≤ HOLD_HZ 3.7) so it came up through the planking as a 0.25 m wall
+  along the hold on both sides. It stops at `DECK_Y - 0.01` now. Found by
+  casting the screen pixel the strip was on (`setFromCamera`) and reading the
+  mesh's bounds — a straight-down scan missed it, the wall being vertical.
+- **The hatch's deck-edge pieces ended IN the deck's plane** (top at exactly
+  DECK_Y): 1.5 cm lower now.
+- **HER TOPSIDES ARE THICK** (`bulwarkGeo`, `TOPSIDE_T` 0.13). The skin
+  (`hullGeo`) stops at the deck — its rows run KEEL_Y..DECK_Y, `v` still the
+  rail-relative one so the paint and holes do not move — and above the deck
+  her side IS the bulwark: lofted on `hullPt` (flare and rake), outer face in
+  `M.hull`, inner face, top and end grain in `M.plank`, broken a plank at a
+  time (`bulwarkWear`). `transomTopGeo` is the same across her stern. The
+  cap rail sits ON the top now (`railY + 0.035`, `TOPSIDE_T + 0.07` wide) and
+  the stanchions lean with the flare against the inner face. `quadOut` winds
+  every face by the normal it is told, so no face is guessed. The two rot
+  holes that reached half a metre over the deck are kept to the skin: cut
+  through the topside they read as a doorway in her bow.
+- **The bow is solid**: walks from 21 foredeck spots × 8 headings keep the
+  body's centre ≥ 0.34 m from the inside of her sides. MEASURE IT WITH THE
+  RAKE INVERTED — forward the planking at x comes from a station up to 1.9 m
+  aft, and `halfAtY(x)` at the walk's own x said the body was 6 mm inside the
+  wall. From the sand, 35 walks at her bow: the only one that ended inside her
+  skin went through the breach.
+- **The dune cut** (main.js, `uShipCutTop` / `cutHW`) stopped under a rail the
+  sheer lifts 0.3 m aft, and at 0.96 of her half-width, short of the thick
+  sides: now `DECK_Y + BULWARK + 0.45` and `halfAtY - 0.06`.
+- **The drifts** were spaced off her by `sz / 2` and then spun: spaced by
+  `rEff = 0.58 · max(sx, sz)` now, checked over that whole reach.
+- **A real hook**: one `TubeGeometry` along a J (eye in its own plane, collar,
+  shank offset so the bowl hangs plumb under the eye, the bowl 1.38× thick,
+  drawn down to a point) — the bowl's bottom where it was, so `KEY_HANG` did
+  not move. The chain had nine links running down through the hook (sized for
+  the head that hung under it); it is `NL` links to the eye now (three).
+- **Signs**: `signMat` is old — 620 specks and 14 flakes back to the wood, a
+  sun bleach over all of it, a grime line, a split, mould, letters at 0.82,
+  lift 0.24. **WHEELHOUSE** over its door outside (`signBoardZ`, between the
+  dead lamp and the roof edge). A manual render of a small far mesh can show
+  it hidden: the distance cull (`bwCullR`) is only re-run by a frame.
+- **No hints aboard**: the helm says only "E to step away"; "Something fell
+  into the hold" and "Crouch (Ctrl) to get through" are gone.
+- **Gulls and the new sides**: `rdCollide`'s inner limit above the deck is
+  `min(deckHalfAt, hull - 0.13)`. 20 drops: nothing in the deck, the coaming
+  or her sides.
+- **ONE RAIL (2026-10-17: "the railings are sideways blocks, not connected").**
+  The cap rail was 84 axis-aligned slabs, square to the world while her side
+  curves and climbs: a staircase of loose blocks round the quarters. It is
+  `capRailGeo` now, lofted on `hullPt` at `railY`, `RAIL_H` 0.07 tall and
+  `RAIL_OVER` 0.035 over each face, top/edges/underside and end grain where a
+  stretch is broken out; the transom carries the same section.
+- **THE BOW CLOSES (2026-10-17: "a gap in the middle of the front").** The
+  topsides skipped stations narrower than `TOPSIDE_T + 0.06`, which left a slot
+  of sea where her sides meet. Every station is built now and the inside face is
+  drawn in to her centreline (`In`: offset `min(T, halfAtY + 0.004)`, and the
+  cap rail's `inOff` the same) — PAST the centreline by 4 mm, so the two sides
+  overlap. At `- 0.003` a ray straight down her bow at 1.4 m still went out
+  through a 6 mm slit; to close a seam, overlap it, never meet it.
+- **Billy glimmers** (`billyGlint`, 2026-10-17): an additive star sprite on his
+  body, depth-tested (so only through her door and glass), fog off, scaled to
+  `clamp(d·0.03, 0.14, 2.6)` so it holds a few pixels at any distance; twinkles
+  every 1.6-3.4 s over a sheen. Only while `billyState === 0`. Measured from the
+  sand 14 m out: max 245 at its peak, in the doorway. From further up the beach
+  her side hides the door — the line through the doorway only reaches the sand
+  inside ~20 m on the walk's line.
+- **A set star goes out** (2026-10-17: "it disappears instead of fully
+  glowing"): `target` 0 for a set star, eased out at 2.2/s after its flare,
+  and its sprites scaled by `max(lit/0.4, flare)` so no faint dot is left.
+  Measured: 1.00 at 0.25 s, 0.22 at 1.25 s, 0.00 at 2.75 s; a broken run brings
+  it back.
+
+**THE ROUND OF 2026-10-17 (the owner: lantern, breakables, glimmer, flicker,
+the reunion).**
+- **The deck lantern is gone** (`S.userData.lantern` is no longer set).
+- **Billy's glimmer waits for the reveal**: `updateBillyGlint` hides it until
+  `wkSeen` and inside `WK.REVEAL` of her — the same moment as the sting and the
+  FOV change. Its own scratch vector (`_bgV`).
+- **No reunion.** The plaque goes straight on the wall when you hand him over
+  (`returnBilly` → `mountBillyHome()`), and the fisherman's `fish` node is the
+  last line, "I thought I lost you to the sea.", whose `enter` gives the Ring of
+  Connection. No drawn frames of Billy anywhere: his pack icon is his photo
+  (`billy.photo[0]`).
+- **FLOOR FLICKER WAS THE HOLD POSTS' TOPS.** The z-fight scan (rays from above
+  and from eye height in all directions, the FIRST hit and any parallel face
+  within 2 mm behind it) found 13 cm squares in the merged `M.wood` lying in
+  the deck's own plane every 0.875 m down the port side: the hold's frames are
+  slabs from `HOLD_Y` to exactly `DECK_Y`, so each one's top was IN the walking
+  surface. They stop 2 cm under it now. Anything that stands up to a surface
+  stops short of it or goes through it; never flush.
+- **SHE HAS THINGS TO BREAK** (`smashShipStore`, main.js; `nav.breakable`, the
+  model): every barrel and crate of the pirate set and the three stacks of pots
+  down her port side, 18 units. The barricade's door: a `physProps` entry with
+  an invisible box proxy (in the SCENE at the unit's middle, so `mesh.position`
+  is the world position every other path reads) and its `SN.props` box spliced
+  out when it goes. The stores STAY BAKED (3-4 draws for twenty pieces): each
+  unit's box is taken off its pieces before the bake — `shipwreck
+  .updateMatrixWorld(true)` first, the stores group was only just added and
+  `setFromObject` measured it in her frame — and on the break its triangles are
+  found in the merged meshes by centroid and the index rewritten without them.
+  A pot stack is its own group (one draw). Barrels go to six staves and two
+  heads, crates and pots to their sides in halves; each piece is drawn with its
+  triangles twice (wound back) so a stave is not a hole from inside without a
+  DoubleSide clone (a compile on the hit frame), laid flat in its geometry, and
+  kept aboard (`confine`: inside her sides; `restAt`: the deck, or the hold
+  through the hatch). Gibs flagged `dry` skip the sea's float/hide and are
+  folded into the rubble merge once at rest. Sacks are cloth and stay. The save
+  carries `shipBrk` (unit indices).
+- **The rest of the flicker scan** (rays from eye height in every direction,
+  deck and hold): the quarters bulkhead and the window glass ran to exactly
+  `DECK_Y` / the sill and head (now 2 cm short / 2 cm into them); the coaming
+  started on the deck (its foot is 3 cm down through it now); the door steps'
+  risers shared their treads' tops and the deck; the hatch edge pieces filled
+  the same cube at each corner; the hold frames' overlapping segments were one
+  section (every other one 4 mm slimmer). And **the deck has an underside**, a
+  second sheet 2.5 cm down: as one double-sided sheet, everything standing on
+  the deck had its bottom face in the hold's ceiling. The sole's half-width is
+  clamped at 0.05 at the stem. A scanner trap: a ray that lands exactly on a
+  grid line hits two neighbouring triangles of one mesh at the same distance —
+  that is a shared edge, not a fight (the scan at z = 0 reported both the sole
+  and the deck "overlapping themselves" from it).
+- **The bow** after the 4 mm overlap: 0 of 1,296 rays from inside her bow
+  below the rail get out.

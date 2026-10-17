@@ -302,3 +302,12 @@ files are still coming cannot be entered yet (retry).
 
 - **Elvédor's flags (2026-10-16):** `elvStage, elvJar, elvGreeted, elvLantern`. His body is a mutant with `saveKey`
   `elvedor@9.3,-598.5`; `deadUnitKeys` retires him on a load, which `updateElvManPose` reads as "already dead".
+
+## New flags (2026-10-15)
+
+`billy` (0 her wall, 1 yours, 2 dock wall), `billyScrews`/`grateScrews`
+(bitmasks of screws out), `billyAsk`, `grateOff`, `seaArt`, `seaOn` (the weapon
+it is set in). `headTaken` is gone; `migrateHeadSave` reads it from old saves.
+Checked by save -> reload: full chain done, a mid-way save (Billy carried, key
+lying in the basket, two screws of each set out, artifact loose), and an
+old-format save with the head carried (comes back as the key, in hand).

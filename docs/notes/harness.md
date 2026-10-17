@@ -340,3 +340,137 @@ black lifts (`__cpReady`, `__cpMake(name)`, `__cpReload`, `__cpCheck`; `__cpAuto
   ground floor take `elvLandFloorAt(x, z, HOUSE_Y + 1.05, 0.45)` yourself.
 - A still's base64 with anything prepended: decode from the `/9j/` (`re.match` of the base64 run from there), or the
   first characters are taken as data.
+
+**A LOST WEBGL CONTEXT CAN GET THE WHOLE HOST BLOCKED.** After a long session
+of renders in a hidden pane the context went ("CONTEXT_LOST_WEBGL"), the game
+reloaded itself as it does on a loss, and every load after that died in
+`new WebGLRenderer` with "Web page caused context loss and was blocked" —
+Chrome blocks 3-D for the HOST for a while after a GPU reset. The same server
+under `http://127.0.0.1:<port>/` is a different host and loads at once. The
+first sign is a page whose `__bw` never appears; read the console before
+waiting longer. (On the way down it also threw "reading 'trim'" inside
+`renderItemIcon`: three's program info log is null on a lost context. That is
+the loss, not a bug in the icons.)
+
+**`tools/shipsweep.js` skips starts inside her gear.** A start inside a piece's
+box grown by the body's radius used to be kept when the push-out left the body
+where it was (a sealed pocket behind the chest and two casks), and every walk
+from it reported 1.9 m jumps that no player can produce. With the rAF loop
+frozen (`window.requestAnimationFrame = () => 0`) a 0.6 m sweep of the quarters
+runs in ~12 s; the whole ship (`__shipSweepAll(true)`, polled through `__swr`)
+in about six minutes. For the wreck approach: `__bw.wk()` and
+`__bw.wkSet(seen, t)`; for the gulls: `__bw.gulls`, `gullsAwake`, `gullToken`,
+`gullStrike(P)` (aim with `lookAt` first), `magTrace(dir)`.
+
+**A HIDDEN PANE IS A 0.5 Hz GAME.** With the app behind other windows the
+preview reports `document.hidden` and rAF fires every ~2 s: "loading" takes
+the full 40 s cap (the texture uploads run per frame) and a walk measures
+1.9 s frames — none of it the game. Check `document.hidden` first. To play
+anyway, freeze the loop (`requestAnimationFrame = () => 0`) and drive
+`__bw.frame(1)` in a loop that yields (`await setTimeout 0` every few frames):
+`animateFrame` takes its dt off the real clock, so that is real-time play with
+each frame's real cost measurable (`__play` in this session's transcript).
+Speeds computed from YOUR loop's clock do not match the game's dt (it clamps
+and floors it): compare displacement with the unit's own velocity instead.
+And `inBridge` is sticky across a teleport out of the wheelhouse — step off
+her first (the sweep's own rule).
+
+**THE BOOT, MEASURED (2026-10-14).** Start Game waits for every download,
+parse, warm and texture upload (`startLeft`), capped at 40 s. In a hidden
+pane it always hit the cap with ~470 uploads queued — the uploads are fast
+(82 in 158 ms), the frames were not. Focused, the parse of ~90 MB of models
+on the main thread is most of it (13 setTimeout ticks in 6 s while parsing),
+plus three's first-use uniform queries, which wait on each program's link.
+The committed build measured the same; nothing in it is the wreck's.
+
+**A SWEEP LONGER THAN 45 S IS STARTED, NOT AWAITED (2026-10-14).**
+`javascript_tool` gives up at 45 s and `__shipSweep` over a 3 x 9 m strip at
+0.6 m takes longer (it is synchronous, so the page is blocked anyway). Queue
+the jobs on `setTimeout`, write each result to `window.__swr`, return at once,
+and read `__swr` in a later call. The gull GLB lands some seconds after
+`beginGame`: a gull with no `mesh` has no `bones`, and `rdStart` refuses it.
+
+**A PANE THAT SAYS IT IS HIDDEN LIES ABOUT EVERYTHING (2026-10-14).** With
+`document.hidden` true (the app in the background, even with the pane
+shown) three things change: `setTimeout` is clamped to 1 s, so a harness
+that yields with `setTimeout(0)` crawls and the game's own timer-driven parse
+chain does too (Start hits its 40 s cap with work left); the GPU process
+deprioritises the page, so frames stall for 300-1400 ms in a single GL call
+(`uniformMatrix4fv`, `vertexAttribPointer` — the command buffer waiting on a
+starved GPU); and the timer queries read 30 ms for a beach that draws in 9.
+Yield with a `MessageChannel` (`__yield` in the scratch `__setup.js`), pace
+frames to 16.6 ms of wall clock, check `document.hidden` before believing a
+stall, and drain `startGate().parts.warm` to 0 before measuring a walk on a
+skip-intro boot (the intro is what normally covers the leftovers).
+Also: `__bw.blocking = true` stamps `blockStart`, so a bot that sets it as a
+stoop comes within ~3.3 m parries (PARRY), and `attackAction()` swings.
+
+## Measuring frame spikes: two traps in the pacing and the pane (2026-10-15)
+
+- **A SPIN-YIELD PACER IS A GARBAGE GENERATOR.** Pacing harness frames at
+  60 fps with `do { await yield() } while (now - a < 16.6)` creates a
+  MessageChannel, a promise and a closure on every spin — hundreds of KB a
+  frame — and the GC pressure it adds (a 5 MB scavenge every ~8 frames)
+  shows up as the GAME's spikes. Measured directly the game itself makes
+  60-100 KB a frame. Pace with a synchronous wait and ONE yield a frame:
+  `b.frame(1); while (performance.now() - a < 16.6) {} await yieldOnce();`.
+- **A HIDDEN PANE STALLS THE RENDER ON ITS OWN.** With the Browser pane not
+  displayed (the tools say so even while `document.hidden` reads false),
+  the main render blocks for 30-240 ms about once a second inside whatever
+  trivial GL call fills the command buffer (`uniform3f`, `bindTexture`):
+  no program compiled, no texture or buffer uploaded, no object drawn for
+  the first time (checked with an `onBeforeRender` hook on all 3,742 meshes
+  and a wrapper on `initTexture`), the intro video paused. Nothing is
+  consuming the canvas's frames, so the context waits for a back buffer.
+  Spikes measured in a hidden pane are not the game's; check
+  `tabs_context` for "hidden" before believing any.
+- **A SECOND RUN IS THE CHEAP FIRST-USE TEST.** The same deck fight run twice
+  in one page: 145-397 ms frames the first time, max 77 ms the second. What
+  goes away on the second run is a first-use cost; what stays is recurring.
+- **`Object.assign(window.__bw, { get x() {} })` COPIES THE VALUE, not the
+  getter** — `pipeBusy` read false forever. Put getters in the literal that
+  defines `__bw`, or export a function.
+- **Teleporting through scripted spots can leave the game frozen** by a cut
+  (the snorkeler's key throw, the dock's pack) — `frozenWhy()` now lists every
+  flag `frozen()` reads. Check it before calling something "broken".
+- **A teleport onto the wreck's deck can land in the hold** (y 1.9, the gulls
+  never hunt, a fight measures nothing): set `camBaseY` with the position and
+  read `camera.position.y` back before trusting the run.
+- **The scratch boot stubs `requestAnimationFrame`** for good; a bot written
+  as a rAF loop after it never runs. Drive frames with `__play(ms, fn)` and
+  keep the result on `window` — a call that outlives 45 s loses its return.
+- **A getter/setter only works in the first export block.** The second part
+  of `window.__bw` is merged with `Object.assign`, which copies a getter's
+  VALUE once: `__bw.started = true` written there set a plain property and
+  nothing in the game saw it. Put accessors beside `get gullsAwake()`.
+- **`started` is false in a harnessed game** (no lock): set `__bw.started =
+  true` before testing anything gated on it (the drain's audio is).
+- **Skipping the intro moves its warm-up into the walk**: the first seconds
+  after `bootSkip` show 100-430 ms frames, all `warmBeachDraw` compiles and
+  geometry uploads. Not a regression; the intro normally covers them.
+- **With `__bw.started = true` the beach is live**: the snorkeler opens his
+  dialogue by himself near z -34 and something there blocks a straight walk
+  at x 9 (it stalls at z -33.7). Walk past it at another x or close the
+  dialogue; do not read a stalled walk as a regression.
+- **A real rAF cannot be borrowed while the pane is hidden**: an iframe's
+  `requestAnimationFrame` never fires either. Isolated 0.4-1.6 s frames in a
+  spin-yield `__play` with the pane hidden had no compile and no slow upload in
+  them (every `tex*Image2D` was timed) — the documented pacing artefact.
+- **MERGING MAIN INTO THIS BRANCH WITH UNCOMMITTED WORK (2026-10-17)**: the
+  branch had no commits past main's old tip, so it was a fast-forward: back up
+  (`git diff --binary`, a tar of every changed and untracked file), `git stash
+  push -u -m <tag>`, `git merge --ff-only origin/main`, `git stash apply <sha>`,
+  then `git checkout --conflict=diff3 -- main.js` to see the BASE in every hunk
+  — without it half the hunks cannot be read (main deleted the abduction, the
+  saucer hall and the fence whole; this branch deleted the captain's head and
+  the shell door). Resolve, `git reset` to drop the index stages, drop the stash
+  by its tag. After the merge, Start is ready at ~40 s cold — main's own figure
+  (measured on an untouched copy of main), not the merge.
+- **THE MERGE'S TWO REAL LOSSES (2026-10-17), and how to look for them.** (1)
+  `bwDequant` was dropped when the loader's parse moved onto `bwParseLater`, so
+  every quantized/gzipped model (driftwood, gem ring, octopus ring, skull key)
+  came in as raw int16 — "the driftwood textures are broken". Check: no mesh
+  with `geometry.userData.bwQ` and every position array a Float32Array. (2)
+  "I found your fish" was aligned into main's new `wreck` dialogue node. A
+  line-presence diff cannot see a MOVED line; compare each added line's
+  position against its nearest unique neighbour from before the merge.

@@ -2641,3 +2641,134 @@ lighthouse.md).
 heavy still sets `FLAME_BURN` (2.6 s × 0.17/s); a blow while `flame.k` ≥ `FLAME_LINGER.from` (0.12) with the flame
 weapon in hand leaves `FLAME_LINGER.dur` (1 s) × min(1, k·1.4) of the same trickle — 0.17 hp at most — and never
 shortens a burn already running.
+
+**THE PEG'S STRING IS HELD: THRUST, THRUST, SLASH (`pegSlashing`, `PEG_KEYS[3]`).**
+The owner asked for a light thrusting weapon that is good at range, with a
+held combo of two thrusts and a slash. What it took:
+- **THE PRESS IS THE ATTACK, NOT THE CLICK.** Every swing in this game goes out
+  through `click`, which waits for the button to come back up; on the peg the
+  `pointerdown` calls `attackAction()` (only with the lock or on the drag
+  fallback, where a click would have swung) and sets `pegPressSwung` so the
+  click that follows is swallowed. Holding chains at `PEG_LINK` while
+  `windHeld` (the chain test in `updateViewmodel`); letting go finishes the beat
+  in the air and stops. The string ends at the slash — hold through it and
+  nothing more happens. Only **Shift + hold** arms the charge latch, and that is
+  the charged lunge (stage 4); the imbroccata (stage 5) is unreachable now,
+  its keys left in `PEG_KEYS` for the day it gets an input again.
+  `pegLunging()` is stage 4 alone.
+- **THE SLASH IS KEYED IN THE PEG'S OWN TRACK** and nothing shared: `thrusting()`
+  stays true for the whole string (it routes the rapier's grip, reach and
+  pose), and `pegSlashing()` is asked at the half-dozen places a sweep differs
+  from a point — `bladeSwept()` (the shaft is swept along its whole arc, so a
+  slash connects 20–35° either side of the crosshair where the thrusts miss),
+  `sweepDirs` (crabs fan in yaw), `bladeLive` (the trail and sweep window
+  `PEG_KEYS[3][1][0]`..`[3][0] + 0.02`), the impact's `cut` branch (freeze,
+  roll, lens), `landBlade` (off: it is authored through the crosshair),
+  `digImpact`'s lunge jolt (off), and the whoosh (`sfxHeavySwing`, timed so its
+  swell lands on the contact). `digPower` is floored at `PEG_SLASH_P` (0.45)
+  for the slash so the confirm is heavier than a jab's.
+- **COCK → CONTACT IS ONE `in` SEGMENT AND CONTACT → THROUGH ONE `out`.**
+  Intermediate keys on a strike put a velocity step at every key (the end of
+  an `in` is fast, the start of the next segment is whatever its ease says),
+  and a two-frame `inout` hang between keys read as a pop. Measured the pose
+  lerp between the cock and the contact before relying on it: the tip bows a
+  tenth of the frame above the straight line, which reads as a club's arc.
+  The cock was solved INSIDE the frame (point (0.83, 0.68)) — the first solve
+  put it at (0.95, 0.75) and the top of the peg left the picture for the
+  whole hold.
+- **THE TIP (`pegTipAt`, `PEG_TIP_FROM` 0.6).** A thrust landing at
+  `stabReach() + 0.6` or more takes one more point (`pegTipHit`, read by
+  `toolDmg`) with its own knock (`pegTipConfirm`). Measured with `__pt.hit`:
+  a jab connects out to 4.8 m and the tip band is 3.7–4.8 m — past nearly
+  everything's swing. The slash has no tip.
+- **A PARRY WITH THE PEG IS FINER AND HITS HARDER** (`parryWin()`,
+  `parryStunK()`, from `parryWinK` 0.75 / `parryStunK` 1.3 on the item): a
+  0.15 s window against 0.20, a 2.7 s stagger against 2.1 and a further shove.
+  The reel clips were mapped over a FIXED stun length (`MUT_STUN * stunK`,
+  `CRAB_STUN`), so a longer stun clamped the clip to its first frame for the
+  extra time; `u.st.stunMax` is what the reel is stretched over now, set by the
+  parry and cleared when the stun ends (and by a gun stun that starts fresh).
+- `tools/pegtest.js`: `__pt.setup()` (dev mode, heal, fallback look, the pale
+  mutant pinned visible), `__pt.hit(d, ang, held)`, `__pt.press(frames, shift)`
+  (real pointer events). **A woken creature kills the harness player and the
+  page reloads to the title** — setup heals on an interval and dev mode stops
+  their swings.
+
+**THE DOUBLE CLEARS A STREET (2026-10-10).** The owner: it is meant to rip
+groups of farmers apart. Measured before with `__blastTest`: five farmers a
+metre apart at 3.5 m — three dead, the two on the ends UNTOUCHED (no pellet,
+no shove, still coming); five at 6 m — one dead. Three changes:
+- **The cone is wider and longer** (`SG_WAVE_A` 0.34 hip / 0.21 aimed,
+  `SG_WAVE_R` 9, share `SG_WAVE_K` 0.62) and there is a **muzzle blast**:
+  inside `SG_BLAST_R` 4.5 m and `SG_BLAST_A` 0.80 rad off the barrels,
+  everything takes at least one pellet (up to `SG_BLAST_N` close in) and
+  `A.blast` (closeness) feeds the shove.
+- **Survivors are staggered, not just wounded** (`sgStagger`): the swing and
+  chain are cancelled, the turn handed back, the biggest flinch played over a
+  recoil 1.6-2.8x a normal one, and a shove of 0.7-1.6 m. `flinchPush` takes
+  `d` (its decay) now, and **a shove during a recoil moves `u.hitFrom`** — the
+  recoil branch puts the body back on `hitFrom` every frame, so before this a
+  shove on a reeling creature was undone on the next line.
+- **A blasted body bowls the men behind it** (`r.bowl`, set by
+  `sgFinish(u, fwd)`, stepped by `sgBowl` from `updateMutRagdoll` during the
+  first flight): a point, a stagger and a shove along the body's own velocity,
+  once per body per man; never a boss or anything 3.4 m tall.
+- **Each kill in one charge lands harder** (`sgShotKills`, reset in `sgFire`):
+  hitstop up to 0.13 s, more trauma and lens, gore sound for the first three,
+  a second body's thud on the 2nd and 4th.
+Measured after: 3.5 m line — four dead, the fifth on 1 hp blown back 0.9 m;
+6 m line — four of five dead; in your face at 2.2 m — the two at ±39° (missed
+outright before) take a pellet each and are blown 1.1-1.2 m back. A man
+directly behind the one you kill is bowled (a point, 1.3 s reel, ~1 m).
+**The `thrown` readout in `__blastTest` reads a bone that may have been
+severed** — a body with its waist taken reads 0.0 m while its ragdoll hips are
+4-5 m away; read `u.rag.byName.Character1_Hips.p` to be sure. And the blast
+tests kill the castle's twenty: reload before a live fight sample.
+
+## The Artifact of The Sea, and artifacts in the plural (2026-10-15)
+
+- `artWeapon()` is any weapon with any artifact. The whale's chain
+  (`artCount`, `artAfterSwing`) now checks `W.artifact === whaleArtItem`; the
+  hotbar/pack styling takes a `sea` class; an artifact item may carry its own
+  pack mark (`artSvg`). `seaArtItem` is a `let` declared beside
+  `whaleArtItem` because the hotbar is drawn at module time.
+- **The wave** fires from `parryMutant`, `parryCrab` and `parryGull`
+  (`seaParry`, gated on `seaOn()` and `seaArt.cd`). It lifts every awake,
+  visible unit in `SEA_R` along a parabola; the lift is laid on AFTER a unit's
+  update and taken off BEFORE its next (`seaLiftOff`/`seaLiftOn`) because
+  creature heights are eased toward their floors — measured landing exactly
+  back at 0.00. Hits land in the air (8 -> 6 measured). Gulls are knocked
+  down instead. A creature hidden by the distance cull is skipped (a test
+  that moves units away from their home stretch sees nothing lift — test
+  where they live).
+- The wave's materials are MeshBasic map+transparent+DoubleSide (the
+  footprints' program) and `seaWarm` compiles them with the SCENE as the
+  target (`renderer.compile(rig, camera, scene)`) — without it the warm
+  compiles a fog-less variant the real draw does not use.
+
+**THE PEG, WEAKER AND SLOWER (the owner, 2026-10-16).** "A little weaker than
+the shovel but quicker — three light hits to kill a crab and one heavy — and
+the animations more natural and not as quick."
+- **Damage**: `dmgLight` 0.75, `dmgHeavy` 1.6, `tipDmg` 0.2 (the item's own;
+  `toolDmg` reads `equipped.tipDmg ?? 1`). The spade is 1 / 2. A crab
+  (CRAB_HP 2) takes three jabs; two tip jabs (1.9) still leave it standing;
+  any heavy on a crab or gull kills (`Math.max(CRAB_HP, …)`); the pale (5)
+  takes seven jabs against the spade's five. **Not 2/3**: three of those leave
+  2.2e-16 hp and a crab that lives. Health is a float everywhere — nothing
+  rounds it.
+- **Timing**: `PEG_DUR` 0.44 / 0.44 / 0.80 / 1.05 / 0.84 (was 0.36 / 0.34 /
+  0.68 / 0.95 / 0.72). With `pegRate` a jab is 0.51 s and chains at 0.28 s
+  against the spade's 0.44 — quicker by the rate, lighter by the blow.
+- **Eases**: draws `inout` (an arm gathers; `out` jumped back), extensions
+  `in2` (arrives at twice its average speed, not three times), and the way
+  home `home` (smoothstep with a small late swell, 1.0002 at its peak) where it
+  was `back`, which left the target at 4.6x its average speed — the yank off
+  the target was most of "too quick". The hit hold runs to 0.58.
+- **Measured** (`__pt.hit`): a jab 0.75, a tip jab 0.95, the held string 3.1;
+  reach unchanged (hits at 4.5 m, tip from about 4 m). Three jabs kill a crab
+  at 1.6 and at 2.4 m; a full Shift-hold lunge kills it outright.
+- **Harness traps met doing it**: with `requestAnimationFrame` stubbed by the
+  scratch boot, `__pt.hit` read no hits past 3.5 m — a fresh page gave 4.5 m.
+  `__pt.press` cannot drive the lunge from `javascript_tool` (the press path
+  reads state the harness cannot see); call `b.windHeld = true;
+  b.startWind()`, step, then `b.releaseWind()`.
