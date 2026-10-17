@@ -836,3 +836,10 @@ there, in the hand's frame (`u.farmPalm` is where `farmArm` put it). Detail: `fa
 COLOUR (`texture2D(aoMap, vAoMapUv)`, squared, 60 %) and into the emissive lift — three's aoMap darkens only ambient
 light and these men are lit by direct light, so every fold and seam was being thrown away; relief at a 3 mm grain and
 in long hanging folds; normalScale 2.1; a roughness floor of 0.58 (0.25 was a plastic sheen). Cache key `farmGrit4`.
+
+**THE MARAUDER WAITED FOR A HIT AFTER DANTE (2026-10-16, "make the marauder attack right after you kill dante, it
+waits until you hit right now").** The rise take waited for `fell`: Dante's death clip within 0.03 s of its end. But
+`updateDante` hands the body to the ragdoll at 0.04 s from the end and the clip stops there, so `fell` never came true
+and only `umbraProvoke` (a blow) started the take. `fell` is also `!!D.rag` now, and the beat on the body is 0.4 s,
+not 1.3. Measured: the kill at 0 s, the take at 5.0 s (the 4.4 s fall + the beat), he is up and charging at 11.5 s.
+Two end-of-clip tests that differ by a centisecond is a door that never opens.

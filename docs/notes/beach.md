@@ -2266,3 +2266,8 @@ floor with him in your arms (`elvFloorWas`/`elvStairBlink`), 0.1 s; measured lid
   `houseWorld`, out of the model's tree, and `buildHousePanes` only walked the model root. It walks the pivots too now
   (15 panes, `name56006_1` linked to its door). Measured with real W-key walking: shut and whole, stopped at the
   door; glass broken, through; open, through. A window is refused by `elvPaneShut` until broken, then not.
+- **`elvPaneShut` blocked the stairs** (the owner, 2026-10-16, "I can't walk up the stairs"): the stair rail's glass
+  (`Stair_2`) is one mesh whose box is the whole flight, 3.6 × 4.2 m, and a pane rule built on boxes made it a slab
+  across the staircase. Only a flat pane (its box under 0.5 m in its thin direction) is a window now. Measured: 0 of
+  2,184 moves through the stair box refused; a window still refused until broken. A rule written for "the glass" must
+  ask what shape each piece of glass is.

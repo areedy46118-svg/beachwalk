@@ -83772,7 +83772,7 @@ MUT_KINDS.wellman = {
   bossDeath: true,
   hideMeshes: ['Object_75'],             // the teeth: a separate mesh of 289 vertices, yellow pegs in the open mouth (the owner: "too corny")
   death: { BUCKLE: 1.2, DROP: 2.0, TAIL: 2.6, QUIET: 3.4 },
-  h: 1.92, hp: 43, dmg: 1, bleedRes: 1.1,   /* 36 → 50 (2026-10-14: "give him more health") → 43 (2026-10-16: "less health … not too much") */ hitR: 0.85, body: 0.55, lungeStop: 1.35, landSlop: 0.22, limbR: 0.26, lungeLead: 0.3, lungeK: 1.0,
+  h: 1.92, hp: 34, dmg: 1, bleedRes: 1.1,   /* 36 → 50 (2026-10-14: "give him more health") → 43 (2026-10-16: "less health … not too much") → 34 (2026-10-16 again: "make the well man less health") */ hitR: 0.85, body: 0.55, lungeStop: 1.35, landSlop: 0.22, limbR: 0.26, lungeLead: 0.3, lungeK: 1.0,
   /* QUICK: 1.5 of the pale one's pace is 6.9 m/s at a run, his clips allowed
    * to play at up to three times their stride so the feet keep up, and a
    * burst (`st.sprint`) on every charge that takes him past ten for a moment. */
@@ -87724,8 +87724,11 @@ function updateThroneScene(dt) {
     /* NOT BEFORE THE BEAST HAS FINISHED DYING (the owner): its fall is 4.4 s
      * and the take turned away from it at 4.2, with it still on its knees.
      * The whole clip, and a beat on it lying there, then him. */
-    const dieDur = (D.clips && D.clips.death ? D.clips.death.getClip().duration : 4.4) + 1.3;
-    const fell = D.retired || !(D.cur && D.cur.getClip().name === 'death' && D.cur.time < D.cur.getClip().duration - 0.03);
+    /* (and the ragdoll IS the end of it: it takes the body 0.04 s before the clip's end and the clip stops there, so a
+     * "within 0.03 of the end" test never passed and he sat until you hit him — 2026-10-16, the owner: "make the
+     * marauder attack right after you kill dante, it waits until you hit". A beat of 0.4 s on the body, not 1.3.) */
+    const dieDur = (D.clips && D.clips.death ? D.clips.death.getClip().duration : 4.4) + 0.4;
+    const fell = D.retired || !!D.rag || !(D.cur && D.cur.getClip().name === 'death' && D.cur.time < D.cur.getClip().duration - 0.05);
     if (fell && since > dieDur && (since < 25 || camera.position.z - THR_Z < UMBRA_WAKE_Z + 2.0)) startThrCutRise();
   }
   // the chain sim runs on the wall clock, takes included
@@ -95138,6 +95141,7 @@ function elvPaneShut(x0, z0, x1, z1, feet) {
     const b = P.box;
     if (feet > b.max.y - 0.2 || feet + 1.6 < b.min.y) continue;
     const sx = b.max.x - b.min.x, sz = b.max.z - b.min.z, alongX = sx > sz;
+    if (Math.min(sx, sz) > 0.5) continue;           // not a flat pane: the stair rail's glass, whose box is the whole flight (it blocked the stairs)
     const along1 = alongX ? x1 : z1, a0 = alongX ? b.min.x : b.min.z, a1 = alongX ? b.max.x : b.max.z;
     if (along1 < a0 - 0.1 || along1 > a1 + 0.1) continue;
     const c = alongX ? (b.min.z + b.max.z) / 2 : (b.min.x + b.max.x) / 2;
