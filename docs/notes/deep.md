@@ -191,10 +191,16 @@ after the sea monster fight."
 fall reaches 5.2 m/s (was 3.4). On the floor: thud 0.14, surge 0.85 / 2.2 s, a heart thud, trauma 0.6 — all scaled by
 how near you are — and a rebound (`plio.bounce`, two smaller bounces over 2.2 s). Not seen in the harness.
 
-**PENDING (2026-10-17): the Artifact of The Sea behind the wash-up's syringe.** The owner wants "the water artifact my
+**DONE (2026-10-17, rebuilt — see weapons.md): the Artifact of The Sea behind the wash-up's syringe.** The owner wants "the water artifact my
 partner made" lying behind the empty needle when you wash up. That artifact (`seaArtItem`, the parry wave — see
 weapons.md, 2026-10-15) was deleted whole by the partner's e7e7e6a (the Ring of Connection replaced it) and was never
 committed: no copy in git, origin, the stash or this machine's transcripts. The owner chose to wait for the partner to
 push it. When it lands: spawn it in `needlePlace` (the needle is at `x, 0.016, z`, the body lies at `deep.washX`, so
 "behind" is on the far side of the needle from the wash pose), with `addItemShine`, as a once-a-game pickup keyed in
 the save so a restore does not lay a second one.
+- **It lies at `deep.washX + SEA_WASH.dx (1.45)`, `z + SEA_WASH.dz (-0.25)`**, laid by `seaLay` in 'black' beside
+  `needlePlace`, stood 0.7 rad up in the sand (flat it was a sliver from the 0.38 m eye; tilted it faces you 0.79) —
+  dead centre of the view as your eyes open, under the crosshair standing. `seaRelic` (0/1/2), `seaRelicAt`,
+  `seaRelicOn` in the save; a save from before it that has `deepDone` lays it by the saved needle. Testing the wash in
+  the harness needs `startDeepHook()` first (it sets `deepLock`; `updateDeep` returns without it), and `__bw.frame`,
+  not `step` (the deep runs per frame).

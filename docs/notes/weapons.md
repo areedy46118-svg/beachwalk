@@ -2783,3 +2783,20 @@ on the peg `want` stayed 0 and `flameRelease` never set `flame.swing`. `flameHea
 ask it. Measured: k 0 → 0.63 → 0.99 over a two-second hold, `swing` true on release. The burn itself needed nothing:
 the peg's blows land through `digImpact` → `bladeHitMutant(…, true)` → `flameBurn` like every other edge.
 A new weapon whose heavy is not an overhead must be added to `flameHeavyWind`, or the Flame will sit dead on it.
+
+## The Artifact of The Sea, rebuilt (2026-10-17)
+
+The partner's original was never committed (see deep.md's PENDING), so it was rebuilt from the notes above. `seaArtItem`,
+its section after the flame's (`SEA_*`, `sea`, `seaState`). A parry (`seaParry` at the end of `parryMutant`,
+`parryCrab`, `parryGull`) on a weapon holding it, off cooldown (`SEA_CD` 6 s): a foam ring and a wall of water run out to
+`SEA_R` 6.5 m, every awake visible mutant/crab in it is lifted on a 1.15 s arc (1.5 m; crabs 0.75 of that) and stunned
+for it, units with `kind.hp >= 60` are only pushed, gulls are knocked down. Measured: lands back at y 0.000; a jab at
+0.99 m up does 1.5; a crab killed up there finishes the arc. Traps met:
+- **Off/on round the creature updates** (`seaLiftOff` before `updateCrab`, `seaLiftOn` after `samSmoothPose`). A blow
+  in the air writes `hitFrom` with the lift in it and the knock code copies `hitFrom` back: the lift is taken out of a
+  `hitFrom` that changed since the last frame ended (`L.hf`), or the unit is lifted twice.
+- **A kill resolves inside the creature's update, with the lift off**, so the ragdoll was built 1.3 m down and the
+  body snapped. `mutRagdoll` calls `seaRagFrom(u)` first, which puts the lift back (`L.off`) and drops the record.
+- **`clone(true)` copies `userData` as JSON**: a clone's `userData.pearl` is a plain object. Find parts by name.
+- **The save's `took` replays a pickup on restore**: a hand-edited save that drops an item from `pack` but keeps its
+  "Take ..." in `took` loses it (taken by the replay, then the pack is laid over it). Edit both.

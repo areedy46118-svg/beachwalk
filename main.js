@@ -11105,7 +11105,7 @@ function placeInSlot(item, at = -1, cap = INV_MAX) {
 }
 function clearSlot(item) { const i = slotOf(item); if (i >= 0) packSlots[i] = undefined; }
 let equipped = null;
-let whaleArtItem = null, artState = 0, flameArtItem = null, beachMapItem = null, tavChestTaken = false;   // the artifact the whale gives up (its section is near the end)
+let whaleArtItem = null, artState = 0, flameArtItem = null, seaArtItem = null, beachMapItem = null, tavChestTaken = false;   // the artifact the whale gives up (its section is near the end)
 /* AND THE STRIP IS UPDATED, NOT REBUILT. `innerHTML = ''` and six fresh
  * slots every time is what made scrolling through your things feel like a
  * flicker rather than a slide: every wheel step threw six nodes and six
@@ -11152,6 +11152,7 @@ function renderHotbar() {
     c.el.classList.toggle('empty', !item);
     c.el.classList.toggle('art', !!(item && isArtWeapon(item) && item.artifact));
     c.el.classList.toggle('fire', !!item && (item.artifact === flameArtItem || item === flameArtItem));   // the flame's border burns orange
+    c.el.classList.toggle('sea', !!item && !!seaArtItem && (item.artifact === seaArtItem || item === seaArtItem));   // and the sea's runs blue
     c.el.classList.toggle('equipped', sel);
     c.el.classList.add('slot');
   }
@@ -11964,7 +11965,7 @@ function renderPack() {
   for (let i = 0; i < nSlots; i++) {
     const item = packSlots[i];
     const slot = document.createElement('div');
-    slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '') + (item && isArtWeapon(item) && item.artifact ? ' art' : '') + (item && (item.artifact === flameArtItem || item === flameArtItem) ? ' fire' : '');
+    slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '') + (item && isArtWeapon(item) && item.artifact ? ' art' : '') + (item && (item.artifact === flameArtItem || item === flameArtItem) ? ' fire' : '') + (item && seaArtItem && (item.artifact === seaArtItem || item === seaArtItem) ? ' sea' : '');
     slot.dataset.index = String(i);
     slot.innerHTML = `<span class="num">${i + 1}</span>` + (item ? iconHTML(item) : '');
     if (item) {
@@ -18395,6 +18396,7 @@ function parryCrab(u = crabs[0]) {
   u.g.position.x += (kx / kd) * 0.34 * parryStunK();
   u.g.position.z += (kz / kd) * 0.34 * parryStunK();
   /* no caption: you can see and hear what you just did (the owner, 2026-10-16: "things that are obvious don't need to be said") */
+  seaParry(u);
 }
 /* Out of wind: the guard drops and you hear it go. Once per emptying — a
  * gasp on every press while the bar is flat would be a stutter, not a body. */
@@ -26929,6 +26931,7 @@ function parryGull(u) {
   u.hitDir.copy(_glF);
   knockGullDown(u, GULL.STUN * parryStunK(), 3.2);
   sfxGullShriek(u.g.position.x, u.g.position.z, 1.12, 0.5);
+  seaParry(u);
 }
 /* OUT OF THE SKY: it is thrown along `hitDir`, tumbles as it falls, and lies
  * on the ground beating a wing until `stun` runs out — in reach the whole
@@ -34059,6 +34062,7 @@ function parryMutant(u) {
   u.g.position.z += (kz / kd) * 0.5 * parryStunK();
   // (no caption — see the first parry's)
   if (u.kind.heavyBlock) palBlockFx(u, true);
+  seaParry(u);                               // and the sea's wave, if it is set in what parried
 }
 function blockMutant(u) {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock();
@@ -36660,6 +36664,7 @@ function ragSmash(r, speed) {
 const _rgP = new THREE.Vector3();
 function mutRagdoll(u, dirX, dirZ, power) {
   if (u.rag || !u.model) return;
+  seaRagFrom(u);                             // killed in the air by the sea's wave: from up there
   /* IT DIES FROM THE POSE IT WAS IN — so the mixer is simply never updated
    * again. `stopAllAction()` was called here first, and that RESTORES every
    * bound property to the value it had when the clip was first played: the
@@ -44929,6 +44934,7 @@ function update(dt, rawDt = dt) {
   updateSmileWatch(dt);
   updateBleedRig(dt);
   updateRockSurf();
+  seaLiftOff();             // the sea's wave holds things up in the air: taken off before they update...
   updateCrab(dt);
   updateMutant(dt);
   if (elvReady) updateElvManPose(dt);    // Elvédor's face and his puppet hand, on whatever his clips just did
@@ -44943,6 +44949,7 @@ function update(dt, rawDt = dt) {
   samTwoHand(dt);           // and his left hand goes onto the handle behind the right
   if (window.__samDbg) window.__samDbg('two');
   samSmoothPose(dt);        // and no clip change, restart or reel may pop his body from one pose to another in a frame
+  seaLiftOn(dt);            // ...and laid on again after everything that moves them has
   if (window.__samDbg) window.__samDbg('smooth');
   samKeepClear();           // and after all of it, no fist and no steel inside him
   if (window.__samDbg) window.__samDbg('clear');
@@ -45167,6 +45174,8 @@ function saveCheckpoint(spot) {
       bradlyGone: bradlyGone || bradlyScurry.on,
       // the whale's artifact: not yet given, lying in the belly, or yours — and what it is set in
       whaleArt: artState, artOn: artAttachedTo(), artAt: art.spot || null, flameOn: flameAttachedTo(), tavChest: tavChestTaken, c13Arch: c13ArchOpen,
+      // the sea's (rebuilt 2026-10-17): lying in the sand where you washed up (1, at seaRelicAt), or yours (2) and what it is set in
+      seaRelic: seaState, seaRelicAt: sea.spot || null, seaRelicOn: seaAttachedTo(),
       /* the fish: on her wall (0), yours (1) or home on the captain's (2); his
        * screws and the drain grate's, as bitmasks of the ones out; whether the
        * grate is off; what you have asked him; and the sea's artifact and what
@@ -45608,7 +45617,7 @@ function packByName(name) {
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
                     syringeItem, waterBottleItem, fishingRodItem, magnumItem, shotgunItem, fangItem, oldRingItem,
-                    spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem, flameArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem, cellKeyItem, goldRingItem, connRingItem, screwdriverItem, billyItem]) {
+                    spliffItem, grammyItem, lostKeyItem, whaleArtItem, storeKeyItem, flameArtItem, seaArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem, cellKeyItem, goldRingItem, connRingItem, screwdriverItem, billyItem]) {
     if (it === beachMapItem && !BEACH_MAP_ON) continue;                            // the chart is out for now
     if (it && (it.name === name || (it.was && it.was.includes(name)))) return it;   // `was`: what a save made before a rename calls it
   }
@@ -50867,7 +50876,7 @@ const SELL_ROWS = [
     count: () => (inventory.includes(it()) || rings.includes(it()) ? 1 : 0), get desc() { return 'Worn: ' + (it().desc || 'a ring'); }, ring: true })),
   /* AND ANY ARTIFACT IS THREE JARS — loose in the pack only; one set into a
    * weapon has to come out of it first, the way a ring comes off a finger. */
-  ...[['artWhale', () => whaleArtItem], ['artFlame', () => flameArtItem]].map(([key, it]) => ({
+  ...[['artWhale', () => whaleArtItem], ['artFlame', () => flameArtItem], ['artSea', () => seaArtItem]].map(([key, it]) => ({
     key, item: it, get name() { return it() ? it().name : ''; }, price: 3, sum: 'Any artifact, three jars',
     count: () => (it() && inventory.includes(it()) ? 1 : 0), get desc() { return it() ? it().desc || '' : ''; }, art: true })),
 ];
@@ -95460,6 +95469,7 @@ function stickArtifacts() {
   };
   if (one(flameArtItem, 'flameOn')) f.tavChest = true;
   if (one(whaleArtItem, 'artOn')) { f.whaleArt = 2; f.artAt = null; }
+  if (one(seaArtItem, 'seaRelicOn')) { f.seaRelic = 2; f.seaRelicAt = null; }
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch (e) {}
 }
 function attachArtifact(a, w) {
@@ -95985,6 +95995,12 @@ var ART_WHALE_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(ART_WHALE_SV
 @keyframes fireb{from{border-color:rgba(255,118,30,.80);box-shadow:0 0 8px rgba(255,80,10,.40),inset 0 0 10px rgba(255,110,30,.18)}to{border-color:rgba(255,160,60,.95);box-shadow:0 0 14px rgba(255,120,30,.62),inset 0 0 14px rgba(255,140,50,.28)}}
 #inv-grid .islot.fire,#inv-grid .islot.art.fire{border-color:rgba(255,128,36,.88);box-shadow:inset 0 0 0 1px rgba(255,140,50,.50),inset 0 0 14px rgba(255,110,30,.24)}
 #inv-grid .islot.fire.sel,#inv-grid .islot.art.fire.sel{border-color:#ffa24a;box-shadow:inset 0 0 0 1px #ffa24a,inset 0 0 18px rgba(255,120,40,.36),0 0 10px rgba(255,110,30,.45)}
+#hotbar .slot.sea,#hotbar .slot.sea.equipped,#hotbar .slot.art.sea{--c:#7fe0f2;border-color:rgba(70,196,226,.85);box-shadow:0 0 10px rgba(40,170,220,.45),inset 0 0 12px rgba(60,190,230,.20);animation:seab 2.4s ease-in-out infinite alternate}
+#hotbar .slot.sea.equipped,#hotbar .slot.art.sea.equipped{border-color:#8fe6f6;box-shadow:0 0 16px rgba(50,180,230,.65),inset 0 0 16px rgba(70,200,240,.28)}
+#hotbar .slot.art.sea.seacd{--c:rgba(127,224,242,.40);border-color:rgba(70,196,226,.28);box-shadow:none;animation:none}
+@keyframes seab{from{border-color:rgba(60,180,220,.75);box-shadow:0 0 7px rgba(30,150,210,.38),inset 0 0 9px rgba(50,170,220,.16)}to{border-color:rgba(130,226,246,.95);box-shadow:0 0 14px rgba(60,190,236,.60),inset 0 0 14px rgba(90,210,240,.28)}}
+#inv-grid .islot.sea,#inv-grid .islot.art.sea{border-color:rgba(70,196,226,.85);box-shadow:inset 0 0 0 1px rgba(90,206,236,.48),inset 0 0 14px rgba(50,170,220,.22)}
+#inv-grid .islot.sea.sel,#inv-grid .islot.art.sea.sel{border-color:#8fe6f6;box-shadow:inset 0 0 0 1px #8fe6f6,inset 0 0 18px rgba(70,200,240,.34),0 0 10px rgba(60,190,236,.45)}
 #inv-detail .artline{margin:6px 0 2px;font-size:.72rem;letter-spacing:.06em;color:#ffd97a;display:flex;align-items:center;gap:7px}
 #inv-detail .artline svg{width:38px;height:14px;flex:none;filter:drop-shadow(0 0 2px rgba(255,200,70,.7))}`;
   document.head.appendChild(st);
@@ -96112,7 +96128,7 @@ function updateArtWorld(dt) {
 
 /* ---- per frame ---- */
 function artTick(dt) {
-  flameTick(dt); flameRestoreTick();
+  flameTick(dt); flameRestoreTick(); seaTick(dt);
   ART_TIME.value += dt;
   renderer.getDrawingBufferSize(ART_RES.value);
   if (art.cd > 0) { art.cd = Math.max(0, art.cd - dt); if (art.cd === 0 && artWeapon()) sfxArtReady(); }
@@ -96175,6 +96191,7 @@ function artRestore(f) {
   if (f.whaleArt == null && f.whaleGone) { artState = 2; art.grantPending = true; }
   art.attachPending = f.artOn || null;
   flameAttachPending = f.flameOn || null;
+  seaRestore(f);
   tavChestTaken = !!f.tavChest;
 }
 
@@ -96785,6 +96802,391 @@ function flameRestoreTick() {
   } else if (!restore) { flameAttachPending = null; if (!inventory.includes(flameArtItem) && !flameArtItem.on) addToInventory(flameArtItem); }
 }
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { flameArtItem, flame, flameVM, flameWorld, flameWeapon, flameRelease, flameBurn, flameTick, makeFlameArtifact }));
+
+/* ---- THE ARTIFACT OF THE SEA (rebuilt 2026-10-17) ----
+ * The owner's partner made the first one, and it went with the Ring of Connection's commit (e7e7e6a) without
+ * ever having been committed itself. This is it again from what the notes kept (weapons.md, 2026-10-15): set
+ * into a weapon, a PARRY sends a wave out from your feet. Every awake thing near you is lifted off the ground
+ * along a parabola and your blows land on it up there; a gull is knocked out of the sky; the big ones stand in
+ * it and are only pushed. It comes back after SEA_CD. The owner: "add the artifact of the sea back in but do it
+ * after the underwater fight with the sea monster. Have it be in front of you as you awake on the beach." */
+const SEA_R = 6.5, SEA_CD = 6, SEA_UP = 1.15, SEA_H = 1.5, SEA_BOSS_HP = 60;
+const SEA_WASH = { dx: 1.45, dz: -0.25 };      // where it lies from where you wash up: up the sand past the needle, in front of your face
+const sea = { cd: 0, lifted: new Map(), waves: [], world: null, spot: null, warmed: false, attachPending: null };
+let seaState = 0;      // 0 not given yet, 1 lying in the sand at `sea.spot`, 2 yours (in the pack, set in a weapon, or sold)
+function seaWeapon() { return isArtWeapon(equipped) && !!seaArtItem && equipped.artifact === seaArtItem ? equipped : null; }
+
+/* THE MEDALLION: the same bronze as the other two, green with the sea, round a disc of abalone — a great wave
+ * cut into the nacre and the cuts run with silver, and in the curl of the wave a blue pearl. */
+let _seaFace = null, _seaBz = null;
+function artSeaFaceMaps() {
+  if (_seaFace) return _seaFace;
+  const S = 1024, c = S / 2, N = 512;           // (drawn at 512 in 1024's coordinates, like the flame's)
+  const [cc, g] = artCanvas(N, N), [hc, hg] = artCanvas(N, N);
+  const nz = artNoise2(523);
+  const img = g.createImageData(N, N), himg = hg.createImageData(N, N);
+  for (let yy = 0; yy < N; yy++) for (let xx = 0; xx < N; xx++) {
+    const x = xx * 2, y = yy * 2;
+    const n = artFbm(nz, x / 120, y / 120, 4), m = artFbm(nz, x / 30 + 17, y / 30, 3);
+    const r = Math.hypot(x - c, y - c) / c;
+    const band = Math.sin(n * 14 + r * 9), k = 0.5 + 0.5 * band, rim = 1 - Math.max(0, r - 0.72) * 1.4, o = (yy * N + xx) * 4;
+    img.data[o] = (16 + 34 * (1 - k) + m * 14) * rim; img.data[o + 1] = (48 + 74 * k + m * 22) * rim; img.data[o + 2] = (72 + 56 * k + 34 * (1 - k) + m * 18) * rim; img.data[o + 3] = 255;
+    himg.data[o] = himg.data[o + 1] = himg.data[o + 2] = 128 + (n - 0.5) * 30 + band * 5; himg.data[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0); hg.putImageData(himg, 0, 0);
+  g.setTransform(N / S, 0, 0, N / S, 0, 0); hg.setTransform(N / S, 0, 0, N / S, 0, 0);
+  const silver = (ctx, w) => { ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = ctx === g ? '#cfdcd8' : 'rgb(60,60,60)'; };
+  const both = (fn) => { for (const ctx of [g, hg]) { ctx.save(); fn(ctx); ctx.restore(); } };
+  // the border: two rings, and a run of little breaking waves between them
+  both((ctx) => { silver(ctx, 7); ctx.beginPath(); ctx.arc(c, c, 492, 0, 6.283); ctx.stroke(); silver(ctx, 4); ctx.beginPath(); ctx.arc(c, c, 446, 0, 6.283); ctx.stroke(); });
+  for (let i = 0; i < 40; i++) {
+    const a = i / 40 * 6.283;
+    both((ctx) => { silver(ctx, 3); ctx.translate(c, c); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(-18, 458); ctx.quadraticCurveTo(-6, 486, 10, 470); ctx.quadraticCurveTo(4, 462, 12, 456); ctx.stroke(); });
+  }
+  // the wave: the face rising from the left, over the top and curling down into itself
+  const curl = (ctx) => {
+    ctx.beginPath(); ctx.moveTo(190, 720);
+    ctx.bezierCurveTo(270, 700, 340, 600, 420, 480); ctx.bezierCurveTo(480, 385, 600, 300, 705, 330);
+    ctx.bezierCurveTo(800, 360, 812, 460, 738, 486); ctx.bezierCurveTo(686, 504, 652, 452, 694, 428);
+  };
+  both((ctx) => { curl(ctx); ctx.lineTo(694, 428); ctx.bezierCurveTo(760, 470, 830, 600, 840, 720); ctx.closePath();
+    ctx.fillStyle = ctx === g ? 'rgba(207,220,216,0.16)' : 'rgb(108,108,108)'; ctx.fill(); silver(ctx, 6); curl(ctx); ctx.stroke(); });
+  // the lines down its face, and the claws of foam off the crest
+  for (let i = 1; i <= 3; i++) both((ctx) => { silver(ctx, 2.5); ctx.beginPath(); ctx.moveTo(220 + i * 70, 720); ctx.bezierCurveTo(300 + i * 60, 680, 370 + i * 40, 560 + i * 10, 470 + i * 50, 430 + i * 30); ctx.stroke(); });
+  for (let i = 0; i < 7; i++) {
+    const x = 470 + i * 42, y = 400 - Math.sin(i / 6 * Math.PI) * 70;
+    both((ctx) => { silver(ctx, 2.5); ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 6, y - 34, x + 26, y - 30); ctx.stroke(); });
+  }
+  // the sea under it: three swells across
+  for (let j = 0; j < 3; j++) both((ctx) => { silver(ctx, 3); ctx.beginPath(); const y = 760 + j * 44, w = 300 - j * 50;
+    for (let x = c - w; x <= c + w; x += 6) { const yy = y + Math.sin((x - c) / 34) * 9; if (x === c - w) ctx.moveTo(x, yy); else ctx.lineTo(x, yy); } ctx.stroke(); });
+  // the words round the top
+  const words = 'WHAT THE SEA TAKES IT GIVES BACK';
+  g.font = 'bold 30px Georgia, "Times New Roman", serif'; hg.font = g.font;
+  const span = 2.5, a0 = -Math.PI / 2 - span / 2;
+  for (let i = 0; i < words.length; i++) {
+    const a = a0 + span * (i + 0.5) / words.length;
+    both((ctx) => { ctx.translate(c + Math.cos(a) * 470, c + Math.sin(a) * 470); ctx.rotate(a + Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = ctx === g ? '#cfdcd8' : 'rgb(60,60,60)'; ctx.fillText(words[i], 0, 0); });
+  }
+  // the ring the pearl sits in, in the curl
+  both((ctx) => { silver(ctx, 4); ctx.beginPath(); ctx.arc(SEA_PEARL[0], SEA_PEARL[1], 24, 0, 6.283); ctx.stroke(); });
+  const gr = hg.createRadialGradient(c, c, 470, c, c, 512); gr.addColorStop(0, 'rgba(150,150,150,0)'); gr.addColorStop(1, 'rgba(60,60,60,1)');
+  hg.fillStyle = gr; hg.fillRect(0, 0, S, S);
+  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
+  return (_seaFace = { map, normalMap: artNormalFrom(hc, 4.2) });
+}
+const SEA_PEARL = [712, 420];                  // where the pearl sits on the face, in the face's 1024 coordinates
+function makeSeaArtifact() {
+  const g = new THREE.Group(); g.name = 'seaArtifact';
+  const env = ringEnv();
+  const R = ART_R, T = 0.0034;
+  const face = artSeaFaceMaps(), bz = _seaBz || (_seaBz = artBronzeMaps());
+  const nacreF = new THREE.MeshStandardMaterial({ map: face.map, normalMap: face.normalMap, normalScale: new THREE.Vector2(1.5, 1.5), roughness: 0.16, metalness: 0, envMap: env, envMapIntensity: 1.1,
+    emissive: new THREE.Color(0xffffff), emissiveMap: face.map, emissiveIntensity: 0.3 });
+  const nacreB = new THREE.MeshStandardMaterial({ color: 0x10202a, roughness: 0.3, metalness: 0, envMap: env, envMapIntensity: 0.7, emissive: 0x04090c, emissiveIntensity: 1 });
+  const bronze = new THREE.MeshStandardMaterial({ map: bz.map, metalnessMap: bz.mr, roughnessMap: bz.mr, normalMap: bz.normalMap, normalScale: new THREE.Vector2(1.2, 1.2),
+    metalness: 1, roughness: 1, envMap: env, envMapIntensity: 1.5, color: 0x5e7466, emissive: new THREE.Color(0xffffff), emissiveMap: bz.map, emissiveIntensity: 0.07 });
+  const pearlM = new THREE.MeshStandardMaterial({ color: 0x9fe6ff, roughness: 0.08, metalness: 0, emissive: 0x2aa8ff, emissiveIntensity: 1.5, envMap: env, envMapIntensity: 1.3 });
+  const cordM = new THREE.MeshStandardMaterial({ color: 0x14191a, roughness: 0.85, metalness: 0, emissive: 0x070909, emissiveIntensity: 1 });
+  const lathe = (pts, seg) => { const geo = new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), seg); geo.rotateX(Math.PI / 2); return geo; };
+  const planarUV = (geo) => { const p = geo.attributes.position, uv = new Float32Array(p.count * 2); for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / (2 * R) + 0.5; uv[i * 2 + 1] = p.getY(i) / (2 * R) + 0.5; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
+  const fp = [], bp = [];
+  for (let k = 0; k <= 24; k++) { const r = R * k / 24, d = Math.cos((k / 24) * Math.PI / 2); fp.push([r, T + 0.0026 * d]); bp.push([r, -T - 0.0009 * d]); }
+  const faceGeo = planarUV(lathe(fp.reverse(), 96)); faceGeo.computeVertexNormals();
+  const backGeo = lathe(bp, 96); backGeo.computeVertexNormals();
+  g.add(new THREE.Mesh(faceGeo, nacreF), new THREE.Mesh(backGeo, nacreB));
+  const edge = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 2 * T, 96, 1, true), nacreB); edge.rotation.x = Math.PI / 2; g.add(edge);
+  const sec = [[R - 0.0016, T + 0.0006], [R + 0.0006, T + 0.0024], [R + 0.0044, T + 0.0018], [R + 0.0066, T], [R + 0.0070, -T + 0.0004], [R + 0.0058, -T - 0.0016],
+               [R + 0.0010, -T - 0.0018], [R - 0.0004, -T - 0.0004], [R - 0.0004, T - 0.0006], [R - 0.0016, T + 0.0006]];
+  const bezGeo = lathe(sec, 128); bezGeo.computeVertexNormals();
+  g.add(new THREE.Mesh(bezGeo, bronze));
+  // eight rivets round the bezel, and barnacles crusted over two of them
+  for (let i = 0; i < 8; i++) {
+    const a = i / 8 * Math.PI * 2 + Math.PI / 8;
+    const rv = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 10, 8), bronze);
+    rv.position.set(Math.cos(a) * (R + 0.0032), Math.sin(a) * (R + 0.0032), T + 0.0022); g.add(rv);
+  }
+  for (const [a, s] of [[3.6, 1], [3.9, 0.7], [4.15, 0.85], [0.5, 0.6]]) {
+    const b = new THREE.Mesh(new THREE.ConeGeometry(0.0026 * s, 0.003 * s, 7, 1, true), nacreB);
+    b.position.set(Math.cos(a) * (R + 0.004), Math.sin(a) * (R + 0.004), T + 0.0012); b.rotation.x = Math.PI / 2; g.add(b);
+  }
+  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.0072, 0.0021, 12, 32), bronze);
+  bail.position.set(0, R + 0.0118, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
+  const cordCurve = new THREE.CatmullRomCurve3([[-0.012, R + 0.026, 0.003], [-0.004, R + 0.016, 0.002], [0, R + 0.0118, -0.0005], [0.005, R + 0.016, -0.003], [0.013, R + 0.028, -0.001]].map((p) => new THREE.Vector3(...p)));
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 48, 0.0012, 8, false), cordM));
+  const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.0024, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), pearlM);
+  pearl.rotation.x = Math.PI / 2; pearl.scale.set(1, 1, 0.7); pearl.name = 'seaPearl';
+  pearl.position.set((SEA_PEARL[0] / 1024 - 0.5) * 2 * R, (0.5 - SEA_PEARL[1] / 1024) * 2 * R, T + 0.0024); g.add(pearl);
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  g.userData.pearl = pearl;
+  return g;
+}
+function makeSeaArtIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const x = c.getContext('2d');
+  x.fillStyle = '#10232c'; x.beginPath(); x.arc(32, 34, 20, 0, Math.PI * 2); x.fill();
+  x.strokeStyle = '#4f6a5c'; x.lineWidth = 4; x.stroke();
+  const gr = x.createLinearGradient(0, 46, 0, 20); gr.addColorStop(0, '#1d7f9a'); gr.addColorStop(0.7, '#5fd0e6'); gr.addColorStop(1, '#e8fbff');
+  x.fillStyle = gr; x.beginPath(); x.moveTo(16, 44); x.bezierCurveTo(22, 36, 26, 24, 36, 22); x.bezierCurveTo(46, 21, 48, 31, 42, 32); x.bezierCurveTo(38, 33, 37, 29, 40, 28);
+  x.bezierCurveTo(44, 34, 48, 40, 48, 44); x.closePath(); x.fill();
+  x.fillStyle = '#bff0ff'; x.beginPath(); x.arc(41, 29, 2, 0, Math.PI * 2); x.fill();
+  return c.toDataURL();
+}
+var ART_SEA_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 19c2-1 3-4 5-8 2-4 6-7 10-6 3 1 4 5 1 6-2 1-3-1-2-2 1 2 3 5 4 10z" fill="#4cc4dc" stroke="#9fdff0" stroke-width="0.8"/><path d="M2 21c2-1 4-1 6 0s4 1 6 0 4-1 6 0" fill="none" stroke="#7fd8ea" stroke-width="1"/></svg>';
+const seaArtModel = makeSeaArtifact();
+seaArtItem = {
+  id: 'seaArtifact', name: 'Artifact of the Sea', icon: makeSeaArtIcon(), artifact: true, svg: ART_SEA_SVG,
+  desc: `Set into a weapon · A parry sends out a wave that lifts every enemy near you · ${SEA_CD}s to return`,
+  inspectModel: seaArtModel, iconRot: { x: 0.12, y: -0.35 },
+  use: () => {
+    if (isArtWeapon(equipped)) { if (attachArtifact(seaArtItem, equipped)) seaWarm(); }
+    else artSay('Hold a weapon to set it in');
+  },
+};
+function seaAttachedTo() { for (const it of inventory) if (it.artifact === seaArtItem) return it.name; return null; }
+
+/* ---- the wave ---- */
+/* A ring of foam running out over the ground and a low wall of water standing up behind it and falling again.
+ * MeshBasic map + transparent + DoubleSide (the footprints' program), and warmed against the SCENE the first time
+ * the artifact is yours, so the first parry does not stop the game to compile it. */
+function seaRingTex() {
+  const S = 256, [cv, x] = artCanvas(S, S), im = x.createImageData(S, S), nz = artNoise2(611);
+  for (let y = 0; y < S; y++) for (let xx = 0; xx < S; xx++) {
+    const dx = xx - S / 2 + 0.5, dy = y - S / 2 + 0.5, r = Math.hypot(dx, dy) / (S / 2), o = (y * S + xx) * 4;
+    if (r < 0.62 || r > 1) continue;
+    const k = (r - 0.62) / 0.38, a = Math.atan2(dy, dx);
+    const foam = artFbm(nz, (a + Math.PI) * 9, k * 6, 3);
+    const al = smooth01(0, 0.25, k) * (1 - smooth01(0.9, 1, k)) * (0.25 + 0.75 * k * k) * (0.55 + 0.9 * foam);
+    const w = Math.min(1, k * k * 1.2 + (foam - 0.5) * 0.6);
+    im.data[o] = 60 + 190 * w; im.data[o + 1] = 160 + 92 * w; im.data[o + 2] = 182 + 73 * w; im.data[o + 3] = Math.min(255, 255 * al);
+  }
+  x.putImageData(im, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function seaWallTex() {
+  const W = 128, H = 128, [cv, x] = artCanvas(W, H), im = x.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+    const v = 1 - y / (H - 1), u = xx / W * Math.PI * 2, o = (y * W + xx) * 4;
+    const streak = 0.5 + 0.25 * Math.sin(u * 23) + 0.25 * Math.sin(u * 61 + v * 4);
+    const crest = smooth01(0.6, 0.86, v) * (1 - smooth01(0.9, 1, v));
+    const body = smooth01(0, 0.12, v) * (1 - smooth01(0.82, 1, v));
+    const al = Math.min(1, body * 0.3 * (0.6 + 0.6 * streak) + crest * 0.8 * (0.5 + 0.6 * streak));
+    const w = Math.min(1, crest * 1.1 + streak * 0.15);
+    im.data[o] = 40 + 200 * w; im.data[o + 1] = 130 + 120 * w; im.data[o + 2] = 160 + 92 * w; im.data[o + 3] = 255 * al;
+  }
+  x.putImageData(im, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; return t;
+}
+let _seaRingTex = null, _seaWallTex = null;
+function seaMakeWave() {
+  const g = new THREE.Group(); g.visible = false;
+  const mat = (map) => new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.62, 1, 72, 1).rotateX(-Math.PI / 2), mat(_seaRingTex || (_seaRingTex = seaRingTex())));
+  ring.position.y = 0.05; ring.renderOrder = 2;
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.08, 1, 72, 1, true).translate(0, 0.5, 0), mat(_seaWallTex || (_seaWallTex = seaWallTex())));
+  wall.renderOrder = 2;
+  ring.raycast = wall.raycast = () => {};
+  g.add(ring, wall); scene.add(g);
+  const w = { g, ring, wall, on: false, t: 0, spray: 0 }; sea.waves.push(w); return w;
+}
+function seaWarm() {
+  if (sea.warmed) return;
+  sea.warmed = true;
+  try {
+    const w = sea.waves[0] || seaMakeWave();
+    w.g.visible = true; w.g.position.copy(camera.position);
+    renderer.compile(w.g, camera, scene);
+    w.g.visible = w.on;
+  } catch (e) {}
+}
+function seaWave(x, y, z) {
+  let w = sea.waves.find((v) => !v.on) || (sea.waves.length < 3 ? seaMakeWave() : sea.waves[0]);
+  w.on = true; w.t = 0; w.spray = 0; w.g.position.set(x, y, z); w.g.visible = true;
+  seaWaveTick(0);
+}
+function seaWaveTick(dt) {
+  const D = 1.0;
+  for (const w of sea.waves) {
+    if (!w.on) continue;
+    w.t += dt; const T = w.t;
+    const e = 1 - Math.pow(1 - Math.min(1, T / 0.6), 3), r = 0.6 + (SEA_R - 0.6) * e;
+    const fade = 1 - smooth01(0.4, D, T);
+    w.ring.scale.set(r, 1, r); w.ring.material.opacity = 0.95 * fade;
+    w.wall.scale.set(r * 0.97, Math.max(0.02, SEA_H * Math.sin(Math.min(1, T / D) * Math.PI) * (0.6 + 0.4 * fade)), r * 0.97);
+    w.wall.material.opacity = 0.85 * fade;
+    w.wall.material.map.offset.x = T * 0.15;
+    // the spray off it, twice as it runs out
+    if (w.spray < 2 && T > [0.06, 0.32][w.spray]) {
+      const n = w.spray === 0 ? 8 : 12, a0 = Math.random() * 6.283;
+      for (let i = 0; i < n; i++) {
+        const a = a0 + i / n * 6.283, cx = Math.cos(a), cz = Math.sin(a);
+        spawnSplash(w.g.position.x + cx * r, w.g.position.z + cz * r, 3, cx, cz, w.spray ? 0.9 : 0.7, w.g.position.y + 0.02);
+      }
+      w.spray++;
+    }
+    if (T >= D) { w.on = false; w.g.visible = false; }
+  }
+}
+
+/* ---- the lift ----
+ * Creature heights are eased toward their floors every frame, so a lift written into a unit's position is taken
+ * off BEFORE the creatures update and laid on again AFTER (`seaLiftOff` / `seaLiftOn`, round updateCrab ...
+ * samSmoothPose in `update`) — the AI only ever sees the ground. A blow that lands in the air writes `hitFrom`
+ * with the lift in it, and the knock-back code copies `hitFrom` back into the position: the lift is taken out of
+ * a `hitFrom` that changed since the last frame ended, so a unit struck up there is not lifted twice. */
+function seaLiftOff() {
+  for (const [u, L] of sea.lifted) {
+    /* KILLED UP THERE, A MUTANT KEEPS THE HEIGHT IT DIED AT: its ragdoll is built from the pose a few frames on,
+     * and built with the lift taken off it dropped the body 1.3 m in one frame (measured). Its fall is the
+     * ragdoll's. A crab's death never touches its height again, so a dead crab finishes the arc. */
+    if (L.mut && !u.st.alive) { sea.lifted.delete(u); continue; }
+    u.g.position.y -= L.y;
+    if (u.hitFrom && L.y && u.hitFrom.y !== L.hf) u.hitFrom.y -= L.y;
+    L.off = L.y; L.y = 0;
+  }
+}
+/* ...and a blow that kills resolves INSIDE the creature's update, with the lift off: `mutRagdoll` asks this first,
+ * so the body comes apart at the height it was killed at and falls from there. */
+function seaRagFrom(u) {
+  const L = sea.lifted.get(u); if (!L) return;
+  sea.lifted.delete(u);
+  if (L.y === 0 && L.off) { u.g.position.y += L.off; u.g.updateMatrixWorld(true); }
+}
+function seaLiftOn(dt) {
+  for (const [u, L] of sea.lifted) {
+    L.t += dt;
+    const k = Math.min(1, L.t / L.dur);
+    // a body the ragdoll has taken is the ragdoll's
+    if (k >= 1 || u.rag || (u.rd && u.rd.on)) { sea.lifted.delete(u); continue; }
+    L.y = L.h * 4 * k * (1 - k);
+    u.g.position.y += L.y;
+    L.hf = u.hitFrom ? u.hitFrom.y : 0;
+  }
+}
+function seaCatch(u, p, src, mut) {
+  const st = u && u.st;
+  if (!st || !st.alive || !st.awake || !u.g.visible) return false;
+  const dx = u.g.position.x - p.x, dz = u.g.position.z - p.z, d = Math.hypot(dx, dz);
+  if (d > SEA_R || Math.abs(u.g.position.y - (p.y - EYE_HEIGHT)) > 4) return false;   // (not one on another floor)
+  const kd = d || 1, big = mut && (u.kind.hp || 0) >= SEA_BOSS_HP;
+  if (u !== src) { const push = big ? 0.25 : 0.3 + 0.4 * (1 - d / SEA_R); u.g.position.x += dx / kd * push; u.g.position.z += dz / kd * push; }
+  if (big || sea.lifted.has(u)) return true;    // the big ones stand in it: the water breaks round them
+  st.atk = -1;
+  if (mut) { mutDrop(u); st.chainAt = -1; st.chained = false; } else if (crabToken === u) crabToken = null;
+  const up = SEA_UP * (u === src ? 1.1 : 1);
+  st.stun = Math.max(st.stun || 0, up + 0.45); st.stunMax = Math.max(st.stunMax || 0, st.stun);
+  sea.lifted.set(u, { t: 0, dur: up, h: SEA_H * (mut ? 1 : 0.75) * (0.85 + 0.15 * (1 - d / SEA_R)), y: 0, hf: u.hitFrom ? u.hitFrom.y : 0, mut });
+  return true;
+}
+/* Called at the end of every parry (`parryMutant`, `parryCrab`, `parryGull`) with what was parried. */
+function seaParry(src) {
+  if (!seaWeapon() || sea.cd > 0) return;
+  sea.cd = SEA_CD;
+  const p = camera.position, gU = groundUnder(p.x, p.z), gy = Number.isFinite(gU) ? gU : groundY;
+  seaWave(p.x, gy, p.z);
+  sfxSplash(1.6); sfxSurge(0.5, 1.1);
+  playSampleAt('wade', p.x, p.z, { gain: 1.2, ref: 3, far: 30, rate: 0.7 });
+  addTrauma(0.3);
+  for (const u of mutants) seaCatch(u, p, src, true);
+  for (const u of crabs) seaCatch(u, p, src, false);
+  for (const u of gulls) {
+    const S = u.st;
+    if (u === src || !S.alive || S.dead || S.phase === 'stun' || !u.g.visible) continue;
+    const dx = u.g.position.x - p.x, dz = u.g.position.z - p.z, d = Math.hypot(dx, dz);
+    if (d > SEA_R + 1) continue;
+    u.hitDir.set(dx / (d || 1), 0, dz / (d || 1));
+    knockGullDown(u, GULL.STUN * 1.2, 3.6);
+  }
+}
+
+/* ---- on the sand ---- */
+/* Laid in front of your face as the sea gives you back (the deep's 'black', beside the needle), and put back
+ * where it lay by a restore until you take it. Once a game: `seaState` rides the save. */
+function seaLay(x, z) {
+  if (seaState === 2 || sea.world) return;
+  seaState = 1; sea.spot = [+x.toFixed(2), +z.toFixed(2)];
+  seaSpawnWorld();
+}
+function seaSpawnWorld() {
+  if (sea.world || !sea.spot) return;
+  const [x, z] = sea.spot, w = new THREE.Group();
+  const m = seaArtModel.clone(true);
+  m.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  m.scale.setScalar(4.2);
+  /* face up and the wave the right way up to whoever lies looking up the beach — and stood up in the sand at
+   * 0.7 rad, its bottom edge sunk, so it looks back at the eye 0.38 m off the sand (measured: 0.79 toward it;
+   * lying flat it was a sliver at 0.22) and still shows its face to you standing over it (0.76 up) */
+  m.rotation.x = -Math.PI / 2 + 0.7;
+  w.add(m);
+  const gU = groundUnder(x, z);
+  w.position.set(x, (Number.isFinite(gU) ? gU : beachGroundAt(x, z)) + 0.06, z);
+  w.rotation.set(0.05, -Math.PI / 2 + 0.22, 0.04);
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; w.add(proxy);
+  w.userData.pearl = m.getObjectByName('seaPearl');   // (a clone's userData is copied as JSON: its `pearl` is not a mesh)
+  scene.add(w); sea.world = w;
+  addItemShine(w, { ...DROP_SHINE, height: 0.3 });
+  addInteractable(w, 'Take the Artifact of the Sea', 'inventory', {
+    keepSize: true, mid: true,
+    when: () => !deep.ph,
+    onActivate: () => {
+      seaState = 2;
+      dropShine(w); scene.remove(w); removeInteractable(w); hovered = null; sea.world = null; sea.spot = null;
+      addToInventory(seaArtItem);
+      stickArtifacts();
+      seaWarm();
+      sfxArtAttach();
+      artBanner('Artifact of the Sea');
+    },
+  });
+}
+function seaUnlay() {
+  if (!sea.world) return;
+  const w = sea.world; sea.world = null;
+  dropShine(w); scene.remove(w); removeInteractable(w);
+}
+/* Restore: what state it is in, where it lies, and what it is set in. */
+function seaRestore(f) {
+  seaState = f.seaRelic || 0;
+  sea.spot = seaState === 1 && Array.isArray(f.seaRelicAt) ? f.seaRelicAt : null;
+  // a save from before it came back, made after the deep: it is lying where it would have been, by the needle
+  if (f.seaRelic == null && f.deepDone) {
+    const nx = f.needle ? f.needle[0] - 0.6 : WASH.x, nz = f.needle ? f.needle[1] - 0.1 : TREE_SPOT.z + WASH.dz;
+    seaState = 1; sea.spot = [+(nx + SEA_WASH.dx).toFixed(2), +(nz + SEA_WASH.dz).toFixed(2)];
+  }
+  if (seaState !== 1 || !sea.spot) { seaUnlay(); if (seaState === 1) seaState = 0; }
+  sea.attachPending = seaState === 2 ? (f.seaRelicOn || null) : null;
+  sea.cd = 0;
+  for (const [u, L] of sea.lifted) u.g.position.y -= L.y;
+  sea.lifted.clear();
+}
+function seaRestoreTick() {
+  if (!sea.attachPending) return;
+  const w = packByName(sea.attachPending);
+  if (w && inventory.includes(w)) {
+    sea.attachPending = null;
+    if (inventory.includes(seaArtItem)) { inventory.splice(inventory.indexOf(seaArtItem), 1); clearSlot(seaArtItem); }
+    w.artifact = seaArtItem; seaArtItem.on = w; renderHotbar(); renderPack();
+  } else if (!restore) { sea.attachPending = null; if (!inventory.includes(seaArtItem) && !seaArtItem.on) addToInventory(seaArtItem); }
+}
+function seaTick(dt) {
+  if (sea.cd > 0) {
+    sea.cd = Math.max(0, sea.cd - dt);
+    if (sea.cd === 0 && seaWeapon()) playSample('slosh', 0.35, 0.05, 1.25);   // it is back: the water in it moves
+  }
+  seaWaveTick(dt);
+  seaRestoreTick();
+  if (seaState === 1 && !sea.world && sea.spot) seaSpawnWorld();
+  const pm = sea.world && sea.world.userData.pearl;
+  if (pm && pm.material) pm.material.emissiveIntensity = 1.3 + 0.5 * Math.sin(performance.now() / 700);
+  // the weapon's own slot goes hollow while the wave comes back
+  for (let i = 0; i < hotbarCache.length; i++) {
+    const c = hotbarCache[i]; if (!c) continue;
+    c.el.classList.toggle('seacd', !!c.item && c.item.artifact === seaArtItem && sea.cd > 0);
+  }
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaArtItem, sea, seaParry, seaLay, seaUnlay, seaWeapon, seaWave, makeSeaArtifact, seaS: () => seaState }));
 
 animate();
 
@@ -98129,7 +98531,8 @@ function updateDeep(rawDt) {
           for (let k = 0; k <= 20; k++) hi = Math.max(hi, shoreLineJS(z, t0 + k * 0.5));
           deep.washX = Math.max(WASH.x, hi + 0.9); }
         needlePlace(deep.washX + 0.6, TREE_SPOT.z + WASH.dz + 0.1);
-        washPose(0);                                             // already lying there behind the black, so the beach loads round you
+        seaLay(deep.washX + SEA_WASH.dx, TREE_SPOT.z + WASH.dz + SEA_WASH.dz);   // and past it, the sea's artifact: what the sea took, it gives back
+        washPose(0);                                            // already lying there behind the black, so the beach loads round you
       } else washPose(0);
       if (T >= WASH_BLACK) { deep.ph = 'wash'; deep.t = 0; }
       break;
