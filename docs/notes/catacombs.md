@@ -873,3 +873,18 @@ lying there) and adds him to the end's kill tally (`statKill` skips `undying`, s
 `catHunterReset` (run on every fall into the catacombs) returns for a dead or retired one. `kind.undying` is left
 on: it is what routes his first death into the lie-down rather than the generic death. `statKillTotal` +1.
 Measured: killed, 75 s of frames later still `mode 'down'`, key in the save's `deadUnits` and `stats.kill`.
+
+## "I fell through the ground once again and the monster keeps getting stuck — fix these forever" (2026-10-16)
+
+- **The player stands on the drawn floor** where the grid lost the storey: `catFloorP` in `updateCatacombs` (the
+  player's walk only; the hunter's routes stay on the grid) answers a lookup that would drop you more than 0.6 m with
+  `keepDrawnFloor` at your feet, flagged `drawn`, and the camera's smoothed floor is not allowed to pull you off it.
+  A real ledge has nothing drawn at your level past it, so it still drops you.
+- **The fall net counts walk-offs.** `onGround` only ever goes false on a jump, so walking off an edge never started
+  `catAirT` and `catGroundSpot` followed you down. "On the floor" is now the feet within 0.3 of it; the clock is 1.25 s.
+- **`catWatch` has a clock nothing renews**: every exemption (a swing, an act, you in reach) was renewable, so a
+  hunter a storey under you or behind a wall could swing at you through it for ever. `C.aT` is reset only by 1.5 m of
+  ground, a storey, an act/fall, or real fighting (in reach on your own level); nine seconds of anything else and
+  it detours, else `catLose` (`window.__catBackstop` counts). A cancelled swing drops the token.
+- **Pushes may not cross drawn stone** (`pushHeld`, misc.md). Measured: 81 m of random walking and jumping, 0 caught,
+  worst step 0.23 m.

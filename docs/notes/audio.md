@@ -585,3 +585,17 @@ effects bus is 0.12 at defaults, so there is headroom. The drone's moan is
 noise through a wandering band (no oscillators — the triangle hum was the
 "synthetic" in it), plus the well's mouth mode through `wellA`, and on its
 own a drip or grit from the well every 4–13 s while you are near.
+
+- **The crabs' crawl (2026-10-16, the owner: "a subtle crawl sound on the beach, make it match their pace").**
+  `crabCrawlTick` (called from `crabAnim`'s walk branch) reads the walk clip's OWN time: `CRAWL_STEPS` (4)
+  footfalls per loop, so the clip's `timeScale` (which already follows the crab's speed) sets the pace — measured
+  ~10 footfalls/s for the loner closing at a run. Each is `sfxCrabCrawl`: one or two 45 ms grains (six buffers made
+  once, sand hiss with a hard tick at the head), bandpassed 2.6–4.8 kHz, through `packOut` at 0.075 — far under
+  the pack's clatter (0.5). Silent in the wash (`submersionAt > 0.25`), past 26 m, in rooms, or while hidden.
+  Test: count `createBufferSource` starts whose buffer is 0.045 s while a `called` crab chases you.
+
+- **Behind the dune (2026-10-16):** `startElvAmbience` (a looped noise bed → band-pass + low rumble + a narrow
+  whistle, to `masterGain`, gain by `elvSecK`/`elvAirK`/`airGust`), `sfxElvCreak` (sawtooth through a narrow band,
+  wavering), `sfxElvChime` (three detuned sines with inharmonic partials, on the porch), the swing's creak at each end of
+  its arc, the music box upstairs (`updateElvMusicBox`, `ELV_BOX_TUNE`, runs down over three passes, half volume through
+  the floor, stops when you lift the puppet), and the front door slam (`elvSlamFront`, 1.4 s after the pickup).

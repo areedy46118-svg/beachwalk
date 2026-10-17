@@ -82,7 +82,7 @@
   #blackout { position: fixed; inset: 0; z-index: 11; background: #000; opacity: 0; pointer-events: none; }
   /* the morning after the Great Crab Call (`startWakeCut`): nothing of the game on the screen but the sky */
   body.wake-cine #hud, body.wake-cine #vitals, body.wake-cine #stamwrap, body.wake-cine #crosshair, body.wake-cine #promptmid, body.wake-cine #prompt,
-  body.wake-cine #blood, body.wake-cine #ehp, body.wake-cine #fighttip, body.wake-cine #digtip, body.wake-cine #hotbar, body.wake-cine #rings,
+  body.wake-cine #blood, body.wake-cine #ehp, body.wake-cine #fighttip, body.wake-cine #digtip, body.wake-cine #packtip, body.wake-cine #hotbar, body.wake-cine #rings,
   body.wake-cine #health, body.wake-cine #ammo, body.wake-cine #gear, body.wake-cine #autosave, body.wake-cine #dread, body.wake-cine #hurt, body.wake-cine #hurt-blood { opacity: 0 !important; }
   #intro {
     position: fixed;
@@ -415,6 +415,7 @@
     pointer-events: none;
     transition: background 0.15s ease, transform 0.15s ease;
   }
+  body.dialog-on #crosshair { opacity: 0 !important; }
   #crosshair.active { background: rgba(235, 244, 255, 0.9); transform: scale(1.5); }
   #crosshair.holding { background: rgba(150, 200, 255, 0.8); transform: scale(0.7); }
 
@@ -507,7 +508,7 @@
     background: radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(4,0,0,0.55) 72%, rgba(0,0,0,0.95) 100%);
   }
   /* the first crab fight's controls: one row along the bottom, over the stamina strip */
-  #fighttip, #digtip {
+  #fighttip, #digtip, #packtip {
     position: fixed; left: 50%; bottom: 118px; transform: translateX(-50%);
     pointer-events: none; z-index: 6;
     display: flex; gap: 2.4em; justify-content: center;
@@ -518,12 +519,12 @@
     opacity: 0; transition: opacity 0.6s ease;
     white-space: nowrap;
   }
-  #fighttip.show, #digtip.show { opacity: 1; }
+  #fighttip.show, #digtip.show, #packtip.show { opacity: 1; }
   #digtip b { font-weight: 600; color: #ffffff; margin-right: 0.7em; }
-  @media (max-width: 1100px) { #fighttip, #digtip { font-size: 13px; gap: 1.6em; } }
+  @media (max-width: 1100px) { #fighttip, #digtip, #packtip { font-size: 13px; gap: 1.6em; } }
   #fighttip b { font-weight: 600; color: #ffffff; margin-right: 0.7em; }
-  @media (max-width: 760px) { #fighttip, #digtip { gap: 1.2em; font-size: 11px; } }
-  @media (max-width: 620px) { #fighttip, #digtip { flex-wrap: wrap; width: 94vw; row-gap: 0.2em; } }
+  @media (max-width: 760px) { #fighttip, #digtip, #packtip { gap: 1.2em; font-size: 11px; } }
+  @media (max-width: 620px) { #fighttip, #digtip, #packtip { flex-wrap: wrap; width: 94vw; row-gap: 0.2em; } }
   #prompt .key, #promptmid .key {
     display: inline-block;
     min-width: 1.5em;
@@ -595,31 +596,52 @@
     pointer-events: none;
     transition: opacity 0.3s ease;
     font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Courier New", monospace;
+    /* ONE SIZE FOR THE WHOLE CARD, AND IT FOLLOWS THE WINDOW (2026-10-15, the owner: "make all dialog a little bigger
+       and the name of the character more noticeable … make it match the size better and look better"). Every size
+       in it was a fixed pixel count picked on a laptop: on a 2000 px window the line was 16 px in a 660 px column, a
+       caption under the picture. Everything below is in em off this: ~21 px on a 2000 x 840 window, ~18 on a 1440
+       laptop, never under 16. */
+    font-size: clamp(16px, calc(0.62vw + 0.55vh + 4px), 26px);
+    /* and its words cannot be selected: a click-drag or a double click on a line painted it the browser's blue
+       (2026-10-16, the owner: "my dialog with the dealer was highlighted for some reason") */
+    user-select: none; -webkit-user-select: none;
+  }
+  /* and a shade under it, so the words hold up over a lit scene — from the bottom only, never over a face */
+  #dialog::before {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: min(55vh, 30em); z-index: -1; pointer-events: none;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.42) 45%, rgba(0, 0, 0, 0) 100%);
   }
   #dialog.show { opacity: 1; pointer-events: auto; }
-  #dialog .frame { width: min(92vw, 660px); }
+  #dialog .frame { width: min(92vw, 44em); }
   /* Black and white and nothing else. The teal was a UI from a different
      game — this one is a night beach with no colour in it. */
+  /* the name: a tag, not a caption — bold, a size up, on its own dark ground with a white bar at its edge, so who is
+     talking is the first thing read. Still black and white. (No speaker — the well's voice — and there is no tag.) */
   #dialog .speaker {
     display: inline-block;
-    padding: 3px 0 5px;
-    background: none;
+    margin-bottom: 0.45em;
+    padding: 0.32em 0.8em 0.3em 0.7em;
+    background: rgba(0, 0, 0, 0.62);
     border: none;
+    border-left: 3px solid #ffffff;
     color: #ffffff;
-    font-size: 0.68rem;
-    letter-spacing: 0.34em;
+    font-size: 0.8em;
+    font-weight: 700;
+    letter-spacing: 0.3em;
     text-transform: uppercase;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
   }
+  #dialog .speaker:empty { display: none; }
   #dialog .box {
     position: relative;
     min-height: 0;
-    padding: 0.55rem 0 0.75rem;
+    padding: 0.6em 0 0.7em;
     background: none;
     border: none;
-    border-top: 1px solid rgba(255, 255, 255, 0.16);
+    border-top: 1px solid rgba(255, 255, 255, 0.22);
     color: #ffffff;
-    font-size: 1.02rem;
-    line-height: 1.7;
+    font-size: 1em;
+    line-height: 1.62;
     letter-spacing: 0.04em;
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.95), 0 0 3px rgba(0, 0, 0, 0.9);
   }
@@ -635,19 +657,19 @@
     animation: caret 0.7s step-end infinite;
   }
   @keyframes caret { 0%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
-  #dialog .choices { position: relative; display: flex; flex-direction: column; gap: 1px; margin-top: 10px; }
+  #dialog .choices { position: relative; display: flex; flex-direction: column; gap: 0.1em; margin-top: 0.5em; }
   #dialog .choice {
     display: block;
     width: 100%;
     text-align: left;
-    padding: 0.3rem 0 0.3rem 1.5em;
+    padding: 0.34em 0 0.34em 1.5em;
     background: none;
     border: none;
     /* every readable line is the same white; a choice you have already put
        to him is the ONLY thing that dims, so the grey means one thing */
     color: #ffffff;
     font-family: inherit;
-    font-size: 0.86rem;
+    font-size: 0.8em;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     cursor: pointer;
@@ -673,8 +695,8 @@
   #dialog .choice.used { color: rgba(255, 255, 255, 0.42); }
   #dialog .choice.used:hover { color: rgba(255, 255, 255, 0.68); }
   #dialog .hint {
-    margin-top: 12px;
-    font-size: 0.68rem;
+    margin-top: 0.7em;
+    font-size: 0.62em;
     letter-spacing: 0.24em;
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.42);
@@ -682,8 +704,8 @@
   }
   /* always-available way out of a conversation */
   #dialog .leave {
-    margin-top: 14px;
-    font-size: 0.64rem;
+    margin-top: 0.8em;
+    font-size: 0.6em;
     letter-spacing: 0.22em;
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.32);
@@ -1209,12 +1231,15 @@
   /* BUY and SELL are two tabs of the same title: the one you are on is
      white with a hairline under it, the other dim and clickable */
   #shoppanel .tabs { display: flex; gap: 2.2rem; }
+  /* (2026-10-16, the owner: "make sell buy upgrades text white and more noticeable": all three white and bold, the
+     one you are on underlined and lit, the others a step back but never grey) */
   #shoppanel .tab {
-    cursor: pointer; color: rgba(255, 255, 255, 0.38);
-    padding-bottom: 0.35rem; border-bottom: 1px solid transparent;
+    cursor: pointer; color: rgba(255, 255, 255, 0.82); font-weight: 700; font-size: 1.08rem;
+    padding-bottom: 0.4rem; border-bottom: 2px solid transparent;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
   }
-  #shoppanel .tab:hover { color: rgba(255, 255, 255, 0.7); }
-  #shoppanel .tab.on { color: #ffffff; border-bottom-color: rgba(255, 255, 255, 0.8); }
+  #shoppanel .tab:hover { color: #ffffff; }
+  #shoppanel .tab.on { color: #ffffff; border-bottom-color: #ffffff; text-shadow: 0 0 10px rgba(255, 255, 255, 0.45), 0 1px 6px rgba(0, 0, 0, 0.9); }
   #shoppanel .detail .buy.all { margin-top: 0.6rem; }
   #shoppanel .head .jars {
     font-size: 0.72rem;
@@ -1303,10 +1328,10 @@
   }
   #shoppanel .detail .ds {
     margin-top: 0.7rem;
-    font-size: 0.78rem;
+    font-size: 0.82rem;
     line-height: 1.55;
     letter-spacing: 0.02em;
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(255, 255, 255, 0.86);
   }
   #shoppanel .detail .buy {
     margin-top: 1.2rem;
@@ -1574,7 +1599,7 @@
     transition: opacity 2s ease;
   }
   #end.show { opacity: 1; pointer-events: auto; }
-  #end.bare h1, #end.bare p { display: none; }   /* the Great Crab Call's end: black, and the way back */
+  #end h1, #end p { display: none; }   /* (2026-10-15, the owner: "take out the 'the lighthouse' text and the message at the end i just want the stats and 'walk again' make it white text too") */
   #end.bare { background: #000; }
   #end h1 {
     font-size: clamp(2rem, 6vw, 3.4rem);
@@ -1585,22 +1610,50 @@
   }
   #end p { font-size: 0.9rem; letter-spacing: 0.1em; opacity: 0.7; max-width: 32ch; line-height: 1.8; }
   /* the tally, above the way back */
-  #end-stats { display: grid; gap: 0.55rem; min-width: min(20rem, 80vw); font-size: 0.95rem; letter-spacing: 0.12em; }
-  #end-stats .row { display: flex; justify-content: space-between; gap: 2.5rem; border-bottom: 1px solid rgba(140, 162, 200, 0.14); padding-bottom: 0.35rem; }
-  #end-stats .row span:last-child { color: #e6edfb; font-variant-numeric: tabular-nums; }
+  /* (2026-10-15, the owner: "make final stats and walk again way bigger on the screen") */
+  #end-stats { display: grid; gap: clamp(0.7rem, 1.6vh, 1.1rem); min-width: min(40rem, 88vw); font-size: clamp(1.25rem, 2.7vw, 2.1rem); letter-spacing: 0.12em; }
+  #end-stats { color: #fff; text-transform: uppercase; }
+  #end-stats .row { display: flex; justify-content: space-between; gap: 3rem; border-bottom: 1px solid rgba(255, 255, 255, 0.22); padding-bottom: 0.45rem; }
+  #end-stats .row span:last-child { color: #fff; font-variant-numeric: tabular-nums; }
   #end button {
-    margin-top: 1rem;
-    padding: 0.7rem 1.6rem;
+    margin-top: 1.4rem;
+    padding: clamp(0.9rem, 2vh, 1.3rem) clamp(2.2rem, 5vw, 3.6rem);
     background: transparent;
-    border: 1px solid rgba(140, 162, 200, 0.4);
-    border-radius: 6px;
-    color: #dde6f6;
+    border: 2px solid rgba(255, 255, 255, 0.75);
+    border-radius: 8px;
+    color: #fff;
     font-family: inherit;
-    font-size: 0.75rem;
-    letter-spacing: 0.2em;
+    font-size: clamp(1.15rem, 2.4vw, 1.8rem);
+    letter-spacing: 0.24em;
     text-transform: uppercase;
     cursor: pointer;
   }
+  /* AN ACHIEVEMENT, THE WAY THE CONSOLE SHOWS ONE (2026-10-15, the owner: "make it an xbox achievement pop up … Rare
+   * achievement unlocked 50 - Seagull Slayer"): the round badge pops in first, the pill unrolls out of it, the two lines
+   * come up inside, it holds, and it rolls back into the badge and goes. Driven from `showAchievement` in main.js. */
+  #ach { position: fixed; left: 50%; bottom: 13vh; z-index: 70; width: min(380px, 92vw); height: 64px; transform: translateX(-50%); pointer-events: none;
+         font-family: "Segoe UI", "Segoe UI Variable", -apple-system, "Helvetica Neue", Arial, sans-serif;
+         visibility: hidden; opacity: 0; }
+  /* (2026-10-15, the owner: "it lagged when the achievement showed up"): nothing here animates a size or a shadow — the
+   * bar SLIDES out from behind the badge inside a fixed rounded frame, and the rest is opacity and scale, all of it the
+   * compositor's; and the toast is laid out from the start (hidden, not `display: none`), so showing it builds nothing */
+  #ach.on { visibility: visible; opacity: 1; }
+  #ach .clip { position: absolute; left: 0; top: 0; width: 100%; height: 64px; border-radius: 32px; overflow: hidden; }
+  #ach .pill { position: absolute; left: 0; top: 0; width: 100%; height: 64px; border-radius: 32px;
+               background: linear-gradient(90deg, rgba(122, 18, 24, 0.94), rgba(88, 12, 18, 0.9));
+               transform: translateX(calc(-100% + 64px)); transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
+  #ach.open .pill { transform: translateX(0); }
+  #ach .badge { position: absolute; left: 0; top: 0; width: 64px; height: 64px; border-radius: 50%;
+                background: radial-gradient(circle at 50% 40%, #e2343c, #a3141c 70%); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+                display: grid; place-items: center; transform: scale(0); transition: transform 0.38s cubic-bezier(0.3, 1.6, 0.5, 1); will-change: transform; }
+  #ach.pop .badge { transform: scale(1); }
+  #ach .badge svg { width: 38px; height: 38px; }
+  #ach .txt { position: absolute; left: 80px; top: 11px; white-space: nowrap; color: #fff; opacity: 0; transform: translateX(-8px);
+              transition: opacity 0.35s ease 0.25s, transform 0.35s ease 0.25s; will-change: opacity, transform; }
+  #ach.open .txt { opacity: 1; transform: none; }
+  #ach .t1 { font-size: 16px; font-weight: 600; letter-spacing: 0.01em; }
+  #ach .t2 { font-size: 15px; margin-top: 3px; display: flex; align-items: center; gap: 5px; color: rgba(255, 255, 255, 0.92); }
+  #ach .g { width: 15px; height: 15px; }
 </style>
 </head>
 <body>
@@ -1617,10 +1670,11 @@
   <div id="ehp"></div>
   <div id="dread"></div>
   <div id="digtip"></div>
+  <div id="packtip"><div>PRESS TAB TO OPEN INVENTORY</div></div>
   <div id="fighttip">
     <div><b>Click</b>light hit</div>
     <div><b>Hold click</b>heavy</div>
-    <div><b>Shift + hold click</b>heavy overhead</div>
+    <div><b>Shift + hold click</b>heavy stab</div>
     <div><b>Right-click</b>block</div>
   </div>
 
@@ -1799,7 +1853,7 @@
       <div class="ctl-group">Fighting</div>
       <div class="ctl"><span class="key">Click</span><span>swing</span></div>
       <div class="ctl"><span class="key">Hold click</span><span>charge a heavy</span></div>
-      <div class="ctl"><span class="key">Shift + hold</span><span>overhead &middot; thrust with a blade</span></div>
+      <div class="ctl"><span class="key">Shift + hold</span><span>heavy stab</span></div>
       <div class="ctl"><span class="key">Right click</span><span>guard &middot; parry on the tell &middot; aim a gun</span></div>
       <div class="ctl"><span class="key">R</span><span>reload</span></div>
       <div class="ctl-group">Things</div>
@@ -1810,6 +1864,12 @@
       <div class="ctl"><span class="key">Esc</span><span>menu</span></div>
       <div class="buttons one"><button id="m-back">Back</button></div>
     </div>
+  </div>
+
+  <div id="ach">
+    <div class="clip"><div class="pill"></div></div>
+    <div class="txt-wrap"><div class="txt"><div class="t1"></div><div class="t2"><svg class="g" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M10.6 6.1A3 3 0 1 0 11 8.4H8.3" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/></svg><span class="t2s"></span></div></div></div>
+    <div class="badge"><svg viewBox="0 0 40 40"><path d="M8 15 L13 8 H27 L32 15 L20 33 Z" fill="#fff"/><path d="M8 15 H32 M13 8 L17 15 L20 33 L23 15 L27 8 M17 15 L20 8 L23 15" fill="none" stroke="#b81c24" stroke-width="1.3" stroke-linejoin="round"/></svg></div>
   </div>
 
   <div id="end">

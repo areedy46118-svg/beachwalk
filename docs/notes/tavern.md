@@ -1095,3 +1095,40 @@ in; and the no-reversal test compared the result with the SLANT the frame asked 
 away from it — so the whole frame was thrown out, every frame. The test is now made against the slide once
 one is taken (`_tavWant` set to it), in the tavern and in the three walks built on it (`_fortWant`, `_c13Want`,
 `_thrWant`). After: slants from either side slide into the storeroom, zero reversals.
+
+## "None of the enemies should get stuck on both these curtains" (2026-10-16)
+
+The two hanging carpets on the south wall come down to 0.3–0.7 m over the flags (x −8.5..−4.5 and −2..1.5, z −6.6..−6.2;
+the east one is tied up to 2.3 m at its west edge) with a 2.45 m gap between them — the only way south. Measured with
+the player behind the west carpet (−6, −9.5) and all three set on you: two held one spot for 20 s. Four faults, all fixed:
+- **A step off the arena was put back WHOLE** (`u.st.tavHome`), so a body whose chase ran it along the arena's edge in
+  front of the cloth was refused every frame. It now keeps whichever axis of the step is still on the arena (the wall
+  push's own slide), else the whole revert.
+- **`tavClear` said "clear" down a line the arena refuses** (cells off `TAV_G.main` at 35/70/100 % of the look), so no
+  route was ever asked for. It now checks the arena too.
+- **The progress test only ran on a SHUT line, and per frame.** Against a carpet's hem the push rocks a body ±1 cm a
+  frame, which reads as walking. Now: net ground over half a second (`u.tavAnchor`, 0.25 m), asked of an open line as
+  well when out of reach (`maxReach + 0.1`); half a second still forces a route (`u.tavForced`), dropped once in reach.
+- **`mutSeparate` moved tavern bodies with no clamp after it**: two pressing along the east carpet put the orc on no
+  floor, half in the wall (x 1.37 against the clamp's 0.6). It now runs `mutClampX` for `kind.tav`.
+And a route in hand means the line is shut, so `near` is false for a tavern body with `u.path` — the catacombs' rule:
+no swinging at you through a carpet at 2.8 m. After, both carpets and back to the hall: all three close to reach.
+- **Test trap: dev mode never swings** (`!settings.devMode` gates the swing branch), so in a devMode harness the ones
+  "in reach" stand idle — and the two without the token hold ~3.5 m by design. Read `mutToken` and the distances
+  against `u.maxReach` before calling a body stuck.
+
+## The storeroom door: "an invisible wall walking through the door after unlocking" (2026-10-16)
+
+The leaf was in the wall index where it is drawn SHUT, and `tavWallsDirty` re-took the whole hall's index only when the
+swing ended — 0.9 s for the bolt plus 1.15 s of swing of a wall you can see opening, then the index rebuilt in one frame.
+Now the hinge's meshes are `bwGhost` (drawn, never walked into) and nothing rebuilds on opening; while it is locked the
+walk itself refuses the doorway (`tavStoreShut`: a slab ±0.28 m about the leaf's plane, the opening's width + 0.15,
+feet under the flags + 1; a move into or over it is refused, out of it is not). Measured: locked, the walk stops at
+z 8.39 from the middle and both slants; opened, a walk in straight away reaches the room, worst step 4.5 ms.
+
+## The orc's portrait drops (2026-10-16)
+
+"flying in the air and getting stuck in the air." `updateGrammyFlutter` lowered its floor with `corpseTopAt` — the orc's
+own body — so it settled on the corpse's height and stayed when the body went. Only `bunkerFloorAt` sets the floor now,
+and `dropGrammy`'s fallback is the orc's feet, not its middle. It plays the octopus ring's sting (`ringDrop`) unless a
+save is being put back. Measured: dropped at 1.6 m, it lies 0.04 m over the flags.

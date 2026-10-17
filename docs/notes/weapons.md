@@ -2636,3 +2636,8 @@ The solid-hit branch plays `gfPlay('hitWood' | 'hitMetal' | 'hitStone')` (modal 
 body; a bright crack over a low thud; a ringing clang) under the tool's recorded hit — `katBlock`/`katHit` for
 blades, `blockMil`/`milHeavy` for the military shovel. Every walled site answers now (`siteBladeHit`, see
 lighthouse.md).
+
+**The fire left on the edge burns a little (2026-10-16).** `flameBurn` runs on every main blade hit now: the burning
+heavy still sets `FLAME_BURN` (2.6 s × 0.17/s); a blow while `flame.k` ≥ `FLAME_LINGER.from` (0.12) with the flame
+weapon in hand leaves `FLAME_LINGER.dur` (1 s) × min(1, k·1.4) of the same trickle — 0.17 hp at most — and never
+shortens a burn already running.

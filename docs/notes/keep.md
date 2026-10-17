@@ -737,3 +737,27 @@ beside the door and slivers on the terrace's far edge were DRAWN at 15.7–16.1 
 **`trustDrawn` — the drawn-floor rule is the keep's and the tavern's ONLY.** `keepFloorAt` is also the island's, the
 castles', the catacombs', the throne room's and the dungeon's floor, and the rule went into all of them; it is now
 behind `S.trustDrawn`, set on `KEEP_SITE` and `TAV_SITE`.
+
+## The sea comes up round the sides, and a line under it (2026-10-16)
+
+"make the water be raised slightly on the sides of the tavern up the beach so you cant walk around the back … its too
+laggy back there and i lagged through the tavern again." (The owner calls the island "the outside of the tavern".)
+Flooded from the pier with the walk's rules (`keepFloorAt` with a jump's 0.97, the three `keepHitsWall` heights,
+`KEEP_BLOCKS`, a wall-near radius): with ANY body width (0.15 m) nothing reaches the back; with a POINT — which is what
+the push-outs let you be, a frame at a time — there were three ways: up the east side over a rubble of rock 2–4 m high,
+north from the bales and over the rocks at z 4.5 into the keep's open BASE at (−6.6, 2.1) and out of its far side
+(the "through the tavern"), and the base the other way. A point squeezing past rock is exactly where the pushes fight,
+which is the lag.
+- `KEEP_TIDES`: two necks (east z −1.5 from the rock out to sea, west z 1 north of the bales) where the sea stands
+  higher — 1.25 / 0.80 m, full across the middle half, easing out along it and seaward. `keepTideAt(lx, lz)` is asked
+  by the walk's `wet` (ground under it is the sea, like the waterline), `keepWading` and `roomSubmersion`.
+  Drawn by `buildKeepTides`: a patch per tide hung from `keepWater`, in its frame, with the island water's shader and
+  its SHARED uniforms (one clock, one field); where the rise is 0 the patch sits 0.10 under the sea. The shore foam,
+  which reads the field's old shoreline, is swapped for foam off each vertex's depth over the sand (`aDepth`).
+- `KEEP_BACK_CUT`: one refused polyline west sea → along the west tide → down the side of the base → along the east
+  tide → east sea, pushed onto `KEEP_BLOCKS` with a `top` (6.5): `keepBlockCrossed(…, feet)` skips it for feet over
+  `KEEP_Y + top`, so the terrace and the storeys are untouched. The push-out may not carry you over a line either.
+- The base is not reachable by any legitimate walk (0.15 m flood: 0 cells in it), so the cut costs nobody a place.
+- Measured with the real walk (`setFallbackLook(true)`, `keys.KeyW`, `step`, a jump every 37–45 ticks, 900 ticks
+  each) from 18 starts along both sides: 0 crossings, worst step 0.15 m. The tide is subtle on screen, as asked — it
+  covers the low sand at the necks; the rocks still stand out of it.

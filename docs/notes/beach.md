@@ -1946,3 +1946,323 @@ radius: measured, it woke and came from 21 m to 6 m in three seconds.
 `TREE_SPOT.z = TRIBE_Z + 22` (−814; it was 10.5 m PAST the fire), `FISH_SPOT.z = TRIBE_Z + 22.5`, `FISH_GLOW` and the
 chart's X follow. 12 m short of the camp's lookout (`TRIBE_Z + 10`), 54 m short of the whale's music (`WS_Z0`).
 The tree's and the pliosaur's reach are 814. The deep's spit lands you under it (`TREE_SPOT`), unchanged in code.
+
+## The body bag is gone (2026-10-15)
+
+"take out the wrapped up body before the shipwreck to save space". Removed: `assets/corpse.glb` (5.3 MB → incoming/
+unused-2026-10-15/), its load/grade/far-cull/warm block, the sand drift (`regMound`) it had settled into, its four
+`rockColliders` (step 0.10), its `ASSET_REACH` and `WARM_REACH` entries, `__bw.corpse`, and its README feature line and
+credit (Dennis Hafemann, CC-BY-4.0). KEPT: `CORPSE_X/CORPSE_Z` — the mood still closes in on that stretch
+(`MOOD_PLACES`, `moodKeys`' `CORPSE_Z + 20`) and `moundKeepOuts` still keeps the mounds off the spot, so no mound and
+no colour on the walk moves. Measured: walked x 9.6 from z -118 through -126, eye 1.655–1.745 (the bob only), nothing in
+the way; the whole beach and every room toured with no failed request and no console error.
+
+## Driftwood and the stones you throw, scanned; glass breaks to a throw (2026-10-15)
+
+The owner: "driftwood should not clip through the ground when thrown. glass should break when other things are thrown
+at it too. give the rocks and driftwood on the beach more detail hyperrealistic" — "the throwable rocks i mean" —
+then "the big piece of drift wood is floating and you can see too many of the same ones down the beach" and
+"driftwood should float on the water too not get covered".
+- **The wood** is jonathan.imaginaire's photogrammetry of a bleached root standing in sand (CC-BY, 7.0 M triangles,
+  two 8K maps, incoming/). `tools/driftwood_seg.py` (Blender, headless): a tenth by decimation, the 75 chunks WELDED
+  (unwelded, no region crosses a seam and the sand never forms one region), each face's brightness off its texture
+  blurred three rings, and a face is sand if darker than 0.5 AND within 0.35 of the ground under it (the ground =
+  10th-percentile height per cell; brightness alone ate the trunk's dark bark); only BIG dark regions go.
+  `tools/driftwood_bake.py`: solidified (the scan is an open shell — a voxel remesh of a shell is confetti), voxel
+  remesh 0.02, decimate to 22k; the trunk cut off where the 90th-percentile spread passes 1.7x the median and closed
+  (`log`, 13k); one atlas; colour baked as EMIT (the source is UNLIT — a DIFFUSE bake of it is black), normals 1024;
+  each laid in its REST POSE: the convex-hull face it is stable on (centre over the face), lowest-sitting. (Laid by
+  "thinnest axis up" the root stood on a root tip, trunk in the air — "floating".) glbquant + gzip: 2.0 MB.
+- **On the beach** (`driftKind`, in the driftwood loader): no longer the 46 m wrack tile (one log a tile = one log in
+  one pose the whole walk). World pieces from a fixed seed, every 45–120 m to z -1120, x 9.4–12.4 (dry), off rock,
+  uneven ground (>0.25 m across it) and set pieces (`avoid()` + `moundKeepOuts`); 70 % logs bedded 2–6 cm, 30 % roots
+  bedded 20–30 % of their height; length, yaw and handedness (negative z scale) each their own; `farProps` 140 m.
+- **The pickup** is the log at 1.3 m, `floats` (in the sea it rides with 30 % of its depth under the surface — measured
+  6 cm under, 16 over), and knows its shape.
+- **`PhysProp.setShape(root)`**: the hull's extreme points along 98 directions; every frame `restH` = how far the lowest
+  hangs under the middle at the current pose (+4 mm), re-lifted after the frame's turn; on the ground and slow it eases
+  its flattest axis to vertical (`shapeSettle`). Measured, random tumbling throws: at rest 3–4 mm over the floor and
+  within 0.6° of flat; on dry sand never more than 6 mm under it for a frame (the surf moves its own floor).
+- **The stones** (three, `dressStone`): each takes one of rocks.glb's six scanned LittleRocks (kinds 0, 2, 4; the
+  formation's own grade), shrunk to the old size — no new bytes — with `setShape`.
+- **`PhysProp.hitProps(speed)`** (any body over 3 m/s): what it passes through that has `onImpact` (floats, bottles,
+  jars) gets the blow at its speed, and a breakable thrower breaks too. Measured: a stone and the log at 9 m/s break a
+  float; a stone rolled into one at 2 m/s does not. (`ragSmash`'s comment claimed thrown props already did; they did not.)
+
+## MORE BEACH BETWEEN THE BUNKER AND THE THREE: `BEACH_EXT` (2026-10-15)
+
+"from the 3 mutant charge cutscene to the bunker … have more beach in between, I want to fit another scene. I do not want
+anything to change otherwise at all." 100 m, the owner's pick. Everything at or before the bunker's hatch (z −542) is
+exactly where it was; everything from the three (`MUT_Z`, now −710) on is `BEACH_EXT` further along −Z. The new stretch
+runs from the hatch to the three's trigger line (−680, `MUT_Z + MUT_TRIGGER`), and nothing is laid in −560…−660.
+How it is done, so the next length change is one number (`BEACH_EXT`, top of main.js):
+- **The chain.** Almost everything past the bunker is placed off the place before it — `MUT_Z` → `ROCK_Z`/`HOLE_Z` →
+  `PORTAL_Z` → `CAVE_Z`/`CAT_OUT_Z` → `TRIBE_Z`/`TREE_SPOT`/`WB_Z`, `TRADER_Z` — so `MUT_Z` carries `- BEACH_EXT`.
+- **The world numbers.** The far end was measured in world z: the lighthouse (`LH_Z`, and `END_Z` off it), both castles
+  (`FORT_Z`, `C13_Z`, `FORT_NOTCH`, `CASTLE_LINK`), the second trader, the island and every table of it (`ISLE_*`, the
+  jetty box, the stair noses), Henry's jetty spot, the vista (`VISTA_Z`, its hamlet and boats), the map sheet's head
+  (`MAP_Z1` — so the drawn map is a little more compressed), and the fetch thresholds (`p.z < -700` for the island, -800
+  for the jetty Henry, the dev teleport's -1090). Each wears `ez(…)`: the number as measured, moved.
+- **The walk's own distances**: `ASSET_REACH` (every entry ≥ 600, 37 files), `WARM_REACH` (lh, undercroft,
+  catacombs) and `BW_FROM`'s `ROOM_Z` carry `+ BEACH_EXT`.
+- **The seeded walkers** (the driftwood, the mounds) lay the same sequence and step over the gap once, at `BEACH_CUT_Z`
+  (−560 in the old layout) — extending their end instead would have laid NEW pieces past the cut and left the old ones
+  where they were relative to moved places; and a save keeps mounds by INDEX.
+- **Saves**: `ext` is written; `migrateSave` moves an older save's beach z's past the cut, and the keys built off
+  positions (`kind@x,z`, `label@x,y,z`).
+**Proved, A/B against the build before it** (`zz-*` throwaway pages, deleted): every drawn thing's (signature, world
+position) incl. instances — 5066 unchanged, 853 moved exactly 100 m, and the ~330 left over are the SAME kinds that
+two loads of the unchanged old build disagree on (randomised scatters: 6246 vs 6176 objects between two old loads);
+all 479 colliders (409 discs, 70 boxes: 17 unchanged + 53 moved), all 10 mounds, all 99 interactables. Nothing in the gap.
+Harness note: the cave-in is now at z −851…−858 (was −751…−758); walk probes skip that.
+
+## The well's checkpoint is the stare (2026-10-15)
+
+"make the save when the well man stares at you actually, not before it like i said last." The save the tall one's going
+wrote (`smileSavePending`, 2026-10-13) is gone; `wellReveal` writes it, the moment you are set down in front of him with
+the lens on his face, and the save carries `wellStare` (he has not come yet). Loading it puts that moment back:
+`wellRestore` calls `wellReveal(true)` (the restore's call, which does not save) — you at the stand spot, him staring,
+`cineHold` on his head — and the stare (`wellStalk.stare`) does not run down until the load's black is half gone
+(`bootHold < 0.5`, and not while `restore`/`applyingSave`), so all of it is seen. Measured: held at 6.05 s for the 17 s
+of a checkpoint load, then 6 s in the open, then the charge.
+**A restore runs as the files come in**: his model was not dressed yet on one load (`u.mixer` null), and the stare's
+`u.mixer.update` threw every frame — the frame loop died and the boot sat at 46 forever. Now `wellStagePending` holds
+him (hidden, `holdAnim`, `updateWellMan` skipped) and `updateWell` stages the moment the frame he is dressed, still
+behind the black; both mixer updates in `updateWellMan` are guarded. Harness: `__bw.wellReveal()`, `__bw.wellStalkS()`.
+
+## 2026-10-15/16 — crabs leashed, the pack's tip, driftwood props, the tree on the map
+
+- **Crabs give up** (`CRAB_LEASH` 90 m from `u.home`, their spawn): an awake crab past the leash turns (`u.st.goHome`),
+  runs the ordinary chase code with home as its target (`homing` makes it "closing", so it can never start a swing),
+  and at home sleeps with `called` false and `wake` = CRAB_WAKE, so it wakes again only if you go back to it. Coming
+  within its wake range and back inside the leash turns it on you again. The pack's home is PACK_START_X (in the sea):
+  they give up about 80 m past the dock, around the camp.
+- **"PRESS TAB TO OPEN INVENTORY"** (`#packtip`, the dig tip's style): `addToInventory` → `startPackTip` on the first
+  item (not `applyingSave`/`replaying`/`restore`, and only after `introDone` — the starting syringe goes in at MODULE
+  TIME, which is also why `packTipDone`/`packTip`/`packTipEl` are declared up by `let restore`: a `let` below
+  `addToInventory(syringeItem)` was a dead-zone crash that froze the owner's game on load). Up until the pack opens or
+  14 s; waits behind the fight/dig tips; `packTipDone` on the save.
+- **Every driftwood piece is a prop** (`makeProp(m, 'driftwood', { sleeps: true })`, `floats`, `setShape(m)`), culled by
+  its live position (`farProps` `live: true`).
+- **The map draws the tree** at `TREE_SPOT`, unlabelled, under the red X (`drawBeachMap`).
+- **A log to throw by the snorkeler** (2026-10-16): a driftwood prop at (9.6, CAMP_Z − 9.5), the beach's own log mesh
+  scaled to 1.25 m once `withDriftwood` has it (a box until then); `floats`. And the lost key's drop plays the octopus
+  ring's sting (`lostKeyLie`, not when quiet / `applyingSave` / `replaying`).
+
+## Elvédor Basquiant, the ravine, the house, the puppet (2026-10-16)
+
+**Where.** Elvédor stands at `ELV` (9.3, −598.5), in the `BEACH_EXT` gap before the mutants. The break in the cliff
+is `ELV_PATH` (a polyline from the beach at x 9.5 to the yard at x 41, half-width `ELV_PATH_HW`), the yard is
+`ELV_YARD`, the house sits at `HOUSE_X/Y/Z` (64.4, 3.34, −611), front and porch facing −x (toward the sea).
+The whole section is one block before `window.__bw = {`; its state lets (`elvReady`, `elvStage`, `elvLand`,
+`elvAirK`, `elvCarrying`…) live at the VERY TOP of `main.js` beside `BEACH_EXT` — the frame loop runs before the
+module finishes, so `updateMood`, the beach clamp and the strike hooks read them early. Every early hook is gated on
+`elvReady` (set as the section's last line). Moving those lets lower is the TDZ crash again.
+
+**Stages.** `elvStage` 0 unmet → 1 asked (dialog "Yes") → 2 carrying → 3 handed back (jar paid, killable) → 4 dead.
+Saved as `elvStage`, `elvJar`, `elvGreeted`. The auto-greet fires within 6.5 m the first time; if you walk up
+carrying the puppet, that same greet hands it over and opens the "back" node (that is what `elvTalk` does when
+carrying). `setElvStage(1)` in the harness skips the greet flag, so walking up after it greets.
+
+**The cliff break.** The cliff material's `onBeforeCompile` is CHAINED (not replaced) with a world-space discard:
+GLSL polyline distance over a `vec2[]` of `ELV_PATH`, plus the yard box. `elvCliffCut(x,z)` is the same test in JS
+(for the dressing). The floor is its own heightfield (`buildElvField`, step 0.5, sand material + vertex colours);
+`elvPathFloor` rises from −0.04 at the mouth to `ELV_YARD_Y`. `noiseGLSL` is 1-D only — `ELV_N2` is a 2-D value
+noise for the ground fog planes. A vertex shader `#include` must start its own line (a mid-line one fails compile).
+
+**The walk.** `elvLand` is the flag that hands the walk from the beach clamp to the ravine's own floor/walls.
+It must not drop on a sideways step in the mouth (it did, and threw you back to x 14.2): `if (was) elvLand = inside
+|| p.x > CLIFF_BLOCK_X − 0.6; else elvLand = inside`. HARNESS: a teleport straight into the ravine is clamped to
+14.2 by the beach — step through the mouth (14, −606) first and wait ~300 ms (`__elvTo` does).
+Walls are the keep/tavern site machinery (`HOUSE_SITE`, `fortWallsStep` built in steps, `bwGhost` on doors and
+panes so they are not baked into the walls). `bunkerFloorAt` is overridden for the land and the house.
+
+**Download order.** The three GLBs were queued behind everything and never arrived in a test: they need
+`ASSET_REACH` entries (585/590/592 + `BEACH_EXT*0.4`).
+
+**The house** (`puppet-house.glb`, `undercroft_pack.py tavern --scale 1.27 --yaw -90`): bounds x ±5.42, z ±7.7,
+ground floor ≈1.05 local, upper ≈4.91. Materials darkened, metalness 0, emissive 0.10×colour, `houseGrime(m)`
+(chained onBeforeCompile + `customProgramCacheKey`). Doors: `name22*`/`name56006` leaves regrouped on hinge pivots
+(`buildHouseDoors`, 7 doors, `elvDoorShut` slab test blocks a closed one). Panes: `Glass_Ray_glass_3` (14),
+`elvBreakPane` → shards as gibs + `sfxGlassBreak`; `houseGlassStrike` in `digImpactCore`, `hglass` in `magTrace`,
+a `Set` of panes in `sgFire`. Clutter becomes `makeProp`. Four dim moon point lights (bedroom 0.16) — from the pool.
+The bed's box top is the HEADBOARD: the mattress top is found by a ray down (`ELV_BED.x` 2.52 house-local).
+
+**The puppet rig** (`puppet.glb`, rigid-parented, faces +x, 1.64 file units, `PUP_K` 0.55). MEASURED, not as named:
+`Bone003_03` is the HEAD, `Bone004_04` the JAW (the lower teeth hang off it) — with them swapped, head-at turned the
+jaw and reopened the mouth. `Bone005` is his right arm. The eye and lid NODES have origins far from the eyes:
+turning one swings it off the face. So an eye is turned about its own centre (`E.eyes[i].C`, front `frontL` in the
+parent's frame, `pupEyesAt`), and the blink is a cap of eyelid paint squashed along his up (`pupLids`).
+`pupMouthShut` searches the jaw angle so the lower teeth sit 0.042 under the upper (the file has it hanging open).
+The file's pupils are WHITE over a pale iris map; with the 0.06 emissive they read white at night — they are
+tinted 0.07 grey, no emissive, roughness 0.25 (the owner: "his pupils should look darker").
+
+**The carry** lives in `vmScene` (never clips a wall). `vmScene` used to render only when `viewmodel.visible` —
+it now also renders while `elvCarrying`. Carrying holsters the weapon and blocks `useSlot`/`toggleEquip`/
+`scrollHotbar` ("Your hands are full"). `pupCarryPose`: held by the knees and the head, head to your right, legs
+left, arms along his sides, placed by his HIPS at `ELV_CARRY` (−0.11, −0.2, −0.48 — the owner: "closer", "low").
+The head-at must run AFTER the holder is at `ELV_CARRY` and the hips placed — aimed with the holder at the origin
+the camera was inside him and the face looked past you. `pupHeadAt`'s "forward" is the averaged pupil gaze, not the
+root's +x (after the neck is aimed the root's front is not the face's; it turned the back of his head to you).
+He looks at (0, −0.2, 0) — just under your eyes, head let down a little (the owner) — plus a −0.28 roll toward
+you. Rest gaze measured ~22° under the camera; the glance (`ELV_GLANCE_AT` 34 m, in 1.6 s, holds to 4.4, out by
+6.6) brings the pupils to exactly 1.0 on the camera. The blink is once at `ELV_BLINK_AT` 7 m, 0.22 s, silent.
+To measure the eye's real turn use the PUPIL mesh centre minus the EYE mesh centre — `frontL` through the parent's
+matrix ignores the eye's own rotation.
+
+**Handed back:** a fresh instance on his left forearm (`pupSit`, scale `PUP_K*0.92`), both heads at you.
+Dialog 2's `reward` node `say`s `elvGiveJar` (once, `elvJarGiven`). Killing (`ELV_HP` 4; light 1, heavy 2;
+immune before stage 3): 5 `dropJar` + `ringDrop`, `pupRunBegin` puts the puppet in the sand, a 0.6 s beat, then
+it runs into the ravine and is removed after 9 s or past x 24.
+
+Harness: `tools/elvtest.js` — `await __elvBoot(); await __elvTo('beach'|'yard'|'bed'|'carry')`. The dialog only
+advances on a REAL click (`computer left_click` on the box); synthetic key/mouse events don't reach it, though
+`button.click()` works on a choice.
+
+## Elvédor, round 2: the house moved past the mutants, the gully, the mist, the fire, the fight (2026-10-16)
+
+**Moved (twice).** Elvédor still stands at `ELV` (−598.5). The gully's mouth is a little SHORT of where the three
+mutants stand (they are at −710…−713 and charge from `MUT_Z + MUT_TRIGGER` −680), so their fight is in your way to it
+— the owner: "you should have to fight the 3 mutant group to go to the house" (I first put it past them, at −786: wrong).
+Mouth `ELV_GAP_Z` −702.4, house `HOUSE_X/Z` (34.6, −716.4), fire `ELV_CAMP` (8.2, −697) — ON the cliff's plateau (the plateau runs from the
+face at x≈16 to x 46.5; a ridge mesh behind the lot, `elvRidgeRise`, hides its end). `HOUSE_Y` is computed from the cliff.
+
+**The gully is carved INTO the cliff, not laid next to it** (the first pass was a separate flat-shaded field in a hole
+cut by a shape that was not its edge — "ai slop, floors don't connect"). `elvCliffCol`/`elvCliffAt` rebuild the cliff's
+surface EXACTLY as `makeCliff` lofts it: columns every 2 m of z (the strip snaps by 40, its own period, so a column is
+the same column everywhere; cached by z mod 40), 23 rows, the same two triangles per quad (`PlaneGeometry` quad
+a(z0,hi) b(z0,lo) c(z1,lo) d(z1,hi), tris abd, bcd). `elvGround = min(elvCarve, elvSurf − 0.02)`; the carve rises fast
+outside `ELV_PATH_HW`, so at `ELV_CUT` it is metres over the cliff and the cliff is dropped (chained discard, polyline
+distance only) exactly where the carve already equals the cliff. The carve's mesh wears the cliff's OWN material:
+`CLIFF_BASE_MAT.clone()` with `onBeforeCompile = CLIFF_BASE_OBC` (captured right after `makeCliff`, before any cut is
+chained — a clone carries the chained hook, which would discard the carve too) and an `aU` attribute = the cliff's own
+loft u where uncut (so toe/face shading match), 0.18 on the trodden floor, ≥0.78 on the banks. THE FLOOR IS COMPUTED (`elvFloorS(s)`): the cliff's runnels repeat every 40 m, so
+where the face crosses the line moves with the gully; `ELV_S_FACE` (found at load) is where it starts, the floor eases
+to 0.45 (under the talus top, 0.55) by then and climbs to the plateau's height at the head. Hand-typed floors were a
+step the moment the gully moved. Measured: at most 0.10 m rise per 0.25 m.
+Walk: `elvLandFloorAt` (carve in the gully, `driftAt` at its mouth, plateau in the lot, `houseFloorAt` in the house);
+a step that climbs more than ~1.15× its run is refused outside the house (no walking up banks).
+
+**The lot**: `ELV_YARD` x0 21.8 (where the gully comes up level). Its fence must skip anything within
+`ELV_PATH_HW + 0.5` of the gully line and the gate is where the line crosses x0 (at x0 18.8 the fence stood across
+the gully). Static dressing merged per material (`mergeGeometries`): gnarled trees (`elvTreeGeo`, tapered tubes),
+sleeper steps, a rope rail, roots, stones, stepping stones, posts/rails; pickets and grass are InstancedMeshes; the
+swing and the marionette crosses move (`updateElvDressing`). A name board ("BASQUIANT", canvas, `retroTex`).
+
+**The mist** (`buildElvMist`, "a different new type of misty artistic fog"): camera-facing veils, one instanced draw
+each set — 164 over the lot and down the gully, 150 along the beach from Elvédor to the gully (`elvBeachMist`, shown
+while `elvSecK`). Eroded by domain-warped fbm, drifting on their own loops, faded at the ground (`vY` vs the instance's
+ground `aS.y`) and as you walk into them. THE FOG COLOUR IS NEARLY BLACK (#0b1626): veils in the fog's own colour were
+invisible; they are fog × 2.6 + (0.035, 0.045, 0.06) and 0.42 alpha. Fog: `ELV_SEC_D` 0.052 over the beach stretch
+(`elvSecK`, from 25 m before Elvédor to 60 m past the house), `ELV_FOG_D` 0.095 behind the dune (`elvAirK`).
+
+**The fire** at `ELV_CAMP`: `buildTribeFire(cx, cz, cy, seed)` now takes a spot (the tribe's call is
+unchanged); updated in `updateElvCamp` (it advances `KEEP_GLOW_U` only when the tribe's fire is not up). A quiet
+`startFireCrackle`. **The lantern** on its log ("Take the lantern", flag `elvLantern`, saved): a pooled PointLight at
+your left hand while behind the dune (`updateElvLamp`, 6.0, 12 m) — there is NO player light anywhere else in the game.
+
+**Loading**: Elvédor and the puppet when z < ELV.z + 110; the gully/dressing/mist/fire when z < ELV.z + 40; the house
+when z < ELV.z − 30 (and walls in 3 ms steps within 170 m). The old 160 m house radius reached the pavilion checkpoint
+(157 m): a respawn there loaded the house, and its clutter props dropped off the shelves with full-volume knocks
+(`sfxPropHit` has no falloff) — the owner's "bunch of sound and lag". Measured now: walking −450 → −805, two long
+tasks (65, 71 ms); a pavilion respawn loads none of it and plays 2 sounds.
+
+## Elvédor, round 3: the puppet on the fire, the taps, the darker house (2026-10-16)
+
+**The fire** (`elvFireTick`, `buildElvFireThrow`): "Throw it in" on a proxy over `ELV_CAMP` while carrying (stage 2).
+Hovered (and only then: `hovered.root === elvFireHit`) he says the owner's six pleas in order (`SAMPLES.pupPlead`,
+cut at the file's silences), stopping mid-word when you look away (the line is said again if cut before 70 %). Thrown
+(`elvThrowPuppet`): `elvStage` 5 + `elvBurned` (saved), an arc onto the NEAR side of the fire, across your view, the
+last scream (`sfxPupScream`: the clip through a tanh shaper plus a copy at 0.74 rate, and a low whoomph), struggle
+(`pupBurnPose`, aims in the lying root's frame: +x his front = the sky), char to black (`pupChar` on his own cloned
+materials), flames off his bones into `flameWorld`, smoke sprites, sizzles. At `ELV_BURN_T − ELV_MAN_RUN` Elvédor is
+put 24 m up the beach behind you and runs in (`M.run`/`elvManRun`, `mHRun`, `holdAnim`), stands (`M.stand`) and opens
+`burn` → `burnAlive`/`burnBiz` → `burnEnd`; leaving it any way calls `elvBurnFight` (provoke). A load at stage 5: he
+provokes on sight within 11 m; the black remains (`elvAsh`) lie on the fire. **Traps, all measured:** in the fire's
+middle the additive sheets were drawn over him and he vanished — he lands 0.42 m toward you; a quarter-turn wrong
+yaw (`toCam + π/2`) laid him END-ON to you, feet in the flames, a fist-sized blob; an ember emissive of 0.55 made him
+as bright as the fire (now 0.10); at 0.9 m he read as a log (`ELV_BURN_K` 1.2).
+
+**His mouth on the words** (`pupEnv`/`pupEnvAt`/`pupClipT`/`pupMouthAt`): a loudness envelope computed ONCE from the
+decoded buffer (60 per second, against the clip's own peak), looked up by `ctx.currentTime − outputLatency − t0` (the
+wall clock when the context is suspended), fast open/slower close. No analyser. `pupJawOpen(I, k)` slerps the jaw
+from `pupMouthShut`'s shut quaternion to the file's own hang. A suspended context never fires `onended`: lines also
+end on the clock. Eyes: `pupEyesAt(C, elvPleaLook)` while hovered.
+
+**THE FINGERS WENT BLACK** (the owner): ~30 finger/knuckle meshes share ONE material, and a per-mesh
+`multiplyScalar(0.84)` in the load's traverse ran on it thirty times. Darken a material once (`seenM`), and clone
+per material, not per mesh. The carried copy is tinted `_pupCarryTint` (the vm scene's own lights are bright).
+
+**Just the fire** (the owner): the camp's log, blanket and kettle gone; the tribe fire's stick, bones and ribs are
+tagged `campClutter` in `buildTribeFire` and removed for this fire only; the lantern on the sand.
+
+**The walk up**: sleepers, rope rail, roots, gully stones, BASQUIANT board, mailbox, stepping stones are built by
+`skip` (they still draw from `rnd`, so the fence/trees/grass are where they were). Yard fence and gate kept.
+**Wisps**: 130 thin veils (aspect 0.22–0.42) round the house, 0.6–4.6 m up, in `elvMist`.
+
+**The taps and shower** (`HOUSE_WATER_DEF`, house-local, measured by rays): kitchen spout (4.60, 2.01, 0.80) basin floor
+1.726; vanity spouts (4.47, 6.40, −0.96 / 0.49) bowls 6.19; shower rose (4.58, 7.19, 2.26) over the tub (floor 5.185),
+turned at the tub's handle (4.50, 5.72, 1.70). Stream = open cylinder with a scrolling streak alphaMap; shower = 260
+instanced drops; spatter Points; a pool that fills; `startWaterRun` noise loop per fixture (a floor between halves
+it). Not while carrying. **The house**: paint ×0.40 (was 0.55), emissive 0.016, moon lights 0.14/0.10, decals 7
+(was 26), strings 6 (22); `updateHouseDread` every 11–24 s inside: steps on the other floor, a creak, three knocks
+or a whisper. Harness: `tools/burntest.js` (`__clockOn`, `__atFire`, `__pov`, `__povStrip`), `tools/still.js`.
+
+## Elvédor, round 4: alive, on you, the jars thrown, the carry slower (2026-10-16)
+
+**HE LOOKED PAST YOU — two bugs.** `const eye = _emB.copy(camera.position)` was passed to `elvLookBone`, which writes
+`_emB` (`to = _emB.subVectors(target, …)`): after the neck the "target" was a unit vector, so the head aimed at a point
+by the world's origin. And each bone was turned by the angle from the BODY's front to you, whatever the clip had done
+with the head, so neck and head each took the whole turn. Now `elvGaze`: the face's real front every frame
+(`elvFaceFwd`: cross of HeadEnd−Head and RightEye−LeftEye, signed to the body's side), the neck 45 % of what is left
+(≤ 0.55 rad), the head the rest (≤ 0.75), then each eye bone onto your eye (≤ 0.4) with saccades every 0.6–2.4 s;
+weight 1 talking, else fading out past 10–16 m. Measured: face 0.1–1.5° off you from 0°, ±40°, 1.8–6 m.
+**`elvBreathe`** (before the gaze, only on frames the mixer ran): Spine2/Spine1 pitch on a 4.2 s breath, the shoulders
+up on the in-breath; standing, a slow roll and yaw at the waist with the neck countering. Blinks 1.8–6 s, 0.11–0.17 s,
+a double one in five, lids down a touch when he looks down (`M.lidDrop`).
+
+**The jars fly** (`dropJar(…, fly)`): a `PhysProp` with the hull off its own glass (`setShape`, the DROP_SHINE beacon —
+a 2.6 m mesh on the jar — taken off while it is read), thrown up and out from his chest, knocks on landing, `ringDrop`
+at 1.15. Spawned INSIDE his body they landed on top of it 0.15 m out: they start 0.42 m out. Measured: 1.7–3 m out,
+resting with their lowest point at y ≈ 0.
+
+**Carry**: walk ×0.78 while `elvCarrying` (at the speed line in the move code). The stair blink: the first change of
+floor with him in your arms (`elvFloorWas`/`elvStairBlink`), 0.1 s; measured lids 0.51 → 1.0 → 0 in six frames.
+
+## Elvédor, round 5 (2026-10-16): the lip, the room, the door, the gate, the run, the hand, the swim
+
+- **"I can't walk in this room"** (the ground floor's back bedroom): `keepWallNear` tests a wall triangle by its whole
+  outline from above and its whole height range, and the wall round that door is a few tall triangles whose outlines run
+  across the opening — the open door was a wall at (0.23, −2.97). `HOUSE_SITE.slice` makes it clip each face to the
+  asked band first (`wallSlice`, Sutherland–Hodgman against y = lo and y = hi). Only the house says `slice`. Measured:
+  every room on both floors reached through its door.
+- **"A lip in the sand right before the house"**: no lip on the gully's centreline; the one refused step in the whole
+  front yard was the bank where the gully's head comes up into the yard (0.65 m over 0.9, at (−12, 9.2) house-local).
+  Inside the lot (`elvYardD < 0`) the no-banks bar is 2.3 × run, not 1.15. (A 0.3 m averaged floor was tried: it does
+  not flatten a bank that size, and it was reverted — the ground is exactly as it was.)
+- The gate's posts and leaf are `skip`ped (they floated); the lantern is not built (`buildElvLantern` no longer called).
+- **The front door's glass** is linked to its door (`D.pane`, found by walking up from the pane to the pivot); its box
+  is taken again where it is each ray (it swings); broken, the shut door does not stop you.
+- **He slid**: `holdAnim` keeps `mutAnim` off, and that is also what steps his mixer — `elvManRun` steps it, `mHRun`
+  at a timeScale off his pace. **His hand**: `LeftHand` scaled to 0.001 AFTER the puppet is placed off it (its child
+  `LeftHandMiddle1` places the puppet). hp 6 → 9. **The draw sound on the hand-over**: `equipQuiet` (top of the file)
+  silences `katDraw` for the re-equip in `elvCarryEnd`.
+- **The puppet's escape** (`updatePupRun`): sit, run −x, leap at the surf, swim. The sea is `waterSurfaceAt` (OCEAN_Y
+  −0.34 + swell), not 0: at y −0.66 he stood on it to his knees. Swimming he is tipped 1.15 rad forward with his feet
+  0.3 under it.
+- **The lip at the gully's mouth, again** (the owner at (14.87, 0.20, −705.40), 2026-10-16): not in the yard this time
+  but at the foot of the face, on the gully's SOUTH half only. The floor was `elvFloorS(s)` of the distance up the
+  centre line; the face runs along z and the line crosses it at a slant (~31°), so a point 1.4 m south of the line is
+  ~0.85 m further "up" it at the same x and its floor was already 0.5 m over the talus under it — a slope of 10 over
+  5 cm. Two changes: below the face (`s < ELV_S_FACE + 2.5`, eased out by +6) the floor is the centre line's at the same
+  x (`elvSAtX`, inside `elvPathNear`); and the floor at the face is `ELV_F_FACE` 0.30, not 0.45 (the talus's toe at the
+  face on the south half is 0.40 — a floor above it there is a kerb). Worst slope across the whole width: 0.5.
+  The cliff is dropped inside the cut, so lowering the carve shows no seam.
+- **The swing**: the limb grows out of the big tree's own trunk now. `elvTreeGeo` hands back `geos.trunk` (its first,
+  random-walked curve) and `geos.trunkR`; the limb starts inside the bark where the trunk is at the limb's height,
+  runs toward the old swing spot, and the ropes are tied where the limb really is (`getPointAt` at 2.1 and 2.76 m
+  along it, two rope wraps each); the seat group is yawed to the limb so its `rotation.z` swing is across it.
+- **The front door's glass was never a pane**: `buildHouseDoors` moves each leaf's parts onto a pivot under
+  `houseWorld`, out of the model's tree, and `buildHousePanes` only walked the model root. It walks the pivots too now
+  (15 panes, `name56006_1` linked to its door). Measured with real W-key walking: shut and whole, stopped at the
+  door; glass broken, through; open, through. A window is refused by `elvPaneShut` until broken, then not.

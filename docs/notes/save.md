@@ -287,3 +287,18 @@ for a second, then let it go at 0.2 — the fade's own value, carried on behind 
 only before the fade begins (`fading = bootHold < 1`; only the two restores ever set it, and both to exactly 1).
 Twice after: one fade of 0.57–0.58 s, no rise, no jump in the picture after it. It applies to every restore, beach
 and room.
+
+## Every checkpoint, made and reloaded (2026-10-16)
+
+"the new checkpoint after dying from the 3 mutants just gave me a black screen … every save needs to work." The black
+screen was the dead-zone crash of that hour (`packTipDone` read at module time) — the page never ran, so nothing lifted
+the black. Then, with `tools/cptest.js` (harness.md), every kind of save was made the way its save point makes it and
+reloaded the way a death does: wreck, dock, camp, well (the stare replays), pavilion, hatchOut, gap, mutants, caveOut,
+whaleOut, isle, bunkerIn, ucIn, ucInFar, dojoIn, catIn, catDoorIn, whaleIn, keepIn, tavIn, fortIn, c13In, thrIn, dun:
+all lifted, frames running, in the right room. Traps the run hit, none of them the game's: a scenario that places into
+a room from another room keeps the old room's flag (`devLeaveRooms` first); a test player who dies reloads the same save
+and eats the queue (dev mode on); the harness module is cached across reloads (cache-bust the import); a room whose
+files are still coming cannot be entered yet (retry).
+
+- **Elvédor's flags (2026-10-16):** `elvStage, elvJar, elvGreeted, elvLantern`. His body is a mutant with `saveKey`
+  `elvedor@9.3,-598.5`; `deadUnitKeys` retires him on a load, which `updateElvManPose` reads as "already dead".

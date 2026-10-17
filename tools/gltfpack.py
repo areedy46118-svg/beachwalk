@@ -195,6 +195,9 @@ def main():
                     help='carry TEXCOORD_0 through --decimate and rebuild smooth normals')
     ap.add_argument('--decimate', type=int, default=0,
                     help='merge every primitive and vertex-cluster down to about this many triangles')
+    ap.add_argument('--decimate-for', action='append', default=[],
+                    help='REGEX=N: with --decimate-each, a mesh whose name matches gets its own budget (a face kept fine, '
+                         'a hundred knuckles taken down hard)')
     ap.add_argument('--decimate-each', type=int, default=0,
                     help='vertex-cluster EVERY PRIMITIVE ON ITS OWN down to about this many '
                          'triangles, carrying its uv. --decimate merges the whole file into one '
@@ -353,7 +356,10 @@ def main():
         it back where it was, so the thirty-two rocks are still thirty-two
         rocks and the node names still name them."""
         newbuf, views, accs, before, after = bytearray(), [], [], 0, 0
+        import re as _re
+        _dfor = [(_re.compile(x.split('=')[0]), int(x.split('=')[1])) for x in a.decimate_for]
         for mesh in g.get('meshes', []):
+            budget = next((n for rx, n in _dfor if rx.search(mesh.get('name', ''))), a.decimate_each)
             for pr in mesh.get('primitives', []):
                 pos = read_accessor(g, bufs, pr['attributes']['POSITION'])
                 idx = ([v[0] for v in read_accessor(g, bufs, pr['indices'])]
@@ -361,7 +367,7 @@ def main():
                 ti = pr['attributes'].get('TEXCOORD_0')
                 uv = read_accessor(g, bufs, ti) if ti is not None else [(0.0, 0.0)] * len(pos)
                 before += len(idx) // 3
-                if len(idx) // 3 <= a.decimate_each:
+                if len(idx) // 3 <= budget:
                     ext = 0.0
                 else:
                     ext = max(max(p[k] for p in pos) - min(p[k] for p in pos) for k in range(3))
@@ -370,7 +376,7 @@ def main():
                     for _ in range(24):
                         cell = (lo + hi) / 2
                         out = _cluster_uv(pos, uv, idx, cell)
-                        if len(out[-1]) > a.decimate_each: lo = cell
+                        if len(out[-1]) > budget: lo = cell
                         else: hi = cell; best = out
                     if best is None:
                         best = _cluster_uv(pos, uv, idx, hi)
@@ -403,6 +409,26 @@ def main():
                              'count': len(tris) * 3, 'type': 'SCALAR'})
                 pr['attributes'] = attrs
                 pr['indices'] = len(accs) - 1
+        # AND WHAT IS NOT A MESH COMES ALONG. The new accessor list is the meshes' only, so a skin's bind matrices and
+        # every animation sampler pointed past its end (an IndexError on any rigged file). They are copied across as
+        # they were, with their own component types.
+        def carry(ai):
+            ao = g['accessors'][ai]
+            elems = read_accessor(g, bufs, ai)
+            fmt = '<' + CT[ao['componentType']][0] * NC[ao['type']]
+            off = len(newbuf)
+            for e in elems: newbuf.extend(struct.pack(fmt, *e))
+            while len(newbuf) % 4: newbuf.append(0)
+            views.append({'buffer': 0, 'byteOffset': off, 'byteLength': len(newbuf) - off})
+            na = {'bufferView': len(views) - 1, 'componentType': ao['componentType'], 'count': ao['count'], 'type': ao['type']}
+            for k in ('min', 'max', 'normalized'):
+                if k in ao: na[k] = ao[k]
+            accs.append(na); return len(accs) - 1
+        for sk in g.get('skins', []):
+            if 'inverseBindMatrices' in sk: sk['inverseBindMatrices'] = carry(sk['inverseBindMatrices'])
+        for an in g.get('animations', []):
+            for smp in an.get('samplers', []):
+                smp['input'] = carry(smp['input']); smp['output'] = carry(smp['output'])
         g['buffers'] = [{'byteLength': len(newbuf)}]
         g['bufferViews'] = views
         g['accessors'] = accs

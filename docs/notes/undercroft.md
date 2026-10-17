@@ -1981,3 +1981,52 @@ climb out" was at `spots.exit` (130.5, z 5.3), the last floored column in the fl
 now clamps `_ucL.x` to `ucExitStop()` = `spots.exit.x - UC_EXIT_BACK` (4.2) = 126.32, and the proxy (1.2 × 2.6 × 3.2)
 stands just past it on the axis, "To crawl out". Measured: W held from x 120, straight and at 0.6 rad, stops at
 126.32; the prompt reads "E To crawl out" there.
+
+## THE JOINS, MADE TO DISAPPEAR (2026-10-15)
+
+"the tunnel connections to the church look really bad and some textures are too bright … the connections should not be
+noticed, they stick out as ugly and ai right now." Looked at from all four sides (nave → front door, tunnel → front
+door, nave → apse, exit bore → apse) with the glowstick in hand (`tools/ucshot.js`: `__ucSetup()`, `__uc2(x,y,z, lx,ly,lz)`
+in the undercroft's local metres, `__col(x0,y0,x1,y1)` mean RGB of a screen box; set `toneMappingExposure` to 4 while
+measuring — the room reads 2-6 of 255 at the game's own 0.96 and the ratios are lost in the rounding — and put it back).
+What was wrong, measured:
+- **The doorway blend brightened the tunnels.** Both sides of each door eased to a MIDPOINT look (level 0.45, knee half
+  on) and getting the rock there meant multiplying its lift by 2.3: a tan collar round the hole from the tunnel side, and
+  at the apse the whole exit bore seen through the break as a pale boulder. The masonry (one material, both faces) was
+  tuned to that brightened rock, so from the nave it was the brightest thing in view: rim and sill 1.2-1.5 x the wall,
+  the spill's blocks 1.7 x the flags, a pale scalloped frame on a pale slab.
+- **From the tunnel the bore met the wall on a clean circle** — the one regular line down there.
+- **The water ended on a ruler line** at each door, and the exit's channel was never given the entry's look at all (a
+  pale blue matte sheet, 0xc8e5ff rough 1: the brightest thing in the exit bore).
+- **A UV-stretched streak** on the passage's left wall three metres short of the church (`passageTriplanar` exists and
+  is never called — the tunnel wears the scan's own mapping).
+- **The infill panel's atlas cells are 0.7 of the piers** beside them: a dark, greener rectangle in the doorway.
+What it is now (`models/undercroft.js`):
+- `S.doorBlend`: the tunnels are left EXACTLY as they are (no band), and the church eases DOWN to the tunnel's own look
+  (level 0.19, no knee, lift x `CH_MUL` 0.061 — the wall at the door 17.6 against the rock through the hole 17.6). The
+  front door's fade is the old x band across its whole walled-up doorway; the apse's is ROUND the break (`uUcRad1`,
+  `DOOR_R` 4 m) — an x band takes a wall's whole plane with it, and at the apse that was every light of the tracery,
+  leaving the break a lit patch in a void. The church's outside skin (`-ext`), which shows as two pale wedges at the foot
+  of the apse wall, fades over twice the radius.
+- `brokenWall` builds TWO meshes: the face leaf (`o.mat`) and the back leaf (`o.matBack`, `bwLeaf: 'back'`), dressed for
+  the room each faces — back leaf at the rock's look x `ASH_ROCK` 0.15; and the back leaf's blocks stand proud by
+  different amounts, which is what breaks the crown of the circle. Sill and spill have their own materials too.
+- `ASH_FACE_K` 1.6 on the panel and the face (11.8 → 16 against piers of 19), `ASH_HEAP_K` 0.45 on the spill (35 → 22
+  against flags of 18-27) — scalars on colour AND emissive (`tone`). The panel's material is not the first `breach` in
+  `S.mats`; find what is drawn by traversing the group.
+- `junctionStones` at both ends: noise-pushed, split-faced lumps of the tunnel's own rock (`rockLumps`, once-subdivided
+  icosahedra — twice-subdivided came out as a row of matching beads), only on the lower two thirds of the section, most
+  at the floor's edges, never across the walkway, gaps. **Measure the bore at each stone** (`rayHit` off the tunnel's
+  `triIndex`, kept as `S.passIx`): measured once at the ring, the stones laid further in hung in the air where the exit
+  bore widens.
+- `uUcOcc` (x of the wall, reach, depth): a corner shadow in the tunnels' rock within 1.4 m of each broken wall. A seam
+  with no light on it is a seam nobody sees; this, more than the stones, is what made the circle go.
+- `bwStretch`: the tunnels' rock measures its own uv-per-metre Jacobian per pixel (singular values off the
+  derivatives) and lays the same map triplanar at the mapping's own density (0.087/m, measured over 70k triangles)
+  where one direction is 3-6 x the other. Everywhere else is the scan as it was.
+- `bwClipRag`: the water's clip wanders up to `WATER_RAG` 0.8 m along z; both channels wear `waterLook` (the candlelit
+  mirror).
+Traps met: the discard-splitting clones (`splitDiscards`) are made AFTER the last `doorBlend` and copy userData shallowly
+— set what a clone must carry on the original before it runs. A preview screenshot taken right after a render often
+shows the PREVIOUS render: take it twice. Candle flicker and lamp pooling move a reading by 3x between frames — compare
+regions within one frame, never across runs.

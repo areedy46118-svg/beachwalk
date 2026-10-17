@@ -886,3 +886,64 @@ deck (26.34), off the side to the rock (25.88). 25 random walks with random jump
 island). Stops left standing are real: the deck's 3.5 m stone edge from the rock below, a 6 m rock face over the
 stair-head landing, the chasm to the sea at (−12, −1159). NB a scripted walk must jump from ON the stack — walking
 toward the roof it steps off the 0.8 m stack first.
+
+## The gulls can be shot, and a hit sounds like one (2026-10-15)
+
+The owner: "make the seagulls that poof shootable as well and have a hit sound as well". `isleBirdStrike` was split:
+`isleBirdOnRay(O, D, far, slack)` finds the nearest visible gull on a line, and `isleBirdPoof(B, n)` hides it, bursts the
+feathers and plays the sounds. The blade asks with its old slack (0.18 + P·0.15, still only `onIsle`); `magTrace` asks
+along every round with slack 0.06 out to `MAG_RANGE` whenever the island's birds exist and you are not in a room, and
+returns kind `'gull'` — `magFire` poofs it (46 feathers), `sgFire` collects the gulls its pellets found into a Set and
+poofs each once (52). `sfxBirdHit(c)`: the `fleshHit` sample through `playSampleAt` pitched to 1.42 (falls off to 90 m),
+a 0.42 s bandpassed noise flurry chopped by a slowing flutter (wings), and a soft low knock up close — it replaced the
+near-silent `sfxThud(0.02)`; `sfxGull` now gets the real distance. Measured: revolver from 14 m and 30 m (below, up at
+the rock's birds) bursts them, a shot 1.2 m wide of one leaves it, a shotgun from 12 m bursts one; no console errors.
+Harness: the sawn-off starts with empty barrels (`__bw.sgCh` is `[0,0]` — set both to 1), and with the skip-intro reload
+a teleport out to the island got reset to the start on the next frames; place the camera and fire in the same call.
+
+## The Seagull Slayer (2026-10-15)
+
+"use this sound and make it an xbox achievement pop up when you kill all the seagulls at the lighthouse only the ones
+on the actual island that you can reach. make it say Rare achievement unlocked 50 - Seagull Slayer". `isleBirdReach(B)`
+is the nearest eye you can stand at to a bird: flat floors of `ISLE_SITE` within 3 m round it (non-steep, ≤ 4.5 m under
+it) and the lantern gallery's ring. Measured: eleven of the twelve sit 0.4–1.6 m from an eye (the deck, the shed and its
+chimney, the gallery and the lantern's cap, the flight, the jetty post); bird 7 sits on a rock in the sea at y 0.1,
+46.6 m from any floor. `GULL_REACH` 3.0 decides; `gullTally()` (from `isleBirdPoof`, so blade, revolver and shotgun all
+count) fires `showAchievement` 0.7 s after the last one. Saved: `flags.gullsDown` (bird indices — the extraction order
+is the mesh's, the same every load; held in `isleBirdsDown` until the birds exist) and `flags.gullSlayer` (once a game).
+No autosave on the kill: a save calls `calmChasers`. The toast is `#ach` in index.html (see ui.md), the chime
+`assets/achievement-rare.m4a` (the owner's clip, 1.0–7.4 s cut, 82 KB) as sample `achievement`.
+`__bw.isleBirds`, `isleBirdReach`, `isleBirdPoof`, `showAchievement`, `gullSlayer`.
+**Two gulls taken out** (same day, the owner, of that contact sheet: "the seagulls from screenshot 0 and 7 can go
+away"): `ISLE_NO_GULL` (world centres: the deck rail at the tower's foot -9.0, 31.9, -1180.3 and the sea rock -7.1, 0.1,
+-1196.0) marks them `B.gone` and hidden at extraction — kept in `isleBirds` so saved indices do not shift; never drawn,
+hit or counted. The Seagull Slayer is now ten birds (measured: fires on the tenth).
+- The toast now comes on the blow that kills the last gull (was 0.7 s after); the badge pops at once and the pill opens at 0.3 s (was 0.03/0.42).
+
+## Off the stair's side onto the jetty; the lagging toast; the horn's fade (2026-10-15)
+
+- "i should be able to jump or walk off the stairs on to the jetty right here" (feet 2.76 at x −17.68, z −1138.65):
+  `rampHold` lets go over a side where `isleJettyBox` (x −27.5…−13, z −1162…−1135.5) has a floor 0.45 m out lower than
+  your feet by 0.25…`ISLE_LEAP`; `nextTo(st, x, z)` takes a drop under 1.5 m inside that box (the jetty's boards are
+  the one sea-height floor that is a floor). Probed: west of the flight at z −1138.65 the deck is 0.63; east, nothing.
+  Measured: off the west side from the third tread → on the deck at 0.64; east held at −15.52; west at z −1142.6
+  (water below) held at −17.68; the flight still walks down (→ 0.76) and up (→ 15.64).
+- "it lagged when the achievement showed up": the kill, tally and toast cost 1.6 ms of JS and 0.1 ms of layout; the
+  toast animated its WIDTH (a repaint a frame, under a 24 px blurred shadow, over the canvas) and was `display: none`
+  until then (built on the spot). Now the bar is a full-width pill SLID out from behind the badge inside a fixed
+  clipped frame (transform), the badge scales, the text fades — compositor-only, `will-change` — and `#ach` is laid out
+  from the start (`visibility: hidden`). Same look, rendered.
+- "make the water fade to the new color after the horn is blown": `updateCrabCut` cut the fog to 0.00062 in one frame
+  at `CRAB_T.black` (4 s). Eased in log density over 4.5 s from what it was (`C.fog0`): 0.0099 at 4.0 → 0.0006 at 8.5.
+
+**`ISLE_LEAP` 6.5 (2026-10-16, "let me jump off the tall part of the shed")**: the house behind the shed is 30.6–32.2
+over the deck's 26.3. Drops over 0.7 fall freely (the eye's hold is only for small steps).
+**The gulls can be shot (2026-10-16).** They could in code, but the island's wall index holds the gulls' own faces
+and `magTrace` measures a gull at its centre — so a round square into one met its breast as "solid" first. A solid
+within the gull's radius + 0.25 no longer beats it, and the gull ray's slack is 0.14.
+**Not found (2026-10-16): "in the screenshot let me walk freely down here."** Mapped the area (grid floor vs. drawn
+surface): the hillside east of the cliff stair drops 12 m to the landing in one cell, the slope north of the landing
+(x −9..−2, z ez(−1131..−1129)) carries on drawn where the grid stops, and a sea-level drawn cove sits at x 0..9, z
+ez(−1139..−1135). Could not tell which spot the picture is: ask for the P overlay readout there. NB `__bw.step` with
+`keys.KeyW` gave the same distances at every island spot, the open jetty included — the island walk was not being
+driven by it; do not trust that harness there.

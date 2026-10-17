@@ -3453,3 +3453,55 @@ farmers, the knight and every other `mutants` kind. Measured on a beach mutant s
 
 **The Dealer flies a little further on the kill**: `ragK 2.5, ragVmax 18, ragTravel 14, ragLift 2.1` (was 2.0 / 16 /
 12 / 1.9). `tools/dealerfly.js` at P 0.6: 5.83 m and 0.74 m up (was 4.9 m and 0.73).
+
+**Health, 2026-10-16: back about 15 %** ("give the knight the mutants and the well guy and the catacombs monster less
+health noticeable but not too much"): knight 70 → 60, hunter 80 → 68, well man 50 → 43, beach mutants pale 9, red 13,
+dark 8, hulk 22, spindle 11, runt 9, crooked 13, bloat 19. The dealer, parasites and zombies are untouched.
+
+**The parasites swing one arm (2026-10-16, "the cross arm swing is horrible").** `paCut`/`paCutB` were the orc's
+great-sword cuts with both fists locked — two arms crossing in front of it. Now `paCut` is the knight pack's `kPunch`
+(right, `limbs: [0]`) and `paCutB` the Marauder's `uC1` hook (left, `[1]`), added to `PAR_SRC_A`; parasiteB gets
+`pbPunch` (`kPunch`) as an opener beside `pbC1`, and its two-armed zombie rakes drop to 0.05/0.03. `blowLands` sweeps
+only the listed arm, so the hit is the fist you watched. Their skin read as a muddy silhouette (map × 0x8a6660,
+roughness 1): tint 0xc4a49a, emis 0.09, and `matMore` roughness 0.62, normalScale 2.0.
+
+- **Rigid-parented props with misnamed bones (Elvédor's puppet, 2026-10-16):** see `beach.md` "Elvédor" — measure
+  which bone carries the face before aiming a head; eye nodes with offset origins must be turned about the mesh's
+  own centre; a head-at's "forward" should come from the pupils, not the root.
+
+## Elvédor as a mutant kind (2026-10-16)
+`MUT_KINDS.elvedor` = `FARM_BASE` + the brawler, with his own `pre`/`author`: `poseRig(u, m, null, ELV_J, {})` on the
+BIND, then `ntarRetarget` over `ELV_MOCAP` (wong idle/walk/run, knight punch/hits/parry, demon punches/kicks; cached in
+`ELV_MOCAP_SET`, `u.parLate` if a pack is late). His bones are plain Mixamo names, so `rag` is `Character1_X → X`.
+`wakeAt: 0` (nothing wakes him) and `provoke` (called by `hurtMutantCore` on a blow) starts the fight; with the puppet on
+his hand `u.kind.use` is swapped to `ELV_HELD_USE` (no swing whose `limbs` includes 1, the left arm). `claws: 0`
+(the farmers' fist curl is measured for their hands). Spawned at runtime by `loadElvMan` → `makeMutant`.
+What is his is laid on AFTER the mutants tick (`updateElvManPose`, hooked right after `updateMutant(dt)`): look-at on
+Neck/Head (only when his mixer ran this frame — `u.mixer.time` changed — or the extra turns pile up), the jaw and lids
+written absolutely from the bind each frame (the clips never touch them). **The jaw's hinge is its local +Y**
+(measured: +0.3 rad about local x moved the lower lip 2.4 cm SIDEWAYS — the owner's "jaw slides side to side"; about
+y it dropped 3.0 cm); the upper lids' y is the same line across the face. The puppet on his hand: left arm aimed up and
+forward after the mixer, the puppet's root placed so its `spine` bone is at his fist (`pupHang`). The ragdoll is the
+mutants' own; `elvDie` adds the 5 jars, `ringDrop` and `pupRunBegin`. **A unit made at runtime is retired on load if its
+`saveKey` is in `deadUnitKeys`** — `updateElvManPose` must treat a RETIRED Elvédor as already dead (no drops), or a
+restore replays the jars and the sting.
+
+## 2026-10-16: the beach's mutants hit a little less, and their checkpoints
+
+`kind.hitK` (0.75 on pale, dark, hulk, spindle, runt, crooked, bloat): just before a mutant's landed blow calls `damagePlayer(dmg, u)` the rest is banked
+(`mutHitBank`, health is whole points) and a blow the bank pays for is a graze. The horde's charge writes a checkpoint
+half a metre short of `MUT_Z + MUT_TRIGGER` before anything wakes (a load puts you a step from it, the take again),
+and `mutTrioSaveTick` writes one 1.5 s after the last of the three (`mutTrio`, taken at the trigger) is down.
+Harness trap: they cannot be killed while the take runs, and `hurtMutant` leaves `st.alive` true until frames run.
+
+## 2026-10-16: a body in the water falls, then floats
+
+"The mutants sometimes stay up after death near the water." Reproduced: killed in the surf with an ordinary finishing
+blow (hp + 0.01, not a 999 overkill — an overkill throws them flat and hides it), the hulk and the spindle stood 2 m
+tall for three seconds and then the slump drew them straight down where they stood. The water's thickness
+(`RAG_DAMP − 0.34 × wet`) was eating the tip push. Now: for the first 2.2 s the water is thin (0.06), the push starts at
+0.45 s in water (0.9 on land) and is 1.5× as strong; measured, all five down in 1.5–2 s. And then **it floats**: a body
+asleep in the sea (submersion > 0.3 at its hips) is moved as one rigid piece — never joint by joint, which is what
+once drove floating bodies across the beach — toward the wave surface over its middle less 0.1 m (never more than 0.15
+under where it came to rest), eased at 2.2/s, so it rides the swell; a floating body is not woken by the tide rule
+(`r.flK`), or it would fall to the bed and float up again for ever.

@@ -748,3 +748,52 @@ is not counted.
 
 **The mound tip is one line** (2026-10-15): "CLICK WITH SHOVEL TO DIG UP MOUNDS", whatever you carry.
 **Dev mode gives the skull key and the bigger pack** too (`devGrantWeapons`: `INV_MAX` 14, the trader's one then sold).
+
+## Achievement toast; a bigger end screen (2026-10-15)
+
+- `#ach` (index.html, CSS beside `#end`): the console's toast after the owner's picture — a round red badge with a
+  white diamond pops (scale, overshoot), a dark-red pill unrolls out of it to 380 px (`width` transition), two lines
+  come up ("Rare achievement unlocked" / Ⓖ "50 - Seagull Slayer", the G an inline SVG), it holds ~5 s and rolls back.
+  `showAchievement(line1, line2)` drives the classes (`on`, `pop`, `open`) on timers and plays sample `achievement`.
+  Centred as a whole: the box is the pill's full width (a 0-wide box translated -50 % put the pill's start at the
+  middle). Bottom 13vh, z 70, no pointer events.
+- The end screen ("make final stats and walk again way bigger"): `#end-stats` clamp(1.25rem, 2.7vw, 2.1rem), min-width
+  min(40rem, 88vw); the button clamp(1.15rem, 2.4vw, 1.8rem) with a 2 px border. Measured at 1762 wide: rows 33.6 px
+  (were 15), the button 372×77.
+- Then (same day): "take out the 'the lighthouse' text and the message at the end i just want the stats and 'walk
+  again' make it white text too" — `#end h1, #end p { display: none }` for every ending (the `.bare` rule was only the
+  crab call's), the stats and their numbers #fff, the button white with a white 0.75 border.
+- (same day) `RARE_ACHIEVEMENTS` (main.js, above `statLines`): a list of `() => bool`; the end screen's last row is
+  "RARE ACHIEVEMENTS" with how many are true (the Seagull Slayer is the first). Every stat label is in capitals in
+  `statLines`, and `#end-stats` is `text-transform: uppercase` too.
+
+## The dialog card, bigger and following the window (2026-10-15)
+
+"make all dialog a little bigger and the name of the character more noticeable … make it match the size better and look
+better." `#dialog` carries one font size, `clamp(16px, 0.62vw + 0.55vh + 4px, 26px)` (~21 px on a 2000 x 840 window, ~18
+on a 1440 laptop), and everything in it is in em off that (the column 44em). The name is a tag — bold, 0.8em, on
+rgba(0,0,0,.62) with a 3 px white bar at its left — and hidden when empty. A gradient shade rises from the bottom only
+(`#dialog::before`), so the words hold over a lit scene and never cover a face. Still black and white, still monospace.
+
+## The tips take turns (2026-10-16)
+
+"one tutorial should play after another they were just overlapped." The fight, dig and pack tips share one spot. The
+dig tip no longer ends when the fight tip starts: it hides while the fight tip (or a shown pack tip) is up and its clock
+pauses; the pack tip waits unshown while the fight or dig tip is up, and once shown hides and pauses the same way. The
+dealer's dialog was selectable (a drag highlighted it): `#dialog` is `user-select: none`.
+
+## Twelve pockets, and the shop says what things do (2026-10-16)
+
+- `INV_MAX` starts at 12 (2 × 6, the hotbar 6); the trader's Bigger Pack makes it 16 (2 × 8, the hotbar 8, keys 1–8,
+  `HOTBAR_SLOTS` 8). A save with the old 14 comes back at 16 (`f.invMax > 12`).
+- The shop's Buy / Upgrades / Sell tabs are white, bold, 1.08rem, with a shadow; the one you are on underlined in
+  white and lit. The detail text is brighter (0.86). The sell list's descriptions were the trader's flavour lines; they
+  are what the thing does now (rings and artifacts read their own `desc`, "Worn: …").
+
+- **Fast walk (`toggleFastWalk`) is key 9 (2026-10-16, the owner).** It was 8 until the upgraded hotbar grew to eight
+  slots and the digit test became `Digit[1-8]`, which caught 8 first and fast walk silently died. A dev key must
+  never sit inside the hotbar's digit range — if the hotbar ever grows to nine, move fast walk again.
+
+- **The crosshair hides in a dialog; the dialog cursor starts on the box (2026-10-16).** `startDialog` adds
+  `body.dialog-on` (`#crosshair` opacity 0), `endDialog` removes it. `vcSync` puts `#vcursor` over the dialog box when a
+  dialog opens: at screen centre it sat on the speaker's mouth (the lens frames his face there).

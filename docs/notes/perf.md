@@ -1147,3 +1147,116 @@ generate and lag before my eyes when loading back in".
   loop (serve.py sends the policy header), keep each slow frame's start and length, then count the trace's samples
   inside that window by every frame name up their stack — the top of the list (after `update`/`animateFrame`/
   `frame`) is the culprit. `__bw.bootLeft()` says what START is still waiting on (queue, parses, warm steps, uploads).
+
+## THE HIDDEN-ROOM SKIP NEVER RAN (2026-10-15)
+
+"reduce lag everywhere too without changing the game." Profiled (`new Profiler`, 400 frames, GPU synced): the biggest
+CPU item everywhere was `updateMatrixWorld` — `scene.updateMatrixWorld` measured **1.57 ms a frame** over 11,300
+objects, 9,100 of them under hidden top-level groups. The custom `scene.updateMatrixWorld` (by `const scene`) was meant
+to skip those, but the scene's own `matrixAutoUpdate` recomposed its matrix every frame, which marks it changed, which
+set `force`, which walked every hidden room anyway. `scene.matrixAutoUpdate = false` (the scene never moves): **0.06
+ms**. Frame medians (`tools/perftour.js`, 1080p, synced): beach -150 7.0 → 4.5, -450 6.9 → 4.3, -850 (the tree) 10.0
+→ 7.8, -1000 8.2 → 5.8; fort 8.6 → 7.0, c13 8.1 → 6.5, dungeon 6.0 → 2.8, tavern 5.8 → 3.1, keep 6.2 → 3.1.
+CONSEQUENCE, now real: a hidden top-level group's DESCENDANTS keep last frame's matrixWorld until it is shown. Anything
+that reads matrixWorld/localToWorld/worldToLocal/raycasts inside a hidden room must `updateMatrixWorld(true)` first
+(the CLAUDE.md rule; `fortWallsStep` does). Left alone: the farmers' animation at 120 m and the tree's 770k
+triangles (changing either changes the game); `siteMainStep` is a one-off budgeted flood-fill.
+Audited the same day (every matrixWorld/raycast/localToWorld read that could hit a hidden room): nothing broken —
+builders refresh first, readers are gated on the room or read a top-level group's own matrix (the skip keeps that
+current). Fragile spots noted: `cullBeyondFog`/`cullReach` read nested units' matrixWorld (worst case one frame of
+pop-in, or a too-big cached reach = less culling); the C13 jobs and `fortWallsStep` slice static meshes over frames;
+the bunker's props raycast its hidden model — now an unconditional `g.updateMatrixWorld(true)` in its onLoad.
+
+## Eleven files the game never loaded, out (2026-10-15)
+
+"is there anything we can take out to make space but not change the game at all". Every git-tracked file under
+assets/ was matched against main.js, index.html and models/ — by name, and by numbered stem built in code
+(`cat-breath${i}`, `'snork-laugh' +`). Eleven matched nothing: dojo.glb 10.7 MB (the Scorched Dojo, replaced by
+courtyard.glb on 2026-09-17), tex/grass.png + grass-tall.png + grass.json, fisherman.JPG (the game uses .png),
+eyes.glb (it uses eyes.png), rust-diff.jpg, and the cut-out tools' source photos (snorkeler.jpg, snorkeler-head.png,
+raw-billy-idle.png, raw-billy-talk.webp). Moved to `incoming/unused-2026-10-15/` (gitignored; `tools/snorkeler_body.py`
+and `tools/billy_frames.py` read them from there now). 441.1 → 429.2 MB. Verified on a fresh load without them: the
+beach at seven stations and all eleven rooms toured, 278 asset requests, no status ≥ 400, none of the eleven asked
+for, no console errors.
+Lossless squeezing inside the GLBs was measured and is not worth it: jpegtran-optimised JPEGs (pixels and markers
+kept) 0.4 MB, duplicate images 0.5 MB, uint32 indices that fit uint16 0 MB, unreferenced accessors 0.03 MB, UV sets
+no texture reads 0.4 MB. 194 MB of the 362 MB of GLB is geometry; the rest would need visible changes.
+The README's dojo credit went with dojo.glb; courtyard.glb's source/licence is NOT recorded anywhere (README flags it).
+
+## The rings and the skull key, smaller and the same (2026-10-15)
+
+"shrink the rings and skull key without changing how they look". octopus-ring 12.0 → 7.6 MB, skull-key 8.5 → 6.0,
+gem-ring 6.8 → 4.8 (−9.0 MB; the game 429.2 → 420.9). `tools/glbquant.py`: normals (and the skull key's uvs) as
+normalized int16 across their own range (`extras.bwQ`), POSITIONS LEFT FLOAT, the gem ring's two 2048² PNG colour maps
+as lossless WebP (`EXT_texture_webp`, `exact`, verified pixel for pixel in the tool), then the whole file gzipped.
+In the game: `bwFetch` → `bwGunzip` (sniffs 1f 8b, the browser's `DecompressionStream`), `bwGlb` → `bwDequant` (back to
+Float32 before any onLoad, so bounds / `ringCavity` / the gold's model-space noise read floats as before). The model
+viewer does the same. A plain .glb passes through both untouched.
+Proof: the three rendered with the game's own materials (envMap, worn gold) from four angles in a fixed light, before
+and after, pixel-compared: gem ring identical; octopus ring 298 of 589,824 pixels differ, by 1/255; skull key 1,730,
+by 1/255. (Quantizing POSITION as well saved 1.9 MB more and tipped ~100 glints a view on the octopus ring, up to
+218/255 — `ringCavity` divides neighbour differences by the edge length and multiplies by nine. Not shipped.)
+Originals: incoming/originals-2026-10-15/.
+
+## The intro video: only its unseen tail could go (2026-10-15)
+
+"make it smaller with no quality loss". `assets/intro-waves.mp4` is 1080p H.264 High, 31 s, 11.6 Mbit/s, no audio,
+shown full screen (`object-fit: cover`, scale 1.09). Re-encoding cannot be lossless: x264 veryslow at CRF 17/19/21
+came out 98/83/71 MB (BIGGER — the waves are all fine detail), and two-pass at 9/7.5/6 Mbit/s scored VMAF 83/75/67
+against it (33/28/22 MB) — the water's sparkle is what goes. What CAN go is what is never shown: the intro starts the
+video with the song, fades it out from song 22.3 s over 7 s (`INTRO_CUE.wavesOut`), black by ~29.3 s. Cut at the
+keyframe at 30.067 s by stream copy (`-c copy -frames:v 902 -movflags +faststart`): every one of the 902 kept frames
+is bit-identical (framemd5 of both files compared), 42.8 → 41.6 MB, and the index is at the front now. Keyframes near
+the end: 28.10, 29.07, 30.07 — 29.07 would have been inside the last breath of the fade. Original in
+incoming/originals-2026-10-15/.
+**And then shorter (same day): THE VIDEO WAS ALREADY A LOOP.** "is there a way to shorten the video file but loop it
+sooner…". Frames 258 apart (8.60 s) differ by 2.4 grey levels on average (max 2.9 — compression noise), against ~10
+between neighbouring frames, and a period one frame either way jumps to 9–13: the 31 s file is one 8.6 s clip of waves
+repeated three and a half times. So the file is now ONE cycle, stream-copied from the keyframe at 8.23 s: frames
+247–504, every one bit-identical to the original's (framemd5), 12.4 MB (from 41.6). It loops with the element's own
+`loop` (it already had it); the seam 504 → 247 is a change of 9.9, smaller than the natural step there (10.6). New: the
+browser now actually LOOPS it, three times in the visible 29 s — a browser that hitches a frame at a loop would show it.
+(Playback could not be timed in the pane: the app window was not drawing video. If a hitch shows, two cycles — 17.2 s,
+~25 MB — loop once.)
+
+## The lag before the whale: Castle XIII loading in, and the well (2026-10-15)
+
+"there is a lag right before the whale … as the castle loads in. optimize what we have so far but do not change
+anything about the game." Measured on the real clock (`tools/perf.js` `__probe`, a fresh tab): frames of 92, 59, 86,
+53, 41 and 48 ms from z −900 on, all Castle XIII getting ready while you walk past it. Every fix below moves WHEN work
+happens, never what it makes:
+ - **One background allowance a frame** (`BG_MS` 5, `bgLeft`/`bgRun`/`bgHas`): the first castle's and Castle XIII's
+   walls and flood fills, XIII's dressing and its showing, and the isle's walls each had their own budget and from
+   −900 all ran at once. Out on the walk they share 5 ms; standing in the place, its own budget as before. A step that
+   cannot stop part way (a dressing job's slice) waits for a frame with ≥ 1 ms left (`bgHas`).
+ - **`repairKeepStoreys(S, budget)` is resumable** (`S._rk`, an iterator over its cells); `fortWallsStep` and the
+   isle's loops keep calling while `S._rk` is set.
+ - **The dressing is built hidden and shown warm** (`c13ShowDressing`): `renderer.compile` a few objects a frame,
+   then `compileAsync`, then `initTexture` one a frame, then visible. Its canvas textures are painted a step each
+   (banners, the flag, the crest and runner memoized as `C13_SHIELD_T`/`C13_RUNNER_T`, `c13MarketMatsSteps`), and the
+   cloths' wear is a job of its own (`c13ClothWear`, yielding every 8 rows past 2 ms).
+ - **The flail knight (crusader.glb)** is parsed at boot behind the loading screen (`mutPreParse`, its maps uploaded
+   there), his `kind.pre` runs on its own turn, his fourteen clips are authored one a turn (`u.clipsPending`; the
+   mixer, natural swings and start pose wait for the last), and he is only made visible once his textures are up and
+   `compileAsync` has answered. Spans: dress 227 → < 16 ms.
+ - **The dressing's generator slices** (found by tagging every `yield` with its line number in a throwaway copy and
+   logging each `next()`): `c13Features` 7.6 ms (now `c13FeaturesSteps`, published only when whole), the torches'
+   bake 8.7 (`bakeStaticSteps`: `bakeStatic` is that generator run without a yield, the subtree touched only at the
+   end in the same order; its scratch matrices are locals now because two paused bakes must not share them), the
+   windows' vertex walk and clustering 4.4 + 9.8, the flower boxes 16.2 (four windows a slice, each scanning every
+   frame vertex twice), the chimneys 5.5 — all now yield after ~2 ms.
+   PROOF THE DRESSING IS THE SAME: a fingerprint of every mesh under it (vertex count, weighted position sum,
+   instance matrices, material) old build vs new: 46 of 50 identical; the four that differ are the fountain's drops
+   (they move) and the lanterns (a `Math.random()` phase each).
+ - **The well (z −318, a 20 ms update in `updateWell`)**: `wellA()` drew the reverb's 4.6 s stereo tail in JS
+   (8–12 ms) and set it on a ConvolverNode, which readies it synchronously (7–10 ms), on the frame the drone first
+   sounded; the drone's own 8 s of noise is 2–3 ms more. Now `wellPrepStep` draws the same tail (`wellIRSteps`, a
+   yield every 16k samples) out of the background allowance as soon as there is an audio context, and makes the node
+   on a frame of its own; `wellA` asked first still does it all at once.
+Result, the walk −30 → −1150 (the cave-in skipped): the worst update near the castle 8–12 ms, against 28–51 before.
+The castle's own walls are still 4–5 ms a frame for ~30 frames (budgeted, by design).
+
+- **`tools/gltfpack.py --decimate-each` on a skinned file (2026-10-16):** it dropped the inverse-bind-matrix and
+  animation accessors (the puppet's bones collapsed). Fixed (`carry(ai)`), and `--decimate-for REGEX=N` gives a
+  per-mesh triangle budget (the face 5000, fingers 160…). Blender's own export of the puppet also collapsed its
+  bones — pack the original gltf instead.

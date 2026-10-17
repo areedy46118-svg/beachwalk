@@ -1796,6 +1796,10 @@ export function makeUndercroft(opts = {}) {
        * all see through and messed up" was. Nothing of the building is drawn
        * beyond its own wall; what floors the threshold is the cave's skin. */
       sh.uniforms.uUcClipHi = { value: self.userData.bwClipHi ?? 1e9 };
+      /* AND A CLIP CAN BE RAGGED (2026-10-15): the tunnels' water ended on a ruler-straight line across the channel,
+       * a lip of mirror standing proud of the floor at each doorway. `bwClipRag` metres of wander along z, so the
+       * standing water gives out the way water does, unevenly between the stones. Zero is the straight cut. */
+      sh.uniforms.uUcClipRag = { value: self.userData.bwClipRag || 0 };
       /* AND TWO ROOMS THAT MEET IN A DOORWAY MUST NOT MEET ON A LINE. The
        * church is dressed at level 0.98 with its emissive at 0.9 and the
        * tunnel at 0.19 and 0.055 — five times the diffuse and sixteen times
@@ -1810,10 +1814,22 @@ export function makeUndercroft(opts = {}) {
        * draw. Off by default — x0 equal to x1 is no fade at all. */
       sh.uniforms.uUcFade = { value: self.userData.bwFade || new THREE.Vector2(0, 0) };
       sh.uniforms.uUcFadeTo = { value: self.userData.bwFadeTo || new THREE.Vector3(1, 0, 1) };
+      // and a second band, for a material that runs from one doorway to the other (the church's own stone): the nearer wins
+      sh.uniforms.uUcFade2 = { value: self.userData.bwFade2 || new THREE.Vector2(0, 0) };
+      /* AND ROUND A HOLE, A FADE IS ROUND (2026-10-15). A band in x takes the whole plane of a wall with it: at the
+       * apse that was every light of the tracery and the windows round the break, and the break was left a lit patch
+       * in a black void. (centre, radius): full at the middle of the hole, gone by the radius. w zero is off. */
+      sh.uniforms.uUcRad1 = { value: self.userData.bwRad1 || new THREE.Vector4(0, 0, 0, 0) };
+      sh.uniforms.uUcRad2 = { value: self.userData.bwRad2 || new THREE.Vector4(0, 0, 0, 0) };
+      /* AND WHERE A BORE MEETS A WALL IS A CORNER, AND CORNERS ARE DARK (2026-10-15). (x of the wall, how far the
+       * shadow reaches — its sign says which side of the wall the material is on — and how deep it goes.) The line a
+       * round tunnel makes against flat masonry is a clean curve whatever is laid along it; in a real one the light
+       * never gets into that angle, and a seam with no light on it is a seam nobody sees. Off at zero depth. */
+      sh.uniforms.uUcOcc = { value: self.userData.bwOcc || new THREE.Vector3(0, 1, 0) };
       self.userData.bwSh = sh;
       sh.vertexShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\n' + sh.vertexShader
         .replace('#include <fog_vertex>', '#include <fog_vertex>\n  vGrimeN = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);\n  vGrimeP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel, uUcEmisK; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX; uniform float uUcClipHi; uniform float uUcCutOn; uniform vec2 uUcFade; uniform vec3 uUcFadeTo; float ucLevel; float ucKnee; float ucEmisMul;\n' + sh.fragmentShader
+      sh.fragmentShader = 'varying vec3 vGrimeN; varying vec3 vGrimeP;\nuniform float uUcDust, uUcDamp, uUcLevel, uUcEmisK; uniform vec4 uUcCut; uniform float uUcCutX; uniform float uUcClipX; uniform float uUcClipHi; uniform float uUcClipRag; uniform float uUcCutOn; uniform vec2 uUcFade; uniform vec2 uUcFade2; uniform vec4 uUcRad1; uniform vec4 uUcRad2; uniform vec3 uUcFadeTo; uniform vec3 uUcOcc; float ucLevel; float ucKnee; float ucEmisMul;\n' + sh.fragmentShader
         /* THE WAY OUT IS CUT THROUGH THE APSE. A cylinder along x through the
          * back wall, WALLS ONLY — a floor or a vault inside the radius is
          * left alone, or the arch stands over a black disc — and the stone
@@ -1835,11 +1851,18 @@ export function makeUndercroft(opts = {}) {
     ucF = clamp((vGrimeP.x - uUcFade.x) / (uUcFade.y - uUcFade.x), 0.0, 1.0);
     ucF = ucF * ucF * (3.0 - 2.0 * ucF);
   }
+  if (uUcFade2.y != uUcFade2.x) {
+    float f2 = clamp((vGrimeP.x - uUcFade2.x) / (uUcFade2.y - uUcFade2.x), 0.0, 1.0);
+    ucF = max(ucF, f2 * f2 * (3.0 - 2.0 * f2));
+  }
+  if (uUcRad1.w > 0.0) ucF = max(ucF, 1.0 - smoothstep(uUcRad1.w * 0.35, uUcRad1.w, length(vGrimeP - uUcRad1.xyz)));
+  if (uUcRad2.w > 0.0) ucF = max(ucF, 1.0 - smoothstep(uUcRad2.w * 0.35, uUcRad2.w, length(vGrimeP - uUcRad2.xyz)));
   ucLevel = mix(uUcLevel, uUcFadeTo.x, ucF);
   ucKnee = mix(uUcEmisK, uUcFadeTo.y, ucF);
   ucEmisMul = mix(1.0, uUcFadeTo.z, ucF);
-${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
-  if (vGrimeP.x > uUcClipHi) discard;
+${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 + 1.3) + 0.20 * sin(vGrimeP.z * 9.1 + 0.4));
+  if (vGrimeP.x < uUcClipX + ucRag) discard;
+  if (vGrimeP.x > uUcClipHi - ucRag) discard;
   if (uUcCutOn > 0.5 && uUcCut.w > 0.0 && abs(ucN.y) < 0.6 && abs(vGrimeP.x - uUcCut.x) < uUcCutX) {
     float cdy = vGrimeP.y - uUcCut.y, cdz = vGrimeP.z - uUcCut.z;
     float ca = atan(cdy, cdz);
@@ -1848,7 +1871,7 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
     if (cd < cr) discard;
     ucCutEdge = cd - cr;
   }`}`)
-        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n  gl_FragColor.rgb *= mix(0.28, 1.0, smoothstep(0.0, 0.55, ucCutEdge));')
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n  gl_FragColor.rgb *= mix(0.28, 1.0, smoothstep(0.0, 0.55, ucCutEdge));\n  if (uUcOcc.z > 0.0) gl_FragColor.rgb *= mix(1.0 - uUcOcc.z, 1.0, smoothstep(0.0, abs(uUcOcc.y), (uUcOcc.x - vGrimeP.x) * sign(uUcOcc.y)));')
         /* THE KNEE ON THE LIFT. A scan's albedo is a photograph of a lit
          * building, so its brightest texels are SUNLIGHT — and handing those
          * back as emissive is what draws a glowing seam up the edge of every
@@ -1868,6 +1891,43 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
     diffuseColor.rgb *= 1.0 - uUcDamp * (0.35 + 0.65 * g2);
     diffuseColor.rgb *= ucLevel;
   }`);
+      /* AND WHERE THE SCAN'S UVs ARE STRETCHED, THE MAP GOES ON BY WORLD POSITION (2026-10-15). The tunnel's own
+       * mapping runs an even 0.087 of the map per metre (measured over 70,000 of its triangles, 0.053-0.128 for the
+       * middle eighty per cent) — and in a few places a face is mapped along a line, which draws as long smeared
+       * streaks; one of them is on the left wall three metres short of the church, the owner's "ugly and AI". Each
+       * pixel measures its own mapping: the two singular values of the uv-per-metre Jacobian off the derivatives,
+       * and where one direction is more than three to six times the other the same map is laid triplanar at the
+       * mapping's own density instead. Everywhere else is the model exactly as it was. `bwStretch` is that density. */
+      if (self.userData.bwStretch && self.map && self.emissiveMap === self.map) {
+        sh.uniforms.uUcTexPerM = { value: self.userData.bwStretch };
+        sh.fragmentShader = 'uniform float uUcTexPerM; vec4 ucTex;\n' + sh.fragmentShader
+          .replace('#include <map_fragment>', `{
+  vec4 t0 = texture2D(map, vMapUv);
+  vec3 dpx = dFdx(vGrimeP), dpy = dFdy(vGrimeP);
+  vec2 dux = dFdx(vMapUv), duy = dFdy(vMapUv);
+  vec3 sn = normalize(cross(dpx, dpy));
+  vec3 e1 = normalize(dpx), e2 = normalize(cross(sn, e1));
+  mat2 Am = mat2(dot(dpx, e1), dot(dpx, e2), dot(dpy, e1), dot(dpy, e2));
+  float k = 0.0;
+  if (abs(determinant(Am)) > 1e-14) {
+    mat2 J = mat2(dux, duy) * inverse(Am);
+    mat2 JJ = J * transpose(J);
+    float tr = JJ[0][0] + JJ[1][1], dt = determinant(JJ);
+    float disc = sqrt(max(tr * tr * 0.25 - dt, 0.0));
+    float l1 = tr * 0.5 + disc, l2 = max(tr * 0.5 - disc, 1e-16);
+    k = smoothstep(3.0, 6.0, sqrt(l1 / l2));
+  }
+  vec4 tt = t0;
+  if (k > 0.0) {
+    vec3 tp = vGrimeP * uUcTexPerM;
+    vec3 tw = abs(sn); tw = tw / max(1e-4, tw.x + tw.y + tw.z);
+    tt = mix(t0, texture2D(map, tp.yz) * tw.x + texture2D(map, tp.xz) * tw.y + texture2D(map, tp.xy) * tw.z, k);
+  }
+  ucTex = tt;
+  diffuseColor *= tt;
+}`)
+          .replace('#include <emissivemap_fragment>', 'totalEmissiveRadiance *= ucTex.rgb;');
+      }
     };
     mat.needsUpdate = true;
     S.mats.push(mat);
@@ -2037,6 +2097,20 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
    * the side the thing came through. Nothing about it is smooth: the
    * outline steps with the courses, which is what says masonry. */
   const BREAK_T = 0.78;                                   // how thick the church's wall is where it was broken through
+  /* the doorway dressing (`S.doorBlend`), as emissive multipliers on the church's own 0.9: the church's stone at a door
+   * (lands on the tunnel rock's lift) and the masonry's back leaf (its atlas is darker than the rock: matched beside it) */
+  const CH_MUL = 0.061, ASH_ROCK = 0.15;
+  /* AND THE ATLAS'S PLAIN CELLS ARE NOT THE WALL'S TONE. The panel in the walled-up doorway and the broken wall's
+   * face are laid from the atlas's plain-stone cells, which measure 0.7 of the piers either side of them — so the
+   * doorway read as a dark, greener rectangle pasted between grey stone; and the spill's cut faces, lying flat under
+   * the glowstick, came out 1.7 x the flags they lie on. A scalar on the colour and the lift, each measured on
+   * screen against what is next to it (2026-10-15): the panel 11.8 -> 16 against piers of 19 a metre nearer the lamp,
+   * the blocks 35 -> 22 against flags of 18-27. */
+  const ASH_FACE_K = 1.6, ASH_HEAP_K = 0.45;
+  const tone = (m, k) => { m.color.multiplyScalar(k); if (m.emissive) m.emissive.multiplyScalar(k); return m; };
+  const WATER_RAG = 0.8;
+  const OCC_REACH = 1.4, OCC_DEPTH = 0.55;
+  const DOOR_R = 4.0;                                     // how far round each break the church's stone eases into the tunnel's dark               // the corner's shadow in the tunnels' rock at each broken wall: how far it reaches, how dark                                  // how unevenly the channels' water gives out short of each broken wall
   const ASHLAR_U = [0.375, 0.4375], ASHLAR_V = [0.3125, 0.375, 0.4375, 0.5, 0.5625], ASHLAR_CS = 0.0625;
   function ashlarMat() {
     const src = S.wallMat;
@@ -2098,9 +2172,14 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
       return t >= 1 ? -1 : hw * Math.sqrt(Math.max(0, 1 - t * t));
     };
     const e = new THREE.Euler(), q = new THREE.Quaternion(), m4 = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1);
-    const geos = [];
-    const leaves = [[0.0, o.T * 0.52, 0.0], [o.T * 0.48, o.T, 0.20]];   // [from, to, how much further back it is broken]
-    for (const [d0, d1, grow] of leaves) {
+    /* AND EACH LEAF IS DRESSED FOR THE ROOM IT FACES (2026-10-15). One material for the whole wall had to be one
+     * brightness, and the wall is looked at from two rooms that are dressed sixteen times apart: tuned to the tunnel's
+     * rock it was a pale frame round the hole from the nave, tuned to the nave it was a black cut-out from the tunnel.
+     * The face leaf wears `o.mat`, the back leaf `o.matBack`. */
+    const out = new THREE.Group(); out.name = 'brokenWall';
+    const leaves = [[0.0, o.T * 0.52, 0.0, o.mat], [o.T * 0.48, o.T, 0.20, o.matBack || o.mat]];   // [from, to, how much further back it is broken, dressing]
+    for (const [d0, d1, grow, leafMat] of leaves) {
+      const geos = [];
       let v = -0.30, row = 0;
       while (v < o.H) {
         const ch = row === 0 ? 0.42 : 0.34 + rnd() * 0.14;
@@ -2121,9 +2200,12 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
           } else if (row > 0 && vc < o.top + grow + 0.45 && Math.abs((u0 + u1) / 2) < o.hw * 0.8) rim = true;   // over the crown
           if (u1 - u0 < 0.12) continue;
           const lenK = rim ? 0.86 + rnd() * 0.14 : 1;
-          const sx = (d1 - d0) * (rim ? 0.80 + rnd() * 0.2 : 0.97), sy = ch * (rim ? 0.86 + rnd() * 0.12 : 0.97), sz = (u1 - u0) * lenK - 0.012;
+          /* the BACK of a wall is never dressed: its blocks stand out of it by whatever they happened to be cut
+           * to, and where a round bore meets it that is what breaks the line the two make */
+          const proud = d0 > 0 && !rim && rnd() < 0.55 ? Math.pow(rnd(), 1.5) * 0.32 : 0;
+          const sx = (d1 - d0) * (rim ? 0.80 + rnd() * 0.2 : 0.97) + proud, sy = ch * (rim ? 0.86 + rnd() * 0.12 : 0.97), sz = (u1 - u0) * lenK - 0.012;
           const g = ashlarBox(sx, sy, sz, rnd);
-          const dx = (d0 + d1) / 2 + (rim ? (rnd() - 0.5) * 0.10 : (rnd() - 0.5) * 0.012);
+          const dx = (d0 + d1) / 2 + proud / 2 + (rim ? (rnd() - 0.5) * 0.10 : (rnd() - 0.5) * 0.012);
           e.set(rim ? (rnd() - 0.5) * 0.14 : 0, rim ? (rnd() - 0.5) * 0.16 : 0, rim ? (rnd() - 0.5) * 0.10 : 0);
           m4.compose(new THREE.Vector3(o.x + o.dir * dx, o.fy + vc, o.cz + (u0 + u1) / 2), q.setFromEuler(e), one);
           g.applyMatrix4(m4);
@@ -2131,10 +2213,11 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
         }
         v += ch; row++;
       }
+      const mesh = new THREE.Mesh(mergeGeos(geos), leafMat);
+      mesh.name = d0 === 0 ? 'brokenWall' : 'brokenWallBack';
+      out.add(mesh);
     }
-    const mesh = new THREE.Mesh(mergeGeos(geos), o.mat);
-    mesh.name = 'brokenWall';
-    return mesh;
+    return out;
   }
   // the wall that came down: broken blocks, lying where they fell, each sunk a little into what is under it
   function blockHeap(mat, lumps, rndSeed) {
@@ -2151,6 +2234,84 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
     const mesh = new THREE.Mesh(mergeGeos(geos), mat);
     mesh.name = 'blockHeap';
     return mesh;
+  }
+  /* ---- AND WHERE A ROUND BORE MEETS A FLAT WALL IT MEETS IT ON A CIRCLE (2026-10-15). From the tunnel the rock ran
+   * up to the masonry and stopped on a clean ring — the one perfectly regular line in the place, and what the eye goes
+   * to. A tunnel that was dug up to a wall has the wall's foot choked with what came off the face: so the ring is
+   * broken by stones of the TUNNEL'S OWN ROCK, sunk half into the rock and half into the masonry, never two the same.
+   * Real lumps, not icosahedra (those read as "black pebbles with a shine", this file's own words): a two-times
+   * subdivided ball pushed in and out by two octaves of noise taken off its own position, so neighbouring faces
+   * agree and the shading rolls. Same fixed hash rule as the spill. */
+  function rockLumps(lumps, mat, seed) {
+    let h = seed || 31;
+    const rnd = () => { h = (h * 1103515245 + 12345) & 0x7fffffff; return h / 0x7fffffff; };
+    const e = new THREE.Euler(), q = new THREE.Quaternion(), m4 = new THREE.Matrix4(), v = new THREE.Vector3();
+    const geos = [];
+    for (const L of lumps) {
+      /* once subdivided and pushed hard: a ball twice subdivided came out as a row of matching beads round the
+       * ring, which is the one thing a heap of broken rock never is. Coarser, rougher, and split — every stone has
+       * a flat side where it broke off, which is what makes it read as stone rather than as a pebble */
+      const g = new THREE.IcosahedronGeometry(1, 1);
+      const p = g.attributes.position, o1 = rnd() * 50, o2 = rnd() * 50;
+      const cut = new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(), cutD = 0.25 + rnd() * 0.35;
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i);
+        const d = (vnoise3(v.x * 1.3 + o1, v.y * 1.3, v.z * 1.3) - 0.5) * 0.95 + (vnoise3(v.x * 3.1 + o2, v.y * 3.1, v.z * 3.1) - 0.5) * 0.35;
+        v.multiplyScalar(1 + d);
+        const k = v.dot(cut) - cutD; if (k > 0) v.addScaledVector(cut, -k);   // the broken face
+        p.setXYZ(i, v.x, v.y, v.z);
+      }
+      e.set(rnd() * 6.28, rnd() * 6.28, rnd() * 6.28);
+      m4.compose(new THREE.Vector3(L.pos[0], L.pos[1], L.pos[2]), q.setFromEuler(e), new THREE.Vector3(L.sz * L.scl[0], L.sz * L.scl[1], L.sz * L.scl[2]));
+      g.applyMatrix4(m4);
+      g.setIndex(Array.from({ length: p.count }, (_, i) => i));
+      g.computeVertexNormals();
+      geos.push(g);
+    }
+    const mesh = new THREE.Mesh(mergeGeos(geos), mat);
+    mesh.name = 'rockLumps';
+    return mesh;
+  }
+  /* the bore's own radius round a point on its axis, in `n` directions across it (group frame, x along the bore) */
+  function boreRing(ix, x, cy, cz, n) {
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      const a = k / n * Math.PI * 2, dy = Math.sin(a), dz = Math.cos(a);
+      const t = rayHit(ix, x, cy, cz, 0, dy, dz, 6.0);
+      out.push({ a, dy, dz, r: t > 0 ? t : -1 });
+    }
+    return out;
+  }
+  /* the stones where a bore meets the back of a broken wall: `xB` the wall's back face, `dir` the way into the
+   * tunnel from it (-1 at the front door, +1 at the apse), `ay`/`cz` the bore's axis there */
+  function junctionStones(ix, xB, dir, ay, cz, mat, seed) {
+    let lh = seed;
+    const lr = () => { lh = (lh * 1103515245 + 12345) & 0x7fffffff; return lh / 0x7fffffff; };
+    const lumps = [];
+    /* LOW, AND NOT EVENLY. What comes off a face lies at its foot and banks up the corners; nothing stays on a
+     * roof. So the stones are on the lower two thirds of the section, most at the floor's edges, with gaps — the
+     * crown's ring is broken by the masonry itself (the back leaf's blocks stand proud by different amounts,
+     * `brokenWall`) */
+    for (const R of boreRing(ix, xB + dir * 0.30, ay, cz, 34)) {
+      if (R.r < 0.6) continue;
+      if (R.dy > 0.30) continue;                                           // nothing on the roof
+      if (R.dy < -0.45 && Math.abs(R.dz) < 0.75) continue;               // the walkway
+      if (lr() < (R.dy < -0.3 ? 0.12 : 0.38)) continue;                   // gaps, fewer at the foot
+      const n = R.dy < -0.3 ? (lr() < 0.6 ? 3 : 2) : (lr() < 0.35 ? 2 : 1);
+      for (let k = 0; k < n; k++) {
+        const sz = 0.12 + Math.pow(lr(), 1.6) * (k ? 0.30 : 0.48), sink = sz * (0.10 + lr() * 0.25);
+        const da = (lr() - 0.5) * 0.18, dy = Math.sin(R.a + da), dz = Math.cos(R.a + da);
+        const x = xB - dir * 0.04 + dir * (k * (0.25 + lr() * 0.35) + lr() * 0.12);
+        /* measured AT the stone, not at the ring: a bore that widens by a hand a metre in left the stones laid
+         * further from the wall hanging in the air off it (measured: the exit's flares) */
+        const r = rayHit(ix, x, ay, cz, 0, dy, dz, 6.0);
+        if (r < 0.6) continue;
+        lumps.push({ sz, pos: [x, ay + dy * (r - sink), cz + dz * (r - sink)],
+                     scl: [0.7 + lr() * 0.6, 0.45 + lr() * 0.4, 0.7 + lr() * 0.6] });
+      }
+    }
+    if (!lumps.length) return null;
+    return rockLumps(lumps, mat, seed);
   }
   const findMat = (root, want) => {
     let hit = null;
@@ -2174,10 +2335,24 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
       for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (m) { m.flatShading = false; m.needsUpdate = true; }
     });
   }
+  // the channel's water, both tunnels: a mirror tinted to the altar's candles (the reasons are at the passage's load)
+  function waterLook(m) {
+    m.color.setHex(0xffa951);
+    m.emissive.setHex(0x0d0803);
+    m.emissiveIntensity = 1;
+    m.roughness = 0.12;
+    m.metalness = 0.93;
+    m.needsUpdate = true;
+  }
+  // the tunnels' rock: its own mapping, but laid by world position where that mapping is stretched (see `grime`)
+  const unstretch = (root) => root.traverse((o) => {
+    if (o.isMesh && o.material && /^Rock01/.test(o.material.name || '')) o.material.userData.bwStretch = 0.087;
+  });
   load(opts.passageUrl || 'assets/tunnel.glb', (gltf) => {
     const root = gltf.scene;
     const w = parseWalk(root);
     dress(root, 'cave');
+    unstretch(root);
     /* THE WATER IS DRESSING, NOT ROCK — and A MATERIAL WITH NO MAP AND NO
      * LIFT IS BLACK DOWN HERE, which is the lamp-in-a-wall lesson wearing a
      * puddle. The grime pass lifts a surface off its OWN map, and this one
@@ -2227,12 +2402,7 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
        * (0xffa951, main.js) at full, with the metalness up so almost none
        * of it is left over as diffuse: what lies on the water is the
        * candlelight and the stone under it stays as dark as the rock. */
-      m.color.setHex(0xffa951);
-      m.emissive.setHex(0x0d0803);
-      m.emissiveIntensity = 1;
-      m.roughness = 0.12;
-      m.metalness = 0.93;
-      m.needsUpdate = true;
+      waterLook(m);
     });
     smoothRock(root);
     group.add(root);
@@ -2243,6 +2413,11 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
     const root = gltf.scene;
     const w = parseWalk(root);
     dress(root, 'cave');
+    unstretch(root);
+    /* AND THE WAY OUT'S CHANNEL IS THE SAME WATER (2026-10-15). It came through as the export left it — a pale blue
+     * matte sheet (0xc8e5ff, rough 1, no metal), which under the glowstick was a flat teal strip of big facets and
+     * the brightest thing in the exit bore, and nothing like the dark candlelit mirror you waded in by. */
+    root.traverse((o) => { if (o.isMesh && o.material && (o.material.name || '') === 'Water') waterLook(o.material); });
     smoothRock(root);
     group.add(root);
     S.cave = { root, walk: w };
@@ -2566,7 +2741,8 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
        * smoothed into them — and those are the narrowest stations in the
        * model, where being a foot off centre is the difference between a
        * corridor and a wall. */
-      fitCorridor(inbound, surfaceBins(S.passage.root), triIndex(S.passage.root));
+      S.passIx = triIndex(S.passage.root);       // kept: the junction's stones are laid off it too
+      fitCorridor(inbound, surfaceBins(S.passage.root), S.passIx);
       /* AND THE TUBE IS KEPT ONLY FOR THE SEAM. `walkable` asks the corridor
        * BEFORE the grids, so a tube down the whole tunnel overrides the
        * model's own floor everywhere it reaches — which is exactly the cage
@@ -2665,8 +2841,8 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
             if (!o.isMesh) return;
             for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
               if (!m || (m.name || '') !== 'Water') continue;
-              m.userData.bwClipHi = wEnd;
-              if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipHi) m.userData.bwSh.uniforms.uUcClipHi.value = wEnd;
+              m.userData.bwClipHi = wEnd; m.userData.bwClipRag = WATER_RAG;   // and not on a ruler line: it gives out unevenly, up to WATER_RAG short of it
+              if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipHi) { m.userData.bwSh.uniforms.uUcClipHi.value = wEnd; m.userData.bwSh.uniforms.uUcClipRag.value = WATER_RAG; }
             }
           });
         }
@@ -2699,25 +2875,63 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
          * material came off rather than on what it is called, and the exit's
          * runs the other way — from three and a half metres inside the bore
          * down to the apse. */
+        /* AND THE TWO ROOMS MEET IN THE DARK, NOT HALFWAY (2026-10-15, the owner: "the tunnel connections to the
+         * church look really bad and some textures are too bright … the connections should not be noticed"). The
+         * meeting point used to be halfway between the dressings — a level of 0.45 with the knee half on — and
+         * getting there meant BRIGHTENING the tunnel: its rock's lift multiplied by 2.3 over the last three and a half
+         * metres, which is the tan collar round the hole from the tunnel side, and at the apse the whole exit bore
+         * seen through the break as a pale grey boulder plugging it. The broken masonry, one material for both of its
+         * faces, was tuned to that brightened rock — so from the nave it was the brightest thing in view, a pale
+         * scalloped frame round the hole on a pale sill, with pale blocks on the floor (measured 1.2-1.5 x the wall
+         * under the glowstick).
+         *
+         * Now the tunnel is left exactly as it is, all the way to the stone, and everything of the CHURCH that comes
+         * near a doorway eases DOWN to the tunnel's own look: its level, no knee, and a lift that lands the church's
+         * 0.9 on the rock's 0.055 (0.061, measured: the wall at the door 17.6 against the rock through the hole 17.6).
+         * The nave's light dies in the doorway, which is what light does, and a seam in the dark is a seam nobody
+         * sees. The masonry is dressed by the side it faces: the face leaf, the sill and the spill as the church at
+         * that spot, the back leaf as the rock round it. The church's stone runs from one doorway to the other, so it
+         * carries both bands and the nearer wins. */
         S.doorBlend = () => {
-          const band = (m, from, to, mul) => {
-            if (!m) return;
-            m.userData.bwFade = new THREE.Vector2(from, to);
-            m.userData.bwFadeTo = new THREE.Vector3(0.45, 1.0, mul);   // level, knee, emissive multiplier
+          const C = LOOK.cave, NONE = new THREE.Vector2(0, 0), OCC_OFF = new THREE.Vector3(0, 1, 0);
+          const ALL = new THREE.Vector2(doorX + 100, doorX + 99);          // the whole of the place: the full target everywhere
+          const R_OFF = new THREE.Vector4(0, 0, 0, 0);
+          /* THE FRONT DOOR FADES ACROSS ITS WHOLE WALL, THE APSE ROUND ITS HOLE. The front's break is in a walled-up
+           * doorway five metres high between plain piers, and all of that wall wants the dark (round the hole alone,
+           * the panel's top came back at 61 against a hole of 15); the apse's is in a wall of tracery and glass that
+           * must keep its own look, so its fade is round the break (`uUcRad1`): full at the hole, gone DOOR_R out. */
+          const front = new THREE.Vector2(doorX + 3.6, doorX);
+          const apse = S.apseC ? new THREE.Vector4(S.apseC.x, S.apseC.y, S.apseC.z, DOOR_R) : R_OFF;
+          /* and the building's OUTSIDE skin, which shows inside the chancel either side of the break as two pale flat
+           * wedges at the foot of the wall (measured 30 against the flags' 6-9): the outer wall has no business being
+           * lit in there at all, so it goes to the dark over twice the radius */
+          const apseExt = S.apseC ? new THREE.Vector4(S.apseC.x, S.apseC.y, S.apseC.z, DOOR_R * 2) : R_OFF;
+          const set = (m, f1, mul, r1 = R_OFF, r2 = R_OFF) => {
+            m.userData.bwFade = f1; m.userData.bwFade2 = NONE; m.userData.bwRad1 = r1; m.userData.bwRad2 = r2;
+            m.userData.bwFadeTo = new THREE.Vector3(C.level, C.knee || 0, mul);   // level, knee, emissive multiplier
             const sh = m.userData.bwSh;
-            if (sh && sh.uniforms.uUcFade) { sh.uniforms.uUcFade.value = m.userData.bwFade; sh.uniforms.uUcFadeTo.value = m.userData.bwFadeTo; }
+            if (sh && sh.uniforms.uUcFade) {
+              sh.uniforms.uUcFade.value = f1; sh.uniforms.uUcFadeTo.value = m.userData.bwFadeTo;
+              if (sh.uniforms.uUcFade2) sh.uniforms.uUcFade2.value = NONE;
+              if (sh.uniforms.uUcRad1) { sh.uniforms.uUcRad1.value = r1; sh.uniforms.uUcRad2.value = r2; }
+            }
           };
           for (const m of S.mats) {
-            const n = m.name || '';
-            /* the broken walls: church stone in a tunnel's light. At the
-             * seam's own values the wall's darker atlas read as a black
-             * silhouette against the tan rock, so their emissive meets the
-             * rock's brightness rather than its number */
-            if (m.userData.bwBreak === 'front') { band(m, doorX + 3.6, doorX, 0.34); continue; }
-            if (m.userData.bwBreak === 'apse') { if (S.apseX != null) band(m, S.apseX - 3.6, S.apseX, 0.34); continue; }
-            if (S.exitMats && S.exitMats.has(m)) { if (S.apseX != null) band(m, S.apseX + 3.6, S.apseX, 2.3); }
-            else if (m.userData.bwKind === 'church') band(m, doorX + 3.6, doorX, 0.14);
-            else if (/^Rock01/.test(n)) band(m, doorX - 3.6, doorX, 2.3);
+            const n = m.name || '', brk = m.userData.bwBreak, leaf = m.userData.bwLeaf;
+            if (brk) {
+              if (leaf === 'back') set(m, ALL, ASH_ROCK);                     // seen only from the tunnel, beside its rock
+              else if (brk === 'front') set(m, front, CH_MUL);                 // the face, the sill and the spill (the spill's own tone carries the rest: ASH_HEAP_K)
+              else set(m, NONE, CH_MUL, apse);
+              continue;
+            }
+            if ((S.exitMats && S.exitMats.has(m)) || /^Rock01/.test(n) || n === 'Water') {   // the tunnels as they are, but dark in the corner at each wall
+              set(m, NONE, 1);
+              const o = (S.exitMats && S.exitMats.has(m) ? S.occApse : S.occFront) || OCC_OFF;
+              m.userData.bwOcc = o;
+              if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcOcc) m.userData.bwSh.uniforms.uUcOcc.value = o;
+              continue;
+            }
+            if (m.userData.bwKind === 'church') set(m, front, CH_MUL, /-ext$/.test(n) ? apseExt : apse);
           }
         };
         S.doorBlend();
@@ -2831,6 +3045,7 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
       if (S.wallMat) {
         fm = S.wallMat.clone(); fm.userData = {}; fm.name = 'breach';
         grime(fm, 'church');
+        tone(fm, ASH_FACE_K);
       } else {
         fm = new THREE.MeshBasicMaterial({ color: 0x000000, fog: false });
       }
@@ -2890,10 +3105,13 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
        * through, and it is solid everywhere else (`S.gates`): the tunnel is
        * four metres wide at the church and the grids know nothing about the
        * stone across its end. */
-      const ashF = ashlarMat(); ashF.userData.bwBreak = 'front';
+      const ashF = tone(ashlarMat(), ASH_FACE_K); ashF.userData.bwBreak = 'front';
+      const ashFS = ashlarMat(); ashFS.userData.bwBreak = 'front';                                     // the sill: flags beside flags, as it is
+      const ashFB = ashlarMat(); ashFB.userData.bwBreak = 'front'; ashFB.userData.bwLeaf = 'back';   // the side the tunnel sees
+      const ashFH = tone(ashlarMat(), ASH_HEAP_K); ashFH.userData.bwBreak = 'front'; ashFH.userData.bwLeaf = 'heap';   // what fell out of it, on the nave's floor
       const wallB = brokenWall({ x: wallX - 0.015, dir: -1, cz, fy: cy, hw: FRONT_HOLE.hw, top: FRONT_HOLE.top,
         W: Math.max(FRONT_HOLE.hw * 2 + 3.4, mouthCol.w + 2.8), H: Math.max(FRONT_HOLE.top + 1.8, mouthCol.h + 1.4),
-        T: BREAK_T, seed: 4411, mat: ashF });
+        T: BREAK_T, seed: 4411, mat: ashF, matBack: ashFB });
       group.add(wallB); S.frontBreak = wallB;
       /* AND A THRESHOLD UNDER IT. The church's own flags start a quarter of a
        * metre inside the face and the tunnel's rock is clipped behind it, so
@@ -2912,7 +3130,7 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
           t.applyMatrix4(m4.makeTranslation(x0 + (a + 0.5) * dx, cy + 0.014 - 0.10 - trnd() * 0.010, cz - TW / 2 + (b + 0.5) * dz));   // a worn threshold a finger proud of the flags: the scan's floor at the door carries the daylight it was photographed in, a pale blue band
           tiles.push(t);
         }
-        const sill = new THREE.Mesh(mergeGeos(tiles), ashF);
+        const sill = new THREE.Mesh(mergeGeos(tiles), ashFS);
         sill.name = 'breakSill';
         group.add(sill);
       }
@@ -2959,9 +3177,16 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
                            rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 0.55 + rnd() * 0.3, 1] });
         }
         const spill = new THREE.Group();
-        spill.add(blockHeap(ashF, doorLumps, 5150));     // what fell out of it is blocks, not lumps
+        spill.add(blockHeap(ashFH, doorLumps, 5150));    // what fell out of it is blocks, not lumps
         group.add(spill);
         S.spill = spill;
+      }
+      /* and the ring where the bore meets the wall's back, broken (`junctionStones`): stones round the bore's own
+       * measured section at the masonry, half in the rock and half in the wall, none across the walkway */
+      S.occFront = new THREE.Vector3(group.localToWorld(new THREE.Vector3(wallX - 0.015 - BREAK_T, 0, 0)).x, OCC_REACH, OCC_DEPTH);
+      if (S.passIx) {
+        const lm = junctionStones(S.passIx, wallX - 0.015 - BREAK_T, -1, cy + 1.35, cz, patchMat(findMat(S.passage.root)), 2718);
+        if (lm) { group.add(lm); S.frontLumps = lm; }
       }
       if (S.doorBlend) S.doorBlend();        // the rubble is in `S.mats` now
     }
@@ -3130,7 +3355,9 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
            * what stands there now is the masonry itself, broken through,
            * the same build as the front door's (`brokenWall`), and it is
            * solid either side of its hole (`S.gates`). */
-          const ashA = ashlarMat(); ashA.userData.bwBreak = 'apse';
+          const ashA = tone(ashlarMat(), ASH_FACE_K); ashA.userData.bwBreak = 'apse';
+          const ashAB = ashlarMat(); ashAB.userData.bwBreak = 'apse'; ashAB.userData.bwLeaf = 'back';
+          const ashAH = tone(ashlarMat(), ASH_HEAP_K); ashAH.userData.bwBreak = 'apse'; ashAH.userData.bwLeaf = 'heap';
           /* ROUND, like the skin's own cut, and INSIDE it all the way round
            * (1.15 about 1.30 against 1.42 about 1.46), so a ring of broken
            * blocks shows within the cut at every angle — an arch with
@@ -3138,14 +3365,15 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
            * closes in to half a metre at the floor */
           const APSE_HOLE = { hw: 1.15, top: 2.45, R: 1.15, cyR: 1.30 };
           const wallA = brokenWall({ x: exitEdge + 0.16, dir: 1, cz: off.z, fy: exitFloor, hw: APSE_HOLE.hw, top: APSE_HOLE.top, R: APSE_HOLE.R, cyR: APSE_HOLE.cyR,
-            W: 7.0, H: 5.4, T: BREAK_T, seed: 8123, mat: ashA });
-          group.add(wallA); S.apseBreak = wallA; S.apseAsh = ashA; S.apseHole = APSE_HOLE;
+            W: 7.0, H: 5.4, T: BREAK_T, seed: 8123, mat: ashA, matBack: ashAB });
+          group.add(wallA); S.apseBreak = wallA; S.apseAsh = ashA; S.apseHeapMat = ashAH; S.apseHole = APSE_HOLE;
           S.gates.push({ x0: exitEdge - 0.35, x1: exitEdge + 0.16 + BREAK_T + 0.45, z: off.z, hw: 0.62 });
           S.apseRing = ring;
           /* AND THE EXIT'S OWN MATERIALS ARE THE ONES THAT FADE AT THIS END.
            * Collected by ROOT, because the two ends of the church are now
            * cut from the same model and a name cannot tell them apart. */
           S.apseX = group.localToWorld(new THREE.Vector3(exitEdge, 0, 0)).x;
+          S.apseC = group.localToWorld(new THREE.Vector3(exitEdge, exitFloor + 1.4, off.z));   // the break's middle, for the fade round it
           S.exitMats = new Set();
           S.cave.root.traverse((o) => {
             if (!o.isMesh || !o.material) return;
@@ -3185,9 +3413,16 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
                              rot: [rnd() * 3, rnd() * 3, rnd() * 3], scl: [1, 1, 1] });
           }
           const spill = new THREE.Group();
-          spill.add(blockHeap(S.apseAsh, wallLumps, 9091));
+          spill.add(blockHeap(S.apseHeapMat, wallLumps, 9091));
           group.add(spill);
           S.apseSpill = spill;
+        }
+        // and the exit bore's own ring, where it meets the back of the apse's broken wall
+        S.occApse = new THREE.Vector3(group.localToWorld(new THREE.Vector3(exitEdge + 0.16 + BREAK_T, 0, 0)).x, -OCC_REACH, OCC_DEPTH);
+        {
+          const cIx = triIndex(S.cave.root);
+          const lm = junctionStones(cIx, exitEdge + 0.16 + BREAK_T, 1, exitFloor + 1.35, off.z, patchMat(findMat(S.cave.root, 'Rock01') || findMat(S.cave.root)), 6151);
+          if (lm) { group.add(lm); S.apseLumps = lm; if (S.exitMats) S.exitMats.add(lm.material); }
         }
         if (S.doorBlend) S.doorBlend();      // the exit's own band, and its rubble
         const clipX = group.localToWorld(new THREE.Vector3(exitEdge + 0.12, 0, 0)).x;
@@ -3197,7 +3432,11 @@ ${noDisc ? '' : `  if (vGrimeP.x < uUcClipX) discard;
           if (!o.isMesh) return;
           for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
             m.userData.bwClipX = (m.name || '') === 'Water' ? clipW : clipX;
-            if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipX) m.userData.bwSh.uniforms.uUcClipX.value = m.userData.bwClipX;
+            if ((m.name || '') === 'Water') m.userData.bwClipRag = WATER_RAG;
+            if (m.userData.bwSh && m.userData.bwSh.uniforms.uUcClipX) {
+              m.userData.bwSh.uniforms.uUcClipX.value = m.userData.bwClipX;
+              if (m.userData.bwSh.uniforms.uUcClipRag) m.userData.bwSh.uniforms.uUcClipRag.value = m.userData.bwClipRag || 0;
+            }
           }
         });
         /* AND THE OLD CAVE IS WALKED AS A TUBE TOO. Its walkable channel,

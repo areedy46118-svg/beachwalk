@@ -156,3 +156,11 @@ winning his game), the C13 arch and `fortBackBarred` (already open / already dev
 on and no keys, the hold door opened (850 ms timer), chest and gate unlocked, `henryFreeS()` went to 1/'wait'.
 Note `statHad(boatKeyItem)` falls back to `holdDoorOpen`, so a dev-opened door counts that key in the end stats — dev
 mode only.
+
+## A push-out never carries you through a wall (2026-10-16)
+
+"I should never clip through a wall." The storeyed walks (catacombs, tavern, keep) tested the STEP for crossing a face
+(`hits`, at 0.8/1.25/1.68 over the feet) and never the pushes after it (`pushOutOfKeep`, `keepWallPush`), and against a
+thin wall the nearest face can be the far one. A push that crosses is undone — but a body put INSIDE something (a
+restore, a teleport) can only get out by crossing, so after 0.35 s held the push is let through (`pushHeld`, per walk).
+`shovePlayer` (a creature's body shoving you) also refuses a shove that crosses drawn stone in those three rooms.

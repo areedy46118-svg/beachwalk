@@ -651,3 +651,27 @@ steel across the middle. Material colour 0x5c5d57 — the map at white read as c
 (the old "…"); "Give me the key or else" → `threat`, "You think a plastic shovel scares me? I’ll make this quick."
 (`end: false`), and the click off it is `DEALER_NPC.onLeave` → the bar. Measured: both choices shown, the line, the
 bar in his hand after the click.
+
+**AND A THIRD: THE PORTRAIT (2026-10-16).** "Hand him the portrait" (only with `wellPhotoItem` in the pack, so it wears
+the item star) → `portrait`, "Wait... how did you..." (`end: false`); `dealerTakePortrait` takes it from the pack and sets
+`dealerRage`. The click off the line is the usual `onLeave` → pickup; when the pickup ends with `dealerRage` and the table
+standing, `dealerSmash` runs instead of the fight: he turns to `workTable`, his `attackDown` is driven by hand at
+`SMASH_RATE` 1.5, at clip time `SMASH_HIT` 1.0 `smashWorkTable(11, …)` and trauma, at `SMASH_END` 2.0 the fight. Measured
+through the real dialog: the choice, the line, the bar in his hand, ~1.5 s of smash, `tableBroken` and `dealerFight` true.
+
+**A piece of the desk hits you (2026-10-16).** `tableShot(n0)` takes the biggest gib the smash threw and sends it on an
+arc that meets the camera in 0.45 s (gibs fall at 15), `updateTableShot` (top of `updateDealer`) lands it as a
+`grazePlayer` — flash, shake, the head knocked, no damage — and bounces it off. Measured: table at 1.76 s, the graze at
+2.29 s. The portrait choice now reads "Hand him the well man's portrait" (the owner thought the orc's photograph had
+set him off; only `wellPhotoItem` ever could), and it leaves the pack and the hand.
+
+## 2026-10-16: the camera in the rage, and the flash on the way out
+
+- **The camera** stands at `CAM_STAND` (1.30, 2.55), a stride in front of the desk (the scan has it at `CAM_SPOT`).
+  After the desk (no `tableShot` off the desk any more), `dealerCamPh`: he walks to 0.95 m behind the tripod on the line
+  from you, squares up, plays `dSide` paused on its own clock (×1.25), and at 0.40 of it `smashTripodCam(16, toward
+  you)`; every piece it makes is re-aimed at your feet (T 0.45–0.75 s, 15 m/s² gibs) and the biggest at your face
+  (`tableShot`). The lens is held until 0.8 s after the hit, then the fight.
+- **The flash leaving**: `bunkerTenantry` kept the beach hidden for as long as `hatchBusy`, which runs half a second
+  past the cut through the fade-in — measured, the frame black from the cut to t 1.23 and the whole beach popping in.
+  Coming out, the cut is where you are outside. Measured after: brightness steady from the cut through the fade.

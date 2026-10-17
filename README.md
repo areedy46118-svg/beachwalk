@@ -20,7 +20,7 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 |-------|--------|
 | `W` `A` `S` `D` | Walk |
 | `Shift` | Run (≈5 s of stamina) |
-| `8` | Toggle the walk-speed setting between 14x and 1.4x — it drives the slider in the menu, and never persists |
+| `9` | Toggle the walk-speed setting between 14x and 1.4x — it drives the slider in the menu, and never persists |
 | `Space` | Jump &mdash; a directional step while a fight is live |
 | Mouse | Look (pointer lock; drag-to-look fallback if it's blocked) |
 | Click / `E` / `F` | Grab a physics object · take an item · dig (with the shovel) |
@@ -409,12 +409,6 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   *in* the beach rather than on it. Solid — you're pushed out of them and can
   climb them. The scans were baked in daylight, so `reexpose()` gamma-lifts
   the albedo for the moonlight.
-- **The body bag** — a corpse roped at the head and the feet
-  (`assets/corpse.glb`), on the high-water line thirty metres short of the
-  wreck, tipped on its side and settled into the sand, clear of the tide at
-  every state of it. You read it as a black bar long before you can tell what
-  it is. Solid; looking at it says one line and offers you nothing to do.
-  `CORPSE_X` / `CORPSE_Z`.
 - **The stuck gate** — the barred outlet in the back wall of the drainage
   tunnel home now says **Look inside**. Press `E` and you lean the last half
   metre onto the bars while the FOV squeezes to 24°, which is the zoom and is
@@ -434,6 +428,26 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   (`sfxBusGain`) under the master volume, with its own *Effects volume*
   slider. Previously they went straight to the speakers, which is why
   digging was so loud.
+
+## Elvédor Basquiant and the house behind the dune
+
+In the gap before the three mutants a man in a white tux calls out to you —
+Elvédor Basquiant, master puppeteer, world-renowned pianist, and nobody you
+have heard of. His house is just beyond where the three mutants wait: fight your way
+through them and a fire burns on the sand at the mouth of a gully carved up through the sand
+wall, an oil lantern left on a log beside it. Up the gully, over old sleepers
+and past a rope rail, is his lot: a broken picket fence with his name on the
+gate, gnarled dead trees, a swing that moves on its own, the crosses of
+marionettes turning on their strings, and a new kind of mist lying over all
+of it. The house is pitch dark — take the lantern. Every door opens, every
+window breaks (to a blade, a round or a thrown thing), and there are
+handprints on the walls and strings hanging from the ceilings. A music box
+plays upstairs. His puppet sits on the edge of a bed, staring; pick it up and
+the box stops and a door slams downstairs. Carry it back (it blinks once,
+and later looks up at you) and he wears it on his hand, both of them watching
+you, and pays you a jar of blue blood. Hit him and he fights — with the
+puppet on, only with his free hand — and goes down like any man: five jars,
+the ring's sting, and the puppet climbs down and runs.
 
 ## The bunker
 
@@ -630,6 +644,8 @@ you while it loads; the first click takes the mouse back.
 - `WADE_X` / `CLIFF_BLOCK_X` — the two invisible walls
 - `CLIFF_X` / `CLIFF_H` / `CLIFF_PERIOD`
 - `LH_Z` — how far the lighthouse (the ending) is; `END_Z` is the trigger
+- `BEACH_EXT` — extra beach between the bunker's hatch and the three mutants (100 m); everything from the mutants on moves with it
+- `KEEP_TIDES` / `KEEP_BACK_CUT` — where the sea stands higher round the sides of the sea keep (rise in metres) and the line under it the walk refuses, so the back of the island can't be reached
 - `CITY_TILE` and the `towers` block — city distance / height / density
 - `CASTLE_Z` — where the shovel-in-a-castle sits; `crabWorld.position` — the crab
 - `inspectDist` / the `k` fit factor in `inspectSetModel()` — examine-view framing
@@ -652,6 +668,8 @@ you while it loads; the first click takes the mouse back.
 - `DEFAULT_SETTINGS.sfxVolume` — how loud one-shot effects sit
 - `FOOT_POOL`, `REACH`, `NOTE_TEXT`, `scene.fog` density
 - `DEFAULT_SETTINGS` — starting FOV etc.
+- `ELV` / `ELV_PATH` / `ELV_PATH_HW` / `ELV_CUT` / `ELV_YARD` — where Elvédor stands, the gully's centre line (with its floor height at each point), its half-width, where the cliff is cut, the lot; `HOUSE_X/Z` the house (`HOUSE_Y` comes off the cliff); `ELV_CAMP` the fire; `ELV_SEC_D` / `ELV_FOG_D` the fog from Elvédor on and behind the dune; `MUT_KINDS.elvedor` his fight (`hp`, `use`, `speedK`…)
+- `ELV_CARRY` — where the puppet's hips sit in your arms (viewmodel space); `ELV_BLINK_AT` / `ELV_GLANCE_AT` — metres walked before the blink and the look; `PUP_K` his size
 
 `window.__bw` is a dev hook (scene, camera, physProps, inventory, lighthouse,
 castle, crab, `startDig`, `toggleEquip`, `openMenu`, `openInspect`, `showEnd`,
@@ -799,6 +817,19 @@ leaning over the water at the fisherman's old spot, past the five's fire
 (`assets/tree.glb`, `tools/gltfpack.py --tex 1024`, 8.3 MB, its own sway played as
 it comes; its needles alpha-tested rather than blended).
 
+This work is based on ["House with interior elements"](https://sketchfab.com/3d-models/house-with-interior-elements-a8da1f6c22e54a98abbbf7a9bf5e6ca3)
+by [3D Arena](https://sketchfab.com/Jamesaalam) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the house behind the dune
+(`assets/puppet-house.glb`, `tools/undercroft_pack.py tavern --tex 512 --scale 1.27 --yaw -90`, 3.9 MB).
+
+This work is based on ["Henry The Puppet Remastered"](https://sketchfab.com/3d-models/henry-the-puppet-remastered-571fad77654943eda32e10c511462ec8)
+by [3D_Garbage](https://sketchfab.com/JKJKJKSJDKJKSDJK) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — Elvédor's puppet
+(`assets/puppet.glb`, `tools/gltfpack.py --tex 512` with per-mesh `--decimate-for` budgets, 6.0 MB).
+
+Elvédor himself (`assets/elvedor.glb`, from the owner's `BrettHughes.fbx`, converted in
+Blender, 2.2 MB) came without a licence file — its source and terms still need recording here.
+
 This work is based on ["Pliosaur (Jurassic Sea Predator) - Animated"](https://sketchfab.com/3d-models/pliosaur-jurassic-sea-predator-animated-01dfc9e28ce5494181caec4b7d8baa3b)
 by [Animal Animator](https://sketchfab.com/animalanimator) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the thing on the end of the
@@ -807,6 +838,16 @@ colour maps only, normals and weights quantised; its own four clips).
 
 "Deep Sea Monster Sounds Terrifying Under Water Ambience" — the owner's file, the bed under the deep
 (`assets/deep-ambience.m4a`, AAC 64 kbps, 1.8 MB). **No licence came with it — confirm it before a release.**
+
+"puppet audio" — the owner's own recording: the puppet's six pleas over the fire (`assets/puppet-plead1-6.m4a`, 0–10 s of
+it cut at its own silences) and his last scream when he goes in (`assets/puppet-scream.m4a`, 11.1–13.6 s), each
+normalised, mono AAC 96 kbps, 110 KB in all.
+
+"Climbing Rope Snap Sound Effect" — the owner's file; the line parting in the deep (`assets/line-snap.m4a`, 2.84–3.40 s of it,
+10 KB). **No licence came with it — confirm it before a release.**
+
+"Xbox Rare Achievement" (a clip by ArthurBR, the owner's file) — the chime under the Seagull Slayer toast
+(`assets/achievement-rare.m4a`, 1.0–7.4 s of it, AAC, 82 KB). **The console's sound: Microsoft's — confirm it before a release.**
 
 The flail knight in Castle XIII's west court is the owner's "Crusader tank"
 (a flail and a heater shield, fourteen of its own animations), packed by
@@ -870,7 +911,8 @@ by [Delandi](https://sketchfab.com/delandi) licensed under
 in the jewellery box on the credenza in the pavilion (`assets/gem-ring.glb`,
 through `tools/gltfpack.py` at 2048: it is a 1,371-vertex game-ready mesh
 under forty-three megabytes of 4K maps, which is twice the bunker for a thing
-you hold in your hand, and it comes out at 7 MB). Its stone's map carries a
+you hold in your hand, and it comes out at 7 MB — 4.8 since 2026-10-15, its colour maps as lossless WebP and the file
+gzipped by `tools/glbquant.py`, the same pixels). Its stone's map carries a
 real alpha and stays blended; its gold has none and is forced opaque.
 
 This work is based on ["An Old Ring"](https://sketchfab.com/3d-models/an-old-ring-ea5e0c11f2e046c993239ea1a3efcad7)
@@ -922,12 +964,13 @@ sand a hundred metres past the cave (`assets/portal.glb`, through
 which three r160 needs). The light turning over inside the ring is not the
 model — it is built round it.
 
-This work is based on ["Scorched Dojo"](https://sketchfab.com/3d-models/scorched-dojo-b6fc27abbe984d4ea3997941382b665f)
-by [matiasmgru](https://sketchfab.com/matiasmgru) licensed under
-[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — what is on the other
-side of the portal (`assets/dojo.glb`, packed by `tools/undercroft_pack.py` with
-its walk grid inside it). Its rain is driven by the game, not by the model's own
-clip, which cannot survive a world-space bake.
+The courtyard on the other side of the portal (`assets/courtyard.glb`, packed by
+`tools/undercroft_pack.py courtyard` with its walk grid inside it) — **SOURCE AND
+LICENCE NOT RECORDED: fill in its author, link and licence before a release.**
+Its rain is driven by the game, not by the model's own clip, which cannot survive
+a world-space bake. (It replaced matiasmgru's "Scorched Dojo", `assets/dojo.glb`,
+on 2026-09-17; that file was never loaded after and left the game on 2026-10-15,
+so its credit went with it.)
 
 This work is based on ["Fantasy Sea Keep"](https://sketchfab.com/3d-models/fantasy-sea-keep-daa54937ce844ed390101fa9318843ba)
 by [JesseL](https://sketchfab.com/JesseL) licensed under
@@ -1276,7 +1319,8 @@ by [VISHNUGAMER](https://sketchfab.com/vishnujegan14),
 (`assets/skull-key.glb`, through `tools/gltfpack.py --tex 2048 --normal-tex
 1024 --quality 92`): all three of its meshes and all 256,688 triangles, with
 its own colour, metal-rough and normal maps. Its metal wears the same night
-sky the wedding ring does.
+sky the wedding ring does. (6.0 MB since 2026-10-15: normals and uvs as 16-bit, gzipped, by `tools/glbquant.py` —
+rendered before and after, no pixel off by more than 1/255.)
 
 
 **Medieval key (copper version)** — the key in the dock's crate.
@@ -1375,15 +1419,17 @@ This work is based on "[Human Rotten Limbs](https://sketchfab.com/3d-models/huma
 
 ["Octopus Ring"](https://sketchfab.com/3d-models/octopus-ring)
 by [Thunk3D scanner](https://sketchfab.com/Diana123456),
-[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/). (`assets/octopus-ring.glb`, every triangle; 7.6 MB since
+2026-10-15: its normals as 16-bit and the file gzipped by `tools/glbquant.py` — no pixel off by more than 1/255.)
 
 
-**Corpse in a black body bag with ropes** — the body on the beach before the
-wreck.
+**Branche beach photogrametry** — the driftwood: the logs and roots along the beach and the piece you pick up.
 
-["Corpse in a black body bag with ropes"](https://sketchfab.com/3d-models/corpse-in-a-black-body-bag-with-ropes-fb2fe10ba9b14982b5785d73d7155daa)
-by [Dennis Hafemann](https://sketchfab.com/dennis.hafemann),
-[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+["Branche beach photogrametry"](https://sketchfab.com/3d-models/branche-beach-photogrametry-72bace4925a74d0bad841323898fa475)
+by [jonathan.imaginaire](https://sketchfab.com/jonathan.imaginaire),
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/). (`assets/driftwood.glb`, 2.0 MB: the wood cut out of the sand
+it was scanned in and rebuilt as two pieces — the trunk alone and the whole root — with the scan's colour and relief
+baked onto them, by `tools/driftwood_seg.py` and `tools/driftwood_bake.py` in Blender.)
 
 
 **Procedural Eyes For Ray II** — the eyes down the pipe behind the drain gate.

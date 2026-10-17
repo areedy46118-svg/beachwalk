@@ -507,3 +507,37 @@ outside; in from −70° … +70°, walking and running, 10/10, 0 back.
   splash still hands the controls back, but the take's long lens (`C.fov`, ~14°) is HELD (`C.lensHold`, read in
   `updateDialogCam`'s `wantFov`) until the whale is down and the take ends; then it eases back. Measured: 14° through
   the whale (up at 8.9 s), back to 104° by 1.2 s after.
+
+## Henry's wiggle in the dungeon was FLOAT32 SKINNING far out (2026-10-15)
+
+"Henry is perfect when talking to him at the lighthouse I'm not sure why his textures move like that and wiggle in the
+dungeon after talking to him when you free him." Both copies run the same capture idle and the same materials; what
+differs is WHERE: the dungeon is at (21000, 700, 21000), the jetty 1.2 km out. three skins on the GPU with each bone's
+WORLD matrix in float32 and takes the mesh's world off afterwards — at 21 km a float32 is good to ~2 mm, so his
+vertices sit on a 2 mm lattice his breathing flips between, and the sweater (a few mm over the skin) trades places with
+it in patches that crawl. Rendered still (bones moving 0.1–0.3 mm a frame) his chest's blotches changed every 3 frames.
+**`skinLocal(mesh)`** (from `henryCutout`, so both copies): the bone matrices are made relative to the mesh in the
+CPU's doubles (`meshWorld⁻¹ · boneWorld · boneInverse · bind`), the mesh's bind matrices set to identity
+(`bindMode 'detached'`), and `applyBoneTransform` overridden with the same sum for bounds/raycasts. Meshes bound the
+same way (same bones, inverses, bind, parent, local matrix) SHARE one such skeleton — his 18 meshes are one update and
+one bone texture a frame (three gave each its own). Measured, 24° lens on his chest, 12 frame pairs: mean pixel change
+0.8–1.0 → 0.2, pixels jumping > 24 levels 108–159 → 0. Any skinned thing in a far room has the same lattice; only
+Henry (cloth over skin) showed it. `__bw.dunG().henry`, `mesh.userData.skinBind` holds the original bind.
+
+## Henry looks at you in the cell (2026-10-15)
+
+"make henrys head turn and look right at you when talking in the cellar." `henryLookAt(h, h.talk)` replaces the fixed
+neck lift: the face direction is off his eyes (`CC_Base_L_Eye`/`R_Eye`, made level against the neck→head line), the
+target is the camera, and the turn is laid half on `CC_Base_NeckTwist01` (≤ 0.75 rad) and the rest on `CC_Base_Head`
+(≤ 0.9), in each bone's parent frame, every frame — so he follows you. The head is reset to `head0` each frame first.
+
+## Henry fights the eagle (2026-10-16)
+
+"give henrys legs while getting flown away more randomness … make it like he's actually struggling." `hjPoseAir`
+keeps the run under it with a lurching pace (`hjRunPace`: 0.5–2.05x, re-drawn every 0.25–0.85 s), and `hjStruggle`
+lays per-leg kicks over it — a thigh thrown forward or back, a knee snapped up or straight, a leg wrenched out, now
+and then both together, now and then hanging limp — eased between targets every 0.16–0.65 s and slerped on by a
+weight that wanders 0.35–0.9, aimed with `henryAim` in his own frame. Before the hands are snapped to the feet.
+
+- **(2026-10-16) The pavilion checkpoint's lag and noise were Elvédor's house** (157 m away, inside its old 160 m load
+  radius). See `beach.md`, "Elvédor, round 2".

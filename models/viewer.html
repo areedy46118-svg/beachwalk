@@ -66,8 +66,25 @@
      * pack before it has been wired into anything. */
     const rawGlb = Q.get('glb');
     const which = rawGlb || Q.get('model') || 'horseshoe-crab';
-    const loadGlb = (url) => import('three/addons/loaders/GLTFLoader.js').then(({ GLTFLoader }) =>
-      new Promise((ok, no) => new GLTFLoader().load(url, g => ok(g.scene), undefined, no)));
+    /* (a packed file may be gzipped, and its mesh 16-bit with the range in `bwQ` — `tools/glbquant.py`; the game's
+     * `bwGunzip` / `bwDequant`, the same here, so the viewer sees what the game sees) */
+    const gunzip = async (buf) => { const u = new Uint8Array(buf, 0, 2); return u[0] === 0x1f && u[1] === 0x8b ? new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : buf; };
+    const dequant = (root) => root.traverse((o) => {
+      const g = o.geometry, Q = g && g.userData.bwQ; if (!Q) return;
+      for (const name in Q) {
+        const key = name === 'POSITION' ? 'position' : name === 'NORMAL' ? 'normal' : name === 'TEXCOORD_0' ? 'uv' : 'uv' + name.slice(9);
+        const A = g.attributes[key]; if (!A) continue;
+        const n = A.itemSize, R = Q[name], out = new Float32Array(A.count * n);
+        for (let i = 0; i < A.count; i++) for (let c = 0; c < n; c++) out[i * n + c] = R[c] + ((c === 0 ? A.getX(i) : c === 1 ? A.getY(i) : c === 2 ? A.getZ(i) : A.getW(i)) + 1) * 0.5 * (R[n + c] - R[c]);
+        g.setAttribute(key, new THREE.BufferAttribute(out, n));
+      }
+      delete g.userData.bwQ; g.computeBoundingBox(); g.computeBoundingSphere();
+    });
+    const loadGlb = (url) => import('three/addons/loaders/GLTFLoader.js').then(async ({ GLTFLoader }) => {
+      const buf = await gunzip(await (await fetch(url)).arrayBuffer());
+      const g = await new Promise((ok, no) => new GLTFLoader().parse(buf, url.replace(/[^/]*$/, ''), ok, no));
+      dequant(g.scene); return g.scene;
+    });
     const factories = {
       'horseshoe-crab': () => import('./horseshoe-crab.js').then(m => m.makeHorseshoeCrab()),
       'syringe': () => import('./syringe.js').then(m => m.makeSyringe()),

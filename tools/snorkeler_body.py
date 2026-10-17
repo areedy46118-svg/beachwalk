@@ -7,15 +7,15 @@ seen through the water, and its colour on the water) is kept by a soft colour
 matte, so the neck and chest come out of the sea the way they do in the photo,
 and the bottom of the frame fades so the picture never ends on a line.
 
-    swift tools/cutout.swift assets/snorkeler.jpg /tmp/snorkeler-head.png 900
+    swift tools/cutout.swift incoming/unused-2026-10-15/snorkeler.jpg /tmp/snorkeler-head.png 900
     python3 tools/snorkeler_body.py [/tmp/snorkeler-head.png]
 
 X0/Y0 is where that head cut-out sits in the photo (found by matching)."""
 import sys, colorsys
 from PIL import Image, ImageFilter
 import numpy as np
-head_path = sys.argv[1] if len(sys.argv) > 1 else 'assets/snorkeler-head.png'
-src = Image.open('assets/snorkeler.jpg').convert('RGB')
+head_path = sys.argv[1] if len(sys.argv) > 1 else 'incoming/unused-2026-10-15/snorkeler-head.png'
+src = Image.open('incoming/unused-2026-10-15/snorkeler.jpg')   # (the source photos left assets/ on 2026-10-15: the game never loads them).convert('RGB')
 head = Image.open(head_path).convert('RGBA')
 X0, Y0 = 59, 50
 W, H = head.size; sw, sh = src.size

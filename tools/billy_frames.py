@@ -60,7 +60,7 @@ SUBJECT = {'idle': ('raw-billy-idle.png', 3), 'talk': ('raw-billy-talk.webp', 1)
 
 def subject_cut(src, up, out):
     subprocess.check_call(['swift', os.path.join(HERE, 'subject_cutout.swift'),
-                           os.path.join(ROOT, 'assets', src), out, str(up)])
+                           os.path.join(ROOT, 'incoming/unused-2026-10-15', src), out, str(up)])   # (the raw frames left assets/ on 2026-10-15: the game never loads them)
     im = Image.open(out).convert('RGBA')
     # a soft mask has a halo of the wall's colour in its last few percent;
     # keep what is solidly the object and let the rest go

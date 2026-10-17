@@ -308,3 +308,35 @@ thread spins, and a frozen clock never reaches 55 ms or the deadline. Make the f
 (`performance.now = () => base + (off += 0.002)`, as `tools/hjshot.js` now does). Real play is unaffected.
 Also: `__hjTalk` only opens the dialog when `introDone` — reload with `beachwalk.skipIntro` set, or `startDialog`
 silently refuses and leaves Henry stuck in mode 'talk' (reset `hjG().hj.mode = 'sea'` to try again).
+
+## The pane's renderer wears out after ~8 reloads of the game (2026-10-15)
+
+The preview tab's renderer process is reused across reloads and navigations, and it does not give the game's memory
+back: after about eight loads (plus long `__probe` walks) its RSS reached 3.7–3.9 GB, it sat at 550 % CPU with the
+page's main thread idle, boot stalled at `bootLeft()` "parsing 56" for minutes, frames ran 100–760 ms, and even a
+3-line `javascript_tool` call timed out. It looks exactly like a regression — the PREVIOUS build did the same in that
+tab. Check before bisecting: `ps -Ao pid,pcpu,rss,comm -r | head -3` (a "Claude Helper (Renderer)" in the gigabytes),
+then `tabs_create` a new tab, `tabs_close` the old one (that process dies), load the game there: boot 9–12 s again.
+Also: a tab opened with `tabs_create` is in the BACKGROUND, and its renders measure 70–100 ms; `tabs_select` it before
+timing anything. And `__bw.beginGame()` before a walk probe — on the title card the camera is the title's, so
+`__probe` sets a position that is thrown away and the walk never moves.
+`__bw.lag()` only keeps spans ≥ 16 ms; to find a 5–15 ms slice, serve a throwaway copy (`zz-dbg.html` importing a
+patched `zz-dbg-main.js`) with the threshold lowered and timing wrapped round the suspects, and delete it after.
+
+**`__bw.keys.KeyW` moves nothing unless `__bw.setFallbackLook(true)`** — `canMove` wants `locked || fallbackLook`, and a
+fresh load in the pane has neither (`state().fallbackLook` can read true from an earlier session in the same tab and
+lie to you). And **a flood fill is the way to ask "can you get there"**: BFS over a 0.3–0.5 m grid with the walk's own
+floor call, `keepHitsWall` at the body heights, the block lines and a wall-near radius; run it with a point body AND a
+real width — the difference is where the push-outs squeeze you through (and where the lag is). See keep.md 2026-10-16.
+`tools/cptest.js` makes every checkpoint the way a save point does, reloads into it the way a death does and checks the
+black lifts (`__cpReady`, `__cpMake(name)`, `__cpReload`, `__cpCheck`; `__cpAuto` runs a queue across reloads off
+`sessionStorage['cp.q']`) — it sets dev mode, because a death reloads the same save forever.
+- **A walker that moves `camera.position` between frames tests floors, not walls.** `_preMove` is taken at the start
+  of the frame's move, so a hand-placed step is already in it: every crossing check (`keepHitsWall`, a door, a pane)
+  sees a zero-length move and passes. It still catches a lip (the floor's `up` and the rise rule), but to test a door
+  or a wall drive the real input — `document.dispatchEvent(new KeyboardEvent('keydown', {code: 'KeyW', bubbles: true}))`,
+  `__bw.lookAt` each frame, `__adv(1)`, keyup after.
+- `__elvWalk(x, z)` stands you on the HIGHEST floor at (x, z) — inside the house's plan that is upstairs. For the
+  ground floor take `elvLandFloorAt(x, z, HOUSE_Y + 1.05, 0.45)` yourself.
+- A still's base64 with anything prepended: decode from the `/9j/` (`re.match` of the base64 run from there), or the
+  first characters are taken as data.

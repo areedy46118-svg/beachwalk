@@ -593,3 +593,7 @@ stride (L 108°, R 78°, 44-frame runs) — the take carries the sword in a fixe
 forearms after them, smaller when he stands (a breath). After: no held-elbow runs in 1,500 frames; walk L
 92–135°, R 78–86°. The fight sample: 18 swings / 49 damage a minute (sampling noise against 23 / 44: nothing
 here touches the AI or the blows).
+
+**Three jars come off the samurai (2026-10-16):** `samuraiJars()` on the frame `dojoWon` goes true — round where he
+fell, each on `bunkerFloorAt` (his feet's height if none), and the octopus ring's sting. `dojoWon` is on the save, so
+a restore never drops them again. Measured: three jars at 800.22 with him at 800.20.

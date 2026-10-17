@@ -112,3 +112,81 @@ floor; the unhurt whale comes up and swallows you, spits you onto the sand by th
   tell turns at 2.2 rad/s and goes at < 0.2 rad or 2.4 s; the charge steers at 2.6 rad/s outside 16 m. Measured:
   lurks at 43–63 m, charges from 41–61 m.
 - **Its skin sits in the murk**: colour × (0.78, 0.88, 0.9), emissive (0.34, 0.52, 0.56) at 0.3 (teeth 0.4).
+
+## Stone is stone; a faster, harder animal in thicker water (2026-10-15)
+
+The owner: "i should not clip through the rocks in the depths neither should the sea monster. make underwater beast
+faster and harder make the water more murky too he needs to be scary."
+- **Rocks**: `buildDeep` keeps each of the 26 stones as an ellipsoid on its own axes (`deep.rocks`: centre, rotation,
+  semi-axes = the dodecahedron's r × 0.95 × its scale — between the faces' 0.79 and the corners' 1). `deepRockPush(p,
+  rad)` puts a point back out along the line from the middle, in the stone's own frame.
+- **You**: `deepClampBody()` (from `deepSwim`, and again after the pliosaur's body shoves you — whatever moves you last
+  clamps you) keeps the eye (0.55) and the chest a metre under it (0.45) out of the stones and over the floor, and
+  takes the velocity into the stone off. `deepFloorBump` now has all three of the floor mesh's swells (the third,
+  ±0.35 m, was missing).
+- **It**: `plioSolid()` (every frame, all states) runs each body sphere (`PLIO_SPHERES`, r × 0.8) out of the stones
+  and over the floor; the deepest one moves the whole animal, twice. Sinking dead onto a stone, it settles there.
+  `plioAvoid(dt)` looks a second ahead (three points, a body's width round them) and lifts the nose over a stone or a
+  swell — in lurk, tell, flee and the charge until the last 9 m.
+- Measured: you swimming flat out at six stones from three sides — 0.000 m into any; a minute of fight parked low
+  beside a stone — no sphere of it ever inside a stone or the floor.
+- **Faster, harder**: lurk 3.2–7.2 s (was 6–12), speed 7.5, and once its time is up and it is behind you it RACES round
+  to your front at 14 (`plio.raced`, the shorter way by angle) instead of idling — attacks went from every ~22 s to
+  every 11–15 in the harness with a fixed camera. Tell: turns at 3.2, charges after 0.6 s aimed (1.7 s at most).
+  Charge to 21 m/s at 19 a second (was 15 at 13), the bite from 14 m. After a bite it wheels straight back in 45 % of
+  the time (`plio.again`). Flee 8–15 m/s, at most 3.6 s. `PLIO_HP` 100 (was 80), stun 1.7 s (2.2), parry window
+  `PARRY_WINDOW` × 1.3 (1.5). A bite is still one heart.
+- **Murk**: the descent's fog ends at 0.056 (was 0.042): half-seen at 15 m, gone by 30. The vignette 0.88. The first
+  pass is at 24 m (at 34 the new murk hid it whole). Rendered: a faint shape at 28 m, a silhouette with its eyes at
+  19, on you at 13.
+
+## The tail, the wheel, the weave; the snap; the glow goes (2026-10-15)
+
+The owner: "make some of his moves faster and more erratic you can tell when hes leaving too easy he should sometimes turn
+around faster rather than disappear … give him a move where he swings his tail at you too but make this readable as
+well to block … the flashing circles around the sea monsters body when he dies can go … make the water slightly more
+murky … give the fishing line snap the sound effect at 3 seconds in this clip … make the glow in the water disappear
+after the sea monster fight."
+- **Tail swipe** (`plio.atk === 'tail'`, a third of the runs once it has bitten): the charge aims 3 m to a side
+  (`plio.side`), at 8.5 m it goes to `swipe`: it GLIDES PAST at 7 m/s until you are behind its hip (`plioHipPos`,
+  tail_01), then winds up 0.6 s — the tail curls AWAY from you (−0.95 rad), bubbles stream off the tip, a growl and a
+  surge — and sweeps 0.3 s through you (+1.15), its hindquarters drifting in 1.8 m/s through the wind-up. Contact:
+  tip or mid-tail within 2.9 m during the sweep → `plioTailContact`: parry window (PARRY_WINDOW × 1.3, facing) stuns
+  it, a block costs stamina and knocks you 9 m/s, else a heart and 14 m/s across the water. Measured: unguarded from
+  four directions 4/4 hit; guard raised at t 0.45 of the wind-up 2/2 parried.
+- **The tail pose** (`plioTailTurn`, `plioTailPose`): after the mixer, each of tail_01..06 turned about the animal's
+  own up (weights 0.10…0.20), conjugated through its parent's world rotation; the pre-turn quaternions restored before
+  the next mixer update (a bone the clip does not drive must not accumulate). Which way + throws the tip is MEASURED
+  once (`plio.tailSign`, +1 on this rig).
+- **Erratic**: the charge weaves ±5.5 m across its line (`plio.wph`), gone by the last 10 m. **The wheel**:
+  `plioOff(p)` after a bite (0.55), a stun (0.4) or a swipe (0.55): `again` turns it at 0.7–1.4 s into the flee, from
+  12 m out (was 26), at 6 rad/s and 9 m/s, charging after 0.25 s aimed — it comes round in sight.
+- **Death**: no bubbles off its body (thrash or sink) — blood and silt only.
+- **Murk**: the descent ends at 0.064 (was 0.056).
+- **The snap**: `assets/line-snap.m4a` (the owner's "Climbing Rope Snap", 2.84–3.40 s, 10 KB), straight into
+  `gameAudioGate` past the deep's 520 Hz low-pass (it parts as you go under), scaled by `masterGain` × `sfxBusGain`.
+- **The glow** (`updateFishSpot`): `k = 0` once `deepDone` — the haze and the sea's own glow both.
+
+## The pliosaur, round three (2026-10-16)
+
+- **"Flashing red and white circles around him when he dies."** The bubbles came off the thrash on 10-15, but the
+  deep's one particle pool (`deepFx`) draws blood and silt as screen-facing discs that fade in and out, and the death
+  threw sixty at the mouth (`plioDie`), a stream through the thrash and the sink, and seventy of silt where it settled
+  (twice: the 'die' case and `plioSolid`). All four are gone, and `plio.flash` is zeroed at the kill.
+- **The tail is a whip** (`plioTailPose(dt)`): each of the six tail bones is a spring on `tailAng` (K 520 at the root
+  to 140 at the tip, damping 0.62→0.40 of critical), so the curl rolls down the tail and the tip overshoots (measured:
+  target 1.3, tip 1.75) and settles. The swipe is `PLIO_TAIL_WT` 0.85 (coil over two thirds of it, then a cocked
+  tremble) + `PLIO_TAIL_ST` 0.34 (ease-out cubic), the body banks into the coil and rolls back through the sweep. The
+  hit test sweeps the tip's whole path each frame (`plio.tipPrev`), so a fast frame cannot step over you. Measured in
+  the harness (`b.step` by hand: the hidden pane gives the deep four frames in three seconds): a camera put on the
+  tip's path is hit at t 0.85.
+- **The wash-up was in the sand**: `washPose` set the eye 0.16 over y = 0 with a 1.2 rad roll, and at FOV 105 the near
+  plane's low corner is ~0.27 under the eye. Now 0.38 over `groundUnder` (mounds, berm); `endDeep` stands you on it too.
+- **The line snap sounds under water** (`sfxLineSnap`): when `uwLP` is down, its own 1.1 kHz low-pass and a 0.13 s
+  murky slap-back (feedback 0.38 through 520 Hz), not the deep's 520 Hz, which made it a thump.
+
+## 2026-10-16: the body falls straight down, faster, and lands
+
+`plioDie`'s sink: the thrash moves it 0.5 m/s (was 2) and it is already sinking; horizontal speed bleeds at e^−4t; the
+fall reaches 5.2 m/s (was 3.4). On the floor: thud 0.14, surge 0.85 / 2.2 s, a heart thud, trauma 0.6 — all scaled by
+how near you are — and a rebound (`plio.bounce`, two smaller bounces over 2.2 s). Not seen in the harness.

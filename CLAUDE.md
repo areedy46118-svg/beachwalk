@@ -15,7 +15,7 @@ game belongs in this file, and this file should stay under ~25 KB.
 
 | area | notes |
 |---|---|
-| beach: sand, sea, sky, fog, mist, caches, snorkeler, camp, rocks, intro | `docs/notes/beach.md` |
+| beach: sand, sea, sky, fog, mist, caches, snorkeler, camp, rocks, intro, Elvédor + the house behind the dune + the puppet | `docs/notes/beach.md` |
 | the wreck, Billy the fish | `docs/notes/wreck.md` |
 | the dock, the fisherman | `docs/notes/dock.md` |
 | the pavilion (mushroom house), the dungeon behind its yard, Henry | `docs/notes/pavilion.md` |

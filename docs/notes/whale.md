@@ -637,3 +637,7 @@ far side (z −1019) is 37 m short of the castle's gate (−1057) and 21 m short
 by its head: `settleMounds` moves mounds off solids, and the whale's colliders are solids.
 - (later the same day) `WB_SONG_FAR` back to 180: the sighting track starts where `1 − (d − NEAR)/(FAR − NEAR) > 0.2`
   — the song's range — and at 150 the track started ~24 m later and the fog's clearing came off the music's swell.
+- (2026-10-15 again) "the fog hiding the whale used to work way better before we moved him": the TOWER's clearing
+  (`moodKeys`: `smoothstep(430 − twr, 0, 260)`, which also parts the cloud over the moon) reaches 20 m deeper into the
+  misted stretch now — about 0.5 against 0.37 before the reveal — and the whale stood against a clearing sky. It is
+  multiplied by `1 − wsM` now: while the sighting's mist is up the tower clears nothing; at the swell it comes back.
