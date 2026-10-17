@@ -25,6 +25,7 @@ const DOOR_X = BORE_LEN;
 const ROOM_X0 = BORE_LEN + 0.55;
 const ROOM_X1 = ROOM_X0 + 7.2;
 const ROOM_HZ = 3.15;           // room half-width
+const BUCKET_X = ROOM_X0 + 2.65, BUCKET_Z = ROOM_HZ - 0.38;   // the drip bucket, against the side wall past the shelving
 const ROOM_H = 2.85;
 const FLOOR_Y = 0.05;           // the silted invert you actually walk on
 
@@ -593,16 +594,14 @@ function drawingTex() {
     for (let y = 0; y < h; y += 6) g.fillRect(4, y, 2, 3);
   }, 0xF8);
 }
-// chalk on the pipe wall: the way in, and the days
+// chalk on the pipe wall: the way in
 function chalkTex() {
   const c = document.createElement('canvas'); c.width = 128; c.height = 64;
   const g = c.getContext('2d');
   g.clearRect(0, 0, 128, 64);
   g.strokeStyle = 'rgba(220,218,206,0.75)'; g.lineWidth = 3; g.lineCap = 'round';
   g.beginPath(); g.moveTo(10, 32); g.lineTo(70, 32); g.moveTo(56, 20); g.lineTo(72, 32); g.lineTo(56, 44); g.stroke();   // an arrow, in
-  g.lineWidth = 2;
-  for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(84 + i * 7, 18); g.lineTo(84 + i * 7, 46); g.stroke(); }
-  g.beginPath(); g.moveTo(80, 40); g.lineTo(112, 22); g.stroke();                                                   // and the days
+  // (the days' tally that stood beside it is gone — 2026-10-17, the owner: "take the tallys in the sewer drain away")
   const t = new THREE.CanvasTexture(c);
   t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter; t.anisotropy = 1;
   return t;
@@ -1857,9 +1856,10 @@ export function makeDrainageTunnelHome(opts = {}) {
     turned(ROOM_X0 + 1.5, 0, -ROOM_HZ + 0.55, 0.3, (F) => crate(F, 0.55, 0.5, 0.55));
     turned(ROOM_X0 + 1.5, 0.5, -ROOM_HZ + 0.5, -0.2, (F) => crate(F, 0.5, 0.44, 0.5));
 
-    // a bucket left under the worst of the ceiling drips, a rim rolled round its top
+    // a bucket left under the worst of the ceiling drips, a rim rolled round its top — against the wall past the
+    // shelves, out of the way in (it stood two metres in from the door, beside its line, and the owner walked into it)
     {
-      const kx = ROOM_X0 + 2.0, kz = 1.42;
+      const kx = BUCKET_X, kz = BUCKET_Z;
       R.add(cyl(0.17, 0.13, 0.26, 10, M.steel, kx, 0.13, kz, true));
       const base = new THREE.Mesh(new THREE.CircleGeometry(0.13, 10), M.steel);
       base.rotation.x = -Math.PI / 2; base.position.set(kx, 0.005, kz); R.add(base);
@@ -1873,18 +1873,7 @@ export function makeDrainageTunnelHome(opts = {}) {
       R.add(handle);
     }
 
-    // his boots by the bed, one fallen over: sole, foot, the shaft
-    for (let i = 0; i < 2; i++) {
-      turned(bx - 1.2, 0, -ROOM_HZ + 0.45 + i * 0.2, 0.2 - i * 0.5, (F) => {
-        const B = new THREE.Group(); if (i) { B.rotation.x = Math.PI / 2 - 0.1; B.position.y = 0.055; }
-        B.add(slab(0.29, 0.03, 0.11, M.leather, 0.02, 0.015, 0));
-        B.add(slab(0.2, 0.08, 0.1, M.leather, 0.05, 0.07, 0));
-        B.add(cyl(0.05, 0.05, 0.1, 8, M.leather, 0.15, 0.06, 0).rotateX(Math.PI / 2));
-        B.add(slab(0.11, 0.2, 0.1, M.leather, -0.07, 0.2, 0));
-        B.updateMatrix();
-        for (const c of [...B.children]) { c.applyMatrix4(B.matrix); F.add(c); }
-      });
-    }
+    // (his boots by the bed are gone, 2026-10-17, the owner: "get rid of shoes by the bed in sewer drain")
 
     // his coat on a peg by the door, against the bulkhead's own face (DOOR_X + 0.46, not ROOM_X0)
     const wx = DOOR_X + 0.46;
@@ -1914,9 +1903,7 @@ export function makeDrainageTunnelHome(opts = {}) {
       R.add(slab(0.24, 0.34, 0.02, M.cloth, rx + 0.34, ROOM_H - 0.38, rz, 0, -0.08, -0.04));
       R.add(slab(0.2, 0.3, 0.02, M.coat, rx - 0.55, ROOM_H - 0.36, rz, 0, 0.05, 0.03));     // and a pair of socks' worth
     }
-    // tally scratched by the bed
-    for (let i = 0; i < 11; i++)
-      R.add(slab(0.012, 0.2, 0.016, M.dark, bx - 0.7 + i * 0.055, 1.35, -ROOM_HZ + 0.02, 0, 0, i % 5 === 4 ? 0.9 : 0));
+    // (the tally scratched by the bed is gone, 2026-10-17)
 
     /* ---- AND THE THINGS THAT MAKE IT SOMEBODY'S: a rug walked thin in front
      * of the bed, a photograph and a drawing pinned over it, candles on the
@@ -2410,7 +2397,7 @@ export function makeDrainageTunnelHome(opts = {}) {
       [shX - 0.78, ROOM_HZ - 0.53, shX + 0.78, ROOM_HZ - 0.07],       // shelving
       [ROOM_X0 + 0.41, -ROOM_HZ + 0.31, ROOM_X0 + 0.99, -ROOM_HZ + 0.89], // barrel
       [ROOM_X0 + 1.22, -ROOM_HZ + 0.25, ROOM_X0 + 1.78, -ROOM_HZ + 0.85], // crates
-      [ROOM_X0 + 1.82, 1.24, ROOM_X0 + 2.18, 1.60],                   // bucket
+      [BUCKET_X - 0.18, BUCKET_Z - 0.18, BUCKET_X + 0.18, BUCKET_Z + 0.18], // bucket
       [ROOM_X1 - 2.25, ROOM_HZ - 1.47, ROOM_X1 - 1.71, ROOM_HZ - 0.93], // the chair at the crate
       [ROOM_X1 - 0.6, ROOM_HZ - 0.6, ROOM_X1 - 0.3, ROOM_HZ - 0.3],    // the stove
       [ROOM_X0, -3.0, ROOM_X0 + 0.42, -1.08],                         // the door leaf, open against the front wall (doorway half-width 1.0)

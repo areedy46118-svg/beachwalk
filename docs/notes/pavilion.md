@@ -541,3 +541,12 @@ weight that wanders 0.35–0.9, aimed with `henryAim` in his own frame. Before t
 
 - **(2026-10-16) The pavilion checkpoint's lag and noise were Elvédor's house** (157 m away, inside its old 160 m load
   radius). See `beach.md`, "Elvédor, round 2".
+
+**THE WHALE TAKE IS A CUTSCENE TO THE END AGAIN (2026-10-17, the owner: "make henry get swallowed by the whale sooner
+and dont let the camera be moved my playtester moved and didnt see the whale").** The splash no longer sets
+`C.released` (that handed the look and the legs back and left only `lensHold` on the fov): the take keeps
+`frozen()` and `cineHold` on the spot where he went in (`hjwTick`'s `hold`, C.hp + 2 m, 14°) until `hjEnd`. And
+`HJW_T.at` 9.0 → 4.0: the whale is up 4 s after the splash, the take ends ~7.8 s after it. Measured with mousemove,
+drag and W held from the splash on: the camera did not move (0.00 m; its 2.9° is the lens settling onto the hold).
+(`tools/hjshot.js`'s `__hjStand` left the camera on the beach at x −2.4 in this session — the isle was not under it —
+so its frames were not the jetty's; no still of the whale was taken.)

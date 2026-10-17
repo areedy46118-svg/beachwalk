@@ -1497,3 +1497,54 @@ the reunion).**
   and the deck "overlapping themselves" from it).
 - **The bow** after the 4 mm overlap: 0 of 1,296 rays from inside her bow
   below the rail get out.
+
+**2026-10-17, round 2 — the catch basket and the tables break; the starboard waist opened.**
+- **Units appended LAST to `BREAKABLE`** (a save's `shipBrk` unit numbers still mean what they meant): the two
+  tables (`table_3` the mess, `table_1` the hold's workbench; `kind: 'table'`, `src: 'furniture'` — their triangles
+  are lifted out of the furniture set's merge the stores' way, UVs and materials kept, so the pieces keep their wood;
+  boxes off their own meshes before the bake, `shipStoresBoxes('furniture')`, which `furnish` feeds by pushing each
+  PLAN entry's mesh into its unit's `pieces`) and the catch basket (`kind: 'basket'`, its own group like a pot
+  stack, box off `setFromObject` at load, `walk: true`).
+- **The mess table's mug, cup and lamp** are their own unbaked group now (`S.userData.messTop`, `noBake`), the
+  table's `top`: they go over as gibs when it breaks (laid on the floor on a restore).
+- **WALKED INTO** (`shipBreakWalk`, from `updateShipKey`): its box is a wall while it stands, so you never get inside
+  it; within 0.45 m of its side and moving toward it is the blow. Measured: walking from (−3.3, 1.4) toward it in the
+  hold breaks it and carries you on through where it stood.
+- **The key without its basket**: `catchBasket.broken`; `updateShipKey` lands it on the boards (`lo + 0.02`), and a
+  key already lying in the basket falls on to them (`keyFall` reset). Measured: rests at y 0.283.
+- **THE STARBOARD WAIST** (the owner at (−4.45, 3.89): "I can't walk freely … around the pole"): the gaff post's
+  solid is the post (0.38), not its 0.62 base plate; the rope coil at its foot is walked over (no solid); the barrel
+  and the open barrel stand against the rail (`deckHalf(x) − 0.70 / − 0.64`); the deck crate pair moved a metre aft
+  (x −0.9) — it left 14 cm round the post. Measured with real input: a lap of the post, the owner's spot out round it
+  and back across, both waists end to end, a lap of the mast. `tools/shipsweep.js` strips −9…0: nothing trapped.
+
+## The port rail's nets and floats, cut (2026-10-17)
+
+The owner, standing at local (−5.36, −2.03) on deck: "get rid of these circle things and let me walk here". The five
+`M.rope` icosahedron bundles at x −7.4…−5.4 and the four painted floats at x −5.2…−3.94, both hard against the port
+bulwark, are gone from `models/shipwreck.js`, and with them the two `solid()` boxes that made them walls out to the
+rail (`DECK_Y + 0.45` and `+ 0.51`). Walked: all eight headings free from his spot, and the rail itself end to end
+both ways (x −7.6 → −3.8 and back). DON'T run `__shipSweep` over even a 4.5 m strip in one call: it is synchronous,
+outran the 45 s tool limit and hung the tab until it was closed. Walk the handful of spots by hand instead.
+
+## Every breakable breaks when walked or jumped into; pots and the key basket sound like crates (2026-10-17)
+
+The owner: "take this out I get stuck on it" (the lone `sack` on the hold's sole by the bow stores, (-5.2, -1.45): cloth,
+solid, unbreakable — removed), "make every breakable on the ship able to be jumped through", "give an actual break
+sound for the key basket and baskets on top deck like the crates".
+- `shipBreakWalk` no longer asks `u.walk`: any unit breaks when you move into it (within 0.5 m of its box, moving
+  toward it) or come down on it (feet within 0.35 m over its top and falling, or standing on it). Measured: her gear's
+  push-out leaves a body exactly 0.45 m off a box, and shoves a body off a top sideways — the old 0.45 cut-off and a
+  "near the middle" landing test both missed every time. A frame that moves more than half a metre (a teleport, a
+  restore) is ignored: placing the body beside a barrel broke it before that.
+- Steel (pots, the key basket) breaks with the crate's crunch and snap plus `camBreak` (steel on steel), and every
+  piece clanks (`sfxPropHit('metal')`) as it lands; it had two quiet metal taps.
+- Tested in the pane: deck crate, deck barrel, hold barrel, both tables and a pot break when walked into; a deck barrel
+  and a crate break when landed on; standing still beside one does not break it.
+
+**The key lies ON the broken basket (2026-10-17, "the basket breaking covered the key drop").** Its floor was the
+basket's floor, and the pieces came down over it. `shipKeyBed(x, z)` rays down onto the basket's pieces — live gibs
+marked `keyBed`, and the rubble they settle into (`sleepGib` merges a settled gib into a per-material rubble mesh and it
+LEAVES `gibs`: the entry is marked `r.keyBed`) — and takes the first face flat enough to lie on (|n.y| > 0.55). A box
+was tried first: a wall of the basket landed on its edge and the key sat on top of its box in mid-air. The key is
+lifted onto that surface while the pieces settle, and for good after (`keyFall > 4`).

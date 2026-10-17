@@ -759,6 +759,7 @@ you while it loads; the first click takes the mouse back.
 | `models/` | Standalone object models + a dev viewer (`horseshoe-crab.js`, `viewer.html`) |
 | `assets/backrooms.m4a` | Opening music (mono AAC, converted from the source WAV) |
 | `assets/keep-intro.m4a` | The sea keep's intro, played on arriving at its pier (AAC, converted from the owner's WAV) |
+| `assets/samurai-score.m4a` | The samurai fight's score, from "THAT'S MY SWORD." until he falls, looped (AAC 160 kbps, converted from the owner's "5450 score" MP3) |
 | `assets/catacombs-fall.m4a` | The landing in the catacombs, played the moment you hit the stone (AAC, converted from the owner's WAV) |
 | `assets/well-rope.m4a` | The rope creaking as the man from the well climbs it: 13.8 s cut from the owner's "Rope Creaking Holding Weight" sound effect, normalised (+40 dB) and faded, AAC |
 | `vendor/three/` | three.js r160 (vendored, offline-safe) |

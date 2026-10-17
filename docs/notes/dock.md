@@ -488,3 +488,8 @@ Connection** (the Artifact of The Sea is gone, code and all — 291 lines).
   choice button (a `startDialog` while a dialogue is open is ignored — drive it
   through `#dialog .choice` and clicks on `#dialog`).
 - **Billy's three-dots bubble** (main's) is gone; his motion-sensor whirr stays.
+
+**NO CRATE ON THE DOCK (2026-10-17, "remove the crate on the fishermans dock").** `buildCrate` is no longer called for
+the pier: the chest key is laid where the crate stood (`dropKey({x, y: DOCK_DECK, z})`), under its glint. Only the
+beach crate is built now (`crates[0]`); a save that broke the dock's names index 1, which is passed over, and taking
+the key replays by its label. The model's own `BoxCrate` mesh stays hidden and, being invisible, gets no collider.

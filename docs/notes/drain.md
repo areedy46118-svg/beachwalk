@@ -414,3 +414,12 @@ sewer").**
 - **Softer lamps**: bore bulbs 0.46/9/1.1 (was 0.5/7/1.4), the hung lantern
   0.8/9.5/1.2, the crate lantern 0.6/6/1.3: the same pools, falling off into
   the murk instead of stopping.
+
+**2026-10-17, the owner's cuts.** "Remove the sewer face and breathing sound when you look in the drain": the peek
+(`startPeek`) no longer builds or shows `gateFace` (nor is it pre-built on load), so `updateGateFace` and its
+`drainBreathTick` never run; the `drainBreath` sample is out of `SAMPLES`; `assets/crawler-head.glb` and
+`assets/drain-breath.m4a` moved to `incoming/unused-2026-10-17/` (gitignored). The lean, the bars, the drone and the
+drips stay. "Move the water bucket … I walk into it": it stood two metres in from the door beside its line —
+`BUCKET_X/Z` (ROOM_X0 + 2.65, ROOM_HZ − 0.38) puts it against the side wall past the shelving, and the nav prop
+follows the constants. The tally scratched by the bed, the chalk tally beside the arrow, and his boots by the bed
+are gone.

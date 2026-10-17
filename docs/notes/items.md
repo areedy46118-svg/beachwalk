@@ -1175,3 +1175,16 @@ glass, which is why the count lives there and not in `hitConnect`.
 `tools/connection_ring_pack.py` (Bladeblend's "Gold ring", CC-BY-4.0), 342 KB,
 worst position error 7.6e-6 of the ring's size; it wears `ringEnv()` at 3.2. An
 old save with `seaArt >= 2` is given the ring instead.
+
+## Small item fixes (2026-10-17)
+
+- The screwdriver glows like every other pickup: `addItemShine(screwdriverModel, { size: 0.8, height: 0.12 })`, and
+  `dropShine` before it leaves the scene on the take.
+- Billy's description is "Longs to see his crew".
+- THE RUSTED KEY GOES WHEN THE PAVILION OPENS, whichever key turned it. The gate takes the key that turned it
+  (`gateKeyIn()` prefers the well man's `pavKeyItem`), so the snorkeler's `lostKeyItem` stayed in the pack for good.
+  Removed in the gate's onActivate, and every frame in `updateGate` while `mushGateUnlocked` (skipped under
+  `applyingSave`), which also cleans an old save and a key handed over after the gate is open. Testing note: the
+  harness's `mushGateUnlocked` is a getter only — assigning it does nothing; use `__bw.openPavGate()`.
+- Returning Billy (`returnBilly`) unlocks the rare achievement "50 - Reunited lost friends" (not on replay or a
+  restore), and `RARE_ACHIEVEMENTS` counts `billyState === 2`. Harness: `__bw.setBillyS(1)` then `returnBilly()`.

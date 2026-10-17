@@ -41,6 +41,7 @@ import { makeShell, SHELL_R } from './models/shotgun.js';   // the built double 
  * its first `await`, long before that line runs (and the save is read in between) — a `let` read from either is a dead-zone crash that takes the page. Every early hook into
  * him also asks `elvReady`, which the last line of his section sets. */
 let elvReady = false, elvStage = 0, elvJarGiven = false, elvGreeted = false, elvLand = false, elvAirK = 0, elvCarrying = false, elvLantern = false, elvSecK = 0;
+let palCutRef = null;        // the paladin's entrance take (`palStartCut`), read by frozen() and the lens
 let equipQuiet = false;                // (a weapon back into your hand without its draw: after the puppet leaves your arms — up here, `toggleEquip` can run at load)
 let elvBurned = false;                 // the puppet went on the fire (`elvThrowPuppet`): what is left of him lies on it for good
 const BEACH_EXT = 100;
@@ -233,7 +234,6 @@ const ASSET_REACH = {
   'assets/cave.glb': 648 + BEACH_EXT,             // and the way out, behind the altar
   'assets/sol.glb': 646 + BEACH_EXT,              // and what is standing on its altar
   'assets/scp096.glb': 470,           // on the beach in front of the pavilion
-  'assets/crawler-head.glb': 40,      // what is down the drain's own pipe, behind the spawn
   'assets/trader.glb': 738 + BEACH_EXT,           // the man at the sand wall, a little short of the stones (and his double at the castle)
   'assets/magnum.glb': 739 + BEACH_EXT,            // and the thing he has that the jars are for
   'assets/old-ring.glb': 739 + BEACH_EXT,          // and the old ring on his table, five jars
@@ -255,6 +255,7 @@ const ASSET_REACH = {
   'assets/farmer-woodman.glb': 1005 + BEACH_EXT, 'assets/farmer-farmman.glb': 1005 + BEACH_EXT, 'assets/farmer-workman.glb': 1005 + BEACH_EXT,   // the twenty in the castle's houses
   'assets/castle13.glb': 1080 + BEACH_EXT,         // Castle XIII, through the first castle's back door
   'assets/throne.glb': 1150 + BEACH_EXT,           // and the throne room through its west court
+  'assets/paladin.glb': 1005 + BEACH_EXT, 'assets/paladin-moves.json': 1005 + BEACH_EXT,   // the paladin who comes into the farmers' fight halfway
   'assets/crusader.glb': 1085 + BEACH_EXT,         // and the flail knight who holds its west court
   'assets/sawnoff.glb': 1085 + BEACH_EXT,          // the sawn-off, sold by the castle's trader
   'assets/castle.glb': 1000 + BEACH_EXT,           // the castle across the beach at the foot of the headland, where he waits             // the four-armed thing past the five, on the open sand
@@ -921,6 +922,24 @@ try { loadMode = sessionStorage.getItem('beachwalk.load') || 'fresh'; sessionSto
  * new one when you reach the pavilion. */
 if (loadMode !== 'checkpoint') { try { localStorage.removeItem(SAVE_KEY); } catch (e) {} }
 
+/* NOTHING IS DONE WHILE THE GAME LOADS (2026-10-17, the owner: "dont allow swinging or doing things while loading the
+ * game shouldnt play while loading"). Under a checkpoint's black (`bootHold`), while a restore or a room's restore is
+ * putting the world back, or a save is being applied, no press, key, click, wheel or right-click reaches the game — a
+ * capture listener registered before every other one in the file swallows it. Releases go through (a button held
+ * into the load is let go of cleanly) and so does Esc (the menu). A wind-up is refused outright too (`startWind`), for a
+ * button already held when the load began. NOT `startDig` or `primaryAction`: the restore itself re-runs your digs
+ * and pickups through them. */
+function gameLoading() {
+  return !!(introDone && (bootHold > 0 || restore || roomRestore || applyingSave || replaying));
+}
+for (const type of ['pointerdown', 'mousedown', 'click', 'dblclick', 'auxclick', 'contextmenu', 'wheel', 'keydown', 'keypress']) {
+  window.addEventListener(type, (e) => {
+    if (!gameLoading()) return;
+    if (type === 'keydown' && e.code === 'Escape') return;
+    e.stopImmediatePropagation();
+    if (e.cancelable) e.preventDefault();
+  }, { capture: true });
+}
 let audioStarted = false, audioCtx = null, masterGain = null;
 /* NOTHING OF THE GAME IS HEARD BEFORE THE GAME. Every sound in the world goes
  * through `masterGain`, and a dozen things write that gain (the slider, the
@@ -995,6 +1014,8 @@ const WL_LEVEL = 1.35;
 let wlBuf = null, wlLoading = false, wlVol = null, wlEnv = null, wlSrc = null, wlT0 = 0;
 // the wreck's theme (see `updateWreckTheme`): up here for the same reason
 const WRECK_THEME_LEVEL = 0.42;   // the owner: "a little" up from 0.3
+const SAM_SCORE_LEVEL = 0.55;     // the samurai's fight (`startSamScore`): the file is mastered at -9 dBFS RMS, the others at -16 to -25 (0.26 until the owner: "turn up the samurai music")
+let samScoreVol = null;
 let wreckThemeVol = null;
 
 // ------------------------------------------------------------------
@@ -7864,7 +7885,7 @@ function spatterLens(k) {
  * the flash, the shove, the sound — or it reads as the game missing you. */
 let dmgBank = 0;
 function damagePlayer(n = 1, from = null) {
-  if (dying || ended || !introDone) return;
+  if (dying || ended || !introDone || bootHold > 0) return;      // (nothing lands under a load's black)
   if (dodgedBlow()) return;              // it went past you: that is what the step is for
   connStreak = 0;                        // the Ring of Connection's run is broken by anything that lands
   const neg = 1 - dmgTakeK();
@@ -8038,7 +8059,7 @@ function updateHurt(dt) {
   hurtEl.style.opacity = String(Math.max(hurtFlash * hurtFlash, rim));
 }
 
-function frozen() { return (!!crabCut && crabCut.t >= CRAB_T.cut) || (!!hjCut && !hjCut.released) || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone || deepCutOn; }
+function frozen() { return bootHold > 0 || (!!crabCut && crabCut.t >= CRAB_T.cut) || (!!hjCut && !hjCut.released) || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!palCutRef || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone || deepCutOn; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -8397,7 +8418,10 @@ let instantStart = false;
  * at the one moment a player expects one, rather than a hitch a second
  * after they have their hands. It is CAPPED, because a late download can
  * refill the chain minutes later and the hold must never wait for one. */
-let bootHold = 0, bootHoldT = 0;
+/* (a `var`: `frozen()` reads it and is declared thousands of lines above — the world holds under a checkpoint's black,
+ * 2026-10-17, the owner: "the farmers fight checkpoint before i even load i am getting hit by them … no enemies should be
+ * killing me or anything game related going on before full loading") */
+var bootHold = 0, bootHoldT = 0;
 let restoreTune = null, saveTune = null;          // a song a checkpoint was written under, played again as the black lifts on it
 const BOOT_HOLD_MAX = 1600;
 const BOOT_HOLD_WARM_MAX = 6500;   // and at most this long for the rooms' own warms
@@ -8494,7 +8518,21 @@ function updateBootHold(dt) {
   if (restoreTune === 'passing') { restoreTune = null; ucLeftBy = 'far'; passPlayed = false; startPassing(); }
   bootHold = Math.max(0, bootHold - dt / BOOT_FADE);
   blackoutEl.style.opacity = bootHold.toFixed(3);
-  if (bootHold <= 0) { catchBreath(); document.documentElement.classList.remove('resuming'); }
+  if (bootHold <= 0) { catchBreath(); document.documentElement.classList.remove('resuming'); audioAfterLoad(); }
+}
+/* AND THE SOUND IS PUT BACK AS THE BLACK LIFTS (2026-10-17, the owner: "the sound effects on the farmer fight didnt
+ * load when i reloaded the checkpoint"; "make sure the sound effects stay upon reloading a checkpoint"). A load
+ * passes through every state the mix has — the restore's hush, the gate shut under the title, the master pulled to
+ * nothing for a hidden page, a context that cannot start until it is clicked, the voice limiter's window counted on a
+ * clock that was standing still — and the end of the load is the one place all of them are known to be over. */
+function audioAfterLoad() {
+  const ctx = audioCtx; if (!ctx) return;
+  sfxHush = false;
+  if (ctx.state !== 'running') ctx.resume().catch(() => {});
+  _mutVoiceT.length = 0;
+  if (gameAudioGate && gameAudioGate.gain.value < 0.99) openGameAudio(0.6);
+  if (masterGain && !document.hidden && masterGain.gain.value < settings.volume * 0.5) fadeInMaster(0.6);
+  if (sfxBusGain) sfxBusGain.gain.setTargetAtTime(settings.sfxVolume * SFX_TRIM, ctx.currentTime, 0.05);
 }
 
 /* THE TITLE CAMERA. The menu is not a picture of the beach, it is the
@@ -9271,6 +9309,7 @@ function applySettings() {
   if (passVol && audioCtx) passVol.gain.setTargetAtTime(settings.volume * settings.musicVolume * PASS_LEVEL, audioCtx.currentTime, 0.05);
   if (wlVol && audioCtx) wlVol.gain.setTargetAtTime(settings.volume * settings.musicVolume * WL_LEVEL, audioCtx.currentTime, 0.05);
   if (wreckThemeVol && audioCtx) wreckThemeVol.gain.setTargetAtTime(settings.volume * settings.musicVolume * WRECK_THEME_LEVEL, audioCtx.currentTime, 0.05);
+  if (samScoreVol && audioCtx) samScoreVol.gain.setTargetAtTime(settings.volume * settings.musicVolume * SAM_SCORE_LEVEL, audioCtx.currentTime, 0.05);
   updateBeachBed();          // NOT `waveVolume` flat: the slider must not un-duck a room
   if (sfxBusGain && audioCtx) sfxBusGain.gain.setTargetAtTime(settings.sfxVolume * SFX_TRIM, audioCtx.currentTime, 0.05);
   document.getElementById('v-fov').textContent = settings.fov;
@@ -9400,7 +9439,7 @@ mCheckpointBtn.addEventListener('click', () => { if (hasCheckpoint()) reloadInto
  * the trader, facing him. It refuses in the middle of a cut, and in the hall
  * in the saucer, whose fight is a sequence with no exit but winning it. */
 const devShopBusy = () => hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy
-  || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!thrCut || !!wbFareCut || dying || ended || !introDone;
+  || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!thrCut || !!palCutRef || !!wbFareCut || dying || ended || !introDone;
 /* AND THE CASTLE'S MERCHANT (the owner's word): the same, to the second
  * trader on the sand sixteen metres short of the first castle's gate. The
  * walk's once-only events between here and there are marked as passed the
@@ -14678,6 +14717,7 @@ function cancelSwing() {
 const WIND_IN = 0.10;                    // seconds the haul-back blends in from wherever the hand was
 const _windFrom = [0, 0, 0, 0, 0, 0];
 function startWind() {
+  if (gameLoading()) return false;                     // (nothing while the game loads)
   if (blocking) return false;           // no swing comes out of a guard
   /* AND A THRUSTING WEAPON HAS NO WIND-UP TO HOLD. The button means the
    * combination on this one, so the charge must never arm — otherwise the
@@ -18133,6 +18173,7 @@ function sleepGib(g) {
   m.updateMatrixWorld(true);
   let geo = m.geometry.clone();
   geo.applyMatrix4(_rbM.copy(m.matrixWorld));
+
   if (geo.index) geo = geo.toNonIndexed();
   for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') geo.deleteAttribute(k);
   if (!geo.getAttribute('uv')) geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
@@ -18141,6 +18182,7 @@ function sleepGib(g) {
   let r = rubble.get(key);
   if (!r) { r = { mat: m.material, mesh: null, items: [], dirty: false, at: 0 }; rubble.set(key, r); }
   r.items.push({ geo, life: g.life });
+  if (g.keyBed) r.keyBed = true;      // (the wreck's key lies on these: `shipKeyBed`)
   r.dirty = true;
   scene.remove(m);
   if (!m.geometry.userData.shared) m.geometry.dispose();
@@ -21805,10 +21847,7 @@ const BRADLY_SCRIPT = {
   },
   blood: {
     text: 'Injecting the horseshoe blood. People say it has healing properties, not only that but can change you for the better. I tried it in high school and all I did was shit blue for weeks.',
-    choices: [{ label: 'What else do they say about this beach?', to: 'rumours' }],
-  },
-  rumours: {
-    text: "Haha, pretty much anything. I've heard of castles, monsters, demons, I've even heard of a giant horseshoe crab\u2026 I think it's just junkies like you hallucinating off that blue shit. Anyway good luck, I still got 4 sets of burpees.",
+    // (his last word now: "What else do they say about this beach?" and the rumours reply are out, 2026-10-17, the owner)
     say: () => { bradlyScurry.armed = true; },     // however the box is closed now, he goes
     // he waits for you to click away (the owner's word): no timer ends it
     hint: 'click to leave', end: false,
@@ -22005,6 +22044,7 @@ function updateDialogCam(dt) {
   const wantFov = (mutCutFov > 0 ? mutCutFov
     : keyCut ? keyCut.fov
     : thrCut ? thrCut.fov
+    : palCutRef ? palCutRef.fov
     : (crabCut && crabCut.t >= CRAB_T.cut) ? crabCut.fov
     : wbFareCut ? wbFareCut.fov
     : peeking && !peekLeaving ? PEEK_FOV
@@ -22015,7 +22055,7 @@ function updateDialogCam(dt) {
     : settings.fov) + fovKick
     - settings.fov * (equipped && equipped.shotgun ? SG_ZOOM : MAG_ZOOM) * magAim;
   // and it arrives at a gun's pace, not a conversation's
-  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : palCutRef ? palCutRef.fovRate : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -22339,7 +22379,6 @@ const SAMPLES = {
   unlock: ['assets/unlock.m4a'],
   mutantVox: Array.from({ length: 6 }, (_, i) => `assets/mutant-vox${i + 1}.m4a`),
   dealerHit: Array.from({ length: 8 }, (_, i) => `assets/dealer-hit${i + 1}.m4a`),
-  drainBreath: ['assets/drain-breath.m4a'],
   whaleThanks: ['assets/whale-thanks.m4a'],
   whaleHeal: ['assets/whale-heal.m4a'],
   /* THE MAN IN THE WELL, the owner's own take cut at its silences into his six
@@ -23903,6 +23942,7 @@ function statHad(it) {
  * found this will include the seagull slayer i will add more too"): one line each, true once earned — add the next here. */
 const RARE_ACHIEVEMENTS = [
   () => gullSlayer,                                       // Seagull Slayer: every gull on the lighthouse's rock you can reach
+  () => billyState === 2,                                 // Reunited lost friends: Billy back with the Very Old Fisherman
 ];
 function statLines() {
   const tally = (list) => list.filter(statHad).length;
@@ -24294,19 +24334,9 @@ function stopPeekAudio() {
 function startPeek() {
   const F = drainTunnel.userData.outlet;
   if (peeking || !F || frozen()) return;
-  if (!gateFace) gateFace = makeGateFace(F);
   peeking = true; peekLeaving = false; peekT = 0; peekHeld = 0;
-  // visible at zero opacity from the first frame of the lean: the draw is
-  // free and it gets the material compiled while you are still moving
-  gateFace.visible = true;
-  gateFace.userData.gain.value = 0;
-  const u = gateFace.userData;
-  /* Once. The first time you look in, they are there; every time after,
-   * nothing is — and you know it was there. A second showing would make it a
-   * feature of the gate. The first made it a thing that happened to you. */
-  u.gone = eyesSeen; u.t = 0; u.holdFor = 0.75 + Math.random() * 0.8;
-  if (eyesSeen) gateFace.visible = false;
-  gateFace.position.z = EYES_Z;
+  /* (no face down the pipe any more, and no breathing — 2026-10-17, the owner: "remove the sewer face and
+   * breathing sound when you look in the drain". The lean, the bars, the drone and the drips stay.) */
   _peekHome.copy(camera.position); _peekHomeQ.copy(camera.quaternion);
   _peekFrom.copy(camera.position); _peekFromQ.copy(camera.quaternion);
   /* Where to stop. Closer than this and the crop threads clean between the
@@ -24396,10 +24426,7 @@ if (drainTunnel.userData.outlet) {
   addInteractable(drainTunnel.userData.outlet, 'Look inside', 'default', {
     onActivate: () => startPeek(),
   });
-  // Built now, not on the first peek: a lazy build compiled two new shaders
-  // and uploaded the geometry on the frame the eyes appeared, which is the
-  // one frame in the game that must not hitch.
-  gateFace = makeGateFace(drainTunnel.userData.outlet);
+  // (the face that used to be built here for the first peek is gone: `startPeek`)
 }
 
 // ---- a full bottle of water, left by the bed in the chamber ----------
@@ -25171,7 +25198,10 @@ onMossyRocks(() => {
 bwGlb('assets/furniture.glb', (gltf) => {
   if (!shipwreck.userData.furnish) return;
   const g = shipwreck.userData.furnish(gltf.scene);
+  const boxes = shipStoresBoxes('furniture');   // the tables' boxes, before the bake melts them in (`smashShipStore`)
   bakeStatic(g, undefined, { named: true });
+  shipFurnG = g;
+  for (const [i, b] of boxes) addShipBreakable(SN.breakable[i], i, b);
 });
 /* AND HER STORES, the owner's pirate-ship set (`dressPirate`): solid from the
  * first frame by the plan, stood and merged when the file lands. */
@@ -25964,12 +25994,30 @@ function takeShipKey() {
   sfxThud(0.03);
   addToInventory(boatKeyItem);
 }
+// the surface of the broken basket's pieces under (x, z) — a ray down onto the pieces themselves, moving or settled into
+// rubble (a box was not enough: a wall of the basket landed on its edge and the key sat on the top of its box, in the air)
+const _kbR = new THREE.Raycaster(), _kbO = new THREE.Vector3(), _kbD = new THREE.Vector3(0, -1, 0), _kbN = new THREE.Vector3();
+function shipKeyBed(x, z) {
+  const objs = [];
+  for (const g of gibs) if (g.keyBed && g.m.parent) objs.push(g.m);
+  for (const r of rubble.values()) if (r.keyBed && r.mesh) objs.push(r.mesh);
+  if (!objs.length) return -Infinity;
+  _kbR.set(_kbO.set(x, SN.DECK_Y + 2.5, z), _kbD); _kbR.far = 6;
+  // (the first face that lies flat enough to rest on: a wall stood on its edge is passed through, not stood on)
+  for (const h of _kbR.intersectObjects(objs, false)) {
+    if (!h.face) continue;
+    _kbN.copy(h.face.normal).transformDirection(h.object.matrixWorld);
+    if (Math.abs(_kbN.y) > 0.55) return h.point.y;
+  }
+  return -Infinity;
+}
 /* IT LANDS IN THE BASKET UNDER THE HOOK, flat on the basket's floor, and the
  * basket takes the weight and rocks. The hook is dead over it, so steering
  * it to the middle only ever corrects a centimetre. */
 const _keyV = new THREE.Vector3();
 function updateShipKey(dt) {
-  const cb = shipwreck.userData.catchBasket;
+  const cbAll = shipwreck.userData.catchBasket, cb = cbAll && !cbAll.broken ? cbAll : null;
+  shipBreakWalk();
   if (cb && basketRock > 0) {
     basketRock = Math.max(0, basketRock - dt);
     const k = basketRock / 0.9;
@@ -25979,9 +26027,17 @@ function updateShipKey(dt) {
   }
   if (keyFall < 0 || boatKeyTaken || !boatKey.parent) return;
   keyFall += dt;
-  if (keyFall > 4) return;
+  /* AND IT LIES ON WHAT IS LEFT OF THE BASKET, NOT UNDER IT (2026-10-17, the owner: "the basket breaking covered the key
+   * drop on the ship make it sit on top of the debris"). The key fell to the basket's floor and the pieces came down
+   * over it. Its floor is the top of whatever piece of the basket is under it, and while the pieces are still settling
+   * it is lifted onto them. */
+  const bed = cbAll && cbAll.broken ? shipKeyBed(boatKey.position.x, boatKey.position.z) : -Infinity;
+  if (keyFall > 4) {
+    if (bed + 0.012 > boatKey.position.y) boatKey.position.y = bed + 0.012;
+    return;
+  }
   const bx = cb ? SHIP_X + cb.x : boatKey.position.x, bz = cb ? SHIP_Z + cb.z : boatKey.position.z;
-  const floorY = (cb ? cb.floor : SHIP_Y_FLOOR) + 0.012;
+  const floorY = Math.max((cb ? cb.floor : cbAll ? cbAll.lo + 0.02 : SHIP_Y_FLOOR) + 0.012, bed + 0.012);
   if (boatKey.position.y > floorY) {
     _keyV.set(0, -Math.min(6, keyFall * 9.8), 0);
     boatKey.position.addScaledVector(_keyV, dt);
@@ -25995,7 +26051,7 @@ function updateShipKey(dt) {
       sfxThud(0.03);
       if (cb) { sfxPropHit('metal', 4); basketRock = 0.5; }
     }
-  }
+  } else if (boatKey.position.y < floorY - 1e-4) boatKey.position.y = floorY;      // (lying: lifted as the pieces settle under it)
 }
 
 /* ---- her deck lantern, off the wheelhouse step ------------------------
@@ -27372,12 +27428,14 @@ let screwdriverTaken = false;
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy'; hit.visible = false; screwdriverModel.add(hit);
+  addItemShine(screwdriverModel, { size: 0.8, height: 0.12 });       // (2026-10-17, the owner: "give the screwdriver item glow")
   addInteractable(screwdriverModel, 'Take the screwdriver', 'inventory', {
     keepSize: true,
     onActivate: () => {
       if (screwdriverTaken) return;
       screwdriverTaken = true;
       if (hovered && hovered.root === screwdriverModel) hovered = null;
+      dropShine(screwdriverModel);
       scene.remove(screwdriverModel);
       screwdriverModel.remove(hit);
       dropShine(screwdriverModel);
@@ -28150,7 +28208,7 @@ function billyCarryFit() {
   billyCarry.userData.face.scale.x = billy.spanX || 1;
 }
 const billyItem = {
-  id: 'billy', name: 'Big Mouth Billy Bass', desc: 'Unscrewed from her wheelhouse wall. He misses his old crew.',
+  id: 'billy', name: 'Big Mouth Billy Bass', desc: 'Longs to see his crew',
   icon: (() => {
     const c = document.createElement('canvas'); c.width = c.height = 64;
     const g = c.getContext('2d'), im = billy.frames[0].image;
@@ -28199,6 +28257,8 @@ function returnBilly() {
    * him give him the plaque and put him on the wall"). The floating, the hearts and the music box are gone. */
   mountBillyHome();
   sfxThud(0.03);
+  // (2026-10-17, the owner: "give an xbox rare achievement when the fisherman gets the fish back")
+  if (!replaying && !applyingSave) showAchievement('Rare achievement unlocked', '50 - Reunited lost friends');
 }
 
 /* ---- HE GLIMMERS (the owner, 2026-10-17: "you need to be able to see the fish sort of glimmering through the door of
@@ -28894,14 +28954,18 @@ function addShipBreakable(u, i, pre) {
   if (shipBrkGone.has(i)) smashShipStore(B, 0, true);
 }
 // the pots are built with her; the stores arrive with their file (`shipStoresLanded`)
-SN.breakable && SN.breakable.forEach((u, i) => { if (u.kind === 'pot') addShipBreakable(u, i); });
+SN.breakable && SN.breakable.forEach((u, i) => {
+  if (u.kind === 'pot') addShipBreakable(u, i);
+  else if (u.kind === 'basket') { shipwreck.updateMatrixWorld(true); addShipBreakable(u, i, new THREE.Box3().setFromObject(u.group, true)); }
+});
 // called with the stores group BEFORE it is baked: each unit's box off its own pieces
 let shipStoresG = null;
-function shipStoresBoxes() {
+let shipFurnG = null;                       // the furniture set, merged: the tables' triangles are lifted out of it
+function shipStoresBoxes(src) {
   const out = new Map();
   shipwreck.updateMatrixWorld(true);        // the stores were only just added: their world matrices are unwritten
   (SN.breakable || []).forEach((u, i) => {
-    if (u.kind === 'pot' || !u.pieces.length) return;
+    if (u.kind === 'pot' || u.kind === 'basket' || !u.pieces.length || (u.src || 'stores') !== (src || 'stores')) return;
     const b = new THREE.Box3();
     for (const p of u.pieces) { p.updateMatrixWorld(true); b.union(_sbBox.setFromObject(p, true)); }
     out.set(i, b);
@@ -28924,8 +28988,9 @@ function shipStoreTris(B) {
   };
   const uvOf = (uv, i) => uv ? [uv.getX(i), uv.getY(i)] : [0, 0];
   const meshes = [];
-  if (B.u.kind === 'pot') B.u.group.traverse((o) => { if (o.isMesh) meshes.push(o); });
-  else if (shipStoresG) shipStoresG.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  const own = B.u.kind === 'pot' || B.u.kind === 'basket';
+  if (own) B.u.group.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  else { const G = B.u.src === 'furniture' ? shipFurnG : shipStoresG; if (G) G.traverse((o) => { if (o.isMesh) meshes.push(o); }); }
   const box = _sbBox.copy(B.wbox).expandByScalar(0.02);
   shipwreck.updateMatrixWorld(true);
   for (const m of meshes) {
@@ -28940,11 +29005,11 @@ function shipStoreTris(B) {
       _sbB.fromBufferAttribute(P, i1).applyMatrix4(m.matrixWorld);
       _sbC.fromBufferAttribute(P, i2).applyMatrix4(m.matrixWorld);
       const cx = (_sbA.x + _sbB.x + _sbC.x) / 3, cy = (_sbA.y + _sbB.y + _sbC.y) / 3, cz = (_sbA.z + _sbB.z + _sbC.z) / 3;
-      const mine = B.u.kind === 'pot' || (cx > box.min.x && cx < box.max.x && cy > box.min.y && cy < box.max.y && cz > box.min.z && cz < box.max.z);
+      const mine = own || (cx > box.min.x && cx < box.max.x && cy > box.min.y && cy < box.max.y && cz > box.min.z && cz < box.max.z);
       if (mine) { put(m.material, _sbA, _sbB, _sbC, uvOf(uv, i0), uvOf(uv, i1), uvOf(uv, i2)); took = true; }
       else keep.push(i0, i1, i2);
     }
-    if (took && B.u.kind !== 'pot') { g.setIndex(keep); if (!keep.length) m.visible = false; }
+    if (took && !own) { g.setIndex(keep); if (!keep.length) m.visible = false; }
   }
   return out;
 }
@@ -28972,7 +29037,26 @@ function smashShipStore(B, speed, quiet = false) {
   if (k >= 0) SN.props.splice(k, 1);
   B.prop.mesh.removeFromParent();
   const tris = shipStoreTris(B);
-  if (B.u.kind === 'pot') B.u.group.removeFromParent();
+  if (B.u.kind === 'pot' || B.u.kind === 'basket') B.u.group.removeFromParent();
+  if (B.u.kind === 'basket') {
+    // nothing to catch the key now: it goes to the boards (and if it was lying in the basket, it falls on to them)
+    const cb = shipwreck.userData.catchBasket; if (cb) cb.broken = true;
+    if (keyFall >= 0 && !boatKeyTaken && boatKey.parent) keyFall = Math.min(keyFall, 0.01);
+  }
+  if (B.u.top) {
+    // what stood on the table goes over with it: the cup, the mug, the lamp
+    const T = B.u.top; T.updateMatrixWorld(true);
+    for (const c of [...T.children]) {
+      scene.attach(c);
+      if (quiet) { c.position.y = B.floor + 0.05; c.rotation.set(Math.PI / 2, Math.random() * 6, 0); continue; }
+      gibs.push({ m: c, vel: new THREE.Vector3((Math.random() - 0.5) * 1.6, 1.2 + Math.random(), (Math.random() - 0.5) * 1.6),
+        spin: new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 8),
+        rest: B.floor + 0.04, life: 240, bleed: false, dry: true, wait: 0.05,
+        restAt: B.u.deck ? shipGibFloor : null, confine: B.u.deck ? shipGibDeck : shipGibHold,
+        onLand: (_g, sp) => sfxPropHit('metal', Math.min(4, 1 + sp)) });
+    }
+    T.removeFromParent();
+  }
   if (quiet) return;
   const cx = (B.wbox.min.x + B.wbox.max.x) / 2, cz = (B.wbox.min.z + B.wbox.max.z) / 2;
   const cs = Math.cos(-B.u.ry), sn = Math.sin(-B.u.ry);
@@ -28998,7 +29082,7 @@ function smashShipStore(B, speed, quiet = false) {
   let dx = cx - camera.position.x, dz = cz - camera.position.z;
   const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
   const kick = Math.min(2.4, 0.9 + (speed || 5) * 0.11);
-  const steel = B.u.kind === 'pot';
+  const steel = B.u.kind === 'pot' || B.u.kind === 'basket';
   for (const [key, pc] of pieces) {
     const nT = pc.P.length / 9;
     let mx = 0, my = 0, mz = 0;
@@ -29031,15 +29115,21 @@ function smashShipStore(B, speed, quiet = false) {
     const facing = (ox / ol) * dx + (oz / ol) * dz < -0.3;      // the side that took the blow
     const lid = key[0] === 'c' || key.startsWith('y+');
     const kk = (facing ? 1.0 : 0.55) * kick * (0.7 + Math.random() * 0.5);
-    gibs.push({ m,
+    gibs.push({ m, keyBed: B.u.kind === 'basket',
       vel: new THREE.Vector3((facing ? dx : (ox / ol) * 0.6 + dx * 0.4) * kk, (lid ? 2.2 : 0.7) + Math.random() * 0.6, (facing ? dz : (oz / ol) * 0.6 + dz * 0.4) * kk),
       spin: new THREE.Vector3((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 6),
       rest: B.floor + 0.01, life: 240, bleed: false, dry: true, wait: lid ? 0.04 : facing ? 0 : 0.06 + Math.random() * 0.08,
       restAt: B.u.deck ? shipGibFloor : null, confine: B.u.deck ? shipGibDeck : shipGibHold,
-      onLand: steel ? null : (_g, sp) => sfxPlankKnock(m.position.x, m.position.z, sp, false) });
+      onLand: steel ? (_g, sp) => sfxPropHit('metal', Math.min(3, 0.8 + sp * 0.5)) : (_g, sp) => sfxPlankKnock(m.position.x, m.position.z, sp, false) });
   }
-  if (steel) { sfxPropHit('metal', 6); sfxPropHit('metal', 3); }
-  else {
+  /* A POT OR THE KEY'S BASKET BREAKS AS LOUD AS A CRATE (2026-10-17, the owner: "give an actual break sound for the key
+   * basket and baskets on top deck like the crates"): two taps of metal was all it had. The crate's crunch and snap,
+   * the wire and frame going (`camBreak`, steel hitting steel), and every piece clanking down after. */
+  if (steel) {
+    sfxCrateCrunch(Math.min(1.3, 0.7 + (speed || 5) * 0.08));
+    sfxWoodSnap();
+    if (!playSample('camBreak', 1.0 + Math.random() * 0.12, 0.05)) { sfxPropHit('metal', 6); sfxPropHit('metal', 3); }
+  } else {
     // and splinters off the break
     const sm = [...pieces.values()][0];
     for (let j = 0; j < 12 && sm; j++) {
@@ -29053,6 +29143,34 @@ function smashShipStore(B, speed, quiet = false) {
     }
     sfxCrateCrunch(Math.min(1.3, 0.6 + (speed || 5) * 0.08));
     sfxWoodSnap();
+  }
+}
+/* AND THE BASKET BREAKS IF YOU WALK INTO IT (the owner's word). Its box is a wall to the walk while it stands, so you
+ * never get inside it: walking AT it — within a hand of its side and moving toward it, at a walk — is the blow. */
+const _sbwP = { x: 0, y: 0, z: 0, vy: 0, ok: false };
+function shipBreakWalk() {
+  const p = camera.position;
+  const vx = _sbwP.ok ? p.x - _sbwP.x : 0, vz = _sbwP.ok ? p.z - _sbwP.z : 0;
+  _sbwP.vy = _sbwP.ok ? p.y - _sbwP.y : 0;
+  _sbwP.x = p.x; _sbwP.z = p.z; _sbwP.y = p.y; _sbwP.ok = true;
+  if (!shipBrk.length || frozen()) return;
+  if (Math.hypot(vx, vz) > 0.5 || Math.abs(_sbwP.vy) > 0.5) return;   // (a teleport, a restore: not a walk into anything)
+  /* AND EVERY ONE OF THEM, NOT ONLY THE BASKET (2026-10-17, the owner: "make every breakable on the ship able to be
+   * jumped through"): walk into any barrel, crate, pot or table and it goes, and so does one you jump into or come
+   * down on — nothing of hers that breaks is a thing you can be caught on. */
+  const feet = p.y - playerEye(), vy = _sbwP.vy || 0;
+  for (const B of shipBrk) {
+    if (B.dead) continue;
+    const bx = THREE.MathUtils.clamp(p.x, B.wbox.min.x, B.wbox.max.x), bz = THREE.MathUtils.clamp(p.z, B.wbox.min.z, B.wbox.max.z);
+    const dx = bx - p.x, dz = bz - p.z, d = Math.hypot(dx, dz);
+    if (d > 0.5 || p.y < B.wbox.min.y) continue;               // (her gear's push-out leaves a body 0.45 off the box: measured)
+    if (feet > B.wbox.max.y - 0.08) {                        // over it: coming down on its top, or stood on it
+      // (within reach of its edge: her gear's push-out shoves a body off a top sideways, so a landing never gets over the middle)
+      if (feet < B.wbox.max.y + 0.35 && (vy < -0.004 || (d < 0.05 && feet < B.wbox.max.y + 0.06))) smashShipStore(B, 4.0);
+      continue;
+    }
+    const toward = d > 1e-4 ? (vx * dx + vz * dz) / d : Math.hypot(vx, vz);
+    if (toward > 0.012) smashShipStore(B, 4.0);
   }
 }
 // what a piece off her deck lands on: the deck, or the hold through the hatch
@@ -31127,6 +31245,8 @@ function toggleGate() {
   sfxGateHinge(gateOpen);
 }
 function updateGate(dt) {
+  // (a save loaded past the gate brings the pack back after the flags: the rusted key is not kept once the gate is open)
+  if (mushGateUnlocked && inventory.includes(lostKeyItem) && !applyingSave) removeInventoryKey(lostKeyItem);
   if (!MGATE || !MGATE.pivot) return;
   const want = gateOpen ? 1 : 0;
   if (gateT === want) return;
@@ -31158,6 +31278,9 @@ function updateGate(dt) {
         if (!k && !devKeys()) { sfxGateRattle(); return; }
         if (k) { keyUsed(k); removeInventoryKey(k); } else sfxLockOpen();
         mushGateUnlocked = true;
+        // and the snorkeler's rusted key goes too, whichever key turned it (2026-10-17, the owner: "the rusted key from the
+        // CD guy should disappear when the pavilion opens" — the well man's key turns the gate first and left it in the pack)
+        if (inventory.includes(lostKeyItem)) removeInventoryKey(lostKeyItem);
         setTimeout(() => { if (!gateOpen) toggleGate(); }, 900);
         return;
       }
@@ -33935,6 +34058,7 @@ function parryMutant(u) {
   u.g.position.x += (kx / kd) * 0.5 * parryStunK();
   u.g.position.z += (kz / kd) * 0.5 * parryStunK();
   // (no caption — see the first parry's)
+  if (u.kind.heavyBlock) palBlockFx(u, true);
 }
 function blockMutant(u) {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock();
@@ -33971,6 +34095,7 @@ function blockMutant(u) {
   const kx = camera.position.x - u.g.position.x, kz = camera.position.z - u.g.position.z;
   const kd = Math.hypot(kx, kz) || 1;
   knockback.set((kx / kd) * 4.2 * u.kind.reachK, 0, (kz / kd) * 4.2 * u.kind.reachK);
+  if (u.kind.heavyBlock) palBlockFx(u, false);
 }
 function killMutant(u) {
   if (!u.st.alive || u.st.struck) return;
@@ -34213,9 +34338,17 @@ function recordDrawn(u) {
     bn.getWorldPosition(p).applyMatrix4(_drInv);
   }
 }
+const _blFront = new THREE.Vector3();
 function blowLands(u) {
   if (!blowHeightOK(u)) return false;
-  const foe = mutFoePos(u);
+  let foe = mutFoePos(u);
+  /* AND JUDGED IN FRONT OF YOUR FACE (`kind.hitFront`, the farmers, 2026-10-17). You have no body on screen: a blow
+   * judged at your middle counts as the weapon goes under the lens, and measured, the weapon's head was in the picture
+   * on 4 of 12 counted blows. Judged `hitFront` towards the man swinging, it counts as it arrives in front of you. */
+  if (u.kind.hitFront && !u.st.foe) {
+    const dx = u.g.position.x - foe.x, dz = u.g.position.z - foe.z, dl = Math.hypot(dx, dz) || 1, k = Math.min(u.kind.hitFront, dl * 0.4);
+    foe = _blFront.set(foe.x + dx / dl * k, foe.y, foe.z + dz / dl * k);
+  }
   if (blowWalled(u, foe)) return false;
   _dbF.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
   _dbC.subVectors(foe, u.g.position).setY(0);
@@ -34223,7 +34356,13 @@ function blowLands(u) {
   if (_dbC.divideScalar(dist).dot(_dbF) < 0.35) return false;        // behind him or wide of him: no
   const B = u.bones;
   if (!B || !B.hand) return dist < 1.9;
-  const top = foe.y + 0.15, bot = foe.y - (u.kind.bodyLow || 1.15);   // a kind that kicks and sweeps may reach your legs
+  const _Ab = u.atk && u.atk[u.st.swing];
+  /* AND A BLOW YOU CAN SEE LAND (`kind.bodyLowArm`, 2026-10-17, the farmers; the owner: "their hits do not connect
+   * right"). Measured with tools/farmhits.js: every counted blow was within 8 cm of you — and 13 of 14 landed where you
+   * cannot see, on the body under the camera. A blow thrown with the hands (no leg in `A.limbs`) only counts from the
+   * upper chest up, so the weapon is in the picture as it lands; a kick still takes your legs. */
+  const armOnly = u.kind.bodyLowArm && _Ab && _Ab.limbs && _Ab.limbs.length && _Ab.limbs.every((i) => i < 2);
+  const top = foe.y + 0.15, bot = foe.y - (armOnly ? u.kind.bodyLowArm : (u.kind.bodyLow || 1.15));   // a kind that kicks and sweeps may reach your legs
   /* THE WHOLE LIMB, NOT THE LAST HAND'S BREADTH OF IT. The first version
    * sampled the weapon alone — the grip out to the tip — and it was wrong
    * for exactly the swing it most needed to be right for: the aim puts the
@@ -37497,6 +37636,8 @@ function updateMutantUnit(u, dt) {
   if (u.kind.dante && danteUnitPre(u, dt)) return;
   // THE FARMERS: behind their doors until they are sent out, then coming out of them, then a pack
   if (u.kind.farmer && farmUnitPre(u, dt)) return;
+  // THE PALADIN: underground until he comes, then on the cobbles; his entrance is the take's
+  if (u.kind.paladin && palUnitPre(u, dt)) return;
   if (!u.st.awake && u.comfy && u.st.alive && u.clips.mSit) { updateComfy(u, dt); return; }
   /* ONE OF THE FIVE WAS STANDING IN THE SEA WHEN IT SAW YOU. Snapping it to
    * the sand plane stood it on top of the water; it wades out instead, its
@@ -37512,7 +37653,7 @@ function updateMutantUnit(u, dt) {
    * THROUGH the heap with the sand at its knees. Every room kind has its own
    * floor above; a beach body is anything near the beach's own x and height.
    * Eased the way the rooms ease a riser, so a bank is climbed, not snapped. */
-  else if (!u.kind.uc && !u.kind.dojo && !u.kind.tav && !u.kind.cat && !u.kind.c13Body && !u.kind.thrBody && u.st.alive
+  else if (!u.kind.uc && !u.kind.dojo && !u.kind.tav && !u.kind.cat && !u.kind.c13Body && !u.kind.thrBody && !u.kind.paladin && u.st.alive
       && Math.abs(p.x) < 120 && p.y > -4 && p.y < 30 && !(u.comfy && !u.st.awake)) {
     const ty = beachGroundAt(p.x, p.z);      // in the shallows it stands on the seabed, as it always did
     const dy = ty - p.y, ad = Math.abs(dy);
@@ -38291,6 +38432,7 @@ function updateMutantUnit(u, dt) {
           let tot = 0;
           for (const k in u.kind.use) {
             const AK = u.atk[k] || MUT_ATTACKS[k];
+            if (u.kind.clipGated && (!u.clips[k] || (u.atk[k] && u.atk[k].skip))) continue;      // (a swing whose clip has not arrived, or that crosses nothing, is not thrown: the paladin's)
             if (AK.reach + 0.25 < dist) continue;
             if (AK.minDist && dist < AK.minDist) continue;    // a charge needs ground to charge across
             if (AK.stand && u.noStand) continue;              // and a thing that rears up needs a roof to rear under
@@ -39047,8 +39189,11 @@ bwGlb('assets/dock.glb', (gltf) => {
     buildDockSteps(deckMat || new THREE.MeshStandardMaterial({ color: 0x6b5942, roughness: 1, flatShading: true, emissive: 0x231c14 }));
   }
   {
+    /* NO CRATE ON THE DOCK (2026-10-17, the owner: "remove the crate on the fishermans dock"). The chest key it held
+     * lies on the boards where it stood, under its glint. (A save that broke it names crate 1, which is not built any
+     * more and is passed over; the key's taking is replayed by its label either way.) */
     const at = dock.localToWorld(new THREE.Vector3(-0.31, 0.62, 2.10));
-    buildCrate(at.x, DOCK_DECK, at.z, 0.4, dropKey);
+    dropKey({ x: at.x, y: DOCK_DECK, z: at.z });
   }
   // the lamps light the boards: the post at the sea end, the one by the door
   const post = dock.localToWorld(new THREE.Vector3(0.17, 1.28, 2.5));
@@ -44790,6 +44935,7 @@ function update(dt, rawDt = dt) {
   wellManClear(dt);          // after the chase has moved him: the well is solid to him
   if (wellUnit && wellUnit.g.visible) wellManAir(wellUnit);   // and the pounce's flight on top of where it put him
   updateCrusader(dt);       // and the flail knight's chain, after whatever moved his arm
+  updatePaladin(dt);        // and the paladin's blade: its tell, its trail, the stones, the farmers in its way
   updateThroneBoss(dt);     // and the marauder on his throne, on the hall's floor
   updateDante(dt);          // and the beast at the foot of his dais, and its chain
   if (window.__samDbg) window.__samDbg('mut');
@@ -46465,7 +46611,7 @@ function animateFrame() {
    * the rest of the frame goes on. */
   try { update(dt, rawDt); } catch (e) { bwFrameErr(e); }
   updateHatch(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updatePackTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updatePalCut(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updatePackTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -56614,6 +56760,7 @@ function warmSamurai() {
 
 function updateDojo(dt) {
   cullWorldInHall();
+  updateSamScore();
 
   if (!dojoReady) return;
   if (inDojo) warmSamurai();
@@ -58012,12 +58159,62 @@ function spawnSamurai(behind) {
                                     camera.position.z - (DOJO_Z + sz));
 }
 
+/* THE FIGHT HAS A SCORE NOW (2026-10-17, the owner's "5450 score": "add this to the samurai fight make it start as soon
+ * as it says 'thats my sword'"). It comes in on the line itself — the file has no silence at its head — on the music
+ * slider, and it LOOPS for as long as the fight does, each pass crossfaded 1.5 s into the next (it ends on a full bar,
+ * not a fade). It goes when he is dead (a long fade, under the quiet before the portal), when you are, or when you are
+ * out of the dojo. Asked for the moment you are in the dojo (`lazyBuf`); if it is still on its way at the line it
+ * comes in when it lands. Never on a replay or a restore. (An older looped "8 bit samurai fight" was taken out on the
+ * owner's word: this is a different track, asked for by name.) */
+const SAM_SCORE = 'assets/samurai-score.m4a', SAM_SCORE_XF = 1.5;
+let samScore = null, samScoreWant = false;
+function samScorePass(at, fadeIn) {
+  const ctx = audioCtx, buf = lazyBuf(SAM_SCORE);
+  const env = ctx.createGain(); env.gain.setValueAtTime(fadeIn > 0 ? 0.0001 : 1, at);
+  if (fadeIn > 0) env.gain.linearRampToValueAtTime(1, at + fadeIn);
+  env.connect(samScoreVol);
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(env); src.start(at);
+  src.onended = () => { try { env.disconnect(); } catch (e) { /* */ } };
+  return { src, env, t0: at, dur: buf.duration };
+}
+function startSamScore() {
+  samScoreWant = true;
+  const ctx = audioCtx; if (!ctx || samScore) return;
+  if (!lazyBuf(SAM_SCORE)) return;                     // (`updateSamScore` starts it when it lands)
+  if (!samScoreVol) { samScoreVol = ctx.createGain(); samScoreVol.connect(ctx.destination); }
+  samScoreVol.gain.value = settings.volume * settings.musicVolume * SAM_SCORE_LEVEL;
+  samScore = { cur: samScorePass(ctx.currentTime + 0.02, 0.04), next: null };
+}
+function stopSamScore(secs = 2) {
+  samScoreWant = false;
+  if (!samScore || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  for (const P of [samScore.cur, samScore.next]) if (P) { holdParam(P.env.gain, t); P.env.gain.linearRampToValueAtTime(0.0001, t + secs); try { P.src.stop(t + secs + 0.05); } catch (e) { /* */ } }
+  samScore = null;
+}
+function updateSamScore() {
+  const ctx = audioCtx; if (!ctx) return;
+  if (inDojo) lazyBuf(SAM_SCORE);
+  if (samScoreWant && !samScore && inDojo && lazyBuf(SAM_SCORE)) startSamScore();
+  if (!samScore) return;
+  if (!inDojo || dying || ended) { stopSamScore(dying ? 1.2 : 1.5); return; }
+  if (samurai && !samurai.st.alive) { stopSamScore(5); return; }
+  // the next pass, laid over the end of this one
+  const S = samScore, t = ctx.currentTime;
+  if (!S.next && t > S.cur.t0 + S.cur.dur - SAM_SCORE_XF - 0.5) {
+    const at = Math.max(t + 0.02, S.cur.t0 + S.cur.dur - SAM_SCORE_XF);
+    S.next = samScorePass(at, SAM_SCORE_XF);
+    holdParam(S.cur.env.gain, at); S.cur.env.gain.linearRampToValueAtTime(0.0001, at + SAM_SCORE_XF);
+  }
+  if (S.next && t > S.next.t0 + SAM_SCORE_XF) { S.cur = S.next; S.next = null; }
+}
 function wakeSamurai() {
   if (samuraiSpoke) return;
   samuraiSpoke = true;
   spawnSamurai(true);                  // he arrives now, at your back
   if (!samurai) return;
   bossLine('THAT’S MY SWORD.');
+  if (!replaying && !applyingSave) startSamScore();    // the fight's score, on the line (2026-10-17)
   mutPlay(samurai, 'taunt');
   samurai.holdAnim = true;             // or mutAnim fades it straight back out for the idle
   sfxSamuraiShout();
@@ -84893,20 +85090,17 @@ function updateHenrySnatch(dt) {
        * their own control"). The lens and the controls are handed back on the splash; the clock runs on behind them
        * (`released`: not in `frozen()`, no hold on the camera) for the bird flying off and for the whale, which comes
        * up where he went in exactly as it did. He does not come back up ("dont show henry in the water"). */
-      C.released = true; C.hp = C.splash.clone();
-      /* (and the LENS stays — 2026-10-15, the owner: "i couldn't see the whale at all … it should still look how it
-       * used to when it was a cutscene": at your own field of view a whale 150 m off is a speck. The take's long lens
-       * is held, pointed where he went in, until the whale has gone back down; the look is yours the whole time.) */
-      C.lensHold = true;
-      cineHold = false; dialogTarget = null; dialogHead = null;
-      lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order); lookEuler.z = 0; camera.quaternion.setFromEuler(lookEuler);
+      /* (NOT handed back any more — 2026-10-17, the owner: "dont let the camera be moved my playtester moved and didnt
+       * see the whale". The take holds the lens where he went in, long, until the whale is back down; `hjEnd` gives
+       * the look and the legs back. The whale also comes sooner: `HJW_T.at` 9.0 → 4.0.) */
+      C.hp = C.splash.clone();
     }
   }
   // after the splash: him in the water, and then the whale (`hjwTick`)
   const lens = C.ts !== undefined ? hjwTick(C, h, dt, C.t - C.ts) : null;
   if (C.voice) hjVoiceTick(C.voice, h.mode === 'fall' ? h.fc : hjPelvis(h, C.pelV));
   if (C.splash) wfUpdateFx(dt);
-  // the lens: on him, on the two of them, on him falling — and from the splash it is yours again
+  // the lens: on him, on the two of them, on him falling, then held where he went in until the whale is gone
   if (!C.released) {
   let T, R = null, minF = 14, fk = 2;
   if (C.phase === 'dive') T = h.B.CC_Base_Head.getWorldPosition(_hjA);
@@ -84958,7 +85152,7 @@ function hjSprayOut() {
  * beached one, lying on its jaw, never does (`HJW_GLSL`). Its programs are
  * compiled when it is built, behind the start cover. */
 const HJW_K = 1.15;                                            // a thirty-seven metre animal
-const HJW_T = { surface: 2.2, at: 9.0, rise: 0.5, shut: 0.6, top: 0.82, gone: 2.2, after: 1.6 };
+const HJW_T = { surface: 2.2, at: 4.0, rise: 0.5, shut: 0.6, top: 0.82, gone: 2.2, after: 1.6 };
 const HJW_ZM = 480;                                            // where along its mouth he is taken (model z)
 const HJW_GLSL = (() => {
   const a = `-${WB_OPEN_UP.toFixed(3)} * aG : -${WB_OPEN_DN.toFixed(3)} * aG`;
@@ -92946,6 +93140,12 @@ MUT_ATTACKS.fKick   = { wind: 0.34, strike: 0.10, recover: 0.34, hit: 0.436,  re
   A.fsKick  = FM('mZKick',   0.442, 0.50, 0.78, { wind: 0.36, clipRate: 1.4, limbs: [2], chain: 'fsPunch', chainP: 0.35 });
   A.fsKick2 = FM('mZKick2',  0.481, 0.42, 0.67, { wind: 0.42, clipRate: 1.8, limbs: [2], chain: 'fsJab', chainP: 0.35 });
   A.fsSwipe = FM('mSwipe',   0.481, 0.44, 0.74, { wind: 0.44, clipRate: 2.0, limbs: [0, 1], chain: 'fsJab', chainP: 0.35 });
+  /* AND EVERY ONE OF THEM CAN BE SEEN COMING (2026-10-17, "they just shrug and you get hurt"). Strokes played at two
+   * and two and a half times the capture went by in a few frames — a jab, a hook, the hatchet's cut read as a shrug of
+   * the shoulders and a hit. They play at the capture's own speed (`naturalSwings`), where a jab is in you three tenths
+   * of a second after it starts: every one is now drawn back to just over half way and HELD there (`natHold`) — the
+   * fists and the rake's thrust longest, because theirs are the smallest movements — then let go. */
+  for (const k in A) if (/^(ax|hm|rk|fs)[A-Z]/.test(k)) { A[k].natHold = Math.max(A[k].natHold || 0, /^(fs|rk)/.test(k) ? 0.16 : 0.12); A[k].cockF = A[k].cockF ?? 0.55; }   // (natHold 0.30 / 0.22 at first: a man frozen at the top of every swing)
 }
 /* A temperament's moves are GENERIC (a cut, a thrust, a kick); what they are
  * on a given man depends on what is in his fist — the roster lends tools
@@ -92976,7 +93176,7 @@ const FARM_BASE = {
    * 35 cm off you. A body's width now, from the shins (they kick and sweep)
    * to the head, and the lunge closes WITH the blow (`lungeLead`) so it
    * arrives rather than being thrown from where he stood. */
-  limbR: 0.32, landSlop: 0.30, bodyLow: 1.5, lungeLead: 0.30, aimDrop: 0.25, flinch: 1.0,
+  limbR: 0.32, landSlop: 0.30, bodyLow: 1.5, bodyLowArm: 0.85, hitFront: 0.30, lungeLead: 0.30, aimDrop: 0.05, flinch: 1.0,   // (round 2026-10-17: aimed at the face, counted from the chest up — see `blowLands`)
   /* A KILLING BLOW THROWS THEM ACROSS THE STREET: a harder kick, the cap on a
    * first flight raised, and the leash on how far a body may travel let out
    * to match. The castle's walls hold them (`fortBody`'s ragdoll flag). */
@@ -93262,7 +93462,7 @@ function authorFarmerClips(u, m) {
   farmArm(u, m);
   installLife(u, m, J);
   if (u.life) u.life.grip = u.farmTool ? FARM_FIST : null;     // a fist round the handle; a bare hand is the claws' fist
-  if (u.farmTool) farmSeatTool(u, m, FARM_FIST);
+  if (u.farmTool) { farmSeatTool(u, m, FARM_FIST); u.farmToolBase = { p: u.farmTool.position.clone(), q: u.farmTool.quaternion.clone() }; }
   u.packList = u.packList || farmUnits;
   const mc = farmMocap(u, R0);
   if (!mc) u.parLate = () => {
@@ -93348,7 +93548,7 @@ function farmArm(u, m) {
   hand.matrixWorld.clone().invert().multiply(Mw).decompose(mesh.position, mesh.quaternion, mesh.scale);
   hand.add(mesh);
   const tip = new THREE.Object3D(); tip.position.copy(want.c).addScaledVector(want.ax, want.hi); mesh.add(tip);
-  u.farmTool = mesh; u.farmPalm = palm.clone();
+  u.farmTool = mesh; u.farmPalm = palm.clone(); u.farmGrip = gp.clone();
   u.bones = u.bones || {}; u.bones.tip = tip; u.limbs = null;
 }
 /* AND THE HANDLE IS IN THE FIST (round 3: "make the farmers actually hold there weapons"). The handle went through
@@ -93885,8 +94085,75 @@ function farmFightDone() { return farmFight.done || !farmUnits.length; }
  * the fight goes on — until all twenty have been out and are down. A door
  * opens the moment there is room for another man; two go together now and
  * then, because two doors crashing at once is the best thing this fight has. */
+/* (The weapon-hand glint that was here is gone: the owner, 2026-10-17, "i dont need glints when fighting the farmers".) */
+/* THE EDGE LEADS THE CUT (2026-10-17, the owner: "their weapons facing the right way"). The tool is seated once, at the
+ * stance (`farmArm`), and every swing is a borrowed capture — the orc's great sword, the knight's — whose wrist turns its
+ * own way. Measured at each contact (the head's travel against the way its face points, 1 = the face leading): the
+ * hatchet's cut −0.17, the hammer's −0.17, the rake's tines −0.8 (backwards). So through each blow the tool is ROLLED
+ * about its own handle until its face (`FARM_TOOLS[t].bT`: the axe's bit, the hammer's face, the tines) points the way
+ * the head is going — eased in over the 0.3 s before the blow and out through the recovery, the way a wrist turns an
+ * axe into a cut. Not for kicks, and not where the head moves along its own handle (a thrust: there is no face to
+ * lead with). */
+const _frH = new THREE.Vector3(), _frV = new THREE.Vector3(), _frA = new THREE.Vector3(), _frB = new THREE.Vector3(),
+  _frC = new THREE.Vector3(), _frD = new THREE.Vector3(), _frQ = new THREE.Quaternion(), _frR = new THREE.Quaternion();
+/* The roll each swing needs, measured ONCE on this man's own clip and seat (round 2: followed frame by frame off the
+ * head's travel it was still turning when the blow counted — 5 of 13 blows led with the face): the clip is posed a
+ * hair before and at its contact (`A.hit`), the head's travel there taken across the handle, and the turn about the
+ * handle that brings the face onto it kept per swing. Every action's state is put back after, as `measureGaits` does. */
+function farmRollMeasure(u) {
+  const mesh = u.farmTool, B = u.farmToolBase, W = FARM_TOOLS[u.kind.tool], tip = u.bones && u.bones.tip;
+  const out = {};
+  if (!mesh || !B || !W || !tip || !u.mixer || !u.clips || !u.atk) return out;
+  const saved = [];
+  for (const k in u.clips) { const a = u.clips[k]; saved.push([a, a.time, a.enabled, a.paused, a.getEffectiveWeight(), a.isRunning() || u.mixer._isActiveAction(a)]); }
+  const rot = u.model ? u.model.rotation.y : 0;
+  mesh.position.copy(B.p); mesh.quaternion.copy(B.q);
+  for (const k of Object.keys(u.kind.use || {})) {
+    const A = u.atk[k], a = A && (u.clips[k] || (A.clip && u.clips[A.clip]));
+    if (!A || !a || !(A.hit > 0.05) || (A.limbs && A.limbs.some((i) => i >= 2))) continue;
+    for (const x of Object.values(u.clips)) { x.stop(); x.enabled = false; x.setEffectiveWeight(0); }
+    a.reset(); a.play(); a.enabled = true; a.setEffectiveWeight(1); a.paused = true;
+    const dur = a.getClip().duration;
+    const at = (f) => { a.time = dur * Math.max(0, Math.min(1, f)); u.mixer.update(0); u.g.updateMatrixWorld(true); tip.getWorldPosition(_frH); return _frH; };
+    _frD.copy(at(A.hit - 0.035)); at(A.hit);
+    _frV.subVectors(_frH, _frD);
+    mesh.getWorldQuaternion(_frQ);
+    _frA.copy(W.ax).applyQuaternion(_frQ).normalize(); _frB.copy(W.bT).applyQuaternion(_frQ).normalize();
+    const sp = _frV.length(); _frV.addScaledVector(_frA, -_frV.dot(_frA));
+    if (sp < 1e-5 || _frV.length() < sp * 0.4) continue;           // (along its handle: a thrust, nothing to turn)
+    _frV.normalize();
+    out[k] = Math.atan2(_frC.crossVectors(_frB, _frV).dot(_frA), _frB.dot(_frV));
+    a.stop(); a.enabled = false; a.setEffectiveWeight(0);
+  }
+  for (const [a, t, en, pa, w, run] of saved) { if (run) a.play(); a.time = t; a.enabled = en; a.paused = pa; a.setEffectiveWeight(w); }
+  if (u.model) u.model.rotation.y = rot;
+  u.mixer.update(0);
+  return out;
+}
+function farmToolRoll(u, dt) {
+  const mesh = u.farmTool, B = u.farmToolBase, W = FARM_TOOLS[u.kind.tool];
+  if (!mesh || !B || !W || !u.farmGrip) return;
+  if (!u.farmRollK && u.natDone) u.farmRollK = farmRollMeasure(u);
+  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
+  let want = 0;
+  if (A && u.farmRollK && u.farmRollK[st.swing] !== undefined) {
+    const t = st.atk, end = A.wind + A.strike;
+    const w = THREE.MathUtils.smoothstep(t, A.wind - 0.35, A.wind - 0.06) * (1 - THREE.MathUtils.smoothstep(t, end, end + Math.max(0.15, (A.recover || 0.4) * 0.5)));
+    want = u.farmRollK[st.swing] * w;
+  }
+  const R = u.farmRoll || (u.farmRoll = { ang: 0 });
+  R.ang += (want - R.ang) * Math.min(1, dt * 18);
+  mesh.position.copy(B.p); mesh.quaternion.copy(B.q);
+  if (Math.abs(R.ang) < 0.005) { R.ang = want === 0 ? 0 : R.ang; return; }
+  // turned about the handle's own line, through the grip, so the fist does not move on it
+  _frR.setFromAxisAngle(W.ax, R.ang);
+  mesh.quaternion.multiply(_frR);
+  _frD.copy(u.farmGrip).sub(_frC.copy(u.farmGrip).applyQuaternion(_frR)).multiply(mesh.scale).applyQuaternion(B.q);
+  mesh.position.add(_frD);
+}
 function updateFarmers(dt) {
   updateFarmDoors(dt);
+  if (inFort) for (const u of farmUnits) if (u.farmTool && u.farm && u.farm.out && u.g.visible) farmToolRoll(u, dt);
   if (farmFight.done || !farmUnits.length) return;
   if (!inFort || fortBusy || !fortReady || frozen()) return;
   farmFight.t += dt;
@@ -93897,7 +94164,8 @@ function updateFarmers(dt) {
   farmCrowdTick(dt);
   let live = 0, dead = 0;
   for (const u of farmUnits) { if (u.farm.out && u.st.alive) live++; if (!u.st.alive) dead++; }
-  if (dead >= farmUnits.length) { farmFight.done = true; return; }
+  palMayCome(dead);
+  if (dead >= farmUnits.length) { if (paladinDone()) farmFight.done = true; return; }
   farmLostTick(dt, live);
   const cap = farmFight.sent < 5 ? 4 : farmFight.sent < 11 ? 5 : 6;
   farmFight.next -= dt * (live < 2 ? 2.2 : 1);
@@ -93960,10 +94228,12 @@ function farmCalm() {
     farmFight.sent--;
   }
   farmFight.started = false;
+  palCalm();
 }
 function farmRetireAll() {
   farmFight.done = true;
   for (const u of farmUnits) retireUnit(u);
+  if (typeof paladin !== 'undefined' && paladin.unit && !paladin.unit.retired) retireUnit(paladin.unit);   // (a save from before he came, with the street already won)
 }
 if (FARM_ROSTER.length) {
   const P = FARM_PARK();
@@ -93976,6 +94246,810 @@ if (FARM_ROSTER.length) {
   }
 }
 
+
+/* ---- THE PALADIN ---------------------------------------------------------
+ * (2026-10-17, the owner: "make the paladin be big and swing his sword
+ * readable … a brand new smooth moveset … weighted like he hits hard, more
+ * sparks on the blocks … wide swings … act like his sword's heavy … he comes
+ * in halfway with a cutscene where he walks up, slices a farmer's head,
+ * exploding it … wide swings that sometimes kill farmers like he doesn't
+ * care … like the big knights in Sekiro".)
+ *
+ * WHO HE IS. The owner's "paintpoly paladin knight" (`tools/paladin_pack.py` →
+ * `assets/paladin.glb`, his Rigify rig rebuilt onto Mixamo's names and his
+ * paint made grim), at 2.45 m: a head and a half over you, not a giant. His
+ * blows are Mixamo's standing melee set, which nothing else in the game
+ * swings; his stance, gait and flinches are the Great Sword Pack clips the
+ * orc does not use (`tools/ntar_moves.py -- paladin` → `paladin-moves.json`).
+ *
+ * HOW HE FIGHTS. Slowly, and then not: every swing is drawn up and HELD
+ * (`natHold`) — the tell is long and it is the thing to read — then let go at
+ * the clip's own speed. He turns slowly (`turnMax`), so the way round him is
+ * real, and a light blow does not move him (`poise`). Your guard holds, but
+ * it costs: a block against him is a wall of sparks off his blade, a flash,
+ * a ring and a shove back a step (`palBlockFx`).
+ *
+ * AND THE FARMERS ARE IN HIS WAY. Anything his blade passes through on a
+ * swing dies (`palCleave`), whoever it was swung at.
+ *
+ * WHEN HE COMES. With half the twenty dead (`palMayCome`), the street stops:
+ * the bell's last stroke, a low dread under everything, and out of the dark
+ * past the nearest farmer he walks, the blade's point down on the stones and
+ * sparking. The farmer turns to look at him. He takes the man's head off
+ * without stopping, and the world slows for it; then he turns to you and
+ * shouts, and the fight is his (`palCut`, wall clock, the world held).
+ * The back door stays barred until he is dead too (`farmFight.done`). */
+const PALADIN_MOVES_URL = 'assets/paladin-moves.json';
+let paladinMoves = null, paladinMovesLate = null;
+bwFetch(PALADIN_MOVES_URL).then((buf) => {
+  try { paladinMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
+  if (paladinMovesLate) { paladinMovesLate(); paladinMovesLate = null; }
+}, () => {});
+const PAL_JOINTS = {
+  hip: 'Hips', waist: 'Spine', chest: 'Spine2', neck: 'Neck', head: 'Head',
+  clavL: 'LeftShoulder', clavR: 'RightShoulder', armL: 'LeftArm', armR: 'RightArm', foreL: 'LeftForeArm', foreR: 'RightForeArm',
+  thighL: 'LeftUpLeg', thighR: 'RightUpLeg', calfL: 'LeftLeg', calfR: 'RightLeg', footL: 'LeftFoot', footR: 'RightFoot',
+};
+const PALADIN_RAG = {};
+for (const n of ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
+  'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase',
+  'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase']) PALADIN_RAG['Character1_' + n] = n;
+let PAL_TRAVEL_K = 0.8;
+function authorPaladinClips(u, m, gltf) {
+  poseRig(u, m, null, PAL_JOINTS, {});
+  u.palTip = m.getObjectByName('paladin_tip'); u.palHilt = m.getObjectByName('paladin_hilt');
+  /* HIS CLIPS ARE IN HIS OWN FILE NOW (2026-10-17, round 4; the owner: "his rig is bad it makes no sense … hes not
+   * even holding his sword … the moveset isnt showing up right at all"). Three packs' clips used to be retargeted here
+   * at load, with no fingers and one grip read off one capture's rest: the blade sat in an open hand at a different
+   * wrong angle in every pack. `tools/paladin_bake.py` bakes every clip onto his own skeleton in Blender instead — his
+   * fist closed round the grip, his hand turned each frame so his blade lies along the captured man's — and the loader
+   * has already made actions of them by name. What is left here is what the moves file says about each: how far it
+   * carries him (`travel`, in his model's metres, so times the model's scale: his root then moves as far as his feet
+   * do), and from that the speed a gait is drawn at. */
+  const lay = (moves) => {
+    for (const n in moves.clips) {
+      const C = moves.clips[n]; if (!u.clips[n] || !C.travel || !C.travel.length) continue;
+      // (a swing's ×0.8: a captured man's lunge scaled up to a 2.75 m body covered three metres; a gait's is its feet's, whole)
+      const k = (m.scale.x || 1) * (C.mode === 'gait' || C.mode === 'idle' ? 1 : PAL_TRAVEL_K);
+      const T = u.clipTravel[n] = C.travel.map(([x, z]) => [x * k, z * k]);
+      const e = T[T.length - 1], sp = Math.hypot(e[0], e[1]) / Math.max(0.05, C.dur);
+      if (sp > 0.15) u.clipSpeed[n] = sp;
+    }
+    palContact(u);
+    if (u.kind.alias) for (const a in u.kind.alias) if (u.clips[u.kind.alias[a]]) u.clips[a] = u.clips[u.kind.alias[a]];
+    mutStartPose(u);
+    u.natDone = false;
+    u.clipsPending = 0;
+  };
+  u.clipsPending = 1;
+  if (paladinMoves) bwTurn().then(() => lay(paladinMoves));
+  else paladinMovesLate = () => lay(paladinMoves);
+  return [];
+}
+/* WHERE EACH BLOW LANDS, MEASURED ON HIS OWN BLADE. A capture's contact frame is where the HAND is fastest, which
+ * on a long blade swung from the shoulders is not where the POINT goes through the man in front of him — measured,
+ * the first cut's "contact" had the point 2.8 m up, over your head. So each swing's clip is posed through on his
+ * own skeleton and the frame taken where the point crosses the space in front of him (ahead of him, within a body's
+ * width of his line, between knee and crown) at the greatest speed. `A.tipF` is how far ahead it is then. */
+const _pcV = new THREE.Vector3(), _pcP = new THREE.Vector3(), _pcH = new THREE.Vector3();
+function palContact(u) {
+  if (!u.palTip || !u.mixer || !u.model) return;
+  const yaw = u.g.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw), o = u.g.position;
+  const hold = u.holdAnim; u.holdAnim = true;
+  const at = (a, t) => { a.time = t; u.mixer.update(0); u.model.rotation.y = 0; u.g.updateMatrixWorld(true); u.palTip.getWorldPosition(_pcV); u.palHilt.getWorldPosition(_pcH); };
+  for (const k in u.atk) {
+    const a = u.clips[k]; if (!a || !MUT_ATTACKS[k] || !u.kind.use[k]) continue;
+    for (const x of Object.values(u.clips)) x.stop();
+    a.reset(); a.play(); a.paused = true; a.setEffectiveWeight(1);
+    const dur = a.getClip().duration, N = Math.max(30, Math.round(dur * 60));
+    // (only after the top of the draw: the blade rising through the same space on the way UP is not the blow)
+    let apex = 0, top = -1e9;
+    for (let i = 0; i <= N * 0.8; i++) { at(a, dur * i / N); if (_pcV.y > top) { top = _pcV.y; apex = i; } }
+    // the blow: the fastest frame after it with the blade's middle at a man's height, across his front
+    let best = null, has = false;
+    const sp = new Float32Array(N + 1);
+    for (let i = apex; i <= N; i++) {
+      at(a, dur * i / N);
+      if (has) {
+        sp[i] = _pcV.distanceTo(_pcP) / (dur / N);
+        // (where his feet have taken him by then: the swing carries him, `palRootMotion`)
+        const TT = clipTravelAt(u, k, i / N), tx = TT ? TT.x : 0, tz = TT ? TT.y : 0;
+        const mx = _pcH.x + (_pcV.x - _pcH.x) * 0.65 - o.x + tx * Math.cos(yaw) + tz * Math.sin(yaw), mz = _pcH.z + (_pcV.z - _pcH.z) * 0.65 - o.z - tx * Math.sin(yaw) + tz * Math.cos(yaw), my = _pcH.y + (_pcV.y - _pcH.y) * 0.65 - o.y;
+        const f = mx * fx + mz * fz, sd = mx * fz - mz * fx;
+        const bear = Math.atan2(sd, f);           // (and across his FRONT: the follow-through behind him is fast too)
+        const sc = sp[i] * Math.max(0.15, Math.cos(bear));
+        // (round 7: on HIS scale — a captured cut meets a man the performer's size, and on a 2.75 m body that is 1.9–2 m
+        // up, over your head; the arm aim (`aimK`, `aimDrop`) brings it down onto you and `palLands` counts only steel at
+        // your body's height, so a blade over your head never hurts you)
+        const ty = _pcV.y - o.y;
+        if (my > 0.6 && my < 2.4 && ty < 2.9 && Math.hypot(f, sd) > 0.45 && Math.abs(bear) < 2.3 && (!best || sc > best.sc)) best = { sc, sp: sp[i], i, frac: i / N, bear, d: Math.hypot(f, sd) };
+      }
+      _pcP.copy(_pcV); has = true;
+    }
+    a.stop();
+    // (a blow that never crosses his front at a man's height is not one he throws: nothing to read, nothing it can hit)
+    if (!best || best.frac < 0.08 || best.frac > 0.95) { u.atk[k].skip = true; continue; }
+    /* THE BLOW IS THE WHOLE FAST PART OF THE SWING, not a frame. His hit is the blade passing through you
+     * (`palLands`), so the active window opens where the point's speed first reaches half the blow's and closes
+     * where it falls back under it: what you see cut through you is what hits you. */
+    let i0 = best.i, i1 = best.i;
+    while (i0 > apex + 1 && sp[i0 - 1] >= best.sp * 0.5) i0--;
+    while (i1 < N && sp[i1 + 1] >= best.sp * 0.5) i1++;
+    // (and opened a beat sooner: you stand nearer him than the space measured in, so the blade reaches you first —
+    // measured in the fight, it went through you 0.10–0.15 s before the window opened, on every blow)
+    /* THE WHOLE CUT IS LIVE, AND ONLY THE CUT. The hit is the blade passing through you (`palLands`), so the window
+     * runs from the top of the draw (or a third of a second before the fast part, if that is later) to where the
+     * blade has slowed again: whatever the blade visibly goes through on the way down lands, and nothing before or
+     * after it does. (A contact FRAME was always a little early or late against a held, slowed, stepping capture:
+     * measured, the blade went through a standing man 0.1–0.15 s outside it on most blows.) */
+    i0 = Math.max(apex, i0 - Math.round(0.18 * (u.atk[k].rate || 1) / dur * N));
+    u.atk[k].hit = Math.max(0.05, i0 / N); u.atk[k].tipF = best.d; u.atk[k]._nat = false;
+    u.atk[k].strikeFix = THREE.MathUtils.clamp((Math.min(N, i1 + 3) - i0) / N * dur, 0.15, 0.8);
+    /* AND HE STANDS WHERE IT CROSSES YOU. The captured swordsman is a small man cutting close, so a blow passes
+     * where its blade crossed his front (`best.d`), not at a stopping distance typed for a big one: measured, at 1.9 m
+     * every window passed you a metre and a half short. He comes in to that, and the lunge is only a step. */
+    u.atk[k].stop = THREE.MathUtils.clamp(best.d * 0.95, 1.15, 2.6); u.atk[k].lunge = 0.15;
+    u.atk[k].reach = Math.max(u.atk[k].stop + 0.8, Math.min(u.atk[k].reach, u.atk[k].stop + 1.4));
+    /* AND THE BLOW IS TURNED ONTO THE MAN IN FRONT OF HIM. A captured cut finishes where the performer's partner was,
+     * which is not always straight ahead of where his hips point — the TC string's first cut comes down across his
+     * left side. The clip is turned about the vertical (its root's rotation, every key) by the bearing the blade's
+     * middle had at the blow, so the blade crosses his own line there. Measured, logged on `u.atk[k].yawFix`. */
+    const phi = THREE.MathUtils.clamp(-best.bear, -0.9, 0.9);      // (no more than about fifty degrees: further and the whole move reads as a man facing the wrong way)
+    if (Math.abs(phi) > 0.05) {
+      const tr = a.getClip().tracks.find((t) => t.name === 'Hips.quaternion');
+      if (tr) {
+        // ramped: nothing at the clip's first frame, all of it at the blow, nothing again at its last — he turns his body
+        // INTO the cut, and a chained piece still meets the one before it where that one ended
+        const qy = new THREE.Quaternion(), q = new THREE.Quaternion(), v = tr.values, T = tr.times, hT = dur * best.frac, Y = new THREE.Vector3(0, 1, 0);
+        for (let i = 0, j = 0; i < v.length; i += 4, j++) {
+          const t = T[j], w = t <= hT ? THREE.MathUtils.smootherstep(t, 0, hT) : 1 - THREE.MathUtils.smootherstep(t, hT, dur);
+          qy.setFromAxisAngle(Y, phi * w);
+          q.set(v[i], v[i + 1], v[i + 2], v[i + 3]).premultiply(qy); v[i] = q.x; v[i + 1] = q.y; v[i + 2] = q.z; v[i + 3] = q.w;
+        }
+        u.atk[k].yawFix = +phi.toFixed(2);
+      }
+    }
+  }
+  for (const k in u.atk) { const A = u.atk[k]; if (A.chain && (!u.atk[A.chain] || u.atk[A.chain].skip || !u.clips[A.chain])) A.chain = null; }
+  // the distance his footwork holds and the longest he throws from, again, off the measured blows
+  let acc = 0, w = 0, mx = 0;
+  for (const k in u.kind.use) { const A = u.atk[k]; if (!A || A.skip || !u.clips[k]) continue; acc += A.reach * u.kind.use[k]; w += u.kind.use[k]; if (!A.minDist) mx = Math.max(mx, A.reach); }
+  if (w > 0) { u.ring = acc / w; u.maxReach = mx; }
+  u.holdAnim = hold;
+  u.palMeasured = true;
+  // and his timing off it, here and now (the creature tick that would have done it is not run while he waits underground)
+  naturalSwings(u); u.natDone = true; u.palNat = true;
+  for (const k in u.atk) { const A = u.atk[k]; if (A.strikeFix) { const w2 = A.strikeFix / (A.rate || 1), d = w2 - A.strike; A.strike = w2; A.recover = Math.max(0.08, A.recover - Math.max(0, d)); } }
+  // (round 6: the Great Sword Pack's cuts walk all the way back to the guard; he leaves that 30 % sooner, into whatever
+  // he does next — the blend carries the rest — so the fight is blows, not recoveries)
+  for (const k in u.atk) { const A = u.atk[k]; if (A.strikeFix && !A._recK) { A._recK = true; A.recover *= 0.7; } }
+}
+/* THE SWINGS. `hit` is overwritten by the clip's own contact frame when it
+ * loads (above); `natHold` is the held top of the swing in seconds and
+ * `cockF` how far toward contact the blade is drawn before it holds. The
+ * reaches are a two-metre blade on a 2.45 m man. Two hits for the cleave,
+ * the turning sweep and the leap; the wide sweep and its return are the ones
+ * that go through farmers. */
+/* AND HIS STRING (the owner's MocapOnline "TC Sword" pack): one swordsman's combination cut into its four blows,
+ * each of which can be thrown alone and each of which CHAINS into the next — so the whole string comes back as he
+ * played it, with a hit of its own on every blow, and he can stop after any of them. The first cut holds its draw;
+ * the second and third are quick, with only a beat before them (a delay you learn, Sekiro's rhythm); the last
+ * raises the blade high, HOLDS it there — the longest tell he has — and brings it down into the stones. */
+/* (and slower than the captured man by a fifth, `rate` 0.78, the owner: "bigger … slightly massive with heavy
+ * combat": a 2.75 m man in plate does not swing like a fencer) */
+/* HIS SWINGS NOW (2026-10-17, the owner: "use these animations instead, scrape all the others unless they match
+ * well"): the EEJANAI pack's slashes, each a whole blow of a real swordsman, and chained into strings of his own.
+ * `hit`, the active window and the turn onto you are measured on his blade at load (`palContact`); `lunge` is
+ * roughly the ground the clip itself covers; every one holds its draw (`natHold`) for the tell. The fifth starts
+ * three metres up in the air with no take-off and is left out. */
+MUT_ATTACKS.pS1 = { wind: 0.6, strike: 0.16, recover: 0.4, hit: 0.5, reach: 2.70, lunge: 0.7, chain: 'pS3', chainP: 0.50, w: 0.20, guardK: 1.40, limbs: [0], stop: 1.90, natHold: 0.26, cockF: 0.55, rate: 1.0, twoHanded: true, cleave: true };
+MUT_ATTACKS.pS2 = { wind: 0.7, strike: 0.16, recover: 0.4, hit: 0.5, reach: 3.50, lunge: 1.4, chain: 'pS3', chainP: 0.45, w: 0.16, guardK: 1.60, limbs: [0], stop: 1.90, natHold: 0.20, cockF: 0.55, rate: 1.0, twoHanded: true, cleave: true };
+MUT_ATTACKS.pS3 = { wind: 0.7, strike: 0.16, recover: 0.4, hit: 0.5, reach: 3.30, lunge: 1.2, chain: 'pS4', chainP: 0.40, w: 0.14, guardK: 1.60, limbs: [0], stop: 1.90, natHold: 0.16, cockF: 0.55, rate: 1.0, twoHanded: true, cleave: true };
+MUT_ATTACKS.pS4 = { wind: 0.7, strike: 0.16, recover: 0.5, hit: 0.5, reach: 3.40, lunge: 1.3, chain: 'pS2', chainP: 0.40, w: 0.14, dmg: 2, slam: true, guardK: 1.60, limbs: [0], stop: 1.90, natHold: 0.20, cockF: 0.55, rate: 1.0, twoHanded: true, cleave: true };
+MUT_ATTACKS.pS6 = { wind: 0.8, strike: 0.18, recover: 0.6, hit: 0.5, reach: 3.30, lunge: 1.1, chain: 'pS3', chainP: 0.35, w: 0.14, guardK: 1.70, limbs: [0], stop: 1.90, natHold: 0.30, cockF: 0.60, rate: 1.0, twoHanded: true, cleave: true };
+MUT_ATTACKS.pS7 = { wind: 1.0, strike: 0.18, recover: 0.8, hit: 0.5, reach: 2.60, lunge: 0.4, chain: null,  chainP: 0,    w: 0.12, dmg: 2, guardK: 2.10, limbs: [0], stop: 1.90, natHold: 0.50, cockF: 0.70, rate: 1.0, twoHanded: true, cleave: true, slam: true };
+MUT_ATTACKS.pS8 = { wind: 0.4, strike: 0.14, recover: 0.4, hit: 0.5, reach: 2.80, lunge: 0.8, chain: 'pS1', chainP: 0.55, w: 0.14, guardK: 1.20, limbs: [0], stop: 1.90, natHold: 0.10, cockF: 0.50, rate: 1.0, twoHanded: true, cleave: true };
+MUT_ATTACKS.pS9 = { wind: 0.9, strike: 0.18, recover: 0.7, hit: 0.5, reach: 4.00, lunge: 1.7, chain: 'pS3', chainP: 0.30, w: 0.12, dmg: 2, hold: true, minDist: 3.2, guardK: 2.00, limbs: [0], stop: 2.02, natHold: 0.40, cockF: 0.60, rate: 1.0, twoHanded: true, cleave: true, slam: true };
+MUT_ATTACKS.pCut1   = { wind: 0.8, strike: 0.16, recover: 0.4, hit: 0.64, reach: 2.90, lunge: 1.1, chain: 'pCut2', chainP: 0.62, w: 0.30, guardK: 1.50, limbs: [0], stop: 1.70, natHold: 0.30, cockF: 0.55, twoHanded: true, cleave: true };
+MUT_ATTACKS.pCut2   = { wind: 0.4, strike: 0.16, recover: 0.4, hit: 0.35, reach: 2.70, lunge: 1.0, chain: 'pCut3', chainP: 0.55, w: 0.10, guardK: 1.50, limbs: [0], stop: 1.70, natHold: 0.12, cockF: 0.50, twoHanded: true, cleave: true };
+MUT_ATTACKS.pCut3   = { wind: 0.5, strike: 0.16, recover: 0.4, hit: 0.46, reach: 2.70, lunge: 1.0, chain: 'pSlam', chainP: 0.55, w: 0.10, guardK: 1.60, limbs: [0], stop: 1.70, natHold: 0.18, cockF: 0.50, twoHanded: true, cleave: true };
+MUT_ATTACKS.pSlam   = { wind: 1.0, strike: 0.18, recover: 0.9, hit: 0.48, reach: 2.90, lunge: 1.0, chain: 'pCut1', chainP: 0.20, w: 0.22, dmg: 2, guardK: 2.10, limbs: [0], stop: 1.80, natHold: 0.50, cockF: 0.70, twoHanded: true, cleave: true, slam: true };
+MUT_ATTACKS.pWide   = { wind: 0.9, strike: 0.18, recover: 0.6, hit: 0.45, reach: 3.40, lunge: 1.5, chain: 'pBack',   chainP: 0.55, w: 0.26, guardK: 1.60, limbs: [0], stop: 2.20, natHold: 0.34, cockF: 0.50, twoHanded: true, cleave: true };
+MUT_ATTACKS.pBack   = { wind: 0.7, strike: 0.16, recover: 0.6, hit: 0.45, reach: 3.30, lunge: 1.2, chain: 'pDown',   chainP: 0.35, w: 0.16, guardK: 1.40, limbs: [0], stop: 2.20, natHold: 0.14, cockF: 0.50, twoHanded: true, cleave: true };
+MUT_ATTACKS.pDown   = { wind: 1.0, strike: 0.16, recover: 0.8, hit: 0.45, reach: 3.00, lunge: 1.4, chain: 'pWide',   chainP: 0.30, w: 0.18, dmg: 2, guardK: 2.00, limbs: [0], stop: 2.10, natHold: 0.48, cockF: 0.62, twoHanded: true, slam: true };
+MUT_ATTACKS.pCombo1 = { wind: 0.8, strike: 0.18, recover: 0.7, hit: 0.45, reach: 3.10, lunge: 1.6, chain: null,      chainP: 0,    w: 0.12, guardK: 1.50, limbs: [0], stop: 2.10, natHold: 0.22, cockF: 0.50, twoHanded: true, cleave: true };
+MUT_ATTACKS.pCombo2 = { wind: 0.8, strike: 0.18, recover: 0.7, hit: 0.45, reach: 3.10, lunge: 1.6, chain: null,      chainP: 0,    w: 0.12, guardK: 1.50, limbs: [0], stop: 2.10, natHold: 0.22, cockF: 0.50, twoHanded: true, cleave: true };
+MUT_ATTACKS.pCombo3 = { wind: 0.8, strike: 0.18, recover: 0.7, hit: 0.45, reach: 3.10, lunge: 1.6, chain: null,      chainP: 0,    w: 0.10, guardK: 1.50, limbs: [0], stop: 2.10, natHold: 0.22, cockF: 0.50, twoHanded: true, cleave: true };
+MUT_ATTACKS.pSpin   = { wind: 1.0, strike: 0.26, recover: 0.7, hit: 0.50, reach: 3.60, lunge: 0.6, chain: 'pWide',   chainP: 0.25, w: 0.12, dmg: 2, hold: true, guardK: 2.00, limbs: [0], stop: 2.20, natHold: 0.36, cockF: 0.50, twoHanded: true, cleave: true };
+MUT_ATTACKS.pLeap   = { wind: 1.1, strike: 0.22, recover: 0.8, hit: 0.50, reach: 6.50, lunge: 5.0, chain: 'pWide',   chainP: 0.40, w: 0.14, dmg: 2, hold: true, guardK: 2.00, minDist: 3.6, limbs: [0], stop: 2.20, natHold: 0.26, cockF: 0.60, twoHanded: true, slam: true };
+MUT_KINDS.paladin = {
+  glb: 'assets/paladin.glb', faceFix: 0, solo: true, skin: null, bones: null, noSand: true, preParse: true,
+  facingRef: 'mixamo', natural: true, gaitBySpeed: true, fortBody: true, paladin: true, clipGated: true, heavyBlock: true,
+  h: 2.75, hp: 85, dmg: 1, hitR: 0.95, body: 0.74, lungeStop: 1.95, landSlop: 0.55, limbR: 0.50, lungeLead: 0.30,
+  speedK: 0.92, windK: 1.00, reachK: 1.00, lungeK: 0.90, aggr: 2.60, press: 0.95, chainMax: 3, stepBack: 1.6,   // (round 6: he presses — four blows in twenty seconds was a man waiting)
+  use: { pS1: 0.26, pS2: 0.24, pS3: 0.22, pS4: 0.18, pS9: 0.10 },   // (round 7: the high spin is out — the owner: "some of the spin moves are bad")      // (round 5: the Great Sword Pack's two-handed blows — see tools/paladin_bake.py)
+  circle: 0.08, step: 0.10, feint: 0.08, sizeUp: 0.08, restless: 1, smart: 1,
+  turnMax: 3.4, yawK: 0.70, fade: 0.25,
+  poise: 26, poiseBack: 2.0, poiseWait: 1.1, parryK: 0.90, recoilK: 0.40, stunK: 0.60, blockCost: 1.25, block: 0.30,
+  fidgetK: 0.10, fidgetGap: 3.6,
+  reacts: true, aimed: true, barLen: 0.0, aimK: 2.2, aimDrop: 0.6, aimFrom: 0.5, grip: true, bossDeath: true, landFn: (u, A, d, w) => palLands(u, A, d, w),   // (the hit is HIS BLADE through you, over the whole cut — `palContact`'s window; the arm is still steered onto you late in the draw)
+  rig: { arm: 'RightArm', fore: 'RightForeArm', hand: 'RightHand', tip: 'paladin_tip',
+         armL: 'LeftArm', foreL: 'LeftForeArm', handL: 'LeftHand', head: 'Head',
+         limbs: [['RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase']] },
+  rag: PALADIN_RAG,
+  emis: 0.18, rim: [0.075, 0.064, 0.060], gamma: 0.88,
+  author: authorPaladinClips,
+  anim: { idle: 'pReady', walk: 'pWalkT', run: 'pRunT', roar: 'pCast', die: 'pDie', rate: 1.0, lean: 0.03, strafeK: 1.0 },
+  gaits: { walk: ['pWalkT'], run: ['pRunT'], idle: ['pReady'], strafeL: ['pStrL'], strafeR: ['pStrR'] },
+  alias: { idle2: 'pReady', walk2: 'pWalkT', run2: 'pRunT', roar: 'pCast', roar2: 'pCast', pRoar: 'pCast', die2: 'pDieB', strafeL: 'pStrL', strafeR: 'pStrR',
+           hit: 'pHit', hitBig: 'pHitBig', hitSide: 'pHitBig', hitBack: 'pHit', hitHead: 'pHitBig', block: 'pBlock', blockC: 'pBlock', parry: 'pHitBig', calm: 'pReady' },
+  stunClip: 'pHitBig', first: 'pReady', sleepIdle: 'pReady', wakeAt: 0,
+  /* AT HALF HEALTH HE RAISES THE BLADE OVER HIS HEAD AND SHOUTS, and the
+   * gaps between his swings close. The tells do not. */
+  rage: { aggr: 2.9, speedK: 0.95, press: 0.92, chainMax: 4, feint: 0.18, circle: 0.08, block: 0.36 },
+  rageClip: 'pCast', rageDur: 1.6,
+  voice: { f: 0.62, growl: 1.35, rasp: 1.10, throat: 'bellow' },
+};
+mutPreParse(MUT_KINDS.paladin.glb);
+const paladin = { unit: null, out: false, cut: null, bar: null };
+/* made with the twenty, underground at their park spot (so his save key is
+ * the same in every game, and a save that has him dead has him retired) */
+if (FARM_ROSTER.length) {
+  const P = FARM_PARK();
+  paladin.unit = makeMutant(P.x, P.z, 'paladin', P.y);
+  paladin.unit.g.visible = false;
+}
+function paladinDone() { const u = paladin.unit; return !u || u.retired || !u.st.alive; }
+function palReady() {
+  const u = paladin.unit;
+  return !!(u && u.model && u.mixer && !(u.clipsPending > 0) && u.clips.pWalkT && u.texW && u.texW.compiled);
+}
+// (from the farmers' tick: half of them down, and he is ready, and nothing else has the camera)
+function palMayCome(dead) {
+  const u = paladin.unit;
+  if (!u || u.retired || !u.st.alive || paladin.out || paladin.cut) return;
+  if (dead < Math.ceil(farmUnits.length / 2) || !palReady() || frozen() || dying || restore || applyingSave || bootHold > 0) return;
+  palJoin();
+}
+/* HE JUST COMES (2026-10-17, round 4; the owner: "take out the cutscene and just make him join the fight half way").
+ * No take: the bell's last stroke, and he is on the street — on open paving nine to fourteen metres off, with a
+ * clear line to you, off to your side or behind you rather than in front of your face — awake, and walking in.
+ * (`palStartCut` and its take are kept, unused.) */
+function palJoin(quiet = false) {
+  const u = paladin.unit, me = camera.position;
+  camera.getWorldDirection(_pdnA); _pdnA.y = 0; _pdnA.normalize();
+  const fy = fortCourtAt(me.x, me.z) ?? FORT_Y + FORT_FLOOR;
+  const roomy = (x, z) => {
+    if (fortCourtAt(x, z) === null) return false;
+    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; if (fortCourtAt(x + Math.cos(a) * 0.9, z + Math.sin(a) * 0.9) === null) return false; }
+    return true;
+  };
+  const clear = (x, z) => !(fortWalls && (keepHitsWall(me.x, me.z, x, z, fy + 1.2, FORT_SITE) || keepHitsWall(me.x, me.z, x, z, fy + 2.0, FORT_SITE)));
+  let S = null, best = -1e9;
+  for (let k = 0; k < 24; k++) {
+    const a = k / 24 * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
+    for (const r of [14, 12.5, 11, 9.5]) {
+      const x = me.x + dx * r, z = me.z + dz * r;
+      if (!roomy(x, z) || !clear(x, z)) continue;
+      const sc = r * 0.15 - (dx * _pdnA.x + dz * _pdnA.z) * 1.5;   // (out of your face: to the side, or behind)
+      if (sc > best) { best = sc; S = { x, z }; }
+      break;
+    }
+  }
+  if (!S) { const D = fortW(FORT_DOOR.x, FORT_DOOR.z + 2.5); S = { x: D.x, z: D.z }; }
+  const y = fortCourtAt(S.x, S.z) ?? FORT_Y + FORT_FLOOR;
+  u.g.position.set(S.x, y, S.z);
+  u.g.rotation.y = Math.atan2(me.x - S.x, me.z - S.z);
+  if (u.model) u.model.rotation.y = 0;
+  u.holdAnim = false;
+  u.st.awake = true; u.st.roar = 0; u.st.cool = 0.8; u.st.atk = -1; u.st.step = 0;
+  paladin.out = true;
+  u.g.visible = true;
+  if (quiet) return;
+  farmFight.bellN = 8;
+  const B = farmBellSpot(); sfxCastleBell(B.x, B.z, 1.3);
+  sfxMutRoar(Math.hypot(S.x - me.x, S.z - me.z) * 0.5, u.kind.voice);
+}
+// leaving the castle mid-fight puts him back where he came from; he comes again when you do, the way the twenty do
+function palCalm() {
+  const u = paladin.unit; if (!u || u.retired || !u.st.alive) return;
+  paladin.out = false; paladin.cut = palCutRef = null; palDrone(false);
+  u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.holdAnim = false; u.g.visible = false;
+  if (mutToken === u) mutToken = null;
+  const P = FARM_PARK(); u.g.position.set(P.x, P.y, P.z);
+  palBarShow(false);
+}
+/* HIS OWN BRANCH OF THE CREATURE TICK: hidden until he is out, on the
+ * cobbles, and the cut's while the cut is running. */
+function palUnitPre(u, dt) {
+  if (u.kind.natural && !u.palNat && u.palMeasured) {          // (after `palContact`: run on the first frame, before the clips were in, it set nothing and never ran again)
+    naturalSwings(u); u.natDone = true; u.palNat = true;
+    // (natural timing cuts the active window to a third of what follows the contact: his is the measured fast part)
+    for (const k in u.atk) { const A = u.atk[k]; if (A.strikeFix) { const w = A.strikeFix / (A.rate || 1), d = w - A.strike; A.strike = w; A.recover = Math.max(0.08, A.recover - Math.max(0, d)); } }
+  }
+  const W = u.texW || (u.texW = {});
+  if (u.model && !(u.clipsPending > 0) && texWarmStep(u.model, W) && !W.asked) {
+    W.asked = true;
+    try { renderer.compileAsync(u.model, camera, scene).then(() => { W.compiled = true; }, () => { W.compiled = true; }); } catch (e) { W.compiled = true; }
+  }
+  if (!paladin.out) {
+    u.g.visible = false;
+    if (u.st.alive) { const P = FARM_PARK(); u.g.position.set(P.x, P.y, P.z); }
+    return true;
+  }
+  if (!u.st.alive) return false;
+  /* AND HE IS NEVER LOST OFF THE STREET (2026-10-17, the owner: "the paladins health bar shows up when reloading a
+   * checkpoint but he never spawns"): a join decided while a checkpoint was still putting you back placed him off the
+   * spot you stood on BEFORE the restore — the bar up and the man nowhere. Out, alive and more than 30 m off you in
+   * the castle, or six metres under you, he is put back on the street near you. */
+  if (inFort && !paladin.cut && !frozen()) {
+    const p0 = u.g.position;
+    if (Math.hypot(p0.x - camera.position.x, p0.z - camera.position.z) > 30 || camera.position.y - playerEye() - p0.y > 6) palJoin(true);
+  }
+  u.g.visible = !!(fortWorld && fortWorld.visible) && inFort;
+  const p = u.g.position, ty = fortCourtAt(p.x, p.z);
+  if (ty !== null) p.y += (ty - p.y) * Math.min(1, dt * 12);
+  return !!paladin.cut;
+}
+/* ---- THE BLADE: where it is, the tell on it, the trail behind it, and what it goes through */
+const _pdnH = new THREE.Vector3(), _pdnT = new THREE.Vector3(), _pdnA = new THREE.Vector3(), _pdnB = new THREE.Vector3(), _pdnC = new THREE.Vector3();
+function palBlade(u) {
+  if (!u.palTip || !u.palHilt) return false;
+  u.palHilt.getWorldPosition(_pdnH); u.palTip.getWorldPosition(_pdnT);
+  return true;
+}
+// the nearest point on the blade to `p`, into `out`
+function palOnBlade(p, out) {
+  _pdnA.subVectors(_pdnT, _pdnH);
+  const L2 = _pdnA.lengthSq() || 1, t = THREE.MathUtils.clamp(_pdnC.subVectors(p, _pdnH).dot(_pdnA) / L2, 0, 1);
+  return out.copy(_pdnH).addScaledVector(_pdnA, t);
+}
+const PAL_TRAIL_N = 18;
+function makePalTrail() {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PAL_TRAIL_N * 2 * 3), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(PAL_TRAIL_N * 2 * 3), 3));
+  const idx = [];
+  for (let i = 0; i < PAL_TRAIL_N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false }));
+  m.frustumCulled = false; m.renderOrder = 6; m.visible = false; m.name = 'palTrail';
+  scene.add(m);
+  const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xdfe6ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  glint.raycast = () => {}; glint.visible = false; scene.add(glint);
+  return { m, glint, h: [], t: [], on: 0, g: 0 };
+}
+let palTrail = null;
+/* THREE BEATS A SWING, off his own swing clock: THE TELL (a cold glint on
+ * the point, held through the wind-up, and a low grunt of effort), THE
+ * STRIKE (a heavy rush of air and a pale sheet down the blade's whole path —
+ * hilt to point, so you see the arc it cut), THE IMPACT (a blade that comes
+ * down on the stones hits them: a thud you feel, grit, sparks). */
+function palSwingFx(u, dt) {
+  const T = palTrail || (palTrail = makePalTrail());
+  if (!palBlade(u)) return;
+  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
+  const F = u.swFx || (u.swFx = { swing: null, atk: -1, tell: false, strike: false, hit: false, cut: new Set() });
+  if (A && (F.swing !== st.swing || st.atk < F.atk - 0.05)) { F.swing = st.swing; F.tell = F.strike = F.hit = false; F.cut.clear(); }
+  F.atk = A ? st.atk : -1;
+  const dist = Math.hypot(_pdnT.x - camera.position.x, _pdnT.z - camera.position.z), pan = panTo(_pdnT.x, _pdnT.z);
+  if (A) {
+    const hitT = A.wind, swingT = A.natHold ? Math.max(0.14, (A.wind - A.natHold) * (1 - (A.cock || 0))) : Math.min(0.35, A.wind * 0.5);
+    if (!F.tell) { F.tell = true; sfxMutRoar(dist * 1.6, u.kind.voice); }
+    if (!F.strike && st.atk >= hitT - swingT) { F.strike = true; T.h.length = T.t.length = 0; sfxFlailRush(dist, pan, (A.dmg || 1) > 1 ? 1.5 : 1.25); }
+    if (!F.hit && st.atk >= hitT) {
+      F.hit = true;
+      const floor = fortCourtAt(_pdnT.x, _pdnT.z) ?? u.g.position.y;
+      if (_pdnT.y - floor < 0.6) palGroundHit(_pdnT.x, floor, _pdnT.z, (A.dmg || 1) > 1 ? 1 : 0.7);
+    }
+    // and anyone between him and you on the way through
+    if (A.cleave && st.atk >= hitT - 0.06 && st.atk <= hitT + A.strike + 0.12) palCleave(u, F.cut);
+  }
+  // the glint: on from the tell to the strike
+  const want = A && F.tell && !F.strike ? 1 : 0;
+  T.g += (want - T.g) * Math.min(1, dt * 12);
+  T.glint.visible = T.g > 0.02;
+  if (T.glint.visible) {
+    T.glint.position.copy(_pdnT);
+    const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.016);
+    T.glint.material.opacity = T.g * pulse; T.glint.scale.setScalar(0.5 + 0.35 * pulse);
+  }
+  // the sheet: the hilt and the point, sampled while the strike is in the air
+  const live = A && F.strike && st.atk <= A.wind + A.strike + 0.06;
+  if (live) { T.h.push(_pdnH.clone()); T.t.push(_pdnT.clone()); if (T.h.length > PAL_TRAIL_N) { T.h.shift(); T.t.shift(); } T.on = 1; }
+  else T.on = Math.max(0, T.on - dt * 3.5);
+  T.m.visible = T.on > 0.01 && T.h.length > 2;
+  if (!T.m.visible) return;
+  const pos = T.m.geometry.attributes.position.array, col = T.m.geometry.attributes.color.array, n = T.h.length;
+  for (let i = 0; i < PAL_TRAIL_N; i++) {
+    const j = Math.min(n - 1, i), f = n > 1 ? j / (n - 1) : 1;
+    const h = T.h[j], t = T.t[j];
+    // (faint, and gone within two metres of your eye: close up an additive sheet hilt-to-point was half the picture
+    // white — measured, the owner's whole view on a blow that passed his face)
+    const near = THREE.MathUtils.smoothstep(Math.min(h.distanceTo(camera.position), t.distanceTo(camera.position)), 1.2, 2.6);
+    const al = Math.pow(f, 1.6) * T.on * (i < n ? 1 : 0) * 0.22 * near;
+    pos[i * 6] = h.x * 0.65 + t.x * 0.35; pos[i * 6 + 1] = h.y * 0.65 + t.y * 0.35; pos[i * 6 + 2] = h.z * 0.65 + t.z * 0.35;   // (the sheet is the outer two thirds of the blade)
+    pos[i * 6 + 3] = t.x; pos[i * 6 + 4] = t.y; pos[i * 6 + 5] = t.z;
+    col[i * 6] = 0.30 * al; col[i * 6 + 1] = 0.32 * al; col[i * 6 + 2] = 0.38 * al;
+    col[i * 6 + 3] = 0.62 * al; col[i * 6 + 4] = 0.64 * al; col[i * 6 + 5] = 0.72 * al;
+  }
+  T.m.geometry.attributes.position.needsUpdate = T.m.geometry.attributes.color.needsUpdate = true;
+}
+// a blade on the stones: felt, heard and seen, whether it found anyone or not
+function palGroundHit(x, floor, z, k0 = 1) {
+  const dist = Math.hypot(x - camera.position.x, z - camera.position.z), k = Math.max(0, 1 - dist / 16);
+  sfxSlam(0.55 + 0.4 * k0);
+  _pdnC.set(x, floor + 0.05, z);
+  worldSparks(_pdnC, Math.round(18 * k0));
+  idolDust(_pdnC, _pdnA.set(0, 0, 0), Math.round(16 * k0), 0.9, 0.7);
+  if (k > 0) addTrauma(0.32 * k * k0);
+}
+/* HIS BLADE HAS TO GO THROUGH YOU. Every frame of a blow's active window the blade's sweep since the last frame —
+ * hilt to point, both frames, the strip between them — is tested against you as a body: a line from a hand's
+ * width over your feet to your eye, half a metre thick. A cut that passes you a metre wide misses; one that goes
+ * through you lands, at whatever height. (`kind.landFn`; the caller does the guard, the parry and the damage.) */
+const _plQ0 = new THREE.Vector3(), _plQ1 = new THREE.Vector3(), _plQ2 = new THREE.Vector3(), _plQ3 = new THREE.Vector3(), _plX = new THREE.Vector3();
+function palLands(u, A, dist, was) {
+  if (!palBlade(u)) return false;
+  const cam = camera.position, feet = cam.y - playerEye(), R = 0.34;      // (round 7: 0.42 counted a blade you could see go past)
+  const prev = u.palPrevBlade && u.palPrevBlade.at === u.st.swing ? u.palPrevBlade : null;
+  _plQ0.copy(_pdnH); _plQ1.copy(_pdnT);
+  if (prev) { _plQ2.copy(prev.h); _plQ3.copy(prev.t); } else { _plQ2.copy(_pdnH); _plQ3.copy(_pdnT); }
+  const keep = u.palPrevBlade || (u.palPrevBlade = { h: new THREE.Vector3(), t: new THREE.Vector3(), at: null });
+  keep.h.copy(_pdnH); keep.t.copy(_pdnT); keep.at = u.st.swing;
+  const lo = feet + 0.35, hi = cam.y + 0.15;             // (knee to crown: a blade through your head is a hit, one over it is not)
+  for (let a = 0; a <= 4; a++) {
+    const w = a / 4;
+    for (let k = 0; k <= 10; k++) {
+      const f = 0.25 + 0.75 * k / 10;              // the blade from a quarter of the way out to the point
+      _plX.copy(_plQ0).lerp(_plQ1, f).lerp(_pdnC.copy(_plQ2).lerp(_plQ3, f), w);
+      if (_plX.y < lo || _plX.y > hi) continue;                 // (only a blade that is at your body's height: not over your head)
+      if (Math.hypot(_plX.x - cam.x, _plX.z - cam.z) < R) return true;
+    }
+  }
+  return false;
+}
+/* THROUGH THE FARMERS. A farmer whose chest or head the blade passes within
+ * half a metre of on the way through is dead — cut through or his head off —
+ * and he was not what it was swung at. Once each a swing. */
+function palCleave(u, done) {
+  for (const f of farmUnits) {
+    if (!f.st.alive || f.st.struck || !f.farm || !f.farm.out || f.farm.burst || done.has(f)) continue;
+    const fp = f.g.position;
+    if (Math.hypot(fp.x - u.g.position.x, fp.z - u.g.position.z) > 4.5) continue;
+    let hit = 0;
+    for (const [y, r] of [[1.15, 0.5], [1.55, 0.42]]) {
+      _pdnB.set(fp.x, fp.y + y, fp.z);
+      if (palOnBlade(_pdnB, _pdnC).distanceTo(_pdnB) < r) { hit = y; break; }
+    }
+    if (!hit) continue;
+    done.add(f);
+    const dx = fp.x - u.g.position.x, dz = fp.z - u.g.position.z;
+    palKill(f, dx, dz, hit > 1.4 || Math.random() < 0.35);
+  }
+}
+// a farmer killed by him: his head (or the whole of him) and nothing of it yours
+function palKill(f, dx, dz, head) {
+  if (!f.st.alive || f.st.struck) return;
+  f.lastHitMine = false;
+  f.st.mine = false; f.st.foe = null;
+  f.st.killP = 1; f.st.killOh = false; f.st.killGore = 2.0; f.st.hpBefore = f.st.hp;
+  f.st.gunHead = !!head;
+  f.st.hp = 0;
+  killMutant(f);
+  const L = Math.hypot(dx, dz) || 1;
+  f.hitDir.set(dx / L, 0, dz / L);
+  sfxKillThud(1.2);
+  playSampleAt('katHit', f.g.position.x, f.g.position.z, { gain: 1.4, ref: 10, far: 50, rate: 0.82 });
+}
+/* ---- HIS BLOWS ON YOUR GUARD. On top of what any block does (`blockMutant`
+ * / `parryMutant`): the sparks come off HIS blade where it met yours — a
+ * spray, lit by a flash — and the ring is lower and longer, the shove
+ * further, the stop harder. A deflect is brighter still and freezes the
+ * world longer: the reward for reading him. */
+function palBlockFx(u, parry) {
+  const eye = camera.position;
+  if (palBlade(u)) palOnBlade(_pdnB.set(eye.x, eye.y - 0.35, eye.z), _pdnC);
+  else _pdnC.set(eye.x, eye.y - 0.3, eye.z);
+  const dx = eye.x - _pdnC.x, dz = eye.z - _pdnC.z, L = Math.hypot(dx, dz) || 1;
+  worldSparks(_pdnC, parry ? 64 : 44, dx / L * 2.2, dz / L * 2.2);
+  deflectLamp.position.copy(_pdnC); deflectLamp.intensity = parry ? 48 : 30; deflectT = parry ? 0.18 : 0.12;
+  spawnSparks(SPARK_N, parry ? 1.9 : 1.6);
+  playSample('blockMil', 0.9, 0.04, parry ? 0.78 : 0.6);
+  sfxSlam(parry ? 0.3 : 0.5);
+  addTrauma(parry ? 0.35 : 0.5);
+  fovKick = Math.max(fovKick, parry ? 11 : 9);
+  slamDip = Math.max(slamDip, parry ? 0.05 : 0.07);
+  hitstop = Math.max(hitstop, parry ? 0.26 : 0.13);
+  if (!parry) knockback.multiplyScalar(1.5);
+}
+/* ---- THE BAR. One for him, under the middle of the picture, with his
+ * name: he is not one of the twenty. */
+function palBarShow(on) {
+  let B = paladin.bar;
+  if (!B && on) {
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;left:50%;bottom:9vh;transform:translateX(-50%);width:min(560px,70vw);z-index:30;pointer-events:none;font:600 13px Georgia,serif;letter-spacing:0.22em;color:#cfc6b8;text-shadow:0 1px 3px #000;opacity:0;transition:opacity 0.8s';
+    el.innerHTML = '<div style="margin-bottom:5px">THE PALADIN</div><div style="height:7px;background:rgba(10,8,8,0.75);border:1px solid rgba(200,190,170,0.35)"><div class="pb" style="height:100%;width:100%;background:linear-gradient(#9c2a22,#5e130f);transition:width 0.25s"></div></div>';
+    document.body.appendChild(el);
+    B = paladin.bar = { el, fill: el.querySelector('.pb'), shown: false };
+  }
+  if (!B) return;
+  if (B.shown !== on) { B.shown = on; B.el.style.opacity = on ? '1' : '0'; }
+}
+function palBarTick() {
+  const u = paladin.unit, B = paladin.bar;
+  const on = !!(u && paladin.out && !paladin.cut && u.st.alive && inFort && !menuOpen);
+  palBarShow(on);
+  if (B && on) B.fill.style.width = (100 * Math.max(0, u.st.hp) / (u.hpMax || u.kind.hp)).toFixed(1) + '%';
+}
+// after the fight AI has moved and posed him (from `update`)
+function updatePaladin(dt) {
+  const u = paladin.unit;
+  if (!u || u.retired) return;
+  palBarTick();
+  if (!paladin.out || !u.g.visible) return;
+  if (!paladin.cut) { palRootMotion(u); palTrack(u, dt); }
+  palSwingFx(u, dt);
+  // a step of his: heavy plate on stone, and you feel the near ones
+  if (u.st.alive && !paladin.cut) {
+    const P = u.palStep || (u.palStep = { t: 0, x: u.g.position.x, z: u.g.position.z });
+    const sp = Math.hypot(u.g.position.x - P.x, u.g.position.z - P.z) / Math.max(dt, 1e-3);
+    P.x = u.g.position.x; P.z = u.g.position.z;
+    if (sp > 0.4 && sp < 12) {
+      P.t -= dt * (0.9 + sp * 0.55);
+      if (P.t <= 0) { P.t = 1; palStep(u); }
+    }
+  }
+}
+/* HIS FEET GO WHERE THE SWORDSMAN'S WENT. A creature's swing is played in place and the game slides it by its
+ * own `lunge`; the captured man steps a metre and more into most of these cuts (the second, 1.8 m), so played in
+ * place his legs walked on the spot while he lunged — the owner's "he should move like a human". During a swing
+ * his root follows the clip's own travel, turned to his heading, held by the castle's stone, and never through
+ * you. (The measured contact counts the same travel: `palContact`.) */
+/* AND THE BLOW IS AIMED AT YOU (2026-10-17, round 6; the owner: "the paladins hits dont even get near me … he just
+ * swinging randomly and his sword doesnt even touch my player"). A captured cut lands where the performer's partner
+ * stood; the game turned him slowly (`turnMax`) and stopped him where a number said, so most of his blade went through
+ * the air a metre off you. Through the draw — until the cut commits, a beat before the window opens — he turns into
+ * you (up to 4.5 rad/s) and closes or gives ground to the distance his blade crosses his line for THIS blow
+ * (`A.tipF`, measured on his own sword by `palContact`, from where the swing began), less the step the clip has
+ * already taken. Once it commits it goes where it was aimed: that is the moment to be somewhere else. */
+function palTrack(u, dt) {
+  const st = u.st; if (!st.alive || !(st.atk >= 0) || !u.atk) return;
+  const A = u.atk[st.swing], a = A && u.clips[st.swing];
+  if (!A || !a || !A.tipF) return;
+  const p = u.g.position, cx = camera.position.x - p.x, cz = camera.position.z - p.z, cd = Math.hypot(cx, cz) || 1;
+  // (a blow begun with you further off than the draw can close — a chain off a cut you walked out of — is not thrown)
+  if (st.atk < 0.2 && !A.minDist && cd > A.tipF + Math.max(1.2, A.wind * 2.6)) { st.atk = -1; st.chained = false; st.chainAt = -1; return; }
+  if (u.cur !== a || st.atk > A.wind + A.strike) return;
+  // he turns into you through the draw, and on into the cut itself, slower: a wide blow follows a man stepping round it
+  // (measured, at 2 m/s round him with the turn stopped at the commit, nine cuts in twelve went past)
+  const committed = st.atk > A.wind - 0.1, tr = committed ? 2.4 : 4.5;
+  let dy = Math.atan2(cx, cz) - u.g.rotation.y; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+  u.g.rotation.y += THREE.MathUtils.clamp(dy, -tr * dt, tr * dt);
+  if (committed) return;                                        // (but he does not come on after you once it is coming)
+  const T = clipTravelAt(u, st.swing, a.time / a.getClip().duration);
+  const ideal = Math.max((u.kind.body || 0.7) + 0.5, A.tipF * 0.88 - (T ? T.y : 0));
+  const mv = THREE.MathUtils.clamp(cd - ideal, -2.2 * dt, 3.2 * dt);
+  p.x += cx / cd * mv; p.z += cz / cd * mv;
+  if (u.kind.fortBody && fortWalls) fortClampUnit(u, p);
+}
+const _prmV = new THREE.Vector3();
+function palRootMotion(u) {
+  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
+  const a = A && u.clips[st.swing];
+  if (!A || !a || u.cur !== a) { u.palRM = null; return; }
+  const f = a.time / a.getClip().duration, T = clipTravelAt(u, st.swing, f);
+  if (!T) return;
+  const R = u.palRM;
+  if (!R || R.sw !== st.swing || f < R.f - 0.02) { u.palRM = { sw: st.swing, f, x: T.x, z: T.y }; return; }
+  let dx = T.x - R.x, dz = T.y - R.z;
+  R.f = f; R.x = T.x; R.z = T.y;
+  const yaw = u.g.rotation.y, wx = dx * Math.cos(yaw) + dz * Math.sin(yaw), wz = -dx * Math.sin(yaw) + dz * Math.cos(yaw);
+  const p = u.g.position, cx = camera.position.x - p.x, cz = camera.position.z - p.z, cd = Math.hypot(cx, cz) || 1;
+  const toward = (wx * cx + wz * cz) / cd, room = cd - (u.kind.body || 0.7) - 0.45;
+  let k = 1; if (toward > 0 && room < toward) k = Math.max(0, room / toward);
+  /* (Until round 6 only the sideways part of the step went through once the cut began, so a stepping blow fell short
+   * of where his feet said it would land; the blow is aimed during the draw now, `palTrack`, and the step is whole.) */
+  _prmV.set(p.x + wx * k, p.y, p.z + wz * k);
+  p.x = _prmV.x; p.z = _prmV.z;
+  if (u.kind.fortBody && fortWalls) fortClampUnit(u, p);
+}
+function palStep(u) {
+  const dist = Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z), k = Math.max(0, 1 - dist / 12);
+  sfxMutStep(dist, u.kind.voice);
+  playSampleAt('blockMil', u.g.position.x, u.g.position.z, { gain: 0.16, ref: 4, far: 30, rate: 0.42, jitter: 0.06 });
+  if (k > 0) addTrauma(0.05 * k);
+}
+/* ---- THE ENTRANCE (`paladin.cut`). The world is held (`frozen()`), so
+ * everything in it that should move is moved here: him, the man he kills
+ * and what is left of him, the stares, the sparks, the dust, the lens. */
+const PAL_CUT_WALK = 1.35;               // his pace up the street, m/s
+let PAL_KILL = 'pS3';                    // the slash that takes the man's head (chosen off the pose sheet)
+let palDroneNodes = null;
+function palDrone(on) {
+  const ctx = audioCtx; if (!ctx) return;
+  if (on && !palDroneNodes) {
+    const g = ctx.createGain(); g.gain.value = 0.0001;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240;
+    const ws = ctx.createWaveShaper(); const c = new Float32Array(256); for (let i = 0; i < 256; i++) { const x = i / 128 - 1; c[i] = Math.tanh(2.2 * x); } ws.curve = c;
+    const os = [];
+    for (const [f, ty] of [[41, 'sawtooth'], [41.6, 'sawtooth'], [61.7, 'triangle'], [82.3, 'sine']]) { const o = ctx.createOscillator(); o.type = ty; o.frequency.value = f; o.connect(ws); o.start(); os.push(o); }
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.21; const lg = ctx.createGain(); lg.gain.value = 70; lfo.connect(lg).connect(lp.frequency); lfo.start(); os.push(lfo);
+    ws.connect(lp).connect(g).connect(sfxOut());
+    g.gain.setTargetAtTime(0.32, ctx.currentTime, 1.2);
+    palDroneNodes = { g, os };
+  } else if (!on && palDroneNodes) {
+    const N = palDroneNodes; palDroneNodes = null;
+    N.g.gain.setTargetAtTime(0.0001, ctx.currentTime, 1.6);
+    setTimeout(() => { for (const o of N.os) try { o.stop(); } catch (e) { /* gone */ } }, 6000);
+  }
+}
+// the man he kills: the nearest farmer out on the street not on top of you, and where he comes from: beyond him, out of the dark
+function palStartCut() {
+  const u = paladin.unit, me = camera.position;
+  let V = null, bd = 1e9;
+  for (const f of farmUnits) {
+    if (!f.st.alive || f.st.struck || !f.farm || !f.farm.out || f.farm.burst || !f.model) continue;
+    const d = Math.hypot(f.g.position.x - me.x, f.g.position.z - me.z);
+    if (d > 5.0 && d < 16 && Math.abs(d - 8) < bd) { bd = Math.abs(d - 8); V = f; }      // (eight metres off is where the take reads: the man and him both in the picture)
+  }
+  const roomy = (x, z) => {
+    if (fortCourtAt(x, z) === null) return false;
+    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; if (fortCourtAt(x + Math.cos(a) * 0.9, z + Math.sin(a) * 0.9) === null) return false; }
+    return true;
+  };
+  const base = V ? V.g.position : me;
+  let ax, az;
+  if (V) { ax = base.x - me.x; az = base.z - me.z; } else { const D = fortW(FORT_DOOR.x, FORT_DOOR.z); ax = D.x - me.x; az = D.z - me.z; }
+  const a0 = Math.atan2(ax, az);
+  /* SEEN, AND WITH A STREET TO WALK: the first try put him round a corner,
+   * and the first six seconds of the take were a wall. Out of the dark means
+   * in plain view down open paving — nothing between your eye and him, nor
+   * between him and the man he walks to. */
+  const fy = fortCourtAt(base.x, base.z) ?? FORT_Y + FORT_FLOOR;
+  const clear = (x0, z0, x1, z1, y) => !(fortWalls && keepHitsWall(x0, z0, x1, z1, y, FORT_SITE));
+  let S = null, best = -1e9;
+  for (const off of [0, 0.3, -0.3, 0.6, -0.6, 0.95, -0.95, 1.3, -1.3, 1.7, -1.7, 2.2, -2.2, Math.PI]) {
+    for (let r = 12; r >= 5.5; r -= 0.5) {
+      const x = base.x + Math.sin(a0 + off) * r, z = base.z + Math.cos(a0 + off) * r;
+      if (!roomy(x, z) || Math.hypot(x - me.x, z - me.z) < 6.5) continue;
+      if (!clear(me.x, me.z, x, z, fy + 1.2) || !clear(me.x, me.z, x, z, fy + 2.0)) continue;
+      if (!clear(x, z, base.x, base.z, fy + 0.6) || !clear(x, z, base.x, base.z, fy + 1.4)) continue;
+      const sc = r * 0.4 - Math.abs(Math.abs(off) - 1.0) * 2.2;    // far out of the dark, and off to the man's side: square behind him, the man stood in front of him the whole walk
+      if (sc > best) { best = sc; S = { x, z }; }
+      break;                                                         // the furthest clear spot on this bearing
+    }
+  }
+  if (!S) { const D = fortW(FORT_DOOR.x, FORT_DOOR.z + 2.5); S = { x: D.x, z: D.z }; }
+  const y = fortCourtAt(S.x, S.z) ?? FORT_Y + FORT_FLOOR;
+  u.g.position.set(S.x, y, S.z);
+  u.g.rotation.y = Math.atan2(base.x - S.x, base.z - S.z);
+  if (u.model) u.model.rotation.y = 0;
+  u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.holdAnim = true;
+  paladin.out = true;
+  u.g.visible = true;
+  paladin.cut = palCutRef = { t: 0, V, phase: 'reveal', look: new THREE.Vector3(S.x, y + 1.7, S.z), fov: Math.min(settings.fov, 34), fovRate: 2.2,
+    stepT: 0.3, sparkT: 0, swingT: -1, killed: false, slow: 1, slowT: 0, roarT: -1, turnFrom: 0 };
+  blocking = false; hovered = null;
+  // the street stops: the bell's last stroke, deep, and the dread under it
+  farmFight.bellN = 8;
+  const B = farmBellSpot(); sfxCastleBell(B.x, B.z, 1.3);
+  palDrone(true);
+  _pdnC.set(S.x, y + 0.2, S.z);
+  idolDust(_pdnC, _pdnA.set(0, 0.2, 0), 40, 1.6, 1.4);
+  idolDust(_pdnC, _pdnA.set(0, 0.1, 0), 24, 2.4, 2.2);
+  if (V) { V.holdAnim = true; V.st.atk = -1; }
+}
+const PAL_IDLE_OF = (f) => (f.clips.idle ? 'idle' : f.kind.anim && f.clips[f.kind.anim.idle] ? f.kind.anim.idle : null);
+function updatePalCut(rawDt) {
+  const C = paladin.cut; if (!C) return;
+  const u = paladin.unit;
+  if (!inFort || !u || !u.st.alive) { palCutEnd(false); return; }
+  // the slowing: the world at a fifth for the blow, easing back
+  if (C.slowT > 0) { C.slowT -= rawDt; C.slow = THREE.MathUtils.lerp(1, 0.18, THREE.MathUtils.clamp(C.slowT / 0.55, 0, 1)); } else C.slow = 1;
+  const dt = rawDt * C.slow;
+  C.t += dt;
+  const p = u.g.position, V = C.V;
+  // the street watches him: every man out there stops where he stands and turns his face to him
+  for (const f of farmUnits) {
+    if (!f.st.alive || f.st.struck || !f.farm || !f.farm.out || f.farm.burst || !f.mixer) continue;
+    const want = Math.atan2(p.x - f.g.position.x, p.z - f.g.position.z);
+    let d = want - f.g.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+    f.g.rotation.y += d * Math.min(1, dt * 3);
+    const idl = PAL_IDLE_OF(f); if (idl && (!f.cur || f.cur !== f.clips[idl])) mutPlay(f, idl, true);
+    f.mixer.update(dt);
+  }
+  // the man killed, and his body after, which the held world will not run for him
+  if (V && C.killed) updateMutantUnit(V, dt);
+  updateGibs(dt); updateSpurts(dt); updateBloodCloud(dt); updateWorldSparks(); updateIdolDust(dt);
+  const target = V && V.st.alive && !V.st.struck ? V.g.position : camera.position;
+  const dTo = Math.hypot(target.x - p.x, target.z - p.z);
+  if (C.phase === 'reveal' || C.phase === 'walk') {
+    if (C.phase === 'reveal' && C.t > 1.3) C.phase = 'walk';
+    if (C.phase === 'walk') {
+      const stop = V ? 2.15 : 4.0;
+      if (dTo > stop + 0.03) {
+        const s = Math.min(dTo - stop, PAL_CUT_WALK * dt);
+        p.x += (target.x - p.x) / dTo * s; p.z += (target.z - p.z) / dTo * s;
+        const fy = fortCourtAt(p.x, p.z); if (fy !== null) p.y += (fy - p.y) * Math.min(1, dt * 10);
+      } else if (V && u.clips[PAL_KILL]) { C.phase = 'swing'; C.swingT = 0; C.kill = PAL_KILL; mutPlay(u, C.kill, false); }
+      else { C.phase = 'roar'; C.roarT = 0; C.turnFrom = u.g.rotation.y; }
+    }
+    if (C.phase === 'walk' || C.phase === 'reveal') {
+      if (u.clips.pWalkT && (C.phase === 'walk') && u.cur !== u.clips.pWalkT) mutPlay(u, 'pWalkT', true);
+      if (C.phase === 'reveal' && u.clips.pReady && u.cur !== u.clips.pReady) mutPlay(u, 'pReady', true);
+      u.g.rotation.y = Math.atan2(target.x - p.x, target.z - p.z);
+      if (C.phase === 'walk' && (C.stepT -= dt) <= 0) { C.stepT = 0.62; palStep(u); }
+    }
+  }
+  if (C.phase === 'swing') {
+    C.swingT += dt;
+    const a = u.clips[C.kill], dur = a.getClip().duration, hitAt = dur * ((u.atk[C.kill] && u.atk[C.kill].hit) || 0.5);
+    if (!C.killed && C.swingT >= hitAt - 0.12 && C.swingT < hitAt - 0.1 && C.slowT <= 0) C.slowT = 0.75;     // the world slows into it
+    if (!C.killed && C.swingT >= hitAt) {
+      C.killed = true;
+      palKill(V, V.g.position.x - p.x, V.g.position.z - p.z, true);
+      finishMutant(V);
+      addTrauma(0.7);
+      fovKick = Math.max(fovKick, 8);
+      _pdnC.set(V.g.position.x, V.g.position.y + 1.6, V.g.position.z);
+      deflectLamp.position.copy(_pdnC); deflectLamp.intensity = 14; deflectT = 0.1;
+    }
+    if (C.swingT >= dur * 0.92) { C.phase = 'roar'; C.roarT = 0; C.turnFrom = u.g.rotation.y; }
+  }
+  if (C.phase === 'roar') {
+    C.roarT += dt;
+    // round to you, slowly, before the shout
+    const want = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+    let d = want - u.g.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+    u.g.rotation.y += d * Math.min(1, dt * 2.6);
+    if (C.roarT < 0.9) { if (u.clips.pReady && u.cur !== u.clips.pReady) mutPlay(u, 'pReady', true); }
+    else if (!C.roared) {
+      C.roared = true;
+      if (u.clips.pRoar) mutPlay(u, 'pRoar', false);
+      C.roarDur = u.clips.pRoar ? u.clips.pRoar.getClip().duration : 2.2;
+      sfxMutRoar(Math.hypot(p.x - camera.position.x, p.z - camera.position.z) * 0.5, u.kind.voice);
+      setTimeout(() => sfxMutRoar(0, u.kind.voice), 140);
+      addTrauma(0.55);
+      _pdnC.set(p.x, p.y + 0.1, p.z); idolDust(_pdnC, _pdnA.set(0, 0, 0), 30, 2.0, 1.2);
+    }
+    if (C.roared && C.roarT > 0.9 + Math.min(C.roarDur, 3.0) * 0.85) { palCutEnd(true); return; }
+  }
+  u.mixer.update(dt);
+  // the lens: him whole out of the dark; the two of them as he closes; the blow; then his face as he shouts
+  let T, h;
+  _pdnA.set(p.x, p.y + 1.6, p.z);
+  if (C.phase === 'reveal') { T = _pdnA; h = 3.4; }
+  else if (C.phase === 'walk' || C.phase === 'swing') {
+    if (V) { _pdnB.set((p.x + V.g.position.x) / 2, p.y + 1.45, (p.z + V.g.position.z) / 2); T = _pdnB; h = Math.max(2.9, dTo * 0.7 + 1.2); }
+    else { T = _pdnA; h = 3.2; }
+  } else { _pdnB.set(p.x, p.y + 1.9, p.z); T = _pdnB; h = C.roared ? 3.4 : 3.8; }   // (all of him as he shouts: at 2.2 m of frame the lens was his breastplate)
+  C.look.lerp(T, 1 - Math.exp(-rawDt * 4));
+  thrCutLook(C.look, 2.4, rawDt);
+  C.fov = thrCutFov(C.look, h);
+  // and his point on the stones as he walks: a scrape and a spit of sparks
+  if (C.phase === 'walk' && palBlade(u)) {
+    const fl = fortCourtAt(_pdnT.x, _pdnT.z) ?? p.y;
+    if (_pdnT.y - fl < 0.45 && (C.sparkT -= rawDt) <= 0) { C.sparkT = 0.07 + Math.random() * 0.06; _pdnC.set(_pdnT.x, fl + 0.03, _pdnT.z); worldSparks(_pdnC, 3); }
+  }
+}
+function palCutEnd(fight) {
+  const u = paladin.unit, C = paladin.cut;
+  paladin.cut = palCutRef = null;
+  if (C && C.V && !C.killed) { C.V.holdAnim = false; }
+  if (!u) return;
+  u.holdAnim = false;
+  palDrone(false);
+  if (!fight) return;
+  u.st.awake = true; u.st.roar = 0; u.st.cool = 0.25; u.st.atk = -1; u.st.step = 0;
+  const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  if (u.atk && u.atk.pLeap && u.clips.pLeap && d > 4) u.st.forceSwing = 'pLeap';
+  else if (u.atk && u.atk.pWide && u.clips.pWide) u.st.forceSwing = 'pWide';
+  else if (u.atk && u.atk.pS9 && u.clips.pS9 && d > 2.6) u.st.forceSwing = 'pS9';
+  else if (u.atk && u.atk.pS3 && u.clips.pS3) u.st.forceSwing = 'pS3';
+  thrCutRelease(); catchBreath();
+}
 
 /* ---- ARTIFACTS ---------------------------------------------------------- */
 /* A NEW KIND OF THING: an ARTIFACT is not held and not worn, it is SET INTO A
@@ -95425,8 +96499,15 @@ function sfxFlameSear(x, z) {
   n.connect(hp).connect(g).connect(dst); n.start(t); n.stop(t + 0.5);
 }
 /* the release: a full shift heavy with the flames up is a burning swing */
+/* AND THE PEG'S HEAVY IS ITS LUNGE (2026-10-17, the owner: "flame artifact
+ * isnt working on peg the artifacts should work on all weapons"). The flames
+ * rose only on a wind latched overhead, and the peg's Shift hold is coiled,
+ * never raised (`thrusting()` keeps `windOverhead` off it), so on the peg they
+ * never caught. Every wind of the rapier is its charged lunge: that is its
+ * heavy, and that is what burns. */
+const flameHeavyWind = () => windOverhead || !!(equipped && equipped.rapier);
 function flameRelease(charge) {
-  flame.swing = !!(flameWeapon() && windOverhead && charge >= FLAME_FULL && flame.k > 0.5);
+  flame.swing = !!(flameWeapon() && flameHeavyWind() && charge >= FLAME_FULL && flame.k > 0.5);
   flame.swingT = 0;
   if (flame.swing) sfxFlameSwing();
 }
@@ -95465,7 +96546,7 @@ function flameTick(dt) {
   // what the flames want: rising with the charge of a shift heavy, held through its swing, gone after
   if (flame.swing) { flame.swingT += dt; if (!(digT > 0) && flame.swingT > 0.25) flame.swing = false; }
   let want = 0;
-  if (W && winding && windOverhead) want = THREE.MathUtils.smoothstep(charge, FLAME_FROM, 1.0);
+  if (W && winding && flameHeavyWind()) want = THREE.MathUtils.smoothstep(charge, FLAME_FROM, 1.0);
   if (W && flame.swing) want = 1;
   if (!W || frozen()) want = 0;
   flame.k += (want - flame.k) * Math.min(1, dt * (want > flame.k ? 5 : 2.4));
@@ -99187,7 +100268,15 @@ function elvLandFloorAt(x, z, feet = null, up = 0.45) {
   }
   return f;
 }
-const elvInLand = (x, z) => (x > CLIFF_BLOCK_X - 0.6 && elvPathNear(x, z).d < ELV_PATH_HW - 0.1) || elvYardD(x, z) < 0;
+/* (and the talus's toe round the mouth: the sand below the face either side of the gully, out from the beach's own clamp
+ * at CLIFF_BLOCK_X by an edge that slants back to it — 3 m wide beside the gully, nothing 6.6 m off its line — so walking
+ * along it you slide back onto the beach rather than meet a wall in open sand; the face itself is the no-banks rule's.
+ * 2026-10-16, the owner at (15.36, -705.80): "I hit an invisible wall right here") */
+const elvInLand = (x, z) => {
+  if (x <= CLIFF_BLOCK_X - 0.6) return elvYardD(x, z) < 0;
+  const d = elvPathNear(x, z).d;
+  return d < ELV_PATH_HW - 0.1 || (d < ELV_CUT + 2 && x < CLIFF_BLOCK_X + (ELV_CUT + 2 - d) * 0.6) || elvYardD(x, z) < 0;
+};
 let elvLastSpot = null;
 function updateElvLand(dt) {
   const p = camera.position;
@@ -99231,7 +100320,7 @@ function updateElvLand(dt) {
    * you on. OFF: only back out through the mouth onto the sand (or into a room); a step that leaves sideways is a bank
    * and is refused below — dropping the flag on it would hand the frame to the beach's clamp, which throws you back. */
   if (inRoom()) elvLand = false;
-  else if (was) elvLand = inside || p.x > CLIFF_BLOCK_X - 0.6;
+  else if (was) elvLand = inside || p.x > CLIFF_BLOCK_X + 0.02;   // (out onto the sand wherever the beach's own clamp would not move you: the toe's edge comes back to it)
   else elvLand = inside;
   if (!elvLand) { if (was) elvLastSpot = null; return; }
   const feet0 = camBaseY - playerEye();
@@ -99244,7 +100333,8 @@ function updateElvLand(dt) {
    * head comes up into the yard, 0.65 m over 0.9 at (-12, 9.2) house-local — was the owner's "lip in the sand right
    * before walking up to the house that blocks me", 2026-10-16) */
   const steepOk = (x, z, f) => { const run = Math.hypot(x - _preMove.x, z - _preMove.z), rise = f - feet0; return rise < 0.06 || rise < run * (elvYardD(x, z) < 0 ? 2.3 : 1.15) + 0.03 || (houseWalls && Math.abs(x - HOUSE_X) < 6.2 && Math.abs(z - HOUSE_Z) < 8.4); };
-  const legal = (x, z) => { if (!elvInLand(x, z)) return false; const f = floorOk(x, z); return f !== null && steepOk(x, z, f) && !hits(_preMove.x, _preMove.z, x, z) && !elvDoorShut(_preMove.x, _preMove.z, x, z, feet0) && !elvPaneShut(_preMove.x, _preMove.z, x, z, feet0); };
+  // (off the land only onto the beach's side of its clamp)
+  const legal = (x, z) => { if (!elvInLand(x, z)) return x <= CLIFF_BLOCK_X + 0.02 && x < _preMove.x + 0.3; const f = floorOk(x, z); return f !== null && steepOk(x, z, f) && !hits(_preMove.x, _preMove.z, x, z) && !elvDoorShut(_preMove.x, _preMove.z, x, z, feet0) && !elvPaneShut(_preMove.x, _preMove.z, x, z, feet0); };
   if (!legal(p.x, p.z)) {
     const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
     let took = false;
@@ -99865,6 +100955,13 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   elvPickUp, elvTalk, elvGiveToMan, elvDoorToggle, elvBreakPane, loadHouse, loadElvMan, buildElvField, elvTakeLantern,
   elvS: () => ({ elvStage, elvLand, elvAirK, elvSecK, elvCarrying, elvLantern, houseReady, walls: !!houseWalls, doors: elvDoors.length, panes: elvPanes.length,
     man: elvMan && { ready: elvMan.ready, dead: elvMan.dead, awake: elvMan.u.st.awake, hp: elvMan.u.st.hp }, pup: !!(elvPup && elvPup.src), walked: elvWalked }),
+  audS: () => ({ hush: sfxHush, replaying, applyingSave, ctx: audioCtx && audioCtx.state, sfx: sfxBusGain && +sfxBusGain.gain.value.toFixed(3), master: masterGain && +masterGain.gain.value.toFixed(3),
+    banks: Object.keys(sampleBanks).filter((k) => sampleBanks[k].some(Boolean)).length, of: Object.keys(SAMPLES).length, bootHold }),
+  samScoreS: () => ({ want: samScoreWant, on: !!samScore, next: !!(samScore && samScore.next), buf: !!(lazyBufs[SAM_SCORE] && lazyBufs[SAM_SCORE].buf), level: samScoreVol && +samScoreVol.gain.value.toFixed(3) }),
+  audNodes: () => ({ gate: gameAudioGate, master: masterGain, sfx: sfxBusGain }),
+  flameS: () => flame, flameArt: () => flameArtItem, attachArtifact, returnBilly, screwdriverModel, billyS: () => billyState, setBillyS: (v) => { billyState = v; },
+  shipBrkS: () => shipBrk, shipKeyS: () => ({ keyFall, taken: boatKeyTaken, y: boatKey.position.y, inScene: !!boatKey.parent }), dropShipKey,
+  paladinS: () => paladin, palStartCut, palKill, palCalm, palBlockFx, farmFightS: () => farmFight, farmUnitsS: () => farmUnits,
   elvDoors: () => elvDoors, elvPanes: () => elvPanes, houseGlassStrike, elvPaneShut, elvBreakPane, elvManS: () => elvMan, elvPupS: () => elvPup, elvCarryS: () => elvPupCarry, houseWorldS: () => houseWorld,
   elvFieldS: () => elvField, elvPathNear, elvSurf, elvCarve, elvMistS: () => [elvMist, elvBeachMist], elvCampS: () => elvCamp,
   pupRunS: () => pupRun,
@@ -99888,7 +100985,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updatePalCut(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* AND THE WARM CHAIN, THE FAR-CULL AND EVERY WALL-CLOCK CUT LIVE IN

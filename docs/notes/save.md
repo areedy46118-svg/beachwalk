@@ -311,3 +311,20 @@ it is set in). `headTaken` is gone; `migrateHeadSave` reads it from old saves.
 Checked by save -> reload: full chain done, a mid-way save (Billy carried, key
 lying in the basket, two screws of each set out, artifact loose), and an
 old-format save with the head carried (comes back as the key, in hand).
+
+**NOTHING RUNS UNDER A CHECKPOINT'S BLACK (2026-10-17, "before i even load i am getting hit by them … no enemies should be
+killing me or anything game related going on before full loading").** `frozen()` now includes `bootHold > 0` (and
+`bootHold` is a `var`: `frozen()` is declared thousands of lines above it), and `damagePlayer` refuses under it. The
+restore itself (`updateRestore`) and the hold's own work are not gated on `frozen()`, so the load still drains.
+**And the sound is put back as the black lifts** (`audioAfterLoad`, "the sound effects on the farmer fight didnt load"):
+hush cleared, a suspended context asked to resume, the voice limiter's window emptied (it counts on the audio clock,
+which stands still while the context is suspended), the game gate and the master brought up if a load left them down.
+Measured in the pane after a fort reload: the effects bus peaks 0.08–0.13 through the fight.
+
+**AND NOTHING YOU PRESS REACHES IT (2026-10-17, "dont allow swinging or doing things while loading").** `gameLoading()`
+(introDone && bootHold > 0 || restore || roomRestore || applyingSave || replaying) gates a capture listener registered
+near the top of main.js, before every other window listener: pointerdown, mousedown, click, dblclick, auxclick,
+contextmenu, wheel, keydown, keypress are swallowed while it is true; the releases pass (nothing is left held) and Esc
+passes (the menu). `startWind` also refuses under it (a button held INTO the load re-tries its latch every 45 ms).
+NOT `startDig` / `primaryAction`: the restore re-runs your digs and pickups through them. Tested under a real checkpoint
+load: presses, E and the hotbar did nothing until the black lifted, then the hotbar worked on the next press.

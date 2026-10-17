@@ -597,3 +597,13 @@ here touches the AI or the blows).
 **Three jars come off the samurai (2026-10-16):** `samuraiJars()` on the frame `dojoWon` goes true — round where he
 fell, each on `bunkerFloorAt` (his feet's height if none), and the octopus ring's sting. `dojoWon` is on the save, so
 a restore never drops them again. Measured: three jars at 800.22 with him at 800.20.
+
+**THE SAMURAI'S FIGHT HAS A SCORE AGAIN (2026-10-17).** The owner, with "5450 score.mp3": "add this to the samurai fight
+make it start as soon as it says 'thats my sword'". (The note above is about the old 8-bit loop; this is a different
+track, asked for by name.) `assets/samurai-score.m4a` (afconvert AAC 160 kbps, 2.65 MB, 149.8 s, sound from its first
+sample). `startSamScore()` in `wakeSamurai` beside the line (not on a replay or restore); `updateSamScore()` from the top
+of `updateDojo`: fetched the moment you are in the dojo (`lazyBuf`), started late if it was still on its way, looped
+with each pass crossfaded 1.5 s into the next (the file ends on a full bar), faded out over 5 s when he falls, 1.2 s
+when you do, 1.5 s when you leave. On the music slider through its own gain (`samScoreVol`, in `applySettings`) at
+`SAM_SCORE_LEVEL` 0.26 (then 0.55, the owner: "turn up the samurai music", about 6.5 dB up) — the file is mastered at −9.1 dBFS RMS against the wreck theme's −16.4 and the passing theme's
+−20.5, so 0.26 puts it about 3 dB over them. Harness: `__bw.samScoreS()`.

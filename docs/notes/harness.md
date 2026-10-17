@@ -474,3 +474,9 @@ stoop comes within ~3.3 m parries (PARRY), and `attackAction()` swings.
   "I found your fish" was aligned into main's new `wreck` dialogue node. A
   line-presence diff cannot see a MOVED line; compare each added line's
   position against its nearest unique neighbour from before the merge.
+
+**`tools/audtap.js` (2026-10-17):** `__audMute()` takes the game's final gate off the speakers into an analyser that goes
+nowhere (silent, the context still running — the owner declined `setSinkId`), and taps the effects bus;
+`__audLevel(ms)` → { peak, rms, loud } of what reached it. `__bw.audS()` reads hush / replaying / applyingSave / the
+context / the bus gains / banks loaded / bootHold. In a HIDDEN pane a checkpoint load never lifts (no rAF): drive it
+with `__bw.frame(n)`. `__palBoot` leaves the paladin `holdAnim` and dev mode on: no swings until both are cleared.

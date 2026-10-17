@@ -2271,3 +2271,15 @@ floor with him in your arms (`elvFloorWas`/`elvStairBlink`), 0.1 s; measured lid
   across the staircase. Only a flat pane (its box under 0.5 m in its thin direction) is a window now. Measured: 0 of
   2,184 moves through the stair box refused; a window still refused until broken. A rule written for "the glass" must
   ask what shape each piece of glass is.
+- **The invisible wall south of the mouth** (the owner at (15.36, 0.28, −705.80), 2026-10-16): the land was the gully's
+  floor strip (1.45 m off its line) and the beach stopped at `CLIFF_BLOCK_X`; the talus's toe between them, open sand
+  below the face, was neither. `elvInLand` now takes the toe too, within `ELV_CUT + 2` of the line and out to an edge
+  that slants back to `CLIFF_BLOCK_X` (3 m out beside the gully, 0 at 6.65 m off it), so walking along it slides you back
+  onto the beach. A step off the land is legal only onto the beach's side of its clamp (`x <= CLIFF_BLOCK_X + 0.02`),
+  and the flag drops there, so the beach's clamp never throws you. Measured with real W walking: out of the mouth to the
+  south, the north and south-west onto the beach, along the beach past the mouth, from the beach up the toe into the
+  gully and down again — all through, no step over a stride. (A comment appended after a statement on a one-line
+  arrow function swallowed the rest of its body — the page did not load. Check the console after every edit.)
+- **Bradly's last exchange is out** (2026-10-17, the owner): "What else do they say about this beach?" and the rumours
+  reply (castles, monsters, the giant horseshoe crab, the burpees) are gone; `blood` is his last word and carries the
+  `say` that arms `bradlyScurry`, the 'click to leave' hint and `end: false`.

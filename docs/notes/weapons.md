@@ -2772,3 +2772,14 @@ the animations more natural and not as quick."
   `__pt.press` cannot drive the lunge from `javascript_tool` (the press path
   reads state the harness cannot see); call `b.windHeld = true;
   b.startWind()`, step, then `b.releaseWind()`.
+
+## The Flame on the peg: its heavy is the lunge (2026-10-17)
+
+"flame artifact isnt working on peg". `flameWeapon()` was fine (the peg has `onDig`, so `isArtWeapon` takes it, and
+the whale artifact always worked on it), but the flames rise only on a wind latched `windOverhead`, and the rapier
+never latches it: `if (overheadHeld() && !thrusting())`, because its Shift hold is the coiled lunge, not a raise. So
+on the peg `want` stayed 0 and `flameRelease` never set `flame.swing`. `flameHeavyWind()` (beside `flameRelease`) is
+`windOverhead || equipped.rapier`: every rapier wind is its charged lunge, and both `flameTick` and `flameRelease`
+ask it. Measured: k 0 → 0.63 → 0.99 over a two-second hold, `swing` true on release. The burn itself needed nothing:
+the peg's blows land through `digImpact` → `bladeHitMutant(…, true)` → `flameBurn` like every other edge.
+A new weapon whose heavy is not an overhead must be added to `flameHeavyWind`, or the Flame will sit dead on it.

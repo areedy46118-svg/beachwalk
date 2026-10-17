@@ -2164,10 +2164,13 @@ export function makeShipwreck(opts = {}) {
        * open floor now, while the table itself sat three metres away with
        * nothing on it. */
       const TX = 4.75, TZ = -3.05, TOP = 0.825, ty = soleY(TX, TZ) - 0.02;
-      HULL.add(cyl(0.055, 0.05, 0.10, 8, M.plank, TX - 0.36, ty + TOP + 0.05, TZ + 0.14));
-      HULL.add(slab(0.13, 0.21, 0.13, M.glass, TX + 0.32, ty + TOP + 0.14, TZ - 0.12));
-      HULL.add(cyl(0.085, 0.095, 0.06, 7, M.steel, TX + 0.32, ty + TOP + 0.055, TZ - 0.12));
-      HULL.add(cyl(0.02, 0.02, 0.13, 6, M.steel, TX + 0.32, ty + TOP + 0.30, TZ - 0.12));
+      // (in a group of their own and not baked: they go over when the table is broken — main.js `smashShipStore`)
+      const TT = new THREE.Group(); TT.name = 'messTop'; TT.userData.noBake = true; HULL.add(TT);
+      TT.add(cyl(0.055, 0.05, 0.10, 8, M.plank, TX - 0.36, ty + TOP + 0.05, TZ + 0.14));
+      TT.add(slab(0.13, 0.21, 0.13, M.glass, TX + 0.32, ty + TOP + 0.14, TZ - 0.12));
+      TT.add(cyl(0.085, 0.095, 0.06, 7, M.steel, TX + 0.32, ty + TOP + 0.055, TZ - 0.12));
+      TT.add(cyl(0.02, 0.02, 0.13, 6, M.steel, TX + 0.32, ty + TOP + 0.30, TZ - 0.12));
+      S.userData.messTop = TT;
 
       /* ---- a sea chest, IN FRONT OF THE KEG, and it opens --------------
        * IT IS THE OWNER'S OWN MODEL NOW (`assets/chest.glb`, out of
@@ -2719,7 +2722,7 @@ export function makeShipwreck(opts = {}) {
       lk.rotation.set(i % 2 ? 0 : Math.PI / 2, 0, 0);
       gaff.add(lk);
     }
-    solid(GAFF_X, postZ, 0.62, 0.62);
+    solid(GAFF_X, postZ, 0.38, 0.38);     // the post, not its base plate: a 9 cm plate is stepped on (the owner, 2026-10-17: "I can't walk freely … around the pole")
 
     const hook = new THREE.Group();
     hook.position.set(0, HOOK_Y - DECK_Y, 0);
@@ -2951,7 +2954,7 @@ export function makeShipwreck(opts = {}) {
       solidLow(x, z, span, span);
       if (isCatch) {
         bk.name = 'catchBasket'; bk.userData.noBake = true;   // it rocks when he lands in it
-        S.userData.catchBasket = { group: bk, x, z, floor: y - 0.145 };   // the top of its base
+        S.userData.catchBasket = { group: bk, x, z, ry, floor: y - 0.145, lo, box: PROPS[PROPS.length - 1] };   // the top of its base
       }
     }
 
@@ -2968,7 +2971,7 @@ export function makeShipwreck(opts = {}) {
     };
     S.add(coil(-3.6, 3.60, 0.42));
     S.add(coil(8.4, -3.30, 0.36));
-    solid(-3.6, 3.60, 0.9, 0.9, undefined, undefined, DECK_Y + 0.25);
+    // (the coil is walked over: 25 cm of rope at the gaff post's foot was a 0.9 m wall in the one gap round the pole)
 
     /* BUT HER POTS STAY HER POTS. She is a crab boat, and the steel pots
      * stacked down her port side are what says so — the set has nothing
@@ -2994,27 +2997,11 @@ export function makeShipwreck(opts = {}) {
      * project to be a fender at all, and however they were seated they
      * read as black rings poking out of her. Cut, not adjusted. */
 
-    for (let i = 0; i < 5; i++) {          // netting bundled at the rail
-      const x = -7.4 + i * 0.5;
-      const n = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 0), M.rope);
-      n.scale.set(1.1, 0.7, 0.9);
-      n.position.set(x, DECK_Y + 0.20, -deckHalf(x) + 0.55);
-      n.rotation.set(rnd(i) * 2, rnd(i * 3) * 3, rnd(i * 5) * 2);
-      S.add(n);
-    }
-    {  // the bundles' box runs out to the bulwark: between its old edge and the rail you stood in the nets
-      const zOut = -deckHalf(-4.9) - 0.1, zIn = -2.65;
-      solid(-6.4, (zIn + zOut) / 2, 3.0, zIn - zOut, undefined, undefined, DECK_Y + 0.45);
-    }
-    for (let i = 0; i < 4; i++)            // floats
-      S.add(new THREE.Mesh(new THREE.SphereGeometry(0.17, 7, 6), M.paint)
-        .translateX(-5.2 + i * 0.42).translateY(DECK_Y + 0.34).translateZ(-deckHalf(-5) + 0.5));
-    /* and they are solid, out to the bulwark: the sweep walked through the
-     * row of them between the netting's box and the rail (2026-10-14) */
-    {
-      const zIn = -deckHalf(-5) + 0.5 + 0.2, zOut = -deckHalf(-5) - 0.1;
-      solid(-4.56, (zIn + zOut) / 2, 1.66, zIn - zOut, undefined, undefined, DECK_Y + 0.51);
-    }
+    /* NO NETTING, NO FLOATS (2026-10-17, the owner, standing among them at
+     * the port rail: "get rid of these circle things and let me walk here").
+     * Five bundles of net and a row of four floats, and the two boxes that
+     * made them solid out to the bulwark, are cut: that stretch of rail is
+     * open deck now. */
 
     for (const dz of [-0.10, 0.12]) {      // his boots, still there
       S.add(slab(0.16, 0.30, 0.13, M.rubber, 3.4, DECK_Y + 0.15, -1.9 + dz, 0.1, 0.3, 0));
@@ -3118,10 +3105,12 @@ export function makeShipwreck(opts = {}) {
       // and a long bench down the side you come in from, aft of the hole
       ['bench_3', -1.10, 2.94, 0, 3.38, 0.50],
     ];
-    for (const [, x, z, , w, d, o] of PLAN) {
+    for (const e of PLAN) {
+      const [, x, z, , w, d, o] = e;
       if (!w || (o && o.loose)) continue;
       if (o && o.deck) solid(x, z, w, d);
       else solidLow(x, z, w, d);
+      e.box = PROPS[PROPS.length - 1];
     }
     /* ---- HER STORES: THE OWNER'S PIRATE-SHIP SET ----------------------
      * "Pirate Ship Assets" by Liaval (CC-BY-4.0, `tools/pirate_pack.py`):
@@ -3151,16 +3140,17 @@ export function makeShipwreck(opts = {}) {
       ['sacks', -7.50, 2.55, Math.PI / 2 + 0.12, 1.02, 0.80, { s: 0.74 }],
       // where the two loose baskets stood
       ['crate_open', -6.0, -1.3, 0.12, 0.62, 0.92, { s: 1.0 }],
-      ['sack', -5.2, -1.45, 0.71, 0.80, 0.80, { s: 0.86 }],
+      // (the lone sack that lay here is gone: cloth that does not break, flat on the sole, and you caught on it —
+      // the owner, 2026-10-17: "take this out I get stuck on it")
       // ---- her quarters: the keg the sea chest stands in front of, and a crate by it
       ['barrel', 6.50, 3.05, 0.9, 0.62, 0.62, { s: 0.9 }],
       ['crate', 5.75, 3.15, 2.1, 0.80, 0.80, { s: 0.95 }],
       // ---- her deck: casks where her casks stood, the crate on the starboard waist
-      ['barrel', -7.2, 2.6, 0.5, 0.78, 0.78, { s: 1.0, deck: true }],
-      ['barrel_open', -5.3, 2.90, 1.3, 0.70, 0.70, { s: 0.92, deck: true }],
+      ['barrel', -7.2, deckHalf(-7.2) - 0.70, 0.5, 0.78, 0.78, { s: 1.0, deck: true }],     // (against the rail: the starboard waist is the walk)
+      ['barrel_open', -5.3, deckHalf(-5.3) - 0.64, 1.3, 0.70, 0.70, { s: 0.92, deck: true }],
       ['barrel', 8.2, 0.90, 2.4, 0.74, 0.74, { s: 0.95, deck: true }],
-      ['crate', -1.9, 3.45, Math.PI / 2 + 0.22, 0.95, 0.75, { s: 1.08, deck: true }],
-      ['crate_small', -1.94, 3.42, 0.55, 0, 0, { s: 0.78, deck: true, on: 0.477 * 1.08 }],
+      ['crate', -0.9, 3.45, Math.PI / 2 + 0.22, 0.95, 0.75, { s: 1.08, deck: true }],     // (a metre aft of where it stood: the gaff post can be walked round now)
+      ['crate_small', -0.94, 3.42, 0.55, 0, 0, { s: 0.78, deck: true, on: 0.477 * 1.08 }],
       // the port side's stowed gear, where the basket stacks stood
       ['crate', -3.0, -3.45, Math.PI / 2 + 0.1, 0.8, 0.8, { s: 0.95, deck: true }],
       ['crate_small', -3.02, -3.47, 0.4, 0, 0, { s: 0.82, deck: true, on: 0.477 * 0.95 }],
@@ -3194,6 +3184,24 @@ export function makeShipwreck(opts = {}) {
       e.unit = u;
       for (const f of PIRATE) if (!f[4] && f !== e && Math.hypot(f[1] - x, f[2] - z) < 0.2) f.unit = u;
       BREAKABLE.push(u);
+    }
+    /* AND THE TABLES AND THE CATCH BASKET (2026-10-17, the owner: "make tables in the shipwreck break too but keep
+     * their textures"; "make the basket to catch the key breakable when hit and when walked through"). The tables'
+     * pieces are the furniture set's own meshes (`src: 'furniture'`, lifted out of its merge like the stores, UVs
+     * and all); the mess table takes its mug, cup and lamp with it (`top`). The basket is its own group (`group`),
+     * like a pot stack, and breaks when you walk into it (`walk`). Appended LAST: a save's unit numbers stay. */
+    for (const name of ['table_3', 'table_1']) {
+      const e = PLAN.find((f) => f[0] === name); if (!e || !e.box) continue;
+      const [, x, z, ry, , , o] = e;
+      const u = { kind: 'table', src: 'furniture', x, z, ry, deck: !!(o && o.deck), lie: false, box: e.box, pieces: [], floor: soleY(x, z) - 0.02,
+                  top: name === 'table_3' ? S.userData.messTop : null };
+      e.unit = u;
+      BREAKABLE.push(u);
+    }
+    if (S.userData.catchBasket) {
+      const cb = S.userData.catchBasket;
+      cb.unit = { kind: 'basket', group: cb.group, x: cb.x, z: cb.z, ry: cb.ry, deck: false, lie: false, box: cb.box, pieces: [], floor: cb.lo, walk: true };
+      BREAKABLE.push(cb.unit);
     }
     /* Stand them the moment the download lands. Every piece is CLONED —
      * `barrel_2` and `barrel_4` are each used twice and a mesh has one
@@ -3239,7 +3247,8 @@ export function makeShipwreck(opts = {}) {
         }
         return out;
       };
-      for (const [name, x, z, ry, w, d, o] of PLAN) {
+      for (const e of PLAN) {
+        const [name, x, z, ry, w, d, o] = e;
         const src = byName.get(name);
         if (!src) { console.warn('shipwreck: no furniture piece named ' + name); continue; }
         const m = new THREE.Mesh(src.geometry, dress(src.material));
@@ -3258,6 +3267,7 @@ export function makeShipwreck(opts = {}) {
         m.position.set(x, y, z);
         m.rotation.set(o && o.tilt ? o.tilt : 0, ry, o && o.roll ? o.roll : 0);
         G.add(m);
+        if (e.unit) e.unit.pieces.push(m);
       }
       S.add(G);
       return G;

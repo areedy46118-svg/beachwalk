@@ -843,3 +843,218 @@ waits until you hit right now").** The rise take waited for `fell`: Dante's deat
 and only `umbraProvoke` (a blow) started the take. `fell` is also `!!D.rag` now, and the beat on the body is 0.4 s,
 not 1.3. Measured: the kill at 0 s, the take at 5.0 s (the 4.4 s fall + the beat), he is up and charging at 11.5 s.
 Two end-of-clip tests that differ by a centisecond is a door that never opens.
+
+**THE PALADIN (2026-10-17, the owner's "paintpoly paladin knight").** Comes into the farmers' fight in the first castle
+when half the twenty are dead (`palMayCome`, from `updateFarmers`), with a take (`palStartCut` / `updatePalCut`, wall
+clock, `palCutRef` in `frozen()` and the lens, declared at the top of the file): the bell's last stroke, a low drone
+(`palDrone`), dust where he stands out of the dark beyond the nearest farmer, the farmers stop and turn to him (their
+mixers ticked by the take, idle), he walks up dragging his point (sparks when the tip is under 0.45 m), the wide sweep
+(`pWide`) takes the man's head off (`palKill` + `finishMutant` by hand: `gunHead` → `burstHead`) with the world
+slowed to a fifth for 0.75 s, then he turns to you and roars and the fight is his (`forceSwing` pLeap / pWide).
+- **Model:** `tools/paladin_pack.py` rebuilds the Rigify rig onto 52 Mixamo-named bones (twist halves, pelvis,
+  breast and palm merged into their chain bones' weights), skins the sword wholly to `RightHand`, hangs
+  `paladin_tip` / `paladin_hilt` / `paladin_pommel` empties off the hand, and repaints the storybook lilac as
+  blackened steel (the painted light kept as wear), a black-red tabard and dark hide. 1.4 MB. At `h` 2.45.
+- **Moves:** `ntar_moves.py -- paladin` (`--partial` writes a set whose clips are still coming). Swings: the owner's
+  Mixamo `paladin moves` folder on the Desktop (Standing Melee Attack Downward/Horizontal/Backhand, Combo Ver. 1–3,
+  360 Low, Run Jump Attack, Taunt Battlecry, Falling Back Death). Stance, gait, flinches: Great Sword Pack clips the
+  orc does NOT use (idle 3–5, impact 3–5, blocking 2, casting, death 2). The sources moved to
+  `~/Desktop/BEACHWALK ASSETS`; the set says so (`SRC`).
+- **Swings he has no clip for are not thrown** (`kind.clipGated`, in the pick). `hit` comes off the json at author
+  time (`authorPaladinClips`) so `natural` times every swing off its own contact frame; `natHold` holds the top.
+- **Cleave:** `palCleave` — a farmer whose chest (1.15 m, r 0.5) or head (1.55, r 0.42) the hilt→tip segment passes
+  near during a `cleave` swing's strike window dies (`palKill`, head 35 % or when the head was the hit).
+- **Heavy guard:** `blockMutant` / `parryMutant` call `palBlockFx` for a `heavyBlock` kind: 44/64 world sparks off
+  the point of HIS blade nearest your eye, the deflect lamp, a low `blockMil`, a slam, more shake, hitstop 0.13/0.26,
+  and the block's shove ×1.5.
+- **The street is not won until he is dead too** (`paladinDone()` gates `farmFight.done`); `farmCalm` → `palCalm`;
+  `farmRetireAll` retires him (a save from before he existed, with the street already won).
+- **Boss bar:** `palBarShow` / `palBarTick` — the game's first; a DOM bar under the picture, "THE PALADIN".
+- Not the beach's ground clamp (`!u.kind.paladin`); `fortBody` gives him the castle's stone (`fortClampUnit`).
+- **His entrance spot must be SEEN**: the first try put him on open cobbles round a corner and the take's first six
+  seconds were a wall. `palStartCut` now wants a clear line (`keepHitsWall`, FORT_SITE) from your eye to his chest
+  and head height, and from him to the victim at knee and chest height, scoring far-and-behind-the-victim. The victim
+  is the farmer nearest EIGHT metres off (more than 5): a man at 3 m put the roar on top of the lens.
+- **Harness:** `tools/paltest.js` (`__palBoot`, `__palCut`). In a pane that is not focused rAF gives NO frames: drive it
+  with `tools/burntest.js`'s fake clock (`__clockOn`, `__adv(n)`); `b.frame(n)` alone advances real time only (a
+  thirtieth of a second for thirty frames). The intro waits on wall time: let a few real seconds pass. A still of the
+  player's view needs `renderer.setSize(...)` first — the hidden pane's canvas is 0×0. tools/farmfight.js's
+  `__unfreeze` spins up to 5,000 frames if the intro never finished: it held the page for minutes.
+
+**THE PALADIN'S MOVES, ROUND 2 (2026-10-17): the EEJANAI slashes, a real grip, and one rest per skeleton.**
+- **Sources:** the owner's EEJANAI "Free Sword Animation" (nine slashes, three stances; `~/paladin moves/Assets/
+  EEJANAI_Team`), MocapOnline's "TC Sword" free pack (`~/Downloads/TC_Sword_Free_Pack`: ready idle, walk, run, one
+  combo), the Great Sword Pack for flinches, strafes and death. EEJANAI's FBXs have the HIPS AS THE ARMATURE OBJECT
+  (`EEJANAIBot:Hips` under an `Armature` empty, 0.01 scale) and prefixed bones: `tools/eej_convert.py` re-lays each on a
+  plain Mixamo skeleton (Copy Rotation, world→world, per bone — they share rest axes; a Child Of on every bone counted
+  each parent twice — and a Child Of with its inverse set at rest for the hips) and bakes to `~/paladin moves/converted`.
+  Its three STANCE FBXs are a near T pose (the real stances are Unity humanoid .anim curves): not used.
+- **ONE REST PER SKELETON (the owner's "all bunched up and ugly").** `ntarRetarget` aligns the rig once, to the FIRST
+  clip it is handed, and plays every clip's delta from that rest. Fed Mixamo, MotusMan and EEJANAI clips together, the
+  TC walk and the slashes were played off Mixamo's rest: shin swinging sideways, arms flared. `authorPaladinClips`
+  groups clips by rest (rest Hips quaternion + LeftArm rest position) and retargets each with the first of its group;
+  `facingRef: 'mixamo'` only for Mixamo's rest (it compares the hips BONE's rest to Mixamo's, meaningless for others).
+  After: his walk's bone directions match the source to a hundredth.
+- **THE GRIP** (`tools/paladin_pack.py`): the hand is a leaf of the retarget and takes its FOREARM's rest alignment, so
+  the blade is seated as the captured swordsman's sat at HIS rest, turned back by the smallest rotation that lays the
+  paladin's forearm along his (`Ai`). Read in the hand's own frame on a frame of a SLASH (constant to a hundredth
+  through the clip; the stance files hang the sword anyhow, and with the sword empty's own action off it sat a
+  quarter-turn wrong), carried to the rest hand, and turned to face −Y off his feet (EEJANAI's bot faces +Y; the same
+  foot rule ntar uses, so they agree). Blade ×0.78 (1.5 m model, ~2.1 m at h 2.75).
+- **CONTACT IS MEASURED ON HIS BLADE** (`palContact`, at load): after the draw's apex, the fastest frame with the
+  blade's middle at a man's height across his front (within ±115°), the active window the span where the point's
+  speed is over half that, opened 0.16 s earlier (in the fight the blade went through you before the window, every
+  time), the clip's own travel counted. The clip is turned about the vertical (ramped in to the blow, out to the end,
+  ≤ 0.9 rad) so the blow crosses his line; his stop is where the blade crosses (≤ 2.6 m); a blow that never crosses his
+  front is `skip`ped (slash4, 7, 8) and nothing chains into it; the second slash measured 0/5 and is out of `use`.
+  `ring` and `maxReach` are recomputed after. The game's own aimed blow (`blowLands`, `aimK` 2.2) is the hit test:
+  `palLands` (blade-through-capsule) was stricter than a held, slowed capture could pass.
+- **ROOT MOTION** (`palRootMotion`): swings are played in place by the game; the captured man steps up to 1.8 m into a
+  cut, so his feet slid. During a swing his root follows `clipTravelAt` (turned to his heading, never closer than
+  body + 0.45 to you, `fortClampUnit`), and `lunge` is 0.15.
+- **Heavy:** `h` 2.75, every slash `rate` 0.78, `speedK` 0.76. Measured on a still player: ~40 swings a minute.
+- **The take:** spawns off to the farmer's SIDE (`|off| ≈ 1 rad` scores best) — square behind him the farmer stood in
+  front of him the whole walk; the kill is `PAL_KILL` (`pS3`); the roar frames 3.4–3.8 m (2.2 was his breastplate).
+- **The trail** is faint (×0.22) and fades within 2.6 m of the eye: an additive hilt-to-point sheet across the lens was
+  half the picture white.
+- **`kind.clipGated`** (in the pick): a swing with no clip, or `skip`, is not thrown.
+- **ROUND 3 — HITS THAT CONNECT AND CAN BE READ (the owner: "make sure he feels good to fight and hits connect well
+  and read visually like swordfighting").** The hit is HIS BLADE THROUGH YOU again (`palLands`, R 0.42, the blade's
+  outer three quarters swept between frames), over the WHOLE CUT: `palContact`'s window opens 0.18 s before the
+  point's fast part (never before the draw's apex) and closes three frames after it slows (≤ 0.8 s). Root motion is
+  live through the draw and SIDEWAYS ONLY once the cut starts (he does not chase you through it). Measured with
+  `tools/paltest.js`: `__palBout(25)` against a man standing still — 6 of 9 blows landed, ~22 swings a minute;
+  `__palBout(30, true)`, stepping back 1.6 m as each blow came — 1 of 14. `__palCal` / `__palFair` per swing.
+- **His timing was never applied**: `naturalSwings` + the measured windows ran on the creature tick, which is not run
+  while he waits underground before the take (and on its first frame his clips were not in, so it set nothing and
+  never ran again). They run at the end of `palContact` now (`u.palMeasured`).
+- Live swings after measuring: slash 1, 2, 3, 6, 9 (4, 7, 8 cross nothing at a man's height: `skip`).
+
+**THE PALADIN, ROUND 4 (2026-10-17): BAKED IN BLENDER, A REAL FIST, NO ENTRANCE.** The owner: "the paladin fight is
+horrible take out the cutscene and just make him join the fight half way. his rig is bad it makes no sense. his moves
+look horrible hes not even holding his sword. fingers arent even wrapped around the handle".
+- **What was wrong, measured:** the moves file carried 22 bones (no fingers), so his hands were open; the blade was
+  seated off one capture's (EEJANAI's) rest and played under TC and Mixamo clips too, so it sat at a different wrong
+  angle in each pack. And the model's own sword seat is for a POSED hand — at rest the blade floats across his chest
+  nowhere near the palm (rendered in Blender): no rest-relative seat was ever a grip.
+- **`tools/paladin_pack.py`** now seats the sword itself: grip across the palm along the knuckles (pinky→index, tipped
+  0.3 up the hand), in front of the palm by the grip's radius + 1.6 cm, flat parallel to the palm, the fist just under
+  the guard (the guard is the widest section of the blade's profile along its PCA axis; a low-poly grip has vertices
+  only at its rings — take the median of the non-zero bins). The blade has its own `Sword` bone (child of RightHand);
+  `paladin_tip`/`paladin_hilt` ride it. It saves /tmp/paladin_pack/rest.blend; the maps are cached in /tmp/paladin_pack/tex.
+- **`tools/paladin_bake.py`** (Blender) bakes every clip onto his own skeleton and exports assets/paladin.glb with the
+  clips in it (NLA tracks → glTF animations by name) plus a small assets/paladin-moves.json ({dur, travel, hipY, mode}).
+  World-space retarget off each source's own rest, put upright and turned to his facing (-Y): his bone takes the
+  source bone's motion since ITS rest, applied to his bone laid along the source's rest direction (shortest turn);
+  the hips and both hands are laid by whole FRAMES (pelvis up + across; hand along + across the knuckles).
+  EEJANAI's hips are the armature OBJECT: its rest is its parent's frame with the identity local rotation (checked:
+  upright, facing +Y). **The right hand follows the CAPTURED BLADE** (TC's `TonySword_01`, EEJANAI's `Sword` mesh):
+  hand = capturedSwordFrame · hisSwordFrame⁻¹ · handRest, the flat's sign picked once per clip nearest the plain
+  retarget. Checked every frame: his blade within 1.2° of the capture's. **The fist:** each finger joint turned about
+  the grip's axis until its end lands on a cylinder of grip-radius + 1.6 cm (curling IN only), the thumb last, aimed
+  over the index's middle joint. `--shots DIR` renders six frames of each clip and of the captured man beside it;
+  `--only fist` renders the fist at rest. TRAP: the source sword's `matrix_world` has no facing turn in it — compare it
+  against a hand position taken the same way, or the blade's point/pommel flips.
+- **The set:** TC ready/walk/run; EEJANAI slashes 1, 2, 3, 4, 7 (5 is a 7 m dash, 6 a leaping spin, 8 a twitch, 9 a
+  roll); Great Sword Pack strafes, 180 turn, impact (2) → pHit, impact (3) → pHitBig (impact, (4), (5) are held
+  crouches), blocking (2), casting (the rage), both two-handed deaths. The TC string (pCut1–3, pSlam) turns ±170°
+  between pieces and is gone with the entrance. Turns: gaits lose drift only; swings unwind their end turn over the
+  back half; the turn and the deaths keep theirs. 2.44 MB with every clip (the old pair was 2.6).
+- **In the game:** the loader already makes actions of a GLB's clips by name; `authorPaladinClips` no longer
+  retargets — it sets `clipTravel`/`clipSpeed` from the moves file × the model's scale (× `PAL_TRAVEL_K` 0.8 for
+  swings: a captured lunge scaled to a 2.75 m body covered three metres), then `palContact` as before. Swing `rate`
+  0.78 → 0.90, `speedK` 0.85. `palRootMotion` lets 40 % of the forward step through once the cut starts (none of it
+  slid his feet). Measured (`__palBout`): standing still 11/11 blows land; a 1.6 m step back still eats ~9 in 10 (he is
+  a 2.75 m man with a 2.1 m blade); a 2.6 m retreat escapes 3 in 4. Block and parry are the answer, as in Sekiro.
+- **No entrance:** `palMayCome` → `palJoin()`: the bell, a roar, and he is on open paving 9.5–14 m off with a clear
+  line to you, to your side or behind rather than in your face, awake. `palStartCut`/`updatePalCut` are kept, unused.
+- `ntar_moves.py -- paladin` now exits without writing (it would overwrite the new moves file in the old format);
+  `tools/eej_convert.py` and the converted folder are no longer read.
+- HARNESS TRAPS: `__palBoot` leaves him `holdAnim` (bind pose, no swings) and dev mode on (no attacks) — a still of a
+  live swing needs `u.holdAnim = false; settings.devMode = false`. `__palBout(sec, dodge, far)` takes the retreat now.
+
+**THE PALADIN, ROUND 5 (2026-10-17): BOTH HANDS ON THE HANDLE, A TWO-HANDER'S BLOWS.** The owner: "he holds the sword
+too awkward … make him actually hold the sword on the handle"; then "hes holding too high on the handle".
+- **Why it was awkward:** a long-handled two-hander in ONE fist, the other arm loose, and in the TC ready/walk/run the
+  blade followed a captured curved sabre held out at his right side — his left hand could not have reached the grip
+  (1.15–1.24 of his arm). The EEJANAI slashes are a fencer's, one-handed, out of a low side guard.
+- **The set now (tools/paladin_bake.py):** guard, walk and run are the Great Sword Pack's idle / walk (2) / run, blade up
+  in front in both hands; his blows are its slash → pS1, slash (3) → pS2, slash (4) → pS3, attack (the chop, dmg 2,
+  `slam`) → pS4, high spin → pS6, jump attack → pS9 (minDist 3.2). They start and end in the guard he stands in, so
+  every join is seamless. (The tavern orc uses the same captures — on a different body, in a different room.)
+- **THE LEFT HAND IS PUT ON THE GRIP every frame:** a left fist made like the right (`make_fist(side, hilt, axis)` on a
+  grip mirrored across his middle — the rig is symmetric to the millimetre), its seat on the blade the right one's
+  mirrored (`seatL`, made proper again with a Z flip), placed `space` (palm width + 3 cm) down the grip from the right,
+  and the arm solved two-bone to reach it with the capture's own elbow as the pole. Weighted by reach
+  (1 under 0.98 of his arm, 0 over 1.12, eased per frame), so where a cut takes the blade past his left arm the hand
+  comes off and goes back on. Logged per clip: "left hand on the grip: reach a..b".
+- **Lower on the handle:** the right fist closes 8.2 cm (unscaled) under the guard, not 1.2 — `gripAt` in paladin_pack.
+- Measured: standing still 4 of 6 blows land, a 1.6 m step back escapes 7 of 8 (`__palBout`), ~20 blows a minute.
+- `gripshots()` in the bake renders the sword hand close at four moments of each clip (`--shots DIR`).
+
+**HE NEVER CAME AFTER A CHECKPOINT (2026-10-17).** The bar was up and the man nowhere: `palMayCome` could fire while a
+load was still putting you back (it only asked `frozen()`), and `palJoin` placed him off the spot you stood on before the
+restore. It now waits on `restore`, `applyingSave` and `bootHold`, and `palUnitPre` puts him back on the street near you
+(`palJoin(true)`, no bell) whenever he is out, alive and more than 30 m off or six under you in the castle.
+
+**THE FARMERS' BLOWS CAN BE READ (2026-10-17, "they just shrug and you get hurt").** (1) They swing at the capture's own
+speed (`naturalSwings`, which overwrites `wind`/`clipRate`), a jab in you 0.3 s after it starts: every `ax/hm/rk/fs`
+move now has `natHold` (0.22, fists and rake 0.30) at `cockF` 0.55 — drawn back and HELD, then let go. Measured winds
+0.8–1.2 s. (2) Out-of-turn swings (`frenzy`) and the pack's man sent to your back hit you from where you were not
+looking: `farmInView(u)` (70° of your facing) now gates both `wantSwing` and `demonFrenzyOK` for farmers.
+
+**ROUND 6 (2026-10-17): HIS BLOWS COME AT YOU; THE FARMERS HIT FROM BEHIND AGAIN.** The owner: "the farmers should
+still hit you from behind just make their swings better and more readable/visible"; "the paladins hits dont even get
+near me … he just swinging randomly and his sword doesnt even touch my player".
+- `farmInView` is GONE (both gates): they swing from wherever they stand, as before. What they have instead is a TELL
+  ON THE WEAPON — `farmTellTick` (from `updateFarmers`): a warm additive glint (`glowTex`, 0xffcf8a) on each man's weapon
+  hand from the start of a swing to its release, one cloned sprite per farmer made on his first swing — with the held
+  tops (`natHold`) it is up 0.8–1.2 s. Measured: made on the men who swung, two lit at once in a busy street.
+- **`palTrack`** (from `updatePaladin`, after `palRootMotion`): through the draw he turns into you at up to 4.5 rad/s
+  and closes or gives ground to `A.tipF × 0.95 − the clip's travel so far` (tipF is measured from where the swing began,
+  with the travel in it — `palContact`), at ≤ 3.2 m/s in, 2.2 out, never inside body + 0.5. Once it commits (0.1 s
+  before the window) he stops coming on but keeps turning into the cut at 2.4 rad/s (with the turn stopped at the
+  commit, nine cuts in twelve went past a man walking round him). A blow begun with you further than the draw can close
+  (tipF + max(1.2, wind × 2.6)) is called off in its first 0.2 s unless it is a gap-closer (`minDist`) — the
+  "swinging randomly" was chains and picks thrown from 10 m.
+- The cut's whole step goes through again (`palRootMotion`'s sideways-only block is out). `aimK` 2.2 → 1.2 (the body
+  aims now; `grip` keeps the left hand on the handle under what arm steering is left). rate 0.9 → 1.0, recover × 0.7,
+  press 0.95, sizeUp/circle 0.08, stepBack 1.6, turnMax 3.4.
+- **`__palNear(sec, mode)`** (tools/paltest.js) — per blow, the closest the blade's outer three quarters came to your
+  body's axis over its strike, and whether it hurt. Measured: still 5 of 6 land (blade 0.00–0.24 m off you); walking
+  round him at 2 m/s 5 of 10; stepping back 1.6 m as each is drawn, most miss.
+- HARNESS: the pane can stop giving the page frames while it is "displayed" (uTime frozen, `document.hidden` false) —
+  `__palBoot` then reports `fight: false`; `__clockOn(); __adv(90)` starts it.
+
+**ROUND 7 (2026-10-17): EVERY BLOW VISIBLY THROUGH YOU; THE HIGH SPIN OUT.** The owner: "make all his hits visually
+connect to the player some of the spin moves are bad".
+- **Why some never touched you (measured per blow, `__palEach(reps, mode)` — forced, three of each):** a captured cut
+  meets an opponent the performer's size, so on a 2.75 m body the overheads come through 1.9–2.0 m up — at and over
+  your head (your eye is 1.7) — and `palLands` counted steel up to 0.47 m over your eye within 0.42 m: pS3 and pS4
+  "hit" with the blade never lower than your eye.
+- **Now:** `palLands` counts only steel between knee (feet + 0.35) and crown (eye + 0.15), within 0.34 m of your axis;
+  the arm aim pulls the blade down onto you (`aimK` back to 2.2, `aimDrop` 0.6, `aimFrom` 0.5 — `grip` keeps the left
+  hand on); `palTrack` closes to `tipF × 0.88`. (`palContact`'s band stays on HIS scale, 0.6–2.4 m with the point
+  under 2.9: 0.5–1.6 was tried and threw three of five blows out as never crossing his front.)
+- Measured after, standing still and walking round him: every blow's steel passes 0–0.25 m off your axis and lands;
+  stepping 1.6 m back as each is drawn, one of thirteen lands.
+- `pS6` (the high spin) is out of `use` (its clip is still in the file); pS4 now chains to pS2.
+
+**THE FARMERS, 2026-10-17 (later): NO GLINT; HITS YOU CAN SEE; THE EDGE LEADS.** The owner: "i dont need glints when
+fighting the farmers i need there hits to look better and their weapons facing the right way. the hits do not connect
+right." `farmTellTick` is gone.
+- **Seen, not just counted.** tools/farmhits.js said every counted blow was within 8 cm of you — and a projection said
+  the weapon's head was in the picture on 4 of 12: judged at your middle, a blow counts as the weapon goes UNDER the
+  lens (you have no body on screen). Now `kind.hitFront` 0.30 judges it that far in front of you towards the man
+  swinging (in `blowLands`), `kind.bodyLowArm` 0.85 counts a hand or weapon blow only from the upper chest up (kicks
+  keep `bodyLow` 1.5), and `aimDrop` 0.25 → 0.05 aims them at your face. After: 17 of 18 blows land, median 0.15 m.
+- **The edge leads the cut** (`farmRollMeasure`, `farmToolRoll`, from the top of `updateFarmers`). The tool is seated
+  once at the stance and every swing is a borrowed capture whose wrist turns its own way: averaged over each blow's
+  fast part, the face (`FARM_TOOLS[t].bT`) led the head's travel by 0.05 (the rake's thrust −0.78: tines backwards).
+  Each swing's roll about the handle is measured ONCE on his own clip and seat at its contact (`A.hit`; along-handle
+  thrusts skipped), and applied about the handle's line through the grip, eased in from wind − 0.35 and out through
+  the recovery. After: 0.57 mean, every swing positive (0.15–0.96). (Following the head's travel frame by frame was
+  tried first and locked onto the draw: −0.8 to −0.95 at contact.) `u.farmToolBase` / `u.farmGrip` keep the seat.
+- `natHold` 0.30/0.22 → 0.16/0.12: frozen at the top of every swing.
+- TRAP PAID AGAIN: a `//` comment appended inside a one-line `for … { …; …; }` commented out its `}` and took the page
+  ("Unexpected end of input"). Put a comment AFTER the closing brace.

@@ -60,9 +60,11 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'crusader') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'crusader', 'paladin') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
+# (the owner keeps the packs on the Desktop now; a set may say so)
+if SET == 'paladin': SRC = os.path.expanduser('~/Desktop/BEACHWALK ASSETS')
 FPS = 30
 
 # What to take off the Mixamo rig: the joints the alien's own ragdoll map
@@ -504,6 +506,80 @@ if SET == 'crusader':
     CONTACT['sKick'] = 'RightToeBase'
 
 
+# ---- THE PALADIN (2026-10-17, the owner: "a brand new smooth moveset … unique swings"). His blows are
+# Mixamo's standing melee set, which nothing else in the game swings: the owner's `paladin moves` folder.
+# How he carries himself between them is the Great Sword Pack's — only the clips the orc does not use, so
+# even his standing and his flinches are his own.
+_P, _G = 'paladin moves', 'Great Sword Pack'
+_TC = os.path.expanduser('~/Downloads/TC_Sword_Free_Pack/FBX_Pack/Animation')
+_EJ = os.path.expanduser('~/paladin moves/converted')     # (absolute: `os.path.join` lets it win over SRC)
+PALADIN_CLIPS = [
+    # ---- THE OWNER'S EEJANAI "Free Sword Animation" PACK (2026-10-17, "use these instead"): nine slashes and three
+    # stances, re-laid on a plain Mixamo skeleton by `tools/eej_convert.py` (its hips are the armature object).
+    ('battle stance',                       'pStance', 'his guard', _EJ),
+    ('deffensive stance',                   'pGuard',  'the guard, braced', _EJ),
+    ('damaged (tired) stance',              'pTired',  'hurt, breathing, still holding the blade up', _EJ),
+    ('slash1',                              'pS1',     'a slash', _EJ),
+    ('slash2',                              'pS2',     'a slash', _EJ),
+    ('slash3',                              'pS3',     'a slash', _EJ),
+    ('slash4',                              'pS4',     'a slash', _EJ),
+    ('slash5',                              'pS5',     'a slash', _EJ),
+    ('slash6',                              'pS6',     'a slash', _EJ),
+    ('slash7',                              'pS7',     'a slash', _EJ),
+    ('slash8',                              'pS8',     'a quick one', _EJ),
+    ('slash9',                              'pS9',     'a slash', _EJ),
+    # ---- THE OWNER'S MOCAPONLINE "TC Sword" FREE PACK (2026-10-17): a real swordsman's capture — one ready stance,
+    # a walk, a run, and ONE combination of four blows, which is cut here into its blows (`WINDOW`) so the game can
+    # throw each on its own and CHAIN them back into the whole string: each piece ends on the frame the next begins.
+    ('KBS_Sword_ATK_Combo_01_001',          'pCut1',   'the first cut, one hand, down across', _TC),
+    ('KBS_Sword_ATK_Combo_01_001',          'pCut2',   'the second, both hands, back across', _TC),
+    ('KBS_Sword_ATK_Combo_01_001',          'pCut3',   'the third, both hands, low', _TC),
+    ('KBS_Sword_ATK_Combo_01_001',          'pSlam',   'the blade raised high and brought down into the stones', _TC),
+    ('KBS_Ready_Idle_001',                  'pReady',  'his guard, the blade out', _TC),
+    ('KBS_Walk_F_001',                      'pWalkT',  'the walk, blade in hand', _TC),
+    ('KBS_Run_F_001',                       'pRunT',   'the run', _TC),
+    ('Standing Melee Attack Downward',      'pDown',   'the overhead cleave', _P),
+    ('Standing Melee Attack Horizontal',    'pWide',   'the wide sweep', _P),
+    ('Standing Melee Attack Backhand',      'pBack',   'the return sweep', _P),
+    ('Standing Melee Combo Attack Ver. 1',  'pCombo1', 'a string', _P),
+    ('Standing Melee Combo Attack Ver. 2',  'pCombo2', 'a second string', _P),
+    ('Standing Melee Combo Attack Ver. 3',  'pCombo3', 'a third', _P),
+    ('Standing Melee Attack 360 Low',       'pSpin',   'the low turning sweep', _P),
+    ('Standing Melee Run Jump Attack',      'pLeap',   'the run and the leap down on you', _P),
+    ('Standing Taunt Battlecry',            'pRoar',   'the war cry', _P),
+    ('Falling Back Death',                  'pDie',    'and down on his back', _P),
+    ('great sword idle (3)',                'pIdle',   'standing, the blade down', _G),
+    ('great sword idle (4)',                'pIdleB',  'a second way of standing', _G),
+    ('great sword idle (5)',                'pIdleC',  'a third', _G),
+    ('great sword walk',                    'pWalk',   'the walk', _G),
+    ('great sword run',                     'pRun',    'the run', _G),
+    ('great sword strafe',                  'pStrL',   'sideways, left', _G),
+    ('great sword strafe (2)',              'pStrR',   'sideways, right', _G),
+    ('great sword 180 turn',                'pTurn',   'about face', _G),
+    ('great sword impact (4)',              'pHit',    'the flinch', _G),
+    ('great sword impact (5)',              'pHitB',   'a second flinch', _G),
+    ('great sword impact (3)',              'pHitBig', 'the one that rocks him', _G),
+    ('great sword blocking (2)',            'pBlock',  'the guard', _G),
+    ('great sword casting',                 'pCast',   'the blade raised over his head', _G),
+    ('two handed sword death (2)',          'pDieB',   'and down, the other way', _G),
+]
+if SET == 'paladin':
+    # (2026-10-17, round 4: his moves are baked onto his own skeleton by `tools/paladin_bake.py`, which writes
+    # assets/paladin-moves.json in ITS format; this set would overwrite it with the old one)
+    print('[ntar-moves] the paladin is baked by tools/paladin_bake.py now; nothing written'); sys.exit(0)
+    CLIPS = PALADIN_CLIPS
+    REST_FWD = True
+    _SW = ('pDown', 'pWide', 'pBack', 'pCombo1', 'pCombo2', 'pCombo3', 'pSpin', 'pLeap', 'pCut1', 'pCut2', 'pCut3', 'pSlam') + tuple('pS%d' % i for i in range(1, 10))
+    KEEP_YAW = {'pDie', 'pDieB', 'pTurn', 'pSpin'} | set(_SW)
+    RAMP_YAW = set(_SW) - {'pSpin', 'pCut1', 'pCut2', 'pCut3', 'pSlam'}     # (an EEJANAI slash that turns him unwinds over its back half)     # (the cut-up string keeps its turns: unwinding each piece would break the joins)
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW
+    # the string's blows, at the frames the hands are slowest between them (measured: the point's speed falls to
+    # 3 m/s at 37, 2.8 at 63, 1.5 at 91; the slam is in the stones at 124 and settled by 152)
+    WINDOW = {'pCut1': (0, 36), 'pCut2': (36, 62), 'pCut3': (62, 90), 'pSlam': (90, 151)}
+    for _c in _SW:
+        CONTACT[_c] = 'RightHand'          # the sword is in his right fist (the left rides the grip)
+
+
 if 'HIP_FROM_TAKE' not in globals(): HIP_FROM_TAKE = set()
 if 'RAMP_YAW' not in globals(): RAMP_YAW = set()
 # A clip whose hips are measured from its LAST frame, not its first: it
@@ -786,7 +862,7 @@ def main():
             out['clips'][name]['hit'] = contact
             out['clips'][name]['by'] = cb
 
-    if missing:
+    if missing and '--partial' not in sys.argv:          # (`--partial` writes what there is: a set whose clips are still on their way)
         sys.exit('no source and nothing already built for: ' + ', '.join(missing))
     with open(OUT, 'w') as f:
         json.dump(out, f, separators=(',', ':'))
