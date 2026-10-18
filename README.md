@@ -26,7 +26,7 @@ Then open <http://localhost:4173> and click to begin. Any static server works
 | Click / `E` / `F` | Grab a physics object · take an item · dig (with the shovel) |
 | Click (while carrying) | Throw the held object — it's a toggle, no hold |
 | Hold right-click | Guard with the shovel, held across you. Raise it INTO a blow to parry and stun — then hit it, because a blow on a parried enemy counts double. No swing comes out of a guard |
-| `Ctrl` | Crouch (toggle) — crawl under the pier |
+| `C` (or `Ctrl`) | Crouch (toggle) — crawl under the pier. `C` is the one to use: on Windows, W pressed before Ctrl is let go is Ctrl+W, which closes the tab (the game asks "Leave site?" first) |
 | Left-click (with the .44) | Fire — one round per press, six to a cylinder |
 | Hold right-click (with the .44) | Aim down the sights: the lens narrows, the sway falls away and the spread closes to almost nothing |
 | `R` | Reload the .44 off a speedloader (a dry trigger does it for you if you have one) |
@@ -157,7 +157,7 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   lands on the pier's boards instead of dropping through them, bounces off
   rock and timber with a sound that matches what it hit, and will kill the
   crab outright.
-- **Crouch (`Ctrl`) to get under the pier.** Nothing solid can be walked
+- **Crouch (`C`) to get under the pier.** Nothing solid can be walked
   through: the piles, the light post and the boat are all real, and you can
   stand on the boat and step off it.
 - **Walk speed always starts at 1.4×.** The slider in the menu is for the
@@ -340,7 +340,7 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   gaps in the barricade before you can get to it. You come in
   by the breach on her near side and go out through a second tear low in her
   far side, past the foot of the companion ladder — too low to walk through:
-  crouch (`Ctrl`) to get out. Sand has blown in through it and the moon
+  crouch (`C`) to get out. Sand has blown in through it and the moon
   shines in on the sand, so from across the hold the way out is a pale patch
   at the foot of the far wall. Her whole deck
   walks: a clear lane down each waist between the wheelhouse and the
@@ -574,7 +574,10 @@ the box stops and a door slams downstairs. Carry it back (it blinks once,
 and later looks up at you) and he wears it on his hand, both of them watching
 you, and pays you a jar of blue blood. Hit him and he fights — with the
 puppet on, only with his free hand — and goes down like any man: five jars,
-the ring's sting, and the puppet climbs down and runs.
+the ring's sting, and if the puppet is on his hand it climbs down and runs.
+Kill him before you have brought it back and the puppet is still yours to
+deal with — waiting on the bed, or still in your arms: throw it on the fire,
+or carry it all the way to the shop, where he buys it for ten jars.
 
 ## The bunker
 

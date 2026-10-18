@@ -2283,3 +2283,15 @@ floor with him in your arms (`elvFloorWas`/`elvStairBlink`), 0.1 s; measured lid
 - **Bradly's last exchange is out** (2026-10-17, the owner): "What else do they say about this beach?" and the rumours
   reply (castles, monsters, the giant horseshoe crab, the burpees) are gone; `blood` is his last word and carries the
   `say` that arms `bradlyScurry`, the 'click to leave' hint and `end: false`.
+
+**The puppet outlives the man (2026-10-18, the owner: "when you kill the puppeteer before going into the house the
+puppet is then gone but the puppet should still be there and be able to still be thrown into the fire or sold at the
+shop if you bring him that far for 10 jars").** He has no immunity, so he can die at any stage, and every death set
+`elvStage` 4 — which took the bed's "Pick it up" away (it asks for stage 1) and, in your arms, made the puppet jump
+down and run (`elvPupFromArms`, deleted). `elvStageOnDeath()` is the one rule now, used by `elvDie`, the retired-unit
+path in `updateElvManPose` and the load path: 3 → 4 (on his hand: it runs, as before); 0 → 1 (killed before he
+asked: the puppet is on the bed for the taking); 1, 2, 5, 6 unchanged. So **`elvStage` is the puppet's story and
+`elvMan.dead` is the man's** — read the right one. The load path's `elvStage >= 4` became `=== 4`: it was retiring a
+LIVING man on any stage-5 load (the provoke-on-sight after the fire could never run). The talk interaction is
+`elvStage < 5`. **Stage 6 is sold**: `SELL_ROWS` 'puppet' (10 jars, only while `elvCarrying && elvStage === 2`),
+`traderSell` ends the carry; its tile is `pupShopItem()` (a fresh instance in the bed's `pupSitEdge` pose, `iconRot` 0.3 / −2.3: from dead ahead the thighs run at the lens and he reads as stood up straight).

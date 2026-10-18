@@ -819,3 +819,11 @@ need to be said").** Every `flashPrompt`/`setPrompt` of PARRY, BLOCKED,
 RIPOSTE, DOWN, SAND and STEP is gone (17 of them, every creature family).
 OUT OF BREATH (a state, not an act) and the deep's "SPACE rise · CTRL sink"
 (keys you could not guess) stay.
+
+**CTRL+W CLOSES THE TAB (2026-10-18, the owner, on Windows: "control and w to crouch and walk ... closes the
+tab").** Crouch is a toggle on Ctrl, and a W pressed before Ctrl is released is Ctrl+W, which every browser keeps
+for itself: `preventDefault` on it is ignored in a normal tab (only the Keyboard Lock API, Chromium-only and only
+in element fullscreen, can take it). So: C crouches too and is the key the controls card, the README and the
+deep's hint name; and a `beforeunload` guard asks "Leave site?" while a game is under way — skipped when the game
+reloads itself (`leavingOnPurpose`, set by `reloadInto`, the end screen's restart and the lost-context fallback)
+and in dev mode. A new self-reload must set `leavingOnPurpose` or it will ask.

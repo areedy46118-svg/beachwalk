@@ -1082,7 +1082,7 @@ export function makeDrainageTunnelHome(opts = {}) {
       const x = 0.2 + rnd(i * 5.1) * (BORE_LEN - 0.4);
       const w = 0.25 + rnd(i * 2.7) * 0.9;
       const patch = slab(w, 0.006, 0.16 + rnd(i * 7.3) * 0.5, M.algae,
-        x, FLOOR_Y - 0.012, (rnd(i * 3.9) - 0.5) * 0.5);
+        x, FLOOR_Y - 0.012 + i * 0.0003, (rnd(i * 3.9) - 0.5) * 0.5);   // each its own height (all under the silt's top): overlapping at one, their tops fought
       IN.add(patch);
     }
     // slime creeping up the pipe walls at the waterline: slices of cylinder at
@@ -1332,8 +1332,9 @@ export function makeDrainageTunnelHome(opts = {}) {
     // steel frame + the heavy leaf swung right back out of the way (photo 8)
     // x 0.05 not 0.02: at 0.02 the frame's back face landed exactly on the
     // wall's front face (both at -0.06) and the two z-fought
-    DOOR.add(slab(0.16, OH + 0.1, 0.12, M.steel, 0.05, OH / 2, OW + 0.06));
-    DOOR.add(slab(0.16, OH + 0.1, 0.12, M.steel, 0.05, OH / 2, -OW - 0.06));
+    // and the jambs stand 1 cm proud into the opening: at OW + 0.06 their inner faces were the wall's own (z = ±OW)
+    DOOR.add(slab(0.16, OH + 0.1, 0.12, M.steel, 0.05, OH / 2, OW + 0.05));
+    DOOR.add(slab(0.16, OH + 0.1, 0.12, M.steel, 0.05, OH / 2, -OW - 0.05));
     DOOR.add(slab(0.16, 0.12, OW * 2 + 0.24, M.steel, 0.05, OH + 0.05, 0));
     // frame bolts
     for (const sg of [-1, 1]) for (let i = 0; i < 5; i++) {
@@ -2097,7 +2098,7 @@ export function makeDrainageTunnelHome(opts = {}) {
     }
     for (let i = 0; i < 9; i++)
       C.add(slab(0.4 + rnd(i * 3.3) * 1.2, 0.006, 0.12 + rnd(i * 1.9) * 0.4, M.algae,
-        CIS_X0 + 0.5 + rnd(i * 4.4) * (CIS_LEN - 1.0), 0.04, CH_Z0 + 0.2 + rnd(i * 2.6) * 0.9));
+        CIS_X0 + 0.5 + rnd(i * 4.4) * (CIS_LEN - 1.0), 0.04 + i * 0.0015, CH_Z0 + 0.2 + rnd(i * 2.6) * 0.9));   // each its own height, as the bore's
 
     /* THE PIPE YOU CAME IN BY, on the west wall at the height it left the
      * room, a concrete collar round it and a slope of silt washed out of it

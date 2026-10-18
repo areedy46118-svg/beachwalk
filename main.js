@@ -1043,11 +1043,11 @@ document.body.appendChild(renderer.domElement);
   renderer.domElement.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
     if (lostT) return;
-    lostT = setTimeout(() => { try { reloadInto(hasCheckpoint() ? 'checkpoint' : 'fresh'); } catch (er) { location.reload(); } }, 4000);
+    lostT = setTimeout(() => { try { reloadInto(hasCheckpoint() ? 'checkpoint' : 'fresh'); } catch (er) { leavingOnPurpose = true; location.reload(); } }, 4000);
   }, false);
   renderer.domElement.addEventListener('webglcontextrestored', () => {
     clearTimeout(lostT); lostT = 0;
-    try { reloadInto(hasCheckpoint() ? 'checkpoint' : 'fresh'); } catch (er) { location.reload(); }
+    try { reloadInto(hasCheckpoint() ? 'checkpoint' : 'fresh'); } catch (er) { leavingOnPurpose = true; location.reload(); }
   }, false);
 }
 
@@ -9148,7 +9148,10 @@ window.addEventListener('keydown', (e) => {
     else if (noteOpen) closeNote();
     else if (menuOpen) closeMenu();
     else if (fallbackLook) openMenu();
-  } else if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+  } else if (e.code === 'KeyC' || e.code === 'ControlLeft' || e.code === 'ControlRight') {
+    /* C FIRST (2026-10-18, the owner: "control and w to crouch and walk ... closes the tab" on Windows): Ctrl still
+     * crouches, but a W pressed before it is let go is Ctrl+W, which the browser keeps for itself and no page can
+     * cancel. C sits off W's finger, and it is the key the game names now. */
     // standing up is refused while there is something over your head — you
     // used to stand under the pier and get teleported out from under it
     if (!frozen() && (!crouching || headroomClear())) crouching = !crouching;
@@ -9415,7 +9418,18 @@ document.getElementById('m-reset').addEventListener('click', () => {
  * you were carrying it when you reached the pavilion. The opening card is
  * skipped either way; the title click stays, because pointer lock needs a
  * gesture and nothing can give it one for you. */
+/* DON'T LOSE THE GAME TO CTRL+W. The browser closes the tab on Ctrl+W (Cmd+W on a Mac) and a page cannot stop it —
+ * but it can ask first: while a game is under way, closing or leaving the tab gets the browser's own "Leave site?".
+ * Not when the game reloads itself (a death, a restart, a lost GPU: `leavingOnPurpose`), and not in dev mode, where
+ * the owner refreshes all day. */
+let leavingOnPurpose = false;
+window.addEventListener('beforeunload', (e) => {
+  if (leavingOnPurpose || !started || ended || settings.devMode) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 function reloadInto(mode) {
+  leavingOnPurpose = true;
   try {
     sessionStorage.setItem('beachwalk.skipIntro', '1');
     sessionStorage.setItem('beachwalk.load', mode);
@@ -23983,7 +23997,7 @@ function showEnd(opt = {}) {
   refreshUI();
   endEl.classList.add('show');
 }
-document.getElementById('end-restart').addEventListener('click', () => location.reload());
+document.getElementById('end-restart').addEventListener('click', () => { leavingOnPurpose = true; location.reload(); });
 
 // ------------------------------------------------------------------
 // Movement + recentring + loop
@@ -23994,7 +24008,7 @@ const right = new THREE.Vector3();
 const moveDir = new THREE.Vector3();
 let bobPhase = 0;
 let camBaseY = EYE_HEIGHT, vy = 0, onGround = true, jumpLatch = false;
-/* Crouch. A toggle on Ctrl, not a hold — you crawl under the pier for as
+/* Crouch. A toggle on C (or Ctrl), not a hold — you crawl under the pier for as
  * long as it takes to come out the other side, and holding a key for that
  * is worse than pressing one twice. The eye drops to CROUCH_EYE and the
  * body with it, which is what lets you under the boards; `playerHeight()`
@@ -40448,9 +40462,8 @@ const ASK_WRECK = { label: 'Ask about the shipwreck', to: 'wreck', when: () => !
 /* AND HE WAS HER CAPTAIN (the owner's word, 2026-10-15). The fish on her
  * wheelhouse wall misses his old crew; bring him up the beach off his screws
  * and the old man has his first mate back — the fish goes up on the shed's
- * back wall and the captain gives you what came up in his nets the night she
- * went down: the Artifact of The Sea. Offered wherever the conversation goes,
- * the peg's own rule. */
+ * back wall and the captain gives you the Ring of Connection (on the `fish`
+ * line). Offered wherever the conversation goes, the peg's own rule. */
 const OFFER_FISH = {
   label: 'I found your fish', to: 'fish',
   when: () => billyState === 1 && inventory.includes(billyItem),
@@ -50874,6 +50887,11 @@ const SELL_ROWS = [
   ...[['ringOct', () => ringItem], ['ringWed', () => weddingItem], ['ringGem', () => gemItem], ['ringOld', () => oldRingItem]].map(([key, it]) => ({
     key, item: it, get name() { return it().name; }, price: 3, sum: 'Any ring, three jars',
     count: () => (inventory.includes(it()) || rings.includes(it()) ? 1 : 0), get desc() { return 'Worn: ' + (it().desc || 'a ring'); }, ring: true })),
+  /* AND THE PUPPET, if you carried him this far (2026-10-18, the owner: "sold at the shop if you bring him that far for
+   * 10 jars"): only while he is in your arms, and he goes out of them across the counter (`elvStage` 6, saved) */
+  { key: 'puppet', item: () => pupShopItem(), name: 'The Puppet', price: 10, sum: 'Elvédor\'s puppet, in your arms',
+    count: () => (elvCarrying && elvStage === 2 ? 1 : 0),
+    desc: 'Elvédor Basquiant\'s puppet. The talent. He has not taken his eyes off you since the house.' },
   /* AND ANY ARTIFACT IS THREE JARS — loose in the pack only; one set into a
    * weapon has to come out of it first, the way a ring comes off a finger. */
   ...[['artWhale', () => whaleArtItem], ['artFlame', () => flameArtItem], ['artSea', () => seaArtItem]].map(([key, it]) => ({
@@ -50924,6 +50942,11 @@ function traderSell(key) {
     sellFromStack(glowstickItem);
     gainJar(r.price);
     traderSaid = inventory.includes(glowstickItem) ? 'More of these. Light your own way next time.' : 'A glowstick. One jar.';
+  } else if (key === 'puppet') {
+    elvCarryEnd();
+    elvStage = 6;                       // sold: no bed, no arms, no fire (saved as it is)
+    gainJar(r.price);
+    traderSaid = 'He blinked. I saw him blink. Ten jars, and get your hands off him.';
   } else if (key === 'water') {
     sellFromStack(waterBottleItem);
     gainJar(r.price);
@@ -98503,7 +98526,7 @@ function updateDeep(rawDt) {
       if (T >= DEEP_DESC_T) {
         deep.ph = 'silence'; deep.t = 0; deepNoHands = false; deepBend = 0; deep.v.copy(_dA).multiplyScalar(1.5);
         if (uwBed) uwBed.rush.gain.setTargetAtTime(0, audioCtx.currentTime, 0.4);
-        if (!deep.hint) { deep.hint = true; setPrompt('<b>SPACE</b> rise · <b>CTRL</b> sink'); setTimeout(() => { if (promptHTML.includes('SPACE')) setPrompt(''); }, 5000); }
+        if (!deep.hint) { deep.hint = true; setPrompt('<b>SPACE</b> rise · <b>C</b> sink'); setTimeout(() => { if (promptHTML.includes('SPACE')) setPrompt(''); }, 5000); }
       }
       break;
     }
@@ -98704,7 +98727,7 @@ deepLive = true;
  * --decimate-for …`: 296k triangles to 42k, the node tree whole — every piece of him hangs rigid off a bone);
  * Elvédor is the owner's BrettHughes.fbx through Blender (`assets/elvedor.glb`, a 93-bone rig with face bones, no clips:
  * every pose of his is aimed here).
- * ===================================================================== */// (elvStage — 0 not met, 1 asked, 2 carrying him, 3 given back, 4 the man is dead — elvLand, elvAirK, elvCarrying,
+ * ===================================================================== */// (elvStage — 0 not met, 1 asked (or the man dead with the puppet still in the house), 2 carrying him, 3 given back, 4 the man dead with it on his hand, 5 burned, 6 sold — elvLand, elvAirK, elvCarrying,
 // elvGreeted and elvJarGiven are declared at the top of the file)
 let elvMan = null, elvPup = null, elvPupCarry = null, elvHouse = null, elvField = null, elvFieldMesh = null;
 let houseWorld = null, houseReady = false, houseWalk = null, houseCells = null, houseWalls = null;
@@ -99926,6 +99949,17 @@ function pupSit(P) {
     A('fore' + s, 'hand' + s, 1, -0.35, 0.05 * sz);
   }
 }
+// his tile in the shop's sell list: a fresh one of him, sat as he sits on the bed (made once, once he has loaded)
+let _pupShopItem = null;
+function pupShopItem() {
+  if (_pupShopItem) return _pupShopItem;
+  if (!elvPup || !elvPup.src) return null;
+  const I = pupMakeInstance();
+  pupSitEdge(I);                        // the bed's own pose: sat, his shins hanging
+  // three-quarters on, from a little above: from dead ahead his thighs ran at the lens and he read as stood up straight
+  _pupShopItem = { id: 'puppet', name: 'The Puppet', iconModel: I.root, iconRot: { rotX: 0.3, rotY: -2.3 } };
+  return _pupShopItem;
+}
 function pupMakeInstance() {
   const root = elvPup.src.clone(true);
   root.scale.setScalar(PUP_K);
@@ -100303,10 +100337,11 @@ function loadElvMan() {
   addInteractable(u.g, 'Talk', 'default', {
     far: 3.2, mid: true,
     label: () => (elvCarrying ? 'Hand him the puppet' : 'Talk to Elvédor'),
-    when: () => elvMan.ready && u.st.alive && !u.st.awake && elvStage !== 5 && !inRoom() && !frozen() && !dialogOpen,
+    when: () => elvMan.ready && u.st.alive && !u.st.awake && elvStage < 5 && !inRoom() && !frozen() && !dialogOpen,
     onActivate: () => elvTalk(),
   });
-  if (elvStage >= 4 || u.retired) { if (!u.retired) retireUnit(u); elvMan.dead = true; elvMan.done = true; elvStage = Math.max(elvStage, 4); }
+  // (=== 4, not >= 4: a 5 or a 6 is the puppet's fate, burned or sold, and says nothing about whether he is alive)
+  if (elvStage === 4 || u.retired) { if (!u.retired) retireUnit(u); elvMan.dead = true; elvMan.done = true; elvStageOnDeath(); }
 }
 function elvTalk() {
   const M = elvMan; if (!M || M.dead || M.u.st.awake) return;
@@ -100468,7 +100503,7 @@ function updateElvManPose(dt) {
   M.t += dt;
   if (!u.st.alive) {
     // a load that lists him among the dead retires him (`deadUnitKeys`): he is gone, and nothing falls out of him twice
-    if (u.retired) { if (!M.done) { M.done = true; M.dead = true; elvStage = 4; } return; }
+    if (u.retired) { if (!M.done) { M.done = true; M.dead = true; elvStageOnDeath(); } return; }
     if (!M.done) elvDie();
     return;
   }
@@ -100542,9 +100577,15 @@ function updateElvManPose(dt) {
 }
 /* HIS END: the ragdoll is the mutants' own (`finishMutant`); what is his is the five jars out of his coat with the
  * ring's sting, and the puppet off his hand and away */
+/* THE MAN IS GONE, NOT THE PUPPET (2026-10-18, the owner: "when you kill the puppeteer before going into the house the
+ * puppet is then gone but the puppet should still be there and be able to still be thrown into the fire or sold at the
+ * shop ... for 10 jars"). Stage 4 meant both, and from 0 or 1 it took the bed's "Pick it up" away. Now only a puppet
+ * on his hand goes with him (it runs for the sea); one still in the house waits there to be picked up (a man killed
+ * before he ever asked is stage 1 for it: the pickup asks for 1), and one in your arms stays in them. */
+function elvStageOnDeath() { if (elvStage === 3) elvStage = 4; else if (elvStage === 0) elvStage = 1; }
 function elvDie() {
   const M = elvMan; if (M.done) return;
-  M.done = true; M.dead = true; elvStage = 4;
+  M.done = true; M.dead = true; elvStageOnDeath();
   /* THE JARS COME OUT OF HIS COAT AND FALL (2026-10-16, the owner: "make the jars from elvedor fall like items, they just
    * spawn in right now, and give octopus ring music sound"): thrown up and out from his chest, tumbling, landing on the
    * sand (or on him) with a knock, under the octopus ring's own sting */
@@ -100555,16 +100596,7 @@ function elvDie() {
     dropJar(x, z, groundUnder(x, z) + 0.02, null, null, { y: p.y + 1.15 + Math.random() * 0.2, vx: Math.cos(a) * s, vy: 2.6 + Math.random() * 1.4, vz: Math.sin(a) * s });
   }
   if (!applyingSave && !replaying) playSample('ringDrop', 1.15);
-  if (M.pup) pupRunBegin();
-  else if (elvCarrying) { elvCarryEnd(); elvPupFromArms(); }
-}
-// the one in your arms jumps down and goes too, when the man it belonged to is gone
-function elvPupFromArms() {
-  if (!elvPup || !elvPup.src) return;
-  const I = pupMakeInstance();
-  scene.add(I.root); I.root.scale.setScalar(PUP_K);
-  I.root.position.set(camera.position.x, groundUnder(camera.position.x, camera.position.z), camera.position.z);
-  pupRun = { I, t: 0, ph: 0 };
+  if (M.pup) pupRunBegin();          // (one in your arms stays there: the fire or the shop, 2026-10-18)
 }
 let pupRun = null;
 function pupRunBegin() {

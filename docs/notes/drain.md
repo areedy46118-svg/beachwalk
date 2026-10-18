@@ -423,3 +423,11 @@ drips stay. "Move the water bucket … I walk into it": it stood two metres in f
 `BUCKET_X/Z` (ROOM_X0 + 2.65, ROOM_HZ − 0.38) puts it against the side wall past the shelving, and the nav prop
 follows the constants. The tally scratched by the bed, the chalk tally beside the arrow, and his boots by the bed
 are gone.
+
+- **Flicker scan (2026-10-17)**: rays fanned from eye height down the bore,
+  the room and the culvert. Real: the algae patches (26 slabs 6 mm thick, all
+  topped at one height — overlapping ones fought; each now `i * 0.0003` up,
+  all under the silt shelf's top; the culvert's nine `i * 0.0015`)
+  and the door frame's jambs, whose inner faces were the bulkhead's own at
+  z = ±OW (now 1 cm proud). Not real: the stain decals (`polygonOffset` -2/-2,
+  no depth write) — a ray scan cannot see the offset, so they always report.
