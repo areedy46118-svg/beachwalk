@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>load time</title>
+<!-- THE LOAD, TIMED IN A CHROME OF ITS OWN. Not part of the game. Run headless (see tools/loadtime.sh): it starts the
+     game fresh in an iframe, writes a checkpoint on the beach, then reloads into it the way a death does (the card up,
+     Restart clicked at once) and logs every phase. Everything it prints starts with "[LT]". Its own profile, so it never
+     touches the owner's save. ?runs=N repeats the checkpoint load. -->
+<body style="margin:0;background:#000">
+<iframe id="g" style="width:1280px;height:720px;border:0"></iframe>
+<script>
+const P = new URLSearchParams(location.search), RUNS = +(P.get('runs') || 2);
+const log = (...a) => console.log('[LT]', ...a);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const f = document.getElementById('g');
+async function load(setup) {
+  f.src = 'about:blank'; await sleep(200);
+  for (const k of ['beachwalk.load', 'beachwalk.skipIntro', 'beachwalk.died']) sessionStorage.removeItem(k);
+  if (setup) setup();
+  const t0 = performance.now();
+  f.src = '/index.html';
+  let w = null;
+  for (let i = 0; i < 60; i++) { await sleep(25); try { w = f.contentWindow; if (w.__bw) break; } catch (e) {} }
+  return { w, t0, built: (performance.now() - t0) / 1000 };
+}
+(async () => {
+  // a checkpoint to load: a fresh start, the save written where you stand
+  let { w, built } = await load(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+  log('fresh module built', built.toFixed(2), 's', 'gl', (() => { try { const g = w.__bw.renderer.getContext(); const d = g.getExtension('WEBGL_debug_renderer_info'); return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : '?'; } catch (e) { return 'err ' + e; } })());
+  for (let i = 0; i < 200 && !w.__bw.state().started; i++) { try { w.__bw.beginGame(); } catch (e) {} await sleep(250); }
+  log('fresh start-gate ready at', ((w.__startReadyAt || 0) / 1000).toFixed(2), 's');
+  await sleep(3000);
+  w.__bw.camera.position.set(8, 1.7, -60);
+  await sleep(500);
+  w.__bw.saveCheckpoint();
+  log('saved', !!localStorage.getItem('beachwalk.save'));
+  for (let r = 0; r < RUNS; r++) {
+    const L = await load(() => { sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1'); });
+    w = L.w; const t0 = L.t0;
+    const btn = w.document.querySelector('.dc-restart'); if (btn) btn.click();   // clicked at once: the game comes up the moment it can
+    // where a frame's time goes: the draws, timed by wrapping the renderer's own call
+    const R = w.__bw.renderer, rr = R.render.bind(R); let rT = 0, rN = 0; const sc = w.__bw.scene; let mN = 0, mT = 0; R.render = (a, b) => { const t = performance.now(); rr(a, b); const d = performance.now() - t; rT += d; rN++; if (a === sc) { mN++; mT += d; } };
+    let fN = 0; const raf = w.requestAnimationFrame.bind(w); (function cnt() { fN++; raf(cnt); })();
+    const flags = { restore: 0, n: 0 };
+    let lit = null, up = null, last = '';
+    for (let i = 0; i < 2400; i++) {
+      await sleep(25);
+      const b = w.__bw, T = (performance.now() - t0) / 1000;
+      if (!b) continue;
+      const g = b.startGate ? b.startGate() : null;
+      if (g && !(i % 40)) { const s = 'parts ' + JSON.stringify(g.parts) + ' left ' + g.left; if (s !== last) { log(T.toFixed(1), s); last = s; } }
+      if (b.restoreS) { flags.n++; const q = b.restoreS(); if (q.restore) flags.restore++; if (!(i % 8)) log(T.toFixed(1), 'near', q.nearLeft, 'all', q.allLeft, 'audio', q.ctx, 'hold', q.bootHold); }
+      if (!b.frozen() && b.state().introDone) { up = T; break; }
+    }
+    // and after: the far rest going on behind you — how long, and the worst frames while it does
+    { const lag0 = w.__bw.lag().length, tA = performance.now(); let worst = [], doneAt = null;
+      for (let i = 0; i < 60; i++) { await sleep(50); const q = w.__bw.restoreS(); if (!(i % 100)) log('  +' + ((performance.now() - tA) / 1000).toFixed(0) + 's far left', q.allLeft, 'bg', q.bg, q.bgOk, q.bgAge, 'nearPend', q.nearPend, 'awake', q.awake, 'parsing', w.__bw.startGate().parts.parsing); if (q.allLeft === 0) { doneAt = (performance.now() - tA) / 1000; break; } }
+      const after = w.__bw.lag().slice(lag0).map((e) => e[1] + ':' + String(e[2]).slice(0, 22)).sort((a, b) => parseInt(b) - parseInt(a));
+      log('RUN', r, 'far rest done', doneAt && doneAt.toFixed(1), 's after playable; spans over 16 ms after:', after.length, 'worst', JSON.stringify(after.slice(0, 8))); }
+    const lag = w.__bw.lag(); const sum = {}; for (const e of lag) { const k = String(e[2]).replace(/\d+/g, '#'); sum[k] = (sum[k] || 0) + e[1]; }
+    log('RUN', r, 'module built', L.built.toFixed(2), 's; playable at', up && up.toFixed(2), 's');
+    log('RUN', r, 'frames', fN, 'renders', rN, 'render ms', Math.round(rT), 'world renders', mN, 'world ms', Math.round(mT), 'restore-flag share', flags.n ? (flags.restore / flags.n).toFixed(2) : 'n/a');
+    log('RUN', r, 'blocked ms by span', JSON.stringify(Object.entries(sum).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + ':' + Math.round(v))));
+    try { await w.__bw.audioCtx.close(); } catch (e) {}
+  }
+  log('DONE');
+})().catch((e) => log('FAILED', e && e.stack || e));
+</script>

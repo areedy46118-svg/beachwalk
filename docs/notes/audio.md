@@ -694,3 +694,45 @@ drain's audio (gated on it) never builds.
   read as pixel snow at the game's resolution.
 - **The shop theme is gone** (2026-10-17: "my collaborator already has one"):
   code, `assets/shop-theme.m4a` and its section of `tools/sound_pack.py`.
+
+**…AND NOW IT DOES ON A CHECKPOINT LOAD (2026-10-17, the owner: "none of my music is playing you have to fix
+this").** The rule above was written into the intro's reveal (`go()` in `runIntro`), but a checkpoint load sets
+`instantStart` AND `skipIntro` (the block after the save code) and a restart sets `skipIntro`, and both go through
+`beginGame`'s `if (skipIntro)` branch, which returned before any `startMusic`. Measured on a checkpoint load: the
+only thing reaching the output was the effects bus. Now the skip branch starts it at 0.72 for a restart, and a
+checkpoint load starts it as the black lifts (`updateBootHold`, beside `audioAfterLoad`) unless the passing theme is
+being restored (`passSrc || passLoading`) or the load is inside a room. The samurai's score and the passing theme
+were measured reaching the output on a fresh start and after a load.
+**Measuring what reaches the speakers WITHOUT sound**: the game makes its `AudioContext` at module load, so a patch
+run after the page is up is too late. Load the game in a same-origin `<iframe>` from a page with no game on it
+(`/README.md`), poll every 1 ms for the frame's new window (`location` is index.html, no `__bw` yet) and patch
+ITS `AudioNode.prototype.connect` so any `connect(destination)` goes into an analyser instead (and
+`HTMLMediaElement.prototype.play` mutes first). The module has not run yet when the poll lands (main.js is 4.8 MB).
+Every scored moment then shows up by the function that connected it (`startMusic`, `startSamScore`, …) with its
+peak. Session storage is shared with the frame, so `beachwalk.load = 'checkpoint'` works through it.
+
+**EFFECTS COME FROM WHERE THEY HAPPEN (2026-10-18, "everything sounds directly next to you").** `sfxAt(x, z, fn)` scopes
+`sfxOut()` to a chain for that spot (`sfxPosOut`: gain `ref/(ref + d - ref)`, ref 2.5 m; low-pass from 1.5 ref, 16 kHz
+toward 900 Hz at `far` 70; pan opening from 0.6 to 3.5 m; silent past `far`; one chain per scope). Scoped: every
+mutant's frame and every crab's (`updateMutant`/crab loops), `hurtMutant` and `hurtCrab` (wounds, deaths, kills).
+`damagePlayer` runs UNscoped (what lands on you is yours). `playSampleAt`, `farOut`, `artOut`, `catPlayAt` place
+themselves and take `sfxOutBase()`; the voices with their own distance (`mutVox`, `sfxMutTell/Step/Roar/Laugh/Hunger/
+SandThrow`, `sfxScpScream`) set `dist = 0` inside a scope. Measured on the effects bus, a hit sample: 1.5 m 0.082, 6 m
+0.029, 15 m 0.012, 35 m 0.005, 80 m nothing (unscoped 0.118). Not scoped yet: setTimeout tails inside a scope, gulls
+(already positional), crate/prop breaks (you make most of them).
+
+**THE MUSIC GUARD AND THE MUSIC TEST (2026-10-18, the owner: "the music i add needs to play … never let it not work
+again").** `tools/musictest.js` (with `tools/silentframe.js`) loads the game in a silent iframe and drives each piece
+through its REAL trigger: `restart` (a death with no checkpoint: the opening music, skip-intro path), `checkpoint`
+(a death's card clicked: the opening music at the black's end), `samurai` ("Take the katana" off its stand),
+`church` (`leaveUndercroft('far')`), `end` (`startWakeCut` on a fake clock through to the stats). Measured at the
+speakers: samurai 0.081, end 0.013, church 0.0044 (fading in, faint by design), restart 0.0042, checkpoint 0.0042 —
+all PASS. Before, every check had called the start function directly, which proves nothing about the trigger.
+`musicGuard()` (top of `animateFrame`, twice a second) holds every music VOLUME node on its slider level and asks a
+suspended context back while a piece plays; `musicNote()` logs each start (`console.info('[music] …')`,
+`__bw.musicLog()`). `applySettings` had also set the opening music's volume without `musicLevel`.
+
+**NOTHING IS HEARD ON A LOADING SCREEN (2026-10-18).** `loadSilent()` (the title still loading, any `bootHold`, a
+death's card before a fresh start) suspends the context in `loadSilenceTick` (top of `animateFrame`), and `ctx.resume`
+is wrapped to refuse while it holds; at the end of the load `audioRealResume`. Measured (loadtime.sh): suspended for the
+whole of a checkpoint load, the music test's five pieces all PASS after it (`sh tools/musictest.sh`).

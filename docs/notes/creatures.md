@@ -3512,3 +3512,22 @@ numbers and turn-taking in the drone's shape, with a stall-and-shriek tell, a
 stoop at your face, and the bolt's guard rules on contact. A unit carries
 `gull: true`, which is what the gun's two fire paths dispatch on; health bars
 come from `updateEnemyBars` like the crabs'.
+
+## Bodies that flew (2026-10-18, the owner: "THE MUTANTS BODIES NEED TO STOP FLYING IN THE AIR AFTER DEATH")
+- **The throw was 3x (6x at 120 Hz) its written speed**: `pp = p - v/60` against a solver step of `min(dt,1/30)/RAG_SUB`.
+  The velocity is now `part.seed`, applied over the solver's real first step in `updateMutRagdoll`; `v.y` capped 3.0
+  (4.0 a shotgun's).
+- **Hacking a corpse ratcheted it up**: `ragHit`/`sgBlastCorpse` added an upward push to the velocity a "done" body
+  slept with. `ragBlowStart` stills it, re-opens a done body (`r.t` ≤ 3.5, the slump's), and the blow is one capped `seed`.
+- `r.landed` on any floor contact after 0.6 s (a gently-set body kept the throw's flight cap for good).
+- Off the edge of a raised floor on the beach (headland ridge, a veranda) a joint's floor is `groundUnder`, not the
+  floor it died on; a floor may not jump up > 0.6 m under a joint below it (the headland's 3 m pop).
+- A NaN or a joint 20 m off puts the body back where it fell.
+- Measured (tools/probes.js `bodies`, headless): pale/red/dark peak = their standing height (1.8-1.9), at rest top
+  joint 0.22-0.32; hacked five times, peak 0.30-0.39, rest unchanged, asleep.
+
+## 2026-10-18 — thrown sand costs no stamina
+
+The beach mutants' thrown sand (`mutSand`, hit < 0.85 m from the eye) used to take 0.42 of the stamina bar. The owner:
+it should not. It still shakes, kicks the FOV, flashes, puffs and shoves — it takes neither health nor stamina now.
+And a creature behind the dune is held by `elvUnitClamp`, not the beach's x clamp (see beach.md, same date).

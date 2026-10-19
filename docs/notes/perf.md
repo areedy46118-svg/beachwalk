@@ -1389,3 +1389,56 @@ to (three gulls killed), under the JS self-profiler: no frame over 45 ms;
 frames avg 9-11 ms. **A teleport into the hold and back up onto the deck
 gave a 1.4 s frame on the first frame of a fight** — a harness artefact; a
 player never arrives that way. The first-stun lead above did not show.
+
+## A checkpoint load, measured (2026-10-18, "the load times are too long")
+Silent iframe (tools/silentframe.js), beach checkpoint, focused pane: the card's Restart lit at 12.7-13.3 s — 2.3 s
+building the world, ~8 s of parses (one per turn), ~2 s of texture uploads. `bwLag`: 7.98 s blocked, of which "frame"
+4.95 s — 67 frames of 40-500 ms drawing the whole world under an opaque black; `rocks.glb`'s onLoad 1.05 s; `warm
+mound relics` 0.30. Tried: three parse chains side by side under the black — no change (13.3/12.9 s): the parses are
+CPU, not waiting. Kept: under a checkpoint's black the world is drawn one frame in eight (the title cover's rule)
+until `startLookWarm` begins, and never while the save is being put back (that reads matrices only a render writes);
+`updateTexUpload` gets the cover's 34 ms budget there (the full draws were uploading textures by the way). NOT
+measured after: the pane was throttled to 1-3 rAF a second (unfocused/occluded) for the rest of the session — re-time
+it with the pane in front. Next levers: `rocks.glb`'s 1 s onLoad; the far rooms' warms owed on every load.
+
+## A checkpoint load, 13.3 s → 6.9 s (2026-10-18, the owner: "I NEED THE LOADING SCREEN TIMES AS FAST AS POSSIBLE")
+**Measure it with `sh tools/loadtime.sh [runs]`**: a headless Chrome of its own (its own profile and save, Metal GPU,
+"ANGLE Metal Renderer: Apple M4 Pro") against a throwaway server on 4211 — never the owner's pane. It starts the game,
+saves on the beach, reloads into it the way a death does (card up, Restart clicked at once) and prints `[LT]` lines.
+- Before: playable at 13.3 s (module 2.4 s; near part in at ~6 s; everything at ~11.6; then the tails).
+- **The hold waits for the near part only on a checkpoint load** (`fastLoad` = `instantStart && BW_FROM`): `bootLeft()`
+  (reach from the SAVE), the restore, `roomWarm`, `warmBlock`, the look warm; 150 ms idle (was 500) and 12 settled frames
+  (was 30). → 6.8-7.0 s.
+- **The far rest is paced from the moment the near part is in** (`bgLoadMode`, `bgLoadOk`, `bwBgGate` on the far parse
+  chain and the warm driver): one step at least 150 ms after the last, none while anything awake is within 30 m.
+  Started only at the reveal it ran flat out under the black and the settled frames never came. Measured after the
+  reveal: all of it in 44.8 s, 65 spans over 16 ms, the worst 54 ms.
+- Two starvation bugs on the way: the warm driver stamped `bgLoadLast` every frame a held compile said "alive"
+  (`warmRan` now says when a step really ran), and `warmBunker` — asked every frame until the bunker's model is in —
+  stamped it too, holding the gate shut on the very parse it waited for. Stamp only what happened.
+- Tried and dropped: three parse chains side by side (no change: the parses are CPU), drawing 1 in 8 under the black
+  (kept, but the frames are mostly the warms' own 4x4 scene draws, not the world's).
+- A first load is unchanged: START and the intro's black wait for everything.
+
+## The load, profiled (2026-10-18, the owner: "FULLY OPTIMIZE ... DO NOT CHANGE ANYTHING ABOUT THE GAME ... THINK OF WORSE
+SYSTEMS ... AND WINDOWS")
+**How**: a CPU profile of a whole headless run — Chrome's own startup trace, JSON:
+`--trace-startup=disabled-by-default-v8.cpu_profiler,v8.execute --trace-startup-format=json --trace-startup-duration=40
+--trace-startup-file=…` on `tools/loadtime.html`, then the ProfileChunk samples summed, each charged to the nearest
+game function up its stack (the scratch `agg2.py`; ~25 lines). It names what no span can: the cost inside three.
+Found and fixed, each measured equal before/after where it computes anything:
+- **The warm chain SPUN.** Under a black, `animateFrame` ran warm steps flat out for 55 ms a frame — and a step held on
+  its async compile (`warmBlock`) answers "alive" without running anything, so the loop spun on it: 1.35 s of
+  `warmRunStep` self time + 0.33 s of `performance.now`. The loop stops while `warmBlock` is set.
+- **`fillRockGaps` cast ~5,500 rays at every load**, each testing every triangle of its rock (1.0 s). `vRayTop` asks a
+  per-mesh grid of upward faces (0.5 m cells): the same highest FrontSide hit within the same reach. Checked point by
+  point against the Raycaster (probes `rockRays`): 0 mismatches of 5,471, |dy| ≤ 1e-12; 117 fills, as before.
+- **The pavilion's clutter placement** did a full ray test of every room mesh per rim point per try (0.3 s): `onFloor`
+  uses `vRayTop` too (probes `mushRays`: 0 mismatches of 3,000).
+- **`normalFrom`** (mushroom-house.js): wrap indices per row/column and `Math.sqrt` for `Math.hypot` — 0.37 → ~0.2 s.
+- **`renderer.debug.checkShaderErrors = false`**: three's first-use status/info-log reads are a sync wait per program
+  (0.53 s here; ANGLE on Windows pays far more) and only ever logged.
+Measured (loadtime.sh): Start ready on a first load 16.4 → 11.1 s; module 2.4 → 1.8 s; a checkpoint 6.9 → 5.3 s.
+What is left is mostly the uploads themselves (`texSubImage2D` ~1.7 s per load) — the textures, which are the game.
+Frame times (probes `tour`, 1080p synced, this Mac): 3.4–7.9 ms medians everywhere; the busiest draw lists are the
+tavern (~470: its breakable furniture, kept apart on purpose — the bake notes above) and the fort (~450).

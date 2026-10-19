@@ -328,3 +328,23 @@ contextmenu, wheel, keydown, keypress are swallowed while it is true; the releas
 passes (the menu). `startWind` also refuses under it (a button held INTO the load re-tries its latch every 45 ms).
 NOT `startDig` / `primaryAction`: the restore re-runs your digs and pickups through them. Tested under a real checkpoint
 load: presses, E and the hotbar did nothing until the black lifted, then the hotbar worked on the next press.
+
+## A ring lost on a checkpoint reload (2026-10-18, a play tester)
+- `packByName` had no `gemItem` (Gem Stone Ring): a worn or carried gem came back only through its pickup's replay,
+  which fails into a full pack (the world copy already removed) — gone for good. Added.
+- The pack restore re-added without `over`: an event's gift that went in over a full pack (`addToInventory(x, true)`:
+  Billy's Ring of Connection, Henry's owed ring, the katana) was the last name saved and was refused. Now `over`.
+- A worn ring that could not go back on (slots full) went into the pack but was then trimmed (not in `d.pack`):
+  counted into the trim's keep list (`wornOver`).
+- The old-save migration that grants the Ring of Connection (`seaArt >= 2`) pushed it into the pack before the trim
+  removed it: its name is pushed into `d.pack` too.
+- Elvédor has a `saveKey` ('elvedor') now; since d9b3e63 a death from any stage but 3 left no record and a reload
+  stood him back up.
+
+## 2026-10-19 — a load is not heard
+"stop having all those spawning sounds when loading or reloading a checkpoint" — recorded in a silent frame (`tools/probes.js
+loadSounds`, every source started with its caller): 31 in the first seconds of a beach checkpoint, 16 of them props
+landing into place — 7 knocks and 9 ELECTRONICS SMASHING (they broke on arrival). `propSettling()`: while the boot holds,
+a restore runs, the save applies, the intro is on or the game is frozen, and 2.5 s after, a prop's landing is silent,
+breaks nothing and knocks nothing (`PhysProp.step`). After: 14, all ambience and the music. (A castle checkpoint resumes
+its live fight — the bell, the men — which is the fight, not the load.)

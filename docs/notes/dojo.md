@@ -607,3 +607,11 @@ with each pass crossfaded 1.5 s into the next (the file ends on a full bar), fad
 when you do, 1.5 s when you leave. On the music slider through its own gain (`samScoreVol`, in `applySettings`) at
 `SAM_SCORE_LEVEL` 0.26 (then 0.55, the owner: "turn up the samurai music", about 6.5 dB up) — the file is mastered at −9.1 dBFS RMS against the wreck theme's −16.4 and the passing theme's
 −20.5, so 0.26 puts it about 3 dB over them. Harness: `__bw.samScoreS()`.
+
+**THE SCORE SWAPPED FOR THE "5450 FIX" MIX (2026-10-17).** The owner: "switch the samurai fight music with this" ("5450 FIX.mp3", 320 kbps). Same file name (`assets/samurai-score.m4a`, afconvert AAC 160 kbps, 3.06 MB, 149.8 s, the same length and so the same loop point). This mix is 3.5 dB quieter than the first (ffmpeg volumedetect mean −15.5 dB against −12.0), so `SAM_SCORE_LEVEL` went 0.55 → 0.82 to keep the loudness the owner had asked for.
+Then "make the samurai fight audio louder": `SAM_SCORE_LEVEL` 0.82 → 1.64 (+6 dB). `samScoreVol` goes straight to `ctx.destination` (no limiter) and the file peaks at −2 dBFS, so the gain is capped at `SAM_SCORE_MAX` 1.2 — it only bites when volume × music is above ~0.73 (the owner's defaults, 0.5 × 0.25, give 0.205).
+**THE PORTAL WAITS FOR HIS JARS (2026-10-18, "WAIT UNTIL THE JARS ARE GRABBED").** `samuraiJars` keeps its three
+(`samJars`); the `DOJO_QUIET` count starts when the last is picked up.
+
+## 2026-10-18 — the rain louder
+`dojoRainSound`: 0.30 → 0.42 of the dojo mix (+3 dB), the owner: "MAKE THE RAIN A LITTLE LOUDER IN SAMURAI FIGHT".

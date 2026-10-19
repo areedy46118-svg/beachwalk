@@ -493,3 +493,7 @@ Connection** (the Artifact of The Sea is gone, code and all — 291 lines).
 the pier: the chest key is laid where the crate stood (`dropKey({x, y: DOCK_DECK, z})`), under its glint. Only the
 beach crate is built now (`crates[0]`); a save that broke the dock's names index 1, which is passed over, and taking
 the key replays by its label. The model's own `BoxCrate` mesh stays hidden and, being invisible, gets no collider.
+**AND NO KEY ON THE DOCK (2026-10-18, the owner: "THE KEY THAT USED TO BE IN THE CRATE ON THE FISHERMANS DOCK HAS TO
+GO").** The `dropKey` call is gone: the "Rusted Key" (`keyItem`) opened nothing since the captain's key took the sea
+chest. `keyItem` stays defined (a save carrying it still loads it; the fisherman's "Do you know about this key?" lines
+only show with it in the pack). The end's tally: `STAT_KEYS` drops it (6), `STAT_RINGS` gains the Ring of Connection (6).

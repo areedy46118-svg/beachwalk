@@ -204,3 +204,31 @@ the save so a restore does not lay a second one.
   `seaRelicOn` in the save; a save from before it that has `deepDone` lays it by the saved needle. Testing the wash in
   the harness needs `startDeepHook()` first (it sets `deepLock`; `updateDeep` returns without it), and `__bw.frame`,
   not `step` (the deep runs per frame).
+
+**THE PLIOSAUR, FASTER AND NEARER (2026-10-18, the owner: "MORE AGGRESSIVE … SWIMS AWAY TOO MUCH AND TOO FAR … IMPROVE
+THE TAIL SWING HIT").** Lurk 22-28 m (16-20 a quarter of the time; was 40-48 — out of sight at the fog's 0.064), 1.2-2.8
+s (was 3.2-7.2), 10/18 m/s, steer 1.4, forced tell at −2. Tell 6 m/s, turn 4.5, 0.35-1.0 s. Charge from 10 (14 a wheel),
+28 m/s², cap 24, gives up at 4 s. Flee 35 m and +2 (was 70, +6), 10-18 m/s, wheels at 8 m after 0.35-0.7 s, 75 % after
+a bite/swipe (60 % a stun), lurks again past 24 m or 2 s. Tail 45 % of attacks (any time). The swipe winds up beside
+you (level with its middle, glide ≤ 1.2 s at 10), `PLIO_TAIL_WT/ST` 0.6/0.22, coil 1.4 with a bank 0.45 and an eye flare;
+the hit only in the sweep, the tip's swept path ≤ 1.5 m or mid-tail ≤ 1.9, the tip moving toward you; the knock along
+the tip's travel (16 + 2.5 up, only if it landed), thud 0.18, surge, trauma 1.0, fov 9, hitstop 0.14. Not played.
+
+## 2026-10-18 (second round) — no free hits, a tail that reaches
+
+The owner: "he sometimes just swims beside me so i can get free hits he should be attacking and biting i dont think the
+tail swing is working well now". Measured with `sh tools/probe.sh plioTest` (you held still in the deep; 12 forced tail
+swings, then 8 cuts made with it alongside 4 m off).
+- **A cut it did not earn is answered**: `plioHurt` (melee, not stunned off a parry, not already biting/telling/charging,
+  not mid-sweep) → `plioSnap`: the bite clip from `PLIO_BITE_FROM + 0.25` at 1.1x, a roar, the body whipped round at
+  6 rad/s, and its HEAD driven (≤ 16 m/s) to the bite's own 4.2 m stand-off so the clip's 3.5 m lunge ends at your face.
+  Driving the MOUTH to 1.5 m instead overshot — the lunge then carried the jaws past you (0 of 8). With the head at 4.2:
+  5 of 8 snaps reached a player who did nothing (a guard/parry takes them as any bite).
+- **The tail reaches**: the curled tail only reaches BEHIND the hips, and it wound up with you level with its middle —
+  in front of anything it could touch. Through the wind-up the hips are now carried (≤ 7 m/s, so the tell can be swum
+  from) to where the arc passes through you: you 0.72 of a tail (`plio.tailLen`, hip→tip, measured once with the
+  tail sign) behind them and 0.36 out to the side, at their height. And the hit window runs on 0.3 s past the sweep:
+  the tip is a spring a beat behind its target, so most of its real travel came after the old window shut.
+  Glide before the wind-up capped at 0.5 s (was 1.2). Result: 8 of 9 sweeps land on a still player (was most missing).
+- Tail chosen 30 % of runs (45 % for a day): mostly it bites.
+- Counters on `plio`: `nTail`, `nSwipe`, `nSnap`, `nBite`, `lastBiteD` (harness only).

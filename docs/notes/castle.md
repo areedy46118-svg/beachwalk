@@ -1058,3 +1058,158 @@ right." `farmTellTick` is gone.
 - `natHold` 0.30/0.22 → 0.16/0.12: frozen at the top of every swing.
 - TRAP PAID AGAIN: a `//` comment appended inside a one-line `for … { …; …; }` commented out its `}` and took the page
   ("Unexpected end of input"). Put a comment AFTER the closing brace.
+
+## The paladin's spawn, his bar, the late farmer, the farmers thinned (2026-10-18)
+- **`palJoin` never in a wall or a house**: a spot is `farmCobble` (the paving, not a house's boards), `siteOnMain`
+  (the walkable flood), a metre off any wall (`keepWallNear`), and seen down a line walked a metre at a time
+  (`keepHitsWall` only checks the cells round a line's two ENDS — a 14 m "clear line" never saw the walls between).
+  Fallback: the farthest passing point on `FARM_SPINE` near 12 m. `palUnitPre` re-places him after 2 s off the paving
+  or the flood. Measured from 6 spine positions: every spawn on the street, none near a wall.
+- **His bar is everyone's**: `palBarTick` no longer runs (he always had the over-head bar too). `ehpBlocked` now asks
+  the fort's walls (`FORT_SITE`) — every bar there showed through walls.
+- **The late farmer**: the forced send (`noDoorT`) counted only when nobody was out; now any failed send counts.
+  `farmLostTick` runs at 4 Hz on `fortLineClear` (walked) and recalls after 12 s (16.8 with three or more out, was 24).
+- **Thinned animation** (`farmMixThin`): a farmer not swinging, over 18 m off or behind you past 6 m, steps his mixer
+  every third frame on the summed time. Not re-timed (the pane was throttled).
+
+## Blows that arrive on screen (2026-10-18, "THE FARMERS HITS NEVER VISUALLY CONNECT … THE PALADINS SWORD DOESNT EVEN GET NEAR ME")
+Every stand-off and hit test was built round the line UNDER the camera: at FOV 105 a blade at your body is off screen.
+- **Paladin**: he stands at the crossing point `+ PAL_STAND` (−0.13; `A.vAdj` per swing, pS2 +0.25), and a blow is
+  judged in a 0.40 ring `PAL_VIEW` (0.30) IN FRONT of your eye toward him, chest to brow, the blade point required in
+  front of the eye (`palLands`; it stores `u.hitPt`). His cuts `rate` 1.18 and chained as strings (pS2→pS1→pS3→pS4,
+  pS1→pS3, pS9→pS1; pS4 the finisher). Measured (`tools/probe.sh paladin`: every swing forced 3x, standing, facing him):
+  15/15 land, the landed blade at ndc x −0.36…0.10, y −0.96…0.72 (on screen). Before: 0/15 inside the picture.
+- **Farmers**: `stop` = head reach + 0.32 (was −0.06: the head arrived AT the lens); a blow is the tool's segment only
+  (the forearm landed it before the head); the "benefit of the doubt" fallback is off for `hitFront` kinds. Measured
+  (`tools/probe.sh farmers`, a 40 s natural fight): 17 hurt, all with a tool point; 12 in front on screen (x ±0.2,
+  y −0.2…−0.7), 5 from behind (kept: "they should still hit you from behind").
+- Headless harness: `tools/probe.sh <scenario>` with `tools/probes.js` (house, toilet, paladin, farmers, wave, bodies).
+
+## The farmers' and the paladin's blows, given weight (2026-10-18, "the farmer and paladin fight is just bad")
+Looked at frame by frame from the eye (`sh tools/probe.sh castleSheet` — a paladin cut then a farmer's blow, a still
+every 4 frames; `farmSheet` for the farmers alone; stitch with any contact-sheet script).
+- **The paladin's sheet was invisible**: 0.22 alpha and faded out inside 1.2–2.6 m, so on a whole cut that reached you
+  not one still showed it. 0.45 now, thinned inside 1.8 m, gone at 0.8.
+- **Farmers get the same streak** (`farmTrailTick`, `makeSwingTrail`, 12 samples): the outer half of the handle to the
+  tool head (`u.bones.tip`), from 0.2 s before the blow to 0.08 after, fading from its tail. Not a glint (the owner did
+  not want glints on them). Kicks (`A.limbs` ≥ 2) leave none.
+- **The blow stops in you** (`u.st.impF`, 0.085 s, fortBody and paladin kinds): on a landed or guarded blow the man's
+  swing clock runs at 6 % and his mixer too (`mutAnim`), then the follow-through — measured on a rake thrust, its clock
+  held at 0.48 across eight frames. The paladin's 15 forced blows still all land on screen (`probe.sh paladin`).
+- Seen and NOT fixed (needs new animation, not tuning): the paladin's pS1 holds the sword behind his back, turned away,
+  for ~0.7 s of the draw; the farmers' borrowed captures throw the tool wide of the face before the aim brings it in.
+
+## The two swordsmen of Castle XIII's west court (2026-10-19) — the flail knight out
+The owner: "take out the mace knight in the second section of the castle and add both of these guys … avoid using
+anything out of place for these characters because they have no shields … give each character … personality … make all
+moves connect … make sure they actually hold their sword normally … make sure their textures blend in with the game".
+- **Out**: the crusader is not parsed, not placed (`updateCrusader` no longer called; his code stays). `crusaderAlive()`
+  (the throne door's bar) is now `knAlive()`: barred until BOTH are down. Stats count two kills where he was one.
+- **Packer** `tools/swordknights_pack.py` (system python): `knight-man.glb` (sanyaork's, an Unreal mannequin: bone
+  suffixes stripped so `MUT_KINDS.knight.rag` maps him; 44 maps/330 MB → 28 at 512–1024; metal/rough, specular,
+  OCCLUSION (the MR map's red — a dangling `occlusionTexture` made GLTFLoader throw "reading 'extensions'") dropped;
+  BLEND → MASK) and `knight-iron.glb` (PONCHIK's, a 20-bone rig renamed to `Character1_*`, his single spine bone as
+  Spine2 so the whole torso turn lands on it). Both: the source pose animation and a stray `Icosphere` gone, tangents
+  gone, the binary rebuilt with only drawn accessors. 7.3 + 1.8 MB.
+- **Blending in**: the man's maps darkened (0.70 plate, 0.78 cloth), a third less saturated, warmed, grimed with low
+  noise; the iron knight had NO colour map (flat 0.013 factors and a normal map) — his colour is MADE from his normal
+  map (flat plate dark, recesses darker, raised edges worn light, grime). Lighting measured in the court (`probe.sh
+  knLight`, 16 px at the chest against the paving before him): a flat emissive on a mapless material is a grey wash
+  (iron 5 → 37 with 0.03!), so `matMore` zeroes the lift on parts with no map; man `emis` 0.17 / gamma 0.86 → 22 vs
+  paving 24; iron `emis` 0.13 / gamma 0.92 off his new map.
+- **The sword in the fist** (`knSeatSword`, the kind's `pre`): every skeleton `pose()`d to its bind first (node TRS is
+  the artist's last pose); the iron knight's sword is a loose node that sits in his fist only in the bind — `attach`ed
+  to `Character1_RightHand`; the man's is skinned to `hand_r`. `kn_tip`/`kn_hilt` are added as **Bones** (the rig's
+  names are looked up among bones: an Object3D was never found) at the vertex farthest from the hand and the hand.
+- **Clips** (`KN_CLIPS`): the pack minus the shield's — no blocks, crouch blocks, casts, `sHit` (its left arm shoves
+  a shield), `sDraw` (the blade is already out), `sAtkD` (contact behind him), `sSlashB` (a 3.7 s jump-spin to a crouch).
+- **The empty left hand** (`knFreeHand`): every clip carries the shield arm raised; after the mixer and the aim the left
+  upper arm and forearm are aimed (in the model's frame, +z front, +x his left) to a swordsman's carry, 0.85 standing,
+  0.45 in a blow, eased; per kind (`freeHand`: the iron knight's forearm further down).
+- **Personalities** (tables `kmCut…kmKick`, `kiChop…kiKick`, each `clip`-aliased; `hit`/`cockF` MEASURED off each man's
+  own blade by `tools/swordknights.js` `__knContact` — the frame the tip is fastest, the frame before it furthest away):
+  the man fences (rate 1.1–1.2, holds 0.10–0.16, strings of three, `circle` 0.30, `feint` 0.25, `opening` 0.45, hp 34,
+  light blows; lunge, leap, spin, kick); the iron knight walks you down (rate 0.92–1.0, holds 0.24–0.42, dmg 2,
+  `chainMax` 1, `poise` 18, `opening` 0.9, hp 52; chop, sweep, low spin, charge, kick; roars at half health: `rage`).
+- **Gap-closers were never thrown**: the draw runs only at reach, where every `minDist` swing is out of the hat.
+  `kind.gapRate` (per second) throws one from the chase when the gap is inside its window — and the turn is taken from a
+  holder who is not mid-blow (with two of them the near one held `mutToken` while circling: 11 frames in 1006 free).
+- **Trail** (`knSwordTrail`, `makeSwingTrail`): outer half of the blade, 0.24 (iron `trailK` 0.15), thinned from 2.4 m
+  and gone at 1.1 — at 0.42 inside 0.7–1.6 his 1.5 m blade drew a white sheet across the picture.
+- **Measured** (`sh tools/probe.sh knFight`, 50 s, standing, healed): man 16 thrown 14 landed, iron 8/8, every landed
+  blade on screen (ndc x ±0.2); `knKite` (backing off): lunges, leaps and charges thrown and landed. `knDeath`: both
+  ragdoll, the door opens, saves carry `knMan@…`/`knIron@…` (retired on restore under ANY key: the court's dressing moves
+  their posts). Not parsed at boot: load 10.5 s fresh / 5.6 s checkpoint (unchanged); musictest 5/5.
+- Harness: `tools/swordknights.js` (`__knGo`, `__knStrip` in a studio scene via `__bw.knStudio`, `__knContact`), probes
+  `knStrips`, `knClose`, `knFreeFront`, `knFight`, `knSheet`, `knKite`, `knMat`, `knLight`, `knDeath`, `glbTest`.
+
+## The dark knight in the paladin's place (2026-10-19)
+The owner: "the paladin is awful switch him with this knight but make him the same size roughly. give him all new sword
+and shield moves we have and use the animations that come with this character … have the textures blend well. you should
+walk in to him killing farmers too". Catholomew's "The Dark Knight - Infinity Blade" — **CC-BY-NC-4.0, not for a sale**.
+- `tools/swordknights_pack.py dark` → `assets/dark-knight.glb` (3.5 MB): bone suffixes stripped (MF rig `b_MF_*`), his
+  eight strings kept as `dkC0…dkC7` (animation samplers carried in the rebuilt binary), his map graded and LIFTED (`**0.72`
+  after ×1.25 — at the first grade his chest read 1 against paving 17: a hole). In-game `emis` 0.30, gamma 0.82, rim 0.075:
+  chest 12 vs paving 31 — the darkest thing on the street, readable.
+- `MUT_KINDS.darkKnight` (h 2.7, hp 90, `block` 0.45 — he has a shield), `dkSeat`: sword ends off the vertices skinned
+  to `b_MF_Weapon_R` (tip = farthest from the hand), `dk_shield` = the centre of `b_MF_Weapon_L`'s. `authorDkClips` lays
+  the WHOLE Sword and Shield pack on him (blocks included: they fit him) but `sDraw`.
+- **Contacts measured as a body would meet them** (`tools/probes.js dkContacts`/`dkPack`): every frame, the blade's
+  nearest pass to a body 1.6/2.0/2.4 m in front of him at chest-to-eye height; the tip-SPEED peaks were useless on these
+  (root motion and leaps). His strings land 1–2 times: `dkS0/1/2/7` one contact, `dkS3/5/6` two. `dkC4` reaches nobody: out.
+  The long stands before the first blow sliced off (`kind.slice`: dkC0 from 0.9 s, dkC3 1.6, dkC6 3.6, dkC7 1.5).
+- **`A.more` — a swing that lands several times**: extra contacts as clip fractions, put on the swing's clock by
+  `naturalSwings` (`moreT`, linear before and after the contact — natural, no `natHold`), each its own guarded/parried
+  window in the attack tick. General: any kind's natural swing may use it.
+- **He takes the paladin's slot** (`paladin.unit` = `makeMutant(..., 'darkKnight')`, park spot → same save key every game;
+  `paladinDone()` still gates the back door). Nothing of the paladin's runs on him: `updatePaladin` returns unless
+  `kind.paladin`; `palReady` wants `pWalkT`, so `palJoin` never fires. The paladin's glb and moves json are no longer
+  fetched (files kept).
+- **The entrance** (`dkStage1`, `updateDarkKnight`): when the farmers' fight starts and he is ready, he is put on the
+  street's own line (`FARM_SPINE`) ~10.5 m ahead of you, three idle farmers placed round him with `st.foe = him`
+  (`farm.victim`, hp ≤ 3) and he on them — he cuts them down (measured: two in eight to twelve seconds). He turns on you
+  (`dkTurn`) when they are dead, you come within 5 m, or you strike him; what the farmers took is given back. `palCalm`
+  (leaving) still parks him; he is back on the street when you return, without the men already dead (`dk.done1`).
+- Measured hands-off (`dkFight`, 45 s, still, healed): 18 swings — his strings and the pack's — 14 landed, all on screen.
+- **DEV MODE STOPS A CREATURE SWINGING AT REACH** (`u.st.cool <= 0 && !settings.devMode`): `__palBoot` turns it on — a
+  fight probe must turn it off after, or it measures only the gap-closers.
+
+## The castles' frame cost (2026-10-19, "the castle lags very badly fix this in every section of it")
+Measured (`tools/probes.js castlePerf`: 150 frames each, `gl.finish` so the GPU counts, info summed over the frame —
+`renderer.info` resets per render): the first castle's street 465 draws / 1.12 M tris, Castle XIII's court 470 / 1.08 M.
+- **Both castles drawn from inside either**: from 39 spots over XIII's whole court, 8 ways round each, the first castle
+  and the sea change NO pixel (`castleVisC13`) → hidden while `inC13`. From the first castle's street XIII and the island
+  DO show (14k px), but piece by piece (`castleVisMesh`) only XIII's outer chunks `acmat_4`–`9` and its flags, and part
+  of the island: the rest (62 + 35 draws) are hidden for the one render from the first castle (`farMaskBegin/End`).
+- **Skinned creatures were drawn everywhere** (their culling is off: a skinned box is the bind pose) — the court's two
+  swordsmen through two castles' walls. `cullUnitModels`: a sphere round each creature's height and reach against the
+  frustum, `u.model.visible` for the frame (nothing else reads it). The swordsmen are only shown in or within 50 m of XIII.
+- **The man-at-arms was 118k triangles** — decimated in Blender (`tools/swordknights_decimate.py`, collapse 0.33 on
+  meshes over 1200 faces, BEFORE the armature modifier) → 40k; packed 3.6 MB (was 7.3); same at game resolution.
+- XIII's instanced dressing (lanterns, flags, goods, flowers, bunting) given bounds over all instances (+2 m) and culled.
+- After: street 360 draws / 868k (median 3.4 → 2.7 ms here), XIII's court 296 / 584k (turned: 98 draws).
+
+## Castle XIII's arch door: only the wood swings (2026-10-19)
+The owner: "trim this door better it should just be the door that opens not concrete textures too". The leaves were cut
+from two materials: `acmat_3` (the castle's STONE wall — it swung open with the door) and `acmat_1`, the door's map, which
+paints the stone surround round the wood in one texture (upside down: the arch is at the bottom of the image). Now only
+`acmat_1` is cut; the leaf wears `assets/c13-door-mask.png` (the wood's outline — straight sides, the round end — fitted
+off the map by `tools/c13_door_mask.py`) as `alphaMap` + `alphaTest`, and a fixed copy (`c13ArchFrame*`) stays in the
+wall wearing the inverse (`c13-door-frame-mask.png`): opened, the painted arch stays round an empty doorway.
+
+## 2026-10-19 — the dark knight's throw; already at it as you come in
+
+- **THE THROW** ("his hits should destroy the farmers and fling them pretty far"): `dkFling` sets `killFling` 1; in
+  `mutRagdoll` `rFL` gives the throw (11 + 6·rFL)·(0.55 + 0.45·kw) out and 3.2 + rFL·(2.6 + 1.6h) up (cap 7.5),
+  turned ¾ onto the street's line (`FARM_SPINE`, nearer way) — thrown every way from him, one hit a house wall 2 m
+  off. Measured 7 m and no further, and it was not the throw: **`RAG_DAMP` 0.990 a substep is 84 % of a body's speed
+  gone in one second of AIR**, and `RAG_FRICTION` 0.74 runs every iteration of every substep (36 a frame), so a body
+  stopped dead where it first touched. A flung body (`r.slide` 1.8 s) gets 0.998 damping and friction 0.012 → 0.062
+  over the window: `dkIntro` measures 12.9–13.0 m, the body skidding the last metre.
+- **ALREADY THERE** ("i see them clip in when entering the castle"): `sh tools/probe.sh fortEntry` (an ordinary
+  boot, outside the gate, the gate's own cut) — the knight and his three are staged and drawn at frame 28, under the
+  black; nothing else appears but the farmers' door bursts (knock, roar, door smashed), off screen or 20 m up.
+  Cold (`fortEntryCold`, half a second at the gate) the same: he is warm by then. A CHECKPOINT in the street
+  (`fortEntryRestore`) staged him at 2.6 s with the black lifting at 3.1 — luck. `bootStageHold` (a `var` declared by
+  `deathWait`, assigned beside `updateDarkKnight`) holds the load's black until he is out, at most
+  `BOOT_HOLD_WARM_MAX`.

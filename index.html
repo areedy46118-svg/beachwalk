@@ -13,12 +13,51 @@
   try {
     if (sessionStorage.getItem('beachwalk.load') === 'checkpoint' && localStorage.getItem('beachwalk.save'))
       document.documentElement.classList.add('resuming');
+    // a death: the card that says so is up from the first paint, and the load runs under it (main.js `deathCard`)
+    if (sessionStorage.getItem('beachwalk.died') === '1') document.documentElement.classList.add('died');
+    // and Restart clicked already, on the card that went up before the reload: only the hairline from the first paint
+    if (sessionStorage.getItem('beachwalk.dcGo') === '1') { sessionStorage.removeItem('beachwalk.dcGo'); window.__dcEarly = true; document.documentElement.classList.add('dcgo'); }
   } catch (e) {}
+  /* THE CARD IS UP SECONDS BEFORE main.js IS (2026-10-19, the owner: "i keep having to click restart twice"): a 4.8 MB
+     module downloads and parses under it, and a click in that time went nowhere. It is kept here, and main.js acts on
+     it the moment it runs (`window.__dcEarly`); after that main.js has the buttons (`window.__dcLive`). */
+  document.addEventListener('click', function (e) {
+    if (window.__dcLive || !document.documentElement.classList.contains('died')) return;
+    var t = e.target && e.target.closest ? e.target : null;
+    if (t && t.closest('.dc-restart')) { window.__dcEarly = true; document.documentElement.classList.add('dcgo'); }
+    else if (t && t.closest('.dc-quit')) {
+      try { ['beachwalk.load', 'beachwalk.skipIntro', 'beachwalk.died', 'beachwalk.dcGo'].forEach(function (k) { sessionStorage.removeItem(k); }); } catch (e2) {}
+      location.reload();
+    }
+  }, true);
 </script>
 <style>
   html.resuming, html.resuming body { background: #000; }
   html.resuming #overlay { display: none !important; }
   html.resuming #blackout { opacity: 1; }
+  /* YOU DIED (2026-10-18, the owner: "make a death screen that looks like the start screen that say 'YOU DIED' then
+     under it have 'restart from last checkpoint' or 'quit to titlescreen' you must click one of these"). The title's
+     black and its type; up from the first paint of the reload, the load running under it, the way back greyed out
+     until the game is ready. */
+  html.died #overlay { display: none !important; }
+  #deathcard { display: none; position: fixed; inset: 0; z-index: 60; flex-direction: column; align-items: center; justify-content: center; gap: 3.2rem;
+    background: #000; color: #f4f4f4; font-family: "Helvetica Neue", Helvetica, "Inter", Arial, sans-serif; -webkit-font-smoothing: antialiased; user-select: none;
+    transition: opacity 0.7s ease; }
+  html.died #deathcard { display: flex; }
+  #deathcard.fadein { animation: dcIn 0.7s ease both; }
+  @keyframes dcIn { from { opacity: 0; } to { opacity: 1; } }
+  #deathcard.gone { opacity: 0; pointer-events: none; }
+  #deathcard h1 { font-size: clamp(2.6rem, 5.4vw, 4.4rem); font-weight: 500; letter-spacing: 0.42em; text-indent: 0.42em; text-transform: uppercase; color: #fff; }
+  #deathcard .opts { display: flex; flex-direction: column; align-items: center; gap: 0.9rem; }
+  #deathcard button { font: inherit; font-size: clamp(1.05rem, 1.9vw, 1.45rem); font-weight: 500; letter-spacing: 0.32em; text-indent: 0.32em; text-transform: uppercase;
+    color: #7d7d7d; background: none; border: none; padding: 0.7rem 1.4rem; cursor: pointer; transition: opacity 0.6s ease, color 0.2s ease, text-shadow 0.2s ease; }
+  /* both grey until the cursor is on one (2026-10-18, the owner); still loading or not, they look the same and both click */
+  #deathcard button:hover, #deathcard button:focus-visible { color: #fff; text-shadow: 0 0 12px rgba(255,255,255,0.45); outline: none; }
+  #deathcard h1, #deathcard .opts { transition: opacity 0.6s ease; }
+  #deathcard.early h1, #deathcard.early .opts, html.dcgo #deathcard h1, html.dcgo #deathcard .opts { opacity: 0; pointer-events: none; }   /* clicked before the load was done: only the hairline is left */
+  #dcbar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255,255,255,0.04); transition: opacity 1.2s ease; }
+  #dcbar i { position: absolute; inset: 0; background: rgba(214,222,240,0.55); transform-origin: 0 50%; transform: scaleX(0.02); transition: transform 0.25s linear; }
+  #dcbar.done { opacity: 0; }
   /* The live beach under the title, graded the way a painted menu is: drained
      of colour, crushed, pushed toward a sick olive. Lifted the moment you begin. */
   canvas.title-grade { filter: saturate(0.12) contrast(1.4) brightness(0.28); }
@@ -1423,8 +1462,17 @@
     text-transform: uppercase;
     color: #ffffff;
     text-shadow: 0 2px 12px rgba(0, 0, 0, 0.95), 0 0 22px rgba(255, 255, 255, 0.2);
-    white-space: nowrap;
-    pointer-events: none;
+    /* A LONG ONE WRAPS AND SCROLLS (2026-10-18, the owner: "if the description of an item is too long have a scroll
+       you can click and drag"). It was one line that ran off both sides of the screen. */
+    white-space: normal;
+    text-align: center;
+    line-height: 1.6;
+    width: max-content;
+    max-width: min(86vw, 52rem);
+    max-height: 24vh;
+    overflow-y: auto;
+    padding: 0 0.9rem;
+    pointer-events: auto;
   }
   #inspect .hint {
     position: absolute;
@@ -1471,6 +1519,13 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
   }
+  /* SCROLLBARS YOU CAN TAKE HOLD OF (2026-10-18): the pack's and the shop's panes and an item's description. A styled
+     bar is a classic one (an overlay bar is zero wide and cannot be grabbed), and the game's own cursor drags it by
+     hand (`vcScrollGrab` in main.js). */
+  #invpanel .detail, #invpanel .grid, #shoppanel .list, #shoppanel .detail, #inspect .idesc { scrollbar-width: auto; scrollbar-color: rgba(255, 255, 255, 0.55) rgba(255, 255, 255, 0.08); }
+  #invpanel .detail::-webkit-scrollbar, #invpanel .grid::-webkit-scrollbar, #shoppanel .list::-webkit-scrollbar, #shoppanel .detail::-webkit-scrollbar, #inspect .idesc::-webkit-scrollbar { width: 10px; }
+  #invpanel .detail::-webkit-scrollbar-track, #invpanel .grid::-webkit-scrollbar-track, #shoppanel .list::-webkit-scrollbar-track, #shoppanel .detail::-webkit-scrollbar-track, #inspect .idesc::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.08); }
+  #invpanel .detail::-webkit-scrollbar-thumb, #invpanel .grid::-webkit-scrollbar-thumb, #shoppanel .list::-webkit-scrollbar-thumb, #shoppanel .detail::-webkit-scrollbar-thumb, #inspect .idesc::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.55); border-radius: 5px; min-height: 28px; }
   #menu .panel::-webkit-scrollbar { width: 3px; }
   #menu .panel::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.3); }
   #menu .panel::-webkit-scrollbar-track { background: transparent; }
@@ -1894,6 +1949,14 @@
   <div id="overlay">
     <button type="button" class="start loading">Loading 1%</button>
     <div id="bootbar"><i></i></div>
+  </div>
+  <div id="deathcard">
+    <h1>You Died</h1>
+    <div class="opts">
+      <button type="button" class="dc-restart loading">Restart from last checkpoint</button>
+      <button type="button" class="dc-quit">Quit to title screen</button>
+    </div>
+    <div id="dcbar"><i></i></div>
   </div>
   </div>
 

@@ -2295,3 +2295,100 @@ asked: the puppet is on the bed for the taking); 1, 2, 5, 6 unchanged. So **`elv
 LIVING man on any stage-5 load (the provoke-on-sight after the fire could never run). The talk interaction is
 `elvStage < 5`. **Stage 6 is sold**: `SELL_ROWS` 'puppet' (10 jars, only while `elvCarrying && elvStage === 2`),
 `traderSell` ends the carry; its tile is `pupShopItem()` (a fresh instance in the bed's `pupSitEdge` pose, `iconRot` 0.3 / −2.3: from dead ahead the thighs run at the lens and he reads as stood up straight).
+
+**ELVÉDOR SPUN (2026-10-18, "spinning around when you go back to him").** His late motion capture (`parLate`, left by
+`elvAuthor` when the packs were not in) was never called — only the farmers', tavern's, demons' and parasites' ticks
+call theirs — so he could have no clip at all, and the breath and gaze (RELATIVE turns, `lifeTurn`/`elvTurnWorld`)
+piled up on bones nothing rewrote. Now `updateElvManPose` calls it, and the layered bones start each frame from the
+pose under them (`elvLayerIn/Out`: a bone found exactly as last frame left it is put back to last frame's base) — a
+held clip frame does the same, since three's PropertyMixer skips unchanged values. Not seen in the pane.
+**THE WELL'S "LOOK INSIDE" IS GONE ONCE THE WELL MAN IS DEAD** (`wellEmptyLookIt`'s `when`, with `deadUnitKeys`).
+**THE PUPPET BLINKS ONCE ON HIS HAND (2026-10-18, the owner, not for the first time: "make the puppet blink once while
+on the beach past the fire ... his animation should have one single blink as well").** The handed-back puppet on the
+man's arm never blinked (only the carried one did). `M.pupBlink` in `updateElvManPose`'s `M.pup` block: 1.5 s after
+you come within 8 m, one silent 0.22 s blink (`pupLids`), re-armed only after you walk off past 30 m. Not seen in the
+pane (the owner was playing in it).
+**THE FIRE A METRE NEARER THE WALL (2026-10-18, the owner: "a little closer to the sand wall just barely so its easier
+to accidentally stumble upon it with the puppet in hand").** `ELV_CAMP.x` 8.2 → 9.2 (the face is at x≈16, the walk
+stops at `CLIFF_BLOCK_X` 14.2). The lantern, the "Throw it in" proxy and the burn's landing are all off `ELV_CAMP`.
+
+**THE HOUSE: TOILET LID, FRIDGE, TV (2026-10-18).** `buildHouseProps` (after `buildHousePanes`), `updateHouseProps`
+(beside `updateHouseDoors`). The toilet `name0001` is spared the small-things cull and given a lid on a hinge at the back
+("Open the lid"). The fridge's two doors are cut out of the kitchen's `name38` meshes by triangle centroid (`hpCut`) onto
+hinges at z −2.39/−1.38, its front face cut away, a lit liner/shelves/lamp and a bottle (`elvFridgeTaken`, saved as
+`flags.elvFridge`; a 'default' interactable, not a replayed pickup — the house loads after the restore's window).
+The TV `name54`: a plane over its screen plays `assets/elvedor-tv.mp4` (the owner's clip — NOT IN THE REPO YET) with its
+sound from the set (sfx bus, by distance); without the file, static and a hiss; it goes off when you leave.
+**The puppet can be picked up from stage 0** (before Elvédor asks). Stills: probes `house`, `toilet`.
+
+**ROUND OF 2026-10-18 (evening).** Elvédor's mark `ELV.z` −598.5 → −640 ("a little up the beach closer to the house";
+the house still loads at −628.5, where it always did). **The TV's show** (`tvShow*`, "Elvédor on stage doing his puppet
+set in front of a full crowd"): no clip exists, so it is a scene of its own drawn into a 200×102 target every other frame
+while the set is on — a stage, a folded red curtain under two spots, a second copy of his model (parsed on first switch-on,
+emissive off, colour ×0.55) with the puppet on his left hand (`pupAim`/`pupHang`/`pupJawOpen`), and 150 silhouettes
+(instanced) that bob and throw their hands up on a laugh; its sound from the set (a murmur, laughs, applause — noise
+shaped, on the sfx bus by distance). A file at `assets/elvedor-tv.mp4` would play instead. Render-target pixels read
+back in probes `tvshow`. **The doorway flicker**: under every door the floor, the wall's bottom face (`material_30`) and a
+sill (`material_9`, or the outside's `base`) were coplanar; `houseDoorSill` cuts the level wall faces out of each
+doorway's footprint and `base`/`material_9` are drawn with a small polygon offset behind the floor. **The carried
+puppet's blink** now comes 2.5 s after you step onto the sand with him (it was 7 m from the pickup — inside the house),
+0.34 s long. **The lighthouse gulls** are the wreck's `gull.glb`, built on each diorama bird (`isleGullBuild`, in the
+scene root: the island's static meshes have frozen matrices, so bones under them never moved), wings tucked by bone
+scale, heads turning (`isleGullsTick`).
+**THE TV SHOW, ROUND 2 (2026-10-18: "MORE HYPER REALISTIC USE THE ACTUAL MODELS … STILL LOOK LIKE ITS ON A TV").** His
+copy wears his own dressing — each mesh's material from the beach Elvédor copied into a PLAIN `MeshStandardMaterial`
+(sharing them hid him: the game's per-unit shader hooks) — and his pose is the live man's, bone for bone, with the
+puppet arm and the gestures laid on. The crowd are lathed busts (shoulders, neck, the back of a head), rim-lit from the
+stage; faint beams in the haze and footlights. The picture is 384×196 drawn through `TV_CRT_FS` on the screen: bowed
+glass, scanlines, an aperture mask, colour fringe at the edges, a slow roll, snow and a vignette (`1 - smoothstep(...)`:
+the reversed-edge smoothstep left the screen black). Probes `tvscreen` (stand the camera IN the house first, or the set
+switches itself off) and `tvshow`.
+**THE BLINK THAT DID NOT SHOW.** It ran (traced frame by frame: the lids closed and opened 2.5 s onto the sand) but the
+pupils stand proud of the eyeball and looked out through the shut lid — rendered red, the lid covered the white and the
+black sat on top. The lid is 1.32 of the eye (was 1.12) and `pupLids` puts the pupils away while it is over half down.
+Stills: probes `pupBlink`.
+
+## 2026-10-18 — the run in, the one blink, the TV set, the land opened to the pack
+
+- **Elvédor cannot be hurt while he runs in after the burn** (`elvRunImmune(u)`: `elvMan.run` set and `u === elvMan.u`).
+  Gated at `hurtMutantCore`, `bladeHitMutant` (the blade passes through: no hitConnect, no flesh) and `magHeadshot`. The
+  owner: ONLY while he runs — once `elvManRun` ends (`M.run = null`) he is as killable as ever. The wake-by-distance never
+  fires during the run anyway (`holdAnim`). Probe: `sh tools/probe.sh elvRunHit`.
+- **The carried puppet blinks exactly once**, at `ELV_BLINK_Z` = midway from the gully mouth (`ELV_GAP_Z`) to the man
+  (`ELV.z`), −671.2, with him in your arms, off the land, not in a room. Gone: the stair blink (`elvStairBlink`), the
+  2.5 s-onto-the-sand blink (`elvBeachT`) and the blink on the man's hand (`M.pupBlink`). Probe `pupBlink` walks
+  −703 → −638 and counts lid-closings: 1, at −671.15.
+- **The TV show**: the puppet's `rotation.y` must be `man.rotation.y - PI/2` (its front is the file's +x) — it was
+  `+PI/2`, facing backwards. The hold is the beach's own (`updateElvManPose`): arm aims (0.22,-0.82,0.3) /
+  (-0.12,0.62,0.78) / (-0.05,0.95,0.2), the puppet's spine on the hand↔LeftHandMiddle1 midpoint −0.04, the hand scaled
+  to 0.001 AFTER it is measured (scaling it first collapses LeftHandMiddle1 onto it). `pupAim` with the gltf scene as
+  root uses the same frame as `elvAimMan` (+z his front, +x his left) — measured, the copy faces the camera at
+  rotation 0.
+- **His moves on the set** (`tvShowRig` / `tvShowMove`): an `AnimationMixer` on the copy playing `ELV_MOCAP_SET`'s
+  mHIdle / mHWalk (tracks are bone-NAME based, so the beach's retargeted clips bind to a fresh parse of the same glb),
+  hip x/z flattened to the first key (the set moves him). Every frame the bones go back to the bind BEFORE the mixer —
+  anything the clips leave alone (and the aims on top) would otherwise pile up frame on frame. Blocking: hold 4–9 s,
+  cross to a new mark (x ±1.3, ≥0.7 away) side-on at 0.85 m/s, turn back to the house; never starts a cross mid-laugh;
+  a bow from Spine1 on a laugh; the right hand gestures only standing on his line; head yaw by world rotation
+  (`tvHeadAt`), frame-safe; the TV camera pans after him a beat behind. Probe `tvmove`.
+- **The pack follows you up to the house.** Before, `mutClampX`'s last line held every beach creature at
+  `CLIFF_BLOCK_X + 0.5`, so the gully was a door none of them could use. Now `elvUnitClamp` (called just before that
+  line) holds a creature behind the dune by the player's own land rules — `elvLandFloorAt` at ITS feet (never the
+  top storey: pass the y), no bank climbed (rise vs run, ×2.3 in the yard), `keepHitsWall` on `HOUSE_SITE`,
+  `elvDoorShut`, `elvPaneShut`, slide offsets then revert — keeping its last good spot in `u.elvLp` (reset when it is
+  more than 3 m off: a spawn or a restore). Its height comes from the land's floor too (the beach height block).
+  `elvSteer` gives it a route along `ELV_PATH` (via `ucFollowPath`, `pathO` 0,0) whenever the straight way is not
+  walkable (`elvLineClear`), re-drawn every 0.4 s. A swing's own travel can carry a body off the land into a bank
+  without a clamp: the height block runs `elvUnitClamp` on anything past the clamp line and outside the land, before its
+  feet sink. Probe `landChase`: all three reach you in the gully and on the lot, every frame on the floor.
+
+## 2026-10-18 (second round) — a real lid, and the ring's sting for the jar
+
+- **The puppet's lid** (`pupRig`/`pupLids`): it was a sphere squashed along his up and stretched back — a blob swelling.
+  Now a hemisphere shell (radius 1.22 of the eye, the eyelid paint, double-sided) on a `hinge` at the eye centre whose
+  frame is built from his up and the eye's own front (`frontL`, orthogonalised): `PUP_LID_OPEN` −1.45 (rolled up and back
+  under the brow, hidden) to `PUP_LID_SHUT` 1.62 (down over the front, rim at the bottom). The blink's shape is
+  `pupBlinkK(t)`: close in the first 32 % (ease-in), shut to 46 %, open over the rest (smoothstep) — 0.42 s in all.
+  `PUP_LID_*` sit above `pupRig` (declaration order). Stills: `sh tools/probe.sh lidShots` (0, .35, .7, 1).
+- **Elvédor's jar** (`elvGiveJar`) plays `ringDrop`, the octopus ring's sting, like every other thing given to you
+  (not on a restore or a replay).

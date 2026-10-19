@@ -731,7 +731,7 @@ end too. The button reads "Walk again" (CSS upper-cases it).
 - Totals are from the lists the world is BUILT from (most rooms make their people and jars on first entry):
   `statKillTotal()` = MUT_SPOTS + CAT_FOES + Dealer, knight, samurai, the crawler's young, crusader, Umbra, the well
   man, Dante + 7 demons + PAR_SPOTS + Wong/drunk/orc + TAV_DRINK_FROM + FARM_ROSTER + 1 + PACK_SPOTS = 56. SCP-096 is
-  retired at boot and not counted. Keys 7, weapons 7, rings 5 (`STAT_KEYS/WEAPONS/RINGS`, function declarations so
+  retired at boot and not counted. Keys 6 (the dock key gone 2026-10-18), weapons 7, rings 6 (+ connection) (`STAT_KEYS/WEAPONS/RINGS`, function declarations so
   they are hoisted). Jars = mounds whose `moundRole` is 'jar' + dojo 1 + catacombs 2 + tavern bore 2 + grille 1 +
   the Dealer's bench 3 = 12; found = `takenPickups` ids starting "Take the jar@". Add a jar or a unit anywhere and
   these totals must be told.
@@ -827,3 +827,62 @@ in element fullscreen, can take it). So: C crouches too and is the key the contr
 deep's hint name; and a `beforeunload` guard asks "Leave site?" while a game is under way — skipped when the game
 reloads itself (`leavingOnPurpose`, set by `reloadInto`, the end screen's restart and the lost-context fallback)
 and in dev mode. A new self-reload must set `leavingOnPurpose` or it will ask.
+
+**THE STATS HAVE A SONG, AND THE STATS CAME UP AGAIN (2026-10-17).** The owner: "add this music to right when you see
+the stats it starts" ("5451 beachwalk.mp3"). `assets/end-theme.m4a` (afconvert AAC 160 kbps, 2.09 MB, 109.3 s; the
+file is silent from 1:03 to 1:37 and then plays again — the owner's own, left as made). `startEndSong()` at the end
+of `showEnd`, prefetched by `lazyBuf(END_SONG)` in `startWakeCut` and retried every 250 ms if it is still on its way;
+played once on the music slider (`endVol`, `END_LEVEL` 2.4 capped at `END_MAX` 1.0 — 0.30 at the defaults; peak
+0 dBFS straight to the output), in over 0.6 s under the card's two-second fade. Measured through the silent iframe
+(audio.md): it reaches the output as the card shows.
+**And `showEnd` threw**: `statHad(boatKeyItem)` still read `holdDoorOpen`, removed with the hold door in e7e7e6a.
+It is only reached when `boatKeyTaken` is false (never took the boat key), and then `renderEndStats` threw a
+ReferenceError before `endEl` was shown: the game ended on the black with no stats and no "Walk again". Now
+`boatKeyTaken` alone (a save's `f.holdDoor` already sets it). A removed variable must be grepped for in `statHad`.
+
+## The death card, Esc out of the shop, Ctrl chords, scrollbars you can hold (2026-10-18)
+- **YOU DIED** (`#deathcard` in index.html; `deathCardShow/Ready/Go` beside `updateBootHold`). `playerDied` puts it up
+  over the red after the usual hold, sets `beachwalk.died` and reloads; the head script adds `html.died` before the
+  first paint so the reload comes up on the same card (and `#overlay` is hidden under it). `deathWait` (a `var`, read
+  by the input gate) makes `updateBootHold` hold the black after the load is done and light "Restart from last
+  checkpoint"; the click clears it (the fade and `audioAfterLoad` follow as before) and, being a real gesture, takes
+  the pointer lock and resumes the context. No checkpoint: the reload is fresh, "Restart" lights off the start gate
+  and calls `beginGame`. "Quit to title screen" clears the session keys and reloads (the save is kept). The input
+  gate lets presses inside `#deathcard` through, and Esc is swallowed while it waits.
+- **Esc leaves the shop and the pack.** Both keep the pointer lock (the virtual cursor), and with the lock held the
+  browser spends Esc on releasing it — the keydown never arrives. `pointerlockchange` losing the lock with either open
+  now closes it (the pack re-asks for the look).
+- **Ctrl/Cmd + any key**: a capture keydown takes the default off every chord once `started` (text fields excepted).
+  Ctrl+W/T/N/Tab cannot be cancelled by a page; `navigator.keyboard.lock` is asked for those keys only (never all:
+  Esc must still release the pointer) whenever the lock is taken — Chrome honours it only in fullscreen.
+- **Long descriptions**: the examine screen's `.idesc` wraps (max 86vw × 24vh) and scrolls; a release or a wheel on
+  it is not "put it away"/zoom. The pack's/shop's panes and it have styled (classic, 10 px) scrollbars, and under the
+  virtual cursor a press in a scrollable box's bar gutter is dragged by hand (`vcScrollAt`, `vcScrollGrab`), its
+  release swallowed.
+**The death card's Restart is always clickable (2026-10-18).** Clicked before the load is done, the words fade
+(`#deathcard.early`) and only the hairline is left; the checkpoint's black stops waiting (`deathWait` off) and the card
+goes as the black starts to lift (`deathCardHide` in `updateBootHold`); with no checkpoint `dcFreshGo` begins the game
+from the start gate. The lock is taken inside that click either way.
+**The stats song, trimmed and from its first note (2026-10-18).** "YOU CUT THE START … I HEAR CLICKS … TAKE OUT THE LOUD
+PART AFTER THE SONG": the source MP3 peaks +0.93 dBFS in the reprise after its 34 s silence (clipped on decode: the
+clicks); `end-theme.m4a` is now its first 63.77 s only (to where it fades to silence, a 0.5 s tail fade), AAC 192 kbps,
+peak −9.6 dB, mean −25.2; `END_LEVEL` 6.5; no fade-in (0.6 s from nothing swallowed its start at 0.3 s).
+
+## 2026-10-18 — the death card's two choices are grey until the cursor is on one
+
+`#deathcard button` is #7d7d7d; `:hover`/`:focus-visible` white with the glow. The `.loading` dimming of Restart is
+gone (still clickable while loading, as before; both look the same).
+
+## 2026-10-19 — Restart on the death card, clicked once
+
+The owner: "when clicking restart on the checkpoint the text should fade and it continues loading with just the
+loading bar then starts i keep having to click restart twice". Two windows lost the click: (1) the card goes up
+750 ms BEFORE the reload, when `deathWait` is still false — `deathCardGo` returned; (2) after the reload the card is
+up from the first paint, but `main.js` (4.8 MB) downloads and parses for ~1.7 s under it with no listener. Now:
+(1) a click on the pre-reload card sets `beachwalk.dcGo` in sessionStorage and fades the words; index.html's head
+script reads it into `window.__dcEarly` and `html.dcgo` (the words hidden from the first paint); (2) a capture
+listener in index.html's head keeps a Restart click (and does Quit itself) until `window.__dcLive` is set where
+main.js attaches its own. `__dcEarly` is acted on at the very BOTTOM of main.js — `instantStart` is only set there,
+and read at line ~8750 it is still false, which would have sent a checkpoint load down the fresh-start path. Acted on
+without a gesture, so it does not ask for the pointer lock. `sh tools/probe.sh dcClick`: clicked early → words faded
+→ in at 5.3 s; clicked before the reload → in at 5.7 s; not clicked → still waiting.

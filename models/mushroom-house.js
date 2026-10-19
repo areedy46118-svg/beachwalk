@@ -72,11 +72,17 @@ function normalFrom(hc, strength, rep) {
   const S = hc.width, g = hc.getContext('2d'), src = g.getImageData(0, 0, S, S).data;
   const out = document.createElement('canvas'); out.width = out.height = S;
   const og = out.getContext('2d'), img = og.createImageData(S, S), d = img.data;
-  const h = (x, y) => src[(((y + S) % S) * S + ((x + S) % S)) * 4] / 255;
-  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const dx = (h(x + 1, y) - h(x - 1, y)) * strength, dy = (h(x, y + 1) - h(x, y - 1)) * strength;
-    const l = Math.hypot(dx, dy, 1), i = (y * S + x) * 4;
-    d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+  // (the same map, faster: the wrap-round indices worked out once a row and a column, and a square root for `Math.hypot`
+  // — it was 0.37 s of every load, the single heaviest thing the pavilion builds, 2026-10-18)
+  const k = strength / 255, xm = new Int32Array(S), xp = new Int32Array(S);
+  for (let x = 0; x < S; x++) { xm[x] = ((x - 1 + S) % S) * 4; xp[x] = ((x + 1) % S) * 4; }
+  for (let y = 0; y < S; y++) {
+    const r0 = y * S * 4, rm = ((y - 1 + S) % S) * S * 4, rp = ((y + 1) % S) * S * 4;
+    for (let x = 0; x < S; x++) {
+      const dx = (src[r0 + xp[x]] - src[r0 + xm[x]]) * k, dy = (src[rp + x * 4] - src[rm + x * 4]) * k;
+      const l = Math.sqrt(dx * dx + dy * dy + 1), i = r0 + x * 4;
+      d[i] = (-dx / l * 0.5 + 0.5) * 255; d[i + 1] = (dy / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+    }
   }
   og.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(out);

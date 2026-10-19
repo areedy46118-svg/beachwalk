@@ -480,3 +480,25 @@ nowhere (silent, the context still running — the owner declined `setSinkId`), 
 `__audLevel(ms)` → { peak, rms, loud } of what reached it. `__bw.audS()` reads hush / replaying / applyingSave / the
 context / the bus gains / banks loaded / bootHold. In a HIDDEN pane a checkpoint load never lifts (no rAF): drive it
 with `__bw.frame(n)`. `__palBoot` leaves the paladin `holdAnim` and dev mode on: no swings until both are cleared.
+
+**Keys go to `document`, not `window` (2026-10-17).** The game's `keys` map is filled by a keydown listener on
+`document`: a `KeyboardEvent` dispatched on `window` never reaches it, so a "Shift + hold" built that way is a plain
+hold. Dispatch on `document`, or set `__bw.keys.ShiftLeft` directly. And a test that presses again on a fake clock
+must step the frames out first (`digT > 0` refuses the next wind; its retry latch runs on REAL timers while the
+fake clock stands still) — the "every other press fails" pattern is that, not the game.
+
+**A TEST ON 4199 WRITES THE OWNER'S SAVE (2026-10-17).** The pane's server is the one the owner plays on, and
+`localStorage` is per origin: `saveCheckpoint()` in a test (or anything that autosaves) replaces his checkpoint.
+Don't save in a test without telling him; the silent-iframe method in audio.md shares the same storage.
+
+**`tools/silentframe.js` (2026-10-18)**: the game in a same-origin iframe from `/README.md`, its `connect(destination)`
+caught before the module runs (every scored moment shows up by who connected it, `__sfLevels()`), media muted. A reload
+the GAME asks for inside the frame (a death) comes up UNpatched — close its context at once. And a minimised or
+covered pane gives 1-3 rAF a second to everything, the top page included: time nothing then.
+
+## 2026-10-18 — more headless probes; musictest one scenario at a time
+`tools/probes.js` scenarios added: `tvmove`, `landChase`, `pupBlink` (rewritten: walks the beach back, counts closings),
+`elvRunHit`, `lidShots`, `isleGulls` (rewritten), `whaleWave`, `plioTest`, `castleSheet`, `farmSheet`. The full
+`musictest.sh` can run past 7 minutes on a loaded machine (its cap is now 700 s); `sh tools/musictest.sh <out> end`
+(or `?only=end,samurai` on musictest.html) runs just those. `__bw.seaS` is NOT the sea artifact's state (a name taken
+long ago) — use `__bw.sea`.

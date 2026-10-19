@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>probe</title>
+<!-- A HEADLESS LOOK AT SOMETHING, for tools/probe.sh. Not part of the game. ?s=<name> picks a scenario in tools/probes.js;
+     it prints "[PB]" lines and stills as "[PBIMG] <name> <i>/<n> <base64 chunk>", which probe.sh reassembles into jpgs. -->
+<body style="margin:0;background:#000"><iframe id="g" style="width:1280px;height:720px;border:0"></iframe>
+<script type="module">
+const S = new URLSearchParams(location.search).get('s');
+const log = (...a) => console.log('[PB]', ...a);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const f = document.getElementById('g');
+for (const k of ['beachwalk.load', 'beachwalk.died']) sessionStorage.removeItem(k);
+sessionStorage.setItem('beachwalk.skipIntro', '1');
+f.src = '/index.html';
+let w = null; for (let i = 0; i < 400; i++) { await sleep(50); try { w = f.contentWindow; if (w.__bw) break; } catch (e) {} }
+const b = w.__bw;
+for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(250); }
+try { await b.audioCtx.suspend(); } catch (e) {}
+const shot = (name, W = 640, gain = 1) => {
+  b.renderer.render(b.scene, b.camera);
+  const src = b.renderer.domElement, c = document.createElement('canvas'); c.width = W; c.height = Math.round(W * src.height / src.width);
+  const g2 = c.getContext('2d'); if (gain !== 1) g2.filter = `brightness(${gain})`; g2.drawImage(src, 0, 0, c.width, c.height);
+  const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', name, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+};
+const ctx = { w, b, log, sleep, shot };
+try { const P = await import('/tools/probes.js?' + Date.now()); await P[S](ctx); } catch (e) { log('FAILED', e && e.stack || e); }
+log('DONE');
+</script>

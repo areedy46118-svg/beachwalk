@@ -2800,3 +2800,43 @@ for it, units with `kind.hp >= 60` are only pushed, gulls are knocked down. Meas
 - **`clone(true)` copies `userData` as JSON**: a clone's `userData.pearl` is a plain object. Find parts by name.
 - **The save's `took` replays a pickup on restore**: a hand-edited save that drops an item from `pack` but keeps its
   "Take ..." in `took` loses it (taken by the replay, then the pack is laid over it). Edit both.
+
+## The Flame: a burn you can see, and burning rounds (2026-10-17)
+
+"fire artifact isnt working fix it". Measured first, on a fresh skip-intro load: the catch, the burning swing and
+the burn itself all worked on the sand shovel, the military shovel, the katana and the peg (k 1.00, `swing` true,
+`st.burn.t` 2.58 on the pale, hp ticking), and the artifact came back on its weapon across a checkpoint reload.
+What did not work:
+- **You could not see a creature burn.** `flameTick`'s emission on a burning unit was 16 tongues a second, 8-14 cm,
+  in a band at the chest: a still of a burning pale showed five flames, two orange specks. Now 75 a second over the
+  shins to the shoulders (`h` × 0.12-0.84, `h` scaled by `u.g.scale.y`), 13-40 cm, a faint body-sized glow (5/s),
+  embers (12/s) and `flameRoomLamp` on the nearest burning unit within 40 m whenever the blade is not using it
+  (`flame.k <= 0.02`). `flameWorld`'s pool 320 → 900 (about 45 live on one burning body). The burn's damage is the
+  owner's second-pass number, unchanged.
+- **On a gun it did nothing.** `isArtWeapon` takes guns (the whale's counts their hits), but `flameWeapon()` asks
+  for `onDig`. `flameGunBurn(u)` (beside `FLAME_LINGER`): a round that lands from a gun holding the Flame leaves
+  `FLAME_GUN.dur` 1.4 s of burn at the burn's own rate (0.24 of a point), refreshed, never stacked, never cutting a
+  longer one short. Called after the revolver's `hurtMutant` and in `sgHitFoe` (once a blast, not a pellet).
+  Measured: shotgun 27 + burn 1.40, revolver 14 + burn 1.40, the revolver without it 14 and no burn.
+- Still not burnable: crabs and gulls (a heavy kills them outright anyway) and the pliosaur (`plioHurt`).
+
+**THE SEA WAVE BREAKS (2026-10-18, "HYPER REALISTIC").** `SEA_WAVE_VS/FS` on a 96×14 band (`seaWaveGeo`): the profile
+in the vertex shader (back face to a crest, a lip curling over by `uCurl`, height uneven round the ring), faceted
+normals, moon sheen/fresnel, deep→green see-through crest, foam on the lip and streaks, posterised. 1.4 s (rise 0.35,
+curl to 0.95, collapse), three spray bursts (the last off the lip), a crash at 0.48 (`playSampleAt('splash')` +
+`sfxSurge`), `seaLamp` (in the scene from boot) flaring cyan, and a wet disc on the sand for 4 s. Stills: probes `wave`.
+
+## 2026-10-19 — the sawn-off's sight picture; a held thing that is never drawn
+- **Down the sights was a hip shot slid over** (the owner: "straighten the shotguns aim out it doesnt even look like
+  aiming"). Measured in the eye's frame (muzzles against chambers, `tools/probes.js sgAim`), the old `SG_HOLD_ADS` had the
+  bores 8° left, 13° up and rolled 13°, the breech 5 cm right and 9 cm low: the gun ran in off the bottom right to a bead
+  pinned on the crosshair. Solved by Newton on the hold's pitch/yaw/roll (`sgSolve`): [0, -0.112, -0.297, 0.0159,
+  -0.0056, -0.0189] — bores along the view with a degree of rise, level, the breech 2.7 cm under the eye. The idle's own
+  roll leaned it up to 8° wherever the aim froze it: while aiming the idle is eased to its FIRST frame (the one solved on;
+  its last frame is not its first). **Probe on the fake clock** (`burntest.js __clockOn/__adv`): with real-ms frames the
+  0.55 s draw never finished and the first solve was done on the draw pose.
+- **"My weapons went invisible when I loaded a checkpoint"** — not reproduced on the katana (8,300 px drawn before the
+  save and after, beach and castle). What can do it is fixed: `toggleEquip` built a lazy `holdable` model even before its
+  scan had landed (an empty clone for good — the revolver and every carried thing are lazy) — now only when
+  `heldWarmReady`; and `vmSelfHeal` (every frame something is held): a pending build is built the frame its model lands,
+  the held thing and everything to the hand is shown, a NaN transform is reset.

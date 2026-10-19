@@ -947,3 +947,76 @@ surface): the hillside east of the cliff stair drops 12 m to the landing in one 
 ez(−1139..−1135). Could not tell which spot the picture is: ask for the P overlay readout there. NB `__bw.step` with
 `keys.KeyW` gave the same distances at every island spot, the open jetty included — the island walk was not being
 driven by it; do not trust that harness there.
+
+**NO GOING OVER THE RAILINGS (2026-10-18, the owner, stuck between a railing and the house: "I SHOULD NOT FALL OR JUMP
+OVER FENCES AT THE LIGHTHOUSE ISLAND").** `ISLE_SITE.wallMin` 0.03 (`fortWallsStep` reads `S.wallMin ?? KEEP_WALL_MIN`):
+a tube rail's faces are walls now; `hits` also asks at feet+0.45 and +1.0; a raised floor with no floor at its own height
+on both sides across one axis (`narrow`: a rail top, a post cap) cannot be stepped, jumped or mantled onto. The
+un-stick: `isleGood` (on the ground, not narrow, no wall within a body) and `isleStuck` — pushing for 1.5 s without
+moving 0.35 m while squeezed against a face or on a narrow top puts you back on the last good spot. Not walked in the
+pane (the owner was playing); re-run the 2026-10-14 flood test.
+
+## 2026-10-18 (second round) — the island's own gulls again, heads alive
+
+The owner: "go back to the old seaguls at the lighthouse those models arent working just make their heads move a little
+bit". The skinned wreck gull that sat on each (`isleGullBuild`, `gullSrc`) is gone; the diorama's birds draw again.
+`isleGullHead(B)` finds each bird's head in its own geometry — the vertices within 0.26–0.46 of the bird's length of
+its highest point (the crown), weight 1 → 0 by that distance, none below the neck (crown lerped 0.42 toward the box
+centre) — about 100 of the 372. `isleGullsTick` turns them about the neck by world yaw (±0.7) and tip (−0.1…+0.25),
+weighted, so the neck bends rather than tears; a new look every 0.8–2.8 s, eased at 8/s, and the position buffer is
+only written while it moves (within 60 m). World → the bird's local through its own inverse `matrixWorld` (the island's
+statics are frozen: geometry is what moves). Stills: `sh tools/probe.sh isleGulls` (three looks of three birds).
+
+## 2026-10-18 — the gap before the tower door
+
+The owner: "i keep falling in the gap before the lighthouse door". Mapped (`sh tools/probe.sh isleDoorGap`: the walk's
+floor in front of the door, rows out from the axis, columns across the door's line): pockets 0.9–1.05 m under the deck
+across the whole doorway from r 2.0 to 2.8 — the grid's cells there held the flare's stone under the boards, not the
+threshold drawn over it. Walked (`isleDoorWalk`, W held, five lines across the door, in and out): on the left of the
+door you dropped 1.08 m and stuck at r 2.44 with the eye 0.74 over the deck. `isleFillThreshold()` (run once, right
+after `isleBuildCells`) gives every cell of the doorway's sector (r 1.85–3.05, within `ISLE_DOOR_W` + 0.55 of the line)
+whose highest floor within a step of the deck is more than 0.3 under it the deck's own floor (18 cells). After: no line
+drops more than 6 cm, in or out; the outer lines stop on the jambs, as walls.
+
+## 2026-10-18 — the gulls' beaks turn with their heads
+
+The owner: "fix the beaks of the seagulls at the lighthouse since the heads move it looks weird now". `isleGullHead`
+chose the head by distance from the crown (0.26–0.46 of the bird's length), and the beak's tip is the far end of the
+head from the crown: measured (`sh tools/probe.sh gullBeak`, vertices along the bird's front from the neck), the four
+front-most vertices of every bird had no weight, so the beak stretched and sheared as the head turned. Now the head is
+chosen by HEIGHT over the neck — weight 1 from 0.055 of the length under the neck up, fading to 0 at 0.12 under it (the
+throat into the shoulders), and only within 0.6 of the length of the crown across the ground — so the whole beak is
+rigid with the head (all front vertices weight 1, nothing under the throat taken).
+
+## 2026-10-19 — two sea-level pockets in the jetty's box; the boards' ragged rim
+
+The owner's screenshot, deep in the sea mist with the jetty's lamp at the edge of it: "i fell and got stuck like this
+at the lighthouse". (First guess, under the drawbridge's land end, was wrong: `isleUnderBr` mapped that pocket, 1.1–3
+m under the deck, and every floor of it walks back out. **The mist was the clue** — `ISLE_MIST` only lies within 4.2 m
+of the sea.)
+
+- **`nextTo` took ANY floor in `isleJettyBox`** (x −27.5…−13), not just the boards: the rock at the sea's own level
+  beside the stair's foot (x −18…−16.5, z −1153…−1154) and under the cliff (x −14.5…−14, z −1155.5…−1157).
+  `sh tools/probe.sh isleJettyTraps` stands a body on every low floor in the box and walks it out eight ways with
+  jumps: ten traps, best height reached 0.23 (the boards are 0.41). The ISLE_FALL clause chained small drops down to
+  them too. Now under 1.5 m the walk takes only `isleBoards` (the walkway x −27.2…−21.3, z −1161.8…−1139, and the
+  landing x −27.2…−12.5, z −1140.2…−1135) and nothing under 0.2 there. A body already down there (an older session)
+  is put back on `isleGood`, which never records a low spot off the boards. `isleJettyFix`: 808 walks with jumps from
+  every floor within 7 m of the old traps, none ended low; the rescue lands on the boards.
+- **THE BOARDS' RIM IS RAGGED**: a fringe a cell wide at 0.2–0.37 (x −22.2…−22.0 on the walkway's east side) that
+  ends in corners. A body sliding up the edge ran into one (x −22.004, z −1151.404 — the cell's very corner) with
+  nothing ahead or beside it, and every slide was a part-stride too short to get round; the wide slides (±0.7…1.4)
+  then ran it straight back along the rim into the corner, so it dithered there pushing W. Cutting the fringe out by
+  height just made new corners. Now the slide is: ±0.35, then the NOTCH SIDESTEP (square to the way you go, or up to
+  0.6 rad back from square — in a cell's corner the square step still drifts forward off it — by 60 % of the stride,
+  taken only when a sidestep of up to 0.9 m, all of it ground, opens ground 0.25 on the way you were going, that
+  stride asked FROM the sidestep or its wall ray runs through what is being rounded, and clear of `keepWallNear`),
+  then the wide slides. A search that found nothing is not repeated from the same spot and heading (`isleSlipNo`):
+  measured, pushing into the jetty's side costs the same 1.3–1.4 ms a frame as walking the boards.
+- Not fixed, and older: the walkway's rim POSTS (x −22.6…−22.3 at z −1144.5, −1148, −1152, −1156, −1160.5) stand
+  0.2 inside the edge, too tight to pass outboard; a body hugging the rim walks into one and stops — the step into it
+  is legal and `keepWallPush` shoves it back, so the sidestep never runs. You steer round it.
+- Probes: `isleJettyTraps`, `isleJettyFix`, `isleJettyRescue`, `isleJettyWays` (flight ↔ landing ↔ walkway ↔ sea end,
+  off the flight's west side), `isleEdgeWhy` / `islePostWhy` (the walk's own tests each way, through
+  `window.__isleDbg = {}`), `isleEdgeCost`. `__bw.isleSetLast(x, z, f)` stands the walk on a floor (without it a body
+  set down is snapped back to its last spot); `isleLast()`. `PB_WAIT=900 sh tools/probe.sh …` for a scan past 300 s.

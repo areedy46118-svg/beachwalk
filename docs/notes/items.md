@@ -1188,3 +1188,17 @@ old save with `seaArt >= 2` is given the ring instead.
   harness's `mushGateUnlocked` is a getter only — assigning it does nothing; use `__bw.openPavGate()`.
 - Returning Billy (`returnBilly`) unlocks the rare achievement "50 - Reunited lost friends" (not on replay or a
   restore), and `RARE_ACHIEVEMENTS` counts `billyState === 2`. Harness: `__bw.setBillyS(1)` then `returnBilly()`.
+
+## 2026-10-18 — a shine's column went nowhere when the thing was taken
+
+`dropShine(root)` unhung the glint and the through-glint but not the `beacon` column (`col`), which stands in the
+SCENE beside the thing, not on it — so every thing with `DROP_SHINE` taken through `dropShine` left its column of light
+standing in the sand (the owner: "i stil see the item glow when picking up the water artifact"). It is removed and
+disposed now. (Things taken without `dropShine` were always fine: `updateShines` hides a column whose root has no parent.)
+
+## 2026-10-18 — the Sea's wave breaks on the floor you stand on
+
+`seaBurst` (split out of `seaParry`; `__bw.seaBurstDbg`) asked `groundUnder(x, z)` with no height — the BEACH's sand —
+so in the whale (`WHALE_Y` 500) the wave and every splash went off half a kilometre under you. It asks with your feet
+now (`groundUnder(x, z, feet + 0.3)`, which a room answers), falling back to `groundY`, then your feet. Measured in the
+belly (`sh tools/probe.sh whaleWave`): wave at 500.18 = your feet, 101 splash drops live round your eye.

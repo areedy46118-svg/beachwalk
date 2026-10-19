@@ -762,7 +762,8 @@ you while it loads; the first click takes the mouse back.
 | `models/` | Standalone object models + a dev viewer (`horseshoe-crab.js`, `viewer.html`) |
 | `assets/backrooms.m4a` | Opening music (mono AAC, converted from the source WAV) |
 | `assets/keep-intro.m4a` | The sea keep's intro, played on arriving at its pier (AAC, converted from the owner's WAV) |
-| `assets/samurai-score.m4a` | The samurai fight's score, from "THAT'S MY SWORD." until he falls, looped (AAC 160 kbps, converted from the owner's "5450 score" MP3) |
+| `assets/samurai-score.m4a` | The samurai fight's score, from "THAT'S MY SWORD." until he falls, looped (AAC 160 kbps, converted from the owner's "5450 FIX" MP3) |
+| `assets/end-theme.m4a` | The end's song, from the moment the stats come up, played once (AAC 192 kbps, the first 63.8 s of the owner's "5451 beachwalk" MP3: the piece before its silence, the loud reprise after it cut) |
 | `assets/catacombs-fall.m4a` | The landing in the catacombs, played the moment you hit the stone (AAC, converted from the owner's WAV) |
 | `assets/well-rope.m4a` | The rope creaking as the man from the well climbs it: 13.8 s cut from the owner's "Rope Creaking Holding Weight" sound effect, normalised (+40 dB) and faded, AAC |
 | `vendor/three/` | three.js r160 (vendored, offline-safe) |
@@ -995,12 +996,26 @@ normalised, mono AAC 96 kbps, 110 KB in all.
 "Xbox Rare Achievement" (a clip by ArthurBR, the owner's file) — the chime under the Seagull Slayer toast
 (`assets/achievement-rare.m4a`, 1.0–7.4 s of it, AAC, 82 KB). **The console's sound: Microsoft's — confirm it before a release.**
 
-The flail knight in Castle XIII's west court is the owner's "Crusader tank"
-(a flail and a heater shield, fourteen of its own animations), packed by
-`tools/crusader_pack.py` into `assets/crusader.glb`. **No licence came with the
-download — confirm it before a release.** On top of his own clips he plays
-Mixamo's "Pro Sword and Shield Pack" (Adobe Mixamo terms), retargeted by
-`tools/ntar_moves.py -- crusader` into `assets/crusader-moves.json`.
+Castle XIII's west court is held by two swordsmen (the flail knight that stood there is out of the game; his
+`assets/crusader.glb` is no longer loaded):
+
+This work is based on ["knight"](https://sketchfab.com/3d-models/knight-b05342642ee1475985c746a5b64332fc) by
+[sanyaork](https://sketchfab.com/sanyaork) licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) —
+the man-at-arms (`assets/knight-man.glb`, packed by `tools/swordknights_pack.py`: maps made smaller and darker).
+
+This work is based on ["KNIGHT"](https://sketchfab.com/3d-models/knight-eb3b4e9f796d495d9ce8cdfc1390ab40) by
+[PONCHIK](https://sketchfab.com/PONCHIK) licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) —
+the iron knight (`assets/knight-iron.glb`, the same packer: his colour map made from his normal map).
+
+Both play Mixamo's "Pro Sword and Shield Pack" (Adobe Mixamo terms), retargeted by `tools/ntar_moves.py -- crusader`
+into `assets/crusader-moves.json` — only the moves of a man with a sword and no shield.
+
+This work is based on ["The Dark Knight - Infinity Blade"](https://sketchfab.com/3d-models/the-dark-knight-infinity-blade-d8e45261895747a3833e801ecda12bd6)
+by [Catholomew](https://sketchfab.com/Catholomew) licensed under
+[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/) — the dark knight in the first castle's street, in the
+paladin's place (`assets/dark-knight.glb`, `tools/swordknights_pack.py dark`: his own eight attack strings kept, his
+map lifted for a night street). He also plays the whole Pro Sword and Shield Pack. **NON-COMMERCIAL: this model may not
+ship in anything sold — replace it before a release that charges money.**
 
 This work is based on ["Castle XVII"](https://sketchfab.com/3d-models/castle-xvii-26d4689f97f0484cbd8277d495a87123)
 by [gogiart](https://sketchfab.com/agt14032013) licensed under
