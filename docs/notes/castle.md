@@ -1213,3 +1213,67 @@ wall wearing the inverse (`c13-door-frame-mask.png`): opened, the painted arch s
   (`fortEntryRestore`) staged him at 2.6 s with the black lifting at 3.1 — luck. `bootStageHold` (a `var` declared by
   `deathWait`, assigned beside `updateDarkKnight`) holds the load's black until he is out, at most
   `BOOT_HOLD_WARM_MAX`.
+
+## 2026-10-19 (later) — the dark knight's feet, his leap, his trail, and the town on him
+
+- **SKATE, MEASURED** (`tools/probes.js dkSkate`: the lower foot, when within 0.345 of the paving and not rising, and
+  its speed over the ground). Causes found: `sRunB` in his runs is a run BACKWARDS (−2.34 m) — 9-11 m/s of skate;
+  `velGaitAnim` played `anim.back` reversed, and his `sWalkB` already walks backwards (it now plays forwards when the
+  clip's own travel is backwards — general, every velGait kind); his running strafes `sStr3/4` (2.9 m/s) at 0.7× under a
+  1.8 m/s body; a gap between his walk's top (1.68) and his run's bottom (2.44) (`gaitBands`: run only at a run, else
+  walk held to the walk's stride); every swing's 1 m lunge and `lungeLead` 0.30 closing; the chained step-in at
+  2.4 m/s and the wind-up glide (`noSkate` — `planted` also gives up a swing thrown from beyond reach + 0.9, which
+  killed the leap from range); `stepBack` 2.4. Now `velGait`, `gaitBands`, `smoothMove`, `noSkate`, `lungeMax` 2.0,
+  `stepBack` 0.9, `turnMax` 2.8, lunges 0.45, `lungeLead` 0.18. Swings skating: his strings 17-45 % → 18-32 %;
+  moving, matched clips at full weight 0.2-1.2 m/s (most of what is left is cross-fades).
+- **THE LEAP** ("he slides towards you then hits you"): `dkLeapMeasure` — the clip jumped in place (feet 2.3 m up at
+  0.33-1.0 s), landed into a crouch, and the 4 m lunge went on AFTER the landing, on his knees. `dkRootMotion`: the
+  four pack blows that step (`dkLeap` sAtk 3.6 m, `dkLunge` sAtkC, `dkTurn` sAtkB, `dkSpin` sSlashD — `dkTravel`) take
+  no lunge and walk the clip's own recorded step up to their last contact (`A.rm`), its forward part scaled to what
+  is left to his stand-off (×0-1.6), its side halved, nothing after (their recoveries wander sideways). Measured: the
+  4 m crossed between take-off and touchdown, then still through the crouch; the blow on the rise, 3 m from you.
+- **THE TRAIL** ("a swing where i see no white air effect … cant block it"): it was drawn only round a swing's first
+  contact, and his strings land two and three times (`A.more`): the later blades came out of nothing. `knSwordTrail`
+  draws through every `moreT` window too. (Against a held guard for a minute — `dkBlock` — nothing got through: the
+  blocking was always there; what was missing was the tell.)
+- **THE TOWN ON HIM** ("make the farmers also attack the dark knight"): `dkTownFights` — once he has turned on you, up
+  to two men out on the street go for him (`st.foe`), nearest him and furthest from you; he answers the nearest one
+  hacking at him (< 4.5 m) while you are over 6 m off and have not cut him for 3 s, and throws him (`dkFling`); their
+  blows wound him but not below 40 % (`mutLandBlow`). `dkTown`: 2 on him most of the time, 10 thrown in 40 s.
+
+## 2026-10-19 (round 3) — the dark knight: his arm in its own swing, a tight blow, a steadier head
+
+The owner: "only the swing down on the dark knights jump hit should hit not his sword after. make the dark knights
+connectivity way more tight hes all over the place and his arm is moving weird on some swings".
+
+- **THE LEAP'S ONE BLOW** is the chop as he lands: `dkLeapMeasure` now logs the tip — down through head and chest height
+  2.7 m in front of him at 0.488 of the clip, just before his feet touch; 0.777 was the sword lifted out of the crouch.
+  `hit` 0.488 (and `rm`, his travel, ends there); stand-off 2.6.
+- **THE ARM** (`dkAimSweep*`, every swing at every stand-off, logging the most the aim bent his shoulder): at `aimK` 2.6
+  it was 119° off the clip on nearly every blow — the arm "moving weird"; at 1.0 it sat on the 46° cap. And they
+  hit anyway at nearly every stand-off: the BLOW TEST was loose (blade only, judged 0.55 in front of your eye, radius
+  0.45 — a blade half a metre short scored). Now `aimK` 0.3 (≤ 14°), `aimFront`/`hitFront` 0.3, `limbR` 0.33 (on a
+  farmer `foeLimbR` 0.6: the tight radius had his opening kills taking 19 s), and each swing's stand-off re-swept under
+  it (`dkAimSweepK`): the one where its own blade lands nearest the middle of the picture. `dkLunge` (landing at
+  alternate stand-offs, low) and `dkKick` (only from 1.4 m) are out of `use`. The pack's held tells shortened
+  (`natHold` 0.22 → 0.12; the spin 0.16, the turn 0.10): an arm frozen in the cock read as a fault.
+- **THE HEAD**: circle/step/feint/sizeUp to 0.03-0.04, `fidgetK` 0.05, `gapRate` 0.35; `dkTownFights` keeps whoever he
+  picks three seconds and only turns from you when you are over 8 m off. `dkBehave` (40 s at 3/6/4.5/8 m): 77 %
+  swinging, 21 swings a minute, 14 % side-stepping, 9 % closing, no flips between closing and backing off, 3.5 m kept.
+- `dkFight`: 15 of 16 blows landed, all at x ±0.17, y −0.69…+0.19. `dkPoseSheet`: each swing from his side at
+  three-quarter wind and contact, drawn in `knStudio` (his street is too dark to read a pose in).
+
+## 2026-10-19 (round 4) — his blows land up close
+
+The owner: "some of the dark nights hits don even land when he swings close to the player". `dkClose` (each swing at its
+own stand-off, you at 1.2/1.6/2.0/2.4 m): 6 of 52 missed — he steps back through the wind (`stepBack` 0.9) and did not
+always reach his stand-off, and only the blade's last segment was judged, 0.3 in front of your eye, so the end of the
+blade went past you while his hilt and forearm went through you (`dkS0` from 1.2 and 1.6, `dkCut` from 1.2).
+- `kind.closeBody`: when you are inside the swing's stand-off (by 0.2), the whole chain — shoulder, elbow, hand, blade —
+  is tested against your UPPER body where you stand (eye + 0.15 down to eye − 0.85, radius `limbR` + 0.07), and only
+  where it is in front of the lens (> 0.12 m ahead): the first cut of it scored hits through your legs and behind your
+  head (ndc y −19), a blow you never see land.
+- `kind.stopPick` 0.6: a swing is picked by how near its measured stand-off is to where you are (×0.15 floor, gaussian
+  of 0.6 m) — up close he reaches for the cut (1.8), not the long strings (2.9).
+- After: `dkClose` 48 of 52 (the four: the leap, only ever thrown from 4 m); `dkFightClose` (you at 1.6 m, his own
+  choices) 14 of 16 thrown landed, all but one in the picture; `dkFight` at 3 m unchanged.

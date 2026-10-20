@@ -1012,7 +1012,7 @@ export async function dkFight({ w, b, log, sleep }) {
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
   b.dkTurn(u, true);
-  const C = b.camera.position, P = u.g.position, home = [P.x + Math.sin(u.g.rotation.y) * 3, P.z + Math.cos(u.g.rotation.y) * 3];
+  const C = b.camera.position, P = u.g.position, home = [P.x + Math.sin(u.g.rotation.y) * (w.__fightR || 3), P.z + Math.cos(u.g.rotation.y) * (w.__fightR || 3)];
   const per = {}; let last = { swing: null, atk: -1 }, hitAt = 0, hurts = 0, hp0 = b.state().hp, landed = 0;
   for (let f = 0; f < 60 * 45; f++) {
     b.lookAt(P.x, C.y - 0.2, P.z); w.__adv(1); C.x = home[0]; C.z = home[1];
@@ -1023,6 +1023,7 @@ export async function dkFight({ w, b, log, sleep }) {
     if (b.state().hp < hp0) hurts++; b.heal(); hp0 = b.state().hp;
   }
   for (const [k, s] of Object.entries(per)) log(k, 'thrown', s.n, 'contacts landed', s.land, 'screen', s.scr.slice(0, 5).join(' '));
+  { let th = 0, ld = 0; for (const s2 of Object.values(per)) { th += s2.n; ld += Math.min(s2.n, s2.land); } log('thrown', th, 'with a contact landed', ld); }
   log('hurts', hurts, 'in 45 s');
 }
 
@@ -1621,3 +1622,429 @@ export async function fortEntryRestore({ w, b, log, sleep, shot }) {
     if (lifted >= 0 && i - lifted > 80) break;
   }
 }
+
+// COLLATERALS (2026-10-19, the owner: "make bullets travel through enemies making collaterals possible"): four pale ones
+// in a file down the beach, asleep, and one round from the revolver down the line at the chest; then four more and one
+// shell from the sawn-off. Logs each one's health after.
+export async function collateral({ w, b, log, sleep }) {
+  for (let i = 0; i < 100 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(150); }
+  for (let k = 0; k < 300 && !b.state().introDone; k++) { b.frame(3); await sleep(30); }
+  b.skipTakes(); b.settings.devMode = false;
+  const C = b.camera.position, X = 8, Z0 = -60;
+  const line = async (n, gap) => {
+    const us = []; for (let i = 0; i < n; i++) us.push(b.mutSpawnTest(X, Z0 - 6 - i * gap, 'pale', 0));
+    for (let i = 0; i < 200 && us.some((u) => !u.model); i++) { b.frame(1); await sleep(50); }
+    for (const u of us) { u.st.awake = false; u.g.visible = true; u.g.rotation.y = 0; }
+    return us;
+  };
+  w.eval(await (await fetch('/tools/burntest.js?' + Date.now())).text()); w.__clockOn();
+  const aim = () => { C.set(X, 1.7, Z0); b.camBaseY = 1.7; b.lookAt(X, 1.2, Z0 - 20); };
+  for (const gun of (w.__colKill ? ['magnum'] : ['magnum', 'shotgun'])) {
+    const it = gun === 'magnum' ? b.magnumItem : b.shotgunItem;
+    if (!b.inventory.includes(it)) b.addToInventory(it);
+    if (b.equippedS() !== it) b.toggleEquip(it);
+    const us = await line(4, gun === 'magnum' ? 1.6 : 1.2);
+    for (let i = 0; i < 150; i++) { aim(); for (const u of us) { u.st.awake = false; u.st.atk = -1; } w.__adv(1); }
+    b.loadGunsTest(); b.magAim = 1; aim(); w.__adv(1);
+    if (w.__colKill) for (const u of us) u.st.hp = 9;
+    const hp0 = us.map((u) => u.st.hp);
+    if (gun === 'magnum') b.magFire(); else b.sgFire();
+    for (let i = 0; i < 30; i++) w.__adv(1);
+    log(gun, 'hp before', hp0.join(','), 'after', us.map((u) => (u.st.alive ? u.st.hp : 'dead')).join(','), 'ammo', JSON.stringify(b.magAmmoS()));
+    for (const u of us) { u.st.alive && (u.st.hp = 0); u.g.visible = false; u.g.position.x += 200; }
+  }
+}
+
+export async function collateralKill(ctx) { ctx.w.__colKill = true; return collateral(ctx); }
+
+// EVERY WEAPON AFTER A CHECKPOINT LOAD (2026-10-19, the owner again: "i loaded a checkpoint and my weapons were
+// invisible"): the pack filled, the katana in hand, a save; then a death's reload with Restart clicked AT ONCE (the early
+// click); from the moment the game is in, the held thing's pixels, then each weapon in turn taken into the hand
+export async function vmAll({ w, b, log, sleep }) {
+  for (let i = 0; i < 100 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(150); }
+  for (let k = 0; k < 300 && !b.state().introDone; k++) { b.frame(3); await sleep(30); }
+  b.skipTakes();
+  const names = ['katanaItem', 'shotgunItem', 'magnumItem', 'militaryItem', 'shovelItem', 'pegItem', 'fishingRodItem', 'screwdriverItem', 'syringeItem', 'glowstickItem'];
+  for (const n of names) { const it = b[n]; try { if (it && !b.inventory.includes(it)) b.addToInventory(it); } catch (e) { log('add failed', n, e.message); } }
+  await sleep(3000);
+  const first = b[w.__vmFirst || 'katanaItem'];
+  if (b.equippedS() !== first) b.toggleEquip(first);
+  if (w.__vmRoom === 'fort') { b.loadFort(); for (let i = 0; i < 120 && !(b.fortRdy() && b.fortWallsReady()); i++) { b.frame(1); await sleep(250); } b.placeInFort(); await sleep(3000); }
+  else b.camera.position.set(8, 1.7, -60);
+  await sleep(500); b.saveCheckpoint();
+  log('saved holding', b.equippedS() && b.equippedS().name, 'pack', b.inventory.map((i) => i.name).join('|'));
+  const f = document.querySelector('iframe');
+  sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1');
+  f.contentWindow.location.reload(); await sleep(300);
+  let clicked = false, w2 = null;
+  for (let i = 0; i < 400; i++) { await sleep(50); try { w2 = f.contentWindow; const btn = w2.document.querySelector('.dc-restart'); if (btn && !clicked) { btn.click(); clicked = true; } if (w2.__bw && w2.__bw.state) break; } catch (e) {} }
+  const B = w2.__bw;
+  for (let i = 0; i < 400 && (B.frozen() || !B.state().introDone); i++) await sleep(100);
+  const R = B.renderer, gl = R.getContext(), W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
+  const grab = () => { B.frame(1); const px = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+  const diff = (a2, b2) => { let n = 0; for (let k = 0; k < a2.length; k += 4) if (Math.abs(a2[k] - b2[k]) + Math.abs(a2[k + 1] - b2[k + 1]) + Math.abs(a2[k + 2] - b2[k + 2]) > 30) n++; return n; };
+  // drawn with the hands' pass and without it (the rig hidden for one frame)
+  const measure = () => { const v = B.viewmodelS(); const on = grab(); const vv = v.visible; v.visible = false; const off = grab(); v.visible = vv; return diff(on, off); };
+  const E0 = B.equippedS();
+  log('in: holding', E0 && E0.name, 'pixels', measure());
+  for (const n of names) {
+    const it = B[n]; if (!it || !B.inventory.includes(it) || !it.viewmodel) continue;
+    if (B.equippedS() !== it) B.toggleEquip(it);
+    let px = 0; for (let t = 0; t < 12 && (px = measure()) < 200; t++) await sleep(250);
+    const vm = it.viewmodel; let meshes = 0; vm.traverse((o) => { if (o.isMesh) meshes++; });
+    // the thing itself: drawn, then its own held copy hidden (a gun's own rig is not in the copy: `it.vmRig` if it has one)
+    let own = -1; if (meshes) { const on = grab(); vm.visible = false; const off = grab(); vm.visible = true; own = diff(on, off); }
+    log(n, 'pixels', px, 'its own', own, 'meshes in its held copy', meshes, 'build pending', !!vm.userData.build);
+  }
+}
+export async function vmAllFort(ctx) { ctx.w.__vmRoom = 'fort'; return vmAll(ctx); }
+export async function vmAllGun(ctx) { ctx.w.__vmFirst = 'shotgunItem'; ctx.w.__vmRoom = 'fort'; return vmAll(ctx); }
+
+// THE DARK KNIGHT AGAINST A HELD GUARD (2026-10-19, the owner: "the dark knight has a swing where i see no white air
+// effect following the sword and cant block it"): the katana up and the guard held the whole time, you standing; every
+// hit that still costs health, with the swing, the swing's clock against its contacts, and whether his trail was drawn
+export async function dkBlock({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem);
+  if (b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem);
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
+  for (const f of b.farmUnitsS()) f.st.awake = false;
+  b.dkTurn(u, true);
+  const C = b.camera.position, P = u.g.position, home = [P.x + Math.sin(u.g.rotation.y) * 3, P.z + Math.cos(u.g.rotation.y) * 3];
+  let hp0 = b.state().hp, hurts = 0, swings = {}, lastSw = null, lastAtk = -1;
+  const guard = w.__dkNoGuard ? false : true;
+  for (let f = 0; f < 60 * 60; f++) {
+    // you step back out to a range now and then (3, 6, 4.5, 8 m, six seconds each), so the gap-closers come too
+    if (f % 360 === 0) { const R = [3, 6, 4.5, 8][(f / 360) % 4], dx = C.x - P.x, dz = C.z - P.z, L = Math.hypot(dx, dz) || 1; home[0] = P.x + dx / L * R; home[1] = P.z + dz / L * R; }
+    b.lookAt(P.x, C.y - 0.2, P.z); b.testGuard(guard); w.__adv(1); C.x = home[0]; C.z = home[1];
+    for (const g of b.farmUnitsS()) g.st.awake = false;
+    if (u.st.atk >= 0 && (lastSw !== u.st.swing || u.st.atk < lastAtk)) swings[u.st.swing] = (swings[u.st.swing] || 0) + 1;
+    lastSw = u.st.atk >= 0 ? u.st.swing : null; lastAtk = u.st.atk;
+    const hp = b.state().hp;
+    if (hp < hp0) {
+      hurts++;
+      const A = u.atk && u.st.swing ? u.atk[u.st.swing] : null;
+      log('HURT', 'swing', u.st.swing, 'atk', u.st.atk.toFixed(2), 'wind', A ? A.wind.toFixed(2) : '-', 'more', A && A.moreT ? A.moreT.map((x) => x.toFixed(2)).join('/') : '-',
+        'd', Math.hypot(P.x - C.x, P.z - C.z).toFixed(2), 'trail', !!(u.swTrail && u.swTrail.m.visible), 'blocking', b.blocking, 'foe', !!u.st.foe, 'alive', u.st.alive);
+    }
+    b.heal(); hp0 = b.state().hp;
+  }
+  log('swings', JSON.stringify(swings), 'hurts through the guard', hurts);
+}
+export async function dkOpen(ctx) { ctx.w.__dkNoGuard = true; return dkBlock(ctx); }
+
+// THE DARK KNIGHT'S LEAP, MEASURED (2026-10-19, the owner: "the dark knight jump move he slides towards you then hits
+// you … make his jump move hit right where he lands and when he actually swing"): the leap forced from 7 m; each frame
+// the swing's clock, both feet's height over the paving, the pelvis's, and how far he has come
+export async function dkLeapMeasure({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
+  for (const f of b.farmUnitsS()) f.st.awake = false;
+  b.dkTurn(u, true);
+  const C = b.camera.position, P = u.g.position;
+  const R = +(w.__leapR || 7);
+  const place = () => { const a = u.g.rotation.y; C.x = P.x + Math.sin(a) * R; C.z = P.z + Math.cos(a) * R; };
+  place(); for (let i = 0; i < 40; i++) { b.lookAt(P.x, C.y - 0.2, P.z); u.st.atk = -1; u.st.cool = 1; w.__adv(1); place(); b.heal(); }
+  const home = [C.x, C.z], A = u.atk.dkLeap;
+  log('dkLeap wind', A.wind.toFixed(3), 'strike', A.strike, 'recover', A.recover.toFixed(3), 'lunge', A.lunge.toFixed(2), 'air', A.air, 'stop', A.stop);
+  u.st.swing = 'dkLeap'; u.st.atk = 0; u.st.cool = 0;
+  const V = P.constructor, fl = new V(), fr = new V(), pe = new V();
+  const bone = (n) => u.model.getObjectByName(n);
+  const bl = bone('b_MF_Foot_L'), br = bone('b_MF_Foot_R'), bp = bone('b_MF_Pelvis');
+  const x0 = P.x, z0 = P.z, rows = [];
+  for (let i = 0; i < 160 && u.st.swing === 'dkLeap' && u.st.atk >= 0; i++) {
+    b.lookAt(P.x, C.y - 0.2, P.z); w.__adv(1); C.x = home[0]; C.z = home[1]; b.heal();
+    u.model.updateMatrixWorld(true); bl.getWorldPosition(fl); br.getWorldPosition(fr); bp.getWorldPosition(pe);
+    const tp = u.bones.tip.getWorldPosition(new V()), cl = u.cur, fr2 = cl ? cl.time / cl.getClip().duration : -1;
+    const fwd = (tp.x - P.x) * Math.sin(u.g.rotation.y) + (tp.z - P.z) * Math.cos(u.g.rotation.y);
+    if (i % 2 === 0) rows.push(`${u.st.atk.toFixed(2)}[${fr2.toFixed(3)}]:ft ${(Math.min(fl.y, fr.y) - P.y).toFixed(2)} tip ${(tp.y - P.y).toFixed(2)}/${fwd.toFixed(2)} mv ${Math.hypot(P.x - x0, P.z - z0).toFixed(2)}`);
+  }
+  for (let k = 0; k < rows.length; k += 5) log(rows.slice(k, k + 5).join('  '));
+}
+
+// HOW MUCH HE SKATES (2026-10-19, the owner: "the dark knight is sliding around a lot"): forty seconds of him on you at
+// 3, 6, 4.5 and 8 m; each frame the lower foot, if it is planted (within 6 cm of its lowest), and how fast it moves over
+// the paving — a planted foot should not move at all. Split by what he is doing.
+export async function dkSkate({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
+  for (const f of b.farmUnitsS()) f.st.awake = false;
+  b.dkTurn(u, true);
+  const C = b.camera.position, P = u.g.position, home = [P.x + Math.sin(u.g.rotation.y) * 3, P.z + Math.cos(u.g.rotation.y) * 3];
+  const V = P.constructor, fl = new V(), fr = new V(), pl = new V(), pr = new V();
+  const bl = u.model.getObjectByName('b_MF_Foot_L'), br = u.model.getObjectByName('b_MF_Foot_R');
+  const S = {}; let first = true, bodyMv = 0;
+  const px0 = { x: P.x, z: P.z };
+  for (let f = 0; f < 60 * 40; f++) {
+    if (f % 360 === 0) { const R = [3, 6, 4.5, 8][(f / 360) % 4], dx = C.x - P.x, dz = C.z - P.z, L = Math.hypot(dx, dz) || 1; home[0] = P.x + dx / L * R; home[1] = P.z + dz / L * R; }
+    b.lookAt(P.x, C.y - 0.2, P.z); w.__adv(1); C.x = home[0]; C.z = home[1]; b.heal();
+    for (const g of b.farmUnitsS()) g.st.awake = false;
+    u.model.updateMatrixWorld(true); bl.getWorldPosition(fl); br.getWorldPosition(fr);
+    if (!first) {
+      const low = fl.y < fr.y ? [fl, pl] : [fr, pr], hy = low[0].y - P.y;
+      const sp = Math.hypot(low[0].x - low[1].x, low[0].z - low[1].z) * 60, vy = Math.abs(low[0].y - low[1].y) * 60;
+      const bm = Math.hypot(P.x - px0.x, P.z - px0.z) * 60;
+      const k = u.st.atk >= 0 ? 'swing ' + u.st.swing : bm > 0.2 ? 'moving' : 'standing';
+      const kk = u.st.atk >= 0 ? 'swing (all)' : k;
+      if (k === 'moving' && (w.__mvLog = (w.__mvLog || 0) + 1) % 25 === 1) { const c = u.cur; log('moving: clip', c ? c.getClip().name : '-', 'ts', c ? c.timeScale.toFixed(2) : '-', 'w', c ? c.getEffectiveWeight().toFixed(2) : '-', 'body', bm.toFixed(2), 'foot', sp.toFixed(2), 'vg', u._vgMode, 'clipSpeed', c && u.clipSpeed ? (u.clipSpeed[c.getClip().name] || 0).toFixed(2) : '-'); }
+      if (k === 'standing' && (w.__stLog = (w.__stLog || 0) + 1) % 8 === 1) { const c = u.cur; log('standing: clip', c ? c.getClip().name : '-', 'yaw rate', ((u.g.rotation.y - (w.__py || 0)) * 60).toFixed(2), 'model yaw', u.model.rotation.y.toFixed(2), 'foot', sp.toFixed(2)); }
+      w.__py = u.g.rotation.y;
+      if (hy < (w.__skH || 0.345) && vy < 0.4) for (const key of [k, kk === k ? null : kk, 'ALL'].filter(Boolean)) { const s = S[key] || (S[key] = { n: 0, sum: 0, bad: 0, body: 0 }); s.n++; s.sum += sp; if (sp > 0.6) s.bad++; s.body += bm; }
+    }
+    first = false; pl.copy(fl); pr.copy(fr); px0.x = P.x; px0.z = P.z;
+  }
+  for (const [k, s] of Object.entries(S).sort((a, c) => c[1].n - a[1].n)) log(k.padEnd(16), 'frames', String(s.n).padStart(5), 'planted foot speed', (s.sum / s.n).toFixed(2), 'm/s; skating (>0.6)', Math.round(100 * s.bad / s.n) + '%', 'body', (s.body / s.n).toFixed(2), 'm/s');
+}
+
+// what the dark knight's clips carry of their own travel (`u.clipTravel`): each attack's total forward/side step, and the
+// leap's along its length
+export async function dkTravel({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/paltest.js');
+  log('boot', JSON.stringify(await w.__palBoot()));
+  const u = b.dkS().u, T = u.clipTravel || {};
+  log('clips with travel', Object.keys(T).length, 'of', Object.keys(u.clips || {}).length);
+  for (const k of Object.keys(u.atk || {})) { if (!/^dk/.test(k)) continue; const A = u.atk[k], c = A.clip, tr = T[c] || T[k]; const e = tr && tr[tr.length - 1];
+    log(k.padEnd(8), 'clip', c, 'travel', tr ? `fwd ${e[1].toFixed(2)} side ${e[0].toFixed(2)} (${tr.length} samples)` : 'none', 'own clip key travel', T[k] ? 'yes' : 'no'); }
+  for (const g of ['sWalk', 'sRun', 'sRunB', 'sStr1', 'sStr2', 'sWalkB']) { const tr = T[g]; const e = tr && tr[tr.length - 1]; log(g, tr ? `fwd ${e[1].toFixed(2)} side ${e[0].toFixed(2)}` : 'none', 'clipSpeed', u.clipSpeed && u.clipSpeed[g]); }
+  for (const c of ['sAtk', 'sAtkC', 'sAtkB', 'sSlashD']) { const tr = T[c]; if (tr) log(c, 'side/fwd along:', tr.filter((_, i) => i % Math.max(1, Math.floor(tr.length / 16)) === 0).map((v) => v[0].toFixed(2) + '/' + v[1].toFixed(2)).join(' ')); }
+}
+
+// THE CLIFF IN THE JETTY'S BOX (2026-10-19, the owner's screenshot: feet 9.85 at x −19.53, z −1148.40, stuck under the
+// landing beside the stair's head — "i fell off the first part of the lighthouse dock where the 2 seagulls sit"). Every
+// floor in `isleJettyBox` over 1.5 m that is not the flight, the landing (≥ 15.3) or the boards: a body stood on it walks
+// out eight ways with jumps; a trap is one that never gets back onto the flight, the landing or the boards. With
+// `w.__boxReach`, it also asks which of them the walk lets you DROP onto from the landing and the flight's edges.
+export async function isleBoxTraps({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true; b.loadIsle();
+  for (let i = 0; i < 300 && !(b.isleS().ready && b.ISLE_SITE.cells); i++) { b.frame(2); await sleep(100); }
+  b.placeOnIsle(); w.__clockOn(); w.__adv(30);
+  const S = b.ISLE_SITE, ez = (z) => z - 100, C = b.camera.position;
+  const boards = (x, z) => (x > -27.2 && x < -21.3 && z > ez(-1161.8) && z < ez(-1139)) || (x > -27.2 && x < -12.5 && z > ez(-1140.2) && z < ez(-1135));
+  const path = (x, z, g) => b.isleRampAt(x, z) !== null || (boards(x, z) && g < 1.5) || g >= 15.3;
+  { const fl = b.keepCellAt(-19.53, ez(-1148.40), S); log('the owner\'s spot: floors', fl ? fl.filter((v, k) => k % 3 === 0).map((v) => v.toFixed(2)).join('/') : 'none'); }
+  const traps = []; let tried = 0;
+  for (let z = ez(-1162); z <= ez(-1135.5); z += 0.5) for (let x = -27.5; x <= -13; x += 0.5) {
+    const fl = b.keepCellAt(x, z, S); if (!fl) continue;
+    for (let k = 0; k < fl.length; k += 3) {
+      const f = fl[k]; if (f <= 1.5 || f >= 15.3 || b.isleRampAt(x, z) !== null) continue;
+      tried++;
+      let out = false, stood = false;
+      for (let a = 0; a < 8 && !out; a++) {
+        C.set(x, f + 1.7, z); b.camBaseY = f + 1.7; b.groundY = f; b.isleSetLast(x, z, f); w.__adv(3);
+        if (Math.abs(b.isleS().groundY - f) > 0.4 || Math.hypot(C.x - x, C.z - z) > 0.4) break;
+        stood = true;
+        const an = a / 8 * Math.PI * 2; b.keys.KeyW = true;
+        for (let i = 0; i < 110 && !out; i++) { b.lookAt(C.x + Math.sin(an) * 5, C.y, C.z + Math.cos(an) * 5); w.__adv(1); if (i % 25 === 20) { b.keys.Space = true; w.__adv(1); b.keys.Space = false; } if (b.state().onGround && path(C.x, C.z, b.isleS().groundY)) out = true; }
+        b.keys.KeyW = false; w.__adv(3);
+      }
+      if (stood && !out) traps.push(`${x.toFixed(1)},${(z + 100).toFixed(1)} f ${f.toFixed(2)}`);
+    }
+  }
+  log('floors tried', tried, 'traps', traps.length); for (let i = 0; i < traps.length; i += 6) log(traps.slice(i, i + 6).join(' | '));
+  // and from the paths: walk off every edge of the landing and the flight, eight ways, and see where you end up
+  const land = []; let walks = 0;
+  for (let z = ez(-1150.5); z <= ez(-1137); z += 0.5) for (let x = -19.0; x <= -14.0; x += 0.5) {
+    const fl = b.keepCellAt(x, z, S); if (!fl) continue; const f = fl[fl.length - 3];
+    if (!(b.isleRampAt(x, z) !== null || f >= 15.3)) continue;
+    for (let a = 0; a < 8; a++) {
+      C.set(x, f + 1.7, z); b.camBaseY = f + 1.7; b.groundY = f; b.isleSetLast(x, z, f); w.__adv(3);
+      if (Math.hypot(C.x - x, C.z - z) > 0.4) break;
+      walks++; const an = a / 8 * Math.PI * 2; b.keys.KeyW = true;
+      for (let i = 0; i < 60; i++) { b.lookAt(C.x + Math.sin(an) * 5, C.y, C.z + Math.cos(an) * 5); w.__adv(1); if (i === 10) { b.keys.Space = true; w.__adv(1); b.keys.Space = false; } }
+      b.keys.KeyW = false; w.__adv(40);
+      const g = b.isleS().groundY;
+      if (!path(C.x, C.z, g) && b.state().onGround) land.push(`${x.toFixed(1)},${(z + 100).toFixed(1)} → ${C.x.toFixed(1)},${(C.z + 100).toFixed(1)} f ${g.toFixed(2)}`);
+    }
+  }
+  log('walks off the landing and the flight', walks, 'ended off the paths', land.length); for (const s of land.slice(0, 30)) log(s);
+}
+
+// THE TOWN ON HIM (2026-10-19, the owner: "make the farmers also attack the dark knight"): he has turned on you, you
+// stand ten metres off, the farmers' fight runs as it does; every two seconds how many are on him, his health and whom
+// he is on, and at the end the men he threw and the hurts you took
+export async function dkTown({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; b.dkTurn(u, true);
+  const C = b.camera.position, P = u.g.position;
+  const away = () => { const dx = C.x - P.x, dz = C.z - P.z, L = Math.hypot(dx, dz) || 1; return [P.x + dx / L * 10, P.z + dz / L * 10]; };
+  let home = away(), hurts = 0, hp0 = b.state().hp, thrown = 0, onHimMax = 0;
+  const seen = new Set();
+  for (let f = 0; f < 60 * 40; f++) {
+    if (f % 240 === 0) home = away();
+    b.lookAt(P.x, C.y - 0.2, P.z); w.__adv(1); C.x = home[0]; C.z = home[1];
+    if (b.state().hp < hp0) hurts++; b.heal(); hp0 = b.state().hp;
+    const F = b.farmUnitsS(), on = F.filter((q) => q.st.alive && q.st.foe === u).length; onHimMax = Math.max(onHimMax, on);
+    for (const q of F) if (!q.st.alive && q.st.killFling && !seen.has(q)) { seen.add(q); thrown++; }
+    if (f % 120 === 0) log('t', (f / 60).toFixed(0), 'on him', on, 'out', F.filter((q) => q.st.alive && q.farm && q.farm.out && !q.farm.burst).length, 'his hp', u.st.hp, 'he is on', u.st.foe ? 'a farmer' : 'you', 'd you', Math.hypot(P.x - C.x, P.z - C.z).toFixed(1), 'swing', u.st.atk >= 0 ? u.st.swing : '-');
+  }
+  log('most on him at once', onHimMax, 'farmers he threw', thrown, 'your hurts', hurts, 'his hp', u.st.hp, '/', u.kind.hp);
+}
+
+// EVERY SWING OF HIS, AT EVERY STAND-OFF, WITH THE ARM'S BEND (2026-10-19, the owner: "make the dark knights connectivity
+// way more tight hes all over the place and his arm is moving weird on some swings"): as `dkStopSweep`, with the kind's
+// `aimK` set from `w.__aimK` and, for each throw, the most the aim bent his shoulder off the clip (degrees)
+export async function dkAimSweep({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
+  for (const f of b.farmUnitsS()) f.st.awake = false;
+  b.dkTurn(u, true);
+  if (w.__aimK != null) u.kind.aimK = +w.__aimK;
+  log('aimK', u.kind.aimK);
+  const C = b.camera.position, P = u.g.position;
+  const keys = (w.__dkKeys || Object.keys(u.kind.use)).filter((k) => u.atk[k]);
+  const stops = w.__stops || [1.6, 1.9, 2.2, 2.5, 2.8, 3.1, 3.4];
+  for (const k of keys) {
+    const A = u.atk[k], out = [], st0 = A.stop;
+    for (const S of stops) {
+      A.stop = S;
+      for (let i = 0; i < 400 && u.st.atk >= 0; i++) { w.__adv(1); b.heal(); }
+      const yaw = u.g.rotation.y, home = [P.x + Math.sin(yaw) * (S + 0.3), P.z + Math.cos(yaw) * (S + 0.3)];
+      for (let i = 0; i < 15; i++) { C.set(home[0], C.y, home[1]); b.lookAt(P.x, C.y - 0.15, P.z); w.__adv(1); b.heal(); for (const g of b.farmUnitsS()) g.st.awake = false; }
+      u.st.forceSwing = k; u.st.cool = 0; u.aimProbe = { max: 0 };
+      let started = false, h0 = u.hitAt || 0; const hits = [];
+      for (let i = 0; i < 600; i++) {
+        C.set(home[0], C.y, home[1]); b.lookAt(P.x, C.y - 0.15, P.z); w.__adv(1); for (const g of b.farmUnitsS()) g.st.awake = false;
+        const live = u.st.atk >= 0 && u.st.swing === k; if (live) started = true; else if (started) break;
+        if (u.hitAt && u.hitAt !== h0) { h0 = u.hitAt; const q = u.hitPt.clone().project(b.camera); hits.push(q.x.toFixed(2) + ',' + q.y.toFixed(2)); }
+        b.heal();
+      }
+      out.push(S + ':' + (hits.length ? hits.join('+') : (started ? 'miss' : 'never')) + '/' + Math.round(u.aimProbe.max * 57.3) + '°');
+      u.aimProbe = null;
+    }
+    A.stop = st0;
+    log(k.padEnd(8), out.join('  '));
+  }
+}
+export async function dkAimSweep1(ctx) { ctx.w.__aimK = 1.0; return dkAimSweep(ctx); }
+export async function dkAimSweep26(ctx) { ctx.w.__aimK = 2.6; return dkAimSweep(ctx); }
+
+export async function dkAimSweep03(ctx) { ctx.w.__aimK = 0.3; return dkAimSweep(ctx); }
+export async function dkAimSweep0(ctx) { ctx.w.__aimK = 0.01; return dkAimSweep(ctx); }
+
+export async function dkAimSweepK(ctx) { ctx.w.__stops = [1.4, 1.7, 2.0, 2.3, 2.6, 2.9, 3.2]; return dkAimSweep(ctx); }
+
+// EVERY SWING OF HIS, SEEN FROM THE SIDE: thrown at its own stand-off against you, a still three quarters of the way
+// through its wind-up and one at its contact, from a camera off his sword side (you are at the right of the frame)
+export async function dkPoseSheet({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
+  for (const f of b.farmUnitsS()) f.st.awake = false;
+  b.dkTurn(u, true);
+  const C = b.camera, P = u.g.position, V = P.constructor;
+  const keys = Object.keys(u.kind.use).filter((k) => u.atk[k]);
+  let n = 0;
+  for (const k of keys) {
+    const A = u.atk[k];
+    for (let i = 0; i < 400 && u.st.atk >= 0; i++) { w.__adv(1); b.heal(); }
+    const S = A.stop, yaw = u.g.rotation.y, home = [P.x + Math.sin(yaw) * (S + 0.3), P.z + Math.cos(yaw) * (S + 0.3)];
+    for (let i = 0; i < 15; i++) { C.position.set(home[0], C.position.y, home[1]); b.lookAt(P.x, C.position.y - 0.15, P.z); w.__adv(1); b.heal(); for (const g of b.farmUnitsS()) g.st.awake = false; }
+    u.st.forceSwing = k; u.st.cool = 0;
+    let started = false, shotW = false, shotC = false;
+    // drawn in the harness's studio (`knStudio`): him alone, lit, a camera off his side; a red post where you stand
+    const ST = b.knStudio(), cam = w.__psCam || (w.__psCam = new C.constructor(40, 1.4, 0.1, 100));
+    const post = w.__psPost || (w.__psPost = (() => { const T = P.constructor; const g = new (b.scene.constructor)(); return null; })());
+    const side = () => {
+      const sc = ST.scene(u); if (u.model) u.model.visible = true;
+      const yw = u.g.rotation.y, fx = Math.sin(yw), fz = Math.cos(yw), rx = Math.cos(yw), rz = -Math.sin(yw);
+      cam.position.set(P.x + fx * 1.5 + rx * 6.5, P.y + 2.0, P.z + fz * 1.5 + rz * 6.5); cam.lookAt(P.x + fx * 1.5, P.y + 1.4, P.z + fz * 1.5); cam.updateMatrixWorld(true);
+      b.renderer.render(sc, cam);
+      const src = b.renderer.domElement, cv = document.createElement('canvas'); cv.width = 300; cv.height = Math.round(300 * src.height / src.width); cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+      ST.done(u); return cv; };
+    const emit = (name, cv) => { const d = cv.toDataURL('image/jpeg', 0.85).split(',')[1], m = Math.ceil(d.length / 8000); for (let j = 0; j < m; j++) console.log('[PBIMG]', name, j + '/' + m, d.slice(j * 8000, (j + 1) * 8000)); };
+    for (let i = 0; i < 600; i++) {
+      C.position.set(home[0], C.position.y, home[1]); b.lookAt(P.x, C.position.y - 0.15, P.z); w.__adv(1); for (const g of b.farmUnitsS()) g.st.awake = false; b.heal();
+      const live = u.st.atk >= 0 && u.st.swing === k; if (live) started = true; else if (started) break;
+      if (live && !shotW && u.st.atk >= A.wind * 0.75) { shotW = true; emit('ps_' + String(++n).padStart(2, '0') + '_' + k + '_w', side()); }
+      if (live && !shotC && u.st.atk >= A.wind + 0.03) { shotC = true; emit('ps_' + String(++n).padStart(2, '0') + '_' + k + '_c', side()); }
+    }
+    log(k, 'stills', shotW, shotC);
+  }
+}
+
+// HOW HE CONDUCTS HIMSELF (2026-10-19, round 3: "hes all over the place"): forty seconds of him on you at 3, 6, 4.5 and 8 m;
+// the share of time in each gait (by `velGait`'s own mode) and swinging, swings a minute, flips between closing and backing
+// off a minute, and how far from you he keeps between blows
+export async function dkBehave({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
+  for (const f of b.farmUnitsS()) f.st.awake = false;
+  b.dkTurn(u, true);
+  const C = b.camera.position, P = u.g.position, home = [0, 0];
+  const cnt = {}; let swings = 0, lastSw = null, lastAtk = -1, flips = 0, lastDir = 0, dsum = 0, dn = 0;
+  const N = 60 * 40;
+  for (let f = 0; f < N; f++) {
+    if (f % 360 === 0) { const R = [3, 6, 4.5, 8][(f / 360) % 4], dx = C.x - P.x, dz = C.z - P.z, L = Math.hypot(dx, dz) || 1; home[0] = P.x + dx / L * R; home[1] = P.z + dz / L * R; }
+    b.lookAt(P.x, C.y - 0.2, P.z); w.__adv(1); C.x = home[0]; C.z = home[1]; b.heal();
+    for (const g of b.farmUnitsS()) g.st.awake = false;
+    const k = u.st.atk >= 0 ? 'swinging' : (u._vgMode || '?');
+    cnt[k] = (cnt[k] || 0) + 1;
+    if (u.st.atk >= 0 && (lastSw !== u.st.swing || u.st.atk < lastAtk)) swings++;
+    lastSw = u.st.atk >= 0 ? u.st.swing : null; lastAtk = u.st.atk;
+    if (u.st.atk < 0) { const dir = u._vgMode === 'fwd' ? 1 : u._vgMode === 'back' ? -1 : 0; if (dir && lastDir && dir !== lastDir) flips++; if (dir) lastDir = dir; dsum += Math.hypot(P.x - C.x, P.z - C.z); dn++; }
+  }
+  log('time share', Object.entries(cnt).map(([k, v]) => k + ' ' + Math.round(100 * v / N) + '%').join(', '));
+  log('swings a minute', (swings * 1.5).toFixed(0), 'close/back flips a minute', (flips * 1.5).toFixed(0), 'mean distance between blows', (dsum / Math.max(1, dn)).toFixed(2));
+}
+
+// UP CLOSE (2026-10-19, the owner: "some of the dark nights hits don even land when he swings close to the player"): each
+// swing at its OWN stand-off, but you standing 1.2 / 1.6 / 2.0 / 2.4 m from him (he may step back through the wind, as he
+// does); landed or missed, where, and how far he was at the contact
+export async function dkClose({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
+  for (const f of b.farmUnitsS()) f.st.awake = false;
+  b.dkTurn(u, true);
+  const C = b.camera.position, P = u.g.position;
+  const keys = Object.keys(u.kind.use).filter((k) => u.atk[k]);
+  let land = 0, tot = 0;
+  for (const k of keys) {
+    const out = [];
+    for (const D of [1.2, 1.6, 2.0, 2.4]) {
+      for (let i = 0; i < 400 && u.st.atk >= 0; i++) { w.__adv(1); b.heal(); }
+      const yaw = u.g.rotation.y, home = [P.x + Math.sin(yaw) * D, P.z + Math.cos(yaw) * D];
+      for (let i = 0; i < 15; i++) { C.set(home[0], C.y, home[1]); b.lookAt(P.x, C.y - 0.15, P.z); w.__adv(1); b.heal(); for (const g of b.farmUnitsS()) g.st.awake = false; }
+      u.st.forceSwing = k; u.st.cool = 0;
+      let started = false, h0 = u.hitAt || 0, hp0 = b.state().hp, hurt = 0, dAt = -1; const hits = [];
+      for (let i = 0; i < 600; i++) {
+        C.set(home[0], C.y, home[1]); b.lookAt(P.x, C.y - 0.15, P.z); w.__adv(1); for (const g of b.farmUnitsS()) g.st.awake = false;
+        const live = u.st.atk >= 0 && u.st.swing === k; if (live) started = true; else if (started) break;
+        if (live && dAt < 0 && u.st.atk >= u.atk[k].wind) dAt = Math.hypot(P.x - C.x, P.z - C.z);
+        if (u.hitAt && u.hitAt !== h0) { h0 = u.hitAt; const q = u.hitPt.clone().project(b.camera); hits.push(q.x.toFixed(2) + ',' + q.y.toFixed(2)); }
+        if (b.state().hp < hp0) hurt++; b.heal(); hp0 = b.state().hp;
+      }
+      tot++; if (hits.length) land++;
+      out.push(D + (hits.length ? ':' + hits.join('+') : ':MISS') + '@' + dAt.toFixed(1));
+    }
+    log(k.padEnd(8), out.join('  '));
+  }
+  log('landed', land, 'of', tot);
+}
+
+export async function dkFightClose(ctx) { ctx.w.__fightR = 1.6; return dkFight(ctx); }

@@ -1020,3 +1020,14 @@ of the sea.)
   off the flight's west side), `isleEdgeWhy` / `islePostWhy` (the walk's own tests each way, through
   `window.__isleDbg = {}`), `isleEdgeCost`. `__bw.isleSetLast(x, z, f)` stands the walk on a floor (without it a body
   set down is snapped back to its last spot); `isleLast()`. `PB_WAIT=900 sh tools/probe.sh …` for a scan past 300 s.
+
+## 2026-10-19 (later) — the shelf under the landing
+
+The owner's screenshot again (its own readout: feet 9.85 at x −19.53, z −1148.40): off the landing's west side, the
+flight's head ("the first part of the lighthouse dock where the 2 seagulls sit"), onto a shelf of the cliff 4-6 m
+down. `isleBoxTraps` (every floor over 1.5 in `isleJettyBox` that is not the flight, the landing or the boards, walked
+out eight ways with jumps; then every edge of the landing and the flight walked off eight ways): 15 traps, x
+−19.5…−18, z −1148.5…−1150, 9.9-11.6, and the landing's west edge dropped you straight into them. The 1.5 m floor rule
+let them by. Now in the jetty's box a fall of more than `ISLE_FALL` lands only on the flight (`isleRampAt`) or the
+boards. After: nothing walked off the landing ends under 14 (the rock path round it, none of it a trap); the jetty's
+ways walk as before.

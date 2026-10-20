@@ -2840,3 +2840,16 @@ curl to 0.95, collapse), three spray bursts (the last off the lip), a crash at 0
   scan had landed (an empty clone for good — the revolver and every carried thing are lazy) — now only when
   `heldWarmReady`; and `vmSelfHeal` (every frame something is held): a pending build is built the frame its model lands,
   the held thing and everything to the hand is shown, a NaN transform is reset.
+
+## 2026-10-19 — rounds go through: collaterals
+
+The owner: "make bullets travel through enemies making collaterals possible". `magTrace` takes `magSkip`, a set of
+bodies the round has already been through (crabs, gulls, creatures); `magFire` traces again past each foe it hits,
+`MAG_PASS` 3 more at ×`MAG_PASS_K` 0.75 each (a pale one's file of four: 14, 11, 8, 6). What one body takes is
+`magRoundHits(h, k, pass)` — false where the round stops (stone, sand, glass, the pliosaur, a gull on the island, a
+raised `gunBlock` guard), true where it goes on, 'kill' where it killed what it went through; a headshot still pops
+the head and goes on. Two or more killed by one round: hitstop 0.16 + 0.03·n and trauma 0.3·n. A spray of blood comes
+off the far side of each body passed through. The sawn-off: each pellet that hits a foe traces on through `SG_PASS`
+1 more at ×0.6 (not through a raised guard), into the same per-foe tally (`take`). Measured, `sh tools/probe.sh
+collateral`: revolver 20,20,20,20 → 6,9,12,14; sawn-off at 1.2 m apart → dead, 4, 17, 20; `collateralKill` (health
+9): dead, dead, 1, 3. Test exports: `mutSpawnTest(x, z, kind)`, `mutantsS()`, `magAmmoS()`, `loadGunsTest()`.

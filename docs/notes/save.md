@@ -348,3 +348,15 @@ landing into place — 7 knocks and 9 ELECTRONICS SMASHING (they broke on arriva
 a restore runs, the save applies, the intro is on or the game is frozen, and 2.5 s after, a prop's landing is silent,
 breaks nothing and knocks nothing (`PhysProp.step`). After: 14, all ambience and the music. (A castle checkpoint resumes
 its live fight — the bell, the men — which is the fight, not the load.)
+
+## 2026-10-19 — what you carry is loaded first (the invisible weapons, found)
+
+The owner, twice: "i loaded a checkpoint and my weapons were invisible" (still swingable). Found with
+`sh tools/probe.sh vmAllFort` (the pack filled, a save in the first castle, the death's reload with Restart clicked at
+once, then every weapon taken in turn and its OWN held copy's pixels measured by hiding just it): the Military Shovel's
+and the Spare Peg's held copies had **no mesh in them and no build pending**. Their models are fetched by where the
+world copy LIES (`ASSET_REACH`: the shovel by the drain, the peg in the wreck); a fast checkpoint load puts those in the
+"far rest", paced one parse at a time and none while anything awake is within 30 m (`bgLoadOk`) — the whole castle
+fight. The milModel/pegModel groups the held copies wrap were empty until then. On the beach it never showed (near
+enough to load). Now `BW_FROM.first` takes every model in the save's `pack` and `worn` (`PACK_FILES`, name → file):
+fetched first, under the black. After: all ten weapons draw after a castle reload (3,700–4,600 px each).

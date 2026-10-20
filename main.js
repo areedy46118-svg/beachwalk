@@ -184,9 +184,24 @@ const BW_FROM = (() => {
       bunker: ['bunker.glb', 'dealer.glb'],
       whale: ['whale.glb', 'demon.glb', 'demon-moves.json', 'parasite.glb', 'knight-moves.json', 'ntar-moves.json', 'wong-moves.json', 'orc-moves.json', 'drunk-moves.json', 'umbra-moves.json', 'crawler-moves.json'],
     };
+    /* AND WHAT YOU ARE CARRYING COMES WITH YOU (2026-10-19, the owner, twice: "i loaded a checkpoint and my weapons were
+     * invisible"). A held thing is a copy of its world model, and the world model was ranked by where it LIES — the
+     * Military Shovel by the drain, the peg in the wreck — so loaded in the castle, the far rest held it back (one parse
+     * at a time, none while anything awake is near: the whole fight) and the shovel in your hand was an empty group you
+     * swung and never saw. Measured, `vmAllFort`: the shovel and the peg built with no mesh in them. Every model in the
+     * save's pack is fetched first, under the black. */
+    const PACK_FILES = {
+      'Military Shovel': 'military-shovel.glb', 'Spare Peg': 'peg-leg.glb', 'Fishing rod': 'fishing-rod.glb', 'Screwdriver': 'screwdriver.glb',
+      '.44 Magnum': 'magnum.glb', 'The Sawed Off Shotgun': 'sawnoff.glb', 'Bloody Blade': 'bloody-blade.glb', 'Wax Spliff': 'spliff.glb',
+      'The Octopus Ring': 'octopus-ring.glb', 'Gold Ring': 'gold-ring.glb', 'Gem Stone Ring': 'gem-ring.glb', 'Old Ring': 'old-ring.glb',
+      'Forgotten Wedding Ring': 'wedding-ring.glb', 'Ring of Connection': 'connection-ring.glb', 'Skull Key': 'skull-key.glb',
+      'Rusted Key': 'key.glb', 'The Great Crab Call': 'crab-call.glb', 'Mutant Fang': 'fang.glb',
+    };
     const f = d.flags || {};
     const walked = f.beachZ != null ? -f.beachZ : d.room ? (ROOM_Z[d.room] || 0) : -d.pos[2];
-    return { walked, first: new Set((ROOM_FILES[d.room] || []).map((n) => 'assets/' + n)) };
+    const first = new Set((ROOM_FILES[d.room] || []).map((n) => 'assets/' + n));
+    for (const n of [...(Array.isArray(d.pack) ? d.pack : []), ...(Array.isArray(d.worn) ? d.worn : [])]) if (PACK_FILES[n]) first.add('assets/' + PACK_FILES[n]);
+    return { walked, first };
   } catch (e) { return null; }
 })();
 const ASSET_REACH = {
@@ -33301,15 +33316,22 @@ function velGaitAnim(u, dt, N) {
   if (mode === 'fwd') {
     const walkC = spd(G.walk) || 1.2;
     u._vgRun = NAT ? (u._vgRun ? f > walkC * 1.05 : f > walkC * 1.22) : (u._vgRun ? f > walkC * 1.45 : f > walkC * 1.75);
+    /* (`gaitBands`: a walk and a run with a gap between what their strides can cover — the dark knight's walk at most
+     * 1.68 m/s, his run at least 2.44 — and a body between them skated whichever was on. He runs only when the body is
+     * really going at a run, and otherwise walks, held to the walk's stride. 2026-10-19, `dkSkate`) */
+    if (u.kind.gaitBands && spd(G.run) > 0.2) { const runMin = spd(G.run) * rLo, fRaw = ix * sh + iz * ch; u._vgRun = u._vgRun ? fRaw > runMin * 0.85 : fRaw > runMin; }
     const nm = u._vgRun ? G.run : G.walk;
-    capStep(capFor(G.run || nm));
+    capStep(capFor(u.kind.gaitBands ? nm : (G.run || nm)));
     const a = mutPlay(u, nm, true);
     if (a) { a.paused = false; a.timeScale = rate(nm, f, 1); }
   } else if (mode === 'back') {
     const nm = N.back || G.walk;
     capStep(capFor(nm));
     const a = mutPlay(u, nm, true);
-    if (a) { a.paused = false; a.timeScale = -rate(nm, -f, 1); }
+    /* (a walk run backwards, unless the clip IS a walk backwards: then it plays forwards. The dark knight's `sWalkB`
+     * travels −1.44 m, and reversed it strode forwards while he backed off — measured, 3 m/s of skate, 2026-10-19) */
+    const TB = u.clipTravel && u.clipTravel[a ? a.getClip().name : nm], rev = !(TB && TB.length > 1 && TB[TB.length - 1][1] < -0.2);
+    if (a) { a.paused = false; a.timeScale = (rev ? -1 : 1) * rate(nm, -f, 1); }
   } else if (mode === 'L' || mode === 'R') {
     const nm = mode === 'L' ? (G.strafeL || 'strafeL') : (G.strafeR || 'strafeR');
     capStep(capFor(nm));
@@ -34678,6 +34700,8 @@ function mutFoePos(u) {
 function mutLandBlow(u, dmg) {
   const f = u.st.foe;
   if (f && f.st.alive && u.kind === MUT_KINDS.darkKnight && f.kind.farmer) { dkFling(u, f); return; }
+  // (a farmer's blow on the dark knight: it wounds him, never below two fifths — the kill is yours, `dkTownFights`)
+  if (f && f.st.alive && f.kind === MUT_KINDS.darkKnight && u.kind.farmer) { hurtMutant(f, Math.max(0, Math.min(dmg, f.st.hp - Math.ceil(f.kind.hp * 0.4))), 0, u); return; }
   if (f && f.st.alive) { hurtMutant(f, dmg, 0, u); return; }
   /* A BLOW THAT FOLLOWS A BLOW TOO CLOSE TO BE ANSWERED. The Marauder's
    * combo throws its second and fourth blades 0.13 s after the one before,
@@ -34792,6 +34816,7 @@ const _blFront = new THREE.Vector3();
  * and inside the frame — the window runs on, so a blade still coming into view lands as it arrives */
 const _osV = new THREE.Vector3();
 function onScreenPt(p) { _osV.copy(p).project(camera); return _osV.z < 1 && Math.abs(_osV.x) < 0.92 && _osV.y > -0.92 && _osV.y < 0.85; }
+const _blFwd = new THREE.Vector3();
 function blowLands(u) {
   if (!blowHeightOK(u)) return false;
   let foe = mutFoePos(u);
@@ -34850,12 +34875,27 @@ function blowLands(u) {
     }
     const pts = _dbPts;
     // (a farmer's blow is the TOOL, judged in front of your face: the forearm landed it before the head arrived, 2026-10-18)
+    /* (`kind.closeBody`: and when you are INSIDE his stand-off the whole arm and blade are tested against your whole body
+     * where you stand — the dark knight stepping back through a wind-up did not always get there, and his blade's end
+     * went past you while his hilt went through you: measured, `dkClose`, 6 of 52 blows "missed" a man inside them) */
+    const closeIn = u.kind.closeBody && !u.st.foe && _Ab && _Ab.stop && Math.hypot(mutFoePos(u).x - u.g.position.x, mutFoePos(u).z - u.g.position.z) < _Ab.stop - 0.2;
+    if (closeIn) {
+      // (your upper body, and in front of the lens: through your legs or behind your head is a blow you never see land)
+      const me = mutFoePos(u), cTop = me.y + 0.15, cBot = me.y - 0.85, cr = (u.kind.limbR || LIMB_R) + 0.07;
+      camera.getWorldDirection(_blFwd);
+      for (let i = 1; i < n; i++) for (let k = 0; k <= 4; k++) {
+        _dbC.lerpVectors(pts[i - 1], pts[i], k / 4);
+        const y = THREE.MathUtils.clamp(_dbC.y, cBot, cTop), dx = _dbC.x - me.x, dz = _dbC.z - me.z, dy = _dbC.y - y;
+        const ahead = (_dbC.x - camera.position.x) * _blFwd.x + (_dbC.y - camera.position.y) * _blFwd.y + (_dbC.z - camera.position.z) * _blFwd.z;
+        if (dx * dx + dz * dz + dy * dy < cr * cr && ahead > 0.12) { (u.hitPt || (u.hitPt = new THREE.Vector3())).copy(_dbC); u.hitAt = performance.now(); return true; }
+      }
+    }
     for (let i = u.kind.hitFront ? Math.max(1, n - 1) : 1; i < n; i++) {
       for (let k = 0; k <= 4; k++) {
         _dbC.lerpVectors(pts[i - 1], pts[i], k / 4);
         const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
         const dx = _dbC.x - foe.x, dz = _dbC.z - foe.z, dy = _dbC.y - y;
-        const lr = u.kind.limbR || LIMB_R;
+        const lr = (u.st.foe && u.kind.foeLimbR) || u.kind.limbR || LIMB_R;   // (`foeLimbR`: tight on you, not on a farmer — they have to go down as you watch)
         if (dx * dx + dz * dz + dy * dy < lr * lr && (!u.kind.hitOnScreen || u.st.foe || onScreenPt(_dbC))) { (u.hitPt || (u.hitPt = new THREE.Vector3())).copy(_dbC); u.hitAt = performance.now(); return true; }  // a body is wider than a line (and a kind may say how much wider) (`hitPt`: where, for the harness)
       }
     }
@@ -38481,7 +38521,7 @@ function updateMutantUnit(u, dt) {
       mutAnim(u, dt, 0);
       return;
     }
-    if (t < A.wind * 0.8 && dist > A.reach * 0.75 && !A.hold && !u.kind.planted) {
+    if (t < A.wind * 0.8 && dist > A.reach * 0.75 && !A.hold && !u.kind.planted && !u.kind.noSkate) {   // (`noSkate`: the closings that skate, without `planted`'s giving up on a swing thrown from range)
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, MUT_SPEED * u.kind.speedK * 0.66 * (u.kind.windWalkK ?? 1) * dt);   // (a wind-up on a planted clip is a skate: `windWalkK`)
     }
@@ -38597,7 +38637,7 @@ function updateMutantUnit(u, dt) {
     // a chained swing STEPS IN through its startup: the first blow's own
     // knockback put you out of reach, and a follow-up that stands still is
     // a follow-up that never lands
-    if (u.st.chained && t < A.wind && dist > A.reach - 0.3 && !u.kind.planted) {
+    if (u.st.chained && t < A.wind && dist > A.reach - 0.3 && !u.kind.planted && !u.kind.noSkate) {
       u.dir.set(dx / dist, 0, dz / dist);
       p.addScaledVector(u.dir, 2.4 * dt);
     }
@@ -38983,6 +39023,9 @@ function updateMutantUnit(u, dt) {
             if (AK.minDist && dist < AK.minDist) continue;    // a charge needs ground to charge across
             if (AK.stand && u.noStand) continue;              // and a thing that rears up needs a roof to rear under
             let w = u.kind.use[k];
+            /* (`kind.stopPick`: a blow measured for a stand-off is thrown at about that stand-off — the dark knight's, from
+             * 1.8 to 3.0, and up close his long ones landed past you, 2026-10-19 round 4; weighted, never ruled out) */
+            if (u.kind.stopPick && AK.stop) w *= 0.15 + 0.85 * Math.exp(-Math.pow((dist - AK.stop) / u.kind.stopPick, 2));
             if (u.kind.smart) {
               /* ---- WHAT MAKES A CREATURE READ AS A FIGHTER RATHER THAN AS A
                * WEIGHTED DIE. Two things, and both of them are things the
@@ -39338,6 +39381,7 @@ function aimBar(u, dt, dist) {
     let ang = Math.acos(THREE.MathUtils.clamp(_abB.dot(_abC), -1, 1));
     if (!(ang > 1e-4)) continue;
     let use = Math.min(ang, AIM_MAX * (u.kind.aimK || 1)) * u.aimW;
+    if (u.aimProbe) u.aimProbe.max = Math.max(u.aimProbe.max, use);   // (a probe's: how far the shoulder is bent off the clip)
     /* A BLADE POINTING AWAY FROM YOU IS NOT AIMED YET (`aimCone` on the swing
      * or the kind, [full, none] in radians). Through the samurai's overhead the tip points 100-135
      * degrees off your chest until the last tenth of a second — the cut has
@@ -52459,6 +52503,12 @@ const _mgO = new THREE.Vector3(), _mgD = new THREE.Vector3(), _mgC = new THREE.V
  * against the body's own vertical AXIS instead, and the top quarter of that
  * axis is the head. */
 let magBest = null;
+/* A ROUND GOES THROUGH (2026-10-19, the owner: "make bullets travel through enemies making collaterals possible"). The
+ * bodies a round has already been through, which the next trace of the same round sees past (`magTrace`); and how
+ * many more a .44 goes on through, and what it keeps at each. Stone, sand, glass, the deep thing and a raised guard
+ * still stop it. A pellet goes through one (`SG_PASS`). */
+let magSkip = null;
+const MAG_PASS = 3, MAG_PASS_K = 0.75, SG_PASS = 1, SG_PASS_K = 0.6;
 function magBody(u, y0, y1, r, hd) {
   const p = u.g.position;
   /* Closest approach between the shot and the body's axis — the ray
@@ -52484,10 +52534,10 @@ function magTrace(dir) {
   camera.getWorldPosition(_mgO);
   _mgD.copy(dir).normalize();
   magBest = null;
-  for (const u of crabs) if (u.st.alive) magBody(u, 0.05, 0.50, 0.58, 0);
-  for (const u of gulls) if (u.st.alive && u.g.visible) magBody(u, -0.10, 0.10, 0.50, 0);   // a gull is a span, not a height
+  for (const u of crabs) if (u.st.alive && !(magSkip && magSkip.has(u))) magBody(u, 0.05, 0.50, 0.58, 0);
+  for (const u of gulls) if (u.st.alive && u.g.visible && !(magSkip && magSkip.has(u))) magBody(u, -0.10, 0.10, 0.50, 0);   // a gull is a span, not a height
   for (const u of mutants) {
-    if (!u.st.alive || !u.g.visible) continue;
+    if (!u.st.alive || !u.g.visible || (magSkip && magSkip.has(u))) continue;
     const h = u.kind.h || 1.8;
     magBody(u, h * 0.12, h * 0.94, Math.max(0.42, (u.kind.hitR || 0.85) * 0.72), h * 0.74);
   }
@@ -52608,13 +52658,27 @@ function magFire() {
     _mgSp.addScaledVector(_mgRt, Math.cos(a) * r).addScaledVector(_mgUp, Math.sin(a) * r).normalize();
   }
 
-  const h = magTrace(_mgSp);
-  if (!h) return;
-  if (h.kind === 'plio') { plioHurt(MAG_DMG * PLIO_GUN_K, 0.5, h.point); hitstop = Math.max(hitstop, 0.07); return; }
-  if (h.kind === 'gull') { isleBirdPoof(h.B, 46); return; }
-  if (h.kind === 'hglass') { elvBreakPane(h.P, camera.position); return; }
+  magSkip = new Set(); let passK = 1, kills = 0;
+  for (let pass = 0; pass <= MAG_PASS; pass++) {
+    const h = magTrace(_mgSp);
+    const r = magRoundHits(h, passK, pass);
+    if (r === 'kill') kills++;
+    if (!r || !h || h.kind !== 'foe') break;
+    magSkip.add(h.u); passK *= MAG_PASS_K;
+  }
+  magSkip = null;
+  // two or more down to the one round: the beat is held a little longer and the frame shakes for it
+  if (kills >= 2) { hitstop = Math.max(hitstop, 0.16 + 0.03 * kills); addTrauma(0.3 * kills); }
+}
+/* WHAT ONE BODY ON THE ROUND'S LINE TAKES: `k` what the round still carries, `pass` how many it has been through.
+ * Answers false where the round stops, true where it goes on, 'kill' where it went on through a body it killed. */
+function magRoundHits(h, k, pass) {
+  if (!h) return false;
+  if (h.kind === 'plio') { plioHurt(MAG_DMG * PLIO_GUN_K * k, 0.5, h.point); hitstop = Math.max(hitstop, 0.07); return false; }
+  if (h.kind === 'gull') { isleBirdPoof(h.B, 46); return false; }
+  if (h.kind === 'hglass') { elvBreakPane(h.P, camera.position); return false; }
   if (h.kind === 'foe') {
-    if (h.u.gull) { hurtGull(h.u, 4, 0.5); return; }          // a gull: one round and it comes down
+    if (h.u.gull) { hurtGull(h.u, 4, 0.5); return true; }          // a gull: one round and it comes down
     /* AND A ROUND THROUGH THE HEAD IS NOT A BLOW YOU SHRUG OFF. Everything
      * else in this game goes through `hurtMutant`, which is right — it is
      * where the poise pool, the guard, the riposte and the wound all live —
@@ -52624,8 +52688,8 @@ function magFire() {
      * on the beach and the five past the door have it, and the bosses do
      * not, because a revolver that ends a boss on one lucky shot is a
      * revolver that ends the fight rather than joining it. */
-    if (h.u.kind && h.u.kind.gunBlock && h.u.st.alive && gunBlocks(h.u)) { umbraDeflect(h.u, _mgO.clone().addScaledVector(_mgSp, h.t)); return; }
-    if (h.head && h.u.kind && h.u.kind.headPop) { magHeadshot(h.u); return; }
+    if (h.u.kind && h.u.kind.gunBlock && h.u.st.alive && gunBlocks(h.u)) { umbraDeflect(h.u, _mgO.clone().addScaledVector(_mgSp, h.t)); return false; }
+    if (h.head && h.u.kind && h.u.kind.headPop) { magHeadshot(h.u); return h.u.st.alive ? true : 'kill'; }
     /* AND A ROUND IS NOT A CHARGED CUT. `P` is the swing's own power and it
      * is what `finishMutant` reads to decide whether the blow was enough to
      * take a creature APART at the waist — so a pistol at 1.0 counted as the
@@ -52633,11 +52697,14 @@ function magFire() {
      * of legs standing on the sand with the torso lying beside them. Under
      * `MUT_HEAVY` it still takes a limb and still throws the body; what it
      * cannot do is bisect one. */
-    const dmg = Math.round(MAG_DMG * (h.head ? MAG_HEAD : 1));
+    const dmg = Math.max(1, Math.round(MAG_DMG * (h.head ? MAG_HEAD : 1) * k));
+    const was = h.u.st.alive;
     if (h.u.kind) { hurtMutant(h.u, dmg, 0.5); flameGunBurn(h.u); } else hurtCrab(h.u, 4, 0.5);   // (a gun holding the Flame: what it hits catches)
-    if (h.u.kind && h.u.kind.gunStun && !h.u.kind.baby) gunStun(h.u);
+    if (h.u.kind && h.u.kind.gunStun && !h.u.kind.baby && h.u.st.alive) gunStun(h.u);
     if (h.head) { hitstop = Math.max(hitstop, 0.09); addTrauma(0.22); }
-    return;
+    // and out of the far side of him: a spray off his back along the line of the round
+    if (pass < MAG_PASS && h.point) sprayBlood(h.point.x + _mgSp.x * 0.35, h.point.y, h.point.z + _mgSp.z * 0.35, _mgSp.x, _mgSp.z, 3, 1.2);
+    return was && !h.u.st.alive ? 'kill' : true;
   }
   if (h.kind === 'solid') {
     stampScar(h.hit, h.surface);
@@ -52646,6 +52713,7 @@ function magFire() {
   } else if (h.kind === 'sand') {
     spawnPuffs(h.point.x, h.point.z, 4, -_mgSp.x, -_mgSp.z, Math.max(0.05, h.point.y), null);
   }
+  return false;
 }
 /* THE HEAD GOES, AND THE REST OF IT DROPS. It is killed OUTSIDE the normal
  * door: the health is set to nothing and `killMutant` called directly, so no
@@ -53596,11 +53664,24 @@ function sgFire() {
     if (best.crate) { boxes.add(best.crate); continue; }
     const H = best.h;
     if (H.kind === 'foe') {
-      const A = foes.get(H.u) || { n: 0, head: 0, dmg: 0, t: Infinity, pts: [] };
-      A.n++; if (H.head) A.head++;
-      A.dmg += SG_PELLET_DMG * sgFall(H.t);
-      A.t = Math.min(A.t, H.t); A.pts.push(H.point);
-      foes.set(H.u, A);
+      const take = (h2, k) => {
+        const A = foes.get(h2.u) || { n: 0, head: 0, dmg: 0, t: Infinity, pts: [] };
+        A.n++; if (h2.head) A.head++;
+        A.dmg += SG_PELLET_DMG * sgFall(h2.t) * k;
+        A.t = Math.min(A.t, h2.t); A.pts.push(h2.point);
+        foes.set(h2.u, A);
+      };
+      take(H, 1);
+      // and on through him into whoever is behind (`SG_PASS`), weaker — not through a raised guard
+      if (!(H.u.kind && H.u.kind.gunBlock && gunBlocks(H.u))) {
+        magSkip = new Set([H.u]); let k = 1;
+        for (let pass = 1; pass <= SG_PASS; pass++) {
+          k *= SG_PASS_K;
+          const h2 = magTrace(_sgP); if (!h2 || h2.kind !== 'foe') break;
+          take(h2, k); magSkip.add(h2.u);
+        }
+        magSkip = null;
+      }
     } else if (H.kind === 'solid') {
       if (scars < 3) { stampScar(H.hit, H.surface); scars++; }
       spawnPuffs(H.point.x, H.point.z, 2, -_sgP.x, -_sgP.z, H.point.y, 0x9aa3ae);
@@ -84144,7 +84225,11 @@ const _kstH = new THREE.Vector3(), _kstT = new THREE.Vector3();
 function knSwordTrail(u, dt) {
   const tip = u.bones && u.bones.tip, hilt = u.model && (u.knHilt || (u.knHilt = u.model.getObjectByName('kn_hilt')));
   const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
-  const live = !!(A && tip && hilt && !(A.limbs && A.limbs.some((i) => i >= 2)) && st.atk >= A.wind - 0.22 && st.atk <= A.wind + A.strike + 0.10);
+  /* (and through each of a string's other contacts, `A.moreT`: 2026-10-19, the owner: "the dark knight has a swing where i
+   * see no white air effect following the sword and cant block it" — his strings land two and three times, and only the
+   * first blade was ever drawn; the others came out of nothing) */
+  const win = (t0) => st.atk >= t0 - 0.22 && st.atk <= t0 + A.strike + 0.10;
+  const live = !!(A && tip && hilt && !(A.limbs && A.limbs.some((i) => i >= 2)) && (win(A.wind) || (A.moreT && A.moreT.some(win))));
   let T = u.swTrail;
   if (!T) { if (!live) return; T = u.swTrail = makeSwingTrail(16); }
   if (live) {
@@ -84269,26 +84354,45 @@ function authorDkClips(u, m) {
 MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
   glb: 'assets/dark-knight.glb', c13Body: false, fortBody: true, preParse: false,
   joints: DK_JOINTS, rag: DK_RAG, pre: dkSeat, author: authorDkClips,
-  h: 2.70, hp: 90, hitR: 0.9, body: 0.72, lungeStop: 2.0, landSlop: 0.5, limbR: 0.45, lungeLead: 0.30,
+  h: 2.70, hp: 90, hitR: 0.9, body: 0.72, lungeStop: 2.0, landSlop: 0.5, limbR: 0.33, foeLimbR: 0.6, lungeLead: 0.18, closeBody: true, stopPick: 0.6,
   speedK: 0.95, aggr: 2.4, press: 0.9, chainMax: 3,
-  circle: 0.12, step: 0.12, feint: 0.10, sizeUp: 0.10,
-  turnMax: 4.0, yawK: 0.8, aimK: 2.6, aimFront: 0.7, aimDrop: 0.22, hitFront: 0.55, hitOnScreen: true, fade: 0.30,
+  /* A KNIGHT, NOT A DANCER (2026-10-19, round 3; the owner: "make the dark knights connectivity way more tight hes all
+   * over the place and his arm is moving weird on some swings just fix his animations and ai"). He circles, side-steps,
+   * feints and sizes you up a third as often; he closes to his blow, throws it, recovers, and comes again. */
+  circle: 0.04, step: 0.04, feint: 0.03, sizeUp: 0.04, restless: 0.4,
+  /* HIS FEET STAY WHERE THEY ARE PUT (2026-10-19, the owner: "the dark knight is sliding around a lot fix this so moves
+   * more natural"). Measured (`tools/probes.js dkSkate`, a planted foot's speed over the paving): moving 3.37 m/s with the
+   * body at 2.04 (96 % of frames skating), a third of every swing skating, `dkSweep`'s body sliding 2.3 m/s through the
+   * cut. The stride is matched to the ground he covers (`velGait`), a closing eases in and out (`smoothMove`), a chained
+   * swing does not skate 2.4 m/s into the next nor a wind-up glide in (`noSkate`), the last-moment closing is capped at a stride (`lungeMax`),
+   * the backing-off through a wind-up is a step not a glide (`stepBack`), and he turns on the spot slower. The pack's
+   * stepping blows walk their own recorded step instead of a lunge (`dkRootMotion`). */
+  velGait: true, gaitBands: true, gaitMax: 1.5, smoothMove: true, noSkate: true, lungeMax: 2.0, stepBack: 0.9,
+  /* (THE ARM STAYS IN ITS OWN SWING: `aimK` 2.6 bent his shoulder up to 119° off the clip on every blow — measured,
+   * `dkAimSweep26` — the "arm moving weird". 0.3 is 14° at most; his body still turns into you (`yawK`), and every swing
+   * stands off where its own blade crosses you. And a blow counts only where the blade REACHES you: judged 0.3 in front
+   * of your eye with a third of a metre of flesh, not 0.55 out with 0.45 — a blade stopping half a metre short scored.) */
+  turnMax: 2.8, yawK: 0.8, aimK: 0.3, aimFront: 0.3, aimDrop: 0.22, hitFront: 0.3, hitOnScreen: true, fade: 0.30,
   poise: 16, poiseBack: 2.2, poiseWait: 0.9, parryK: 0.9, recoilK: 0.55, stunK: 0.75, blockCost: 0.7, block: 0.45, heavyBlock: true,
-  fidgetK: 0.12, fidgetGap: 3.0, opening: 0.7, gapRate: 0.9,
+  fidgetK: 0.05, fidgetGap: 4.0, opening: 0.7, gapRate: 0.35,
   rig: { arm: DKB('UpperArm_R'), fore: DKB('Forearm_R'), hand: DKB('Hand_R'), tip: 'kn_tip', armL: DKB('UpperArm_L'), foreL: DKB('Forearm_L'), handL: DKB('Hand_L'), tipL: 'dk_shield', head: DKB('Head'),
          limbs: [[DKB('Thigh_R'), DKB('Calf_R'), DKB('Foot_R'), DKB('Foot_R')]] },
   emis: 0.30, rim: [0.075, 0.075, 0.085], gamma: 0.82,   // (black plate in a night street: lifted until he reads against the paving, measured)
   anim: { idle: 'sIdle', walk: 'sWalk', run: 'sRun', roar: 'sRoar', die: 'sDie', back: 'sWalkB', rate: 1.0, lean: 0.03, strafeK: 1.0 },
-  gaits: { walk: ['sWalk'], run: ['sRun', 'sRunB'], idle: ['sIdle', 'sIdleB', 'sBlockI'], strafeL: ['sStr2', 'sStr3'], strafeR: ['sStr1', 'sStr4'] },
-  alias: { idle: 'sIdle', idle2: 'sIdleB', walk2: 'sWalk', run2: 'sRunB', roar: 'sRoar', roar2: 'sCast', die2: 'sDieB', back: 'sWalkB', calm: 'sIdle',
+  // (`sRunB` runs BACKWARDS, −2.34 m — as a run his feet went the wrong way at 9-11 m/s; `sStr3`/`sStr4` are running
+  // side-steps of 2.9 m/s played at 0.7× under a body of 1.8: walking ones only, the body held to their stride)
+  gaits: { walk: ['sWalk'], run: ['sRun'], idle: ['sIdle', 'sIdleB', 'sBlockI'], strafeL: ['sStr2'], strafeR: ['sStr1'] },
+  alias: { idle: 'sIdle', idle2: 'sIdleB', walk2: 'sWalk', run2: 'sRun', roar: 'sRoar', roar2: 'sCast', die2: 'sDieB', back: 'sWalkB', calm: 'sIdle',
            strafeL: 'sStr2', strafeR: 'sStr1', hit: 'sHit', hitBig: 'sHitC', hitSide: 'sHitB', hitBack: 'sHit', hitHead: 'sHitB',
            block: 'sBlockI', blockC: 'sCBlock', parry: 'sHitC' },
   stunClip: 'sHitC', first: 'sIdle', sleepIdle: 'sIdle', wakeAt: 0,
   voice: { f: 0.66, growl: 1.35, rasp: 1.2, throat: 'bellow' },
   /* HIS OWN STRINGS, trimmed of the long stand before the first blow where it was long (`slice`, seconds of the clip) */
   slice: [['dkC0', 'dkS0', 0.9, 4.33], ['dkC3', 'dkS3', 1.6, 4.63], ['dkC6', 'dkS6', 3.6, 7.97], ['dkC7', 'dkS7', 1.5, 4.97]],
-  use: { dkS0: 0.07, dkS1: 0.08, dkS2: 0.08, dkS3: 0.08, dkS5: 0.07, dkS6: 0.06, dkS7: 0.07,
-         dkCut: 0.10, dkSweep: 0.08, dkSpin: 0.06, dkRise: 0.07, dkTurn: 0.05, dkLunge: 0.06, dkLeap: 0.04, dkKick: 0.08 },
+  // (no `dkLunge`, no `dkKick` — round 3: under the tight blow test the lunge landed at alternate stand-offs and low, the
+  // kick only from 1.4 m, inside his own reach; neither reads as his)
+  use: { dkS0: 0.08, dkS1: 0.09, dkS2: 0.08, dkS3: 0.08, dkS5: 0.07, dkS6: 0.07, dkS7: 0.07,
+         dkCut: 0.10, dkSweep: 0.09, dkSpin: 0.06, dkRise: 0.08, dkTurn: 0.05, dkLeap: 0.05 },
   rage: { aggr: 3.0, speedK: 1.1, press: 0.95, chainMax: 3, circle: 0.08 }, rageClip: 'sRoar', rageDur: 1.9,
 });
 /* HIS BLOWS. The contacts are MEASURED on his own blade (`tools/probes.js` `dkContacts`/`dkPack`: every frame the blade's
@@ -84296,7 +84400,7 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
  * each contact is its own window (see `A.more`). His own strings play at their own speed, a touch quicker, with no held
  * tell (the string's wind-up is the tell, and long); the pack's are drawn and held like the swordsmen's. */
 {
-  const S = (clip, hit, more, o) => Object.assign({ clip, hit, more: more.length ? more : undefined, rate: 1.12, strike: 0.2, reach: 2.9, lunge: 1.0, stop: 2.0, limbs: [0], dmg: 1, chain: null, guardK: 1.5 }, o || {});
+  const S = (clip, hit, more, o) => Object.assign({ clip, hit, more: more.length ? more : undefined, rate: 1.12, strike: 0.2, reach: 2.9, lunge: 0.45, stop: 2.0, limbs: [0], dmg: 1, chain: null, guardK: 1.5 }, o || {});
   MUT_ATTACKS.dkS0 = S('dkS0', 0.56, [], { stop: 1.6, reach: 2.6, dmg: 2, guardK: 1.9 });
   MUT_ATTACKS.dkS1 = S('dkC1', 0.386, [], { dmg: 2, guardK: 1.9 });
   MUT_ATTACKS.dkS2 = S('dkC2', 0.386, [], { dmg: 2, guardK: 1.9 });
@@ -84304,14 +84408,18 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
   MUT_ATTACKS.dkS5 = S('dkC5', 0.195, [0.695]);
   MUT_ATTACKS.dkS6 = S('dkS6', 0.412, [0.687]);
   MUT_ATTACKS.dkS7 = S('dkS7', 0.568, [], { dmg: 2, guardK: 1.8 });
-  const P = (clip, hit, o) => Object.assign({ clip, hit, natHold: 0.22, cockF: 0.75, rate: 1.05, fluid: true, strike: 0.2, reach: 2.8, lunge: 1.0, stop: 2.0, limbs: [0], dmg: 1, guardK: 1.3, chain: null }, o || {});
+  const P = (clip, hit, o) => Object.assign({ clip, hit, natHold: 0.12, cockF: 0.75, rate: 1.05, fluid: true, strike: 0.2, reach: 2.8, lunge: 0.45, stop: 2.0, limbs: [0], dmg: 1, guardK: 1.3, chain: null }, o || {});
   MUT_ATTACKS.dkCut   = P('sSlash', 0.388, { chain: 'dkSweep', chainP: 0.45 });
   MUT_ATTACKS.dkSweep = P('sSlashC', 0.50, { chain: 'dkTurn', chainP: 0.30 });
-  MUT_ATTACKS.dkSpin  = P('sSlashD', 0.545, { natHold: 0.30, dmg: 2, guardK: 1.7 });
+  MUT_ATTACKS.dkSpin  = P('sSlashD', 0.545, { natHold: 0.16, dmg: 2, guardK: 1.7 });
   MUT_ATTACKS.dkRise  = P('sSlashE', 0.411, { chain: 'dkCut', chainP: 0.40 });
-  MUT_ATTACKS.dkTurn  = P('sAtkB', 0.419, { natHold: 0.18 });
+  MUT_ATTACKS.dkTurn  = P('sAtkB', 0.419, { natHold: 0.10 });
   MUT_ATTACKS.dkLunge = P('sAtkC', 0.42, { reach: 4.6, lunge: 2.6, minDist: 2.8, hold: true, chain: 'dkSweep', chainP: 0.4 });
-  MUT_ATTACKS.dkLeap  = P('sAtk', 0.777, { natHold: 0.28, reach: 6.0, lunge: 4.0, minDist: 4.0, hold: true, dmg: 2, guardK: 1.9 });
+  /* (the leap's ONE blow is the chop coming down as he lands, 0.488 of the clip — measured, `dkLeapMeasure`: the tip
+   * through head and chest height 2.7 m in front of him just before his feet touch. 0.777 was the sword lifted out of
+   * the crouch after it, and it was that — not the chop — that hit you: the owner, "only the swing down on the dark
+   * knights jump hit should hit not his sword after") */
+  MUT_ATTACKS.dkLeap  = P('sAtk', 0.488, { natHold: 0.28, reach: 6.0, lunge: 4.0, minDist: 4.0, hold: true, dmg: 2, guardK: 1.9 });
   MUT_ATTACKS.dkKick  = P('sKick', 0.35, { natHold: 0.12, fluid: false, reach: 2.2, stop: 1.4, limbs: [2], chain: 'dkCut', chainP: 0.6, guardK: 1.0 });
   /* WHERE HE STANDS FOR EACH (2026-10-19, round 2; the owner: "make the hits of the dark knight connect to the player
    * more and are visible … some just completely dont align"). Measured (`tools/probes.js dkSwings`): every blow came
@@ -84319,9 +84427,20 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
    * With the aim on a point in front of your face (`aimFront`) and a blow counted only in the picture (`hitOnScreen`),
    * each swing was thrown at stand-offs 1.5 to 3.3 (`dkStopSweep`) and its stop is the one that lands its blade nearest
    * the middle of the picture, a little low: a long blade wants room. */
-  const STOP = { dkS0: 2.8, dkS1: 3.0, dkS2: 2.4, dkS3: 3.0, dkS5: 2.7, dkS6: 3.0, dkS7: 3.0, dkCut: 2.2, dkSweep: 2.7, dkSpin: 3.0, dkRise: 2.7, dkTurn: 2.4, dkLunge: 2.7, dkLeap: 3.0, dkKick: 2.0 };
+  /* (round 3: swept again with the arm held to its clip, `aimK` 0.3, and the tight blow test — `dkAimSweepK`, stand-offs
+   * 1.4-3.2: each one's stand-off is where its blade lands nearest the middle of the picture, the neighbours landing too) */
+  const STOP = { dkS0: 2.5, dkS1: 2.5, dkS2: 2.3, dkS3: 2.9, dkS5: 2.4, dkS6: 2.5, dkS7: 2.8, dkCut: 1.8, dkSweep: 2.6, dkSpin: 2.7, dkRise: 2.6, dkTurn: 3.0, dkLunge: 2.4, dkLeap: 2.6, dkKick: 1.5 };
   for (const k in STOP) { const A = MUT_ATTACKS[k]; A.stop = STOP[k]; A.reach = Math.max(A.reach, STOP[k] + 0.8); }
   for (const k in MUT_ATTACKS) if (/^dk[A-Z]/.test(k)) { MUT_ATTACKS[k].w = 0.1; MUT_KINDS.darkKnight.alias[k] = MUT_ATTACKS[k].clip; }
+  /* THE PACK'S STEPPING BLOWS GO WHERE THEIR OWN FEET TAKE THEM (2026-10-19, the owner: "the dark knight jump move he
+   * slides towards you then hits you its really bad and random make his jump move hit right where he lands and when he
+   * actually swing"). Measured (`dkLeapMeasure`): the leap jumped straight up in place and then SKATED the four metres
+   * on its knees through the crouch after it landed; the clip's own root carries him 3.6 m forward through the jump
+   * (`dkTravel`). These four take no lunge: `dkRootMotion` walks the clip's recorded step up to the last contact (`rm`),
+   * the forward part stretched or shrunk so the blow lands at his stand-off, and nothing after it (their recoveries
+   * wander off sideways). The leap's held crouch is shortened: the blow comes as he rises out of the landing. */
+  for (const k of ['dkLeap', 'dkLunge', 'dkTurn', 'dkSpin']) { const A = MUT_ATTACKS[k]; A.lunge = 0; A.rm = Math.max(A.hit, ...(A.more || [])); }
+  MUT_ATTACKS.dkLeap.natHold = 0.12;
 }
 /* HE IS AT WORK WHEN YOU COME IN. The paladin came half way through the farmers' fight; the dark knight is already on
  * the street, fifteen metres in, with three of the town's men on him — and he cuts them down. Then he turns on you:
@@ -84417,6 +84536,61 @@ function dkTurn(u, quiet) {
   for (const f of dk.victims) if (f.st.alive && f.st.foe === u) { f.st.foe = null; f.farm.victim = false; }
   if (!quiet) { u.st.cool = Math.max(u.st.cool, 0.9); sfxMutRoar(Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z) * 0.6, u.kind.voice); }
 }
+const _dkRM = { x: 0, y: 0 };
+function dkRootMotion(u) {
+  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
+  const a = A && A.rm ? (u.clips[A.clip] || u.clips[st.swing]) : null;
+  if (!a || u.cur !== a || !(u.clipTravel && u.clipTravel[A.clip])) { u.dkRM = null; return; }
+  const f = Math.min(a.time / a.getClip().duration, A.rm);
+  const T = clipTravelAt(u, A.clip, f); if (!T) return;
+  const tx = T.x, ty = T.y;
+  const R = u.dkRM;
+  if (!R || R.sw !== st.swing || f < R.f - 0.02) { u.dkRM = { sw: st.swing, f, x: tx, y: ty }; return; }
+  const dSide = tx - R.x, dFwd = ty - R.y, yPrev = R.y;
+  R.f = f; R.x = tx; R.y = ty;
+  if (!dSide && !dFwd) return;
+  // the forward step scaled to what is left between him and his stand-off, over what the clip has left to the blow
+  const fc = clipTravelAt(u, A.clip, A.rm).y, left = fc - yPrev;
+  const p = u.g.position, foe = mutFoePos(u), gap = Math.hypot(foe.x - p.x, foe.z - p.z) - (A.stop || 2);
+  const k = left > 0.05 ? THREE.MathUtils.clamp(gap / left, 0, 1.6) : (gap > 0 ? 1 : 0);
+  const sx = dSide * 0.5, fz = dFwd > 0 ? dFwd * k : dFwd;
+  const yaw = u.g.rotation.y, wx = sx * Math.cos(yaw) + fz * Math.sin(yaw), wz = -sx * Math.sin(yaw) + fz * Math.cos(yaw);
+  p.x += wx; p.z += wz;
+  if (u.kind.fortBody && fortWalls) fortClampUnit(u, p);
+}
+/* AND THE TOWN FIGHTS HIM TOO (2026-10-19, the owner: "make the farmers also attack the dark knight"). Once he has
+ * turned on you, up to two of the men out on the street go for him instead (`st.foe`, the creatures' own quarrel: their
+ * chase, aim and blows all ask `mutFoePos`) — the ones nearest him and furthest from you. He answers whoever is hacking
+ * at him while you are more than six metres off and have not cut him for three seconds, and his blow throws that man
+ * down the street (`dkFling`); otherwise he is on you. They can wound him but not finish him: the fight is yours. */
+function dkTownFights(u, dt) {
+  dk.townT = (dk.townT || 0) - dt;
+  if (dk.townT > 0) return;
+  dk.townT = 0.5;
+  const P = u.g.position, me = camera.position;
+  const on = farmUnits.filter((f) => f.st.alive && !f.st.struck && f.st.foe === u);
+  if (on.length < 2) {
+    let best = null, bs = -1e9;
+    for (const f of farmUnits) {
+      if (!f.st.alive || f.st.struck || !f.st.awake || !f.farm || !f.farm.out || f.farm.burst || f.st.foe || f.st.mine || !f.model) continue;
+      const dK = Math.hypot(f.g.position.x - P.x, f.g.position.z - P.z), dMe = Math.hypot(f.g.position.x - me.x, f.g.position.z - me.z);
+      if (dK > 18) continue;
+      const sc = -dK + dMe * 0.5;
+      if (sc > bs) { bs = sc; best = f; }
+    }
+    if (best && Math.random() < 0.6) { best.st.foe = u; best.st.mine = false; best.st.cool = Math.min(best.st.cool || 0, 0.4); }
+  }
+  // whom he answers: not mid-blow
+  if (u.st.atk >= 0) return;
+  // (and not turning back and forth: whoever he picks he stays on for three seconds at least — round 3, "all over the place")
+  const now = performance.now() / 1000;
+  if (dk.pickT && now - dk.pickT < 3 && (!u.st.foe || u.st.foe.st.alive)) return;
+  const meD = Math.hypot(P.x - me.x, P.z - me.z), cutMe = u.st.lastHurt && now - u.st.lastHurt < 4;
+  let pest = null, pd = 4.0;
+  if (meD > 8 && !cutMe) for (const f of on) { const d = Math.hypot(f.g.position.x - P.x, f.g.position.z - P.z); if (d < pd) { pd = d; pest = f; } }
+  if (pest) { if (u.st.foe !== pest) { u.st.foe = pest; u.st.mine = false; dk.pickT = now; } }
+  else if (u.st.foe) { u.st.foe = null; u.st.mine = true; dk.pickT = now; }
+}
 function updateDarkKnight(dt) {
   const u = paladin.unit;
   if (!u || u.retired || u.kind !== MUT_KINDS.darkKnight) return;
@@ -84437,17 +84611,19 @@ function updateDarkKnight(dt) {
     return;
   }
   u.g.visible = true;
+  dkRootMotion(u);
   if (dk.stage === 1) {
     if (u.st.foe === null || !u.st.foe.st.alive) { const nx = dk.victims.find((f) => f.st.alive); if (nx) u.st.foe = nx; }
     const near = Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z) < 5;
     if (u.st.mine || near || !dk.victims.some((f) => f.st.alive)) dkTurn(u, u.st.mine);
   }
+  if (dk.stage === 2) dkTownFights(u, dt);
   if (u.g.visible) knSwordTrail(u, dt);
 }
 /* A CHECKPOINT IN THE STREET: the load's black waits until he is on it with his three (measured, 2026-10-19: put there
  * at 2.6 s, the black lifting at 3.1 — half a second from the owner's "i see them clip in") */
 bootStageHold = () => { const u = paladin.unit; return !!(inFort && u && u.kind === MUT_KINDS.darkKnight && u.st.alive && !u.retired && !paladin.out && !paladinDone()); };
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { dkS: () => ({ dk, u: paladin.unit }), dkStage1, dkTurn, dkSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'darkKnight', y) }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { dkS: () => ({ dk, u: paladin.unit }), dkStage1, dkTurn, dkSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'darkKnight', y), mutSpawnTest: (x, z, kind, y = 0) => makeMutant(x, z, kind, y), mutantsS: () => mutants, magAmmoS: () => ({ ammo: magAmmo, t: magT, busy: magBusy(), sg: sgCh.slice() }), loadGunsTest: () => { magAmmo = 6; sgCh = [1, 1]; } }));
 
 /* =====================================================================
  * THE THRONE ROOM. Uğur Yakışık's "Throne Room" (CC-BY-4.0,
@@ -91943,7 +92119,11 @@ function updateIsle(dt) {
       return (!same(0.25, 0) && !same(-0.25, 0)) || (!same(0, 0.25) && !same(0, -0.25));
     };
     const tower = (x, z) => !throughDoor && Math.hypot(x - ISLE_AXIS.x, z - ISLE_AXIS.z) < ISLE_TOWER_R(feet + 0.5) + 0.3 && feet < ISLE_GALLERY - 2;
-    const nextTo = (st, x, z) => st && (st.f > 1.5 || (x !== undefined && isleBoards(x, z) && st.f > 0.2)) && (st.f > ref - ISLE_FALL || st.f > ref - ISLE_LEAP);   // (a hop down a rock step too; never to the sea's level, a step at a time or in one — but the jetty's boards ARE a floor down there)
+    /* (and in the jetty's box a fall of more than a step lands only on the flight or the boards — 2026-10-19, the owner's
+     * screenshot, feet 9.85 at x −19.53 z −1148.40: off the landing's west side onto a shelf of the cliff four to six
+     * metres down, fifteen spots of it (`isleBoxTraps`) none of which walks back out) */
+    const nextTo = (st, x, z) => st && (st.f > 1.5 || (x !== undefined && isleBoards(x, z) && st.f > 0.2))
+      && (st.f > ref - ISLE_FALL || (st.f > ref - ISLE_LEAP && !(x !== undefined && isleJettyBox(x, z) && isleRampAt(x, z) === null && !isleBoards(x, z))));   // (a hop down a rock step too; never to the sea's level, a step at a time or in one — but the jetty's boards ARE a floor down there)
     /* and no face of rock steeper than ISLE_MAX_SLOPE, up it or down it: the step is 0.62 a 20 cm cell, which
      * by itself lets you walk up seventy degrees. Measured over the 0.8 m ahead (a deck's edge is a step, not
      * a slope); the cliff stair's ramp is the one steep way and is let be. */
