@@ -431,3 +431,89 @@ are gone.
   and the door frame's jambs, whose inner faces were the bulkhead's own at
   z = ±OW (now 1 cm proud). Not real: the stain decals (`polygonOffset` -2/-2,
   no depth write) — a ray scan cannot see the offset, so they always report.
+
+## The sewer through the pipe (2026-10-22)
+
+The owner: a new area through the pipe behind the grate, built from his five Sketchfab downloads (`incoming/sewerrooms`,
+packed by `tools/sewer_pack.py` into `assets/sewer*.glb`) to a pencil sketch. The pipe's crawl (`updatePipeCut`) now
+ends in it (`placeInSewer`, autosave spot `sewIn`); the culvert is still built behind the room but nothing leads to it.
+
+- **A far room, not the drain's frame** (`SEW_X/Y/Z` 24000/700/24000, `inSewer`, room key `sewer`): it is 6.6 m wide
+  and 5.5 m tall, which the sand plane and the cliff would cut. Every hook the dungeon has, it has (`inRoom`,
+  `indoors`, `saveRoom`, `ROOM_BACK`, `clearRoomFlags`, the lighthouse teleport's leave-all, `dropTargets`,
+  `bunkerFloorAt`, the beach clamp's room list, the hall cull's key 11, the step sounds, `clampPlayerToRoom`).
+- **The kit is a catalogue laid out in rows**, not a level: its pieces do not join where they stand. Each one is
+  placed by a MEASURED native anchor (`put(name, anchor, yaw, to)`, a translate-rotate-translate), and everything that
+  does not move is baked and merged one mesh a material. The anchors came off the gltf with every node transform
+  applied: the big tunnel runs along z, walks at -0.70 (|x| 1.16..2.65), channel bed -1.47, walls x +-2.65 to 3.52,
+  vault 4.80; `Serwers_007`'s side door is 1.07 wide x 2.37 on the kit's -x, `Serwers_001`'s branch spans z 17.35..22.65
+  and ends 4.38 from its centre (10.16), `Serwers_011` is the dead end (ledge z -16.09..-14.52 round the channel's end),
+  `SerwersP_003`'s branch is 0.21 off its middle, `SerwersP_012`'s door gap is the same 1.07 as the side door.
+- **The big tunnel has no grate of its own.** The small passage's plain arched grate (`SerwersP_011`) is WARPED onto
+  the rib's opening: both arches are straight walls under a vault, so y is mapped piecewise (wall to wall, vault to
+  vault) and each vertex's x by the ratio of the two half-widths at its height — the bars stay upright and the frame
+  meets the brick all round. A linear scale left 0.44 m gaps at the springing.
+- **The levers are on local -x** (the left walking from the ladder to the generator — his sketch's right side, read
+  facing down the page). Knife switch: the hinge is the middle of the blade's lowest tenth; down is -2.0 rad about x.
+- **Light, measured from the ladder looking down the tunnel** (frame mean of 255, `readPixels` straight after
+  `__bw.frame(1)`): the walls' emissive lift `SEW_LIFT` gives 0.6 at 0x1a1e17 (black), 4.0 at 0x30362c, 6.9 at
+  0x3a4136 (kept), 11 at 0x464e40. The response is steep — an emissive in the 0x1x range is invisible in this game.
+  With the power off the lift drops to `SEW_DARK` (0.45): 7.9 -> 2.8, and the glowstick takes it to ~28 around you.
+- **Fog 0.022, not the dungeon's 0.07**: the generator's lamp is meant to be seen from the ladder 44 m off; its halo
+  is unfogged and 2.6 m across.
+- **The room is lit only by the live box** (`boxLight`, `lpAlways` 14, plus the sparks' flashes): without it the box
+  and its wires could not be seen through the grate, which is the whole warning.
+- **Saves**: `flags.sewer` = levers bitmask, generator off, gate, chest, loot, plank (2 = laid, at `pz`), spare
+  glowstick. A plank carried up the ladder goes back by the wall (`sewerLeave`).
+- **Harness traps met here**: `beginGame()` returns early until the boot's warms are done (`__bw.bootLeft().nWarm`
+  0), and until `introStarted` the title camera (`titleCam`) rewrites the camera every frame — a body put in the room
+  is snapped by the room's clamp to the nearest corner of its walks (it read (-2.25, -43.92) every time). Call
+  `beginGame` until `#overlay` is `hidden`, then `__bw.introDone = true; __bw.started = true`. A tab that is not
+  fronted (`tabs_select`) boots at a crawl. Replacing `requestAnimationFrame` to freeze the loop eats its next
+  request, and the loop does not come back when you put it back: drive frames with `__bw.frame(1)` after that.
+  `__bw.sewS()`, `sewG()`, `sewSet(lx, lz, yaw, pitch)`, `sewRestore({...})`, `sewPullLever(i)`, `sewPressButton()`.
+- **Never put Python with backticks in a PowerShell `@"..."@`**: the backtick is PowerShell's escape, and these notes
+  came out once with tabs, carriage returns and bells where the code names were. Write the script to a file.
+
+**THE SECOND PASS (the owner, 2026-10-22: "the levers ... arent even attached to the wall", darker, "ray tracing type
+effects with fog ... amnesia the bunker", "no collision errors or invisible walls", and the screwdriver onto the crate by
+the drain's grate).**
+- **THE BIG TUNNEL IS EGG-SHAPED.** `Serwers_009`'s section: from the walk's edge (|x| 2.65, y -0.70) the wall leans OUT
+  to 3.30 at 0.66, stands straight to 2.16, comes back to 2.65 at 3.52 and over the vault (1.47 at 4.46, 0 at 4.80).
+  The first pass read "walls at +-2.65" off the floor's edge and hung the levers, the cable and the leaning plank
+  there — 0.6 m out in the air above the knee. Everything on a wall goes on the straight (`SEW.WALL_HI` 3.30): the
+  panels at walk + 1.6, the cable at y 1.9 and over the vault along the section three centimetres in (`ARCH`), the
+  plank leaning from the walk's foot (x -2.56) to the straight (top at 2.11). The walk clamp's 2.65 was right.
+- **Bodies are round.** Props were pushed out to the nearest edge of a box grown by the radius, so a body meeting a
+  box's corner was thrown back the way it came: walking south along the wall stopped dead at the ladder. Pushed out
+  along the line from the box's nearest point, it slides round (`sewClamp`). And no box for what is on the wall above
+  the walk: the first pass's lever boxes were four invisible walls; the leaning plank's box is its foot, not its lean.
+- **Narrow ways catch you.** The plank allowed +-0.13 off its line and the side door +-0.135: arriving a hand off either
+  stopped you at the lip. Heading onto the plank or into the door's passage the body is drawn to the line
+  (`sewClamp`'s funnel, only while moving that way); the plank's rect runs 0.35 onto each walk so a slanted step off it
+  lands; the far walk's inside corner into the branch has a fillet rect.
+- **Walked, not reasoned** (`tools/sewer.js`: `__sw.route` turns toward each point and holds W through real `keydown`s,
+  reporting a leg that stops making headway). Final run: every leg on both walks hugging the wall both ways past the
+  ladder and the plank's foot, the dead end's ledge, onto and off the plank at slants both ways, into the branch's
+  mouth and out round its corner, through the door and to all four corners of the room with the power off — none
+  stuck. A crate that stood between the door and the chest is stacked on the other.
+- **Darker, and the light in the air**: `SEW_LIFT` 0x2c3229 (mean 4.7 from the ladder, was 6.9), 0.3 of it once the power
+  is gone; the fog chunk's ground mist laid on the water in here (`SEW_MIST`, `FOG_GROUND` y/z/w in `animateFrame`, and
+  `FOG_TINT.w` 0 after `drainAir` — the murk's own grey, no moon). It is NOT lit by the lamps (the fog chunk has no
+  lights) and at density 1.25 it covered a lamp's pool on the floor by 80 %: 0.6. A cone of lit air under every burning
+  lamp (the drain's beam shader): measured, K 0.07 and 0.24 vanish under ACES in this dark, 0.8 reads as a soft wedge
+  (`SEW_BEAM_K` 0.75). 1,100 motes lit by the eight lights that matter, the held glowstick among them.
+- **The Bunker's sound**: a sub drone (34 / 35.3 Hz triangles under a 95 Hz lowpass), pipes groaning (`sewGroan`, a
+  falling saw through a sweeping resonance, 18-44 s), something heavy far off (`sewThuds`, one to three dull impacts
+  with the tunnel's echo, 38-83 s), rats (`sewRats`, squeaks and the patter passing across, 15-40 s), and a burning lamp
+  stuttering with a crack now and then (7-21 s). All through `sfxOut`, so the drain's reverb (`pipeVerbGain`) has them.
+- **The screwdriver** is on the drain room's crate table (top 0.674 in the world, a ray down says; the three candles
+  stand in the corner toward the grate, so it lies along the far edge). Its pickup id is a PLACE, so a save that took it
+  from the fisherman's table restores it in the pack and the restore stows the one on the crate (`stowScrewdriver`).
+- **Harness traps, again**: the boot's warms run one a frame and the pane gives few frames — drive `__bw.frame(1)`
+  until `bootLeft().nWarm` is 0 and `beginGame` takes (`__sw.boot`). The overlay's fade runs for seconds in the pane;
+  a load after a death waits on `#deathcard`'s Restart. A pane resized after the load shows the top-left of an old-size
+  render (the view's centre lands bottom-right) — reload at the pane's size. Screenshots need the page's own rAF: never
+  stub it (the tool times out); and while the game's loop also runs, a still can be one of ITS frames — measure with
+  `readPixels` straight after `frame(1)` (`__sw.lum`). Restoring the sewer's state while standing in the room shuts the
+  gate, the clamp puts you in the live passage, and you die — `sewRestore` from the walk.

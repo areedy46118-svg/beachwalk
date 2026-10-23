@@ -503,8 +503,9 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   Once you have asked all of it a new question appears, starred: "Do you need
   help?" — "I just miss my old crew." His plaque is held to the wall by four
   screws, one in each corner; looked at with nothing to turn them they say
-  **I have nothing for this**. The **screwdriver** lies on the Very Old
-  Fisherman's table in the dock house. With it the screws back out and drop,
+  **I have nothing for this**. The **screwdriver** lies on the crate table in
+  the drainage tunnel home, a stride from the grate in its back wall (it was
+  on the Very Old Fisherman's table until 2026-10-22). With it the screws back out and drop,
   and with all four out you can take Billy off the wall and carry him.
 - **He glimmers.** Once she is revealed (the sting, the view widening) you
   can catch a little star twinkling on Billy through her wheelhouse door — it
@@ -537,15 +538,33 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   held by four screws in its corners (**I have nothing for this** without the
   screwdriver). Take them out and the grate comes off and leans against the
   wall, and the hole says **Crawl into the pipe**.
-- **The overflow culvert** — what the pipe behind the grate runs to: a
-  Victorian storm-overflow culvert under the cliff, behind the tunnel home.
-  The crawl is done behind black, and you come out on its wide walk. A brick
-  barrel vault over a channel of standing water, a raised walk either side and
-  a plank bridge across, two gratings in the crown letting the moon down in
-  thin shafts, a soft crate and some bottles, a chain off a ring in the vault,
-  chalk by the pipe, a heap of small picked bones at the dark end, and a
-  rusted-shut sluice gate (**It won't turn**) at the far end for whatever
-  comes later. **Crawl back through the pipe** takes you home.
+- **The sewer under the drain** — where the pipe behind the grate comes out
+  now (the crawl, behind black, and you are at the foot of a ladder). A big
+  red-brick sewer built from Elbolillo's PSX kit to the owner's sketch: a
+  channel of black water between two walks, grated off past the ladder and
+  down a branch, ending in a dead end with a generator on its ledge under a
+  dim lamp you can see from the ladder. Across the channel, through a door's
+  short passage and a grate door, a small storeroom is flooded to your feet
+  and **live** — an electric box on its far wall hangs its wires into the
+  water, it crackles blue, and stepping in kills you (**Locked. The lock is
+  humming.**). A cable runs out of the box, over the vault and along the
+  left wall to four knife-switch levers, each with an old hanging lamp over
+  it and a red pilot blinking so you can find them in the dark. **Pull the
+  lever** lights its lamp; with all four down, **Turn off the generator** on
+  its button: the hum winds down, the lamps die one by one back toward you,
+  the water goes dead and the gate's lock lets go. Walk back by your
+  glowstick (a spare one lies by the generator), **Pick up the plank** by the
+  ladder and **Lay the plank across** the channel, **Open the gate**, and the
+  chest in the corner has five jars of blood. **Climb the ladder** to go
+  back. It is dark: a murk lies on the water, the lamps stand cones of lit
+  air with dust hanging in them and now and then stutter, a sub drone sits
+  under the hum, pipes groan, something heavy lands somewhere far off, and
+  rats run. Saved on the way in; the levers, the generator, the gate, the chest
+  and where you laid the plank are kept.
+- **The overflow culvert** — the pipe's old destination, still built behind
+  the tunnel home but no longer reached: a brick barrel vault over standing
+  water, a plank bridge, moonlight through gratings in the crown, and a
+  rusted-shut sluice gate (**It won't turn**).
 - **The enemy crab** — a bigger animal on a proper rig: eight two-bone legs
   walking an alternating-tripod gait, articulated claws that weave as it
   closes, gape when it rears and snap shut on the strike, eye stalks that
@@ -1537,7 +1556,7 @@ anything sold. `assets/head.glb` is the scan cut to 20k triangles by
 `tools/head_pack.py`.
 
 
-**Screwdriver** — the one on the Very Old Fisherman's table. "CC0 -
+**Screwdriver** — the one on the crate table by the drain's grate. "CC0 -
 Screwdriver" (Sketchfab), CC0 — public domain, no attribution required; the
 owner supplied it as `~/Desktop/Shipwreck/Screwdriver/`. `assets/screwdriver.glb`
 is the 1k version laid along +X at 21 cm with its maps cut to 512 JPEG by
@@ -1658,3 +1677,30 @@ no environment map; and its occlusion is multiplied into its albedo, because
 one directional light that is somewhere else entirely never shades a crease.
 Its file ships six locomotion clips and NOT ONE SWING — the fight is authored
 in code on the stance its own idle carries.
+
+This work is based on ["Sewers - PSX"](https://sketchfab.com/3d-models/sewers-psx-e7600c588013491296a9959549fc4fce)
+by [Elbolillo](https://sketchfab.com/Elbolilloduro) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the sewer under the
+drain (`assets/sewer.glb`, `tools/sewer_pack.py`: the dozen kit pieces it is built
+from, colour maps only, metalness off). The big tunnel's grates are the kit's own
+small arched grate drawn out to the big tunnel's arch.
+
+This work is based on ["Simple Generator(Fixed)"](https://sketchfab.com/3d-models/simple-generatorfixed-eda91f75faae470e8d6461e0e6fc86fa)
+by [Blender3D](https://sketchfab.com/Blender3D) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the generator at the
+sewer's dead end (`assets/sewer-generator.glb`, its 4K colour map cut to 512).
+
+This work is based on ["Old lever"](https://sketchfab.com/3d-models/old-lever-f1075e12ba4a49368e0f29c62881ac73)
+by [Gunnar Correa](https://sketchfab.com/gunnarcorrea) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the four levers on the
+sewer's wall (`assets/sewer-lever.glb`).
+
+This work is based on ["Hanging Light"](https://sketchfab.com/3d-models/hanging-light-d7ebaf7437274376ad2609a6323ad534)
+by [s4306270](https://sketchfab.com/s4306270) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the lamps over the
+levers and the generator (`assets/sewer-lamp.glb`).
+
+"Old Electric Box" (https://sketchfab.com/3d-models/old-electric-box-2a358352430d491ab2ecf05e64391cb1)
+by [DarwinDOS](https://sketchfab.com/darwin.art), under the
+[Sketchfab Standard licence](https://sketchfab.com/licenses) — the electric box in
+the sewer's flooded storeroom (`assets/sewer-box.glb`).

@@ -20,7 +20,7 @@ game belongs in this file, and this file should stay under ~25 KB.
 | the dock, the fisherman | `docs/notes/dock.md` |
 | the pavilion (mushroom house), the dungeon behind its yard, Henry | `docs/notes/pavilion.md` |
 | the lighthouse, the headland | `docs/notes/lighthouse.md` |
-| the drainage tunnel home, the face in the pipe | `docs/notes/drain.md` |
+| the drainage tunnel home, the face in the pipe, the sewer through the pipe (levers, generator, flooded storeroom) | `docs/notes/drain.md` |
 | the bunker, the Dealer | `docs/notes/bunker.md` |
 | the undercroft: tunnel, church, knight, idol | `docs/notes/undercroft.md` |
 | the catacombs, the hunter, Ben Ali | `docs/notes/catacombs.md` |

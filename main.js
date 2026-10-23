@@ -227,7 +227,7 @@ const ASSET_REACH = {
   'assets/peg-leg.glb': 152,          // and what is inside it
   'assets/gull.glb': 152,             // the three that wheel over her
   'assets/dock.glb': 215,
-  'assets/screwdriver.glb': 215,      // on the fisherman's table in the dock house
+  'assets/screwdriver.glb': 16,       // on the crate by the grate in the drain's room, behind the spawn (moved off the fisherman's table, 2026-10-22)
   'assets/keep.glb': 216,              // and where its boat goes: fetched on the walk up to the pier
   'assets/tavern.glb': 216,            // and the hall behind its door
   'assets/wong.glb': 216,              // the barman
@@ -724,6 +724,7 @@ function updateWhereAmI() {
   else if (inC13) { room = 'castle13'; ox = C13_X; oy = C13_Y; oz = C13_Z; }
   else if (inThrone) { room = 'throne'; ox = THR_X; oy = THR_Y; oz = THR_Z; group = thrWorld; }
   else if (inDun) { room = 'dungeon'; ox = DUN_X; oy = DUN_Y; oz = DUN_Z; group = dunWorld; }
+  else if (inSewer) { room = 'sewer'; ox = SEW_X; oy = SEW_Y; oz = SEW_Z; group = sewWorld; }
   else if (inFort || fortMaskAt(p.x, p.z + 3) || fortMaskAt(p.x, p.z - 3)) { room = inFort ? 'castle' : 'castle (outside)'; ox = FORT_X; oy = FORT_Y; oz = FORT_Z; }   // its own frame; no aim (a raycast is 300k triangles)
   const feet = camBaseY - playerEye();
   let aim = '';
@@ -6695,7 +6696,7 @@ function cullWorldInHall() {
    * door opens straight into the tavern, six kilometres away, and nothing
    * passes a beach frame between them, so whatever of the tavern's the keep
    * had switched off (its lamps, its cast) stayed off for the whole visit. */
-  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : inDun ? 9 : inDeep ? 10 : 0;
+  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : inDun ? 9 : inDeep ? 10 : inSewer ? 11 : 0;
   if (hallHid && hk !== hallKey) { for (const o of hallHid) o.visible = true; hallHid = null; }
   hallKey = hk;
   if (hk) {
@@ -9752,6 +9753,7 @@ function devLeaveRooms() {
   if (inC13) { inC13 = false; }
   if (inThrone) { inThrone = false; if (thrWorld) thrWorld.visible = false; throneLeave(); }
   if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
+  if (inSewer) placeOutOfSewer();
   if (inDeep) placeOutOfDeep();
 }
 /* AND THE LIGHTHOUSE (the owner: "a teleport to lighthouse in the settings
@@ -11109,7 +11111,7 @@ function groundUnder(x, z, atY) {
  * So the ray is cast at whatever room you are standing in, the floor comes
  * from `bunkerFloorAt` (which every room answers), and the beach's two walls
  * are only applied when you are on the beach. */
-const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone || inDun || inDeep;
+const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone || inDun || inDeep || inSewer;
 function dropTargets() {
   if (inUndercroft) return [undercroft];
   if (inBunker) return bunkers.map((b) => b.group).filter(Boolean);
@@ -11120,6 +11122,7 @@ function dropTargets() {
   if (inWhale) return whale ? [whale.floor] : [];
   if (inThrone) return thrWorld ? [thrWorld] : [];
   if (inDun) return dunWorld ? [dunWorld] : [];
+  if (inSewer) return sewWorld ? [sewWorld] : [];
   return [sand, dock, DOCK_STEPS, driftGroup, rockGroup];
 }
 function dropPoint() {
@@ -27841,7 +27844,8 @@ let _preHelmBaseY = 0;
  * nothing to turn them they say so — "I have nothing for this" — and with the
  * screwdriver in the pack each one backs out on a click, spins free and
  * drops; when the last one is out, the thing they held comes away. The
- * screwdriver lies on the Very Old Fisherman's table in the dock house: the
+ * screwdriver lies on the crate table in the drain's room, by the grate (it was
+ * on the Very Old Fisherman's table in the dock house until 2026-10-22): the
  * owner's own CC0 model, packed by `tools/screwdriver_pack.py` (21 cm, along
  * +X with the blade at +X). */
 const screwdriverModel = new THREE.Group();
@@ -27858,7 +27862,7 @@ function makeScrewdriverIcon() {
   return c.toDataURL();
 }
 const screwdriverItem = {
-  id: 'screwdriver', name: 'Screwdriver', desc: "A flathead, off the Old Fisherman's table", icon: makeScrewdriverIcon(),
+  id: 'screwdriver', name: 'Screwdriver', desc: "A flathead, off a crate in the drain", icon: makeScrewdriverIcon(),
   use: () => toggleEquip(screwdriverItem),
 };
 holdable(screwdriverItem, screwdriverModel, { scale: 1.7, pos: [0.0, -0.02, 0.0], rot: [0.15, 1.25, 0.35] });
@@ -27873,29 +27877,39 @@ bwGlb('assets/screwdriver.glb', (gltf) => {
   });
   screwdriverModel.add(m);
 }, undefined, () => {});
-/* ON HIS TABLE, the tabletop measured at y 2.59 between x 9.45-10.86 and
- * z -220.72 to -218.73: lying on its side at the landward end, angled, the
- * handle toward the room. */
-let screwdriverTaken = false;
+/* ON THE CRATE BY THE GRATE (2026-10-22, the owner: "put the screwdriver in the sewer room on the table near the
+ * grate"). It lay on the fisherman's table up the beach (y 2.59 at x 10.3, z -220); it is in the drain's room now,
+ * on the crate he eats off a stride from the grate in the back wall — laid along the top's far edge, between the
+ * lantern and the edge, clear of his mug, his bottle and the three candles (which stand in the corner toward the
+ * grate: measured, the first spot put it through one). The crate's top is 0.625 over the floor (0.674 in the world,
+ * a ray down says) and turned 0.14 (`models/drainage-tunnel-home.js`); the tunnel stands unturned at
+ * (DRAIN_X, 0, DRAIN_Z). The model lies along its own x, 0.21 long and 0.022 thick. */
+let screwdriverTaken = false, stowScrewdriver = () => false;
 {
-  screwdriverModel.position.set(10.3, 2.59 + 0.012, -220.0);
-  screwdriverModel.rotation.set(0, 0.55, 0);
+  const cx0 = DN.ROOM_X1 - 1.2, cz0 = DN.ROOM_HZ - 1.0, ry = 0.14, lx = -0.06, lz = 0.235;
+  screwdriverModel.position.set(DRAIN_X + cx0 + lx * Math.cos(ry) + lz * Math.sin(ry), DN.FLOOR_Y + 0.625 + 0.012, DRAIN_Z + cz0 - lx * Math.sin(ry) + lz * Math.cos(ry));
+  screwdriverModel.rotation.set(0, ry + 0.12, 0);
   scene.add(screwdriverModel);
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy'; hit.visible = false; screwdriverModel.add(hit);
   addItemShine(screwdriverModel, { size: 0.8, height: 0.12 });       // (2026-10-17, the owner: "give the screwdriver item glow")
+  // off the crate and into the hand's own frame (the same model is the one you hold)
+  stowScrewdriver = () => {
+    if (screwdriverTaken) return false;
+    screwdriverTaken = true;
+    if (hovered && hovered.root === screwdriverModel) hovered = null;
+    dropShine(screwdriverModel);
+    scene.remove(screwdriverModel);
+    screwdriverModel.remove(hit);
+    dropShine(screwdriverModel);
+    screwdriverModel.position.set(0, 0, 0); screwdriverModel.rotation.set(0, 0, 0);
+    return true;
+  };
   addInteractable(screwdriverModel, 'Take the screwdriver', 'inventory', {
     keepSize: true,
     onActivate: () => {
-      if (screwdriverTaken) return;
-      screwdriverTaken = true;
-      if (hovered && hovered.root === screwdriverModel) hovered = null;
-      dropShine(screwdriverModel);
-      scene.remove(screwdriverModel);
-      screwdriverModel.remove(hit);
-      dropShine(screwdriverModel);
-      screwdriverModel.position.set(0, 0, 0); screwdriverModel.rotation.set(0, 0, 0);
+      if (!stowScrewdriver()) return;
       sfxThud(0.03);
       addToInventory(screwdriverItem);
     },
@@ -28079,8 +28093,9 @@ function updateGrateLift(dt) {
 function startPipe(into) {
   if (pipeBusy || frozen()) return;
   if (into && !grateOff) return;
-  pipeBusy = true; pipeT = 0; pipeDone = false; pipeInto = into;
+  pipeBusy = true; pipeT = 0; pipeDone = false; pipeInto = into; pipeWait = 0;
   blocking = false; hovered = null;
+  if (into) loadSewer();
   sfxPipeCrawl();
 }
 function setDrainSpot(lx, floorY, lz, yaw) {
@@ -28098,11 +28113,18 @@ function updatePipeCut(dt) {
   const black = t < PIPE_OUT ? smooth01(0.02, PIPE_OUT, t) : t < PIPE_OUT + PIPE_HOLD ? 1 : 1 - smooth01(PIPE_OUT + PIPE_HOLD, D, t);
   blackoutEl.style.opacity = black.toFixed(3);
   if (!pipeDone && t >= PIPE_OUT + 0.05) {
+    /* THE PIPE COMES OUT IN THE SEWER now (2026-10-22), at the foot of its ladder; the black holds while it
+     * arrives. Back up the ladder, it is the same crawl the other way, out into the room. (The culvert stays
+     * built behind the room; nothing leads to it now but a load that left you there.) */
+    if (pipeInto && !sewReady && pipeWait < 30) { loadSewer(); pipeWait += dt; pipeT = PIPE_OUT + 0.04; return; }
     pipeDone = true;
     const N = DN.cis;
-    if (pipeInto) { const ci = drainTunnel.userData.culvertIn; setDrainSpot(ci[0], N.WALK, ci[1], -Math.PI / 2); }
-    else setDrainSpot(DN.ROOM_X1 - 1.0, DN.FLOOR_Y, 0.55, Math.PI / 2);
-    insideDrain = true; drainMix = 1;
+    if (pipeInto && sewReady) { placeInSewer(); autosaveNow('sewIn'); }
+    else {
+      if (pipeInto) { const ci = drainTunnel.userData.culvertIn; setDrainSpot(ci[0], N.WALK, ci[1], -Math.PI / 2); }
+      else { if (inSewer) placeOutOfSewer(); setDrainSpot(DN.ROOM_X1 - 1.0, DN.FLOOR_Y, 0.55, Math.PI / 2); }
+      insideDrain = true; drainMix = 1;
+    }
   }
   if (t >= D) { pipeBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
 }
@@ -41504,6 +41526,7 @@ function clampPlayerToRoom() {
   if (c13ClampPlayer()) return;          // the castle's stone answers a knockback in its courtyard
   if (thrClampPlayer()) return;
   if (dunClampPlayer()) return;
+  if (sewClampPlayer()) return;
   /* AND WHATEVER MOVES THE PLAYER LAST MUST RE-RUN THE ROOM'S CLAMP — the
    * bunker's own lesson, and the courtyard never got it. `updateDojo` reverts
    * a step that leaves the walk, and the samurai's KNOCKBACK is applied from
@@ -45171,7 +45194,7 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!deepLock && !(elvReady && elvLand) && !inDeep && !insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inDun && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
+  if (!deepLock && !(elvReady && elvLand) && !inDeep && !insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inDun && !inSewer && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -45220,6 +45243,7 @@ function update(dt, rawDt = dt) {
   updateCatacombs(dt);      // and the catacombs under the sand past the stones
   tickFort(dt);             // and the castle across the beach at the headland's foot: solid outside, walked inside
   updateC13Arch(dt); updateThrone(dt); updateDungeon(dt);   // the arched door in Castle XIII, and the throne room behind it
+  updateSewer(dt);          // and the sewer through the drain's pipe
   updateHenryJetty(dt);     // and Henry, once he is out, at the sea end of the lighthouse's jetty
   updateFishSpot(dt);       // the fisherman's old spot: the tree's sway and the fish out past it
   updateFeathers(dt);       // a gull's, drifting down
@@ -45318,6 +45342,7 @@ function update(dt, rawDt = dt) {
         else if (inTavern) sfxStepTav();
         else if (inWhale) sfxStepWhale();
         else if (inFort || inC13 || inThrone || inDun) sfxStepCat();
+        else if (inSewer) sewStepSnd();
         else sfxStep();
       });
     }
@@ -45445,6 +45470,8 @@ function update(dt, rawDt = dt) {
         sfxStepWhale();                    // flesh gives underfoot; the fluid is a wade
       } else if (inFort || inC13 || inThrone || inDun) {
         sfxStepCat();                      // the courtyard's cobbles: stone, and no print
+      } else if (inSewer) {
+        sewStepSnd();                      // the walks' concrete, the plank's board, or the flood
       } else {
         stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
         sfxStepSand();
@@ -45618,7 +45645,7 @@ const _saveV = new THREE.Vector3();
  * table (`updateRoomRestore`) rather than one special case. */
 const saveRoom = () => (inKeep ? 'keep' : inTavern ? 'tav' : inCat ? 'cat'
   : inDojo ? 'dojo' : inUndercroft ? 'uc' : inBunker ? 'bunker' : inWhale ? 'whale'
-  : inThrone ? 'thr' : inDun ? 'dun' : inC13 ? 'c13' : inFort ? 'fort' : null);
+  : inThrone ? 'thr' : inDun ? 'dun' : inSewer ? 'sewer' : inC13 ? 'c13' : inFort ? 'fort' : null);
 /* AND THE TWO CASTLES ARE PLACES TOO. They stand on the beach, not in a room,
  * so a save inside one used to be a position on the sand — and restored as
  * one, the castle's footprint is a wall from outside, so the body came back
@@ -45773,6 +45800,8 @@ function saveCheckpoint(spot) {
        * it is set in */
       billy: billyState, billyScrews: billyScrewsOut, billyAsk: [...billyAsked],
       grateScrews: grateScrewsOut, grateOff,
+      // the sewer through the pipe: its levers (a bitmask), the generator off, the gate, the chest and its jars, the plank laid where, the spare glowstick
+      sewer: sewSave(),
     },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (err) { return; }
@@ -46004,6 +46033,10 @@ function beginRestoreQuiet() {
   else if (billyState === 2) mountBillyHome();
   grateScrewsOut = f.grateScrews || 0; if (grateSet) screwSync(grateSet);
   if (f.grateOff || grateScrewsOut === 15) liftGrate(true);
+  sewRestore(f.sewer);                             // a generator you shut off stays off; a plank you laid is where you laid it
+  // the screwdriver moved to the drain's crate (2026-10-22) and a pickup's id is its PLACE: a save that took it from the
+  // old table has it in the pack by name, and must not find it lying on the crate as well
+  if ((d.pack || []).includes(screwdriverItem.name)) stowScrewdriver();
   // a save from when his thanks was the Artifact of The Sea: the ring is what he gives now
   // (into the save's pack too: the pack is trimmed to the save's list after the grant, and it was not on it — the ring never came)
   if ((f.seaArt || 0) >= 2 && !inventory.includes(connRingItem) && !rings.includes(connRingItem)) { if (Array.isArray(d.pack) && !d.pack.includes(connRingItem.name)) d.pack.push(connRingItem.name); addToInventory(connRingItem, true); }
@@ -46385,7 +46418,7 @@ function applySavedInventoryInner(d, loud, hand) {
  * of a swell rolling every eleven seconds is a thing you hear, and the owner
  * does. Inside a room the bed is nothing; only the drain's mouth, which is
  * open to the sea, keeps a little of it near the outfall. */
-function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inWhale || inThrone || inDun || inDeep; }
+function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inWhale || inThrone || inDun || inDeep || inSewer; }
 function beachBedK() {
   if (indoors()) return 0;
   return (1 - 0.97 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 - 0.72 * wellAirK);   // in the well's fog the sea goes a long way off
@@ -47178,8 +47211,9 @@ function animateFrame() {
   updateUmbraFire();
   FOG_MOON.w = inRoom() ? 0 : 1;
   FOG_KEEP.w = inKeep ? 1 : isleMagicK * ISLE_MIST.on;   // and the lighthouse's sea mist (`ISLE_MIST`)
-  FOG_GROUND.w = inDojo ? 0.50 : inRoom() ? 0 : GROUND_MIST * (1 + 2.4 * wsM) * (1 + 3.2 * wellMistK); FOG_GROUND.x = performance.now() * 0.00055;
-  FOG_GROUND.y = inDojo ? DOJO_Y + (dojoArenaY || 0) - 0.05 : -0.10;     // in the dojo the mist lies on the courtyard's own stones
+  FOG_GROUND.w = inDojo ? 0.50 : inSewer ? SEW_MIST.d : inRoom() ? 0 : GROUND_MIST * (1 + 2.4 * wsM) * (1 + 3.2 * wellMistK); FOG_GROUND.x = performance.now() * 0.00055;
+  FOG_GROUND.y = inDojo ? DOJO_Y + (dojoArenaY || 0) - 0.05 : inSewer ? SEW_Y + SEW.WATER - 0.05 : -0.10;     // in the dojo the mist lies on the courtyard's own stones; in the sewer on its water
+  FOG_GROUND.z = inSewer ? SEW_MIST.h : 0.55;
   skyUniforms.uMoonDir.value = inDojo ? DOJO_MOON : MOON_DIR;
   updateDojoSky();   // the dojo has a night of its own now; the beach's sky is hidden while it is up
   if (inKeep) { FOG_KEEP2.x = performance.now() * 0.001; FOG_KEEP2.y = KEEP_Y + KEEP_SEA; FOG_KEEP2.z = 2.9; FOG_KEEP2.w = 0.13; FOG_KEEP.x = KEEP_MOON.x; FOG_KEEP.y = KEEP_MOON.y; FOG_KEEP.z = KEEP_MOON.z; }
@@ -47194,6 +47228,7 @@ function animateFrame() {
   updateMood();
   updateSquall();
   drainAir();                            // and down the drain the air is the sewer's, over all of it
+  if (inSewer) FOG_TINT.w = 0;           // and in the sewer under it no moon lights the mist: it is the murk's own grey
   updateKeepLife();
   skyUniforms.uTime.value = performance.now() * 0.001;          // the beach's moon lights the beach's air, and no room's
   /* ONE WARM PER FRAME, AND EACH ONE NAMED. They are the most expensive
@@ -47310,7 +47345,7 @@ function animateFrame() {
   if (hRoll) camera.rotateZ(-hRoll);
   renderer.autoClear = false;
   // a film has nobody's hands in it: the whale's farewell is shown without what you are holding
-  if ((viewmodel.visible || elvCarrying) && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t >= CRAB_T.cut)) {   // (and the puppet in your arms, which is not a held item)
+  if ((viewmodel.visible || elvCarrying || sewPlank === 1) && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t >= CRAB_T.cut)) {   // (and the puppet in your arms, which is not a held item)
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);
   }
@@ -49658,7 +49693,7 @@ function updateSpaceAudio(dt) {
   if (!audioCtx || !pipeVerbGain) return;
   const t = audioCtx.currentTime;
   shipMix += (shipEnclosure() - shipMix) * Math.min(1, dt * 1.6);
-  const pipeWant = drainMix * 0.62, shipWant = shipMix * 0.55;
+  const pipeWant = Math.max(drainMix * 0.62, inSewer ? 0.7 : 0), shipWant = shipMix * 0.55;   // (the sewer under the drain rings the same)
   if (Math.abs(pipeVerbGain.gain.value - pipeWant) > 0.005) pipeVerbGain.gain.setTargetAtTime(pipeWant, t, 0.35);
   if (Math.abs(shipVerbGain.gain.value - shipWant) > 0.005) shipVerbGain.gain.setTargetAtTime(shipWant, t, 0.35);
   // the wreck's own voice: a creak now and then, a groan through her more rarely
@@ -74264,6 +74299,7 @@ function clearRoomFlags() {
   if (inWhale) { inWhale = false; if (whale) whale.G.visible = false; whaleLeave(); }
   if (inThrone) { inThrone = false; if (thrWorld) thrWorld.visible = false; throneLeave(); }
   if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
+  if (inSewer) placeOutOfSewer();
   if (inDeep) placeOutOfDeep();
 }
 const ROOM_BACK = {
@@ -74336,6 +74372,9 @@ const ROOM_BACK = {
   dun:  { grp: () => dunWorld, at: () => [DUN_X, DUN_Z], ready: () => dunReady, load: () => loadDungeon(),
           place: () => placeInDungeon(), seat: (p) => { dunLastFloor = p[1] - playerEye(); dunLastSpot.x = p[0]; dunLastSpot.z = p[2]; },
           spots: {} },
+  // the sewer through the drain's pipe: at the foot of its ladder
+  sewer: { grp: () => sewWorld, at: () => [SEW_X, SEW_Z], ready: () => sewReady, load: () => loadSewer(),
+           place: () => placeInSewer(), seat: () => {}, spots: { sewIn: () => {} } },
 };
 /* AND A RESTORE IS WATCHED FOR THREE SECONDS AFTER IT LANDS. Every way this
  * has failed the owner — a stale room flag, a room that was not really
@@ -85191,6 +85230,1054 @@ function thrClampPlayer() {
   if (!keepFloorAt(p.x, p.z, feet, FORT_STEP, THR_SITE)) { p.x = thrLastSpot.x; p.z = thrLastSpot.z; }
   return true;
 }
+
+/* =====================================================================
+ * THE SEWER UNDER THE DRAIN (2026-10-22, the owner: "a new area that you can get to through the sewer pipe in the
+ * sewer tunnel that you open by unscrewing the grate … you will appear in a large sewage tunnel. Use the assets i am
+ * providing and connect the modular sewers to line up with the sketch i have drawn"). The pipe behind the drain's
+ * grate is crawled (`startPipe`, the same cut) and you come down a ladder into it.
+ *
+ * Elbolillo's "Sewers - PSX" (CC-BY-4.0; `assets/sewer.glb`, `tools/sewer_pack.py`, the dozen pieces this uses out
+ * of a catalogue of ~170) laid out to his sketch, north to south down the big red-brick tunnel:
+ *
+ *     grate ── the ladder (you come down here) ── the side door across the channel ── lever 1 ── lever 2 ──
+ *     the branch (grated, across from lever 3) ── lever 4 ── the dead end, the generator on its ledge
+ *
+ * The levers are on the LEFT wall walking from the ladder to the generator (local -x); the storage room is across
+ * the channel (+x), through the door's short passage, behind the small passage's own grate and the grate door in it
+ * (`SerwersP_012` / `_013`). Its floor is flooded and LIVE while the generator runs: the electric box (DarwinDOS's
+ * "Old Electric Box") hangs its wires into the water, and stepping into it kills you. A cable runs out of the box,
+ * over the tunnel's vault and along the left wall to each lever (Gunnar Correa's "Old lever"); each lever lights the
+ * old hanging lamp over it (s4306270's "Hanging Light"), and a red pilot on each blinks so the line can be found in
+ * the dark. With all four down the button on the generator (Blender3D's "Simple Generator(Fixed)") shuts it off:
+ * every light in the place dies, the water goes dead and the gate's lock lets go, and you walk back by your own
+ * glowstick (there is one on the ledge by the generator for whoever has none). A plank against the wall by the
+ * ladder is the only way over the channel. The chest in the room has the loot.
+ *
+ * A far room like the others (24 km out). Its frame: the tunnel runs along z, the ladder at z = 0, the generator
+ * at -43.5; the kit's own heights (the walks at -0.70, the channel's bed at -1.47).
+ * ===================================================================== */
+const SEW_X = 24000, SEW_Y = 700, SEW_Z = 24000;
+const SEW = {
+  WALK: -0.70, WATER: -1.10, FLOOD: -0.60,
+  WALL: 2.65, LIP: 1.16,                        // a walk runs from the channel's lip to the wall, either side
+  /* AND THE WALL IS NOT UPRIGHT. The kit's tunnel is egg-shaped: from the walk's edge (2.65) it leans OUT to 3.30
+   * by 1.36 m up, stands straight to 2.86 m, and comes back in to the vault (measured off `Serwers_009`'s own
+   * section). The first pass hung the levers, the cable and the plank on 2.65 — 0.6 m out in the air above the
+   * knee (the owner: "they arent even attached to the wall"). Anything on the wall goes on the straight part. */
+  WALL_HI: 3.30, LEVER_Y: 1.6, CABLE_Y: 1.9,
+  NORTH: 3.39,                                  // the grate across the tunnel, just past the ladder
+  END: -44.32, CH_END: -42.75,                  // the dead end's wall, and where the channel stops short of it
+  DOOR_Z: -6.78, STUB1: 4.35, DOOR_HW: 0.535,   // the side door across from the ladder, and its short passage
+  GATE_X: 4.55,                                 // the room's grate, with the door in it
+  ROOM_X0: 4.99, ROOM_X1: 7.48, ROOM_Z0: -8.66, ROOM_Z1: -0.29,
+  T_Z: -28.12, BR_HW: 2.65, BR_END: 4.38,       // the branch on the room's side, grated where its stub ends
+  LEVERS: [-12.4, -19.6, -28.12, -35.9],
+  GEN_Z: -43.55, GEN_HX: 0.933,
+  SPAWN: { x: -1.85, z: 0.15, yaw: -0.78 },     // at the ladder's foot, looking across the channel at the door
+  PLANK_Z: -2.1,
+  LAMP_X: -1.85, LAMP_CEIL: 4.14,               // the lamps hang over the walk, from the vault
+};
+const SEW_FOG = { color: new THREE.Color(0x050706), density: 0.022 };   // thin enough that the generator's lamp is seen from the ladder
+/* the walls' own breath of light: a shape in the dark, not a room. MEASURED, not guessed: from the ladder looking
+ * down the tunnel the frame's mean is 0.6 / 255 at 0x1a1e17 (black), 4.0 at 0x30362c, 6.9 at 0x3a4136, 11 at
+ * 0x464e40. The first pass kept 0x3a4136; the owner's word on it was "make it darker". */
+const SEW_LIFT = 0x2c3229;
+// the murk lying on the water and the walks: the fog chunk's own ground-mist integral (`FOG_GROUND`), scale height and density
+// (it is not lit by the lamps — the fog chunk has no lights — so it is kept thin enough that a lamp's pool on the floor shows through it)
+const SEW_MIST = { h: 0.65, d: 0.6 };
+const SEW_LEVER_ARC = 2.0;                        // radians the knife swings down through
+let sewWorld = null, sewReady = false, sewLoading = false, inSewer = false;
+let sewLevers = 0, sewGenOn = true, sewGateOpen = false, sewChestOpen = false, sewLootTaken = false, sewGlowTaken = false;
+let sewPlank = 0, sewPlankZ = SEW.DOOR_Z;           // 0 against the wall by the ladder, 1 carried, 2 laid across at sewPlankZ
+let sewGenOffT = -1, sewZapT = 0, sewGateSwing = 0, sewChestSwing = 0, _sewFogSaved = null, pipeWait = 0;
+const sewP = { levers: [], lamps: [], sparks: [], props: [], lift: [] };
+const SEW_DARK = 0.3;                             // what is left of the walls' own light once the power is gone
+const sewLeverDown = (i) => !!((sewLevers >> i) & 1);
+const sewAllDown = () => (sewLevers & 15) === 15;
+function sewProxy(w, h, d) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  m.name = 'hitProxy'; m.visible = false;
+  return m;
+}
+function sewGlow(col, size) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: col, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0, fog: false }));
+  s.scale.setScalar(size);
+  return s;
+}
+function loadSewer() {
+  if (sewWorld || sewLoading) return;
+  sewLoading = true;
+  const want = { kit: 'assets/sewer.glb', gen: 'assets/sewer-generator.glb', lever: 'assets/sewer-lever.glb', lamp: 'assets/sewer-lamp.glb', box: 'assets/sewer-box.glb' };
+  const got = {};
+  for (const [k, url] of Object.entries(want)) {
+    bwGlb(url, (g) => {
+      got[k] = g.scene;
+      if (Object.keys(got).length === 5 && !sewWorld) { try { buildSewer(got); } catch (e) { console.error('sewer: build failed', e); } }
+    }, () => { sewLoading = false; console.warn('sewer: could not load', url); });
+  }
+}
+function buildSewer(got) {
+  const S = SEW, W = sewWorld = new THREE.Group();
+  W.name = 'sewer'; W.position.set(SEW_X, SEW_Y, SEW_Z); W.visible = false;
+  scene.add(W);
+  const kit = got.kit; kit.updateMatrixWorld(true);
+  const byName = {}; kit.traverse((o) => { if (o.name && !byName[o.name]) byName[o.name] = o; });
+  /* THE KIT'S OWN MATERIALS, made this game's: a rough dark dielectric (METALNESS IS A TRAP), nearest-filtered,
+   * flat-shaded, and a breath of their own map as light so a wall no lamp reaches is a wall and not a hole */
+  const kmats = new Map();
+  const kmat = (m) => {
+    let c = kmats.get(m); if (c) return c;
+    c = m.clone(); c.metalness = 0; c.roughness = 0.9; c.flatShading = true;
+    if (c.map) { retroTex(c.map); c.emissive = new THREE.Color(SEW_LIFT); c.emissiveMap = c.map; c.emissiveIntensity = 1; sewP.lift.push(c); }
+    c.needsUpdate = true; kmats.set(m, c);
+    return c;
+  };
+  /* EVERYTHING THAT DOES NOT MOVE IS ONE MESH A MATERIAL: the pieces are baked where they stand and merged */
+  const buckets = new Map();
+  const prep = (g) => {
+    g = g.index ? g.toNonIndexed() : g.clone();
+    for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k);
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    if (!g.attributes.normal) g.computeVertexNormals();
+    return g;
+  };
+  const bake = (g, mat) => { let b = buckets.get(mat); if (!b) buckets.set(mat, (b = [])); b.push(prep(g)); };
+  const at = (anchor, yaw, to) => new THREE.Matrix4().makeTranslation(to[0], to[1], to[2])
+    .multiply(new THREE.Matrix4().makeRotationY(yaw)).multiply(new THREE.Matrix4().makeTranslation(-anchor[0], -anchor[1], -anchor[2]));
+  const meshesOf = (name) => {
+    const n = byName[name], out = [];
+    if (!n) { console.warn('sewer: no kit piece', name); return out; }
+    n.traverse((o) => { if (o.isMesh) out.push(o); });
+    return out;
+  };
+  const put = (name, anchor, yaw, to) => {
+    const M = at(anchor, yaw, to);
+    for (const o of meshesOf(name)) { const g = prep(o.geometry); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(M, o.matrixWorld)); bake(g, kmat(o.material)); }
+  };
+  // a rubbish piece stood on the floor where it is put (its own box's foot is the anchor)
+  const putOn = (name, x, y, z, yaw, solid) => {
+    const n = byName[name]; if (!n) return;
+    const b = new THREE.Box3().setFromObject(n), c = b.getCenter(new THREE.Vector3());
+    put(name, [c.x, b.min.y, c.z], yaw, [x, y, z]);
+    if (solid) { const hx = (b.max.x - b.min.x) / 2, hz = (b.max.z - b.min.z) / 2, r = Math.max(hx, hz); sewP.props.push([x - r, z - r, x + r, z + r]); }
+  };
+
+  /* ---- THE BIG TUNNEL, north to south. The pieces run along z in the kit already; the side door and the branch
+   * are on the kit's -x, turned half round onto the room's side. */
+  put('Serwers_005', [0, 0, 32.82], 0, [0, 0, 0]);                   // the ladder's shaft
+  put('Cylinder', [0, 0, 32.82], 0, [0, 0, 0]);                      // and its ladder, on the levers' wall
+  for (const z of [6.78, 13.56]) put('Serwers_009', [0, 0, 0], 0, [0, 0, z]);           // past the north grate, into the dark
+  put('Serwers_007', [0, 0, 13.855], Math.PI, [0, 0, S.DOOR_Z]);     // the door across from the ladder
+  for (const z of [-13.56, -20.34, -35.90]) put('Serwers_009', [0, 0, 0], 0, [0, 0, z]);
+  put('Serwers_001', [10.16, 0, 20.0], Math.PI, [0, 0, S.T_Z]);      // the branch
+  for (const x of [7.77, 14.55]) put('Serwers_009', [0, 0, 0], Math.PI / 2, [x, 0, S.T_Z]);   // down it, past its grate
+  put('Serwers_011', [0, 0, -11.06], 0, [0, 0, -39.29]);             // the dead end, its ledge round the channel's end
+  put('Serwers_010', [0, 0, -7.085], 0, [0, 0, S.NORTH + 0.765]);   // a rib round each grate
+  put('Serwers_010', [0, 0, -7.085], Math.PI / 2, [S.BR_END + 0.765, 0, S.T_Z]);
+
+  /* THE GRATES. The kit's grates are for the small passage; the big tunnel has none. Its plain arched grate
+   * (`SerwersP_011`) is drawn out to the rib's opening: both arches are straight walls under a vault, so it is
+   * mapped wall to wall and vault to vault — the bars stay upright and the frame meets the brick all the way round. */
+  const PROF_P = [[-0.70, 1.245], [1.47, 1.245], [2.07, 0.995], [2.41, 0.565], [2.53, 0]];   // the small passage, measured
+  const PROF_B = [[-0.70, 2.40], [3.37, 2.50], [4.23, 1.42], [4.62, 0]];                     // inside the rib, a hand over
+  const hwAt = (P, y) => {
+    if (y <= P[0][0]) return P[0][1];
+    for (let i = 1; i < P.length; i++) if (y <= P[i][0]) { const [y0, h0] = P[i - 1], [y1, h1] = P[i]; return h0 + (h1 - h0) * (y - y0) / (y1 - y0); }
+    return 0;
+  };
+  const mapY = (y) => (y <= 1.47 ? -0.70 + (y + 0.70) * 4.07 / 2.17 : 3.37 + (y - 1.47) * 1.25 / 1.06);
+  const grate = (yaw, to) => {
+    const M = at([0, 0, 0], yaw, to);
+    for (const o of meshesOf('SerwersP_011')) {
+      const g = prep(o.geometry); g.applyMatrix4(o.matrixWorld);
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const u = p.getZ(i) - 13.855, y = p.getY(i), d = p.getX(i) + 15.10, y2 = mapY(y), hp = hwAt(PROF_P, y);
+        p.setXYZ(i, hp > 1e-3 ? u * hwAt(PROF_B, y2) / hp : 0, y2, d * 1.8);
+      }
+      p.needsUpdate = true; g.computeVertexNormals(); g.applyMatrix4(M);
+      bake(g, kmat(o.material));
+    }
+  };
+  grate(0, [0, 0, S.NORTH + 0.765]);
+  grate(Math.PI / 2, [S.BR_END + 0.765, 0, S.T_Z]);
+
+  /* ---- THE STOREROOM: the small red-brick passage's T, its branch the room's mouth onto the door's passage, and a
+   * length of passage on north; the passage's grate across the mouth. */
+  put('SerwersP_003', [-29.53, 0, 11.97], Math.PI / 2, [S.STUB1, 0, S.DOOR_Z]);
+  put('SerwersP', [-6.70, 0, 12.61], Math.PI / 2, [S.ROOM_X0, 0, -4.48]);
+  put('SerwersP_012', [-14.155, 0, 13.855], 0, [S.GATE_X, 0, S.DOOR_Z]);
+  // the walls the kit does not have: both ends of the room, and round the door where the passage meets the mouth
+  const pBrick = byName.SerwersP_brick_modern_0, pConc = byName.SerwersP_concrete_bare_01_0;
+  const uvRate = (o) => {
+    if (!o || !o.geometry.attributes.uv) return 0.5;
+    const g = o.geometry, P = g.attributes.position, U = g.attributes.uv, I = g.index, N = I ? I.count : P.count;
+    const ws = new THREE.Vector3(); o.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), ws);
+    const a = new THREE.Vector3(), b = new THREE.Vector3(); let s = 0, n = 0;
+    for (let k = 0; k + 1 < N; k += 3) {
+      const i0 = I ? I.getX(k) : k, i1 = I ? I.getX(k + 1) : k + 1;
+      a.fromBufferAttribute(P, i0).multiply(ws); b.fromBufferAttribute(P, i1).multiply(ws);
+      const dl = a.distanceTo(b); if (dl < 0.05) continue;
+      s += Math.hypot(U.getX(i1) - U.getX(i0), U.getY(i1) - U.getY(i0)) / dl; n++;
+    }
+    return n ? s / n : 0.5;
+  };
+  const brickM = pBrick ? kmat(pBrick.material) : null, concM = pConc ? kmat(pConc.material) : null;
+  const rB = uvRate(pBrick), rC = uvRate(pConc);
+  const wall = (pts, M, mat, rate) => {
+    if (!mat) return;
+    const g = new THREE.ShapeGeometry(new THREE.Shape(pts.map(([u, y]) => new THREE.Vector2(u, y))));
+    const p = g.attributes.position, uv = g.attributes.uv;
+    for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * rate, p.getY(i) * rate);
+    g.applyMatrix4(M); bake(g, mat);
+  };
+  const ARCH = [[1.28, 1.47], [1.02, 2.08], [0.58, 2.43], [0, 2.56], [-0.58, 2.43], [-1.02, 2.08], [-1.28, 1.47]];
+  for (const [z, yaw] of [[S.ROOM_Z0 + 0.005, 0], [S.ROOM_Z1 - 0.005, Math.PI]]) {
+    const M = at([0, 0, 0], yaw, [(S.ROOM_X0 + S.ROOM_X1) / 2, 0, z]);
+    wall([[-1.28, -0.72], [1.28, -0.72], [1.28, 0.66], [-1.28, 0.66]], M, concM, rC);
+    wall([[-1.28, 0.66], [1.28, 0.66], ...ARCH], M, brickM, rB);
+  }
+  {
+    const M = at([0, 0, 0], Math.PI / 2, [S.STUB1 + 0.01, 0, S.DOOR_Z]), h = S.DOOR_HW;
+    for (const s of [-1, 1]) {
+      wall(s < 0 ? [[-1.4, -0.72], [-h, -0.72], [-h, 0.66], [-1.4, 0.66]] : [[h, -0.72], [1.4, -0.72], [1.4, 0.66], [h, 0.66]], M, concM, rC);
+      wall(s < 0 ? [[-1.4, 0.66], [-h, 0.66], [-h, 1.67], [-1.4, 1.67]] : [[h, 0.66], [1.4, 0.66], [1.4, 1.67], [h, 1.67]], M, brickM, rB);
+    }
+    wall([[-1.4, 1.67], [1.4, 1.67], [1.4, 2.7], [-1.4, 2.7]], M, brickM, rB);
+  }
+  // and black where the tunnels run on past their grates, and up the ladder's shaft
+  const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  { const g = new THREE.PlaneGeometry(7, 8); g.rotateY(Math.PI); g.translate(0, 1.6, 16.9); bake(g, black); }
+  { const g = new THREE.PlaneGeometry(7, 8); g.rotateY(-Math.PI / 2); g.translate(17.9, 1.6, S.T_Z); bake(g, black); }
+  { const g = new THREE.PlaneGeometry(1.6, 1.6); g.rotateX(Math.PI / 2); g.translate(-2.7, 6.7, 0); bake(g, black); }
+
+  // ---- what lies about
+  putOn('Garbage_bag', -2.38, S.WALK, 2.95, 0.4, true);     // in the corners by the grate, out of the walk's way
+  putOn('Garbage_bag_001', 2.38, S.WALK, 2.95, 2.1, true);
+  putOn('Bricks', -2.45, S.WALK, -16.2, 0.3, false);   // rubble at the wall's foot: stepped over, not walked into
+  putOn('Tire', 1.95, S.WALK, -43.5, 0.9, false);
+  putOn('Trash_M', 1.75, S.WALK, -37.2, 1.4, false);
+  putOn('Pipe_003', 2.35, S.WALK, -33.0, 1.57, false);
+  putOn('Box_T', 6.75, S.WALK, -8.2, 0.2, true);
+  putOn('Box_T_03', 5.6, S.WALK, -8.05, -0.3, true);
+  putOn('Box_T_01', 5.62, S.WALK + 0.43, -8.08, 1.3, false);   // stacked on the other, out of the way between the door and the chest
+  putOn('Brick', 6.4, S.WALK, -5.0, 0.8, false);
+
+  // ---- the water: the channel's and the branch's, and the room's flood (one sheet, so nothing overlaps itself)
+  const rip = drainTunnel.userData.waterMat && drainTunnel.userData.waterMat.normalMap;
+  const ripple = rip ? rip.clone() : null;
+  if (ripple) { ripple.needsUpdate = true; ripple.wrapS = ripple.wrapT = THREE.RepeatWrapping; ripple.repeat.set(1, 1); }
+  const waterMat = new THREE.MeshStandardMaterial({ color: 0x15170e, roughness: 0.16, metalness: 0, normalMap: ripple, normalScale: new THREE.Vector2(0.55, 0.55) });
+  const floodMat = new THREE.MeshStandardMaterial({ color: 0x171b13, roughness: 0.12, metalness: 0, normalMap: ripple, normalScale: new THREE.Vector2(0.3, 0.3),
+    emissive: new THREE.Color(0x2a5a9a), emissiveIntensity: 0 });
+  const worldUV = (g, k) => { const p = g.attributes.position, uv = g.attributes.uv; for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * k, p.getZ(i) * k); return g; };
+  const sheet = (x0, z0, x1, z1, y) => { const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, y, (z0 + z1) / 2); return worldUV(g, 0.45); };
+  const water = new THREE.Mesh(mergeGeometries([sheet(-1.07, S.CH_END, 1.07, 16.9, S.WATER), sheet(1.08, S.T_Z - 1.07, 17.9, S.T_Z + 1.07, S.WATER)].map(prep), false), waterMat);
+  W.add(water);
+  {
+    const F = [[2.66, -7.315], [4.36, -7.315], [4.36, -8.025], [S.ROOM_X0, -8.025], [S.ROOM_X0, S.ROOM_Z0], [S.ROOM_X1, S.ROOM_Z0], [S.ROOM_X1, S.ROOM_Z1],
+      [S.ROOM_X0, S.ROOM_Z1], [S.ROOM_X0, -5.535], [4.36, -5.535], [4.36, -6.245], [2.66, -6.245]];
+    const g = new THREE.ShapeGeometry(new THREE.Shape(F.map(([x, z]) => new THREE.Vector2(x, -z))));
+    g.rotateX(-Math.PI / 2); g.translate(0, S.FLOOD, 0);
+    W.add(new THREE.Mesh(worldUV(g, 0.6), floodMat));
+  }
+  sewP.waterMat = waterMat; sewP.floodMat = floodMat; sewP.ripple = ripple;
+
+  /* ---- THE MIST: soft blobs drawn wrapping (so the sheet tiles) and laid low over the walks, the channel and the
+   * flood. Lambert, so it is seen only where a light is — a lamp's pool, your own glowstick — and is nothing in the dark. */
+  const mistTex = (() => {
+    const [c, g] = artCanvas(256, 256), rnd = mulberry32(911);
+    g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256);
+    for (let k = 0; k < 46; k++) {
+      const x = rnd() * 256, y = rnd() * 256, r = 18 + rnd() * 46, a = 0.2 + rnd() * 0.3;
+      for (const ox of [-256, 0, 256]) for (const oy of [-256, 0, 256]) {
+        const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+        gr.addColorStop(0, `rgba(255,255,255,${a})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = gr; g.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+      }
+    }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  })();
+  sewP.mist = [];
+  const mist = (x0, z0, x1, z1, y, op) => {
+    const tex = mistTex.clone(); tex.needsUpdate = true; tex.offset.set(Math.random(), Math.random());
+    const m = new THREE.Mesh(sheet(x0, z0, x1, z1, y), new THREE.MeshLambertMaterial({ color: 0x8e9a90, alphaMap: tex, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide }));
+    m.material.alphaMap.repeat.set(1, 1);
+    m.raycast = () => {}; m.renderOrder = 2; W.add(m); sewP.mist.push(tex);
+    worldUV(m.geometry, 0.16);
+  };
+  mist(-2.65, S.END, 2.65, 16.9, S.WALK + 0.18, 1.0);
+  mist(-2.65, S.END, 2.65, 16.9, S.WALK + 0.5, 0.7);
+  mist(-2.65, S.END, 2.65, 16.9, S.WALK + 0.9, 0.35);
+  mist(-1.1, S.CH_END, 1.1, 16.9, S.WATER + 0.16, 1.0);
+  mist(S.ROOM_X0, S.ROOM_Z0, S.ROOM_X1, S.ROOM_Z1, S.FLOOD + 0.2, 0.8);
+  /* THE DUST hanging in the tunnel and the room, drifting, lit only near a light: the eight that matter are handed to
+   * it every frame (the lamps, the box's glow and its sparks, and the glowstick in your hand — so on the walk back in
+   * the dark the motes are the only thing in the air, round you). The drain's dust, in the sewer's frame. */
+  {
+    const N = 1100, P = new Float32Array(N * 3), A = new Float32Array(N), rnd = mulberry32(5150);
+    for (let i = 0; i < N; i++) {
+      let x, y, z;
+      if (i < 960) { z = S.END + 0.3 + rnd() * (S.NORTH + 1.5 - S.END); x = (rnd() * 2 - 1) * 2.5; y = S.WATER + 0.1 + rnd() * 4.2; }
+      else { x = S.ROOM_X0 + 0.2 + rnd() * 2.1; z = S.ROOM_Z0 + 0.2 + rnd() * 8.0; y = S.FLOOD + 0.05 + rnd() * 2.3; }
+      P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z; A[i] = rnd();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('aS', new THREE.BufferAttribute(A, 1));
+    const NL = 8, uL = [], uLC = [];
+    for (let k = 0; k < NL; k++) { uL.push(new THREE.Vector3(0, -99, 0)); uLC.push(new THREE.Vector3()); }
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { uT: { value: 0 }, uL: { value: uL }, uLC: { value: uLC } },
+      vertexShader: `uniform float uT; uniform vec3 uL[${NL}]; uniform vec3 uLC[${NL}]; attribute float aS; varying vec3 vC;
+        void main() {
+          vec3 p = position;
+          p.x += sin(uT * 0.11 + aS * 6.28) * 0.22;
+          p.y += sin(uT * 0.17 + aS * 11.0) * 0.12 + mod(uT * 0.012 * (0.5 + aS), 0.3) - 0.15;
+          p.z += cos(uT * 0.13 + aS * 4.1) * 0.18;
+          vec3 c = vec3(0.0);
+          for (int i = 0; i < ${NL}; i++) { float d = distance(p, uL[i]); c += uLC[i] / (1.0 + d * d * 2.4); }
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          float dist = -mv.z;
+          vC = c * exp(-dist * 0.09) * (0.6 + 0.4 * sin(uT * 1.7 + aS * 40.0));
+          gl_PointSize = clamp(4.5 / dist, 1.0, 4.0);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `varying vec3 vC;
+        void main() { float r = length(gl_PointCoord - 0.5) * 2.0; if (r > 1.0) discard; gl_FragColor = vec4(vC * (1.0 - r) * 0.5, 1.0); }`,
+      blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+    });
+    const dust = new THREE.Points(g, mat); dust.raycast = () => {}; dust.frustumCulled = false; dust.renderOrder = 4; W.add(dust);
+    sewP.dust = mat;
+  }
+
+  /* ---- THE LAMPS: the kit's old hanging lamp on a rod from the vault, its glass lit and a pooled lamp under it
+   * when it is on, and a halo in the air (unfogged, so one burning at the far end is seen from the ladder) */
+  const lampP = got.lamp; lampP.updateMatrixWorld(true);
+  const lbox = new THREE.Box3().setFromObject(lampP);
+  let bulbY = 0.3;
+  lampP.traverse((o) => { if (o.isMesh && /lamp_?light/i.test(o.name)) { const b = new THREE.Box3().setFromObject(o); bulbY = (b.min.y + b.max.y) / 2 - lbox.min.y; } });
+  const LAMP_K = 1.1, lampH = (lbox.max.y - lbox.min.y) * LAMP_K;
+  const iron = new THREE.MeshStandardMaterial({ color: 0x24211d, roughness: 0.75, metalness: 0 });
+  const rodGeo = (x, y0, z, y1) => { const g = new THREE.CylinderGeometry(0.007, 0.007, y1 - y0, 5); g.translate(x, (y0 + y1) / 2, z); return g; };
+  /* THE LIGHT IN THE AIR (the owner: "more ray tracing type effects with fog ... amnesia the bunker"). Every lamp that
+   * burns stands a cone of lit air under it — the drain's beam (`models/drainage-tunnel-home.js`): additive, its
+   * alpha `|N.V|^2.2` so it feathers at the silhouette instead of drawing a lampshade, `v^1.6` so it is gone before
+   * the floor, fading with distance on its own (unfogged). The murk itself is the fog chunk's ground mist on the
+   * water (`SEW_MIST`), and the dust hanging in it is lit only near a light (below). */
+  const beamVS = `varying float vV; varying vec3 vN; varying vec3 vView;
+    void main() { vV = uv.y; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vView = -mv.xyz; gl_Position = projectionMatrix * mv; }`;
+  const beamFS = `uniform vec3 uCol; uniform float uK; varying float vV; varying vec3 vN; varying vec3 vView;
+    void main() { float f = abs(dot(normalize(vN), normalize(vView))); float a = pow(f, 2.2) * pow(vV, 1.6) * uK * exp(-length(vView) * 0.06); gl_FragColor = vec4(uCol * a, 1.0); }`;
+  const makeLamp = (x, y0, z, ceil, base, col, hs = 0.85, footY = null) => {
+    const g = lampP.clone(true), mats = [];
+    g.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = o.material.clone(); m.metalness = 0; m.roughness = 0.75;
+      if (m.map) retroTex(m.map);
+      m.emissiveIntensity = 0; m.needsUpdate = true; o.material = m; mats.push(m);
+    });
+    g.position.set(-(lbox.min.x + lbox.max.x) / 2, -lbox.min.y, -(lbox.min.z + lbox.max.z) / 2);
+    const hold = new THREE.Group(); hold.scale.setScalar(LAMP_K); hold.add(g); hold.position.set(x, y0, z); W.add(hold);
+    if (ceil > y0 + lampH) bake(rodGeo(x, y0 + lampH - 0.02, z, ceil), iron);
+    const L = new THREE.PointLight(col, 0, 7.5, 1.6); L.position.set(x, y0 + bulbY * LAMP_K - 0.04, z); W.add(L);
+    const halo = sewGlow(col, hs); halo.position.copy(L.position); W.add(halo);
+    let beam = null;
+    if (footY !== null) {
+      const len = L.position.y - footY;
+      beam = new THREE.ShaderMaterial({ uniforms: { uCol: { value: new THREE.Color(col) }, uK: { value: 0 } }, vertexShader: beamVS, fragmentShader: beamFS,
+        blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, side: THREE.FrontSide });
+      const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 1.25, len, 18, 1, true), beam);
+      cone.position.set(x, footY + len / 2, z); cone.raycast = () => {}; cone.renderOrder = 3; W.add(cone);
+    }
+    const lamp = { mats, L, halo, beam, base, lvl: 0, want: 0, flick: 0, ph: Math.random() * 7, cutAt: 99 };
+    sewP.lamps.push(lamp);
+    return lamp;
+  };
+
+  /* ---- THE LEVERS: the panel flat on the left wall at chest height, the knife on its hinge (found as the middle of
+   * the blade's lowest tenth), a red pilot on the panel's corner and the lamp over the walk in front of it */
+  const lvP = got.lever; lvP.updateMatrixWorld(true);
+  let panelM = null, armM = null;
+  lvP.traverse((o) => { if (o.isMesh) { if (/panel/i.test(o.name)) panelM = o; else if (/lever/i.test(o.name)) armM = o; } });
+  const pgeo = panelM.geometry.clone().applyMatrix4(panelM.matrixWorld), ageo = armM.geometry.clone().applyMatrix4(armM.matrixWorld);
+  pgeo.computeBoundingBox(); ageo.computeBoundingBox();
+  const pb = pgeo.boundingBox, ab = ageo.boundingBox, pc = pb.getCenter(new THREE.Vector3());
+  const LS = 0.72 / (pb.max.y - pb.min.y);
+  const piv = new THREE.Vector3();
+  {
+    const P = ageo.attributes.position, lim = ab.min.y + (ab.max.y - ab.min.y) * 0.12; let n = 0;
+    for (let i = 0; i < P.count; i++) if (P.getY(i) < lim) { piv.x += P.getX(i); piv.y += P.getY(i); piv.z += P.getZ(i); n++; }
+    if (n) piv.multiplyScalar(1 / n);
+  }
+  ageo.translate(-piv.x, -piv.y, -piv.z);
+  const lvMat = (m) => { const c = m.clone(); c.metalness = 0; c.roughness = 0.8; if (c.map) retroTex(c.map); c.needsUpdate = true; return c; };
+  const pMat = lvMat(panelM.material), aMat = lvMat(armM.material);
+  const backX = -S.WALL_HI + (pb.max.z - pc.z) * LS + 0.006, front = (pb.min.z - pc.z) * LS, top = (pb.max.y - pc.y) * LS;
+  S.LEVERS.forEach((z, i) => {
+    const G = new THREE.Group(); G.position.set(backX, S.WALK + S.LEVER_Y, z); G.rotation.y = -Math.PI / 2; W.add(G);   // its face (-z) to the tunnel, its back on the straight of the wall
+    const M = new THREE.Group(); M.scale.setScalar(LS); M.position.set(-pc.x * LS, -pc.y * LS, -pc.z * LS); G.add(M);
+    M.add(new THREE.Mesh(pgeo, pMat));
+    const pv = new THREE.Group(); pv.position.copy(piv); M.add(pv);
+    pv.add(new THREE.Mesh(ageo, aMat));
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.017, 8, 6), new THREE.MeshBasicMaterial({ color: 0x300606 }));
+    bulb.position.set(0.13, top - 0.05, front - 0.012); G.add(bulb);
+    const bl = new THREE.PointLight(0xff2412, 0, 2.4, 2); bl.position.set(0.13, top - 0.05, front - 0.14); G.add(bl);
+    const bh = sewGlow(0xff2a14, 0.38); bh.position.copy(bulb.position); G.add(bh);
+    const hp = sewProxy(0.5, 0.75, 0.55); hp.position.set(0, 0, front - 0.15); G.add(hp);
+    const lamp = makeLamp(S.LAMP_X, S.WALK + 2.3, z, S.LAMP_CEIL, 2.4, 0xffb46a, 0.85, S.WALK + 0.02);
+    lamp.cutAt = 1.1 + (3 - i) * 0.42;                  // when the power goes, they go from the generator back toward you
+    sewP.levers.push({ i, pv, bulb, bl, bh, lamp, t: 0, lightIn: -1 });   // (no prop: it is on the wall above the walk, and a box round it was a wall you could not see)
+    addInteractable(hp, 'Pull the lever', 'default', { far: 2.6, when: () => inSewer && sewGenOn && !sewLeverDown(i), onActivate: () => sewPullLever(i) });
+  });
+
+  /* ---- THE GENERATOR, long side to the tunnel on the dead end's ledge, the lamp over it lit (dimly) from the
+   * start; its button and pilots in a box on the end you come at it from */
+  const gp = got.gen; gp.updateMatrixWorld(true);
+  const gb = new THREE.Box3().setFromObject(gp), gc = gb.getCenter(new THREE.Vector3());
+  const GS = 1.25 / (gb.max.y - gb.min.y);
+  gp.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material = o.material.clone();
+    m.metalness = 0; m.roughness = 0.75; m.transparent = false; m.opacity = 1; m.depthWrite = true;
+    if (m.map) { retroTex(m.map); m.emissive = new THREE.Color(SEW_LIFT); m.emissiveMap = m.map; m.emissiveIntensity = 1; }
+    m.needsUpdate = true;
+  });
+  gp.scale.setScalar(GS); gp.position.set(-gc.x * GS, -gb.min.y * GS, -gc.z * GS);
+  const GN = new THREE.Group(); GN.position.set(0, S.WALK, S.GEN_Z); GN.rotation.y = Math.PI / 2; GN.add(gp); W.add(GN);
+  {
+    const C = new THREE.Group(); C.position.set(-S.GEN_HX - 0.06, S.WALK + 0.8, S.GEN_Z + 0.1); W.add(C);
+    const steel = new THREE.MeshStandardMaterial({ color: 0x55534a, roughness: 0.8, metalness: 0 });
+    C.add(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.34, 0.28), steel));
+    const collar = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.058, 0.03, 14), new THREE.MeshStandardMaterial({ color: 0xb8921a, roughness: 0.6, metalness: 0 }));
+    collar.rotation.z = Math.PI / 2; collar.position.set(-0.07, -0.05, 0); C.add(collar);
+    const btn = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.047, 0.05, 14), new THREE.MeshStandardMaterial({ color: 0xa8140b, roughness: 0.5, metalness: 0, emissive: 0x2a0402 }));
+    btn.rotation.z = Math.PI / 2; btn.position.set(-0.1, -0.05, 0); C.add(btn);
+    const pilot = (col, z) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), new THREE.MeshBasicMaterial({ color: col })); m.position.set(-0.062, 0.1, z); C.add(m);
+      const h = sewGlow(col, 0.16); h.position.copy(m.position); h.material.opacity = 0.7; C.add(h); return { m, h, col }; };
+    sewP.pilots = [pilot(0x3cff5c, 0.07), pilot(0xffa020, -0.07)];
+    sewP.btn = btn;
+    const hp = sewProxy(0.3, 0.4, 0.4); hp.position.set(-0.08, 0, 0); C.add(hp);
+    addInteractable(hp, 'Press the button', 'default', {
+      far: 2.4,
+      label: () => (sewAllDown() ? 'Turn off the generator' : 'Press the button'),
+      when: () => inSewer && sewGenOn, onActivate: sewPressButton,
+    });
+    sewP.props.push([-S.GEN_HX - 0.2, S.GEN_Z - 0.62, S.GEN_HX, S.GEN_Z + 0.62]);
+  }
+  sewP.genLamp = makeLamp(0, S.WALK + 2.2, S.GEN_Z, 4.78, 2.1, 0xffc27a, 2.6, S.WALK + 1.27);
+  sewP.genLamp.cutAt = 0.55;
+
+  /* the spare glowstick on the ledge by the generator, lit, for whoever came down without one */
+  {
+    const gs = makeGlowstick(); gs.position.set(-1.95, S.WALK + 0.03, S.GEN_Z - 0.38); gs.rotation.y = 0.7; W.add(gs);
+    const gl = new THREE.PointLight(GLOWSTICK_COLOR, 0.45, 2.4, 1.0); gl.position.set(0, 0.06, 0); gs.add(gl);
+    const hp = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hp.name = 'hitProxy'; hp.visible = false; hp.position.y = 0.05; gs.add(hp);
+    addItemShine(gs, { ...DROP_SHINE, height: 0.3 });
+    sewP.glow = gs;
+    addInteractable(gs, 'Take the glowstick', 'default', {
+      when: () => inSewer && !sewGlowTaken,
+      onActivate: () => { sewGlowTaken = true; sfxGlassPick(); gs.removeFromParent(); removeInteractable(gs); hovered = null; gainGlowstick(); },
+    });
+  }
+
+  /* ---- THE ELECTRIC BOX on the room's far wall, square across from the gate, its wires hanging into the flood
+   * and the water fizzing where they go in */
+  const bx = got.box; bx.updateMatrixWorld(true);
+  const bbx = new THREE.Box3().setFromObject(bx), bcx = bbx.getCenter(new THREE.Vector3());
+  bx.traverse((o) => { if (o.isMesh) { const m = o.material = o.material.clone(); m.metalness = 0; m.roughness = 0.8; if (m.map) { retroTex(m.map); m.emissive = new THREE.Color(SEW_LIFT); m.emissiveMap = m.map; } m.needsUpdate = true; } });
+  bx.position.set(-bcx.x, -bcx.y, -bcx.z);
+  const EB = new THREE.Group(); EB.rotation.y = -Math.PI / 2;   // its face (+z) to the room
+  EB.position.set(S.ROOM_X1 - (bcx.z - bbx.min.z) - 0.005, S.WALK + 1.35, S.DOOR_Z); EB.add(bx); W.add(EB);
+  const boxBot = S.WALK + 1.35 - (bcx.y - bbx.min.y), boxTop = S.WALK + 1.35 + (bbx.max.y - bcx.y);
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x121211, roughness: 0.55, metalness: 0 });
+  const tube = (pts, r, n) => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'centripetal'), n, r, 5, false);
+  [[-0.18, 0.30, 0.0], [-0.06, 0.58, 0.26], [0.07, 0.44, -0.22], [0.18, 0.74, 0.1]].forEach(([dz, out, sw]) => {
+    const a = new THREE.Vector3(S.ROOM_X1 - 0.12, boxBot + 0.02, S.DOOR_Z + dz);
+    const e = new THREE.Vector3(S.ROOM_X1 - 0.12 - out, S.FLOOD - 0.03, S.DOOR_Z + dz + sw);
+    const m1 = a.clone().lerp(e, 0.35); m1.x -= 0.05; m1.y -= 0.14;
+    const m2 = a.clone().lerp(e, 0.78); m2.y += 0.03;
+    bake(tube([a, m1, m2, e], 0.011, 24), rubber);
+    const sp = sewGlow(0x9fd2ff, 0.34); sp.position.set(e.x, S.FLOOD + 0.04, e.z); W.add(sp);
+    sewP.sparks.push({ sp, t: 0, next: Math.random() * 0.8 });
+  });
+  sewP.zap = new THREE.PointLight(0x8cc4ff, 0, 4.5, 1.6); sewP.zap.position.set(S.ROOM_X1 - 0.6, S.FLOOD + 0.35, S.DOOR_Z); sewP.zap.userData.lpAlways = 14; W.add(sewP.zap);
+  // and a cold glow off the box itself while it is live, so from the gate you can see what is waiting in the water
+  sewP.boxLight = new THREE.PointLight(0x9fbcff, 0, 4.4, 1.5); sewP.boxLight.position.set(S.ROOM_X1 - 0.7, S.WALK + 1.25, S.DOOR_Z); sewP.boxLight.userData.lpAlways = 14; W.add(sewP.boxLight);
+
+  /* THE CABLE out of the box's top: up the wall, along the room's crown and through over the door, out of the
+   * passage and up the tunnel's wall, over the vault, down the levers' wall and along it, dropping to each panel,
+   * and on to the generator's back. Clipped every metre; where it runs level it sags between the clips. */
+  {
+    const V = (x, y, z) => new THREE.Vector3(x, y, z), cz = S.DOOR_Z + 0.24, cy = S.CABLE_Y, cx = -S.WALL_HI + 0.03;
+    // the tunnel's own section, three centimetres in: up the straight, round the haunch, over the crown
+    const ARCH = (s) => [V(s * 3.27, 2.16, cz), V(s * 2.95, 2.83, cz), V(s * 2.63, 3.49, cz), V(s * 2.05, 3.97, cz), V(s * 1.46, 4.43, cz), V(s * 0.74, 4.66, cz)];
+    const pts = [], clips = [];
+    const run = (a, b, step) => {
+      const d = a.distanceTo(b), n = Math.max(1, Math.round(d / step)), level = Math.abs(a.y - b.y) < 0.05 && d > 0.6, seg = n * 6;
+      for (let k = pts.length ? 1 : 0; k <= seg; k++) {
+        const t = k / seg, p = a.clone().lerp(b, t);
+        if (level) { const f = (t * n) % 1; p.y -= 0.05 * 4 * f * (1 - f); }
+        pts.push(p);
+      }
+      for (let k = 0; k <= n; k++) clips.push(a.clone().lerp(b, k / n));
+    };
+    const path = [V(S.ROOM_X1 - 0.04, boxTop, cz), V(S.ROOM_X1 - 0.04, 1.45, cz), V(7.3, 1.95, cz), V(6.95, 2.3, cz), V(6.24, 2.5, cz), V(4.39, 2.5, cz),
+      V(4.39, 1.74, cz), V(4.3, 1.62, cz), V(S.WALL_HI + 0.04, 1.62, cz), V(S.WALL_HI - 0.03, 1.76, cz),
+      ...ARCH(1), V(0, 4.77, cz), ...ARCH(-1).reverse(),
+      V(cx, cy, cz), V(cx, cy, S.END + 0.04), V(-0.75, cy, S.END + 0.04), V(-0.75, S.WALK + 1.3, S.END + 0.04), V(-0.75, S.WALK + 1.27, S.GEN_Z - 0.5)];
+    for (let i = 1; i < path.length; i++) run(path[i - 1], path[i], 1.0);
+    bake(tube(pts, 0.013, pts.length * 2), rubber);
+    const pTop = S.WALK + S.LEVER_Y + top;
+    for (const z of S.LEVERS) bake(tube([V(cx, cy - 0.04, z - 0.25), V(cx, cy - 0.3, z - 0.24), V(cx + 0.01, pTop + 0.1, z - 0.2), V(cx + 0.04, pTop - 0.02, z - 0.12)], 0.011, 16), rubber);
+    for (const c of clips) { const g = new THREE.BoxGeometry(0.035, 0.03, 0.035); g.translate(c.x, c.y, c.z); bake(g, iron); }
+  }
+
+  /* ---- THE GATE: the grate door in the room's grate, on a hinge at its north edge, swinging into the room once the
+   * lock lets go; and the lock, a box on the frame with a red eye that goes out with the power */
+  {
+    const piv2 = new THREE.Group(); piv2.position.set(S.GATE_X + 0.01, 0, S.DOOR_Z + 0.485); W.add(piv2);
+    const M = at([-14.145, 0, 14.34], 0, [0, 0, 0]);
+    for (const o of meshesOf('SerwersP_013')) { const g = prep(o.geometry); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(M, o.matrixWorld)); piv2.add(new THREE.Mesh(g, kmat(o.material))); }
+    sewP.gate = piv2;
+    const lk = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.16, 0.1), iron); lk.position.set(S.GATE_X - 0.07, S.WALK + 1.05, S.DOOR_Z - 0.52); W.add(lk);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.011, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2010 })); eye.position.set(S.GATE_X - 0.108, S.WALK + 1.1, S.DOOR_Z - 0.52); W.add(eye);
+    const eh = sewGlow(0xff2010, 0.12); eh.position.copy(eye.position); eh.material.opacity = 0.8; W.add(eh);
+    sewP.lockEye = { eye, eh };
+    const hp = sewProxy(0.35, 2.1, 1.05); hp.position.set(S.GATE_X, S.WALK + 1.05, S.DOOR_Z); W.add(hp);
+    sewP.gateProxy = hp;
+    addInteractable(hp, 'Locked.', 'default', {
+      far: 3.0,
+      label: () => (sewGenOn ? 'Locked. The lock is humming.' : 'Open the gate'),
+      bare: () => sewGenOn,
+      when: () => inSewer && !sewGateOpen,
+      onActivate: () => {
+        if (sewGenOn || sewGateOpen) return;
+        sewGateOpen = true; hovered = null;
+        sfxAt(SEW_X + S.GATE_X, SEW_Z + S.DOOR_Z, () => sfxGateRattle());
+      },
+    });
+  }
+
+  /* ---- THE CHEST in the room's far corner, its lock to the room, the loot in it */
+  {
+    const CH = new THREE.Group(); CH.position.set(6.95, S.WALK, -1.05); CH.rotation.y = Math.PI; W.add(CH);
+    const lid = new THREE.Group(); CH.add(lid); sewP.lid = lid;
+    const hp = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.68, 0.70), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    hp.name = 'hitProxy'; hp.visible = false; hp.position.y = 0.34; CH.add(hp);
+    sewP.props.push([6.95 - 0.52, -1.05 - 0.38, 6.95 + 0.52, -1.05 + 0.38]);
+    const jars = new THREE.Group(); jars.visible = false; CH.add(jars); sewP.jars = jars;
+    [[-0.28, -0.08], [-0.12, 0.09], [0.04, -0.07], [0.19, 0.08], [0.3, -0.1]].forEach(([x, z], k) => {
+      const j = makeBloodJar(); j.scale.setScalar(1.55); j.position.set(x, 0.05, z); j.rotation.y = k * 1.3; jars.add(j);
+    });
+    const jp = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.3, 0.45), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    jp.name = 'hitProxy'; jp.visible = false; jp.position.y = 0.2; jars.add(jp);
+    addItemShine(jars, { size: 0.6, height: 0.2, strength: 0.9, lift: 0.2 });
+    addInteractable(jars, 'Take the jars', 'default', {
+      inside: true, far: 2.6,
+      when: () => inSewer && sewChestOpen && !sewLootTaken,
+      onActivate: () => {
+        if (sewLootTaken) return;
+        sewLootTaken = true; jars.visible = false; hovered = null;
+        sfxGlassPick(); gainJar(SEW_LOOT_JARS);
+        flashPrompt(SEW_LOOT_JARS + ' jars of blood', 2200);
+      },
+    });
+    addInteractable(CH, 'Open the chest', 'default', {
+      far: 2.6,
+      label: () => (sewChestOpen ? 'Close the chest' : 'Open the chest'),
+      when: () => inSewer && sewGateOpen,
+      onActivate: () => { sewChestOpen = !sewChestOpen; hovered = null; jars.visible = sewChestOpen && !sewLootTaken; sfxLockerOpen(); },
+    });
+    bwGlb('assets/chest.glb', (gltf) => {
+      const root = gltf.scene; root.updateMatrixWorld(true);
+      const hinge = (root.userData && root.userData.bw_chest && root.userData.bw_chest.hinge) || [0.3464, -0.321];
+      lid.position.set(0, hinge[0], hinge[1]);
+      const seen = new Map();
+      const lift = (m) => { if (seen.has(m)) return seen.get(m); const c = m.clone(); c.metalness = 0; c.roughness = Math.max(0.5, c.roughness || 0.8);
+        if (c.map) { c.emissive = new THREE.Color(SEW_LIFT); c.emissiveMap = c.map; } seen.set(m, c); return c; };
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        const mesh = new THREE.Mesh(o.geometry.clone().applyMatrix4(o.matrixWorld), lift(o.material));
+        if (/lid/i.test(o.name)) { mesh.position.set(0, -hinge[0], -hinge[1]); lid.add(mesh); } else CH.add(mesh);
+      });
+    });
+  }
+
+  /* ---- THE PLANK against the wall by the ladder; taken, it is carried (drawn in the hands' own scene), and laid
+   * across the channel wherever you stand on the walk */
+  {
+    const PM = tavPlankMaps(), map = PM.map.clone(); map.needsUpdate = true; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.repeat.set(0.35, 1);
+    const mat = new THREE.MeshStandardMaterial({ map, color: 0x8a7a66, roughness: 0.9, metalness: 0, emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.16 });
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2.9, 0.30), mat); W.add(plank); sewP.plank = plank;
+    sewP.props.push([-S.WALL, S.PLANK_Z - 0.16, -2.53, S.PLANK_Z + 0.16, 'plank']);   // its foot on the walk (the rest leans back to the wall, over your head)
+    addInteractable(plank, 'Pick up the plank', 'default', {
+      far: 2.8, when: () => inSewer && (sewPlank === 0 || (sewPlank === 2 && !sewOnPlank())), onActivate: sewTakePlank,
+    });
+    const vm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2.9, 0.30), new THREE.MeshStandardMaterial({ map, color: 0x6e6252, roughness: 0.9, metalness: 0 }));
+    vm.rotation.set(-1.25, 0.0, 1.5); vm.position.set(0.02, -0.46, -1.25); vm.visible = false; vmScene.add(vm); sewP.vmPlank = vm;
+    const lay = sewProxy(2.2, 0.6, 27.4); lay.position.set(0, S.WALK - 0.2, -10.6); W.add(lay);
+    addInteractable(lay, 'Lay the plank across', 'default', { far: 3.2, when: () => inSewer && sewPlank === 1, onActivate: sewLayPlank });
+  }
+
+  /* ---- THE LADDER: back up it, and through the pipe to the drain's room */
+  {
+    const hp = sewProxy(0.7, 2.6, 1.0); hp.position.set(-2.75, S.WALK + 1.3, 0); W.add(hp);
+    addInteractable(hp, 'Climb the ladder', 'default', { mid: true, far: 2.8, when: () => inSewer && !pipeBusy, onActivate: () => startPipe(false) });
+    sewP.props.push([-S.WALL - 0.7, -0.45, -2.54, 0.45]);   // the ladder's rails, where they stand out of the shaft onto the walk
+  }
+
+  for (const [mat, geos] of buckets) {
+    let g = null;
+    try { g = geos.length === 1 ? geos[0] : mergeGeometries(geos, false); } catch (e) { g = null; }
+    if (!g) { for (const one of geos) W.add(new THREE.Mesh(one, mat)); continue; }
+    W.add(new THREE.Mesh(g, mat));
+  }
+  sewApplyState();
+  sewReady = true;
+  warmStep('sewer compile', () => warmCompile([W], SEW_X + S.SPAWN.x, SEW_Y + 0.9, SEW_Z + S.SPAWN.z, SEW_X + 2, SEW_Y, SEW_Z - 6));
+}
+const SEW_LOOT_JARS = 5;
+const SEW_PLANK_LEAN = Math.asin((SEW.WALL_HI - 0.025 - 2.56) / 2.9);   // from the walk's foot to the wall's straight, a board's half-thickness off it
+// where the plank stands, lies or is: put to match the state (a restore and the live game alike)
+function sewPlankPose() {
+  const P = sewP.plank; if (!P) return;
+  P.visible = sewPlank !== 1;
+  // its foot on the walk at the wall's foot, its top against the straight of the wall (2.81 m up the lean: inside the straight's 0.66..2.16)
+  if (sewPlank === 0) { const a = SEW_PLANK_LEAN; P.rotation.set(0, 0, a); P.position.set(-2.56 - 1.45 * Math.sin(a), SEW.WALK + 0.012 + 1.45 * Math.cos(a), SEW.PLANK_Z); }
+  else if (sewPlank === 2) { P.rotation.set(0, 0, Math.PI / 2); P.position.set(0, SEW.WALK + 0.026, sewPlankZ); }
+}
+function sewOnPlank() {
+  if (sewPlank !== 2) return false;
+  const lx = camera.position.x - SEW_X, lz = camera.position.z - SEW_Z;
+  return Math.abs(lx) < SEW.LIP + 0.25 && Math.abs(lz - sewPlankZ) < 0.6;
+}
+function sewTakePlank() {
+  if (sewPlank === 1) return;
+  sewPlank = 1; hovered = null; sewPlankPose();
+  sfxPropHit('wood', 2.5);
+}
+function sewLayPlank() {
+  if (sewPlank !== 1) return;
+  // across from where you stand: the far walk has to be there to land on (it ends at the branch)
+  sewPlankZ = THREE.MathUtils.clamp(camera.position.z - SEW_Z, SEW.T_Z + SEW.LIP + 0.6, SEW.NORTH - 0.6);
+  sewPlank = 2; hovered = null; sewPlankPose();
+  sfxAt(SEW_X, SEW_Z + sewPlankZ, () => sfxPropHit('wood', 5));
+}
+function sewPullLever(i) {
+  if (sewLeverDown(i) || !sewGenOn) return;
+  sewLevers |= 1 << i; hovered = null;
+  const L = sewP.levers[i]; L.lightIn = 0.45;
+  sfxAt(SEW_X - SEW.WALL, SEW_Z + SEW.LEVERS[i], () => { sfxPropHit('metal', 4.5); sfxThud(0.05); });
+}
+function sewPressButton() {
+  if (!sewGenOn) return;
+  hovered = null;
+  if (!sewAllDown()) {
+    sfxAt(SEW_X - 1, SEW_Z + SEW.GEN_Z, () => sfxPropHit('metal', 1.6));
+    flashPrompt('Nothing. The levers are still up.', 1800);
+    return;
+  }
+  sewGenOn = false; sewGenOffT = 0;
+  sfxAt(SEW_X - 1, SEW_Z + SEW.GEN_Z, () => { sfxPropHit('metal', 3.5); sfxThud(0.06); });
+}
+// the state, put on the world at once: a restore, or the build after one
+function sewApplyState() {
+  if (!sewWorld) return;
+  for (const L of sewP.levers) {
+    L.t = sewLeverDown(L.i) ? 1 : 0; L.pv.rotation.x = -SEW_LEVER_ARC * L.t; L.lightIn = -1;
+    L.lamp.want = L.lamp.lvl = sewGenOn && L.t ? 1 : 0;
+  }
+  if (sewP.genLamp) sewP.genLamp.want = sewP.genLamp.lvl = sewGenOn ? 1 : 0;
+  if (!sewGenOn) sewGenOffT = 99;
+  sewGateSwing = sewGateOpen ? 1 : 0; if (sewP.gate) sewP.gate.rotation.y = -1.75 * sewGateSwing;
+  sewChestSwing = sewChestOpen ? 1 : 0; if (sewP.lid) sewP.lid.rotation.x = -easeOutCubic(sewChestSwing) * 1.5;
+  if (sewP.jars) sewP.jars.visible = sewChestOpen && !sewLootTaken;
+  if (sewGlowTaken && sewP.glow && sewP.glow.parent) { sewP.glow.removeFromParent(); removeInteractable(sewP.glow); }
+  if (sewPlank === 1) sewPlank = 0;
+  sewPlankPose();
+}
+function sewRestore(s) {
+  s = s || {};
+  sewLevers = (s.lv | 0) & 15; sewGenOn = !s.gen; sewGateOpen = !!s.gate; sewChestOpen = !!s.chest; sewLootTaken = !!s.loot; sewGlowTaken = !!s.glow;
+  sewPlank = s.plank === 2 ? 2 : 0; sewPlankZ = Number.isFinite(+s.pz) ? +s.pz : SEW.DOOR_Z;
+  sewGenOffT = sewGenOn ? -1 : 99;
+  sewApplyState();
+}
+const sewSave = () => ({ lv: sewLevers, gen: sewGenOn ? 0 : 1, gate: sewGateOpen ? 1 : 0, chest: sewChestOpen ? 1 : 0, loot: sewLootTaken ? 1 : 0,
+  plank: sewPlank === 2 ? 2 : 0, pz: +sewPlankZ.toFixed(2), glow: sewGlowTaken ? 1 : 0 });
+function sewerEnter() {
+  if (!_sewFogSaved) {
+    _sewFogSaved = { color: scene.fog.color.clone(), density: scene.fog.density, sky: sky.visible || !!(hallHid && hallHid.includes(sky)) };
+    scene.fog.color.copy(SEW_FOG.color); scene.fog.density = SEW_FOG.density; sky.visible = false;
+  }
+  setSkyDuck(1);
+}
+function sewerLeave() {
+  if (_sewFogSaved) {
+    scene.fog.color.copy(_sewFogSaved.color); scene.fog.density = _sewFogSaved.density; sky.visible = _sewFogSaved.sky;
+    _sewFogSaved = null;
+  }
+  setSkyDuck(0);
+  if (sewPlank === 1) { sewPlank = 0; sewPlankPose(); }      // up a ladder with a plank in your arms: it is back by the wall
+  if (sewP.vmPlank) sewP.vmPlank.visible = false;
+}
+function placeInSewer() {
+  inC13 = false; inFort = false; onIsle = false; insideTower = false; isleOnGallery = false;
+  mushWhere = 'out'; mushInYard = false; insideDrain = false; drainMix = 0;
+  inSewer = true;
+  sewWorld.visible = true;
+  sewerEnter();
+  try { renderer.compile(sewWorld, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  const f = SEW_Y + SEW.WALK;
+  groundY = f;
+  camera.position.set(SEW_X + SEW.SPAWN.x, f + playerEye(), SEW_Z + SEW.SPAWN.z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(0, SEW.SPAWN.yaw, 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
+  _preMove.set(camera.position.x, 0, camera.position.z);
+}
+function placeOutOfSewer() {
+  inSewer = false;
+  if (sewWorld) sewWorld.visible = false;
+  sewerLeave();
+}
+/* THE FLOOR IS RECTANGLES. The walks either side of the channel (the far one as far as the branch, and into the
+ * branch's mouth to its grate), the plank once it is down, the door's passage to the grate (or on into the room
+ * once the gate is open) — the channel is a drop you are not let into. Kept inside them, out of what stands on
+ * them, inside them again (the culvert's order: `clampToCulvert`). */
+const _sewRects = [];
+function sewRects() {
+  const R = PLAYER_R, S = SEW, out = _sewRects; out.length = 0;
+  out.push([-S.WALL + R, S.END + R, -S.LIP - 0.02, S.NORTH - R]);
+  out.push([S.LIP + 0.02, S.T_Z + S.LIP + 0.02, S.WALL - R, S.NORTH - R]);
+  out.push([S.LIP + 0.02, S.T_Z + S.LIP + 0.02, S.BR_END - R, S.T_Z + S.BR_HW - R]);
+  // the inside corner where the far walk turns into the branch: a body goes round it, not into a square notch
+  out.push([S.WALL - R - 0.02, S.T_Z + S.BR_HW - R - 0.02, S.WALL - R + 0.13, S.T_Z + S.BR_HW - R + 0.13]);
+  // the plank, its ends well onto both walks so a step off it at a slant lands on one
+  if (sewPlank === 2) out.push([-S.LIP - 0.35, sewPlankZ - SEW_PLANK_HW, S.LIP + 0.35, sewPlankZ + SEW_PLANK_HW]);
+  const hw = S.DOOR_HW - R;
+  out.push([S.WALL - R - 0.05, S.DOOR_Z - hw, sewGateOpen && sewGateSwing > 0.6 ? S.ROOM_X0 + R + 0.1 : S.GATE_X - 0.08 - R, S.DOOR_Z + hw]);
+  if (sewGateOpen && sewGateSwing > 0.6) out.push([S.ROOM_X0 + R, S.ROOM_Z0 + R, S.ROOM_X1 - R, S.ROOM_Z1 - R]);
+  return out;
+}
+const SEW_PLANK_HW = 0.13;                         // how far off the plank's line the body may stand (the board is 0.30 across)
+function sewClamp() {
+  const R = PLAYER_R, rects = sewRects();
+  let lx = camera.position.x - SEW_X, lz = camera.position.z - SEW_Z;
+  /* THE NARROW WAYS CATCH YOU (walked 2026-10-22: arriving a hand off the plank's line stopped you dead at the lip,
+   * and the side door is a 1.07 m gap for a 0.8 m body). Heading onto the plank or into the door's passage, the body
+   * is drawn to its line — only while it is moving that way, so walking past is walking past. */
+  const mx = lx - (_preMove.x - SEW_X);
+  if (sewPlank === 2 && Math.abs(lx) < SEW.LIP + 0.45 && Math.abs(lz - sewPlankZ) < 0.75 && Math.abs(mx) > 0.002 && Math.sign(mx) === -Math.sign(lx || mx)) {
+    lz = sewPlankZ + (lz - sewPlankZ) * (Math.abs(lx) < SEW.LIP ? 0.6 : 0.82);
+  }
+  if (lx > SEW.WALL - R - 0.5 && lx < SEW.STUB1 && Math.abs(lz - SEW.DOOR_Z) < 0.75 && mx > 0.002) {
+    lz = SEW.DOOR_Z + (lz - SEW.DOOR_Z) * (lx > SEW.WALL - R ? 0.6 : 0.82);
+  }
+  const onRects = () => {
+    let bx = lx, bz = lz, bd = Infinity;
+    for (const [x0, z0, x1, z1] of rects) {
+      const cx = Math.min(x1, Math.max(x0, lx)), cz = Math.min(z1, Math.max(z0, lz)), d = (cx - lx) ** 2 + (cz - lz) ** 2;
+      if (d < bd) { bd = d; bx = cx; bz = cz; }
+    }
+    lx = bx; lz = bz;
+  };
+  onRects();
+  /* A BODY IS ROUND (2026-10-22, walked: going south along the wall the first pass stopped dead at the ladder). Pushed
+   * out to the nearest EDGE of a box grown by the radius, a body arriving at a corner is thrown straight back the way
+   * it came and never slides round; out along the line from the box's nearest point, it is turned along the side. */
+  for (const [x0, z0, x1, z1, tag] of sewP.props) {
+    if (tag === 'plank' && sewPlank !== 0) continue;
+    const cx = Math.min(x1, Math.max(x0, lx)), cz = Math.min(z1, Math.max(z0, lz)), dx = lx - cx, dz = lz - cz, d = Math.hypot(dx, dz);
+    if (d >= R) continue;
+    if (d > 1e-4) { lx = cx + dx / d * R; lz = cz + dz / d * R; continue; }
+    const dl = lx - x0, dr = x1 - lx, db = lz - z0, df = z1 - lz, m = Math.min(dl, dr, db, df);   // (inside it: out the shortest way)
+    if (m === dl) lx = x0 - R; else if (m === dr) lx = x1 + R; else if (m === db) lz = z0 - R; else lz = z1 + R;
+  }
+  onRects();
+  camera.position.x = SEW_X + lx; camera.position.z = SEW_Z + lz;
+}
+function sewClampPlayer() {
+  if (!inSewer || !sewReady) return false;
+  sewClamp();
+  return true;
+}
+// a step in here: a splash in the flood, a board on the plank, the drain's concrete everywhere else
+function sewStepSnd() {
+  const lx = camera.position.x - SEW_X;
+  if (lx > SEW.WALL + 0.05) sfxSplash(0.4);
+  else if (sewOnPlank()) sfxStepWood();
+  else sfxStepDrain();
+}
+/* STEPPING INTO LIVE WATER: the zap, the screen thrown, and dead (dev mode throws you back out of it instead) */
+function sfxSewZap(k = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), len = 0.5 * k;
+  const n = noiseBurst(len, (x) => Math.pow(1 - x, 1.4) * (Math.random() < 0.55 ? 1 : 0.15));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 0.7;
+  const g = ctx.createGain(); g.gain.value = 0.5 * Math.min(1.5, k);
+  n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + len);
+  const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 60;
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.22 * Math.min(1.5, k), t); og.gain.exponentialRampToValueAtTime(0.0001, t + len * 0.9);
+  o.connect(og).connect(out); o.start(t); o.stop(t + len);
+}
+function sewZap() {
+  if (sewZapT > 0 || dying) return;
+  sewZapT = 1.2;
+  sfxSewZap(1.5); addTrauma(1); hurtFlash = 1; fovKick = Math.max(fovKick, 9);
+  for (const s of sewP.sparks) s.next = 0;
+  if (settings.devMode) { camera.position.x = SEW_X + SEW.WALL - PLAYER_R - 0.05; knockback.set(-4, 0, 0); return; }
+  hp = 0;
+  setTimeout(() => playerDied(), 380);
+}
+function sewDrip() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), f = 520 + Math.random() * 700;
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(f * 0.5, t); o.frequency.exponentialRampToValueAtTime(f * 1.9, t + 0.04);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.1 + Math.random() * 0.12, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+  let dst = out;
+  if (ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = Math.random() * 1.6 - 0.8; sp.connect(out); dst = sp; }
+  const dl = ctx.createDelay(1); dl.delayTime.value = 0.12 + Math.random() * 0.08;
+  const fb = ctx.createGain(); fb.gain.value = 0.38; const wet = ctx.createGain(); wet.gain.value = 0.5;
+  dl.connect(fb).connect(dl);
+  o.connect(g); g.connect(dst); g.connect(dl).connect(wet).connect(dst);
+  o.start(t); o.stop(t + 0.45);
+  setTimeout(() => { try { wet.disconnect(); fb.disconnect(); dl.disconnect(); } catch (e) {} }, 2800);
+}
+/* THE SOUND OF IT: his sewer recording for the bed (the drain's), the generator's hum (two low tones through a
+ * lowpass, beating with its engine) from wherever it is, the box's mains buzz from the room, drips about you.
+ * The hum winds down when it is shut off and the buzz stops with it. */
+let sewAud = null;
+function sewAudioTick(dt) {
+  const ctx = audioCtx; if (!ctx || !started || !sfxBusGain) return;
+  if (!sewAud) {
+    if (!inSewer) return;
+    const A = sewAud = { drip: 2 };
+    const pan = () => (ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain());
+    A.humG = ctx.createGain(); A.humG.gain.value = 0; A.humP = pan();
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.8;
+    A.hum1 = ctx.createOscillator(); A.hum1.type = 'sawtooth'; A.hum1.frequency.value = 49;
+    A.hum2 = ctx.createOscillator(); A.hum2.type = 'square'; A.hum2.frequency.value = 98;
+    const g2 = ctx.createGain(); g2.gain.value = 0.3;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 6.2; const lg = ctx.createGain(); lg.gain.value = 0.25; lfo.connect(lg);
+    const thr = ctx.createGain(); thr.gain.value = 0.75; lg.connect(thr.gain);
+    A.hum1.connect(lp); A.hum2.connect(g2).connect(lp); lp.connect(thr).connect(A.humG).connect(A.humP).connect(sfxBusGain);
+    A.hum1.start(); A.hum2.start(); lfo.start();
+    A.buzzG = ctx.createGain(); A.buzzG.gain.value = 0; A.buzzP = pan();
+    const bz = ctx.createOscillator(); bz.type = 'square'; bz.frequency.value = 120;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 1.2;
+    bz.connect(bp).connect(A.buzzG).connect(A.buzzP).connect(sfxBusGain); bz.start();
+    // under all of it a pressure more than a note: two sub tones beating, felt before they are heard
+    A.subG = ctx.createGain(); A.subG.gain.value = 0;
+    const sl = ctx.createBiquadFilter(); sl.type = 'lowpass'; sl.frequency.value = 95;
+    for (const f of [34, 35.3]) { const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.connect(sl); o.start(); }
+    sl.connect(A.subG).connect(sfxBusGain);
+    A.groan = 9 + Math.random() * 10; A.thud = 24 + Math.random() * 20; A.rat = 12 + Math.random() * 12;
+  }
+  const A = sewAud, t = ctx.currentTime, on = inSewer ? 1 : 0, c = camera.position;
+  const buf = lazyBuf(SEWER_BED);
+  if (!A.bed && buf) { A.bed = recLoop(buf, sfxBusGain, 0.82); const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1300; lp.connect(A.bed.g); A.bed.start(lp); }
+  if (A.bed) A.bed.g.gain.setTargetAtTime(on * 0.5, t, 0.6);
+  const run = sewGenOn ? 1 : Math.max(0, 1 - sewGenOffT / 3);
+  const gd = Math.hypot(c.x - SEW_X, c.z - (SEW_Z + SEW.GEN_Z));
+  A.humG.gain.setTargetAtTime(on * run * 0.32 / (1 + gd / 5), t, 0.15);
+  A.hum1.frequency.setTargetAtTime(49 * (0.25 + 0.75 * run), t, 0.4);
+  A.hum2.frequency.setTargetAtTime(98 * (0.25 + 0.75 * run), t, 0.4);
+  if (A.humP.pan) A.humP.pan.setTargetAtTime(panTo(SEW_X, SEW_Z + SEW.GEN_Z) * 0.7, t, 0.1);
+  const bd = Math.hypot(c.x - (SEW_X + SEW.ROOM_X1), c.z - (SEW_Z + SEW.DOOR_Z));
+  A.buzzG.gain.setTargetAtTime(on * (sewGenOn ? 1 : 0) * 0.09 / (1 + bd / 3), t, 0.08);
+  if (A.buzzP.pan) A.buzzP.pan.setTargetAtTime(panTo(SEW_X + SEW.ROOM_X1, SEW_Z + SEW.DOOR_Z) * 0.7, t, 0.1);
+  A.drip -= dt;
+  if (on && A.drip <= 0) { A.drip = 1.2 + Math.random() * 4; sewDrip(); }
+  A.subG.gain.setTargetAtTime(on * 0.075, t, 0.8);
+  // the place's own noises, somewhere off in the dark: pipes groaning, something heavy, rats
+  if (on) {
+    A.groan -= dt; A.thud -= dt; A.rat -= dt;
+    if (A.groan <= 0) { A.groan = 18 + Math.random() * 26; sewGroan(); }
+    if (A.thud <= 0) { A.thud = 38 + Math.random() * 45; sewThuds(1 + ((Math.random() * 3) | 0)); }
+    if (A.rat <= 0) { A.rat = 15 + Math.random() * 25; sewRats(); }
+  }
+}
+/* A PIPE GROANING: a low saw gliding down through a resonance that sweeps, a rumble of noise under it, from one
+ * side or the other — metal settling somewhere in the walls */
+function sewGroan() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), dur = 2.2 + Math.random() * 1.8, f0 = 62 + Math.random() * 20;
+  let dst = out;
+  if (ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.5); sp.connect(out); dst = sp; }
+  const o = ctx.createOscillator(); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f0 * 0.68, t + dur);
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 9;
+  bp.frequency.setValueAtTime(140, t); bp.frequency.linearRampToValueAtTime(260 + Math.random() * 120, t + dur * 0.6); bp.frequency.linearRampToValueAtTime(150, t + dur);
+  const g = ctx.createGain(); const peak = 0.10 + Math.random() * 0.08;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + dur * 0.35); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(bp).connect(g).connect(dst); o.start(t); o.stop(t + dur + 0.05);
+  const n = noiseBurst(dur, (x) => Math.sin(x * Math.PI) * 0.6);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 160;
+  const ng = ctx.createGain(); ng.gain.value = peak * 1.4;
+  n.connect(lp).connect(ng).connect(dst); n.start(t); n.stop(t + dur);
+}
+/* SOMETHING HEAVY, a long way off: one to three dull impacts half a second apart, each a falling low thump and a
+ * dark slap, with the tunnel's echo after them. Nothing comes of it. */
+function sewThuds(n) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime, out = sfxOut(), pan = Math.random() * 1.4 - 0.7, gap = 0.48 + Math.random() * 0.25;
+  let dst = out;
+  if (ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = pan; sp.connect(out); dst = sp; }
+  const dl = ctx.createDelay(1.5); dl.delayTime.value = 0.31; const fb = ctx.createGain(); fb.gain.value = 0.42; const wet = ctx.createGain(); wet.gain.value = 0.55;
+  dl.connect(fb).connect(dl); dl.connect(wet).connect(dst);
+  for (let k = 0; k < n; k++) {
+    const t = t0 + k * gap, v = 0.26 * (0.8 + Math.random() * 0.3);
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(52, t); o.frequency.exponentialRampToValueAtTime(28, t + 0.35);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    o.connect(g); g.connect(dst); g.connect(dl); o.start(t); o.stop(t + 0.55);
+    const s = noiseBurst(0.18, (x) => Math.pow(1 - x, 3));
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 220;
+    const sg = ctx.createGain(); sg.gain.value = v * 0.8;
+    s.connect(lp).connect(sg); sg.connect(dst); sg.connect(dl); s.start(t); s.stop(t + 0.18);
+  }
+  setTimeout(() => { try { wet.disconnect(); fb.disconnect(); dl.disconnect(); } catch (e) {} }, (n * gap + 5) * 1000);
+}
+/* RATS: a run of thin squeaks and the patter of them going, passing from one side to the other */
+function sewRats() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime, out = sfxOut(), p0 = Math.random() * 1.6 - 0.8, p1 = THREE.MathUtils.clamp(p0 + (Math.random() < 0.5 ? -0.8 : 0.8), -0.9, 0.9);
+  let dst = out, sp = null;
+  if (ctx.createStereoPanner) { sp = ctx.createStereoPanner(); sp.pan.setValueAtTime(p0, t0); sp.pan.linearRampToValueAtTime(p1, t0 + 1.4); sp.connect(out); dst = sp; }
+  const nq = 2 + ((Math.random() * 4) | 0);
+  for (let k = 0; k < nq; k++) {
+    const t = t0 + k * (0.09 + Math.random() * 0.16), f = 3000 + Math.random() * 2200, d = 0.05 + Math.random() * 0.07;
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f, t); o.frequency.linearRampToValueAtTime(f * (0.85 + Math.random() * 0.4), t + d);
+    const vib = ctx.createOscillator(); vib.frequency.value = 38 + Math.random() * 20; const vg = ctx.createGain(); vg.gain.value = f * 0.04; vib.connect(vg).connect(o.frequency);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.035, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g).connect(dst); o.start(t); vib.start(t); o.stop(t + d + 0.02); vib.stop(t + d + 0.02);
+  }
+  const steps = 10 + ((Math.random() * 8) | 0);
+  for (let k = 0; k < steps; k++) {
+    const t = t0 + 0.3 + k * (0.035 + Math.random() * 0.03);
+    const s = noiseBurst(0.012, (x) => Math.pow(1 - x, 2));
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400 + Math.random() * 1600; bp.Q.value = 2;
+    const g = ctx.createGain(); g.gain.value = 0.05 * (1 - k / steps * 0.6);
+    s.connect(bp).connect(g).connect(dst); s.start(t); s.stop(t + 0.012);
+  }
+}
+const _sewC = new THREE.Color(), _sewHeld = new THREE.Vector3();
+const SEW_BEAM_K = 0.75;                           // how much lit air stands under a burning lamp (measured: the drain's 0.07 and 0.24 are lost under ACES in this dark; 0.8 reads as a soft wedge)
+function updateSewer(dt) {
+  if (!sewWorld) {
+    // fetched once the drain's grate is off and you are near it: the pipe behind it comes out here
+    if (grateOff && Math.abs(camera.position.x - DRAIN_X) < 70 && Math.abs(camera.position.z - DRAIN_Z) < 70) loadSewer();
+    return;
+  }
+  sewWorld.visible = inSewer;
+  sewAudioTick(dt);
+  if (sewP.vmPlank) sewP.vmPlank.visible = inSewer && sewPlank === 1;
+  if (!inSewer || !sewReady) return;
+  const now = performance.now() * 0.001;
+  if (sewZapT > 0) sewZapT -= dt;
+  if (!sewGenOn && sewGenOffT < 99) sewGenOffT += dt;
+  // the knives swing down, and the lamp over each comes on a beat after, stuttering as it catches
+  for (const L of sewP.levers) {
+    const want = sewLeverDown(L.i) ? 1 : 0;
+    if (L.t !== want) { L.t = THREE.MathUtils.clamp(L.t + (want - L.t > 0 ? dt : -dt) * 3.2, 0, 1); L.pv.rotation.x = -SEW_LEVER_ARC * easeOutCubic(L.t); }
+    if (L.lightIn >= 0) {
+      L.lightIn -= dt;
+      if (L.lightIn < 0 && sewGenOn) { L.lamp.want = 1; L.lamp.flick = 0.8; sfxAt(SEW_X + SEW.LAMP_X, SEW_Z + SEW.LEVERS[L.i], () => sfxPropHit('glass', 1.2)); }
+    }
+    // the pilot: a red blink until it is pulled, green and steady after, dark once the power is gone
+    let col = 0x300606, li = 0, ho = 0;
+    if (sewGenOn || sewGenOffT < 0.25) {
+      if (sewLeverDown(L.i)) { col = 0x34ff52; li = 0.3; ho = 0.35; L.bl.color.setHex(0x34ff52); L.bh.material.color.setHex(0x34ff52); }
+      else {
+        const on = ((now * 0.9 + L.i * 0.27) % 1) < 0.32;
+        col = on ? 0xff2a14 : 0x3a0606; li = on ? 0.75 : 0; ho = on ? 0.85 : 0;
+        L.bl.color.setHex(0xff2412); L.bh.material.color.setHex(0xff2a14);
+      }
+    }
+    L.bulb.material.color.setHex(col); L.bl.intensity = li; L.bh.material.opacity = ho;
+  }
+  // the power going: one lamp after another from the generator back toward you, each with a stutter
+  if (!sewGenOn) for (const lp of sewP.lamps) if (lp.want && sewGenOffT >= lp.cutAt) { lp.want = 0; lp.flick = 0.45; }
+  /* AND WHILE IT RUNS IT IS NOT STEADY: now and then one lamp that is burning stutters, with the crack of a bad
+   * contact — the Bunker's lights, which you never quite trust */
+  sewP.flickIn = (sewP.flickIn ?? 6) - dt;
+  if (sewP.flickIn <= 0) {
+    sewP.flickIn = 7 + Math.random() * 14;
+    const lit = sewP.lamps.filter((lp) => lp.want && lp.lvl > 0.9 && lp.flick <= 0);
+    if (lit.length && sewGenOn) {
+      const lp = lit[(Math.random() * lit.length) | 0]; lp.flick = 0.25 + Math.random() * 0.6;
+      sfxAt(SEW_X + lp.L.position.x, SEW_Z + lp.L.position.z, () => sfxSewZap(0.09), { ref: 3, far: 26 });
+    }
+  }
+  for (const lp of sewP.lamps) {
+    let k = lp.want;
+    if (lp.flick > 0) { lp.flick -= dt; k = Math.random() < 0.45 ? 1 - lp.want : lp.want; if (lp.flick <= 0) k = lp.want; }
+    lp.lvl += (k - lp.lvl) * Math.min(1, dt * 30);
+    const breathe = 0.95 + 0.035 * Math.sin(now * 1.3 + lp.ph) + 0.015 * Math.sin(now * 2.7 + lp.ph * 2);
+    lp.L.intensity = lp.base * lp.lvl * breathe;
+    lp.halo.material.opacity = 0.5 * lp.lvl;
+    if (lp.beam) lp.beam.uniforms.uK.value = SEW_BEAM_K * lp.lvl * breathe;
+    for (const m of lp.mats) m.emissiveIntensity = 1.3 * lp.lvl;
+  }
+  // and the walls go darker with them: the lamps were most of what you saw them by
+  { const k = sewGenOn ? 1 : 1 - (1 - SEW_DARK) * THREE.MathUtils.clamp(sewGenOffT / 3, 0, 1);
+    if (sewP.liftK !== k) { sewP.liftK = k; for (const m of sewP.lift) m.emissiveIntensity = k; } }
+  if (sewP.pilots) for (const p of sewP.pilots) { const live = sewGenOn || sewGenOffT < 0.2; p.m.material.color.setHex(live ? p.col : 0x101010); p.h.material.opacity = live ? 0.7 : 0; }
+  if (sewP.lockEye) { const live = sewGenOn || sewGenOffT < 2.6; sewP.lockEye.eye.material.color.setHex(live ? 0xff2010 : 0x1a0606); sewP.lockEye.eh.material.opacity = live ? 0.8 : 0;
+    if (!sewGenOn && sewGenOffT >= 2.6 && sewGenOffT - dt < 2.6) sfxAt(SEW_X + SEW.GATE_X, SEW_Z + SEW.DOOR_Z, () => sfxLockOpen()); }
+  // the wires in the water: a crack of blue now and then while it is live, the water lit with it
+  let zap = 0;
+  const live = sewGenOn || sewGenOffT < 0.45;
+  for (const s of sewP.sparks) {
+    s.next -= dt;
+    if (live && s.next <= 0) { s.t = 0.04 + Math.random() * 0.09; s.next = 0.25 + Math.random() * 1.6; s.sp.scale.setScalar(0.22 + Math.random() * 0.3);
+      if (Math.random() < 0.35) sfxAt(SEW_X + SEW.ROOM_X1 - 0.4, SEW_Z + SEW.DOOR_Z, () => sfxSewZap(0.18 + Math.random() * 0.12), { ref: 3, far: 22 }); }
+    if (s.t > 0) { s.t -= dt; zap = Math.max(zap, 0.6 + Math.random() * 0.4); }
+    s.sp.material.opacity = s.t > 0 && live ? 0.9 : 0;
+  }
+  sewP.zap.intensity = live ? zap * 2.4 : 0;
+  sewP.boxLight.intensity = live ? 0.75 + 0.02 * Math.sin(now * 2.3) + zap * 0.5 : 0;   // (a lamp breathes, it does not strobe: the sparks are the flicker)
+  sewP.floodMat.emissiveIntensity = live ? zap * 0.35 : 0;
+  // the gate swings in, the lid comes up
+  if (sewGateOpen && sewGateSwing < 1) { sewGateSwing = Math.min(1, sewGateSwing + dt / 1.2); sewP.gate.rotation.y = -1.75 * easeOutCubic(sewGateSwing); }
+  const cw = sewChestOpen ? 1 : 0;
+  if (sewP.lid && Math.abs(sewChestSwing - cw) > 0.001) { sewChestSwing += (cw - sewChestSwing) * Math.min(1, dt * 4.5); sewP.lid.rotation.x = -easeOutCubic(sewChestSwing) * 1.5; }
+  // the dust: lit by the eight lights that matter, the glowstick in your hand among them (its world spot into ours)
+  if (sewP.dust) {
+    const U = sewP.dust.uniforms, srcs = [];
+    for (const lp of sewP.lamps) srcs.push([lp.L.position, lp.L.color, lp.L.intensity]);
+    srcs.push([sewP.boxLight.position, sewP.boxLight.color, sewP.boxLight.intensity], [sewP.zap.position, sewP.zap.color, sewP.zap.intensity]);
+    _sewHeld.set(heldGlow.position.x - SEW_X, heldGlow.position.y - SEW_Y, heldGlow.position.z - SEW_Z);
+    srcs.push([_sewHeld, heldGlow.color, heldGlow.intensity * 0.6]);
+    for (let k = 0; k < U.uL.value.length; k++) {
+      const s = srcs[k];
+      if (s && s[2] > 0.01) { U.uL.value[k].copy(s[0]); U.uLC.value[k].set(s[1].r * s[2], s[1].g * s[2], s[1].b * s[2]); }
+      else { U.uL.value[k].set(0, -99, 0); U.uLC.value[k].set(0, 0, 0); }
+    }
+    U.uT.value = now;
+  }
+  // the water creeps down the channel, the mist drifts
+  if (sewP.ripple) sewP.ripple.offset.y += dt * 0.05;
+  sewP.mist.forEach((tx, i) => { tx.offset.x += dt * (0.006 + i * 0.002); tx.offset.y += dt * (i % 2 ? -0.009 : 0.011); });
+  // the floor: kept on it, a hair higher on the plank, and the live water
+  sewClamp();
+  groundY = SEW_Y + SEW.WALK + (sewOnPlank() ? 0.05 : 0);
+  const lx = camera.position.x - SEW_X, lz = camera.position.z - SEW_Z;
+  if (sewGenOn && lx > SEW.WALL + 0.12 && Math.abs(lz - SEW.DOOR_Z) < 0.7) sewZap();
+}
+const _floorBeforeSew = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => {
+  if (inSewer && Math.abs(x - SEW_X) < 60 && Math.abs(z - SEW_Z) < 60) {
+    const lx = x - SEW_X, lz = z - SEW_Z;
+    return SEW_Y + (Math.abs(lx) < SEW.LIP && lz > SEW.CH_END ? SEW.WATER : SEW.WALK);
+  }
+  return _floorBeforeSew(x, z, y);
+};
 
 /* =====================================================================
  * THE DUNGEON BEHIND THE PAVILION (2026-10-14, the owner: "add a door that leads to this castle dungeon
@@ -104215,7 +105302,7 @@ Object.assign(window.__bw, { crusaderShieldTick, crusaderChain, farmCobble, farm
   recBufs: () => Object.fromEntries(Object.entries(lazyBufs).map(([k, v]) => [k, v.buf ? +v.buf.duration.toFixed(2) : v.busy ? 'loading' : 'failed'])),
   startWreckTheme,
   audioDbg: () => ({ forest: forestBed && +forestBed.g.gain.value.toFixed(4), ben: benBr && benBr.g && +benBr.g.gain.value.toFixed(4), sand: (sampleBanks.sandStep || []).filter(Boolean).length, benBuf: (sampleBanks.benBreath || []).filter(Boolean).length, bedK: beachBedK() }),
-  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, isleBarkS: () => isleBark, isleBarkPush, isleRampAt, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, isleLast: () => ({ x: isleLastSpot.x, z: isleLastSpot.z, f: isleLastFloor }), isleSetLast: (x, z, f) => { onIsle = true; insideTower = false; isleOnGallery = false; isleLastFloor = f; isleLastSpot.x = x; isleLastSpot.z = z; isleGood.ok = false; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), placeInC13, devRoom: () => saveRoom() || 'beach', devLeaveRooms, placeInDungeon, wellReveal, wellStalkS: () => ({ stare: +wellStalk.stare.toFixed(2), awake: !!(wellUnit && wellUnit.st.awake), hold: !!(wellUnit && wellUnit.holdAnim), cine: cineHold }), wellAudS: () => ({ aud: !!(wellAud && wellAud.ctx === audioCtx), prep: !!wellPrep, buf: !!(wellPrep && wellPrep.buf), drone: !!wellDroneNodes, air: +wellAirK.toFixed(3) }), wellLookStart, wellLetUp, wellLeave, endDialog, WELL_X, WELL_Z, wellG, wellSetBucket, sharpenFrame, startCrabCut, hornItem, hornLie, startWakeCut, wakeS: () => ({ t: wakeCut ? +wakeCut.t.toFixed(2) : -1, built: !!wakeSet, seated: wakeSet ? wakeSet.seated : null, ended }), wakeG: () => ({ scene: wakeScene, cam: wakeCam, set: wakeSet }), WAKE_T, crabS: () => ({ t: crabCut ? +crabCut.t.toFixed(2) : -1, giant: !!crabGiant, y: crabGiant ? +crabGiant.position.y.toFixed(1) : null, horn: hornState, ended }), CRAB_T, thrHeadToCamera, isleMagicS: () => ({ k: isleMagicK, top: isleTopK, fog: scene.fog.density, keep: FOG_KEEP.w }), wellPartsS: () => wellParts, rockSurfS: () => rockSurfList, crabUnit, cellKeyS: () => ({ ...cellKey, world: !!cellKey.world, prop: !!cellKey.prop }), henryFreeS: () => ({ henryFree, phase: henry && henry.free ? henry.free.phase : null, ring: henryRingTaken, t: henry && henry.free ? +henry.free.t.toFixed(2) : -1 }), henryRingW: () => henryRingWorld, takeHenryRing, goldRingItem, hjS: () => ({ taken: hjTaken, loaded: !!hj, eagle: !!hjEagle, mode: hj ? hj.mode : null, cut: hjCut ? hjCut.phase : null, t: hjCut ? +hjCut.t.toFixed(2) : -1 }), hjG: () => ({ hj, eagle: hjEagle, cut: hjCut }), loadJettyHenry, hjTalk, startHenrySnatch, isleRestoreAt, bootLeft: () => ({ n: startLeft(), open: bwOpen, waiting: bwWaiting.map((j) => j.url.split('/').pop()), parsing: bwParsing, warm: warmSteps.map((w) => w[0]).slice(0, 12), nWarm: warmSteps.length, tex: (texUp.q.length + texUp.wait.length), drain: drainWarmed, mush: mushWarmed, bunker: bunkerWarmed, rooms: bootRoomsAsked }), henryMocap, henryPlay, henrySample, setHenryFree: (v) => { henryFree = v; }, HJ_SPOT, cellKeyItem, cellKeyLie, dealerDropsCellKey, dunS: () => ({ ready: dunReady, inDun, busy: dunBusy, door: !!dunDoorMesh, doorR: dunDoorMesh ? dunDoorMesh.userData.r : null, henry: !!henry, walls: !!dunWalls }), dunG: () => ({ world: dunWorld, door: dunDoorMesh, henry, HENRY_POSE }), startDungeon, loadDungeon, henryPose, DUN_X, DUN_Y, DUN_Z, rockCrabS: () => ({ taken: rockCrabTaken, at: rockCrabW ? rockCrabW.position.toArray().map((v) => +v.toFixed(2)) : null, fill: window.__bwRockFill }), WELL_RIM_Y, wellClinch, wellGrab, wellMindS, wellPhotoItem, wellPhotoS: () => ({ taken: wellPhotoTaken, onTable: !!wellPhotoOnTable }), traderSell, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
+  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, isleBarkS: () => isleBark, isleBarkPush, isleRampAt, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, isleLast: () => ({ x: isleLastSpot.x, z: isleLastSpot.z, f: isleLastFloor }), isleSetLast: (x, z, f) => { onIsle = true; insideTower = false; isleOnGallery = false; isleLastFloor = f; isleLastSpot.x = x; isleLastSpot.z = z; isleGood.ok = false; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), placeInC13, devRoom: () => saveRoom() || 'beach', devLeaveRooms, placeInDungeon, wellReveal, wellStalkS: () => ({ stare: +wellStalk.stare.toFixed(2), awake: !!(wellUnit && wellUnit.st.awake), hold: !!(wellUnit && wellUnit.holdAnim), cine: cineHold }), wellAudS: () => ({ aud: !!(wellAud && wellAud.ctx === audioCtx), prep: !!wellPrep, buf: !!(wellPrep && wellPrep.buf), drone: !!wellDroneNodes, air: +wellAirK.toFixed(3) }), wellLookStart, wellLetUp, wellLeave, endDialog, WELL_X, WELL_Z, wellG, wellSetBucket, sharpenFrame, startCrabCut, hornItem, hornLie, startWakeCut, wakeS: () => ({ t: wakeCut ? +wakeCut.t.toFixed(2) : -1, built: !!wakeSet, seated: wakeSet ? wakeSet.seated : null, ended }), wakeG: () => ({ scene: wakeScene, cam: wakeCam, set: wakeSet }), WAKE_T, crabS: () => ({ t: crabCut ? +crabCut.t.toFixed(2) : -1, giant: !!crabGiant, y: crabGiant ? +crabGiant.position.y.toFixed(1) : null, horn: hornState, ended }), CRAB_T, thrHeadToCamera, isleMagicS: () => ({ k: isleMagicK, top: isleTopK, fog: scene.fog.density, keep: FOG_KEEP.w }), wellPartsS: () => wellParts, rockSurfS: () => rockSurfList, crabUnit, cellKeyS: () => ({ ...cellKey, world: !!cellKey.world, prop: !!cellKey.prop }), henryFreeS: () => ({ henryFree, phase: henry && henry.free ? henry.free.phase : null, ring: henryRingTaken, t: henry && henry.free ? +henry.free.t.toFixed(2) : -1 }), henryRingW: () => henryRingWorld, takeHenryRing, goldRingItem, hjS: () => ({ taken: hjTaken, loaded: !!hj, eagle: !!hjEagle, mode: hj ? hj.mode : null, cut: hjCut ? hjCut.phase : null, t: hjCut ? +hjCut.t.toFixed(2) : -1 }), hjG: () => ({ hj, eagle: hjEagle, cut: hjCut }), loadJettyHenry, hjTalk, startHenrySnatch, isleRestoreAt, bootLeft: () => ({ n: startLeft(), open: bwOpen, waiting: bwWaiting.map((j) => j.url.split('/').pop()), parsing: bwParsing, warm: warmSteps.map((w) => w[0]).slice(0, 12), nWarm: warmSteps.length, tex: (texUp.q.length + texUp.wait.length), drain: drainWarmed, mush: mushWarmed, bunker: bunkerWarmed, rooms: bootRoomsAsked }), henryMocap, henryPlay, henrySample, setHenryFree: (v) => { henryFree = v; }, HJ_SPOT, cellKeyItem, cellKeyLie, dealerDropsCellKey, sewS: () => ({ ready: sewReady, inSewer, levers: sewLevers, gen: sewGenOn, offT: +sewGenOffT.toFixed(2), gate: sewGateOpen, chest: sewChestOpen, loot: sewLootTaken, glow: sewGlowTaken, plank: sewPlank, pz: sewPlankZ, lx: +(camera.position.x - SEW_X).toFixed(2), lz: +(camera.position.z - SEW_Z).toFixed(2) }), sewG: () => ({ world: sewWorld, P: sewP, SEW, SEW_X, SEW_Y, SEW_Z }), loadSewer, placeInSewer, placeOutOfSewer, sewGroan, sewThuds, sewRats, sfxSewZap, sewPullLever, sewPressButton, sewTakePlank, sewLayPlank, sewRestore, sewSet: (lx, lz, yaw = 0, pitch = 0) => { camera.position.set(SEW_X + lx, SEW_Y + SEW.WALK + playerEye(), SEW_Z + lz); camBaseY = camera.position.y; lookEuler.set(pitch, yaw, 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); _preMove.set(camera.position.x, 0, camera.position.z); }, dunS: () => ({ ready: dunReady, inDun, busy: dunBusy, door: !!dunDoorMesh, doorR: dunDoorMesh ? dunDoorMesh.userData.r : null, henry: !!henry, walls: !!dunWalls }), dunG: () => ({ world: dunWorld, door: dunDoorMesh, henry, HENRY_POSE }), startDungeon, loadDungeon, henryPose, DUN_X, DUN_Y, DUN_Z, rockCrabS: () => ({ taken: rockCrabTaken, at: rockCrabW ? rockCrabW.position.toArray().map((v) => +v.toFixed(2)) : null, fill: window.__bwRockFill }), WELL_RIM_Y, wellClinch, wellGrab, wellMindS, wellPhotoItem, wellPhotoS: () => ({ taken: wellPhotoTaken, onTable: !!wellPhotoOnTable }), traderSell, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
   c13State: () => ({ inC13, ready: c13Ready, walls: !!c13Walls, life: !!c13Life, torches: !!(c13Life && c13Life.torches), mask: !!C13_M.data,
     thrive: c13Thrive && { done: c13Thrive.done, jobs: c13Jobs.length, torches: (c13Thrive.torchAt || []).length, banners: c13Thrive.banners.length, lanterns: c13Thrive.lanterns.length, stalls: c13Thrive.stalls.length, towers: (c13Thrive.towers || []).length, lines: (c13Thrive.lines || []).length, windows: (c13Thrive.windows || []).length, fountain: c13Thrive.fountain && [c13Thrive.fountain.x, c13Thrive.fountain.z], door: c13Thrive.door, solids: c13Solids.length, flowers: c13Thrive.flowers, snd: c13Snd && { fountain: !!c13Snd.fsrc, fg: c13Snd.fg && +c13Snd.fg.gain.value.toFixed(3), lute: c13Snd.playing, lg: +c13Snd.lute.gain.value.toFixed(3) } } }),
   c13Thrive: () => c13Thrive, c13Solids, c13Open, c13RunJobs, placeInC13, C13_SITE, C13_X, C13_Y, C13_Z,
