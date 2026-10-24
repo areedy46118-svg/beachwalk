@@ -517,3 +517,122 @@ the drain's grate).**
   stub it (the tool times out); and while the game's loop also runs, a still can be one of ITS frames — measure with
   `readPixels` straight after `frame(1)` (`__sw.lum`). Restoring the sewer's state while standing in the room shuts the
   gate, the clamp puts you in the live passage, and you die — `sewRestore` from the walk.
+
+## The kit's surfaces on the drain, the brick headwall, the storeroom cut down (2026-10-23)
+
+The owner: "revamp the sewer tunnel using the modular sewer textures to better match the deeper sewerrooms area",
+"update and improve the front of the tunnel", the screwdriver "on the other side of the crate so its easier seen", the
+electric box "backwards the warning should be facing out", "get rid of the other little room in the storage area and
+bring the chest into the other room where it can be seen through the grated door", "check again for collision errors
+especially with the plank". ("The sewer tunnel" here is the drainage tunnel home — the bore and the chamber.)
+
+- **The kit's colour maps are copied out of `assets/sewer.glb`** (`tools/sewer_tex.py` -> `assets/sewer-tex/*.jpg`,
+  256 px as packed, 6 files, ~120 KB): the drain is built at boot and the sewer's glb is not. `kitTex(name, avg)` hands
+  back a CanvasTexture painted the map's average colour and draws the picture over it when it lands (quantised `& 0xF0`
+  like `paint`), and refills the normal map `normalFrom` lifted off the placeholder (`fillNormal`, `_nmCache`) — so no
+  material changes shape when the picture arrives and nothing recompiles.
+- **Kit maps are ~1.8x the brightness of the paint they replaced** (means: brick 128-131, base concrete 125, paving 118,
+  bare concrete 101, Metal 133; the paint was ~72). `kitLift` cuts each material's colour and lift by `72 / mean`, and
+  the frames measured from the same spots came out as dark as before.
+- **Tile sizes, measured off the kit's own pieces** (uv per metre along their edges, `KIT_M`): the big tunnel's
+  `brick_modern_01` 5.75 m, the small passage's `brick_modern` 3.24, `brick_pavement` 2.5, `concrete_bare_01` 1.37,
+  `concrete_base` 4.24. The end-of-builder metres pass (was brick only) now lays every box, extrusion and flat piece of
+  each kit material in metres (`KIT_UV`); a mesh with `userData.ownUV` keeps its own.
+- **The bore's brick runs ALONG the pipe**: the cylinder's u goes round and v along, so its uv is swapped and laid in
+  metres, two tiles round — a whole number, or the seam shows. The rings are the bare concrete.
+- **The chamber**: the storeroom's red brick, a paved floor (`M.pave`), and a knee-high skirting of bare concrete
+  (`M.skirt`, one tile tall so the map's own top and foot lines are the skirting's) two centimetres proud of the brick,
+  because every room of the sewer stands its brick on that band.
+- **The headwall** is an extruded wall with the bore's hole cut through it (`ExtrudeGeometry` turned so its cap faces
+  -x; its foot is at -0.6 so the hole, which goes below the sand, is inside the shape), a ring of bricks on end round
+  the hole (`RingGeometry`, u = radius, v = arc over a tile that goes round 8 times), keystone, plinth, piers, band,
+  coping, stepped wings set back 16 cm. All of it is at x >= -0.3 and `updateDrain` stops you at -0.5, so none of it
+  needs collision; the fallen coping and loose bricks on the sand are half sunk because nothing stops you walking
+  through them. The bore's shell behind went to r 2.95 so its top stays under the coping. Out under the moon the brick
+  is lifted moon-blue off its own map (`FACE_LIFT`): at the paint's lift it was a black cut-out against the bank.
+- **The screwdriver** is on the crate's near edge (-z in the crate's frame, `lz` -0.27): on the far edge the lantern
+  hid it from everywhere in the room.
+
+**The storeroom.**
+- **The electric box's face is its model's -z**, not +z: turned -pi/2 its back was to the gate and the DANGER label
+  read mirrored through the double-sided material. Turned +pi/2, its back (+z) on the wall: x = ROOM_X1 - (max.z -
+  centre.z). At eye height now (`BOX_Y` walk + 1.6) — square in the gate's frame, and clear of the chest's open lid.
+- **The room is the T only** (`ROOM_Z1` -4.48; the `SerwersP` length that ran on to -0.29 is gone, the end wall loop
+  closes the T itself). The T is x 4.35..7.48 (its branch the mouth onto the door's passage), z -8.66..-4.48.
+- **From the walk the passage shows a hand's width either side of the box** — a chest beside the box (tried at z
+  -7.75, then -7.55) stood behind the passage's wall whatever its light. So the chest is UNDER the box (`SEW.CHEST`,
+  turned so its lock faces the gate), the wires draped out over its lid's front edge into the water, the zap light moved
+  out of it (a point light inside a closed box lights nothing you can see). At fov 105 from the walk it is small; at
+  fov 12 it is plainly a chest in the box's cold light. Measured with a red override material: 36,822 red pixels from
+  the walk, so it is not occluded — a 560 px sheet just loses it. Its own lift is `SEW_CHEST_LIFT` x the walls'.
+- **The open gate leaf had no collision**: it swings a metre into the room off the passage's north jamb (hinge
+  (4.56, -6.295), leaf to (5.53, -6.12) at -1.75 rad). It is a prop now, tagged `'gate'`, live only once it has swung.
+- **The passage is live too**: the flood polygon starts at x 2.66, so with the power on a harness `go` into the door's
+  passage zaps you (and without dev mode, kills you and the page restarts). Look through the gate from the walk
+  (2.1, -6.8), or turn the power off first. Set `__bw.settings.devMode = true` before a harness run in here.
+- **Walked** (`__sw.route`, real keys): the near walk both ways past the leaning plank's foot; the plank laid at
+  -6.78, -2.1, 0, 2.6 and -24.5 and crossed four times each at slants; through the gate into the shortened room, round
+  the chest and both ends. No stalls. The two legs that stopped were into the open leaf, which is the point.
+
+## The thing in the water, the flashlight, the light falling off (2026-10-23)
+
+The owner: a monster that stalks you in the sewer's water from the first lever — rising only while you do not look,
+diving with a loud splash when you do (seen a beat first), leaping and killing you after ~5 s unseen, more often and
+sooner once the generator is off; his slosh/splash/jump recordings and a "creepy sewers" bed; the monster model from
+~/Desktop/Tunnel Rooms/monster; eyes glowing slightly as it peeks; "starts with just his head peeking out then as he
+lifts out he starts to raise his arms like he is about to grab you"; the green angle-head flashlight (his
+FlashlightFBX pack, the Fulton) in place of the spare glowstick; the lighting "more natural with the fog and darkness".
+
+- **Assets**: `tools/sewer_monster_pack.py` (Blender; base 1024, normal 512 JPEG, metallic/roughness/emission dropped:
+  the emission is 30 texels of speckle, no eyes) -> `assets/sewer-monster.glb` 2.0 MB (32k verts after seams, 63 bones,
+  no clip). `tools/sewer_monster_sound.py` (afconvert + plain Python) -> `sew-slosh1..8`, `sew-splash`, `sew-leap`,
+  `sew-drip-bed` (64 s loop, padded). `tools/flashlight_pack.py` -> `assets/flashlight.glb` 152 KB (decimated to 4.6k
+  faces, 0.19 m, lens at (-0.034, 0.169, 0) facing -x, measured off its near-white `Material.002`).
+- **It lives under the water sheet.** The channel's and the branch's water are opaque meshes, so anything below WATER
+  simply is not drawn: it rises THROUGH the sheet. `SEWMON.HID` (-0.35) is hidden.
+- **THE BONES CARRY THE FBX'S 0.01.** Anything hung on a bone (the eye glows on `Head_M`) is drawn at a hundredth of
+  its size unless scaled by `1 / bone.getWorldScale()`. The eyes were two millimetres across until that.
+- **The model's own eyes are amber in its map**; the glow sprites stand `SEWMON_EYE_OUT` (0.15 m) in front of the
+  sockets — inside the head, the face hid their middle and they read as a halo round the skull — and draw at
+  renderOrder 6, after the mist sheets lying on the water, which veiled a peek's glow to nothing.
+- **Posing without a clip** (`sewAim`): every frame the bones go back to bind, then a bone is turned in the world so the
+  line from it to a tip points somewhere: `L' = P^-1 q P L` (P its parent's world quaternion). Neck then head onto
+  you; upper arm (joint5 -> elbow joint6) and forearm (joint6 -> wrist joint7) out at you with `reach`.
+  With the camera half a metre off its face, arms aimed past your head land at the edges of a 105-degree frame:
+  measured, the upper arm points within ~25 degrees of the camera, it only LOOKS sideways.
+- **Size**: at 0.95 and rising 1.45 only its back cleared the water from the walk; 1.1 and `UP` 2.0 puts its head at
+  your eye, waist-deep. At fov 105 it is still small at 5 m — the game's lens is wide.
+- **Seen** = its eyes inside ~43 degrees of the middle of your view with an open line (`sewOpenAt` — the tunnel, past
+  both grates, the branch, the door's passage, the room). It only comes up more than ~83 degrees off your view.
+  Walked: it picked a spot behind me (past the north grate), rose; turning onto it -> `seen` (0.5 s) -> `dive` with
+  the splash -> `under`, 13 s to the next, that spot marked and avoided.
+- **The scare** (`sewScare`, declared ahead of `frozen()`, which reads it): the camera is slerped onto its eyes, it
+  flies the distance in 0.34 s + 0.022 s a metre, lands its eyes 0.52 m in front of yours, a pooled lamp lights its
+  face (1.3 — 2.6 washed its brow white), the synthesised scream, 0.85 s, `playerDied`. Dev mode: the scare and back
+  under. A bug met: `sewMonPose` writes `_smCam` (the camera in WORLD space), so the scare's own camera vector has to
+  be a different one taken after the pose — sharing it put the landing point 24 km off.
+- **Sounds**: an HRTF `PannerNode` per sound (the listener is set to the camera every sewer frame; nothing else in the
+  game uses the 3-D panner, so moving the listener disturbs nothing), into the effects bus, so the sewer's concrete
+  reverb send has them. The water running off it is a looped noise on its own panner, louder the more of it is out.
+- **The light falls off** (`sewLightPass`): every sewer material lit off its own map (`emissiveMap`) has its emissive
+  multiplied by `0.2 + 0.8 exp(-0.11 d)` (view distance, `vViewPosition`, no new varyings), so near walls keep their
+  breath of light and far ones go into the dark. Not the lamps' glass.
+- **The flashlight's beam is a real SpotLight that lives in the sewer's world** (`sewP.flash`): a light inside a group
+  that is not visible is not in three's light state, the sewer's world is only visible in the sewer, and its warm
+  compile includes it — so it costs no recompile anywhere. Off the sewer the flashlight is a pooled point thrown 2.2 m
+  ahead (`flashGlow`). 14 / 0.62 penumbra was a hard white stage disc on a near wall: 9, angle 0.52, penumbra 0.88, and
+  a faint pooled spill 1.6 m out so the dark at the pool's edge is not a cut-out. The ledge torch lies on its side
+  (turned 1.35) throwing its pool along the floor and up the wall; in the dark it is the guide to the far end.
+- **Harness**: `__bw.SEWMON` is the tuning object (set `LOOK = 2` to photograph a rise without being "seen", and
+  `RISE[0]` long to hold one), `sewMon()`, `sewMonS()`, `sewMonLeap()`. `__bw.frame(1)` advances ~7 ms, not 1/60.
+
+**The playthrough (2026-10-23)**, beach -> drain -> screwdriver -> four screws -> crawl -> four levers -> generator ->
+flashlight -> plank -> gate -> chest -> ladder, by real keys and aimed E presses (scratch harness). Fixed on the way:
+- **Seen is at the crosshair** (the owner): its eyes within ~16 degrees of the middle of the view (`SEWMON.LOOK`, a cos).
+  Where it comes up is off the SCREEN (`sewNdc`, NDC beyond `CLEAR` 1.2 at both its peek and full heights) — the lens is
+  105 degrees tall and ~121 across at 4:3, so the old 83-degree cone let it rise in plain sight. (Harness: `LOOK = 2`
+  now means never seen.)
+- **A ladder lamp** (`sewP.ladderLamp`, dim, cut last): you came down into black.
+- **The flashlight blew out at arm's length** at decay 2: decay 1.25 at 2.8.
+- **"Lay the plank across" was a low box over the channel**: looking across at the far walk missed it. 2.4 m tall now.
+- Death with dev mode off: hp 0, `dying`, the card and the checkpoint reload, as any death.

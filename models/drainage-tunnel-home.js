@@ -85,130 +85,6 @@ function bakeScatter(group) {
   return group;
 }
 
-// ---- procedural surfaces --------------------------------------------------
-// wet, stained concrete: grey base, ochre/rust washes, dark damp at the bottom
-function concreteTex(w = 128, h = 128, opts = {}) {
-  const { base = '#5a5c5e', damp = 0.55, graffiti = false } = opts;
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const g = c.getContext('2d');
-  g.fillStyle = base; g.fillRect(0, 0, w, h);
-  // broad mottling
-  for (let i = 0; i < 60; i++) {
-    const x = Math.random() * w, y = Math.random() * h, r = 6 + Math.random() * 34;
-    const v = Math.random() < 0.5 ? '20,22,24' : '132,128,116';
-    const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, `rgba(${v},${0.05 + Math.random() * 0.16})`);
-    gr.addColorStop(1, `rgba(${v},0)`);
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
-  }
-  // rust / ochre streaks running down
-  for (let i = 0; i < 16; i++) {
-    const x = Math.random() * w, wd = 1 + Math.random() * 4;
-    const gr = g.createLinearGradient(0, 0, 0, h);
-    gr.addColorStop(0, 'rgba(122,84,40,0.30)');
-    gr.addColorStop(0.6, 'rgba(96,66,34,0.16)');
-    gr.addColorStop(1, 'rgba(60,44,26,0)');
-    g.fillStyle = gr; g.fillRect(x, 0, wd, h * (0.4 + Math.random() * 0.6));
-  }
-  // damp rising up from the bottom edge
-  const dp = g.createLinearGradient(0, h, 0, h * (1 - damp));
-  dp.addColorStop(0, 'rgba(12,16,14,0.72)');
-  dp.addColorStop(1, 'rgba(12,16,14,0)');
-  g.fillStyle = dp; g.fillRect(0, 0, w, h);
-  // grit
-  for (let i = 0; i < 1400; i++) {
-    const v = 40 + Math.random() * 90;
-    g.fillStyle = `rgba(${v | 0},${(v - 2) | 0},${(v - 6) | 0},0.35)`;
-    g.fillRect(Math.random() * w | 0, Math.random() * h | 0, 1, 1);
-  }
-  if (opts.weathered) {
-    // salt bloom and pale leaching high up, algae and damp low down
-    for (let i = 0; i < 26; i++) {
-      const x = Math.random() * w, y = Math.random() * h * 0.7, r = 5 + Math.random() * 22;
-      const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, `rgba(196,196,186,${0.06 + Math.random() * 0.16})`);
-      gr.addColorStop(1, 'rgba(196,196,186,0)');
-      g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
-    }
-    for (let i = 0; i < 20; i++) {
-      const x = Math.random() * w, y = h * (0.45 + Math.random() * 0.55), r = 6 + Math.random() * 26;
-      const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, `rgba(${58 + Math.random() * 40 | 0},${76 + Math.random() * 40 | 0},44,${0.10 + Math.random() * 0.22})`);
-      gr.addColorStop(1, 'rgba(58,76,44,0)');
-      g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
-    }
-    // hairline cracks
-    g.strokeStyle = 'rgba(26,24,22,0.5)';
-    for (let i = 0; i < 10; i++) {
-      g.lineWidth = 0.6 + Math.random();
-      g.beginPath();
-      let x = Math.random() * w, y = Math.random() * h;
-      g.moveTo(x, y);
-      for (let k = 0; k < 6; k++) g.lineTo(x += (Math.random() - 0.5) * 20, y += Math.random() * 16);
-      g.stroke();
-    }
-  }
-  if (graffiti) {
-    const cols = ['#8e2f3a', '#2f4f8e', '#c8b03a', '#3a7a4a', '#101010'];
-    for (let i = 0; i < 5; i++) {
-      g.strokeStyle = cols[(Math.random() * cols.length) | 0];
-      g.globalAlpha = 0.35 + Math.random() * 0.3;
-      g.lineWidth = 2 + Math.random() * 3;
-      g.beginPath();
-      let x = Math.random() * w, y = h * (0.25 + Math.random() * 0.4);
-      g.moveTo(x, y);
-      for (let k = 0; k < 5; k++) g.lineTo(x += (Math.random() - 0.4) * 26, y += (Math.random() - 0.5) * 22);
-      g.stroke();
-      g.globalAlpha = 1;
-    }
-  }
-  // quantise for the retro palette
-  const img = g.getImageData(0, 0, w, h), px = img.data;
-  for (let i = 0; i < px.length; i += 4) { px[i] &= 0xF0; px[i + 1] &= 0xF0; px[i + 2] &= 0xF0; }
-  g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
-  t.anisotropy = 1;
-  return t;
-}
-// old brick for the chamber
-function brickTex() {
-  const w = 128, h = 128;
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const g = c.getContext('2d');
-  g.fillStyle = '#3b332b'; g.fillRect(0, 0, w, h);      // mortar
-  const rows = 8, bh = h / rows;
-  for (let r = 0; r < rows; r++) {
-    const off = (r % 2) * 16;
-    for (let bx = -32; bx < w + 32; bx += 32) {
-      const v = rnd(r * 13 + bx) ;
-      const rr = 74 + v * 34, gg = 50 + v * 26, bb = 40 + v * 20;
-      g.fillStyle = `rgb(${rr | 0},${gg | 0},${bb | 0})`;
-      g.fillRect(bx + off + 1, r * bh + 1, 30, bh - 2);
-    }
-  }
-  // soot + damp
-  for (let i = 0; i < 40; i++) {
-    const x = Math.random() * w, y = Math.random() * h, r = 8 + Math.random() * 26;
-    const gr = g.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, `rgba(14,12,10,${0.1 + Math.random() * 0.3})`);
-    gr.addColorStop(1, 'rgba(14,12,10,0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
-  }
-  const dp = g.createLinearGradient(0, h, 0, h * 0.35);
-  dp.addColorStop(0, 'rgba(10,14,12,0.6)'); dp.addColorStop(1, 'rgba(10,14,12,0)');
-  g.fillStyle = dp; g.fillRect(0, 0, w, h);
-  const img = g.getImageData(0, 0, w, h), px = img.data;
-  for (let i = 0; i < px.length; i += 4) { px[i] &= 0xF0; px[i + 1] &= 0xF0; px[i + 2] &= 0xF0; }
-  g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
-  t.anisotropy = 1;
-  return t;
-}
-
 // the ochre bleed that runs down a wall under a rusting outlet
 /* The throat's own surface. The gate is the one place in the game you stand
  * still and STARE at a wall, and a flat dark cylinder gives the eye nothing
@@ -387,74 +263,6 @@ function blot(g, x, y, r, rgb, a) {
 function grit(g, w, h, n, lo, span, a = 0.4) {
   for (let i = 0; i < n; i++) { const v = lo + R01(span) | 0; g.fillStyle = `rgba(${v},${v - 2},${v - 6},${a})`; g.fillRect(R01(w) | 0, R01(h) | 0, 1, 1); }
 }
-// the pipe: wet poured concrete, mineral bloom and rust weeping out of it, green-black where the water sits
-function pipeTex() {
-  /* On the bore this wraps with x AROUND the pipe and y ALONG it, so
-   * anything that runs down the wall is painted along x, not y. */
-  return paint(256, 256, (g, w, h) => {
-    g.fillStyle = '#464a46'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 140; i++) { const p = Math.random(); blot(g, R01(w), R01(h), 8 + R01(30), p < 0.5 ? '22,26,24' : p < 0.75 ? '78,82,74' : '48,58,44', 0.06 + R01(0.14)); }
-    const run = (x0, y, L, th, rgb, a) => {                          // a stain running round the wall
-      const gr = g.createLinearGradient(x0, 0, x0 + L, 0);
-      gr.addColorStop(0, `rgba(${rgb},${a})`); gr.addColorStop(1, `rgba(${rgb},0)`);
-      g.fillStyle = gr; g.fillRect(Math.min(x0, x0 + L), y, Math.abs(L), th);
-    };
-    for (let i = 0; i < 30; i++) run(R01(w), R01(h), (Math.random() < 0.5 ? 1 : -1) * (14 + R01(40)), 2 + R01(6), '176,178,162', 0.10 + R01(0.12));   // mineral bloom
-    for (let i = 0; i < 22; i++) run(R01(w), R01(h), (Math.random() < 0.5 ? 1 : -1) * (20 + R01(70)), 1 + R01(3), '118,62,24', 0.35 + R01(0.2));     // rust out of the reinforcement
-    for (let i = 0; i < 70; i++) blot(g, R01(w), R01(h), 3 + R01(10), '30,44,28', 0.08 + R01(0.2));   // wet growth
-    g.strokeStyle = 'rgba(18,18,16,0.55)';                          // hairline cracks
-    for (let i = 0; i < 9; i++) { g.lineWidth = 0.6 + R01(0.8); g.beginPath(); let x = R01(w), y = R01(h); g.moveTo(x, y); for (let k = 0; k < 7; k++) g.lineTo(x += R01(14) - 4, y += R01(22) - 11); g.stroke(); }
-    grit(g, w, h, 4200, 28, 90);
-  });
-}
-// the chamber's brick: old, sooted over the lamp, damp at the foot, salt where the wet comes through
-function brickTex2() {
-  return paint(256, 256, (g, w, h) => {
-    g.fillStyle = '#2c2621'; g.fillRect(0, 0, w, h);                // mortar, gone dark
-    const rows = 12, bh = h / rows, bw = 42;
-    for (let r = 0; r < rows; r++) {
-      const off = (r % 2) * bw / 2;
-      for (let bx = -bw; bx < w + bw; bx += bw) {
-        const v = Math.random(), burnt = Math.random() < 0.12;
-        const rr = burnt ? 44 + v * 18 : 92 + v * 40, gg = burnt ? 34 + v * 12 : 58 + v * 26, bb = burnt ? 30 + v * 10 : 44 + v * 18;
-        g.fillStyle = `rgb(${rr | 0},${gg | 0},${bb | 0})`;
-        g.fillRect(bx + off + 1.5, r * bh + 1.5, bw - 3, bh - 3);
-        g.fillStyle = 'rgba(255,240,220,0.06)'; g.fillRect(bx + off + 1.5, r * bh + 1.5, bw - 3, 1.5);   // a worn top edge
-        if (Math.random() < 0.18) blot(g, bx + off + R01(bw), r * bh + R01(bh), 3 + R01(6), '20,16,14', 0.35);  // a chip out of it
-      }
-    }
-    const soot = g.createLinearGradient(0, 0, 0, h * 0.55);        // years of a lamp under the ceiling
-    soot.addColorStop(0, 'rgba(10,8,6,0.62)'); soot.addColorStop(1, 'rgba(10,8,6,0)');
-    g.fillStyle = soot; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 18; i++) {                                  // salt coming through the joints
-      const x = R01(w), y = h * 0.3 + R01(h * 0.6);
-      for (let k = 0; k < 5; k++) blot(g, x + R01(10) - 5, y + k * 4, 3 + R01(7), '206,204,190', 0.08 + R01(0.12));
-    }
-    const dp = g.createLinearGradient(0, h, 0, h * 0.6);
-    dp.addColorStop(0, 'rgba(10,14,10,0.6)'); dp.addColorStop(1, 'rgba(10,14,10,0)');
-    g.fillStyle = dp; g.fillRect(0, 0, w, h);
-    grit(g, w, h, 2400, 30, 80, 0.3);
-  });
-}
-// the floor: poured concrete under a skin of silt, stained, and worn pale where somebody walks every day
-function floorTex() {
-  return paint(256, 256, (g, w, h) => {
-    g.fillStyle = '#48443d'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 120; i++) blot(g, R01(w), R01(h), 10 + R01(50), Math.random() < 0.5 ? '30,28,24' : '96,88,72', 0.08 + R01(0.18));
-    for (let i = 0; i < 40; i++) blot(g, R01(w), R01(h), 14 + R01(34), '92,74,50', 0.10 + R01(0.2));      // silt drifts
-    for (let i = 0; i < 5; i++) {                                   // rings where water stood and dried
-      const x = R01(w), y = R01(h), r = 8 + R01(26);
-      g.strokeStyle = `rgba(26,22,18,${0.10 + R01(0.12)})`; g.lineWidth = 1 + R01(1.5);
-      g.beginPath(); g.ellipse(x, y, r, r * (0.6 + R01(0.4)), R01(3), 0, TAU); g.stroke();
-    }
-    const worn = g.createLinearGradient(0, h * 0.35, 0, h * 0.65);  // a path worn pale down the middle
-    worn.addColorStop(0, 'rgba(150,140,120,0)'); worn.addColorStop(0.5, 'rgba(150,140,120,0.12)'); worn.addColorStop(1, 'rgba(150,140,120,0)');
-    g.fillStyle = worn; g.fillRect(0, 0, w, h);
-    g.strokeStyle = 'rgba(16,14,12,0.6)';
-    for (let i = 0; i < 7; i++) { g.lineWidth = 0.6 + R01(1); g.beginPath(); let x = R01(w), y = R01(h); g.moveTo(x, y); for (let k = 0; k < 8; k++) g.lineTo(x += R01(26) - 13, y += R01(26) - 13); g.stroke(); }
-    grit(g, w, h, 4000, 34, 80, 0.45);
-  });
-}
 // planks: grain, a knot or two, nail heads gone to rust, grime in the gaps
 function woodTex() {
   return paint(128, 256, (g, w, h) => {
@@ -507,35 +315,6 @@ function blanketTex() {
     for (let i = 0; i < w; i += 32) { g.fillStyle = 'rgba(150,120,80,0.25)'; g.fillRect(i + 20, 0, 2, h); g.fillRect(0, i + 20, w, 2); }
     blot(g, w / 2, h / 2, 40, '90,70,60', 0.2);
     grit(g, w, h, 1600, 40, 70, 0.35);
-  });
-}
-// rust: orange-brown and black, pitted
-function rustTex() {
-  return paint(128, 128, (g, w, h) => {
-    g.fillStyle = '#5e3a22'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 70; i++) { const p = Math.random(); blot(g, R01(w), R01(h), 4 + R01(20), p < 0.4 ? '140,74,30' : p < 0.7 ? '28,18,12' : '96,90,80', 0.15 + R01(0.3)); }
-    for (let i = 0; i < 120; i++) { g.fillStyle = 'rgba(14,8,6,0.6)'; g.fillRect(R01(w) | 0, R01(h) | 0, 1 + (R01(2) | 0), 1); }
-  });
-}
-// cast and wrought iron gone to scale: near-black, blistered with rust, pitted — mottled, never grained
-function ironTex() {
-  return paint(128, 128, (g, w, h) => {
-    g.fillStyle = '#2c2420'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 90; i++) { const p = Math.random(); blot(g, R01(w), R01(h), 3 + R01(16), p < 0.45 ? '118,58,26' : p < 0.7 ? '74,44,28' : '16,12,10', 0.25 + R01(0.4)); }
-    for (let i = 0; i < 40; i++) blot(g, R01(w), R01(h), 1.5 + R01(3), '150,80,36', 0.6);          // fresh rust in the pits
-    for (let i = 0; i < 260; i++) { g.fillStyle = 'rgba(8,6,5,0.7)'; g.fillRect(R01(w) | 0, R01(h) | 0, 1 + (R01(2) | 0), 1 + (R01(2) | 0)); }
-  });
-}
-// silt and mud: soft brown-grey with ripples where the last flow left it
-function siltTex() {
-  /* wet mud, not planks: a dark grey-brown with clots and pocks and a sheen
-   * where water stands in it — no running lines (stretched, they were grain) */
-  return paint(128, 128, (g, w, h) => {
-    g.fillStyle = '#35322c'; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 70; i++) blot(g, R01(w), R01(h), 4 + R01(16), Math.random() < 0.5 ? '22,20,17' : '78,70,56', 0.15 + R01(0.25));
-    for (let i = 0; i < 14; i++) blot(g, R01(w), R01(h), 3 + R01(7), '120,124,118', 0.18);            // wet shine
-    for (let i = 0; i < 160; i++) { g.fillStyle = 'rgba(12,10,8,0.6)'; g.beginPath(); g.arc(R01(w), R01(h), 0.6 + R01(1.4), 0, TAU); g.fill(); }
-    grit(g, w, h, 900, 30, 70, 0.4);
   });
 }
 // growth: dark wet moss, never the neon of a sign
@@ -672,11 +451,21 @@ const _nmCache = new Map();
 function normalFrom(map, k = 2.2) {
   if (_nmCache.has(map)) return _nmCache.get(map);
   const im = map.image; if (!im || !im.getContext) return null;
+  const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+  fillNormal(im, c, k);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.repeat = map.repeat; t.offset = map.offset;     // shared, so it can never drift off its picture
+  t.userData.k = k;
+  _nmCache.set(map, t);
+  return t;
+}
+function fillNormal(im, c, k) {
   const w = im.width, h = im.height;
   const src = im.getContext('2d').getImageData(0, 0, w, h).data;
   const L = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) L[i] = (src[i * 4] * 0.3 + src[i * 4 + 1] * 0.59 + src[i * 4 + 2] * 0.11) / 255;
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d'), out = g.createImageData(w, h), o = out.data;
   const at = (x, y) => L[((y + h) % h) * w + ((x + w) % w)];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -687,13 +476,41 @@ function normalFrom(map, k = 2.2) {
     o[i] = (nx * 0.5 + 0.5) * 255; o[i + 1] = (ny * 0.5 + 0.5) * 255; o[i + 2] = (nz * 0.5 + 0.5) * 255; o[i + 3] = 255;
   }
   g.putImageData(out, 0, 0);
+}
+/* THE SEWER KIT'S OWN SURFACES (the owner, 2026-10-23: "revamp the sewer tunnel
+ * using the modular sewer textures to better match the deeper sewerrooms area").
+ * The drain is built at boot and the kit's glb is not, so its colour maps are
+ * copied out to `assets/sewer-tex/` (`tools/sewer_tex.py`) and each comes in
+ * here as a canvas painted its average colour, drawn over with the picture when
+ * the picture lands — quantised like `paint`, and the normal map lifted off it
+ * again — so nothing about the material changes shape when it arrives. */
+function kitTex(name, avg) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = avg; g.fillRect(0, 0, 256, 256);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.repeat = map.repeat; t.offset = map.offset;     // shared, so it can never drift off its picture
-  _nmCache.set(map, t);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
+  t.anisotropy = 1;
+  if (typeof Image === 'undefined') return t;
+  const im = new Image();
+  im.onload = () => {
+    g.drawImage(im, 0, 0, 256, 256);
+    const img = g.getImageData(0, 0, 256, 256), px = img.data;
+    for (let i = 0; i < px.length; i += 4) { px[i] &= 0xF0; px[i + 1] &= 0xF0; px[i + 2] &= 0xF0; }
+    g.putImageData(img, 0, 0);
+    t.needsUpdate = true;
+    const nm = _nmCache.get(t);
+    if (nm) { fillNormal(c, nm.image, nm.userData.k); nm.needsUpdate = true; }
+  };
+  im.src = 'assets/sewer-tex/' + name + '.jpg';
   return t;
 }
+/* how big one tile of each is, in metres — measured off the kit's own pieces
+ * (uv per metre along their edges): the big tunnel's brick 5.75, the small
+ * passage's 3.24, its paving 2.5, its bare concrete 1.37, the big walls' 4.24 */
+const FACE_LIFT = 1.2;
+const KIT_M = { brick01: 5.75, brick: 3.24, pave: 2.5, bare: 1.37, base: 4.24 };
 /* AND DARKER (the owner: too bright). The glow every surface is lit by is
  * cut by DIM across the board; what light there is comes from the lamps,
  * spread softer and further so it fills the space rather than pooling. */
@@ -736,19 +553,14 @@ export function makeDrainageTunnelHome(opts = {}) {
   const T = new THREE.Group();
   T.name = 'drainageTunnelHome';
 
-  const boreTex = concreteTex(128, 128, { base: '#575a5b', damp: 0.6, graffiti: true });
-  boreTex.repeat.set(6, 2);
-  const wallTex = concreteTex(128, 128, { base: '#4e5052', damp: 0.5 });
-  wallTex.repeat.set(3, 2);
-  const brick = brickTex(); brick.repeat.set(3, 1.4);
   // the headwall takes the weather off the sea: salt bloom, damp, algae, rust
-  const rockTex = concreteTex(128, 128, { base: '#4c4a46', damp: 0.72, weathered: true });
-  rockTex.repeat.set(9, 6);      // the headwall is big; a loose repeat just smears
+  // (2026-10-23: the kit's big-wall concrete, laid in metres like everything else on the headwall)
+  const rockTex = kitTex('concrete_base', '#797d81');
 
   const M = {
-    bore:    new THREE.MeshStandardMaterial({ map: boreTex, color: 0x9aa0a2, roughness: 0.95, metalness: 0.02, emissive: 0x0a0d10, side: THREE.DoubleSide, flatShading: true }),
+    bore:    new THREE.MeshStandardMaterial({ color: 0x9aa0a2, roughness: 0.95, metalness: 0.02, emissive: 0x0a0d10, side: THREE.DoubleSide, flatShading: true }),
     rock:    new THREE.MeshStandardMaterial({ map: rockTex, color: 0x7e7b74, roughness: 1, metalness: 0, emissive: 0x141821, flatShading: true, side: THREE.DoubleSide }),
-    conc:    new THREE.MeshStandardMaterial({ map: wallTex, color: 0x8e9294, roughness: 0.98, metalness: 0.02, emissive: 0x0a0d11, flatShading: true }),
+    conc:    new THREE.MeshStandardMaterial({ color: 0x8e9294, roughness: 0.98, metalness: 0.02, emissive: 0x0a0d11, flatShading: true }),
     throat:  new THREE.MeshStandardMaterial({ color: 0x191c20, roughness: 1, metalness: 0, emissive: 0x05070a, side: THREE.BackSide }),
     void:    new THREE.MeshStandardMaterial({ color: 0x05060a, roughness: 1, metalness: 0, emissive: 0x000000, side: THREE.BackSide }),
     dark:    new THREE.MeshStandardMaterial({ color: 0x23262a, roughness: 1, metalness: 0, emissive: 0x05070a, flatShading: true }),
@@ -762,7 +574,7 @@ export function makeDrainageTunnelHome(opts = {}) {
     web:     new THREE.MeshStandardMaterial({ color: 0x9aa0a8, transparent: true, opacity: 0.13, roughness: 1, depthWrite: false, side: THREE.DoubleSide }),
     frame:   new THREE.MeshStandardMaterial({ color: 0xa4652c, roughness: 0.9, metalness: 0.2, emissive: 0x2a1508, flatShading: true }),
     steel:   new THREE.MeshStandardMaterial({ color: 0x5b6064, roughness: 0.6, metalness: 0.6, emissive: 0x0c0e10, flatShading: true }),
-    brickM:  new THREE.MeshStandardMaterial({ map: brick, color: 0xa08c7c, roughness: 1, metalness: 0, emissive: 0x0b0908, flatShading: true }),
+    brickM:  new THREE.MeshStandardMaterial({ color: 0xa08c7c, roughness: 1, metalness: 0, emissive: 0x0b0908, flatShading: true }),
     wood:    new THREE.MeshStandardMaterial({ color: 0x4c3f2c, roughness: 1, metalness: 0, emissive: 0x100c07, flatShading: true }),
     cloth:   new THREE.MeshStandardMaterial({ color: 0x8b8578, roughness: 1, metalness: 0, emissive: 0x1e1c18, flatShading: true, side: THREE.DoubleSide }),
     blanket: new THREE.MeshStandardMaterial({ color: 0x3d3a44, roughness: 1, metalness: 0, emissive: 0x0d0c10, flatShading: true }),
@@ -781,31 +593,55 @@ export function makeDrainageTunnelHome(opts = {}) {
 
   /* the second pass's maps on the first pass's materials: the colours below
    * are what the map is multiplied by, and the lift is what reads in the dark */
-  liftOff(M.bore, pipeTex(), 0.30, 0xc8d0c8, [4, 6]); M.bore.color.set(0xb4b8b0);
+  /* (2026-10-23) THE SEWER'S OWN SURFACES on the structure: the kit's maps
+   * (`kitTex`) are near twice the brightness of the paint they replace, so each
+   * colour and lift is cut by its map's (`kd`, the paint's mean over the map's)
+   * to leave the place as dark as the owner had it. Every box that wears one is
+   * laid in metres by the pass at the end (`KIT_UV`), one tile to `KIT_M`. */
+  const kd = (lum) => 72 / lum;
+  const kitLift = (m, name, avg, lum, k, tint, col, bump = 1.2) => {
+    liftOff(m, kitTex(name, avg), k * kd(lum), tint, [1, 1], bump);
+    m.color.set(col).multiplyScalar(kd(lum));
+    return m;
+  };
+  // the bore: the big tunnel's brick, its uv laid along the pipe below; its joints the small passage's bare concrete
+  M.boreBrick = kitLift(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true, side: THREE.DoubleSide }),
+    'brick_modern_01', '#938065', 131, 0.30, 0xc8d0c8, 0xb4b8b0, 1.4);
+  kitLift(M.bore, 'concrete_bare_01', '#646466', 101, 0.30, 0xc8d0c8, 0xb4b8b0);
+  M.bore.map.repeat.set(10, 1);
   // the collars and lips round the bore are outside under the moon as much as in: weathered concrete, barely lifted
-  liftOff(M.conc, pipeTex(), 0.08, 0xb8c0b8, [2, 1]); M.conc.color.set(0x8e9290);
-  // the chamber's own floor and ceiling: lived on, and lit off their own map
-  M.roomConc = liftOff(new THREE.MeshStandardMaterial({ roughness: 0.98, flatShading: true }), floorTex(), 0.26, 0xd0c8b8, [2, 2]);
-  M.roomConc.color.set(0xa8a298);
-  /* the brick's uv is laid in METRES by the game-side pass below (`brickUV`), one
-   * tile to 3.45 m by 2.7 — so the repeat is 1 and every wall, pier and patch
-   * round the outlet shows bricks the same size and continuous across seams */
-  liftOff(M.brickM, brickTex2(), 0.30, 0xffe4cc, [1, 1], 1.4); M.brickM.color.set(0xa89888);
+  kitLift(M.conc, 'concrete_bare_01', '#646466', 101, 0.08, 0xb8c0b8, 0x8e9290);
+  // the chamber's ceiling, the big walls' concrete; its floor the small passage's paving, worn
+  M.roomConc = kitLift(new THREE.MeshStandardMaterial({ roughness: 0.98, flatShading: true }), 'concrete_base', '#797d81', 125, 0.26, 0xd0c8b8, 0xa8a298);
+  M.pave = kitLift(new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }), 'brick_pavement', '#7b746d', 118, 0.26, 0xd0c8b8, 0xa8a298, 1.4);
+  // and round the chamber's foot the passage's concrete skirting, as in every room below
+  M.skirt = kitLift(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true }), 'concrete_bare_01', '#646466', 101, 0.28, 0xd0c8b8, 0xb0aca4);
+  /* the chamber's brick: the storeroom's red brick, its uv laid in METRES by
+   * the pass at the end — every wall, pier and patch round the outlet shows
+   * bricks the same size and continuous across seams */
+  kitLift(M.brickM, 'brick_modern', '#947b61', 128, 0.30, 0xffe4cc, 0xa89888, 1.4);
+  /* the headwall's face, out under the moon: the big tunnel's brick, lifted
+   * moon-blue off its own map the way the beach's sand is, or the low moon
+   * leaves the face a black cut-out against the bank (FACE_LIFT, measured) */
+  M.face = kitLift(new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), 'brick_modern_01', '#938065', 131, FACE_LIFT, 0x8898c0, 0x8a8a8c, 1.4);
+  M.arch = kitLift(new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), 'brick_modern', '#947b61', 128, FACE_LIFT, 0x8898c0, 0x8a8686, 1.4);
+  M.rock.color.multiplyScalar(kd(125));            // its concrete, the kit's big-wall map in place of the paint
   liftOff(M.wood, woodTex(), 0.30, 0xffe0c0); M.wood.color.set(0xb09878);
   liftOff(M.cloth, linenTex(), 0.22, 0xfff0dc); M.cloth.color.set(0xa8a294);
   liftOff(M.blanket, blanketTex(), 0.34, 0xffd8c8); M.blanket.color.set(0xb89a90);
-  liftOff(M.rust, rustTex(), 0.26, 0xffd0a8); M.rust.color.set(0xb08868);
-  liftOff(M.steel, rustTex(), 0.18, 0xc0c8d0); M.steel.color.set(0x8a8e92); M.steel.roughness = 0.75;
-  // the shelves are 18 m by 0.7: square the tile, or it stretches into planks
-  liftOff(M.silt, siltTex(), 0.2, 0xc8c4b8, [24, 1], 1.6); M.silt.color.set(0x7c766a); M.silt.roughness = 0.6;
+  // the rust and the steel: the kit's own rusted sheet (the grates', the ladder's), the steel cooled grey
+  kitLift(M.rust, 'Metal', '#9c7d6e', 133, 0.26, 0xffd0a8, 0xb08868); M.rust.map.repeat.set(1.5, 1.5);
+  kitLift(M.steel, 'Metal', '#9c7d6e', 133, 0.18, 0xc0c8d0, 0x7a8288); M.steel.roughness = 0.75;
+  // the shelves either side of the channel: the passage's paving under a skin of silt (laid in metres)
+  kitLift(M.silt, 'brick_pavement', '#7b746d', 118, 0.2, 0xc8c4b8, 0x8c8478, 1.6); M.silt.roughness = 0.6;
   liftOff(M.algae, mossTex(), 0.16, 0xa0b890); M.algae.color.set(0x6a7a58); M.algae.roughness = 0.8;
   liftOff(M.slime, mossTex(), 0.14, 0x98ac88); M.slime.color.set(0x5a6a4c);
   // the grate's own iron, darker than the rust patches on it, and the precast round the hole
-  M.iron = liftOff(new THREE.MeshStandardMaterial({ roughness: 0.8, flatShading: true }), ironTex(), 0.22, 0xffd0b0, [3, 3], 1.8);
-  M.iron.color.set(0x9a8070);
-  liftOff(M.frame, ironTex(), 0.22, 0xffd0b0, [3, 3], 1.8); M.frame.color.set(0x9a8070); M.frame.roughness = 0.8;   // every bit of old iron down here, the same scale
-  M.surround = liftOff(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true }), pipeTex(), 0.22, 0xc8ccc4, null, 1.2);
-  M.surround.color.set(0x8c908a);
+  M.iron = kitLift(new THREE.MeshStandardMaterial({ roughness: 0.8, flatShading: true }), 'Metal', '#9c7d6e', 133, 0.22, 0xffd0b0, 0x9a8070, 1.8);
+  M.iron.map.repeat.set(3, 3);
+  kitLift(M.frame, 'Metal', '#9c7d6e', 133, 0.22, 0xffd0b0, 0x9a8070, 1.8); M.frame.roughness = 0.8;   // every bit of old iron down here, the same scale
+  M.frame.map.repeat.set(3, 3);
+  M.surround = kitLift(new THREE.MeshStandardMaterial({ roughness: 0.95, flatShading: true }), 'concrete_bare_01', '#646466', 101, 0.22, 0xc8ccc4, 0x8c908a);
   M.mattress = liftOff(new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), mattressTex(), 0.36, 0xfff0dc);
   M.mattress.color.set(0xc4beb0);
   // water that has stood a long time: dark, a little sheen, and never the blue of a hole in the floor
@@ -830,75 +666,97 @@ export function makeDrainageTunnelHome(opts = {}) {
   M.fairy = new THREE.MeshBasicMaterial({ color: 0xffb56a, fog: false });
   M.wire = new THREE.MeshStandardMaterial({ color: 0x1c1c1a, roughness: 0.9, metalness: 0, emissive: 0x060606 });
 
-  // ================= headwall — the weathered mass round the mouth =========
-  // a chunky, rounded concrete/rock buttress the pipe pokes out of
-  // NOTE: it has to be a *shell*, not a solid — a solid block would plug the
-  // bore. Open-ended cylinder buried in the dune + a ring plate with the hole
-  // in it for the face you actually walk up to.
+  // ================= headwall — the outfall's face in the bank =============
+  /* (2026-10-23, the owner: "update and improve the front of the tunnel").
+   * It was a lumpy dome of rock with a ring round the hole; it is the sewer's
+   * own now, built the way the old outfalls were: a brick headwall set into
+   * the bank, a ring of bricks on end round the bore with a concrete keystone,
+   * piers at its ends on a concrete plinth, a band across it and a coping
+   * along the top, and stepped wings running off into the bank either side —
+   * the kit's brick and concrete (`M.face`, `M.arch`, `M.rock`). The face is
+   * at x -0.06 and the beach's clamp stops you half a metre short of it
+   * (`updateDrain`), so nothing here stands where you walk.
+   * NOTE: the shell behind is a *shell*, not a solid — a solid block would
+   * plug the bore. */
   const HW = new THREE.Group();
   T.add(HW);
   {
-    const shell = xCyl(3.6, 3.2, 4.7, 11, M.rock, true);
+    const FW = 3.7, FH = 4.3, FX = -0.06, FT = 0.62, HR = BORE_R + 0.02, R1 = HR + 0.5, AX = FX - 0.08;
+    // the bore's outside, buried in the bank, under the coping's line
+    const shell = xCyl(2.95, 2.85, 4.7, 11, M.rock, true);
     shell.position.set(2.3, PIPE_CY, 0);
+    { const uv = shell.geometry.getAttribute('uv'); for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 7, uv.getY(i) * 2); }
     HW.add(shell);
-    // the weathered face, with the pipe hole punched through it
-    const faceG = new THREE.RingGeometry(BORE_R + 0.02, 3.52, 22, 2);
-    const fp = faceG.attributes.position;
-    for (let i = 0; i < fp.count; i++) {      // rough it up so it isn't a disc
-      const x = fp.getX(i), y = fp.getY(i), rr = Math.hypot(x, y);
-      const k = (rr - BORE_R) / (3.52 - BORE_R);
-      fp.setZ(i, (rnd(i * 1.7) - 0.5) * 0.34 * k * k - 0.22 * k);
-    }
-    faceG.computeVertexNormals();
-    faceG.rotateY(-Math.PI / 2);
-    const face = new THREE.Mesh(faceG, M.rock);
-    face.material = M.rock;
-    face.position.set(-0.04, PIPE_CY, 0);
-    HW.add(face);
-    // the raised concrete rim round the mouth
-    const collar = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 0.22, 0.26, 6, 18), M.conc);
-    collar.position.set(-0.02, PIPE_CY, 0);
-    collar.rotation.y = Math.PI / 2;
-    HW.add(collar);
-    // Weathering on the face. Everything here is placed in polar coordinates
-    // about the bore axis and kept outside BORE_R — put at an arbitrary small
-    // radius it ends up floating inside the pipe mouth, which is exactly what
-    // it looked like: debris hanging in the opening.
-    for (let i = 0; i < 10; i++) {
-      const a = rnd(i * 3.7) * TAU;
-      const rad = BORE_R + 0.45 + rnd(i * 5.1) * 1.2;
-      const py = PIPE_CY + rad * Math.cos(a);
-      if (py < 0.25) continue;                 // not below the sand
-      const pz = rad * Math.sin(a);
-      const px = -0.06 - rnd(i * 2.9) * 0.08;  // just proud of the face plate
-      const spall = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + rnd(i * 6.3) * 0.26, 0), M.dark);
-      spall.scale.set(0.30, 1, 1);
-      spall.position.set(px, py, pz);
-      HW.add(spall);
-      if (i % 3 === 0) {                       // a bar of rebar hanging out
-        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.42, 4), M.frame);
-        bar.position.set(px - 0.16, py, pz);
-        bar.rotation.set(0, 0, Math.PI / 2 - 0.4 + rnd(i) * 0.8);
-        HW.add(bar);
+    // the face, the hole cut through it (its foot below the sand: the hole goes under it)
+    const sh = new THREE.Shape();
+    sh.moveTo(-FW, -0.6); sh.lineTo(FW, -0.6); sh.lineTo(FW, FH); sh.lineTo(-FW, FH); sh.lineTo(-FW, -0.6);
+    const hole = new THREE.Path(); hole.absarc(0, PIPE_CY, HR, 0, TAU, true); sh.holes.push(hole);
+    const fg = new THREE.ExtrudeGeometry(sh, { depth: FT, bevelEnabled: false, curveSegments: 28 });
+    fg.rotateY(Math.PI / 2); fg.translate(FX, 0, 0);       // its cap at z 0 faces the sea (-x)
+    HW.add(new THREE.Mesh(fg, M.face));
+    /* THE RING: bricks set on end round the hole, proud of the face. The map's
+     * courses run round the ring and its bricks out along the radius — u is the
+     * radius, v the arc, over a tile that goes round a whole number of times. */
+    {
+      const tile = TAU * (HR + 0.25) / 8, rg = new THREE.RingGeometry(HR, R1, 48, 1);
+      const p = rg.getAttribute('position'), uv = rg.getAttribute('uv');
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i);
+        uv.setXY(i, (Math.hypot(x, y) - HR) / tile, (Math.atan2(y, x) + Math.PI) * (HR + 0.25) / tile);
       }
+      rg.rotateY(-Math.PI / 2); rg.translate(AX, PIPE_CY, 0);
+      const ring = new THREE.Mesh(rg, M.arch); ring.userData.ownUV = true; HW.add(ring);
+      // its outer edge, and its inner one seen from inside the hole
+      const ob = xCyl(R1, R1, FX - AX, 48, M.arch, true); ob.position.set((AX + FX) / 2, PIPE_CY, 0); HW.add(ob);
+      { const u = ob.geometry.getAttribute('uv'); for (let i = 0; i < u.count; i++) u.setXY(i, u.getX(i) * 8, u.getY(i) * 0.06); }
+      if (!M.archIn) { M.archIn = M.arch.clone(); M.archIn.side = THREE.BackSide; }
+      const ib = xCyl(HR, HR, FX - AX + 0.02, 48, M.archIn, true); ib.position.set((AX + FX) / 2, PIPE_CY, 0); HW.add(ib);
     }
-    // a broken lip where the sea has had at the top edge, on the shell itself
-    for (let i = 0; i < 7; i++) {
-      const a = (rnd(i * 9.1) - 0.5) * 1.5, s = rnd(i * 4.2);
-      const rad = 3.2 + s * 0.3;
-      HW.add(slab(0.5 + s * 0.7, 0.3 + s * 0.5, 0.5 + s * 0.8, M.rock,
-        0.5 + s * 1.7, PIPE_CY + rad * Math.cos(a), rad * Math.sin(a),
-        (s - 0.5) * 0.4, a, (s - 0.5) * 0.35));
+    // the keystone, and the springers either side where the ring meets the plinth's line
+    HW.add(slab(0.16, 0.6, 0.44, M.rock, AX - 0.02, PIPE_CY + HR + 0.32, 0));
+    HW.add(slab(0.12, 0.08, 0.6, M.rock, AX - 0.02, PIPE_CY + HR + 0.65, 0));
+    // the plinth along its foot (wide of the hole), the piers at its ends on their own blocks
+    const PZ = FW - 0.35;
+    for (const s of [-1, 1]) {
+      const z0 = R1 + 0.06, z1 = FW - 0.7;
+      HW.add(slab(0.12, 0.55, z1 - z0, M.rock, FX - 0.06, 0.2, s * (z0 + z1) / 2));
+      HW.add(slab(0.26, 0.7, 0.82, M.rock, FX - 0.11, 0.25, s * PZ));
+      HW.add(slab(0.18, FH - 0.6, 0.7, M.face, FX - 0.09, 0.6 + (FH - 0.6) / 2, s * PZ));
+      HW.add(slab(0.24, 0.1, 0.78, M.rock, FX - 0.1, 3.45, s * PZ));       // the band, round the pier
+    }
+    // the band across between the piers, over the ring
+    HW.add(slab(0.12, 0.14, 2 * (FW - 0.7), M.rock, FX - 0.06, 3.45, 0));
+    // the coping, overhanging the face and the piers
+    HW.add(slab(1.0, 0.26, 2 * FW + 0.36, M.rock, FX + 0.31, FH + 0.13, 0));
+    /* THE WINGS: stepping down into the bank either side, set back off the
+     * face so its ends read, each step capped */
+    [[3.3, 1.0], [2.3, 0.9], [1.35, 0.9]].reduce((z0, [h, w]) => {
+      for (const s of [-1, 1]) {
+        HW.add(slab(0.7, h + 0.5, w, M.face, FX + 0.45, (h - 0.5) / 2, s * (z0 + w / 2)));
+        HW.add(slab(0.84, 0.18, w + 0.06, M.rock, FX + 0.43, h + 0.09, s * (z0 + w / 2)));
+      }
+      return z0 + w;
+    }, FW);
+    // the weather on it: water down from the coping, and rust under the weep pipes either side of the ring
+    const decal = (mat, w, h, y, z) => {
+      const g = new THREE.PlaneGeometry(w, h); g.rotateY(-Math.PI / 2);
+      const m = new THREE.Mesh(g, mat); m.position.set(FX - 0.006, y, z); HW.add(m);
+    };
+    for (const [z, w, h] of [[-2.55, 1.3, 2.4], [-0.9, 1.1, 1.0], [0.6, 1.4, 1.1], [2.2, 1.2, 2.8]]) decal(M.damp, w, h, FH - h / 2, z);
+    for (const s of [-1, 1]) {
+      const wp = xCyl(0.05, 0.05, 0.22, 8, M.rust, true); wp.position.set(FX - 0.1, 1.55, s * 2.55); HW.add(wp);
+      const wv = new THREE.Mesh(new THREE.CircleGeometry(0.045, 8), M.void); wv.rotation.y = -Math.PI / 2; wv.position.set(FX - 0.2, 1.55, s * 2.55); HW.add(wv);
+      decal(M.stain, 0.36, 1.1, 1.0, s * 2.55);
     }
 
     // ---- the beacon: a red lamp so you can find it from down the beach ----
     // Emissive only, no PointLight — it has to be visible from a long way off
     // and the scene is already carrying a lot of lights.
-    // Sits clear above the top edge, so it reads against the sky rather than
-    // against the concrete, and it has to be big enough to survive the retro
+    // Sits clear above the coping, so it reads against the sky rather than
+    // against the wall, and it has to be big enough to survive the retro
     // downscale from thirty-odd metres away.
     const beacon = new THREE.Group();
-    beacon.position.set(-0.30, 5.05, 0);
+    beacon.position.set(FX + 0.31, FH + 1.95, 0);
     HW.add(beacon);
     beacon.add(new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.32, 7), M.rust));
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.155, 9, 7), M.beaconOn);
@@ -914,21 +772,20 @@ export function makeDrainageTunnelHome(opts = {}) {
       hoop.rotation.set(Math.PI / 2, 0, k * 1.05);
       beacon.add(hoop);
     }
-    // the mast down onto the headwall, with a brace
-    beacon.add(slab(0.07, 1.9, 0.07, M.rust, 0.04, -1.10, 0));
-    beacon.add(slab(0.05, 0.7, 0.05, M.rust, 0.30, -1.45, 0, 0, 0, 0.5));
+    // the mast down onto the coping, with a brace
+    beacon.add(slab(0.07, 1.9, 0.07, M.rust, 0.0, -1.10, 0));
+    beacon.add(slab(0.05, 0.7, 0.05, M.rust, 0.26, -1.45, 0, 0, 0, 0.5));
     T.userData.beacon = { bulb, halo };
     beacon.userData.noBake = true;
 
-    // wing walls running off either side, and rubble shelving to the sand.
-    // Everything here sits clear of the walking line down the middle.
-    HW.add(slab(3.2, 3.0, 3.0, M.rock, 2.1, 1.35, 4.4, 0, 0.06, 0.02));
-    HW.add(slab(2.6, 2.4, 2.6, M.rock, 1.7, 1.0, -4.3, 0, -0.09, -0.03));
-    for (let i = 0; i < 6; i++) {
+    // what has come off it: a fallen piece of coping and loose bricks at its foot, clear of the line in
+    // (half sunk in the sand: there is nothing to stop you walking through them)
+    HW.add(slab(0.9, 0.24, 0.5, M.rock, -0.95, 0.03, -2.6, 0.08, 0.5, 0.12));
+    for (let i = 0; i < 9; i++) {
       const s = rnd(i * 3.3), sg = i % 2 ? 1 : -1;
-      HW.add(slab(1.3 + s * 1.4, 0.34 + s * 0.3, 1.4 + s * 1.2, M.rock,
-        -1.5 + s * 1.3, 0.14 + (i % 3) * 0.13, sg * (2.4 + s * 1.9),
-        (s - 0.5) * 0.16, s * 0.7, (s - 0.5) * 0.14));
+      const bk = slab(0.22, 0.07, 0.11, M.arch, -0.4 - s * 1.4, 0.02, sg * (1.7 + rnd(i * 5.1) * 1.8), rnd(i) * 0.3, s * TAU, rnd(i * 2) * 0.2);
+      const u = bk.geometry.getAttribute('uv'); for (let k = 0; k < u.count; k++) u.setXY(k, u.getX(k) * 0.07, 0.4 + u.getY(k) * 0.045);
+      HW.add(bk);
     }
   }
 
@@ -938,10 +795,18 @@ export function makeDrainageTunnelHome(opts = {}) {
   T.add(BORE);
   {
     // the pipe itself — an open tube you stand inside
-    const pipe = xCyl(BORE_R, BORE_R, BORE_LEN, 20, M.bore, true);
+    /* lined in the big tunnel's brick (2026-10-23), the courses running along
+     * the pipe: the cylinder's u goes round and its v along, so they are
+     * swapped and laid in metres — two tiles round (a whole number, or the
+     * seam shows), the brick a shade smaller than the kit's 5.75 m for it */
+    const pipe = xCyl(BORE_R, BORE_R, BORE_LEN, 20, M.boreBrick, true);
+    {
+      const uv = pipe.geometry.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) { const u = uv.getX(i), v = uv.getY(i); uv.setXY(i, v * BORE_LEN / (TAU * BORE_R / 2), u * 2); }
+    }
     pipe.position.x = BORE_LEN / 2;
     BORE.add(pipe);
-    // ring joints every couple of metres (photos 2–4)
+    // ring joints every couple of metres (photos 2–4) — concrete ribs now, the way the kit rings its tunnel
     for (let x = 1.7; x < BORE_LEN - 0.3; x += 1.85) {
       const ring = new THREE.Mesh(new THREE.TorusGeometry(BORE_R - 0.075, 0.055, 5, 20), M.bore);
       ring.position.x = x; ring.rotation.y = Math.PI / 2;
@@ -1414,7 +1279,25 @@ export function makeDrainageTunnelHome(opts = {}) {
     // floor and side walls run back 9 cm past ROOM_X0 to the bulkhead's face
     // (DOOR_X + 0.46), or a slit opens along the foot and up both corners
     const fx0 = DOOR_X + 0.44, flen = ROOM_X1 - fx0, fcx = (fx0 + ROOM_X1) / 2;
-    R.add(slab(flen, 0.2, ROOM_HZ * 2 + 0.4, M.roomConc, fcx, -0.1, 0));                 // floor
+    R.add(slab(flen, 0.2, ROOM_HZ * 2 + 0.4, M.pave, fcx, -0.1, 0));                     // floor
+    /* THE SKIRTING (2026-10-23): every room of the sewer below stands its brick
+     * on a band of bare concrete to the knee, its line drawn by the map's own
+     * top and foot (one tile tall, `skirtUV`). Two centimetres proud of the
+     * brick, so the props against the walls sit on it, not in it. */
+    {
+      const SK = 0.72, t = 0.02;
+      const skirt = (w, x, z, ry) => {
+        const m = slab(w, SK, t, M.skirt, x, SK / 2, z, 0, ry, 0);
+        const uv = m.geometry.getAttribute('uv');
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / (KIT_M.bare * 1.4), uv.getY(i));
+        R.add(m);
+      };
+      skirt(flen, fcx, ROOM_HZ - t / 2, 0);
+      skirt(flen, fcx, -ROOM_HZ + t / 2, 0);
+      skirt(ROOM_HZ * 2, ROOM_X1 - t / 2, 0, Math.PI / 2);
+      const fx = DOOR_X + 0.46 + 0.024 + t / 2, ow = 1.0, sw = ROOM_HZ - ow;
+      for (const s of [-1, 1]) skirt(sw, fx, s * (ow + sw / 2), Math.PI / 2);
+    }
     R.add(slab(flen, ROOM_H + 0.4, 0.25, M.brickM, fcx, ROOM_H / 2, ROOM_HZ + 0.12));    // side walls
     R.add(slab(flen, ROOM_H + 0.4, 0.25, M.brickM, fcx, ROOM_H / 2, -ROOM_HZ - 0.12));
     // Back wall, built around a real opening for the outlet — a solid slab
@@ -2247,14 +2130,21 @@ export function makeDrainageTunnelHome(opts = {}) {
    * strips over and under it came out with bricks a third the size of the
    * wall's (the owner's "weird textures" round the grate). Every brick box is
    * box-mapped here from its own corners in the tunnel's frame: the face's
-   * two in-plane axes, in metres, over one tile of 3.45 m by 2.7 — so every
-   * course runs straight on from one piece into the next. */
+   * two in-plane axes, in metres, over one of its map's tiles (`KIT_M`) — so
+   * every course runs straight on from one piece into the next. And since the
+   * kit's surfaces came in (2026-10-23) the same for every box and every
+   * flat piece of the headwall in each of them (`KIT_UV`). */
   {
     T.updateMatrixWorld(true);
+    const KIT_UV = new Map([[M.brickM, KIT_M.brick], [M.face, KIT_M.brick01 * 0.5], [M.conc, KIT_M.bare * 1.4], [M.rock, KIT_M.base * 0.6],
+      [M.roomConc, KIT_M.base * 0.6], [M.pave, KIT_M.pave], [M.silt, KIT_M.pave]]);
+    const FLAT = new Set(['BoxGeometry', 'ExtrudeGeometry', 'ShapeGeometry', 'PlaneGeometry']);
     const p = new THREE.Vector3(), nrm = new THREE.Vector3(), nm3 = new THREE.Matrix3();
     T.traverse((o) => {
-      if (!o.isMesh || o.material !== M.brickM || o.geometry.type !== 'BoxGeometry') return;
+      const tile = o.isMesh && KIT_UV.get(o.material);
+      if (!tile || !FLAT.has(o.geometry.type) || o.userData.ownUV) return;
       const g = o.geometry, pos = g.getAttribute('position'), nor = g.getAttribute('normal'), uv = g.getAttribute('uv');
+      if (!uv || !nor) return;
       nm3.getNormalMatrix(o.matrixWorld);
       for (let i = 0; i < pos.count; i++) {
         p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
@@ -2262,7 +2152,7 @@ export function makeDrainageTunnelHome(opts = {}) {
         const ax = Math.abs(nrm.x), ay = Math.abs(nrm.y), az = Math.abs(nrm.z);
         let u, v;
         if (ax >= ay && ax >= az) { u = p.z; v = p.y; } else if (az >= ay) { u = p.x; v = p.y; } else { u = p.x; v = p.z; }
-        uv.setXY(i, u / 3.45, v / 2.7);
+        uv.setXY(i, u / tile, v / tile);
       }
       uv.needsUpdate = true;
     });

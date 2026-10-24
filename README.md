@@ -473,10 +473,16 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   it is. Solid; looking at it says one line and offers you nothing to do.
   `CORPSE_X` / `CORPSE_Z`.
 - **The drainage tunnel home** — the storm drain in the dune and the room at
-  the end of it, kept the way he lives in it: wet weathered concrete with
-  mineral bloom and rust weeping down the pipe, a duckboard walkway he has
-  laid over the last of the silt, a string of bulbs half of which still
-  work, chalk on the wall. In the room, brick sooted over the lamp and damp
+  the end of it, kept the way he lives in it. It wears the sewer's own
+  surfaces (the PSX kit's brick, concrete, paving and rusted iron, the same
+  as the sewer under it): its mouth is a brick headwall in the bank, a ring
+  of bricks on end round the bore under a concrete keystone, piers on a
+  plinth, a band and a coping, stepped wings into the sand, rust run from its
+  weep pipes and water stains down from the top; the pipe is lined in the
+  big tunnel's brick with concrete ribs, a duckboard walkway he has laid over
+  the last of the silt on the paving, a string of bulbs half of which still
+  work, chalk on the wall. In the room, red brick on a knee-high band of bare
+  concrete, a paved floor, damp
   coming down from the joists, standing water on the floor, a pallet bed
   with a mattress, pillow and thrown-back blanket, a slatted crate table with
   a hurricane lantern, candles, a plate and a mug and a chair pulled up to
@@ -504,7 +510,7 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   help?" — "I just miss my old crew." His plaque is held to the wall by four
   screws, one in each corner; looked at with nothing to turn them they say
   **I have nothing for this**. The **screwdriver** lies on the crate table in
-  the drainage tunnel home, a stride from the grate in its back wall (it was
+  the drainage tunnel home, on the edge toward the room, a stride from the grate in its back wall (it was
   on the Very Old Fisherman's table until 2026-10-22). With it the screws back out and drop,
   and with all four out you can take Billy off the wall and carry him.
 - **He glimmers.** Once she is revealed (the sting, the view widening) you
@@ -545,22 +551,43 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   down a branch, ending in a dead end with a generator on its ledge under a
   dim lamp you can see from the ladder. Across the channel, through a door's
   short passage and a grate door, a small storeroom is flooded to your feet
-  and **live** — an electric box on its far wall hangs its wires into the
-  water, it crackles blue, and stepping in kills you (**Locked. The lock is
+  and **live** — an electric box on its far wall, square across from the
+  gate with its DANGER sign to you, hangs its wires over the chest under it
+  and into the water, it crackles blue, and stepping in kills you (**Locked. The lock is
   humming.**). A cable runs out of the box, over the vault and along the
   left wall to four knife-switch levers, each with an old hanging lamp over
   it and a red pilot blinking so you can find them in the dark. **Pull the
   lever** lights its lamp; with all four down, **Turn off the generator** on
   its button: the hum winds down, the lamps die one by one back toward you,
-  the water goes dead and the gate's lock lets go. Walk back by your
-  glowstick (a spare one lies by the generator), **Pick up the plank** by the
+  the water goes dead and the gate's lock lets go. Walk back by the
+  **Flashlight** left switched on on the generator's ledge (**Take the
+  flashlight**: an old army-green angle-head torch whose warm beam swings a
+  beat behind your look and stutters now and then; it lights its pool and
+  a faint spill round it, and the dust in the air), **Pick up the plank** by the
   ladder and **Lay the plank across** the channel, **Open the gate**, and the
-  chest in the corner has five jars of blood. **Climb the ladder** to go
+  chest under the box has five jars of blood. **Climb the ladder** to go
   back. It is dark: a murk lies on the water, the lamps stand cones of lit
   air with dust hanging in them and now and then stutter, a sub drone sits
   under the hum, pipes groan, something heavy lands somewhere far off, and
-  rats run. Saved on the way in; the levers, the generator, the gate, the chest
+  rats run, over the drip and wet air of the owner's sewer recording. Far
+  walls fall away into the dark; what you see is near you or under a lamp.
+  Saved on the way in; the levers, the generator, the gate, the chest
   and where you laid the plank are kept.
+- **The thing in the water** — pull the first lever and something in the
+  sewer heard it: a heavy splash far down the water, and from then on it
+  stalks you. It comes up somewhere in the channel or the branch out of your
+  sight, and only while you are NOT looking: a ring on the water and a
+  slosh, the top of its head, two amber eyes glowing faintly just over the
+  surface, then the rest of it, its arms coming up and out at you, the
+  sloshing louder and closer together. Turn and catch it and it holds a
+  breath — long enough to be sure you saw it — and goes under with a splash
+  you cannot miss, and does not come up there again. Leave it five seconds
+  unseen and it comes out of the water at you. It is cleverer about where it
+  rises the longer it hunts (behind you, at a fair distance, a clear line to
+  you; sometimes past the grates, where it can only stand and watch), and
+  once the generator is off it rises twice as often and in under four
+  seconds. Every sound it makes is placed in 3-D in the tunnel's echo.
+  (Dev mode plays the scare and lets you live.)
 - **The overflow culvert** — the pipe's old destination, still built behind
   the tunnel home but no longer reached: a brick barrel vault over standing
   water, a plank bridge, moonlight through gratings in the crown, and a
@@ -1683,7 +1710,15 @@ by [Elbolillo](https://sketchfab.com/Elbolilloduro) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the sewer under the
 drain (`assets/sewer.glb`, `tools/sewer_pack.py`: the dozen kit pieces it is built
 from, colour maps only, metalness off). The big tunnel's grates are the kit's own
-small arched grate drawn out to the big tunnel's arch.
+small arched grate drawn out to the big tunnel's arch. Its colour maps also dress the
+drainage tunnel home above it (`assets/sewer-tex/`, copied out of the glb by
+`tools/sewer_tex.py`).
+
+The **thing in the sewer's water** is the owner's "monster" model (`assets/sewer-monster.glb`,
+`tools/sewer_monster_pack.py`: base colour 1024, normal 512, no clip — posed in the game), its sloshes, splash,
+leap and the drip bed his recordings (`tools/sewer_monster_sound.py`: `sew-slosh1..8`, `sew-splash`, `sew-leap`,
+`sew-drip-bed`). The **flashlight** is the Fulton out of his "FlashlightFBX" pack (`assets/flashlight.glb`,
+`tools/flashlight_pack.py`).
 
 This work is based on ["Simple Generator(Fixed)"](https://sketchfab.com/3d-models/simple-generatorfixed-eda91f75faae470e8d6461e0e6fc86fa)
 by [Blender3D](https://sketchfab.com/Blender3D) licensed under
