@@ -141,7 +141,7 @@ POSITIVE z because beach triggers are "z less than a line".
 - **A `three/addons/…` import must be added to BOTH import maps**
   (`index.html` and `models/viewer.html`).
 - **All one-shot sfx go through `sfxOut()`**, never `ctx.destination`.
-- **The owner's music must always play.** A new piece gets its own volume node added to `musicGuard()` and a
+- **The owner's music must always play** (one exception, his: the opening song is NOT played on a death's respawn, `bootRespawn`; the musictest's `checkpoint` wants silence and `load` the song). A new piece gets its own volume node added to `musicGuard()` and a
   `musicNote()` at its start, and a scenario in `tools/musictest.js`. After ANY change near audio, a trigger, the
   boot or the restore, run `sh tools/musictest.sh` (a headless Chrome of its own, silent, never the owner's pane or
   save) and report the result. `sh tools/loadtime.sh` times a checkpoint load the same way.

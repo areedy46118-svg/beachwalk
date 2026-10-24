@@ -8599,6 +8599,10 @@ var deathWait = false;
  * `updateDarkKnight`); `updateBootHold` holds the black for it, at most `BOOT_HOLD_WARM_MAX` */
 var bootStageHold = null;
 try { if (sessionStorage.getItem('beachwalk.died') === '1') { deathWait = true; sessionStorage.removeItem('beachwalk.died'); } } catch (e) {}
+/* THE OPENING SONG IS THE OPENING (2026-10-24, the owner: "make it so the starting song doesnt play on a respawn but just
+ * on the first load into the game"). A load that is a death's reload (`beachwalk.died`) comes back without it; a first
+ * load, a restart and a checkpoint loaded from the menu still have it (`startMusic`). */
+const bootRespawn = deathWait;
 let restoreTune = null, saveTune = null;          // a song a checkpoint was written under, played again as the black lifts on it
 const BOOT_HOLD_MAX = 1600;
 const BOOT_HOLD_WARM_MAX = 6500;   // and at most this long for the rooms' own warms
@@ -22655,6 +22659,7 @@ function musicBuffer() {
  * it is, and the bytes are fetched again if they were lost. */
 let musicRetryT = null, musicLevel = 1;
 function startMusic(level = 1) {
+  if (bootRespawn) return;                         // (a respawn: see `bootRespawn`)
   if (!audioCtx) return;
   musicLevel = level;
   if (musicStarted) return;

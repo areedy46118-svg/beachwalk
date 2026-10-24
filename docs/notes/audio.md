@@ -736,3 +736,10 @@ suspended context back while a piece plays; `musicNote()` logs each start (`cons
 death's card before a fresh start) suspends the context in `loadSilenceTick` (top of `animateFrame`), and `ctx.resume`
 is wrapped to refuse while it holds; at the end of the load `audioRealResume`. Measured (loadtime.sh): suspended for the
 whole of a checkpoint load, the music test's five pieces all PASS after it (`sh tools/musictest.sh`).
+
+**The opening song is the opening (2026-10-24).** The owner: "make it so the starting song doesnt play on a respawn but
+just on the first load into the game". `bootRespawn` (captured from `beachwalk.died` at load, beside `deathWait`) makes
+`startMusic` a no-op for the whole of a death's reload; a first load, a restart and a checkpoint loaded from the menu
+still play it. `tools/musictest.js`: `checkpoint` (a respawn) now passes SILENT, and a new `load` (a checkpoint, no death)
+must hear it — it waits for the black to lift (`restoreS().bootHold`), 15-20 s: listening straight after boot heard
+nothing on the untouched commit too. (`restart` and `church` fail on the untouched commit as well: not this.)

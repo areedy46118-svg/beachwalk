@@ -1,7 +1,7 @@
 /* EVERY PIECE OF THE OWNER'S MUSIC, THROUGH ITS REAL TRIGGER, MEASURED AT THE SPEAKERS — SILENTLY. Not part of the game.
  * Open /README.md in the pane (no game on it), then:
  *   await import('/tools/silentframe.js'); await import('/tools/musictest.js');
- *   await __mtRun('samurai')       // one scenario (each well under the tool's 45 s): 'restart', 'checkpoint',
+ *   await __mtRun('samurai')       // one scenario (each well under the tool's 45 s): 'restart', 'checkpoint' (a respawn: silent), 'load',
  *                                  // 'samurai', 'church', 'end'  -> { scenario, pass, peak, who, note }
  * Each loads the game fresh in the silent iframe, drives the moment the way a player reaches it (the sword taken
  * off its stand, the crawl out behind the altar, the morning after the horn, a death's card clicked …) and reads the
@@ -10,7 +10,10 @@
  * owner's checkpoint (`beachwalk.save`) itself. */
 (function () {
   const W = window, sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const want = { restart: 'startMusic', checkpoint: 'startMusic', samurai: 'startSamScore', church: 'startPassing', end: 'startEndSong' };
+  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', samurai: 'startSamScore', church: 'startPassing', end: 'startEndSong' };
+  /* (2026-10-24, the owner: the opening song plays on the first load into the game and NOT on a respawn) — 'checkpoint'
+   * is a death's respawn and passes SILENT; 'load' is a checkpoint loaded without a death and must play it */
+  const silent = { checkpoint: true };
   async function boot(setup) {
     await W.__sfLoad(setup);
     for (let i = 0; i < 60; i++) { await sleep(250); const w = W.__sfW(); if (w && w.__bw) break; }
@@ -42,6 +45,13 @@
         for (let i = 0; i < 240 && btn.classList.contains('loading'); i++) { b.frame(4); await sleep(20); }
         note = btn.classList.contains('loading') ? 'card never lit' : 'card lit';
         btn.click(); await drive(b, 120); peak = await listen(want[sc], 8000);
+      } else if (sc === 'load') {
+        if (!bak) return { scenario: sc, pass: false, note: 'no checkpoint saved to load' };
+        const { b } = await boot(() => { sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); });
+        // (a checkpoint comes in behind the black for 15-20 s: wait for it to lift, as the respawn waits for its card)
+        for (let i = 0; i < 900 && !(b.restoreS && b.restoreS().bootHold <= 0); i++) { b.frame(4); await sleep(20); }
+        note = 'a checkpoint loaded, no death' + (b.restoreS && b.restoreS().bootHold <= 0 ? '' : ', BLACK NEVER LIFTED');
+        await drive(b, 120); peak = await listen(want[sc], 9000);
       } else if (sc === 'samurai') {
         const { b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
         b.settings.devMode = true;
@@ -77,6 +87,6 @@
       for (const k of ['beachwalk.load', 'beachwalk.skipIntro', 'beachwalk.died']) sessionStorage.removeItem(k);
     }
     const others = W.__sfDests.map((d) => d.who).filter((v, i, a) => a.indexOf(v) === i).join(',');
-    return { scenario: sc, pass: peak > 0.004, peak, who: want[sc], note, heard: others };
+    return { scenario: sc, pass: silent[sc] ? peak <= 0.004 : peak > 0.004, peak, who: want[sc], note: note + (silent[sc] ? ' (wants silence)' : ''), heard: others };
   };
 })();
