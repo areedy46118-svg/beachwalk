@@ -448,12 +448,21 @@ function tinTex() {
  * across something. Sobel over the canvas's luminance, wrapped at the edges
  * so it tiles, and it shares its map's repeat and offset. */
 const _nmCache = new Map();
+/* (2026-10-24, optimised) one normal canvas per source picture, however many materials wear it at their own repeats:
+ * the kit's six pictures were sixteen Sobel passes at boot and sixteen again when they landed */
+const _nmCanvas = new Map();
 function normalFrom(map, k = 2.2) {
   if (_nmCache.has(map)) return _nmCache.get(map);
   const im = map.image; if (!im || !im.getContext) return null;
-  const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
-  fillNormal(im, c, k);
+  let N = _nmCanvas.get(im);
+  if (!N) {
+    const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+    fillNormal(im, c, k);
+    _nmCanvas.set(im, (N = { c, k, texs: [] }));
+  }
+  const c = N.c;
   const t = new THREE.CanvasTexture(c);
+  N.texs.push(t);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
   t.repeat = map.repeat; t.offset = map.offset;     // shared, so it can never drift off its picture
@@ -484,26 +493,33 @@ function fillNormal(im, c, k) {
  * here as a canvas painted its average colour, drawn over with the picture when
  * the picture lands — quantised like `paint`, and the normal map lifted off it
  * again — so nothing about the material changes shape when it arrives. */
+const _kitSrc = new Map();          // one canvas and one fetch per picture; a texture per material for its own repeat
 function kitTex(name, avg) {
-  const c = document.createElement('canvas'); c.width = c.height = 256;
-  const g = c.getContext('2d', { willReadFrequently: true });
-  g.fillStyle = avg; g.fillRect(0, 0, 256, 256);
-  const t = new THREE.CanvasTexture(c);
+  let K = _kitSrc.get(name);
+  if (!K) {
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.fillStyle = avg; g.fillRect(0, 0, 256, 256);
+    _kitSrc.set(name, (K = { c, texs: [] }));
+    if (typeof Image !== 'undefined') {
+      const im = new Image();
+      im.onload = () => {
+        g.drawImage(im, 0, 0, 256, 256);
+        const img = g.getImageData(0, 0, 256, 256), px = img.data;
+        for (let i = 0; i < px.length; i += 4) { px[i] &= 0xF0; px[i + 1] &= 0xF0; px[i + 2] &= 0xF0; }
+        g.putImageData(img, 0, 0);
+        for (const t of K.texs) t.needsUpdate = true;
+        const N = _nmCanvas.get(c);
+        if (N) { fillNormal(c, N.c, N.k); for (const t of N.texs) t.needsUpdate = true; }
+      };
+      im.src = 'assets/sewer-tex/' + name + '.jpg';
+    }
+  }
+  const t = new THREE.CanvasTexture(K.c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
   t.anisotropy = 1;
-  if (typeof Image === 'undefined') return t;
-  const im = new Image();
-  im.onload = () => {
-    g.drawImage(im, 0, 0, 256, 256);
-    const img = g.getImageData(0, 0, 256, 256), px = img.data;
-    for (let i = 0; i < px.length; i += 4) { px[i] &= 0xF0; px[i + 1] &= 0xF0; px[i + 2] &= 0xF0; }
-    g.putImageData(img, 0, 0);
-    t.needsUpdate = true;
-    const nm = _nmCache.get(t);
-    if (nm) { fillNormal(c, nm.image, nm.userData.k); nm.needsUpdate = true; }
-  };
-  im.src = 'assets/sewer-tex/' + name + '.jpg';
+  K.texs.push(t);
   return t;
 }
 /* how big one tile of each is, in metres — measured off the kit's own pieces

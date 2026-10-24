@@ -18,6 +18,8 @@ decodes and encodes, everything between is plain Python on 16-bit PCM.
                             slosh, 0.1-3.0 s — the thing going back under.
   assets/sew-leap.m4a       "Water jumping sound effects.mp3" (5.2 s): the burst
                             out of the water, 0.2-3.4 s.
+  assets/sew-breath1..2.m4a "Monster Breathing Sound Effect 3 Free SFX.mp3" (10.1 s): two breaths, in and out,
+                            0.4-5.3 s and 5.4-10.0 s (cut at the quiet between, -40 dB), normalised to one RMS.
   assets/sew-drip-bed.m4a   "ASMR Dark, creepy sewers..." (498 s, an even bed: RMS
                             -28 dB in every 5 s of it). 64 s from 20 s in, the 2 s
                             after it crossfaded (equal power) over its head, padded
@@ -105,5 +107,10 @@ def main():
     p = int(PAD * sr2) * 2
     loop = body[-p:] + body + body[:p]
     encode(loop, sr2, 2, os.path.join(ASSETS, 'sew-drip-bed.m4a'), 72, tmp)
+    # ---- its breath (2026-10-24): two breaths in the take, each in and out, cut at the quiet between them
+    e = decode(os.path.join(SRC, 'Monster Breathing Sound Effect 3 Free SFX.mp3'), sr, 1, tmp)
+    for n, (t0, t1) in enumerate([(0.4, 5.3), (5.4, 10.0)], 1):
+        seg = fade(e[int(t0 * sr):int(t1 * sr)], sr, 0.05, 0.6)
+        encode(seg, sr, 1, os.path.join(ASSETS, 'sew-breath%d.m4a' % n), 64, tmp, gain=0.12 / (rms(seg) or 1))
 
 main()

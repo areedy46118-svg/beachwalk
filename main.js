@@ -22858,6 +22858,7 @@ const SAMPLES = {
   sewSlosh: Array.from({ length: 8 }, (_, i) => `assets/sew-slosh${i + 1}.m4a`),
   sewSplash: ['assets/sew-splash.m4a'],
   sewLeap: ['assets/sew-leap.m4a'],
+  sewBreath: ['assets/sew-breath1.m4a', 'assets/sew-breath2.m4a'],   // its breath (the owner's "Monster Breathing", 2026-10-24)
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -27933,14 +27934,19 @@ bwGlb('assets/flashlight.glb', (gltf) => {
 const flashGlow = new THREE.PointLight(FLASH.COLOR, 0, 9, 1.5);
 scene.add(flashGlow);
 let flashOn = 0, flashFlick = 0, flashFlickIn = 9;
+/* AND IT FAILS WHEN IT IS NEAR (2026-10-24, the owner's pick of the ideas): the thing in the sewer's water writes how
+ * close it is to having you (`sewMonTick`: rising unseen, nearer, further up) and the torch stutters with it — more
+ * often, deeper — a cue that is also the threat */
+let flashDread = 0;
 const _flF = new THREE.Vector3(), _flR = new THREE.Vector3(), _flAim = new THREE.Vector3(0, 0, -1), _flP = new THREE.Vector3();
 function updateFlashlight(dt) {
   const on = equipped === flashlightItem && !held && !dying;
   flashOn += ((on ? 1 : 0) - flashOn) * Math.min(1, dt * 9);
   // an old battery: now and then it dims and catches
-  if ((flashFlickIn -= dt) <= 0) { flashFlickIn = 8 + Math.random() * 18; flashFlick = 0.12 + Math.random() * 0.3; }
+  if ((flashFlickIn -= dt * (1 + flashDread * 14)) <= 0) { flashFlickIn = 8 + Math.random() * 18; flashFlick = (0.12 + Math.random() * 0.3) * (1 + flashDread * 1.5); }
   let k = flashOn;
-  if (flashFlick > 0) { flashFlick -= dt; k *= Math.random() < 0.5 ? 0.35 : 0.85; }
+  if (flashFlick > 0) { flashFlick -= dt; k *= Math.random() < 0.5 ? 0.35 - 0.25 * flashDread : 0.85; }
+  if (flashDread > 0.05) k *= 1 - flashDread * (Math.random() < 0.25 ? 0.55 : 0.12);
   for (const m of flashLensMats) m.emissiveIntensity = 0.3 + 1.3 * Math.max(k, flashlightModel.userData.ledgeOn ? 1 : 0);
   camera.getWorldDirection(_flF);
   // the beam swings a beat behind the look, the way a hand does
@@ -86393,6 +86399,9 @@ function updateSewer(dt) {
   for (const s of sewP.sparks) {
     s.next -= dt;
     if (live && s.next <= 0) { s.t = 0.04 + Math.random() * 0.09; s.next = 0.25 + Math.random() * 1.6; s.sp.scale.setScalar(0.22 + Math.random() * 0.3);
+      // and a few real sparks thrown off it, white-blue, arcing and gone (2026-10-24)
+      if (sewMon && inSewer) for (let k = 0, n = 3 + ((Math.random() * 5) | 0); k < n; k++) { const a = Math.random() * 6.283, v = 0.8 + Math.random() * 1.8;
+        sewDrop(s.sp.position.x, s.sp.position.y + 0.02, s.sp.position.z, Math.cos(a) * v, 0.6 + Math.random() * 1.4, Math.sin(a) * v, 0.004 + Math.random() * 0.005, 0.18 + Math.random() * 0.2, true); }
       if (Math.random() < 0.35) sfxAt(SEW_X + SEW.ROOM_X1 - 0.4, SEW_Z + SEW.DOOR_Z, () => sfxSewZap(0.18 + Math.random() * 0.12), { ref: 3, far: 22 }); }
     if (s.t > 0) { s.t -= dt; zap = Math.max(zap, 0.6 + Math.random() * 0.4); }
     s.sp.material.opacity = s.t > 0 && live ? 0.9 : 0;
@@ -86551,21 +86560,43 @@ function sewMonBuild(root) {
     eyes.push({ core, glow });
   }
   // the water it breaks: two rings opening, and the spray it throws
-  const ringMat = () => new THREE.MeshBasicMaterial({ color: 0x8a9c98, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const rings = [0, 1].map(() => { const r = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 28), ringMat()); r.rotation.x = -Math.PI / 2; r.raycast = () => {}; r.renderOrder = 2; W.add(r); return { r, t: 9, k: 1 }; });
-  const NS = 70, sp = new Float32Array(NS * 3), sv = new Float32Array(NS * 3);
-  const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-  const spray = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0x9aaeae, size: 0.045, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
-  spray.frustumCulled = false; spray.raycast = () => {}; W.add(spray);
+  /* a ripple is a soft bright band, not a line: a hairline ring was a pixel wide at five metres and nothing in the dark */
+  const ripTex = (() => {
+    const [c, g] = artCanvas(64, 64), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.55, 'rgba(255,255,255,0.05)'); gr.addColorStop(0.78, 'rgba(255,255,255,0.9)');
+    gr.addColorStop(0.88, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  })();
+  const ringMat = () => new THREE.MeshBasicMaterial({ color: 0xa6bab6, map: ripTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+  const rings = Array.from({ length: 16 }, () => { const r = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), ringMat()); r.rotation.x = -Math.PI / 2; r.raycast = () => {}; r.renderOrder = 5; W.add(r); return { r, t: 9, k: 1 }; });
+  /* THE WATER IT THROWS (2026-10-24, the owner: "update all the animations and particles to look more natural and be
+   * more detailed"): one pool of droplets, each its own size, soft and round, falling under gravity with a little drag,
+   * a dive's column and crown and the water running off it while it is up; a drop that lands leaves a ripple now and then */
+  const NS = 220, sp = new Float32Array(NS * 3), sz = new Float32Array(NS), sa = new Float32Array(NS), sc = new Float32Array(NS * 3).fill(1);
+  const sv = new Float32Array(NS * 3), life = new Float32Array(NS);   // (not `sl`: that is the slosh timer, and the later field overwrote it — every drop died on its first frame)
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); sg.setAttribute('aSize', new THREE.BufferAttribute(sz, 1)); sg.setAttribute('aA', new THREE.BufferAttribute(sa, 1));
+  sg.setAttribute('aC', new THREE.BufferAttribute(sc, 3));   // (water's grey, or a spark's blue-white off the box's wires)
+  const spray = new THREE.Points(sg, new THREE.ShaderMaterial({
+    vertexShader: `attribute float aSize; attribute float aA; attribute vec3 aC; varying float vA; varying vec3 vC;
+      void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vA = aA * exp(-(-mv.z) * 0.05); vC = aC; gl_PointSize = clamp(aSize * 420.0 / -mv.z, 1.0, 9.0); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying float vA; varying vec3 vC;
+      void main() { float r = length(gl_PointCoord - 0.5) * 2.0; if (r > 1.0) discard; float a = vA * (1.0 - r * r); gl_FragColor = vec4(vC * a, 1.0); }`,
+    blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+  }));
+  spray.frustumCulled = false; spray.raycast = () => {}; spray.renderOrder = 5; W.add(spray);
   // where it can come up: down the channel and the branch, every 0.8 m, those past the grates marked
   const spots = [];
   for (let z = S.CH_END + 1.2; z <= 16.0; z += 0.8) spots.push({ x: 0, z, ch: true, barred: z > S.NORTH + 0.4 });
   for (let x = 1.6; x <= 16.5; x += 0.8) spots.push({ x, z: S.T_Z, ch: false, barred: x > S.BR_END + 0.8 });
   // the light its face is seen by when it reaches you (pooled like every lamp, so it costs nothing until then)
   const faceL = new THREE.PointLight(0xffd6b0, 0, 3.2, 2); faceL.userData.lpAlways = 40; W.add(faceL);
-  sewMon = { g, body, root, bones, bind, head, mid, eyes, rings, spray, sp, sv, sprayT: 9, spots, faceL,
+  sewMon = { g, body, root, bones, bind, head, mid, eyes, rings, spray, sp, sv, sz, sa, life, sc, dropN: 0, spots, faceL,
     st: 'off', t: 0, h: SEWMON.HID, x: 0, z: 0, barred: false, nextIn: 8, sl: 0, lastSeen: null, last: null, yaw: 0, eyeK: 0,
-    lean: 0, flare: 0, intro: -1, levers: sewLevers, ambIn: 6, aud: null };
+    lean: 0, flare: 0, intro: -1, levers: sewLevers, ambIn: 6, aud: null,
+    placed: false, path: null, seg: 0, wakeIn: 0, drift: 0, press: 0, hbIn: 0, breath: 0, bubIn: 1, brIn: 2,
+    tilt: 0, tiltTo: 0, tiltIn: 2, twitch: 0, flinch: 0, twist: 0, dripIn: 0, lapIn: 0 };
 }
 // the thing's own sounds: a recording placed in 3-D at a point in the sewer's frame, duller with distance
 function sewMonPlay(name, x, y, z, gain, rate = 1) {
@@ -86611,7 +86642,12 @@ function sewMonAud() {
   const p = sewPanner(SEW_X, SEW_Y, SEW_Z);
   src.connect(bp).connect(am).connect(g).connect(p).connect(sfxBusGain);
   src.start(); lfo.start();
-  return (sewMon.aud = { g, p });
+  // and the pressure in your own head while it comes up unseen: a thin high ringing, not placed
+  const to = ctx.createOscillator(); to.type = 'sine'; to.frequency.value = 6300;
+  const tv = ctx.createOscillator(); tv.frequency.value = 0.31; const tvg = ctx.createGain(); tvg.gain.value = 40; tv.connect(tvg).connect(to.frequency);
+  const tin = ctx.createGain(); tin.gain.value = 0;
+  to.connect(tin).connect(sfxBusGain); to.start(); tv.start();
+  return (sewMon.aud = { g, p, tin, srcs: [src, lfo, to, tv], outs: [g, tin] });
 }
 /* THE SCREAM in your face: a torn roar (noise through a falling band, two detuned saws sliding down, all of it driven
  * into a hard clip) over a sub hit. Synthesised: there was no voice in the recordings. */
@@ -86635,26 +86671,81 @@ function sfxSewScream() {
   const sg = ctx.createGain(); sg.gain.setValueAtTime(0.0001, t); sg.gain.exponentialRampToValueAtTime(0.7, t + 0.01); sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
   sub.connect(sg).connect(out); sub.start(t); sub.stop(t + 0.75);
 }
+/* WHERE IT SWIMS: a path through the water from one place to another — straight down the channel or the branch,
+ * by the junction between them */
+const sewInBranch = (x, z) => x > 1.2 && Math.abs(z - SEW.T_Z) < 1.2;
+function sewWaterPath(ax, az, bx, bz) {
+  const pts = [[ax, az]];
+  if (sewInBranch(ax, az) !== sewInBranch(bx, bz)) pts.push([0, SEW.T_Z]);
+  pts.push([bx, bz]);
+  return pts;
+}
+const sewPathLen = (P) => { let L = 0; for (let i = 1; i < P.length; i++) L += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); return L; };
+// a bubble breaking the surface over it: a quick rising blip, placed
+function sewMonBubble(x, z, g) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, f = 260 + Math.random() * 260;
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 2.6, t + 0.05);
+  const gg = ctx.createGain(); gg.gain.setValueAtTime(0.0001, t); gg.gain.exponentialRampToValueAtTime(g, t + 0.006); gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  o.connect(gg).connect(sewPanner(SEW_X + x, SEW_Y + SEW.WATER, SEW_Z + z)).connect(sfxOutBase()); o.start(t); o.stop(t + 0.1);
+}
+// its breath: one of the two takes, from where it is, muffled under the water
+function sewMonBreath(near, under) {
+  const ctx = audioCtx, M = sewMon; if (!ctx) return;
+  const bank = (sampleBanks.sewBreath || []).filter(Boolean); if (!bank.length) return;
+  const src = ctx.createBufferSource(); src.buffer = bank[(M.brPick = ((M.brPick || 0) + 1) % bank.length)];
+  src.playbackRate.value = 0.9 + Math.random() * 0.12;
+  const g = ctx.createGain(); g.gain.value = (0.05 + 0.3 * near) * (under ? 0.75 : 1);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = under ? 900 : 6500; lp.Q.value = under ? 2 : 0.7;
+  const y = under ? SEW.WATER - 0.05 : sewMonEyeY(M.h) - 0.1;
+  src.connect(lp).connect(g).connect(sewPanner(SEW_X + M.x, SEW_Y + y, SEW_Z + M.z)).connect(sfxOutBase());
+  src.start();
+  if (under && Math.random() < 0.6) for (let i = 0; i < 3; i++) setTimeout(() => sewMon && sewMonBubble(M.x + (Math.random() - 0.5) * 0.3, M.z + (Math.random() - 0.5) * 0.3, 0.03), 1800 + i * 160 + Math.random() * 300);   // (breathing out under water)
+}
+// your heart: a low lub and a softer dub
+function sfxSewHeart(g) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t0 = ctx.currentTime, out = sfxOutBase();
+  for (const [dt, k] of [[0, 1], [0.24, 0.62]]) {
+    const t = t0 + dt;
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(62, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.13);
+    const gg = ctx.createGain(); gg.gain.setValueAtTime(0.0001, t); gg.gain.exponentialRampToValueAtTime(g * k, t + 0.012); gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 140;
+    o.connect(gg).connect(lp).connect(out); o.start(t); o.stop(t + 0.2);
+  }
+}
 // the top of its head over the water -> where its feet are, and its eyes
 const sewMonFootY = (h) => SEW.WATER + h - SEWMON.TOP * SEWMON.SCALE;
 const sewMonEyeY = (h) => SEW.WATER + h - (SEWMON.TOP - SEWMON.EYE_Y) * SEWMON.SCALE;
 function sewMonRing(x, z, k) {
-  const R = sewMon.rings.find((r) => r.t > 1.2) || sewMon.rings[0];
+  const R = sewMon.rings.reduce((a, r) => (r.t > a.t ? r : a));      // (pool of 16: drops land in it too)      // the oldest: a wake lays them down fast
   R.t = 0; R.k = k; R.r.position.set(x, SEW.WATER + 0.006, z);
 }
+// one droplet into the pool (the oldest slot reused): where, how fast, how big, how long
+function sewDrop(x, y, z, vx, vy, vz, size, life, spark = false) {
+  const M = sewMon, i = M.dropN = (M.dropN + 1) % M.sz.length;
+  M.sp[i * 3] = x; M.sp[i * 3 + 1] = y; M.sp[i * 3 + 2] = z;
+  M.sv[i * 3] = vx; M.sv[i * 3 + 1] = vy; M.sv[i * 3 + 2] = vz;
+  M.sz[i] = size; M.life[i] = life; M.sa[i] = 1;
+  if (spark) { M.sc[i * 3] = 1.6; M.sc[i * 3 + 1] = 2.0; M.sc[i * 3 + 2] = 2.6; } else { M.sc[i * 3] = 0.62; M.sc[i * 3 + 1] = 0.7; M.sc[i * 3 + 2] = 0.7; }
+  M.spray.geometry.attributes.aC.needsUpdate = true;
+}
+// a body breaking the water: a column straight up, a crown thrown out round it, and spatter low over the surface
 function sewMonSpray(x, z, k) {
-  const M = sewMon, n = M.sp.length / 3;
-  for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2, r = Math.random() * 0.45;
-    M.sp[i * 3] = x + Math.cos(a) * r; M.sp[i * 3 + 1] = SEW.WATER + 0.05; M.sp[i * 3 + 2] = z + Math.sin(a) * r;
-    const v = (1.2 + Math.random() * 2.6) * k;
-    M.sv[i * 3] = Math.cos(a) * v * 0.45; M.sv[i * 3 + 1] = v; M.sv[i * 3 + 2] = Math.sin(a) * v * 0.45;
-  }
-  M.sprayT = 0; M.spray.geometry.attributes.position.needsUpdate = true;
+  const W0 = SEW.WATER + 0.04;
+  for (let i = 0; i < 26 * k; i++) { const a = Math.random() * 6.283, r = Math.random() * 0.22; sewDrop(x + Math.cos(a) * r, W0, z + Math.sin(a) * r, Math.cos(a) * 0.5, (2.6 + Math.random() * 2.8) * k, Math.sin(a) * 0.5, 0.012 + Math.random() * 0.02, 1.6); }
+  for (let i = 0; i < 34 * k; i++) { const a = Math.random() * 6.283, v = (1.1 + Math.random() * 1.9) * k; sewDrop(x + Math.cos(a) * 0.35, W0, z + Math.sin(a) * 0.35, Math.cos(a) * v, (1.4 + Math.random() * 1.8) * k, Math.sin(a) * v, 0.008 + Math.random() * 0.016, 1.4); }
+  for (let i = 0; i < 18 * k; i++) { const a = Math.random() * 6.283, v = 0.8 + Math.random() * 1.6; sewDrop(x + Math.cos(a) * 0.3, W0, z + Math.sin(a) * 0.3, Math.cos(a) * v, 0.4 + Math.random() * 0.7, Math.sin(a) * v, 0.006 + Math.random() * 0.008, 0.8); }
 }
 function sewMonReset(leaving = false) {
   const M = sewMon; if (!M) return;
   M.st = 'off'; M.t = 0; M.h = SEWMON.HID; M.g.visible = false; M.flare = 0; M.intro = -1; M.faceL.intensity = 0;
+  M.placed = false; M.path = null; M.press = 0; flashDread = 0;
+  // (its sound runs only while you are down there: leaving, the loops are stopped and let go, not left at nought)
+  if (M.aud) {
+    M.aud.tin.gain.value = 0;
+    if (leaving) { for (const n of M.aud.srcs) try { n.stop(); } catch (e) {} for (const n of M.aud.outs) try { n.disconnect(); } catch (e) {} M.aud = null; }
+  }
   if (M.aud) M.aud.g.gain.value = 0;
   if (sewScare && !dying) sewScare = null;
   if (leaving) M.levers = sewLevers;
@@ -86712,7 +86803,16 @@ function sewAim(bone, tip, dir, amt) {
   bone.quaternion.premultiply(_smQ3);
   bone.updateMatrixWorld(true);
 }
-const _smTip = new THREE.Vector3(), _smDir = new THREE.Vector3(), _smCam = new THREE.Vector3();
+const _smTip = new THREE.Vector3(), _smDir = new THREE.Vector3(), _smCam = new THREE.Vector3(), _smAx = new THREE.Vector3();
+// turn a bone by an angle about a world axis (the same P^-1 q P as `sewAim`)
+function sewTurn(bone, axis, ang) {
+  if (!bone || Math.abs(ang) < 1e-4) return;
+  _smQ.setFromAxisAngle(axis, ang);
+  bone.parent.getWorldQuaternion(_smQ2);
+  _smQ3.copy(_smQ2).invert().multiply(_smQ).multiply(_smQ2);
+  bone.quaternion.premultiply(_smQ3);
+  bone.updateMatrixWorld(true);
+}
 function sewMonPose(dt, reach) {
   const M = sewMon, B = M.bones;
   for (const [b, q] of M.bind) b.quaternion.copy(q);
@@ -86722,17 +86822,27 @@ function sewMonPose(dt, reach) {
   const want = Math.atan2(cx - M.x, cz - M.z);
   let dy = want - M.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
   M.yaw += dy * Math.min(1, dt * (M.st === 'leap' ? 20 : 2.2));
-  M.g.rotation.y = M.yaw;
-  M.body.rotation.x = M.lean;
-  M.body.position.y = M.st === 'rise' || M.st === 'linger' ? Math.sin(performance.now() * 0.0013) * 0.02 : 0;
+  M.g.rotation.y = M.yaw + M.twist;
+  M.body.rotation.x = M.lean - M.flinch * 0.18;
+  const up = M.st === 'rise' || M.st === 'linger' || M.st === 'seen';
+  // standing in the water it is not still: it heaves with its breath and sways on the current
+  const now = performance.now() * 0.001, br = Math.sin(M.breath * Math.PI * 2);
+  M.body.position.y = up ? br * 0.025 + Math.sin(now * 0.7) * 0.012 : 0;
+  M.body.rotation.z = up ? Math.sin(now * 0.53) * 0.025 : 0;
   M.g.updateMatrixWorld(true);
   _smCam.copy(camera.position);
+  _smAx.set(Math.cos(M.yaw), 0, -Math.sin(M.yaw));                          // its right, in the world
+  if (up) sewTurn(M.bones.Spine1_M, _smAx, -br * 0.045);                    // the chest drawing in and letting go
   // the neck, then the head, onto you
   if (B.joint4_M && B.Head_M) {
     M.mid.getWorldPosition(_smTip); _smDir.copy(_smCam).sub(_smTip);
     sewAim(B.joint4_M, _smTip, _smDir, 0.45);
     M.mid.getWorldPosition(_smTip); _smDir.copy(_smCam).sub(_smTip);
     sewAim(B.Head_M, _smTip, _smDir, 0.85);
+    // a predator's head: cocked to one side, now and then a twitch; caught, it jerks back
+    B.Head_M.getWorldPosition(_smB); M.mid.getWorldPosition(_smTip); _smDir.copy(_smTip).sub(_smB).normalize();
+    sewTurn(B.Head_M, _smDir, M.tilt + M.twitch);
+    sewTurn(B.Head_M, _smAx, M.flinch * 0.35);
   }
   // and at the end, the arms come up and out at you
   if (reach > 0) for (const s of ['L', 'R']) {
@@ -86761,19 +86871,27 @@ function sewMonWater(dt) {
   for (const R of M.rings) {
     if (R.t > 1.6) { R.r.material.opacity = 0; continue; }
     R.t += dt; const u = R.t / 1.6;
-    R.r.scale.setScalar(0.6 + u * 2.6 * R.k); R.r.material.opacity = 0.22 * R.k * (1 - u) * (1 - u);
+    // (a wake's small rings at 0.22 x their size were 7 % and nothing in the dark: a floor of their own; drawn after the mist on the water, which veiled them)
+    R.r.scale.setScalar(0.35 + u * 2.6 * R.k); R.r.material.opacity = (0.2 + 0.3 * R.k) * Math.pow(1 - u, 1.6);
   }
-  if (M.sprayT < 1.4) {
-    M.sprayT += dt;
-    const p = M.sp, v = M.sv, n = p.length / 3;
-    for (let i = 0; i < n; i++) {
-      if (p[i * 3 + 1] < SEW.WATER) continue;
-      v[i * 3 + 1] -= 9.8 * dt;
-      p[i * 3] += v[i * 3] * dt; p[i * 3 + 1] += v[i * 3 + 1] * dt; p[i * 3 + 2] += v[i * 3 + 2] * dt;
-    }
-    M.spray.geometry.attributes.position.needsUpdate = true;
-    M.spray.material.opacity = 0.55 * Math.max(0, 1 - M.sprayT / 1.4);
-  } else M.spray.material.opacity = 0;
+  // the droplets: gravity and a little air, gone when they meet the water (a ripple for one in five) or their time is up
+  const p = M.sp, v = M.sv, n = M.sz.length, drag = Math.max(0, 1 - dt * 0.6);
+  let live = 0;
+  for (let i = 0; i < n; i++) {
+    if (M.sa[i] <= 0) continue;
+    live++;
+    M.life[i] -= dt;
+    v[i * 3 + 1] -= 9.8 * dt; v[i * 3] *= drag; v[i * 3 + 2] *= drag;
+    p[i * 3] += v[i * 3] * dt; p[i * 3 + 1] += v[i * 3 + 1] * dt; p[i * 3 + 2] += v[i * 3 + 2] * dt;
+    if (p[i * 3 + 1] < SEW.WATER && v[i * 3 + 1] < 0) {
+      M.sa[i] = 0;
+      if (Math.abs(p[i * 3]) < 1.07 && M.sc[i * 3 + 2] < 1 && Math.random() < 0.2) sewMonRing(p[i * 3], p[i * 3 + 2], 0.06 + M.sz[i] * 4);
+    } else M.sa[i] = M.life[i] > 0 ? Math.min(1, M.life[i] * 2.5) : 0;
+  }
+  if (live || M.sprayLive) {
+    M.spray.geometry.attributes.position.needsUpdate = true; M.spray.geometry.attributes.aA.needsUpdate = true; M.spray.geometry.attributes.aSize.needsUpdate = true;
+  }
+  M.sprayLive = live > 0; M.spray.visible = live > 0;
 }
 // a thing breaking the water somewhere off down it, now and then, while it is under: you are not alone down here
 function sewMonFarSlosh() {
@@ -86809,16 +86927,57 @@ function sewMonTick(dt) {
     case 'under': {
       M.h = SEWMON.HID;
       if ((M.ambIn -= dt) <= 0) { M.ambIn = 6 + Math.random() * 9; sewMonFarSlosh(); }
+      /* WHILE IT WAITS IT FOLLOWS: down the channel after you, under the water, keeping its distance — a ring now and
+       * then where it is, and its breath if you are near it (the owner's pick of the ideas, 2026-10-24) */
+      if (M.placed && Math.abs(M.x) < 1.2 && dist > 8) {
+        const tz = THREE.MathUtils.clamp(cz + Math.sign(M.z - cz) * 7, SEW.CH_END + 1, 16);
+        const step = Math.sign(tz - M.z) * Math.min(Math.abs(tz - M.z), dt * (0.45 + dark * 0.3));
+        M.z += step;
+        if (Math.abs(step) > 1e-4 && (M.wakeIn -= dt) <= 0) { M.wakeIn = 1.1 + Math.random() * 0.6; sewMonRing(M.x, M.z, 0.28); }
+      }
       if ((M.nextIn -= dt) > 0) break;
       const sp = sewMonPick();
       if (!sp) { M.nextIn = 1; break; }
-      M.x = sp.ch ? (Math.random() - 0.5) * 0.6 : sp.x + (Math.random() - 0.5) * 0.6;
-      M.z = sp.ch ? sp.z + (Math.random() - 0.5) * 0.6 : sp.z + (Math.random() - 0.5) * 0.5;
-      M.barred = sp.barred; M.last = { x: M.x, z: M.z };
-      M.yaw = Math.atan2(cx - M.x, cz - M.z); M.lean = 0.12; M.eyeK = 1;
-      M.st = 'stir'; M.t = 0;
-      sewMonRing(M.x, M.z, 0.7);
-      sewMonPlay('sewSlosh', M.x, SEW.WATER, M.z, 0.07, 0.8);
+      const tx = sp.ch ? (Math.random() - 0.5) * 0.6 : sp.x + (Math.random() - 0.5) * 0.6;
+      const tz = sp.ch ? sp.z + (Math.random() - 0.5) * 0.6 : sp.z + (Math.random() - 0.5) * 0.5;
+      // where it comes from: where it was, or the first time from further down the water, away from you
+      if (!M.placed) {
+        if (sp.ch) { M.x = 0; M.z = THREE.MathUtils.clamp(tz + Math.sign(tz - cz || 1) * 10, SEW.CH_END + 1, 16); }
+        else { M.x = Math.min(16.5, tx + 6); M.z = SEW.T_Z; }
+        M.placed = true;
+      }
+      let P = sewWaterPath(M.x, M.z, tx, tz);
+      // (a long way off it has been on its way a while already: the last fourteen metres of it)
+      for (let L = sewPathLen(P); L > 14 && P.length > 1; L = sewPathLen(P)) {
+        const [a, b2] = [P[0], P[1]], d = Math.hypot(b2[0] - a[0], b2[1] - a[1]), cut = Math.min(d, L - 14);
+        if (cut >= d - 1e-3) P.shift(); else P[0] = [a[0] + (b2[0] - a[0]) * cut / d, a[1] + (b2[1] - a[1]) * cut / d];
+      }
+      M.path = P; M.seg = 0; M.x = P[0][0]; M.z = P[0][1];
+      M.barred = sp.barred; M.last = { x: tx, z: tz };
+      M.st = 'swim'; M.t = 0; M.wakeIn = 0;
+      break;
+    }
+    case 'swim': {
+      /* THE WAKE: it comes to the place under the water, and the water shows it — a small ring every fifth of a second
+       * where its head is, a slosh now and then, so it can be followed by eye as well as by ear */
+      M.h = SEWMON.HID;
+      const P = M.path, v = (2.4 + dark * 0.9) * dt;
+      let left = v;
+      while (left > 0 && M.seg < P.length - 1) {
+        const [bx, bz] = P[M.seg + 1], d = Math.hypot(bx - M.x, bz - M.z);
+        if (d <= left) { M.x = bx; M.z = bz; M.seg++; left -= d; } else { M.x += (bx - M.x) / d * left; M.z += (bz - M.z) / d * left; left = 0; }
+      }
+      if ((M.wakeIn -= dt) <= 0) {
+        // (not a chain of equal rings: each its own size, a little to one side or the other of its line)
+        M.wakeIn = 0.22 + Math.random() * 0.16; sewMonRing(M.x + (Math.random() - 0.5) * 0.35, M.z + (Math.random() - 0.5) * 0.2, 0.22 + Math.random() * 0.2);
+        if (Math.random() < 0.16) sewMonPlay('sewSlosh', M.x, SEW.WATER, M.z, 0.04, 0.7);
+      }
+      if (M.seg >= P.length - 1) {
+        M.yaw = Math.atan2(cx - M.x, cz - M.z); M.lean = 0.12; M.eyeK = 1;
+        M.st = 'stir'; M.t = 0;
+        sewMonRing(M.x, M.z, 0.7);
+        sewMonPlay('sewSlosh', M.x, SEW.WATER, M.z, 0.07, 0.8);
+      }
       break;
     }
     case 'stir':
@@ -86827,7 +86986,7 @@ function sewMonTick(dt) {
       if (M.t >= SEWMON.STIR) { M.st = 'rise'; M.t = 0; M.sl = 0.2; }
       break;
     case 'rise': {
-      if (M.h > SEWMON.HID + 0.25 && sewMonSeen()) { M.st = 'seen'; M.t = 0; M.flare = 1; M.hold = k(SEWMON.SEEN_HOLD); break; }
+      if (M.h > SEWMON.HID + 0.25 && sewMonSeen()) { M.st = 'seen'; M.t = 0; M.flare = 1; M.flinch = 1; M.hold = k(SEWMON.SEEN_HOLD); break; }
       const T = k(SEWMON.RISE), u = Math.min(1, M.t / T);
       // the head and the eyes in the first second and a half, then the rest of it, slowly, crouching at the end
       const peek = THREE.MathUtils.smoothstep(M.t, 0, 1.5), rest = THREE.MathUtils.smoothstep(u, 0.32, 1);
@@ -86854,22 +87013,25 @@ function sewMonTick(dt) {
       // caught: it holds, flaring, a beat — enough to be sure you saw it
       wet = 0.6; M.flare = 1;
       if (M.t >= M.hold) {
-        M.st = 'dive'; M.t = 0; M.h0 = M.h; M.lastSeen = { x: M.x, z: M.z };
+        M.st = 'dive'; M.t = 0; M.h0 = M.h; M.lastSeen = { x: M.x, z: M.z }; M.twistTo = (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.4);
         sewMonPlay('sewSplash', M.x, SEW.WATER + 0.3, M.z, 0.95);
         sewMonPlay('sewLeap', M.x, SEW.WATER + 0.3, M.z, 0.35, 0.8);
         sewMonSpray(M.x, M.z, 0.9); sewMonRing(M.x, M.z, 1.2);
       }
       break;
     case 'dive': {
-      const u = Math.min(1, M.t / 0.42);
-      M.h = M.h0 + (SEWMON.HID - 0.4 - M.h0) * u * u; M.lean = 0.3 - 0.5 * u;
-      if (u >= 1) { M.st = 'under'; M.nextIn = smRand(k(SEWMON.GAP)); M.eyeK = 0; }
+      // it throws itself back and round as it goes, its arms up out of the water, and is gone
+      const u = Math.min(1, M.t / 0.48);
+      M.h = M.h0 + (SEWMON.HID - 0.4 - M.h0) * u * u; M.lean = 0.3 - 0.75 * Math.sin(u * Math.PI * 0.5);
+      M.twist = M.twistTo * THREE.MathUtils.smoothstep(u, 0, 1);
+      M.reach = Math.max(M.reach || 0, 0.6 * Math.sin(u * Math.PI));
+      if (u >= 1) { M.st = 'under'; M.nextIn = smRand(k(SEWMON.GAP)); M.eyeK = 0; M.twist = 0; sewMonSpray(M.x, M.z, 0.35); }   // (and the water closes over it)
       break;
     }
     case 'linger':
       // past the bars it cannot come at you: it stands and watches, and then it is not there
       wet = 0.35;
-      if (sewMonSeen() && M.t > 0.3) { M.st = 'seen'; M.t = 0; M.flare = 1; M.hold = k(SEWMON.SEEN_HOLD) + 0.4; break; }
+      if (sewMonSeen() && M.t > 0.3) { M.st = 'seen'; M.t = 0; M.flare = 1; M.flinch = 1; M.hold = k(SEWMON.SEEN_HOLD) + 0.4; break; }
       if (M.t > 2.2) { M.st = 'sink'; M.t = 0; }
       break;
     case 'sink': {
@@ -86880,7 +87042,42 @@ function sewMonTick(dt) {
       break;
     }
   }
-  if (M.st === 'dive' || M.st === 'sink' || M.st === 'under' || M.st === 'stir') M.reach = Math.max(0, (M.reach || 0) - dt * 2.5);
+  // its head: a new cock every few seconds, eased; a twitch now and then; the flinch and the dive's twist fading
+  if ((M.tiltIn -= dt) <= 0) { M.tiltIn = 1.8 + Math.random() * 2.6; M.tiltTo = (Math.random() - 0.5) * 0.5; if (Math.random() < 0.35) M.twitch = (Math.random() < 0.5 ? -1 : 1) * 0.16; }
+  M.tilt += (M.tiltTo - M.tilt) * Math.min(1, dt * 2.2); M.twitch *= Math.max(0, 1 - dt * 14);
+  M.flinch = Math.max(0, M.flinch - dt * 2.2);
+  if (M.st !== 'dive') M.twist *= Math.max(0, 1 - dt * 3);
+  // while it is up: the water running off its arms, its chin and shoulders, and lapping round its waist
+  if (M.g.visible && M.h > SEWMON.PEEK && (M.st === 'rise' || M.st === 'linger' || M.st === 'seen')) {
+    if ((M.dripIn -= dt) <= 0) {
+      M.dripIn = 0.05 + Math.random() * 0.09;
+      const names = ['joint7_L', 'joint7_R', 'joint6_L', 'joint6_R', 'Head_M', 'joint5_L', 'joint5_R', 'joint9_L', 'joint9_R'];
+      const bn = M.bones[names[(Math.random() * names.length) | 0]];
+      if (bn) { bn.getWorldPosition(_smB); _smB.x -= SEW_X; _smB.y -= SEW_Y; _smB.z -= SEW_Z;
+        if (_smB.y > SEW.WATER + 0.05) sewDrop(_smB.x + (Math.random() - 0.5) * 0.12, _smB.y - 0.05, _smB.z + (Math.random() - 0.5) * 0.12, 0, -0.2 - Math.random() * 0.3, 0, 0.006 + Math.random() * 0.009, 2.5); }
+    }
+    if ((M.lapIn -= dt) <= 0) { M.lapIn = 0.55 + Math.random() * 0.5; sewMonRing(M.x + (Math.random() - 0.5) * 0.2, M.z + (Math.random() - 0.5) * 0.2, 0.45 + Math.random() * 0.2); }
+  }
+  /* ITS BREATH (the owner's recording, 2026-10-24: "subtle but noticable and directional"): a breath in and out from where
+   * it is, every four to six seconds while it is near — muffled under the water, open once it is up, through the 3-D panner
+   * and the tunnel's echo */
+  const upNow = M.st === 'rise' || M.st === 'linger' || M.st === 'seen';
+  const brR = upNow ? 13 : 9, brNear = M.placed && M.st !== 'dive' && M.st !== 'sink' ? Math.pow(THREE.MathUtils.clamp(1 - dist / brR, 0, 1), 1.2) : 0;
+  if ((M.brIn -= dt) <= 0 && brNear > 0.03) { M.brIn = 4.2 + Math.random() * 2.2; sewMonBreath(brNear, !upNow || M.h < SEWMON.PEEK); }
+  /* THE PRESSURE: the longer it has been coming up unseen, the louder and quicker your heart and the thin ringing in your
+   * ears; caught, it drains away. And the torch goes with it (`flashDread`). */
+  const up = M.st === 'rise' ? Math.min(1, M.t / k(SEWMON.RISE)) : M.st === 'linger' ? 0.45 : 0;
+  M.press += ((up > 0 ? up : 0) - M.press) * Math.min(1, dt * (up > M.press ? 1.6 : 2.8));
+  flashDread = (M.st === 'rise' || M.st === 'linger') ? THREE.MathUtils.clamp(1 - dist / 14, 0, 1) * (0.3 + 0.7 * up) : flashDread * Math.max(0, 1 - dt * 3);
+  if (M.press > 0.08 && (M.hbIn -= dt) <= 0) {
+    M.hbIn = 60 / (62 + 70 * M.press);
+    sfxSewHeart(0.05 + 0.3 * M.press * M.press);
+  }
+  // a bubble breaking over it now and then, under the water near you; its breathing (the chest's heave) on a 3.1 s cycle
+  const near = M.placed && (M.st === 'under' || M.st === 'swim' || M.st === 'stir') ? Math.pow(THREE.MathUtils.clamp(1 - dist / 8, 0, 1), 1.3) : 0;
+  M.breath = (M.breath + dt / 3.1) % 1;
+  if (near > 0.02 && (M.bubIn -= dt) <= 0) { M.bubIn = 0.35 + Math.random() * 1.1; sewMonBubble(M.x + (Math.random() - 0.5) * 0.3, M.z + (Math.random() - 0.5) * 0.3, 0.02 + 0.05 * near); }
+  if (M.st === 'sink' || M.st === 'under' || M.st === 'stir' || M.st === 'swim') M.reach = Math.max(0, (M.reach || 0) - dt * 2.5);
   reach = M.reach || 0;
   M.g.visible = M.h > SEWMON.HID + 0.02;
   if (M.g.visible) sewMonPose(dt, reach);
@@ -86888,6 +87085,7 @@ function sewMonTick(dt) {
     const t = audioCtx.currentTime;
     if (aud.p.positionX) { aud.p.positionX.value = SEW_X + M.x; aud.p.positionY.value = SEW_Y + SEW.WATER + 0.3; aud.p.positionZ.value = SEW_Z + M.z; }
     aud.g.gain.setTargetAtTime(M.g.visible ? 0.05 * wet : 0, t, 0.25);
+    aud.tin.gain.setTargetAtTime(0.012 * M.press * M.press, t, 0.3);
   }
   sewMonWater(dt);
 }
@@ -86931,7 +87129,8 @@ function sewScareTick(dt) {
   lookEuler.setFromQuaternion(camera.quaternion);
   for (const e2 of M.eyes) e2.glow.material.opacity = 0.85;
   if (u >= 1 && !C.hit) {
-    C.hit = true; C.hitT = C.t;
+    C.hit = true; C.hitT = C.t; M.press = 0; flashDread = 0;
+    if (M.aud) M.aud.tin.gain.value = 0;
     sfxSewScream(); addTrauma(1); hurtFlash = 1; fovKick = Math.max(fovKick, 12);
   }
   if (C.hit && C.t - C.hitT > 0.85 && !C.done) {

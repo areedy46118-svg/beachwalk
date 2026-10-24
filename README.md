@@ -586,7 +586,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   rises the longer it hunts (behind you, at a fair distance, a clear line to
   you; sometimes past the grates, where it can only stand and watch), and
   once the generator is off it rises twice as often and in under four
-  seconds. Every sound it makes is placed in 3-D in the tunnel's echo.
+  seconds. Every sound it makes is placed in 3-D in the tunnel's echo: its
+  breathing under the water when it is near (and once it is up), the wake it
+  lays swimming between places, its heart-pounding approach in yours, and
+  your torch stuttering as it comes.
   (Dev mode plays the scare and lets you live.)
 - **The overflow culvert** — the pipe's old destination, still built behind
   the tunnel home but no longer reached: a brick barrel vault over standing
@@ -1717,7 +1720,7 @@ drainage tunnel home above it (`assets/sewer-tex/`, copied out of the glb by
 The **thing in the sewer's water** is the owner's "monster" model (`assets/sewer-monster.glb`,
 `tools/sewer_monster_pack.py`: base colour 1024, normal 512, no clip — posed in the game), its sloshes, splash,
 leap and the drip bed his recordings (`tools/sewer_monster_sound.py`: `sew-slosh1..8`, `sew-splash`, `sew-leap`,
-`sew-drip-bed`). The **flashlight** is the Fulton out of his "FlashlightFBX" pack (`assets/flashlight.glb`,
+`sew-drip-bed`, and its breath, `sew-breath1..2`, from his "Monster Breathing"). The **flashlight** is the Fulton out of his "FlashlightFBX" pack (`assets/flashlight.glb`,
 `tools/flashlight_pack.py`).
 
 This work is based on ["Simple Generator(Fixed)"](https://sketchfab.com/3d-models/simple-generatorfixed-eda91f75faae470e8d6461e0e6fc86fa)

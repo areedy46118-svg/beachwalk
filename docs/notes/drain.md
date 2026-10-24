@@ -636,3 +636,39 @@ flashlight -> plank -> gate -> chest -> ladder, by real keys and aimed E presses
 - **The flashlight blew out at arm's length** at decay 2: decay 1.25 at 2.8.
 - **"Lay the plank across" was a low box over the channel**: looking across at the far walk missed it. 2.4 m tall now.
 - Death with dev mode off: hp 0, `dying`, the card and the checkpoint reload, as any death.
+
+**The owner's four (2026-10-24): wake, breath, the torch, pressure.**
+- **It swims there** (`'swim'`, `sewWaterPath` — straight down the channel or the branch, by the junction between):
+  from where it went under (the first time, ten metres further down the water away from you) at 2.4 m/s (3.3 in the
+  dark), the last 14 m of the way only. And while it waits under (`'under'`) it drifts down the channel after you,
+  holding seven metres off.
+- **The wake**: a soft ripple texture on a flat quad (`ripTex`), not a ring mesh — the hairline ring was a pixel wide at
+  five metres. Drawn at renderOrder 5, after the mist sheets on the water, which veiled them (as they did the eyes);
+  opacity floor `0.2 + 0.3k`. A chain of equal rings read as the Olympic logo: each one its own size, jittered off its
+  line, 0.22-0.38 s apart. Ten in the pool, the oldest reused.
+- **Its breath**: the water-noise buffer slowed, a narrow 420 Hz band, its level drawn in and let out on a 3.1 s cycle
+  (the out-breath gurgles), on its own HRTF panner at its underwater position, within 8 m, only once it has a place
+  (`M.placed` — at first its position defaults to the ladder). Bubbles: a rising sine blip, placed.
+- **The torch** reads `flashDread` (declared beside `flashOn`, written by the monster's tick): rising unseen, nearer,
+  higher -> stutters up to 15x as often and deeper.
+- **The pressure** (`M.press`): rise progress while unseen, drained fast when caught; a lub-dub (`sfxSewHeart`, 62 -> 38
+  Hz under a 140 Hz lowpass) from 62 to 132 bpm, and a 6.3 kHz ringing at 0.012 x press^2. Cut by the scream.
+
+**The detail pass (2026-10-24)** — the owner: "update all the animations and particles to look more natural and be more
+detailed", his "Monster Breathing" for its breath ("subtle but noticable and directional"), then optimise.
+- **Its breath** is his recording (`sew-breath1..2`, two takes cut at the quiet between): every 4-6 s within 9 m under the
+  water (lowpassed to 900 Hz, Q 2: muffled) or 13 m once it is up (open), on the HRTF panner, 0.05-0.35. Breathing out
+  under water sends up bubbles. The synthesised breath is gone.
+- **The droplets** (`sewDrop`, one pool of 220, a ShaderMaterial of soft round points, a size and a colour each): a dive
+  throws a column, a crown and low spatter, and a smaller splash as the water closes; drops landing in the channel leave
+  a ripple one time in five; while it is up, water runs off its hands, arms, chin and shoulders and laps round its waist;
+  the box's wires throw a few blue-white sparks with every crack. **TRAP: the lifetimes array was named `sl`, the same as
+  the slosh timer further down the state object literal — the later field won, every drop died on its first frame and
+  `M.sl[i] = ...` threw on a number.**
+- **The pose**: the chest heaves on its breath (`sewTurn`: a bone turned about a world axis, P^-1 q P), it sways on the
+  current, its head is cocked (a new angle every 2-4 s, eased) with the odd twitch, caught it flinches (head and body
+  jerk back), and it throws itself back and round going under, arms up out of the water.
+- **Optimised**: its audio graph (the water-off-it noise, the ringing) is built on the way in and stopped and let go on
+  the way out (`sewMonReset(true)`), not left running at nought for the rest of the game; the droplet buffers upload
+  only while a drop is alive; the drain's kit textures share one canvas and one normal map per picture (`_kitSrc`,
+  `_nmCanvas`) — six fetches and six Sobel passes instead of sixteen.
