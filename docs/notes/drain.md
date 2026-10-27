@@ -672,3 +672,100 @@ detailed", his "Monster Breathing" for its breath ("subtle but noticable and dir
   the way out (`sewMonReset(true)`), not left running at nought for the rest of the game; the droplet buffers upload
   only while a drop is alive; the drain's kit textures share one canvas and one normal map per picture (`_kitSrc`,
   `_nmCanvas`) — six fetches and six Sobel passes instead of sixteen.
+
+**The stalker round (2026-10-26)** — the owner: the monster waits behind the grate before the first lever; the ripples
+"look like little droplets", it must look like something moving through the water, flowing away; it must never move in
+the water while you look at it ("it is a stalker and is smart about its attacks"); rusty levers that take a couple of
+seconds, with his lever recording and reverb; all its sounds cohesive, the tinnitus quieter; the stalking earlier and the
+rise longer; and it pulls you back into the water.
+- **The watcher** (states `gone` -> `wrise` -> `watch` -> `wsink`): before the first lever it stands at `WATCH_H` (1.35;
+  at 0.9 the grate's lower bar hid its eyes from the ladder) 1.3-2.8 m past the north grate (or past the branch's bars),
+  sinks after 1.6 s of being stared at, when you reach the bars, or after 40 s, and is gone 16-34 s. On the first lever
+  it dives with a splash if it was up (otherwise the far splash), and `M.hunt = SEWMON.FIRST` (4 s) puts it `under`.
+- **Frozen while watched**: `sewMonWatched(x, z)` (within 32 m, NDC |x|,|y| <= 1.08, a clear line) — the swim's speed is
+  nought while it holds and the under-drift does not run. So the wake is seen at the edge of the screen, or after.
+- **The wake is in the water's shader, not sprites.** The ring sprites read as droplets. `sewP.wake`: 24 points (x, z,
+  age, strength), the oldest replaced (`sewMonRing`); `waterMat.onBeforeCompile` sums for each a wave packet on an
+  expanding front (`front = 0.12 + age*0.85`) plus a turbulent inner fill, into the normal (through `viewMatrix`: the
+  normal is in view space), the roughness (smoother where disturbed) and a faint crest emissive. The points are aged and
+  carried on the flow in `sewMonWater` (down the channel at 0.24 m/s, out along the branch at 0.2). Laid every 0.11-0.16 s
+  while it swims, the overlapping fronts make a V (half-angle ~16°, about Kelvin's). **The channel's mist sheet at 1.0
+  veiled it entirely** (pixel diff max 31 with, 86 without): it is 0.6 now.
+- **The rusty pull** (`sewPullLever` -> `sewPull`, `sewPullTick`): a keyed curve `SEW_PULL` (2.47 s: a grab, two jerks
+  with strains between, a slam with a bounce); the lever's arm shudders through the strains; the owner's take cut in three
+  (`sew-lever-a/b/c`) laid on the jerks, a synthesized rusty creak (`sfxRustCreak`: a gated sawtooth through two
+  bandpasses) on the strains, trauma on each. You are held where you stood. `sewPullLeverNow` is the old instant one (the
+  harness, restores). `sewApplyState` and `sewerLeave` clear a half-done pull.
+- **The drag** (`SEW_DRAG`, `sewDragCamera`, `sewUnderwater`): 0.45 s after it lands on you, you and it go together — its
+  face held where it landed in front of yours (`C.dir`, fixed at the hit) — out over the channel and then down, under
+  the water: a murky green radial overlay, the fog green and dense, the deep's lowpass (`deepAudio`), bubbles (droplet
+  kind 2) going up past you; dead there (dev mode: let go, back on the walk). TRAPS, all measured:
+  - **Moving `camera.position.y` does nothing**: `update` runs the walk's vertical step after `updateSewer` and puts the eye
+    back on `camBaseY`. Set `camBaseY`, `groundY` (under it) and `vy` with it.
+  - **It is posed standing where it rose, then moved bodily**: its head aim (and the arms' reach) must look at where you
+    are from where it was moved to (`sewMonPose(dt, reach, at)`, `C.shift` = last frame's move), or dragged below its
+    standing eyes it looked down and you saw the crown of its head.
+  - Its turn must freeze during the haul: with you right over it, `atan2` of the jolts spun it round.
+  - Sending it ahead into the water below you rolled the lens (lookAt straight down) and showed its back or chest
+    whichever way it leaned; face to face, fixed, reads.
+  - The leap's offset was solved from the pose's full height while the jump left from `f0` (its height when it leapt):
+    a leap from low ended short and under you. `_smTip` is moved to `f0` before the offset.
+
+**The tunnel, the room's air, the grate's hitch, held levers (2026-10-26)** — the owner: "get rid of this arrow in the
+tunnel ... random props in the wall of the tunnel that look strange and out of place ... more dingy and misty and dark in
+the actual room where the bed is ... hyper real ... It lags super bad when you take the grate off ... hold e on the
+levers".
+- **Gone from the bore**: the chalk arrow at BORE_LEN - 3.2 (and the culvert's, and `chalkTex` with them), and the
+  "smaller line joining the bore" at x 11.4 — a concrete torus proud of the wall with two bars in it, which over the
+  sewer's brick read as a ring hung on nothing.
+- **The room** (`T.userData.roomMist`, the block after the air in the model; `DRAIN_ROOM`, `drainRoomK` in main.js):
+  - every Standard material in R with an emissive map (the `liftOff` breath) gets `*= 0.1 + 0.9 exp(-0.34 d)` on its
+    emissive (`drainFall`; the headwall's moonlit materials are kept out — they are seen from the beach);
+  - the hung lantern 3.4 / 9 m / decay 2, the crate's 1.8 / 6 / 2, and every warm point light in R is
+    `userData.flame`: `updateDrainFlicker` breathes those (several sines, no stutter) instead of the bulbs' sag;
+  - a candle stub on a tin lid at the head of the bed (0.65, 3.4 m, decay 2, `lpAlways` 7): with the lift gone the
+    bed's corner was black;
+  - five Lambert mist sheets, floor to 1.7 m, 0.85 -> 0.08 opacity, drifting. **At 0x8c8878 they were a grey veil over
+    everything** (the scene's base light lights a Lambert sheet everywhere); 0x625e54, and the flames light them;
+  - past the door the fog closes to 0.15 and goes 0x0e100b, the ground mist 1.25 dense to 0.6 m (1.6 / 0.85 hid the
+    lantern's pool on the floor), eased in over 2.2 m of the doorway.
+- **THE GRATE'S HITCH WAS THE SEWER BEING BUILT.** Taking the grate off fetched the sewer (`loadSewer`) and the last file
+  to land built it on the spot: one 2.3 s task in the room (a longtask observer). `loadSewer(false)` now only fetches and
+  keeps the pieces (`sewGot`); a `loadSewer()` builds — the crawl's hold (black at 1, measured: a 2.9 s task at opacity
+  1) and the restore's room loader. Off the grate now: a 66 ms parse.
+- **Held levers**: `sewPull.held` is kept only while E / F / Enter is down (`sewUseHeld`, `keys`) and the game is not
+  frozen; let go and it runs back at 1.4x with a creak, the jerks re-armed as it passes back over them (`P.ev--`), and
+  at 0 it is let go with a small clunk; E on it on the way back takes it from where it is. You are held at it only while
+  holding. The leap takes your hands off it.
+
+**Shadows, breath, roaches and moths (2026-10-26)** — the owner's pick of the ideas: "do 1,4,5".
+- **Contact shadows** (`roomShade`, the block after the room's air in the model): one merged mesh, one 64² radial
+  falloff texture, **nine-sliced** so the falloff is the same width in metres whatever the size of the thing (the
+  slice's middle is the texture's centre, its rim the edge); strength per vertex (4-component colour, black). Under
+  each prop from `nav.props`' boxes, round ones as a small core (0.6 r) with a wide rim; wall feet are strips down the
+  texture's centre line, 0.42 m out over the floor and 0.38 m up the brick (the front wall either side of the door, its
+  face at DOOR_X + 0.46). **Prop shadows sit at 0.016, not 0.005: the rug is a plane at 0.012 and hid the bed's.**
+  MeshBasic, DoubleSide, depthWrite off, renderOrder 1 (under the mist's 2).
+- **Breath** (`updateBreath`, `BREATH`, after `updateFlashlight` in the update): `insideDrain || inSewer`, not
+  `frozen()`; an exhale every ~4.2 s (faster by `1 - stamina / stamMax()`), four or five world-space sprites 0.3 m out
+  and 0.2 down, slowing and spreading over ~2 s. Unlit, so the opacity carries the light: 0.3 + 0.7 torch in the sewer,
+  0.35 + 0.45 `drainRoomK` + 0.4 torch in the drain. **At 0.12 a puff the four of one breath overlapped into a pale
+  ball;** 0.055 and a wider spread.
+- **Roaches** (`drainBugs`, `updateDrainBugs`): one InstancedMesh in the drain's frame, 8 homes. **In the dark corners
+  they were nothing at all** — measured a roach at 32 on a floor of 28 (the floor under the hung lantern is ~28/255),
+  and a real-sized 4.8 cm one is a few pixels at the game's resolution. So: 6 cm, a glossy 0x8a4420 with emissive
+  0x44200e, **transparent with renderOrder 3 so they draw after the floor mist** (under it 51-on-30 became 32-on-28),
+  and most homes out in the lanterns' pools, where you walk in among them. Scared at 1.9 m (1.3 on the crate: at 1.25
+  they went from under the bottom of the view, unseen), or a torch on (`flashOn > 0.5`, `_flAim` within ~13°, 5 m).
+  They run to the hide that is furthest from you for the least run (`dist(hide, you) - 1.3 dist(hide, it)`, within
+  3.5 m), in jinks and stops, clamped inside the walls (a jink along the back wall went 5 cm into it), 6 s at most;
+  then gone 18-43 s and back only when you are over 3 m off and not looking toward the spot. Idle shuffles are tethered
+  to 10 cm of home (the crate's would have walked off it). `sfxSkitter`: a scatter of 1.5 ms high-passed ticks, placed.
+  **Instance matrices start as identity: they stand at the drain's mouth until the first live frame** — harmless only
+  because the mesh is hidden until then.
+- **Moths**: 7 instanced cards (4 at the hung lantern, 3 at the crate's) chasing a target that jumps about the glass
+  every 0.15-0.6 s (8 % of the time into it); wings flap by x scale. **A bare card read as a grey square up close**
+  (seen in a still and first taken for a broken breath sprite): an alpha-tested wing cut-out now.
+- Harness: `__bw.flashlightItem` is exposed for torch tests. Teleporting straight into the room off the centre line
+  puts you back at the mouth ("walked into the concrete face") — enter with `__dr.at(…, 0, …)` then move. The preview
+  pane's canvas can be ~300 px wide: judge small things after `renderer.setSize(1280, 760, false)`.

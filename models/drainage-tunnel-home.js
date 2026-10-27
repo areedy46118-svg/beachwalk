@@ -373,18 +373,6 @@ function drawingTex() {
     for (let y = 0; y < h; y += 6) g.fillRect(4, y, 2, 3);
   }, 0xF8);
 }
-// chalk on the pipe wall: the way in
-function chalkTex() {
-  const c = document.createElement('canvas'); c.width = 128; c.height = 64;
-  const g = c.getContext('2d');
-  g.clearRect(0, 0, 128, 64);
-  g.strokeStyle = 'rgba(220,218,206,0.75)'; g.lineWidth = 3; g.lineCap = 'round';
-  g.beginPath(); g.moveTo(10, 32); g.lineTo(70, 32); g.moveTo(56, 20); g.lineTo(72, 32); g.lineTo(56, 44); g.stroke();   // an arrow, in
-  // (the days' tally that stood beside it is gone — 2026-10-17, the owner: "take the tallys in the sewer drain away")
-  const t = new THREE.CanvasTexture(c);
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter; t.anisotropy = 1;
-  return t;
-}
 // a puddle: wet floor darkening out from a glassy middle, a ragged edge, not a disc cut in the floor
 function puddleTex() {
   return paint(128, 128, (g, w, h) => {
@@ -882,46 +870,9 @@ export function makeDrainageTunnelHome(opts = {}) {
     }
   }
 
-  // ---- a smaller line joining the bore partway down ---------------------
-  // Built proud of the pipe wall rather than cut into it — a recess would need
-  // a hole punching in the tube. Same rule as the lamps: the group's +Y must
-  // point radially *outward*, or the stub sticks out into the middle instead.
-  {
-    const SX = 11.4, ang = 0.62, sg = -1;
-    const RR = BORE_R - 0.06;
-    const S = new THREE.Group();
-    S.position.set(SX, PIPE_CY + RR * Math.cos(ang), sg * RR * Math.sin(ang));
-    S.rotation.x = sg * ang;
-    T.add(S);
-    const surround = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.09, 5, 14), M.conc);
-    surround.rotation.x = Math.PI / 2;
-    S.add(surround);
-    // the stub runs back out of the bore, into the ground
-    const mouth = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.95, 12, 1, true), M.throat);
-    mouth.position.y = 0.46;
-    S.add(mouth);
-    const cap = new THREE.Mesh(new THREE.CircleGeometry(0.26, 12), M.void);
-    cap.rotation.x = Math.PI / 2;
-    cap.position.y = 0.93;
-    S.add(cap);
-    for (let i = 0; i < 2; i++) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.024, 0.52), M.frame);
-      bar.position.set(-0.13 + i * 0.26, 0.02, 0);
-      S.add(bar);
-    }
-    // the stain it has run down the pipe wall ever since. A flat plane would
-    // cut through a round pipe, so this is a slice of cylinder at wall radius.
-    // After rotateZ, a point at theta sits at (y, z) = (sin t, cos t) * r, so
-    // the outlet's own angle is atan2 of its direction, and theta increases
-    // down the wall toward the invert.
-    const thOut = Math.atan2(Math.cos(ang), sg * Math.sin(ang));
-    const rg = new THREE.CylinderGeometry(BORE_R - 0.015, BORE_R - 0.015, 0.62, 6, 1, true,
-      thOut, 1.45);
-    rg.rotateZ(Math.PI / 2);                          // lay it along the bore
-    const run = new THREE.Mesh(rg, M.stain);
-    run.position.set(SX, PIPE_CY, 0);
-    T.add(run);
-  }
+  /* (the smaller line that joined the bore partway down is gone — 2026-10-26, the owner: "there are just random props
+   * in the wall of the tunnel that look strange and out of place": a concrete ring proud of the brick with two bars in
+   * it, hanging on the wall over nothing once the bore was the sewer's brick) */
 
   // ---- a string of bulbs he has hung for the last few metres ------------
   // Hooked up near the crown and sagging between the hooks, a third of them
@@ -1626,6 +1577,16 @@ export function makeDrainageTunnelHome(opts = {}) {
     R.add(slab(0.95, 0.26, 0.03, M.blanket, bx - 0.34, 0.24, bz + 0.47, -0.16, -0.05, 0));    // over the edge
     // a book left face-down by the pillow
     R.add(slab(0.17, 0.03, 0.24, M.spines, bx + 0.3, 0.295, bz + 0.22, 0, 0.5, 0));
+    /* and a candle stub on a tin lid on the floor at the head of it, burnt down to a stub and guttering (2026-10-26: with
+     * the room gone dark the bed's corner was black; this is what he reads by) */
+    {
+      const wx = ROOM_X1 - 0.3, wz = bz + 0.32;
+      R.add(cyl(0.05, 0.05, 0.008, 10, M.steel, wx, 0.004, wz));
+      const wax = new THREE.MeshStandardMaterial({ color: 0xd8ccb0, roughness: 0.9, emissive: 0x3a2a14, flatShading: true });
+      const st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.024, 0.045, 6), wax); st.position.set(wx, 0.03, wz); R.add(st);
+      const fl = new THREE.Mesh(new THREE.ConeGeometry(0.007, 0.026, 4), M.glow); fl.position.set(wx, 0.066, wz); R.add(fl);
+      const bl = new THREE.PointLight(0xff9a4a, 0.65, 3.4, 2); bl.position.set(wx, 0.22, wz); bl.userData.lpAlways = 7; R.add(bl);
+    }
 
     // the crate he eats off: slatted, dark inside between the slats
     const cx0 = ROOM_X1 - 1.2, cz0 = ROOM_HZ - 1.0;
@@ -1839,13 +1800,7 @@ export function makeDrainageTunnelHome(opts = {}) {
       candle.position.set(cx0 + 0.24, 0.85, cz0 - 0.08);
       candle.userData.lpAlways = 9;               // seen lit from the door, not only from beside it (main.js `lampReach`)
       R.add(candle);
-      // chalk on the pipe wall, a few metres short of the door
-      const chalk = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45),
-        new THREE.MeshStandardMaterial({ map: chalkTex(), transparent: true, depthWrite: false, roughness: 1, emissive: 0xffffff, emissiveIntensity: 0.18 }));
-      chalk.material.emissiveMap = chalk.material.map;
-      chalk.position.set(BORE_LEN - 3.2, PIPE_CY - 0.05, BORE_R - 0.04);
-      chalk.rotation.y = Math.PI;
-      T.add(chalk);
+      // (the chalk arrow on the pipe wall short of the door is gone: 2026-10-26, the owner: "get rid of this arrow in the tunnel")
     }
   }
 
@@ -2084,14 +2039,7 @@ export function makeDrainageTunnelHome(opts = {}) {
       fe.position.set(BX + (rnd(i * 4.3) - 0.5) * 0.9, CIS_WALK + 0.008, BZ + (rnd(i * 6.3) - 0.5) * 0.7);
       C.add(fe);
     }
-    // chalk on the wall by the pipe: his arrow, pointing back the way he came, and a line through it
-    const chalk2 = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.4),
-      new THREE.MeshStandardMaterial({ map: chalkTex(), transparent: true, depthWrite: false, roughness: 1, emissive: 0xffffff, emissiveIntensity: 0.16 }));
-    chalk2.material.emissiveMap = chalk2.material.map;
-    chalk2.position.set(CIS_X0 + 1.6, 1.25, CIS_HZ - 0.012); chalk2.rotation.y = Math.PI;
-    chalk2.scale.x = -1;                      // the arrow points west, at the pipe home
-    chalk2.userData.noBake = true;            // a mirrored mesh merged flat would turn its face away
-    C.add(chalk2);
+    // (and the culvert's chalk arrow with it)
 
     /* THE LIGHT: two gratings in the crown to the dune above, with the moon
      * coming through them in cold shafts (emissive only, additive, no cost
@@ -2247,7 +2195,7 @@ export function makeDrainageTunnelHome(opts = {}) {
     lampsAt.push(lightUp(lamp, { s: 0.95, k: 0.36 }, { foot: (() => { const q = at(lamp); q.y = FLOOR_Y + 0.02; return q; })(), r0: 0.09, r1: 1.7, k: 0.05 }));
     lampsAt.push(lightUp(lamp2, { s: 0.7, k: 0.3 }, null));
     // the dust: hanging in the bore and the room, lit only near a lamp
-    const N = 520, P = new Float32Array(N * 3), S = new Float32Array(N);
+    const N = 760, P = new Float32Array(N * 3), S = new Float32Array(N);   // (380 in the bore, the rest in the room: thick in its lantern light)
     for (let i = 0; i < N; i++) {
       let x, y, z;
       if (i < 380) {
@@ -2293,6 +2241,131 @@ export function makeDrainageTunnelHome(opts = {}) {
     dust.raycast = () => {}; dust.userData.noBake = true; dust.name = 'drainDust'; dust.frustumCulled = false;
     T.add(dust);
     T.userData.air = { lamps: air, dust: dustMat };
+  }
+
+  /* THE ROOM'S AIR (2026-10-26, the owner: "update the ambiance and atmosphere to be more dingy and misty and dark in the
+   * actual room where the bed is ... make it look hyper real with the lighting and atmosphere"). It was lit evenly: every
+   * surface carried the same breath of its own map as light (`liftOff`), so every wall read from anywhere. Now:
+   *   - that breath falls away with distance from the eye (the sewer's `sewLightPass`, harder): what is near you is
+   *     faintly there, the far corners go into the dark, and what you see across the room is what a flame lights;
+   *   - the flames are flames (the game flickers them as fire, `userData.flame`), with light falling off as light does
+   *     (decay 2) — a pool round each, not a wash;
+   *   - mist lies in the room in layers, thick on the floor and thinning up to the waist, slowly drifting
+   *     (`T.userData.roomMist`): Lambert sheets, so a lantern lights the mist round it and the rest of it is a grey you
+   *     can barely see — the game's fog chunk has no lights, these do. */
+  {
+    const keep = new Set([M.face, M.arch, M.conc, M.rock, M.wetsand, M.drysand, M.cobble]);
+    const done = new Set();
+    R.traverse((o) => {
+      if (!o.isMesh) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (!m || done.has(m) || keep.has(m) || !m.isMeshStandardMaterial || !m.emissiveMap || m.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile) continue;
+        done.add(m);
+        m.onBeforeCompile = (sh) => {
+          sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>',
+            '#include <emissivemap_fragment>\n  totalEmissiveRadiance *= 0.1 + 0.9 * exp(-length(vViewPosition) * 0.34);');
+        };
+        m.customProgramCacheKey = () => 'drainFall';
+        m.needsUpdate = true;
+      }
+    });
+    for (const [l, i, d] of [[lamp, 3.4, 9], [lamp2, 1.8, 6]]) { l.intensity = i; l.distance = d; l.decay = 2; l.userData.flame = true; }
+    R.traverse((o) => { if (o.isPointLight && o !== lamp && o !== lamp2 && o.color.r > o.color.b * 1.5) o.userData.flame = true; });   // (the candles)
+    const mistTex = (seed) => {
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const g = c.getContext('2d');
+      g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256);
+      for (let k = 0; k < 42; k++) {
+        const x = rnd(seed + k * 1.7) * 256, y = rnd(seed + k * 2.9) * 256, r = 20 + rnd(seed + k * 4.3) * 52, a = 0.18 + rnd(seed + k * 5.9) * 0.3;
+        for (const ox of [-256, 0, 256]) for (const oy of [-256, 0, 256]) {
+          const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+          gr.addColorStop(0, `rgba(255,255,255,${a})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+          g.fillStyle = gr; g.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+        }
+      }
+      const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      return t;
+    };
+    const mists = [];
+    const x0 = DOOR_X + 0.5, x1 = ROOM_X1 - 0.05, zh = ROOM_HZ - 0.05;
+    for (const [y, op, rep, seed] of [[0.1, 0.85, 0.5, 11], [0.32, 0.6, 0.42, 23], [0.62, 0.36, 0.36, 37], [1.05, 0.18, 0.3, 53], [1.7, 0.08, 0.26, 71]]) {
+      const tex = mistTex(seed); tex.repeat.set((x1 - x0) * rep / 2, zh * 2 * rep / 2);
+      const mm = new THREE.MeshLambertMaterial({ color: 0x625e54, alphaMap: tex,   // (0x8c8878 was a grey veil over everything: lit only by the scene's base light; dark, the flames light it)
+        transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide });
+      const sh = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, zh * 2), mm);
+      sh.rotation.x = -Math.PI / 2; sh.position.set((x0 + x1) / 2, y, 0);
+      sh.raycast = () => {}; sh.userData.noBake = true; sh.renderOrder = 2; sh.name = 'roomMist';
+      R.add(sh); mists.push(tex);
+    }
+    T.userData.roomMist = mists;
+  }
+
+  /* CONTACT SHADOWS (2026-10-26, the owner's pick of the ideas). Nothing in the room cast a shadow, so the bed, the crates
+   * and the barrel stood on the floor like cut-outs pasted over it. Under each, a soft dark footprint, and along the
+   * foot of every wall a darkening up the brick and out across the floor — where the light cannot get into a corner.
+   * One radial falloff texture, nine-sliced: the middle of the slice is the texture's centre (full dark), its rim the
+   * texture's edge, so the falloff is the same width in metres whatever the size of the thing over it, and a round
+   * thing (the barrel, the bucket) is a slice with no middle. A strip along a wall is the same texture down its centre
+   * line. All of it one merged mesh, its strength per vertex. */
+  {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), img = g.createImageData(64, 64);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+      const r = Math.min(1, Math.hypot(x - 31.5, y - 31.5) / 31.5), s = r * r * (3 - 2 * r), a = Math.pow(1 - s, 1.5) * 255;
+      const i = (y * 64 + x) * 4; img.data[i] = img.data[i + 1] = img.data[i + 2] = a; img.data[i + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    const P = [], UV = [], C = [], I = [];
+    // a grid on axes U, V from o: positions along each and the uv at each, every vertex at strength a
+    const grid = (o, U, V, us, uu, vs, vv, a) => {
+      const b = P.length / 3;
+      for (let j = 0; j < vs.length; j++) for (let k = 0; k < us.length; k++) {
+        P.push(o[0] + U[0] * us[k] + V[0] * vs[j], o[1] + U[1] * us[k] + V[1] * vs[j], o[2] + U[2] * us[k] + V[2] * vs[j]);
+        UV.push(uu[k], vv[j]); C.push(0, 0, 0, a);
+      }
+      const n = us.length;
+      for (let j = 0; j < vs.length - 1; j++) for (let k = 0; k < n - 1; k++) {
+        const q = b + j * n + k; I.push(q, q + n, q + 1, q + 1, q + n, q + n + 1);
+      }
+    };
+    const SL = [0, 0.5, 0.5, 1], Y = 0.005, YP = 0.016;   // (a thing's own: over the rug, which lies at 0.012 and hid the bed's)
+    const under = (x0, z0, x1, z1, m, a) => {
+      const hx = (x1 - x0) / 2, hz = (z1 - z0) / 2;
+      grid([(x0 + x1) / 2, YP, (z0 + z1) / 2], [1, 0, 0], [0, 0, 1], [-hx - m, -hx, hx, hx + m], SL, [-hz - m, -hz, hz, hz + m], SL, a);
+    };
+    under(bedX - 0.95, -ROOM_HZ + 0.25, bedX + 0.95, -ROOM_HZ + 1.25, 0.2, 0.85);           // the pallet bed
+    under(ROOM_X1 - 1.52, ROOM_HZ - 1.27, ROOM_X1 - 0.88, ROOM_HZ - 0.73, 0.16, 0.8);       // the crate he eats off
+    under(shX - 0.74, ROOM_HZ - 0.5, shX + 0.74, ROOM_HZ - 0.1, 0.18, 0.7);                // the shelving
+    under(ROOM_X0 + 1.26, -ROOM_HZ + 0.29, ROOM_X0 + 1.74, -ROOM_HZ + 0.81, 0.15, 0.8);     // the crates by the door
+    under(ROOM_X1 - 2.2, ROOM_HZ - 1.42, ROOM_X1 - 1.76, ROOM_HZ - 0.98, 0.12, 0.45);      // the chair: legs, light
+    under(ROOM_X1 - 0.58, ROOM_HZ - 0.58, ROOM_X1 - 0.32, ROOM_HZ - 0.32, 0.12, 0.6);      // the stove
+    // round things: a small core well inside the rim, so the dark is full at the rim and rounds off past it
+    const round = (x, z, r, m, a) => under(x - r * 0.6, z - r * 0.6, x + r * 0.6, z + r * 0.6, r * 0.4 + m, a);
+    round(ROOM_X0 + 0.7, -ROOM_HZ + 0.6, 0.29, 0.16, 0.85);                                // the barrel
+    round(BUCKET_X, BUCKET_Z, 0.16, 0.1, 0.7);                                               // the bucket
+    // the foot of every wall: up the brick, and out over the floor (the front wall either side of the doorway)
+    const FW = DOOR_X + 0.46, ST = [0.5, 1], WH = 0.38, FD = 0.42, WA = 0.55;
+    for (const s of [-1, 1]) {
+      const L = ROOM_X1 - FW;
+      grid([(FW + ROOM_X1) / 2, Y, s * ROOM_HZ], [1, 0, 0], [0, 0, -s], [-L / 2, L / 2], [0.5, 0.5], [0, FD], ST, WA);
+      grid([(FW + ROOM_X1) / 2, 0, s * (ROOM_HZ - 0.006)], [1, 0, 0], [0, 1, 0], [-L / 2, L / 2], [0.5, 0.5], [0, WH], ST, WA);
+      const z0 = s * 1.0, z1 = s * ROOM_HZ, zm = (z0 + z1) / 2, hl = (ROOM_HZ - 1.0) / 2;
+      grid([FW, Y, zm], [0, 0, 1], [1, 0, 0], [-hl, hl], [0.5, 0.5], [0, FD], ST, WA);
+      grid([FW + 0.006, 0, zm], [0, 0, 1], [0, 1, 0], [-hl, hl], [0.5, 0.5], [0, WH], ST, WA);
+    }
+    grid([ROOM_X1, Y, 0], [0, 0, 1], [-1, 0, 0], [-ROOM_HZ, ROOM_HZ], [0.5, 0.5], [0, FD], ST, WA);
+    grid([ROOM_X1 - 0.006, 0, 0], [0, 0, 1], [0, 1, 0], [-ROOM_HZ, ROOM_HZ], [0.5, 0.5], [0, WH], ST, WA);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(C, 4));
+    geo.setIndex(I);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, alphaMap: tex, transparent: true, depthWrite: false,
+      side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const sh = new THREE.Mesh(geo, mat);
+    sh.raycast = () => {}; sh.userData.noBake = true; sh.renderOrder = 1; sh.name = 'roomShade';
+    R.add(sh);
   }
 
   T.userData.nav = {

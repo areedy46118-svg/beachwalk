@@ -20,6 +20,9 @@ decodes and encodes, everything between is plain Python on 16-bit PCM.
                             out of the water, 0.2-3.4 s.
   assets/sew-breath1..2.m4a "Monster Breathing Sound Effect 3 Free SFX.mp3" (10.1 s): two breaths, in and out,
                             0.4-5.3 s and 5.4-10.0 s (cut at the quiet between, -40 dB), normalised to one RMS.
+  assets/sew-lever-a..c.m4a "Large Dull Clunky Industrial Metal Spring Lever Pull.mp3" (6.0 s): its three events —
+                            the grab and first clunk 0.06-0.62 s, a second clunk 0.62-1.08, the slam ringing out
+                            1.08-2.45 — at one gain, so their balance is the recording's.
   assets/sew-drip-bed.m4a   "ASMR Dark, creepy sewers..." (498 s, an even bed: RMS
                             -28 dB in every 5 s of it). 64 s from 20 s in, the 2 s
                             after it crossfaded (equal power) over its head, padded
@@ -112,5 +115,14 @@ def main():
     for n, (t0, t1) in enumerate([(0.4, 5.3), (5.4, 10.0)], 1):
         seg = fade(e[int(t0 * sr):int(t1 * sr)], sr, 0.05, 0.6)
         encode(seg, sr, 1, os.path.join(ASSETS, 'sew-breath%d.m4a' % n), 64, tmp, gain=0.12 / (rms(seg) or 1))
+    # ---- the rusty levers (2026-10-26): the owner's lever take is three events — the grab and a first clunk, a second
+    # clunk, the heavy slam ringing out — cut apart so the game can lay each on its own jerk of the pull. One gain for
+    # all three (their own balance kept), peaks to -3 dBFS. Mono: the game places them at the lever.
+    L = decode(os.path.join(SRC, 'Large Dull Clunky Industrial Metal Spring Lever Pull.mp3'), sr, 1, tmp)
+    cuts = [(0.06, 0.62, 'a'), (0.62, 1.08, 'b'), (1.08, 2.45, 'c')]
+    segs = [fade(L[int(t0 * sr):int(t1 * sr)], sr, 0.004, 0.08 if n != 'c' else 0.5) for t0, t1, n in cuts]
+    k = 0.708 / max(max(abs(x) for x in sg) for sg in segs)
+    for (t0, t1, n), sg in zip(cuts, segs):
+        encode(sg, sr, 1, os.path.join(ASSETS, 'sew-lever-%s.m4a' % n), 80, tmp, gain=k)
 
 main()

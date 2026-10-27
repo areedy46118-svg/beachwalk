@@ -22864,6 +22864,8 @@ const SAMPLES = {
   sewSplash: ['assets/sew-splash.m4a'],
   sewLeap: ['assets/sew-leap.m4a'],
   sewBreath: ['assets/sew-breath1.m4a', 'assets/sew-breath2.m4a'],   // its breath (the owner's "Monster Breathing", 2026-10-24)
+  // the rusty levers (the owner's "Large Dull Clunky Industrial Metal Spring Lever Pull", 2026-10-26): the grab, a clunk, the slam
+  sewLeverA: ['assets/sew-lever-a.m4a'], sewLeverB: ['assets/sew-lever-b.m4a'], sewLeverC: ['assets/sew-lever-c.m4a'],
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -25162,13 +25164,228 @@ function updateDrainFlicker(dt) {
     // a slow sag with an occasional hard stutter
     let k = 0.90 + 0.10 * Math.sin(t * 2.3) * Math.sin(t * 0.71);
     const s = Math.sin(t * 13.7) * Math.sin(t * 5.1);
-    if (s > 0.95) k *= 0.58;          // a stutter, not a blackout — you still have to walk it
+    if (f.l.userData.flame) {         // a flame (the room's lanterns and candles, 2026-10-26): never still, never a stutter — it breathes and licks
+      k = 0.86 + 0.07 * Math.sin(t * 6.1) * Math.sin(t * 2.3) + 0.04 * Math.sin(t * 17.3 + Math.sin(t * 3.7) * 2) + 0.03 * Math.sin(t * 29.1);
+    } else if (s > 0.95) k *= 0.58;   // a stutter, not a blackout — you still have to walk it
     f.l.intensity = f.base * k;
     const a = drainAirLamps.get(f.l);
     if (a) { a.halo.color.copy(a.col).multiplyScalar(a.haloK * k); if (a.beam) a.beam.uniforms.uK.value = a.beamK * k; }
   }
   const air = drainTunnel.userData.air;
   if (air) air.dust.uniforms.uT.value = flickerT;
+}
+
+/* YOUR OWN BREATH (2026-10-26, the owner's pick of the ideas). Down in the drain and the sewer it is cold and wet, and
+ * now and then you see your breath: a faint grey puff low in front of you that drifts on, spreads and is gone, every
+ * four seconds or so, quicker while you are winded. It hangs in the world, so you walk on through it. Sprites are
+ * unlit, so how bright it is is asked of where you are: barely there in the dark, plainer in the room's lantern
+ * light, plainest in the torch's beam. */
+const BREATH = { N: 16, EVERY: 4.2, LIFE: 2.0, OP: 0.055 };   // (each puff: four of one breath overlap, and at 0.12 they piled into a pale ball)
+const breathPuffs = [];
+{
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,0.4)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  for (let i = 0; i < BREATH.N; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xc4c8c2, transparent: true, depthWrite: false, opacity: 0 }));
+    s.visible = false; s.renderOrder = 3; s.raycast = () => {}; s.userData.noBake = true; s.name = 'breathPuff';
+    scene.add(s);
+    breathPuffs.push({ s, t: 1, life: 1, v: new THREE.Vector3(), r0: 0, r1: 0, k: 0 });
+  }
+}
+let breathIn = 2.5, breathOut = 0, breathNext = 0;
+const _brF = new THREE.Vector3();
+function updateBreath(dt) {
+  const cold = (insideDrain || inSewer) && !frozen();
+  if (cold) {
+    const winded = 1 - THREE.MathUtils.clamp(stamina / stamMax(), 0, 1);
+    if ((breathIn -= dt * (1 + winded * 1.4)) <= 0) { breathIn = BREATH.EVERY * (0.8 + Math.random() * 0.4); breathOut = 0.42; breathNext = 0; }
+  } else breathOut = 0;
+  if (breathOut > 0) {                       // the exhale: four or five puffs over the better part of half a second
+    breathOut -= dt;
+    if ((breathNext -= dt) <= 0) {
+      breathNext = 0.08 + Math.random() * 0.04;
+      const P = breathPuffs.find((p) => p.t >= p.life);
+      if (P) {
+        camera.getWorldDirection(_brF); _brF.y = 0; _brF.normalize();
+        const lit = inSewer ? 0.3 + 0.7 * flashOn : Math.min(1, 0.35 + 0.45 * drainRoomK + 0.4 * flashOn);
+        P.s.position.copy(camera.position).addScaledVector(_brF, 0.3); P.s.position.y -= 0.2;
+        P.s.position.x += (Math.random() - 0.5) * 0.03; P.s.position.z += (Math.random() - 0.5) * 0.03;
+        P.v.copy(_brF).multiplyScalar(0.3 + Math.random() * 0.15);
+        P.v.x += (Math.random() - 0.5) * 0.16; P.v.z += (Math.random() - 0.5) * 0.16; P.v.y = 0.02 + Math.random() * 0.06;
+        P.t = 0; P.life = BREATH.LIFE * (0.8 + Math.random() * 0.4); P.r0 = 0.05; P.r1 = 0.28 + Math.random() * 0.12; P.k = lit;
+        P.s.material.rotation = Math.random() * Math.PI * 2;
+        P.s.visible = true;
+      }
+    }
+  }
+  for (const P of breathPuffs) {
+    if (P.t >= P.life) { if (P.s.visible) P.s.visible = false; continue; }
+    P.t += dt;
+    const f = Math.min(1, P.t / P.life);
+    P.s.position.addScaledVector(P.v, dt);
+    P.v.multiplyScalar(Math.max(0, 1 - dt * 0.9));                    // it slows as it spreads
+    const r = P.r0 + (P.r1 - P.r0) * (1 - (1 - f) * (1 - f));
+    P.s.scale.set(r, r, 1);
+    P.s.material.opacity = BREATH.OP * P.k * THREE.MathUtils.smoothstep(f, 0, 0.12) * Math.pow(1 - f, 1.5);
+  }
+}
+
+/* WHAT LIVES IN HIS ROOM (2026-10-26, the owner's pick of the ideas). Cockroaches in the dark at the walls' feet, by
+ * the bed and on his crate: still, but for a turn or a shuffle now and then, until you come near or put the torch on
+ * one; then it is off, quick, in jinks and stops, to the nearest dark (under the bed, the shelving, the crates) away
+ * from you, with a dry tick of feet — and it creeps back to where it was once you are well off and not looking. And
+ * moths at the two lanterns, batting round the glass. One instanced mesh each, in the drain's own frame, so they go
+ * where the drain goes (and are culled with it). */
+const drainBugs = (() => {
+  const T = drainTunnel, F = DN.FLOOR_Y + 0.011, X0 = DN.ROOM_X0, X1 = DN.ROOM_X1, HZ = DN.ROOM_HZ, bedX = X1 - 1.5, shX = X0 + 1.5;
+  const cx = X1 - 1.2, cz = HZ - 1.0, top = DN.FLOOR_Y + 0.6245 + 0.011;
+  // [x, y, z, yaw, on the crate] — most of them out in the lanterns' pools on the floor, where they can be seen (in the
+  // dark corners a brown bug on brown concrete was nothing at all, measured), and they go as you walk in among them
+  const lx = X0 + 0.5 + 4 * (X1 - X0 - 1.0) / 8;       // (the hanging lantern's x, the model's own sum)
+  const homes = [[lx - 0.35, F, 0.05, 1.4, 0], [lx + 0.3, F, 0.75, -2.2, 0], [lx - 0.1, F, -0.55, 0.4, 0],
+    [cx - 0.55, F, cz - 0.75, 2.6, 0], [cx + 0.13, top, cz - 0.17, 2.2, 1], [X1 - 0.35, F, -HZ + 1.5, -1.2, 0],
+    [X1 - 0.84, F, HZ - 0.12, 3.0, 0], [X1 - 0.12, F, -0.6, 1.4, 0]];
+  const hides = [[bedX, -HZ + 0.75], [shX, HZ - 0.3], [X0 + 1.5, -HZ + 0.55], [X1 - 0.45, HZ - 0.45], [X0 + 0.7, -HZ + 0.6]];
+  // a big sewer roach, six centimetres: the size a real one is was a few pixels at the game's resolution
+  const geo = new THREE.SphereGeometry(1, 8, 5); geo.scale(0.03, 0.01, 0.016); geo.translate(0, 0.005, 0);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8a4420, roughness: 0.25, metalness: 0, emissive: 0x44200e, flatShading: true,
+    transparent: true });                               // (drawn after the room's floor mist: under it they were 32 on 28, gone)
+  const roach = new THREE.InstancedMesh(geo, mat, homes.length);
+  roach.frustumCulled = false; roach.userData.noBake = true; roach.raycast = () => {}; roach.name = 'drainRoaches'; roach.renderOrder = 3;
+  T.add(roach);
+  const bugs = homes.map(([x, y, z, yaw, up], i) => ({ i, home: [x, y, z, yaw], up: !!up, x, y, z, yaw, st: 'idle', t: 0,
+    wait: 1 + Math.random() * 3, gx: 0, gz: 0, sp: 0, stop: 0, go: 0, back: 0, seed: Math.random() * 10, sx: 0, sz: 0, sy: 0 }));
+  // moths: round the hanging lantern and the one on the crate
+  T.updateMatrixWorld(true);
+  const L = T.userData.lights || {}, ctr = [L.lamp, L.lamp2].filter(Boolean).map((l) => T.worldToLocal(l.getWorldPosition(new THREE.Vector3())));
+  const mgeo = new THREE.PlaneGeometry(0.036, 0.022); mgeo.rotateX(-Math.PI / 2);   // flat, its span across the way it flies
+  // its shape cut out of the card: two rounded wings either side of a body (a bare card read as a grey square up close)
+  const wc = document.createElement('canvas'); wc.width = 32; wc.height = 20;
+  { const g = wc.getContext('2d'); g.fillStyle = '#fff';
+    for (const s of [-1, 1]) { g.beginPath(); g.ellipse(16 + s * 8, 8, 8, 6, s * 0.35, 0, Math.PI * 2); g.fill(); g.beginPath(); g.ellipse(16 + s * 6, 14, 5, 4, -s * 0.3, 0, Math.PI * 2); g.fill(); }
+    g.fillRect(15, 3, 2, 15); }
+  const wtex = new THREE.CanvasTexture(wc); wtex.magFilter = wtex.minFilter = THREE.NearestFilter; wtex.generateMipmaps = false;
+  const mmat = new THREE.MeshBasicMaterial({ color: 0xbfae88, alphaMap: wtex, alphaTest: 0.5, side: THREE.DoubleSide });
+  const counts = [4, 3], moths = [];
+  ctr.forEach((c, j) => { for (let k = 0; k < counts[j]; k++) moths.push({ c, p: c.clone().add(new THREE.Vector3(0.2, 0.05, 0)), v: new THREE.Vector3(), tgt: c.clone(), tt: 0, ph: Math.random() * 10 }); });
+  const moth = new THREE.InstancedMesh(mgeo, mmat, Math.max(1, moths.length));
+  moth.frustumCulled = false; moth.userData.noBake = true; moth.raycast = () => {}; moth.name = 'drainMoths'; moth.count = moths.length;
+  T.add(moth);
+  return { roach, bugs, hides, moth, moths, skit: 0, crate: [cx, cz] };
+})();
+// a cockroach's feet on concrete: a scatter of dry ticks, high and short, at the bug
+function sfxSkitter(x, z) {
+  const ctx = audioCtx; if (!ctx) return;
+  sfxAt(x, z, () => {
+    const t = ctx.currentTime, dur = 0.3 + Math.random() * 0.25, len = Math.floor(ctx.sampleRate * dur);
+    const b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0), w = Math.floor(ctx.sampleRate * 0.0015);
+    for (let at = 0; at < len - w; at += Math.floor(ctx.sampleRate * (0.01 + Math.random() * 0.028))) {
+      const a = (0.4 + Math.random() * 0.6) * (1 - at / len * 0.6);
+      for (let i = 0; i < w; i++) d[at + i] += (Math.random() * 2 - 1) * a * (1 - i / w);
+    }
+    const s = ctx.createBufferSource(); s.buffer = b;
+    const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 2600;
+    const g = ctx.createGain(); g.gain.value = 0.07;
+    s.connect(f).connect(g).connect(sfxOut());
+    s.start(t); s.stop(t + dur);
+  }, { ref: 1.2, far: 12 });
+}
+const _bugM = new THREE.Matrix4(), _bugQ = new THREE.Quaternion(), _bugP = new THREE.Vector3(), _bugS = new THREE.Vector3(), _bugY = new THREE.Vector3(0, 1, 0);
+const _bugD = new THREE.Vector3(), _bugF = new THREE.Vector3();
+function updateDrainBugs(dt) {
+  const B = drainBugs, live = drainMix > 0.02;
+  B.roach.visible = B.moth.visible = live;
+  if (!live) return;
+  B.skit = Math.max(0, B.skit - dt);
+  const px = camera.position.x - DRAIN_X, pz = camera.position.z - DRAIN_Z;
+  const torch = flashOn > 0.5;
+  camera.getWorldDirection(_bugF);
+  for (const b of B.bugs) {
+    b.t += dt;
+    const dx = b.x - px, dz = b.z - pz, d = Math.hypot(dx, dz);
+    if (b.st === 'idle') {
+      let scared = d < (b.up ? 1.3 : 1.9);              // (at 1.25 they went from under the bottom of the view, unseen)
+      if (!scared && torch && d < 5) {
+        _bugD.set(b.x + DRAIN_X, b.y + drainTunnel.position.y, b.z + DRAIN_Z).sub(camera.position).normalize();
+        scared = _bugD.dot(_flAim) > 0.975;
+      }
+      if (scared) {
+        b.st = 'run'; b.t = 0; b.sp = 0.85 + Math.random() * 0.45; b.stop = 0; b.go = 0.25 + Math.random() * 0.4;
+        if (b.up) {                                          // on the crate: to the edge of it away from you, and over
+          const k = d || 1; b.gx = B.crate[0] + dx / k * 0.36; b.gz = B.crate[1] + dz / k * 0.36;
+        } else {                                             // the nearest dark that is not toward you
+          let best = null, bs = -1e9;
+          for (const [hx, hz] of B.hides) {
+            const toMe = Math.hypot(hx - b.x, hz - b.z); if (toMe > 3.5) continue;
+            const s = Math.hypot(hx - px, hz - pz) - 1.3 * toMe;
+            if (s > bs) { bs = s; best = [hx, hz]; }
+          }
+          if (!best) {                                       // none near: straight off from you to the foot of the wall
+            const k = d || 1; best = [b.x + dx / k * 2.5, b.z + dz / k * 2.5];
+          }
+          b.gx = THREE.MathUtils.clamp(best[0], DN.ROOM_X0 + 0.05, DN.ROOM_X1 - 0.05); b.gz = THREE.MathUtils.clamp(best[1], -DN.ROOM_HZ + 0.05, DN.ROOM_HZ - 0.05);
+        }
+        if (B.skit <= 0) { sfxSkitter(b.x + DRAIN_X, b.z + DRAIN_Z); B.skit = 0.3; }
+      } else if ((b.wait -= dt) <= 0) {                      // a turn, or a shuffle of a few centimetres
+        b.wait = 1.5 + Math.random() * 3;
+        b.yaw += (Math.random() - 0.5) * 1.2;
+        if (Math.random() < 0.5) {
+          const s = 0.03 + Math.random() * 0.03, [hx, , hz] = b.home;
+          if (Math.hypot(b.x + Math.cos(b.yaw) * s - hx, b.z - Math.sin(b.yaw) * s - hz) > 0.1) b.yaw = Math.atan2(-(hz - b.z), hx - b.x);   // kept to its spot (and the crate's on its crate)
+          b.sx = Math.cos(b.yaw) * s; b.sz = -Math.sin(b.yaw) * s; b.sy = 0.2;
+        }
+      }
+      if (b.sy > 0) { const k = Math.min(dt, b.sy) / 0.2; b.x += b.sx * k; b.z += b.sz * k; b.sy -= dt; }
+    } else if (b.st === 'run') {
+      if (b.stop > 0) b.stop -= dt;
+      else {
+        if ((b.go -= dt) <= 0) { b.stop = 0.08 + Math.random() * 0.18; b.go = 0.3 + Math.random() * 0.5; }
+        const gx = b.gx - b.x, gz = b.gz - b.z, gd = Math.hypot(gx, gz);
+        if (gd < 0.06 || b.t > 6) { b.st = 'gone'; b.back = 18 + Math.random() * 25; }   // (and never a runner that cannot get there)
+        else {
+          const want = Math.atan2(-gz, gx) + 0.55 * Math.sin(b.t * 13 + b.seed) * Math.min(1, gd / 0.4);
+          let dy = want - b.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+          b.yaw += dy * Math.min(1, dt * 18);
+          const step = Math.min(gd, b.sp * dt);
+          b.x += Math.cos(b.yaw) * step; b.z -= Math.sin(b.yaw) * step;
+          if (!b.up) {                                       // a jink toward a wall runs along it, not into the brick
+            b.x = THREE.MathUtils.clamp(b.x, DN.ROOM_X0 + 0.04, DN.ROOM_X1 - 0.04);
+            b.z = THREE.MathUtils.clamp(b.z, -DN.ROOM_HZ + 0.04, DN.ROOM_HZ - 0.04);
+          }
+        }
+      }
+    } else if ((b.back -= dt) <= 0) {                        // gone: back when you are well off and not looking
+      const [hx, hy, hz, hyaw] = b.home;
+      _bugD.set(hx + DRAIN_X - camera.position.x, 0, hz + DRAIN_Z - camera.position.z);
+      const far = _bugD.length() > 3;
+      if (far && _bugD.normalize().dot(_bugF) < 0.3) { b.x = hx; b.y = hy; b.z = hz; b.yaw = hyaw; b.st = 'idle'; b.wait = 2 + Math.random() * 3; }
+      else b.back = 2;
+    }
+    if (b.st === 'gone') _bugS.set(0, 0, 0); else _bugS.set(1, 1, 1);
+    _bugM.compose(_bugP.set(b.x, b.y, b.z), _bugQ.setFromAxisAngle(_bugY, b.yaw), _bugS);
+    B.roach.setMatrixAt(b.i, _bugM);
+  }
+  B.roach.instanceMatrix.needsUpdate = true;
+  // the moths: each a jittery chase of a point that keeps jumping about the glass, now and then into it
+  for (let i = 0; i < B.moths.length; i++) {
+    const m = B.moths[i];
+    if ((m.tt -= dt) <= 0) {
+      m.tt = 0.15 + Math.random() * 0.45;
+      const into = Math.random() < 0.08, r = into ? 0.04 : 0.09 + Math.random() * 0.24, a = Math.random() * Math.PI * 2;
+      m.tgt.set(m.c.x + Math.cos(a) * r, m.c.y - 0.05 + Math.random() * 0.3, m.c.z + Math.sin(a) * r);
+    }
+    _bugD.copy(m.tgt).sub(m.p).multiplyScalar(18).addScaledVector(m.v, -3.5);
+    m.v.addScaledVector(_bugD, dt);
+    if (m.v.length() > 1.6) m.v.setLength(1.6);
+    m.p.addScaledVector(m.v, dt);
+    const fl = 0.25 + 0.75 * Math.abs(Math.sin(flickerT * 38 + m.ph));
+    _bugM.compose(m.p, _bugQ.setFromAxisAngle(_bugY, Math.atan2(-m.v.z, m.v.x) + Math.PI / 2), _bugS.set(fl, 1, 1));
+    B.moth.setMatrixAt(i, _bugM);
+  }
+  B.moth.instanceMatrix.needsUpdate = true;
 }
 /* THE DRAIN'S AIR (the owner, 2026-10-17: "add some mist/fog in the sewer
  * tunnel ... a real nasty sewer"). The drain is on the beach, not a far room,
@@ -25180,6 +25397,11 @@ function updateDrainFlicker(dt) {
  * lamps' halos, beams and the lit dust are the model's (`T.userData.air`). */
 const DRAIN_FOG_D = 0.085, DRAIN_MIST_D = 1.15;
 const DRAIN_FOG_COL = new THREE.Color(0x161b12);
+/* AND IN HIS ROOM IT IS THICKER (2026-10-26, the owner: "more dingy and misty and dark in the actual room where the bed
+ * is"): past the door the fog closes further and goes a dead brown-green, and the ground mist stands to the knee, not
+ * the ankle — with the model's lit mist sheets (`roomMist`) over it. `drainRoomK` eases in over the doorway. */
+const DRAIN_ROOM = { fog: 0.15, col: new THREE.Color(0x0e100b), mistD: 1.25, mistH: 0.6 };   // (1.6 / 0.85 drowned the lantern's pool on the floor)
+let drainRoomK = 0;
 const _drainFogBase = new THREE.Color();
 let drainFogOn = false;
 function drainAir() {
@@ -25196,6 +25418,13 @@ function drainAir() {
   FOG_TINT.x *= 1 - 0.25 * k; FOG_TINT.y *= 1 - 0.12 * k; FOG_TINT.z *= 1 - 0.5 * k; FOG_TINT.w = 1 - k;
   FOG_GROUND.w = THREE.MathUtils.lerp(FOG_GROUND.w, DRAIN_MIST_D, k);
   FOG_GROUND.y = THREE.MathUtils.lerp(FOG_GROUND.y, DN.FLOOR_Y - 0.05, k);
+  const rk = drainRoomK * k;
+  if (rk > 0.001) {
+    scene.fog.color.lerp(DRAIN_ROOM.col, rk);
+    scene.fog.density = THREE.MathUtils.lerp(scene.fog.density, DRAIN_ROOM.fog, rk);
+    FOG_GROUND.w = THREE.MathUtils.lerp(FOG_GROUND.w, DRAIN_ROOM.mistD, rk);
+    FOG_GROUND.z = THREE.MathUtils.lerp(FOG_GROUND.z, DRAIN_ROOM.mistH, rk);
+  }
 }
 let beaconT = 0;
 function updateDrain(dt) {
@@ -25218,6 +25447,11 @@ function updateDrain(dt) {
   if (wm && wm.normalMap) { wm.normalMap.offset.x -= dt * 0.03; wm.normalMap.offset.y += dt * 0.011; }
   updateDrainDrips(dt);
   if (drainMix > 0.02) updateDrainFlicker(dt);
+  // how far into his room you are (the doorway eases it in), and its mist drifting, each layer its own way
+  const inRoomNow = insideDrain && lx > DN.DOOR_X - 0.5 && lx < DN.ROOM_X1 + 1;
+  drainRoomK = inRoomNow ? THREE.MathUtils.clamp((lx - (DN.DOOR_X - 0.5)) / 2.2, 0, 1) : Math.max(0, drainRoomK - dt * 2);
+  const rmist = drainTunnel.userData.roomMist;
+  if (rmist && drainMix > 0.02) rmist.forEach((tx, i) => { tx.offset.x += dt * (0.008 + i * 0.003) * (i % 2 ? -1 : 1); tx.offset.y += dt * (0.005 + i * 0.002); });
 
   /* THE CULVERT PAST THE GRATE. Asked by where you stand, not by a flag, so
    * nothing that puts you there (the crawl, a teleport) can leave you on the
@@ -28197,7 +28431,7 @@ function startPipe(into) {
   if (into && !grateOff) return;
   pipeBusy = true; pipeT = 0; pipeDone = false; pipeInto = into; pipeWait = 0;
   blocking = false; hovered = null;
-  if (into) loadSewer();
+  if (into) loadSewer(false);                           // (fetched only: it is built in the black, below)
   sfxPipeCrawl();
 }
 function setDrainSpot(lx, floorY, lz, yaw) {
@@ -45645,6 +45879,7 @@ function update(dt, rawDt = dt) {
   updateFlashes(rawDt);
   updateHeldGlow(dt);
   updateFlashlight(dt);
+  updateBreath(dt); updateDrainBugs(dt);   // (after the torch, so its aim is this frame's)
   updateDialogCam(dt);
   updatePack(dt);
   updateSnorkeler(dt);
@@ -85416,8 +85651,17 @@ function sewGlow(col, size) {
   s.scale.setScalar(size);
   return s;
 }
-function loadSewer() {
-  if (sewWorld || sewLoading) return;
+/* FETCHED EARLY, BUILT IN THE BLACK (2026-10-26, the owner: "It lags super bad when you take the grate off the tunnel").
+ * The grate coming off fetched the sewer and built it the moment the last file landed: 2.3 s in one task (measured, a
+ * longtask observer), in the middle of the room. Now the grate only fetches (`loadSewer(false)`); the pieces are kept
+ * (`sewGot`) and built when something asks with the screen black — the crawl's hold (which already waits on
+ * `sewReady`), a restore. */
+let sewGot = null, sewBuildWant = false;
+function loadSewer(build = true) {
+  if (sewWorld) return;
+  if (build) sewBuildWant = true;
+  if (sewGot && sewBuildWant) { const got = sewGot; sewGot = null; try { buildSewer(got); } catch (e) { console.error('sewer: build failed', e); } return; }
+  if (sewLoading) return;
   sewLoading = true;
   const want = { kit: 'assets/sewer.glb', gen: 'assets/sewer-generator.glb', lever: 'assets/sewer-lever.glb', lamp: 'assets/sewer-lamp.glb', box: 'assets/sewer-box.glb',
     mon: 'assets/sewer-monster.glb' };
@@ -85425,7 +85669,10 @@ function loadSewer() {
   for (const [k, url] of Object.entries(want)) {
     bwGlb(url, (g) => {
       got[k] = g.scene;
-      if (Object.keys(got).length === n && !sewWorld) { try { buildSewer(got); } catch (e) { console.error('sewer: build failed', e); } }
+      if (Object.keys(got).length === n && !sewWorld) {
+        if (sewBuildWant) { try { buildSewer(got); } catch (e) { console.error('sewer: build failed', e); } }
+        else sewGot = got;
+      }
     }, () => { sewLoading = false; console.warn('sewer: could not load', url); });
   }
 }
@@ -85581,6 +85828,48 @@ function buildSewer(got) {
   const ripple = rip ? rip.clone() : null;
   if (ripple) { ripple.needsUpdate = true; ripple.wrapS = ripple.wrapT = THREE.RepeatWrapping; ripple.repeat.set(1, 1); }
   const waterMat = new THREE.MeshStandardMaterial({ color: 0x15170e, roughness: 0.16, metalness: 0, normalMap: ripple, normalScale: new THREE.Vector2(0.55, 0.55) });
+  /* THE WATER MOVES WHEN SOMETHING MOVES IN IT (2026-10-26, the owner: "the ripple effects for the monster in the water
+   * looks bad. they look like little droplets in the water. It needs to look like somethings moving through the water
+   * and the water needs to looks better aswell like it is flowing away from the spot"). Not sprites on the water: the
+   * water's own surface. A pool of disturbances (`sewP.wake`: x, z, age, strength in the sewer's frame) each bends the
+   * surface's normal into a wave packet running outward from where it was made — a string of them laid by something
+   * moving is a V, the way a wake is — while they drift off down the channel on its flow; under them the surface goes
+   * glassy (it catches a lamp or your torch sharply) and gives the faintest light of its own, so in the dark it is
+   * almost nothing. And the channel flows: two long slow swells along it under the ripple map. */
+  {
+    const WN = 24;
+    sewP.wake = { pts: Array.from({ length: WN }, () => new THREE.Vector4(0, 0, 99, 0)), t: { value: 0 } };
+    waterMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uWake = { value: sewP.wake.pts }; sh.uniforms.uSwT = sewP.wake.t;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vSwXZ;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vSwXZ = position.xz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+  vec2 swG = vec2(0.0); float swL = 0.0, swC = 0.0;
+  for (int i = 0; i < ${WN}; i++) {
+    vec4 w = uWake[i];
+    if (w.w <= 0.001) continue;
+    vec2 d = vSwXZ - w.xy; float r = length(d) + 1e-4;
+    float front = 0.12 + w.z * 0.85, x = r - front;
+    float band = exp(-x * x * 9.0), inner = (1.0 - smoothstep(0.0, front, r)) * exp(-w.z * 2.2);
+    float f = w.w * exp(-w.z * 1.15) / (1.0 + r * 1.4);
+    swG += (d / r) * (cos(x * 20.0) * band + sin(r * 31.0 - w.z * 9.0) * inner * 0.5) * f;
+    swL += (band + inner * 0.6) * f;
+    swC += max(0.0, cos(x * 20.0)) * band * f;      // the crests: what catches the light
+  }
+  // the channel's own flow: long low swells running down it, broken across
+  swG.y += (sin(vSwXZ.y * 2.3 + uSwT * 1.1 + sin(vSwXZ.x * 3.1) * 0.8) * 0.05 + sin(vSwXZ.y * 5.7 + uSwT * 2.3) * 0.025);
+  roughnessFactor = mix(roughnessFactor, 0.03, clamp(swL * 0.8, 0.0, 1.0));`)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  normal = normalize(normal + (viewMatrix * vec4(swG.x, 0.0, swG.y, 0.0)).xyz * 2.2);`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  // (measured: the water is near-black, and a bent normal alone showed only where a lamp happened to mirror in it —
+  // the crests get a faint sheen of their own, the more so near a light, so a wake reads as lines moving on the water)
+  totalEmissiveRadiance += vec3(0.05, 0.062, 0.058) * clamp(swC, 0.0, 1.2) + vec3(0.004, 0.005, 0.005) * clamp(swL, 0.0, 1.5);`);
+    };
+    waterMat.customProgramCacheKey = () => 'sewWake';
+  }
   const floodMat = new THREE.MeshStandardMaterial({ color: 0x171b13, roughness: 0.12, metalness: 0, normalMap: ripple, normalScale: new THREE.Vector2(0.3, 0.3),
     emissive: new THREE.Color(0x2a5a9a), emissiveIntensity: 0 });
   const worldUV = (g, k) => { const p = g.attributes.position, uv = g.attributes.uv; for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * k, p.getZ(i) * k); return g; };
@@ -85623,7 +85912,7 @@ function buildSewer(got) {
   mist(-2.65, S.END, 2.65, 16.9, S.WALK + 0.18, 1.0);
   mist(-2.65, S.END, 2.65, 16.9, S.WALK + 0.5, 0.7);
   mist(-2.65, S.END, 2.65, 16.9, S.WALK + 0.9, 0.35);
-  mist(-1.1, S.CH_END, 1.1, 16.9, S.WATER + 0.16, 1.0);
+  mist(-1.1, S.CH_END, 1.1, 16.9, S.WATER + 0.16, 0.6);         // (thinner than the walk's: at 1.0 it veiled the wake on the water)
   mist(S.ROOM_X0, S.ROOM_Z0, S.ROOM_X1, S.ROOM_Z1, S.FLOOD + 0.2, 0.8);
   /* THE DUST hanging in the tunnel and the room, drifting, lit only near a light: the eight that matter are handed to
    * it every frame (the lamps, the box's glow and its sparks, and the glowstick in your hand — so on the walk back in
@@ -85741,7 +86030,7 @@ function buildSewer(got) {
     const lamp = makeLamp(S.LAMP_X, S.WALK + 2.3, z, S.LAMP_CEIL, 2.4, 0xffb46a, 0.85, S.WALK + 0.02);
     lamp.cutAt = 1.1 + (3 - i) * 0.42;                  // when the power goes, they go from the generator back toward you
     sewP.levers.push({ i, pv, bulb, bl, bh, lamp, t: 0, lightIn: -1 });   // (no prop: it is on the wall above the walk, and a box round it was a wall you could not see)
-    addInteractable(hp, 'Pull the lever', 'default', { far: 2.6, when: () => inSewer && sewGenOn && !sewLeverDown(i), onActivate: () => sewPullLever(i) });
+    addInteractable(hp, 'Hold to pull the lever', 'default', { far: 2.6, when: () => inSewer && sewGenOn && !sewLeverDown(i) && (!sewPull || (sewPull.i === i && !sewPull.held)), onActivate: () => sewPullLever(i) });
   });
 
   /* ---- THE GENERATOR, long side to the tunnel on the dead end's ledge, the lamp over it lit (dimly) from the
@@ -86025,11 +86314,89 @@ function sewLayPlank() {
   sewPlank = 2; hovered = null; sewPlankPose();
   sfxAt(SEW_X, SEW_Z + sewPlankZ, () => sfxPropHit('wood', 5));
 }
+/* THE LEVERS ARE RUSTED (2026-10-26, the owner: "make it so that the levers are rusty and you have to take a couple
+ * seconds to pull it down. Use the sound i am providing"). A pull is two and a half seconds of it: it will not go, it
+ * gives a hand's breadth with a clunk, grinds, gives again, grinds, and slams home — his recording's three events on
+ * the three jerks, a rusty creak synthesised under the strains, a jolt through you at each give. You are held where
+ * you stand while you pull (`sewPull`, the clamp puts you back) but you can look round, and the thing in the water
+ * does not wait for you to finish. `sewPullLeverNow` is the old instant pull, for a restore and the harness. */
+let sewPull = null;
+const SEW_PULL = [   // [seconds, lever travel 0..1]: strain, give, strain, give, grind, slam, settle
+  [0, 0], [0.55, 0.06], [0.67, 0.32], [1.45, 0.42], [1.6, 0.7], [2.15, 0.82], [2.25, 1.03], [2.37, 0.97], [2.47, 1],
+];
+const SEW_PULL_T = 2.47;
+function sewPullCurve(t) {
+  for (let k = 1; k < SEW_PULL.length; k++) {
+    const [t0, p0] = SEW_PULL[k - 1], [t1, p1] = SEW_PULL[k];
+    if (t <= t1) { const u = (t - t0) / (t1 - t0), jerk = p1 - p0 > 0.15 || t1 - t0 < 0.13; return p0 + (p1 - p0) * (jerk ? 1 - Math.pow(1 - u, 3) : u); }
+  }
+  return 1;
+}
+/* AND IT IS HELD (2026-10-26, the owner: "make it so the player has to hold e on the levers to turn them"): it only goes
+ * down while E (or F, or Enter) is held; let go and its spring takes it back up, creaking, and E on it again takes it
+ * from where it is. Held, you are held at it. */
+const sewUseHeld = () => !!(keys.KeyE || keys.KeyF || keys.Enter || keys.NumpadEnter);
 function sewPullLever(i) {
+  if (sewLeverDown(i) || !sewGenOn || (sewPull && sewPull.i !== i)) return;
+  hovered = null;
+  if (sewPull) {                                   // taken again on its way back up
+    sewPull.held = true; sewPull.slip = false; sewPull.x = camera.position.x; sewPull.z = camera.position.z;
+    sfxRustCreak(i, 0.35, 0.6);
+    return;
+  }
+  sewPull = { i, t: 0, x: camera.position.x, z: camera.position.z, ev: 0, held: true, slip: false };
+  sewLeverSnd('sewLeverA', i, 0.85);
+  sfxRustCreak(i, 0.5, 0.8);
+}
+function sewPullLeverNow(i) {
   if (sewLeverDown(i) || !sewGenOn) return;
   sewLevers |= 1 << i; hovered = null;
   const L = sewP.levers[i]; L.lightIn = 0.45;
-  sfxAt(SEW_X - SEW.WALL, SEW_Z + SEW.LEVERS[i], () => { sfxPropHit('metal', 4.5); sfxThud(0.05); });
+}
+const sewLeverAt = (i) => [SEW_X - SEW.WALL_HI + 0.2, SEW_Z + SEW.LEVERS[i]];
+function sewLeverSnd(name, i, g, rate = 1) { const [x, z] = sewLeverAt(i); sfxAt(x, z, () => playSample(name, g, 0.02, rate), { ref: 3, far: 40 }); }
+/* RUST GIVING: a stick-slip judder of metal on metal — a low saw gated on and off thirty-odd times a second through two
+ * narrow resonances — placed at the lever, the tunnel's echo on it like everything else */
+function sfxRustCreak(i, dur, k = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const [x, z] = sewLeverAt(i);
+  sfxAt(x, z, () => {
+    const t = ctx.currentTime, out = sfxOut();
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(150 + Math.random() * 40, t); o.frequency.linearRampToValueAtTime(110 + Math.random() * 60, t + dur);
+    const gate = ctx.createGain(); gate.gain.value = 0;
+    const sq = ctx.createOscillator(); sq.type = 'square'; sq.frequency.setValueAtTime(24 + Math.random() * 14, t); sq.frequency.linearRampToValueAtTime(34 + Math.random() * 20, t + dur);
+    const sg = ctx.createGain(); sg.gain.value = 0.5; sq.connect(sg).connect(gate.gain);
+    const b1 = ctx.createBiquadFilter(); b1.type = 'bandpass'; b1.frequency.value = 900 + Math.random() * 300; b1.Q.value = 7;
+    const b2 = ctx.createBiquadFilter(); b2.type = 'bandpass'; b2.frequency.value = 2300 + Math.random() * 500; b2.Q.value = 10;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.11 * k, t + 0.06); g.gain.setValueAtTime(0.11 * k, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(gate); gate.connect(b1).connect(g); gate.connect(b2).connect(g); g.connect(out);
+    o.start(t); sq.start(t); o.stop(t + dur + 0.02); sq.stop(t + dur + 0.02);
+  }, { ref: 3, far: 40 });
+}
+// the pull, a frame at a time: the lever on its curve, the sounds and the jolts on its events, you held at the lever
+function sewPullTick(dt) {
+  const P = sewPull; if (!P) return;
+  const L = sewP.levers[P.i];
+  P.held = P.held && sewUseHeld() && !frozen();
+  if (P.held) P.t += dt;
+  else {                                           // let go: the spring has it back up, a little quicker than it went down
+    if (!P.slip) { P.slip = true; sfxRustCreak(P.i, 0.5, 0.55); }
+    P.t -= dt * 1.4;
+    if (P.t <= 0) { sewPull = null; L.t = 0; L.pv.rotation.x = 0; sewLeverSnd('sewLeverB', P.i, 0.3, 1.25); return; }
+  }
+  const pr = sewPullCurve(P.t), strain = (P.t < 0.55 || (P.t > 0.67 && P.t < 1.45) || (P.t > 1.6 && P.t < 2.15));
+  L.t = Math.min(1, pr); L.pv.rotation.x = -SEW_LEVER_ARC * (pr + (strain ? Math.sin(P.t * 61) * 0.006 : 0));
+  const ev = [[0.55, () => { sewLeverSnd('sewLeverB', P.i, 0.7, 1.05); addTrauma(0.07); sfxRustCreak(P.i, 0.75, 0.7); }],
+    [1.45, () => { sewLeverSnd('sewLeverB', P.i, 0.75, 0.9); addTrauma(0.08); sfxRustCreak(P.i, 0.55, 0.9); }],
+    [2.15, () => { sewLeverSnd('sewLeverC', P.i, 0.95); addTrauma(0.14); }]];
+  if (P.held) while (P.ev < ev.length && P.t >= ev[P.ev][0]) ev[P.ev++][1]();
+  else while (P.ev > 0 && P.t < ev[P.ev - 1][0]) P.ev--;          // (back past a jerk: it will be fought again)
+  if (P.held && P.t >= SEW_PULL_T) {
+    sewPull = null;
+    if (!sewGenOn) return;
+    sewLevers |= 1 << P.i; L.t = 1; L.lightIn = 0.45;
+  }
 }
 function sewPressButton() {
   if (!sewGenOn) return;
@@ -86045,6 +86412,7 @@ function sewPressButton() {
 // the state, put on the world at once: a restore, or the build after one
 function sewApplyState() {
   if (!sewWorld) return;
+  sewPull = null;
   for (const L of sewP.levers) {
     L.t = sewLeverDown(L.i) ? 1 : 0; L.pv.rotation.x = -SEW_LEVER_ARC * L.t; L.lightIn = -1;
     L.lamp.want = L.lamp.lvl = sewGenOn && L.t ? 1 : 0;
@@ -86083,6 +86451,7 @@ function sewerLeave() {
   }
   setSkyDuck(0);
   if (sewPlank === 1) { sewPlank = 0; sewPlankPose(); }      // up a ladder with a plank in your arms: it is back by the wall
+  if (sewPull) { const L = sewP.levers[sewPull.i]; sewPull = null; if (L) { L.t = 0; L.pv.rotation.x = 0; } }   // (a pull let go of: back up)
   if (sewP.vmPlank) sewP.vmPlank.visible = false;
   sewMonReset(true);
 }
@@ -86339,7 +86708,7 @@ const SEW_BEAM_K = 0.75;                           // how much lit air stands un
 function updateSewer(dt) {
   if (!sewWorld) {
     // fetched once the drain's grate is off and you are near it: the pipe behind it comes out here
-    if (grateOff && Math.abs(camera.position.x - DRAIN_X) < 70 && Math.abs(camera.position.z - DRAIN_Z) < 70) loadSewer();
+    if (grateOff && Math.abs(camera.position.x - DRAIN_X) < 70 && Math.abs(camera.position.z - DRAIN_Z) < 70) loadSewer(false);
     return;
   }
   sewWorld.visible = inSewer;
@@ -86352,7 +86721,8 @@ function updateSewer(dt) {
   // the knives swing down, and the lamp over each comes on a beat after, stuttering as it catches
   for (const L of sewP.levers) {
     const want = sewLeverDown(L.i) ? 1 : 0;
-    if (L.t !== want) { L.t = THREE.MathUtils.clamp(L.t + (want - L.t > 0 ? dt : -dt) * 3.2, 0, 1); L.pv.rotation.x = -SEW_LEVER_ARC * easeOutCubic(L.t); }
+    if (sewPull && sewPull.i === L.i) { /* (its own curve, `sewPullTick`) */ }
+    else if (L.t !== want) { L.t = THREE.MathUtils.clamp(L.t + (want - L.t > 0 ? dt : -dt) * 3.2, 0, 1); L.pv.rotation.x = -SEW_LEVER_ARC * easeOutCubic(L.t); }
     if (L.lightIn >= 0) {
       L.lightIn -= dt;
       if (L.lightIn < 0 && sewGenOn) { L.lamp.want = 1; L.lamp.flick = 0.8; sfxAt(SEW_X + SEW.LAMP_X, SEW_Z + SEW.LEVERS[L.i], () => sfxPropHit('glass', 1.2)); }
@@ -86447,6 +86817,8 @@ function updateSewer(dt) {
   if (sewP.ripple) sewP.ripple.offset.y += dt * 0.05;
   sewP.mist.forEach((tx, i) => { tx.offset.x += dt * (0.006 + i * 0.002); tx.offset.y += dt * (i % 2 ? -0.009 : 0.011); });
   // the floor: kept on it, a hair higher on the plank, and the live water
+  sewPullTick(dt);
+  if (sewPull && sewPull.held) { camera.position.x = sewPull.x; camera.position.z = sewPull.z; velocity.set(0, 0, 0); }   // (held at the lever while you pull)
   sewClamp();
   groundY = SEW_Y + SEW.WALK + (sewOnPlank() ? 0.05 : 0);
   const lx = camera.position.x - SEW_X, lz = camera.position.z - SEW_Z;
@@ -86497,9 +86869,14 @@ const SEWMON = {
   HID: -0.35,                     // the top of its head this far under the water is under it
   PEEK: 0.45,                     // the top of its head over the water once its eyes are out
   UP: 2.0,                        // and once it is all the way up: waist-deep, its head at your eyes (measured: at 1.45 only its back cleared the water)
-  RISE: [5.0, 3.6],               // unseen seconds from breaking the surface to the leap: before the power goes, after
+  /* (2026-10-26, the owner: "I want the stalking to start earlier and it take longer for him to come out and get you")
+   * — it comes for you four seconds after the first lever, not ten, and is seven and a half coming up (five and a half
+   * once the power is off), not five */
+  RISE: [7.5, 5.5],               // unseen seconds from breaking the surface to the leap: before the power goes, after
   SEEN_HOLD: [0.5, 0.72],         // how long it lets you see it before it goes under
-  GAP: [[9, 17], [4, 9]],         // seconds under between one rising and the next
+  GAP: [[7, 13], [4, 8]],         // seconds under between one rising and the next
+  FIRST: 4,                       // and the first, after the first lever
+  WATCH_H: 1.35,                  // before the first lever, behind the bars: head and shoulders out of the water (at 0.9 the grate's lower bar hid its eyes from the ladder)
   NEAR: [5, 3.8], FAR: 15,
   /* SEEN IS AT YOUR CROSSHAIR (the owner, 2026-10-23: "make sure the monster only counts as seen when its near the
    * middle crosshair or close to it so its not just the whole screen that gets rid of him"): its eyes within LOOK
@@ -86565,16 +86942,6 @@ function sewMonBuild(root) {
     eyes.push({ core, glow });
   }
   // the water it breaks: two rings opening, and the spray it throws
-  /* a ripple is a soft bright band, not a line: a hairline ring was a pixel wide at five metres and nothing in the dark */
-  const ripTex = (() => {
-    const [c, g] = artCanvas(64, 64), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.55, 'rgba(255,255,255,0.05)'); gr.addColorStop(0.78, 'rgba(255,255,255,0.9)');
-    gr.addColorStop(0.88, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
-    return new THREE.CanvasTexture(c);
-  })();
-  const ringMat = () => new THREE.MeshBasicMaterial({ color: 0xa6bab6, map: ripTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
-  const rings = Array.from({ length: 16 }, () => { const r = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), ringMat()); r.rotation.x = -Math.PI / 2; r.raycast = () => {}; r.renderOrder = 5; W.add(r); return { r, t: 9, k: 1 }; });
   /* THE WATER IT THROWS (2026-10-24, the owner: "update all the animations and particles to look more natural and be
    * more detailed"): one pool of droplets, each its own size, soft and round, falling under gravity with a little drag,
    * a dive's column and crown and the water running off it while it is up; a drop that lands leaves a ripple now and then */
@@ -86597,11 +86964,29 @@ function sewMonBuild(root) {
   for (let x = 1.6; x <= 16.5; x += 0.8) spots.push({ x, z: S.T_Z, ch: false, barred: x > S.BR_END + 0.8 });
   // the light its face is seen by when it reaches you (pooled like every lamp, so it costs nothing until then)
   const faceL = new THREE.PointLight(0xffd6b0, 0, 3.2, 2); faceL.userData.lpAlways = 40; W.add(faceL);
-  sewMon = { g, body, root, bones, bind, head, mid, eyes, rings, spray, sp, sv, sz, sa, life, sc, dropN: 0, spots, faceL,
+  sewMon = { g, body, root, bones, bind, head, mid, eyes, spray, sp, sv, sz, sa, life, sc, kind: new Uint8Array(sz.length), dropN: 0, spots, faceL,
     st: 'off', t: 0, h: SEWMON.HID, x: 0, z: 0, barred: false, nextIn: 8, sl: 0, lastSeen: null, last: null, yaw: 0, eyeK: 0,
     lean: 0, flare: 0, intro: -1, levers: sewLevers, ambIn: 6, aud: null,
     placed: false, path: null, seg: 0, wakeIn: 0, drift: 0, press: 0, hbIn: 0, breath: 0, bubIn: 1, brIn: 2,
-    tilt: 0, tiltTo: 0, tiltIn: 2, twitch: 0, flinch: 0, twist: 0, dripIn: 0, lapIn: 0 };
+    tilt: 0, tiltTo: 0, tiltIn: 2, twitch: 0, flinch: 0, twist: 0, dripIn: 0, lapIn: 0, seenT: 0, hunt: 0 };
+}
+/* ONE VOICE (2026-10-26, the owner: "update all of the sounds to be more cohecisve and not have the tinitus sound be so
+ * loud"): everything the thing makes — sloshes, splashes, its breath, bubbles, your heart, the ringing — goes through
+ * one bus, a gentle compressor that pulls the loud ones down to the quiet ones, into the effects bus and so the sewer's
+ * concrete echo. A restore's hush still wins (`sfxOutBase` hands back the sink). */
+let sewBus = null;
+function sewBusNode() {                            // the bus itself: for the loops that run while you are down there
+  if (!sewBus && audioCtx && sfxBusGain) {
+    const ctx = audioCtx;
+    sewBus = ctx.createGain(); sewBus.gain.value = 0.9;
+    const c = ctx.createDynamicsCompressor(); c.threshold.value = -24; c.knee.value = 12; c.ratio.value = 3; c.attack.value = 0.01; c.release.value = 0.3;
+    sewBus.connect(c).connect(sfxBusGain);
+  }
+  return sewBus || sfxBusGain;
+}
+function sewOut() {                                // and for a one-shot: the bus, unless a restore's hush has the sink out
+  const b = sfxOutBase();
+  return audioCtx && b === sfxBusGain ? sewBusNode() : b;
 }
 // the thing's own sounds: a recording placed in 3-D at a point in the sewer's frame, duller with distance
 function sewMonPlay(name, x, y, z, gain, rate = 1) {
@@ -86613,7 +86998,7 @@ function sewMonPlay(name, x, y, z, gain, rate = 1) {
   src.playbackRate.value = rate * (0.93 + Math.random() * 0.14);
   const g = ctx.createGain(); g.gain.value = gain;
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 11000 * Math.pow(800 / 11000, Math.min(1, d / 45));
-  src.connect(g).connect(lp).connect(sewPanner(wx, wy, wz)).connect(sfxOutBase());
+  src.connect(g).connect(lp).connect(sewPanner(wx, wy, wz)).connect(sewOut());
   src.start();
   return src;
 }
@@ -86645,20 +87030,22 @@ function sewMonAud() {
   const lfo = ctx.createOscillator(); lfo.frequency.value = 3.1; const lg = ctx.createGain(); lg.gain.value = 0.4; lfo.connect(lg).connect(am.gain);
   const g = ctx.createGain(); g.gain.value = 0;
   const p = sewPanner(SEW_X, SEW_Y, SEW_Z);
-  src.connect(bp).connect(am).connect(g).connect(p).connect(sfxBusGain);
+  src.connect(bp).connect(am).connect(g).connect(p).connect(sewBusNode());
   src.start(); lfo.start();
-  // and the pressure in your own head while it comes up unseen: a thin high ringing, not placed
-  const to = ctx.createOscillator(); to.type = 'sine'; to.frequency.value = 6300;
-  const tv = ctx.createOscillator(); tv.frequency.value = 0.31; const tvg = ctx.createGain(); tvg.gain.value = 40; tv.connect(tvg).connect(to.frequency);
+  // and the pressure in your own head while it comes up unseen: a thin ringing, not placed — low in the mix and lower
+  // in pitch than it was (2026-10-26: "not have the tinitus sound be so loud"), softened by a lowpass
+  const to = ctx.createOscillator(); to.type = 'sine'; to.frequency.value = 4700;
+  const tv = ctx.createOscillator(); tv.frequency.value = 0.31; const tvg = ctx.createGain(); tvg.gain.value = 25; tv.connect(tvg).connect(to.frequency);
+  const tlp = ctx.createBiquadFilter(); tlp.type = 'lowpass'; tlp.frequency.value = 5200;
   const tin = ctx.createGain(); tin.gain.value = 0;
-  to.connect(tin).connect(sfxBusGain); to.start(); tv.start();
+  to.connect(tlp).connect(tin).connect(sewBusNode()); to.start(); tv.start();
   return (sewMon.aud = { g, p, tin, srcs: [src, lfo, to, tv], outs: [g, tin] });
 }
 /* THE SCREAM in your face: a torn roar (noise through a falling band, two detuned saws sliding down, all of it driven
  * into a hard clip) over a sub hit. Synthesised: there was no voice in the recordings. */
 function sfxSewScream() {
   const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime, out = sfxOutBase(), dur = 1.35;
+  const t = ctx.currentTime, out = sewOut(), dur = 1.35;
   const ws = ctx.createWaveShaper(), N = 1024, cv = new Float32Array(N);
   for (let i = 0; i < N; i++) { const x = i / (N - 1) * 2 - 1; cv[i] = Math.tanh(x * 5); }
   ws.curve = cv;
@@ -86692,7 +87079,7 @@ function sewMonBubble(x, z, g) {
   const t = ctx.currentTime, f = 260 + Math.random() * 260;
   const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 2.6, t + 0.05);
   const gg = ctx.createGain(); gg.gain.setValueAtTime(0.0001, t); gg.gain.exponentialRampToValueAtTime(g, t + 0.006); gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-  o.connect(gg).connect(sewPanner(SEW_X + x, SEW_Y + SEW.WATER, SEW_Z + z)).connect(sfxOutBase()); o.start(t); o.stop(t + 0.1);
+  o.connect(gg).connect(sewPanner(SEW_X + x, SEW_Y + SEW.WATER, SEW_Z + z)).connect(sewOut()); o.start(t); o.stop(t + 0.1);
 }
 // its breath: one of the two takes, from where it is, muffled under the water
 function sewMonBreath(near, under) {
@@ -86700,17 +87087,17 @@ function sewMonBreath(near, under) {
   const bank = (sampleBanks.sewBreath || []).filter(Boolean); if (!bank.length) return;
   const src = ctx.createBufferSource(); src.buffer = bank[(M.brPick = ((M.brPick || 0) + 1) % bank.length)];
   src.playbackRate.value = 0.9 + Math.random() * 0.12;
-  const g = ctx.createGain(); g.gain.value = (0.05 + 0.3 * near) * (under ? 0.75 : 1);
+  const g = ctx.createGain(); g.gain.value = (0.05 + 0.26 * near) * (under ? 0.75 : 1);
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = under ? 900 : 6500; lp.Q.value = under ? 2 : 0.7;
   const y = under ? SEW.WATER - 0.05 : sewMonEyeY(M.h) - 0.1;
-  src.connect(lp).connect(g).connect(sewPanner(SEW_X + M.x, SEW_Y + y, SEW_Z + M.z)).connect(sfxOutBase());
+  src.connect(lp).connect(g).connect(sewPanner(SEW_X + M.x, SEW_Y + y, SEW_Z + M.z)).connect(sewOut());
   src.start();
   if (under && Math.random() < 0.6) for (let i = 0; i < 3; i++) setTimeout(() => sewMon && sewMonBubble(M.x + (Math.random() - 0.5) * 0.3, M.z + (Math.random() - 0.5) * 0.3, 0.03), 1800 + i * 160 + Math.random() * 300);   // (breathing out under water)
 }
 // your heart: a low lub and a softer dub
 function sfxSewHeart(g) {
   const ctx = audioCtx; if (!ctx) return;
-  const t0 = ctx.currentTime, out = sfxOutBase();
+  const t0 = ctx.currentTime, out = sewOut();
   for (const [dt, k] of [[0, 1], [0.24, 0.62]]) {
     const t = t0 + dt;
     const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(62, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.13);
@@ -86722,17 +87109,21 @@ function sfxSewHeart(g) {
 // the top of its head over the water -> where its feet are, and its eyes
 const sewMonFootY = (h) => SEW.WATER + h - SEWMON.TOP * SEWMON.SCALE;
 const sewMonEyeY = (h) => SEW.WATER + h - (SEWMON.TOP - SEWMON.EYE_Y) * SEWMON.SCALE;
+// a disturbance in the water at (x, z) of strength k: into the wake pool, the oldest one reused
 function sewMonRing(x, z, k) {
-  const R = sewMon.rings.reduce((a, r) => (r.t > a.t ? r : a));      // (pool of 16: drops land in it too)      // the oldest: a wake lays them down fast
-  R.t = 0; R.k = k; R.r.position.set(x, SEW.WATER + 0.006, z);
+  if (!sewP.wake) return;
+  const P = sewP.wake.pts, w = P.reduce((a, v) => (v.z > a.z ? v : a));
+  w.set(x, z, 0, k);
 }
 // one droplet into the pool (the oldest slot reused): where, how fast, how big, how long
-function sewDrop(x, y, z, vx, vy, vz, size, life, spark = false) {
+function sewDrop(x, y, z, vx, vy, vz, size, life, spark = false) {   // spark: true (blue-white) or 2 (a bubble rising)
   const M = sewMon, i = M.dropN = (M.dropN + 1) % M.sz.length;
   M.sp[i * 3] = x; M.sp[i * 3 + 1] = y; M.sp[i * 3 + 2] = z;
   M.sv[i * 3] = vx; M.sv[i * 3 + 1] = vy; M.sv[i * 3 + 2] = vz;
   M.sz[i] = size; M.life[i] = life; M.sa[i] = 1;
-  if (spark) { M.sc[i * 3] = 1.6; M.sc[i * 3 + 1] = 2.0; M.sc[i * 3 + 2] = 2.6; } else { M.sc[i * 3] = 0.62; M.sc[i * 3 + 1] = 0.7; M.sc[i * 3 + 2] = 0.7; }
+  if (spark === 2) { M.sc[i * 3] = 0.45; M.sc[i * 3 + 1] = 0.6; M.sc[i * 3 + 2] = 0.56; M.kind[i] = 2; }
+  else if (spark) { M.sc[i * 3] = 1.6; M.sc[i * 3 + 1] = 2.0; M.sc[i * 3 + 2] = 2.6; M.kind[i] = 1; }
+  else { M.sc[i * 3] = 0.62; M.sc[i * 3 + 1] = 0.7; M.sc[i * 3 + 2] = 0.7; M.kind[i] = 0; }
   M.spray.geometry.attributes.aC.needsUpdate = true;
 }
 // a body breaking the water: a column straight up, a crown thrown out round it, and spatter low over the surface
@@ -86745,19 +87136,19 @@ function sewMonSpray(x, z, k) {
 function sewMonReset(leaving = false) {
   const M = sewMon; if (!M) return;
   M.st = 'off'; M.t = 0; M.h = SEWMON.HID; M.g.visible = false; M.flare = 0; M.intro = -1; M.faceL.intensity = 0;
-  M.placed = false; M.path = null; M.press = 0; flashDread = 0;
+  M.placed = false; M.path = null; M.press = 0; flashDread = 0; M.seenT = 0; M.hunt = 0;
   // (its sound runs only while you are down there: leaving, the loops are stopped and let go, not left at nought)
   if (M.aud) {
     M.aud.tin.gain.value = 0;
     if (leaving) { for (const n of M.aud.srcs) try { n.stop(); } catch (e) {} for (const n of M.aud.outs) try { n.disconnect(); } catch (e) {} M.aud = null; }
   }
   if (M.aud) M.aud.g.gain.value = 0;
-  if (sewScare && !dying) sewScare = null;
+  if (sewScare && !dying) { sewScare = null; if (_sewUwFog) sewUnderwater(false); }
   if (leaving) M.levers = sewLevers;
 }
 /* WHERE IT COMES UP NEXT: out of your sight, at a fair distance, with a clear line to you (or past the bars, to watch) */
-function sewMonPick() {
-  const M = sewMon, dark = !sewGenOn, near = SEWMON.NEAR[dark ? 1 : 0];
+function sewMonPick(barredOnly = false) {
+  const M = sewMon, dark = !sewGenOn, near = barredOnly ? 3 : SEWMON.NEAR[dark ? 1 : 0];
   const cx = camera.position.x - SEW_X, cz = camera.position.z - SEW_Z;
   camera.getWorldDirection(_smF); const fl = Math.hypot(_smF.x, _smF.z) || 1, fx = _smF.x / fl, fz = _smF.z / fl;
   const eyeUp = sewMonEyeY(SEWMON.UP);
@@ -86765,6 +87156,7 @@ function sewMonPick() {
   for (const sp of M.spots) {
     const dx = sp.x - cx, dz = sp.z - cz, d = Math.hypot(dx, dz);
     if (d < near || d > (sp.barred ? SEWMON.FAR + 5 : SEWMON.FAR)) continue;
+    if (barredOnly && !sp.barred) continue;
     if (sewPlank === 2 && sp.ch && Math.abs(sp.z - sewPlankZ) < 1.4) continue;   // (not under the plank)
     const c = (dx * fx + dz * fz) / d;
     // off the screen with room to spare, at every height it will stand at (its eyes peeking, and all the way up)
@@ -86775,7 +87167,7 @@ function sewMonPick() {
     let sc = -c * 1.3 - Math.abs(d - (dark ? 6 : 8)) * 0.13 + Math.random() * 0.9;
     if (M.lastSeen && Math.hypot(sp.x - M.lastSeen.x, sp.z - M.lastSeen.z) < 6) sc -= 1.6;
     if (M.last && Math.hypot(sp.x - M.last.x, sp.z - M.last.z) < 3) sc -= 0.8;
-    if (sp.barred) sc += Math.random() < 0.2 ? 1.0 : -3;
+    if (sp.barred && !barredOnly) sc += Math.random() < 0.2 ? 1.0 : -3;
     if (sc > bs) { bs = sc; best = sp; }
   }
   return best;
@@ -86788,6 +87180,14 @@ function sewNdc(x, y, z) {
   if (_smA.copy(_smN).sub(camera.position).dot(_smF) <= 0.05) return null;
   camera.updateMatrixWorld(); _smN.project(camera);
   return _smN;
+}
+// a patch of water on your screen, near enough and in the open: while it is, the thing under it does not move
+function sewMonWatched(x, z) {
+  const d = Math.hypot(SEW_X + x - camera.position.x, SEW_Z + z - camera.position.z);
+  if (d > 32) return false;
+  const n = sewNdc(x, SEW.WATER, z);
+  if (!n || Math.abs(n.x) > 1.08 || Math.abs(n.y) > 1.08) return false;
+  return sewLos(camera.position.x - SEW_X, camera.position.z - SEW_Z, x, z);
 }
 function sewMonSeen() {
   const M = sewMon, ey = sewMonEyeY(M.h);
@@ -86818,7 +87218,7 @@ function sewTurn(bone, axis, ang) {
   bone.quaternion.premultiply(_smQ3);
   bone.updateMatrixWorld(true);
 }
-function sewMonPose(dt, reach) {
+function sewMonPose(dt, reach, at = null) {
   const M = sewMon, B = M.bones;
   for (const [b, q] of M.bind) b.quaternion.copy(q);
   M.g.position.set(M.x, sewMonFootY(M.h), M.z);
@@ -86826,16 +87226,16 @@ function sewMonPose(dt, reach) {
   const cx = camera.position.x - SEW_X, cz = camera.position.z - SEW_Z;
   const want = Math.atan2(cx - M.x, cz - M.z);
   let dy = want - M.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-  M.yaw += dy * Math.min(1, dt * (M.st === 'leap' ? 20 : 2.2));
+  if (!(sewScare && sewScare.drag)) M.yaw += dy * Math.min(1, dt * (M.st === 'leap' ? 20 : 2.2));   // (hauling you, you are over it: it chased the jolts round)
   M.g.rotation.y = M.yaw + M.twist;
   M.body.rotation.x = M.lean - M.flinch * 0.18;
-  const up = M.st === 'rise' || M.st === 'linger' || M.st === 'seen';
+  const up = M.st === 'rise' || M.st === 'linger' || M.st === 'seen' || M.st === 'watch' || M.st === 'wrise';
   // standing in the water it is not still: it heaves with its breath and sways on the current
   const now = performance.now() * 0.001, br = Math.sin(M.breath * Math.PI * 2);
   M.body.position.y = up ? br * 0.025 + Math.sin(now * 0.7) * 0.012 : 0;
   M.body.rotation.z = up ? Math.sin(now * 0.53) * 0.025 : 0;
   M.g.updateMatrixWorld(true);
-  _smCam.copy(camera.position);
+  _smCam.copy(at || camera.position);                                       // (the eye it looks at and reaches for)
   _smAx.set(Math.cos(M.yaw), 0, -Math.sin(M.yaw));                          // its right, in the world
   if (up) sewTurn(M.bones.Spine1_M, _smAx, -br * 0.045);                    // the chest drawing in and letting go
   // the neck, then the head, onto you
@@ -86873,11 +87273,15 @@ function sewMonPose(dt, reach) {
 }
 function sewMonWater(dt) {
   const M = sewMon;
-  for (const R of M.rings) {
-    if (R.t > 1.6) { R.r.material.opacity = 0; continue; }
-    R.t += dt; const u = R.t / 1.6;
-    // (a wake's small rings at 0.22 x their size were 7 % and nothing in the dark: a floor of their own; drawn after the mist on the water, which veiled them)
-    R.r.scale.setScalar(0.35 + u * 2.6 * R.k); R.r.material.opacity = (0.2 + 0.3 * R.k) * Math.pow(1 - u, 1.6);
+  // the wake: each disturbance ages, and drifts off on the flow — down the channel toward the dead end, out along the branch
+  if (sewP.wake) {
+    sewP.wake.t.value += dt;
+    for (const w of sewP.wake.pts) {
+      if (w.w <= 0) continue;
+      w.z += dt;
+      if (Math.abs(w.x) < 1.2) w.y -= dt * 0.24; else w.x += dt * 0.2;
+      if (w.z > 4) w.w = 0;
+    }
   }
   // the droplets: gravity and a little air, gone when they meet the water (a ripple for one in five) or their time is up
   const p = M.sp, v = M.sv, n = M.sz.length, drag = Math.max(0, 1 - dt * 0.6);
@@ -86886,11 +87290,13 @@ function sewMonWater(dt) {
     if (M.sa[i] <= 0) continue;
     live++;
     M.life[i] -= dt;
-    v[i * 3 + 1] -= 9.8 * dt; v[i * 3] *= drag; v[i * 3 + 2] *= drag;
+    if (M.kind[i] === 2) { v[i * 3 + 1] += 1.8 * dt; v[i * 3] += (Math.random() - 0.5) * dt * 2; }   // a bubble: it rises, wobbling
+    else v[i * 3 + 1] -= 9.8 * dt;
+    v[i * 3] *= drag; v[i * 3 + 2] *= drag;
     p[i * 3] += v[i * 3] * dt; p[i * 3 + 1] += v[i * 3 + 1] * dt; p[i * 3 + 2] += v[i * 3 + 2] * dt;
-    if (p[i * 3 + 1] < SEW.WATER && v[i * 3 + 1] < 0) {
+    if (M.kind[i] === 2 ? p[i * 3 + 1] > SEW.WATER : (p[i * 3 + 1] < SEW.WATER && v[i * 3 + 1] < 0)) {
       M.sa[i] = 0;
-      if (Math.abs(p[i * 3]) < 1.07 && M.sc[i * 3 + 2] < 1 && Math.random() < 0.2) sewMonRing(p[i * 3], p[i * 3 + 2], 0.06 + M.sz[i] * 4);
+      if (Math.abs(p[i * 3]) < 1.07 && M.kind[i] !== 1 && Math.random() < 0.2) sewMonRing(p[i * 3], p[i * 3 + 2], 0.06 + M.sz[i] * 4);
     } else M.sa[i] = M.life[i] > 0 ? Math.min(1, M.life[i] * 2.5) : 0;
   }
   if (live || M.sprayLive) {
@@ -86910,18 +87316,25 @@ function sewMonTick(dt) {
   if (audioCtx) sewListen();
   if (sewScare) { sewScareTick(dt); sewMonWater(dt); return; }
   const dark = !sewGenOn ? 1 : 0;
-  // the first lever: it has heard you. A heavy splash far down the water, and it starts
-  if (M.levers === 0 && sewLevers !== 0) M.intro = 2.2;
+  /* THE FIRST LEVER: it has heard you. If it was watching from behind the bars it goes under there with a splash; if
+   * not, a heavy splash somewhere far down the water. Either way the hunt is on, and it is coming soon. */
+  if (M.levers === 0 && sewLevers !== 0 && inSewer) {
+    if ((M.st === 'watch' || M.st === 'wrise' || M.st === 'wsink') && M.g.visible) {
+      M.st = 'dive'; M.t = 0; M.h0 = M.h; M.twistTo = 0.6; M.lastSeen = { x: M.x, z: M.z };
+      sewMonPlay('sewSplash', M.x, SEW.WATER + 0.3, M.z, 0.75, 0.9); sewMonSpray(M.x, M.z, 0.8); sewMonRing(M.x, M.z, 1.2);
+    } else M.intro = 1.2;
+    M.hunt = SEWMON.FIRST;
+  }
   M.levers = sewLevers;
   if (M.intro > 0 && (M.intro -= dt) <= 0) {
     const cz = camera.position.z - SEW_Z, z = cz > -20 ? SEW.CH_END + 2 : 12;
-    sewMonPlay('sewSplash', 0, SEW.WATER, z, 0.45, 0.8);
-    if (M.st === 'off') { M.st = 'under'; M.nextIn = 6 + Math.random() * 3; }
+    sewMonPlay('sewSplash', 0, SEW.WATER, z, 0.4, 0.8); sewMonRing(0, z, 1.0);
   }
-  const active = inSewer && sewLevers !== 0 && !dying && !ended;
+  const active = inSewer && !dying && !ended;
   if (!active) { if (M.st !== 'off') sewMonReset(); sewMonWater(dt); return; }
-  if (M.st === 'off') { M.st = 'under'; M.nextIn = 10; }
+  if (M.st === 'off') { M.st = sewLevers ? 'under' : 'gone'; M.nextIn = sewLevers ? 8 : 1.5; }
   if (frozen() || pipeBusy) { sewMonWater(dt); return; }          // a menu, the pack, the climb: it waits with you
+  if (M.hunt > 0 && M.st !== 'dive') { M.st = 'under'; M.nextIn = M.hunt; M.hunt = 0; M.placed = true; }
   const k = (a) => a[dark];
   const cx = camera.position.x - SEW_X, cz = camera.position.z - SEW_Z;
   const dist = Math.hypot(M.x - cx, M.z - cz);
@@ -86929,16 +87342,53 @@ function sewMonTick(dt) {
   const aud = sewMonAud();
   let wet = 0, reach = 0;
   switch (M.st) {
+    /* BEFORE THE FIRST LEVER IT WAITS BEHIND THE GRATE (2026-10-26, the owner): head and shoulders out of the water past
+     * the bars, still, watching you, breathing. Stare at it a while, or come up to the bars, and it lets itself down
+     * into the water and is gone; a while later it is behind bars again somewhere, where you were not looking. */
+    case 'gone':
+      M.h = SEWMON.HID;
+      if ((M.nextIn -= dt) > 0) break;
+      {
+        const sp = sewMonPick(true);
+        if (!sp) { M.nextIn = 1.5; break; }
+        // close behind the bars, at the edge of the light: a shape you can just make out, not two dots in the black
+        M.x = sp.ch ? (Math.random() - 0.5) * 0.5 : SEW.BR_END + 1.2 + Math.random() * 1.3;
+        M.z = sp.ch ? SEW.NORTH + 1.3 + Math.random() * 1.5 : sp.z + (Math.random() - 0.5) * 0.4;
+        M.yaw = Math.atan2(cx - M.x, cz - M.z); M.lean = 0.08; M.eyeK = 1; M.placed = true; M.seenT = 0;
+        M.st = 'wrise'; M.t = 0;
+        sewMonRing(M.x, M.z, 0.5); sewMonPlay('sewSlosh', M.x, SEW.WATER, M.z, 0.05, 0.75);
+      }
+      break;
+    case 'wrise': {
+      const u = Math.min(1, M.t / 2.6);
+      M.h = SEWMON.HID + (SEWMON.WATCH_H - SEWMON.HID) * THREE.MathUtils.smoothstep(u, 0, 1);
+      wet = 0.4 * (1 - u);
+      if (u >= 1) { M.st = 'watch'; M.t = 0; }
+      break;
+    }
+    case 'watch': {
+      M.h = SEWMON.WATCH_H; M.lean = 0.08; M.flare = Math.max(M.flare, 0.35);   // (its eyes a little lit while it watches)
+      if (sewMonSeen()) M.seenT += dt; else M.seenT = Math.max(0, M.seenT - dt * 0.5);
+      const atBars = M.z > SEW.NORTH ? cz > SEW.NORTH - 2.2 && Math.abs(cx) < 2.7 : cx > SEW.BR_END - 2.2 && Math.abs(cz - SEW.T_Z) < 2.7;
+      if (M.seenT > 1.6 || atBars || M.t > 40) { M.st = 'wsink'; M.t = 0; M.h0 = M.h; sewMonPlay('sewSlosh', M.x, SEW.WATER, M.z, 0.09, 0.7); sewMonRing(M.x, M.z, 0.7); }
+      break;
+    }
+    case 'wsink': {
+      const u = Math.min(1, M.t / 2.2);
+      M.h = M.h0 + (SEWMON.HID - M.h0) * u * u;
+      if (u >= 1) { M.st = 'gone'; M.nextIn = 16 + Math.random() * 18; M.eyeK = 0; }
+      break;
+    }
     case 'under': {
       M.h = SEWMON.HID;
       if ((M.ambIn -= dt) <= 0) { M.ambIn = 6 + Math.random() * 9; sewMonFarSlosh(); }
       /* WHILE IT WAITS IT FOLLOWS: down the channel after you, under the water, keeping its distance — a ring now and
        * then where it is, and its breath if you are near it (the owner's pick of the ideas, 2026-10-24) */
-      if (M.placed && Math.abs(M.x) < 1.2 && dist > 8) {
+      if (M.placed && Math.abs(M.x) < 1.2 && dist > 8 && !sewMonWatched(M.x, M.z)) {
         const tz = THREE.MathUtils.clamp(cz + Math.sign(M.z - cz) * 7, SEW.CH_END + 1, 16);
         const step = Math.sign(tz - M.z) * Math.min(Math.abs(tz - M.z), dt * (0.45 + dark * 0.3));
         M.z += step;
-        if (Math.abs(step) > 1e-4 && (M.wakeIn -= dt) <= 0) { M.wakeIn = 1.1 + Math.random() * 0.6; sewMonRing(M.x, M.z, 0.28); }
+        if (Math.abs(step) > 1e-4 && (M.wakeIn -= dt) <= 0) { M.wakeIn = 0.35 + Math.random() * 0.2; sewMonRing(M.x, M.z, 0.18); }
       }
       if ((M.nextIn -= dt) > 0) break;
       const sp = sewMonPick();
@@ -86966,16 +87416,20 @@ function sewMonTick(dt) {
       /* THE WAKE: it comes to the place under the water, and the water shows it — a small ring every fifth of a second
        * where its head is, a slosh now and then, so it can be followed by eye as well as by ear */
       M.h = SEWMON.HID;
-      const P = M.path, v = (2.4 + dark * 0.9) * dt;
+      /* (2026-10-26, the owner: "the creature shouldnt be moving in the water when the player is looking at it ...
+       * it is a stalker and is smart about its attacks"): while the water over it is on your screen it is still, and
+       * what you see is the wake it left fading and drifting off — never it going */
+      const still = sewMonWatched(M.x, M.z);
+      const P = M.path, v = still ? 0 : (2.4 + dark * 0.9) * dt;
       let left = v;
       while (left > 0 && M.seg < P.length - 1) {
         const [bx, bz] = P[M.seg + 1], d = Math.hypot(bx - M.x, bz - M.z);
         if (d <= left) { M.x = bx; M.z = bz; M.seg++; left -= d; } else { M.x += (bx - M.x) / d * left; M.z += (bz - M.z) / d * left; left = 0; }
       }
-      if ((M.wakeIn -= dt) <= 0) {
-        // (not a chain of equal rings: each its own size, a little to one side or the other of its line)
-        M.wakeIn = 0.22 + Math.random() * 0.16; sewMonRing(M.x + (Math.random() - 0.5) * 0.35, M.z + (Math.random() - 0.5) * 0.2, 0.22 + Math.random() * 0.2);
-        if (Math.random() < 0.16) sewMonPlay('sewSlosh', M.x, SEW.WATER, M.z, 0.04, 0.7);
+      if (!still && (M.wakeIn -= dt) <= 0) {
+        // a disturbance every eighth of a second along its line: the packets spreading behind it make the V
+        M.wakeIn = 0.11 + Math.random() * 0.05; sewMonRing(M.x + (Math.random() - 0.5) * 0.08, M.z, 0.34 + Math.random() * 0.1);
+        if (Math.random() < 0.06) sewMonPlay('sewSlosh', M.x, SEW.WATER, M.z, 0.035, 0.7);
       }
       if (M.seg >= P.length - 1) {
         M.yaw = Math.atan2(cx - M.x, cz - M.z); M.lean = 0.12; M.eyeK = 1;
@@ -86988,6 +87442,7 @@ function sewMonTick(dt) {
     case 'stir':
       M.h = SEWMON.HID;
       if (M.t > 0.3 && sewMonSeen()) { M.st = 'under'; M.nextIn = 2 + Math.random() * 2; M.lastSeen = { x: M.x, z: M.z }; break; }   // caught at it: gone, without a sound
+      if ((M.wakeIn -= dt) <= 0) { M.wakeIn = 0.35 + Math.random() * 0.25; sewMonRing(M.x + (Math.random() - 0.5) * 0.3, M.z + (Math.random() - 0.5) * 0.3, 0.3); }   // the water boiling over it
       if (M.t >= SEWMON.STIR) { M.st = 'rise'; M.t = 0; M.sl = 0.2; }
       break;
     case 'rise': {
@@ -87004,7 +87459,7 @@ function sewMonTick(dt) {
       wet = 0.25 + 0.75 * u;
       if ((M.sl -= dt) <= 0) {
         M.sl = 1.5 - 0.85 * u + Math.random() * 0.35;
-        sewMonPlay('sewSlosh', M.x, SEW.WATER + 0.2, M.z, 0.1 + 0.42 * Math.pow(u, 1.3), 0.9 + u * 0.15);
+        sewMonPlay('sewSlosh', M.x, SEW.WATER + 0.2, M.z, 0.08 + 0.32 * Math.pow(u, 1.3), 0.9 + u * 0.15);
         if (Math.random() < 0.5) sewMonRing(M.x, M.z, 0.4 + u * 0.4);
       }
       if (u >= 1) {
@@ -87019,8 +87474,8 @@ function sewMonTick(dt) {
       wet = 0.6; M.flare = 1;
       if (M.t >= M.hold) {
         M.st = 'dive'; M.t = 0; M.h0 = M.h; M.lastSeen = { x: M.x, z: M.z }; M.twistTo = (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.4);
-        sewMonPlay('sewSplash', M.x, SEW.WATER + 0.3, M.z, 0.95);
-        sewMonPlay('sewLeap', M.x, SEW.WATER + 0.3, M.z, 0.35, 0.8);
+        sewMonPlay('sewSplash', M.x, SEW.WATER + 0.3, M.z, 0.8);
+        sewMonPlay('sewLeap', M.x, SEW.WATER + 0.3, M.z, 0.28, 0.8);
         sewMonSpray(M.x, M.z, 0.9); sewMonRing(M.x, M.z, 1.2);
       }
       break;
@@ -87053,7 +87508,7 @@ function sewMonTick(dt) {
   M.flinch = Math.max(0, M.flinch - dt * 2.2);
   if (M.st !== 'dive') M.twist *= Math.max(0, 1 - dt * 3);
   // while it is up: the water running off its arms, its chin and shoulders, and lapping round its waist
-  if (M.g.visible && M.h > SEWMON.PEEK && (M.st === 'rise' || M.st === 'linger' || M.st === 'seen')) {
+  if (M.g.visible && M.h > SEWMON.PEEK && (M.st === 'rise' || M.st === 'linger' || M.st === 'seen' || M.st === 'watch')) {
     if ((M.dripIn -= dt) <= 0) {
       M.dripIn = 0.05 + Math.random() * 0.09;
       const names = ['joint7_L', 'joint7_R', 'joint6_L', 'joint6_R', 'Head_M', 'joint5_L', 'joint5_R', 'joint9_L', 'joint9_R'];
@@ -87066,7 +87521,7 @@ function sewMonTick(dt) {
   /* ITS BREATH (the owner's recording, 2026-10-24: "subtle but noticable and directional"): a breath in and out from where
    * it is, every four to six seconds while it is near — muffled under the water, open once it is up, through the 3-D panner
    * and the tunnel's echo */
-  const upNow = M.st === 'rise' || M.st === 'linger' || M.st === 'seen';
+  const upNow = M.st === 'rise' || M.st === 'linger' || M.st === 'seen' || M.st === 'watch' || M.st === 'wrise';
   const brR = upNow ? 13 : 9, brNear = M.placed && M.st !== 'dive' && M.st !== 'sink' ? Math.pow(THREE.MathUtils.clamp(1 - dist / brR, 0, 1), 1.2) : 0;
   if ((M.brIn -= dt) <= 0 && brNear > 0.03) { M.brIn = 4.2 + Math.random() * 2.2; sewMonBreath(brNear, !upNow || M.h < SEWMON.PEEK); }
   /* THE PRESSURE: the longer it has been coming up unseen, the louder and quicker your heart and the thin ringing in your
@@ -87076,7 +87531,7 @@ function sewMonTick(dt) {
   flashDread = (M.st === 'rise' || M.st === 'linger') ? THREE.MathUtils.clamp(1 - dist / 14, 0, 1) * (0.3 + 0.7 * up) : flashDread * Math.max(0, 1 - dt * 3);
   if (M.press > 0.08 && (M.hbIn -= dt) <= 0) {
     M.hbIn = 60 / (62 + 70 * M.press);
-    sfxSewHeart(0.05 + 0.3 * M.press * M.press);
+    sfxSewHeart(0.04 + 0.22 * M.press * M.press);
   }
   // a bubble breaking over it now and then, under the water near you; its breathing (the chest's heave) on a 3.1 s cycle
   const near = M.placed && (M.st === 'under' || M.st === 'swim' || M.st === 'stir') ? Math.pow(THREE.MathUtils.clamp(1 - dist / 8, 0, 1), 1.3) : 0;
@@ -87089,8 +87544,8 @@ function sewMonTick(dt) {
   if (aud) {
     const t = audioCtx.currentTime;
     if (aud.p.positionX) { aud.p.positionX.value = SEW_X + M.x; aud.p.positionY.value = SEW_Y + SEW.WATER + 0.3; aud.p.positionZ.value = SEW_Z + M.z; }
-    aud.g.gain.setTargetAtTime(M.g.visible ? 0.05 * wet : 0, t, 0.25);
-    aud.tin.gain.setTargetAtTime(0.012 * M.press * M.press, t, 0.3);
+    aud.g.gain.setTargetAtTime(M.g.visible ? 0.035 * wet : 0, t, 0.25);
+    aud.tin.gain.setTargetAtTime(0.0025 * M.press * M.press, t, 0.4);
   }
   sewMonWater(dt);
 }
@@ -87098,6 +87553,7 @@ function sewMonTick(dt) {
  * its face fills the screen, it screams, and you are dead. */
 function sewMonLeap() {
   const M = sewMon;
+  if (sewPull) sewPull.held = false;               // (it has you: your hands are off the lever)
   M.st = 'leap'; M.t = 0; M.flare = 1;
   const f0 = new THREE.Vector3(M.x, sewMonFootY(M.h), M.z);
   sewScare = { t: 0, f0, T: 0.34 + Math.min(16, Math.hypot(M.x - (camera.position.x - SEW_X), M.z - (camera.position.z - SEW_Z))) * 0.022, hit: false };
@@ -87105,27 +87561,84 @@ function sewMonLeap() {
   sewMonPlay('sewSplash', M.x, SEW.WATER + 0.2, M.z, 0.6, 1.2);
   sewMonSpray(M.x, M.z, 1.3); sewMonRing(M.x, M.z, 1.4);
 }
-const _smCam2 = new THREE.Vector3(), _smLook = new THREE.Matrix4(), _smLookQ = new THREE.Quaternion(), _smEnd = new THREE.Vector3();
+const _smCam2 = new THREE.Vector3(), _smAt = new THREE.Vector3(), _smLook = new THREE.Matrix4(), _smLookQ = new THREE.Quaternion(), _smEnd = new THREE.Vector3();
+/* AND IT TAKES YOU BACK INTO THE WATER (2026-10-26, the owner: "Make it so the creature pulls you back in the water after
+ * it gets you"). Half a second on you, screaming, and then it goes back the way it came with you: hauled off the walk
+ * to the edge and over it, and down. Under the water the light goes murky green-black, everything is heard through it
+ * (the deep's own lowpass, `deepAudio`), your air goes up past you, and you are dead there. In dev mode it lets you go
+ * and you are back on the walk. The camera is put FIRST in the tick (the clamp has already put it back on the walk this
+ * frame) and the monster placed off it after, so the two never disagree in a frame. */
+const SEW_DRAG = { AT: 0.45, ACROSS: 0.6, DOWN: 0.5, UNDER: 1.1 };
+let sewUwEl = null, _sewUwFog = null;
+function sewUnderwater(on) {
+  if (!sewUwEl) {
+    sewUwEl = document.createElement('div');
+    Object.assign(sewUwEl.style, { position: 'fixed', inset: '0', pointerEvents: 'none', opacity: '0', zIndex: '4', transition: 'opacity 0.25s',
+      background: 'radial-gradient(ellipse at 50% 35%, rgba(26,52,40,0.55) 0%, rgba(6,16,12,0.9) 60%, rgba(1,4,3,0.98) 100%)' });
+    document.body.appendChild(sewUwEl);
+  }
+  sewUwEl.style.opacity = on ? '1' : '0';
+  if (on && !_sewUwFog) { _sewUwFog = { c: scene.fog.color.clone(), d: scene.fog.density }; scene.fog.color.setHex(0x061510); scene.fog.density = 0.42; }
+  else if (!on && _sewUwFog) { scene.fog.color.copy(_sewUwFog.c); scene.fog.density = _sewUwFog.d; _sewUwFog = null; }
+  try { deepAudio(on, on ? 0.25 : 0.6); } catch (e) { /* no audio yet */ }
+}
+const _sewDragA = new THREE.Vector3();
+function sewDragCamera(C) {
+  const k = C.t - C.hitT - SEW_DRAG.AT;
+  if (!C.hit || k <= 0) return;
+  if (!C.drag) {
+    C.drag = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    sewMonPlay('sewSplash', C.f0.x, SEW.WATER + 0.3, C.f0.z, 0.55, 0.75);
+  }
+  // out over the water first and then down to it (together, the eye went down through the walk's edge on the way)
+  const D = C.drag, a = THREE.MathUtils.smoothstep(k / (SEW_DRAG.ACROSS * 0.7), 0, 1), ay = Math.pow(THREE.MathUtils.smoothstep(k / SEW_DRAG.ACROSS, 0, 1), 1.8);
+  const b = THREE.MathUtils.smoothstep((k - SEW_DRAG.ACROSS + 0.05) / SEW_DRAG.DOWN, 0, 1);
+  // (to just short of where it rose, its face in front of yours: to the spot itself, it went on into the far wall)
+  const tx = SEW_X + C.f0.x - C.dir.x * 0.3, tz = SEW_Z + C.f0.z - C.dir.z * 0.3, ty1 = SEW_Y + SEW.WATER + 0.35, ty2 = SEW_Y + SEW.WATER - 0.85;
+  camera.position.set(D.x + (tx - D.x) * a, D.y + (ty1 - D.y) * ay + (ty2 - ty1) * b, D.z + (tz - D.z) * a);
+  camera.position.x += (Math.random() - 0.5) * 0.03 * (1 - b); camera.position.y += (Math.random() - 0.5) * 0.03 * (1 - b);   // (dragged: it jolts)
+  // the height too, through what the walk's own vertical step reads after this (`update` runs it after `updateSewer`:
+  // with only the camera moved, it put the eye back on the walk every frame and you never went in)
+  camBaseY = camera.position.y; groundY = camBaseY - playerEye() - 0.01; vy = 0;
+  if (!C.uw && camera.position.y < SEW_Y + SEW.WATER) {
+    C.uw = true; sewUnderwater(true);
+    sewMonPlay('sewSplash', C.f0.x, SEW.WATER, C.f0.z, 0.9, 0.65); sewMonRing(C.f0.x, C.f0.z, 1.6); sewMonSpray(C.f0.x, C.f0.z, 1.0);
+    try { sfxBubbles(18, 1.0, 1.4, 0.8); } catch (e) { /* */ }
+  }
+  if (C.uw && Math.random() < 0.6) {                // your air going up past you
+    _sewDragA.set(camera.position.x - SEW_X, camera.position.y - SEW_Y, camera.position.z - SEW_Z);
+    sewDrop(_sewDragA.x + (Math.random() - 0.5) * 0.5, _sewDragA.y - 0.3 + Math.random() * 0.2, _sewDragA.z + (Math.random() - 0.5) * 0.5, 0, 0.6 + Math.random() * 0.8, 0, 0.01 + Math.random() * 0.02, 1.2, 2);
+  }
+}
 function sewScareTick(dt) {
   const M = sewMon, C = sewScare; if (!M || !C) return;
   C.t += dt;
+  sewDragCamera(C);
   const u = Math.min(1, C.t / C.T);
   // where it lands: its eyes six tenths of a metre in front of yours, on the line it came along
   M.lean = 0.35 + 0.35 * Math.sin(u * Math.PI);
   M.h = SEWMON.UP;
   M.x = C.f0.x; M.z = C.f0.z;
-  sewMonPose(dt, Math.max(M.reach || 0, Math.min(1, u * 1.6)));
+  /* it is posed standing where it rose and then moved bodily onto you, so it looks and reaches at where you are from where
+   * it was put last frame (looking at you from where it stood, dragged down below that it looked down, and you saw the
+   * crown of its head) */
+  sewMonPose(dt, Math.max(M.reach || 0, Math.min(1, u * 1.6)), C.shift ? _smAt.copy(camera.position).sub(C.shift) : null);
   const cam = _smCam2.set(camera.position.x - SEW_X, camera.position.y - SEW_Y, camera.position.z - SEW_Z);   // (after the pose: it uses _smCam)
   M.mid.getWorldPosition(_smTip); _smTip.x -= SEW_X; _smTip.y -= SEW_Y; _smTip.z -= SEW_Z;   // its eyes, posed at the start
+  _smTip.sub(M.g.position).add(C.f0);   // (the pose stands it at its full height; it left from where it was: a leap from low ended short, under you)
   const dir = _smEnd.copy(_smTip).sub(cam).normalize();
   // its face is lit as it comes, from your side of it (set before `dir` is made into the end point below)
   M.faceL.position.copy(cam).addScaledVector(dir, 0.25); M.faceL.position.y += 0.25;
-  M.faceL.intensity = 1.3 * THREE.MathUtils.smoothstep(u, 0.35, 1);   // (2.6 washed its brow to white)
-  const end = dir.multiplyScalar(0.52).add(cam);
+  M.faceL.intensity = 1.3 * THREE.MathUtils.smoothstep(u, 0.35, 1) * (C.uw ? 0.4 : 1);   // (2.6 washed its brow to white; under, the murk takes it)
+  /* once it has you, its face stays where it landed in front of yours and the two of you go together, over the edge and
+   * down, the water coming up its body and over your eyes. (Aimed afresh each frame it was over you, and you under it
+   * looking up; sent ahead into the water, below you, the lens rolled looking straight down and it read as nothing.) */
+  const end = C.dir ? dir.copy(C.dir).multiplyScalar(0.52).add(cam) : dir.multiplyScalar(0.52).add(cam);
   const off = _smB.copy(end).sub(_smTip);                                   // the whole of it moved so its eyes land there
   const e = u * u * (3 - 2 * u), arc = Math.sin(u * Math.PI) * 0.7;
   M.g.position.set(C.f0.x + off.x * e, C.f0.y + off.y * e + arc, C.f0.z + off.z * e);
   if (u >= 1) M.g.position.x += (Math.random() - 0.5) * 0.02, M.g.position.y += (Math.random() - 0.5) * 0.02;   // and it shakes, on you
+  (C.shift || (C.shift = new THREE.Vector3())).set(M.g.position.x - M.x, M.g.position.y - sewMonFootY(SEWMON.UP), M.g.position.z - M.z);
   M.g.visible = true; M.g.updateMatrixWorld(true);
   // the lens is yanked onto it
   M.mid.getWorldPosition(_smTip);
@@ -87134,13 +87647,20 @@ function sewScareTick(dt) {
   lookEuler.setFromQuaternion(camera.quaternion);
   for (const e2 of M.eyes) e2.glow.material.opacity = 0.85;
   if (u >= 1 && !C.hit) {
-    C.hit = true; C.hitT = C.t; M.press = 0; flashDread = 0;
+    C.hit = true; C.hitT = C.t; C.dir = new THREE.Vector3().copy(_smTip).sub(camera.position).normalize(); M.press = 0; flashDread = 0;
     if (M.aud) M.aud.tin.gain.value = 0;
     sfxSewScream(); addTrauma(1); hurtFlash = 1; fovKick = Math.max(fovKick, 12);
   }
-  if (C.hit && C.t - C.hitT > 0.85 && !C.done) {
+  if (C.hit && C.t - C.hitT > SEW_DRAG.AT + SEW_DRAG.ACROSS + SEW_DRAG.DOWN + SEW_DRAG.UNDER && !C.done) {
     C.done = true;
-    if (settings.devMode) { M.faceL.intensity = 0; sewScare = null; M.st = 'dive'; M.t = 0; M.h0 = M.h; M.x = C.f0.x; M.z = C.f0.z; M.lastSeen = { x: M.x, z: M.z }; return; }   // (dev mode: the scare, and back in)
+    if (settings.devMode) {                          // (dev mode: it lets you go, and you are back on the walk)
+      M.faceL.intensity = 0; sewScare = null; sewUnderwater(false);
+      const lz = THREE.MathUtils.clamp(C.f0.z, SEW.END + 1, SEW.NORTH - 1);
+      camera.position.set(SEW_X - 1.85, SEW_Y + SEW.WALK + playerEye(), SEW_Z + lz); camBaseY = camera.position.y; vy = 0; velocity.set(0, 0, 0);
+      _preMove.set(camera.position.x, 0, camera.position.z);
+      M.st = 'under'; M.h = SEWMON.HID; M.g.visible = false; M.nextIn = 6; M.x = C.f0.x; M.z = C.f0.z; M.lastSeen = { x: M.x, z: M.z }; M.eyeK = 0;
+      return;
+    }
     hp = 0; playerDied();
   }
 }
@@ -99939,7 +100459,7 @@ function sfxArtRise() {
 // the harness's handles on the artifact
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { whaleArtItem, art, artFrozen, attachArtifact, detachArtifact, artImmobilize, artRelease, artSpawnWorld, artCount, artState: () => artState, setArtState: (v) => { artState = v; } }));
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { connRingItem, giveConnectionRing, connBonus, connState: () => connStreak,
-  screwdriverItem, screwdriverModel, billyItem, billySet, grateSet, unscrew, takeBilly, returnBilly, mountBillyHome,
+  screwdriverItem, screwdriverModel, flashlightItem, billyItem, billySet, grateSet, unscrew, takeBilly, returnBilly, mountBillyHome,
   liftGrate, startPipe, billyAsked, billyState: () => billyState, grateOff: () => grateOff, pipeBusy: () => pipeBusy,
   takeShipKey, dropShipKey, BILLY_SCRIPT, FISHERMAN_SCRIPT_REF: () => FISHERMAN_SCRIPT }));
 
@@ -106189,7 +106709,7 @@ Object.assign(window.__bw, { crusaderShieldTick, crusaderChain, farmCobble, farm
   recBufs: () => Object.fromEntries(Object.entries(lazyBufs).map(([k, v]) => [k, v.buf ? +v.buf.duration.toFixed(2) : v.busy ? 'loading' : 'failed'])),
   startWreckTheme,
   audioDbg: () => ({ forest: forestBed && +forestBed.g.gain.value.toFixed(4), ben: benBr && benBr.g && +benBr.g.gain.value.toFixed(4), sand: (sampleBanks.sandStep || []).filter(Boolean).length, benBuf: (sampleBanks.benBreath || []).filter(Boolean).length, bedK: beachBedK() }),
-  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, isleBarkS: () => isleBark, isleBarkPush, isleRampAt, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, isleLast: () => ({ x: isleLastSpot.x, z: isleLastSpot.z, f: isleLastFloor }), isleSetLast: (x, z, f) => { onIsle = true; insideTower = false; isleOnGallery = false; isleLastFloor = f; isleLastSpot.x = x; isleLastSpot.z = z; isleGood.ok = false; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), placeInC13, devRoom: () => saveRoom() || 'beach', devLeaveRooms, placeInDungeon, wellReveal, wellStalkS: () => ({ stare: +wellStalk.stare.toFixed(2), awake: !!(wellUnit && wellUnit.st.awake), hold: !!(wellUnit && wellUnit.holdAnim), cine: cineHold }), wellAudS: () => ({ aud: !!(wellAud && wellAud.ctx === audioCtx), prep: !!wellPrep, buf: !!(wellPrep && wellPrep.buf), drone: !!wellDroneNodes, air: +wellAirK.toFixed(3) }), wellLookStart, wellLetUp, wellLeave, endDialog, WELL_X, WELL_Z, wellG, wellSetBucket, sharpenFrame, startCrabCut, hornItem, hornLie, startWakeCut, wakeS: () => ({ t: wakeCut ? +wakeCut.t.toFixed(2) : -1, built: !!wakeSet, seated: wakeSet ? wakeSet.seated : null, ended }), wakeG: () => ({ scene: wakeScene, cam: wakeCam, set: wakeSet }), WAKE_T, crabS: () => ({ t: crabCut ? +crabCut.t.toFixed(2) : -1, giant: !!crabGiant, y: crabGiant ? +crabGiant.position.y.toFixed(1) : null, horn: hornState, ended }), CRAB_T, thrHeadToCamera, isleMagicS: () => ({ k: isleMagicK, top: isleTopK, fog: scene.fog.density, keep: FOG_KEEP.w }), wellPartsS: () => wellParts, rockSurfS: () => rockSurfList, crabUnit, cellKeyS: () => ({ ...cellKey, world: !!cellKey.world, prop: !!cellKey.prop }), henryFreeS: () => ({ henryFree, phase: henry && henry.free ? henry.free.phase : null, ring: henryRingTaken, t: henry && henry.free ? +henry.free.t.toFixed(2) : -1 }), henryRingW: () => henryRingWorld, takeHenryRing, goldRingItem, hjS: () => ({ taken: hjTaken, loaded: !!hj, eagle: !!hjEagle, mode: hj ? hj.mode : null, cut: hjCut ? hjCut.phase : null, t: hjCut ? +hjCut.t.toFixed(2) : -1 }), hjG: () => ({ hj, eagle: hjEagle, cut: hjCut }), loadJettyHenry, hjTalk, startHenrySnatch, isleRestoreAt, bootLeft: () => ({ n: startLeft(), open: bwOpen, waiting: bwWaiting.map((j) => j.url.split('/').pop()), parsing: bwParsing, warm: warmSteps.map((w) => w[0]).slice(0, 12), nWarm: warmSteps.length, tex: (texUp.q.length + texUp.wait.length), drain: drainWarmed, mush: mushWarmed, bunker: bunkerWarmed, rooms: bootRoomsAsked }), henryMocap, henryPlay, henrySample, setHenryFree: (v) => { henryFree = v; }, HJ_SPOT, cellKeyItem, cellKeyLie, dealerDropsCellKey, SEWMON, sewMonS: () => sewMon && ({ st: sewMon.st, t: +sewMon.t.toFixed(2), h: +sewMon.h.toFixed(2), x: +sewMon.x.toFixed(2), z: +sewMon.z.toFixed(2), next: +(sewMon.nextIn || 0).toFixed(2), barred: sewMon.barred, scare: !!sewScare, vis: sewMon.g.visible }), sewMon: () => sewMon, sewMonPick, sewMonSeen, sewMonLeap, sfxSewScream, sewS: () => ({ ready: sewReady, inSewer, levers: sewLevers, gen: sewGenOn, offT: +sewGenOffT.toFixed(2), gate: sewGateOpen, chest: sewChestOpen, loot: sewLootTaken, glow: sewGlowTaken, plank: sewPlank, pz: sewPlankZ, lx: +(camera.position.x - SEW_X).toFixed(2), lz: +(camera.position.z - SEW_Z).toFixed(2) }), sewG: () => ({ world: sewWorld, P: sewP, SEW, SEW_X, SEW_Y, SEW_Z }), loadSewer, placeInSewer, placeOutOfSewer, sewGroan, sewThuds, sewRats, sfxSewZap, sewPullLever, sewPressButton, sewTakePlank, sewLayPlank, sewRestore, sewSet: (lx, lz, yaw = 0, pitch = 0) => { camera.position.set(SEW_X + lx, SEW_Y + SEW.WALK + playerEye(), SEW_Z + lz); camBaseY = camera.position.y; lookEuler.set(pitch, yaw, 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); _preMove.set(camera.position.x, 0, camera.position.z); }, dunS: () => ({ ready: dunReady, inDun, busy: dunBusy, door: !!dunDoorMesh, doorR: dunDoorMesh ? dunDoorMesh.userData.r : null, henry: !!henry, walls: !!dunWalls }), dunG: () => ({ world: dunWorld, door: dunDoorMesh, henry, HENRY_POSE }), startDungeon, loadDungeon, henryPose, DUN_X, DUN_Y, DUN_Z, rockCrabS: () => ({ taken: rockCrabTaken, at: rockCrabW ? rockCrabW.position.toArray().map((v) => +v.toFixed(2)) : null, fill: window.__bwRockFill }), WELL_RIM_Y, wellClinch, wellGrab, wellMindS, wellPhotoItem, wellPhotoS: () => ({ taken: wellPhotoTaken, onTable: !!wellPhotoOnTable }), traderSell, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
+  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, isleBarkS: () => isleBark, isleBarkPush, isleRampAt, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, isleLast: () => ({ x: isleLastSpot.x, z: isleLastSpot.z, f: isleLastFloor }), isleSetLast: (x, z, f) => { onIsle = true; insideTower = false; isleOnGallery = false; isleLastFloor = f; isleLastSpot.x = x; isleLastSpot.z = z; isleGood.ok = false; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), placeInC13, devRoom: () => saveRoom() || 'beach', devLeaveRooms, placeInDungeon, wellReveal, wellStalkS: () => ({ stare: +wellStalk.stare.toFixed(2), awake: !!(wellUnit && wellUnit.st.awake), hold: !!(wellUnit && wellUnit.holdAnim), cine: cineHold }), wellAudS: () => ({ aud: !!(wellAud && wellAud.ctx === audioCtx), prep: !!wellPrep, buf: !!(wellPrep && wellPrep.buf), drone: !!wellDroneNodes, air: +wellAirK.toFixed(3) }), wellLookStart, wellLetUp, wellLeave, endDialog, WELL_X, WELL_Z, wellG, wellSetBucket, sharpenFrame, startCrabCut, hornItem, hornLie, startWakeCut, wakeS: () => ({ t: wakeCut ? +wakeCut.t.toFixed(2) : -1, built: !!wakeSet, seated: wakeSet ? wakeSet.seated : null, ended }), wakeG: () => ({ scene: wakeScene, cam: wakeCam, set: wakeSet }), WAKE_T, crabS: () => ({ t: crabCut ? +crabCut.t.toFixed(2) : -1, giant: !!crabGiant, y: crabGiant ? +crabGiant.position.y.toFixed(1) : null, horn: hornState, ended }), CRAB_T, thrHeadToCamera, isleMagicS: () => ({ k: isleMagicK, top: isleTopK, fog: scene.fog.density, keep: FOG_KEEP.w }), wellPartsS: () => wellParts, rockSurfS: () => rockSurfList, crabUnit, cellKeyS: () => ({ ...cellKey, world: !!cellKey.world, prop: !!cellKey.prop }), henryFreeS: () => ({ henryFree, phase: henry && henry.free ? henry.free.phase : null, ring: henryRingTaken, t: henry && henry.free ? +henry.free.t.toFixed(2) : -1 }), henryRingW: () => henryRingWorld, takeHenryRing, goldRingItem, hjS: () => ({ taken: hjTaken, loaded: !!hj, eagle: !!hjEagle, mode: hj ? hj.mode : null, cut: hjCut ? hjCut.phase : null, t: hjCut ? +hjCut.t.toFixed(2) : -1 }), hjG: () => ({ hj, eagle: hjEagle, cut: hjCut }), loadJettyHenry, hjTalk, startHenrySnatch, isleRestoreAt, bootLeft: () => ({ n: startLeft(), open: bwOpen, waiting: bwWaiting.map((j) => j.url.split('/').pop()), parsing: bwParsing, warm: warmSteps.map((w) => w[0]).slice(0, 12), nWarm: warmSteps.length, tex: (texUp.q.length + texUp.wait.length), drain: drainWarmed, mush: mushWarmed, bunker: bunkerWarmed, rooms: bootRoomsAsked }), henryMocap, henryPlay, henrySample, setHenryFree: (v) => { henryFree = v; }, HJ_SPOT, cellKeyItem, cellKeyLie, dealerDropsCellKey, SEWMON, sewMonS: () => sewMon && ({ st: sewMon.st, t: +sewMon.t.toFixed(2), h: +sewMon.h.toFixed(2), x: +sewMon.x.toFixed(2), z: +sewMon.z.toFixed(2), next: +(sewMon.nextIn || 0).toFixed(2), barred: sewMon.barred, scare: !!sewScare, vis: sewMon.g.visible }), sewMon: () => sewMon, sewMonPick, sewMonSeen, sewMonLeap, sfxSewScream, sewS: () => ({ ready: sewReady, inSewer, levers: sewLevers, gen: sewGenOn, offT: +sewGenOffT.toFixed(2), gate: sewGateOpen, chest: sewChestOpen, loot: sewLootTaken, glow: sewGlowTaken, plank: sewPlank, pz: sewPlankZ, lx: +(camera.position.x - SEW_X).toFixed(2), lz: +(camera.position.z - SEW_Z).toFixed(2) }), sewG: () => ({ world: sewWorld, P: sewP, SEW, SEW_X, SEW_Y, SEW_Z }), loadSewer, placeInSewer, placeOutOfSewer, sewGroan, sewThuds, sewRats, sfxSewZap, sewPullLever, sewPullLeverNow, sewPullS: () => sewPull && { i: sewPull.i, t: +sewPull.t.toFixed(2) }, sewPressButton, sewTakePlank, sewLayPlank, sewRestore, sewSet: (lx, lz, yaw = 0, pitch = 0) => { camera.position.set(SEW_X + lx, SEW_Y + SEW.WALK + playerEye(), SEW_Z + lz); camBaseY = camera.position.y; lookEuler.set(pitch, yaw, 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); _preMove.set(camera.position.x, 0, camera.position.z); }, dunS: () => ({ ready: dunReady, inDun, busy: dunBusy, door: !!dunDoorMesh, doorR: dunDoorMesh ? dunDoorMesh.userData.r : null, henry: !!henry, walls: !!dunWalls }), dunG: () => ({ world: dunWorld, door: dunDoorMesh, henry, HENRY_POSE }), startDungeon, loadDungeon, henryPose, DUN_X, DUN_Y, DUN_Z, rockCrabS: () => ({ taken: rockCrabTaken, at: rockCrabW ? rockCrabW.position.toArray().map((v) => +v.toFixed(2)) : null, fill: window.__bwRockFill }), WELL_RIM_Y, wellClinch, wellGrab, wellMindS, wellPhotoItem, wellPhotoS: () => ({ taken: wellPhotoTaken, onTable: !!wellPhotoOnTable }), traderSell, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
   c13State: () => ({ inC13, ready: c13Ready, walls: !!c13Walls, life: !!c13Life, torches: !!(c13Life && c13Life.torches), mask: !!C13_M.data,
     thrive: c13Thrive && { done: c13Thrive.done, jobs: c13Jobs.length, torches: (c13Thrive.torchAt || []).length, banners: c13Thrive.banners.length, lanterns: c13Thrive.lanterns.length, stalls: c13Thrive.stalls.length, towers: (c13Thrive.towers || []).length, lines: (c13Thrive.lines || []).length, windows: (c13Thrive.windows || []).length, fountain: c13Thrive.fountain && [c13Thrive.fountain.x, c13Thrive.fountain.z], door: c13Thrive.door, solids: c13Solids.length, flowers: c13Thrive.flowers, snd: c13Snd && { fountain: !!c13Snd.fsrc, fg: c13Snd.fg && +c13Snd.fg.gain.value.toFixed(3), lute: c13Snd.playing, lg: +c13Snd.lute.gain.value.toFixed(3) } } }),
   c13Thrive: () => c13Thrive, c13Solids, c13Open, c13RunJobs, placeInC13, C13_SITE, C13_X, C13_Y, C13_Z,

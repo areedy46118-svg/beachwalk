@@ -743,3 +743,14 @@ just on the first load into the game". `bootRespawn` (captured from `beachwalk.d
 still play it. `tools/musictest.js`: `checkpoint` (a respawn) now passes SILENT, and a new `load` (a checkpoint, no death)
 must hear it — it waits for the black to lift (`restoreS().bootHold`), 15-20 s: listening straight after boot heard
 nothing on the untouched commit too. (`restart` and `church` fail on the untouched commit as well: not this.)
+
+**The sewer, made one (2026-10-26).** The owner: "update all of the sounds to be more cohesive and not have the tinitus
+sound be so loud". Every sound of the thing in the water goes through `sewBus` (0.9) -> a DynamicsCompressor (-24 dB,
+knee 12, 3:1, 10 ms / 300 ms) -> `sfxBusGain` (so the pipe's reverb, 0.7 in the sewer). One-shots take `sewOut()`, which
+still hands back the restore's hush sink when `sfxOutBase` gives one; the persistent loops take `sewBusNode()` directly
+(a loop on the hush sink would stay silenced). The ringing is 4.7 kHz with a 25-cent wobble through a 5.2 kHz lowpass at
+0.0025 x press^2 (was 6.3 kHz at 0.012). Pulled down a step: the rise's slosh (0.08 + 0.32u^1.3), the dive's splash
+(0.8), the leap's layer (0.28), the heart (0.04 + 0.22p^2), the breath (0.26 near), the water-off-it noise (0.035). The
+owner's lever take ("Large Dull Clunky Industrial Metal Spring Lever Pull") is cut in `tools/sewer_monster_sound.py` into
+its three events at one gain; **re-running that script rewrites every other sew-*.m4a byte-differently** (AAC is not
+deterministic here): `git checkout` the ones you did not mean to change.

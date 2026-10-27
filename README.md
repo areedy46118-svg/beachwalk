@@ -481,17 +481,28 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   weep pipes and water stains down from the top; the pipe is lined in the
   big tunnel's brick with concrete ribs, a duckboard walkway he has laid over
   the last of the silt on the paving, a string of bulbs half of which still
-  work, chalk on the wall. In the room, red brick on a knee-high band of bare
+  work. In the room, red brick on a knee-high band of bare
   concrete, a paved floor, damp
   coming down from the joists, standing water on the floor, a pallet bed
   with a mattress, pillow and thrown-back blanket, a slatted crate table with
   a hurricane lantern, candles, a plate and a mug and a chair pulled up to
   it, a gas ring and kettle in the corner, shelves of tins, jars, books and a
-  radio, his boots, his coat on a peg by the door, a rug, a photograph and a
+  radio, his coat on a peg by the door, a rug, a photograph and a
   drawing pinned over the bed. The furniture is solid, and you slide off it
   rather than snag on it. It is dark and wet, lit by a hurricane lantern hung
-  from a joist, the lantern on his crate and his candles, and a bulb or two
-  in the pipe: black water with a moving ripple in the channel, brick with
+  from a joist, the lantern on his crate, his candles and a stub guttering on
+  a tin lid at the head of the bed, and a bulb or two in the pipe — the
+  flames breathe and lick, their light falls off into black corners, and in
+  his room the fog is thicker and browner and a mist lies in drifting layers
+  from the floor to the waist, lit only round the flames. Every thing in it
+  stands in a soft shadow of its own and the foot of every wall goes dark into
+  the corner. Big cockroaches sit out in the lanterns' pools on the floor, on
+  his crate and by the bed, and dart off to the dark under the furniture with a
+  dry tick of feet when you come within a couple of metres or put the torch on
+  one, creeping back once you are well away and not looking; moths bat round
+  both lanterns. Down here and in the sewer your breath shows now and then, a
+  faint puff drifting off in front of you, quicker when you are winded, plainest
+  in the lantern light or the torch's beam: black water with a moving ripple in the channel, brick with
   its mortar sunk, the dead tube light on its batten, conduit and a soil pipe strapped to the walls,
   the outlet's precast surround and angle-iron frame with a dark wet run down
   the brick below it, a tyre and rubbish washed up in the bore. The pipe has
@@ -556,8 +567,12 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   and into the water, it crackles blue, and stepping in kills you (**Locked. The lock is
   humming.**). A cable runs out of the box, over the vault and along the
   left wall to four knife-switch levers, each with an old hanging lamp over
-  it and a red pilot blinking so you can find them in the dark. **Pull the
-  lever** lights its lamp; with all four down, **Turn off the generator** on
+  it and a red pilot blinking so you can find them in the dark. **Hold to pull the
+  lever** (hold E: let go and its spring takes it back up, creaking; take
+  it again and it goes on from there): they are rusted stiff, and it comes
+  down in jerks over two and a half seconds held — a grab and a clunk, a creak and a strain, a second clunk,
+  then the slam ringing off down the tunnel (the owner's lever recording,
+  in the sewer's echo) — and lights its lamp; with all four down, **Turn off the generator** on
   its button: the hum winds down, the lamps die one by one back toward you,
   the water goes dead and the gate's lock lets go. Walk back by the
   **Flashlight** left switched on on the generator's ledge (**Take the
@@ -573,19 +588,26 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   walls fall away into the dark; what you see is near you or under a lamp.
   Saved on the way in; the levers, the generator, the gate, the chest
   and where you laid the plank are kept.
-- **The thing in the water** — pull the first lever and something in the
-  sewer heard it: a heavy splash far down the water, and from then on it
-  stalks you. It comes up somewhere in the channel or the branch out of your
+- **The thing in the water** — it is there before you start: head and
+  shoulders out of the water past the north grate, watching you through
+  the bars (stare at it, or walk up to the bars, and it sinks away). Pull
+  the first lever and it heard it: it goes under there with a splash (or,
+  if it was not watching, a heavy splash far down the water), and four
+  seconds later it is hunting you. It never moves while you are looking at
+  the water it is in; when you are not, it swims, and all it leaves is its
+  wake, a V of waves on the water spreading and running off on the flow. It comes up somewhere in the channel or the branch out of your
   sight, and only while you are NOT looking: a ring on the water and a
   slosh, the top of its head, two amber eyes glowing faintly just over the
   surface, then the rest of it, its arms coming up and out at you, the
   sloshing louder and closer together. Turn and catch it and it holds a
   breath — long enough to be sure you saw it — and goes under with a splash
-  you cannot miss, and does not come up there again. Leave it five seconds
-  unseen and it comes out of the water at you. It is cleverer about where it
+  you cannot miss, and does not come up there again. Leave it seven and a
+  half seconds unseen and it comes out of the water at you, takes hold of
+  you face to face and drags you over the edge and down into the water,
+  where the light goes murky green and your air goes up past you. It is cleverer about where it
   rises the longer it hunts (behind you, at a fair distance, a clear line to
   you; sometimes past the grates, where it can only stand and watch), and
-  once the generator is off it rises twice as often and in under four
+  once the generator is off it rises twice as often and in five and a half
   seconds. Every sound it makes is placed in 3-D in the tunnel's echo: its
   breathing under the water when it is near (and once it is up), the wake it
   lays swimming between places, its heart-pounding approach in yours, and
