@@ -2048,3 +2048,498 @@ export async function dkClose({ w, b, log, sleep }) {
 }
 
 export async function dkFightClose(ctx) { ctx.w.__fightR = 1.6; return dkFight(ctx); }
+
+// THE SAMURAI'S SCORE AGAINST EVERYTHING ELSE AT THE SPEAKERS (2026-10-21, the owner: "my music isnt playing at the
+// samurai"): a fresh game in a silent frame, the dojo, the sword taken; every half second for twelve seconds the peak
+// of each thing that reaches the output, by who connected it (`tools/silentframe.js`)
+export async function samLevels({ w, b, log, sleep }) {
+  try { await b.audioCtx.close(); } catch (e) {}
+  await import('/tools/silentframe.js?' + Date.now());
+  await window.__sfLoad(() => { sessionStorage.setItem('beachwalk.skipIntro', '1'); });
+  let F = null; for (let i = 0; i < 80; i++) { await sleep(250); F = window.__sfW(); if (F && F.__bw) break; }
+  const B = F.__bw;
+  for (let i = 0; i < 80 && !B.state().started; i++) { try { B.beginGame(); } catch (e) {} await sleep(250); }
+  for (let k = 0; k < 200 && !B.state().introDone; k++) { B.frame(3); await sleep(30); }
+  log('settings', JSON.stringify({ vol: B.settings.volume, music: B.settings.musicVolume, fx: B.settings.effectsVolume }));
+  const RB = B.ROOM_BACK.dojo; RB.load();
+  for (let i = 0; i < 160 && !RB.ready(); i++) { B.frame(2); await sleep(50); }
+  RB.place(); for (let i = 0; i < 60; i += 5) { B.frame(5); await sleep(5); }
+  const it = B.interactables.find((x) => /Take the katana/.test(typeof x.label === 'function' ? x.label() : x.label));
+  if (w.__samDev) B.settings.devMode = true;
+  log('katana on the stand', !!it); if (it) it.onActivate();
+  for (let s = 0; s < 24; s++) { for (let i = 0; i < 30; i += 5) { B.frame(5); await sleep(5); } await sleep(380); if (s % 2 === 1) log('t', ((s + 1) / 2).toFixed(0), window.__sfLevels(), 'dojo', B.roomFlags().inDojo, 'dying', B.state().dying, 'hp', B.state().hp, 'sam alive', B.samuraiS ? B.samuraiS().st.alive : '?'); }
+}
+
+export async function samLevelsDev(ctx) { ctx.w.__samDev = true; return samLevels(ctx); }
+
+// THE REMATCH (2026-10-21): the dojo's checkpoint written, the sword taken, killed by him; the death's own reload, Restart
+// on the card; then what is on the stand, how he wakes, and what reaches the speakers for twenty seconds
+export async function samRematch({ w, b, log, sleep }) {
+  try { await b.audioCtx.close(); } catch (e) {}
+  await import('/tools/silentframe.js?' + Date.now());
+  await window.__sfLoad(() => { sessionStorage.setItem('beachwalk.skipIntro', '1'); });
+  let F = null; for (let i = 0; i < 80; i++) { await sleep(250); F = window.__sfW(); if (F && F.__bw) break; }
+  let B = F.__bw;
+  for (let i = 0; i < 80 && !B.state().started; i++) { try { B.beginGame(); } catch (e) {} await sleep(250); }
+  for (let k = 0; k < 200 && !B.state().introDone; k++) { B.frame(3); await sleep(30); }
+  const RB = B.ROOM_BACK.dojo; RB.load();
+  for (let i = 0; i < 160 && !RB.ready(); i++) { B.frame(2); await sleep(50); }
+  RB.place(); for (let i = 0; i < 60; i += 5) { B.frame(5); await sleep(5); }
+  B.saveCheckpoint(); log('saved in', B.devRoom());
+  const it = B.interactables.find((x) => /Take the katana/.test(typeof x.label === 'function' ? x.label() : x.label));
+  it.onActivate(); B.settings.devMode = false;
+  // die to him: the reload is the game's own
+  const f0 = window.__sfW();
+  for (let i = 0; i < 400 && window.__sfW() === f0 && !(f0.document.documentElement.classList.contains('died') && f0.__bwReloading); i++) { try { B.frame(5); } catch (e) {} await sleep(30); if (B.state().dying) break; }
+  log('dying', B.state().dying);
+  // the death's reload, done through the silent frame so what it plays is heard (the same session keys a death sets)
+  await sleep(2500);
+  await window.__sfLoad(() => { sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1'); });
+  let F2 = null; for (let i = 0; i < 200; i++) { await sleep(200); try { F2 = window.__sfW(); if (F2.__bw && F2.__bw.state) break; } catch (e) {} }
+  const B2 = F2.__bw;
+  const btn = F2.document.querySelector('.dc-restart');
+  for (let i = 0; i < 300 && btn && btn.classList.contains('loading'); i++) { try { B2.frame(4); } catch (e) {} await sleep(30); }
+  if (btn) btn.click();
+  for (let i = 0; i < 300 && (B2.frozen() || !B2.state().introDone); i++) { try { B2.frame(3); } catch (e) {} await sleep(30); }
+  log('back: room', B2.devRoom(), 'holding', B2.state().equipped, 'pack has katana', B2.state().inv.includes('Katana'));
+  const it2 = B2.interactables.find((x) => /Take the katana/.test(typeof x.label === 'function' ? x.label() : x.label));
+  log('katana on the stand again', !!it2, it2 ? (typeof it2.data?.when === 'function' ? it2.data.when() : '-') : '');
+  B2.settings.devMode = true;
+  if (it2) it2.onActivate();
+  for (let s = 0; s < 40; s++) { for (let i = 0; i < 30; i += 5) { B2.frame(5); await sleep(5); } await sleep(380); if (s % 4 === 3) log('t', ((s + 1) / 2).toFixed(0), window.__sfLevels(), 'sam awake', B2.samurai ? B2.samurai.st.awake : '?'); }
+}
+
+// RESTART GAME ASKS FIRST (2026-10-24): the menu, Restart game pressed — the question and its two buttons; then Cancel
+export async function menuAsk({ w, b, log, sleep }) {
+  for (let i = 0; i < 100 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(150); }
+  await sleep(1500);
+  b.openMenu(); await sleep(300);
+  const d = w.document, M = d.getElementById('menu'), vis = (sel) => { const e = d.querySelector(sel); return e && w.getComputedStyle(e).display !== 'none'; };
+  d.getElementById('m-restart').click(); await sleep(250);
+  log('after Restart game: settings shown', vis('#menu .panel.settings'), 'question shown', vis('#menu .panel.ask'), 'text', d.querySelector('#menu .ask-q').textContent, 'still started', b.state().started);
+  const src = d.body; const c = d.createElement('canvas');
+  // the menu is HTML over the canvas: capture by drawing its box as text is not possible here, so report its geometry
+  const r = d.querySelector('#menu .panel.ask').getBoundingClientRect(); log('question panel at', Math.round(r.left), Math.round(r.top), Math.round(r.width) + 'x' + Math.round(r.height));
+  d.getElementById('m-ask-no').click(); await sleep(250);
+  log('after Cancel: settings shown', vis('#menu .panel.settings'), 'question shown', vis('#menu .panel.ask'), 'menu open', M.classList.contains('show'), 'game still on', b.state().started);
+  d.getElementById('m-restart').click(); await sleep(100); b.closeMenu(); await sleep(100); b.openMenu(); await sleep(250);
+  log('closed while asking, reopened: settings shown', vis('#menu .panel.settings'), 'question shown', vis('#menu .panel.ask'));
+}
+
+// "QUIT TO TITLE SCREEN" ASKS FIRST (2026-10-24): a death's reload in a silent frame; Quit pressed before main.js runs —
+// the question, then Cancel; again once the game is in — the question, then Quit: the page goes to the title, save kept
+export async function dcQuitAsk({ w, b, log, sleep }) {
+  for (let i = 0; i < 100 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(150); }
+  await sleep(2000); b.camera.position.set(8, 1.7, -60); await sleep(300); b.saveCheckpoint();
+  try { await b.audioCtx.close(); } catch (e) {}
+  await import('/tools/silentframe.js?' + Date.now());
+  await window.__sfLoad(() => { sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1'); });
+  const F = window.__sfW(), vis = (sel) => { const e = F.document.querySelector(sel); return !!e && F.getComputedStyle(e).display !== 'none'; };
+  let early = false;
+  for (let i = 0; i < 200; i++) { await sleep(20); const q = F.document.querySelector('.dc-quit'); if (q && !F.__bw) { q.click(); early = true; break; } }
+  log('early press: module up', !!F.__bw, '| choices shown', vis('#deathcard > .opts'), 'question shown', vis('#deathcard .ask'), 'text', F.document.querySelector('#deathcard .ask p').textContent);
+  F.document.querySelector('.dc-quit-no').click();
+  log('Cancel: choices shown', vis('#deathcard > .opts'), 'question shown', vis('#deathcard .ask'), 'page still the game', F.location.href.includes('index'));
+  for (let i = 0; i < 300 && !(F.__bw && F.__bw.state); i++) await sleep(50);
+  F.document.querySelector('.dc-quit').click();
+  log('in, Quit pressed: question shown', vis('#deathcard .ask'));
+  const before = F.document; F.document.querySelector('.dc-quit-yes').click();
+  let reloaded = false; for (let i = 0; i < 100; i++) { await sleep(100); try { if (window.__sfW().document !== before && window.__sfW().document.readyState !== 'loading') { reloaded = true; break; } } catch (e) {} }
+  const F2 = window.__sfW();
+  log('Quit: reloaded', reloaded, 'died card on', F2.document.documentElement.classList.contains('died'), 'load key', sessionStorage.getItem('beachwalk.load'), 'save kept', !!localStorage.getItem('beachwalk.save'));
+}
+
+// THE MINOTAUR (2026-10-28). Into XIII's court with him at your side, the two before the throne room's door killed, him
+// down; a checkpoint; the page reloaded into it the way a death does: is he lying where he fell, with his blood and his
+// swords? (its own profile: never the owner's save)
+async function mnCourt(w, b, sleep) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  await w.__mnGate(4.5);
+  w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
+  const M = b.MINO, u = M.u;
+  for (let i = 0; i < 120 && !b.c13State().ready; i++) { await sleep(300); w.__c13Step(2); }
+  b.skipTakes(); await w.__c13Go(); b.skipTakes();
+  M.stage = 'with'; M.ally = true;
+  for (let i = 0; i < 400 && !(b.knUnitsS().length === 2 && b.knUnitsS().every((k) => k.model && !(k.clipsPending > 0) && k.natDone)); i++) { w.__c13Step(1); await sleep(40); }
+  const K = b.knUnitsS(), P0 = K[0].g.position, yaw = K[0].g.rotation.y, cam = b.camera.position;
+  const home = [P0.x + Math.sin(yaw) * 7, P0.z + Math.cos(yaw) * 7];
+  cam.set(home[0], P0.y + 1.7, home[1]); b.camBaseY = P0.y + 1.7;
+  b.minoJoin(u); w.__c13Step(5);
+  return { M, u, K, home };
+}
+export async function minoRestore({ w, b, log, sleep, shot }) {
+  const f = w.frameElement;
+  const { M, u, K, home } = await mnCourt(w, b, sleep);
+  b.settings.devMode = true;
+  log('your blade on him while he is yours: landed', b.hurtMutantTest(u, 5), 'hp', u.st.hp);
+  for (const k of K) b.hurtMutantTest(k, 999);
+  for (let i = 0; i < 60 * 9; i++) { b.camera.position.x = home[0]; b.camera.position.z = home[1]; w.__c13Step(1); }
+  log('before', JSON.stringify({ stage: M.stage, spot: M.spot, hipY: +(u.minoAuthor.J.hip.getWorldPosition(u.g.position.clone()).y - u.g.position.y).toFixed(2) }));
+  b.settings.devMode = false;
+  b.saveCheckpoint();
+  const sv = JSON.parse(localStorage.getItem('beachwalk.save') || 'null');
+  log('saved', JSON.stringify(sv && sv.flags.mino), 'dead', JSON.stringify(sv && sv.flags.deadUnits.filter((k) => /^kn|mino/.test(k))), 'room', sv && sv.room);
+  sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1');
+  f.contentWindow.location.reload();
+  await sleep(1500);
+  let w2 = null; for (let i = 0; i < 200; i++) { await sleep(100); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.state) break; } catch (e) {} }
+  const B = w2.__bw;
+  const btn = w2.document.querySelector('.dc-restart'); if (btn) btn.click();
+  for (let i = 0; i < 300 && (B.frozen() || !B.state().introDone); i++) await sleep(100);
+  try { await B.audioCtx.suspend(); } catch (e) { /* */ }
+  const M2 = B.MINO;
+  for (let i = 0; i < 400 && !(M2.u && M2.u.model && !(M2.u.clipsPending > 0) && M2.u.minoAuthor && !M2.restored); i++) {
+    if (i % 40 === 0) log('wait', i, JSON.stringify({ stage: M2.stage, restored: M2.restored, u: !!M2.u, model: !!(M2.u && M2.u.model), pend: M2.u && M2.u.clipsPending, lay: !!(M2.u && M2.u.minoLay), cam: [+B.camera.position.x.toFixed(1), +B.camera.position.z.toFixed(1)], room: B.devRoom() }));
+    await sleep(100);
+  }
+  await sleep(1500);
+  const u2 = M2.u;
+  log('loads', JSON.stringify(B.loadLog().filter((e) => /minotaur|gargoyle|castle13|knight-|moves/.test(e[0])).map((e) => [e[0], (e[1] / 1000).toFixed(1), e[2]])));
+  log('after', JSON.stringify({ stage: M2.stage, ally: M2.ally, at: u2 && u2.g.position.toArray().map((v) => +v.toFixed(2)), spot: M2.spot, vis: u2 && u2.g.visible, pool: !!M2.pool, swords: M2.swords && M2.swords.length,
+    hipY: u2 && u2.minoAuthor && +(u2.minoAuthor.J.hip.getWorldPosition(u2.g.position.clone()).y - u2.g.position.y).toFixed(2), knAlive: B.knAlive(), inC13: B.state().inC13 }));
+  if (u2) { w2.requestAnimationFrame = () => 0; const p = u2.g.position, c = B.camera.position; c.set(p.x - 2.6, p.y + 1.7, p.z + 0.6); B.lookAt(p.x, p.y + 0.3, p.z); B.camera.updateMatrixWorld(true);
+    B.renderer.render(B.scene, B.camera); log('drawn'); }
+}
+// HE GOES DOWN, in the court where he does (2026-10-29, the owner: "his body should not float while laying … he should be
+// easier to talk to i couldn't prompt it"): the two killed, him down; once he lies, how far each part of him is off the
+// paving UNDER IT (the court's own floor, not his feet's), and from eight sides at two distances, does the prompt come up
+// looking at his chest. (its own profile)
+export async function minoDown({ w, b, log, sleep, shot }) {
+  const { M, u, K, home } = await mnCourt(w, b, sleep);
+  b.settings.devMode = true;
+  for (const k of K) b.hurtMutantTest(k, 999);
+  for (let i = 0; i < 60 * 10 && M.stage !== 'down'; i++) { b.camera.position.x = home[0]; b.camera.position.z = home[1]; w.__c13Step(1); }
+  for (let i = 0; i < 60 * 12; i++) { b.camera.position.x = home[0]; b.camera.position.z = home[1]; w.__c13Step(1); }   // (his fall is ten seconds now)
+  log('lookK', M.lookK, 'base', !!M.base, 'fall', u.clips.mnFall.getClip().duration, 'act', u.clips.mnFall.isRunning(), u.clips.mnFall.enabled, u.clips.mnFall.getEffectiveWeight());
+  log('stage', M.stage, 't', M.t.toFixed(1), 'at', JSON.stringify(u.g.position.toArray().map((v) => +v.toFixed(2))), 'floor there', b.c13CourtAt(u.g.position.x, u.g.position.z));
+  // every vertex of his body against the floor under it
+  let body = null; u.model.traverse((o) => { if (o.isSkinnedMesh && o.geometry.attributes.position.count === 3572) body = o; });
+  u.g.updateMatrixWorld(true);
+  const P = body.geometry.attributes.position, SI = body.geometry.attributes.skinIndex, SW = body.geometry.attributes.skinWeight, bs = body.skeleton.bones, v = b.camera.position.clone();
+  const lo = {}; let under = 0, nf = 0;
+  for (let i = 0; i < P.count; i++) {
+    let best = -1, bw = 0; for (let k = 0; k < 4; k++) { const x = SW.getComponent(i, k); if (x > bw) { bw = x; best = SI.getComponent(i, k); } }
+    v.fromBufferAttribute(P, i); body.applyBoneTransform(i, v); v.applyMatrix4(body.matrixWorld);
+    const f = b.c13CourtAt(v.x, v.z); if (f === null) { nf++; continue; }
+    const g = v.y - f, k = bs[best].name.replace(/[LR]$/, '').replace(/^F\d+$/, 'F');
+    if (!(k in lo) || g < lo[k]) lo[k] = g; under = Math.min(under, g);
+  }
+  // (and again with his clip alone re-applied, no breath laid on it: which is it that puts his head in the stone)
+  const headLow = () => { let lo = 1e9; u.g.updateMatrixWorld(true); for (let i = 0; i < P.count; i++) { let best = -1, bw = 0; for (let k = 0; k < 4; k++) { const x = SW.getComponent(i, k); if (x > bw) { bw = x; best = SI.getComponent(i, k); } } if (!/^(Head|Mouth)/.test(bs[best].name)) continue; v.fromBufferAttribute(P, i); body.applyBoneTransform(i, v); v.applyMatrix4(body.matrixWorld); const f = b.c13CourtAt(v.x, v.z); if (f !== null) lo = Math.min(lo, v.y - f); } return lo.toFixed(3); };
+  log('actions', u.mixer._actions.filter((x) => x.enabled && x.getEffectiveWeight() > 0.001).map((x) => x.getClip().name + '@' + x.time.toFixed(2) + ' w' + x.getEffectiveWeight().toFixed(2)).join(', '),
+    '| model pos', u.model.position.toArray().map((q) => +q.toFixed(3)).join(','), 'rot', [u.model.rotation.x, u.model.rotation.y, u.model.rotation.z].map((q) => +q.toFixed(3)).join(','), 'scale', +u.model.scale.x.toFixed(3), '| g rot', [u.g.rotation.x, u.g.rotation.z].map((q) => +q.toFixed(3)).join(','));
+  { const tr = u.clips.mnFall.getClip().tracks, res = [];
+    for (const nm of ['Head', 'Neck', 'Spine5', 'Spine4']) { const t = tr.find((x) => x.name === nm + '.quaternion'), bn = u.model.getObjectByName(nm); if (!t || !bn) { res.push(nm + ':none'); continue; } const n = t.values.length; const q = new b.THREE.Quaternion(t.values[n - 4], t.values[n - 3], t.values[n - 2], t.values[n - 1]); res.push(nm + ' off its clip ' + bn.quaternion.angleTo(q).toFixed(3)); }
+    log('bones vs the clip', res.join(' | '), '| base', M.base ? [...M.base.keys()].map((k) => k.name).join(',') : '-'); }
+  const h0 = headLow(); u.mixer.update(0); const h1 = headLow();
+  log('head off the floor: as drawn', h0, '| his clip alone', h1);
+  { const H = u.bones.head.getWorldPosition(u.g.position.clone()), y = u.g.rotation.y, fx = Math.sin(y), fz = Math.cos(y), o = u.g.position;
+    const fw = (H.x - o.x) * fx + (H.z - o.z) * fz, sd = (H.x - o.x) * fz - (H.z - o.z) * fx;
+    const prof = []; for (let d = -3; d <= 1.5; d += 0.5) prof.push(d + ':' + ((b.c13CourtAt(o.x + fx * d, o.z + fz * d) ?? NaN) - o.y).toFixed(2));
+    log('his head is', fw.toFixed(2), 'm ahead of him,', sd.toFixed(2), 'to the side | the floor along him (m ahead: height over his feet)', prof.join(' ')); }
+  log('off the floor under it (m):', Object.entries(lo).sort((a, c) => a[1] - c[1]).map(([k, g]) => k + ' ' + g.toFixed(3)).join(', '), '| deepest', under.toFixed(3), 'off the court', nf);
+  // the prompt, looking at his chest from around him
+  const C = u.minoAuthor.J.chest.getWorldPosition(u.g.position.clone()), cam = b.camera.position, res = [];
+  for (const r of [1.8, 3.0]) for (let k = 0; k < 8; k++) {
+    const a = k / 8 * Math.PI * 2, x = C.x + Math.sin(a) * r, z = C.z + Math.cos(a) * r, f = b.c13CourtAt(x, z);
+    if (f === null) { res.push(r + '/' + k + ':wall'); continue; }
+    cam.set(x, f + 1.7, z); b.camBaseY = f + 1.7; b.lookAt(C.x, C.y, C.z); w.__c13Step(1); cam.set(x, f + 1.7, z); b.lookAt(C.x, C.y, C.z); w.__c13Step(1);
+    const moved = Math.hypot(cam.x - x, cam.z - z);
+    res.push(r + '/' + k + ':' + (b.hoveredS() === 'Talk to the minotaur' ? 'YES' : (b.hoveredS() || 'none')) + (moved > 0.05 ? '(moved ' + moved.toFixed(2) + ')' : '') + (b.hoveredS() ? '' : ' d' + cam.distanceTo(C).toFixed(2) + ' dy' + (cam.y - C.y).toFixed(2)));
+  }
+  log('prompt', res.join(' '));
+  // (close, from where you would stand over him, at your own eye height: the arm the owner saw)
+  for (const k of [0, 1, 2, 3, 4, 5, 6, 7]) {
+    const a = k / 8 * Math.PI * 2, x = C.x + Math.sin(a) * 1.9, z = C.z + Math.cos(a) * 1.9, f = b.c13CourtAt(x, z);
+    if (f === null || b.gargWhy(x, f + 1, z).wall6) continue;
+    cam.set(x, f + 1.7, z); b.camera.fov = 60; b.camera.updateProjectionMatrix(); b.camera.lookAt(C.x, C.y, C.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('mndown' + k, 640, 1.2);
+  }
+  b.camera.fov = 105; b.camera.updateProjectionMatrix();
+}
+// THE TWO BEFORE THE THRONE ROOM, FOUGHT (2026-10-29, the owner: "make the two knights before the throne room actually
+// hard and a good fight they should be smarter and have different personalities. make sure one fights the minotaur first
+// as well unless engaged with"): him at your side, both awake; you go for whichever is NOT on him, keep a stride off it
+// and strike (2) between its blows, once a second; when it is dead, the other. Who is on whom, their health, their
+// blows landed on you, their sidesteps out of your line, their second wind. (its own profile)
+export async function knDuel({ w, b, log, sleep, shot }) {
+  const { M, u, K, home } = await mnCourt(w, b, sleep);
+  b.settings.devMode = false;            // (dev mode: no creature ever starts a swing — measured, nobody here struck anybody)
+  let hp0 = b.state().hp, hurts = 0;
+  const cam = b.camera.position, nm = (k) => (k === K[0] ? 'MAN' : 'IRON');
+  { const D = b.C13_THR_DOOR, dX = b.C13_X + D.x, dZ = b.C13_Z + D.z;
+    log('posts: from the throne room door', K.map((k) => Math.hypot(k.g.position.x - dX, k.g.position.z - dZ).toFixed(1)).join(', '), 'm, apart', Math.hypot(K[0].g.position.x - K[1].g.position.x, K[0].g.position.z - K[1].g.position.z).toFixed(1));
+    const c0 = cam.clone(); cam.set(home[0], K[0].g.position.y + 1.7, home[1]); b.camera.lookAt(dX, K[0].g.position.y + 1.6, dZ); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('kn_posts', 720, 1.2); cam.copy(c0); }
+  for (const k of K) { k.st.awake = true; k.st.roar = 0.3; }
+  const landed = { MAN: 0, IRON: 0 }, onHim = { MAN: 0, IRON: 0 }, mine = { MAN: 0, IRON: 0 }, dodges = { MAN: 0, IRON: 0 }, raged = {}, seen = {}, ev = {};
+  let t = 0, cd = 0, first = null;
+  for (let f = 0; f < 60 * 150 && K.some((k) => k.st.alive); f++) {
+    t += 1 / 60; cd -= 1 / 60;
+    const tgt = K.filter((k) => k.st.alive).sort((a, c) => (a.knOnMino ? 1 : 0) - (c.knOnMino ? 1 : 0) || Math.hypot(a.g.position.x - cam.x, a.g.position.z - cam.z) - Math.hypot(c.g.position.x - cam.x, c.g.position.z - cam.z))[0];
+    if (tgt) {
+      const P = tgt.g.position, d = Math.hypot(P.x - cam.x, P.z - cam.z);
+      if (d > 2.6) { const nx = cam.x + (P.x - cam.x) / d * 3.2 / 60, nz = cam.z + (P.z - cam.z) / d * 3.2 / 60; if (b.c13CourtAt(nx, nz) !== null) { cam.x = nx; cam.z = nz; } }
+      b.lookAt(P.x, cam.y - 0.1, P.z);
+      if (cd <= 0 && d < 2.9 && tgt.st.atk < 0 && !(tgt.st.evade > 0)) { b.hurtMutantTest(tgt, 2, 0.3); mine[nm(tgt)]++; cd = 1.0; }   // (a light blow, as a click is)
+    }
+    const cx = cam.x, cz = cam.z; w.__c13Step(1); cam.x = cx; cam.z = cz;
+    if (b.state().hp < hp0) hurts += hp0 - b.state().hp; b.heal(); hp0 = b.state().hp;
+    for (const k of K) {
+      const n = nm(k);
+      if (!first && k.knOnMino) first = n + ' at ' + t.toFixed(1) + 's';
+      if (k.st.foe === M.u) onHim[n] += 1 / 60;
+      if (k.hitAt && k.hitAt !== seen[n]) { seen[n] = k.hitAt; if (!k.st.foe) landed[n]++; }
+      if (k.st.evade > 0 && !ev[n]) dodges[n]++; ev[n] = k.st.evade > 0;
+      if (k.st.raged && !raged[n]) raged[n] = t.toFixed(1) + 's';
+    }
+    if (f % 600 === 0) log(t.toFixed(0) + 's', K.map((k) => nm(k) + ' hp ' + (k.st.alive ? k.st.hp : 'dead') + ' on ' + (k.st.foe === M.u ? 'HIM' : k.st.foe ? 'other' : 'you')).join(' | '), '| minotaur hp', M.u.st.hp, 'on', M.u.st.foe ? nm(M.u.st.foe) : '-', '| him to his', (() => { const o = K.find((k) => k.st.foe === M.u); return o ? Math.hypot(o.g.position.x - M.u.g.position.x, o.g.position.z - M.u.g.position.z).toFixed(1) + 'm, its atk ' + o.st.atk.toFixed(2) + ' cool ' + (o.st.cool || 0).toFixed(2) + ', his atk ' + M.u.st.atk.toFixed(2) + ' awake ' + M.u.st.awake : '-'; })());
+  }
+  log('done at', t.toFixed(1), 's; first on the minotaur:', first, '| time on him (s)', JSON.stringify(Object.fromEntries(Object.entries(onHim).map(([k, v]) => [k, +v.toFixed(1)]))));
+  log('your health lost', hurts, '| your blows', JSON.stringify(mine), '| theirs landed on you', JSON.stringify(landed), '| sidesteps', JSON.stringify(dodges), '| second wind at', JSON.stringify(raged), '| minotaur', M.u.st.hp, M.stage);
+}
+// the street, hands off: him at your side as the town comes out of its doors and the dark knight cuts them down
+export async function minoFort({ w, b, log, sleep, shot }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  await w.__mnGate(4.5);
+  w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
+  const M = b.MINO, u = M.u, cam = b.camera.position;
+  M.stage = 'inside'; M.ally = true; u.g.visible = false;
+  b.placeInFort(); w.__c13Step(20);
+  log('joined', M.stage, M.place, 'd', Math.hypot(cam.x - u.g.position.x, cam.z - u.g.position.z).toFixed(2), 'vis', u.g.visible);
+  const home = [cam.x, cam.z]; let shots = 0, sw = {}, last = null, la = -1;
+  for (let k = 0; k < 40; k++) {
+    for (let i = 0; i < 60; i++) {
+      cam.x = home[0]; cam.z = home[1]; w.__c13Step(1);
+      if (u.st.atk >= 0 && (u.st.swing !== last || u.st.atk < la)) sw[u.st.swing] = (sw[u.st.swing] || 0) + 1;
+      last = u.st.atk >= 0 ? u.st.swing : null; la = u.st.atk;
+      const A = u.st.atk >= 0 && u.atk[u.st.swing];
+      if (A && Math.abs(u.st.atk - A.wind) < 0.02 && shots < 8) { shots++; b.lookAt(u.g.position.x, u.g.position.y + 1.3, u.g.position.z); b.camera.updateMatrixWorld(true); shot('mnfort' + shots + '_' + u.st.swing, 480, 1.2); }
+    }
+    if (k % 5 === 4) log(k, 'farmers alive', b.farmUnitsS().filter((f) => f.st.alive).length, 'on him', b.farmUnitsS().filter((f) => f.st.alive && f.st.foe === u).length, 'dk hp', b.dkS().u.st.hp, 'his hp', u.st.hp, 'my hp', b.state().hp);
+    if (b.state().dying) { log('you died'); break; }
+  }
+  log('swings', JSON.stringify(sw));
+}
+
+// THEIR BLOWS ON EACH OTHER IN THE STREET (2026-10-29, the owner: "some of the minotaurs hits never land and look
+// ridiculous same with dark knight tighten this up now everything needs to be flawless and visually correct when
+// fighting the farmer fight right now is bad"): him at your side in the first castle's street, hands off. Every swing
+// the minotaur and the dark knight throw at a man (not you): at its contact, how far off the man is, whether he is in
+// front, and did it land. (its own profile)
+export async function townHits({ w, b, log, sleep }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  await w.__mnGate(4.5);
+  w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
+  const M = b.MINO, u = M.u, cam = b.camera.position;
+  M.stage = 'inside'; M.ally = true; u.g.visible = false;
+  b.placeInFort(); w.__c13Step(20);
+  b.settings.devMode = false;
+  const home = [cam.x, cam.z], DK = () => b.dkS().u, rec = { MINO: [], DK: [] }, open = new Map();
+  for (let f = 0; f < 60 * (w.__thSecs || 75); f++) {
+    cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); b.heal();
+    for (const [nm, x] of [['MINO', u], ['DK', DK()]]) {
+      if (!x || !x.st.alive) continue;
+      const A = x.st.atk >= 0 && x.atk ? x.atk[x.st.swing] : null, F = x.st.foe;
+      const o = open.get(x);
+      if (A && F && F.st && x.st.atk >= A.wind && (!o || o.atk > x.st.atk + 0.05 || o.sw !== x.st.swing) && x.st.atk < A.wind + 0.05) {
+        const dx = F.g.position.x - x.g.position.x, dz = F.g.position.z - x.g.position.z, d = Math.hypot(dx, dz) || 1;
+        const front = (dx * Math.sin(x.g.rotation.y) + dz * Math.cos(x.g.rotation.y)) / d;
+        const r = { sw: x.st.swing, d: +d.toFixed(2), front: +front.toFixed(2), foe: F.kindName || (F.kind.farmer ? 'farmer' : '?'), foeHp: F.st.hp, landed: false, reach: A.reach, stop: A.stop, foeAtk: F.st.atk >= 0, foeFlung: !!(F.st.down || F.rag) };
+        rec[nm].push(r); open.set(x, { atk: x.st.atk, sw: x.st.swing, r, t: 0 });
+      }
+      const oo = open.get(x);
+      if (oo) { oo.t += 1 / 60; if (x.st.landed) oo.r.landed = true; if (oo.t > 0.5) open.delete(x); else oo.atk = x.st.atk; }
+    }
+  }
+  for (const nm of ['MINO', 'DK']) {
+    const R = rec[nm], L = R.filter((r) => r.landed);
+    log(nm, 'blows at men', R.length, 'landed', L.length, '| misses:', JSON.stringify(R.filter((r) => !r.landed).slice(0, 14).map((r) => [r.sw, r.d, r.front, r.stop, r.foe, r.foeFlung ? 'down' : ''])));
+    log(nm, 'landed at', JSON.stringify(L.slice(0, 10).map((r) => [r.sw, r.d, r.front])));
+  }
+}
+// THE GARGOYLES (2026-10-28): into XIII's east court with the minotaur at your side, the arch door tried, and the fight
+// hands off — you stand two and a half metres out from the door and land a blow (2) on whichever one strikes at you within
+// reach, the way a guard-and-answer player would. Their modes, your hurts, his, the kills, and the door after.
+export async function gargFight({ w, b, log, sleep, shot }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
+  const G = b.GARG, M = b.MINO, cam = b.camera.position, A = b.c13Dbg().arch;
+  log('perches', JSON.stringify(G.perches.map((p) => [+(p.x - b.C13_X).toFixed(1), +(p.z - b.C13_Z).toFixed(1)])), 'units', G.units.length);
+  // (the passage runs from the arch's start A along u, into the east court: you stand on THAT side, 2.6 m out)
+  const home = [b.C13_X + A.ax + A.ux * (A.L + 2.6), b.C13_Z + A.az + A.uz * (A.L + 2.6)];
+  cam.set(home[0], cam.y, home[1]); b.lookAt(b.C13_X + A.ax, cam.y, b.C13_Z + A.az); w.__c13Step(3);
+  if (w.__ggMino !== false && M.u && M.u.model) { M.stage = 'with'; M.ally = true; M.place = '?'; w.__c13Step(3); }
+  log('minotaur', M.stage, M.place, M.u && M.u.g.visible);
+  b.settings.devMode = true;                     // (your health clamps at one; nothing else of theirs reads it)
+  w.__ggDbg = [];
+  b.gargTryDoor();
+  log('tried: his line up', b.state().dialogOpen); if (b.state().dialogOpen) b.endDialog();   // (his "FUCK its locked...", closed: they come down)
+  let hp0 = b.state().hp, hurts = 0, hits = 0, t = 0, shots = 0; const hitOn = new Set(), mino0 = M.u ? M.u.st.hp : 0;
+  const tally = {};
+  while (G.phase < 2 && t < 150) {
+    for (let i = 0; i < 30; i++) {
+      cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); t += 1 / 60;
+      if (b.state().hp < hp0) hurts++; hp0 = b.state().hp;
+      for (const u of G.units) {
+        if (!u.st.alive || !u.gp) continue;
+        tally[u.gp.mode] = (tally[u.gp.mode] || 0) + 1;
+        const d = Math.hypot(u.g.position.x - cam.x, u.g.position.z - cam.z);
+        // (you answer in its opening: a blow as it hangs in front of you after its lunge — `w.__ggIdle` stands and takes it)
+        if (!w.__ggIdle && u.gp.mode === 'recover' && !u.gp.tgt && d < 2.8 && u.gp.t > 0.15 && !hitOn.has(u)) { b.hurtMutantTest(u, 2); hits++; hitOn.add(u); }
+        if (u.gp.mode !== 'recover' && u.gp.mode !== 'reel') hitOn.delete(u);
+        // (their blows that land on you, counted at the blow — your health is held at one, so its drops stop at three)
+        if (!u.gp.tgt && u.hitAt && u.hitAt !== u._pbHit) { u._pbHit = u.hitAt; w.__ggLanded = (w.__ggLanded || 0) + 1; }
+        // (the bones the clip leaves alone must not wander: the spin)
+        if (u.gRest) for (const [bn, q0] of u.gRest) w.__ggDrift = Math.max(w.__ggDrift || 0, bn.quaternion.angleTo(q0));
+        for (const [m, at, kd] of [['tell', 0.3, 'talon'], ['tell', 0.3, 'rake'], ['lunge', 0.18, 'talon'], ['lunge', 0.12, 'bite'], ['rake', 0.14, 'rake'], ['rake', 0.5, 'rake'], ['recover', 0.12, 'talon']]) {
+          const tt = m === 'rake' ? (u.gp.rk || 0) : u.gp.t, key = m + kd + at;
+          if (u.gp.mode === m && u.gp.kind === kd && tt > at && tt < at + 0.03 && !u.gp.tgt && (w.__ggShot = w.__ggShot || {})[key] === undefined) {
+            w.__ggShot[key] = 1; b.camera.lookAt(u.g.position.x, u.g.position.y + 1.1, u.g.position.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('g_' + m + '_' + kd + '_' + at, 560, 1.15);
+          }
+        }
+      }
+    }
+    if (Math.round(t * 2) % 10 === 0) log(t.toFixed(1) + 's', 'alive', G.units.filter((u) => u.st.alive).length, 'hp', G.units.map((u) => (u.st.alive ? u.st.hp : 'x')).join(','),
+      'tgt', G.units.map((u) => (u.gp.tgt ? 'M' : 'Y')).join(''), 'minotaur hp', M.u && M.u.st.hp, 'his foe', M.u && M.u.st.foe && M.u.st.foe.kindName,
+      '|', G.units.filter((u) => u.st.alive).map((u) => { const T = u.gp.tgt ? u.gp.tgt.g.position : cam; return u.gp.i + ':' + u.gp.mode + ' d' + Math.hypot(u.g.position.x - T.x, u.g.position.z - T.z).toFixed(1) + ' h' + (u.g.position.y - (b.camBaseY - 1.7)).toFixed(1) + ' p' + (u.g.position.x - b.C13_X).toFixed(0) + ',' + (u.g.position.z - b.C13_Z).toFixed(0); }).join(' '));
+  }
+  const frames = Object.values(tally).reduce((a, c) => a + c, 0);
+  log('done at', t.toFixed(1), 's; phase', G.phase, 'your blows', hits, 'their hurts on you', hurts, 'minotaur', mino0, '->', M.u && M.u.st.hp,
+    'time in', JSON.stringify(Object.fromEntries(Object.entries(tally).map(([k, v]) => [k, +(v / frames).toFixed(2)]))));
+  log('pieces', JSON.stringify(G.units.map((u) => u.gp.mode)), 'door locked', b.gargLockedS && b.gargLockedS());
+  if (w.__ggDbg) { const D = w.__ggDbg.filter((r) => r[7] === 'Y'); log('strikes on you', D.length, 'hit', D.filter((r) => r[6]).length, JSON.stringify(D.slice(0, 24))); }
+  log('their blows landed on you', w.__ggLanded || 0, '| most any spine/neck bone was off its rest (rad):', (w.__ggDrift || 0).toFixed(2));
+}
+
+// THROUGH THE ARCH DOOR WITH HIM (2026-10-29, the owner: "the minotaur needs to step through the door he keeps getting stuck
+// in the gargoyle part"): the four broken, the door open, you through it and on into the fountain's court; him from the
+// east side. Where he gets to, and where along the passage a step of his is refused. (its own profile)
+export async function minoArch({ w, b, log, sleep }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
+  const G = b.GARG, M = b.MINO, u = M.u, cam = b.camera.position, A = b.c13Dbg().arch;
+  for (const g of G.units) { g.st.hp = 0; g.st.alive = false; g.retired = true; g.g.visible = false; }
+  G.phase = 2; b.openC13Arch(true);
+  const X = (s, o = 0) => b.C13_X + A.ax + A.ux * s - A.uz * o, Z = (s, o = 0) => b.C13_Z + A.az + A.uz * s + A.ux * o;
+  const sOf = (x, z) => (x - b.C13_X - A.ax) * A.ux + (z - b.C13_Z - A.az) * A.uz;
+  log('arch', 'L', A.L.toFixed(2), 'open', b.c13Dbg().archOpen);
+  // where along the axis (and a little either side of it) is a step of his legal?
+  const row = []; for (let s = A.L + 2; s >= -3; s -= 0.5) { const x = X(s), z = Z(s), f = b.c13CourtAt(x, z); row.push(s.toFixed(1) + (f === null ? ':nofloor' : b.minoLegal(x, z, x, z, f) ? ':ok' : ':NO')); }
+  log('his legal along the passage (s: from the door start, east is > L)', row.join(' '));
+  M.stage = 'with'; M.ally = true; M.place = '?';
+  const off = w.__maOff ?? 4.0;   // (off to one side of the door: walking straight at you he meets the wall beside it)
+  { let o = off; for (; Math.abs(o) > 0.5 && b.c13CourtAt(X(A.L + 3.5, o), Z(A.L + 3.5, o)) === null; o *= 0.8); u.g.position.set(X(A.L + 3.5, o), b.c13CourtAt(X(A.L + 3.5, o), Z(A.L + 3.5, o)), Z(A.L + 3.5, o)); log('him set', o.toFixed(1), 'm off the door\'s line'); }
+  cam.set(X(A.L + 1.5), cam.y, Z(A.L + 1.5)); w.__c13Step(5);
+  // you walk through and on
+  for (let f = 0; f < 60 * 24; f++) {
+    const sMe = A.L + 1.5 - Math.min(f / 60, 6) * 1.4, oMe = sMe < -2 ? Math.min(3, (-2 - sMe) * 0.8) * -Math.sign(off || 1) : 0;
+    const x = X(sMe, oMe), z = Z(sMe, oMe), fl = b.c13CourtAt(x, z);
+    cam.set(x, (fl ?? cam.y - 1.7) + 1.7, z); b.camBaseY = cam.y; b.lookAt(X(sMe - 5), cam.y, Z(sMe - 5));
+    w.__c13Step(1);
+    if (f % 120 === 0) log((f / 60).toFixed(0) + 's', 'you at s', sMe.toFixed(1), '| him at s', sOf(u.g.position.x, u.g.position.z).toFixed(2), 'v', (M.v || 0).toFixed(2), 'stuck', (M.stuckT || 0).toFixed(1), 'hold', M.hold);
+  }
+  log('end: him at s', sOf(u.g.position.x, u.g.position.z).toFixed(2), 'you at s', sOf(cam.x, cam.z).toFixed(2), 'apart', Math.hypot(u.g.position.x - cam.x, u.g.position.z - cam.z).toFixed(1));
+}
+// THE LOCKED DOOR WITH HIM (2026-10-29, the owner: "when you go to open the locked door make the player spin around and
+// enter dialog with the minotaur in the angle i provided … 'FUCK its locked...'"): you at the arch door facing it, him a
+// few strides behind; tried: does the view swing round onto him, level and wide, the line up, and do they come down after?
+export async function gargDoor({ w, b, log, sleep, shot }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
+  const G = b.GARG, M = b.MINO, cam = b.camera.position, A = b.c13Dbg().arch;
+  const door = [b.C13_X + A.ax + A.ux * A.L * 0.5, b.C13_Z + A.az + A.uz * A.L * 0.5];
+  const home = [b.C13_X + A.ax + A.ux * (A.L + 2.0), b.C13_Z + A.az + A.uz * (A.L + 2.0)];
+  cam.set(home[0], cam.y, home[1]); b.lookAt(door[0], cam.y, door[1]); w.__c13Step(3);
+  M.stage = 'with'; M.ally = true; M.place = '?';
+  for (let i = 0; i < 240; i++) { cam.x = home[0]; cam.z = home[1]; b.lookAt(door[0], cam.y, door[1]); w.__c13Step(1); }
+  const u = M.u, dM = () => Math.hypot(u.g.position.x - cam.x, u.g.position.z - cam.z).toFixed(1);
+  const yawOf = () => { const f = new b.THREE.Vector3(0, 0, -1).applyQuaternion(b.camera.quaternion); return Math.atan2(f.x, f.z); };
+  const toM = () => Math.atan2(u.g.position.x - cam.x, u.g.position.z - cam.z);
+  const off = () => { let d = yawOf() - toM(); while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return (d * 57.3).toFixed(0); };
+  log('before: him', M.stage, M.place, 'at', dM(), 'm, view off him', off(), 'deg, vis', u.g.visible);
+  b.gargTryDoor();
+  const D = w.document.getElementById('dialog'), txt = () => w.document.getElementById('dialog-text').textContent;
+  const step = (n) => { for (let i = 0; i < n; i++) w.__c13Step(1); };
+  const choose = (k) => { D.click(); const bs = [...D.querySelectorAll('button.choice')]; log('  said:', JSON.stringify(txt()), '| you:', bs.map((x) => x.textContent).join(' / '), '-> pick', k); bs[k].click(); };
+  const S = () => G.scene, gu = () => S() && S().unit;
+  const rel = () => { const x = gu(); if (!x) return 'none'; const P = x.g.position, Q = u.g.position, f = b.c13CourtAt(P.x, P.z); const toM = Math.atan2(Q.x - cam.x, Q.z - cam.z), toG = Math.atan2(P.x - cam.x, P.z - cam.z); return S().phase + ' behind him ' + (Math.hypot(P.x - cam.x, P.z - cam.z) - Math.hypot(Q.x - cam.x, Q.z - cam.z)).toFixed(1) + 'm, off-line ' + ((toG - toM) * 57.3).toFixed(0) + 'deg, toes over floor ' + (P.y + (x.gp.footH || 0.83) - f).toFixed(2); };
+  const facing = () => { const x = gu(); if (!x) return '-'; let d = Math.atan2(x.g.position.x - u.g.position.x, x.g.position.z - u.g.position.z) - u.g.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return (d * 57.3).toFixed(0); };
+  log('tried: dialog', b.state().dialogOpen); step(90);
+  log('turned: view off him', off(), 'deg, him at', dM(), 'm');
+  choose(0); choose(0); step(30);
+  for (let k = 0; k < 6; k++) { step(30); log('  t', ((k + 1) * 0.5).toFixed(1), 'the gargoyle:', rel()); }
+  b.camera.updateMatrixWorld(true); shot('door_dropped', 900, 1.2);
+  choose(0); D.click();
+  log('  said:', JSON.stringify(txt())); D.click();
+  log('box shown', D.classList.contains('show'));
+  let shotTurn = false;
+  for (let k = 0; k < 40 && txt() !== 'oh'; k++) { step(15); if (k % 2 === 1) log('  t', ((k + 1) * 0.25).toFixed(2), rel(), '| him to it', facing(), 'deg'); if (!shotTurn && Math.abs(+facing()) < 100 && Math.abs(+facing()) > 50) { shotTurn = true; b.camera.updateMatrixWorld(true); shot('door_turning', 900, 1.2); } }
+  step(20); log('said:', JSON.stringify(txt()), 'box', D.classList.contains('show'), '| him to it', facing(), 'deg');
+  b.camera.updateMatrixWorld(true); shot('door_oh', 900, 1.2);
+  D.click(); D.click();
+  log('after the oh: dialog', b.state().dialogOpen, 'phase', G.phase, 'modes', G.units.map((x) => x.gp.mode).join(','));
+  step(180);
+  log('3 s on: modes', G.units.map((x) => x.gp.mode).join(','), 'his foe', u.st.foe && u.st.foe.kindName);
+}
+// THE MINOTAUR AGAINST YOU (a no), each swing at each stand-off: did the blade reach you, and where on the screen did it
+// arrive (ndc; the middle is 0,0). (its own profile)
+export async function minoClose({ w, b, log, sleep }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  await w.__mnGate(6);
+  w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
+  const M = b.MINO, u = M.u, C = b.camera.position, P = u.g.position;
+  b.settings.devMode = false;
+  b.minoTurn(u); for (let i = 0; i < 120; i++) { w.__c13Step(1); b.heal(); }
+  const keys = (w.__mnKeys || Object.keys(u.kind.use)).filter((k) => u.atk[k]);
+  const stops = w.__mnStops || [1.4, 1.8, 2.2, 2.6, 3.0];
+  let land = 0, tot = 0; const best = {};
+  for (const k of keys) {
+    const out = []; let bs = -1, bD = null;
+    for (const D of stops) {
+      for (let i = 0; i < 400 && u.st.atk >= 0; i++) { w.__c13Step(1); b.heal(); }
+      const yaw = u.g.rotation.y, home = [P.x + Math.sin(yaw) * D, P.z + Math.cos(yaw) * D];
+      for (let i = 0; i < 15; i++) { C.set(home[0], C.y, home[1]); b.lookAt(P.x, C.y - 0.15, P.z); w.__c13Step(1); b.heal(); }
+      u.st.forceSwing = k; u.st.cool = 0;
+      let started = false, h0 = u.hitAt || 0; const hits = [];
+      for (let i = 0; i < 600; i++) {
+        C.set(home[0], C.y, home[1]); b.lookAt(P.x, C.y - 0.15, P.z); w.__c13Step(1);
+        const live = u.st.atk >= 0 && u.st.swing === k; if (live) started = true; else if (started) break;
+        if (u.hitAt && u.hitAt !== h0) { h0 = u.hitAt; const q = u.hitPt ? u.hitPt.clone().project(b.camera) : { x: 9, y: 9 }; hits.push([q.x, q.y]); }
+        b.heal();
+      }
+      tot++; if (hits.length) land++;
+      const sc = hits.length ? 2 - Math.min(...hits.map(([x, y]) => Math.hypot(x, y + 0.15))) : -1;
+      if (sc > bs) { bs = sc; bD = D; }
+      out.push(D + (hits.length ? ':' + hits.map(([x, y]) => x.toFixed(2) + ',' + y.toFixed(2)).join('+') : ':MISS'));
+    }
+    best[k] = bD;
+    log(k.padEnd(9), out.join('  '));
+  }
+  log('landed', land, 'of', tot, 'best stand-offs', JSON.stringify(best));
+}
+
+// THE STREET FIGHT'S FRAMES (2026-10-29, the owner: "the farmer fight is a laggy mess"): 40 s of the farmers' fight from
+// the gate, standing, with the minotaur at your side (or, `w.__noMino`, without him): each frame's own time (update +
+// render, gl.finish so the GPU counts), and what is going on — bodies falling, the living, the debris
+export async function fortPerf({ w, b, log, sleep }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  await w.__mnGate(4.5);
+  w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
+  const M = b.MINO, u = M.u, cam = b.camera.position;
+  b.settings.devMode = false;
+  if (!w.__noMino) { M.stage = 'inside'; M.ally = true; u.g.visible = false; }
+  b.placeInFort(); w.__c13Step(20);
+  const gl = b.renderer.getContext(), home = [cam.x, cam.z], T = [], tags = [];
+  for (let f = 0; f < 60 * 40; f++) {
+    cam.x = home[0]; cam.z = home[1];
+    const t0 = performance.now.call ? Date.now() : 0;
+    const a = (window.performance && window.performance.timeOrigin) ? 0 : 0;
+    const s0 = Date.now(); w.__c13Step(1); b.renderer.render(b.scene, b.camera); gl.finish(); const dt = Date.now() - s0; b.heal();
+    T.push(dt);
+    if (dt > 30) tags.push(f + ':' + dt + 'ms rag' + b.mutantsS().filter((x) => x.rag && !x.rag.asleep).length + ' gib' + (b.gibsS ? b.gibsS().length : '?'));
+  }
+  const S = T.slice().sort((p, q) => p - q), q = (k) => S[Math.floor(S.length * k)];
+  log(w.__noMino ? 'WITHOUT him' : 'WITH him', 'median', q(0.5), 'p90', q(0.9), 'p99', q(0.99), 'max', S[S.length - 1], 'over 33ms', T.filter((x) => x > 33).length, 'of', T.length);
+  log('farmers alive', b.farmUnitsS().filter((x) => x.st.alive).length, 'ragdolls', b.mutantsS().filter((x) => x.rag).length, 'awake rags', b.mutantsS().filter((x) => x.rag && !x.rag.asleep).length);
+  log('spikes', tags.slice(0, 14).join('  '));
+}
+export async function fortPerfNo(ctx) { ctx.w.__noMino = true; return fortPerf(ctx); }

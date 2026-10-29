@@ -2,7 +2,7 @@
  * Open /README.md in the pane (no game on it), then:
  *   await import('/tools/silentframe.js'); await import('/tools/musictest.js');
  *   await __mtRun('samurai')       // one scenario (each well under the tool's 45 s): 'restart', 'checkpoint' (a respawn: silent), 'load',
- *                                  // 'samurai', 'church', 'end'  -> { scenario, pass, peak, who, note }
+ *                                  // 'samurai', 'samuraiBack', 'church', 'end', 'mino'  -> { scenario, pass, peak, who, note }
  * Each loads the game fresh in the silent iframe, drives the moment the way a player reaches it (the sword taken
  * off its stand, the crawl out behind the altar, the morning after the horn, a death's card clicked …) and reads the
  * analyser on whatever connected to the speakers for that track. PASS is a peak over 0.004 within the window.
@@ -10,7 +10,7 @@
  * owner's checkpoint (`beachwalk.save`) itself. */
 (function () {
   const W = window, sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', samurai: 'startSamScore', church: 'startPassing', end: 'startEndSong' };
+  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong' };
   /* (2026-10-24, the owner: the opening song plays on the first load into the game and NOT on a respawn) — 'checkpoint'
    * is a death's respawn and passes SILENT; 'load' is a checkpoint loaded without a death and must play it */
   const silent = { checkpoint: true };
@@ -62,6 +62,21 @@
         if (!it) return { scenario: sc, pass: false, note: 'no "Take the katana" on the stand' };
         it.onActivate(); note = 'sword taken';
         await drive(b, 40); peak = await listen(want[sc], 12000);
+      } else if (sc === 'samuraiBack') {
+        // (2026-10-21, "my music isnt playing at the samurai"): the sword taken, out of the dojo mid-fight, and back in to
+        // him still on his feet — the score has to come back with the fight, not only on his line
+        const { b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+        b.settings.devMode = true;
+        const RB = b.ROOM_BACK.dojo; RB.load();
+        for (let i = 0; i < 160 && !RB.ready(); i++) { b.frame(2); await sleep(50); }
+        RB.place(); await drive(b, 60);
+        const it = b.interactables.find((x) => /Take the katana/.test(typeof x.label === 'function' ? x.label() : x.label));
+        if (!it) return { scenario: sc, pass: false, note: 'no "Take the katana" on the stand' };
+        it.onActivate(); await drive(b, 120);
+        b.placeBackAtPortal(); await drive(b, 200);
+        const away = W.__sfDests.filter((d) => d.who === want[sc]).reduce((m, d) => Math.max(m, W.__sfLvl(d.an)), 0);
+        const sam = b.samurai; note = 'out (score ' + away.toFixed(4) + ') and back, he is ' + (sam && sam.st.awake ? 'awake' : 'asleep');
+        RB.place(); await drive(b, 60); peak = await listen(want[sc], 12000);
       } else if (sc === 'church') {
         const { b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
         const RB = b.ROOM_BACK.uc; RB.load();
@@ -78,6 +93,21 @@
         for (let i = 0; i < 3000 && !b.state().ended; i++) { off += 16.7; b.frame(1); if (!(i % 20)) await sleep(2); }
         w.performance.now = () => real() + off;
         note += b.state().ended ? ', stats up' : ', NEVER ENDED';
+        peak = await listen(want[sc], 8000);
+      } else if (sc === 'mino') {
+        // (2026-10-29, the owner's "minotaur death music": once, the first moment you see him going down in XIII's court)
+        const { w, b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+        w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+        w.__ggBoot(); for (let i = 0; i < 180 && !w.__ggBooted; i++) await sleep(1000);
+        try { await b.audioCtx.resume(); } catch (e) { /* the boot helper suspends it */ }
+        const M = b.MINO, u = M.u;
+        if (!u || !w.__ggBooted) return { scenario: sc, pass: false, note: 'never got into XIII with him' };
+        M.stage = 'with'; M.ally = true; M.place = '?';
+        for (let i = 0; i < 20; i++) w.__c13Step(1);
+        b.minoGoDown(u); note = 'he goes down';
+        const look = () => b.lookAt(u.g.position.x, u.g.position.y + 1.2, u.g.position.z);
+        for (let i = 0; i < 40; i++) { look(); w.__c13Step(1); await sleep(5); }
+        note += M.songDue ? ', seen' : ', NOT DUE';
         peak = await listen(want[sc], 8000);
       } else return { scenario: sc, pass: false, note: 'unknown scenario' };
     } catch (e) { note += ' THREW ' + e; }

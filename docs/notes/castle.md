@@ -1277,3 +1277,305 @@ blade went past you while his hilt and forearm went through you (`dkS0` from 1.2
   of 0.6 m) — up close he reaches for the cut (1.8), not the long strings (2.9).
 - After: `dkClose` 48 of 52 (the four: the leap, only ever thrown from 4 m); `dkFightClose` (you at 1.6 m, his own
   choices) 14 of 16 thrown landed, all but one in the picture; `dkFight` at 3 m unchanged.
+
+## The minotaur at the first castle's gate (2026-10-28)
+The owner: "add this minotaur to the left of the very first castle door … 'You must be here to kill the king?' … 'Yes'
+'No' … if yes … walk to the entrance of the castle and enter … if 'No' … attack the player … fight through the castle
+with you up until you kill the two guys before the throne room door … slowly lay down and hold his stomach as blood
+increases … breath heavy … 'I tried my best friend, I love you...' … slowly die … as tall as the dark knight … unique in
+the way he fights and be strong … cannot be damaged by the player". Toni García Vilche's "Minotaur Low-Poly" (CC-BY-4.0),
+`tools/minotaur_pack.py` → `assets/minotaur.glb` (3.9 MB). Code: `MINO_*`, `minoSeat`, `authorMinoClips`,
+`minoAuthorOwn`, `MUT_KINDS.minotaur`, `MINO` (the story), `updateMinotaur`, `minoUnitPre`. Harness `tools/minotaur.js`
+(`__mnGate`, `__mnStrip`, `__mnContact`); probes `minoRestore`, `minoFort`.
+- **Where**: `minoPost` — 3.6 m to the sea side of the gate's outer face, 2.2 m out from it (world 6.4, −1154.55; his
+  save key `minotaur@6.4,-1155.0` is off the gate's constants, not the mask search). He watches you come up the beach.
+  Made when the fort is ready and you are within 420 m; `assets/minotaur.glb` at reach 980 + BEACH_EXT.
+- **Stages** (`MINO.stage`, on the save as `mino: {s, at}`): wait → (yes) toGate → inside → with → down → dying → dead;
+  (no, or your blade before you have spoken) hostile. `minoLeave` is the dialogue's `onLeave`; a No goes to a node that
+  does not exist, so the box closes on it and he roars (`minoTurn`). Hostile, he goes back to his post whenever you are
+  off the sand (`minoCalm`) and turns again within 14 m.
+- **THE GATE'S DOORS DO NOT SWING**: walked straight in, he went through the shut planks. He stops at the outer face,
+  the gate's groan plays from the gate (`sfxAt` + `sfxFortGate(1)`) and he fades out over 0.7 s (his cloned `u.mats`
+  transparent, then put back).
+- **WITH YOU**: every change of place (beach / fort / c13 / room) puts him behind your left shoulder on that place's
+  floor (`minoJoin`); a room hides him. `minoFollow` walks/runs him there under the castles' own clamps; left behind
+  (stuck 1.6 s, or 30 m off) he is put behind you again where you are not looking (`dkInView`). With a foe the creature
+  AI runs him (`minoUnitPre` returns false); `minoPickFoe` (nearest to him, within 16 m of you, kept 2.5 s, never changed
+  mid-blow) over `minoFoes` (farmers out of their doors, the dark knight, the two swordsmen). `minoDraws`: up to two
+  farmers go for him, and one knight turns on him while he is close and you are not. `dkTownFights` answers him like a
+  pesting farmer.
+- **HIS BLOWS** (`mutLandBlow` → `minoLand`): a farmer is thrown down the street (`dkFling`); a knight or the dark knight
+  takes ×4 (`MINO_UNIT_K`) but never below a sixth — THE KILL IS YOURS (the owner: "until you kill the two guys").
+  Theirs on him stop at 35 % (`MINO_FLOOR`): he goes down at the end, not in the fight. On you (a no) a cut is one of
+  your four and a heavy two (at three, a slam was the bar; measured, two blows killed you).
+- **UNTOUCHABLE BY YOU** (`minoAlly`: `MINO.ally`): `hurtMutantCore` refuses a blow with no `from`, `bladeHitMutant`
+  refuses, and the blade sweep, the aim sweep, the dig ray, a thrown thing, the revolver's trace, the double's wave and
+  `nearestMutant` skip him — the blade passes through. He is also not "something awake near you" (saves, the far
+  loading's pause, the music's `mutNearest`, `inCombat`, the token, `calmChasers`, the laughers) and has no enemy bar.
+- **THE END**: on XIII's court, `knAlive()` false and his blow finished, 1.4 s later `minoGoDown`: `mnFall` (4.4 s: folds
+  over with the left hand to the wound, knees, sits back, onto his back with his head up), both swords baked out of his
+  skinned mesh into static meshes that fall and land (`minoDropSwords`, `sfxSwordDrop`), Ben's pool texture spreading
+  from under his belly bone over 40 s (`minoPoolStep`, 0.3 → 3.3 m), and the owner's dying-man recording at 0.8× rate
+  looped from where he lies, his chest and head driven by its envelope (`updateMinoBreath`, `minoBreathPose`).
+  "Talk to the minotaur" (after 4 s) → his line at 70 ms a character, never ending on its own; closing it is
+  `minoLetGo`: the last breath (the recording from 6.05 s), `mnDie` (5.2 s) and the lens held on his head
+  (`cineHold`, fov 30) until he is still.
+- **BEN'S POOL IS FOR THE DARK**: on XIII's torch-warm paving it read as a shadow (measured in a still). His is
+  multiplied up (color 2.1, 0.9, 0.9) with a little more red emissive.
+- **THE POSES ARE SOLVED, NOT GUESSED** (`MINO_LIE`, `MINO_DEAD`, `MINO_HOLD`): the guessed thighs drove his legs 0.96 m
+  into the paving and the hand sat at his mouth. In the pane: hipY bisected so the lowest skinned vertex is 1.5 cm over
+  the floor; the left hand searched (coordinate descent on armL/foreL) onto the front of his belly (0.2-0.5 cm), the
+  right onto the stone (7 cm). Lying: top 0.99 m, head 0.66; dead: head 0.47.
+- Measured: `minoFort` (street, hands off): 11 swings of 8 kinds in 40 s, farmers 20 → 13, the dark knight 90 → 63,
+  1–2 farmers on him, his health 150 → 143. Court (pane): the man-at-arms 34 → 6 (his floor) in ten seconds.
+  `minoRestore`: saved `{"s":"down"}` with the knights' keys; reloaded, lying at the spot, posed (hips 0.30 m), pool and
+  both swords. Musictest 7/7.
+
+## The gargoyles of XIII's east court, and the arch door they keep (2026-10-28)
+The owner: "4 of these … grey statue textures as if they are gargoyles … hyper realistic … spread out in the section after
+the farmers … sitting hanging off the walls semi high up but noticeable above the fog … make the door to the section with
+the fountain be locked. once you try the door you hear the gargoyles drop down behind you … attack you and the minotaur …
+semi hard to kill flying around fast biting and striking with their feet … unlocked once the gargoyles are dead"; then
+"give them a block of stone they sit on matching the textures on the castle sticking out from the wall". Spinnee's "Flint
+Maw" (CC-BY-4.0), `tools/gargoyle_pack.py` → `assets/gargoyle.glb` (1.7 MB). Code: `GARG*`, `gargFindPerches`,
+`gargPlinths`, `placeGargoyles`, `gargTryDoor`, `gargUnitPre`, `gargLand`, `gargDied`/`gargDeadStep`, `updateGargoyles`;
+harness `tools/minotaur.js` (`__ggBoot`, `__ggShots`); probe `gargFight`.
+- **THE STONE IS MADE FROM THE NORMAL MAP** (the iron knight's way): cool limestone grey, folds darker by CURVATURE only —
+  the first cut darkened by slope (`1 − n.z`) and came out zebra-striped: a normal map holds slope, not depth — ridges
+  worn pale, the flesh map's detail kept as faint tone, mottle, pitting, grime in recesses, a little lichen.
+- **ITS EMISSIVE MAP IS A BROWN WASH** with the eyes in it (median 0.10): lit at the waking strength (2.6) it glowed the
+  whole stone body flesh-brown in flight. Packed eyes-only (over 0.30, ~1.2k px of 512²). `matMore` takes that map back
+  (`dressMutant` puts every emissive on the colour map), dark while stone, lit as it wakes. Grey ×1.5, gamma 0.78, a
+  cold rim: at ×1 they were small black shapes five metres up where the torches below do not reach.
+- **ITS ONE CLIP IS ONE SLOW WINGBEAT** (8.4 s, off a wingtip): `gPerch` frame 0 (crouched, head out and down, the wings'
+  elbows up over its shoulders, wings draped — already a gargoyle), `gWake` 0 → 2.4 s, `gBeat` the upstroke 2.0 ↔ 3.8
+  played there and back (`pingClip`), sped up in flight. The head never moves in the file: bite (neck, head, jaw) and
+  talons (body reared, legs forward, toes spread) are laid on after the mixer (`gargStrikePose`).
+- **WHERE THEY SIT** (`gargFindPerches`, runtime, deterministic): open east-court cells within 14 m of your way in
+  (spawn → arch), 16 rays out to a wall face 4.8 m up that is flat a metre either side, goes on 1.6 m higher, has open
+  court 2.5/5/7.5 m in front of it (not an alley) and faces your path; the first nearest the arch, the rest farthest-point.
+  Their save keys come off fixed spots (`C13_X − 60 − 2i`), not the perches.
+- **THE PLINTHS** (`gargPlinths`): a slab with a drip-lip, two stepped courses and a strut tapering into the face, let
+  0.15 m into the wall; XIII's own brick (`acmat_4`, the same material object) in world-metre planar UVs at its repeat
+  (11.8 along, 23.4 up). The toes stand on the slab's middle: its toes are 0.83 m over its origin and 0.70 behind it in
+  the perch (measured, `gargFootH`) — before, it hung a metre over the ledge.
+- **THE DOOR**: the arch's "Open the door" is "The door is locked." while `gargLocked()`; trying it rattles it and wakes
+  them nearest first, 0.35–0.7 s apart (stone crack, dust, a screech). All dead: the bar's knock, and it opens. Leaving
+  XIII mid-fight puts the living back on their walls whole. On the save: `garg: 2` once they are all dead; a save with the
+  arch open (from before them) has them retired. Dev mode opens the door like every locked door, and they never wake.
+- **IN THE AIR** (`gargUnitPre`, the ground AI never runs them): wake → drop (an arc off the wall to behind their target)
+  → circle (4–5.6 m out, 2–3.7 m up, its own clock) → dive (two at most) → strike (0.5 s hanging in front, the blow at
+  0.24) → back → circle; struck → reel (a parry stuns longer and lower). Two go for you, two for the minotaur when he is
+  with you. Your guard and parry answer them (`blockMutant`/`parryMutant`). hp 12 (your blows are 1–3). Death: back to
+  stone in the air, falls, shatters on the paving into stone chips (`gibs`).
+- **TWO DIVE FAULTS, MEASURED**: from the wall's side a dive was held off by the stone and struck air — now the stand-off
+  point is taken on the OPEN side, and a dive that cannot arrive in 2.4 s pulls out; at a flat 11 m/s it overshot and
+  circled its spot (38 % diving, 1 % striking) — now it brakes in (`min(11, 2.5 + 4d)`).
+- **THE MINOTAUR AGAINST THINGS IN THE AIR**: his ground blade test never caught one (two took him to his floor in a
+  minute). `kind.landFn` → `minoLandsOn`: on a gargoyle the blow lands if it is in front, within his stop + 1.3 and at a
+  height he swings at; and as one dives at him he answers with his quickest cut (`minoCounter`, 75 %). His blows on one
+  are ×2, not the castle's ×4, and he may kill it.
+- Measured (`gargFight`, you 2.6 m out from the door on the EAST side — the passage runs from `arch.ax` along `u` into the
+  east court; the first probe stood you in the fountain court and every dive met the wall): all four broken at 74.5 s,
+  the door open, you answering every strike at reach; the minotaur 110 → 91 and both of his killed by him. Unanswered,
+  they landed 3 blows on you in 10 s. Musictest 7/7.
+
+## The gargoyles break (2026-10-28/29)
+The owner: "give these random stone breaking effects on each kill of the gargoyles and have them break into pieces
+matching the audio well … a very satisfying break smashing them into pieces with good physics"; then, of the first cut,
+"i dont want bullshit claude peices make the model actualy break into its own parts".
+- **THE SOUND**: his recording (9.1 s, six breaks) cut at its silences by `tools/stone_break_pack.py` into
+  `assets/stone-break1..6.m4a` (110 KB in all), each from 10 ms before its first crack; the packer measures each one's
+  `peak` (loudest 5 ms) and `subs` (later 6 dB rises: the debris going again) into `GARG_BREAKS`. One at random a kill,
+  never the last one twice. `gargBreakSound` plays it from where it falls with an OFFSET (`playSampleAt` has none).
+- **THE SMASH LANDS ON THE IMPACT**: the dead statue falls ballistically, so its landing time is known; the sound starts
+  that far ahead of its peak (measured: break 5, peak 0.435, started 0.42 s before the landing) — the crackle in the air,
+  the smash on the stone. Killed on the ground: straight into the peak.
+- **ITS OWN PARTS, NOT CUT PIECES**: the first version cut the statue into Voronoi chunks with a rough lump inside each
+  and threw stone chips and the sand's puffs — the owner rejected all of it. Now every triangle goes with the part its
+  dominant bone belongs to (`gargPartOf`: head, jaw, chest, hips, upper arm / forearm / hand-with-fingers-and-membrane a
+  wing, thigh / shin / foot a leg, the tail in three); on the stone it splits into its seven limbs and trunk
+  (`GARG_LIMBS`), and on each `sub` beat the piece with the most joints left loses its outermost part (a wing's hand,
+  then its forearm; a foot; the jaw; the tail's tip). Nothing added: the only extra is a dark unlit dust cloud
+  (`gargDust` sprites — at 0.52 grey they glowed white in the torchlight).
+- **PHYSICS** (`updateStoneBits`): gravity, spin integrated on a quaternion, the floor met at the piece's own lowest
+  point turned with it (14 extreme points a piece), a hard landing bounces 0.26 and puts a twist in it from where it
+  struck (r × J), a soft one slides to a stop; the court's walls throw it back; asleep when still for 0.6 s. All of one
+  statue's pieces still → merged into one mesh a material (`gargMergeBits`).
+- **COST**: baking the skin and cutting it on the LANDING frame was 23 ms; the pose is frozen at death, so `gargBake`
+  runs on the death frame (in the statue's own frame) and the landing only transforms and throws: 9–13 ms and 10–18.
+- Measured (`gargFight`): all four broken, the door open, no errors; a break's parts at rest in 3 s, the wings snapped at
+  the wrist on the beats. Musictest 7/7.
+## 2026-10-29 — the owner's playthrough of the minotaur and the gargoyles ("this is unplayable")
+- **HIS BODY VANISHED WHEN YOU KILLED HIM (a no)**: `updateMinotaur`'s visibility asked `u.st.alive`; it now reads
+  `(alive || stage === 'hostile')`, so the body lies where he fell.
+- **HIS BLOWS ON YOU**: `aimDrop 0`, `aimFront 0.35`, `aimK 0.45`, a measured `STOP` per swing (`__mnContact`,
+  `minoClose`): the slam lands mid-screen, the slash and sweep near eye level; the chop and kick (whose contact was at
+  your shins) are out of his table. A cut is 1, a heavy 2 — two-hit kills before. Harder as a foe: `aggr 3.4`,
+  `press 1.0`, `chainMax 3`, almost no circling/feinting.
+- **HE AND THE DARK KNIGHT FIGHT**: they ignored each other. `minoFoes` lists the dark knight (+6 score in
+  `minoPickFoe`); `dkTownFights` takes him as a pest within 5 m, and a dark knight he strikes turns on him.
+- **"THE FARMER FIGHT IS A LAGGY MESS"**: measured (`fortPerf`) with him: median 6 ms, p99 17, nothing over 33 — the
+  frames were fine; what read as lag was the camera shake of his throws and slams on every farmer. `dkFling` from him
+  throws no impulse shake (0.06 trauma), `minoQuake` 0.2 only within 9 m. And `fade 0.32` between his clips.
+- **STANDING WITH YOU** (`minoFollow`): he circled you. Now he holds 3.6–5.5 m off (hysteresis), turns to face you, and
+  backs off with `oWalkB` if you walk into him under 2 m.
+- **HIS FISTS**: a borrowed (Mixamo) clip has no fingers for him — his `F4` is the wrist — so every finger fell back to
+  the file's rest, OPEN, 30–79° off his grip, and the hilts floated in open hands. `authorMinoClips` passes
+  `ntarRetarget` a `keep` map of every finger (not `F4`) at his `mIdle`'s first frame (measured after: < 1° off it in
+  every clip, rendered closed round the hafts).
+- **HIS EYES** ("his eyeballs are just brown"): the visible eyeballs are two 74-vertex hemispheres each (upper, lower;
+  both eyes share one mirrored UV layout, bottom left of the Base map) — NOT the cupped 32-vertex shells round them,
+  which are the sockets (found by painting test colours on the live map in the pane: the first repaint went on the
+  sockets and showed as a white rim round a black eye). `tools/minotaur_pack.py` rasterises the +x eye's normals into UV
+  space and paints by angle to a gaze 0.55 out / 0.83 forward: sclera (dimmed toward the lids, a few thin veins), hazel
+  iris with fibres and a limbal ring, pupil, a painted catchlight (the 0.85-rough eye has no specular); its normal-map
+  texels go flat.
+- **LYING DOWN** ("his arm is coming out his stomach … his body should not float … easier to talk to"): measured, the old
+  `MINO_LIE` had his back 13–30 cm off the stone (propped on the right arm and his hooves), and the left upper arm ran
+  THROUGH his torso so the fist came out of his belly; the fall's in-between keys sank his shins up to 40 cm into the
+  floor. Re-solved with `tools/minolie.js` (coordinate descent; the arm-in-body test casts a ray straight up from each
+  arm vertex through the rest of him — odd crossings = inside — valid because he lies on his back). Now: back 0.7 cm,
+  pelvis 1.9, every vertex over the floor, the fist on the top of his belly; the fall never more than 3 cm under (two
+  half-keys at their own height: his legs fold before his hips drop); the death keeps the fist on the wound (a hand
+  sliding off was solved too — every path between two keys swung the arm up through him), and the breath's chest lift
+  turns his right arm with it (it put the hand 9 cm into the paving). In the court (`minoDown` probe): chest and head
+  within 1 cm of the paving under them. The talk box is a wide low one over his chest while he lies; from every side
+  you can stand at 1.8 and 3 m, the prompt comes up (`__bw.hoveredS()` reads it).
+- **NOTHING THROUGH WALLS**: `minoKeepOut` each frame he is with you: the step is legal only on a floor within half a
+  step, inside the court's mask, not a blocked passage, `keepWallNear(0.55)` clear from knee to head and no
+  `keepHitsWall` crossing at hip and chest height — else slid along the wall, else put back. The gargoyles fly a 1 m
+  grid of the court (`gargGrid`, clearance 0.95 m from 1.6–4.6 m up), route by BFS to the furthest visible cell, and
+  every step passes `gargLegal`; an illegal start (a perch, a knock) is allowed to step OUT.
+- **THE GARGOYLES**: four new perches, all on the door region's walls, none over a window (picked by rendered
+  thumbnails — the far-wall ones were reachable only through a low passage); immune to everything until the door is
+  tried (`gargImmune`). Their fight is a cycle, one at a time on you (`gargTurnOf`): ring (circle out of reach) →
+  approach → TELL (rear back, wings up, 0.5 s) → LUNGE (bite or feet, 9.5 m/s) → RECOVER (hang in front of you, the
+  opening) → back off; a block or parry knocks it to `reel`. Measured (`gargFight`, a guard-and-answer player): all four
+  broken in 53 s, 3 hurts on you, the minotaur 110 → 95. Their breaks' bits crumble and are removed after 3.5 s.
+- **HE LOOKS DOWN AT YOU** (2026-10-29, "have the minotaurs head tilt down at you as he looks at you to talk or
+  follow"): `minoHeadAt` after his clip is sampled — the neck a third, the head the rest, ≤ 0.9 rad off the clip, eased
+  — aims his face at a hand under your eyes. His "face" is the stance's forward carried in the head's frame
+  (`Head.userData.mnFront`, `minoSeat`); the painted irises measured within a degree of it. Measured, his face's pitch
+  in his clips: idle −11…−15°, walk −8°, the borrowed walk-back/idle/run −6…+4° — level over your head. Called in the
+  wait branch (within 12 m), the talk (`dialogOpen` at the gate) and `minoFollow` (within 14 m, his body turned to you);
+  not in a fight and not lying. In the game at the gate and following: 0.0° off. TRAP: `q.slerpQuaternions(I, q, t)`
+  with `q` as both target and argument copies the identity over it first — the turn was always nothing.
+- **THE GARGOYLES' PERCHES, ON THE DRAWN STONE** (2026-10-29, "one is floating off the wall the other clipped through the
+  wall"): two causes, both measured. (1) The perches were found off XIII's COLLISION walls, and on the door's side the
+  drawn wall is elsewhere: a ray from a metre out hit the stone at 0.26 m for perch 0 (a tower's corner 0.74 m in front of
+  the face, more stone 0.6 m beside) and 2.64 m for perch 1 (hanging 1.64 m off the wall), and the drawn face there runs
+  8–11° off the collision one. Re-found by raycasting the castle's own meshes (every mesh of `c13World` but the corbels):
+  flat to 2 cm over ±1.2 m × four metres of height, nothing within 1.5 m of the statue either side, nothing out in front
+  or overhead, the face's OWN normal from the hit (`face.normal` → world). Only one stretch of the door-side wall passes
+  that (x 31–35); perch 0 is on a 2.4 m face between two corners, its wings ±0.95 m, the corner 1.34 m off. (2) The far
+  wall's two were never SEATED: `gargFootH` (the toes' offset in the perch pose) ran only from the unit's own tick, near
+  it — until then they stood at the guessed offset, 0.7 m deeper and 0.22 m lower (56 cm of statue inside the stone) with
+  their mixers blending four clips. `updateGargoyles` seats every one the moment its model is in. After: all four on the
+  stone (rays 1.00 m), nearest vertex 15 cm off the wall.
+- **THE LOCKED DOOR, WITH HIM** (2026-10-29, "when you go to open the locked door make the player spin around and enter
+  dialog with the minotaur in the angle i provided … 'FUCK its locked...'"): `gargTryDoor` → `minoAtDoor` (him at your
+  side in XIII, not mid-blow, within 16 m): a dialog on `MINO_DOOR_NPC` — the target his root raised to YOUR eye height
+  less 5 cm (level), `fov 200` so the lens stays at yours (his screenshot: the whole of him, level, not the push-in), no
+  head bone so it holds still; the dialogue camera's own slerp is the spin (measured: 148° round in 1.25 s, pitch −1°).
+  He stops, plays his idle and turns to you through it (the talk branch of `updateMinotaur` now runs for `with` too).
+  The line ends on its own (2.6 s) or a click, and its `onLeave` is `gargWake` — they come down then. Once a game
+  (`GARG.told`); without him, the door wakes them at once as before. Probe `gargDoor`.
+- **THE DOOR'S CONVERSATION** (2026-10-29, the owner's script, replacing the one line): "FUCK its locked..." → you: "You
+  can probably break this door." → "I’m not some savage beast." → you: "You just killed 40 people?" (→ the polite-door
+  line) or "Okay, let’s figure out another way" (→ "…smart one human.") → you: "I swear a gargoyle just dropped behind
+  you." → "I DON’T HAVE TIME FOR GAMES! …" → (click) the box goes, the gargoyle rises and hangs over him, he turns round
+  on it SLOWLY (0.25 → 0.8 rad/s, ~4.5 s for the half turn, his head on it) → "oh" → (click) the rest drop, the fight.
+  All in `MINO_NPC.script` (`locked` … `oh`), the one conversation open throughout so the world is held; the scripted
+  gargoyle is `gp.mode = 'script'` (immune, the AI skips it) driven by `gargSceneStep` from `updateGargoyles`, which
+  runs while frozen. The DROP starts on entering either of his two middle lines (`enter`), 0.9 s in: the closest
+  gargoyle to him cracks, falls 1.15 s in an arc and crouches on the paving 2.4 m behind him — OFF to one side of your
+  line (`gargSceneSpot` tries ±0.85 rad first): dead behind him his body hid it (measured in the probe's still). Its
+  eyes light as it cracks; it watches you over his shoulder. `gargWake` takes it straight into the fight from where it
+  is ('ring'); clicked or Escaped through early, every path still ends in `gargWake`. Probe `gargDoor` clicks through
+  the whole of it.
+- **THE DOOR TALK'S LENS** (2026-10-29, "make the minotaur zoom … be normal like when you talk to him and have him stand a
+  little closer … so you dont expect the gargoyle to drop"): `MINO_DOOR_NPC` is the gate's framing again (his head bone,
+  `fov 34`), and `minoAtDoor` puts him 2.3 m from you along his line while he is still behind you (a legal floor, no
+  stone crossed, `MINO.legal` moved with him). The drop happens out of that frame; the rise and his turn are in it.
+- **THE GARGOYLES, ROUND THREE** (same day: "stop spinning there head … harder and more aggressive … flap their wings way
+  faster … a smooth fight diving at you … i cant even register if they attack"). Measured causes: `gBeat` is 3.6 s of clip
+  a beat (they flapped once every 3 s; now `GARG_BEAT` 5.4–8.6 = 1.5–2.4 beats/s); the strike poses bent Spine1/Spine3/Neck,
+  which have NO track in the clip, so each frame's bend stacked on the last — the spin (`gargRest` puts `GARG_FREE` back
+  to rest after the mixer, before the pose: measured after, never more than 0.35 rad off rest); its head is 1.85 m and
+  its toes 0.75 m over its origin in flight (`GARG_HEAD`/`GARG_TOE`), so the bite now arrives at your eyes and the claws
+  at your chest. The attack is a dive: approach to 4.2 m out with its head 1.25 m over yours → `tell` 0.55 s (rears back
+  and up, wings HELD at the top of the beat, jaw open, eyes ×2.3, a screech every time) → `lunge` on `gGlide` at 12.5 m/s
+  → the blow (`gargLand`: your hit also shakes the view 0.22 and it screams) → `recover` is a pull-up past you on hard
+  beats → `back`. `gargBodyMotion`: banks into turns and drift, noses down with speed, the body heaves on its beats (on
+  the model). Two on you at once when three or more are left, the second only once the first is diving (`gargTurnOf`).
+  hp 12 → 16. Measured (`gargFight`): 16 of their blows landed in 74 s on the probe's player, all four broken.
+- **THE KNIGHTS BEFORE THE THRONE ROOM, ROUND TWO** ("actually hard and a good fight … smarter and have different
+  personalities. make sure one fights the minotaur first as well unless engaged with"). THE DUELIST (`knMan`): hp 48,
+  chains of four, feints, circles, sidesteps your charge on his strafe (`dodgeClip`), small openings, and a second wind
+  at 40% (`rageAt`) — faster and closer. THE JUGGERNAUT (`knIron`): hp 72, poise 28, never backs out of your charge
+  (`reactK: 0`, new — the react's chance is scaled by it), short stuns, a berserk second wind at half. In `minoDraws`
+  one of them is ON the minotaur from the moment they wake (the iron one, or the other if you are on the iron) and
+  stays on him; the one you strike is yours for good (`knYours`), and the minotaur picks the one on him first (+8).
+  Measured (`knDuel`, a probe player striking light blows between theirs, never blocking): the iron knight on him at
+  0.3 s for 57 s, taken by him from 72 to his floor of 12 while he lost 38; the duelist 55 s to kill and landed 30 on a
+  player who never blocked. TRAP: dev mode stops every creature starting a swing (`!settings.devMode` in the tick) — a
+  fight probe in dev mode measures nothing; turn it off and `heal()` each frame.
+- **HIS DEATH SONG AND A SLOWER FALL** (2026-10-29, the owner: "when the minotaur falls too his knees make this play.
+  have him fall slowly and natural … dont loop it"; then "dont actually stretch the song"; then "just have it play when
+  you notice him dying and if you do the dialog it still plays through"). `assets/minotaur-death.m4a` (his MP3, 13.5 s of
+  music + 3 s of silence → 14.6 s, AAC 160k, 288 KB, NOT time-stretched). `startMinoSong` is the end song's pattern: its
+  own gain to the output (`minoSongVol`, `MINO_SONG_LEVEL` 3.2 capped at 1 — the file is ~6 dB louder than the end
+  song's piece), in `musicGuard`, `musicNote('minotaur song')`, played once. It starts in `minoDownStep` on the FIRST frame
+  his head is on your screen (projected inside ±0.85/±0.9 of the view, within 40 m) while he is down or dying — only if
+  `MINO.songDue`, which only `minoGoDown` sets, so a restore into his lying there never plays it; a conversation does
+  nothing to it. Preloaded (`lazyBuf`) while he is at your side in XIII. Musictest scenario `mino` (into XIII with
+  `__ggBoot`, which SUSPENDS the context — resume it after — him down, looked at): PASS. The fall is 9.8 s now:
+  folded over the wound (1.1), a sway (1.8), down onto his knees (3.5), held there head hanging to 5.3, sat back (7.2),
+  over (8.4), lying (9.8) — the floor-fitted keys spaced out plus two holds that bend only chest and head (the sway's
+  hips at −0.04 sank him 4.5 cm: 0.005 now; the whole fall within 3 cm of the floor). Swords leave his hands at 3.3 s,
+  as his knees land; the talk prompt waits for the fall to finish.
+- **ROUND FOUR (2026-10-29)** — the owner's list after playing:
+  - **The door scene's end**: no "oh". He turns round slowly on it (its body, not over its head — "looking up too much":
+    look target its origin + 1.0, the hover lower and further back, 1.7 m up and 2.2 m behind him), holds 0.7 s, then a
+    double take (`S.stage` 'back': his head led round to you, smoothed at 10/s, his shoulders after at 1.7 rad/s), a
+    second of eye contact once he is within 1 rad of you, round again onto it, and the conversation ends itself
+    (`endDialog` → `gargWake`).
+  - **His step back** ("he looks scared of me"): the orc's guarded walk-back is out; backing off you he walks his own
+    `mWalk` backwards, 0.45–0.6 m/s, from under 1.8 m out to 2.6.
+  - **Gargoyles break in the air**: `gargDied` bakes and sets `airBreak`; the next frame `gargShatter(u, true)` throws
+    the parts from where it was struck, off the line of the killing blow (0.8 of a 4.5 m/s push carried, limbs ×1.35),
+    the smash of its recording on that instant.
+  - **Their moveset** (Elden Ring's birds, the owner): three moves, each its own tell and cue. TALON DIVE — up and out,
+    rears back with its feet drawn up (`GARG_DRAWN`), wings held at the top, screech; dives with both feet thrust out
+    (`GARG_THRUST`), rakes them on through and back (`GARG_SWEPT`) as it pulls up past you. RAKE — hovers in to a stride,
+    feet cocked (`GARG_COCK`), hiss of beats; a left kick then a right (`GARG_KICK`, 0.2 s each, eased out), each its own
+    hit; its kicks keep their own clock (`g.rk`) that only runs once it is within 1.5 m (the first was thrown from 2 m).
+    DELAYED BITE — reared and swaying 0.95 s, then a snap. Legs: [thigh, knee] ×2 about the body's left-right, MEASURED in
+    the studio (thigh negative = forward, knee negative = straightened ahead, positive = folded up under); they have
+    tracks, so they are laid on after the mixer each frame (eased). `gargClawTrails`: the swords' white streak on each
+    striking foot, ankle to 2.4× past its toe. Hits judged by `gargStrikes` (toe or head within 1.05 m of you, or the body
+    within 1.7 in front of you): measured, the talons reach no further forward than the body, so the dive stands in to
+    0.9 m and the rake to 1.0 — before that 9 of 28 reached; after, 24 of 24. hp 20.
+  - **Blows between creatures in the street** (`townHits`: every swing the minotaur and the dark knight throw at a man,
+    at its contact): 19/21 and 10/14 at first, the dark knight's every miss on the minotaur. Fixed in the creature tick:
+    the blade test counts the target's BODY (`lr += body*0.8 − 0.25` on a creature), the stand-off adds its body, a LEAP
+    is not held to the stride's cap (9 m/s), a creature on a creature starts its closing 0.42 s out at up to 3.4 m/s, the
+    step-back through a wind-up is for blows at YOU only, and a creature on a creature lets go of a swing in its wind-up
+    (to 0.7 of it) when its man is dead, thrown, switched, off its line (< 0.55 in front) or further than its closing can
+    reach — including the next blow of a string (his first blow THROWS a farmer). The minotaur does not take a man the
+    dark knight is mid-swing at. Root-motion swings (`dkRootMotion`) stop at the body too, a leap stretching to 2.4×.
+    After: 25/25 and 22/22.
+  - **Lying**: his breath's rest pose (`MINO.base`) is read from `mnFall`'s last frame (`minoClipEnd`) — read off the live
+    bones it held a stray 0.46 rad in the neck (and the chest, which carries the arms): the back of his head was 14 cm
+    into the paving. Now 5.5 cm over it. A finished clip is NOT re-applied by `mixer.update(0)` (it is not running): a
+    "clip alone" check that way measures nothing. The swords are thrown 1.7 m/s out to his sides (one landed on his leg).
+  - **Myles**: his name on the card; dying, "I thought I could push through" (click on) then "I tried my best friend, I
+    love you..."; his head turns to your face while you speak to him and through his dying (0.6 rad, he is on his back),
+    eased off after. His breath while he lies is slower and quieter (rate 0.64, level 0.24, the chest's heave halved).
+  - **His song** is the owner's longer file (55.8 s, whole), faded in over 3.5 s and out over 5 as he dies
+    (`minoSongFade` on 'dead').
+  - **Through the arch** (`minoViaArch`): on the other side of the open door from you he walks to its mouth on his side,
+    then along the passage and out (measured, `minoArch`: from 4 m off its line he stuck at the wall beside it).
+  - **The two knights guard the throne room's door**: 3 m out in front of it, 1.8 either side, facing out across the
+    court (`guardOK` asks a 1.1 m clear circle, not the court's 2.6).

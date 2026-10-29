@@ -502,3 +502,11 @@ covered pane gives 1-3 rAF a second to everything, the top page included: time n
 `musictest.sh` can run past 7 minutes on a loaded machine (its cap is now 700 s); `sh tools/musictest.sh <out> end`
 (or `?only=end,samurai` on musictest.html) runs just those. `__bw.seaS` is NOT the sea artifact's state (a name taken
 long ago) — use `__bw.sea`.
+- **(2026-10-29) PATCHING `AudioContext.prototype.resume` BEFORE THE GAME BEGINS STOPS IT BEGINNING** (`__mnSpawn`'s
+  `beginGame` never started; no model ever loaded). Patch the instance (`__bw.audioCtx.resume = () => Promise.resolve()`),
+  and keep an interval that re-suspends it: a `beginGame` inside a helper can still bring it back to `running`.
+- **(2026-10-29) A STUDIO RENDER OF A UNIT THE GAME HAS HIDDEN IS BLANK**: `u.g.visible` is the game's (the minotaur is
+  hidden off the beach) — set it true before `knStudio` renders, or the frame is the empty studio.
+- **(2026-10-29) `__bw.hoveredS()`** is the label of what the crosshair is on after the last `update()` — a probe can
+  ask whether a prompt comes up (`minoDown`). A probe camera inside a wall is moved by the step: re-aim after the step,
+  or the miss is the probe's.

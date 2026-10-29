@@ -201,6 +201,9 @@ const BW_FROM = (() => {
     const walked = f.beachZ != null ? -f.beachZ : d.room ? (ROOM_Z[d.room] || 0) : -d.pos[2];
     const first = new Set((ROOM_FILES[d.room] || []).map((n) => 'assets/' + n));
     for (const n of [...(Array.isArray(d.pack) ? d.pack : []), ...(Array.isArray(d.worn) ? d.worn : [])]) if (PACK_FILES[n]) first.add('assets/' + PACK_FILES[n]);
+    /* (and the minotaur, when the save has him at your side, down or dead: ranked by his gate, he parsed in the far
+     * queue — measured, `minoRestore`, 40 s after a load into XIII's court before he lay there again) */
+    if (f.mino && f.mino.s && f.mino.s !== 'wait') first.add('assets/minotaur.glb');
     return { walked, first };
   } catch (e) { return null; }
 })();
@@ -273,6 +276,8 @@ const ASSET_REACH = {
   'assets/castle13.glb': 1080 + BEACH_EXT,         // Castle XIII, through the first castle's back door
   'assets/throne.glb': 1150 + BEACH_EXT,           // and the throne room through its west court
   'assets/dark-knight.glb': 1005 + BEACH_EXT,     // the dark knight in the first castle's street (the paladin's place, 2026-10-19: his files no longer fetched)
+  'assets/minotaur.glb': 980 + BEACH_EXT,        // and the minotaur waiting at its gate (2026-10-28)
+  'assets/gargoyle.glb': 1060 + BEACH_EXT,       // and the four on the walls of Castle XIII's east court (2026-10-28)
   'assets/knight-man.glb': 1085 + BEACH_EXT,       // and the two swordsmen who hold its west court (the flail knight's, 2026-10-19)
   'assets/knight-iron.glb': 1085 + BEACH_EXT,
   'assets/sawnoff.glb': 1085 + BEACH_EXT,          // the sawn-off, sold by the castle's trader
@@ -420,7 +425,7 @@ function bgLoadOk() {
   if (startLeft() === 0) { bgLoadMode = false; console.info('[boot] the far rest is in'); return true; }
   if (performance.now() - bgLoadLast < 150) return false;   // (330 first: the rest took 90 s to come in, its worst step 46 ms)
   const c = camera.position;
-  for (const u of mutants) if (u.st && u.st.alive && u.st.awake && u.g.visible && Math.abs(u.g.position.x - c.x) < 30 && Math.abs(u.g.position.z - c.z) < 30) return false;
+  for (const u of mutants) if (u.st && u.st.alive && u.st.awake && u.g.visible && !minoAlly(u) && Math.abs(u.g.position.x - c.x) < 30 && Math.abs(u.g.position.z - c.z) < 30) return false;
   for (const u of crabs) if (u.st && u.st.alive && u.st.awake && Math.abs(u.g.position.x - c.x) < 30 && Math.abs(u.g.position.z - c.z) < 30) return false;
   return true;
 }
@@ -1092,6 +1097,12 @@ let samScoreVol = null;
  * capped at 1 — it goes straight to the output. */
 const END_SONG = 'assets/end-theme.m4a', END_LEVEL = 6.5, END_MAX = 1.0;   // (2.4 for the whole file with its loud reprise; the first piece alone, trimmed 2026-10-18, is -25.2 dB mean / -9.6 peak: 6.5 sets it a little over the samurai's score)
 let endVol = null, endSong = null;
+/* the minotaur's death (`startMinoSong`): the owner's "minotaur death music", once, from the moment he starts to go down
+ * (2026-10-29: "when you see him start falling this plays … dont loop it", and "dont actually stretch the song"; then his
+ * longer file, 55.8 s, whole) — faded in over 3.5 s, faded out over 5 as he dies. −19.2 dB mean / −5 peak: about 6 dB over the end song's
+ * piece, so its level is about half that one's, capped at 1 (it goes straight to the output). */
+const MINO_SONG = 'assets/minotaur-death.m4a', MINO_SONG_LEVEL = 3.2, MINO_SONG_MAX = 1.0;
+let minoSongVol = null, minoSong = null;
 let wreckThemeVol = null;
 
 // ------------------------------------------------------------------
@@ -2363,7 +2374,7 @@ function sfxFoghorn(dist, pan) {
 }
 function somethingAwakeNear(r) {
   const px = camera.position.x, pz = camera.position.z;
-  for (const u of mutants) if (u.st.alive && u.st.awake && Math.hypot(u.g.position.x - px, u.g.position.z - pz) < r) return true;
+  for (const u of mutants) if (u.st.alive && u.st.awake && !minoAlly(u) && Math.hypot(u.g.position.x - px, u.g.position.z - pz) < r) return true;
   for (const u of crabs) if (u.st.alive && u.st.awake && Math.hypot(u.g.position.x - px, u.g.position.z - pz) < r) return true;
   return false;
 }
@@ -8735,7 +8746,7 @@ const dcRestartEl = deathCardEl && deathCardEl.querySelector('.dc-restart');
 if (dcRestartEl && deathWait && loadMode !== 'checkpoint') dcRestartEl.textContent = 'Restart';
 function deathCardShow() {
   document.documentElement.classList.add('died');
-  if (deathCardEl) { deathCardEl.classList.remove('gone'); deathCardEl.classList.add('fadein'); }
+  if (deathCardEl) { deathCardEl.classList.remove('gone', 'asking'); deathCardEl.classList.add('fadein'); }
   if (dcRestartEl) { dcRestartEl.classList.add('loading'); dcRestartEl.textContent = hasCheckpoint() ? 'Restart from last checkpoint' : 'Restart'; }
 }
 function deathCardReady() {
@@ -8777,7 +8788,8 @@ function deathCardGo(gesture = true) {
 }
 if (dcRestartEl) dcRestartEl.addEventListener('click', () => deathCardGo());
 window.__dcLive = true;   // (from here the buttons are this module's; a click before now was kept by index.html — acted on at the bottom)
-{ const q = deathCardEl && deathCardEl.querySelector('.dc-quit');
+// (the quit itself, once the card has asked — the question is index.html's: `.dc-quit` → `.asking` → `.dc-quit-yes`)
+{ const q = deathCardEl && deathCardEl.querySelector('.dc-quit-yes');
   if (q) q.addEventListener('click', () => {
     leavingOnPurpose = true;
     try { for (const k of ['beachwalk.load', 'beachwalk.skipIntro', 'beachwalk.died', 'beachwalk.dcGo']) sessionStorage.removeItem(k); } catch (e) {}
@@ -10917,7 +10929,7 @@ class PhysProp {
         break;
       }
       for (const u of mutants) {
-        if (!u.st.alive || u.st.struck) continue;
+        if (!u.st.alive || u.st.struck || minoAlly(u) || gargImmune(u)) continue;
         if (Math.hypot(p.x - u.g.position.x, p.z - u.g.position.z) >= 0.9 || p.y > u.kind.h) continue;
         hitConnect(0.4, 1); hurtMutant(u, 1);
         this.vel.multiplyScalar(0.3);
@@ -14884,7 +14896,7 @@ function aimLand(P) {
   }
   { const far = meleeReach(P);
     for (const u of mutants) {
-      if (!u.st.alive || !u.g.visible) continue;
+      if (!u.st.alive || !u.g.visible || minoAlly(u) || gargImmune(u)) continue;
       const t = meleeT(u, P, far);
       if (t >= 0) d = Math.min(d, t);
     } }
@@ -15144,7 +15156,7 @@ function bladeSweep(live) {
       raycaster.setFromCamera(_bldN.set(x, y), camera);
       _aimD.copy(raycaster.ray.direction);
       for (const u of mutants) {
-        if (!u.st.alive || u.st.struck || !u.g.visible || blade.hits.has(u) || blade.first === u) continue;
+        if (!u.st.alive || u.st.struck || !u.g.visible || blade.hits.has(u) || blade.first === u || minoAlly(u) || gargImmune(u)) continue;
         /* the BODY, not the old ray's charity: `hitR` was sized for one line down the
          * crosshair (a metre round the samurai); the blade's whole path is swept now,
          * so what it must pass through is the creature's own width */
@@ -15167,7 +15179,7 @@ function bladeSweep(live) {
  * (`M.run`); once he has stopped in front of you he is as killable as ever. */
 const elvRunImmune = (u) => !!(elvMan && elvMan.run && u === elvMan.u);
 function bladeHitMutant(u, P, main) {
-  if (elvRunImmune(u)) return;
+  if (elvRunImmune(u) || minoAlly(u) || gargImmune(u)) return;
   const heavy = P >= MUT_HEAVY;
   hitConnect(P, (heavy ? 1.35 : 0.9) * (main ? 1 : 0.6));
   if (isBlade()) playSample('katHit', main ? 1.0 : 0.8, 0.05, 1 - P * 0.08);
@@ -15259,7 +15271,7 @@ function digImpactCore() {
     for (let di = 0; di < nd && !best; di++) {
       _aimD.copy(_mswD[di]);
       for (const u of mutants) {
-        if (!u.st.alive || u.st.struck || !u.g.visible) continue;
+        if (!u.st.alive || u.st.struck || !u.g.visible || minoAlly(u) || gargImmune(u)) continue;
         if (bladeSwept()) continue;      // a swept weapon hits what its blade passes through, and nothing else
         // A BODY IS AS WIDE AS THE BODY, AND AS TALL: the capsule, not a ball
         const t = meleeT(u, P, far);
@@ -18993,7 +19005,7 @@ function updateEnemyBars(dt) {
     b.fill.style.width = (f * 100).toFixed(1) + '%';
     b.lost.style.width = (Math.max(f, b.trail) * 100).toFixed(1) + '%';
   };
-  for (const u of mutants) consider(u, (u.kind.h || 1.8) * 1.0 + 0.12, u.kind.hp);
+  for (const u of mutants) if (!minoAlly(u)) consider(u, (u.kind.h || 1.8) * 1.0 + 0.12, u.kind.hp);   // (not an enemy's bar over the minotaur at your side)
   for (const u of crabs) consider(u, 0.75, CRAB_HP);
   for (const u of gulls) consider(u, 0.32, GULL_HP);
   for (const [u, b] of ehpPool) {
@@ -22800,6 +22812,9 @@ const SAMPLES = {
    * — a thing you hear when you are near him and not before — and the last
    * is the breath he dies on, laid under the fall so they are one event. */
   benBreath: ['assets/ben-breath.m4a'],
+  /* THE GARGOYLES BREAKING, the owner's "3D Render Stone Break Sound Design" cut at its silences into six, each from just
+   * before its first crack (`tools/stone_break_pack.py`; `GARG_BREAKS` holds each one's smash and its debris beats) */
+  stoneBreak: Array.from({ length: 6 }, (_, i) => `assets/stone-break${i + 1}.m4a`),
   /* SAND UNDERFOOT, the owner's recording: a walk on a beach cut at its own
    * onsets into twelve steps (one every 0.54 s in the source), each faded out
    * over its last sixth, one at random per footfall. */
@@ -24457,6 +24472,30 @@ function startEndSong() {
   endSong = { src, env };
 }
 document.getElementById('end-restart').addEventListener('click', () => { leavingOnPurpose = true; location.reload(); });
+// the minotaur's death song: once, as he goes down (`minoGoDown`); asked for while he is at your side in XIII so it is in
+// hand, and if it is not yet, started the moment it is
+function startMinoSong() {
+  const ctx = audioCtx; if (!ctx || minoSong) return;
+  const buf = lazyBuf(MINO_SONG);
+  if (!buf) { setTimeout(startMinoSong, 150); return; }
+  if (!minoSongVol) { minoSongVol = ctx.createGain(); minoSongVol.connect(ctx.destination); }
+  minoSongVol.gain.value = Math.min(MINO_SONG_MAX, settings.volume * settings.musicVolume * MINO_SONG_LEVEL);
+  musicNote('minotaur song', minoSongVol.gain.value);
+  // (2026-10-29, the owner: "have the death music fade in" … "fade it when he dies looking at you": `minoSongFade`)
+  const t = ctx.currentTime + 0.02, env = ctx.createGain();
+  env.gain.setValueAtTime(0.0001, t); env.gain.exponentialRampToValueAtTime(1, t + 3.5);
+  env.connect(minoSongVol);
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(env); src.start(t);
+  minoSong = { src, env, done: false };
+  src.onended = () => { minoSong.done = true; };
+}
+function minoSongFade(sec) {
+  const ctx = audioCtx, S = minoSong; if (!ctx || !S || S.done || S.fading) return;
+  S.fading = true;
+  const t = ctx.currentTime, g = S.env.gain;
+  g.cancelScheduledValues(t); g.setValueAtTime(Math.max(0.0001, g.value), t); g.exponentialRampToValueAtTime(0.0001, t + sec);
+  try { S.src.stop(t + sec + 0.05); } catch (e) { /* already stopped */ }
+}
 
 // ------------------------------------------------------------------
 // Movement + recentring + loop
@@ -34839,7 +34878,7 @@ function updateScp(dt) {
 function nearestMutant(pos, maxD = Infinity) {
   let best = null, bd = maxD;
   for (const u of mutants) {
-    if (!u.st.alive) continue;
+    if (!u.st.alive || minoAlly(u) || gargImmune(u)) continue;
     const d = Math.hypot(pos.x - u.g.position.x, pos.z - u.g.position.z);
     if (d < bd) { bd = d; best = u; }
   }
@@ -35057,6 +35096,9 @@ function mutFoePos(u) {
 /* AND A BLOW LANDS ON WHOEVER IT WAS THROWN AT. */
 function mutLandBlow(u, dmg) {
   const f = u.st.foe;
+  // the minotaur's blows on the castle's men, and theirs on him (he goes down at the end, not in the fight: `MINO_FLOOR`)
+  if (f && f.st.alive && u.kind.mino) { minoLand(u, f, dmg); return; }
+  if (f && f.st.alive && f.kind.mino) { hurtMutant(f, Math.max(0, Math.min(dmg, f.st.hp - Math.ceil(f.kind.hp * MINO_FLOOR))), 0, u); return; }
   if (f && f.st.alive && u.kind === MUT_KINDS.darkKnight && f.kind.farmer) { dkFling(u, f); return; }
   // (a farmer's blow on the dark knight: it wounds him, never below two fifths — the kill is yours, `dkTownFights`)
   if (f && f.st.alive && f.kind === MUT_KINDS.darkKnight && u.kind.farmer) { hurtMutant(f, Math.max(0, Math.min(dmg, f.st.hp - Math.ceil(f.kind.hp * 0.4))), 0, u); return; }
@@ -35253,7 +35295,11 @@ function blowLands(u) {
         _dbC.lerpVectors(pts[i - 1], pts[i], k / 4);
         const y = THREE.MathUtils.clamp(_dbC.y, bot, top);
         const dx = _dbC.x - foe.x, dz = _dbC.z - foe.z, dy = _dbC.y - y;
-        const lr = (u.st.foe && u.kind.foeLimbR) || u.kind.limbR || LIMB_R;   // (`foeLimbR`: tight on you, not on a farmer — they have to go down as you watch)
+        let lr = (u.st.foe && u.kind.foeLimbR) || u.kind.limbR || LIMB_R;   // (`foeLimbR`: tight on you, not on a farmer — they have to go down as you watch)
+        /* (and on another creature, ITS width: the test is against the line through its middle, so a blade that met the
+         * minotaur's chest — 0.78 of body either side — was a miss; measured, `townHits`, the dark knight's every miss
+         * was on him) */
+        if (u.st.foe && u.st.foe.kind) lr += Math.max(0, (u.st.foe.kind.body || 0.45) * 0.8 - 0.25);
         if (dx * dx + dz * dz + dy * dy < lr * lr && (!u.kind.hitOnScreen || u.st.foe || onScreenPt(_dbC))) { (u.hitPt || (u.hitPt = new THREE.Vector3())).copy(_dbC); u.hitAt = performance.now(); return true; }  // a body is wider than a line (and a kind may say how much wider) (`hitPt`: where, for the harness)
       }
     }
@@ -35414,6 +35460,8 @@ function mutFlinch(u, P = 0, from = null) {
 }
 function hurtMutantCore(u, dmg, P = 0, from = null) {
   if (!u.st.alive || u.st.struck || elvRunImmune(u)) return false;
+  if (!from && minoAlly(u)) return false;           // the minotaur, on your side: your blade and your shot go through him
+  if (gargImmune(u)) return false;                  // a gargoyle still stone
   u.hbT = performance.now();                          // its health bar comes up when it is hit
   if (u.kind.baby) return babyHurt(u, P);            // the young one counts blows, it does not spend health
   /* WHOEVER YOU HIT LOCKS ON TO YOU. `from` is the creature that threw the
@@ -35698,6 +35746,7 @@ function finishMutant(u) {
   mutDrop(u);
   maybeDropFang(u);
   maybeDropGrammy(u);
+  if (u.kind.garg) { gargDied(u); return; }        // it goes back to stone and falls (`gargDeadStep`)
   /* A BOSS DIES AT DIFFERENT ODDS. Both branches ragdoll and both can take
    * a limb; what separates them is the RATES and the fact that a boss is
    * killed once. Everything in here goes through `boneAlias`, so any rig
@@ -35855,7 +35904,7 @@ function finishMutant(u) {
    * nearest that are awake, standing near you and drawn laugh; nobody else. */
   const laughers = [];
   for (const o of mutants) {
-    if (o === u || !o.st.alive || !o.st.awake || !o.g.visible || (o.farm && !o.farm.out)) continue;
+    if (o === u || !o.st.alive || !o.st.awake || !o.g.visible || (o.farm && !o.farm.out) || minoAlly(o)) continue;
     const d = Math.hypot(camera.position.x - o.g.position.x, camera.position.z - o.g.position.z);
     if (d < 28) laughers.push([d, o]);
   }
@@ -38366,7 +38415,7 @@ function updateMutantUnit(u, dt) {
   const p = u.g.position;
   if (!u.st.alive) {
     u.st.deadT += dt;
-    if (u.rag) updateMutRagdoll(u, dt); else mutAnim(u, dt, 0);
+    if (u.rag) updateMutRagdoll(u, dt); else if (!u.kind.garg) mutAnim(u, dt, 0);   // (a gargoyle's stone fall is its own: `gargDeadStep`)
     return;
   }
   if (u.st.immob > 0) { artHold(u, dt); return; }   // held in the gold: nothing of the fight runs
@@ -38427,7 +38476,7 @@ function updateMutantUnit(u, dt) {
    * a copy with the rage's fields in it — every number below reads off
    * `u.kind`, so the swap is the whole mechanism — and it announces itself:
    * the creature stops, roars, and you keep your hands. Once. */
-  if (u.kind.rage && !u.st.raged && u.st.awake && u.st.hp <= u.kind.hp * 0.5) {
+  if (u.kind.rage && !u.st.raged && u.st.awake && u.st.hp <= u.kind.hp * (u.kind.rageAt || 0.5)) {
     u.st.raged = true;
     const wk0 = u.kind.windK || 1;
     u.kind = Object.assign({}, u.kind, u.kind.rage, { rage: null });
@@ -38537,6 +38586,10 @@ function updateMutantUnit(u, dt) {
   if (u.kind.farmer && farmUnitPre(u, dt)) return;
   // THE PALADIN: underground until he comes, then on the cobbles; his entrance is the take's
   if (u.kind.paladin && palUnitPre(u, dt)) return;
+  // THE MINOTAUR: at the gate, at your side, or lying in XIII's court — the fight runs him only while he has someone to fight
+  if (u.kind.mino && minoUnitPre(u, dt)) return;
+  // THE GARGOYLES: stone on the walls, then wings — the fight's ground AI never runs them (`gargUnitPre`)
+  if (u.kind.garg && gargUnitPre(u, dt)) return;
   if (!u.st.awake && u.comfy && u.st.alive && u.clips.mSit) { updateComfy(u, dt); return; }
   /* ONE OF THE FIVE WAS STANDING IN THE SEA WHEN IT SAW YOU. Snapping it to
    * the sand plane stood it on top of the water; it wades out instead, its
@@ -38796,7 +38849,7 @@ function updateMutantUnit(u, dt) {
     const canBreak = u.st.atk < 0 || (!u.st.chained && u.st.atk < A0.wind * 0.55);
     if (canBreak && u.st.stun <= 0 && u.st.recoil <= 0 && u.st.block <= 0
         && u.st.react <= 0 && winding && windT > WIND_FULL * 0.30
-        && dist < A0.reach + 1.6 && Math.random() < dt * 9.0) {
+        && dist < A0.reach + 1.6 && Math.random() < dt * 9.0 * (u.kind.reactK ?? 1)) {   // (`reactK` 0: he does not back out of your charge — he takes it)
       u.st.react = 1.4 + Math.random() * 1.0;
       if (u.st.atk >= 0) { u.st.atk = -1; u.st.chainAt = -1; u.st.landed = false; mutDrop(u); }
       // and a thing with no guard has only the one answer
@@ -38957,8 +39010,10 @@ function updateMutantUnit(u, dt) {
      * at the kind's own stop, the stomp's boot finished at ndc y -1.63 —
      * off the bottom of the frame, every time. A kick is thrown from further
      * out than a punch, which is also simply what a kick is. */
-    const stop = A.stop != null ? A.stop
-      : (u.kind.lungeStop != null ? u.kind.lungeStop : Math.max(1.3, (u.kind.body || 0.9) + 0.15));
+    const stop = (A.stop != null ? A.stop
+      : (u.kind.lungeStop != null ? u.kind.lungeStop : Math.max(1.3, (u.kind.body || 0.9) + 0.15)))
+      // (against another creature, its body as well as yours: stopping at a man's width from the minotaur's middle put the blade in him)
+      + (u.st.foe && u.st.foe.kind ? Math.max(0, (u.st.foe.kind.body || 0.45) - 0.45) : 0);
     /* AND A LUNGE THAT STARTS ON THE CONTACT FRAME ARRIVES AFTER THE BLOW.
      * The pack's lunge covers ground THROUGH the strike, so on the frame the
      * damage is scored the creature is still where it threw from — measured
@@ -38966,8 +39021,24 @@ function updateMutantUnit(u, dt) {
      * the shoulder, which is a blow that cannot reach and was scored anyway
      * off a body test 0.7 m wide. `lungeLead` starts the closing that many
      * seconds before the contact, so the body arrives WITH the weapon. */
+    /* AND A SWING AT A MAN WHO IS NO LONGER THERE IS LET GO (2026-10-29, the owner: "some of the minotaurs hits never land
+     * and look ridiculous"): measured, `townHits`, his misses came down 5 to 11 m from anyone — the man he had started on
+     * was cut down or thrown by the dark knight in the wind-up, he took the next, and the blade fell on air. A creature on
+     * another creature breaks off in the first part of its wind-up when its man is gone or out of reach. */
+    if (t <= dt * 1.5) u.st.swFoe = u.st.foe;
+    // (and one his step cannot reach — the man backing off faster than the closing can follow — is let go at the commit
+    // and he goes in again: measured, the rest of his misses came down 0.7–1.3 m short)
+    const _capNow = (A.hold || A.air != null) ? Math.max(u.kind.lungeMax || 0, 9) : (u.kind.lungeMax || MUT_SPEED * 2.4);
+    const _short = u.st.swFoe && t > A.wind * 0.45 && dist - stop > (A.lunge > 0 || u.st.chained ? _capNow * (A.wind - t + 0.1) : A.rm ? 0.35 : 0.4) + 0.35;
+    // (a string's next blow too: his first blow THROWS a farmer down the street, and the second came down where he had been)
+    const _wide = u.st.swFoe && t > A.wind * 0.45 && !A.whirl && (() => { const fx = u.st.swFoe.g.position.x - p.x, fz = u.st.swFoe.g.position.z - p.z, fl = Math.hypot(fx, fz) || 1; return (fx * Math.sin(u.g.rotation.y) + fz * Math.cos(u.g.rotation.y)) / fl < 0.55; })();
+    if (u.st.swFoe && t < A.wind * 0.7 && (_short || _wide || u.st.foe !== u.st.swFoe || !u.st.swFoe.st.alive || u.st.swFoe.st.down > 0 || dist > A.reach + (A.lunge || 0) + 1.5)) {
+      u.st.atk = -1; u.st.chainAt = -1; u.st.landed = false; u.st.cool = Math.max(u.st.cool || 0, 0.25); u.st.swFoe = null; mutDrop(u);
+      return;
+    }
     const _mvx = p.x, _mvz = p.z;                       // (what the three closings below move him, smoothed for a kind that asks)
-    const lead = Math.min(A.wind * 0.5, u.kind.lungeLead || 0);
+    // (on another creature, which moves as much as you do, the closing starts earlier and follows it to the contact)
+    const lead = Math.min(A.wind * 0.5, u.st.foe ? Math.max(0.42, u.kind.lungeLead || 0) : (u.kind.lungeLead || 0));
     const tail = A.air != null ? 0.02 : A.strike + 0.12;
     if (A.lunge > 0 && t >= A.wind - air - lead && t < A.wind + tail && dist > stop) {
       u.dir.set(dx / dist, 0, dz / dist);
@@ -38978,7 +39049,10 @@ function updateMutantUnit(u, dt) {
        * your last blow's knockback had put you back a step. Up to the
        * contact frame he covers exactly what is left to his stop. */
       if (lead > 0 && t < A.wind) sp = Math.max(sp, (dist - stop) / Math.max(0.06, A.wind - t));
-      p.addScaledVector(u.dir, Math.min(sp, u.kind.lungeMax || MUT_SPEED * 2.4) * dt);
+      /* (a LEAP is in the air: the stride's cap is for feet on the paving — measured, `townHits`, the dark knight's and
+       * the minotaur's leaps thrown from 4–6 m landed in the air two metres short of a man who was standing still) */
+      const cap = (A.hold || A.air != null) ? Math.max(u.kind.lungeMax || 0, 9) : u.st.foe ? Math.max(u.kind.lungeMax || 0, 3.4) : (u.kind.lungeMax || MUT_SPEED * 2.4);
+      p.addScaledVector(u.dir, Math.min(sp, cap) * dt);
     }
     /* AND A SWING THROWN TOO CLOSE STEPS BACK. A flail is a weapon of
      * distance: chained off his kick or his shield bash, both thrown from a
@@ -38987,7 +39061,9 @@ function updateMutantUnit(u, dt) {
      * 2.4 m stop). A kind that says `stepBack` backs off through the
      * wind-up — drawing the flail as he goes, which is a tell in itself —
      * to where its own blow lands in front of you. */
-    if (u.kind.stepBack && t < A.wind - 0.05 && dist < stop - 0.3) {
+    // (only for a blow at YOU — it is there to put the blade in your picture; two creatures backing off each other
+    // through their wind-ups drifted apart and missed: measured, `townHits`, the dark knight and the minotaur)
+    if (u.kind.stepBack && !u.st.foe && t < A.wind - 0.05 && dist < stop - 0.3) {
       u.dir.set(dx / dist, 0, dz / dist);
       const sp = Math.min(u.kind.stepBack, (stop - dist) / Math.max(0.15, A.wind - t));
       p.addScaledVector(u.dir, -sp * dt);
@@ -39846,7 +39922,7 @@ function mutGiveToken(dt) {
   let best = null, bw = -1;
   for (const u of mutants) {
     const st = u.st;
-    if (!st.alive || !st.awake || st.struck || st.stun > 0 || st.recoil > 0 || st.roar > 0 || st.foe || st.flee) continue;
+    if (!st.alive || !st.awake || st.struck || st.stun > 0 || st.recoil > 0 || st.roar > 0 || st.foe || st.flee || minoAlly(u) || u.kind.garg) continue;
     if (u.pk && u.pk.role === 'hold') continue;          // one of the seven holding off: not its turn
     if (u.kind.ownTurn) continue;                        // the two parasites take no turn from the pack: they have their own
     st.wait += dt;
@@ -39869,7 +39945,7 @@ function updateMutant(dt) {
   mutGiveToken(dt);
   mutNearest = 999;
   for (const u of mutants) {
-    if (!u.st.alive || !u.st.awake) continue;
+    if (!u.st.alive || !u.st.awake || minoAlly(u)) continue;
     mutNearest = Math.min(mutNearest, Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z));
   }
   /* AND A CREATURE IN A SCRIPTED BEAT NEVER REACHES `mutAnim`. The stride
@@ -45366,7 +45442,7 @@ const _stepD = new THREE.Vector3(), _stepF = new THREE.Vector3(), _stepR = new T
 function inCombat() {
   if (dealerFight && dealer.st.alive && dealer.g.visible) return true;
   for (const u of mutants) {
-    if (u === dealer || !u.st.alive || !u.st.awake) continue;
+    if (u === dealer || !u.st.alive || !u.st.awake || minoAlly(u)) continue;
     if (Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) < 10) return true;
   }
   for (const u of crabs) {
@@ -45898,6 +45974,8 @@ function update(dt, rawDt = dt) {
   updateSwordKnights(dt);   // the west court's two swordsmen (the flail knight's place, 2026-10-19)
   updatePaladin(dt);        // and the paladin's blade: its tell, its trail, the stones, the farmers in its way
   updateDarkKnight(dt);     // the dark knight in his place: on the street killing farmers as you come in, then you
+  updateMinotaur(dt);       // the minotaur at the first castle's gate, and with you through both castles if you say yes
+  updateGargoyles(dt);      // the four on the walls of XIII's east court, and the arch door they keep shut
   updateThroneBoss(dt);     // and the marauder on his throne, on the hall's floor
   updateDante(dt);          // and the beast at the foot of his dais, and its chain
   if (window.__samDbg) window.__samDbg('mut');
@@ -46011,7 +46089,7 @@ const saveRoom = () => (inKeep ? 'keep' : inTavern ? 'tav' : inCat ? 'cat'
 function calmChasers() {
   chaseGraceUntil = performance.now() + CHASE_GRACE;
   for (const u of mutants) {
-    if (!u.st.alive || !u.st.awake || u.st.foe || u.kind.cat || u.kind.baby) continue;
+    if (!u.st.alive || !u.st.awake || u.st.foe || u.kind.cat || u.kind.baby || u.kind.mino || u.kind.garg) continue;
     u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.st.cool = 0; u.st.chainAt = -1; u.st.chained = false;
     u.st.side = 0; u.st.back = 0; u.st.dash = 0; u.st.sprint = 0; u.st.feint = 0; u.path = null;
     mutDrop(u);
@@ -46092,6 +46170,8 @@ function saveCheckpoint(spot) {
       catBaby: catBabyGone,
       // Ben Ali's sword: in the thing's back, on the floor where it fell, or yours; and he is dead once he has spoken
       bb: bbState, bbAt, benDead,
+      garg: GARG.phase === 2 ? 2 : 0,  // the four on XIII's east court walls: all dead, the arch door open to you
+      mino: minoSave(),                // the minotaur at the gate: waiting, with you, against you, down in XIII's court, or dead
       // and what the man at the sand wall has left to sell
       trader: { ...TRADER_STOCK }, ammoV: AMMO_V, invMax: INV_MAX, ringSlots: RING_SLOTS,
       /* AND WHAT IS IN THE CYLINDER. The gun itself comes back through the
@@ -46519,6 +46599,8 @@ function updateRestore(dt) {
   if (f.catBaby) catBabyGone = true;
   if (f.bb) restoreBackSword(f.bb, f.bbAt);
   if (f.benDead) benDead = true;
+  minoLoad(f.mino);
+  if (f.garg === 2) GARG.phase = 2;
   if (f.trader) { const ammo0 = TRADER_STOCK.ammo; Object.assign(TRADER_STOCK, f.trader); const av = f.ammoV || 0; if (av < 2) TRADER_STOCK.ammo = ammo0; else if (av < 3) TRADER_STOCK.ammo = (f.trader.ammo || 0) >= 5 ? 1 : 0; }   // v2 stocked five: untouched is one, bought from is none
   if (typeof f.ammo === 'number') { magAmmo = f.ammo; magSpare = f.spare || 0; }
   if (Array.isArray(f.sgCh)) { sgCh = f.sgCh.map((c) => (c === 1 ? 1 : c === 2 ? 2 : 0)); sgSpare = f.sgSpare || 0; }
@@ -47530,9 +47612,10 @@ function musicGuard() {
   fix(samScoreVol, Math.min(SAM_SCORE_MAX, v * SAM_SCORE_LEVEL));
   fix(passVol, v * PASS_LEVEL);
   fix(endVol, Math.min(END_MAX, v * END_LEVEL));
+  fix(minoSongVol, Math.min(MINO_SONG_MAX, v * MINO_SONG_LEVEL));
   fix(wlVol, v * WL_LEVEL);
   fix(wreckThemeVol, v * WRECK_THEME_LEVEL);
-  const playing = musicSrc || samScore || passSrc || endSong || wlSrc;
+  const playing = musicSrc || samScore || passSrc || endSong || wlSrc || (minoSong && !minoSong.done);
   if (playing && ctx.state === 'suspended' && started && !frozen()) ctx.resume().catch(() => {});
 }
 function animateFrame() {
@@ -52911,7 +52994,7 @@ function magTrace(dir) {
   for (const u of crabs) if (u.st.alive && !(magSkip && magSkip.has(u))) magBody(u, 0.05, 0.50, 0.58, 0);
   for (const u of gulls) if (u.st.alive && u.g.visible && !(magSkip && magSkip.has(u))) magBody(u, -0.10, 0.10, 0.50, 0);   // a gull is a span, not a height
   for (const u of mutants) {
-    if (!u.st.alive || !u.g.visible || (magSkip && magSkip.has(u))) continue;
+    if (!u.st.alive || !u.g.visible || (magSkip && magSkip.has(u)) || minoAlly(u) || gargImmune(u)) continue;
     const h = u.kind.h || 1.8;
     magBody(u, h * 0.12, h * 0.94, Math.max(0.42, (u.kind.hitR || 0.85) * 0.72), h * 0.74);
   }
@@ -54087,7 +54170,7 @@ function sgWave(fwd, foes) {
   const waveA = SG_WAVE_A * (1 - magAim) + SG_WAVE_A_ADS * magAim;
   camera.getWorldPosition(_swO);
   for (const u of mutants) {
-    if (!u.kind || !u.st.alive || u.st.struck || !u.g.visible) continue;
+    if (!u.kind || !u.st.alive || u.st.struck || !u.g.visible || minoAlly(u) || gargImmune(u)) continue;
     const g = u.g.position, H = u.kind.h || 1.8;
     const dx = g.x - _swO.x, dy = g.y + H * 0.55 - _swO.y, dz = g.z - _swO.z;
     const d = Math.hypot(dx, dz), d3 = Math.hypot(dx, dy, dz);
@@ -59296,6 +59379,11 @@ function stopSamScore(secs = 2) {
 function updateSamScore() {
   const ctx = audioCtx; if (!ctx) return;
   if (inDojo) lazyBuf(SAM_SCORE);
+  /* AND IT IS THE FIGHT'S, NOT THE LINE'S (2026-10-21, the owner: "my music isnt playing at the samurai fix this now have
+   * all music play"). It was asked for once, on "THAT'S MY SWORD." — so a fight that was going without that moment (you
+   * went out of the dojo and came back to him still up, a restore, any other way he woke) went on in silence. Whenever
+   * he is up and on his feet in the dojo, his score is wanted. */
+  if (!samScore && inDojo && samurai && samurai.st.alive && (samurai.st.awake || samuraiSpoke) && !dying && !ended && !replaying && !applyingSave) samScoreWant = true;
   if (samScoreWant && !samScore && inDojo && lazyBuf(SAM_SCORE)) startSamScore();
   if (!samScore) return;
   if (!inDojo || dying || ended) { stopSamScore(dying ? 1.2 : 1.5); return; }
@@ -65121,6 +65209,7 @@ function wlStart(off) {
   const src = ctx.createBufferSource(); src.buffer = wlBuf; src.connect(wlEnv); src.start(t, off);
   src.onended = () => { if (wlSrc === src) wlSrc = null; };
   wlSrc = src; wlT0 = t - off;
+  musicNote('whale leaving song', wlVol.gain.value);
   return true;
 }
 // where the song is, in seconds of its own file
@@ -66213,6 +66302,7 @@ function startWreckTheme() {
   env.gain.setValueAtTime(0.0001, t); env.gain.linearRampToValueAtTime(1, t + 2.5);
   env.connect(wreckThemeVol);
   const src = ctx.createBufferSource(); src.buffer = buf; src.connect(env); src.start(t);
+  musicNote('wreck theme', wreckThemeVol.gain.value);
   const th = { src, env };
   src.onended = () => { if (wrTh === th) wrTh = null; try { env.disconnect(); } catch (e) {} };
   wrTh = th;
@@ -66227,7 +66317,8 @@ function updateWreckTheme(d, beach) {
   if (!audioCtx || !introDone) return;
   if (beach && d < WK.FAR + 60) lazyBuf(WRECK_THEME);
   if (wrThPend >= 0) {
-    if (performance.now() - wrThPend > 6000 || !beach) wrThPend = -1;
+    // (25 s, not 6: after a checkpoint's fast load the file can still be on its way at the reveal, and it then never played — 2026-10-21, "have all music play")
+    if (performance.now() - wrThPend > 25000 || !beach || d > WK.FAR + 80) wrThPend = -1;
     else if (lazyBuf(WRECK_THEME)) startWreckTheme();
   }
   if (wrTh && inRoom()) stopWreckTheme();
@@ -81616,10 +81707,12 @@ function buildC13Arch() {
   p.position.set(ax + ux * L / 2, (yt + yf) / 2, az + uz * L / 2); p.rotation.y = -Math.atan2(uz, ux);
   p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
   c13World.add(p);
-  addInteractable(p, 'Open the door', 'default', {
+  /* LOCKED WHILE THE FOUR ON THE WALLS STAND (2026-10-28, the owner: "make the door to the section with the fountain be
+   * locked. once you try the door you hear the gargoyles drop down behind you … unlocked once the gargoyles are dead") */
+  addInteractable(p, () => (gargLocked() ? 'The door is locked.' : 'Open the door'), 'default', {
     mid: true, far: 3.6,
     when: () => inC13 && !c13ArchOpen && !fortBusy,
-    onActivate: () => openC13Arch(false),
+    onActivate: () => { if (gargLocked()) gargTryDoor(); else openC13Arch(false); },
   });
   if (c13ArchOpen) openC13Arch(true);
 }
@@ -84460,15 +84553,23 @@ const KN_BASE = {
   stunClip: 'sHitC', first: 'sIdle', sleepIdle: 'sIdle', wakeAt: 19,
   use: {},
 };
+/* (2026-10-29, the owner: "make the two knights before the throne room actually hard and a good fight they should be
+ * smarter and have different personalities". THE DUELIST, the man-at-arms: quick on his feet and never still — he
+ * circles, feints, strings three and four together, steps OUT of the line of your charge (a sidestep on his strafe), and
+ * when he is down to two fifths he stops playing: faster, closer, longer strings. Little to stagger him, small openings.
+ * THE JUGGERNAUT, the iron knight: he does not dodge and barely staggers — your blows must be traded into him — every
+ * one of his is held long enough to read and costs two of your four; at half he roars and comes on without waiting.) */
 MUT_KINDS.knMan = Object.assign({}, KN_BASE, {
-  use: { kmCut: 0.26, kmSweep: 0.16, kmRise: 0.20, kmSpin: 0.06, kmLunge: 0.14, kmLeap: 0.06, kmKick: 0.12 }, chainMax: 3,
-  opening: 0.45, gapRate: 1.6,
+  use: { kmCut: 0.24, kmSweep: 0.16, kmRise: 0.18, kmSpin: 0.08, kmLunge: 0.16, kmLeap: 0.06, kmKick: 0.12 }, chainMax: 4,
+  opening: 0.30, gapRate: 2.2,
+  dodgeClip: 'sStr1', dodgeSide: 4.2, dodgeT: 0.42, dodgeRate: 1.8,
+  rage: { aggr: 3.6, speedK: 1.4, press: 1.0, chainMax: 4, feint: 0.45, circle: 0.18, windK: 0.85 }, rageAt: 0.4, rageClip: 'sRoar', rageDur: 1.2,
   glb: 'assets/knight-man.glb', swordMat: 'sword_1', joints: KNIGHT_JOINTS, rag: MUT_KINDS.knight.rag,
-  h: 1.92, hp: 34, hitR: 0.55, body: 0.45, lungeStop: 2.0, landSlop: 0.36, limbR: 0.34, lungeLead: 0.30,
-  speedK: 1.15, aggr: 2.4, press: 0.80,
-  circle: 0.30, step: 0.30, feint: 0.25, sizeUp: 0.18,
-  turnMax: 5.2, yawK: 0.85,
-  poise: 7, poiseBack: 1.6, poiseWait: 0.7, parryK: 1.0, recoilK: 0.85, stunK: 0.95, blockCost: 0.5, block: 0,
+  h: 1.92, hp: 48, hitR: 0.55, body: 0.45, lungeStop: 2.0, landSlop: 0.36, limbR: 0.34, lungeLead: 0.30,
+  speedK: 1.25, aggr: 3.0, press: 0.90,
+  circle: 0.30, step: 0.35, feint: 0.35, sizeUp: 0.18,
+  turnMax: 6.0, yawK: 0.85,
+  poise: 12, poiseBack: 2.2, poiseWait: 0.6, parryK: 1.0, recoilK: 0.7, stunK: 0.8, blockCost: 0.5, block: 0,
   fidgetK: 0.25, fidgetGap: 2.4, aimK: 1.9,
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r', tip: 'kn_tip', armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
          limbs: [['thigh_r', 'calf_r', 'foot_r', 'ball_r']] },
@@ -84481,14 +84582,14 @@ MUT_KINDS.knMan = Object.assign({}, KN_BASE, {
 });
 MUT_KINDS.knIron = Object.assign({}, KN_BASE, {
   use: { kiChop: 0.30, kiSweep: 0.22, kiSpin: 0.16, kiCharge: 0.14, kiKick: 0.18 }, chainMax: 1,
-  freeHand: [0.30, -0.90, 0.12, 0.10, -0.80, 0.55], opening: 0.9, gapRate: 1.0, trailK: 0.15,
-  rage: { aggr: 2.4, speedK: 1.05, press: 0.98, chainMax: 2, circle: 0.04 }, rageClip: 'sRoar', rageDur: 1.9,
+  freeHand: [0.30, -0.90, 0.12, 0.10, -0.80, 0.55], opening: 0.7, gapRate: 1.2, trailK: 0.15, reactK: 0,
+  rage: { aggr: 3.0, speedK: 1.12, press: 1.0, chainMax: 3, circle: 0.04, windK: 0.85 }, rageClip: 'sRoar', rageDur: 1.9,
   glb: 'assets/knight-iron.glb', swordNode: 'SWORD', joints: KN_IRON_JOINTS, rag: KN_IRON_RAG,
-  h: 2.15, hp: 52, hitR: 0.75, body: 0.62, lungeStop: 2.3, landSlop: 0.40, limbR: 0.38, lungeLead: 0.30,
-  speedK: 0.85, aggr: 1.7, press: 0.95,
+  h: 2.15, hp: 72, hitR: 0.75, body: 0.62, lungeStop: 2.3, landSlop: 0.40, limbR: 0.38, lungeLead: 0.30,
+  speedK: 0.9, aggr: 2.1, press: 0.95,
   circle: 0.06, step: 0.08, feint: 0.05, sizeUp: 0.08,
-  turnMax: 3.4, yawK: 0.75,
-  poise: 18, poiseBack: 2.6, poiseWait: 1.0, parryK: 0.9, recoilK: 0.45, stunK: 0.65, blockCost: 0.7, block: 0,
+  turnMax: 3.6, yawK: 0.75,
+  poise: 28, poiseBack: 3.0, poiseWait: 1.0, parryK: 0.9, recoilK: 0.3, stunK: 0.5, blockCost: 0.7, block: 0,
   fidgetK: 0.10, fidgetGap: 3.2, aimK: 1.8,
   rig: { arm: KN_IRON_N('RightArm'), fore: KN_IRON_N('RightForeArm'), hand: KN_IRON_N('RightHand'), tip: 'kn_tip',
          armL: KN_IRON_N('LeftArm'), foreL: KN_IRON_N('LeftForeArm'), handL: KN_IRON_N('LeftHand'), head: KN_IRON_N('Head'),
@@ -84525,10 +84626,23 @@ function placeSwordKnights() {
     return { x: cx, z: cz };
   };
   KN_POSTS.length = 0;
+  /* GUARDING THE DOOR (2026-10-29, the owner: "make the knights be closer to the throne room door like they are guarding
+   * it"): either side of the throne room's door, three metres out in front of it, square to whoever comes across the court
+   * at it — not out in the middle of the court. (`roomy` asks less of them here: the door's own wall is behind them.) */
+  const D = C13_THR_DOOR;
+  let nx = Fo.x - D.x, nz = Fo.z - D.z; if (Math.hypot(nx, nz) < 0.5) { nx = A.x - D.x; nz = A.z - D.z; } { const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l; }
+  const guardOK = (x, z) => c13Open(x, z) && !c13Overlaps(x, z, 1.2) && [0, 1, 2, 3, 4, 5, 6, 7].every((k) => { const a = k / 8 * Math.PI * 2; return c13Open(x + Math.cos(a) * 1.1, z + Math.sin(a) * 1.1); });
+  const findG = (cx, cz) => {
+    for (let r = 0; r <= 4; r += 0.4) for (let k = 0; k < (r ? 12 : 1); k++) {
+      const a = k / 12 * Math.PI * 2, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+      if (guardOK(x, z)) return { x, z };
+    }
+    return find(cx, cz);
+  };
   for (const [kind, side] of [['knMan', -1], ['knIron', 1]]) {
-    const cx = A.x + dx * 17 - dz * side * 1.6, cz = A.z + dz * 17 + dx * side * 1.6;
-    const p = find(cx, cz);
-    const post = { x: p.x, z: p.z, yaw: Math.atan2(A.x - p.x, A.z - p.z) };
+    const cx = D.x + nx * 3.0 - nz * side * 1.8, cz = D.z + nz * 3.0 + nx * side * 1.8;
+    const p = findG(cx, cz);
+    const post = { x: p.x, z: p.z, yaw: Math.atan2(nx, nz) };
     KN_POSTS.push(post);
     const w = c13W(p.x, p.z);
     const u = makeMutant(+w.x.toFixed(1), +w.z.toFixed(1), kind, C13_Y + c13PaveAt(p.x, p.z));
@@ -84848,11 +84962,14 @@ function dkFling(u, f) {
   f.st.hp = 0;
   killMutant(f);
   f.hitDir.set(fx / fl, 0, fz / fl);
-  u.st.impF = 0.09;
+  /* (the minotaur throws a man every couple of seconds at your side: with the knight's stop-dead beat and the knight's
+   * shake on each, the street juddered — the owner's "the farmer fight is a laggy mess" — so his throws are felt less) */
+  const bull = !!u.kind.mino;
+  if (!bull) u.st.impF = 0.09;
   const d = Math.hypot(f.g.position.x - camera.position.x, f.g.position.z - camera.position.z);
-  sfxKillThud(1.4);
+  sfxKillThud(bull ? 1.0 : 1.4);
   playSampleAt('katHit', f.g.position.x, f.g.position.z, { gain: 1.5, ref: 10, far: 55, rate: 0.78 });
-  if (d < 14) addTrauma(0.25 * (1 - d / 14));
+  if (d < 14) addTrauma((bull ? 0.06 : 0.25) * (1 - d / 14));
 }
 const DK_STAND = [-3.2, 15];                  // the street, local: fifteen metres in from the gate
 const dk = { stage: 0, victims: [], hp0: 0 };
@@ -84929,8 +85046,11 @@ function dkRootMotion(u) {
   if (!dSide && !dFwd) return;
   // the forward step scaled to what is left between him and his stand-off, over what the clip has left to the blow
   const fc = clipTravelAt(u, A.clip, A.rm).y, left = fc - yPrev;
-  const p = u.g.position, foe = mutFoePos(u), gap = Math.hypot(foe.x - p.x, foe.z - p.z) - (A.stop || 2);
-  const k = left > 0.05 ? THREE.MathUtils.clamp(gap / left, 0, 1.6) : (gap > 0 ? 1 : 0);
+  // (to its stand-off from the man's BODY, and a leap may stretch further than a step: measured, `townHits`, his leaps came
+  // down 0.8–1 m short of men a stride further off than the recorded jump)
+  const F = st.foe && st.foe.kind, p = u.g.position, foe = mutFoePos(u);
+  const gap = Math.hypot(foe.x - p.x, foe.z - p.z) - (A.stop || 2) - (F ? Math.max(0, (F.body || 0.45) - 0.45) : 0);
+  const k = left > 0.05 ? THREE.MathUtils.clamp(gap / left, 0, A.hold ? 2.4 : 1.6) : (gap > 0 ? 1 : 0);
   const sx = dSide * 0.5, fz = dFwd > 0 ? dFwd * k : dFwd;
   const yaw = u.g.rotation.y, wx = sx * Math.cos(yaw) + fz * Math.sin(yaw), wz = -sx * Math.sin(yaw) + fz * Math.cos(yaw);
   p.x += wx; p.z += wz;
@@ -84962,10 +85082,15 @@ function dkTownFights(u, dt) {
   if (u.st.atk >= 0) return;
   // (and not turning back and forth: whoever he picks he stays on for three seconds at least — round 3, "all over the place")
   const now = performance.now() / 1000;
-  if (dk.pickT && now - dk.pickT < 3 && (!u.st.foe || u.st.foe.st.alive)) return;
+  if (dk.pickT && now - dk.pickT < 3 && (!u.st.foe || u.st.foe.st.alive) && !(MINO.u && u.st.foe !== MINO.u && MINO.u.st.foe === u && u.st.hitBy === MINO.u && performance.now() - (u.st.hitByT || 0) < 600)) return;
   const meD = Math.hypot(P.x - me.x, P.z - me.z), cutMe = u.st.lastHurt && now - u.st.lastHurt < 4;
   let pest = null, pd = 4.0;
   if (meD > 8 && !cutMe) for (const f of on) { const d = Math.hypot(f.g.position.x - P.x, f.g.position.z - P.z); if (d < pd) { pd = d; pest = f; } }
+  /* AND THE MINOTAUR (2026-10-29, the owner: "make the dark knight fight with the minotaur as well they completely
+   * ignored each other"): the bull on him is answered whenever it is — unless you have cut him in the last three
+   * seconds, and then you are; at five metres or nearer, whatever the farmers are doing */
+  const MU = MINO.ally && MINO.u && MINO.u.st.alive && MINO.stage === 'with' ? MINO.u : null;
+  if (MU && !cutMe && Math.hypot(MU.g.position.x - P.x, MU.g.position.z - P.z) < 5.0 && (MU.st.foe === u || !pest)) pest = MU;
   if (pest) { if (u.st.foe !== pest) { u.st.foe = pest; u.st.mine = false; dk.pickT = now; } }
   else if (u.st.foe) { u.st.foe = null; u.st.mine = true; dk.pickT = now; }
 }
@@ -84993,7 +85118,8 @@ function updateDarkKnight(dt) {
   if (dk.stage === 1) {
     if (u.st.foe === null || !u.st.foe.st.alive) { const nx = dk.victims.find((f) => f.st.alive); if (nx) u.st.foe = nx; }
     const near = Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z) < 5;
-    if (u.st.mine || near || !dk.victims.some((f) => f.st.alive)) dkTurn(u, u.st.mine);
+    const bull = MINO.u && u.st.hitBy === MINO.u && performance.now() - (u.st.hitByT || 0) < 800;   // (struck by the minotaur: he turns on him)
+    if (u.st.mine || near || bull || !dk.victims.some((f) => f.st.alive)) { dkTurn(u, u.st.mine); if (bull && !u.st.mine) { u.st.foe = MINO.u; dk.pickT = performance.now() / 1000; } }
   }
   if (dk.stage === 2) dkTownFights(u, dt);
   if (u.g.visible) knSwordTrail(u, dt);
@@ -85002,6 +85128,2223 @@ function updateDarkKnight(dt) {
  * at 2.6 s, the black lifting at 3.1 — half a second from the owner's "i see them clip in") */
 bootStageHold = () => { const u = paladin.unit; return !!(inFort && u && u.kind === MUT_KINDS.darkKnight && u.st.alive && !u.retired && !paladin.out && !paladinDone()); };
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { dkS: () => ({ dk, u: paladin.unit }), dkStage1, dkTurn, dkSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'darkKnight', y), mutSpawnTest: (x, z, kind, y = 0) => makeMutant(x, z, kind, y), mutantsS: () => mutants, magAmmoS: () => ({ ammo: magAmmo, t: magT, busy: magBusy(), sg: sgCh.slice() }), loadGunsTest: () => { magAmmo = 6; sgCh = [1, 1]; } }));
+
+/* =====================================================================
+ * THE MINOTAUR AT THE GATE (2026-10-28, the owner: "add this minotaur to the left of the very first castle door standing
+ * on the beach … if yes … hell walk to the entrance of the castle and enter … make him fight through the castle with you
+ * up until you kill the two guys before the throne room door … he will slowly lay down and hold his stomach as blood
+ * increases on the floor around him … make him as tall as the dark knight … unique in the way he fights and be strong …
+ * he cannot be damaged by the player because they are on the same team"). Toni García Vilche's "Minotaur Low-Poly"
+ * (CC-BY-4.0), `assets/minotaur.glb` by `tools/minotaur_pack.py`: 3.6k vertices, two swords, a digitigrade FBX rig.
+ *
+ * HIS SWORDS ARE IN HIS FISTS: each blade is skinned to the root of a finger off its forearm (`F4R`/`F4L` — the rig has
+ * no hand bone), which is the wrist they turn on; the `Obj` bones under the root are the source's IK targets and move
+ * nothing. A borrowed clip turns each blade with its own wrist (Mixamo's hand → `F4`, `MINO_RAG`). THE FILE'S REST IS THE
+ * STANCE: `skeleton.pose()` lays him on his back (measured: the mesh's own frame is turned a quarter over) — it is never
+ * called on him.
+ * ===================================================================== */
+const MINO_GLB = 'assets/minotaur.glb';
+const MINO_JOINTS = {
+  hip: 'Spine1', waist: 'Spine2', chest: 'Spine5', neck: 'Neck', head: 'Head',
+  clavL: 'ShoulderL', clavR: 'ShoulderR', armL: 'UpperArmL', armR: 'UpperArmR', foreL: 'ForearmL', foreR: 'ForearmR',
+  thighL: 'Leg1L', thighR: 'Leg1R', calfL: 'Leg2L', calfR: 'Leg2R', footL: 'FeetL', footR: 'FeetR',
+};
+/* (his legs are a bull's: thigh, shin, a long rear foot and the hoof. Mixamo's shin is mapped onto his shin and aimed at
+ * the hoof, so the shin and the rear foot go together as one leg below the knee; the hoof takes the foot. And his NECK is
+ * not mapped: it leans forward 45° off his chest where a man's stands up, and aligned onto Mixamo's it threw his snout at
+ * the sky on every borrowed clip — measured in a strip. The head takes the chest's alignment and its own turns.) */
+const MINO_RAG = {
+  Character1_Hips: 'Spine1', Character1_Spine: 'Spine2', Character1_Spine1: 'Spine4', Character1_Spine2: 'Spine5',
+  Character1_Head: 'Head',
+  Character1_LeftShoulder: 'ShoulderL', Character1_LeftArm: 'UpperArmL', Character1_LeftForeArm: 'ForearmL', Character1_LeftHand: 'F4L',
+  Character1_RightShoulder: 'ShoulderR', Character1_RightArm: 'UpperArmR', Character1_RightForeArm: 'ForearmR', Character1_RightHand: 'F4R',
+  Character1_LeftUpLeg: 'Leg1L', Character1_LeftLeg: 'Leg2L', Character1_LeftFoot: 'FeetL',
+  Character1_RightUpLeg: 'Leg1R', Character1_RightLeg: 'Leg2R', Character1_RightFoot: 'FeetR',
+};
+const _mnA = new THREE.Vector3();
+function minoSeat(u, gltf) {
+  const sc = gltf.scene;
+  sc.updateMatrixWorld(true);
+  const B = {}; sc.traverse((o) => { if (o.isBone) B[o.name] = o; });
+  // each blade's vertices (the ones its wrist owns, on the swords' own mesh), in the stance: the tip is the furthest from the wrist
+  const blade = { R: [], L: [] };
+  sc.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    const P = o.geometry.attributes.position, SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight, bs = o.skeleton.bones;
+    if (P.count !== 620) return;                                         // (the swords' mesh: `Swords_Minotaur_Extras_0`)
+    for (let i = 0; i < P.count; i++) {
+      let best = -1, bw = 0; for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; best = SI.getComponent(i, k); } }
+      const side = bs[best] === B.F4R ? 'R' : bs[best] === B.F4L ? 'L' : null;
+      if (!side) continue;
+      _mnA.fromBufferAttribute(P, i); o.applyBoneTransform(i, _mnA); blade[side].push(_mnA.clone().applyMatrix4(o.matrixWorld));
+    }
+  });
+  for (const side of ['R', 'L']) {
+    const W = B['F4' + side]; if (!W || !blade[side].length) continue;
+    const H = W.getWorldPosition(new THREE.Vector3());
+    let grip = null, tip = null, dn = 1e9, df = -1;
+    for (const p of blade[side]) { const d = p.distanceToSquared(H); if (d < dn) { dn = d; grip = p; } if (d > df) { df = d; tip = p; } }
+    // the blade's two ends, as bones (the rig's names are looked up among bones)
+    const tipN = side === 'R' ? 'kn_tip' : 'mn_tipL', hiltN = side === 'R' ? 'kn_hilt' : 'mn_hiltL';
+    for (const [nm, w] of [[tipN, tip], [hiltN, grip]]) { const o = new THREE.Bone(); o.name = nm; W.add(o); o.position.copy(W.worldToLocal(w.clone())); }
+    if (side === 'R') u.knBlade = grip.distanceTo(tip);
+  }
+  // where his face looks, in his head's own frame: the body's forward at the stance (his eyes are level in it)
+  if (B.Head) B.Head.userData.mnFront = new THREE.Vector3(0, 0, 1).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+  // the horns' reach for the gore: a hand in front of his brow
+  if (B.Head) {
+    const h = B.Head.getWorldPosition(new THREE.Vector3()), o = new THREE.Bone(); o.name = 'mn_horn';
+    B.Head.add(o); o.position.copy(B.Head.worldToLocal(h.add(_mnA.set(0, 0.12, 0.34))));
+  }
+  /* AND THE CLIPS: the IK helpers out, and the root's travel flattened to its rise and fall — his walk carries him 3.9 m
+   * and the game moves him itself (the forward lies along the root's own Y here, which is why `kind.flatten` cannot do
+   * it: it holds X and Z) */
+  const pos0 = B.Position.position.clone(), up = new THREE.Vector3(0, 1, 0).applyQuaternion(B.Position.parent.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+  for (const clip of gltf.animations) {
+    clip.tracks = clip.tracks.filter((t) => !/^(Obj[RL]|Pole[RL]|Ft[RL])(_end)?\./.test(t.name));
+    const tr = clip.tracks.find((t) => t.name === 'Position.position');
+    if (tr) for (let i = 0; i < tr.values.length; i += 3) {
+      _mnA.set(tr.values[i] - pos0.x, tr.values[i + 1] - pos0.y, tr.values[i + 2] - pos0.z);
+      const k = _mnA.dot(up);
+      tr.values[i] = pos0.x + up.x * k; tr.values[i + 1] = pos0.y + up.y * k; tr.values[i + 2] = pos0.z + up.z * k;
+    }
+  }
+}
+/* WHAT HE BORROWS. Three of the game's Mixamo sets, each clip under a name of his own (the sets share 'walk', 'idle' and
+ * 'roar'): the orc's two-handed great-sword set is his body — a brute's guard, his cleaves, the whirl, the leap, his
+ * gait; the demon's roar is his voice's shape; the sword pack's two quick cuts are the right blade alone (the demon's
+ * head-butt was tried for his horns: its clawing arms threw both swords out behind him). Laid a clip a turn,
+ * once all three are in. */
+const MINO_PACKS = [
+  [() => orcMoves, { idle: 'oIdle', idleB: 'oIdleB', walk: 'oWalk', walkB: 'oWalkB', run: 'oRun', roar: 'oRoar', hit: 'oHit', hitB: 'oHitB', hitBig: 'oHitBig',
+    strafeL: 'oStrL', strafeR: 'oStrR', die: 'oDie', oChop: 'oChop', oCut: 'oCut', oCutC: 'oCutC', oCutD: 'oCutD', oSpin: 'oSpin', oLeap: 'oLeap', oKick: 'oKick' }],
+  [() => demonMoves, { roar: 'dRoar' }],
+  [() => crusaderMoves, { sSlash: 'sSlash', sSlashC: 'sSlashC' }],
+];
+function authorMinoClips(u, m) {
+  const R = poseRig(u, m, null, MINO_JOINTS, {});
+  u.minoR = R;
+  /* HIS FISTS: a borrowed clip has no fingers for him (Mixamo's hand is his `F4` wrist), so every finger fell back to
+   * the file's rest — open, 30–79° off his own grip (measured) — and the hilts sat in open hands. The fingers are held
+   * at his own idle's first frame instead, closed round the hilts. */
+  const keep = new Map(), idle = u.clips.mIdle && u.clips.mIdle.getClip();
+  if (idle) for (const t of idle.tracks) {
+    const k = /^(F\d+[LR])\.quaternion$/.exec(t.name), b = k && k[1] !== 'F4L' && k[1] !== 'F4R' && R.bones.find((o) => o.name === k[1]);
+    if (b) keep.set(b, new THREE.Quaternion().fromArray(t.values, 0));
+  }
+  const jobs = [];
+  for (const [get, names] of MINO_PACKS) for (const src in names) jobs.push([get, src, names[src]]);
+  u.clipsPending = jobs.length + 1;
+  u.minoLay = () => {
+    let i = 0;
+    const step = () => {
+      if (u.retired || !u.mixer) { u.clipsPending = 0; return; }
+      const [get, src, as] = jobs[i++];
+      const data = get(), first = Object.keys(data.clips)[0];
+      if (data.clips[src]) {
+        const sub = Object.assign({}, data, { clips: src === first ? { [first]: data.clips[first] } : { [first]: data.clips[first], [src]: data.clips[src] } });
+        for (const c of ntarRetarget(u, m, R.bones, R.bind, R.J, R.hipUp, R.hipPos, sub, { keep })) {
+          if (c.name !== src) continue;
+          c.name = as; u.clips[as] = u.mixer.clipAction(c);
+          for (const T of [u.clipSpeed, u.clipTravel, u.clipAz]) if (T[src] !== undefined && src !== as) { T[as] = T[src]; delete T[src]; }
+        }
+      }
+      u.clipsPending--;
+      if (i < jobs.length) { bwTurn().then(step); return; }
+      minoAuthorOwn(u, R);
+      u.clipsPending = 0;
+      if (u.kind.alias) for (const k in u.kind.alias) if (u.clips[u.kind.alias[k]]) u.clips[k] = u.clips[u.kind.alias[k]];
+      mutStartPose(u);
+      u.natDone = false;
+    };
+    bwTurn().then(step);
+  };
+  return [];
+}
+/* HIS LAST, WRITTEN ON HIS OWN BODY (`poseRig` on his idle's first frame, turns about the body's axes — +right on a
+ * spine bone bends it forward, on a hanging limb swings it back; his legs bend like a bull's). `mnFall`: struck through,
+ * he folds over the wound, his hand goes to it, he drops to his knees, sits back and goes over onto his back with his
+ * head up off the stone; `mnDie`: from there, the head goes back and the hand slides off. */
+/* (SOLVED in the pane, `tools/minolie.js`: a coordinate descent over the joints against what the lying pose measures.
+ * The first cut was solved for the hand alone and he FLOATED — propped on his right arm and his hooves, his back 13–30 cm
+ * off the paving — and his left arm ran THROUGH his torso, the fist coming out of his belly (the owner, both, in the
+ * court). Now every vertex is over the floor, the back 0.7 cm and the pelvis 1.9 cm off it, the shoulders 4, the head
+ * 7; the left fist clutched on the top of his belly with no vertex of that arm inside him (a ray cast straight up from
+ * each through the rest of him crosses an even number of times), the right hand and forearm on the stone.) */
+const MINO_LIE = {
+  hip: { right: -1.573, fwd: -0.263 }, hipF: -0.257, hipY: -0.965, waist: { right: -0.028 }, chest: { right: 0.121 }, head: { right: -0.263, up: 0.172 },
+  thighL: { right: -0.407, up: 0.18 }, calfL: { right: 0.85 }, thighR: { right: -0.12, up: -0.12 }, calfR: { right: 0.35 },
+  armL: { right: -1.453, fwd: -1.391, up: 1.841 }, foreL: { right: -1.329, up: -0.104 }, armR: { right: 0.191, fwd: -0.285, up: -0.871 }, foreR: { right: 0 },
+};
+/* (and dead: the chest lets go and the head rolls over; his fist stays on the wound. A hand sliding off him onto the
+ * stone was solved too, and every way between the two keys swung the arm up through him or into the air.) */
+const MINO_DEAD = Object.assign({}, MINO_LIE, { hipY: -0.950, chest: { right: 0.101 }, head: { right: -0.124, up: 0.35 } });
+// the hand to the wound while he is still up (solved the same way, 0.4 cm off the front of his belly)
+const MINO_HOLD = { waist: { right: 0.30 }, chest: { right: 0.28 }, head: { right: 0.30 }, armL: { right: -0.245, fwd: -0.8, up: -0.047 }, foreL: { right: -0.806, up: -1.851 } };
+function minoAuthorOwn(u, R) {
+  const idle = u.clips.mIdle && u.clips.mIdle.getClip();
+  const A = poseRig(u, u.model, idle, MINO_JOINTS, {});
+  u.minoAuthor = A;
+  const hold = MINO_HOLD;
+  // a key halfway between two, at its own height (the halfway of two keys sinks him: his legs fold before his hips drop)
+  const half = (a, b, hipY) => {
+    const o = { hipY };
+    for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      if (k === 'hipY') continue;
+      const x = a[k], y = b[k];
+      if (typeof x === 'number' || typeof y === 'number') { o[k] = ((x || 0) + (y || 0)) / 2; continue; }
+      o[k] = {}; for (const ax of new Set([...Object.keys(x || {}), ...Object.keys(y || {})])) o[k][ax] = (((x || {})[ax] || 0) + ((y || {})[ax] || 0)) / 2;
+    }
+    return o;
+  };
+  const k0 = Object.assign({ hipY: 0 }, hold);
+  const k1 = Object.assign({}, hold, { hipY: -0.506, thighL: { right: -1.05 }, calfL: { right: 1.75 }, thighR: { right: -0.754 }, calfR: { right: 1.643 }, armR: { right: -0.15, fwd: 0.35 } });
+  const k2 = Object.assign({}, hold, { hipY: -0.68, hip: { right: -0.668 }, thighL: { right: -0.917 }, calfL: { right: 1.602 }, thighR: { right: -0.99 }, calfR: { right: 1.35 }, armR: { right: 0.2, fwd: 0.55 } });
+  /* SLOWLY (2026-10-29, the owner: "have him fall slowly and natural"): it was 4.4 s, down to his back in one movement.
+   * Now ten: the blow lands and he folds over it, hand to the wound; he sways, hunched further; his legs go and he comes
+   * down onto his knees; he stays there, head hanging, breathing; then sits back off them and goes over. (The keys are
+   * the floor-fitted ones, spaced out; the two new holds bend only his chest and head.) */
+  const sway = Object.assign({}, k0, { hipY: 0.005, chest: { right: 0.36 }, head: { right: 0.38 } });
+  const kneel = Object.assign({}, k1, { chest: { right: 0.38 }, head: { right: 0.52 } });
+  const fall = A.build('mnFall', 9.8, [
+    [0.0, {}],
+    // (every key fitted to the floor in the pane: the guessed ones sank his hooves and shins up to 40 cm into the paving)
+    [1.1, k0], [1.8, sway], [2.6, half(k0, k1, -0.150)], [3.5, k1], [5.3, kneel], [6.3, half(k1, k2, -0.506)], [7.2, k2],
+    [8.4, { hipY: -0.705, hipF: -0.129, hip: { right: -1.12, fwd: -0.132 }, waist: { right: 0.136 }, chest: { right: 0.201 }, head: { right: 0.019, up: 0.086 },
+      thighL: { right: -0.662, up: 0.09 }, calfL: { right: 1.226 }, thighR: { right: -0.555, up: -0.06 }, calfR: { right: 0.85 },
+      armL: { right: -0.849, fwd: -1.095, up: 0.897 }, foreL: { right: -1.067, up: -0.978 }, armR: { right: 0.196, fwd: 0.133, up: -0.435 } }],
+    [9.8, MINO_LIE],
+  ], false);
+  // (slow: the breath is drawn, held, and let go over five seconds — the owner's "slowly die in front of you")
+  // (the last breath lifts his chest and his head off the stone and lets them down; the right arm, which hangs off the
+  // chest, is turned back onto the stone with it — lifted, it put the hand 9 cm into the paving)
+  const lift = (c, h, up) => Object.assign({}, MINO_LIE, { chest: { right: MINO_LIE.chest.right + c }, head: { right: MINO_LIE.head.right + h, up: MINO_LIE.head.up },
+    armR: { right: 0.111, fwd: -0.365, up } });
+  const die = A.build('mnDie', 5.2, [[0.0, MINO_LIE], [0.7, lift(0.18, 0.2, -0.791)], [1.4, lift(0.14, 0.14, -0.897)], [5.2, MINO_DEAD]], false);
+  for (const c of [fall, die]) u.clips[c.name] = u.mixer.clipAction(c);
+}
+MUT_KINDS.minotaur = Object.assign({}, KN_BASE, {
+  glb: MINO_GLB, mino: true, c13Body: false, fortBody: false, preParse: false, solo: true,
+  joints: MINO_JOINTS, rag: MINO_RAG, pre: minoSeat, author: authorMinoClips,
+  slice: [['mWalkAtk', 'mWalk', 0.0, 2.6], ['mWalkAtk', 'mSlam', 2.6, 5.2]],
+  h: 2.70, hp: 140, hitR: 0.95, body: 0.78, lungeStop: 2.1, landSlop: 0.5, limbR: 0.36, foeLimbR: 0.62, lungeLead: 0.18, closeBody: true, stopPick: 0.6,
+  // (a no: he comes at you and keeps coming — the owner, "make him harder and way more aggressive to the player")
+  speedK: 1.1, aggr: 3.4, press: 1.0, chainMax: 3,
+  circle: 0.03, step: 0.03, feint: 0.02, sizeUp: 0.02, restless: 0.3,
+  velGait: true, gaitBands: true, gaitMax: 1.6, smoothMove: true, noSkate: true, lungeMax: 2.2, stepBack: 0.8,
+  turnMax: 3.6, yawK: 0.85, aimK: 0.45, aimFront: 0.35, aimDrop: 0.0, hitFront: 0.3, hitOnScreen: true, fade: 0.32,
+  poise: 28, poiseBack: 3.0, poiseWait: 0.7, parryK: 0.8, recoilK: 0.4, stunK: 0.55, blockCost: 0.8, block: 0,
+  fidgetK: 0.04, fidgetGap: 4.0, opening: 0.3, gapRate: 1.0,
+  rig: { arm: 'UpperArmR', fore: 'ForearmR', hand: 'F4R', tip: 'kn_tip', armL: 'UpperArmL', foreL: 'ForearmL', handL: 'F4L', tipL: 'mn_tipL', head: 'Head',
+         limbs: [['Leg1R', 'Leg2R', 'FeetR', 'FeetR'], ['Neck', 'Head', 'Head', 'mn_horn']] },
+  emis: 0.22, rim: [0.06, 0.06, 0.068], gamma: 0.86,
+  anim: { idle: 'mIdle', walk: 'mWalk', run: 'oRun', roar: 'dRoar', die: 'oDie', back: 'oWalkB', rate: 1.0, lean: 0.04, strafeK: 1.0 },
+  gaits: { walk: ['mWalk'], run: ['oRun'], idle: ['mIdle', 'oIdle'], strafeL: ['oStrL'], strafeR: ['oStrR'] },
+  alias: { idle: 'mIdle', idle2: 'oIdle', walk2: 'mWalk', run2: 'oRun', roar: 'dRoar', roar2: 'oRoar', die2: 'oDie', back: 'oWalkB', calm: 'mIdle',
+           strafeL: 'oStrL', strafeR: 'oStrR', hit: 'oHit', hitBig: 'oHitBig', hitSide: 'oHitB', hitBack: 'oHit', hitHead: 'oHitB', parry: 'oHitBig' },
+  stunClip: 'oHitBig', first: 'mIdle', sleepIdle: 'mIdle', wakeAt: 0,
+  voice: { f: 0.58, growl: 1.5, rasp: 1.0, throat: 'bellow' },
+  use: {},
+  landFn: (u, A, dist, was) => minoLandsOn(u, A, dist, was),
+});
+/* HIS BLOWS. The orc's great-sword set swung with a blade in each fist — the contacts are the orc's own, measured on that
+ * set (a contact is the clip's, not the rig's) — his own double overhead slam out of his file (the tip fastest at 0.769 of
+ * the slice, 2.1 m in front of him at head height, `tools/minotaur.js` `__mnContact`), and the sword pack's two quick cuts
+ * for the right blade alone. WHAT MAKES HIM HIS: everything heavy; the slam shakes the ground and throws what is near
+ * where both blades come down (`quake`); the whirl takes everyone round him (`whirl`); the leap closes four metres. */
+{
+  const P = (clip, hit, o) => Object.assign({ clip, hit, natHold: 0.10, cockF: 0.75, rate: 1.0, fluid: true, strike: 0.22, reach: 3.0, lunge: 0.5, stop: 2.2, limbs: [0], dmg: 1, guardK: 1.6, chain: null }, o || {});
+  MUT_ATTACKS.mnCleave = P('oCut', 0.405, { rate: 1.1, chain: 'mnBack', chainP: 0.55 });
+  MUT_ATTACKS.mnBack   = P('oCutC', 0.407, { rate: 1.1, chain: 'mnRise', chainP: 0.35 });
+  MUT_ATTACKS.mnRise   = P('oCutD', 0.407, { rate: 1.1, chain: 'mnCleave', chainP: 0.3 });
+  MUT_ATTACKS.mnChop   = P('oChop', 0.350, { natHold: 0.22, dmg: 2, guardK: 2.0 });
+  MUT_ATTACKS.mnWhirl  = P('oSpin', 0.533, { natHold: 0.14, dmg: 2, guardK: 1.9, whirl: true });
+  MUT_ATTACKS.mnSlam   = P('mSlam', 0.769, { natHold: 0, rate: 1.15, dmg: 2, guardK: 2.2, quake: true });
+  MUT_ATTACKS.mnLeap   = P('oLeap', 0.449, { natHold: 0.12, reach: 6.2, minDist: 3.6, hold: true, dmg: 2, guardK: 2.0 });
+  MUT_ATTACKS.mnKick   = P('oKick', 0.367, { natHold: 0.06, fluid: false, reach: 2.2, stop: 1.4, limbs: [2], dmg: 1, chain: 'mnCleave', chainP: 0.6, guardK: 1.0 });
+  MUT_ATTACKS.mnSlash  = P('sSlash', 0.367, { rate: 1.2, dmg: 1, chain: 'mnSweep', chainP: 0.5, guardK: 1.2 });
+  MUT_ATTACKS.mnSweep  = P('sSlashC', 0.500, { rate: 1.15, dmg: 1, chain: 'mnCleave', chainP: 0.4, guardK: 1.3 });
+  // (the three that travel walk their own recorded step to the blow, the dark knight's way: `dkRootMotion`)
+  for (const k of ['mnLeap', 'mnWhirl', 'mnRise']) { const A = MUT_ATTACKS[k]; A.lunge = 0; A.rm = A.hit; }
+  for (const k in MUT_ATTACKS) if (/^mn[A-Z]/.test(k)) { MUT_ATTACKS[k].w = 0.1; MUT_KINDS.minotaur.alias[k] = MUT_ATTACKS[k].clip; }
+  MUT_KINDS.minotaur.use = { mnCleave: 0.16, mnBack: 0.11, mnRise: 0.08, mnWhirl: 0.10, mnSlam: 0.15, mnLeap: 0.08, mnSlash: 0.16, mnSweep: 0.14 };
+  /* WHERE HE STANDS FOR EACH (2026-10-29, the owner: "make his hits connect way better visually with the player"): every
+   * swing thrown at you from 1.4 to 3.0 m (`tools/probes.js minoClose`) — the stand-off kept is the one whose blade
+   * arrives nearest the middle of your view. (Measured first: 34 of 50 landed, most of them low across your chest, the
+   * kick never — it is out: his kick's leg is a bull's and the pack's kick reaches over it; and with the aim raised the
+   * chop never at all — out. After: the slam arrives dead centre, the slash and the sweep at your eyes.) */
+  const STOP = { mnCleave: 2.0, mnBack: 2.2, mnRise: 1.6, mnWhirl: 2.2, mnSlam: 2.2, mnSlash: 2.8, mnSweep: 2.2, mnLeap: 2.4 };
+  for (const k in STOP) { const A = MUT_ATTACKS[k]; A.stop = STOP[k]; A.reach = Math.max(A.reach, STOP[k] + 0.8); }
+}
+/* ---- WHAT HAPPENS TO HIM. `stage`: 'wait' at the gate · 'toGate' walking in after your yes · 'inside' through it ahead
+ * of you · 'with' at your side (following, or fighting whoever is on you) · 'down' on the paving of XIII's court once the
+ * two before the throne room's door are dead · 'dying' on his last breath after his last word · 'dead' · 'hostile' after
+ * your no (or your blade). On the save as `mino`. */
+const MINO = { stage: 'wait', u: null, ally: false, place: 'beach', answer: null, post: null, spot: null, t: 0, v: 0, pickT: 0, drawT: 0,
+               stuckT: 0, lastD: 0, pool: null, swords: null, restored: null, downIn: 0 };
+const minoAlly = (u) => !!(u && u.kind && u.kind.mino && MINO.ally);
+/* HIS BLOWS ON YOU (a no) are the castle's own weight — a cut one of your four, the heavies two (at three a slam was
+ * the whole bar; measured, two cleaves killed you); on the castle's men they are four times that */
+const MINO_UNIT_K = 4;                                  // his blows on a man: a farmer is thrown, a knight is staggered and opened
+const MINO_FLOOR = 0.35;                                // what the castle's men can take off him (the rest is for the end)
+/* AND WHAT IS LEFT OF THEM IS YOURS. A knight he cuts goes down to a sixth and no further — the owner's "until you kill
+ * the two guys": the kill is the player's. A farmer is not a knight: one blow of his throws him down the street. */
+function minoLand(u, f, dmg) {
+  const A = u.atk && u.atk[u.st.swing];
+  const hit = (t, k) => {
+    if (!t.st.alive || t.st.struck || t === u) return;
+    if (t.kind.farmer) { dkFling(u, t); return; }
+    if (t.kind.garg) { hurtMutant(t, dmg * 2, 1.0, u); return; }   // (a gargoyle he may break himself)
+    const floor = Math.ceil(t.kind.hp * 0.16);
+    hurtMutant(t, Math.max(0, Math.min(dmg * MINO_UNIT_K * k, t.st.hp - floor)), 1.0, u);
+  };
+  hit(f, 1);
+  if (A && A.whirl) for (const o of minoFoes()) if (o !== f && Math.hypot(o.g.position.x - u.g.position.x, o.g.position.z - u.g.position.z) < 3.4) hit(o, 0.6);
+}
+/* HIS BLOW ON A THING IN THE AIR: a gargoyle is in his reach for half a second, hanging in front of him, and the ground
+ * fight's blade test (made for men standing on the paving) let every one of them through — measured, two of them took him
+ * to his floor in a minute and he never touched either. On a gargoyle the blow lands if it is in front of him, inside his
+ * blade's reach and at a height he can swing at; on anything else it is the ground test it always was. */
+function minoLandsOn(u, A, dist, was) {
+  const f = u.st.foe;
+  if (f && f.kind && f.kind.garg) {
+    const p = u.g.position, q = f.g.position, d = Math.hypot(q.x - p.x, q.z - p.z) || 1e-3;
+    const fx = Math.sin(u.g.rotation.y), fz = Math.cos(u.g.rotation.y), facing = ((q.x - p.x) * fx + (q.z - p.z) * fz) / d;
+    return d < (A.stop || 2.2) + 1.3 && facing > 0.2 && q.y < p.y + u.kind.h + 0.4 && q.y + f.kind.h * 0.5 > p.y + 0.4;
+  }
+  return u.kind.aimed && !A.plain ? blowLands(u) : plainLands(u, A, dist, was);
+}
+/* AND HE MEETS ONE COMING: as one dives in on him, his quickest cut, timed to its arrival (`gargUnitPre`) */
+function minoCounter(u, g) {
+  if (!u || !u.st.alive || u.st.atk >= 0 || MINO.stage !== 'with' || (u.st.stun || 0) > 0) return;
+  u.st.foe = g; u.st.awake = true; u.st.mine = false;
+  u.st.swing = Math.random() < 0.6 ? 'mnSlash' : 'mnSweep'; u.st.atk = 0; u.st.landed = false; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
+  MINO.pickT = 1.2;
+}
+/* THE SLAM SHAKES THE GROUND: dust where both blades go in, the court feels it, and whatever of theirs is standing within
+ * two and a half metres of it is thrown (a farmer) or rocked (a knight). On you too, when he is not on your side. */
+function minoQuake(u) {
+  const p = u.g.position, yaw = u.g.rotation.y, x = p.x + Math.sin(yaw) * 2.1, z = p.z + Math.cos(yaw) * 2.1;
+  const d = Math.hypot(camera.position.x - x, camera.position.z - z);
+  addTrauma(THREE.MathUtils.clamp(0.2 * (1 - d / 9), 0, 0.2));            // (felt near, not across the street: see `dkFling`)
+  spawnPuffs(x, z, 16, Math.sin(yaw), Math.cos(yaw), Math.max(0.06, p.y - (camBaseY - playerEye()) + 0.06));
+  sfxKillThud(1.25);
+  playSampleAt('smash', x, z, { gain: 1.3, ref: 9, far: 50, rate: 0.62 });
+  if (!MINO.ally) return;
+  for (const o of minoFoes()) {
+    if (o === u.st.foe || Math.hypot(o.g.position.x - x, o.g.position.z - z) > 2.6) continue;
+    if (o.kind.farmer) dkFling(u, o);
+    else hurtMutant(o, Math.max(0, Math.min(2, o.st.hp - Math.ceil(o.kind.hp * 0.16))), 1.0, u);
+  }
+}
+// whoever of the castle's is up and fighting where you are
+function minoFoes() {
+  const L = [];
+  if (inFort) {
+    for (const f of farmUnits) if (f.st.alive && !f.retired && f.farm && f.farm.out && !f.farm.burst && f.st.awake && f.g.visible) L.push(f);
+    const d = paladin.unit;
+    if (d && d.kind === MUT_KINDS.darkKnight && d.st.alive && !d.retired && paladin.out && d.g.visible) L.push(d);
+  }
+  if (inC13) for (const k of knUnits) if (k.st.alive && !k.retired && k.st.awake && k.g.visible) L.push(k);
+  if (inC13) for (const k of GARG.units) if (k.st.alive && !k.retired && k.gp && !['perch', 'wake', 'drop'].includes(k.gp.mode)) L.push(k);
+  return L;
+}
+/* WHOM HE GOES FOR: the nearest of them to him, and sooner one that is on you or on him; kept two and a half seconds, and
+ * never changed in the middle of a blow */
+function minoPickFoe(u, dt) {
+  if ((MINO.pickT -= dt) > 0 && u.st.foe && u.st.foe.st.alive) return;
+  MINO.pickT = 0.4;
+  if (u.st.atk >= 0 && u.st.foe && u.st.foe.st.alive) return;
+  const P = u.g.position, me = camera.position;
+  let best = null, bs = -1e9;
+  const D = paladin && paladin.unit;
+  for (const f of minoFoes()) {
+    // (not a man the dark knight is already cutting down: he was gone by the time the blow came, and it fell on air)
+    if (D && D !== f && D.st.alive && D.st.foe === f && D.st.atk >= 0) continue;
+    const dU = Math.hypot(f.g.position.x - P.x, f.g.position.z - P.z), dMe = Math.hypot(f.g.position.x - me.x, f.g.position.z - me.z);
+    if (dU > 24 || dMe > 16) continue;                                    // (at your side: not off down the street on his own)
+    const sc = -dU - dMe * 0.4 + (f.st.foe === u ? 3 : 0) + (!f.st.foe && dMe < 4 ? 2 : 0) + (f.kind === MUT_KINDS.darkKnight ? 6 : 0) + (f.knOnMino ? 8 : 0);   // (the knight first: he is the street's real fight; in XIII, the one on him)
+    if (sc > bs) { bs = sc; best = f; }
+  }
+  if (best !== u.st.foe) { u.st.foe = best; if (best) { MINO.pickT = 2.5; u.st.awake = true; u.st.mine = false; } }
+}
+/* AND THEY FIGHT HIM TOO: up to two of the town's men go for him (nearest him, not ones you are cutting), and one knight
+ * of the two turns on him while he is close and you are not — handed back to you the moment you are on him or he is off */
+function minoDraws(u, dt) {
+  if ((MINO.drawT -= dt) > 0) return;
+  MINO.drawT = 0.5;
+  const now = performance.now() / 1000, P = u.g.position, me = camera.position;
+  if (inFort && farmUnits.filter((f) => f.st.alive && f.st.foe === u).length < 2) {
+    let best = null, bd = 10;
+    for (const f of farmUnits) {
+      if (!f.st.alive || f.st.struck || !f.st.awake || !f.farm || !f.farm.out || f.farm.burst || f.st.foe || !f.model) continue;
+      if (f.st.mine && now - (f.st.lastHurt || 0) < 4) continue;
+      const d = Math.hypot(f.g.position.x - P.x, f.g.position.z - P.z);
+      if (d < bd) { bd = d; best = f; }
+    }
+    if (best && Math.random() < 0.6) { best.st.foe = u; best.st.mine = false; best.st.cool = Math.min(best.st.cool || 0, 0.4); }
+  }
+  /* THE TWO BEFORE THE THRONE ROOM (2026-10-29, the owner: "make sure one fights the minotaur first as well unless engaged
+   * with"): from the moment they wake, one of them — the iron knight, the big one for the big one, or the other if you
+   * are already on the iron — goes for HIM and stays on him; the one you strike is yours from then on (`knYours`), and
+   * if that was the one on him the other takes him instead. */
+  if (inC13) {
+    for (const k of knUnits) if (k.st.alive && k.st.lastHurt && k.st.mine) k.knYours = true;
+    let on = knUnits.find((k) => k.st.alive && !k.retired && k.knOnMino);
+    if (on && on.knYours) { on.knOnMino = false; on.st.foe = null; on.st.mine = true; on = null; }
+    if (!on) {
+      const free = knUnits.filter((k) => k.st.alive && !k.retired && k.st.awake && !k.knYours);
+      on = free.find((k) => k.kind === MUT_KINDS.knIron) || free[0] || null;
+      if (on) on.knOnMino = true;
+    }
+    if (on && on.st.foe !== u && on.st.atk < 0) { on.st.foe = u; on.st.mine = false; on.st.awake = true; }
+  }
+}
+// where you are: the beach, the first castle, XIII, or a room he cannot follow you into
+function minoPlaceNow() { return inRoom() ? 'room' : inC13 ? 'c13' : inFort ? 'fort' : 'beach'; }
+function minoFloor(x, z, y) {
+  const pl = MINO.place;
+  return pl === 'fort' ? fortCourtAt(x, z) : pl === 'c13' ? c13CourtAt(x, z) : beachGroundAt(x, z);
+}
+function minoBody(u) {
+  const K = u.kind, pl = MINO.place, beach = !['fort', 'c13'].includes(pl) || !(MINO.ally || MINO.stage === 'down');
+  K.fortBody = !beach && pl === 'fort'; K.c13Body = !beach && pl === 'c13';
+}
+/* HE COMES THROUGH THE DOOR BEHIND YOU. Every cut that puts you somewhere new (the gate, the back door into XIII, back
+ * again) puts him a stride or two behind your left shoulder there, on a floor of that place, facing where you face. */
+function minoJoin(u) {
+  const c = camera.position, yaw = lookEuler.y, fx = -Math.sin(yaw), fz = -Math.cos(yaw), pl = MINO.place;
+  const ok = (x, z) => pl === 'fort' ? fortCourtAt(x, z) !== null && !fortWallsTooNear(x, z, fortCourtAt(x, z))
+    : pl === 'c13' ? c13CourtAt(x, z) !== null && maskAt(C13_M, x, z) && !(c13Walls && keepWallNear(x, z, 0.6, c13CourtAt(x, z) + 0.5, c13CourtAt(x, z) + 1.8, C13_SITE))
+    : !fortMaskAt(x, z);
+  let at = null;
+  for (const r of [2.6, 2.0, 3.4, 1.6, 4.4]) {
+    for (const a of [0.55, -0.55, 0, 1.1, -1.1, 1.7, -1.7, 2.4, -2.4, Math.PI]) {
+      const bx = -fx * Math.cos(a) + fz * Math.sin(a), bz = -fz * Math.cos(a) - fx * Math.sin(a);   // `a` round from straight behind you
+      const x = c.x + bx * r, z = c.z + bz * r;
+      if (ok(x, z)) { at = { x, z }; break; }
+    }
+    if (at) break;
+  }
+  if (!at) at = { x: c.x - fx * 1.2, z: c.z - fz * 1.2 };
+  const y = minoFloor(at.x, at.z) ?? (camBaseY - playerEye());
+  u.g.position.set(at.x, y, at.z);
+  u.g.rotation.y = Math.atan2(fx, fz); if (u.model) u.model.rotation.y = 0;
+  u.st.foe = null; u.st.atk = -1; u.st.fortHome = null; u.st.c13Home = null; u.holdAnim = false;
+  MINO.v = 0; MINO.stuckT = 0; MINO.legal = null; MINO.hold = true;
+}
+/* AT YOUR SIDE, NOT ROUND YOU (2026-10-29, the owner: "when standing still the minotaur just circles me i need him to stand
+ * a little distance away but look at the player when no enemies are around"). The first cut aimed him at a point behind
+ * your left shoulder off your LOOK, so every turn of your head swung it round you and he walked rings. Now nothing of
+ * your look is in it: three to five and a half metres off he stands and watches you; further, he walks (runs past nine)
+ * to three and a half metres short of you along the line between you; nearer than two, he takes a step back. */
+/* THROUGH XIII'S ARCH DOOR (2026-10-29, the owner: "the minotaur needs to step through the door he keeps getting stuck in
+ * the gargoyle part"): walking straight at you from off the door's line he met the wall beside it and stood there —
+ * measured, `minoArch`, 4 m off the line he never came through. On the other side of the open door from you he goes by
+ * it: to its mouth on his side, square to it, then along the passage and out. Where to walk to this frame, or null. */
+function minoViaArch(p, c) {
+  if (MINO.place !== 'c13' || !c13Arch || !c13ArchOpen) return null;
+  const A = c13Arch, ox = C13_X + A.ax, oz = C13_Z + A.az;
+  const sOf = (x, z) => (x - ox) * A.ux + (z - oz) * A.uz, lOf = (x, z) => -(x - ox) * A.uz + (z - oz) * A.ux;
+  const sM = sOf(p.x, p.z), sP = sOf(c.x, c.z), lM = lOf(p.x, p.z), mid = A.L / 2;
+  const sideM = sM > mid ? 1 : -1, sideP = sP > mid ? 1 : -1;
+  if (sideM === sideP || Math.abs(lM) > 7 || Math.abs(sM - mid) > 9) return null;
+  const outside = sideM > 0 ? sM > A.L + 0.2 : sM < -0.2;
+  const ts = outside && Math.abs(lM) > 0.4 ? (sideM > 0 ? A.L + 1.3 : -1.3) : (sideM > 0 ? -1.8 : A.L + 1.8);
+  return _mnVia.set(ox + A.ux * ts, 0, oz + A.uz * ts);
+}
+const _mnVia = new THREE.Vector3();
+function minoFollow(u, dt) {
+  const p = u.g.position, c = camera.position;
+  const via = minoViaArch(p, c);
+  const dMe = Math.hypot(c.x - p.x, c.z - p.z) || 1e-3, T = via || c;
+  const dx = T.x - p.x, dz = T.z - p.z;
+  MINO.hold = MINO.hold ?? true;
+  if (MINO.hold && dMe > 5.5) MINO.hold = false;                       // (hysteresis: he sets off at 5.5, stops at 3.6)
+  if (!MINO.hold && dMe < 3.6) MINO.hold = true;
+  if (via) MINO.hold = false;                                          // (on his way through the door: he keeps going)
+  let want = 0, dir = 1;
+  if (!MINO.hold) want = via ? 1.6 : dMe > 9 ? 3.6 : 1.5;
+  else if (dMe < 1.8) { want = 0.6; dir = -1; MINO.backing = true; }  // (a step back, unhurried: you are in his space —
+  else if (MINO.backing) { MINO.backing = dMe < 2.6; if (MINO.backing) { want = 0.45; dir = -1; } }   //  on to 2.6 m, not a twitch at the edge)
+  else MINO.backing = false;
+  MINO.v += (want - MINO.v) * Math.min(1, dt * (want > MINO.v ? 3 : 5));
+  const face = Math.atan2(dx, dz);                                     // always on you
+  let dy = face - u.g.rotation.y; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+  u.g.rotation.y += THREE.MathUtils.clamp(dy, -3.0 * dt, 3.0 * dt);
+  if (MINO.v > 0.05) {
+    const k = Math.max(0, Math.cos(dy));                               // he turns before he strides off
+    p.x += Math.sin(u.g.rotation.y) * MINO.v * k * dt * dir; p.z += Math.cos(u.g.rotation.y) * MINO.v * k * dt * dir;
+  }
+  if (MINO.place === 'beach') mutClampX(u, p, dt);
+  if (u.model) u.model.rotation.y = 0;
+  const back = dir < 0 && MINO.v > 0.1;
+  /* (2026-10-29, the owner: "stop making the mintaur flinch when i walk up to him after a fight he should just step back he
+   * looks scared of me": the borrowed walk-back is the orc's guarded retreat — a fighter backing off a blade. Backing off
+   * you he walks his OWN walk backwards, slow, his face on you.) */
+  const a = MINO.v < 0.1 ? mutPlay(u, 'mIdle', true) : back ? mutPlay(u, 'mWalk', true) : MINO.v < 2.3 ? mutPlay(u, 'mWalk', true) : mutPlay(u, 'oRun', true);
+  if (a) a.timeScale = MINO.v < 0.1 ? 1 : back ? -THREE.MathUtils.clamp(MINO.v / 1.48, 0.3, 0.8) : THREE.MathUtils.clamp(MINO.v / (MINO.v < 2.3 ? 1.48 : (u.clipSpeed.oRun || 2.2)), 0.5, 1.5);
+  u.mixer.update(dt);
+  minoHeadAt(u, Math.hypot(dx, dz) < 14 && Math.abs(dy) < 1.4, dt);
+  // left behind: put behind you again, where you are not looking
+  const prog = (MINO.lastD ?? dMe) - dMe; MINO.lastD = dMe;
+  MINO.stuckT = !MINO.hold && dMe > 7 && prog < 0.3 * dt ? MINO.stuckT + dt : Math.max(0, MINO.stuckT - dt);
+  if ((MINO.stuckT > 1.4 || dMe > 30) && !dkInView(p.x, p.z)) minoJoin(u);
+}
+/* HE LOOKS AT YOU (2026-10-29, the owner: "have the minotaurs head tilt down at you as he looks at you to talk or
+ * follow"). He stands 2.7 m and turning his body to you left his eyes level over your head. After his clip is sampled
+ * the neck takes a third of the turn and the head the rest, so his face — the stance's forward, carried in the head's
+ * own frame (`mnFront`, `minoSeat`; his painted irises measured within a degree of it) — points at your face; eased in
+ * and out, and never more than 0.9 rad off his clip. (Measured, his face's pitch in his clips: his idle −11…−15°, his walk
+ * −8°, the borrowed walk-back, idle and run −6…+4° — level over your head from three metres.) */
+const _mlV = new THREE.Vector3(), _mlW = new THREE.Vector3(), _mlLook = new THREE.Vector3(), _mlCam = new THREE.Vector3(), _mlQ = new THREE.Quaternion(), _mlQ2 = new THREE.Quaternion(), _mlQ3 = new THREE.Quaternion(), _mlQ4 = new THREE.Quaternion();
+function minoTurnBone(b, qW) {                      // a world turn put onto a bone's local rotation
+  b.parent.getWorldQuaternion(_mlQ2); _mlQ3.copy(_mlQ2).invert();
+  b.quaternion.premultiply(_mlQ3.multiply(qW).multiply(_mlQ2));
+}
+function minoHeadAt(u, on, dt, at = null, lim = 0.9) {
+  MINO.lookK = (MINO.lookK || 0) + ((on ? 1 : 0) - (MINO.lookK || 0)) * Math.min(1, dt * 3);
+  const H = u.bones && u.bones.head, N = H && H.parent, F = H && H.userData.mnFront;
+  if (!F || !N || !N.isBone || MINO.lookK < 0.01) return;
+  for (const [b, share] of [[N, 0.35], [H, 1]]) {
+    u.g.updateMatrixWorld(true);
+    H.getWorldPosition(_mlV);
+    if (at) _mlW.copy(at); else { _mlW.copy(camera.position); _mlW.y -= 0.15; }   // (a hand under your eyes: the nod reads)
+    _mlW.sub(_mlV).normalize();
+    H.getWorldQuaternion(_mlQ); const f = F.clone().applyQuaternion(_mlQ);
+    _mlQ.setFromUnitVectors(f, _mlW);
+    const ang = 2 * Math.acos(Math.min(1, Math.abs(_mlQ.w)));
+    const k = Math.min(1, (b === H ? lim : 0.35 * lim / 0.9) / Math.max(ang, 1e-3)) * share * MINO.lookK;
+    minoTurnBone(b, _mlQ4.identity().slerp(_mlQ, k));
+  }
+}
+/* NOTHING OF HIM GOES INTO THE STONE (2026-10-29, the owner: "they get stuck in the cracks in the walls and clip through
+ * the wall so doe the minotaurs fix this now nothing should clip through walls"). The castles' unit clamps push a body
+ * out of a face a few centimetres a frame and no more, so a crack between two wall pieces held him, and a fight's lunge
+ * carried him through. Whatever moved him this frame — his follow, the fight's chase or a swing's step — is asked the
+ * questions your own walk is asked: a floor within a step under him, no stone within his body's reach from shin to head,
+ * no face crossed since the last place he legally stood (the shut arch door is a face). Asked, it slides along whichever
+ * axis is clear, or goes back. */
+function minoLegal(x, z, fx, fz, feet) {
+  const pl = MINO.place, S = pl === 'fort' ? FORT_SITE : pl === 'c13' ? C13_SITE : null;
+  if (!S || !S.walls) return true;
+  const st = keepFloorAt(x, z, feet, 0.5, S); if (!st) return false;
+  const f = st.f;
+  if (pl === 'fort' ? !fortMaskAt(x, z) : !maskAt(C13_M, x, z)) return false;
+  if (pl === 'c13' && c13PassBlocked(x, z)) return false;
+  if (keepWallNear(x, z, 0.55, f + 0.35, f + 2.1, S)) return false;
+  if (keepHitsWall(fx, fz, x, z, f + 0.8, S) || keepHitsWall(fx, fz, x, z, f + 1.6, S)) return false;
+  return true;
+}
+function minoKeepOut(u) {
+  const p = u.g.position, L = MINO.legal || (MINO.legal = { x: p.x, z: p.z, ok: false, place: MINO.place });
+  if (L.place !== MINO.place) { L.place = MINO.place; L.x = p.x; L.z = p.z; L.ok = false; }
+  if (!['fort', 'c13'].includes(MINO.place)) return;
+  if (!L.ok) { if (minoLegal(p.x, p.z, p.x, p.z, p.y)) { L.x = p.x; L.z = p.z; L.ok = true; } return; }
+  if (Math.hypot(p.x - L.x, p.z - L.z) > 6) { L.x = p.x; L.z = p.z; return; }       // (a placement, not a step)
+  if (minoLegal(p.x, p.z, L.x, L.z, p.y)) { L.x = p.x; L.z = p.z; return; }
+  if (minoLegal(p.x, L.z, L.x, L.z, p.y)) { p.z = L.z; L.x = p.x; return; }
+  if (minoLegal(L.x, p.z, L.x, L.z, p.y)) { p.x = L.x; L.z = p.z; return; }
+  p.x = L.x; p.z = L.z;
+}
+/* HIS WALK IN THROUGH THE GATE after your yes: to its mouth, square to it, and up to the doors — which groan (the gate's
+ * own sound, from the gate) as he goes into them, and he is gone through them into the dark of the arch. (The doors are
+ * the castle's stone and do not swing: measured, he walked straight through the shut planks; so he fades into them over
+ * the groan, the way you go through them under the cut's black.) */
+function minoToGate(u, dt) {
+  const p = u.g.position, g = fortW(FORT_GATE.x, FORT_GATE.z);
+  if (MINO.fade !== undefined) {
+    MINO.fade += dt / 0.7;
+    const k = Math.max(0, 1 - MINO.fade);
+    for (const m of u.mats || []) { m.transparent = true; m.opacity = k; m.depthWrite = k > 0.5; }
+    const a = mutPlay(u, 'mIdle', true); u.mixer.update(dt);
+    if (MINO.fade >= 1) {
+      for (const m of u.mats || []) { m.opacity = 1; m.transparent = false; m.depthWrite = true; }
+      MINO.fade = undefined; MINO.stage = 'inside'; u.g.visible = false;
+    }
+    return;
+  }
+  const tx = g.x, tz = p.z > g.z + 1.2 ? g.z + 1.0 : g.z - 1.0;
+  const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+  MINO.v += (1.45 - MINO.v) * Math.min(1, dt * 2.5);
+  let dy = Math.atan2(dx, dz) - u.g.rotation.y; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+  u.g.rotation.y += THREE.MathUtils.clamp(dy, -3 * dt, 3 * dt);
+  const k = Math.max(0, Math.cos(dy));
+  p.x += Math.sin(u.g.rotation.y) * MINO.v * k * dt; p.z += Math.cos(u.g.rotation.y) * MINO.v * k * dt;
+  if (p.z > g.z - 0.6) p.y += (beachGroundAt(p.x, p.z) - p.y) * Math.min(1, dt * 10);
+  if (u.model) u.model.rotation.y = 0;
+  const a = mutPlay(u, 'mWalk', true); if (a) a.timeScale = THREE.MathUtils.clamp(MINO.v / 1.48, 0.5, 1.2);
+  u.mixer.update(dt);
+  if (p.z < g.z + 0.45 && Math.abs(p.x - g.x) < 1.2) { MINO.fade = 0; sfxAt(g.x, g.z, () => sfxFortGate(1)); }
+}
+/* ---- WHAT HE SAYS. The owner's words, as written. */
+const MINO_NPC = {
+  name: 'Myles',                                     // (2026-10-29, the owner: "make his name 'Myles'")
+  script: {
+    start: { text: 'You must be here to kill the king?', choices: [
+      { label: 'Yes', to: 'yes', act: () => { MINO.answer = 'yes'; } },
+      // (no reply to a no: the dialogue closes on it and he comes for you)
+      { label: 'No', to: 'mnNo', act: () => { MINO.answer = 'no'; } },
+    ] },
+    yes: { text: 'Good, Looks like were headed down the same path. Stay close.', choices: [], rate: 30, hint: '', end: 3600 },
+    // (dying: "I thought I could push through" first, then the rest — the owner, 2026-10-29)
+    last: { text: 'I thought I could push through', choices: [], next: 'last2', rate: 70, hint: 'click to go on' },
+    last2: { text: 'I tried my best friend, I love you...', choices: [], rate: 70, hint: '', end: 1e9 },
+    /* (at XIII's arch door, `minoAtDoor` — the owner's script, 2026-10-29: the closest gargoyle drops behind him while he
+     * talks and he never sees it; told, he will not hear of it; then it rises behind him and he turns round on it) */
+    locked: { text: 'FUCK its locked...', rate: 45, choices: [{ label: 'You can probably break this door.', to: 'beast' }] },
+    beast: { text: 'I’m not some savage beast.', choices: [
+      { label: 'You just killed 40 people?', to: 'rude' },
+      { label: 'Okay, let’s figure out another way', to: 'smart' },
+    ] },
+    rude: { text: 'Yeah but the first door was unlocked. We politely walked in, then killed them. I don’t run around breaking doors because I can. It’s rude.',
+      enter: () => gargSceneDrop(), choices: [{ label: 'I swear a gargoyle just dropped behind you.', to: 'games' }] },
+    smart: { text: 'Okay, maybe we could like… damn I’m not sure. You’re supposed to be the smart one human.',
+      enter: () => gargSceneDrop(), choices: [{ label: 'I swear a gargoyle just dropped behind you.', to: 'games' }] },
+    games: { text: 'I DON’T HAVE TIME FOR GAMES! IM HERE TO KILL THE KING! MOVE ILL BREAK THE DOOR!', rate: 22, choices: [], next: 'turn', hint: 'click to go on' },
+    // (no words: the box goes, the stone rises behind him and he turns round on it; `gargSceneStep` ends it)
+    turn: { text: '', choices: [], hint: '', end: false, enter: () => { dialogEl.classList.remove('show'); gargSceneRise(); } },
+
+  },
+  sprite: null, head: null, fov: 34,
+  onLeave: () => minoLeave(),
+};
+function minoTalk() {
+  const u = MINO.u; if (!u || !u.bones || !u.bones.head) return;
+  MINO_NPC.sprite = u.bones.head; MINO_NPC.head = u.bones.head;
+  if (MINO.stage === 'down') { MINO_NPC.fov = 30; startDialog('last', MINO_NPC); return; }
+  MINO.answer = null; MINO_NPC.fov = 34;
+  startDialog('start', MINO_NPC);
+}
+/* THE LOCKED DOOR, WITH HIM (2026-10-29, the owner: "when you go to open the locked door make the player spin around and
+ * enter dialog with the minotaur in the angle i provided … make the minotaur say 'FUCK its locked...'"). You turn round
+ * on him where he stands behind you, the lens pushed in on his face as at the gate, and the conversation plays out
+ * (`gargSceneStep`); its end wakes the rest (`then`). Only when he is at your side in XIII and not mid-blow; false and
+ * nothing happens otherwise. */
+const MINO_DOOR_NPC = { name: 'Myles', script: MINO_NPC.script, sprite: null, head: null, fov: 34, onLeave: null };
+function minoAtDoor(then) {
+  const u = MINO.u;
+  if (!u || !u.model || !u.st.alive || MINO.stage !== 'with' || MINO.place !== 'c13' || !u.g.visible || u.st.atk >= 0) return false;
+  if (Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z) > 16) return false;
+  /* (2026-10-29, the owner, after the first cut: "make the minotaur zoom when in the dialog about the door be normal like
+   * when you talk to him and have him stand a little closer … so you dont expect the gargoyle to drop": the lens is the
+   * gate's, tight on his head — the wide level shot showed the court behind him and gave the drop away — and he is put a
+   * stride closer, 2.3 m, while he is still behind you, on a legal floor reached without crossing stone) */
+  const c = camera.position, p = u.g.position, d = Math.hypot(p.x - c.x, p.z - c.z);
+  if (d > 2.6) {
+    const k = 2.3 / d, x = c.x + (p.x - c.x) * k, z = c.z + (p.z - c.z) * k, f = c13CourtAt(x, z);
+    if (f !== null && Math.abs(f - p.y) < 0.4 && minoLegal(x, z, p.x, p.z, f)) { p.set(x, f, z); if (MINO.legal) { MINO.legal.x = x; MINO.legal.z = z; } }
+  }
+  u.g.rotation.y = Math.atan2(c.x - p.x, c.z - p.z);
+  MINO_DOOR_NPC.sprite = u.bones.head; MINO_DOOR_NPC.head = u.bones.head; MINO_DOOR_NPC.onLeave = then;
+  MINO.v = 0;
+  startDialog('locked', MINO_DOOR_NPC);
+  return dialogOpen;
+}
+function minoLeave() {
+  const u = MINO.u; if (!u) return;
+  if (MINO.stage === 'down') { minoLetGo(u); return; }
+  if (MINO.stage !== 'wait') return;
+  if (MINO.answer === 'yes') { MINO.stage = 'toGate'; MINO.ally = true; MINO.v = 0; minoBody(u); }
+  else if (MINO.answer === 'no') minoTurn(u);
+}
+// he comes for you: a roar, and the fight is on — on the sand in front of the gate
+function minoTurn(u) {
+  MINO.stage = 'hostile'; MINO.ally = false; minoBody(u);
+  u.st.awake = true; u.st.mine = true; u.st.foe = null; u.st.roar = 1.3; u.st.cool = 0.5; u.holdAnim = false;
+  sfxMutRoar(Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z) * 0.5, u.kind.voice);
+  addTrauma(0.2);
+}
+// and goes back to his place by the gate while you are not on the sand with him
+function minoCalm(u) {
+  u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.st.foe = null; u.holdAnim = false;
+  if (mutToken === u) mutToken = null;
+  const P = MINO.post; u.g.position.set(P.x, beachGroundAt(P.x, P.z), P.z); u.g.rotation.y = P.yaw; if (u.model) u.model.rotation.y = 0;
+}
+/* WHERE HE WAITS: on the sand to the left of the first castle's gate as you come up the beach (the sea side of it), a
+ * stride out from the wall, turned half toward you coming and half toward the door */
+function minoPost() {
+  const g = fortW(FORT_GATE.x, FORT_GATE.z);
+  let x = g.x - 3.6, z = g.z + 1.8;
+  for (let k = 0; k < 30 && fortMaskAt(x, z); k++) z += 0.25;
+  return { x, z: z + 0.4, yaw: 0.35, key: [+(g.x - 3.6).toFixed(1), +(g.z + 1.8).toFixed(1)] };
+}
+function placeMinotaur() {
+  const P = MINO.post = minoPost();
+  const u = MINO.u = makeMutant(P.key[0], P.key[1], 'minotaur', beachGroundAt(P.x, P.z));
+  u.g.position.set(P.x, beachGroundAt(P.x, P.z), P.z); u.g.rotation.y = P.yaw; u.g.visible = false;
+  if (u.retired) { MINO.stage = 'killed'; return; }                                // you killed him (a no): he stays dead
+  const prox = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.4, 1.3), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  prox.position.y = 1.3; prox.name = 'hitProxy'; prox.visible = false; prox.userData.bwGhost = true;
+  u.g.add(prox); MINO.prox = prox;
+  addInteractable(prox, 'Talk to the minotaur', 'default', {
+    mid: true, far: 4.6,
+    when: () => !!u.model && u.st.alive && !dialogOpen && ((MINO.stage === 'wait' && !inFort && !inRoom()) || (MINO.stage === 'down' && MINO.t > (u.clips.mnFall ? u.clips.mnFall.getClip().duration : 4))),
+    onActivate: () => minoTalk(),
+  });
+}
+/* ---- HE GOES DOWN. The second of the two before the throne room's door has fallen: he lets his swords go, goes to his
+ * knees with a hand on his belly, and onto his back; the blood comes out from under him across the paving and his
+ * breath is the owner's dying-man recording pitched down to his size. Speak to him and he says his last; close it and
+ * he dies on the breath. */
+const MINO_POSE = {
+  // (filled by `minoAuthorOwn` once his clips are in: per joint, turns about the body's axes from his idle's first frame)
+};
+function minoGoDown(u) {
+  MINO.stage = 'down'; MINO.t = 0; MINO.songDue = true;
+  u.st.foe = null; u.st.atk = -1; u.st.awake = false; u.st.roar = 0; u.holdAnim = true;
+  if (mutToken === u) mutToken = null;
+  for (const k of knUnits) if (k.st.foe === u) k.st.foe = null;
+  MINO.spot = { x: u.g.position.x, z: u.g.position.z, yaw: u.g.rotation.y };
+  if (u.model) u.model.rotation.y = 0;
+  mutPlay(u, 'mnFall', false);
+  sfxMutHunger(Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z), u.kind.voice);
+}
+function minoLetGo(u) {
+  if (MINO.stage !== 'down') return;
+  MINO.stage = 'dying'; MINO.t = 0;
+  // the lens stays on him through it
+  cineHold = true; dialogHead = u.bones.head; dialogTarget = u.bones.head.getWorldPosition(new THREE.Vector3()); dialogFov = 30;
+  if (!minoLastBreath(u)) sfxBenLastBreath(u.g.position.x, u.g.position.z);
+  mutPlay(u, 'mnDie', false);
+}
+// the pool: Ben's spills, spreading out from under his belly over most of a minute
+function minoPoolMake(u) {
+  const T = THREE;
+  const m = new T.Mesh(new T.PlaneGeometry(1, 1), new T.MeshStandardMaterial({
+    map: benPoolTexture(), transparent: true, depthWrite: false, roughness: 0.10, metalness: 0,
+    // (Ben's pool is for the catacombs' dark: on XIII's torch-warm paving it read as a shadow — measured in a still)
+    color: new T.Color(2.1, 0.9, 0.9), emissive: 0x2a0303, emissiveIntensity: 1.0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+  }));
+  m.rotation.x = -Math.PI / 2; m.renderOrder = 3; scene.add(m);
+  return m;
+}
+function minoPoolStep(u, k) {
+  if (!MINO.pool) MINO.pool = minoPoolMake(u);
+  const S = MINO.spot, P = MINO.pool, s = 0.3 + 3.0 * k;
+  // out from under his belly (where the wound is, wherever the fall has put it)
+  const W = u.minoAuthor && u.minoAuthor.J.waist;
+  if (W) W.getWorldPosition(_mnA); else _mnA.set(S.x - Math.sin(S.yaw) * 0.9, 0, S.z - Math.cos(S.yaw) * 0.9);
+  const bx = _mnA.x, bz = _mnA.z;
+  P.position.set(bx, (c13CourtAt(bx, bz) ?? u.g.position.y) + 0.012, bz);
+  P.rotation.z = -S.yaw; P.scale.set(s, s * 1.15, 1);
+  P.visible = !!(c13World && c13World.visible) && !inRoom();
+}
+// his breathing: the dying man's recording, a fifth lower for a chest this size, from where he lies
+let minoBr = null;
+// (slower and quieter while he lies there: "make him breath less hard and fast until hes dying" — 0.8 / 0.42 before)
+const MINO_BR_RATE = 0.64, MINO_BR_LEVEL = 0.24, MINO_BR_FAR = 10;
+function updateMinoBreath(on) {
+  const ctx = audioCtx; if (!ctx || !sfxBusGain) return;
+  const bank = sampleBanks.benBreath && sampleBanks.benBreath[0];
+  if (!minoBr) {
+    if (!on || !bank) return;
+    const src = ctx.createBufferSource(); src.buffer = bank; src.loop = true; src.loopStart = 0.15; src.loopEnd = 6.0; src.playbackRate.value = MINO_BR_RATE;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5000;
+    const g = ctx.createGain(); g.gain.value = 0;
+    const pan = ctx.createStereoPanner();
+    src.connect(lp).connect(g).connect(pan).connect(sfxBusGain);
+    src.start(ctx.currentTime, 0.15);
+    minoBr = { src, lp, g, pan, t0: ctx.currentTime };
+  }
+  const t = ctx.currentTime, u = MINO.u;
+  let k = 0;
+  if (on && u) {
+    const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+    const f = THREE.MathUtils.clamp(1 - (d - 1.5) / (MINO_BR_FAR - 1.5), 0, 1); k = f * f;
+    minoBr.pan.pan.setTargetAtTime(THREE.MathUtils.clamp(panTo(u.g.position.x, u.g.position.z) * 0.7, -1, 1), t, 0.1);
+    minoBr.lp.frequency.setTargetAtTime(1200 + 3800 * f, t, 0.2);
+  }
+  minoBr.g.gain.setTargetAtTime(k * MINO_BR_LEVEL, t, on ? 0.35 : 0.12);
+}
+function minoBreathNow() {                            // -1 (empty) .. 1 (full), on the recording you hear
+  if (!minoBr || !audioCtx) return null;
+  const E = benBreathEnv(); if (!E) return null;
+  const s = minoBr.src, L = s.loopEnd - s.loopStart;
+  const tt = s.loopStart + ((((audioCtx.currentTime - minoBr.t0) * MINO_BR_RATE) % L) + L) % L;
+  const i = tt / E.hop, i0 = Math.min(E.e.length - 2, Math.floor(i)), f = i - i0;
+  return (E.e[i0] + (E.e[i0 + 1] - E.e[i0]) * f) * 2 - 1;
+}
+function minoLastBreath(u) {
+  const ctx = audioCtx; if (!ctx) return false;
+  const bank = sampleBanks.benBreath && sampleBanks.benBreath[0]; if (!bank) return false;
+  updateMinoBreath(false);
+  const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  const src = ctx.createBufferSource(); src.buffer = bank; src.playbackRate.value = MINO_BR_RATE;
+  const g = ctx.createGain(); g.gain.value = MINO_BR_LEVEL * 1.2 * THREE.MathUtils.clamp(1 - (d - 1.5) / 11, 0.15, 1);
+  const pan = ctx.createStereoPanner(); pan.pan.value = THREE.MathUtils.clamp(panTo(u.g.position.x, u.g.position.z) * 0.7, -1, 1);
+  src.connect(g).connect(pan).connect(sfxOut());
+  src.start(ctx.currentTime, 6.05);
+  return true;
+}
+/* HIS CHEST ON THE BREATH: the lying pose held as its own base, and the ribs and the head lifted on each draw — heavy and
+ * ragged while he lies there, gone still after the last one */
+const _mnbQ = new THREE.Quaternion(), _mnbA = new THREE.Vector3(), _mnbP = new THREE.Quaternion(), _mnbM = new THREE.Quaternion();
+// the body's own left-right axis (the model's +x) in a bone's parent frame: what "bend forward" turns about
+function minoSide(u, b) {
+  u.model.getWorldQuaternion(_mnbM); b.parent.getWorldQuaternion(_mnbP).invert();
+  return _mnbA.set(1, 0, 0).applyQuaternion(_mnbM).applyQuaternion(_mnbP).normalize();
+}
+// a bone's rotation on the last frame of one of his clips
+function minoClipEnd(u, clip, b) {
+  const a = u.clips[clip], t = a && a.getClip().tracks.find((x) => x.name === b.name + '.quaternion');
+  if (!t) return null; const n = t.values.length;
+  return new THREE.Quaternion(t.values[n - 4], t.values[n - 3], t.values[n - 2], t.values[n - 1]);
+}
+function minoBreathPose(u, k, dt) {
+  const R = u.minoAuthor; if (!R) return;
+  /* (his lying pose, from the clip's own last frame — it was read off the live bones the first frame it was needed, and
+   * measured, his neck held a stray 0.46 rad in it then: the back of his head 14 cm into the paving for the rest of it) */
+  if (!MINO.base) { MINO.base = new Map(); for (const nm of ['chest', 'waist', 'neck', 'head']) { const b = R.J[nm]; if (b) MINO.base.set(b, minoClipEnd(u, 'mnFall', b) || b.quaternion.clone()); } }
+  const bn = minoBreathNow();
+  let br;
+  if (bn !== null) { MINO.brS = MINO.brS === undefined ? bn : MINO.brS + (bn - MINO.brS) * Math.min(1, dt * 12); br = MINO.brS; }
+  else { MINO.brPh = (MINO.brPh || 0) + dt * 2.2; br = Math.sin(MINO.brPh); }
+  for (const [b, q] of MINO.base) {
+    const nm = Object.keys(R.J).find((n) => R.J[n] === b);
+    const amt = { waist: 0.03, chest: 0.055, neck: 0.025, head: 0.035 }[nm] * br * k;
+    b.quaternion.copy(q).premultiply(_mnbQ.setFromAxisAngle(minoSide(u, b), -amt));
+  }
+}
+/* ---- EVERY FRAME. */
+function updateMinotaur(dt) {
+  if (!MINO.u) { if (fortReady && Math.abs(camera.position.z - FORT_Z) < 420 && !inRoom()) placeMinotaur(); updateMinoBreath(false); return; }
+  const u = MINO.u;
+  if (u.retired) { updateMinoBreath(false); return; }
+  if (u.minoLay && MINO_PACKS.every(([g]) => !!g())) { const f = u.minoLay; u.minoLay = null; f(); }
+  if (!u.mixer || u.clipsPending > 0) return;
+  if (u.kind.natural && !u.natDone) u.natDone = naturalSwings(u);
+  // his maps on the card and his programs compiled before he is ever drawn (the knights' way)
+  const W = u.texW || (u.texW = {});
+  let texOK = !u.model || texWarmStep(u.model, W);
+  if (u.model && texOK && !W.compiled) {
+    if (!W.asked) { W.asked = true; try { renderer.compileAsync(u.model, camera, scene).then(() => { W.compiled = true; }, () => { W.compiled = true; }); } catch (e) { W.compiled = true; } }
+    texOK = W.compiled;
+  }
+  if (MINO.restored) minoApplyRestore(u);
+  const pl = minoPlaceNow();
+  if (pl !== MINO.place) {
+    const was = MINO.place; MINO.place = pl;
+    if (MINO.stage === 'inside' || MINO.stage === 'toGate') { if (pl === 'fort') MINO.stage = 'with'; }
+    if (MINO.stage === 'with' && pl !== 'room') minoJoin(u);
+    if (MINO.stage === 'hostile' && pl !== 'beach' && u.st.alive) minoCalm(u);
+    if (MINO.stage === 'wait' && was !== 'beach') { minoCalm(u); }
+  }
+  // your blade on him before you have spoken is your answer
+  if (MINO.stage === 'wait' && u.st.mine) minoTurn(u);
+  minoBody(u);
+  const st = MINO.stage, here = MINO.place;
+  // drawn where he is: the sand by the gate, at your side, or lying in XIII's court
+  const onBeach = st === 'wait' || st === 'hostile' || st === 'toGate' || (st === 'with' && here === 'beach');
+  // (dead — a no, and your blade — his body lies where he fell: measured, it vanished, `alive` was asked here)
+  u.g.visible = texOK && (u.st.alive || st === 'hostile') && (onBeach ? here === 'beach' && Math.abs(camera.position.z - u.g.position.z) < 220
+    : st === 'with' ? here !== 'room' : (st === 'down' || st === 'dying' || st === 'dead') ? !!(c13World && c13World.visible) && !inRoom() : false);
+  if (u.g.visible) knSwordTrail(u, dt);
+  if (st === 'with' || st === 'hostile') dkRootMotion(u);
+  if (st === 'with' && here === 'c13' && !minoSong && audioCtx) lazyBuf(MINO_SONG);   // (his song in hand before he falls)
+  if (st === 'with' && u.st.alive) minoKeepOut(u);
+  if (st === 'with' && here !== 'room' && here !== 'beach') { minoPickFoe(u, dt); minoDraws(u, dt); }
+  if (st === 'hostile' && u.st.alive && !u.st.awake && here === 'beach' && Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) < 14) minoTurn(u);
+  // the slam's ground-shake, on its own contact
+  { const A = u.st.atk >= 0 && u.atk ? u.atk[u.st.swing] : null;
+    if (A && A.quake && u.st.atk >= A.wind && !u.mnQuaked) { u.mnQuaked = true; minoQuake(u); }
+    if (u.st.atk < 0) u.mnQuaked = false; }
+  // the end of the fight: the second of the two before the throne room's door down, and he goes down after it
+  if (st === 'with' && here === 'c13' && knUnits.length === 2 && !knAlive() && u.st.atk < 0) {
+    MINO.downIn += dt;
+    if (MINO.downIn > 1.4) minoGoDown(u);
+  } else if (st === 'with') MINO.downIn = 0;
+  // talking: he is frozen with everything else, but he breathes and holds his idle (or his lying) through it
+  if (dialogOpen && dialogScript === MINO_NPC.script && (st === 'wait' || st === 'with')) {
+    /* (at the door: he stops where he is and turns to you — and at the end, slowly, round on the thing behind him; then
+     * (2026-10-29, the owner: "take out the 'oh' just have him abruptly turn his head back to you but natural then he
+     * makes eye contact for a sec then turns around and the fight starts") a double take: his head snaps back round to
+     * you, the shoulders after it, a second's look, and round again onto it — `gargSceneStep` keeps the beats) */
+    const S = GARG.scene, sc = st === 'with' && S && S.turn && S.unit;
+    let head = null;
+    if (st === 'with') {
+      mutPlay(u, 'mIdle', true);
+      let T = camera.position, rate = 2.5;
+      if (sc) {
+        // (its body, not over its head: he looked up too much at it — the owner)
+        const G = _mlLook.copy(S.unit.g.position).setY(S.unit.g.position.y + 1.0), stg = S.stage || 'turn';
+        const want = stg === 'back' ? _mlCam.copy(camera.position).setY(camera.position.y - 0.15) : G;
+        if (stg !== 'back') T = G;
+        // (the turn round is slow on purpose: a shuffle, easing in, the head going first; the look back is quick, the head leading)
+        rate = stg === 'turn' ? 0.25 + 0.55 * Math.min(1, S.turnT / 1.4) : stg === 'back' ? 1.7 : 3.0;
+        if (stg === 'turn') S.turnT += dt;
+        S.headP = S.headP ? S.headP.lerp(want, Math.min(1, dt * (stg === 'back' ? 10 : 6))) : want.clone();
+        head = S.headP;
+      }
+      let dy = Math.atan2(T.x - u.g.position.x, T.z - u.g.position.z) - u.g.rotation.y;
+      while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+      u.g.rotation.y += THREE.MathUtils.clamp(dy, -rate * dt, rate * dt);
+      if (sc) { S.faced = Math.abs(dy) < 0.12; S.eye = (S.stage === 'back') && Math.abs(dy) < 1.0; }
+    }
+    u.mixer.update(dt); minoHeadAt(u, true, dt, head);
+  }
+  if (st === 'down' || st === 'dying' || st === 'dead') minoDownStep(u, dt);
+  else updateMinoBreath(false);
+  /* WHERE YOU SPEAK TO HIM: on his feet, a box his height; lying, a wide low one over his chest — it stood upright at his
+   * feet while he lay two metres behind it, and the owner could not raise the prompt */
+  if (MINO.prox) {
+    const X = MINO.prox, lying = st === 'down' || st === 'dying' || st === 'dead';
+    if (lying && u.minoAuthor && u.minoAuthor.J.chest) { u.minoAuthor.J.chest.getWorldPosition(_mnA); u.g.worldToLocal(_mnA); X.position.copy(_mnA); X.scale.set(1.9, 0.6, 1.9); }
+    else { X.position.set(0, 1.3, 0); X.scale.set(1, 1, 1); }
+  }
+}
+const _mnSee = new THREE.Vector3();
+function minoDownStep(u, dt) {
+  MINO.t += dt;
+  /* (nothing of his walk's lean left on him while he is down: his last stride's tilt of the model, kept, laid his whole
+   * length over on its feet — measured in the court, his head 14 cm into a flat paving it should have rested on) */
+  if (u.model) { u.model.rotation.x = 0; u.model.rotation.z = 0; }
+  /* HIS SONG, WHEN YOU SEE HIM GOING (2026-10-29, the owner: "just have it play when you notice him dying and if you do
+   * the dialog it still plays through"): the first frame he is on your screen while he is down, once; a conversation does
+   * nothing to it. (`songDue` is set only by his going down — not by a restore into his lying there.) */
+  if (MINO.songDue && !minoSong && (MINO.stage === 'down' || MINO.stage === 'dying') && u.g.visible && u.bones && u.bones.head) {
+    u.bones.head.getWorldPosition(_mnSee).project(camera);
+    if (_mnSee.z < 1 && Math.abs(_mnSee.x) < 0.85 && Math.abs(_mnSee.y) < 0.9 && camera.position.distanceTo(u.g.position) < 40) startMinoSong();
+  }
+  const st = MINO.stage, fall = u.clips.mnFall, die = u.clips.mnDie;
+  updateMinoBreath(st === 'down' && u.g.visible);
+  // the clip runs when the world does; a dialogue is `frozen()` and the unit's own tick does not run, so it is driven here
+  if (frozen() && u.mixer) u.mixer.update(dt);
+  const k = THREE.MathUtils.clamp(MINO.t / 40, 0, 1);
+  minoPoolStep(u, st === 'down' ? 1 - Math.pow(1 - k, 2) : 1);
+  if (st === 'down') {
+    if (MINO.t > (fall ? fall.getClip().duration : 4) + 0.05) minoBreathPose(u, 1, dt);
+    if (MINO.t > 3.3 && !MINO.swords) minoDropSwords(u);          // (they go from his hands as his knees hit the stone)
+  } else if (st === 'dying') {
+    // the last breath lifts him (0..0.6 s) and he goes still on the way out; the lens is let go once he has
+    const gasp = MINO.t < 0.6 ? Math.sin(MINO.t / 0.6 * Math.PI * 0.5) : Math.max(0, 1 - (MINO.t - 0.6) / 1.2);
+    if (gasp > 0 && u.minoAuthor) { const b = u.minoAuthor.J.chest; if (b) b.quaternion.premultiply(_mnbQ.setFromAxisAngle(minoSide(u, b), -0.14 * gasp)); }
+    if (MINO.t > (die ? die.getClip().duration : 3.5) + 0.6) {
+      MINO.stage = 'dead';
+      minoSongFade(5);                                   // (his song goes out with him)
+      cineHold = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV;
+    }
+  }
+  if (MINO.swords) minoSwordsStep(dt);
+  /* HIS EYES ON YOURS (2026-10-29, the owner: "make him make direct eye contact when talking to him as he dies"): while you
+   * speak to him and through the dying, his head turns to your face — a little, he is on his back on the stone (0.6 rad
+   * at most, measured clear of the paving) — and lets go as he does */
+  const talking = dialogOpen && dialogScript === MINO_NPC.script;
+  if ((st === 'down' && talking) || st === 'dying') minoHeadAt(u, true, dt, null, 0.6);
+  else if (st === 'down') minoHeadAt(u, false, dt, null, 0.6);           // (the breath puts his neck and head back each frame)
+  else if (st === 'dead' && MINO.lookK > 0.01) {
+    // (dead, his clip is over and nothing puts them back: from its last frame each time, the look easing off them)
+    for (const nm of ['neck', 'head']) { const bn = u.minoAuthor && u.minoAuthor.J[nm], q = bn && minoClipEnd(u, 'mnDie', bn); if (q) bn.quaternion.copy(q); }
+    minoHeadAt(u, false, dt, null, 0.6);
+  }
+}
+/* HIS SWORDS GO OUT OF HIS HANDS AS HE GOES DOWN: each blade, as it is in his fist on that frame, becomes a thing of its
+ * own that falls to the paving and lies there (the swords' mesh on him is put away) */
+function minoDropSwords(u) {
+  const sw = []; u.model.traverse((o) => { if (o.isSkinnedMesh && o.geometry.attributes.position.count === 620) sw.push(o); });
+  if (!sw.length) { MINO.swords = []; return; }
+  const S = sw[0], P = S.geometry.attributes.position, SI = S.geometry.attributes.skinIndex, SW = S.geometry.attributes.skinWeight, bs = S.skeleton.bones;
+  S.updateMatrixWorld(true);
+  const parts = { F4R: [], F4L: [] };
+  const idx = S.geometry.index ? S.geometry.index.array : null;
+  const owner = new Int8Array(P.count);
+  for (let i = 0; i < P.count; i++) {
+    let best = -1, bw = 0; for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; best = SI.getComponent(i, k); } }
+    owner[i] = bs[best] && bs[best].name === 'F4R' ? 1 : 2;
+  }
+  MINO.swords = [];
+  for (const side of [1, 2]) {
+    const pos = [], uv = [], UV = S.geometry.attributes.uv, v = new THREE.Vector3(), c = new THREE.Vector3();
+    const tri = idx ? idx.length / 3 : P.count / 3;
+    for (let t = 0; t < tri; t++) {
+      const a = idx ? idx[t * 3] : t * 3; if (owner[a] !== side) continue;
+      for (let j = 0; j < 3; j++) {
+        const i = idx ? idx[t * 3 + j] : t * 3 + j;
+        v.fromBufferAttribute(P, i); S.applyBoneTransform(i, v); v.applyMatrix4(S.matrixWorld);
+        pos.push(v.x, v.y, v.z); if (UV) uv.push(UV.getX(i), UV.getY(i));
+      }
+    }
+    if (!pos.length) continue;
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    if (uv.length) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.computeBoundingBox(); g.boundingBox.getCenter(c); g.translate(-c.x, -c.y, -c.z); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, S.material); m.position.copy(c); scene.add(m);
+    const fl = (c13CourtAt(c.x, c.z) ?? u.g.position.y);
+    const yaw = MINO.spot.yaw + (side === 1 ? -1.2 : 1.2);
+    // (out to his sides, clear of where he lies down: at 0.9 one came down across his thigh)
+    MINO.swords.push({ m, v: new THREE.Vector3((side === 1 ? -1 : 1) * Math.cos(MINO.spot.yaw) * 1.7, 1.0, -(side === 1 ? -1 : 1) * Math.sin(MINO.spot.yaw) * 1.7),
+      q0: new THREE.Quaternion(), q1: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, Math.PI / 2 * (side === 1 ? 1 : -1))), floor: fl + 0.05, t: 0, landed: false });
+  }
+  S.visible = false;
+}
+function minoSwordsStep(dt) {
+  for (const s of MINO.swords) {
+    s.m.visible = !!(c13World && c13World.visible) && !inRoom();
+    if (s.landed) continue;
+    s.t += dt;
+    s.v.y -= 9.8 * dt; s.m.position.addScaledVector(s.v, dt);
+    s.m.quaternion.slerpQuaternions(s.q0, s.q1, Math.min(1, s.t / 0.55));
+    if (s.m.position.y <= s.floor) {
+      s.m.position.y = s.floor; s.landed = true; s.m.quaternion.copy(s.q1);
+      if (typeof sfxSwordDrop === 'function') sfxSwordDrop(s.m.position.x, s.m.position.z); else sfxKillThud(0.5);
+    }
+  }
+}
+/* HIS UNIT'S OWN BRANCH of the creature tick: true when this file drives him, false when the fight does */
+function minoUnitPre(u, dt) {
+  const st = MINO.stage, p = u.g.position;
+  if (!u.st.alive) return false;
+  if (st === 'wait') {
+    // he watches you come up the beach
+    const dx = camera.position.x - p.x, dz = camera.position.z - p.z, d = Math.hypot(dx, dz);
+    const want = d < 12 ? Math.atan2(dx, dz) : MINO.post.yaw;
+    let dy = want - u.g.rotation.y; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+    u.g.rotation.y += THREE.MathUtils.clamp(dy, -1.2 * dt, 1.2 * dt);
+    p.y += (beachGroundAt(p.x, p.z) - p.y) * Math.min(1, dt * 8);
+    mutPlay(u, 'mIdle', true); u.mixer.update(dt);
+    minoHeadAt(u, d < 12 && Math.abs(dy) < 1.4, dt);
+    return true;
+  }
+  if (st === 'toGate') { minoToGate(u, dt); return true; }
+  if (st === 'inside') return true;
+  if (st === 'down' || st === 'dying' || st === 'dead') { u.mixer.update(st === 'dead' ? 0 : dt); return true; }
+  if (st === 'with') {
+    if (MINO.place === 'room') return true;
+    // on the paving under him whatever he is doing (the farmers' and the knights' own way)
+    const fy = MINO.place === 'beach' ? null : minoFloor(p.x, p.z);
+    if (fy !== null) p.y += (fy - p.y) * Math.min(1, dt * 12);
+    if (u.st.foe && u.st.foe.st.alive) { u.st.awake = true; return false; }
+    if (u.st.atk >= 0) return false;                                  // a blow already thrown is finished
+    minoFollow(u, dt);
+    return true;
+  }
+  return false;                                                       // 'hostile': the fight's own
+}
+/* ---- ON THE SAVE: where his story is (a walk in and a dying are written as where they end), and where he lies */
+function minoSave() {
+  const s = MINO.stage;
+  return { s: s === 'toGate' || s === 'inside' ? 'with' : s === 'dying' ? 'dead' : s, at: MINO.spot ? [+MINO.spot.x.toFixed(2), +MINO.spot.z.toFixed(2), +MINO.spot.yaw.toFixed(3)] : null };
+}
+function minoLoad(f) {
+  if (!f || !f.s) return;
+  MINO.restored = f;
+}
+function minoApplyRestore(u) {
+  const f = MINO.restored; MINO.restored = null;
+  const s = f.s;
+  if (s === 'with') { MINO.stage = 'with'; MINO.ally = true; MINO.place = '?'; return; }      // joined beside you on the next frame
+  if (s === 'hostile') { MINO.stage = 'hostile'; MINO.ally = false; minoCalm(u); return; }
+  if ((s === 'down' || s === 'dead') && f.at) {
+    MINO.ally = true; MINO.spot = { x: f.at[0], z: f.at[1], yaw: f.at[2] };
+    u.g.position.set(f.at[0], c13CourtAt(f.at[0], f.at[1]) ?? (C13_Y + C13_FLOOR), f.at[1]); u.g.rotation.y = f.at[2];
+    u.st.awake = false; u.holdAnim = true;
+    MINO.stage = 'down'; MINO.t = 60;
+    const a = mutPlay(u, 'mnFall', false); if (a) { a.time = a.getClip().duration; a.setEffectiveWeight(1); }
+    u.mixer.update(0);
+    minoDropSwords(u); for (const sw of MINO.swords) { sw.m.position.y = sw.floor; sw.landed = true; sw.m.quaternion.copy(sw.q1); }
+    if (s === 'dead') { MINO.stage = 'dead'; const d = mutPlay(u, 'mnDie', false); if (d) { d.time = d.getClip().duration; d.setEffectiveWeight(1); } u.mixer.update(0); }
+  }
+}
+/* =====================================================================
+ * THE GARGOYLES OF XIII'S EAST COURT (2026-10-28, the owner: "i want 4 of these to be grey statue textures as if they are
+ * gargoyles make it look hyper realistic … spread out in the section after the farmers in the castle … sitting hanging off
+ * the walls semi high up but noticeable above the fog … make the door to the section with the fountain be locked. once you
+ * try the door you hear the gargoyles drop down behind you they should attack you and the minotaur and be semi hard to
+ * kill flying around fast biting and striking with their feet … the door be unlocked once the gargoyles are dead").
+ * Spinnee's "Flint Maw" (CC-BY-4.0), `assets/gargoyle.glb` by `tools/gargoyle_pack.py`: its colour made out of its own
+ * normal map as weathered limestone; its eyes' emissive map kept, dark while it is stone and lit when it wakes.
+ *
+ * ITS ONE CLIP IS ONE SLOW WINGBEAT (8.4 s, measured off a wingtip: wrapped in its wings until 1.0 s, up to the top at 3.8,
+ * held, down and folded again by 8.2). The perch is its first frame held; the drop is the unfurling (0 → 2.4 s); the
+ * flight is the upstroke played there and back as a beat (`gBeat`, 2.0 ↔ 3.8 s). Its head never moves in the file: the
+ * bite and the talons are laid on top of the beat in code (`gargStrikePose`).
+ * ===================================================================== */
+const GARG_GLB = 'assets/gargoyle.glb';
+const GARG_N = 4, GARG_PERCH_Y = 4.8;                  // how many, and how high the wall face they sit out from (over the paving)
+function pingClip(src, name, t0, t1, fps = 30) {
+  // `src` from t0 to t1 and back again: a loop with no seam
+  const a = sliceClip(src, name + '_f', t0, t1, fps), n = Math.round((t1 - t0) * fps), tracks = [];
+  for (const tr of a.tracks) {
+    const st = tr.getValueSize(), times = [], vals = [];
+    for (let i = 0; i <= 2 * n; i++) { const k = i <= n ? i : 2 * n - i; times.push(i / fps); for (let c = 0; c < st; c++) vals.push(tr.values[k * st + c]); }
+    tracks.push(new tr.constructor(tr.name, times, vals));
+  }
+  return new THREE.AnimationClip(name, (2 * n) / fps, tracks);
+}
+function gargPrep(u, gltf) {
+  // its eyes' map, kept apart: `dressMutant` puts every material's emissive on its colour
+  gltf.scene.traverse((o) => { if (o.isMesh && o.material && o.material.emissiveMap && !u.gEyes) u.gEyes = o.material.emissiveMap; });
+  const src = gltf.animations[0];
+  if (src) gltf.animations.push(sliceClip(src, 'gPerch', 0.0, 0.4), sliceClip(src, 'gWake', 0.0, 2.4), pingClip(src, 'gBeat', 2.0, 3.8), sliceClip(src, 'gGlide', 3.0, 3.2));
+}
+MUT_KINDS.gargoyle = {
+  glb: GARG_GLB, garg: true, solo: true, noSand: true, skin: null, bones: null, faceFix: 0, preParse: false,
+  h: 2.6, hp: 20, hitR: 1.0, body: 0.78, dmg: 1, reachK: 1, windK: 1, lungeK: 1, poise: 0, block: 0, flinch: 1.2,   // (20: "harder", twice, 2026-10-29)
+  pre: gargPrep, use: {}, wakeAt: 0, sleepIdle: 'gPerch', first: 'gPerch',
+  // stone: almost no lift (the torches and the moon are what it is seen by), a cold edge so it holds against the sky
+  /* (measured in the court: at 1.7 m, grey ×1 and a faint rim they were small black shapes on the brick five metres
+   * up, where the torches below do not reach — a statue is pale stone against warm brick, so the stone is lifted and
+   * its edge is cold) */
+  emis: 0.0, rim: [0.075, 0.078, 0.088], gamma: 0.78,
+  matMore: (mm, u) => { mm.emissiveMap = u.gEyes || null; mm.emissive.setRGB(1.0, 0.42, 0.10); mm.emissiveIntensity = 0; mm.roughness = 0.95; mm.side = THREE.DoubleSide; mm.color.setScalar(1.5); },
+  anim: { idle: 'gBeat', walk: 'gBeat', run: 'gBeat', roar: 'gBeat', die: 'gPerch', back: 'gBeat', rate: 1.0 },
+  alias: { idle: 'gBeat', idle2: 'gBeat', walk: 'gBeat', walk2: 'gBeat', run: 'gBeat', run2: 'gBeat', roar: 'gBeat', roar2: 'gBeat', die: 'gPerch', die2: 'gPerch',
+           back: 'gBeat', calm: 'gPerch', strafeL: 'gBeat', strafeR: 'gBeat', hit: 'gBeat', hitBig: 'gBeat', hitSide: 'gBeat', hitBack: 'gBeat', hitHead: 'gBeat', parry: 'gBeat' },
+  voice: { f: 1.75, growl: 0.5, rasp: 1.5, throat: 'bellow' },
+};
+/* ---- THEIR STATE. `G.phase`: 0 on the walls (stone), 1 down and fighting, 2 all four dead — the door is open to you.
+ * On the save as `garg` (2 only; the dead ones by their keys like any other). */
+const GARG = { phase: 0, units: [], perches: null, corbels: null, t: 0, tried: 0, voiceT: 0, scene: null };
+// on the wall, waking, dropping: stone, and nothing of yours touches it (2026-10-29, the owner: "the gargoyles should not take damage before the fight starts")
+const gargImmune = (u) => !!(u && u.kind && u.kind.garg && (!u.gp || u.gp.mode === 'perch' || u.gp.mode === 'wake' || u.gp.mode === 'drop' || u.gp.mode === 'script'));
+const gargLocked = () => GARG.phase < 2 && !c13ArchOpen && !devKeys();
+const gargAlive = () => GARG.units.filter((u) => u.st.alive && !u.retired);
+/* WHERE THEY SIT. Found off the court's own stone the way the swordsmen's posts are: every open cell of the east court
+ * within reach of your way in to the arch, sixteen ways round it, out to the nearest wall face at five and a half metres
+ * up — a face that is flat for a metre either side and goes on up another metre and a half (a wall, not a parapet), seen
+ * from the path. Then four of them as far apart as they can be, the first the one nearest the arch. */
+function gargFindPerches(tiers, all) {
+  const S = C13_SITE;
+  const path = [c13W(C13_SPAWN.x, C13_SPAWN.z), c13W(ck(16), ck(-4)), c13W(C13_ARCH.x, C13_ARCH.z)];
+  const nearPath = (x, z) => { let bd = 1e9; for (let i = 0; i < path.length - 1; i++) { const a = path[i], b = path[i + 1], dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz; const t = THREE.MathUtils.clamp(((x - a.x) * dx + (z - a.z) * dz) / L2, 0, 1); bd = Math.min(bd, Math.hypot(x - a.x - dx * t, z - a.z - dz * t)); } return bd; };
+  const wall = (x, z, y) => keepWallNear(x, z, 0.18, y - 0.25, y + 0.25, S);
+  /* (in tiers: the strictest first — measured, at its margins only one wall face of the east court passed — and each
+   * looser one only for what the stricter could not fill) */
+  const scan = (yP, T) => {
+    const cands = [];
+    for (let lx = C13_ARCH.x + 1; lx < C13_SPAWN.x + 16; lx += 1.5) for (let lz = C13_SPAWN.z - 20; lz < C13_SPAWN.z + 20; lz += 1.5) {
+      if (!c13Open(lx, lz)) continue;
+      const o = c13W(lx, lz); if (nearPath(o.x, o.z) > T.near) continue;
+      for (let k = 0; k < 16; k++) {
+        const a = k / 16 * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
+        for (let r = 0.5; r < 9; r += 0.25) {
+          const x = o.x + dx * r, z = o.z + dz * r, h = wall(x, z, yP);
+          if (!h) continue;
+          // flat for its wings' span either side, and a real wall above
+          const sx = -dz, sz = dx;
+          if (!wall(x + sx * T.flat * 0.5, z + sz * T.flat * 0.5, yP) || !wall(x - sx * T.flat * 0.5, z - sz * T.flat * 0.5, yP) || !wall(x + sx * T.flat, z + sz * T.flat, yP) || !wall(x - sx * T.flat, z - sz * T.flat, yP) || !wall(x, z, yP + 1.6)) break;
+          /* NOT IN A CORNER, NOT OVER A WINDOW (2026-10-29, the owner: "gargoyle in the screenshot is clipped in the wall
+           * move him … they shouldnt cover windows or clip in any wall"): nothing standing out from the face along it at
+           * its height (a corner's other wall), and no door or window near it */
+          let boxed = false;
+          for (const kk of [-T.corner, -T.corner * 0.65, -1.0, 1.0, T.corner * 0.65, T.corner]) { const qx = x - dx * 0.8 + sx * kk, qz = z - dz * 0.8 + sz * kk; if (keepWallNear(qx, qz, 0.3, yP - 0.6, yP + 1.6, S)) { boxed = true; break; } }
+          if (boxed || c13FeatNear(x - C13_X, yP - C13_Y - 0.6, z - C13_Z, T.featR, T.featY)) break;
+          const wx = x - dx * 0.2, wz = z - dz * 0.2;
+          if (wall(wx - dx * 0.2, wz - dz * 0.2, yP - 0.8)) break;                       // (nothing standing out under it)
+          // out over open court (not an alley between two walls), turned to your way in
+          const L = (k2) => { const q = { x: wx - dx * k2, z: wz - dz * k2 }; return c13Open(q.x - C13_X, q.z - C13_Z); };
+          if (!L(2.5) || !L(5) || !L(7.5)) break;
+          let pb = null, pd = 1e9; for (const q of path) { const dd = Math.hypot(q.x - wx, q.z - wz); if (dd < pd) { pd = dd; pb = q; } }
+          if (pb && ((pb.x - wx) * -dx + (pb.z - wz) * -dz) / (pd || 1) < 0.2) break;
+          cands.push({ x: wx, z: wz, nx: -dx, nz: -dz, d: nearPath(wx, wz), fx: h.x, fz: h.z, y: yP });
+          break;
+        }
+      }
+    }
+    return cands;
+  };
+  const TIERS = tiers || [{ flat: 1.6, corner: 2.6, featR: 1.8, featY: 2.8, near: 16 }, { flat: 1.4, corner: 2.1, featR: 1.4, featY: 2.2, near: 20 },
+                 { flat: 1.2, corner: 1.7, featR: 1.1, featY: 1.8, near: 24 }];
+  if (all) { let c = []; for (const h of (TIERS[0].heights || [GARG_PERCH_Y, GARG_PERCH_Y + 0.8])) c = c.concat(scan(C13_Y + C13_FLOOR + h, TIERS[0])); return c; }   // (the harness: every face that passes)
+  const pick = [], arch = c13W(C13_ARCH.x, C13_ARCH.z), base = C13_Y + C13_FLOOR;
+  for (const T of TIERS) {
+    let cands = [];
+    for (const h of [GARG_PERCH_Y, GARG_PERCH_Y + 0.8, GARG_PERCH_Y - 0.6]) cands = cands.concat(scan(base + h, T));
+    cands.sort((p, q) => Math.hypot(p.x - arch.x, p.z - arch.z) - Math.hypot(q.x - arch.x, q.z - arch.z));
+    if (!pick.length && cands.length) pick.push(cands.find((c) => c.d > 3) || cands[0]);
+    while (pick.length < GARG_N && cands.length) {
+      let best = null, bs = -1;
+      for (const c of cands) { const s2 = Math.min(...pick.map((p) => Math.hypot(c.x - p.x, c.z - p.z))) - Math.max(0, c.d - 10) * 0.5; if (s2 > bs) { bs = s2; best = c; } }
+      if (!best || bs < 4.5) break;
+      pick.push(best);
+    }
+    if (pick.length >= GARG_N) break;
+  }
+  return pick.map((p) => ({ x: p.fx + p.nx * 0.55, z: p.fz + p.nz * 0.55, y: p.y - 0.1, yaw: Math.atan2(p.nx, p.nz), wx: p.fx, wz: p.fz, nx: p.nx, nz: p.nz }));
+}
+/* WHAT EACH SITS ON (2026-10-28, the owner: "give them a block of stone they sit on matching the textures on the castle
+ * sticking out from the wall so they arent just floating make it look good and natural"). A carved bracket built into
+ * the wall: a thick top slab with a drip-lip under its edge, two courses stepping back under it, and a sloped strut
+ * tapering into the face — the whole of it let a hand's breadth into the wall so it is part of it, not stuck on. XIII's
+ * own brick material (the same object: its night grade and fog), mapped in world metres at the wall's own repeat
+ * (11.8 m along, 23.4 m up — measured for the passage between the castles, `planarUV2`). */
+function gargPlinths(P) {
+  const mat = linkCastleMat(c13World, 'acmat_4');
+  const geos = [];
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
+  for (const p of P) {
+    // the bracket's own frame: x along the wall, y up, z out of it; the origin on the face at the slab's top
+    _q.setFromAxisAngle(_gaA.set(0, 1, 0), p.yaw);
+    _m.compose(_gaB.set(p.wx, p.y, p.wz), _q, _gaA.set(1, 1, 1));
+    const piece = (w, h, d, y, z, taper) => {
+      const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+      const P2 = g.attributes.position;
+      for (let i = 0; i < P2.count; i++) {
+        let vx = P2.getX(i), vy = P2.getY(i), vz = P2.getZ(i);
+        if (taper && vy < 0) vz = -d / 2;                     // the strut's foot runs back into the wall
+        P2.setXYZ(i, vx, vy + y, vz + z);
+      }
+      g.applyMatrix4(_m); g.computeVertexNormals();
+      geos.push(g);
+    };
+    const IN = 0.15;                                          // let into the wall
+    piece(1.55, 0.34, 1.25 + IN, -0.17, (1.25 - IN) / 2, false);        // the slab it sits on
+    piece(1.62, 0.07, 1.32 + IN, -0.37, (1.32 - IN) / 2, false);        // its drip-lip
+    piece(1.30, 0.24, 0.98 + IN, -0.53, (0.98 - IN) / 2, false);        // the first course under it
+    piece(1.04, 0.24, 0.70 + IN, -0.77, (0.70 - IN) / 2, false);        // the second
+    piece(0.78, 0.95, 0.56 + IN, -1.365, (0.56 - IN) / 2, true);        // the strut, tapering into the face
+  }
+  const geo = mergeGeometries(geos, false);
+  planarUV2(geo, 11.8, 23.4);
+  geo.applyMatrix4(c13World.matrixWorld.clone().invert());
+  const mesh = new THREE.Mesh(geo, mat || new THREE.MeshStandardMaterial({ color: 0x6d675e, roughness: 1, flatShading: true }));
+  mesh.userData.c13Keep = true;
+  c13World.add(mesh);
+  return mesh;
+}
+/* WHERE THEY SIT, MEASURED AND CHOSEN (2026-10-29): the search above run in the pane, every passing face rendered from the
+ * court and four chosen by eye — plain stone, no window, door, banner or corner within their wings' span — the east
+ * court's walls at five and six metres are crowded with windows and corners (two faces passed the strict rules, one of
+ * them the corner the owner found one clipped into), so they sit higher, 7.7 and 7.9 m, two on each of the two walls
+ * that face each other across the part of the court the arch door is in — the far end's walls were tried and dropped:
+ * that end meets the door's only by a passage too low for their wings, and the two from it never got to you. (castle frame: the face's point, its height over XIII's origin, its outward normal) */
+/* (AND MEASURED AGAINST THE DRAWN STONE, 2026-10-29, the owner: "one is floating off the wall the other clipped through
+ * the wall". The perches were found off XIII's COLLISION walls, and on the door's side of the court the drawn wall does
+ * not lie where they do: rays from a metre out found the stone 0.74 m IN FRONT of the first (into a tower's corner, more
+ * stone 0.6 m beside it) and 1.64 m BEHIND the second (hanging in the air), and the drawn face there runs 8–11° off the
+ * collision one. The two were re-found by raycasting the castle's own meshes: flat to 2 cm over ±1.2 m and four metres of
+ * height, nothing within 1.5 m either side of the statue, nothing out in front or overhead — each with the face's own
+ * normal. The far wall's two measured on the stone, 1.00 m.) */
+const GARG_PERCHES = [[25.58, 3.66, 7.7, -0.519, -0.855], [32.5, 2.05, 7.7, -0.566, -0.824], [17.554, -6.331, 7.9, 0.3827, 0.9239], [21.77, -8.52, 7.9, 0.3827, 0.9239]];
+function placeGargoyles() {
+  if (GARG.units.length || !c13Ready || !c13Walls || !c13World) return;
+  const P = GARG.perches = GARG_PERCHES.map(([lx, lz, ly, nx, nz]) => { const w = c13W(lx, lz); return { x: w.x + nx * 0.55, z: w.z + nz * 0.55, y: C13_Y + ly - 0.1, yaw: Math.atan2(nx, nz), wx: w.x, wz: w.z, nx, nz }; });
+  if (!P.length) return;
+  GARG.corbels = gargPlinths(P);
+  for (let i = 0; i < P.length; i++) {
+    const p = P[i];
+    // (made at a fixed place so its save key is the same every game; then put on its perch)
+    const u = makeMutant(+(C13_X - 60 - i * 2).toFixed(1), +C13_Z.toFixed(1), 'gargoyle', p.y);
+    u.g.rotation.order = 'YXZ';
+    u.gp = { i, perch: p, mode: 'perch', t: 0, vel: new THREE.Vector3(), seed: Math.random() * 100, eyes: 0, hp0: u.kind.hp, tgt: null };
+    gargPerch(u);
+    GARG.units.push(u);
+  }
+  if (GARG.phase === 2 || c13ArchOpen || GARG.units.every((u) => u.retired)) { GARG.phase = 2; for (const u of GARG.units) retireUnit(u); }
+}
+/* ON ITS LEDGE: its first frame is the gargoyle already — crouched, the head out and down, the wings' elbows up over its
+ * shoulders and the wings draped down — but its toes are a metre over its own origin (measured, 1.05 m: the wingtips hang
+ * lowest). So its toes are stood on the corbel's top and the wings hang down over the ledge's edge. */
+function gargPerch(u) {
+  const p = u.gp.perch, out = 0.62 - (u.gp.footZ ?? 0);                        // its feet on the middle of the slab
+  u.g.position.set(p.wx + p.nx * out, p.y - (u.gp.footH ?? 1.05), p.wz + p.nz * out); u.g.rotation.set(0.06, p.yaw, 0);   // leaning out over the court
+  if (u.model) u.model.position.y = 0;
+  u.gp.mode = 'perch'; u.st.awake = false;
+}
+// how high its toes stand off its origin in the perch (measured once, its own scale)
+function gargFootH(u) {
+  const a = u.clips.gPerch; if (!a) return;
+  for (const x of u.mixer._actions) { x.stop(); x.enabled = false; }
+  a.reset(); a.enabled = true; a.setEffectiveWeight(1); a.play(); a.time = 0; u.mixer.update(0);
+  const r0 = u.g.rotation.clone(); u.g.rotation.set(0, 0, 0); u.g.updateMatrixWorld(true);
+  let lo = 1e9, fz = 0, n = 0;
+  u.model.traverse((o) => { if (o.isBone && /^(Toe\d_[34]_|Ankle_)/.test(o.name)) { o.getWorldPosition(_gaA); lo = Math.min(lo, _gaA.y); fz += _gaA.z - u.g.position.z; n++; } });
+  u.g.rotation.copy(r0);
+  if (lo < 1e8) { u.gp.footH = lo - u.g.position.y; u.gp.footZ = fz / n; }
+}
+/* ---- THE DOOR. Tried while they sit there, it is locked — and four stones crack on the walls behind you. */
+function gargTryDoor() {
+  const A = c13Arch; if (!A) return;
+  const d = c13W(A.ax + A.ux * A.L * 0.5, A.az + A.uz * A.L * 0.5);
+  sfxAt(d.x, d.z, () => { sfxGateRattle(); sfxPlankKnock(d.x, d.z, 6); });
+  if (GARG.phase === 0 && GARG.units.length) {
+    // with him at your side you turn round on him first, and they come down as he finishes swearing
+    if (!GARG.told) { GARG.told = true; GARG.scene = { unit: null, phase: null, t: 0, turn: false, turnT: 0, faced: false }; if (minoAtDoor(() => gargWake())) return; GARG.scene = null; }
+    gargWake();
+  }
+}
+function gargWake() {
+  // (the one already off its wall in the scene goes straight up into the fight; the others crack and come down)
+  const S = GARG.scene; GARG.scene = null;
+  if (S && S.unit && S.unit.st.alive && S.unit.gp.mode === 'script') { const g = S.unit.gp; g.mode = 'ring'; g.t = 0; g.vel.set(0, 0, 0); g.cracked = true; }
+  if (GARG.phase === 0 && GARG.units.length) {
+    GARG.phase = 1; GARG.t = 0;
+    // the nearest goes first, the rest on its heels
+    const me = camera.position, order = gargAlive().sort((a, b) => a.g.position.distanceTo(me) - b.g.position.distanceTo(me));
+    order.filter((u) => u.gp.mode === 'perch').forEach((u, k) => { u.gp.mode = 'wake'; u.gp.t = -(0.75 + k * (0.35 + Math.random() * 0.35)); });
+  }
+}
+/* ---- THE DOOR, PLAYED OUT (2026-10-29, the owner: "as either one of these dialogs is displaying the gargoyle closest to
+ * the Minotaur should drop down but the Minotaur doesn't notice and dialog keeps going … once this dialog is skipped have
+ * the gargoyle fly up and float behind the Minotaur have him comedically slowly turn around and see him flying then go
+ * 'oh' … once skipping the oh all of them drop and the fight starts"). The conversation stays open through all of it, so
+ * the world is held (`frozen`) and this drives the one gargoyle itself, from `updateGargoyles`, which runs regardless;
+ * his turn is in the talk branch of `updateMinotaur`. The lens is the dialogue's, level on him: it lands behind him as
+ * you look at him, in plain sight over his shoulder. */
+function gargSceneSpot(M, r, up, angs = [0, 0.35, -0.35, 0.7, -0.7]) {
+  const p = M.g.position, c = camera.position, d = Math.hypot(p.x - c.x, p.z - c.z) || 1, dx = (p.x - c.x) / d, dz = (p.z - c.z) / d;
+  const f0 = c13CourtAt(p.x, p.z) ?? p.y;
+  for (const rr of [r, r + 0.6, r - 0.4, r + 1.2]) for (const a of angs) {
+    const ca = Math.cos(a), sa = Math.sin(a), x = p.x + (dx * ca - dz * sa) * rr, z = p.z + (dz * ca + dx * sa) * rr;
+    const f = c13CourtAt(x, z); if (f === null || Math.abs(f - f0) > 0.35) continue;
+    if (keepWallNear(x, z, 1.0, f + 0.3 + up, f + 2.4 + up, C13_SITE)) continue;
+    return new THREE.Vector3(x, f, z);
+  }
+  return new THREE.Vector3(p.x + dx * r, f0, p.z + dz * r);
+}
+function gargSceneDrop() {
+  const S = GARG.scene, M = MINO.u; if (!S || S.unit || !M) return;
+  const perched = gargAlive().filter((x) => x.model && x.gp && x.gp.mode === 'perch');
+  if (!perched.length) return;
+  const u = perched.sort((a, b) => a.g.position.distanceTo(M.g.position) - b.g.position.distanceTo(M.g.position))[0];
+  S.unit = u; S.phase = 'crack'; S.t = -0.9;                 // (a beat into his line)
+  // (off to one side of him, not dead behind: straight behind, his body hid it from you — measured in the probe's still)
+  S.land = gargSceneSpot(M, 2.4, 0, [0.85, -0.85, 0.65, -0.65, 1.05, -1.05, 0.45, -0.45, 0]);
+  u.gp.mode = 'script';
+}
+function gargSceneRise() {
+  const S = GARG.scene, M = MINO.u; if (!S || !S.unit || !M) return;
+  if (S.phase === 'crack' || S.phase === 'fall') { gargScenePut(S.unit, S.land); }   // (clicked through before it landed)
+  S.phase = 'rise'; S.t = 0; S.from = S.unit.g.position.clone();
+  // (lower and a stride further back than it was, so his look up at it is a look, not a crane)
+  const h = gargSceneSpot(M, 2.2, 1.7); S.hover = h.setY(h.y + 1.7);
+  const a = mutPlay(S.unit, 'gBeat', true); if (a) a.timeScale = GARG_BEAT.hover;
+}
+// crouched on the paving where it came down, its toes on the stone (`footH`: its toes stand that far over its origin)
+function gargScenePut(u, at) { u.g.position.set(at.x, at.y - (u.gp.footH ?? 0.83), at.z); }
+function gargSceneStep(dt) {
+  const S = GARG.scene; if (!S || !S.unit) return;
+  const u = S.unit, g = u.gp, p = u.g.position, c = camera.position;
+  if (!u.st.alive || g.mode !== 'script') return;
+  S.t += dt;
+  const hold = (nm) => { mutPlay(u, nm, true); const a = u.clips[nm]; if (a) { a.time = 0; a.paused = true; } };
+  const faceTo = (x, z, k) => { let dy = Math.atan2(x - p.x, z - p.z) - u.g.rotation.y; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2; u.g.rotation.y += dy * Math.min(1, dt * k); u.g.rotation.x = 0; };
+  let lit = 1;
+  if (S.phase === 'crack') {
+    hold('gPerch'); lit = S.t > 0 ? 1 : 0;
+    if (S.t >= 0 && !S.cracked) { S.cracked = true; sfxGargCrack(p.x, p.z); gargDust(p.x, p.y - 0.2, p.z, 0.4); S.from = p.clone(); }
+    if (S.t > 0.4) { S.phase = 'fall'; S.t = 0; const a = mutPlay(u, 'gWake', false); if (a) a.timeScale = 1.6; }
+  } else if (S.phase === 'fall') {
+    // off the wall and down: out in an arc, gathering speed, onto the paving behind him
+    const k = Math.min(1, S.t / 1.15), e = k * k * (3 - 2 * k), to = S.land, ty = to.y - (g.footH ?? 0.83);
+    p.set(S.from.x + (to.x - S.from.x) * e, S.from.y + (ty - S.from.y) * k * k + Math.sin(k * Math.PI) * 0.5, S.from.z + (to.z - S.from.z) * e);
+    faceTo(to.x, to.z, 4);
+    if (k >= 1) {
+      S.phase = 'crouch'; S.t = 0; gargScenePut(u, to);
+      gargDust(p.x, to.y + 0.1, p.z, 0.8);
+      sfxAt(p.x, p.z, () => { sfxSlam(0.35); sfxPlankKnock(p.x, p.z, 3); });
+    }
+  } else if (S.phase === 'crouch') {
+    hold('gPerch'); faceTo(c.x, c.z, 3);                    // (it watches you over his shoulder)
+  } else if (S.phase === 'rise') {
+    const k = Math.min(1, S.t / 1.6), e = k * k * (3 - 2 * k);
+    p.set(S.from.x + (S.hover.x - S.from.x) * e, S.from.y + (S.hover.y - S.from.y) * e, S.from.z + (S.hover.z - S.from.z) * e);
+    faceTo(c.x, c.z, 3);
+    if ((S.wingT = (S.wingT || 0) - dt) < 0) { S.wingT = 0.48; sfxGargWing(p.x, p.z, 1.1); }
+    if (S.t > 0.7) S.turn = true;                           // (he begins to turn as it gets its height)
+    if (k >= 1) { S.phase = 'hover'; S.t = 0; }
+  } else if (S.phase === 'hover') {
+    // hanging there over him, bobbing on its beats, until he has come all the way round and seen it
+    p.set(S.hover.x, S.hover.y + Math.sin(S.t * 2.6) * 0.12, S.hover.z);
+    faceTo(MINO.u.g.position.x, MINO.u.g.position.z, 2);
+    if ((S.wingT = (S.wingT || 0) - dt) < 0) { S.wingT = 0.48; sfxGargWing(p.x, p.z, 0.8); }
+    // he sees it; the double take; a second's look at you; round again, and the fight is on (the conversation ends: `gargWake`)
+    const stg = S.stage || (S.stage = 'turn');
+    if (stg === 'turn') { S.seenT = S.faced ? (S.seenT || 0) + dt : 0; if (S.seenT > 0.7) { S.stage = 'back'; S.stT = 0; S.eyeT = 0; } }
+    else if (stg === 'back') { S.stT += dt; if (S.eye) S.eyeT += dt; if (S.eyeT > 1.0 || S.stT > 3) { S.stage = 'away'; S.stT = 0; } }
+    else if (stg === 'away') { S.stT += dt; if (((S.faced && S.stT > 0.3) || S.stT > 2) && dialogOpen) endDialog(); }
+  }
+  g.eyes += (lit - g.eyes) * Math.min(1, dt * 2.5);
+  for (const m of u.mats || []) m.emissiveIntensity = g.eyes * 2.6;
+  u.mixer.update(dt);
+}
+/* ---- THE SOUNDS: the stone giving way as it moves, a screech, its wings */
+function sfxGargCrack(x, z) {
+  const ctx = audioCtx; if (!ctx) return;
+  sfxAt(x, z, () => {
+    const t = ctx.currentTime, out = sfxOut();
+    const n = noiseBurst(0.9, (s) => (s < 0.08 ? s / 0.08 : Math.pow(1 - s, 2.2)) * (0.6 + 0.4 * Math.abs(Math.sin(s * 37))));
+    const bp = ctx.createBiquadFilter(); bp.type = 'lowpass'; bp.frequency.setValueAtTime(1800, t); bp.frequency.exponentialRampToValueAtTime(260, t + 0.8);
+    const g = ctx.createGain(); g.gain.value = 0.55;
+    n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.9);
+    sfxSlam(0.4);
+  });
+  playSampleAt('smash', x, z, { gain: 0.7, ref: 8, far: 45, rate: 0.75 });
+}
+function sfxGargWing(x, z, k = 1) {
+  const ctx = audioCtx; if (!ctx) return;
+  const d = Math.hypot(camera.position.x - x, camera.position.z - z); if (d > 26) return;
+  sfxAt(x, z, () => {
+    const t = ctx.currentTime, out = sfxOut();
+    const n = noiseBurst(0.26, (s) => Math.sin(s * Math.PI) ** 2);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 340 + Math.random() * 120; bp.Q.value = 0.9;
+    const g = ctx.createGain(); g.gain.value = 0.32 * k * Math.max(0, 1 - d / 26);
+    n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.26);
+  });
+}
+/* ---- IN THE AIR (rebuilt 2026-10-29, the owner: "the gargoyles are horrible to fight make them better they just spin
+ * around crazy and have no way of fighting … theyre animations are all off … they get stuck in the cracks in the walls and
+ * clip through the wall"). A fight you can read: ONE comes at you at a time (two may be on the minotaur); the others hang
+ * in a slow ring above, watching. The one whose turn it is comes to hang in front of your face (`approach`), rears back
+ * — a held tell, wings high (`tell`) — and goes straight at you (`lunge`) into a bite or a rake of both feet, the blow on
+ * the arrival; then it hangs there low in front of you, beating to get its height back (`recover`): your opening. Struck,
+ * it is knocked back off its line (`reel`, no spin); a second blow in the opening sends it up and away (`back`). Every
+ * point it is sent to is a point over the court's paving with no stone within its wingspan, reached without crossing a
+ * face (`gargLegal`); a step that would is refused. */
+/* (ROUND THREE, 2026-10-29, the owner: "the gargoyles need to stop spinning there head when fighting. they should be
+ * harder and more aggressive they need to flap their wings way faster … make them actually a smooth fight diving at you
+ * and moving like a creature would … i cant even register if they attack". Measured first: ONE wingbeat of `gBeat` is
+ * 3.6 s of clip (up and back down), so at the rates here they beat once every three seconds — now 1.5–2.5 a second; its
+ * head stands 1.85 m over its origin and its toes 0.75, so the bite that arrived at "aim − 1.2" was 40 cm over your eyes;
+ * and the spine and neck the strike poses bend have NO track in the clip, so each frame's bend was laid on the last one's
+ * and the head went round and round. The attack is a DIVE now: up and out in front of you, a held rear-back (wings high,
+ * jaw open, screech, eyes flaring — the tell, and an opening), the wings swept back and down at you, the bite at your
+ * face or the claws at your chest, and up and away past you, the wings thrashing (the second opening). Two may be on you
+ * at once when three are left, never both in the air at the same beat.) */
+const GARG_SPD = { ring: 3.8, approach: 6.5, lunge: 12.5, back: 6.5, recover: 5.0 };
+const GARG_T = { tell: 0.55, strikeAt: 0.06, recover: 0.55 };
+// wingbeats: `gBeat`'s clip is 3.6 s a beat, so these are about 1.5 to 2.4 beats a second
+const GARG_BEAT = { ring: 5.4, approach: 6.6, back: 6.6, recover: 8.2, reel: 8.6, hover: 5.4 };
+// where its head and toes are over its origin in flight (measured on `gBeat`): a bite lands at your eyes, the claws at your chest
+const GARG_HEAD = 1.85, GARG_TOE = 0.75;
+const _gaA = new THREE.Vector3(), _gaB = new THREE.Vector3(), _gaQ = new THREE.Quaternion(), _gaP = new THREE.Quaternion(), _gaM = new THREE.Quaternion();
+function gargTargetOf(u) {
+  const mino = MINO.u && MINO.ally && MINO.stage === 'with' && MINO.place === 'c13' && MINO.u.st.alive && MINO.u.g.visible ? MINO.u : null;
+  return (u.gp.i % 2 === 1 && mino) ? mino : null;                 // null: you
+}
+function gargAim(u, out) {
+  const T = u.gp.tgt;
+  if (T) return out.set(T.g.position.x, T.g.position.y + T.kind.h * 0.72, T.g.position.z);
+  return out.set(camera.position.x, camera.position.y - 0.25, camera.position.z);
+}
+function gargFloor(x, z) { return c13CourtAt(x, z) ?? (C13_Y + C13_FLOOR); }
+// may a body this size hang at (x, y, z), having come from (fx, fy, fz)? over the paving, clear of stone, no face crossed
+function gargLegal(x, y, z, fx, fy, fz) {
+  if (!c13Walls) return true;
+  if (!maskAt(C13_M, x, z) || c13CourtAt(x, z) === null || c13PassBlocked(x, z)) return false;
+  if (keepWallNear(x, z, 0.75, y - 0.2, y + 1.6, C13_SITE)) return false;   // (its body; the grid it follows asks 0.95, so a path on it is always a legal one)
+  if (fx !== undefined && (keepHitsWall(fx, fz, x, z, y + 0.5, C13_SITE) || keepHitsWall(fx, fz, x, z, y + 1.4, C13_SITE))) return false;
+  return true;
+}
+// the nearest legal place to hang near a wanted one: round it in rings, nearest the wanted bearing first
+function gargSpot(cx, cz, y, r, ang, out) {
+  for (const dr of [0, 0.8, -0.8, 1.6]) for (let k = 0; k < 12; k++) {
+    const a = ang + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 6), R = Math.max(0.8, r + dr);
+    const x = cx + Math.sin(a) * R, z = cz + Math.cos(a) * R;
+    if (gargLegal(x, y, z)) return out.set(x, y, z);
+  }
+  return null;
+}
+// fly toward a point: speed eased in as it arrives, the step refused (and slid) where it would meet stone
+function gargFlyTo(u, x, y, z, speed, dt, turn = 4) {
+  const p = u.g.position, V = u.gp.vel;
+  _gaA.set(x - p.x, y - p.y, z - p.z);
+  const d = _gaA.length(), sp = Math.min(speed, 0.6 + d * 2.5);
+  if (d > 1e-4) _gaA.multiplyScalar(sp / d);
+  V.lerp(_gaA, Math.min(1, dt * turn));
+  const nx = p.x + V.x * dt, ny = Math.max(gargFloor(p.x, p.z) + 0.4, p.y + V.y * dt), nz = p.z + V.z * dt;
+  const O = u.gp.over;
+  if (O && (p.y > O.top - 0.6 || (Math.hypot(nx - p.x, nz - p.z) < 0.02 + Math.abs(ny - p.y) * 0.05 && c13Open(p.x - C13_X, p.z - C13_Z)) || (ny < p.y && p.y > O.top - 3))) { p.set(nx, ny, nz); return d; }
+  /* (a body already too near the stone — off its wall, knocked into a corner — may go anywhere that crosses no face, so it
+   * can always work its way out: measured, two refused every step and hung against a wall for a minute) */
+  if (!gargLegal(p.x, p.y, p.z) && !keepHitsWall(p.x, p.z, nx, nz, ny + 0.5, C13_SITE) && !keepHitsWall(p.x, p.z, nx, nz, ny + 1.4, C13_SITE)) p.set(nx, ny, nz);
+  else if (gargLegal(nx, ny, nz) && GARG.grid && gargOnGrid(nx, nz) && gargOnGrid(p.x, p.z) && !keepHitsWall(p.x, p.z, nx, nz, ny + 1.0, C13_SITE)) p.set(nx, ny, nz);
+  else if (gargLegal(nx, ny, nz, p.x, p.y, p.z)) p.set(nx, ny, nz);
+  else if (gargLegal(nx, ny, p.z, p.x, p.y, p.z)) { p.set(nx, ny, p.z); V.z *= -0.3; }
+  else if (gargLegal(p.x, ny, nz, p.x, p.y, p.z)) { p.set(p.x, ny, nz); V.x *= -0.3; }
+  else { V.multiplyScalar(-0.3); p.y = Math.max(p.y, ny); }
+  return d;
+}
+/* AND THE COURT BENDS: a straight line from one end of the east court to the other crosses walls, and a step that crosses
+ * one is refused — measured, the two from the far wall hung by it for the whole fight, and the one holding its turn
+ * stopped the others coming at all. So they find their way: a grid of the court a metre square where a body this size
+ * can fly (open court, nothing within its wingspan from two to four and a half metres up), a breadth-first walk out from
+ * the goal's cell, and the furthest cell down that walk it can reach in a straight line is where it heads. */
+function gargClear(ax, az, bx, bz, y) { return !c13Walls || (!keepHitsWall(ax, az, bx, bz, y + 0.5, C13_SITE) && !keepHitsWall(ax, az, bx, bz, y + 1.4, C13_SITE)); }
+function gargGrid() {
+  if (GARG.grid) return GARG.grid;
+  const x0 = C13_ARCH.x - 6, x1 = C13_SPAWN.x + 22, z0 = C13_SPAWN.z - 26, z1 = C13_SPAWN.z + 26, c = 1.0;
+  const gw = Math.ceil((x1 - x0) / c), gh = Math.ceil((z1 - z0) / c), ok = new Uint8Array(gw * gh);
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    const lx = x0 + (i + 0.5) * c, lz = z0 + (j + 0.5) * c;
+    if (!c13Open(lx, lz)) continue;
+    const w = c13W(lx, lz), f = gargFloor(w.x, w.z);
+    if (c13PassBlocked(w.x, w.z) || keepWallNear(w.x, w.z, 0.95, f + 1.6, f + 4.6, C13_SITE)) continue;
+    ok[j * gw + i] = 1;
+  }
+  return (GARG.grid = { x0, z0, c, gw, gh, ok, dist: new Map() });
+}
+// the highest stone between here and there, and a body's height over it
+function gargRoofLine(a, b) {
+  let top = Math.max(a.y, b.y);
+  const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z)));
+  for (let i = 0; i <= n; i++) { const t = i / n, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t, w = keepWallNear(x, z, 1.5, a.y - 2, a.y + 40, C13_SITE); if (w && w.top > top) top = w.top; }
+  return top + 2.0;
+}
+function gargOnGrid(x, z) { const G = GARG.grid, c = gargCell(G, x, z); return c >= 0 && !!G.ok[c]; }
+function gargCell(G, x, z) {
+  const i = Math.floor((x - C13_X - G.x0) / G.c), j = Math.floor((z - C13_Z - G.z0) / G.c);
+  return i < 0 || j < 0 || i >= G.gw || j >= G.gh ? -1 : j * G.gw + i;
+}
+function gargDistFrom(G, goal) {
+  // the nearest flyable cell to the goal, and every cell's steps from it (kept a while per goal cell)
+  let gc = gargCell(G, goal.x, goal.z);
+  if (gc < 0 || !G.ok[gc]) {
+    let best = -1, bd = 1e9; const gi = Math.floor((goal.x - C13_X - G.x0) / G.c), gj = Math.floor((goal.z - C13_Z - G.z0) / G.c);
+    for (let r = 1; r < 6 && best < 0; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const i = gi + di, j = gj + dj; if (i < 0 || j < 0 || i >= G.gw || j >= G.gh || !G.ok[j * G.gw + i]) continue; const d = di * di + dj * dj; if (d < bd) { bd = d; best = j * G.gw + i; } }
+    gc = best;
+  }
+  if (gc < 0) return null;
+  const now = performance.now(), hit = G.dist.get(gc);
+  if (hit && now - hit.t < 600) return hit.d;
+  const d = new Int16Array(G.gw * G.gh).fill(-1); const q = [gc]; d[gc] = 0;
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h], i = c % G.gw, j = (c / G.gw) | 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue; const ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= G.gw || nj >= G.gh) continue;
+      const n = nj * G.gw + ni; if (!G.ok[n] || d[n] >= 0) continue;
+      if (di && dj && (!G.ok[j * G.gw + ni] || !G.ok[nj * G.gw + i])) continue;   // (no corner cut)
+      d[n] = d[c] + 1; q.push(n);
+    }
+  }
+  if (G.dist.size > 24) G.dist.clear();
+  G.dist.set(gc, { t: now, d });
+  return d;
+}
+function gargRoute(u, goal, out) {
+  const p = u.g.position;
+  if (gargClear(p.x, p.z, goal.x, goal.z, Math.min(p.y, goal.y))) return out.copy(goal);
+  const G = gargGrid(), D = gargDistFrom(G, goal); if (!D) return out.copy(goal);
+  let c = gargCell(G, p.x, p.z);
+  /* AND WHERE THE COURT DOES NOT JOIN UP AT ITS HEIGHT — the far side of the east court meets the door's side only
+   * through a passage too low for its wings — it goes OVER: straight up out of the open court, across above the roofs,
+   * and down into the court where its goal is */
+  if (c >= 0 && G.ok[c] && D[c] < 0) {
+    const O = u.gp.over || (u.gp.over = { top: gargRoofLine(p, goal) });
+    if (Math.hypot(p.x - goal.x, p.z - goal.z) > 1.2) return out.set(p.y < O.top - 0.3 ? p.x : goal.x, O.top, p.y < O.top - 0.3 ? p.z : goal.z);
+  }
+  if (u.gp.over && (c < 0 || D[c] >= 0 || Math.hypot(p.x - goal.x, p.z - goal.z) <= 1.2)) {
+    if (p.y > goal.y + 0.4 && Math.hypot(p.x - goal.x, p.z - goal.z) < 2.5) return out.set(goal.x, goal.y, goal.z);   // down into it
+    u.gp.over = null;
+  }
+  if (c < 0 || D[c] < 0) {
+    // off the grid (by a wall, on its way off it): to the nearest cell on the walk it can reach
+    let best = -1, bd = 1e9; const ci = Math.floor((p.x - C13_X - G.x0) / G.c), cj = Math.floor((p.z - C13_Z - G.z0) / G.c);
+    for (let r = 1; r < 8 && best < 0; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const i = ci + di, j = cj + dj; if (i < 0 || j < 0 || i >= G.gw || j >= G.gh) continue; const n = j * G.gw + i; if (D[n] < 0) continue; const w = c13W(G.x0 + (i + 0.5) * G.c, G.z0 + (j + 0.5) * G.c); if (!gargClear(p.x, p.z, w.x, w.z, p.y)) continue; const d = di * di + dj * dj; if (d < bd) { bd = d; best = n; } }
+    if (best < 0) return out.copy(goal);
+    const w = c13W(G.x0 + ((best % G.gw) + 0.5) * G.c, G.z0 + (((best / G.gw) | 0) + 0.5) * G.c);
+    return out.set(w.x, Math.max(p.y, gargFloor(w.x, w.z) + 2.8), w.z);
+  }
+  // down the walk toward the goal, as far as it can see — and always at least the next cell (two flyable cells side by
+  // side are clear between them; a straight look past a wall's corner was refused, and it hung on its own cell)
+  let far = -1;
+  for (let step = 0; step < 40; step++) {
+    const i = c % G.gw, j = (c / G.gw) | 0; let nb = -1;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const ni = i + di, nj = j + dj; if ((!di && !dj) || ni < 0 || nj < 0 || ni >= G.gw || nj >= G.gh) continue; const n = nj * G.gw + ni; if (D[n] >= 0 && D[n] < D[c] && (nb < 0 || D[n] < D[nb])) nb = n; }
+    if (nb < 0) break;
+    c = nb;
+    const w = c13W(G.x0 + ((c % G.gw) + 0.5) * G.c, G.z0 + (((c / G.gw) | 0) + 0.5) * G.c);
+    if (far < 0 || gargClear(p.x, p.z, w.x, w.z, Math.min(p.y, gargFloor(w.x, w.z) + 2.8))) far = c; else break;
+  }
+  if (far < 0) return out.copy(goal);
+  const w = c13W(G.x0 + ((far % G.gw) + 0.5) * G.c, G.z0 + (((far / G.gw) | 0) + 0.5) * G.c);
+  return out.set(w.x, D[far] <= 2 ? goal.y : Math.max(gargFloor(w.x, w.z) + 2.8, Math.min(goal.y + 1, p.y)), w.z);
+}
+// it turns its whole body to a bearing, gently, and leans only a little into its flight (never rolled about)
+function gargFace(u, x, z, dt, rate = 4) {
+  const p = u.g.position, want = Math.atan2(x - p.x, z - p.z);
+  let dy = want - u.g.rotation.y; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+  u.g.rotation.y += THREE.MathUtils.clamp(dy, -rate * dt, rate * dt);
+  return dy;
+}
+function gargLean(u, pitch, roll, dt) {
+  u.g.rotation.x += (THREE.MathUtils.clamp(pitch, -0.6, 0.6) - u.g.rotation.x) * Math.min(1, dt * 5);
+  u.g.rotation.z += (THREE.MathUtils.clamp(roll, -0.5, 0.5) - u.g.rotation.z) * Math.min(1, dt * 5);
+}
+/* AND IT FLIES LIKE A THING THAT FLIES: it banks into its turns and its sideways drift, noses down as it speeds up, and
+ * its body heaves on its beats (up on the downstroke, down as the wings come up — on the model, not its place) */
+function gargBodyMotion(u, pitch0, dt, ph) {
+  const g = u.gp, V = g.vel, y = u.g.rotation.y, fwd = V.x * Math.sin(y) + V.z * Math.cos(y), side = V.x * Math.cos(y) - V.z * Math.sin(y);
+  let dy = y - (g.prevYaw ?? y); while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+  g.prevYaw = y; g.yawRate = (g.yawRate || 0) + (dy / Math.max(dt, 1e-3) - (g.yawRate || 0)) * Math.min(1, dt * 6);
+  gargLean(u, pitch0 + fwd * 0.035, -side * 0.06 - g.yawRate * 0.18, dt);
+  if (u.model) u.model.position.y = ph === null ? 0 : Math.cos(ph * Math.PI * 2) * 0.11;
+}
+/* THE BITE, THE FEET AND THE TELL, laid on after the wings' clip — every turn about the BODY'S own axes (its left-right
+ * through each bone's parent frame), so a neck goes forward and a leg swings forward whatever way the rig lays its bones;
+ * the first cut turned the bones about their own X and the heads and legs went every way. `k` 0 → 1. */
+function gargBodyTurn(u, b, a) {
+  if (!b || !a) return;
+  u.model.getWorldQuaternion(_gaM); b.parent.getWorldQuaternion(_gaP).invert();
+  _gaB.set(1, 0, 0).applyQuaternion(_gaM).applyQuaternion(_gaP).normalize();
+  b.quaternion.premultiply(_gaQ.setFromAxisAngle(_gaB, a));
+}
+// the bones the clip never moves, back to their rest every frame before a pose bends them (else each bend stacks: the spin)
+const GARG_FREE = ['Spine1', 'Spine2', 'Spine3', 'Neck'];
+function gargRest(u) {
+  const B = u.gB || (u.gB = (() => { const o = {}; u.model.traverse((b) => { if (b.isBone) o[b.name] = b; }); return o; })());
+  if (!u.gRest) { u.gRest = new Map(); for (const n of GARG_FREE) if (B[n]) u.gRest.set(B[n], B[n].quaternion.clone()); }
+  for (const [b, q] of u.gRest) b.quaternion.copy(q);
+}
+function gargStrikePose(u, kind, k, open) {
+  const B = u.gB || (u.gB = (() => { const o = {}; u.model.traverse((b) => { if (b.isBone) o[b.name] = b; }); return o; })());
+  if (kind === 'bite') {
+    gargBodyTurn(u, B.Spine3, 0.20 * k); gargBodyTurn(u, B.Neck, 0.35 * k); gargBodyTurn(u, B.Head, -0.25 * k);
+    gargBodyTurn(u, B.Jaw, 0.65 * open);
+  } else if (kind === 'feet') {
+    gargBodyTurn(u, B.Spine1, -0.35 * k); gargBodyTurn(u, B.Neck, -0.15 * k);
+    for (const sd of ['Left', 'Right']) { gargBodyTurn(u, B['Leg_1_' + sd], -0.95 * k); gargBodyTurn(u, B['Knee_' + sd], 0.55 * k * (1 - open)); }
+  } else if (kind === 'tell') {
+    // reared back, the head up and the jaw open: it is coming
+    gargBodyTurn(u, B.Spine1, -0.25 * k); gargBodyTurn(u, B.Neck, -0.30 * k); gargBodyTurn(u, B.Head, 0.15 * k); gargBodyTurn(u, B.Jaw, 0.5 * k);
+  } else if (kind === 'dive') {
+    // stretched out along the dive, the head down its line
+    gargBodyTurn(u, B.Spine1, 0.25 * k); gargBodyTurn(u, B.Neck, 0.25 * k);
+  }
+}
+// whose turn it is to come at you: one at a time, the one nearest you that has waited longest
+function gargTurnOf() {
+  const on = GARG.units.filter((u) => u.st.alive && u.gp && !u.gp.tgt && ['approach', 'tell', 'lunge', 'rake'].includes(u.gp.mode));
+  const mine = GARG.units.filter((u) => u.st.alive && u.gp && !u.gp.tgt && !['perch', 'wake', 'drop', 'dead', 'script'].includes(u.gp.mode)).length;
+  // (one at a time; a second may set off once the first is diving, when there are three or more of them on you)
+  if (on.length >= (mine >= 3 ? 2 : 1) || on.some((u) => u.gp.mode !== 'lunge')) return null;
+  let best = null, bs = -1e9;
+  for (const u of GARG.units) {
+    if (!u.st.alive || !u.gp || u.gp.tgt || u.gp.mode !== 'ring' || u.gp.t < 0.5) continue;
+    const sc = u.gp.t - u.g.position.distanceTo(camera.position) * 0.1;
+    if (sc > bs) { bs = sc; best = u; }
+  }
+  return best;
+}
+function gargUnitPre(u, dt) {
+  if (!u.gp || !u.model) return true;
+  const g = u.gp, p = u.g.position;
+  u.g.visible = !!(c13World && c13World.visible) && !inRoom();
+  const eyes = g.mode === 'perch' ? 0 : 1;
+  g.eyes += (eyes - g.eyes) * Math.min(1, dt * 2.5);
+  for (const m of u.mats || []) m.emissiveIntensity = g.eyes * 2.6;
+  if (g.mode === 'script') return true;                       // (the door's scene drives it: `gargSceneStep`)
+  if (g.mode === 'perch') {
+    if (g.footH === undefined) { gargFootH(u); gargPerch(u); }
+    mutPlay(u, 'gPerch', true); const a = u.clips.gPerch; if (a) { a.time = 0; a.paused = true; }
+    u.mixer.update(dt); u.st.awake = false;
+    return true;
+  }
+  u.st.awake = true;
+  g.t += dt;
+  g.tgt = gargTargetOf(u);
+  if (g.tgt && !g.tgt.st.alive) g.tgt = null;
+  const aim = gargAim(u, _gaB.clone()), fl = gargFloor(aim.x, aim.z);
+  // struck: knocked back off its line, a beat, then (a second time in its opening) away
+  if (u.hbT && u.hbT !== g.hbSeen) {
+    g.hbSeen = u.hbT;
+    if (u.st.alive && !['wake', 'drop'].includes(g.mode)) {
+      const from = u.st.hitBy && performance.now() - (u.st.hitByT || 0) < 200 ? u.st.hitBy.g.position : camera.position;
+      _gaA.set(p.x - from.x, 0, p.z - from.z).normalize();
+      g.vel.set(_gaA.x * 3.2, 1.2, _gaA.z * 3.2);
+      g.hits = (g.hits || 0) + 1;
+      g.mode = 'reel'; g.t = 0; g.reelFor = Math.max(0.4, u.st.stun || 0);
+    }
+  }
+  if (u.st.stun > 0 && g.mode !== 'reel') { g.mode = 'reel'; g.t = 0; g.reelFor = Math.max(0.7, u.st.stun); g.vel.multiplyScalar(0.2); }
+  let beat = GARG_BEAT.ring, pose = null, pk = 0, open = 0, pitch0 = 0, clip = 'gBeat', hold = -1, legs = GARG_TUCK, claws = 0;
+  if (g.mode === 'wake') {
+    mutPlay(u, 'gPerch', true); const a = u.clips.gPerch; if (a) { a.time = 0; a.paused = true; }
+    if (g.t >= 0 && !g.cracked) {
+      g.cracked = true; sfxGargCrack(p.x, p.z);
+      gargDust(p.x, p.y - 0.2, p.z, 0.4);
+      if ((GARG.voiceT -= 1) < 0 || g.i === 0) { GARG.voiceT = 1; sfxAt(p.x, p.z, () => sfxScpScream(0, u.kind.voice)); }
+    }
+    if (g.t > 0.45) {
+      g.mode = 'drop'; g.t = 0; g.from = p.clone();
+      // down into its place in the ring round whoever it is after
+      // out from its own wall and down into open air in front of it (the ring and the route take it on from there)
+      const P0 = g.perch, fx = P0.wx + P0.nx * 4.2, fz = P0.wz + P0.nz * 4.2, fy = gargFloor(fx, fz) + 3.4;
+      g.to = gargSpot(fx, fz, fy, 0.0, 0, new THREE.Vector3()) || new THREE.Vector3(fx, fy, fz);
+      const a2 = mutPlay(u, 'gWake', false); if (a2) a2.timeScale = 1.6;
+    }
+  } else if (g.mode === 'drop') {
+    // off the wall in a falling arc, out over the court and up into its place
+    const k = Math.min(1, g.t / 1.5), e = k * k * (3 - 2 * k);
+    const nx = g.from.x + (g.to.x - g.from.x) * e, nz = g.from.z + (g.to.z - g.from.z) * e, ny = g.from.y + (g.to.y - g.from.y) * e - Math.sin(k * Math.PI) * 1.2;
+    p.set(nx, ny, nz);
+    gargFace(u, g.to.x, g.to.z, dt, 3);
+    if (k >= 1) { g.mode = 'ring'; g.t = 0; g.vel.set(0, 0, 0); sfxGargWing(p.x, p.z, 1.2); }
+  } else if (g.mode === 'ring') {
+    // hanging back, high, wheeling round, watching
+    g.ang = (g.ang ?? Math.atan2(p.x - aim.x, p.z - aim.z)) + dt * 0.6 * (g.i % 2 ? 1 : -1);
+    const R = 5.6 + Math.sin(g.seed + g.t * 0.5) * 0.8, H = 3.4 + Math.sin(g.seed * 2 + g.t * 0.8) * 0.5;
+    const want = gargSpot(aim.x, aim.z, fl + H, R, g.ang, _gaA.clone());
+    if (want) { const r = gargRoute(u, want, new THREE.Vector3()); gargFlyTo(u, r.x, r.y, r.z, GARG_SPD.ring, dt, 2.5); }
+    gargFace(u, aim.x, aim.z, dt, 3);
+    pitch0 = 0.05; legs = GARG_TUCK;
+    // its turn: on you as the turns allow; on the minotaur its own
+    const mine = g.tgt ? true : gargTurnOf() === u;
+    if (mine && g.t > (g.tgt ? 1.0 : 0.45)) {
+      const r = Math.random(); g.kind = r < 0.42 ? 'talon' : r < 0.78 ? 'rake' : 'bite';
+      g.mode = 'approach'; g.t = 0; g.hits = 0;
+    }
+  } else if (g.mode === 'approach') {
+    // where its move comes from: up and out for the dive and the bite (its head a metre over yours, four metres off), close
+    // and at your chest for the rake (two and a half)
+    const ang = Math.atan2(p.x - aim.x, p.z - aim.z), close = g.kind === 'rake';
+    const at = gargSpot(aim.x, aim.z, close ? eyeOf(g) - 1.35 : eyeOf(g) + 1.25 - GARG_HEAD, close ? 2.0 : 4.2, ang, _gaA.clone());
+    const via = at ? gargRoute(u, at, new THREE.Vector3()) : null;
+    let d = via ? gargFlyTo(u, via.x, via.y, via.z, GARG_SPD.approach, dt, 3.5) : 99;
+    if (via && via.distanceToSquared(at) > 0.01) d = 99;                    // (still on its way round)
+    gargFace(u, aim.x, aim.z, dt, 5);
+    beat = GARG_BEAT.approach; pitch0 = 0.1; legs = GARG_TUCK;
+    if (g.t > 6 && Math.hypot(p.x - aim.x, p.z - aim.z) > 5.5) { g.mode = 'back'; g.t = 0; }                 // (it cannot get there: its turn goes on)
+    else if (d < 0.6 || (g.t > 4 && Math.hypot(p.x - aim.x, p.z - aim.z) < 5.5)) {
+      g.mode = 'tell'; g.t = 0; g.vel.multiplyScalar(0.2); g.sway = Math.random() < 0.5 ? -1 : 1;
+      // (each move its own cue: the dive a screech, the rake a hiss of beats, the bite a low one, held)
+      if (g.kind === 'rake') { sfxGargWing(p.x, p.z, 1.6); sfxGargWing(p.x, p.z, 1.2); }
+      else sfxAt(p.x, p.z, () => sfxScpScream(0, u.kind.voice));
+    }
+  } else if (g.mode === 'tell') {
+    // THE TELL, held long enough to read, each move's own: the dive — reared back and up, wings high, its feet drawn up
+    // under it; the rake — beating hard, both feet up and forward, cocked; the bite — reared, jaw open, swaying, held
+    // too long (a delay, to catch the early dodge)
+    _gaA.set(p.x - aim.x, 0, p.z - aim.z).normalize();
+    const back = g.kind === 'rake' ? 0.5 : 1.1, side = g.kind === 'bite' ? Math.sin(g.t * 5) * 0.9 * g.sway : 0;
+    g.vel.lerp(_gaB.set(_gaA.x * back - _gaA.z * side, g.kind === 'rake' ? 0.1 : 0.6, _gaA.z * back + _gaA.x * side), Math.min(1, dt * 4)); p.addScaledVector(g.vel, dt);
+    gargFace(u, aim.x, aim.z, dt, 8);
+    const T0 = GARG_TELL[g.kind];
+    if (g.kind === 'talon') { pitch0 = -0.45; hold = 0.5; pose = 'tell'; pk = Math.min(1, g.t / 0.25); legs = GARG_DRAWN; }
+    else if (g.kind === 'rake') { pitch0 = -0.35; beat = GARG_BEAT.reel; legs = GARG_COCK; pose = 'tell'; pk = Math.min(1, g.t / 0.2) * 0.5; }
+    else { pitch0 = -0.3; hold = 0.5; pose = 'tell'; pk = Math.min(1, g.t / 0.3); legs = GARG_TUCK; }
+    if (g.t > T0) {
+      g.t = 0; g.from = p.clone(); g.landed = false;
+      g.mode = g.kind === 'rake' ? 'rake' : 'lunge';
+      sfxGargWing(p.x, p.z, 1.8);
+      if (g.tgt && g.tgt.kind.mino && Math.random() < 0.75) minoCounter(g.tgt, u);
+    }
+  } else if (g.mode === 'lunge') {
+    // the dive: wings swept back, down its line at them — talons thrust out ahead at their chest, or the head at their face
+    _gaA.set(g.from.x - aim.x, 0, g.from.z - aim.z).normalize();
+    // (measured: its talons reach no further forward than its body, so the dive comes in to within a stride of you)
+    const bite = g.kind === 'bite', stand = bite ? 1.1 : 0.9, eye = eyeOf(g);
+    const tx = aim.x + _gaA.x * stand, tz = aim.z + _gaA.z * stand, ty = bite ? eye - GARG_HEAD + 0.05 : eye - 0.35 - GARG_TOE;
+    const d = gargFlyTo(u, tx, ty, tz, bite ? GARG_SPD.lunge * 1.15 : GARG_SPD.lunge, dt, 12);
+    gargFace(u, aim.x, aim.z, dt, 10);
+    clip = 'gGlide'; pitch0 = bite ? 0.45 : -0.35;
+    if (bite) { pose = g.t < 0.1 ? 'dive' : 'bite'; pk = Math.min(1, g.t / 0.12); open = 1; legs = GARG_TUCK; }
+    else { const k = Math.min(1, g.t / 0.16); legs = gargLegMix(GARG_DRAWN, GARG_THRUST, k); claws = 2; }
+    if (!g.landed && (d < 0.45 || g.t > 0.65)) {
+      g.landed = true;
+      if (gargStrikes(u, aim, eye, bite ? 'head' : 'feet')) gargLand(u); else sfxGargWing(p.x, p.z, 1.0);
+      if (g.mode !== 'reel') {
+        // and up and away past them, the talons raking on through as it goes
+        g.mode = 'recover'; g.t = 0;
+        _gaA.set(p.x - aim.x, 0, p.z - aim.z).normalize();
+        g.vel.set(_gaA.x * 2.4, 3.6, _gaA.z * 2.4);
+      }
+    }
+  } else if (g.mode === 'rake') {
+    // THE RAKE: hanging in close, a kick of the left foot and then the right, each driven at them from cocked to full
+    // reach, the body pressing in behind each — two blows, each its own hit, each its own claw-streak
+    _gaA.set(aim.x - p.x, 0, aim.z - p.z); const dd = _gaA.length() || 1; _gaA.multiplyScalar(1 / dd);
+    // (driven in to a stride off them through the two kicks: measured, hanging where it set off it raked the air 2–3 m short)
+    gargFlyTo(u, aim.x - _gaA.x * 1.0, eyeOf(g) - 1.35, aim.z - _gaA.z * 1.0, 4.5, dt, 8);
+    gargFace(u, aim.x, aim.z, dt, 8);
+    beat = GARG_BEAT.reel; pitch0 = -0.35;
+    // (its kicks keep their own clock, which runs once it is within reach — the first one was thrown from two metres out)
+    if (g.t < 0.4 && dd > 1.5) g.rk = 0; else g.rk = (g.rk || 0) + dt;
+    const rk = g.rk;
+    const kick = (t0) => THREE.MathUtils.clamp((rk - t0) / 0.2, 0, 1);
+    const kL = kick(0.0), kR = kick(0.36), ease = (k) => 1 - Math.pow(1 - k, 3);
+    const L = rk < 0.32 ? gargLegMix(GARG_COCK, GARG_KICK, ease(kL)) : gargLegMix(GARG_KICK, GARG_TUCK, Math.min(1, (rk - 0.32) / 0.3));
+    const Rl = rk < 0.36 ? GARG_COCK : gargLegMix(GARG_COCK, GARG_KICK, ease(kR));
+    legs = [L[0], L[1], Rl[2], Rl[3]];
+    claws = (kL > 0 && kL < 1 ? 1 : 0) | (kR > 0 && kR < 1 ? 2 : 0) || (rk < 0.75 ? 4 : 0);
+    for (const [ct, n] of [[0.14, 1], [0.5, 2]]) {
+      if (rk >= ct && !(g.rakeHit & n)) {
+        g.rakeHit = (g.rakeHit || 0) | n;
+        if (gargStrikes(u, aim, eyeOf(g), 'feet')) gargLand(u); else sfxGargWing(p.x, p.z, 0.9);
+        if (g.mode === 'reel') break;                       // (blocked: the second never comes)
+      }
+    }
+    if (g.mode === 'rake' && rk > 0.75) {
+      g.rakeHit = 0; g.rk = 0; g.mode = 'recover'; g.t = 0;
+      g.vel.set(-_gaA.x * 2.6, 3.2, -_gaA.z * 2.6);
+    }
+  } else if (g.mode === 'recover') {
+    // the pull-up: it climbs back off them on hard beats — slow at first, close: the second opening
+    g.vel.y = Math.max(1.2, g.vel.y - dt * 2.5);
+    gargFlyTo(u, p.x + g.vel.x * 0.4, p.y + g.vel.y * 0.4, p.z + g.vel.z * 0.4, g.vel.length(), dt, 6);
+    gargFace(u, aim.x, aim.z, dt, 3);
+    beat = GARG_BEAT.recover; pitch0 = -0.2;
+    if (g.kind === 'bite') { pose = 'bite'; pk = Math.max(0, 1 - g.t / 0.3); legs = GARG_TUCK; }
+    else if (g.kind === 'talon') { const k = Math.min(1, g.t / 0.28); legs = k < 1 ? gargLegMix(GARG_THRUST, GARG_SWEPT, k) : gargLegMix(GARG_SWEPT, GARG_TUCK, Math.min(1, (g.t - 0.28) / 0.3)); claws = k < 1 ? 3 : 0; }
+    else legs = GARG_TUCK;
+    if (g.t > GARG_T.recover || (g.hits || 0) >= 2) { g.mode = 'back'; g.t = 0; }
+  } else if (g.mode === 'back') {
+    // up and away, back to the ring
+    const ang = Math.atan2(p.x - aim.x, p.z - aim.z);
+    const at = gargSpot(aim.x, aim.z, fl + 3.4, 5.6, ang, _gaA.clone());
+    if (at) { const r = gargRoute(u, at, new THREE.Vector3()); gargFlyTo(u, r.x, r.y, r.z, GARG_SPD.back, dt, 3); }
+    gargFace(u, aim.x, aim.z, dt, 3);
+    beat = GARG_BEAT.back; pitch0 = 0.15; legs = GARG_TUCK;
+    if (g.t > 1.0) { g.mode = 'ring'; g.t = 0; g.ang = ang; }
+  } else if (g.mode === 'reel') {
+    // knocked back off its line and catching itself: a lurch and a flail of the wings
+    g.vel.multiplyScalar(Math.exp(-dt * 3)); g.vel.y -= 2 * dt;
+    gargFlyTo(u, p.x + g.vel.x * 0.3, Math.max(fl + 0.6, p.y + g.vel.y * 0.3), p.z + g.vel.z * 0.3, g.vel.length() + 0.5, dt, 6);
+    beat = GARG_BEAT.reel; pitch0 = -0.4; legs = GARG_SWEPT; g.rakeHit = 0;
+    if (g.t > g.reelFor) { u.st.stun = 0; g.mode = 'back'; g.t = 0; }
+  }
+  let ph = null;
+  if (g.mode !== 'wake' && g.mode !== 'drop') {
+    const a = mutPlay(u, clip, true);
+    if (a && clip === 'gBeat') {
+      const D = a.getClip().duration;
+      if (hold >= 0) { a.timeScale = 0; a.time += (D * hold - a.time) * Math.min(1, dt * 10); }
+      else a.timeScale = beat;
+      ph = (a.time / D) % 1;
+      if (g.lastPh !== undefined && g.lastPh < 0.5 && ph >= 0.5 && hold < 0) sfxGargWing(p.x, p.z, 0.45);
+      g.lastPh = ph;
+    } else if (a) a.timeScale = 1;
+    gargBodyMotion(u, pitch0, dt, ph);
+    // the eyes flare as it rears and strikes
+    const flare = ['tell', 'lunge', 'rake'].includes(g.mode) ? 2.3 : 1;
+    for (const m of u.mats || []) m.emissiveIntensity = g.eyes * 2.6 * flare;
+  }
+  if (u.model) u.model.rotation.y = 0;
+  u.mixer.update(dt);
+  gargRest(u);
+  if (pose && pk > 0) gargStrikePose(u, pose, pk, open);
+  // its legs, eased toward what the move wants (they have their own tracks in the clip, so this is laid on every frame)
+  if (g.mode !== 'wake' && g.mode !== 'drop') {
+    const L = g.legsNow || (g.legsNow = GARG_TUCK.slice()), k = Math.min(1, dt * (['lunge', 'rake', 'recover'].includes(g.mode) ? 30 : 8));
+    for (let i = 0; i < 4; i++) L[i] += (legs[i] - L[i]) * k;
+    gargLegPose(u, L);
+  }
+  gargClawTrails(u, dt, claws);
+  return true;
+}
+// its move's target height: your eyes, or (on the minotaur) his head
+function eyeOf(g) { return g.tgt ? g.tgt.g.position.y + g.tgt.kind.h * 0.9 : camera.position.y; }
+/* ITS LEGS (2026-10-29, the owner: "i cant tell the gargoyles hits they need to swing their feet or something more visual …
+ * make their moveset way better and more readable like a bird from Elden ring"). [left thigh, left knee, right thigh,
+ * right knee], turns about the body's left-right (`gargBodyTurn`); measured in the studio: a thigh's negative turn swings
+ * it FORWARD, a knee's negative straightens the shin out ahead, positive folds the foot up under it. */
+const GARG_TUCK = [-0.35, 0.9, -0.35, 0.9];          // flying: feet up under it
+const GARG_DRAWN = [-0.55, 1.25, -0.55, 1.25];       // the dive's tell: drawn right up, ready
+const GARG_THRUST = [-1.15, -0.9, -1.15, -0.9];      // the dive's strike: both feet thrust out ahead
+const GARG_SWEPT = [0.55, 0.2, 0.55, 0.2];           // raked on through and back
+const GARG_COCK = [-0.45, 1.15, -0.45, 1.15];        // the rake's tell
+const GARG_KICK = [-1.4, -0.75, -1.4, -0.75];        // a rake's kick at full reach
+const GARG_TELL = { talon: 0.6, rake: 0.45, bite: 0.95 };
+const gargLegMix = (a, b, k) => [0, 1, 2, 3].map((i) => a[i] + (b[i] - a[i]) * k);
+function gargLegPose(u, L) {
+  const B = u.gB; if (!B) return;
+  gargBodyTurn(u, B.Leg_1_Left, L[0]); gargBodyTurn(u, B.Knee_Left, L[1]);
+  gargBodyTurn(u, B.Leg_1_Right, L[2]); gargBodyTurn(u, B.Knee_Right, L[3]);
+}
+// does its blow reach them: the talons (or its jaws) inside a hand of them, in front of it, at a height it can strike
+function gargStrikes(u, aim, eye, part) {
+  const p = u.g.position, B = u.gB;
+  const T = _gaM2.set(aim.x, eye - (part === 'feet' ? 0.45 : 0.05), aim.z);
+  let best = 1e9;
+  if (part === 'feet' && B) for (const n of ['Toe1_4_Left', 'Toe1_4_Right', 'Ankle_Left', 'Ankle_Right']) if (B[n]) best = Math.min(best, B[n].getWorldPosition(_gaM3).distanceTo(T));
+  if (part === 'head' && B && B.Head) best = B.Head.getWorldPosition(_gaM3).distanceTo(T);
+  const dd = Math.hypot(aim.x - p.x, aim.z - p.z), facing = ((aim.x - p.x) * Math.sin(u.g.rotation.y) + (aim.z - p.z) * Math.cos(u.g.rotation.y)) / (dd || 1);
+  const hit = facing > 0.3 && (best < 1.05 || (dd < 1.7 && Math.abs(eye - (p.y + 1.3)) < 1.5));
+  if (window.__ggDbg) window.__ggDbg.push([u.gp.kind, u.gp.mode, +best.toFixed(2), +dd.toFixed(2), +facing.toFixed(2), +(eye - p.y).toFixed(2), hit ? 1 : 0, u.gp.tgt ? 'M' : 'Y']);
+  return hit;
+}
+const _gaM2 = new THREE.Vector3(), _gaM3 = new THREE.Vector3(), _gclA = new THREE.Vector3(), _gclB = new THREE.Vector3();
+/* THE CLAWS' STREAKS: the swords' white air on each striking foot — ankle to a hand past its talons — so a rake is a
+ * thing you see coming across you, not a number. `which`: 1 the left foot, 2 the right, 4 both fading. */
+function gargClawTrails(u, dt, which) {
+  const B = u.gB; if (!B) return;
+  const tr = u.gTr || (u.gTr = {});
+  for (const [s, bit] of [['Left', 1], ['Right', 2]]) {
+    const live = !!(which & bit) && u.g.visible && u.st.alive;
+    let T = tr[s];
+    if (!T) { if (!live) continue; T = tr[s] = makeSwingTrail(12); }
+    const an = B['Ankle_' + s], to = B['Toe1_4_' + s];
+    if (live && an && to) {
+      if (T.on < 0.5) { T.h.length = T.t.length = 0; }
+      an.getWorldPosition(_gclA); to.getWorldPosition(_gclB); _gclB.sub(_gclA).multiplyScalar(2.4).add(_gclA);
+      T.h.push(_gclA.clone()); T.t.push(_gclB.clone()); if (T.h.length > T.N) { T.h.shift(); T.t.shift(); }
+      T.on = 1;
+    } else T.on = Math.max(0, T.on - dt * 5);
+    T.m.visible = T.on > 0.01 && T.h.length > 2 && u.g.visible;
+    if (!T.m.visible) continue;
+    const pos = T.m.geometry.attributes.position.array, col = T.m.geometry.attributes.color.array, n = T.h.length;
+    for (let i = 0; i < T.N; i++) {
+      const j = Math.min(n - 1, i), f = n > 1 ? j / (n - 1) : 1, h = T.h[j], t = T.t[j];
+      const near = THREE.MathUtils.smoothstep(Math.min(h.distanceTo(camera.position), t.distanceTo(camera.position)), 0.6, 1.4);
+      const al = Math.pow(f, 1.4) * T.on * (i < n ? 1 : 0) * 0.42 * near;
+      pos[i * 6] = h.x; pos[i * 6 + 1] = h.y; pos[i * 6 + 2] = h.z; pos[i * 6 + 3] = t.x; pos[i * 6 + 4] = t.y; pos[i * 6 + 5] = t.z;
+      col[i * 6] = 0.15 * al; col[i * 6 + 1] = 0.15 * al; col[i * 6 + 2] = 0.17 * al;
+      col[i * 6 + 3] = 0.78 * al; col[i * 6 + 4] = 0.76 * al; col[i * 6 + 5] = 0.80 * al;
+    }
+    T.m.geometry.attributes.position.needsUpdate = T.m.geometry.attributes.color.needsUpdate = true;
+  }
+}
+/* ITS BLOW: on whoever it went for — your guard and your parry answer it like any other (a parried one is stunned, low,
+ * and open); on the minotaur, his floor holds */
+function gargLand(u) {
+  const T = u.gp.tgt;
+  u.st.foe = T;
+  if (!T && blocking) {
+    const dtp = (performance.now() - blockStart) / 1000;
+    if (dtp <= parryWin() && parryCool <= 0) parryMutant(u); else blockMutant(u);
+    _gaA.set(u.g.position.x - camera.position.x, 0, u.g.position.z - camera.position.z).normalize();
+    u.gp.vel.set(_gaA.x * 2.5, 0.6, _gaA.z * 2.5);
+    u.gp.mode = 'reel'; u.gp.t = 0; u.gp.reelFor = Math.max(0.5, u.st.stun || 0);
+    return;
+  }
+  playSampleAt('katHit', u.g.position.x, u.g.position.z, { gain: 0.9, ref: 6, far: 30, rate: u.gp.kind === 'bite' ? 1.25 : 0.9 });
+  mutLandBlow(u, 1);
+  if (!T) { addTrauma(0.22); sfxAt(u.g.position.x, u.g.position.z, () => sfxScpScream(0, u.kind.voice)); }   // (you feel it land: the owner could not tell they had hit him)
+  u.hitAt = performance.now();
+}
+/* ---- DEATH: it goes back to stone in the air — the wings stop, the eyes go out — and falls, and the statue BREAKS on
+ * the paving (2026-10-28, the owner: "give these random stone breaking effects on each kill of the gargoyles and have them
+ * break into pieces matching the audio well. this should be a very satisfying break smashing them into pieces with good
+ * physics"). His recording, cut at its silences into six (`tools/stone_break_pack.py`), one at random a kill; each one's
+ * SMASH (its loudest instant) lands on the frame the statue hits the stone — the sound is started while it is still
+ * falling, as far ahead of the landing as its own crackle runs before the smash — and each later rise in its envelope (the
+ * debris going again) breaks the biggest piece left again, on the beat you hear it. */
+const GARG_BREAKS = [   // (measured by the packer, seconds into each cut)
+  { peak: 0.075, subs: [0.245, 0.45, 0.575, 0.765, 0.98, 1.1] }, { peak: 0.09, subs: [0.455, 0.65, 0.82, 0.965, 1.135, 1.275] },
+  { peak: 0.075, subs: [0.53, 1.14, 1.305, 1.445, 1.565] }, { peak: 0.185, subs: [0.415, 0.585, 0.88] },
+  { peak: 0.435, subs: [0.805, 1.095] }, { peak: 0.395, subs: [0.655] },
+];
+let gargBreakLast = -1;
+function gargDied(u) {
+  const g = u.gp;
+  if (u.gTr) for (const k in u.gTr) { u.gTr[k].on = 0; u.gTr[k].m.visible = false; }   // (its claws' streaks go with it)
+  g.mode = 'dead'; g.vel.y = Math.min(g.vel.y, 0); g.spin = (Math.random() - 0.5) * 6;
+  for (const m of u.mats || []) m.emissiveIntensity = 0;
+  if (u.mixer) u.mixer.timeScale = 0;
+  // a break it has not had last time
+  let k; do { k = (Math.random() * GARG_BREAKS.length) | 0; } while (k === gargBreakLast && GARG_BREAKS.length > 1);
+  gargBreakLast = k; g.brk = k; g.sndAt = null;
+  // (its pose is stone now and does not move: cut it into its pieces here, so the frame it lands only throws them —
+  // measured, doing all of it on the landing was a 23 ms frame)
+  g.pre = gargBake(u);
+  /* AND IT BREAKS WHERE IT IS STRUCK (2026-10-29, the owner: "the gargoyles should break in the air when hit for the
+   * kill"): no fall first — on the next frame (the cut is this one's cost) it comes apart in the air, thrown off the
+   * line of the blow that killed it, the smash of its recording on that instant */
+  const from = u.st.hitBy && performance.now() - (u.st.hitByT || 0) < 300 ? u.st.hitBy.g.position : camera.position;
+  _gsA.set(u.g.position.x - from.x, 0, u.g.position.z - from.z); const L = _gsA.length() || 1;
+  g.vel.set(_gsA.x / L * 4.5, 1.2, _gsA.z / L * 4.5);
+  g.airBreak = true;
+}
+// the break's sound from where it falls, `off` seconds into it (its crackle skipped when it is already nearly down)
+function gargBreakSound(u, k, off) {
+  const ctx = audioCtx, bank = sampleBanks.stoneBreak && sampleBanks.stoneBreak[k];
+  if (!ctx || !bank) { sfxGargCrack(u.g.position.x, u.g.position.z); return; }
+  const p = u.g.position, d = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
+  if (d > 70) return;
+  const src = ctx.createBufferSource(); src.buffer = bank;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 12000 * Math.pow(900 / 12000, Math.min(1, d / 70));
+  const gn = ctx.createGain(); gn.gain.value = 1.6 / (1 + d / 12);
+  let dst = sfxOutBase();
+  if (ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(p.x, p.z) * 0.85, -1, 1); sp.connect(dst); dst = sp; }
+  src.connect(lp).connect(gn).connect(dst);
+  src.start(ctx.currentTime, Math.max(0, off));
+}
+function gargDeadStep(u, dt) {
+  const g = u.gp, p = u.g.position;
+  if (!g || g.mode !== 'dead') return;
+  if (g.airBreak) { g.airBreak = false; g.mode = 'broken'; gargShatter(u, true); return; }
+  g.vel.y -= 9.8 * dt; p.addScaledVector(g.vel, dt);
+  u.g.rotation.x += dt * 2.2; u.g.rotation.z += g.spin * dt;
+  const fl = gargFloor(p.x, p.z), h = p.y - (fl + 0.2);
+  // when will it land: the sound is started that far ahead of its smash
+  if (!g.sndAt) {
+    const vy = -g.vel.y, tl = h <= 0 ? 0 : (-vy + Math.sqrt(vy * vy + 2 * 9.8 * h)) / 9.8;
+    const pk = GARG_BREAKS[g.brk].peak;
+    if (tl <= pk) { g.sndAt = performance.now(); gargBreakSound(u, g.brk, pk - tl); }
+  }
+  if (h <= 0) { g.mode = 'broken'; gargShatter(u); }
+}
+/* THE STATUE IN PIECES: its own carved, mapped stone as it was on the frame it died — every triangle of every part, put
+ * through the skin — thrown apart at its own joints (`gargPartOf`, `GARG_LIMBS`), each limb a body of its own. */
+const _gsA = new THREE.Vector3(), _gsB = new THREE.Vector3(), _gsQ = new THREE.Quaternion(), _gsW = new THREE.Quaternion();
+const stoneBits = [];
+/* ITS OWN PARTS (2026-10-29, the owner: "i dont want bullshit claude peices make the model actualy break into its own
+ * parts"). It comes apart where it is jointed: every triangle goes with the bone that holds it most, and the bones are
+ * its anatomy — the head and its jaw, the chest and the hips, each wing as upper arm, forearm and hand with its fingers
+ * and membrane, each leg as thigh, shin and foot, the tail in three. On the stone it breaks into its seven limbs and
+ * trunk; on each later blow in the recording one more joint gives, the outermost first (a wing's hand, then its
+ * forearm; a foot, then a shin; the jaw off the head; the tail's tip; the chest off the hips). Nothing is added to it:
+ * no lumps, no chips — every piece on the paving is a piece of the statue. */
+function gargPartOf(n) {
+  if (/^(Jaw|JawTip|Tongue)/.test(n)) return 'jaw';
+  if (/^(Head|Face|Eye)/.test(n)) return 'head';
+  if (/^(Neck|Spine2|Spine3)/.test(n)) return 'chest';
+  const sd = /(Left|Right)$/.exec(n), S = sd ? sd[1][0] : '';
+  if (S) {
+    if (/^Arm_/.test(n)) return 'arm' + S;
+    if (/^Elbow_/.test(n)) return 'fore' + S;
+    if (/^(Hand_|Wing)/.test(n)) return 'hand' + S;
+    if (/^Leg_/.test(n)) return 'thigh' + S;
+    if (/^Knee_/.test(n)) return 'shin' + S;
+    if (/^(Ankle_|Toe)/.test(n)) return 'foot' + S;
+  }
+  const t = /^Tail(\d)/.exec(n);
+  if (t) return +t[1] <= 3 ? 'tailA' : +t[1] <= 6 ? 'tailB' : 'tailC';
+  return 'hips';
+}
+// what breaks off on the stone, and in each what goes next: outermost first
+const GARG_LIMBS = [['jaw', 'head'], ['chest', 'hips'], ['handL', 'foreL', 'armL'], ['handR', 'foreR', 'armR'],
+                    ['footL', 'shinL', 'thighL'], ['footR', 'shinR', 'thighR'], ['tailC', 'tailB', 'tailA']];
+// its triangles in its own frame (through the skin, as it stands frozen), each with the part it belongs to
+function gargBake(u) {
+  u.g.updateMatrixWorld(true);
+  const inv = u.g.matrixWorld.clone().invert(), M = new THREE.Matrix4();
+  const parts = new Map();                                 // part -> [ax,ay,az, bx,by,bz, cx,cy,cz, u0,v0, u1,v1, u2,v2, mat]
+  u.model.traverse((o) => {
+    if (!o.isSkinnedMesh || !o.visible) return;
+    M.multiplyMatrices(inv, o.matrixWorld);
+    const PA = o.geometry.attributes.position, UV = o.geometry.attributes.uv, I = o.geometry.index;
+    const SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight, bs = o.skeleton.bones;
+    const wp = new Float32Array(PA.count * 3), own = new Array(PA.count);
+    for (let i = 0; i < PA.count; i++) {
+      _gsA.fromBufferAttribute(PA, i); o.applyBoneTransform(i, _gsA); _gsA.applyMatrix4(M); wp[i * 3] = _gsA.x; wp[i * 3 + 1] = _gsA.y; wp[i * 3 + 2] = _gsA.z;
+      let bi = 0, bw = -1; for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; bi = SI.getComponent(i, k); } }
+      own[i] = gargPartOf(bs[bi] ? bs[bi].name : '');
+    }
+    const n = I ? I.count : PA.count;
+    for (let t = 0; t < n; t += 3) {
+      const ia = I ? I.getX(t) : t, ib = I ? I.getX(t + 1) : t + 1, ic = I ? I.getX(t + 2) : t + 2;
+      // the triangle goes with whichever part two of its corners are in (or its first)
+      const key = own[ib] === own[ic] ? own[ib] : own[ia];
+      if (!parts.has(key)) parts.set(key, []);
+      parts.get(key).push([wp[ia * 3], wp[ia * 3 + 1], wp[ia * 3 + 2], wp[ib * 3], wp[ib * 3 + 1], wp[ib * 3 + 2], wp[ic * 3], wp[ic * 3 + 1], wp[ic * 3 + 2],
+        UV ? UV.getX(ia) : 0, UV ? UV.getY(ia) : 0, UV ? UV.getX(ib) : 0, UV ? UV.getY(ib) : 0, UV ? UV.getX(ic) : 0, UV ? UV.getY(ic) : 0, o.material]);
+    }
+  });
+  return parts;
+}
+function gargShatter(u, air = false) {
+  const g = u.gp, P = u.g.position, fl = gargFloor(P.x, P.z);
+  u.g.updateMatrixWorld(true);
+  // its parts, carried from its death's frame to where it lies now (turned with the fall)
+  const W = u.g.matrixWorld, e = W.elements;
+  const baked = g.pre || gargBake(u), parts = new Map();
+  for (const [k, T] of baked) parts.set(k, T.map((t) => {
+    const o = t.slice();
+    for (let v = 0; v < 3; v++) { const x = t[v * 3], y = t[v * 3 + 1], z = t[v * 3 + 2]; o[v * 3] = e[0] * x + e[4] * y + e[8] * z + e[12]; o[v * 3 + 1] = e[1] * x + e[5] * y + e[9] * z + e[13]; o[v * 3 + 2] = e[2] * x + e[6] * y + e[10] * z + e[14]; }
+    return o;
+  }));
+  g.pre = null;
+  u.g.visible = false;
+  if (u.mixer) u.mixer.timeScale = 1;
+  // where the trunk is: the limbs are thrown out from it
+  const trunk = gargTriCenter([...(parts.get('chest') || []), ...(parts.get('hips') || [])].length ? [...(parts.get('chest') || []), ...(parts.get('hips') || [])] : [].concat(...parts.values()));
+  const cx = trunk[0], cz = trunk[2], cy = trunk[1];
+  const born = [];
+  for (const limb of GARG_LIMBS) {
+    const keys = limb.filter((k) => parts.has(k) && parts.get(k).length);
+    if (!keys.length) continue;
+    const b = stoneBody(keys, parts);
+    if (!b) continue;
+    // out from the trunk, up off the stone, a quarter of its fall carried, turning; the trunk itself barely moves
+    const isTrunk = keys.includes('hips') || keys.includes('chest');
+    _gsA.set(b.m.position.x - cx, 0, b.m.position.z - cz); const L = _gsA.length() || 1; _gsA.multiplyScalar(1 / L);
+    // (in the air: the blow's push carried most of the way, the limbs burst outward harder — nothing under them to stop them)
+    const k = (isTrunk ? 0.4 + Math.random() * 0.6 : 1.8 + Math.random() * 2.6) * (air ? 1.35 : 1), carry = air ? 0.8 : 0.25;
+    b.v.set(_gsA.x * k + g.vel.x * carry, (isTrunk ? 0.8 : 1.6 + Math.random() * 2.8) * (air ? 0.7 : 1) + Math.max(0, b.m.position.y - cy) * 0.8, _gsA.z * k + g.vel.z * carry);
+    b.w.set((Math.random() - 0.5) * (isTrunk ? 3 : 11), (Math.random() - 0.5) * (isTrunk ? 2 : 8), (Math.random() - 0.5) * (isTrunk ? 3 : 11));
+    born.push(b);
+  }
+  const grp = { u, bits: born, subs: GARG_BREAKS[g.brk].subs.map((t) => t - GARG_BREAKS[g.brk].peak), t: 0, merged: null, still: 0 };
+  GARG.breaks = GARG.breaks || []; GARG.breaks.push(grp);
+  for (const b of born) b.grp = grp;
+  // dust, the shake
+  gargDust(cx, air ? Math.max(fl, cy - 0.7) : fl, cz, 1.0);
+  sfxKillThud(1.3);
+  const d = Math.hypot(camera.position.x - cx, camera.position.z - cz); if (d < 12) addTrauma(0.32 * (1 - d / 12));
+  if (!g.sndAt) gargBreakSound(u, g.brk, GARG_BREAKS[g.brk].peak);    // (killed on the ground: straight into the smash)
+}
+/* A PIECE: the parts it is made of (their triangles centred on the piece, kept in the frame they were cut in, so it can
+ * come apart again), one mesh a material, and the handful of its own points that reach furthest each way — what it
+ * lands on (its lowest one, turned with it) */
+function stoneBody(keys, parts) {
+  const T = []; for (const k of keys) for (const t of parts.get(k)) T.push(t);
+  if (T.length < 4) return null;
+  const [x, y, z] = gargTriCenter(T);
+  const byMat = new Map();
+  for (const t of T) { if (!byMat.has(t[15])) byMat.set(t[15], []); byMat.get(t[15]).push(t); }
+  const G = new THREE.Group(); G.position.set(x, y, z);
+  let ext = 0; const pts = [];
+  for (const [mat, list] of byMat) {
+    const pos = new Float32Array(list.length * 9), uv = new Float32Array(list.length * 6);
+    list.forEach((t, i) => { for (let v = 0; v < 3; v++) { pos[i * 9 + v * 3] = t[v * 3] - x; pos[i * 9 + v * 3 + 1] = t[v * 3 + 1] - y; pos[i * 9 + v * 3 + 2] = t[v * 3 + 2] - z; uv[i * 6 + v * 2] = t[9 + v * 2]; uv[i * 6 + v * 2 + 1] = t[10 + v * 2]; } });
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); geo.computeVertexNormals();
+    G.add(new THREE.Mesh(geo, mat));
+    for (let i = 0; i < pos.length; i += 3) ext = Math.max(ext, Math.hypot(pos[i], pos[i + 1], pos[i + 2]));
+  }
+  if (ext < 0.03) return null;
+  const dirs = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], [1, 1, 1], [-1, 1, 1], [1, -1, 1], [1, 1, -1], [-1, -1, 1], [-1, 1, -1], [1, -1, -1], [-1, -1, -1]];
+  for (const d of dirs) {
+    let best = null, bd = -1e9;
+    for (const t of T) for (let v = 0; v < 3; v++) { const px = t[v * 3] - x, py = t[v * 3 + 1] - y, pz = t[v * 3 + 2] - z, s2 = px * d[0] + py * d[1] + pz * d[2]; if (s2 > bd) { bd = s2; best = [px, py, pz]; } }
+    if (best) pts.push(new THREE.Vector3(best[0], best[1], best[2]));
+  }
+  scene.add(G);
+  const b = { m: G, keys: keys.slice(), parts, c: [x, y, z], v: new THREE.Vector3(), w: new THREE.Vector3(), pts, r: ext, sleep: 0, still: false, split: 0 };
+  stoneBits.push(b);
+  return b;
+}
+// a joint gives: the piece's outermost part comes off it, the rest stays one piece, and the two are thrown apart
+function stoneSplit(b) {
+  if (b.keys.length < 2) return false;
+  const q = b.m.quaternion, P = b.m.position, off = [b.keys[0]], rest = b.keys.slice(1), out = [];
+  for (const ks of [off, rest]) {
+    const nb = stoneBody(ks, b.parts); if (!nb) continue;
+    // where its centre is now: its offset from the old piece's centre, turned with the piece
+    _gsA.set(nb.c[0] - b.c[0], nb.c[1] - b.c[1], nb.c[2] - b.c[2]).applyQuaternion(q);
+    nb.m.position.copy(P).add(_gsA); nb.m.quaternion.copy(q);
+    const kick = ks === off ? 1.6 + Math.random() * 1.8 : 0.5;
+    nb.v.copy(b.v).addScaledVector(_gsA.normalize(), kick); nb.v.y += ks === off ? 1.4 + Math.random() * 1.4 : 0.4;
+    nb.w.copy(b.w).add(_gsB.set((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 9));
+    nb.split = b.split + 1; nb.grp = b.grp; out.push(nb);
+  }
+  stoneBitRemove(b);
+  gargDust(P.x, gargFloor(P.x, P.z), P.z, 0.35);
+  return out;
+}
+function gargTriCenter(T) { let x = 0, y = 0, z = 0; for (const t of T) { x += t[0] + t[3] + t[6]; y += t[1] + t[4] + t[7]; z += t[2] + t[5] + t[8]; } const n = T.length * 3; return [x / n, y / n, z / n]; }
+function stoneBitRemove(b) {
+  const i = stoneBits.indexOf(b); if (i >= 0) stoneBits.splice(i, 1);
+  b.m.removeFromParent(); b.m.traverse((o) => { if (o.isMesh && o.geometry) o.geometry.dispose(); });
+  if (b.grp) { const j = b.grp.bits.indexOf(b); if (j >= 0) b.grp.bits.splice(j, 1); }
+}
+/* THE DUST: a cloud that rolls out low over the paving and hangs there (not the game's puffs: those are the sand's clods,
+ * and on stone they read as more made-up pieces) */
+let gargDustTex = null;
+const gargClouds = [];
+function gargDust(x, fl, z, k) {
+  if (!gargDustTex) {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const g2 = c.getContext('2d');
+    const gr = g2.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,0.55)'); gr.addColorStop(0.5, 'rgba(255,255,255,0.22)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g2.fillStyle = gr; g2.fillRect(0, 0, 64, 64); gargDustTex = new THREE.CanvasTexture(c);
+  }
+  for (let i = 0; i < Math.round(7 * k); i++) {
+    // (unlit: at 0.52 grey and three-quarters opaque it glowed white in the torchlight — measured in a still; it is dust in the dark)
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: gargDustTex, color: new THREE.Color(0.21, 0.205, 0.19), transparent: true, depthWrite: false, opacity: 0, fog: true }));
+    const a = Math.random() * Math.PI * 2, r = Math.random() * 0.5;
+    sp.position.set(x + Math.cos(a) * r, fl + 0.3 + Math.random() * 0.5, z + Math.sin(a) * r);
+    sp.scale.setScalar(0.6);
+    scene.add(sp);
+    gargClouds.push({ sp, t: 0, life: 2.6 + Math.random() * 1.8, v: new THREE.Vector3(Math.cos(a) * (0.8 + Math.random() * 1.6) * k, 0.25 + Math.random() * 0.5, Math.sin(a) * (0.8 + Math.random() * 1.6) * k), size: (1.6 + Math.random() * 1.6) * (0.6 + 0.4 * k) });
+  }
+}
+/* EVERY PIECE, every frame: gravity, a turn on its spin, and the stone under it — met at its own lowest point as it is
+ * turned now, so it lands on an edge and tips over it; a hard landing bounces a quarter of it back and puts a twist in it
+ * from where it struck, a soft one slides to a stop; the walls throw it back; and it sleeps when it is still. */
+function updateStoneBits(dt) {
+  const vis = !!(c13World && c13World.visible) && !inRoom();
+  for (let i = stoneBits.length - 1; i >= 0; i--) {
+    const b = stoneBits[i], m = b.m, P = m.position;
+    m.visible = vis;
+    /* AND THEN IT IS DUST (2026-10-29, the owner: "make the debris of their breaks better and it can disappear after they
+     * break to save cpu"): a piece that has come to rest, or has been tumbling three and a half seconds, crumbles — down
+     * into itself over most of a second in a breath of its own dust — and is gone */
+    b.age = (b.age || 0) + dt;
+    if (b.crumble === undefined && (b.still || b.age > 3.5) && !(b.keys && b.keys.length > 1 && b.grp && b.grp.subs.length)) {
+      b.crumble = 0; gargDust(P.x, gargFloor(P.x, P.z), P.z, Math.min(0.5, 0.15 + b.r * 0.35));
+    }
+    if (b.crumble !== undefined) {
+      b.crumble += dt / 0.7;
+      const k = Math.max(0, 1 - b.crumble);
+      m.scale.setScalar(Math.max(0.001, k * k * (3 - 2 * k)));
+      P.y -= dt * 0.25 * b.r;
+      if (b.crumble >= 1) { stoneBitRemove(b); continue; }
+    }
+    if (b.still) continue;
+    b.v.y -= 9.8 * dt;
+    P.addScaledVector(b.v, dt);
+    const wl = b.w.length();
+    if (wl > 1e-4) { _gsQ.setFromAxisAngle(_gsA.copy(b.w).multiplyScalar(1 / wl), wl * dt); m.quaternion.premultiply(_gsQ).normalize(); }
+    // its lowest point now
+    let lo = 1e9, lp = null;
+    for (const q of b.pts) { _gsB.copy(q).applyQuaternion(m.quaternion); if (_gsB.y < lo) { lo = _gsB.y; lp = _gsB.clone(); } }
+    const fl = gargFloor(P.x, P.z);
+    const pen = fl - (P.y + lo);
+    if (pen > 0) {
+      P.y += pen;
+      const vin = -b.v.y;
+      if (vin > 0.6) {
+        b.v.y = vin * 0.26;
+        b.v.x *= 0.72; b.v.z *= 0.72;
+        // the knock turns it about where it struck: r × J
+        const j = vin * 0.9 / Math.max(0.15, b.r);
+        b.w.x += -lp.z * j; b.w.z += lp.x * j; b.w.multiplyScalar(0.7);
+      } else {
+        b.v.y = Math.max(0, b.v.y);
+        const f = Math.exp(-dt * 7); b.v.x *= f; b.v.z *= f; b.w.multiplyScalar(Math.exp(-dt * 5));
+      }
+    }
+    // the court's walls
+    if (c13Walls) {
+      const w = keepWallNear(P.x, P.z, b.r * 0.7, P.y - 0.3, P.y + 0.3, C13_SITE);
+      if (w) { const nx = P.x - w.x, nz = P.z - w.z, L = Math.hypot(nx, nz) || 1, ux = nx / L, uz = nz / L; P.x = w.x + ux * b.r * 0.7; P.z = w.z + uz * b.r * 0.7; const vn = b.v.x * ux + b.v.z * uz; if (vn < 0) { b.v.x -= 1.5 * vn * ux; b.v.z -= 1.5 * vn * uz; } }
+    }
+    if (pen > -0.02 && b.v.lengthSq() < 0.02 && b.w.lengthSq() < 0.05) { if ((b.sleep += dt) > 0.6) { b.still = true; b.v.set(0, 0, 0); b.w.set(0, 0, 0); } }
+    else b.sleep = 0;
+  }
+  // the clouds: out low, rising a little, swelling, gone
+  for (let i = gargClouds.length - 1; i >= 0; i--) {
+    const c = gargClouds[i]; c.t += dt;
+    const k = c.t / c.life;
+    c.sp.position.addScaledVector(c.v, dt); c.v.multiplyScalar(Math.exp(-dt * 1.2));
+    c.sp.scale.setScalar(0.6 + c.size * Math.sqrt(Math.min(1, k * 1.6)));
+    c.sp.material.opacity = 0.55 * Math.min(1, c.t / 0.15) * (1 - k) * (1 - k * 0.3);
+    c.sp.visible = vis;
+    if (k >= 1) { c.sp.removeFromParent(); c.sp.material.dispose(); gargClouds.splice(i, 1); }
+  }
+  // each break's second blows, on its recording's beats; a break with nothing left is let go
+  if (GARG.breaks) GARG.breaks = GARG.breaks.filter((B) => B.bits.length || B.t < 0.1);
+  for (const B of GARG.breaks || []) {
+    B.t += dt;
+    while (B.subs.length && B.t >= B.subs[0]) {
+      B.subs.shift();
+      const big = B.bits.filter((b) => b.keys && b.keys.length > 1).sort((p, q) => q.keys.length - p.keys.length || q.r - p.r)[0];
+      if (big) { const nb = stoneSplit(big); if (nb) for (const x of nb) B.bits.push(x); }
+    }
+  }
+}
+/* ---- EVERY FRAME */
+function updateGargoyles(dt) {
+  if (!GARG.units.length) { if (inC13 || (c13World && c13World.visible)) placeGargoyles(); return; }
+  for (const u of GARG.units) {
+    if (u.retired) continue;
+    if (!u.st.alive) { gargDeadStep(u, dt); continue; }
+    /* (seated on its ledge the moment its model is in, wherever you are: the far wall's two were only ever measured
+     * once their own tick ran, near them — until then they sat at the guessed offset, 0.7 m into the wall and 0.22 m
+     * down into the slab: measured, 0.56 m of the statue inside the stone; the owner's "clipped through the wall") */
+    if (u.model && u.gp && u.gp.mode === 'perch' && u.gp.footH === undefined && u.clips.gPerch) { gargFootH(u); gargPerch(u); }
+  }
+  if (stoneBits.length || gargClouds.length || (GARG.breaks && GARG.breaks.length)) updateStoneBits(dt);
+  if (GARG.scene) gargSceneStep(dt);
+  if (GARG.phase === 1) {
+    GARG.t += dt;
+    if (!gargAlive().length) {
+      GARG.phase = 2;
+      // the door gives: the bar inside it drops (the iron's knock) — it opens to your hand now
+      const A = c13Arch;
+      if (A) { const d = c13W(A.ax + A.ux * A.L * 0.5, A.az + A.uz * A.L * 0.5); sfxAt(d.x, d.z, () => sfxKeyTurn()); }
+    }
+    // leaving the court mid-fight puts them back on the walls, whole, for when you come back
+    if (!inC13 && !fortBusy) { GARG.phase = 0; for (const u of gargAlive()) { u.st.hp = u.kind.hp; gargPerch(u); } }
+  }
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { GARG, placeGargoyles, gargTryDoor, gargFindPerches, gargLockedS: () => gargLocked(), gargLegal, gargSpot,
+  gargStrikePose, gargRouteDbg: (u) => { const G = gargGrid(), aim = gargAim(u, new THREE.Vector3()), at = gargSpot(aim.x, aim.z, aim.y - 0.6, 3.1, Math.atan2(u.g.position.x - aim.x, u.g.position.z - aim.z), new THREE.Vector3()); const D = at ? gargDistFrom(G, at) : null, c = gargCell(G, u.g.position.x, u.g.position.z), gc = at ? gargCell(G, at.x, at.z) : -1; const r = at ? gargRoute(u, at, new THREE.Vector3()) : null;
+    return { c, cOk: c >= 0 ? G.ok[c] : 'out', Dc: D && c >= 0 ? D[c] : 'n', gc, gcOk: gc >= 0 ? G.ok[gc] : 'out', at: at && [at.x - C13_X, at.y, at.z - C13_Z].map((v) => +v.toFixed(1)), r: r && [r.x - C13_X, r.y, r.z - C13_Z].map((v) => +v.toFixed(1)), over: u.gp.over, mode: u.gp.mode }; },
+  gargWhy: (x, y, z) => ({ mask: maskAt(C13_M, x, z), court: c13CourtAt(x, z), pass: c13PassBlocked(x, z), wall: !!keepWallNear(x, z, 1.0, y - 0.3, y + 1.9, C13_SITE), wall6: !!keepWallNear(x, z, 0.6, y - 0.3, y + 1.9, C13_SITE) }) }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { minoSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'minotaur', y), kindSpawnTest: (kind, x, z, y = 0) => makeMutant(x, z, kind, y), minoPacksIn: () => MINO_PACKS.every(([g]) => !!g()),
+  MINO, minoGoDown, minoTalk, minoJoin, minoTurn, minoHeadAt, minoLegal, minoFollow, hurtMutantTest: (u, d, P = 1.0) => hurtMutant(u, d, P),
+  hoveredS: () => hovered && (typeof hovered.label === 'function' ? hovered.label() : hovered.label) }));
 
 /* =====================================================================
  * THE THRONE ROOM. Uğur Yakışık's "Throne Room" (CC-BY-4.0,
@@ -106675,6 +109018,13 @@ if (window.__dcEarly) { window.__dcEarly = false; if (deathWait) deathCardGo(fal
 // interacted with, so: build it and try immediately (which works whenever
 // the browser already trusts this page), and otherwise resume on the very
 // first thing the player does — moving onto the page, a key, a click.
+/* AND ANY KEY OR PRESS IN THE GAME BRINGS THE SOUND BACK (2026-10-21, "have all music play"). The priming below lets go
+ * of its listeners once the context first runs; a context the browser suspended after that (a reload with no click on
+ * the new page, a tab the system put to sleep) waited on `musicGuard`, whose resume without a gesture the browser
+ * refuses. Every press or key, for the whole game, asks — never during a load (`loadSilent`). */
+for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListener(ev, () => {
+  if (audioCtx && audioCtx.state === 'suspended' && !loadSilent()) audioCtx.resume().catch(() => {});
+}, { passive: true, capture: true });
 (function primeAmbience() {
   startAmbientAudio();
   if (!audioCtx) return;

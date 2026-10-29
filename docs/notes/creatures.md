@@ -3531,3 +3531,34 @@ come from `updateEnemyBars` like the crabs'.
 The beach mutants' thrown sand (`mutSand`, hit < 0.85 m from the eye) used to take 0.42 of the stamina bar. The owner:
 it should not. It still shakes, kicks the FOV, flashes, puffs and shoves — it takes neither health nor stamina now.
 And a creature behind the dune is held by `elvUnitClamp`, not the beach's x clamp (see beach.md, same date).
+
+## The minotaur's rig (2026-10-28) — a Sketchfab FBX export, digitigrade
+- **`skeleton.pose()` LAYS HIM ON HIS BACK.** His meshes sit under the export's −90° X / ×1.237 node, so the inverse bind
+  matrices put the bones in the mesh's own frame and `pose()` treats that as world: skinned, the whole body comes out
+  rotated a quarter over (measured: as loaded the bbox is y 0…2.60, posed z −2.6…0). The loaded node TRS IS the bind
+  (skinned − raw = 0 only after pose, but the loaded pose stands him up). Never call `pose()` on this file; `knSeatSword`
+  and `dkSeat` do — fine for their files, not this kind of export.
+- **HIS SWORDS ARE SKINNED TO A FINGER ROOT** (`F4R`/`F4L`, off the forearm — there is no hand bone), not to the
+  `Obj.R/L` bones under the root, which are the source's IK targets and move nothing. Mixamo's hand maps onto `F4`, so a
+  borrowed clip turns each blade with its own wrist. (`Pole*`, `Ft*` tracks dropped too.)
+- **HIS NECK IS NOT MAPPED**: it leans 45° forward off his chest, and aligned onto Mixamo's upright neck it threw his
+  snout at the sky on every retargeted clip. With it unmapped the head inherits the chest's alignment and keeps its own
+  turns.
+- **HIS LEGS**: Mixamo's shin → his shin (`Leg2`), its foot → his hoof (`Feet`); the alignment aims his shin at the hoof,
+  so shin and rear foot go together as one leg below the knee. Reads right in every strip.
+- **ROOT MOTION ON THE ROOT'S Y**: his walk carries `Position` 3.9 m forward along its own local Y (the export's axes),
+  so `kind.flatten` (holds X and Z) cannot hold it; `minoSeat` keeps only the component along world up.
+- **THE PACKS SHARE NAMES** ('walk', 'idle', 'roar' in the orc's and the demon's): retargeted one clip a turn and renamed
+  (`oWalk`, `dRoar` …), `clipSpeed`/`clipTravel` moved to the new name. The demon's head-butt was tried for his horns:
+  its clawing arms threw both swords out behind him.
+- **HARNESS**: jumping down the beach starts the pack's take (`mutCut`) and freezes him — `skipTakes()`; `__bw.frame()`
+  runs on the real clock (a few ms a frame): use `step(1/60)` or `c13shot.js`'s `__c13Step`; the intro needs real
+  seconds before a dialogue will open; `heal()` in a step loop froze the street (not chased).
+- **(2026-10-29) A BORROWED CLIP OPENS A RIG'S FINGERS** when its hand maps onto a bone that is not the finger's parent's
+  equivalent (the minotaur: Mixamo's hand → his `F4` wrist): bones with no track fall back to the BIND, which for this
+  file is open. `ntarRetarget(…, { keep })` — a Map bone → local quaternion — holds them; take them from the creature's
+  own idle's first frame.
+- **(2026-10-29) SOLVING A POSE AGAINST THE FLOOR AND THE BODY**: `tools/minolie.js` is the minotaur's, but the method is
+  general — pose by `poseRig.build` keys, skin every vertex on the CPU (`applyBoneTransform`), score floor contact per
+  bone group and limb-inside-body by vertical ray parity, coordinate-descend. A key halfway between two solved keys is
+  NOT solved: check the in-betweens (`{ clip, f }` frames) and add half-keys at their own height.

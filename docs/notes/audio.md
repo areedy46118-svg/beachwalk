@@ -754,3 +754,20 @@ still hands back the restore's hush sink when `sfxOutBase` gives one; the persis
 owner's lever take ("Large Dull Clunky Industrial Metal Spring Lever Pull") is cut in `tools/sewer_monster_sound.py` into
 its three events at one gain; **re-running that script rewrites every other sew-*.m4a byte-differently** (AAC is not
 deterministic here): `git checkout` the ones you did not mean to change.
+
+## 2026-10-21 — the samurai's score follows the fight; every press brings the sound back
+
+The owner: "my music isnt playing at the samurai fix this now have all music play". Not reproduced on any path driven:
+a fresh walk-in (`samLevels`: the score at ~0.05-0.10 peak, three times the rain and the ambience), the rematch after
+dying to him (`samRematch`, reloaded THROUGH the silent frame — the game's own reload is a new page the tap never saw,
+and measured as total silence), deaths off. (A first run "lost" the score at 7 s: the probe's own player had died.)
+What could still leave him fighting in silence, closed:
+- `updateSamScore` wants the score whenever he is up and on his feet in the dojo (`awake || samuraiSpoke`, alive, not
+  dying/ended/replaying/applying) — it was asked for only on "THAT'S MY SWORD.", so a fight that resumed without that
+  moment (out of the dojo and back, `samuraiSpoke` already set) went on silent.
+- A press, a key or a touch anywhere, all game long, resumes a suspended context (not while `loadSilent`):
+  `primeAmbience` lets go of its listeners once the context first runs, and after that only `musicGuard` asked — without
+  a gesture, which the browser refuses. (The music test runs Chrome with autoplay allowed and cannot see this.)
+- The wreck's theme may start up to 25 s late (was 6) while you are still within reach; after a fast checkpoint load the
+  file could miss its reveal and never play. It and the whale's leaving song now log `musicNote`.
+- `tools/musictest.js` `samuraiBack`: the sword, out of the dojo mid-fight, back in — the score has to come back.

@@ -886,3 +886,12 @@ main.js attaches its own. `__dcEarly` is acted on at the very BOTTOM of main.js 
 and read at line ~8750 it is still false, which would have sent a checkpoint load down the fresh-start path. Acted on
 without a gesture, so it does not ask for the pointer lock. `sh tools/probe.sh dcClick`: clicked early → words faded
 → in at 5.3 s; clicked before the reload → in at 5.7 s; not clicked → still waiting.
+
+## 2026-10-24 — "Quit to title screen" asks first
+
+The owner: "quit to title screen should ask are you sure you want to quit?" (a first try put a question on the MENU's
+"Restart game" instead — "no change it back to how it was"; reverted). On the death card, `.dc-quit` swaps the two
+choices for `.ask` ("Are you sure you want to quit?", Quit / Cancel: `#deathcard.asking`). The swap is index.html's
+own click listener, which runs from the first paint — so a press before main.js is up asks too; Quit (`.dc-quit-yes`)
+is index.html's until `__dcLive`, main.js's after (`leavingOnPurpose`). `deathCardShow` clears `asking`.
+`sh tools/probe.sh dcQuitAsk`: early press asks, Cancel restores, Quit goes to the title with the save kept.

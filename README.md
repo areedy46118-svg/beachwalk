@@ -835,6 +835,7 @@ you while it loads; the first click takes the mouse back.
 | `assets/keep-intro.m4a` | The sea keep's intro, played on arriving at its pier (AAC, converted from the owner's WAV) |
 | `assets/samurai-score.m4a` | The samurai fight's score, from "THAT'S MY SWORD." until he falls, looped (AAC 160 kbps, converted from the owner's "5450 FIX" MP3) |
 | `assets/end-theme.m4a` | The end's song, from the moment the stats come up, played once (AAC 192 kbps, the first 63.8 s of the owner's "5451 beachwalk" MP3: the piece before its silence, the loud reprise after it cut) |
+| `assets/minotaur-death.m4a` | The minotaur's death, once, from the first moment you see him going down in Castle XIII's court, on through his last words — faded in, and out as he dies (AAC 160 kbps, 55.8 s: the owner's "minotaur death music" MP3, whole) |
 | `assets/catacombs-fall.m4a` | The landing in the catacombs, played the moment you hit the stone (AAC, converted from the owner's WAV) |
 | `assets/well-rope.m4a` | The rope creaking as the man from the well climbs it: 13.8 s cut from the owner's "Rope Creaking Holding Weight" sound effect, normalised (+40 dB) and faded, AAC |
 | `vendor/three/` | three.js r160 (vendored, offline-safe) |
@@ -1087,6 +1088,22 @@ by [Catholomew](https://sketchfab.com/Catholomew) licensed under
 paladin's place (`assets/dark-knight.glb`, `tools/swordknights_pack.py dark`: his own eight attack strings kept, his
 map lifted for a night street). He also plays the whole Pro Sword and Shield Pack. **NON-COMMERCIAL: this model may not
 ship in anything sold — replace it before a release that charges money.**
+
+This work is based on ["Minotaur Low-Poly"](https://sketchfab.com/3d-models/minotaur-low-poly-e822f283ec9f4985a19e6d60d0b26823)
+by [Toni García Vilche](https://sketchfab.com/zul_gv) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the minotaur waiting beside the first castle's gate
+(`assets/minotaur.glb`, `tools/minotaur_pack.py`: his walk, his double overhead slam and his idle kept, his maps darkened
+and grimed for the castle). He also swings the orc's great-sword set, two cuts of the Pro Sword and Shield Pack and the
+demon's roar, and his kneeling, lying and dying are posed in the game.
+
+This work is based on ["Flint Maw"](https://sketchfab.com/3d-models/flint-maw-f301bd397cd6492b9df719313ecc51fe)
+by [Spinnee](https://sketchfab.com/Spinnee) licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) —
+the four gargoyles on the walls of Castle XIII's east court (`assets/gargoyle.glb`, `tools/gargoyle_pack.py`: its colour
+made into weathered stone out of its own normal map, its eyes' glow kept). The stone brackets they sit on, their flight,
+bites and talon strikes are built in the game.
+
+The gargoyles breaking is the owner's "3D Render Stone Break Sound Design" recording, cut at its silences into six
+(`assets/stone-break1..6.m4a`, `tools/stone_break_pack.py`); treat it as not redistributable.
 
 This work is based on ["Castle XVII"](https://sketchfab.com/3d-models/castle-xvii-26d4689f97f0484cbd8277d495a87123)
 by [gogiart](https://sketchfab.com/agt14032013) licensed under

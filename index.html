@@ -22,10 +22,15 @@
      module downloads and parses under it, and a click in that time went nowhere. It is kept here, and main.js acts on
      it the moment it runs (`window.__dcEarly`); after that main.js has the buttons (`window.__dcLive`). */
   document.addEventListener('click', function (e) {
-    if (window.__dcLive || !document.documentElement.classList.contains('died')) return;
-    var t = e.target && e.target.closest ? e.target : null;
+    if (!document.documentElement.classList.contains('died')) return;
+    var t = e.target && e.target.closest ? e.target : null, card = document.getElementById('deathcard');
+    /* "Quit to title screen" ASKS FIRST (2026-10-24, the owner: "quit to title screen should ask are you sure you want to
+       quit?"): the two choices give way to the question, here, whichever script is up — Cancel puts them back */
+    if (t && t.closest('.dc-quit')) { if (card) card.classList.add('asking'); return; }
+    if (t && t.closest('.dc-quit-no')) { if (card) card.classList.remove('asking'); return; }
+    if (window.__dcLive) return;                      // (from here main.js has Restart and the quit itself)
     if (t && t.closest('.dc-restart')) { window.__dcEarly = true; document.documentElement.classList.add('dcgo'); }
-    else if (t && t.closest('.dc-quit')) {
+    else if (t && t.closest('.dc-quit-yes')) {
       try { ['beachwalk.load', 'beachwalk.skipIntro', 'beachwalk.died', 'beachwalk.dcGo'].forEach(function (k) { sessionStorage.removeItem(k); }); } catch (e2) {}
       location.reload();
     }
@@ -54,6 +59,10 @@
   /* both grey until the cursor is on one (2026-10-18, the owner); still loading or not, they look the same and both click */
   #deathcard button:hover, #deathcard button:focus-visible { color: #fff; text-shadow: 0 0 12px rgba(255,255,255,0.45); outline: none; }
   #deathcard h1, #deathcard .opts { transition: opacity 0.6s ease; }
+  #deathcard .ask { display: none; flex-direction: column; align-items: center; gap: 1.6rem; }
+  #deathcard .ask p { font-size: clamp(0.95rem, 1.6vw, 1.2rem); letter-spacing: 0.28em; text-indent: 0.28em; text-transform: uppercase; color: #d8d8d8; margin: 0; }
+  #deathcard.asking > .opts { display: none; }
+  #deathcard.asking .ask { display: flex; }
   #deathcard.early h1, #deathcard.early .opts, html.dcgo #deathcard h1, html.dcgo #deathcard .opts { opacity: 0; pointer-events: none; }   /* clicked before the load was done: only the hairline is left */
   #dcbar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255,255,255,0.04); transition: opacity 1.2s ease; }
   #dcbar i { position: absolute; inset: 0; background: rgba(214,222,240,0.55); transform-origin: 0 50%; transform: scaleX(0.02); transition: transform 0.25s linear; }
@@ -1955,6 +1964,10 @@
     <div class="opts">
       <button type="button" class="dc-restart loading">Restart from last checkpoint</button>
       <button type="button" class="dc-quit">Quit to title screen</button>
+    </div>
+    <div class="ask">
+      <p>Are you sure you want to quit?</p>
+      <div class="opts"><button type="button" class="dc-quit-yes">Quit</button><button type="button" class="dc-quit-no">Cancel</button></div>
     </div>
     <div id="dcbar"><i></i></div>
   </div>

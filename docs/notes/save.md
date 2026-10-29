@@ -360,3 +360,8 @@ world copy LIES (`ASSET_REACH`: the shovel by the drain, the peg in the wreck); 
 fight. The milModel/pegModel groups the held copies wrap were empty until then. On the beach it never showed (near
 enough to load). Now `BW_FROM.first` takes every model in the save's `pack` and `worn` (`PACK_FILES`, name → file):
 fetched first, under the black. After: all ten weapons draw after a castle reload (3,700–4,600 px each).
+- **(2026-10-29) THE MINOTAUR ON A CHECKPOINT**: `minoRestore` (a load into XIII's court with him down) put him back
+  right — lying, his blood and his swords — but 40 s after the load: `minotaur.glb` is ranked by his GATE, so in the
+  court it was "far" and parsed behind the rest of the world (downloads were all in by 4 s; the far parse chain held
+  it). `BW_FROM` now puts it in the checkpoint's first set whenever the save has him at your side, down or dead
+  (`flags.mino.s !== 'wait'`): in under 8 s, under the black.
