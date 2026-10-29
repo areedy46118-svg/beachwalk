@@ -800,6 +800,10 @@ export async function knDeath({ w, b, log, sleep, shot }) {
     u.st.awake = true;
     for (let k = 0; k < 40 && u.st.alive; k++) { b.hurtMutant(u, 3, 0.5); for (let f = 0; f < 12; f++) { w.__c13Step(1); b.heal(); } }
     for (let f = 0; f < 120; f++) { w.__c13Step(1); b.heal(); }
+    { const fl = b.c13CourtAt(P.x, P.z) ?? P.y, V = P.constructor; const hb = (nm) => { let o = null; u.model.traverse((q) => { if (!o && q.isBone && new RegExp(nm, 'i').test(q.name)) o = q; }); return o ? +(o.getWorldPosition(new V()).y - fl).toFixed(2) : null; };
+      if (u.rag) log(i, 'rag parts', u.rag.parts.map((q) => q.bone.name.replace(/^Character1_/, '') + ':' + +(q.bone.getWorldPosition(new V()).y - fl).toFixed(2) + '/p' + +(q.p.y - q.floor).toFixed(2)).join(' '), '| orphans', u.rag.orphans.length, 'h0', u.rag.h0 && u.rag.h0.toFixed(2), 'limp', u.rag.limp);
+      if (u.rag) { const q = u.rag.parts[0]; log(i, 'part0', q.bone.name, 'turns', q.turns, 'child', q.child, 'alt', q.kidAlt && q.kidAlt.bone.name, 'rooted', q.rooted, 'pin', !!q.pin, '| acts', u.mixer._actions.filter((x) => x.enabled && x.isRunning()).map((x) => x.getClip().name).join(',')); }
+      log(i, 'down: hips', hb('hips|pelvis'), 'm, head', hb('head'), 'm off the floor | rag', !!u.rag, u.rag && u.rag.asleep, '| cur clip', u.cur && u.cur.getClip().name, u.cur && u.cur.time.toFixed(2), '| kind', u.kind === b.MUT_KINDS.knIron ? 'IRON' : 'MAN'); }
     log(i, 'alive', u.st.alive, 'rag', !!u.rag, 'key', u.saveKey, 'dead keys has', b.deadUnitKeysS ? [...b.deadUnitKeysS()].filter((k) => k.startsWith('kn')).join(',') : '?');
     b.lookAt(P.x, P.y + 0.5, P.z); shot('kndead' + i, 400, 1.4);
   }
@@ -2444,11 +2448,11 @@ export async function minoArch({ w, b, log, sleep }) {
   cam.set(X(A.L + 1.5), cam.y, Z(A.L + 1.5)); w.__c13Step(5);
   // you walk through and on
   for (let f = 0; f < 60 * 24; f++) {
-    const sMe = A.L + 1.5 - Math.min(f / 60, 6) * 1.4, oMe = sMe < -2 ? Math.min(3, (-2 - sMe) * 0.8) * -Math.sign(off || 1) : 0;
+    const sMe = A.L + 1.5 - Math.min(f / 60, (w.__maWalk || 8.4) / 1.4) * 1.4, oMe = w.__maWalk ? 0 : sMe < -2 ? Math.min(3, (-2 - sMe) * 0.8) * -Math.sign(off || 1) : 0;
     const x = X(sMe, oMe), z = Z(sMe, oMe), fl = b.c13CourtAt(x, z);
     cam.set(x, (fl ?? cam.y - 1.7) + 1.7, z); b.camBaseY = cam.y; b.lookAt(X(sMe - 5), cam.y, Z(sMe - 5));
     w.__c13Step(1);
-    if (f % 120 === 0) log((f / 60).toFixed(0) + 's', 'you at s', sMe.toFixed(1), '| him at s', sOf(u.g.position.x, u.g.position.z).toFixed(2), 'v', (M.v || 0).toFixed(2), 'stuck', (M.stuckT || 0).toFixed(1), 'hold', M.hold);
+    if (f % 120 === 0) log((f / 60).toFixed(0) + 's', 'him at', u.g.position.x.toFixed(1), u.g.position.z.toFixed(1), 'you at s', sMe.toFixed(1), '| him at s', sOf(u.g.position.x, u.g.position.z).toFixed(2), 'v', (M.v || 0).toFixed(2), 'stuck', (M.stuckT || 0).toFixed(1), 'hold', M.hold);
   }
   log('end: him at s', sOf(u.g.position.x, u.g.position.z).toFixed(2), 'you at s', sOf(cam.x, cam.z).toFixed(2), 'apart', Math.hypot(u.g.position.x - cam.x, u.g.position.z - cam.z).toFixed(1));
 }
@@ -2822,7 +2826,7 @@ export async function minoKneel({ w, b, log, sleep, shot }) {
   b.camera.fov = 60; b.camera.updateProjectionMatrix(); look(3.4, 1.9); b.renderer.render(b.scene, b.camera); shot('lying', 640, 1.3);
   step(30); await sleep(2500); log('said:', JSON.stringify(txt())); D.click(); step(30); await sleep(2500); log('said:', JSON.stringify(txt())); D.click(); step(30); await sleep(300);
   // "Take this.": his arm up with it, what you see, and taking it
-  for (let k = 0; k < 6 && !/Take this/.test(txt()); k++) { D.click(); step(30); await sleep(900); }
+  for (let k = 0; k < 6 && !/take this/i.test(txt()); k++) { D.click(); step(30); await sleep(900); }
   for (let k = 0; k < 4; k++) { step(30); await sleep(400); }
   log('said:', JSON.stringify(txt()), '| you:', [...D.querySelectorAll('button.choice')].map((x) => x.textContent).join(' / '), '| offering', M.offering, 'sketch in hand', !!M.sketchW, 'clip', u.cur && u.cur.getClip().name);
   b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('offer_view', 800, 1.3);
@@ -2958,4 +2962,141 @@ export async function c13Load({ w, b, log, sleep }) {
     log('  long spans (worst first):', JSON.stringify((B.lag ? B.lag() : []).slice(0, 12)));
     log('  frames after the black: n', sd.length, 'median', sd[sd.length >> 1].toFixed(1), 'p95', sd[Math.floor(sd.length * 0.95)].toFixed(1), 'max', sd[sd.length - 1].toFixed(1), 'ms | over 50 ms', big.length, JSON.stringify(big.slice(0, 12).map(([d, k]) => [+d.toFixed(0), k])));
   }
+}
+// FARMERS IN THE STONE (2026-10-29, the owner, with a screenshot of one sunk into the foot of a tower in the first castle's
+// street: "farmers should not be getting stuck in these walls"): the street fight as played (him at your side), 60 s, you
+// moving between three spots; every frame each farmer's body against the castle's wall index and the paving — the
+// longest spell in the stone (or off the paving), where, and what he was doing. (own profile)
+export async function fortStuck({ w, b, log, sleep, shot }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  await w.__mnGate(4.5);
+  w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
+  const M = b.MINO, cam = b.camera.position;
+  b.settings.devMode = false;
+  M.stage = 'inside'; M.ally = true;
+  b.placeInFort(); w.__c13Step(20);
+  const S = b.FORT_SITE, h0 = [cam.x, cam.z], spots = [h0, [h0[0] + 4, h0[1] - 8], [h0[0] - 3, h0[1] - 16]];
+  const R = new Map(); let t = 0, worst = null;
+  for (let f = 0; f < 60 * 60; f++) {
+    t += 1 / 60;
+    const hm = spots[Math.floor(t / 20) % 3]; cam.x = hm[0]; cam.z = hm[1];
+    w.__c13Step(1); b.heal();
+    for (const u of b.farmUnitsS()) {
+      if (!u.st.alive || !u.model || u.rag) continue;
+      const p = u.g.position, r = (u.kind.body || 0.42) * 0.6;
+      const wall = !!b.keepWallNear(p.x, p.z, r, p.y + 0.4, p.y + 1.6, S), off = b.fortCourtAt(p.x, p.z) === null;
+      const st = R.get(u) || { run: 0, best: 0, at: null, what: '', n: 0, offN: 0 }; R.set(u, st);
+      if (wall || off) { st.run += 1 / 60; st.n++; if (off) st.offN++; if (st.run > st.best) { st.best = st.run; st.at = [+(p.x - b.FORT_X).toFixed(1), +(p.z - b.FORT_Z).toFixed(1)]; st.what = (u.st.struck ? 'struck ' : '') + (u.st.foe ? 'on a unit ' : '') + (u.st.atk >= 0 ? 'swing ' + u.st.swing : u.cur ? u.cur.getClip().name : '-') + (off ? ' OFF PAVING' : '') + ' | out ' + !!(u.farm && u.farm.out) + ' burst ' + !!(u.farm && u.farm.burst) + ' legal ' + (u.st.fortLegal ? (Math.hypot(u.st.fortLegal.x - p.x, u.st.fortLegal.z - p.z)).toFixed(2) : 'none') + ' fortBody ' + !!u.kind.fortBody; } }
+      else st.run = 0;
+      if (st.best > 1 && (!worst || st.best > worst.best)) worst = { u, best: st.best };
+    }
+  }
+  const rows = [...R.entries()].filter(([, s]) => s.n > 0).sort((a, c) => c[1].best - a[1].best);
+  log('farmers seen', R.size, '| ever in the stone', rows.length, '| stuck over 1 s', rows.filter(([, s]) => s.best > 1).length, '| alive at the end', b.farmUnitsS().filter((x) => x.st.alive).length);
+  for (const [u, s] of rows.slice(0, 10)) log('  ', u.kindName || u.kind.name || '?', 'longest', s.best.toFixed(2), 's at', JSON.stringify(s.at), 'frames in', s.n, '(off the paving', s.offN + ')', '|', s.what);
+  if (worst) { const p = worst.u.g.position; w.requestAnimationFrame = () => 0; cam.set(p.x + 3, p.y + 1.8, p.z + 3); b.camera.lookAt(p.x, p.y + 1, p.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('stuck', 640, 1.4); }
+}
+// WHERE THEY COME OUT (2026-10-29): the first castle's street, stills of a spot (castle frame) from the street side
+export async function fortSpot({ w, b, log, sleep, shot }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  await w.__mnGate(4.5);
+  w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
+  b.placeInFort(); w.__c13Step(20);
+  for (const u of b.farmUnitsS()) u.st.awake = false;
+  const cam = b.camera.position, pts = w.__fsPts || [[-7.9, -15.3], [8.0, 1.8], [6.8, 13.6], [6.8, -6.7]];
+  const doors = b.fortDoorsS ? b.fortDoorsS() : null; log('doors', doors ? JSON.stringify(doors.map((d) => [+(d.x).toFixed(1), +(d.z).toFixed(1)])) : 'n/a');
+  w.requestAnimationFrame = () => 0; b.camera.fov = 70; b.camera.updateProjectionMatrix();
+  pts.forEach(([lx, lz], i) => {
+    const x = b.FORT_X + lx, z = b.FORT_Z + lz, f = b.fortCourtAt(x, z) ?? cam.y - 1.7;
+    let best = null; for (let a = 0; a < 16; a++) { const ax = x + Math.sin(a / 16 * 6.283) * 5, az = z + Math.cos(a / 16 * 6.283) * 5; if (b.fortCourtAt(ax, az) !== null && !b.keepWallNear(ax, az, 0.3, f + 0.5, f + 2, b.FORT_SITE)) { best = [ax, az]; break; } }
+    if (!best) best = [x + 5, z];
+    cam.set(best[0], f + 1.7, best[1]); b.camera.lookAt(x, f + 1.0, z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('spot' + i, 480, 1.5);
+  });
+}
+
+// the farmers' doors (castle frame), each shot straight on from four metres out along its own normal
+export async function fortDoors({ w, b, log, sleep, shot }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  await w.__mnGate(4.5); w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
+  b.placeInFort(); w.__c13Step(20); for (const u of b.farmUnitsS()) u.st.awake = false;
+  const P = b.palDbg, D = P.farmDoors, cam = b.camera.position;
+  w.requestAnimationFrame = () => 0; b.camera.fov = 60; b.camera.updateProjectionMatrix();
+  D.forEach((d, i) => {
+    const c = P.fortW(d.cx, d.cz), o = P.fortW(d.cx + d.n.x * 4, d.cz + d.n.z * 4), f = b.fortCourtAt(c.x, c.z) ?? b.fortCourtAt(o.x, o.z) ?? cam.y - 1.7;
+    const iw = P.fortW(d.cx - d.n.x * 0.75, d.cz - d.n.z * 0.75), ow = P.fortW(d.cx + d.n.x * 3.4, d.cz + d.n.z * 3.4), yy = b.FORT_Y + d.yLo;
+    const segHit = []; for (let k = 0; k <= 14; k++) { const q = k / 14, x = iw.x + (ow.x - iw.x) * q, z = iw.z + (ow.z - iw.z) * q; segHit.push(b.palDbg.keepWallNear(x, z, 0.22, yy + 0.4, yy + 1.6, b.FORT_SITE) ? '#' : (b.fortCourtAt(x, z) !== null ? (P.farmCobble(x, z) ? 'c' : '.') : '_')); }
+    log('  path in→out (0.75 in .. 3.4 out):', segHit.join(''), 'door frame at', Math.round(0.75 / 4.15 * 14));
+    log('door', i, 'at', (c.x - b.FORT_X).toFixed(1), (c.z - b.FORT_Z).toFixed(1), 'out', d.out, 'leaf visible', d.leaf && d.leaf.visible, 'W', d.W && d.W.toFixed(2), 'H', d.H && d.H.toFixed(2));
+    if (Math.hypot(c.x - b.FORT_X - 8, c.z - b.FORT_Z - 1.8) < 3) for (const sg of [1, -1]) { const oo = P.fortW(d.cx + d.n.x * 4.5 * sg, d.cz + d.n.z * 4.5 * sg); cam.set(oo.x, f + 1.6, oo.z); b.camera.lookAt(c.x, f + 1.1, c.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('door' + i + (sg > 0 ? 'p' : 'm'), 560, 1.5); }
+    if (false) { cam.set(o.x, f + 1.6, o.z); b.camera.lookAt(c.x, f + 1.1, c.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('door' + i, 560, 1.5); }
+  });
+}
+// INTO THE THRONE ROOM (2026-10-29, the owner: "no one spawned in the thrown room then i completely froze while playing"):
+// XIII with the two at its door dead and him down, through the door as the game does it; every frame's CPU (a frozen
+// frame is seconds), who is in the room, and the long spans. (own profile)
+export async function throneIn({ w, b, log, sleep }) {
+  const { M, u, K, home } = await mnCourt(w, b, sleep);
+  b.settings.devMode = false;
+  for (const k of K) b.hurtMutantTest(k, 999);
+  for (let i = 0; i < 60 * 4; i++) { w.__c13Step(1); b.heal(); }
+  log('before: in XIII', b.state().inC13, 'files waiting', JSON.stringify(b.bootLeft ? b.bootLeft().waiting.slice(0, 12) : '?'));
+  let worst = 0, t0 = performance.now();
+  try { b.startThrone(1); } catch (e) { log('startThrone threw', e.message); }
+  for (let i = 0; i < 60 * 20 && !b.state().inThrone; i++) { const s0 = performance.now(); w.__c13Step(1); worst = Math.max(worst, performance.now() - s0); b.heal(); if (i % 30 === 0) { try { b.startThrone(1); } catch (e) { /* */ } await sleep(30); } }
+  log('in the throne room', b.state().inThrone, 'after', ((performance.now() - t0) / 1000).toFixed(1), 's, worst frame', worst.toFixed(0), 'ms');
+  const ms = []; for (let i = 0; i < 60 * 15; i++) { const s0 = performance.now(); w.__c13Step(1); ms.push(performance.now() - s0); b.heal(); if (i % 60 === 0) await sleep(20); }
+  ms.sort((a, c) => a - c);
+  const D = b.danteU && b.danteU();
+  log('15 s in it: frame median', ms[ms.length >> 1].toFixed(1), 'max', ms[ms.length - 1].toFixed(0), 'ms | dante', !!D, D && !!D.model, D && D.g.visible, D && D.st && D.st.awake, '| units in the room', b.mutantsS().filter((x) => x.st.alive && Math.hypot(x.g.position.x - b.camera.position.x, x.g.position.z - b.camera.position.z) < 40).map((x) => x.kindName || '?').join(','));
+  log('long spans', JSON.stringify((b.lag ? b.lag(100) : []).slice(0, 8)), '| threw', JSON.stringify((b.threw ? b.threw() : []).slice(0, 3)));
+}
+
+export async function minoArchFar(ctx) { ctx.w.__maWalk = 16; ctx.w.__maOff = 0.0; return minoArch(ctx); }
+
+// the gargoyle's rig and maps, listed
+export async function gargRig({ w, b, log, sleep }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
+  const u = b.GARG.units[0], names = [];
+  u.model.traverse((o) => { if (o.isBone) names.push(o.name); });
+  log('bones', names.length, names.join(' '));
+  const mats = new Set(); u.model.traverse((o) => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => mats.add(m)); });
+  for (const m of mats) log('mat', m.name, 'map', m.map && m.map.image && (m.map.image.width + 'x' + m.map.image.height), 'shared with unit1', b.GARG.units[1] && (() => { let sh = false; b.GARG.units[1].model.traverse((o) => { if (o.isMesh && o.material === m) sh = true; }); return sh; })(), 'mapShared', b.GARG.units[1] && (() => { let sh = false; b.GARG.units[1].model.traverse((o) => { if (o.isMesh && o.material.map === m.map) sh = true; }); return sh; })());
+  log('meshes', (() => { const r = []; u.model.traverse((o) => { if (o.isMesh) r.push(o.name + ':' + o.geometry.attributes.position.count + (o.isSkinnedMesh ? 'S' : '')); }); return r.join(' '); })());
+}
+// THE GARGOYLES GIVING (2026-10-29: "start to visually crack more as their health gets lower … make ones wings just break
+// off then he crawls at you very fast to try and bite you"): XIII, the four down off the walls; one beaten a blow at a
+// time with stills of it as it cracks; the one whose wings go, on the ground, coming, biting; and your blows on it.
+export async function gargCrawl({ w, b, log, sleep, shot }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
+  const G = b.GARG, M = b.MINO, cam = b.camera.position, A = b.c13Dbg().arch;
+  M.stage = 'with'; M.ally = true; M.place = '?';
+  b.settings.devMode = false;
+  const home = [b.C13_X + A.ax + A.ux * (A.L + 4.0), b.C13_Z + A.az + A.uz * (A.L + 4.0)];
+  cam.set(home[0], cam.y, home[1]); for (let i = 0; i < 60; i++) { cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); }
+  b.gargTryDoor(); if (b.state().dialogOpen) b.endDialog();
+  for (let i = 0; i < 60 * 6; i++) { cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); b.heal(); }
+  const u = G.units.find((x) => x.st.alive && !['perch', 'wake', 'drop'].includes(x.gp.mode));
+  log('modes', G.units.map((x) => x.gp.mode).join(','), '| chosen', u && u.gp.i, 'hp', u && u.st.hp);
+  if (!u) return;
+  const V = cam.constructor, still = (nm) => { const hb = u.model.getObjectByName('Hip'), P = hb ? hb.getWorldPosition(new V()) : u.g.position.clone(), c0 = cam.clone(), q0 = b.camera.quaternion.clone(); const fl = b.c13CourtAt(P.x, P.z) ?? P.y - 1; let at = null; for (let k = 0; k < 16 && !at; k++) { const a = u.g.rotation.y + k / 16 * Math.PI * 2, x = P.x + Math.sin(a) * 2.6, z = P.z + Math.cos(a) * 2.6; if (b.c13CourtAt(x, z) !== null && !b.keepWallNear(x, z, 0.5, fl + 0.5, fl + 2, b.C13_SITE) && !b.keepHitsWall(x, z, P.x, P.z, fl + 1.0, b.C13_SITE)) at = [x, z]; } if (!at) at = [P.x + 2.2, P.z + 2.2]; b.camera.fov = 60; b.camera.updateProjectionMatrix(); cam.set(at[0], fl + 1.4, at[1]); b.camera.lookAt(P.x, P.y, P.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 480, 1.4); cam.copy(c0); b.camera.quaternion.copy(q0); };
+  for (let k = 0; k < 8 && u.st.alive && !u.gp.crawl; k++) { const bd0 = b.bloodDropsN(); b.hurtMutantTest(u, 3, 0.4); log('  blood drops from that blow', b.bloodDropsN() - bd0); for (let i = 0; i < 8; i++) { w.__c13Step(1); b.heal(); } log('  hit', k, 'hp', u.st.hp, 'cracks', u.gCrack && u.gCrack.drawn, 'crawl', !!u.gp.crawl); if (k === 1 || k === 3) still('crack' + k); }
+  log('wings broken', !!u.gp.crawl, 'wingless is it', G.wingless === u, 'wing bones', (u.gWingGone || []).length);
+  let landedT = null, bites = 0, hurt0 = w.__ggLanded || 0, t = 0, minD = 99;
+  const hp0 = b.state().hp;
+  for (let i = 0; i < 60 * 8; i++) {
+    cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); t += 1 / 60;
+    if (u.gp.cph === 'run' && landedT === null) { landedT = t; still('crawl_land'); }
+    if (u.gp.cph === 'bite' && u.gp.ck < 0.02) bites++;
+    minD = Math.min(minD, Math.hypot(u.g.position.x - cam.x, u.g.position.z - cam.z));
+    if (i === 200) still('crawl_run'); if (i === 320) still('crawl_run2');
+    if (b.state().hp < hp0) { b.heal(); }
+  }
+  log('on the ground after', landedT && landedT.toFixed(2), 's | bites', bites, '| nearest to you', minD.toFixed(2), 'm | its height over the floor', (u.g.position.y - b.c13CourtAt(u.g.position.x, u.g.position.z)).toFixed(2), 'crawlH', u.gp.crawlH && u.gp.crawlH.toFixed(2));
+  // your swing at it, low, as you would
+  b.lookAt(u.g.position.x, u.g.position.y, u.g.position.z);
+  log('your blade reaches it (meleeT span)', JSON.stringify(u.meleeSpan));
+  for (let k = 0; k < 10 && u.st.alive; k++) { b.hurtMutantTest(u, 3, 0.4); for (let i = 0; i < 10; i++) { w.__c13Step(1); b.heal(); } }
+  log('finished', !u.st.alive, 'mode', u.gp.mode);
 }

@@ -3601,3 +3601,10 @@ starting now clears any circle (`u.st.side/sideT/sizing`, all three start sites)
 of the clip's (a leap 0.2–1.7; it was 0–1.6 / 2.4), the side 0.85 (was 0.5). His non-leap swings start at stop + 0.5
 (was 0.8). `dkSee` swings forced back to back vary run to run on the last commit too (`dkS0` 2–3/3, the leap 1–3).
 Still open: his gait crossfades and his turning on the spot skate (`dkSkate`: moving 2.25 m/s planted foot on 1.77).
+
+**A RAGDOLL PART WHOSE NAMED CHILD WAS NEVER BUILT (2026-10-29).** `mutRagdoll`: `q.turns` needed `byName[q.child]`; a rig
+missing that bone (the iron knight: no Spine/Spine1) left the part unturned, and whatever hung off it kept the pose he
+died in over a body lying flat. `q.kidAlt` is the nearest part further down its own bones; `updateMutRagdoll` points
+at it. Game-wide.
+**`u.meleeSpan` = [lo, hi] over its origin** replaces `meleeT`'s 0.06h–0.96h for a creature that is not stood up (the
+wingless gargoyle).

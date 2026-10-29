@@ -1716,3 +1716,55 @@ castle").** `updateMinotaur` made him only once the FIRST castle was built (`for
 builds last: his unit at 12.7 s, 7.5 s after the black lifted (`c13Load`). A restore with him past the gate (not
 'wait'/'killed') in either castle or the throne room places him at once: there at 4.1–4.3 s, before the black lifts
 (4.7–5.5).
+
+**FARMERS IN THE WALLS (2026-10-29, the owner, with a screenshot of a man sunk into the foot of the round tower in the
+first castle's street: "farmers should not be getting stuck in these walls").** Probe `fortStuck` (the street fight,
+60 s, each farmer's body against the wall index and the paving, the longest spell in the stone), `fortDoors` (each door's
+burst path traced: `#` stone, `c` cobble). Three causes:
+- **Two doors give onto a metre and a half of street under the round tower** (door 0 at castle (7.8, 2.0), door 2 at
+  (−4.9, −14.7)); a door's run-out `D.out` was the furthest point out to 3.4 m that was cobble — and the cobble mask runs
+  on under the tower — so a burst charged 3.2 m out INTO its wall and the man stood there. Now it is out from the door
+  (from 0.6 m, past the frame) until the first stone in the way.
+- **`fortClampUnit` moves a body 8 cm a frame at most**, so a chase or a crack held a man in the stone (1.4 s, running at a
+  creature). `fortKeepOut` (the minotaur's `minoLegal` way, for every fort unit): the last spot clear of stone from shin
+  to head (`fortBodyClear`) and on the paving; a move that ends in stone or crosses a face slides along a clear axis or
+  goes back; a man in a door's burst is exempt; one with no clear last spot (out of a door into a wall, a placement) goes
+  to the nearest clear spot within 2.3 m.
+- **`mutSeparate`'s shove ran after the clamp** (a man pushed into the wall in the narrow strip by door 0, 0.72 s): it
+  asks `fortKeepOut` after its push, as it asked the tavern's clamp.
+After: nobody in the stone over a second in three runs; the longest spells are 0.17 s, the door frames as they come out.
+`townHits` 25/25 and 20/20, `farmers` 10 blows on you, as before.
+
+**2026-10-29, the owner's next list (a screenshot of Myles in the arch's doorway).**
+- **"No one spawned in the throne room then I completely froze."** The castles' far-file hold (`bwCastleHeld`, perf.md)
+  held `dante.glb` — in no reach table, so it read as the beach's — and `umbra.glb`: neither of the throne room's two
+  came, and its scene waited on him. Now `bwCastleOwn(url, reach)`: by name, or any reach ≥ 900 + `BEACH_EXT`. Probe
+  `throneIn`: both there, worst frame 46 ms on the way in, 5 ms in it. (The freeze itself was not reproduced headless.)
+- **"Myles gets stuck on this door."** `minoArch` (side-on): inside the passage he counted as past its middle, so on your
+  side, and walked straight at you — into its side — for ever (and his "left behind" rejoin waits until you look
+  away). `minoViaArch`: inside the passage (−0.3 < s < L + 0.3) he makes for its mouth on YOUR side first; and while
+  he is in it or at its mouths, his offset from its middle line is eased out (`minoFollow`). `minoArch` and
+  `minoArchFar` (16 m straight on): through, 3.3 and 4.6 m off you.
+- **The iron knight sat up dead.** His rig's ragdoll has no Spine/Spine1, so his hips' `child` ("Character1_Spine")
+  was never built, `turns` was false and his hips never turned: the particles lay flat (≤ 0.21 m) while the trunk he
+  died in stood over them, head 0.9 m up (`knDeath`, part heights logged bone/particle). `mutRagdoll` now gives such a
+  part `kidAlt`, the nearest part further down its own bones (his Spine2): head 0.21 m.
+- **Myles hit you as an ally.** His blow with no live foe (it had fallen mid-swing) went to `blowLands`, which tests
+  YOU. `minoLandsOn`: an ally's blow with no live foe lands on nobody.
+- **Gargoyle aggro.** `gp.aggro`, set in `hurtMutantAt`: hurt by you → you; by him → him; `gargTargetOf` asks it
+  first. (The fight is harder for it: `gargFight`'s player, who strikes every one in reach, had all four on him.)
+- **The sketch.** "Please take this."; the water ring gone; his arm aimed at a place between his chest and your eyes
+  (`minoOfferAim`, ≤ 1.1 rad on the upper arm over the clip, the elbow eased open) — and his right arm added to
+  `minoSetDownPose`'s bones, or the aim would stack frame on frame.
+- **No gargoyle blood, at all.** `bleedMutant` (a blow's own bleed: 8 drops a blow) and `addSpurt` were outside the
+  `noBlood` gate, and `mutBleedOut`, `bleedProc`, `blastApart`, `burstHead`, `mutSever` now return for `stone`.
+  `gargCrawl` probe: 0 drops a blow (8 before). The red that shows in its stills is YOURS, from its bites.
+- **Cracking.** `gargCrackStep` (from `hurtMutantAt`): its map copied to a 512 canvas of its own at the first blow, and
+  six steps of forked cracks drawn as its health goes (0 → 3 by 14 of 32); grit at every blow. `gargMend` puts the
+  maps back for a fight begun again.
+- **The one whose wings break.** The first below 45% (`GARG.wingless`): `gargBreakWings` bakes its arms (they ARE the
+  wings — upper arm to fingers; at the elbow, the upper arm's skin stayed on its back as two flaps) to stone pieces of
+  their own (`gargBake(u, gargWingPart)` → `stoneBody`), collapses `Arm_*` to nothing, and it falls; then
+  `gargCrawlStep`: over on its front (`GARG_CRAWL_PITCH` 1.1, `gGlide` held), its ride height measured off its feet,
+  jaw and body (not its tail), at you at 5.4 m/s on scuttling legs, a hop-bite inside 1.8 m (`gargStrikes` 'head').
+  `u.meleeSpan` puts your blade's test from the stone to a metre up. Probe: down in 0.3 s, 10–12 bites in 8 s, finished.
