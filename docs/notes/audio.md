@@ -771,3 +771,7 @@ What could still leave him fighting in silence, closed:
 - The wreck's theme may start up to 25 s late (was 6) while you are still within reach; after a fast checkpoint load the
   file could miss its reveal and never play. It and the whale's leaving song now log `musicNote`.
 - `tools/musictest.js` `samuraiBack`: the sword, out of the dojo mid-fight, back in — the score has to come back.
+- **Myles's song after he dies (2026-10-29, the owner: "make the music play longer after he dies but fade slowly").**
+  `minoSongFade(sec, hold)`: called with (20, 12) when he is dead — twelve seconds on at its level, then twenty going out
+  on a `(1 - x)²` curve (`setValueCurveAtTime`), not the exponential, which is most of the way gone in its first fifth.
+  The file is 55.8 s from the first sight of him falling, so a long talk with him lets it end on its own first.

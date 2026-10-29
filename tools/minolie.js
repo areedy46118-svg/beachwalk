@@ -5,6 +5,7 @@
  *                               belly, the right hand and forearm on the stone
  *   __lieSolve(pose, ms, vars)  coordinate descent from `pose` for `ms` (keeps going from `__lieBest` across calls)
  *   (a pose may be a frame of one of his clips instead: { clip: 'mnFall', f: 0.6 })
+ *   __lieRest(pose, true)       the same with the left arm AT REST on the stone, mirrored off the right (`__lieRestVars`)
  *   __lieShot(pose, angs)       renders of the pose in the studio, swords hidden: [jpeg base64]
  * A pose is `poseRig` keys on his idle's first frame (`u.minoAuthor.build`). The arm-in-body test casts a ray straight
  * up from each left-arm vertex through every triangle of the rest of him: odd crossings = inside (he lies on his back,
@@ -74,6 +75,27 @@
     const r3 = (x) => +x.toFixed(3);
     return { s: +s.toFixed(4), under: r3(under), back: r3(back), pel: r3(pel), sh: r3(sh), hd: r3(hd), pc, pd: r3(pd), bd: r3(bd), hr: r3(hr), fr: r3(fr), hl: r3(hl), lo: r3(low(all)) };
   };
+  /* AT REST (2026-10-29, the owner: "just make it normal he doesnt have to hold his stomach"): the left arm down on the
+   * stone beside him as the right is — that hand and forearm on the paving, no vertex of the arm in him, and the hand
+   * where the right one is, mirrored across his spine (in his own frame) */
+  const spine = of(/^(Spine\d|Chest)$/), lv = new V();
+  const loc = (S) => { const c = [0, 0, 0]; for (const i of S) { lv.set(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]); u.g.worldToLocal(lv); c[0] += lv.x; c[1] += lv.y; c[2] += lv.z; } return c.map((x) => x / S.length); };
+  const foreL = of(/^ForearmL$/);
+  window.__lieRest = (Pz, detail) => {
+    poseP(Pz);
+    const y0 = u.g.position.y; let under = 0;
+    for (let i = 0; i < n; i++) { const y = pos[i * 3 + 1] - y0; if (y < -0.004) under = Math.max(under, -y); }
+    let pc = 0, pd = 0; for (const i of armL) { const d = depthIn(i); if (d > 0.005) { pc++; pd = Math.max(pd, d); } }
+    const hl = low(palmL), fl = low(foreL), hr = low(handR), fr = low(foreR);
+    const L = loc(palmL), R = loc(handR), mid = loc(spine)[0];
+    const md = Math.hypot(L[0] - (2 * mid - R[0]), L[2] - R[2]);
+    const s = under * under * 4000 + (under > 0 ? 0.2 : 0) + pc * 0.03 + pd * pd * 3000
+      + Math.max(0, hl - 0.03) ** 2 * 800 + Math.max(0, fl - 0.08) ** 2 * 400 + md * md * 20;
+    if (!detail) return s;
+    const r3 = (x) => +x.toFixed(3);
+    return { s: +s.toFixed(4), under: r3(under), pc, pd: r3(pd), hl: r3(hl), fl: r3(fl), hr: r3(hr), fr: r3(fr), md: r3(md), lo: r3(low(all)) };
+  };
+  window.__lieRestVars = [['armL', 'right', 0.15], ['armL', 'fwd', 0.15], ['armL', 'up', 0.15], ['foreL', 'right', 0.15], ['foreL', 'up', 0.15]];
   const VARS = [['hip', 'right', 0.1], ['hip', 'fwd', 0.1], ['hipY', null, 0.05], ['hipF', null, 0.05], ['waist', 'right', 0.1], ['chest', 'right', 0.1],
     ['head', 'right', 0.15], ['head', 'up', 0.15], ['armL', 'right', 0.15], ['armL', 'fwd', 0.15], ['armL', 'up', 0.15], ['foreL', 'right', 0.15], ['foreL', 'up', 0.15],
     ['armR', 'right', 0.15], ['armR', 'fwd', 0.15], ['armR', 'up', 0.15], ['foreR', 'right', 0.15], ['thighL', 'right', 0.1], ['thighR', 'right', 0.1]];
@@ -104,7 +126,7 @@
     const C = u.minoAuthor.J.waist.getWorldPosition(new V()), fov0 = b.camera.fov; b.camera.fov = 40; b.camera.updateProjectionMatrix();
     for (const [ang, d, hy] of angs) {
       const yy = u.g.rotation.y + ang;
-      b.camera.position.set(C.x + Math.sin(yy) * d, u.g.position.y + hy, C.z + Math.cos(yy) * d); b.lookAt(C.x, u.g.position.y + 0.2, C.z); b.camera.updateMatrixWorld(true);
+      b.camera.position.set(C.x + Math.sin(yy) * d, u.g.position.y + hy, C.z + Math.cos(yy) * d); b.camera.lookAt(C.x, u.g.position.y + 0.2, C.z); b.camera.updateMatrixWorld(true);   // (`b.lookAt` aims the player's view, not this camera)
       b.renderer.render(ST.scene(u), b.camera);
       const c = document.createElement('canvas'); c.width = W; c.height = Math.round(W * src.height / src.width); c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
       out.push(c.toDataURL('image/jpeg', 0.85).split(',')[1]);

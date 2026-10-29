@@ -1442,3 +1442,13 @@ Measured (loadtime.sh): Start ready on a first load 16.4 → 11.1 s; module 2.4 
 What is left is mostly the uploads themselves (`texSubImage2D` ~1.7 s per load) — the textures, which are the game.
 Frame times (probes `tour`, 1080p synced, this Mac): 3.4–7.9 ms medians everywhere; the busiest draw lists are the
 tavern (~470: its breakable furniture, kept apart on purpose — the bake notes above) and the fort (~450).
+
+## The castles hold the far rest (2026-10-29, the owner: "make the load times in the castle as fast as possible and
+eliminate any lag")
+Probe `c13Load` (a checkpoint in XIII reloaded as a death, twice; the black, him, the files, then ten seconds of real
+frames and `__bw.lag()`): page boot ~2.1 s, black lifted 4.7–5.5 s. After it, a 330 ms freeze three seconds in — the
+lighthouse island's file parsed in one frame (155 ms) plus the frame round it — and 70–120 ms others. In the castles
+and the throne room (`bwInCastle`) a far file that is not the section's own (`BW_CASTLE_FILES`) is set aside at its
+turn on the far chain (`bwCastleHeld`, asked when it would parse, not when it arrived: a checkpoint's files are in
+before the restore puts you in a castle) and fed back in once you are out. After: no frame over 50 ms in one run
+(worst 46), two of ~70 in the other (the first castle's own `castle.glb` and its wall warm, allowed).

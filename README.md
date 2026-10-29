@@ -1202,6 +1202,9 @@ third cache, on the trader's table and in the crate on the keep's pier
 "Memory of grammy orc" (`assets/grammy-orc.jpg`) is the owner's own painting,
 aged into a crumpled pocket photograph in the game at load.
 
+"Sketch of Myles Jr." (`assets/myles-jr.jpg`, 640 × 512, 47 KB) is a pencil drawing supplied by the owner, aged into a
+folded, foxed sheet of old paper in the game at load (nothing written on it).
+
 The intro — `assets/intro-waves.mp4` (wave footage) and `assets/beachwalk-intro.m4a`
 (the song) — was supplied by the owner.
 

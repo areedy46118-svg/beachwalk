@@ -2211,6 +2211,11 @@ export async function minoDown({ w, b, log, sleep, shot }) {
   for (let i = 0; i < 60 * 10 && M.stage !== 'down'; i++) { b.camera.position.x = home[0]; b.camera.position.z = home[1]; w.__c13Step(1); }
   for (let i = 0; i < 60 * 12; i++) { b.camera.position.x = home[0]; b.camera.position.z = home[1]; w.__c13Step(1); }   // (his fall is ten seconds now)
   log('lookK', M.lookK, 'base', !!M.base, 'fall', u.clips.mnFall.getClip().duration, 'act', u.clips.mnFall.isRunning(), u.clips.mnFall.enabled, u.clips.mnFall.getEffectiveWeight());
+  log('yaw', u.g.rotation.y.toFixed(3), 'clear', b.minoLieClear(u.g.position.x, u.g.position.z, u.g.rotation.y));
+  { const F = b.c13Thrive() && b.c13Thrive().fountain, g = u.g.position;
+    log('fountain', F && [F.x, F.z].map((q) => +q.toFixed(2)).join(','), 'world', F && [b.C13_X + F.x, b.C13_Z + F.z].map((q) => +q.toFixed(2)).join(','), 'from him', F && Math.hypot(b.C13_X + F.x - g.x, b.C13_Z + F.z - g.z).toFixed(2),
+      'overlaps', b.c13Overlaps ? b.c13Overlaps(g.x - b.C13_X, g.z - b.C13_Z, 0.2) : '?', 'solids', b.c13Solids.filter((q) => q.r !== undefined).map((q) => [q.x, q.z, q.r].map((v) => +v.toFixed(1)).join('/')).join(' '));
+    const yy = []; for (let k = 0; k < 24; k++) yy.push(k + ':' + (b.minoLieClear(g.x, g.z, k / 24 * Math.PI * 2) ? 'Y' : 'n')); log('clear by yaw', yy.join(' ')); }
   log('stage', M.stage, 't', M.t.toFixed(1), 'at', JSON.stringify(u.g.position.toArray().map((v) => +v.toFixed(2))), 'floor there', b.c13CourtAt(u.g.position.x, u.g.position.z));
   // every vertex of his body against the floor under it
   let body = null; u.model.traverse((o) => { if (o.isSkinnedMesh && o.geometry.attributes.position.count === 3572) body = o; });
@@ -2254,6 +2259,14 @@ export async function minoDown({ w, b, log, sleep, shot }) {
     if (f === null || b.gargWhy(x, f + 1, z).wall6) continue;
     cam.set(x, f + 1.7, z); b.camera.fov = 60; b.camera.updateProjectionMatrix(); b.camera.lookAt(C.x, C.y, C.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('mndown' + k, 640, 1.2);
   }
+  // (from over him, straight down and from his feet: the arms, whatever is round him)
+  { const vs = []; u.model.traverse((o) => { if (o.isMesh) vs.push(o.name + ':' + o.visible + '/' + (o.material && o.material.visible) + '/' + o.frustumCulled + '/' + (o.layers && o.layers.mask)); });
+    let pv = u.g, chain = []; while (pv) { chain.push((pv.name || pv.type) + ':' + pv.visible); pv = pv.parent; }
+    log('meshes', vs.join(' '), '| chain', chain.join(' < '), '| cam layers', b.camera.layers.mask, 'near', b.camera.near); }
+  log('visible', u.g.visible, u.model.visible, 'C', C.toArray().map((q) => +q.toFixed(2)).join(','), 'g', u.g.position.toArray().map((q) => +q.toFixed(2)).join(','));
+  { const y = u.g.rotation.y; b.camera.fov = 60; b.camera.updateProjectionMatrix();
+    for (const [nm, dx, dy, dz] of [['mnover', 0.01, 3.2, 0], ['mnfeet', Math.sin(y) * 2.4, 1.6, Math.cos(y) * 2.4], ['mnside', Math.cos(y) * 2.2, 1.5, -Math.sin(y) * 2.2], ['mnside2', -Math.cos(y) * 2.2, 1.5, Math.sin(y) * 2.2]]) {
+      cam.set(C.x + dx, C.y + dy, C.z + dz); b.camera.lookAt(C.x, C.y, C.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 640, 1.4); } }
   b.camera.fov = 105; b.camera.updateProjectionMatrix();
 }
 // THE TWO BEFORE THE THRONE ROOM, FOUGHT (2026-10-29, the owner: "make the two knights before the throne room actually
@@ -2471,12 +2484,24 @@ export async function gargDoor({ w, b, log, sleep, shot }) {
   choose(0); D.click();
   log('  said:', JSON.stringify(txt())); D.click();
   log('box shown', D.classList.contains('show'));
-  let shotTurn = false;
-  for (let k = 0; k < 40 && txt() !== 'oh'; k++) { step(15); if (k % 2 === 1) log('  t', ((k + 1) * 0.25).toFixed(2), rel(), '| him to it', facing(), 'deg'); if (!shotTurn && Math.abs(+facing()) < 100 && Math.abs(+facing()) > 50) { shotTurn = true; b.camera.updateMatrixWorld(true); shot('door_turning', 900, 1.2); } }
-  step(20); log('said:', JSON.stringify(txt()), 'box', D.classList.contains('show'), '| him to it', facing(), 'deg');
-  b.camera.updateMatrixWorld(true); shot('door_oh', 900, 1.2);
-  D.click(); D.click();
-  log('after the oh: dialog', b.state().dialogOpen, 'phase', G.phase, 'modes', G.units.map((x) => x.gp.mode).join(','));
+  // the double take: his body's yaw, where his head points against you and against it, by the stage, every 0.1 s
+  const H = u.bones.head, F = H.userData.mnFront, hp = new b.THREE.Vector3(), hq = new b.THREE.Quaternion(), hf = new b.THREE.Vector3(), to = new b.THREE.Vector3();
+  const headOff = (x, y, z) => { u.g.updateMatrixWorld(true); H.getWorldPosition(hp); H.getWorldQuaternion(hq); hf.copy(F).applyQuaternion(hq); to.set(x, y, z).sub(hp).normalize(); return +(hf.angleTo(to) * 57.3).toFixed(0); };
+  const shots = {}; let lastSt = '', yaw0 = null, tB = 0, tEye = 0, tRound = 0, t = 0, yawSwing = 0, minC = 999;
+  for (let k = 0; k < 160 && b.state().dialogOpen; k++) {
+    step(6); t += 0.1;
+    const Sc = S(), stg = Sc && Sc.stage, gp = gu() && gu().g.position;
+    const toYou = headOff(cam.x, cam.y - 0.15, cam.z), toIt = gp ? headOff(gp.x, gp.y + 1.0, gp.z) : -1;
+    if (stg !== lastSt) { log('  stage', stg, 'at', t.toFixed(1), 's | body to it', facing(), 'deg | head to you', toYou, 'to it', toIt); lastSt = stg; if (stg === 'back') { yaw0 = u.g.rotation.y; tB = t; } }
+    if (stg === 'back' || stg === 'away') { yawSwing = Math.max(yawSwing, Math.abs(u.g.rotation.y - yaw0) * 57.3); minC = Math.min(minC, toYou); }
+    if (stg === 'back' && Sc.eye && !tEye) tEye = t;
+    if (stg === 'turn' && !shots.turn && Math.abs(+facing()) < 100) { shots.turn = 1; b.camera.updateMatrixWorld(true); shot('dt_turning', 900, 1.2); }
+    if (stg === 'back' && Sc.eye && !shots.eye) { shots.eye = 1; b.camera.updateMatrixWorld(true); shot('dt_eye', 900, 1.2); }
+    if (stg === 'away' && Sc.backK < 0.05 && !shots.away) { shots.away = 1; tRound = t; b.camera.updateMatrixWorld(true); shot('dt_away', 900, 1.2); }
+    if (k % 3 === 0 && (stg === 'back' || stg === 'away')) log('   ', t.toFixed(1), stg, 'backK', Sc.backK.toFixed(2), 'head to you', toYou, 'to it', toIt);
+  }
+  log('double take: eyes on you', (tEye - tB).toFixed(1), 's after it began, back round', (tRound - tB).toFixed(1), 's | his body turned', yawSwing.toFixed(0), 'deg in it | head closest to you', minC, 'deg | dialog', b.state().dialogOpen);
+  log('after: phase', G.phase, 'modes', G.units.map((x) => x.gp.mode).join(','));
   step(180);
   log('3 s on: modes', G.units.map((x) => x.gp.mode).join(','), 'his foe', u.st.foe && u.st.foe.kindName);
 }
@@ -2543,3 +2568,394 @@ export async function fortPerf({ w, b, log, sleep }) {
   log('spikes', tags.slice(0, 14).join('  '));
 }
 export async function fortPerfNo(ctx) { ctx.w.__noMino = true; return fortPerf(ctx); }
+
+// HIS LEFT ARM AT REST, SOLVED (2026-10-29, the owner: "fix the minotaurs arm when hes laying down just make it normal he
+// doesnt have to hold his stomach"): on the studio minotaur, the lying pose with only the left arm free, from two mirrored
+// guesses, against `__lieRest` (tools/minolie.js); then the frames of his fall and his death checked for the arm in him
+// or off the stone, and stills. (its own profile)
+export async function minoArm({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/minotaur.js'); log('spawn', JSON.stringify(await w.__mnSpawn())); await ev('/tools/minolie.js');
+  const L = b.MINO_LIE, out = (k, a) => { for (let i = 0; i < a.length; i++) { const d = a[i], n = Math.ceil(d.length / 8000); for (let j = 0; j < n; j++) console.log('[PBIMG]', k + i, j + '/' + n, d.slice(j * 8000, (j + 1) * 8000)); } };
+  log('now', JSON.stringify(w.__lieRest(L, true)), '| old score', JSON.stringify(w.__lieScore(L, true)));
+  out('lie_old', w.__lieShot(L));
+  let best = null;
+  if (w.__lieRest(L, true).s < 0.05) best = { best: L, d: w.__lieRest(L, true) };   // (the game's pose already rests: no solve)
+  else for (const g of [{ right: 0.191, fwd: 0.285, up: 0.871 }, { right: 0.191, fwd: -0.285, up: -0.871 }, { right: 0.0, fwd: 0, up: 0 }]) {
+    const st = Object.assign({}, L, { armL: g, foreL: { right: 0, up: 0 } });
+    w.__lieSteps = null;
+    const r = w.__lieSolve(st, 25000, w.__lieRestVars, w.__lieRest);
+    log('from', JSON.stringify(g), '->', JSON.stringify(r.d), JSON.stringify({ armL: r.best.armL, foreL: r.best.foreL }));
+    if (!best || r.d.s < best.d.s) best = r;
+  }
+  log('BEST', JSON.stringify({ armL: best.best.armL, foreL: best.best.foreL }), JSON.stringify(best.d));
+  // (his last breath lifts the chest, and the arm hanging off it, into the stone: the arm turned back onto it, key by key)
+  for (const [c, h, up] of [[0.18, 0.2, -0.791], [0.14, 0.14, -0.897]]) {
+    const lk = Object.assign({}, L, { chest: { right: L.chest.right + c }, head: { right: L.head.right + h, up: L.head.up }, armR: { right: 0.111, fwd: -0.365, up } });
+    log('lift', c, 'as is', JSON.stringify(w.__lieRest(lk, true)));
+    w.__lieSteps = null; const r = w.__lieSolve(lk, 15000, w.__lieRestVars.slice(0, 3), w.__lieRest);
+    log('lift', c, '->', JSON.stringify(r.d), JSON.stringify(r.best.armL));
+  }
+  // his clips as built now: every frame of the fall's last part and the death, the left arm in him / its hand off the stone
+  const fr = [];
+  for (const [c, a, z] of (w.__armClips || [['mnFall', 0.7, 1], ['mnDie', 0, 1]])) for (let f = a; f <= z + 1e-6; f += 0.05) { const d = w.__lieRest({ clip: c, f }, true); fr.push(c + '@' + f.toFixed(2) + ' pc' + d.pc + ' pd' + d.pd + ' hl' + d.hl + ' under' + d.under); }
+  log('frames', fr.join(' | '));
+}
+// THE COURT FIGHT, FOR SLIDING AND LAG (2026-10-29, the owner: "improve the combat … make enemies slide around and lag
+// less"): the two knights and him, you fighting the one not on him (the knDuel driver). Per creature and per state
+// (its swing, a dodge, moving, standing): how fast its PLANTED foot travels over the floor (a foot on the stone should
+// not move; >0.6 m/s is a skate), and the CPU of each whole frame of the castle's tick. (its own profile)
+export async function knSkate({ w, b, log, sleep }) {
+  const { M, u, K, home } = await mnCourt(w, b, sleep);
+  b.settings.devMode = false;
+  const cam = b.camera.position, V = cam.constructor, nm = (k) => (k === K[0] ? 'MAN' : k === K[1] ? 'IRON' : 'MINO');
+  const feet = (x) => { const bs = []; x.model.traverse((o) => { if (o.isBone && /toe/i.test(o.name) && !/^ik_/.test(o.name)) bs.push(o); });
+    if (bs.length < 2) x.model.traverse((o) => { if (o.isBone && /(foot|feet)/i.test(o.name) && !/toe|^ik_/i.test(o.name)) bs.push(o); });
+    const L = bs.find((o) => /(left|_l\b|L$|\.L)/i.test(o.name)), R = bs.find((o) => /(right|_r\b|R$|\.R)/i.test(o.name)); return [L || bs[0], R || bs[1]]; };
+  const all = [...K, u], F = new Map(all.map((x) => [x, { f: feet(x), p: [new V(), new V()], q: [new V(), new V()], low: 9, b0: x.g.position.clone(), first: true }]));
+  log('feet', all.map((x) => nm(x) + ':' + F.get(x).f.map((o) => o && o.name).join('/')).join(' '));
+  for (const k of K) { k.st.awake = true; k.st.roar = 0.3; }
+  const S = {}, ms = []; let t = 0, cd = 0, hp0 = b.state().hp;
+  for (let f = 0; f < 60 * 70 && K.some((k) => k.st.alive); f++) {
+    t += 1 / 60; cd -= 1 / 60;
+    const tgt = K.filter((k) => k.st.alive).sort((a, c) => (a.knOnMino ? 1 : 0) - (c.knOnMino ? 1 : 0))[0];
+    if (tgt) {
+      const P = tgt.g.position, d = Math.hypot(P.x - cam.x, P.z - cam.z);
+      if (d > 2.6) { const nx = cam.x + (P.x - cam.x) / d * 3.2 / 60, nz = cam.z + (P.z - cam.z) / d * 3.2 / 60; if (b.c13CourtAt(nx, nz) !== null) { cam.x = nx; cam.z = nz; } }
+      b.lookAt(P.x, cam.y - 0.1, P.z);
+      if (cd <= 0 && d < 2.9 && tgt.st.atk < 0 && !(tgt.st.evade > 0)) { b.hurtMutantTest(tgt, 1, 0.3); cd = 1.0; }
+    }
+    const snap = all.map((x) => x.st.atk >= 0 ? x.st.swing + '@' + x.st.atk.toFixed(2) : x.st.evade > 0 ? 'dodge' : x.st.stun > 0 ? 'stun' : '-').join(',');
+    const cx = cam.x, cz = cam.z, t0 = performance.now(); w.__c13Step(1); const dms = performance.now() - t0; ms.push(dms); cam.x = cx; cam.z = cz;
+    if (dms > 7) (w.__spk = w.__spk || []).push([+dms.toFixed(1), +t.toFixed(2), snap, all.map((x) => x.st.atk >= 0 ? x.st.swing + '@' + x.st.atk.toFixed(2) : x.st.evade > 0 ? 'dodge' : x.st.stun > 0 ? 'stun' : '-').join(','), b.state().hp]);
+    b.heal();
+    for (const x of all) {
+      if (!x.st.alive || !x.model || x.g.visible === false) continue;
+      const D = F.get(x); if (!D.f[0] || !D.f[1]) continue;
+      x.model.updateMatrixWorld(true); D.f[0].getWorldPosition(D.p[0]); D.f[1].getWorldPosition(D.p[1]);
+      const lo = D.p[0].y < D.p[1].y ? 0 : 1, hy = D.p[lo].y - x.g.position.y; D.low = Math.min(D.low, hy);
+      if (!D.first) {
+        const sp = Math.hypot(D.p[lo].x - D.q[lo].x, D.p[lo].z - D.q[lo].z) * 60, vy = Math.abs(D.p[lo].y - D.q[lo].y) * 60;
+        const bm = Math.hypot(x.g.position.x - D.b0.x, x.g.position.z - D.b0.z) * 60;
+        const st = x.st.atk >= 0 ? 'swing ' + x.st.swing : x.st.evade > 0 ? 'dodge' : x.st.stun > 0 ? 'stun' : bm > 0.2 ? 'moving ' + (x.cur ? x.cur.getClip().name : '-') : 'standing';
+        const c = x.cur, cn = c ? c.getClip().name + '@' + c.timeScale.toFixed(1) + (c.paused ? 'P' : '') : '-', yr = Math.abs(x.g.rotation.y - (D.yaw ?? x.g.rotation.y)) * 60; D.yaw = x.g.rotation.y;
+        const key0 = nm(x) + ' ' + st;
+        if (/^moving/.test(st) && c && bm > 0.5) { const T = x.clipTravel && x.clipTravel[c.getClip().name], yw = x.g.rotation.y, vx = (x.g.position.x - D.b0.x), vz = (x.g.position.z - D.b0.z);
+          const lx = vx * Math.cos(yw) - vz * Math.sin(yw), lz = vx * Math.sin(yw) + vz * Math.cos(yw), e = T && T.length > 1 ? T[T.length - 1] : null;
+          const dk = '#' + key0; const q = S[dk] || (S[dk] = { n: 0, agree: 0, tr: e ? e.map((v) => +v.toFixed(2)).join(',') : 'none', lx: 0, lz: 0 }); q.n++; q.lx += lx * 60; q.lz += lz * 60;
+          if (e) { const along = Math.abs(e[0]) > Math.abs(e[1]) ? Math.sign(e[0]) * Math.sign(lx) : Math.sign(e[1]) * Math.sign(lz); if (along * Math.sign(c.timeScale) > 0) q.agree++; } } (S['@' + key0] = S['@' + key0] || {})[cn] = (S['@' + key0][cn] || 0) + 1;
+        if (hy < D.low + 0.06 && vy < 0.4) for (const key of [key0, nm(x) + ' ALL']) { const s = S[key] || (S[key] = { n: 0, sum: 0, bad: 0, body: 0, yr: 0 }); s.n++; s.sum += sp; if (sp > 0.6) s.bad++; s.body += bm; s.yr += yr; }
+      }
+      D.first = false; D.q[0].copy(D.p[0]); D.q[1].copy(D.p[1]); D.b0.copy(x.g.position);
+    }
+  }
+  log('spikes (ms, t, before, after)', JSON.stringify((w.__spk || []).sort((a, c) => c[0] - a[0]).slice(0, 14)));
+  ms.sort((a, c) => a - c);
+  log('frame CPU ms: median', ms[ms.length >> 1].toFixed(2), 'p95', ms[Math.floor(ms.length * 0.95)].toFixed(2), 'p99', ms[Math.floor(ms.length * 0.99)].toFixed(2), 'max', ms[ms.length - 1].toFixed(1), 'frames', ms.length, '| t', t.toFixed(0), 's, knights alive', K.filter((k) => k.st.alive).length);
+  for (const [k, s] of Object.entries(S).sort((a, c) => a[0] < c[0] ? -1 : 1)) if (k[0] !== '@' && k[0] !== '#' && s.n > 20) log(k.padEnd(22), 'n', String(s.n).padStart(5), 'planted foot', (s.sum / s.n).toFixed(2), 'm/s, skating', Math.round(100 * s.bad / s.n) + '%', 'body', (s.body / s.n).toFixed(2), 'm/s, turning', (s.yr / s.n).toFixed(2), 'rad/s | clips', JSON.stringify(Object.entries(S['@' + k] || {}).sort((a, c) => c[1] - a[1]).slice(0, 4)));
+  for (const [k, q] of Object.entries(S)) if (k[0] === '#' && q.n > 10) log('direction', k.slice(1).padEnd(20), 'n', q.n, 'clip travel (side,fwd)', q.tr, '| body local (side,fwd) m/s', (q.lx / q.n).toFixed(2), (q.lz / q.n).toFixed(2), '| feet go the body\'s way', Math.round(100 * q.agree / q.n) + '%');
+  for (const x of all) log(nm(x), 'clipSpeed', JSON.stringify(Object.fromEntries(Object.entries(x.clipSpeed || {}).filter(([k]) => /Str|Walk|Run|walk|run|str/.test(k)).map(([k, v]) => [k, +v.toFixed(2)]))), 'gaitMax', x.kind.gaitMax, 'velGait', !!x.kind.velGait, 'measured', !!x._gaitMeasured);
+  log('MAN', JSON.stringify({ alive: K[0].st.alive, awake: K[0].st.awake, vis: K[0].g.visible, foe: K[0].st.foe ? 'unit' : 'you', hp: K[0].st.hp, low: F.get(K[0]).low.toFixed(2), states: Object.keys(S).filter((k) => k.startsWith('@MAN')).map((k) => k + ':' + Object.values(S[k]).reduce((a, c) => a + c, 0)) }));
+}
+// EVERY KNIGHT BLOW, CAN YOU SEE IT COMING (2026-10-29, the owner: "any enemy swings that look bad and you can barely see
+// to block take them out"): each knight alone in the court with you standing at its stand-off looking at it; each of its
+// swings forced three times. Its wind-up, whether it landed, and over the last 0.4 s before contact how much of the time
+// the weapon (the blade's tip, or the foot for a kick) was on your screen, and where it was at contact. (its own profile)
+export async function knSee({ w, b, log, sleep }) {
+  const { M, u, K } = await mnCourt(w, b, sleep);
+  b.settings.devMode = false;
+  u.st.awake = false; u.g.visible = false; u.g.position.x += 80; M.stage = 'wait';
+  const cam = b.camera.position, V = cam.constructor, v = new V();
+  for (const k of K) { k.st.awake = false; k.g.position.x += 0; }
+  for (const k of K) {
+    const other = K.find((x) => x !== k), o0 = other.g.position.clone(); other.g.position.x += 60; other.st.awake = false;
+    k.st.awake = true; k.st.roar = 0;
+    const keys = Object.keys(k.kind.use).filter((x) => k.atk[x]), tip = k.bones && k.bones.tip;
+    let foot = null; k.model.traverse((o) => { if (!foot && o.isBone && /RightToeBase|foot_r$/i.test(o.name) && !/^ik_/.test(o.name)) foot = o; });
+    for (const key of keys) {
+      const A = k.atk[key], kick = A.limbs && A.limbs.some((i) => i >= 2), P = k.kind.lungeStop || 1.6;
+      const res = [];
+      for (let rep = 0; rep < 3; rep++) {
+        for (let i = 0; i < 300 && k.st.atk >= 0; i++) { w.__c13Step(1); b.heal(); }
+        const D = Math.max(1.4, (A.stop || 1.5) + 0.1), Q = k.g.position, yw = k.g.rotation.y, home = [Q.x + Math.sin(yw) * D, Q.z + Math.cos(yw) * D];
+        const put = () => { cam.set(home[0], cam.y, home[1]); b.lookAt(Q.x, cam.y - 0.1, Q.z); };
+        for (let i = 0; i < 10; i++) { put(); w.__c13Step(1); b.heal(); }
+        k.st.forceSwing = key; k.st.cool = 0;
+        let started = false, hp0 = b.state().hp, landed = false, win = [], atContact = null, t = 0;
+        for (let i = 0; i < 400; i++) {
+          put(); w.__c13Step(1); t += 1 / 60;
+          const live = k.st.atk >= 0 && k.st.swing === key; if (live) started = true; else if (started) break;
+          if (!live) continue;
+          const bone = kick ? foot : tip; if (!bone) break;
+          bone.getWorldPosition(v); v.project(b.camera);
+          const on = v.z < 1 && Math.abs(v.x) < 0.95 && Math.abs(v.y) < 0.95;
+          if (k.st.atk > A.wind - 0.4 && k.st.atk < A.wind) win.push(on ? 1 : 0);
+          if (!atContact && k.st.atk >= A.wind) atContact = [+v.x.toFixed(2), +v.y.toFixed(2)];
+          if (b.state().hp < hp0) landed = true;
+          b.heal(); hp0 = b.state().hp;
+        }
+        res.push({ landed, seen: win.length ? win.reduce((a, c) => a + c, 0) / win.length : -1, at: atContact });
+      }
+      log((k === K[0] ? 'MAN ' : 'IRON') + ' ' + key.padEnd(9), 'clip', A.clip, kick ? '(KICK)' : '', 'wind', A.wind.toFixed(2), 's strike', A.strike.toFixed(2),
+        '| landed', res.filter((r) => r.landed).length + '/3', '| on screen before contact', res.map((r) => Math.round(r.seen * 100) + '%').join(' '), '| at contact', res.map((r) => JSON.stringify(r.at)).join(' '));
+    }
+    k.st.awake = false; other.g.position.copy(o0);
+  }
+}
+// THE DARK KNIGHT'S EVERY CONTACT, CAN YOU SEE IT COMING (2026-10-29, the `knSee` question asked of him): you at each
+// swing's stop facing him; each swing 3 times. For each contact, over the 0.4 s before it: how much of the time ANY of his
+// blade (seven points hilt to tip) was on your screen, and how much of the time its middle was. (its own profile)
+export async function dkSee({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
+  for (const f of b.farmUnitsS()) f.st.awake = false;
+  b.dkTurn(u, true);
+  const C = b.camera.position, V = C.constructor, P = u.g.position, tip = u.bones.tip, hilt = u.model.getObjectByName('kn_hilt'), H = new V(), T = new V(), q = new V();
+  const on = (x) => { q.copy(x).project(b.camera); return q.z < 1 && Math.abs(q.x) < 0.97 && Math.abs(q.y) < 0.97; };
+  for (const k of Object.keys(u.kind.use).filter((k) => u.atk[k])) {
+    const A = u.atk[k], cts = A.moreT ? [A.wind, ...A.moreT] : [A.wind], acc = cts.map(() => ({ any: 0, mid: 0, n: 0 }));
+    let landed = 0;
+    for (let r = 0; r < 3; r++) {
+      for (let i = 0; i < 400 && u.st.atk >= 0; i++) { w.__adv(1); b.heal(); }
+      const yaw = u.g.rotation.y, d0 = (A.stop || 2) + 0.4, home = [P.x + Math.sin(yaw) * d0, P.z + Math.cos(yaw) * d0];
+      C.set(home[0], C.y, home[1]);
+      for (let i = 0; i < 20; i++) { b.lookAt(P.x, C.y - 0.15, P.z); w.__adv(1); C.x = home[0]; C.z = home[1]; b.heal(); for (const g of b.farmUnitsS()) g.st.awake = false; }
+      u.st.forceSwing = k; u.st.cool = 0;
+      let started = false, hp0 = b.state().hp;
+      for (let i = 0; i < 600; i++) {
+        b.lookAt(P.x, C.y - 0.15, P.z); w.__adv(1); C.x = home[0]; C.z = home[1]; for (const g of b.farmUnitsS()) g.st.awake = false;
+        const live = u.st.atk >= 0 && u.st.swing === k; if (live) started = true; else if (started) break;
+        if (b.state().hp < hp0) landed++; b.heal(); hp0 = b.state().hp;
+        if (!live) continue;
+        hilt.getWorldPosition(H); tip.getWorldPosition(T);
+        cts.forEach((ct, j) => { if (u.st.atk > ct - 0.4 && u.st.atk < ct) { const a = acc[j]; a.n++; let any = 0; for (let s = 0; s <= 6; s++) if (on(q.copy(H).lerp(T, s / 6).clone())) any = 1; a.any += any; a.mid += on(H.clone().lerp(T, 0.5)) ? 1 : 0; } });
+      }
+    }
+    log(k.padEnd(8), 'clip', String(A.clip).padEnd(8), 'wind', A.wind.toFixed(2), '| landed', landed, '| seen before each contact (any of the blade / its middle):', acc.map((a) => a.n ? Math.round(100 * a.any / a.n) + '%/' + Math.round(100 * a.mid / a.n) + '%' : '-').join('  '));
+  }
+}
+// HIS IDLES' BREATHING (2026-10-29, "make the minotaurs breathing less hard and fast until hes dying"): on the studio
+// minotaur, each idle clip scrubbed — its length, and how far his chest and shoulders swing in it (rad) and how often
+export async function minoIdleBreath({ w, b, log }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text()); log('spawn', JSON.stringify(await w.__mnSpawn()));
+  const u = w.__mnU, J = u.minoAuthor.J, Q = b.camera.quaternion.constructor;
+  log('idle clips', Object.keys(u.clips).filter((k) => /idle/i.test(k)).join(','), '| kind idle', u.kind.anim.idle, JSON.stringify(u.kind.gaits.idle));
+  for (const nm of Object.keys(u.clips).filter((k) => /idle/i.test(k))) {
+    const a = u.clips[nm], dur = a.getClip().duration;
+    for (const x of u.mixer._actions) { x.stop(); x.enabled = false; }
+    a.reset(); a.enabled = true; a.setEffectiveWeight(1); a.play(); a.paused = true;
+    const out = {};
+    for (const bn of ['chest', 'clavL', 'clavR', 'neck', 'head']) {
+      const bone = J[bn]; if (!bone) continue; const q0 = new Q(), ang = []; let first = true;
+      for (let i = 0; i <= 120; i++) { a.time = dur * i / 120; u.mixer.update(0); if (first) { q0.copy(bone.quaternion); first = false; } ang.push(bone.quaternion.angleTo(q0)); }
+      const mx = Math.max(...ang); let peaks = 0; for (let i = 1; i < ang.length - 1; i++) if (ang[i] > ang[i - 1] && ang[i] >= ang[i + 1] && ang[i] > mx * 0.6) peaks++;
+      out[bn] = +mx.toFixed(3) + ' rad, ' + peaks + ' peaks';
+    }
+    log(nm.padEnd(8), 'dur', dur.toFixed(2), 's', JSON.stringify(out));
+  }
+}
+// ON THEIR STONES (2026-10-29, the owner: "the gargoyles are not even on their stone parts their clipped through it"): XIII
+// booted, the four perched. Each: its toes against the slab's top (`p.y`) and how far out from the face they stand (the
+// slab reaches 1.1 m), the lowest and furthest-in of its body, and stills from the court and from the side. (own profile)
+export async function gargPerches({ w, b, log, sleep, shot }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
+  const G = b.GARG, cam = b.camera.position, V = cam.constructor, v = new V();
+  for (let i = 0; i < 30; i++) w.__c13Step(1);
+  log('corbels', !!G.corbels, G.corbels && G.corbels.visible, G.corbels && G.corbels.parent && G.corbels.parent.name);
+  G.units.forEach((u, i) => {
+    const p = u.gp.perch; u.g.updateMatrixWorld(true);
+    let toe = 1e9, inMost = 1e9, low = 1e9; const outOf = (x, z) => (x - p.wx) * p.nx + (z - p.wz) * p.nz;
+    u.model.traverse((o) => { if (!o.isBone) return; o.getWorldPosition(v); if (/^(Toe\d_[34]_|Ankle_)/.test(o.name)) toe = Math.min(toe, v.y); inMost = Math.min(inMost, outOf(v.x, v.z)); low = Math.min(low, v.y); });
+    let feetOut = []; u.model.traverse((o) => { if (o.isBone && /^Toe\d_4_/.test(o.name)) { o.getWorldPosition(v); feetOut.push(+outOf(v.x, v.z).toFixed(2)); } });
+    log('perch', i, 'mode', u.gp.mode, 'clip', u.cur && u.cur.getClip().name, 'footH', u.gp.footH && u.gp.footH.toFixed(2), 'footZ', u.gp.footZ && u.gp.footZ.toFixed(2),
+      '| toes over the slab top', (toe - p.y).toFixed(2), 'm | toes out from the face', JSON.stringify(feetOut), '| deepest bone into the wall', inMost.toFixed(2), '| lowest bone under the slab', (low - p.y).toFixed(2));
+  });
+  { const u = G.units[0]; log('unit0 model.y', u.model.position.y.toFixed(2), 'model scale', u.model.scale.x.toFixed(2), 'rot', [u.g.rotation.x, u.g.rotation.y, u.g.rotation.z].map((q) => q.toFixed(2)).join(','),
+      '| actions', u.mixer._actions.filter((x) => x.enabled && x.getEffectiveWeight() > 0.01).map((x) => x.getClip().name + '@' + x.time.toFixed(2) + ' w' + x.getEffectiveWeight().toFixed(2)).join(', '));
+    const h0 = u.gp.footH; delete u.gp.footH; w.__c13Step(1); log('re-measured footH', u.gp.footH && u.gp.footH.toFixed(2), 'was', h0 && h0.toFixed(2));
+    const gb = u.model.getObjectByName('Leg_1_Left'); log('Leg_1_Left local q', gb && gb.quaternion.toArray().map((q) => q.toFixed(2)).join(','), 'clip has leg track', u.clips.gPerch.getClip().tracks.some((t) => /Leg_1_Left/.test(t.name))); }
+  if (w.__gpBind) {                                       // (the rig's own bind pose instead of the clip's frame, held)
+    for (const u of G.units) { for (const x of u.mixer._actions) { x.stop(); x.enabled = false; } u.model.traverse((o) => { if (o.isSkinnedMesh) o.skeleton.pose(); }); u.g.updateMatrixWorld(true);
+      let toe = 1e9; u.model.traverse((o) => { if (o.isBone && /^(Toe\d_[34]_|Ankle_)/.test(o.name)) { o.getWorldPosition(v); toe = Math.min(toe, v.y); } }); log('bind pose: toes over its origin', (toe - u.g.position.y).toFixed(2)); }
+  }
+  b.camera.fov = 60; b.camera.updateProjectionMatrix();
+  G.units.forEach((u, i) => {
+    const p = u.gp.perch, tx = p.wx + p.nx * 0.6, tz = p.wz + p.nz * 0.6, ty = p.y + 0.4;
+    for (const [nm, out, side, up] of [['front', 5.5, 0, -2.5], ['side', 2.2, 3.2, -0.6]]) {
+      cam.set(tx + p.nx * out + p.nz * side, ty + up, tz + p.nz * out - p.nx * side); b.camera.lookAt(tx, ty, tz); b.camera.updateMatrixWorld(true);
+      b.renderer.render(b.scene, b.camera); shot('perch' + i + '_' + nm, 520, 1.3);
+    }
+  });
+}
+
+export async function gargPerchesBind(ctx) { ctx.w.__gpBind = true; return gargPerches(ctx); }
+// HIS KNEE, THEN HIS BACK (2026-10-29, the owner: "make it so he takes the knee and drops his stuff then when you go to talk
+// to him while hes kneeled it says you can ask 'What's wrong?' to which he replies 'Im bleeding' … after 'Im bleeding' he
+// should lay down and then continue to the other dialog"): the two killed, him down; the prompt on his knee, the talk
+// clicked through, his lying down in it, the rest of it, his death; the song; stills kneeling and lying. (own profile)
+export async function minoKneel({ w, b, log, sleep, shot }) {
+  const { M, u, K, home } = await mnCourt(w, b, sleep);
+  b.settings.devMode = true;
+  for (const k of K) b.hurtMutantTest(k, 999);
+  const cam = b.camera.position, hipY = () => +(u.minoAuthor.J.hip.getWorldPosition(u.g.position.clone()).y - u.g.position.y).toFixed(2);
+  for (let i = 0; i < 60 * 10 && M.stage !== 'down'; i++) { cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); }
+  log('down', M.stage, 'kneel', M.kneel);
+  for (let i = 0; i < 60 * 7; i++) { cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); }
+  log('after 7 s: kneel', M.kneel, 'hip over feet', hipY(), 'swords', M.swords && M.swords.length, 'clip', u.cur && u.cur.getClip().name, 'song', !!b.music().minoSong);
+  const C = u.minoAuthor.J.chest.getWorldPosition(u.g.position.clone()), y = u.g.rotation.y;
+  const look = (d, h) => { cam.set(C.x + Math.sin(y) * d, u.g.position.y + h, C.z + Math.cos(y) * d); b.camera.lookAt(C.x, C.y, C.z); b.camera.updateMatrixWorld(true); };
+  b.camera.fov = 60; b.camera.updateProjectionMatrix(); look(3.2, 1.7); b.renderer.render(b.scene, b.camera); shot('kneeling', 640, 1.3);
+  // the prompt, from in front of him
+  cam.set(C.x + Math.sin(y) * 2.2, u.g.position.y + 1.7, C.z + Math.cos(y) * 2.2); b.camBaseY = cam.y; b.lookAt(C.x, C.y, C.z); w.__c13Step(1); b.lookAt(C.x, C.y, C.z); w.__c13Step(1);
+  log('prompt on his knee:', b.hoveredS());
+  b.minoTalk();
+  const D = w.document.getElementById('dialog'), txt = () => w.document.getElementById('dialog-text').textContent, step = (n) => { for (let i = 0; i < n; i++) w.__c13Step(1); };
+  step(30); await sleep(1500); log('said:', JSON.stringify(txt()), '| you:', [...D.querySelectorAll('button.choice')].map((x) => x.textContent).join(' / '), '| song started', !!b.music().minoSong);
+  const bs = [...D.querySelectorAll('button.choice')]; if (bs[0]) bs[0].click();
+  step(30); await sleep(1500); log('said:', JSON.stringify(txt())); D.click();
+  step(10); log('box shown', D.classList.contains('show'), 'kneel', M.kneel, 'clip', u.cur && u.cur.getClip().name);
+  for (let k = 0; k < 6; k++) { step(60); await sleep(200); if (k < 4) { const fv = b.camera.fov; b.camera.fov = 60; b.camera.updateProjectionMatrix(); const c0 = cam.clone(), q0 = b.camera.quaternion.clone(); cam.set(C.x + Math.cos(y) * 3.4, u.g.position.y + 1.6, C.z - Math.sin(y) * 3.4); b.camera.lookAt(C.x, u.g.position.y + 0.6, C.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('lie' + (k + 1), 480, 1.3); cam.copy(c0); b.camera.quaternion.copy(q0); b.camera.fov = fv; b.camera.updateProjectionMatrix(); } log('  +' + (k + 1) + ' s: hip', hipY(), 'box', D.classList.contains('show'), 'text', JSON.stringify(txt().slice(0, 30)), 'dialog', b.state().dialogOpen); }
+  b.camera.fov = 60; b.camera.updateProjectionMatrix(); look(3.4, 1.9); b.renderer.render(b.scene, b.camera); shot('lying', 640, 1.3);
+  step(30); await sleep(2500); log('said:', JSON.stringify(txt())); D.click(); step(30); await sleep(2500); log('said:', JSON.stringify(txt())); D.click(); step(30); await sleep(300);
+  // "Take this.": his arm up with it, what you see, and taking it
+  for (let k = 0; k < 6 && !/Take this/.test(txt()); k++) { D.click(); step(30); await sleep(900); }
+  for (let k = 0; k < 4; k++) { step(30); await sleep(400); }
+  log('said:', JSON.stringify(txt()), '| you:', [...D.querySelectorAll('button.choice')].map((x) => x.textContent).join(' / '), '| offering', M.offering, 'sketch in hand', !!M.sketchW, 'clip', u.cur && u.cur.getClip().name);
+  b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('offer_view', 800, 1.3);
+  { const fv = b.camera.fov, c0 = cam.clone(), q0 = b.camera.quaternion.clone(); b.camera.fov = 50; b.camera.updateProjectionMatrix(); cam.set(C.x + Math.cos(y) * 2.6, u.g.position.y + 1.9, C.z - Math.sin(y) * 2.6); b.camera.lookAt(C.x, u.g.position.y + 0.5, C.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('offer_side', 640, 1.3); cam.copy(c0); b.camera.quaternion.copy(q0); b.camera.fov = fv; b.camera.updateProjectionMatrix(); }
+  const tb = [...D.querySelectorAll('button.choice')]; if (tb[0]) tb[0].click(); step(30); await sleep(300);
+  log('after: stage', M.stage, 'dialog', b.state().dialogOpen, '| given', M.sketchGiven, 'in hand still', !!M.sketchW);
+  step(60 * 8); log('8 s on: stage', M.stage);
+}
+// THE SAVE AT THE DOOR (2026-10-29, the owner: "make a save point after opening the door after the gargoyle fight"): XIII
+// booted with him at your side, the four killed, you at the arch: it opened as you open it; the save it writes; and that
+// save reloaded the way a death does — where you are, the door, him, the four. (its own profile)
+export async function gargSave({ w, b, log, sleep }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
+  const G = b.GARG, M = b.MINO, cam = b.camera.position, A = b.c13Dbg().arch, f = w.frameElement;
+  M.stage = 'with'; M.ally = true; M.place = '?';
+  const home = [b.C13_X + A.ax + A.ux * (A.L + 2.0), b.C13_Z + A.az + A.uz * (A.L + 2.0)];
+  cam.set(home[0], cam.y, home[1]); for (let i = 0; i < 120; i++) { cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); }
+  G.phase = 1; for (const u of G.units) { u.gp.mode = 'recover'; b.hurtMutantTest(u, 999); }
+  for (let i = 0; i < 240 && G.phase !== 2; i++) { cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); }
+  log('phase', G.phase, 'locked', b.gargLockedS && b.gargLockedS(), 'dead', G.units.filter((u) => !u.st.alive).length);
+  localStorage.removeItem('beachwalk.save');
+  b.openC13Arch(false); await sleep(1500); w.__c13Step(2);
+  const sv = JSON.parse(localStorage.getItem('beachwalk.save') || 'null');
+  log('saved', !!sv, sv && JSON.stringify({ room: sv.room, pos: sv.pos, arch: sv.flags.c13Arch, garg: sv.flags.garg, mino: sv.flags.mino, dead: sv.flags.deadUnits.filter((k) => /garg|kn/.test(k)).length }));
+  if (!sv) return;
+  const at0 = [cam.x, cam.z];
+  sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1');
+  f.contentWindow.location.reload(); await sleep(1500);
+  let w2 = null; for (let i = 0; i < 200; i++) { await sleep(100); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.state) break; } catch (e) {} }
+  const B = w2.__bw, btn = w2.document.querySelector('.dc-restart'); if (btn) btn.click();
+  for (let i = 0; i < 400 && (B.frozen() || !B.state().introDone || !(B.MINO.u && B.MINO.u.model)); i++) await sleep(100);
+  try { await B.audioCtx.suspend(); } catch (e) { /* */ }
+  await sleep(2500);
+  const c2 = B.camera.position, M2 = B.MINO;
+  log('after: room', B.devRoom(), 'inC13', B.state().inC13, 'from the save spot', Math.hypot(c2.x - at0[0], c2.z - at0[1]).toFixed(2), 'm | arch open', B.c13Dbg().archOpen,
+    '| garg phase', B.GARG.phase, 'retired', B.GARG.units.filter((u) => u.retired).length, '| him', M2.stage, M2.u && Math.hypot(M2.u.g.position.x - c2.x, M2.u.g.position.z - c2.z).toFixed(1), 'm off, vis', M2.u && M2.u.g.visible, '| knights alive', B.knAlive());
+}
+// WHO TAKES HIM WHEN THE LIGHT ONE WAKES FIRST (2026-10-29, the owner: "make the big knight gaurding the throne room attack
+// the minotaur first"): only the duelist woken; a second on, which is on him, and is the iron one awake. (own profile)
+export async function knFirst({ w, b, log, sleep }) {
+  const { M, u, K } = await mnCourt(w, b, sleep);
+  b.settings.devMode = false;
+  K[0].st.awake = true; K[0].st.roar = 0.3;
+  for (let i = 0; i < 60; i++) { w.__c13Step(1); b.heal(); }
+  log('on him:', K.map((k, i) => (i ? 'IRON' : 'MAN') + ' onMino ' + !!k.knOnMino + ' awake ' + !!k.st.awake + ' foe ' + (k.st.foe === u ? 'HIM' : k.st.foe ? 'other' : 'you')).join(' | '));
+}
+// HIS HEAD AND ARMS, FRAME TO FRAME, THROUGH HIS DEATH (2026-10-29, the owner: "his head keeps glitching around during the
+// death scene and dialog … his arm keeps glitching too"): the minoKneel run, every frame each bone's turn since the frame
+// before (world), by phase — the largest, and how many frames jumped more than 0.08 rad. (its own profile)
+export async function minoJitter({ w, b, log, sleep }) {
+  const { M, u, K, home } = await mnCourt(w, b, sleep);
+  b.settings.devMode = true;
+  for (const k of K) b.hurtMutantTest(k, 999);
+  const cam = b.camera.position, Q = b.camera.quaternion.constructor, J = u.minoAuthor.J;
+  const bones = { head: J.head, neck: J.neck, chest: J.chest, armL: J.armL, armR: J.armR, foreL: J.foreL, foreR: J.foreR, handL: u.model.getObjectByName('F4L'), handR: u.model.getObjectByName('F4R') };
+  const prev = {}, S = {}; let phase = 'fight';
+  const tick = (n, real = 0) => { for (let i = 0; i < n; i++) { w.__c13Step(1);
+    for (const [nm, bn] of Object.entries(bones)) { if (!bn) continue; const q = bn.getWorldQuaternion(new Q()); if (prev[nm]) { const a = prev[nm].angleTo(q), k = phase + ' ' + nm, s = S[k] || (S[k] = { max: 0, big: 0, n: 0, at: 0 }); s.n++; if (a > s.max) { s.max = a; s.at = s.n; } if (a > 0.08) { s.big++; if ((nm === 'neck' || nm === 'head') && (w.__mjN = (w.__mjN || 0) + 1) < 60) log('  JUMP', phase, nm, a.toFixed(2), 'pre-look jump', (() => { const In = M.lookIn && M.lookIn.get(bn), P = w.__mjPre && w.__mjPre[nm]; return In && P ? In.angleTo(P).toFixed(2) : '-'; })(), 'restores', M.dbgRest || 0, 'look', (() => { const c = M.lookS && M.lookS.get(bn); return c ? (2 * Math.acos(Math.min(1, Math.abs(c.w)))).toFixed(2) : '-'; })(), 't', M.t.toFixed(2), M.stage, 'kneel', M.kneel, 'lookK', (M.lookK || 0).toFixed(2), 'base', !!M.base, 'acts', u.mixer._actions.filter((x) => x.enabled && x.getEffectiveWeight() > 0.01).map((x) => x.getClip().name + '@' + x.time.toFixed(2) + 'w' + x.getEffectiveWeight().toFixed(2) + (x.paused ? 'P' : '')).join(',')); } } prev[nm] = q; (w.__mjPre = w.__mjPre || {})[nm] = M.lookIn && M.lookIn.get(bn) ? M.lookIn.get(bn).clone() : null; } } };
+  for (let i = 0; i < 60 * 10 && M.stage !== 'down'; i++) { cam.x = home[0]; cam.z = home[1]; tick(1); }
+  phase = 'kneeling'; for (let i = 0; i < 60 * 7; i++) { cam.x = home[0]; cam.z = home[1]; tick(1); }
+  const C = u.minoAuthor.J.chest.getWorldPosition(u.g.position.clone()), y = u.g.rotation.y;
+  cam.set(C.x + Math.sin(y) * 2.2, u.g.position.y + 1.7, C.z + Math.cos(y) * 2.2); b.camBaseY = cam.y; b.lookAt(C.x, C.y, C.z); tick(2);
+  b.minoTalk(); phase = 'talk on knee';
+  const D = w.document.getElementById('dialog');
+  for (let k = 0; k < 4; k++) { tick(20); await sleep(400); }
+  const bs = [...D.querySelectorAll('button.choice')]; if (bs[0]) bs[0].click();
+  for (let k = 0; k < 4; k++) { tick(20); await sleep(400); } D.click();
+  phase = 'lying down'; for (let k = 0; k < 6; k++) { tick(50); await sleep(100); }
+  phase = 'talk lying'; for (let k = 0; k < 6; k++) { tick(20); await sleep(500); } D.click(); for (let k = 0; k < 6; k++) { tick(20); await sleep(500); } D.click(); await sleep(300); D.click();
+  phase = 'dying'; tick(60 * 7);
+  phase = 'dead'; tick(60 * 4);
+  log('stage at the end', M.stage);
+  for (const [k, s] of Object.entries(S)) if (s.max > 0.03 || s.big) log(k.padEnd(24), 'frames', s.n, 'max jump', s.max.toFixed(3), 'rad at frame', s.at, '| over 0.08:', s.big);
+}
+
+export async function minoJitterBare(ctx) { ctx.w.__mnNoLook = true; return minoJitter(ctx); }
+
+export async function minoArmLie(ctx) { ctx.w.__armClips = [['mnLie', 0.3, 1]]; return minoArm(ctx); }
+// HIS BLINK (2026-10-29, "make him naturally blink as well must look good"): him at your side in XIII, close on his face,
+// lids open and shut; and over twenty seconds how many blinks. (own profile)
+export async function minoBlink({ w, b, log, sleep, shot }) {
+  const { M, u } = await mnCourt(w, b, sleep);
+  for (let i = 0; i < 30; i++) w.__c13Step(1);
+  log('lids', !!u.mnLids, u.mnLids && u.mnLids.lids.length, u.mnLids && u.mnLids.lids.map((L) => L.r.toFixed(3) + ' @' + L.piv.position.toArray().map((q) => q.toFixed(3)).join(',')).join(' | '));
+  let n = 0, was = 0; for (let i = 0; i < 60 * 20; i++) { w.__c13Step(1); const s = u.mnLids && u.mnLids.ph; if (s === 1 && was !== 1) n++; was = s; }
+  log('blinks in 20 s', n);
+  w.requestAnimationFrame = () => 0; log('vis', u.g.visible, u.model.visible);
+  const H = u.bones.head, hp = H.getWorldPosition(u.g.position.clone()), y = u.g.rotation.y, cam = b.camera.position;
+  b.camera.fov = 16; b.camera.updateProjectionMatrix();
+  for (const [nm, ang] of [['face', 0], ['face34', 0.6]]) for (const [st, c] of [['open', -1.15], ['shut', 1.62], ['half', 0.25]]) {
+    for (const L of u.mnLids.lids) L.hinge.rotation.x = c;
+    cam.set(hp.x + Math.sin(y + ang) * 2.6, hp.y + 0.1, hp.z + Math.cos(y + ang) * 2.6); b.camera.lookAt(hp.x, hp.y - 0.02, hp.z); b.camera.updateMatrixWorld(true);
+    b.renderer.render(b.scene, b.camera); shot('blink_' + nm + '_' + st, 400, 1.4);
+  }
+}
+// A CHECKPOINT IN XIII, LOADED, TIMED (2026-10-29, the owner: "the minotaur isnt spawning in instantly at my checkpoint in
+// the castle. make the load times in the castle as fast as possible"): him at your side by the arch, saved; reloaded the
+// way a death does; from the reload, when the black lifts, when he is there (model, visible), and every file's arrival.
+export async function c13Load({ w, b, log, sleep }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
+  const M = b.MINO, cam = b.camera.position, A = b.c13Dbg().arch, f = w.frameElement;
+  M.stage = 'with'; M.ally = true; M.place = '?';
+  const home = [b.C13_X + A.ax + A.ux * (A.L + 2.0), b.C13_Z + A.az + A.uz * (A.L + 2.0)];
+  for (let i = 0; i < 120; i++) { cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); }
+  b.saveCheckpoint();
+  for (let run = 0; run < 2; run++) {
+    sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1');
+    const t0 = performance.now(); f.contentWindow.location.reload(); await sleep(300);
+    let w2 = null; for (let i = 0; i < 400; i++) { await sleep(25); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.state) break; } catch (e) {} }
+    const B = w2.__bw; let clicked = false, tLift = null, tMino = null, tModel = null;
+    for (let i = 0; i < 2400 && !(tLift && tMino); i++) {
+      if (!clicked) { const btn = w2.document.querySelector('.dc-restart'); if (btn) { btn.click(); clicked = performance.now() - t0; } }
+      if (!tLift && clicked && !B.frozen() && B.state().introDone) tLift = performance.now() - t0;
+      const u = B.MINO.u; if (!tModel && u && u.model) tModel = performance.now() - t0;
+      const G = w2.__mlG || (w2.__mlG = {}), now = +((performance.now() - t0) / 1000).toFixed(2);
+      const mark = (k, ok) => { if (ok && G[k] === undefined) G[k] = now; };
+      mark('unit', !!u); mark('model', u && u.model); mark('laid', u && u.model && !u.minoLay); mark('packs', B.minoPacksIn && B.minoPacksIn()); mark('clips', u && u.model && !(u.clipsPending > 0));
+      mark('tex', u && u.texW && u.texW.compiled); mark('visible', u && u.g.visible); mark('restored', B.MINO.restored === false || (u && !B.MINO.restored));
+      if (!tMino && u && u.model && u.g.visible && !(u.clipsPending > 0)) tMino = performance.now() - t0;
+      await sleep(25);
+    }
+    log('run', run, '| restart clicked', (clicked / 1000).toFixed(2), 's | black lifted', tLift && (tLift / 1000).toFixed(2), 's | his model', tModel && (tModel / 1000).toFixed(2), 's | him there', tMino && (tMino / 1000).toFixed(2), 's | room', B.devRoom());
+    log('  his gates (s):', JSON.stringify(w2.__mlG));
+    log('  files (name, s, MB):', JSON.stringify(B.loadLog().map((e) => [e[0].split('/').pop(), +(e[1] / 1000).toFixed(2), e[2]]).sort((a, c) => a[1] - c[1])));
+    try { await B.audioCtx.suspend(); } catch (e) { /* */ }
+    // and the frames after the black, as drawn (rAF intervals), ten seconds: what you would feel as lag
+    const dts = []; let last = performance.now(), go = true;
+    const loop = () => { const n = performance.now(); dts.push(n - last); last = n; if (go) w2.requestAnimationFrame(loop); };
+    w2.requestAnimationFrame(loop); await sleep(10000); go = false;
+    const sd = dts.slice(2).sort((a, c) => a - c), big = dts.map((d, k) => [d, k]).filter(([d]) => d > 50);
+    log('  long spans (worst first):', JSON.stringify((B.lag ? B.lag() : []).slice(0, 12)));
+    log('  frames after the black: n', sd.length, 'median', sd[sd.length >> 1].toFixed(1), 'p95', sd[Math.floor(sd.length * 0.95)].toFixed(1), 'max', sd[sd.length - 1].toFixed(1), 'ms | over 50 ms', big.length, JSON.stringify(big.slice(0, 12).map(([d, k]) => [+d.toFixed(0), k])));
+  }
+}

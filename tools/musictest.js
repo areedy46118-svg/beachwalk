@@ -95,7 +95,7 @@
         note += b.state().ended ? ', stats up' : ', NEVER ENDED';
         peak = await listen(want[sc], 8000);
       } else if (sc === 'mino') {
-        // (2026-10-29, the owner's "minotaur death music": once, the first moment you see him going down in XIII's court)
+        // (2026-10-29, the owner's "minotaur death music": once — now when you ask him "What's wrong?" on his knee, fading in)
         const { w, b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
         w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
         w.__ggBoot(); for (let i = 0; i < 180 && !w.__ggBooted; i++) await sleep(1000);
@@ -106,8 +106,9 @@
         for (let i = 0; i < 20; i++) w.__c13Step(1);
         b.minoGoDown(u); note = 'he goes down';
         const look = () => b.lookAt(u.g.position.x, u.g.position.y + 1.2, u.g.position.z);
-        for (let i = 0; i < 40; i++) { look(); w.__c13Step(1); await sleep(5); }
-        note += M.songDue ? ', seen' : ', NOT DUE';
+        for (let i = 0; i < 360; i++) { look(); w.__c13Step(1); if (i % 40 === 0) await sleep(5); }
+        note += M.kneel ? ', on his knee' : ', NOT KNEELING';
+        b.minoTalk(); note += b.state().dialogOpen ? ', asked' : ', NO TALK';
         peak = await listen(want[sc], 8000);
       } else return { scenario: sc, pass: false, note: 'unknown scenario' };
     } catch (e) { note += ' THREW ' + e; }

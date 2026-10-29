@@ -1579,3 +1579,140 @@ matching the audio well … a very satisfying break smashing them into pieces wi
     then along the passage and out (measured, `minoArch`: from 4 m off its line he stuck at the wall beside it).
   - **The two knights guard the throne room's door**: 3 m out in front of it, 1.8 either side, facing out across the
     court (`guardOK` asks a 1.1 m clear circle, not the court's 2.6).
+
+**MYLES ON HIS BACK, THE LEFT ARM AT REST (2026-10-29, the owner: "fix the minotaurs arm when hes laying down just make
+it normal he doesnt have to hold his stomach its not working").** `MINO_LIE.armL/foreL` were solved with the fist on the
+top of his belly; it never read in the game, and `mnDie`'s last breath (the chest lifting, the arm hanging off it) put
+that arm 15 cm into him. Re-solved with `__lieRest` in `tools/minolie.js` (probe `minoArm`): the hand 3 cm off the stone
+where the right hand is mirrored across his spine, no vertex of the arm in him. The two `lift` keys of `mnDie` carry
+their own `armL` now — lifted as it lay, the new hand went 7 cm into the paving. `MINO_HOLD` (the hand on the wound while
+he is up and kneeling) is unchanged; the hand comes away as he goes over. Measured across every frame of `mnDie`: arm in
+him 0, under the floor 4 mm at most.
+- **`__lieShot`'s studio stills come out blank headless** (grey floor, no him) even after aiming with
+  `camera.lookAt`; the `minoDown` probe's stills in the court do work (`mnover`, `mnfeet`, `mnside`, `mnside2`).
+- **WHERE HE LIES, `minoLieSpot` / `minoLieClear`.** The castle's solids push only on his feet's disc; lying, his head is
+  1.6 m BEHIND where he stood. The `minoDown` probe parks you by the throne room knights, which is 5.8 m from the
+  fountain: he stood INSIDE its disc (2.4 m from its middle; it is 3.45) and lay under its water — the stills showed the
+  basin with bits of him in it. `minoGoDown` now picks the nearest spot (out to 2 m) and the least turn that leaves the
+  ground under his whole length clear — the court's floor at his height, no solid, no wall — and `minoDownStep` eases
+  him there over the first 1.8 s of the fall (he staggers with the blow). `MINO.spot` is that spot, so the save, the
+  swords and the pool all follow it.
+
+**THE DOUBLE TAKE IS HIS HEAD, NOT HIS BODY (2026-10-29, the owner: "when he turn to see the gargoyle make him look back
+at you by turning his head more not his body sliding mak his head and neck actually turn look at you then look back real
+quick he should only look at you for like a second").** The look back had been his whole root yawed round at 1.7 rad/s
+with his feet planted — a slide. Now his body turns to the gargoyle only until it is `MINO_GARG_OFF` (1.15 rad) off his
+nose, on the side it was first (`S.sideG`), and stays there; you are then ~2 rad round the other way. `S.backK` (up in
+0.32 s on 'back', down in 0.28 s) slides the look's yaw and pitch, in HIS frame, from the gargoyle to you — straight
+across his front, never round behind him. `minoLookYaw(u, yaw, pitch, w)` lays it on chest / neck / head
+(`MINO_LOOK_CHAIN`: shares 0.3 / 0.5 / 1 of what is left, caps 0.5 / 0.55 / 0.9 rad) as turns about the UPRIGHT, then a
+nod at the head alone. One free `setFromUnitVectors` turn onto the aim instead rolled his head on its side, snout down
+and a horn flat (probe still). Measured (`gargDoor`): his body turns 0° through it, his head is on you 0.3 s after it
+starts, holds 0.9 s (`S.eyeT > 0.9`), and is back on the gargoyle 0.3 s later; the talk closes once `backK` is 0.
+
+**THE CASTLE FIGHTS, REVISED (2026-10-29, the owner: "play through the castle section and improve the combat make the hit
+boxes better and make enemies slide around and lag less. any enemy swings that look bad and you can barely see to block
+take them out").** (The general fixes and the measurements are in creatures.md "SLIDING, MEASURED".)
+- **Cut, as barely visible:** the knights' kicks (`kmKick` 0.49 s from nothing, arriving at the foot of your screen with
+  no trail — kicks never get one, `knSwordTrail` skips `limbs ≥ 2`; `kiKick` never landed). The gargoyles' `rake`
+  (0.45 s tell, hung a metre off you, two kicks half a second apart from under your view); they choose talon 58%, bite
+  42%. Probe `knSee`: every remaining knight swing lands 3/3 and its blade is on screen 65–100% of the 0.4 s before
+  contact. Probe `dkSee`: every dark knight contact 100% on screen before it — nothing of his cut (his blade's TIP is
+  often off the edge at contact, `dkSwings`, because the blade is 30 cm from your eye).
+- **Knights:** `KN_BASE` `noSkate`, `smoothMove`, `lungeMax: 4.5` — no 3.8 m/s glide through a wind-up on a clip that
+  stands still, no chained skate, the closing eased and held to a charging stride. `knDuel` still costs you 29 health;
+  the iron knight is on the minotaur 0.3 s after waking.
+- **Farmers:** `windWalkK: 0.35`, `smoothMove` (their wind-up glide cut to a third). `farmers` probe: 10 blows on you in
+  its window (6 on the last commit), all with the tool's point.
+- **Gargoyle hit box, `gargStrikes`:** it counted a talon within 1.05 m of one point below your eyes OR its body within
+  1.7 m of you — so every dive "hit" from 1.3–1.6 m away with its talons 1.27 m off (probe `gargFight`'s `__ggDbg`;
+  with the body rule removed, 0 of 18 landed). Now the talons (jaws) must come within `GARG_REACH` 0.62 m of the upright
+  from your shins to your crown; the body counts only within `GARG_ON` 0.85 m AND with the part within 0.92. And the dive
+  comes in to strike: talon stand 0.55, bite 0.45, flown at a point half a metre past it (the flight brakes near its
+  goal and the 0.65 s clock ran out a stride short), struck on the gargoyle's distance from YOU, clock 0.8 s. Measured:
+  20 of 20 strikes land, talons 0.55 m from you, jaws 0.67–0.71.
+
+**HIS BREATHING, CALMER (2026-10-29, the owner: "make the minotaurs breathing less hard and fast until hes dying … his
+bodies idle motion of breathing I mean").** The standing idle `mIdle` heaved twice in 2.7 s — a breath every 1.35 s,
+the neck 0.22 rad, head 0.16, shoulders 0.10 (probe `minoIdleBreath`). `minoCalmIdle` (end of `minoAuthorOwn`, after
+every pose is built on the idle's first frame) stretches it ×2 (`MINO_IDLE_SLOW`) and draws each key 0.42 of the way
+back to frame 0 (`MINO_IDLE_K`): a breath every 2.7 s, neck 0.09, head 0.065, shoulders 0.04. Frame 0 is untouched, so
+the solved lying poses are the same (`minoDown`: head 5.5 cm over the floor, nothing more than 5 mm under it).
+Lying, before he dies: the recording at 0.56 (was 0.64), level 0.14 (was 0.24), muffled under 2.4 kHz
+(`MINO_BR_DARK`), and the chest follows it through a slow lag (3/s, was 12: it jerked with every catch in a gasp) at
+half the heave. His last breath (`minoLastBreath`) keeps 0.64 / 0.24, `MINO_LAST_RATE` / `MINO_LAST_LEVEL`.
+
+**THE GARGOYLES WERE NEVER ON THEIR STONES (2026-10-29, the owner, with a screenshot: "the gargoyles are not even on their
+stone parts their clipped through it").** Probe `gargPerches`: every one's toes 1.75 m UNDER the top of its slab, the body
+hung down the wall below it (the same on the last commit). `gargFootH` measured the perch with the model still lifted
+1.79 m in its group by the loader; `gargPerch` sets `u.model.position.y = 0` right after, and everything dropped by that.
+Measured unlifted, `footH` is −0.96 (the toes under its origin: the perch frame has the legs hanging), and they stand
+4 cm over the slab, 0.55 m out on its 1.1. (Tried first and wrong: holding the file's own pose — it is the clip's frame
+0.) `gargScenePut` (the one that lands behind him at the door) reads the same number.
+
+**HIS LOOK BACK FROM THE NECK (2026-10-29, the owner: "the way the minotaur turns his head is so bad it should turn from
+the neck not the chest … he can move his body a little so he doesnt bend too much").** `MINO_LOOK_CHAIN` is now waist
+0.25 / chest 0.08 / neck 0.75 / head 0.75 (caps; shares 0.14 / 0.06 / 0.6 / 1), and his body comes round
+`MINO_LOOK_BODY` 0.3 rad with the look (eased on `backK`, 1.2 rad/s). `gargDoor`: body 17° in it, head on you in 0.3 s.
+
+**ON HIS KNEE FIRST (2026-10-29, the owner: "make it so he takes the knee and drops his stuff then when you go to talk to
+him while hes kneeled it says you can ask 'What's wrong?' to which he replies 'Im bleeding' make the music slowly fade in
+when 'What's wrong?' is shown. after the dialog 'Im bleeding' he should lay down and then continue to the other
+dialog").** `minoGoDown` plays `mnKneel` (the fall's first 5.3 s: the swords go at 3.3) and sets `MINO.kneel`; the prompt
+comes at 5.4 s. `minoTalk` on his knee opens `hurt` ('...', the choice "What’s wrong?"; its `enter` starts his song) →
+`bleed` ("Im bleeding") → `lie` (the box hidden, `minoLieDown`: `mnLie`, kneel to `MINO_LIE` in 4.5 s) → when he is down
+(`minoLaidDown`) `minoDownStep` shows the box again on `last` → `last2` → dying as before. Closed on his knee or mid-lie,
+`minoLeave` leaves him be (talk again). `mnFall` is kept whole for the restore into him lying (`MINO.t = 60`, kneel off).
+The 8.4 s key is `MINO_GOING`, shared. His song no longer starts on sight (`songDue` is never set now): it fades in over
+`MINO_SONG_IN` 10 s on an x² curve, from your question. Probes `minoKneel`; musictest `mino` asks him.
+
+**THE THRONE ROOM KNIGHTS, HARDER (2026-10-29: "a little more health too and be harder", and "make the big knight … attack
+the minotaur first").** knMan hp 62 (48), aggr 3.4; knIron hp 92 (72), aggr 2.5, poise 34, chainMax 2. `knDuel`: 75 s
+(58), 33 health off you (29). `minoDraws` picked the one for him among the AWAKE, so a light knight woken first took him;
+now once either is awake the iron one is woken onto him unless he is yours (`knFirst` probe).
+
+**A SAVE AT THE ARCH DOOR (2026-10-29: "make a save point after opening the door after the gargoyle fight").**
+`openC13Arch(false)` with `GARG.phase === 2`, not while `applyingSave`: `autosaveNow()` 0.7 s after (position-based, XIII
+has no named spot but `c13In`). Probe `gargSave`: reloaded as a death, 0.13 m from where you stood, arch open, the four
+retired, him 'with' 2.6 m off, the knights alive.
+
+**HIS HEAD, STEADY, DOWN (2026-10-29, the owner: "his head keeps glitching around during the death scene and dialog fix
+this … his arm keeps glitching too").** Probe `minoJitter`: each bone's world turn frame to frame through kneel, talk,
+lie, dying, dead. It was 0.6–1.2 rad single-frame jumps of neck and head as he lay down and as he died, and a creep of
+0.1–0.15 rad a frame while you spoke to him on his knee; with the look switched off (a debug run) none. Two causes,
+both fixed: (1) the look was the one rotation from his face to yours worked out fresh each frame — near 180° (lying,
+you behind his face) its axis flips; now `MINO_LOOK_CONE` 1.75 rad (faded out toward its edge, not swung round) and the
+turn EASED (`MINO.lookS`, 4/s) in the bone's parent frame. (2) Down, the mixer did not rewrite his neck and head each
+frame (a held kneel, a finished lie: a restore-if-unwritten test fired 127 times), so the look stacked on itself and
+snapped when the breath took the neck back. `minoSetDownPose` now sets neck and head every frame from his down clips
+(`MINO_DOWN_CLIPS`) sampled at their own times, blended by weight, before breath and look. After: nothing over ~0.11
+rad in a frame anywhere. (Tried and dropped first: restoring a bone left as the look left it — the base underneath
+still jumped.) Arm: in `mnLie` the left arm swept from the wound through his chest as he went flat (`minoArmLie`: 27
+vertices up to 34 cm in, at 80%); `MINO_GOING` has it down at his side already. Probe `minoJitterBare` = look off.
+
+**HE BLINKS (2026-10-29: "make him naturally blink as well must look good").** `minoMakeLids`: per eye an upper lid —
+the top half of a sphere 8% outside the eyeball, coloured from the map's texels round the socket (×0.72: at their own
+average, shut, it read as a pale ring) — on a pivot at the ball's centre in the head bone's frame, built from the
+ball's skinned vertices (centre, front-most, top-most; `MINO_EYE_C` from the packer). Hinge −1.15 rad open (tucked up
+behind), 1.62 shut. A blink every 2.5–6 s (15% a double), 70 ms down, 50 held, 130 up; dead, they close over 2.2 s.
+Probe `minoBlink` (stills open/half/shut, ~5 blinks in 20 s).
+
+**THE SKETCH OF MYLES JR. (2026-10-29, the owner, with a pencil drawing of a calf in a blanket: "make the minotaur hold out
+this pic make it be called 'Sketch of Myles Jr.' make it old and worn like the grammy orc picture but don't add any text
+… make him hold this out after he says i love you and say Take this. once you take it he should then die").**
+`assets/myles-jr.jpg`; the item and its ageing beside the grammy photo's (`mylesCanvas`, `mylesTear`, `mylesGeometry`,
+`MYLES_FOLDS`; the back blank paper). `last2` now runs on to `take` ("Take this.", choice "Take it"): `minoOffer` plays
+`mnOffer` (from `MINO_LIE`, the right arm up off the stone, `MINO_OFFER`) and hangs a world copy in his right hand
+(`F4R`), turned each frame to face you and pinched by its bottom edge (`minoSketchStep`: centred on the fist, the fist
+hid it); `minoGiveSketch` puts it in your pack and he dies on `mnDieO` (the death from the arm held out). Closed without
+taking it, he waits (`minoLeave`); talk again starts at `take`. In `packByName`. Probe `minoKneel` runs it all.
+
+**SMALLER, SAME DAY.** Gargoyles hp 32 and `stone` (no spray, stain, wound or bleed: the `noBlood` gate round
+`hurtMutantCore`; `gargFight`: three of four broken by its steady player in 150 s, all four in ~100 before). Throne
+door knights hp 78 / 115. His death song `MINO_SONG_LEVEL` 1.9 (3.2).
+
+**HIM AT A CASTLE CHECKPOINT AT ONCE (2026-10-29: "the minotaur isnt spawning in instantly at my checkpoint in the
+castle").** `updateMinotaur` made him only once the FIRST castle was built (`fortReady`), which a checkpoint in XIII
+builds last: his unit at 12.7 s, 7.5 s after the black lifted (`c13Load`). A restore with him past the gate (not
+'wait'/'killed') in either castle or the throne room places him at once: there at 4.1–4.3 s, before the black lifts
+(4.7–5.5).

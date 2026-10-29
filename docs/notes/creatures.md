@@ -3562,3 +3562,42 @@ And a creature behind the dune is held by `elvUnitClamp`, not the beach's x clam
   general — pose by `poseRig.build` keys, skin every vertex on the CPU (`applyBoneTransform`), score floor contact per
   bone group and limb-inside-body by vertical ray parity, coordinate-descend. A key halfway between two solved keys is
   NOT solved: check the in-betweens (`{ clip, f }` frames) and add half-keys at their own height.
+
+**SLIDING, MEASURED (2026-10-29, the owner: "improve the combat make the hit boxes better and make enemies slide around
+and lag less").** Probe `knSkate` (the court fight, the knDuel driver): per creature and state, the PLANTED foot's speed
+over the floor, the clip playing, the body's speed and turn, whether the feet go the body's way (clip travel against
+body motion in its own frame), and the CPU of each castle tick with what every creature was doing on its spikes.
+- **A back-off clip that already walks backwards was played backwards** — `sWalkB` (the sword knights), `oWalkB` (the
+  orc set): the `u.st.back` branch of `mutAnim` ran `N.back` at a NEGATIVE rate, so the feet walked forwards while the
+  body backed off (the light knight: 2.91 m/s planted foot, 0% of frames the right way). It now asks the clip's own
+  travel (forward travel < −0.2 = a backwards walk) or its name (`WalkB` / `Back` at the end) and plays those forwards:
+  0.69 m/s, 100%.
+- **Strafe and back-off rates are from `u.realSp`**, the speed the body really made, not `MUT_STRAFE` (1.7).
+- **The circle is held to what its strafe can play**: `scs × GAIT_MAX × 0.95` (the minotaur was sent round at 1.96 m/s
+  plus the radial term, on a 1.05 m/s strafe).
+- **`dodgeMatch`** (knMan): the sidestep's clip rate is `dodgeSide / clipSpeed` (1–2.4) and the step no faster than that
+  rate plays; reversed when the step goes the other way from the clip's side travel. Both evade branches now call
+  `mutClampX` — they returned before any room clamp, so a sidestep could go through the castle's walls.
+- **The parry's 0.5 m knock-back is eased** over the stagger (`u.st.shoveX/Z`, 11/s, clamped), not set in one frame.
+- **`gaitToes`** on a kind: the bones `measureGaits` treats as toes. The minotaur's are `FeetL/FeetR` (his strides had
+  never been measured; `minoFollow` used a typed 1.48 for `mWalk`, which measures 1.37). A rig whose toes never resolve
+  stops being asked after 20 tries (the dark knight's was traversed twice a frame for the whole game).
+- Tried and reverted: measuring one gait clip a frame to spread the cost. It did not touch the fight-start spikes, and
+  measured across frames the light knight's strides came out 10–25% different.
+- **The fight-start spikes** (10–19 ms CPU frames in the first 1.3 s after the knights wake, none above 9.4 after) are
+  the same on the last commit; steady state is 2.6 ms median, p99 8. Render: 1.8–3.5 ms median per castle area
+  (`castlePerf`).
+
+**A GUARD FACES FORWARD (2026-10-29): `guardSees(P)`.** Both block checks in the attack tick (and `gargLand`) asked only
+`blocking`, so a blow from straight behind was blocked. Now the attacker must be within about 99° of your view
+(cosine > −0.15), or on top of you (< 0.3 m). Game-wide.
+
+**THE DARK KNIGHT, RESET BETWEEN STRINGS (2026-10-29, the owner: "the dark knight sword combat just needs to be better
+his swings just dont feel right make the AI feel and look better").** `dkBehave`: mid-swing 72% of the fight, 20 swings a
+minute, circling right 16% / left 0% (`steadySide` keeps the last side 80%). Now `sideKeep` 0.45 and `regroup` 0.45 /
+`regroupT` [0.9, 1.7]: after a string, round you the other way at his own range for that long. Sized out a metre past his
+reach first (`sizing`), the blow after it fell short (`dkFight`: 10 of 13 landed; at his range 15/15 and 12/12). A swing
+starting now clears any circle (`u.st.side/sideT/sizing`, all three start sites). `dkRootMotion`: the forward step 0.6–1.25
+of the clip's (a leap 0.2–1.7; it was 0–1.6 / 2.4), the side 0.85 (was 0.5). His non-leap swings start at stop + 0.5
+(was 0.8). `dkSee` swings forced back to back vary run to run on the last commit too (`dkS0` 2–3/3, the leap 1–3).
+Still open: his gait crossfades and his turning on the spot skate (`dkSkate`: moving 2.25 m/s planted foot on 1.77).

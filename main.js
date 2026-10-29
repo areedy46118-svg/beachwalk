@@ -430,6 +430,16 @@ function bgLoadOk() {
   return true;
 }
 const bwBgGate = () => new Promise((r) => { const chk = () => { if (bgLoadOk()) { bgLoadLast = performance.now(); r(); } else setTimeout(chk, 100); }; chk(); });
+/* NOTHING FROM ELSEWHERE WHILE YOU ARE IN THE CASTLES (2026-10-29, the owner: "make the load times in the castle as fast as
+ * possible and eliminate any lag"). Measured after a checkpoint into XIII (`c13Load`, `__bw.lag()`): a 330 ms freeze three
+ * seconds after the black lifted — the lighthouse island's file parsed in a frame (155 ms) — and others after it. In the
+ * castles and the throne room the far rest waits for you to leave, all but the section's own files. */
+const BW_CASTLE_FILES = /(castle13|castle|throne|minotaur|gargoyle|dark-knight|knight-man|knight-iron|farmer-|crusader|orc-moves|demon-moves|knight-moves|stone-break)/;
+// (set aside, not held in line: the far chain is one file after another, and the first castle's file behind a held one
+// would have waited with it)
+const bwCastleHeld = [];
+const bwInCastle = () => inC13 || inFort || inThrone;
+setInterval(() => { if (bwCastleHeld.length && !bwInCastle()) for (const f of bwCastleHeld.splice(0)) f(); }, 400);
 const bwNearClear = () => new Promise((r) => { const chk = () => (bwNearPending() ? setTimeout(chk, 100) : r()); chk(); });
 function bwParseLater(url, bufP, job, onError) {
   bufP.then((buf) => {
@@ -438,7 +448,16 @@ function bwParseLater(url, bufP, job, onError) {
     const fin = () => { bwParsing--; if (near) bwParsingNear--; };
     const run = () => job(buf, reach);
     if (near) bwParseChain = bwParseChain.then(bwTurn).then(run).catch(() => {}).finally(fin);
-    else bwParseChainFar = bwParseChainFar.then(bwNearClear).then(bwBgGate).then(bwTurn).then(run).catch(() => {}).finally(fin);
+    else {
+      // (asked at its turn, not when it arrived: a checkpoint's files are in before the restore has put you in a castle)
+      const far = () => {
+        bwParseChainFar = bwParseChainFar.then(bwNearClear).then(bwBgGate).then(() => {
+          if (bgLoadMode && bwInCastle() && !BW_CASTLE_FILES.test(url)) { bwCastleHeld.push(far); return null; }
+          return bwTurn().then(run).catch(() => {}).finally(fin);
+        }).catch(() => {});
+      };
+      far();
+    }
   }, (e) => { if (onError) onError(e); });
 }
 /* The one door every GLB goes through. Same shape as `loader.load`. */
@@ -1101,7 +1120,8 @@ let endVol = null, endSong = null;
  * (2026-10-29: "when you see him start falling this plays … dont loop it", and "dont actually stretch the song"; then his
  * longer file, 55.8 s, whole) — faded in over 3.5 s, faded out over 5 as he dies. −19.2 dB mean / −5 peak: about 6 dB over the end song's
  * piece, so its level is about half that one's, capped at 1 (it goes straight to the output). */
-const MINO_SONG = 'assets/minotaur-death.m4a', MINO_SONG_LEVEL = 3.2, MINO_SONG_MAX = 1.0;
+// (3.2 until 2026-10-29: "make the death music less loud for the minotaur")
+const MINO_SONG = 'assets/minotaur-death.m4a', MINO_SONG_LEVEL = 1.9, MINO_SONG_MAX = 1.0, MINO_SONG_IN = 10;
 let minoSongVol = null, minoSong = null;
 let wreckThemeVol = null;
 
@@ -18564,6 +18584,7 @@ const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _be = new THREE.E
  * roughly where the blood is, which is all `bunkerFloorAt` needs to answer
  * which floor is under it — the same lookup the gibs have had all along. */
 function stampBlood(x, z, size, atY) {
+  if (noBlood) return;
   const bf = atY === undefined ? null : bunkerFloorAt(x, z, atY);
   if (bf === null && inWater(x, z)) return;  // washes straight off the wet sand
   _be.set(0, Math.random() * Math.PI * 2, 0); _bq.setFromEuler(_be);
@@ -22036,6 +22057,143 @@ function updateGrammyFlutter(dt) {
     }
   }
 }
+/* ---- SKETCH OF MYLES JR. ------------------------------------------------
+ * (2026-10-29, the owner: "make the minotaur hold out this pic make it be called 'Sketch of Myles Jr.' make it old and
+ * worn like the grammy orc picture but don't add any text to the photo. make him hold this out after he says i love you
+ * and say Take this. once you take it he should then die.") The owner's pencil drawing of a calf in a blanket
+ * (`assets/myles-jr.jpg`, 640 x 512) — Myles's boy — on a sheet of paper he has carried folded through every fight:
+ * yellowed and foxed, a water ring, the grime of his thumb at the corner he held it by, two folds cracked into it, rubbed
+ * scratches, a corner torn away, and the paper itself bent along the folds (the grammy photo's way, its own seeds). No
+ * words on it, either side: the back is the paper's own. */
+const MYLES_W = 0.170, MYLES_H = 0.136;           // landscape, a little bigger than a print
+const MYLES_FOLDS = [[0.48, 0.0, 0.52, 1.0, -0.0036], [0.0, 0.55, 1.0, 0.50, 0.0028]];
+const mylesModel = new THREE.Group();
+const mylesWaiting = [];
+function mylesCanvas(img) {
+  const W = 640, H = 512;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const rnd = mulberry32(0x4d13);
+  // the paper, and the pencil on it, gone the colour of old paper
+  g.fillStyle = '#efe4c8'; g.fillRect(0, 0, W, H);
+  g.filter = 'sepia(0.35) contrast(0.9) brightness(0.97)';
+  g.drawImage(img, 0, 0, W, H);
+  g.filter = 'none';
+  g.globalCompositeOperation = 'multiply';
+  g.fillStyle = 'rgba(222, 196, 140, 0.45)'; g.fillRect(0, 0, W, H);
+  const vg = g.createRadialGradient(W * 0.5, H * 0.5, W * 0.22, W * 0.5, H * 0.5, W * 0.72);
+  vg.addColorStop(0, 'rgba(255,255,255,1)'); vg.addColorStop(1, 'rgba(160,126,84,1)');
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  // foxing (the brown freckles old paper gets), a water ring, his thumb at the corner
+  for (let i = 0; i < 26; i++) {
+    const x = rnd() * W, y = rnd() * H, r = 3 + rnd() * (rnd() < 0.8 ? 10 : 36);
+    const sg = g.createRadialGradient(x, y, 0, x, y, r);
+    sg.addColorStop(0, `rgba(130, 86, 40, ${0.10 + rnd() * 0.22})`); sg.addColorStop(1, 'rgba(130,86,40,0)');
+    g.fillStyle = sg; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  g.strokeStyle = 'rgba(120, 80, 40, 0.26)'; g.lineWidth = 4;
+  g.beginPath(); g.ellipse(W * 0.18, H * 0.28, 52, 48, -0.2, 0.3, Math.PI * 1.85); g.stroke();
+  const tg = g.createRadialGradient(W * 0.94, H * 0.9, 0, W * 0.94, H * 0.9, 80);
+  tg.addColorStop(0, 'rgba(60, 42, 26, 0.5)'); tg.addColorStop(1, 'rgba(60,42,26,0)');
+  g.fillStyle = tg; g.fillRect(W - 170, H - 170, 170, 170);
+  g.globalCompositeOperation = 'source-over';
+  // the folds, cracked pale with a shadow beside each
+  for (const [u0, v0, u1, v1] of MYLES_FOLDS) {
+    const x0 = u0 * W, y0 = (1 - v0) * H, x1 = u1 * W, y1 = (1 - v1) * H;
+    const L = Math.hypot(x1 - x0, y1 - y0), nx = -(y1 - y0) / L, ny = (x1 - x0) / L;
+    g.strokeStyle = 'rgba(70, 48, 24, 0.26)'; g.lineWidth = 3;
+    g.beginPath(); g.moveTo(x0 + nx * 2.5, y0 + ny * 2.5); g.lineTo(x1 + nx * 2.5, y1 + ny * 2.5); g.stroke();
+    g.strokeStyle = 'rgba(252, 244, 222, 0.7)';
+    for (let s2 = 0; s2 < L; s2 += 3 + rnd() * 6) {
+      const t = s2 / L, wob = (rnd() - 0.5) * 3.2, x = x0 + (x1 - x0) * t + nx * wob, y = y0 + (y1 - y0) * t + ny * wob;
+      g.lineWidth = 0.8 + rnd() * 1.4;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + (x1 - x0) / L * (2 + rnd() * 6), y + (y1 - y0) / L * (2 + rnd() * 6)); g.stroke();
+    }
+  }
+  // rubbed scratches, and grain
+  for (let i = 0; i < 22; i++) {
+    const x = rnd() * W, y = rnd() * H, a = rnd() * Math.PI, l = 10 + rnd() * 60;
+    g.strokeStyle = `rgba(248, 238, 214, ${0.12 + rnd() * 0.3})`; g.lineWidth = 0.6 + rnd();
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a) * l * 0.5 + (rnd() - 0.5) * 8, y + Math.sin(a) * l * 0.5, x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+  }
+  const id = g.getImageData(0, 0, W, H), d = id.data;
+  for (let i = 0; i < d.length; i += 4) { const n = (rnd() - 0.5) * 18; d[i] += n; d[i + 1] += n * 0.95; d[i + 2] += n * 0.85; }
+  g.putImageData(id, 0, 0);
+  mylesTear(g, W, H);
+  return c;
+}
+// a corner torn away (top right), a nick from the bottom edge, the other corners worn round — both faces, the same uv
+function mylesTear(g, W, H) {
+  const rnd = mulberry32(0x91c4), X = (u) => u * W, Y = (v) => (1 - v) * H, px = W / 640;
+  g.save(); g.globalCompositeOperation = 'destination-out'; g.fillStyle = '#000';
+  g.beginPath(); g.moveTo(X(1), Y(0.74));
+  for (let i = 1; i < 14; i++) { const t = i / 14; g.lineTo(X(1 - t * 0.2 + (rnd() - 0.5) * 0.02), Y(0.74 + t * 0.26 + (rnd() - 0.5) * 0.02)); }
+  g.lineTo(X(0.79), Y(1)); g.lineTo(X(1), Y(1)); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(X(0.36), Y(0)); g.lineTo(X(0.375), Y(0.035)); g.lineTo(X(0.39), Y(0.022)); g.lineTo(X(0.405), Y(0.04)); g.lineTo(X(0.42), Y(0)); g.closePath(); g.fill();
+  for (const [u, v] of [[0, 1], [0, 0], [1, 0]]) {
+    const r = (10 + rnd() * 7) * px, cx = X(u), cy = Y(v), sx = cx < W / 2 ? 1 : -1, sy = cy < H / 2 ? 1 : -1, ox = cx + sx * r, oy = cy + sy * r;
+    const a0 = Math.atan2(cy - oy, 0), a1 = Math.atan2(0, cx - ox), ccw = ((a1 - a0 + Math.PI * 4) % (Math.PI * 2)) > Math.PI;
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(ox, cy); g.arc(ox, oy, r, a0, a1, ccw); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+function mylesBackCanvas() {
+  const W = 320, H = 256, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d'), rnd = mulberry32(0x2b77);
+  g.fillStyle = '#ddd0ad'; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 34; i++) {
+    const x = rnd() * W, y = rnd() * H, r = 3 + rnd() * 24, sg = g.createRadialGradient(x, y, 0, x, y, r);
+    sg.addColorStop(0, `rgba(140, 100, 55, ${0.06 + rnd() * 0.2})`); sg.addColorStop(1, 'rgba(140,100,55,0)');
+    g.fillStyle = sg; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  for (const [u0, v0, u1, v1] of MYLES_FOLDS) { g.strokeStyle = 'rgba(80, 60, 35, 0.35)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(u0 * W, (1 - v0) * H); g.lineTo(u1 * W, (1 - v1) * H); g.stroke(); }
+  mylesTear(g, W, H);
+  return c;
+}
+function mylesGeometry() {
+  const geo = new THREE.PlaneGeometry(MYLES_W, MYLES_H, 28, 22), P = geo.attributes.position, U = geo.attributes.uv, rnd = mulberry32(0x6e05);
+  const bumps = []; for (let i = 0; i < 9; i++) bumps.push([rnd(), rnd(), 0.08 + rnd() * 0.12, (rnd() - 0.5) * 0.0028]);
+  for (let i = 0; i < P.count; i++) {
+    const u = U.getX(i), v = U.getY(i); let z = 0;
+    for (const [u0, v0, u1, v1, dep] of MYLES_FOLDS) { const du = u1 - u0, dv = v1 - v0, L = Math.hypot(du, dv), dd = Math.abs((u - u0) * dv - (v - v0) * du) / L; z += dep * Math.max(0, 1 - dd / 0.15); }
+    for (const [bu, bv, br, bd] of bumps) { const r = Math.hypot(u - bu, v - bv) / br; if (r < 1) z += bd * (1 - r * r); }
+    const cu = Math.max(0, 0.2 - u) / 0.2, cv = Math.max(0, 0.16 - v) / 0.16;   // the bottom-left corner, curling where it was held
+    z += 0.005 * Math.pow(Math.min(1, Math.hypot(cu, cv)), 2);
+    P.setZ(i, z + (rnd() - 0.5) * 0.0005);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+function mylesIcon(img) {
+  const c = document.createElement('canvas'); c.width = c.height = 48; const g = c.getContext('2d');
+  g.fillStyle = '#ddcfa8'; g.fillRect(4, 10, 40, 30);
+  if (img) { g.filter = 'sepia(0.4) contrast(0.9)'; g.drawImage(img, 6, 12, 36, 26); g.filter = 'none'; }
+  g.fillStyle = 'rgba(214, 186, 130, 0.35)'; g.fillRect(4, 10, 40, 30);
+  return c.toDataURL();
+}
+const mylesItem = {
+  id: 'mylesJr', name: 'Sketch of Myles Jr.', icon: mylesIcon(null), clickInspect: true,
+  desc: 'Folded small for a pocket, carried a long way',
+  use: () => toggleEquip(mylesItem),
+};
+new THREE.ImageLoader().load('assets/myles-jr.jpg', (img) => {
+  const front = new THREE.CanvasTexture(mylesCanvas(img)); front.colorSpace = THREE.SRGBColorSpace; front.anisotropy = 4;
+  const back = new THREE.CanvasTexture(mylesBackCanvas()); back.colorSpace = THREE.SRGBColorSpace;
+  const geo = mylesGeometry();
+  const mk = (map, side) => new THREE.MeshStandardMaterial({ map, side, alphaTest: 0.5, roughness: 0.92, metalness: 0, flatShading: true, emissive: 0xffffff, emissiveMap: map, emissiveIntensity: 0.16 });
+  const f = new THREE.Mesh(geo, mk(front, THREE.FrontSide)); f.name = 'mylesFront';
+  const b = new THREE.Mesh(geo, mk(back, THREE.BackSide)); b.name = 'mylesBack';
+  mylesModel.add(f, b);
+  for (const w of mylesWaiting.splice(0)) w();
+  mylesItem.icon = mylesIcon(img); try { renderHotbar(); renderPack(); } catch (e) { /* before the pack is up */ }
+  const vm = mylesItem.viewmodel; if (vm && !vm.userData.build && vm.userData.make) vm.userData.make();
+});
+holdable(mylesItem, mylesModel, { scale: 1.7, pos: [-0.03, 0.04, -0.02], rot: [0.22, 0.32, 0.08] });
+// a copy of it in the world (in his hand), with its own light: the court's torches are a long way off a hand on the stone
+function mylesWorldCopy(w) {
+  const fill = () => { const c = mylesModel.clone(true); c.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.emissiveIntensity = 0.5; } }); w.add(c); };
+  if (mylesModel.children.length) fill(); else mylesWaiting.push(fill);
+}
 function maybeDropGrammy(u) {
   if (!u || u !== orcUnit || grammyState !== 0) return;
   const p = u.g.position;
@@ -24482,18 +24640,26 @@ function startMinoSong() {
   minoSongVol.gain.value = Math.min(MINO_SONG_MAX, settings.volume * settings.musicVolume * MINO_SONG_LEVEL);
   musicNote('minotaur song', minoSongVol.gain.value);
   // (2026-10-29, the owner: "have the death music fade in" … "fade it when he dies looking at you": `minoSongFade`)
-  const t = ctx.currentTime + 0.02, env = ctx.createGain();
-  env.gain.setValueAtTime(0.0001, t); env.gain.exponentialRampToValueAtTime(1, t + 3.5);
+  /* (and slowly: "make the minotaur music slowly fade in" — 2026-10-29, the second time: 3.5 s on an exponential, which
+   * is most of it in the last second, was not slow. Ten seconds up a (x²) curve: the first of it under the talk, and it is
+   * full as he goes over onto his back) */
+  const t = ctx.currentTime + 0.02, env = ctx.createGain(), up = new Float32Array(48);
+  for (let i = 0; i < 48; i++) up[i] = Math.max(0.0001, (i / 47) ** 2);
+  env.gain.value = 0.0001; env.gain.setValueCurveAtTime(up, t, MINO_SONG_IN);
   env.connect(minoSongVol);
   const src = ctx.createBufferSource(); src.buffer = buf; src.connect(env); src.start(t);
   minoSong = { src, env, done: false };
   src.onended = () => { minoSong.done = true; };
 }
-function minoSongFade(sec) {
+// (2026-10-29, the owner: "make the music play longer after he dies but fade slowly": it held on `hold` seconds at its
+// own level and went out over 5 on an exponential, which is most of the way gone in the first two; now the fall is
+// (1 - x)², a slow letting go — half way through it is still at a quarter)
+function minoSongFade(sec, hold = 0) {
   const ctx = audioCtx, S = minoSong; if (!ctx || !S || S.done || S.fading) return;
   S.fading = true;
-  const t = ctx.currentTime, g = S.env.gain;
-  g.cancelScheduledValues(t); g.setValueAtTime(Math.max(0.0001, g.value), t); g.exponentialRampToValueAtTime(0.0001, t + sec);
+  const t = ctx.currentTime + hold, g = S.env.gain, g0 = Math.max(0.0001, g.value), curve = new Float32Array(64);
+  for (let i = 0; i < 64; i++) curve[i] = g0 * (1 - i / 63) ** 2;
+  g.cancelScheduledValues(ctx.currentTime); g.setValueAtTime(g0, ctx.currentTime); g.setValueCurveAtTime(curve, t, sec);
   try { S.src.stop(t + sec + 0.05); } catch (e) { /* already stopped */ }
 }
 
@@ -32709,7 +32875,7 @@ function flankDir(u, list, token, slotAng, dist, ring, out) {
  * working and only changes its mind now and then, so the circle reads as him
  * walking round to your weak side rather than as indecision. */
 function steadySide(u, list, token, slotAng) {
-  if (u.kind.restless && u.st.lastSide && Math.random() < 0.80) return u.st.lastSide;
+  if (u.kind.restless && u.st.lastSide && Math.random() < (u.kind.sideKeep ?? 0.80)) return u.st.lastSide;
   const s = flankSide(u, list, token, slotAng);
   u.st.lastSide = s;
   return s;
@@ -33607,10 +33773,13 @@ function mutGaitCap(u) {
 const _mgA = new THREE.Vector3(), _mgB = new THREE.Vector3(), _mgI = new THREE.Matrix4();
 function measureGaits(u, only) {
   if ((!only && u._gaitMeasured) || !u.mixer || !u.model || !u.clips) return;
-  const rt = ragBone(u, 'Character1_RightToeBase'), lt = ragBone(u, 'Character1_LeftToeBase');
+  const T = u.kind.gaitToes, rt = T ? T[1] : ragBone(u, 'Character1_RightToeBase'), lt = T ? T[0] : ragBone(u, 'Character1_LeftToeBase');
   let R = null, L = null;
   u.g.traverse((o) => { if (o.isBone) { if (o.name === rt) R = R || o; else if (o.name === lt) L = L || o; } });
-  if (!R || !L) return;                                  // the scan has not landed; ask again next frame
+  /* the scan has not landed; ask again next frame — but not for ever: a rig with no toes the map knows (the dark knight's,
+   * the minotaur's before `gaitToes`) was asked twice a frame for the whole game, a traverse of its rig each time
+   * (2026-10-29, "lag less") */
+  if (!R || !L) { if (u.model && !(u.clipsPending > 0) && (u._gaitTries = (u._gaitTries || 0) + 1) > 20) u._gaitMeasured = true; return; }
   const names = new Set(), G = u.kind.gaits || {}, N = u.kind.anim || {};
   for (const k of ['walk', 'run', 'strafeL', 'strafeR']) for (const n of (G[k] || [])) names.add(n);
   for (const k of ['walk', 'run', 'back']) if (N[k]) names.add(N[k]);
@@ -33868,7 +34037,8 @@ function mutAnim(u, dt, moving) {
     const a = mutPlay(u, nm, true);
     if (a) {
       a.paused = false;
-      a.timeScale = (mir ? -1 : 1) * gaitRate(u, nm, MUT_STRAFE * N.strafeK, 1.25 * N.strafeK);
+      // (at the speed the body really goes, `realSp`, not the speed it was asked for: 2026-10-29, "slide … less")
+      a.timeScale = (mir ? -1 : 1) * gaitRate(u, nm, u.realSp > 0.15 ? u.realSp : MUT_STRAFE * N.strafeK, 1.25 * N.strafeK);
     }
   } else if (u.st.back > 0) {
     /* AND A THING BACKING OFF PLAYS ITS WALK BACKWARDS. The Dealer has done
@@ -33879,7 +34049,11 @@ function mutAnim(u, dt, moving) {
     const a = mutPlay(u, N.back, true);
     // and BACKWARDS AT THE RIGHT RATE: a fixed -1.2 is the same scrub the
     // strafe had, one clip along
-    if (a) { a.paused = false; a.timeScale = -gaitRate(u, N.back, MUT_STRAFE * N.strafeK, 1.2); }
+    /* (and a clip that is ALREADY a walk backwards — the sword knights' `sWalkB` — plays forwards: run backwards it walked
+     * them forwards while they backed off, the planted foot going 2.3 m/s. Which it is: its own travel, or its name.) */
+    const TB = a && u.clipTravel && u.clipTravel[a.getClip().name];
+    const isBack = a && (TB && TB.length > 1 ? TB[TB.length - 1][1] < -0.2 : /(WalkB|Back)$/.test(a.getClip().name));
+    if (a) { a.paused = false; a.timeScale = (isBack ? 1 : -1) * gaitRate(u, N.back, u.realSp > 0.15 ? u.realSp : MUT_STRAFE * N.strafeK, 1.2); }
   } else if (u.st.flourish > 0) {
     // a roar thrown in mid-fight — quick, and not the one it opened with
     const a = mutPlay(u, u.st.flourishClip, false);
@@ -34897,6 +35071,13 @@ function nearestFoe(pos) {
 }
 const mutDrop = (u) => { if (mutToken === u) mutToken = null; };
 
+/* A GUARD FACES ONE WAY (2026-10-29, the owner: "make the hit boxes better"): a raised blade stopped a blow from anywhere,
+ * the back of you included. It stops what comes from in front, out to a little past your shoulders. */
+function guardSees(P) {
+  camera.getWorldDirection(_gsV); const dx = P.x - camera.position.x, dz = P.z - camera.position.z, d = Math.hypot(dx, dz), f = Math.hypot(_gsV.x, _gsV.z);
+  return d < 0.3 || f < 1e-3 || (dx * _gsV.x + dz * _gsV.z) / (d * f) > -0.15;
+}
+const _gsV = new THREE.Vector3();
 function parryMutant(u) {
   pegParryHaste(); goldRingParry();
   if (u.kind.smart) { const pr = u.st.parried || (u.st.parried = {}); pr[u.st.swing] = (pr[u.st.swing] || 0) + 1; }
@@ -34921,8 +35102,9 @@ function parryMutant(u) {
   hitstop = Math.max(hitstop, 0.19 + (parryStunK() - 1) * 0.08);
   const kx = u.g.position.x - camera.position.x, kz = u.g.position.z - camera.position.z;
   const kd = Math.hypot(kx, kz) || 1;
-  u.g.position.x += (kx / kd) * 0.5 * parryStunK();
-  u.g.position.z += (kz / kd) * 0.5 * parryStunK();
+  // (driven back half a metre over the stagger's first quarter-second, `u.st.shove`, held by the room's stone — it was
+  // put there in one frame, a jump through whatever was behind it: 2026-10-29, "make enemies slide around … less")
+  u.st.shoveX = (kx / kd) * 0.5 * parryStunK(); u.st.shoveZ = (kz / kd) * 0.5 * parryStunK();
   // (no caption — see the first parry's)
   if (u.kind.heavyBlock) palBlockFx(u, true);
   seaParry(u);                               // and the sea's wave, if it is set in what parried
@@ -35424,14 +35606,17 @@ function mutHeavyKnock(u, heavyBlow, woke, mine) {
  * health gone. It is written as a wrapper so every exit of the damage code
  * below counts the same, and it only ever reads what the blow already did.
  * See `bleedBuild` for the numbers. */
+let noBlood = false;
 function hurtMutant(u, dmg, P = 0, from = null) { return sfxAt(u.g.position.x, u.g.position.z, () => hurtMutantAt(u, dmg, P, from)); }
 function hurtMutantAt(u, dmg, P = 0, from = null) {
   // held by the Artifact of the Whale: none of the reactions below, and it goes in harder
   if (!from && u.st && u.st.immob > 0 && u.st.alive && !u.st.struck) return artHitFrozen(u, dmg, P);
   const hp0 = u.st ? u.st.hp : 0;
-  const r = hurtMutantCore(u, dmg, P, from);
+  // (stone does not bleed: no spray, no stain, no wound, no bleed — 2026-10-29, the owner, of the gargoyles: "dont make them bleed")
+  noBlood = !!u.kind.stone;
+  let r; try { r = hurtMutantCore(u, dmg, P, from); } finally { noBlood = false; }
   if (!from && u.st && (r || u.st.hp < hp0)) artCount(u, r);
-  if (!from && bloodHeld() && !r && u.st.alive && !u.st.struck && u.st.hp < hp0 && !u.kind.baby) bleedBuild(u, P);
+  if (!from && bloodHeld() && !r && u.st.alive && !u.st.struck && u.st.hp < hp0 && !u.kind.baby && !u.kind.stone) bleedBuild(u, P);
   if (!r && u.st && u.st.alive && u.st.hp < hp0 && u.kind.flinch) mutFlinch(u, P, from);
   return r;
 }
@@ -36234,6 +36419,7 @@ function updateSpurts(dt) {
   }
 }
 function sprayBlood(x, y, z, dirX, dirZ, n, force) {
+  if (noBlood) return;
   for (let i = 0; i < n; i++) {
     const m = bloodDropObj(0.028 * (0.5 + Math.random()));
     m.position.set(x + (Math.random() - 0.5) * 0.2, y + (Math.random() - 0.5) * 0.25, z + (Math.random() - 0.5) * 0.2);
@@ -36258,6 +36444,7 @@ function sprayBlood(x, y, z, dirX, dirZ, n, force) {
  * been opened eight times comes apart more readily than a whole one. The
  * materials are the per-copy clones `dressMutant` already makes. */
 function woundMutant(u, dirX, dirZ, atY, P = 0) {
+  if (noBlood || u.kind.stone) return;
   const st = u.st;
   st.cuts = (st.cuts || 0) + (isBlade() ? 1 : 0.5);
   const w = Math.min(1, st.cuts / 9);
@@ -38789,6 +38976,12 @@ function updateMutantUnit(u, dt) {
   // parried: stopped dead, wide open, for exactly as long as the clip says
   if (u.st.stun > 0) {
     u.st.stun -= dt;
+    if (u.st.shoveX || u.st.shoveZ) {
+      const e = Math.min(1, dt * 11), mx = u.st.shoveX * e, mz = u.st.shoveZ * e;
+      p.x += mx; p.z += mz; u.st.shoveX -= mx; u.st.shoveZ -= mz;
+      if (Math.hypot(u.st.shoveX, u.st.shoveZ) < 0.005) u.st.shoveX = u.st.shoveZ = 0;
+      mutClampX(u, p, dt);
+    }
     mutAnim(u, dt, 0);
     if (u.st.stun <= 0) { u.st.stun = 0; u.st.stunMax = 0; u.st.cool = 0.3; }
     return;
@@ -38813,13 +39006,26 @@ function updateMutantUnit(u, dt) {
        * instead — out of the arc rather than away from it, which is the one
        * direction a committed swing cannot follow. */
       if (u.kind.dodgeClip) {
+        const fresh = !u.st.dodgeS;
         u.st.dodgeS = u.st.dodgeS || (Math.random() < 0.5 ? -1 : 1);
         u.dir.set(-dz / dist, 0, dx / dist).multiplyScalar(u.st.dodgeS);
-        p.addScaledVector(u.dir, (u.kind.dodgeSide || 4.9) * dt);
+        /* (`dodgeMatch`, 2026-10-29, the owner: "make enemies slide around … less": the sword knight's sidestep went 4.2 m/s
+         * on a strafe whose feet cover 1.1 at the 1.8 it played at — half of it a skate, and either way, so one of the two
+         * was a strafe the wrong way. Now the clip's rate is what the step needs (2.4 at most, and the step no faster than
+         * that), and it plays backwards when the step is to the side its feet do not go.) */
+        let sp = u.kind.dodgeSide || 4.9, rate = u.kind.dodgeRate || 1.0, rev = false;
+        const cs = u.kind.dodgeMatch && u.clipSpeed && u.clipSpeed[u.kind.dodgeClip];
+        if (cs > 0.3) {
+          rate = THREE.MathUtils.clamp(sp / cs, 1, 2.4); sp = rate * cs;
+          const T = u.clipTravel && u.clipTravel[u.kind.dodgeClip], sc = T && T.length > 1 ? Math.sign(T[T.length - 1][0]) || 1 : 1;
+          rev = Math.sign(u.dir.x * Math.cos(u.g.rotation.y) - u.dir.z * Math.sin(u.g.rotation.y)) !== sc;
+        }
+        p.addScaledVector(u.dir, sp * dt);
         turn(9);
         const a = mutPlay(u, u.kind.dodgeClip, false);
-        if (a) { a.paused = false; a.timeScale = u.kind.dodgeRate || 1.0; }
+        if (a) { a.paused = false; a.timeScale = rev ? -rate : rate; if (fresh && rev) a.time = a.getClip().duration; }
         if (u.model) { u.leanT += (0.0 - u.leanT) * Math.min(1, dt * 6); u.model.rotation.x = u.leanT; }
+        mutClampX(u, p, dt);                              // (the castle's stone holds a sidestep too: it was let through walls)
         u.mixer.update(dt);
         if (u.st.evade <= 0) u.st.dodgeS = 0;
         return;
@@ -38835,6 +39041,7 @@ function updateMutantUnit(u, dt) {
       const a = mutPlay(u, 'walk', true);
       if (a) { a.paused = false; a.timeScale = -1.5; }
       if (u.model) { u.leanT += (-0.06 - u.leanT) * Math.min(1, dt * 6); u.model.rotation.x = u.leanT; }
+      mutClampX(u, p, dt);
       u.mixer.update(dt);
       return;
     }
@@ -39108,7 +39315,7 @@ function updateMutantUnit(u, dt) {
          * man who threw it now stops dead on the contact for a twelfth of a second — his clip and his clock both — the
          * beat that makes a blow read as landing on something. (`impF`: here, and his mixer in `mutAnim`.) */
         if (u.kind.fortBody || u.kind.paladin) u.st.impF = 0.085;
-        if (blocking && !u.st.foe) {
+        if (blocking && !u.st.foe && guardSees(u.g.position)) {
           /* AND HIS IS A TIGHTER WINDOW. `parryK` scales it per creature —
            * the pack keeps the full fifth of a second, he gives you a little
            * over three quarters of it. The tell is still the whole of the
@@ -39139,7 +39346,7 @@ function updateMutantUnit(u, dt) {
           if (!hits2) continue;
           ML[i] = true;
           if (u.kind.fortBody || u.kind.paladin) u.st.impF = 0.085;
-          if (blocking && !u.st.foe) {
+          if (blocking && !u.st.foe && guardSees(u.g.position)) {
             const dtp = (performance.now() - blockStart) / 1000;
             if (dtp <= parryWin() * (u.kind.parryK || 1) && parryCool <= 0) parryMutant(u); else blockMutant(u);
           } else mutLandBlow(u, A.dmg || u.kind.dmg);
@@ -39183,6 +39390,16 @@ function updateMutantUnit(u, dt) {
        * which is not hard, only tiresome. For that long he does not start a
        * swing and does not guard: it is yours to punish. */
       if (u.kind.opening) { u.st.cool = Math.max(u.st.cool, u.kind.opening); u.st.openT = u.kind.opening; }
+      /* AND SOMETIMES HE GIVES GROUND AND WALKS ROUND YOU (`kind.regroup`, the chance; `regroupT`, its seconds). 2026-10-29,
+       * the owner: "the dark knight sword combat just needs to be better his swings just dont feel right make the AI feel
+       * and look better" — measured (`dkBehave`), he was mid-swing 72% of the fight, twenty swings a minute, and between
+       * them circled one way only (right 16%, left 0%). A duelist resets: round you, the other way from last time, his eyes
+       * on you, and in again. */
+      if (u.kind.regroup && Math.random() < u.kind.regroup && dist < A.reach + 1.2) {
+        const [a0, a1] = u.kind.regroupT || [0.9, 1.7], T = a0 + Math.random() * (a1 - a0);
+        u.st.side = u.st.lastSide ? -u.st.lastSide : (Math.random() < 0.5 ? -1 : 1); u.st.lastSide = u.st.side;
+        u.st.sideT = T; u.st.sizing = false; u.st.cool = Math.max(u.st.cool, T);   // (at his own range: sized out past his reach, the blow after it fell short, 3 of 13 — `dkFight`)
+      }
     }
   } else {
     u.st.cool = Math.max(0, u.st.cool - dt);
@@ -39268,8 +39485,13 @@ function updateMutantUnit(u, dt) {
         && u.clipSpeed[u.kind.stepClip[u.st.side < 0 ? 0 : 1]]) || 0;
       // (a demon's borrowed side-steps carry their feet forward: it circles at the prowl's pace, so they slip at half the rate)
       const sw = stepSp || (u.kind.prowl ? u.kind.prowl : MUT_STRAFE * u.kind.anim.strafeK * (u.st.sizing ? 1.15 : 1));
-      p.x += (tx * u.st.side * sw + (dx / dist) * r * 1.5) * dt;
-      p.z += (tz * u.st.side * sw + (dz / dist) * r * 1.5) * dt;
+      let vx = tx * u.st.side * sw + (dx / dist) * r * 1.5, vz = tz * u.st.side * sw + (dz / dist) * r * 1.5;
+      /* (and no faster than its side-step can be played: 2026-10-29, "slide … less" — the minotaur was sent round at 1.96
+       * m/s, the in-and-out on top, on a strafe that covers 1.05 at its own rate and may be run at 1.55 of it) */
+      const scs = !stepSp && u.clipSpeed && u.gait && u.clipSpeed[u.st.side < 0 ? u.gait.strafeL : u.gait.strafeR];
+      if (scs > 0.3) { const L = Math.hypot(vx, vz), cap = scs * GAIT_MAX * 0.95; if (L > cap) { vx *= cap / L; vz *= cap / L; } }
+      p.x += vx * dt;
+      p.z += vz * dt;
       mutClampX(u, p, dt);
       moving = 0.2;
       /* AND CIRCLING IS NOT CHASING. It closes at a metre and a half a second
@@ -39331,6 +39553,7 @@ function updateMutantUnit(u, dt) {
         if (mutToken === u) {
           const pick = u.kind.use.attack4 ? 'attack4' : Object.keys(u.kind.use)[0];
           u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
+          u.st.side = 0; u.st.sideT = 0; u.st.sizing = false;   // (a circle, a regroup's included, ends when the swing begins)
           sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
         }
       }
@@ -39377,6 +39600,7 @@ function updateMutantUnit(u, dt) {
           const pick = ks[Math.floor(Math.random() * ks.length)];
           mutToken = u;
           u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0; u.st.lastSwing = pick; u.st.dash = 0;
+          u.st.side = 0; u.st.sideT = 0; u.st.sizing = false;   // (a circle, a regroup's included, ends when the swing begins)
           sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
         }
       }
@@ -39502,6 +39726,7 @@ function updateMutantUnit(u, dt) {
         }
         u.st.lastSwing = pick;
         u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
+        u.st.side = 0; u.st.sideT = 0; u.st.sizing = false;   // (a circle, a regroup's included, ends when the swing begins)
         if (u.kind.frenzy && mutToken !== u) u.st.frenzyCool = 1.3 + Math.random() * 1.3;   // a swing out of turn: not another straight away
         u.st.feint = (!forced && u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
         sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
@@ -46662,7 +46887,7 @@ function packByName(name) {
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
                     syringeItem, waterBottleItem, fishingRodItem, magnumItem, shotgunItem, fangItem, oldRingItem,
-                    spliffItem, grammyItem, lostKeyItem, gemItem, whaleArtItem, storeKeyItem, flameArtItem, seaArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem, cellKeyItem, goldRingItem, connRingItem, screwdriverItem, flashlightItem, billyItem]) {
+                    spliffItem, grammyItem, lostKeyItem, gemItem, whaleArtItem, storeKeyItem, flameArtItem, seaArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem, cellKeyItem, goldRingItem, connRingItem, screwdriverItem, flashlightItem, billyItem, mylesItem]) {
     if (it === beachMapItem && !BEACH_MAP_ON) continue;                            // the chart is out for now
     if (it && (it.name === name || (it.was && it.was.includes(name)))) return it;   // `was`: what a save made before a rename calls it
   }
@@ -81761,6 +81986,10 @@ function openC13Arch(quiet) {
   if (!c13Arch) return;
   c13Arch.t = quiet ? 1 : 0;
   if (!quiet) { try { sfxTavernDoor(); } catch (e) {} }
+  /* A SAVE AT THE DOOR (2026-10-29, the owner: "make a save point after opening the door after the gargoyle fight"): you
+   * opening it yourself — the four dead, it unlocked — and not a restore's or a placement's quiet open, so a reload into
+   * it never saves again. Where you stand at the door, him at your side; the knights beyond are as they were. */
+  if (!quiet && GARG.phase === 2 && !applyingSave) setTimeout(() => { if (!dying && inC13) autosaveNow(); }, 700);
 }
 function updateC13Arch(dt) {
   const A = c13Arch; if (!A) return;
@@ -84547,6 +84776,10 @@ const KN_BASE = {
   dmg: 1, reachK: 1.0, windK: 1.0, chainMax: 2, stepBack: 2.4,
   restless: 1, smart: 1, fade: 0.22,
   reacts: true, aimed: true, barLen: 0.0, aimDrop: 0.10, aimFrom: 0.70, bossDeath: true, hitFront: 0.30,
+  /* (2026-10-29, the owner: "make enemies slide around … less": through a wind-up they skated in at 3.8 m/s on a swing
+   * clip that stands still, and a lunge could close at 11. The dark knight's way: no wind-up glide, no chained skate
+   * (`noSkate`), the closing eased (`smoothMove`) and held to a charging stride (`lungeMax`).) */
+  noSkate: true, smoothMove: true, lungeMax: 4.5,
   pre: knSeatSword, author: authorKnClips,
   // a part with no map of its own (the iron knight's gauntlets, his grip) takes no lift: under a flat emissive it glowed white
   matMore: (mm) => { if (!mm.map) mm.emissiveIntensity = 0.01; },
@@ -84560,13 +84793,16 @@ const KN_BASE = {
  * THE JUGGERNAUT, the iron knight: he does not dodge and barely staggers — your blows must be traded into him — every
  * one of his is held long enough to read and costs two of your four; at half he roars and comes on without waiting.) */
 MUT_KINDS.knMan = Object.assign({}, KN_BASE, {
-  use: { kmCut: 0.24, kmSweep: 0.16, kmRise: 0.18, kmSpin: 0.08, kmLunge: 0.16, kmLeap: 0.06, kmKick: 0.12 }, chainMax: 4,
+  // (no kick: 2026-10-29, the owner: "any enemy swings that look bad and you can barely see to block take them out" — `kmKick`
+  // was 0.49 s from nothing, at the foot of your screen, with no trail behind it: the `knSee` probe)
+  use: { kmCut: 0.27, kmSweep: 0.18, kmRise: 0.20, kmSpin: 0.09, kmLunge: 0.18, kmLeap: 0.08 }, chainMax: 4,
   opening: 0.30, gapRate: 2.2,
-  dodgeClip: 'sStr1', dodgeSide: 4.2, dodgeT: 0.42, dodgeRate: 1.8,
+  dodgeClip: 'sStr1', dodgeSide: 4.2, dodgeT: 0.42, dodgeRate: 1.8, dodgeMatch: true,
   rage: { aggr: 3.6, speedK: 1.4, press: 1.0, chainMax: 4, feint: 0.45, circle: 0.18, windK: 0.85 }, rageAt: 0.4, rageClip: 'sRoar', rageDur: 1.2,
   glb: 'assets/knight-man.glb', swordMat: 'sword_1', joints: KNIGHT_JOINTS, rag: MUT_KINDS.knight.rag,
-  h: 1.92, hp: 48, hitR: 0.55, body: 0.45, lungeStop: 2.0, landSlop: 0.36, limbR: 0.34, lungeLead: 0.30,
-  speedK: 1.25, aggr: 3.0, press: 0.90,
+  // (2026-10-29, the owner: "make the knights gaurding the throne room have a little more health too and be harder": 48 → 62, aggr 3.0 → 3.4; "give the two throne door guard knights more health as well": 78)
+  h: 1.92, hp: 78, hitR: 0.55, body: 0.45, lungeStop: 2.0, landSlop: 0.36, limbR: 0.34, lungeLead: 0.30,
+  speedK: 1.25, aggr: 3.4, press: 0.95,
   circle: 0.30, step: 0.35, feint: 0.35, sizeUp: 0.18,
   turnMax: 6.0, yawK: 0.85,
   poise: 12, poiseBack: 2.2, poiseWait: 0.6, parryK: 1.0, recoilK: 0.7, stunK: 0.8, blockCost: 0.5, block: 0,
@@ -84581,15 +84817,16 @@ MUT_KINDS.knMan = Object.assign({}, KN_BASE, {
   voice: { f: 1.05, growl: 0.8, rasp: 0.9, throat: 'bellow' },
 });
 MUT_KINDS.knIron = Object.assign({}, KN_BASE, {
-  use: { kiChop: 0.30, kiSweep: 0.22, kiSpin: 0.16, kiCharge: 0.14, kiKick: 0.18 }, chainMax: 1,
+  use: { kiChop: 0.36, kiSweep: 0.27, kiSpin: 0.20, kiCharge: 0.17 }, chainMax: 2,   // (two in a string now: "harder")   // (and his kick out too: never landed, never seen)
   freeHand: [0.30, -0.90, 0.12, 0.10, -0.80, 0.55], opening: 0.7, gapRate: 1.2, trailK: 0.15, reactK: 0,
   rage: { aggr: 3.0, speedK: 1.12, press: 1.0, chainMax: 3, circle: 0.04, windK: 0.85 }, rageClip: 'sRoar', rageDur: 1.9,
   glb: 'assets/knight-iron.glb', swordNode: 'SWORD', joints: KN_IRON_JOINTS, rag: KN_IRON_RAG,
-  h: 2.15, hp: 72, hitR: 0.75, body: 0.62, lungeStop: 2.3, landSlop: 0.40, limbR: 0.38, lungeLead: 0.30,
-  speedK: 0.9, aggr: 2.1, press: 0.95,
+  // (72 → 92, aggr 2.1 → 2.5, poise 28 → 34: the same day's "a little more health too and be harder"; then "more health as well": 115)
+  h: 2.15, hp: 115, hitR: 0.75, body: 0.62, lungeStop: 2.3, landSlop: 0.40, limbR: 0.38, lungeLead: 0.30,
+  speedK: 0.9, aggr: 2.5, press: 0.98,
   circle: 0.06, step: 0.08, feint: 0.05, sizeUp: 0.08,
   turnMax: 3.6, yawK: 0.75,
-  poise: 28, poiseBack: 3.0, poiseWait: 1.0, parryK: 0.9, recoilK: 0.3, stunK: 0.5, blockCost: 0.7, block: 0,
+  poise: 34, poiseBack: 3.0, poiseWait: 1.0, parryK: 0.9, recoilK: 0.3, stunK: 0.5, blockCost: 0.7, block: 0,
   fidgetK: 0.10, fidgetGap: 3.2, aimK: 1.8,
   rig: { arm: KN_IRON_N('RightArm'), fore: KN_IRON_N('RightForeArm'), hand: KN_IRON_N('RightHand'), tip: 'kn_tip',
          armL: KN_IRON_N('LeftArm'), foreL: KN_IRON_N('LeftForeArm'), handL: KN_IRON_N('LeftHand'), head: KN_IRON_N('Head'),
@@ -84852,6 +85089,7 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
    * over the place and his arm is moving weird on some swings just fix his animations and ai"). He circles, side-steps,
    * feints and sizes you up a third as often; he closes to his blow, throws it, recovers, and comes again. */
   circle: 0.04, step: 0.04, feint: 0.03, sizeUp: 0.04, restless: 0.4,
+  regroup: 0.45, regroupT: [0.9, 1.7], sideKeep: 0.45,   // (2026-10-29: he resets between strings, and circles both ways)
   /* HIS FEET STAY WHERE THEY ARE PUT (2026-10-19, the owner: "the dark knight is sliding around a lot fix this so moves
    * more natural"). Measured (`tools/probes.js dkSkate`, a planted foot's speed over the paving): moving 3.37 m/s with the
    * body at 2.04 (96 % of frames skating), a third of every swing skating, `dkSweep`'s body sliding 2.3 m/s through the
@@ -84922,7 +85160,8 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
   /* (round 3: swept again with the arm held to its clip, `aimK` 0.3, and the tight blow test — `dkAimSweepK`, stand-offs
    * 1.4-3.2: each one's stand-off is where its blade lands nearest the middle of the picture, the neighbours landing too) */
   const STOP = { dkS0: 2.5, dkS1: 2.5, dkS2: 2.3, dkS3: 2.9, dkS5: 2.4, dkS6: 2.5, dkS7: 2.8, dkCut: 1.8, dkSweep: 2.6, dkSpin: 2.7, dkRise: 2.6, dkTurn: 3.0, dkLunge: 2.4, dkLeap: 2.6, dkKick: 1.5 };
-  for (const k in STOP) { const A = MUT_ATTACKS[k]; A.stop = STOP[k]; A.reach = Math.max(A.reach, STOP[k] + 0.8); }
+  // (thrown from 0.5 past the stand-off, not 0.8: the closing under a swing clip that stands still is a skate, 2026-10-29)
+  for (const k in STOP) { const A = MUT_ATTACKS[k]; A.stop = STOP[k]; A.reach = Math.max(A.hold ? A.reach : 0, STOP[k] + 0.5); }
   for (const k in MUT_ATTACKS) if (/^dk[A-Z]/.test(k)) { MUT_ATTACKS[k].w = 0.1; MUT_KINDS.darkKnight.alias[k] = MUT_ATTACKS[k].clip; }
   /* THE PACK'S STEPPING BLOWS GO WHERE THEIR OWN FEET TAKE THEM (2026-10-19, the owner: "the dark knight jump move he
    * slides towards you then hits you its really bad and random make his jump move hit right where he lands and when he
@@ -85050,8 +85289,12 @@ function dkRootMotion(u) {
   // down 0.8–1 m short of men a stride further off than the recorded jump)
   const F = st.foe && st.foe.kind, p = u.g.position, foe = mutFoePos(u);
   const gap = Math.hypot(foe.x - p.x, foe.z - p.z) - (A.stop || 2) - (F ? Math.max(0, (F.body || 0.45) - 0.45) : 0);
-  const k = left > 0.05 ? THREE.MathUtils.clamp(gap / left, 0, A.hold ? 2.4 : 1.6) : (gap > 0 ? 1 : 0);
-  const sx = dSide * 0.5, fz = dFwd > 0 ? dFwd * k : dFwd;
+  /* (2026-10-29, "his swings just dont feel right": the step was stretched 0–1.6× (a leap 2.4×) and its side halved, so
+   * his feet walked one step and his body took another — `dkTurn` skated its planted foot 3 m/s (`dkSkate`). Now the
+   * recorded step is near what he walks: 0.6–1.25× (a leap 0.6–1.7×), the side 0.85 of it; and he throws his swings from
+   * nearer, `STOP` below.) */
+  const k = left > 0.05 ? THREE.MathUtils.clamp(gap / left, A.hold ? 0.2 : gap > 0 ? 0.6 : 0.3, A.hold ? 1.7 : 1.25) : (gap > 0 ? 1 : 0);
+  const sx = dSide * 0.85, fz = dFwd > 0 ? dFwd * k : dFwd;
   const yaw = u.g.rotation.y, wx = sx * Math.cos(yaw) + fz * Math.sin(yaw), wz = -sx * Math.sin(yaw) + fz * Math.cos(yaw);
   p.x += wx; p.z += wz;
   if (u.kind.fortBody && fortWalls) fortClampUnit(u, p);
@@ -85144,6 +85387,8 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, { dkS: () => ({ d
  * called on him.
  * ===================================================================== */
 const MINO_GLB = 'assets/minotaur.glb';
+// how far off his nose the gargoyle over him is left when he has turned to it (his head and neck look the rest of the way)
+const MINO_GARG_OFF = 1.15;
 const MINO_JOINTS = {
   hip: 'Spine1', waist: 'Spine2', chest: 'Spine5', neck: 'Neck', head: 'Head',
   clavL: 'ShoulderL', clavR: 'ShoulderR', armL: 'UpperArmL', armR: 'UpperArmR', foreL: 'ForearmL', foreR: 'ForearmR',
@@ -85269,15 +85514,29 @@ function authorMinoClips(u, m) {
  * The first cut was solved for the hand alone and he FLOATED — propped on his right arm and his hooves, his back 13–30 cm
  * off the paving — and his left arm ran THROUGH his torso, the fist coming out of his belly (the owner, both, in the
  * court). Now every vertex is over the floor, the back 0.7 cm and the pelvis 1.9 cm off it, the shoulders 4, the head
- * 7; the left fist clutched on the top of his belly with no vertex of that arm inside him (a ray cast straight up from
- * each through the rest of him crosses an even number of times), the right hand and forearm on the stone.) */
+ * 7; the right hand and forearm on the stone.) */
+/* (HIS LEFT ARM AT REST, 2026-10-29, the owner: "fix the minotaurs arm when hes laying down just make it normal he doesnt
+ * have to hold his stomach its not working". It was solved clutched on the top of his belly, and in the game it never
+ * read — and his last breath put that arm into him (4 vertices, 15 cm). Now it lies down on the stone beside him as the
+ * right one does: re-solved with `__lieRest` (tools/minolie.js, the `minoArm` probe) — its hand 3 cm off the paving,
+ * where the right hand is mirrored across his spine (3.4 cm off it), no vertex of the arm in him. He still holds the
+ * wound while he is up, `MINO_HOLD`; the hand comes away as he goes over onto his back.) */
 const MINO_LIE = {
   hip: { right: -1.573, fwd: -0.263 }, hipF: -0.257, hipY: -0.965, waist: { right: -0.028 }, chest: { right: 0.121 }, head: { right: -0.263, up: 0.172 },
   thighL: { right: -0.407, up: 0.18 }, calfL: { right: 0.85 }, thighR: { right: -0.12, up: -0.12 }, calfR: { right: 0.35 },
-  armL: { right: -1.453, fwd: -1.391, up: 1.841 }, foreL: { right: -1.329, up: -0.104 }, armR: { right: 0.191, fwd: -0.285, up: -0.871 }, foreR: { right: 0 },
+  armL: { right: 0.128, fwd: 0.319, up: -0.360 }, foreL: { right: -0.247, up: -0.026 }, armR: { right: 0.191, fwd: -0.285, up: -0.871 }, foreR: { right: 0 },
 };
-/* (and dead: the chest lets go and the head rolls over; his fist stays on the wound. A hand sliding off him onto the
- * stone was solved too, and every way between the two keys swung the arm up through him or into the air.) */
+/* (and dead: the chest lets go and the head rolls over; the arms stay where they lie) */
+// going over onto his back (the fall's key at 8.4 s, and `mnLie`'s at 3.1)
+/* (its left arm is already down at his side, the hand to the stone to take him: from the wound there at this key, it
+ * swept through his chest as he went flat — 2026-10-29, "his arm keeps glitching too": `minoArmLie`, 27 of that arm's
+ * vertices up to 34 cm inside him at 80% of `mnLie`) */
+const MINO_GOING = { hipY: -0.705, hipF: -0.129, hip: { right: -1.12, fwd: -0.132 }, waist: { right: 0.136 }, chest: { right: 0.201 }, head: { right: 0.019, up: 0.086 },
+  thighL: { right: -0.662, up: 0.09 }, calfL: { right: 1.226 }, thighR: { right: -0.555, up: -0.06 }, calfR: { right: 0.85 },
+  armL: { right: 0.128, fwd: 0.319, up: -0.36 }, foreL: { right: -0.247, up: -0.026 }, armR: { right: 0.196, fwd: 0.133, up: -0.435 } };
+// lying, the right arm raised from the stone and held out over his chest toward whoever is at his side
+const MINO_OFFER = Object.assign({}, MINO_LIE, { armR: { right: -0.85, fwd: -0.15, up: -0.30 }, foreR: { right: -0.75 }, head: { right: MINO_LIE.head.right + 0.12, up: MINO_LIE.head.up } });
+const MINO_OFFER_HALF = Object.assign({}, MINO_LIE, { armR: { right: -0.45, fwd: -0.25, up: -0.65 }, foreR: { right: -0.45 } });
 const MINO_DEAD = Object.assign({}, MINO_LIE, { hipY: -0.950, chest: { right: 0.101 }, head: { right: -0.124, up: 0.35 } });
 // the hand to the wound while he is still up (solved the same way, 0.4 cm off the front of his belly)
 const MINO_HOLD = { waist: { right: 0.30 }, chest: { right: 0.28 }, head: { right: 0.30 }, armL: { right: -0.245, fwd: -0.8, up: -0.047 }, foreL: { right: -0.806, up: -1.851 } };
@@ -85310,18 +85569,52 @@ function minoAuthorOwn(u, R) {
     [0.0, {}],
     // (every key fitted to the floor in the pane: the guessed ones sank his hooves and shins up to 40 cm into the paving)
     [1.1, k0], [1.8, sway], [2.6, half(k0, k1, -0.150)], [3.5, k1], [5.3, kneel], [6.3, half(k1, k2, -0.506)], [7.2, k2],
-    [8.4, { hipY: -0.705, hipF: -0.129, hip: { right: -1.12, fwd: -0.132 }, waist: { right: 0.136 }, chest: { right: 0.201 }, head: { right: 0.019, up: 0.086 },
-      thighL: { right: -0.662, up: 0.09 }, calfL: { right: 1.226 }, thighR: { right: -0.555, up: -0.06 }, calfR: { right: 0.85 },
-      armL: { right: -0.849, fwd: -1.095, up: 0.897 }, foreL: { right: -1.067, up: -0.978 }, armR: { right: 0.196, fwd: 0.133, up: -0.435 } }],
+    [8.4, MINO_GOING],
     [9.8, MINO_LIE],
   ], false);
   // (slow: the breath is drawn, held, and let go over five seconds — the owner's "slowly die in front of you")
   // (the last breath lifts his chest and his head off the stone and lets them down; the right arm, which hangs off the
   // chest, is turned back onto the stone with it — lifted, it put the hand 9 cm into the paving)
-  const lift = (c, h, up) => Object.assign({}, MINO_LIE, { chest: { right: MINO_LIE.chest.right + c }, head: { right: MINO_LIE.head.right + h, up: MINO_LIE.head.up },
-    armR: { right: 0.111, fwd: -0.365, up } });
-  const die = A.build('mnDie', 5.2, [[0.0, MINO_LIE], [0.7, lift(0.18, 0.2, -0.791)], [1.4, lift(0.14, 0.14, -0.897)], [5.2, MINO_DEAD]], false);
-  for (const c of [fall, die]) u.clips[c.name] = u.mixer.clipAction(c);
+  // (and the left, at rest beside him now, the same way: lifted as it was, its hand went 7 cm into the stone)
+  const lift = (c, h, up, aL) => Object.assign({}, MINO_LIE, { chest: { right: MINO_LIE.chest.right + c }, head: { right: MINO_LIE.head.right + h, up: MINO_LIE.head.up },
+    armR: { right: 0.111, fwd: -0.365, up }, armL: aL });
+  const die = A.build('mnDie', 5.2, [[0.0, MINO_LIE], [0.7, lift(0.18, 0.2, -0.791, { right: -0.022, fwd: 0.445, up: -0.21 })],
+    [1.4, lift(0.14, 0.14, -0.897, { right: -0.010, fwd: 0.403, up: -0.21 })], [5.2, MINO_DEAD]], false);
+  /* TO HIS KNEE, AND THERE (2026-10-29, the owner: "make it so he takes the knee and drops his stuff then when you go to talk
+   * to him while hes kneeled it says you can ask 'What's wrong?' to which he replies 'Im bleeding' … after the dialog 'Im
+   * bleeding' he should lay down and then continue to the other dialog"). `mnFall` cut at its kneel: `mnKneel` is its
+   * first 5.3 s — the blow, the sway, down onto his knees, the swords going at 3.3 — and holds there; `mnLie`, from that
+   * kneel over onto his back by the same keys, is played when you have heard him (`minoLieDown`). `mnFall` stays, whole,
+   * for a restore into him lying there. */
+  const kneelC = A.build('mnKneel', 5.3, [[0.0, {}], [1.1, k0], [1.8, sway], [2.6, half(k0, k1, -0.150)], [3.5, k1], [5.3, kneel]], false);
+  const lieC = A.build('mnLie', 4.5, [[0.0, kneel], [1.0, half(k1, k2, -0.506)], [1.9, k2], [3.1, MINO_GOING], [4.5, MINO_LIE]], false);
+  // (and from his back, his right arm up off the stone, the sketch held out to you: `minoOffer`)
+  const offerC = A.build('mnOffer', 1.6, [[0.0, MINO_LIE], [0.6, MINO_OFFER_HALF], [1.6, MINO_OFFER]], false);
+  // (his death from the arm held out: the first breath's keys carry the arm down to the stone, not a snap)
+  const dieO = A.build('mnDieO', 5.2, [[0.0, MINO_OFFER], [0.7, lift(0.18, 0.2, -0.791, { right: -0.022, fwd: 0.445, up: -0.21 })],
+    [1.4, lift(0.14, 0.14, -0.897, { right: -0.010, fwd: 0.403, up: -0.21 })], [5.2, MINO_DEAD]], false);
+  for (const c of [fall, die, kneelC, lieC, offerC, dieO]) u.clips[c.name] = u.mixer.clipAction(c);
+  minoCalmIdle(u);                                   // (after the poses above: they are built on its first frame)
+}
+/* HIS IDLE, CALMER (2026-10-29, the owner: "make the minotaurs breathing less hard and fast until hes dying … his bodies
+ * idle motion of breathing I mean"). `mIdle` heaves twice in its 2.7 s — a breath every 1.35 s — his neck swinging 0.22
+ * rad, his head 0.16, his shoulders 0.10 (probe `minoIdleBreath`): a man who has just run. Stretched to twice its length
+ * and every key drawn `MINO_IDLE_K` of the way back to its first frame — the first frame itself untouched, since every
+ * pose of his (`poseRig`) is built on it, and the loop still closes. */
+const MINO_IDLE_SLOW = 2.0, MINO_IDLE_K = 0.42;
+function minoCalmIdle(u) {
+  const a = u.clips.mIdle, c = a && a.getClip(); if (!c || c._calm) return;
+  c._calm = true;
+  const q0 = new THREE.Quaternion(), q = new THREE.Quaternion();
+  for (const t of c.tracks) {
+    const v = t.values, n = t.getValueSize();
+    if (/quaternion$/.test(t.name) && n === 4) {
+      q0.fromArray(v, 0);
+      for (let i = 4; i < v.length; i += 4) { q.fromArray(v, i); if (q0.dot(q) < 0) q.set(-q.x, -q.y, -q.z, -q.w); q.slerpQuaternions(q0, q.clone(), MINO_IDLE_K).toArray(v, i); }
+    } else for (let i = n; i < v.length; i++) v[i] = v[i % n] + (v[i] - v[i % n]) * MINO_IDLE_K;
+    for (let i = 0; i < t.times.length; i++) t.times[i] *= MINO_IDLE_SLOW;
+  }
+  c.duration *= MINO_IDLE_SLOW;
 }
 MUT_KINDS.minotaur = Object.assign({}, KN_BASE, {
   glb: MINO_GLB, mino: true, c13Body: false, fortBody: false, preParse: false, solo: true,
@@ -85332,6 +85625,7 @@ MUT_KINDS.minotaur = Object.assign({}, KN_BASE, {
   speedK: 1.1, aggr: 3.4, press: 1.0, chainMax: 3,
   circle: 0.03, step: 0.03, feint: 0.02, sizeUp: 0.02, restless: 0.3,
   velGait: true, gaitBands: true, gaitMax: 1.6, smoothMove: true, noSkate: true, lungeMax: 2.2, stepBack: 0.8,
+  gaitToes: ['FeetL', 'FeetR'],                          // (his hooves: his strides measured, `measureGaits` — he skated 2.9 m/s on 2.0)
   turnMax: 3.6, yawK: 0.85, aimK: 0.45, aimFront: 0.35, aimDrop: 0.0, hitFront: 0.3, hitOnScreen: true, fade: 0.32,
   poise: 28, poiseBack: 3.0, poiseWait: 0.7, parryK: 0.8, recoilK: 0.4, stunK: 0.55, blockCost: 0.8, block: 0,
   fidgetK: 0.04, fidgetGap: 4.0, opening: 0.3, gapRate: 1.0,
@@ -85492,9 +85786,12 @@ function minoDraws(u, dt) {
     for (const k of knUnits) if (k.st.alive && k.st.lastHurt && k.st.mine) k.knYours = true;
     let on = knUnits.find((k) => k.st.alive && !k.retired && k.knOnMino);
     if (on && on.knYours) { on.knOnMino = false; on.st.foe = null; on.st.mine = true; on = null; }
-    if (!on) {
-      const free = knUnits.filter((k) => k.st.alive && !k.retired && k.st.awake && !k.knYours);
-      on = free.find((k) => k.kind === MUT_KINDS.knIron) || free[0] || null;
+    /* (2026-10-29, the owner: "make the big knight gaurding the throne room attack the minotaur first": the pick was among
+     * the ones already AWAKE, so when the light one woke a moment before him it was the light one on him. Once either is
+     * awake, the iron knight is woken onto him, unless he is already yours.) */
+    if (!on && knUnits.some((k) => k.st.alive && k.st.awake)) {
+      const free = knUnits.filter((k) => k.st.alive && !k.retired && !k.knYours);
+      on = free.find((k) => k.kind === MUT_KINDS.knIron) || free.find((k) => k.st.awake) || null;
       if (on) on.knOnMino = true;
     }
     if (on && on.st.foe !== u && on.st.atk < 0) { on.st.foe = u; on.st.mine = false; on.st.awake = true; }
@@ -85583,7 +85880,8 @@ function minoFollow(u, dt) {
    * looks scared of me": the borrowed walk-back is the orc's guarded retreat — a fighter backing off a blade. Backing off
    * you he walks his OWN walk backwards, slow, his face on you.) */
   const a = MINO.v < 0.1 ? mutPlay(u, 'mIdle', true) : back ? mutPlay(u, 'mWalk', true) : MINO.v < 2.3 ? mutPlay(u, 'mWalk', true) : mutPlay(u, 'oRun', true);
-  if (a) a.timeScale = MINO.v < 0.1 ? 1 : back ? -THREE.MathUtils.clamp(MINO.v / 1.48, 0.3, 0.8) : THREE.MathUtils.clamp(MINO.v / (MINO.v < 2.3 ? 1.48 : (u.clipSpeed.oRun || 2.2)), 0.5, 1.5);
+  const wk = (u.clipSpeed && u.clipSpeed.mWalk) || 1.48;          // (his walk's stride as measured, not a guess)
+  if (a) a.timeScale = MINO.v < 0.1 ? 1 : back ? -THREE.MathUtils.clamp(MINO.v / wk, 0.3, 0.8) : THREE.MathUtils.clamp(MINO.v / (MINO.v < 2.3 ? wk : (u.clipSpeed.oRun || 2.2)), 0.5, 1.5);
   u.mixer.update(dt);
   minoHeadAt(u, Math.hypot(dx, dz) < 14 && Math.abs(dy) < 1.4, dt);
   // left behind: put behind you again, where you are not looking
@@ -85602,20 +85900,63 @@ function minoTurnBone(b, qW) {                      // a world turn put onto a b
   b.parent.getWorldQuaternion(_mlQ2); _mlQ3.copy(_mlQ2).invert();
   b.quaternion.premultiply(_mlQ3.multiply(qW).multiply(_mlQ2));
 }
+// a look that takes his chest and neck with it: the head turned to (world yaw, pitch), each bone taking its share of the
+// turn that is left and no more than its cap (the chest 0.5 rad, the neck 0.55, the head 0.9 — round past his shoulder).
+// The turn is about the upright, the nod at the head alone: one free rotation onto the aim rolled his head over on its
+// side, snout down and a horn flat (the probe's still)
+/* (2026-10-29, the owner: "the way the minotaur turns his head is so bad it should turn from the neck not the chest make it
+ * actually look natural and good please. he can move his body a little so he doesnt bend too much": the chest took the
+ * first 0.5 rad of every look, a bend through his ribs. Now the neck and head take it — 0.75 each at most — with a little
+ * twist low in the back, at the waist (0.25), the chest almost still (0.08), and the body itself coming round
+ * `MINO_LOOK_BODY` toward what he looks at) */
+const MINO_LOOK_BODY = 0.3;
+const MINO_LOOK_CHAIN = [['waist', 0.25, 0.14], ['chest', 0.08, 0.06], ['neck', 0.75, 0.6], ['head', 0.75, 1]], _mlD = new THREE.Vector3(), _mlF = new THREE.Vector3(), _mlUp = new THREE.Vector3(0, 1, 0);
+function minoLookYaw(u, yaw, pitch, w) {
+  const H = u.bones && u.bones.head, F = H && H.userData.mnFront, J = u.minoAuthor && u.minoAuthor.J;
+  if (!F || !J || w < 0.01) return;
+  const front = () => { u.g.updateMatrixWorld(true); H.getWorldQuaternion(_mlQ); return _mlF.copy(F).applyQuaternion(_mlQ); };
+  for (const [nm, cap, share] of MINO_LOOK_CHAIN) {
+    const b = J[nm]; if (!b) continue;
+    const f = front();
+    let d = yaw - Math.atan2(f.x, f.z); while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+    minoTurnBone(b, _mlQ4.setFromAxisAngle(_mlUp, Math.sign(d) * Math.min(Math.abs(d) * share, cap) * w));
+  }
+  const f = front(), dp = THREE.MathUtils.clamp(pitch - Math.asin(THREE.MathUtils.clamp(f.y, -1, 1)), -0.5, 0.5) * w;
+  _mlD.set(f.z, 0, -f.x).normalize();                    // (the head's own left-right, level: a nod about it)
+  minoTurnBone(H, _mlQ4.setFromAxisAngle(_mlD, -dp));
+}
+/* (STEADY, 2026-10-29, the owner: "his head keeps glitching around during the death scene and dialog fix this". Measured,
+ * `minoJitter`: his neck jumped up to 1.16 rad in one frame as he lay down and 1.07 as he died, his head 0.16 a frame as a
+ * talk began. The turn was the one rotation from his face to yours, worked out fresh each frame — and with you nearly
+ * behind his face, lying, that rotation's axis flips from frame to frame; and it was let on at 3/s. Now it is a turn only
+ * for what is within `MINO_LOOK_CONE` of his face (past it the look lets go, it does not swing round), and the turn put
+ * on each bone is EASED toward the one wanted (`MINO.lookS`, 4/s), on top of whatever the clip gives that frame.) */
+const MINO_LOOK_CONE = 1.75, _mlS0 = new THREE.Quaternion();
 function minoHeadAt(u, on, dt, at = null, lim = 0.9) {
   MINO.lookK = (MINO.lookK || 0) + ((on ? 1 : 0) - (MINO.lookK || 0)) * Math.min(1, dt * 3);
   const H = u.bones && u.bones.head, N = H && H.parent, F = H && H.userData.mnFront;
-  if (!F || !N || !N.isBone || MINO.lookK < 0.01) return;
+  if (!F || !N || !N.isBone) return;
+  const L = MINO.lookS || (MINO.lookS = new Map()), e = 1 - Math.exp(-dt * 4);
   for (const [b, share] of [[N, 0.35], [H, 1]]) {
     u.g.updateMatrixWorld(true);
     H.getWorldPosition(_mlV);
     if (at) _mlW.copy(at); else { _mlW.copy(camera.position); _mlW.y -= 0.15; }   // (a hand under your eyes: the nod reads)
     _mlW.sub(_mlV).normalize();
     H.getWorldQuaternion(_mlQ); const f = F.clone().applyQuaternion(_mlQ);
-    _mlQ.setFromUnitVectors(f, _mlW);
-    const ang = 2 * Math.acos(Math.min(1, Math.abs(_mlQ.w)));
-    const k = Math.min(1, (b === H ? lim : 0.35 * lim / 0.9) / Math.max(ang, 1e-3)) * share * MINO.lookK;
-    minoTurnBone(b, _mlQ4.identity().slerp(_mlQ, k));
+    const ang = f.angleTo(_mlW);
+    // (what is wanted, as a turn of this bone in its parent's frame: none past the cone, and faded in toward its edge)
+    let want = _mlS0.identity();
+    if (MINO.lookK > 0.01 && ang < MINO_LOOK_CONE) {
+      _mlQ.setFromUnitVectors(f, _mlW);
+      const edge = THREE.MathUtils.clamp((MINO_LOOK_CONE - ang) / 0.45, 0, 1);
+      const k = Math.min(1, (b === H ? lim : 0.35 * lim / 0.9) / Math.max(ang, 1e-3)) * share * MINO.lookK * edge;
+      _mlQ4.identity().slerp(_mlQ, k);
+      b.parent.getWorldQuaternion(_mlQ2); _mlQ3.copy(_mlQ2).invert();
+      want = _mlS0.copy(_mlQ3).multiply(_mlQ4).multiply(_mlQ2);
+    }
+    const cur = L.get(b) || new THREE.Quaternion(); L.set(b, cur);
+    cur.slerp(want, e);
+    if (Math.abs(cur.w) < 0.99999) b.quaternion.premultiply(cur);
   }
 }
 /* NOTHING OF HIM GOES INTO THE STONE (2026-10-29, the owner: "they get stuck in the cracks in the walls and clip through
@@ -85673,7 +86014,7 @@ function minoToGate(u, dt) {
   p.x += Math.sin(u.g.rotation.y) * MINO.v * k * dt; p.z += Math.cos(u.g.rotation.y) * MINO.v * k * dt;
   if (p.z > g.z - 0.6) p.y += (beachGroundAt(p.x, p.z) - p.y) * Math.min(1, dt * 10);
   if (u.model) u.model.rotation.y = 0;
-  const a = mutPlay(u, 'mWalk', true); if (a) a.timeScale = THREE.MathUtils.clamp(MINO.v / 1.48, 0.5, 1.2);
+  const a = mutPlay(u, 'mWalk', true); if (a) a.timeScale = THREE.MathUtils.clamp(MINO.v / ((u.clipSpeed && u.clipSpeed.mWalk) || 1.48), 0.5, 1.2);
   u.mixer.update(dt);
   if (p.z < g.z + 0.45 && Math.abs(p.x - g.x) < 1.2) { MINO.fade = 0; sfxAt(g.x, g.z, () => sfxFortGate(1)); }
 }
@@ -85687,9 +86028,15 @@ const MINO_NPC = {
       { label: 'No', to: 'mnNo', act: () => { MINO.answer = 'no'; } },
     ] },
     yes: { text: 'Good, Looks like were headed down the same path. Stay close.', choices: [], rate: 30, hint: '', end: 3600 },
+    // (on his knee: you ask, he answers, the music comes up under it — and he goes down onto his back, `minoLieDown`, and on)
+    hurt: { text: '...', rate: 40, enter: () => startMinoSong(), choices: [{ label: 'What’s wrong?', to: 'bleed' }] },
+    bleed: { text: 'Im bleeding', rate: 60, choices: [], next: 'lie', hint: 'click to go on' },
+    lie: { text: '', choices: [], hint: '', end: false, enter: () => { dialogEl.classList.remove('show'); minoLieDown(MINO.u); } },
     // (dying: "I thought I could push through" first, then the rest — the owner, 2026-10-29)
     last: { text: 'I thought I could push through', choices: [], next: 'last2', rate: 70, hint: 'click to go on' },
-    last2: { text: 'I tried my best friend, I love you...', choices: [], rate: 70, hint: '', end: 1e9 },
+    last2: { text: 'I tried my best friend, I love you...', choices: [], rate: 70, next: 'take', hint: 'click to go on' },
+    // (and he holds his boy's picture out to you; when it is yours, he goes)
+    take: { text: 'Take this.', rate: 60, enter: () => minoOffer(MINO.u), choices: [{ label: 'Take it', to: 'given', act: () => minoGiveSketch(MINO.u) }] },
     /* (at XIII's arch door, `minoAtDoor` — the owner's script, 2026-10-29: the closest gargoyle drops behind him while he
      * talks and he never sees it; told, he will not hear of it; then it rises behind him and he turns round on it) */
     locked: { text: 'FUCK its locked...', rate: 45, choices: [{ label: 'You can probably break this door.', to: 'beast' }] },
@@ -85712,7 +86059,7 @@ const MINO_NPC = {
 function minoTalk() {
   const u = MINO.u; if (!u || !u.bones || !u.bones.head) return;
   MINO_NPC.sprite = u.bones.head; MINO_NPC.head = u.bones.head;
-  if (MINO.stage === 'down') { MINO_NPC.fov = 30; startDialog('last', MINO_NPC); return; }
+  if (MINO.stage === 'down') { MINO_NPC.fov = 30; startDialog(MINO.kneel ? 'hurt' : MINO.offering ? 'take' : 'last', MINO_NPC); return; }
   MINO.answer = null; MINO_NPC.fov = 34;
   startDialog('start', MINO_NPC);
 }
@@ -85743,7 +86090,12 @@ function minoAtDoor(then) {
 }
 function minoLeave() {
   const u = MINO.u; if (!u) return;
-  if (MINO.stage === 'down') { minoLetGo(u); return; }
+  if (MINO.stage === 'down') {
+    // (closed on his knee, or while he is still going down: he is not done — speak to him again)
+    if (MINO.kneel || !minoLaidDown(u)) { MINO.lieTalk = false; return; }
+    if (MINO.offering && !MINO.sketchGiven) return;        // (closed with it still held out to you: it waits for you)
+    minoLetGo(u); return;
+  }
   if (MINO.stage !== 'wait') return;
   if (MINO.answer === 'yes') { MINO.stage = 'toGate'; MINO.ally = true; MINO.v = 0; minoBody(u); }
   else if (MINO.answer === 'no') minoTurn(u);
@@ -85779,7 +86131,7 @@ function placeMinotaur() {
   u.g.add(prox); MINO.prox = prox;
   addInteractable(prox, 'Talk to the minotaur', 'default', {
     mid: true, far: 4.6,
-    when: () => !!u.model && u.st.alive && !dialogOpen && ((MINO.stage === 'wait' && !inFort && !inRoom()) || (MINO.stage === 'down' && MINO.t > (u.clips.mnFall ? u.clips.mnFall.getClip().duration : 4))),
+    when: () => !!u.model && u.st.alive && !dialogOpen && ((MINO.stage === 'wait' && !inFort && !inRoom()) || (MINO.stage === 'down' && (MINO.kneel ? MINO.t > 5.4 : minoLaidDown(u)))),
     onActivate: () => minoTalk(),
   });
 }
@@ -85791,14 +86143,90 @@ const MINO_POSE = {
   // (filled by `minoAuthorOwn` once his clips are in: per joint, turns about the body's axes from his idle's first frame)
 };
 function minoGoDown(u) {
-  MINO.stage = 'down'; MINO.t = 0; MINO.songDue = true;
+  MINO.stage = 'down'; MINO.t = 0; MINO.kneel = true; MINO.lieT = undefined; MINO.lieTalk = false;   // (his song waits for your question now, `hurt`)
+  MINO.offering = false; MINO.sketchGiven = false;
   u.st.foe = null; u.st.atk = -1; u.st.awake = false; u.st.roar = 0; u.holdAnim = true;
   if (mutToken === u) mutToken = null;
   for (const k of knUnits) if (k.st.foe === u) k.st.foe = null;
-  MINO.spot = { x: u.g.position.x, z: u.g.position.z, yaw: u.g.rotation.y };
+  MINO.spot = minoLieSpot(u.g.position.x, u.g.position.z, u.g.rotation.y);
   if (u.model) u.model.rotation.y = 0;
-  mutPlay(u, 'mnFall', false);
+  mutPlay(u, 'mnKneel', false);
+  // (his neck has no track in the kneel or the lie: from his rest, not from wherever the fight left it)
+  { const nk = u.minoAuthor && u.minoAuthor.J.neck, q = nk && minoClipStart(u, 'mIdle', nk); if (q) nk.quaternion.copy(q); }
   sfxMutHunger(Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z), u.kind.voice);
+}
+/* WHERE HE WILL LIE (2026-10-29): he goes over onto his back, his head 1.6 m behind where he stood and his shoulders
+ * half a metre either side — and the castle's solids push only where his feet are, so in the probe he went down beside
+ * the fountain in XIII and lay across its rim in the water, bits of him showing through it. The way he faces is turned,
+ * the least it can be (he turns with the blow, `minoDownStep`), until that ground is clear: the court's floor at his
+ * own height, no solid, no wall. */
+function minoLieClear(x, z, yaw) {
+  const y0 = c13CourtAt(x, z); if (y0 === null) return true;          // (not in XIII's courts: nothing to ask)
+  if (c13Overlaps(x - C13_X, z - C13_Z, 0.5)) return false;
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  for (const d of [-0.3, 0.5, 1.2, 1.9, 2.5]) for (const sd of [-0.55, 0, 0.55]) {
+    const px = x - fx * d + fz * sd, pz = z - fz * d - fx * sd, f = c13CourtAt(px, pz);
+    if (f === null || Math.abs(f - y0) > 0.15 || c13Overlaps(px - C13_X, pz - C13_Z, 0.2) || keepWallNear(px, pz, 0.25, y0 + 0.1, y0 + 1.0, C13_SITE)) return false;
+  }
+  return true;
+}
+// (and if no way round is clear where he stands — in the solid itself, or hemmed in — the nearest spot that is, out to 2 m:
+// he staggers there with the blow)
+function minoLieSpot(x, z, yaw) {
+  if (!c13World) return { x, z, yaw };
+  for (const r of [0, 0.5, 1.0, 1.5, 2.0]) for (let j = 0; j < (r ? 12 : 1); j++) {
+    const px = x + Math.sin(j / 12 * Math.PI * 2) * r, pz = z + Math.cos(j / 12 * Math.PI * 2) * r;
+    for (let k = 0; k <= 12; k++) for (const sg of k ? [1, -1] : [1]) { const a = yaw + sg * k * Math.PI / 12; if (minoLieClear(px, pz, a)) return { x: px, z: pz, yaw: a }; }
+  }
+  return { x, z, yaw };
+}
+// over onto his back, once you have heard him: and the talk goes on from where it was when he is down (`minoDownStep`)
+function minoLieDown(u) {
+  if (!u || MINO.stage !== 'down' || !MINO.kneel) return;
+  MINO.kneel = false; MINO.lieT = MINO.t; MINO.lieTalk = true;
+  mutPlay(u, 'mnLie', false);
+}
+// lying all the way down: the lie he was asked into, or — restored, or from before the kneel — the whole fall
+function minoLaidDown(u) {
+  if (MINO.kneel) return false;
+  if (MINO.lieT !== undefined) return MINO.t > MINO.lieT + (u.clips.mnLie ? u.clips.mnLie.getClip().duration : 4.5) + 0.05;
+  return MINO.t > (u.clips.mnFall ? u.clips.mnFall.getClip().duration : 4) + 0.05;
+}
+/* HE HOLDS IT OUT (2026-10-29: "make him hold this out after he says i love you and say Take this. once you take it he
+ * should then die"). His arm comes up off the stone (`mnOffer`) with the sketch in his hand, facing you; the lens goes to
+ * it. Taken (the choice), it is yours and he goes, on the breath (`minoLeave` → `minoLetGo`). */
+function minoOffer(u) {
+  if (!u || MINO.offering) return;
+  MINO.offering = true; MINO.sketchGiven = false;
+  mutPlay(u, 'mnOffer', false);
+  const hand = u.model && u.model.getObjectByName('F4R');
+  if (hand && !MINO.sketchW) {
+    const w = new THREE.Group(); mylesWorldCopy(w);
+    const hs = new THREE.Vector3(); hand.updateWorldMatrix(true, false); hand.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), hs);
+    w.scale.setScalar(2.3 / (hs.x || 1));
+    hand.add(w); MINO.sketchW = w;
+  }
+  if (MINO.sketchW) { dialogHead = MINO.sketchW; dialogFov = 38; }
+}
+// (the sketch in his hand turned each frame to face you, a little tipped, as a hand holding something out does)
+function minoSketchStep(u) {
+  const w = MINO.sketchW; if (!w || !w.parent) return;
+  w.parent.updateWorldMatrix(true, false);
+  const P = w.parent.getWorldPosition(_mlV);
+  _mlW.copy(camera.position).sub(P).normalize();
+  const Q = _mlQ.setFromUnitVectors(_mlF.set(0, 0, 1), _mlW).multiply(_mlQ3.setFromAxisAngle(_mlD.set(1, 0, 0), -0.25));
+  // (pinched by its bottom edge, so it stands above his knuckles toward you: centred on his fist, the fist hid it)
+  const up = _mlF.set(0, 1, 0).applyQuaternion(Q), at = _mlD.copy(P).addScaledVector(up, MYLES_H * 2.3 * 0.52).addScaledVector(_mlW, 0.07);
+  w.position.copy(w.parent.worldToLocal(at));
+  w.parent.getWorldQuaternion(_mlQ2); w.quaternion.copy(_mlQ2.invert().multiply(Q));
+}
+function minoGiveSketch(u) {
+  if (MINO.sketchGiven) return;
+  MINO.sketchGiven = true;
+  if (MINO.sketchW) { MINO.sketchW.parent && MINO.sketchW.parent.remove(MINO.sketchW); MINO.sketchW = null; }
+  sfxPaperRustle(1);
+  if (!inventory.includes(mylesItem)) addToInventory(mylesItem);
+  if (u && u.bones && u.bones.head) dialogHead = u.bones.head;
 }
 function minoLetGo(u) {
   if (MINO.stage !== 'down') return;
@@ -85806,7 +86234,7 @@ function minoLetGo(u) {
   // the lens stays on him through it
   cineHold = true; dialogHead = u.bones.head; dialogTarget = u.bones.head.getWorldPosition(new THREE.Vector3()); dialogFov = 30;
   if (!minoLastBreath(u)) sfxBenLastBreath(u.g.position.x, u.g.position.z);
-  mutPlay(u, 'mnDie', false);
+  mutPlay(u, MINO.sketchGiven ? 'mnDieO' : 'mnDie', false);
 }
 // the pool: Ben's spills, spreading out from under his belly over most of a minute
 function minoPoolMake(u) {
@@ -85832,8 +86260,11 @@ function minoPoolStep(u, k) {
 }
 // his breathing: the dying man's recording, a fifth lower for a chest this size, from where he lies
 let minoBr = null;
-// (slower and quieter while he lies there: "make him breath less hard and fast until hes dying" — 0.8 / 0.42 before)
-const MINO_BR_RATE = 0.64, MINO_BR_LEVEL = 0.24, MINO_BR_FAR = 10;
+// (slower and quieter while he lies there: "make him breath less hard and fast until hes dying" — 0.8 / 0.42 before, then
+// 0.64 / 0.24; asked again the same day: 0.56 / 0.14 — a breath every 5.2 s, not 4.6 — and muffled, `MINO_BR_DARK`. His
+// LAST breath keeps the old rate and loudness, `MINO_LAST_RATE` / `MINO_LAST_LEVEL`: that one is meant to be hard)
+const MINO_BR_RATE = 0.56, MINO_BR_LEVEL = 0.14, MINO_BR_FAR = 10, MINO_BR_DARK = 2400;
+const MINO_LAST_RATE = 0.64, MINO_LAST_LEVEL = 0.24;
 function updateMinoBreath(on) {
   const ctx = audioCtx; if (!ctx || !sfxBusGain) return;
   const bank = sampleBanks.benBreath && sampleBanks.benBreath[0];
@@ -85853,7 +86284,7 @@ function updateMinoBreath(on) {
     const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
     const f = THREE.MathUtils.clamp(1 - (d - 1.5) / (MINO_BR_FAR - 1.5), 0, 1); k = f * f;
     minoBr.pan.pan.setTargetAtTime(THREE.MathUtils.clamp(panTo(u.g.position.x, u.g.position.z) * 0.7, -1, 1), t, 0.1);
-    minoBr.lp.frequency.setTargetAtTime(1200 + 3800 * f, t, 0.2);
+    minoBr.lp.frequency.setTargetAtTime(900 + (MINO_BR_DARK - 900) * f, t, 0.2);
   }
   minoBr.g.gain.setTargetAtTime(k * MINO_BR_LEVEL, t, on ? 0.35 : 0.12);
 }
@@ -85870,8 +86301,8 @@ function minoLastBreath(u) {
   const bank = sampleBanks.benBreath && sampleBanks.benBreath[0]; if (!bank) return false;
   updateMinoBreath(false);
   const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
-  const src = ctx.createBufferSource(); src.buffer = bank; src.playbackRate.value = MINO_BR_RATE;
-  const g = ctx.createGain(); g.gain.value = MINO_BR_LEVEL * 1.2 * THREE.MathUtils.clamp(1 - (d - 1.5) / 11, 0.15, 1);
+  const src = ctx.createBufferSource(); src.buffer = bank; src.playbackRate.value = MINO_LAST_RATE;
+  const g = ctx.createGain(); g.gain.value = MINO_LAST_LEVEL * 1.2 * THREE.MathUtils.clamp(1 - (d - 1.5) / 11, 0.15, 1);
   const pan = ctx.createStereoPanner(); pan.pan.value = THREE.MathUtils.clamp(panTo(u.g.position.x, u.g.position.z) * 0.7, -1, 1);
   src.connect(g).connect(pan).connect(sfxOut());
   src.start(ctx.currentTime, 6.05);
@@ -85886,6 +86317,36 @@ function minoSide(u, b) {
   return _mnbA.set(1, 0, 0).applyQuaternion(_mnbM).applyQuaternion(_mnbP).normalize();
 }
 // a bone's rotation on the last frame of one of his clips
+// a bone's first key in a clip (his idle's first frame is the rest every pose of his is built on)
+function minoClipStart(u, clip, b) {
+  const a = u.clips[clip], t = a && a.getClip().tracks.find((x) => x.name === b.name + '.quaternion');
+  return t ? new THREE.Quaternion(t.values[0], t.values[1], t.values[2], t.values[3]) : null;
+}
+/* HIS NECK AND HEAD, FROM HIS CLIPS, BY HAND (2026-10-29, "his head keeps glitching around during the death scene and
+ * dialog"). Down, the mixer did not put them back each frame — a held kneel, a finished lie (`minoJitter`: a bone the look
+ * turned stayed turned, and the look went on top of it again, until something else wrote it and it snapped, 0.6–1.2 rad
+ * in a frame). While he is down they are set here first, every frame, from what his down clips say at their own times,
+ * blended by their weights; his breath and his look go on top of that. */
+const MINO_DOWN_CLIPS = ['mnKneel', 'mnLie', 'mnFall', 'mnDie', 'mnOffer', 'mnDieO'], _mdQ = new THREE.Quaternion(), _mdA = new THREE.Quaternion();
+function minoSetDownPose(u, bones) {
+  const I = u._mdI || (u._mdI = new Map());
+  const acts = MINO_DOWN_CLIPS.map((n) => u.clips[n]).filter((a) => a && a.enabled && a.getEffectiveWeight() > 0.001);
+  if (!acts.length) return;
+  for (const b of bones) {
+    if (!b) continue;
+    let wsum = 0, first = true;
+    for (const a of acts) {
+      const c = a.getClip(), key = c.name + '|' + b.name;
+      let it = I.get(key);
+      if (it === undefined) { const t = c.tracks.find((x) => x.name === b.name + '.quaternion'); it = t ? t.createInterpolant() : null; I.set(key, it); }
+      if (!it) continue;
+      const v = it.evaluate(Math.min(a.time, c.duration)), w = a.getEffectiveWeight();
+      _mdA.set(v[0], v[1], v[2], v[3]);
+      if (first) { _mdQ.copy(_mdA); wsum = w; first = false; } else { wsum += w; _mdQ.slerp(_mdA, w / wsum); }
+    }
+    if (!first) b.quaternion.copy(_mdQ);
+  }
+}
 function minoClipEnd(u, clip, b) {
   const a = u.clips[clip], t = a && a.getClip().tracks.find((x) => x.name === b.name + '.quaternion');
   if (!t) return null; const n = t.values.length;
@@ -85895,20 +86356,97 @@ function minoBreathPose(u, k, dt) {
   const R = u.minoAuthor; if (!R) return;
   /* (his lying pose, from the clip's own last frame — it was read off the live bones the first frame it was needed, and
    * measured, his neck held a stray 0.46 rad in it then: the back of his head 14 cm into the paving for the rest of it) */
-  if (!MINO.base) { MINO.base = new Map(); for (const nm of ['chest', 'waist', 'neck', 'head']) { const b = R.J[nm]; if (b) MINO.base.set(b, minoClipEnd(u, 'mnFall', b) || b.quaternion.clone()); } }
+  if (!MINO.base) { MINO.base = new Map(); for (const nm of ['chest', 'waist', 'neck', 'head']) { const b = R.J[nm]; if (b) MINO.base.set(b, minoClipEnd(u, 'mnFall', b) || minoClipStart(u, 'mIdle', b) || b.quaternion.clone()); } }
   const bn = minoBreathNow();
   let br;
-  if (bn !== null) { MINO.brS = MINO.brS === undefined ? bn : MINO.brS + (bn - MINO.brS) * Math.min(1, dt * 12); br = MINO.brS; }
-  else { MINO.brPh = (MINO.brPh || 0) + dt * 2.2; br = Math.sin(MINO.brPh); }
+  /* (the chest follows the recording's loudness through a slow lag — at 12/s it jerked with every catch inside a gasp —
+   * and at half the heave it was: "less hard and fast until hes dying") */
+  if (bn !== null) { MINO.brS = MINO.brS === undefined ? bn : MINO.brS + (bn - MINO.brS) * Math.min(1, dt * 3); br = MINO.brS; }
+  else { MINO.brPh = (MINO.brPh || 0) + dt * 1.2; br = Math.sin(MINO.brPh); }
   for (const [b, q] of MINO.base) {
     const nm = Object.keys(R.J).find((n) => R.J[n] === b);
-    const amt = { waist: 0.03, chest: 0.055, neck: 0.025, head: 0.035 }[nm] * br * k;
+    const amt = { waist: 0.016, chest: 0.03, neck: 0.012, head: 0.018 }[nm] * br * k;
     b.quaternion.copy(q).premultiply(_mnbQ.setFromAxisAngle(minoSide(u, b), -amt));
   }
 }
+/* HE BLINKS (2026-10-29, the owner: "make him naturally blink as well must look good"). His eyes are two balls on his head
+ * bone (`tools/minotaur_pack.py`: the +x one's centre (0.052, 1.8815, 0.098), radius 0.042, looking along (0.55, −0.06,
+ * 0.83)), with no lids. Each gets an upper lid: a cap of a sphere a few millimetres outside the ball, his own skin's
+ * colour (the map's texels under the sockets round them), on a pivot at the ball's centre — tucked up and back under the
+ * brow when open, swept down over the front to close. Found on his body by its vertices: the ball's centre, its front-
+ * most and its top-most, skinned onto the head bone where he stands. A blink every 2.5–6 s, now and then two; down in
+ * 70 ms, held 50, up in 130. Dead, they close, slowly. */
+const MINO_EYE_C = [0.052, 1.8815, 0.098], MINO_EYE_R = 0.042, MINO_LID_OPEN = -1.15, MINO_LID_SHUT = 1.62;
+function minoMakeLids(u) {
+  let body = null; u.model.traverse((o) => { if (o.isSkinnedMesh && o.geometry.attributes.position.count === 3572) body = o; });
+  const H = u.bones.head; if (!body || !H) return false;
+  const P = body.geometry.attributes.position, UV = body.geometry.attributes.uv, n = P.count, v = new THREE.Vector3();
+  const map = body.material && body.material.map, img = map && map.image;
+  let tex = null;
+  try { if (img && img.width) { const c = document.createElement('canvas'); c.width = 64; c.height = 64; const g2 = c.getContext('2d'); g2.drawImage(img, 0, 0, 64, 64); tex = g2.getImageData(0, 0, 64, 64).data; } } catch (e) { tex = null; }
+  const col = [0, 0, 0]; let nc = 0;
+  body.updateMatrixWorld(true); u.g.updateMatrixWorld(true);
+  const lids = [];
+  for (const sx of [1, -1]) {
+    const C = new THREE.Vector3(MINO_EYE_C[0] * sx, MINO_EYE_C[1], MINO_EYE_C[2]);
+    let iF = -1, iT = -1, bf = -1e9, bt = -1e9; const ball = [];
+    for (let i = 0; i < n; i++) {
+      v.fromBufferAttribute(P, i); const d = v.distanceTo(C);
+      if (d < MINO_EYE_R + 0.005) { ball.push(i); const f = (v.x - C.x) * 0.55 * sx + (v.y - C.y) * -0.06 + (v.z - C.z) * 0.83; if (f > bf) { bf = f; iF = i; } if (v.y - C.y > bt) { bt = v.y - C.y; iT = i; } }
+      else if (d < MINO_EYE_R + 0.03 && tex && UV) { const tu = UV.getX(i), tv = UV.getY(i), px = Math.min(63, Math.max(0, Math.floor(tu * 64))), py = Math.min(63, Math.max(0, Math.floor((1 - tv) * 64))), k = (py * 64 + px) * 4; col[0] += tex[k]; col[1] += tex[k + 1]; col[2] += tex[k + 2]; nc++; }
+    }
+    if (ball.length < 20 || iF < 0 || iT < 0) return false;
+    const skin = (i) => { const w = new THREE.Vector3().fromBufferAttribute(P, i); body.applyBoneTransform(i, w); return w.applyMatrix4(body.matrixWorld); };
+    const cW = new THREE.Vector3(); for (const i of ball) cW.add(skin(i)); cW.divideScalar(ball.length);
+    const fW = skin(iF).sub(cW).normalize(), tW = skin(iT).sub(cW), rW = cW.distanceTo(skin(iF));
+    const up = tW.sub(fW.clone().multiplyScalar(tW.dot(fW))).normalize(), side = new THREE.Vector3().crossVectors(up, fW).normalize();
+    // the pivot in the head bone's frame: z along the eye's look, y up, x across
+    const M = new THREE.Matrix4().makeBasis(side, up, fW).setPosition(cW);
+    H.updateWorldMatrix(true, false); M.premultiply(new THREE.Matrix4().copy(H.matrixWorld).invert());
+    const piv = new THREE.Object3D(); M.decompose(piv.position, piv.quaternion, piv.scale); piv.scale.setScalar(1);
+    const hs = new THREE.Vector3(); H.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), hs);
+    lids.push({ piv, r: rW / (hs.x || 1) });
+    H.add(piv);
+  }
+  // (a little darker than the texels round the socket: shut, at their own average, the lid caught the light as a pale ring)
+  const k = nc ? 0.72 / (nc * 255) : 0, skinC = nc ? new THREE.Color(col[0] * k, col[1] * k, col[2] * k) : new THREE.Color(0.23, 0.14, 0.11);
+  const mat = new THREE.MeshStandardMaterial({ color: skinC, roughness: 0.9, metalness: 0, flatShading: true, side: THREE.DoubleSide });
+  if (body.material && body.material.emissive) { mat.emissive.copy(skinC).multiplyScalar(0.25); mat.emissiveIntensity = body.material.emissiveIntensity || 0; }
+  for (const L of lids) {
+    // the upper half of a ball (its pole on the pivot's +y), 8% out from the eye
+    const lid = new THREE.Mesh(new THREE.SphereGeometry(L.r * 1.08, 14, 7, 0, Math.PI * 2, 0, Math.PI * 0.5), mat);
+    lid.name = 'mnLid'; lid.frustumCulled = false; lid.raycast = () => {};
+    L.hinge = new THREE.Object3D(); L.piv.add(L.hinge); L.hinge.add(lid);
+  }
+  u.mnLids = { lids, t: 2 + Math.random() * 3, ph: 0, dbl: false, shut: 0 };
+  return true;
+}
+function minoBlinkStep(u, dt) {
+  if (!u.mnLids) { if (u.mnLidTry === undefined) u.mnLidTry = 0; if (u.mnLidTry++ < 5 && !minoMakeLids(u)) return; if (!u.mnLids) return; }
+  const B = u.mnLids, dead = MINO.stage === 'dead';
+  let c;
+  if (dead) { B.shut = Math.min(1, B.shut + dt / 2.2); c = B.shut * B.shut * (3 - 2 * B.shut); }
+  else {
+    B.t -= dt;
+    if (B.ph === 0 && B.t <= 0) { B.ph = 1; B.k = 0; }
+    if (B.ph === 1) { B.k += dt; if (B.k > 0.25) { B.ph = 0; if (!B.dbl && Math.random() < 0.15) { B.dbl = true; B.t = 0.12; } else { B.dbl = false; B.t = 2.5 + Math.random() * 3.5; } } }
+    const k = B.ph === 1 ? B.k : 1;
+    c = k < 0.07 ? k / 0.07 : k < 0.12 ? 1 : k < 0.25 ? 1 - (k - 0.12) / 0.13 : 0;
+    c = c * c * (3 - 2 * c);
+  }
+  const a = MINO_LID_OPEN + (MINO_LID_SHUT - MINO_LID_OPEN) * c;
+  for (const L of B.lids) L.hinge.rotation.x = a;
+}
 /* ---- EVERY FRAME. */
 function updateMinotaur(dt) {
-  if (!MINO.u) { if (fortReady && Math.abs(camera.position.z - FORT_Z) < 420 && !inRoom()) placeMinotaur(); updateMinoBreath(false); return; }
+  /* (and at once on a restore that has him past the gate — at your side, down, dead — in either castle: he waited on the
+   * FIRST castle being built, which a checkpoint in XIII does last, and came 7.5 s after the black lifted, `c13Load` —
+   * 2026-10-29, the owner: "the minotaur isnt spawning in instantly at my checkpoint in the castle") */
+  if (!MINO.u) {
+    const early = MINO.restored && !['wait', 'killed'].includes(MINO.restored.s) && (inC13 || inFort || inThrone);
+    if ((fortReady && Math.abs(camera.position.z - FORT_Z) < 420 && !inRoom()) || early) placeMinotaur();
+    updateMinoBreath(false); return;
+  }
   const u = MINO.u;
   if (u.retired) { updateMinoBreath(false); return; }
   if (u.minoLay && MINO_PACKS.every(([g]) => !!g())) { const f = u.minoLay; u.minoLay = null; f(); }
@@ -85922,6 +86460,7 @@ function updateMinotaur(dt) {
     texOK = W.compiled;
   }
   if (MINO.restored) minoApplyRestore(u);
+  if (u.model && u.bones && u.bones.head && u.g.visible) minoBlinkStep(u, dt);
   const pl = minoPlaceNow();
   if (pl !== MINO.place) {
     const was = MINO.place; MINO.place = pl;
@@ -85961,27 +86500,41 @@ function updateMinotaur(dt) {
      * makes eye contact for a sec then turns around and the fight starts") a double take: his head snaps back round to
      * you, the shoulders after it, a second's look, and round again onto it — `gargSceneStep` keeps the beats) */
     const S = GARG.scene, sc = st === 'with' && S && S.turn && S.unit;
-    let head = null;
+    /* (2026-10-29, the owner: "when he turn to see the gargoyle make him look back at you by turning his head more not
+     * his body sliding mak his head and neck actually turn look at you then look back real quick he should only look at
+     * you for like a second". The look back was his whole body swung round on the spot at 1.7 rad/s, feet still. Now his
+     * body goes round only until the thing is over his shoulder (`MINO_GARG_OFF` off his nose; his head takes the rest),
+     * and stays: the double take is his chest, neck and head, `minoLookYaw`, round over the OTHER shoulder to you in a
+     * third of a second, held a second, and back as quick.) */
     if (st === 'with') {
       mutPlay(u, 'mIdle', true);
-      let T = camera.position, rate = 2.5;
+      let ty = Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z), rate = 2.5;
       if (sc) {
-        // (its body, not over its head: he looked up too much at it — the owner)
-        const G = _mlLook.copy(S.unit.g.position).setY(S.unit.g.position.y + 1.0), stg = S.stage || 'turn';
-        const want = stg === 'back' ? _mlCam.copy(camera.position).setY(camera.position.y - 0.15) : G;
-        if (stg !== 'back') T = G;
-        // (the turn round is slow on purpose: a shuffle, easing in, the head going first; the look back is quick, the head leading)
-        rate = stg === 'turn' ? 0.25 + 0.55 * Math.min(1, S.turnT / 1.4) : stg === 'back' ? 1.7 : 3.0;
-        if (stg === 'turn') S.turnT += dt;
-        S.headP = S.headP ? S.headP.lerp(want, Math.min(1, dt * (stg === 'back' ? 10 : 6))) : want.clone();
-        head = S.headP;
+        const P = S.unit.g.position, stg = S.stage || 'turn';
+        const yG = Math.atan2(P.x - u.g.position.x, P.z - u.g.position.z);
+        if (S.sideG === undefined) { let d0 = yG - u.g.rotation.y; while (d0 > Math.PI) d0 -= Math.PI * 2; while (d0 < -Math.PI) d0 += Math.PI * 2; S.sideG = d0 >= 0 ? 1 : -1; }
+        ty = yG - S.sideG * MINO_GARG_OFF;
+        // (the turn round is slow on purpose: a shuffle, easing in, the head going first)
+        rate = stg === 'turn' ? 0.25 + 0.55 * Math.min(1, (S.turnT = (S.turnT || 0) + dt) / 1.4) : 1.2;
+        S.backK = THREE.MathUtils.clamp((S.backK || 0) + (stg === 'back' ? dt / 0.32 : -dt / 0.28), 0, 1);
+        // (and his body comes round a little with the look — "he can move his body a little so he doesnt bend too much")
+        ty -= S.sideG * MINO_LOOK_BODY * S.backK * S.backK * (3 - 2 * S.backK);
       }
-      let dy = Math.atan2(T.x - u.g.position.x, T.z - u.g.position.z) - u.g.rotation.y;
+      let dy = ty - u.g.rotation.y;
       while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
       u.g.rotation.y += THREE.MathUtils.clamp(dy, -rate * dt, rate * dt);
-      if (sc) { S.faced = Math.abs(dy) < 0.12; S.eye = (S.stage === 'back') && Math.abs(dy) < 1.0; }
+      if (sc) { S.faced = Math.abs(dy) < 0.12; S.eye = S.stage === 'back' && S.backK > 0.95; }
     }
-    u.mixer.update(dt); minoHeadAt(u, true, dt, head);
+    u.mixer.update(dt);
+    if (sc) {
+      MINO.lookK = (MINO.lookK || 0) + (1 - (MINO.lookK || 0)) * Math.min(1, dt * 3);
+      const P = S.unit.g.position, H = u.bones.head; H.getWorldPosition(_mlV);
+      const rel = (x, y, z) => { let a = Math.atan2(x - _mlV.x, z - _mlV.z) - u.g.rotation.y; while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return [a, Math.atan2(y - _mlV.y, Math.hypot(x - _mlV.x, z - _mlV.z))]; };
+      const g = rel(P.x, P.y + 1.0, P.z), c = rel(camera.position.x, camera.position.y - 0.15, camera.position.z);
+      // (its side and yours are either side of his nose, so the head goes ACROSS his front, never round the back of him)
+      const k = S.backK * S.backK * (3 - 2 * S.backK);
+      minoLookYaw(u, u.g.rotation.y + g[0] + (c[0] - g[0]) * k, g[1] + (c[1] - g[1]) * k, MINO.lookK);
+    } else minoHeadAt(u, true, dt);
   }
   if (st === 'down' || st === 'dying' || st === 'dead') minoDownStep(u, dt);
   else updateMinoBreath(false);
@@ -86010,10 +86563,20 @@ function minoDownStep(u, dt) {
   updateMinoBreath(st === 'down' && u.g.visible);
   // the clip runs when the world does; a dialogue is `frozen()` and the unit's own tick does not run, so it is driven here
   if (frozen() && u.mixer) u.mixer.update(dt);
+  { const H = u.bones && u.bones.head; minoSetDownPose(u, [H && H.parent, H]); }
   const k = THREE.MathUtils.clamp(MINO.t / 40, 0, 1);
   minoPoolStep(u, st === 'down' ? 1 - Math.pow(1 - k, 2) : 1);
   if (st === 'down') {
-    if (MINO.t > (fall ? fall.getClip().duration : 4) + 0.05) minoBreathPose(u, 1, dt);
+    const S = MINO.spot;
+    if (MINO.t < 1.8) {                                   // (turned with the blow onto ground he can lie on, `minoLieSpot`)
+      const dy = Math.atan2(Math.sin(S.yaw - u.g.rotation.y), Math.cos(S.yaw - u.g.rotation.y)), e = Math.min(1, dt * 3.2);
+      u.g.rotation.y += dy * e; u.g.position.x += (S.x - u.g.position.x) * e; u.g.position.z += (S.z - u.g.position.z) * e;
+    } else { u.g.rotation.y = S.yaw; u.g.position.x = S.x; u.g.position.z = S.z; }
+    if (minoLaidDown(u)) minoBreathPose(u, 1, dt);
+    if (MINO.lieTalk && minoLaidDown(u)) {                 // (down, and he goes on: "I thought I could push through")
+      MINO.lieTalk = false;
+      if (dialogOpen && dialogScript === MINO_NPC.script) { dialogEl.classList.add('show'); showDialogNode('last'); }
+    }
     if (MINO.t > 3.3 && !MINO.swords) minoDropSwords(u);          // (they go from his hands as his knees hit the stone)
   } else if (st === 'dying') {
     // the last breath lifts him (0..0.6 s) and he goes still on the way out; the lens is let go once he has
@@ -86021,7 +86584,7 @@ function minoDownStep(u, dt) {
     if (gasp > 0 && u.minoAuthor) { const b = u.minoAuthor.J.chest; if (b) b.quaternion.premultiply(_mnbQ.setFromAxisAngle(minoSide(u, b), -0.14 * gasp)); }
     if (MINO.t > (die ? die.getClip().duration : 3.5) + 0.6) {
       MINO.stage = 'dead';
-      minoSongFade(5);                                   // (his song goes out with him)
+      minoSongFade(20, 12);                              // (his song plays on over him a while, then goes out slowly)
       cineHold = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV;
     }
   }
@@ -86030,6 +86593,7 @@ function minoDownStep(u, dt) {
    * speak to him and through the dying, his head turns to your face — a little, he is on his back on the stone (0.6 rad
    * at most, measured clear of the paving) — and lets go as he does */
   const talking = dialogOpen && dialogScript === MINO_NPC.script;
+  if (MINO.sketchW) minoSketchStep(u);
   if ((st === 'down' && talking) || st === 'dying') minoHeadAt(u, true, dt, null, 0.6);
   else if (st === 'down') minoHeadAt(u, false, dt, null, 0.6);           // (the breath puts his neck and head back each frame)
   else if (st === 'dead' && MINO.lookK > 0.01) {
@@ -86138,7 +86702,7 @@ function minoApplyRestore(u) {
     MINO.ally = true; MINO.spot = { x: f.at[0], z: f.at[1], yaw: f.at[2] };
     u.g.position.set(f.at[0], c13CourtAt(f.at[0], f.at[1]) ?? (C13_Y + C13_FLOOR), f.at[1]); u.g.rotation.y = f.at[2];
     u.st.awake = false; u.holdAnim = true;
-    MINO.stage = 'down'; MINO.t = 60;
+    MINO.stage = 'down'; MINO.t = 60; MINO.kneel = false; MINO.lieT = undefined; MINO.lieTalk = false;   // (restored lying: his knee is behind him)
     const a = mutPlay(u, 'mnFall', false); if (a) { a.time = a.getClip().duration; a.setEffectiveWeight(1); }
     u.mixer.update(0);
     minoDropSwords(u); for (const sw of MINO.swords) { sw.m.position.y = sw.floor; sw.landed = true; sw.m.quaternion.copy(sw.q1); }
@@ -86179,7 +86743,8 @@ function gargPrep(u, gltf) {
 }
 MUT_KINDS.gargoyle = {
   glb: GARG_GLB, garg: true, solo: true, noSand: true, skin: null, bones: null, faceFix: 0, preParse: false,
-  h: 2.6, hp: 20, hitR: 1.0, body: 0.78, dmg: 1, reachK: 1, windK: 1, lungeK: 1, poise: 0, block: 0, flinch: 1.2,   // (20: "harder", twice, 2026-10-29)
+  // (20: "harder", twice; 32: "give the gargoyles more health and dont make them bleed" — `stone`, all 2026-10-29)
+  h: 2.6, hp: 32, hitR: 1.0, body: 0.78, dmg: 1, reachK: 1, windK: 1, lungeK: 1, poise: 0, block: 0, flinch: 1.2, stone: true,
   pre: gargPrep, use: {}, wakeAt: 0, sleepIdle: 'gPerch', first: 'gPerch',
   // stone: almost no lift (the torches and the moon are what it is seen by), a cold edge so it holds against the sky
   /* (measured in the court: at 1.7 m, grey ×1 and a faint rim they were small black shapes on the brick five metres
@@ -86346,6 +86911,11 @@ function gargFootH(u) {
   const a = u.clips.gPerch; if (!a) return;
   for (const x of u.mixer._actions) { x.stop(); x.enabled = false; }
   a.reset(); a.enabled = true; a.setEffectiveWeight(1); a.play(); a.time = 0; u.mixer.update(0);
+  /* (with the model where it will be drawn: the loader leaves it lifted 1.79 m in its group and `gargPerch` puts it
+   * back to 0 — measured lifted, the toes came out 0.81 m over the origin where they are drawn 0.98 UNDER it, and every
+   * one stood 1.75 m under the top of its stone, hung down the wall: 2026-10-29, "the gargoyles are not even on their
+   * stone parts their clipped through it". The same number set the crouch behind the minotaur, `gargScenePut`.) */
+  u.model.position.y = 0;
   const r0 = u.g.rotation.clone(); u.g.rotation.set(0, 0, 0); u.g.updateMatrixWorld(true);
   let lo = 1e9, fz = 0, n = 0;
   u.model.traverse((o) => { if (o.isBone && /^(Toe\d_[34]_|Ankle_)/.test(o.name)) { o.getWorldPosition(_gaA); lo = Math.min(lo, _gaA.y); fz += _gaA.z - u.g.position.z; n++; } });
@@ -86451,8 +87021,8 @@ function gargSceneStep(dt) {
     // he sees it; the double take; a second's look at you; round again, and the fight is on (the conversation ends: `gargWake`)
     const stg = S.stage || (S.stage = 'turn');
     if (stg === 'turn') { S.seenT = S.faced ? (S.seenT || 0) + dt : 0; if (S.seenT > 0.7) { S.stage = 'back'; S.stT = 0; S.eyeT = 0; } }
-    else if (stg === 'back') { S.stT += dt; if (S.eye) S.eyeT += dt; if (S.eyeT > 1.0 || S.stT > 3) { S.stage = 'away'; S.stT = 0; } }
-    else if (stg === 'away') { S.stT += dt; if (((S.faced && S.stT > 0.3) || S.stT > 2) && dialogOpen) endDialog(); }
+    else if (stg === 'back') { S.stT += dt; if (S.eye) S.eyeT += dt; if (S.eyeT > 0.9 || S.stT > 2.5) { S.stage = 'away'; S.stT = 0; } }
+    else if (stg === 'away') { S.stT += dt; if (((S.backK < 0.02 && S.stT > 0.35) || S.stT > 2) && dialogOpen) endDialog(); }
   }
   g.eyes += (lit - g.eyes) * Math.min(1, dt * 2.5);
   for (const m of u.mats || []) m.emissiveIntensity = g.eyes * 2.6;
@@ -86781,7 +87351,9 @@ function gargUnitPre(u, dt) {
     // its turn: on you as the turns allow; on the minotaur its own
     const mine = g.tgt ? true : gargTurnOf() === u;
     if (mine && g.t > (g.tgt ? 1.0 : 0.45)) {
-      const r = Math.random(); g.kind = r < 0.42 ? 'talon' : r < 0.78 ? 'rake' : 'bite';
+      // (no rake: 2026-10-29, the owner: "any enemy swings … you can barely see to block take them out" — a 0.45 s tell,
+      // hung a metre off you, two kicks half a second apart from under your view; the dive's talons and the bite stay)
+      const r = Math.random(); g.kind = r < 0.58 ? 'talon' : 'bite';
       g.mode = 'approach'; g.t = 0; g.hits = 0;
     }
   } else if (g.mode === 'approach') {
@@ -86823,14 +87395,17 @@ function gargUnitPre(u, dt) {
     // the dive: wings swept back, down its line at them — talons thrust out ahead at their chest, or the head at their face
     _gaA.set(g.from.x - aim.x, 0, g.from.z - aim.z).normalize();
     // (measured: its talons reach no further forward than its body, so the dive comes in to within a stride of you)
-    const bite = g.kind === 'bite', stand = bite ? 1.1 : 0.9, eye = eyeOf(g);
-    const tx = aim.x + _gaA.x * stand, tz = aim.z + _gaA.z * stand, ty = bite ? eye - GARG_HEAD + 0.05 : eye - 0.35 - GARG_TOE;
+    // (and in to where the talons are IN you, not a stride short: its blows landed from 1.3 m on the old test's say-so)
+    const bite = g.kind === 'bite', stand = bite ? 0.45 : 0.55, eye = eyeOf(g);
+    // (flown at a point half a metre past the stand, so it does not brake into it — its flight eases off near its goal, and
+    // the dive's clock ran out a stride short — and struck at the stand, measured from YOU)
+    const tx = aim.x + _gaA.x * (stand - 0.5), tz = aim.z + _gaA.z * (stand - 0.5), ty = bite ? eye - GARG_HEAD + 0.05 : eye - 0.35 - GARG_TOE;
     const d = gargFlyTo(u, tx, ty, tz, bite ? GARG_SPD.lunge * 1.15 : GARG_SPD.lunge, dt, 12);
     gargFace(u, aim.x, aim.z, dt, 10);
     clip = 'gGlide'; pitch0 = bite ? 0.45 : -0.35;
     if (bite) { pose = g.t < 0.1 ? 'dive' : 'bite'; pk = Math.min(1, g.t / 0.12); open = 1; legs = GARG_TUCK; }
     else { const k = Math.min(1, g.t / 0.16); legs = gargLegMix(GARG_DRAWN, GARG_THRUST, k); claws = 2; }
-    if (!g.landed && (d < 0.45 || g.t > 0.65)) {
+    if (!g.landed && (Math.hypot(p.x - aim.x, p.z - aim.z) < stand + 0.08 || d < 0.18 || g.t > 0.8)) {
       g.landed = true;
       if (gargStrikes(u, aim, eye, bite ? 'head' : 'feet')) gargLand(u); else sfxGargWing(p.x, p.z, 1.0);
       if (g.mode !== 'reel') {
@@ -86942,14 +87517,20 @@ function gargLegPose(u, L) {
   gargBodyTurn(u, B.Leg_1_Right, L[2]); gargBodyTurn(u, B.Knee_Right, L[3]);
 }
 // does its blow reach them: the talons (or its jaws) inside a hand of them, in front of it, at a height it can strike
+/* (2026-10-29, the owner: "make the hit boxes better": it hit when a talon came within 1.05 m of one point under your eyes,
+ * OR whenever its body was within 1.7 m of you at about your height, whatever its feet were doing — a blow that landed
+ * from the air beside you. Now the talons (or the jaws) must come within `GARG_REACH` of YOU — of the upright from your
+ * shins to the top of your head — and the body counts only when it is on you, `GARG_ON`.) */
+const GARG_REACH = 0.62, GARG_ON = 0.85;
 function gargStrikes(u, aim, eye, part) {
   const p = u.g.position, B = u.gB;
-  const T = _gaM2.set(aim.x, eye - (part === 'feet' ? 0.45 : 0.05), aim.z);
+  const lo = eye - 1.35, hi = eye + 0.12;
+  const toYou = (v) => Math.hypot(Math.hypot(v.x - aim.x, v.z - aim.z), v.y < lo ? lo - v.y : v.y > hi ? v.y - hi : 0);
   let best = 1e9;
-  if (part === 'feet' && B) for (const n of ['Toe1_4_Left', 'Toe1_4_Right', 'Ankle_Left', 'Ankle_Right']) if (B[n]) best = Math.min(best, B[n].getWorldPosition(_gaM3).distanceTo(T));
-  if (part === 'head' && B && B.Head) best = B.Head.getWorldPosition(_gaM3).distanceTo(T);
+  if (part === 'feet' && B) for (const n of ['Toe1_4_Left', 'Toe1_4_Right', 'Ankle_Left', 'Ankle_Right']) if (B[n]) best = Math.min(best, toYou(B[n].getWorldPosition(_gaM3)));
+  if (part === 'head' && B && B.Head) best = toYou(B.Head.getWorldPosition(_gaM3));
   const dd = Math.hypot(aim.x - p.x, aim.z - p.z), facing = ((aim.x - p.x) * Math.sin(u.g.rotation.y) + (aim.z - p.z) * Math.cos(u.g.rotation.y)) / (dd || 1);
-  const hit = facing > 0.3 && (best < 1.05 || (dd < 1.7 && Math.abs(eye - (p.y + 1.3)) < 1.5));
+  const hit = facing > 0.3 && (best < GARG_REACH || (dd < GARG_ON && best < GARG_REACH + 0.3 && Math.abs(eye - (p.y + 1.3)) < 1.0));
   if (window.__ggDbg) window.__ggDbg.push([u.gp.kind, u.gp.mode, +best.toFixed(2), +dd.toFixed(2), +facing.toFixed(2), +(eye - p.y).toFixed(2), hit ? 1 : 0, u.gp.tgt ? 'M' : 'Y']);
   return hit;
 }
@@ -86989,7 +87570,7 @@ function gargClawTrails(u, dt, which) {
 function gargLand(u) {
   const T = u.gp.tgt;
   u.st.foe = T;
-  if (!T && blocking) {
+  if (!T && blocking && guardSees(u.g.position)) {
     const dtp = (performance.now() - blockStart) / 1000;
     if (dtp <= parryWin() && parryCool <= 0) parryMutant(u); else blockMutant(u);
     _gaA.set(u.g.position.x - camera.position.x, 0, u.g.position.z - camera.position.z).normalize();
@@ -87342,7 +87923,7 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, { GARG, placeGarg
   gargStrikePose, gargRouteDbg: (u) => { const G = gargGrid(), aim = gargAim(u, new THREE.Vector3()), at = gargSpot(aim.x, aim.z, aim.y - 0.6, 3.1, Math.atan2(u.g.position.x - aim.x, u.g.position.z - aim.z), new THREE.Vector3()); const D = at ? gargDistFrom(G, at) : null, c = gargCell(G, u.g.position.x, u.g.position.z), gc = at ? gargCell(G, at.x, at.z) : -1; const r = at ? gargRoute(u, at, new THREE.Vector3()) : null;
     return { c, cOk: c >= 0 ? G.ok[c] : 'out', Dc: D && c >= 0 ? D[c] : 'n', gc, gcOk: gc >= 0 ? G.ok[gc] : 'out', at: at && [at.x - C13_X, at.y, at.z - C13_Z].map((v) => +v.toFixed(1)), r: r && [r.x - C13_X, r.y, r.z - C13_Z].map((v) => +v.toFixed(1)), over: u.gp.over, mode: u.gp.mode }; },
   gargWhy: (x, y, z) => ({ mask: maskAt(C13_M, x, z), court: c13CourtAt(x, z), pass: c13PassBlocked(x, z), wall: !!keepWallNear(x, z, 1.0, y - 0.3, y + 1.9, C13_SITE), wall6: !!keepWallNear(x, z, 0.6, y - 0.3, y + 1.9, C13_SITE) }) }));
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { minoSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'minotaur', y), kindSpawnTest: (kind, x, z, y = 0) => makeMutant(x, z, kind, y), minoPacksIn: () => MINO_PACKS.every(([g]) => !!g()),
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { minoSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'minotaur', y), MINO_LIE, MINO_DEAD, minoLieClear, c13Overlaps, kindSpawnTest: (kind, x, z, y = 0) => makeMutant(x, z, kind, y), minoPacksIn: () => MINO_PACKS.every(([g]) => !!g()),
   MINO, minoGoDown, minoTalk, minoJoin, minoTurn, minoHeadAt, minoLegal, minoFollow, hurtMutantTest: (u, d, P = 1.0) => hurtMutant(u, d, P),
   hoveredS: () => hovered && (typeof hovered.label === 'function' ? hovered.label() : hovered.label) }));
 
@@ -99536,6 +100117,7 @@ const FARM_BASE = {
   palm: [0, 0, 1],    // the hand bone's own +Z is the palm (measured for the bottle grip), so a fist closes the right way on both hands
   natural: true,      // their Mixamo swings play at the clip's own speed (`naturalSwings`)
   solo: true, fortBody: true, farmer: true, noSand: true, gaitBySpeed: true, velGait: true, gaitMax: 1.7, lungeK: 0.55, headPop: true, faceFix: 0, facingRef: 'mixamo',
+  windWalkK: 0.35, smoothMove: true,   // (the wind-up's glide in cut to a third, the closing eased: "slide around … less")
   h: 1.84, hp: 4, dmg: 1, hitR: 0.62, body: 0.42, lungeStop: 1.05, landSlop: 0.45,
   speedK: 1.25, windK: 0.96, reachK: 1.0, aggr: 2.2, press: 0.85, chainMax: 2, pressMax: 3,
   frenzy: true, bursts: 2, holdR: 4.2, pressW: 1, pressT: 5,
