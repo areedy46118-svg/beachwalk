@@ -784,3 +784,11 @@ peak −4.1, like `minotaur-death.m4a`). `startSkrimSong` (own `skrimSongVol` st
 digging inside 20 m and within ~37° of your view; `SKRIM.songDone` is saved (`skrimSong`) so it is once a game.
 `skrimSongFade` (9 s, (1 − x)²) when his dialogue is open, he rises to fight, you die or leave the whale.
 musictest `skrim`: placed in the whale, 15 m off facing him — PASS.
+
+## 2026-10-30 — Skrim's fight music ("skrim fight")
+"have this play once you fight skrim on loop not too loud. slow fade it once he dies": `assets/skrim-fight.m4a` (111 s,
+the owner's MP3 +6 dB: peak −2.1, mean −16.8; the samurai's score is −15.5 at 1.64), `SKRIM_FIGHT_LEVEL` 0.95, own
+`skrimFightVol` in `musicGuard`, `musicNote('skrim fight')`. `updateSkrimFightMusic` (from `updateSkrimMood`, every frame
+off `animate`): wanted while he is in 'rise'/'fight' and alive; looped as passes laid 1.5 s over each other's ends (the
+samurai's way: the file has no silence at either end); (1 − x)² over 9 s when he dies, 1.5 s if you die or leave.
+musictest `skrimFight` (its own floor 0.0012, like `skrim`): PASS.

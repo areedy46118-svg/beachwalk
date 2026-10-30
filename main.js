@@ -1133,6 +1133,11 @@ const SKRIM_SONG = 'assets/skrim-spotting.m4a', SKRIM_SONG_LEVEL = 0.55,   // (1
       SKRIM_SONG_MAX = 1.0, SKRIM_SONG_FADE = 9;
 let skrimSongVol = null, skrimSong = null;
 let wbHook = null;   // Skrim's hook in the beached whale's side, and its chain (`wbHookTick`): declared up here, the whale is built early
+// Skrim's fight: from his getting up to fight until he is dead, looped (passes laid over each other's ends), not loud, a
+// long fade as he dies (2026-10-30, the owner's "skrim fight": "play once you fight skrim on loop not too loud. slow fade
+// it once he dies"). His file packed +6 dB (peaks −2.1 dB, mean −16.8 — the samurai's score is −15.5), and played under it.
+const SKRIM_FIGHT = 'assets/skrim-fight.m4a', SKRIM_FIGHT_LEVEL = 0.95, SKRIM_FIGHT_MAX = 1.0, SKRIM_FIGHT_XF = 1.5, SKRIM_FIGHT_FADE = 9;
+let skrimFightVol = null, skrimFightM = null;
 let wreckThemeVol = null;
 
 // ------------------------------------------------------------------
@@ -5938,7 +5943,73 @@ function mulberry32(a) {
 /* Collision. The game has no mesh collision, so each mass registers a
  * cylinder: stand on it when your feet clear the top, and get pushed out of
  * it when they don't. Cheap, and for rounded boulders it's honest enough. */
-const rockColliders = [];
+/* AND EVERY BODY ASKED ALL OF THEM, EVERY FRAME (2026-10-30, the perf pass: "make sure the whole game is running smooth
+ * as possible ... do not change anything about the game"). Profiled (probes `tourProf`, 2,500 frames an area): a
+ * hundred-odd bodies each stepped every frame, and each step asks `pushOutOfSolids` two or three times and
+ * `rockGroundAt` once — every one a walk down all ~470 colliders — so the props' `step` was 25-30 % of the CPU frame
+ * in EVERY area, the whale and the tavern included. `colNear` hands back only the colliders whose footprint (grown by
+ * `COL_GMAX`) covers the 4 m cell the point is in, IN THE LIST'S OWN ORDER, so every loop sees the same colliders that
+ * could answer it in the same order and returns exactly what the full walk did (a tie still goes to the earlier one).
+ * The list is a `ColliderList`: a push files the newcomers, a splice rebuilds; the pavilion's gate (the one thing that
+ * moves an entry in place) marks it; `colIdxCheck` compares every entry each frame against what was filed, in case
+ * anything else ever does. Anything it cannot file (a NaN, a collider over 256 m, a grow over 2 m, a point that is not
+ * finite) falls back to the whole list. */
+const COL_CELL = 4, COL_GMAX = 2, COL_SPAN = 64, COL_NONE = [];
+const colIdx = { dirty: true, ok: false, cells: new Map(), snap: [], n: 0 };
+const colKey = (cx, cz) => (cx + 524288) * 1048576 + (cz + 524288);
+function colIdxFile(c) {
+  let x0, x1, z0, z1;
+  if (c.r !== undefined) { const r = Math.abs(c.r); x0 = c.x - r; x1 = c.x + r; z0 = c.z - r; z1 = c.z + r; }
+  else { x0 = Math.min(c.x0, c.x1); x1 = Math.max(c.x0, c.x1); z0 = Math.min(c.z0, c.z1); z1 = Math.max(c.z0, c.z1); }
+  const m = COL_GMAX + 0.01;
+  const cx0 = Math.floor((x0 - m) / COL_CELL), cx1 = Math.floor((x1 + m) / COL_CELL);
+  const cz0 = Math.floor((z0 - m) / COL_CELL), cz1 = Math.floor((z1 + m) / COL_CELL);
+  if (!(cx1 - cx0 <= COL_SPAN && cz1 - cz0 <= COL_SPAN)) return false;   // a NaN fails this too
+  for (let i = cx0; i <= cx1; i++) for (let j = cz0; j <= cz1; j++) {
+    const k = colKey(i, j); let L = colIdx.cells.get(k);
+    if (!L) { L = []; colIdx.cells.set(k, L); }
+    L.push(c);
+  }
+  colIdx.snap.push(c, c.r !== undefined ? c.x : c.x0, c.r !== undefined ? c.z : c.x1, c.r !== undefined ? c.r : c.z0, c.r !== undefined ? undefined : c.z1);
+  return true;
+}
+function colIdxBuild() {
+  colIdx.dirty = false; colIdx.ok = true; colIdx.cells.clear(); colIdx.snap.length = 0;
+  for (const c of rockColliders) if (!colIdxFile(c)) { colIdx.ok = false; break; }
+  colIdx.n = rockColliders.length;
+}
+class ColliderList extends Array {
+  static get [Symbol.species]() { return Array; }
+  push(...a) {
+    const n = super.push(...a);
+    if (this === rockColliders && !colIdx.dirty) {
+      if (!colIdx.ok) colIdx.dirty = true;
+      else for (const c of a) if (!colIdxFile(c)) { colIdx.dirty = true; break; }
+      colIdx.n = n;
+    }
+    return n;
+  }
+  splice(...a) { if (this === rockColliders) colIdx.dirty = true; return super.splice(...a); }
+}
+// once a frame: anything changed in place that nobody said
+function colIdxCheck() {
+  if (colIdx.dirty || !colIdx.ok) return;
+  const L = rockColliders, S = colIdx.snap;
+  if (L.length !== colIdx.n || S.length !== L.length * 5) { colIdx.dirty = true; return; }
+  for (let i = 0, k = 0; i < L.length; i++, k += 5) {
+    const c = L[i];
+    if (c !== S[k]) { colIdx.dirty = true; return; }
+    if (c.r !== undefined ? (c.x !== S[k + 1] || c.z !== S[k + 2] || c.r !== S[k + 3] || S[k + 4] !== undefined)
+                          : (c.x0 !== S[k + 1] || c.x1 !== S[k + 2] || c.z0 !== S[k + 3] || c.z1 !== S[k + 4])) { colIdx.dirty = true; return; }
+  }
+}
+// the colliders that can hold (x, z) grown by `grow`, in list order (or the whole list where it cannot say)
+function colNear(x, z, grow) {
+  if (colIdx.dirty) colIdxBuild();
+  if (!colIdx.ok || !(grow <= COL_GMAX) || !Number.isFinite(x) || !Number.isFinite(z)) return rockColliders;
+  return colIdx.cells.get(colKey(Math.floor(x / COL_CELL), Math.floor(z / COL_CELL))) || COL_NONE;
+}
+const rockColliders = new ColliderList();
 const surfRocks = [];                 // the formations' stones, for the surf round the ones in the sea
 /* Where the beach is shut behind you: the saucer's old spot, twenty-six
  * metres past the drainage tunnel home (see AND THE SAME WALL BEHIND YOU). */
@@ -6785,7 +6856,7 @@ function solidDepth(c, x, z, grow = 0) {
 }
 function rockGroundAt(x, z, feetY) {
   let best = null;
-  for (const c of rockColliders) {
+  for (const c of colNear(x, z, 0)) {
     if (solidDepth(c, x, z) <= 0) continue;
     if (feetY >= c.top - (c.step ?? ROCK_STEP) && (!best || c.top > best.top)) best = c;
   }
@@ -6807,7 +6878,7 @@ function pushOutOfSolids(pos, feetY, grow, headY = Infinity) {
   let hit = null;
   for (let pass = 0; pass < 4; pass++) {
     let worst = null, wd = 0;
-    for (const c of rockColliders) {
+    for (const c of colNear(pos.x, pos.z, grow)) {
       /* Anything whose top is within a STEP of your feet is a floor, not a
        * wall — `rockGroundAt()` lifts you onto it in the same frame. The two
        * used to disagree (0.06 here against ROCK_STEP there), so a stair tread
@@ -6853,7 +6924,7 @@ function pushOutOfSolids(pos, feetY, grow, headY = Infinity) {
       const cand = [[(c.x0 - grow) - pos.x, 0], [(c.x1 + grow) - pos.x, 0],
                     [0, (c.z0 - grow) - pos.z], [0, (c.z1 + grow) - pos.z]];
       const blocker = (nx, nz) => {
-        for (const o of rockColliders) {
+        for (const o of colNear(nx, nz, grow)) {
           if (feetY >= o.top - (o.step ?? ROCK_STEP)) continue;
           if (o.floorY !== undefined && headY < o.floorY) continue;
           if (solidDepth(o, nx, nz, grow) > 1e-4) return o;
@@ -10642,19 +10713,35 @@ class PhysProp {
   setShape(root) {
     root.updateMatrixWorld(true);
     _pshInv.copy(this.mesh.matrixWorld).invert();
-    const pts = [];
+    /* THE POINTS IN ONE FLAT ARRAY, AND ONE PASS OVER THEM (2026-10-30, the perf pass). Each vertex was a cloned
+     * Vector3 and the 98 directions each walked them all: the driftwood's pieces made this 120 ms of the near part of
+     * every checkpoint load (CPU trace of `tools/loadtime.sh`). The same numbers in a Float64Array, every direction
+     * scored in one walk in vertex order with the same strict `>` (so a tie still keeps the first), the same dot
+     * (x·dx + y·dy + z·dz) and the same min/max box: the shape that comes out is the one that went in. */
+    let n = 0;
+    root.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy' && o.geometry.attributes.position) n += o.geometry.attributes.position.count; });
+    if (!n) return;
+    const xyz = new Float64Array(n * 3); let k = 0;
     root.traverse((o) => {
       if (!o.isMesh || o.name === 'hitProxy' || !o.geometry.attributes.position) return;
       const P = o.geometry.attributes.position; _pshM.multiplyMatrices(_pshInv, o.matrixWorld);
-      for (let i = 0; i < P.count; i++) pts.push(_pshV.fromBufferAttribute(P, i).applyMatrix4(_pshM).clone());
+      for (let i = 0; i < P.count; i++) { _pshV.fromBufferAttribute(P, i).applyMatrix4(_pshM); xyz[k++] = _pshV.x; xyz[k++] = _pshV.y; xyz[k++] = _pshV.z; }
     });
-    if (!pts.length) return;
     // the hull's extremes along 98 directions are every point that can ever be the lowest (near enough)
     const keep = new Set(), dirs = [];
     for (let a = -3; a <= 3; a++) for (let b = -3; b <= 3; b++) for (let c = -3; c <= 3; c++) if (Math.max(Math.abs(a), Math.abs(b), Math.abs(c)) === 3) dirs.push(new THREE.Vector3(a, b, c).normalize());
-    for (const d of dirs) { let bi = 0, bv = -Infinity; for (let i = 0; i < pts.length; i++) { const v = pts[i].dot(d); if (v > bv) { bv = v; bi = i; } } keep.add(bi); }
-    const sp = [...keep].map((i) => pts[i]);
-    const box = new THREE.Box3().setFromPoints(pts), sz = box.getSize(new THREE.Vector3());
+    const D = dirs.length, dx = new Float64Array(D), dy = new Float64Array(D), dz = new Float64Array(D), bv = new Float64Array(D).fill(-Infinity), bi = new Int32Array(D);
+    for (let d = 0; d < D; d++) { dx[d] = dirs[d].x; dy[d] = dirs[d].y; dz[d] = dirs[d].z; }
+    const box = new THREE.Box3(), lo = box.min, hi = box.max;
+    for (let i = 0, j = 0; i < n; i++, j += 3) {
+      const x = xyz[j], y = xyz[j + 1], z = xyz[j + 2];
+      for (let d = 0; d < D; d++) { const v = x * dx[d] + y * dy[d] + z * dz[d]; if (v > bv[d]) { bv[d] = v; bi[d] = i; } }
+      lo.x = Math.min(lo.x, x); lo.y = Math.min(lo.y, y); lo.z = Math.min(lo.z, z);
+      hi.x = Math.max(hi.x, x); hi.y = Math.max(hi.y, y); hi.z = Math.max(hi.z, z);
+    }
+    for (let d = 0; d < D; d++) keep.add(bi[d]);
+    const sp = [...keep].map((i) => new THREE.Vector3(xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2]));
+    const sz = box.getSize(new THREE.Vector3());
     const flat = sz.x <= sz.y && sz.x <= sz.z ? new THREE.Vector3(1, 0, 0) : sz.y <= sz.z ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
     this.shape = { pts: sp, box, flat };
   }
@@ -17757,6 +17844,7 @@ function placeMoundCrab(relic, x, z) {
 const moundRelicHold = new THREE.Group();
 moundRelicHold.visible = false;
 scene.add(moundRelicHold);
+let moundRelicView = null;             // (the view the relics are compiled and then drawn from: two steps, one camera)
 warmStep('mound relics', () => {
   mounds.forEach((m, i) => {
     if (m.taken || m.relic) return;
@@ -17767,9 +17855,15 @@ warmStep('mound relics', () => {
     moundRelicHold.add(m.relic);
   });
   moundRelicHold.position.set(camera.position.x, -30, camera.position.z);
-  warmView([moundRelicHold], camera.position.x, -28.5, camera.position.z + 2,
-    camera.position.x + 1, -30, camera.position.z);
+  /* THE COMPILE FIRST, OFF THE THREAD (2026-10-30, the perf pass). This is the first warm of every load, and its one
+   * render was the first draw of the whole visible beach — 255 ms of a checkpoint load blocked waiting on the driver to
+   * link the programs (a CPU trace of `tools/loadtime.sh`: `getProgramParameter` under this step). `warmCompile` hands
+   * the same scene from the same camera to `compileAsync` and the chain waits for it while the parses go on; the same
+   * view is drawn as the next step, with every program ready. */
+  moundRelicView = [camera.position.x, -28.5, camera.position.z + 2, camera.position.x + 1, -30, camera.position.z];
+  warmCompile([moundRelicHold], ...moundRelicView);
 });
+warmStep('mound relics draw', () => { if (moundRelicView) warmView([moundRelicHold], ...moundRelicView); });
 function moundAt(x, z) {
   for (const m of mounds) {
     if (m.taken) continue;
@@ -24687,6 +24781,51 @@ function startSkrimSong() {
   const src = ctx.createBufferSource(); src.buffer = buf; src.connect(env); src.start(t);
   skrimSong = { src, env, done: false };
   src.onended = () => { skrimSong.done = true; };
+}
+function skfPass(at, fadeIn) {
+  const ctx = audioCtx, buf = lazyBuf(SKRIM_FIGHT);
+  const env = ctx.createGain(); env.gain.setValueAtTime(fadeIn > 0 ? 0.0001 : 1, at);
+  if (fadeIn > 0) env.gain.linearRampToValueAtTime(1, at + fadeIn);
+  env.connect(skrimFightVol);
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(env); src.start(at);
+  src.onended = () => { try { env.disconnect(); } catch (e) { /* */ } };
+  return { src, env, t0: at, dur: buf.duration };
+}
+function startSkrimFightMusic() {
+  const ctx = audioCtx; if (!ctx || skrimFightM) return;
+  if (!lazyBuf(SKRIM_FIGHT)) return;                   // (`updateSkrimFightMusic` starts it when it lands)
+  if (!skrimFightVol) { skrimFightVol = ctx.createGain(); skrimFightVol.connect(ctx.destination); }
+  skrimFightVol.gain.value = Math.min(SKRIM_FIGHT_MAX, settings.volume * settings.musicVolume * SKRIM_FIGHT_LEVEL);
+  musicNote('skrim fight', skrimFightVol.gain.value);
+  skrimFightM = { cur: skfPass(ctx.currentTime + 0.02, 1.2), next: null };
+}
+function stopSkrimFightMusic(secs = 2) {
+  const S = skrimFightM; skrimFightM = null;
+  if (!S || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  // (a slow letting go: (1 − x)², most of it still there half way)
+  for (const P of [S.cur, S.next]) if (P) {
+    const g = P.env.gain, g0 = Math.max(0.0001, g.value), c = new Float32Array(48); for (let i = 0; i < 48; i++) c[i] = Math.max(0.0001, g0 * (1 - i / 47) ** 2);
+    g.cancelScheduledValues(t); g.setValueAtTime(g0, t); g.setValueCurveAtTime(c, t + 0.01, secs);
+    try { P.src.stop(t + secs + 0.1); } catch (e) { /* */ }
+  }
+}
+function updateSkrimFightMusic() {
+  const ctx = audioCtx, u = SKRIM.u; if (!ctx) return;
+  const on = inWhale && u && (SKRIM.stage === 'rise' || SKRIM.stage === 'fight');
+  if (on) lazyBuf(SKRIM_FIGHT);
+  if (on && u.st.alive && !skrimFightM && !dying && !replaying && !applyingSave) startSkrimFightMusic();
+  if (!skrimFightM) return;
+  if (!inWhale || dying || ended) { stopSkrimFightMusic(1.5); return; }
+  if (!u || !u.st.alive) { stopSkrimFightMusic(SKRIM_FIGHT_FADE); return; }
+  // the next pass laid over the end of this one
+  const S = skrimFightM, t = ctx.currentTime;
+  if (!S.next && t > S.cur.t0 + S.cur.dur - SKRIM_FIGHT_XF - 0.5) {
+    const at = S.cur.t0 + S.cur.dur - SKRIM_FIGHT_XF;
+    S.next = skfPass(at, SKRIM_FIGHT_XF);
+    const g = S.cur.env.gain; g.setValueAtTime(1, at); g.linearRampToValueAtTime(0.0001, at + SKRIM_FIGHT_XF);
+  }
+  if (S.next && t > S.next.t0 + SKRIM_FIGHT_XF) { S.cur = S.next; S.next = null; }
 }
 function skrimSongFade(sec) {
   const ctx = audioCtx, S = skrimSong; if (!ctx || !S || S.done || S.fading) return;
@@ -32327,6 +32466,7 @@ function updateGate(dt) {
     c.x = MUSH_X + MGATE.x + Math.sin(a) * c.t;
     c.z = MUSH_Z + MGATE.z + Math.cos(a) * c.t;
   }
+  colIdx.dirty = true;                              // (moved in place: `colNear` files it again)
 }
 {
   // the crosshair needs something to find: the bars are 35 mm and you are
@@ -45711,7 +45851,7 @@ function headroomClear() {
   /* A narrower body than the push-out uses. At the full radius, standing
    * beside one of the pier's bollards counted as something over your head
    * and locked you in a crouch on open deck. */
-  for (const c of rockColliders) {
+  for (const c of colNear(camera.position.x, camera.position.z, PLAYER_R * 0.3)) {
     if (c.top <= feet + 0.25 || c.top >= stand) continue;
     if (solidDepth(c, camera.position.x, camera.position.z, PLAYER_R * 0.3) > 0) return false;
   }
@@ -47492,12 +47632,22 @@ function heldWarmLeft() {
  * are hidden until a blow — so the first parry of the game drew them for the
  * first time in the middle of the fight. Shown and drawn once into the four
  * pixels behind the loading screen, then put back. */
-let vmFxWarmed = false;
+/* AND ITS PROGRAMS GO TO THE DRIVER FIRST (2026-10-30, the perf pass): the one render was 60-75 ms of every load's
+ * main thread spent waiting on the links (`getProgramParameter`, CPU trace of `tools/loadtime.sh`). The same things
+ * shown, `compileAsync`ed, hidden; the render that follows, a frame or two later, finds them ready. */
+let vmFxWarmed = false, vmFxPend = null;
 function warmViewFx() {
-  vmFxWarmed = true;
+  if (vmFxPend && !vmFxPend.done && performance.now() < vmFxPend.t) return;     // still with the driver
   const shown = [];
   vmScene.traverse((o) => { if (o !== vmScene && !(o.isMesh || o.isPoints || o.isLine || o.isSprite) ) return; if (o.visible) return; shown.push(o); o.visible = true; });
   for (const c of toolMount.children) if (shown.includes(c)) c.visible = false;     // the held things are the held warm's
+  if (!vmFxPend && renderer.compileAsync) {
+    const pend = vmFxPend = { done: false, t: performance.now() + 3000 };
+    try { renderer.compileAsync(vmScene, vmCamera).then(() => { pend.done = true; }, () => { pend.done = true; }); } catch (e) { pend.done = true; }
+    for (const o of shown) o.visible = false;
+    return;
+  }
+  vmFxWarmed = true;
   const sc = renderer.getScissorTest(), prevAuto = renderer.autoClear, size = renderer.getSize(new THREE.Vector2());
   renderer.setScissorTest(true); renderer.setScissor(0, 0, 4, 4); renderer.setViewport(0, 0, 4, 4); renderer.autoClear = true;
   try { renderer.render(vmScene, vmCamera); } catch (e) { /* a warm is never fatal */ } finally {
@@ -47507,7 +47657,7 @@ function warmViewFx() {
 }
 function updateHeldWarm() {
   const now = performance.now();
-  if (!vmFxWarmed && !introDone) { warmViewFx(); return; }
+  if (!vmFxWarmed && (!introDone || vmFxPend)) { warmViewFx(); return; }   // (once begun, it finishes)
   if (heldWarmPend) {
     if (!heldWarmPend.done && now < heldWarmPend.t) return;
     const vm = heldWarmPend.vm; heldWarmPend = null;
@@ -47944,12 +48094,14 @@ function musicGuard() {
   fix(endVol, Math.min(END_MAX, v * END_LEVEL));
   fix(minoSongVol, Math.min(MINO_SONG_MAX, v * MINO_SONG_LEVEL));
   fix(skrimSongVol, Math.min(SKRIM_SONG_MAX, v * SKRIM_SONG_LEVEL));
+  fix(skrimFightVol, Math.min(SKRIM_FIGHT_MAX, v * SKRIM_FIGHT_LEVEL));
   fix(wlVol, v * WL_LEVEL);
   fix(wreckThemeVol, v * WRECK_THEME_LEVEL);
-  const playing = musicSrc || samScore || passSrc || endSong || wlSrc || (minoSong && !minoSong.done) || (skrimSong && !skrimSong.done);
+  const playing = musicSrc || samScore || passSrc || endSong || wlSrc || (minoSong && !minoSong.done) || (skrimSong && !skrimSong.done) || !!skrimFightM;
   if (playing && ctx.state === 'suspended' && started && !frozen()) ctx.resume().catch(() => {});
 }
 function animateFrame() {
+  colIdxCheck();
   vcSync();
   loadSilenceTick();
   musicGuard();
@@ -63480,8 +63632,9 @@ function whAirFog(G, cuts, rnd) {
     fragmentShader: `varying float vL; void main(){ vec2 c = gl_PointCoord - 0.5; float a = smoothstep(0.5, 0.0, length(c)); gl_FragColor = vec4(vec3(0.75, 0.82, 1.0) * a * vL * 0.9, 1.0); }`,
   }));
   dust.frustumCulled = false; dust.raycast = () => {}; dust.userData.bwGhost = true; dust.renderOrder = 8;
-  G.add(dust);
-  return { U, list: [banks, dust] };
+  // (not added — 2026-10-30, the owner, of them drawn as teal blobs by a wall: "TAKE THESE FLOATING THINGS OUT THEY LOOK TOO AI")
+  dust.geometry.dispose(); dust.material.dispose();
+  return { U, list: [banks] };
 }
 // dust in his beam: a few dozen motes turning slowly in the cold light, over where it lands
 function whBeamMotes(G, spot, fy) {
@@ -65065,8 +65218,8 @@ function buildWhaleBeach(gltf) {
    * still throws it out of the wound, and the chain goes with it. */
   {
     const H = new THREE.Group(); H.name = 'harpoon';
-    const dir = hn.clone().negate().add(new THREE.Vector3(0, 0.22, 0)).normalize();    // (in, and up a little: the weight of the chain on it)
-    H.position.copy(hp).addScaledVector(hn, 0.28);
+    const dir = hn.clone().negate().add(new THREE.Vector3(0, 0.06, 0)).normalize();    // (straight in, the chain's weight barely tipping it)
+    H.position.copy(hp).addScaledVector(hn, 0.02);   // (0.28 until 2026-10-30: "MAKE THE HOOK LOOK MORE STUCK INTO THE WHALE" — most of the blade in it now, the handle and its bend out)
     H.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir); H.rotateZ(Math.PI);   // (turned so the curve of the blade goes down into the wound: the probe's four turns, `wbHook`)
     H.scale.setScalar(1.7);
     G.add(H);
@@ -85248,6 +85401,7 @@ function authorKnClips(u, m) {
       u.clipsPending--;
       if (i < names.length) { bwTurn().then(step); return; }
       if (u.kind.alias) for (const k in u.kind.alias) if (u.clips[u.kind.alias[k]]) u.clips[k] = u.clips[u.kind.alias[k]];
+      seatPackClips(u);                                 // (2026-10-30: his guard on the stone, not 0.2 m over it)
       mutStartPose(u);
       u.natDone = false;
     };
@@ -85814,11 +85968,81 @@ function dkTurn(u, quiet) {
  * moves with its pelvis (`A.rmStop`, one per contact: the swept `STOP` less how far forward the pelvis was there), and
  * where it is thrown from is that plus the step it takes to the blow, stretched or shrunk (`A.rmFrom`). */
 const DK_WARP = 0.5, DK_WARP_HOLD = 0.8, _dkLead = new THREE.Vector3();   // (how much a step may be stretched or shrunk to land — half of it either way; a leap more)
+/* HIS FEET ON THE STONE IN EVERY POSE (2026-10-30, the owner: "THE DARK KNIGHT KEEPS FLOATING WHILE CROUCHED FIX THIS").
+ * The pack's `hipY` is the hips' rise and fall from each clip's OWN first frame (`tools/ntar_moves.py`), and the Sword and
+ * Shield pack starts most of its clips in a guard — knees bent, hips down — so they played with the hips at the standing
+ * rest and the bent legs hung under it. Measured (`myl&f=dkCrouch`, his lowest point over his root at a clip's lowest
+ * frame): the idles 0.22 m, the strafes 0.23-0.25, `sBlockI` and `sHit` 0.40, the crouch block `sCBlock` 0.84, `sSlashE`
+ * 0.82; the walk 0.01 and his own strings 0. Each pack clip's hips are put down (or up) by what its first frame's lowest
+ * point stands off his root — soles and shins read off each leg bone's own outermost points (rigid to it), not guessed. */
+/* (and the two before XIII's throne door wear the same pack and stood on the same air — the iron knight's guard is the
+ * "crouched" figure by the doorway in the owner's screenshot: so it is for any rig in `kind.joints`, its own pelvis, shins
+ * and feet (and toes, the feet's child bones); clips named `s…`, the pack's) */
+function seatPackClips(u) {
+  const m = u.model, J = u.kind.joints, H = m && J && m.getObjectByName(J.hip);
+  if (!H || !u.mixer) return;
+  const legs = [J.footL, J.footR, J.calfL, J.calfR].map((n) => m.getObjectByName(n));
+  if (legs.some((b) => !b)) return;
+  const t0 = performance.now();
+  for (const f of legs.slice(0, 2)) for (const c of f.children) if (c.isBone) legs.push(c);
+  const ry = m.rotation.y; m.rotation.y = 0; u.g.updateMatrixWorld(true);
+  const gi = new THREE.Matrix4().copy(u.g.matrixWorld).invert(), toG = new THREE.Matrix4().multiplyMatrices(gi, H.parent.matrixWorld), toL = toG.clone().invert();
+  const pn = J.hip + '.position';
+  const dirs = [], pts = legs.map(() => []), v = new THREE.Vector3();
+  for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) if (x || y || z) dirs.push(new THREE.Vector3(x, y, z).normalize());
+  m.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    const P = o.geometry.attributes.position, SI = o.geometry.attributes.skinIndex, SW = o.geometry.attributes.skinWeight, bs = o.skeleton.bones;
+    const best = legs.map(() => dirs.map(() => null));
+    for (let i = 0; i < P.count; i++) {
+      let bi = -1, bw = 0; for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bw) { bw = w; bi = SI.getComponent(i, k); } }
+      const L = legs.indexOf(bs[bi]); if (L < 0 || bw < 0.75) continue;
+      v.fromBufferAttribute(P, i).applyMatrix4(o.bindMatrix).applyMatrix4(o.skeleton.boneInverses[bi]);   // (in its bone's frame)
+      for (let j = 0; j < dirs.length; j++) { const s = v.dot(dirs[j]); if (!best[L][j] || s > best[L][j].s) best[L][j] = { s, p: v.clone() }; }
+    }
+    best.forEach((B, L) => { for (const b of B) if (b) pts[L].push(b.p); });
+  });
+  if (!pts[0].length || !pts[1].length) { m.rotation.y = ry; u.g.updateMatrixWorld(true); console.info('[seat]', u.kindName, 'no feet'); return; }
+  const saved = [];
+  for (const k in u.clips) { const a = u.clips[k]; saved.push([a, a.time, a.enabled, a.paused, a.getEffectiveWeight(), a.isRunning() || u.mixer._isActiveAction(a)]); }
+  for (const k in u.clips) { const a = u.clips[k]; a.stop(); a.enabled = false; a.setEffectiveWeight(0); }
+  /* (at the clip's FIRST frame — the one its `hipY` is measured from, and a stance with a foot down in every clip of the
+   * pack, the jumps included. Its lowest frame instead lifted the iron knight's spin 0.37 m for one frame's foot through
+   * the paving, and floated the rest of it.) */
+  const lowest = (a) => {
+    a.reset(); a.play(); a.enabled = true; a.setEffectiveWeight(1); a.paused = true;
+    a.time = 0; u.mixer.update(0); m.updateMatrixWorld(true);
+    let y = 1e9;
+    legs.forEach((b, L) => { for (const p of pts[L]) { v.copy(p).applyMatrix4(b.matrixWorld).applyMatrix4(gi); if (v.y < y) y = v.y; } });
+    a.stop(); a.enabled = false; a.setEffectiveWeight(0);
+    return y;
+  };
+  /* (to the root, where the bind's own lowest point was stood, `dressMutant`: not the walk's sole — on the dark knight the
+   * same (0.01), but the man-at-arms' walk is 0.10 into the paving where his idle stands on it: measured, `myl&f=knFeet`) */
+  const sole = 0, seen = new Set(), log = [];
+  for (const k in u.clips) {
+    const a = u.clips[k], clip = a.getClip();
+    if (seen.has(clip) || !/^s[A-Z]/.test(clip.name) || /^sDie/.test(clip.name)) continue;   // (the pack's; his own strings stand already, the deaths go to the ragdoll)
+    seen.add(clip);
+    if (clip._seat !== undefined) continue;
+    const tr = clip.tracks.find((t) => t.name === pn); if (!tr) continue;
+    const drop = lowest(a) - sole; clip._seat = 0;
+    if (Math.abs(drop) < 0.02) continue;
+    clip._seat = drop;
+    for (let i = 0; i < tr.values.length; i += 3) { v.fromArray(tr.values, i).applyMatrix4(toG); v.y -= drop; v.applyMatrix4(toL); v.toArray(tr.values, i); }
+    log.push(clip.name + ' ' + drop.toFixed(2));
+  }
+  for (const [a, t, en, pa, w, run] of saved) { if (run) a.play(); a.time = t; a.enabled = en; a.paused = pa; a.setEffectiveWeight(w); }
+  u.mixer.update(0);
+  m.rotation.y = ry; u.g.updateMatrixWorld(true);
+  if (log.length) console.info('[seat]', u.kindName || '', (performance.now() - t0).toFixed(0) + ' ms', log.join(', '));
+}
 function dkBuildTravel(u) {
   const m = u.model, PV = m && m.getObjectByName(DKB('Pelvis')), FL = m && m.getObjectByName(DKB('Foot_L')), FR = m && m.getObjectByName(DKB('Foot_R'));
   if (!PV || !FL || !FR || !u.mixer) return true;
   const ry = m.rotation.y; m.rotation.y = 0; u.g.updateMatrixWorld(true);
   const gi = new THREE.Matrix4().copy(u.g.matrixWorld).invert(), toG = new THREE.Matrix4().multiplyMatrices(gi, PV.parent.matrixWorld), toL = toG.clone().invert();
+  seatPackClips(u); m.rotation.y = 0; u.g.updateMatrixWorld(true);   // (his feet on the stone first: the blade's heights below are read after)
   const v = new THREE.Vector3(), w2 = new THREE.Vector3(), pn = DKB('Pelvis') + '.position';
   // where the pack's pelvis stands over his origin (its idle's): the strings' is pinned there
   const idle = u.clips.sIdle && u.clips.sIdle.getClip().tracks.find((t) => t.name === pn);
@@ -86559,6 +86783,7 @@ function minoJoin(u) {
   u.g.rotation.y = Math.atan2(fx, fz); if (u.model) u.model.rotation.y = 0;
   u.st.foe = null; u.st.atk = -1; u.st.fortHome = null; u.st.c13Home = null; u.holdAnim = false;
   MINO.v = 0; MINO.stuckT = 0; MINO.legal = null; MINO.hold = true;
+  minoWhole(u);                                        // (a fade the cut froze part way: never see-through at your side)
 }
 /* AT YOUR SIDE, NOT ROUND YOU (2026-10-29, the owner: "when standing still the minotaur just circles me i need him to stand
  * a little distance away but look at the player when no enemies are around"). The first cut aimed him at a point behind
@@ -86740,10 +86965,7 @@ function minoToGate(u, dt) {
     const k = Math.max(0, 1 - MINO.fade);
     for (const m of u.mats || []) { m.transparent = true; m.opacity = k; m.depthWrite = k > 0.5; }
     const a = mutPlay(u, 'mIdle', true); u.mixer.update(dt);
-    if (MINO.fade >= 1) {
-      for (const m of u.mats || []) { m.opacity = 1; m.transparent = false; m.depthWrite = true; }
-      MINO.fade = undefined; MINO.stage = 'inside'; u.g.visible = false;
-    }
+    if (MINO.fade >= 1) { minoWhole(u); MINO.stage = 'inside'; u.g.visible = false; }
     return;
   }
   const tx = g.x, tz = p.z > g.z + 1.2 ? g.z + 1.0 : g.z - 1.0;
@@ -86758,6 +86980,14 @@ function minoToGate(u, dt) {
   const a = mutPlay(u, 'mWalk', true); if (a) a.timeScale = THREE.MathUtils.clamp(MINO.v / ((u.clipSpeed && u.clipSpeed.mWalk) || 1.48), 0.5, 1.2);
   u.mixer.update(dt);
   if (p.z < g.z + 0.45 && Math.abs(p.x - g.x) < 1.2) { MINO.fade = 0; sfxAt(g.x, g.z, () => sfxFortGate(1)); }
+}
+/* HIS FADE ENDED, WHEREVER IT WAS (2026-10-30, the owner: "MYLES IS INVISIBLE IN THE SCREENSHOT FIX THIS NOW"). Walked in
+ * at the gate on his heels, the cut's black froze his fade part way (his tick does not run in a cut) and the move made him
+ * yours with his materials left see-through — measured, `myl&f=allyFade`: opacity 0.63, transparent, through both castles
+ * and back out, for good. Every join puts him back whole. */
+function minoWhole(u) {
+  for (const m of u.mats || []) { m.opacity = 1; m.transparent = false; m.depthWrite = true; }
+  MINO.fade = undefined;
 }
 /* ---- WHAT HE SAYS. The owner's words, as written. */
 const MINO_NPC = {
@@ -87222,7 +87452,8 @@ function updateMinotaur(dt) {
   const pl = minoPlaceNow();
   if (pl !== MINO.place) {
     const was = MINO.place; MINO.place = pl;
-    if (MINO.stage === 'inside' || MINO.stage === 'toGate') { if (pl === 'fort') MINO.stage = 'with'; }
+    // (either castle: a way into XIII that is not the first castle's street still finds him at your side — 2026-10-30)
+    if (MINO.stage === 'inside' || MINO.stage === 'toGate') { if (pl === 'fort' || pl === 'c13') MINO.stage = 'with'; }
     if (MINO.stage === 'with' && pl !== 'room') minoJoin(u);
     if (MINO.stage === 'hostile' && pl !== 'beach' && u.st.alive) minoCalm(u);
     if (MINO.stage === 'wait' && was !== 'beach') { minoCalm(u); }
@@ -99932,7 +100163,9 @@ const skrimFloorW = (x, z) => WHALE_Y + whFloor(x - WHALE_X, WHALE_Z - z);
 // is (x, z) inside the gut, a margin off its wall
 function skrimInGut(x, z, m = 1.2) {
   const s = WHALE_Z - z, lx = x - WHALE_X;
-  if (s < WH_ARENA_S - 26 || s > WH_ARENA_S + 30) return false;
+  // (the whole gut, the throat to the far end — 2026-10-30, the owner: "SKRIM GOT STUCK AND COULDNT HURT ME HERE HE SHOULD BE
+  // ABLE TO GET YOU ANYWHERE IN THE WHALE": he was held to the fight's 56 m round his heap, s 38–94)
+  if (s < WH_S0 + 1 || s > WH_S1 - 1) return false;
   return Math.abs(lx - whCx(s)) < 12.5 * whScale(s) - m;
 }
 /* HIS TALK. He goes on digging and never looks up; the lens comes in on him as on anyone. Your lines are the owner's,
@@ -100308,6 +100541,7 @@ function skrimDrone() {
   return (skDrone = { out });
 }
 function updateSkrimMood(dt) {
+  updateSkrimFightMusic();        // (his fight's music: off `animate`, every frame, in or out of the whale)
   const u = SKRIM.u, A = whale && whale.arena;
   // his song: once a game, the first time you have him in front of you, digging, inside twenty metres; slowly away as you talk
   if (u && inWhale && !SKRIM.songDone && (SKRIM.stage === 'dig' || SKRIM.stage === 'deal') && u.model && started && !applyingSave && !replaying) {
@@ -100642,6 +100876,7 @@ function skrimGait(u, k, dt) {
     if (best === 'idle' || !SK_GAIT[best]) best = 'walk';
     for (const n of ['walk', 'walkB', 'walkL', 'walkR']) if (score(n) > score(best) + 0.3) best = n;
   }
+  if (best === 'walk' && k.chase && SKRIM.stage === 'fight' && u.clips.run) best = 'run';   // (after you down the gut: his run, its feet carrying him)
   if (best !== k.gait) { if (k.gait && k.gaitT < 0.4) best = k.gait; else { k.gait = best; k.gaitT = 0; } }
   // (coming over to you he walks it quicker — his feet carry him, so a quicker clip is a quicker walk, not a slide: 2026-10-30)
   const a = mutPlay(u, best, true); if (a) a.timeScale = best === 'idle' ? 1 : k.rage ? 1.12 : SKRIM.stage === 'meet' ? 1.45 : 1;
@@ -100770,14 +101005,17 @@ function skrimFightStep(u, dt) {
     // between: round you at his range, the other way now and then — straight back out of it when you are on him
     k.sideT -= dt; if (k.sideT <= 0) { k.side = -k.side; k.sideT = 2.2 + Math.random() * 2.4; }
     const want = (SK_RANGE[0] + SK_RANGE[1]) / 2; let rad = THREE.MathUtils.clamp((d - want) * 0.7, -1.2, 1.5);
+    // (far off — you ran, or fought him from the far end of the gut — he RUNS at you and saves his throws till he is in
+    // range: measured, 50 m off he closed 3 m in 20 s, stopping to cast at nothing; 2026-10-30, "HE SHOULD BE ABLE TO GET YOU ANYWHERE")
+    k.chase = d > SK_RANGE[1] + 4; if (k.chase) rad = 3.2;
     if ((k.wallT = (k.wallT || 0) - dt) > 0) rad = Math.max(0, rad);       // (backed onto the wall: round you instead)
-    const tan = k.side * (k.rage ? 1.5 : 1.2) * THREE.MathUtils.smoothstep(d, 2.6, 5);
+    const tan = k.chase ? 0 : k.side * (k.rage ? 1.5 : 1.2) * THREE.MathUtils.smoothstep(d, 2.6, 5);
     const tx = -dz / d, tz = dx / d;
     let vx = dx / d * rad + tx * tan, vz = dz / d * rad + tz * tan;
     if (!skrimInGut(p.x + vx * 0.8, p.z + vz * 0.8)) { k.side = -k.side; vx = dx / d * rad - tx * tan; vz = dz / d * rad - tz * tan; }
     const e = 1 - Math.exp(-dt * 2.5); k.vx = (k.vx || 0) + (vx - (k.vx || 0)) * e; k.vz = (k.vz || 0) + (vz - (k.vz || 0)) * e;
     skrimGait(u, k, dt);
-    if (k.cd <= 0) skrimStart(u, skrimPick(u, d));
+    if (k.cd <= 0 && !k.chase) skrimStart(u, skrimPick(u, d));
   }
   if (u.model) u.model.rotation.y = 0;
   // where his feet took him (`skrimMix`); a wall turns him the other way round you, and ends a step back
@@ -101027,7 +101265,8 @@ function skqArtTake(w) {
   if (!inventory.includes(whaleArtItem) && !addToInventory(whaleArtItem)) { sayInventoryFull(); return; }
   artState = 2;
   dropShine(w); scene.remove(w); removeInteractable(w); hovered = null; art.world = null; SKQ.artAt = null;
-  stickArtifacts(); skqStick();
+  // (the checkpoint is not patched — 2026-10-30, the owner: "UPON LOADING … THE CHECKPOINT I HAD THE ARTIFACT AND SKRIM WALKED
+  // UP TO ME IT SHOULD FULLY RESTART ON THE CHECKPOINT AND BE BACK IN THE PILE IT WAS")
   artWarm(); sfxArtAttach();
   artBanner('Artifact of the Whale');
 }
@@ -101127,7 +101366,7 @@ function skqGive() {
   if (inventory.includes(whaleArtItem)) removeFromInventory(whaleArtItem);
   renderHotbar(); renderPack(); refreshUI();
   artState = 3; SKQ.gave = true;            // (3: his — `artRestore` keeps any number it is given)
-  skqHand(true);
+  // (not in his hand — 2026-10-30, the owner: "DONT MAKE SKRIM HOLD THE ARTIFACT IN HIS HAND IT LOOKS BAD"; it is on him, and falls out when he dies)
   sfxArtAttach(true);
 }
 // it in his right hand, while he has it
@@ -101150,7 +101389,7 @@ function skqGoneNow() {
   SKRIM.stage = 'gone'; SKQ.gone = true; SKQ.doomed = SKQ.gave || SKQ.doomed;
   skqHand(false);
   if (u) { u.g.visible = false; u.st.awake = false; }
-  skqStick();
+  // (no checkpoint patch: a reload restarts the checkpoint as it was, 2026-10-30; the next save keeps what is so then)
 }
 function skqFightStanding(u) {
   const k = u.sk;
@@ -101355,7 +101594,7 @@ function cryJarMake(lx, s) {
   far.raycast = () => {}; far.position.y = 0.3; far.renderOrder = 8; jar.add(far); CRY.glow = far;
   addInteractable(jar, 'Take the jar', 'inventory', {
     when: () => inWhale,
-    onActivate: () => { scene.remove(jar); removeInteractable(jar); hovered = null; CRY.jar = null; CRY.jarTaken = true; gainJar(); cryStick(); },
+    onActivate: () => { scene.remove(jar); removeInteractable(jar); hovered = null; CRY.jar = null; CRY.jarTaken = true; gainJar(); },
   });
 }
 function cryLieDead(h) {
@@ -101403,7 +101642,7 @@ function cryFly(h, dt, e, mu) {
 /* ---- THE WAKE: the first at your face, the rest off the walls */
 function cryWake() {
   if (CRY.woke) return;
-  CRY.woke = true; CRY.t = 0; cryStick();
+  CRY.woke = true; CRY.t = 0;   // (no checkpoint patch: a reload is the checkpoint as it was, 2026-10-30)
   /* THEY COME RUNNING (2026-10-30, the owner: "make it so the head crab are running towards you as you get closer to the
    * jar"): off the walls and down the gut at you, the first a stride ahead of the others; it does not stop when it
    * reaches you — out of its run, straight at your face (`h.scare`, `'charge'`). A shriek from the dark as they go. */
@@ -101528,7 +101767,6 @@ function cryKill(h, P) {
   hitConnect(P, 1.05); if (isBlade()) playSample('katHit', 0.95, 0.05, 1 - P * 0.08);
   hitFlesh = true; addTrauma(0.18);
   if (!CRY.woke) cryWake();
-  cryStick();
   if (CRY.log) CRY.log.push({ ev: 'killed', i: h.i, was: h.was, P: +P.toFixed(2), v: h.v.toArray().map((q) => +q.toFixed(2)), at: h.p.toArray().map((q) => +q.toFixed(2)) });
 }
 // the swing's blow: one the blade crossed (`cryBladeRay`), else the aim line (fanned the blade's way) passing one, generously
@@ -113001,6 +113239,8 @@ window.__bw = {
    * on demand, render and all, so anything the loop owns can be drained
    * without waiting on a pane nobody is looking at. */
   frame: (n = 1) => { for (let i = 0; i < n; i++) animateFrame(); },
+  physProps, cullUnits, rebuildCullUnits, cullBeyondFog, updateFarProps, updateHover, updateLightPool,   // (the perf pass, 2026-10-30: per-frame work, for timing it)
+  bootGateS: () => ({ hold: bootHold, holdT: bootHoldT ? Math.round(performance.now() - bootHoldT) : 0, left: bootLeft(), all: startLeft(), roomRestore: !!roomRestore, restore: !!restore, warmBlock: !!warmBlock, roomWarm: roomWarm ? roomWarm.view + '/' + roomWarm.i + '/' + roomWarm.tex.length : 0, look: bootLookDone, smooth: bootSmoothN, idle: bootIdleSince ? Math.round(performance.now() - bootIdleSince) : 0, owed: warmOwed(), stage: !!bootStageHold && bootStageHold(), deathWait }),
   /* The lamp pool, for a still: a frozen loop never points the twelve at
    * anything, so a hand-placed camera renders an unlit room. */
   lamps: () => updateLightPool(),
@@ -113214,7 +113454,7 @@ window.__bw = {
   lhDoor, shinies, onPath, pathBend, pathHalfAt, lhWindows, lanternGlass,
   get doorOpen() { return doorOpen; }, set doorOpen(v) { doorOpen = v; doorSwing = v ? 1 : 0; lhDoor.rotation.y = -doorSwing * 1.95; },
   get insideTower() { return insideTower; },
-  rockColliders, rockGroundAt, pushOutOfRocks, rockGroup, headroomClear, solidDepth,
+  rockColliders, rockGroundAt, pushOutOfRocks, pushOutOfSolids, colIdx, colNear, rockGroup, headroomClear, solidDepth,
   parryCrab, blockCrab, breakCastle, get blocking() { return blocking; }, set blocking(v) { blocking = v; mouseBtns = v ? (mouseBtns | 2) : (mouseBtns & ~2); blockStart = performance.now(); },
   /* accessors only work in THIS literal: `Object.assign` copies a getter's
    * VALUE, so a setter added down there sets a dead property on the harness */

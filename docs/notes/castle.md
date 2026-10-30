@@ -1864,3 +1864,44 @@ pelvis path, chest yaw), `dkWarp` (each swing forced from its window), `dkTrace`
 - **Myles backing off** ("when im backing up fighting the knights the minatoar can never catch up"): `speedK` 1.75
   (1.3), the leap's weight doubled. `knDuelBack` (you give ground two seconds in five): 52 swings in 109 s, his mean gap
   to his man 2.88 m, 117 of the knights' health his.
+
+## 2026-10-30 — Myles always with you; the dark knight's crouch
+The owner: "MYLES DIDNT SHOW UP IN THE CASTLE AFTER TALKING TO HIM … IF YOU SAY YOULL KILL THE KING WITH HIM HE HAS TO
+ALWAYS SPAWN WITH YOU IN THE CASTLE. THE DARK KNIGHT KEEPS FLOATING WHILE CROUCHED … MYLES IS INVISIBLE IN THE SCREENSHOT".
+Probes in `tools/myles.js`, run as `PB_PORT=4223 sh tools/probe.sh 'myl&f=<name>' <out>`: `allyWalk` / `allyFade` /
+`allyAfter` (the real Yes, then you walk in at the gate while he is still walking to it / while he is fading into it /
+after he is through; then XIII by the back door, back, out of the gate, in, XIII again — and for `allyWalk` a checkpoint
+load and a death's respawn in XIII, back to the first castle under the restored game, and a death's respawn there; each
+step asserts his stage `with`, ally, `u.g.visible` and every parent drawn, his model and all 4 skinned meshes shown,
+material opacity 1 and not transparent, within 9-12 m, feet on that place's floor), `noMyles`, `dkCrouch`, `dkStills`,
+`knFeet`.
+- **MYLES SEE-THROUGH (the "invisible" one), root cause**: `minoToGate` fades his cloned `u.mats` over 0.7 s as he goes into
+  the gate's planks (`MINO.fade`). Walk in on his heels and the gate's cut starts mid-fade; a cut is `frozen()` so his
+  unit tick (where the fade runs) stops, and the move into the fort turns `toGate` into `with` and `minoJoin`s him beside
+  you — with the materials left at the fade's opacity, transparent, depth-write off, for good (through both castles,
+  the beach, everything until a reload). Measured, `allyFade` before: opacity 0.63 at every one of seven stops (the
+  still shows the wall through him); walked in later in the fade it is nearer 0 — nothing there. `minoWhole(u)` puts the
+  materials back and clears `MINO.fade`; the fade's own end and every `minoJoin` call it. After: 7/7 at opacity 1.
+- Ruled out, measured: the castles' far-file hold (`BW_CASTLE_FILES` has `minotaur`; his packs `orc-moves`,
+  `demon-moves`, `crusader-moves` are `bwFetch`, never held), restores (in XIII at 4.1 s, before the black lifts at
+  4.5-5.4 s; a death's respawn in the first castle 4.8 s vs 6.7), the collider/warm perf pass (he is in place and drawn at
+  every stop). Also: a `toGate`/`inside` Myles now becomes `with` on arriving in XIII as well as the first castle.
+- **WITHOUT HIM** (`noMyles`: a No, him hostile and calmed at his post, into XIII by the real cuts): the arch door tried →
+  phase 1, the four off their walls (drop/ring) at once, no dialog; and the same after a death's respawn into XIII.
+  `gargTryDoor` → `minoAtDoor` is false without him at your side → `gargWake`; it was already so — the see-through Myles
+  is what would have opened the door talk with nobody visible. `gargDoor` (with him) unchanged.
+- **THE DARK KNIGHT FLOATED, root cause**: `tools/ntar_moves.py` writes `hipY` from each clip's OWN first frame, and the
+  Sword and Shield pack starts most clips in a guard (knees bent, hips low). Played at the rig's rest hip height, the bent
+  legs hung under him: his lowest point over his root at a clip's best frame — idles 0.22 m, strafes 0.23-0.25, `sBlockI`
+  and `sHit` 0.40, `sCBlock` (his `blockC`) 0.84, `sSlashE` 0.82; the walk 0.01 and his own `dk*` strings ~0. Live
+  (`dkCrouch`, 40 s of the fight): `sSlashE` 0.77 m mean over the street, strafes 0.25.
+  `seatPackClips(u)` (once the clips are in: the dark knight's from `dkBuildTravel` before the blade scrub, the two
+  throne-door knights' at the end of `authorKnClips`): each leg bone's (calves, feet, toes) outermost skinned points in
+  its own frame, from the bind (weight ≥ 0.75); each `s…` pack clip (not the deaths) sampled at its FIRST frame (what
+  `hipY` is measured from; its lowest frame instead lifted the iron knight's spin 0.37 m for one foot through the paving),
+  and its pelvis position track moved down/up by that height over the root (where `dressMutant` stood the bind's lowest
+  point). 1-20 ms once. After, studio: every pack clip's lowest frame 0 to −0.08 (`sCast` −0.34 at its kneel); live max
+  0.05 m; stills `dkStills` (crouch block, guard, rising slash, idle) on the paving. `dkS3` lifts 0.4 m in its own leap.
+- **THE TWO KNIGHTS** (same pack, `knFeet`): their idles stood (+0.02 / +0.005) but the walks were 0.09-0.15 into the
+  paving and `kmRise` (`sSlashE`) 0.43 over it; seated to the root: idles 0.0, walks −0.01/+0.03 mean.
+- Musictest 9/9 after.

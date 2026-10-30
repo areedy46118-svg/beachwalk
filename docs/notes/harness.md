@@ -510,3 +510,13 @@ long ago) — use `__bw.sea`.
 - **(2026-10-29) `__bw.hoveredS()`** is the label of what the crosshair is on after the last `update()` — a probe can
   ask whether a prompt comes up (`minoDown`). A probe camera inside a wall is moved by the step: re-aim after the step,
   or the miss is the probe's.
+
+**`b.lag().slice(lag0)` LIES AFTER A LONG LOAD (2026-10-30).** `bwLag` keeps the last 500 spans and shifts the oldest
+off, and a load fills it: the index taken before a run then points into entries that have moved, and the "new" spans it
+returns are old ones (a walk's 755 ms frame was missing from it entirely). Filter by time instead —
+`b.lag().filter((e) => e[0] >= w.performance.now() at the start)` — `e[0]` is the iframe's own clock.
+**Two scenarios for this (`tools/probes.js`):** `tourProf` (`?a=<area>&n=<frames>`) is the perf tour under the JS
+sampling profiler, printing self and inclusive samples by `name:line`; `evalFile` (`?f=/path.js`) runs a throwaway script
+as a scenario body with `(w, b, log, sleep, shot)`. Chrome's profiler samples about every 10 ms whatever is asked, so
+give it 2,500 frames; and `--js-flags=--no-turbo-inlining` on the Chrome line (a scratch copy of probe.sh) stops V8
+folding a hot helper's time into its caller (the props' `step` hid `pushOutOfSolids` that way).

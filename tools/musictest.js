@@ -10,7 +10,7 @@
  * owner's checkpoint (`beachwalk.save`) itself. */
 (function () {
   const W = window, sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong', skrim: 'startSkrimSong' };
+  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong', skrim: 'startSkrimSong', skrimFight: 'startSkrimFightMusic' };
   /* (2026-10-24, the owner: the opening song plays on the first load into the game and NOT on a respawn) — 'checkpoint'
    * is a death's respawn and passes SILENT; 'load' is a checkpoint loaded without a death and must play it */
   const silent = { checkpoint: true };
@@ -110,6 +110,17 @@
         note += M.kneel ? ', on his knee' : ', NOT KNEELING';
         b.minoTalk(); note += b.state().dialogOpen ? ', asked' : ', NO TALK';
         peak = await listen(want[sc], 8000);
+      } else if (sc === 'skrimFight') {
+        // (2026-10-30, the owner's "skrim fight": looped through his fight, not loud)
+        const { w, b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+        try { await b.audioCtx.resume(); } catch (e) { /* the boot helper suspends it */ }
+        b.placeInWhale(); const S = b.SKRIM;
+        for (let i = 0; i < 240 && !(S.u && S.u.model && S.placed && !(S.u.clipsPending > 0)); i++) { b.frame(1); await sleep(40); }
+        if (!S.u || !S.u.model) return { scenario: sc, pass: false, note: 'he never came in' };
+        b.skrimFight(); note = 'in the whale, fighting him: ' + S.stage;
+        W.__mtFloor = 0.0012;
+        for (let i = 0; i < 60; i++) { b.frame(1); if (i % 20 === 0) await sleep(10); }
+        peak = await listen(want[sc], 8000);
       } else if (sc === 'skrim') {
         W.__mtFloor = 0.0012;
         // (2026-10-30, the owner's "skrim spotting": once, as you first walk up on him digging in the whale)
@@ -134,7 +145,7 @@
       for (const k of ['beachwalk.load', 'beachwalk.skipIntro', 'beachwalk.died']) sessionStorage.removeItem(k);
     }
     const others = W.__sfDests.map((d) => d.who).filter((v, i, a) => a.indexOf(v) === i).join(',');
-    const floor = { skrim: 0.0012 }[sc] || 0.004;   // (his song is played low by the owner's word: 0.55, not 1.9)
+    const floor = { skrim: 0.0012, skrimFight: 0.0012 }[sc] || 0.004;   // (his song is played low by the owner's word: 0.55, not 1.9)
     return { scenario: sc, pass: silent[sc] ? peak <= 0.004 : peak > floor, peak, who: want[sc], note: note + (silent[sc] ? ' (wants silence)' : ''), heard: others };
   };
 })();

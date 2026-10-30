@@ -1142,3 +1142,19 @@ All of it is the `CRY` section after the `SKQ` one; probes `cryHeads` (`&m=resto
   asked for "slightly more accurate"): lead 0.6 of your velocity (0.85), a ±0.25 m error across your path, the in-flight
   bend 0.6 m/s² (2.2), the bite radius 0.40 m (0.45). `cryRun`: standing 4/4, approaching 2/2, backing off 2/3,
   circling 4/6. The jar's far glow is the blood's blue (0x3a7dff; it was moon-white at the foot of Skrim's beam).
+
+## 2026-10-30 (night) — no dust, no artifact in his hand, the checkpoint as it was, Skrim anywhere, the hook driven in
+- The 2200 dust `Points` (`whAirFog`) are not added: up close they drew as teal blobs by a wall — "TAKE THESE FLOATING
+  THINGS OUT THEY LOOK TOO AI". (The whale's own faint pink spores, `whAirPoints`, stay.)
+- `skqGive` no longer puts the artifact in his hand (`skqHand(true)` not called).
+- **NO CHECKPOINT PATCHES** ("UPON LOADING … THE CHECKPOINT I HAD THE ARTIFACT AND SKRIM WALKED UP TO ME IT SHOULD FULLY
+  RESTART ON THE CHECKPOINT AND BE BACK IN THE PILE"): taking the artifact called `stickArtifacts` + `skqStick`, which
+  wrote it into the stored save; his leaving, and the heads' wake/kill/jar (`cryStick`), did the same. None are called
+  now: a reload is the checkpoint as it was saved; the next real save keeps what is so then (`skrimQ&m=restore` still
+  passes through `saveCheckpoint`).
+- **SKRIM ANYWHERE** ("SKRIM GOT STUCK AND COULDNT HURT ME HERE"): `skrimInGut` was the fight's stretch, s 38–94 round
+  his heap; now the whole gut (`WH_S0`+1 to `WH_S1`−1). And a CHASE: more than `SK_RANGE[1]` + 4 m off he runs at you
+  (`k.chase`, the 'run' clip, his feet carrying him) and starts no throw till he is back in range. Probe `skrimFar`
+  (you 50 m down the gut): 50 → 12.7 m in 14 s, then hitting you (before: 50 → 47 in 20 s, casting at nothing).
+- **THE HOOK DRIVEN IN** ("MAKE THE HOOK LOOK MORE STUCK INTO THE WHALE"): straight in (−hn, 0.06 up) and its handle end
+  0.02 m off the skin (0.28): the handle and the chain out of the wound, the blade in it.

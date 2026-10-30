@@ -1463,3 +1463,72 @@ frozen through the fade. `skrimWarmIn` (from `placeInWhale`, before its compile)
 chained at 1.07 s, no frame over 50 ms after the black. He digs through the fade (`updateSkrimLife` runs while
 `whaleBusy`); his song starts as the fade begins. Beach warms (relics, the beach's draw, driftwood) still run during a
 whale checkpoint load (~0.8 s of the main thread) — they count toward the start gate, so holding them would delay it.
+
+## 2026-10-30 — whole-game performance pass
+The owner: "make sure the whole game is running smooth as possible and no lag with fastest load times. do not change
+anything about the game just improve performance please." Measured first (probes `tour` / `tourProf`, `tools/loadtime.sh`,
+a CPU trace of a load), then the biggest things, each checked equal to what it replaced. M4 Pro, headless Chrome, Metal.
+**Baseline for an A/B:** a scratch directory of symlinks to the repo with `git show HEAD:main.js` as its main.js — serve.py
+serves its own directory (`abspath`, not `realpath`), so `sh <that dir>/tools/probe.sh …` runs the old game beside the new.
+
+**1. `colNear` — the colliders by cell (`rockGroundAt`, `pushOutOfSolids` and its `blocker`, `headroomClear`).** The
+profile's top game function in EVERY area was the props' `PhysProp.step`: 25-30 % of the CPU frame (beach, tavern,
+fort, XIII, catacombs, whale), and with inlining off (`--js-flags=--no-turbo-inlining`) two thirds of it was
+`pushOutOfSolids` + `rockGroundAt` walking all ~473 `rockColliders` 2-4 times per body per frame (117 bodies on the beach,
+157 with the tavern's; most never sleep). Now a 4 m grid of each collider's footprint grown by `COL_GMAX` 2 m, each cell's
+list in the list's own order, so a loop sees every collider that could answer, in the same order (ties go to the earlier
+one, as before). `rockColliders` is a `ColliderList` (an Array whose `push` files the newcomers and `splice` rebuilds; its
+species is plain Array, so `filter` is untouched); the pavilion gate marks it when it moves its colliders in place;
+`colIdxCheck` (first line of `animateFrame`) compares every entry to what was filed, for anything else that ever does. A
+grow over 2 m, a non-finite point, a NaN or a collider over 256 m: the whole list, as before. **Proof:** 14,190 points
+round every collider after loading seven rooms, nine grows (0 … 2.5, so the fall-back is exercised), three heads —
+`rockGroundAt` and `pushOutOfSolids` (hit and the moved x, z) compared bit for bit with the index off: 0 mismatches.
+All props' `step` per frame: 720 µs → 30 µs on the beach, 87 µs in the tavern.
+
+**2. `PhysProp.setShape` in one flat pass.** A cloned Vector3 per vertex and 98 walks over them; the driftwood made it
+120 ms of the NEAR part of every load. Now a Float64Array, every direction scored in one walk in vertex order with the same
+strict `>`, the same dot, the same min/max box. Compared with the old code on all 13 shaped bodies at the spawn (470,823
+vertices): 0 mismatches in points, box and flat axis; 500 → 100 ms. `driftwood.glb`'s span 200 → 140 ms.
+(A bounding prefilter on top of it was tried and gave nothing — the pieces are long and thin — and was taken out.)
+
+**3. The first warm compiles before it draws (`'mound relics'` → `warmCompile`, then `'mound relics draw'`).** A CPU
+trace of a checkpoint load: 523 ms of the main thread inside `getProgramParameter` (three's `onFirstUse` waiting on the
+driver's link), 255 of it under this one step's render — the first draw of the whole visible beach. Same view, same scene,
+handed to `compileAsync` first; the parses run while the driver links. Span 281-343 ms → 67 + 24. **4. `warmViewFx`
+the same way** (60-75 ms of links): shown, `compileAsync`ed, hidden; drawn when it answers (`vmFxPend`; once begun it
+finishes even if the intro ends between). Programs per area identical before and after (`tour`'s `programs`, every area).
+
+**Frames, CPU (update / whole frame with its draws issued, median ms; `b.step` and `b.frame` timed, 400 each):**
+beach -150 0.90/2.50 → 0.20/1.90 · beach -1000 1.20/3.60 → 0.30/2.90 · tavern 1.30/3.60 → 0.30/2.90 · fort 1.20/3.40 →
+0.70/3.30 · XIII 0.90/2.40 → 0.20/1.70 · whale 0.80/2.20 → 0.10/1.50 · catacombs 1.30/2.60 → 0.50/1.70 · keep 0.80/1.60
+→ 0.20/0.90 · throne 0.90/2.00 → 0.20/1.70. The whale's own probe (`skrimPerf`): update step 0.95 → 0.25-0.32 ms; the
+real loop beside him 60 fps both, no span over 16 ms.
+**Frames, GPU-synced tour (median/p95/max ms, before → after):** beach -150 5.0/10.4/11.8 → 4.5/8.5/10.8; -450
+5.5/8.7/11.6 → 5.2/7.8/10.4; -850 6.6/10.9/22.4 → 7.1/10.0/13.8; -1000 8.8/14/25 → 7.1/9.6/22.1; tavern 4.4/7.1/10.6 →
+3.9/5.9/9.3; fort 6.2/9.8/18.3 → 5.8/9.4/19; XIII 5.6/12/15.2 → 4.7/8.1/19.6; throne 4.6/6.4/8 → 3.8/6.2/8.4; dojo
+3.7/8.8/10.9 → 3.0/4.5/5.0; whale 4.1/9/12.3 → 4.3/6.5/8.2; catacombs 7.1/8.9/11.6 → 7.2/8.6/10.3; undercroft 2.7/6.4/7
+→ 3.1/6.4/8; bunker 3.5/5.4/7.4 → 3.1/6.3/7.8; dungeon 3.0/4.3/5.9 → 2.2/5.5/6.5; sewer 2.9/6/6.7 → 3.3/6/7.4; keep
+2.6/3.7/5.2 → 2.1-3.9 (three runs). None over 33 ms before or after. These are GPU-bound on this machine and move ±30 %
+run to run (the keep read 2.1, 3.9 and 3.1 on three runs of the same build) — the CPU table above is the one to trust;
+on a slower CPU the 0.6-1 ms a frame saved is three to five times that.
+**Loads (`loadtime.sh 3`, the old and new builds back to back):** beach checkpoint playable 5.52/5.45/5.41 → 5.30/5.26/
+5.32 s (module built 1.96 → 1.71); whale checkpoint 5.51/5.22/5.25 → 4.90/5.09/5.77 (an earlier pair 4.58/4.50), Skrim
+in 2.72 → 2.56 s; a first load's Start ready 11.5 → 11.2 s (9.9 once). The whale's cut: unchanged (one ~500 ms frame in
+the black, then p95 18 ms). Spans over 16 ms after a checkpoint's black: 16-22 → 7-21, worst ~33 both (the paced far rest).
+
+**Found, not changed (and why):**
+- The checkpoint black lifts ~1 s after the near part is in (`bootGateS`, on `__bw` now, logs the gate): the FAR warms
+  (beach draw 150 m, gulls 152, the wreck's paint 155, pavilion, bunker) run flat out under the black and each held
+  compile (`warmBlock`) resets the 150 ms idle, and the drain's warm (near) is only queued once the chain empties. Letting
+  the black go first would move ~60 warm steps (≤ 30 ms each) to after the reveal and could put a first-draw hitch on the
+  gulls in sight of the spawn — a load-time-for-smoothness trade the owner should make, not a pure speed-up.
+- The tavern's bottles (and anything transparent + DoubleSide) are drawn twice by three, which sets `needsUpdate` each
+  pass: ~66 `getProgram` cache-key builds a frame in the tavern (~0.2 ms). Fixing it means patching vendored three.
+- Walking the beach (`tools/probes.js` `evalFile` with a 14 m/s real-loop walk, everything loaded first): 755 ms at
+  z -858 is `startCaveIn` in DEV MODE (no cut: the catacombs build in the open) — a real game builds them under the
+  cave-in's black. 75 ms at -600 (`buildElvField`/`buildElvDressing`) and 66-107 ms at -629 (`puppet-house.glb` parse,
+  `warm house compile`, the house's `fortWallsStep`) are Elvédor's stretch built on the walk; building it earlier would
+  change from how far away the gully and the house can be seen.
+- `rebuildCullUnits` walks the whole scene (11-12k objects) every 90 frames: 0.33 ms once every 1.5 s.
+- The fort/XIII flood fills (`siteMainStep` → `keepHitsWall`) show in tours that start before they finish: a budgeted
+  one-off, by design.

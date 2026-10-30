@@ -837,6 +837,7 @@ you while it loads; the first click takes the mouse back.
 | `assets/end-theme.m4a` | The end's song, from the moment the stats come up, played once (AAC 192 kbps, the first 63.8 s of the owner's "5451 beachwalk" MP3: the piece before its silence, the loud reprise after it cut) |
 | `assets/minotaur-death.m4a` | The minotaur's death, once, from the first moment you see him going down in Castle XIII's court, on through his last words — faded in, and out as he dies (AAC 160 kbps, 55.8 s: the owner's "minotaur death music" MP3, whole) |
 | `assets/skrim-spotting.m4a` | Skrim's, once, from the moment you first see him digging in the whale, slowly away as you talk to him (AAC 160 kbps, the owner's "skrim spotting" MP3 raised 16 dB to the minotaur's level) |
+| `assets/skrim-fight.m4a` | Skrim's fight, looped from his getting up to fight until he dies, a long fade then (AAC 160 kbps, the owner's "skrim fight" MP3 raised 6 dB) |
 | `assets/skrim-chain-*.m4a` | Skrim's chains: a crack, two lashes and two heavy crashes cut from the owner's "Chain Whip Rifle (Fantasy Weapon SFX Preview)" MP3, faded, mono, levelled (AAC 128 kbps). Supplied by the owner; check its licence before redistributing |
 | `assets/catacombs-fall.m4a` | The landing in the catacombs, played the moment you hit the stone (AAC, converted from the owner's WAV) |
 | `assets/well-rope.m4a` | The rope creaking as the man from the well climbs it: 13.8 s cut from the owner's "Rope Creaking Holding Weight" sound effect, normalised (+40 dB) and faded, AAC |

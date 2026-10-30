@@ -299,6 +299,38 @@ export async function tour({ w, log }) {
   log('TOUR', await w.__tour(a));
 }
 
+// THE PERF TOUR UNDER THE JS SAMPLING PROFILER (?a=..., 2026-10-30): the same 360 timed frames, then the functions
+// that held them — self time (where the CPU was) and inclusive time (what called it), by name:line, top 40 each
+export async function tourProf({ w, b, log }) {
+  const a = new URLSearchParams(location.search).get('a') || 'beach:-150';
+  w.eval(await (await fetch('/tools/perftour.js?' + Date.now())).text());
+  // armed at the first b.look, which __tour calls only inside its timed loop (one frame in)
+  const look = b.look; let P = null;
+  b.look = function (...x) { if (!P) P = new w.Profiler({ sampleInterval: 1, maxBufferSize: 600000 }); return look.apply(this, x); };
+  const res = await w.__tour(a, +(new URLSearchParams(location.search).get('n') || 360));
+  const tr = P ? await P.stop() : null; b.look = look;
+  log('TOUR', res);
+  if (!tr) { log('no trace'); return; }
+  const self = new Map(), incl = new Map(), nm = (fi) => { const f = tr.frames[fi]; return (f.name || '(anon)') + ':' + (f.line || 0) + (f.resourceId != null && !/main\.js/.test(tr.resources[f.resourceId] || '') ? '@' + (tr.resources[f.resourceId] || '').split('/').pop().split('?')[0] : ''); };
+  let tot = 0;
+  for (const s of tr.samples) {
+    if (s.stackId == null) continue; tot++;
+    let st = tr.stacks[s.stackId]; const k = nm(st.frameId); self.set(k, (self.get(k) || 0) + 1);
+    const seen = new Set(); for (let id = s.stackId; id != null; id = tr.stacks[id].parentId) { const kk = nm(tr.stacks[id].frameId); if (!seen.has(kk)) { seen.add(kk); incl.set(kk, (incl.get(kk) || 0) + 1); } }
+  }
+  const top = (m) => [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, 40).map(([k, v]) => k + ' ' + v);
+  log('PROF samples', tot, 'of', tr.samples.length);
+  log('SELF', JSON.stringify(top(self)));
+  log('INCL', JSON.stringify(top(incl)));
+}
+
+// A THROWAWAY SCRIPT AS A SCENARIO (?f=/path.js): its text is the body of an async function of (w, b, log, sleep, shot)
+export async function evalFile({ w, b, log, sleep, shot }) {
+  const f = new URLSearchParams(location.search).get('f');
+  const src = await (await fetch(f + '?' + Date.now())).text();
+  await new (Object.getPrototypeOf(async function () {}).constructor)('w', 'b', 'log', 'sleep', 'shot', src)(w, b, log, sleep, shot);
+}
+
 // WHAT THE DRAW CALLS ARE in an area (?a=...): every mesh in view, grouped by its top-level ancestor and material
 export async function draws({ w, b, log }) {
   const a = new URLSearchParams(location.search).get('a') || 'beach:-150';
@@ -4070,3 +4102,18 @@ export async function cryRun({ w, b, log, sleep, shot }) {
   }
   log('SMOOTHNESS (largest one-frame body turn, rad/s, and step, m/s):'); for (const k of Object.keys(worst).sort()) log('  ', k, worst[k][0], worst[k][1]);
 }
+// SKRIM FOLLOWS YOU ANYWHERE IN THE GUT (2026-10-30, "SKRIM GOT STUCK AND COULDNT HURT ME HERE"): the fight begun, you
+// stood 50 m further down the gut than his heap (past the old 30 m bound) — his distance to you over 20 s. (own profile)
+export async function skrimFar({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  b.placeInWhale(); const S = b.SKRIM;
+  for (let i = 0; i < 400 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed); i++) { b.frame(1); await sleep(40); }
+  const u = S.u, P = u.g.position, cam = b.camera.position, G = b.whaleS().G;
+  b.skrimFight(); for (let i = 0; i < 60; i++) b.step(1 / 60);
+  const far = new (b.THREE.Vector3)(P.x, cam.y, P.z - 50); cam.copy(far);
+  const ds = [];
+  for (let i = 0; i < 60 * 20; i++) { cam.x = far.x; cam.z = far.z; b.step(1 / 60); if (i % 120 === 0) ds.push(Math.hypot(P.x - cam.x, P.z - cam.z).toFixed(1)); }
+  log('his distance to you every 2 s:', ds.join(' '), '| his stage', S.stage, '| hits on you', JSON.stringify(u.sk.res || {}));
+}
+// MYLES ALWAYS WITH YOU, the gargoyles without him, the dark knight's crouch (2026-10-30): `tools/myles.js`, 'myl&f=<name>'
+export async function myl(ctx) { return (await import('/tools/myles.js?' + Date.now()))[new URLSearchParams(location.search).get('f')](ctx); }
