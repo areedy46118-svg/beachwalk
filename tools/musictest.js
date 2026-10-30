@@ -10,7 +10,7 @@
  * owner's checkpoint (`beachwalk.save`) itself. */
 (function () {
   const W = window, sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong' };
+  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong', skrim: 'startSkrimSong' };
   /* (2026-10-24, the owner: the opening song plays on the first load into the game and NOT on a respawn) — 'checkpoint'
    * is a death's respawn and passes SILENT; 'load' is a checkpoint loaded without a death and must play it */
   const silent = { checkpoint: true };
@@ -25,7 +25,7 @@
     let peak = 0; const t0 = performance.now();
     while (performance.now() - t0 < ms) {
       for (const d of W.__sfDests) if (d.who === who) peak = Math.max(peak, W.__sfLvl(d.an));
-      if (peak > 0.004) break;
+      if (peak > (W.__mtFloor || 0.004)) break;
       await sleep(40);
     }
     return +peak.toFixed(4);
@@ -110,14 +110,31 @@
         note += M.kneel ? ', on his knee' : ', NOT KNEELING';
         b.minoTalk(); note += b.state().dialogOpen ? ', asked' : ', NO TALK';
         peak = await listen(want[sc], 8000);
+      } else if (sc === 'skrim') {
+        W.__mtFloor = 0.0012;
+        // (2026-10-30, the owner's "skrim spotting": once, as you first walk up on him digging in the whale)
+        const { w, b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+        try { await b.audioCtx.resume(); } catch (e) { /* the boot helper suspends it */ }
+        b.placeInWhale();
+        const S = b.SKRIM;
+        for (let i = 0; i < 240 && !(S.u && S.u.model && S.placed && !(S.u.clipsPending > 0)); i++) { b.frame(1); await sleep(40); }
+        if (!S.u || !S.u.model) return { scenario: sc, pass: false, note: 'he never came in' };
+        note = 'in the whale, him placed';
+        const P = S.u.g.position, cam = b.camera.position, y = S.u.g.rotation.y;
+        cam.set(P.x + Math.sin(y + 0.6) * 15, cam.y, P.z + Math.cos(y + 0.6) * 15);
+        for (let i = 0; i < 120; i++) { b.lookAt(P.x, P.y + 0.8, P.z); b.frame(1); if (i % 20 === 0) await sleep(10); }
+        note += S.songDone ? ', seen' : ', NOT SEEN';
+        peak = await listen(want[sc], 8000);
       } else return { scenario: sc, pass: false, note: 'unknown scenario' };
     } catch (e) { note += ' THREW ' + e; }
     finally {
+      W.__mtFloor = 0;
       try { const w = W.__sfW(); if (w && w.__bw && w.__bw.audioCtx) await w.__bw.audioCtx.close(); } catch (e) { /* */ }
       if (bak) localStorage.setItem('beachwalk.save', bak);
       for (const k of ['beachwalk.load', 'beachwalk.skipIntro', 'beachwalk.died']) sessionStorage.removeItem(k);
     }
     const others = W.__sfDests.map((d) => d.who).filter((v, i, a) => a.indexOf(v) === i).join(',');
-    return { scenario: sc, pass: silent[sc] ? peak <= 0.004 : peak > 0.004, peak, who: want[sc], note: note + (silent[sc] ? ' (wants silence)' : ''), heard: others };
+    const floor = { skrim: 0.0012 }[sc] || 0.004;   // (his song is played low by the owner's word: 0.55, not 1.9)
+    return { scenario: sc, pass: silent[sc] ? peak <= 0.004 : peak > floor, peak, who: want[sc], note: note + (silent[sc] ? ' (wants silence)' : ''), heard: others };
   };
 })();

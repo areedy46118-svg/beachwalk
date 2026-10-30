@@ -1452,3 +1452,14 @@ and the throne room (`bwInCastle`) a far file that is not the section's own (`BW
 turn on the far chain (`bwCastleHeld`, asked when it would parse, not when it arrived: a checkpoint's files are in
 before the restore puts you in a castle) and fed back in once you are out. After: no frame over 50 ms in one run
 (worst 46), two of ~70 in the other (the first castle's own `castle.glb` and its wall warm, allowed).
+
+## 2026-10-30 — the whale's load, timed (`sh tools/loadtime.sh N <out> whale`)
+`tools/loadtime.html?at=whale`: in through the real cut (`startWhale(1)`), each thing's arrival after the trigger and
+the frames through it, then checkpoint loads saved in the belly. M4 Pro, headless: a checkpoint in the whale is playable
+at 5.0–5.25 s (module 2.3), Skrim in at 2.7 s — a beach checkpoint is 5.5–5.65. Through the cut: the whale built and
+compiled in the black (one ~360–490 ms frame, unseen), but Skrim placed, his chains made and the six heaps built on the
+first frame the world ran again, 5.45 s, the fade already over — an 82 ms frame in sight, him not there till then, and
+frozen through the fade. `skrimWarmIn` (from `placeInWhale`, before its compile) does all of it in the black: placed and
+chained at 1.07 s, no frame over 50 ms after the black. He digs through the fade (`updateSkrimLife` runs while
+`whaleBusy`); his song starts as the fade begins. Beach warms (relics, the beach's draw, driftwood) still run during a
+whale checkpoint load (~0.8 s of the main thread) — they count toward the start gate, so holding them would delay it.

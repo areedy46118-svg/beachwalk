@@ -8,7 +8,7 @@
 <body style="margin:0;background:#000">
 <iframe id="g" style="width:1280px;height:720px;border:0"></iframe>
 <script>
-const P = new URLSearchParams(location.search), RUNS = +(P.get('runs') || 2);
+const P = new URLSearchParams(location.search), RUNS = +(P.get('runs') || 2), AT = P.get('at') || 'beach';   // ?at=whale: the checkpoint in the whale's belly
 const log = (...a) => console.log('[LT]', ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const f = document.getElementById('g');
@@ -29,7 +29,27 @@ async function load(setup) {
   for (let i = 0; i < 200 && !w.__bw.state().started; i++) { try { w.__bw.beginGame(); } catch (e) {} await sleep(250); }
   log('fresh start-gate ready at', ((w.__startReadyAt || 0) / 1000).toFixed(2), 's');
   await sleep(3000);
-  w.__bw.camera.position.set(8, 1.7, -60);
+  if (AT === 'whale') {
+    // in the way the game puts you in: the cut (black up, placed, held, black down); what arrives when, after the trigger
+    const b = w.__bw, t0 = performance.now(), T = () => ((performance.now() - t0) / 1000).toFixed(2);
+    const rs0 = w.performance.getEntriesByType('resource').length;
+    let fr = [], lastF = performance.now(); const raf = w.requestAnimationFrame.bind(w); let rec = true; (function tick() { const n = performance.now(); fr.push(n - lastF); lastF = n; if (rec) raf(tick); })();
+    b.startWhale(1);
+    const seen = {};
+    for (let i = 0; i < 1200; i++) {
+      await sleep(25);
+      const S = b.SKRIM, u = S && S.u, st = b.state();
+      const ev = { inWhale: b.whaleS && !!b.whaleS() && b.whaleS().G && b.whaleS().G.visible, cutOver: !b.whaleBusyS(), skrimModel: !!(u && u.model), skrimClips: !!(u && u.model && !(u.clipsPending > 0) && u.clips && u.clips.crouchIdle), skrimPlaced: !!(S && S.placed), chains: !!(b.SKC && b.SKC.ready), song: !!(b.skrimSongS && b.skrimSongS()) };
+      for (const [k, v] of Object.entries(ev)) if (v && !seen[k]) { seen[k] = T(); log('whale', k, 'at', seen[k], 's'); }
+      if (Object.keys(ev).every((k) => seen[k])) break;
+    }
+    await sleep(2500); rec = false;
+    const big = fr.filter((d) => d > 50).length, mx = Math.max(...fr), srt = fr.slice().sort((a, c) => a - c), p95 = srt[Math.floor(srt.length * 0.95)];
+    log('whale frames', fr.length, 'max ms', mx.toFixed(0), 'p95', p95.toFixed(0), 'over 50 ms', big, 'worst', JSON.stringify(fr.map((d, i) => [i, Math.round(d)]).sort((a, c) => c[1] - a[1]).slice(0, 6)));
+    const R = w.performance.getEntriesByType('resource').slice(rs0).filter((e) => /assets|models/.test(e.name)).map((e) => e.name.split('/').pop() + ' ' + Math.round(e.transferSize / 1024) + 'kB ' + Math.round(e.startTime - (t0 - performance.timeOrigin + w.performance.timeOrigin - performance.timeOrigin)) + '+' + Math.round(e.duration) + 'ms');
+    log('whale files fetched after the trigger', R.length, JSON.stringify(R.slice(0, 20)));
+    log('whale lag spans', JSON.stringify(b.lag().slice(-12).map((e) => e[1] + ':' + String(e[2]).slice(0, 30))));
+  } else { w.__bw.camera.position.set(8, 1.7, -60); }
   await sleep(500);
   w.__bw.saveCheckpoint();
   log('saved', !!localStorage.getItem('beachwalk.save'));
@@ -50,6 +70,7 @@ async function load(setup) {
       if (g && !(i % 40)) { const s = 'parts ' + JSON.stringify(g.parts) + ' left ' + g.left; if (s !== last) { log(T.toFixed(1), s); last = s; } }
       if (b.restoreS) { flags.n++; const q = b.restoreS(); if (q.restore) flags.restore++; if (!(i % 8)) log(T.toFixed(1), 'near', q.nearLeft, 'all', q.allLeft, 'audio', q.ctx, 'hold', q.bootHold); }
       if (!b.frozen() && b.state().introDone) { up = T; break; }
+      if (AT === 'whale' && b.SKRIM && b.SKRIM.u && b.SKRIM.u.model && !(b.SKRIM.u.clipsPending > 0) && !flags.sk) { flags.sk = T; log(T.toFixed(1), 'Skrim in (model and clips)'); }
     }
     // and after: the far rest going on behind you — how long, and the worst frames while it does
     { const lag0 = w.__bw.lag().length, tA = performance.now(); let worst = [], doneAt = null;
@@ -57,6 +78,7 @@ async function load(setup) {
       const after = w.__bw.lag().slice(lag0).map((e) => e[1] + ':' + String(e[2]).slice(0, 22)).sort((a, b) => parseInt(b) - parseInt(a));
       log('RUN', r, 'far rest done', doneAt && doneAt.toFixed(1), 's after playable; spans over 16 ms after:', after.length, 'worst', JSON.stringify(after.slice(0, 8))); }
     const lag = w.__bw.lag(); const sum = {}; for (const e of lag) { const k = String(e[2]).replace(/\d+/g, '#'); sum[k] = (sum[k] || 0) + e[1]; }
+    if (AT === 'whale') { for (let i = 0; i < 400 && !(w.__bw.SKRIM.u && w.__bw.SKRIM.u.model && !(w.__bw.SKRIM.u.clipsPending > 0)); i++) await sleep(25); log('RUN', r, 'in the whale:', w.__bw.whaleS() && w.__bw.whaleS().G.visible, '| Skrim in at', flags.sk ? flags.sk.toFixed(2) : ((performance.now() - t0) / 1000).toFixed(2) + ' (after playable)', 's'); }
     log('RUN', r, 'module built', L.built.toFixed(2), 's; playable at', up && up.toFixed(2), 's');
     log('RUN', r, 'frames', fN, 'renders', rN, 'render ms', Math.round(rT), 'world renders', mN, 'world ms', Math.round(mT), 'restore-flag share', flags.n ? (flags.restore / flags.n).toFixed(2) : 'n/a');
     log('RUN', r, 'blocked ms by span', JSON.stringify(Object.entries(sum).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + ':' + Math.round(v))));

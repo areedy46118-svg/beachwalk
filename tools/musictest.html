@@ -13,7 +13,7 @@ for (let i = 0; i < 200; i++) { await new Promise((r) => setTimeout(r, 250)); co
 await new Promise((r) => setTimeout(r, 3000));
 try { const b = window.__sfW().__bw; b.camera.position.set(8, 1.7, -60); await new Promise((r) => setTimeout(r, 400)); b.saveCheckpoint(); await b.audioCtx.close(); } catch (e) { log('save failed', e); }
 const only = new URLSearchParams(location.search).get('only');   // ?only=end,samurai: just those
-for (const s of (only ? only.split(',') : ['restart', 'checkpoint', 'load', 'samurai', 'samuraiBack', 'church', 'end', 'mino'])) {
+for (const s of (only ? only.split(',') : ['restart', 'checkpoint', 'load', 'samurai', 'samuraiBack', 'church', 'end', 'mino', 'skrim'])) {
   let r; try { r = await window.__mtRun(s); } catch (e) { r = { scenario: s, pass: false, note: 'THREW ' + e }; }
   log(r.scenario, r.pass ? 'PASS' : 'FAIL', r.peak, r.note || '');
 }

@@ -775,3 +775,12 @@ What could still leave him fighting in silence, closed:
   `minoSongFade(sec, hold)`: called with (20, 12) when he is dead — twelve seconds on at its level, then twenty going out
   on a `(1 - x)²` curve (`setValueCurveAtTime`), not the exponential, which is most of the way gone in its first fifth.
   The file is 55.8 s from the first sight of him falling, so a long talk with him lets it end on its own first.
+
+## 2026-10-30 — Skrim's song ("skrim spotting")
+The owner: "make it play when you start to walk towards skrim and notice him. fade it slowly when talking have it play
+once". `assets/skrim-spotting.m4a` (his MP3 came 20 dB under the minotaur's — mean −38.5, peak −20 dB — packed +16 dB:
+peak −4.1, like `minotaur-death.m4a`). `startSkrimSong` (own `skrimSongVol` straight to the destination, in
+`musicGuard`, `musicNote('skrim song')`), 1.5 s in; started from `updateSkrimMood` (off `animate`) the first frame he is
+digging inside 20 m and within ~37° of your view; `SKRIM.songDone` is saved (`skrimSong`) so it is once a game.
+`skrimSongFade` (9 s, (1 − x)²) when his dialogue is open, he rises to fight, you die or leave the whale.
+musictest `skrim`: placed in the whale, 15 m off facing him — PASS.

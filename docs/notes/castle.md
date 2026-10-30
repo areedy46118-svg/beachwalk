@@ -1768,3 +1768,99 @@ After: nobody in the stone over a second in three runs; the longest spells are 0
   `gargCrawlStep`: over on its front (`GARG_CRAWL_PITCH` 1.1, `gGlide` held), its ride height measured off its feet,
   jaw and body (not its tail), at you at 5.4 m/s on scuttling legs, a hop-bite inside 1.8 m (`gargStrikes` 'head').
   `u.meleeSpan` puts your blade's test from the stone to a metre up. Probe: down in 0.3 s, 10–12 bites in 8 s, finished.
+
+## 2026-10-29 (later) — the last gargoyle crawls, its key, stone that smacks; the lute out; Myles at the throne door
+
+The owner: "make the last gargoyle do the crawl but make it better the animation was horrible couldnt even tell he was
+crawling his head just spun. make the gargoyles drop the key to the locked door and do the octopus ring drop sound. make
+the last crawler drop it … more smacking concrete sounds loud stacked … take out the music you have for the fountain fight
+the ai music. the minataur doesnt even fight when im attacking the knights guarding the throne he needs to jump in there
+more. make him seem better and faster"; then "myles should not join the fight in the throne room just make him better and
+attack the knights outfront the throne door when i am too."
+- **THE LAST ONE CRAWLS**: `hurtMutantAt` breaks the wings of the one left alive at 70% (was the first below 45%).
+- **"HIS HEAD JUST SPUN"**: the crawler is pitched onto its front by `rotation.x` — in three's default XYZ order that is a
+  pitch about the WORLD's X whatever way it faces, so turning to you rolled it. `gargBreakWings` sets `rotation.order =
+  'YXZ'` (`gargMend` puts XYZ back).
+- **IT RODE ON ITS FACE**: probe `gargTail` (bone heights over the floor at pitches 0–1.1): at 1.1 the head was 0.12 m
+  off the stone, the hips 0.71, the feet 0.36 in the air (`crawlH` was the lowest of toes, JAW, hips). `GARG_CRAWL_PITCH`
+  0.45 (chest over hips, feet down); every frame the lowest of its feet (`u.gFeet`, toes and ankles) is put on the stone
+  (its strides make the bob), the tail's root lifted as far as its tip needs, the back swayed about the world's up with
+  the tail against it, legs reaching with the knee folded on the way forward, a roll, the jaws working, the head turned so
+  the snout (Head → JawTip) points at your eye (≤ 1.6 rad). Head/Jaw/Tail/Neck are put back to rest each frame first.
+- Stills in that court: Myles and the knights stand in the probe's camera spot; `crawl_run` hides small meshes near it.
+  A `scene.overrideMaterial` (normals) pass drew the skinned gargoyle as nothing — don't use it to look at a pose here.
+- **THE KEY** (`gargKeyItem` 'Iron key', `gargDropKey`, `gargKeyStep`, `gargKeyHome`): out of the last one as it breaks
+  (`gargDied`), the `ringDrop` sting, falls turning, rings (`sfxRingLand`) and lies in `DROP_SHINE`. `gargLocked` is now
+  "not open, not dev, and not (all dead and the key in the pack)"; the door spends it (`keyUsed`). Save `garg` 2 = dead,
+  key not taken (it is put back lying in front of the door on the court's side), 3 = taken; it is in the saved-item name
+  list. The bar's knock when the last died is gone. Probe `gargCrawl` ends: key lies 0.015 over the stone, door locked,
+  taken, door unlocked, save 3.
+- **STONE STRUCK** (`sfxGargSmack`, every blow that takes health): the overhead `smash` pitched up, the first 0.3 s of a
+  `stoneBreak` slab, a 1.7 kHz-highpassed grit click and a 140→55 Hz knock, scaled by the damage.
+- **THE LUTE IS OUT** (`C13_LUTE = false`): the Karplus-Strong minstrel by the fountain — the owner's "ai music".
+- **MYLES** quicker: every `mn*` blow ×1.2 rate and its wind-up hold ×0.6; `speedK` 1.3, `aggr` 4.2, `press` 1.2.
+  `knDuel` showed him forty seconds on the iron knight at 19 (his blows leave a knight a sixth: `minoLand`) while you
+  fought the other alone. `minoSpent`: such a knight scores −30 in `minoPickFoe` and is let go mid-hold; in `minoDraws`
+  the knight on him that is spent turns on you (`knYours`) and frees him for the other.
+- **THE REAL REASON HE NEVER HELPED YOU**: `minoFoes` asked `k.g.visible`, and the light knight's group had `visible ===
+  undefined` (drawn — three hides only `false` — but falsy): he never had the knight you were fighting on his list at all,
+  only the iron one sent onto him. Now `visible !== false`. `knDuel` after: on the iron knight to its sixth by 40 s, then
+  onto the light one (38 → 14 in 10 s), done at 77 s (100–103 before), 43 health off you (52–59). `__bw.minoPickDbg()`
+  prints what he sees. He does not follow you into the throne room (he goes down when the two are dead).
+
+## 2026-10-29 — the dark knight's swings carry him, land where you are, and track to the blow
+
+The owner: "make the darkknight moveset better he misses every hit hes bad and the animations suck hes sliding all over
+the place please". Probes in `tools/dkmove.js` (run `sh tools/probe.sh dkMove`, or `'dkx&f=<name>'` for the others):
+`dkMove` (his own choices, 30-60 s a mode, you still / strafing at the walk / backing off 1.5 m a quarter second into each
+swing / wandering / side-stepping 0.15 s before each contact), `dkClipFeet` (each clip scrubbed: planted-foot travel,
+pelvis path, chest yaw), `dkWarp` (each swing forced from its window), `dkTrace` (one swing frame by frame), `dkGait`.
+- **What was wrong, measured.** His own strings carry him on the PELVIS and the sliced ones start with it far behind his
+  origin (`dkS7` −2.57 m, `dkS3` −2.23, `dkS0` −1.36; his strings' rest is −0.33 against the pack's −0.02): the fade into
+  each slid him metres backwards, he turned through the wind-up about a point metres off his body, and every distance the
+  AI took was from where he was not. The pack's blows are in place on stepping feet (`sSlash` steps 0.68 m in and back
+  out; `sSlashC` 0.74, `sSlashE` 0.43), and `sAtkB`'s recorded travel goes 2.87 m SIDEWAYS where its feet go 3.2 m
+  forward. Tracking stopped at 0.8 of the first contact and never ran again for a string's later blows; the model's aim
+  yaw was taken off the TIP's bearing, which through an overhead's cock is behind him (`dkS7`'s chop came down 0.7 m to
+  his left). His gaits' `clipSpeed` came off the retargeted root (walk 1.34, strafes 0.99/1.10, walk back 1.03) where
+  his feet make 1.55 / 1.29 / 1.39 / 1.39 — `measureGaits` had never run on him (no toes; and the first ask came before
+  the pack's clips were laid).
+- **`dkBuildTravel`** (once, when his clips are in; `dkReady` waits for it): a string's pelvis track is pinned over his
+  origin and the path it took becomes `clipTravel` (exactly the same picture, but his root is where his body is); the
+  pack's travel is read off the planted foot (the recorded root's through a jump). Then each swing's blade is scrubbed
+  round each contact: the furthest it reaches at your height (0.6-1.85 m) and the bearing off his nose — `A.rmStop`
+  (reach + 0.2) and `A.rmYaw` per contact; `A.rmFrom`, where it can be thrown from (stand-off + its step ± half the
+  ground its feet cover); `maxReach`/`ring` from those. No lunge on any of his swings, `stepBack` 0.
+- **`dkWalkSwing`** (the minotaur keeps `dkRootMotion`): every frame of a swing the root walks the clip's own travel;
+  toward each contact the forward step gets a share `k` (±`DK_WARP` 0.5; a leap 0.8) of its own length added or taken
+  off, spread over all the ground the feet still cover, so the blow arrives at the stand-off from where you will be —
+  your walk's velocity led by up to 0.35 s; `u.faceOff` faces him so the BLADE's bearing is on you (`yawK` 0). Both are
+  committed `trackT` 0.2 s before each contact: a step in the last fifth of a second still beats it. Early in the
+  wind-up, if even the stretched step leaves the blade 0.55 m short of where you really are, he drops the swing and walks.
+- Generic, gated: `swingTracks(u, A, t)` (with `kind.trackT`, tracking to that long before EACH contact; without it the
+  old 0.8 of the wind), `kind.trackRate`, `kind.warpPick` (weights a swing by `A.rmFrom`), `kind.standTurn` (1.6 rad/s
+  turning on the spot), `u.faceOff`. His `gaitToes` are his foot bones.
+- **Moveset**: out `dkS5` (5.3 s, its second blow 2.4 s after the first, off the picture) and `dkS6` (steps back into its
+  blows: 0.7-1.0 m short at 3.5 m on all four against a man standing). Chains added: `dkS1`→`dkS2` 0.35, `dkS2`→`dkCut`
+  0.30, `dkTurn`→`dkRise` 0.35. The long strings (`dkS7`, `dkS3`) are now his gap-closers from 4-7 m.
+- **Measured, before → after** (`dkMove`, contacts landed): still 10/10 → 17/18; strafing 5/9 (56 %) → 11/16 (69 %, 71-78 %
+  on other runs); backing off 2/9 (22 %) → 5/13-13/16 (38-81 % run to run; the swings he cannot reach are dropped, not
+  whiffed — what still misses is a quick cut stepped out of after its commit); wandering 2/9 → 10/13; the late
+  side-step 7/10 → 9/18 (it is meant to work). `dkFight` (3 m, hands off) 12 of 14 thrown landed; `dkBlock` nothing
+  through a held guard; `dkIntro` the three farmers dead in 6 s. Planted foot in swings 0.95 m/s (36 % of frames over
+  0.6) → 0.76 (33 %); moving 2.20 → 1.88 m/s; standing 2.50 → 1.97.
+- **Still open**: the feet while he walks and strafes still read 1.9 m/s on a 1.7 m/s body in `dkMove` — mostly the
+  0.3 s cross-fades between walk / strafe / idle and the probe's own "lower foot" pick in a strafe, not the rate (matched
+  now: e.g. `sStr1` at 1.22 × 1.39 under 1.79); the swing-end fade back to idle moves his feet (the "standing" frames);
+  the warp itself slides the planted foot up to half the step. The turn clips `sTurn`/`sTurnB` rotate the body ~100° in
+  model space and are not used.
+
+## 2026-10-30 — the key lit, deeper cracks, no crawler; Myles keeps up
+- The key's shine (`DROP_SHINE`, strength 5.5, its beacon) from the moment it falls, and `dropShine` when it is taken
+  (the beacon column is in the scene, not on the key: it would have stood there after).
+- **No crawler** ("take out the crawling one its not working"): nothing calls `gargBreakWings`; the last one still drops
+  the key as it breaks.
+- Cracks: 12 + 6n strokes a step (7 + 3n), the dark line 2.6–5.2 px + 0.6n wide (1.2–2.8), a pale lit edge 1.4 px off.
+- **Myles backing off** ("when im backing up fighting the knights the minatoar can never catch up"): `speedK` 1.75
+  (1.3), the leap's weight doubled. `knDuelBack` (you give ground two seconds in five): 52 swings in 109 s, his mean gap
+  to his man 2.88 m, 117 of the knights' health his.

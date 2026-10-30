@@ -836,6 +836,8 @@ you while it loads; the first click takes the mouse back.
 | `assets/samurai-score.m4a` | The samurai fight's score, from "THAT'S MY SWORD." until he falls, looped (AAC 160 kbps, converted from the owner's "5450 FIX" MP3) |
 | `assets/end-theme.m4a` | The end's song, from the moment the stats come up, played once (AAC 192 kbps, the first 63.8 s of the owner's "5451 beachwalk" MP3: the piece before its silence, the loud reprise after it cut) |
 | `assets/minotaur-death.m4a` | The minotaur's death, once, from the first moment you see him going down in Castle XIII's court, on through his last words — faded in, and out as he dies (AAC 160 kbps, 55.8 s: the owner's "minotaur death music" MP3, whole) |
+| `assets/skrim-spotting.m4a` | Skrim's, once, from the moment you first see him digging in the whale, slowly away as you talk to him (AAC 160 kbps, the owner's "skrim spotting" MP3 raised 16 dB to the minotaur's level) |
+| `assets/skrim-chain-*.m4a` | Skrim's chains: a crack, two lashes and two heavy crashes cut from the owner's "Chain Whip Rifle (Fantasy Weapon SFX Preview)" MP3, faded, mono, levelled (AAC 128 kbps). Supplied by the owner; check its licence before redistributing |
 | `assets/catacombs-fall.m4a` | The landing in the catacombs, played the moment you hit the stone (AAC, converted from the owner's WAV) |
 | `assets/well-rope.m4a` | The rope creaking as the man from the well climbs it: 13.8 s cut from the owner's "Rope Creaking Holding Weight" sound effect, normalised (+40 dB) and faded, AAC |
 | `vendor/three/` | three.js r160 (vendored, offline-safe) |
@@ -1133,23 +1135,20 @@ not redistributable, and so is the music that plays on the walk down to it
 (`assets/whale-sighting.m4a`) and the song its farewell is cut to
 (`assets/whale-leaving.m4a`).
 
-This work is based on ["Cursed Rune Demon"](https://sketchfab.com/3d-models/cursed-rune-demon-0d2348598de9425b95e3a9a1cb915b79)
-by [PolyGoreStudio](https://sketchfab.com/Phu.99) licensed under
-[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the seven demons in
-the whale's belly (`assets/demon.glb`, through `tools/gltfpack.py` at 1024).
-They move to the owner's "Scary Zombie Pack" (Mixamo animations, Adobe),
-retargeted by `tools/ntar_moves.py -- demon` into `assets/demon-moves.json`.
+Skrim, who digs in the whale's belly: this work is based on ["Dagon's sectarian"](https://sketchfab.com/3d-models/dagon-s-sectarian-b883b0b1190f4c5f9617ae20d3d3fad9)
+by [David Glynch](https://sketchfab.com/yaveselyigolovastic) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) (`assets/skrim.glb`, through `tools/skrim_pack.py`:
+bones renamed, maps cut to 1024/512, decimated). He moves to the owner's "Pro Magic Pack" (Mixamo animations,
+Adobe), retargeted by `tools/ntar_moves.py -- skrim` into `assets/skrim-moves.json`. (The seven demons and the
+two parasites that were in the belly are gone, and their models with them; the "Scary Zombie Pack" clips in
+`assets/demon-moves.json` stay, for the minotaur's roar.)
 
-This work is based on ["Parasite L Starkie"](https://sketchfab.com/3d-models/parasite-l-starkie-d1b6b1bdd1574a01b1968ead7ae96134)
-by [informatica e manutenção](https://sketchfab.com/nunoreis79) licensed under
-[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/). **Non-commercial**:
-this build is a personal one, and the licence does not allow the model in
-anything sold. The two parasites that hold off while the seven demons fight
-you, then come in on their own (`assets/parasite.glb`, through
-`tools/gltfpack.py` at 1024, its alpha dropped). They carry no animation of
-their own: every move is another fighter's clip retargeted onto them (the
-knight's, the red alien's, Wong's, the orc's, the drunk's, the Marauder's and
-the crawler's).
+This work is based on ["Crying head"](https://sketchfab.com/3d-models/crying-head-f4da660299be485a9e7bc722db2a68ad)
+by [CommunicationNode](https://sketchfab.com/Starven38) licensed under
+[CC-BY-SA-4.0](http://creativecommons.org/licenses/by-sa/4.0/) — the three heads nesting at the very back of the
+whale's belly (`assets/crying-head.glb`, `tools/crying_head_pack.py`: its display floor dropped, its clearcoat and
+specular stripped, metalness 0, its maps cut to 1024 JPEG, its two clips kept; the modified model is shared under the
+same licence). Their leaps, their bites, their flight when struck and their shrieks are built in the game.
 
 The sting as the octopus ring comes off the knight is the owner's own
 recording (`assets/octopus-ring-drop.m4a`), not redistributable.

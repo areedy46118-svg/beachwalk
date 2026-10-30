@@ -641,3 +641,457 @@ by its head: `settleMounds` moves mounds off solids, and the whale's colliders a
   (`moodKeys`: `smoothstep(430 − twr, 0, 260)`, which also parts the cloud over the moon) reaches 20 m deeper into the
   misted stretch now — about 0.5 against 0.37 before the reveal — and the whale stood against a clearing sky. It is
   multiplied by `1 − wsM` now: while the sighting's mist is up the tower clears nothing; at the swell it comes back.
+
+**SKRIM, AND THE BELLY EMPTIED (2026-10-29, the owner: "take out all enemies in the whales mouth and free up space with
+their models. add this character named 'Skrim' …", his script word for word, and a water-magic fight on its two bad ends).**
+- **The seven demons and the two parasites are gone**: their spawns (`demonUnits` / `parasiteUnits` stay as empty
+  lists for the code that walks them), `assets/demon.glb` and `assets/parasite.glb` deleted (1.2 MB), the room's file
+  lists and reach table carry `skrim.glb` / `skrim-moves.json` instead. `assets/demon-moves.json` STAYS: the minotaur's
+  roar (`MINO_PACKS`, `dRoar`) is in it. `statKillTotal` counts Skrim as one. `wbBellyClear` (the farewell's trigger)
+  is now Skrim dead or held to his deal.
+- **His files**: `tools/skrim_pack.py` (Blender; "Dagon's sectarian", CC-BY-4.0, bones renamed onto `Character1_*`
+  so `ntarRetarget` maps them by itself, 16.7k verts, 1.98 MB, 1.85 m, facing +Z, a steep A-pose rest) and
+  `tools/ntar_moves.py -- skrim` (all 56 Pro Magic Pack clips, `TAKE_FROM_ACTION`: the takes run to the armature
+  action's own end, not the 250-frame scene). Keys: idle/idle2-4, walk/walkB/walkL/walkR, run…, crouchIdle…,
+  fromCrouch, m1A1-3, m2A1-5, area1-2, cast1-2, block*, hitS*/hitL*, die*, jump….
+- **Where**: `whBuildArena` records every moonbeam's floor point (`A.skrimSpots`) and kneels him under the widest
+  (`A.skrimSpot`), the heap (`whFleshPile`: icospheres pushed out on noise, vertex-coloured folds, wet roughness) beside
+  him. `skrimDigPose` lays a slow dig on `crouchIdle` (arms in and out, head down) — he never looks at you.
+- **Talk** (`SKRIM_NPC`, `skrimTalk` / `skrimLeave`): "Fine here." shows only with 4 jars and spends them
+  (`spendJars`, `SKRIM.paid`); "*Kill him*" and "No, I want it." → "I tried to be nice." start the fight
+  (`SKRIM.fightNext` → `skrimFight`, `fromCrouch`); "Of course, as long as you promise to heal the whale" is the deal
+  (`stage 'deal'`). A blow on him while he digs starts it too. On the save as `flags.skrim` ('deal' / 'paid').
+- **His fight** (`skrimFightStep`): a ring 5.8–9 m out, strafing, turning sides; moves `SK_ACTS` — bolt (a ball from
+  his right hand), volley (3, enraged 5, fanned, both hands), geyser (its circle under you first, `skwGeyserTell`, up
+  at 0.55 of the clip), wave (a ring along the floor: jump it or guard it), palm (close: a water-burst strike,
+  blockable, parryable — a parry stuns him), dash (back out of reach in a spray, after two blows in 1.5 s or when you
+  close), nova (at half health, once: a ring bursting off him). Struck before two-thirds of a wind-up, he flinches
+  and the cast breaks. A ball's release is the frame his hand goes out fastest (`skrimRelease`, measured once a clip).
+- **Balls** (`SKW.balls`): 15.5 m/s, homing for 0.35 s, a little lead. Reaching you: guard → `blockMutant` + splash;
+  guard inside the parry window → it goes BACK at him (21 m/s, homing) for 7; otherwise 1.
+- **The water** (`skwMat`): MeshPhysicalMaterial transmission 1, ior 1.33, attenuation blue-green over 0.42 m,
+  clear coat; its vertices moved on a noise field (`SKW_NOISE`) so it quivers. Droplets: one InstancedMesh of 500,
+  stretched along velocity. Splash = droplets + mist sprites + a crown (torn-rim cylinder shader) + a wet gloss decal
+  that dries over 7 s. Geyser column and wave lip are their own flowing-foam shaders.
+- **His dig is AIMED**: `skrimDigPose` turns each upper arm so shoulder→hand points at a place on the heap (in and out
+  on his clock), and bows his head toward it. Turns about his own axes (two tries) held his arms out level over it:
+  this rig's crouch carries them forward. The heap is rough (0.62) and dark — at 0.34 its glints read as red stones.
+- **The release frame is measured BEFORE the clip is played** (`skrimRelease` scrubs the mixer; after, it stopped
+  the clip just begun, and he cast standing still).
+- **The wave's lip and the geyser's column are water too** (`skwBodyMat`: the transmission material with its own
+  vertex stage), with only their foam in the shader over them — a white shader alone read as plastic at range. The
+  balls are 0.26 m with a faint additive glow (`skwGlow`) so they read in the dark.
+- Probe `skrimIn` (`skrimDig` for the stills only): over 40 s of fixed 1/60 steps he cast ~12 times; with your guard
+  held (the probe must hold `mouseBtns & 2` too: `blocking` is dropped every frame without the button, line ~45815,
+  `__bw.setGuardTest`) blocked 7, parried 4 (him 120 → 92), 5 on you (the geysers, and balls with the guard down).
+  Frame cost of the transmission pass while his water is on screen was NOT measured.
+
+## 2026-10-29 (later) — the belly darker, Skrim lit, his search, the walk up to him; his chains
+
+The owner: "make inside the whale way more atmospheric it should be darker with more shine onto skrim. make the flesh pile
+look more like this [a raw meat mound with bones in it] … have him search through it better … moving bones throwing flesh
+to the side. make walking up on skrim way more cinematic"; then "his loading screen and moves are horrible … sliding all
+over and its lagging bad try that he throws and swings chains … like hellraiser chains swinging and big chains he summons
+through the ground like the water. make performance better than the water. use the hook his model has on these chains".
+- **THE MOON LAMPS WERE ALL AT THE WHALE'S ORIGIN.** `ml.position.copy(T).lerp(H, 0.3); ml.userData.lpAlways = 50;` sat
+  inside the `//` comment on the line above it (in HEAD too). Fixed — and the lamps at their cuts lit the floor brighter,
+  so the darkening had to be measured, not reasoned: probe `skrimLight` lists every point light near him by owner
+  (FILL / MOON / pool) and renders with the wash, the glands and the lights each off. The floor was the point lights;
+  the glands (`uWhN`) hardly mattered. `WH_DARK` { gl 0.45, fill 0.13, moon 0.14, wash 0.42 } (the wash is `uWhMoon`,
+  1.5 before). His lamp (`L.skrim`) distance 9 decay 1.4 (a pool on him, not the floor), ×`whMood.beam` 1.6 → 2.6.
+- **THE HEAP** (`whFleshPile`, `whMeatMap`, `whLump`, `whBoneGeo`): a painted muscle map (pieces, grain, fat, the black
+  between) as map + bump, roughness 0.42; lumps welded with `mergeVertices` (an icosahedron comes unindexed: its normals
+  were the faces' — facets with a white glint on each) with their own planar UVs; ten bones (0.42–0.82 m) standing out
+  of it. Returns the bones. He kneels 1.05 m from its middle (`SKRIM_OFF` 0.95/0.45; at 0.5 he was inside it).
+- **HIS SEARCH** (`skrimSearch`, `updateSkrimLife`): off `animate`, NOT `update` (a dialogue returns `update` early: he
+  froze while you talked). Aimed upper arms (`skrimAimArm`), eased targets, a lean at the waist BEFORE the aims, the
+  head (`skrimLookAt`). Loop dig → fling / bone (every third). The bone is `attach`ed to his hand and SEATED at the hand
+  (`position.set(0,0,0)`: the aimed hand never quite reaches it, and it floated a hand off his fist). Guard each grab
+  with a flag of its own (`R.got`): after the throw the "not holding" test re-grabbed the same bone every frame — 106
+  throws counted in 40 s. Thrown things fly in the whale group's frame (`skrimFlyTick`, floor `whFloor`).
+- **THE WALK UP** (`updateSkrimMood`): `whMood.cine` from 14 → 6 m (1 in a dialogue), dims the glands/fills, raises his
+  beam, black bars (z-index 3: under the HUD and the dialogue), a drone (saws at 36.7/37.3/55/73.6 Hz through 220 Hz
+  lowpass + banded noise, on `sfxOutBase`), dust motes in the beam (`whBeamMotes`).
+- **CHAINS, NOT WATER** (`SKC`, `skcInit`, `skcTick`, `skcLay`, `updateSkrimChains`): the water built and disposed a
+  material per splash — a shader compile mid-fight each time. Every link is one `InstancedMesh` (1800); the hooks are
+  meshes of HIS hook's geometry (bind-pose `skrim_hook`, put on its handle at min z, pointing +Z) out of a pool;
+  everything is made in `skcInit` while he digs and parked at y −1000 (drawn, so compiled). Kinds: dangle (the sling
+  whirl in the wind-up), throw (out / bite + yank / slack / whip back when parried / haul in over the floor), sweep
+  (hits when the chain's angle crosses your bearing inside its reach), rise (pit ×4, line ×13, ring ×12). Sounds made
+  (`sfxChainRattle`, `sfxChainRing`). Probes `skrimChains` (stills of each), `skrimIn` (40 s: 12 casts, blocks, parries,
+  hits; 0 errors).
+- **HIS FEET** (`SK_GAIT`, `skrimGait`): his clips' ground speeds read off `travel` — walk 1.67, walkB 1.21, walkL 1.33,
+  walkR 1.38, runB 3.25 m/s — all four were played as if 1.35, and the dash was 6.5 m/s on the 3.25 clip. Velocity
+  eased (2.5/s), the clip kept until another beats it by 0.3, turn 3.4 rad/s (2.6 mid-cast). His throws' release frames
+  are measured during the rise, one a frame (`SK_MEASURE`): measuring scrubs 41 mixer steps.
+- **"MY SCREEN WENT BLACK AT THE WHALE LOADING SCREEN"**: the owner loaded while `whBuildArena` called `whBeamMotes`
+  before it was written. A half-made edit to anything the whale builds is a black screen for whoever is playing.
+- **HE LOOKS UP ON "BRO…"** (`bro.enter` sets `SKRIM.lookT` 3.2 s; `skrimSearch` turns the look onto your eye). His
+  look (`skrimLookAt`) takes the face's forward from the head bone to between his eyes (`c_eye_l/r`), neck 40% then
+  head, ≤ 1.4 rad, and lifts the point by 0.7 × its distance: the eyes sit ~35° up off the head bone's front, and aimed
+  by them his face still pointed at your chest (probe `skrimFace`, stills `bro_before/look/after`).
+- **BLINK AND BREATH** (`skrimFace`, in the search and after the fight's mixer): Auto-Rig Pro lid bones
+  `c_eyelid_top/bot_01..03_l/r` pivot on the eye's centre (measured 0.000 m off `c_eye_l`); turned about the line
+  between the eyes, top −0.9 rad shuts the eye (+0.9 stares it open), bottom +0.15. No clip moves them: their rest is put
+  back each frame. Breath: the chest about his lateral axis and the shoulders, 0.028 rad at ~0.5 Hz digging, 0.045
+  quicker in the fight, quicker again angry.
+
+## 2026-10-30 — the cave under the moon: rays, mist, cold; grounded heaps, real bones; his look
+
+The owner, with a still of a creature crouched under shafts of cold light in a cave: "skrims scene needs to be darker
+more scary with light rays shining down on him with subtle mist low on the ground moving … the bones and flesh piles look
+awful make them not float on the ground … the bones in his hand look awful too like ai slop … make him stop searching for
+a second then look at you more natural. his head turns too weird and should be longer … put some more flesh piles around".
+- **WHAT LIT THE FLOOR PINK** (probe `skrimDig` now steps the game's own `update` — `b.step` — then `b.lamps()`, or its
+  stills never showed the mood's dimming): floor means with each source off — all point lights off 49 → 14; the wash,
+  the eye-lit fill and the glands hardly mattered; of the point lights only HIS lamp (39 at full mood, 6.5 m reach from
+  3.4 m up). Now 3.0 m reach, decay 2, 2.4 m over him and his heap, colour 0x8aa2e0, `whMood.beam` 1.0 + 0.7·cine.
+  `whMood.dim` 1 − 0.75·cine also takes the other moon lamps and the flesh's eye-lit fill (`uWhDim`, new uniform), and
+  a COLD GRADE in the flesh shader (luma × (0.74, 0.86, 1.12), up to 0.8 of the way, on `uWhDim`). Fog goes toward
+  0x03050a and +0.018 density with cine.
+- **RAYS** (`whGodRays`): five soft cones out of his cut (one wide, four narrow at their own angles), edge-lit additive
+  with dust streaks falling down them and a slow flicker; `A.rays.U.uI` 0.45 + 0.8·cine. **MIST** (`whGroundMist`):
+  three 30 m sheets whose every vertex is put at the gut's floor + 0.1 / 0.32 / 0.6 m (no hard line where it meets the
+  floor), two-octave fbm drifting, lit cold under the rays, faded near the lens and at its edge.
+- **HEAPS** (`whFleshPile(G, x, s, rnd, K, nBones)`): every lump's geometry is sheared onto the curved floor under each
+  vertex and sunk 4 cm (`whSeat`), darkened toward the floor through vertex colours (the contact shadow nothing else
+  draws; the meat material is `vertexColors` now — `whLump` always carries a white colour attribute, or a chunk with
+  none would draw black); a wet black-red pool under it laid on the floor itself (`whFloorDisc`, ragged `whPoolMap`
+  alpha, its UVs turned per heap — a flat disc floated over half of it; at 0x1a0203 opaque it read as a hole); the beam's
+  pool of light conformed the same way. Six more heaps (K 0.42–0.77) seeded round his within 3.5–11.5 m.
+- **BONES** (`whBoneGeo(len, r, rnd, broken)`): lathe-turned — knuckled flaring ends, a narrow bowed shaft, a third
+  snapped into splinters — vertex-coloured old yellow-white, blood up the end that was in the meat, grime in the flares;
+  ribs in a row (`whRibGeo`, flat curved tubes).
+- **HIS LOOK** (`SK_LOOK` {4.8 s: wait 0.55, rise 1.15, fall 1.2}): on "bro…" his hands stop in the meat (the search's
+  clocks held), a beat, the head comes up and round, the chest following a little (≤ 0.21 rad), held, and slowly back.
+  The face's forward is `skrimFaceDir`: head→eyes turned −0.61 rad about the eye line (`SK_FACE_TILT`), aimed from
+  between the eyes — the earlier "lift the point 35°" was right far off and threw his head back at a bone under his chin.
+  Measured: 1.5° off your eye. The inspected bone is held under his chin (−0.26).
+
+## 2026-10-30 — Skrim's fight: his feet, his hook, his head, the chains as chains
+
+The owner: "fix his animations i hate when his head leans back too much on that one move ... give the chains some more
+realism ... he needs some normal swings too he slides around too much. when you are up close he does nothing and is easy
+to hit he should back up to use the distant change or just swing his hook". Probe `skrimF2` (tools/probes.js; `&m=poses`
+the head/swings/gait-scale numbers and stills, `&m=fight` four 10–14 s fights on fixed steps, `&m=chains` chain stills;
+add `&wt=1` for mixer weights and a per-frame walk trace). Run it with `PB_PORT=4223`.
+- **THE FOOT METRIC**: the lower toe while it is within 3 cm of the lowest that clip puts it (walk's toe never comes below
+  6.7 cm of his root; walkB 4.2, runB 5.1, the rest ~3), its world speed. Before: walkL 0.84, walkR 1.21, walkB 0.85–1.08,
+  walk 1.25, runB 4.2 m/s. With root travel alone (scaled): 0.2–0.5 still (scrubbed in place — the hips' path in a take
+  does not keep the stance foot's pace). With the foot lock (`skrimMix`): walkL 0.00, walk 0.06, walkB 0.05–0.2, runB
+  0.01–0.14. What is left is close-in: the player put at 1.5 m every frame by the probe pushes him.
+- **HIS STRIDE IS 0.75–0.82 OF THE TAKE'S** (him held still, gaits scrubbed: planted toe speed over root travel — walk
+  0.80, walkB 0.82, walkL/R 0.75, runB 0.80; `SK_STRIDE`). SK_GAIT's speeds were all a quarter too fast for his feet.
+- **`skrimMix`**: the mixer moved on, then he is moved by whatever keeps the planted toe where the last frame left it (its
+  `matrixWorld` is still last frame's when `skrimMix` starts: nothing updates it between); with no foot down, the clips'
+  `travel` deltas × weight × `SK_STRIDE`, loop wrap handled. `skrimTurn` turns about the planted toe. `k.vx/vz` only
+  choose the clip now (`skrimGait`: idle under 0.45, a clip held ≥ 0.4 s, `kind.fade` 0.22). Backed onto the gut wall,
+  `k.wallT` drops the backward part for 0.9 s (a walk into a wall is the clip playing with no motion: the worst skate).
+- **A TRAP IN `skrimRelease`** (measuring scrubs the mixer): putting back `setEffectiveWeight` on EVERY action stopped any
+  fade in progress, and a clip fading in stayed at part weight — three then blends the rest of the pose toward the bind
+  pose: legs half frozen, every skate number 0.00 in that probe run. Only the measured clip's weight is put back now.
+  (A probe that scrubs must `stop()` every action after, too.)
+- **THE HEAD** (`skrimNeckFix`, after the mixer, before `skrimFace`): the face's pitch off his chest over the idle's
+  (idle 53.9° off the chest, 28° up in the world), scrubbed through every fight clip — m1A3 122° at 0.47 (the bolt's and
+  the sweep's clip: the one he did most), area1 63, cast2 35; in the world cast2 61, hitSF 49, area2 47, cast1 40, m1A3
+  31. The neck (45%) and head (55%) are turned forward about his shoulders' line by 85% of whatever is over 30° off the
+  chest or 20° up in the world (`SK_NECK`). m1A3 after: 24° off the chest (still `posefix_m1A3`). + about his left
+  (cos y, 0, −sin y) is the face DOWN.
+- **HIS HOOK, CLOSE IN** (`SK_HOOK`, `skrimHookNext`, `skrimHookStep`, act `hook`): the pack has no left-hand swing (every
+  1H clip is thrown with the right, `by: RightHand`), so `skrimMirrorMoves` mirrors m1A1–3 into `m1A1M..m1A3M` at load:
+  the file's tracks are each bone's turn since rest in ONE frame (him facing +Z), and the rests are mirror images across X
+  (LeftArm (−.5,−.5,.5,−.5) ↔ RightArm (−.5,.5,−.5,−.5)), so the other side's quaternion → (x, −y, −z, w), the middle bones
+  in place, travel x negated; the rests left alone (the hips' carries his facing). The blow lands where the hand is
+  furthest out after its fastest frame (`skrimHookContact`: at the fastest frame the hand was 0.07–0.61 m out, crossing
+  his body), reach 2.05 m in a 0.8 rad cone, 1–3 blows, the last of a string 2 dmg; blocked, the string stops; parried,
+  `parryMutant` → stun. A little out of reach he walks in first (≤ 1.1 s, on his feet).
+- **CLOSE RANGE** (`skrimPick`): under 3 m, the hook 58% (66 angry), else `dash` (runB 1.5 strides on its own feet, then
+  `k.ranged`: a throw next) or the sweep, else `retreat` (walkB 1.1–1.6 s, then a throw); after a string, 45% back out
+  (`k.backOff`). Struck: a flinch ONCE (`k.armT` 1.5 s); struck again in it with you close, he answers — the hook back at
+  you (`k.counter`, 1–2 blows) or the dash; he does not stop for a blow in his own swing or his run back. Parried: hitLF
+  on its own feet (1.13 m back) instead of half a metre slid. Measured, pressed at 1.5 m and cut every 0.8 s: before,
+  489 of 720 frames standing flinching, 0 blows on you; now ~130–200 (flinches, mostly), 4 on you, 3–5 hooks and 2–3
+  dashes in 12 s. Standing at 1.5 m without cutting: he swings or backs out, mean distance 2.0–3.9.
+- **THE CHAINS** (`skcSim`, `skcLay`, `skcLinkGeo`): links were a stretched thin torus (wire 0.023 in a link 0.16 long)
+  laid at 0.066 — half the inside length, each half inside the last. Now a stadium of round bar (`SKC_BAR` 0.0125, eye
+  1.45 bars wide and 3 long), pitch = the inside length (0.076 × sc), vertex colour wear on the bends, instance colour
+  iron/rust (24%)/near-black (10%), `vertexColors` + instance colour multiply; no metalness. Each link's frame is
+  carried down the chain (made fresh per segment it twisted at every bend), a quarter-turn each with a little play. Every
+  chain is Verlet points (gravity, damp 0.985, two half-steps, 10 constraint passes, floor with drag): dangle (hook
+  dragged round the wrist's circle, 0.8 m), throw (pinned hand↔hook while out/bite/whip, paid out 1–10% long; let go,
+  the hook flies on with its velocity on what is out and is hauled in by shortening it), sweep (the hook on its arc, let
+  go at ≤ 9 m/s at the end), rise (16 points; the top on a spring 15/1.5 with a random shove, so a great chain swings
+  over and back about 0.6 a second). Still one InstancedMesh, nothing built after `skcInit`. The hook geometry is now
+  put on the middle of its HANDLE end (the box's middle hung it a hand off the last link, still `ch_hook_close`).
+- **NOT DONE**: turnL/turnR (they keep their 90° in the hips; playing them needs the clip's yaw curve put back on his
+  heading); hits of yours while you walk into him still push him (the general separation, not his feet).
+
+## 2026-10-30 (later) — no glands, thicker murk; his body turns; bones in his fist; his song from the start
+- **NO GLANDS** (`WH_GLANDS = false`: "take out those orange light up things in the whale belly just have the light from
+  the cuts"): the wall glands (instanced bulbs), their halos, their shader lamps (`A.lamps`), the four warm fills
+  (`A.fills`) and the far-end orange glow are not built/shown. `WH_FOG` 0x07050a, 0.058. Mist sheets 24 m (15), alpha
+  (0.2 + 0.3·lit) (0.1 + 0.22), thresholds 0.08–0.40, `uI` 0.9 + 0.5·cine.
+- **HIS BODY ON "BRO…"** (`skrimBroBody`, put on BEFORE his arms are aimed so his hands stay in the meat): waist and
+  chest share half the bearing to you (≤ 0.9 rad between them) a beat behind the head, and he straightens 0.16; the head
+  does the rest (still 1.6° off your eye).
+- **BONES** 0.26–0.48 m × 1.3–2 cm (0.42–0.82 × 2–3.2). **THE GRIP** (`skrimGrip`): his rig has no fingers — the hand's
+  line is forearm→wrist carried on; the bone is set across it, level, at the palm 7 cm past the wrist, a third of the way
+  along, and `attach`ed with that world transform (it had sat centred on the wrist joint, at the angle it was pulled at).
+- **HIS SONG** from the frame you are in the belly (not whale-busy, not frozen), at `SKRIM_SONG_LEVEL` 0.55 (1.9:
+  "turn it down alot"); still faded on talking. musictest `skrim` has its own floor (0.0012): PASS 0.0014.
+
+## 2026-10-30 — chains that sound like iron, sparks like Sekiro
+
+The owner: "make his sound effects better with the metal chains. make sparks fly like sekiro when blocked or parried
+against him." Probes `skrimSparks` (tools/probes.js; `&m=snd` the sounds only, `&m=fx` the stills only) and
+`skrimFxFight` (the 40 s fight of `skrimIn`, every step guarded, then the chains' source count and spark bursts).
+- **THE SOUND BANK** (`SKA`, `skaBuild`, built in `skcInit` while he digs — 38–40 ms — or by `skaReady()` on the first
+  sound): AudioBuffers by modal synthesis, each partial a damped resonator run down the samples (`skaModes`: y = 2r·cos
+  w·y1 − r²·y2), a crack of contact (`skaCrack`: differenced noise, or dulled through a pole), a falling-sine thump
+  (`skaThump`), shaped noise (`skaWet`); every buffer peak-normalised to 0.9, the last 20 ms faded. Banks: clink ×10
+  (1.5–3.2 kHz, ratios 1/1.47/2.09/2.75/3.6/4.4 under 7.5 kHz, ~0.09 s), heavy ×8 (380–800 Hz, 7 partials, a 150→65 Hz
+  thump), clang ×3 (the hook as a bent bar 1/2.756/5.404/8.933 over ~880 Hz, the blade's steel ~2.9 kHz with its pair
+  2 Hz apart so the 1 s tail beats), parry ×2 (higher and longer, a second smaller strike 24–36 ms on), tick ×3 (the hook's
+  point), slap ×3, drag ×2 (a rub with a sticky, bumpy level), swish ×2 (resonant band swept 300→1300→300 Hz), rumble ×2
+  (low noise chattering at 18–30 Hz). Measured energy by octave (first 2048 samples): clink 2k 40% / 4k 57%; heavy <177
+  50% (the thump), 500 29%, 1k 14%; clang 1k 27% / 2k 57%; parry 4k 71% — the parry is the brighter.
+- **PLAYING THEM** (`skaOne`: a buffer source and a gain, rate jitter, optional grain envelope): `sfxChainRattle` (clumps:
+  40% of clinks get a quieter neighbour 4–16 ms after; heavy adds a rumble grain), `sfxChainWhirl` (once a TURN of the
+  dangle, `C.turn` — was a rattle every 0.22 s), `sfxChainPayout` (the throw: clinks 65 ms apart closing ×0.86 to 11 ms,
+  pitch rising), `sfxChainDrag` (the haul back over flesh, every 0.24 s while the hook is down; in the air a light
+  rattle), `sfxChainSlap` (slack chain landing, the throw's and now the sweep's: a slap, then nine clinks settling, gaps
+  ×1.32), `sfxChainBite` (the hook into you: tick, wet, the chain snapping taut), `sfxChainClang(parry)` (AT your blade
+  whatever scope it is called in: the clang over the game's own block sample, and a shiver of links), `sfxChainBurst`
+  (pit, ring and line chains up through the floor). `sfxChainRing` is kept as the old name for the block clang.
+- **LEVELS** (each sound alone at 2 m: in the probe, anything that would `connect` to the effects bus is sent to an
+  isolated gain instead — the whale's beds read 0.03 peak on the bus under everything): katBlock at 0.82 peak 1.12 rms
+  0.38; fleshHit 0.88 / 0.26; clang 0.50 / 0.15, parry clang 0.57 / 0.17 (layered under the block, ~8 dB down); rattle
+  0.22 / 0.07; whirl 0.23 / 0.07; payout 0.26 / 0.07; drag 0.21 / 0.06; slap 0.33 / 0.10; bite 0.34 / 0.09; pit burst 0.50
+  / 0.17, ring burst 0.65 / 0.20; a rattle at 12 m 0.06 / 0.018 (positional, `sfxAt`). Sources: 4–35 an event, ~2 nodes
+  each, none an oscillator.
+- **A NaN CHAIN** (fixed): a throw hauled in after a BITE or a WHIP never had `C.Ls` set — NaN, the whole run NaN, never
+  hauled in and never freed (its `C.Ls < 0.3` never true). The old rattle only played `if (C.p.y < floor + 0.15)`, false
+  for NaN, so it was silent; the new drag's else-branch panned to NaN and threw (`sfxPosOut`: "The provided float value
+  is non-finite"). It went NaN on the very frame of the change (whip/bite → back, then the shape's `skcSim` with
+  `C.Ls / (n − 1)` before `back` ever ran): `C.Ls` is now set from the hook's distance there if it is not > 0, and
+  `skaFar` treats NaN as far. `skrimFxFight` watches every step for a chain going NaN (before: six left in a 40 s fight,
+  all throws parried into a whip; after: none).
+- **SPARKS** (`SKSP`, `skSparks`, `updateSkSparks`, `skSparkAt`, `skspView`; fired from `skrimGuardFx` in
+  `skrimHitsYouC` on every block and parry of his — hook, sweep, throw, rise — with the clang, `deflectLamp` at the
+  contact 28/48 for 0.12/0.18 s, a small trauma and view kick on top of `blockMutant`/`parryMutant`'s). 300 thin quads in
+  one InstancedMesh (x 0..1 tail→head), per-instance colour, additive, a streak texture, one more mesh for the flash; all
+  built at load. Each spark is drawn from where it was 0.024 s ago (by its velocity, 1.2–30 cm) to where it is, its
+  width 0.75% of its distance (min 3.5 mm), the quad's normal toward you (FrontSide: a transparent DoubleSide material
+  draws twice and sets `needsUpdate` both times, every frame). Gravity 9.8, air drag 1.5/s, one bounce off the gut floor
+  (×0.3 up, ×0.45 along) then out. Heat: white → yellow → orange → dull red, the parry's whiter and longer. Block: 80 at
+  ≤7.5 m/s, 0.2–0.52 s; parry: 140 at ≤9 m/s, 0.28–0.78 s, plus 30 slow gold embers 0.5–1 s. They fan along the blow
+  across your view (`dir`: the throw's velocity, the sweep's arc, up for a rise; else hand→blade), up 0.5, toward you
+  0.2, 20% thrown back the other way. In a hitstop they run at 0.3 of real time (`hitstopFrame`), so the spray blooms
+  slowly in the freeze instead of hanging as a dot.
+- **DRAWN IN THE VIEW MODEL'S PASS**: the world pass is overdrawn by the blade (`clearDepth`, then `vmScene`), so the
+  sparks live in `vmScene` but fly in world space: `onBeforeRender` sets the mesh's `matrixWorld` to diag(sx, sy, 1) ×
+  `camera.matrixWorldInverse` × T(origin), sx = tan(vmFov/2)·vmAspect / (tan(fov/2)·aspect), sy = tan(vmFov/2)/tan(fov/2)
+  — the same pixel at the same depth under the 70° view-model camera as under the world's 105° (z kept, so they depth-
+  test against the blade truly). Instance positions are relative to the camera at update (no float32 trouble thousands
+  of metres out). `onBeforeRender` runs before three computes `modelViewMatrix`, after `objects.update` — so the matrix
+  is set there, the instance buffers in update.
+- **THE CONTACT** (`skSparkAt`): in the guard the katana lies across the whole view, grip left, point off the right edge;
+  "two thirds up the blade" was x 0.79 m at z −0.36 (the screen's right edge). Now the point of grip→point (0.3–0.92 of
+  it) whose projection is nearest NDC (0.1, −0.02): x 0.07, z −0.36 in the held block. A parry lands while the guard is
+  still coming up, so its sparks come off wherever the blade is then (still `rise_par`: to the right).
+- **CHECKED**: stills `guard_up`, `blk_0..2`, `par_0..3`, `swp_blk`, `rise_par`; `skrimFxFight` 40 s (blocks and
+  parries of bolt and volley, ~30 chain sources a second of fight) and `skrimF2 &m=fight` (hook, geyser, bolt parried;
+  hook, palm, wave, bolt landing): no errors; `sh tools/musictest.sh` all PASS. NOT DONE: the view
+  model's own square point sparks (`spawnSparks`, called by `blockMutant`/`parryMutant` for every foe) still show at the
+  blade tip, off to the right in the guard; nothing was heard (levels and spectra measured, not listened to).
+
+## 2026-10-30 — the piles, the artifact, his deal
+
+The owner: "make like 6 other flesh piles scattered past skrim after you agree to help him you can search the piles and in
+one random one the artifact of the whale will fall out with the octopus drop noise … two heavies or 4 light hits to fully
+break and dissapear. if you pick up the artifact before you walk past him hell come up to you and say this dialog", his
+tree word for word, and "if you let him leave the whale stays on the beach for the rest of the game.. if you leave the
+whale with the artifact you should still get the healing cutscene just take out the artifact spawning on the beach. if you
+just walk out nothing happens". All of it is the `SKQ` section after `skrimUnitPre`; probe `skrimQ` (`&m=` give | givekill
+| keep | hitleave | none | restore | giverestore), run with `PB_PORT=4223`.
+- **THE HEAPS** (`skqBuild`, lazily off `skqTick` once `whale.arena.skrimSpot` exists): six `whFleshPile`s, seed
+  `mulberry32(30102026)` so the same every load, 6.4–22.9 m further down the gut than his spot (alternate sides, off the
+  walls by `whWallAt` + 2.2, out of the fluid, 2.9 m clear of every other 'skrimPile' — his own and the six about him), K
+  0.62–0.84. The group is `bones[0].m.parent` (the function returns its bones). Which one holds it: `skqChoose`, random,
+  on the first tick in `'deal'` (so an old 'deal' save gets one too), or on the first blow once he is dead unasked.
+- **THE BLOW** (`skqPileStrike`, in `digImpactCore` after `catBoneStrike`): the aim line within 0.5 + 0.6·K of the heap's
+  middle inside `digRay.far`. `P >= MUT_HEAVY` counts 2, else 1 (`skqPileHit`). Not open yet (`skqOpen`: picked, or
+  `'deal'`, or him dead) it only squelches and wobbles. Open: pieces thrown off the blow (`skqThrow`: one pool of 60
+  meshes over six `whLump` shapes made at build, landing flat with a wet hit; the oldest lying one is taken up again),
+  red puffs, the heap sinks and spreads (`skqShape`); at 4 `skqBreak`: 14 pieces, gone, `SKQ.broke |= 1 << i`.
+  Measured with real `startDig` swings: LLLL → 1, 2, 3, 4 gone; HH → 2, 4 gone; before the deal a light swing hit (wobble)
+  and left hits 0.
+- **THE ARTIFACT OUT** (`skqArtOut` → `skqArtSpawn`, `skqArtLie`): `ringDrop`, `artState` 1, laid 0.9 m toward you face
+  up like the beach's, the MODEL falling the 0.6 s from the heap's top (the root waits where it lands, because the drop
+  shine's column stands in the scene where the root was when it was hung), a soft wet hit, its warm glow guttering down.
+  It IS `art.world` (`w.userData.belly`; `updateArtWorld` hands it to `skqArtLie`); `artTick` puts it back on a restore
+  from `SKQ.artAt` before `art.spot`. Taken (`skqArtTake`): `dropShine` (the beach's take never did), `stickArtifacts`,
+  `skqStick`. Measured: lying at floor + 0.000.
+- **HIM** (`skqMeet`, `skqUnitStep`, stages `'meet' | 'talk' | 'leave' | 'gone'` next to 'dig' | 'deal' | 'rise' |
+  'fight'): with it on you (`skqHolding`: pack, or set in a weapon in the pack) and him in 'deal', inside 6.5 m or past him
+  toward the throat inside 14 m: `fromCrouch` ×1.35 (his throws measured one a frame through it, as the rise does), then
+  `skrimGait`/`skrimTurn`/`skrimMix` at you; the talk opens after 0.45 s stood inside 2 m, or at once inside 1.6 (you
+  walking on into him: the first try opened at 0.8 m, his body filling the frame). Measured from 6.5 m: up 1.2 s, 4.6 m
+  walked, talk at 1.55 m. In the talk the dialogue holds `update`, so `updateSkrimLife` runs `skqTalkPose` (idle, neck
+  fix, his look on you). Escaped before a choice: he puts it again in 1.4 s, or walks after you past 3.6 m. The climb out
+  while he is coming opens it there (`whaleClimbOut`).
+- **THE TALK** (nodes added to `SKRIM_NPC.script` with `Object.assign`: `skqFound` → `skqHand` → give `skqThanks` →
+  `skqWaste` → "*Kill him*" `killNow` / "*let him leave*" `skqBye`; keep `skqKeep`). Give (`skqGive`): out of the pack or
+  off the weapon, `artState` 3 (his — `artRestore` keeps any number), a copy `attach`ed in his right hand (`skqHand`).
+  The talk closed on him (`skqDialogLeave`, in `skrimLeave` after its fight check): given → `skqLetGo` ('leave'), else ask
+  again. 'leave' walks a point 3 m ahead of him down the gut's middle (`skqInGut`, `whWallAt` — `skrimInGut` holds only
+  the fight's stretch), ~1.2 m/s measured (s 57.6 → 18.9 in 32 s), and is 'gone' at s < 14.6 with you over 5 m off (or
+  s < 11.6), or the moment you are out of the whale (`skqGoneNow`: hidden, `doomed` if he had it, `skqStick`). Struck on
+  the way (the `hurtMutantAt` hook takes 'meet'/'talk'/'leave' too) → the fight. Kept, "*Kill him*", or struck: `skrimFight`
+  → `skqFightStanding` (no `fromCrouch`: 'fight' at once, the roar, any throws not yet measured measured). Dead with it
+  on him: 0.6 s after, out of his hand toward you (`skqDropFromHim`, `ringDrop`).
+- **THE WAY OUT IS THE HEAL** (`whaleClimbOut` on "Climb back up the throat"): `wbBellyClear()` is now "not doomed, he is
+  not on his feet alive, and it is yours" — the farewell no longer starts by itself 2.4 s after the belly clears (that
+  block is gone from `updateWhaleFarewell`; `wbFareClearT` is left unused). With it: `startWhaleFarewell`; `wfPlaceOut`
+  sets no `C.artP` while you carry it, so nothing lands on the beach and the motes gather on the whale (`C.artP || Cw`).
+  Without it, or him doomed: the plain `startWhale(-1)`. Measured: none → no farewell, the climb cut; kept/killed/hit →
+  farewell, `artP` undefined after the cut onto the sand, still yours; let go → doomed, bellyClear false, the climb cut.
+- **SAVES**: `flags.skrimQ` = `skqSave()` {pick, broke, artAt, gave, gone, doomed} (`gone`/`doomed` also true while he is
+  still walking out: the climb's autosave runs before `skqTick` sees you are out); `flags.skrim` is 'deal' in 'meet'/'talk'
+  too; `flags.whaleArt` 3 when given. `skqRestore` (after the `f.skrim` line in the restore; dead units are retired before
+  it): given and him alive on a save → gone and doomed; gone → stage 'gone', hidden; broken heaps hidden (also in
+  `skqBuild` when it runs after). `skqStick` writes `skrimQ`, `whaleArt`, `artOn`, `skrim` 'deal' into the STORED
+  checkpoint on taking it and on his going (and takes it out of that save's pack when he has it). Measured: restore with
+  two heaps broken and it lying → heaps 0,1 hidden, pick kept, lying again (`belly`); restore after he left → 'gone',
+  hidden, doomed, art 3, not in the pack, bellyClear false.
+- **A BUG THAT IS NOT THIS SECTION'S**: killing him while a hook chain is out (`throw` → `back`) leaves the chain's `p` NaN;
+  `skcTick` passes it to `sfxChainRattle` → `sfxPosOut` throws ("non-finite") and `update` throws there every frame after
+  (so `skqTick` never drops the artifact). Probe `skrimQ&m=hitleave&chainbug` shows it; without `chainbug` the probe clears
+  `SKC.list` before the kill.
+- **HIS WALK TO YOU** (2026-10-30: "make him walk over to you faster. his walk when not in combat should be more relaxed
+  he has his hand up swinging it. make the artifact dissapear when hes hit"): `skrimGait` plays the walk at 1.45 in
+  'meet' (his feet move him, so it is a quicker walk, not a slide): ~2.1 m/s over the ground (1.2). `skrimArmsDown`
+  ('meet'/'leave', eased): each upper arm aimed under its shoulder, 10 cm out, swung ±16 cm against the stride — the
+  pack's walks carry a caster's hand up. `skqFightStanding` hides the artifact in his hand (`SKQ.held.visible = false`);
+  it still falls out of him when he dies. Probe `skrimQ&m=give` stills `q_walkside130/146`.
+- **THE GROUND FOG, THE GUT'S LENGTH** (2026-10-30, "needs more fog in the whale it must actually be noticeable drifting
+  across the ground beautifully"): `whGroundMist(G, spot, cuts)` — four sheets from the throat (`WH_S0`) to `WH_L` − 8,
+  each vertex on the floor (+0.05 / 0.22 / 0.48 / 0.9 m), faded to the walls (`aW`) and the two ends. Grey-blue
+  (0.22, 0.25, 0.32), brighter (0.6, 0.7, 0.92) in a pool under EVERY cut (`uCuts`, his ×1.6). Wisps: domain-warped
+  5-octave fbm, each sheet drifting its own way (low banks ~0.4 m/s), times a large slow noise so it lies in BANKS with
+  clear ground between; thinned edge-on (`vG`, the view's steepness: four sheets at a grazing look added up to a solid
+  grey floor — the `entry_view` still), near the lens and far off. Measured first that the drawn floor is the walked
+  floor (`skrimDig` raycast: within 0.01 m wherever you walk; the "clear strip" in the stills is the gut wall's foot).
+
+## 2026-10-30 (late) — fog that reads, fog in the air, every cut lit; the lag; the piles; his chains recorded
+- **THE LAG** ("fix the lag here too its horrible"): probe `skrimPerf` — the world drawn and GPU-synced (a 1-px read)
+  at 1280×720, by part, then 15 s of the REAL loop near him (save `w.__rafOrig` before the probe freezes rAF; `delete
+  w.requestAnimationFrame` removes it outright). Headless M4: 3.5 ms near him, 4.8–7 across the gut; the loop 60 fps,
+  p99 19 ms, max 21–23, no span over 16 ms — not reproduced here. Made cheap anyway: the fog READS a 256² tileable
+  noise texture (`whNoiseTex`: R, G fbm, B a broad one for banks, A a warp) — four fetches, not ~15 fbm octaves a pixel
+  a sheet (switching all fog off now saves ≤ 0.3 ms); his beam's 70 dust sprites (a draw each) are gone into one
+  `Points`; the letterbox bars' style is written only when it changes, the drone's gain only when it moves (an
+  automation event a frame before).
+- **GLSL TRAP**: `.aw` mixes the rgba and xyzw sets — a compile error, and the material simply does not draw (no error
+  in the probe's console grep). Use `.ba`.
+- **FOG** "more like this" (his still: thick and white round him): `whGroundMist` thick again (smoothstep 0.30–0.66 on
+  the texture, banks only thin it to 0.45), white (0.72, 0.8, 0.96) under the cuts. **IN THE AIR** (`whAirFog`): 70
+  fog banks 2–9 m up the gut, one instanced draw, each a lens-facing quad (built in the vertex stage), drifting, a warped
+  read of the noise, lit only near a cut; and 2200 dust motes the length of the gut (one `Points` draw, size by
+  `PIXEL_RATIO_U`, bright only near a cut). Two rays down every other cut (`whGodRays(..., n, U)`, shared `A.rays2`).
+  `WH_FOG` 0.04 (0.058): the far gut seen through the hanging banks is what makes it big.
+- **PILES**: every visible heap but his is searchable — the six about him are added to `SKQ.piles` after the six past
+  him (`grp.userData.K`), so a save's broken bits keep their meaning. `skqOpen()` is always true (breakable before the
+  talk); the artifact is put only on the deal, in the FARTHEST pile still standing (`skqChoose`; all broken → it lies
+  where the farthest stood). Probe `skrimQ&m=give`: before the deal a light swing counts; pick 5 (the farthest).
+- **TALKING**: no bone to his face while a dialogue is open; one in his hand is dropped (his rig has no fingers to close
+  on it). The grip 11 cm past the wrist (7).
+- **HIS CHAINS RECORDED** (the owner's "Chain Whip Rifle (Fantasy Weapon SFX Preview)": "trim them in the best possible
+  way for skrims weapon and attack with the chains"): four takes at 3.6 / 5.9 / 7.6–9.3 / 11.1–13.0 s (silencedetect
+  −42 dB, onsets off a 20 ms envelope); cut on their attacks — `skrim-chain-crack` (the snap), `-lash1` (a whoosh into a
+  lash, its blow 0.26 s in), `-lash2` (a quick lash), `-slam1/2` (heavy crashes) — 6 ms in, tails faded, mono,
+  loudnorm −14 LUFS, AAC 128 (80 kB). `skChainCrack` on a throw, `skChainLash` on the sweep, `skChainSlam` on the
+  chains bursting up and (higher, quieter) the bite; the made metal under them at half.
+- **HIS CROUCH** (2026-10-30, the owner: "fix his crouch his back looks too bent … dont change his heads height or where
+  hes at"): `skrimPosture`, first thing in `skrimSearch` (before the dig lean and the arm aims): 0.42 rad of the crouch
+  clip's curl taken back out through Spine1/Spine2, and the lean put at the base of the back (Spine) by two secant steps
+  on the head's height. Probe `skrimDig` POSTURE: head 1.248 → 1.237 m over his feet, 0.33 → 0.27 m forward of them;
+  stills `posture_0` / `posture_0.42`. His opening line is "*Digging*" (was "...").
+- **SMALL HEAPS AT ONE BLOW** ("make the small flesh piles one hit"): `skqPileHit` — a heap of K < 0.65 takes all four
+  at the first blow. **HIS FOUR JARS** ("make skrim drop 4 jars as well with octopus drop sound"): `skrimJarsOut`, 0.75 s
+  after he dies (from `skqTick`): `ringDrop`, four `makeBloodJar` thrown up out of him through `dropJar(..., fly)` with
+  the whale's floor (`fly.floorAt`, new — it was always `corpseTopAt`); saved where they still lie (`skrimJars`), laid
+  again on a restore (`SKRIM.jarsAt`). Probe `skrimJars`: small heap (K 0.50) broke at one light blow, a big one dented;
+  4 jars, lowest point 2 mm over the floor (their origin 0.14 m up: they lie on their sides); one taken → 3 on the list.
+- **HIS HOOK IN THE WHALE'S SIDE** ("instead of a sword in the whale make it look like one of skrims hooks and chain
+  hanging rocking in the wind dont make this corny"): the harpoon (iron shaft, snapped pole, rope across the sand) is
+  gone. The group is still named 'harpoon' (the heal throws it out of the wound) and holds his own `skrim_hook` (×1.7,
+  filled in when his model is in: `wbHookGeo`), sunk point-first 0.28 m out from the wound, turned π so the curve of the
+  blade goes down into it (four turns rendered, `wbHook` probe). `wbHookTick` (off `animate`): a 30-point verlet chain
+  pinned at the handle, gravity, damping 0.985, 14 constraint passes, the sand (dragging), wind gusts along the flank
+  and a lift off the sea; the flank read by RAYS at the drawn body every 10 cm (its sample points `B.P` held nothing
+  near the hook, and a fin 9 m off read as the flank and flung the chain 17 m); pushes move the frame-before too (a
+  push, not a throw). Drawn as the fight's links ×1.6, one draw ('harpoonChain', dropped with the whale). Measured:
+  hangs to the sand, 7 of 30 points lying on it, a point 60% down swings ~0.28 m over 6 s; a quiet clink as it swings
+  within 14 m. `wbHook` is declared at the top of the module: the whale is built early.
+- **HIS BACK, AGAIN** ("his back looks worse he shouldn't be arching like that his back needs to be straighter"): the
+  fixed 0.42 rad "unbend" of Spine1/2 hollowed it. Measured (`skrimDig` POSTURE, joint to joint): the clip's spine
+  chain was nearly straight already (hips→waist→sp1→sp2→neck bends 3/5/6°), 23° off upright; what read as bent was the
+  PELVIS — tipped forward, his seat out behind and the small of his back hollow. `skrimPosture` now: the pelvis tucked
+  under (`SK_POSTURE.tuck` 0.32 rad about his side) with both thighs turned back the same (feet within 2 cm), each of
+  Spine1/Spine2 turned so the stretch above carries straight on from the one below (`straight` 0.9: bends 0/1°), and the
+  lean at the base of the back solved for the head's height (1.247 → 1.244). Stills `posture_0_0` / `posture_0.9_0.32`.
+
+## 2026-10-30 — the crying heads
+The owner: "if you walk a little further past the pile with the artifact in it make this creature jump like a head crab
+through the air with good source engine like physics and can be smacked out of the air for one hit. make the first one
+like a jump scare sorta. this is near the back of the whale belly", then "make a visible jar lit like an item in the very
+back of the whale belly lit up make 3 headcrabs attack you but the first supposed to scare you like i said and jump out".
+All of it is the `CRY` section after the `SKQ` one; probes `cryHeads` (`&m=restore`), `cryMeasure`, `cryGait`, `cryLook`,
+`cryFace` (run with `PB_PORT=4223`).
+- **THE FILE** (`tools/crying_head_pack.py`, `python3 -I`, json + struct + `sips`, no Blender): 1.39 MB. Floor disc gone,
+  clearcoat/specular/texture-transform stripped, metalness 0 and the metal/rough map dropped (roughness 0.55 factor),
+  base colour and normal 1024 JPEG, no tangents, Sketchfab `_0NN` suffixes off and '.' → '_'. Node chain kept.
+- **MEASURED IN ITS FILE**: faces +Z; centimetres; legs 4.6 × 3.1 × 6.2 m; tips at y −184 (IDLE) / ~−190 (MOVE);
+  HeadBase y −3.5 z ~120 in MOVE, y ~28 z ~270 in IDLE (IDLE leans it 0.3 m forward). Both clips in place. The first leg
+  pair (`H_*_000..004`) stays up at its eyes — its hands over its face, crying — and its open bloody mouth is under it:
+  rendered from in front, pitched, the mouth turns to you at +0.45 (`CRY_MOUTH`), not at the "underside forward" sign the
+  maths gave. MOVE's planted tips go back at ~410–800 units/s (noisy: the tips never sit on one floor); `CRY_GAIT` 520,
+  so the clip's rate is set from the speed (`spd / (CRY_GAIT·K)`). `CRY_K` 0.0021: a leg span ~1 m, the head ~0.3 m.
+- **THE NEST** (`cryBuild`, from `cryWarmIn` in `placeInWhale` under the black, before its `renderer.compile`; else lazily
+  from `cryTick`): three skinned copies (`cryClone`: the scene cloned and each skin rebound to the copy's bones — no
+  SkeletonUtils), each with a clone of one material made at build (its glow its own), in `whale.G`. The jar at local
+  x = `whCx(s)` (−0.95), s = `WH_S1` − 1.6 = 152.4 (world 14999.05, 500.54, 14847.60), stood on the floor, the full
+  `DROP_SHINE` (beacon and all): seen as a glow from 25 m up the gut. The heads at the walls' feet s 148.1 / 149.2 / 151.6
+  (x −10.1 / 10.6 / −11.3: up the floor's curve there, 2.1–2.7 m above the middle). The wake line `CRY.wakeS` = s 145.9.
+- **THE SCARE** (`cryWake`): head 0 is put 4 m along your look (whichever way), 0.8 m toward the nearer wall, 1.35 m up;
+  0.14 s later it launches at your eye (T 0.40 s: 10.9 m/s), `babyScream` at 1.32 + a synthesised wet shriek
+  (`sfxCryShriek`: three detuned saws through two formants with a 26–34 Hz vibrato, noise chopped at 17 Hz under it),
+  fov kick 9, trauma. It bites (`damagePlayer(1)`) and hangs on your face 1.0 s (`'latch'`, 0.36 m out, legs going).
+  The other two `'stir'` and come 1.5 / 2.2 s after (`catTell` at 1.55 and ticks as their tell).
+- **THE HEADCRAB** (`cryStep`): `'crawl'` (MOVE at its speed, weaving; a fed one keeps off 2–3 s, `h.fed`) → `'rear'`
+  0.5 s (stops, mouth up, trembling, the tell) → `'leap'`: T = clamp(0.26 + 0.075·d, 0.32, 0.72), v solved for the arc
+  under `CRY_G` 15 to meet your head (−0.12 m) led by 0.6 of your velocity, capped 14 m/s; two half-steps a frame;
+  contact within 0.42 m across and −1.35..+0.25 of your eye. Guard (`blocking && guardSees`) → batted off alive
+  (`'tumble'`, half a block's stamina). Floor/walls (`cryCollide`): restitution 0.3–0.38, Coulomb friction off the
+  blow, spin handed over to a roll; walls by `whWallAt`'s own normals; s held in [`WH_S0`+1, `WH_S1`+1.5]. Righted in
+  0.3 s and back to crawling. One leap in the air at a time (`CRY.next` 0.8 s).
+- **ONE BLOW** (`cryStrike` in `digImpactCore` before `skqPileStrike`; `cryBladeRay` in `bladeSweep`'s ray loop sets
+  `CRY.first`, which also fires the impact like `blade.first`): radius 0.78 + 0.25P in the air or on your face, 0.5 +
+  0.25P on the floor. Thrown 7 + 5P m/s along the aim, a cut's side by `slashDir`, up 2.4 + 1.6P (an overhead drives it
+  down), spun 12 + 10P rad/s → `'dead'` → `'still'` legs up.
+- **MEASURED** (`cryHeads`, standing, facing the nearest): woke 1.78 s after the walk started 2.5 m short; the scare at
+  0.68 m from your eye at 0.8 of its flight; leaps apex 1.5–2.5 (your eye 2.0 local there) — every unguarded leap at a
+  player standing still bites; guard → 'blocked'; a light swing at a head 3.56 m out, 0.18 s into its flight → killed
+  'leap', first floor hit at 0.59 s, settled at 1.39 s, 7.0 m from where it was struck.
+- **SAVES**: `flags.cry` = `crySave()` {w, d (bit per head), j (the jar)}; `cryRestore` after `skqRestore`; `cryStick`
+  writes it into the stored checkpoint on the wake, each death and the jar. The wake is refused while `restore`,
+  `applyingSave` or `replaying`. Measured (`&m=restore`): restored → built, woke, dead 1 (#0 lying, 'still'), no scare,
+  jar not rebuilt.
+- Dev mode does NOT keep them asleep (the crabs' rule): damage still clamps to 1 hp.
+- **AND AGAIN, WITH REFERENCES** (the owner's sheet of crouching men: "his lower back should not bend inward like that
+  its like hes sticking his butt out"): the probe's bends are SIGNED now (+ forward/rounded, − back/hollow, about his
+  side). Tuck 0.62 with the lower back (Spine) turned forward by the same — the pelvis rolls under while the trunk keeps
+  its line — then Spine1/2 straightened and rounded +0.09 each, and the head's height trimmed within ±0.3 rad (unbounded,
+  the solve found the height leaning BACK: head 0.26 m behind his feet). Clip: hip>waist −3°, 24° off upright; now
+  +26° (rounded), 5/5 through the back, 17° off upright, feet unmoved, head 1.21 → 1.25 m. Still `posture_0.9_0.62`.

@@ -2052,6 +2052,10 @@ export async function dkClose({ w, b, log, sleep }) {
 }
 
 export async function dkFightClose(ctx) { ctx.w.__fightR = 1.6; return dkFight(ctx); }
+// (2026-10-29) the dark knight against a player who moves — strafing, backing off, wandering, dodging late: `tools/dkmove.js`
+export async function dkMove(ctx) { return (await import('/tools/dkmove.js?' + Date.now())).dkMove(ctx); }
+// (any other scenario of that file: `sh tools/probe.sh 'dkx&f=<name>'`)
+export async function dkx(ctx) { return (await import('/tools/dkmove.js?' + Date.now()))[new URLSearchParams(location.search).get('f')](ctx); }
 
 // THE SAMURAI'S SCORE AGAINST EVERYTHING ELSE AT THE SPEAKERS (2026-10-21, the owner: "my music isnt playing at the
 // samurai"): a fresh game in a silent frame, the dojo, the sword taken; every half second for twelve seconds the peak
@@ -2278,6 +2282,7 @@ export async function minoDown({ w, b, log, sleep, shot }) {
 // as well unless engaged with"): him at your side, both awake; you go for whichever is NOT on him, keep a stride off it
 // and strike (2) between its blows, once a second; when it is dead, the other. Who is on whom, their health, their
 // blows landed on you, their sidesteps out of your line, their second wind. (its own profile)
+export async function knDuelBack(ctx) { ctx.w.__backOff = true; return knDuel(ctx); }
 export async function knDuel({ w, b, log, sleep, shot }) {
   const { M, u, K, home } = await mnCourt(w, b, sleep);
   b.settings.devMode = false;            // (dev mode: no creature ever starts a swing — measured, nobody here struck anybody)
@@ -2294,7 +2299,10 @@ export async function knDuel({ w, b, log, sleep, shot }) {
     const tgt = K.filter((k) => k.st.alive).sort((a, c) => (a.knOnMino ? 1 : 0) - (c.knOnMino ? 1 : 0) || Math.hypot(a.g.position.x - cam.x, a.g.position.z - cam.z) - Math.hypot(c.g.position.x - cam.x, c.g.position.z - cam.z))[0];
     if (tgt) {
       const P = tgt.g.position, d = Math.hypot(P.x - cam.x, P.z - cam.z);
-      if (d > 2.6) { const nx = cam.x + (P.x - cam.x) / d * 3.2 / 60, nz = cam.z + (P.z - cam.z) / d * 3.2 / 60; if (b.c13CourtAt(nx, nz) !== null) { cam.x = nx; cam.z = nz; } }
+      const backing = w.__backOff && (t % 5) > 3;   // (you giving ground: two seconds in every five, walking back off it)
+      if (backing) { const nx = cam.x - (P.x - cam.x) / d * 2.6 / 60, nz = cam.z - (P.z - cam.z) / d * 2.6 / 60; if (b.c13CourtAt(nx, nz) !== null) { cam.x = nx; cam.z = nz; } }
+      else if (d > 2.6) { const nx = cam.x + (P.x - cam.x) / d * 3.2 / 60, nz = cam.z + (P.z - cam.z) / d * 3.2 / 60; if (b.c13CourtAt(nx, nz) !== null) { cam.x = nx; cam.z = nz; } }
+      { const F = M.u.st.foe; if (F && F.st.alive) { w.__mnGap = (w.__mnGap || 0) + Math.hypot(F.g.position.x - M.u.g.position.x, F.g.position.z - M.u.g.position.z); w.__mnGapN = (w.__mnGapN || 0) + 1; } if (M.u.st.atk >= 0 && !w.__mnWas) w.__mnSw = (w.__mnSw || 0) + 1; w.__mnWas = M.u.st.atk >= 0; }
       b.lookAt(P.x, cam.y - 0.1, P.z);
       if (cd <= 0 && d < 2.9 && tgt.st.atk < 0 && !(tgt.st.evade > 0)) { b.hurtMutantTest(tgt, 2, 0.3); mine[nm(tgt)]++; cd = 1.0; }   // (a light blow, as a click is)
     }
@@ -2308,8 +2316,10 @@ export async function knDuel({ w, b, log, sleep, shot }) {
       if (k.st.evade > 0 && !ev[n]) dodges[n]++; ev[n] = k.st.evade > 0;
       if (k.st.raged && !raged[n]) raged[n] = t.toFixed(1) + 's';
     }
-    if (f % 600 === 0) log(t.toFixed(0) + 's', K.map((k) => nm(k) + ' hp ' + (k.st.alive ? k.st.hp : 'dead') + ' on ' + (k.st.foe === M.u ? 'HIM' : k.st.foe ? 'other' : 'you')).join(' | '), '| minotaur hp', M.u.st.hp, 'on', M.u.st.foe ? nm(M.u.st.foe) : '-', '| him to his', (() => { const o = K.find((k) => k.st.foe === M.u); return o ? Math.hypot(o.g.position.x - M.u.g.position.x, o.g.position.z - M.u.g.position.z).toFixed(1) + 'm, its atk ' + o.st.atk.toFixed(2) + ' cool ' + (o.st.cool || 0).toFixed(2) + ', his atk ' + M.u.st.atk.toFixed(2) + ' awake ' + M.u.st.awake : '-'; })());
+    if (f % 600 === 0 && t > 35) log('  foes seen', b.minoPickDbg());
+    if (f % 600 === 0) log(t.toFixed(0) + 's', K.map((k) => nm(k) + ' hp ' + (k.st.alive ? k.st.hp : 'dead') + ' on ' + (k.st.foe === M.u ? 'HIM' : k.st.foe ? 'other' : 'you')).join(' | '), '| minotaur hp', M.u.st.hp, 'on', M.u.st.foe ? (M.u.st.foe === K[0] ? 'MAN' : M.u.st.foe === K[1] ? 'IRON' : 'other:' + M.u.st.foe.kindName + (M.u.st.foe.st.alive ? '' : '(dead)')) : '-', 'pickT', (b.MINO.pickT || 0).toFixed(2), 'his atk', M.u.st.atk.toFixed(2), '| him to his', (() => { const o = K.find((k) => k.st.foe === M.u); return o ? Math.hypot(o.g.position.x - M.u.g.position.x, o.g.position.z - M.u.g.position.z).toFixed(1) + 'm, its atk ' + o.st.atk.toFixed(2) + ' cool ' + (o.st.cool || 0).toFixed(2) + ', his atk ' + M.u.st.atk.toFixed(2) + ' awake ' + M.u.st.awake : '-'; })());
   }
+  log('minotaur: swings', w.__mnSw || 0, '| mean gap to his foe', ((w.__mnGap || 0) / (w.__mnGapN || 1)).toFixed(2), 'm | knights hp he took', K.reduce((a, k) => a + (k.kind.hp - Math.max(0, k.st.hp)), 0) - 2 * Object.values(mine).reduce((a, c) => a + c, 0));
   log('done at', t.toFixed(1), 's; first on the minotaur:', first, '| time on him (s)', JSON.stringify(Object.fromEntries(Object.entries(onHim).map(([k, v]) => [k, +v.toFixed(1)]))));
   log('your health lost', hurts, '| your blows', JSON.stringify(mine), '| theirs landed on you', JSON.stringify(landed), '| sidesteps', JSON.stringify(dodges), '| second wind at', JSON.stringify(raged), '| minotaur', M.u.st.hp, M.stage);
 }
@@ -3067,6 +3077,7 @@ export async function gargRig({ w, b, log, sleep }) {
 // THE GARGOYLES GIVING (2026-10-29: "start to visually crack more as their health gets lower … make ones wings just break
 // off then he crawls at you very fast to try and bite you"): XIII, the four down off the walls; one beaten a blow at a
 // time with stills of it as it cracks; the one whose wings go, on the ground, coming, biting; and your blows on it.
+export async function gargTail(ctx) { ctx.w.__tailTry = true; return gargCrawl(ctx); }
 export async function gargCrawl({ w, b, log, sleep, shot }) {
   w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
   w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
@@ -3080,7 +3091,11 @@ export async function gargCrawl({ w, b, log, sleep, shot }) {
   const u = G.units.find((x) => x.st.alive && !['perch', 'wake', 'drop'].includes(x.gp.mode));
   log('modes', G.units.map((x) => x.gp.mode).join(','), '| chosen', u && u.gp.i, 'hp', u && u.st.hp);
   if (!u) return;
-  const V = cam.constructor, still = (nm) => { const hb = u.model.getObjectByName('Hip'), P = hb ? hb.getWorldPosition(new V()) : u.g.position.clone(), c0 = cam.clone(), q0 = b.camera.quaternion.clone(); const fl = b.c13CourtAt(P.x, P.z) ?? P.y - 1; let at = null; for (let k = 0; k < 16 && !at; k++) { const a = u.g.rotation.y + k / 16 * Math.PI * 2, x = P.x + Math.sin(a) * 2.6, z = P.z + Math.cos(a) * 2.6; if (b.c13CourtAt(x, z) !== null && !b.keepWallNear(x, z, 0.5, fl + 0.5, fl + 2, b.C13_SITE) && !b.keepHitsWall(x, z, P.x, P.z, fl + 1.0, b.C13_SITE)) at = [x, z]; } if (!at) at = [P.x + 2.2, P.z + 2.2]; b.camera.fov = 60; b.camera.updateProjectionMatrix(); cam.set(at[0], fl + 1.4, at[1]); b.camera.lookAt(P.x, P.y, P.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 480, 1.4); cam.copy(c0); b.camera.quaternion.copy(q0); };
+  // (the LAST of them crawls, 2026-10-29: the other three broken first)
+  for (const o of G.units) if (o !== u && o.st.alive) b.hurtMutantTest(o, 999);
+  for (let i = 0; i < 30; i++) { cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); b.heal(); }
+  log('alive after the three', G.units.filter((x) => x.st.alive).length, 'key yet', !!w.__bw.gargKeyS());
+  const V = cam.constructor, still = (nm) => { const hb = u.model.getObjectByName('Hip'), P = hb ? hb.getWorldPosition(new V()) : u.g.position.clone(), c0 = cam.clone(), q0 = b.camera.quaternion.clone(); const fl = b.c13CourtAt(P.x, P.z) ?? P.y - 1; let at = null; for (let k = 0; k < 16 && !at; k++) { const a = u.g.rotation.y + k / 16 * Math.PI * 2, x = P.x + Math.sin(a) * 3.2, z = P.z + Math.cos(a) * 3.2; if (b.c13CourtAt(x, z) !== null && !b.keepWallNear(x, z, 0.5, fl + 0.5, fl + 2, b.C13_SITE) && !b.keepHitsWall(x, z, P.x, P.z, fl + 1.0, b.C13_SITE)) at = [x, z]; } if (!at) at = [P.x + 2.2, P.z + 2.2]; b.camera.fov = 60; b.camera.updateProjectionMatrix(); cam.set(at[0], fl + 2.7, at[1]); b.camera.lookAt(P.x, P.y, P.z); b.camera.updateMatrixWorld(true); const mine = new Set(); u.g.traverse((o) => mine.add(o)); const hid = []; const W = new V(); b.scene.traverse((o) => { if (!o.isMesh || !o.visible || mine.has(o)) return; const g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere(); if (o.isSkinnedMesh || (g.boundingSphere.radius < 2.5 && o.getWorldPosition(W).distanceTo(P) < 4)) hid.push(o); }); for (const o of hid) o.visible = false; b.renderer.render(b.scene, b.camera); for (const o of hid) o.visible = true; shot(nm, 480, 1.4); cam.copy(c0); b.camera.quaternion.copy(q0); };
   for (let k = 0; k < 8 && u.st.alive && !u.gp.crawl; k++) { const bd0 = b.bloodDropsN(); b.hurtMutantTest(u, 3, 0.4); log('  blood drops from that blow', b.bloodDropsN() - bd0); for (let i = 0; i < 8; i++) { w.__c13Step(1); b.heal(); } log('  hit', k, 'hp', u.st.hp, 'cracks', u.gCrack && u.gCrack.drawn, 'crawl', !!u.gp.crawl); if (k === 1 || k === 3) still('crack' + k); }
   log('wings broken', !!u.gp.crawl, 'wingless is it', G.wingless === u, 'wing bones', (u.gWingGone || []).length);
   let landedT = null, bites = 0, hurt0 = w.__ggLanded || 0, t = 0, minD = 99;
@@ -3091,6 +3106,16 @@ export async function gargCrawl({ w, b, log, sleep, shot }) {
     if (u.gp.cph === 'bite' && u.gp.ck < 0.02) bites++;
     minD = Math.min(minD, Math.hypot(u.g.position.x - cam.x, u.g.position.z - cam.z));
     if (i === 200) still('crawl_run'); if (i === 320) still('crawl_run2');
+    if (i === 229) { let n = 0, vis = 0, sk = 0, par = []; u.g.traverse((o) => { if (o.isMesh) { n++; if (o.visible) vis++; if (o.isSkinnedMesh) sk++; } }); let q = u.g; while (q) { par.push((q.name || q.type) + (q.visible ? '' : '(hidden)')); q = q.parent; } const M0 = []; u.g.traverse((o) => { if (o.isMesh) { const m = o.material, g = o.geometry; if (!g.boundingSphere) g.computeBoundingSphere(); const c = g.boundingSphere.center.clone().applyMatrix4(o.matrixWorld); M0.push((o.name || '?') + ' mv' + (m.visible ? 1 : 0) + ' op' + (+m.opacity).toFixed(2) + ' tr' + (m.transparent ? 1 : 0) + ' fc' + (o.frustumCulled ? 1 : 0) + ' bs' + g.boundingSphere.radius.toFixed(2) + ' d' + c.distanceTo(u.g.position).toFixed(1) + ' sc' + o.getWorldScale(c.clone()).x.toFixed(3)); } }); log('crawler mats', M0.join(' | ')); { let o = null; u.g.traverse((x) => { if (!o && x.isMesh) o = x; }); const ch = []; while (o) { ch.push((o.name || o.type) + (o.visible ? '' : '(HIDDEN)')); o = o.parent; } log('mesh chain', ch.join('<')); const H = u.gB.Hip.getWorldPosition(new V()), sp = H.clone().project(b.camera); log('hip on screen', sp.x.toFixed(2), sp.y.toFixed(2), sp.z.toFixed(3), 'hip', H.toArray().map((v) => v.toFixed(1)).join(','), 'cam', cam.toArray().map((v) => v.toFixed(1)).join(',')); } log('crawler meshes', n, 'visible', vis, 'skinned', sk, 'chain', par.join('<'), 'model in g', !!(u.model && u.model.parent), 'model scale', u.model && u.model.scale.x.toFixed(3), 'pos', u.g.position.toArray().map((v) => v.toFixed(1)).join(',')); }
+    if (i === 230 || i === 236) { const T = b.camera.layers.mask, NM = new (b.THREE || w.__bw.THREE).MeshNormalMaterial(), P = u.gB.Hip.getWorldPosition(u.g.position.clone()), y = u.g.rotation.y, c0 = cam.clone(), q0 = b.camera.quaternion.clone();
+      const off = b.scene.children.filter((o) => o !== u.g && o.visible); for (const o of off) o.visible = false; b.scene.overrideMaterial = NM; b.camera.fov = 45; b.camera.updateProjectionMatrix();
+      for (const [nm, a] of [['side', Math.PI / 2], ['front', 0.25]]) { cam.set(P.x + Math.sin(y + a) * 4.5, P.y + 0.5, P.z + Math.cos(y + a) * 4.5); b.camera.lookAt(P.x, P.y - 0.2, P.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('cr_' + nm + i, 360, 1.3); if (nm === 'side') { b.scene.overrideMaterial = null; for (const o of off) o.visible = true; b.renderer.render(b.scene, b.camera); shot('cr_full' + i, 360, 1.3); for (const o of off) o.visible = false; b.scene.overrideMaterial = NM; } }
+      b.scene.overrideMaterial = null; for (const o of off) o.visible = true; cam.copy(c0); b.camera.quaternion.copy(q0); }
+    if (i === 260) { const B = u.gB, fl = b.c13CourtAt(u.g.position.x, u.g.position.z), V = u.g.position.constructor, hy = (n) => B[n] ? +(B[n].getWorldPosition(new V()).y - fl).toFixed(2) : null;
+      const row = () => ['Hip', 'Head', 'JawTip', 'Tail1', 'Tail3', 'Tail5', 'Tail8', 'Ankle_Left'].map((n) => n + ' ' + hy(n)).join(' ');
+      log('crawl heights', row());
+      if (w.__tailTry) { const x0 = u.g.rotation.x, y0 = u.g.position.y; for (const pt of [0.0, 0.2, 0.4, 0.6, 0.8, 1.1]) { u.g.rotation.x = pt; u.g.updateMatrixWorld(true); log(' pitch', pt, row(), 'Neck', hy('Neck'), 'Spine3', hy('Spine3')); } u.g.rotation.x = x0; u.g.updateMatrixWorld(true); }
+      if (w.__tailTry) for (const a of [0.8, -0.8]) { const q0 = B.Tail1.quaternion.clone(); w.__bw.gargBodyTurnT(u, B.Tail1, a); u.g.updateMatrixWorld(true); log(' Tail1 turned', a, row()); B.Tail1.quaternion.copy(q0); u.g.updateMatrixWorld(true); } }
     if (b.state().hp < hp0) { b.heal(); }
   }
   log('on the ground after', landedT && landedT.toFixed(2), 's | bites', bites, '| nearest to you', minD.toFixed(2), 'm | its height over the floor', (u.g.position.y - b.c13CourtAt(u.g.position.x, u.g.position.z)).toFixed(2), 'crawlH', u.gp.crawlH && u.gp.crawlH.toFixed(2));
@@ -3099,4 +3124,862 @@ export async function gargCrawl({ w, b, log, sleep, shot }) {
   log('your blade reaches it (meleeT span)', JSON.stringify(u.meleeSpan));
   for (let k = 0; k < 10 && u.st.alive; k++) { b.hurtMutantTest(u, 3, 0.4); for (let i = 0; i < 10; i++) { w.__c13Step(1); b.heal(); } }
   log('finished', !u.st.alive, 'mode', u.gp.mode);
+  // the key out of it: falling, landing, lying in its glint; taken; the door
+  for (let i = 0; i < 120; i++) { w.__c13Step(1); }
+  const K = w.__bw.gargKeyS(); log('key', K ? K.st : 'none', K ? 'at y-floor ' + (K.g.position.y - b.c13CourtAt(K.g.position.x, K.g.position.z)).toFixed(3) + ' from you ' + Math.hypot(K.g.position.x - cam.x, K.g.position.z - cam.z).toFixed(1) : '', '| door locked', b.gargLockedS());
+  if (K) { const c0 = cam.clone(); cam.set(K.g.position.x + 1.2, K.g.position.y + 1.2, K.g.position.z + 1.2); b.camera.lookAt(K.g.position.x, K.g.position.y, K.g.position.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('key_lies', 480, 1.3); cam.copy(c0); }
+  w.__bw.gargTakeKey(); log('taken: door locked', b.gargLockedS(), 'garg save', JSON.stringify(w.__bw.gargSaveS()));
+}
+// SKRIM IN THE WHALE (2026-10-29): into the belly; him placed under the widest wound's moonbeam, digging; stills; the
+// prompt, the talk through to "I tried to be nice."; then his fight for 40 s with you standing your ground at 7 m,
+// blocking now and then: what he throws and how it lands. (own profile)
+export async function skrimIn({ w, b, log, sleep, shot }) {
+  b.settings.devMode = false;
+  try { if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem); if (b.equippedS && b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem); } catch (e) { log('katana', e.message); }
+  b.placeInWhale();
+  const S = b.SKRIM, cam = b.camera.position;
+  for (let i = 0; i < 400 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed && S.u.clips.crouchIdle); i++) { b.frame(1); await sleep(50); }
+  const u = S.u;
+  log('skrim', !!u, 'model', !!(u && u.model), 'placed', S.placed, 'clips', u && Object.keys(u.clips).length, 'crouchIdle', !!(u && u.clips.crouchIdle), 'spot', JSON.stringify(b.whaleS() && b.whaleS().arena && b.whaleS().arena.skrimSpot && { x: +b.whaleS().arena.skrimSpot.x.toFixed(2), s: +b.whaleS().arena.skrimSpot.s.toFixed(2), w: +b.whaleS().arena.skrimSpot.w.toFixed(2) }));
+  if (!u || !u.model) return;
+  for (let i = 0; i < 30; i++) b.frame(1);
+  const P = u.g.position, y = u.g.rotation.y;
+  w.__rafOrig = w.__rafOrig || w.requestAnimationFrame.bind(w);
+  w.requestAnimationFrame = () => 0;
+  const shotFrom = (nm, ang, d, h, fov = 50) => { b.camera.fov = fov; b.camera.updateProjectionMatrix(); cam.set(P.x + Math.sin(y + ang) * d, P.y + h, P.z + Math.cos(y + ang) * d); b.camera.lookAt(P.x, P.y + 0.7, P.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 560, 1.2); };
+  shotFrom('dig_front', 0.5, 3.2, 1.6); shotFrom('dig_side', 1.9, 3.0, 1.5); shotFrom('dig_far', 0.9, 7.5, 2.2, 60);
+  log('hips over floor', (() => { const hb = u.model.getObjectByName('Character1_Hips'); return hb ? +(hb.getWorldPosition(P.clone()).y - P.y).toFixed(2) : null; })());
+  if (w.__skFace) {
+    const g = (n) => u.model.getObjectByName(n), V3 = cam.constructor, wp = (o) => o.getWorldPosition(new V3());
+    u.g.updateMatrixWorld(true);
+    const eL = wp(g('c_eye_l')), eR = wp(g('c_eye_r')), H = wp(g('Character1_Head')), mid = eL.clone().add(eR).multiplyScalar(0.5);
+    log('eye L to lid top_01 origin', eL.distanceTo(wp(g('c_eyelid_top_01_l'))).toFixed(3), 'bot_01', eL.distanceTo(wp(g('c_eyelid_bot_01_l'))).toFixed(3), 'eyes apart', eL.distanceTo(eR).toFixed(3));
+    const fwd = mid.clone().sub(H).normalize(), at = mid.clone().addScaledVector(fwd, 0.42);
+    const lat = eR.clone().sub(eL).normalize(), Q = b.camera.quaternion.constructor;
+    const tops = ['01', '02', '03'].flatMap((k) => ['l', 'r'].map((sd) => g('c_eyelid_top_' + k + '_' + sd))), bots = ['01', '02', '03'].flatMap((k) => ['l', 'r'].map((sd) => g('c_eyelid_bot_' + k + '_' + sd)));
+    const turn = (bn, ang) => { const qW = new Q().setFromAxisAngle(lat, ang), p = new Q(); bn.parent.getWorldQuaternion(p); const pi = p.clone().invert(); bn.quaternion.premultiply(pi.multiply(qW).multiply(p)); };
+    const shotF = (nm, aT, aB) => { const keep = [...tops, ...bots].map((x) => x.quaternion.clone()); for (const x of tops) turn(x, aT); for (const x of bots) turn(x, aB); u.g.updateMatrixWorld(true);
+      b.camera.fov = 28; b.camera.updateProjectionMatrix(); cam.copy(at); b.camera.lookAt(mid.x, mid.y, mid.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 320, 1.2);
+      [...tops, ...bots].forEach((x, i) => x.quaternion.copy(keep[i])); u.g.updateMatrixWorld(true); };
+    shotF('face_open', 0, 0);
+    // "bro…": you 3 m off his side at standing height; his head up onto you
+    const P = u.g.position, yy = u.g.rotation.y, me = new V3(P.x + Math.sin(yy + 1.0) * 3, P.y + 1.62, P.z + Math.cos(yy + 1.0) * 3);
+    const look = (nm) => { cam.copy(me); b.camera.fov = 13; b.camera.updateProjectionMatrix(); const H2 = g('Character1_Head').getWorldPosition(new V3()); b.camera.lookAt(H2.x, H2.y + 0.02, H2.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 420, 1.2); };
+    cam.copy(me); for (let i = 0; i < 60; i++) b.updateSkrimLife(1 / 60); look('bro_before');
+    b.SKRIM.lookT = 4.8; for (let i = 0; i < 30; i++) { cam.copy(me); b.updateSkrimLife(1 / 60); } look('bro_pause');
+    for (let i = 0; i < 90; i++) { cam.copy(me); b.updateSkrimLife(1 / 60); } { const f = b.skrimFaceDir(u, u.skJ), d = me.clone().sub(u.skEm).normalize(); log('bro: face to your eye', (f.angleTo(d) * 57.3).toFixed(1), 'deg; face pitch', (Math.asin(f.y) * 57.3).toFixed(1), 'eye pitch', (Math.asin(d.y) * 57.3).toFixed(1)); } look('bro_look');
+    for (let i = 0; i < 240; i++) { cam.copy(me); b.updateSkrimLife(1 / 60); } look('bro_after');
+    log('lids', !!u.skLids, 'tops', u.skLids && u.skLids.top.length, 'bots', u.skLids && u.skLids.bot.length);
+    return;
+  }
+  if (w.__skPerf) {
+    // what a frame in here costs, by part: the world drawn and finished (a 1-px read syncs the GPU), and the update step
+    const run = (sec) => { for (let i = 0; i < sec * 60; i++) { b.step(1 / 60); b.updateSkrimLife(1 / 60); b.updateSkrimMood(1 / 60); } b.lamps(); };
+    const R = b.renderer, gl = R.getContext(), px = new Uint8Array(4), A = b.whaleS().arena, G = b.whaleS().G;
+    R.setSize(1280, 720, false);
+    const at = (dd, h, ang) => { cam.set(P.x + Math.sin(y + ang) * dd, P.y + h, P.z + Math.cos(y + ang) * dd); b.camera.fov = 70; b.camera.updateProjectionMatrix(); b.camera.lookAt(P.x, P.y + 0.6, P.z); b.camera.updateMatrixWorld(true); b.lamps(); };
+    const gpu = (n = 40) => { R.render(b.scene, b.camera); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t = performance.now(); for (let i = 0; i < n; i++) { R.render(b.scene, b.camera); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); } return (performance.now() - t) / n; };
+    const cpu = (n = 60) => { const t = performance.now(); for (let i = 0; i < n; i++) { b.step(1 / 60); b.updateSkrimLife(1 / 60); b.updateSkrimMood(1 / 60); } return (performance.now() - t) / n; };
+    const tog = (list, v) => { for (const o of list || []) if (o) o.visible = v; };
+    for (const [where, dd, h, ang] of [['near him', 5, 1.6, 0.6], ['across the gut', 14, 1.6, 0.9]]) {
+      at(dd, h, ang); run(1);
+      const base = gpu(), info = R.info.render;
+      const mist = A.mist ? A.mist.layers : [], rays = A.rays ? A.rays.rays : [], motes = (A.motes || []).map((m) => m.sp), air = A.air ? A.air.list : [];
+      tog(mist, false); const noMist = gpu(); tog(mist, true);
+      tog(rays, false); const noRays = gpu(); tog(rays, true);
+      tog(motes, false); const noMotes = gpu(); tog(motes, true);
+      tog(air, false); const noAir = gpu(); tog(air, true);
+      const vis = G.visible; G.visible = false; const noWhale = gpu(); G.visible = vis;
+      log('PERF', where, '| frame ms', base.toFixed(2), 'draws', info.calls, 'tris', info.triangles, '| without: mist', noMist.toFixed(2), 'rays', noRays.toFixed(2), 'motes', noMotes.toFixed(2), 'air', noAir.toFixed(2), 'the whole whale', noWhale.toFixed(2), '| update step ms', cpu().toFixed(2));
+    }
+    // and the real loop, near him, as he digs: every frame's length, and what held the thread when one ran long
+    w.requestAnimationFrame = w.__rafOrig; b.animate && b.animate();
+    at(4, 1.6, 0.6); const lag0 = b.lag().length, dl = []; let last = performance.now(), go = true;
+    (function tick() { const n = performance.now(); dl.push(n - last); last = n; if (go) w.requestAnimationFrame(tick); })();
+    await sleep(15000); go = false;
+    const sr = dl.slice(5).sort((a, c) => a - c), q = (f) => sr[Math.floor(sr.length * f)].toFixed(1);
+    log('LOOP near him 15 s | frames', sr.length, 'p50', q(0.5), 'p95', q(0.95), 'p99', q(0.99), 'max', sr[sr.length - 1].toFixed(0), '| over 33 ms', sr.filter((d) => d > 33).length, 'over 50', sr.filter((d) => d > 50).length);
+    const L = b.lag().slice(lag0), sum = {}; for (const e of L) { const k = String(e[2]).replace(/\d+/g, '#'); sum[k] = (sum[k] || 0) + e[1]; }
+    log('LOOP spans over 16 ms', L.length, JSON.stringify(Object.entries(sum).sort((a, c) => c[1] - a[1]).slice(0, 12).map(([k, v]) => k + ':' + Math.round(v))));
+    return;
+  }
+  if (w.__skChains) {
+    b.skcInit(u); const C = b.SKC, L = u.model.getObjectByName('Character1_LeftHand'), R = u.model.getObjectByName('Character1_RightHand');
+    const lk = (nm, ang, dd, h, at) => { b.camera.fov = 50; b.camera.updateProjectionMatrix(); cam.set(at.x + Math.sin(y + ang) * dd, at.y + h, at.z + Math.cos(y + ang) * dd); b.camera.lookAt(at.x, at.y, at.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 560, 1.2); };
+    // a thrown hook, frozen halfway to a point 6 m in front of him
+    cam.set(P.x + Math.sin(y) * 7, P.y + 1.6, P.z + Math.cos(y) * 7);
+    const T = b.skcThrow(u, L, 0, true); for (let i = 0; i < 12; i++) b.updateSkrimChains(1 / 60);
+    log('throw links', C.n, 'tip', T.p.toArray().map((v) => v.toFixed(1)).join(','), 'hook visible', !!T.hook);
+    lk('ch_throw_side', 1.57, 3.2, 0.4, T.p.clone().lerp(u.g.position.clone().setY(T.p.y), 0.4)); lk('ch_hook_close', 1.2, 0.9, 0.15, T.p);
+    C.list.length = 0; b.updateSkrimChains(1 / 60);
+    const at = u.g.position.clone().add(cam.clone().sub(u.g.position).setY(0).normalize().multiplyScalar(4)); at.y = u.g.position.y;
+    b.skcPit(u, at); for (let i = 0; i < 20; i++) b.updateSkrimChains(1 / 60);
+    log('pit links', C.n); lk('ch_pit', 0.9, 5.5, 1.6, at.clone().setY(at.y + 1.3));
+    for (let i = 0; i < 120; i++) b.updateSkrimChains(1 / 60);
+    b.skcRing(u, u.g.position.clone()); for (let i = 0; i < 16; i++) b.updateSkrimChains(1 / 60);
+    log('ring links', C.n); lk('ch_ring', 0.6, 8, 2.5, u.g.position.clone().setY(u.g.position.y + 1));
+    for (let i = 0; i < 120; i++) b.updateSkrimChains(1 / 60);
+    const sw = b.skcSweep(u, R); for (let i = 0; i < 12; i++) b.updateSkrimChains(1 / 60);
+    log('sweep links', C.n); lk('ch_sweep', 0.4, 6, 2.2, u.g.position.clone().setY(u.g.position.y + 1));
+    return;
+  }
+  if (w.__skLight) {
+    const G = b.WH_GL, sh = (nm) => { cam.set(P.x + Math.sin(y + 0.6) * 4, P.y + 1.6, P.z + Math.cos(y + 0.6) * 4); b.camera.fov = 55; b.camera.updateProjectionMatrix(); b.camera.lookAt(P.x, P.y + 0.7, P.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 400, 1.2); };
+    log('uWhMoon', G.uWhMoon.value, 'uWhN', G.uWhN.value, 'exposure', b.renderer.toneMappingExposure, 'lights', (() => { let n = 0, s = []; b.scene.traverse((o) => { if (o.isLight && o.visible && o.intensity > 0) { n++; const d = o.getWorldPosition(cam.clone()).distanceTo(P); if (d < 30 || !o.isPointLight) s.push(o.type + ':' + o.intensity.toFixed(2) + '@' + d.toFixed(0)); } }); return n + ' ' + s.join(' '); })());
+    { const A = b.whaleS().arena, fills = new Set((A.fills || []).map((f) => f.L)), moons = new Set((A.moonLamps || []).map((m) => m.L)); const rows = [];
+      b.scene.traverse((o) => { if (o.isPointLight && o.visible && o.intensity > 0) { const d = o.getWorldPosition(cam.clone()).distanceTo(P); if (d < 25) rows.push(o.intensity.toFixed(1) + '@' + d.toFixed(0) + ' dist' + o.distance + ' dec' + o.decay + ' ' + (fills.has(o) ? 'FILL' : moons.has(o) ? 'MOON' : (o.name || o.parent && o.parent.name || '?')) + (o.userData.lpReal ? ' real' : '')); } });
+      log('near lights', rows.join(' | ')); }
+    sh('L0_base');
+    const m0 = G.uWhMoon.value; G.uWhMoon.value = 0; sh('L1_nowash'); G.uWhMoon.value = m0;
+    const n0 = G.uWhN.value; G.uWhN.value = 0; sh('L2_noglands'); G.uWhN.value = n0;
+    const off = []; b.scene.traverse((o) => { if (o.isLight && o.intensity > 0) { off.push([o, o.intensity]); o.intensity = 0; } }); sh('L3_nolights'); for (const [o, i] of off) o.intensity = i;
+    G.uWhMoon.value = 0; G.uWhN.value = 0; for (const [o] of off) o.intensity = 0; sh('L4_nothing'); G.uWhMoon.value = m0; G.uWhN.value = n0; for (const [o, i] of off) o.intensity = i;
+    return;
+  }
+  if (w.__skDigOnly) {
+    // the search on fixed steps, through each of its three things; the approach's mood far and near
+    const R = () => u.sk.sr || {}, run = (sec) => { for (let i = 0; i < sec * 60; i++) { b.step(1 / 60); b.updateSkrimLife(1 / 60); b.updateSkrimMood(1 / 60); } b.lamps(); };
+    const ws = b.whaleS(), A = ws.arena; log('bones in the heap', (A.skrimBones || []).length, 'motes', (A.motes || []).length);
+    cam.set(P.x + Math.sin(y + 0.6) * 16, P.y + 1.6, P.z + Math.cos(y + 0.6) * 16); run(3); log('cine from 16 m', b.whMood.cine.toFixed(2));
+    { const H = () => u.skJ.head.getWorldPosition(P.clone()), K = b.SK_POSTURE, k0 = K.straight, res = [], J = u.skJ, s1 = u.model.getObjectByName('Character1_Spine1');
+      const bends = () => { const ft = ['Character1_LeftFoot', 'Character1_RightFoot'].map((n) => u.model.getObjectByName(n)).filter(Boolean).map((o) => o.getWorldPosition(P.clone())); const p = [J.hip, J.waist, s1, J.chest, J.neck, J.head].map((o) => o.getWorldPosition(P.clone())); const feet = ft.map((f) => f.toArray().map((v) => v.toFixed(2)).join(',')).join(' '); const d = [], latv = new (b.THREE.Vector3)(Math.cos(y), 0, -Math.sin(y)); for (let i = 1; i < 5; i++) { const a1 = p[i].clone().sub(p[i - 1]).normalize(), a2 = p[i + 1].clone().sub(p[i]).normalize(); d.push((Math.sign(a1.clone().cross(a2).dot(latv)) * a1.angleTo(a2) * 57.3).toFixed(0)); } const back = p[4].clone().sub(p[1]); return 'hip>waist>sp1>sp2>neck>head ' + d.join('/') + ' | back from upright ' + (Math.acos(back.y / back.length()) * 57.3).toFixed(0) + ' | feet ' + feet; };
+      const t0 = K.tuck, r0 = K.round; for (const [kk, tk, rr] of [[0, 0, 0], [k0, t0, r0]]) { K.straight = kk; K.tuck = tk; K.round = rr; const keep = b.skrimPosture; cam.set(P.x + Math.sin(y + 1.57) * 6, P.y + 1.6, P.z + Math.cos(y + 1.57) * 6); for (let i = 0; i < 30; i++) b.updateSkrimLife(1 / 60); const h = H(); res.push('straight ' + kk + ' tuck ' + tk + ': head y ' + (h.y - P.y).toFixed(3) + ' fwd ' + ((h.x - P.x) * Math.sin(y) + (h.z - P.z) * Math.cos(y)).toFixed(3) + ' bends ' + bends() + ' deg'); shotFrom('posture_' + kk + '_' + tk, 1.57, 3.2, 1.0, 45); }
+      K.tuck = t0; K.round = r0; K.straight = k0; log('POSTURE', res.join(' | ')); }
+    shotFrom('mood_far', 0.6, 16, 1.6, 60);
+    { const ws = b.whaleS(), G = ws.G, T = b.THREE, rc = new T.Raycaster(), rows = [];
+      for (const dd of [16, 13, 10, 7, 4]) { const x = P.x + Math.sin(y + 0.6) * dd, z = P.z + Math.cos(y + 0.6) * dd; rc.set(new T.Vector3(x, P.y + 6, z), new T.Vector3(0, -1, 0)); const ms = []; G.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !o.isSprite) ms.push(o); }); rc.camera = b.camera; const hits = rc.intersectObjects(ms, false).filter((h) => h.object.isMesh && !h.object.userData.bwGhost && h.object.material && !h.object.material.transparent); const fl = b.skrimFloorW(x, z); rows.push(dd + 'm: drawn ' + (hits[0] ? (hits[0].point.y - fl).toFixed(2) : 'none') + ' (' + (hits[0] ? (hits[0].object.name || hits[0].object.type) : '') + ')'); }
+      log('drawn floor over the walked floor', rows.join(' | ')); }
+    cam.set(P.x + Math.sin(y + 0.6) * 9, P.y + 1.6, P.z + Math.cos(y + 0.6) * 9); run(4); shotFrom('mood_mid', 0.6, 9, 1.6, 55); shotFrom('mood_low', 1.4, 7, 0.9, 62);
+    cam.set(P.x + Math.sin(y + 0.6) * 4, P.y + 1.6, P.z + Math.cos(y + 0.6) * 4); run(5); log('cine from 4 m', b.whMood.cine.toFixed(2));
+    { const c0 = cam.clone(), q0 = b.camera.quaternion.clone(); b.placeInWhale(); for (let i = 0; i < 90; i++) { b.step(1 / 60); b.updateSkrimMood(1 / 60); } b.lamps(); b.camera.fov = 70; b.camera.updateProjectionMatrix(); b.camera.lookAt(P.x, P.y + 0.3, P.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('entry_view', 560, 1.2); cam.copy(c0); b.camera.quaternion.copy(q0); }
+    shotFrom('mood_near', 0.6, 4, 1.6, 55);
+    { const G = b.WH_GL, m0 = G.uWhMoon.value, d0 = G.uWhDim.value, n0 = G.uWhN.value; log('near: uWhMoon', m0.toFixed(2), 'uWhDim', d0.toFixed(2), 'uWhN', n0, 'pooled', (() => { const r = []; b.scene.traverse((o) => { if (o.isPointLight && o.visible && o.intensity > 0.01 && o.userData.lpReal) r.push(o.intensity.toFixed(1) + '@' + o.getWorldPosition(cam.clone()).distanceTo(P).toFixed(0)); }); return r.join(' '); })());
+      G.uWhMoon.value = 0; shotFrom('v_nowash', 0.6, 4, 1.6, 55); G.uWhMoon.value = m0;
+      G.uWhDim.value = 0; shotFrom('v_noeye', 0.6, 4, 1.6, 55); G.uWhDim.value = d0;
+      G.uWhN.value = 0; shotFrom('v_noglands', 0.6, 4, 1.6, 55); G.uWhN.value = n0;
+      const off = []; b.scene.traverse((o) => { if (o.isPointLight && o.intensity > 0) { off.push([o, o.intensity]); o.intensity = 0; } }); shotFrom('v_nopoint', 0.6, 4, 1.6, 55); for (const [o, i] of off) o.intensity = i; }
+    { let big = null; b.scene.traverse((o) => { if (o.isPointLight && o.intensity > 20) big = o; }); if (big) { const i0 = big.intensity; big.intensity = 0; shotFrom('v_noskrim', 0.6, 4, 1.6, 55); big.intensity = i0; log('big light at', big.getWorldPosition(cam.clone()).toArray().map((v) => v.toFixed(1)).join(','), 'him', P.toArray().map((v) => v.toFixed(1)).join(','), 'dist', big.distance, 'decay', big.decay); } }
+    { const A = b.whaleS().arena, sk = A.moonLamps.find((m) => m.skrim).L, rows = []; b.scene.traverse((o) => { if (o.isPointLight && o.intensity > 0.01) rows.push((o === sk ? 'SKRIM ' : '') + o.intensity.toFixed(1) + '@' + o.getWorldPosition(cam.clone()).distanceTo(P).toFixed(1) + ' d' + o.distance); }); log('point lights', rows.join(' | ')); }
+    const seen = {}; let n = 0;
+    for (let k = 0; k < 60 * 40 && n < 6; k++) {
+      cam.set(P.x + Math.sin(y + 0.6) * 4, P.y + 1.6, P.z + Math.cos(y + 0.6) * 4); run(1 / 60);
+      const r = R(), key = r.mode + (r.mode === 'bone' ? (r.t > 2.2 ? '_look' : r.t > 4.2 ? '_toss' : '') : r.mode === 'fling' ? (r.t > 1.2 && r.t < 1.5 ? '_pull' : '') : '');
+      if (!seen[key] && (key === 'bone_look' || key === 'fling_pull' || (key === 'dig' && k > 120))) { seen[key] = 1; n++; shotFrom('srch_' + key + '_a', 0.3, 2.6, 1.35, 45); shotFrom('srch_' + key + '_b', 1.6, 2.6, 1.3, 45); }
+    }
+    log('modes seen', Object.keys(seen).join(','), '| thrown', b.SKS.fly.length, 'resting', b.SKS.fly.filter((f) => f.rest).length, 'bones left', (A.skrimBones || []).filter((x) => !x.taken).length);
+    shotFrom('srch_after_wide', 0.9, 6, 2.2, 60);
+    return;
+  }
+  // his poses, close: the crouch as drawn, then a standing idle and a cast scrubbed (put back after)
+  { const big = (nm, ang) => { b.camera.fov = 35; b.camera.updateProjectionMatrix(); cam.set(P.x + Math.sin(y + ang) * 3.4, P.y + 1.1, P.z + Math.cos(y + ang) * 3.4); b.camera.lookAt(P.x, P.y + 0.75, P.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 420, 1.3); };
+    big('pose_crouch_front', 0); big('pose_crouch_side', 1.57);
+    for (const [clip, f] of [['idle', 0.2], ['m1A1', 0.38], ['walk', 0.3]]) { const a = u.clips[clip]; if (!a) continue; for (const x of u.mixer._actions) x.enabled = false; a.reset(); a.enabled = true; a.setEffectiveWeight(1); a.play(); a.paused = true; a.time = a.getClip().duration * f; u.mixer.update(0); big('pose_' + clip + '_front', 0); big('pose_' + clip + '_side', 1.57); a.stop(); }
+    for (const x of u.mixer._actions) x.enabled = true; }
+  // the prompt and the talk
+  cam.set(P.x + Math.sin(y + 0.4) * 2.0, P.y + 1.7, P.z + Math.cos(y + 0.4) * 2.0); b.camBaseY = cam.y; b.lookAt(P.x, P.y + 0.7, P.z); b.frame(1); b.lookAt(P.x, P.y + 0.7, P.z); b.frame(1);
+  log('prompt', b.hoveredS());
+  b.skrimTalk();
+  const D = w.document.getElementById('dialog'), txt = () => w.document.getElementById('dialog-text').textContent;
+  const step = async (ms = 900) => { for (let i = 0; i < 20; i++) b.frame(1); await sleep(ms); };
+  const pick = async (re) => { for (let k = 0; k < 12 && !D.querySelectorAll('button.choice').length; k++) { if (k === 3) D.click(); await step(500); } const bs = [...D.querySelectorAll('button.choice')]; log('  said:', JSON.stringify(txt()), '| you:', bs.map((x) => x.textContent).join(' / ')); const B = bs.find((x) => re.test(x.textContent)) || bs[0]; if (B) B.click(); else D.click(); };
+  b.camera.fov = 105; b.camera.updateProjectionMatrix();
+  await pick(/What are you/); await pick(/Must be/); await pick(/Why/); await pick(/Hell no/); await step(3200);
+  log('after no jars: dialog', b.state().dialogOpen, 'stage', S.stage);
+  b.skrimTalk(); await pick(/What are you/); await pick(/Kill him/); for (let k = 0; k < 8 && b.state().dialogOpen; k++) await step(500);
+  log('after *Kill him*: dialog', b.state().dialogOpen, 'stage', S.stage);
+  // the fight
+  w.requestAnimationFrame = (f) => setTimeout(f, 16);
+  b.settings.devMode = false;
+  const home = [P.x + Math.sin(y) * 7, P.z + Math.cos(y) * 7];
+  const tally = {}, res = { hit: 0, blocked: 0, parried: 0 }; let hp0 = b.state().hp, n = 0, shots = 0;
+  const hp1 = u.st.hp;
+  for (let f = 0; f < 60 * 40 && u.st.alive; f++) {
+    const fl = b.whaleS() ? null : null;
+    cam.x = home[0]; cam.z = home[1]; b.lookAt(P.x, cam.y - 0.2, P.z);
+    // (your guard: up as a ball comes within 4 m, every other one — the first frames of it are the parry)
+    const near = b.SKC.list.find((q) => q.kind === 'throw' && q.st === 'out' && q.p.distanceTo(cam) < 4.5);
+    if (near && !near.seen) { near.seen = true; { w.__gdAge = (n++) % 2 ? 0 : 1.0; w.__gdT = 30; if (!w.__gdLog) { w.__gdLog = 1; log('guard up?', b.blockingS(), 'equipped', b.equippedS && b.equippedS() && b.equippedS().name, 'started', b.state().started, 'frozen', b.frozen && b.frozen()); } } }
+    if (w.__gdT > 0) { if (--w.__gdT === 0) b.setGuardTest(false); else if (!b.blockingS() || w.__gdT === 29) b.setGuardTest(true, w.__gdAge); }
+    b.step(1 / 60);
+    const A = u.sk.act; if (A && A.t < 0.02) tally[A.name] = (tally[A.name] || 0) + 1;
+    if (b.state().hp < hp0) res.hit++; b.heal(); hp0 = b.state().hp;
+    if (A && !shots && A.name === 'bolt' && A.t > A.rel[0] * A.dur * 0.7) { shots++; b.renderer.render(b.scene, b.camera); shot('fight_bolt', 640, 1.2); }
+    if (A && shots === 1 && A.name === 'geyser' && A.fired) { shots++; b.renderer.render(b.scene, b.camera); shot('fight_geyser', 640, 1.2); }
+    if (A && shots < 3 && A.name === 'wave' && A.fired && A.t > A.rel[0] * A.dur + 0.4) { shots = 3; b.renderer.render(b.scene, b.camera); shot('fight_wave', 640, 1.2); }
+    if (f % 600 === 0) log(' ', (f / 60).toFixed(0) + 's', 'his hp', u.st.hp, 'act', A && A.name, 'chains', b.SKC.list.length, 'links', b.SKC.n, 'd', Math.hypot(P.x - cam.x, P.z - cam.z).toFixed(1));
+    if (f % 30 === 0) await sleep(1);
+  }
+  log('his own count', JSON.stringify(u.sk.counts), '| outcomes', JSON.stringify(u.sk.res));
+  log('40 s: his moves', JSON.stringify(tally), '| landed on you', res.hit, '| his hp', hp1, '->', u.st.hp, '| threw', JSON.stringify((b.threw ? b.threw() : []).slice(0, 3)));
+}
+
+export async function skrimDig(ctx) { ctx.w.__skDigOnly = true; return skrimIn(ctx); }
+export async function skrimFace(ctx) { ctx.w.__skFace = true; return skrimIn(ctx); }
+export async function skrimPerf(ctx) { ctx.w.__skPerf = true; return skrimIn(ctx); }
+export async function skrimChains(ctx) { ctx.w.__skChains = true; return skrimIn(ctx); }
+export async function skrimLight(ctx) { ctx.w.__skLight = true; return skrimIn(ctx); }
+
+// HIS IRON AND HIS SPARKS (2026-10-30, the owner: "make his sound effects better with the metal chains. make sparks fly
+// like sekiro when blocked or parried against him"): the chains' sound bank (built, in how long, each bank's count);
+// each chain sound's peak and loudest 43 ms RMS on the effects bus beside the game's own block sample; and stills of a
+// block and a parry from the moment of contact on, drawn as the game draws a frame (the world, then the view model).
+// `&m=snd` the sounds only, `&m=fx` the stills only.
+export async function skrimSparks({ w, b, log, sleep }) {
+  const M = new URLSearchParams(location.search).get('m') || 'all';
+  b.settings.devMode = false;
+  try { if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem); if (b.equippedS && b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem); } catch (e) { log('katana', e.message); }
+  b.placeInWhale();
+  const S = b.SKRIM, cam = b.camera.position, V3 = cam.constructor;
+  for (let i = 0; i < 400 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed && S.u.clips.crouchIdle); i++) { b.frame(1); await sleep(50); }
+  const u = S.u; if (!u || !u.model) { log('no Skrim'); return; }
+  for (let i = 0; i < 30; i++) b.frame(1);
+  b.skcInit(u);
+  const A = b.SKA; log('bank ready', A.ready, 'built in', A.ms, 'ms;', ['clink', 'heavy', 'clang', 'parry', 'tick', 'slap', 'drag', 'swish', 'rumble'].map((k) => k + ' ' + A[k].length + '×' + (A[k][0] ? A[k][0].duration.toFixed(2) + 's' : '-')).join(', '));
+  const P = u.g.position, y = u.g.rotation.y;
+  // where each bank's energy is: the first 2048 samples, a plain DFT summed into octaves
+  for (const k of ['clink', 'heavy', 'clang', 'parry', 'tick', 'slap', 'drag', 'swish', 'rumble']) {
+    const d = A[k][0].getChannelData(0), sr = A[k][0].sampleRate, N = Math.min(2048, d.length), oct = {};
+    for (let j = 1; j < N / 2; j++) { let re = 0, im = 0; const wv = 2 * Math.PI * j / N; for (let i = 0; i < N; i++) { const h = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N); re += d[i] * h * Math.cos(wv * i); im -= d[i] * h * Math.sin(wv * i); }
+      const f = j * sr / N, o = f < 177 ? '<177' : f < 354 ? '250' : f < 707 ? '500' : f < 1414 ? '1k' : f < 2828 ? '2k' : f < 5657 ? '4k' : f < 11314 ? '8k' : '16k'; oct[o] = (oct[o] || 0) + re * re + im * im; }
+    const tot = Object.values(oct).reduce((x, q) => x + q, 0);
+    log('  energy by octave', k.padEnd(7), ['<177', '250', '500', '1k', '2k', '4k', '8k', '16k'].map((o) => o + ' ' + Math.round(100 * (oct[o] || 0) / tot) + '%').join('  '));
+  }
+  if (M !== 'fx') {
+    const ctx = b.audioCtx; try { await ctx.resume(); } catch (e) {} await sleep(200); log('context', ctx.state, ctx.sampleRate);
+    // (each sound alone: while it is made, whatever would connect to the effects bus connects to `iso` instead, which
+    // goes only to the analyser — the whale's beds are on the bus too and read 0.03 under everything)
+    const base = b.sfxOut(), iso = ctx.createGain(), an = ctx.createAnalyser(); an.fftSize = 2048; iso.connect(an); const buf = new Float32Array(2048);
+    const AN = w.AudioNode.prototype, con = AN.connect, isoOn = () => { AN.connect = function (d, ...r) { return con.call(this, d === base ? iso : d, ...r); }; }, isoOff = () => { AN.connect = con; };
+    w.requestAnimationFrame = () => 0; await sleep(300);      // (the loop stopped: nothing of the game's own on the bus but its beds)
+    const near = [cam.x + 2, cam.z];
+    const meas = async (nm, fn, ms = 1500) => {
+      await sleep(250); const n0 = A.n; let err = null; isoOn(); try { fn(); } catch (e) { err = e.message; } isoOff();
+      let pk = 0, rms = 0; const t0 = performance.now();
+      while (performance.now() - t0 < ms) { an.getFloatTimeDomainData(buf); let s = 0; for (const v of buf) { const q = Math.abs(v); if (q > pk) pk = q; s += v * v; } rms = Math.max(rms, Math.sqrt(s / buf.length)); await sleep(12); }
+      log('  ', nm.padEnd(22), 'peak', pk.toFixed(3), 'rms', rms.toFixed(3), 'sources', A.n - n0, err ? 'ERR ' + err : '');
+    };
+    await meas('nothing, again', () => {});
+    await meas('katBlock (game, 0.82)', () => b.playSample('katBlock', 0.82, 0.05, 0.98));
+    await meas('katParry (game, 0.62)', () => b.playSample('katParry', 0.62));
+    await meas('clang (block)', () => b.sfxChainClang(false));
+    await meas('clang (parry)', () => b.sfxChainClang(true));
+    await meas('rattle 0.5 s', () => b.sfxChainRattle(near[0], near[1], 0.5, 1));
+    await meas('rattle heavy', () => b.sfxChainRattle(near[0], near[1], 0.6, 1, true));
+    await meas('whirl', () => b.sfxChainWhirl(near[0], near[1], 0.8));
+    await meas('payout (throw)', () => b.sfxChainPayout(near[0], near[1], 1));
+    await meas('drag', () => b.sfxChainDrag(near[0], near[1], 0.3, 0.9));
+    await meas('slap (slack lands)', () => b.sfxChainSlap(near[0], near[1], 1));
+    await meas('bite', () => b.sfxChainBite(cam.x, cam.z, 1));
+    await meas('burst (pit, 1.3)', () => b.sfxChainBurst(near[0], near[1], 1.3, 0.9));
+    await meas('burst (ring, 1.5)', () => b.sfxChainBurst(near[0], near[1], 1.5, 1.1));
+    await meas('rattle at 12 m', () => b.sfxChainRattle(cam.x + 12, cam.z, 0.5, 1));
+    await meas('fleshHit (game)', () => b.playSample('fleshHit', 0.9));
+    try { await ctx.suspend(); } catch (e) {}
+  }
+  if (M === 'snd') return;
+  // the stills: you 2 m in front of him at your own fov, guard up; his hand's blow on it
+  w.requestAnimationFrame = () => 0;
+  b.camera.fov = 105; b.camera.updateProjectionMatrix();
+  const place = () => { cam.set(P.x + Math.sin(y) * 2.0, b.skrimFloorW(P.x + Math.sin(y) * 2.0, P.z + Math.cos(y) * 2.0) + 1.62, P.z + Math.cos(y) * 2.0); b.camBaseY = cam.y; b.lookAt(P.x, cam.y - 0.25, P.z); };
+  const grab = (nm, W = 480) => {
+    const R = b.renderer; R.render(b.scene, b.camera); R.autoClear = false; R.clearDepth(); R.render(b.vmScene, b.vmCamera); R.autoClear = true;
+    const src = R.domElement, c = document.createElement('canvas'); c.width = W; c.height = Math.round(W * src.height / src.width);
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+    for (let i = 0; i < n; i++) console.log('[PBIMG]', nm, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  };
+  const steps = (n) => { for (let i = 0; i < n; i++) { place(); b.step(1 / 60); } };
+  const sp = () => { const L = b.SKSP; let lo = 1e9, hi = -1e9, far = 0; for (const s of L.p) if (s.ttl > 0) { lo = Math.min(lo, s.p.y); hi = Math.max(hi, s.p.y); far = Math.max(far, s.p.distanceTo(cam)); } return 'live ' + L.live + ' y ' + (lo - cam.y).toFixed(2) + '..' + (hi - cam.y).toFixed(2) + ' furthest ' + far.toFixed(2) + ' m'; };
+  place(); b.setGuardTest(true, 1); steps(40);
+  { const at = b.skSparkAt(new V3()); b.camera.updateMatrixWorld(true); const l = at.clone().applyMatrix4(b.camera.matrixWorldInverse); log('contact in your view (m): x', l.x.toFixed(2), 'y', l.y.toFixed(2), 'z', l.z.toFixed(2), '| equipped', b.equippedS() && b.equippedS().name, 'vm', b.vmScene.children.length, 'vm fov', b.vmCamera.fov, 'aspect', b.vmCamera.aspect.toFixed(2), '/', b.camera.aspect.toFixed(2)); }
+  grab('guard_up');
+  const H = () => u.model.getObjectByName('Character1_LeftHand').getWorldPosition(new V3());
+  log('block:', b.skrimHitsYou(u, H(), 0, true));
+  steps(1); grab('blk_0'); log('  +1', sp()); steps(4); grab('blk_1'); log('  +5', sp()); steps(8); grab('blk_2'); log('  +13', sp()); steps(15); log('  +28', sp());
+  steps(60); b.setGuardTest(false); steps(20); b.setGuardTest(true, 0); place(); b.step(1 / 60);
+  log('parry:', b.skrimHitsYou(u, H(), 0, true));
+  steps(1); grab('par_0'); log('  +1', sp()); steps(5); grab('par_1'); log('  +6', sp()); steps(8); grab('par_2'); log('  +14', sp()); steps(16); grab('par_3'); log('  +30', sp());
+  steps(90); b.setGuardTest(false); steps(20); b.setGuardTest(true, 1); steps(30);
+  log('sweep, blocked:', b.skrimHitsYou(u, cam.clone().setY(cam.y - 0.42), 0, true, new V3(Math.cos(y), 0, -Math.sin(y))));
+  steps(3); grab('swp_blk'); log('  +3', sp());
+  steps(90); b.setGuardTest(false); steps(20); b.setGuardTest(true, 0); place(); b.step(1 / 60);
+  log('chain from the floor, parried:', b.skrimHitsYou(u, cam.clone().setY(cam.y - 0.7), 0, false, new V3(0, 1, 0)));
+  steps(4); grab('rise_par'); log('  +4', sp());
+  b.setGuardTest(false);
+  log('bursts', b.SKSP.bursts, 'his outcomes', JSON.stringify(u.sk.res));
+}
+
+// SKRIM'S FIGHT, MEASURED (2026-10-30, the owner: "he slides around too much. when you are up close he does nothing"):
+// the head-back pose of every fight clip (face pitch against his chest, scrubbed), stills of the worst; then the fight
+// on fixed steps from four places — you 1.5 m off and standing, you pressing him at 1.5 m and cutting, you at 7 m, you
+// backing off — with what he does, how close, and how far his planted foot skates (`__skF2` 'poses' / 'fight' / both)
+export async function skrimF2({ w, b, log, sleep, shot }) {
+  b.settings.devMode = false;
+  try { if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem); if (b.equippedS && b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem); } catch (e) { log('katana', e.message); }
+  b.placeInWhale();
+  const S = b.SKRIM, cam = b.camera.position, V3 = cam.constructor;
+  for (let i = 0; i < 400 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed && S.u.clips.crouchIdle); i++) { b.frame(1); await sleep(50); }
+  const u = S.u; if (!u || !u.model) { log('no skrim'); return; }
+  for (let i = 0; i < 30; i++) b.frame(1);
+  w.requestAnimationFrame = () => 0;
+  const mode = new URLSearchParams(window.location.search).get('m') || 'all';
+  w.__skW = new URLSearchParams(window.location.search).get('wt');
+  const g = (n) => u.model.getObjectByName(n), wp = (o, v = new V3()) => o.getWorldPosition(v);
+  const P = u.g.position;
+  const side = (nm, ang = 1.57, dd = 3.4, fov = 38) => { const y = u.g.rotation.y; b.camera.fov = fov; b.camera.updateProjectionMatrix(); cam.set(P.x + Math.sin(y + ang) * dd, P.y + 1.1, P.z + Math.cos(y + ang) * dd); b.camera.lookAt(P.x, P.y + 0.95, P.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 400, 1.3); };
+  // the face's pitch off his chest: + is the head thrown back
+  const facePitch = () => { u.g.updateMatrixWorld(true);
+    const H = wp(g('Character1_Head')), e = wp(g('c_eye_l')).add(wp(g('c_eye_r'))).multiplyScalar(0.5), f = e.sub(H).normalize();
+    const C = wp(g('Character1_Spine2')), N = wp(g('Character1_Neck')), up = N.sub(C).normalize();
+    const fw = new V3(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y)), lat = new V3().crossVectors(up, fw).normalize(), cf = new V3().crossVectors(lat, up).normalize();
+    // the face in the chest's own plane: the angle up off the chest's forward
+    return w.__skWorld ? Math.asin(f.y) * 57.3 : Math.atan2(f.dot(up), f.dot(cf)) * 57.3; };
+  const scrub = (clip, f) => { const a = u.clips[clip]; for (const x of u.mixer._actions) x.enabled = false; a.reset(); a.enabled = true; a.setEffectiveWeight(1); a.play(); a.paused = true; a.time = a.getClip().duration * f; u.mixer.update(0); return a; };
+  if (mode === 'all' || mode === 'poses') {
+    S.stage = 'fight'; u.sk.act = null;
+    const keep = u.g.rotation.y;
+    scrub('idle', 0.3); const p0 = facePitch(); log('idle face pitch off chest', p0.toFixed(1));
+    const rows = [];
+    for (const c of ['m1A1', 'm1A2', 'm1A3', 'm2A1', 'm2A2', 'm2A3', 'm2A4', 'm2A5', 'area1', 'area2', 'cast1', 'cast2', 'hitSF', 'hitSL', 'hitSR', 'fromCrouch', 'walk', 'walkB', 'walkL', 'walkR', 'runB', 'blockHit']) {
+      if (!u.clips[c]) continue; let mx = -1e9, at = 0;
+      for (let i = 0; i <= 40; i++) { scrub(c, i / 40); const p = facePitch() - p0; if (p > mx) { mx = p; at = i / 40; } }
+      rows.push([c, mx, at]);
+    }
+    rows.sort((a, b2) => b2[1] - a[1]);
+    { w.__skWorld = 1; scrub('idle', 0.3); const q0 = facePitch(); const r2 = [];
+      for (const c of ['m1A1', 'm1A2', 'm1A3', 'm2A1', 'm2A2', 'm2A4', 'area1', 'area2', 'cast1', 'cast2', 'hitSF', 'hitSL']) { if (!u.clips[c]) continue; let mx = -1e9, at = 0; for (let i = 0; i <= 40; i++) { scrub(c, i / 40); const p = facePitch() - q0; if (p > mx) { mx = p; at = i / 40; } } r2.push(c + ' ' + mx.toFixed(0) + '@' + at.toFixed(2)); }
+      w.__skWorld = 0; log('face pitch in the world over idle (' + q0.toFixed(0) + '):', r2.join(' | ')); }
+    // the swings: each hand's fastest frame along his front, how fast, and how far out in front of him it is then
+    for (const c of ['m1A1', 'm1A2', 'm1A3', 'm1A1M', 'm1A2M', 'm1A3M', 'm2A1', 'm2A2', 'm2A4', 'cast1']) { if (!u.clips[c]) continue; const out = [];
+      for (const hn of ['Character1_LeftHand', 'Character1_RightHand']) { let pv = null, bv = -1e9, bf = 0, reach = 0, hy = 0, top = 0; const H = g(hn), y = u.g.rotation.y, fx = Math.sin(y), fz = Math.cos(y);
+        for (let i = 0; i <= 60; i++) { scrub(c, i / 60); u.g.updateMatrixWorld(true); const q = wp(H); if (pv) { const v = Math.hypot(q.x - pv.x, q.y - pv.y, q.z - pv.z) * 60 / u.clips[c].getClip().duration; if (v > bv) { bv = v; bf = i / 60; reach = (q.x - P.x) * fx + (q.z - P.z) * fz; hy = q.y - P.y; } } top = Math.max(top, (q.x - P.x) * fx + (q.z - P.z) * fz); pv = q; }
+        out.push(hn.slice(11, 12) + ' v' + bv.toFixed(1) + '@' + bf.toFixed(2) + ' out' + reach.toFixed(2) + ' y' + hy.toFixed(2) + ' max out' + top.toFixed(2)); }
+      log('swing', c, (u.clips[c].getClip().duration).toFixed(2) + 's', out.join(' ; ')); }
+    log('head back (deg over idle, at f):', rows.map(([c, m, f]) => c + ' ' + m.toFixed(0) + '@' + f.toFixed(2)).join(' | '));
+    for (const [c, , f] of rows.slice(0, 3)) { scrub(c, f); u.g.updateMatrixWorld(true); if (w.__skPoseFix) w.__skPoseFix(u, c); side('pose_' + c); }
+    if (w.__bw.skrimNeckFix) { for (const [c, , f] of rows.slice(0, 3)) { scrub(c, f); u.g.rotation.y = keep; const ov = w.__bw.skrimNeckFix(u); u.g.updateMatrixWorld(true); log('  fixed', c, 'over', (ov * 57.3).toFixed(0), 'now off chest', (facePitch() - p0).toFixed(0)); side('posefix_' + c); } }
+    // the gaits with him held still: the planted toe's speed back under him against the clip's root travel (they should
+    // be equal and opposite — the ratio is the scale the travel needs)
+    { const tl = g('Character1_LeftToeBase'), tr = g('Character1_RightToeBase'), y = u.g.rotation.y, c = Math.cos(y), s = Math.sin(y), out = [];
+      for (const cn of ['walk', 'walkB', 'walkL', 'walkR', 'runB']) { const T = u.clipTravel[cn]; if (!T) continue; const dur = u.clips[cn].getClip().duration; let pv = null, sF = 0, sT = 0, nn = 0;
+        const smp = []; let ymin = 1e9;
+        for (let i = 0; i <= 120; i++) { const f = i / 120; scrub(cn, f); u.g.updateMatrixWorld(true); const a = wp(tl), bb = wp(tr), lo = a.y < bb.y ? a : bb, wh = a.y < bb.y;
+          const x = f * (T.length - 1), j = Math.min(T.length - 2, Math.floor(x)), t = x - j, tx = T[j][0] + (T[j + 1][0] - T[j][0]) * t, tz = T[j][1] + (T[j + 1][1] - T[j][1]) * t;
+          const lx = (lo.x - P.x) * c - (lo.z - P.z) * s, lz = (lo.x - P.x) * s + (lo.z - P.z) * c;
+          smp.push({ wh, lx, lz, tx, tz, y: lo.y - P.y }); ymin = Math.min(ymin, lo.y - P.y); }
+        const K = { walk: 0.8, walkB: 0.82, walkL: 0.75, walkR: 0.75, runB: 0.8 }[cn]; let res = 0, old = 0;
+        const E = T[T.length - 1], ox = E[0] / (T.length - 1), oz = E[1] / (T.length - 1);      // (the old way: the clip's mean speed, every frame)
+        for (const q of smp) { if (pv && pv.wh === q.wh && q.y < ymin + 0.03 && pv.y < ymin + 0.03) { sF += Math.hypot(q.lx - pv.lx, q.lz - pv.lz); sT += Math.hypot(q.tx - pv.tx, q.tz - pv.tz); res += Math.hypot(q.lx - pv.lx + K * (q.tx - pv.tx), q.lz - pv.lz + K * (q.tz - pv.tz)); old += Math.hypot(q.lx - pv.lx + ox * (T.length - 1) / 120, q.lz - pv.lz + oz * (T.length - 1) / 120); nn++; } pv = q; }
+        out.push('residual ' + (res / (dur * nn / 120 || 1)).toFixed(2) + ' (the old way at its best ' + (old / (dur * nn / 120 || 1)).toFixed(2) + ')');
+        out.push(cn + ' toe low ' + ymin.toFixed(3) + ' foot ' + (sF / (dur * nn / 120 || 1)).toFixed(2) + ' travel ' + (sT / (dur * nn / 120 || 1)).toFixed(2) + ' ratio ' + (sF / (sT || 1)).toFixed(2) + ' n' + nn); }
+      log('gait scale (him still):', out.join(' | ')); }
+    // his hook swings, the mirrored three: the wind-up, the contact, after (from in front and to his left, where the hook is)
+    for (const c of ['m1A1M', 'm1A2M', 'm1A3M']) for (const f of [0.55, 0.8, 1]) { if (!u.clips[c]) continue; const rel = w.__bw.skrimRelS ? w.__bw.skrimRelS(u, c) : 0.38; scrub(c, Math.min(0.95, rel * f)); u.g.rotation.y = keep; u.g.updateMatrixWorld(true); w.__bw.skrimNeckFix && w.__bw.skrimNeckFix(u); side('sw_' + c + '_' + f, 0.75, 3.6, 42); }
+    // (stopped, every one: left enabled and paused at weight 1 they froze his legs under the fight that followed — every
+    // skate number read 0.00 in that run)
+    for (const x of u.mixer._actions) { x.stop(); x.enabled = true; } u.cur = null;
+    if (mode === 'poses') return;
+  }
+  if (mode === 'chains') {
+    // the chains as they hang: a throw caught mid-flight, then let fall slack onto the floor; the pit coming up and swaying;
+    // a sweep mid-swing from over his shoulder
+    b.skcInit(u); const C = b.SKC, L = g('Character1_LeftHand'), R = g('Character1_RightHand'), y = u.g.rotation.y;
+    const lk = (nm, ang, dd, h, at, fov = 50) => { b.camera.fov = fov; b.camera.updateProjectionMatrix(); cam.set(at.x + Math.sin(y + ang) * dd, at.y + h, at.z + Math.cos(y + ang) * dd); b.camera.lookAt(at.x, at.y, at.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot(nm, 480, 1.3); };
+    const run = (n) => { for (let i = 0; i < n; i++) b.updateSkrimChains(1 / 60); };
+    cam.set(P.x + Math.sin(y) * 9, P.y + 1.6, P.z + Math.cos(y) * 9);
+    const T = b.skcThrow(u, L, 0, true); run(14);
+    const mid = T.p.clone().lerp(P.clone().setY(T.p.y), 0.5); log('throw out: links', C.n, 'out', T.p.distanceTo(P).toFixed(1));
+    lk('c_throw', 1.57, 4.2, 0.3, mid);
+    T.st = 'slack'; T.st0 = T.t; T.Ls = T.p.distanceTo(T.A) * 1.06; T.v.multiplyScalar(0.3); run(30);
+    log('slack: links', C.n, 'tip y over floor', (T.p.y - b.skrimFloorW(T.p.x, T.p.z)).toFixed(2), 'pts over floor', T.pts.map((q) => (q.y - b.skrimFloorW(q.x, q.z)).toFixed(2)).join(' '));
+    lk('c_slack', 2.6, 3.4, 2.6, T.p.clone().lerp(P.clone().setY(T.p.y), 0.5));
+    run(30); lk('c_haul', 2.6, 3.4, 2.6, T.p.clone().lerp(P.clone().setY(T.p.y), 0.5));
+    C.list.length = 0; run(1);
+    const at = P.clone().add(new V3(Math.sin(y), 0, Math.cos(y)).multiplyScalar(4)); at.y = b.skrimFloorW(at.x, at.z);
+    b.skcPit(u, at); run(12); lk('c_pit_up', 0.9, 5.0, 1.5, at.clone().setY(at.y + 1.4));
+    run(24); lk('c_pit_sway', 0.9, 5.0, 1.5, at.clone().setY(at.y + 1.4));
+    C.list.length = 0; run(1);
+    b.skcSweep(u, R); run(14); lk('c_sweep', 0.2, 4.5, 3.2, P.clone().setY(P.y + 1), 60);
+    return;
+  }
+  // ---- the fight
+  S.stage = 'dig'; cam.set(P.x + Math.sin(u.g.rotation.y) * 4, P.y + 1.62, P.z + Math.cos(u.g.rotation.y) * 4);
+  b.skrimFight();
+  for (let i = 0; i < 90 && S.stage !== 'fight'; i++) b.step(1 / 60);
+  log('stage', S.stage);
+  const toeL = g('Character1_LeftToeBase'), toeR = g('Character1_RightToeBase'), fL = g('Character1_LeftFoot'), fR = g('Character1_RightFoot');
+  const seg = async (label, secs, place) => {
+    const k = u.sk, acts = {}, res0 = JSON.stringify(k.res || {}); let close = 0, idleClose = 0, dsum = 0, n = 0, sk = 0, skN = 0, skMax = 0, hpY0 = b.state().hp, hits = 0;
+    const byClip = {}; let prev = null, last = null; const hp0 = u.st.hp;
+    for (let f = 0; f < secs * 60 && u.st.alive; f++) {
+      place(f);
+      b.lookAt(P.x, cam.y - 0.2, P.z);
+      const cur0 = u.cur, t0 = cur0 && cur0.time;
+      b.step(1 / 60);
+      if (w.__skW && f === 200) log('   clip time per step', cur0 && cur0.getClip().name, ((cur0.time - t0) * 60).toFixed(3), 'x timeScale', cur0.timeScale.toFixed(2));
+      const A = k.act; if (A && A !== last) { const nm = A.name + (A.seq ? 'x' + A.seq.length : ''); acts[nm] = (acts[nm] || 0) + 1; } last = A;
+      const d = Math.hypot(P.x - cam.x, P.z - cam.z); dsum += d; n++;
+      if (d < 3) { close++; const sp = Math.hypot(k.vx || 0, k.vz || 0); if (!A && sp < 0.3 && !(u.st.stun > 0)) idleClose++; }
+      if (b.state().hp < hpY0) hits++; b.heal(); hpY0 = b.state().hp;
+      // planted foot: the lower toe, while it is within 4 cm of the floor
+      u.g.updateMatrixWorld(true);
+      const a = wp(toeL || fL), c = wp(toeR || fR), fy = b.skrimFloorW ? b.skrimFloorW(P.x, P.z) : P.y;
+      const lo = a.y < c.y ? a : c, which = a.y < c.y ? 'L' : 'R';
+      const th = ({ walk: 0.067, walkB: 0.042, runB: 0.051 }[u.cur ? u.cur.getClip().name : ''] || 0.03) + 0.03;     // (3 cm over the clip's own lowest toe, as the poses' "gait scale")
+      if (prev && prev.w === which && lo.y - fy < th && prev.y < th) { const v = Math.hypot(lo.x - prev.p.x, lo.z - prev.p.z) * 60; if (v < 6) { sk += v; skN++; skMax = Math.max(skMax, v); let mw = 0; for (const x of u.mixer._actions) if (x.enabled) mw = Math.max(mw, x.getEffectiveWeight());
+        const cn = (u.cur ? u.cur.getClip().name : '?') + (mw > 0.97 ? '' : '~'); const B = byClip[cn] || (byClip[cn] = [0, 0]); B[0] += v; B[1]++; } }
+      if (w.__skW && u.cur && /^walk[LB]$/.test(u.cur.getClip().name) && u.cur.getEffectiveWeight() > 0.99 && (w.__skN = (w.__skN || 0) + 1) < 40) {
+        const R0 = w.__skR || P.clone(); log('    ' + u.cur.getClip().name, 't', u.cur.time.toFixed(3), 'root d', (Math.hypot(P.x - R0.x, P.z - R0.z) * 60).toFixed(2), 'yaw', u.g.rotation.y.toFixed(3), which, 'toe y', (lo.y - fy).toFixed(3), 'toe v', prev ? (Math.hypot(lo.x - prev.p.x, lo.z - prev.p.z) * 60).toFixed(2) : '-');
+      }
+      w.__skR = P.clone();
+      prev = { w: which, p: lo.clone(), y: lo.y - fy };
+      if (w.__skShots && w.__skShots(label, f, u, side)) { /* (a still taken) */ }
+      if (w.__skW && f % 90 === 45 && label === '7m standing') log('   weights', 'toes over floor', (a.y - fy).toFixed(2), (c.y - fy).toFixed(2), u.mixer._actions.filter((x) => x.isRunning()).map((x) => x.getClip().name + ':' + x.getEffectiveWeight().toFixed(2) + (x.isRunning() ? '' : '(stopped)') + (x.enabled ? '' : '(off)') + (x.paused ? '(paused)' : '')).join(' '));
+      if (f % 30 === 0) await sleep(1);
+    }
+    log(label, '| moves', JSON.stringify(acts), '| mean d', (dsum / n).toFixed(1), '| close frames', close, 'of them idle', idleClose, '| on you', hits, '| his hp', hp0, '->', u.st.hp,
+      '| planted skate mean', (sk / Math.max(1, skN)).toFixed(2), 'm/s max', skMax.toFixed(2), 'n', skN,
+      '| by clip', Object.entries(byClip).map(([c2, [s2, n2]]) => c2 + ' ' + (s2 / n2).toFixed(2) + '(' + n2 + ')').join(' '));
+    log('   outcomes', JSON.stringify(k.res || {}), 'was', res0);
+  };
+  const at = (dd) => { const dx = cam.x - P.x, dz = cam.z - P.z, l = Math.hypot(dx, dz) || 1; cam.x = P.x + dx / l * dd; cam.z = P.z + dz / l * dd; };
+  const took = {};
+  w.__skShots = (label, f, u2, sideF) => {
+    const A = u2.sk.act; let nm = null;
+    if (A && A.name === 'hook' && A.sw && !took.hk_wind && A.i === 0 && A.sw.t >= A.sw.rel * A.sw.dur * 0.6) nm = 'hk_wind';
+    else if (A && A.name === 'hook' && A.sw && took.hk_wind && !took.hk_hit && A.sw.t >= A.sw.rel * A.sw.dur) nm = 'hk_hit';
+    else if (A && A.name === 'dash' && !took.dash && A.t > 0.3) nm = 'dash';
+    else if (A && A.name === 'bolt' && !took.bolt && A.fired && A.t > A.rel[0] * A.dur + 0.15) nm = 'bolt';
+    if (!nm) return; took[nm] = 1;
+    const c0 = cam.clone(), f0 = b.camera.fov, q0 = b.camera.quaternion.clone();
+    sideF('f_' + nm, nm === 'bolt' ? 0.9 : 1.25, nm === 'bolt' ? 6.5 : 4.2, nm === 'bolt' ? 55 : 45);
+    cam.copy(c0); b.camera.fov = f0; b.camera.updateProjectionMatrix(); b.camera.quaternion.copy(q0); b.camera.updateMatrixWorld(true);
+  };
+  if (mode === 'all' || mode === 'fight') {
+    at(7); await seg('7m standing', 14, () => {});
+    at(1.5); await seg('1.5m standing', 10, () => {});
+    let cut = 0; await seg('pressing 1.5m, cutting', 12, (f) => { at(1.5); if (++cut % 50 === 0) b.hurtMutantTest(u, 1); });
+    at(1.5); let stuns = 0, was = false; await seg('1.5m, parrying everything', 10, () => { at(1.5); b.setGuardTest(true, 0); const s = u.st.stun > 0; if (s && !was) stuns++; was = s; });
+    b.setGuardTest(false); log('   staggers', stuns);
+    at(4); let back = 0; await seg('backing off', 8, () => { const dx = cam.x - P.x, dz = cam.z - P.z, l = Math.hypot(dx, dz) || 1; if (b.skrimInGutS ? b.skrimInGutS(cam.x + dx / l * 0.03, cam.z + dz / l * 0.03) : true) { cam.x += dx / l * 0.03; cam.z += dz / l * 0.03; } });
+  }
+}
+
+/* SKRIM'S DEAL (2026-10-30): the six heaps past him, the artifact in one, him getting up and coming for it, every branch
+ * of the talk, and the way out. `&m=` give (let him leave) | givekill | keep | hitleave | none (out with nothing) | restore.
+ * Run with PB_PORT=4223. The swings are real (`startDig` aimed at the heap, on fixed steps); the talk is clicked. */
+export async function skrimQ({ w, b, log, sleep, shot }) {
+  const mode = new URLSearchParams(window.location.search).get('m') || 'give';
+  const f = w.frameElement;
+  if (mode === 'restore2') return skrimQRestored({ w, b, log, sleep, shot, f });
+  b.settings.devMode = false;
+  try { if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem); if (b.equippedS && b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem); } catch (e) { log('katana', e.message); }
+  b.placeInWhale();
+  const S = b.SKRIM, Q = b.SKQ, cam = b.camera.position, V3 = cam.constructor;
+  for (let i = 0; i < 400 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed && S.u.clips.crouchIdle); i++) { b.frame(1); await sleep(50); }
+  const u = S.u; if (!u || !u.model) { log('no skrim'); return; }
+  for (let i = 0; i < 30; i++) b.frame(1);
+  w.requestAnimationFrame = () => 0;
+  const P = u.g.position, home = P.clone();
+  const st = () => `stage ${S.stage} art ${b.artState()} holding ${b.skqHolding()} world ${!!b.art.world} gave ${Q.gave} gone ${Q.gone} doomed ${Q.doomed} pick ${Q.pick} broke ${Q.broke.toString(2)}`;
+  const put = (x, z) => { cam.x = x; cam.z = z; const fy = b.skrimFloorW(x, z); b.groundY = fy; cam.y = fy + 1.62; b.camBaseY = cam.y; };
+  const steps = (n, fn) => { for (let i = 0; i < n; i++) { if (fn) fn(i); b.step(1 / 60); b.updateSkrimLife(1 / 60); } };
+  log('piles', Q.built, Q.piles.length, Q.piles.map((p) => `#${p.i} ${(p.s - (b.whaleS().arena.skrimSpot.s)).toFixed(1)}m past, K${p.K.toFixed(2)}`).join(' | '));
+  const G = (p) => p.g.getWorldPosition(new V3());
+  // a real swing at a heap: stood 1.9 m short of it on the side you come from, aimed at its middle
+  const swingAt = (p, pow) => {
+    const g = G(p), dx = home.x - g.x, dz = home.z - g.z, L = Math.hypot(dx, dz) || 1;
+    const x = g.x + dx / L * 1.9, z = g.z + dz / L * 1.9; put(x, z);
+    b.lookAt(g.x, g.y + 0.3 * p.K, g.z); const h0 = p.hits, j0 = p.jig;
+    b.startDig(pow);
+    let hit = false; steps(110, () => { put(x, z); b.lookAt(g.x, g.y + 0.3 * p.K, g.z); if (p.jig > j0 + 0.5 || p.hits !== h0 || p.gone) hit = true; });
+    return { hit, hits: p.hits, gone: p.gone };
+  };
+  // the deal, through his talk (four jars for "Fine here.")
+  const D = w.document.getElementById('dialog'), txt = () => w.document.getElementById('dialog-text').textContent;
+  const step = async (ms = 700) => { for (let i = 0; i < 12; i++) b.frame(1); await sleep(ms); };
+  const pick = async (re) => {
+    for (let k = 0; k < 16 && !D.querySelectorAll('button.choice').length; k++) { if (k % 3 === 2) D.click(); await step(450); }
+    const bs = [...D.querySelectorAll('button.choice')]; log('  he:', JSON.stringify(txt()), '| you:', bs.map((x) => x.textContent).join(' / '));
+    const B = bs.find((x) => re.test(x.textContent)); if (B) B.click(); else log('  NO CHOICE', re); return !!B;
+  };
+  const closed = async () => { for (let k = 0; k < 14 && b.state().dialogOpen; k++) { if (k % 3 === 2) D.click(); await step(450); } log('  last:', JSON.stringify(txt()), 'dialog', b.state().dialogOpen, '|', st()); };
+  // BEFORE THE DEAL: a heap only squelches
+  { const p = Q.piles[0], r = swingAt(p, 0); log('before the deal, a light swing at #0:', JSON.stringify(r), 'pick', Q.pick); }
+  if (mode === 'none' && w.location.search.includes('nodeal')) { /* (never asked) */ }
+  else {
+    b.gainJar(4);
+    put(P.x + Math.sin(u.g.rotation.y + 0.4) * 2.0, P.z + Math.cos(u.g.rotation.y + 0.4) * 2.0); b.lookAt(P.x, P.y + 0.7, P.z);
+    b.skrimTalk();
+    await pick(/What are you/); await pick(/Must be/); await pick(/Why/); await pick(/Fine here/); await pick(/An artifact/); await pick(/Whoa/);
+    await pick(/now that you explained/); await pick(/help look/); await pick(/Of course/); await closed();
+    steps(2);
+    log('agreed:', st());
+  }
+  if (mode === 'none') {
+    put(home.x, home.z + 30); steps(2);
+    b.whaleClimbOut(); steps(3);
+    log('out with nothing: farewell', !!b.wfState(), 'whale cut', JSON.stringify(b.whaleState()), '|', st());
+    return;
+  }
+  // SEARCH: the heaps in turn, mixing light and heavy, until it is out; one heap all light, the next two heavies
+  let plan = [0, 0, 0, 0], n = 0;
+  for (const p of Q.piles) {
+    if (b.art.world || b.artState() !== 0) break;
+    plan = n % 2 ? [1, 1] : [0, 0, 0, 0]; n++;
+    const res = plan.map((pw) => swingAt(p, pw));
+    log(`#${p.i} ${plan.map((x) => (x ? 'H' : 'L')).join('')}:`, res.map((r) => `${r.hit ? 'hit' : 'MISS'} ${r.hits}${r.gone ? ' gone' : ''}`).join(', '), '| chunks thrown', Q.pool.length, 'resting', Q.pool.filter((c) => c.rest).length);
+  }
+  log('found:', st(), 'at', JSON.stringify(Q.artAt));
+  steps(60);
+  const W = b.art.world; if (!W) { log('NO ARTIFACT OUT'); return; }
+  const wp = W.getWorldPosition(new V3()); log('  lying at floor+', (wp.y - b.skrimFloorW(wp.x, wp.z)).toFixed(3), 'fall done', !W.userData.fall, 'shine', !!(b.shinies ? b.shinies.find((s) => s.root === W) : 'n/a'));
+  put(wp.x + 1.2, wp.z + 1.2); b.lookAt(wp.x, wp.y, wp.z); steps(2); shot('q_artifact_lying', 560, 1.3);
+  if (mode === 'restore') {
+    b.saveCheckpoint(); const d = JSON.parse(w.localStorage.getItem(b.SAVE_KEY)); log('saved skrimQ', JSON.stringify(d.flags.skrimQ), 'skrim', d.flags.skrim, 'whaleArt', d.flags.whaleArt, 'room', d.room);
+    sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1');
+    f.contentWindow.location.reload(); await sleep(1500);
+    return skrimQRestored({ w: f.contentWindow, b: null, log, sleep, shot, f });
+  }
+  const it = b.interactables.find((x) => x.root === W); if (it) it.onActivate(); log('taken:', st(), 'in pack', b.inventory.includes(b.whaleArtItem));
+  // BACK UP ON HIM: he gets up, comes over, and says it
+  let t0 = 0; const far = { x: home.x - (wp.x - home.x) * 0.0, z: home.z };
+  put(wp.x, wp.z); steps(1);
+  const walk = []; let pts = 0;
+  for (let i = 0; i < 60 * 25 && !b.state().dialogOpen; i++) {
+    // you walk back toward the way out past him, slowly, and stop 3 m beyond his heap
+    const tz = home.z + 3, dz = tz - cam.z; if (t0) b.lookAt(P.x, P.y + 1.4, P.z); else if (Math.abs(dz) > 0.02) put(cam.x + (home.x + 1.5 - cam.x) * 0.01, cam.z + Math.sign(dz) * Math.min(Math.abs(dz), 1.4 / 60));
+    b.step(1 / 60); b.updateSkrimLife(1 / 60);
+    if (S.stage !== 'deal' && !t0) { t0 = i; log('he gets up at', (i / 60).toFixed(1) + 's, you', Math.hypot(cam.x - P.x, cam.z - P.z).toFixed(1), 'm from him'); }
+    if (t0 && (i - t0) % 30 === 0) walk.push(`${S.stage}/${u.sk.mp || ''}/${u.sk.gait || ''} d${Math.hypot(cam.x - P.x, cam.z - P.z).toFixed(1)} moved${Math.hypot(P.x - home.x, P.z - home.z).toFixed(1)} lock${u.sk.lock || 0}`);
+    if (t0 && i - t0 === 150 && !pts++) { b.renderer.render(b.scene, b.camera); shot('q_coming', 560, 1.3); }
+    if (t0 && (i - t0 === 130 || i - t0 === 146)) { const c0 = cam.clone(), q0 = b.camera.quaternion.clone(), yy = u.g.rotation.y; cam.set(P.x + Math.cos(yy) * 2.8, P.y + 1.2, P.z - Math.sin(yy) * 2.8); b.camera.lookAt(P.x, P.y + 0.95, P.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('q_walkside' + (i - t0), 420, 1.3); cam.copy(c0); b.camera.quaternion.copy(q0); b.camera.updateMatrixWorld(true); }
+    if (i % 120 === 0) await sleep(1);
+  }
+  log('  his walk:', walk.join(' | '));
+  log('talk open', b.state().dialogOpen, '|', st(), 'd', Math.hypot(cam.x - P.x, cam.z - P.z).toFixed(2));
+  if (!b.state().dialogOpen) return;
+  await sleep(1100); log('  he opens:', JSON.stringify(txt())); await step(300); shot('q_talk', 560, 1.3);
+  if (mode === 'keep') {
+    await pick(/keep this/); await closed();
+    steps(30); log('kept: fight?', S.stage, 'awake', u.st.awake);
+  } else {
+    await pick(/Give him/);
+    log('  given:', st(), 'in his hand', !!Q.held, 'pack has it', b.inventory.includes(b.whaleArtItem));
+    await pick(/Wait you can/);
+    if (mode === 'givekill') { await pick(/Kill him/); await closed(); steps(30); log('*Kill him*: ', st(), 'awake', u.st.awake); }
+    else { await pick(/let him leave/); await closed(); log('*let him leave*:', st()); }
+  }
+  if (S.stage === 'leave') {
+    const tr = []; let hit = false;
+    for (let i = 0; i < 60 * 70 && S.stage === 'leave'; i++) {
+      b.step(1 / 60); b.updateSkrimLife(1 / 60);
+      if (i % 240 === 0) tr.push(`s${(b.WB_Z ? 0 : 0) + (15000 - P.z).toFixed(1)} gait ${u.sk.gait} lock${u.sk.lock || 0}`);
+      if (mode === 'hitleave' && i === 300) { b.hurtMutantTest(u, 2, 0.2); hit = true; log('  hit him on his way out:', st()); }
+      if (i % 120 === 0) await sleep(1);
+    }
+    log('  his way out:', tr.join(' | '));
+    log('after:', st(), 'visible', u.g.visible, 'awake', u.st.awake);
+    if (mode === 'giverestore') {
+      b.saveCheckpoint(); const d = JSON.parse(w.localStorage.getItem(b.SAVE_KEY)); log('saved skrimQ', JSON.stringify(d.flags.skrimQ), 'whaleArt', d.flags.whaleArt, 'pack has it', (d.pack || []).includes('Artifact of the Whale'));
+      sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1');
+      f.contentWindow.location.reload(); await sleep(1500);
+      await skrimQRestored({ w: f.contentWindow, b: null, log, sleep, shot, f });
+      const B = f.contentWindow.__bw; log('  him: visible', B.SKRIM.u.g.visible, 'doomed', B.SKQ.doomed, 'bellyClear', B.wbBellyClear());
+      return;
+    }
+    if (mode === 'give') {
+      const sv = b.skqSave(); log('save says', JSON.stringify(sv));
+      const d = JSON.parse(w.localStorage.getItem(b.SAVE_KEY) || 'null'); log('stored checkpoint patched:', d && JSON.stringify(d.flags && d.flags.skrimQ), 'pack has it', d && (d.pack || []).includes('Artifact of the Whale'));
+      put(home.x, home.z + 40); steps(2); b.whaleClimbOut(); steps(3);
+      log('out after he left: farewell', !!b.wfState(), 'whale cut', b.whaleState().busy, 'bellyClear', b.wbBellyClear());
+      return;
+    }
+  }
+  if (S.stage === 'fight' || S.stage === 'rise') {
+    const nanC = () => b.SKC.list.filter((q) => q.p && !Number.isFinite(q.p.x)).map((q) => q.kind + '/' + q.st).join(',');
+    for (let i = 0; i < 90; i++) { try { steps(1); } catch (e) { log('  STEP THREW', i, e.message, 'his pos', P.toArray().map((v) => v.toFixed(2)).join(','), 'act', u.sk.act && u.sk.act.name, 'nan chains', nanC()); break; } const nc = nanC(); if (nc) { log('  NaN chain at', i, nc, 'act', u.sk.act && u.sk.act.name, 'pos', P.toArray().map((v) => v.toFixed(2)).join(','), 'd', Math.hypot(cam.x - P.x, cam.z - P.z).toFixed(2)); break; } }
+    log('  chains before the kill', b.SKC.list.map((q) => q.kind + '/' + q.st).join(','), 'act', u.sk.act && u.sk.act.name);
+    // (a chain out when he dies goes NaN in the SKC code and throws from `update` every frame, 2026-10-30 — not this
+    // probe's to fix: `&chainbug` leaves it in, otherwise the chains are cleared first so the drop can be measured)
+    if (!w.location.search.includes('chainbug') && !window.location.search.includes('chainbug')) b.SKC.list.length = 0;
+    b.hurtMutantTest(u, 999, 1); log('killed him:', st(), 'alive', u.st.alive);
+    for (let i = 0; i < 120; i++) { const hR = u.model.getObjectByName('Character1_RightHand'), hp = hR.getWorldPosition(new V3()); try { steps(1); } catch (e) { log('  STEP THREW at', i, e.message, 'alive', u.st.alive, 'rag', !!u.rag, 'hand', hp.toArray().map((v) => v.toFixed(2)).join(','), 'chains', b.SKC.list.map((q) => q.kind + '/' + q.st + (q.p ? (Number.isFinite(q.p.x) ? '' : ' NaN') : '')).join(',')); break; } }
+    const W2 = b.art.world;
+    log('  after his death:', st(), W2 ? 'lying at ' + W2.position.toArray().map((v) => v.toFixed(1)).join(',') : '(nothing lying)');
+    if (W2) { const it2 = b.interactables.find((x) => x.root === W2); steps(30); if (it2) it2.onActivate(); log('  taken off him:', st()); }
+    put(home.x, home.z + 40); steps(2);
+    log('bellyClear', b.wbBellyClear(), 'wb', !!b.wbObj());
+    b.whaleClimbOut(); steps(4);
+    const C = b.wfState(); log('out with it: farewell', !!C, 'artP (a beach artifact)', C ? JSON.stringify(C.artP) : '-');
+    for (let i = 0; i < 260 && b.wfState() && !b.wfState().artP; i++) b.step(1 / 60);
+    const C2 = b.wfState(); log('  after the cut onto the sand (t', C2 && C2.t.toFixed(2), '): artP', C2 && JSON.stringify(C2.artP), 'inWhale', b.state().inWhale, 'still yours', b.skqHolding());
+  }
+}
+async function skrimQRestored({ w, b, log, sleep, shot, f }) {
+  let w2 = null; for (let i = 0; i < 300; i++) { await sleep(100); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.state) break; } catch (e) {} }
+  const B = w2.__bw; const btn = w2.document.querySelector('.dc-restart'); if (btn) btn.click();
+  for (let i = 0; i < 400 && (B.frozen() || !B.state().introDone || !B.state().inWhale); i++) { await sleep(100); }
+  await sleep(1500);
+  for (let i = 0; i < 60; i++) B.frame(1);
+  const Q = B.SKQ; log('restored: inWhale', B.state().inWhale, 'built', Q.built, 'broke', Q.broke.toString(2), 'gone piles', Q.piles.filter((p) => p.gone).map((p) => p.i).join(','), 'hidden', Q.piles.filter((p) => !p.g.visible).map((p) => p.i).join(','),
+    'pick', Q.pick, 'art', B.artState(), 'holding', B.skqHolding(), 'stage', B.SKRIM.stage, 'lying', !!B.art.world, B.art.world ? B.art.world.userData.belly : '', 'artAt', JSON.stringify(Q.artAt));
+}
+// the 40 s fight of `skrimIn` with every step guarded: a throw names the chains' state when it fails (a NaN chain hauled in
+// threw in the drag's pan, 2026-10-30), and after it how many sound sources the chains made and how many spark bursts
+export async function skrimFxFight(ctx) {
+  const st = ctx.b.step, n0 = ctx.b.SKA.n, t0 = performance.now();
+  const was = new Map(), told = new Set();
+  const nanWatch = () => { for (const C of ctx.b.SKC.list) { const bad = !(C.pts[0].x === C.pts[0].x) || (C.p && !(C.p.x === C.p.x)); if (bad && !told.has(C)) { told.add(C); const w = was.get(C) || {}; ctx.log('NaN CHAIN', C.kind, 'now', C.st, 'last frame', w.st, 't', C.t.toFixed(2), 'Ls', w.Ls, '->', C.Ls, 'p', w.p, 'v', C.v && C.v.toArray().map((q) => q.toFixed(1)).join(','), 'pull', C.pull, 'own', C.own, 'landed', C.landed); } was.set(C, { st: C.st, Ls: C.Ls, p: C.p && C.p.toArray().map((q) => q.toFixed(1)).join(',') }); } };
+  ctx.b.step = (dt) => { try { st(dt); nanWatch(); } catch (e) { const c = ctx.b.camera.position; ctx.log('FAILED IN A STEP', e.message, 'cam', c.x.toFixed(1), c.z.toFixed(1), 'chains', ctx.b.SKC.list.map((C) => C.kind + ':' + C.st + ' p' + (C.p ? C.p.x : '-') + ' Ls ' + C.Ls).join(' | ')); throw e; } };
+  await skrimIn(ctx);
+  ctx.log('chain sound sources', ctx.b.SKA.n - n0, 'in', ((performance.now() - t0) / 1000).toFixed(0), 's of probe (40 s of fight) | spark bursts', ctx.b.SKSP.bursts, '| chains left', ctx.b.SKC.list.length, 'NaN chains', ctx.b.SKC.list.filter((C) => !(C.pts[0].x === C.pts[0].x)).map((C) => C.kind + ':' + C.st + ' t' + C.t.toFixed(1) + ' Ls ' + C.Ls + ' p ' + (C.p ? C.p.x : '-') + ' tip ' + (C.tip ? C.tip.x : '-') + ' base ' + (C.base ? C.base.x : '-')).join(' | ') || 0);
+}
+
+// THE CRYING HEAD AS IT COMES OUT OF ITS FILE (2026-10-30): its size and which way it faces in the bind pose, what its
+// two clips do to its height, and how fast its leg tips go back under it while they are down (the MOVE clip's ground speed)
+export async function cryMeasure({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 600 && !b.CRY.gltf; i++) { b.frame(1); await sleep(50); }
+  const g = b.CRY.gltf; if (!g) { log('no gltf'); return; }
+  const T = b.THREE, sc = g.scene; sc.updateMatrixWorld(true);
+  let sk = null; sc.traverse((o) => { if (o.isSkinnedMesh) sk = o; });
+  const bb = new T.Box3(); sk.computeBoundingBox(); bb.copy(sk.boundingBox).applyMatrix4(sk.matrixWorld);
+  const f = (v) => v.toArray().map((q) => q.toFixed(3)).join(',');
+  log('bind bbox', f(bb.min), '..', f(bb.max), 'size', f(bb.getSize(new T.Vector3())), 'clips', g.animations.map((a) => a.name + ' ' + a.duration.toFixed(2)).join(' | '));
+  const W = (n) => { const o = sc.getObjectByName(n); return o ? o.getWorldPosition(new T.Vector3()) : null; };
+  for (const n of ['HeadBase', 'Jaw', 'Jaw_end', 'Eyelid_left', 'Eyelid_right', 'Eye_ropes', 'H_left', 'H_left_004_end', 'H_right_004_end', 'H_left_009_end', 'H_left_014_end', 'H_left_019_end']) { const p = W(n); log('  ', n, p ? f(p) : '-'); }
+  const names = []; sc.traverse((o) => { if (o.isBone) names.push(o.name); }); log('bones', names.join(' '));
+  const tips = []; sc.traverse((o) => { if (o.isBone && /^H_(left|right)_\d+_end$/.test(o.name)) tips.push(o); });
+  const mx = new T.AnimationMixer(sc);
+  for (const clip of g.animations) {
+    mx.stopAllAction(); const a = mx.clipAction(clip); a.reset().play(); mx.update(0);
+    const N = 48, dt = clip.duration / N, rows = []; let prev = null; const sp = []; let hbMin = 1e9, hbMax = -1e9, low = 1e9, high = -1e9;
+    for (let k = 0; k <= N; k++) {
+      mx.setTime(k * dt); sc.updateMatrixWorld(true);
+      const P = tips.map((t) => t.getWorldPosition(new T.Vector3())), hb = W('HeadBase');
+      hbMin = Math.min(hbMin, hb.y); hbMax = Math.max(hbMax, hb.y);
+      const ly = Math.min(...P.map((p) => p.y)); low = Math.min(low, ly); high = Math.max(high, ...P.map((p) => p.y));
+      if (prev) P.forEach((p, i) => { if (p.y < ly + 0.02 * (bb.max.y - bb.min.y) + 1e-6) sp.push([(p.x - prev[i].x) / dt, (p.z - prev[i].z) / dt, (p.y - prev[i].y) / dt]); });
+      if (k % 8 === 0) rows.push(`t${(k * dt).toFixed(2)} hb ${f(hb)} lowTip ${ly.toFixed(3)}`);
+      prev = P;
+    }
+    const m = (j) => sp.reduce((s, q) => s + q[j], 0) / Math.max(1, sp.length);
+    log(clip.name, 'HeadBase y', hbMin.toFixed(3), '..', hbMax.toFixed(3), 'tips y', low.toFixed(3), '..', high.toFixed(3), '| contact tip vel mean x', m(0).toFixed(3), 'z', m(2).toFixed(3), 'y', m(1).toFixed(3), 'n', sp.length);
+    log('   ', rows.join(' | '));
+  }
+}
+// the head from four sides in the gut, each clip (a red ball off its +X, a blue one off its +Z)
+export async function cryLook({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 600 && !b.CRY.gltf; i++) { b.frame(1); await sleep(50); }
+  const g = b.CRY.gltf, T = b.THREE, sc = g.scene, K = +(new URLSearchParams(window.location.search).get('k') || 0.0016);
+  b.placeInWhale(); for (let i = 0; i < 20; i++) b.frame(1);
+  w.requestAnimationFrame = () => 0;
+  const cam = b.camera.position, fx = cam.x, fz = cam.z - 2.2, fy = b.skrimFloorW(fx, fz);
+  sc.scale.setScalar(K); sc.position.set(fx, fy + 184 * K, fz); b.scene.add(sc);
+  const lamp = new T.PointLight(0xffffff, 6, 8, 1); lamp.position.set(fx + 0.6, fy + 1.6, fz + 1.2); b.scene.add(lamp);
+  const ball = (c, x, z) => { const m = new T.Mesh(new T.SphereGeometry(0.04), new T.MeshBasicMaterial({ color: c })); m.position.set(fx + x, fy + 0.3, fz + z); b.scene.add(m); };
+  ball(0xff0000, 0.7, 0); ball(0x0000ff, 0, 0.7);
+  if (window.location.search.includes('basic')) sc.traverse((o) => { if (o.isMesh) o.material = new T.MeshBasicMaterial({ map: o.material.map }); });
+  const mx = new T.AnimationMixer(sc);
+  for (const [clip, t] of [['IDLE', 0], ['MOVE', 0.2], ['MOVE', 0.4]]) {
+    mx.stopAllAction(); mx.clipAction(g.animations.find((a) => a.name === clip)).reset().play(); mx.setTime(t);
+    for (const [nm, x, y, z] of [['f', 0, 0.35, 0.8], ['r', 0.8, 0.35, 0], ['top', 0.01, 1.0, 0.0], ['b', 0, 0.35, -0.8]]) {
+      cam.set(fx + x, fy + y, fz + z); b.camera.lookAt(fx, fy + 0.2, fz); b.camera.updateMatrixWorld(true);
+      shot(`look_${clip}${t}_${nm}`, 420, 1.6);
+    }
+  }
+}
+// each leg tip through MOVE: its height, and its velocity over the ground while it is down (within 6 units of the floor)
+export async function cryGait({ w, b, log, sleep }) {
+  for (let i = 0; i < 600 && !b.CRY.gltf; i++) { b.frame(1); await sleep(50); }
+  const g = b.CRY.gltf, T = b.THREE, sc = g.scene;
+  const tips = []; sc.traverse((o) => { if (o.isBone && /^H_(left|right)_\d+_end$/.test(o.name)) tips.push(o); });
+  const mx = new T.AnimationMixer(sc), clip = g.animations.find((a) => a.name === 'MOVE'); mx.clipAction(clip).play();
+  const N = 76, dt = clip.duration / N, ys = tips.map(() => []), ps = tips.map(() => []);
+  for (let k = 0; k <= N; k++) { mx.setTime(k * dt); sc.updateMatrixWorld(true); tips.forEach((t, i) => { const p = t.getWorldPosition(new T.Vector3()); ys[i].push(p.y); ps[i].push(p); }); }
+  const floor = Math.min(...ys.flat()); log('floor (lowest tip)', floor.toFixed(1));
+  let sx = 0, sz = 0, n = 0;
+  tips.forEach((t, i) => {
+    const v = []; let st = 0;
+    for (let k = 1; k <= N; k++) { const y0 = ps[i][k - 1].y, y1 = ps[i][k].y; const lo = Math.min(...ys[i]); if (y0 < lo + 12 && y1 < lo + 12) { v.push([(ps[i][k].x - ps[i][k - 1].x) / dt, (ps[i][k].z - ps[i][k - 1].z) / dt]); st++; } }
+    const mx_ = v.reduce((s, q) => s + q[0], 0) / Math.max(1, v.length), mz = v.reduce((s, q) => s + q[1], 0) / Math.max(1, v.length);
+    if (v.length) { sx += mx_ * v.length; sz += mz * v.length; n += v.length; }
+    log(t.name, 'y', Math.min(...ys[i]).toFixed(0), '..', Math.max(...ys[i]).toFixed(0), 'stance frames', st, '/', N, 'vel x', mx_.toFixed(1), 'z', mz.toFixed(1), 'start', ps[i][0].x.toFixed(0), ps[i][0].z.toFixed(0));
+  });
+  log('ALL stance vel x', (sx / n).toFixed(1), 'z', (sz / n).toFixed(1), 'units/s over', n, 'frames');
+}
+// SKRIM'S FOUR JARS AND THE ONE-HIT HEAPS (2026-10-30): a small heap struck once; then him killed — his jars thrown,
+// where they come to rest over the gut's floor; taken one; the save's list. (own profile)
+export async function skrimJars({ w, b, log, sleep, shot }) {
+  b.settings.devMode = false;
+  b.placeInWhale();
+  const S = b.SKRIM;
+  for (let i = 0; i < 400 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed); i++) { b.frame(1); await sleep(40); }
+  const u = S.u; for (let i = 0; i < 30; i++) b.frame(1);
+  const Q = b.SKQ, small = Q.piles.find((p) => p.K < 0.65 && !p.gone), big = Q.piles.find((p) => p.K >= 0.65 && !p.gone);
+  log('piles', Q.piles.length, 'small', Q.piles.filter((p) => p.K < 0.65).length);
+  if (small) log('small heap K', small.K.toFixed(2), 'one light blow:', b.skqPileHit(small, 1), 'gone', small.gone);
+  if (big) log('big heap K', big.K.toFixed(2), 'one light blow:', b.skqPileHit(big, 1), 'hits', big.hits);
+  b.skrimFight(); for (let i = 0; i < 60; i++) b.step(1 / 60);
+  b.hurtMutantTest(u, 999);
+  for (let i = 0; i < 60 * 4; i++) b.step(1 / 60);
+  const J = S.jars || [];
+  log('jars out', J.length, 'done', !!S.jarsDone, J.map((j) => 'over floor ' + (j.jar.position.y - b.skrimFloorW(j.x, j.z)).toFixed(3)).join(' | '));
+  if (J[1]) { const P = J[1].jar.position, cam = b.camera.position; w.requestAnimationFrame = () => 0; cam.set(P.x + 1.1, P.y + 0.35, P.z + 1.1); b.camera.fov = 40; b.camera.updateProjectionMatrix(); b.camera.lookAt(P.x, P.y, P.z); b.camera.updateMatrixWorld(true); b.lamps(); b.renderer.render(b.scene, b.camera); shot('jar_rest', 420, 1.3); log('jar box', (() => { const B = new (b.THREE.Box3)().setFromObject(J[1].jar.children.find((o) => o.isMesh && o.name !== 'hitProxy') || J[1].jar); return 'min y over floor ' + (B.min.y - b.skrimFloorW(P.x, P.z)).toFixed(3); })()); }
+  if (J[0]) { J[0].jar.parent.remove(J[0].jar); for (let i = 0; i < 5; i++) b.step(1 / 60); }
+  log('after one taken: left', (S.jars || []).length);
+}
+// SKRIM'S HOOK IN THE BEACHED WHALE'S SIDE (2026-10-30): up the beach to it; his model in; the chain settled; stills from
+// the side and below, and the chain's shape: where it hangs, how much lies on the sand, how far it swings. (own profile)
+export async function wbHook({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(250); }
+  let W = null; for (let i = 0; i < 120 && !(W = b.wbHookS()); i++) { b.frame(2); await sleep(100); }
+  if (!W) { log('no whale hook'); return; }
+  const cam = b.camera.position, A = W.H.getWorldPosition(cam.clone());
+  cam.set(A.x + 6, 1.7, A.z + 2); b.camBaseY = 1.7;
+  for (let i = 0; i < 400 && !W.built; i++) { cam.set(A.x + 6, 1.7, A.z + 2); b.frame(2); await sleep(60); }
+  log('hook built', W.built, 'at', A.toArray().map((v) => v.toFixed(1)).join(','));
+  const sw = []; for (let i = 0; i < 60 * 6; i++) { cam.set(A.x + 6, 1.7, A.z + 2); b.frame(1); if (W.sim && i % 30 === 0) sw.push(W.sim.P[Math.floor(W.sim.N * 0.6)].clone()); if (i % 60 === 0) await sleep(5); }
+  const S = W.sim; if (!S) { log('no chain sim'); return; }
+  log('flank reach by height (m out from the hook point):', Array.from({ length: 12 }, (_, k) => (k * 0.5).toFixed(1) + ':' + S.out[k * 5].toFixed(2)).join(' '));
+  log('points (y, out):', S.P.filter((_, i) => i % 4 === 0).map((p) => p.y.toFixed(2) + '/' + ((p.x - S.hpW.x) * S.Nh.x + (p.z - S.hpW.z) * S.Nh.z).toFixed(2)).join(' '), '| hook point y', S.hpW.y.toFixed(2), 'seg', S.seg.toFixed(3));
+  const onSand = S.P.filter((p) => p.y < 0.06).length, low = Math.min(...S.P.map((p) => p.y)), spread = sw.length ? Math.max(...sw.map((p) => p.distanceTo(sw[0]))) : 0;
+  log('chain: links drawn', S.L.count, '| points on the sand', onSand, 'of', S.N, '| lowest', low.toFixed(3), '| a point 60% down moved up to', spread.toFixed(2), 'm in 6 s');
+  w.requestAnimationFrame = () => 0;
+  const still = (nm, ox, oy, oz, ty = 0) => { cam.set(A.x + ox, oy, A.z + oz); b.camera.fov = 50; b.camera.updateProjectionMatrix(); b.camera.lookAt(A.x, A.y * 0.5 + ty, A.z); b.camera.updateMatrixWorld(true); b.lamps(); b.renderer.render(b.scene, b.camera); shot(nm, 480, 1.3); };
+  const Nh = S.Nh, T = S.T;
+  still('hook_side', Nh.x * 5 + T.x * 2, 1.7, Nh.z * 5 + T.z * 2);
+  still('hook_close', Nh.x * 2.2 + T.x * 0.8, A.y + 0.2, Nh.z * 2.2 + T.z * 0.8, A.y * 0.5);
+  still('hook_low', Nh.x * 3.5 - T.x * 1.5, 0.6, Nh.z * 3.5 - T.z * 1.5, -A.y * 0.2);
+  const q0 = W.H.quaternion.clone(); for (const r of [0, 1.57, 3.14, 4.71]) { W.H.quaternion.copy(q0); W.H.rotateZ(r - Math.PI); W.H.updateMatrixWorld(true); still('hook_rot' + r, Nh.x * 2 + T.x * 0.5, A.y + 0.1, Nh.z * 2 + T.z * 0.5, A.y * 0.5); } W.H.quaternion.copy(q0);
+}
+// THE CRYING HEADS (2026-10-30): walk past the farthest heap; the wake, every leap (launch, apex, where it came down
+// against where you were), the bites, a swing that takes one out of the air and the body's flight, a guard, and stills.
+// `&m=` fight (default) | restore
+export async function cryHeads({ w, b, log, sleep, shot }) {
+  const mode = new URLSearchParams(window.location.search).get('m') || 'fight';
+  const f = w.frameElement;
+  b.settings.devMode = false;
+  try { if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem); if (b.equippedS && b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem); } catch (e) { log('katana', e.message); }
+  for (let i = 0; i < 600 && !b.CRY.gltf; i++) { b.frame(1); await sleep(50); }
+  b.placeInWhale();
+  const C = b.CRY, cam = b.camera.position, V3 = cam.constructor, WX = 15000, WY = 500, WZ = 15000;
+  for (let i = 0; i < 400 && !C.built; i++) { b.frame(1); await sleep(50); }
+  for (let i = 0; i < 20; i++) b.frame(1);
+  w.requestAnimationFrame = () => 0;
+  const A = b.whaleS().arena;
+  log('built', C.built, 'skrim s', A.skrimSpot.s.toFixed(1), 'piles s', b.SKQ.piles.map((p) => p.s.toFixed(1)).join(','), 'far', C.farS.toFixed(1), 'wakeS', C.wakeS.toFixed(1), 'WH_S1 154');
+  log('nest', C.list.map((h) => `#${h.i} x${h.p.x.toFixed(1)} s${(-h.p.z).toFixed(1)} y${h.p.y.toFixed(2)}`).join(' | '), 'jar', C.jar ? C.jar.position.toArray().map((q) => q.toFixed(2)).join(',') + ' local s ' + (WZ - C.jar.position.z).toFixed(1) : 'none');
+  const put = (x, z) => { cam.x = x; cam.z = z; const fy = b.skrimFloorW(x, z); b.groundY = fy; cam.y = fy + 1.62; b.camBaseY = cam.y; };
+  const fl = (v) => v.toArray().map((q) => q.toFixed(2)).join(',');
+  C.log = [];
+  let seen = 0; const flush = () => { while (seen < C.log.length) log('  EV', JSON.stringify(C.log[seen++])); };
+  // the jar from 25 m up the gut and from short of the wake line, looking at it: lit like a dropped thing
+  const cxW = (s) => WX + 4.4 * Math.sin(s * 0.021) + 1.3 * Math.sin(s * 0.057 + 1.3);
+  if (C.jar) { const J = C.jar.position, js = WZ - J.z, Wl = b.whWallAtS ? b.whWallAtS(js) : null; log('jar local x', (J.x - WX).toFixed(2), 's', js.toFixed(2), 'floor+', (J.y - b.skrimFloorW(J.x, J.z)).toFixed(3)); }
+  for (const [nm, back] of [['cry_jar_25m', 25], ['cry_jar_near', 8.5]]) { const J = C.jar.position, s = WZ - J.z - back; put(cxW(s), WZ - s); b.lookAt(J.x, J.y + 0.2, J.z); b.step(1 / 60); b.lookAt(J.x, J.y + 0.2, J.z); b.renderer.render(b.scene, b.camera); shot(nm, 480, 1.0); }
+  if (mode === 'restore') {
+    for (let i = 0; i < 3; i++) { const h = C.list[i]; h.was = 'probe'; }
+  }
+  // walk on toward the jar at a walk, looking down the gut, until the nest wakes
+  let s = C.wakeS - 2.5, woke = -1;
+  for (let i = 0; i < 600 && woke < 0; i++) { s += 1.4 / 60; put(cxW(s), WZ - s); b.look(0, -0.05); b.step(1 / 60); if (C.woke) woke = i; }
+  log('woke at s', s.toFixed(2), 'after', (woke / 60).toFixed(2), 's of walking', '| head0', C.list[0].mode, fl(C.list[0].p));
+  // THE SCARE: from your eye, as it comes
+  let shotScare = false;
+  for (let i = 0; i < 240; i++) {
+    b.step(1 / 60);
+    const h = C.list[0];
+    if (!shotScare && h.mode === 'leap' && h.t > h.T * 0.8) { shotScare = true; b.renderer.render(b.scene, b.camera); shot('cry_scare_eye', 480, 1.0); log('scare frame: head0 at', fl(h.p), 'dist to eye', Math.hypot(h.p.x - (cam.x - WX), h.p.y - (cam.y - WY), h.p.z - (cam.z - WZ)).toFixed(2)); }
+    if (h.mode === 'latch' && h.t > 0.2 && h.t < 0.22) { b.renderer.render(b.scene, b.camera); shot('cry_latched', 480, 1.0); }
+    flush(); if (i % 30 === 0) b.heal();
+    if (h.mode === 'crawl' && i > 60) break;
+  }
+  log('after the scare: hp', b.state().hp, C.list.map((h) => h.mode).join(','));
+  if (mode === 'restore') {
+    b.saveCheckpoint(); const d = JSON.parse(w.localStorage.getItem(b.SAVE_KEY)); log('saved cry', JSON.stringify(d.flags.cry));
+    // kill one, then a stick should put it into the stored save
+    const h = C.list[1]; h.mode = 'crawl'; h.cd = 9; h.p.set(cam.x - WX + 1, b.skrimFloorW(cam.x + 1, cam.z - 1) - WY + 0.39, cam.z - WZ - 1);
+    for (let i = 0; i < 40 && !(C.dead & 2); i++) { if (i === 0) { b.lookAt(h.p.x + WX, h.p.y + WY, h.p.z + WZ); b.startDig(0); } b.step(1 / 60); } flush();
+    // and the jar taken
+    const jars0 = b.state().jars, it = b.interactables.find((q) => q.root === C.jar); if (it) it.onActivate();
+    log('jar taken: jars', jars0, '->', b.state().jars, 'jar left', !!C.jar);
+    const d2 = JSON.parse(w.localStorage.getItem(b.SAVE_KEY)); log('stored after a kill and the jar', JSON.stringify(d2.flags.cry), 'dead bits', C.dead, 'took has the jar', (d2.took || []).filter((q) => q.startsWith('Take the jar@')).length);
+    b.saveCheckpoint();
+    sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); sessionStorage.setItem('beachwalk.died', '1');
+    f.contentWindow.location.reload(); await sleep(1500);
+    let w2 = null; for (let i = 0; i < 300; i++) { await sleep(100); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.state) break; } catch (e) {} }
+    const B = w2.__bw; const btn = w2.document.querySelector('.dc-restart'); if (btn) btn.click();
+    for (let i = 0; i < 400 && (B.frozen() || !B.state().introDone || !B.state().inWhale); i++) await sleep(100);
+    await sleep(1500); for (let i = 0; i < 60; i++) B.frame(1);
+    const C2 = B.CRY; log('restored: inWhale', B.state().inWhale, 'built', C2.built, 'woke', C2.woke, 'dead', C2.dead, 'modes', C2.list.map((h) => h.mode).join(','), 'jar', !!C2.jar, 'jarTaken', C2.jarTaken);
+    return;
+  }
+  // THE FIGHT: you stand and face the nearest; every leap logged; the third leap you swing at, mid-air; one you guard
+  let leaps = 0, swung = false, guarded = false, sideShot = false, deadShot = false, killed = null;
+  const near = () => { let best = null, bd = 1e9; for (const h of C.list) { if (h.mode === 'dead' || h.mode === 'still') continue; const d = Math.hypot(h.p.x - (cam.x - WX), h.p.z - (cam.z - WZ)); if (d < bd) { bd = d; best = h; } } return best; };
+  const home = [cam.x, cam.z];
+  for (let i = 0; i < 60 * 40; i++) {
+    put(home[0], home[1]);
+    const h = near(); if (!h && !killed) break;
+    const tgt = C.list.find((q) => q.mode === 'leap' || q.mode === 'rear') || h;
+    if (tgt) b.lookAt(tgt.p.x + WX, tgt.p.y + WY, tgt.p.z + WZ);
+    const n0 = C.log.length;
+    b.step(1 / 60); if (i % 20 === 0) b.heal();
+    flush();
+    for (let k = n0; k < C.log.length; k++) if (C.log[k].ev === 'leap' && !C.log[k].scare) leaps++;
+    const L = C.list.find((q) => q.mode === 'leap' && !q.scare);
+    if (L && !sideShot && L.t > L.T * 0.45 && leaps >= 1) {
+      sideShot = true; const c0 = cam.clone(), q0 = b.camera.quaternion.clone();
+      const vx = L.v.x, vz = L.v.z, vl = Math.hypot(vx, vz) || 1;
+      cam.set(L.p.x + WX - vz / vl * 2.2, L.p.y + WY + 0.2, L.p.z + WZ + vx / vl * 2.2); b.camera.lookAt(L.p.x + WX, L.p.y + WY, L.p.z + WZ); b.camera.updateMatrixWorld(true);
+      b.renderer.render(b.scene, b.camera); shot('cry_leap_side', 480, 1.3); cam.copy(c0); b.camera.quaternion.copy(q0); b.camera.updateMatrixWorld(true);
+      log('side still: leap of #' + L.i, 'at', fl(L.p), 'v', fl(L.v));
+    }
+    if (L && leaps === 2 && !guarded) { guarded = true; b.testGuard(true); log('guard up for #' + L.i); }
+    if (guarded && guarded !== 'down' && !C.list.some((q) => q.mode === 'leap' && !q.scare)) { b.testGuard(false); guarded = 'down'; }
+    if (L && leaps >= 3 && !swung) {
+      const d = Math.hypot(L.p.x - (cam.x - WX), L.p.z - (cam.z - WZ));
+      if (d < 3.6) { swung = true; b.lookAt(L.p.x + WX, L.p.y + WY, L.p.z + WZ); b.startDig(0); log('SWING (light) at #' + L.i, 'd', d.toFixed(2), 'in flight t', L.t.toFixed(2), '/', L.T.toFixed(2)); }
+    }
+    const K = C.list.find((q) => q.mode === 'dead');
+    if (K && !killed) { killed = K; log('killed #' + K.i, 'was', K.was); }
+    if (killed && killed.mode === 'dead' && i % 6 === 0) log('   body', fl(killed.p), '|v|', killed.v.length().toFixed(2), '|w|', killed.w.length().toFixed(1), 'ground', killed.ground);
+    if (killed && killed.mode === 'still' && !deadShot) {
+      deadShot = true; const c0 = cam.clone(), q0 = b.camera.quaternion.clone(), P = killed.p;
+      cam.set(P.x + WX + 0.9, P.y + WY + 0.7, P.z + WZ + 0.9); b.camera.lookAt(P.x + WX, P.y + WY, P.z + WZ); b.camera.updateMatrixWorld(true);
+      b.renderer.render(b.scene, b.camera); shot('cry_dead', 480, 1.3); cam.copy(c0); b.camera.quaternion.copy(q0); b.camera.updateMatrixWorld(true);
+      log('dead one settled at', fl(P), 'travelled', Math.hypot(P.x - killed.lastAt[0], P.z - killed.lastAt[2]).toFixed(2), 'm from where it was struck');
+    }
+    if (killed && !killed.lastAt) killed.lastAt = killed.p.toArray();
+    if (leaps >= 7 && deadShot) break;
+    if (i % 240 === 0) await sleep(1);
+  }
+  flush();
+  log('end: hp', b.state().hp, 'modes', C.list.map((h) => h.mode).join(','), 'dead bits', C.dead, 'leaps', leaps, 'save', JSON.stringify(b.crySave()));
+}
+// one built head in MOVE, unlit, from six sides round its body origin (which way its face is, in the game's own frame)
+export async function cryFace({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 600 && !b.CRY.gltf; i++) { b.frame(1); await sleep(50); }
+  b.placeInWhale(); const C = b.CRY;
+  for (let i = 0; i < 400 && !C.built; i++) { b.frame(1); await sleep(50); }
+  w.requestAnimationFrame = () => 0;
+  const T = b.THREE, h = C.list[0], cam = b.camera.position;
+  h.model.traverse((o) => { if (o.isMesh) o.material = new T.MeshBasicMaterial({ map: o.material.map, skinning: true }); });
+  h.idle.weight = 0; h.move.weight = 1; h.mixer.update(0.2); h.yaw = 0; h.pitch = 0; h.roll = 0;
+  h.body.position.copy(h.p); h.body.quaternion.set(0, 0, 0, 1); h.body.updateMatrixWorld(true);
+  const P = h.body.getWorldPosition(new T.Vector3());
+  h.model.updateMatrixWorld(true);
+  const hb = h.model.getObjectByName('HeadBase').getWorldPosition(new T.Vector3()), jw = h.model.getObjectByName('Jaw').getWorldPosition(new T.Vector3()), el = h.model.getObjectByName('Eyelid_left').getWorldPosition(new T.Vector3());
+  let sk = null; h.model.traverse((o) => { if (o.isSkinnedMesh) sk = o; }); sk.computeBoundingBox(); const bb = sk.boundingBox.clone().applyMatrix4(sk.matrixWorld);
+  const f = (v) => v.clone().sub(P).toArray().map((q) => q.toFixed(3)).join(',');
+  log('rel body origin: HeadBase', f(hb), 'Jaw', f(jw), 'Eyelid_left', f(el), 'bbox', f(bb.min), '..', f(bb.max));
+  for (const [nm, x, y, z] of [['pz', 0, 0.1, 0.6], ['nz', 0, 0.1, -0.6], ['px', 0.6, 0.1, 0], ['nx', -0.6, 0.1, 0], ['py', 0.01, 0.6, 0], ['ny', 0.01, -0.6, 0]]) {
+    cam.set(P.x + x, P.y + y, P.z + z); b.camera.lookAt(P); b.camera.updateMatrixWorld(true); shot('face_' + nm, 300, 1.0);
+  }
+  // the camera on +Z of it at 0.55 m, the body pitched (Euler YXZ, yaw 0): which pitch turns its face to you
+  for (const pt of [-0.6, -0.4, -0.2, 0.4]) {
+    h.body.quaternion.setFromEuler(new T.Euler(pt, 0, 0, 'YXZ')); h.body.updateMatrixWorld(true);
+    cam.set(P.x, P.y, P.z + 0.42); b.camera.lookAt(P); b.camera.updateMatrixWorld(true); shot('pitch_' + pt, 360, 1.0);
+  }
 }

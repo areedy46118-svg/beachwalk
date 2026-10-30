@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'crusader', 'paladin') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'crusader', 'paladin', 'skrim') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 # (the owner keeps the packs on the Desktop now; a set may say so)
@@ -580,7 +580,106 @@ if SET == 'paladin':
         CONTACT[_c] = 'RightHand'          # the sword is in his right fist (the left rides the grip)
 
 
+# ---- SKRIM, THE THING DIGGING IN THE WHALE'S BELLY (2026-10-29), carries the
+# owner's PRO MAGIC PACK whole (~/Downloads/Pro Magic Pack): every clip in the
+# folder. His rig (`assets/skrim.glb`, from `tools/skrim_pack.py`) is an Auto-Rig
+# Pro skeleton renamed to HumanIK under `Character1_`, so the delta lands one to
+# one. The blows are SPELLS: the frame that matters is the one the casting hand
+# is thrown hardest, which is the reptilian rake's rule again (fastest, not
+# furthest), read off whichever hand moves fastest.
+_M = 'Pro Magic Pack'
+SKRIM_CLIPS = [
+    ('standing idle',                    'idle',        'standing', _M),
+    ('standing idle 02',                 'idle2',       'a second way of standing', _M),
+    ('Standing Idle 03',                 'idle3',       'a third, long', _M),
+    ('Standing Idle 04',                 'idle4',       'a fourth', _M),
+    ('Standing Walk Forward',            'walk',        'the walk', _M),
+    ('Standing Walk Back',               'walkB',       'walking backwards', _M),
+    ('Standing Walk Left',               'walkL',       'sideways, left', _M),
+    ('Standing Walk Right',              'walkR',       'sideways, right', _M),
+    ('Standing Run Forward',             'run',         'the run', _M),
+    ('Standing Run Back',                'runB',        'running backwards', _M),
+    ('Standing Run Left',                'runL',        'running sideways, left', _M),
+    ('Standing Run Right',               'runR',        'running sideways, right', _M),
+    ('Standing Sprint Forward',          'sprint',      'flat out', _M),
+    ('Crouch Idle',                      'crouchIdle',  'down low', _M),
+    ('Crouch Walk Forward',              'crouchWalk',  'creeping forward', _M),
+    ('Crouch Walk Back',                 'crouchWalkB', 'creeping back', _M),
+    ('Crouch Walk Left',                 'crouchWalkL', 'creeping left', _M),
+    ('Crouch Walk Right',                'crouchWalkR', 'creeping right', _M),
+    ('Standing Idle To Crouch',          'toCrouch',    'going down', _M),
+    ('Crouch To Standing Idle',          'fromCrouch',  'and up again', _M),
+    ('Crouch Turn Left 90',              'crouchTurnL', 'a quarter turn down low, left', _M),
+    ('Crouch Turn Right 90',             'crouchTurnR', 'a quarter turn down low, right', _M),
+    ('Standing Turn Left 90',            'turnL',       'a quarter turn, left', _M),
+    ('Standing Turn Right 90',           'turnR',       'a quarter turn, right', _M),
+    ('Standing 1H Magic Attack 01',      'm1A1',        'one hand thrown out', _M),
+    ('Standing 1H Magic Attack 02',      'm1A2',        'a second', _M),
+    ('Standing 1H Magic Attack 03',      'm1A3',        'a third', _M),
+    ('Standing 2H Magic Attack 01',      'm2A1',        'both hands', _M),
+    ('Standing 2H Magic Attack 02',      'm2A2',        'both hands, a second', _M),
+    ('Standing 2H Magic Attack 03',      'm2A3',        'a third', _M),
+    ('Standing 2H Magic Attack 04',      'm2A4',        'a fourth', _M),
+    ('Standing 2H Magic Attack 05',      'm2A5',        'a fifth', _M),
+    ('Standing 2H Magic Area Attack 01', 'area1',       'all round him', _M),
+    ('Standing 2H Magic Area Attack 02', 'area2',       'all round him, a second', _M),
+    ('standing 1H cast spell 01',        'cast1',       'a spell, one hand', _M),
+    ('Standing 2H Cast Spell 01',        'cast2',       'a spell, both hands', _M),
+    ('Standing Block Start',             'blockStart',  'the guard comes up', _M),
+    ('Standing Block Idle',              'blockIdle',   'holding it', _M),
+    ('Standing Block End',               'blockEnd',    'and down', _M),
+    ('Standing Block React Large',       'blockHit',    'the guard is struck', _M),
+    ('Standing React Small From Front',  'hitSF',       'a flinch, from in front', _M),
+    ('Standing React Small From Back',   'hitSB',       'from behind', _M),
+    ('Standing React Small From Left',   'hitSL',       'from his left', _M),
+    ('Standing React Small From Right',  'hitSR',       'from his right', _M),
+    ('Standing React Large From Front',  'hitLF',       'rocked, from in front', _M),
+    ('Standing React Large From Back',   'hitLB',       'from behind', _M),
+    ('Standing React Large From Left',   'hitLL',       'from his left', _M),
+    ('Standing React Large From Right',  'hitLR',       'from his right', _M),
+    ('Standing React Death Backward',    'dieB',        'and down on his back', _M),
+    ('Standing React Death Forward',     'dieF',        'and down on his face', _M),
+    ('Standing React Death Left',        'dieL',        'and down to his left', _M),
+    ('Standing React Death Right',       'dieR',        'and down to his right', _M),
+    ('Standing Jump',                    'jump',        'a jump on the spot', _M),
+    ('Standing Jump Running',            'jumpRun',     'a running jump', _M),
+    ('Standing Jump Running Landing',    'jumpLand',    'a running jump, and the landing', _M),
+    ('Standing Land To Standing Idle',   'land',        'landing, and standing', _M),
+]
+if SET == 'skrim':
+    CLIPS = SKRIM_CLIPS
+    REST_FWD = True
+    # THE PACK'S TAKES ARE ALL 250 FRAMES ON THE SCENE AND NONE OF THEM IS:
+    # measured, the armature's own action runs 16 to 343 frames (`Standing Idle
+    # 03` is 343 and the scene range CUT it at 250). The take is the action.
+    TAKE_FROM_ACTION = True
+    # the game turns him at the player every frame, so nothing turns his hips as
+    # well — except a body falling over (`knockOut`'s lesson) and the quarter
+    # turns, where the turn IS the move (the crusader's rule; `drift` says how far).
+    # MEASURED, the spells TWIST HIM: the hips swing 56-122 deg through a cast and
+    # come back square (drift 0-2 deg), so the twist is the throw and is kept, and
+    # any end drift unwound over the back half (`RAMP_YAW`, the crusader's swings).
+    # The TRANSITIONS are kept too: the guard is side-on (blockStart ends +50,
+    # blockEnd -50), the crouch is turned (toCrouch +30, fromCrouch -30) and the
+    # landing starts turned (-37); de-yawed, each would end square and the clip
+    # after it would snap through the difference. The two idles that look round
+    # (idle2 43 deg, idle4 76 deg, both ending 0) are left to the default rule.
+    _SP = ('m1A1', 'm1A2', 'm1A3', 'm2A1', 'm2A2', 'm2A3', 'm2A4', 'm2A5', 'area1', 'area2', 'cast1', 'cast2')
+    KEEP_YAW = {'dieB', 'dieF', 'dieL', 'dieR', 'turnL', 'turnR', 'crouchTurnL', 'crouchTurnR',
+                'blockStart', 'blockEnd', 'toCrouch', 'fromCrouch', 'land'} | set(_SP)
+    RAMP_YAW = set(_SP)
+    FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW - {'idle2', 'idle4'}
+    WINDOW = {}
+    # a clip that never stands up is measured from the rest hips (the crawl's
+    # rule); one that begins low and ends standing, from its last frame (getUp's)
+    HIP_FROM_REST = {'crouchIdle', 'crouchWalk', 'crouchWalkB', 'crouchWalkL', 'crouchWalkR', 'crouchTurnL', 'crouchTurnR'}
+    HIP_ZERO_END = {'fromCrouch', 'land'}
+    for _c in _SP:
+        CONTACT[_c] = ('LeftHand', 'RightHand')     # whichever hand is thrown hardest
+
+
 if 'HIP_FROM_TAKE' not in globals(): HIP_FROM_TAKE = set()
+if 'TAKE_FROM_ACTION' not in globals(): TAKE_FROM_ACTION = False
 if 'RAMP_YAW' not in globals(): RAMP_YAW = set()
 # A clip whose hips are measured from its LAST frame, not its first: it
 # begins on the floor and ends standing, so the stance is at the END.
@@ -634,6 +733,8 @@ def main():
         arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
         sc = bpy.context.scene
         f0, f1 = int(sc.frame_start), int(sc.frame_end)
+        if TAKE_FROM_ACTION and arm.animation_data and arm.animation_data.action:
+            f0, f1 = (int(round(v)) for v in arm.animation_data.action.frame_range)
         bones = [b for b in KEEP if b in arm.pose.bones or ('mixamorig:' + b) in arm.pose.bones]
         pref = 'mixamorig:' if ('mixamorig:Hips' in arm.pose.bones) else ''
         MW = arm.matrix_world
