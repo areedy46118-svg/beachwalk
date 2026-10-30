@@ -3243,8 +3243,8 @@ export async function skrimIn({ w, b, log, sleep, shot }) {
     cam.set(P.x + Math.sin(y + 0.6) * 16, P.y + 1.6, P.z + Math.cos(y + 0.6) * 16); run(3); log('cine from 16 m', b.whMood.cine.toFixed(2));
     { const H = () => u.skJ.head.getWorldPosition(P.clone()), K = b.SK_POSTURE, k0 = K.straight, res = [], J = u.skJ, s1 = u.model.getObjectByName('Character1_Spine1');
       const bends = () => { const ft = ['Character1_LeftFoot', 'Character1_RightFoot'].map((n) => u.model.getObjectByName(n)).filter(Boolean).map((o) => o.getWorldPosition(P.clone())); const p = [J.hip, J.waist, s1, J.chest, J.neck, J.head].map((o) => o.getWorldPosition(P.clone())); const feet = ft.map((f) => f.toArray().map((v) => v.toFixed(2)).join(',')).join(' '); const d = [], latv = new (b.THREE.Vector3)(Math.cos(y), 0, -Math.sin(y)); for (let i = 1; i < 5; i++) { const a1 = p[i].clone().sub(p[i - 1]).normalize(), a2 = p[i + 1].clone().sub(p[i]).normalize(); d.push((Math.sign(a1.clone().cross(a2).dot(latv)) * a1.angleTo(a2) * 57.3).toFixed(0)); } const back = p[4].clone().sub(p[1]); return 'hip>waist>sp1>sp2>neck>head ' + d.join('/') + ' | back from upright ' + (Math.acos(back.y / back.length()) * 57.3).toFixed(0) + ' | feet ' + feet; };
-      const t0 = K.tuck, r0 = K.round; for (const [kk, tk, rr] of [[0, 0, 0], [k0, t0, r0]]) { K.straight = kk; K.tuck = tk; K.round = rr; const keep = b.skrimPosture; cam.set(P.x + Math.sin(y + 1.57) * 6, P.y + 1.6, P.z + Math.cos(y + 1.57) * 6); for (let i = 0; i < 30; i++) b.updateSkrimLife(1 / 60); const h = H(); res.push('straight ' + kk + ' tuck ' + tk + ': head y ' + (h.y - P.y).toFixed(3) + ' fwd ' + ((h.x - P.x) * Math.sin(y) + (h.z - P.z) * Math.cos(y)).toFixed(3) + ' bends ' + bends() + ' deg'); shotFrom('posture_' + kk + '_' + tk, 1.57, 3.2, 1.0, 45); }
-      K.tuck = t0; K.round = r0; K.straight = k0; log('POSTURE', res.join(' | ')); }
+      const LB = b.SK_LOWBACK, lb0 = LB.tuck, t0 = K.tuck, r0 = K.round; for (const [kk, tk, rr] of [[0, 0, 0], [1, 0, 0]]) { LB.tuck = kk ? lb0 : 0; K.straight = 0; K.tuck = tk; K.round = rr; const keep = b.skrimPosture; cam.set(P.x + Math.sin(y + 1.57) * 6, P.y + 1.6, P.z + Math.cos(y + 1.57) * 6); for (let i = 0; i < 30; i++) b.updateSkrimLife(1 / 60); const h = H(); res.push('straight ' + kk + ' tuck ' + tk + ': head y ' + (h.y - P.y).toFixed(3) + ' fwd ' + ((h.x - P.x) * Math.sin(y) + (h.z - P.z) * Math.cos(y)).toFixed(3) + ' bends ' + bends() + ' deg'); shotFrom('posture_' + kk + '_' + tk, 1.57, 3.2, 1.0, 45); }
+      LB.tuck = lb0; K.tuck = t0; K.round = r0; K.straight = k0; log('POSTURE', res.join(' | ')); }
     shotFrom('mood_far', 0.6, 16, 1.6, 60);
     { const ws = b.whaleS(), G = ws.G, T = b.THREE, rc = new T.Raycaster(), rows = [];
       for (const dd of [16, 13, 10, 7, 4]) { const x = P.x + Math.sin(y + 0.6) * dd, z = P.z + Math.cos(y + 0.6) * dd; rc.set(new T.Vector3(x, P.y + 6, z), new T.Vector3(0, -1, 0)); const ms = []; G.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !o.isSprite) ms.push(o); }); rc.camera = b.camera; const hits = rc.intersectObjects(ms, false).filter((h) => h.object.isMesh && !h.object.userData.bwGhost && h.object.material && !h.object.material.transparent); const fl = b.skrimFloorW(x, z); rows.push(dd + 'm: drawn ' + (hits[0] ? (hits[0].point.y - fl).toFixed(2) : 'none') + ' (' + (hits[0] ? (hits[0].object.name || hits[0].object.type) : '') + ')'); }
@@ -3982,4 +3982,91 @@ export async function cryFace({ w, b, log, sleep, shot }) {
     h.body.quaternion.setFromEuler(new T.Euler(pt, 0, 0, 'YXZ')); h.body.updateMatrixWorld(true);
     cam.set(P.x, P.y, P.z + 0.42); b.camera.lookAt(P); b.camera.updateMatrixWorld(true); shot('pitch_' + pt, 360, 1.0);
   }
+}
+// THE HOOK IN THE HEAL (2026-10-30, "make the hook and chain dissapear in the healing cutscene not sit in the water"):
+// the farewell started on the beach, run past the throw (WL.harp 15.2 s) — the hook and its chain gone, not lying. (own profile)
+export async function wbHookHeal({ w, b, log, sleep }) {
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(250); }
+  let W = null; for (let i = 0; i < 120 && !(W = b.wbHookS()); i++) { b.frame(2); await sleep(100); }
+  if (!W) { log('no hook'); return; }
+  const A = W.H.getWorldPosition(b.camera.position.clone()), cam = b.camera.position;
+  for (let i = 0; i < 300 && !(W.built && W.sim); i++) { cam.set(A.x + 6, 1.7, A.z + 2); b.frame(2); await sleep(40); }
+  log('before: hook in scene', !!W.H.parent, 'chain shown', !!(W.sim && W.sim.L.visible));
+  b.startWhaleFarewell();
+  const seen = []; let gone = null;
+  for (let i = 0; i < 60 * 24; i++) { b.step(1 / 60); const C = b.wfState(); const t = (i + 1) / 60;
+    if (C && C.harp && !seen.length) seen.push('thrown at ' + t.toFixed(1) + 's');
+    if (C && C.harp && !W.H.parent && gone === null) gone = t;
+    if (i % 120 === 0) await sleep(1); }
+  const ch = b.scene.getObjectByName('harpoonChain');
+  log('heal:', seen.join(' '), '| hook gone at', gone && gone.toFixed(2) + 's', '| hook in scene', !!W.H.parent, '| chain visible', !!(ch && ch.visible));
+}
+// THE CRYING HEADS, SECOND PASS (2026-10-30): the jar from Skrim's spot; the walk to it (they come running, the first
+// at your face); then you back off, stand, and circle — where they are every half second, every leap and whether it bit,
+// and the smoothness: the largest one-frame turn of each head's body and its largest one-frame step, by mode
+export async function cryRun({ w, b, log, sleep, shot }) {
+  b.settings.devMode = false;
+  try { if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem); if (b.equippedS && b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem); } catch (e) {}
+  for (let i = 0; i < 600 && !b.CRY.gltf; i++) { b.frame(1); await sleep(50); }
+  b.placeInWhale();
+  const C = b.CRY, cam = b.camera.position, T = b.THREE, WX = 15000, WY = 500, WZ = 15000;
+  for (let i = 0; i < 400 && !C.built; i++) { b.frame(1); await sleep(50); }
+  for (let i = 0; i < 20; i++) b.frame(1);
+  w.requestAnimationFrame = () => 0;
+  const A = b.whaleS().arena, J = C.jar.position;
+  const put = (x, z) => { cam.x = x; cam.z = z; const fy = b.skrimFloorW(x, z); b.groundY = fy; cam.y = fy + 1.62; b.camBaseY = cam.y; };
+  const cxW = (s) => WX + 4.4 * Math.sin(s * 0.021) + 1.3 * Math.sin(s * 0.057 + 1.3);
+  // FROM SKRIM: stood beside him, looking down the gut at it
+  { put(WX + A.skrimSpot.x + 1.2, WZ - A.skrimSpot.s); b.lookAt(J.x, J.y + 0.3, J.z); b.step(1 / 60); b.lookAt(J.x, J.y + 0.3, J.z); b.step(1 / 60);
+    log('from Skrim: distance to the jar', cam.distanceTo(J).toFixed(1), 'glow scale', C.glow.scale.x.toFixed(2), 'opacity', C.glow.material.opacity.toFixed(2));
+    const q = J.clone(); q.y += 0.3; q.project(b.camera); log('  jar on screen at ndc', q.x.toFixed(3), q.y.toFixed(3));
+    b.renderer.render(b.scene, b.camera); shot('run_from_skrim', 480, 1.0); }
+  C.log = []; let seen = 0;
+  const evs = []; const flush = () => { while (seen < C.log.length) { const e = C.log[seen++]; evs.push({ ...e, ph }); if (e.ev !== 'leap') log('  EV', ph, JSON.stringify(e)); } };
+  let ph = 'approach';
+  const prev = C.list.map((h) => ({ p: h.p.clone(), q: h.body.quaternion.clone(), m: h.mode }));
+  const worst = {}; const note = (k, v, what) => { if (!worst[k] || v > worst[k][0]) worst[k] = [v, what]; };
+  const frame = (fi) => {
+    b.step(1 / 60); flush(); if (fi % 20 === 0) b.heal();
+    C.list.forEach((h, i) => {
+      const P = prev[i]; h.body.updateMatrixWorld(true);
+      if (h.mode !== 'dead' && h.mode !== 'still' && h.mode !== 'latch' && P.m !== 'latch') {
+        const ang = P.q.angleTo(h.body.quaternion) * 60, step = P.p.distanceTo(h.p) * 60;
+        const key = P.m === h.mode ? h.mode : P.m + '>' + h.mode;
+        note('turn ' + key, +ang.toFixed(1), 'rad/s #' + i); note('speed ' + key, +step.toFixed(2), 'm/s #' + i);
+      }
+      P.p.copy(h.p); P.q.copy(h.body.quaternion); P.m = h.mode;
+    });
+  };
+  const rows = []; const snap = (t) => rows.push(`${ph} t${t.toFixed(1)} you s${(WZ - cam.z).toFixed(1)} | ` + C.list.map((h) => `#${h.i} ${h.mode} d${Math.hypot(h.p.x - (cam.x - WX), h.p.z - (cam.z - WZ)).toFixed(1)}`).join(' '));
+  // THE APPROACH: from 10 m short of the line, walking at the jar
+  let s = C.wakeS - 10, fi = 0, wokeAt = -1, scareAt = -1;
+  for (; fi < 60 * 30 && s < WZ - J.z - 1.5; fi++) {
+    if (scareAt < 0 || fi - scareAt > 70) s += 1.4 / 60;
+    put(cxW(s), WZ - s); b.lookAt(J.x, J.y + 0.3, J.z); frame(fi);
+    if (C.woke && wokeAt < 0) { wokeAt = fi; log('woke: you at s', s.toFixed(1), (WZ - J.z - s).toFixed(1), 'm short of the jar; heads', C.list.map((h) => Math.hypot(h.p.x - (cam.x - WX), h.p.z - (cam.z - WZ)).toFixed(1)).join(',')); }
+    const h0 = C.list[0];
+    if (scareAt < 0 && h0.mode === 'leap') { scareAt = fi; log('the scare leaps', ((fi - wokeAt) / 60).toFixed(2), 's after the wake, from', Math.hypot(h0.p.x - (cam.x - WX), h0.p.z - (cam.z - WZ)).toFixed(2), 'm, you at s', s.toFixed(1)); }
+    if (scareAt > 0 && fi - scareAt === Math.round(h0.T * 0.75 * 60)) { b.renderer.render(b.scene, b.camera); shot('run_scare', 480, 1.0); }
+    if (fi % 30 === 0 && wokeAt >= 0) snap((fi - wokeAt) / 60);
+    if (scareAt > 0 && fi - scareAt > 240) break;
+  }
+  // BACK OFF up the gut at a jog for 6 s, looking back at them
+  ph = 'retreat'; const t0 = fi;
+  for (let k = 0; k < 360; k++, fi++) { s -= 3.0 / 60; put(cxW(s), WZ - s); const n = C.list.find((h) => h.mode !== 'dead' && h.mode !== 'still'); if (n) b.lookAt(n.p.x + WX, n.p.y + WY, n.p.z + WZ); frame(fi); if (k % 30 === 0) snap((fi - t0) / 60); }
+  // STAND for 8 s
+  ph = 'stand'; const t1 = fi;
+  for (let k = 0; k < 480; k++, fi++) { put(cxW(s), WZ - s); const n = C.list.find((h) => h.mode === 'leap' || h.mode === 'rear') || C.list[0]; b.lookAt(n.p.x + WX, n.p.y + WY, n.p.z + WZ); frame(fi); if (k % 30 === 0) snap((fi - t1) / 60);
+    const L = C.list.find((q) => q.mode === 'leap' && q.t > q.T * 0.5 && q.t < q.T * 0.5 + 0.02);
+    if (L && !w.__side) { w.__side = 1; const c0 = cam.clone(), q0 = b.camera.quaternion.clone(), vl = Math.hypot(L.v.x, L.v.z) || 1; cam.set(L.p.x + WX - L.v.z / vl * 2.4, L.p.y + WY + 0.2, L.p.z + WZ + L.v.x / vl * 2.4); b.camera.lookAt(L.p.x + WX, L.p.y + WY, L.p.z + WZ); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('run_leap_side', 480, 1.3); cam.copy(c0); b.camera.quaternion.copy(q0); b.camera.updateMatrixWorld(true); }
+  }
+  // CIRCLE: walking round a 3 m circle at 2.6 m/s for 10 s
+  ph = 'moving'; const t2 = fi, cx0 = cam.x, cz0 = cam.z;
+  for (let k = 0; k < 600; k++, fi++) { const a = k / 60 * 2.6 / 3; put(cx0 + Math.sin(a) * 3 - 0, cz0 + Math.cos(a) * 3 - 3); const n = C.list.find((h) => h.mode === 'leap' || h.mode === 'rear') || C.list[1]; b.lookAt(n.p.x + WX, n.p.y + WY, n.p.z + WZ); frame(fi); if (k % 30 === 0) snap((fi - t2) / 60); }
+  for (const r of rows) log(r);
+  for (const p of ['approach', 'retreat', 'stand', 'moving']) {
+    const L = evs.filter((e) => e.ph === p && e.ev === 'leap'), B = evs.filter((e) => e.ph === p && e.ev === 'bit'), Ld = evs.filter((e) => e.ph === p && e.ev === 'landed' && !e.off);
+    log(p, 'leaps', L.length, 'bites', B.length, 'missed (landed)', Ld.length, Ld.length ? 'miss by ' + Ld.map((e) => e.miss).join(',') : '');
+  }
+  log('SMOOTHNESS (largest one-frame body turn, rad/s, and step, m/s):'); for (const k of Object.keys(worst).sort()) log('  ', k, worst[k][0], worst[k][1]);
 }

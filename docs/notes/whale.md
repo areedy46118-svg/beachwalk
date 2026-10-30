@@ -1095,3 +1095,50 @@ All of it is the `CRY` section after the `SKQ` one; probes `cryHeads` (`&m=resto
   its line — then Spine1/2 straightened and rounded +0.09 each, and the head's height trimmed within ±0.3 rad (unbounded,
   the solve found the height leaning BACK: head 0.26 m behind his feet). Clip: hip>waist −3°, 24° off upright; now
   +26° (rounded), 5/5 through the back, 17° off upright, feet unmoved, head 1.21 → 1.25 m. Still `posture_0.9_0.62`.
+- **THE HOOK IN THE HEAL** ("make the hook and chain dissapear in the healing cutscene not sit in the water"): thrown
+  out of the wound as before, then 0.45 s on it shrinks to nothing over 0.35 s in a puff of the heal's gold, and the
+  chain goes with it (`wbChainGone`: off `farProps` too — the cull turned it back on every frame). The cut's skip/end
+  removes them rather than laying the hook on the sand. Probe `wbHookHeal`: thrown 12.7 s, gone 13.5 s, chain hidden.
+  Also: his volley is two hooks (one a hand), at any health (was 3, 5 angry); his back is the clip's own again
+  (`skrimPosture` not called).
+- **THE LOWER BACK ONLY** ("just straighten skrims lower back please", after the back was put back): `skrimLowBack`
+  (called where `skrimPosture` was): the pelvis tucked 0.35 rad about his side, pivoted on the hip SOCKETS (the hip bone
+  put back so the sockets do not move — tilted about the bone itself it swung the base of the spine and lifted his head
+  7 cm), both thighs and the base of the back turned back the same. His clips write the hips' position every frame
+  (`ntarRetarget`'s hip track), so moving the bone does not accumulate. Measured: feet within 2 cm, head +3 cm; stills
+  `posture_0_0` (clip) / `posture_1_0`.
+- **SECOND PASS** (2026-10-30, the owner: "make it so the head crab are running towards you as you get closer to the jar
+  make the jar shine visible from skrim too. the headcrabs movement could be better make them jump more smooth and
+  slightly more accurate. i dont like how you just walk back and they are sitting there make them move around then jump
+  at you"). Probe `cryRun` (from Skrim's spot; the walk in; 6 s backing off at 3 m/s; 8 s standing; 10 s circling at
+  2.6 m/s; every half second where each one is; leaps and bites by phase; the largest one-frame turn and step by mode).
+  - **THE WAKE** is 27 m short of the jar (s 125.4). No more teleport in front of you: all three come off the walls
+    (0.15 / 0.6 / 1.05 s apart) and RUN (`'charge'`, 4.2 m/s the first, 3.6 the others, the clip at their speed) down
+    the gut at you, with a far shriek. The first does not stop: inside 4.8 m it leaps at your face out of its run (the
+    scare: T 0.34–0.46). Measured: woke 26/25/30 m off; the scare leapt 4.1 s after the wake from 4.7 m, and bit.
+  - **NEVER STILL** (`'crawl'` is a prowl now): each holds a distance of its own (2.7–4.3 m, 4.4–6 for 3 s after it fed),
+    closing or backing to it (1.3/m, ≤ 1.8 m/s) while circling you at 1.7 m/s one way, flipping its way and distance every
+    1.1–3 s, pushed off the others inside 1.4 m. Past 8 m it charges again, so backing off they follow (measured: 3 m/s
+    away for 6 s, they held 5–8 m behind, charging). `cryWalk` turns toward the way it wants and steps along its own
+    facing (a wall ahead tries ±0.45..2.3 rad), height eased to the floor; `cryTicks` its feet.
+  - **SMOOTH**: the tell eases in (smoothstep over 0.3 s, turning at ≤ 7 rad/s onto where you are going); at launch
+    nothing is set — the yaw, mouth and roll ease onto the flight (yaw ≤ 7 rad/s), the roll is 1.8–3.6 rad/s ramped over
+    0.15 s (it was a 4–8 rad/s spin). It lands ON ITS LEGS at 0.85 of its standing height (`'skid'`): the fall partly
+    taken off the slide, it slides at 8 m/s², sinks with the fall and comes up, rights its roll the short way, turns on
+    you, then prowls. Off your face it HOPS away (`h.off`: the leap's own flight with no bite in it) into a skid — the
+    old random-spin tumble was 40 rad/s. Only a guard's bat or a wall in the air still tumbles it. Measured, every frame
+    of 34 s: largest one-frame turn 7.9 rad/s (leap), 7.6 (rear), 7.3 (skid), 7.0 (charge); every change of mode ≤ 6
+    rad/s and its step continuous (leap→skid 7.7 m/s = its speed then).
+  - **ACCURATE**: led by 0.85 of your velocity (0.6), at your face −0.08 (−0.12), T = clamp(0.3 + 0.07 d, 0.34, 0.7);
+    over the first two thirds of the flight it bends ≤ 2.2 m/s² across toward where you will be. Contact 0.45 m across.
+    Measured: approach 2/2 bit, backing off 2/2, standing 4/4, circling at 2.6 m/s 5/5 — none missed. (At 3.5 m/s² of
+    bend and a full lead it was the same; a sidestep at the launch is what dodges it now. Your blade or guard is the
+    answer, as in Half-Life.)
+  - **THE JAR FROM SKRIM**: at 96.5 m the gut's fog leaves nothing, so `CRY.glow` — a `glowTex` sprite on the jar, additive,
+    `fog: false`, depth-tested (the gut still hides it), 0x86b4ff, scaled 0.045 × distance (~2.5° across, 4.3 m at
+    Skrim), opacity 0.8 ± 0.15 slow pulse, faded out inside 8–22 m where the dropped-item shine takes over. Still
+    `run_from_skrim`: a blue-white point dead centre at the end of his beam, readable.
+- **THE HEADS' AIM, TUNED BACK** (after the second pass every leap bit, a player circling at 2.6 m/s too — the owner
+  asked for "slightly more accurate"): lead 0.6 of your velocity (0.85), a ±0.25 m error across your path, the in-flight
+  bend 0.6 m/s² (2.2), the bite radius 0.40 m (0.45). `cryRun`: standing 4/4, approaching 2/2, backing off 2/3,
+  circling 4/6. The jar's far glow is the blood's blue (0x3a7dff; it was moon-white at the foot of Skrim's beam).
