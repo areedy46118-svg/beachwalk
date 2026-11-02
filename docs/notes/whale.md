@@ -1158,3 +1158,84 @@ All of it is the `CRY` section after the `SKQ` one; probes `cryHeads` (`&m=resto
   (you 50 m down the gut): 50 → 12.7 m in 14 s, then hitting you (before: 50 → 47 in 20 s, casting at nothing).
 - **THE HOOK DRIVEN IN** ("MAKE THE HOOK LOOK MORE STUCK INTO THE WHALE"): straight in (−hn, 0.06 up) and its handle end
   0.02 m off the skin (0.28): the handle and the chain out of the wound, the blade in it.
+- **THE TEAL BLOBS WERE NOT THE PLANKTON** — WRONG TWICE. First the dust went (it was already unbuilt), then the
+  plankton (`air.plank`) was hidden; the owner, with a still of the same column on the wall: "nooooo i liked the
+  particles in the air take out these on the wall bring back the other stuff". They were the GLOWING COLONIES
+  (`whBioMesh`, 14 clusters × 60 beads, `#7ff6e6`, on the walls in `buildWhale`) — now built but never added (its
+  `rnd` draws kept, so nothing seeded after it moves). The plankton is visible again. `whaleFloats` only listed
+  Points/Sprites/additive meshes, and these are an ordinary `InstancedMesh` with `MeshBasicMaterial`, so it could not
+  see them; `whaleTeal` lists everything visible by COLOUR (material, emissive, colour uniforms, vertex colours). When
+  the owner points at a colour, search by the colour, not by the kind of thing you expect it to be.
+
+## The ring of chains, told (2026-10-30)
+
+"the one where all the chains come up in a circle around him should be more readable". The nova (`skrimStart`
+'nova' → `skcRing`) came with no warning. Now, through the wind-up (`act.rel = [0.62]`, the tell lasts 0.62 × dur):
+- `skcRingEdge(u, at, dur)`: twenty harmless chains (`grp: null`, `H: 1.0`, `np: 10`) stand a metre out of the floor
+  at 5.0 m round him — the danger radius is 5.2 — sweeping up round the circle, and drop as the ring fires.
+- `skcTell(…, 5.4, …)` and a heavy `sfxChainRattle` under it; `act.tele.done` on fire.
+- The ring itself rises in a sweep (`delay: i * 0.035`) instead of in three bunches.
+**Dark floor decals are lost under the white ground mist** — the first tell (16 tips at 0.45 m) did not read in the
+still either; iron standing up out of the mist does. Hooks are preallocated ×36 (`skcHook` makes one on demand, a
+mesh added mid-fight). `skrimChains` probe: still `ch_ring_tell`.
+
+## Walking in without the hitch (2026-10-30)
+
+"the lag while walking into the whale belly needs to be fixed". `placeInWhale` under the cut (whaleBusy) now queues
+its warm-ins in `whaleJobs` and `updateWhaleCut` runs one a frame through the black, flushing the rest before the
+light comes up: `A.later` (the mist, the other cuts' rays, the air fog, the six extra heaps — built on their own
+seeded stream `mulberry32(0x7a11)`, so `whPlaceRemains` moved once, same every load), `skrimWarmIn`, `cryWarmIn`,
+`renderer.compileAsync(W.G)` with G kept HIDDEN until it resolves (the first render under black was compiling
+everything synchronously), then the textures' `initTexture`. `whLump` clones one cached welded unit sphere
+(`whLumpUnit`) instead of merging vertices per lump; `whAirFog`'s 2200-point dust is no longer built (it was never
+seen). `whaleWalkIn` probe: the worst frame 493 → 265 ms, all under the black; walking ~32–36 ms max.
+
+## 2026-10-31 — Skrim harder ("MAKE SKRIM HARDER")
+- **`SK_HARD`** (beside `SK_RANGE`) plus the kind: hp 120 → 170, poise 12 → 16, `stunK` 0.7 → 0.5 (a parry's stagger
+  ~1.05 s). Rage at 60% (was 50%), its clip rate 1.3 (1.22). A blow breaks his cast only before 0.4 of the way to the
+  release (`commit`, was 0.66); the flinch is 0.25 s (`react`, 0.4) and the window he answers a second blow in 2.2 s
+  (`arm`, 1.5), answering with the hook 70% (58). Between throws 0.42 + 0.4r (0.7 + 0.6r), angry 0.22 + 0.26r; close
+  0.08 + 0.16r. Hook picked 66/75% close (58/66), walked in on you 45% (30), strings 1–3 / angry 1–4, `meleeCd`
+  (1.0 / 0.6) + 0.3 n, rate 1.5. Turn rates ~20% up. `SKC_THROW` spd 20 (17), home 2.3 (1.7). The tells untouched.
+- Probes (`sh tools/probe.sh skrimIn`, `'skrimF2&m=fight'`, PB_PORT 4231): `skrimIn` 40 s guarding at range — before 12
+  casts, 5 on you, parried back 120 → 99; after 13 casts, 4 on you, 170 → 142 (random; the clips' own lengths bound
+  the ranged pace, not `k.cd`). `skrimF2` pressed at 1.5 m cut every 0.8 s: hitSR 23 frames of 720 (130–200 before),
+  6 hook strings (x1 ×3, x2, x3) + 2 dashes, 4 on you, 170 → 156. "Parrying everything" showed walkB planted skate
+  1.75 m/s (19 frames) — the probe holds you at 1.5 m and pushes him; not compared against before.
+- (the same day) "GIVE SKRIM A LITTLE MORE HEALTH": hp 170 → 200. Nothing else touched; rage still at 60% (now 120).
+- (2026-10-31) The NOT DONE above — the view model's square sparks at the tip on top of his — is done for every foe:
+  `guardSparks` (weapons.md); `blockMutant`/`parryMutant` throw none for him, his own `skrimGuardFx` is the one burst.
+
+## 2026-11-01 — Skrim's aim; his heads at half health
+The owner: "make skrim harder. give him a phase at half health where he visually spawns in the head crabs from the ground
+to attack you make it still feel balanced. improve his fight as well alot of his attacks miss especially the ones from the
+ground". Probe `skrimAim` (your guard down, healed; 20 s standing 7 m off, 25 s circling him at a walk 7 m out, 20 s
+strafing at a run reversing every 1.5 s; per attack hit/started) and `skrimAim&m=phase` (him at 49%, you 6 m off cutting at
+any head leaping or rearing within 2.2 m, 65% of swings connecting).
+- **WHY THEY MISSED**: a throw went at your chest as it was (0.3 s homing, no lead); the pit came up where you stood when
+  the wind-up began (`act.at` at `skrimStart`, ~1 s earlier); the line ran at that same spot. Before: walking, hooks 0/5,
+  floor 2/3; running, 0/5 and 0/2.
+- **`SKV`** (`skrimYouTrack`, first thing in `skrimFightStep`): your ground velocity eased at 8/s, zeroed on a jump > 9 m/s.
+- **`SK_AIM`**: a bolt leads by its flight × 0.85 (`skcThrow(…, lead)`, `C.lead`), homing on the led point for 0.36 s at
+  2.3; a volley's two hooks lead 1.0 and 0.1 (a bracket: a walker is caught by one, a stop by the other; fan 0.05). At
+  homing 3.0 / 0.42 s and 0.2 both hooks hit a walker every time (11 hp in 25 s) — too much. The pit's split
+  (`act.tele`) follows you at ≤ 7.5 m/s through the wind-up, no lead, and is fixed 0.5 s before the chains (`lock`); its
+  `hitR` 1.45 → 1.25 (reach ~2 m round it: a run of 0.5 s clears it, a walk does not unless you go when it stops). The line
+  is aimed at release where you will be when it reaches you (it runs 11.8 m/s), `hitR` 0.9 → 1.05.
+- After: standing bolt 5/5; walking bolt 3/3, pit 3/3, volley 3 hooks of 4; running with reversals floor 0/4, bolt 0/1,
+  volley 2/2. Guard held (`skrimIn`): every hook blocked or parried, only the floor lands (5 in 40 s).
+- Between throws 0.36 + 0.34r (0.42 + 0.4r), angry 0.2 + 0.22r.
+- **THE HEADS** (`SK_SUMMON`, act `'summon'`): once, at ≤ 50% (before the ring, which moved to ≤ 30% and only with none of
+  them alive). cast2 drawn out to 2.6 s, roar, uninterruptible (in the flinch's "through it" list) — the price is that he
+  is open. At 0.16 three splits (`skcTell` r 0.95; the pool is 4) 3.4–4.6 m round you on his side (`crySummonSpots`,
+  `skrimInGut` 1.0, > 1.6 m off him); at 0.42/0.56/0.70 each head claws up out of its split (`crySummonEmerge` → mode
+  `'emerge'`: from 0.5 m under the floor, mouth up, legs at 3.4x, a blood puff every 0.11 s, 0.75 s) and hops clear of it
+  (the `h.off` leap) into the nest's own loop (`cryStep`). While any lives: no pit, no line, his throws 2.2x apart
+  (`slow`), and a leap of theirs no sooner than 1.5 s after the last (`gap`; the nest's 0.8). They die with him
+  (`crySummonDie` in `cryTick`).
+- **BUILT WITH THE NEST**: `CRY_N` 3 + `CRY_SUMMON_N` 3 copies in `cryBuild` (so `cryWarmIn` makes them under the black;
+  same material program), the three `h.summon`, mode `'buried'`, hidden. Not in the save (`crySave` masks the nest's bits;
+  `cryRestore` and the dead-bit pass skip them); a kill of one neither sets `CRY.dead` nor wakes the nest; `cryTick` runs
+  them whether or not the nest has woken; `cryBladeRay` also while one lives. `cryHeads&m=restore` unchanged.
+- Phase measured: summoned 1.1 / 1.5 / 1.8 s into the cast; cutting at them, 4 swings, 3 killed, 1 bite in 30 s (standing
+  and never cutting: a bite every ~2–3 s — they are meant to be fought). musictest all PASS.

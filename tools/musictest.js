@@ -118,7 +118,7 @@
         for (let i = 0; i < 240 && !(S.u && S.u.model && S.placed && !(S.u.clipsPending > 0)); i++) { b.frame(1); await sleep(40); }
         if (!S.u || !S.u.model) return { scenario: sc, pass: false, note: 'he never came in' };
         b.skrimFight(); note = 'in the whale, fighting him: ' + S.stage;
-        W.__mtFloor = 0.0012;
+        W.__mtFloor = 0.00025;
         for (let i = 0; i < 60; i++) { b.frame(1); if (i % 20 === 0) await sleep(10); }
         peak = await listen(want[sc], 8000);
       } else if (sc === 'skrim') {
@@ -145,7 +145,7 @@
       for (const k of ['beachwalk.load', 'beachwalk.skipIntro', 'beachwalk.died']) sessionStorage.removeItem(k);
     }
     const others = W.__sfDests.map((d) => d.who).filter((v, i, a) => a.indexOf(v) === i).join(',');
-    const floor = { skrim: 0.0012, skrimFight: 0.0012 }[sc] || 0.004;   // (his song is played low by the owner's word: 0.55, not 1.9)
+    const floor = { skrim: 0.0012, skrimFight: 0.00025 }[sc] || 0.004;   // (his fight's music is low and comes in over 7 s)   // (his song is played low by the owner's word: 0.55, not 1.9)
     return { scenario: sc, pass: silent[sc] ? peak <= 0.004 : peak > floor, peak, who: want[sc], note: note + (silent[sc] ? ' (wants silence)' : ''), heard: others };
   };
 })();

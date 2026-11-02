@@ -74,10 +74,13 @@ async function load(setup) {
     }
     // and after: the far rest going on behind you — how long, and the worst frames while it does
     { const lag0 = w.__bw.lag().length, tA = performance.now(); let worst = [], doneAt = null;
-      for (let i = 0; i < 60; i++) { await sleep(50); const q = w.__bw.restoreS(); if (!(i % 100)) log('  +' + ((performance.now() - tA) / 1000).toFixed(0) + 's far left', q.allLeft, 'bg', q.bg, q.bgOk, q.bgAge, 'nearPend', q.nearPend, 'awake', q.awake, 'parsing', w.__bw.startGate().parts.parsing); if (q.allLeft === 0) { doneAt = (performance.now() - tA) / 1000; break; } }
+      const FR = []; let fl = performance.now(), frOn = true; const raf2 = w.requestAnimationFrame.bind(w); (function fr() { const n = performance.now(); FR.push(n - fl); fl = n; if (frOn) raf2(fr); })();
+      for (let i = 0; i < (AT === 'whale' ? +(P.get('hold') || 1600) : 60); i++) { await sleep(50); const q = w.__bw.restoreS(); if (!(i % 100)) log('  +' + ((performance.now() - tA) / 1000).toFixed(0) + 's far left', q.allLeft, 'bg', q.bg, q.bgOk, q.bgAge, 'nearPend', q.nearPend, 'awake', q.awake, 'parsing', w.__bw.startGate().parts.parsing); if (q.allLeft === 0) { doneAt = (performance.now() - tA) / 1000; break; } }
+      frOn = false; { const F = FR.slice(3); log('RUN', r, 'frames after playable', F.length, 'over 33 ms', F.filter((d) => d > 33).length, 'over 50', F.filter((d) => d > 50).length, 'over 100', F.filter((d) => d > 100).length, 'max', Math.round(Math.max(...F))); }
       const after = w.__bw.lag().slice(lag0).map((e) => e[1] + ':' + String(e[2]).slice(0, 22)).sort((a, b) => parseInt(b) - parseInt(a));
-      log('RUN', r, 'far rest done', doneAt && doneAt.toFixed(1), 's after playable; spans over 16 ms after:', after.length, 'worst', JSON.stringify(after.slice(0, 8))); }
+      log('RUN', r, 'far rest done', doneAt && doneAt.toFixed(1), 's after playable; spans over 16 ms after:', after.length, 'worst', JSON.stringify(after.slice(0, 30))); }
     const lag = w.__bw.lag(); const sum = {}; for (const e of lag) { const k = String(e[2]).replace(/\d+/g, '#'); sum[k] = (sum[k] || 0) + e[1]; }
+    if (AT === 'whale' && P.get('leave')) { const q0 = w.__bw.restoreS().allLeft; w.__bw.placeOutOfWhale(); await sleep(12000); log('RUN', r, 'left the whale: far left', q0, '→', w.__bw.restoreS().allLeft, 'in 12 s; inWhale', w.__bw.whaleState().inWhale); }
     if (AT === 'whale') { for (let i = 0; i < 400 && !(w.__bw.SKRIM.u && w.__bw.SKRIM.u.model && !(w.__bw.SKRIM.u.clipsPending > 0)); i++) await sleep(25); log('RUN', r, 'in the whale:', w.__bw.whaleS() && w.__bw.whaleS().G.visible, '| Skrim in at', flags.sk ? flags.sk.toFixed(2) : ((performance.now() - t0) / 1000).toFixed(2) + ' (after playable)', 's'); }
     log('RUN', r, 'module built', L.built.toFixed(2), 's; playable at', up && up.toFixed(2), 's');
     log('RUN', r, 'frames', fN, 'renders', rN, 'render ms', Math.round(rT), 'world renders', mN, 'world ms', Math.round(mT), 'restore-flag share', flags.n ? (flags.restore / flags.n).toFixed(2) : 'n/a');

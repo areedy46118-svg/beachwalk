@@ -3608,3 +3608,25 @@ died in over a body lying flat. `q.kidAlt` is the nearest part further down its 
 at it. Game-wide.
 **`u.meleeSpan` = [lo, hi] over its origin** replaces `meleeT`'s 0.06h–0.96h for a creature that is not stood up (the
 wingless gargoyle).
+
+## 2026-10-31 — the side-step went the wrong way; the Dealer's idle and side-step; the samurai is not still
+- **`authorSideStep` (was the body of `authorSamuraiStrafe`) BUILT BOTH STRAFES BACKWARDS.** `dir > 0` is toward the rig's
+  +X, and on a man facing +Z that is his LEFT; `strafeR` was built going +X, and `lead = (dir > 0) === (side === 'R')` put
+  the right leg in front going left — across the other. The fight's tangent `(-dz, dx)/d` × `side` takes him to −X (his
+  right) when `side > 0`, which plays `strafeR`. Measured: the samurai's fight (probe `samStill`) played `strafeR` while he
+  went −X 351 frames of 431; the Dealer's `strafeR` held its planted toe at 0.70 m/s carried +X and 2.77 carried −X. Now
+  `strafeL` = `mk(+1)`, `strafeR` = `mk(−1)`, `lead = (dir > 0) === (side === 'L')`: Dealer `strafeR` 0.34 carried −X,
+  2.87 +X; `strafeL` 0.61 / 2.79; his old walk-as-strafe 1.22–3.05. Samurai after: `strafeL` while +X, `strafeR` while −X.
+- **Each clip its own `clipSpeed`, off both feet** (each foot over 0.60–0.95 of its own planted half): it was the right
+  foot of `strafeR` given to both. Dealer 1.32 / 1.32, samurai 1.45 / 1.46.
+- **THE DEALER HAD NO STANCE FOR TWO MONTHS.** `anim.idle` and the lit alias said `'ready'`; the 2026-09-05 rebuild on his
+  own idle (a41fa6d) shipped no 'ready' (`git show <c>:assets/dealer.glb` lists them), so every "stand ready" was
+  `mutPlay`'s no-op (`[mut] no clip named ready`, once) and he held his last swing's pose — probe: `attackDown` 1736 frames
+  of 1800. Now `idleSrc`, the frame every clip of his is built on.
+- **THE DEALER'S SIDE-STEP** (`authorDealerSide`, `kind.author`): `authorSideStep` on `idleSrc`, joints found by regex on
+  his `mixamorig*_NN` bones, leg measured (0.94), DUR 0.74, STRIDE 0.62. The lit alias drops `strafeL/R → walk` when he has
+  his own. His idle stands the left toe ~2 cm higher than the right; the right toe in `strafeR` drifts 0.32 m/s forward
+  (his stance's turn-out) — what is left of the 0.34–0.61.
+- **The samurai is not a statue** (the 1948 note predates `installLife`): in a real fight he stands ~17% of frames and
+  his head travels a median 146 mm within a still second. The "96% under 5 mm" was per frame, which a breathing head is.
+- Probes: `dealerSide` (fight, `&m=clip` the carry test and stills, `&m=guard`), `samStill` (`&m=clip`). See harness.md.

@@ -1905,3 +1905,15 @@ material opacity 1 and not transparent, within 9-12 m, feet on that place's floo
 - **THE TWO KNIGHTS** (same pack, `knFeet`): their idles stood (+0.02 / +0.005) but the walks were 0.09-0.15 into the
   paving and `kmRise` (`sSlashE`) 0.43 over it; seated to the root: idles 0.0, walks −0.01/+0.03 mean.
 - Musictest 9/9 after.
+
+## 2026-10-30 — a shotgun threw the gargoyles out of the court (and so no key)
+
+"MAKE SURE SHOOTING THE GARGOYLES STILL BREAKS THEM AND HAS THE KEY DROP THE KEY JUST DIDNT DROP". The gargoyle kind had
+no branch in `mutClampX`, so a shotgun's shove (`sgHitFoe` sets `st.flinchPush`, and the generic step runs
+`mutClampX` after moving it) went through the BEACH's clamp: one blast and a gargoyle at x 85.5 was at x 14.7 the next
+frame — 70 m off, outside the court, alive and unreachable, and the key only falls out of the last one to die. (The
+magnum pushes nothing, so it was always fine.) Now `mutClampX` has a `garg` branch: a position `gargLegal` refuses is put
+back to the last legal one (`u.gp.legal`). Probe `gargShoot` (`&g=sg|mag`, `&head=1`, `&solo=1` without Myles,
+`&trace=1` frame by frame after the first two shots): the real trigger, each shot's damage, then the key — both guns,
+with and without Myles, all four broken, the key lying 0.02 over the stone. Harness: `__bw.magAmmo` (get/set);
+`__bw.sgCh` is the two barrels' ARRAY (`[1, 1]` loaded, 2 spent) — set it to a number and every shot is a dry click.

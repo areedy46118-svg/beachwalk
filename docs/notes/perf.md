@@ -1532,3 +1532,23 @@ the black, then p95 18 ms). Spans over 16 ms after a checkpoint's black: 16-22 �
 - `rebuildCullUnits` walks the whole scene (11-12k objects) every 90 frames: 0.33 ms once every 1.5 s.
 - The fort/XIII flood fills (`siteMainStep` → `keepHitsWall`) show in tours that start before they finish: a budgeted
   one-off, by design.
+
+## 2026-10-30 — the whale's way in, spread over the black
+
+Work done at a cut can go one piece a frame under the black (`whaleJobs` in `placeInWhale` / `updateWhaleCut`, see
+whale.md). The trap: `renderer.compileAsync` only sees what `traverseVisible` reaches, so the group must be visible at
+the call — show it, call, hide it again, and show it when the promise resolves. Otherwise the first frame that draws
+it compiles every program synchronously (it was the 493 ms frame).
+
+## 2026-10-30 — no far rest in the whale's belly
+
+"it still lags when i walk up to skrim fix any lag for good in here". A FRESH walk up to him was clean (`skrimWalkUp`
+probe: max 21 ms) and so was the draw (`skrimPerf`: 3–6 ms). The lag was a CHECKPOINT in the belly — every death to
+Skrim is one: playable in ~5 s, then the whole world's far rest (`bgLoadMode`) parsed and warmed for 48 s while you
+walked to him, 52 frames over 33 ms, worst 307. Now the castles' hold covers the belly too (`bwHoldHere`,
+`bwHoldOwn` with `BW_WHALE_FILES`): far parses are set aside in `bwCastleHeld` and released by the 400 ms interval once
+you are out, and `animateFrame` runs no warm step while `bgLoadMode && inWhale`. Measured: 80 s in the belly after the
+load, 4912 frames, none over 33 ms, max 23; out of it the rest resumes (113 → 91 left in 12 s). Cost: the far rest
+now comes in on the beach after you leave, paced as after any checkpoint.
+`tools/loadtime.html` (whale) now watches until the far rest is in (`&hold=` iterations of 50 ms), counts frames over
+33/50/100 ms after playable, and `&leave=1` steps out; `LT_Q` and `LT_WAIT` in `tools/loadtime.sh` pass them.

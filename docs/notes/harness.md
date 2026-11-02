@@ -520,3 +520,14 @@ sampling profiler, printing self and inclusive samples by `name:line`; `evalFile
 as a scenario body with `(w, b, log, sleep, shot)`. Chrome's profiler samples about every 10 ms whatever is asked, so
 give it 2,500 frames; and `--js-flags=--no-turbo-inlining` on the Chrome line (a scratch copy of probe.sh) stops V8
 folding a hot helper's time into its caller (the props' `step` hid `pushOutOfSolids` that way).
+
+## 2026-10-31 — dev mode starts no swing; probes `dealerSide`, `samStill`
+- **DEV MODE STOPS EVERY MUTANT'S SWING** (`u.st.cool <= 0 && !settings.devMode`, `updateMutantUnit`): a fight probe in
+  dev mode reads as "he stops attacking after one swing". Run with it off and `b.heal()` when `state().hp < 3`.
+- The Dealer's probe must close his opening dialogue (`b.endDialog()`) or `update` is frozen and he stands in his taunt.
+- A probe pinning the camera N m off a chaser keeps him running at nothing: stand still and let him come.
+- `w.__clockOn()` / `w.__adv(n)` (tools/burntest.js) for any fight: whole frames on a fake clock.
+- The view model's sparks are not in `shot()` (it renders `scene` alone): `dealerSide&m=guard` draws the canvas straight
+  after `__adv(1)`, in the same task, to catch them.
+- On the samurai, `u.mixer.update` alone in a probe gives unreliable foot readings (his life/forest layers): judge his
+  clips by his fight's own travel per clip, not a carried test.

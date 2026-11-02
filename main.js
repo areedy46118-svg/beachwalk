@@ -444,7 +444,15 @@ const bwCastleOwn = (url, reach) => BW_CASTLE_FILES.test(url) || reach >= 900 + 
 // would have waited with it)
 const bwCastleHeld = [];
 const bwInCastle = () => inC13 || inFort || inThrone;
-setInterval(() => { if (bwCastleHeld.length && !bwInCastle()) for (const f of bwCastleHeld.splice(0)) f(); }, 400);
+/* AND NOTHING FROM ELSEWHERE IN THE WHALE'S BELLY EITHER (2026-10-30, the owner: "it still lags when i walk up to skrim fix
+ * any lag for good in here"). A checkpoint in the belly — every death to Skrim is one — came up playable in 5 s with the
+ * whole world's far rest still to come: 48 s of parses and warms while you walk up to him, 52 frames over 33 ms, the worst
+ * 307 (`tools/loadtime.sh 1 <out> whale`). In the belly it waits for you to leave, parses and warms both; its own files
+ * (the whale, Skrim, the crying heads and their moves) come through. */
+const BW_WHALE_FILES = /(whale|skrim|crying-head|demon-moves)/;
+const bwHoldHere = () => bwInCastle() || inWhale;
+const bwHoldOwn = (url, reach) => (inWhale ? BW_WHALE_FILES.test(url) : bwCastleOwn(url, reach));
+setInterval(() => { if (bwCastleHeld.length && !bwHoldHere()) for (const f of bwCastleHeld.splice(0)) f(); }, 400);
 const bwNearClear = () => new Promise((r) => { const chk = () => (bwNearPending() ? setTimeout(chk, 100) : r()); chk(); });
 function bwParseLater(url, bufP, job, onError) {
   bufP.then((buf) => {
@@ -457,7 +465,7 @@ function bwParseLater(url, bufP, job, onError) {
       // (asked at its turn, not when it arrived: a checkpoint's files are in before the restore has put you in a castle)
       const far = () => {
         bwParseChainFar = bwParseChainFar.then(bwNearClear).then(bwBgGate).then(() => {
-          if (bgLoadMode && bwInCastle() && !bwCastleOwn(url, reach)) { bwCastleHeld.push(far); return null; }
+          if (bgLoadMode && bwHoldHere() && !bwHoldOwn(url, reach)) { bwCastleHeld.push(far); return null; }
           return bwTurn().then(run).catch(() => {}).finally(fin);
         }).catch(() => {});
       };
@@ -1132,11 +1140,14 @@ let minoSongVol = null, minoSong = null;
 const SKRIM_SONG = 'assets/skrim-spotting.m4a', SKRIM_SONG_LEVEL = 0.55,   // (1.9 until 2026-10-30: "turn it down alot")
       SKRIM_SONG_MAX = 1.0, SKRIM_SONG_FADE = 9;
 let skrimSongVol = null, skrimSong = null;
+let whaleJobs = null;   // the belly's warm-ins, one a frame through the cut's black (`placeInWhale`, `updateWhaleCut`)
 let wbHook = null;   // Skrim's hook in the beached whale's side, and its chain (`wbHookTick`): declared up here, the whale is built early
 // Skrim's fight: from his getting up to fight until he is dead, looped (passes laid over each other's ends), not loud, a
 // long fade as he dies (2026-10-30, the owner's "skrim fight": "play once you fight skrim on loop not too loud. slow fade
 // it once he dies"). His file packed +6 dB (peaks −2.1 dB, mean −16.8 — the samurai's score is −15.5), and played under it.
-const SKRIM_FIGHT = 'assets/skrim-fight.m4a', SKRIM_FIGHT_LEVEL = 0.95, SKRIM_FIGHT_MAX = 1.0, SKRIM_FIGHT_XF = 1.5, SKRIM_FIGHT_FADE = 9;
+const SKRIM_FIGHT = 'assets/skrim-fight.m4a', SKRIM_FIGHT_LEVEL = 0.25,   // (0.6 → 0.4 → 0.25 the same night: "turn the music down some more too", then "lower skrim fight music more")
+     SKRIM_FIGHT_IN = 7,   // (0.95, in over 1.2 s, until 2026-10-30: "make the skrim fight music fade in slowly and make it lower volume")
+      SKRIM_FIGHT_MAX = 1.0, SKRIM_FIGHT_XF = 1.5, SKRIM_FIGHT_FADE = 9;
 let skrimFightVol = null, skrimFightM = null;
 let wreckThemeVol = null;
 
@@ -10646,6 +10657,7 @@ function propSettling() {
 class PhysProp {
   constructor(mesh, opts = {}) {
     this.mesh = mesh;
+    this.born = performance.now();   // (its first settle is silent: `step`, 2026-10-30)
     this.vel = new THREE.Vector3();
     this.angVel = new THREE.Vector3();
     this.radius = opts.radius ?? 0.3;
@@ -11060,7 +11072,10 @@ class PhysProp {
      * the game comes up: measured on a checkpoint load, 31 sounds in the first seconds — seven knocks and nine of the
      * electronics SMASHING (they broke on landing). Through the load and for two and a half seconds after it a landing is
      * silent and breaks nothing (`propSettling`). */
-    const settling = propSettling();
+    /* (and a thing just made — an area's props laid out as you walk into it, a drop out of a body — makes no sound settling
+     * for its first two seconds unless it has been in your hand: 2026-10-30, the owner, walking into the whale: "any sounds of
+     * things spawning in i dont want to hear") */
+    const settling = propSettling() || (!this.everHeld && performance.now() - this.born < 2000);
     if (struck && incoming > 1.1 && !settling) {
       const tnow = performance.now();
       if (tnow - this.hitAt > 120) { this.hitAt = tnow; sfxPropHit(surface, incoming); }
@@ -11114,7 +11129,7 @@ function worldPropWall(p, r, half) {
 }
 function grab(prop) {
   if (held) dropHeld();
-  held = prop; prop.held = true; hovered = null;
+  held = prop; prop.held = true; prop.everHeld = true; hovered = null;
   sfxThud(0.03);
 }
 function dropHeld() {
@@ -18965,7 +18980,7 @@ function parryCrab(u = crabs[0]) {
   u.st.stun = CRAB_STUN * parryStunK();
   u.st.stunMax = u.st.stun;
   parryGlow = 0.42;
-  guardShockV += 6.4; spawnSparks(11, 1.0);
+  guardShockV += 6.4; guardSparks(true, u.g.position, 0.4);
   flashMats(u.g);
   sfxParry();
   playSample('poise', 0.58);             // and the sound of its poise going
@@ -18998,7 +19013,7 @@ function blockCrab(u = crabs[0]) {
   guardTick();
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);                     // the tool goes white for the frozen frames
-  guardShockV += 3.6; spawnSparks(6, 0.5);
+  guardShockV += 3.6; guardSparks(false, u.g.position, 0.35);
   parryGlow = Math.max(parryGlow, 0.22); // and shudders in your hands
   fovKick = Math.max(fovKick, 3.5);
   addTrauma(0.42);
@@ -24797,7 +24812,7 @@ function startSkrimFightMusic() {
   if (!skrimFightVol) { skrimFightVol = ctx.createGain(); skrimFightVol.connect(ctx.destination); }
   skrimFightVol.gain.value = Math.min(SKRIM_FIGHT_MAX, settings.volume * settings.musicVolume * SKRIM_FIGHT_LEVEL);
   musicNote('skrim fight', skrimFightVol.gain.value);
-  skrimFightM = { cur: skfPass(ctx.currentTime + 0.02, 1.2), next: null };
+  skrimFightM = { cur: skfPass(ctx.currentTime + 0.02, SKRIM_FIGHT_IN), next: null };
 }
 function stopSkrimFightMusic(secs = 2) {
   const S = skrimFightM; skrimFightM = null;
@@ -28014,7 +28029,7 @@ function parryGull(u) {
   pegParryHaste();
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
   parryCool = 0;
-  parryGlow = 0.42; guardShockV += 6.4; spawnSparks(11, 1.0);
+  parryGlow = 0.42; guardShockV += 6.4; guardSparks(true, u.g.position, 0.4);
   flashMats(u.g);
   sfxParry(); playSample('poise', 0.58);
   addTrauma(0.45); fovKick = Math.max(fovKick, 7); vmImpulse(-1.35);
@@ -28050,7 +28065,7 @@ function blockGull(u) {
   guardTick();
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);
-  guardShockV += 3.6; spawnSparks(6, 0.5);
+  guardShockV += 3.6; guardSparks(false, u.g.position, 0.35);
   parryGlow = Math.max(parryGlow, 0.22);
   fovKick = Math.max(fovKick, 3.0);
   addTrauma(0.3); vmImpulse(-1.0);
@@ -33458,7 +33473,11 @@ const MUT_KINDS = {
           poise: 9, poiseBack: 1.9, poiseWait: 1.2, parryK: 0.72,
           block: 0.52, fidgetK: 0.22, fidgetGap: 2.4,
           bones: null,
-          anim: { run: 'run', idle: 'ready', roar: 'taunt', die: 'death', walk: 'walk', back: 'walk',
+          /* (`idleSrc`, not 'ready': the rebuild on his own idle, 2026-09-05, shipped no 'ready', and for two months
+           * every "stand ready" in the fight was `mutPlay`'s no-op — he held his last swing's pose between swings.
+           * 2026-10-31.) And he circles on a side-step of his own (`authorDealerSide`), not on his walk. */
+          author: authorDealerSide,
+          anim: { run: 'run', idle: 'idleSrc', roar: 'taunt', die: 'death', walk: 'walk', back: 'walk',
                   rate: 1.0, lean: 0.05, strafeK: 1.2 },
           voice: { f: 1.00, growl: 0.80, rasp: 0.9, throat: 'mask', human: true, grunt: 'dealerHit' } },
   /* SCP-096, ON THE HEADLAND. Sealife Fan 3's "SCP-096 Reanimated" — the
@@ -34634,7 +34653,7 @@ function dressMutant(u, gltf) {
    * actions, not keys. */
   if (u.kind.lit) {
     const alias = { strafeL: 'walk', strafeR: 'walk', walk2: 'walk', run2: 'run', idle2: 'idleSrc',
-                    idle: 'ready', roar: 'taunt', roar2: 'taunt',
+                    idle: 'idleSrc', roar: 'taunt', roar2: 'taunt',
       /* AND THE SWINGS ANSWER TO THE NAMES THE TABLE CALLS THEM. `MUT_ATTACKS`
        * knows them as dDown/dSide/dHold/dLunge and the GLB ships them as
        * attackDown/attackSide/attackHold/attackLunge — so `mutPlay` looked up
@@ -34645,6 +34664,7 @@ function dressMutant(u, gltf) {
        * clip is what hid it — a swing that does not exist should be loud. */
       block: 'block', dDown: 'attackDown', dSide: 'attackSide', dDownM: 'attackDownM',
       dSideM: 'attackSideM', dHold: 'attackHold', dLunge: 'attackLunge' };
+    if (u.clips.strafeL && u.clips.strafeR) { delete alias.strafeL; delete alias.strafeR; }   // (his own side-steps, `kind.author`: kept)
     for (const k in alias) if (u.clips[alias[k]]) u.clips[k] = u.clips[alias[k]];
   }
   /* AND ANY KIND MAY ALIAS. The Dealer's map above is his because his GLB
@@ -35287,7 +35307,7 @@ function parryMutant(u) {
   u.st.stun = MUT_STUN * (u.kind.stunK || 1) * parryStunK();
   u.st.stunMax = u.st.stun;                  // the reel is stretched over however long this stagger is
   parryGlow = 0.5;
-  guardShockV += 7.6 * u.kind.reachK; spawnSparks(14, 1.3);
+  guardShockV += 7.6 * u.kind.reachK; if (!u.kind.skrim) guardSparks(true, u.g.position);
   flashMats(u.g);
   sfxParry();
   playSample('poise', 0.6);
@@ -35331,7 +35351,7 @@ function blockMutant(u) {
    * the edge, the knee dipping under it, and the word gone off the screen
    * before you have finished reading it. Short and violent beats long and
    * heavy for anything you are meant to do four times in an exchange. */
-  guardShockV += 7.4 * u.kind.reachK; spawnSparks(16, 1.1);
+  guardShockV += 7.4 * u.kind.reachK; if (!u.kind.skrim) guardSparks(false, u.g.position);
   parryGlow = Math.max(parryGlow, 0.34);
   fovKick = Math.max(fovKick, 6.0);
   addTrauma(0.62);
@@ -48141,6 +48161,7 @@ function animateFrame() {
    * to look when a load hitches, and the timer says which. */
   if (introHoldNow()) { /* a moment of the intro is due: nothing heavy across it */ }
   else if (bgLoadMode && !bgLoadOk()) { /* after a fast checkpoint: the far rest waits for a quiet moment */ }
+  else if (bgLoadMode && inWhale) { /* and in the whale's belly for you to leave it (`bwHoldHere`) */ }
   else if (warmRunStep()) {
     if (bgLoadMode && performance.now() - warmRan < 1) bgLoadLast = performance.now();     // (stamped only when a step RAN this frame: a held compile reports "alive" every frame, and stamped then the parses never got a turn)
     /* one view of one room, and nothing else this frame — EXCEPT behind the
@@ -48437,6 +48458,17 @@ function mutClampX(u, p, dt) {
   if (u.kind.thrBody) { thrClampUnit(u, p); return; }   // the throne room's stone, not the beach's
   if (u.kind.fortBody && fortWalls) { fortClampUnit(u, p); return; }   // the castle's stone, not the surf and the dune
   if (u.kind.c13Body) { c13ClampUnit(u, p); return; }   // and Castle XIII's
+  /* AND THE GARGOYLES ARE HELD BY THEIR OWN COURT (2026-10-30, the owner: "MAKE SURE SHOOTING THE GARGOYLES STILL BREAKS
+   * THEM AND HAS THE KEY DROP THE KEY JUST DIDNT DROP"). They had no branch here, so a shotgun's shove (`sgHitFoe` →
+   * `flinchPush`) ran them through the beach's clamp below: measured, one blast and a gargoyle at x 85.5 was at x 14.7
+   * on the next frame — seventy metres off, out of the court, alive where you could never reach it, and the key only
+   * falls out of the last one to die. Now a shove that would take one into a wall or out of the court is refused
+   * (`gargLegal`), back to where it last stood legally. */
+  if (u.kind.garg) {
+    const L = u.gp && (u.gp.legal || (u.gp.legal = p.clone()));
+    if (gargLegal(p.x, p.y, p.z)) { if (L) L.copy(p); } else if (L) { p.x = L.x; p.z = L.z; }
+    return;
+  }
   /* THE BEACH'S WALLS ARE NOT EVERY CREATURE'S WALLS — and by now there are
    * two rooms below that prove it. The dojo is six thousand metres from the
    * surf, so clamping the samurai between the wading line and the foot of the
@@ -59086,13 +59118,10 @@ function samuraiPick(u) {
   u.samPicked = true;
   return true;
 }
-function authorSamuraiStrafe(u, m, gltf) {
-  const src = (gltf.animations || []).find((c) => c.name === 'idle');
-  if (!src) return [];
-  const R = poseRig(u, m, src, SAM_STRAFE_JOINTS, {});
+/* THE SIDE-STEP, ON ANY RIG `poseRig` has the legs of (the samurai's, 2026-10; the Dealer's, 2026-10-31): legs only, every
+ * other bone held on the stance `R` was taken from. Returns [strafeL, strafeR] and sets their `clipSpeed`. */
+function authorSideStep(u, m, R, opt) {
   const { J, base, build, compose } = R;
-  u.samR = R;                                    // the bind and the stance, for the great-sword set when it lands
-  for (const k of ['hip', 'thighL', 'thighR', 'calfL', 'calfR', 'footL', 'footR']) if (!J[k]) return [];
   /* WHICH WAY IS OUT, AND WHICH WAY IS UP, ARE MEASURED. Nothing about a pose
    * on somebody else's rig can be checked by reasoning — this file has said so
    * for the curl of a fist, the swing of a thigh and the roll of a tail, and
@@ -59117,7 +59146,7 @@ function authorSamuraiStrafe(u, m, gltf) {
   /* A SIDE-STEP IS SHORT AND LOW. A metre of travel a cycle at a metre and a
    * quarter a second, which is what a man in armour holding a guard does when
    * he is circling you rather than walking somewhere. */
-  const DUR = 0.80, STRIDE = 0.50, LEG = 0.90;
+  const { DUR, STRIDE, LEG } = opt;
   /* AND `-cos(ph)/2` IS NOT ACTUALLY A FOOT THAT STAYS PUT. It is the phase
    * this file wrote down for the reptilians and it gets the important half
    * right — the foot moves outward exactly while it is in the air — but its
@@ -59137,10 +59166,12 @@ function authorSamuraiStrafe(u, m, gltf) {
     for (let i = 0; i <= N; i++) {
       const t = i / N, kf = {};
       for (const side of ['L', 'R']) {
-        // the leg on the side he is going leads; the other is half a cycle behind
-        const lead = (dir > 0) === (side === 'R');
+        // the leg on the side he is going leads; the other is half a cycle behind. (`dir` > 0 is toward the rig's +X, which on
+        // a man facing +Z is his LEFT: it was `(dir > 0) === (side === 'R')`, the right leg reaching out to his left across the
+        // other — and `strafeR` built going +X, while the fight's `side` > 0 carries him to −X. 2026-10-31, probe `dealerSide&m=clip`)
+        const lead = (dir > 0) === (side === 'L');
         const p = (t + (lead ? 0 : 0.5)) % 1;
-        const offRight = off(p) * dir;                         // metres, toward his right
+        const offRight = off(p) * dir;                         // metres, toward the rig's +X (his left)
         const air = p < 0.5 ? Math.sin(p / 0.5 * Math.PI) : 0;
         kf['thigh' + side] = { fwd: abd[side] * (offRight / LEG) };
         kf['calf' + side] = { right: lift[side] * air * 0.62 };
@@ -59153,28 +59184,67 @@ function authorSamuraiStrafe(u, m, gltf) {
     }
     return build(name, DUR, keys, true);
   };
-  const out = [mk('strafeL', -1), mk('strafeR', 1)];
+  const out = [mk('strafeL', 1), mk('strafeR', -1)];
   /* AND THE RATE IS THE STRIDE OVER THE SPEED — MEASURED OFF THE PLANTED
    * FOOT, not taken from `STRIDE`. The parameter is an ANGLE and the travel
    * is a chord, so what the hip actually gets is not what was asked for:
    * measured, 0.845 m of travel for a metre requested. The clip states its
    * own stride the way the packer measures the retargeted ones. */
-  {
+  /* (EACH CLIP ITS OWN, OFF BOTH FEET — 2026-10-31. It was the right foot's pace in `strafeR` given to both clips; on the
+   * Dealer's rig, probe `dealerSide&m=clip`, the right foot went 1.22 m/s planted when it led and 1.58 when it trailed.
+   * A foot is down over the back half of its own cycle — the lead's from 0.5, the trail's from 0 — so its pace is read
+   * over 0.6–0.95 of that half, and the clip's is the two feet's mean.) */
+  for (const [ci, dir] of [[0, 1], [1, -1]]) {
     const mx = new THREE.AnimationMixer(m);
-    const a = mx.clipAction(out[1]); a.play(); a.weight = 1; a.enabled = true;
+    const a = mx.clipAction(out[ci]); a.play(); a.weight = 1; a.enabled = true;
     const hp = new THREE.Vector3(), fp = new THREE.Vector3();
-    const at = (tt) => {
-      a.time = tt * DUR; mx.update(0); m.updateMatrixWorld(true);
-      J.hip.getWorldPosition(hp);
-      // the right foot leads `strafeR`, so it is DOWN over the back half
-      J.footR.getWorldPosition(fp);
+    const at = (tt, foot) => {
+      a.time = (((tt % 1) + 1) % 1) * DUR; mx.update(0); m.updateMatrixWorld(true);
+      J.hip.getWorldPosition(hp); J[foot].getWorldPosition(fp);
       return fp.sub(hp).dot(wRight);
     };
-    const d = (at(0.95) - at(0.60)) / (0.35 * DUR);
+    let sum = 0;
+    for (const side of ['L', 'R']) {
+      const t0 = ((dir > 0) === (side === 'L')) ? 0 : 0.5;     // (where this foot's cycle starts in the clip's time)
+      sum += Math.abs(at(t0 + 0.95, 'foot' + side) - at(t0 + 0.60, 'foot' + side)) / (0.35 * DUR);
+    }
     mx.stopAllAction(); mx.uncacheRoot(m);
-    const v = Math.abs(d);
-    u.clipSpeed.strafeL = u.clipSpeed.strafeR = (v > 0.2 && v < 6) ? v : STRIDE * 2 / DUR;
+    const v = sum / 2;
+    u.clipSpeed[out[ci].name] = (v > 0.2 && v < 6) ? v : STRIDE * 2 / DUR;
   }
+  for (const k in J) if (J[k]) J[k].quaternion.copy(base.get(J[k]));
+  m.updateMatrixWorld(true);
+  return out;
+}
+/* THE DEALER'S SIDE-STEP (2026-10-31, the owner: "do the dealer … fix"). He circles you 70% of a fight (`circle`) and
+ * did it on his WALK — `strafeL/R` aliased onto it, a man striding forward while he went sideways, the bug this file
+ * fixed on the samurai, the knight, the drunk and the reptilians and never on him. His GLB has no side-step and its
+ * packer's Mixamo source has none either, so it is the samurai's (`authorSideStep`): legs only, on a frame of his own
+ * idle (`idleSrc`, what every one of his clips is built on), so the bar stays in his fist the way Mixamo holds it.
+ * His leg is measured, not guessed: hip joint to ankle at the stance. */
+function authorDealerSide(u, m, gltf) {
+  const src = (gltf.animations || []).find((c) => c.name === 'idleSrc');
+  if (!src) return [];
+  const want = { hip: /Hips_\d+$/, thighL: /LeftUpLeg_\d+$/, thighR: /RightUpLeg_\d+$/, calfL: /LeftLeg_\d+$/, calfR: /RightLeg_\d+$/,
+    footL: /LeftFoot_\d+$/, footR: /RightFoot_\d+$/ };
+  const JN = {};
+  m.traverse((o) => { if (!o.isBone) return; for (const k in want) if (!JN[k] && want[k].test(o.name)) JN[k] = o.name; });
+  for (const k in want) if (!JN[k]) return [];
+  const R = poseRig(u, m, src, JN, {});
+  const { J } = R;
+  const a = J.thighL.getWorldPosition(new THREE.Vector3()), b = J.footL.getWorldPosition(new THREE.Vector3());
+  const LEG = THREE.MathUtils.clamp(a.distanceTo(b), 0.6, 1.3);
+  u.dealerLeg = LEG;
+  return authorSideStep(u, m, R, { DUR: 0.74, STRIDE: 0.62, LEG });
+}
+function authorSamuraiStrafe(u, m, gltf) {
+  const src = (gltf.animations || []).find((c) => c.name === 'idle');
+  if (!src) return [];
+  const R = poseRig(u, m, src, SAM_STRAFE_JOINTS, {});
+  const { J, base } = R;
+  u.samR = R;                                    // the bind and the stance, for the great-sword set when it lands
+  for (const k of ['hip', 'thighL', 'thighR', 'calfL', 'calfR', 'footL', 'footR']) if (!J[k]) return [];
+  const out = authorSideStep(u, m, R, { DUR: 0.80, STRIDE: 0.50, LEG: 0.90 });
   for (const k in J) if (J[k]) J[k].quaternion.copy(base.get(J[k]));
   m.updateMatrixWorld(true);
   const th = samuraiThrowClip(u, m, R);
@@ -60502,7 +60572,7 @@ function parryShuriken(b) {
   b.back = true; b.t = 0;
   worldSparks(b.p, 20);
   parryGlow = 0.5;
-  guardShockV += 6.4; spawnSparks(16, 1.3);
+  guardShockV += 6.4; guardSparks(true, b.p, 0.6);
   sfxParry();
   playSample('poise', 0.55);
   addTrauma(0.45);
@@ -60524,7 +60594,7 @@ function blockShuriken(b) {
   guardTick();
   if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM);
-  guardShockV += 5.2; spawnSparks(12, 1.0);
+  guardShockV += 5.2; guardSparks(false, b.p, 0.5);
   parryGlow = Math.max(parryGlow, 0.28);
   fovKick = Math.max(fovKick, 4);
   addTrauma(0.36);
@@ -63388,10 +63458,12 @@ function whRibGeo(r, rnd) {
   for (let i = 0; i < pos.count; i++) { pos.setZ(i, pos.getZ(i) * 0.45); const b = THREE.MathUtils.smoothstep(i / pos.count, 0.6, 1); col[i * 3] = 0.78 - 0.4 * b; col[i * 3 + 1] = 0.71 - 0.62 * b; col[i * 3 + 2] = 0.58 - 0.52 * b; }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.computeVertexNormals(); return g;
 }
+let whLumpUnit = null;
 function whLump(r, sx, sy, sz, seed) {
   // (welded first: an icosahedron comes unindexed, and its normals were the faces' own — the heap drawn in facets with a glint on each)
-  const g0 = new THREE.IcosahedronGeometry(r, 4); g0.deleteAttribute('normal'); g0.deleteAttribute('uv');
-  const g = mergeVertices(g0, 1e-4), P = g.attributes.position;
+  // (the welded unit sphere made once and scaled to r for each lump: welding 15k vertices a lump was half of the belly's build, 2026-10-30)
+  if (!whLumpUnit) { const g0 = new THREE.IcosahedronGeometry(1, 4); g0.deleteAttribute('normal'); g0.deleteAttribute('uv'); whLumpUnit = mergeVertices(g0, 1e-4); }
+  const g = whLumpUnit.clone(); g.scale(r, r, r); const P = g.attributes.position;
   for (let i = 0; i < P.count; i++) {
     const vx = P.getX(i), vy = P.getY(i), vz = P.getZ(i), q = 1 / r;
     const n = Math.sin(vx * q * 5.1 + seed) * Math.cos(vz * q * 4.3 - seed) * 0.14 + Math.sin(vy * q * 7.7 + vx * q * 3.1 + seed * 2) * 0.09 + Math.sin(vx * q * 15 + vz * q * 13 + seed) * 0.035 + Math.abs(Math.sin(vx * q * 9 - vz * q * 11 + seed)) * 0.05;
@@ -63615,25 +63687,7 @@ function whAirFog(G, cuts, rnd) {
   }));
   banks.frustumCulled = false; banks.raycast = () => {}; banks.userData.bwGhost = true; banks.renderOrder = 7;
   G.add(banks);
-  // the dust
-  const ND = 2200, dp = new Float32Array(ND * 3), dr = new Float32Array(ND);
-  for (let i = 0; i < ND; i++) { const s = WH_S0 + 2 + rnd() * (WH_L - WH_S0 - 12), cx = whCx(s), hw = 12.5 * whScale(s), x = cx + (rnd() * 2 - 1) * hw * 0.85; dp[i * 3] = x; dp[i * 3 + 1] = whFloor(x, s) + 0.3 + rnd() * 9; dp[i * 3 + 2] = -s; dr[i] = rnd() * 6.28; }
-  const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(dp, 3)); dg.setAttribute('aR', new THREE.BufferAttribute(dr, 1));
-  const dust = new THREE.Points(dg, new THREE.ShaderMaterial({
-    uniforms: { uT: U.uT, uCuts: U.uCuts, uPx: PIXEL_RATIO_U }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-    vertexShader: `attribute float aR; uniform float uT, uPx; uniform vec3 uCuts[8]; varying float vL;
-      void main(){
-        vec3 p = position + vec3(sin(uT * 0.11 + aR) * 0.6, sin(uT * 0.07 + aR * 3.0) * 0.4, cos(uT * 0.09 + aR * 2.0) * 0.6);
-        vec3 w = (modelMatrix * vec4(p, 1.0)).xyz; float lit = 0.0;
-        for (int i = 0; i < 8; i++) { vec2 d = p.xz - uCuts[i].xy; lit += exp(-dot(d, d) / 4.0); }
-        vL = min(1.0, lit) * (0.55 + 0.45 * sin(uT * 0.8 + aR * 5.0));
-        vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_Position = projectionMatrix * mv;
-        gl_PointSize = max(1.0, 26.0 * uPx / -mv.z); }`,
-    fragmentShader: `varying float vL; void main(){ vec2 c = gl_PointCoord - 0.5; float a = smoothstep(0.5, 0.0, length(c)); gl_FragColor = vec4(vec3(0.75, 0.82, 1.0) * a * vL * 0.9, 1.0); }`,
-  }));
-  dust.frustumCulled = false; dust.raycast = () => {}; dust.userData.bwGhost = true; dust.renderOrder = 8;
-  // (not added — 2026-10-30, the owner, of them drawn as teal blobs by a wall: "TAKE THESE FLOATING THINGS OUT THEY LOOK TOO AI")
-  dust.geometry.dispose(); dust.material.dispose();
+  // (the dust, 2200 points, is not built: "TAKE THESE FLOATING THINGS OUT", 2026-10-30)
   return { U, list: [banks] };
 }
 // dust in his beam: a few dozen motes turning slowly in the cold light, over where it lands
@@ -63760,15 +63814,21 @@ function whBuildArena(G, gut, rnd) {
       const pool = new THREE.Mesh(whFloorDisc(best.x, best.s, fy, 2.4, 0.02, 40), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(pc), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.16, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, fog: false }));
       pool.position.set(best.x, fy, -best.s); pool.renderOrder = 4; G.add(pool); A.beamPool = pool;   // (on the floor's own curve: a flat disc floated over half of it)
       A.motes = [];   // (his beam's 70 sprites — a draw each — are the gut's dust now: `whAirFog`)
-      A.rays = whGodRays(G, best, fy, rnd); A.mist = whGroundMist(G, best, A.skrimSpots);
-      // a shaft or two down every other cut as well, and fog hanging in the air the length of the gut (2026-10-30: "grand and huge")
-      A.rays2 = { uT: WH_U.uT, uI: { value: 0.55 } };
-      for (const c of A.skrimSpots) if (c !== best) whGodRays(G, c, whFloor(c.x, c.s), rnd, 2, A.rays2);
-      A.air = whAirFog(G, A.skrimSpots, rnd);
-      // and more heaps of it about the place, smaller, none in his way or yours (seeded: the same every load)
-      { let n = 0; for (let k = 0; k < 60 && n < 6; k++) { const a = rnd() * 6.28, d = 3.5 + rnd() * 8, lx = best.x + Math.cos(a) * d, ls = best.s + Math.sin(a) * d;
-          if (Math.abs(lx - whCx(ls)) > 12.5 * whScale(ls) - 2.2 || Math.hypot(lx - px, ls - ps) < 3) continue;
-          whFleshPile(G, lx, ls, rnd, 0.42 + rnd() * 0.35, 2 + Math.floor(rnd() * 3)); n++; } }
+      A.rays = whGodRays(G, best, fy, rnd);
+      /* (the rest a frame later, through the cut's black: `placeInWhale`'s first job runs `A.later` — 2026-10-30, the belly's
+       * build was one 0.5 s frame. Its own seeded stream, so it is the same every load however it is called.) */
+      const rl = mulberry32(0x7a11);
+      A.later = () => {
+        A.mist = whGroundMist(G, best, A.skrimSpots);
+        // a shaft or two down every other cut as well, and fog hanging in the air the length of the gut (2026-10-30: "grand and huge")
+        A.rays2 = { uT: WH_U.uT, uI: { value: 0.55 } };
+        for (const c of A.skrimSpots) if (c !== best) whGodRays(G, c, whFloor(c.x, c.s), rl, 2, A.rays2);
+        A.air = whAirFog(G, A.skrimSpots, rl);
+        // and more heaps of it about the place, smaller, none in his way or yours (seeded: the same every load)
+        { let n = 0; for (let k = 0; k < 60 && n < 6; k++) { const a = rl() * 6.28, d = 3.5 + rl() * 8, lx = best.x + Math.cos(a) * d, ls = best.s + Math.sin(a) * d;
+            if (Math.abs(lx - whCx(ls)) > 12.5 * whScale(ls) - 2.2 || Math.hypot(lx - px, ls - ps) < 3) continue;
+            whFleshPile(G, lx, ls, rl, 0.42 + rl() * 0.35, 2 + Math.floor(rl() * 3)); n++; } }
+      };
     } }
   whPlaceRemains(G, A, rnd);
   return A;
@@ -63906,7 +63966,10 @@ function buildWhale() {
       bio.setMatrixAt(bi++, m4.compose(p, q, new THREE.Vector3(rr, rr, rr)));
     }
   }
-  bio.count = bi; bio.frustumCulled = false; bio.raycast = () => {}; bio.userData.bwGhost = true; G.add(bio);
+  /* (NOT ADDED — 2026-10-30, the owner, of a column of them on the wall by a cut: "take out these on the wall bring back
+   * the other stuff". These were the teal blobs all along, not the plankton. Still built and placed, so `rnd` draws the
+   * same and everything seeded after it stays where it was.) */
+  bio.count = bi; bio.geometry.dispose(); bio.material.dispose();
   // the throat: the only cold light, falling out of the hole you came down onto the slope
   const thr = new THREE.Vector3(whCx(3), WH_C0 + 0.3, -3);
   const shaftG = new THREE.CylinderGeometry(0.9, 3.4, 12, 18, 1, true); shaftG.translate(0, -6, 0);
@@ -63968,6 +64031,7 @@ function buildWhale() {
     });
     const plank = new THREE.Points(g, pm); plank.frustumCulled = false; plank.raycast = () => {}; plank.userData.bwGhost = true; plank.renderOrder = 5;
     G.add(plank); air.plank = plank;
+
   }
   // drips, and bubbles coming up through the fluid
   const bubbles = [];
@@ -64035,6 +64099,13 @@ function updateWhaleCut(dt) {
     // and out of its mouth is a checkpoint too, on the sand in front of its face
     if (whaleDir > 0) { sfxWhaleGulp(); placeInWhale(); autosaveNow('whaleIn'); } else { placeOutOfWhale(); autosaveNow(); }
   }
+  // the belly's warm-ins, one a frame while it is black; any left are done before the light comes up
+  if (whaleJobs && whaleCutDone) {
+    if (t < WH_OUT + WH_HOLD - 0.1 && whaleJobs.length) { try { whaleJobs.shift()(); } catch (e) { /* never fatal */ } }
+    else { for (const j of whaleJobs) { try { j(); } catch (e) { /* never fatal */ } } whaleJobs = null; if (inWhale && whale) whale.G.visible = true; }
+    if (whaleJobs && !whaleJobs.length) whaleJobs = null;
+  }
+  if (whaleCutDone && whaleDir > 0 && t >= WH_OUT + WH_HOLD && inWhale && whale && !whale.G.visible && !whaleJobs) whale.G.visible = true;   // (shown by the time the light comes up, compiled or not)
   if (t >= D) { whaleBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
 }
 function whaleEnter() {
@@ -64060,10 +64131,23 @@ function placeInWhale() {
    * placed, his chains made and the six heaps built on the first frame the world ran again — 5.45 s after the trigger,
    * the fade already over: an 82 ms frame in plain sight, and him not there until then). Placed, posed, his chains and
    * the heaps built, so the compile below takes them too. */
-  try { skrimWarmIn(); } catch (e) { /* never fatal: his own tick does it all again if this could not */ }
-  try { cryWarmIn(); } catch (e) { /* (the crying heads' nest and its jar, 2026-10-30: `cryTick` builds them if this could not) */ }
-  // the programs and the textures go now, while the screen is black
-  try { renderer.compile(W.G, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  /* (one thing a frame through the cut's black, not all of it in one — 2026-10-30, the owner: "the lag while walking
+   * into the whale belly needs to be fixed": measured, `whaleWalkIn`, one 493 ms frame at the cut — the build 276, these
+   * 111, the first frame's uploads 93. Through the cut they go a frame each, the compile in the background
+   * (`compileAsync`), the textures uploaded on a frame of their own; a restore or a direct call does them at once.) */
+  const jobs = [
+    () => { const A = W.arena; if (A && A.later) { const f = A.later; A.later = null; f(); } },   // the fog, the other cuts' rays, the heaps about his (before his search lists the heaps)
+    () => skrimWarmIn(),                               // never fatal: his own tick does it all again if this could not
+    () => cryWarmIn(),                                 // (the crying heads' nest and its jar: `cryTick` builds them if this could not)
+    () => {                                            // the programs, while the screen is black — in the background through the cut, the
+      if (!whaleBusy || !renderer.compileAsync) { W.G.visible = true; renderer.compile(W.G, camera, scene); return; }   //  belly not drawn till they are linked
+      W.G.visible = true; const pr = renderer.compileAsync(W.G, camera, scene); W.G.visible = false;   // (its materials are gathered now, from what is shown)
+      pr.catch(() => {}).then(() => { if (inWhale) W.G.visible = true; });
+    },
+    () => W.G.traverse((o) => { const m = o.material; if (!m) return; for (const q of Array.isArray(m) ? m : [m]) for (const k of ['map', 'bumpMap', 'alphaMap', 'normalMap', 'emissiveMap']) if (q[k]) renderer.initTexture(q[k]); }),
+  ];
+  if (whaleBusy) { whaleJobs = jobs; W.G.visible = false; }   // (not drawn — so not compiled in one go by the first render — till its programs are in)
+  else for (const j of jobs) { try { j(); } catch (e) { /* a warm is never fatal */ } }
   const s = WH_LAND_S, x = whCx(s) + 0.4;
   groundY = WHALE_Y + whFloor(x, s);
   camera.position.set(WHALE_X + x, groundY + playerEye(), WHALE_Z - s);
@@ -89175,13 +89259,14 @@ function updateGargoyles(dt) {
     if (!inC13 && !fortBusy) { GARG.phase = 0; GARG.wingless = null; for (const u of gargAlive()) { u.st.hp = u.kind.hp; gargMend(u); gargPerch(u); } }
   }
 }
+queueMicrotask(() => window.__bw && Object.defineProperty(window.__bw, 'magAmmo', { get: () => magAmmo, set: (v) => { magAmmo = v; }, configurable: true }));
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { gargBodyTurnT: gargBodyTurn, gargKeyS: () => gargKey, gargTakeKey: () => { const K = gargKey; if (!K) return; const it = interactables.find((x) => x.root === K.g); if (it && it.data && it.data.onActivate) it.data.onActivate(); else if (it && it.onActivate) it.onActivate(); }, gargSaveS: () => (GARG.phase === 2 ? (GARG.keyTaken ? 3 : 2) : 0), gargKeyItem }));
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { GARG, placeGargoyles, gargTryDoor, gargFindPerches, gargLockedS: () => gargLocked(), gargLegal, gargSpot,
   gargStrikePose, gargRouteDbg: (u) => { const G = gargGrid(), aim = gargAim(u, new THREE.Vector3()), at = gargSpot(aim.x, aim.z, aim.y - 0.6, 3.1, Math.atan2(u.g.position.x - aim.x, u.g.position.z - aim.z), new THREE.Vector3()); const D = at ? gargDistFrom(G, at) : null, c = gargCell(G, u.g.position.x, u.g.position.z), gc = at ? gargCell(G, at.x, at.z) : -1; const r = at ? gargRoute(u, at, new THREE.Vector3()) : null;
     return { c, cOk: c >= 0 ? G.ok[c] : 'out', Dc: D && c >= 0 ? D[c] : 'n', gc, gcOk: gc >= 0 ? G.ok[gc] : 'out', at: at && [at.x - C13_X, at.y, at.z - C13_Z].map((v) => +v.toFixed(1)), r: r && [r.x - C13_X, r.y, r.z - C13_Z].map((v) => +v.toFixed(1)), over: u.gp.over, mode: u.gp.mode }; },
   gargWhy: (x, y, z) => ({ mask: maskAt(C13_M, x, z), court: c13CourtAt(x, z), pass: c13PassBlocked(x, z), wall: !!keepWallNear(x, z, 1.0, y - 0.3, y + 1.9, C13_SITE), wall6: !!keepWallNear(x, z, 0.6, y - 0.3, y + 1.9, C13_SITE) }) }));
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { minoSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'minotaur', y), MINO_LIE, MINO_DEAD, minoLieClear, c13Overlaps, kindSpawnTest: (kind, x, z, y = 0) => makeMutant(x, z, kind, y), minoPacksIn: () => MINO_PACKS.every(([g]) => !!g()),
-  bloodDropsN: () => bloodDrops.length, raiseGuard, lowerGuard: () => { blocking = false; }, blockingS: () => blocking, setGuardTest: (v, age = 0) => { blocking = v; if (v) { mouseBtns |= 2; blockStart = performance.now() - age * 1000; } else mouseBtns &= ~2; }, SKRIM, SKC, SKS, SK_POSTURE, skrimPosture, SK_LOWBACK, wbHookS: () => wbHook, skrimFaceDir, whaleBusyS: () => whaleBusy, skrimSongS: () => !!skrimSong, skrimFloorW, skrimInGutS: (x, z) => skrimInGut(x, z), skrimNeckFix, skrimNeckPitch, skrimRelS: (u, c) => skrimHookContact(u, c), skcThrow, skcPit, skcSweep, skcLine, skcRing, skcTell, updateSkrimChains, skcInit, WH_GL, WH_DARK, skrimFight, skrimTalk, updateSkrimLife, updateSkrimMood, whMood, whaleS: () => whale, MINO, minoPickDbg: () => { const u = MINO.u, P = u.g.position, me = camera.position; return minoFoes().map((f) => { const dU = Math.hypot(f.g.position.x - P.x, f.g.position.z - P.z), dMe = Math.hypot(f.g.position.x - me.x, f.g.position.z - me.z); return f.kindName + ' hp' + f.st.hp + ' spent' + minoSpent(f) + ' dU' + dU.toFixed(1) + ' dMe' + dMe.toFixed(1) + ' foe' + (f.st.foe === u ? 'HIM' : f.st.foe ? 'x' : 'you') + ' on' + !!f.knOnMino; }).join(' | ') + ' || kn: ' + knUnits.map((k) => k.kindName + ' alive' + k.st.alive + ' ret' + !!k.retired + ' awake' + !!k.st.awake + ' vis' + k.g.visible).join(' ; '); }, minoGoDown, minoTalk, minoJoin, minoTurn, minoHeadAt, minoLegal, minoFollow, hurtMutantTest: (u, d, P = 1.0) => hurtMutant(u, d, P),
+  bloodDropsN: () => bloodDrops.length, raiseGuard, lowerGuard: () => { blocking = false; }, blockingS: () => blocking, setGuardTest: (v, age = 0) => { blocking = v; if (v) { mouseBtns |= 2; blockStart = performance.now() - age * 1000; } else mouseBtns &= ~2; }, SKRIM, SKC, SKS, whNoiseTex, whFleshPile, whGroundMist, whAirFog, whGodRays, SK_POSTURE, skrimPosture, SK_LOWBACK, wbHookS: () => wbHook, skrimFaceDir, whaleBusyS: () => whaleBusy, skrimSongS: () => !!skrimSong, skrimFloorW, skrimInGutS: (x, z) => skrimInGut(x, z), skrimNeckFix, skrimNeckPitch, skrimRelS: (u, c) => skrimHookContact(u, c), skcThrow, skcPit, skcSweep, skcLine, skcRing, skcRingEdge, skcTell, updateSkrimChains, skcInit, WH_GL, WH_DARK, skrimFight, skrimTalk, updateSkrimLife, updateSkrimMood, whMood, whaleS: () => whale, MINO, minoPickDbg: () => { const u = MINO.u, P = u.g.position, me = camera.position; return minoFoes().map((f) => { const dU = Math.hypot(f.g.position.x - P.x, f.g.position.z - P.z), dMe = Math.hypot(f.g.position.x - me.x, f.g.position.z - me.z); return f.kindName + ' hp' + f.st.hp + ' spent' + minoSpent(f) + ' dU' + dU.toFixed(1) + ' dMe' + dMe.toFixed(1) + ' foe' + (f.st.foe === u ? 'HIM' : f.st.foe ? 'x' : 'you') + ' on' + !!f.knOnMino; }).join(' | ') + ' || kn: ' + knUnits.map((k) => k.kindName + ' alive' + k.st.alive + ' ret' + !!k.retired + ' awake' + !!k.st.awake + ' vis' + k.g.visible).join(' ; '); }, minoGoDown, minoTalk, minoJoin, minoTurn, minoHeadAt, minoLegal, minoFollow, hurtMutantTest: (u, d, P = 1.0) => hurtMutant(u, d, P),
   hoveredS: () => hovered && (typeof hovered.label === 'function' ? hovered.label() : hovered.label) }));
 
 /* =====================================================================
@@ -100131,7 +100216,7 @@ function authorSkrimClips(u, m) {
 }
 MUT_KINDS.skrim = {
   glb: 'assets/skrim.glb', skrim: true, solo: true, noSand: true, skin: null, bones: null, faceFix: 0, preParse: false,
-  h: 1.86, hp: 120, dmg: 1, hitR: 0.62, body: 0.46, reachK: 1.0, windK: 1, lungeK: 1, poise: 12, block: 0, blockCost: 0.62, parryK: 0.9, stunK: 0.7,
+  h: 1.86, hp: 200, dmg: 1, hitR: 0.62, body: 0.46, reachK: 1.0, windK: 1, lungeK: 1, poise: 16, block: 0, blockCost: 0.62, parryK: 0.9, stunK: 0.5,   // (120 → 170 → 200, poise 12 → 16, stunK 0.7 → 0.5: 2026-10-31, the owner: "MAKE SKRIM HARDER" — `SK_HARD`)
   author: authorSkrimClips, use: {},
   anim: { idle: 'idle', walk: 'walk', run: 'run', die: 'dieB', back: 'walkB', roar: 'cast2', rate: 1.0 },
   first: 'crouchIdle', sleepIdle: 'crouchIdle', wakeAt: 0, stunClip: 'hitLF', bossDeath: true, fade: 0.22,   // (his clips eased into each other: 2026-10-30)
@@ -100602,6 +100687,36 @@ function updateSkrimLife(dt) {
  * at chest height, or steps back out of reach. At half health a ring of them bursts up round him, and everything
  * quickens. (It was water until the owner, 2026-10-29: chains, `SKC`.) */
 const SK_RANGE = [5.8, 9.0];
+/* HARDER (2026-10-31, the owner: "MAKE SKRIM HARDER"; then "A LITTLE MORE HEALTH"). 120 → 170 → 200 health, poise 12 → 16, a parry's stagger 0.7 → 0.5 of
+ * the game's; angry at 60% not 50% and 1.3x not 1.22; a cast broken by a blow only before 0.4 of its wind-up (0.66);
+ * his flinch 0.25 s not 0.4 and the window he answers a second blow in 2.2 s not 1.5; half the breath between throws;
+ * the hook more often, in longer strings, sooner again; he turns onto you quicker; the thrown hook 20 m/s homing
+ * harder. The tells (the floor splitting, the ring's edge) are untouched: the owner asked for them readable. */
+const SK_HARD = { rage: 0.6, rageRate: 1.3, commit: 0.4, react: 0.25, arm: 2.2 };
+/* HIS AIM (2026-11-01, the owner: "a lot of his attacks miss especially the ones from the ground"). Measured (probe
+ * `skrimAim`, your guard down): standing, nearly all of it landed; circling him at a walk 7 m out, his thrown hooks 0 of 5
+ * and the floor 2 of 3; strafing at a run, 0 of 5 and 0 of 2. Every throw went at where your chest WAS (0.3 s of homing,
+ * no lead); the pit came up where you stood when the wind-up began, a second before; the line ran at that same spot. Now
+ * he reads your going (`SKV`, eased off your feet): a hook leads you by its flight (`lead`) and homes on that a little
+ * longer; a volley brackets you — one led, one where you are — so a steady walk is caught by one and a stop by the other;
+ * the pit's split in the floor FOLLOWS you through the wind-up and is fixed `lock` s before the chains come (step off it
+ * then: that is the dodge); the line is laid at where you will be when it gets to you. The tells are as they were. */
+const SK_AIM = { lead: 0.85, volley: [1.0, 0.1], homeT: 0.36, home: 2.3, lock: 0.5, track: 7.5, lineSpd: 11.8, lineR: 1.05 };
+const SKV = { p: new THREE.Vector3(), v: new THREE.Vector3(), ok: false }, _skvA = new THREE.Vector3();
+function skrimYouTrack(dt) {
+  const c = camera.position;
+  if (SKV.ok && dt > 0) { _skvA.set((c.x - SKV.p.x) / dt, 0, (c.z - SKV.p.z) / dt); if (_skvA.length() < 9) SKV.v.lerp(_skvA, Math.min(1, dt * 8)); else SKV.v.set(0, 0, 0); }
+  SKV.p.copy(c); SKV.ok = true;
+}
+/* THE HEADS AT HALF HEALTH (2026-11-01, the owner: "give him a phase at half health where he visually spawns in the head
+ * crabs from the ground to attack you make it still feel balanced"). Once, at half: he stands and calls (cast2 slowed to
+ * `dur`, and nothing you do breaks it — the price is that he is open for all of it), the floor splits in three places
+ * round you, and one by one a crying head claws up out of each (`crySummonEmerge`), hops clear of its hole and hunts you
+ * as the nest's do (`cryStep`: prowl, the rear that tells it, the leap; one blow kills it; your guard bats it off).
+ * Balanced: three, never more than one in the air (`gap` between leaps, the nest's 0.8), and while any of them lives he
+ * throws `slow`x less often and calls nothing up out of the floor (no pit, no line). His ring moves to 30% health, after
+ * them. They die with him. */
+const SK_SUMMON = { at: 0.5, dur: 2.6, rel: [0.16, 0.42, 0.56, 0.7], dist: [3.4, 4.6], gap: 1.5, slow: 2.2 };
 const skrimDur = (u, n) => (u.clips[n] ? u.clips[n].getClip().duration : 1.2);
 // the frame his hand goes out fastest along his front: when what is in it leaves it (measured once a clip, cached)
 function skrimRelease(u, clipName, handName, lo = 0.2, hi = 0.85, reach = false) {
@@ -100636,7 +100751,7 @@ const SK_ACTS = {        // (the names are the water's; what each one throws is 
   wave:   { clips: ['area2'], rate: 1.0 },                     // the line: up out of the floor from him to you
   palm:   { clips: ['m1A3', 'm1A1'], rate: 1.25 },             // the sweep, close in
   nova:   { clips: ['cast2'], rate: 1.0 },                     // the ring, at half health
-  hook:   { clips: ['m1A1M', 'm1A2M', 'm1A3M'], rate: 1.4 },   // his hook, swung: one to three blows (2026-10-30)
+  hook:   { clips: ['m1A1M', 'm1A2M', 'm1A3M'], rate: 1.5 },   // his hook, swung: one to three blows (2026-10-30; four angry, 1.4 → 1.5: 2026-10-31)
 };
 /* HIS HOOK, CLOSE IN (2026-10-30, the owner: "when you are up close he does nothing and is easy to hit he should back up
  * to use the distant change or just swing his hook if you are close enough"). The swings are the pack's one-hand
@@ -100660,21 +100775,23 @@ function skrimHookContact(u, clip) {
 }
 function skrimPick(u, d) {
   const k = u.sk;
-  if (k.rage && !k.novaDone) { k.novaDone = true; return 'nova'; }
+  if (!k.summonDone && u.st.hp <= u.kind.hp * SK_SUMMON.at && crySummonReady()) { k.summonDone = true; return 'summon'; }
+  if (k.rage && !k.novaDone && u.st.hp <= u.kind.hp * 0.3 && !crySummonAlive()) { k.novaDone = true; return 'nova'; }
   // close: the hook, or back out to his range (and from there, straight into a throw: `k.ranged`), or the sweep
   if (d < SK_HOOK.near && !k.ranged) {
     if (k.backOff) { k.backOff = false; return k.dashCd <= 0 ? 'dash' : 'retreat'; }
     const r = Math.random();
-    if (k.meleeCd <= 0 && r < (k.rage ? 0.66 : 0.58)) return 'hook';
+    if (k.meleeCd <= 0 && r < (k.rage ? 0.75 : 0.66)) return 'hook';
     if (k.dashCd <= 0 && r < 0.86) return 'dash';
     if (k.sweepCd <= 0) return 'palm';
     return k.meleeCd <= 0 ? 'hook' : k.dashCd <= 0 ? 'dash' : 'retreat';
   }
   // a little out of reach, now and then he walks in on you with it
-  if (d < 4.6 && !k.ranged && k.meleeCd <= 0 && Math.random() < 0.3) return 'hook';
+  if (d < 4.6 && !k.ranged && k.meleeCd <= 0 && Math.random() < 0.45) return 'hook';
   k.ranged = false;
   const w = k.rage ? { bolt: 0.32, volley: 0.3, geyser: 0.19, wave: 0.19 } : { bolt: 0.42, volley: 0.22, geyser: 0.18, wave: 0.18 };
   if (k.last === 'wave') w.wave *= 0.3; if (k.last === 'geyser') w.geyser *= 0.3;
+  if (crySummonAlive()) w.wave = w.geyser = 0;     // (nothing out of the floor while his heads are on it)
   let r = Math.random() * Object.values(w).reduce((a, c) => a + c, 0);
   for (const [n, x] of Object.entries(w)) { if ((r -= x) <= 0) return n; }
   return 'bolt';
@@ -100693,19 +100810,25 @@ function skrimStart(u, name) {
     k.act = { name, t: 0, dur: skrimDur(u, 'runB') * 1.5 / 1.2 }; const a = mutPlay(u, 'runB', true); if (a) a.timeScale = 1.2;
     sfxChainRattle(u.g.position.x, u.g.position.z, 0.5, 0.8); k.dashCd = k.rage ? 2.2 : 2.8; k.ranged = true; return;
   }
+  if (name === 'summon') {   // he stands and calls them up: cast2 drawn out over the whole of it
+    const cd = skrimDur(u, 'cast2'), a = mutPlay(u, 'cast2', false); if (a) a.timeScale = cd / SK_SUMMON.dur;
+    k.act = { name, t: 0, dur: SK_SUMMON.dur, fired: 0, rel: SK_SUMMON.rel.slice(), spots: crySummonSpots(u), tells: [] };
+    sfxAt(u.g.position.x, u.g.position.z, () => sfxMutRoar(2.2, u.kind.voice), { ref: 8, far: 60 });
+    return;
+  }
   if (name === 'retreat') {  // walked backwards out of it, facing you, then a throw
     k.act = { name, t: 0, dur: 1.1 + Math.random() * 0.5 }; mutPlay(u, 'walkB', true); k.ranged = true; return;
   }
   if (name === 'hook') {
-    const n = k.counter ? 1 + (Math.random() < 0.4 ? 1 : 0) : 1 + Math.floor(Math.random() * (k.rage ? 3 : 2.6)), cl = D.clips.slice().sort(() => Math.random() - 0.5);
+    const n = k.counter ? 1 + (Math.random() < 0.6 ? 1 : 0) : 1 + Math.floor(Math.random() * (k.rage ? 3.6 : 3)), cl = D.clips.slice().sort(() => Math.random() - 0.5);
     const seq = []; for (let i = 0; i < n; i++) seq.push(cl[i % cl.length]);
     const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
     k.act = { name, t: 0, dur: 9, seq, i: -1, sw: null, phase: d > SK_HOOK.reach - 0.15 && !k.counter ? 'close' : 'swing', rel: [], hand: u.model.getObjectByName('Character1_LeftHand') };
-    k.counter = false; k.meleeCd = (k.rage ? 0.9 : 1.4) + n * 0.35;
+    k.counter = false; k.meleeCd = (k.rage ? 0.6 : 1.0) + n * 0.3;
     if (k.act.phase === 'swing') skrimHookNext(u, k.act);
     return;
   }
-  const clip = D.clips[Math.floor(Math.random() * D.clips.length)], rate = D.rate * (k.rage ? 1.22 : 1);
+  const clip = D.clips[Math.floor(Math.random() * D.clips.length)], rate = D.rate * (k.rage ? SK_HARD.rageRate : 1);
   // (measured BEFORE it is played: measuring scrubs the mixer, and after, it stopped the clip just begun)
   const handN = name === 'bolt' || name === 'palm' ? skrimThrowHand(u, clip) : 'Character1_RightHand';
   const rel = skrimRelease(u, clip, handN);
@@ -100719,7 +100842,10 @@ function skrimStart(u, name) {
   else if (name === 'palm') { act.rel = [Math.max(0.1, rel - 0.08)]; k.sweepCd = 2.6; }
   else if (name === 'geyser') { act.rel = [0.55]; act.at = camera.position.clone(); act.tele = skcTell(act.at.x, act.at.z, 1.7, act.rel[0] * dur); sfxChainRattle(act.at.x, act.at.z, act.rel[0] * dur, 0.35, true); }
   else if (name === 'wave') { act.rel = [0.5]; act.at = camera.position.clone(); }
-  else if (name === 'nova') act.rel = [0.5];
+  /* (the ring told — 2026-10-30, the owner: "the one where all the chains come up in a circle around him should be more
+   * readable": it came with no warning. Now through the wind-up its edge shows: the floor splits in a ring five metres
+   * round him, chain tips push up out of it all the way round, and it grinds — then they come.) */
+  else if (name === 'nova') { act.rel = [0.62]; const q = u.g.position, td = 0.62 * dur; act.tele = skcTell(q.x, q.z, 5.4, td); act.edge = skcRingEdge(u, q, td); sfxChainRattle(q.x, q.z, td, 0.6, true); }
   // the chain whirled round his hand from the start of the wind-up, the hook on it
   if (name === 'bolt' || name === 'volley' || name === 'palm') act.held = skcDangle(u, act.hand);
   k.act = act;
@@ -100730,8 +100856,9 @@ function skrimFire(u, act, i) {
     if (act.held && i === 0) { act.held.done = true; act.held = null; }
     const L = u.model.getObjectByName('Character1_LeftHand'), R = u.model.getObjectByName('Character1_RightHand');
     const hand = act.name === 'volley' ? (i % 2 ? L : R) : act.hand;
-    const fan = act.name === 'volley' ? (i - (act.rel.length - 1) / 2) * 0.14 : 0;
-    skcThrow(u, hand, fan, hand === L && !SKC.list.some((c) => c.own));     // (out of his left: his own hook)
+    const fan = act.name === 'volley' ? (i - (act.rel.length - 1) / 2) * 0.05 : 0;
+    const lead = act.name === 'volley' ? SK_AIM.volley[i % 2] : SK_AIM.lead;     // (a volley brackets you: one led, one where you are)
+    skcThrow(u, hand, fan, hand === L && !SKC.list.some((c) => c.own), lead);     // (out of his left: his own hook)
   } else if (act.name === 'palm') {
     if (act.held) { act.held.done = true; act.held = null; }
     skcSweep(u, act.hand);
@@ -100739,8 +100866,15 @@ function skrimFire(u, act, i) {
     if (act.tele) act.tele.done = true;
     skcPit(u, act.at);
   } else if (act.name === 'wave') {
+    // laid at where you will be when it reaches you (it runs out at `lineSpd`), not where you stood a second ago
+    const c = camera.position, t = Math.hypot(c.x - p.x, c.z - p.z) / SK_AIM.lineSpd;
+    act.at.set(c.x + SKV.v.x * t * 0.9, c.y, c.z + SKV.v.z * t * 0.9);
     skcLine(u, p, act.at);
+  } else if (act.name === 'summon') {
+    if (i === 0) for (const q of act.spots) { act.tells.push(skcTell(q.x, q.z, 0.95, (act.rel[1] - act.rel[0]) * act.dur + 0.15)); skcPuff(q.x, skrimFloorW(q.x, q.z), q.z, 3, 0.8); playSampleAt('slosh', q.x, q.z, { gain: 0.5, ref: 4, far: 26, rate: 0.5 }); }
+    else { const q = act.spots[i - 1]; if (act.tells[i - 1]) act.tells[i - 1].done = true; if (q) crySummonEmerge(i - 1, q.x, q.z); }
   } else if (act.name === 'nova') {
+    if (act.tele) act.tele.done = true;
     skcRing(u, p);
   }
 }
@@ -100949,9 +101083,10 @@ function skrimHookStep(u, A, dt, d, by) {
 }
 function skrimFightStep(u, dt) {
   const k = u.sk, p = u.g.position, c = camera.position;
+  skrimYouTrack(dt);
   const dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz) || 1e-3;
   k.cd -= dt; k.meleeCd -= dt; k.dashCd -= dt; k.reactT -= dt; k.sweepCd = (k.sweepCd || 0) - dt; k.armT = (k.armT || 0) - dt;
-  if (!k.rage && u.st.hp <= u.kind.hp * 0.5) k.rage = true;
+  if (!k.rage && u.st.hp <= u.kind.hp * SK_HARD.rage) k.rage = true;
   let by = Math.atan2(dx, dz) - u.g.rotation.y; while (by > Math.PI) by -= Math.PI * 2; while (by < -Math.PI) by += Math.PI * 2;
   const drop = (A) => { if (A && A.held) A.held.done = true; if (A && A.tele) A.tele.done = true; };
   /* struck: a flinch, which breaks a wind-up he had not yet committed (two-thirds of the way to the release) — ONCE. Cut
@@ -100960,14 +101095,14 @@ function skrimFightStep(u, dt) {
    * threw a thing). Nor does he stop for a blow in his own swing or his run back. */
   if (u.st.lastHurt && u.st.lastHurt !== k.hurtSeen) {
     k.hurtSeen = u.st.lastHurt;
-    const A = k.act, commit = A && A.rel && A.rel.length ? A.rel[0] * A.dur * 0.66 : 0;
+    const A = k.act, commit = A && A.rel && A.rel.length ? A.rel[0] * A.dur * SK_HARD.commit : 0;
     const swinging = A && A.name === 'hook' && (k.armT > 0 || (A.sw && A.sw.t > A.sw.rel * A.sw.dur * 0.45));
-    if (A && (A.name === 'dash' || swinging)) { /* through it */ }
+    if (A && (A.name === 'dash' || A.name === 'summon' || swinging)) { /* through it */ }
     else if (k.armT > 0 && d < SK_HOOK.near + 0.6) {
       drop(A); k.act = null; k.reactT = 0;
-      if (k.dashCd <= 0 && Math.random() < 0.42) skrimStart(u, 'dash'); else { k.counter = true; skrimStart(u, 'hook'); }
+      if (k.dashCd <= 0 && Math.random() < 0.3) skrimStart(u, 'dash'); else { k.counter = true; skrimStart(u, 'hook'); }
     } else if (!A || A.name === 'retreat' || A.t < commit) {
-      drop(A); k.act = null; k.reactT = 0.4; k.vx = k.vz = 0; k.armT = 1.5;
+      drop(A); k.act = null; k.reactT = SK_HARD.react; k.vx = k.vz = 0; k.armT = SK_HARD.arm;
       const cl = ['hitSF', 'hitSL', 'hitSR'][Math.floor(Math.random() * 3)]; const a = mutPlay(u, cl, false); if (a) a.timeScale = 1.3;
       k.cd = Math.max(k.cd, d < SK_HOOK.near ? 0.1 : 0.35);
     }
@@ -100986,8 +101121,8 @@ function skrimFightStep(u, dt) {
   if (k.stunned) { k.stunned = false; k.cd = Math.max(k.cd, 0.2); k.armT = 1.0; }
   // facing you, at a man's rate, about the foot he stands on; slower once a throw or a blow has gone
   const A = k.act;
-  const rate = !A ? (k.rage ? 3.0 : 2.5) : A.name === 'hook' ? (A.sw && A.sw.t > A.sw.rel * A.sw.dur ? 0.7 : 2.6)
-    : A.name === 'dash' || A.name === 'retreat' ? 2.4 : A.fired ? 0.9 : 2.2;
+  const rate = !A ? (k.rage ? 3.6 : 3.0) : A.name === 'hook' ? (A.sw && A.sw.t > A.sw.rel * A.sw.dur ? 0.85 : 3.0)
+    : A.name === 'dash' || A.name === 'retreat' ? 2.4 : A.fired ? 1.1 : 2.7;
   skrimTurn(u, Math.atan2(dx, dz), rate, dt);
   if (A) {
     A.t += dt;
@@ -100995,10 +101130,15 @@ function skrimFightStep(u, dt) {
       if (A.t >= A.dur) { k.act = null; k.cd = 0.06; }
     } else if (A.name === 'hook') skrimHookStep(u, A, dt, d, by);
     else {
+      // the pit's split follows you through the wind-up, and is fixed `lock` s before the chains come
+      if (A.name === 'geyser' && A.tele && A.t < A.rel[0] * A.dur - SK_AIM.lock) {
+        const tx = c.x - A.at.x, tz = c.z - A.at.z, tl = Math.hypot(tx, tz), mv = Math.min(tl, SK_AIM.track * dt);
+        if (tl > 1e-4) { A.at.x += tx / tl * mv; A.at.z += tz / tl * mv; A.tele.m.position.set(A.at.x, skrimFloorW(A.at.x, A.at.z) + 0.03, A.at.z); }
+      }
       while (A.fired < A.rel.length && A.t >= A.rel[A.fired] * A.dur) { skrimFire(u, A, A.fired); A.fired++; }
       if (A.t >= A.dur * 0.94) {
         k.act = null; if (A.held) A.held.done = true;
-        k.cd = d < SK_HOOK.near ? 0.12 + Math.random() * 0.25 : (k.rage ? 0.4 : 0.7) + Math.random() * (k.rage ? 0.4 : 0.6);
+        k.cd = d < SK_HOOK.near ? 0.08 + Math.random() * 0.16 : ((k.rage ? 0.2 : 0.36) + Math.random() * (k.rage ? 0.22 : 0.34)) * (crySummonAlive() ? SK_SUMMON.slow : 1);
       }
     }
   } else if (k.reactT <= 0) {
@@ -101513,7 +101653,8 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, { SKQ, skqPileHit
  *   SAVED as `cry` {w: woke, d: the dead by bit, j: the jar taken}; `cryStick` writes it into the stored checkpoint too.
  * ===================================================================== */
 const CRY_GLB = 'assets/crying-head.glb';
-const CRY_N = 3, CRY_K = 0.0021;                      // how many, and its centimetres to metres (a leg span of ~1 m, the head a third of it)
+const CRY_N = 3, CRY_SUMMON_N = 3, CRY_K = 0.0021;   // (and three more Skrim calls up out of the floor at half health: `SK_SUMMON`)
+//                      // how many, and its centimetres to metres (a leg span of ~1 m, the head a third of it)
 const CRY_GAIT = 520;                                  // MOVE's ground speed in file units/s at rate 1 (measured off its planted tips)
 const CRY_STAND = 186 * CRY_K, CRY_R = 0.16;          // its head over the floor on its legs; its head's radius as a body
 const CRY_G = 15;                                      // a headcrab's gravity (Source's 600 u/s², not the earth's)
@@ -101558,7 +101699,7 @@ function cryBuild() {
   }
   const src = CRY.gltf.scene, rnd = mulberry32(30102027);
   const clips = { idle: CRY.gltf.animations.find((a) => a.name === 'IDLE'), move: CRY.gltf.animations.find((a) => a.name === 'MOVE') };
-  for (let i = 0; i < CRY_N; i++) {
+  for (let i = 0; i < CRY_N + CRY_SUMMON_N; i++) {
     const model = cryClone(src);
     // (a copy of the one material each, made now: the same program, and its glow its own — it comes up as it nears your face)
     const mat = CRY.mat.clone();
@@ -101572,10 +101713,12 @@ function cryBuild() {
     const x = side < 0 ? Wl.l + 0.9 + rnd() * 0.5 : Wl.r - 0.9 - rnd() * 0.5;
     const h = { i, body, model, mat, mixer, idle, move, mode: 'cling', t: 0, cd: 0, home: { x, s }, p: new THREE.Vector3(x, whFloor(x, s) + CRY_STAND, -s),
       v: new THREE.Vector3(), w: new THREE.Vector3(), yaw: Math.atan2(whCx(s) - x, 0.4 * side), pitch: 0, roll: 0, spin: 0, ground: true, tick: 0, settle: 0, bit: false };
+    // (Skrim's: under the floor, unseen, till he calls them — built here with the nest so nothing is made in the fight)
+    if (i >= CRY_N) { h.summon = true; h.mode = 'buried'; body.visible = false; }
     CRY.list.push(h);
     cryPose(h, 0);
   }
-  for (const h of CRY.list) if (CRY.dead & (1 << h.i)) cryLieDead(h);
+  for (const h of CRY.list) if (!h.summon && (CRY.dead & (1 << h.i))) cryLieDead(h);
   if (CRY.woke) for (const h of CRY.list) if (h.mode === 'cling') { h.mode = 'crawl'; h.cd = 1.5; }
 }
 // the jar they are lying round: a dropped jar's way (`dropJar`) without its beacon, a faint glint only
@@ -101724,7 +101867,7 @@ function cryLaunch(h, scare) {
   h.move.timeScale = 3.2; h.idle.weight = 0; h.move.weight = 1;          // (its yaw and mouth are eased onto the flight, not set)
   cryVoice(h, scare ? 'scare' : 'leap');
   if (scare) { fovKick = Math.max(fovKick, 9); addTrauma(0.35); }
-  CRY.next = scare ? 1.4 : 0.8;
+  CRY.next = scare ? 1.4 : h.summon && SKRIM.u && SKRIM.u.st.alive ? SK_SUMMON.gap : 0.8;
   h.lg = null;
   if (CRY.log) CRY.log.push(h.lg = { ev: 'leap', i: h.i, scare: !!scare, T: +T.toFixed(2), v: +h.v.length().toFixed(2), vy: +h.v.y.toFixed(2), d: +d.toFixed(2), from: h.p.toArray().map((q) => +q.toFixed(2)), aim: [+tx.toFixed(2), +ty.toFixed(2), +tz.toFixed(2)], you: c.toArray().map((q) => +q.toFixed(2)), apex: h.p.y });
 }
@@ -101761,12 +101904,12 @@ function cryKill(h, P) {
   h.body.quaternion.setFromEuler(_cryE.set(h.pitch, h.yaw, h.roll));
   if (h.mode === 'latch') h.p.addScaledVector(h.v, 0.03);
   h.mode = 'dead'; h.t = 0; h.settle = 0; h.move.timeScale = 0.25; h.idle.weight = 0; h.move.weight = 1;
-  CRY.dead |= 1 << h.i; if (CRY.first === h) CRY.first = null;
+  if (!h.summon) CRY.dead |= 1 << h.i; if (CRY.first === h) CRY.first = null;
   cryVoice(h, 'die');
   const W = cryWorld(h); spawnPuffs(W.x, W.z, 9, h.v.x, h.v.z, W.y, [0.34, 0.03, 0.03]);
   hitConnect(P, 1.05); if (isBlade()) playSample('katHit', 0.95, 0.05, 1 - P * 0.08);
   hitFlesh = true; addTrauma(0.18);
-  if (!CRY.woke) cryWake();
+  if (!CRY.woke && !h.summon) cryWake();
   if (CRY.log) CRY.log.push({ ev: 'killed', i: h.i, was: h.was, P: +P.toFixed(2), v: h.v.toArray().map((q) => +q.toFixed(2)), at: h.p.toArray().map((q) => +q.toFixed(2)) });
 }
 // the swing's blow: one the blade crossed (`cryBladeRay`), else the aim line (fanned the blade's way) passing one, generously
@@ -101794,7 +101937,7 @@ function cryStrike(P) {
 }
 // one ray of the blade's own sweep (`bladeSweep`): a head in flight it passes is the blow, on this frame
 function cryBladeRay(far) {
-  if (!inWhale || !CRY.built || CRY.first || !CRY.woke) return;
+  if (!inWhale || !CRY.built || CRY.first || !(CRY.woke || crySummonAlive())) return;
   for (const h of CRY.list) {
     if (h.mode !== 'leap' && h.mode !== 'tumble' && h.mode !== 'latch' && h.mode !== 'scare') continue;
     const C = cryWorld(h), t = THREE.MathUtils.clamp(_cryA.copy(C).sub(_aimO).dot(_aimD), 0, far);
@@ -101806,6 +101949,21 @@ function cryStep(h, dt) {
   const c = CRY.cl, dx = c.x - h.p.x, dz = c.z - h.p.z, d = Math.hypot(dx, dz);
   h.t += dt;
   if (h.mode === 'cling') { h.mixer.update(dt); return; }
+  if (h.mode === 'emerge') {                     // SKRIM'S: clawing up out of the floor, mouth first, legs going — then a hop clear of the hole
+    const k = Math.min(1, h.t / 0.75), fl = whFloor(h.p.x, -h.p.z);
+    h.p.y = fl - 0.5 + (CRY_STAND + 0.5 + 0.18) * (1 - Math.pow(1 - k, 2.4));
+    h.pitch = CRY_MOUTH + 0.55 * (1 - k); h.roll = 0.32 * Math.sin(h.t * 21) * (1 - k);
+    let dy = Math.atan2(dx, dz) - h.yaw; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+    h.yaw += THREE.MathUtils.clamp(dy, -5 * dt, 5 * dt);
+    if ((h.dirt = (h.dirt || 0) - dt) <= 0 && k < 0.85) { h.dirt = 0.11; const P = cryWorld(h); spawnPuffs(P.x, P.z, 2, (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 1.5, WHALE_Y + fl + 0.05, [0.3, 0.04, 0.04]); }
+    h.move.timeScale = 3.4; h.mixer.update(dt); cryPose(h, dt);
+    if (k >= 1) {
+      const ux = dx / (d || 1), uz = dz / (d || 1);
+      h.v.set(ux * 1.8, 3.4, uz * 1.8); h.mode = 'leap'; h.off = true; h.t = 0; h.T = 0.5; h.spin = (Math.random() < 0.5 ? -1 : 1) * 1.2; h.lg = null;
+      const P = cryWorld(h); playSampleAt('fleshHit', P.x, P.z, { gain: 0.6, ref: 3, far: 18, rate: 1.3 });
+    }
+    return;
+  }
   if (h.mode === 'stir') {                       // still curled, then off the wall onto its feet and coming
     h.mixer.update(dt);
     if (h.t >= 0) { h.mode = 'charge'; h.idle.weight = 0; h.move.weight = 1; cryVoice(h, 'tell'); }
@@ -101960,25 +102118,62 @@ function cryTick(dt) {
   cryLocal(CRY.cl, camera.position);
   if (CRY.cp && dt > 0) { _cryA.subVectors(CRY.cl, CRY.cp).divideScalar(dt); if (_cryA.length() < 12) CRY.cv.lerp(_cryA, Math.min(1, dt * 8)); }
   (CRY.cp || (CRY.cp = new THREE.Vector3())).copy(CRY.cl);
+  const sum = crySummonAlive();
   if (!CRY.woke) {
     if (-CRY.cl.z > CRY.wakeS && !restore && !applyingSave && !replaying && !dying) cryWake();
-    else { if (-CRY.cl.z > CRY.farS - 25) for (const h of CRY.list) if (h.mode === 'cling') h.mixer.update(dt); return; }
+    else { if (-CRY.cl.z > CRY.farS - 25) for (const h of CRY.list) if (h.mode === 'cling') h.mixer.update(dt); if (!sum) return; }
   }
   CRY.t += dt; CRY.next -= dt;
+  const skDead = sum && SKRIM.u && !SKRIM.u.st.alive;
   for (const h of CRY.list) {
+    if (h.mode === 'buried' || (!CRY.woke && !h.summon)) continue;
+    if (skDead && h.summon && h.mode !== 'dead' && h.mode !== 'still') crySummonDie(h);
     if (h.mode !== 'still') cryStep(h, dt);
     // its skin comes up out of the dark as it nears your face (the gut has no light here to show it by)
     const d = h.p.distanceTo(CRY.cl), k = THREE.MathUtils.smoothstep(d, 0.35, 3.2);
     h.mat.emissiveIntensity = (h.mode === 'still' || h.mode === 'dead' ? 0.3 : 0.45) + 0.75 * (1 - k);
   }
 }
+/* ---- SKRIM'S HEADS (`SK_SUMMON`): ready, alive, called up, and dead with him */
+const crySummonReady = () => CRY.built && CRY.list.some((h) => h.summon && h.mode === 'buried');
+const crySummonAlive = () => CRY.list.reduce((n, h) => n + (h.summon && h.mode !== 'buried' && h.mode !== 'dead' && h.mode !== 'still' ? 1 : 0), 0);
+// three places round you, on the side he is on (so you see them come), a few metres off and in the gut
+function crySummonSpots(u) {
+  const c = camera.position, p = u.g.position, a0 = Math.atan2(p.x - c.x, p.z - c.z), out = [];
+  for (const off of [-1.05, 0.15, 1.25]) {
+    for (let t = 0; t < 6; t++) {
+      const a = a0 + off + (t ? (t % 2 ? 1 : -1) * Math.ceil(t / 2) * 0.5 : 0), r = SK_SUMMON.dist[0] + Math.random() * (SK_SUMMON.dist[1] - SK_SUMMON.dist[0]);
+      const x = c.x + Math.sin(a) * r, z = c.z + Math.cos(a) * r;
+      if (skrimInGut(x, z, 1.0) && Math.hypot(x - p.x, z - p.z) > 1.6) { out.push(new THREE.Vector3(x, 0, z)); break; }
+    }
+  }
+  return out;
+}
+function crySummonEmerge(n, x, z) {
+  const h = CRY.list.filter((q) => q.summon)[n]; if (!h || h.mode !== 'buried') return;
+  h.p.set(x - WHALE_X, whFloor(x - WHALE_X, WHALE_Z - z) - 0.5, z - WHALE_Z);
+  h.v.set(0, 0, 0); h.w.set(0, 0, 0); h.right = null; h.off = false; h.bit = false; h.scare = false; h.fedT = 0; h.dirt = 0;
+  h.yaw = Math.atan2(CRY.cl.x - h.p.x, CRY.cl.z - h.p.z); h.pitch = CRY_MOUTH + 0.55; h.roll = 0;
+  h.mode = 'emerge'; h.t = 0; h.cd = 1.0 + n * 0.6; h.body.visible = true; h.idle.weight = 0; h.move.weight = 1;
+  cryPose(h, 0);
+  playSampleAt('fleshHit', x, z, { gain: 0.8, ref: 4, far: 26, rate: 0.55 }); playSampleAt('slosh', x, z, { gain: 0.6, ref: 4, far: 26, rate: 0.7 });
+  cryVoice(h, 'tell');
+  if (CRY.log) CRY.log.push({ ev: 'summoned', i: h.i, at: h.p.toArray().map((q) => +q.toFixed(2)) });
+}
+function crySummonDie(h) {
+  h.body.quaternion.setFromEuler(_cryE.set(h.pitch, h.yaw, h.roll));
+  h.v.set((Math.random() - 0.5) * 1.6, 2.2, (Math.random() - 0.5) * 1.6); h.w.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 10);
+  if (h.mode === 'emerge') h.p.y = Math.max(h.p.y, whFloor(h.p.x, -h.p.z) + CRY_R);
+  h.mode = 'dead'; h.t = 0; h.settle = 0; h.move.timeScale = 0.25; cryVoice(h, 'die');
+}
 /* ---- THE SAVE */
-const crySave = () => ({ w: CRY.woke ? 1 : 0, d: CRY.dead, j: CRY.jarTaken ? 1 : 0 });
+const crySave = () => ({ w: CRY.woke ? 1 : 0, d: CRY.dead & ((1 << CRY_N) - 1), j: CRY.jarTaken ? 1 : 0 });
 function cryRestore(f) {
   const q = f.cry; if (!q) return;
   CRY.woke = !!q.w; CRY.dead = q.d | 0; CRY.jarTaken = !!q.j;
   if (CRY.jarTaken && CRY.jar) { scene.remove(CRY.jar); removeInteractable(CRY.jar); CRY.jar = null; }
   for (const h of CRY.list) {
+    if (h.summon) continue;
     if (CRY.dead & (1 << h.i)) cryLieDead(h);
     else if (CRY.woke && (h.mode === 'cling' || h.mode === 'scare' || h.mode === 'stir')) { h.mode = 'crawl'; h.cd = 1.5; }
   }
@@ -101996,7 +102191,7 @@ function cryWarmIn() {
   cryBuild();
   for (const h of CRY.list) { h.mixer.update(0); cryPose(h, 0); }
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { CRY, cryBuild, cryTick, cryWake, cryStrike, crySave, cryRestore, cryLaunch }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { crySummonAlive, CRY, cryBuild, cryTick, cryWake, cryStrike, crySave, cryRestore, cryLaunch }));
 /* ---- HIS CHAINS (2026-10-29, the owner: "try that he throws and swings chains but it the same way like hellraiser
  * chains swinging and big chains he summons through the ground like the water. make performance better than the water.
  * use the hook his model has on these chains too"). The water went, and with it what it cost: every splash built and
@@ -102068,7 +102263,7 @@ function skcInit(u) {
     if (hn) g.translate(-hx / hn, -hy / hn, -bb.min.z); else g.translate(-(bb.min.x + bb.max.x) / 2, -(bb.min.y + bb.max.y) / 2, -bb.min.z);
     SKC.hookGeo = g; SKC.hookMat = src.material; SKC.hookSrc = src;
   } else { SKC.hookGeo = new THREE.TorusGeometry(0.11, 0.016, 5, 12, Math.PI * 1.4); SKC.hookMat = mat; }
-  for (let i = 0; i < 4; i++) skcHook().busy = false;
+  for (let i = 0; i < 36; i++) skcHook().busy = false;   // (36: the ring and its edge are 32 at once — a hook made mid-fight is a hitch)
   // the floor splitting where the chains will come up: a dark ring with cracks running out of it
   const c = document.createElement('canvas'); c.width = c.height = 256; const g2 = c.getContext('2d');
   const gr = g2.createRadialGradient(128, 128, 0, 128, 128, 128); gr.addColorStop(0, 'rgba(8,1,1,0.9)'); gr.addColorStop(0.45, 'rgba(18,2,2,0.75)'); gr.addColorStop(0.7, 'rgba(30,4,3,0.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
@@ -102400,12 +102595,13 @@ const skcChest = (out) => out.set(camera.position.x, camera.position.y - 0.42, c
 // ---- the kinds
 // whirled round his hand in the wind-up (a sling), the hook on it
 function skcDangle(u, hand) { return skcNew('dangle', u, { hand, hook: skcHook(), sc: 1.35, np: 12, w: 9 + Math.random() * 3 }); }
-function skcThrow(u, hand, fan, own) {
+function skcThrow(u, hand, fan, own, lead = 0) {
   const from = skcHandW(u, hand, new THREE.Vector3()), to = skcChest(new THREE.Vector3());
+  to.addScaledVector(SKV.v, from.distanceTo(to) / SKC_THROW.spd * lead);     // (where you will be when it gets there)
   const dir = to.sub(from).normalize(); dir.applyAxisAngle(_skcY, fan);
   if (own && SKC.hookSrc) SKC.hookSrc.visible = false;     // his own hook, out of his fist and on the end of it
   sfxChainPayout(from.x, from.z, 1.0);
-  return skcNew('throw', u, { hand, own, st: 'out', sc: 1.35, p: from.clone(), v: dir.multiplyScalar(SKC_THROW.spd), hook: skcHook(), wob: 0.45, side: new THREE.Vector3(), hookRoll: Math.random() * 6.28 });
+  return skcNew('throw', u, { hand, own, lead, st: 'out', sc: 1.35, p: from.clone(), v: dir.multiplyScalar(SKC_THROW.spd), hook: skcHook(), wob: 0.45, side: new THREE.Vector3(), hookRoll: Math.random() * 6.28 });
 }
 function skcSweep(u, hand) {
   sfxChainPayout(u.g.position.x, u.g.position.z, 1.15); sfxChainWhirl(u.g.position.x, u.g.position.z, 1.1);
@@ -102422,12 +102618,12 @@ function skcTell(x, z, r, dur) {
   T.busy = true; T.t = 0; T.dur = dur; T.out = 0; T.r = r; T.m.position.set(x, skrimFloorW(x, z) + 0.03, z); T.m.scale.setScalar(0.01);
   return T;
 }
-const SKC_THROW = { spd: 17, dmg: 1, backDmg: 7, home: 1.7, reach: 15 };
+const SKC_THROW = { spd: 20, dmg: 1, backDmg: 7, home: 2.3, reach: 15 };   // (spd 17 → 20, home 1.7 → 2.3: 2026-10-31, `SK_HARD`)
 function skcPit(u, at) {     // four, in a ring round where you were, leaning in over it
   const g = { hit: false, at: at.clone() };
   for (let i = 0; i < 4; i++) {
     const a = i / 4 * 6.283 + Math.random() * 0.6, r = 0.55 + Math.random() * 0.25, x = at.x + Math.cos(a) * r, z = at.z + Math.sin(a) * r;
-    const C = skcRise(u, x, z, { H: 2.8 + Math.random() * 0.8, delay: i * 0.035, hold: 0.7, grp: g, hitR: 1.45, dmg: 2, lift: 5.5 });
+    const C = skcRise(u, x, z, { H: 2.8 + Math.random() * 0.8, delay: i * 0.035, hold: 0.7, grp: g, hitR: 1.25, dmg: 2, lift: 5.5 });   // (1.45 until it followed you, 2026-11-01)
     C.lean.set(at.x - x, 0, at.z - z).normalize().multiplyScalar(0.35);
   }
   const fy = skrimFloorW(at.x, at.z);
@@ -102439,16 +102635,28 @@ function skcLine(u, from, to) {    // one after another from his feet out along 
   for (let i = 1; i <= 13; i++) {
     const s = i * 1.0, jit = (Math.random() - 0.5) * 0.5, x = from.x + ux * s - uz * jit, z = from.z + uz * s + ux * jit;
     if (!skrimInGut(x, z, 0.4)) break;
-    const C = skcRise(u, x, z, { H: 1.9 + Math.random() * 0.5, delay: i * 0.085, hold: 0.28, grp: g, hitR: 0.9, dmg: 1, lift: 3.2, sc: 2.1, snd: true });
+    const C = skcRise(u, x, z, { H: 1.9 + Math.random() * 0.5, delay: i * 0.085, hold: 0.28, grp: g, hitR: SK_AIM.lineR, dmg: 1, lift: 3.2, sc: 2.1, snd: true });
     C.lean.set(ux, 0, uz).multiplyScalar(0.3);
   }
+}
+// the ring's edge through the wind-up: twenty chains a metre out of the floor, five metres round him, no harm in them
+// (dark marks on the floor are lost under the white mist; iron standing up out of it reads from across the gut)
+function skcRingEdge(u, at, dur) {
+  const out = [];
+  for (let i = 0; i < 20; i++) {
+    const a = i / 20 * 6.283, x = at.x + Math.cos(a) * 5.0, z = at.z + Math.sin(a) * 5.0;
+    if (!skrimInGut(x, z, 0.2)) continue;
+    const C = skcRise(u, x, z, { H: 1.0, delay: i * 0.015, hold: Math.max(0.2, dur - 0.35), sc: 2.1, hookK: 0.9, grp: null, np: 10 });
+    C.lean.set(Math.cos(a), 0, Math.sin(a)).multiplyScalar(-0.15); out.push(C);
+  }
+  return out;
 }
 function skcRing(u, at) {          // all round him, and whipping out
   const g = { hit: false, ring: true, at: at.clone() };
   for (let i = 0; i < 12; i++) {
     const a = i / 12 * 6.283, x = at.x + Math.cos(a) * 1.5, z = at.z + Math.sin(a) * 1.5;
     if (!skrimInGut(x, z, 0.2)) continue;
-    const C = skcRise(u, x, z, { H: 2.7, delay: (i % 3) * 0.03, hold: 0.45, grp: g, hitR: 0, dmg: 2, lift: 3.5, whip: 1 });
+    const C = skcRise(u, x, z, { H: 2.7, delay: i * 0.035, hold: 0.45, grp: g, hitR: 0, dmg: 2, lift: 3.5, whip: 1 });   // (round the ring in a sweep, not all at once)
     C.lean.set(Math.cos(a), 0, Math.sin(a)).multiplyScalar(0.25);
   }
   playSampleAt('fleshHit', at.x, at.z, { gain: 1, ref: 5, far: 34, rate: 0.45 }); sfxChainBurst(at.x, at.z, 1.5, 1.1); skcPuff(at.x, skrimFloorW(at.x, at.z), at.z, 10, 2); addTrauma(0.35);
@@ -102473,7 +102681,7 @@ function skcTick(C, dt) {
     // let go: the hook flies on by itself with what it had, on as much chain as is out
     const slack = () => { C.st = 'slack'; C.st0 = C.t; C.Ls = Math.max(1, A.distanceTo(C.p) * 1.06); C.pv[n - 1].copy(C.p).addScaledVector(C.v, -Math.min(dt, 1 / 30) / 2); };
     if (C.st === 'out') {
-      if (C.t < 0.3) { _skcT.copy(skcChest(_skcU)).sub(C.p).normalize().multiplyScalar(SKC_THROW.spd); C.v.lerp(_skcT, Math.min(1, dt * SKC_THROW.home)); }
+      if (C.t < SK_AIM.homeT) { skcChest(_skcU); _skcU.addScaledVector(SKV.v, _skcU.distanceTo(C.p) / SKC_THROW.spd * (C.lead || 0)); _skcT.copy(_skcU).sub(C.p).normalize().multiplyScalar(SKC_THROW.spd); C.v.lerp(_skcT, Math.min(1, dt * SK_AIM.home)); }
       C.p.addScaledVector(C.v, dt);
       if (skwHitsBody(C.p, 0.18)) {
         const r = u.st.alive ? skrimHitsYou(u, C.p, SKC_THROW.dmg, false, C.v) : 'hit';
@@ -102699,13 +102907,13 @@ function skSparkAt(out) {
   camera.updateMatrixWorld(); return out.applyMatrix4(camera.matrixWorld);
 }
 // a burst off your blade at P, the blow going along `dir`: a block's spray, or a parry's big white-gold one
-function skSparks(P, dir, parry) {
+function skSparks(P, dir, parry, k = 1) {
   const S = SKSP; camera.getWorldDirection(_skgF); S.bursts++;
   // the line of the blow across your view (what of it is not straight at you); straight at you, off to one side
   _skgL.copy(dir).normalize(); _skgL.addScaledVector(_skgF, -_skgL.dot(_skgF));
   if (_skgL.lengthSq() < 0.05) _skgL.crossVectors(_skgF, _skcY).multiplyScalar(Math.random() < 0.5 ? 1 : -1);
   _skgL.normalize();
-  const n = parry ? 140 : 80, spd = parry ? 9 : 7.5, spread = parry ? 0.8 : 0.6;
+  const n = Math.round((parry ? 140 : 80) * k), spd = parry ? 9 : 7.5, spread = parry ? 0.8 : 0.6;
   for (let i = 0; i < n; i++) {
     const sp = S.p[S.i]; S.i = (S.i + 1) % SKSP_N;
     const back = Math.random() < 0.2;      // (some thrown back off the edge the other way)
@@ -102717,12 +102925,12 @@ function skSparks(P, dir, parry) {
     sp.hot = (parry ? 1.7 : 1.4) * (0.6 + Math.random() * 0.6); sp.gold = parry; sp.b = 0;
   }
   // and a parry's gold: a slower fall of embers that hang on after the spray
-  if (parry) for (let i = 0; i < 30; i++) {
+  if (parry) for (let i = 0; i < Math.round(30 * k); i++) {
     const sp = S.p[S.i]; S.i = (S.i + 1) % SKSP_N;
     sp.v.set(Math.random() - 0.5, Math.random() * 0.8 + 0.2, Math.random() - 0.5).multiplyScalar(skaR(0.8, 2.6)).addScaledVector(_skgL, 0.8);
     sp.p.copy(P); sp.life = sp.ttl = skaR(0.5, 1.0); sp.hot = skaR(0.7, 1.2); sp.gold = true; sp.b = 0;
   }
-  const f = S.fl; f.t = 0; f.life = parry ? 0.14 : 0.08; f.size = parry ? 0.5 : 0.28; f.p.copy(P); f.gold = parry;
+  const f = S.fl; f.t = 0; f.life = parry ? 0.14 : 0.08; f.size = (parry ? 0.5 : 0.28) * (0.5 + 0.5 * k); f.p.copy(P); f.gold = parry;
   S.live = Math.max(S.live, 1);
 }
 function updateSkSparks(dt) {
@@ -102760,7 +102968,19 @@ function updateSkSparks(dt) {
   if (!n) { L.setMatrixAt(0, _skgM.makeScale(0, 0, 0)); n = 1; }
   L.count = n; L.instanceMatrix.needsUpdate = true; L.instanceColor.needsUpdate = true;
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { SKA, SKSP, skaBuild, skSparks, skSparkAt, skrimGuardFx, skrimHitsYou, sfxChainClang, sfxChainRattle, sfxChainWhirl, sfxChainPayout, sfxChainDrag, sfxChainSlap, sfxChainBite, sfxChainBurst }));
+/* EVERY GUARD'S SPARKS OFF THE PLACE THE BLOW MET YOUR BLADE (2026-10-31, the owner). Blocks and parries threw the old
+ * square points (`spawnSparks`) at the blade's TIP — in the guard the point lies off the right edge of the view, so the
+ * sparks came from beside the blow, not from it, and in the whale they came as well as Skrim's. Now every block and
+ * parry of yours (crab, gull, shuriken, any man, the pliosaur) throws Skrim's streaks from `skSparkAt`, along the line
+ * from what struck to you, `k` the size (a claw or a beak a third of a sword's). `spawnSparks` is left for your own
+ * blade's strikes, which do land at its tip. */
+function guardSparks(parry, from, k = 1) {
+  const P = skSparkAt(_gspP);
+  if (from) _gspD.subVectors(P, from).setY(0); else _gspD.set(0, 0, 0);
+  skSparks(P, _gspD, parry, k);
+}
+const _gspP = new THREE.Vector3(), _gspD = new THREE.Vector3();
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { guardSparks, SKA, SKSP, skaBuild, skSparks, skSparkAt, skrimGuardFx, skrimHitsYou, sfxChainClang, sfxChainRattle, sfxChainWhirl, sfxChainPayout, sfxChainDrag, sfxChainSlap, sfxChainBite, sfxChainBurst }));
 // is (p) in your body (a capsule from your feet to your eye), within r
 function skwHitsBody(p, r) {
   const c = camera.position, lo = c.y - 1.45, hi = c.y + 0.05, y = Math.max(lo, Math.min(hi, p.y));
@@ -105778,7 +105998,6 @@ function palBlockFx(u, parry) {
   const dx = eye.x - _pdnC.x, dz = eye.z - _pdnC.z, L = Math.hypot(dx, dz) || 1;
   worldSparks(_pdnC, parry ? 64 : 44, dx / L * 2.2, dz / L * 2.2);
   deflectLamp.position.copy(_pdnC); deflectLamp.intensity = parry ? 48 : 30; deflectT = parry ? 0.18 : 0.12;
-  spawnSparks(SPARK_N, parry ? 1.9 : 1.6);
   playSample('blockMil', 0.9, 0.04, parry ? 0.78 : 0.6);
   sfxSlam(parry ? 0.3 : 0.5);
   addTrauma(parry ? 0.35 : 0.5);
@@ -109169,7 +109388,7 @@ function plioParried() {
   pegParryHaste(); goldRingParry();
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
   parryCool = 0;
-  parryGlow = 0.5; guardShockV += 9; spawnSparks(18, 1.5);
+  parryGlow = 0.5; guardShockV += 9; guardSparks(true, plio.g.position);
   sfxParry(); playSample('poise', 0.7);
   addTrauma(0.75); fovKick = Math.max(fovKick, 10); vmImpulse(-1.6);
   hitstop = Math.max(hitstop, 0.22);
@@ -109185,7 +109404,7 @@ function plioBlocked() {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(); else sfxBlock();
   stamina = Math.max(0, stamina - BLOCK_COST * 2.4); guardTick();
   if (stamina <= 0.001) { exhausted = true; gaspOut(); damagePlayer(1, { g: plio.g }); }
-  flashMats(toolVM); guardShockV += 8; spawnSparks(16, 1.1); parryGlow = Math.max(parryGlow, 0.34);
+  flashMats(toolVM); guardShockV += 8; guardSparks(false, plio.g.position); parryGlow = Math.max(parryGlow, 0.34);
   fovKick = Math.max(fovKick, 7); addTrauma(0.7); vmImpulse(-1.6); hitstop = Math.max(hitstop, 0.09);
   // (no caption — see the first parry's)
   deep.knock.copy(plio.dir).multiplyScalar(11).addScaledVector(_dUP, 1);
@@ -113586,7 +113805,7 @@ Object.assign(window.__bw, { crusaderShieldTick, crusaderChain, farmCobble, farm
   fortState: () => ({ inFort, ready: fortReady, busy: fortBusy, walls: !!fortWalls, wb: FORT_SITE._wb ? FORT_SITE._wb.mi : null, cells: fortCells ? fortCells.size : 0, spot: fortSpot, inT: +fortInT.toFixed(2), save: fortSaveDone, vis: !!(fortWorld && fortWorld.visible) }),
   loadFort, startFort, placeInFort, placeOutOfFort, fortWallsStep, fortMaskAt, fortCourtAt, fortW, FORT_K, FORT_X, FORT_Y, FORT_Z, FORT_GATE, FORT_DOOR, FORT_SITE, FORT_M, fortWorld: () => fortWorld, fortLife: () => fortLife, fortDress, FORT_LOOK,
   keepFloorAtS: keepFloorAt, keepWallNear, keepHitsWall,
-  buildTribeFire, TRIBE_X, TRIBE_Z, startWhale, placeInWhale, placeOutOfWhale, buildWhale, whaleState: () => ({ inWhale, busy: whaleBusy, t: whaleT, built: !!whale, beach: !!wb, sw: wbSw && wbSw.t, jaw: wb && wb.jaw }), wbGet: () => wb, wbU, wbBermAt, startSwallow, wsState: () => ({ wsDone, wsR: +wsR.toFixed(3), wsM: +wsM.toFixed(3), wsSect: +wsSect.toFixed(3), on: WS_S.on, t: WS_S.on ? +wsTime().toFixed(2) : null, buf: !!WS_S.buf, src: !!wsSrc }), startSighting, wsReset: () => { wsDone = false; WS_S.on = false; WS_S.waitT = 0; }, WB_Z, WB_SNOUT_X, whFloor, whCx,
+  buildTribeFire, TRIBE_X, TRIBE_Z, startWhale, startSwallow, placeInWhale, placeOutOfWhale, buildWhale, whaleState: () => ({ inWhale, busy: whaleBusy, t: whaleT, built: !!whale, beach: !!wb, sw: wbSw && wbSw.t, jaw: wb && wb.jaw }), wbGet: () => wb, wbU, wbBermAt, startSwallow, wsState: () => ({ wsDone, wsR: +wsR.toFixed(3), wsM: +wsM.toFixed(3), wsSect: +wsSect.toFixed(3), on: WS_S.on, t: WS_S.on ? +wsTime().toFixed(2) : null, buf: !!WS_S.buf, src: !!wsSrc }), startSighting, wsReset: () => { wsDone = false; WS_S.on = false; WS_S.waitT = 0; }, WB_Z, WB_SNOUT_X, whFloor, whCx,
   umbraIgnite, umbraFireState: () => umbraFire, settleMounds, moundRole, moundSpotClear, closeShop, openShop, softLookState: () => softLook,
   poseRig, MUT_JOINTS, oceanUniforms, submersionAt, restYInWater, updateComfy,
   audioGate: () => (gameAudioGate ? gameAudioGate.gain.value : null),

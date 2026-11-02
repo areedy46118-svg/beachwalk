@@ -792,3 +792,17 @@ the owner's MP3 +6 dB: peak −2.1, mean −16.8; the samurai's score is −15.5
 off `animate`): wanted while he is in 'rise'/'fight' and alive; looped as passes laid 1.5 s over each other's ends (the
 samurai's way: the file has no silence at either end); (1 − x)² over 9 s when he dies, 1.5 s if you die or leave.
 musictest `skrimFight` (its own floor 0.0012, like `skrim`): PASS.
+- (later) "make the skrim fight music fade in slowly and make it lower volume": `SKRIM_FIGHT_LEVEL` 0.6 (0.95), in over
+  `SKRIM_FIGHT_IN` 7 s (1.2). musictest `skrimFight` floor 0.0007 (it reads 0.0013 inside its 8 s window now).
+- (the same night, again) "turn the music down some more too for skrim fight": `SKRIM_FIGHT_LEVEL` 0.6 → 0.4; the
+  musictest `skrimFight` floor 0.0007 → 0.0004 (both the scenario's `W.__mtFloor` and the `floor` map) — it reads
+  ~0.0005 in the rise, still fading in.
+
+## Things settling as they spawn are silent (2026-10-30)
+
+"any sounds of things spawning in i dont want to hear" — walking into the whale, props placed there dropped onto the
+floor and clattered. `propSettling()` (a global 2.5 s after a load) did not cover props built later. Each `PhysProp`
+now records `born = performance.now()` and stays silent for its first 2 s unless it has been held (`everHeld`, set on
+grab), so a prop you pick up and drop at once still sounds.
+- (again) "lower skrim fight music more": `SKRIM_FIGHT_LEVEL` 0.4 → 0.25; musictest floor 0.00025 (reads 0.0003 in the
+  rise, still fading in).

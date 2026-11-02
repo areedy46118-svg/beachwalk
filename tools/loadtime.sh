@@ -9,7 +9,7 @@ python3 serve.py 4211 > "$OUT/serve.log" 2>&1 & SRV=$!
 sleep 1
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$OUT/prof" --no-first-run \
   --mute-audio --autoplay-policy=no-user-gesture-required --window-size=1280,760 --use-angle=metal --enable-logging=stderr --v=0 \
-  "http://localhost:4211/tools/loadtime.html?runs=$RUNS${3:+&at=$3}" > /dev/null 2> "$OUT/chrome.err" & CH=$!
-for i in $(seq 1 360); do sleep 1; grep -q "\[LT\] DONE\|\[LT\] FAILED" "$OUT/chrome.err" && break; done
+  "http://localhost:4211/tools/loadtime.html?runs=$RUNS${3:+&at=$3}${LT_Q:-}" > /dev/null 2> "$OUT/chrome.err" & CH=$!
+for i in $(seq 1 ${LT_WAIT:-360}); do sleep 1; grep -q "\[LT\] DONE\|\[LT\] FAILED" "$OUT/chrome.err" && break; done
 kill $CH $SRV 2>/dev/null; sleep 1; pkill -f "user-data-dir=$OUT/prof" 2>/dev/null
 grep -o "\[LT\].*" "$OUT/chrome.err" | sed 's/", source.*//'

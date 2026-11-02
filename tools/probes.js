@@ -3248,6 +3248,8 @@ export async function skrimIn({ w, b, log, sleep, shot }) {
     b.skcPit(u, at); for (let i = 0; i < 20; i++) b.updateSkrimChains(1 / 60);
     log('pit links', C.n); lk('ch_pit', 0.9, 5.5, 1.6, at.clone().setY(at.y + 1.3));
     for (let i = 0; i < 120; i++) b.updateSkrimChains(1 / 60);
+    { const q = u.g.position, T = b.skcTell(q.x, q.z, 5.4, 0.6), E = b.skcRingEdge(u, q, 0.6); for (let i = 0; i < 24; i++) b.updateSkrimChains(1 / 60);
+      log('ring tell edge chains', E.length, 'links', C.n); lk('ch_ring_tell', 0.6, 8, 2.5, q.clone().setY(q.y + 1)); T.done = true; }
     b.skcRing(u, u.g.position.clone()); for (let i = 0; i < 16; i++) b.updateSkrimChains(1 / 60);
     log('ring links', C.n); lk('ch_ring', 0.6, 8, 2.5, u.g.position.clone().setY(u.g.position.y + 1));
     for (let i = 0; i < 120; i++) b.updateSkrimChains(1 / 60);
@@ -4117,3 +4119,419 @@ export async function skrimFar({ w, b, log, sleep }) {
 }
 // MYLES ALWAYS WITH YOU, the gargoyles without him, the dark knight's crouch (2026-10-30): `tools/myles.js`, 'myl&f=<name>'
 export async function myl(ctx) { return (await import('/tools/myles.js?' + Date.now()))[new URLSearchParams(location.search).get('f')](ctx); }
+// WHAT FLOATS IN THE WHALE (2026-10-30, "i said take these out", a still of a cluster of teal blobs on the gut's wall):
+// every visible Points / Sprite / small additive thing in the scene while you are in the belly, by owner and colour. (own profile)
+export async function whaleFloats({ w, b, log, sleep }) {
+  b.placeInWhale(); for (let i = 0; i < 300; i++) { b.frame(1); if (i % 30 === 0) await sleep(30); }
+  const rows = [], V = b.camera.position.constructor, cam = b.camera.position;
+  b.scene.traverse((o) => {
+    if (!(o.isPoints || o.isSprite || (o.isMesh && o.material && o.material.blending === 2))) return;
+    let vis = true, q = o; while (q) { if (!q.visible) vis = false; q = q.parent; } if (!vis) return;
+    const m = o.material || {}, col = m.color ? '#' + m.color.getHexString() : m.uniforms ? 'shader:' + Object.keys(m.uniforms).slice(0, 4).join(',') : '?';
+    const chain = []; q = o; for (let k = 0; k < 4 && q; k++) { chain.push(q.name || q.type); q = q.parent; }
+    const p = o.getWorldPosition(new V()), n = o.isPoints ? (o.geometry.drawRange.count !== Infinity ? o.geometry.drawRange.count : o.geometry.attributes.position.count) : 1;
+    rows.push([o.isPoints ? 'Points' : o.isSprite ? 'Sprite' : 'AddMesh', n, col, chain.join('<'), p.distanceTo(cam).toFixed(0)].join(' '));
+  });
+  const agg = {}; for (const r of rows) { const k = r.split(' ').slice(0, 4).join(' '); agg[k] = (agg[k] || 0) + 1; }
+  for (const [k, n] of Object.entries(agg).sort((a, c) => c[1] - a[1])) log(n + 'x', k);
+}
+// THE WALK INTO THE WHALE (2026-10-30, "the lag while walking into the whale belly needs to be fixed and any sounds of
+// things spawning in i dont want to hear"): the real loop, from 70 m up the beach to its mouth, the swallow, the belly's
+// cut and the first seconds inside — every frame over 25 ms with the spans that held the thread, and every sound that
+// starts (who started it, from the stack). (own profile)
+export async function whaleWalkInCold(ctx) { ctx.w.__cold = true; return whaleWalkIn(ctx); }
+export async function whaleWalkIn({ w, b, log, sleep }) {
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(250); }
+  try { await b.audioCtx.resume(); } catch (e) {}
+  // every sound source started, by who started it
+  const snd = []; let phase = 'boot';
+  const tag = () => { const st = (new Error().stack || '').split('\n').slice(2, 7).map((l) => l.trim().replace(/^at /, '').split(' ')[0]).filter((n) => n && !/^(Object|Array|new|eval|<anonymous>)/.test(n)); return st.slice(0, 3).join('<'); };
+  for (const C of [w.AudioBufferSourceNode, w.OscillatorNode]) { const st0 = C.prototype.start; C.prototype.start = function (...a) { if (phase !== 'boot') snd.push(phase + ' ' + tag()); return st0.apply(this, a); }; }
+  // the beach in front of its mouth, and back from it
+  b.placeOutOfWhale(); for (let i = 0; i < 20; i++) b.frame(1);
+  const cam = b.camera.position, mouth = cam.clone(), back = new (b.THREE.Vector3)(mouth.x, mouth.y, mouth.z + 70);
+  if (w.__cold) log('cold: skrim model in yet?', !!(b.SKRIM.u && b.SKRIM.u.model), 'clips', b.SKRIM.u && Object.keys(b.SKRIM.u.clips || {}).length);
+  const frames = { walk: [], swallow: [], inside: [] }; let last = performance.now(), go = true;
+  w.requestAnimationFrame((function tick() { const n = performance.now(); if (frames[phase]) frames[phase].push([n - last, n]); last = n; if (go) w.requestAnimationFrame(tick); }));
+  // walk up the beach to it, 7 m/s for 10 s (the files of the whale come in as you come up)
+  cam.copy(back); await sleep(800);
+  phase = 'walk'; const lag0 = performance.now();
+  for (let i = 0; i < 100; i++) { const k = i / 100; cam.set(back.x, mouth.y, back.z + (mouth.z - back.z) * k); b.lookAt(mouth.x - 5, mouth.y, mouth.z - 10); await sleep(100); }
+  phase = 'swallow'; const t1 = performance.now(); b.startSwallow();
+  for (let i = 0; i < 120 && b.whaleState().busy !== false || i < 20; i++) await sleep(100);
+  phase = 'inside'; const t2 = performance.now(); await sleep(5000); go = false; phase = 'end';
+  const lag = b.lag().filter((e) => e[0] >= lag0 - performance.timeOrigin || true);
+  for (const [k, F] of Object.entries(frames)) {
+    const d = F.map((f) => f[0]).sort((a, c) => a - c), big = F.filter((f) => f[0] > 25);
+    log(k.toUpperCase(), 'frames', d.length, 'p50', (d[Math.floor(d.length / 2)] || 0).toFixed(1), 'max', (d[d.length - 1] || 0).toFixed(0), 'over 25 ms', big.length, 'over 50', F.filter((f) => f[0] > 50).length);
+  }
+  log('SPANS over 16 ms (latest 40):', JSON.stringify(b.lag().slice(-40).map((e) => Math.round(e[1]) + ':' + String(e[2]).slice(0, 28))));
+  const agg = {}; for (const s of snd) agg[s] = (agg[s] || 0) + 1;
+  for (const [k, n] of Object.entries(agg).sort((a, c) => c[1] - a[1]).slice(0, 40)) log('SOUND', n + 'x', k);
+}
+// what the whale's 0.5 s build is made of (2026-10-30): buildWhale, then placeInWhale's warm-ins and compile. (own profile)
+export async function whaleBuildCost({ w, b, log, sleep }) {
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(250); }
+  b.placeOutOfWhale(); for (let i = 0; i < 400; i++) { b.frame(1); if (i % 20 === 0) await sleep(30); }   // (its files in)
+  const t0 = performance.now(); b.buildWhale(); const t1 = performance.now();
+  b.placeInWhale(); const t2 = performance.now(); b.frame(1); const t3 = performance.now();
+  log('COST buildWhale', (t1 - t0).toFixed(0), 'ms | placeInWhale (warm-ins, compile)', (t2 - t1).toFixed(0), 'ms | the first frame inside', (t3 - t2).toFixed(0), 'ms');
+}
+// the pieces of the arena's build, timed alone on a fresh page (2026-10-30). (own profile)
+export async function whalePieces({ w, b, log, sleep }) {
+  const T = b.THREE, G = new T.Group(), r = () => Math.random(), ms = (f) => { const t = performance.now(); f(); return (performance.now() - t).toFixed(1); };
+  const spot = { x: 5.3, s: 56.2, H: new T.Vector3(5, 12, -56) }, cuts = [spot, { x: -3, s: 80 }, { x: 4, s: 100 }];
+  log('PIECES noise tex', ms(() => b.whNoiseTex()), '| a heap (K 1, 10 bones)', ms(() => b.whFleshPile(G, 5, 56, r, 1, 10)), '| a small heap', ms(() => b.whFleshPile(G, 8, 60, r, 0.5, 3)),
+    '| ground mist', ms(() => b.whGroundMist(G, spot, cuts)), '| air fog', ms(() => b.whAirFog(G, cuts, r)), '| rays ×5', ms(() => b.whGodRays(G, spot, 0, r)), '| buildWhale whole', ms(() => b.buildWhale()));
+}
+// THE TEAL ON THE GUT'S WALL (2026-10-30, a still: a column of round teal blobs on the wall by a cut; the plankton was not
+// it). Every visible thing within 120 m whose colour (material colour, emissive, a colour uniform, or vertex colours) is
+// cool — green and blue over red — with its owner chain; and the plankton's own colour for comparison. (own profile)
+export async function whaleTeal({ w, b, log, sleep }) {
+  b.placeInWhale(); for (let i = 0; i < 300; i++) { b.frame(1); if (i % 30 === 0) await sleep(30); }
+  const cam = b.camera.position, V = cam.constructor, out = {};
+  const cool = (c) => c && c.g > c.r * 1.3 && c.b > c.r * 1.3;
+  b.scene.traverse((o) => {
+    if (!(o.isMesh || o.isPoints || o.isSprite || o.isInstancedMesh)) return;
+    let vis = true, q = o; while (q) { if (!q.visible) vis = false; q = q.parent; } if (!vis) return;
+    const p = o.getWorldPosition(new V()); if (p.distanceTo(cam) > 400 && !o.isPoints) return;
+    const ms = Array.isArray(o.material) ? o.material : [o.material]; const why = [];
+    for (const m of ms) { if (!m) continue;
+      if (cool(m.color)) why.push('color#' + m.color.getHexString()); if (cool(m.emissive) && m.emissiveIntensity > 0) why.push('emi#' + m.emissive.getHexString());
+      if (m.uniforms) for (const [k, u] of Object.entries(m.uniforms)) { const v = u && u.value; if (v && v.isColor && cool(v)) why.push(k + '#' + v.getHexString()); if (v && v.isVector3 && v.y > v.x * 1.3 && v.z > v.x * 1.3 && v.y <= 2) why.push(k + 'v' + v.toArray().map((x) => x.toFixed(2)).join(',')); }
+      if (m.fragmentShader && /vec3\(\s*0?\.[0-4]\d*\s*,\s*0?\.[5-9]/.test(m.fragmentShader)) why.push('frag-teal'); }
+    const ca = o.geometry && o.geometry.attributes && o.geometry.attributes.color; if (ca) { let n = 0; for (let i = 0; i < Math.min(ca.count, 400); i++) if (ca.getY(i) > ca.getX(i) * 1.3 && ca.getZ(i) > ca.getX(i) * 1.3) n++; if (n > 20) why.push('vcol' + n); }
+    if (!why.length) return;
+    const chain = []; q = o; for (let k = 0; k < 5 && q; k++) { chain.push((q.name || q.type) + (q.userData && Object.keys(q.userData).length ? '{' + Object.keys(q.userData).slice(0, 2).join(',') + '}' : '')); q = q.parent; }
+    const key = (o.isPoints ? 'Points' : o.isInstancedMesh ? 'Inst' : o.isSprite ? 'Sprite' : 'Mesh') + ' ' + why.join(',') + ' ' + chain.join('<');
+    out[key] = (out[key] || 0) + 1;
+  });
+  for (const [k, n] of Object.entries(out).sort((a, c) => c[1] - a[1]).slice(0, 40)) log(n + 'x', k);
+}
+// THE WALK UP TO SKRIM (2026-10-30, "it still lags when i walk up to skrim fix any lag for good in here"): swallowed the
+// real way, then walked from where you land up to him at a walk (3.4 m/s), looking at him, through the real loop; every
+// frame over 22 ms with what it was doing — the draw's share, new shader programs, new textures and geometries, and
+// what changed in his state that frame. Then 4 s beside him. `&talk=1` opens the talk at the end. (own profile)
+export async function skrimWalkUp({ w, b, log, sleep }) {
+  for (let k = 0; k < 600 && (!b.state().introDone || b.frozen()); k++) { try { if (!b.state().started) b.beginGame(); } catch (e) {} b.frame(3); await sleep(30); }
+  log('intro done', b.state().introDone, 'frozen', b.frozen());
+  await sleep(3000); b.startWhale(1);   // (the cut the game puts you in by: black up, placed, held, black down — as tools/loadtime.html)
+  for (let i = 0; i < 900 && (b.whaleState().busy !== false || !b.whaleState().inWhale) || i < 20; i++) await sleep(100);
+  log('in the whale', b.whaleState().inWhale, JSON.stringify(b.whaleState()).slice(0, 120));
+  const S = b.SKRIM; for (let i = 0; i < 200 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed); i++) await sleep(100);
+  await sleep(1500);
+  const aim = () => { const dx = P.x - cam.x, dz = P.z - cam.z, dy = P.y + 0.7 - cam.y; b.look(Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz))); };
+  const R = b.renderer, I = R.info, cam = b.camera.position, P = S.u.g.position;
+  const rr = R.render.bind(R); let rT = 0; R.render = (a, c) => { const t = performance.now(); rr(a, c); rT += performance.now() - t; };
+  const snap = () => [S.stage, b.skrimSongS && b.skrimSongS() ? 'song' : '-', b.whMood ? 'cine' + b.whMood.cine.toFixed(1) : '', S.u.sk && S.u.sk.noticed ? 'noticed' : '', S.u.sk && S.u.sk.sr ? 'sr:' + (S.u.sk.sr.ph || '') : ''].join(' ');
+  const rows = [], all = []; let last = performance.now(), go = true, phase = 'stand', prog = I.programs ? I.programs.length : 0, tex = I.memory.textures, geo = I.memory.geometries, st = snap();
+  (function tick() {
+    const n = performance.now(), d = n - last; last = n;
+    const p2 = I.programs ? I.programs.length : 0, s2 = snap();
+    all.push([phase, d]);
+    if (d > 22) rows.push(phase + ' ' + Math.round(d) + 'ms draw ' + Math.round(rT) + ' prog+' + (p2 - prog) + ' tex+' + (I.memory.textures - tex) + ' geo+' + (I.memory.geometries - geo) + (s2 !== st ? ' [' + st + ' → ' + s2 + ']' : '') + ' @' + cam.distanceTo(P).toFixed(1) + 'm');
+    prog = p2; tex = I.memory.textures; geo = I.memory.geometries; st = s2; rT = 0;
+    if (go) w.requestAnimationFrame(tick);
+  })();
+  await sleep(1500);
+  const from = cam.clone(), to = P.clone(), dist = Math.hypot(to.x - from.x, to.z - from.z), stop = 2.6;
+  log('walk from', dist.toFixed(1), 'm away; stage', S.stage, 'progs', prog);
+  phase = 'walk'; const t0 = performance.now(), secs = (dist - stop) / 3.4;
+  const lag0 = b.lag(0).length;
+  while (true) {
+    const k = Math.min(1, (performance.now() - t0) / 1000 / secs); const f = k * (dist - stop) / dist;
+    cam.x = from.x + (to.x - from.x) * f; cam.z = from.z + (to.z - from.z) * f; aim();
+    if (k >= 1) break; await sleep(16);
+  }
+  phase = 'near'; for (let i = 0; i < 250; i++) { aim(); await sleep(16); }
+  if (new URLSearchParams(location.search).get('talk')) { phase = 'talk'; try { b.skrimTalk(); } catch (e) { log('talk', e.message); } await sleep(4000); }
+  go = false;
+  for (const ph of ['stand', 'walk', 'near', 'talk']) { const F = all.filter((r) => r[0] === ph).map((r) => r[1]).sort((a, c) => a - c); if (!F.length) continue;
+    log('PHASE', ph, 'frames', F.length, 'p50', F[F.length >> 1].toFixed(1), 'p95', F[Math.floor(F.length * 0.95)].toFixed(1), 'max', F[F.length - 1].toFixed(0), 'over 33', F.filter((d) => d > 33).length); }
+  for (const r of rows.slice(0, 60)) log('SLOW', r);
+  log('SPANS', JSON.stringify(b.lag(0).slice(0).filter((e) => e[0] >= t0 - 2000 + performance.timeOrigin - performance.timeOrigin).slice(0, 20).map((e) => e[1] + ':' + String(e[2]).slice(0, 30))));
+}
+// SHOOTING THE GARGOYLES (2026-10-30, the owner: "MAKE SURE SHOOTING THE GARGOYLES STILL BREAKS THEM AND HAS THE KEY DROP
+// THE KEY JUST DIDNT DROP"): XIII's court, the door tried, and then every one of them shot down with the real trigger
+// (`&g=sg` the shotgun, `&g=mag` the magnum, aimed at its chest; `&head=1` at its head), Myles at your side as in a game.
+// Each shot: who it hit, alive/struck/mode; then the key. (own profile)
+export async function gargShoot({ w, b, log, sleep, shot }) {
+  const Q = new URLSearchParams(location.search), gun = Q.get('g') || 'sg', head = !!Q.get('head'), solo = !!Q.get('solo');
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  w.__ggBoot(); for (let i = 0; i < 120 && !w.__ggBooted; i++) await sleep(1000);
+  const G = b.GARG, M = b.MINO, cam = b.camera.position, A = b.c13Dbg().arch;
+  if (!solo) { M.stage = 'with'; M.ally = true; M.place = '?'; }
+  b.settings.devMode = false;
+  const it = gun === 'sg' ? b.shotgunItem : b.magnumItem;
+  if (!b.inventory.includes(it)) b.addToInventory(it); if (b.equippedS && b.equippedS() !== it) b.toggleEquip(it);
+  const home = [b.C13_X + A.ax + A.ux * (A.L + 4.0), b.C13_Z + A.az + A.uz * (A.L + 4.0)];
+  const step = (n) => { for (let i = 0; i < n; i++) { cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); b.heal(); } };
+  cam.set(home[0], cam.y, home[1]); step(60);
+  b.gargTryDoor(); if (b.state().dialogOpen) b.endDialog();
+  step(60 * 6);
+  log('phase', G.phase, 'modes', G.units.map((x) => x.gp.mode + (x.st.alive ? '' : '†')).join(','), 'equipped', b.equippedS() && b.equippedS().name);
+  let shots = 0;
+  for (let k = 0; k < (+Q.get('n') || 80) && G.units.some((u) => u.st.alive && !u.retired); k++) {
+    const u = G.units.filter((x) => x.st.alive && !x.retired && !['perch', 'wake', 'drop', 'script'].includes(x.gp.mode)).sort((a, c) => a.g.position.distanceTo(cam) - c.g.position.distanceTo(cam))[0];
+    if (!u) { step(20); continue; }
+    const p = u.g.position, hb = u.model && u.model.getObjectByName(head ? 'Head' : 'Spine2'), at = hb ? hb.getWorldPosition(p.clone()) : p.clone().setY(p.y + 1);
+    b.lookAt(at.x, at.y, at.z); w.__c13Step(1); b.lookAt(at.x, at.y, at.z);
+    if (gun === 'sg') b.sgCh = [1, 1]; else b.magAmmo = 6;
+    const dir = b.camera.getWorldDirection(cam.clone()), tr = b.magTrace(dir), ch0 = gun === 'sg' ? JSON.stringify(b.sgCh) : b.magAmmo;
+    const hp0 = u.st.hp; b.magFire(); shots++;
+    if (shots <= 6) log('  trace', tr ? tr.kind + (tr.u ? ' g' + (tr.u.gp ? tr.u.gp.i : '?') : '') + ' t' + tr.t.toFixed(1) : 'nothing', '| shells', ch0, '→', gun === 'sg' ? JSON.stringify(b.sgCh) : b.magAmmo, '| frozen', b.frozen(), 'aim at', at.toArray().map((v) => v.toFixed(1)).join(','), 'unit at', p.toArray().map((v) => v.toFixed(1)).join(','));
+    if (Q.get('trace') && shots <= 2) for (let f = 0; f < 6; f++) { step(1); log('    frame', f, 'cam', cam.toArray().map((v) => v.toFixed(1)).join(','), 'unit', p.toArray().map((v) => v.toFixed(1)).join(','), 'mode', u.gp.mode, 'vel', u.gp.vel.toArray().map((v) => v.toFixed(1)).join(','), 'push', u.st.flinchPush ? u.st.flinchPush.v.toFixed(1) : '-'); }
+    step(2); const r = 'shot ' + shots + ' at g' + u.gp.i + ' ' + p.distanceTo(cam).toFixed(1) + 'm mode ' + u.gp.mode + ' hp ' + hp0 + '→' + u.st.hp + ' alive ' + u.st.alive + ' struck ' + !!u.st.struck;
+    step(40); log(r, '| after: alive', u.st.alive, 'mode', u.gp.mode, '| alive left', G.units.filter((x) => x.st.alive && !x.retired).length, 'phase', G.phase, 'key', !!w.__bw.gargKeyS());
+  }
+  step(180);
+  const K = w.__bw.gargKeyS();
+  log('END phase', G.phase, 'keyTaken', G.keyTaken, 'key', K ? K.st + ' at y-floor ' + (K.g.position.y - (b.c13CourtAt(K.g.position.x, K.g.position.z) ?? 0)).toFixed(2) + ' from you ' + Math.hypot(K.g.position.x - cam.x, K.g.position.z - cam.z).toFixed(1) + ' m, in scene ' + !!K.g.parent : 'NONE', '| door locked', b.gargLockedS(), '| modes', G.units.map((x) => x.gp.mode + (x.st.alive ? '' : '†') + (x.retired ? 'R' : '')).join(','));
+}
+
+// THE DEALER'S SIDE-STEP (2026-10-31): in the bunker, the fight on, you held 2.6 m off him on fixed 1/60 steps; per clip
+// the frames and the planted foot's skate (the lower toe while within 3 cm of the lowest it has been, its world speed),
+// and stills of him circling. `&m=hold` keeps you still; default orbits you slowly so he must circle.
+export async function dealerSide({ w, b, log, sleep, shot }) {
+  b.settings.devMode = false;   // (dev mode starts no mutant's swing: `main.js` ~39865; you are healed every frame instead)
+  b.placeInBunker();
+  const u = (b.mutants || []).find((m) => m.kindName === 'dealer'); if (!u) { log('no dealer'); return; }
+  for (let i = 0; i < 300 && !(u.model && u.mixer && !(u.clipsPending > 0)); i++) { b.frame(1); await sleep(50); }
+  log('model', !!u.model, 'clips', Object.keys(u.clips).length, 'strafeL', u.clips.strafeL && u.clips.strafeL.getClip().name, 'speed L', u.clipSpeed && u.clipSpeed.strafeL, 'R', u.clipSpeed && u.clipSpeed.strafeR);
+  for (let i = 0; i < 20; i++) b.frame(1);
+  if ((new URLSearchParams(window.location.search).get('m')) === 'clip') {
+    // his feet on a clip alone: the mixer driven here, him carried sideways at the clip's speed both ways; the planted
+    // toe (the lower one, within 1.5 cm of the lowest it gets in that clip) — its world speed. The way that reads ~0 is
+    // the way the clip walks. Then 'walk', as the fight played it before (the old alias), at the same speed.
+    w.requestAnimationFrame = () => 0;
+    const V = b.camera.position.constructor, P = u.g.position, P0 = P.clone(), cs = u.clipSpeed.strafeR || 1.3; let cs2 = 0;
+    const g = (re) => { let o = null; u.model.traverse((x) => { if (!o && x.isBone && re.test(x.name)) o = x; }); return o; };
+    const tL = g(/LeftToeBase/), tR = g(/RightToeBase/), a = new V(), c = new V(), pv = new V();
+    const run = (name, sgn, rate, shots) => {
+      for (const x of u.mixer._actions) x.stop();
+      const A = u.clips[name]; A.reset(); A.enabled = true; A.setEffectiveWeight(1); A.timeScale = rate; A.play();
+      P.copy(P0); const y = u.g.rotation.y, rx = Math.cos(y), rz = -Math.sin(y);
+      let lo = 1e9; const H = [];
+      for (let f = 0; f < 150; f++) {
+        u.mixer.update(1 / 60); P.x += rx * sgn * cs / 60; P.z += rz * sgn * cs / 60; u.g.updateMatrixWorld(true);
+        tL.getWorldPosition(a); tR.getWorldPosition(c); const L = a.y < c.y; const t = (L ? a : c).clone(); t.w = L; H.push(t);
+        if (f > 30) lo = Math.min(lo, t.y);
+        if (shots && f >= 60 && f < 108 && f % 12 === 0) { u.g.visible = true; const fv = b.camera.fov; b.camera.fov = 30; b.camera.updateProjectionMatrix(); b.camera.position.set(P.x + Math.sin(y) * 4.2, P.y + 1.0, P.z + Math.cos(y) * 4.2); b.lookAt(P.x, P.y + 1.0, P.z); shot(name + '_' + f, 420, 1.5); b.camera.fov = fv; b.camera.updateProjectionMatrix(); }
+      }
+      let s = 0, n = 0;
+      for (let f = 31; f < H.length; f++) { const q = H[f], r = H[f - 1]; if (q.w === r.w && q.y < lo + 0.015) { s += Math.hypot(q.x - r.x, q.z - r.z) * 60; n++; } }
+      return [(s / Math.max(1, n)).toFixed(2), n];
+    };
+    log('clipSpeed strafe', cs.toFixed(2), 'walk', u.clipSpeed.walk, 'leg', u.dealerLeg && u.dealerLeg.toFixed(2));
+    for (const [nm, rate] of [['strafeR', 1], ['strafeL', 1], ['walk', 1]]) {
+      if (!u.clips[nm]) { log(nm, 'none'); continue; }
+      const p1 = run(nm, 1, rate, false), m1 = run(nm, -1, rate, false);
+      log(nm, 'carried +X (his left): planted toe', p1[0], 'm/s n', p1[1], '| carried -X (his right):', m1[0], 'm/s n', m1[1]);
+    }
+    for (const [nm, sg] of [['strafeR', 1], ['strafeL', -1]]) {
+      const row = []; let best = [9, 0];
+      for (let v = 0.6; v <= 2.21; v += 0.1) { const k = cs; cs2 = v; const r = run(nm, sg * v / cs, 1, false); row.push(v.toFixed(1) + ':' + r[0]); if (+r[0] < best[0]) best = [+r[0], v]; }
+      log(nm, 'sweep', row.join(' '), '| best', best[1].toFixed(1), 'm/s at', best[0]);
+    }
+    // held still: the planted toe's own velocity in his frame (x his +X, z his front) — the way and pace the clip walks
+    for (const nm of ['strafeR', 'strafeL']) {
+      for (const x of u.mixer._actions) x.stop();
+      const A = u.clips[nm]; A.reset(); A.enabled = true; A.setEffectiveWeight(1); A.timeScale = 1; A.play(); P.copy(P0); u.g.updateMatrixWorld(true);
+      const inv = u.g.matrixWorld.clone().invert(), H = []; let loL = 1e9, loR = 1e9;
+      for (let f = 0; f < 150; f++) { u.mixer.update(1 / 60); u.g.updateMatrixWorld(true); tL.getWorldPosition(a); tR.getWorldPosition(c); const L = a.y < c.y, t = (L ? a : c).clone().applyMatrix4(inv); t.w = L; t.wy = (L ? a : c).y; H.push(t); if (f > 30) { if (L) loL = Math.min(loL, t.wy); else loR = Math.min(loR, t.wy); } }
+      let sx = 0, sz = 0, n = 0, sxL = 0, szL = 0, nL = 0;
+      for (let f = 31; f < H.length; f++) { const q = H[f], r = H[f - 1]; if (q.w === r.w && q.wy < (q.w ? loL : loR) + 0.015) { const vx = (q.x - r.x) * 60, vz = (q.z - r.z) * 60; if (q.w) { sxL += vx; szL += vz; nL++; } else { sx += vx; sz += vz; n++; } } }
+      log(nm, 'held still, planted toe in his frame: right foot (x,z)', (sx / Math.max(1, n)).toFixed(2), (sz / Math.max(1, n)).toFixed(2), 'n', n, '| left foot', (sxL / Math.max(1, nL)).toFixed(2), (szL / Math.max(1, nL)).toFixed(2), 'n', nL, '| his scale', u.g.scale.x.toFixed(3), 'model rot y', u.model.rotation.y.toFixed(3), 'g rot y', u.g.rotation.y.toFixed(3));
+    }
+    { const mine = new Set(); u.g.traverse((o) => mine.add(o)); b.scene.traverse((o) => { if ((o.isMesh || o.isPoints || o.isSprite) && !mine.has(o)) o.visible = false; }); }
+    run('strafeR', -1, 1, true); run('walk', -1, 1, true);
+    return;
+  }
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  for (let i = 0; i < 6; i++) { w.__adv(1); if (b.state().dialogOpen) b.endDialog(); }
+  b.startDealerFight();
+  for (let i = 0; i < 60; i++) { w.__adv(1); if (b.state().dialogOpen) b.endDialog(); }
+  log('fight on: dialog', b.state().dialogOpen, 'awake', u.st.awake, 'frozen', b.frozen && b.frozen());
+  const mode = new URLSearchParams(window.location.search).get('m') || 'orbit';
+  if (mode === 'guard') {
+    // your guard held against him (the katana): 20 s re-raised every frame (inside the parry window: parries), then 20 s
+    // held (blocks). Every guard's sparks now come off `skSparks` (SKSP.bursts); stills of the whole frame (the view
+    // model's pass included) the frame a burst goes off and three after
+    try { if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem); if (b.equippedS && b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem); } catch (e) { log('katana', e.message); }
+    for (let i = 0; i < 30; i++) w.__adv(1);
+    const P = u.g.position, cam = b.camera.position, C0 = cam.clone(), SK = b.SKSP; const res = { parry: 0, block: 0 }; let shots = 0, pend = 0;
+    const grab = (nm) => { const src = b.renderer.domElement, c = document.createElement('canvas'); c.width = 520; c.height = Math.round(520 * src.height / src.width); const g2 = c.getContext('2d'); g2.filter = 'brightness(1.5)'; g2.drawImage(src, 0, 0, c.width, c.height);
+      const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let k = 0; k < n; k++) console.log('[PBIMG]', nm, k + '/' + n, d.slice(k * 8000, (k + 1) * 8000)); };
+    for (let f = 0; f < 60 * 40; f++) {
+      const ph = f < 1200 ? 'parry' : 'block';
+      cam.copy(C0); b.lookAt(P.x, P.y + 1.3, P.z);
+      if (ph === 'parry') b.setGuardTest(true, 0); else if (!b.blockingS()) b.setGuardTest(true, 1);
+      const b0 = SK.bursts; w.__adv(1); if (b.state().hp < 3) b.heal();
+      if (SK.bursts > b0) { res[ph]++; if (shots < 4 && (ph === 'parry' ? shots < 2 : shots >= 2)) { grab('gs_' + ph + '_' + shots + 'a'); pend = 3; shots++; } }
+      else if (pend && --pend === 0) grab('gs_' + ph + '_' + (shots - 1) + 'b');
+    }
+    b.setGuardTest(false);
+    log('guard: spark bursts while parrying', res.parry, '| while blocking', res.block, '| his hp', u.st.hp, '| you', b.state().hp);
+    return;
+  }
+  const g = (re) => { let o = null; u.model.traverse((x) => { if (!o && x.isBone && re.test(x.name)) o = x; }); return o; };
+  const toeL = g(/LeftToeBase/), toeR = g(/RightToeBase/), P = u.g.position, cam = b.camera.position, V3 = cam.constructor;
+  const a = new V3(), c = new V3(), prev = new V3(); let had = false, lowMin = 1e9;
+  const by = {}, sideF = { n: 0, clips: {} }; let ang = Math.atan2(cam.x - P.x, cam.z - P.z), shots = 0;
+  const C0 = cam.clone(); log('you at', C0.x.toFixed(1), C0.z.toFixed(1), 'him', P.x.toFixed(1), P.z.toFixed(1));
+  for (let f = 0; f < 60 * 60; f++) {
+    if (mode !== 'hold') ang += 0.2 / 60;
+    cam.set(C0.x + (mode !== 'hold' ? Math.sin(ang) * 0.6 : 0), C0.y, C0.z + (mode !== 'hold' ? Math.cos(ang) * 0.6 : 0)); b.lookAt(P.x, P.y + 1.1, P.z);
+    w.__adv(1); if (b.state().hp < 3) b.heal();
+    u.g.updateMatrixWorld(true); toeL.getWorldPosition(a); toeR.getWorldPosition(c);
+    const lo = a.y < c.y ? a : c, which = a.y < c.y ? 'L' : 'R';
+    lowMin = Math.min(lowMin, lo.y - P.y);
+    const nm = u.cur ? u.cur.getClip().name : '-';
+    const B = by[nm] || (by[nm] = { n: 0, sk: 0, skN: 0, mx: 0 }); B.n++;
+    if (u.st.side) { sideF.n++; sideF.clips[nm] = (sideF.clips[nm] || 0) + 1; }
+    { const vx = (P.x - (w.__dsLast ? w.__dsLast.x : P.x)) * 60, vz = (P.z - (w.__dsLast ? w.__dsLast.z : P.z)) * 60, y = u.g.rotation.y, sx = vx * Math.cos(y) - vz * Math.sin(y);
+      if (/strafe/.test(nm) && Math.hypot(vx, vz) > 0.3) { const k = nm + (sx > 0 ? ' +X' : ' -X'); sideF.dir = sideF.dir || {}; sideF.dir[k] = (sideF.dir[k] || 0) + 1; }
+      w.__dsLast = P.clone(); }
+    if (had && prev.w === which && lo.y - P.y < lowMin + 0.03) { const v = Math.hypot(lo.x - prev.x, lo.z - prev.z) * 60; B.sk += v; B.skN++; B.mx = Math.max(B.mx, v); }
+    prev.copy(lo); prev.w = which; had = true;
+    if (f % 120 === 0) log('  t', (f / 60).toFixed(0), 'd', Math.hypot(P.x - cam.x, P.z - cam.z).toFixed(2), 'clip', nm, 'atk', u.st.atk, 'side', u.st.side, 'awake', u.st.awake, 'vis', u.g.visible, 'near', u.st.near, 'realSp', (u.realSp || 0).toFixed(2));
+    if (u.st.side && shots < 4 && f % 37 === 0) { const sv = cam.clone(); cam.set(P.x + (C0.x - P.x) * 1.4 + 1.2, P.y + 1.3, P.z + (C0.z - P.z) * 1.4); b.lookAt(P.x, P.y + 0.7, P.z); shot('ds_' + shots++, 520, 1.6); cam.copy(sv); }
+  }
+  log('mode', mode, '| frames circling (side≠0)', sideF.n, JSON.stringify(sideF.clips), '| strafe clip vs his own x travel', JSON.stringify(sideF.dir || {}));
+  log('by clip', Object.entries(by).map(([k, B]) => k + ' ' + B.n + 'f skate ' + (B.sk / Math.max(1, B.skN)).toFixed(2) + ' max ' + B.mx.toFixed(2)).join(' | '));
+  log('his hp', u.st.hp, 'alive', u.st.alive, 'player hp', b.state().hp);
+}
+
+// THE SAMURAI BETWEEN SWINGS (2026-10-31): the dojo, the katana taken, the fight on (dev mode: you never die); you stand
+// 2.4 m off him on fixed 1/60 steps. For frames he is neither swinging, stunned nor travelling: how far his head and
+// chest move in his own frame each frame (the note said 96 % under 5 mm, before the life layer), and over each second.
+export async function samStill({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 80 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(250); }
+  for (let k = 0; k < 200 && !b.state().introDone; k++) { b.frame(3); await sleep(30); }
+  const RB = b.ROOM_BACK.dojo; RB.load();
+  for (let i = 0; i < 160 && !RB.ready(); i++) { b.frame(2); await sleep(50); }
+  RB.place(); for (let i = 0; i < 60; i += 5) { b.frame(5); await sleep(5); }
+  b.settings.devMode = false;
+  const it = b.interactables.find((x) => /Take the katana/.test(typeof x.label === 'function' ? x.label() : x.label));
+  log('katana', !!it); if (it) it.onActivate();
+  const u = (b.mutants || []).find((m) => m.kindName === 'samurai');
+  for (let i = 0; i < 200 && u && !(u.model && u.mixer && !(u.clipsPending > 0)); i++) { b.frame(2); await sleep(50); }
+  if (!u || !u.model) { log('no samurai', !!u); return; }
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  w.__adv(240);
+  const P = u.g.position, cam = b.camera.position, V3 = cam.constructor;
+  if (new URLSearchParams(window.location.search).get('m') === 'clip') {
+    // his side-steps on their own, him carried along his model's +X and -X at the clip's speed: the planted ankle's
+    // world speed (the lower one, within 1.5 cm of its own lowest) — the way that reads ~0 is the way the clip walks
+    const bn = (re) => { let o = null; u.model.traverse((x) => { if (!o && x.isBone && re.test(x.name)) o = x; }); return o; };
+    const fL = bn(/footL$/), fR = bn(/footR$/), a = new V3(), c = new V3(), P0 = P.clone();
+    log('feet', fL && fL.name, fR && fR.name);
+    const carry = (nm, sg) => {
+      for (const x of u.mixer._actions) x.stop(); const A = u.clips[nm]; A.reset(); A.enabled = true; A.setEffectiveWeight(1); A.timeScale = 1; A.play();
+      P.copy(P0); u.g.updateMatrixWorld(true); const mx = new V3().setFromMatrixColumn(u.model.matrixWorld, 0).setY(0).normalize(), cs = u.clipSpeed[nm] || 1;
+      const H = []; let loL = 1e9, loR = 1e9;
+      for (let f = 0; f < 150; f++) { u.mixer.update(1 / 60); P.addScaledVector(mx, sg * cs / 60); u.g.updateMatrixWorld(true); fL.getWorldPosition(a); fR.getWorldPosition(c);
+        const L = a.y < c.y, t = (L ? a : c).clone(); t.w = L; H.push(t); if (f > 30) { if (L) loL = Math.min(loL, t.y); else loR = Math.min(loR, t.y); } }
+      let s2 = 0, n = 0; for (let f = 31; f < H.length; f++) { const q = H[f], r = H[f - 1]; if (q.w === r.w && q.y < (q.w ? loL : loR) + 0.015) { s2 += Math.hypot(q.x - r.x, q.z - r.z) * 60; n++; } }
+      return (s2 / Math.max(1, n)).toFixed(2) + ' (n' + n + ')';
+    };
+    for (const nm of ['strafeL', 'strafeR']) log(nm, 'speed', (u.clipSpeed[nm] || 0).toFixed(2), '| carried +X (his left): planted ankle', carry(nm, 1), '| carried -X (his right):', carry(nm, -1));
+    // stills: strafeR carried to his right, from in front of him, nothing else drawn
+    const mine = new Set(); u.g.traverse((o) => mine.add(o)); b.scene.traverse((o) => { if ((o.isMesh || o.isPoints || o.isSprite) && !mine.has(o)) o.visible = false; });
+    for (const x of u.mixer._actions) x.stop(); const A = u.clips.strafeR; A.reset(); A.enabled = true; A.setEffectiveWeight(1); A.play(); P.copy(P0);
+    u.g.updateMatrixWorld(true); const mx = new V3().setFromMatrixColumn(u.model.matrixWorld, 0).setY(0).normalize(), fz = new V3().setFromMatrixColumn(u.model.matrixWorld, 2).setY(0).normalize();
+    b.camera.fov = 34; b.camera.updateProjectionMatrix();
+    for (let f = 0; f < 110; f++) { u.mixer.update(1 / 60); P.addScaledVector(mx, -(u.clipSpeed.strafeR || 1) / 60); u.g.updateMatrixWorld(true);
+      if (f >= 60 && f % 12 === 0) { u.g.visible = true; b.camera.position.set(P.x + fz.x * 5.5, P.y + 1.3, P.z + fz.z * 5.5); b.lookAt(P.x, P.y + 1.2, P.z); shot('sam_' + f, 420, 1.4); } }
+    return;
+  }
+  const bone = (re) => { let o = null; u.model.traverse((x) => { if (!o && x.isBone && re.test(x.name)) o = x; }); return o; };
+  const H = bone(/spine006$/), C = bone(/spine003$/), inv = new u.g.matrixWorld.constructor();
+  const hp = new V3(), cp = new V3(), ph = new V3(), pc = new V3(); let have = false, last = P.clone();
+  let n = 0, under = 0, sumH = 0, sumC = 0; const clips = {}, win = [], dirs = {}; let wl = [];
+  for (let f = 0; f < 60 * 40; f++) {
+    const dx = cam.x - P.x, dz = cam.z - P.z, d = Math.hypot(dx, dz) || 1;
+    cam.set(P.x + dx / d * 2.4, cam.y, P.z + dz / d * 2.4); b.lookAt(P.x, P.y + 1.4, P.z);
+    w.__adv(1); if (b.state().hp < 3) b.heal();
+    u.g.updateMatrixWorld(true); inv.copy(u.g.matrixWorld).invert();
+    H.getWorldPosition(hp).applyMatrix4(inv); C.getWorldPosition(cp).applyMatrix4(inv);
+    const sp = Math.hypot(P.x - last.x, P.z - last.z) * 60; last.copy(P);
+    const still = u.st.atk < 0 && !(u.st.stun > 0) && !(u.st.recoil > 0) && sp < 0.15 && u.st.alive;
+    if (still && have) {
+      const mh = hp.distanceTo(ph), mc = cp.distanceTo(pc); n++; sumH += mh; sumC += mc; if (mh < 0.005 * 1 / 60 * 60 && mh < 0.005) under++;
+      const nm = u.cur ? u.cur.getClip().name : '-'; clips[nm] = (clips[nm] || 0) + 1;
+      wl.push(hp.clone()); if (wl.length === 60) { let mx = 0; for (const q of wl) mx = Math.max(mx, q.distanceTo(wl[0])); win.push(mx); wl = []; }
+    } else wl = [];
+    ph.copy(hp); pc.copy(cp); have = true;
+    { const nm = u.cur ? u.cur.getClip().name : '-', mx = new V3().setFromMatrixColumn(u.model.matrixWorld, 0).setY(0).normalize();
+      const vx = (P.x - (w.__ssL ? w.__ssL.x : P.x)) * 60, vz = (P.z - (w.__ssL ? w.__ssL.z : P.z)) * 60; w.__ssL = P.clone();
+      const mz = new V3().setFromMatrixColumn(u.model.matrixWorld, 2).setY(0).normalize();
+      if (/strafe/.test(nm) && Math.hypot(vx, vz) > 0.3) { const D = dirs[nm] || (dirs[nm] = { x: 0, z: 0, n: 0 }); D.x += vx * mx.x + vz * mx.z; D.z += vx * mz.x + vz * mz.z; D.n++; } }
+  }
+  // each strafe clip held still: which way its planted foot goes under him along his model's +X (the clip walks the other way)
+  const fL = bone(/footL$/), fR = bone(/footR$/), A = new V3(), Bv = new V3(), held = {};
+  for (const nm of ['strafeL', 'strafeR']) {
+    const Ac = u.clips[nm]; if (!Ac) continue; for (const x of u.mixer._actions) x.stop(); Ac.reset(); Ac.enabled = true; Ac.setEffectiveWeight(1); Ac.timeScale = 1; Ac.play();
+    let prev = null, sx = 0, sz = 0, n = 0;
+    for (let f = 0; f < 120; f++) { u.mixer.update(1 / 60); u.model.updateMatrixWorld(true); const inv = u.model.matrixWorld.clone().invert(); fL.getWorldPosition(A); fR.getWorldPosition(Bv);
+      const low = (A.y < Bv.y ? A : Bv).clone().applyMatrix4(inv), wch = A.y < Bv.y; if (prev && prev.w === wch && f > 20) { sx += (low.x - prev.x) * 60; sz += (low.z - prev.z) * 60; n++; } low.w = wch; prev = low; }
+    held[nm] = 'x ' + (sx / Math.max(1, n)).toFixed(2) + ' z ' + (sz / Math.max(1, n)).toFixed(2) + ' n' + n;
+  }
+  log('fight: his travel in his model frame per strafe clip (sum x, z)', JSON.stringify(Object.fromEntries(Object.entries(dirs).map(([k, D]) => [k, 'x ' + (D.x / D.n).toFixed(2) + ' z ' + (D.z / D.n).toFixed(2) + ' n' + D.n]))), '| held still, planted foot x-speed in model frame (clip walks the opposite way)', JSON.stringify(held), 'model scale', u.model.scale.x.toFixed(3));
+  const s = win.slice().sort((a, b2) => a - b2), med = s.length ? s[s.length >> 1] : 0;
+  log('still frames', n, '| per frame: head under 5 mm', (100 * under / Math.max(1, n)).toFixed(1) + '%', 'mean head', (1000 * sumH / Math.max(1, n)).toFixed(2), 'mm chest', (1000 * sumC / Math.max(1, n)).toFixed(2), 'mm');
+  log('head travel within a still second: windows', win.length, 'median', (med * 1000).toFixed(0), 'mm max', ((s[s.length - 1] || 0) * 1000).toFixed(0), 'mm | clips', JSON.stringify(clips), '| life', !!u.life, 'restless', !!u.kind.restless);
+}
+
+// SKRIM'S AIM (2026-11-01): his fight on fixed 1/60 steps, your guard down, healed every frame; you standing 7 m off,
+// then circling him at a walk (3.4 m/s) 7 m out, then backing and strafing at a run (5.7). Per attack: how many he
+// started, and how many reached you (hit). `&m=phase` drops him to half health first and logs the heads' summon.
+export async function skrimAim({ w, b, log, sleep }) {
+  b.settings.devMode = false;
+  b.placeInWhale();
+  const S = b.SKRIM, cam = b.camera.position;
+  for (let i = 0; i < 400 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed && S.u.clips.crouchIdle); i++) { b.frame(1); await sleep(50); }
+  const u = S.u; if (!u || !u.model) { log('no skrim'); return; }
+  for (let i = 0; i < 30; i++) b.frame(1);
+  w.requestAnimationFrame = () => 0;
+  const P = u.g.position, mode = new URLSearchParams(window.location.search).get('m') || 'aim';
+  S.stage = 'dig'; cam.set(P.x + Math.sin(u.g.rotation.y) * 4, P.y + 1.62, P.z + Math.cos(u.g.rotation.y) * 4);
+  b.skrimFight();
+  for (let i = 0; i < 120 && S.stage !== 'fight'; i++) b.step(1 / 60);
+  log('stage', S.stage, 'hp', u.st.hp);
+  const C0 = P.clone(); let ang = Math.atan2(cam.x - P.x, cam.z - P.z);
+  const floorY = () => cam.y;   // (the eye's height is kept by the game's own clamp each step)
+  const seg = (label, secs, place) => {
+    const k = u.sk, c0 = JSON.parse(JSON.stringify(k.counts || {})), r0 = JSON.parse(JSON.stringify(k.res || {}));
+    let hpHits = 0, hpY = b.state().hp;
+    for (let f = 0; f < secs * 60 && u.st.alive; f++) { place(f); b.lookAt(P.x, P.y + 1.3, P.z); b.step(1 / 60); if (b.state().hp < hpY) hpHits++; b.heal(); hpY = b.state().hp; if (w.__seg) w.__seg(f); }
+    const c1 = k.counts || {}, r1 = k.res || {}, rows = [];
+    for (const n of Object.keys(c1)) { const st = (c1[n] || 0) - (c0[n] || 0); if (!st) continue; const hit = (r1[n + ':hit'] || 0) - (r0[n + ':hit'] || 0); rows.push(n + ' ' + hit + '/' + st); }
+    log(label, '| hit/started:', rows.join(' '), '| hp lost', hpHits, '| his hp', u.st.hp);
+  };
+  if (mode === 'phase') {
+    u.st.hp = Math.round(u.kind.hp * 0.52); log('his hp set', u.st.hp); if (b.CRY) b.CRY.log = []; log('heads built', b.CRY && b.CRY.list.length, 'summon ready', b.CRY && b.CRY.list.filter((h) => h.summon).length);
+    // one cut at him to cross half: his own fight sees the hp drop
+    u.st.hp = Math.round(u.kind.hp * 0.49);
+    w.__seg = (f) => { if (f % 60 === 0) { const C = b.CRY, sm = (C && C.list || []).filter((h) => h.summon); log('  t', (f / 60).toFixed(0), 'his hp', u.st.hp, 'act', u.sk.act && u.sk.act.name, 'heads', sm.map((h) => h.mode).join(','), 'next', C && C.next && C.next.toFixed(2)); } };
+  }
+  const place7 = () => { const dx = cam.x - P.x, dz = cam.z - P.z, d = Math.hypot(dx, dz) || 1; cam.x = P.x + dx / d * 7; cam.z = P.z + dz / d * 7; };
+  if (mode === 'phase') {
+    // you at 6 m, the heads coming; every head in reach cut down a second after it lands near you (your blade's way: one hit)
+    // and you fight back: a head leaping or rearing within 2.2 m is swung at once (65% of the time it connects, as a
+    // player's cut at a thing in the air would), your guard otherwise down
+    const tried = new Set(); let swung = 0, killed = 0;
+    const fight = () => { for (const h of b.CRY.list) { if (!h.summon) continue; if (h.mode !== 'leap' && h.mode !== 'rear') { tried.delete(h); continue; } if (tried.has(h) || h.off) continue;
+      const W = h.body.getWorldPosition(new P.constructor()); if (W.distanceTo(cam) > 2.2) continue; tried.add(h); swung++;
+      if (Math.random() < 0.65) { b.lookAt(W.x, W.y, W.z); if (b.cryStrike(0.6)) killed++; } } };
+    seg('phase, standing 6 m, cutting at heads', 30, (f) => { const dx = cam.x - P.x, dz = cam.z - P.z, d = Math.hypot(dx, dz) || 1; cam.x = P.x + dx / d * 6; cam.z = P.z + dz / d * 6; fight(); });
+    const ev = {}; for (const e of (b.CRY.log || [])) ev[e.ev] = (ev[e.ev] || 0) + 1; log('swung at heads', swung, 'killed', killed, '| head events', JSON.stringify(ev));
+    const C = b.CRY; log('summoned heads', (C.list || []).filter((h) => h.summon).map((h) => h.i + ':' + h.mode).join(' '), '| log', JSON.stringify((C.log || []).slice(-12)));
+    return;
+  }
+  seg('standing 7 m', 20, place7);
+  seg('circling 7 m at a walk', 25, () => { const dx = cam.x - P.x, dz = cam.z - P.z; ang = Math.atan2(dx, dz) + 3.4 / 7 / 60; cam.x = P.x + Math.sin(ang) * 7; cam.z = P.z + Math.cos(ang) * 7; });
+  seg('strafing 7 m at a run, turning every 1.5 s', 20, (f) => { const dx = cam.x - P.x, dz = cam.z - P.z, sg = Math.floor(f / 90) % 2 ? 1 : -1; ang = Math.atan2(dx, dz) + sg * 5.7 / 7 / 60; cam.x = P.x + Math.sin(ang) * 7; cam.z = P.z + Math.cos(ang) * 7; });
+}

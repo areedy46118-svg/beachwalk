@@ -2853,3 +2853,12 @@ off the far side of each body passed through. The sawn-off: each pellet that hit
 1 more at ×0.6 (not through a raised guard), into the same per-foe tally (`take`). Measured, `sh tools/probe.sh
 collateral`: revolver 20,20,20,20 → 6,9,12,14; sawn-off at 1.2 m apart → dead, 4, 17, 20; `collateralKill` (health
 9): dead, dead, 1, 3. Test exports: `mutSpawnTest(x, z, kind)`, `mutantsS()`, `magAmmoS()`, `loadGunsTest()`.
+
+## 2026-10-31 — every guard's sparks off the contact (`guardSparks`)
+The old square points (`spawnSparks`) on a block or parry came off the blade TIP, which in the guard lies off the right edge
+of the view — beside the blow, not on it (whale.md's NOT DONE). Every block and parry of yours (crab, gull, shuriken, every
+mutant, the pliosaur; the paladin's `palBlockFx` lost its own, `blockMutant`/`parryMutant` throw them) now throws Skrim's
+streaks (`skSparks`, now with a size `k`) from `skSparkAt` along the line from what struck: claws and beaks 0.35–0.4, stars
+0.5–0.6, men 1. Skrim's own come off `skrimGuardFx` as before (`blockMutant`/`parryMutant` skip `kind.skrim`, so one burst).
+`spawnSparks` is left for your own blade's strikes and digs, which do land at the tip. `updateSkSparks` floors them at
+`camera.y − playerEye()` outside the whale. Probe `dealerSide&m=guard`: 6 bursts parrying, 8 blocking, stills at mid-blade.
