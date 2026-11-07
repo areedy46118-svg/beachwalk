@@ -1917,3 +1917,20 @@ back to the last legal one (`u.gp.legal`). Probe `gargShoot` (`&g=sg|mag`, `&hea
 `&trace=1` frame by frame after the first two shots): the real trigger, each shot's damage, then the key — both guns,
 with and without Myles, all four broken, the key lying 0.02 over the stone. Harness: `__bw.magAmmo` (get/set);
 `__bw.sgCh` is the two barrels' ARRAY (`[1, 1]` loaded, 2 spent) — set it to a number and every shot is a dry click.
+
+## 2026-11-04 — the paladin and the crusader out for good
+
+- Deleted: `assets/paladin.glb`, `assets/paladin-moves.json`, the paladin's whole section of `main.js` (his kind,
+  swings `p*`, blade/trail/cleave, the entrance take `palStartCut`/`updatePalCut`/`palCutRef`, `palJoin`/`palMayCome`)
+  and the flail knight's (`MUT_KINDS.crusader`, his seat/shield/chain/flail trail, `placeCrusader`/`updateCrusader`,
+  his `s*` swing table). Tools gone with them: paladin_pack/bake, paltest, eej_convert, crusader_pack, crusader.js,
+  crfight, crlive. Shipped size 429.2 → 426.7 MB.
+- KEPT, RENAMED: the Pro Sword and Shield Pack is not the crusader's — the court's swordsmen, the dark knight and the
+  minotaur all play it. `assets/crusader-moves.json` → `assets/sword-moves.json`, `crusaderMoves` → `swordMoves`,
+  `tools/ntar_moves.py -- crusader` → `-- sword`. The dark knight's slot: `paladin` → `dkSlot` (`unit`, `out`),
+  `paladinDone` → `dkDone`, `palCalm` → `dkCalm`, `palBlockFx` → `heavyBlockFx` (a `heavyBlock` kind's block: he never
+  had the paladin's blade empties, so it was always the at-your-guard fallback). `crusaderMayWake` → `c13MayWake`;
+  the throne door asks `knAlive()` directly. `__bw.palDbg` → `__bw.fortDbg`, `__bw.paladinS` → `__bw.dkSlotS`.
+- The castle boot helper the dk/Myles probes use was in paltest.js: now `tools/fortboot.js`, `__fortBoot()`.
+- TRAP met doing it: a scratch vector declared in a comma list (`const _pdnH = …, _pdnA = …`) was used by `dkStage1`;
+  a check of removed `const NAME` heads missed it. Check every name in a removed multi-declaration, not just the first.

@@ -1071,8 +1071,7 @@ normalised, mono AAC 96 kbps, 110 KB in all.
 "Xbox Rare Achievement" (a clip by ArthurBR, the owner's file) — the chime under the Seagull Slayer toast
 (`assets/achievement-rare.m4a`, 1.0–7.4 s of it, AAC, 82 KB). **The console's sound: Microsoft's — confirm it before a release.**
 
-Castle XIII's west court is held by two swordsmen (the flail knight that stood there is out of the game; his
-`assets/crusader.glb` is no longer loaded):
+Castle XIII's west court is held by two swordsmen:
 
 This work is based on ["knight"](https://sketchfab.com/3d-models/knight-b05342642ee1475985c746a5b64332fc) by
 [sanyaork](https://sketchfab.com/sanyaork) licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) —
@@ -1082,13 +1081,12 @@ This work is based on ["KNIGHT"](https://sketchfab.com/3d-models/knight-eb3b4e9f
 [PONCHIK](https://sketchfab.com/PONCHIK) licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) —
 the iron knight (`assets/knight-iron.glb`, the same packer: his colour map made from his normal map).
 
-Both play Mixamo's "Pro Sword and Shield Pack" (Adobe Mixamo terms), retargeted by `tools/ntar_moves.py -- crusader`
-into `assets/crusader-moves.json` — only the moves of a man with a sword and no shield.
+Both play Mixamo's "Pro Sword and Shield Pack" (Adobe Mixamo terms), retargeted by `tools/ntar_moves.py -- sword`
+into `assets/sword-moves.json` — only the moves of a man with a sword and no shield.
 
 This work is based on ["The Dark Knight - Infinity Blade"](https://sketchfab.com/3d-models/the-dark-knight-infinity-blade-d8e45261895747a3833e801ecda12bd6)
 by [Catholomew](https://sketchfab.com/Catholomew) licensed under
-[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/) — the dark knight in the first castle's street, in the
-paladin's place (`assets/dark-knight.glb`, `tools/swordknights_pack.py dark`: his own eight attack strings kept, his
+[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/) — the dark knight in the first castle's street (`assets/dark-knight.glb`, `tools/swordknights_pack.py dark`: his own eight attack strings kept, his
 map lifted for a night street). He also plays the whole Pro Sword and Shield Pack. **NON-COMMERCIAL: this model may not
 ship in anything sold — replace it before a release that charges money.**
 

@@ -10,8 +10,8 @@
  * far he stood from you. And his planted foot's speed over the paving, by what he was doing. */
 export async function dkMove({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -107,8 +107,8 @@ export async function dkMove({ w, b, log, sleep }) {
 // measure (`measureGaits` on his foot bones — his rig has no toes, so it had never been asked), and the model's scale
 export async function dkGait({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  log('boot', JSON.stringify(await w.__palBoot())); w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u, G = ['sWalk', 'sRun', 'sStr1', 'sStr2', 'sWalkB', 'sRunB', 'sStr3', 'sStr4'];
   const cs = () => G.map((g) => g + ' ' + (u.clipSpeed[g] || 0).toFixed(2)).join(', ');
@@ -125,8 +125,8 @@ export async function dkGait({ w, b, log, sleep }) {
 // Against the recorded root travel where there is one (`clipTravel`, the pack's), and the pelvis's own wander.
 export async function dkClipFeet({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  log('boot', JSON.stringify(await w.__palBoot())); w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u, V = u.g.position.constructor, M = new (u.g.matrixWorld.constructor)();
   const FL = u.model.getObjectByName('b_MF_Foot_L'), FR = u.model.getObjectByName('b_MF_Foot_R'), PV = u.model.getObjectByName('b_MF_Pelvis');
@@ -171,8 +171,8 @@ export async function dkClipFeet({ w, b, log, sleep }) {
 // moves you through it (backing off at the walk 0.25-0.7 s into it, or strafing at the walk).
 export async function dkWarp({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -220,8 +220,8 @@ export async function dkWarp({ w, b, log, sleep }) {
 // ONE SWING, FRAME BY FRAME: his body's step along his facing against what `dkWalkSwing` walked (its curve × k)
 export async function dkTrace({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;

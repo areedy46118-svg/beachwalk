@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Skrim, the thing digging in the whale's belly: "Dagon's sectarian" into assets/skrim.glb.
 
-Two stages, the way `tools/crusader_pack.py` runs: the maps are built under the
+Two stages (the way the flail knight's old packer ran): the maps are built under the
 system python because that is the one with PIL, then Blender is run on this
 same file to assemble the model.
 

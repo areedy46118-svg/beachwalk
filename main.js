@@ -42,7 +42,6 @@ import { makeShell, SHELL_R } from './models/shotgun.js';   // the built double 
  * him also asks `elvReady`, which the last line of his section sets. */
 let elvReady = false, elvStage = 0, elvJarGiven = false, elvGreeted = false, elvLand = false, elvAirK = 0, elvCarrying = false, elvLantern = false, elvSecK = 0;
 let elvFridgeTaken = false;                  // the bottle out of his fridge (`buildHouseProps`), saved
-let palCutRef = null;        // the paladin's entrance take (`palStartCut`), read by frozen() and the lens
 let equipQuiet = false;                // (a weapon back into your hand without its draw: after the puppet leaves your arms — up here, `toggleEquip` can run at load)
 let elvBurned = false;                 // the puppet went on the fire (`elvThrowPuppet`): what is left of him lies on it for good
 const BEACH_EXT = 100;
@@ -438,7 +437,7 @@ const bwBgGate = () => new Promise((r) => { const chk = () => { if (bgLoadOk()) 
 /* (and the throne room's own — "no one spawned in the thrown room then i completely froze", 2026-10-29: the throne's boss
  * `dante.glb` is in no reach table, so it read as the beach's and was held while you stood in his room, and nobody came.
  * Now anything the castle section's own reach or further is let through as well as these by name.) */
-const BW_CASTLE_FILES = /(castle13|castle|throne|minotaur|gargoyle|dark-knight|knight-man|knight-iron|farmer-|crusader|orc-moves|demon-moves|knight-moves|stone-break|dante|umbra|sawnoff)/;
+const BW_CASTLE_FILES = /(castle13|castle|throne|minotaur|gargoyle|dark-knight|knight-man|knight-iron|farmer-|sword-moves|orc-moves|demon-moves|knight-moves|stone-break|dante|umbra|sawnoff)/;
 const bwCastleOwn = (url, reach) => BW_CASTLE_FILES.test(url) || reach >= 900 + BEACH_EXT;
 // (set aside, not held in line: the far chain is one file after another, and the first castle's file behind a held one
 // would have waited with it)
@@ -8318,7 +8317,7 @@ function updateHurt(dt) {
 /* the sewer's thing in the water has you (`sewMonTick`): declared here, ahead of `frozen`, which reads it (the sewer's own
  * code is 77,000 lines further down, and a `let` read before its line runs is a dead-zone crash) */
 let sewScare = null;
-function frozen() { return bootHold > 0 || !!sewScare || (!!crabCut && crabCut.t >= CRAB_T.cut) || (!!hjCut && !hjCut.released) || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!palCutRef || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone || deepCutOn; }
+function frozen() { return bootHold > 0 || !!sewScare || (!!crabCut && crabCut.t >= CRAB_T.cut) || (!!hjCut && !hjCut.released) || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone || deepCutOn; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -9783,7 +9782,7 @@ S_DEV.addEventListener('change', () => {
 const DEV_JARS = 100;                 // what dev mode puts in the corner
 /* AND IN DEV MODE EVERY DOOR UNLOCKS (2026-10-15, the owner): each lock asks this as well as its key — the wheelhouse
  * door, the ship's chest, the pavilion's gate, the catacombs' door (and its door in the dune), the tavern's storeroom,
- * Henry's cell, and the throne room's door the crusader bars. The lock still turns with its own sound; a key you do
+ * Henry's cell, and the throne room's door the court's swordsmen bar. The lock still turns with its own sound; a key you do
  * carry is still used, and one you do not is not asked for. */
 function devKeys() { return !!settings.devMode; }
 function devGrantWeapons() {
@@ -9866,7 +9865,7 @@ mCheckpointBtn.addEventListener('click', () => { if (hasCheckpoint()) reloadInto
  * the trader, facing him. It refuses in the middle of a cut, and in the hall
  * in the saucer, whose fight is a sequence with no exit but winning it. */
 const devShopBusy = () => hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy
-  || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!thrCut || !!palCutRef || !!wbFareCut || dying || ended || !introDone;
+  || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || packCut || mutCut || !!keyCut || !!thrCut || !!wbFareCut || dying || ended || !introDone;
 /* AND THE CASTLE'S MERCHANT (the owner's word): the same, to the second
  * trader on the sand sixteen metres short of the first castle's gate. The
  * walk's once-only events between here and there are marked as passed the
@@ -22781,7 +22780,6 @@ function updateDialogCam(dt) {
   const wantFov = (mutCutFov > 0 ? mutCutFov
     : keyCut ? keyCut.fov
     : thrCut ? thrCut.fov
-    : palCutRef ? palCutRef.fov
     : (crabCut && crabCut.t >= CRAB_T.cut) ? crabCut.fov
     : wbFareCut ? wbFareCut.fov
     : peeking && !peekLeaving ? PEEK_FOV
@@ -22792,7 +22790,7 @@ function updateDialogCam(dt) {
     : settings.fov) + fovKick
     - settings.fov * (equipped && equipped.shotgun ? SG_ZOOM : MAG_ZOOM) * magAim;
   // and it arrives at a gun's pace, not a conversation's
-  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : palCutRef ? palCutRef.fovRate : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -35324,7 +35322,7 @@ function parryMutant(u) {
   // put there in one frame, a jump through whatever was behind it: 2026-10-29, "make enemies slide around … less")
   u.st.shoveX = (kx / kd) * 0.5 * parryStunK(); u.st.shoveZ = (kz / kd) * 0.5 * parryStunK();
   // (no caption — see the first parry's)
-  if (u.kind.heavyBlock) palBlockFx(u, true);
+  if (u.kind.heavyBlock) heavyBlockFx(u, true);
   seaParry(u);                               // and the sea's wave, if it is set in what parried
 }
 function blockMutant(u) {
@@ -35362,7 +35360,7 @@ function blockMutant(u) {
   const kx = camera.position.x - u.g.position.x, kz = camera.position.z - u.g.position.z;
   const kd = Math.hypot(kx, kz) || 1;
   knockback.set((kx / kd) * 4.2 * u.kind.reachK, 0, (kz / kd) * 4.2 * u.kind.reachK);
-  if (u.kind.heavyBlock) palBlockFx(u, false);
+  if (u.kind.heavyBlock) heavyBlockFx(u, false);
 }
 function killMutant(u) {
   if (!u.st.alive || u.st.struck) return;
@@ -39019,7 +39017,6 @@ function updateMutantUnit(u, dt) {
   // THE FARMERS: behind their doors until they are sent out, then coming out of them, then a pack
   if (u.kind.farmer && farmUnitPre(u, dt)) return;
   // THE PALADIN: underground until he comes, then on the cobbles; his entrance is the take's
-  if (u.kind.paladin && palUnitPre(u, dt)) return;
   // THE MINOTAUR: at the gate, at your side, or lying in XIII's court — the fight runs him only while he has someone to fight
   if (u.kind.mino && minoUnitPre(u, dt)) return;
   // THE GARGOYLES: stone on the walls, then wings — the fight's ground AI never runs them (`gargUnitPre`)
@@ -39041,7 +39038,7 @@ function updateMutantUnit(u, dt) {
    * THROUGH the heap with the sand at its knees. Every room kind has its own
    * floor above; a beach body is anything near the beach's own x and height.
    * Eased the way the rooms ease a riser, so a bank is climbed, not snapped. */
-  else if (!u.kind.uc && !u.kind.dojo && !u.kind.tav && !u.kind.cat && !u.kind.c13Body && !u.kind.thrBody && !u.kind.paladin && u.st.alive
+  else if (!u.kind.uc && !u.kind.dojo && !u.kind.tav && !u.kind.cat && !u.kind.c13Body && !u.kind.thrBody && u.st.alive
       && Math.abs(p.x) < 120 && p.y > -4 && p.y < 30 && !(u.comfy && !u.st.awake)) {
     // (behind the dune, the gully's floor, the lot's and the house's: the one at its feet, not the top storey — and a
     // swing's own travel that carried it off the land into a bank is undone here, before its feet sink into it)
@@ -39057,7 +39054,7 @@ function updateMutantUnit(u, dt) {
      * — the pack's take, the SCP's look, the knight's altar — so a creature
      * simply set down on the sand would sleep through you walking past it.
      * `wakeAt` is the distance at which it does not. */
-    if (u.kind.wakeAt && u.st.alive && introDone && !dying && !ended && !u.holdAnim && (!u.kind.fortBody || (inFort && fortInT > 0.9 && farmFightDone())) && (!u.kind.c13Body || crusaderMayWake())
+    if (u.kind.wakeAt && u.st.alive && introDone && !dying && !ended && !u.holdAnim && (!u.kind.fortBody || (inFort && fortInT > 0.9 && farmFightDone())) && (!u.kind.c13Body || c13MayWake())
         && (!u.kind.thrBody || throneMayWake(u))) {
       const dW = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
       // (the castle's is saved at its gate the moment before you walk in: the calm a save buys is not his)
@@ -39563,7 +39560,7 @@ function updateMutantUnit(u, dt) {
          * farmer's tool or the paladin's blade went straight on through the follow-through as if it had met air: the
          * man who threw it now stops dead on the contact for a twelfth of a second — his clip and his clock both — the
          * beat that makes a blow read as landing on something. (`impF`: here, and his mixer in `mutAnim`.) */
-        if (u.kind.fortBody || u.kind.paladin) u.st.impF = 0.085;
+        if (u.kind.fortBody) u.st.impF = 0.085;
         if (blocking && !u.st.foe && guardSees(u.g.position)) {
           /* AND HIS IS A TIGHTER WINDOW. `parryK` scales it per creature —
            * the pack keeps the full fifth of a second, he gives you a little
@@ -39594,7 +39591,7 @@ function updateMutantUnit(u, dt) {
           const hits2 = u.kind.landFn ? u.kind.landFn(u, A, dist, was) : (u.kind.aimed && !A.plain) ? blowLands(u) : plainLands(u, A, dist, was);
           if (!hits2) continue;
           ML[i] = true;
-          if (u.kind.fortBody || u.kind.paladin) u.st.impF = 0.085;
+          if (u.kind.fortBody) u.st.impF = 0.085;
           if (blocking && !u.st.foe && guardSees(u.g.position)) {
             const dtp = (performance.now() - blockStart) / 1000;
             if (dtp <= parryWin() * (u.kind.parryK || 1) && parryCool <= 0) parryMutant(u); else blockMutant(u);
@@ -46451,7 +46448,6 @@ function update(dt, rawDt = dt) {
   wellManClear(dt);          // after the chase has moved him: the well is solid to him
   if (wellUnit && wellUnit.g.visible) wellManAir(wellUnit);   // and the pounce's flight on top of where it put him
   updateSwordKnights(dt);   // the west court's two swordsmen (the flail knight's place, 2026-10-19)
-  updatePaladin(dt);        // and the paladin's blade: its tell, its trail, the stones, the farmers in its way
   updateDarkKnight(dt);     // the dark knight in his place: on the street killing farmers as you come in, then you
   updateMinotaur(dt);       // the minotaur at the first castle's gate, and with you through both castles if you say yes
   updateGargoyles(dt);      // the four on the walls of XIII's east court, and the arch door they keep shut
@@ -48230,7 +48226,7 @@ function animateFrame() {
   try { updateSkrimLife(rawDt); updateSkrimMood(rawDt); } catch (e) { bwFrameErr(e); }
   try { wbHookTick(rawDt); } catch (e) { bwFrameErr(e); }   // (his hook in the whale's side, and its chain in the wind)   // (Skrim digs and his light comes up through a dialogue's freeze)
   updateHatch(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updatePalCut(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updatePackTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updatePackTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -82784,11 +82780,11 @@ function buildC13ThroneDoor() {
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
   p.position.set(D.x, C13_FLOOR + 1.8, D.z); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
   c13World.add(p);
-  addInteractable(p, () => crusaderAlive() && !devKeys() ? 'The door is barred.' : 'Enter the throne room', 'default', {
+  addInteractable(p, () => knAlive() && !devKeys() ? 'The door is barred.' : 'Enter the throne room', 'default', {
     mid: true, far: 4.2,
-    bare: () => crusaderAlive() && !devKeys(),            // while the knight who holds this court lives, it does not open (dev mode: it does)
+    bare: () => knAlive() && !devKeys(),            // while the knight who holds this court lives, it does not open (dev mode: it does)
     when: () => inC13 && !fortBusy && !thrBusy,
-    onActivate: () => { if (!crusaderAlive() || devKeys()) startThrone(1); },
+    onActivate: () => { if (!knAlive() || devKeys()) startThrone(1); },
   });
 }
 
@@ -84678,397 +84674,21 @@ function c13PushSolids(p, r) {
 }
 
 /* =====================================================================
- * THE CRUSADER, IN THE WEST COURT OF CASTLE XIII. The owner's "flail knight"
- * (the Crusader tank: a heater shield on the left forearm and a flail on a
- * twelve-link chain in the right fist), through `tools/crusader_pack.py` into
- * `assets/crusader.glb` with his own fourteen clips, and the owner's Pro Sword
- * and Shield Pack on top through `tools/ntar_moves.py -- crusader`. He stands
- * on the carpet in front of the throne room's door and the door is barred
- * while he lives: the second half of the castle is his.
- *
- * HIS OWN CLIPS PLAY AT THE SPEED HIS OWN SCENE PLAYS THEM. The takes are slow
- * (24 fps, eighty frames for a swing) and his Unity Animator runs the attacks
- * and the run at three times and the walk, the hit reel and the shield bash at
- * twice; the packer writes those rates into the file and `crusaderPre` puts
- * them into the clips before a single action is made from them.
- *
- * EVERY SWING PLAYS AT ITS OWN SPEED (`natural`): the startup is the clip up to
- * its contact frame, measured — on his own clips, the frame the flail's ball is
- * moving fastest (the shield's edge for the bash); on the pack's, the frame his
- * fist is. The tell is the clip's own wind-up, so what you read is exactly what
- * the animator drew.
- *
- * THE HIT IS THE FLAIL. The sweep (`blowLands`) runs shoulder, elbow, fist and
- * then the BALL (`tip`), and the aim turns his shoulder so the ball, not the
- * fist, arrives at your chest on the contact frame. His own clips key every link
- * of the chain; the pack's do not, so for those the chain swings itself — a rope
- * of thirteen links under gravity hung off the haft (`crusaderChain`) — and the
- * ball the sweep reads is wherever the rope has thrown it.
+ * THE SWORD PACK. The owner's Mixamo Pro Sword and Shield Pack (`tools/ntar_moves.py -- sword` →
+ * `assets/sword-moves.json`), worn by the court's two swordsmen (`authorKnClips`), the dark knight and the throne
+ * door's knights. (The flail knight it was first packed for is gone for good, 2026-11-04, his code with him.)
  * ===================================================================== */
-const CRUSADER_MOVES_URL = 'assets/crusader-moves.json';
-let crusaderMoves = null, crusaderMovesLate = null;
-bwFetch(CRUSADER_MOVES_URL, 1085).then((buf) => {
-  try { crusaderMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
-  if (crusaderMovesLate) { crusaderMovesLate(); crusaderMovesLate = null; }
+const SWORD_MOVES_URL = 'assets/sword-moves.json';
+let swordMoves = null, swordMovesLate = null;
+bwFetch(SWORD_MOVES_URL, 1085).then((buf) => {
+  try { swordMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
+  if (swordMovesLate) { swordMovesLate(); swordMovesLate = null; }
 }, () => {});
-const CR = (n) => 'Crusader_tank_' + n;
-const CRUSADER_JOINTS = {
-  hip: CR('Hips'), waist: CR('Spine'), chest: CR('Spine2'), neck: CR('Neck'), head: CR('Head'),
-  clavL: CR('LeftShoulder'), clavR: CR('RightShoulder'), armL: CR('LeftArm'), armR: CR('RightArm'),
-  foreL: CR('LeftForeArm'), foreR: CR('RightForeArm'),
-  thighL: CR('LeftUpLeg'), thighR: CR('RightUpLeg'), calfL: CR('LeftLeg'), calfR: CR('RightLeg'),
-  footL: CR('LeftFoot'), footR: CR('RightFoot'),
-};
-const CRUSADER_RAG = {};
-for (const n of ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
-  'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase',
-  'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase']) CRUSADER_RAG['Character1_' + n] = CR(n);
-const CRUSADER_OWN = new Set(['idle', 'idleB', 'idleC', 'guard', 'walk', 'run', 'side', 'jump', 'hit', 'die', 'cA1', 'cA2', 'cA3', 'cBash']);
-function crusaderPre(u, gltf) {
-  let info = null;
-  gltf.scene.traverse((o) => { if (!info && o.userData && o.userData.bw_crusader) info = o.userData.bw_crusader; });
-  try { if (typeof info === 'string') info = JSON.parse(info); } catch (e) { info = null; }
-  const rate = (info && info.rate) || {};
-  for (const c of gltf.animations) {
-    let t0 = Infinity;
-    for (const tr of c.tracks) if (tr.times.length) t0 = Math.min(t0, tr.times[0]);
-    if (!isFinite(t0)) t0 = 0;
-    const r = rate[c.name] || 1;
-    // THE LOADER SHARES ONE TIMES ARRAY between every track sampled off the same
-    // accessor: rescaled in place it was rescaled 378 times and the clip came to nothing,
-    // and between CLIPS of the same length, at different rates: each clip gets its own
-    const mine = new Map();
-    for (const tr of c.tracks) {
-      let t = mine.get(tr.times);
-      if (!t) { t = Float32Array.from(tr.times, (v) => (v - t0) / r); mine.set(tr.times, t); }
-      tr.times = t;
-    }
-    c.duration = (c.duration - t0) / r;
-    c.resetDuration && c.resetDuration();
-  }
-  if (crusaderSeat(gltf.scene)) {
-    u.crSeat = gltf.scene.userData.crSeat;
-    for (const c of gltf.animations) c.tracks = c.tracks.filter((t) => !CR_WEAP_TRACK.test(t.name));
-  }
-}
-/* THE SHIELD AND THE FLAIL WERE NEVER IN HIS HANDS. Both are rigid children
- * of the hand bones, and by the file's own bind the shield hangs 0.57 m past
- * the left wrist and the haft 0.46 m off the right one — symmetrically, a
- * little out and forward of both, as if the weapons were placed against a
- * different arm pose than the one the body is bound in (his Unity prefab must
- * have positioned them; none of that comes through). In every clip, his own
- * and the pack's, they float off his fists, which is the owner's "his weapons
- * and shield are floating from his body".
- *
- * So they are SEATED, by geometry, once, at load: the shield's own shape
- * says which face is its front (the side its middle sinks AWAY from — the
- * first guess took the bulge and showed the strapped back) and which end its
- * top (the wide one). Seated once on the forearm's roll it lay like a tray in
- * half the pack's clips, so `crusaderShieldTick` carries it every frame
- * instead: upright, face out along the model's forward, at the forearm's
- * wrist end, scaled with the hand. The haft's own shape says
- * which end the chain hangs from; it goes through the right fist from the
- * pinky side to the thumb with a hand's breadth of butt below it. Every clip's
- * tracks on those bones go, so nothing puts them back. */
-const CR_WEAP_TRACK = /^(shield1|shield2|shield3|stick_of_a_club1)\./;
-function crusaderSeat(root) {
-  // the WEAPON mesh: the body is bound to the same skeleton, so asking which
-  // skeleton has the bone finds the body first, and it has no shield in it
-  let wm = null;
-  root.traverse((o) => { if (o.isSkinnedMesh && o.skeleton && o.skeleton.bones.some((b) => b.name === 'shield1') && (!wm || /weapon/i.test(o.name))) wm = o; });
-  if (!wm) return false;
-  const sk = wm.skeleton, V = THREE.Vector3;
-  const bi = (n) => sk.bones.findIndex((b) => b.name === n);
-  for (const n of ['shield1', 'stick_of_a_club1', 'chain1', CR('LeftHand'), CR('RightHand')]) if (bi(n) < 0) return false;
-  const bw = (n) => new THREE.Matrix4().copy(sk.boneInverses[bi(n)]).invert();
-  const bp = (n) => new V().setFromMatrixPosition(bw(n));
-  const P = wm.geometry.attributes.position, SI = wm.geometry.attributes.skinIndex, SW = wm.geometry.attributes.skinWeight;
-  const vertsOf = (n) => {
-    const want = bi(n), out = [];
-    for (let i = 0; i < P.count; i++) {
-      let best = 0, bwt = -1;
-      for (let k = 0; k < 4; k++) { const w = SW.getComponent(i, k); if (w > bwt) { bwt = w; best = SI.getComponent(i, k); } }
-      if (best === want) out.push(new V().fromBufferAttribute(P, i));
-    }
-    return out;
-  };
-  // the principal axes of a set of points, longest first, by power iteration
-  const pca = (pts) => {
-    const c = new V(); for (const q of pts) c.add(q); c.divideScalar(pts.length);
-    let xx = 0, xy = 0, xz = 0, yy = 0, yz = 0, zz = 0;
-    for (const q of pts) { const x = q.x - c.x, y = q.y - c.y, z = q.z - c.z; xx += x * x; xy += x * y; xz += x * z; yy += y * y; yz += y * z; zz += z * z; }
-    const ax = [];
-    for (let e = 0; e < 3; e++) {
-      let v = new V(e === 0 ? 1 : 0.3, e === 1 ? 1 : 0.2, e === 2 ? 1 : 0.1).normalize();
-      for (let it = 0; it < 120; it++) {
-        const w = new V(xx * v.x + xy * v.y + xz * v.z, xy * v.x + yy * v.y + yz * v.z, xz * v.x + yz * v.y + zz * v.z);
-        for (const q of ax) w.addScaledVector(q, -w.dot(q));
-        if (w.lengthSq() < 1e-20) break;
-        v = w.normalize();
-      }
-      ax.push(v.clone());
-    }
-    const ext = ax.map((v) => { let lo = 1e9, hi = -1e9; for (const q of pts) { const t = _crT.copy(q).sub(c).dot(v); lo = Math.min(lo, t); hi = Math.max(hi, t); } return [lo, hi]; });
-    return { c, ax, ext };
-  };
-  const sv = vertsOf('shield1'), hv = vertsOf('stick_of_a_club1');
-  if (sv.length < 20 || hv.length < 10) return false;
-  const sh = pca(sv), st = pca(hv);
-  const n0 = sh.ax[2], up0 = sh.ax[0], wd0 = sh.ax[1];
-  const ha = Math.max(1e-3, (sh.ext[0][1] - sh.ext[0][0]) / 2), hw = Math.max(1e-3, (sh.ext[1][1] - sh.ext[1][0]) / 2);
-  let dc = 0, nc = 0, dr = 0, nr = 0, wTop = 0, wBot = 0;
-  for (const q of sv) {
-    _crT.copy(q).sub(sh.c);
-    const a = _crT.dot(up0), w = _crT.dot(wd0), d = _crT.dot(n0), r = Math.hypot(a / ha, w / hw);
-    if (r < 0.35) { dc += d; nc++; } else if (r > 0.75) { dr += d; nr++; }
-    if (a > sh.ext[0][1] * 0.6) wTop = Math.max(wTop, Math.abs(w));
-    if (a < sh.ext[0][0] * 0.6) wBot = Math.max(wBot, Math.abs(w));
-  }
-  /* its painted face is the side its middle sinks AWAY from: the shell is
-   * curved and the straps and boss stand off its back, which pulls the
-   * middle's mean toward the back (measured: the first build took the
-   * other side and turned the strapped back to the enemy) */
-  const front = (dc / Math.max(1, nc) - dr / Math.max(1, nr)) > 0 ? n0.clone().negate() : n0.clone();
-  const top = wTop >= wBot ? up0.clone() : up0.clone().negate();
-  // each forearm's own frame: its axis, the thumb's side across it, and the back of the hand
-  const frame = (side) => {
-    const N = side === 'L' ? 'Crusader_tank_Left' : 'Crusader_tank_Right';
-    const el = bp(N + 'ForeArm'), wr = bp(N + 'Hand'), mid = bp(N + 'HandMiddle1'), th = bp(N + 'HandThumb1'), pk = bp(N + 'HandPinky1');
-    const a = wr.clone().sub(el).normalize();
-    const fing = mid.clone().sub(wr); fing.addScaledVector(a, -fing.dot(a)).normalize();
-    const rad = th.clone().sub(pk); rad.addScaledVector(a, -rad.dot(a)).normalize();
-    const d = new V().crossVectors(a, rad).normalize();
-    if (d.dot(fing) > 0) d.negate();                 // the fingers curl toward the palm, so the back of the hand is away from them
-    return { el, wr, a, rad, d, fing, L: wr.distanceTo(el) };
-  };
-  const basis = (x, y) => { const z = new V().crossVectors(x, y).normalize(); const yy = new V().crossVectors(z, x).normalize(); return new THREE.Matrix4().makeBasis(x.clone().normalize(), yy, z); };
-  const FL = frame('L'), FR = frame('R');
-  const tilt = 35 * Math.PI / 180;
-  const topT = FL.rad.clone().multiplyScalar(Math.cos(tilt)).addScaledVector(FL.a, -Math.sin(tilt));
-  topT.addScaledVector(FL.d, -topT.dot(FL.d)).normalize();
-  const Rs = basis(FL.d, topT).multiply(basis(front, top).invert());
-  const C = FL.el.clone().addScaledVector(FL.a, 0.62 * FL.L).addScaledVector(FL.d, 0.075).addScaledVector(topT, -0.12);
-  const Ms = new THREE.Matrix4().makeTranslation(C.x, C.y, C.z).multiply(Rs).multiply(new THREE.Matrix4().makeTranslation(-sh.c.x, -sh.c.y, -sh.c.z));
-  const Ls = new THREE.Matrix4().copy(bw(CR('LeftHand'))).invert().multiply(Ms).multiply(bw('shield1'));
-  // the haft: the chain hangs from its head end
-  const up = st.ax[0].clone();
-  const headS = bp('chain1').sub(st.c).dot(up) > 0 ? up.clone() : up.clone().negate();
-  const buttExt = headS.dot(up) > 0 ? -st.ext[0][0] : st.ext[0][1];
-  const gripS = st.c.clone().addScaledVector(headS, -(buttExt - 0.08));
-  const ht = 20 * Math.PI / 180;
-  const headT = FR.rad.clone().multiplyScalar(Math.cos(ht)).addScaledVector(FR.fing, Math.sin(ht)).normalize();
-  const side0 = st.ax[1].clone(); side0.addScaledVector(headS, -side0.dot(headS)).normalize();
-  const sideT = FR.d.clone(); sideT.addScaledVector(headT, -sideT.dot(headT)).normalize();
-  const Rh = basis(headT, sideT).multiply(basis(headS, side0).invert());
-  const G = FR.wr.clone().addScaledVector(FR.fing, 0.075).addScaledVector(FR.d, -0.02);
-  const Mh = new THREE.Matrix4().makeTranslation(G.x, G.y, G.z).multiply(Rh).multiply(new THREE.Matrix4().makeTranslation(-gripS.x, -gripS.y, -gripS.z));
-  const Lh = new THREE.Matrix4().copy(bw(CR('RightHand'))).invert().multiply(Mh).multiply(bw('stick_of_a_club1'));
-  const s1 = sk.bones[bi('shield1')], st1 = sk.bones[bi('stick_of_a_club1')], sc = new V();
-  Ls.decompose(s1.position, s1.quaternion, sc);
-  Lh.decompose(st1.position, st1.quaternion, sc);
-  // and what the per-frame carry needs: the shield's own frame in the bind, and its bone's bind
-  root.userData.crSeat = {
-    G: new THREE.Matrix4().makeTranslation(sh.c.x, sh.c.y, sh.c.z).multiply(basis(front, top)),
-    Bs: bw('shield1'), BhInv: bw(CR('LeftHand')).invert(),
-    hand: sk.bones[bi(CR('LeftHand'))], fore: sk.bones[bi(CR('LeftForeArm'))], shield: s1,
-  };
-  return true;
-}
-/* AND THE SHIELD IS CARRIED, NOT WORN LIKE A BRACER. Seated on the forearm's
- * own roll it was right for his own clips, whose arm hangs palm-in, and wrong
- * for the borrowed pack, which carries the forearm palm-down: the shield lay
- * flat across his arm like a tray. So every frame it is put on the forearm
- * by where the forearm IS and turned by where HE faces: upright, its face out
- * in front of him and a little to his shield side, a hand's breadth off the
- * arm. Raised, it covers him; hanging, it is at his side; thrust (the bash),
- * it goes at you face first. A body on the ragdoll keeps the last of it. */
-const _csA = new THREE.Vector3(), _csB = new THREE.Vector3(), _csF = new THREE.Vector3(), _csL = new THREE.Vector3(), _csU = new THREE.Vector3(), _csZ = new THREE.Vector3();
-const _csM = new THREE.Matrix4(), _csN = new THREE.Matrix4(), _csS = new THREE.Vector3();
-function crusaderShieldTick(u) {
-  const S = u.crSeat;
-  if (!S || !u.model || u.rag) return;
-  if (!S.Ginv) S.Ginv = S.G.clone().invert();
-  u.model.updateMatrixWorld(true);
-  S.fore.getWorldPosition(_csA); S.hand.getWorldPosition(_csB);
-  // the scale the arm is drawn at now (the hand's world against its bind)
-  _csM.multiplyMatrices(S.hand.matrixWorld, S.BhInv);
-  const k = _csS.setFromMatrixColumn(_csM, 0).length();
-  // which way he faces: the model's own +z, flat, and his shield side, its +x
-  const e = u.model.matrixWorld.elements;
-  _csF.set(e[8], 0, e[10]).normalize(); _csL.set(e[0], 0, e[2]).normalize();
-  _csF.addScaledVector(_csL, 0.35).normalize();
-  _csU.set(0, 1, 0);
-  _csZ.crossVectors(_csF, _csU).normalize(); _csU.crossVectors(_csZ, _csF).normalize();
-  const C = _csA.lerp(_csB, 0.6).addScaledVector(_csF, 0.09).addScaledVector(_csU, -0.10);
-  _csM.makeBasis(_csF, _csU, _csZ).scale(_csS.set(k, k, k)).setPosition(C);
-  _csM.multiply(S.Ginv).multiply(S.Bs);                       // the bone's world
-  _csN.copy(S.hand.matrixWorld).invert().multiply(_csM);      // and its local under the hand
-  _csN.decompose(S.shield.position, S.shield.quaternion, S.shield.scale);
-  S.shield.updateMatrixWorld(true);
-}
-const _crT = new THREE.Vector3();
-/* (A CLIP A TURN, AFTER THE DRESSING — 2026-10-15: his fourteen clips retargeted on the frame he was made were a
- * 36 ms frame out past the whale. The late path he always had (his moves file arriving after him) is taken every
- * time now, one clip a turn; each call carries the pack's first clip too, because it is what the hips are measured
- * off (`ntarRetarget`'s `any`), so every clip comes out exactly as it did. He is not drawn until the last is in
- * (`u.clipsPending`, `updateCrusader`), and his swings are measured once, after it.) */
-function authorCrusaderClips(u, m, gltf) {
-  const R = poseRig(u, m, null, CRUSADER_JOINTS, {});
-  const mk = (data) => ntarRetarget(u, m, R.bones, R.bind, R.J, R.hipUp, R.hipPos, data)
-    .map((c) => { c.tracks = c.tracks.filter((t) => !CR_WEAP_TRACK.test(t.name)); return c; });
-  const lay = (moves) => {
-    const names = Object.keys(moves.clips), first = names[0];
-    u.clipsPending = names.length;
-    let i = 0;
-    const step = () => {
-      if (u.retired || !u.mixer) { u.clipsPending = 0; return; }
-      const n = names[i++];
-      const sub = Object.assign({}, moves, { clips: n === first ? { [first]: moves.clips[first] } : { [first]: moves.clips[first], [n]: moves.clips[n] } });
-      for (const c of mk(sub)) if (c.name === n) u.clips[c.name] = u.mixer.clipAction(c);
-      u.clipsPending--;
-      if (i < names.length) { bwTurn().then(step); return; }
-      // the last: the names the fight calls them by, his first pose, and his swings measured — what the dressing did
-      if (u.kind.alias) for (const k in u.kind.alias) if (u.clips[u.kind.alias[k]]) u.clips[k] = u.clips[u.kind.alias[k]];
-      mutStartPose(u);
-      u.natDone = false;
-    };
-    bwTurn().then(step);
-  };
-  u.clipsPending = 1;                                 // (nothing to draw him with until the moves are in)
-  if (crusaderMoves) lay(crusaderMoves);
-  else crusaderMovesLate = () => lay(crusaderMoves);
-  return [];
-}
-/* THE TABLE. The contact fractions are measured off the clips (above); the
- * reaches are where his flail's ball is on that frame, from his origin, with
- * him at 2.25 m. The overhead smash and the leap take two. The bash is the
- * short one, and it opens a string: shield into your face, then the flail. */
-/* A FLAIL FIGHT, NOT A SWORD FIGHT WITH A FLAIL IN IT. The pack's sword
- * thrust, its two diagonal cuts and its crouched cut were his too, and a
- * thrust with a ball on a chain is a man poking you with a stick: they are out
- * of the draw (still in the table, unused). What is left is the four things a
- * flail and a shield do — his own sweep, his own spinning blow, his own shield
- * bash, the pack's overhead chop — the pack's turning blow and kick for a
- * change of rhythm, and the leap for when you back off.
- *
- * AND EVERY ONE OF THEM HOLDS ITS WIND-UP (`natHold`, seconds, at `cockF` of
- * the way to contact — the frame his striking end is furthest from where it
- * lands, measured off the clips). A natural swing played straight through at
- * the animator's speed was the owner's "unreadable": the overhead's whole
- * wind-up was a third of a second. Drawn fast, settled and HELD at the top,
- * then let go, it is a tell you can answer — and the strike itself still
- * plays at the clip's own speed, so it lands as hard as it did. */
-MUT_ATTACKS.cA1    = { wind: 0.77, strike: 0.12, recover: 0.30, hit: 0.700, reach: 3.00, lunge: 1.4, chain: 'cA2',    chainP: 0.38, w: 0.22, guardK: 1.25, limbs: [0, 1], stop: 2.10, natHold: 0.30, cockF: 0.33 };
-MUT_ATTACKS.cA2    = { wind: 0.89, strike: 0.14, recover: 0.70, hit: 0.496, reach: 3.05, lunge: 1.3, chain: 'sSlash', chainP: 0.30, w: 0.14, dmg: 2, guardK: 1.85, limbs: [0], stop: 2.40, natHold: 0.38, cockF: 0.12 };
-MUT_ATTACKS.cBash  = { wind: 1.01, strike: 0.12, recover: 0.52, hit: 0.612, reach: 2.10, lunge: 1.6, chain: 'cA2',    chainP: 0.62, w: 0.14, guardK: 1.55, limbs: [1], stop: 1.50, natHold: 0.18, cockF: 0.70 };
-MUT_ATTACKS.sSlash = { wind: 0.60, strike: 0.12, recover: 0.70, hit: 0.367, reach: 2.95, lunge: 1.3, chain: 'cA2',    chainP: 0.35, w: 0.16, dmg: 2, guardK: 1.60, limbs: [0], stop: 2.40, natHold: 0.42, cockF: 0.63 };
-MUT_ATTACKS.sSlashC= { wind: 0.84, strike: 0.12, recover: 0.60, hit: 0.500, reach: 2.50, lunge: 1.2, chain: 'cBash',  chainP: 0.35, w: 0.10, guardK: 1.25, limbs: [0], stop: 1.90 };
-MUT_ATTACKS.sSlashE= { wind: 0.60, strike: 0.12, recover: 0.70, hit: 0.400, reach: 2.45, lunge: 1.3, chain: 'sAtkD',  chainP: 0.42, w: 0.10, guardK: 1.15, limbs: [0], stop: 1.90 };
-MUT_ATTACKS.sAtkD  = { wind: 0.43, strike: 0.10, recover: 0.58, hit: 0.382, reach: 2.40, lunge: 1.2, chain: 'sSlash', chainP: 0.38, w: 0.10, guardK: 1.05, limbs: [0], stop: 1.90 };
-MUT_ATTACKS.sAtkB  = { wind: 0.53, strike: 0.14, recover: 0.70, hit: 0.372, reach: 3.10, lunge: 1.0, chain: 'sSlash',    chainP: 0.30, w: 0.10, guardK: 1.60, limbs: [0], hold: true, stop: 2.40, natHold: 0.26, cockF: 0.57 };
-MUT_ATTACKS.sAtkC  = { wind: 0.77, strike: 0.14, recover: 0.80, hit: 0.411, reach: 2.95, lunge: 1.4, chain: 'sSlash', chainP: 0.30, w: 0.05, guardK: 1.60, limbs: [0], hold: true, stop: 1.90 };
-MUT_ATTACKS.sKick  = { wind: 0.47, strike: 0.12, recover: 0.70, hit: 0.350, reach: 2.15, lunge: 1.2, chain: 'cA2',    chainP: 0.45, w: 0.10, guardK: 1.10, limbs: [2], stop: 1.60, natHold: 0.16, cockF: 0.38 };
-MUT_ATTACKS.sAtk   = { wind: 1.13, strike: 0.18, recover: 1.10, hit: 0.460, reach: 5.20, lunge: 4.2, chain: 'cA2',    chainP: 0.45, w: 0.06, dmg: 2, hold: true, guardK: 1.90, minDist: 3.0, limbs: [0], stop: 2.40, natHold: 0.32, cockF: 0.75 };
-MUT_KINDS.crusader = {
-  glb: 'assets/crusader.glb' /* (deleted 2026-10-19: he is out of the game) */, faceFix: 0, solo: true, skin: null, bones: null, noSand: true, preParse: true,
-  facingRef: 'mixamo', natural: true, gaitBySpeed: true, c13Body: true,
-  /* FAIRLY DIFFICULT, by the owner's word: not the marauder and not the
-   * samurai. A lot of him to get through and a shield that turns a careless
-   * swing, but the tells are the animator's own and none of them is short. */
-  /* AND HE FIGHTS FROM WHERE THE BALL ARRIVES IN FRONT OF YOU. At 1.7 m (his
-   * old stopping distance, measured) half his blows came in beside or behind
-   * the eye — a flail on two metres of arm and chain swung at a man standing
-   * on your toes — and a blow you cannot see land is the owner's
-   * "unreadable". At 2.4 the ball comes in through the picture. */
-  h: 2.25, hp: 66, dmg: 1, hitR: 0.80, body: 0.62, lungeStop: 2.40, landSlop: 0.42, limbR: 0.40, lungeLead: 0.30,
-  speedK: 1.10, windK: 1.00, reachK: 1.00, aggr: 2.50, press: 0.88, chainMax: 3, stepBack: 2.6,
-  use: { cA1: 0.08, cA2: 0.20, cBash: 0.15, sSlash: 0.22, sAtkB: 0.12, sKick: 0.12, sAtk: 0.08 },
-  circle: 0.16, step: 0.16, feint: 0.22, sizeUp: 0.14, restless: 1, smart: 1,
-  turnMax: 4.0, yawK: 0.80, fade: 0.22,
-  /* THE SHIELD. A light swing thrown into his front while he is ready meets
-   * it — half the time — and costs you more of the bar than a man's guard
-   * would; the parry and the heavy are what get past it. */
-  poise: 16, poiseBack: 2.4, poiseWait: 0.9, parryK: 0.85, recoilK: 0.50, stunK: 0.70, blockCost: 0.72, block: 0.50,
-  fidgetK: 0.12, fidgetGap: 3.2,
-  reacts: true, aimed: true, barLen: 0.0, aimK: 1.80, aimDrop: 0.08, aimFrom: 0.78, bossDeath: true,
-  rig: { arm: CR('RightArm'), fore: CR('RightForeArm'), hand: CR('RightHand'), tip: 'ball_on_a_club2',
-         armL: CR('LeftArm'), foreL: CR('LeftForeArm'), handL: CR('LeftHand'), tipL: 'shield1', head: CR('Head'),
-         limbs: [[CR('RightUpLeg'), CR('RightLeg'), CR('RightFoot'), CR('RightToeBase')]] },
-  rag: CRUSADER_RAG,
-  /* TOO DARK, by the owner's word: black plate in a night court measured 17.5
-   * against the paving round him at 16.3 — a silhouette with no armour on it.
-   * 0.24 of his own map back as light and a gamma lift for the plate's darks
-   * put him near 28: the tabard's cross, the rivets and the shield's paint read
-   * from across the square, and he is still the darkest thing in it. */
-  emis: 0.24, rim: [0.085, 0.072, 0.060], gamma: 0.86,
-  pre: crusaderPre, author: authorCrusaderClips,
-  anim: { idle: 'idle', walk: 'walk', run: 'run', roar: 'sRoar', die: 'sDie', back: 'sWalkB', rate: 1.0, lean: 0.04, strafeK: 1.0 },
-  gaits: { walk: ['walk', 'sWalk'], run: ['run', 'sRun'], idle: ['idle', 'sIdle', 'sIdleB', 'guard'],
-           strafeL: ['sStr2', 'sStr3'], strafeR: ['sStr1', 'sStr4'] },
-  alias: { idle2: 'sIdle', walk2: 'sWalk', run2: 'sRun', roar: 'sRoar', roar2: 'sDraw', die2: 'sDieB', back: 'sWalkB', calm: 'idle',
-           strafeL: 'sStr2', strafeR: 'sStr1', hit: 'hit', hitBig: 'sHitC', hitSide: 'sHitB', hitBack: 'sHit', hitHead: 'sHitB',
-           block: 'sBlockI', blockC: 'sCBlock', parry: 'sHitC' },
-  stunClip: 'sHitC', first: 'idle', sleepIdle: 'idle', wakeAt: 19,
-  /* AT HALF HEALTH HE WHIRLS THE FLAIL OVER HIS HEAD — his own third attack,
-   * which is a flourish, not a blow — and everything between his swings
-   * quickens. The tells do not. */
-  rage: { aggr: 3.3, speedK: 1.25, press: 0.94, chainMax: 4, feint: 0.30, circle: 0.10, block: 0.58 },
-  rageClip: 'cA3', rageDur: 1.75,
-  voice: { f: 0.80, growl: 1.20, rasp: 1.05, throat: 'bellow' },
-};
-// (no longer parsed: the flail knight is out of the court, 2026-10-19 — `placeSwordKnights`)
-let crusaderUnit = null;
-const CRUSADER_POST = { x: 0, z: 0, yaw: 0 };
-function crusaderAlive() { return knAlive(); }        // (the door's: the court's swordsmen now, 2026-10-19)
-/* WHERE HE STANDS: in the open square between the arch and the market,
- * facing the arch, so the first thing through it is him across the paving
- * with the stalls and the fountain behind him. In front of the throne room's
- * own door is a lane two strides wide, which is a place to be cornered, not
- * a place to fight. Found, not typed: eighteen metres in from the arch toward
- * the fountain, then the nearest spot with open paving all round it. */
-function placeCrusader() {
-  if (crusaderUnit || !c13Ready || !c13Walls || !c13Thrive || !c13Thrive.done) return;
-  const A = C13_ARCH, Fo = c13Thrive.fountain || C13_THR_DOOR;
-  let dx = Fo.x - A.x, dz = Fo.z - A.z; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
-  const cx = A.x + dx * 18, cz = A.z + dz * 18;
-  const roomy = (x, z) => {
-    if (!c13Open(x, z) || c13Overlaps(x, z, 3.0)) return false;
-    for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; if (!c13Open(x + Math.cos(a) * 3.5, z + Math.sin(a) * 3.5)) return false; }
-    return true;
-  };
-  let best = null;
-  for (let r = 0; r <= 8 && !best; r += 0.5) for (let k = 0; k < (r ? 16 : 1); k++) {
-    const a = k / 16 * Math.PI * 2, x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-    if (roomy(x, z)) { best = { x, z }; break; }
-  }
-  if (!best) best = { x: cx, z: cz };
-  CRUSADER_POST.x = best.x; CRUSADER_POST.z = best.z; CRUSADER_POST.yaw = Math.atan2(A.x - best.x, A.z - best.z);
-  const w = c13W(best.x, best.z);
-  crusaderUnit = makeMutant(+w.x.toFixed(1), +w.z.toFixed(1), 'crusader', C13_Y + c13PaveAt(best.x, best.z));
-  /* his save key is where he stands, and where he stands is found off the
-   * fountain — which moves whenever the court's dressing does (the throne
-   * door moved, the stalls went). A save that has him dead under ANY key has
-   * him dead. */
-  if (!crusaderUnit.retired && [...deadUnitKeys].some((k) => k.startsWith('crusader@'))) retireUnit(crusaderUnit);
-  if (crusaderUnit.retired) return;
-  crusaderUnit.g.rotation.y = CRUSADER_POST.yaw;
-  crusaderUnit.g.visible = false;
-}
-/* HE WAKES WHEN YOU COME THROUGH THE ARCH, or come within his own reach of
- * him, and only while you are in the castle. Leaving puts him back on his
- * post, asleep, with what health he had. */
-function crusaderMayWake() {
+/* CASTLE XIII'S COURT WAKES WHEN YOU COME THROUGH THE ARCH, and only while you are in the castle. */
+function c13MayWake() {
   if (!inC13 || fortBusy) return false;
   const lx = camera.position.x - C13_X;
   return lx < C13_ARCH.x - 1.0;
-}
-function crusaderCalm() {
-  const u = crusaderUnit; if (!u || !u.st.alive) return;
-  u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.holdAnim = false;
-  if (mutToken === u) mutToken = null;
-  const w = c13W(CRUSADER_POST.x, CRUSADER_POST.z);
-  u.g.position.x = w.x; u.g.position.z = w.z; u.g.rotation.y = CRUSADER_POST.yaw;
-  if (u.model) u.model.rotation.y = 0;
 }
 // the castle's stone holds him the way the first castle's holds the marauder
 function c13ClampUnit(u, p) {
@@ -85082,336 +84702,13 @@ function c13ClampUnit(u, p) {
   if (c13CourtAt(p.x, p.z) !== null && maskAt(C13_M, p.x, p.z)) { if (!u.st.c13Home) u.st.c13Home = { x: 0, z: 0 }; u.st.c13Home.x = p.x; u.st.c13Home.z = p.z; }
   else if (u.st.c13Home) { p.x = u.st.c13Home.x; p.z = u.st.c13Home.z; }
 }
-function updateCrusader(dt) {
-  if (!crusaderUnit) { if (inC13 || (c13World && c13World.visible)) placeCrusader(); return; }
-  const u = crusaderUnit;
-  if (u.retired) return;
-  /* `natural` HAD NEVER RUN ON HIM. `naturalSwings` is called from the tavern's,
-   * the belly's and the farmers' own branches, and the knight has none, so his
-   * table's numbers were all he ever had. It is asked here, once his clips are in. */
-  if (u.kind.natural && !u.natDone && u.clips && !(u.clipsPending > 0)) u.natDone = naturalSwings(u);
-  /* (and not drawn until his maps are on the card — two 2048s and four 1024s went up on the frame he was first drawn,
-   * a 48 ms frame at z −905 on the walk past the whale; 2026-10-15. A frame a map, while he is out of sight anyway.) */
-  const W = u.texW || (u.texW = {});
-  let texOK = !u.model || (!(u.clipsPending > 0) && texWarmStep(u.model, W));
-  if (u.model && texOK && !W.compiled) {                  // and his programs, compiled off the frame before he is drawn
-    if (!W.asked) { W.asked = true; try { renderer.compileAsync(u.model, camera, scene).then(() => { W.compiled = true; }, () => { W.compiled = true; }); } catch (e) { W.compiled = true; } }
-    texOK = W.compiled;
-  }
-  u.g.visible = !!(c13World && c13World.visible) && !inRoom() && texOK;
-  if (u.st.alive && u.st.awake && !inC13) crusaderCalm();
-  // he stands on the paving, which is the castle's floor and not the beach's
-  if (u.st.alive && c13Walls) {
-    const p = u.g.position, f = c13CourtAt(p.x, p.z);
-    if (f !== null) { const dy = f - p.y; p.y += Math.abs(dy) < 0.02 ? dy : Math.sign(dy) * Math.min(Math.abs(dy), Math.max(Math.abs(dy) * dt * 12, 3 * dt)); }
-  }
-  if (u.g.visible) { crusaderShieldTick(u); crusaderChain(u, dt); crusaderSwingFx(u, dt); }
-}
-/* WHAT YOU READ OFF HIM. Three beats a swing, all driven off his own swing
- * clock (`st.atk` against the swing's `wind`), so they cannot drift off the
- * blow they belong to:
- *  - THE TELL, on the swing's first frame: the chain rattling up as he draws
- *    the flail back and a glint on the ball that holds through the wind-up —
- *    the thing to watch is the ball, so the ball is what lights;
- *  - THE STRIKE, the moment the held wind-up is let go: a low rush of air and
- *    a pale ribbon down the ball's path, so you see the arc it took and not
- *    only the frame it arrived on;
- *  - THE IMPACT, on the contact frame: if the ball comes down near the stones
- *    it hits them — a thud you feel, grit off the paving, sparks off the iron,
- *    a jolt in the lens that falls off with distance — whether it found you
- *    or not. A blow that lands on nothing should still have weight. */
-const FLAIL_TRAIL_N = 20;
-let flailTrail = null;
-function makeFlailTrail() {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(FLAIL_TRAIL_N * 2 * 3), 3));
-  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(FLAIL_TRAIL_N * 2 * 3), 3));
-  const idx = [];
-  for (let i = 0; i < FLAIL_TRAIL_N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false }));
-  m.frustumCulled = false; m.renderOrder = 6; m.visible = false; m.name = 'flailTrail';
-  scene.add(m);
-  const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffe2b0, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-  glint.raycast = () => {}; glint.visible = false; scene.add(glint);
-  return { m, glint, pts: [], on: 0, g: 0 };
-}
-const _ftA = new THREE.Vector3(), _ftT = new THREE.Vector3(), _ftV = new THREE.Vector3(), _ftS = new THREE.Vector3();
-function crusaderSwingFx(u, dt) {
-  const T = flailTrail || (flailTrail = makeFlailTrail());
-  const st = u.st, ball = u.bones && u.bones.tip;
-  if (!ball) return;
-  ball.getWorldPosition(_ftA);
-  const A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
-  const F = u.swFx || (u.swFx = { swing: null, atk: -1, tell: false, strike: false, hit: false });
-  if (A && (F.swing !== st.swing || st.atk < F.atk - 0.05)) { F.swing = st.swing; F.tell = F.strike = F.hit = false; }
-  F.atk = A ? st.atk : -1;
-  const dx = _ftA.x - camera.position.x, dz = _ftA.z - camera.position.z, dist = Math.hypot(dx, dz);
-  const flail = A && st.swing !== 'cBash' && st.swing !== 'sKick';
-  if (A) {
-    const hitT = A.wind, swingT = A.natHold ? Math.max(0.12, (A.wind - A.natHold) * (1 - (A.cock || 0))) : Math.min(0.35, A.wind * 0.5);
-    if (!F.tell && st.atk >= 0.0) { F.tell = true; sfxFlailTell(dist, panTo(_ftA.x, _ftA.z), flail ? 1 : 0.5); }
-    if (!F.strike && st.atk >= hitT - swingT) { F.strike = true; T.pts.length = 0; sfxFlailRush(dist, panTo(_ftA.x, _ftA.z), (A.dmg || 1) > 1 ? 1.25 : 1); }
-    if (!F.hit && st.atk >= hitT) {
-      F.hit = true;
-      const cf = c13Walls ? c13CourtAt(_ftA.x, _ftA.z) : null, floor = cf ?? u.g.position.y;
-      if (flail && _ftA.y - floor < 0.75) {
-        const k = Math.max(0, 1 - dist / 14);
-        sfxSlam((A.dmg || 1) > 1 ? 0.9 : 0.55);
-        _ftS.set(_ftA.x, floor + 0.05, _ftA.z);
-        worldSparks(_ftS, 10);
-        idolDust(_ftS, _ftV.set(0, 0, 0), (A.dmg || 1) > 1 ? 14 : 8, 0.7, 0.6);
-        if (k > 0) addTrauma(0.22 * k * ((A.dmg || 1) > 1 ? 1.3 : 1));
-      }
-    }
-  }
-  // the glint: on from the tell to the strike, breathing
-  const want = A && F.tell && !F.strike && flail ? 1 : 0;
-  T.g += (want - T.g) * Math.min(1, dt * 14);
-  T.glint.visible = T.g > 0.02;
-  if (T.glint.visible) {
-    T.glint.position.copy(_ftA);
-    const pulse = 0.75 + 0.25 * Math.sin(performance.now() * 0.018);
-    T.glint.material.opacity = T.g * pulse;
-    T.glint.scale.setScalar(0.55 + 0.25 * pulse);
-  }
-  // the trail: sampled while the strike is in the air, fading out after
-  const live = A && F.strike && st.atk <= A.wind + 0.16 && flail;
-  if (live) { T.pts.push(_ftA.clone()); if (T.pts.length > FLAIL_TRAIL_N) T.pts.shift(); T.on = 1; }
-  else T.on = Math.max(0, T.on - dt * 4);
-  T.m.visible = T.on > 0.01 && T.pts.length > 2;
-  if (!T.m.visible) return;
-  const pos = T.m.geometry.attributes.position.array, col = T.m.geometry.attributes.color.array, n = T.pts.length;
-  for (let i = 0; i < FLAIL_TRAIL_N; i++) {
-    const j = Math.min(n - 1, i), p = T.pts[j];
-    const a = T.pts[Math.max(0, j - 1)], b = T.pts[Math.min(n - 1, j + 1)];
-    _ftT.subVectors(b, a); if (_ftT.lengthSq() < 1e-8) _ftT.set(0, 1, 0);
-    _ftV.subVectors(camera.position, p);
-    _ftS.crossVectors(_ftT, _ftV).normalize();
-    const f = n > 1 ? j / (n - 1) : 1, w = 0.02 + 0.09 * f, al = Math.pow(f, 1.8) * T.on * (i < n ? 1 : 0);
-    pos[i * 6] = p.x + _ftS.x * w; pos[i * 6 + 1] = p.y + _ftS.y * w; pos[i * 6 + 2] = p.z + _ftS.z * w;
-    pos[i * 6 + 3] = p.x - _ftS.x * w; pos[i * 6 + 4] = p.y - _ftS.y * w; pos[i * 6 + 5] = p.z - _ftS.z * w;
-    for (let c = 0; c < 2; c++) { col[i * 6 + c * 3] = 0.52 * al; col[i * 6 + c * 3 + 1] = 0.46 * al; col[i * 6 + c * 3 + 2] = 0.38 * al; }
-  }
-  T.m.geometry.attributes.position.needsUpdate = T.m.geometry.attributes.color.needsUpdate = true;
-}
-// the chain rattling up as the flail is drawn back: links clicking faster and a low swell under them
-function sfxFlailTell(dist = 4, pan = 0, k0 = 1) {
-  const ctx = audioCtx; if (!ctx) return;
-  const t0 = ctx.currentTime + 0.01, k = Math.max(0.15, 1 - dist / 24) * k0;
-  let out = sfxOut();
-  if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan * 0.7; p.connect(out); out = p; }
-  let t = t0;
-  for (let i = 0; i < 9; i++) {
-    t += 0.075 - i * 0.005 + Math.random() * 0.012;
-    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime((0.05 + i * 0.008) * k, t + 0.003);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
-    g.connect(out);
-    const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = 620 + Math.random() * 520;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = o.frequency.value * 1.3; bp.Q.value = 7;
-    o.connect(bp).connect(g); o.start(t); o.stop(t + 0.08);
-  }
-  const o = ctx.createOscillator(); o.type = 'sine';
-  o.frequency.setValueAtTime(52, t0); o.frequency.linearRampToValueAtTime(78, t0 + 0.55);
-  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(0.16 * k, t0 + 0.4); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.75);
-  o.connect(g).connect(out); o.start(t0); o.stop(t0 + 0.8);
-}
-// the strike: a heavy iron ball moving a lot of air — low, a rush and gone
-function sfxFlailRush(dist = 4, pan = 0, k0 = 1) {
-  const ctx = audioCtx; if (!ctx) return;
-  const t = ctx.currentTime + 0.01, k = Math.max(0.15, 1 - dist / 22) * k0, L = 0.42;
-  let out = sfxOut();
-  if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = pan * 0.7; p.connect(out); out = p; }
-  const n = noiseBurst(L, (x) => Math.pow(Math.sin(Math.PI * Math.min(1, x * 1.35)), 1.6));
-  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 1.4;
-  lp.frequency.setValueAtTime(180, t); lp.frequency.exponentialRampToValueAtTime(820, t + L * 0.6); lp.frequency.exponentialRampToValueAtTime(240, t + L);
-  const g = ctx.createGain(); g.gain.value = 0.55 * k;
-  n.connect(lp).connect(g).connect(out); n.start(t); n.stop(t + L);
-}
-/* ---- THE CHAIN. Thirteen links and a spiked ball, as a rope: each joint is a
- * Verlet point under gravity, held at its own length to the next, its first
- * point riding the haft. While a clip of his own plays (which keys every link)
- * the rope simply follows the bones, so it carries their velocity into the
- * moment a clip from the pack takes over and the rope is let go. The bones are
- * then turned to lie along it, each by the smallest rotation, parent first. */
-const CR_CHAIN = ['chain1', 'chain2', 'chain3', 'chain4', 'chain5', 'chain6', 'chain7', 'chain8', 'chain9', 'chain10', 'chain11', 'chain12', 'ball_on_a_club1', 'ball_on_a_club2', 'ball_on_a_club3'];
-const _ccA = new THREE.Vector3(), _ccB = new THREE.Vector3(), _ccQ = new THREE.Quaternion(), _ccP = new THREE.Quaternion(), _ccW = new THREE.Quaternion();
-function crusaderChain(u, dt) {
-  if (!u.model) return;
-  let C = u.chain;
-  if (!C) {
-    const by = {}; u.model.traverse((o) => { if (o.isBone) by[o.name] = o; });
-    const bones = CR_CHAIN.map((n) => by[n]).filter(Boolean);
-    if (bones.length < 4) { u.chain = { off: true }; return; }
-    u.model.updateMatrixWorld(true);
-    const pts = bones.map((b) => b.getWorldPosition(new THREE.Vector3()));
-    C = u.chain = { bones, p: pts, pp: pts.map((v) => v.clone()), len: [], k: 1 };
-    for (let i = 1; i < pts.length; i++) C.len.push(pts[i].distanceTo(pts[i - 1]));
-  }
-  if (C.off) return;
-  /* HELD IN THE GOLD, THE FLAIL HOLDS TOO. The artifact freezes the mixer
-   * and the body (`artHold`) and this rope is simulated OUTSIDE the mixer,
-   * so it went on swinging round a statue: the ball orbiting a man who
-   * could not move ("when he gets immobilized his flail still swings"). The
-   * rope keeps the pose it was caught in and the whirl's own clock stops. */
-  if (u.st.immob > 0) return;
-  dt = Math.min(dt, 1 / 30);
-  const cur = u.cur && u.cur.getClip ? u.cur.getClip().name : '';
-  /* THE WHIRL (the owner: "i cant even tell he is swinging"). A flail's tell
-   * is the ball going round: through every flail blow's wind-up the ball is
-   * swung in a tilted circle over his shoulder, faster and faster, with a
-   * swish each time it comes round — then let go into the strike, and the
-   * rope's own momentum carries it there. A held, still pose with a ball
-   * hanging behind his helmet was all there was to read before. */
-  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
-  const W = u.whirl || (u.whirl = { k: 0, ang: Math.random() * 6, spd: 0, half: 0 });
-  let wantW = 0;
-  if (A && st.swing !== 'cBash' && st.swing !== 'sKick' && !u.rag) {
-    const swingT = A.natHold ? Math.max(0.12, (A.wind - A.natHold) * (1 - (A.cock || 0))) : Math.min(0.35, A.wind * 0.5);
-    if (st.atk < A.wind - swingT) wantW = 1;
-  }
-  W.k += (wantW - W.k) * Math.min(1, dt * (wantW ? 5 : 16));
-  W.spd = wantW ? Math.min(2.1, W.spd + dt * 2.6) : W.spd * Math.max(0, 1 - dt * 4);
-  W.ang += dt * W.spd * Math.PI * 2;
-  if (W.k > 0.5 && Math.floor(W.ang / Math.PI) !== W.half) {
-    W.half = Math.floor(W.ang / Math.PI);
-    const h = C.bones[0].getWorldPosition(_ccA);
-    sfxFlailRush(Math.hypot(h.x - camera.position.x, h.z - camera.position.z), panTo(h.x, h.z), 0.22 + 0.2 * Math.min(1, W.spd / 2));
-  }
-  const own = CRUSADER_OWN.has(cur) && !u.rag && W.k < 0.04;
-  const n = C.p.length;
-  // what the clip says, this frame
-  u.model.updateMatrixWorld(true);
-  if (own) {
-    // keyed: follow, remembering last frame so the swing carries on when it is let go
-    for (let i = 0; i < n; i++) { C.pp[i].copy(C.p[i]); C.bones[i].getWorldPosition(C.p[i]); }
-    C.k = Math.max(0, C.k - dt * 4);
-    if (C.k <= 0.001) return;
-  } else C.k = Math.min(1, C.k + dt * 6);
-  // the head of the rope rides the haft
-  const head = C.bones[0].getWorldPosition(_ccA);
-  if (!own) {
-    /* A ROPE AT REST HANGS; IT DOES NOT SWING FOR EVER. Between swings the
-     * damping is heavy, so the ball comes to hang off the haft in a second
-     * rather than orbiting him like a pendulum through the whole exchange —
-     * most of "the flail moves so badly" was a ball that never stopped. */
-    const idle = !A;
-    const damp = idle ? 0.90 : 0.985;
-    const g = 15 * dt * dt, floorY = beachGroundAt(u.g.position.x, u.g.position.z) + 0.05;
-    for (let i = 1; i < n; i++) {
-      const p = C.p[i], q = C.pp[i];
-      let vx = (p.x - q.x) * damp, vy = (p.y - q.y) * damp, vz = (p.z - q.z) * damp;
-      // and no link may move more than a chain's length in a frame: a rope that outruns its own constraints snaps about
-      const vl = Math.hypot(vx, vy, vz), vmax = 0.45; if (vl > vmax) { vx *= vmax / vl; vy *= vmax / vl; vz *= vmax / vl; }
-      q.copy(p);
-      p.x += vx; p.y += vy - g; p.z += vz;
-    }
-    /* THE BODY IS SOLID TO THE CHAIN. Nothing kept the rope out of him, so a
-     * swing let go behind his head came round THROUGH his helmet and chest —
-     * the ball passing through the man holding it, every second swing. Every
-     * link is pushed out of a capsule round him. */
-    const bx = u.g.position.x, bz = u.g.position.z, by0 = u.g.position.y + 0.1, by1 = u.g.position.y + (u.kind.h || 2.2) * 0.92, bR = 0.46;
-    for (let it = 0; it < 8; it++) {
-      C.p[0].copy(head);
-      for (let i = 1; i < n; i++) {
-        const a = C.p[i - 1], b = C.p[i], L = C.len[i - 1];
-        _ccB.subVectors(b, a); const d = _ccB.length() || 1e-6;
-        const k = (d - L) / d;
-        if (i === 1) b.addScaledVector(_ccB, -k);
-        else { a.addScaledVector(_ccB, k * 0.5); b.addScaledVector(_ccB, -k * 0.5); }
-      }
-      for (let i = 1; i < n; i++) {
-        const p = C.p[i];
-        if (p.y < floorY) p.y = floorY;
-        if (p.y > by0 && p.y < by1) { const ex = p.x - bx, ez = p.z - bz, r = Math.hypot(ex, ez); if (r < bR) { const s2 = r > 1e-4 ? bR / r : 0; p.x = bx + (r > 1e-4 ? ex * s2 : bR); p.z = bz + (r > 1e-4 ? ez * s2 : 0); } }
-      }
-    }
-    C.p[0].copy(head);
-    /* AND A BLOW GOES WHERE IT IS AIMED. The rope is physics and the aim turns
-     * his shoulder, which cannot steer a ball on a chain: measured, half his
-     * strikes went past a metre wide and the rest arrived by luck. Through
-     * the strike the ball is GUIDED — from where it was when the wind-up was
-     * let go, up over his shoulder and down onto your chest on the contact
-     * frame, blended in over the swing so the first of it is still the
-     * rope's own momentum — and the links are laid between the haft and the
-     * ball with a little sag. After the contact the physics has it back, so
-     * the follow-through is a real swing carrying on. */
-    const flailA = A && st.swing !== 'cBash' && st.swing !== 'sKick';
-    if (flailA) {
-      const swingT = A.natHold ? Math.max(0.12, (A.wind - A.natHold) * (1 - (A.cock || 0))) : Math.min(0.35, A.wind * 0.5);
-      const t0 = A.wind - swingT, t1 = A.wind + 0.04;
-      if (st.atk >= t0 && st.atk <= t1) {
-        const G = u.flailGuide || (u.flailGuide = { swing: null, atk: -1, p0: new THREE.Vector3(), p1: new THREE.Vector3(), p2: new THREE.Vector3(), on: false });
-        if (G.swing !== st.swing || st.atk < G.atk - 0.05 || !G.on) {
-          G.swing = st.swing; G.on = true;
-          G.p0.copy(C.p[n - 1]);
-          const foe = mutFoePos(u); G.p2.set(foe.x, foe.y - 0.45, foe.z);
-          // the control point: high, over the flail shoulder, a little toward you
-          const yaw = u.g.rotation.y;
-          G.p1.set(head.x + Math.sin(yaw) * 0.6 + (G.p2.x - head.x) * 0.25, head.y + 1.6, head.z + Math.cos(yaw) * 0.6 + (G.p2.z - head.z) * 0.25);
-        }
-        G.atk = st.atk;
-        const foe = mutFoePos(u); G.p2.set(foe.x, foe.y - 0.45, foe.z);           // you may have moved
-        const s0 = THREE.MathUtils.clamp((st.atk - t0) / Math.max(1e-3, A.wind - t0), 0, 1);
-        const q = 1 - s0;
-        _ccA.set(q * q * G.p0.x + 2 * q * s0 * G.p1.x + s0 * s0 * G.p2.x, q * q * G.p0.y + 2 * q * s0 * G.p1.y + s0 * s0 * G.p2.y, q * q * G.p0.z + 2 * q * s0 * G.p1.z + s0 * s0 * G.p2.z);
-        // never further from the haft than the chain is long
-        let total = 0; for (let i = 1; i < n; i++) total += C.len[i - 1];
-        _ccB.subVectors(_ccA, head); const dl = _ccB.length(); if (dl > total * 0.98) _ccB.multiplyScalar(total * 0.98 / dl);
-        _ccA.copy(head).add(_ccB);
-        const w = 0.25 + 0.7 * s0 * s0;
-        C.p[n - 1].lerp(_ccA, w);
-        // the links between, hung with a little sag toward the ball's own line
-        let along = 0;
-        for (let i = 1; i < n - 1; i++) {
-          along += C.len[i - 1];
-          const f = along / total, sag = Math.sin(f * Math.PI) * 0.18 * (1 - s0);
-          _ccB.copy(head).lerp(C.p[n - 1], f); _ccB.y -= sag;
-          C.p[i].lerp(_ccB, w * 0.8);
-        }
-      } else if (u.flailGuide) u.flailGuide.on = false;
-    } else if (u.flailGuide) u.flailGuide.on = false;
-    if (W.k > 0.01) {
-      // the circle: tilted up over his flail shoulder, in his own frame
-      const yaw = u.g.rotation.y, ca = Math.cos(W.ang), sa = Math.sin(W.ang);
-      const rx = Math.cos(yaw), rz = -Math.sin(yaw), fx = Math.sin(yaw), fz = Math.cos(yaw);
-      _ccB.set(ca * rx + sa * fx * 0.8, 0.62, ca * rz + sa * fz * 0.8).normalize();
-      let along = 0;
-      for (let i = 1; i < n; i++) {
-        along += C.len[i - 1];
-        _ccA.copy(head).addScaledVector(_ccB, along);
-        C.p[i].lerp(_ccA, W.k * 0.55);
-      }
-    }
-  }
-  // lay the bones along the rope, parent first
-  for (let i = 0; i < n - 1; i++) {
-    const b = C.bones[i];
-    b.updateWorldMatrix(true, true);
-    b.getWorldPosition(_ccA);
-    C.bones[i + 1].getWorldPosition(_ccB);
-    const cur = _ccB.sub(_ccA); const cl = cur.length(); if (cl < 1e-6) continue;
-    cur.divideScalar(cl);
-    const want = _ccA.copy(C.p[i + 1]).sub(C.p[i]); const wl = want.length(); if (wl < 1e-6) continue;
-    want.divideScalar(wl);
-    _ccQ.setFromUnitVectors(cur, want);
-    if (C.k < 1) _ccQ.slerp(_ccW.identity(), 1 - C.k);
-    b.getWorldQuaternion(_ccW);
-    _ccW.premultiply(_ccQ);
-    b.parent.getWorldQuaternion(_ccP).invert();
-    b.quaternion.copy(_ccP.multiply(_ccW));
-  }
-  C.bones[n - 1].updateWorldMatrix(true, true);
-}
 
 /* =====================================================================
  * THE TWO SWORDSMEN OF CASTLE XIII'S WEST COURT (2026-10-19, the owner: "take out the mace knight in the second
  * section of the castle and add both of these guys utilize these mixamo moves to its best potential for the best fight
  * with both of these guys … avoid using anything out of place for these characters because they have no shields …
  * give each character here personality in their fighting styles … make sure they actually hold their sword normally").
- * The flail knight is gone from the square (his code stays, unplaced); in it stand two men with swords and no shields:
+ * The flail knight is gone from the square (gone for good, 2026-11-04); in it stand two men with swords and no shields:
  *  - THE MAN-AT-ARMS (`knMan`, `assets/knight-man.glb`, sanyaork's "knight", CC-BY-4.0): a soldier in a bascinet
  *    and a padded coat, a fencer — quick, light on his feet, cutting in short strings and stepping out again, circling,
  *    feinting, never still. Little health; his blows are light and many.
@@ -85419,8 +84716,8 @@ function crusaderChain(u, dt) {
  *    plate — slow, patient, walking you down: few blows, all of them heavy, every one of them drawn and HELD long enough
  *    to read; a kick for a man behind his guard and a leaping cut for a man who backs off. Hard to rock. At half his
  *    health he roars and comes faster, the tells no shorter.
- * Both swing the owner's Mixamo Pro Sword and Shield Pack (`assets/crusader-moves.json`, `tools/ntar_moves.py --
- * crusader`), retargeted onto each rig — only the moves a man with a sword and an EMPTY left hand makes (`KN_*_USE`).
+ * Both swing the owner's Mixamo Pro Sword and Shield Pack (`assets/sword-moves.json`, `tools/ntar_moves.py --
+ * sword`), retargeted onto each rig — only the moves a man with a sword and an EMPTY left hand makes (`KN_*_USE`).
  * Their swords are in their fists by the files' own binds (`knSeatSword`): the man's is skinned to his right hand,
  * the iron knight's is a loose object the packer leaves where it lay in his fist, put on his right hand here. Two empties
  * ride each blade (`kn_hilt`, `kn_tip`): the hit, the aim, the measured contact and the trail are the steel's.
@@ -85492,8 +84789,8 @@ function authorKnClips(u, m) {
     bwTurn().then(step);
   };
   u.clipsPending = 1;
-  if (crusaderMoves) lay(crusaderMoves);
-  else { const was = crusaderMovesLate; crusaderMovesLate = () => { if (was) was(); lay(crusaderMoves); }; }
+  if (swordMoves) lay(swordMoves);
+  else { const was = swordMovesLate; swordMovesLate = () => { if (was) was(); lay(swordMoves); }; }
   return [];
 }
 // the pack's clips a man with a sword and no shield can wear (the blocks, the crouched guards and the casts are the shield's)
@@ -85761,7 +85058,7 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, { knUnitsS: () =>
  * Catholomew's "The Dark Knight - Infinity Blade" (CC-BY-NC-4.0 — not for a sale), `assets/dark-knight.glb` by
  * `tools/swordknights_pack.py dark`: one skinned mesh — sword in the right fist, a kite shield on the left forearm — on
  * Infinity Blade's own MF rig (bone suffixes stripped), his eight attack strings kept as `dkC0`…`dkC7`. He takes the
- * paladin's slot (`paladin.unit`, made at the farmers' park so his save key is the same in every game) but none of the
+ * paladin's slot (`dkSlot.unit`, made at the farmers' park so his save key is the same in every game) but none of the
  * paladin's machinery: he is `darkKnight`, and `updateDarkKnight` runs him.
  * ===================================================================== */
 const DKB = (n) => 'b_MF_' + n;
@@ -85831,8 +85128,8 @@ function authorDkClips(u, m) {
     bwTurn().then(step);
   };
   u.clipsPending = 1;
-  if (crusaderMoves) lay(crusaderMoves);
-  else { const was = crusaderMovesLate; crusaderMovesLate = () => { if (was) was(); lay(crusaderMoves); }; }
+  if (swordMoves) lay(swordMoves);
+  else { const was = swordMovesLate; swordMovesLate = () => { if (was) was(); lay(swordMoves); }; }
   return [];
 }
 MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
@@ -85947,7 +85244,7 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
  * the street, fifteen metres in, with three of the town's men on him — and he cuts them down. Then he turns on you:
  * when the last of them falls, when you come within five metres, or the moment you strike him. (The rest of the town
  * keeps coming out of its doors at you, as before.) What the farmers took off him is given back when he turns: he is
- * whole for you. Leaving the castle puts him away (`palCalm`, the slot's own); he is on his feet in the street again
+ * whole for you. Leaving the castle puts him away (`dkCalm`, the slot's own); he is on his feet in the street again
  * when you come back — without the men he has already killed. */
 /* HIS BLOWS DESTROY THEM (2026-10-19, round 2: "his hits should destroy the farmers and fling them pretty far"). A blow
  * of his that lands on a farmer is that man's death — opened up (`killGore`) and thrown along the cut: `killFling` gives
@@ -85989,16 +85286,17 @@ function dkInView(x, z) {
   _dkvS.center.set(x, (fortCourtAt(x, z) ?? camera.position.y - 1.7) + 1.4, z); _dkvS.radius = 3.5;
   return _dkvF.intersectsSphere(_dkvS);
 }
+const _dkFwd = new THREE.Vector3();
 function dkStage1(u) {
   const late = !fortBusy && !frozen() && fortInT > 1.2;
   /* ten and a half metres in front of where you came in, on the street's own line (measured: the gate's arrival is fifteen
    * metres up the street already, and a fixed spot put him two metres off your nose) */
-  const me0 = camera.position; camera.getWorldDirection(_pdnA); _pdnA.y = 0; _pdnA.normalize();
+  const me0 = camera.position; camera.getWorldDirection(_dkFwd); _dkFwd.y = 0; _dkFwd.normalize();
   let L = fortW(DK_STAND[0], DK_STAND[1]), bestSc = -1e9;
   for (let i = 0; i < FARM_SPINE.length - 1; i++) for (let t = 0; t <= 1.0001; t += 0.05) {
     const P = fortW(FARM_SPINE[i][0] + (FARM_SPINE[i + 1][0] - FARM_SPINE[i][0]) * t, FARM_SPINE[i][1] + (FARM_SPINE[i + 1][1] - FARM_SPINE[i][1]) * t);
     const dx = P.x - me0.x, dz = P.z - me0.z, d = Math.hypot(dx, dz) || 1;
-    let sc = -Math.abs(d - 10.5) + 4 * (dx * _pdnA.x + dz * _pdnA.z) / d;
+    let sc = -Math.abs(d - 10.5) + 4 * (dx * _dkFwd.x + dz * _dkFwd.z) / d;
     // (in late, with you already looking: not where you are looking — a man does not appear in front of you)
     if (late && dkInView(P.x, P.z)) sc -= 100;
     if (fortCourtAt(P.x, P.z) !== null && sc > bestSc) { bestSc = sc; L = P; }
@@ -86011,7 +85309,7 @@ function dkStage1(u) {
   u.g.rotation.y = Math.atan2(S.x - me.x, S.z - me.z);          // his back half to the gate: busy
   if (u.model) u.model.rotation.y = 0;
   u.holdAnim = false; u.st.atk = -1; u.st.roar = 0; u.st.cool = 0.4; u.st.step = 0; u.st.mine = false;
-  u.st.awake = true; u.g.visible = true; paladin.out = true;
+  u.st.awake = true; u.g.visible = true; dkSlot.out = true;
   dk.hp0 = u.st.hp;
   // three of the town's men round him (not on a later visit: the ones he killed stay dead)
   dk.victims = [];
@@ -86360,7 +85658,7 @@ function dkTownFights(u, dt) {
   else if (u.st.foe) { u.st.foe = null; u.st.mine = true; dk.pickT = now; }
 }
 function updateDarkKnight(dt) {
-  const u = paladin.unit;
+  const u = dkSlot.unit;
   if (!u || u.retired || u.kind !== MUT_KINDS.darkKnight) return;
   if (u.kind.natural && !u.natDone && u.clips && !(u.clipsPending > 0)) u.natDone = naturalSwings(u);
   if (u.natDone && !u.dkTravel && u.model && !(u.clipsPending > 0)) u.dkTravel = dkBuildTravel(u);   // (his swings' own travel, once: 2026-10-29)
@@ -86370,13 +85668,13 @@ function updateDarkKnight(dt) {
     if (!W.asked) { W.asked = true; try { renderer.compileAsync(u.model, camera, scene).then(() => { W.compiled = true; }, () => { W.compiled = true; }); } catch (e) { W.compiled = true; } }
   }
   if (!inFort || !u.st.alive) { if (!inFort) dk.stage = 0; return; }
-  if (!paladin.out) {
-    if (dk.stage !== 0) dk.stage = 0;                                       // (`palCalm` put him away)
+  if (!dkSlot.out) {
+    if (dk.stage !== 0) dk.stage = 0;                                       // (`dkCalm` put him away)
     /* ALREADY AT IT WHEN YOU COME IN (2026-10-19, round 2: "dont make them randomly spawn in when i walk through they
      * should already be there fighting"). He was put on the street when the bell rang, a beat after you were through the
      * gate — in front of you. Now he is put there the moment you are inside — under the gate's own black when he is ready
      * by then — and if he comes ready only after you are in, somewhere you are not looking. */
-    if (dkReady(u) && !paladinDone()) dkStage1(u);
+    if (dkReady(u) && !dkDone()) dkStage1(u);
     return;
   }
   u.g.visible = true;
@@ -86392,8 +85690,8 @@ function updateDarkKnight(dt) {
 }
 /* A CHECKPOINT IN THE STREET: the load's black waits until he is on it with his three (measured, 2026-10-19: put there
  * at 2.6 s, the black lifting at 3.1 — half a second from the owner's "i see them clip in") */
-bootStageHold = () => { const u = paladin.unit; return !!(inFort && u && u.kind === MUT_KINDS.darkKnight && u.st.alive && !u.retired && !paladin.out && !paladinDone()); };
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { dkS: () => ({ dk, u: paladin.unit }), dkStage1, dkTurn, dkSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'darkKnight', y), mutSpawnTest: (x, z, kind, y = 0) => makeMutant(x, z, kind, y), mutantsS: () => mutants, magAmmoS: () => ({ ammo: magAmmo, t: magT, busy: magBusy(), sg: sgCh.slice() }), loadGunsTest: () => { magAmmo = 6; sgCh = [1, 1]; } }));
+bootStageHold = () => { const u = dkSlot.unit; return !!(inFort && u && u.kind === MUT_KINDS.darkKnight && u.st.alive && !u.retired && !dkSlot.out && !dkDone()); };
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { dkS: () => ({ dk, u: dkSlot.unit }), dkStage1, dkTurn, dkSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'darkKnight', y), mutSpawnTest: (x, z, kind, y = 0) => makeMutant(x, z, kind, y), mutantsS: () => mutants, magAmmoS: () => ({ ammo: magAmmo, t: magT, busy: magBusy(), sg: sgCh.slice() }), loadGunsTest: () => { magAmmo = 6; sgCh = [1, 1]; } }));
 
 /* =====================================================================
  * THE MINOTAUR AT THE GATE (2026-10-28, the owner: "add this minotaur to the left of the very first castle door standing
@@ -86487,7 +85785,7 @@ const MINO_PACKS = [
   [() => orcMoves, { idle: 'oIdle', idleB: 'oIdleB', walk: 'oWalk', walkB: 'oWalkB', run: 'oRun', roar: 'oRoar', hit: 'oHit', hitB: 'oHitB', hitBig: 'oHitBig',
     strafeL: 'oStrL', strafeR: 'oStrR', die: 'oDie', oChop: 'oChop', oCut: 'oCut', oCutC: 'oCutC', oCutD: 'oCutD', oSpin: 'oSpin', oLeap: 'oLeap', oKick: 'oKick' }],
   [() => demonMoves, { roar: 'dRoar' }],
-  [() => crusaderMoves, { sSlash: 'sSlash', sSlashC: 'sSlashC' }],
+  [() => swordMoves, { sSlash: 'sSlash', sSlashC: 'sSlashC' }],
 ];
 function authorMinoClips(u, m) {
   const R = poseRig(u, m, null, MINO_JOINTS, {});
@@ -86765,8 +86063,8 @@ function minoFoes() {
   const L = [];
   if (inFort) {
     for (const f of farmUnits) if (f.st.alive && !f.retired && f.farm && f.farm.out && !f.farm.burst && f.st.awake && f.g.visible) L.push(f);
-    const d = paladin.unit;
-    if (d && d.kind === MUT_KINDS.darkKnight && d.st.alive && !d.retired && paladin.out && d.g.visible) L.push(d);
+    const d = dkSlot.unit;
+    if (d && d.kind === MUT_KINDS.darkKnight && d.st.alive && !d.retired && dkSlot.out && d.g.visible) L.push(d);
   }
   // (`visible !== false`, as three draws it: the light knight's was `undefined` — drawn, but never on his list; measured,
   // `knDuel`, the owner's "the minataur doesnt even fight when im attacking the knights")
@@ -86786,7 +86084,7 @@ function minoPickFoe(u, dt) {
   if (u.st.atk >= 0 && u.st.foe && u.st.foe.st.alive) return;
   const P = u.g.position, me = camera.position;
   let best = null, bs = -1e9;
-  const D = paladin && paladin.unit;
+  const D = dkSlot.unit;
   for (const f of minoFoes()) {
     // (not a man the dark knight is already cutting down: he was gone by the time the blow came, and it fell on air)
     if (D && D !== f && D.st.alive && D.st.foe === f && D.st.atk >= 0) continue;
@@ -95326,7 +94624,7 @@ MUT_KINDS.wellman = {
   bossDeath: true,
   hideMeshes: ['Object_75'],             // the teeth: a separate mesh of 289 vertices, yellow pegs in the open mouth (the owner: "too corny")
   death: { BUCKLE: 1.2, DROP: 2.0, TAIL: 2.6, QUIET: 3.4 },
-  h: 1.92, hp: 34, dmg: 1, bleedRes: 1.1,   /* 36 → 50 (2026-10-14: "give him more health") → 43 (2026-10-16: "less health … not too much") → 34 (2026-10-16 again: "make the well man less health") */ hitR: 0.85, body: 0.55, lungeStop: 1.35, landSlop: 0.22, limbR: 0.26, lungeLead: 0.3, lungeK: 1.0,
+  h: 1.92, hp: 29, dmg: 1, bleedRes: 1.1,   /* 36 → 50 (2026-10-14: "give him more health") → 43 (2026-10-16: "less health … not too much") → 34 (2026-10-16 again: "make the well man less health") → 29 (2026-11-06: "drop the well guys health a little") */ hitR: 0.85, body: 0.55, lungeStop: 1.35, landSlop: 0.22, limbR: 0.26, lungeLead: 0.3, lungeK: 1.0,
   /* QUICK: 1.5 of the pale one's pace is 6.9 m/s at a run, his clips allowed
    * to play at up to three times their stride so the feet keep up, and a
    * burst (`st.sprint`) on every charge that takes him past ten for a moment. */
@@ -105342,8 +104640,7 @@ function updateFarmers(dt) {
   farmCrowdTick(dt);
   let live = 0, dead = 0;
   for (const u of farmUnits) { if (u.farm.out && u.st.alive) live++; if (!u.st.alive) dead++; }
-  palMayCome(dead);
-  if (dead >= farmUnits.length) { if (paladinDone()) farmFight.done = true; return; }
+  if (dead >= farmUnits.length) { if (dkDone()) farmFight.done = true; return; }
   farmLostTick(dt, live);
   const cap = farmFight.sent < 5 ? 4 : farmFight.sent < 11 ? 5 : 6;
   farmFight.next -= dt * (live < 2 ? 2.2 : 1);
@@ -105422,12 +104719,12 @@ function farmCalm() {
     farmFight.sent--;
   }
   farmFight.started = false;
-  palCalm();
+  dkCalm();
 }
 function farmRetireAll() {
   farmFight.done = true;
   for (const u of farmUnits) retireUnit(u);
-  if (typeof paladin !== 'undefined' && paladin.unit && !paladin.unit.retired) retireUnit(paladin.unit);   // (a save from before he came, with the street already won)
+  if (typeof dkSlot !== 'undefined' && dkSlot.unit && !dkSlot.unit.retired) retireUnit(dkSlot.unit);   // (a save from before he came, with the street already won)
 }
 if (FARM_ROSTER.length) {
   const P = FARM_PARK();
@@ -105441,563 +104738,35 @@ if (FARM_ROSTER.length) {
 }
 
 
-/* ---- THE PALADIN ---------------------------------------------------------
- * (2026-10-17, the owner: "make the paladin be big and swing his sword
- * readable … a brand new smooth moveset … weighted like he hits hard, more
- * sparks on the blocks … wide swings … act like his sword's heavy … he comes
- * in halfway with a cutscene where he walks up, slices a farmer's head,
- * exploding it … wide swings that sometimes kill farmers like he doesn't
- * care … like the big knights in Sekiro".)
- *
- * WHO HE IS. The owner's "paintpoly paladin knight" (`tools/paladin_pack.py` →
- * `assets/paladin.glb`, his Rigify rig rebuilt onto Mixamo's names and his
- * paint made grim), at 2.45 m: a head and a half over you, not a giant. His
- * blows are Mixamo's standing melee set, which nothing else in the game
- * swings; his stance, gait and flinches are the Great Sword Pack clips the
- * orc does not use (`tools/ntar_moves.py -- paladin` → `paladin-moves.json`).
- *
- * HOW HE FIGHTS. Slowly, and then not: every swing is drawn up and HELD
- * (`natHold`) — the tell is long and it is the thing to read — then let go at
- * the clip's own speed. He turns slowly (`turnMax`), so the way round him is
- * real, and a light blow does not move him (`poise`). Your guard holds, but
- * it costs: a block against him is a wall of sparks off his blade, a flash,
- * a ring and a shove back a step (`palBlockFx`).
- *
- * AND THE FARMERS ARE IN HIS WAY. Anything his blade passes through on a
- * swing dies (`palCleave`), whoever it was swung at.
- *
- * WHEN HE COMES. With half the twenty dead (`palMayCome`), the street stops:
- * the bell's last stroke, a low dread under everything, and out of the dark
- * past the nearest farmer he walks, the blade's point down on the stones and
- * sparking. The farmer turns to look at him. He takes the man's head off
- * without stopping, and the world slows for it; then he turns to you and
- * shouts, and the fight is his (`palCut`, wall clock, the world held).
- * The back door stays barred until he is dead too (`farmFight.done`). */
-const PALADIN_MOVES_URL = 'assets/paladin-moves.json';
-let paladinMoves = null, paladinMovesLate = null;
-if (false) bwFetch(PALADIN_MOVES_URL).then((buf) => {   // (not fetched: the paladin is out of the game, 2026-10-19)
-  try { paladinMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
-  if (paladinMovesLate) { paladinMovesLate(); paladinMovesLate = null; }
-}, () => {});
-const PAL_JOINTS = {
-  hip: 'Hips', waist: 'Spine', chest: 'Spine2', neck: 'Neck', head: 'Head',
-  clavL: 'LeftShoulder', clavR: 'RightShoulder', armL: 'LeftArm', armR: 'RightArm', foreL: 'LeftForeArm', foreR: 'RightForeArm',
-  thighL: 'LeftUpLeg', thighR: 'RightUpLeg', calfL: 'LeftLeg', calfR: 'RightLeg', footL: 'LeftFoot', footR: 'RightFoot',
-};
-const PALADIN_RAG = {};
-for (const n of ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
-  'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase',
-  'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase']) PALADIN_RAG['Character1_' + n] = n;
-let PAL_TRAVEL_K = 0.8;
-function authorPaladinClips(u, m, gltf) {
-  poseRig(u, m, null, PAL_JOINTS, {});
-  u.palTip = m.getObjectByName('paladin_tip'); u.palHilt = m.getObjectByName('paladin_hilt');
-  /* HIS CLIPS ARE IN HIS OWN FILE NOW (2026-10-17, round 4; the owner: "his rig is bad it makes no sense … hes not
-   * even holding his sword … the moveset isnt showing up right at all"). Three packs' clips used to be retargeted here
-   * at load, with no fingers and one grip read off one capture's rest: the blade sat in an open hand at a different
-   * wrong angle in every pack. `tools/paladin_bake.py` bakes every clip onto his own skeleton in Blender instead — his
-   * fist closed round the grip, his hand turned each frame so his blade lies along the captured man's — and the loader
-   * has already made actions of them by name. What is left here is what the moves file says about each: how far it
-   * carries him (`travel`, in his model's metres, so times the model's scale: his root then moves as far as his feet
-   * do), and from that the speed a gait is drawn at. */
-  const lay = (moves) => {
-    for (const n in moves.clips) {
-      const C = moves.clips[n]; if (!u.clips[n] || !C.travel || !C.travel.length) continue;
-      // (a swing's ×0.8: a captured man's lunge scaled up to a 2.75 m body covered three metres; a gait's is its feet's, whole)
-      const k = (m.scale.x || 1) * (C.mode === 'gait' || C.mode === 'idle' ? 1 : PAL_TRAVEL_K);
-      const T = u.clipTravel[n] = C.travel.map(([x, z]) => [x * k, z * k]);
-      const e = T[T.length - 1], sp = Math.hypot(e[0], e[1]) / Math.max(0.05, C.dur);
-      if (sp > 0.15) u.clipSpeed[n] = sp;
-    }
-    palContact(u);
-    if (u.kind.alias) for (const a in u.kind.alias) if (u.clips[u.kind.alias[a]]) u.clips[a] = u.clips[u.kind.alias[a]];
-    mutStartPose(u);
-    u.natDone = false;
-    u.clipsPending = 0;
-  };
-  u.clipsPending = 1;
-  if (paladinMoves) bwTurn().then(() => lay(paladinMoves));
-  else paladinMovesLate = () => lay(paladinMoves);
-  return [];
-}
-/* WHERE EACH BLOW LANDS, MEASURED ON HIS OWN BLADE. A capture's contact frame is where the HAND is fastest, which
- * on a long blade swung from the shoulders is not where the POINT goes through the man in front of him — measured,
- * the first cut's "contact" had the point 2.8 m up, over your head. So each swing's clip is posed through on his
- * own skeleton and the frame taken where the point crosses the space in front of him (ahead of him, within a body's
- * width of his line, between knee and crown) at the greatest speed. `A.tipF` is how far ahead it is then. */
-const _pcV = new THREE.Vector3(), _pcP = new THREE.Vector3(), _pcH = new THREE.Vector3();
-function palContact(u) {
-  if (!u.palTip || !u.mixer || !u.model) return;
-  const yaw = u.g.rotation.y, fx = Math.sin(yaw), fz = Math.cos(yaw), o = u.g.position;
-  const hold = u.holdAnim; u.holdAnim = true;
-  const at = (a, t) => { a.time = t; u.mixer.update(0); u.model.rotation.y = 0; u.g.updateMatrixWorld(true); u.palTip.getWorldPosition(_pcV); u.palHilt.getWorldPosition(_pcH); };
-  for (const k in u.atk) {
-    const a = u.clips[k]; if (!a || !MUT_ATTACKS[k] || !u.kind.use[k]) continue;
-    for (const x of Object.values(u.clips)) x.stop();
-    a.reset(); a.play(); a.paused = true; a.setEffectiveWeight(1);
-    const dur = a.getClip().duration, N = Math.max(30, Math.round(dur * 60));
-    // (only after the top of the draw: the blade rising through the same space on the way UP is not the blow)
-    let apex = 0, top = -1e9;
-    for (let i = 0; i <= N * 0.8; i++) { at(a, dur * i / N); if (_pcV.y > top) { top = _pcV.y; apex = i; } }
-    // the blow: the fastest frame after it with the blade's middle at a man's height, across his front
-    let best = null, has = false;
-    const sp = new Float32Array(N + 1);
-    for (let i = apex; i <= N; i++) {
-      at(a, dur * i / N);
-      if (has) {
-        sp[i] = _pcV.distanceTo(_pcP) / (dur / N);
-        // (where his feet have taken him by then: the swing carries him, `palRootMotion`)
-        const TT = clipTravelAt(u, k, i / N), tx = TT ? TT.x : 0, tz = TT ? TT.y : 0;
-        const mx = _pcH.x + (_pcV.x - _pcH.x) * 0.65 - o.x + tx * Math.cos(yaw) + tz * Math.sin(yaw), mz = _pcH.z + (_pcV.z - _pcH.z) * 0.65 - o.z - tx * Math.sin(yaw) + tz * Math.cos(yaw), my = _pcH.y + (_pcV.y - _pcH.y) * 0.65 - o.y;
-        const f = mx * fx + mz * fz, sd = mx * fz - mz * fx;
-        const bear = Math.atan2(sd, f);           // (and across his FRONT: the follow-through behind him is fast too)
-        const sc = sp[i] * Math.max(0.15, Math.cos(bear));
-        // (round 7: on HIS scale — a captured cut meets a man the performer's size, and on a 2.75 m body that is 1.9–2 m
-        // up, over your head; the arm aim (`aimK`, `aimDrop`) brings it down onto you and `palLands` counts only steel at
-        // your body's height, so a blade over your head never hurts you)
-        const ty = _pcV.y - o.y;
-        if (my > 0.6 && my < 2.4 && ty < 2.9 && Math.hypot(f, sd) > 0.45 && Math.abs(bear) < 2.3 && (!best || sc > best.sc)) best = { sc, sp: sp[i], i, frac: i / N, bear, d: Math.hypot(f, sd) };
-      }
-      _pcP.copy(_pcV); has = true;
-    }
-    a.stop();
-    // (a blow that never crosses his front at a man's height is not one he throws: nothing to read, nothing it can hit)
-    if (!best || best.frac < 0.08 || best.frac > 0.95) { u.atk[k].skip = true; continue; }
-    /* THE BLOW IS THE WHOLE FAST PART OF THE SWING, not a frame. His hit is the blade passing through you
-     * (`palLands`), so the active window opens where the point's speed first reaches half the blow's and closes
-     * where it falls back under it: what you see cut through you is what hits you. */
-    let i0 = best.i, i1 = best.i;
-    while (i0 > apex + 1 && sp[i0 - 1] >= best.sp * 0.5) i0--;
-    while (i1 < N && sp[i1 + 1] >= best.sp * 0.5) i1++;
-    // (and opened a beat sooner: you stand nearer him than the space measured in, so the blade reaches you first —
-    // measured in the fight, it went through you 0.10–0.15 s before the window opened, on every blow)
-    /* THE WHOLE CUT IS LIVE, AND ONLY THE CUT. The hit is the blade passing through you (`palLands`), so the window
-     * runs from the top of the draw (or a third of a second before the fast part, if that is later) to where the
-     * blade has slowed again: whatever the blade visibly goes through on the way down lands, and nothing before or
-     * after it does. (A contact FRAME was always a little early or late against a held, slowed, stepping capture:
-     * measured, the blade went through a standing man 0.1–0.15 s outside it on most blows.) */
-    i0 = Math.max(apex, i0 - Math.round(0.18 * (u.atk[k].rate || 1) / dur * N));
-    u.atk[k].hit = Math.max(0.05, i0 / N); u.atk[k].tipF = best.d; u.atk[k]._nat = false;
-    u.atk[k].strikeFix = THREE.MathUtils.clamp((Math.min(N, i1 + 3) - i0) / N * dur, 0.15, 0.8);
-    /* AND HE STANDS WHERE IT CROSSES YOU. The captured swordsman is a small man cutting close, so a blow passes
-     * where its blade crossed his front (`best.d`), not at a stopping distance typed for a big one: measured, at 1.9 m
-     * every window passed you a metre and a half short. He comes in to that, and the lunge is only a step. */
-    /* (2026-10-18, the owner: "THE PALADIN'S SWORD DOESN'T EVEN GET NEAR ME"): 0.95 of the crossing, and `palTrack`'s
-     * 0.88, put the blade's measured point a hand BEHIND your eye — the cut went through the body under the camera and
-     * past your ear, never across the picture. He stands so that point crosses `PAL_VIEW` in front of your face. */
-    u.atk[k].stop = THREE.MathUtils.clamp(best.d + PAL_STAND + (u.atk[k].vAdj || 0), 1.15, 3.0); u.atk[k].lunge = 0.15;
-    u.atk[k].reach = Math.max(u.atk[k].stop + 0.8, Math.min(u.atk[k].reach, u.atk[k].stop + 1.4));
-    /* AND THE BLOW IS TURNED ONTO THE MAN IN FRONT OF HIM. A captured cut finishes where the performer's partner was,
-     * which is not always straight ahead of where his hips point — the TC string's first cut comes down across his
-     * left side. The clip is turned about the vertical (its root's rotation, every key) by the bearing the blade's
-     * middle had at the blow, so the blade crosses his own line there. Measured, logged on `u.atk[k].yawFix`. */
-    const phi = THREE.MathUtils.clamp(-best.bear, -0.9, 0.9);      // (no more than about fifty degrees: further and the whole move reads as a man facing the wrong way)
-    if (Math.abs(phi) > 0.05) {
-      const tr = a.getClip().tracks.find((t) => t.name === 'Hips.quaternion');
-      if (tr) {
-        // ramped: nothing at the clip's first frame, all of it at the blow, nothing again at its last — he turns his body
-        // INTO the cut, and a chained piece still meets the one before it where that one ended
-        const qy = new THREE.Quaternion(), q = new THREE.Quaternion(), v = tr.values, T = tr.times, hT = dur * best.frac, Y = new THREE.Vector3(0, 1, 0);
-        for (let i = 0, j = 0; i < v.length; i += 4, j++) {
-          const t = T[j], w = t <= hT ? THREE.MathUtils.smootherstep(t, 0, hT) : 1 - THREE.MathUtils.smootherstep(t, hT, dur);
-          qy.setFromAxisAngle(Y, phi * w);
-          q.set(v[i], v[i + 1], v[i + 2], v[i + 3]).premultiply(qy); v[i] = q.x; v[i + 1] = q.y; v[i + 2] = q.z; v[i + 3] = q.w;
-        }
-        u.atk[k].yawFix = +phi.toFixed(2);
-      }
-    }
-  }
-  for (const k in u.atk) { const A = u.atk[k]; if (A.chain && (!u.atk[A.chain] || u.atk[A.chain].skip || !u.clips[A.chain])) A.chain = null; }
-  // the distance his footwork holds and the longest he throws from, again, off the measured blows
-  let acc = 0, w = 0, mx = 0;
-  for (const k in u.kind.use) { const A = u.atk[k]; if (!A || A.skip || !u.clips[k]) continue; acc += A.reach * u.kind.use[k]; w += u.kind.use[k]; if (!A.minDist) mx = Math.max(mx, A.reach); }
-  if (w > 0) { u.ring = acc / w; u.maxReach = mx; }
-  u.holdAnim = hold;
-  u.palMeasured = true;
-  // and his timing off it, here and now (the creature tick that would have done it is not run while he waits underground)
-  naturalSwings(u); u.natDone = true; u.palNat = true;
-  for (const k in u.atk) { const A = u.atk[k]; if (A.strikeFix) { const w2 = A.strikeFix / (A.rate || 1), d = w2 - A.strike; A.strike = w2; A.recover = Math.max(0.08, A.recover - Math.max(0, d)); } }
-  // (round 6: the Great Sword Pack's cuts walk all the way back to the guard; he leaves that 30 % sooner, into whatever
-  // he does next — the blend carries the rest — so the fight is blows, not recoveries)
-  for (const k in u.atk) { const A = u.atk[k]; if (A.strikeFix && !A._recK) { A._recK = true; A.recover *= 0.7; } }
-}
-/* THE SWINGS. `hit` is overwritten by the clip's own contact frame when it
- * loads (above); `natHold` is the held top of the swing in seconds and
- * `cockF` how far toward contact the blade is drawn before it holds. The
- * reaches are a two-metre blade on a 2.45 m man. Two hits for the cleave,
- * the turning sweep and the leap; the wide sweep and its return are the ones
- * that go through farmers. */
-/* AND HIS STRING (the owner's MocapOnline "TC Sword" pack): one swordsman's combination cut into its four blows,
- * each of which can be thrown alone and each of which CHAINS into the next — so the whole string comes back as he
- * played it, with a hit of its own on every blow, and he can stop after any of them. The first cut holds its draw;
- * the second and third are quick, with only a beat before them (a delay you learn, Sekiro's rhythm); the last
- * raises the blade high, HOLDS it there — the longest tell he has — and brings it down into the stones. */
-/* (and slower than the captured man by a fifth, `rate` 0.78, the owner: "bigger … slightly massive with heavy
- * combat": a 2.75 m man in plate does not swing like a fencer) */
-/* HIS SWINGS NOW (2026-10-17, the owner: "use these animations instead, scrape all the others unless they match
- * well"): the EEJANAI pack's slashes, each a whole blow of a real swordsman, and chained into strings of his own.
- * `hit`, the active window and the turn onto you are measured on his blade at load (`palContact`); `lunge` is
- * roughly the ground the clip itself covers; every one holds its draw (`natHold`) for the tell. The fifth starts
- * three metres up in the air with no take-off and is left out. */
-/* HIS STRINGS (2026-10-18, the owner: "THE PALADIN IS THE WORST FIGHT HIS MOVESETS HAS TO BE AND FEEL BETTER"): each
- * cut a touch quicker (`rate` 1.18 — the held top, `natHold`, stays to read it by), and the cuts chain as combinations
- * rather than coin tosses: a two-cut (pS1 → pS3), a three-cut ending in the overhead (pS2 → pS1 → pS3 → pS4 within
- * `chainMax`), and the leap (pS9) followed by a cut. The overhead finishes a string and is the opening after it. */
-MUT_ATTACKS.pS1 = { wind: 0.6, strike: 0.16, recover: 0.4, hit: 0.5, reach: 2.70, lunge: 0.7, chain: 'pS3', chainP: 0.80, w: 0.20, guardK: 1.40, limbs: [0], stop: 1.90, natHold: 0.26, cockF: 0.55, rate: 1.18, twoHanded: true, cleave: true };
-MUT_ATTACKS.pS2 = { vAdj: 0.25, wind: 0.7, strike: 0.16, recover: 0.4, hit: 0.5, reach: 3.50, lunge: 1.4, chain: 'pS1', chainP: 0.80, w: 0.16, guardK: 1.60, limbs: [0], stop: 1.90, natHold: 0.20, cockF: 0.55, rate: 1.18, twoHanded: true, cleave: true };
-MUT_ATTACKS.pS3 = { wind: 0.7, strike: 0.16, recover: 0.4, hit: 0.5, reach: 3.30, lunge: 1.2, chain: 'pS4', chainP: 0.65, w: 0.14, guardK: 1.60, limbs: [0], stop: 1.90, natHold: 0.16, cockF: 0.55, rate: 1.18, twoHanded: true, cleave: true };
-MUT_ATTACKS.pS4 = { wind: 0.7, strike: 0.16, recover: 0.6, hit: 0.5, reach: 3.40, lunge: 1.3, chain: null, chainP: 0, w: 0.14, dmg: 2, slam: true, guardK: 1.60, limbs: [0], stop: 1.90, natHold: 0.20, cockF: 0.55, rate: 1.18, twoHanded: true, cleave: true };
-MUT_ATTACKS.pS6 = { wind: 0.8, strike: 0.18, recover: 0.6, hit: 0.5, reach: 3.30, lunge: 1.1, chain: 'pS3', chainP: 0.35, w: 0.14, guardK: 1.70, limbs: [0], stop: 1.90, natHold: 0.30, cockF: 0.60, rate: 1.0, twoHanded: true, cleave: true };
-MUT_ATTACKS.pS7 = { wind: 1.0, strike: 0.18, recover: 0.8, hit: 0.5, reach: 2.60, lunge: 0.4, chain: null,  chainP: 0,    w: 0.12, dmg: 2, guardK: 2.10, limbs: [0], stop: 1.90, natHold: 0.50, cockF: 0.70, rate: 1.0, twoHanded: true, cleave: true, slam: true };
-MUT_ATTACKS.pS8 = { wind: 0.4, strike: 0.14, recover: 0.4, hit: 0.5, reach: 2.80, lunge: 0.8, chain: 'pS1', chainP: 0.55, w: 0.14, guardK: 1.20, limbs: [0], stop: 1.90, natHold: 0.10, cockF: 0.50, rate: 1.0, twoHanded: true, cleave: true };
-MUT_ATTACKS.pS9 = { wind: 0.9, strike: 0.18, recover: 0.7, hit: 0.5, reach: 4.00, lunge: 1.7, chain: 'pS1', chainP: 0.60, w: 0.12, dmg: 2, hold: true, minDist: 3.2, guardK: 2.00, limbs: [0], stop: 2.02, natHold: 0.40, cockF: 0.60, rate: 1.0, twoHanded: true, cleave: true, slam: true };
-MUT_ATTACKS.pCut1   = { wind: 0.8, strike: 0.16, recover: 0.4, hit: 0.64, reach: 2.90, lunge: 1.1, chain: 'pCut2', chainP: 0.62, w: 0.30, guardK: 1.50, limbs: [0], stop: 1.70, natHold: 0.30, cockF: 0.55, twoHanded: true, cleave: true };
-MUT_ATTACKS.pCut2   = { wind: 0.4, strike: 0.16, recover: 0.4, hit: 0.35, reach: 2.70, lunge: 1.0, chain: 'pCut3', chainP: 0.55, w: 0.10, guardK: 1.50, limbs: [0], stop: 1.70, natHold: 0.12, cockF: 0.50, twoHanded: true, cleave: true };
-MUT_ATTACKS.pCut3   = { wind: 0.5, strike: 0.16, recover: 0.4, hit: 0.46, reach: 2.70, lunge: 1.0, chain: 'pSlam', chainP: 0.55, w: 0.10, guardK: 1.60, limbs: [0], stop: 1.70, natHold: 0.18, cockF: 0.50, twoHanded: true, cleave: true };
-MUT_ATTACKS.pSlam   = { wind: 1.0, strike: 0.18, recover: 0.9, hit: 0.48, reach: 2.90, lunge: 1.0, chain: 'pCut1', chainP: 0.20, w: 0.22, dmg: 2, guardK: 2.10, limbs: [0], stop: 1.80, natHold: 0.50, cockF: 0.70, twoHanded: true, cleave: true, slam: true };
-MUT_ATTACKS.pWide   = { wind: 0.9, strike: 0.18, recover: 0.6, hit: 0.45, reach: 3.40, lunge: 1.5, chain: 'pBack',   chainP: 0.55, w: 0.26, guardK: 1.60, limbs: [0], stop: 2.20, natHold: 0.34, cockF: 0.50, twoHanded: true, cleave: true };
-MUT_ATTACKS.pBack   = { wind: 0.7, strike: 0.16, recover: 0.6, hit: 0.45, reach: 3.30, lunge: 1.2, chain: 'pDown',   chainP: 0.35, w: 0.16, guardK: 1.40, limbs: [0], stop: 2.20, natHold: 0.14, cockF: 0.50, twoHanded: true, cleave: true };
-MUT_ATTACKS.pDown   = { wind: 1.0, strike: 0.16, recover: 0.8, hit: 0.45, reach: 3.00, lunge: 1.4, chain: 'pWide',   chainP: 0.30, w: 0.18, dmg: 2, guardK: 2.00, limbs: [0], stop: 2.10, natHold: 0.48, cockF: 0.62, twoHanded: true, slam: true };
-MUT_ATTACKS.pCombo1 = { wind: 0.8, strike: 0.18, recover: 0.7, hit: 0.45, reach: 3.10, lunge: 1.6, chain: null,      chainP: 0,    w: 0.12, guardK: 1.50, limbs: [0], stop: 2.10, natHold: 0.22, cockF: 0.50, twoHanded: true, cleave: true };
-MUT_ATTACKS.pCombo2 = { wind: 0.8, strike: 0.18, recover: 0.7, hit: 0.45, reach: 3.10, lunge: 1.6, chain: null,      chainP: 0,    w: 0.12, guardK: 1.50, limbs: [0], stop: 2.10, natHold: 0.22, cockF: 0.50, twoHanded: true, cleave: true };
-MUT_ATTACKS.pCombo3 = { wind: 0.8, strike: 0.18, recover: 0.7, hit: 0.45, reach: 3.10, lunge: 1.6, chain: null,      chainP: 0,    w: 0.10, guardK: 1.50, limbs: [0], stop: 2.10, natHold: 0.22, cockF: 0.50, twoHanded: true, cleave: true };
-MUT_ATTACKS.pSpin   = { wind: 1.0, strike: 0.26, recover: 0.7, hit: 0.50, reach: 3.60, lunge: 0.6, chain: 'pWide',   chainP: 0.25, w: 0.12, dmg: 2, hold: true, guardK: 2.00, limbs: [0], stop: 2.20, natHold: 0.36, cockF: 0.50, twoHanded: true, cleave: true };
-MUT_ATTACKS.pLeap   = { wind: 1.1, strike: 0.22, recover: 0.8, hit: 0.50, reach: 6.50, lunge: 5.0, chain: 'pWide',   chainP: 0.40, w: 0.14, dmg: 2, hold: true, guardK: 2.00, minDist: 3.6, limbs: [0], stop: 2.20, natHold: 0.26, cockF: 0.60, twoHanded: true, slam: true };
-MUT_KINDS.paladin = {
-  glb: 'assets/paladin.glb', faceFix: 0, solo: true, skin: null, bones: null, noSand: true, preParse: true,
-  facingRef: 'mixamo', natural: true, gaitBySpeed: true, fortBody: true, paladin: true, clipGated: true, heavyBlock: true,
-  h: 2.75, hp: 85, dmg: 1, hitR: 0.95, body: 0.74, lungeStop: 1.95, landSlop: 0.55, limbR: 0.50, lungeLead: 0.30,
-  speedK: 0.92, windK: 1.00, reachK: 1.00, lungeK: 0.90, aggr: 2.60, press: 0.95, chainMax: 3, stepBack: 1.6,   // (round 6: he presses — four blows in twenty seconds was a man waiting)
-  use: { pS1: 0.26, pS2: 0.24, pS3: 0.22, pS4: 0.18, pS9: 0.10 },   // (round 7: the high spin is out — the owner: "some of the spin moves are bad")      // (round 5: the Great Sword Pack's two-handed blows — see tools/paladin_bake.py)
-  circle: 0.08, step: 0.10, feint: 0.08, sizeUp: 0.08, restless: 1, smart: 1,
-  turnMax: 3.4, yawK: 0.70, fade: 0.25,
-  poise: 26, poiseBack: 2.0, poiseWait: 1.1, parryK: 0.90, recoilK: 0.40, stunK: 0.60, blockCost: 1.25, block: 0.30,
-  fidgetK: 0.10, fidgetGap: 3.6,
-  reacts: true, aimed: true, barLen: 0.0, aimK: 2.2, aimDrop: 0.6, aimFrom: 0.5, grip: true, bossDeath: true, landFn: (u, A, d, w) => palLands(u, A, d, w),   // (the hit is HIS BLADE through you, over the whole cut — `palContact`'s window; the arm is still steered onto you late in the draw)
-  rig: { arm: 'RightArm', fore: 'RightForeArm', hand: 'RightHand', tip: 'paladin_tip',
-         armL: 'LeftArm', foreL: 'LeftForeArm', handL: 'LeftHand', head: 'Head',
-         limbs: [['RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase']] },
-  rag: PALADIN_RAG,
-  emis: 0.18, rim: [0.075, 0.064, 0.060], gamma: 0.88,
-  author: authorPaladinClips,
-  anim: { idle: 'pReady', walk: 'pWalkT', run: 'pRunT', roar: 'pCast', die: 'pDie', rate: 1.0, lean: 0.03, strafeK: 1.0 },
-  gaits: { walk: ['pWalkT'], run: ['pRunT'], idle: ['pReady'], strafeL: ['pStrL'], strafeR: ['pStrR'] },
-  alias: { idle2: 'pReady', walk2: 'pWalkT', run2: 'pRunT', roar: 'pCast', roar2: 'pCast', pRoar: 'pCast', die2: 'pDieB', strafeL: 'pStrL', strafeR: 'pStrR',
-           hit: 'pHit', hitBig: 'pHitBig', hitSide: 'pHitBig', hitBack: 'pHit', hitHead: 'pHitBig', block: 'pBlock', blockC: 'pBlock', parry: 'pHitBig', calm: 'pReady' },
-  stunClip: 'pHitBig', first: 'pReady', sleepIdle: 'pReady', wakeAt: 0,
-  /* AT HALF HEALTH HE RAISES THE BLADE OVER HIS HEAD AND SHOUTS, and the
-   * gaps between his swings close. The tells do not. */
-  rage: { aggr: 2.9, speedK: 0.95, press: 0.92, chainMax: 4, feint: 0.18, circle: 0.08, block: 0.36 },
-  rageClip: 'pCast', rageDur: 1.6,
-  voice: { f: 0.62, growl: 1.35, rasp: 1.10, throat: 'bellow' },
-};
-// (not parsed: the dark knight holds his place — `updateDarkKnight`)
-const paladin = { unit: null, out: false, cut: null, bar: null };
-/* made with the twenty, underground at their park spot (so his save key is
- * the same in every game, and a save that has him dead has him retired) */
+/* ---- THE DARK KNIGHT'S SLOT IN THE FIRST CASTLE --------------------------
+ * (The paladin who stood here first is gone for good, 2026-11-04: his model, his moves and every piece of his
+ * machinery — his blade, his trail, his cleave, his entrance take. The dark knight took his place on 2026-10-19.)
+ * The dark knight is made with the twenty, underground at their park spot (so his save key is the same in every
+ * game, and a save that has him dead has him retired); `updateDarkKnight` runs him, and `out` is him on the street. */
+const dkSlot = { unit: null, out: false };
 if (FARM_ROSTER.length) {
   const P = FARM_PARK();
-  paladin.unit = makeMutant(P.x, P.z, 'darkKnight', P.y);   // (the dark knight in the paladin's slot, 2026-10-19: `updateDarkKnight`)
-  paladin.unit.g.visible = false;
+  dkSlot.unit = makeMutant(P.x, P.z, 'darkKnight', P.y);
+  dkSlot.unit.g.visible = false;
 }
-function paladinDone() { const u = paladin.unit; return !u || u.retired || !u.st.alive; }
-function palReady() {
-  const u = paladin.unit;
-  return !!(u && u.model && u.mixer && !(u.clipsPending > 0) && u.clips.pWalkT && u.texW && u.texW.compiled);
-}
-// (from the farmers' tick: half of them down, and he is ready, and nothing else has the camera)
-function palMayCome(dead) {
-  const u = paladin.unit;
-  if (!u || u.retired || !u.st.alive || paladin.out || paladin.cut) return;
-  if (dead < Math.ceil(farmUnits.length / 2) || !palReady() || frozen() || dying || restore || applyingSave || bootHold > 0) return;
-  palJoin();
-}
-/* HE JUST COMES (2026-10-17, round 4; the owner: "take out the cutscene and just make him join the fight half way").
- * No take: the bell's last stroke, and he is on the street — on open paving nine to fourteen metres off, with a
- * clear line to you, off to your side or behind you rather than in front of your face — awake, and walking in.
- * (`palStartCut` and its take are kept, unused.) */
-function palJoin(quiet = false) {
-  const u = paladin.unit, me = camera.position;
-  camera.getWorldDirection(_pdnA); _pdnA.y = 0; _pdnA.normalize();
-  const fy = fortCourtAt(me.x, me.z) ?? FORT_Y + FORT_FLOOR;
-  const roomy = (x, z) => {
-    if (fortCourtAt(x, z) === null) return false;
-    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; if (fortCourtAt(x + Math.cos(a) * 0.9, z + Math.sin(a) * 0.9) === null) return false; }
-    return true;
-  };
-  /* AND NEVER IN A WALL OR A HOUSE (2026-10-18, the owner: "the paladin also didnt even spawn right breaking the
-   * game he should not be spawning in walls where you cant find him"). Three holes let a bad spot through:
-   * `keepHitsWall` only looks at the wall cells round the two ENDS of a line, so a 9.5-14 m "clear line" never saw
-   * the walls between; `fortCourtAt` takes a house's boards for street; and nothing asked whether the spot was on the
-   * floor you can walk to or clear of a wall. Now a spot is the paving (`farmCobble`), on the walkable floor
-   * (`siteOnMain`), a metre off any wall (`keepWallNear`), and seen down a line walked a metre at a time. Failing
-   * all of those, the street's own middle line, the farthest point of it that passes. */
-  const street = (x, z) => roomy(x, z) && (!fortWalls || (farmCobble(x, z) && siteOnMain(FORT_SITE, x, z) && !keepWallNear(x, z, 1.0, fy + 0.3, fy + 2.4, FORT_SITE)));
-  const clear = (x, z) => {
-    if (!fortWalls) return true;
-    const L = Math.hypot(x - me.x, z - me.z), n = Math.max(1, Math.ceil(L));
-    for (let i = 0; i < n; i++) {
-      const t0 = i / n, t1 = (i + 1) / n, ax = me.x + (x - me.x) * t0, az = me.z + (z - me.z) * t0, bx = me.x + (x - me.x) * t1, bz = me.z + (z - me.z) * t1;
-      if (keepHitsWall(ax, az, bx, bz, fy + 1.2, FORT_SITE) || keepHitsWall(ax, az, bx, bz, fy + 2.0, FORT_SITE)) return false;
-    }
-    return true;
-  };
-  let S = null, best = -1e9;
-  for (let k = 0; k < 24; k++) {
-    const a = k / 24 * Math.PI * 2, dx = Math.sin(a), dz = Math.cos(a);
-    for (const r of [14, 12.5, 11, 9.5, 8]) {
-      const x = me.x + dx * r, z = me.z + dz * r;
-      if (!street(x, z) || !clear(x, z)) continue;
-      const sc = r * 0.15 - (dx * _pdnA.x + dz * _pdnA.z) * 1.5;   // (out of your face: to the side, or behind)
-      if (sc > best) { best = sc; S = { x, z }; }
-      break;
-    }
-  }
-  if (!S) {
-    let bd = -1;
-    for (let i = 0; i < FARM_SPINE.length - 1; i++) for (let t = 0; t <= 1; t += 0.1) {
-      const L = fortW(FARM_SPINE[i][0] + (FARM_SPINE[i + 1][0] - FARM_SPINE[i][0]) * t, FARM_SPINE[i][1] + (FARM_SPINE[i + 1][1] - FARM_SPINE[i][1]) * t);
-      const d = Math.hypot(L.x - me.x, L.z - me.z);
-      if (d < 6 || d > 40 || !street(L.x, L.z)) continue;
-      const sc = (clear(L.x, L.z) ? 100 : 0) - Math.abs(d - 12);
-      if (sc > bd) { bd = sc; S = { x: L.x, z: L.z }; }
-    }
-  }
-  if (!S) { const D = fortW(FORT_DOOR.x, FORT_DOOR.z + 2.5); S = { x: D.x, z: D.z }; }
-  const y = fortCourtAt(S.x, S.z) ?? FORT_Y + FORT_FLOOR;
-  u.g.position.set(S.x, y, S.z);
-  u.g.rotation.y = Math.atan2(me.x - S.x, me.z - S.z);
-  if (u.model) u.model.rotation.y = 0;
-  u.holdAnim = false;
-  u.st.awake = true; u.st.roar = 0; u.st.cool = 0.8; u.st.atk = -1; u.st.step = 0;
-  paladin.out = true;
-  u.g.visible = true;
-  if (quiet) return;
-  farmFight.bellN = 8;
-  const B = farmBellSpot(); sfxCastleBell(B.x, B.z, 1.3);
-  sfxMutRoar(Math.hypot(S.x - me.x, S.z - me.z) * 0.5, u.kind.voice);
-}
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { palDbg: { farmCobble, siteOnMain, keepWallNear, fortCourtAt, FORT_SITE, FARM_SPINE, fortW, palJoin, paladin: () => paladin, fortLineClear, farmDoors } }));
+function dkDone() { const u = dkSlot.unit; return !u || u.retired || !u.st.alive; }
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { fortDbg: { farmCobble, siteOnMain, keepWallNear, fortCourtAt, FORT_SITE, FARM_SPINE, fortW, fortLineClear, farmDoors } }));
 // leaving the castle mid-fight puts him back where he came from; he comes again when you do, the way the twenty do
-function palCalm() {
-  const u = paladin.unit; if (!u || u.retired || !u.st.alive) return;
-  paladin.out = false; paladin.cut = palCutRef = null; palDrone(false);
+function dkCalm() {
+  const u = dkSlot.unit; if (!u || u.retired || !u.st.alive) return;
+  dkSlot.out = false;
   u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.holdAnim = false; u.g.visible = false;
   if (mutToken === u) mutToken = null;
   const P = FARM_PARK(); u.g.position.set(P.x, P.y, P.z);
-  palBarShow(false);
 }
-/* HIS OWN BRANCH OF THE CREATURE TICK: hidden until he is out, on the
- * cobbles, and the cut's while the cut is running. */
-function palUnitPre(u, dt) {
-  if (u.kind.natural && !u.palNat && u.palMeasured) {          // (after `palContact`: run on the first frame, before the clips were in, it set nothing and never ran again)
-    naturalSwings(u); u.natDone = true; u.palNat = true;
-    // (natural timing cuts the active window to a third of what follows the contact: his is the measured fast part)
-    for (const k in u.atk) { const A = u.atk[k]; if (A.strikeFix) { const w = A.strikeFix / (A.rate || 1), d = w - A.strike; A.strike = w; A.recover = Math.max(0.08, A.recover - Math.max(0, d)); } }
-  }
-  const W = u.texW || (u.texW = {});
-  if (u.model && !(u.clipsPending > 0) && texWarmStep(u.model, W) && !W.asked) {
-    W.asked = true;
-    try { renderer.compileAsync(u.model, camera, scene).then(() => { W.compiled = true; }, () => { W.compiled = true; }); } catch (e) { W.compiled = true; }
-  }
-  if (!paladin.out) {
-    u.g.visible = false;
-    if (u.st.alive) { const P = FARM_PARK(); u.g.position.set(P.x, P.y, P.z); }
-    return true;
-  }
-  if (!u.st.alive) return false;
-  /* AND HE IS NEVER LOST OFF THE STREET (2026-10-17, the owner: "the paladins health bar shows up when reloading a
-   * checkpoint but he never spawns"): a join decided while a checkpoint was still putting you back placed him off the
-   * spot you stood on BEFORE the restore — the bar up and the man nowhere. Out, alive and more than 30 m off you in
-   * the castle, or six metres under you, he is put back on the street near you. */
-  if (inFort && !paladin.cut && !frozen()) {
-    const p0 = u.g.position;
-    if (Math.hypot(p0.x - camera.position.x, p0.z - camera.position.z) > 30 || camera.position.y - playerEye() - p0.y > 6) palJoin(true);
-    // and never left inside a house or off the walkable floor: two seconds of it and he is put back on the street
-    else if (fortWalls) {
-      u.palOffT = (farmCobble(p0.x, p0.z) && siteOnMain(FORT_SITE, p0.x, p0.z)) ? 0 : (u.palOffT || 0) + dt;
-      if (u.palOffT > 2) { u.palOffT = 0; palJoin(true); }
-    }
-  }
-  u.g.visible = !!(fortWorld && fortWorld.visible) && inFort;
-  const p = u.g.position, ty = fortCourtAt(p.x, p.z);
-  if (ty !== null) p.y += (ty - p.y) * Math.min(1, dt * 12);
-  return !!paladin.cut;
-}
-/* ---- THE BLADE: where it is, the tell on it, the trail behind it, and what it goes through */
-const _pdnH = new THREE.Vector3(), _pdnT = new THREE.Vector3(), _pdnA = new THREE.Vector3(), _pdnB = new THREE.Vector3(), _pdnC = new THREE.Vector3();
-function palBlade(u) {
-  if (!u.palTip || !u.palHilt) return false;
-  u.palHilt.getWorldPosition(_pdnH); u.palTip.getWorldPosition(_pdnT);
-  return true;
-}
-// the nearest point on the blade to `p`, into `out`
-function palOnBlade(p, out) {
-  _pdnA.subVectors(_pdnT, _pdnH);
-  const L2 = _pdnA.lengthSq() || 1, t = THREE.MathUtils.clamp(_pdnC.subVectors(p, _pdnH).dot(_pdnA) / L2, 0, 1);
-  return out.copy(_pdnH).addScaledVector(_pdnA, t);
-}
-const PAL_TRAIL_N = 18;
-function makePalTrail() {
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PAL_TRAIL_N * 2 * 3), 3));
-  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(PAL_TRAIL_N * 2 * 3), 3));
-  const idx = [];
-  for (let i = 0; i < PAL_TRAIL_N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false }));
-  m.frustumCulled = false; m.renderOrder = 6; m.visible = false; m.name = 'palTrail';
-  scene.add(m);
-  const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xdfe6ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-  glint.raycast = () => {}; glint.visible = false; scene.add(glint);
-  return { m, glint, h: [], t: [], on: 0, g: 0 };
-}
-let palTrail = null;
-/* THREE BEATS A SWING, off his own swing clock: THE TELL (a cold glint on
- * the point, held through the wind-up, and a low grunt of effort), THE
- * STRIKE (a heavy rush of air and a pale sheet down the blade's whole path —
- * hilt to point, so you see the arc it cut), THE IMPACT (a blade that comes
- * down on the stones hits them: a thud you feel, grit, sparks). */
-function palSwingFx(u, dt) {
-  const T = palTrail || (palTrail = makePalTrail());
-  if (!palBlade(u)) return;
-  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
-  const F = u.swFx || (u.swFx = { swing: null, atk: -1, tell: false, strike: false, hit: false, cut: new Set() });
-  if (A && (F.swing !== st.swing || st.atk < F.atk - 0.05)) { F.swing = st.swing; F.tell = F.strike = F.hit = false; F.cut.clear(); }
-  F.atk = A ? st.atk : -1;
-  const dist = Math.hypot(_pdnT.x - camera.position.x, _pdnT.z - camera.position.z), pan = panTo(_pdnT.x, _pdnT.z);
-  if (A) {
-    const hitT = A.wind, swingT = A.natHold ? Math.max(0.14, (A.wind - A.natHold) * (1 - (A.cock || 0))) : Math.min(0.35, A.wind * 0.5);
-    if (!F.tell) { F.tell = true; sfxMutRoar(dist * 1.6, u.kind.voice); }
-    if (!F.strike && st.atk >= hitT - swingT) { F.strike = true; T.h.length = T.t.length = 0; sfxFlailRush(dist, pan, (A.dmg || 1) > 1 ? 1.5 : 1.25); }
-    if (!F.hit && st.atk >= hitT) {
-      F.hit = true;
-      const floor = fortCourtAt(_pdnT.x, _pdnT.z) ?? u.g.position.y;
-      if (_pdnT.y - floor < 0.6) palGroundHit(_pdnT.x, floor, _pdnT.z, (A.dmg || 1) > 1 ? 1 : 0.7);
-    }
-    // and anyone between him and you on the way through
-    if (A.cleave && st.atk >= hitT - 0.06 && st.atk <= hitT + A.strike + 0.12) palCleave(u, F.cut);
-  }
-  // the glint: on from the tell to the strike
-  const want = A && F.tell && !F.strike ? 1 : 0;
-  T.g += (want - T.g) * Math.min(1, dt * 12);
-  T.glint.visible = T.g > 0.02;
-  if (T.glint.visible) {
-    T.glint.position.copy(_pdnT);
-    const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.016);
-    T.glint.material.opacity = T.g * pulse; T.glint.scale.setScalar(0.5 + 0.35 * pulse);
-  }
-  // the sheet: the hilt and the point, sampled while the strike is in the air
-  const live = A && F.strike && st.atk <= A.wind + A.strike + 0.06;
-  if (live) { T.h.push(_pdnH.clone()); T.t.push(_pdnT.clone()); if (T.h.length > PAL_TRAIL_N) { T.h.shift(); T.t.shift(); } T.on = 1; }
-  else T.on = Math.max(0, T.on - dt * 3.5);
-  T.m.visible = T.on > 0.01 && T.h.length > 2;
-  if (!T.m.visible) return;
-  const pos = T.m.geometry.attributes.position.array, col = T.m.geometry.attributes.color.array, n = T.h.length;
-  for (let i = 0; i < PAL_TRAIL_N; i++) {
-    const j = Math.min(n - 1, i), f = n > 1 ? j / (n - 1) : 1;
-    const h = T.h[j], t = T.t[j];
-    // (faint, and gone within two metres of your eye: close up an additive sheet hilt-to-point was half the picture
-    // white — measured, the owner's whole view on a blow that passed his face)
-    // (0.22 and gone inside 1.2-2.6 m until 2026-10-18, the owner: "have hits actually visually be better": at that the
-    // arc of a blow that reached you was never seen — on stills of a whole cut, not one frame showed it. Twice as strong
-    // now, and still thinned inside 1.8 m and gone at 0.8, so a blade past your face is a streak, not a white wall)
-    const near = THREE.MathUtils.smoothstep(Math.min(h.distanceTo(camera.position), t.distanceTo(camera.position)), 0.8, 1.8);
-    const al = Math.pow(f, 1.4) * T.on * (i < n ? 1 : 0) * 0.45 * near;
-    pos[i * 6] = h.x * 0.65 + t.x * 0.35; pos[i * 6 + 1] = h.y * 0.65 + t.y * 0.35; pos[i * 6 + 2] = h.z * 0.65 + t.z * 0.35;   // (the sheet is the outer two thirds of the blade)
-    pos[i * 6 + 3] = t.x; pos[i * 6 + 4] = t.y; pos[i * 6 + 5] = t.z;
-    col[i * 6] = 0.30 * al; col[i * 6 + 1] = 0.32 * al; col[i * 6 + 2] = 0.38 * al;
-    col[i * 6 + 3] = 0.62 * al; col[i * 6 + 4] = 0.64 * al; col[i * 6 + 5] = 0.72 * al;
-  }
-  T.m.geometry.attributes.position.needsUpdate = T.m.geometry.attributes.color.needsUpdate = true;
-}
-// a blade on the stones: felt, heard and seen, whether it found anyone or not
-function palGroundHit(x, floor, z, k0 = 1) {
-  const dist = Math.hypot(x - camera.position.x, z - camera.position.z), k = Math.max(0, 1 - dist / 16);
-  sfxSlam(0.55 + 0.4 * k0);
-  _pdnC.set(x, floor + 0.05, z);
-  worldSparks(_pdnC, Math.round(18 * k0));
-  idolDust(_pdnC, _pdnA.set(0, 0, 0), Math.round(16 * k0), 0.9, 0.7);
-  if (k > 0) addTrauma(0.32 * k * k0);
-}
-/* HIS BLADE HAS TO GO THROUGH YOU. Every frame of a blow's active window the blade's sweep since the last frame —
- * hilt to point, both frames, the strip between them — is tested against you as a body: a line from a hand's
- * width over your feet to your eye, half a metre thick. A cut that passes you a metre wide misses; one that goes
- * through you lands, at whatever height. (`kind.landFn`; the caller does the guard, the parry and the damage.) */
-const _plQ0 = new THREE.Vector3(), _plQ1 = new THREE.Vector3(), _plQ2 = new THREE.Vector3(), _plQ3 = new THREE.Vector3(), _plX = new THREE.Vector3();
-const _plV = new THREE.Vector3();
-const PAL_VIEW = 0.30;   // where his blow is judged: this far in front of your eye, toward him (`palLands`)
-const PAL_STAND = -0.13;  // and where he stands for it: the crossing point plus this (`palContact`, `palTrack`) — measured (tools/probes.js 'paladin'): at +0.32 his blade crossed your line of sight 0.54-0.85 m out
-function palLands(u, A, dist, was) {
-  if (!palBlade(u)) return false;
-  /* JUDGED WHERE YOU SEE IT (2026-10-18). A ring round the line under the camera took the blade as it entered the side
-   * of your body — out of the picture. The ring is now `PAL_VIEW` in front of your eye toward him, chest to brow: the
-   * blow counts as the steel crosses your face, and the hitstop freezes it there. */
-  const c0 = camera.position, feet = c0.y - playerEye(), R = 0.40;
-  const vx = u.g.position.x - c0.x, vz = u.g.position.z - c0.z, vl = Math.hypot(vx, vz) || 1;
-  const cam = _plV.set(c0.x + vx / vl * PAL_VIEW, c0.y, c0.z + vz / vl * PAL_VIEW);
-  const prev = u.palPrevBlade && u.palPrevBlade.at === u.st.swing ? u.palPrevBlade : null;
-  _plQ0.copy(_pdnH); _plQ1.copy(_pdnT);
-  if (prev) { _plQ2.copy(prev.h); _plQ3.copy(prev.t); } else { _plQ2.copy(_pdnH); _plQ3.copy(_pdnT); }
-  const keep = u.palPrevBlade || (u.palPrevBlade = { h: new THREE.Vector3(), t: new THREE.Vector3(), at: null });
-  keep.h.copy(_pdnH); keep.t.copy(_pdnT); keep.at = u.st.swing;
-  const lo = cam.y - 0.8, hi = cam.y + 0.2;               // (chest to brow: what is in the picture; a blade at your knees is not seen land)
-  for (let a = 0; a <= 4; a++) {
-    const w = a / 4;
-    for (let k = 0; k <= 10; k++) {
-      const f = 0.25 + 0.75 * k / 10;              // the blade from a quarter of the way out to the point
-      _plX.copy(_plQ0).lerp(_plQ1, f).lerp(_pdnC.copy(_plQ2).lerp(_plQ3, f), w);
-      if (_plX.y < lo || _plX.y > hi) continue;                 // (only a blade that is at your body's height: not over your head)
-      if (Math.hypot(_plX.x - cam.x, _plX.z - cam.z) < R && ((_plX.x - c0.x) * vx + (_plX.z - c0.z) * vz) / vl > 0.08) { (u.hitPt || (u.hitPt = new THREE.Vector3())).copy(_plX); u.hitAt = performance.now(); return true; }
-    }
-  }
-  return false;
-}
-/* THROUGH THE FARMERS. A farmer whose chest or head the blade passes within
- * half a metre of on the way through is dead — cut through or his head off —
- * and he was not what it was swung at. Once each a swing. */
-function palCleave(u, done) {
-  for (const f of farmUnits) {
-    if (!f.st.alive || f.st.struck || !f.farm || !f.farm.out || f.farm.burst || done.has(f)) continue;
-    const fp = f.g.position;
-    if (Math.hypot(fp.x - u.g.position.x, fp.z - u.g.position.z) > 4.5) continue;
-    let hit = 0;
-    for (const [y, r] of [[1.15, 0.5], [1.55, 0.42]]) {
-      _pdnB.set(fp.x, fp.y + y, fp.z);
-      if (palOnBlade(_pdnB, _pdnC).distanceTo(_pdnB) < r) { hit = y; break; }
-    }
-    if (!hit) continue;
-    done.add(f);
-    const dx = fp.x - u.g.position.x, dz = fp.z - u.g.position.z;
-    palKill(f, dx, dz, hit > 1.4 || Math.random() < 0.35);
-  }
-}
-// a farmer killed by him: his head (or the whole of him) and nothing of it yours
-function palKill(f, dx, dz, head) {
-  if (!f.st.alive || f.st.struck) return;
-  f.lastHitMine = false;
-  f.st.mine = false; f.st.foe = null;
-  f.st.killP = 1; f.st.killOh = false; f.st.killGore = 2.0; f.st.hpBefore = f.st.hp;
-  f.st.gunHead = !!head;
-  f.st.hp = 0;
-  killMutant(f);
-  const L = Math.hypot(dx, dz) || 1;
-  f.hitDir.set(dx / L, 0, dz / L);
-  sfxKillThud(1.2);
-  playSampleAt('katHit', f.g.position.x, f.g.position.z, { gain: 1.4, ref: 10, far: 50, rate: 0.82 });
-}
-/* ---- HIS BLOWS ON YOUR GUARD. On top of what any block does (`blockMutant`
- * / `parryMutant`): the sparks come off HIS blade where it met yours — a
- * spray, lit by a flash — and the ring is lower and longer, the shove
- * further, the stop harder. A deflect is brighter still and freezes the
- * world longer: the reward for reading him. */
-function palBlockFx(u, parry) {
+/* A BLOCK AGAINST A HEAVY BLADE (`heavyBlock`: the dark knight) costs: a wall of sparks at your guard, a flash, a
+ * ring and a shove back a step. */
+const _hbC = new THREE.Vector3();
+function heavyBlockFx(u, parry) {
   const eye = camera.position;
-  if (palBlade(u)) palOnBlade(_pdnB.set(eye.x, eye.y - 0.35, eye.z), _pdnC);
-  else _pdnC.set(eye.x, eye.y - 0.3, eye.z);
-  const dx = eye.x - _pdnC.x, dz = eye.z - _pdnC.z, L = Math.hypot(dx, dz) || 1;
-  worldSparks(_pdnC, parry ? 64 : 44, dx / L * 2.2, dz / L * 2.2);
-  deflectLamp.position.copy(_pdnC); deflectLamp.intensity = parry ? 48 : 30; deflectT = parry ? 0.18 : 0.12;
+  _hbC.set(eye.x, eye.y - 0.3, eye.z);
+  worldSparks(_hbC, parry ? 64 : 44, 0, 0);
+  deflectLamp.position.copy(_hbC); deflectLamp.intensity = parry ? 48 : 30; deflectT = parry ? 0.18 : 0.12;
   playSample('blockMil', 0.9, 0.04, parry ? 0.78 : 0.6);
   sfxSlam(parry ? 0.3 : 0.5);
   addTrauma(parry ? 0.35 : 0.5);
@@ -106005,296 +104774,6 @@ function palBlockFx(u, parry) {
   slamDip = Math.max(slamDip, parry ? 0.05 : 0.07);
   hitstop = Math.max(hitstop, parry ? 0.26 : 0.13);
   if (!parry) knockback.multiplyScalar(1.5);
-}
-/* ---- THE BAR. One for him, under the middle of the picture, with his
- * name: he is not one of the twenty. */
-function palBarShow(on) {
-  let B = paladin.bar;
-  if (!B && on) {
-    const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;left:50%;bottom:9vh;transform:translateX(-50%);width:min(560px,70vw);z-index:30;pointer-events:none;font:600 13px Georgia,serif;letter-spacing:0.22em;color:#cfc6b8;text-shadow:0 1px 3px #000;opacity:0;transition:opacity 0.8s';
-    el.innerHTML = '<div style="margin-bottom:5px">THE PALADIN</div><div style="height:7px;background:rgba(10,8,8,0.75);border:1px solid rgba(200,190,170,0.35)"><div class="pb" style="height:100%;width:100%;background:linear-gradient(#9c2a22,#5e130f);transition:width 0.25s"></div></div>';
-    document.body.appendChild(el);
-    B = paladin.bar = { el, fill: el.querySelector('.pb'), shown: false };
-  }
-  if (!B) return;
-  if (B.shown !== on) { B.shown = on; B.el.style.opacity = on ? '1' : '0'; }
-}
-function palBarTick() {
-  const u = paladin.unit, B = paladin.bar;
-  const on = !!(u && paladin.out && !paladin.cut && u.st.alive && inFort && !menuOpen);
-  palBarShow(on);
-  if (B && on) B.fill.style.width = (100 * Math.max(0, u.st.hp) / (u.hpMax || u.kind.hp)).toFixed(1) + '%';
-}
-// after the fight AI has moved and posed him (from `update`)
-function updatePaladin(dt) {
-  const u = paladin.unit;
-  if (!u || u.retired || !u.kind.paladin) return;   // (the slot holds the dark knight now: `updateDarkKnight`)
-  /* (no `palBarTick` (2026-10-18, the owner: "give the paladin a normal healthbar too it doesnt match everyone
-   * else"): he is in `mutants`, so he has always had the bar over his head every other creature has — the
-   * named bar under the picture was a second one. `palBarShow`/`palBarTick` are left for the day a boss bar is
-   * wanted.) */
-  if (!paladin.out || !u.g.visible) return;
-  if (!paladin.cut) { palRootMotion(u); palTrack(u, dt); }
-  palSwingFx(u, dt);
-  // a step of his: heavy plate on stone, and you feel the near ones
-  if (u.st.alive && !paladin.cut) {
-    const P = u.palStep || (u.palStep = { t: 0, x: u.g.position.x, z: u.g.position.z });
-    const sp = Math.hypot(u.g.position.x - P.x, u.g.position.z - P.z) / Math.max(dt, 1e-3);
-    P.x = u.g.position.x; P.z = u.g.position.z;
-    if (sp > 0.4 && sp < 12) {
-      P.t -= dt * (0.9 + sp * 0.55);
-      if (P.t <= 0) { P.t = 1; palStep(u); }
-    }
-  }
-}
-/* HIS FEET GO WHERE THE SWORDSMAN'S WENT. A creature's swing is played in place and the game slides it by its
- * own `lunge`; the captured man steps a metre and more into most of these cuts (the second, 1.8 m), so played in
- * place his legs walked on the spot while he lunged — the owner's "he should move like a human". During a swing
- * his root follows the clip's own travel, turned to his heading, held by the castle's stone, and never through
- * you. (The measured contact counts the same travel: `palContact`.) */
-/* AND THE BLOW IS AIMED AT YOU (2026-10-17, round 6; the owner: "the paladins hits dont even get near me … he just
- * swinging randomly and his sword doesnt even touch my player"). A captured cut lands where the performer's partner
- * stood; the game turned him slowly (`turnMax`) and stopped him where a number said, so most of his blade went through
- * the air a metre off you. Through the draw — until the cut commits, a beat before the window opens — he turns into
- * you (up to 4.5 rad/s) and closes or gives ground to the distance his blade crosses his line for THIS blow
- * (`A.tipF`, measured on his own sword by `palContact`, from where the swing began), less the step the clip has
- * already taken. Once it commits it goes where it was aimed: that is the moment to be somewhere else. */
-function palTrack(u, dt) {
-  const st = u.st; if (!st.alive || !(st.atk >= 0) || !u.atk) return;
-  const A = u.atk[st.swing], a = A && u.clips[st.swing];
-  if (!A || !a || !A.tipF) return;
-  const p = u.g.position, cx = camera.position.x - p.x, cz = camera.position.z - p.z, cd = Math.hypot(cx, cz) || 1;
-  // (a blow begun with you further off than the draw can close — a chain off a cut you walked out of — is not thrown)
-  if (st.atk < 0.2 && !A.minDist && cd > A.tipF + Math.max(1.2, A.wind * 2.6)) { st.atk = -1; st.chained = false; st.chainAt = -1; return; }
-  if (u.cur !== a || st.atk > A.wind + A.strike) return;
-  // he turns into you through the draw, and on into the cut itself, slower: a wide blow follows a man stepping round it
-  // (measured, at 2 m/s round him with the turn stopped at the commit, nine cuts in twelve went past)
-  const committed = st.atk > A.wind - 0.1, tr = committed ? 2.4 : 4.5;
-  let dy = Math.atan2(cx, cz) - u.g.rotation.y; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
-  u.g.rotation.y += THREE.MathUtils.clamp(dy, -tr * dt, tr * dt);
-  if (committed) return;                                        // (but he does not come on after you once it is coming)
-  const T = clipTravelAt(u, st.swing, a.time / a.getClip().duration);
-  const ideal = Math.max((u.kind.body || 0.7) + 0.5, A.tipF + PAL_STAND + (A.vAdj || 0) - (T ? T.y : 0));   // (`A.tipF * 0.88` until 2026-10-18: the crossing behind your eye)
-  const mv = THREE.MathUtils.clamp(cd - ideal, -2.2 * dt, 3.2 * dt);
-  p.x += cx / cd * mv; p.z += cz / cd * mv;
-  if (u.kind.fortBody && fortWalls) fortClampUnit(u, p);
-}
-const _prmV = new THREE.Vector3();
-function palRootMotion(u) {
-  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
-  const a = A && u.clips[st.swing];
-  if (!A || !a || u.cur !== a) { u.palRM = null; return; }
-  const f = a.time / a.getClip().duration, T = clipTravelAt(u, st.swing, f);
-  if (!T) return;
-  const R = u.palRM;
-  if (!R || R.sw !== st.swing || f < R.f - 0.02) { u.palRM = { sw: st.swing, f, x: T.x, z: T.y }; return; }
-  let dx = T.x - R.x, dz = T.y - R.z;
-  R.f = f; R.x = T.x; R.z = T.y;
-  const yaw = u.g.rotation.y, wx = dx * Math.cos(yaw) + dz * Math.sin(yaw), wz = -dx * Math.sin(yaw) + dz * Math.cos(yaw);
-  const p = u.g.position, cx = camera.position.x - p.x, cz = camera.position.z - p.z, cd = Math.hypot(cx, cz) || 1;
-  const toward = (wx * cx + wz * cz) / cd, room = cd - (u.kind.body || 0.7) - 0.45;
-  let k = 1; if (toward > 0 && room < toward) k = Math.max(0, room / toward);
-  /* (Until round 6 only the sideways part of the step went through once the cut began, so a stepping blow fell short
-   * of where his feet said it would land; the blow is aimed during the draw now, `palTrack`, and the step is whole.) */
-  _prmV.set(p.x + wx * k, p.y, p.z + wz * k);
-  p.x = _prmV.x; p.z = _prmV.z;
-  if (u.kind.fortBody && fortWalls) fortClampUnit(u, p);
-}
-function palStep(u) {
-  const dist = Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z), k = Math.max(0, 1 - dist / 12);
-  sfxMutStep(dist, u.kind.voice);
-  playSampleAt('blockMil', u.g.position.x, u.g.position.z, { gain: 0.16, ref: 4, far: 30, rate: 0.42, jitter: 0.06 });
-  if (k > 0) addTrauma(0.05 * k);
-}
-/* ---- THE ENTRANCE (`paladin.cut`). The world is held (`frozen()`), so
- * everything in it that should move is moved here: him, the man he kills
- * and what is left of him, the stares, the sparks, the dust, the lens. */
-const PAL_CUT_WALK = 1.35;               // his pace up the street, m/s
-let PAL_KILL = 'pS3';                    // the slash that takes the man's head (chosen off the pose sheet)
-let palDroneNodes = null;
-function palDrone(on) {
-  const ctx = audioCtx; if (!ctx) return;
-  if (on && !palDroneNodes) {
-    const g = ctx.createGain(); g.gain.value = 0.0001;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 240;
-    const ws = ctx.createWaveShaper(); const c = new Float32Array(256); for (let i = 0; i < 256; i++) { const x = i / 128 - 1; c[i] = Math.tanh(2.2 * x); } ws.curve = c;
-    const os = [];
-    for (const [f, ty] of [[41, 'sawtooth'], [41.6, 'sawtooth'], [61.7, 'triangle'], [82.3, 'sine']]) { const o = ctx.createOscillator(); o.type = ty; o.frequency.value = f; o.connect(ws); o.start(); os.push(o); }
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.21; const lg = ctx.createGain(); lg.gain.value = 70; lfo.connect(lg).connect(lp.frequency); lfo.start(); os.push(lfo);
-    ws.connect(lp).connect(g).connect(sfxOut());
-    g.gain.setTargetAtTime(0.32, ctx.currentTime, 1.2);
-    palDroneNodes = { g, os };
-  } else if (!on && palDroneNodes) {
-    const N = palDroneNodes; palDroneNodes = null;
-    N.g.gain.setTargetAtTime(0.0001, ctx.currentTime, 1.6);
-    setTimeout(() => { for (const o of N.os) try { o.stop(); } catch (e) { /* gone */ } }, 6000);
-  }
-}
-// the man he kills: the nearest farmer out on the street not on top of you, and where he comes from: beyond him, out of the dark
-function palStartCut() {
-  const u = paladin.unit, me = camera.position;
-  let V = null, bd = 1e9;
-  for (const f of farmUnits) {
-    if (!f.st.alive || f.st.struck || !f.farm || !f.farm.out || f.farm.burst || !f.model) continue;
-    const d = Math.hypot(f.g.position.x - me.x, f.g.position.z - me.z);
-    if (d > 5.0 && d < 16 && Math.abs(d - 8) < bd) { bd = Math.abs(d - 8); V = f; }      // (eight metres off is where the take reads: the man and him both in the picture)
-  }
-  const roomy = (x, z) => {
-    if (fortCourtAt(x, z) === null) return false;
-    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; if (fortCourtAt(x + Math.cos(a) * 0.9, z + Math.sin(a) * 0.9) === null) return false; }
-    return true;
-  };
-  const base = V ? V.g.position : me;
-  let ax, az;
-  if (V) { ax = base.x - me.x; az = base.z - me.z; } else { const D = fortW(FORT_DOOR.x, FORT_DOOR.z); ax = D.x - me.x; az = D.z - me.z; }
-  const a0 = Math.atan2(ax, az);
-  /* SEEN, AND WITH A STREET TO WALK: the first try put him round a corner,
-   * and the first six seconds of the take were a wall. Out of the dark means
-   * in plain view down open paving — nothing between your eye and him, nor
-   * between him and the man he walks to. */
-  const fy = fortCourtAt(base.x, base.z) ?? FORT_Y + FORT_FLOOR;
-  const clear = (x0, z0, x1, z1, y) => !(fortWalls && keepHitsWall(x0, z0, x1, z1, y, FORT_SITE));
-  let S = null, best = -1e9;
-  for (const off of [0, 0.3, -0.3, 0.6, -0.6, 0.95, -0.95, 1.3, -1.3, 1.7, -1.7, 2.2, -2.2, Math.PI]) {
-    for (let r = 12; r >= 5.5; r -= 0.5) {
-      const x = base.x + Math.sin(a0 + off) * r, z = base.z + Math.cos(a0 + off) * r;
-      if (!roomy(x, z) || Math.hypot(x - me.x, z - me.z) < 6.5) continue;
-      if (!clear(me.x, me.z, x, z, fy + 1.2) || !clear(me.x, me.z, x, z, fy + 2.0)) continue;
-      if (!clear(x, z, base.x, base.z, fy + 0.6) || !clear(x, z, base.x, base.z, fy + 1.4)) continue;
-      const sc = r * 0.4 - Math.abs(Math.abs(off) - 1.0) * 2.2;    // far out of the dark, and off to the man's side: square behind him, the man stood in front of him the whole walk
-      if (sc > best) { best = sc; S = { x, z }; }
-      break;                                                         // the furthest clear spot on this bearing
-    }
-  }
-  if (!S) { const D = fortW(FORT_DOOR.x, FORT_DOOR.z + 2.5); S = { x: D.x, z: D.z }; }
-  const y = fortCourtAt(S.x, S.z) ?? FORT_Y + FORT_FLOOR;
-  u.g.position.set(S.x, y, S.z);
-  u.g.rotation.y = Math.atan2(base.x - S.x, base.z - S.z);
-  if (u.model) u.model.rotation.y = 0;
-  u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.holdAnim = true;
-  paladin.out = true;
-  u.g.visible = true;
-  paladin.cut = palCutRef = { t: 0, V, phase: 'reveal', look: new THREE.Vector3(S.x, y + 1.7, S.z), fov: Math.min(settings.fov, 34), fovRate: 2.2,
-    stepT: 0.3, sparkT: 0, swingT: -1, killed: false, slow: 1, slowT: 0, roarT: -1, turnFrom: 0 };
-  blocking = false; hovered = null;
-  // the street stops: the bell's last stroke, deep, and the dread under it
-  farmFight.bellN = 8;
-  const B = farmBellSpot(); sfxCastleBell(B.x, B.z, 1.3);
-  palDrone(true);
-  _pdnC.set(S.x, y + 0.2, S.z);
-  idolDust(_pdnC, _pdnA.set(0, 0.2, 0), 40, 1.6, 1.4);
-  idolDust(_pdnC, _pdnA.set(0, 0.1, 0), 24, 2.4, 2.2);
-  if (V) { V.holdAnim = true; V.st.atk = -1; }
-}
-const PAL_IDLE_OF = (f) => (f.clips.idle ? 'idle' : f.kind.anim && f.clips[f.kind.anim.idle] ? f.kind.anim.idle : null);
-function updatePalCut(rawDt) {
-  const C = paladin.cut; if (!C) return;
-  const u = paladin.unit;
-  if (!inFort || !u || !u.st.alive) { palCutEnd(false); return; }
-  // the slowing: the world at a fifth for the blow, easing back
-  if (C.slowT > 0) { C.slowT -= rawDt; C.slow = THREE.MathUtils.lerp(1, 0.18, THREE.MathUtils.clamp(C.slowT / 0.55, 0, 1)); } else C.slow = 1;
-  const dt = rawDt * C.slow;
-  C.t += dt;
-  const p = u.g.position, V = C.V;
-  // the street watches him: every man out there stops where he stands and turns his face to him
-  for (const f of farmUnits) {
-    if (!f.st.alive || f.st.struck || !f.farm || !f.farm.out || f.farm.burst || !f.mixer) continue;
-    const want = Math.atan2(p.x - f.g.position.x, p.z - f.g.position.z);
-    let d = want - f.g.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
-    f.g.rotation.y += d * Math.min(1, dt * 3);
-    const idl = PAL_IDLE_OF(f); if (idl && (!f.cur || f.cur !== f.clips[idl])) mutPlay(f, idl, true);
-    f.mixer.update(dt);
-  }
-  // the man killed, and his body after, which the held world will not run for him
-  if (V && C.killed) updateMutantUnit(V, dt);
-  updateGibs(dt); updateSpurts(dt); updateBloodCloud(dt); updateWorldSparks(); updateIdolDust(dt);
-  const target = V && V.st.alive && !V.st.struck ? V.g.position : camera.position;
-  const dTo = Math.hypot(target.x - p.x, target.z - p.z);
-  if (C.phase === 'reveal' || C.phase === 'walk') {
-    if (C.phase === 'reveal' && C.t > 1.3) C.phase = 'walk';
-    if (C.phase === 'walk') {
-      const stop = V ? 2.15 : 4.0;
-      if (dTo > stop + 0.03) {
-        const s = Math.min(dTo - stop, PAL_CUT_WALK * dt);
-        p.x += (target.x - p.x) / dTo * s; p.z += (target.z - p.z) / dTo * s;
-        const fy = fortCourtAt(p.x, p.z); if (fy !== null) p.y += (fy - p.y) * Math.min(1, dt * 10);
-      } else if (V && u.clips[PAL_KILL]) { C.phase = 'swing'; C.swingT = 0; C.kill = PAL_KILL; mutPlay(u, C.kill, false); }
-      else { C.phase = 'roar'; C.roarT = 0; C.turnFrom = u.g.rotation.y; }
-    }
-    if (C.phase === 'walk' || C.phase === 'reveal') {
-      if (u.clips.pWalkT && (C.phase === 'walk') && u.cur !== u.clips.pWalkT) mutPlay(u, 'pWalkT', true);
-      if (C.phase === 'reveal' && u.clips.pReady && u.cur !== u.clips.pReady) mutPlay(u, 'pReady', true);
-      u.g.rotation.y = Math.atan2(target.x - p.x, target.z - p.z);
-      if (C.phase === 'walk' && (C.stepT -= dt) <= 0) { C.stepT = 0.62; palStep(u); }
-    }
-  }
-  if (C.phase === 'swing') {
-    C.swingT += dt;
-    const a = u.clips[C.kill], dur = a.getClip().duration, hitAt = dur * ((u.atk[C.kill] && u.atk[C.kill].hit) || 0.5);
-    if (!C.killed && C.swingT >= hitAt - 0.12 && C.swingT < hitAt - 0.1 && C.slowT <= 0) C.slowT = 0.75;     // the world slows into it
-    if (!C.killed && C.swingT >= hitAt) {
-      C.killed = true;
-      palKill(V, V.g.position.x - p.x, V.g.position.z - p.z, true);
-      finishMutant(V);
-      addTrauma(0.7);
-      fovKick = Math.max(fovKick, 8);
-      _pdnC.set(V.g.position.x, V.g.position.y + 1.6, V.g.position.z);
-      deflectLamp.position.copy(_pdnC); deflectLamp.intensity = 14; deflectT = 0.1;
-    }
-    if (C.swingT >= dur * 0.92) { C.phase = 'roar'; C.roarT = 0; C.turnFrom = u.g.rotation.y; }
-  }
-  if (C.phase === 'roar') {
-    C.roarT += dt;
-    // round to you, slowly, before the shout
-    const want = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
-    let d = want - u.g.rotation.y; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
-    u.g.rotation.y += d * Math.min(1, dt * 2.6);
-    if (C.roarT < 0.9) { if (u.clips.pReady && u.cur !== u.clips.pReady) mutPlay(u, 'pReady', true); }
-    else if (!C.roared) {
-      C.roared = true;
-      if (u.clips.pRoar) mutPlay(u, 'pRoar', false);
-      C.roarDur = u.clips.pRoar ? u.clips.pRoar.getClip().duration : 2.2;
-      sfxMutRoar(Math.hypot(p.x - camera.position.x, p.z - camera.position.z) * 0.5, u.kind.voice);
-      setTimeout(() => sfxMutRoar(0, u.kind.voice), 140);
-      addTrauma(0.55);
-      _pdnC.set(p.x, p.y + 0.1, p.z); idolDust(_pdnC, _pdnA.set(0, 0, 0), 30, 2.0, 1.2);
-    }
-    if (C.roared && C.roarT > 0.9 + Math.min(C.roarDur, 3.0) * 0.85) { palCutEnd(true); return; }
-  }
-  u.mixer.update(dt);
-  // the lens: him whole out of the dark; the two of them as he closes; the blow; then his face as he shouts
-  let T, h;
-  _pdnA.set(p.x, p.y + 1.6, p.z);
-  if (C.phase === 'reveal') { T = _pdnA; h = 3.4; }
-  else if (C.phase === 'walk' || C.phase === 'swing') {
-    if (V) { _pdnB.set((p.x + V.g.position.x) / 2, p.y + 1.45, (p.z + V.g.position.z) / 2); T = _pdnB; h = Math.max(2.9, dTo * 0.7 + 1.2); }
-    else { T = _pdnA; h = 3.2; }
-  } else { _pdnB.set(p.x, p.y + 1.9, p.z); T = _pdnB; h = C.roared ? 3.4 : 3.8; }   // (all of him as he shouts: at 2.2 m of frame the lens was his breastplate)
-  C.look.lerp(T, 1 - Math.exp(-rawDt * 4));
-  thrCutLook(C.look, 2.4, rawDt);
-  C.fov = thrCutFov(C.look, h);
-  // and his point on the stones as he walks: a scrape and a spit of sparks
-  if (C.phase === 'walk' && palBlade(u)) {
-    const fl = fortCourtAt(_pdnT.x, _pdnT.z) ?? p.y;
-    if (_pdnT.y - fl < 0.45 && (C.sparkT -= rawDt) <= 0) { C.sparkT = 0.07 + Math.random() * 0.06; _pdnC.set(_pdnT.x, fl + 0.03, _pdnT.z); worldSparks(_pdnC, 3); }
-  }
-}
-function palCutEnd(fight) {
-  const u = paladin.unit, C = paladin.cut;
-  paladin.cut = palCutRef = null;
-  if (C && C.V && !C.killed) { C.V.holdAnim = false; }
-  if (!u) return;
-  u.holdAnim = false;
-  palDrone(false);
-  if (!fight) return;
-  u.st.awake = true; u.st.roar = 0; u.st.cool = 0.25; u.st.atk = -1; u.st.step = 0;
-  const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
-  if (u.atk && u.atk.pLeap && u.clips.pLeap && d > 4) u.st.forceSwing = 'pLeap';
-  else if (u.atk && u.atk.pWide && u.clips.pWide) u.st.forceSwing = 'pWide';
-  else if (u.atk && u.atk.pS9 && u.clips.pS9 && d > 2.6) u.st.forceSwing = 'pS9';
-  else if (u.atk && u.atk.pS3 && u.clips.pS3) u.st.forceSwing = 'pS3';
-  thrCutRelease(); catchBreath();
 }
 
 /* ---- ARTIFACTS ---------------------------------------------------------- */
@@ -113422,7 +111901,7 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   audNodes: () => ({ gate: gameAudioGate, master: masterGain, sfx: sfxBusGain }),
   flameS: () => flame, flameArt: () => flameArtItem, attachArtifact, returnBilly, screwdriverModel, billyS: () => billyState, setBillyS: (v) => { billyState = v; },
   shipBrkS: () => shipBrk, shipKeyS: () => ({ keyFall, taken: boatKeyTaken, y: boatKey.position.y, inScene: !!boatKey.parent }), dropShipKey,
-  paladinS: () => paladin, palStartCut, palKill, palCalm, palBlockFx, farmFightS: () => farmFight, farmUnitsS: () => farmUnits,
+  dkSlotS: () => dkSlot, dkCalm, heavyBlockFx, farmFightS: () => farmFight, farmUnitsS: () => farmUnits,
   elvDoors: () => elvDoors, elvPanes: () => elvPanes, houseGlassStrike, elvPaneShut, elvBreakPane, elvManS: () => elvMan, elvPupS: () => elvPup, elvCarryS: () => elvPupCarry, houseWorldS: () => houseWorld,
   elvFieldS: () => elvField, elvPathNear, elvSurf, elvCarve, elvMistS: () => [elvMist, elvBeachMist], elvCampS: () => elvCamp,
   pupRunS: () => pupRun,
@@ -113446,7 +111925,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updatePalCut(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* AND THE WARM CHAIN, THE FAR-CULL AND EVERY WALL-CLOCK CUT LIVE IN
@@ -113782,7 +112261,7 @@ for (const ev of ['pointerdown', 'keydown', 'touchstart']) window.addEventListen
   }
 })();
 
-Object.assign(window.__bw, { crusaderShieldTick, crusaderChain, farmCobble, farmUnits, farmFight, farmDoors, farmSendOut, farmKeyDefs, farmCalm, updateFarmers, FARM_TOOLS, placeInFort, fortW, fortCourtAt, fortRdy: () => fortReady, fortWallsReady: () => !!fortWalls,
+Object.assign(window.__bw, { farmCobble, farmUnits, farmFight, farmDoors, farmSendOut, farmKeyDefs, farmCalm, updateFarmers, FARM_TOOLS, placeInFort, fortW, fortCourtAt, fortRdy: () => fortReady, fortWallsReady: () => !!fortWalls,
   mutAnim, velGaitAnim, digImpact, aimLand, updateEnemyBars, ehpPool, bleedMax, bleedProc, updateBleed, startFightTip, skipExtraction, tavFloorMat, dropItem, inspectHeld, dockThrowHit, DOJO_MOON, tavSite: () => TAV_SITE, dockHitBox, dockMeshes: () => dockHitMeshes, updateCatDread, traderSell, fightTipState: () => ({ fightTipDone, fightTip: !!fightTip }),
   snorkLaugh, CAMP_X, CAMP_Z, SNORK_X, SNORK_Z, snorkKey, SNORK_NPC, lostKeyItem, LOST_KEY_AT,
   snorkState: () => ({ snorkMet, snorkUp: +snorkUp.toFixed(2), snorkWant, mushGateUnlocked, gateOpen }),

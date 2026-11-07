@@ -31,55 +31,16 @@ export async function toilet({ b, log, sleep, shot }) {
   T.open = true; for (let i = 0; i < 60; i++) b.frame(1); look(); shot('toilet_open', 640, 4);
 }
 
-// THE PALADIN'S BLOWS, where they land ON SCREEN: every swing forced 3x with you standing still; for each, whether it
-// hurt and the landed blade point projected to the screen (ndc x,y in -1..1; the middle is 0,0)
-export async function paladin({ w, b, log, sleep }) {
-  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  log('boot', JSON.stringify(await w.__palBoot()));
-  w.__clockOn();
-  const P = b.paladinS(), u = P.unit, cam = b.camera.position;
-  b.settings.devMode = false; P.out = true; u.g.visible = true; u.holdAnim = false; u.st.awake = true;
-  const V = cam.constructor, home = [cam.x, cam.z];
-  for (const k of Object.keys(u.kind.use)) {
-    const res = [];
-    for (let r = 0; r < 3; r++) {
-      cam.x = home[0]; cam.z = home[1];
-      for (let i = 0; i < 400 && u.st.atk >= 0; i++) { w.__adv(1); b.heal(); for (const f of b.farmUnitsS()) f.st.awake = false; }
-      w.__nb = 99; w.__ny = 0; w.__nd = 0; w.__nf = 0; u.st.forceSwing = k; let started = false, hit = null, hp0 = b.state().hp, t0 = u.hitAt || 0;
-      for (let i = 0; i < 360; i++) {
-        b.lookAt(u.g.position.x, cam.y - 0.1, u.g.position.z);   // (a player looks at the man swinging at him)
-        w.__adv(1); for (const f of b.farmUnitsS()) f.st.awake = false;
-        cam.x = home[0]; cam.z = home[1];
-        const A = u.st.atk >= 0 && u.st.swing === k; if (A) started = true; else if (started) break;
-        const AA = A ? u.atk[k] : null;
-        if (AA && u.st.atk >= AA.wind - 0.05 && u.st.atk <= AA.wind + AA.strike + 0.1 && u.palTip && u.palHilt) {
-          const H = new V(), T = new V(), Q = new V(); u.palHilt.getWorldPosition(H); u.palTip.getWorldPosition(T);
-          const dx = u.g.position.x - cam.x, dz = u.g.position.z - cam.z, dl = Math.hypot(dx, dz) || 1, vx = cam.x + dx / dl * 0.32, vz = cam.z + dz / dl * 0.32;
-          for (let j = 0; j <= 8; j++) { Q.copy(H).lerp(T, 0.25 + 0.75 * j / 8); if (Q.y < cam.y - 1.0 || Q.y > cam.y + 0.4) continue;
-            const rx = Q.x - cam.x, rz = Q.z - cam.z, fwd = (rx * dx + rz * dz) / dl, lat = Math.abs(rx * dz - rz * dx) / dl;
-            if (lat < (w.__nb || 99)) { w.__nb = lat; w.__ny = Q.y - cam.y; w.__nf = fwd; w.__nd = dl; } }
-        }
-        if (!hit && (u.hitAt || 0) > t0 && u.hitPt) { const q = u.hitPt.clone().project(b.camera); hit = q.x.toFixed(2) + ',' + q.y.toFixed(2) + (q.z > 1 ? '(behind)' : ''); }
-        if (b.state().hp < hp0) hit = hit || 'hurt-no-pt';
-        b.heal(); hp0 = b.state().hp;
-      }
-      res.push(started ? (hit || 'miss') + '[lat ' + w.__nb.toFixed(2) + ' fwd ' + (w.__nf || 0).toFixed(2) + ' dy ' + w.__ny.toFixed(2) + ' at ' + w.__nd.toFixed(2) + ']' : 'never');
-    }
-    log(k, res.join('  '), 'stand', (u.atk[k].stop || 0).toFixed(2));
-  }
-}
-
 // THE FARMERS' BLOWS ON SCREEN: a natural fight, standing still and facing whoever is swinging; each blow that hurt,
 // where its tool was on the screen when it landed (ndc), and how many landed with no tool point (the old fallback)
 export async function farmers({ w, b, log }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  log('boot', JSON.stringify(await w.__palBoot()));
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot()));
   w.__clockOn();
   b.settings.devMode = false;
   const cam = b.camera.position, home = [cam.x, cam.z], pts = []; let hurt = 0, noPt = 0, hp0 = b.state().hp;
-  const P = b.paladinS(); if (P.unit) { P.unit.st.awake = false; P.unit.g.visible = false; }
+  const P = b.dkSlotS(); if (P.unit) { P.unit.st.awake = false; P.unit.g.visible = false; }
   const seen = new Map();
   for (let i = 0; i < 60 * 40; i++) {
     const us = b.farmUnitsS().filter((f) => f.st.alive && f.farm && f.farm.out);
@@ -580,32 +541,17 @@ export async function plioTest({ w, b, log, sleep }) {
   log('snaps', P.nSnap, 'bites', P.nBite, 'landed', hits0, 'hp', P.hp);
 }
 
-// THE CASTLE FIGHT, FRAME BY FRAME from your eye: a paladin cut and a farmer's blow, a still every 4 frames through each,
+// THE CASTLE FIGHT, FRAME BY FRAME from your eye: a farmer's blow, a still every 4 frames through it,
 // you standing and facing the one swinging (devMode off, healed every frame). Stills named cs_<who>_<n>.
 export async function castleSheet({ w, b, log, shot }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  log('boot', JSON.stringify(await w.__palBoot()));
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot()));
   w.__clockOn();
   b.settings.devMode = false;
   const cam = b.camera.position, home = [cam.x, cam.z];
-  const P = b.paladinS(), pu = P.unit;
-  // a paladin cut: pS2 then on into its string
-  if (pu && !w.__noPal) {
-    const sleepF = () => { for (const f of b.farmUnitsS()) f.st.awake = false; };
-    P.out = true; pu.g.visible = true; pu.holdAnim = false; pu.st.awake = true;
-    for (let i = 0; i < 400 && pu.st.atk >= 0; i++) { w.__adv(1); cam.x = home[0]; cam.z = home[1]; b.heal(); sleepF(); }
-    pu.st.forceSwing = w.__palSwing || 'pS2'; let m = 0, started = false;
-    log('pal d', Math.hypot(pu.g.position.x - cam.x, pu.g.position.z - cam.z).toFixed(2), 'awake', pu.st.awake, 'atk', pu.st.atk);
-    for (let i = 0; i < 400 && m < 16; i++) {
-      b.lookAt(pu.g.position.x, cam.y - 0.1, pu.g.position.z); w.__adv(1); cam.x = home[0]; cam.z = home[1]; b.heal(); sleepF();
-      if (pu.st.atk >= 0) started = true;
-      if (started && i % 4 === 0) { shot('cs_pal_' + String(m).padStart(2, '0'), 300, 1.3); m++; log('  pal', m - 1, 'd', Math.hypot(pu.g.position.x - cam.x, pu.g.position.z - cam.z).toFixed(2), 'atk', pu.st.atk.toFixed(2), 'swing', pu.st.swing); }
-      if (started && pu.st.atk < 0 && m > 6) break;
-    }
-    log('paladin frames', m);
-  }
-  // a farmer's blow first (the paladin kept out of it)
+  const P = b.dkSlotS(), pu = P.unit;
+  // a farmer's blow (the dark knight kept out of it)
   if (pu) { pu.st.awake = false; pu.g.visible = false; }
   let n = 0, prevAtk = -1, tgt = null;
   for (let i = 0; i < (w.__noFarm ? 0 : 60 * 40) && n < 14; i++) {
@@ -623,7 +569,7 @@ export async function castleSheet({ w, b, log, shot }) {
   log('farm frames', n, 'swing', tgt && tgt.st.swing);
 }
 
-export async function farmSheet(ctx) { ctx.w.__noPal = true; return castleSheet(ctx); }
+export async function farmSheet(ctx) { return castleSheet(ctx); }
 
 // THE WAY UP TO THE TOWER DOOR: the island's floor in front of the door, as a map — rows from the wall out (0.1 m),
 // columns across the door's line (0.15 m); '.' the deck's height, 'v' lower (a fall), 'x' no floor, '^' higher (a wall)
@@ -1005,9 +951,9 @@ export async function dkPack(ctx) { ctx.w.__dkNoStrips = true; ctx.w.__dkList = 
 // does he kill them, does he turn on you — and stills from your eye while he works
 export async function dkIntro({ w, b, log, sleep, shot }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
   b.settings.devMode = false;   // (dev mode stops a creature swinging at reach)
-  log('boot', JSON.stringify(await w.__palBoot()));
+  log('boot', JSON.stringify(await w.__fortBoot()));
   b.settings.devMode = false;
   w.__clockOn();
   const S = () => b.dkS(), C = b.camera.position, home = [C.x, C.z];
@@ -1015,7 +961,7 @@ export async function dkIntro({ w, b, log, sleep, shot }) {
     w.__adv(1); b.heal(); C.x = home[0]; C.z = home[1];
     const s = S(), u = s.u;
     if (u && s.dk.stage >= 1) b.lookAt(u.g.position.x, C.y - 0.2, u.g.position.z);
-    if (i % 120 === 0) log('t', (i / 60).toFixed(0), 'stage', s.dk.stage, 'out', b.paladinS().out, 'vis', u && u.g.visible, 'dkHP', u && u.st.hp, 'victims alive', s.dk.victims.filter((f) => f.st.alive).length, '/', s.dk.victims.length, 'foe', u && u.st.foe ? 'farmer' : 'you', 'swing', u && u.st.atk >= 0 ? u.st.swing : '-', 'd', u ? Math.hypot(u.g.position.x - C.x, u.g.position.z - C.z).toFixed(1) : '-');
+    if (i % 120 === 0) log('t', (i / 60).toFixed(0), 'stage', s.dk.stage, 'out', b.dkSlotS().out, 'vis', u && u.g.visible, 'dkHP', u && u.st.hp, 'victims alive', s.dk.victims.filter((f) => f.st.alive).length, '/', s.dk.victims.length, 'foe', u && u.st.foe ? 'farmer' : 'you', 'swing', u && u.st.atk >= 0 ? u.st.swing : '-', 'd', u ? Math.hypot(u.g.position.x - C.x, u.g.position.z - C.z).toFixed(1) : '-');
     if (s.dk.stage === 1 && i % 30 === 0 && (w.__dkShots = (w.__dkShots || 0) + 1) <= 12) shot('dki_' + String(w.__dkShots).padStart(2, '0'), 360, 1.5);
     if (s.dk.stage === 1 && i % 45 === 0 && (w.__dkClose = (w.__dkClose || 0) + 1) <= 8) { const P = u.g.position, sv = C.clone(); C.set(P.x + 4.5, P.y + 1.8, P.z + 2.5); b.lookAt(P.x, P.y + 1.2, P.z); b.renderer.render(b.scene, b.camera); shot('dkc_' + String(w.__dkClose).padStart(2, '0'), 360, 1.3); C.copy(sv); }
     if (s.dk.stage === 2 && !w.__turned) { w.__turned = true; log('TURNED at', (i / 60).toFixed(1), 's'); }
@@ -1027,8 +973,8 @@ export async function dkIntro({ w, b, log, sleep, shot }) {
 
 export async function dkLight({ w, b, log, sleep, shot }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; u.st.awake = false; u.st.foe = null; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 50; }
   const R = b.renderer, gl = R.getContext(), V = b.camera.position.constructor, P = u.g.position, y = u.g.rotation.y;
@@ -1042,8 +988,8 @@ export async function dkLight({ w, b, log, sleep, shot }) {
 // THE DARK KNIGHT ON YOU, HANDS OFF: turned at once, you standing still facing him, healed; each swing, landed, on screen
 export async function dkFight({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -1098,8 +1044,8 @@ export async function loadSoundsC13(ctx) { ctx.w.__lsRoom = 'c13'; return loadSo
 // with draws, triangles, skinned meshes and visible lights
 export async function castlePerf({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   const R = b.renderer, gl = R.getContext(), C = b.camera;
   const measure = async (name, n = 150) => {
     for (let i = 0; i < 30; i++) { w.__adv(1); b.heal(); }
@@ -1133,8 +1079,8 @@ export async function castlePerf({ w, b, log, sleep }) {
 
 export async function castleWhat({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  log('boot', JSON.stringify(await w.__palBoot())); w.__clockOn(); for (let i = 0; i < 60; i++) w.__adv(1);
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn(); for (let i = 0; i < 60; i++) w.__adv(1);
   const V = b.camera.position.constructor, C = b.camera.position;
   log('player', C.toArray().map((x) => x.toFixed(1)).join(','));
   for (const top of b.scene.children) {
@@ -1151,8 +1097,8 @@ export async function castleWhat({ w, b, log, sleep }) {
 // each spot, the frame drawn with and without each other big group; how many pixels each changes (any = it is seen)
 export async function castleVis({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  log('boot', JSON.stringify(await w.__palBoot())); w.__clockOn(); for (let i = 0; i < 60; i++) w.__adv(1);
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn(); for (let i = 0; i < 60; i++) w.__adv(1);
   const R = b.renderer, gl = R.getContext(), C = b.camera, W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
   const grp = (n) => b.scene.children.find((o) => o.name === n);
   const ocean = b.scene.children.find((o) => o.isMesh && o.geometry && o.geometry.index && o.geometry.index.count / 3 > 100000 && !o.name);
@@ -1168,7 +1114,7 @@ export async function castleVis({ w, b, log, sleep }) {
     log(label, 'most pixels changed at any spot/direction (of ' + W * H + '):', JSON.stringify(tot));
   };
   const fy = b.camera.position.y;
-  const fs = []; const SP = b.palDbg.FARM_SPINE; for (let i = 0; i < SP.length - 1; i++) for (let t = 0; t < 1; t += 0.34) { const L = b.palDbg.fortW(SP[i][0] + (SP[i + 1][0] - SP[i][0]) * t, SP[i][1] + (SP[i + 1][1] - SP[i][1]) * t); const f = b.palDbg.fortCourtAt(L.x, L.z); if (f !== null) fs.push([L.x, f + 1.7, L.z]); }
+  const fs = []; const SP = b.fortDbg.FARM_SPINE; for (let i = 0; i < SP.length - 1; i++) for (let t = 0; t < 1; t += 0.34) { const L = b.fortDbg.fortW(SP[i][0] + (SP[i + 1][0] - SP[i][0]) * t, SP[i][1] + (SP[i + 1][1] - SP[i][1]) * t); const f = b.fortDbg.fortCourtAt(L.x, L.z); if (f !== null) fs.push([L.x, f + 1.7, L.z]); }
   log('fort spots', fs.length);
   if (!w.__skipFort) await test('FIRST CASTLE STREET', fs, ['castle13', 'isle', 'ocean']);
   for (let i = 0; i < 60 && !b.c13State().ready; i++) await sleep(300);
@@ -1188,13 +1134,13 @@ export async function castleVisC13(ctx) { ctx.w.__skipFort = true; return castle
 // spot and direction; the ones that never change a pixel are listed (by traversal index)
 export async function castleVisMesh({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  log('boot', JSON.stringify(await w.__palBoot())); w.__clockOn(); for (let i = 0; i < 60; i++) w.__adv(1);
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn(); for (let i = 0; i < 60; i++) w.__adv(1);
   const R = b.renderer, gl = R.getContext(), C = b.camera, W = gl.drawingBufferWidth, H = gl.drawingBufferHeight;
   const grp = (n) => b.scene.children.find((o) => o.name === n);
   const grab = () => { R.render(b.scene, C); const px = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
   const diff = (a2, b2) => { let n = 0; for (let k = 0; k < a2.length; k += 16) if (Math.abs(a2[k] - b2[k]) + Math.abs(a2[k + 1] - b2[k + 1]) + Math.abs(a2[k + 2] - b2[k + 2]) > 24) n++; return n; };
-  const fs = []; const SP = b.palDbg.FARM_SPINE; for (let i = 0; i < SP.length - 1; i++) for (let t = 0; t < 1; t += 0.25) { const L = b.palDbg.fortW(SP[i][0] + (SP[i + 1][0] - SP[i][0]) * t, SP[i][1] + (SP[i + 1][1] - SP[i][1]) * t); const f = b.palDbg.fortCourtAt(L.x, L.z); if (f !== null) fs.push([L.x, f + 1.7, L.z]); }
+  const fs = []; const SP = b.fortDbg.FARM_SPINE; for (let i = 0; i < SP.length - 1; i++) for (let t = 0; t < 1; t += 0.25) { const L = b.fortDbg.fortW(SP[i][0] + (SP[i + 1][0] - SP[i][0]) * t, SP[i][1] + (SP[i + 1][1] - SP[i][1]) * t); const f = b.fortDbg.fortCourtAt(L.x, L.z); if (f !== null) fs.push([L.x, f + 1.7, L.z]); }
   for (const gname of ['castle13', 'isle']) {
     const G = grp(gname); if (!G) continue;
     const ms = []; G.traverse((o) => { if (o.isMesh && o.visible) ms.push(o); });
@@ -1241,8 +1187,8 @@ export async function archDoor({ w, b, log, sleep, shot }) {
 // (ndc), and how far from your eye the blade passed (m) — the misses with their distance
 export async function dkSwings({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -1282,8 +1228,8 @@ export async function dkSwings({ w, b, log, sleep }) {
 // EACH DARK KNIGHT SWING AT EACH STAND-OFF: forced once at stops 1.5 … 3.3; where its landed blow was on your screen (ndc)
 export async function dkStopSweep({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -1741,8 +1687,8 @@ export async function vmAllGun(ctx) { ctx.w.__vmFirst = 'shotgunItem'; ctx.w.__v
 // hit that still costs health, with the swing, the swing's clock against its contacts, and whether his trail was drawn
 export async function dkBlock({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem);
   if (b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem);
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
@@ -1777,8 +1723,8 @@ export async function dkOpen(ctx) { ctx.w.__dkNoGuard = true; return dkBlock(ctx
 // the swing's clock, both feet's height over the paving, the pelvis's, and how far he has come
 export async function dkLeapMeasure({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -1809,8 +1755,8 @@ export async function dkLeapMeasure({ w, b, log, sleep }) {
 // the paving — a planted foot should not move at all. Split by what he is doing.
 export async function dkSkate({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -1845,8 +1791,8 @@ export async function dkSkate({ w, b, log, sleep }) {
 // leap's along its length
 export async function dkTravel({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/paltest.js');
-  log('boot', JSON.stringify(await w.__palBoot()));
+  await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot()));
   const u = b.dkS().u, T = u.clipTravel || {};
   log('clips with travel', Object.keys(T).length, 'of', Object.keys(u.clips || {}).length);
   for (const k of Object.keys(u.atk || {})) { if (!/^dk/.test(k)) continue; const A = u.atk[k], c = A.clip, tr = T[c] || T[k]; const e = tr && tr[tr.length - 1];
@@ -1912,8 +1858,8 @@ export async function isleBoxTraps({ w, b, log, sleep }) {
 // he is on, and at the end the men he threw and the hurts you took
 export async function dkTown({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; b.dkTurn(u, true);
   const C = b.camera.position, P = u.g.position;
@@ -1936,8 +1882,8 @@ export async function dkTown({ w, b, log, sleep }) {
 // `aimK` set from `w.__aimK` and, for each throw, the most the aim bent his shoulder off the clip (degrees)
 export async function dkAimSweep({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -1981,8 +1927,8 @@ export async function dkAimSweepK(ctx) { ctx.w.__stops = [1.4, 1.7, 2.0, 2.3, 2.
 // through its wind-up and one at its contact, from a camera off his sword side (you are at the right of the frame)
 export async function dkPoseSheet({ w, b, log, sleep, shot }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -2023,8 +1969,8 @@ export async function dkPoseSheet({ w, b, log, sleep, shot }) {
 // off a minute, and how far from you he keeps between blows
 export async function dkBehave({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -2051,8 +1997,8 @@ export async function dkBehave({ w, b, log, sleep }) {
 // does); landed or missed, where, and how far he was at the contact
 export async function dkClose({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -2753,8 +2699,8 @@ export async function knSee({ w, b, log, sleep }) {
 // blade (seven points hilt to tip) was on your screen, and how much of the time its middle was. (its own profile)
 export async function dkSee({ w, b, log, sleep }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
@@ -3061,12 +3007,12 @@ export async function fortDoors({ w, b, log, sleep, shot }) {
   w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
   await w.__mnGate(4.5); w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
   b.placeInFort(); w.__c13Step(20); for (const u of b.farmUnitsS()) u.st.awake = false;
-  const P = b.palDbg, D = P.farmDoors, cam = b.camera.position;
+  const P = b.fortDbg, D = P.farmDoors, cam = b.camera.position;
   w.requestAnimationFrame = () => 0; b.camera.fov = 60; b.camera.updateProjectionMatrix();
   D.forEach((d, i) => {
     const c = P.fortW(d.cx, d.cz), o = P.fortW(d.cx + d.n.x * 4, d.cz + d.n.z * 4), f = b.fortCourtAt(c.x, c.z) ?? b.fortCourtAt(o.x, o.z) ?? cam.y - 1.7;
     const iw = P.fortW(d.cx - d.n.x * 0.75, d.cz - d.n.z * 0.75), ow = P.fortW(d.cx + d.n.x * 3.4, d.cz + d.n.z * 3.4), yy = b.FORT_Y + d.yLo;
-    const segHit = []; for (let k = 0; k <= 14; k++) { const q = k / 14, x = iw.x + (ow.x - iw.x) * q, z = iw.z + (ow.z - iw.z) * q; segHit.push(b.palDbg.keepWallNear(x, z, 0.22, yy + 0.4, yy + 1.6, b.FORT_SITE) ? '#' : (b.fortCourtAt(x, z) !== null ? (P.farmCobble(x, z) ? 'c' : '.') : '_')); }
+    const segHit = []; for (let k = 0; k <= 14; k++) { const q = k / 14, x = iw.x + (ow.x - iw.x) * q, z = iw.z + (ow.z - iw.z) * q; segHit.push(b.fortDbg.keepWallNear(x, z, 0.22, yy + 0.4, yy + 1.6, b.FORT_SITE) ? '#' : (b.fortCourtAt(x, z) !== null ? (P.farmCobble(x, z) ? 'c' : '.') : '_')); }
     log('  path in→out (0.75 in .. 3.4 out):', segHit.join(''), 'door frame at', Math.round(0.75 / 4.15 * 14));
     log('door', i, 'at', (c.x - b.FORT_X).toFixed(1), (c.z - b.FORT_Z).toFixed(1), 'out', d.out, 'leaf visible', d.leaf && d.leaf.visible, 'W', d.W && d.W.toFixed(2), 'H', d.H && d.H.toFixed(2));
     if (Math.hypot(c.x - b.FORT_X - 8, c.z - b.FORT_Z - 1.8) < 3) for (const sg of [1, -1]) { const oo = P.fortW(d.cx + d.n.x * 4.5 * sg, d.cz + d.n.z * 4.5 * sg); cam.set(oo.x, f + 1.6, oo.z); b.camera.lookAt(c.x, f + 1.1, c.z); b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera); shot('door' + i + (sg > 0 ? 'p' : 'm'), 560, 1.5); }

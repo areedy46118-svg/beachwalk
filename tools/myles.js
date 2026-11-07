@@ -156,8 +156,8 @@ export async function noMyles(ctx) {
  * itself is off the paving; then 40 s of the fight with every frame's lowest sole against the street under him, by clip. */
 export async function dkCrouch({ w, b, log, sleep, shot }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); b.settings.devMode = false; w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); b.settings.devMode = false; w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   const u = b.dkS().u, V = u.g.position.constructor, Mi = new (u.g.matrixWorld.constructor)(), v = new V();
   const nm = (s) => u.model.getObjectByName('b_MF_' + s);
@@ -214,8 +214,8 @@ export async function dkCrouch({ w, b, log, sleep, shot }) {
 // HIS LOW POSES, side on and from the paving: each clip at the frame given (or its lowest), the street under him
 export async function dkStills({ w, b, log, sleep, shot }) {
   const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-  await ev('/tools/burntest.js'); await ev('/tools/paltest.js');
-  b.settings.devMode = false; log('boot', JSON.stringify(await w.__palBoot())); w.__clockOn();
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
   for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
   for (let i = 0; i < 200 && !b.dkS().u.dkTravel; i++) w.__adv(1);
   const u = b.dkS().u, P = u.g.position, C = b.camera.position, fl = b.fortCourtAt(P.x, P.z);
