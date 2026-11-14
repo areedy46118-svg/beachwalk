@@ -365,3 +365,8 @@ fetched first, under the black. After: all ten weapons draw after a castle reloa
   court it was "far" and parsed behind the rest of the world (downloads were all in by 4 s; the far parse chain held
   it). `BW_FROM` now puts it in the checkpoint's first set whenever the save has him at your side, down or dead
   (`flags.mino.s !== 'wait'`): in under 8 s, under the black.
+
+## 2026-11-13 — the deep is a checkpoint room
+`saveRoom()` → 'deep' and `ROOM_BACK.deep` (spot 'deepSnap'): the one save written between the bite and the sand, at the
+line's snap. Details in deep.md. `tools/loadall.sh` times a load from every checkpoint place (the beach at five
+stretches and every `ROOM_BACK` room at its door's spot); see perf.md.

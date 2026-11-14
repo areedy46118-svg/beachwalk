@@ -1,7 +1,7 @@
 /* EVERY PIECE OF THE OWNER'S MUSIC, THROUGH ITS REAL TRIGGER, MEASURED AT THE SPEAKERS — SILENTLY. Not part of the game.
  * Open /README.md in the pane (no game on it), then:
  *   await import('/tools/silentframe.js'); await import('/tools/musictest.js');
- *   await __mtRun('samurai')       // one scenario (each well under the tool's 45 s): 'restart', 'checkpoint' (a respawn: silent), 'load',
+ *   await __mtRun('samurai')       // one scenario (each well under the tool's 45 s): 'restart', 'checkpoint' (a respawn: silent), 'load', 'loadTavern', 'loadDeep',
  *                                  // 'samurai', 'samuraiBack', 'church', 'end', 'mino'  -> { scenario, pass, peak, who, note }
  * Each loads the game fresh in the silent iframe, drives the moment the way a player reaches it (the sword taken
  * off its stand, the crawl out behind the altar, the morning after the horn, a death's card clicked …) and reads the
@@ -10,7 +10,7 @@
  * owner's checkpoint (`beachwalk.save`) itself. */
 (function () {
   const W = window, sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong', skrim: 'startSkrimSong', skrimFight: 'startSkrimFightMusic' };
+  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', loadTavern: 'startMusic', loadDeep: 'startMusic', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong', skrim: 'startSkrimSong', skrimFight: 'startSkrimFightMusic' };
   /* (2026-10-24, the owner: the opening song plays on the first load into the game and NOT on a respawn) — 'checkpoint'
    * is a death's respawn and passes SILENT; 'load' is a checkpoint loaded without a death and must play it */
   const silent = { checkpoint: true };
@@ -51,6 +51,40 @@
         // (a checkpoint comes in behind the black for 15-20 s: wait for it to lift, as the respawn waits for its card)
         for (let i = 0; i < 900 && !(b.restoreS && b.restoreS().bootHold <= 0); i++) { b.frame(4); await sleep(20); }
         note = 'a checkpoint loaded, no death' + (b.restoreS && b.restoreS().bootHold <= 0 ? '' : ', BLACK NEVER LIFTED');
+        await drive(b, 120); peak = await listen(want[sc], 9000);
+      } else if (sc === 'loadTavern') {
+        // (2026-11-09, the owner: "MAKE SURE ALL MUSIC PLAYS THE TAVERN MUSIC DIDNT"): a checkpoint written IN a room (the
+        // tavern) and loaded without a death plays the opening song like any other load
+        { const { b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+          const RB = b.ROOM_BACK.tav; RB.load();
+          for (let i = 0; i < 200 && !RB.ready(); i++) { b.frame(2); await sleep(50); }
+          if (!RB.ready()) return { scenario: sc, pass: false, note: 'the tavern never loaded' };
+          RB.place(); await drive(b, 60);
+          if (!b.tavState().inTavern) return { scenario: sc, pass: false, note: 'not in the tavern' };
+          b.saveCheckpoint(); await sleep(300);
+          try { await b.audioCtx.close(); } catch (e) { /* */ } }
+        const { b } = await boot(() => { sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); });
+        for (let i = 0; i < 900 && !(b.restoreS && b.restoreS().bootHold <= 0); i++) { b.frame(4); await sleep(20); }
+        note = 'a checkpoint in the tavern loaded, no death' + (b.restoreS && b.restoreS().bootHold <= 0 ? '' : ', BLACK NEVER LIFTED') + (b.tavState().inTavern ? ', in it' : ', NOT IN IT');
+        await drive(b, 120); peak = await listen(want[sc], 9000);
+      } else if (sc === 'loadDeep') {
+        // (2026-11-13, the owner: "add checkpoint when the fishing rod snaps in the water too"): the checkpoint the snap
+        // writes, loaded without a death, plays the opening song like any other load (under the water's low-pass)
+        { const { w, b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+          for (let i = 0; i < 100 && !b.state().introDone; i++) await sleep(100);
+          if (!b.inventory.includes(b.fishingRodItem)) b.addToInventory(b.fishingRodItem);
+          b.startDeepHook(); const D = b.deepS(), plio = b.plioS();
+          for (let i = 0; i < 400 && !plio.ready; i++) { b.frame(1); await sleep(25); }
+          D.ph = 'plunge'; D.t = 0.3; D.plY = b.camera.position.y;
+          for (let i = 0; i < 30 && D.ph !== 'descent'; i++) b.frame(1);
+          D.t = 8.6; localStorage.removeItem('beachwalk.save');
+          for (let i = 0; i < 300 && !D.snapped; i++) { b.frame(1); await sleep(16); }
+          const sv = JSON.parse(localStorage.getItem('beachwalk.save') || 'null');
+          if (!sv || sv.room !== 'deep') return { scenario: sc, pass: false, note: 'the snap wrote no deep checkpoint' };
+          try { await b.audioCtx.close(); } catch (e) { /* */ } }
+        const { b } = await boot(() => { sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1'); });
+        for (let i = 0; i < 900 && !(b.restoreS && b.restoreS().bootHold <= 0); i++) { b.frame(4); await sleep(20); }
+        note = 'the snap\'s checkpoint loaded, no death' + (b.restoreS && b.restoreS().bootHold <= 0 ? '' : ', BLACK NEVER LIFTED') + (b.deepFlags.inDeep ? ', in the deep' : ', NOT IN IT');
         await drive(b, 120); peak = await listen(want[sc], 9000);
       } else if (sc === 'samurai') {
         const { b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));

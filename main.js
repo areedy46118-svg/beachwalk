@@ -173,7 +173,7 @@ const BW_FROM = (() => {
     if (sessionStorage.getItem('beachwalk.load') !== 'checkpoint') return null;
     const d = migrateSave(JSON.parse(localStorage.getItem('beachwalk.save') || 'null'));
     if (!d || !d.pos) return null;
-    const ROOM_Z = { keep: 215, tav: 215, uc: 640 + BEACH_EXT, dojo: 742 + BEACH_EXT, cat: 745 + BEACH_EXT, bunker: 333, whale: 995 + BEACH_EXT };
+    const ROOM_Z = { keep: 215, tav: 215, uc: 640 + BEACH_EXT, dojo: 742 + BEACH_EXT, cat: 745 + BEACH_EXT, bunker: 333, whale: 995 + BEACH_EXT, deep: 814 + BEACH_EXT };
     const ROOM_FILES = {
       keep: ['keep.glb', 'dock.glb'],
       tav: ['tavern.glb', 'keep.glb', 'dock.glb', 'wong.glb', 'drunk.glb', 'orc.glb', 'wedding-ring.glb'],
@@ -181,6 +181,7 @@ const BW_FROM = (() => {
       dojo: ['courtyard.glb', 'samurai.glb', 'portal.glb'],
       cat: ['catacombs.glb', 'crawler.glb', 'skull-key.glb', 'limbs.glb', 'benali.glb', 'bloody-blade.glb'],
       bunker: ['bunker.glb', 'dealer.glb'],
+      deep: ['pliosaur.glb'],              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
       whale: ['whale.glb', 'skrim.glb', 'crying-head.glb', 'skrim-moves.json', 'demon-moves.json', 'knight-moves.json', 'ntar-moves.json', 'wong-moves.json', 'orc-moves.json', 'drunk-moves.json', 'umbra-moves.json', 'crawler-moves.json'],
     };
     /* AND WHAT YOU ARE CARRYING COMES WITH YOU (2026-10-19, the owner, twice: "i loaded a checkpoint and my weapons were
@@ -203,7 +204,7 @@ const BW_FROM = (() => {
     /* (and the minotaur, when the save has him at your side, down or dead: ranked by his gate, he parsed in the far
      * queue — measured, `minoRestore`, 40 s after a load into XIII's court before he lay there again) */
     if (f.mino && f.mino.s && f.mino.s !== 'wait') first.add('assets/minotaur.glb');
-    return { walked, first };
+    return { walked, first, room: d.room || null };
   } catch (e) { return null; }
 })();
 const ASSET_REACH = {
@@ -449,8 +450,11 @@ const bwInCastle = () => inC13 || inFort || inThrone;
  * 307 (`tools/loadtime.sh 1 <out> whale`). In the belly it waits for you to leave, parses and warms both; its own files
  * (the whale, Skrim, the crying heads and their moves) come through. */
 const BW_WHALE_FILES = /(whale|skrim|crying-head|demon-moves)/;
-const bwHoldHere = () => bwInCastle() || inWhale;
-const bwHoldOwn = (url, reach) => (inWhale ? BW_WHALE_FILES.test(url) : bwCastleOwn(url, reach));
+/* and in the deep, now a checkpoint stands there (2026-11-13, the snap: `deepSnapSave`): a death to the pliosaur loads you
+ * into its fight, and the far rest is not parsed through it; its own (the pliosaur, the whale that takes you) come through */
+const BW_DEEP_FILES = /(pliosaur|whale)/;
+const bwHoldHere = () => bwInCastle() || inWhale || inDeep;
+const bwHoldOwn = (url, reach) => (inWhale ? BW_WHALE_FILES.test(url) : inDeep ? BW_DEEP_FILES.test(url) : bwCastleOwn(url, reach));
 setInterval(() => { if (bwCastleHeld.length && !bwHoldHere()) for (const f of bwCastleHeld.splice(0)) f(); }, 400);
 const bwNearClear = () => new Promise((r) => { const chk = () => (bwNearPending() ? setTimeout(chk, 100) : r()); chk(); });
 function bwParseLater(url, bufP, job, onError) {
@@ -528,8 +532,18 @@ const WARM_REACH = { lh: 1180 + BEACH_EXT, pavilion: 300, wreck: 155, bunker: 33
   undercroft: 640 + BEACH_EXT, catacombs: 745 + BEACH_EXT, keep: 216, tavern: 216,
   // needed before the walk, not before Start: they run after the opening, under the title or the intro
   beach: 150, gulls: 152, thunder: 101, pack: 101 };
+/* AND IN A ROOM THE BEACH'S WARMS ARE THE FAR REST (2026-11-13, the owner: "make sure all load times are fast as possible
+ * check every checkpoint"). A warm's reach is from the SPAWN (or the parse that queued it, 0 outside one), so loaded into
+ * the tavern the drain's, the pavilion's and the wreck's warms counted as near and held its black ~2 s past its own
+ * (`tools/loadall.sh`: 7.7 s, the slowest of them). Loaded into a room you reach through a cut — nothing of the beach in
+ * sight — only that room's own warms and the pack's (`icon`, `view`) are near; the rest is paced after, as any far
+ * rest is. The castles stand on the beach and keep the rule. */
+const WARM_ROOM_OWN = { keep: ['keep'], tav: ['tavern', 'keep'], uc: ['undercroft'], dojo: ['dojo'], cat: ['catacombs'], bunker: ['bunker'],
+  whale: ['whale'], deep: ['deep'], sewer: ['sewer'], dun: ['dungeon'], thr: ['throne'] };
 function warmStep(name, fn) {
-  const r = WARM_REACH[name.split(' ')[0]];
+  const k = name.split(' ')[0], r = WARM_REACH[k];
+  const own = BW_FROM && BW_FROM.room && WARM_ROOM_OWN[BW_FROM.room];
+  if (own) { warmSteps.push([name, fn, own.includes(k) || k === 'icon' || k === 'view' ? -1 : BOOT_NEAR + 50]); return; }
   warmSteps.push([name, fn, r !== undefined ? r : bwCurReach]);
 }
 /* AND A SLICE THAT ARRIVES BEFORE THE DRIVER HAS FINISHED PAYS FOR THE
@@ -546,6 +560,7 @@ function warmStep(name, fn) {
  * AND A GATE NEEDS A DEADLINE, or a promise that never settles is a warm
  * chain that never runs again. */
 let warmBlock = null, warmBlockT = 0;
+let warmRanNear = true;   // whether the step that ran last (and so any compile it is held on) was near — a checkpoint's black waits only on those (`updateBootHold`)
 let warmRan = 0;          // when a step last actually RAN (a held one, waiting on its compile, says "alive" every frame and runs nothing)
 function warmRunStep() {
   if (warmBlock) {
@@ -561,7 +576,7 @@ function warmRunStep() {
   for (let j = 1; j < warmSteps.length; j++) if (warmSteps[j][2] < warmSteps[i][2]) i = j;
   if (warmSteps.length && warmSteps[i][2] > BOOT_NEAR && bwNearPending()) return false;
   const s = warmSteps.length ? warmSteps.splice(i, 1)[0] : null;
-  if (s) { bwSpan('warm ' + s[0], s[1]); warmRan = performance.now(); }
+  if (s) { warmRanNear = s[2] <= BOOT_NEAR; bwSpan('warm ' + s[0], s[1]); warmRan = performance.now(); }
   return !!s;
 }
 function warmHoldFor(ready, ms = 4000) { warmBlock = ready; warmBlockT = performance.now() + ms; }
@@ -608,7 +623,26 @@ function snapCullStamp(groups) {
 function restoreCullStamp(snap) {
   for (const [o, c] of snap) { if (c === undefined) delete o.userData.bwCulled; else o.userData.bwCulled = c; }
 }
+/* A ROOM'S COMPILE PREPARES THE ROOM, NOT THE WORLD (2026-11-13, the owner: "make sure all load times are fast as
+ * possible check every checkpoint"). three's `compile(scene)` walks EVERY material in the scene — thousands, every room's —
+ * and builds each one's program key whatever it was asked to warm: 'bunker compile' and the undercroft's were 80-106 ms
+ * frames on the paced far rest after a checkpoint (`tools/loadall.sh`). `warmCompileOwn` hands three the warm's own groups
+ * (a stand-in whose `traverse` is theirs, then whatever in the scene is shown, and that has no lights of its own) with the
+ * scene as the target, so the lights are the scene's exactly as before — the groups are shown for it — and the hidden
+ * rooms' thousands of materials are not walked. The two
+ * whole-beach compiles (`mound relics`, the boot's beach) stay whole on purpose. `localStorage['bw.warmAll']` puts the old
+ * way back, for an A/B. */
+let warmOwnOnly = false;
+function warmCompileOwn(groups, ...a) {
+  let all = false; try { all = localStorage.getItem('bw.warmAll') === '1'; } catch (e) { /* no storage */ }
+  warmOwnOnly = !all;
+  try { warmCompile(groups, ...a); } finally { warmOwnOnly = false; }
+}
 function warmCompile(groups, px, py, pz, lx, ly, lz, atZ) {
+  const own = warmOwnOnly && {
+    traverseVisible() { /* the lights are the target scene's: the groups are in it, and shown */ },
+    traverse(fn) { for (const g of groups) if (g) g.traverse(fn); scene.traverseVisible(fn); },   // (and what is shown about it: the blood, the props — drawn in the room under its lights too; the hidden rooms are what cost)
+  };
   const shown = groups.map((g) => g && g.visible);
   const stamp = snapCullStamp(groups);
   const culled = [];
@@ -624,9 +658,9 @@ function warmCompile(groups, px, py, pz, lx, ly, lz, atZ) {
     warmAtZ(atZ, () => {
       if (renderer.compileAsync) {
         let done = false;
-        renderer.compileAsync(scene, cam).then(() => { done = true; }, () => { done = true; });
+        (own ? renderer.compileAsync(own, cam, scene) : renderer.compileAsync(scene, cam)).then(() => { done = true; }, () => { done = true; });
         warmHoldFor(() => done);                       // the slices behind this wait for the driver
-      } else renderer.compile(scene, cam);
+      } else if (own) renderer.compile(own, cam, scene); else renderer.compile(scene, cam);
     });
   } catch (e) { /* a warm is never fatal */ }
   for (const [o, f] of culled) o.frustumCulled = f;
@@ -5233,7 +5267,7 @@ if (lhStair) {
    * the worst frame in the game at 504 ms, and the five behind it were free
    * — which is what a slice that is too coarse looks like from the outside.
    * Twenty-four. */
-  if (!LH_RETIRED) warmStep('lh stair compile', () => warmCompile([lhStair, lhLights], _sx, _sy, _sz, LH_X, HL_CREST + 14, LH_Z));
+  if (!LH_RETIRED) warmStep('lh stair compile', () => warmCompileOwn([lhStair, lhLights], _sx, _sy, _sz, LH_X, HL_CREST + 14, LH_Z));
   for (let k = 0; k < (LH_RETIRED ? 0 : 24); k++) {
     warmStep('lh stair', () => warmView([lhStair, lhLights], _sx, _sy, _sz, LH_X, HL_CREST + 14, LH_Z, [k, 24]));
   }
@@ -8793,7 +8827,11 @@ function updateBootHold(dt) {
    * (`bgLoadMode`, `bgLoadOk`). A first load is unchanged (START and the intro's black still wait for everything). */
   const fastLoad = instantStart && !!BW_FROM;
   const left = fastLoad ? bootLeft() : startLeft();
-  if (left > 0 || roomRestore || restore || warmBlock) bootIdleSince = 0; else bootIdleSince = bootIdleSince || now;
+  /* (and a FAR warm's held compile holds nothing: under a checkpoint's black the far warms run while the near part
+   * parses, and every one of them reset this idle — the keep and the tavern waited ~1.5 s on the beach's gulls, its
+   * draw and the bunker after their own were in, 2026-11-13, `tools/loadall.sh`) */
+  const nearBlock = !!warmBlock && (!fastLoad || warmRanNear);
+  if (left > 0 || roomRestore || restore || nearBlock) bootIdleSince = 0; else bootIdleSince = bootIdleSince || now;
   const queueDone = bootIdleSince && now - bootIdleSince > (instantStart && BW_FROM ? 150 : 500);   // (a fast checkpoint: the near part does not refill)
   /* AND ONCE THE BLACK HAS STARTED TO LIFT IT DOES NOT COME BACK (2026-10-15, the owner: "reloading the checkpoint in
    * the catacombs still was making my screen flash"). Measured on the real clock: the fade ran 1 → 0.26, then a hold
@@ -8801,7 +8839,7 @@ function updateBootHold(dt) {
    * black was slammed back to 1, then let go at 0.2 — a flash, every time. The hold is asked only BEFORE the fade
    * begins; whatever is still owed after that is paid in the open. */
   const fading = bootHold < 1;
-  let hold = !fading && !capped && (roomWarm || !queueDone || (fastLoad ? !!warmBlock : warmOwed()) || (!!bootStageHold && el < BOOT_HOLD_WARM_MAX && bootStageHold()));
+  let hold = !fading && !capped && (roomWarm || !queueDone || (fastLoad ? nearBlock : warmOwed()) || (!!bootStageHold && el < BOOT_HOLD_WARM_MAX && bootStageHold()));
   if (!fading && !hold && !capped && !bootLookDone) {
     bootLookDone = true; updateFarProps(); startLookWarm(); hold = true;
     // (a fast checkpoint: the far rest is paced from HERE, or it runs flat out under the black and the thirty settled frames below never come)
@@ -8839,7 +8877,9 @@ function updateBootHold(dt) {
   blackoutEl.style.opacity = bootHold.toFixed(3);
   if (bootHold <= 0) {
     catchBreath(); document.documentElement.classList.remove('resuming'); audioAfterLoad();
-    if (!passSrc && !passLoading && !inRoom()) startMusic(0.72);     // the opening music, a little lower from a load (not over the passing theme, not in a room)
+    /* the opening music, a little lower from a load — not over the passing theme, and IN A ROOM TOO (2026-11-09, the
+     * owner: "MAKE SURE ALL MUSIC PLAYS THE TAVERN MUSIC DIDNT": a checkpoint written in the tavern loaded in silence) */
+    if (!passSrc && !passLoading) startMusic(0.72);
   }
 }
 /* ---- THE DEATH CARD (2026-10-18). The owner: "make a death screen that looks like the start screen that say 'YOU
@@ -9202,6 +9242,7 @@ function bootLeft() {
   let n = bwOpenNear + bwParsingNear;
   for (const j of bwWaiting) if (j.reach <= BOOT_NEAR) n++;
   for (const w of warmSteps) if (w[2] <= BOOT_NEAR) n++;
+  try { if (UC.composing && (bwReach.get('assets/cave.glb') ?? 0) <= BOOT_NEAR) n++; } catch (e) { /* not read yet */ }   // (its build is spread over frames now: models/undercroft.js `uSlice`)
   return n;
 }
 /* ---- AND THE INTRO IS NEVER LAGGED BY THE BOOT. It was thirty seconds of
@@ -9252,6 +9293,7 @@ function startLeft() {
   if (!drainWarmed) n++; if (!mushWarmed) n++; if (!bunkerWarmed) n++;
   if (!bootRoomsAsked) n++;
   try { n += heldWarmLeft(); } catch (e) { /* not built yet */ }
+  try { if (UC.composing) n++; } catch (e) { /* not read yet */ }
   return n;
 }
 /* EVERY BEACH SHADER, ONCE, BEHIND THE LOADING SCREEN. Each room and set
@@ -25503,7 +25545,7 @@ function warmDrain() {
    * variant is built — and they are two frames, not one block of 404 ms. */
   const OUT = [DRAIN_X - 12, 3.0, DRAIN_Z, DRAIN_X + 20, 1.4, DRAIN_Z];
   const IN = [DRAIN_X + DN.ROOM_X0 + 1, 1.7, DRAIN_Z, DRAIN_X + DN.ROOM_X1, 1.6, DRAIN_Z];
-  warmStep('drain compile', () => warmCompile([drainTunnel], ...OUT));
+  warmStep('drain compile', () => warmCompileOwn([drainTunnel], ...OUT));
   for (let k = 0; k < 16; k++) warmStep('drain', () => warmView([drainTunnel], ...OUT, [k, 16]));
   // and the chamber from within is the OTHER half of the room's meshes, so
   // it wants slicing too: unsliced it was the worst frame of the boot after
@@ -26321,7 +26363,7 @@ bwGlb('assets/pirate-props.glb', (gltf) => {
   bakeStatic(g, undefined, { named: true });
   shipStoresLanded(g, boxes);
   // compiled now, off the driver's thread, not on the frame she comes out of the fog
-  warmStep('wreck stores', () => warmCompile([g], SHIP_X + 14, 5, SHIP_Z + 12, SHIP_X, 3, SHIP_Z));
+  warmStep('wreck stores', () => warmCompileOwn([g], SHIP_X + 14, 5, SHIP_Z + 12, SHIP_X, 3, SHIP_Z));
 });
 /* AND THE SEA CHEST IS THE OWNER'S OWN MODEL, in three pieces so its lid can
  * be hung on a real hinge. It is NOT baked: the lid has to survive as
@@ -27815,7 +27857,7 @@ bwGlb('assets/gull.glb', (gltf) => {
    * material is a program of its own, and the first frame one was drawn was a
    * hitch on the walk up to her; the fight measured 17 ms a frame once it
    * had been compiled. */
-  warmStep('gulls', () => warmCompile([...gulls.map((u) => u.g), ...gulls.map((u) => u.shadow)], SHIP_X, 6, SHIP_Z + 20, SHIP_X, 8, SHIP_Z));
+  warmStep('gulls', () => warmCompileOwn([...gulls.map((u) => u.g), ...gulls.map((u) => u.shadow)], SHIP_X, 6, SHIP_Z + 20, SHIP_X, 8, SHIP_Z));
   /* AND DRAWN ONCE, INTO FOUR PIXELS, BEHIND THE COVER. A compile is not a
    * draw: the first frame they were really drawn — at z -5, the moment you
    * come within `GULL.FAR` of her — still uploaded their mesh, their shape
@@ -32380,7 +32422,7 @@ function warmMush() {
    * uploaded on ONE frame. Measured at boot: **1313 ms in a single
    * `warm pavilion`**, the worst block left anywhere in the load and three
    * times the next thing. Twelve slices a view. */
-  warmStep('pavilion compile', () => warmCompile([mushHouse.group],
+  warmStep('pavilion compile', () => warmCompileOwn([mushHouse.group],
     MUSH_X, 2.0, MUSH_Z + 26, MUSH_X, 5.6, MUSH_Z));
   for (let k = 0; k < 12; k++) warmStep('pavilion', () => warmView([mushHouse.group],
     MUSH_X, 2.0, MUSH_Z + 26, MUSH_X, 5.6, MUSH_Z, [k, 12]));
@@ -45462,7 +45504,7 @@ function warmBunker(group) {
   bunkerWarmed = true;
   const V = [g.position.x, g.position.y + 1.7, g.position.z - 3,
              g.position.x, g.position.y + 1.4, g.position.z + 5];
-  warmStep('bunker compile', () => warmCompile([g], ...V));
+  warmStep('bunker compile', () => warmCompileOwn([g], ...V));
   for (let k = 0; k < 16; k++) warmStep('bunker', () => warmView([g], ...V, [k, 16]));
   warmStep('bunker', () => {
     warmView([g], ...V);        // and once whole, for whatever the slices missed
@@ -46537,7 +46579,7 @@ const _saveV = new THREE.Vector3();
  * table (`updateRoomRestore`) rather than one special case. */
 const saveRoom = () => (inKeep ? 'keep' : inTavern ? 'tav' : inCat ? 'cat'
   : inDojo ? 'dojo' : inUndercroft ? 'uc' : inBunker ? 'bunker' : inWhale ? 'whale'
-  : inThrone ? 'thr' : inDun ? 'dun' : inSewer ? 'sewer' : inC13 ? 'c13' : inFort ? 'fort' : null);
+  : inThrone ? 'thr' : inDun ? 'dun' : inSewer ? 'sewer' : inC13 ? 'c13' : inFort ? 'fort' : inDeep ? 'deep' : null);
 /* AND THE TWO CASTLES ARE PLACES TOO. They stand on the beach, not in a room,
  * so a save inside one used to be a position on the sand — and restored as
  * one, the castle's footprint is a wall from outside, so the body came back
@@ -47580,7 +47622,8 @@ function updateTexUpload() {
       texUp.wait.push(t);
       continue;
     }
-    renderer.initTexture(t);
+    // (named, so a long one says which: `__bw.lag()`)
+    bwSpan('tex ' + (im ? (im.width || 0) + 'x' + (im.height || 0) : '') + ' ' + (t.name || (im && im.src ? String(im.src).split('/').pop().slice(0, 30) : '')), () => renderer.initTexture(t));
     n++;
   }
 }
@@ -48157,7 +48200,10 @@ function animateFrame() {
    * to look when a load hitches, and the timer says which. */
   if (introHoldNow()) { /* a moment of the intro is due: nothing heavy across it */ }
   else if (bgLoadMode && !bgLoadOk()) { /* after a fast checkpoint: the far rest waits for a quiet moment */ }
-  else if (bgLoadMode && inWhale) { /* and in the whale's belly for you to leave it (`bwHoldHere`) */ }
+  /* and in the whale's belly, the deep, or any room you reach through a cut, for you to leave it (2026-11-13: loaded into the
+   * tavern, the drain's far warm ran the frame the black lifted — a 237 ms frame for a room nobody there can see; the far
+   * rest's warms are the beach's and come in on it after, paced, as after any checkpoint) */
+  else if (bgLoadMode && (inWhale || inDeep || inKeep || inTavern || inUndercroft || inDojo || inCat || !!inBunker || inThrone || inDun || inSewer)) { /* (`bwHoldHere` holds the whale's and the deep's parses too) */ }
   else if (warmRunStep()) {
     if (bgLoadMode && performance.now() - warmRan < 1) bgLoadLast = performance.now();     // (stamped only when a step RAN this frame: a held compile reports "alive" every frame, and stamped then the parses never got a turn)
     /* one view of one room, and nothing else this frame — EXCEPT behind the
@@ -48293,7 +48339,7 @@ const SHRINE_X = 3000, SHRINE_Y = 600, SHRINE_Z = 3000;
 function warmThrough(groups) {
   const y = SHRINE_Y + 4;
   const R = 28;
-  warmStep('hall compile', () => warmCompile(groups, SHRINE_X, y, SHRINE_Z, SHRINE_X + R, y, SHRINE_Z, SHRINE_Z));
+  warmStep('hall compile', () => warmCompileOwn(groups, SHRINE_X, y, SHRINE_Z, SHRINE_X + R, y, SHRINE_Z, SHRINE_Z));
   for (const v of [
     [SHRINE_X, y, SHRINE_Z, SHRINE_X + R, y, SHRINE_Z],
     [SHRINE_X, y, SHRINE_Z, SHRINE_X - R, y, SHRINE_Z],
@@ -51105,7 +51151,7 @@ function armUndercroft(S) {
   ucWarm = () => {
     const E = sp.entry, M = sp.mouth, X = sp.exit;
     const px = UC_X + E.x, py = UC_Y + E.y + 1.6, pz = UC_Z + E.z;
-    warmStep('undercroft compile', () => warmCompile([undercroft], px, py, pz, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
+    warmStep('undercroft compile', () => warmCompileOwn([undercroft], px, py, pz, UC_X + M.x, UC_Y + M.y + 1, UC_Z + M.z));
     /* AND A WARM IS ONLY MOVED IF IT IS SPREAD. Measured, the first of these
      * views was 397 ms in ONE frame — a church, a cave and a hundred and
      * forty metres of bore, decoded and uploaded together, which is the
@@ -61733,7 +61779,7 @@ function warmCatacombs() {
   if (catWarmed || !catWorld || !catReady) return;
   catWarmed = true;
   const x = CAT_X + CAT_LAND.x, y = CAT_Y + 0.36 * CAT_SCALE + 1.6, z = CAT_Z + CAT_LAND.z;
-  warmStep('catacombs compile', () => warmCompile([catWorld], x, y, z, x - 10, y, z));
+  warmStep('catacombs compile', () => warmCompileOwn([catWorld], x, y, z, x - 10, y, z));
   for (const v of [[x, y, z, x - 20, y, z], [x, y, z, x, y, z + 30], [x, y, z, x, y, z - 30], [CAT_X + 4 * CAT_SCALE, CAT_Y + 5.9 * CAT_SCALE, CAT_Z - 14 * CAT_SCALE, CAT_DOOR.x, CAT_Y + 5.5 * CAT_SCALE, CAT_DOOR.z]])
     warmStep('catacombs', () => warmView([catWorld], ...v));
 }
@@ -74980,7 +75026,7 @@ function warmKeep() {
   if (keepWarmed || !keepWorld || !keepReady) return;
   keepWarmed = true;
   const x = KEEP_X + KEEP_SPAWN.x, y = KEEP_Y + 1.5, z = KEEP_Z + KEEP_SPAWN.z;
-  warmStep('keep compile', () => warmCompile([keepWorld], x, y, z, KEEP_X, KEEP_Y + 10, KEEP_Z));
+  warmStep('keep compile', () => warmCompileOwn([keepWorld], x, y, z, KEEP_X, KEEP_Y + 10, KEEP_Z));
   for (const v of [[x, y, z, KEEP_X, KEEP_Y + 10, KEEP_Z], [x, y, z, x, y, z + 40], [x, y, z, x + 40, y, z], [x, y, z, x - 40, y, z], [x, y, z, x, y + 40, z]])
     warmStep('keep', () => warmView([keepWorld], ...v));
 }
@@ -75750,6 +75796,10 @@ const ROOM_BACK = {
   // the sewer through the drain's pipe: at the foot of its ladder
   sewer: { grp: () => sewWorld, at: () => [SEW_X, SEW_Z], ready: () => sewReady, load: () => loadSewer(),
            place: () => placeInSewer(), seat: () => {}, spots: { sewIn: () => {} } },
+  /* and the deep, from the moment the line snaps (2026-11-13, the owner: "add checkpoint when the fishing rod snaps in
+   * the water too"): at the bottom of the long pull, the line gone, before it comes (`deepSnapSave`, `deepRestore`) */
+  deep: { grp: () => deep.world, at: () => [DEEP.x, DEEP.z], ready: () => plio.ready && !!deep.world, load: () => { bwSoon('assets/pliosaur.glb'); plioLoad(); deepAmbLoad(); },
+          place: () => deepRestore(), seat: () => {}, spots: { deepSnap: () => {} } },
 };
 /* AND A RESTORE IS WATCHED FOR THREE SECONDS AFTER IT LANDS. Every way this
  * has failed the owner — a stale room flag, a room that was not really
@@ -78610,7 +78660,7 @@ function warmTavern() {
   tavWarmed = true;
   const x = TAV_X + TAV_SPAWN.x, y = TAV_Y + TAV_FLOOR + 1.6, z = TAV_Z + TAV_SPAWN.z;
   const lx = x - Math.sin(TAV_SPAWN.yaw) * 10, lz = z - Math.cos(TAV_SPAWN.yaw) * 10;
-  warmStep('tavern compile', () => warmCompile([tavWorld], x, y, z, lx, y, lz));
+  warmStep('tavern compile', () => warmCompileOwn([tavWorld], x, y, z, lx, y, lz));
   for (const v of [[x, y, z, lx, y, lz], [x, y, z, x, y, z + 20], [x, y, z, x + 20, y, z], [x, y, z, x - 20, y, z], [x, y, z, x, y, z - 20]])
     warmStep('tavern', () => warmView([tavWorld], ...v));
 }
@@ -81288,7 +81338,7 @@ function loadFort() {
     buildCastleLink();             // (if XIII is in: the passage is built of both castles' stone)
     /* and every program it needs is compiled now, off the driver's own thread,
      * rather than on the frame it first comes over the horizon */
-    warmStep('castle compile', () => warmCompile([fortWorld], FORT_X - 8, 1.7, FORT_Z + 70, FORT_X - 8, 4, FORT_Z));
+    warmStep('castle compile', () => warmCompileOwn([fortWorld], FORT_X - 8, 1.7, FORT_Z + 70, FORT_X - 8, 4, FORT_Z));
     /* AND ITS WALL INDEX, ITS TORCHES AND ITS DRESSING ARE BUILT BEHIND THE LOADING SCREEN (2026-10-14, "fix all lag").
      * The index was built a slice a frame as you came up the beach, and the frame it finished `buildFortTorches` walked
      * each torch's wall at 5 cm steps — measured with the profiler, a 91 ms frame at z -837, on the walk past the trader.
@@ -82136,7 +82186,7 @@ function loadC13() {
     buildC13ThroneDoor();
     c13Ready = true;
     buildC13Life();
-    warmStep('castle13 compile', () => warmCompile([c13World], C13_X + C13_SPAWN.x, 1.7, C13_Z + C13_SPAWN.z, C13_X, 3, C13_Z + C13_SPAWN.z));
+    warmStep('castle13 compile', () => warmCompileOwn([c13World], C13_X + C13_SPAWN.x, 1.7, C13_Z + C13_SPAWN.z, C13_X, 3, C13_Z + C13_SPAWN.z));
   }, undefined, () => {});
 }
 loadC13();
@@ -83817,7 +83867,7 @@ function* c13BuildThrive() {
   T.G.traverse((o) => { if (o.isInstancedMesh && o.frustumCulled === false && o.count > 0 && o.computeBoundingSphere) { o.computeBoundingSphere(); if (o.boundingSphere) { o.boundingSphere.radius += 2; o.frustumCulled = true; } } });
   T.done = true;
   if (c13Life) c13Life.torches = true;
-  if (inC13) warmStep('castle13 dressing', () => warmCompile([c13World], C13_X + C13_SPAWN.x, C13_Y + 1.7, C13_Z + C13_SPAWN.z, C13_X, C13_Y + 3, C13_Z + C13_SPAWN.z));   // (out of it, `c13ShowDressing` compiles it a batch a frame: this whole-castle compile was a 41 ms frame on the walk)
+  if (inC13) warmStep('castle13 dressing', () => warmCompileOwn([c13World], C13_X + C13_SPAWN.x, C13_Y + 1.7, C13_Z + C13_SPAWN.z, C13_X, C13_Y + 3, C13_Z + C13_SPAWN.z));   // (out of it, `c13ShowDressing` compiles it a batch a frame: this whole-castle compile was a 41 ms frame on the walk)
 }
 
 /* ---- the throne room's door, measured off its own planks and frame ---- */
@@ -88681,7 +88731,7 @@ function loadThrone() {
       onActivate: () => startThrone(-1),
     });
     thrReady = true;
-    warmStep('throne compile', () => warmCompile([thrWorld], THR_X, THR_Y + 4, THR_Z + THR_SPAWN.z, THR_X, THR_Y + 4, THR_Z - 5));
+    warmStep('throne compile', () => warmCompileOwn([thrWorld], THR_X, THR_Y + 4, THR_Z + THR_SPAWN.z, THR_X, THR_Y + 4, THR_Z - 5));
   }, undefined, () => {});
 }
 /* THE MODEL IS A STAGE SET: it stops two strides behind where you stand, with
@@ -89846,7 +89896,7 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
   sewLightPass(W);
   sewApplyState();
   sewReady = true;
-  warmStep('sewer compile', () => warmCompile([W], SEW_X + S.SPAWN.x, SEW_Y + 0.9, SEW_Z + S.SPAWN.z, SEW_X + 2, SEW_Y, SEW_Z - 6));
+  warmStep('sewer compile', () => warmCompileOwn([W], SEW_X + S.SPAWN.x, SEW_Y + 0.9, SEW_Z + S.SPAWN.z, SEW_X + 2, SEW_Y, SEW_Z - 6));
 }
 const SEW_LOOT_JARS = 5;
 /* the chest is dark wood in a room lit only by the box's cold glow, and on the walls' own lift it was a black shape
@@ -91417,7 +91467,7 @@ function loadDungeon() {
     buildDunGate(root, mats);
     loadHenry();
     dunReady = true;
-    warmStep('dungeon compile', () => warmCompile([dunWorld], DUN_X + DUN_SPAWN.x, DUN_Y + 0.5, DUN_Z + DUN_SPAWN.z, DUN_X, DUN_Y, DUN_Z - 3));
+    warmStep('dungeon compile', () => warmCompileOwn([dunWorld], DUN_X + DUN_SPAWN.x, DUN_Y + 0.5, DUN_Z + DUN_SPAWN.z, DUN_X, DUN_Y, DUN_Z - 3));
   }, undefined, () => {});
 }
 /* THE DOOR IN THE PAVILION'S YARD. The dungeon's own door, flat against the yard wall's inside at the cliff
@@ -93400,7 +93450,7 @@ function buildFortTorches() {
   G.add(T); bakeStatic(T, undefined, { named: true });
   T.traverse((o) => { if (o.isMesh) { o.userData.bwGhost = true; o.raycast = () => {}; } });
   for (const o of keepFirePoints(fires)) G.add(o);
-  warmStep('castle torches', () => warmCompile([fortWorld], FORT_X - 8, 1.7, FORT_Z + 40, FORT_X - 8, 3, FORT_Z));
+  warmStep('castle torches', () => warmCompileOwn([fortWorld], FORT_X - 8, 1.7, FORT_Z + 40, FORT_X - 8, 3, FORT_Z));
 }
 /* ---- AND THE COURTYARD IS ALIVE. It was a stone plain with five fires in
  * it: nothing moved but the flames. What a castle yard at night under siege
@@ -97048,7 +97098,7 @@ function isleFliesPlace() {
   isleMagicS.flies = F;
 }
 // compiled with the boot's chain, behind the loading screen
-warmStep('isle magic', () => { isleMagicG.visible = true; warmCompile([isleMagicG], ISLE_AXIS.x - 30, 22, ISLE_AXIS.z + 30, ISLE_AXIS.x, 40, ISLE_AXIS.z); isleMagicG.visible = isleMagicK > 0.003; });
+warmStep('isle magic', () => { isleMagicG.visible = true; warmCompileOwn([isleMagicG], ISLE_AXIS.x - 30, 22, ISLE_AXIS.z + 30, ISLE_AXIS.x, 40, ISLE_AXIS.z); isleMagicG.visible = isleMagicK > 0.003; });
 /* ---- THE VIEW FROM THE END OF THE WALK (2026-10-14, the owner, from the gallery: "fill all this
  * random land with things to see so the world look more thought out and interesting make it look
  * actually like a view"). From the top of the lighthouse the land past the island was one flat sand
@@ -100534,7 +100584,7 @@ Object.assign(SKRIM_NPC.script, {
 // the artifact is yours: in the pack, or set in a weapon that is
 function skqHolding() { return !!whaleArtItem && (inventory.includes(whaleArtItem) || (!!whaleArtItem.on && inventory.includes(whaleArtItem.on))); }
 // a heap gives itself up once you have his leave to look, or he is past minding
-function skqOpen() { return true; }   // (any time now — 2026-10-30, the owner: "make the piles able to be broken before talking to skrim too"; the artifact is put in one only on the deal, `skqChoose`)
+function skqOpen() { return true; }   // (any time now — 2026-10-30, the owner: "make the piles able to be broken before talking to skrim too"; the artifact is in one from the start, 2026-11-13: `skqTick`)
 /* (the farthest back of them that is still standing, 2026-10-30, the owner: "make the artifact be in the farthest pile
  * back": it was any one at random) */
 function skqChoose() {
@@ -100607,7 +100657,7 @@ function skqPileHit(p, n, dx = 0, dz = 0) {
   p.jig = 1;
   playSampleAt('fleshHit', wx, wz, { gain: 0.75, ref: 4, far: 22, rate: 0.72 + Math.random() * 0.14 });
   if (!skqOpen()) { playSampleAt('slosh', wx, wz, { gain: 0.3, ref: 3, far: 14, rate: 0.85 }); skqShape(p); return 'squelch'; }   // (not yours to search yet: it squelches)
-  if (SKQ.pick < 0 && (SKRIM.stage === 'deal' || (!!SKRIM.u && !SKRIM.u.st.alive))) skqChoose();
+  if (SKQ.pick < 0) skqChoose();          // (in one from the start now, deal or no deal: `skqTick`)
   // (a small heap goes at one blow — 2026-10-30, the owner: "make the small flesh piles one hit")
   p.hits = Math.min(4, p.hits + (p.K < 0.65 ? 4 : n));
   playSampleAt('slosh', wx, wz, { gain: 0.45 + 0.1 * n, ref: 3, far: 16, rate: 0.95 + Math.random() * 0.2 });
@@ -100876,7 +100926,9 @@ function skqTick(dt) {
   if (SKQ.pool.length) skqFlyTick(dt);
   if (!inWhale) { if (SKRIM.stage === 'leave') skqGoneNow(); return; }    // (you went out while he was on his way: he is gone)
   if (!SKQ.built) skqBuild();
-  if (SKRIM.stage === 'deal' && SKQ.pick < 0 && SKQ.built) skqChoose();
+  /* the artifact is in a heap from the start, deal or no deal (2026-11-13, the owner: "make the whale artifact spawn in
+   * the flesh pile even without talking to skrim"; it was put in one only on the deal) */
+  if (SKQ.pick < 0 && SKQ.built) skqChoose();
   for (const p of SKQ.piles) if (p.jig > 0 && !p.gone) { p.jig = Math.max(0, p.jig - dt * 2.8); skqShape(p); }
   if (!u || whaleBusy) return;
   // with it in your pack, back up on him: he gets up and comes for it
@@ -107479,6 +107531,34 @@ function placeInDeep() {
   _preMove.set(camera.position.x, 0, camera.position.z);
   deep.v.set(0, 0, 0); deep.knock.set(0, 0, 0);
 }
+/* THE CHECKPOINT AT THE SNAP (2026-11-13, the owner: "add checkpoint when the fishing rod snaps in the water too"). Every
+ * other save is refused from the bite to the sand (`autosaveNow`: `deepLock`), so a death to the pliosaur sent you back
+ * up the beach before the bite. Now the snap writes one — room 'deep', spot 'deepSnap' — and a load of it is the bottom
+ * of the pull: the line gone (the rod with it: it is at the bottom of the sea), the water quiet, it not yet come. */
+function deepSnapSave() {
+  if (applyingSave || replaying || dying || ended) return;
+  saveCheckpoint('deepSnap');
+}
+function deepRestore() {
+  deepLock = true; deepNoHands = false; deepCutOn = false; deepRodOn = false; deepReelSpin = null; deepBend = 0; deepDone = false;
+  placeInDeep();
+  // where the long pull ends, looking along the way it was going
+  const cam = camera.position;
+  cam.copy(deep.descE);
+  _dA.subVectors(deep.descE, deep.descC).normalize();
+  lookEuler.set(Math.asin(THREE.MathUtils.clamp(_dA.y, -1, 1)) * 0.6, Math.atan2(-_dA.x, -_dA.z), 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler); camera.updateMatrixWorld(true);
+  camBaseY = cam.y; groundY = camBaseY - playerEye(); vy = 0; onGround = true; _preMove.set(cam.x, 0, cam.z);
+  scene.fog.color.copy(DEEP_BOT_FOG); scene.fog.density = 0.064;
+  if (deepBack) deepBack.material.uniforms.uK.value = 0.4;
+  deep.ph = 'silence'; deep.t = 0; deep.snapped = true; deep.muffled = true; deep.hint = true; deep.farT = 6;
+  deep.v.set(0, 0, 0); deep.knock.set(0, 0, 0);
+  deep.reMuffle = true;
+  rodLine.visible = false; rodFloat.visible = false;
+  if (inventory.includes(fishingRodItem)) removeFromInventory(fishingRodItem);
+  rodHome();
+  calmChasers();
+}
 function placeOutOfDeep() {
   inDeep = false;
   deepAmbSet(false, 1.5);                        // (and out of the water it is gone, however you left)
@@ -108260,6 +108340,7 @@ function updatePlioBar() {
 function updateDeep(rawDt) {
   updatePlioBar();
   if (!deepLock && !inDeep) return;
+  if (deep.reMuffle && inDeep && audioCtx && masterGain && gameAudioGate) { deep.reMuffle = false; deepAudio(true, 0.3); }   // (a restore into it: the sound goes under once there is sound: `deepRestore`)
   if (menuOpen || dying || ended) return;
   const cut = deepCutOn || deep.ph === 'hook' || deep.ph === 'pull' || deep.ph === 'plunge' || deep.ph === 'descent' || deep.ph === 'drown' || deep.ph === 'black' || deep.ph === 'wash';
   if (!cut && (invOpen || inspecting || noteOpen || dialogOpen)) return;   // the pack and the rest stop the world here as everywhere
@@ -108396,6 +108477,7 @@ function updateDeep(rawDt) {
           deep.snapped = true; deepRodOn = false; deepReelSpin = null; deepScreamSet(0);
           rodLine.visible = false; rodFloat.visible = false; rod.st = 'home'; rod.arm = null; rod.outK = 0;
           sfxLineSnap(); addTrauma(0.35); vmImpulse(1.2);
+          deepSnapSave();
         }
       } else deepBend += (0 - deepBend) * Math.min(1, dt * 7);
       deepHold();
@@ -109386,7 +109468,7 @@ function loadHouse() {
     houseReady = true;
     loadElvPuppet();
     elvPlaceBed();
-    warmStep('house compile', () => warmCompile([houseWorld], HOUSE_X - 9, HOUSE_Y + 2.2, HOUSE_Z + 3, HOUSE_X, HOUSE_Y + 2, HOUSE_Z));
+    warmStep('house compile', () => warmCompileOwn([houseWorld], HOUSE_X - 9, HOUSE_Y + 2.2, HOUSE_Z + 3, HOUSE_X, HOUSE_Y + 2, HOUSE_Z));
   }, () => {});
 }
 /* the house's own floors, straight off its own up-facing triangles (indexed with its walls, a metre grid): whatever is

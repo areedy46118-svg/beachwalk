@@ -4481,3 +4481,142 @@ export async function skrimAim({ w, b, log, sleep }) {
   seg('circling 7 m at a walk', 25, () => { const dx = cam.x - P.x, dz = cam.z - P.z; ang = Math.atan2(dx, dz) + 3.4 / 7 / 60; cam.x = P.x + Math.sin(ang) * 7; cam.z = P.z + Math.cos(ang) * 7; });
   seg('strafing 7 m at a run, turning every 1.5 s', 20, (f) => { const dx = cam.x - P.x, dz = cam.z - P.z, sg = Math.floor(f / 90) % 2 ? 1 : -1; ang = Math.atan2(dx, dz) + sg * 5.7 / 7 / 60; cam.x = P.x + Math.sin(ang) * 7; cam.z = P.z + Math.cos(ang) * 7; });
 }
+
+// THE SHIFT HEAVY, through the real inputs (2026-11-13, the owner: "my shift heavy wont work"): for each weapon, Shift
+// pressed as a real keydown, the left button held past the charge latch, released, and what the swing came out as.
+export async function shiftHeavy({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().introDone; i++) { try { if (!b.state().started) b.beginGame(); } catch (e) { /* */ } b.frame(3); await sleep(30); }
+  b.settings.devMode = true; b.camera.position.set(8, 1.7, -60);
+  if (w.__shRoom) {
+    const RB = b.ROOM_BACK[w.__shRoom]; RB.load();
+    for (let i = 0; i < 200 && !RB.ready(); i++) { b.frame(2); await sleep(50); }
+    RB.place(); for (let i = 0; i < 90; i++) { b.frame(1); await sleep(5); }
+    log('room', w.__shRoom, 'ready', RB.ready(), 'pos', b.camera.position.toArray().map((x) => x.toFixed(1)).join(','));
+  }
+  const cv = b.renderer.domElement;
+  const pe = (t) => new PointerEvent(t, { button: 0, buttons: t === 'pointerup' ? 0 : 1, clientX: 400, clientY: 300, bubbles: true, pointerId: 1 });
+  const ke = (t) => new KeyboardEvent(t, { code: 'ShiftLeft', key: 'Shift', shiftKey: t === 'keydown', bubbles: true });
+  for (const name of (w.__shItems || 'shovelItem,militaryItem,katanaItem,pegItem').split(',')) {
+    const it = b[name]; if (!it) { log(name, 'not exposed'); continue; }
+    if (b.equippedS() !== it) b.toggleEquip(it);
+    for (let i = 0; i < 40; i++) b.frame(1);
+    for (const shift of [false, true]) {
+      if (shift) w.dispatchEvent(ke('keydown'));
+      const keyed = !!(b.keys.ShiftLeft);
+      cv.dispatchEvent(pe('pointerdown'));
+      let wound = false, wo = false;
+      for (let i = 0; i < 70; i++) { b.frame(1); await sleep(16); wound = wound || b.state().digT > 0 || !!b.winding; wo = wo || b.windOverhead; }
+      w.dispatchEvent(pe('pointerup'));
+      let oh = false, swung = false;
+      for (let i = 0; i < 40; i++) { b.frame(1); oh = oh || b.digOverhead; swung = swung || b.state().digT > 0; }
+      if (shift) w.dispatchEvent(ke('keyup'));
+      for (let i = 0; i < 60; i++) b.frame(1);
+      log(name, shift ? 'SHIFT' : 'plain', '| key down', keyed, '| winding seen', wound, '| windOverhead', wo, '| swung', swung, '| overhead', oh, '| equipped', b.equippedS() && b.equippedS().name);
+    }
+  }
+}
+export async function shiftHeavyUc(ctx) { ctx.w.__shRoom = 'uc'; ctx.w.__shItems = 'militaryItem,shovelItem'; return shiftHeavy(ctx); }
+// the same, the owner's way: the Military Shovel held in the undercroft, saved, the page reloaded into that checkpoint
+// (no death, dev mode off), then Shift + hold + release through the real inputs
+export async function shiftHeavyLoad({ w, b, log, sleep }) {
+  const f = w.frameElement;
+  const RB = b.ROOM_BACK.uc; RB.load();
+  for (let i = 0; i < 200 && !RB.ready(); i++) { b.frame(2); await sleep(50); }
+  RB.place(); for (let i = 0; i < 60; i++) { b.frame(1); await sleep(5); }
+  for (const it of [b.militaryItem, b.shovelItem]) if (!b.inventory.includes(it)) b.addToInventory(it);
+  if (b.equippedS() !== b.militaryItem) b.toggleEquip(b.militaryItem);
+  for (let i = 0; i < 30; i++) b.frame(1);
+  b.saveCheckpoint(); await sleep(300);
+  sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1');
+  f.contentWindow.location.reload(); await sleep(1500);
+  let w2 = null; for (let i = 0; i < 300; i++) { await sleep(100); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.state) break; } catch (e) {} }
+  const B = w2.__bw;
+  for (let i = 0; i < 900 && !(B.restoreS && B.restoreS().bootHold <= 0 && B.state().introDone); i++) await sleep(50);
+  await sleep(1500);
+  B.settings.devMode = false;
+  log('loaded', 'room', B.devRoom && B.devRoom(), 'equipped', B.equippedS() && B.equippedS().name, 'frozen', B.frozen(), 'hp', B.state().hp);
+  const cv = B.renderer.domElement;
+  const pe = (t) => new w2.PointerEvent(t, { button: 0, buttons: t === 'pointerup' ? 0 : 1, clientX: 400, clientY: 300, bubbles: true, pointerId: 1 });
+  const ke = (t) => new w2.KeyboardEvent(t, { code: 'ShiftLeft', key: 'Shift', shiftKey: t === 'keydown', bubbles: true });
+  const kw = (t) => new w2.KeyboardEvent(t, { code: 'KeyW', key: 'w', bubbles: true });
+  for (const [shift, run] of [[false, false], [true, false], [true, true], [true, true]]) {
+    if (shift) w2.dispatchEvent(ke('keydown'));
+    if (run) { w2.dispatchEvent(kw('keydown')); await sleep(1500); }
+    const keyed = !!B.keys.ShiftLeft;
+    cv.dispatchEvent(pe('pointerdown'));
+    let wound = false, wo = false;
+    for (let i = 0; i < 70; i++) { await sleep(16); wound = wound || !!B.winding; wo = wo || B.windOverhead; }
+    w2.dispatchEvent(pe('pointerup'));
+    let oh = false, swung = false;
+    for (let i = 0; i < 40; i++) { await sleep(16); oh = oh || B.digOverhead; swung = swung || B.state().digT > 0; }
+    if (shift) w2.dispatchEvent(ke('keyup'));
+    if (run) w2.dispatchEvent(kw('keyup'));
+    await sleep(800);
+    log(shift ? (run ? 'SHIFT+W' : 'SHIFT') : 'plain', '| key down', keyed, '| winding seen', wound, '| windOverhead', wo, '| swung', swung, '| overhead', oh, '| stamina', B.state().stamina, '| exhausted', B.state().exhausted);
+  }
+}
+
+/* THE ARTIFACT WITHOUT HIS DEAL (2026-11-13, the owner: "make the whale artifact spawn in the flesh pile even without
+ * talking to skrim"): never talking to him, the heaps broken with real heavy swings in turn until it falls out; taken;
+ * walked back past him; climbed out — the heal should start. */
+export async function skrimNoDeal({ w, b, log, sleep }) {
+  b.settings.devMode = false;
+  try { if (!b.inventory.includes(b.katanaItem)) b.addToInventory(b.katanaItem); if (b.equippedS && b.equippedS() !== b.katanaItem) b.toggleEquip(b.katanaItem); } catch (e) { log('katana', e.message); }
+  b.placeInWhale();
+  const S = b.SKRIM, Q = b.SKQ, cam = b.camera.position, V3 = cam.constructor;
+  for (let i = 0; i < 400 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed && S.u.clips.crouchIdle); i++) { b.frame(1); await sleep(50); }
+  const u = S.u; if (!u || !u.model) { log('no skrim'); return; }
+  for (let i = 0; i < 30; i++) b.frame(1);
+  w.requestAnimationFrame = () => 0;
+  const P = u.g.position, home = P.clone();
+  const st = () => `stage ${S.stage} art ${b.artState()} holding ${b.skqHolding()} world ${!!b.art.world} pick ${Q.pick} broke ${Q.broke.toString(2)}`;
+  const put = (x, z) => { cam.x = x; cam.z = z; const fy = b.skrimFloorW(x, z); b.groundY = fy; cam.y = fy + 1.62; b.camBaseY = cam.y; };
+  const steps = (n, fn) => { for (let i = 0; i < n; i++) { if (fn) fn(i); b.step(1 / 60); b.updateSkrimLife(1 / 60); } };
+  log('before any blow:', st(), '| farthest #', Q.piles.reduce((a, p) => (!a || p.s > a.s ? p : a), null).i);
+  const G = (p) => p.g.getWorldPosition(new V3());
+  const swingAt = (p, pow) => {
+    const g = G(p), dx = home.x - g.x, dz = home.z - g.z, L = Math.hypot(dx, dz) || 1;
+    const x = g.x + dx / L * 1.9, z = g.z + dz / L * 1.9; put(x, z);
+    b.lookAt(g.x, g.y + 0.3 * p.K, g.z); b.startDig(pow);
+    steps(110, () => { put(x, z); b.lookAt(g.x, g.y + 0.3 * p.K, g.z); });
+  };
+  for (const p of [...Q.piles].sort((a, c) => a.s - c.s)) {
+    if (b.art.world || b.artState() !== 0) break;
+    swingAt(p, 1); if (!p.gone) swingAt(p, 1);
+    log(`#${p.i} HH gone ${p.gone} |`, st());
+  }
+  steps(60);
+  const W = b.art.world; log('out:', !!W, 'stage still', S.stage);
+  if (!W) return;
+  const it = b.interactables.find((x) => x.root === W); if (it) it.onActivate(); steps(2);
+  log('taken:', st(), 'in pack', b.inventory.includes(b.whaleArtItem));
+  put(home.x + 1.5, home.z + 3); steps(120); log('walked back past him:', st(), 'dialog', b.state().dialogOpen);
+  put(home.x, home.z + 40); steps(2); log('bellyClear', b.wbBellyClear());
+  b.whaleClimbOut(); steps(3);
+  log('climbed out: farewell', !!b.wfState(), '|', st());
+}
+
+/* THE ROOM WARMS' COMPILE, A/B (2026-11-13): `warmCompileOwn` prepares only the warm's own groups. Run twice —
+ * `warmAB&ls=bw.warmAll:1` (the old whole-scene compile) and `warmAB&ls=bw.warmAll:0` — and compare: once the whole
+ * first load is in, each room is entered and drawn, and any program compiled THEN is a hitch the warms missed. */
+export async function warmAB({ w, b, log, sleep }) {
+  log('mode warmAll', w.localStorage.getItem('bw.warmAll'));
+  for (let i = 0; i < 600 && b.bootLeft().n > 0; i++) await sleep(100);
+  await sleep(2000);
+  const I = b.renderer.info, P = () => I.programs.length;
+  log('all in: left', b.bootLeft().n, 'programs', P(), 'lag spans named compile', JSON.stringify(b.lag(16).filter((e) => /compile/.test(e[2])).map((e) => e[2] + ' ' + e[1]).slice(0, 20)));
+  const rows = [];
+  for (const k of ['bunker', 'uc', 'sewer', 'dun', 'dojo', 'cat', 'whale', 'keep', 'tav', 'fort', 'c13', 'thr']) {
+    const R = b.ROOM_BACK[k]; R.load();
+    for (let i = 0; i < 400 && !R.ready(); i++) { b.frame(1); await sleep(50); }
+    if (!R.ready()) { rows.push(k + ' NOT READY'); continue; }
+    for (let i = 0; i < 200 && b.bootLeft().n > 0; i++) { b.frame(1); await sleep(30); }
+    const p0 = P(); b.clearRoomFlags(); R.place(); const tA = performance.now();
+    let worst = 0; for (let i = 0; i < 40; i++) { const t = performance.now(); b.frame(1); worst = Math.max(worst, performance.now() - t); if (i % 5 === 0) await sleep(5); }
+    rows.push(`${k} +${P() - p0} programs on entering, worst frame ${Math.round(worst)} ms`);
+    if (k === 'sewer' || k === 'dojo') { const names = {}; const mats = new Map(); b.scene.traverse((o) => { if (o.material) for (const m of [].concat(o.material)) mats.set(m, o); }); for (const pr of I.programs.slice(p0)) { const key = pr.cacheKey; let who = '?'; for (const [m, o] of mats) { const pp = b.renderer.properties.get(m); if (pp && pp.currentProgram === pr) { let r = o; while (r.parent && r.parent !== b.scene) r = r.parent; who = (r.name || r.type) + '/' + (o.name || '') + '/' + m.type; break; } } names[who] = (names[who] || 0) + 1; } log('  new on', k, JSON.stringify(names)); }
+  }
+  b.clearRoomFlags(); b.placeOnBeach && b.placeOnBeach();
+  log('ROOMS', rows.join(' | '));
+  log('end programs', P());
+}

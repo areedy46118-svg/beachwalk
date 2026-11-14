@@ -2551,10 +2551,23 @@ ${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 
     // no re-blend here: the twins carry the bands they were cloned with, and the skin was never given one
     S.discardSplit = { split, flagged, moved, dropped, twins: clean.size };
   }
+  /* AND THE BUILD IS SPREAD OVER FRAMES (2026-11-13, the owner: "make sure all load times are fast as possible check every
+   * checkpoint"). It ran in one go when the last of its three files came in — 237 ms measured (`tools/loadall.sh`), and
+   * after a checkpoint anywhere but down here that file comes in on the paced far rest, a few seconds after you can move:
+   * a quarter-second freeze on the beach, the sewer, the dungeon, the catacombs. Now it stops at its seams (`uSlice`) and
+   * goes on after the next frame is drawn; `S.composing` says it is under way (main.js's gate counts it). The seams are
+   * between whole steps, and nothing reads the build before `S.ready`. */
+  const uSlice = () => new Promise((r) => {
+    let done = false; const go = () => { if (!done) { done = true; r(); } };
+    try { requestAnimationFrame(() => setTimeout(go, 0)); } catch (e) { /* no frames: the timer */ }
+    setTimeout(go, 60);                       // (and a stopped frame loop — a hidden tab, the harness's frozen one — never holds it)
+  });
   function compose() {
-    try { composeInner(); } catch (e) { console.error('[undercroft] compose failed', e); throw e; }
+    if (S.composing || S.ready || !S.church || !S.passage || !S.cave) return;
+    S.composing = true;
+    composeInner().catch((e) => { console.error('[undercroft] compose failed', e); }).finally(() => { S.composing = false; });
   }
-  function composeInner() {
+  async function composeInner() {
     if (!S.church || !S.passage || !S.cave || S.ready) return;
     /* THE SKIN IS BUILT LAST, BEHIND A MODEL THAT HAS ALREADY BEEN CARVED.
      * Fitted to the uncarved scan it would sit behind faces that the carve
@@ -2719,6 +2732,7 @@ ${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 
     S.filled = fillHoles(ch) + fillHoles(cw) + fillHoles(pw);
     ch.stepMax = 0.40;                  // a pew's seat is 0.45 up, and that is not a step
     cw.stepMax = 1.2; cw.dropMax = 2.0;  // the old cave is rubble
+    await uSlice();
     const inbound = buildCorridor(pw, { x: high.x + 2.0, z: high.z }, { x: low.x - 0.4, z: low.z });
     if (!inbound) { console.warn('[undercroft] the passage has no centreline'); return; }
     /* THE JOIN IS BLANKETED, not bridged with a hairline. The passage's
@@ -2741,8 +2755,10 @@ ${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 
        * smoothed into them — and those are the narrowest stations in the
        * model, where being a foot off centre is the difference between a
        * corridor and a wall. */
+    await uSlice();
       S.passIx = triIndex(S.passage.root);       // kept: the junction's stones are laid off it too
       fitCorridor(inbound, surfaceBins(S.passage.root), S.passIx);
+    await uSlice();
       /* AND THE TUBE IS KEPT ONLY FOR THE SEAM. `walkable` asks the corridor
        * BEFORE the grids, so a tube down the whole tunnel overrides the
        * model's own floor everywhere it reaches — which is exactly the cage
@@ -3243,6 +3259,7 @@ ${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 
       if (lastFree !== null) exitEdge = lastFree + 0.55;
     }
     let caveFar = null;
+    await uSlice();
     if (exitEdge !== null) {
       let cm = null, cf = null;
       for (let i = 0; i < cw.gw && !cm; i++) { const st = colStats(cw, i); if (st && st.n >= 4) cm = st; }
@@ -3505,6 +3522,7 @@ ${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 
     // where things are: you arrive a metre in from the high end facing down the tunnel (+x);
     // the way out is behind the altar, at the far end of the nave
     const altarX = ch.bounds[1][0] - 3.2 + off.x;
+    await uSlice();
     let altarFloor = S.floorAt(altarX, off.z) ?? (doorFloor + off.y);
     const exitSpot = caveFar ? { x: caveFar.x - 1.4, y: S.floorAt(caveFar.x - 1.4, caveFar.z) ?? caveFar.y, z: caveFar.z, yaw: Math.PI / 2 }
                              : { x: altarX, y: altarFloor, z: off.z, yaw: Math.PI / 2 };
@@ -3574,8 +3592,10 @@ ${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 
      * walk and is vandalism when the walk is the model's own floor: every
      * face it takes is a hole in an exact replica. The exit cave keeps its
      * carve — it is still walked with a tube at the apse. */
+    await uSlice();
     S.carved = carveTube(S.cave.root, 0.06, 1.15);
     /* and NOW the skin, on what is left of the rock */
+    await uSlice();
     const t0 = performance.now();
     for (const K of skins) {
       const root = K.root();
@@ -3591,9 +3611,11 @@ ${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 
     }
     S.skinMs = Math.round(performance.now() - t0);
     // the idol on the altar and the candles round it
+    await uSlice();
     dressAltar();
     // dust in the air of both tunnels and the nave
     makeMotes(ch, cw, pw);
+    await uSlice();
     splitDiscards();
     S.ready = true;
     if (opts.onReady) opts.onReady(S);

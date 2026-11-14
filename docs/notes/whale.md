@@ -1239,3 +1239,12 @@ any head leaping or rearing within 2.2 m, 65% of swings connecting).
   them whether or not the nest has woken; `cryBladeRay` also while one lives. `cryHeads&m=restore` unchanged.
 - Phase measured: summoned 1.1 / 1.5 / 1.8 s into the cast; cutting at them, 4 swings, 3 killed, 1 bite in 30 s (standing
   and never cutting: a bite every ~2–3 s — they are meant to be fought). musictest all PASS.
+
+## 2026-11-13 — the artifact in a heap without his deal
+The owner: "make the whale artifact spawn in the flesh pile even without talking to skrim". `skqChoose` now runs on the
+first `skqTick` after `skqBuild` whatever his stage (it ran only in 'deal'), and `skqPileHit` asks it whenever no pick is
+set (it asked only on the deal or him dead). Still the FARTHEST heap standing, still saved in `skrimQ.pick`; an old save
+with pick −1 gets one on its next tick. Never asked, he stays in 'dig' when you take it: `skqMeet` is still only for
+'deal', so he does not come for it, and `wbBellyClear` counts 'dig' as not up, so the climb out is the heal. Probe
+`skrimNoDeal` (PB_PORT=4223): pick 5 before any blow; all twelve heaps broken HH nearest first, out of #5 last, stage
+'dig'; taken; walked back past him, no talk; climbed out → farewell true.

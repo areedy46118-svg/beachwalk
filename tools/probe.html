@@ -11,6 +11,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const f = document.getElementById('g');
 for (const k of ['beachwalk.load', 'beachwalk.died']) sessionStorage.removeItem(k);
 sessionStorage.setItem('beachwalk.skipIntro', '1');
+for (const kv of new URLSearchParams(location.search).getAll('ls')) { const i = kv.indexOf(':'); localStorage.setItem(kv.slice(0, i), kv.slice(i + 1)); }   // (&ls=key:value: set in the game's storage before it boots)
 f.src = '/index.html';
 let w = null; for (let i = 0; i < 400; i++) { await sleep(50); try { w = f.contentWindow; if (w.__bw) break; } catch (e) {} }
 const b = w.__bw;

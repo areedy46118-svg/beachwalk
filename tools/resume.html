@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>resume</title>
+<!-- Back into the last checkpoint after the server went away (Chrome's "can't be reached" page). Not part of the game.
+     Open http://localhost:4199/tools/resume.html in the game's tab: it asks for the checkpoint load the way the menu's
+     "Restart from last checkpoint" does (`reloadInto`), so main.js keeps the save instead of starting a new game. -->
+<body style="background:#000;color:#ccc;font:16px Georgia,serif;padding:40px">
+<script>
+try {
+  if (localStorage.getItem('beachwalk.save')) {
+    sessionStorage.setItem('beachwalk.skipIntro', '1');
+    sessionStorage.setItem('beachwalk.load', 'checkpoint');
+    location.replace('/');
+  } else document.body.textContent = 'No checkpoint is saved on this address, so nothing was loaded (the game was not opened).';
+} catch (e) { document.body.textContent = 'Could not read the save: ' + e; }
+</script>

@@ -232,3 +232,22 @@ swings, then 8 cuts made with it alongside 4 m off).
   Glide before the wind-up capped at 0.5 s (was 1.2). Result: 8 of 9 sweeps land on a still player (was most missing).
 - Tail chosen 30 % of runs (45 % for a day): mostly it bites.
 - Counters on `plio`: `nTail`, `nSwipe`, `nSnap`, `nBite`, `lastBiteD` (harness only).
+
+## 2026-11-13 — a checkpoint at the snap
+The owner: "add checkpoint when the fishing rod snaps in the water too". Every save is refused from the bite to the sand
+(`autosaveNow`: `deepLock`), so a death to the pliosaur went back up the beach before the bite. Now:
+- **The save** (`deepSnapSave`, at the snap in 'descent'): `saveCheckpoint('deepSnap')`, bypassing `deepLock` — the one
+  save written down there. `saveRoom()` says 'deep' while `inDeep` (last in its list).
+- **The load** (`ROOM_BACK.deep` → `deepRestore`): ready when `plio.ready && deep.world` (`bwSoon('assets/pliosaur.glb')`,
+  `plioLoad`, `deepAmbLoad`); `placeInDeep`, then the camera at `deep.descE` looking down the pull's last tangent, fog
+  `DEEP_BOT_FOG` 0.064, `deepBack` uK 0.4, `deep.ph = 'silence'` t 0 (the pliosaur's first pass 11 s later), `snapped`,
+  `hint` (already seen), `deepLock` on and the hands free; the rod taken out of the pack (it is at the bottom of the sea,
+  as 'black' does later in a live game). `deep.reMuffle`: the low-pass goes on in `updateDeep` once the audio exists
+  (the restore runs before it). `BW_FROM` ranks `pliosaur.glb` first for a 'deep' save (ROOM_Z 814, ROOM_FILES).
+- **No far rest in it**: `bwHoldHere` includes `inDeep` (`BW_DEEP_FILES` pliosaur | whale come through) and no warm step
+  runs while `bgLoadMode && inDeep` — a death in the fight loads into the fight.
+- A death in the deep → the card → the deep; the opening song is not played on that respawn (`bootRespawn`), and is
+  on a load from the menu (musictest `loadDeep`).
+- Measured (`tools/loadall.sh 1 <out> deep`, which drives the real snap: hook, plunge, the descent's last 2 s): written
+  room 'deep' spot 'deepSnap'; loaded playable 4.8 s (6.5 before the pliosaur was ranked first), black 0, in the deep,
+  'silence' → 'fight' and the pass begun by +10 s, no frame over 45 ms in the 14 s after.

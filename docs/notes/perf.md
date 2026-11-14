@@ -1552,3 +1552,41 @@ load, 4912 frames, none over 33 ms, max 23; out of it the rest resumes (113 → 
 now comes in on the beach after you leave, paced as after any checkpoint.
 `tools/loadtime.html` (whale) now watches until the far rest is in (`&hold=` iterations of 50 ms), counts frames over
 33/50/100 ms after playable, and `&leave=1` steps out; `LT_Q` and `LT_WAIT` in `tools/loadtime.sh` pass them.
+
+## 2026-11-13 — every checkpoint timed (`tools/loadall.sh`)
+The owner: "make sure all load times are fast as possible check every checkpoint". **`sh tools/loadall.sh [runs] [out]
+[names]`** (own headless Chrome, own profile, server 4212): for the beach at -60/-300/-600/-900/-1000 and every
+`ROOM_BACK` room at its door's spot (bunker, uc, ucFar, sewer, dun, dojo, cat, whale, keep, keepDoor, tav, fort, c13,
+thr, deep — the deep driven through the real snap), a fresh start, the room's own `load`/`place`, `saveCheckpoint(spot)`,
+then a death's reload; prints playable time, frames after (`&after=` ms; p95, max, >50, >100), the named spans after,
+the gate's timeline when slow (`&tl=1`), long gaps with the warm/parse in hand, and the programs built in the 1.5 s
+after. "Playable" counts an open dialogue (the Dealer greets you: the bunker read "NEVER" before that). `LT_Q`,
+`LT_WAIT` as loadtime.sh. Traps in it: `__bw.lag()` is SORTED by length (slice `lagTime` by time instead); the
+long-animation-frame API reports nothing in this headless Chrome; a harness's own `const` used inside the first rAF
+callback is a dead zone.
+**Found and fixed, M4 Pro headless:**
+- **`cave.glb`'s 237-290 ms frame** after every checkpoint not in the undercroft: the undercroft's `composeInner` ran in
+  one go when its last file landed on the paced far rest. Now async, stopping at nine seams (`uSlice`: after the next
+  frame is drawn, a 60 ms timer if frames are stopped); `S.composing` counted by `startLeft`/`bootLeft`. Worst piece ~45
+  ms (the carve). The span is 27-31 ms now.
+- **Room warms' compile walked every material in the scene** (`compile(scene)`), 80-106 ms frames: `warmCompileOwn`
+  (twenty room warms) gives three a stand-in traversing the warm's groups + whatever is shown, target the scene (lights
+  identical). A/B probe `warmAB&ls=bw.warmAll:1|0` (`&ls=` in probe.html sets storage before boot): programs built on
+  entering each room after a full load — the same everywhere but the dojo (15 → 5) and the sewer (27 → 28); 925 → 667
+  programs by the end of the tour (the old way compiled ~300 nobody draws); no compile span over 20 ms.
+- **The deep** ranked its pliosaur first (`BW_FROM` room 'deep'): 6.5 → 3.7-4.8 s.
+- **A room save's black waited on the beach's warms**: `warmStep` in a cut-room save (`WARM_ROOM_OWN`) ranks only that
+  room's own (and `icon`/`view`) near; and a far step's held compile no longer resets the gate's idle on a fast load
+  (`warmRanNear`, `nearBlock`). No far warm step runs while `bgLoadMode` in any cut room (they ran the frame the black
+  lifted: the drain's, 237 ms, in the tavern) — they come in on the beach after, paced.
+- Long texture uploads are named (`tex WxH name` spans).
+**Result, playable s (before → after, one run each, ±0.4 run to run):** beach-60 4.89 → 4.28 · -300 5.17 → 4.25 · -600
+4.14 → 3.05 · -900 4.81 → 4.25 · -1000 4.53 → 3.92 · uc 5.36 → 5.11 · ucFar 5.66 → 5.04 · sewer 5.06 → 4.63 · dun 4.45 →
+4.24 · dojo 4.75 → 4.13 · cat 5.66 → 5.05 · whale 4.33 → 4.56 · keep 5.88 → 5.73-6.2 · keepDoor 5.96 → 5.89 · tav 7.77 →
+6.5-6.8 (HEAD 7.2-8.1 the same day) · fort 5.54 → 5.35 · c13 4.46 → 4.37 · thr — → 4.45 · bunker (black lifted ~4.4) ·
+deep (new) 3.7-4.8. Worst frame in the 8 s after: was 250-290 on beach/sewer/dun/cat, now ≤ 137 everywhere, most ≤ 40.
+First load's Start ready 9.4 s (`loadtime.sh`).
+**Left:** the tavern's first frame after its black, ~240 ms in 2 of 3 loads, in HEAD too — no named span inside it, no
+program built, not GC (a trace with `disabled-by-default-v8.gc` shows nothing in it); a v8 sample once put it in
+`updateTexUpload`'s `texSubImage2D` (a GPU-process stall?). And `dress skrim.glb` (84-126 ms) / `beach draw 1` (123)
+on the paced far rest.

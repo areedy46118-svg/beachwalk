@@ -806,3 +806,13 @@ now records `born = performance.now()` and stays silent for its first 2 s unless
 grab), so a prop you pick up and drop at once still sounds.
 - (again) "lower skrim fight music more": `SKRIM_FIGHT_LEVEL` 0.4 → 0.25; musictest floor 0.00025 (reads 0.0003 in the
   rise, still fading in).
+
+## 2026-11-09 — a checkpoint loaded in a room played no music
+
+The owner: "MAKE SURE ALL MUSIC PLAYS THE TAVERN MUSIC DIDNT". The tavern has no track of its own; what plays there
+is the opening song from a load. `updateBootHold` started it with `!inRoom()` in the condition (ba54ae6, 2026-10-19),
+so a checkpoint written in ANY room — the tavern, the keep, the dojo, the bunker — loaded in silence. The `inRoom()`
+is gone; the passing theme is still the one thing it waits for. A death's respawn is still silent (`bootRespawn`, the
+owner's one exception). `tools/musictest.js` has a `loadTavern` scenario (a checkpoint saved in the tavern via
+`ROOM_BACK.tav`, then loaded): FAIL at peak 0 before, PASS after. Still NOT covered by the music test: the wreck
+theme, the whale's leaving song and the lighthouse track (`startLighthouseTrack`, an <audio> element, no `musicNote`).
