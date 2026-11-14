@@ -1031,3 +1031,15 @@ out eight ways with jumps; then every edge of the landing and the flight walked 
 let them by. Now in the jetty's box a fall of more than `ISLE_FALL` lands only on the flight (`isleRampAt`) or the
 boards. After: nothing walked off the landing ends under 14 (the rock path round it, none of it a trap); the jetty's
 ways walk as before.
+
+## 2026-11-13 — a handrail down the flight to Henry's jetty
+"add a handrail down the steps to henry at the lighthouse people keep missing those steps make the textures real wood".
+`isleStairRail(walkway material)`, added beside the drawbridge: on the flight's open WEST edge (the rock is its east;
+`ISLE_RAIL_X` −17.94, the model's sea-side face is at −18.11, the walk keeps you to −17.68): posts on the foot tread, every
+other tread and the landing's nose (newels 0.11, the rest 0.085), a top rail 0.92 m over the pitch and a middle one
+0.47 under it. The wood is the walkway's own (the stair and the jetty are one material, `walkway`, a 2048 atlas with a
+normal map): its plank panel (the atlas's top-left, x 0.08–0.54, y 0.10–0.55 of the image) cut into a 512 tile of its own,
+colour and normal, repeating, the grain laid along each member (`member`: v down its length). **The clone must carry the
+island's compile hook** (`onBeforeCompile`, `customProgramCacheKey`) — without it the rail came out black, the stringer
+wall's lesson again. One draw, `bwGhost`, no raycast. Probes `isleStairShots` (stills from the jetty, the landing, the
+foot, the sea side, close), `isleStairMat` (what the treads are made of, and the atlas dumped with a grid).

@@ -2392,3 +2392,13 @@ Stills: probes `pupBlink`.
   `PUP_LID_*` sit above `pupRig` (declaration order). Stills: `sh tools/probe.sh lidShots` (0, .35, .7, 1).
 - **Elvédor's jar** (`elvGiveJar`) plays `ringDrop`, the octopus ring's sting, like every other thing given to you
   (not on a restore or a replay).
+
+## 2026-11-13 — the well man's cut; a held lens lets go when you walk away
+- **The reveal cuts** ("make it not fade in make it go black then immediately show him keep the same timing"): the
+  `reveal` phase holds the black 0.3 s (as long as before its fade began) and then sets it to 0 in one frame — no 1.6 s
+  fade up. Probe `nov13`: opacities 1 then 0, nothing between.
+- **`cineWalkAway()`** (with `cineHold`): a scene that opts in remembers where you stood (`cineAt`); 0.7 m from there,
+  outside a dialogue, the camera's lens function drops the hold (`cineHold`, `dialogTarget`, `dialogHead`, `dialogFov`)
+  and the FOV eases home at 3.5. The scene goes on. Opted in: `wellReveal` (his stare) and `startDealerPickup` (the
+  Dealer's reach — after the portrait, "*Kill him*" or walking out). Probe: walked back 0.8 m → released, FOV 105, the
+  stare still running down; the Dealer's released the same.

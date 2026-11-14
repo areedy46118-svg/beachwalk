@@ -1934,3 +1934,27 @@ with and without Myles, all four broken, the key lying 0.02 over the stone. Harn
 - The castle boot helper the dk/Myles probes use was in paltest.js: now `tools/fortboot.js`, `__fortBoot()`.
 - TRAP met doing it: a scratch vector declared in a comma list (`const _pdnH = …, _pdnA = …`) was used by `dkStage1`;
   a check of removed `const NAME` heads missed it. Check every name in a removed multi-declaration, not just the first.
+
+## 2026-11-13 — no leaving the throne room mid fight; the songs
+- `thrFightOn()`: from `thrScene.phase` ≥ 1 (the chain's take) while the beast or the marauder is alive, both lift
+  doors and the way you came read "The way is barred." (`bare`) and do nothing; before the chain is touched, or with
+  both dead, they open. Dev mode opens them. Probe `nov13`: phase 0 open; phase 2 barred; beast down/him up barred;
+  both down open.
+- The marauder's fight and the farmers' fight have the owner's songs (audio.md, `LOOP_SONGS`).
+
+## 2026-11-14 — Myles keeps the castle; the gargoyles come harder; the dark knight's feet follow his steps
+- **Myles stays in** ("myles shouldnt follow me outside of the castle"): a place change to 'beach' no longer
+  `minoJoin`s him; with you ('with') and you on the beach, `updateMinotaur` hides him and returns early. Back through a
+  gate, the place change joins him at your side as before. (The `myl&f=allyWalk` probe's "out of the gate" step expects
+  the old follow.)
+- **The gargoyles** ("need to attack more frequent and better they are not aggressive at all"): `GARG_SPD` ring 5.2
+  (3.8), approach 9.5 (6.5), lunge 15 (12.5), back 8.5 (6.5); recover 0.4 (0.55); the ring 4.6 m (5.6) and 0.95 rad/s
+  (0.6); a turn after 0.15 s in the ring (0.45), back to the ring after 0.55 s (1.0); `gargTurnOf`: two on you from two
+  of them up, three from four, the next setting off once the last is past its approach. Measured (`gargFight`, the same
+  guard-and-answer player): all four broken in 107 s (129 before), time ringing 12% (18), telling+lunging 37% (29).
+- **The dark knight** ("horrible make his move-set better and more fluid"): `axisLock` 0.85 (`velGaitAnim`): this
+  frame's step keeps its part along the axis the clip is stepping and 15% of the rest — the fight moved him on a slant and
+  the slant went under his feet. `regroup` 0.2 (0.45), `regroupT` 0.6–1.1 (0.9–1.7): his side-steps after a string were
+  most of his skate (`dkWhy`: by clip, sStr1/sStr2 75–84%, sWalkB 100%). Measured (`dkMove`, 25 s a mode): swings 42
+  (35), every foot 0.92 m/s (1.02), the walk's planted foot 1.23–1.40 m/s (1.62); still mode landed 7/8. STILL OPEN: his
+  side-steps and back-step skate on their own (sWalkB 2–2.6 m/s at 100%) — the clips, or the turn while he faces you.

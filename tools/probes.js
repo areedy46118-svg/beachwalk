@@ -4620,3 +4620,427 @@ export async function warmAB({ w, b, log, sleep }) {
   log('ROOMS', rows.join(' | '));
   log('end programs', P());
 }
+
+// THE STAIR DOWN TO HENRY'S JETTY (2026-11-13, the owner: "add a handrail down the steps to henry at the lighthouse
+// people keep missing those steps"): stills of the flight from the jetty, the landing, the sea side and close on a tread
+export async function isleStairShots({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true; b.loadIsle();
+  for (let i = 0; i < 300 && !(b.isleS().ready && b.ISLE_SITE.cells); i++) { b.frame(2); await sleep(100); }
+  b.placeOnIsle(); for (let i = 0; i < 20; i++) { b.frame(1); await sleep(30); }
+  window.requestAnimationFrame = () => 0; w.requestAnimationFrame = () => 0;
+  const R = b.ISLE_RAMPS[0], C = b.camera, zm = (R.z0 + R.z1) / 2;
+  log('ramp x', R.x0, R.x1, 'z', R.z0.toFixed(2), R.z1.toFixed(2), 'hj', JSON.stringify(b.HJ_SPOT));
+  b.isleWorldG().visible = true;
+  const at = (n, px, py, pz, lx, ly, lz, g = 1.6) => { C.position.set(px, py, pz); C.lookAt(lx, ly, lz); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); shot('st_' + n, 640, g); };
+  const extra = w.__stairViews || [];
+  const yAt = (z) => { const P = R.prof; for (let k = 0; k < P.length - 1; k++) if (z <= P[k][0] && z >= P[k + 1][0]) { const u = (z - P[k][0]) / (P[k + 1][0] - P[k][0]); return P[k][1] + u * (P[k + 1][1] - P[k][1]); } return z > P[0][0] ? P[0][1] : P[P.length - 1][1]; };
+  log('prof', JSON.stringify(R.prof.map((p) => [+p[0].toFixed(2), +p[1].toFixed(2)])));
+  at('jetty', -24, 3, R.z1 + 2, -16.6, 7, zm);
+  at('down', -16.6, yAt(R.z0 + 1) + 1.6, R.z0 + 1, -16.6, 0.5, R.z1 + 1);
+  at('up', -16.6, yAt(R.z1 - 1) + 1.6, R.z1 - 1, -16.6, 15, R.z0);
+  at('side', -27, 10, zm, -16.6, 8, zm);
+  { const rail = b.isleWorldG().getObjectByName('isleStairRail'), m = rail && rail.material;
+    log('rail', !!rail, 'map', m && m.map && m.map.image && m.map.image.width, 'nmap', m && m.normalMap && m.normalMap.image && m.normalMap.image.width, 'color', m && m.color.getHexString(), 'rough', m && m.roughness, 'metal', m && m.metalness, 'emis', m && m.emissive && m.emissive.getHexString(), m && m.emissiveIntensity, 'vc', m && m.vertexColors, 'side', m && m.side);
+    if (m && m.map) { const c = m.map.image, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let r = 0, g = 0, bb = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; bb += d[i + 2]; } const n = d.length / 4; log('crop mean', (r / n).toFixed(0), (g / n).toFixed(0), (bb / n).toFixed(0)); }
+    const wk = b.isleWorldG().children.find((o) => o.name === 'isle_walkway'); if (wk) { const q = wk.material; log('walkway', 'color', q.color.getHexString(), 'vc', q.vertexColors, 'emis', q.emissive.getHexString(), 'metal', q.metalness, 'aoMap', !!q.aoMap, 'onBefore', !!q.onBeforeCompile && String(q.onBeforeCompile).length); } }
+  at('close', -16.4, yAt(zm) + 1.5, zm + 0.6, -17.94, yAt(zm) + 0.6, zm - 1.2, 2.6);
+  at('closeOut', -21.5, yAt(zm) + 1.0, zm + 1.5, -17.94, yAt(zm) + 0.5, zm, 2.6);
+  for (const v of extra) at(...v);
+}
+
+// what the stair's treads and the jetty's boards are made of (their material, map, its size and UV spread)
+export async function isleStairMat({ w, b, log, sleep }) {
+  b.settings.devMode = true; b.loadIsle();
+  for (let i = 0; i < 300 && !(b.isleS().ready && b.ISLE_SITE.cells); i++) { b.frame(2); await sleep(100); }
+  b.placeOnIsle(); for (let i = 0; i < 10; i++) { b.frame(1); await sleep(30); }
+  const T = b.THREE, G = b.isleWorldG(); G.visible = true; G.updateMatrixWorld(true);
+  const R = b.ISLE_RAMPS[0], V = T.Vector3, ray = new T.Raycaster(); ray.camera = b.camera;
+  for (const [x, z, y] of [[-16.6, R.z1 - 3, 30], [-16.6, R.z0 + 2, 40], [-24.2, b.HJ_SPOT.z + 3, 10], [-17.9, (R.z0 + R.z1) / 2, 30]]) {
+    ray.set(new V(x, y, z), new V(0, -1, 0)); const h = ray.intersectObject(G, true)[0];
+    if (!h) { log('no hit', x, z); continue; }
+    const m = [].concat(h.object.material)[h.face ? h.face.materialIndex || 0 : 0] || h.object.material, mp = m.map;
+    const uv = h.object.geometry.attributes.uv;
+    let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9; if (uv) for (let i = 0; i < uv.count; i++) { u0 = Math.min(u0, uv.getX(i)); u1 = Math.max(u1, uv.getX(i)); v0 = Math.min(v0, uv.getY(i)); v1 = Math.max(v1, uv.getY(i)); }
+    if (w.__dumpMap !== false && mp && mp.image && !w.__dumped) { w.__dumped = true; const c = document.createElement('canvas'); c.width = c.height = 768; const g2 = c.getContext('2d'); g2.drawImage(mp.image, 0, 0, 768, 768); g2.strokeStyle = '#f00'; for (let k = 1; k < 8; k++) { g2.beginPath(); g2.moveTo(k * 96, 0); g2.lineTo(k * 96, 768); g2.moveTo(0, k * 96); g2.lineTo(768, k * 96); g2.stroke(); } const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'walkway_map', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+      const tri = h.face, ua = uv; log('  hit uv', ua.getX(tri.a).toFixed(3), ua.getY(tri.a).toFixed(3), ua.getX(tri.b).toFixed(3), ua.getY(tri.b).toFixed(3), ua.getX(tri.c).toFixed(3), ua.getY(tri.c).toFixed(3), 'flipY', mp.flipY); }
+    log('at', x, z.toFixed(1), 'y', h.point.y.toFixed(2), 'mesh', h.object.name, 'mat', m.name, m.type, 'color', m.color && m.color.getHexString(), 'emis', m.emissive && m.emissive.getHexString(), m.emissiveIntensity, 'map', mp ? (mp.image && (mp.image.width + 'x' + mp.image.height)) + ' ' + (mp.name || '') : 'none', 'normal', !!m.normalMap, 'rough', m.roughness, 'uv', uv ? [u0, u1, v0, v1].map((q) => q.toFixed(2)).join(',') : '-', 'tris', h.object.geometry.index ? h.object.geometry.index.count / 3 : 0);
+  }
+}
+
+/* 2026-11-13's list, checked: the throne room's doors barred mid fight; the katana sold for four jars; the Lucky Ring
+ * (its rate over many blows, a turned blow costs nothing, an old save's 'Gem Stone Ring' read as it); the bunker's step;
+ * the well man's reveal cut and his stare's lens let go when you walk off; the Dealer's the same. */
+export async function nov13({ w, b, log, sleep }) {
+  b.settings.devMode = false;
+  const only = new URLSearchParams(window.location.search).get('only');
+  const frames = async (n) => { for (let i = 0; i < n; i++) { b.frame(1); if (i % 10 === 0) await sleep(5); } };
+  // THE THRONE ROOM
+  { const RB = b.ROOM_BACK.thr; RB.load(); for (let i = 0; i < 300 && !RB.ready(); i++) { b.frame(2); await sleep(50); }
+    b.clearRoomFlags(); RB.place(); await frames(20);
+    const it = b.interactables.filter((x) => x.root && x.root.name === 'hitProxy' && b.thrWorldG && false);
+    const S = b.thrSceneS(), lab = () => b.interactables.filter((x) => typeof x.label === 'function').map((x) => x.label()).filter((s) => /Lift|throne room|barred/.test(s));
+    log('throne: phase', S.phase, 'barred', b.thrFightOn(), 'doors', JSON.stringify(lab()));
+    S.phase = 2; log('throne mid fight: barred', b.thrFightOn(), 'doors', JSON.stringify(lab()));
+    const D = b.danteU(), U = b.umbraU(); D.st.alive = false; S.phase = 5; log('beast down, him up: barred', b.thrFightOn());
+    U.st.alive = false; log('both down: barred', b.thrFightOn(), 'doors', JSON.stringify(lab()));
+    U.st.alive = true; D.st.alive = true; S.phase = 0; b.clearRoomFlags(); }
+  // THE KATANA AT THE COUNTER
+  { const K = b.katanaItemS(); if (!b.inventory.includes(K)) b.addToInventory(K); const j0 = b.state().jars ?? null;
+    const row = b.SELL_ROWS ? b.SELL_ROWS.find((r) => r.key === 'katana') : null;
+    const before = b.jarsS();
+    b.traderSell('katana'); log('katana sold: in pack', b.inventory.includes(K), 'row', !!row, row && row.price, 'jars', before, '->', b.jarsS()); }
+  // THE LUCKY RING
+  { const G = b.gemItemS(); log('ring name', G.name, '| desc', G.desc);
+    if (!b.inventory.includes(G)) b.addToInventory(G); b.wearRing && b.wearRing(G);
+    log('worn', b.rings ? b.rings.includes(G) : '?');
+    let lucky = 0, N = 2000; for (let i = 0; i < N; i++) { b.setLuckAt(-1e9); if (b.luckyBlow(null)) lucky++; }
+    log('lucky rolls', lucky, 'of', N, (lucky / N * 100).toFixed(1) + '%');
+    b.setLuckAt(-1e9); let back = 0; for (let i = 0; i < 50; i++) if (b.luckyBlow(null)) back++; log('within the gap after one: lucky', back, 'of 50 more (wants at most 1)');
+    // a real blow that was lucky costs nothing
+    b.setHp(4); let costFree = 0, cost = 0; for (let i = 0; i < 400; i++) { b.setLuckAt(-1e9); const h0 = b.hpS(); b.damagePlayer(1); if (b.hpS() === h0) costFree++; else cost++; b.setHp(4); await (i % 50 === 0 ? sleep(1) : null); }
+    log('real blows with it worn: no damage', costFree, 'damage', cost);
+  }
+  // AN OLD SAVE'S NAME
+  { const d = { pack: ['Gem Stone Ring', 'Katana'], slots: ['Gem Stone Ring', null], worn: ['Gem Stone Ring'], held: 'Gem Stone Ring', ext: 0 };
+    const m = b.migrateSave ? b.migrateSave(d) : null; log('migrated', JSON.stringify(m && { pack: m.pack, slots: m.slots, worn: m.worn, held: m.held })); }
+  // THE BUNKER'S STEP
+  { const bank = (b.sampleBanks.churchStep || []).filter(Boolean).length; let ok = true; try { b.sfxStepBunker(); } catch (e) { ok = 'threw ' + e.message; } log('bunker step: church bank', bank, 'played', ok); }
+  // THE WELL MAN: the reveal cut, the stare's lens, walking off
+  { const u = b.wellU(); for (let i = 0; i < 300 && !(u && u.model && u.mixer); i++) { b.frame(1); await sleep(40); }
+    b.setWellPhase(1); b.wellLook.on = true; b.wellLook.phase = 'black'; b.wellLook.t = 1.89; b.wellLook.to.copy(b.camera.position);
+    const op = []; for (let i = 0; i < 40; i++) { b.step(1 / 60); op.push(w.document.getElementById('blackout').style.opacity); }
+    const firstClear = op.findIndex((v) => +v === 0);
+    log('reveal: black frames then', firstClear, 'opacities', [...new Set(op)].join(','), '| stare', JSON.stringify(b.wellStalkS()), 'cine', JSON.stringify(b.cineS()));
+    for (let i = 0; i < 60; i++) b.step(1 / 60);
+    log('  standing: cine', JSON.stringify(b.cineS()));
+    const c = b.camera.position; log('  before the walk: cam', c.x.toFixed(2), c.z.toFixed(2));
+    b.keys.KeyS = true; for (let i = 0; i < 70; i++) b.step(1 / 60); b.keys.KeyS = false; for (let i = 0; i < 60; i++) b.step(1 / 60);
+    log('  walked back (S) 70 frames: cam', c.x.toFixed(2), c.z.toFixed(2), 'cine', JSON.stringify(b.cineS()), 'stare still', JSON.stringify(b.wellStalkS()));
+    c.x += 1.6; b.camBaseY = c.y; b.step(1 / 60); log('  pushed 1.6 m: cam', c.x.toFixed(2), 'cine', JSON.stringify(b.cineS()));
+  }
+  // THE DEALER'S
+  { const RB = b.ROOM_BACK.bunker; RB.load(); for (let i = 0; i < 400 && !RB.ready(); i++) { b.frame(2); await sleep(50); }
+    if (!RB.ready()) log('bunker never ready');
+    else { b.clearRoomFlags(); RB.place(); await frames(30); const D = b.dealerU(); for (let i = 0; i < 200 && !(D && D.model); i++) { b.frame(1); await sleep(40); }
+      b.startDealerPickup(); for (let i = 0; i < 20; i++) b.step(1 / 60);
+      log('dealer reach: cine', JSON.stringify(b.cineS()));
+      const c = b.camera.position; c.z += 1.4; for (let i = 0; i < 60; i++) b.step(1 / 60);
+      log('  walked off: cine', JSON.stringify(b.cineS())); }
+  }
+}
+
+// THE DEAD IN THE WATER (2026-11-14): loaded as the snap's checkpoint loads (`deepRestore`), the bodies and the blood from
+// where you arrive, close up, and then the pliosaur let loose for a while with you held still — how far it throws them
+export async function deadShots({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  b.plioLoad(); b.deadLoad();
+  for (let i = 0; i < 600 && !(b.plioS().ready && b.dead.gltf); i++) { b.frame(2); await sleep(100); }
+  log('ready plio', b.plioS().ready, 'dead gltf', !!b.dead.gltf);
+  const t0 = performance.now();
+  b.deepRestore();
+  log('restore+build ms', (performance.now() - t0).toFixed(0), 'bodies', b.dead.bodies.length, 'pieces', b.dead.pieces.length, 'bleeds', b.dead.bleeds.length);
+  w.__clockOn();
+  const D = b.deepS(), C = b.camera, E = D.descE.clone(), T = b.THREE;
+  let long = 0; for (let i = 0; i < 120; i++) { const a = performance.now(); w.__adv(1); long = Math.max(long, performance.now() - a); }
+  log('2 s in: worst frame ms', long.toFixed(1), 'phase', D.ph, 'fog', b.scene.fog.density.toFixed(3));
+  const G = (s) => w.__deadGain || s;
+  const at = (n, px, py, pz, lx, ly, lz) => { C.position.set(px, py, pz); C.lookAt(lx, ly, lz); C.updateMatrixWorld(true); shot('dd_' + n, 640, G(1)); shot('dd_' + n + '_hi', 640, 2.4); };
+  at('arrive', E.x, E.y, E.z, E.x - 0.3, E.y - 0.6, E.z + 8);
+  const B0 = b.dead.bodies[0].G.position, B1 = b.dead.bodies[1].G.position;
+  at('close0', B0.x + 1.6, B0.y + 0.5, B0.z - 2.2, B0.x, B0.y, B0.z);
+  at('close1', B1.x - 2.0, B1.y + 0.8, B1.z - 2.5, B1.x, B1.y, B1.z);
+  at('round', E.x, E.y, E.z, E.x - 8, E.y, E.z - 3);
+  at('up', E.x, E.y, E.z, E.x + 2, E.y + 8, E.z + 3);
+  { const L = b.dead.live; if (L) { const c = L.G.position; at('live', c.x - 1.4, c.y + 0.6, c.z - 2.4, c.x, c.y, c.z); } }
+  { const bd = b.dead.bodies[4], cp = bd.capBones && bd.capBones[0]; if (cp) { const v = new T.Vector3(); cp.getWorldPosition(v); at('cap', v.x + 0.5, v.y + 0.35, v.z - 0.7, v.x, v.y, v.z); } }
+  const V = b.dead.bodies[6].G.position;
+  at('descent', V.x - 3.5, V.y + 0.5, V.z - 7, V.x, V.y, V.z);
+  if (w.parent.__deadQuick || location.search.includes("quick")) return;
+  // and the animal through them: the fight, you held where you arrived, 40 s
+  const P = b.plioS();
+  D.ph = 'fight'; D.t = 0; b.plioStartPass();
+  const home = b.dead.pieces.map((q) => q.p.clone());
+  let maxMove = 0, maxV = 0, maxFl = 0, closest = 1e9, shots = 0;
+  for (let f = 0; f < 60 * 40; f++) {
+    C.position.copy(E); b.camBaseY = E.y; D.v.set(0, 0, 0); D.knock.set(0, 0, 0); b.setHp && b.setHp(4);
+    w.__adv(1);
+    for (const q of b.dead.pieces) { maxV = Math.max(maxV, q.v.length()); maxFl = Math.max(maxFl, q.flail); }
+    if (b.dead.pOn) for (const bd of b.dead.bodies) for (const s of b.dead.ps) { const d = s.distanceTo(bd.G.position); if (d < closest) closest = d;
+      if (d < 4 && shots < 4 && f % 6 === 0) { shots++; const c = bd.G.position; C.position.set(c.x - 6, c.y + 1.5, c.z - 6); C.lookAt(c.x, c.y, c.z); C.updateMatrixWorld(true); shot('dd_push' + shots, 640, 2.0); C.position.copy(E); } }
+  }
+  b.dead.pieces.forEach((q, i) => { maxMove = Math.max(maxMove, q.p.distanceTo(home[i])); });
+  log('fight 40 s: plio st', P.st, 'closest sphere to a body', closest.toFixed(2), 'max speed', maxV.toFixed(2), 'max flail', maxFl.toFixed(2), 'max moved m', maxMove.toFixed(2), 'push shots', shots);
+  let live = 0; const Bl = b.dead.blood; for (let i = 0; i < Bl.life.length; i++) if (Bl.life[i] > 0) live++;
+  log('blood clouds live', live, 'pieces under floor', b.dead.pieces.filter((q) => q.p.y < 2000 - 34).length);
+  at('after', E.x, E.y, E.z, E.x - 0.3, E.y - 0.6, E.z + 8);
+}
+
+// what is the big pale thing in the deep's picture: each of the scene's top-level children hidden in turn, the left of the frame measured
+export async function deadWho({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true; b.plioLoad(); b.deadLoad();
+  for (let i = 0; i < 600 && !(b.plioS().ready && b.dead.gltf); i++) { b.frame(2); await sleep(100); }
+  b.deepRestore(); w.__clockOn(); w.__adv(60);
+  const C = b.camera, E = b.deepS().descE;
+  const pose = () => { C.position.set(E.x, E.y, E.z); C.lookAt(E.x - 0.3, E.y - 0.6, E.z + 8); C.updateMatrixWorld(true); };
+  const R = b.renderer, gl = R.getContext();
+  const meas = () => { pose(); R.render(b.scene, C); const px = new Uint8Array(4); gl.readPixels(Math.round(gl.drawingBufferWidth * 0.15), Math.round(gl.drawingBufferHeight * 0.5), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); return px[0] + px[1] + px[2]; };
+  const base = meas(); log('base', base, 'deep.world kids', b.deepS().world.children.length);
+  for (const o of b.scene.children) { if (!o.visible) continue; o.visible = false; const v = meas(); o.visible = true; if (Math.abs(v - base) > 20) log('hide', o.name || o.type, o.type, '->', v); }
+  for (const o of b.deepS().world.children) { if (!o.visible) continue; o.visible = false; const v = meas(); o.visible = true; if (Math.abs(v - base) > 20) log('hide deep kid', o.name || o.type, o.type, '->', v); }
+  for (const o of b.dead.g.children) { if (!o.visible) continue; o.visible = false; const v = meas(); o.visible = true; if (Math.abs(v - base) > 20) log('hide dead kid', o.name || o.type, o.type, '->', v); }
+}
+
+// the frames after the snap's checkpoint loads, one by one: which are slow, and what the dead cost in each
+export async function deadFrames({ w, b, log, sleep }) {
+  b.settings.devMode = true; b.plioLoad(); b.deadLoad();
+  for (let i = 0; i < 600 && !(b.plioS().ready && b.dead.gltf); i++) { b.frame(2); await sleep(100); }
+  await sleep(1500);
+  b.deepRestore();
+  const R = b.renderer; let last = performance.now(); const t0 = last; const slow = []; let n = 0;
+  await new Promise((res) => { const raf = w.requestAnimationFrame.bind(w); (function fr() { const now = performance.now(), d = now - last; last = now; n++;
+    if (d > 35) slow.push(`+${((now - t0) / 1000).toFixed(2)}s ${Math.round(d)}ms dead ${(b.dead.ms || 0).toFixed(1)} prog ${R.info.programs.length} tex ${R.info.memory.textures} geo ${R.info.memory.geometries} ph ${b.deepS().ph}`);
+    if (now - t0 < 16000) raf(fr); else res(); })(); });
+  log('frames', n, 'dead max ms', (b.dead.msMax || 0).toFixed(2)); for (const s of slow) log('  slow', s);
+}
+
+// THE DEAD, LIVE: the bite at the tree, the pull, the plunge, the descent past the first two, the arrival — when the dead
+// are parsed and built (which phase), the slow frames by the wall clock, and stills down the last of the descent
+export async function deadLive({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/deepshot.js');
+  w.__dpBoot();
+  for (let i = 0; i < 100; i++) { w.__adv(2); await sleep(50); }
+  log('hook', w.__dpHook());
+  const D = b.deepS(), want = [['descent', 2.0], ['descent', 6.0], ['descent', 8.4], ['descent', 10.0], ['silence', 1.5], ['fight', 0.9], ['fight', 1.1], ['fight', 1.6], ['fight', 6]];
+  let gAt = null, bAt = null, last = Date.now(), k = 0; const slow = [];
+  for (let n = 0; n < 60 * 45 && k < want.length; n++) {
+    w.__adv(1);
+    if (n % 4 === 0) await sleep(2);
+    const now = Date.now(), d = now - last; last = now;
+    const where = D.ph + ' ' + D.t.toFixed(2);
+    if (d > 45 && n > 30) slow.push(where + ' ' + d + 'ms');
+    if (!gAt && b.dead.gltf) gAt = where;
+    if (!bAt && b.dead.built) bAt = where + ' bodies ' + b.dead.bodies.length;
+    const [ph, t] = want[k];
+    if (D.ph === ph && D.t >= t) { shot('dl_' + k + '_' + ph + '_' + t, 640, 1.6); k++; }
+  }
+  log('parsed at', gAt, '| built at', bAt, '| fetched', !!b.dead.fetching);
+  log('slow frames (wall clock, > 45 ms)', slow.length, slow.slice(0, 12).join(' | '));
+}
+
+// dev mode hands over the fishing rod (2026-11-14)
+export async function devRod({ w, b, log, sleep }) {
+  const has = () => b.inventory.includes(b.fishingRodItem);
+  log('before', has(), 'dev', b.settings.devMode);
+  const box = w.document.getElementById('s-dev') || [...w.document.querySelectorAll('input[type=checkbox]')].pop();
+  box.checked = true; box.dispatchEvent(new w.Event('change'));
+  await sleep(200);
+  log('after the menu box', has(), 'dev', b.settings.devMode, 'pack', b.inventory.length);
+}
+
+// THE AMBUSH (2026-11-14): loaded as the snap's checkpoint loads, you looking where it leaves you: the one still alive
+// struggling, the pliosaur out of the dark through it, carried off, and what it does next. A sheet of the run-in and the
+// bite (`dd_amb_sheet`), stills either side, and where everything was.
+export async function deadAmbush({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true; b.plioLoad(); b.deadLoad();
+  for (let i = 0; i < 600 && !(b.plioS().ready && b.dead.gltf); i++) { b.frame(2); await sleep(100); }
+  for (let i = 0; i < 100 && !(b.fishingRodS && b.fishingRodS().children.length); i++) { b.frame(1); await sleep(100); }
+  b.deepRestore(); w.__clockOn();
+  const D = b.deepS(), P = b.plioS(), L = () => b.dead.live, C = b.camera, E = D.descE.clone(), Q = C.quaternion.clone();
+  const hold = () => { C.position.copy(E); C.quaternion.copy(Q); b.camBaseY = E.y; D.v.set(0, 0, 0); D.knock.set(0, 0, 0); b.setHp && b.setHp(4); };
+  log('live', !!L(), L() && L().st, 'rods', b.dead.rods ? b.dead.rods.length : 'none', 'pieces', b.dead.pieces.length);
+  for (let i = 0; i < 90; i++) { hold(); w.__adv(1); }
+  const lp = L().G.position; log('live at', lp.clone().sub(E).toArray().map((v) => v.toFixed(2)).join(','), 'seen', b.deadLiveSeen());
+  shot('dd_amb_struggle', 640, 1.5);
+  const cv = b.renderer.domElement, sw = 400, sh = Math.round(sw * cv.height / cv.width), cols = 3, rows = 5;
+  const sheet = document.createElement('canvas'); sheet.width = sw * cols; sheet.height = sh * rows; const g2 = sheet.getContext('2d'); g2.filter = 'brightness(1.5)';
+  let k = 0, tAmb = null, tBite = null, minCam = 1e9, biteD = null, carryMin = 1e9;
+  for (let f = 0; f < 60 * 14; f++) {
+    hold(); w.__adv(1);
+    if (P.st === 'ambush' && tAmb === null) tAmb = D.t.toFixed(2) + ' (' + D.ph + ')';
+    if (P.st === 'ambush' || (tBite && k < rows * cols)) {
+      if (P.g) { P.g.updateMatrixWorld(true); const hp = new b.THREE.Vector3(); (P.head ? P.head.getWorldPosition(hp) : hp.copy(P.g.position)); minCam = Math.min(minCam, hp.distanceTo(E)); }
+      if (P.amb === 'carry') carryMin = Math.min(carryMin, P.g.position.distanceTo(E));
+      if (!tBite && L().st === 'held') { tBite = D.t.toFixed(2); biteD = L().G.position.distanceTo(E).toFixed(2); }
+      if (f % 4 === 0 && k < rows * cols && (P.amb === 'carry' || (P.head && P.head.getWorldPosition(new b.THREE.Vector3()).distanceTo(E) < 24))) { b.renderer.render(b.scene, C); g2.drawImage(cv, (k % cols) * sw, Math.floor(k / cols) * sh, sw, sh); k++; }
+    }
+    if (tBite && P.st !== 'ambush' && P.st !== 'lurk' && !w.__ambNext) w.__ambNext = P.st + ' at ' + D.t.toFixed(2);
+  }
+  { const d = sheet.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'dd_amb_sheet', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
+  log('ambush at', tAmb, '| bite at fight t', tBite, 'its distance from you', biteD, '| head nearest you', minCam.toFixed(1), 'in the carry', carryMin.toFixed(1), '| live', L().st, '| next', w.__ambNext || P.st, 'ambushes', P.nAmbush, 'bites at you', P.nBite || 0);
+  shot('dd_amb_after', 640, 1.5);
+  // the rods, from the side
+  const R = b.dead.rods && b.dead.rods[0];
+  if (R) { const p = R.H.position; C.position.set(p.x - 2.2, p.y + 0.6, p.z - 2.6); C.lookAt(p.x, p.y, p.z); C.updateMatrixWorld(true); shot('dd_amb_rod', 640, 1.6); }
+}
+
+// the ambush's run-in, frame by frame: where the mouth is against the one it is coming for
+export async function ambDbg({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true; b.plioLoad(); b.deadLoad();
+  for (let i = 0; i < 600 && !(b.plioS().ready && b.dead.gltf); i++) { b.frame(2); await sleep(100); }
+  b.deepRestore(); w.__clockOn();
+  const D = b.deepS(), P = b.plioS(), C = b.camera, E = D.descE.clone(), Q = C.quaternion.clone(), V = b.THREE.Vector3;
+  const hold = () => { C.position.copy(E); C.quaternion.copy(Q); b.camBaseY = E.y; D.v.set(0, 0, 0); D.knock.set(0, 0, 0); };
+  for (let f = 0; f < 60 * 8; f++) {
+    hold(); w.__adv(1);
+    if (P.st === 'ambush' && f % 6 === 0) {
+      const S = b.dead.live.G.position, h = new V(); P.head.getWorldPosition(h); const m = h.clone().addScaledVector(P.dir, 0.9 * 1.6);
+      const toS = S.clone().sub(m), a = P.A.Attack_Bite;
+      log(D.ph, D.t.toFixed(2), P.amb, 'dS', toS.length().toFixed(2), 'ahead', toS.dot(P.dir).toFixed(2), 'sp', P.speed.toFixed(1), 'clip', a.time.toFixed(2), 'ts', a.timeScale.toFixed(2), 'g', P.g.position.clone().sub(E).toArray().map((v) => v.toFixed(1)).join(','), 'dir', P.dir.toArray().map((v) => v.toFixed(2)).join(','), 'live', b.dead.live.st);
+    }
+  }
+}
+
+// 2026-11-14's list: the merchant hit once (his line) and twice (the gun, the shot, the card at once); splashes only in the water
+export async function nov14({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = false;
+  const C = b.camera, W = b.traderWorld, T = b.THREE;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  // the surf and the courtyard
+  const at = (x, z, y = 1.7) => { C.position.set(x, y, z); b.camBaseY = y; };
+  W.updateMatrixWorld(true); const tp = new T.Vector3(); W.getWorldPosition(tp);
+  at(-14, -40, 1.7 - 0.1); log('wading: out in the sea', b.playerWading());
+  at(tp.x, tp.z + 2); log('wading: by the trader on the sand', b.playerWading());
+  // the merchant: stood 1.6 m in front of him, looking at his chest
+  w.__clockOn();
+  for (let i = 0; i < 60; i++) w.__adv(1);
+  const face = () => { at(tp.x + 1.6, tp.z, 1.7); b.lookAt(tp.x, 1.2, tp.z); C.updateMatrixWorld(true); };
+  face(); w.__adv(1); face();
+  b.aimHere(); log('first blow lands on him', b.traderStrike(0.5), 'rage', b.TRADER_RAGE.n, 'dialog', b.state().dialogOpen, 'card', w.document.getElementById('dialog-speaker') ? w.document.getElementById('dialog-speaker').textContent : '?');
+  for (let i = 0; i < 90; i++) { w.__adv(1); }
+  shot('tr_line', 640, 1.2);
+  b.endDialog(); for (let i = 0; i < 10; i++) { face(); w.__adv(1); }
+  face(); b.aimHere();
+  log('second blow lands', b.traderStrike(0.5), 'busy', b.TRADER_RAGE.busy, 'gun', !!b.TRADER_RAGE.gun);
+  const R = b.TRADER_RAGE, de = w.document.getElementById('death');
+  let f = 0, kicked = false;
+  for (; f < 200 && !de.classList.contains('show'); f++) {
+    face(); w.__adv(1);
+    if (f === 12) shot('tr_draw', 640, 1.3);
+    if (f === 70) shot('tr_held', 640, 1.3);
+    if (R.fired && !kicked) { kicked = true; log('fired at', R.t.toFixed(2), 's after the blow'); shot('tr_kick', 640, 1.3); }
+  }
+  const d = w.document, dc = d.getElementById('deathcard');
+  log('card at frame', f, '(' + (f / 60).toFixed(2) + ' s) red up', de.classList.contains('show'), 'transition', de.style.transition, 'card shown', getComputedStyle(dc).display);
+
+}
+
+// standing in the surf, the game's own frames: your feet against the water's surface, and what the splash test says
+export async function wadeCheck({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera;
+  for (const x of [-2, -5, -8, -11]) {
+    let yes = 0, n = 0, minGap = 9, maxGap = -9, inW = 0;
+    for (let f = 0; f < 120; f++) {
+      C.position.x = x; C.position.z = -60; b.frame(1); if (f % 10 === 0) await sleep(5);
+      const feet = b.camBaseY - 1.7, surf = b.waterSurfaceAt ? b.waterSurfaceAt(C.position.x, C.position.z) : NaN;
+      n++; if (b.playerWading()) yes++; if (b.inWater && b.inWater(C.position.x, C.position.z)) inW++;
+      const gp = feet - surf; minGap = Math.min(minGap, gp); maxGap = Math.max(maxGap, gp);
+    }
+    log('x', x, 'at x', C.position.x.toFixed(2), 'wading', yes + '/' + n, 'inWater', inW, 'feet-surface', minGap.toFixed(2), '..', maxGap.toFixed(2));
+  }
+}
+
+// THE DARK KNIGHT'S SKATE, BY CLIP: you strafing round him at the walk; on every moving frame (not swinging), which clip is
+// on, its rate and weight, the body's speed, and whether the planted foot slid (the `dkMove` test: lower foot > 0.6 m/s)
+export async function dkWhy({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; await w.__fortBoot(); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
+  for (const f of b.farmUnitsS()) f.st.awake = false;
+  b.dkTurn(u, true);
+  const C = b.camera.position, P = u.g.position, V = C.constructor;
+  const bl = u.model.getObjectByName('b_MF_Foot_L'), br = u.model.getObjectByName('b_MF_Foot_R');
+  const fl = new V(), fr = new V(), pl = new V(), pr = new V(), px0 = { x: P.x, z: P.z };
+  const me = { x: P.x + 3, z: P.z }; let side = 1, sideT = 1.5, first = true; const tally = {};
+  for (let f = 0; f < 60 * 30; f++) {
+    const dx = me.x - P.x, dz = me.z - P.z, d = Math.hypot(dx, dz) || 1;
+    sideT -= 1 / 60; if (sideT <= 0) { side = -side; sideT = 1.2 + Math.random(); }
+    me.x += -dz / d * side * 3.4 / 60; me.z += dx / d * side * 3.4 / 60;
+    const k = (d - 3.2) * 0.05; me.x -= dx / d * k; me.z -= dz / d * k;
+    C.set(me.x, C.y, me.z); b.camBaseY = C.y; b.lookAt(P.x, P.y + 1.4, P.z);
+    w.__adv(1); b.heal(); for (const g of b.farmUnitsS()) g.st.awake = false;
+    u.model.updateMatrixWorld(true); bl.getWorldPosition(fl); br.getWorldPosition(fr);
+    if (!first && u.st.atk < 0) {
+      const low = fl.y < fr.y ? [fl, pl] : [fr, pr], hy = low[0].y - P.y;
+      const sp = Math.hypot(low[0].x - low[1].x, low[0].z - low[1].z) * 60, vy = Math.abs(low[0].y - low[1].y) * 60;
+      const bm = Math.hypot(P.x - px0.x, P.z - px0.z) * 60;
+      if (bm > 0.2 && hy < 0.345 && vy < 0.4) {
+        const acts = u.mixer._actions.filter((a) => a.isRunning() && a.getEffectiveWeight() > 0.05);
+        const key = (u.cur ? u.cur.getClip().name : '-') + (acts.length > 1 ? ' (blend ' + acts.length + ')' : '');
+        const t = tally[key] || (tally[key] = { n: 0, bad: 0, sp: 0, body: 0, rate: 0 });
+        t.n++; if (sp > 0.6) t.bad++; t.sp += sp; t.body += bm; t.rate += u.cur ? u.cur.timeScale : 0;
+      }
+    }
+    first = false; pl.copy(fl); pr.copy(fr); px0.x = P.x; px0.z = P.z;
+  }
+  for (const [k, t] of Object.entries(tally).sort((a, c) => c[1].n - a[1].n)) log(k.padEnd(22), 'n', t.n, 'skate', Math.round(100 * t.bad / t.n) + '%', 'foot', (t.sp / t.n).toFixed(2), 'body', (t.body / t.n).toFixed(2), 'rate', (t.rate / t.n).toFixed(2), 'mode', u._vgMode);
+}
+
+// HOW OFTEN IT IS IN YOUR FACE (2026-11-14): the fight, you held where the pull leaves you, 60 s; every frame, how near any
+// vertex of its skin comes to your eye (every 5th vertex, skinned) — frames inside 0.3 m are frames it is through the lens
+export async function plioClip({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true; b.plioLoad(); b.deadLoad();
+  for (let i = 0; i < 600 && !(b.plioS().ready && b.dead.gltf); i++) { b.frame(2); await sleep(100); }
+  b.deepRestore(); w.__clockOn();
+  const D = b.deepS(), P = b.plioS(), C = b.camera, E = D.descE.clone(), T = b.THREE;
+  const meshes = []; P.g.traverse((o) => { if (o.isSkinnedMesh) meshes.push(o); });
+  const v = new T.Vector3();
+  const nearest = () => { let m = 1e9; for (const o of meshes) { o.skeleton.update(); const pa = o.geometry.attributes.position; for (let i = 0; i < pa.count; i += 5) { v.fromBufferAttribute(pa, i); o.applyBoneTransform(i, v); v.applyMatrix4(o.matrixWorld); const d = v.distanceTo(C.position); if (d < m) m = d; } } return m; };
+  D.ph = 'fight'; D.t = 0; b.plioStartPass(); w.__adv(30);   // (its ordinary fight, not the ambush)
+  let n = 0, in03 = 0, in06 = 0, minD = 1e9, hurt = 0, hp0 = 4;
+  for (let f = 0; f < 60 * 60; f++) {
+    C.position.copy(E); b.camBaseY = E.y; D.v.set(0, 0, 0); D.knock.set(0, 0, 0); if (b.setHp) { if (b.hpS && b.hpS() < hp0) hurt++; b.setHp(4); }
+    w.__adv(1);
+    if (f % 2) continue;
+    P.g.updateMatrixWorld(true);
+    const d = nearest(); n++; if (d < 0.3) in03++; if (d < 0.6) in06++; if (d < minD) minD = d;
+  }
+  log('frames sampled', n, '| skin inside 0.3 m of the eye', in03, '| inside 0.6 m', in06, '| nearest', minD.toFixed(2), '| bites', P.nBite || 0, 'landed hurts', hurt, '| snaps', P.nSnap || 0, 'swipes', P.nSwipe || 0);
+}
+
+// THE ONE STILL ALIVE, SWIMMING: candidate ways (clip, rate, pitch, thrash) side by side, six frames over 1.5 s each, from a
+// little in front and to one side. Rows: `__liveTry` or the defaults below.
+export async function liveSwim({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true; b.plioLoad(); b.deadLoad();
+  for (let i = 0; i < 600 && !(b.plioS().ready && b.dead.gltf); i++) { b.frame(2); await sleep(100); }
+  b.deepRestore(); w.__clockOn();
+  const tries = w.__liveTry || JSON.parse(new URLSearchParams(location.search).get('tries') || 'null') || [
+    { clip: 'run', rate: 0.85, pitch: -0.35, thr: 1 }, { clip: 'run', rate: 0.5, pitch: 0.7, thr: 0.25 },
+    { clip: 'walk', rate: 0.75, pitch: 0.5, thr: 0.25 }, { clip: 'roar', rate: 0.9, pitch: -0.2, thr: 0.25 }];
+  const D = b.deepS(), C = b.camera, L = b.dead.live, cv = b.renderer.domElement;
+  const sw = 260, sh = 300, cols = 6;
+  const sheet = document.createElement('canvas'); sheet.width = sw * cols; sheet.height = sh * tries.length; const g = sheet.getContext('2d'); g.filter = 'brightness(1.5)';
+  const hold = () => { D.ph = 'silence'; D.t = 0; C.position.copy(D.descE); b.camBaseY = C.position.y; };
+  tries.forEach((cfg, r) => {
+    b.dead.liveCfg = cfg;
+    for (let i = 0; i < 40; i++) { hold(); w.__adv(1); }
+    for (let k = 0; k < cols; k++) {
+      for (let i = 0; i < 15; i++) { hold(); w.__adv(1); }
+      const p = L.G.position; C.position.set(p.x + 2.0, p.y + 0.4, p.z - 2.6); C.lookAt(p.x, p.y, p.z); C.updateMatrixWorld(true);
+      b.renderer.render(b.scene, C);
+      const W = cv.width, H = cv.height, cw = H * sw / sh;
+      g.drawImage(cv, (W - cw) / 2, 0, cw, H, k * sw, r * sh, sw, sh);
+    }
+    log('row', r, JSON.stringify(cfg));
+  });
+  const d = sheet.toDataURL('image/jpeg', 0.82).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'live_swim', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}

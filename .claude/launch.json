@@ -2,6 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "beachwalk",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "serve.py",
+        "4173"
+      ],
+      "port": 4173
+    },
+    {
       "name": "beachwalk-test",
       "runtimeExecutable": "python3",
       "runtimeArgs": [

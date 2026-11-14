@@ -251,3 +251,131 @@ The owner: "add checkpoint when the fishing rod snaps in the water too". Every s
 - Measured (`tools/loadall.sh 1 <out> deep`, which drives the real snap: hook, plunge, the descent's last 2 s): written
   room 'deep' spot 'deepSnap'; loaded playable 4.8 s (6.5 before the pliosaur was ranked first), black 0, in the deep,
   'silence' → 'fight' and the pass begun by +10 s, no frame over 45 ms in the 14 s after.
+
+## 2026-11-13 — the bite 3 s sooner
+`DEEP_HOOK_T` 14 → 11 ("make the bite at the fishing spot happen 3 seconds earlier"). Nothing else is timed off it
+(`deep.spotT` is only counted against it).
+
+## 2026-11-14 — the dead in the water
+The owner: "make there be dead mutant bodies floating in the water with blood in the water realistic on the sea monster
+fight make them gracefully floating and ripped to bits random limbs too make it cinematic they should have water phyics
+too with the monster swimming by pushing them". All of it is `dead` / `deadStep` / `deadPush` / `deadBlood*`, beside
+`updateDeepFx`; `updateDead(dt)` runs after `updatePlio` while `inDeep`.
+- **The bodies** (`DEAD_SET`, offsets from `deep.descE`): eight of the beach's `mutant.glb` (pale, red, dark skins; each
+  kind's own `bones` build, scaled to its `h` off the bind pose), `cryClone`d skinned copies posed from 62–99 % of `die`
+  or `die2` (scale tracks dropped, as `dressMutant` does), hips on the group's origin. Two of them sit by the descent's
+  last three seconds (the path runs ~(2, 6, −22) → (0.6, 2, −8) from `descE`); the rest are in front of where you
+  arrive, the nearest 4.7 m off (you drift into it on the arrival's 1.5 m/s).
+- **Torn**: each cut bone is baked off by `bakeLimb` (the beach's own), drifted 0.6–2.2 m from the body, then scaled to
+  0.0001 on the body. Every stump, on the body (a child of the cut bone's PARENT, scaled by 1/its world scale) and on the
+  piece (at its cut end in the piece's frame), is `deadCapGeo`: torn meat lumps, a splintered bone shaft and 2–4
+  strands, one merged mesh in vertex colours. Plus 2–3 loose gibs a body. 8 bodies, 47 pieces, 48 bleeding points.
+- **Seen by their own light** (nothing lights the deep): the skin's map as `emissiveMap`, (0.62, 0.72, 0.74) at 1.7 pale /
+  2.4 red / 2.7 dark (the pale map is brighter); DoubleSide so a cut shows its inside. The caps glow by their vertex
+  colour (`onBeforeCompile`: `emissive * vColor`, 0.25). At 0.3 like the pliosaur's they were black shapes.
+- **Water physics**: each piece relaxes toward `deadFlow` (a slow wandering current, ≤ 0.2 m/s) with a drag that grows
+  with speed, a weak leash home past 3 m, the floor and `deepRockPush`; spin damped, a slow noise torque, and a body
+  rights itself toward the up it was built with (overshooting: it rocks). Pieces push each other apart. The limbs sway
+  off the joints (`DEAD_SWAY`, two sines per bone on a random axis), and `flail` (from any shove) throws them about.
+- **The pliosaur moves the water** (`deadPush`): its nine `PLIO_SPHERES`, each with its own velocity from last frame
+  (so the tail swipe pushes too); within skin + 2.4–3 m (+0.8 r) a piece is dragged along at 0.85 of the sphere's
+  velocity and thrown off its flank at 0.75 of its speed, falloff squared, plus a shear spin; inside the skin it is
+  carried out. A hard shove: a muffled `fleshHit`, a burst of blood. Measured, 40 s of the fight held at `descE`:
+  bodies up to 24 m/s, flail 1.57, moved up to 12 m, none under the floor.
+- **The blood** (`deadBloodBuild`): one InstancedBufferGeometry of 440 camera-facing quads, a tiled fbm canvas sampled
+  twice and drifting, radial falloff, near-black red in LINEAR (0.10 → 0.028), faded by the fog like `deepFx`. The first
+  72 are standing clouds (round each body and stump, and a thin haze 3.5–7.5 m wide); the rest a ring of puffs from
+  every stump (0.7–1.5 s apart, slower over minutes, faster when moved) that open ×3.5–6.5 and go in 7–13 s. Moved by
+  the same current and, lighter, by the pliosaur's water.
+- **Two traps.** (1) A BIG QUAD NEAR THE EYE IS CUT BY THE NEAR PLANE and its straight edge shows: the haze read as
+  pale V-shaped walls. Each cloud thins with distance relative to its OWN size (`smoothstep(size·0.3, size·0.85+0.6)`).
+  (2) **A SCRATCH VECTOR READ AFTER A CALL THAT USES IT**: the body's cap scale was `1 / _dzA.x` after `deadCap` had
+  written a direction into `_dzA` — one cap a hundred metres across, a pale wall over the whole view.
+- **Loading**: `bwSoon('assets/mutant.glb')` (or naming it in `BW_DEEP_FILES` / the deep's `ROOM_FILES`) marks the
+  WHOLE URL near, and every beach mutant parses its own copy: they were all parsed and dressed in the fight (a 70 ms
+  frame). `deadLoad(parse)` fetches on its own (shared with the queue if it has it) and parses its own copy, asked at the
+  hook only to fetch, parsed under the plunge's veil (`plunge` T > 0.2) and built at `descent` 0.02 (veil still full).
+  The checkpoint's `ready` waits for it and both skins (`deadSkinsIn`); `deadBuild` uploads the maps
+  (`renderer.initTexture`). Measured: the deep loads playable in 3.85 s, worst frame 27–32 ms (the same as without
+  them); per frame `deadStep` ≤ 0.9 ms (`dead.ms`, `dead.msMax`).
+- A restore puts every piece back at home (`deadPlace`) and re-seeds the standing blood.
+- Probes: `deadShots` (`&quick=1`: stills only), `deadFrames`, `deadLive` (the real bite → descent), `deadWho`.
+
+## 2026-11-14 (later) — one still alive, the ambush, the rods, the light
+The owner: "have one of the bodies in the water be moving in your line of vision have it sit for a sec struggling then
+have the sea monster abruptly and fast swim through biting mutant floating make this be scary like a jump scare then have
+him start attacking after that have floating fishing rods around too … have this instead of part where he swims by in
+the start", then "no strings on the rods" and "make the light shine through the water make it cool looking".
+- **The one still alive** (`dead.live`, `deadBuildLive`, `deadLiveStep`): a pale one, forearm gone and bleeding, at
+  `DEAD_LIVE_AT` (0.2, −0.6, 5.0) off `descE` — dead ahead where you arrive. Its `run` clip with the scale tracks AND
+  `Character1_Hips.position` dropped (it goes nowhere), body tipped back and wrenched on two slow sines, a thrash
+  multiplied onto nine joints after the mixer each frame, bubbles off the head, `mutVox('hurt'|'tell')` placed by `sfxAt`
+  every 1.1–2.5 s. It panics (faster kick, harder thrash) once the ambush starts. The corpse that hung at (−1.7, −0.4,
+  4.4) moved to (−4.2, 1.2, 6.8) to clear the stage.
+- **The trigger** (`updateDeep` 'silence'): once it has been in front of you (`deadLiveSeen`: inside 0.5 rad of the
+  look, under 22 m) after 3.5 s, or at 10 s regardless → `plioAmbush()`. No live one (the dead never loaded) → the old
+  `plioStartPass` at 11.
+- **The ambush** (`plio.st === 'ambush'`, `plio.amb` 'in' → 'carry'): MEASURE THE LENS FIRST — FOV 105 is wide.
+  Head-on from 34 m with the mutant at 9.5 m it was a small dark shape; side-on at 11 m it read as far off. Now the line
+  is ACROSS your view (right × 0.97 + forward × 0.18), the head put 34 m back along it, `Attack_Bite` from
+  `PLIO_BITE_FROM`, speed each frame (dist − 4.2) / (time to `PLIO_BITE_AT`) clamped 8–40 (the bite state's own rule):
+  ~30 m/s, in the picture about a third of a second before the jaws shut 5.6 m in front of you. Warning: a surge only
+  inside 17 m. At the shut, `deadLiveBite`: the right leg baked off and left tumbling (its own piece, cap and bleeds),
+  14 big blood clouds and its last air, the roar 1.7, `mutVox('die')`, the sever, two `fleshHit`s, thud, surge,
+  trauma 0.8, fov 9, hitstop 0.14. Carry: 13 → 18 m/s, steered on along its line and away (1.2 rad/s), the body rolled
+  ±0.45 at 19 rad/s (the shake) fading over 1.6 s, the mutant held across the jaws, thrashing (×1.6), pouring blood,
+  gone at 2.6 s or 30 m. At 2.8 s `plioLurk()` with `lurkT` 0.5: measured, a tell at 4.35 and a bite at you.
+  Measured: head nearest you 5.9 m, the body 7.2. `plioHurt` never snaps out of 'ambush'.
+- **The rods** (`deadBuildRods`, `DEAD_RODS`): five clones of `fishingRod` (the scan), materials cloned (which drops
+  the bend's `onBeforeCompile`, as wanted) and lit by their maps at 0.7, as drifting pieces (`kind 'rod'`). Built when
+  the scan is in (`deadRodsStep` asks each frame until it is); the deep's `ROOM_FILES` names `fishing-rod.glb` so a load
+  straight into the deep has it (only the rod uses that file). No lines: the owner's word.
+- **The light** (`deepRays`, `DEEP_RAY_N` 26): one instanced draw of tall quads turned about a slanted axis
+  (0.32, 1, 0.18) to face you, wrapped round the camera on a 72 m tile, ADDITIVE, depth-tested (bodies cut them).
+  Streaks drift inside each, a ripple runs down them, brightest toward the surface (so the long pull goes from bright
+  water into dark — at 1.6 the top of the descent was solid cyan bars, 0.7 now), thinned by distance at 0.42 of the fog.
+  Built with the deep (`buildDeep`), faded out through the drowning.
+- Measured (`loadall deep`): playable 3.9 s, worst frame 30–31 ms through the ambush. Probes `deadAmbush` (a sheet of the
+  run-in), `deadLive` (now to fight 6 s).
+
+## 2026-11-14 (third round) — real-looking wounds, the grab in one pass, the murk and the light
+The owner (with a still from his game: the stumps were pale bars): "make the severed parts of the models look better
+this looks unrealistic. i dont like the bones poking out that much. make the mutant that gets ate be much farther away.
+the monster shouldnt even stop to bite him just straight swim through fast and grab him all one motion. make it look more
+cinematic down here too the light peaking through the water could look better. make it more mysterious and eerie murky".
+- **Stumps** (`deadCapGeo`): a ragged rim of torn skin (7–9 round lumps, detail 1), wet dark meat and black clots in
+  the middle, a bloody bone end on about half and only 0.2–0.4 of a radius clear, a short strand or two. Loose meat
+  `0x3a0e0a` (at `0x5c1610` / emissive `0x320907` a chunk was a flat red block).
+- **The one taken is 13.5 m off** (`DEAD_LIVE_AT` (0.6, −0.5, 13.5)) and **taken in one pass**: 31 m/s on a line set
+  while it is far (steering stops inside 10 m), the BITE CLIP's speed (not the animal's) set each frame so the jaws shut
+  as the mouth arrives; grabbed inside 2.6 m of the mouth or once past it, eased onto the jaws over a few frames, and on
+  at 25 m/s into the black; no hit stop (trauma 0.5, fov 4). Measured: grabbed 1.07 s after it sets off, 13.1 m from
+  you; a tell at 4.1, a bite at you after.
+  **TRAP: `plioMouthPos(out)` writes `_pM` inside** (`_pM.copy(plio.dir)`), so `plioMouthPos(_pM)` returns
+  dir × 2.44 — the mouth was never near anything and the grab never came. The ambush has its own `_pAm`.
+- **The murk** (`deepMurkC`, 40): great slow clouds 7–17 m, one a shade paler than the water, the next darker
+  (`cloudMat`, the blood's shader with its two colours as uniforms), drifting on `deadFlow`, swirled by the pliosaur
+  (`deadPush`'s `vel`), kept round you (past 44 m they come back on the far side, in the fog).
+- **The light**: 20 shafts that each come and go on their own slow count and lie in patches down their length (light
+  finding its way through, not columns), visible at the fight's depth now (×0.5 floor); and straight up, the surface
+  itself (`deepBack`): a slow shimmer of bands near the zenith (`uT`), where the shafts converge.
+  **TRAP: `patch` IS A RESERVED WORD IN GLSL ES 3** — the rays' program did not link, and with
+  `renderer.debug.checkShaderErrors = false` (line ~1219) the only sign is `useProgram: program not valid` in the
+  console and a mesh that is simply not there. Grep the console for it after any shader edit.
+- Measured: the deep loads playable in 4.1–4.5 s, worst frame 26 ms.
+
+## 2026-11-14 (fourth round) — less of it in your face; the paddle; the swoop
+The owner: "make the seamonster clip into me less while fighting. make the mutant in the water swim animation look better
+its kind of weird and lags. the seamonster should swoop and eat him faster too."
+- **Through the lens**: the body push was nine spheres with 0.7 m round each — nothing between them, ahead of the head
+  or on the flippers. Now a capsule between each two of `PLIO_SPHERES` (radius interpolated), the snout
+  (`plioMouthPos`, 0.55·K) and the four flipper bones (`plio.fins`: forearm/hand L/R, 0.32·K), all + 1.25 m. And a
+  bite's charge stops its head at `PLIO_STAND` 5.0 (4.2), the contact reaching 3.9 (3.4). Measured (`plioClip`: 60 s of
+  its fight, you held; every 2nd frame the nearest of every 5th skinned vertex to your eye): skin inside 0.3 m of the
+  eye 100 frames of 1800 before → 49 at 0.9 m room → 30 at 1.25; inside 0.6 m 151 → 99; bites still land (4 → 4 hurts).
+- **The paddle** (`DEAD_LIVE_CFG` run 0.6×, pitch +0.75, thrash ×0.3; `deadLiveClip` switches clips, `dead.liveCfg` lets
+  the harness try others): picked off `liveSwim`'s rendered rows — upright at 0.85 with the full thrash it ran on air and
+  juddered; tipped forward and slowed it paddles head-first at you.
+- **The swoop**: from 30 m off and 10 m DOWN, heading level at 42 m/s, steered at 2.8 rad/s until the last 8 m — an arc
+  up out of the deep onto him; carried on at 30. Grabbed 0.60 s after it sets off (1.07). `deadAmbush`'s sheet: the arc,
+  the grab, gone into the murk.

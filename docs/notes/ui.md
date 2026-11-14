@@ -895,3 +895,29 @@ choices for `.ask` ("Are you sure you want to quit?", Quit / Cancel: `#deathcard
 own click listener, which runs from the first paint — so a press before main.js is up asks too; Quit (`.dc-quit-yes`)
 is index.html's until `__dcLive`, main.js's after (`leavingOnPurpose`). `deathCardShow` clears `asking`.
 `sh tools/probe.sh dcQuitAsk`: early press asks, Cancel restores, Quit goes to the title with the save kept.
+
+**DEV MODE GIVES THE FISHING ROD TOO** (2026-11-14, "make dev mode give me fishing rod"): `fishingRodItem` is last in
+`devGrantWeapons`' list, so the menu box and a dev-mode reload both hand it over if it is not in the pack. Once the deep
+is done (`deepDone`) the glow is gone and the bite never comes again, so a rod given then only fishes. Probe `devRod`.
+
+## 2026-11-14 — the merchant is not to be hit
+The owner: "make the merchant if you hit him say 'Touch me again and I'll fucking kill you.' if you hit him after that he
+swiftly pulls out the gun and shoots you in the face killing you straight to the restart screen abruptly … comedically
+abrupt". `traderStrike(P)` in `digImpactCore` (after `plioStrike`): the aim ray against either of his two places (the
+beach's `traderWorld`, the castle's `trader2World`), within reach + 0.45, 0.5 m round him, feet to head. `TRADER_RAGE.n`:
+1 → `bossLine` with the line; 2 → `busy`, a clone of `magModel` (the .44 he sells) brought from his hip to arm's length at
+your eyes over 0.2 s, its −Z on you (`traderGunPose`), the click (`sfxMagShut`), and at 0.3 s `sfxMagBlast` and
+`playerExecuted()`: the red with `transition: none`, the death card without `fadein`, the reload in 1.5 s. It ignores dev
+mode (you asked twice). Not saved. `traderRageTick` runs from `updateSkrimMood` (every frame). The harness's `aimRay`
+reads `_aimD`, which only a swing sets — `__bw.aimHere()` sets it for a probe. Probe `nov14`: line on the first, the gun
+on the second, fired 19 frames later, the card shown on that frame.
+- **Later the same day** ("make the merchant wait like a second after pulling his gun on you to shoot make him pulling it
+  out a little more noticeable too the shot should also be the real gun shot sound with the same recoil for him. make his
+  'touch me again' line look like real dialog we have in game too"): the line is `startDialog` on his own card
+  (`TRADER_NPC`, "Rude Trader", the lens on whichever of him you hit), typed, ending on its own at 2.6 s (`bossLine` only
+  if a dialog cannot open). The draw: a cloth-and-leather rasp (`sfxTraderDraw`), out from low at his hip muzzle-down,
+  arcing up onto your face over `TRADER_DRAW` 0.6 s, the hammer (`sfxMagShut`) at the top; held `TRADER_HOLD` 1.0 s,
+  breathing; then exactly `magFire`'s sound (`sfxMagBlast` + `magShot` 1.22 through `magBus`), a muzzle flash
+  (`traderFlash`, an additive sprite 0.3 m toward you, 0.85, gone in ~4 frames — at 0.55/1.0 it whited the screen out), and
+  the gun thrown back and up in his hand (`traderGunPose(u, kick)`) for `TRADER_KICK` 0.1 s before the card. Measured
+  (`nov14`): his card up on the first blow; the shot 1.62 s after the second; the card 0.1 s after the shot.

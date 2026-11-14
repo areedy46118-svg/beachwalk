@@ -816,3 +816,37 @@ is gone; the passing theme is still the one thing it waits for. A death's respaw
 owner's one exception). `tools/musictest.js` has a `loadTavern` scenario (a checkpoint saved in the tavern via
 `ROOM_BACK.tav`, then loaded): FAIL at peak 0 before, PASS after. Still NOT covered by the music test: the wreck
 theme, the whale's leaving song and the lighthouse track (`startLighthouseTrack`, an <audio> element, no `musicNote`).
+
+## 2026-11-13 — the castles' two fight songs; the bunker's step
+- **`LOOP_SONGS`** (`marauder`, `farmers`): the owner's "real boss battle 95 bpm" and "madeinabyss 130bpm". Each cut on a
+  whole bar (45 bars of 95 = 113.684 s, at its trailing silence; 48 of 130 = 88.615 s) and looped by the source itself
+  (`loop`, `loopEnd`) — seamless and on the beat, no crossfade. The marauder's was −26.5 LUFS (peaks −12.1): +11 dB →
+  −15.5 / −1.1; the farmers' as it came (−15.9 / −0.8). Level 0.3 on the music slider (Skrim's fight is 0.25 at −14).
+  Each starter (`startMarauderFight`, `startFarmersFight`) makes its own gain to the speakers — musictest's silent frame
+  names a destination by the function that connected it, so one shared starter would be two songs it cannot tell apart.
+  `updateLoopSongs` (beside `updateSkrimFightMusic`, guarded by `deepLive`: what it reads is declared late): the
+  marauder's from `thrScene.phase` ≥ 4 (his take up) in the hall with him alive, fade-in 1.5 s, out over 7 s as he
+  dies (1.5 s if you leave or die); the farmers' from `farmFight.started` (0.8 s inside the gate) to `farmFight.done`,
+  up an 8 s x² curve, out over 5 s. In `musicGuard`. musictest `marauder` (PASS 0.0043), `farmers` (floor 0.0008: the
+  8 s curve; PASS 0.0009).
+- **The bunker's step is the church's, dry** (`sfxStepBunker`): the eleven `churchStep` recordings carry the corridor
+  they were cut from (0.6–0.7 s). Kept: the hit (70 ms); gated off by 0.2 s; plus one dull slap off a near wall (16 ms
+  delay, 2.2 kHz lowpass, 0.16). `sfxStepMetal` is its fallback before the bank is in. `playSample`'s `dest` is how a
+  sample goes through a chain of its own.
+
+## 2026-11-14 — the opening song only at the start; the castle songs on their moments
+- **No opening song on ANY checkpoint load** ("the very first spawn music in the game should not play when reloading any
+  checkpoint ever only at that start spawn"): `bootRespawn = deathWait || loadMode === 'checkpoint'`. A game from the
+  start (the first load, a restart) has it. Musictest: `load`, `loadTavern`, `loadDeep` now want silence with
+  `checkpoint`; `restart` wants the song. CLAUDE.md's music rule says so.
+- **The farmers' song as you walk in** ("start instantly when you walk in"): on `inFort && !farmFight.done` (it waited
+  for `farmFight.started`, 0.8 s in), `fadeIn` 0.25 (8), its bytes fetched on the beach once you are within 160 m of the
+  castle trader (`lazyBuf`), so it is decoded before the gate.
+- **The throne room's from the chain parting** ("make the throne room music start when he cuts dante loose"): on from
+  `thrCut.snapped` in phase 1 through phases 2-5 while the marauder lives (it waited for him to stand, phase 4), decoded
+  as soon as you are in the room.
+- **Splashes only in the sea** ("i shouldn't be hearing water splashes unless touching the water i keep hearing them
+  while walking on concrete"): `playerWading()` — both the step and the landing — is false on the dock, the wreck, in any
+  room and in every built place (`inFort`, `inC13`, `inThrone`, `inDun`, `insideDrain`, `inBunker`, `inUndercroft`,
+  `inCat`, `inTavern`, `inWhale`, `inSewer`); else the old `inWater` + feet under 0.35. (The wave's own surface is NOT a
+  test for it: standing in the surf your feet are 0.18–0.52 over `waterSurfaceAt` — `wadeCheck`.)

@@ -50,8 +50,17 @@ function ez(z) { return z - BEACH_EXT; }   // a world z past the gap, as it was 
 /* a save from before (or from another length): every beach z past the cut, and the keys built off positions (a killed
  * unit's `kind@x,z`, a pickup's `label@x,y,z`), moved by the difference. Rooms stand at large POSITIVE z and are
  * never touched; nothing at or before the hatch is touched either. */
+/* A THING RENAMED IS THE SAME THING (2026-11-13: the Gem Stone Ring is The Lucky Ring). The pack, its slots, the worn
+ * rings and the hand are saved by name; an old name is read as the new one before anything looks. */
+const ITEM_RENAMED = { 'Gem Stone Ring': 'The Lucky Ring' };
+function migrateItemNames(d) {
+  const re = (n) => (typeof n === 'string' && ITEM_RENAMED[n]) || n;
+  for (const k of ['pack', 'slots', 'worn']) if (Array.isArray(d[k])) d[k] = d[k].map(re);
+  if (typeof d.held === 'string') d.held = re(d.held);
+}
 function migrateSave(d) {
   if (!d || typeof d !== 'object') return d;
+  migrateItemNames(d);
   const by = BEACH_EXT - (d.ext || 0);
   if (!by) return d;
   const sz = (z) => (typeof z === 'number' && z < BEACH_CUT_Z && z > -5000 ? +(z - by).toFixed(3) : z);
@@ -181,7 +190,7 @@ const BW_FROM = (() => {
       dojo: ['courtyard.glb', 'samurai.glb', 'portal.glb'],
       cat: ['catacombs.glb', 'crawler.glb', 'skull-key.glb', 'limbs.glb', 'benali.glb', 'bloody-blade.glb'],
       bunker: ['bunker.glb', 'dealer.glb'],
-      deep: ['pliosaur.glb'],              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
+      deep: ['pliosaur.glb', 'fishing-rod.glb'],   // (and the rods floating in it, 2026-11-14: only the rod uses that file)              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
       whale: ['whale.glb', 'skrim.glb', 'crying-head.glb', 'skrim-moves.json', 'demon-moves.json', 'knight-moves.json', 'ntar-moves.json', 'wong-moves.json', 'orc-moves.json', 'drunk-moves.json', 'umbra-moves.json', 'crawler-moves.json'],
     };
     /* AND WHAT YOU ARE CARRYING COMES WITH YOU (2026-10-19, the owner, twice: "i loaded a checkpoint and my weapons were
@@ -193,7 +202,7 @@ const BW_FROM = (() => {
     const PACK_FILES = {
       'Military Shovel': 'military-shovel.glb', 'Spare Peg': 'peg-leg.glb', 'Fishing rod': 'fishing-rod.glb', 'Screwdriver': 'screwdriver.glb', 'Flashlight': 'flashlight.glb',
       '.44 Magnum': 'magnum.glb', 'The Sawed Off Shotgun': 'sawnoff.glb', 'Bloody Blade': 'bloody-blade.glb', 'Wax Spliff': 'spliff.glb',
-      'The Octopus Ring': 'octopus-ring.glb', 'Gold Ring': 'gold-ring.glb', 'Gem Stone Ring': 'gem-ring.glb', 'Old Ring': 'old-ring.glb',
+      'The Octopus Ring': 'octopus-ring.glb', 'Gold Ring': 'gold-ring.glb', 'Gem Stone Ring': 'gem-ring.glb', 'The Lucky Ring': 'gem-ring.glb', 'Old Ring': 'old-ring.glb',
       'Forgotten Wedding Ring': 'wedding-ring.glb', 'Ring of Connection': 'connection-ring.glb', 'Skull Key': 'skull-key.glb',
       'Rusted Key': 'key.glb', 'The Great Crab Call': 'crab-call.glb', 'Mutant Fang': 'fang.glb',
     };
@@ -1182,6 +1191,18 @@ const SKRIM_FIGHT = 'assets/skrim-fight.m4a', SKRIM_FIGHT_LEVEL = 0.25,   // (0.
      SKRIM_FIGHT_IN = 7,   // (0.95, in over 1.2 s, until 2026-10-30: "make the skrim fight music fade in slowly and make it lower volume")
       SKRIM_FIGHT_MAX = 1.0, SKRIM_FIGHT_XF = 1.5, SKRIM_FIGHT_FADE = 9;
 let skrimFightVol = null, skrimFightM = null;
+/* THE CASTLES' TWO FIGHTS HAVE SONGS (2026-11-13, the owner, with "real boss battle 95 bpm" and "madeinabyss 130bpm": "add
+ * this first audio to when the marauder stands up to fight you make it loop. make this second audio fade in when you enter
+ * the castle first for the farmers fight"). Each is cut on a whole bar (45 bars of 95, 48 of 130) and looped by its source
+ * (`loop`, `loopEnd`: seamless, on the beat). The marauder's came 11 dB under Skrim's (−26.5 LUFS, peaks −12.1): packed
+ * +11 dB to −15.5 (peaks −1.1); the farmers' as it came (−15.9, −0.8). On the music slider, each on its own gain
+ * (`musicGuard`). `updateLoopSongs`: the marauder's from his take up (`thrScene.phase` 4) to his death (a long fade) or
+ * your leaving the hall; the farmers' from the fight's start (`farmFight.started`, 0.8 s inside the gate) to its end. */
+const LOOP_SONGS = {
+  marauder: { url: 'assets/marauder-fight.m4a', level: 0.3, max: 1.0, fadeIn: 1.5, fadeOut: 7, loopEnd: 113.684, vol: null, cur: null },
+  farmers: { url: 'assets/farmers-fight.m4a', level: 0.3, max: 1.0, fadeIn: 0.25, fadeOut: 5,   // (8 s in until 2026-11-14: "make the music to the farmer fight start instantly when you walk in")
+              loopEnd: 88.615, vol: null, cur: null },
+};
 let wreckThemeVol = null;
 
 // ------------------------------------------------------------------
@@ -3276,6 +3297,16 @@ bool bwFortCut1(sampler2D m, vec4 M, vec2 w) {
 bool bwFortCut(vec2 w) { return bwFortCut1(uFortMask, uFortM, w) || bwFortCut1(uFortMask2, uFortM2, w); }
 `;
 // true when (x,z) is seaward of the waterline — i.e. standing in / over water
+/* ARE YOUR FEET IN THE SEA (2026-11-14, the owner: "i shouldn't be hearing water splashes unless touching the water i keep
+ * hearing them while walking on concrete"). The splash asked only whether the beach's sea line was seaward of you
+ * (`inWater`, beach coordinates) and your feet under 0.35 m — and nothing asked whether you were in a built place at all:
+ * a castle, the drain, a room. Now none of those splash. (Asking the wave's own surface was tried and is wrong: in the
+ * real surf your feet stand 0.18–0.52 over `waterSurfaceAt` — measured, `wadeCheck` — and nothing splashed at all.) */
+function playerWading() {
+  if (onDock || onShip || inRoom() || inFort || inC13 || inThrone || inDun || insideDrain || inBunker || inUndercroft || inCat || inTavern || inWhale || inSewer) return false;
+  const c = camera.position;
+  return inWater(c.x, c.z) && camBaseY - playerEye() < 0.35;
+}
 function inWater(x, z) {
   if (Math.abs(x) >= 1500 || Math.abs(z) >= 2500) return false;   // a room's water is its own (see roomSubmersion)
   if (fortMaskAt(x, z)) return false;           // the castle's courtyard is paved, whatever the tide does outside it
@@ -8169,6 +8200,7 @@ function damagePlayer(n = 1, from = null) { const was = sfxPos; sfxPos = null; t
 function damagePlayerAt(n = 1, from = null) {
   if (dying || ended || !introDone || bootHold > 0) return;      // (nothing lands under a load's black)
   if (dodgedBlow()) return;              // it went past you: that is what the step is for
+  if (luckyBlow(from)) return;           // the Lucky Ring: it landed and cost nothing
   connStreak = 0;                        // the Ring of Connection's run is broken by anything that lands
   const neg = 1 - dmgTakeK();
   if (neg > 0) {
@@ -8756,9 +8788,11 @@ var deathWait = false;
 var bootStageHold = null;
 try { if (sessionStorage.getItem('beachwalk.died') === '1') { deathWait = true; sessionStorage.removeItem('beachwalk.died'); } } catch (e) {}
 /* THE OPENING SONG IS THE OPENING (2026-10-24, the owner: "make it so the starting song doesnt play on a respawn but just
- * on the first load into the game"). A load that is a death's reload (`beachwalk.died`) comes back without it; a first
- * load, a restart and a checkpoint loaded from the menu still have it (`startMusic`). */
-const bootRespawn = deathWait;
+ * on the first load into the game"). A load that is a death's reload (`beachwalk.died`) comes back without it.
+ * AND NOT ON ANY CHECKPOINT (2026-11-14: "the very first spawn music in the game should not play when reloading any
+ * checkpoint ever only at that start spawn"): a checkpoint loaded from the menu is silent too. Only a game that starts at
+ * the start — the first load, or a restart from the beginning — has it (`startMusic`). */
+const bootRespawn = deathWait || loadMode === 'checkpoint';
 let restoreTune = null, saveTune = null;          // a song a checkpoint was written under, played again as the black lifts on it
 const BOOT_HOLD_MAX = 1600;
 const BOOT_HOLD_WARM_MAX = 6500;   // and at most this long for the rooms' own warms
@@ -9833,7 +9867,8 @@ function devGrantWeapons() {
   if (INV_MAX <= 12) { INV_MAX = 16; TRADER_STOCK.packSpace = 0; renderPack(); renderHotbar(); }
   statHush = true;
   try {
-    for (const it of [shovelItem, militaryItem, bloodItem, pegItem, pavKeyItem, hornItem, skullKeyItem]) {
+    // (and the fishing rod, 2026-11-14: "make dev mode give me fishing rod")
+    for (const it of [shovelItem, militaryItem, bloodItem, pegItem, pavKeyItem, hornItem, skullKeyItem, fishingRodItem]) {
       if (!it || inventory.includes(it)) continue;
       addToInventory(it);
     }
@@ -15388,6 +15423,7 @@ function digImpactCore() {
   if (blade.first) { const u = blade.first; blade.first = null; if (u.st.alive) { bladeHitMutant(u, P, true); return true; } }
   if (isleBirdStrike(P)) return true;          // a gull on the island: feathers
   if (plioStrike(P)) return true;              // the thing in the deep
+  if (traderStrike(P)) return true;            // the merchant, who will not be hit twice
   if (castleStrike(P)) return true;            // the blade went through the castle
   if (crateStrike(P)) return true;             // the blade is on the crate, not the sand
   if (glassStrike()) return true;              // or on something that shatters
@@ -20812,12 +20848,17 @@ function makeGemIcon() {
   g.beginPath(); g.arc(28, 9, 7, 0, Math.PI * 2); g.fill();
   return c.toDataURL();
 }
-/* SEVEN PER CENT OF WHAT A BLOW COSTS YOU, and what makes that a real number
- * rather than a rounding error is the bank in `damagePlayer`. */
-const GEM_NEG = 0.07;
+/* THE LUCKY RING (2026-11-13, the owner: "make the pavillon gem stone ring be called 'The Lucky Ring' giving a chance an
+ * enemy hit wont do damage … 'Gives random chance of enemy hit doing no damage.' dont make it too overpowered but still
+ * cool and useful"). It was the Gem Stone Ring, 7% damage negation. Worn, a blow that lands has a `LUCK_P` chance of
+ * costing nothing (`luckyBlow`, in `damagePlayer` after the step's dodge) — and never two inside `LUCK_GAP` seconds, so a
+ * pack of them cannot be stood in on luck. The blow still ARRIVES (the shove, the head thrown, a little shake) with a
+ * bright struck note over it instead of the hurt, so you know it was the ring. A save's old name is read as the new
+ * one (`migrateItemNames`). */
+const LUCK_P = 0.18, LUCK_GAP = 5;
 const gemItem = {
-  id: 'gemring', name: 'Gem Stone Ring', icon: makeGemIcon(), ring: true,
-  desc: `Physical Damage Negation +${Math.round(GEM_NEG * 100)}%`,
+  id: 'gemring', name: 'The Lucky Ring', icon: makeGemIcon(), ring: true,
+  desc: 'Gives random chance of enemy hit doing no damage.',
   use: () => toggleEquip(gemItem),
   inspectOpts: () => ({
     rotX: 0.85, rotY: 0.30,
@@ -20826,7 +20867,29 @@ const gemItem = {
   }),
 };
 holdable(gemItem, gemRing, { scale: 2.2, pos: [0, -0.02, 0], rot: [0.9, 0.3, 0.15] });
-dmgTakeK = () => (rings.includes(gemItem) ? 1 - GEM_NEG : 1);
+dmgTakeK = () => 1;                          // (the gem's 7% negation went with its name: it is luck now, `luckyBlow`)
+let luckAt = -1e9;
+function luckyBlow(from) {
+  if (!rings.includes(gemItem)) return false;
+  const now = performance.now() / 1000;
+  if (now - luckAt < LUCK_GAP || Math.random() >= LUCK_P) return false;
+  luckAt = now;
+  addTrauma(0.22); fovKick = Math.max(fovKick, 2.5); hitstop = Math.max(hitstop, 0.03);
+  hurtThrow((from && from.g) || nearestFoe(camera.position), 0.5, 0.55);
+  sfxLuckChime();
+  return true;
+}
+// a coin's ring, bright and short: two struck partials and a shimmer a fifth up
+function sfxLuckChime() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  for (const [f, a, dec, at] of [[1318.5, 0.07, 0.9, 0], [3560, 0.02, 0.35, 0], [1975.5, 0.05, 0.8, 0.07], [5333, 0.012, 0.25, 0.07]]) {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f, t + at);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t + at);
+    g.gain.exponentialRampToValueAtTime(a, t + at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + at + dec);
+    o.connect(g).connect(out); o.start(t + at); o.stop(t + at + dec + 0.05);
+  }
+}
 /* THE OLD RING, ON THE TRADER'S TABLE FOR FOUR JARS.
  * Qifan Zhang's "An Old Ring" (CC-BY-4.0, assets/old-ring.glb). Shipped EXACT,
  * by the owner's word: all 19,092 triangles and all three of its maps —
@@ -22793,6 +22856,14 @@ const DIALOG_FOV = 42;
 let dialogFov = DIALOG_FOV, dialogHead = null;   // an NPC may ask for a tighter lens and a bone to hold it on
 let dialogLeave = null;                          // ...and may refuse to be walked away from
 let cineHold = false;                            // ...and may keep the lens after the talking stops
+/* AND A HELD LENS YOU WALK AWAY FROM LETS GO (2026-11-13, the owner: "when zoomed in on the well man if you walk away make
+ * the camera adjust back to normal it stays zoomed now. do this for the dealers zoom too after you hand him the
+ * portrait"). A scene that opts in (`cineWalkAway`: the well man's stare, the Dealer's reach for the bar) remembers where
+ * you stood; 0.7 m from there (a clear step or two), outside a dialogue, the hold is dropped and the lens eases home at its own rate. The
+ * scene itself goes on — he still stares, he still comes. */
+let cineWalkOff = false;
+const cineAt = new THREE.Vector3();
+function cineWalkAway() { cineWalkOff = true; cineAt.copy(camera.position); }
 const _lookM = new THREE.Matrix4(), _lookQ = new THREE.Quaternion();
 /* AT THE HELM THE LENS LEANS IN. The puzzle's stars are 190 m out over the
  * sea, and at the walk's own field of view (105) each one is three or four
@@ -22836,6 +22907,10 @@ function updateDialogCam(dt) {
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
+  }
+  if (!cineHold) cineWalkOff = false;                                            // (a scene that let go on its own)
+  if (cineHold && cineWalkOff && !dialogOpen && Math.hypot(camera.position.x - cineAt.x, camera.position.z - cineAt.z) > 0.7) {
+    cineHold = false; cineWalkOff = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV;
   }
   if ((dialogOpen || cineHold) && dialogTarget) {
     // a bone, if one was named: a man's head moves while he talks and the
@@ -24881,6 +24956,55 @@ function updateSkrimFightMusic() {
     const g = S.cur.env.gain; g.setValueAtTime(1, at); g.linearRampToValueAtTime(0.0001, at + SKRIM_FIGHT_XF);
   }
   if (S.next && t > S.next.t0 + SKRIM_FIGHT_XF) { S.cur = S.next; S.next = null; }
+}
+// the castles' two (`LOOP_SONGS`): each starter makes its own gain to the speakers (so a test can tell them apart)
+function loopSongPlay(k) {
+  const L = LOOP_SONGS[k], ctx = audioCtx, buf = lazyBuf(L.url); if (!buf || L.cur) return;
+  L.vol.gain.value = Math.min(L.max, settings.volume * settings.musicVolume * L.level);
+  musicNote(k + ' fight', L.vol.gain.value);
+  const t = ctx.currentTime + 0.02, env = ctx.createGain(), up = new Float32Array(48);
+  for (let i = 0; i < 48; i++) up[i] = Math.max(0.0001, (i / 47) ** 2);           // up a slow (x²) curve
+  env.gain.value = 0.0001; env.gain.setValueCurveAtTime(up, t, L.fadeIn);
+  env.connect(L.vol);
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.loopStart = 0; src.loopEnd = Math.min(L.loopEnd, buf.duration);
+  src.connect(env); src.start(t);
+  L.cur = { src, env };
+}
+function startMarauderFight() {
+  const ctx = audioCtx, L = LOOP_SONGS.marauder; if (!ctx || L.cur || !lazyBuf(L.url)) return;
+  if (!L.vol) { L.vol = ctx.createGain(); L.vol.connect(ctx.destination); }
+  loopSongPlay('marauder');
+}
+function startFarmersFight() {
+  const ctx = audioCtx, L = LOOP_SONGS.farmers; if (!ctx || L.cur || !lazyBuf(L.url)) return;
+  if (!L.vol) { L.vol = ctx.createGain(); L.vol.connect(ctx.destination); }
+  loopSongPlay('farmers');
+}
+function loopSongStop(k, secs) {
+  const L = LOOP_SONGS[k], C = L.cur; L.cur = null;
+  if (!C || !audioCtx) return;
+  const t = audioCtx.currentTime, g = C.env.gain, g0 = Math.max(0.0001, g.value), c = new Float32Array(48);
+  for (let i = 0; i < 48; i++) c[i] = Math.max(0.0001, g0 * (1 - i / 47) ** 2);     // a slow letting go, (1 − x)²
+  g.cancelScheduledValues(t); g.setValueAtTime(g0, t); g.setValueCurveAtTime(c, t + 0.01, secs);
+  try { C.src.stop(t + secs + 0.1); } catch (e) { /* */ }
+}
+function updateLoopSongs() {
+  if (!audioCtx || !deepLive) return;              // (frames run while the module is still being read: what this reads is declared late)
+  /* (2026-11-14, the owner: "make the throne room music start when he cuts dante loose": from the chain parting in his
+   * cut (`thrCut.snapped`), through the beast's fight and his, until he is down — it waited for him to stand, phase 4) */
+  const U = umbraUnit, uUp = inThrone && !!U && !U.retired && U.st.alive && (thrScene.phase >= 2 || (thrScene.phase === 1 && !!thrCut && thrCut.kind === 'chain' && !!thrCut.snapped));
+  /* (and the farmers' the moment you are inside, not at the fight's own start 0.8 s later, and in in a quarter second;
+   * its bytes fetched on the way up the beach so it is there to start — `lazyBuf` below) */
+  const fUp = inFort && !farmFight.done;
+  if (!farmFight.done && !inFort && camera.position.z < TRADER2_Z + 160) lazyBuf(LOOP_SONGS.farmers.url);
+  if (inThrone && !!U && !U.retired && U.st.alive) lazyBuf(LOOP_SONGS.marauder.url);   // (decoded before the chain parts, so it starts on it)
+  for (const [k, on, start, gone] of [['marauder', uUp, startMarauderFight, !!U && (U.retired || !U.st.alive)],
+                                     ['farmers', fUp, startFarmersFight, farmFight.done]]) {
+    const L = LOOP_SONGS[k];
+    if (on) lazyBuf(L.url);
+    if (on && !L.cur && !dying && !ended && !replaying && !applyingSave) start();
+    if (L.cur && (!on || dying || ended)) loopSongStop(k, gone && !dying ? L.fadeOut : 1.5);
+  }
 }
 function skrimSongFade(sec) {
   const ctx = audioCtx, S = skrimSong; if (!ctx || !S || S.done || S.fading) return;
@@ -28673,7 +28797,7 @@ let screwdriverTaken = false, stowScrewdriver = () => false;
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy'; hit.visible = false; screwdriverModel.add(hit);
-  addItemShine(screwdriverModel, { size: 0.8, height: 0.12 });       // (2026-10-17, the owner: "give the screwdriver item glow")
+  addItemShine(screwdriverModel, { size: 1.6, height: 0.14, strength: 3.2, lift: 1.8, through: 0.7 });   // (2026-10-17, the owner: "give the screwdriver item glow"; 2026-11-13: "give the screwdriver more item glow you cant even see it" — size 0.8 / strength 1 → 1.6 / 3.2, its own surfaces lifted and a mark through the crate's clutter)
   // off the crate and into the hand's own frame (the same model is the one you hold)
   stowScrewdriver = () => {
     if (screwdriverTaken) return false;
@@ -34135,6 +34259,19 @@ function velGaitAnim(u, dt, N) {
     p.x = px0 + (p.x - px0) * k2; p.z = pz0 + (p.z - pz0) * k2;
     u._vgx = p.x; u._vgz = p.z;
   };
+  /* AND THE BODY GOES THE WAY THE FEET STEP (`kind.axisLock`, 2026-11-14, the owner: "the dark knight is horrible make his
+   * move-set better and more fluid"). A clip strides straight ahead, straight back or straight to a side; the fight moves
+   * him on a slant (closing while he circles), and the slant's other part went under his feet as a glide — measured
+   * (`dkMove`), a planted foot sliding at 1.62 m/s while he moved at 1.83, 85% of every moving frame. This frame's step
+   * keeps its part along the axis being stepped and only (1 − axisLock) of the rest. */
+  if (u.kind.axisLock && mode !== 'idle' && dt > 1e-4 && px0 !== undefined) {
+    const dx = p.x - px0, dz = p.z - pz0, rx = -ch, rz = sh;
+    const al = dx * sh + dz * ch, sd = dx * rx + dz * rz, K = u.kind.axisLock;
+    const fa = mode === 'fwd' || mode === 'back';
+    const a2 = fa ? al : al * (1 - K), s2 = fa ? sd * (1 - K) : sd;
+    p.x = px0 + sh * a2 + rx * s2; p.z = pz0 + ch * a2 + rz * s2;
+    u._vgx = p.x; u._vgz = p.z; ix = (p.x - px0) / dt; iz = (p.z - pz0) / dt;
+  }
   if (mode === 'fwd') {
     const walkC = spd(G.walk) || 1.2;
     u._vgRun = NAT ? (u._vgRun ? f > walkC * 1.05 : f > walkC * 1.22) : (u._vgRun ? f > walkC * 1.45 : f > walkC * 1.75);
@@ -43088,6 +43225,7 @@ function startDealerPickup() {
   cineHold = true;
   dialogHead = dealer.head || null;
   dialogFov = 20;
+  cineWalkAway();                       // (walk away from it and the lens comes back to you)
   if (!dialogTarget) dialogTarget = new THREE.Vector3();
   dealer.g.getWorldPosition(dialogTarget); dialogTarget.y += 1.55;
 }
@@ -45672,6 +45810,26 @@ function sfxHatch(opening) {
  * without the tail the step happens in a padded cell rather than forty
  * metres down inside concrete. Alternating feet get their own weight, pitch
  * and grit so no two are the same. */
+/* THE BUNKER'S STEP IS THE CHURCH'S, DRY (2026-11-13, the owner: "make the bunker footsteps the same as the church but no
+ * reverb make it seem like walking in that rooms space"). The church's eleven are cut from a walk down a stone corridor
+ * and carry it — 0.6-0.7 s each, the floor's hit then the corridor's tail. Here the hit is kept (70 ms) and the corridor
+ * gated off by 0.2 s, and the room is the bunker's own: one quiet, dull slap off a wall a few metres away (16 ms, 2.2 kHz)
+ * — a concrete box you are standing in, not a hall. `sfxStepMetal` stays as the fallback before the bank is in. */
+function sfxStepBunker() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(1, t); env.gain.setValueAtTime(1, t + 0.07); env.gain.exponentialRampToValueAtTime(0.0006, t + 0.2);
+  env.connect(sfxOut());
+  const dl = ctx.createDelay(0.1); dl.delayTime.value = 0.016;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+  const wg = ctx.createGain(); wg.gain.value = 0.16;
+  env.connect(dl).connect(lp).connect(wg).connect(sfxOut());
+  stepAlt ^= 1;
+  if (playSample('churchStep', 0.6 * (stepAlt ? 1 : 0.86), 0.05, 1, 0, env)) return;
+  stepAlt ^= 1;
+  sfxStepMetal();
+}
 function sfxStepMetal() {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime;
@@ -46262,10 +46420,10 @@ function update(dt, rawDt = dt) {
       landDip = Math.max(landDip, 0.06 + force * 0.16);
       addTrauma(force * 0.25);
       vmImpulse(-1.1 - force * 2.4);
-      if (!onDock && !onShip && groundY < 0.35 && inWater(camera.position.x, camera.position.z)) sfxSplash(0.9);
+      if (playerWading()) sfxSplash(0.9);
       else stepSnd(() => {
         if (onDock) sfxStepWood();
-        else if (inBunker) sfxStepMetal();
+        else if (inBunker) sfxStepBunker();
         else if (inUndercroft) sfxStepUnder();
         else if (insideDrain) sfxStepDrain();
         else if (inCat) sfxStepCat();
@@ -46372,8 +46530,7 @@ function update(dt, rawDt = dt) {
   /* Splashing is for walking THROUGH water, never over it. On the pier's
    * boards, on the wreck's deck or on a rock you are above the sea, and the
    * surf noise underfoot was the loudest thing wrong with the pier. */
-  const wading = !onDock && !onShip && inWater(camera.position.x, camera.position.z)
-    && camBaseY - playerEye() < 0.35;
+  const wading = playerWading();
   if (moving && onGround && speed > 0.6) {
     const dx = camera.position.x - lastFootPos.x, dz = camera.position.z - lastFootPos.z;
     const gate = running ? FOOT_STRIDE * 1.3 : FOOT_STRIDE;
@@ -46387,7 +46544,7 @@ function update(dt, rawDt = dt) {
       } else if (onDock) {
         sfxStepWood();                     // boards: a knock, and no print
       } else if (inBunker) {
-        sfxStepMetal();                    // steel plate: a clank, and no print
+        sfxStepBunker();                   // the church's step, dry, in the bunker's own box (`sfxStepBunker`), and no print
       } else if (inUndercroft) {
         sfxStepUnder();                    // stone, or rubble: no print either way
       } else if (insideDrain) {
@@ -48154,9 +48311,10 @@ function musicGuard() {
   fix(minoSongVol, Math.min(MINO_SONG_MAX, v * MINO_SONG_LEVEL));
   fix(skrimSongVol, Math.min(SKRIM_SONG_MAX, v * SKRIM_SONG_LEVEL));
   fix(skrimFightVol, Math.min(SKRIM_FIGHT_MAX, v * SKRIM_FIGHT_LEVEL));
+  for (const k in LOOP_SONGS) { const L = LOOP_SONGS[k]; fix(L.vol, Math.min(L.max, v * L.level)); }
   fix(wlVol, v * WL_LEVEL);
   fix(wreckThemeVol, v * WRECK_THEME_LEVEL);
-  const playing = musicSrc || samScore || passSrc || endSong || wlSrc || (minoSong && !minoSong.done) || (skrimSong && !skrimSong.done) || !!skrimFightM;
+  const playing = musicSrc || samScore || passSrc || endSong || wlSrc || (minoSong && !minoSong.done) || (skrimSong && !skrimSong.done) || !!skrimFightM || !!LOOP_SONGS.marauder.cur || !!LOOP_SONGS.farmers.cur;
   if (playing && ctx.state === 'suspended' && started && !frozen()) ctx.resume().catch(() => {});
 }
 function animateFrame() {
@@ -52530,6 +52688,10 @@ const SELL_ROWS = [
   { key: 'military', item: () => militaryItem, name: 'Military Shovel', price: 3, sum: 'An army entrenching tool',
     count: () => (inventory.includes(militaryItem) ? 1 : 0),
     desc: 'Digs like the sand shovel and hits much harder: click for a light hit, hold Shift for a charged heavy.' },
+  // (2026-11-13, the owner: "make it so the katana can be sold for 4 jars"; an artifact set in it comes back to the pack first: `artOnWeaponLeaving`)
+  { key: 'katana', item: () => katanaItem, name: 'Katana', price: 4, sum: 'A Holy Blade',
+    count: () => (inventory.includes(katanaItem) ? 1 : 0),
+    desc: 'The samurai\'s blade. Fast, and it cuts: click for a light hit, hold Shift for a charged heavy.' },
   { key: 'spliff', item: () => spliffItem, name: 'Wax Spliff', price: 1, sum: 'One jar each',
     count: () => (inventory.includes(spliffItem) ? spliffItem.count || 0 : 0),
     desc: 'Light it and take one hit: your stamina recovers 40% faster for four minutes. They stack.' },
@@ -52595,6 +52757,10 @@ function traderSell(key) {
     removeFromInventory(militaryItem);
     gainJar(r.price);
     traderSaid = 'Army issue. Three jars. Try not to need it.';
+  } else if (key === 'katana') {
+    removeFromInventory(katanaItem);
+    gainJar(r.price);
+    traderSaid = "That's a real one. Four jars. Don't ask me where it ends up.";
   } else if (key === 'spliff') {
     sellFromStack(spliffItem);
     gainJar(r.price);
@@ -52864,6 +53030,135 @@ addInteractable(trader2Hit, 'Buy something', 'npc', {
   far: 5.0, when: () => !dialogOpen && !shopOpen,
   onActivate: () => openShop(2),
 });
+/* ---- AND HE IS NOT TO BE HIT (2026-11-14, the owner: "make the merchant if you hit him say 'Touch me again and I'll
+ * fucking kill you.' if you hit him after that he swiftly pulls out the gun and shoots you in the face killing you
+ * straight to the restart screen abruptly. have you hear the shot then it hard cuts to the screen it should be
+ * comedically abrupt"). One man in two places (the beach's and the castle's), so one temper: the first blow gets the
+ * line (`bossLine`), the second the gun — the .44 he sells, out and level with your face in a fifth of a second, the
+ * shot, and on the same frame as the crack the death card, no red, no fade, no fall (`playerExecuted`). He is the one
+ * death dev mode does not stop: you asked for it twice. Not saved: a load forgives him. */
+const TRADER_RAGE = { n: 0, busy: false, gun: null, t: 0, which: 1 };
+const _trA = new THREE.Vector3(), _trB = new THREE.Vector3();
+function traderStrike(P) {
+  if (TRADER_RAGE.busy || dying || inRoom()) return false;
+  aimRay(P);
+  for (const which of [1, 2]) {
+    const W = which === 2 ? trader2World : traderWorld;
+    W.getWorldPosition(_trA);
+    const t = _trB.copy(_trA).sub(_aimO).dot(_aimD);
+    if (t < 0.1 || t > digRay.far + 0.45) continue;
+    _trB.copy(_aimO).addScaledVector(_aimD, t);
+    if (Math.hypot(_trB.x - _trA.x, _trB.z - _trA.z) > 0.5 || _trB.y < _trA.y + 0.15 || _trB.y > _trA.y + TRADER_H + 0.1) continue;
+    traderStruck(which, _trB);
+    return true;
+  }
+  return false;
+}
+function traderStruck(which, at) {
+  const R = TRADER_RAGE;
+  R.n++; R.which = which;
+  playSample('fleshHit', 0.85, 0.05, 0.75); addTrauma(0.12); hitstop = Math.max(hitstop, 0.04);
+  /* (2026-11-14, the owner: "make his 'touch me again' line look like real dialog we have in game": his own card, the
+   * Rude Trader's, typed like every other line in the game, the lens in on his face; it ends on its own) */
+  if (R.n === 1) {
+    if (!dialogOpen && introDone) startDialog('touch', Object.assign({}, TRADER_NPC, { sprite: which === 2 ? trader2World : traderWorld,
+      script: { touch: { text: "Touch me again and I'll fucking kill you.", choices: [], hint: '', end: 2600 } } }));
+    else bossLine("Touch me again and I'll fucking kill you.");
+    return;
+  }
+  // the gun: out of his coat and on your face, now
+  R.busy = true; R.t = 0;
+  if (magReady) {
+    const g = magModel.clone(true);
+    g.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.raycast = () => {}; } });
+    scene.add(g); R.gun = g;
+  }
+  traderGunPose(0);
+  sfxAt(at.x, at.z, () => sfxTraderDraw(), { ref: 3 });         // (cloth and leather: it comes out of his coat)
+}
+/* THE DRAW, THE WAIT, THE SHOT (2026-11-14, the owner: "make the merchant wait like a second after pulling his gun on you to
+ * shoot make him pulling it out a little more noticeable too the shot should also be the real gun shot sound with the
+ * same recoil for him"). Out from low at his hip, muzzle down, swung up and round onto your face over 0.6 s with the
+ * hammer cocked at the top; held on you a full second, settling; then the .44's own report exactly as yours fires it
+ * (`sfxMagBlast` and the recording through `magBus`), its flash, and the gun thrown up and back in his hand — seen for a
+ * tenth of a second — and the card. */
+const TRADER_DRAW = 0.6, TRADER_HOLD = 1.0, TRADER_KICK = 0.1;
+// the draw: a quick rasp of cloth and a leather scrape as it clears his coat
+function sfxTraderDraw() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const n = noiseBurst(0.32, (x) => Math.pow(Math.sin(Math.min(1, x * 1.6) * Math.PI), 1.5) * (0.6 + 0.4 * Math.random()));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(900, t); bp.frequency.exponentialRampToValueAtTime(2600, t + 0.28);
+  const g = ctx.createGain(); g.gain.value = 0.32;
+  n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.32);
+}
+// where it is: from his hip up to arm's length at your eyes, the barrel on you (its own -Z is the barrel, as in your hand)
+function traderGunPose(u, kick = 0) {
+  const g = TRADER_RAGE.gun; if (!g) return;
+  const W = TRADER_RAGE.which === 2 ? trader2World : traderWorld;
+  W.getWorldPosition(_trA);
+  const cam = camera.position;
+  _trB.set(cam.x - _trA.x, 0, cam.z - _trA.z).normalize();             // toward you
+  const side = new THREE.Vector3(-_trB.z, 0, _trB.x);
+  const k = 1 - Math.pow(1 - Math.min(1, u), 3);
+  const hip = new THREE.Vector3(_trA.x, _trA.y + 0.85, _trA.z).addScaledVector(side, 0.34).addScaledVector(_trB, 0.05);
+  const aim = new THREE.Vector3(_trA.x, _trA.y + 1.5, _trA.z).addScaledVector(side, 0.12).addScaledVector(_trB, 0.62);
+  g.position.lerpVectors(hip, aim, k);
+  g.position.y += Math.sin(Math.min(1, u) * Math.PI) * 0.12;            // (an arc up, not a slide)
+  const T = TRADER_RAGE.t;
+  if (u >= 1 && !kick) g.position.y += Math.sin(T * 7) * 0.006;         // (held on you, breathing)
+  g.position.addScaledVector(_trB, -0.07 * kick);                         // (the kick: back into his hand…)
+  g.lookAt(_trA.copy(g.position).multiplyScalar(2).sub(cam));         // (+Z away from you)
+  g.rotateY(Math.PI / 2);                                              // (and the model's barrel is its +X: a quarter turn puts the muzzle on you — measured, it came up side-on)
+  g.rotateZ((1 - k) * -1.3 + kick * 0.55);                              // (muzzle down at his hip, coming up; …and up)
+  g.scale.setScalar(1.15);
+}
+function traderRageTick(dt) {
+  const R = TRADER_RAGE; if (!R.busy || dying) return;
+  R.t += dt;
+  const tf = TRADER_DRAW + TRADER_HOLD;
+  if (!R.cocked && R.t >= TRADER_DRAW - 0.12) { R.cocked = true; const W = R.which === 2 ? trader2World : traderWorld; W.getWorldPosition(_trA); sfxAt(_trA.x, _trA.z, () => sfxMagShut(), { ref: 4 }); }
+  const kick = R.fired ? Math.sin(Math.min(1, (R.t - tf) / TRADER_KICK) * Math.PI * 0.5) : 0;
+  traderGunPose(R.t / TRADER_DRAW, kick);
+  if (R.t >= tf && !R.fired) {
+    R.fired = true;
+    sfxMagBlast();                                         // the size of it, under the recording — as `magFire` plays it
+    playSample('magShot', 1.22, 0.02, 1, 0, magBus());     // and the crack, through the same ceiling
+    traderFlash();
+  }
+  if (R.flash) R.flash.material.opacity = Math.max(0, R.flash.material.opacity - dt * 14);
+  if (R.fired && R.t >= tf + TRADER_KICK) playerExecuted();
+}
+// the muzzle flash: a star of light at the end of the barrel, between him and you, gone in a few frames
+function traderFlash() {
+  const R = TRADER_RAGE, g = R.gun; if (!g) return;
+  if (!R.flash) {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+    const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,250,220,1)'); gr.addColorStop(0.25, 'rgba(255,200,90,0.9)'); gr.addColorStop(1, 'rgba(255,120,20,0)');
+    x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+    R.flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    R.flash.scale.setScalar(0.3); scene.add(R.flash);
+  }
+  R.flash.position.copy(g.position).addScaledVector(_trB.copy(camera.position).sub(g.position).normalize(), 0.32);
+  R.flash.material.opacity = 0.85; R.flash.material.rotation = Math.random() * 6.28;
+}
+/* straight to the card: no red sinking in, no fall, no wait — the crack and the card on the same frame */
+function playerExecuted() {
+  if (dying) return;
+  dying = true;
+  if (locked) document.exitPointerLock();
+  if (held) dropHeld();
+  endDialog();
+  deathEl.style.transition = 'none'; deathEl.classList.add('show');
+  deathCardShow();
+  if (deathCardEl) deathCardEl.classList.remove('fadein');
+  refreshUI();
+  setTimeout(() => {
+    try { sessionStorage.setItem('beachwalk.died', '1'); } catch (e) {}
+    reloadInto(hasCheckpoint() ? 'checkpoint' : 'fresh');
+  }, 1500);
+}
 
 
 // ------------------------------------------------------------------
@@ -75798,7 +76093,7 @@ const ROOM_BACK = {
            place: () => placeInSewer(), seat: () => {}, spots: { sewIn: () => {} } },
   /* and the deep, from the moment the line snaps (2026-11-13, the owner: "add checkpoint when the fishing rod snaps in
    * the water too"): at the bottom of the long pull, the line gone, before it comes (`deepSnapSave`, `deepRestore`) */
-  deep: { grp: () => deep.world, at: () => [DEEP.x, DEEP.z], ready: () => plio.ready && !!deep.world, load: () => { bwSoon('assets/pliosaur.glb'); plioLoad(); deepAmbLoad(); },
+  deep: { grp: () => deep.world, at: () => [DEEP.x, DEEP.z], ready: () => plio.ready && !!deep.world && ((!!dead.gltf && deadSkinsIn()) || dead.failed), load: () => { bwSoon('assets/pliosaur.glb'); plioLoad(); deepAmbLoad(); deadLoad(); },
           place: () => deepRestore(), seat: () => {}, spots: { deepSnap: () => {} } },
 };
 /* AND A RESTORE IS WATCHED FOR THREE SECONDS AFTER IT LANDS. Every way this
@@ -85191,7 +85486,7 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
    * over the place and his arm is moving weird on some swings just fix his animations and ai"). He circles, side-steps,
    * feints and sizes you up a third as often; he closes to his blow, throws it, recovers, and comes again. */
   circle: 0.04, step: 0.04, feint: 0.03, sizeUp: 0.04, restless: 0.4,
-  regroup: 0.45, regroupT: [0.9, 1.7], sideKeep: 0.45,   // (2026-10-29: he resets between strings, and circles both ways)
+  regroup: 0.2, regroupT: [0.6, 1.1], sideKeep: 0.45,   // (2026-10-29: he resets between strings, and circles both ways; 2026-11-14: less of it, shorter — 0.45 / 0.9-1.7 — the side-steps were most of his skate, and he presses instead)
   /* HIS FEET STAY WHERE THEY ARE PUT (2026-10-19, the owner: "the dark knight is sliding around a lot fix this so moves
    * more natural"). Measured (`tools/probes.js dkSkate`, a planted foot's speed over the paving): moving 3.37 m/s with the
    * body at 2.04 (96 % of frames skating), a third of every swing skating, `dkSweep`'s body sliding 2.3 m/s through the
@@ -85199,7 +85494,7 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
    * swing does not skate 2.4 m/s into the next nor a wind-up glide in (`noSkate`), the last-moment closing is capped at a stride (`lungeMax`),
    * the backing-off through a wind-up is a step not a glide (`stepBack`), and he turns on the spot slower. The pack's
    * stepping blows walk their own recorded step instead of a lunge (`dkRootMotion`). */
-  velGait: true, gaitBands: true, gaitMax: 1.5, smoothMove: true, noSkate: true, lungeMax: 2.0,
+  velGait: true, gaitBands: true, gaitMax: 1.5, smoothMove: true, noSkate: true, lungeMax: 2.0, axisLock: 0.85,
   /* (2026-10-29, the owner: "he misses every hit … hes sliding all over the place". His swings walk their own feet's
    * travel, stretched to land where you are (`dkBuildTravel`, `dkWalkSwing`): no lunge, no step back glided through a
    * wind-up, and each swing thrown from where its step lands it (`warpPick`, not `stopPick`). He turns into you to a
@@ -86886,7 +87181,7 @@ function updateMinotaur(dt) {
     const was = MINO.place; MINO.place = pl;
     // (either castle: a way into XIII that is not the first castle's street still finds him at your side — 2026-10-30)
     if (MINO.stage === 'inside' || MINO.stage === 'toGate') { if (pl === 'fort' || pl === 'c13') MINO.stage = 'with'; }
-    if (MINO.stage === 'with' && pl !== 'room') minoJoin(u);
+    if (MINO.stage === 'with' && pl !== 'room' && pl !== 'beach') minoJoin(u);   // (not out onto the beach: he keeps the castle, 2026-11-14)
     if (MINO.stage === 'hostile' && pl !== 'beach' && u.st.alive) minoCalm(u);
     if (MINO.stage === 'wait' && was !== 'beach') { minoCalm(u); }
   }
@@ -86894,6 +87189,10 @@ function updateMinotaur(dt) {
   if (MINO.stage === 'wait' && u.st.mine) minoTurn(u);
   minoBody(u);
   const st = MINO.stage, here = MINO.place;
+  /* HE KEEPS THE CASTLE (2026-11-14, the owner: "myles shouldnt follow me outside of the castle"). With you, and you out
+   * on the beach: he stays in, unseen and still, and is at your side again the moment you go back through a gate (the
+   * place change above joins him there). A checkpoint on the beach with him 'with' you is the same. */
+  if (st === 'with' && here === 'beach') { u.g.visible = false; updateMinoBreath(false); return; }
   // drawn where he is: the sand by the gate, at your side, or lying in XIII's court
   const onBeach = st === 'wait' || st === 'hostile' || st === 'toGate' || (st === 'with' && here === 'beach');
   // (dead — a no, and your blade — his body lies where he fell: measured, it vanished, `alive` was asked here)
@@ -87516,8 +87815,11 @@ function sfxGargWing(x, z, k = 1) {
  * jaw open, screech, eyes flaring — the tell, and an opening), the wings swept back and down at you, the bite at your
  * face or the claws at your chest, and up and away past you, the wings thrashing (the second opening). Two may be on you
  * at once when three are left, never both in the air at the same beat.) */
-const GARG_SPD = { ring: 3.8, approach: 6.5, lunge: 12.5, back: 6.5, recover: 5.0 };
-const GARG_T = { tell: 0.55, strikeAt: 0.06, recover: 0.55 };
+/* (2026-11-14, the owner: "the gargoyles need to attack more frequent and better they are not aggressive at all": quicker
+ * everywhere but the tells — ring 3.8, approach 6.5, lunge 12.5, back 6.5 before; the recover is shorter, the ring tighter
+ * and faster round, the wait in it a third, and two on you at once from two of them up — `gargTurnOf`) */
+const GARG_SPD = { ring: 5.2, approach: 9.5, lunge: 15, back: 8.5, recover: 5.0 };
+const GARG_T = { tell: 0.55, strikeAt: 0.06, recover: 0.4 };
 // wingbeats: `gBeat`'s clip is 3.6 s a beat, so these are about 1.5 to 2.4 beats a second
 const GARG_BEAT = { ring: 5.4, approach: 6.6, back: 6.6, recover: 8.2, reel: 8.6, hover: 5.4 };
 // where its head and toes are over its origin in flight (measured on `gBeat`): a bite lands at your eyes, the claws at your chest
@@ -87725,11 +88027,12 @@ function gargStrikePose(u, kind, k, open) {
 function gargTurnOf() {
   const on = GARG.units.filter((u) => u.st.alive && u.gp && !u.gp.tgt && ['approach', 'tell', 'lunge', 'rake'].includes(u.gp.mode));
   const mine = GARG.units.filter((u) => u.st.alive && u.gp && !u.gp.tgt && !['perch', 'wake', 'drop', 'dead', 'script'].includes(u.gp.mode)).length;
-  // (one at a time; a second may set off once the first is diving, when there are three or more of them on you)
-  if (on.length >= (mine >= 3 ? 2 : 1) || on.some((u) => u.gp.mode !== 'lunge')) return null;
+  // (two at a time from two of them up, three from four; the next may set off once the last is past its approach — its
+  // tell or its strike — so they come one on another's heels: one at a time, and only when the first was diving, before)
+  if (on.length >= (mine >= 4 ? 3 : mine >= 2 ? 2 : 1) || on.some((u) => u.gp.mode === 'approach')) return null;
   let best = null, bs = -1e9;
   for (const u of GARG.units) {
-    if (!u.st.alive || !u.gp || u.gp.tgt || u.gp.mode !== 'ring' || u.gp.t < 0.5) continue;
+    if (!u.st.alive || !u.gp || u.gp.tgt || u.gp.mode !== 'ring' || u.gp.t < 0.2) continue;
     const sc = u.gp.t - u.g.position.distanceTo(camera.position) * 0.1;
     if (sc > bs) { bs = sc; best = u; }
   }
@@ -87792,15 +88095,15 @@ function gargUnitPre(u, dt) {
     if (k >= 1) { g.mode = 'ring'; g.t = 0; g.vel.set(0, 0, 0); sfxGargWing(p.x, p.z, 1.2); }
   } else if (g.mode === 'ring') {
     // hanging back, high, wheeling round, watching
-    g.ang = (g.ang ?? Math.atan2(p.x - aim.x, p.z - aim.z)) + dt * 0.6 * (g.i % 2 ? 1 : -1);
-    const R = 5.6 + Math.sin(g.seed + g.t * 0.5) * 0.8, H = 3.4 + Math.sin(g.seed * 2 + g.t * 0.8) * 0.5;
+    g.ang = (g.ang ?? Math.atan2(p.x - aim.x, p.z - aim.z)) + dt * 0.95 * (g.i % 2 ? 1 : -1);
+    const R = 4.6 + Math.sin(g.seed + g.t * 0.7) * 0.7, H = 3.1 + Math.sin(g.seed * 2 + g.t * 0.9) * 0.5;
     const want = gargSpot(aim.x, aim.z, fl + H, R, g.ang, _gaA.clone());
     if (want) { const r = gargRoute(u, want, new THREE.Vector3()); gargFlyTo(u, r.x, r.y, r.z, GARG_SPD.ring, dt, 2.5); }
     gargFace(u, aim.x, aim.z, dt, 3);
     pitch0 = 0.05; legs = GARG_TUCK;
     // its turn: on you as the turns allow; on the minotaur its own
     const mine = g.tgt ? true : gargTurnOf() === u;
-    if (mine && g.t > (g.tgt ? 1.0 : 0.45)) {
+    if (mine && g.t > (g.tgt ? 0.6 : 0.15)) {
       // (no rake: 2026-10-29, the owner: "any enemy swings … you can barely see to block take them out" — a 0.45 s tell,
       // hung a metre off you, two kicks half a second apart from under your view; the dive's talons and the bite stay)
       const r = Math.random(); g.kind = r < 0.58 ? 'talon' : 'bite';
@@ -87910,7 +88213,7 @@ function gargUnitPre(u, dt) {
     if (at) { const r = gargRoute(u, at, new THREE.Vector3()); gargFlyTo(u, r.x, r.y, r.z, GARG_SPD.back, dt, 3); }
     gargFace(u, aim.x, aim.z, dt, 3);
     beat = GARG_BEAT.back; pitch0 = 0.15; legs = GARG_TUCK;
-    if (g.t > 1.0) { g.mode = 'ring'; g.t = 0; g.ang = ang; }
+    if (g.t > 0.55) { g.mode = 'ring'; g.t = 0; g.ang = ang; }
   } else if (g.mode === 'reel') {
     // knocked back off its line and catching itself: a lurch and a flail of the wings
     g.vel.multiplyScalar(Math.exp(-dt * 3)); g.vel.y -= 2 * dt;
@@ -88714,10 +89017,10 @@ function loadThrone() {
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
       p.position.set(sx * 6.45, 3.8, THR_EXIT.z); p.name = 'hitProxy'; p.visible = false; p.userData.bwGhost = true;
       thrWorld.add(p);
-      addInteractable(p, 'Use Lift', 'default', {
-        mid: true, far: 4.2,
+      addInteractable(p, () => (thrFightOn() ? 'The way is barred.' : 'Use Lift'), 'default', {
+        mid: true, far: 4.2, bare: () => thrFightOn(),
         when: () => inThrone && !thrBusy,
-        onActivate: () => startThrone(-1, 'lh'),
+        onActivate: () => { if (!thrFightOn()) startThrone(-1, 'lh'); },
       });
     }
     // and the door you came in by, at the hall's near end behind where you arrive: it goes back out the same way
@@ -88725,10 +89028,10 @@ function loadThrone() {
       new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
     q.position.set(THR_SPAWN.x, 3.8, 20.5); q.name = 'hitProxy'; q.visible = false; q.userData.bwGhost = true;
     thrWorld.add(q);
-    addInteractable(q, 'Leave the throne room', 'default', {
-      mid: true, far: 4.2,
+    addInteractable(q, () => (thrFightOn() ? 'The way is barred.' : 'Leave the throne room'), 'default', {
+      mid: true, far: 4.2, bare: () => thrFightOn(),
       when: () => inThrone && !thrBusy && c13Ready,
-      onActivate: () => startThrone(-1),
+      onActivate: () => { if (!thrFightOn()) startThrone(-1); },
     });
     thrReady = true;
     warmStep('throne compile', () => warmCompileOwn([thrWorld], THR_X, THR_Y + 4, THR_Z + THR_SPAWN.z, THR_X, THR_Y + 4, THR_Z - 5));
@@ -95069,8 +95372,11 @@ function updateWell(dt) {
     if (L.t >= 1.9) { wellReveal(); L.phase = 'reveal'; L.t = 0; }
     return;
   }
+  /* AND HE IS THERE ALL AT ONCE (2026-11-13, the owner: "when it zooms in on the well mans face make it not fade in make it
+   * go black then immediately show him keep the same timing"): the black holds as long as it did before its fade began
+   * (0.3 s into the reveal) and is then gone in one frame — no 1.6 s fade up onto his face. */
   if (L.phase === 'reveal') {
-    blackoutEl.style.opacity = Math.max(0, 1 - (L.t - 0.3) / 1.6).toFixed(3);
+    blackoutEl.style.opacity = L.t < 0.3 ? '1' : '0';
     camera.position.copy(L.to);
     if (L.t >= 1.9) { L.on = false; L.phase = ''; blackoutEl.style.opacity = '0'; crosshair.style.display = ''; }
   }
@@ -95152,6 +95458,7 @@ function wellReveal(restaged = false) {
   dialogHead = (u.model && u.model.getObjectByName('head_014_16')) || null;
   dialogTarget = new THREE.Vector3(u.g.position.x, u.g.position.y + 1.62, u.g.position.z);
   if (dialogHead) dialogHead.getWorldPosition(dialogTarget);
+  cineWalkAway();                                    // (step away from him and the lens lets go)
   wellStalk.stare = 3.6 + Math.random() * 3.4;       // how long he stands before he comes
   wellStalk.t = 0; wellStalk.next = 0; wellStalk.breathed = false;
   sfxWellWind();
@@ -96197,6 +96504,68 @@ const isleRampY = (R, z) => {
   return P[P.length - 1][1];
 };
 const isleRampAt = (x, z) => { for (const R of ISLE_RAMPS) if (x >= R.x0 && x <= R.x1 && z >= R.z0 && z <= R.z1) return isleRampY(R, z); return null; };
+/* A HANDRAIL DOWN THE FLIGHT TO HENRY'S JETTY (2026-11-13, the owner: "add a handrail down the steps to henry at the
+ * lighthouse people keep missing those steps make the textures real wood and blend well with the game"). The flight is
+ * fifteen treads up the rock's west face (`ISLE_STAIR_NOSE`, x −18.0 … −15.2): the rock is its east side and the west
+ * edge falls straight to the sea and the jetty, so the rail is on that edge — a post on every other tread and at the foot
+ * and the landing, a top rail 0.92 m over the noses and a middle one under it, all following the pitch. The wood is the
+ * walkway's own: the stair and the jetty are one material, a 2048 atlas whose plank panel (its top-left) is cut out into
+ * a tile of its own (colour and normal), so the rail is the same timber in the same light, its grain along each member.
+ * One draw; out of the wall index (`bwGhost`) — the flight's clamp already keeps you 0.32 m off its edges. */
+const ISLE_RAIL_X = -17.94;
+function isleStairRail(woodMt) {
+  const crop = (tex) => {
+    const img = tex && tex.image; if (!img || !img.width) return null;
+    const c = document.createElement('canvas'); c.width = c.height = 512;
+    c.getContext('2d').drawImage(img, img.width * 0.08, img.height * 0.10, img.width * 0.46, img.height * 0.45, 0, 0, 512, 512);
+    const t = retroTex(new THREE.CanvasTexture(c)); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = tex.colorSpace; t.flipY = tex.flipY;
+    return t;
+  };
+  const mt = woodMt.clone(); mt.name = 'isleRail';
+  const cm = crop(woodMt.map), cn = crop(woodMt.normalMap);
+  if (cm) mt.map = cm;
+  if (woodMt.normalMap) mt.normalMap = cn;
+  if (mt.emissiveMap) mt.emissiveMap = mt.map;
+  // (the island's own lift rides on the material's compile hook and a clone drops it — the stringer wall's lesson: black without it)
+  mt.onBeforeCompile = woodMt.onBeforeCompile;
+  if (woodMt.customProgramCacheKey) mt.customProgramCacheKey = woodMt.customProgramCacheKey;
+  mt.needsUpdate = true;
+  const N = ISLE_STAIR_NOSE, top = (k) => (k < N.length - 1 ? 0.80 + 1.01 * k : 15.65);
+  const rnd = mulberry32(111325), TILE = 1.1, geos = [];
+  const _d = new THREE.Vector3();
+  // a squared timber from A to B (w across, h up), its UVs laid along it: v down its length, u round it
+  const member = (ax, ay, az, bx, by, bz, w, h) => {
+    _d.set(bx - ax, by - ay, bz - az); const len = _d.length();
+    const g = new THREE.BoxGeometry(w, h, len), uv = g.attributes.uv, P = g.attributes.position;
+    const u0 = rnd(), v0 = rnd();
+    for (let i = 0; i < uv.count; i++) {
+      const face = Math.floor(i / 4), x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+      const across = face < 2 ? y : face < 4 ? x : x + y;     // ±x faces round by y, ±y faces by x, the ends anyhow
+      uv.setXY(i, u0 + across / TILE * 2.2, v0 + (face < 4 ? z : y) / TILE);
+    }
+    g.lookAt(_d); g.translate((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2);
+    geos.push(g);
+  };
+  const X = ISLE_RAIL_X, H = 0.92, MID = 0.47;
+  const zF = N[0] - 0.3, zL = N[N.length - 1] - 0.12;             // the foot post on the first tread, the newel on the landing
+  const yF = top(0), yL = top(N.length - 1);
+  const railY = (z) => yF + (z - zF) / (zL - zF) * (yL - yF) + H;  // the pitch, from the foot post's top to the newel's
+  const postAt = [zF];
+  for (let k = 2; k < N.length - 1; k += 2) postAt.push(N[k] - 0.33);
+  postAt.push(zL);
+  for (const z of postAt) {
+    let k = 0; while (k < N.length - 1 && z < N[k + 1] + 1e-6) k++;   // the tread it stands on
+    const base = top(k) - 0.02, ry = railY(z) + 0.05;
+    const s = z === zF || z === zL ? 0.11 : 0.085;
+    member(X, base, z, X + 1e-4, ry, z, s, s);
+  }
+  member(X, railY(zF), zF + 0.05, X, railY(zL), zL - 0.05, 0.075, 0.09);          // the top rail
+  member(X, railY(zF) - MID, zF, X, railY(zL) - MID, zL, 0.05, 0.065);            // and the middle one
+  const g = mergeGeometries(geos.map((q) => q.toNonIndexed()), false);
+  const m = new THREE.Mesh(g, mt); m.name = 'isleStairRail';
+  m.userData.bwGhost = true; m.raycast = () => {};
+  return m;
+}
 function isleBridge(woodMat) {
   const B = ISLE_BR, geos = [], iron = [], L = B.x1 - B.x0, cx = (B.x0 + B.x1) / 2;
   const box = (out, w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); out.push(g); return g; };
@@ -96718,6 +97087,7 @@ function loadIsle() {
     const BR = isleBridge(woodMt ? woodMt.mt : new THREE.MeshStandardMaterial({ color: 0x4a3e30 }));
     isleWorld.add(BR.mesh, BR.chains, BR.frame); floorMeshes.push(BR.slab);
     isleWorld.userData.BR = BR;
+    if (woodMt) isleWorld.add(isleStairRail(woodMt.mt));      // the handrail down the flight to the jetty (`isleStairRail`)
     loadThrone();                      // its door is the postern's (`isleFitThroneDoor`): in before you can see it
     // the lamps on their posts: a warm light and a glow at each head
     const glowT = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,214,160,0.9)'); gr.addColorStop(0.25, 'rgba(255,180,110,0.3)'); gr.addColorStop(1, 'rgba(255,150,80,0)'); x.fillStyle = gr; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
@@ -98416,6 +98786,15 @@ let danteUnit = null;
 /* THE SCENE. 0 chained; 1 the take that frees it; 2 its fight; 3 it is dead
  * and he has not got up yet; 4 the take that gets him up; 5 his fight. */
 let thrScene = { phase: 0, t: 0, deadAt: -1 };
+/* NO WAY OUT MID FIGHT (2026-11-13, the owner: "make it so you cant leave the throne room mid fight"): from the chain's
+ * cut (the beast's take, phase 1) until both it and the marauder are down, the lift doors and the way you came are barred
+ * (as the first castle's back door is until the farmers are done). Before the chain is touched you may still go. Dev
+ * mode opens it, as it opens every locked door. */
+function thrFightOn() {
+  if (settings.devMode || thrScene.phase < 1) return false;
+  const U = umbraUnit;
+  return danteAlive() || (!!U && !U.retired && U.st.alive);
+}
 function danteAlive() { return !!(danteUnit && danteUnit.st.alive && !danteUnit.retired); }
 // a blow on it while it is chained is what frees it: he cuts the chain at once
 function danteProvoke(u) {
@@ -99975,6 +100354,8 @@ function skrimDrone() {
 }
 function updateSkrimMood(dt) {
   updateSkrimFightMusic();        // (his fight's music: off `animate`, every frame, in or out of the whale)
+  updateLoopSongs();              // (and the castles' two: the marauder's, the farmers')
+  traderRageTick(dt);             // (the merchant's gun, when it is out)
   const u = SKRIM.u, A = whale && whale.arena;
   // his song: once a game, the first time you have him in front of you, digging, inside twenty metres; slowly away as you talk
   if (u && inWhale && !SKRIM.songDone && (SKRIM.stage === 'dig' || SKRIM.stage === 'deal') && u.model && started && !applyingSave && !replaying) {
@@ -107115,12 +107496,13 @@ layoutViewmodel();
 // are declared with `bloodJars`, early, because `frozen()` and `inRoom()` read them.
 // ------------------------------------------------------------------
 const DEEP = { x: 25000, y: 2000, z: 25000, floor: -34, R: 80, top: 24 };
-const DEEP_HOOK_T = 14;                       // seconds in the spot before it takes
+const DEEP_HOOK_T = 11;                       // seconds in the spot before it takes (14 until 2026-11-13, the owner: "make the bite at the fishing spot happen 3 seconds earlier")
 const DEEP_DESC_T = 10.5;                     // the long pull down
 const PLIO_K = 1.6;                           // the file is a ten-metre animal: this one is sixteen
 const PLIO_HP = 100;                          // with the Bloody Blade, about six parries (measured at 80: four cuts in a stun, riposte and bleed included, ~16; 2026-10-15 "harder")
 const PLIO_GUN_K = 0.3;                       // a revolver does not end it in three
 const PLIO_BITE_AT = 2.12;                    // Attack_Bite: the jaw slams shut here (measured: open from 1.6, wide at 2.0)
+const PLIO_STAND = 5.0;                       // where a bite's charge puts its head, the clip's lunge carrying the rest (4.2 until 2026-11-14: the jaws ended inside the lens — "clip into me less")
 const PLIO_BITE_FROM = 1.12;                  // and the head draws back from here — the tell inside the bite
 const DEEP_TOP_FOG = new THREE.Color(0x0b2c38), DEEP_BOT_FOG = new THREE.Color(0x04161a);   // (and thicker at the bottom: 0.042 — 2026-10-15, "more murky and mysterious")
 const deep = {
@@ -107144,7 +107526,7 @@ function startDeepHook() {
   deep.ph = 'hook'; deep.t = 0; deep.under = false; deep.yank = 0; deep.jerkT = 0.5; deep.muffled = false; deep.hint = false;
   deep.hookP.copy(rod.pos);
   rodWhirStop();
-  plioLoad(); deepAmbLoad();
+  plioLoad(); deepAmbLoad(); deadLoad(false);
   calmChasers(); deep.calmT = 0.5;              // the five's camp is a stone's throw away: nothing comes after you while this has you
 }
 
@@ -107326,9 +107708,15 @@ function buildDeep() {
   /* the black has a direction: a hair less black overhead, where the surface is, miles up */
   const bm = new THREE.ShaderMaterial({
     // the fog's own colour at the horizon and under it (anything far off melts into exactly this), lifting toward the surface
-    uniforms: { uFog: { value: new THREE.Color() }, uK: { value: 1 } },
+    uniforms: { uFog: { value: new THREE.Color() }, uK: { value: 1 }, uT: { value: 0 } },
     vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-    fragmentShader: 'uniform vec3 uFog; uniform float uK; varying vec3 vD; void main(){ float h = max(vD.y, 0.0); vec3 c = uFog * (1.0 + uK * 2.2 * pow(h, 1.6)); gl_FragColor = vec4(c, 1.0);\n#include <colorspace_fragment>\n}',   // (no tone mapping: the fog it must meet is not tone-mapped either — measured, 3,17,26 both)
+    fragmentShader: 'uniform vec3 uFog; uniform float uK, uT; varying vec3 vD; void main(){ float h = max(vD.y, 0.0);'
+      // (2026-11-14, "the light peaking through the water could look better"): the surface itself, seen straight up through
+      // the water — a slow shimmer of light and dark bands where the shafts come from, only near the top of the sky
+      + ' vec2 q = vD.xz / max(0.2, vD.y) * 2.6;'
+      + ' float cau = sin(q.x * 1.7 + uT * 0.45) * sin(q.y * 1.9 - uT * 0.38) + 0.6 * sin((q.x + q.y) * 1.3 + uT * 0.6) + 0.35 * sin(q.x * 3.1 - q.y * 2.3 - uT * 0.8);'
+      + ' cau = smoothstep(0.2, 1.7, cau + 0.7);'
+      + ' vec3 c = uFog * (1.0 + uK * (2.2 * pow(h, 1.6) + 10.0 * pow(h, 4.0) * cau)); gl_FragColor = vec4(c, 1.0);\n#include <colorspace_fragment>\n}',   // (no tone mapping: the fog it must meet is not tone-mapped either — measured, 3,17,26 both)
     side: THREE.BackSide, depthWrite: false, fog: false,
   });
   deepBack = new THREE.Mesh(new THREE.SphereGeometry(300, 24, 16), bm); deepBack.renderOrder = -10; deepBack.frustumCulled = false;
@@ -107403,6 +107791,7 @@ function buildDeep() {
   deepFx = { pts, P, C, S, A, K, v: new Float32Array(DEEP_FX_N * 3), life: new Float32Array(DEEP_FX_N), max: new Float32Array(DEEP_FX_N), s0: new Float32Array(DEEP_FX_N), ph: new Float32Array(DEEP_FX_N), next: 0 };
   scene.add(W);
   deep.world = W; deepWorldRef = W;
+  deepRaysBuild(); deepMurkBuild();              // (the light coming down and the murk: compiled with the rest of the deep in `placeInDeep`)
 }
 // kind 1 bubble, 0 blood, 2 silt
 function deepPuff(kind, x, y, z, n, spread = 0.3, vel = null, sz = 1) {
@@ -107442,6 +107831,899 @@ function updateDeepFx(dt) {
   }
   const g = F.pts.geometry;
   g.attributes.position.needsUpdate = true; g.attributes.aS.needsUpdate = true; g.attributes.aA.needsUpdate = true; g.attributes.aC.needsUpdate = true; g.attributes.aK.needsUpdate = true;
+}
+
+/* ---- THE DEAD IN THE WATER (2026-11-14) ------------------------------------------------------------------------
+ * The owner: "make there be dead mutant bodies floating in the water with blood in the water realistic on the sea monster
+ * fight make them gracefully floating and ripped to bits random limbs too make it cinematic they should have water
+ * physics too with the monster swimming by pushing them".
+ * What it has been eating. Eight of the beach's mutants (the pale, the red and the dark skins, each with its kind's own
+ * build) hang in the dark round where the pull leaves you — two of them on the way down, so the descent goes past them —
+ * each posed from somewhere in its own death clip, with limbs, heads and the lower half taken off by the game's own limb
+ * bake (`bakeLimb`) and floating free beside it. Every stump is capped with torn meat, a bone end and loose strands, and
+ * goes on bleeding into the water: slow dark clouds that billow, spread, thin and drift on the current.
+ * THE WATER: every piece is a rigid body in a slow current (`deadFlow`), near-neutral, its velocity relaxed toward the
+ * water's and its spin damped; a body rights itself the way a drowned one does, slowly, round its own buoyancy, and its
+ * limbs hang and sway off the joints (the skinned copy is kept: an arm moves). THE ANIMAL: each of the pliosaur's nine
+ * body spheres moves the water it passes through — dragged along behind it and thrown aside off its flanks, falling off
+ * over a few metres — so a pass through them throws the bodies tumbling with their arms flung out (`flail`), and the tail
+ * swipe does the same off its last spheres. The clouds are moved by the same water, lighter. */
+const DEAD_SET = [
+  // offsets from where the pull leaves you (`deep.descE`, looking +z and a little down)
+  { k: 'pale', at: [-4.2, 1.2, 6.8], cut: ['Character1_LeftForeArm', 'Character1_RightLeg'] },
+  { k: 'red', at: [5.5, -2.2, 9.5], cut: ['Character1_LeftUpLeg', 'Character1_RightUpLeg', 'Character1_RightArm'] },
+  { k: 'dark', at: [-7.5, 3.5, 11], cut: ['Character1_Head', 'Character1_LeftArm'] },
+  { k: 'pale', at: [2.2, 5.5, 15.5], cut: ['Character1_RightForeArm', 'Character1_LeftLeg', 'Character1_Head'] },
+  { k: 'red', at: [9.5, 1.5, 2.5], cut: ['Character1_Head', 'Character1_LeftForeArm', 'Character1_RightLeg'] },
+  { k: 'dark', at: [-8.5, -3, -3.5], cut: ['Character1_LeftUpLeg', 'Character1_RightArm'] },
+  // and on the way down: the last three seconds of the pull go past these (the path runs ~(2, 6, -22) → (0.6, 2, -8))
+  { k: 'pale', at: [4.6, 6.6, -22], cut: ['Character1_RightArm', 'Character1_LeftLeg'] },
+  { k: 'dark', at: [-2.9, 2.4, -11], cut: ['Character1_Head', 'Character1_RightForeArm', 'Character1_RightUpLeg'] },
+];
+// the stump's radius by the bone that went, at the pale one's 2.3 m
+const DEAD_CUT_R = { Character1_Head: 0.075, Character1_LeftArm: 0.075, Character1_RightArm: 0.075, Character1_LeftForeArm: 0.055,
+  Character1_RightForeArm: 0.055, Character1_LeftUpLeg: 0.1, Character1_RightUpLeg: 0.1, Character1_LeftLeg: 0.07, Character1_RightLeg: 0.07 };
+// what sways, and how far (radians)
+const DEAD_SWAY = [['Character1_Spine1', 0.05], ['Character1_Spine2', 0.05], ['Character1_Neck', 0.14], ['Character1_Head', 0.16],
+  ['Character1_LeftShoulder', 0.08], ['Character1_RightShoulder', 0.08], ['Character1_LeftArm', 0.28], ['Character1_RightArm', 0.28],
+  ['Character1_LeftForeArm', 0.34], ['Character1_RightForeArm', 0.34], ['Character1_LeftHand', 0.32], ['Character1_RightHand', 0.32],
+  ['Character1_LeftUpLeg', 0.16], ['Character1_RightUpLeg', 0.16], ['Character1_LeftLeg', 0.24], ['Character1_RightLeg', 0.24]];
+const DEAD_BLOOD_N = 440, DEAD_BLOOD_KEEP = 72;          // the first 72 slots are the standing haze; the rest a ring
+const dead = { gltf: null, loading: false, failed: false, built: false, g: null, bodies: [], pieces: [], bleeds: [], mats: {}, capMat: null,
+  meatMat: null, clips: {}, t: 0, ps: [], pv: [], pr: [], pOn: false, thumpT: 0, blood: null };
+const _dzA = new THREE.Vector3(), _dzB = new THREE.Vector3(), _dzC = new THREE.Vector3(), _dzQ = new THREE.Quaternion(), _dzUp = new THREE.Vector3(0, 1, 0);
+const DEAD_SKINS = { red: 'assets/mutant-red.jpg', dark: 'assets/mutant-dark.jpg' };
+function deadSkin(url) {
+  if (!mutSkins[url]) {
+    const t = new THREE.TextureLoader().load(url);
+    t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    mutSkins[url] = t;
+  }
+  return mutSkins[url];
+}
+// (the skins in before the load says ready, and onto the card under its black: two 2048s arriving late were a 70 ms frame in the fight)
+const deadSkinsIn = () => Object.values(DEAD_SKINS).every((u) => { const i = mutSkins[u] && mutSkins[u].image; return !!(i && (i.naturalWidth || i.width)); });
+/* ITS OWN COPY, AND NOT THROUGH THE QUEUE. `bwSoon` on the mutants' file (or naming it among the deep's own files) marks
+ * the whole URL near, and every mutant on the beach parses its own copy of it: they were all parsed and dressed in the
+ * fight, a 70 ms frame. The download is shared if the queue has it already (else a plain fetch the cache answers later);
+ * the parse is ours alone, and asked for only where nobody sees the frame it takes — under the plunge's veil, or the
+ * load's black (`deadLoad(true)`). The hook only fetches. */
+function deadLoad(parse = true) {
+  if (!dead.fetching) {
+    dead.fetching = true;
+    for (const u of Object.values(DEAD_SKINS)) deadSkin(u);
+    const url = 'assets/mutant.glb';
+    (bwGot.has(url) ? bwGot.get(url) : fetch(url).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(url + ' ' + r.status)))).then(bwGunzip))
+      .then((buf) => { dead.buf = buf; if (dead.wantParse) deadParse(); }, (e) => { dead.failed = true; console.warn('[bw] the dead', e); });
+  }
+  if (parse) { dead.wantParse = true; if (dead.buf) deadParse(); }
+}
+function deadParse() {
+  if (dead.loading || !dead.buf) return; dead.loading = true;
+  new GLTFLoader().parse(dead.buf.slice(0), '', (gltf) => { bwDequant(gltf.scene); dead.gltf = gltf; dead.buf = null; },
+    (e) => { dead.failed = true; console.warn('[bw] the dead', e); });
+}
+// the slow water: a current that wanders in space and time, never still, never strong
+function deadFlow(x, y, z, t, out) {
+  const lx = x - DEEP.x, lz = z - DEEP.z, ly = y - DEEP.y;
+  return out.set(Math.sin(lz * 0.11 + t * 0.21) * 0.10 + Math.sin(ly * 0.17 + t * 0.13) * 0.05 + 0.03,
+    Math.sin(lx * 0.09 + lz * 0.07 + t * 0.17) * 0.035 + Math.sin(t * 0.07 + lz * 0.05) * 0.02,
+    Math.cos(lx * 0.12 - t * 0.19) * 0.10 + Math.sin(ly * 0.15 - t * 0.11) * 0.05);
+}
+function deadSkinMat(key, src) {
+  if (dead.mats[key]) return dead.mats[key];
+  const m = src.clone();
+  if (DEAD_SKINS[key]) m.map = deadSkin(DEAD_SKINS[key]);
+  // METALNESS IS A TRAP; wet, drained and cold, and seen down here by its own faint light as the animal is
+  m.metalness = 0; m.roughness = 0.6; m.envMapIntensity = 0;
+  m.transparent = false; m.depthWrite = true; m.side = THREE.DoubleSide;   // (an open cut shows its inside, not a hole)
+  m.color.setRGB(0.82, 0.8, 0.8);
+  m.emissiveMap = m.map; m.emissive = new THREE.Color(0.62, 0.72, 0.74); m.emissiveIntensity = key === 'pale' ? 1.7 : key === 'red' ? 2.4 : 2.7;   // (the pale map is half again as bright as the other two)
+  if (m.normalScale) m.normalScale.set(1.3, 1.3);
+  m.needsUpdate = true;
+  return (dead.mats[key] = m);
+}
+function deadClip(name) {
+  if (dead.clips[name]) return dead.clips[name];
+  const c = dead.gltf.animations.find((a) => a.name === name);
+  if (!c) { console.warn('[bw] the dead: no clip', name); return null; }
+  // (no scale tracks: they would stamp 1.0 over the kind's build and grow a cut bone back — see `dressMutant`)
+  return (dead.clips[name] = new THREE.AnimationClip(c.name, c.duration, c.tracks.filter((t) => !/\.scale$/.test(t.name))));
+}
+/* a stump: torn meat over the cut — one merged mesh in vertex colours, +Y outward. (2026-11-14, the owner: "make the
+ * severed parts of the models look better this looks unrealistic. i dont like the bones poking out that much".) The
+ * first had a pale shaft half a radius to two out with a spike on the end, glowing by its own colour: white bars on
+ * every wound. Now: a ragged rim of torn skin round the edge, wet dark meat and black clots heaped in the middle, a bone
+ * end only on some and barely clear of the meat, bloodied, and a strand or two hanging short. Rounder lumps (detail 1). */
+function deadCapGeo(rad, rnd) {
+  const parts = [];
+  const col = (g, r, gg, b) => {
+    const n = g.attributes.position.count, a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { const j = 0.8 + rnd() * 0.4; a[i * 3] = r * j; a[i * 3 + 1] = gg * j; a[i * 3 + 2] = b * j; }
+    g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g;
+  };
+  const flat = (g) => { const h = g.index ? g.toNonIndexed() : g; h.deleteAttribute('uv'); return h; };
+  const lump = (sx, sy, sz, x, y, z) => { const g = flat(new THREE.IcosahedronGeometry(1, 1)); g.scale(sx, sy, sz); g.rotateY(rnd() * 6.28); g.translate(x, y, z); return g; };
+  // the rim: torn skin, curled up and out a little round the edge
+  const nr = 7 + Math.floor(rnd() * 3);
+  for (let i = 0; i < nr; i++) {
+    const a = (i + rnd() * 0.6) / nr * 6.28, d = rad * (0.68 + rnd() * 0.18);
+    const g = lump(rad * (0.26 + rnd() * 0.14), rad * (0.14 + rnd() * 0.12), rad * (0.22 + rnd() * 0.12), Math.cos(a) * d, rad * (0.0 + rnd() * 0.1), Math.sin(a) * d);
+    parts.push(col(g, 0.17, 0.055, 0.05));
+  }
+  // the meat, and the clots in it
+  const nm = 3 + Math.floor(rnd() * 3);
+  for (let i = 0; i < nm; i++) {
+    const a = rnd() * 6.28, d = rad * rnd() * 0.45;
+    const g = lump(rad * (0.3 + rnd() * 0.22), rad * (0.12 + rnd() * 0.14), rad * (0.3 + rnd() * 0.22), Math.cos(a) * d, rad * (0.04 + rnd() * 0.1), Math.sin(a) * d);
+    parts.push(rnd() < 0.3 ? col(g, 0.06, 0.008, 0.008) : col(g, 0.24, 0.022, 0.02));
+  }
+  // a bone end, on some: just clear of the meat, and bloody
+  if (rnd() < 0.55) {
+    const bl = rad * (0.18 + rnd() * 0.2);
+    const b = flat(new THREE.CylinderGeometry(rad * 0.13, rad * 0.17, bl, 7, 1, false));
+    b.translate((rnd() - 0.5) * rad * 0.25, bl * 0.5 + rad * 0.04, (rnd() - 0.5) * rad * 0.25);
+    parts.push(col(b, 0.3, 0.22, 0.18));
+  }
+  // and a strand or two, hanging short
+  const ns = 1 + Math.floor(rnd() * 2);
+  for (let i = 0; i < ns; i++) {
+    const L = rad * (0.5 + rnd() * 0.8);
+    const s2 = flat(new THREE.ConeGeometry(rad * (0.05 + rnd() * 0.04), L, 4));
+    s2.translate(0, L * 0.5, 0); s2.rotateX((rnd() - 0.5) * 2.4); s2.rotateZ((rnd() - 0.5) * 2.4);
+    const a = rnd() * 6.28; s2.translate(Math.cos(a) * rad * 0.6, rad * 0.05, Math.sin(a) * rad * 0.6);
+    parts.push(col(s2, 0.14, 0.02, 0.02));
+  }
+  const g = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  g.computeVertexNormals();
+  return g;
+}
+function deadCap(parent, at, dir, rad, rnd) {
+  const m = new THREE.Mesh(deadCapGeo(rad, rnd), dead.capMat);
+  m.position.copy(at);
+  m.quaternion.setFromUnitVectors(_dzUp, _dzA.copy(dir).normalize());
+  m.raycast = () => {}; m.frustumCulled = false;
+  parent.add(m);
+  return m;
+}
+// a rigid body in the water
+function deadPiece(o, r, inv, kind) {
+  const P = { o, r, inv, kind, p: o.position.clone(), v: new THREE.Vector3(), q: o.quaternion.clone(), w: new THREE.Vector3(),
+    home: o.position.clone(), q0: o.quaternion.clone(), up: null, flail: 0, seed: Math.random() * 100 };
+  dead.pieces.push(P);
+  return P;
+}
+function deadBuildBody(spec, i, rnd) {
+  const src = dead.gltf.scene;
+  const c = cryClone(src);
+  const kind = MUT_KINDS[spec.k] || MUT_KINDS.pale;
+  const mat = deadSkinMat(spec.k, (() => { let m = null; src.traverse((o) => { if (o.isSkinnedMesh && !m) m = o.material; }); return m; })());
+  c.traverse((o) => { if (o.isSkinnedMesh || o.isMesh) { o.material = mat; o.frustumCulled = false; o.raycast = () => {}; } });
+  const G = new THREE.Group(); G.name = 'deadBody' + i;
+  G.add(c); dead.g.add(G);
+  if (kind.bones) c.traverse((o) => { if (o.isBone && kind.bones[o.name]) o.scale.setScalar(kind.bones[o.name]); });
+  // stood up, measured, scaled to the kind's height (the bind pose is the standing one)
+  G.updateMatrixWorld(true);
+  const b = skinnedBounds(c);
+  const s = kind.h / Math.max(0.001, b.size.y);
+  c.scale.setScalar(s);
+  // somewhere in its own death: the end of it, or a moment before, when the arms were still out
+  const clip = deadClip(rnd() < 0.5 ? 'die' : 'die2') || deadClip('die');
+  if (clip) {
+    const mx = new THREE.AnimationMixer(c), a = mx.clipAction(clip);
+    a.setLoop(THREE.LoopOnce); a.clampWhenFinished = true; a.play();
+    mx.update(clip.duration * (0.62 + rnd() * 0.37));
+  }
+  // its middle on the group's origin
+  G.updateMatrixWorld(true);
+  const hips = c.getObjectByName('Character1_Hips');
+  if (hips) { hips.getWorldPosition(_dzA); c.position.sub(_dzA); }
+  // where it hangs, turned any way at all
+  G.position.set(deep.descE.x + spec.at[0], deep.descE.y + spec.at[1], deep.descE.z + spec.at[2]);
+  G.quaternion.setFromEuler(new THREE.Euler(rnd() * 6.28, rnd() * 6.28, rnd() * 6.28));
+  G.updateMatrixWorld(true);
+  const body = { G, c, spec, sway: [], piece: null, k: kind.h / 2.3 };
+  for (const [n, amp] of DEAD_SWAY) {
+    const bn = c.getObjectByName(n); if (!bn) continue;
+    body.sway.push({ b: bn, q0: bn.quaternion.clone(), amp, ax: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(),
+      ph: rnd() * 6.28, ph2: rnd() * 6.28, f: 0.35 + rnd() * 0.3 });
+  }
+  const u = { model: c };
+  const cutBones = [];
+  // the pieces first, every one baked off the body as it is now; then the bones go
+  for (const name of spec.cut) {
+    const bone = c.getObjectByName(name); if (!bone) continue;
+    const piece = bakeLimb(u, name);
+    bone.getWorldPosition(_dzB);                        // the cut
+    cutBones.push(bone);
+    const rad = (DEAD_CUT_R[name] || 0.07) * body.k;
+    if (piece) {
+      piece.material = mat; piece.raycast = () => {}; piece.frustumCulled = false;
+      // the cut end in the piece's own frame, and capped
+      _dzC.copy(_dzB).sub(piece.position).applyQuaternion(_dzQ.copy(piece.quaternion).invert());
+      // drifted off from where it was torn, turned a little
+      _dzA.copy(piece.position).sub(G.position); if (_dzA.lengthSq() < 1e-4) _dzA.set(rnd() - 0.5, 0.2, rnd() - 0.5);
+      _dzA.normalize();
+      piece.position.addScaledVector(_dzA, 0.6 + rnd() * 1.6).add(_dzB.set((rnd() - 0.5) * 0.8, (rnd() - 0.5) * 0.8, (rnd() - 0.5) * 0.8));
+      piece.quaternion.premultiply(_dzQ.setFromEuler(new THREE.Euler((rnd() - 0.5) * 2, (rnd() - 0.5) * 2, (rnd() - 0.5) * 2)));
+      dead.g.add(piece);
+      const cap = deadCap(piece, _dzC, _dzC.clone().normalize().multiplyScalar(1), rad, rnd);
+      piece.geometry.computeBoundingSphere();
+      const pr = Math.max(0.12, piece.geometry.boundingSphere.radius * 0.6);
+      const P = deadPiece(piece, pr, name === 'Character1_Head' ? 2.2 : /Fore|Leg$/.test(name) ? 1.9 : 1.4, 'limb');
+      dead.bleeds.push({ o: cap, P, t: rnd() * 1.5, k: name === 'Character1_Head' ? 1.2 : 0.8, dir: 1 });
+    }
+  }
+  for (const bone of cutBones) {
+    const rad = (DEAD_CUT_R[bone.name] || 0.07) * body.k;
+    bone.scale.setScalar(0.0001);                       // the seam is the skinning's own, and ragged, as a tear is
+    const par = bone.parent;
+    par.updateMatrixWorld(true);
+    const ws = par.getWorldScale(_dzA).x;          // (read before `deadCap`, which uses the same scratch)
+    const cap = deadCap(par, bone.position, bone.position, rad, rnd);
+    cap.scale.setScalar(1 / Math.max(1e-6, ws));
+    body.capBones = body.capBones || []; body.capBones.push(cap);
+  }
+  body.sway = body.sway.filter((s) => !cutBones.some((cb) => { for (let q = s.b; q; q = q.parent) if (q === cb) return true; return false; }));
+  const P = body.piece = deadPiece(G, 0.75 * body.k, 1, 'body');
+  // it hangs the way a drowned thing hangs: a little off upright, rocking round it
+  P.up = new THREE.Vector3(rnd() - 0.5, 1.2, rnd() - 0.5).normalize();
+  P.upLocal = _dzA.set(0, 1, 0).applyQuaternion(_dzQ.copy(G.quaternion).invert()).clone();   // (its present "up" is where it rights toward)
+  for (const cap of body.capBones || []) dead.bleeds.push({ o: cap, P, t: rnd() * 1.5, k: 1, dir: 1 });
+  dead.bodies.push(body);
+  // the meat that came off with it
+  const ng = 2 + Math.floor(rnd() * 2);
+  for (let j = 0; j < ng; j++) {
+    const bone = j === ng - 1 && rnd() < 0.5;
+    const g = new THREE.Mesh(GIB_ICO, bone ? SKULL_MAT : dead.meatMat);
+    const r = (bone ? 0.03 : 0.045) * (0.6 + rnd() * 0.9);
+    g.scale.set(r * (1 + rnd() * 0.9), r * (0.5 + rnd() * 0.6), r * (1 + rnd() * 0.6));
+    g.position.copy(G.position).add(_dzB.set((rnd() - 0.5) * 3, (rnd() - 0.5) * 2.4, (rnd() - 0.5) * 3));
+    g.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6);
+    g.raycast = () => {};
+    dead.g.add(g);
+    const Pg = deadPiece(g, Math.max(0.06, r * 1.3), 3, 'gib');
+    if (!bone && rnd() < 0.6) dead.bleeds.push({ o: g, P: Pg, t: rnd() * 2, k: 0.35, dir: 0 });
+  }
+}
+function deadBuild() {
+  if (dead.built || !dead.gltf || !deep.world) return false;
+  bwSpan('the dead', () => {
+    dead.built = true;
+    dead.g = new THREE.Group(); dead.g.name = 'deadInWater'; deep.world.add(dead.g);
+    // (nothing lights the deep: the meat glows by its own vertex colour, faintly, as the bodies glow by their maps)
+    dead.capMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0, flatShading: true, emissive: 0xffffff, emissiveIntensity: 0.25 });
+    dead.capMat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('vec3 totalEmissiveRadiance = emissive;', 'vec3 totalEmissiveRadiance = emissive * vColor;'); };
+    dead.capMat.customProgramCacheKey = () => 'deadCap';
+    dead.meatMat = new THREE.MeshStandardMaterial({ color: 0x3a0e0a, roughness: 0.45, metalness: 0, flatShading: true, emissive: 0x1c0504 });   // (darker: at 0x320907 a loose chunk was a flat red block)
+    const rnd = mulberry32(20261114);
+    DEAD_SET.forEach((s, i) => deadBuildBody(s, i, rnd));
+    deadBuildLive(rnd);                           // (the one still alive: `deadLiveStep`, `plioAmbush`)
+    deadBuildRods(rnd);                           // (and the rods: when the scan is in, else later)
+    deadBloodBuild();
+    const wv = deep.world.visible; deep.world.visible = true;
+    try { renderer.compile(dead.g, camera, scene); } catch (e) { /* a warm is never fatal */ }
+    deep.world.visible = wv;
+    for (const m of [...Object.values(dead.mats), dead.blood && dead.blood.mesh.material])
+      for (const t of m ? [m.map, m.normalMap, m.roughnessMap, m.uniforms && m.uniforms.uNoise.value] : []) {
+        const im = t && t.image;
+        if (im && (im.naturalWidth || im.width)) { try { renderer.initTexture(t); } catch (e) { /* never fatal */ } }
+      }
+  });
+  deadBloodSeed();
+  return true;
+}
+// every visit starts them where they hang (a death in the fight loads you back to them as they were)
+function deadPlace() {
+  if (!dead.built) { deadBuild(); return; }
+  deadLiveReset();
+  for (const P of dead.pieces) { P.p.copy(P.home); P.q.copy(P.q0); P.v.set(0, 0, 0); P.w.set(0, 0, 0); P.flail = 0; P.o.position.copy(P.p); P.o.quaternion.copy(P.q); }
+  dead.t = 0; dead.pOn = false;
+  deadBloodSeed();
+}
+
+/* ---- the blood in the water: soft clouds, each a quad turned to the eye with a drifting noise in it, that open out,
+ * thin and go; dark red that the murk takes as it does everything (faded by the fog, not lit by anything) */
+function deadNoiseTex() {
+  const N = 128, d = new Float32Array(N * N);
+  const oct = (cells, amp, seed) => {
+    const rnd = mulberry32(seed), gv = new Float32Array(cells * cells);
+    for (let i = 0; i < gv.length; i++) gv[i] = rnd();
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const fx = x / N * cells, fy = y / N * cells, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const g = (a, b) => gv[(((b % cells) + cells) % cells) * cells + (((a % cells) + cells) % cells)];
+      const v = (g(x0, y0) * (1 - sx) + g(x0 + 1, y0) * sx) * (1 - sy) + (g(x0, y0 + 1) * (1 - sx) + g(x0 + 1, y0 + 1) * sx) * sy;
+      d[y * N + x] += v * amp;
+    }
+  };
+  oct(4, 0.45, 11); oct(8, 0.27, 12); oct(16, 0.17, 13); oct(32, 0.11, 14);
+  const c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d'), im = g.createImageData(N, N);
+  for (let i = 0; i < N * N; i++) { const v = Math.max(0, Math.min(255, d[i] * 255)); im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace;
+  return t;
+}
+/* a cloud in the water: a quad turned to the eye with a drifting noise in it, its colour from thin (c0) to thick (c1),
+ * faded by the fog, and thinned close to the eye by its own size (a big quad that near is cut by the near plane). The
+ * blood and the murk both. */
+let _cloudNoise = null;
+function cloudMat(c0, c1) {
+  if (!_cloudNoise) _cloudNoise = deadNoiseTex();
+  return new THREE.ShaderMaterial({
+    uniforms: { uFog: { value: 0.06 }, uNoise: { value: _cloudNoise }, uT: { value: 0 }, uC0: { value: c0 }, uC1: { value: c1 } },
+    vertexShader: `uniform float uFog; attribute vec3 iPos; attribute float iSize, iRot, iA, iSeed; varying vec2 vUv; varying float vA, vSeed;
+      void main(){ vec4 mv = modelViewMatrix * vec4(iPos, 1.0); float c = cos(iRot), s = sin(iRot); vec2 q = position.xy;
+        mv.xy += vec2(c * q.x - s * q.y, s * q.x + c * q.y) * iSize;
+        float d = max(0.05, -mv.z); float f = exp(-pow(uFog * d, 2.0));
+        vA = iA * f * mix(0.25, 1.0, smoothstep(iSize * 0.3, iSize * 0.85 + 0.6, d));
+        vUv = uv; vSeed = iSeed; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D uNoise; uniform float uT; uniform vec3 uC0, uC1; varying vec2 vUv; varying float vA, vSeed;
+      void main(){ vec2 p = vUv - 0.5; float r = length(p) * 2.0; if (r > 1.0 || vA < 0.002) discard;
+        float n1 = texture2D(uNoise, vUv * 0.85 + vec2(vSeed, vSeed * 1.7) + vec2(uT * 0.006, uT * 0.004)).r;
+        float n2 = texture2D(uNoise, vUv * 2.2 - vec2(vSeed * 2.3, vSeed) - vec2(uT * 0.009, -uT * 0.005)).r;
+        float n = n1 * 0.62 + n2 * 0.38;
+        float fall = 1.0 - smoothstep(0.2, 1.0, r);
+        float dens = smoothstep(0.36, 0.86, n * (0.45 + 0.85 * fall)) * fall;
+        gl_FragColor = vec4(mix(uC0, uC1, smoothstep(0.35, 0.75, n2)), dens * vA);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, fog: false,
+  });
+}
+function deadBloodBuild() {
+  if (dead.blood) return;
+  const N = DEAD_BLOOD_N, pl = new THREE.PlaneGeometry(1, 1);
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.index = pl.index; geo.setAttribute('position', pl.attributes.position); geo.setAttribute('uv', pl.attributes.uv);
+  const P = new Float32Array(N * 3), S = new Float32Array(N), R = new Float32Array(N), A = new Float32Array(N), D = new Float32Array(N);
+  geo.setAttribute('iPos', new THREE.InstancedBufferAttribute(P, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('iSize', new THREE.InstancedBufferAttribute(S, 1).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('iRot', new THREE.InstancedBufferAttribute(R, 1).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('iA', new THREE.InstancedBufferAttribute(A, 1).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('iSeed', new THREE.InstancedBufferAttribute(D, 1));
+  geo.instanceCount = N;
+  const mat = cloudMat(new THREE.Color(0.10, 0.007, 0.009), new THREE.Color(0.028, 0.002, 0.004));   // (linear: blood this deep is near black, a red only where it is thin)
+  const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = 2; mesh.raycast = () => {};
+  dead.g.add(mesh);
+  dead.blood = { mesh, P, S, R, A, D, v: new Float32Array(N * 3), life: new Float32Array(N), max: new Float32Array(N), s0: new Float32Array(N),
+    gr: new Float32Array(N), a0: new Float32Array(N), rs: new Float32Array(N), next: DEAD_BLOOD_KEEP };
+}
+function deadBloodAdd(x, y, z, s0, grow, life, a0, vx = 0, vy = 0, vz = 0, slot = -1) {
+  const B = dead.blood; if (!B) return;
+  let i = slot;
+  if (i < 0) { i = B.next; B.next++; if (B.next >= DEAD_BLOOD_N) B.next = DEAD_BLOOD_KEEP; }
+  B.P[i * 3] = x; B.P[i * 3 + 1] = y; B.P[i * 3 + 2] = z;
+  B.v[i * 3] = vx; B.v[i * 3 + 1] = vy; B.v[i * 3 + 2] = vz;
+  B.s0[i] = s0; B.gr[i] = grow; B.max[i] = B.life[i] = life; B.a0[i] = a0;
+  B.R[i] = Math.random() * 6.28; B.rs[i] = (Math.random() - 0.5) * 0.12; B.D[i] = Math.random();
+  B.mesh.geometry.attributes.iSeed.needsUpdate = true;
+}
+// what it has bled already: a cloud round each body and over each stump, and the haze that hangs over all of it
+function deadBloodSeed() {
+  const B = dead.blood; if (!B) return;
+  B.life.fill(0); B.A.fill(0); B.S.fill(0); B.next = DEAD_BLOOD_KEEP;
+  let k = 0;
+  const keep = (x, y, z, s, a) => { if (k < DEAD_BLOOD_KEEP) { deadBloodAdd(x, y, z, s, 0.25, 1e6, a, 0, 0, 0, k); B.life[k] = B.max[k] = 1e6; k++; } };
+  for (const b of dead.bodies) {
+    const p = b.G.position;
+    for (let j = 0; j < 4; j++) keep(p.x + (Math.random() - 0.5) * 3, p.y + (Math.random() - 0.5) * 2, p.z + (Math.random() - 0.5) * 3, 1.2 + Math.random() * 1.6, 0.3 + Math.random() * 0.2);
+  }
+  for (const d of dead.bleeds) {
+    if (d.k < 0.5 || k >= DEAD_BLOOD_KEEP - 8) continue;
+    d.o.getWorldPosition(_dzA);
+    keep(_dzA.x, _dzA.y, _dzA.z, 0.6 + Math.random() * 0.7, 0.45);
+  }
+  // the haze: big and thin, everywhere round the arrival
+  while (k < DEAD_BLOOD_KEEP) {
+    const a = Math.random() * 6.28, d = 4 + Math.random() * 16;
+    keep(deep.descE.x + Math.cos(a) * d, deep.descE.y - 4 + Math.random() * 11, deep.descE.z + 4 + Math.sin(a) * d, 3.5 + Math.random() * 4, 0.07 + Math.random() * 0.06);
+  }
+  // and the standing clouds hold: their own slow life is the current moving them and the noise in them turning
+  for (let i = 0; i < DEAD_BLOOD_KEEP; i++) { B.gr[i] = 0; }
+}
+function deadBloodUpdate(dt) {
+  const B = dead.blood; if (!B) return;
+  const T = dead.t;
+  for (let i = 0; i < DEAD_BLOOD_N; i++) {
+    if (B.life[i] <= 0) { B.A[i] = 0; B.S[i] = 0; continue; }
+    const keep = i < DEAD_BLOOD_KEEP;
+    if (!keep) B.life[i] -= dt;
+    const b = i * 3;
+    deadFlow(B.P[b], B.P[b + 1], B.P[b + 2], T, _dzA).multiplyScalar(keep ? 0.5 : 1.3);
+    // the animal's water, lighter on a cloud than on a body
+    if (dead.pOn) deadPush(B.P, b, 1.2, 3.2, dt, null);
+    const k = 1 - Math.exp(-0.9 * dt);
+    B.v[b] += (_dzA.x - B.v[b]) * k; B.v[b + 1] += (_dzA.y - B.v[b + 1]) * k; B.v[b + 2] += (_dzA.z - B.v[b + 2]) * k;
+    B.P[b] += B.v[b] * dt; B.P[b + 1] += B.v[b + 1] * dt; B.P[b + 2] += B.v[b + 2] * dt;
+    B.R[i] += B.rs[i] * dt;
+    if (keep) { B.S[i] = B.s0[i]; B.A[i] = B.a0[i]; continue; }
+    const u = 1 - B.life[i] / B.max[i];
+    B.S[i] = B.s0[i] * (1 + B.gr[i] * Math.sqrt(u));
+    B.A[i] = B.a0[i] * Math.min(1, u * 6) * Math.pow(1 - u, 1.3);
+  }
+  const g = B.mesh.geometry;
+  g.attributes.iPos.needsUpdate = true; g.attributes.iSize.needsUpdate = true; g.attributes.iRot.needsUpdate = true; g.attributes.iA.needsUpdate = true;
+  B.mesh.material.uniforms.uT.value = T; B.mesh.material.uniforms.uFog.value = scene.fog.density;
+}
+/* THE ANIMAL MOVES THE WATER. A point near one of its spheres is dragged along at that sphere's velocity and thrown off
+ * its flank, falling off over `reach` metres past its skin; inside the skin it is carried out of it. `arr`/`b` is a point
+ * in a flat array (the clouds) or, with `P`, a piece (whose spin and arms take some of it). Returns the hardest shove. */
+function deadPush(arr, b, inv, reach, dt, P, vel = null) {
+  let hard = 0;
+  const px = arr ? arr[b] : P.p.x, py = arr ? arr[b + 1] : P.p.y, pz = arr ? arr[b + 2] : P.p.z;
+  const pr = P ? P.r : 0.3;
+  for (let s = 0; s < dead.ps.length; s++) {
+    const S = dead.ps[s], V = dead.pv[s], R = dead.pr[s] + pr;
+    const dx = px - S.x, dy = py - S.y, dz = pz - S.z, d2 = dx * dx + dy * dy + dz * dz, reachR = R + reach + dead.pr[s] * 0.8;
+    if (d2 > reachR * reachR) continue;
+    const sp = V.length(); if (sp < 0.3) continue;
+    const d = Math.sqrt(d2) || 1e-3, nx = dx / d, ny = dy / d, nz = dz / d;
+    let f = d < R ? 1 : 1 - (d - R) / (reachR - R); f *= f;
+    const a = f * 2.4 * inv;
+    const ax = (V.x * 0.85 + nx * sp * 0.75) * a, ay = (V.y * 0.85 + ny * sp * 0.75) * a, az = (V.z * 0.85 + nz * sp * 0.75) * a;
+    if (arr) { const Vv = vel || dead.blood.v; Vv[b] += ax * dt; Vv[b + 1] += ay * dt; Vv[b + 2] += az * dt; continue; }
+    P.v.x += ax * dt; P.v.y += ay * dt; P.v.z += az * dt;
+    // it turns them over as it goes by: the water's shear about the line between them
+    P.w.x += (ny * V.z - nz * V.y) * f * 0.35 * inv * dt; P.w.y += (nz * V.x - nx * V.z) * f * 0.35 * inv * dt; P.w.z += (nx * V.y - ny * V.x) * f * 0.35 * inv * dt;
+    if (d < R) {                                        // and what it touches it carries off its skin
+      P.p.x += nx * (R - d); P.p.y += ny * (R - d); P.p.z += nz * (R - d);
+      const vn = P.v.x * nx + P.v.y * ny + P.v.z * nz, sn = V.x * nx + V.y * ny + V.z * nz;
+      if (vn < sn + 0.5) { const j = sn + 0.5 - vn; P.v.x += nx * j; P.v.y += ny * j; P.v.z += nz * j; }
+      hard = Math.max(hard, sp);
+    }
+    P.flail = Math.min(1.6, P.flail + f * sp * 0.09 * dt * 10);
+    hard = Math.max(hard, sp * f * 0.5);
+  }
+  return hard;
+}
+function updateDead(dt) {
+  if (!dead.built) { if (inDeep && dead.gltf) deadBuild(); return; }
+  if (!inDeep) return;
+  const t0 = performance.now();
+  deadStep(dt);
+  dead.ms = performance.now() - t0; dead.msMax = Math.max(dead.msMax || 0, dead.ms);   // (the harness reads these)
+}
+function deadStep(dt) {
+  dead.t += dt;
+  const T = dead.t;
+  // the animal's spheres this frame, and how fast each is going
+  dead.pOn = false;
+  if (plio.g && plio.g.visible && plio.bones.length) {
+    plio.g.updateMatrixWorld(true);
+    while (dead.ps.length < plio.bones.length) { dead.ps.push(new THREE.Vector3()); dead.pv.push(new THREE.Vector3()); dead.pr.push(0); }
+    const first = !dead.pHad;
+    for (let i = 0; i < plio.bones.length; i++) {
+      const s = plio.bones[i];
+      s.b.getWorldPosition(_dzA);
+      if (first || _dzA.distanceTo(dead.ps[i]) > 12) dead.pv[i].set(0, 0, 0);
+      else dead.pv[i].subVectors(_dzA, dead.ps[i]).divideScalar(Math.max(1e-3, dt));
+      if (dead.pv[i].lengthSq() > 1600) dead.pv[i].setLength(40);
+      dead.ps[i].copy(_dzA); dead.pr[i] = s.r;
+    }
+    dead.pHad = true; dead.pOn = dt > 0;
+  } else dead.pHad = false;
+  const cam = camera.position;
+  dead.thumpT -= dt;
+  for (const P of dead.pieces) {
+    // the water it is in
+    deadFlow(P.p.x, P.p.y, P.p.z, T, _dzA);
+    // home, gently, from a few metres off (the arena keeps its dead in it)
+    _dzB.subVectors(P.home, P.p); const hd = _dzB.length();
+    if (hd > 3) _dzA.addScaledVector(_dzB, (hd - 3) / hd * 0.03);
+    const rel = _dzC.subVectors(P.v, _dzA).length();
+    const cd = (P.kind === 'gib' ? 1.1 : P.kind === 'limb' ? 0.8 : 0.6) + rel * 0.25;     // heavier drag the faster it goes through the water
+    P.v.lerp(_dzA, 1 - Math.exp(-cd * dt));
+    // the gibs go down, slowly; a body hangs
+    if (P.kind === 'gib') P.v.y -= 0.03 * dt;
+    if (dead.pOn) {
+      const hard = deadPush(null, 0, P.inv, P.kind === 'body' ? 3.0 : 2.4, dt, P);
+      if (hard > 6 && dead.thumpT <= 0 && P.kind !== 'gib') {
+        dead.thumpT = 0.35;
+        playSampleAt('fleshHit', P.p.x, P.p.z, { gain: 0.7, ref: 6, far: 40, rate: 0.55 + Math.random() * 0.15 });
+        deadBloodAdd(P.p.x, P.p.y, P.p.z, 0.8, 4, 8 + Math.random() * 4, 0.55, P.v.x * 0.4, P.v.y * 0.4, P.v.z * 0.4);
+      }
+    }
+    // you: swum into, it gives
+    const dx = P.p.x - cam.x, dy = P.p.y - (cam.y - 0.5), dz = P.p.z - cam.z, d = Math.hypot(dx, dy, dz), R = P.r + 0.6;
+    if (d < R && d > 1e-4) {
+      const o = (R - d) / d; P.p.x += dx * o * 0.5; P.p.y += dy * o * 0.5; P.p.z += dz * o * 0.5;
+      const sv = deep.v.length(); P.v.addScaledVector(deep.v, 0.5 * Math.min(1, P.inv)); P.w.x += (Math.random() - 0.5) * sv * 0.2; P.w.z += (Math.random() - 0.5) * sv * 0.2;
+      P.flail = Math.min(1.6, P.flail + sv * 0.1);
+    }
+    P.p.addScaledVector(P.v, dt);
+    // the floor and the stones
+    deepRockPush(P.p, P.r);
+    const fl = DEEP.y + DEEP.floor + deepFloorBump(P.p.x, P.p.z) + P.r;
+    if (P.p.y < fl) { P.p.y = fl; if (P.v.y < 0) P.v.y *= -0.2; }
+    // the turn: damped, nudged by the water, and a body rights itself round its buoyancy, slowly, overshooting
+    P.w.multiplyScalar(Math.exp(-(P.kind === 'body' ? 0.55 : 0.75) * dt));
+    const sd = P.seed;
+    P.w.x += Math.sin(T * 0.23 + sd) * 0.02 * dt; P.w.y += Math.sin(T * 0.19 + sd * 1.3) * 0.02 * dt; P.w.z += Math.cos(T * 0.21 + sd * 0.7) * 0.02 * dt;
+    if (P.up) {
+      _dzB.copy(P.upLocal).applyQuaternion(P.q);
+      _dzC.crossVectors(_dzB, P.up);
+      P.w.addScaledVector(_dzC, 0.22 * dt);
+    }
+    const wl = P.w.length();
+    if (wl > 1e-6) { _dzQ.setFromAxisAngle(_dzB.copy(P.w).divideScalar(wl), wl * dt); P.q.premultiply(_dzQ).normalize(); }
+    P.o.position.copy(P.p); P.o.quaternion.copy(P.q);
+    P.flail *= Math.exp(-1.1 * dt);
+  }
+  // the dead do not pass through each other
+  const L = dead.pieces;
+  for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
+    const A = L[i], Bp = L[j];
+    const dx = Bp.p.x - A.p.x, dy = Bp.p.y - A.p.y, dz = Bp.p.z - A.p.z, R = A.r + Bp.r, d2 = dx * dx + dy * dy + dz * dz;
+    if (d2 >= R * R || d2 < 1e-8) continue;
+    const d = Math.sqrt(d2), o = (R - d) / d * 0.5;
+    const wa = A.inv / (A.inv + Bp.inv), wb = 1 - wa;
+    A.p.x -= dx * o * wa * 2; A.p.y -= dy * o * wa * 2; A.p.z -= dz * o * wa * 2;
+    Bp.p.x += dx * o * wb * 2; Bp.p.y += dy * o * wb * 2; Bp.p.z += dz * o * wb * 2;
+    const nx = dx / d, ny = dy / d, nz = dz / d, rv = (Bp.v.x - A.v.x) * nx + (Bp.v.y - A.v.y) * ny + (Bp.v.z - A.v.z) * nz;
+    if (rv < 0) { const j2 = -rv * 0.6; A.v.x -= nx * j2 * wa; A.v.y -= ny * j2 * wa; A.v.z -= nz * j2 * wa; Bp.v.x += nx * j2 * wb; Bp.v.y += ny * j2 * wb; Bp.v.z += nz * j2 * wb; }
+    A.o.position.copy(A.p); Bp.o.position.copy(Bp.p);
+  }
+  // the arms and legs hang off the joints and move in the water — and fly when it goes by
+  for (const b of dead.bodies) {
+    const P = b.piece, fl = P.flail;
+    const near = b.G.position.distanceToSquared(cam) < 3600;
+    if (!near) continue;
+    for (const s of b.sway) {
+      const a = s.amp * (0.62 * Math.sin(T * s.f + s.ph) + 0.38 * Math.sin(T * s.f * 1.73 + s.ph2)) + s.amp * 2.4 * fl * Math.sin(T * 6.5 + s.ph * 3);
+      s.b.quaternion.copy(s.q0).multiply(_dzQ.setFromAxisAngle(s.ax, a));
+    }
+  }
+  deadLiveStep(dt); deadRodsStep();
+  // the bleeding: every stump, slower as the minutes go, harder when it is moved
+  const bk = 0.45 + 0.55 * Math.exp(-T / 100);
+  for (const d of dead.bleeds) {
+    if (d.P.gone) continue;
+    const sp = d.P.v.length();
+    d.t -= dt * bk * d.k * (1 + Math.min(2.5, sp * 0.8));
+    if (d.t > 0) continue;
+    d.t = 0.7 + Math.random() * 0.8;
+    d.o.getWorldPosition(_dzA);
+    if (_dzA.distanceToSquared(cam) > 2500) continue;
+    if (d.dir) { _dzB.set(0, 1, 0).applyQuaternion(d.o.getWorldQuaternion(_dzQ)); } else _dzB.set(0, 0, 0);
+    deadBloodAdd(_dzA.x + _dzB.x * 0.05, _dzA.y + _dzB.y * 0.05, _dzA.z + _dzB.z * 0.05, (0.18 + Math.random() * 0.2) * (d.k > 0.5 ? 1 : 0.6),
+      3.5 + Math.random() * 3, 7 + Math.random() * 6, 0.6 + Math.random() * 0.2, d.P.v.x * 0.5 + _dzB.x * 0.18, d.P.v.y * 0.5 + _dzB.y * 0.18, d.P.v.z * 0.5 + _dzB.z * 0.18);
+  }
+  deadBloodUpdate(dt);
+}
+
+/* ---- ONE OF THEM IS STILL ALIVE (2026-11-14) ----------------------------------------------------------------------
+ * The owner: "have one of the bodies in the water be moving in your line of vision have it sit for a sec struggling then
+ * have the sea monster abruptly and fast swim through biting mutant floating make this be scary like a jump scare then
+ * have him start attacking after that have floating fishing rods around too … have this instead of part where he swims
+ * by in the start." A pale one with a forearm gone hangs in the water dead ahead of where the pull leaves you
+ * (`DEAD_LIVE_AT`), kicking and clawing at nothing — its run cycle with the root taken out, the body tipped back and
+ * wrenching about on top of it — bleeding, losing air, its cries coming through the water. Once you have had a few
+ * seconds of it in front of you (`deadLiveSeen`), the pliosaur comes out of the dark from the side at thirty metres a
+ * second with its jaws already opening (`plioAmbush`): nothing announces it but a rush of water in the last half
+ * second. The jaws shut on it — a roar, the crunch, the hit stop, a cloud of blood and its last air, a leg torn off and
+ * left turning in the water — and it is carried off thrashing in its mouth, the head shaking it, into the black on the
+ * other side. Then it comes round for you (`plioLurk`, short). */
+/* how it swims (the harness may try others: `dead.liveCfg`) — clip, its rate, the body's pitch (+ forward), the thrash */
+/* (2026-11-14, the owner: "make the mutant in the water swim animation look better its kind of weird and lags": it was the run
+ * upright at 0.85 with a 5-9 rad/s thrash on nine joints — running on air, and juddering. Chosen off rendered rows
+ * (`liveSwim`): the run slowed, the body tipped well forward, the thrash a third — it paddles, head first, at you) */
+const DEAD_LIVE_CFG = { clip: 'run', rate: 0.6, pitch: 0.75, thr: 0.3 };
+// (no scale tracks, and no root travel: it goes nowhere however hard its limbs go)
+function deadLiveClip(name) {
+  const L = dead.live, src = dead.gltf && dead.gltf.animations.find((a) => a.name === name); if (!L || !src) return;
+  if (L.act) L.act.stop();
+  const clip = new THREE.AnimationClip('live_' + name, src.duration, src.tracks.filter((t) => !/\.scale$/.test(t.name) && t.name !== 'Character1_Hips.position'));
+  L.act = L.mixer.clipAction(clip); L.act.play(); L.act.time = Math.random() * src.duration; L.clipName = name;
+  L.mixer.update(0);
+}
+const DEAD_LIVE_AT = [0.6, -0.5, 13.5];   // (5 m for an hour: "make the mutant that gets ate be much farther away")
+const _dlA = new THREE.Vector3(), _dlB = new THREE.Vector3(), _dlQ = new THREE.Quaternion(), _dlE = new THREE.Euler();
+function deadBuildLive(rnd) {
+  const src = dead.gltf.scene, kind = MUT_KINDS.pale;
+  const c = cryClone(src);
+  const mat = deadSkinMat('pale', (() => { let m = null; src.traverse((o) => { if (o.isSkinnedMesh && !m) m = o.material; }); return m; })());
+  c.traverse((o) => { if (o.isSkinnedMesh || o.isMesh) { o.material = mat; o.frustumCulled = false; o.raycast = () => {}; } });
+  const G = new THREE.Group(); G.name = 'deadLive'; G.add(c); dead.g.add(G);
+  if (kind.bones) c.traverse((o) => { if (o.isBone && kind.bones[o.name]) o.scale.setScalar(kind.bones[o.name]); });
+  G.updateMatrixWorld(true);
+  const b = skinnedBounds(c);
+  c.scale.setScalar(kind.h / Math.max(0.001, b.size.y));
+  const L = { G, c, st: 'struggle', t: 0, voiceT: 0.4, bubT: 0.2, held: 0, P: { v: new THREE.Vector3(), gone: false }, mixer: new THREE.AnimationMixer(c), act: null, thr: [], home: new THREE.Vector3(), panic: 0 };
+  dead.live = L;
+  deadLiveClip(DEAD_LIVE_CFG.clip);
+  G.updateMatrixWorld(true);
+  const hips = c.getObjectByName('Character1_Hips');
+  if (hips) { hips.getWorldPosition(_dlA); c.position.sub(_dlA); }
+  for (const [n, amp] of [['Character1_Spine1', 0.22], ['Character1_Spine2', 0.2], ['Character1_Neck', 0.35], ['Character1_Head', 0.4],
+    ['Character1_LeftArm', 0.5], ['Character1_RightArm', 0.5], ['Character1_RightForeArm', 0.4], ['Character1_LeftUpLeg', 0.3], ['Character1_RightUpLeg', 0.3]]) {
+    const bn = c.getObjectByName(n); if (bn) L.thr.push({ b: bn, amp, ax: new THREE.Vector3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5).normalize(), ph: rnd() * 6.28, f: 5 + rnd() * 4 });
+  }
+  L.head = c.getObjectByName('Character1_Head');
+  dead.live = L;
+  deadLiveReset();
+  // the forearm already gone: that is the blood that brought it
+  G.updateMatrixWorld(true);
+  const fa = c.getObjectByName('Character1_LeftForeArm');
+  if (fa) {
+    fa.scale.setScalar(0.0001);
+    const par = fa.parent; par.updateMatrixWorld(true);
+    const ws = par.getWorldScale(_dlA).x;
+    const cap = deadCap(par, fa.position, fa.position, DEAD_CUT_R.Character1_LeftForeArm, rnd);
+    cap.scale.setScalar(1 / Math.max(1e-6, ws));
+    dead.bleeds.push({ o: cap, P: L.P, t: 0, k: 2.2, dir: 1 });
+    L.thr = L.thr.filter((s) => s.b !== fa);
+  }
+}
+function deadLiveReset() {
+  const L = dead.live; if (!L) return;
+  L.st = 'struggle'; L.t = 0; L.held = 0; L.P.gone = false; L.P.v.set(0, 0, 0); L.panic = 0; L.bit = false;
+  L.home.set(deep.descE.x + DEAD_LIVE_AT[0], deep.descE.y + DEAD_LIVE_AT[1], deep.descE.z + DEAD_LIVE_AT[2]);
+  L.G.position.copy(L.home); L.G.visible = true;
+  if (L.act) L.act.timeScale = 1;
+  // (a harness restore after the bite: the leg back on, its piece and both their bleeds gone)
+  const legG = L.c.getObjectByName('Character1_RightLeg');
+  if (legG && L.legGone) { legG.scale.setScalar(1); L.legGone = false; }
+  if (L.legCap) { const c = L.legCap; dead.bleeds = dead.bleeds.filter((d) => d.o !== c); c.removeFromParent(); L.legCap = null; }
+  if (L.legPiece) { const lp = L.legPiece; dead.pieces = dead.pieces.filter((q) => q.o !== lp); dead.bleeds = dead.bleeds.filter((d) => d.o.parent !== lp); lp.removeFromParent(); L.legPiece = null; }
+}
+// in front of you, near enough to see: the ambush waits for it (or for you having had long enough to look)
+function deadLiveSeen() {
+  const L = dead.live; if (!L || L.st !== 'struggle') return false;
+  camera.getWorldDirection(_dlA);
+  _dlB.copy(L.G.position).sub(camera.position);
+  const d = _dlB.length();
+  return d < 22 && _dlA.dot(_dlB.divideScalar(d)) > Math.cos(0.5);
+}
+function deadLiveStep(dt) {
+  const L = dead.live; if (!L || L.st === 'gone') return;
+  L.t += dt;
+  const T = L.t, cam = camera.position, G = L.G;
+  if (L.st === 'struggle') {
+    // it knows something is coming before you do
+    if (plio.st === 'ambush' && plio.g) L.panic = Math.min(1, L.panic + dt * 1.5);
+    const p = L.panic, cfg = dead.liveCfg || DEAD_LIVE_CFG;
+    if (cfg.clip !== L.clipName) deadLiveClip(cfg.clip);
+    if (L.act) { L.act.timeScale = cfg.rate * (1 + p * 1.4) + 0.12 * Math.sin(T * 1.7); L.mixer.update(dt); }
+    // held up, kicking: a little rise and fall, a little drift, the body wrenched about
+    G.position.set(L.home.x + Math.sin(T * 0.7) * 0.25, L.home.y + Math.sin(T * 1.9) * 0.18 + Math.min(1.2, T * 0.04), L.home.z + Math.cos(T * 0.6) * 0.2);
+    const yaw = Math.atan2(cam.x - G.position.x, cam.z - G.position.z) + Math.sin(T * 0.9) * 0.6 + Math.sin(T * 2.3) * 0.2;
+    _dlE.set((dead.liveCfg || DEAD_LIVE_CFG).pitch + Math.sin(T * 2.1) * (0.18 + p * 0.25), yaw, Math.sin(T * 1.6) * (0.22 + p * 0.3), 'YXZ');
+    _dlQ.setFromEuler(_dlE); G.quaternion.slerp(_dlQ, Math.min(1, dt * 4));
+    L.P.v.set(Math.cos(T * 0.7) * 0.18, Math.cos(T * 1.9) * 0.34, -Math.sin(T * 0.6) * 0.12);
+  } else if (L.st === 'held') {
+    // in its jaws: across them, shaken, thrashing for all it is worth
+    L.held += dt;
+    if (L.act) { L.act.timeScale = 2.6; L.mixer.update(dt); }
+    plioMouthPos(_dlA);
+    _dlB.crossVectors(plio.dir, _dUP).normalize();
+    _dlA.addScaledVector(plio.dir, -0.25 * PLIO_K).addScaledVector(_dlB, Math.sin(L.held * 13) * 0.25);
+    G.position.lerp(_dlA, 1 - Math.exp(-30 * dt));                 // (taken in passing: onto the jaws in a few frames, not a jump)
+    _dlQ.setFromUnitVectors(_dUP, _dlB);
+    G.quaternion.copy(_dlQ).multiply(_dlQ.setFromAxisAngle(_dUP, L.held * 2.3)).multiply(_dlQ.setFromAxisAngle(_dlA.set(1, 0, 0), Math.sin(L.held * 17) * 0.5));
+    L.P.v.copy(plio.dir).multiplyScalar(plio.speed);
+    // it pours out of it, and hangs in the water behind
+    if (Math.random() < dt * 22) deadBloodAdd(G.position.x + (Math.random() - 0.5) * 0.8, G.position.y + (Math.random() - 0.5) * 0.8, G.position.z + (Math.random() - 0.5) * 0.8,
+      0.5 + Math.random() * 0.5, 4 + Math.random() * 3, 9 + Math.random() * 6, 0.75, -plio.dir.x * 1.5, 0.1, -plio.dir.z * 1.5);
+    if (Math.random() < dt * 6) deepPuff(1, G.position.x, G.position.y + 0.4, G.position.z, 4, 0.5);
+    if (L.held > 2.6 || G.position.distanceTo(cam) > 30) { L.st = 'gone'; G.visible = false; L.P.gone = true; }
+  }
+  // the thrash, on top of the kick (the mixer wrote these joints this frame: nothing accumulates)
+  const k = L.st === 'held' ? 1.6 : (0.55 + L.panic * 0.9) * (dead.liveCfg || DEAD_LIVE_CFG).thr;
+  for (const s of L.thr) s.b.quaternion.multiply(_dlQ.setFromAxisAngle(s.ax, s.amp * k * Math.sin(T * s.f + s.ph)));
+  // air and noise
+  if (L.st === 'struggle') {
+    L.bubT -= dt;
+    if (L.bubT <= 0 && L.head) {
+      L.bubT = 0.35 + Math.random() * 0.9;
+      L.head.getWorldPosition(_dlA);
+      deepPuff(1, _dlA.x, _dlA.y + 0.1, _dlA.z, 3 + (Math.random() * 6 | 0), 0.2, _dlB.set(0, 0.5, 0));
+    }
+    L.voiceT -= dt;
+    if (L.voiceT <= 0) {
+      L.voiceT = 1.1 + Math.random() * 1.4;
+      const x = G.position.x, z = G.position.z;
+      sfxAt(x, z, () => mutVox(Math.random() < 0.7 ? 'hurt' : 'tell', 0), { ref: 4, far: 50 });
+      if (Math.random() < 0.6) sfxBubbles(6, 0.45, 0.4, 0.8);
+    }
+  }
+}
+// the jaws shut on it
+function deadLiveBite() {
+  const L = dead.live; if (!L || L.st !== 'struggle') return;
+  L.st = 'held'; L.held = 0; L.bit = true;
+  const G = L.G, p = G.position;
+  // a leg, off at the knee, left behind turning in the water
+  G.updateMatrixWorld(true);
+  const leg = L.c.getObjectByName('Character1_RightLeg');
+  if (leg) {
+    const piece = bakeLimb({ model: L.c }, 'Character1_RightLeg');
+    leg.getWorldPosition(_dlA);
+    if (piece) {
+      piece.material = deadSkinMat('pale', null); piece.raycast = () => {}; piece.frustumCulled = false;
+      _dlB.copy(_dlA).sub(piece.position).applyQuaternion(_dlQ.copy(piece.quaternion).invert());
+      dead.g.add(piece);
+      deadCap(piece, _dlB, _dlB.clone(), DEAD_CUT_R.Character1_RightLeg, Math.random);
+      piece.geometry.computeBoundingSphere();
+      const P = deadPiece(piece, Math.max(0.12, piece.geometry.boundingSphere.radius * 0.6), 1.9, 'limb');
+      P.home.copy(p); P.v.copy(plio.dir).multiplyScalar(-2.5).add(_dlB.set((Math.random() - 0.5) * 3, 1.5 + Math.random(), (Math.random() - 0.5) * 3));
+      P.w.set((Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7); P.flail = 1.6;
+      dead.bleeds.push({ o: piece.children[0], P, t: 0, k: 2.5, dir: 1 });
+      L.legPiece = piece;
+    }
+    leg.scale.setScalar(0.0001); L.legGone = true;
+    const par = leg.parent; par.updateMatrixWorld(true);
+    const ws = par.getWorldScale(_dlA).x;
+    L.legCap = deadCap(par, leg.position, leg.position, DEAD_CUT_R.Character1_RightLeg, Math.random);
+    L.legCap.scale.setScalar(1 / Math.max(1e-6, ws));
+    dead.bleeds.push({ o: L.legCap, P: L.P, t: 0, k: 3, dir: 1 });
+  }
+  // the blood: all at once, out of the bite, and its last air with it
+  for (let i = 0; i < 14; i++) {
+    const a = Math.random() * 6.28, e = (Math.random() - 0.3) * 1.4, sp = 1.5 + Math.random() * 4.5;
+    deadBloodAdd(p.x, p.y, p.z, 0.6 + Math.random() * 0.8, 4 + Math.random() * 4, 12 + Math.random() * 10, 0.85,
+      Math.cos(a) * sp + plio.dir.x * 3, Math.sin(e) * sp, Math.sin(a) * sp + plio.dir.z * 3);
+  }
+  deepPuff(1, p.x, p.y + 0.3, p.z, 46, 0.9, _dlA.set(0, 0.8, 0), 1.6);
+  // and the sound of it: the roar over the crunch over the water going everywhere
+  plioMouthPos(_dlA);
+  sfxPlioVoice(_dlA.x, _dlA.z, 'roar', 1.7);
+  sfxAt(p.x, p.z, () => mutVox('die', 0), { ref: 6, far: 60 });
+  sfxMutSever(); playSample('fleshHit', 1.0, 0.03, 0.42); playSample('fleshHit', 0.9, 0.05, 0.6);
+  sfxThud(0.2); sfxSurge(1.0, 1.8); sfxBubbles(30, 1, 0.7, 0.6);
+  const near = THREE.MathUtils.clamp(1.4 - camera.position.distanceTo(p) / 20, 0.4, 1);
+  addTrauma(0.5 * near); fovKick = Math.max(fovKick, 4 * near);   // (no hit stop: it is one unbroken motion through it)
+}
+
+/* ---- AND THE RODS OF THE OTHERS IT TOOK. Five more fishing rods hanging in the dark among the dead, turning slowly.
+ * Clones of the scan in your hands, without its bend (`clone` drops `onBeforeCompile`), lit by their own maps. No lines
+ * on them (the owner, 2026-11-14: "no strings on the rods"). Built when the scan is in: a load straight into the deep
+ * asks for it (`ROOM_FILES.deep`). */
+const DEAD_RODS = [[3.2, 1.6, 6.5], [-5.5, -1.2, 8.5], [7.5, 3.8, 13], [-3.2, 4.4, 2.2], [1.5, -3.6, 14.5]];
+function deadBuildRods(rnd) {
+  if (dead.rods || !fishingRod.children.length) return;
+  dead.rods = [];
+  const mats = new Map();
+  for (const at of DEAD_RODS) {
+    const R = fishingRod.clone(true);
+    R.traverse((o) => {
+      if (!o.isMesh) return;
+      o.frustumCulled = false; o.raycast = () => {};
+      o.material = [].concat(o.material).map((m) => {
+        if (!mats.has(m)) { const c = m.clone(); if (c.map && c.emissive) { c.emissiveMap = c.map; c.emissive.setRGB(0.6, 0.68, 0.72); c.emissiveIntensity = 0.7; } c.needsUpdate = true; mats.set(m, c); }
+        return mats.get(m);
+      });
+      if (o.material.length === 1) o.material = o.material[0];
+    });
+    const H = new THREE.Group(); H.add(R); R.position.set(0, -ROD_TIP_Y * 0.5, 0);   // (about its middle, so it turns about it)
+    H.position.set(deep.descE.x + at[0], deep.descE.y + at[1], deep.descE.z + at[2]);
+    H.quaternion.setFromEuler(new THREE.Euler(rnd() * 6.28, rnd() * 6.28, rnd() * 6.28));
+    dead.g.add(H);
+    const P = deadPiece(H, 0.35, 2.2, 'rod');
+    P.w.set((rnd() - 0.5) * 0.3, (rnd() - 0.5) * 0.3, (rnd() - 0.5) * 0.3);
+    dead.rods.push({ H, P });
+  }
+  const wv = deep.world.visible; deep.world.visible = true;
+  try { renderer.compile(dead.g, camera, scene); } catch (e) { /* never fatal */ }
+  deep.world.visible = wv;
+}
+function deadRodsStep() {
+  if (!dead.rods && fishingRod.children.length) deadBuildRods(mulberry32(1114));
+}
+
+/* ---- THE LIGHT COMING DOWN (2026-11-14, the owner: "make the light shine through the water make it cool looking") -
+ * Shafts of the surface's light slanting down through the deep: soft streaks, each a tall quad turned about its own
+ * slanted axis to face you, added onto the picture, wrapped round the camera on a 72 m tile (so they are everywhere and
+ * cost one draw), brightest high up and toward the surface — the long pull down goes from bright water into dark — and
+ * thinned by distance like everything else, more gently than the fog (light in murk is seen further than things are).
+ * Inside each one: a few drifting streaks of different widths and a slow ripple from the surface, so they shimmer and
+ * sway rather than stand. Anything in front of a shaft cuts it (depth test on, depth write off). */
+const DEEP_RAY_N = 20;
+let deepRays = null;
+function deepRaysBuild() {
+  if (deepRays || !deep.world) return;
+  const pl = new THREE.PlaneGeometry(1, 1), geo = new THREE.InstancedBufferGeometry();
+  geo.index = pl.index; geo.setAttribute('position', pl.attributes.position); geo.setAttribute('uv', pl.attributes.uv);
+  const O = new Float32Array(DEEP_RAY_N * 4), rnd = mulberry32(777);
+  for (let i = 0; i < DEEP_RAY_N; i++) { O[i * 4] = rnd() * 72; O[i * 4 + 1] = rnd() * 72; O[i * 4 + 2] = 1.4 + Math.pow(rnd(), 1.4) * 7.5; O[i * 4 + 3] = rnd() * 100; }
+  geo.setAttribute('aO', new THREE.InstancedBufferAttribute(O, 4));
+  geo.instanceCount = DEEP_RAY_N;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uCam: { value: new THREE.Vector3() }, uT: { value: 0 }, uFog: { value: 0.05 }, uK: { value: 1 }, uY0: { value: DEEP.y },
+      uL: { value: new THREE.Vector3(0.32, 1, 0.18).normalize() }, uCol: { value: new THREE.Color(0.26, 0.50, 0.47) } },
+    vertexShader: `uniform vec3 uCam, uL; uniform float uT, uY0; attribute vec4 aO; varying vec2 vUv; varying float vD, vY, vSeed, vW;
+      void main(){
+        // where it comes down: wrapped round you on a 72 m tile, swaying a little with the surface far up
+        vec2 o = aO.xy + vec2(sin(uT * 0.05 + aO.w) * 3.0, cos(uT * 0.043 + aO.w * 1.3) * 3.0);
+        vec2 xz = uCam.xz + mod(o - uCam.xz + 36.0, 72.0) - 36.0;
+        float H = 110.0;
+        vec3 c = vec3(xz.x, uCam.y + 18.0, xz.y);
+        vec3 toC = normalize(uCam - c);
+        vec3 r = normalize(cross(uL, toC));
+        float w = aO.z * (0.85 + 0.15 * sin(uT * 0.3 + aO.w));
+        vec3 p = c + uL * (position.y * H) + r * (position.x * w * (1.0 + 0.6 * (0.5 - position.y)));   // (wider below: it spreads as it goes down)
+        vec4 mv = viewMatrix * vec4(p, 1.0);
+        vD = -mv.z; vY = p.y - uY0; vUv = uv; vSeed = aO.w; vW = w;
+        gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform float uT, uFog, uK; uniform vec3 uCol; varying vec2 vUv; varying float vD, vY, vSeed, vW;
+      void main(){
+        float x = vUv.x * 2.0 - 1.0;
+        float edge = pow(max(0.0, 1.0 - x * x), 1.6);
+        // streaks inside it, drifting across, and a ripple running down from the surface
+        float s = 0.55 + 0.25 * sin(x * 7.0 + uT * 0.35 + vSeed) + 0.2 * sin(x * 17.0 - uT * 0.6 + vSeed * 2.1);
+        float rip = 0.75 + 0.25 * sin(vY * 0.21 + uT * 1.1 + vSeed * 3.0) * sin(vY * 0.07 - uT * 0.4 + vSeed);
+        // brighter up toward the light, gone below the floor's murk; fainter at the shaft's own ends
+        float up = 0.5 + smoothstep(-30.0, 60.0, vY) * 0.5 + smoothstep(60.0, 260.0, vY) * 0.7;
+        // PEEKING THROUGH (2026-11-14): each shaft comes and goes on its own slow count, and lies in patches down its
+        // length — light finding its way through, not columns standing in the water
+        float pk = smoothstep(-0.35, 0.85, sin(uT * 0.11 + vSeed * 2.7) * 0.7 + sin(uT * 0.047 + vSeed * 5.1) * 0.5);
+        float pch = 0.35 + 0.65 * smoothstep(0.15, 0.85, 0.5 + 0.5 * sin(vY * 0.055 + vSeed * 5.0 + uT * 0.07) * sin(vY * 0.021 - vSeed * 2.0 - uT * 0.05));
+        float ends = smoothstep(0.0, 0.25, vUv.y) * smoothstep(1.0, 0.7, vUv.y);
+        float far = exp(-pow(uFog * vD * 0.42, 2.0)), near = smoothstep(1.0, 6.0, vD);
+        float a = edge * s * rip * up * pk * pch * ends * far * near * uK * (0.65 + 0.35 * sin(vSeed * 7.0)) / (0.6 + vW * 0.12);
+        gl_FragColor = vec4(uCol * a * 0.19, 1.0);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide,
+  });
+  const m = new THREE.Mesh(geo, mat); m.frustumCulled = false; m.renderOrder = 3; m.raycast = () => {}; m.name = 'deepRays';
+  deep.world.add(m);
+  deepRays = m;
+}
+/* THE MURK (2026-11-14, "make it more mysterious and eerie murky waters"): forty great slow clouds of silt and murk
+ * hanging round you, some a shade paler than the water (where the light catches them), some darker, drifting on the
+ * current and moved aside by the pliosaur like the blood; kept round you (one that falls 44 m behind comes back on the
+ * far side, out in the fog where it cannot be seen arriving). They give the dark depth: layers, and things half hidden. */
+const DEEP_MURK_N = 40;
+let deepMurkC = null;
+function deepMurkBuild() {
+  if (deepMurkC || !deep.world) return;
+  const N = DEEP_MURK_N, pl = new THREE.PlaneGeometry(1, 1), geo = new THREE.InstancedBufferGeometry();
+  geo.index = pl.index; geo.setAttribute('position', pl.attributes.position); geo.setAttribute('uv', pl.attributes.uv);
+  const P = new Float32Array(N * 3), S = new Float32Array(N), R = new Float32Array(N), A = new Float32Array(N), D = new Float32Array(N);
+  for (const [k, a, n] of [['iPos', P, 3], ['iSize', S, 1], ['iRot', R, 1], ['iA', A, 1], ['iSeed', D, 1]]) geo.setAttribute(k, new THREE.InstancedBufferAttribute(a, n).setUsage(THREE.DynamicDrawUsage));
+  geo.instanceCount = N;
+  const mat = cloudMat(new THREE.Color(0.016, 0.042, 0.046), new THREE.Color(0.0008, 0.004, 0.005));
+  const m = new THREE.Mesh(geo, mat); m.frustumCulled = false; m.renderOrder = 1; m.raycast = () => {}; m.name = 'deepMurk';
+  deep.world.add(m);
+  deepMurkC = { m, P, S, R, A, D, rs: new Float32Array(N), a0: new Float32Array(N), v: new Float32Array(N * 3), placed: false };
+}
+function deepMurkPlace(i, far) {
+  const M = deepMurkC, c = camera.position, b = i * 3;
+  const a = Math.random() * 6.28, d = far ? 34 + Math.random() * 8 : 6 + Math.random() * 34;
+  M.P[b] = c.x + Math.cos(a) * d; M.P[b + 1] = c.y - 8 + Math.random() * 20; M.P[b + 2] = c.z + Math.sin(a) * d;
+  M.S[i] = 7 + Math.random() * 10; M.R[i] = Math.random() * 6.28; M.rs[i] = (Math.random() - 0.5) * 0.04; M.D[i] = Math.random();
+  M.a0[i] = 0.18 + Math.random() * 0.24;
+  M.m.geometry.attributes.iSeed.needsUpdate = true;
+}
+function deepMurkTick(dt) {
+  if (!deepMurkC) deepMurkBuild();
+  const M = deepMurkC; if (!M) return;
+  if (!M.placed) { M.placed = true; for (let i = 0; i < DEEP_MURK_N; i++) deepMurkPlace(i, false); }
+  const c = camera.position, T = M.m.material.uniforms.uT.value += dt;
+  for (let i = 0; i < DEEP_MURK_N; i++) {
+    const b = i * 3;
+    deadFlow(M.P[b], M.P[b + 1], M.P[b + 2], T, _dlA);
+    if (dead.pOn) deadPush(M.P, b, 0.6, 5, dt, null, M.v);   // (the animal moves it too: a swirl in its wake)
+    const k = 1 - Math.exp(-0.5 * dt);
+    M.v[b] += (_dlA.x * 0.7 - M.v[b]) * k; M.v[b + 1] += (_dlA.y * 0.5 - M.v[b + 1]) * k; M.v[b + 2] += (_dlA.z * 0.7 - M.v[b + 2]) * k;
+    M.P[b] += M.v[b] * dt; M.P[b + 1] += M.v[b + 1] * dt; M.P[b + 2] += M.v[b + 2] * dt;
+    M.R[i] += M.rs[i] * dt; M.A[i] = M.a0[i];
+    const dx = M.P[b] - c.x, dy = M.P[b + 1] - c.y, dz = M.P[b + 2] - c.z;
+    if (dx * dx + dz * dz > 44 * 44 || Math.abs(dy) > 26) deepMurkPlace(i, true);
+  }
+  const g = M.m.geometry;
+  g.attributes.iPos.needsUpdate = true; g.attributes.iSize.needsUpdate = true; g.attributes.iRot.needsUpdate = true; g.attributes.iA.needsUpdate = true;
+  M.m.material.uniforms.uFog.value = scene.fog.density;
+}
+function deepRaysTick(dt, k) {
+  deepMurkTick(dt);
+  if (!deepRays) deepRaysBuild();
+  if (!deepRays) return;
+  const U = deepRays.material.uniforms;
+  U.uCam.value.copy(camera.position); U.uT.value += dt; U.uFog.value = scene.fog.density;
+  U.uK.value += (k - U.uK.value) * Math.min(1, dt * 1.5);
 }
 
 /* THE SEA'S OWN SOUND (2026-10-15, the owner's "Deep Sea Monster Sounds Terrifying Under Water Ambience", 4 min,
@@ -107530,6 +108812,7 @@ function placeInDeep() {
   velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
   _preMove.set(camera.position.x, 0, camera.position.z);
   deep.v.set(0, 0, 0); deep.knock.set(0, 0, 0);
+  deadPlace();                                   // (the dead in the water: built here, under the plunge's veil or the load's black)
 }
 /* THE CHECKPOINT AT THE SNAP (2026-11-13, the owner: "add checkpoint when the fishing rod snaps in the water too"). Every
  * other save is refused from the bite to the sand (`autosaveNow`: `deepLock`), so a death to the pliosaur sent you back
@@ -107715,6 +108998,7 @@ function plioLoad() {
     if (plio.A.Attack_Bite) { plio.A.Attack_Bite.setLoop(THREE.LoopOnce); plio.A.Attack_Bite.clampWhenFinished = true; }
     plio.bones = PLIO_SPHERES.map(([n, r]) => ({ b: m.getObjectByName(n), r: r * PLIO_K })).filter((s) => s.b);
     plio.head = m.getObjectByName('head_9'); plio.jaw = m.getObjectByName('jaw_2');
+    plio.fins = ['forearm.L_16', 'hand.L_15', 'forearm.R_21', 'hand.R_20'].map((n) => m.getObjectByName(n)).filter(Boolean);
     plio.g = g; plio.m = m;
     buildDeep(); deep.world.add(g);
     plioPlay('Swim_Slow', 0);
@@ -107875,6 +109159,31 @@ function plioStartPass() {
   plioPlay('Swim_Slow', 0, 1.25);
   sfxPlioVoice(c.x, c.z, 'call', 0.6);
 }
+/* THE AMBUSH (2026-11-14): instead of the first pass, it comes out of the dark for the one still alive out in front of
+ * you (`dead.live`, 13.5 m off) and takes it IN PASSING — the owner: "the monster shouldnt even stop to bite him just
+ * straight swim through fast and grab him all one motion". Its head starts 40 m back along a line across your view; it
+ * runs that line at full speed (31 m/s, steering only while it is still far), and it is the JAWS that are timed: the
+ * bite clip's speed each frame is what shuts them as the mouth arrives. Within 2.6 m of the mouth (or once past it) it
+ * has it, and goes straight on at speed into the black with it, shaking it; then it comes round for you (`plioLurk`,
+ * short). */
+const _pAm = new THREE.Vector3();
+function plioAmbush() {
+  const L = dead.live;
+  camera.getWorldDirection(_dF); _dF.y = 0; _dF.normalize();
+  _dR.crossVectors(_dF, _dUP).normalize();
+  const S = L.G.position, side = Math.random() < 0.5 ? 1 : -1;
+  const dir = new THREE.Vector3().copy(_dR).multiplyScalar(side * 0.96).addScaledVector(_dF, 0.22).add(_dB.set(0, 0.04, 0)).normalize();
+  plio.ambSide = side; plio.ambFwd = _dF.clone(); plio.ambRight = _dR.clone();
+  plioShow(true); plio.st = 'ambush'; plio.t = 0; plio.amb = 'in'; plio.ambT = 0; plio.roll = 0; plio.bit = false; plio.rushed = false; plio.ambSwim = false;
+  /* (2026-11-14, the owner: "the seamonster should swoop and eat him faster too": from 30 m off along the line and 10 m
+   * DOWN, heading level, at 42 m/s — so it comes up out of the deep in an arc onto him, steered hard until the last
+   * 8 m, about 0.75 s from setting off to the jaws shutting; it was 40 m out on the level at 31, 1.07 s) */
+  plioPlace(_dB.copy(S).addScaledVector(dir, -36).add(_dA.set(0, -10, 0)), dir);
+  plio.g.updateMatrixWorld(true); plioHeadPos(_pH);
+  plio.g.position.add(_dB.copy(S).addScaledVector(dir, -30).add(_dA.set(0, -10, 0)).sub(_pH));
+  plio.speed = 42; plio.eyeK = 1; plio.ambDir = dir; plio.nAmbush = (plio.nAmbush || 0) + 1;
+  plioPlay('Attack_Bite', 0, 1, PLIO_BITE_FROM);
+}
 function plioLurk() {
   plio.st = 'lurk'; plio.t = 0; plio.lurkT = 1.2 + Math.random() * 1.6; plio.roll = 0; plio.raced = false;   // (3.2-7.2 until (2026-10-18, the owner: "MORE AGGRESSIVE … SWIMS AWAY TOO MUCH AND TOO FAR … COME BACK AT YOU FASTER"))   // (2026-10-15, "faster and harder": half the wait it had)
   plio.circ = plio.circ || (Math.random() < 0.5 ? 1 : -1);
@@ -107897,7 +109206,7 @@ function plioTell() {
 function plioContact() {
   plioMouthPos(_pH);
   const d = _pH.distanceTo(camera.position); plio.lastBiteD = d;
-  if (d > 3.4) { sfxSurge(0.35, 0.5); return; }                         // it shut on water: past you
+  if (d > 3.9) { sfxSurge(0.35, 0.5); return; }                         // it shut on water: past you (3.4 until the stand-off went to 5.0, 2026-11-14)
   camera.getWorldDirection(_dF);
   const facing = _dF.dot(_dA.copy(_pH).sub(camera.position).normalize()) > 0.3;
   if (blocking && facing && equipped && equipped.onDig) {
@@ -107996,7 +109305,7 @@ function plioHurt(dmg, P, at, melee = false) {
    * hits … he should be attacking and biting … he should be dangerous"). Struck anywhere but stunned off a parry, or
    * already coming at you, it turns on you there and then and snaps — the bite's own clip from late in its draw-back,
    * so it lands about half a second after the blow that started it: time to raise a guard, not time for another cut. */
-  if (melee && !['stun', 'die', 'bite', 'tell', 'charge'].includes(plio.st) && !(plio.st === 'swipe' && plio.wound && plio.t > PLIO_TAIL_WT)) plioSnap();
+  if (melee && !['stun', 'die', 'bite', 'tell', 'charge', 'ambush'].includes(plio.st) && !(plio.st === 'swipe' && plio.wound && plio.t > PLIO_TAIL_WT)) plioSnap();
 }
 function plioSnap() {
   plio.st = 'bite'; plio.t = 0; plio.bit = false; plio.snap = true; plio.tailAng = 0; plio.wound = false;
@@ -108101,11 +109410,41 @@ function updatePlio(dt) {
   if (plio.st === 'off') { plio.eyeK = 0; plio.eyeMat.opacity = 0; return; }
   plioHeadPos(_pH);
   const dHead = _pH.distanceTo(cam);
-  let want = plio.st === 'charge' || plio.st === 'tell' ? 1 : plio.st === 'stun' ? 0.25 : plio.st === 'die' ? 0 : plio.st === 'lurk' ? 0.08 : 0.3;
+  let want = plio.st === 'charge' || plio.st === 'tell' || plio.st === 'ambush' ? 1 : plio.st === 'stun' ? 0.25 : plio.st === 'die' ? 0 : plio.st === 'lurk' ? 0.08 : 0.3;
   plio.eyeK += (want - plio.eyeK) * Math.min(1, dt * (want > plio.eyeK ? 3 : 1.2));
   const murk = Math.exp(-Math.pow(scene.fog.density * dHead * 0.72, 2));        // the eyes come out of the black as the body does, a little before it
   plio.eyeMat.opacity = plio.eyeK * murk; plio.eyeMat.color.setRGB(1, 0.85 - 0.25 * plio.eyeK, 0.55 - 0.3 * plio.eyeK);
   switch (plio.st) {
+    case 'ambush': {
+      const L = dead.live, a = plio.A.Attack_Bite;
+      plio.ambT += dt;
+      if (plio.amb === 'in') {
+        if (!L || L.st !== 'struggle') { if (a) a.timeScale = 1; plioLurk(); break; }
+        const S = L.G.position;
+        plioMouthPos(_pAm);                                                 // (its own vector: `plioMouthPos` uses `_pM` inside)
+        _dA.copy(S).sub(_pAm);
+        const dS = _dA.length(), ahead = _dA.dot(plio.dir);
+        if (dS > 8) plioSteer(S, 2.8, dt);                                   // (the swoop: hauled round and up onto him while it is far; then nothing changes it)
+        plio.speed += (42 - plio.speed) * Math.min(1, dt * 3);
+        g.position.addScaledVector(plio.dir, plio.speed * dt);
+        plioFace(dt, 8);
+        // the jaws, timed to the pass: the clip runs at whatever speed shuts them as the mouth gets there
+        if (a && a.time < PLIO_BITE_AT) a.timeScale = THREE.MathUtils.clamp((PLIO_BITE_AT - a.time) / Math.max(0.05, ahead / plio.speed), 0.5, 4);
+        if (!plio.rushed && dS < 18) { plio.rushed = true; sfxSurge(0.9, 0.9); }      // (the only warning: the water it pushes ahead of it)
+        if (Math.random() < dt * 14) deepPuff(1, _pH.x, _pH.y, _pH.z, 2, 1.0, _dB.copy(plio.dir).multiplyScalar(-2));
+        if (dS < 2.6 || ahead < 0.3) { deadLiveBite(); plio.amb = 'carry'; plio.ambT = 0; plio.flash = 1; if (a) a.timeScale = 1.3; }
+      } else {
+        // straight on with it, hardly slowed, shaking it, into the black
+        plio.speed += (30 - plio.speed) * Math.min(1, dt * 1.2);
+        plioAvoid(dt);
+        g.position.addScaledVector(plio.dir, plio.speed * dt);
+        plio.roll = Math.sin(plio.ambT * 17) * 0.3 * Math.max(0, 1 - plio.ambT / 1.4);
+        plioFace(dt, 6);
+        if (a && a.time >= 2.9 && !plio.ambSwim) { plio.ambSwim = true; plioPlay('Swim_Fast', 0.3, 2.0); }
+        if (plio.ambT > 2.4) { plio.roll = 0; if (a) a.timeScale = 1; plioLurk(); plio.lurkT = 0.6; }
+      }
+      break;
+    }
     case 'pass': {
       g.position.addScaledVector(plio.dir, plio.speed * dt); plio.travel += plio.speed * dt;
       plio.roll = Math.sin(plio.t * 0.5) * 0.08;
@@ -108173,13 +109512,13 @@ function updatePlio(dt) {
       const a = plio.A.Attack_Bite;
       const left = Math.max(0.05, PLIO_BITE_AT - (a ? a.time : PLIO_BITE_AT));
       // timed so the jaws arrive where you are as they close (the lunge in the clip carries the head ~3.5 m)
-      plio.speed = THREE.MathUtils.clamp((dHead - 4.2) / left, 1.5, 21);
+      plio.speed = THREE.MathUtils.clamp((dHead - PLIO_STAND) / left, 1.5, 21);
       if (!plio.bit) plioSteer(cam, plio.snap ? 6 : 0.45, dt);   // (a snap whips round on you; a bite out of a charge is committed)
       /* a snap's head is driven to you: the body beside you is sixteen metres long and its jaws were eight of them away —
        * swung round on its middle they shut on water (measured: two snaps in eight reached). The head is carried on to
        * where the clip's own lunge (3.5 m of it) ends at your face — the bite's own 4.2 m — at up to 16 m/s. */
       if (plio.snap && !plio.bit) {
-        plioHeadPos(_pM); _dB.copy(cam).sub(_pM); const L = _dB.length() - 4.2;
+        plioHeadPos(_pM); _dB.copy(cam).sub(_pM); const L = _dB.length() - PLIO_STAND;
         if (L > 0) g.position.addScaledVector(_dB.normalize(), Math.min(L, 16 * dt));
       }
       g.position.addScaledVector(plio.dir, plio.speed * dt);
@@ -108306,14 +109645,25 @@ function updatePlio(dt) {
     }
   }
   plioSolid();
-  // it does not swim through you: anything inside its body is put outside it
+  /* IT DOES NOT SWIM THROUGH YOU: anything inside its body is put outside it. (2026-11-14, the owner: "make the seamonster
+   * clip into me less while fighting".) It was nine separate spheres down its spine, 0.7 m of room round each: between
+   * them, ahead of the head (the snout runs 1.4 m on) and out on its four flippers there was nothing, and a pass or a
+   * bite's lunge went through the lens. Now a capsule between each two of them, the snout, and the flippers, with 1.25 m (measured, `plioClip`: its skin inside 0.3 m of your eye on 100 of 1800 frames before, 49 at 0.9). */
   if (plio.alive) {
     let pushed = false;
-    for (const s of plio.bones) {
-      s.b.getWorldPosition(_pM);
-      const d = _pM.distanceTo(cam), r = s.r + 0.7;
-      if (d < r && d > 1e-3) { _dA.copy(cam).sub(_pM).multiplyScalar((r - d) / d); cam.add(_dA); deep.v.addScaledVector(_dA, 4); pushed = true; }
+    const room = 1.25, B = plio.bones;
+    const out = (P, r) => { const d = P.distanceTo(cam); if (d < r && d > 1e-3) { _dA.copy(cam).sub(P).multiplyScalar((r - d) / d); cam.add(_dA); deep.v.addScaledVector(_dA, 4); pushed = true; } };
+    if (!plio._bp) plio._bp = B.map(() => new THREE.Vector3());
+    for (let i = 0; i < B.length; i++) B[i].b.getWorldPosition(plio._bp[i]);
+    for (let i = 0; i < B.length - 1; i++) {
+      const A = plio._bp[i], C = plio._bp[i + 1];
+      _dB.subVectors(C, A); const L2 = _dB.lengthSq();
+      const t = L2 > 1e-6 ? THREE.MathUtils.clamp(_pM.copy(cam).sub(A).dot(_dB) / L2, 0, 1) : 0;
+      _pM.copy(A).addScaledVector(_dB, t);
+      out(_pM, THREE.MathUtils.lerp(B[i].r, B[i + 1].r, t) + room);
     }
+    plioMouthPos(_pS); out(_pS, 0.55 * PLIO_K + room);
+    for (const f of plio.fins || []) { f.getWorldPosition(_pM); out(_pM, 0.32 * PLIO_K + room); }
     if (pushed) { deepClampBody(); deepHold(); }                     // (and not through a stone, being shoved: whatever moves you last clamps you)
   }
   if (plio.tailPre) { for (const [b, q] of plio.tailPre) b.quaternion.copy(q); plio.tailPre = null; }   // (a bone the clip does not drive must not keep last frame's swing)
@@ -108438,6 +109788,7 @@ function updateDeep(rawDt) {
     }
     case 'plunge': {
       deepVeil(smooth01(0, 0.22, T));
+      if (T > 0.2) deadLoad(true);                  // (the dead's parse, under the veil)
       deep.plY -= dt * 2.5; cam.y = deep.plY;
       if (T > 0.08 && !deep.muffled) { deep.muffled = true; deepAudio(true, 0.25); sfxBubbles(26, 1, 0.5, 0.7); sfxSurge(0.8, 0.8); deepAmbSet(true, 3); }
       deepHold();
@@ -108494,7 +109845,13 @@ function updateDeep(rawDt) {
       deepSwim(dt); deepBreath(dt);
       deep.farT = (deep.farT ?? 9) - dt;
       if (deep.farT <= 0) { deep.farT = 9 + Math.random() * 12; sfxDeepFar(); }
-      if (deep.ph === 'silence' && T > 11 && plio.ready) { deep.ph = 'fight'; deep.t = 0; plioStartPass(); }
+      if (deep.ph === 'silence' && plio.ready) {
+        // (2026-11-14: the one still alive in front of you, taken, instead of the pass — once you have had a few seconds
+        // of it in front of you, or at ten whether you are looking or not; the old pass if the dead never came)
+        const L = dead.live;
+        if (L && L.st === 'struggle') { if (T > 3.5 && (deadLiveSeen() || T > 10)) { deep.ph = 'fight'; deep.t = 0; plioAmbush(); } }
+        else if (T > 11) { deep.ph = 'fight'; deep.t = 0; plioStartPass(); }
+      }
       if (deep.ph === 'fight' && !plio.alive && plio.settled) { deep.ph = 'after'; deep.t = 0; }
       if (deep.ph === 'after' && deep.t > 4) startDrown();
       break;
@@ -108530,12 +109887,14 @@ function updateDeep(rawDt) {
   }
   if (inDeep) {
     camera.updateMatrixWorld();
-    if (deepBack) { deepBack.position.copy(cam); deepBack.material.uniforms.uFog.value.copy(scene.fog.color); }
+    if (deepBack) { deepBack.position.copy(cam); deepBack.material.uniforms.uFog.value.copy(scene.fog.color); deepBack.material.uniforms.uT.value += dt; }
     const px = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
     if (deepSnow) { deepSnow.material.uniforms.uCam.value.copy(cam); deepSnow.material.uniforms.uT.value += dt; deepSnow.material.uniforms.uPx.value = px; }
     if (deepFx) { deepFx.pts.material.uniforms.uPx.value = px; deepFx.pts.material.uniforms.uFog.value = scene.fog.density; }
     updateDeepFx(dt);
     updatePlio(dt);
+    updateDead(dt);
+    deepRaysTick(dt, deep.ph === 'drown' ? 1 - smooth01(0, DROWN_T * 0.7, deep.t) : 1);   // (the light goes as you do)
   }
 }
 
@@ -112359,7 +113718,7 @@ Object.assign(window.__bw, { farmCobble, farmUnits, farmFight, farmDoors, farmSe
   recBufs: () => Object.fromEntries(Object.entries(lazyBufs).map(([k, v]) => [k, v.buf ? +v.buf.duration.toFixed(2) : v.busy ? 'loading' : 'failed'])),
   startWreckTheme,
   audioDbg: () => ({ forest: forestBed && +forestBed.g.gain.value.toFixed(4), ben: benBr && benBr.g && +benBr.g.gain.value.toFixed(4), sand: (sampleBanks.sandStep || []).filter(Boolean).length, benBuf: (sampleBanks.benBreath || []).filter(Boolean).length, bedK: beachBedK() }),
-  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, isleTrunks: () => isleTrunks, isleBarkS: () => isleBark, isleBarkPush, isleRampAt, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, isleLast: () => ({ x: isleLastSpot.x, z: isleLastSpot.z, f: isleLastFloor }), isleSetLast: (x, z, f) => { onIsle = true; insideTower = false; isleOnGallery = false; isleLastFloor = f; isleLastSpot.x = x; isleLastSpot.z = z; isleGood.ok = false; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), placeInC13, devRoom: () => saveRoom() || 'beach', devLeaveRooms, placeInDungeon, wellReveal, wellStalkS: () => ({ stare: +wellStalk.stare.toFixed(2), awake: !!(wellUnit && wellUnit.st.awake), hold: !!(wellUnit && wellUnit.holdAnim), cine: cineHold }), wellAudS: () => ({ aud: !!(wellAud && wellAud.ctx === audioCtx), prep: !!wellPrep, buf: !!(wellPrep && wellPrep.buf), drone: !!wellDroneNodes, air: +wellAirK.toFixed(3) }), wellLookStart, wellLetUp, wellLeave, endDialog, WELL_X, WELL_Z, wellG, wellSetBucket, sharpenFrame, startCrabCut, hornItem, hornLie, startWakeCut, wakeS: () => ({ t: wakeCut ? +wakeCut.t.toFixed(2) : -1, built: !!wakeSet, seated: wakeSet ? wakeSet.seated : null, ended }), wakeG: () => ({ scene: wakeScene, cam: wakeCam, set: wakeSet }), WAKE_T, crabS: () => ({ t: crabCut ? +crabCut.t.toFixed(2) : -1, giant: !!crabGiant, y: crabGiant ? +crabGiant.position.y.toFixed(1) : null, horn: hornState, ended }), CRAB_T, thrHeadToCamera, isleMagicS: () => ({ k: isleMagicK, top: isleTopK, fog: scene.fog.density, keep: FOG_KEEP.w }), wellPartsS: () => wellParts, rockSurfS: () => rockSurfList, crabUnit, cellKeyS: () => ({ ...cellKey, world: !!cellKey.world, prop: !!cellKey.prop }), henryFreeS: () => ({ henryFree, phase: henry && henry.free ? henry.free.phase : null, ring: henryRingTaken, t: henry && henry.free ? +henry.free.t.toFixed(2) : -1 }), henryRingW: () => henryRingWorld, takeHenryRing, goldRingItem, hjS: () => ({ taken: hjTaken, loaded: !!hj, eagle: !!hjEagle, mode: hj ? hj.mode : null, cut: hjCut ? hjCut.phase : null, t: hjCut ? +hjCut.t.toFixed(2) : -1 }), hjG: () => ({ hj, eagle: hjEagle, cut: hjCut }), loadJettyHenry, hjTalk, startHenrySnatch, isleRestoreAt, bootLeft: () => ({ n: startLeft(), open: bwOpen, waiting: bwWaiting.map((j) => j.url.split('/').pop()), parsing: bwParsing, warm: warmSteps.map((w) => w[0]).slice(0, 12), nWarm: warmSteps.length, tex: (texUp.q.length + texUp.wait.length), drain: drainWarmed, mush: mushWarmed, bunker: bunkerWarmed, rooms: bootRoomsAsked }), henryMocap, henryPlay, henrySample, setHenryFree: (v) => { henryFree = v; }, HJ_SPOT, cellKeyItem, cellKeyLie, dealerDropsCellKey, SEWMON, sewMonS: () => sewMon && ({ st: sewMon.st, t: +sewMon.t.toFixed(2), h: +sewMon.h.toFixed(2), x: +sewMon.x.toFixed(2), z: +sewMon.z.toFixed(2), next: +(sewMon.nextIn || 0).toFixed(2), barred: sewMon.barred, scare: !!sewScare, vis: sewMon.g.visible }), sewMon: () => sewMon, sewMonPick, sewMonSeen, sewMonLeap, sfxSewScream, sewS: () => ({ ready: sewReady, inSewer, levers: sewLevers, gen: sewGenOn, offT: +sewGenOffT.toFixed(2), gate: sewGateOpen, chest: sewChestOpen, loot: sewLootTaken, glow: sewGlowTaken, plank: sewPlank, pz: sewPlankZ, lx: +(camera.position.x - SEW_X).toFixed(2), lz: +(camera.position.z - SEW_Z).toFixed(2) }), sewG: () => ({ world: sewWorld, P: sewP, SEW, SEW_X, SEW_Y, SEW_Z }), loadSewer, placeInSewer, placeOutOfSewer, sewGroan, sewThuds, sewRats, sfxSewZap, sewPullLever, sewPullLeverNow, sewPullS: () => sewPull && { i: sewPull.i, t: +sewPull.t.toFixed(2) }, sewPressButton, sewTakePlank, sewLayPlank, sewRestore, sewSet: (lx, lz, yaw = 0, pitch = 0) => { camera.position.set(SEW_X + lx, SEW_Y + SEW.WALK + playerEye(), SEW_Z + lz); camBaseY = camera.position.y; lookEuler.set(pitch, yaw, 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); _preMove.set(camera.position.x, 0, camera.position.z); }, dunS: () => ({ ready: dunReady, inDun, busy: dunBusy, door: !!dunDoorMesh, doorR: dunDoorMesh ? dunDoorMesh.userData.r : null, henry: !!henry, walls: !!dunWalls }), dunG: () => ({ world: dunWorld, door: dunDoorMesh, henry, HENRY_POSE }), startDungeon, loadDungeon, henryPose, DUN_X, DUN_Y, DUN_Z, rockCrabS: () => ({ taken: rockCrabTaken, at: rockCrabW ? rockCrabW.position.toArray().map((v) => +v.toFixed(2)) : null, fill: window.__bwRockFill }), WELL_RIM_Y, wellClinch, wellGrab, wellMindS, wellPhotoItem, wellPhotoS: () => ({ taken: wellPhotoTaken, onTable: !!wellPhotoOnTable }), traderSell, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
+  c13Dbg: () => ({ arch: c13Arch, archOpen: c13ArchOpen, inThrone, thrBusy, thrReady: !!thrWalk }), openC13Arch, startThrone, placeInThrone, danteU: () => danteUnit, wellU: () => wellUnit, wellLook, placeOnIsle, loadIsle, isleStartCut, ISLE_SITE, ISLE_AXIS, ISLE_SPAWN, ISLE_SPAWN_LOOK, ISLE_FLOOR, ISLE_GALLERY, ISLE_DOOR_A, ISLE_TOP, isleW, isleFloorAt, isleS: () => ({ ready: isleReady, onIsle, insideTower, gallery: isleOnGallery, walls: !!ISLE_SITE.walls, door: isleDoorOpen, swing: +isleDoorSwing.toFixed(2), turns: +stairTurns.toFixed(3), groundY: +groundY.toFixed(2) }), isleWorldG: () => isleWorld, ISLE_RAMPS, isleTrunks: () => isleTrunks, isleBarkS: () => isleBark, isleBarkPush, isleRampAt, C13_SITE, c13CourtAt, C13_X, C13_Z, setIsleDoor: (v) => { isleDoorOpen = v; }, isleReset: () => { onIsle = false; insideTower = false; isleOnGallery = false; isleLastFloor = null; }, isleLast: () => ({ x: isleLastSpot.x, z: isleLastSpot.z, f: isleLastFloor }), isleSetLast: (x, z, f) => { onIsle = true; insideTower = false; isleOnGallery = false; isleLastFloor = f; isleLastSpot.x = x; isleLastSpot.z = z; isleGood.ok = false; }, wellS: () => ({ phase: wellPhase, dread: wellDread, mist: wellMistK }), placeInC13, devRoom: () => saveRoom() || 'beach', devLeaveRooms, placeInDungeon, wellReveal, wellStalkS: () => ({ stare: +wellStalk.stare.toFixed(2), awake: !!(wellUnit && wellUnit.st.awake), hold: !!(wellUnit && wellUnit.holdAnim), cine: cineHold }), wellAudS: () => ({ aud: !!(wellAud && wellAud.ctx === audioCtx), prep: !!wellPrep, buf: !!(wellPrep && wellPrep.buf), drone: !!wellDroneNodes, air: +wellAirK.toFixed(3) }), wellLookStart, wellLetUp, wellLeave, endDialog, WELL_X, WELL_Z, wellG, wellSetBucket, sharpenFrame, startCrabCut, hornItem, hornLie, startWakeCut, wakeS: () => ({ t: wakeCut ? +wakeCut.t.toFixed(2) : -1, built: !!wakeSet, seated: wakeSet ? wakeSet.seated : null, ended }), wakeG: () => ({ scene: wakeScene, cam: wakeCam, set: wakeSet }), WAKE_T, crabS: () => ({ t: crabCut ? +crabCut.t.toFixed(2) : -1, giant: !!crabGiant, y: crabGiant ? +crabGiant.position.y.toFixed(1) : null, horn: hornState, ended }), CRAB_T, thrHeadToCamera, isleMagicS: () => ({ k: isleMagicK, top: isleTopK, fog: scene.fog.density, keep: FOG_KEEP.w }), wellPartsS: () => wellParts, rockSurfS: () => rockSurfList, crabUnit, cellKeyS: () => ({ ...cellKey, world: !!cellKey.world, prop: !!cellKey.prop }), henryFreeS: () => ({ henryFree, phase: henry && henry.free ? henry.free.phase : null, ring: henryRingTaken, t: henry && henry.free ? +henry.free.t.toFixed(2) : -1 }), henryRingW: () => henryRingWorld, takeHenryRing, goldRingItem, hjS: () => ({ taken: hjTaken, loaded: !!hj, eagle: !!hjEagle, mode: hj ? hj.mode : null, cut: hjCut ? hjCut.phase : null, t: hjCut ? +hjCut.t.toFixed(2) : -1 }), hjG: () => ({ hj, eagle: hjEagle, cut: hjCut }), loadJettyHenry, hjTalk, startHenrySnatch, isleRestoreAt, bootLeft: () => ({ n: startLeft(), open: bwOpen, waiting: bwWaiting.map((j) => j.url.split('/').pop()), parsing: bwParsing, warm: warmSteps.map((w) => w[0]).slice(0, 12), nWarm: warmSteps.length, tex: (texUp.q.length + texUp.wait.length), drain: drainWarmed, mush: mushWarmed, bunker: bunkerWarmed, rooms: bootRoomsAsked }), henryMocap, henryPlay, henrySample, setHenryFree: (v) => { henryFree = v; }, HJ_SPOT, cellKeyItem, cellKeyLie, dealerDropsCellKey, SEWMON, sewMonS: () => sewMon && ({ st: sewMon.st, t: +sewMon.t.toFixed(2), h: +sewMon.h.toFixed(2), x: +sewMon.x.toFixed(2), z: +sewMon.z.toFixed(2), next: +(sewMon.nextIn || 0).toFixed(2), barred: sewMon.barred, scare: !!sewScare, vis: sewMon.g.visible }), sewMon: () => sewMon, sewMonPick, sewMonSeen, sewMonLeap, sfxSewScream, sewS: () => ({ ready: sewReady, inSewer, levers: sewLevers, gen: sewGenOn, offT: +sewGenOffT.toFixed(2), gate: sewGateOpen, chest: sewChestOpen, loot: sewLootTaken, glow: sewGlowTaken, plank: sewPlank, pz: sewPlankZ, lx: +(camera.position.x - SEW_X).toFixed(2), lz: +(camera.position.z - SEW_Z).toFixed(2) }), sewG: () => ({ world: sewWorld, P: sewP, SEW, SEW_X, SEW_Y, SEW_Z }), loadSewer, placeInSewer, placeOutOfSewer, sewGroan, sewThuds, sewRats, sfxSewZap, sewPullLever, sewPullLeverNow, sewPullS: () => sewPull && { i: sewPull.i, t: +sewPull.t.toFixed(2) }, sewPressButton, sewTakePlank, sewLayPlank, sewRestore, sewSet: (lx, lz, yaw = 0, pitch = 0) => { camera.position.set(SEW_X + lx, SEW_Y + SEW.WALK + playerEye(), SEW_Z + lz); camBaseY = camera.position.y; lookEuler.set(pitch, yaw, 0, lookEuler.order); camera.quaternion.setFromEuler(lookEuler); _preMove.set(camera.position.x, 0, camera.position.z); }, dunS: () => ({ ready: dunReady, inDun, busy: dunBusy, door: !!dunDoorMesh, doorR: dunDoorMesh ? dunDoorMesh.userData.r : null, henry: !!henry, walls: !!dunWalls }), dunG: () => ({ world: dunWorld, door: dunDoorMesh, henry, HENRY_POSE }), startDungeon, loadDungeon, henryPose, DUN_X, DUN_Y, DUN_Z, rockCrabS: () => ({ taken: rockCrabTaken, at: rockCrabW ? rockCrabW.position.toArray().map((v) => +v.toFixed(2)) : null, fill: window.__bwRockFill }), WELL_RIM_Y, wellClinch, wellGrab, wellMindS, wellPhotoItem, wellPhotoS: () => ({ taken: wellPhotoTaken, onTable: !!wellPhotoOnTable }), traderSell, setWellPhase: (v) => { wellPhase = v; }, sampleBanks, lhWallMaps, lhAshlarMaps, hlRockMaps, hlGrassMaps, headlandAt, headlandSlope, lhBeamFind, lhSearchS: () => lhSearch, lhDress, lhGround, openBeachMap, drawBeachMap, beachMapItemS: () => beachMapItem, giveFishingRod, tavStoreS: () => tavStore, openTavStore, tavChestS: () => ({ open: tavChestOpen, taken: tavChestTaken }), tavPlankMaps, catHear, catSoundField, catAboveStep, catDustAt, catDustS: () => catDust, thrSceneS: () => thrScene, thrChainS: () => thrChain, thrCutS: () => thrCut, startThrCutChain, startThrCutRise, thrStandY, THR_X, THR_Y, THR_Z, DANTE_SPOT, DANTE_RING, C13_ARCH, C13_THR_DOOR,
   c13State: () => ({ inC13, ready: c13Ready, walls: !!c13Walls, life: !!c13Life, torches: !!(c13Life && c13Life.torches), mask: !!C13_M.data,
     thrive: c13Thrive && { done: c13Thrive.done, jobs: c13Jobs.length, torches: (c13Thrive.torchAt || []).length, banners: c13Thrive.banners.length, lanterns: c13Thrive.lanterns.length, stalls: c13Thrive.stalls.length, towers: (c13Thrive.towers || []).length, lines: (c13Thrive.lines || []).length, windows: (c13Thrive.windows || []).length, fountain: c13Thrive.fountain && [c13Thrive.fountain.x, c13Thrive.fountain.z], door: c13Thrive.door, solids: c13Solids.length, flowers: c13Thrive.flowers, snd: c13Snd && { fountain: !!c13Snd.fsrc, fg: c13Snd.fg && +c13Snd.fg.gain.value.toFixed(3), lute: c13Snd.playing, lg: +c13Snd.lute.gain.value.toFixed(3) } } }),
   c13Thrive: () => c13Thrive, c13Solids, c13Open, c13RunJobs, placeInC13, C13_SITE, C13_X, C13_Y, C13_Z,
@@ -112572,3 +113931,9 @@ function wbHookTick(dt) {
   if ((S.clink -= h) <= 0) { S.clink = 2.5 + Math.random() * 4; const m = S.P[Math.floor(S.N * 0.4)]; if (Math.hypot(camera.position.x - m.x, camera.position.z - m.z) < 14 && typeof sfxChainRattle === 'function') sfxChainRattle(m.x, m.z, 0.25, 0.25 * (0.5 + Math.abs(gust) * 0.4)); }
 }
 
+// (2026-11-13's checks: the throne's doors, the Lucky Ring, the bunker's step, the held lens let go — `tools/probes.js` nov13)
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
+  TRADER_RAGE, traderStruck, traderStrike, playerWading, aimHere: () => camera.getWorldDirection(_aimD), dead, deadPlace, deadBloodAdd, deadLoad, deepRaysS: () => deepRays, plioAmbush, deadLiveSeen, fishingRodS: () => fishingRod, plioLoad, deepRestore, thrFightOn, luckyBlow, gemItemS: () => gemItem, setLuckAt: (v) => { luckAt = v; }, sfxStepBunker, startDealerPickup, cineWalkAway,
+  cineS: () => ({ hold: cineHold, walkOff: cineWalkOff, fov: +camera.fov.toFixed(2), want: dialogFov, at: cineAt.toArray().map((v) => +v.toFixed(2)) }),
+  hpS: () => hp, setHp: (v) => { hp = v; }, LOOP_SONGS, katanaItemS: () => katanaItem, dealerU: () => dealer, SELL_ROWS, migrateSave, jarsS: () => bloodJars,
+}));

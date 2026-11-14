@@ -1202,3 +1202,16 @@ disposed now. (Things taken without `dropShine` were always fine: `updateShines`
 so in the whale (`WHALE_Y` 500) the wave and every splash went off half a kilometre under you. It asks with your feet
 now (`groundUnder(x, z, feet + 0.3)`, which a room answers), falling back to `groundY`, then your feet. Measured in the
 belly (`sh tools/probe.sh whaleWave`): wave at 500.18 = your feet, 101 splash drops live round your eye.
+
+## 2026-11-13 — The Lucky Ring; the katana sold; the screwdriver's glow
+- **The Gem Stone Ring is "The Lucky Ring"** ("Gives random chance of enemy hit doing no damage."). Its 7% negation
+  (`GEM_NEG`, the bank) is gone (`dmgTakeK` is 1). `luckyBlow(from)`, in `damagePlayer` right after the step's dodge:
+  worn, `LUCK_P` 0.18, never twice inside `LUCK_GAP` 5 s; the blow still arrives (trauma 0.22, the shove and the head
+  thrown at half, a little hitstop) with `sfxLuckChime` (two struck partials and a shimmer) instead of the hurt.
+  Measured: 18.1% of 2000 rolls, 1 of 50 inside the gap; 73 of 400 real blows cost nothing.
+- **Renamed things in saves** (`ITEM_RENAMED`, `migrateItemNames`, first thing in `migrateSave`, declared above
+  `BW_FROM`, which reads a save at module time): pack, slots, worn and held. `PACK_FILES` knows both names. The pickup's
+  `took` id is "Take the ring", unchanged.
+- **The katana sells for 4 jars** (`SELL_ROWS` 'katana', `traderSell`); an artifact set in it comes back to the pack
+  first (`artOnWeaponLeaving`, in `removeFromInventory`).
+- **The screwdriver's glow**: `addItemShine` size 0.8 → 1.6, strength 1 → 3.2, lift 1.8, through 0.7.
