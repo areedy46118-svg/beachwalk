@@ -2306,6 +2306,54 @@ export function makeShipwreck(opts = {}) {
     }
   }
 
+  /* ---- HER FLOOR HAS A THICKNESS, AND SHE IS SITTING IN THE BEACH (2026-11-14, the owner, from the sand looking into
+   * her hold: "make this wood floor look less like a flat hovering texture make it thicker and connect with the ground
+   * like a real crashed boat would"). Both tears are cut down to the sand, and through them the sole was a sheet of
+   * paper a quarter of a metre up with daylight under it. Along the foot of each tear now: the broken ends of her floor
+   * — plank ends and the joists under them, a hand and more thick, running down into the sand; a frame end sprung out
+   * here and there; and the beach drifted up against it, so she is IN the sand, not on it. */
+  for (const [sg, x0, x1] of [[1, BREACH_X0, BREACH_X1], [-1, FAR_X0, FAR_X1]]) {
+    const n = Math.round((x1 - x0) / 0.15);
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + 0.05 + (i / n) * (x1 - x0 - 0.1);
+      const hz = Math.max(0.05, Math.min(HOLD_HZ + 0.2, halfAtY(x, HOLD_Y) - 0.02));
+      const top = soleY(x, sg * hz) + 0.01 + rnd(i * 3.7 + sg) * 0.035, bot = -0.32;
+      const d = 0.26 + rnd(i * 1.3 + sg * 2) * 0.12;                   // how far the broken end runs out past her line
+      // the plank ends and the joist under them, down into the sand
+      HULL.add(slab(0.13 + rnd(i * 2.9) * 0.05, top - bot, d, M.wood, x, (top + bot) / 2, sg * (hz - 0.10 + d / 2 - 0.12),
+        (rnd(i * 4.1) - 0.5) * 0.06, (rnd(i * 5.3) - 0.5) * 0.12, 0));
+      // and a board's end splintered off the top of it, now and then
+      if (i % 3 === 1) HULL.add(slab(0.11, 0.035, 0.22 + rnd(i * 6.1) * 0.2, M.sole, x + (rnd(i) - 0.5) * 0.05, top + 0.01,
+        sg * (hz + 0.08), (rnd(i * 7.7) - 0.5) * 0.18 * sg + 0.08 * sg, (rnd(i * 8.3) - 0.5) * 0.4, 0));
+      // a frame end sprung out of her bottom, low
+      if (i % 5 === 2) HULL.add(slab(0.14, 0.16, 0.42 + rnd(i * 9.1) * 0.25, M.wood, x, 0.06 + rnd(i * 2.3) * 0.08, sg * (hz + 0.12),
+        sg * (0.10 + rnd(i * 3.9) * 0.18), (rnd(i * 4.4) - 0.5) * 0.35, 0));
+    }
+    // the beach drifted up against her: from over the foot of the broken floor out to the beach a metre and more off
+    {
+      const nx = Math.round((x1 - x0) / 0.12), nz = 8, pos = [], idx = [], uv = [];
+      for (let i = 0; i <= nx; i++)
+        for (let j = 0; j <= nz; j++) {
+          const x = x0 - 0.3 + (i / nx) * (x1 - x0 + 0.6), t = j / nz;
+          const hz = Math.max(0.05, Math.min(HOLD_HZ + 0.2, halfAtY(x, HOLD_Y) - 0.02));
+          const end = Math.min(1, Math.min(i, nx - i) / 4);                   // (it tapers into the beach at each end)
+          const out = 0.10 + t * (1.15 + 0.35 * Math.sin(x * 1.7 + sg));
+          const y = (0.15 + 0.05 * Math.sin(x * 3.1)) * (1 - Math.pow(t, 0.8)) * end - 0.06 + 0.012 * Math.sin(x * 9 + t * 7);
+          pos.push(x, y, sg * (hz + out));
+          uv.push(x / 1.6, out / 1.6);
+        }
+      for (let i = 0; i < nx; i++)
+        for (let j = 0; j < nz; j++) {
+          const a = i * (nz + 1) + j, b = (i + 1) * (nz + 1) + j;
+          if (sg > 0) idx.push(a, b + 1, b, a, a + 1, b + 1); else idx.push(a, b, b + 1, a, b + 1, a + 1);
+        }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx); g.computeVertexNormals();
+      const m = new THREE.Mesh(g, M.wetsand); m.name = 'tearDrift'; m.userData.noBake = true; HULL.add(m);
+    }
+  }
   // ---- torn planking along the ACTUAL edge of each tear ----------------
   for (const [sg, x0, x1, n] of [[1, BREACH_X0, BREACH_X1, 30]])
   for (let i = 0; i <= n; i++) {
@@ -2669,10 +2717,12 @@ export function makeShipwreck(opts = {}) {
       gr.position.set(Math.cos(a) * 0.575, Math.sin(a) * 0.575, 0); gr.rotation.z = a - Math.PI / 2;
       wheel.add(gr);
     }
-    wheel.add(cyl(0.048, 0.042, 0.30, 6, M.brass, 0, 0.575, 0));
-    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.020, 4, 10), M.brass)
+    /* the king spoke — the one you point at the stars — in the hub's own gold (2026-11-14, the owner: "make this lighter
+     * part of the steering wheel you point at the stars gold like the center of the steering wheel"; it was brass) */
+    wheel.add(cyl(0.048, 0.042, 0.30, 6, M.gold, 0, 0.575, 0));
+    wheel.add(new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.020, 4, 10), M.gold)
       .translateY(0.44).rotateY(Math.PI / 2));
-    wheel.add(new THREE.Mesh(new THREE.SphereGeometry(0.050, 7, 6), M.brass).translateY(0.72));
+    wheel.add(new THREE.Mesh(new THREE.SphereGeometry(0.050, 7, 6), M.gold).translateY(0.72));
     wheel.userData.noBake = true;
   }
 
@@ -3202,6 +3252,17 @@ export function makeShipwreck(opts = {}) {
       const cb = S.userData.catchBasket;
       cb.unit = { kind: 'basket', group: cb.group, x: cb.x, z: cb.z, ry: cb.ry, deck: false, lie: false, box: cb.box, pieces: [], floor: cb.lo, walk: true };
       BREAKABLE.push(cb.unit);
+    }
+    /* AND THE BENCHES AND THE CHAIRS (2026-11-14, the owner, with a picture of the quarters: "make this wood bench and
+     * chairs break as well"): the mess bench and its two chairs, and the hold's long bench and its chair — the tables'
+     * own way (`src: 'furniture'`, their own meshes, kind 'table' for the wood's break). Appended after the basket, so a
+     * save's unit numbers stay. */
+    for (const name of ['bench_4', 'chair_2', 'chair_3', 'bench_3', 'chair_5']) {
+      const e = PLAN.find((f) => f[0] === name); if (!e || !e.box || e.unit) continue;
+      const [, x, z, ry, , , o] = e;
+      const u = { kind: 'table', src: 'furniture', x, z, ry, deck: !!(o && o.deck), lie: false, box: e.box, pieces: [], floor: soleY(x, z) - 0.02, top: null };
+      e.unit = u;
+      BREAKABLE.push(u);
     }
     /* Stand them the moment the download lands. Every piece is CLONED —
      * `barrel_2` and `barrel_4` are each used twice and a mesh has one

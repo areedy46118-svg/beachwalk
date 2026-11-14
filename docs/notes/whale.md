@@ -1248,3 +1248,15 @@ with pick −1 gets one on its next tick. Never asked, he stays in 'dig' when yo
 'deal', so he does not come for it, and `wbBellyClear` counts 'dig' as not up, so the climb out is the heal. Probe
 `skrimNoDeal` (PB_PORT=4223): pick 5 before any blow; all twelve heaps broken HH nearest first, out of #5 last, stage
 'dig'; taken; walked back past him, no talk; climbed out → farewell true.
+
+## 2026-11-14 — a bottle and three crabs in Skrim's heaps
+The owner: "IN SKRIMS FLESH PILES ADD ONE WATER BOTTLE AND 3 HORSHOE CRABS ALL IN DIFFERENT PILES. LEAVE THE ARTIFACT AS
+IS." `SKQ_LOOT` ['water', 'crab', 'crab', 'crab'] over four of the twelve heaps (`skqLootPick`, after `skqBuild`): never
+the farthest back (the artifact's, `skqChoose`), a fixed shuffle (`mulberry32(14112026)`) off the piles alone so a
+checkpoint finds the same four (it was also excluding `SKQ.pick`, which a save can change). Broken (`skqBreak` →
+`skqLootOut`): it lies 0.6 m toward you off the heap's middle (± a quarter metre aside), on `skrimFloorW` — the crab by
+`crabRimSeat`, the bottle on its side — under `DROP_SHINE`, a slosh; `when: inWhale`; taken by `gainCrab` / `gainWater`
+(they stack); drawn only in the whale (`skqTick`). Saved: `skrimQ.lootTaken` (bits by heap) and `lootAt` (where each
+fell, so its pickup id — its place, `addInteractable` — is the same on a load); restored by `skqBuild`/`skqRestore` for
+every broken heap whose thing was not taken. Probe `skqLoot`: heaps 7, 0, 3 crabs and 1 the bottle, 5 the artifact;
+crabs 0 → 3, water 0 → 1.

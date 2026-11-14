@@ -531,3 +531,5 @@ folding a hot helper's time into its caller (the props' `step` hid `pushOutOfSol
   after `__adv(1)`, in the same task, to catch them.
 - On the samurai, `u.mixer.update` alone in a probe gives unreliable foot readings (his life/forest layers): judge his
   clips by his fight's own travel per clip, not a carried test.
+
+**ONE LAUNCH ENTRY (2026-11-14).** The owner removed the `beachwalk-test` (4199) entry from `.claude/launch.json`; only `beachwalk` (4173), his game, is left. Do not add a second one back: test headless with `tools/probe.sh` on a port of its own.

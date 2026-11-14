@@ -675,3 +675,12 @@ set him off; only `wellPhotoItem` ever could), and it leaves the pack and the ha
 - **The flash leaving**: `bunkerTenantry` kept the beach hidden for as long as `hatchBusy`, which runs half a second
   past the cut through the fade-in — measured, the frame black from the cut to t 1.23 and the whole beach popping in.
   Coming out, the cut is where you are outside. Measured after: brightness steady from the cut through the fade.
+
+## 2026-11-14 — a blow sounds like what it hit
+The owner: "hitting walls in the bunker have a [clang] sound effect make it match the textures hit". `bunkerBladeHit`
+judged by the room's box (past a side 'concrete', under the floor 'metal', any barred cell 'metal' or a desk's wood).
+Now it raycasts the model first (`_bkRc`, near 0.25 to the blade's reach; 418 meshes, 114k triangles, ≤ 1.1 ms) and the
+material names the surface (`BUNKER_SURF`): ACUnitNSafe, DoorsVents (the wall panels, vents, doors), MetalFloor,
+PultNPeripherals, ComputerNCam, TrashCanMat, TVsNshit, TvScreens, the lights → metal; WoodNPaper, Correspondence → wood;
+Wall, Roof → concrete. `Shadows` and `LightReflectd` (painted over what they shade) are passed through. The box is the
+fallback. Measured from the room's middle (`bunkerHit`): most of the walls in reach are DoorsVents — steel panels.

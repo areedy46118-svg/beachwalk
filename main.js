@@ -41,6 +41,7 @@ import { makeShell, SHELL_R } from './models/shotgun.js';   // the built double 
  * its first `await`, long before that line runs (and the save is read in between) — a `let` read from either is a dead-zone crash that takes the page. Every early hook into
  * him also asks `elvReady`, which the last line of his section sets. */
 let elvReady = false, elvStage = 0, elvJarGiven = false, elvGreeted = false, elvLand = false, elvAirK = 0, elvCarrying = false, elvLantern = false, elvSecK = 0;
+const ELV_FRIDGE_FULL = false;              // (his fridge is empty, the owner's word, 2026-11-14)
 let elvFridgeTaken = false;                  // the bottle out of his fridge (`buildHouseProps`), saved
 let equipQuiet = false;                // (a weapon back into your hand without its draw: after the puppet leaves your arms — up here, `toggleEquip` can run at load)
 let elvBurned = false;                 // the puppet went on the fire (`elvThrowPuppet`): what is left of him lies on it for good
@@ -52,11 +53,14 @@ function ez(z) { return z - BEACH_EXT; }   // a world z past the gap, as it was 
  * never touched; nothing at or before the hatch is touched either. */
 /* A THING RENAMED IS THE SAME THING (2026-11-13: the Gem Stone Ring is The Lucky Ring). The pack, its slots, the worn
  * rings and the hand are saved by name; an old name is read as the new one before anything looks. */
-const ITEM_RENAMED = { 'Gem Stone Ring': 'The Lucky Ring' };
+const ITEM_RENAMED = { 'Gem Stone Ring': 'The Lucky Ring', "Captain's Key": "Captain's Chest Key" };   // (and its pickup: `PICKUP_RENAMED`)
+const PICKUP_RENAMED = [["Take the Captain's Key@", "Take the Captain's Chest Key@"]];
 function migrateItemNames(d) {
   const re = (n) => (typeof n === 'string' && ITEM_RENAMED[n]) || n;
   for (const k of ['pack', 'slots', 'worn']) if (Array.isArray(d[k])) d[k] = d[k].map(re);
   if (typeof d.held === 'string') d.held = re(d.held);
+  // a pickup's id is its label and its place: a renamed thing's taken-list entry follows its name
+  if (Array.isArray(d.took)) d.took = d.took.map((id) => { if (typeof id !== 'string') return id; for (const [a, b] of PICKUP_RENAMED) if (id.startsWith(a)) return b + id.slice(a.length); return id; });
 }
 function migrateSave(d) {
   if (!d || typeof d !== 'object') return d;
@@ -10073,7 +10077,7 @@ noteEl.addEventListener('click', closeNote);
 // little scene on top of everything, like the first-person hand.
 // ------------------------------------------------------------------
 const inspectEl = document.getElementById('inspect');
-const INSPECT_HINT = 'Hold right-click to turn it over  ·  scroll to zoom  ·  click to put it away';
+const INSPECT_HINT = 'Move the mouse to turn it over  ·  scroll to zoom  ·  click to put it away';
 const inspectScene = new THREE.Scene();
 inspectScene.background = new THREE.Color(0x05070e);
 const inspectCamera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
@@ -10152,9 +10156,8 @@ function closeInspect() {
   refreshUI();
   if (inspectReturnLock && !fallbackLook) regainLook();
 }
-// Hold the RIGHT button to turn the object over; the LEFT button puts it
-// away. Keeping the two on separate buttons means you can never spin the
-// thing by accident while trying to leave, or leave while trying to spin.
+// The object turns with the mouse (no button: 2026-11-14); the LEFT button puts it away. The right button still
+// does nothing but its old drag, which is the same turning.
 {
   let idrag = false, lastX = 0, lastY = 0;
   inspectEl.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -10166,12 +10169,22 @@ function closeInspect() {
       inspectEl.setPointerCapture(e.pointerId);
     }
   });
+  /* AND IT TURNS WITH THE MOUSE, NO BUTTON HELD (2026-11-14, the owner: "when inspecting an item make it so you dont have
+   * to right click to move it around just have it follow your cursor already then have it left click to exit like how it
+   * is"). Every move turns it — by the move itself (`movementX/Y`, which the locked cursor's re-sent events carry, so it
+   * keeps turning at the screen's edge) or, without a lock, by how far the cursor went. Left click still puts it away. */
+  let iFresh = true;
   inspectEl.addEventListener('pointermove', (e) => {
-    if (!idrag) return;
-    inspectRotY += (e.clientX - lastX) * 0.01;
-    inspectRotX += (e.clientY - lastY) * 0.01;
+    if (!inspecting) { iFresh = true; return; }
+    let dx = e.movementX, dy = e.movementY;
+    if (!dx && !dy) { dx = iFresh ? 0 : e.clientX - lastX; dy = iFresh ? 0 : e.clientY - lastY; }
+    iFresh = false; lastX = e.clientX; lastY = e.clientY;
+    if (e.target && e.target.closest && e.target.closest('.idesc') && !idrag) return;   // (reading the description is not turning it)
+    if (!dx && !dy) return;
+    inspectAuto = 0;
+    inspectRotY += dx * 0.01;
+    inspectRotX += dy * 0.01;
     inspectRotX = Math.max(-Math.PI, Math.min(Math.PI, inspectRotX));
-    lastX = e.clientX; lastY = e.clientY;
   });
   const endDrag = (e) => {
     if (!idrag) return;
@@ -15605,10 +15618,32 @@ function digImpactCore() {
  * as they always were. */
 const _bhP = new THREE.Vector3(), _bhN = new THREE.Vector3();
 let deskWoodAt = null;                   // set by the desk, thousands of lines below
+/* WHAT THE BLADE MEETS IN THE BUNKER IS WHAT IS DRAWN THERE (2026-11-14, the owner: "hitting walls in the bunker have a
+ * [clang] sound effect make it match the textures hit"). The room was judged by its box — past its sides 'concrete', under
+ * its floor 'metal', and anything the walk is barred from 'metal' or a desk's wood — whatever was actually drawn there.
+ * Now the aim is raycast on the model (114k triangles, under a millisecond a swing) and the MATERIAL it meets says what
+ * it is: the vents, doors and wall panels, the consoles, the safe and the floor plate are steel; the desks and papers
+ * wood; the bare walls and roof concrete. The box is the fallback where the ray finds nothing. */
+const BUNKER_SURF = { ACUnitNSafe: 'metal', DoorsVents: 'metal', MetalFloor: 'metal', PultNPeripherals: 'metal', ComputerNCam: 'metal',
+  TrashCanMat: 'metal', TVsNshit: 'metal', TvScreens: 'metal', LightNTransparency: 'metal', LightReflectd: 'metal',
+  WoodNPaper: 'wood', Correspondence: 'wood', Wall: 'concrete', Roof: 'concrete', Shadows: 'concrete' };
+const _bkRc = new THREE.Raycaster();
 function bunkerBladeHit() {
   if (!inBunker) return null;
   const g = inBunker.group, B = g.userData.bunker;
   if (!B || !B.nav || !B.ready) return null;
+  {
+    _bkRc.set(_aimO, _aimD); _bkRc.near = 0.25; _bkRc.far = digRay.far;
+    const mOf = (q) => [].concat(q.object.material)[q.face.materialIndex || 0] || q.object.material;
+    const h = _bkRc.intersectObject(g, true).find((q) => q.object.visible && q.face && !/^(Shadows|LightReflectd)$/.test(mOf(q).name));   // (painted shadows and reflections lie over what they shade)
+    if (h) {
+      const mt = mOf(h);
+      const surface = BUNKER_SURF[mt && mt.name] || 'concrete';
+      const n = h.face.normal.clone().transformDirection(h.object.matrixWorld);
+      if (n.dot(_aimD) > 0) n.negate();
+      return { point: h.point.clone(), distance: h.distance, surface, n };
+    }
+  }
   const R = B.nav.room, step = 0.10;
   for (let t = 0.30; t <= digRay.far; t += step) {
     _bhP.copy(_aimO).addScaledVector(_aimD, t);
@@ -17509,7 +17544,7 @@ function finishExtraction() {
   const jarName = inspectEl.querySelector('.iname');
   if (jarName) { jarName.textContent = 'Jar of blue blood'; jarName.style.display = ''; }
   inspectEl.querySelector('.hint').textContent =
-    'Hold right-click to turn it · click to put it away';
+    'Move the mouse to turn it · click to put it away';
 }
 
 // ------------------------------------------------------------------
@@ -20858,7 +20893,7 @@ function makeGemIcon() {
 const LUCK_P = 0.18, LUCK_GAP = 5;
 const gemItem = {
   id: 'gemring', name: 'The Lucky Ring', icon: makeGemIcon(), ring: true,
-  desc: 'Gives random chance of enemy hit doing no damage.',
+  desc: 'Gives random chance of an enemy hit doing no damage.',   // ("an" added 2026-11-14, the owner)
   use: () => toggleEquip(gemItem),
   inspectOpts: () => ({
     rotX: 0.85, rotY: 0.30,
@@ -27229,7 +27264,7 @@ function makeBoatKeyIcon() {
  * thing you could not do with the key was hold it. Inspect has its own
  * button and reaches the same model through `inspectModel`. */
 const boatKeyItem = {
-  id: 'boatkey', name: "Captain's Key", desc: 'Off the hook over her hold', icon: makeBoatKeyIcon(),
+  id: 'boatkey', name: "Captain's Chest Key", desc: '', icon: makeBoatKeyIcon(),   // ("Captain's Key" / 'Off the hook over her hold' until 2026-11-14, the owner: "make the key on the shipwreck be called 'Captain's Chest Key' no description"; old saves: `ITEM_RENAMED`)
   use: () => toggleEquip(boatKeyItem),
 };
 holdable(boatKeyItem, boatKey, { scale: 3.0, pos: [0, -0.04, 0.02], rot: [0.3, 0.6, 0.2] });
@@ -27241,17 +27276,28 @@ let boatKeyTaken = false;
  * the key already taken (or spent in the chest) takes it off the hook and
  * nothing else. */
 let basketRock = 0;
+/* THE KEY IS LOWERED, AND YOU WATCH IT (2026-11-14, the owner: "show a cutscene of the key being lowered after the boat
+ * puzzle is complete"). It fell under gravity the instant the last star set, behind you if you were looking at the
+ * stars. Now: the lens comes round off the stars onto it on the hook and draws in (`keyCut` with `ship`, the
+ * snorkeler's way — the camera turned, never moved), the hook lets it down on a line, slowly, turning, into the basket
+ * (`keyLower`), it settles, and the lens holds on it a moment before it hands you back. A restore still just drops it. */
+let keyLower = null, keyLine = null;
 function dropShipKey() {
-  if (keyFall >= 0) return;
-  keyFall = 0;
-  if (boatKeyTaken) { if (boatKey.parent) boatKey.parent.remove(boatKey); dropShine(boatKey); return; }
+  if (keyFall >= 0 || keyLower) return;
+  if (boatKeyTaken) { keyFall = 0; if (boatKey.parent) boatKey.parent.remove(boatKey); dropShine(boatKey); return; }
   boatKey.updateMatrixWorld(true);
   scene.attach(boatKey);
+  if (!applyingSave && !replaying && !restore) {
+    keyLower = { t: -0.55, T: 3.2, from: boatKey.position.clone(), q: boatKey.quaternion.clone() };
+    if (held) dropHeld();
+    hovered = null; setPrompt('');
+    keyCut = { t: 0, hold: 0, fov: Math.min(settings.fov, 46), ship: true };
+  } else keyFall = 0;
   sfxLockerOpen();
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy'; hit.visible = false; boatKey.add(hit);
-  addInteractable(boatKey, "Take the Captain's Key", 'inventory', { keepSize: true, onActivate: takeShipKey });
+  addInteractable(boatKey, "Take the Captain's Chest Key", 'inventory', { keepSize: true, onActivate: takeShipKey });
 }
 function takeShipKey() {
   if (boatKeyTaken) return;
@@ -27293,6 +27339,38 @@ const _keyV = new THREE.Vector3();
 function updateShipKey(dt) {
   const cbAll = shipwreck.userData.catchBasket, cb = cbAll && !cbAll.broken ? cbAll : null;
   shipBreakWalk();
+  updateShipKeyCut(dt);
+  if (keyLower && !boatKeyTaken && boatKey.parent) {
+    const L = keyLower; L.t += dt;
+    const bx = cb ? SHIP_X + cb.x : L.from.x, bz = cb ? SHIP_Z + cb.z : L.from.z;
+    const bed = cbAll && cbAll.broken ? shipKeyBed(bx, bz) : -Infinity;
+    const floorY = Math.max((cb ? cb.floor : cbAll ? cbAll.lo + 0.02 : SHIP_Y_FLOOR) + 0.012, bed + 0.012);
+    const u = Math.max(0, Math.min(1, L.t / L.T)), e = u * u * (3 - 2 * u);
+    // down on its line: slow off the hook, steady, eased onto the basket; turning a little on the line, swinging less as it goes
+    const k = boatKey.position;
+    k.set(L.from.x + (bx - L.from.x) * e + Math.sin(L.t * 2.3) * 0.025 * (1 - u), L.from.y + (floorY + 0.09 - L.from.y) * e,
+      L.from.z + (bz - L.from.z) * e + Math.cos(L.t * 1.9) * 0.02 * (1 - u));
+    boatKey.quaternion.copy(L.q); boatKey.rotateY(Math.sin(L.t * 1.4) * 0.5 * (1 - u));
+    // the line from the hook to its bow
+    if (!keyLine) {
+      keyLine = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 1, 4), new THREE.MeshStandardMaterial({ color: 0x3a342c, roughness: 0.9, metalness: 0, emissive: 0x1a1612 }));
+      keyLine.raycast = () => {}; scene.add(keyLine);
+    }
+    keyLine.visible = true;
+    _keyV.set(k.x, k.y + 0.09, k.z);
+    const len = Math.max(0.01, L.from.y + 0.12 - _keyV.y);
+    keyLine.position.set((L.from.x + _keyV.x) / 2, _keyV.y + len / 2, (L.from.z + _keyV.z) / 2); keyLine.scale.set(1, len, 1);
+    if (L.t >= L.T) {
+      // down: it lets go of the line and lies flat in the basket
+      keyLower = null; keyLine.visible = false;
+      boatKey.position.set(bx, floorY, bz);
+      boatKey.rotation.set(-Math.PI / 2, 0, 0.6);
+      keyFall = 4.01;                                   // (as if it had fallen and settled: `updateShipKey` keeps it on the pieces)
+      sfxThud(0.03);
+      if (cb) { sfxPropHit('metal', 3); basketRock = 0.4; }
+    }
+    return;
+  }
   if (cb && basketRock > 0) {
     basketRock = Math.max(0, basketRock - dt);
     const k = basketRock / 0.9;
@@ -31783,7 +31861,7 @@ function snorkThrowKey() {
 }
 const _kcM = new THREE.Matrix4(), _kcQ = new THREE.Quaternion(), _kcP = new THREE.Vector3();
 function updateKeyCut(dt) {
-  const C = keyCut; if (!C) return;
+  const C = keyCut; if (!C || C.ship) return;   // (the ship's is `updateShipKeyCut`)
   C.t += dt;
   const F = snorkKey.fly, W = snorkKey.world;
   let rate;
@@ -31802,6 +31880,42 @@ function updateKeyCut(dt) {
   camera.quaternion.slerp(_kcQ, Math.min(1, dt * rate));
   if (C.hold > 1.8 || C.t > 9) { keyCut = null; hovered = null; }
 }
+/* THE SHIP'S KEY, SEEN (2026-11-14). From the helm the wheel stands between you and the hook — the lens turned onto it
+ * and drew in on the wheel. So it is a cut, through a camera of its own (`shipKeyCam`, drawn instead of yours by the
+ * frame): you are not moved — at the helm the bridge holds you in, and a body carried out onto the deck and back was
+ * dragged back into the wheelhouse wall. A blink of black; the camera stands on her deck beside the hatch, aft of the
+ * hook, and watches the key come down on its line into the hold and settle in the basket; a blink, and it is your eyes
+ * again, at the helm, looking where you were. */
+let shipKeyCam = null;
+function updateShipKeyCut(dt) {
+  const C = keyCut; if (!C || !C.ship) return;
+  if (!C.vp) {
+    shipwreck.updateMatrixWorld(true);
+    const kl = shipwreck.worldToLocal(boatKey.getWorldPosition(new THREE.Vector3()));
+    const zs = kl.z <= 0 ? 1 : -1;
+    C.vp = shipwreck.localToWorld(new THREE.Vector3(kl.x + 1.5, SN.DECK_Y + 1.62, zs * 2.5));
+    C.blink = 0.14;
+    if (!shipKeyCam) shipKeyCam = new THREE.PerspectiveCamera(50, camera.aspect, camera.near, camera.far);
+    shipKeyCam.position.copy(C.vp);
+    boatKey.getWorldPosition(_kcP); shipKeyCam.lookAt(_kcP);
+  }
+  C.t += dt;
+  const end = C.hold > 1.3 || C.t > 9;
+  if (end && !C.backAt) C.backAt = C.t;
+  const blink = C.t < C.blink || (C.backAt && C.t - C.backAt < C.blink);
+  blackoutEl.style.opacity = blink ? '1' : '0';
+  C.live = !C.backAt;                                   // (the frame draws `shipKeyCam` while this is set)
+  if (C.backAt) { if (C.t - C.backAt >= C.blink) { blackoutEl.style.opacity = '0'; keyCut = null; hovered = null; } return; }
+  shipKeyCam.aspect = camera.aspect; shipKeyCam.fov = keyLower ? 38 : 28;
+  shipKeyCam.fov += 0; shipKeyCam.updateProjectionMatrix();
+  if (!keyLower) C.hold += dt;
+  boatKey.getWorldPosition(_kcP); _kcP.y += 0.04;
+  _kcM.lookAt(shipKeyCam.position, _kcP, _dUPk);
+  _kcQ.setFromRotationMatrix(_kcM);
+  shipKeyCam.quaternion.slerp(_kcQ, Math.min(1, dt * 6));
+  shipKeyCam.updateMatrixWorld(true);
+}
+const _dUPk = new THREE.Vector3(0, 1, 0);
 function updateSnorkKey(dt) {
   const K = snorkKey;
   updateKeyCut(dt);
@@ -41384,6 +41498,13 @@ function landFloat(g) {
   deep.spotT = 0;
   rod.st = 'down'; rod.wet = g.wet; rod.surface = g.y; rod.bobT = 0; rod.nibWait = 5 + Math.random() * 9;
   rod.pos.y = g.y;
+  /* AND A FLOAT CAST ON HIM HAILS HIM (2026-11-14, the owner: "make throwing the fishing line at the snorkeler prompt the
+   * dialog too"): the same as a thing thrown near him — inside 3.2 m, in the water — he comes up and talks; met already
+   * and treading water, he talks again */
+  if (g.wet && !dialogOpen && Math.hypot(rod.pos.x - SNORK_X, rod.pos.z - SNORK_Z) < 3.2) {
+    if (!snorkMet && snorkWant === 0) { snorkMet = true; snorkWant = 1; snorkTalkT = 0.7; spawnSplash(SNORK_X, SNORK_Z, 26, 0, 0, 1.6); sfxSplash(1.5); }
+    else if (snorkMet && snorkTalkT <= 0) snorkTalkT = 0.45;
+  }
   if (g.wet) {
     spawnSplash(rod.pos.x, rod.pos.z, 9, 0, 0, 0.45, g.y);
     if (!playSampleAt('wade', rod.pos.x, rod.pos.z, { gain: 0.9, ref: 7, far: 60, rate: 1.35, lpFar: 1200 })) sfxSplash(0.35);
@@ -47010,7 +47131,7 @@ function reseatQuestItems(d) {
   const screwsLeft = (f.billyScrews || 0) !== 15 || (!f.grateOff && (f.grateScrews || 0) !== 15);
   if (!has(screwdriverItem.name) && screwsLeft && Array.isArray(d.took)) d.took = d.took.filter((id) => !id.startsWith('Take the screwdriver'));
   if (!has(boatKeyItem.name) && !f.chest && !f.holdDoor && Array.isArray(d.took)) {
-    d.took = d.took.filter((id) => !id.startsWith("Take the Captain's Key"));
+    d.took = d.took.filter((id) => !id.startsWith("Take the Captain's Chest Key") && !id.startsWith("Take the Captain's Key"));
     f.boatKey = false;
     boatKeyTaken = false;                // (an old save's migration may have set it, for a key it no longer carries)
   }
@@ -48465,14 +48586,15 @@ function animateFrame() {
   if (slamDip) camera.position.y -= slamDip;
   cullUnitModels();
   const _fm = farMaskBegin();
-  renderer.render(scene, camera);
+  const _cutCam = keyCut && keyCut.ship && keyCut.live && shipKeyCam ? shipKeyCam : null;   // (the ship's key, seen from her deck: `updateShipKeyCut`)
+  renderer.render(scene, _cutCam || camera);
   farMaskEnd(_fm);
   if (slamDip) camera.position.y += slamDip;
   if (hPitch) camera.rotateX(-hPitch);
   if (hRoll) camera.rotateZ(-hRoll);
   renderer.autoClear = false;
   // a film has nobody's hands in it: the whale's farewell is shown without what you are holding
-  if ((viewmodel.visible || elvCarrying || sewPlank === 1) && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t >= CRAB_T.cut)) {   // (and the puppet in your arms, which is not a held item)
+  if (!_cutCam && (viewmodel.visible || elvCarrying || sewPlank === 1) && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t >= CRAB_T.cut)) {   // (and the puppet in your arms, which is not a held item)
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);
   }
@@ -52672,6 +52794,8 @@ const UPGRADE_ROWS = [
 ];
 /* AND HE BUYS. The same list and the same pane: what he will take off you,
  * how many you have, and what he gives for one. A fang is a jar. */
+const SELL_SHELL = () => inventory.find((it) => it && it.id === 'shell');
+const SHELL_SELL_STUB = { id: 'shell', name: 'Sea shell', icon: SHELL_ICON };
 const SELL_ROWS = [
   { key: 'fang', item: () => fangItem, name: 'Mutant Fang', price: 1, sum: 'Pulled off the mutants',
     count: () => (inventory.includes(fangItem) ? fangItem.count || 0 : 0),
@@ -52699,6 +52823,11 @@ const SELL_ROWS = [
   { key: 'glow', item: () => glowstickItem, name: 'Glowstick', price: 1, sum: 'One jar each',
     count: () => (inventory.includes(glowstickItem) ? glowstickItem.count || 1 : 0),
     desc: 'Crack it for a light you can carry underground.' },
+  /* (2026-11-14, the owner: "make shells sell for 1 jar": the sea shells off the beach — each one its own item, so the
+   * count is how many are in the pack and a sale takes the first) */
+  { key: 'seashell', item: () => inventory.find((it) => it && it.id === 'shell') || SHELL_SELL_STUB, name: 'Sea shell', price: 1, sum: 'One jar each',
+    count: () => inventory.filter((it) => it && it.id === 'shell').length,
+    desc: 'A shell off the beach. Hold it to your ear. Or sell it.' },
   { key: 'water', item: () => waterBottleItem, name: 'Bottle of water', price: 1, sum: 'One jar each',
     count: () => (inventory.includes(waterBottleItem) ? waterBottleItem.count || 0 : 0),
     desc: 'Drink it and it heals you fully. They stack in one slot.' },
@@ -52775,6 +52904,10 @@ function traderSell(key) {
     elvStage = 6;                       // sold: no bed, no arms, no fire (saved as it is)
     gainJar(r.price);
     traderSaid = 'He blinked. I saw him blink. Ten jars, and get your hands off him.';
+  } else if (key === 'seashell') {
+    const it = SELL_SHELL(); if (it) removeFromInventory(it);
+    gainJar(r.price);
+    traderSaid = SELL_SHELL() ? 'More shells. The beach is full of them, you know.' : 'A shell. One jar. Hold it to your ear on your own time.';
   } else if (key === 'water') {
     sellFromStack(waterBottleItem);
     gainJar(r.price);
@@ -52958,6 +53091,7 @@ bwGlb('assets/trader.glb', (gltf) => {
       o.userData.bind = o.quaternion.clone();
       const n = o.name.replace(/_\d+$/, '');
       if (/^(upper_arm|forearm|hand|shoulder)[LR]$/.test(n)) (traderBones = traderBones || {})[n] = o;
+      if (/^(f_(index|middle|ring|pinky)|thumb)0[123]R$|^spine(00[0-6])?$|^palm0[1-4]R$/.test(n)) (traderBones = traderBones || {})[n] = o;   // (the right hand's fingers and the spine: the grip and the body the arm must clear — three strips the dots from the names)
     }
     if (!o.isMesh) return;
     o.frustumCulled = false;                       // a skinned box is the bind pose
@@ -53060,12 +53194,10 @@ function traderStruck(which, at) {
   playSample('fleshHit', 0.85, 0.05, 0.75); addTrauma(0.12); hitstop = Math.max(hitstop, 0.04);
   /* (2026-11-14, the owner: "make his 'touch me again' line look like real dialog we have in game": his own card, the
    * Rude Trader's, typed like every other line in the game, the lens in on his face; it ends on its own) */
-  if (R.n === 1) {
-    if (!dialogOpen && introDone) startDialog('touch', Object.assign({}, TRADER_NPC, { sprite: which === 2 ? trader2World : traderWorld,
-      script: { touch: { text: "Touch me again and I'll fucking kill you.", choices: [], hint: '', end: 2600 } } }));
-    else bossLine("Touch me again and I'll fucking kill you.");
-    return;
-  }
+  /* (AFTER YOUR SWING, NOT IN IT — 2026-11-14, the owner: "hitting the merchant lagged my inventory and made my weapon
+   * glitch off screen". The dialog opened on the blow's own frame, and a dialog freezes the world: the swing stopped at
+   * 0.48 s of itself with the weapon hidden, and came back from that pose when the card went. It waits for the swing.) */
+  if (R.n === 1) { R.linePending = which; R.lineT = 0; return; }
   // the gun: out of his coat and on your face, now
   R.busy = true; R.t = 0;
   if (magReady) {
@@ -53093,29 +53225,114 @@ function sfxTraderDraw() {
   const g = ctx.createGain(); g.gain.value = 0.32;
   n.connect(bp).connect(g).connect(out); n.start(t); n.stop(t + 0.32);
 }
-// where it is: from his hip up to arm's length at your eyes, the barrel on you (its own -Z is the barrel, as in your hand)
+/* IN HIS HAND, HIS ARM OUT AT YOUR HEAD (2026-11-14, the owner: "make the merchant actually hold the gun in his hand
+ * give him a good animation where he pulls it out and has his arm stuck out aiming at your head"). His right arm comes
+ * out of its fold — the upper arm turned so the bone points at your head, the forearm and hand straightened along it,
+ * each blended from the crossed-arms pose over the draw with an ease that snaps out and settles — and the .44 rides his
+ * hand (the model hangs from its grip: `magModel`'s origin), its barrel on you. The castle's man is a baked copy with no
+ * bones: for this, the live rig is carried into his place and the copy hidden (you do not live to see it go back). The
+ * kick throws the arm up (the aim lifted 0.9 m for an instant) and the gun with it. A rig-less fallback floats it. */
+const _taA = new THREE.Vector3(), _taB = new THREE.Vector3(), _taX = new THREE.Vector3(), _taP = new THREE.Quaternion(), _taW = new THREE.Quaternion(), _taR = new THREE.Quaternion();
+function traderArmAim(k, kick) {
+  const B = traderBones, R = TRADER_RAGE;
+  if (!B || !B.upper_armR || !B.forearmR || !traderRig) return false;
+  if (R.which === 2 && traderRig.parent !== trader2World) {
+    for (const o of trader2World.children.slice()) if (o !== trader2Hit) o.visible = false;
+    trader2World.add(traderRig);
+  }
+  const ua = B.upper_armR, fa = B.forearmR, ha = B.handR;
+  if (!R.arm0) R.arm0 = { ua: ua.quaternion.clone(), fa: fa.quaternion.clone(), ha: ha ? ha.quaternion.clone() : null };
+  traderRig.updateMatrixWorld(true);
+  ua.getWorldPosition(_taA);
+  _taB.copy(camera.position); _taB.y += kick * 0.9 - 0.05;
+  _taB.sub(_taA).normalize();
+  /* (NOT ACROSS HIS OWN CHEST — 2026-11-14, "make sure the merchants arms doesnt clip through his body": the line is held
+   * to his right of his own front — from 20° toward his left round to 80° to his right; stood off to his left, he points
+   * as far as a right arm can without going through him) */
+  {
+    const W = traderRig.parent; W.getWorldQuaternion(_taP);
+    _taX.copy(_taB).applyQuaternion(_taR.copy(_taP).invert());          // into his frame (front +Z, his right −X)
+    const a = Math.atan2(_taX.x, _taX.z), ac = THREE.MathUtils.clamp(a, -1.4, 0.35), h = Math.hypot(_taX.x, _taX.z);
+    if (ac !== a) { _taX.x = Math.sin(ac) * h; _taX.z = Math.cos(ac) * h; _taB.copy(_taX).applyQuaternion(_taP); }
+  }
+  ua.parent.getWorldQuaternion(_taP);
+  _taW.copy(_taP).multiply(ua.userData.bind);                       // the upper arm at its bind, in the world
+  _taX.set(0, 1, 0).applyQuaternion(_taW);                           // (a bone runs along its own +Y)
+  _taR.setFromUnitVectors(_taX, _taB).multiply(_taW);                // turned onto you
+  _taR.premultiply(_taP.invert());                                   // and back into its parent's frame
+  ua.quaternion.slerpQuaternions(R.arm0.ua, _taR, k);
+  fa.quaternion.slerpQuaternions(R.arm0.fa, fa.userData.bind, k);
+  if (ha) ha.quaternion.slerpQuaternions(R.arm0.ha, ha.userData.bind, k);
+  traderGrip();
+  traderRig.updateMatrixWorld(true);
+  return true;
+}
+/* HIS HAND CLOSED ON THE GRIP. Each finger's three joints curled about their own X, the thumb about whichever of its axes
+ * closes it; WHICH WAY closes them is measured, once — the way that brings the fingers' last joints nearest the palm —
+ * not reasoned (a sign on a bone has been wrong in this file before). The grip sits in the palm (`traderPalm`). */
+const TRADER_CURL = { f_index: [1.05, 1.25, 0.8], f_middle: [1.1, 1.3, 0.8], f_ring: [1.15, 1.3, 0.8], f_pinky: [1.2, 1.3, 0.8] };
+function traderPalm(out) {
+  const B = traderBones; B.handR.getWorldPosition(out);
+  if (B.f_middle01R) out.lerp(B.f_middle01R.getWorldPosition(_taX), 0.7);
+  return out;
+}
+function traderGrip() {
+  const B = traderBones, R = TRADER_RAGE; if (!B.f_index01R) return;
+  const set = (sgn, tAx, tSg) => {
+    for (const f in TRADER_CURL) for (let j = 0; j < 3; j++) { const b = B[f + '0' + (j + 1) + 'R']; if (b) b.quaternion.copy(b.userData.bind).multiply(_taR.setFromAxisAngle(_taX.set(1, 0, 0), sgn * TRADER_CURL[f][j])); }
+    for (let j = 0; j < 3; j++) { const b = B['thumb0' + (j + 1) + 'R']; if (b) b.quaternion.copy(b.userData.bind).multiply(_taR.setFromAxisAngle(tAx === 'x' ? _taX.set(1, 0, 0) : _taX.set(0, 0, 1), tSg * [0.35, 0.6, 0.5][j])); }
+  };
+  if (!R.curl) {
+    // (measured: each way tried, and the fingertips' and the thumb's distance to the palm read)
+    const dist = (names) => { traderRig.updateMatrixWorld(true); const pc = traderPalm(new THREE.Vector3()); let d = 0; for (const n of names) d += B[n].getWorldPosition(_taA).distanceTo(pc); return d; };
+    const tips = ['f_index03R', 'f_middle03R', 'f_ring03R', 'f_pinky03R'].filter((n) => B[n]);
+    let best = null;
+    for (const sg of [1, -1]) { set(sg, 'x', 0); const d = dist(tips); if (!best || d < best.d) best = { d, sg }; }
+    let tb = null;
+    for (const [ax, ts] of [['x', 1], ['x', -1], ['z', 1], ['z', -1]]) { set(best.sg, ax, ts); const d = dist(['thumb03R'].filter((n) => B[n])); if (!tb || d < tb.d) tb = { d, ax, ts }; }
+    R.curl = { sg: best.sg, ax: tb.ax, ts: tb.ts };
+  }
+  set(R.curl.sg, R.curl.ax, R.curl.ts);
+}
 function traderGunPose(u, kick = 0) {
   const g = TRADER_RAGE.gun; if (!g) return;
+  const cam = camera.position;
+  const e = Math.min(1, u), k = e < 1 ? 1 - Math.pow(1 - e, 3) * (1 - 0.35 * Math.sin(e * Math.PI)) : 1;   // (out fast, a touch past, settled)
+  if (traderArmAim(Math.min(1, k), kick)) {
+    traderPalm(g.position);                                            // (the grip in his palm)
+    // (sized to a hand, a .44 about 0.32 m long: the rig was fitted to `MAG_LEN` — a box can't say, its split parts share
+    // one position attribute and `setFromObject` measures the whole file, rounds and all, and shrank it to nothing)
+    if (!TRADER_RAGE.gunK) TRADER_RAGE.gunK = 0.32 / MAG_LEN;
+    g.lookAt(_taA.copy(g.position).multiplyScalar(2).sub(cam));     // (+Z away from you)
+    g.rotateY(Math.PI / 2);                                           // (the model's barrel is its +X: the muzzle on you)
+    g.rotateZ(kick * 0.55);
+    g.scale.setScalar(TRADER_RAGE.gunK);
+    return;
+  }
   const W = TRADER_RAGE.which === 2 ? trader2World : traderWorld;
   W.getWorldPosition(_trA);
-  const cam = camera.position;
   _trB.set(cam.x - _trA.x, 0, cam.z - _trA.z).normalize();             // toward you
   const side = new THREE.Vector3(-_trB.z, 0, _trB.x);
-  const k = 1 - Math.pow(1 - Math.min(1, u), 3);
   const hip = new THREE.Vector3(_trA.x, _trA.y + 0.85, _trA.z).addScaledVector(side, 0.34).addScaledVector(_trB, 0.05);
   const aim = new THREE.Vector3(_trA.x, _trA.y + 1.5, _trA.z).addScaledVector(side, 0.12).addScaledVector(_trB, 0.62);
   g.position.lerpVectors(hip, aim, k);
-  g.position.y += Math.sin(Math.min(1, u) * Math.PI) * 0.12;            // (an arc up, not a slide)
-  const T = TRADER_RAGE.t;
-  if (u >= 1 && !kick) g.position.y += Math.sin(T * 7) * 0.006;         // (held on you, breathing)
-  g.position.addScaledVector(_trB, -0.07 * kick);                         // (the kick: back into his hand…)
-  g.lookAt(_trA.copy(g.position).multiplyScalar(2).sub(cam));         // (+Z away from you)
-  g.rotateY(Math.PI / 2);                                              // (and the model's barrel is its +X: a quarter turn puts the muzzle on you — measured, it came up side-on)
-  g.rotateZ((1 - k) * -1.3 + kick * 0.55);                              // (muzzle down at his hip, coming up; …and up)
+  g.position.addScaledVector(_trB, -0.07 * kick);
+  g.lookAt(_trA.copy(g.position).multiplyScalar(2).sub(cam));
+  g.rotateY(Math.PI / 2);
+  g.rotateZ((1 - k) * -1.3 + kick * 0.55);
   g.scale.setScalar(1.15);
 }
 function traderRageTick(dt) {
-  const R = TRADER_RAGE; if (!R.busy || dying) return;
+  const R = TRADER_RAGE;
+  if (R.linePending && !dying) {
+    R.lineT += dt;
+    if ((digT <= 0 || R.lineT > 1.5) && !dialogOpen && !frozen() && introDone) {
+      const which = R.linePending; R.linePending = 0;
+      startDialog('touch', Object.assign({}, TRADER_NPC, { sprite: which === 2 ? trader2World : traderWorld,
+        script: { touch: { text: "Touch me again and I'll fucking kill you.", choices: [], hint: '', end: 2600 } } }));
+    } else if (R.lineT > 4) { R.linePending = 0; bossLine("Touch me again and I'll fucking kill you."); }
+  }
+  if (!R.busy || dying) return;
   R.t += dt;
   const tf = TRADER_DRAW + TRADER_HOLD;
   if (!R.cocked && R.t >= TRADER_DRAW - 0.12) { R.cocked = true; const W = R.which === 2 ? trader2World : traderWorld; W.getWorldPosition(_trA); sfxAt(_trA.x, _trA.z, () => sfxMagShut(), { ref: 4 }); }
@@ -94516,7 +94733,14 @@ wellG.rotation.set(0.025, 0.6, -0.015);   // settled a shade, and turned so the 
 scene.add(wellG);
 farProps.push({ obj: wellG, z: WELL_Z, d: 260 });
 const wellParts = { bucket: null, handle: null, bolts: null, crank: null, rope: null, myRope: null };
-const WELL_BUCKET_LIFT = 0.44;         // the bucket wound up to the axle (authored, it hung in the mouth)
+/* THE BUCKET HANGS FROM THE DRUM, ON ITS ROPE (2026-11-14, the owner, with a picture: "fix this bucket it isnt even on
+ * the rope right"). Raised 0.44 it was jammed up into the windlass — its handle 17 cm over the drum's underside, the axle
+ * through it — and the model's own rope, still where it was authored for a bucket in the mouth, hung out under it.
+ * Measured in the model's frame (`wellBucket`): the drum's underside 0.356 (the authored rope's top), the handle's top
+ * 0.082 as authored. Raised 0.19 the handle hangs 8 cm under the drum, and OUR rope runs between them from the start
+ * (`wellSetBucket(0)`); the authored one is hidden. */
+const WELL_BUCKET_LIFT = 0.12;         // the bucket wound up under the drum (authored, it hung in the mouth; 0.44 until 2026-11-14)
+const WELL_DRUM_Y = 0.30, WELL_HANDLE_TOP = 0.082 + WELL_BUCKET_LIFT;   // (the drum: under its coil, which reaches 0.356)
 const WELL_BUCKET_Y0 = -0.17 + WELL_BUCKET_LIFT;   // its bottom, where it hangs
 /* THE SHAFT IS THE PARAPET'S WIDTH (2026-10-12). The ring has two inward
  * faces: its stone parapet at r 0.43 and, inside that, a narrow tube at
@@ -94810,6 +95034,21 @@ bwGlb('assets/well.glb', (gltf) => {
   wellMurkPatch(rope.material);
   rope.position.set(-0.08, 0.26, -0.02); rope.scale.y = 0.001; rope.visible = false;
   m.add(rope); wellParts.myRope = rope;
+  /* (the authored rope keeps its coil round the drum; what hung from it — down to where the bucket was authored, out
+   * under the bucket now — is cut from its index: every triangle under the drum) */
+  if (wellParts.rope && !wellParts.rope.userData.cut) {
+    wellParts.rope.userData.cut = true; m.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(m.matrixWorld).invert(), M = new THREE.Matrix4(), v = new THREE.Vector3();
+    wellParts.rope.traverse((o) => {
+      if (!o.isMesh || !o.geometry.index) return;
+      const g = o.geometry, P = g.attributes.position, ix = g.index.array, keep = [];
+      M.multiplyMatrices(inv, o.matrixWorld);
+      const y = (i) => v.fromBufferAttribute(P, i).applyMatrix4(M).y;
+      for (let t = 0; t < ix.length; t += 3) if ((y(ix[t]) + y(ix[t + 1]) + y(ix[t + 2])) / 3 > WELL_DRUM_Y - 0.01) keep.push(ix[t], ix[t + 1], ix[t + 2]);
+      g.setIndex(keep);
+    });
+  }
+  if (wellPhase === 0) { rope.visible = true; wellSetBucket(0); }
   wellG.add(m);
   wellShaft.visible = true;
   // aimed at by a proxy over the mouth
@@ -94930,7 +95169,7 @@ function wellEmptyLookIt() {
 // the bucket at the bottom (a save past the choice): nothing on the rope, the rope paid out into the dark
 function wellBucketDown() {
   for (const k of ['bucket', 'handle', 'bolts']) if (wellParts[k]) wellParts[k].visible = false;
-  if (wellParts.myRope) { wellParts.myRope.visible = true; wellParts.myRope.scale.y = 9; wellParts.myRope.position.y = 0.26 - 4.5; }
+  if (wellParts.myRope) { wellParts.myRope.visible = true; wellParts.myRope.scale.y = 9; wellParts.myRope.position.y = WELL_DRUM_Y - 4.5; }
 }
 
 /* ---- THE MAN FROM THE WELL ------------------------------------------ */
@@ -95372,11 +95611,11 @@ function updateWell(dt) {
     if (L.t >= 1.9) { wellReveal(); L.phase = 'reveal'; L.t = 0; }
     return;
   }
-  /* AND HE IS THERE ALL AT ONCE (2026-11-13, the owner: "when it zooms in on the well mans face make it not fade in make it
-   * go black then immediately show him keep the same timing"): the black holds as long as it did before its fade began
-   * (0.3 s into the reveal) and is then gone in one frame — no 1.6 s fade up onto his face. */
+  /* (the fade up onto his face, as it always was: 2026-11-14, the owner: "bring the old cutscene of the well guy back it
+   * should be exactly how it was unless you start to walk away then it unzooms" — the one-frame cut of 2026-11-13 is out;
+   * the walk-away release, `cineWalkAway`, stays) */
   if (L.phase === 'reveal') {
-    blackoutEl.style.opacity = L.t < 0.3 ? '1' : '0';
+    blackoutEl.style.opacity = Math.max(0, 1 - (L.t - 0.3) / 1.6).toFixed(3);
     camera.position.copy(L.to);
     if (L.t >= 1.9) { L.on = false; L.phase = ''; blackoutEl.style.opacity = '0'; crosshair.style.display = ''; }
   }
@@ -95418,7 +95657,7 @@ function wellRopeStop() {
 function wellSetBucket(depth) {
   for (const k of ['bucket', 'handle', 'bolts']) { const o = wellParts[k]; if (o) { if (o.userData.y0 === undefined) o.userData.y0 = o.position.y; o.position.y = o.userData.y0 - depth; o.visible = depth < 6.0; } }   // (by 5 m down the murk has all of it: it goes out, it is not switched off)
   const r = wellParts.myRope; if (!r) return;
-  const top = 0.26, bottom = WELL_BUCKET_Y0 - depth;
+  const top = WELL_DRUM_Y, bottom = WELL_HANDLE_TOP - depth;
   r.scale.y = Math.max(0.001, top - bottom); r.position.y = (top + bottom) / 2;
 }
 function wellRopeSway(a) {
@@ -99954,7 +100193,7 @@ const SKRIM = { u: null, stage: 'dig', placed: false, paid: false, deal: false, 
 /* his deal kept or broken (2026-10-30, `skqTick`): the six heaps past him you search (`piles`, `broke` a bitmask of the
  * ones gone), the one the artifact is in (`pick`, chosen when you agree), where it lies once out (`artAt`), given him
  * (`gave`), him walked out with it (`gone`) and so the whale left on the sand for good (`doomed`). On the save as `skrimQ`. */
-const SKQ = { piles: [], built: false, pick: -1, broke: 0, artAt: null, gave: false, gone: false, doomed: false, fly: [], pool: [], geos: null, held: null, dropT: 0 };
+const SKQ = { loot: null, lootTaken: 0, lootAt: {}, lootW: {}, piles: [], built: false, pick: -1, broke: 0, artAt: null, gave: false, gone: false, doomed: false, fly: [], pool: [], geos: null, held: null, dropT: 0 };
 {
   const lx = whCx(WH_ARENA_S), s = WH_ARENA_S;
   const u = SKRIM.u = makeMutant(WHALE_X + lx, WHALE_Z - s, 'skrim', WHALE_Y + whFloor(lx, s));
@@ -101008,6 +101247,8 @@ function skqBuild() {
   // the pieces they come apart into: a few shapes of his heap's own meat, made now under the black
   SKQ.geos = [0, 1, 2, 3, 4, 5].map((j) => whLump(0.055 + j * 0.013, 1.5, 0.7, 1.15, 11 + j * 3.7));
   for (const p of SKQ.piles) if (SKQ.broke & (1 << p.i)) { p.gone = true; p.g.visible = false; }   // (a restore: what you broke is gone)
+  skqLootPick();
+  for (const p of SKQ.piles) if (p.gone) skqLootOut(p, true);                                     // (and what came out of it and was not taken lies there still)
 }
 // sunk and spread by the blows it has taken, and a wobble on the last one
 function skqShape(p) {
@@ -101057,6 +101298,7 @@ function skqBreak(p, dx, dz) {
   spawnPuffs(wx, wz, 12, dx, dz, WHALE_Y + p.y + 0.2, [0.3, 0.03, 0.03]);
   addTrauma(0.12);
   if (p.i === SKQ.pick && artState === 0) skqArtOut(p);
+  skqLootOut(p);                          // (and a bottle or a crab, from the four that hold one)
 }
 // pieces of it, thrown away from the blow and landing wet; one pool, the oldest lying piece taken up again
 function skqThrow(p, n, dx, dz, sp = 1) {
@@ -101085,6 +101327,59 @@ function skqFlyTick(dt) {
     const now = performance.now();
     if (now - (SKQ.splatAt || 0) > 70) { SKQ.splatAt = now; playSampleAt('fleshHit', q.x + WHALE_X, q.z + WHALE_Z, { gain: 0.28, ref: 3, far: 14, rate: 0.85 + Math.random() * 0.3 }); }
   }
+}
+/* AND WHAT ELSE WAS IN THEM (2026-11-14, the owner: "IN SKRIMS FLESH PILES ADD ONE WATER BOTTLE AND 3 HORSHOE CRABS ALL IN
+ * DIFFERENT PILES. LEAVE THE ARTIFACT AS IS."). Four heaps hold one thing each — a bottle and three crabs — never the
+ * farthest back (the artifact's, `skqChoose`), the same four every game (a fixed shuffle). Broken, it rolls out a little
+ * toward you onto the meat under the drop shine, and is taken as the beach's are (`gainWater`, `gainCrab`: they stack).
+ * The checkpoint keeps which you have taken and where the rest lie (`skqSave`: `lootTaken`, `lootAt`). */
+const SKQ_LOOT = ['water', 'crab', 'crab', 'crab'];
+function skqLootPick() {
+  if (SKQ.loot || !SKQ.piles.length) return;
+  let far = null; for (const p of SKQ.piles) if (!far || p.s > far.s) far = p;
+  const rest = SKQ.piles.filter((p) => p !== far), rnd = mulberry32(14112026);   // (off the piles alone, so a checkpoint finds the same four)
+  for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
+  SKQ.loot = {}; SKQ_LOOT.forEach((k, n) => { if (rest[n]) SKQ.loot[rest[n].i] = k; });
+}
+function skqLootOut(p, quiet = false) {
+  if (!SKQ.loot) skqLootPick();
+  const k = SKQ.loot && SKQ.loot[p.i], bit = 1 << p.i;
+  if (!k || (SKQ.lootTaken & bit) || SKQ.lootW[p.i]) return;
+  const wx = WHALE_X + p.x, wz = WHALE_Z - p.s, c = camera.position, at = SKQ.lootAt[p.i];
+  let x = wx, z = wz;
+  if (Array.isArray(at)) { x = at[0]; z = at[1]; }
+  else {
+    const dx = c.x - wx, dz = c.z - wz, L = Math.hypot(dx, dz) || 1, sd = (Math.random() - 0.5) * 0.5;
+    x = wx + dx / L * 0.6 - dz / L * sd; z = wz + dz / L * 0.6 + dx / L * sd;
+    if (!skqInGut(x, z, 0.5)) { x = wx; z = wz; }
+  }
+  SKQ.lootAt[p.i] = [+x.toFixed(2), +z.toFixed(2)];
+  const fy = skrimFloorW(x, z), w = new THREE.Group();
+  if (k === 'crab') {
+    const relic = makeCrabRelic(); relic.visible = true; w.add(relic);
+    w.position.set(x, fy, z); w.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(w); crabRimSeat(w, relic, fy + 0.02);
+  } else {
+    const b = makeWaterBottle(); w.add(b);
+    b.rotation.set(Math.PI / 2 - 0.12, 0, 0); b.position.y = 0.04;          // (on its side in the meat: it rolled out)
+    w.position.set(x, fy, z); w.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(w);
+  }
+  const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.32, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.y = 0.12; w.add(proxy);
+  addItemShine(w, { ...DROP_SHINE, height: 0.16 });
+  addInteractable(w, k === 'crab' ? 'Take the horseshoe crab' : 'Take the bottle of water', 'inventory', {
+    gives: k === 'water' ? waterBottleItem : crabItem, when: () => inWhale,
+    onActivate: () => {
+      if (SKQ.lootTaken & bit) return;
+      SKQ.lootTaken |= bit; SKQ.lootW[p.i] = null;
+      sfxThud(0.04); scene.remove(w); removeInteractable(w); hovered = null;
+      if (k === 'crab') gainCrab(); else gainWater();
+    },
+  });
+  w.visible = inWhale;
+  SKQ.lootW[p.i] = w;
+  if (!quiet && !applyingSave && !replaying) playSampleAt('slosh', x, z, { gain: 0.5, ref: 3, far: 16, rate: 1.2, delay: 0.12 });
 }
 // out of the heap it was in: up out of the meat and down a stride toward you
 function skqArtOut(p) {
@@ -101305,6 +101600,7 @@ function skqDropFromHim(u) {
 function skqTick(dt) {
   const u = SKRIM.u;
   if (SKQ.pool.length) skqFlyTick(dt);
+  for (const k in SKQ.lootW) if (SKQ.lootW[k]) SKQ.lootW[k].visible = inWhale;
   if (!inWhale) { if (SKRIM.stage === 'leave') skqGoneNow(); return; }    // (you went out while he was on his way: he is gone)
   if (!SKQ.built) skqBuild();
   /* the artifact is in a heap from the start, deal or no deal (2026-11-13, the owner: "make the whale artifact spawn in
@@ -101325,17 +101621,19 @@ function skqTick(dt) {
 // the walk of a heap search, on the checkpoint: `skrimQ`
 function skqSave() {
   const leaving = SKRIM.stage === 'leave';
-  return { pick: SKQ.pick, broke: SKQ.broke, artAt: SKQ.artAt, gave: SKQ.gave, gone: SKQ.gone || leaving, doomed: SKQ.doomed || (leaving && SKQ.gave) };
+  return { lootTaken: SKQ.lootTaken, lootAt: SKQ.lootAt, pick: SKQ.pick, broke: SKQ.broke, artAt: SKQ.artAt, gave: SKQ.gave, gone: SKQ.gone || leaving, doomed: SKQ.doomed || (leaving && SKQ.gave) };
 }
 function skqRestore(f) {
   const q = f.skrimQ; if (!q) return;
   SKQ.pick = Number.isInteger(q.pick) ? q.pick : -1; SKQ.broke = q.broke | 0;
   SKQ.artAt = Array.isArray(q.artAt) ? q.artAt : null;
+  SKQ.lootTaken = q.lootTaken | 0; SKQ.lootAt = q.lootAt && typeof q.lootAt === 'object' ? q.lootAt : {};
   SKQ.gave = !!q.gave; SKQ.gone = !!q.gone; SKQ.doomed = !!q.doomed;
   // (given him and him still standing on a save: he went — there is no checkpoint between his "Gotta go." and the throat)
   if (SKQ.gave && !SKQ.gone && SKRIM.u && SKRIM.u.st.alive) { SKQ.gone = true; SKQ.doomed = true; }
   if (SKQ.gone && SKRIM.u && SKRIM.u.st.alive) { SKRIM.stage = 'gone'; SKRIM.u.g.visible = false; }
   for (const p of SKQ.piles) if (SKQ.broke & (1 << p.i)) { p.gone = true; p.g.visible = false; }
+  if (SKQ.built) { skqLootPick(); for (const p of SKQ.piles) if (p.gone) skqLootOut(p, true); }
 }
 /* AND THE STORED CHECKPOINT IS TOLD (`stickArtifacts`' way): when you take it out of a heap, and when he walks out with it.
  * Nothing else about the save is touched. */
@@ -101359,7 +101657,7 @@ function whaleClimbOut() {
   if (wb && !wbGone && !wbFareCut && wbBellyClear()) { startWhaleFarewell(); return; }
   startWhale(-1);
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { SKQ, skqPileHit, skqPileStrike, skqTick, skqMeet, skqHolding, skqOpenTalk, skqArtSpawn, skqGive, wbBellyClear, whaleClimbOut, skqSave }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { SKQ, skqLootOut, WHALE_X, WHALE_Z, skrimFloorW, skqPileHit, skqPileStrike, skqTick, skqMeet, skqHolding, skqOpenTalk, skqArtSpawn, skqGive, wbBellyClear, whaleClimbOut, skqSave }));
 /* =====================================================================
  * THE CRYING HEADS (2026-10-30, the owner: "if you walk a little further past the pile with the artifact in it make this
  * creature jump like a head crab through the air with good source engine like physics and can be smacked out of the air
@@ -107431,7 +107729,7 @@ function seaRestore(f) {
   seaState = f.seaRelic || 0;
   sea.spot = seaState === 1 && Array.isArray(f.seaRelicAt) ? f.seaRelicAt : null;
   // a save from before it came back, made after the deep: it is lying where it would have been, by the needle
-  if (f.seaRelic == null && f.deepDone) {
+  if ((f.seaRelic == null || f.seaRelic === 0) && f.deepDone) {   // (0 too, now he brings it: a save between your standing and his throw)
     const nx = f.needle ? f.needle[0] - 0.6 : WASH.x, nz = f.needle ? f.needle[1] - 0.1 : TREE_SPOT.z + WASH.dz;
     seaState = 1; sea.spot = [+(nx + SEA_WASH.dx).toFixed(2), +(nz + SEA_WASH.dz).toFixed(2)];
   }
@@ -109689,6 +109987,7 @@ function updatePlioBar() {
 /* ---- THE CLOCK ------------------------------------------------------------------------------------------------ */
 function updateDeep(rawDt) {
   updatePlioBar();
+  updateSeaGift(Math.min(0.05, rawDt));
   if (!deepLock && !inDeep) return;
   if (deep.reMuffle && inDeep && audioCtx && masterGain && gameAudioGate) { deep.reMuffle = false; deepAudio(true, 0.3); }   // (a restore into it: the sound goes under once there is sound: `deepRestore`)
   if (menuOpen || dying || ended) return;
@@ -109869,7 +110168,8 @@ function updateDeep(rawDt) {
           for (let k = 0; k <= 20; k++) hi = Math.max(hi, shoreLineJS(z, t0 + k * 0.5));
           deep.washX = Math.max(WASH.x, hi + 0.9); }
         needlePlace(deep.washX + 0.6, TREE_SPOT.z + WASH.dz + 0.1);
-        seaLay(deep.washX + SEA_WASH.dx, TREE_SPOT.z + WASH.dz + SEA_WASH.dz);   // and past it, the sea's artifact: what the sea took, it gives back
+        // (the sea's artifact is not laid here any more: the snorkeler brings it, once you are up — `seaGift`, 2026-11-14)
+        sfxSurge(0.6, 2.2); setTimeout(() => { sfxBubbles(14, 0.5, 1.2, 0.5); }, 600);   // (hauled up through the water, in the black)
         washPose(0);                                            // already lying there behind the black, so the beach loads round you
       } else washPose(0);
       if (T >= WASH_BLACK) { deep.ph = 'wash'; deep.t = 0; }
@@ -109905,6 +110205,37 @@ function updateDeep(rawDt) {
  * in from the edges and everything goes soft and dark. Black, and the surf. And you are lying in the wash below the
  * pine with the sea running up round you, and there in the sand beside your face is a syringe. Empty. */
 const DROWN_T = 10, WASH_BLACK = 3.2, WASH_T = 8.2;
+const DROWN_BLINKS = [[1.9, 0.5], [3.7, 0.65], [5.3, 0.8], [7.0, 0.95], [8.6, 1.1]];   // (start, length): slower and longer
+/* HIS FACE IN THE WATER: the cut-out's own picture, cropped to the face (the photo's top half: the eyes are at 0.39 of
+ * it), its edges and neck faded by an oval mask, unlit and out of the fog, tinted the water's colour, swaying; it comes
+ * down out of the dark above and close, from 5.4 s of the drowning to the black */
+let deepFace = null;
+function deepFaceStep(T, dt) {
+  const k = smooth01(5.4, 7.2, T);
+  if (k <= 0 || !snorkOpenTex) { if (deepFace) deepFace.visible = false; return 0; }
+  if (!deepFace) {
+    const tex = snorkOpenTex.clone(); tex.needsUpdate = true;
+    tex.offset.set(0.12, 0.40); tex.repeat.set(0.76, 0.48);
+    const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+    g.translate(64, 60); g.scale(1, 1.22);
+    const gr = g.createRadialGradient(0, 0, 10, 0, 0, 58); gr.addColorStop(0, '#fff'); gr.addColorStop(0.62, '#fff'); gr.addColorStop(1, '#000');
+    g.fillStyle = '#000'; g.fillRect(-64, -64, 128, 128); g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 64, 0, Math.PI * 2); g.fill();
+    const am = new THREE.CanvasTexture(c);
+    deepFace = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, alphaMap: am, transparent: true, depthWrite: false, depthTest: false, fog: false, color: 0x9fc4cc }));
+    deepFace.renderOrder = 20; deepFace.raycast = () => {};
+    const img = snorkOpenTex.image, asp = img && img.height ? (0.76 * img.width) / (0.48 * img.height) : 0.9;
+    deepFace.scale.set(0.95 * asp, 0.95, 1);
+    scene.add(deepFace);
+  }
+  deepFace.visible = true;
+  const cam = camera.position, u = smooth01(5.4, DROWN_T, T);
+  camera.getWorldDirection(_dF); _dR.crossVectors(_dF, _dUP).normalize();
+  deepFace.position.copy(cam).addScaledVector(_dF, 1.5 - 0.65 * u).addScaledVector(_dUP, 0.9 * (1 - k) + Math.sin(T * 0.9) * 0.05)
+    .addScaledVector(_dR, Math.sin(T * 0.6) * 0.18);
+  deepFace.material.rotation = Math.sin(T * 0.7) * 0.18 + 0.1;
+  deepFace.material.opacity = 0.85 * k * (1 - smooth01(DROWN_T - 0.5, DROWN_T, T));
+  return k;
+}
 const WASH = { x: 2.2, dz: 4 };                          // where the sea leaves you: a little out from the tree, on the wet sand
 function startDrown() {
   deep.ph = 'drown'; deep.t = 0; deep.beat = 0.7; deep.gur = 0; deepNoHands = true;
@@ -109927,9 +110258,26 @@ function updateDrown(dt) {
   // the heart: slower, and louder in your ears
   deep.beat -= dt;
   if (deep.beat <= 0) { deep.beat = 0.85 + T * 0.09; sfxHeartThud(0.45 + 0.45 * (T / DROWN_T)); }
-  // the water closes in, everything goes soft, and the sound goes with it
+  /* STRUGGLING, AND THE BLINKS, AND HIM (2026-11-14, the owner: "make it seem like you start to drown after you kill
+   * the sea monster like fading black struggling and slow blinking then when your vision is blurred show the face of the
+   * snorkeler appear but keep it like you are disoriented only have his face show so it doesnt reveal he has no body.
+   * make the snorkeler save you"). Kicks for the surface while the strokes last, the look jerked about; the eyes go
+   * shut slowly and longer each time; and as it blurs, out of the dark above, a face — his, cropped to the face and
+   * faded at its edges (`deepFace`), turning a little, coming down to you — before the black. */
+  if (T < 4.6 && (deep.kickT = (deep.kickT ?? 0.3) - dt) <= 0) {
+    deep.kickT = 0.45 + Math.random() * 0.35;
+    deep.v.y += 0.9 * (1 - T / 4.6); deep.v.x += (Math.random() - 0.5) * 0.6; deep.v.z += (Math.random() - 0.5) * 0.6;
+    sfxSurge(0.22, 0.45); addTrauma(0.09);
+    lookEuler.setFromQuaternion(camera.quaternion, lookEuler.order);
+    lookEuler.x += (Math.random() - 0.35) * 0.16; lookEuler.y += (Math.random() - 0.5) * 0.22; camera.quaternion.setFromEuler(lookEuler);
+    camera.getWorldDirection(_dF); deepPuff(1, cam.x + _dF.x * 0.4, cam.y - 0.1, cam.z + _dF.z * 0.4, 6, 0.3, _dA.set(0, 0.6, 0));
+  }
+  let blink = 0;
+  for (const [t0, d] of DROWN_BLINKS) { const u = (T - t0) / d; if (u > 0 && u < 1) blink = Math.max(blink, Math.sin(u * Math.PI)); }
+  const face = deepFaceStep(T, dt);
+  // the water closes in, everything goes soft, and the sound goes with it (a window in it for his face)
   const k = smooth01(1.2, DROWN_T, T);
-  deepVeil(Math.pow(k, 1.3), '#000');
+  deepVeil(Math.max(Math.pow(k, 1.3) * (1 - 0.6 * face), Math.pow(blink, 0.7)), '#000');
   renderer.domElement.style.filter = `blur(${(0.5 + 3.5 * k).toFixed(2)}px) saturate(${(0.85 - 0.5 * k).toFixed(2)})`;
   if (uwLP && audioCtx) { holdParam(uwLP.frequency, audioCtx.currentTime); uwLP.frequency.setTargetAtTime(520 - 360 * k, audioCtx.currentTime, 0.2); }
   // and the head goes over
@@ -109937,6 +110285,7 @@ function updateDrown(dt) {
   lookEuler.z += (0.35 * k - lookEuler.z) * Math.min(1, dt * 1.5); lookEuler.x += (-0.35 * k - lookEuler.x) * Math.min(1, dt * 0.6 * k);
   camera.quaternion.setFromEuler(lookEuler);
   if (T >= DROWN_T) {
+    if (deepFace) deepFace.visible = false;
     blackoutEl.style.opacity = '1'; deepVeil(0);
     deepAmbSet(false, 2.5);
     deep.ph = 'black'; deep.t = 0; deep.left = false; deepCutOn = true; deep.noSwim = true; deep.swimK = 1;
@@ -110013,6 +110362,53 @@ function endDeep() {
   _preMove.set(camera.position.x, 0, camera.position.z);
   catchBreath();
   autosaveNow();
+  if (seaState === 0) seaGift = { t: 0, ph: 'rise' };   // (and he is there, in the water, with what you lost)
+}
+/* "I THINK YOU DROPPED THIS." (2026-11-14, the owner: "once you wash up on the beach as soon as you fully stand up make his
+ * dialog appear and have him in the water like when you first see him. have him say 'I think you dropped this.' then have
+ * him throw the water artifact on the beach with the octopus ring drop music"). A second copy of him (`seaGiftSprite`,
+ * his own material, so he blinks) comes up out of the water off where you washed up — the tube, then him, as at the camp —
+ * his line on his card, then the artifact thrown up the beach in an arc, turning, and where it lands it lies under the
+ * drop shine (`seaLay`) with the octopus ring's sting. Then he goes back down. A load before it lands lays it by the
+ * needle (`seaRestore`). */
+let seaGift = null, seaGiftSprite = null, seaGiftFly = null;
+function updateSeaGift(dt) {
+  const G = seaGift; if (!G) return;
+  if (dialogOpen && G.ph !== 'talk') return;
+  if (!snorkOpenTex) { if ((G.t += dt) > 3) { seaGift = null; const c = camera.position; seaLay(c.x + 1.2, c.z); } return; }
+  G.t += dt;
+  const z = TREE_SPOT.z + WASH.dz + 1.2, x = shoreLineJS(z, oceanUniforms.uTime.value) - 5.5;
+  if (!seaGiftSprite) { seaGiftSprite = new THREE.Sprite(snorkMat); seaGiftSprite.scale.copy(snorkSprite.scale); seaGiftSprite.raycast = () => {}; scene.add(seaGiftSprite); }
+  const S = seaGiftSprite, Tt = SNORK_H / SNORK_WL, water = waterSurfaceAt(x, z);
+  if (G.ph === 'rise' && G.t < dt * 1.5) { spawnSplash(x, z, 22, 0, 0, 1.4, water); sfxSplash(1.2); }
+  const up = G.ph === 'sink' ? 1 - smooth01(0, 1.2, G.t) : smooth01(0, 1.1, G.ph === 'rise' ? G.t : 9);
+  const e = up * up * (3 - 2 * up);
+  S.visible = true;
+  S.position.set(x, water + THREE.MathUtils.lerp(SNORK_PEEK, SNORK_H - SNORK_SINK, e) - Tt / 2 + Math.sin(G.t * 0.7) * 0.012, z);
+  if (G.ph === 'rise' && G.t > 1.4) {
+    G.ph = 'talk'; G.t = 0;
+    startDialog('gift', { name: 'Snorkeler', sprite: S, headY: Tt * 0.18, fov: 30, script: { gift: { text: 'I think you dropped this.', choices: [], hint: '', end: 2200 } } });
+  } else if (G.ph === 'talk' && !dialogOpen) {
+    G.ph = 'throw'; G.t = 0;
+    // up the beach to a step in front of you, on the dry sand
+    const c = camera.position, dx = c.x - x, dz = c.z - z, L = Math.hypot(dx, dz) || 1;
+    let tx = c.x - dx / L * 1.5, tz = c.z - dz / L * 1.5;
+    tx = Math.max(tx, shoreLineJS(tz, oceanUniforms.uTime.value) + 1.2);
+    seaGiftFly = { from: new THREE.Vector3(x, water + 1.0, z), to: new THREE.Vector3(tx, beachGroundAt(tx, tz) + 0.1, tz), u: 0, T: 1.25, H: 3.2, m: null };
+    if (seaArtModel) { const m = seaArtModel.clone(true); m.scale.setScalar(4.2); m.traverse((o) => { if (o.isMesh) o.raycast = () => {}; }); scene.add(m); seaGiftFly.m = m; }
+    sfxSurge(0.3, 0.6);
+  } else if (G.ph === 'throw') {
+    const F = seaGiftFly, u = Math.min(1, G.t / F.T);
+    if (F.m) { F.m.position.lerpVectors(F.from, F.to, u); F.m.position.y += F.H * 4 * u * (1 - u); F.m.rotation.set(G.t * 7, G.t * 3, 0); }
+    if (u >= 1) {
+      if (F.m) F.m.removeFromParent();
+      seaLay(F.to.x, F.to.z);
+      if (!applyingSave && !replaying) playSample('ringDrop', 1.0);    // the octopus ring's sting, like every drop
+      sfxSandDrop(F.to.x, F.to.z, 0.5, false);
+      seaGiftFly = null; G.ph = 'wait'; G.t = 0;
+    }
+  } else if (G.ph === 'wait' && G.t > 1.8) { G.ph = 'sink'; G.t = 0; }
+  else if (G.ph === 'sink' && G.t > 1.3) { S.visible = false; seaGift = null; }
 }
 
 plioLoad();                                    // queued by its reach: in by the time anyone reaches the tree
@@ -111141,7 +111537,9 @@ function buildHouseProps(root) {
       for (const y of [1.42, 1.86, 2.3]) { const sh = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.015, 0.88), shelfMat); sh.position.set(4.57, y, -1.875); inner.add(sh); }
       const lamp = new THREE.PointLight(0xe8f2ff, 0, 2.2, 2); lamp.position.set(4.45, 2.6, -1.875); lamp.userData.lpAlways = 2; houseWorld.add(lamp);
       let bottle = null;
-      if (!elvFridgeTaken) {
+      // (EMPTY: 2026-11-14, the owner: "make elvedors fridge empty" — the bottle that stood on the middle shelf is gone; the
+      // saved `elvFridge` flag is still read and written, so a save from before means nothing either way)
+      if (ELV_FRIDGE_FULL && !elvFridgeTaken) {
         bottle = makeWaterBottle(); bottle.position.set(4.5, 1.86 + 0.01, -2.1); bottle.rotation.y = 0.4; houseWorld.add(bottle);
         bottle.traverse((o) => { if (o.isMesh && o.material && o.material.emissive) { o.material = o.material.clone(); o.material.emissive.multiplyScalar(1.6); } });
         const bp = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -113341,7 +113739,7 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   samScoreS: () => ({ want: samScoreWant, on: !!samScore, next: !!(samScore && samScore.next), buf: !!(lazyBufs[SAM_SCORE] && lazyBufs[SAM_SCORE].buf), level: samScoreVol && +samScoreVol.gain.value.toFixed(3) }),
   audNodes: () => ({ gate: gameAudioGate, master: masterGain, sfx: sfxBusGain }),
   flameS: () => flame, flameArt: () => flameArtItem, attachArtifact, returnBilly, screwdriverModel, billyS: () => billyState, setBillyS: (v) => { billyState = v; },
-  shipBrkS: () => shipBrk, shipKeyS: () => ({ keyFall, taken: boatKeyTaken, y: boatKey.position.y, inScene: !!boatKey.parent }), dropShipKey,
+  shipBrkS: () => shipBrk, shipKeyS: () => ({ keyFall, lowering: !!keyLower, cut: !!keyCut, cam: shipKeyCam, taken: boatKeyTaken, y: boatKey.position.y, inScene: !!boatKey.parent }), dropShipKey,
   dkSlotS: () => dkSlot, dkCalm, heavyBlockFx, farmFightS: () => farmFight, farmUnitsS: () => farmUnits,
   elvDoors: () => elvDoors, elvPanes: () => elvPanes, houseGlassStrike, elvPaneShut, elvBreakPane, elvManS: () => elvMan, elvPupS: () => elvPup, elvCarryS: () => elvPupCarry, houseWorldS: () => houseWorld,
   elvFieldS: () => elvField, elvPathNear, elvSurf, elvCarve, elvMistS: () => [elvMist, elvBeachMist], elvCampS: () => elvCamp,
@@ -113933,7 +114331,7 @@ function wbHookTick(dt) {
 
 // (2026-11-13's checks: the throne's doors, the Lucky Ring, the bunker's step, the held lens let go — `tools/probes.js` nov13)
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
-  TRADER_RAGE, traderStruck, traderStrike, playerWading, aimHere: () => camera.getWorldDirection(_aimD), dead, deadPlace, deadBloodAdd, deadLoad, deepRaysS: () => deepRays, plioAmbush, deadLiveSeen, fishingRodS: () => fishingRod, plioLoad, deepRestore, thrFightOn, luckyBlow, gemItemS: () => gemItem, setLuckAt: (v) => { luckAt = v; }, sfxStepBunker, startDealerPickup, cineWalkAway,
+  seaGiftS: () => seaGift, seaS: () => ({ state: seaState, world: !!sea.world, spot: sea.spot }), deepFaceS: () => deepFace, traderArmAim, traderBonesS: () => traderBones, traderRigS: () => traderRig, magModel, bunkerG: () => inBunker && inBunker.group, landFloat, traderSell, SNORK_X, SNORK_Z, wellLookStart, wellLeave, WELL_RIM_Y, WELL_S, TRADER_RAGE, traderStruck, traderStrike, playerWading, aimHere: () => camera.getWorldDirection(_aimD), dead, deadPlace, deadBloodAdd, deadLoad, deepRaysS: () => deepRays, plioAmbush, deadLiveSeen, fishingRodS: () => fishingRod, plioLoad, deepRestore, thrFightOn, luckyBlow, gemItemS: () => gemItem, setLuckAt: (v) => { luckAt = v; }, sfxStepBunker, startDealerPickup, cineWalkAway,
   cineS: () => ({ hold: cineHold, walkOff: cineWalkOff, fov: +camera.fov.toFixed(2), want: dialogFov, at: cineAt.toArray().map((v) => +v.toFixed(2)) }),
   hpS: () => hp, setHp: (v) => { hp = v; }, LOOP_SONGS, katanaItemS: () => katanaItem, dealerU: () => dealer, SELL_ROWS, migrateSave, jarsS: () => bloodJars,
 }));

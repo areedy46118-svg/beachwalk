@@ -379,3 +379,25 @@ its kind of weird and lags. the seamonster should swoop and eat him faster too."
 - **The swoop**: from 30 m off and 10 m DOWN, heading level at 42 m/s, steered at 2.8 rad/s until the last 8 m — an arc
   up out of the deep onto him; carried on at 30. Grabbed 0.60 s after it sets off (1.07). `deadAmbush`'s sheet: the arc,
   the grab, gone into the murk.
+
+## 2026-11-14 (fifth round) — drowning, his face, the rescue, "I think you dropped this."
+The owner: "make it seems like you start to drown after you kill the sea monster like fading black struggling and slow
+blinking then when your vision is blurred show the face of the snorkeler appear but keep it like you are disoriented only
+have his face show so it doesnt reaveal he has no body. make the snorkeler save you. once you wash up on the beach as soon
+as you fully stand up make his dialog appear and have him in the water like when you first see him. have him say 'I think
+you dropped this.' then have him throw the water wartifact on the beach with the octopus ring drop music."
+- **The drowning** (`updateDrown`): kicks for the surface while the strokes last (T < 4.6: up-velocity, a surge, the
+  look jerked, bubbles); slow blinks (`DROWN_BLINKS`, each longer: 0.5 → 1.1 s) taken as the veil's max; and HIS FACE
+  (`deepFaceStep`, from 5.4 s): a sprite of `snorkOpenTex` cropped to the face (offset 0.12/0.40, repeat 0.76/0.48 —
+  the cut-out's eyes are at 0.39 of its height), an oval alpha mask (no neck, no shoulders: nothing says he has no
+  body), unlit, out of the fog, water-tinted, swaying and turning a little, coming down to you from 1.5 m to 0.85; the
+  closing black opens 60 % for it. In the black: the sound of being hauled up (surge, bubbles).
+- **No artifact at the wash**: `seaLay` is gone from 'black'. After `endDeep` (you fully standing) with it never given
+  (`seaState` 0): `seaGift` — a second copy of him (`seaGiftSprite`, `snorkMat`: he blinks) surfaces 5.5 m out off where
+  you washed up (tube, then him, `SNORK_PEEK` → `SNORK_H - SNORK_SINK`, a splash), his card ("Snorkeler", `startDialog`
+  'gift', "I think you dropped this.", 2.2 s), then the artifact (a clone of `seaArtModel`, turning) in a 1.25 s arc 3.2 m
+  high to 1.5 m in front of you on dry sand, `seaLay` there with `ringDrop` (the octopus ring's sting) and a sand drop;
+  he goes back down after 1.8 s. `updateSeaGift` runs from the top of `updateDeep`. A save before it lands: `seaRestore`
+  lays it by the needle (`seaRelic` 0 with `deepDone` now counts, as `null` did).
+- Measured (`deepRescue`): the blinks at 2 and 4 s (veil 0.71, 1.00); the face 0.57 at 6.5 s, 0.85 to the black; his card
+  12.0 s after the black; it lies 1.50 m from you, takeable.

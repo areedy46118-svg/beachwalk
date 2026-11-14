@@ -2402,3 +2402,26 @@ Stills: probes `pupBlink`.
   and the FOV eases home at 3.5. The scene goes on. Opted in: `wellReveal` (his stare) and `startDealerPickup` (the
   Dealer's reach — after the portrait, "*Kill him*" or walking out). Probe: walked back 0.8 m → released, FOV 105, the
   stare still running down; the Dealer's released the same.
+
+## 2026-11-14 — the well's bucket on its rope; a float cast on the snorkeler; sea shells sell
+- **The bucket** ("fix this bucket it isnt even on the rope right", a screenshot): raised `WELL_BUCKET_LIFT` 0.44 it was
+  jammed into the windlass — its handle 0.17 over the drum's underside — and the authored rope, made for a bucket in the
+  mouth, hung out under it. Measured in the model's frame (`wellBucket`): the coil on the drum to 0.356, the handle's
+  top 0.082 as authored. Now LIFT 0.12: the handle hangs ~10 cm under the drum (`WELL_DRUM_Y` 0.30, `WELL_HANDLE_TOP`),
+  OUR rope runs between them from the start (`wellSetBucket(0)` at build, and it pays out from `WELL_DRUM_Y` as before),
+  and the authored rope keeps its coil but loses every triangle under the drum (its index cut once). The cost: the
+  bucket hangs at the lean's eye height (1.16–1.53 m against an eye at 1.40, 0.49 m off the middle) — beside the look
+  down the bore, at the top of the frame, not across it (`wellLean`); it was raised that high only because the drum is
+  too low to hang it under and above the eye at once.
+- **A float on the snorkeler** ("make throwing the fishing line at the snorkeler prompt the dialog too"): `landFloat`,
+  wet and inside 3.2 m of him — not met: the thrown thing's hail (up, a splash, his talk at 0.7 s); met: his talk again
+  at 0.45 s. Probe `nov14b`: up, and the dialog open 1.5 s later.
+- **Sea shells sell for a jar** ("make shells sell for 1 jar"): `SELL_ROWS` 'seashell' — each shell is its own item
+  (`id: 'shell'`), so the count is how many are in the pack and a sale takes the first (`SELL_SHELL`); the row's icon is
+  a stub with `SHELL_ICON` while you have none. (Shotgun shells are ammo you buy: not these.) `nov14b`: 2 → 0, jars 0 → 2.
+- The Lucky Ring reads "Gives random chance of an enemy hit doing no damage."
+- **The well's reveal fades in again** (2026-11-14, "bring the old cutscene of the well guy back it should be exactly how
+  it was unless you start to walk away then it unzooms"): `1 - (t - 0.3) / 1.6`, as before 2026-11-13; `cineWalkAway`
+  stays.
+- **Elvédor's fridge is empty** ("make elvedors fridge empty"): `ELV_FRIDGE_FULL` false — no bottle; `elvFridge` still
+  saved and read.

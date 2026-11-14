@@ -921,3 +921,32 @@ on the second, fired 19 frames later, the card shown on that frame.
   (`traderFlash`, an additive sprite 0.3 m toward you, 0.85, gone in ~4 frames — at 0.55/1.0 it whited the screen out), and
   the gun thrown back and up in his hand (`traderGunPose(u, kick)`) for `TRADER_KICK` 0.1 s before the card. Measured
   (`nov14`): his card up on the first blow; the shot 1.62 s after the second; the card 0.1 s after the shot.
+- **Third round** ("hitting the merchant lagged my inventory and made my weapon glitch off screen … make the merchant
+  actually hold the gun in his hand give him a good animation where he pulls it out and has his arm stuck out aiming at
+  your head"):
+  - THE LINE OPENED ON THE BLOW'S OWN FRAME, AND A DIALOG FREEZES THE WORLD. Measured (`traderSwing`, a real
+    `startDig` at him): `digT` stopped at 0.48, the view model hidden, the swing resuming from that pose when the card
+    went — the "glitch". The first blow now sets `TRADER_RAGE.linePending`; `traderRageTick` opens the card once
+    `digT` is back to 0 (or 1.5 s), `bossLine` if no card can open by 4 s. After: the swing runs out to 0, the card at
+    frame 54.
+  - THE ARM (`traderArmAim`): `traderBones.upper_armR` turned so its +Y (a bone's own axis) points at your head
+    (world: the bind's axis rotated onto the line, back into the parent's frame), forearm and hand slerped to their
+    binds (straight), each blended from the crossed pose (`R.arm0`) by the draw's ease (out fast, a touch past,
+    settled); the kick lifts the aim 0.9 m for an instant. The gun rides `handR` (`magModel` hangs from its grip),
+    scaled `0.32 / MAG_LEN` — `Box3.setFromObject` on the .44 measures the whole file (its parts share one position
+    attribute) and shrank it to nothing. The castle's man is a baked copy with no bones: the live rig is carried into
+    `trader2World` and the copy hidden (nobody lives to see it go back). Side still: the arm level at you, the gun in
+    the hand pointing down it.
+- **Fourth round** ("make sure the merchants arms doesnt clip through his body also make sure his hand is closed around
+  the handle of the gun"): measured through the draw (`traderArm`): his right elbow, forearm and hand only move AWAY from
+  his spine's line (hand 0.16 → 0.51 m) — but stood to his left a straight aim crossed his chest, so the line is held,
+  in his own frame, from 20° toward his left round to 80° to his right. THE HAND: `traderGrip` curls f_index/middle/
+  ring/pinky 01-03 about their own X (`TRADER_CURL`) and the thumb about X or Z — WHICH WAY is measured once (each tried,
+  the fingertips' distance to the palm read, the nearer kept). The gun's grip sits in the palm (`traderPalm`: the hand
+  bone 0.7 of the way to `f_middle01R`). The bones are collected by their three-sanitised names (`f_index01R`, no dots).
+- **The inspect screen turns with the mouse, no button** ("when inspecting an item make it so you dont have to right
+  click to move it around"): every `pointermove` turns it by `movementX/Y` (the locked cursor's re-sent events carry
+  them — it keeps turning at the screen's edge), else by the cursor's delta; left click still puts it away; the hints
+  say "Move the mouse to turn it over".
+- **The ship's key is "Captain's Chest Key", no description** (was "Captain's Key" / "Off the hook over her hold"). Old
+  saves: `ITEM_RENAMED` for the pack, and `PICKUP_RENAMED` for its taken-pickup id (label @ place).

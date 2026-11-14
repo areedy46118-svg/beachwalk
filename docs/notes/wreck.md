@@ -1548,3 +1548,29 @@ marked `keyBed`, and the rubble they settle into (`sleepGib` merges a settled gi
 LEAVES `gibs`: the entry is marked `r.keyBed`) — and takes the first face flat enough to lie on (|n.y| > 0.55). A box
 was tried first: a wall of the basket landed on its edge and the key sat on top of its box in mid-air. The key is
 lifted onto that surface while the pieces settle, and for good after (`keyFall > 4`).
+
+## 2026-11-14 — her floor in the sand; the benches and chairs break; the key let down, seen; the king spoke in gold
+The owner (three screenshots): "make this wood floor look less like a flat hovering texture make it thicker and connect
+with the ground like a real crashed boat would. make this wood bench and chairs break as well. show a cutscene of the key
+being lowered after the boat puzzle is complete. make this lighter part of the steering wheel you point at the stars gold
+like the center of the steering wheel."
+- **The floor at the tears** (`models/shipwreck.js`, before the torn planking): both tears are cut to the sand, and the
+  sole was a sheet of paper 0.25 m up with daylight under it. Along each tear's foot every 0.15 m: a broken plank-and-
+  joist end from just over the sole down to y −0.32 (into the sand), running 0.26–0.38 out past her line; a splintered
+  board off the top every third, a frame end sprung out low every fifth; and a drift of wet sand (`tearDrift`, a strip
+  mesh, `noBake`) from over the foot out 1.25–1.6 m to the beach, tapering into it at each end.
+- **The benches and chairs**: `bench_4`, `chair_2`, `chair_3`, `bench_3`, `chair_5` are `BREAKABLE` units the tables'
+  way (`src: 'furniture'`, kind 'table'), appended AFTER the basket so a save's unit numbers hold. 26 breakables, 7 of
+  them furniture (was 2). Probe `shipNov14`: two smashed.
+- **The king spoke** (the handle you point at the stars, its ring and knob): `M.gold`, the hub's (was `M.brass`).
+- **The key, lowered** (`dropShipKey` → `keyLower`, `updateShipKeyCut`): not a fall under gravity behind your back.
+  `keyLower` lets it down its line (`keyLine`, a 6 mm cylinder from the hook to its bow) over 3.2 s (after a 0.55 s
+  beat), swinging and turning less as it goes, into the basket; there it lies flat as the fall left it (`keyFall` 4.01, so
+  `updateShipKey` keeps it on the pieces), a metal tap, the basket rocks. A restore (`applyingSave`/`replaying`/
+  `restore`) still just drops it. THE CUT IS ITS OWN CAMERA (`shipKeyCam`, drawn instead of yours in `animate` while
+  `keyCut.live`; no hands): turned at the helm, the lens drew in on the WHEEL (it stands between you and the hook), and a
+  body carried out onto the deck was dragged back into the wheelhouse wall by the bridge's hold. So you are not moved:
+  a blink of black, the camera on deck beside the hatch (key local x + 1.5, `SN.DECK_Y` + 1.62, z ±2.5 — the hook is at
+  (−3.3, 5.16, 0), the basket under it at the hold's sole), fov 38 → 28 when it is down, holding 1.3 s; a blink, your
+  eyes. Measured: the cut camera dead on the key (cos 1.000), you 0.05 m from where you stood, 5.0 s in all.
+  `keyCut` is the snorkeler's too: `updateKeyCut` returns for a `ship` one.

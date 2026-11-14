@@ -4914,7 +4914,7 @@ export async function nov14({ w, b, log, sleep, shot }) {
   // the merchant: stood 1.6 m in front of him, looking at his chest
   w.__clockOn();
   for (let i = 0; i < 60; i++) w.__adv(1);
-  const face = () => { at(tp.x + 1.6, tp.z, 1.7); b.lookAt(tp.x, 1.2, tp.z); C.updateMatrixWorld(true); };
+  const face = () => { at(tp.x - 2.6, tp.z, 1.7); b.lookAt(tp.x, 1.3, tp.z); C.updateMatrixWorld(true); };
   face(); w.__adv(1); face();
   b.aimHere(); log('first blow lands on him', b.traderStrike(0.5), 'rage', b.TRADER_RAGE.n, 'dialog', b.state().dialogOpen, 'card', w.document.getElementById('dialog-speaker') ? w.document.getElementById('dialog-speaker').textContent : '?');
   for (let i = 0; i < 90; i++) { w.__adv(1); }
@@ -4927,7 +4927,10 @@ export async function nov14({ w, b, log, sleep, shot }) {
   for (; f < 200 && !de.classList.contains('show'); f++) {
     face(); w.__adv(1);
     if (f === 12) shot('tr_draw', 640, 1.3);
-    if (f === 70) shot('tr_held', 640, 1.3);
+    if (f === 70) { shot('tr_held', 640, 1.3);
+      const q = C.position.clone(), qq = C.quaternion.clone(); C.position.set(tp.x - 1.0, 1.6, tp.z + 2.6); C.lookAt(tp.x - 1.0, 1.4, tp.z); C.updateMatrixWorld(true); shot('tr_side', 640, 1.5);
+      { const hp = b.traderBonesS().handR.getWorldPosition(new b.THREE.Vector3()); C.position.set(hp.x - 0.2, hp.y + 0.12, hp.z + 0.6); C.lookAt(hp); C.updateMatrixWorld(true); shot('tr_hand', 640, 1.6); C.position.set(hp.x - 0.55, hp.y + 0.05, hp.z - 0.25); C.lookAt(hp); C.updateMatrixWorld(true); shot('tr_hand2', 640, 1.6); }
+      C.position.copy(q); C.quaternion.copy(qq); C.updateMatrixWorld(true); }
     if (R.fired && !kicked) { kicked = true; log('fired at', R.t.toFixed(2), 's after the blow'); shot('tr_kick', 640, 1.3); }
   }
   const d = w.document, dc = d.getElementById('deathcard');
@@ -5043,4 +5046,249 @@ export async function liveSwim({ w, b, log, sleep }) {
   });
   const d = sheet.toDataURL('image/jpeg', 0.82).split(',')[1], n = Math.ceil(d.length / 8000);
   for (let i = 0; i < n; i++) console.log('[PBIMG]', 'live_swim', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+// SKRIM'S HEAPS GIVE UP A BOTTLE AND THREE CRABS (2026-11-14): in the belly, every heap broken in turn; what came out of
+// which (and the artifact's still its own), a still of each, then each taken; the save's account of it
+export async function skqLoot({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.placeInWhale();
+  const Q = b.SKQ;
+  for (let i = 0; i < 300 && !Q.built; i++) { b.frame(1); await sleep(40); }
+  log('built', Q.built, 'piles', Q.piles.length, 'artifact pile', Q.pick, 'loot', JSON.stringify(Q.loot));
+  const C = b.camera, T = b.THREE;
+  const water0 = b.waterBottleItem ? b.waterBottleItem.count : '?', crab0 = b.crabItem ? b.crabItem.count : '?';
+  const order = Q.piles.slice().sort((a, c) => a.s - c.s);
+  let shots = 0;
+  for (const p of order) {
+    const wx = b.WHALE_X + p.x, wz = b.WHALE_Z - p.s;
+    C.position.set(wx + 1.6, C.position.y, wz + 1.6); b.frame(1);
+    b.skqPileHit(p, 4, -1, -1); for (let i = 0; i < 20; i++) { b.frame(1); }
+    const lw = Q.lootW[p.i];
+    if (lw) {
+      log('pile', p.i, 's', p.s.toFixed(1), '→', Q.loot[p.i], 'lies at', Q.lootAt[p.i].join(','), 'floor gap', (lw.position.y - b.skrimFloorW(lw.position.x, lw.position.z)).toFixed(3), 'visible', lw.visible);
+      if (!w['__sh' + Q.loot[p.i]]) { w['__sh' + Q.loot[p.i]] = 1; shots++; const q = lw.position; C.position.set(q.x + 1.1, q.y + 1.2, q.z + 1.1); C.lookAt(q.x, q.y, q.z); C.updateMatrixWorld(true); shot('skq_' + Q.loot[p.i] + shots, 640, 1.4); }
+    } else if (p.i === Q.pick) log('pile', p.i, '→ the artifact', 'artAt', JSON.stringify(Q.artAt));
+  }
+  log('all broken', Q.broke.toString(2), 'loot out', Object.values(Q.lootW).filter(Boolean).length);
+  log('save before taking', JSON.stringify(b.skqSave()).slice(0, 160));
+  for (const k in Q.lootW) { const lw = Q.lootW[k]; if (!lw) continue; const it = b.interactables.find((e) => e.root === lw); if (it && it.onActivate) it.onActivate(); }
+  log('taken: water', water0, '→', b.waterBottleItem && b.waterBottleItem.count, 'crabs', crab0, '→', b.crabItem && b.crabItem.count, 'lootTaken', Q.lootTaken.toString(2));
+}
+
+// THE WRECK, 2026-11-14: her torn floor from the sand at both tears; the gold king spoke; the key let down on its line from
+// the helm, the lens following it; a chair and a bench broken
+export async function shipNov14({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, V = b.THREE.Vector3;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 400 && !(S.userData.wheel && b.shipBrkS().length > 20); i++) { b.frame(1); await sleep(40); }
+  const brk = b.shipBrkS();
+  log('breakables', brk.length, 'tables/benches/chairs', brk.filter((B) => B.u.kind === 'table').length);
+  w.__clockOn();
+  S.updateMatrixWorld(true);
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z));
+  const at = (n, p, t, g = 1.4) => { C.position.copy(p); C.lookAt(t); C.updateMatrixWorld(true); shot('sh_' + n, 640, g); };
+  at('breach', L(-4.9, 1.0, 7.0), L(-4.9, 0.2, 3.4));
+  at('breachLow', L(-6.2, 0.45, 5.4), L(-4.6, 0.15, 3.6));
+  at('farTear', L(-0.8, 0.9, -6.4), L(-0.8, 0.2, -3.6));
+  const wp = new V(); S.userData.wheel.getWorldPosition(wp);
+  at('wheel', L(4.55, 5.7, 0.55), wp, 1.6);
+  // a chair and a bench, smashed
+  const tb = brk.filter((B) => B.u.kind === 'table');
+  for (const B of tb.slice(2, 4)) b.smashShipStore(B, 6);
+  for (let i = 0; i < 40; i++) w.__adv(1);
+  log('smashed two of them, dead', tb.slice(2, 4).map((B) => B.dead).join(','), 'gibs now', b.gibs ? b.gibs.length : '?');
+  // the key: you at the helm, looking up at the stars, and the last star sets
+  C.position.copy(L(4.6, 5.85, 0)); b.camBaseY = C.position.y; b.lookAt(wp.x - 3, wp.y + 4, wp.z);
+  for (let i = 0; i < 10; i++) w.__adv(1);
+  b.dropShipKey();
+  const K = () => b.shipKeyS();
+  log('dropped: lowering', K().lowering, 'cut', K().cut, 'y', K().y.toFixed(2));
+  let f = 0;
+  for (; f < 60 * 8 && (K().cut || K().lowering); f++) {
+    w.__adv(1);
+    if (f === 30 || f === 90 || f === 150 || f === 230) { const kc = K().cam; if (kc) { b.renderer.render(b.scene, kc); const cv = b.renderer.domElement, c2 = document.createElement('canvas'); c2.width = 640; c2.height = Math.round(640 * cv.height / cv.width); const g2 = c2.getContext('2d'); g2.filter = 'brightness(1.6)'; g2.drawImage(cv, 0, 0, c2.width, c2.height); const d = c2.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let q = 0; q < n; q++) console.log('[PBIMG]', 'sh_key' + f, q + '/' + n, d.slice(q * 8000, (q + 1) * 8000)); } }
+    if (f === 230) log('mid-cut camera from the helm (m)', C.position.distanceTo(L(4.6, 5.85, 0)).toFixed(2));
+  }
+  { const d = new V(); (K().cam || C).getWorldDirection(d); const kw = new V(); (w.__bw.boatKey || { getWorldPosition: () => kw }).getWorldPosition(kw); log('cut camera on the key (cos)', d.dot(kw.clone().sub((K().cam || C).position).normalize()).toFixed(3)); }
+  log('back at the helm (m)', C.position.distanceTo(L(4.6, 5.85, 0)).toFixed(3), 'blackout', w.document.getElementById('blackout').style.opacity);
+  log('cut over after', (f / 60).toFixed(2), 's: lowering', K().lowering, 'keyFall', K().keyFall.toFixed(2), 'y', K().y.toFixed(3), 'fov', C.fov.toFixed(1));
+}
+
+// where the ship's key, its basket and the hatch are, in her own frame
+export async function shipWhere({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, V = b.THREE.Vector3;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 400 && !(S.userData.wheel && b.shipBrkS().length > 20); i++) { b.frame(1); await sleep(40); }
+  S.updateMatrixWorld(true);
+  const kp = b.boatKey.getWorldPosition(new V()), kl = S.worldToLocal(kp.clone()), cb = S.userData.catchBasket;
+  log('key local', kl.toArray().map((v) => v.toFixed(2)).join(','), 'basket local', cb && [cb.x, cb.lo, cb.z].map((v) => (+v).toFixed(2)).join(','), 'ship rot y', S.rotation.y.toFixed(2), 'pos', S.position.toArray().map((v) => v.toFixed(1)).join(','));
+  const wl = S.worldToLocal(S.userData.wheel.getWorldPosition(new V()));
+  log('wheel local', wl.toArray().map((v) => v.toFixed(2)).join(','));
+}
+
+// THE WELL'S BUCKET AT REST: its parts' boxes in the model's own frame, and the look at it the owner sent
+export async function wellBucket({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, P = b.wellPartsS(), T = b.THREE;
+  C.position.set(b.WELL_X + 6, 1.7, b.WELL_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 400 && !(P.bucket && P.myRope); i++) { b.frame(1); await sleep(40); }
+  const m = P.myRope.parent; m.updateMatrixWorld(true);
+  const inv = new T.Matrix4().copy(m.matrixWorld).invert();
+  for (const k of ['bucket', 'handle', 'bolts', 'rope', 'crank', 'myRope']) {
+    const o = P[k]; if (!o) { log(k, 'none'); continue; }
+    const bx = new T.Box3().setFromObject(o, true); bx.applyMatrix4(inv);
+    log(k, 'min', bx.min.toArray().map((v) => v.toFixed(3)).join(','), 'max', bx.max.toArray().map((v) => v.toFixed(3)).join(','), 'visible', o.visible, 'pos.y', o.position.y.toFixed(3));
+  }
+  log('model scale', m.scale.toArray().map((v) => v.toFixed(3)).join(','));
+  window.requestAnimationFrame = () => 0; w.requestAnimationFrame = () => 0;
+  for (let o = P.myRope; o; o = o.parent) o.visible = o === P.myRope ? o.visible : true;
+  const bw = new T.Vector3(); new T.Box3().setFromObject(P.bucket, true).getCenter(bw);
+  { const bb = new T.Box3().setFromObject(P.bucket, true); const eyeY = b.WELL_RIM_Y + 0.40, eyeOff = 0.26 * b.WELL_S;
+    log('bucket world y', bb.min.y.toFixed(3), '..', bb.max.y.toFixed(3), 'half-width', ((bb.max.x - bb.min.x) / 2).toFixed(3), '| lean eye y', eyeY.toFixed(3), 'off centre', eyeOff.toFixed(3), '| well', b.WELL_X, b.WELL_Z.toFixed(2), 'bucket centre', bw.x.toFixed(2), bw.z.toFixed(2)); }
+  C.position.set(bw.x + 1.4, bw.y - 0.5, bw.z + 0.4); C.lookAt(bw); C.updateMatrixWorld(true); shot('well_bucket', 640, 1.8);
+  C.position.set(bw.x + 0.2, bw.y + 0.05, bw.z + 0.75); C.lookAt(bw.x, bw.y + 0.12, bw.z); C.updateMatrixWorld(true); shot('well_bucket2', 640, 1.8);
+}
+
+// THE LEAN INTO THE WELL with the bucket where it hangs now: from each side of the well, what you see looking down the bore
+export async function wellLean({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, P = b.wellPartsS();
+  C.position.set(b.WELL_X + 6, 1.7, b.WELL_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 400 && !(P.bucket && P.myRope); i++) { b.frame(1); await sleep(40); }
+  for (const [n, dx, dz] of [['east', 1.4, 0], ['west', -1.4, 0], ['north', 0, -1.4]]) {
+    C.position.set(b.WELL_X + dx, 1.7, b.WELL_Z + dz); b.camBaseY = 1.7; b.lookAt(b.WELL_X, 1.0, b.WELL_Z);
+    for (let i = 0; i < 10; i++) { b.frame(1); await sleep(5); }
+    b.wellLookStart(false);
+    for (let i = 0; i < 120; i++) { b.frame(1); if (i % 10 === 0) await sleep(5); }
+    shot('lean_' + n, 640, 1.6);
+    b.wellLeave && b.wellLeave();
+    for (let i = 0; i < 120; i++) { b.frame(1); if (i % 10 === 0) await sleep(5); }
+  }
+}
+
+// 2026-11-14 (later): a float cast on the snorkeler hails him; sea shells sell for a jar each
+export async function nov14b({ w, b, log, sleep }) {
+  b.settings.devMode = false;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera;
+  C.position.set(b.SNORK_X + 12, 1.7, b.SNORK_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 30; i++) { b.frame(1); await sleep(10); }
+  const R = b.rodState(); R.pos.set(b.SNORK_X + 1.2, 0, b.SNORK_Z + 0.8);
+  b.landFloat({ wet: true, y: b.waterSurfaceAt(R.pos.x, R.pos.z) });
+  log('float lands 1.4 m from him: he comes up', b.snork().want, 'talk in', b.snork().talkT.toFixed(2));
+  for (let i = 0; i < 90; i++) { b.frame(1); await sleep(10); }
+  log('a second and a half on: his dialog open', b.state().dialogOpen);
+  b.endDialog && b.endDialog();
+  // the shells
+  const mk = () => ({ id: 'shell', name: 'Sea shell', use: () => {} });
+  b.addToInventory(mk()); b.addToInventory(mk());
+  const row = b.SELL_ROWS.find((r) => r.key === 'seashell'), j0 = b.jarsS();
+  log('shells in the pack', row.count(), 'price', row.price);
+  b.traderSell('seashell');
+  log('sold one: jars', j0, '→', b.jarsS(), 'shells left', row.count());
+  b.traderSell('seashell');
+  log('sold two: jars', b.jarsS(), 'shells left', row.count());
+}
+
+// THE BUNKER'S SURFACES UNDER THE BLADE (2026-11-14): what a swing at each wall really meets (a raycast on the model:
+// its material) and what it costs, from the middle of the room in twelve directions, level and a little down
+export async function bunkerHit({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.placeInBunker();
+  for (let i = 0; i < 300; i++) { const ib = b.state().inBunker; b.frame(1); await sleep(40); const B = b.bunkerG && b.bunkerG(); if (B && B.userData.bunker && B.userData.bunker.ready) break; }
+  const g = b.bunkerG(), T = b.THREE, C = b.camera;
+  let meshes = 0, tris = 0; const per = {};
+  g.traverse((o) => { if (!o.isMesh) return; meshes++; const n = o.geometry.index ? o.geometry.index.count / 3 : o.geometry.attributes.position.count / 3; tris += n; const mn = [].concat(o.material).map((m) => m.name).join('/'); per[mn] = (per[mn] || 0) + n; });
+  log('bunker meshes', meshes, 'tris', Math.round(tris), JSON.stringify(Object.fromEntries(Object.entries(per).map(([k, v]) => [k, Math.round(v)]))));
+  const rc = new T.Raycaster(); rc.far = 3.2;
+  for (const pitch of [0, -0.35]) for (let k = 0; k < 12; k++) {
+    const a = k / 12 * Math.PI * 2, d = new T.Vector3(Math.sin(a) * Math.cos(pitch), Math.sin(pitch), Math.cos(a) * Math.cos(pitch));
+    rc.set(C.position, d);
+    const t0 = performance.now(), h = rc.intersectObject(g, true)[0], ms = performance.now() - t0;
+    log('pitch', pitch, 'dir', k, h ? [].concat(h.object.material)[h.face && h.face.materialIndex || 0].name + ' @' + h.distance.toFixed(2) : 'nothing', ms.toFixed(1) + 'ms');
+  }
+}
+
+// A REAL SWING AT THE MERCHANT: the shovel in hand, the swing started the game's way, and the view model and the swing's
+// clock frame by frame through his line (where the weapon is, what is open)
+export async function traderSwing({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, W = b.traderWorld, T = b.THREE; W.updateMatrixWorld(true); const tp = new T.Vector3(); W.getWorldPosition(tp);
+  if (b.state().equipped !== 'Sand shovel') b.toggleEquip(b.shovelItem);
+  w.__clockOn();
+  const face = () => { C.position.set(tp.x - 1.5, 1.7, tp.z); b.camBaseY = 1.7; b.lookAt(tp.x, 1.2, tp.z); };
+  for (let i = 0; i < 30; i++) { face(); w.__adv(1); }
+  const vm = b.viewmodel || (b.armRig);
+  b.startDig(0);
+  for (let f = 0; f < 120; f++) {
+    w.__adv(1);
+    if (f % 6 === 0 || f < 30 && f % 2 === 0) {
+      const v = vm ? vm.position : { x: 0, y: 0, z: 0 };
+      log('f', f, 'dig', b.state().digT, 'dialog', b.state().dialogOpen, 'rage', b.TRADER_RAGE.n, 'vm', [v.x, v.y, v.z].map((q) => (+q).toFixed(2)).join(','), 'vm vis', vm && vm.visible, 'fov', C.fov.toFixed(0));
+    }
+  }
+}
+
+// THE MERCHANT'S ARM THROUGH THE DRAW: at each stage of it, how near his right elbow, forearm and hand come to his
+// spine's line (the body they must not pass through), and the bones the hand has
+export async function traderArm({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 200 && !(b.traderBonesS() && b.traderBonesS().upper_armR); i++) { b.frame(1); await sleep(40); }
+  const B = b.traderBonesS(), T = b.THREE, C = b.camera, W = b.traderWorld;
+  log('bones', Object.keys(B).join(' '));
+  W.updateMatrixWorld(true); const tp = new T.Vector3(); W.getWorldPosition(tp);
+  C.position.set(tp.x - 2.6, 1.7, tp.z); C.lookAt(tp.x, 1.3, tp.z); C.updateMatrixWorld(true);
+  b.TRADER_RAGE.which = 1; b.TRADER_RAGE.arm0 = null;
+  const P = (o) => o.getWorldPosition(new T.Vector3());
+  const seg = (p, a, c) => { const d = c.clone().sub(a), t = Math.max(0, Math.min(1, p.clone().sub(a).dot(d) / d.lengthSq())); return p.distanceTo(a.clone().addScaledVector(d, t)); };
+  for (const k of [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1]) {
+    b.traderArmAim(k, 0);
+    const s0 = P(B.spine), s4 = P(B.spine004 || B.spine003), el = P(B.forearmR), ha = P(B.handR), mid = el.clone().lerp(ha, 0.5);
+    log('k', k, 'elbow', seg(el, s0, s4).toFixed(3), 'forearm mid', seg(mid, s0, s4).toFixed(3), 'hand', seg(ha, s0, s4).toFixed(3), 'shoulder', seg(P(B.upper_armR), s0, s4).toFixed(3));
+  }
+}
+
+// THE DROWNING AND THE RESCUE (2026-11-14): from the snap's checkpoint, the fight skipped to its end; the drowning frame
+// by frame (the veil, his face), the black, the wash, standing, his line, the throw, where it lands
+export async function deepRescue({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true; b.plioLoad(); b.deadLoad();
+  for (let i = 0; i < 600 && !(b.plioS().ready && b.dead.gltf); i++) { b.frame(2); await sleep(100); }
+  b.deepRestore(); w.__clockOn();
+  for (let i = 0; i < 60; i++) w.__adv(1);
+  const D = b.deepS(), C = b.camera, veil = () => { const v = [...w.document.querySelectorAll('div')].find((d) => d.style.zIndex === '10' && d.style.position === 'fixed'); return v ? (+v.style.opacity).toFixed(2) : '?'; };
+  D.ph = 'after'; D.t = 4.05;
+  const at = [2.0, 4.0, 6.5, 7.8, 9.2]; let k = 0;
+  for (let f = 0; f < 60 * 14 && D.ph !== 'black'; f++) {
+    w.__adv(1);
+    if (D.ph === 'drown' && k < at.length && D.t >= at[k]) { const F = b.deepFaceS(); log('drown t', D.t.toFixed(2), 'veil', veil(), 'face', F ? (F.visible ? F.material.opacity.toFixed(2) : 'hidden') : 'none'); shot('rs_drown' + k, 640, 1.5); k++; }
+  }
+  log('black at', D.ph);
+  let f = 0, dlg = false;
+  for (; f < 60 * 30; f++) {
+    w.__adv(1); if (f % 8 === 0) await sleep(2);
+    const G = b.seaGiftS();
+    if (!D.ph && G && G.ph === 'talk' && b.state().dialogOpen && !dlg) { dlg = true; log('his card up', (f / 60).toFixed(1), 's after the black; text', w.document.getElementById('dialog-text') ? w.document.getElementById('dialog-text').textContent : '?'); for (let i = 0; i < 40; i++) w.__adv(1); shot('rs_talk', 640, 1.4); await sleep(2600); w.__adv(2); }
+    if (G && G.ph === 'throw' && G.t > 0.5 && !w.__thr) { w.__thr = 1; shot('rs_throw', 640, 1.4); }
+    if (dlg && !G) break;
+  }
+  const S = b.seaS();
+  log('done: gift over', !b.seaGiftS(), 'artifact', JSON.stringify(S), 'from you', S.spot ? Math.hypot(S.spot[0] - C.position.x, S.spot[1] - C.position.z).toFixed(2) : '-');
+  shot('rs_lying', 640, 1.4);
 }
