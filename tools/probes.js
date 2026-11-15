@@ -5068,6 +5068,19 @@ export async function skqLoot({ w, b, log, sleep, shot }) {
     const lw = Q.lootW[p.i];
     if (lw) {
       log('pile', p.i, 's', p.s.toFixed(1), '→', Q.loot[p.i], 'lies at', Q.lootAt[p.i].join(','), 'floor gap', (lw.position.y - b.skrimFloorW(lw.position.x, lw.position.z)).toFixed(3), 'visible', lw.visible);
+      { lw.updateMatrixWorld(true); let nm = 0, tris = 0, hidden = 0, mats = []; lw.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy') { nm++; tris += o.geometry.index ? o.geometry.index.count / 3 : o.geometry.attributes.position.count / 3; let v = true; for (let q = o; q; q = q.parent) if (!q.visible) v = false; if (!v) hidden++; mats.push((o.material.type || '') + ' op' + o.material.opacity + ' vis' + o.material.visible + ' em' + (o.material.emissiveIntensity ?? '-')); } });
+        const bb = new T.Box3(); lw.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy') bb.expandByObject(o); });
+        const fy = b.skrimFloorW(lw.position.x, lw.position.z);
+        log('   fluid over it', (-0.62 - b.whFloor(lw.position.x - b.WHALE_X, b.WHALE_Z - lw.position.z)).toFixed(3), 'm');
+        { const q = lw.position, keep = C.position.clone(); C.position.set(q.x + 1.0, q.y + 1.3, q.z + 1.0); C.lookAt(q.x, q.y, q.z); C.updateMatrixWorld(true); shot('skq_each_' + p.i, 480, 1.4);
+          const M = b.whaleS() && b.whaleS().arena && b.whaleS().arena.mist; if (M) { for (const m of M.layers) m.visible = false; shot('skq_nomist_' + p.i, 480, 1.4); for (const m of M.layers) m.visible = true; }
+          const bx = new T.Box3().setFromObject(lw.children[0]), cc = bx.getCenter(new T.Vector3()), kf = C.fov; C.fov = 45; C.updateProjectionMatrix();
+          C.position.set(cc.x + 0.9, cc.y + 0.8, cc.z + 0.9); C.lookAt(cc); C.updateMatrixWorld(true); shot('skq_close_' + p.i, 480, 1.4);
+          lw.children[0].visible = false; shot('skq_closeNo_' + p.i, 480, 1.4); lw.children[0].visible = true;
+          log('   relic box', bx.min.toArray().map((n) => n.toFixed(2)).join(','), '..', bx.max.toArray().map((n) => n.toFixed(2)).join(','), 'w at', lw.position.toArray().map((n) => n.toFixed(2)).join(','));
+          C.fov = kf; C.updateProjectionMatrix();
+          C.position.copy(keep); }
+        log('   its meshes', nm, 'tris', tris, 'hidden', hidden, 'box y', bb.isEmpty() ? '-' : (bb.min.y - fy).toFixed(2) + '..' + (bb.max.y - fy).toFixed(2), 'size', bb.isEmpty() ? '-' : bb.getSize(new T.Vector3()).toArray().map((n) => n.toFixed(2)).join('x'), mats.slice(0, 2).join(' | '), 'scene child', lw.parent === b.scene); }
       if (!w['__sh' + Q.loot[p.i]]) { w['__sh' + Q.loot[p.i]] = 1; shots++; const q = lw.position; C.position.set(q.x + 1.1, q.y + 1.2, q.z + 1.1); C.lookAt(q.x, q.y, q.z); C.updateMatrixWorld(true); shot('skq_' + Q.loot[p.i] + shots, 640, 1.4); }
     } else if (p.i === Q.pick) log('pile', p.i, '→ the artifact', 'artAt', JSON.stringify(Q.artAt));
   }
@@ -5274,10 +5287,17 @@ export async function deepRescue({ w, b, log, sleep, shot }) {
   for (let i = 0; i < 60; i++) w.__adv(1);
   const D = b.deepS(), C = b.camera, veil = () => { const v = [...w.document.querySelectorAll('div')].find((d) => d.style.zIndex === '10' && d.style.position === 'fixed'); return v ? (+v.style.opacity).toFixed(2) : '?'; };
   D.ph = 'after'; D.t = 4.05;
-  const at = [2.0, 4.0, 6.5, 7.8, 9.2]; let k = 0;
+  { const row = []; for (let t = 0; t <= 10.4; t += 0.4) row.push(t.toFixed(1) + ':' + b.drownLid(t).toFixed(2)); log('lids through the drowning', row.join(' ')); }
+  { const row = []; for (let t = 0; t <= 4; t += 0.25) row.push(t.toFixed(2) + ':' + b.washLid(t).toFixed(2)); log('lids waking', row.join(' ')); }
+  // a still with the lids drawn over it as the page draws them (the canvas alone has no lids)
+  w.__lidShot = (name, lid) => { const cv = b.renderer.domElement, c2 = document.createElement('canvas'); c2.width = 640; c2.height = Math.round(640 * cv.height / cv.width);
+    const g = c2.getContext('2d'); g.filter = 'brightness(1.5) blur(1.5px)'; g.drawImage(cv, 0, 0, c2.width, c2.height); g.filter = 'blur(14px)';
+    const h = lid * 0.62 * c2.height; g.fillStyle = '#020304'; g.beginPath(); g.ellipse(c2.width / 2, 0, c2.width * 0.7, h + 6, 0, 0, Math.PI * 2); g.fill(); g.beginPath(); g.ellipse(c2.width / 2, c2.height, c2.width * 0.7, h + 6, 0, 0, Math.PI * 2); g.fill();
+    const d = c2.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let q = 0; q < n; q++) console.log('[PBIMG]', name, q + '/' + n, d.slice(q * 8000, (q + 1) * 8000)); };
+  const at = [2.5, 6.4, 8.7, 9.0, 9.3]; let k = 0;
   for (let f = 0; f < 60 * 14 && D.ph !== 'black'; f++) {
     w.__adv(1);
-    if (D.ph === 'drown' && k < at.length && D.t >= at[k]) { const F = b.deepFaceS(); log('drown t', D.t.toFixed(2), 'veil', veil(), 'face', F ? (F.visible ? F.material.opacity.toFixed(2) : 'hidden') : 'none'); shot('rs_drown' + k, 640, 1.5); k++; }
+    if (D.ph === 'drown' && k < at.length && D.t >= at[k]) { const F = b.deepFaceS(); log('drown t', D.t.toFixed(2), 'veil', veil(), 'lid', b.drownLid(D.t).toFixed(2), 'face', F ? (F.visible ? F.material.opacity.toFixed(2) : 'hidden') : 'none'); b.renderer.render(b.scene, C); w.__lidShot('rs_drown' + k, b.drownLid(D.t)); k++; }
   }
   log('black at', D.ph);
   let f = 0, dlg = false;
@@ -5285,10 +5305,428 @@ export async function deepRescue({ w, b, log, sleep, shot }) {
     w.__adv(1); if (f % 8 === 0) await sleep(2);
     const G = b.seaGiftS();
     if (!D.ph && G && G.ph === 'talk' && b.state().dialogOpen && !dlg) { dlg = true; log('his card up', (f / 60).toFixed(1), 's after the black; text', w.document.getElementById('dialog-text') ? w.document.getElementById('dialog-text').textContent : '?'); for (let i = 0; i < 40; i++) w.__adv(1); shot('rs_talk', 640, 1.4); await sleep(2600); w.__adv(2); }
-    if (G && G.ph === 'throw' && G.t > 0.5 && !w.__thr) { w.__thr = 1; shot('rs_throw', 640, 1.4); }
+    if (G && G.ph === 'windup' && G.t > 0.5 && !w.__wu) { w.__wu = 1; shot('rs_windup', 640, 1.4); }
+    if (G && G.ph === 'throw' && G.t > 0.55 && !w.__thr) { w.__thr = 1; shot('rs_throw', 640, 1.4); log('mid-throw: cut', b.shipKeyS ? '' : '', 'fov', C.fov.toFixed(0)); }
+    if (G && G.ph === 'wait' && G.t > 0.6 && !w.__ld) { w.__ld = 1; shot('rs_landed', 640, 1.4); }
     if (dlg && !G) break;
   }
   const S = b.seaS();
   log('done: gift over', !b.seaGiftS(), 'artifact', JSON.stringify(S), 'from you', S.spot ? Math.hypot(S.spot[0] - C.position.x, S.spot[1] - C.position.z).toFixed(2) : '-');
   shot('rs_lying', 640, 1.4);
+}
+
+// THE KEY ON ITS LINE: mid-lowering, where the line ends against the key's own box (its top, its middle), and a close look
+export async function shipKeyRope({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, V = b.THREE.Vector3, T = b.THREE;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 400 && !(S.userData.wheel && b.shipBrkS().length > 20); i++) { b.frame(1); await sleep(40); }
+  w.__clockOn(); S.updateMatrixWorld(true);
+  C.position.copy(S.localToWorld(new V(4.6, 5.85, 0))); b.camBaseY = C.position.y;
+  for (let i = 0; i < 10; i++) w.__adv(1);
+  b.dropShipKey();
+  for (const f of [70, 130]) {
+    while (b.shipKeyS().lowering && (w.__f = (w.__f || 0) + 1) < f) w.__adv(1);
+    const K = b.boatKey, L = b.keyLineS(); K.updateMatrixWorld(true);
+    const bx = new T.Box3().setFromObject(K, true), kp = K.getWorldPosition(new V());
+    const lb = L.position.y - L.scale.y / 2;
+    log('frame', f, 'key origin y', kp.y.toFixed(3), 'box', bx.min.y.toFixed(3), '..', bx.max.y.toFixed(3), 'x', bx.min.x.toFixed(2), bx.max.x.toFixed(2), 'z', bx.min.z.toFixed(2), bx.max.z.toFixed(2), '| line bottom', lb.toFixed(3), 'at', L.position.x.toFixed(2), L.position.z.toFixed(2), '| gap to box top', (lb - bx.max.y).toFixed(3));
+    const kc = b.shipKeyS().cam;
+    if (kc) { kc.fov = 12; kc.updateProjectionMatrix(); kc.lookAt(kp); kc.updateMatrixWorld(true); b.renderer.render(b.scene, kc);
+      const cv = b.renderer.domElement, c2 = document.createElement('canvas'); c2.width = 640; c2.height = Math.round(640 * cv.height / cv.width); const g2 = c2.getContext('2d'); g2.filter = 'brightness(1.6)'; g2.drawImage(cv, 0, 0, c2.width, c2.height);
+      const d = c2.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let q = 0; q < n; q++) console.log('[PBIMG]', 'kr_' + f, q + '/' + n, d.slice(q * 8000, (q + 1) * 8000)); }
+  }
+}
+
+// THE DARK KNIGHT'S TRAIL LEFT BEHIND (2026-11-14): caught mid-swing with his trail up, then he is not ticked any more (as
+// a death or a cull does); is the sheet still there a second later?
+export async function dkTrailLeft({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  b.settings.devMode = false; await w.__fortBoot(); b.settings.devMode = false; w.__clockOn();
+  for (let i = 0; i < 200 && b.dkS().dk.stage === 0; i++) { w.__adv(1); b.heal(); }
+  const u = b.dkS().u; b.dkTurn(u, true);
+  const C = b.camera.position, P = u.g.position;
+  let f = 0;
+  for (; f < 60 * 30; f++) { C.set(P.x + 2.6, C.y, P.z); b.lookAt(P.x, P.y + 1.4, P.z); w.__adv(1); b.heal(); if (u.swTrail && u.swTrail.m.visible && u.swTrail.on > 0.9) break; }
+  log('trail up at frame', f, 'visible', !!(u.swTrail && u.swTrail.m.visible));
+  u.g.visible = false; u.st.alive = false;          // (nobody ticks his trail now)
+  const T = u.swTrail; let goneAt = -1;
+  for (let i = 0; i < 90; i++) { w.__adv(1); if (goneAt < 0 && !T.m.visible) goneAt = i; }
+  log('a second and a half later: trail visible', T.m.visible, 'gone after frames', goneAt);
+}
+
+// THE DOCK'S POSTS: rays straight down over the seaward end of the pier; what stands above the boards, and how high
+export async function dockPosts({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, T = b.THREE;
+  C.position.set(-1.9, 1.74 + 1.7, -215.7); b.camBaseY = C.position.y;
+  for (let i = 0; i < 200; i++) { b.frame(1); await sleep(30); }
+  const D = b.dock; D.visible = true; D.updateMatrixWorld(true);
+  const rc = new T.Raycaster(), hits = [];
+  for (let x = -7; x <= 2; x += 0.08) for (let z = -222; z <= -209; z += 0.08) {
+    rc.set(new T.Vector3(x, 6, z), new T.Vector3(0, -1, 0)); rc.far = 6;
+    const h = rc.intersectObject(D, true)[0];
+    if (h && h.point.y > b.DOCK_DECK + 0.25) hits.push([x, z, h.point.y]);
+  }
+  // clusters
+  const cl = [];
+  for (const p of hits) { let c = cl.find((q) => Math.hypot(q.x - p[0], q.z - p[1]) < 0.5); if (!c) cl.push(c = { x: 0, z: 0, n: 0, top: -9 }); c.x += p[0]; c.z += p[1]; c.n++; c.top = Math.max(c.top, p[2]); }
+  for (const c of cl) log('post at', (c.x / c.n).toFixed(2), (c.z / c.n).toFixed(2), 'top', c.top.toFixed(2), 'cells', c.n);
+  log('deck', b.DOCK_DECK.toFixed(2));
+}
+
+// THE CROW (2026-11-14): its TakeOff clip at a run of times (side view, a sheet), then the pet: it facing you, the beak
+// open in the scream (close), and the take-off
+export async function crowClip({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, K = b.CROW, T = b.THREE;
+  C.position.set(-1.9, 3.44, -215.7); b.camBaseY = C.position.y;
+  for (let i = 0; i < 300 && !(K.g && K.mixer); i++) { b.frame(1); await sleep(40); }
+  log('crow', !!K.g, 'jaw', !!K.jaw, 'lower beak verts', K.lower && K.lower.length, 'jawSign', K.jawSign, 'clip', K.act && K.act.getClip().duration.toFixed(2));
+  w.__clockOn();
+  const G = K.g, P = G.position.clone();
+  const cv = b.renderer.domElement, sw = 240, sh = 200, cols = 6, times = [];
+  for (let t = 0; t <= 10.5; t += 0.35) times.push(t);
+  const sheet = document.createElement('canvas'); sheet.width = sw * cols; sheet.height = sh * Math.ceil(times.length / cols); const g2 = sheet.getContext('2d'); g2.filter = 'brightness(2.2)';
+  K.st = 'test';
+  const fov0 = C.fov;
+  for (let k = 0; k < times.length; k++) { const t = times[k]; w.__adv(1); C.fov = 30; C.updateProjectionMatrix();
+    K.act.paused = true; K.act.time = t; K.mixer.update(0); G.updateMatrixWorld(true);
+    const bb = b.skinnedBoundsS ? null : null;
+    C.position.set(P.x, P.y + 0.3, P.z + 2.2); C.lookAt(P.x, P.y + 0.15, P.z); C.updateMatrixWorld(true);
+    b.renderer.render(b.scene, C); shot('cc_' + String(k).padStart(2, '0') + '_' + t.toFixed(2), 300, 2.2);
+  }
+  C.fov = fov0; C.updateProjectionMatrix();
+  // the pet: you on the pier in front of it
+  K.st = 'perch';
+  C.position.set(P.x + 1.6, 3.44, P.z + 0.3); b.camBaseY = C.position.y; b.lookAt(P.x, P.y + 0.2, P.z);
+  for (let i = 0; i < 5; i++) w.__adv(1);
+  b.crowPet();
+  let f = 0;
+  for (; f < 60 * 3; f++) { C.position.set(P.x + 1.6, 3.44, P.z + 0.3); b.camBaseY = C.position.y; b.lookAt(P.x, P.y + 0.2, P.z); w.__adv(1); if (K.st === 'scream' && K.t > 0.4) break; }
+  { const hp = new T.Vector3(); K.head.getWorldPosition(hp); C.fov = 40; C.updateProjectionMatrix(); C.position.set(P.x + 1.0, P.y + 0.75, P.z + 0.1); C.lookAt(hp); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); shot('crow_scream', 640, 2.0);
+    C.fov = 25; C.updateProjectionMatrix(); C.position.set(hp.x + 0.1, hp.y + 0.05, hp.z + 0.75); C.lookAt(hp); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); shot('crow_scream_side', 640, 2.0); }
+  log('scream state', K.st, 't', K.t.toFixed(2), 'jaw angle', (2 * Math.acos(Math.min(1, Math.abs(K.jaw ? K.jaw.quaternion.w : 1)))).toFixed(2));
+  for (f = 0; f < 60 * 4 && K.st !== 'fly'; f++) w.__adv(1);
+  for (const [nm, tt] of [['crow_fly_a', 0.15], ['crow_fly_b', 0.5], ['crow_fly_c', 1.2], ['crow_fly_d', 2.5]]) {
+    while (K.t < tt && K.st === 'fly') w.__adv(1);
+    C.fov = 60; C.updateProjectionMatrix(); C.position.set(P.x + 1.6, 3.44, P.z + 0.3); C.lookAt(K.g.position); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); shot(nm, 480, 2.0);
+    log(nm, 't', K.t.toFixed(2), 'from the post', K.g.position.clone().sub(P).toArray().map((n) => n.toFixed(2)).join(','), 'clip', K.act.time.toFixed(2), 'vis', K.g.visible);
+  }
+  log('flying: st', K.st, 'height over the post', (K.g.position.y - P.y).toFixed(2), 'gone flag', b.crowGoneS());
+}
+
+// THE CROW, MEASURED: its skinned bounds, feet and beak tip in the world against the post, through the clip
+export async function crowMeasure({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, K = b.CROW, T = b.THREE;
+  C.position.set(-1.9, 3.44, -215.7); b.camBaseY = C.position.y;
+  for (let i = 0; i < 300 && !(K.g && K.mixer && K.jaw); i++) { b.frame(1); await sleep(40); }
+  K.st = 'test';
+  const M = K.mesh, P = M.geometry.attributes.position, v = new T.Vector3(), G = K.g.position;
+  const tip = 0;   // (the old jaw's vertex list is gone: the beak's tip is no longer a mesh vertex here)
+  const at = (t) => {
+    K.act.time = t; K.mixer.update(0); K.g.updateMatrixWorld(true); M.skeleton.update();
+    const box = new T.Box3(); box.makeEmpty(); let low = null, lowY = 1e9;
+    for (let i = 0; i < P.count; i += 3) { v.fromBufferAttribute(P, i); M.applyBoneTransform(i, v); v.applyMatrix4(M.matrixWorld); box.expandByPoint(v); if (v.y < lowY) { lowY = v.y; low = v.clone(); } }
+    v.fromBufferAttribute(P, tip); M.applyBoneTransform(tip, v); v.applyMatrix4(M.matrixWorld);
+    const hp = new T.Vector3(); K.head.getWorldPosition(hp);
+    const f = (q) => [q.x - G.x, q.y - G.y, q.z - G.z].map((n) => n.toFixed(2)).join(',');
+    return `t ${t.toFixed(1)} box ${f(box.min)} .. ${f(box.max)}  feet ${f(low)}  tip ${f(v)}  head ${f(hp)}`;
+  };
+  log('crow group at', G.x.toFixed(2), G.y.toFixed(2), G.z.toFixed(2), 'post', -3.52, 2.32, -216.66);
+  const T0 = +(new URLSearchParams(w.location.search).get('t0') || 0);
+  for (let t = 6.8; t <= 10.52; t += 0.1) { const r = at(t); log(r.replace(/head.*/, '')); }
+}
+
+// THE CROW'S JAW: shut and open, side and front, close (fov 14)
+export async function crowJawShots({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, K = b.CROW, T = b.THREE;
+  C.position.set(-1.9, 3.44, -215.7); b.camBaseY = C.position.y;
+  for (let i = 0; i < 300 && !(K.g && K.jaw); i++) { b.frame(1); await sleep(40); }
+  w.__clockOn(); K.st = 'test'; w.__adv(1);
+  const hp = new T.Vector3(), hq = new T.Quaternion();
+  log('jaw', K.jaw && K.jaw.name, 'the caw opens it', (K.jawOpen || 0).toFixed(3), 'rad about', K.jawAx.toArray().map((n) => n.toFixed(2)).join(','));
+  for (const [a, mo] of [[0, 0], [1.0, 0], [1.25, 0]]) {
+    K.act.time = 6.5; K.mixer.update(0); K.jaw.quaternion.multiply(new T.Quaternion().setFromAxisAngle(K.jawAx, K.jawOpen * a)); K.g.updateMatrixWorld(true);
+    K.head.getWorldPosition(hp); K.head.getWorldQuaternion(hq);
+    const ax = K.jawAx.clone().applyQuaternion(hq).normalize(), fw = K.headFwd.clone().applyQuaternion(hq).normalize(), aim = hp.clone().addScaledVector(fw, 0.04);
+    for (const [nm, d] of [['side', ax], ['front', fw.clone().addScaledVector(ax, 0.35).normalize()]]) {
+      C.fov = 9; C.updateProjectionMatrix(); C.position.copy(aim).addScaledVector(d, 0.7); C.lookAt(aim); C.updateMatrixWorld(true);
+      b.renderer.render(b.scene, C); shot('jaw_' + a + (mo ? 'm' : '') + '_' + nm, 400, 2.6);
+    }
+  }
+}
+
+// THE CROW AS YOU MEET IT: standing where the owner stood on the pier, looking at it (the game's own fov, no gain),
+// the prompt, then the click
+export async function crowMeet({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, K = b.CROW;
+  const at = () => { C.position.set(-1.89, 3.44, -215.73); b.camBaseY = C.position.y; };
+  at();
+  for (let i = 0; i < 300 && !(K.g && K.jaw); i++) { b.frame(1); await sleep(40); }
+  w.__clockOn(); b.setFallbackLook(true);
+  const P = K.g.position;
+  for (let i = 0; i < 20; i++) { at(); b.lookAt(P.x, P.y + 0.15, P.z); w.__adv(1); }
+  log('from', C.position.distanceTo(P).toFixed(2), 'm, prompt', b.hoveredS(), 'st', K.st);
+  { const T = b.THREE, r = new T.Raycaster(); C.updateMatrixWorld(true); r.setFromCamera({ x: 0, y: 0 }, C); const h = r.intersectObject(K.proxy, false); const pp = new T.Vector3(); K.proxy.getWorldPosition(pp);
+    log('ray to the proxy', h.length && h[0].distance.toFixed(2), 'proxy at', pp.toArray().map((n) => n.toFixed(2)).join(','), 'crow it', b.crowHoverS()); }
+  shot('meet_far', 640, 1.0);
+  // nearer: a step up to it
+  const near = () => { C.position.set(-2.7, 3.44, -216.4); b.camBaseY = C.position.y; };
+  for (let i = 0; i < 20; i++) { near(); b.lookAt(P.x, P.y + 0.15, P.z); w.__adv(1); }
+  log('near', C.position.distanceTo(P).toFixed(2), 'm, prompt', b.hoveredS());
+  shot('meet_near', 640, 1.0);
+  if (b.primaryAction) b.primaryAction(); else b.crowPet();
+  log('after the click: st', K.st);
+  for (let i = 0; i < 120 && !(K.st === 'scream' && K.t > 0.35); i++) { near(); w.__adv(1); }
+  shot('meet_scream', 640, 1.0);
+  { const T = b.THREE, G = K.g, hp = new T.Vector3(), q = new T.Quaternion(), tip = new T.Vector3();
+    K.head.getWorldPosition(hp); K.head.getWorldQuaternion(q);
+    const toEye = C.position.clone().sub(hp).normalize(), hf = K.headFwd.clone().applyQuaternion(q);
+    const bf = new T.Vector3(0, 0, 1).applyQuaternion(G.quaternion); const flat = new T.Vector3(toEye.x, 0, toEye.z).normalize();
+    log('body fwd . eye (flat)', bf.dot(flat).toFixed(2), 'head fwd . eye', hf.dot(toEye).toFixed(2), 'rotY', G.rotation.y.toFixed(2)); }
+  log('scream', K.st, K.t.toFixed(2), 'fov', b.camera.fov.toFixed(1));
+  for (let i = 0; i < 60 && !(K.st === 'scream' && K.t > 0.9); i++) { near(); w.__adv(1); }
+  shot('meet_scream2', 640, 1.0);
+  { const keep = C.position.clone(), kq = C.quaternion.clone(), kf = C.fov; const T = b.THREE, hp = new T.Vector3(); K.head.getWorldPosition(hp);
+    for (const [nm, dx, dy, dz] of [['side', 0, 0.1, 1.2], ['behindEye', 1.6, 1.25, 0.3]]) { C.fov = 30; C.updateProjectionMatrix(); C.position.set(P.x + dx, P.y + dy + 0.2, P.z + dz); C.lookAt(hp); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); shot('meet_' + nm, 480, 2.0); }
+    C.position.copy(keep); C.quaternion.copy(kq); C.fov = kf; C.updateProjectionMatrix(); } log('scream later', K.t.toFixed(2), 'fov', b.camera.fov.toFixed(1));
+  for (let i = 0; i < 240 && !(K.st === 'fly' && K.t > 0.6); i++) { near(); w.__adv(1); }
+  shot('meet_fly', 640, 1.0); log('flying', K.t.toFixed(2), 'fov', b.camera.fov.toFixed(1));
+}
+
+// THE SCREAM, THROUGH: the owner's recording decoded, the beak's opening over it, and stills from your eye and from
+// the side at a run of moments (the side views close on the head)
+export async function crowScreamSeq({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, K = b.CROW, T = b.THREE;
+  const near = () => { C.position.set(-2.7, 3.44, -216.4); b.camBaseY = C.position.y; };
+  near();
+  for (let i = 0; i < 400 && !(K.g && K.jaw && K.env); i++) { b.frame(1); await sleep(40); }
+  log('env', !!K.env, K.env && ('len ' + K.env.len.toFixed(2) + ' s, steps ' + K.env.k.length));
+  w.__clockOn(); b.setFallbackLook(true);
+  const P = K.g.position.clone();
+  for (let i = 0; i < 10; i++) { near(); b.lookAt(P.x, P.y + 0.15, P.z); w.__adv(1); }
+  for (let i = 0; i < 4; i++) { near(); w.__adv(1); }
+  shot('sq_eye_perch', 480, 1.6);
+  { const keep = C.position.clone(), kq = C.quaternion.clone(), kf = C.fov; C.fov = 30; C.updateProjectionMatrix(); C.position.set(P.x + 0.9, P.y + 0.35, P.z + 0.15); C.lookAt(P.x, P.y + 0.22, P.z); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); shot('sq_front_perch', 480, 2.0); C.position.copy(keep); C.quaternion.copy(kq); C.fov = kf; C.updateProjectionMatrix(); C.updateMatrixWorld(true); }
+  b.crowPet();
+  while (K.st === 'look' && K.t < 0.5) { near(); w.__adv(1); }
+  { const keep = C.position.clone(), kq = C.quaternion.clone(), kf = C.fov; K.head.updateMatrixWorld(true); const hp0 = new T.Vector3(); K.head.getWorldPosition(hp0);
+    const hq = new T.Quaternion(); K.head.getWorldQuaternion(hq); const ax = K.jawAx.clone().applyQuaternion(hq).normalize(), fw = K.headFwd.clone().applyQuaternion(hq).normalize(), aim = hp0.clone().addScaledVector(fw, 0.05);
+    C.fov = 18; C.updateProjectionMatrix(); C.position.copy(aim).addScaledVector(ax, 0.6); C.lookAt(aim); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); shot('sq_side_shut', 480, 2.0);
+    C.position.copy(keep); C.quaternion.copy(kq); C.fov = kf; C.updateProjectionMatrix(); C.updateMatrixWorld(true); }
+  while (K.st === 'look') { near(); w.__adv(1); }
+  const marks = [0.05, 0.3, 0.8, 1.5, 2.3, 3.0, 3.5, 3.8], rows = [];
+  let m = 0, series = [];
+  const hp = new T.Vector3();
+  while (K.st === 'scream') {
+    near(); w.__adv(1);
+    if (K.st !== 'scream') break;
+    const ang = K.jaw.quaternion.angleTo(new T.Quaternion(0, 0, 0.582, 0.813));
+    if (series.length === 0 || K.t - series[series.length - 1][0] >= 0.25) series.push([K.t, ang]);
+    if (m < marks.length && K.t >= marks[m]) {
+      const tag = String(m) + '_' + K.t.toFixed(2);
+      shot('sq_eye_' + tag, 480, 1.0);
+      const keep = C.position.clone(), kq = C.quaternion.clone(), kf = C.fov;
+      K.head.getWorldPosition(hp);
+      // along the hinge: the beak's own side, square on (the hinge axis in the world, from the head)
+      const hq = new T.Quaternion(); K.head.getWorldQuaternion(hq); const ax = K.jawAx.clone().applyQuaternion(hq).normalize();
+      const fw = K.headFwd.clone().applyQuaternion(hq).normalize(), aim = hp.clone().addScaledVector(fw, 0.05);
+      C.fov = 18; C.updateProjectionMatrix(); C.position.copy(aim).addScaledVector(ax, 0.6); C.up.set(0, 1, 0); C.lookAt(aim); C.updateMatrixWorld(true);
+      b.renderer.render(b.scene, C); shot('sq_side_' + tag, 480, 2.0);
+      C.position.copy(keep); C.quaternion.copy(kq); C.fov = kf; C.updateProjectionMatrix(); C.updateMatrixWorld(true);
+      m++;
+    }
+  }
+  log('beak (s, rad):', series.map((r) => r[0].toFixed(2) + ':' + r[1].toFixed(2)).join(' '));
+  log('then', K.st, 'fov', C.fov.toFixed(1));
+}
+
+// THE CROW'S OWN JAW BONE through the caw: its local turn and place against the idle frame, and whether a track drives it
+export async function crowJawBone({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, K = b.CROW, T = b.THREE;
+  C.position.set(-1.9, 3.44, -215.7); b.camBaseY = C.position.y;
+  for (let i = 0; i < 300 && !(K.g && K.act); i++) { b.frame(1); await sleep(40); }
+  K.st = 'test';
+  const J = K.jaw; log('jaw', J && J.name, 'parent', J && J.parent && J.parent.name);
+  const tracks = K.act.getClip().tracks.filter((t) => /Queue|Head/.test(t.name)).map((t) => t.name + ' x' + t.times.length);
+  log('tracks', tracks.join(' | '));
+  const at = (t) => { K.act.time = t; K.mixer.update(0); return [J.quaternion.clone(), J.position.clone()]; };
+  const [q0, p0] = at(6.5);
+  const row = []; for (let t = 0; t <= 10.5; t += 0.1) { const [q, p] = at(t); row.push(t.toFixed(1) + ':' + q.angleTo(q0).toFixed(2)); }
+  log('turn by time', row.join(' '));
+  const bound = K.mixer._bindings ? K.mixer._bindings.filter((x) => x.binding && x.binding.node === J).length : -1;
+  log('mixer bindings on the jaw', bound);
+}
+
+// THE CROW ON ITS POST: side, front and from your eye (solid now; its feet's middle on the post's middle), the post's
+// own top measured by rays
+export async function crowPerch({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, K = b.CROW, T = b.THREE;
+  const near = () => { C.position.set(-2.7, 3.44, -216.4); b.camBaseY = C.position.y; };
+  near();
+  for (let i = 0; i < 300 && !(K.g && K.jaw); i++) { b.frame(1); await sleep(40); }
+  w.__clockOn(); for (let i = 0; i < 10; i++) { near(); w.__adv(1); }
+  const P = K.g.position.clone(), D = b.dock; D.visible = true; D.updateMatrixWorld(true);
+  const rc = new T.Raycaster(); let xs = [], zs = [];
+  for (let dx = -0.4; dx <= 0.4; dx += 0.01) for (let dz = -0.4; dz <= 0.4; dz += 0.01) {
+    rc.set(new T.Vector3(P.x + dx, P.y + 1, P.z + dz), new T.Vector3(0, -1, 0)); rc.far = 1.1;
+    const h = rc.intersectObject(D, true)[0]; if (h && h.point.y > P.y - 0.05) { xs.push(P.x + dx); zs.push(P.z + dz); }
+  }
+  const cx = xs.reduce((a, v) => a + v, 0) / xs.length, cz = zs.reduce((a, v) => a + v, 0) / zs.length;
+  log('post top: centre', cx.toFixed(3), cz.toFixed(3), 'across', (Math.max(...xs) - Math.min(...xs)).toFixed(2), 'x', (Math.max(...zs) - Math.min(...zs)).toFixed(2), '| crow at', P.x.toFixed(3), P.z.toFixed(3), 'feet points', K.feetN, 'material transparent', K.mesh.material.transparent);
+  // the standing bird's feet, measured again on the post
+  K.mixer.update(0); K.g.updateMatrixWorld(true); K.mesh.skeleton.update();
+  const Pa = K.mesh.geometry.attributes.position, v = new T.Vector3(); let lowY = 1e9; const pts = [];
+  for (let i = 0; i < Pa.count; i++) { v.fromBufferAttribute(Pa, i); K.mesh.applyBoneTransform(i, v); v.applyMatrix4(K.mesh.matrixWorld); pts.push(v.clone()); lowY = Math.min(lowY, v.y); }
+  const ft = pts.filter((q) => q.y < lowY + 0.015), fx = ft.reduce((a, q) => a + q.x, 0) / ft.length, fz = ft.reduce((a, q) => a + q.z, 0) / ft.length;
+  const bx = new T.Box3().setFromPoints(pts);
+  log('feet: middle', fx.toFixed(3), fz.toFixed(3), 'lowest', lowY.toFixed(3), 'post top', P.y.toFixed(3), '| bird', (bx.max.x - bx.min.x).toFixed(2), 'x', (bx.max.y - bx.min.y).toFixed(2), 'x', (bx.max.z - bx.min.z).toFixed(2));
+  for (const [nm, dx, dy, dz, fov, g] of [['perch_side', 0, 0.25, 1.6, 30, 2.0], ['perch_front', 1.6, 0.25, 0.1, 30, 2.0], ['perch_eye', -2.7 - P.x, 3.44 - P.y, -216.4 - P.z, 60, 1.3]]) {
+    C.fov = fov; C.updateProjectionMatrix(); C.position.set(P.x + dx, P.y + dy, P.z + dz); C.lookAt(P.x, P.y + 0.18, P.z); C.updateMatrixWorld(true);
+    b.renderer.render(b.scene, C); shot(nm, 480, g);
+  }
+}
+
+// THE ZOOM AND THE SHAKE through the scream: the lens's fov and the trauma every quarter second from the click, from
+// the far petting spot and from the near one, and what you see at its height
+export async function crowZoomTrace({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, K = b.CROW;
+  for (let i = 0; i < 300 && !(K.g && K.jaw && K.env); i++) { C.position.set(-1.89, 3.44, -215.73); b.camBaseY = C.position.y; b.frame(1); await sleep(40); }
+  w.__clockOn(); b.setFallbackLook(true);
+  const P = K.g.position;
+  for (const [nm, x, z] of [['far', -1.89, -215.73], ['near', -2.7, -216.4]]) {
+    b.crowAgain();
+    const at = () => { C.position.x = x; C.position.z = z; b.camBaseY = 3.44; };
+    for (let i = 0; i < 30; i++) { at(); b.lookAt(P.x, P.y + 0.15, P.z); w.__adv(1); }
+    log(nm, 'from', C.position.distanceTo(P).toFixed(2), 'm, fov', C.fov.toFixed(1), 'st', K.st);
+    b.crowPet();
+    let next = 0, t0 = 0, shotDone = false;
+    for (let i = 0; i < 900 && !(K.st === 'gone' || (K.st === 'fly' && K.achLogged && K.t > 1.2)); i++) {
+      at(); w.__adv(1); t0 += 1 / 60;
+      if (t0 >= next) { log(nm, 't', t0.toFixed(2), K.st, K.t.toFixed(2), 'fov', C.fov.toFixed(1), 'trauma', b.trauma.toFixed(2)); next += 0.25; }
+      if (!shotDone && K.st === 'scream' && K.t > 0.6) { shot('zoom_' + nm, 640, 1.0); shotDone = true; }
+      if (K.ach && !K.achLogged) { K.achLogged = true; const el = w.document.getElementById('ach'); log(nm, 'ACHIEVEMENT at fly t', K.t.toFixed(2), 'crow from you', K.g.position.distanceTo(C.position).toFixed(1), 'm, toast', el && el.className, el && el.textContent.replace(/\s+/g, ' ').trim()); }
+    }
+    log(nm, 'after: fov', C.fov.toFixed(1), 'st', K.st);
+  }
+}
+
+// SKRIM UP HIS CHAIN AT HALF HEALTH (`SK_HANG`): the hook into the vault, him reeled up and hanging, five heads down the
+// chain and off it, you cutting them down as they come, and him lowered back to the fight. Logs every half second; stills
+// from your eye and from off to the side (the whole chain).
+export async function skrimHang({ w, b, log, sleep, shot }) {
+  b.settings.devMode = false;
+  b.placeInWhale();
+  const S = b.SKRIM, cam = b.camera.position, C = b.camera;
+  for (let i = 0; i < 400 && !(S.u && S.u.model && !(S.u.clipsPending > 0) && S.placed && S.u.clips.crouchIdle); i++) { b.frame(1); await sleep(50); }
+  const u = S.u; if (!u || !u.model) { log('no skrim'); return; }
+  for (let i = 0; i < 30; i++) b.frame(1);
+  w.requestAnimationFrame = () => 0;
+  const P = u.g.position, T = P.constructor;
+  S.stage = 'dig'; cam.set(P.x + Math.sin(u.g.rotation.y) * 4, P.y + 1.62, P.z + Math.cos(u.g.rotation.y) * 4);
+  b.skrimFight();
+  for (let i = 0; i < 120 && S.stage !== 'fight'; i++) b.step(1 / 60);
+  for (let i = 0; i < 300 && !(b.CRY && b.CRY.built); i++) b.step(1 / 60);
+  log('stage', S.stage, 'heads built', b.CRY.list.length, 'his', b.CRY.list.filter((h) => h.summon).length);
+  u.st.hp = Math.round(u.kind.hp * 0.49); b.CRY.log = [];
+  const k = u.sk, heads = () => b.CRY.list.filter((h) => h.summon);
+  const side = (nm) => {
+    const keep = cam.clone(), kq = C.quaternion.clone(), kf = C.fov, H = k.hang;
+    const top = H ? H.A : P; C.fov = 70; C.updateProjectionMatrix();
+    const dx = cam.x - P.x, dz = cam.z - P.z, d = Math.hypot(dx, dz) || 1;
+    C.position.set(P.x + 1.5, P.y + 3, P.z + 12); C.lookAt(P.x, (P.y + top.y) / 2, P.z); C.updateMatrixWorld(true);
+    shot(nm, 640, 1.8);
+    C.position.copy(keep); C.quaternion.copy(kq); C.fov = kf; C.updateProjectionMatrix();
+  };
+  const eye = (nm, x, y, z) => { const kf = C.fov; C.fov = 55; C.updateProjectionMatrix(); b.lookAt(x, y, z); C.updateMatrixWorld(true); shot(nm, 640, 1.8); C.fov = kf; C.updateProjectionMatrix(); };
+  let t = 0, nextLog = 0, did = {}, hpLost = 0, cut = 0, hp0 = b.state().hp, hitHim = null, phs = [];
+  const shoot = new URLSearchParams(window.location.search).get('m') === 'shoot';
+  for (let f = 0; f < 60 * 70; f++) {
+    // you: 6 m off him, looking at him (or at a head near you, and cutting it)
+    const dx = cam.x - P.x, dz = cam.z - P.z, d = Math.hypot(dx, dz) || 1; cam.x = P.x + dx / d * 6; cam.z = P.z + dz / d * 6;
+    let look = [P.x, P.y + 1.3, P.z];
+    for (const h of heads()) {
+      if (h.mode === 'dead' || h.mode === 'still' || h.mode === 'buried' || h.mode === 'chain' || h.off) continue;
+      const W = h.body.getWorldPosition(new T()); if (W.distanceTo(cam) > 2.3) continue;
+      look = [W.x, W.y, W.z]; b.lookAt(W.x, W.y, W.z); if (b.cryStrike(0.6)) cut++; break;
+    }
+    b.lookAt(...look);
+    b.step(1 / 60); t += 1 / 60;
+    if (b.state().hp < hp0) hpLost += hp0 - b.state().hp; b.heal(); hp0 = b.state().hp;
+    const H = k.hang, ph = H ? H.ph : (k.hangDone ? 'after' : 'before');
+    if (phs[phs.length - 1] !== ph) { phs.push(ph); log('phase', ph, 'at', t.toFixed(2), 's, his feet over the floor', (P.y - b.skrimFloorW(P.x, P.z)).toFixed(2)); }
+    if (H && H.ph === 'throw' && H.C && !did.throw) { did.throw = 1; eye('hang_throw', P.x, P.y + 3, P.z); side('hang_throw_side'); }
+    if (H && H.ph === 'hang' && H.t > 0.3 && !did.up) {
+      did.up = 1; eye('hang_up', P.x, P.y + 1.2, P.z); side('hang_up_side');
+      log('anchor', H.A.toArray().map((q) => q.toFixed(2)).join(','), 'floor', b.skrimFloorW(P.x, P.z).toFixed(2), 'chain length', H.C && b.skcLen && b.skcLen(H.C).toFixed(2));
+      const hp1 = u.st.hp; b.hurtMutantTest(u, 10); hitHim = hp1 + ' -> ' + u.st.hp;
+    }
+    const onC = heads().filter((h) => h.mode === 'chain');
+    if (onC.length && onC[0].ca > 3 && !did.crab) {
+      did.crab = 1; const W = onC[0].body.getWorldPosition(new T());
+      eye('hang_crab_eye', W.x, W.y, W.z); side('hang_crab_side');
+      const keep = cam.clone(), kq = C.quaternion.clone(), kf = C.fov; C.fov = 35; C.updateProjectionMatrix();
+      C.position.set(W.x + (cam.x - W.x) / 3, W.y - 0.6, W.z + (cam.z - W.z) / 3); C.lookAt(W); C.updateMatrixWorld(true); shot('hang_crab_close', 640, 2.2);
+      C.position.copy(keep); C.quaternion.copy(kq); C.fov = kf; C.updateProjectionMatrix();
+    }
+    if (heads().some((h) => h.mode === 'leap' && h.off && h.t > 0.15) && !did.drop) { did.drop = 1; const h = heads().find((q) => q.mode === 'leap' && q.off); const W = h.body.getWorldPosition(new T()); eye('hang_drop', W.x, W.y, W.z); }
+    if (shoot && H && H.ph === 'hang' && H.t > 1.6 && !did.shot) {
+      did.shot = t; const hp1 = u.st.hp, d0 = new T(P.x - cam.x, 0, P.z - cam.z).normalize();
+      b.skrimShot(u, d0); b.hurtMutantTest(u, 7, 0.5); log('SHOT at', t.toFixed(2), 'his hp', hp1, '->', u.st.hp, 'phase now', k.hang && k.hang.ph, 'feet', (P.y - b.skrimFloorW(P.x, P.z)).toFixed(2));
+    }
+    if (shoot && H && H.ph === 'fall' && H.t > 0.35 && !did.fallShot) { did.fallShot = 1; eye('shot_fall', P.x, P.y + 1, P.z); }
+    if (shoot && H && H.ph === 'down' && H.t > 0.3 && !did.downShot) { did.downShot = 1; eye('shot_down', P.x, P.y + 0.8, P.z); const hp2 = u.st.hp; b.hurtMutantTest(u, 5, 0.6); log('cut him while down', hp2, '->', u.st.hp); }
+    if (ph === 'lower' && H.t > 0.6 && !did.low) { did.low = 1; eye('hang_lower', P.x, P.y + 1.2, P.z); }
+    // close on him from along the gut and from across it: his weight on his fist, the swing, the chain
+    for (const [tag, ph0, t0] of [['reel', 'reel', 0.3], ['catch', 'hang', 0.12], ['h1', 'hang', 0.7], ['h2', 'hang', 1.5], ['h3', 'hang', 4.2]]) {
+      if (!H || H.ph !== ph0 || H.t < t0 || did['c' + tag]) continue; did['c' + tag] = 1;
+      const keep = cam.clone(), kq = C.quaternion.clone(), kf = C.fov, cy = P.y + 1.4;
+      for (const [nm, ox, oz] of [['z', 0.8, 7.5], ['x', 7.5, -0.6]]) {
+        C.fov = 42; C.updateProjectionMatrix(); C.position.set(P.x + ox, cy + 0.3, P.z + oz); C.lookAt(P.x, cy + 0.4, P.z); C.updateMatrixWorld(true); shot('hc_' + tag + '_' + nm, 480, 1.8);
+      }
+      C.position.copy(keep); C.quaternion.copy(kq); C.fov = kf; C.updateProjectionMatrix();
+    }
+    if (t >= nextLog) { nextLog += 0.5; log(' t', t.toFixed(1), ph, 'feet', (P.y - b.skrimFloorW(P.x, P.z)).toFixed(2), 'heads', heads().map((h) => h.mode[0] + h.mode[1] + (h.mode === 'chain' ? h.ca.toFixed(1) : '')).join(' '), 'act', k.act && k.act.name, 'hp', u.st.hp, H && H.b ? 'swing ' + H.b.length().toFixed(2) + ' bounce ' + H.yb.toFixed(2) + ' chain sway ' + H.c.length().toFixed(2) + ' fist->chain end ' + (b.SKC.list.includes(H.C) ? H.C.pts[0].distanceTo(u.model.getObjectByName('Character1_LeftHand').getWorldPosition(new T())).toFixed(3) : '-') : ''); }
+    if (ph === 'after' && !did.end) { did.end = t; }
+    if (did.end && t > did.end + 6) break;
+  }
+  const ev = {}; for (const e of (b.CRY.log || [])) ev[e.ev] = (ev[e.ev] || 0) + 1;
+  { const hs = heads().filter((h) => h.mode === 'still').slice(0, 2);
+    hs.forEach((h, i) => { const W = h.body.getWorldPosition(new T()), fy = b.skrimFloorW(W.x, W.z); C.fov = 50; C.updateProjectionMatrix();
+      C.position.set(W.x + 1.4, fy + 0.45, W.z + 0.6); C.lookAt(W.x, fy + 0.1, W.z); C.updateMatrixWorld(true); shot('dead_head_' + i, 480, 1.8); }); }
+  log('his heads at the end:', heads().map((h) => { const W = h.body.getWorldPosition(new T()); return h.i + ' ' + h.mode + ' over the floor ' + (W.y - b.skrimFloorW(W.x, W.z)).toFixed(2); }).join(' | '));
+  log('phases', phs.join(' > '), '| hit him while hung', hitHim, '| heads cut', cut, '| your hp lost', hpLost, '| events', JSON.stringify(ev), '| his hook back in his fist', b.SKC && b.SKC.hookSrc && b.SKC.hookSrc.visible, 'chains', b.SKC && b.SKC.list.length);
 }

@@ -1784,3 +1784,8 @@ levers and the generator (`assets/sewer-lamp.glb`).
 by [DarwinDOS](https://sketchfab.com/darwin.art), under the
 [Sketchfab Standard licence](https://sketchfab.com/licenses) — the electric box in
 the sewer's flooded storeroom (`assets/sewer-box.glb`).
+
+This work is based on ["Crow"](https://sketchfab.com/3d-models/crow-d5a9b0df4da3493688b63ce42c8a83e2)
+by [Alexei Ostapenko](https://sketchfab.com/alexanders823) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the crow on the pier's
+seaward post (`assets/crow.glb`).

@@ -1260,3 +1260,61 @@ checkpoint finds the same four (it was also excluding `SKQ.pick`, which a save c
 fell, so its pickup id — its place, `addInteractable` — is the same on a load); restored by `skqBuild`/`skqRestore` for
 every broken heap whose thing was not taken. Probe `skqLoot`: heaps 7, 0, 3 crabs and 1 the bottle, 5 the artifact;
 crabs 0 → 3, water 0 → 1.
+
+## 2026-11-14 — Skrim up his chain at half health
+The owner: "have skrim shoot a hook into the whale ceiling and hang in the air by his chain unrreachable when at half
+health. then have him spawn in the scary headcrab things which crawl from the top of the whale down his chain to him then
+they drop down make him spawn 5 once they all die he lowers down. his orignial spawning of these can go. make them come
+fast and scary". Then, mid-build: "make sure hes body actually looks good hanging like he has weight and there tension on
+the chain as he hangs". Probe `skrimHang` (PB_PORT=4231): phases, his feet over the floor, every head's mode, stills.
+- **Gone**: act `'summon'`, `crySummonSpots`, `crySummonEmerge`, mode `'emerge'`. `SK_SUMMON` keeps only `gap` (1.5 → 1.0)
+  and `slow`. `CRY_SUMMON_N` 3 → 5 (built with the nest, as before).
+- **`SK_HANG`** (`skrimPick` at ≤ 50%, once, `k.hangDone`; `k.hang` runs `skrimHangStep` in place of the whole fight
+  step): 'throw' (cast1, left arm eased up), the hook out of his left at 34 m/s to `whVaultY` + 0.25 (the gut's own section
+  formula from `whBuildGut`, folds and arches included, the upper-half point nearest over him: ~14 m of chain at the
+  arena); set → 'reel' (yanked up 0.55 s) → 'hang' (a head every 0.6 s from 0.5 s) → when all five are dead, 'lower' (1.4 s)
+  → jumpLand, the chain 'fall's and is hauled into his fist (seg shrinking at 7 m/s), and his hook goes back in his hand.
+- **Immune** while off his feet: `hurtMutantCore` asks `skrimHung` (measured: a 10-damage blow, 98 → 98).
+- **The heads** (`crySummonChain` → mode `'chain'`): out of the vault with a puff and a shriek, head-first down the links
+  (`skcAlong`, arc length from the hook end) at 7.5 m/s in scuttles, `SK_HANG_PITCH` 1.25 with the mouth toward you (the
+  still `hang_crab_close`), 9 cm off the chain toward you, emissive 1.15 on the chain so they read against the vault. At
+  0.75 m from his fist they let go (`cryChainDrop`: a `'leap'` with `off`, no bite, flung ≤ 3.6 m/s toward you), land in a
+  skid and hunt. The chain kind `'hang'` in `skcTick`: out / set (taut, seg ×1.002) / fall.
+- **HIS WEIGHT**: two pendulums and a spring, not a pose in the air. The chain's foot swings under the hook (`H.c`,
+  ω² = g/Lc) and stretches (`H.yb`, k 55, c 4.2: the catch at the top of the reel is ybv −2.6; a head letting go of it
+  +1.1 and a random kick). His body swings from his fist (`H.b`, his hips' offset under it, ω² = g/Lb, Lb measured fist
+  to hips at the lift-off, so standing with his arm up he swings in under it and over). Each frame: yaw only, the clip,
+  `skrimHangPose` (left clavicle aimed 0.45 at the hook, so the shoulder hikes; the arm and forearm straight up the chain;
+  the free arm down at his side; the thighs aimed under him, then trailing the swing ≤ 0.45 rad), then the whole group
+  turned about the fist so hips → hand is the pendulum's line, then moved so the fist IS the chain's end (twice, the arm
+  re-aimed between). Measured: fist to chain end 0.000 m every log; swing settles 0.4 → 0.05 m, re-kicked by each drop.
+  The 'idle' clip under it (from the 'jump' tuck at the catch: the legs drop into the hang); the jump's held tuck read as
+  sitting in the air, and the idle's stance as walking on it until the legs were aimed.
+- `skrimTurn` is not used while he hangs (it would fight the tilt): `H.yaw` turns at 0.9 rad/s, and `u.g.rotation` is
+  reset to the yaw alone when he lands. If the whale is left with him up there, the chain is gone (`updateSkrimChains`
+  clears it), and he is put down.
+- Measured: five summoned, five dropped and landed, all five cut by the probe, 3 hp lost in ~12 s; phases throw 0.32 s →
+  reel 1.37 → hang 1.9 → lower 14.8 → back to bolts and the line at 16.2. Music test 14/14.
+- **Higher, and shot off it** (the owner, the same day: "make skrim hang higher so you cant hit him. if you shoot him he
+  will fall too"). `feet` 3.4 → 5.0 (measured 5.0–5.4 m with the bounce; the chain at the arena is then ~12.7 m). A round
+  from either gun while he hangs (`skrimHung`: reel, hang or lower) calls `skrimShot` before its damage (`magRoundHits`,
+  `sgHitFoe`), so the damage lands: the hook is torn out (the chain `'fall'`s and is hauled in as ever), and he goes into
+  `'fall'`: ballistic from his swing's speed plus 1.6 m/s along the round, the tilt slerped upright over 0.45 s, hitLB.
+  Then `'down'`: crouchIdle 0.8 s, fromCrouch at 1.35, open to every blow, then the fight. The heads on the chain go off
+  it as it slackens; the rest never come out (`H.n` = 5). `skrimHang&m=shoot` (PB_PORT=4232): shot at 3.5 s, 98 → 91, on
+  the floor 1.2 s later, cut while down 91 → 86, up and fighting at 6.25 s. The "chain gone, put him down" guard only
+  acts while he is hung (the haul-in used to end his getting up early).
+- **THE LAST HEAD KILLED HUNG IN THE AIR** (the owner, with a still: "BODIES SHOULDNT FLOAT LIKE THIS AFTER DEATH ... ITS
+  MODEL IS STUCK IN THE AIR"). `cryTick` returns early while the nest has not woken unless one of Skrim's is alive
+  (`crySummonAlive`, which does not count `'dead'`), so the frame the last of them was cut, nothing stepped its body again
+  and it stayed where the blow left it. The probe had shown it: `deadFirstHit` 4 of 5 killed. Now it also runs while any
+  of his is `'dead'` (falling, not yet `'still'`). Measured: all five `'still'` at 0.16 m (`CRY_R`, the head on the floor),
+  `deadFirstHit` 5, `settled` 5; stills `dead_head_*` on the floor.
+- **THE HEAPS' CRABS WERE THERE, UNDER THE MIST** (the owner, with a still of the prompt and the shine over bare floor:
+  "HORSHHOE CRAB MODELS ARENT SHOWING UP OUT OF THE PILES"). Measured (`skqLoot`, now with its meshes, box, fluid depth
+  and stills per heap): each one has its mesh (30k tris), lies on the floor (box −0.14..0.12 m), dry (the floor is
+  0.66–0.82 m over the fluid), drawn. But `whGroundMist`'s sheets (0.05 / 0.22 / 0.5 m, transparent, renderOrder 6) are
+  drawn over it and veil the pale scan into the floor's own grey. At 45° from 0.9 m it showed; at 105° from 1.6 m it was
+  gone. The mist now has `uClr[6]` (local x, local z, radius) and parts within 1.1 m of each thing lying out
+  (`skqMistClear` in `skqTick`, off `SKQ.lootW`). Also `crabRimSeat` waits 400 tries for a scan that lands late (a load
+  into the whale), not 40.

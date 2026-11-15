@@ -1574,3 +1574,8 @@ like the center of the steering wheel."
   (−3.3, 5.16, 0), the basket under it at the hold's sole), fov 38 → 28 when it is down, holding 1.3 s; a blink, your
   eyes. Measured: the cut camera dead on the key (cos 1.000), you 0.05 m from where you stood, 5.0 s in all.
   `keyCut` is the snorkeler's too: `updateKeyCut` returns for a `ship` one.
+- **The key hangs ON its line** (2026-11-14, "make sure the key is actually visibly attached to the rope in the shipwreck
+  cutscene"): the line ended 9 cm over the key's middle — short of the bow and off to one side; the key hung in the air
+  under it. `keyLower.bow` is the key's highest vertex as it hangs (its own mesh, not `Box3.setFromObject`, which carries
+  the aim sphere and the glint), kept in its own frame; every frame the line runs from the hook to a centimetre into it,
+  leaning with the swing (`setFromUnitVectors`). Probe `shipKeyRope`: close-ups at 70 and 130 frames, the line into the bow.

@@ -914,7 +914,7 @@ on the second, fired 19 frames later, the card shown on that frame.
 - **Later the same day** ("make the merchant wait like a second after pulling his gun on you to shoot make him pulling it
   out a little more noticeable too the shot should also be the real gun shot sound with the same recoil for him. make his
   'touch me again' line look like real dialog we have in game too"): the line is `startDialog` on his own card
-  (`TRADER_NPC`, "Rude Trader", the lens on whichever of him you hit), typed, ending on its own at 2.6 s (`bossLine` only
+  (`TRADER_NPC`, "Trader" (it was "Rude Trader" until the owner: "make it just say Trader not rude"), the lens on whichever of him you hit), typed, ending on its own at 2.6 s (`bossLine` only
   if a dialog cannot open). The draw: a cloth-and-leather rasp (`sfxTraderDraw`), out from low at his hip muzzle-down,
   arcing up onto your face over `TRADER_DRAW` 0.6 s, the hammer (`sfxMagShut`) at the top; held `TRADER_HOLD` 1.0 s,
   breathing; then exactly `magFire`'s sound (`sfxMagBlast` + `magShot` 1.22 through `magBus`), a muzzle flash

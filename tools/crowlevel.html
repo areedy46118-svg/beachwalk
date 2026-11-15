@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>crow level</title>
+<!-- THE CROW'S SCREAM AT THE SPEAKERS, in a silent frame of its own (tools/silentframe.js): the owner's settings, walked
+     onto the pier, the crow petted; the loudest sample reaching the output before it and during the scream, and who
+     connected it. Prints "[CL] ...". Its own profile and save (run it like tools/musictest.sh). Not part of the game. -->
+<body>
+<script type="module">
+await import('/tools/silentframe.js');
+const log = (...a) => console.log('[CL]', ...a);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+try {
+  await window.__sfLoad(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+  let w, b;
+  for (let i = 0; i < 200; i++) { await sleep(250); w = window.__sfW(); if (w && w.__bw && w.__bw.state().started) break; try { w.__bw.beginGame(); } catch (e) {} }
+  b = w.__bw; b.settings.devMode = true;
+  const K = b.CROW, C = b.camera;
+  const near = () => { C.position.set(-2.7, 3.44, -216.4); b.camBaseY = C.position.y; };
+  for (let i = 0; i < 600 && !(K.g && K.jaw && K.env); i++) { near(); b.frame(2); await sleep(20); }
+  log('settings: volume', b.settings.volume, 'effects', b.settings.sfxVolume, 'crow', !!K.g, 'scream decoded', !!K.env);
+  await sleep(4500);                                     // (the master fades up over 4 s)
+  const peakFor = async (ms, tick) => { let pk = 0, who = ''; const t0 = performance.now(); while (performance.now() - t0 < ms) { if (tick) tick(); for (const d of window.__sfDests) { const v = window.__sfLvl(d.an); if (v > pk) { pk = v; who = d.who; } } await sleep(15); } return [pk, who]; };
+  const [p0] = await peakFor(1500, () => { near(); b.frame(1); });
+  log('before: loudest', p0);
+  b.crowPet();
+  const [p1, who] = await peakFor(4500, () => { near(); b.frame(1); });
+  log('the scream: loudest', p1, 'via', who, 'state now', K.st, 'gain', K.screamG && K.screamG.toFixed(1), 't', K.t.toFixed(2), 'hover', b.crowHoverS(), 'hidden', w.document.hidden);
+} catch (e) { log('FAILED', e && e.stack || e); }
+log('DONE');
+</script>
