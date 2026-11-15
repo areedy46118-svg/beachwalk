@@ -1215,3 +1215,7 @@ belly (`sh tools/probe.sh whaleWave`): wave at 500.18 = your feet, 101 splash dr
 - **The katana sells for 4 jars** (`SELL_ROWS` 'katana', `traderSell`); an artifact set in it comes back to the pack
   first (`artOnWeaponLeaving`, in `removeFromInventory`).
 - **The screwdriver's glow**: `addItemShine` size 0.8 → 1.6, strength 1 → 3.2, lift 1.8, through 0.7.
+- **The Lucky Ring says its number** (2026-11-15, the owner: "'random chance to do no damage' is too confusing … i need
+  a % chance"): `LUCK_P` 0.18 → 0.15, the text "15% chance an enemy hit does no damage." — the number in `desc` is
+  written by hand, so change both together. The 5 s `LUCK_GAP` is left out of the text on purpose (a hidden safety
+  rule; in a pack's flurry it pulls the real rate well under 15%, one on one it is about 15%).

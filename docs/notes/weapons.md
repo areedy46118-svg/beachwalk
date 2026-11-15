@@ -2862,3 +2862,6 @@ streaks (`skSparks`, now with a size `k`) from `skSparkAt` along the line from w
 0.5–0.6, men 1. Skrim's own come off `skrimGuardFx` as before (`blockMutant`/`parryMutant` skip `kind.skrim`, so one burst).
 `spawnSparks` is left for your own blade's strikes and digs, which do land at the tip. `updateSkSparks` floors them at
 `camera.y − playerEye()` outside the whale. Probe `dealerSide&m=guard`: 6 bursts parrying, 8 blocking, stills at mid-blade.
+- **The sawn-off hits a little harder** (2026-11-15, the owner: "make the shotgun hit a little harder"): `SG_PELLET_DMG`
+  3.1 → 3.6 (+16 %; nine pellets a stride off 28 → 32). The falloff (`sgFall`, `SG_FULL` 4.5 / `SG_FAR` 24), the spread
+  and the pellet count are as they were; the pliosaur's share reads the same constant.

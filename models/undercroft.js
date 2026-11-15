@@ -1196,8 +1196,13 @@ export function makeUndercroft(opts = {}) {
     }
     return best;
   }
-  function fitCorridor(C, bins, ix) {
+  /* (async, and it lets a frame through every ~10 ms of probing, 2026-11-15, the owner: "i want no lag at any moment":
+   * one call was 63–66 ms of `probe`s after a checkpoint, on the paced far rest — `tools/loadall.sh &prof=1`. The
+   * stations are probed in the same order with the same inputs; only the frames between move.) */
+  async function fitCorridor(C, bins, ix) {
     const P = C.pts, R = 3.2;
+    let tS = performance.now();
+    const breathe = async () => { if (performance.now() - tS > 10) { await uSlice(); tS = performance.now(); } };
     const tang = (k) => {
       const a = P[Math.max(0, k - 1)], b = P[Math.min(P.length - 1, k + 1)];
       let tx = b.x - a.x, tz = b.z - a.z; const L = Math.hypot(tx, tz) || 1; return [tx / L, tz / L];
@@ -1207,6 +1212,7 @@ export function makeUndercroft(opts = {}) {
     for (let k = 0; k < P.length; k++) {
       const [tx, tz] = tang(k), q = probe(bins, P[k], tx, tz, R);
       if (q.floor !== null) shift[k] = Math.max(-0.9, Math.min(0.9, (q.span[0] - q.span[1]) / 2));
+      await breathe();
     }
     for (let k = 1; k < P.length - 1; k++) shift[k] = shift[k] * 0.6 + (shift[k - 1] + shift[k + 1]) * 0.2;
     for (let k = 0; k < P.length; k++) {
@@ -1215,6 +1221,7 @@ export function makeUndercroft(opts = {}) {
     }
     const fy = new Float32Array(P.length);
     for (let k = 0; k < P.length; k++) {
+      await breathe();
       const [tx, tz] = tang(k), q = probe(bins, P[k], tx, tz, R);
       P[k].probe = q;
       fy[k] = q.floor === null ? 0 : q.floor;
@@ -1240,6 +1247,7 @@ export function makeUndercroft(opts = {}) {
     }
     const wall = new Float32Array(P.length).fill(-1);
     for (let k = 0; k < P.length; k++) {
+      await breathe();
       const q = P[k].probe;
       if (P[k].open) continue;
       wall[k] = Math.min(q.span[0], q.span[1], q.head[0], q.head[1]);
@@ -2757,7 +2765,7 @@ ${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 
        * corridor and a wall. */
     await uSlice();
       S.passIx = triIndex(S.passage.root);       // kept: the junction's stones are laid off it too
-      fitCorridor(inbound, surfaceBins(S.passage.root), S.passIx);
+      await fitCorridor(inbound, surfaceBins(S.passage.root), S.passIx);
     await uSlice();
       /* AND THE TUBE IS KEPT ONLY FOR THE SEAM. `walkable` asks the corridor
        * BEFORE the grids, so a tube down the whole tunnel overrides the
@@ -3469,7 +3477,7 @@ ${noDisc ? '' : `  float ucRag = uUcClipRag * (0.5 + 0.30 * sin(vGrimeP.z * 3.7 
         const outbound = buildCorridor(cw, { x: cm.x + coff.x + 0.5, z: cm.z + coff.z },
                                            { x: cf.x + coff.x - 0.5, z: cf.z + coff.z });
         if (outbound) {
-          fitCorridor(outbound, surfaceBins(S.cave.root));
+          await fitCorridor(outbound, surfaceBins(S.cave.root));
           /* THE COLLAR STARTS PAST THE WALL, NOT INSIDE IT. Begun a metre
            * inside the apse, the sleeve's own tube — the measured wall plus
            * a hand's breadth, so nearly two metres across — stood in the

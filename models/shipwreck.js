@@ -2337,8 +2337,9 @@ export function makeShipwreck(opts = {}) {
           const x = x0 - 0.3 + (i / nx) * (x1 - x0 + 0.6), t = j / nz;
           const hz = Math.max(0.05, Math.min(HOLD_HZ + 0.2, halfAtY(x, HOLD_Y) - 0.02));
           const end = Math.min(1, Math.min(i, nx - i) / 4);                   // (it tapers into the beach at each end)
-          const out = 0.10 + t * (1.15 + 0.35 * Math.sin(x * 1.7 + sg));
-          const y = (0.15 + 0.05 * Math.sin(x * 3.1)) * (1 - Math.pow(t, 0.8)) * end - 0.06 + 0.012 * Math.sin(x * 9 + t * 7);
+          // (banked up to just under her floor at the foot, 0.15 until 2026-11-15, so the broken ends stand IN the sand)
+          const out = 0.04 + t * (1.25 + 0.35 * Math.sin(x * 1.7 + sg));
+          const y = (0.24 + 0.04 * Math.sin(x * 3.1)) * (1 - Math.pow(t, 0.7)) * end - 0.06 + 0.012 * Math.sin(x * 9 + t * 7);
           pos.push(x, y, sg * (hz + out));
           uv.push(x / 1.6, out / 1.6);
         }
@@ -2351,7 +2352,11 @@ export function makeShipwreck(opts = {}) {
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
       g.setIndex(idx); g.computeVertexNormals();
-      const m = new THREE.Mesh(g, M.wetsand); m.name = 'tearDrift'; m.userData.noBake = true; HULL.add(m);
+      /* THE BEACH'S OWN SAND, NOT HER WET SAND (2026-11-15, the owner, from her floor at the breach looking out: "make this
+       * part where the boat connects to sand look better"). In `M.wetsand` (warm grey, lit from inside) the drift was a
+       * brown heap on the moon's blue beach with a hard edge where it went under — the join drawn, not hidden. In the
+       * beach's material (every apron's way) it is the beach, risen against her. */
+      const m = new THREE.Mesh(g, M.sand); m.name = 'tearDrift'; m.userData.noBake = true; HULL.add(m);
     }
   }
   // ---- torn planking along the ACTUAL edge of each tear ----------------

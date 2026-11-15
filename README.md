@@ -1018,15 +1018,8 @@ gives you (`assets/gold-ring.glb`: the file's own mesh and texture packed into o
 binary, UNCHANGED, 2.5 MB). **No derivatives: never decimate, re-texture or repack
 it lossy.**
 
-This work is based on ["Eagle - Animated Low Poly"](https://sketchfab.com/3d-models/eagle-animated-low-poly-7011d40dc85b42269ca961e098f6f236)
-by [WildPoly3D](https://sketchfab.com/WildPoly3D) licensed under
-[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/) — the eagle that
-takes Henry off the lighthouse's jetty (`assets/eagle.glb`, the file's glTF
-packed into one binary with its clips' names shortened, 1.5 MB). **Non-commercial
-only: it cannot ship in a game that is sold.** Its flight is the game's. Henry's
-scream as it carries him off is the owner's "Man Screaming Sound Effect"
-(`assets/henry-scream.m4a`, the silence in front of it cut); the bird's sounds are
-synthesised.
+Henry's scream as the crow carries him off the lighthouse's jetty is the owner's "Man Screaming Sound Effect"
+(`assets/henry-scream.m4a`, the silence in front of it cut); the bird's sounds are synthesised.
 
 This work is based on ["Fishing Rod, Rigged and Animated"](https://sketchfab.com/3d-models/fishing-rod-rigged-and-animated-78991bf44cf54acb8660bef317d72c7a)
 by [Ergin ERYILDIR](https://sketchfab.com/ergin3d.com) licensed under
@@ -1788,4 +1781,6 @@ the sewer's flooded storeroom (`assets/sewer-box.glb`).
 This work is based on ["Crow"](https://sketchfab.com/3d-models/crow-d5a9b0df4da3493688b63ce42c8a83e2)
 by [Alexei Ostapenko](https://sketchfab.com/alexanders823) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the crow on the pier's
-seaward post (`assets/crow.glb`).
+seaward post (`assets/crow.glb`), and the giant one that takes Henry off the lighthouse's jetty.
+
+The crows at the dock (`assets/dock-crow-*.m4a`) are cut from the owner's own "Crow Sound Effect" recording.

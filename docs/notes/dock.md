@@ -592,3 +592,38 @@ eyes and scream with its mouth open then fly away." Alexei Ostapenko's "Crow" (S
   `showAchievement('Rare achievement unlocked', '50 - Get scared by big crow.')`, the Seagull Slayer's toast and chime.
   `crowGone` is in `RARE_ACHIEVEMENTS`, so the end stats count it. Measured (`crowZoomTrace`): it fires at 4.2 s of
   flight, 34 m off. A load never flies the crow again, so it never fires twice.
+- **AND THE SKY ANSWERS** (2026-11-14, the owner: "make a lightening strike in the distance and be loud after the crow
+  flies away then the achievement"). At the out-of-sight moment `crowStorm()` replaces the toast. The storm's strike was
+  pulled out of `updateLightning` into `boltStrike(dir, dist, thunderIn)`, so the crow's strike is the same flash, fog and
+  cold light. It lands out over the sea the way the crow flew, dist 0.3, with its thunder 1.1 s on. `bolt.loud` makes
+  `sfxThunder` run through a compressor and a bus-relative gain (`THUNDER_CEIL` 0.42, measured: 0.5 put a 0.55 strike at
+  0.46). `bolt.onThunder` (fired whether or not the storm is `on`) adds the shake and starts the toast 1.6 s into the
+  roll. Measured (`sh tools/crowlevel.sh`): strike, thunder 1.1 s later at 0.54 peak (against 0.11 for everything else),
+  achievement 1.6 s after that.
+- **CROWS AT THE DOCK** (2026-11-15, the owner's "Crow Sound Effect"). First built as songbirds coming up the beach
+  crossfading into crows on the pier; the same day: "take out the pretty bird chirp audio and delete it for good. just
+  have the crow make noise when you get near and on the fisherman dock" — the songbird files (`dock-birds-1..3`) are
+  deleted, not kept. `updateDockBirds` (from `animateFrame` beside the lightning, wall-clock dt; state `DOCKB` and
+  `DOCK_BIRDS` at the top of the file — `DKB` was already the dark knight's bone-name helper, and the clash took the
+  page). Not a loop: the file is two caws in 8.5 s of silence, cut at its silences, mono, −1 dBFS (`dock-crow-1..3`),
+  played one at a time by `playSampleAt`, pitched ±8 %. Weight `wc`: smoothstep 80 → 24 m from (DOCK_X, DOCK_Z), 1 on
+  the pier or in the shed (`onPier || onDock`), 0 while the crow on the post turns on you; eased over `tau` 1.6 s. Off
+  the pier they call from within 8 m of the dock itself; on it, seaward of you 6–18 m. Gain 6.0 (2.6 measured 0.02–0.04:
+  unheard). Measured (`CL_Q="?m=dock" sh tools/crowlevel.sh`): first caw ~80 m off, 0.07–0.13 peaks walking up and on
+  the boards against 0.08 for surf and music, 18 caws in the walk, the weight 0.2 a dozen seconds after running off.
+- **A BLOW STARTS THE SCARE TOO** (2026-11-15, the owner: "make hitting the crow on the dock do the scare too").
+  `crowStrike(P)` in `digImpactCore`, after `traderStrike`: the swing's aim ray against the crow's `proxy` sphere
+  (0.36 m + 0.12 × power, within reach + 0.45) while it is on its post or already turning/screaming on you; `hitConnect`
+  at 0.4, `sfxBirdHit`, and `crowPet()` (which only starts it from `perch`, so a second blow is only the thud).
+  Measured (`CL_Q="?m=hit" sh tools/crowlevel.sh`, a shovel light swing from the pier 1.2 m off): perch → look on the
+  blow, then the scream, the flight, the strike at 2.0 s, the achievement at 4.7 s.
+- **THE CAWS ARE THE CROW'S** (2026-11-15, the owner: "make the crow sounds come from the crow actually on the dock in a
+  directional sense. once the crow flies away the crow sounds should stop. make them happen closer to the dock too i
+  heard it too far away"). `updateDockBirds` plays every caw at `CROW.g`'s position (`playSampleAt` pans it and dulls
+  it by distance), only while it is perched; on its scream and flight the caw under way is stopped (`DOCKB.src`) and
+  nothing more plays — `crowGone`, 'fly' and 'gone' all return. `DOCK_BIRDS` near 8 / far 34 m from the CROW (was 24 / 80
+  from the dock), hear 40, tau 1.2. Measured (`CL_Q="?m=dock" sh tools/crowlevel.sh`): the weight 0.01 at 30 m, the first
+  caw ~12 m off, 0.08–0.16 peaks on the boards against 0.09 for surf and music, 8 caws in the walk.
+- **The caws a little lower** (2026-11-15, "turn the crow sounds down a little dont turn down the scream"):
+  `DOCK_BIRDS.crowGain` 6.0 → 4.5 (−2.5 dB). Measured on the pier: 0.08–0.12 peaks (were 0.08–0.16) against 0.08 for
+  surf and music. The scream is its own chain (`CROW_SCREAM_PEAK` 0.42), untouched.

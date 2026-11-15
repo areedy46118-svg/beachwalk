@@ -5291,10 +5291,10 @@ export async function deepRescue({ w, b, log, sleep, shot }) {
   { const row = []; for (let t = 0; t <= 4; t += 0.25) row.push(t.toFixed(2) + ':' + b.washLid(t).toFixed(2)); log('lids waking', row.join(' ')); }
   // a still with the lids drawn over it as the page draws them (the canvas alone has no lids)
   w.__lidShot = (name, lid) => { const cv = b.renderer.domElement, c2 = document.createElement('canvas'); c2.width = 640; c2.height = Math.round(640 * cv.height / cv.width);
-    const g = c2.getContext('2d'); g.filter = 'brightness(1.5) blur(1.5px)'; g.drawImage(cv, 0, 0, c2.width, c2.height); g.filter = 'blur(14px)';
+    const g = c2.getContext('2d'); g.filter = (cv.style.filter || 'none') + ' brightness(1.5)'; g.drawImage(cv, 0, 0, c2.width, c2.height); g.filter = 'blur(14px)';   // (the game's own filter on the canvas, 2026-11-15)
     const h = lid * 0.62 * c2.height; g.fillStyle = '#020304'; g.beginPath(); g.ellipse(c2.width / 2, 0, c2.width * 0.7, h + 6, 0, 0, Math.PI * 2); g.fill(); g.beginPath(); g.ellipse(c2.width / 2, c2.height, c2.width * 0.7, h + 6, 0, 0, Math.PI * 2); g.fill();
     const d = c2.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let q = 0; q < n; q++) console.log('[PBIMG]', name, q + '/' + n, d.slice(q * 8000, (q + 1) * 8000)); };
-  const at = [2.5, 6.4, 8.7, 9.0, 9.3]; let k = 0;
+  const at = [8.7, 8.95, 9.2, 9.45, 9.65]; let k = 0;   // (the glimpse; 2.5 and 6.4 until 2026-11-15)
   for (let f = 0; f < 60 * 14 && D.ph !== 'black'; f++) {
     w.__adv(1);
     if (D.ph === 'drown' && k < at.length && D.t >= at[k]) { const F = b.deepFaceS(); log('drown t', D.t.toFixed(2), 'veil', veil(), 'lid', b.drownLid(D.t).toFixed(2), 'face', F ? (F.visible ? F.material.opacity.toFixed(2) : 'hidden') : 'none'); b.renderer.render(b.scene, C); w.__lidShot('rs_drown' + k, b.drownLid(D.t)); k++; }
@@ -5729,4 +5729,457 @@ export async function skrimHang({ w, b, log, sleep, shot }) {
       C.position.set(W.x + 1.4, fy + 0.45, W.z + 0.6); C.lookAt(W.x, fy + 0.1, W.z); C.updateMatrixWorld(true); shot('dead_head_' + i, 480, 1.8); }); }
   log('his heads at the end:', heads().map((h) => { const W = h.body.getWorldPosition(new T()); return h.i + ' ' + h.mode + ' over the floor ' + (W.y - b.skrimFloorW(W.x, W.z)).toFixed(2); }).join(' | '));
   log('phases', phs.join(' > '), '| hit him while hung', hitHim, '| heads cut', cut, '| your hp lost', hpLost, '| events', JSON.stringify(ev), '| his hook back in his fist', b.SKC && b.SKC.hookSrc && b.SKC.hookSrc.visible, 'chains', b.SKC && b.SKC.list.length);
+}
+
+// THE BREACH'S FLOOR MEETING THE SAND (2026-11-15, the owner's screenshot from inside her, looking out along the tear:
+// "make this part where the boat connects to sand look better") — from in the hold, out over the broken floor
+export async function breachSeam({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, V = b.THREE.Vector3;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 400 && !(S.userData.wheel && b.shipBrkS().length > 20); i++) { b.frame(1); await sleep(40); }
+  w.__clockOn(); for (let i = 0; i < 20; i++) w.__adv(1);
+  S.updateMatrixWorld(true);
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z));
+  const at = (n, p, t, g = 1.0) => { C.position.copy(p); C.lookAt(t); C.updateMatrixWorld(true); shot('bs_' + n, 800, g); };
+  const q = new URLSearchParams(location.search).get('v') || '';
+  // his shot: stood at the breach's aft end on her floor, looking forward along it, the hold left and the beach right
+  C.fov = 105; C.updateProjectionMatrix();
+  // (or the far tear, the moon's side: its sand spill and its pool of moonlight)
+  for (const [n, z, lz] of [['m1', 3.4, 4.6], ['m2', 3.9, 5.2], ['m3', 4.4, 5.6]]) at(n, L(-8.6, 1.9, z), L(-3.5, -0.3, lz), 1.5);
+  at('m4', L(-7.0, 1.0, 3.6), L(-2.5, -0.1, 5.0), 1.5);
+  at('farOut', L(-0.8, 1.3, -7.6), L(-0.8, 0.2, -3.6), 1.5);
+  at('farIn', L(-0.8, 1.0, -1.8), L(-0.8, -0.1, -5.5), 1.5);
+  const rc = new b.THREE.Raycaster();
+  for (const [nm, x, y] of [['pale', 0.8, -0.78], ['pale2', 0.6, -0.55], ['hump', 0.55, -0.11], ['floorEnd', 0.125, -0.69], ['floorEnd2', 0.3, -0.4], ['hump2', 0.85, -0.2]]) {
+    rc.setFromCamera(new b.THREE.Vector2(x, y), C);
+    const h = rc.intersectObjects(b.scene.children, true).filter((o) => o.object.visible && o.object.name !== 'hitProxy' && o.distance > 0.3).slice(0, 3);
+    const chain = (o) => { const r = []; for (let q = o, k = 0; q && k < 4; q = q.parent, k++) r.push(q.name || q.type); return r.join('<'); };
+    log(nm, h.map((o) => chain(o.object) + ' col:' + (o.object.material && o.object.material.color ? o.object.material.color.getHexString() : '-') + ' mat:' + (o.object.material && (o.object.material.name || o.object.material.type)) + ' d' + o.distance.toFixed(2) + ' y' + o.point.y.toFixed(2)).join(' | '));
+  }
+  log('ship rot', S.rotation.y.toFixed(2), q);
+}
+
+// THE CROW'S BONES AND ITS SHAPE THROUGH THE CLIP (2026-11-15, for the crow that takes Henry): bone names, and at each
+// time its box in its own frame (+Z beak) and where its feet are, in metres at the dock's size
+export async function crowShape({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const K = b.CROW, C = b.camera;
+  for (let i = 0; i < 600 && !(K.g && K.act); i++) { C.position.set(-2.7, 3.44, -216.4); b.frame(2); await sleep(20); }
+  const sk = K.mesh.skeleton; log('bones', sk.bones.map((x) => x.name).join(' '));
+  const T = b.THREE, v = new T.Vector3(), P = K.mesh.geometry.attributes.position;
+  const inv = new T.Matrix4();
+  for (const t of [3.5, 6.6, 6.8, 7.0, 7.2, 7.5, 7.8, 8.1, 8.4, 8.8, 9.0, 9.3, 9.6, 9.8, 10.2]) {
+    K.act.time = t; K.mixer.update(0); K.g.updateMatrixWorld(true); sk.update();
+    inv.copy(K.g.matrixWorld).invert();
+    const lo = new T.Vector3(1e9, 1e9, 1e9), hi = new T.Vector3(-1e9, -1e9, -1e9);
+    for (let i = 0; i < P.count; i += 3) { v.fromBufferAttribute(P, i); K.mesh.applyBoneTransform(i, v); v.applyMatrix4(K.mesh.matrixWorld).applyMatrix4(inv); lo.min(v); hi.max(v); }
+    const feet = sk.bones.filter((x) => /foot|toe|claw|leg/i.test(x.name)).map((x) => { x.getWorldPosition(v); v.applyMatrix4(inv); return x.name.replace('CROW_', '') + '@' + v.toArray().map((q) => q.toFixed(2)).join(','); });
+    log('t', t, 'box x', lo.x.toFixed(2), hi.x.toFixed(2), 'y', lo.y.toFixed(2), hi.y.toFixed(2), 'z', lo.z.toFixed(2), hi.z.toFixed(2), '| span', (hi.x - lo.x).toFixed(2), '|', feet.slice(0, 6).join(' '));
+  }
+  log('group scale', K.g.scale.x, 'm scale', K.m.scale.x.toFixed(4));
+}
+
+// THE CROW THAT TAKES HENRY OFF THE JETTY (2026-11-15, the eagle's replacement): its cut clips, its size, and the take
+// in stills — stood behind him, talked to, the last line clicked off
+export async function hjCrow({ w, b, log, sleep, shot }) {
+  await w.eval(await (await fetch('/tools/hjshot.js?' + Date.now())).text());
+  log('boot', JSON.stringify(await w.__hjBoot()));
+  const G = b.hjG(), B = G.bird;
+  if (!B) { log('no bird'); return; }
+  const src = B.m; let sk = null; src.traverse((o) => { if (o.isSkinnedMesh && !sk) sk = o; });
+  log('clips', Object.entries(B.A).map(([k, a]) => k + ':' + a.getClip().duration.toFixed(2) + 's/' + a.getClip().tracks.length + 'tr').join(' '), 'feet', B.feet.map((f) => f.name).join(','), 'm scale', B.m.scale.x.toFixed(4));
+  w.__hjTalk();
+  for (let i = 0; i < 10; i++) { const c = w.document.querySelectorAll('#dialog .choice'); if (c.length) w.__hjChoose(0); else w.__hjClick(); if (b.hjS().cut) break; }
+  log('cut', JSON.stringify(b.hjS()));
+  const V = b.THREE.Vector3;
+  for (const T of [0.3, 0.6, 0.8, 1.2, 2.0, 3.5, 6.0, 8.5]) {
+    for (let n = 0; n < 3000 && b.hjS().cut && b.hjS().t < T; n++) w.__adv(1);
+    const fe = new V(), hd = new V(); B.feet.forEach((f) => fe.add(f.getWorldPosition(new V()))); fe.multiplyScalar(0.5);
+    G.hj.B.CC_Base_L_Hand.getWorldPosition(hd);
+    log('t', T, b.hjS().cut, 'bird', B.g.position.toArray().map((v) => v.toFixed(1)).join(','), 'clip', B.cur && B.cur.getClip().name, 'feet-hand', fe.distanceTo(hd).toFixed(2), 'cam d', B.g.position.distanceTo(b.camera.position).toFixed(1));
+    shot('hj_' + T, 640, 1.6);
+  }
+}
+
+// THE MERCHANT'S GUN IN HIS HAND (2026-11-15, the owner: "make the gun fit better in the merchants hand when he shoots
+// you it looks weird and off"): the draw stopped before the shot, seen from where you stand and from his side
+export async function merchGun({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 300 && !(b.traderBonesS() && b.traderBonesS().upper_armR && b.magModel && b.magModel.children.length); i++) { b.frame(1); await sleep(40); }
+  const T = b.THREE, C = b.camera, W = b.traderWorld, R = b.TRADER_RAGE;
+  W.updateMatrixWorld(true); const tp = new T.Vector3(); W.getWorldPosition(tp);
+  const me = new T.Vector3(tp.x - 1.6, tp.y + 1.62, tp.z + 0.3);
+  const stand = () => { C.position.copy(me); b.camBaseY = me.y; b.lookAt(tp.x, tp.y + 1.45, tp.z); };
+  stand(); b.frame(2);
+  w.__clockOn();
+  R.n = 1; b.traderStruck(1, tp.clone().setY(tp.y + 1.2));
+  log('busy', R.busy, 'gun', !!R.gun);
+  const B = b.traderBonesS(), P = (o) => o.getWorldPosition(new T.Vector3());
+  const views = (tag) => {
+    stand(); C.updateMatrixWorld(true); shot('mg_' + tag + '_you', 640, 1.6);
+    const ha = P(B.handR);
+    { const f0 = C.fov; C.fov = 16; C.updateProjectionMatrix(); C.lookAt(ha); C.updateMatrixWorld(true); shot('mg_' + tag + '_youZoom', 640, 1.8); C.fov = f0; C.updateProjectionMatrix(); }
+    // from his right, level with the hand, and close behind his shoulder
+    const side = new T.Vector3().subVectors(me, tp).setY(0).normalize(), rt = new T.Vector3(-side.z, 0, side.x);
+    for (const [n, off] of [['side', rt.clone().multiplyScalar(0.5)], ['side2', rt.clone().multiplyScalar(-0.5)], ['over', side.clone().multiplyScalar(-0.35).addScaledVector(rt, 0.2).setY(0.25)]]) {
+      const sv = C.position.clone(); C.position.copy(ha).add(off); C.lookAt(ha); C.updateMatrixWorld(true); shot('mg_' + tag + '_' + n, 640, 1.8); C.position.copy(sv);
+    }
+    { const f0 = C.fov; C.fov = 30; C.updateProjectionMatrix();
+      for (const [n, off] of [['tightR', rt.clone().multiplyScalar(0.42)], ['tightL', rt.clone().multiplyScalar(-0.42)], ['tightUnder', rt.clone().multiplyScalar(0.25).setY(-0.32)]]) {
+        const sv = C.position.clone(); C.position.copy(ha).add(off); C.lookAt(ha); C.updateMatrixWorld(true); shot('mg_' + tag + '_' + n, 640, 2.0); C.position.copy(sv);
+      }
+      C.fov = f0; C.updateProjectionMatrix(); }
+    if (R.gun) { const gp = R.gun.getWorldPosition(new T.Vector3()); log(tag, 'gun origin to palm', gp.distanceTo(b.traderPalm ? b.traderPalm(new T.Vector3()) : ha).toFixed(3), 'to hand bone', gp.distanceTo(ha).toFixed(3)); }
+  };
+  for (let f = 0; f < 60 && R.t < 1.2; f++) { stand(); w.__adv(1); }
+  const meas = (tag) => {
+    const g = R.gun; g.updateMatrixWorld(true);
+    const q = g.getWorldQuaternion(new T.Quaternion()), ax = (x, y, z) => new T.Vector3(x, y, z).applyQuaternion(q);
+    const fa = P(B.forearmR), ha = P(B.handR), mid = B.f_middle01R ? P(B.f_middle01R) : ha, th = B.thumb01R ? P(B.thumb01R) : ha, pk = B.f_pinky01R ? P(B.f_pinky01R) : ha;
+    const arm = ha.clone().sub(fa).normalize(), hand = mid.clone().sub(ha).normalize(), toMe = me.clone().sub(ha).normalize();
+    const across = th.clone().sub(pk).normalize();                // pinky → thumb, across the knuckles
+    const palmN = new T.Vector3().crossVectors(hand, across).normalize();
+    const deg = (a2, b2) => (Math.acos(Math.max(-1, Math.min(1, a2.dot(b2)))) * 180 / Math.PI).toFixed(0);
+    const bar = ax(1, 0, 0), up = ax(0, 1, 0), sd = ax(0, 0, 1);
+    log(tag, 'barrel vs forearm', deg(bar, arm), 'vs hand', deg(bar, hand), 'vs to-you', deg(bar, toMe), '| gun up vs palm normal', deg(up, palmN), 'vs -palmN', deg(up, palmN.clone().negate()), 'vs across', deg(up, across), '| gun side vs across', deg(sd, across), '| hand vs forearm', deg(hand, arm));
+    // where the gun's grip is: the model's lowest point in its own frame, and the barrel's far end
+    const box = new T.Box3(); const inv = g.matrixWorld.clone().invert(), v = new T.Vector3();
+    g.traverse((o) => { if (o.isMesh && o.geometry) { const pa = o.geometry.attributes.position; o.updateMatrixWorld(true); for (let i = 0; i < pa.count; i += 7) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv); box.expandByPoint(v); } } });
+    log(tag, 'gun local box (its units)', box.min.toArray().map((x) => x.toFixed(2)).join(','), '→', box.max.toArray().map((x) => x.toFixed(2)).join(','), 'scale', g.scale.x.toFixed(3));
+  };
+  meas('aim');
+  { // the grip and his hand, in the gun's own frame, in metres
+    const g = R.gun; g.updateMatrixWorld(true);
+    const inv = g.matrixWorld.clone().invert(), sc = g.scale.x, v = new T.Vector3(), pts = [];
+    g.traverse((o) => { if (o.isMesh && o.geometry) { const pa = o.geometry.attributes.position, ix = o.geometry.index; const seen = new Set(); const n = ix ? ix.count : pa.count; for (let q = 0; q < n; q += 3) { const i = ix ? ix.getX(q) : q; if (seen.has(i)) continue; seen.add(i); v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv).multiplyScalar(sc); if (v.length() < 0.5) pts.push(v.clone()); } } });
+    const lo = Math.min(...pts.map((p2) => p2.y)), hi = Math.max(...pts.map((p2) => p2.y)), xs = pts.map((p2) => p2.x);
+    log('gun body (m, its frame, near the origin): x', Math.min(...xs).toFixed(3), Math.max(...xs).toFixed(3), 'y', lo.toFixed(3), hi.toFixed(3), 'n', pts.length);
+    for (const [y0, y1] of [[lo, lo + 0.02], [lo + 0.02, lo + 0.04], [lo + 0.04, lo + 0.06], [lo + 0.06, lo + 0.08], [lo + 0.08, lo + 0.10], [lo + 0.10, hi]]) {
+      const band = pts.filter((p2) => p2.y >= y0 && p2.y < y1); if (!band.length) continue;
+      log('  y', y0.toFixed(3), '..', y1.toFixed(3), 'x', Math.min(...band.map((p2) => p2.x)).toFixed(3), '..', Math.max(...band.map((p2) => p2.x)).toFixed(3), 'n', band.length);
+    }
+    for (const nm of ['handR', 'f_index01R', 'f_middle01R', 'f_middle02R', 'f_middle03R', 'f_pinky01R', 'thumb01R', 'thumb03R']) { if (!B[nm]) continue; const q2 = P(B[nm]).applyMatrix4(inv).multiplyScalar(sc); log('  bone', nm, q2.toArray().map((x) => x.toFixed(3)).join(',')); }
+  }
+  views('aim');
+}
+
+// THE CASTLE MERCHANT'S TELEPORT FROM A FRESH START (2026-11-15, "why when i teleport to the castle sometimes its not
+// there"): the castle's state at the teleport, the black held, and when it is built and shown
+export async function castleTp({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  await sleep(1500);
+  const bo = () => w.document.getElementById('blackout').style.opacity;
+  log('before: fort', JSON.stringify(b.fortState()));
+  const ok = b.devTeleportShop(2), t0 = performance.now();
+  log('teleported', ok, 'black', bo(), 'cam', b.camera.position.toArray().map((v) => v.toFixed(1)).join(','));
+  let shown = 0;
+  for (let i = 0; i < 1500; i++) {
+    b.frame(1); await sleep(20);
+    const F = b.fortState();
+    if (i % 100 === 0) log('t', ((performance.now() - t0) / 1000).toFixed(1), 'ready', F.ready, 'vis', F.vis, 'black', bo());
+    if (F.ready && F.vis && bo() === '0') { shown = performance.now() - t0; break; }
+  }
+  log('castle shown after', (shown / 1000).toFixed(1), 's; cam', b.camera.position.toArray().map((v) => v.toFixed(1)).join(','));
+  for (let i = 0; i < 30; i++) { b.frame(1); await sleep(20); }
+  b.look(Math.PI, 0.05); b.frame(1); shot('ct_down', 640, 1.4);
+}
+
+// AND FROM A CHECKPOINT LOAD (2026-11-15): a fast load waits only for what is near the save and the castle comes in
+// behind you — saved at the spawn, reloaded into it, and the castle merchant's teleport taken at once
+export async function castleTpCp({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  await sleep(1000);
+  (b.saveCheckpoint || b.autosaveNow)();
+  log('saved', !!localStorage.getItem('beachwalk.save'));
+  sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1');
+  const f = document.getElementById('g'); f.contentWindow.location.reload();
+  await sleep(500);
+  let w2 = null, b2 = null; for (let i = 0; i < 600; i++) { await sleep(50); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.state) { b2 = w2.__bw; break; } } catch (e) {} }
+  for (let i = 0; i < 600 && !b2.state().started; i++) { try { b2.beginGame(); } catch (e) {} await sleep(100); }
+  try { await b2.audioCtx.suspend(); } catch (e) {}
+  const bo = () => w2.document.getElementById('blackout').style.opacity;
+  for (let i = 0; i < 400 && bo() === '1'; i++) await sleep(50);
+  log('reloaded: fort', JSON.stringify(b2.fortState()), 'left', b2.startGate ? b2.startGate().left : '?');
+  const ok = b2.devTeleportShop(2), t0 = performance.now();
+  log('teleported', ok, 'black', bo());
+  let shown = 0, blackAll = true;
+  for (let i = 0; i < 2000; i++) {
+    await sleep(25);
+    const F = b2.fortState();
+    if (!F.ready && bo() !== '1') blackAll = false;
+    if (i % 80 === 0) log('t', ((performance.now() - t0) / 1000).toFixed(1), 'ready', F.ready, 'vis', F.vis, 'black', bo());
+    if (F.ready && F.vis && bo() === '0') { shown = performance.now() - t0; break; }
+  }
+  log('castle shown after', (shown / 1000).toFixed(1), 's; black the whole wait', blackAll, '; cam', b2.camera.position.toArray().map((v) => v.toFixed(1)).join(','));
+  await sleep(500);
+  b2.look(0, 0.05); b2.frame(1); b2.renderer.render(b2.scene, b2.camera);
+  const src = b2.renderer.domElement, c = document.createElement('canvas'); c.width = 640; c.height = Math.round(640 * src.height / src.width);
+  const g2 = c.getContext('2d'); g2.filter = 'brightness(1.4)'; g2.drawImage(src, 0, 0, c.width, c.height);
+  const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'ct_cp', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+// THE EAGLE AND THE CROW THAT REPLACED IT, HUNG THE SAME? (2026-11-15, "the crow that grabs henry glitches into the
+// ground i want it to have the same pathing as the old eagle"): each bird's feet and its lowest and highest points from
+// its group's origin (which the flight keys move), through each of its clips. The eagle is read from git into
+// tmp-preview/eagle-ref.glb for this and deleted after.
+export async function birdHang({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  await w.eval(await (await fetch('/tools/hjshot.js?' + Date.now())).text());
+  await w.__hjBoot();
+  const T = b.THREE, v = new T.Vector3();
+  const measure = (tag, g, m, mixer, acts, feetRe) => {
+    let sk = null; m.traverse((o) => { if (o.isSkinnedMesh && !sk) sk = o; });
+    const feet = sk.skeleton.bones.filter((x) => feetRe.test(x.name));
+    g.position.set(0, 0, 0); g.rotation.set(0, 0, 0); g.updateMatrixWorld(true);
+    for (const [name, a] of Object.entries(acts)) {
+      const dur = a.getClip().duration;
+      for (const f of [0, 0.25, 0.5, 0.75]) {
+        mixer.stopAllAction(); a.reset(); a.play(); a.time = dur * f; mixer.update(0); g.updateMatrixWorld(true); sk.skeleton.update();
+        let lo = 1e9, hi = -1e9, x0 = 1e9, x1 = -1e9; const P = sk.geometry.attributes.position;
+        for (let i = 0; i < P.count; i += 2) { v.fromBufferAttribute(P, i); sk.applyBoneTransform(i, v); v.applyMatrix4(sk.matrixWorld); lo = Math.min(lo, v.y); hi = Math.max(hi, v.y); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); }
+        const fp = new T.Vector3(); feet.forEach((x) => fp.add(x.getWorldPosition(v.clone()))); fp.multiplyScalar(1 / Math.max(1, feet.length));
+        let bx0 = 1e9, bx1 = -1e9; for (const bn of sk.skeleton.bones) { bn.getWorldPosition(v); bx0 = Math.min(bx0, v.x); bx1 = Math.max(bx1, v.x); }
+        const xsAll = []; for (let i = 0; i < P.count; i += 2) { v.fromBufferAttribute(P, i); sk.applyBoneTransform(i, v); v.applyMatrix4(sk.matrixWorld); xsAll.push(v.x); } xsAll.sort((p1, p2) => p1 - p2);
+        const q = (r) => xsAll[Math.floor(r * (xsAll.length - 1))];
+        log(tag, name, 'bones x', bx0.toFixed(2), bx1.toFixed(2), '| verts x 0.5%/99.5%', q(0.005).toFixed(2), q(0.995).toFixed(2), 'min/max', q(0).toFixed(2), q(1).toFixed(2), 'meshes', (() => { let n = 0; m.traverse((o) => { if (o.isSkinnedMesh) n++; }); return n; })());
+        log(tag, name, (dur * f).toFixed(2) + '/' + dur.toFixed(2), 'feet', fp.toArray().map((q) => q.toFixed(2)).join(','), 'y', lo.toFixed(2), hi.toFixed(2), 'span', (x1 - x0).toFixed(2));
+      }
+    }
+  };
+  // the crow, as the game built it
+  const B = b.hjG().bird; measure('crow', B.g, B.m, B.mixer, B.A, /_[LR]_Foot_/);
+  // the eagle, as the old loader built it
+  const { GLTFLoader } = await w.eval("import('three/addons/loaders/GLTFLoader.js')");
+  const rsp = await w.fetch('/tmp-preview/eagle-ref.glb?' + Date.now()), buf = await rsp.arrayBuffer();   // (fetched IN the game's frame: its GLTFLoader asks `instanceof ArrayBuffer` of its own realm)
+  log('eagle file', rsp.status, buf.byteLength, String.fromCharCode(...new Uint8Array(buf, 0, 4)));
+  await new Promise((res) => new GLTFLoader().parse(buf, '', (gltf) => {
+    const m = gltf.scene, g = new T.Group(); g.add(m); g.rotation.order = 'YXZ'; g.scale.setScalar(1.1); b.scene.add(g);
+    const mixer = new T.AnimationMixer(m), A = {}; for (const c of gltf.animations) A[c.name] = mixer.clipAction(c);
+    const keep = {}; for (const k of ['gliding', 'landing', 'fly']) if (A[k]) keep[k] = A[k];
+    log('eagle clips', Object.keys(A).join(' '));
+    measure('eagle', g, m, mixer, keep, /^foot[lr]_/); res();
+  }, (e) => { log('eagle parse failed', e && e.message); res(); }));
+}
+
+// why the jetty crow's load-time span (6.83) is not its posed span (12.7): the same measure, posed and at its bind pose
+export async function birdSpan({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  await w.eval(await (await fetch('/tools/hjshot.js?' + Date.now())).text());
+  await w.__hjBoot();
+  const T = b.THREE, B = b.hjG().bird, m = B.m, v = new T.Vector3(); let sk = null; m.traverse((o) => { if (o.isSkinnedMesh && !sk) sk = o; });
+  const span = () => { m.updateMatrixWorld(true); sk.skeleton.update(); let x0 = 1e9, x1 = -1e9; const P = sk.geometry.attributes.position; for (let i = 0; i < P.count; i += 7) { v.fromBufferAttribute(P, i); sk.applyBoneTransform(i, v); v.applyMatrix4(sk.matrixWorld); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); } return (x1 - x0).toFixed(2); };
+  B.g.position.set(0, 0, 0); B.g.rotation.set(0, 0, 0);
+  log('m.scale', m.scale.x.toFixed(4), 'g.scale', B.g.scale.x, 'bindMode', sk.bindMode);
+  B.mixer.stopAllAction(); B.A.gliding.reset().play(); B.A.gliding.time = 0.4; B.mixer.update(0); log('posed (update 0)', span());
+  B.mixer.update(0.01); log('posed (update 0.01)', span());
+  sk.skeleton.pose(); log('bind pose', span());
+  B.mixer.stopAllAction(); B.mixer.update(0); log('after stopAll + update 0', span());
+}
+
+// THE CAVE-IN AS PLAYED (not dev mode), on the real clock with everything loaded: every frame over 25 ms with how black
+// the screen was on it (2026-11-15, the performance pass: is the catacombs' build under the black?)
+export async function caveInPerf({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  b.settings.devMode = false;
+  w.requestAnimationFrame = () => 0;
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  b.camera.position.set(6, 1.7, b.CAVE_Z + 2); b.camBaseY = 1.7;
+  for (let i = 0; i < 60; i++) { b.frame(1); await tick(); }
+  const bo = () => +(w.document.getElementById('blackout').style.opacity || 0);
+  b.startCaveIn();
+  let prev = performance.now(); const slow = []; const t0 = prev;
+  for (let i = 0; i < 900; i++) {
+    const RI = b.renderer.info, pg0 = RI.programs.length, tx0 = RI.memory.textures, ge0 = RI.memory.geometries, lg0 = b.lagTime(8).length;
+    const op0 = bo(); const ta = performance.now(); b.frame(1); const tb = performance.now();
+    const d = tb - prev; prev = tb;
+    const dp = RI.programs.length - pg0;
+    if (d > 25) slow.push([((ta - t0) / 1000).toFixed(2), Math.round(d), op0.toFixed(2), bo().toFixed(2), 'progs ' + dp + ' ' + (dp > 0 ? RI.programs.slice(-dp).map((p2) => p2.name).join('/') : ''), 'tex ' + (RI.memory.textures - tx0), 'geo ' + (RI.memory.geometries - ge0), b.lagTime(8).slice(lg0).map((e) => e[2] + ' ' + e[1]).join(' | ')]);
+    await tick();
+  }
+  log('cave-in frames over 25 ms [t s, ms, black before, black after]:', JSON.stringify(slow));
+}
+
+// WHAT DRESSING A CREATURE COSTS (?k=skrim, 2026-11-15, the performance pass): a fresh copy made far off, the profiler
+// over its parse and dressing, the functions under `dressMutant` by inclusive and self samples (1 ms each)
+export async function dressProf({ w, b, log, sleep }) {
+  const kind = new URLSearchParams(location.search).get('k') || 'skrim';
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  const P = new w.Profiler({ sampleInterval: 1, maxBufferSize: 600000 });
+  const u = b.makeMutant(40, 9000, kind, 0);
+  for (let i = 0; i < 400 && !u.ready; i++) { b.frame(1); await sleep(16); }
+  const tr = await P.stop();
+  log('ready', !!u.ready, 'lag', JSON.stringify(b.lagTime(16).slice(-6)));
+  const nm = (fi) => { const f = tr.frames[fi]; return (f.name || '(anon)') + ':' + (f.line || 0); };
+  const self = new Map(), incl = new Map(); let n = 0;
+  for (const smp of tr.samples) {
+    if (smp.stackId == null) continue;
+    let under = false; for (let id = smp.stackId; id != null; id = tr.stacks[id].parentId) if (/^dressMutant:/.test(nm(tr.stacks[id].frameId))) { under = true; break; }
+    if (!under) continue; n++;
+    const k = nm(tr.stacks[smp.stackId].frameId); self.set(k, (self.get(k) || 0) + 1);
+    const seen = new Set(); for (let id = smp.stackId; id != null; id = tr.stacks[id].parentId) { const kk = nm(tr.stacks[id].frameId); if (!seen.has(kk)) { seen.add(kk); incl.set(kk, (incl.get(kk) || 0) + 1); } }
+  }
+  const top = (m, k) => [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, k).map(([kk, v]) => kk + ' ' + v).join(' · ');
+  log('samples under dressMutant', n);
+  log('INCL', top(incl, 30));
+  log('SELF', top(self, 15));
+}
+
+// THE RETARGET'S NEW LOOP AGAINST ITS OLD ONE (2026-11-15; the old one and the hook are gone from main.js since — put
+// them back from git to rerun): booted with &ls=bw.ntarCheck:1 every creature's clips are
+// built both ways and compared value by value; then a fresh Skrim, a crawler and a knight dressed on top
+export async function ntarCheck({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  for (const k of ['skrim', 'crawler', 'knight', 'orc', 'umbra', 'demon']) { try { const u = b.makeMutant(40 + Math.random(), 9000, k, 0); for (let i = 0; i < 300 && !u.ready; i++) { b.frame(1); await sleep(16); } } catch (e) { log('kind', k, 'failed', e.message); } }
+  for (let i = 0; i < 120; i++) { b.frame(1); await sleep(16); }
+  log('NTAR', JSON.stringify(b.ntarDiff()));
+}
+
+// THE PUPPETEER'S STRETCH SHOWS WHERE IT ALWAYS DID (2026-11-15: built at boot now, hidden till its lines): walked down
+// from -560 to -700, when the gully group and the house are first drawn, and a still past both
+export async function elvShow({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  b.settings.devMode = true;
+  const find = (n) => { let r = null; b.scene.traverse((o) => { if (!r && o.name === n) r = o; }); return r; };
+  const F = find('elvLand'), H = find('puppetHouse');
+  log('built at boot: gully', !!F, 'house', !!H, 'visible', F && F.visible, H && H.visible);
+  let fAt = null, hAt = null;
+  for (let z = -560; z > -700; z -= 0.5) {
+    b.camera.position.set(8, 1.7, z); b.camBaseY = 1.7; b.frame(1);
+    if (fAt === null && F && F.visible) fAt = z;
+    if (hAt === null && H && H.visible) hAt = z;
+  }
+  log('gully first visible at z', fAt, '(built at ELV.z + 40 = -600 before) · house at z', hAt, '(asked at -628.5 before)');
+  b.camera.position.set(9, 1.7, -655); b.camBaseY = 1.7; b.lookAt(30, 2, -716); for (let i = 0; i < 20; i++) { b.frame(1); await sleep(16); }
+  shot('elv_after', 640, 1.5);
+}
+
+// HITTING THE DEAD IN THE WATER (2026-11-15, "make it so i can slice and hit the mutants bodies in the water"): the deep
+// restored, the camera put 1.6 m off a floating body looking at it, the katana swung; what moved, what came off, blood
+export async function deadHit({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  b.plioLoad(); b.deadLoad();
+  for (let i = 0; i < 600 && !(b.plioS().ready && b.dead.gltf); i++) { b.frame(2); await sleep(100); }
+  b.deepRestore(); w.__clockOn();
+  for (let i = 0; i < 30; i++) w.__adv(1);
+  const D = b.dead, C = b.camera, T = b.THREE;
+  if (!b.inventory.includes(b.katanaItem)) b.inventory.push(b.katanaItem);
+  if (b.state().equipped !== b.katanaItem.name) b.toggleEquip(b.katanaItem);
+  log('equipped', b.state().equipped, 'bodies', D.bodies.length, 'pieces', D.pieces.length);
+  const res = [];
+  for (const [bi, label] of [[0, 'body0'], [2, 'body2']]) {
+    const body = D.bodies[bi], P = body.piece;
+    const aim = () => { const d = new T.Vector3(1, 0.1, 0.3).normalize(); C.position.copy(P.p).addScaledVector(d, -1.7); b.camBaseY = C.position.y; b.lookAt(P.p.x, P.p.y, P.p.z); };
+    aim(); for (let i = 0; i < 6; i++) { aim(); w.__adv(1); }
+    const p0 = P.p.clone(), cut0 = body.cut.size, pieces0 = D.pieces.length;
+    shot('dh_' + label + '_before', 640, 1.8);
+    for (let s = 0; s < 3; s++) {
+      aim(); b.startDig(s === 2 ? 1 : 0);
+      for (let f = 0; f < 50; f++) { if (f < 20) aim(); w.__adv(1); }
+    }
+    for (let f = 0; f < 30; f++) w.__adv(1);
+    res.push(label + ': moved ' + P.p.distanceTo(p0).toFixed(2) + ' m, limbs cut ' + (body.cut.size - cut0) + ', pieces ' + pieces0 + '→' + D.pieces.length + ', flail ' + P.flail.toFixed(2));
+    aim(); w.__adv(1); shot('dh_' + label + '_after', 640, 1.8);
+  }
+  log('HIT', res.join(' | '));
+  log('worst deadStep ms', (D.msMax || 0).toFixed(2));
+  // the newest limb, close
+  const L = D.pieces[D.pieces.length - 1]; L.o.geometry.computeBoundingSphere();
+  log('newest piece', L.kind, 'r', L.r.toFixed(2), 'verts', L.o.geometry.attributes.position.count, 'mat', L.o.material.type, L.o.material.emissiveIntensity);
+  const d = new T.Vector3(0.3, 0.4, 1).normalize(); C.position.copy(L.p).addScaledVector(d, 0.9); b.lookAt(L.p.x, L.p.y, L.p.z); w.__adv(1);
+  shot('dh_limb', 640, 1.8);
+}
+
+// HIS MAILBOX (2026-11-15, "put a realistic mailbox right here i dont want people to miss the house"): from the owner's
+// own spot (feet 12.44, -706.55, look -1.22), from the walk coming down the beach, and close
+export async function mailbox({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  b.settings.devMode = true;
+  w.requestAnimationFrame = () => 0;
+  let mb = null; b.scene.traverse((o) => { if (o.name === 'elvMailbox') mb = o; });
+  if (!mb) { log('no mailbox'); return; }
+  const C = b.camera, T = b.THREE, V = new T.Vector3(); mb.getWorldPosition(V);
+  log('mailbox at', V.toArray().map((x) => x.toFixed(2)).join(','));
+  const at = async (n, x, y, z, lx, ly, lz, gain = 1.6) => {
+    C.position.set(x, y, z); b.camBaseY = y;
+    for (let i = 0; i < 12; i++) { C.position.set(x, y, z); b.camBaseY = y; b.lookAt(lx, ly, lz); b.frame(1); await sleep(10); }
+    shot('mb_' + n, 640, gain);
+  };
+  await at('his', 12.44, 1.7, -706.55, 12.44 + Math.sin(1.22) * 5, 0.2, -706.55 - Math.cos(1.22) * 5);
+  await at('walk30', 8, 1.7, -676, V.x, 1.0, V.z, 1.4);
+  await at('walk12', 8.5, 1.7, -693, V.x, 1.0, V.z, 1.4);
+  await at('close', V.x - 1.0, V.y + 1.45, V.z + 1.2, V.x, V.y + 1.0, V.z, 1.8);
+  await at('side', V.x - 1.4, V.y + 1.3, V.z - 0.2, V.x, V.y + 1.0, V.z, 1.8);
+}
+
+// THE MAILBOX, CLOSE AND LARGE (2026-11-15, "dont make the mailbox look ai slop"): 1280-wide stills, three sides
+export async function mailboxClose({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  b.settings.devMode = true; w.requestAnimationFrame = () => 0;
+  let mb = null; b.scene.traverse((o) => { if (o.name === 'elvMailbox') mb = o; });
+  const C = b.camera, V = new b.THREE.Vector3(); mb.getWorldPosition(V);
+  const at = async (n, dx, dy, dz) => { for (let i = 0; i < 12; i++) { C.position.set(V.x + dx, V.y + dy, V.z + dz); b.camBaseY = C.position.y; b.lookAt(V.x, V.y + 1.08, V.z); b.frame(1); await sleep(10); } shot('mc_' + n, 1280, 1.7); };
+  await at('front', -0.75, 1.3, 0.05);
+  await at('name', -0.25, 1.25, 0.75);
+  await at('back', 0.5, 1.35, -0.55);
+}
+
+// THE CLIP AT THE GULLY'S MOUTH (2026-11-15, the owner at feet (15.68, 0.41, -708.36) look -1.29: "I CLIP THROUGH THE
+// SAND RIGHT HERE"): the walk's floor there and round it against the drawn ground (a ray down onto what is drawn),
+// and how far the drawn sand is from the eye each way
+export async function mouthClip({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  b.settings.devMode = true; w.requestAnimationFrame = () => 0;
+  const T = b.THREE, C = b.camera;
+  C.position.set(15.68, 2.11, -708.36); b.camBaseY = 2.11; for (let i = 0; i < 6; i++) b.frame(1);
+  const meshes = []; b.scene.traverse((o) => { if (o.isMesh && o.visible && o.geometry && !/hitProxy/.test(o.name)) { let v = true; for (let q = o; q; q = q.parent) if (!q.visible) v = false; if (v) meshes.push(o); } });
+  const rc = new T.Raycaster(); rc.firstHitOnly = false;
+  const drawn = (x, z) => { rc.set(new T.Vector3(x, 40, z), new T.Vector3(0, -1, 0)); rc.far = 80; const h = rc.intersectObjects(meshes, false).filter((q) => q.object.name !== 'elvMailbox' && !/sky|fog|mist|Points/i.test(q.object.name + q.object.type)); return h.length ? [+h[0].point.y.toFixed(2), (h[0].object.name || h[0].object.parent && h[0].object.parent.name || '?')] : null; };
+  const rows = [];
+  for (const [dx, dz] of [[0, 0], [0.5, 0], [-0.5, 0], [0, 0.5], [0, -0.5], [1, 0], [0, -1], [1, -1]]) {
+    const x = 15.68 + dx, z = -708.36 + dz, L = b.elvLandS(x, z, 0.41);
+    rows.push(`(${x.toFixed(2)},${z.toFixed(2)}) inLand ${L[0]} floor ${L[1] === null ? '-' : L[1].toFixed(2)} drawn ${JSON.stringify(drawn(x, z))}`);
+  }
+  log('MOUTH', rows.join(' | '));
+  const eye = new T.Vector3(15.68, 2.11, -708.36), dirs = [];
+  for (let a = 0; a < 8; a++) { const yaw = a * Math.PI / 4; const d = new T.Vector3(Math.sin(yaw), 0, Math.cos(yaw)); rc.set(eye, d); rc.far = 5; const h = rc.intersectObjects(meshes, false)[0]; dirs.push(`${(yaw).toFixed(2)}:${h ? h.distance.toFixed(2) + ' ' + (h.object.name || '?') : '-'}`); }
+  log('EYE horizontal hits', dirs.join(' | '));
+  b.look(-1.29, -0.1); b.frame(1); shot('mc_his', 640, 1.6);
+}
+
+// THE WAY UP STILL WALKS (2026-11-15: the gully's floor read off its drawn mesh now): along the path's line every 0.2 m,
+// the floor, and the steepest rise over run any step takes (the walk refuses a step over 1.15)
+export async function gullyWalk({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  const P = b.ELV_PATH; let prev = null, worst = 0, at = '', n = 0, nul = 0;
+  for (let i = 1; i < P.length; i++) {
+    const [ax, az] = P[i - 1], [cx, cz] = P[i], L = Math.hypot(cx - ax, cz - az);
+    for (let s = 0; s < L; s += 0.2) {
+      const x = ax + (cx - ax) * s / L, z = az + (cz - az) * s / L, f = b.elvLandS(x, z, 5)[1]; n++;
+      if (f === null) { nul++; continue; }
+      if (prev) { const r = (f - prev.f) / Math.max(1e-3, Math.hypot(x - prev.x, z - prev.z)); if (r > worst) { worst = r; at = x.toFixed(2) + ',' + z.toFixed(2); } }
+      prev = { x, z, f };
+    }
+  }
+  log('GULLY samples', n, 'off the land', nul, 'steepest rise/run', worst.toFixed(2), 'at', at, 'top floor', prev && prev.f.toFixed(2));
 }

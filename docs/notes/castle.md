@@ -1972,3 +1972,8 @@ sometimes fix this now. make him better and more aggressive too."
   `opening` 0.4 s after a string (0.7), `gapRate` 0.7 a second (0.35), fidgets rarer, `regroup` 0.1 / 0.5–0.9 s.
   Measured (`dkMove`, 25 s a mode): 49 swings (42 the last round, 35 before that); landed still 8/9, strafing 5/8,
   backing off 7/8, wandering 5/8, side-stepping on cue 5/8.
+- **LOUDER FIGHT SONGS, QUIETER SURF** (2026-11-15, the owner: "the music i added at the farmers fight and throne room
+  should be louder. the wave audio should be lower in the farmer fight"). `LOOP_SONGS.marauder.level` and
+  `.farmers.level` 0.3 → 0.6 (+6 dB; `max` 1.0 never binds at the default 50 % × 25 %). The surf: `beachBedK` multiplies
+  by `FORT_SURF` (0.35, −9 dB) while `inFort && !farmFight.done` — the fort is not `indoors()`, so the beach's bed was at
+  full there; `updateBeachBed`'s 0.45 s glide takes it down and back. After the fight the yard has the full surf again.

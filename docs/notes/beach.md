@@ -2425,3 +2425,41 @@ Stills: probes `pupBlink`.
   stays.
 - **Elvédor's fridge is empty** ("make elvedors fridge empty"): `ELV_FRIDGE_FULL` false — no bottle; `elvFridge` still
   saved and read.
+
+## 2026-11-15 — his mailbox at the gully's mouth
+The owner, a screenshot from the beach at (12.44, −706.55) looking −1.22 rad into the gully: "put a realistic mailbox
+right here i dont want people to miss the house." (The two boxes that stood at the GATE were taken out 2026-10-16 with
+the rest of the walk up; they are still `skip`ped.) `buildElvMailbox` (called from `buildElvField` after the dressing, so
+it is in `elvField`: built at boot, warmed with the gully, shown from z −600 with it): at `ELV_MAILBOX` (15.6, −707.6) —
+where his crosshair met the bank, 3.4 m off the path's line — yaw −1.35, the door to the sea, the name side up the
+beach. Grounded by a ray down onto `elvFieldMesh` (else `beachGroundAt`): y 0.35. A grey 4x4 post sunk 0.14 and leaning,
+a board and a brace under the box; the box an extruded half-round-top profile (0.17 wide, 0.47 long, three pressed ribs,
+a door a little proud with a latch) in a canvas enamel gone dark green-black with rust blooms, streaks and scratches
+(its map as emissive at 0.42 — at 0.22 it was a black shape at night); the red flag UP on its pivot (emissive 0.8); an
+amber reflector on the post (emissive 0.9) — country-road real, and what catches the eye; BASQUIANT hand-painted on the
+side (as on the gate's board). The post is a collider (r 0.12). Probe `mailbox` (`his`, `walk12`, `close`, `side`):
+from his spot it stands in the middle of the view at the mouth; from the beach 15 m short the cliff's toe hides it —
+you see it as you come level with the gully, as his screenshot did.
+- **Not slop** (same day: "dont make the mailbox look ai slop"). Looked at close, 1280 wide (probe `mailboxClose`), the
+  first pass gave itself away: rust as even orange dots tiled over it, a black block for a latch that read as a hole,
+  a flat saturated red card of a flag, a serif typeface, a glowing yellow coin. Now: enamel with a lighter wear at the
+  top and dull patches, rust only along the bottom edge (where water sits), in two seams and at a knock or two, each a
+  cluster of irregular ellipses with a run under it, the map repeated 2.2 (was 4.5); a pull tab at the top of the door
+  and a hinge rod at its foot; the flag a bent steel strap and a plate with one corner rounded, faded brick (0x8e2f22,
+  emissive 0.45); BASQUIANT in hardware-store stick-on letters, gold vinyl on black squares, each set by hand (jittered
+  rotation and baseline), the I peeled off and its glue ghost left; the reflector smaller (r 0.024) in a steel rim with
+  its screw; the post grey pine with open grain and splits.
+- **"MAKE THE MAILBOX LOOK WAY BETTER AND I CLIP THROUGH THE SAND RIGHT HERE"** (same day, at (15.68, 0.41, −708.36),
+  a metre from it). **The clip:** the walk's floor in the gully was the carve's FORMULA, sheer from the floor to the bank
+  (0.41 → 3.3 m in under half a metre there); what is drawn is that formula sampled on the 0.25 m grid, whose triangles
+  make the step a slope overhanging its foot — the drawn sand was at 2.38 where the feet were at 0.41 (probe
+  `mouthClip`). `elvLandFloorAt` now reads the floor off the mesh's own triangles where the mesh is (`elvFieldY`, off
+  `elvFieldGrid` kept at build; the index's split, a b c / b d c; null on cells the mesh leaves out), so you stand on
+  what is drawn and the steep-step rule refuses the bank. (The probe's ray also hits the CLIFF's mesh above it, 3.19 —
+  invisible there: its shader discards inside `ELV_CUT`, which a CPU ray cannot know.) Probe `gullyWalk`: the path's
+  line still walks, steepest step 0.42 rise/run (the refusal is 1.15). The mutants' floor (`elvLandFloorAt` too) follows.
+  **The mailbox:** smooth-shaded (the round top was faceted), 18 curve segments, the door bevelled and the box's open end
+  rolled into a bead it shuts against, two rusted nails through the board. A bump map off the paint was tried and taken
+  out — off a nearest-filtered map its slopes are huge at any scale. **Trap:** an edit appended a comment to the line
+  holding the paint gradient's `addColorStop`s and commented them out — the canvas had no base, the box came out
+  camouflage. Three "fixes" did nothing before the code was read; read the line before tuning the material.
