@@ -1133,7 +1133,7 @@ generate and lag before my eyes when loading back in".
 ## 2026-10-14 — nothing is built on the walk ("i see the light house island spawn in when walking to the first merchant and it lags")
 - **The island was asked for at z -700** (`updateIsle`), 430 m off and on the skyline at the trader's stretch: its
   9.4 MB parsed (410 ms span) and built on a frame of the walk and it appeared in front of you. Now it, `loadKeep`,
-  `loadTavern`, `loadDungeon`, `loadThrone` and `loadJettyHenry` (Henry's jetty copy and the eagle; hidden until he
+  `loadTavern`, `loadDungeon`, `loadThrone` and `loadJettyHenry` (Henry's jetty copy and the crow that takes him (the eagle until 2026-11-15); hidden until he
   is out) are asked for in the `bootRoomsAsked` block with the dojo and the catacombs. `startLeft` counts the whole
   queue, so START — and a checkpoint's black — waits for them. The old distance triggers stay as fallbacks.
 - **The castle's torches were an 85 ms frame at z -837**, found with the JS sampling profiler (below): the wall index
@@ -1602,3 +1602,51 @@ on the paced far rest.
 - A deferred build must not use the room's `bake`: its buckets were merged when the room was built. `lairDress` batches its
   own (`dBuckets`) and adds them itself; baked into the old buckets, the heap and the rags were never drawn.
 - The biggest single block in a sewer checkpoint's load is not the sewer's: `driftwood.glb` (~130 ms parse).
+
+## 2026-11-15 — performance pass ("no lag at any moment … strictly performance")
+The owner: "optimize performance and load times of the entire game. i want no lag at any moment and the best
+performance possible. do this but do not change any gameplay or the look of anything strictly performance pass."
+Measured first, M4 Pro headless: **`tools/perfwalk.js`** (new; `sh tools/probe.sh 'evalFile&f=/tools/perfwalk.js'`, `&z0=`
+`&z1=` `&v=` `&over=` `&prof=z0,z1`): boots, waits for the far rest, walks the beach spawn → castle merchant on the real
+clock in dev mode and logs every frame over 25 ms with the programs compiled, textures and geometries uploaded in it
+and the named spans; `&prof` runs the JS sampler over a stretch and reports the functions inside the slow frames.
+**`tools/loadall.html &prof=1`** (new, via `LT_Q`) does the same for the 8 s after each checkpoint's black.
+- **`fortWallsStep` ignored its budget.** The clock was read once per 1024 triangles, and a triangle files itself into
+  up to 400 one-metre cells: a "3 ms" step over the puppet house's big wall/floor triangles was 69 ms. Now each triangle
+  and each cell filed counts as work and the clock is read every 384 — same triangles, same order, only where a step
+  stops moves. (The castles', XIII's and the island's `bgRun` steps go through it too.)
+- **The puppeteer's stretch was the last thing built on the walk.** `buildElvField` (z −600: 3 programs, 75 meshes on
+  first draw, 69 ms) and `loadHouse` (−629: 11 programs, 369 meshes, 42 ms). Both are in the boot's room list now
+  (`loadHouse`, `buildElvField` after `loadJettyHenry`), warmed (`elv compile` + 4 `elv` views, `house` 8 views after its
+  compile, `house dressing` compile + 4 views when the decals are made; `WARM_REACH` house/elv 590 + ext·0.4 so they are far
+  steps) and HIDDEN until the old lines: `elvFieldShow` at ELV.z + 40 (pushes the far-prop entry then), `houseSeen` at
+  −628.5 gates `houseWorld.visible`. Probe `elvShow`: gully first drawn at z −600.5, house at −629 (as before).
+- **`ntarRetarget`'s frame loop** (every Mixamo-retargeted creature's clips, at every dress): six to eight Map lookups
+  per bone per frame that never change in a clip, hoisted into flat per-bone arrays; the arithmetic and its order
+  untouched. Checked by running the old function beside it over a whole boot plus six fresh dresses (probe `ntarCheck`,
+  the old copy and its `bw.ntarCheck` hook since removed): 549 clips, 11,134,202 values, 0 differ. `dress skrim.glb`
+  60 → 22 ms alone; the knight's and the farmers' under 16.
+- **The bunker's props on three frames** (`buildBunkerProps`, `S._propStage`): the work table and its desk carve, the
+  tripod, then the spots' rays down the scan — it was 71–126 ms on one frame of the paced far rest.
+- **The undercroft's corridor fit yields** (`fitCorridor` async, `await`ed, a `uSlice` every ~10 ms of probes): 63–66 ms
+  pieces of `composeInner` on the far rest.
+- `makeMutant` is on `__bw` (probe `dressProf&k=…` profiles a fresh dress).
+**Result.** The walk (spawn → castle merchant, 8 m/s, everything loaded): frames over 33 ms 4 → 1, over 50 3 → 1, p99
+8.6 → 8.5 ms; the one left is z −858 in dev mode only (the catacombs placed at once; in a real game the 0.7 s build is
+fully under the cave-in's black — probe `caveInPerf`: the frame at black 1.00). Checkpoints (`loadall.sh`, one run each,
+before → after): playable the same within the run-to-run ±0.4 s (beach-600 3.30 → 3.13, beach-1000 4.35 → 4.04, whale
+6.72 → 4.73; tav 7.09 → 7.30); worst frame in the 8 s after: beach-60 113 → 79, beach-900 156 → 85, ucFar 131 → 84, dojo
+148 → 52, tav 258 → 56 (that one varies run to run, see 2026-11-13), sewer 92 → 75, dun 93 → 80; frames over 100 ms in
+all 19 loads 6 → 2. Music test 14/14.
+**Left (and why):** the crab's three 4096² maps (`crab.glb`, the only 4096 maps in the game) go up 88–95 ms each on the
+far rest after a keep/tavern checkpoint — one `texImage2D` each; splitting it means uploading under three's texture
+handling, and holding them risks the upload landing on the crabs' first frame in the fight. `dress skrim.glb` still reads
+66–78 ms under the probe's load (22 alone) and the farmers' 24–66; Elvédor himself at z −530 is 31 ms (a unit with a
+saved death: not moved to boot). The tavern's first frame after its black is the 2026-11-13 "Left" item.
+
+## The boot rooms wait for the module (2026-11-17)
+`animate()` is kicked at module time (~line 111000) and the boot rooms fire on the first frame past 3 s of page time.
+After the merge of 2026-11-17 the module took longer than that to evaluate, so the boot rooms ran on that FIRST,
+synchronous call — before `houseWorld` / `elvFieldMesh` (~114000) were declared: a dead-zone error swallowed by the
+try/catch, and the puppeteer's house and gully never built at boot. `moduleDone` (set on the module's last line) gates it.
+A check that only passes because evaluation happens to finish in time is a race.

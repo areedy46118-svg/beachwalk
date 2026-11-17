@@ -1958,3 +1958,22 @@ with and without Myles, all four broken, the key lying 0.02 over the stone. Harn
   most of his skate (`dkWhy`: by clip, sStr1/sStr2 75–84%, sWalkB 100%). Measured (`dkMove`, 25 s a mode): swings 42
   (35), every foot 0.92 m/s (1.02), the walk's planted foot 1.23–1.40 m/s (1.62); still mode landed 7/8. STILL OPEN: his
   side-steps and back-step skate on their own (sWalkB 2–2.6 m/s at 100%) — the clips, or the turn while he faces you.
+
+## 2026-11-14 (later) — no trail left hanging; the dark knight harder
+The owner (a screenshot of a white blade-sheet over the dead in the street): "the dark knights sword whisps stay forever
+sometimes fix this now. make him better and more aggressive too."
+- **THE TRAIL OUTLIVED ITS OWNER.** A swing trail (`makeSwingTrail`) fades only while its owner's tick calls it
+  (`knSwordTrail`, `farmTrailTick`, the gargoyles') — and the knight killed mid-swing, or any unit no longer ticked (dead,
+  culled, put away), left its last sheet up at full strength for good. Every trail is now in `SWING_TRAILS` (declared at
+  the top of main.js: frames run before the module is read) and `swingTrailSweep` (every frame, from `updateSkrimMood`)
+  fades any visible trail whose geometry nobody wrote this frame (its additive colours scaled down) and hides it within
+  0.6 s. Probe `dkTrailLeft`: caught mid-swing with the trail up, then not ticked — gone 33 frames later.
+- **Harder**: `aggr` 3.2 (2.4: the wait between swings is divided by it), `press` 0.96, `chainMax` 4, `speedK` 1.0,
+  `opening` 0.4 s after a string (0.7), `gapRate` 0.7 a second (0.35), fidgets rarer, `regroup` 0.1 / 0.5–0.9 s.
+  Measured (`dkMove`, 25 s a mode): 49 swings (42 the last round, 35 before that); landed still 8/9, strafing 5/8,
+  backing off 7/8, wandering 5/8, side-stepping on cue 5/8.
+- **LOUDER FIGHT SONGS, QUIETER SURF** (2026-11-15, the owner: "the music i added at the farmers fight and throne room
+  should be louder. the wave audio should be lower in the farmer fight"). `LOOP_SONGS.marauder.level` and
+  `.farmers.level` 0.3 → 0.6 (+6 dB; `max` 1.0 never binds at the default 50 % × 25 %). The surf: `beachBedK` multiplies
+  by `FORT_SURF` (0.35, −9 dB) while `inFort && !farmFight.done` — the fort is not `indoors()`, so the beach's bed was at
+  full there; `updateBeachBed`'s 0.45 s glide takes it down and back. After the fight the yard has the full surf again.

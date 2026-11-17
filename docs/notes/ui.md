@@ -914,7 +914,7 @@ on the second, fired 19 frames later, the card shown on that frame.
 - **Later the same day** ("make the merchant wait like a second after pulling his gun on you to shoot make him pulling it
   out a little more noticeable too the shot should also be the real gun shot sound with the same recoil for him. make his
   'touch me again' line look like real dialog we have in game too"): the line is `startDialog` on his own card
-  (`TRADER_NPC`, "Rude Trader", the lens on whichever of him you hit), typed, ending on its own at 2.6 s (`bossLine` only
+  (`TRADER_NPC`, "Trader" (it was "Rude Trader" until the owner: "make it just say Trader not rude"), the lens on whichever of him you hit), typed, ending on its own at 2.6 s (`bossLine` only
   if a dialog cannot open). The draw: a cloth-and-leather rasp (`sfxTraderDraw`), out from low at his hip muzzle-down,
   arcing up onto your face over `TRADER_DRAW` 0.6 s, the hammer (`sfxMagShut`) at the top; held `TRADER_HOLD` 1.0 s,
   breathing; then exactly `magFire`'s sound (`sfxMagBlast` + `magShot` 1.22 through `magBus`), a muzzle flash
@@ -1019,3 +1019,49 @@ across the box). The sewer key is the "Steel Door Key" now (`was: ['Lair key']` 
     is set out by the bow's rim × sin(tilt), or the rim above its hang point tips back into the wire.
   - The swing binds from 0.6 rad, and the keys are 0.12 long, not 0.14 (as long as the ring is wide: a 16° swing reached the
     next key on its side). Result: 238/238 clear.
+
+- **Stuck in a heavy charge after his line** (2026-11-15, the owner: "after i hit the merchant the first time i get
+  stuck in a heavy swing charge"). Not his code: the virtual cursor's tail-swallow. When any vc screen closes, the
+  `pointerup`/`mouseup`/`click` in the next 320 ms were eaten (so the click that closed a dialog doesn't swing). His
+  line closes on its own at 2.6 s while you are still clicking at him, so a press made just after went to the game
+  (`windHeld`, the latch, `startWind`) and its RELEASE was eaten — before the game's `pointerup` and even the
+  `mouseBtns` capture listener (registered after the vc one, so `stopImmediatePropagation` starves it). The haul-back
+  never let go. Now the tail is eaten only if the press itself went to the cursor (`vcDownEaten`), and a swallowed
+  `pointerup` still writes `mouseBtns`. Not reproducible headless (no pointer lock, so the vc never comes on; synthetic
+  events are ignored by the vc router) — the fix is from reading the event order.
+- **Bigger bars, same numbers** (2026-11-15, the owner: "make health and stamina look a little bigger on screen", then
+  "only make them look bigger dont change health or stamia"): `#health i` 60 × 12 → 72 × 14 px (gap 5, padding up a
+  pixel), `#stamina` 300 × 11 → 360 × 13. The strip's width at a full reserve is `STAM_BAR_W` in main.js (it grows with
+  `stamMax()`), kept equal to the CSS. No game value changed.
+- **The ring is "Lucky bastards ring"** (2026-11-15, the owner's words as written). `ITEM_RENAMED` maps both old names
+  straight to it (a chain is not followed), and `PACK_FILES` knows it.
+- **The merchant's gun sits in his fist** (2026-11-15, "make the gun fit better in the merchants hand when he shoots you
+  it looks weird and off"). Measured (probe `merchGun`): the barrel was on you and along his forearm (12°), but the gun
+  was squared to the WORLD's up, rolled 46° off his knuckles, the grip out of his fist, and its origin (the top of the
+  grip) 9 cm off the hand. `traderGunPose` now builds its frame from the hand: the barrel on you, its top along his
+  knuckle line (pinky → index knuckle) made square to the barrel, the top of the grip `TRADER_SEAT.along` (0.45) of the
+  way from his wrist to his index knuckle and `.in` (2.5 cm) toward the side his fingertips curl to. The kick still
+  turns it about its own side axis. Side stills: grip down through the curled fingers, barrel out of the fist.
+- **The castle merchant's teleport after a checkpoint load** ("why when i teleport to the castle sometimes its not
+  there"). A fast load (a checkpoint or a death) waits only for what is near the save (`bootLeft`); the far rest,
+  castle.glb (22 MB) among it, comes in behind you. Teleporting before it did showed the beach with no castle.
+  Reproduced (probe `castleTpCp`, served by a copy of serve.py holding castle.glb back 10 s): `fortState().ready` false,
+  86 load steps left. `devTeleportShop(2)` now jumps the castle and Castle XIII to the front (`ROOM_BACK.*.load`) and
+  holds the black on the spot (`devFortWait`, minded first thing in `updateFort`, exempt in `blackGuard`, 30 s at most):
+  the castle stood there 9.3 s after the click with the 10 s hold.
+- **By the handle** (2026-11-15, the same day, "the merchant should hold the handle of the gun not the magazine"): seated
+  by the top of its grip (`TRADER_SEAT`, gone), the gun's own frame put his knuckles 9 cm ahead of the grip and 4 cm
+  over it — his fingers shut round the trigger guard and the cylinder, the grip hung under his wrist. Now the grip's
+  middle (`TRADER_GRIP`, measured off the model in its frame at 0.32 m: the grip spans y −0.085..−0.025, x −0.053..0 at
+  its foot) goes on the hole of his fist (the mean of `f_middle01/02/03R` and his palm), and the gun is
+  `TRADER_GUN_LEN` 0.37 m (0.32: a 6 cm grip in 8.6 cm of knuckles). Measured after: his middle finger's joints at the
+  grip's middle (y −0.056..−0.063 of −0.098..−0.03), the index knuckle at its top, the cylinder and guard ahead of his
+  hand. Probe `merchGun`, views `tightR/tightL/tightUnder`.
+- **The hotbar a little bigger too** (2026-11-15, "make health stamina and the hotbar bigger on the screen not too much
+  tho"): `#hotbar .slot` 62 → 72 px (gap 8, number 14 px, label at 84 px, the held mark 32 px), the ring slots 36 →
+  42. Eight slots and the rings are ~700 px tall now, so `#gear` scales to 0.86 under a 780 px window and 0.72 under
+  640. The health and stamina bars were already up 20 % that day and left there (that change had not been seen yet).
+- **Bigger again, and the rings** (2026-11-15, "make health stamina and the ring section on the hud bigger"): `#health i`
+  72 × 14 → 84 × 16 (gap 6, padding 9/18/9/12), `#stamina` 360 × 13 → 420 × 15 (`STAM_BAR_W` 420; `max-width: 62vw` so
+  a narrow window keeps it), `#rings .rslot` 42 → 52 (gap 8), the RINGS label 0.58 → 0.68 rem. Still only the drawing:
+  no value changed. (Not seen in a still: the probes draw the canvas, not the page.)

@@ -1,0 +1,77 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>crow level</title>
+<!-- THE CROW'S SCREAM AT THE SPEAKERS, in a silent frame of its own (tools/silentframe.js): the owner's settings, walked
+     onto the pier, the crow petted; the loudest sample reaching the output before it and during the scream, and who
+     connected it. Prints "[CL] ...". Its own profile and save (run it like tools/musictest.sh). Not part of the game. -->
+<body>
+<script type="module">
+await import('/tools/silentframe.js');
+const log = (...a) => console.log('[CL]', ...a);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+try {
+  await window.__sfLoad(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+  let w, b;
+  for (let i = 0; i < 200; i++) { await sleep(250); w = window.__sfW(); if (w && w.__bw && w.__bw.state().started) break; try { w.__bw.beginGame(); } catch (e) {} }
+  b = w.__bw; b.settings.devMode = true;
+  const K = b.CROW, C = b.camera;
+  if (new URLSearchParams(location.search).get('m') === 'dock') {
+    // THE DOCK'S CROWS: walked up the beach to it (3 m/s), out onto the pier, held there, then run off it and away (7 m/s)
+    await sleep(4500);
+    const D = b.DOCKB; D.log = [];
+    // the crows alone: the surf and the music muted (their own levels are read first, standing where the walk starts)
+    { C.position.set(6, 1.7, -125); b.camBaseY = 1.7; let pk = 0; const t0 = performance.now(); while (performance.now() - t0 < 3000) { b.frame(1); for (const d of window.__sfDests) pk = Math.max(pk, window.__sfLvl(d.an)); await sleep(16); } log('surf and music, 60 m off the dock: loudest', pk.toFixed(4)); }
+    b.settings.waveVolume = 0; b.settings.musicVolume = 0; await sleep(2500);
+    const path = [[6, -125, 0], [6, -212, 3], [-1.5, -215.5, 3], [-1.5, -215.5, 0, 12], [6, -212, 7], [6, -150, 7], [6, -150, 0, 4]];
+    let P = { x: path[0][0], z: path[0][1] }, sec = 0, pk = 0, who = '', amb = 0;
+    const T0 = performance.now();
+    for (let i = 1; i < path.length; i++) {
+      const [x, z, v, hold] = path[i], t1 = performance.now();
+      while (true) {
+        const now = performance.now(), dt = 0.016;
+        if (hold) { if (now - t1 > hold * 1000) break; }
+        else { const dx = x - P.x, dz = z - P.z, L = Math.hypot(dx, dz); if (L < 0.2) break; const s = Math.min(L, v * dt * 1.0); P.x += dx / L * s; P.z += dz / L * s; }
+        C.position.set(P.x, b.onPier(P.x, P.z) ? 3.44 : 1.7, P.z); b.camBaseY = C.position.y;
+        b.frame(1);
+        for (const d of window.__sfDests) { const lv = window.__sfLvl(d.an); if (lv > pk) { pk = lv; who = d.who; } }
+        if (now - T0 > (sec + 1) * 1000) { sec++; log('t', sec, 'at', P.x.toFixed(1), P.z.toFixed(1), 'pier', b.onPier(P.x, P.z), 'crows', D.wc.toFixed(2), 'loudest this second', pk.toFixed(4), who); pk = 0; }
+        await sleep(16);
+      }
+    }
+    log('played: crows', D.log.length, '| first at', (D.log[0] || {}).t, 'weight then', (D.log[0] || {}).w, 'last at', (D.log[D.log.length - 1] || {}).t);
+    log('DONE'); throw 0;
+  }
+  const near = () => { C.position.set(-2.7, 3.44, -216.4); b.camBaseY = C.position.y; };
+  for (let i = 0; i < 600 && !(K.g && K.jaw && K.env); i++) { near(); b.frame(2); await sleep(20); }
+  log('settings: volume', b.settings.volume, 'effects', b.settings.sfxVolume, 'crow', !!K.g, 'scream decoded', !!K.env);
+  await sleep(4500);                                     // (the master fades up over 4 s)
+  const peakFor = async (ms, tick) => { let pk = 0, who = ''; const t0 = performance.now(); while (performance.now() - t0 < ms) { if (tick) tick(); for (const d of window.__sfDests) { const v = window.__sfLvl(d.an); if (v > pk) { pk = v; who = d.who; } } await sleep(15); } return [pk, who]; };
+  const [p0] = await peakFor(1500, () => { near(); b.frame(1); });
+  log('before: loudest', p0);
+  if (new URLSearchParams(location.search).get('m') === 'hit') {
+    // ?m=hit: a swing of the shovel at it instead of a pet (2026-11-15, "make hitting the crow on the dock do the scare too")
+    if (b.state().equipped !== 'Sand shovel') b.toggleEquip(b.shovelItem);
+    const v = new b.THREE.Vector3(), aim = () => { near(); K.proxy.getWorldPosition(v); b.lookAt(v.x, v.y, v.z); };
+    for (let i = 0; i < 20; i++) { aim(); b.frame(1); await sleep(16); }
+    log('before the swing: state', K.st, 'equipped', b.state().equipped, 'dist', v.distanceTo(C.position).toFixed(2));
+    b.startDig(0);
+    for (let f = 0; f < 60 && K.st === 'perch'; f++) { aim(); b.frame(1); await sleep(16); }
+    log('after the swing: state', K.st, 'dig', b.state().digT);
+  } else b.crowPet();
+  const [p1, who] = await peakFor(4500, () => { near(); b.frame(1); });
+  log('the scream: loudest', p1, 'via', who, 'state now', K.st, 'gain', K.screamG && K.screamG.toFixed(1), 't', K.t.toFixed(2), 'hover', b.crowHoverS(), 'hidden', w.document.hidden);
+  // and on: it flies, the strike, its thunder, the achievement (2026-11-14)
+  const T0 = performance.now(), el = w.document.getElementById('ach'); let tStrike = 0, tThunder = 0, tAch = 0, pkT = 0, whoT = '';
+  while (performance.now() - T0 < 16000 && !(tAch && performance.now() - T0 > tAch + 2500)) {
+    near(); b.frame(1);
+    const now = performance.now() - T0;
+    if (!tStrike && K.ach) tStrike = now;
+    if (!tThunder && K.thunderAt) tThunder = now;
+    if (!tAch && el && el.className.includes('on')) tAch = now;
+    if (tThunder) for (const d of window.__sfDests) { const v = window.__sfLvl(d.an); if (v > pkT) { pkT = v; whoT = d.who; } }
+    await sleep(15);
+  }
+  log('flew; strike at', (tStrike / 1000).toFixed(2), 's, thunder', (tThunder / 1000).toFixed(2), 's, achievement', (tAch / 1000).toFixed(2), 's | thunder loudest', pkT.toFixed(4), 'via', whoT, '| toast', el && el.textContent.replace(/\s+/g, ' ').trim());
+} catch (e) { if (e !== 0) { log('FAILED', e && e.stack || e); log('DONE'); } }
+if (new URLSearchParams(location.search).get('m') !== 'dock') log('DONE');
+</script>

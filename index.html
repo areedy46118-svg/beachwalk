@@ -247,8 +247,9 @@
      hairlines. It was monospace scratches from the first build. The bar you
      spend is a moonlit blade in a dark track, cut on the slant at both ends. */
   #stamina {
-    width: 300px;
-    height: 11px;
+    width: 420px;               /* (300 × 11 → 360 × 13 → 420 × 15, 2026-11-15, the owner: "make health and stamina look a little bigger", then "make health stamina and the ring section on the hud bigger") — and `STAM_BAR_W` in main.js */
+    height: 15px;
+    max-width: 62vw;            /* (a narrow window keeps it on the screen) */
     background: linear-gradient(180deg, rgba(4, 6, 11, 0.86), rgba(16, 21, 31, 0.86));
     box-shadow: inset 0 0 0 1px rgba(176, 194, 224, 0.26), inset 0 1px 3px rgba(0, 0, 0, 0.9);
     clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
@@ -336,14 +337,14 @@
   #stamwrap #fastwalk { position: absolute; left: calc(100% + 10px); }
   #health {
     position: relative;
-    display: flex; align-items: center; gap: 4px;
-    padding: 7px 14px 7px 10px;
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 18px 9px 12px;
     background: linear-gradient(90deg, rgba(4, 6, 11, 0.70) 0%, rgba(4, 6, 11, 0.42) 70%, rgba(4, 6, 11, 0) 100%);
     z-index: 5; pointer-events: none;
     opacity: 0; transition: opacity 0.5s ease;
   }
   #health i {
-    display: block; width: 60px; height: 12px;
+    display: block; width: 84px; height: 16px;   /* (60 × 12 → 72 × 14 → 84 × 16, 2026-11-15: "a little bigger", then "bigger") */
     background: linear-gradient(180deg, rgba(4, 6, 11, 0.9), rgba(18, 22, 32, 0.9));
     box-shadow: inset 0 0 0 1px rgba(176, 194, 224, 0.22), inset 0 1px 3px rgba(0, 0, 0, 0.9);
     clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
@@ -782,17 +783,20 @@
   #hotbar {
     display: flex;
     flex-direction: column;
-    gap: 7px;
+    gap: 8px;
     transition: opacity 0.3s ease;
   }
   #hotbar.hidden { opacity: 0; pointer-events: none; }
+  /* eight 72 px slots and the rings are ~700 px tall: a short window gets the column back down to what fits */
+  @media (max-height: 780px) { #gear { transform: translateY(-50%) scale(0.86); transform-origin: left center; } }
+  @media (max-height: 640px) { #gear { transform: translateY(-50%) scale(0.72); transform-origin: left center; } }
   /* A SLOT IS DARK GLASS WITH ITS CORNERS BRACKETED, in the moonlight the
      whole game is lit by; the held one stands out to the right with a lit
      edge and a mark beside it. */
   #hotbar .slot {
     --c: rgba(214, 224, 240, 0.42);
-    width: 62px;
-    height: 62px;
+    width: 72px;                /* (62 until 2026-11-15, the owner: "make health stamina and the hotbar bigger on the screen not too much tho") */
+    height: 72px;
     box-sizing: border-box;
     border: 1px solid rgba(170, 188, 218, 0.14);
     background:
@@ -822,7 +826,7 @@
     transform: translateX(4px);
   }
   #hotbar .slot.equipped::before {
-    content: ''; position: absolute; left: -9px; top: 50%; width: 2px; height: 28px; margin-top: -14px;
+    content: ''; position: absolute; left: -9px; top: 50%; width: 2px; height: 32px; margin-top: -16px;
     background: linear-gradient(180deg, rgba(255,255,255,0), #ffffff 50%, rgba(255,255,255,0));
     box-shadow: 0 0 8px rgba(190, 210, 255, 0.9);
   }
@@ -831,7 +835,7 @@
     position: absolute;
     top: 3px;
     left: 5px;
-    font: italic 13px/1 Georgia, "Times New Roman", serif;
+    font: italic 14px/1 Georgia, "Times New Roman", serif;
     color: rgba(220, 230, 246, 0.70);
     text-shadow: 0 1px 3px #000, 0 0 6px #000;
     z-index: 1;
@@ -839,7 +843,7 @@
   #hotbar .slot.equipped .num { color: #ffffff; }
   #hotbar .slot .label {
     position: absolute;
-    left: 74px;
+    left: 84px;
     top: 50%;
     transform: translateY(-50%);
     white-space: nowrap;
@@ -868,17 +872,17 @@
   }
   #rings.hidden { opacity: 0; pointer-events: none; }
   #rings .rlabel {
-    font: 0.58rem/1 Georgia, "Times New Roman", serif;
+    font: 0.68rem/1 Georgia, "Times New Roman", serif;
     letter-spacing: 0.34em;
     text-transform: uppercase;
     color: rgba(214, 224, 240, 0.48);
     padding-left: 1px;
   }
-  #rings .rslots { display: flex; gap: 6px; }
+  #rings .rslots { display: flex; gap: 8px; }
   #rings .rslot {
     position: relative;
-    width: 36px;
-    height: 36px;
+    width: 52px;                /* (36 → 42 with the hotbar → 52, 2026-11-15, "make … the ring section on the hud bigger") */
+    height: 52px;
     border: 1px solid rgba(176, 194, 224, 0.26);
     border-radius: 50%;
     background: radial-gradient(circle at 50% 40%, rgba(30, 40, 60, 0.6), rgba(4, 6, 10, 0.9) 75%);

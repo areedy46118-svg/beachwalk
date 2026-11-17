@@ -1574,3 +1574,17 @@ like the center of the steering wheel."
   (−3.3, 5.16, 0), the basket under it at the hold's sole), fov 38 → 28 when it is down, holding 1.3 s; a blink, your
   eyes. Measured: the cut camera dead on the key (cos 1.000), you 0.05 m from where you stood, 5.0 s in all.
   `keyCut` is the snorkeler's too: `updateKeyCut` returns for a `ship` one.
+- **The key hangs ON its line** (2026-11-14, "make sure the key is actually visibly attached to the rope in the shipwreck
+  cutscene"): the line ended 9 cm over the key's middle — short of the bow and off to one side; the key hung in the air
+  under it. `keyLower.bow` is the key's highest vertex as it hangs (its own mesh, not `Box3.setFromObject`, which carries
+  the aim sphere and the glint), kept in its own frame; every frame the line runs from the hook to a centimetre into it,
+  leaning with the swing (`setFromUnitVectors`). Probe `shipKeyRope`: close-ups at 70 and 130 frames, the line into the bow.
+
+## 2026-11-15 — the breach's drift is the beach
+The owner's screenshot from her floor at the breach's aft end, looking forward along the tear (hold left, beach
+right): "make this part where the boat connects to sand look better". The drift laid along each tear's foot
+(`tearDrift`, 2026-11-14) was `M.wetsand` — warm grey-brown with its own map as emissive — a brown heap on the moon's
+blue beach with a hard line where it went under. Raycast the seam before guessing: the drift was the only non-beach
+thing there; the pale sheet beyond it is the beach's own swash (`SAND_EDGE_K`). Now it is `M.sand` (the beach's
+material, every apron's way), banked to 0.24 m (was 0.15) at 0.04 m off her line (was 0.10) and reaching 1.3–1.6 m
+out, so the broken plank ends stand IN it. Probe `breachSeam` (views `m4` is his shot; `farOut`/`farIn` the crawl hole).

@@ -550,3 +550,40 @@ and dont let the camera be moved my playtester moved and didnt see the whale").*
 drag and W held from the splash on: the camera did not move (0.00 m; its 2.9° is the lens settling onto the hold).
 (`tools/hjshot.js`'s `__hjStand` left the camera on the beach at x −2.4 in this session — the isle was not under it —
 so its frames were not the jetty's; no still of the whale was taken.)
+
+## The eagle is a crow (2026-11-15)
+"replace the eagle with the crow model i have already and make it look and do the exact same thing then scrap the
+eagle model." `assets/eagle.glb` is deleted (WildPoly3D's, CC-BY-NC: it could not ship in a game that is sold) and its
+README credit with it (Henry's scream's credit kept). `loadJettyHenry` parses `assets/crow.glb` a second time
+(`hjBird`, group `hjCrow`; the dock's crow is its own parse) and every `hjEagle*` is `hjBird*` (`hjS().bird`,
+`hjG().bird`; `tools/hjshot.js` follows). The flight, keys, sounds, lens and timing are untouched.
+- **The eagle's three clips out of the crow's one** (`HJ_BIRD_CUTS`, seconds of "TakeOff", see dock.md for the
+  frame-by-frame): `gliding` 8.9–9.75 (wings held flat), `landing` 6.75–7.05 (wings opened and thrown up, once,
+  clamped: the flare), `fly` 7.5–8.4 (the beat; it loops — `fa.time` wrapping still rings `sfxWingBeat`).
+- **`THREE.AnimationUtils.subclip` DROPS A TRACK WITH NO KEY INSIDE THE STRETCH** (15 of the crow's 157 bones were
+  held still there), and a bone no action drives keeps what it last had — the bind pose's wings-out on frame one.
+  `hjClipCut(clip, name, t0, t1)` samples every track at both ends (slerped, its own interpolant) with its keys between:
+  157 tracks in each cut, and a loop meets itself exactly.
+- **Size:** posed in the glide and measured with `skinnedBounds`, scaled to `HJ_BIRD_SPAN` 6.8 m across the wings (the
+  eagle's), m.scale 0.1197 — about 4.3× the dock crow. Its look is the dock crow's (solid, its map as a faint
+  emissive, no shine) with `fog = false`, as the eagle had.
+- **His hands on its feet:** `CROW__L_Foot_043`, `CROW__R_Foot_053` (`/_[LR]_Foot_/`). The clip keeps its feet down
+  under it in every flight frame, so they carry him as the eagle's talons did. Measured (probe `hjCrow`): hand to the
+  feet's middle 0.20 m through the carry, as before.
+- `tools/hjshot.js`'s `__hjStand` stood the camera at z −1156.4, the jetty before the beach was lengthened (`ez`): 100 m
+  short, on the beach. It is `HJ_SPOT.z + 3.9` now.
+- **Into the jetty, and twice the size** (2026-11-15, later: "the crow that grabs henry glitches into the ground i want
+  it to have the same pathing as the old eagle make this look better and have his flying look more fluid"). Measured
+  both birds from the point the keys move (probe `birdHang`; the eagle read out of git into tmp-preview/ and deleted
+  after): the eagle's feet hung 0.23 m under and 0.47 m behind it, its glide 6.83 m across; the crow's body hung 7.3 m
+  under and 2.8 m AHEAD (its file's own offset — the dock crow's loader corrects for it, this one did not), and it was
+  12.7 m across, because **`skinnedBounds` samples every 7th vertex and on this bird misses the long primaries** (it
+  read 6.83 of 12.7). The loader now measures every vertex in the glide, scales to `HJ_BIRD_SPAN` 6.83, and slides the
+  model so its feet are at `HJ_BIRD_FEET` (0, −0.23, −0.47). Measured after: glide 6.83 across, feet −0.22/−0.47, body
+  y −0.45..0.79 (the eagle's −0.7..0.5); the beat 5.6–6.2 across (the eagle's 5.9–6.7).
+- **Fluid:** `hjClipCut(…, loop)` spreads what the loop's end misses its start by over the whole stroke (vectors by a
+  straight share, rotations slerped), so `fly` and `gliding` wrap without a jump; `hjBirdPin` slides the model each
+  frame so its feet stay at `HJ_BIRD_FEET` (the crow's beat heaves its body, feet and all, 0.4 m — Henry, hung on its
+  feet, was yanked with every stroke; not during the flare, whose talons reach); pitch and bank are eased (rate 7/s)
+  instead of set straight off the Hermite's velocity, whose turn rate jumps where its pieces meet. Probe `hjCrow`: it
+  comes down over him talons out, takes him at the hands 0.2 m off its feet, carries him out along the eagle's track.

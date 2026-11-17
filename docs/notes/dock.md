@@ -497,3 +497,133 @@ the key replays by its label. The model's own `BoxCrate` mesh stays hidden and, 
 GO").** The `dropKey` call is gone: the "Rusted Key" (`keyItem`) opened nothing since the captain's key took the sea
 chest. `keyItem` stays defined (a save carrying it still loads it; the fisherman's "Do you know about this key?" lines
 only show with it in the pack). The end's tally: `STAT_KEYS` drops it (6), `STAT_RINGS` gains the Ring of Connection (6).
+
+## The crow on the post (2026-11-14)
+
+The owner: "PUT A MODEL OF THIS CROW AND MAKE IT SAY "PET" WHEN close as soon as you touch it have it look you in the
+eyes and scream with its mouth open then fly away." Alexei Ostapenko's "Crow" (Sketchfab, CC-BY-4.0), packed by
+`tools/crow_pack.py` (2048 PNGs → 512 JPEGs, metal/rough dropped: 1.0 MB). It stands on the pier's seaward post
+(`dockPosts`: (-3.52, -216.66), top 2.32). Everything below is in `main.js` under `CROW_AT`.
+
+- **The bone names are sanitised.** The head is `CROW_ Head_05` in the file and `CROW__Head_05` in three (the space
+  becomes `_`). Looking up the file's name found nothing and the jaw silently never got made.
+- **Scale it in the pose it stands in.** The file's bind pose has the wings out, so sizing to the bind pose's
+  height made a standing bird 1.2 m long. The clip is applied first (`CROW_STAND_T`), then measured.
+  - `CROW_H` is 0.40 (the owner: "MAKE HIM BIGGER TOO SO HE EVENLY SITS ON THE PILLAR"). That is 0.42 m tall and
+    0.61 m beak to tail, on a post top 0.40 m across.
+  - The MIDDLE OF ITS FEET (every skinned point within 1.5 cm of the lowest) goes on the post's middle. The single
+    lowest vertex, one toe, stood it off to one side. Measured (`crowPerch`, rays down the post): within 1 cm of the
+    post's centre.
+- **SOLID.** The file's material is alphaMode BLEND (transparent), so it writes no depth and one mesh's triangles are
+  never sorted: its legs drew through its body ("I COULD SEE HIS LEGS THROUGH HIS BODY"). `transparent = false`;
+  the map has no alpha anyway (packed to JPEG).
+- **Its one clip, "TakeOff" (10.52 s), is not a take-off**, measured frame by frame (`crowClip` sheet,
+  `crowMeasure`, `crowJawBone`):
+  - 1.7–3.2 a peck;
+  - a caw at 5.2 (the jaw bone 0.54 rad), and a smaller one at 3.8–4.8;
+  - 3.5–6.5 standing and looking about (3.5 and 6.5 are the same pose, so it loops cleanly for the perch);
+  - 6.8 the wings open;
+  - 7.0–8.7 beating (peaks at 7.5 and 8.4; the flight loops 7.5–8.4 at 1.8x);
+  - 8.8–9.8 held flat (a glide), 10.0–10.4 up and folded.
+
+  The feet never leave the post: the flying is ours (`updateCrow` 'fly'). The first second is NOT a caw, though it
+  looked like one in a tiny sheet. Measure a bone, don't read a thumbnail.
+- **THE JAW IS ITS OWN.** The model has a real one, the bone the file calls "Queue de cheval 1" (3ds Max's ponytail,
+  child of the head; `CROW__Queue_de_cheval_1_06` in three). It carries 230 vertices: the lower beak, the throat and
+  the pink inside of the mouth. Two jaws were cut by hand before it was found, and both were wrong:
+  - the head-weighted vertices under the beak's middle line, re-skinned to a new bone, stretched the shell across
+    the gap (a brown smear and a spike; the owner: "i see no beak or face");
+  - a rebuilt lower beak hinged at the mouth's corner was better but still not the bird's.
+
+  The head-weighted vertices are the UPPER beak. `crowJaw` now measures the jaw bone's turn at its widest in the
+  clip (5.2 s) against the idle frame, as an axis and an angle. The scream lays `CROW_GAPE` (1.1) times that over
+  whatever the clip has the jaw doing (a post-multiply after `mixer.update(0)`, so it never accumulates). The owner
+  sent the model's own Sketchfab viewer with the beak open: that's the look, and it's this bone.
+- **The scream is the owner's** (`assets/crow-scream.m4a`, from his "crow screem beachwalk.wav", 2026-11-14):
+  - 3.6 s of scream, then an echo to 8 s;
+  - levelled to peak 0.8 (it came in at 0.33, against 0.73–0.78 for Henry's and the puppet's), trimmed at 8 s with a
+    1 s fade, mono AAC 128k, 132 KB.
+
+  The beak is DRIVEN BY IT: `crowEnv` takes the decoded buffer's loudness in 25 ms steps (smoothed, 1 at its
+  loudest), and `len` is where it last stays above a third, 3.78 s. The jaw opens on the first breath, rides the
+  loudness at 0.6–1.0 of its widest, trembles, and shuts into the echo. Then the crow flies.
+  - The wings stay flared as long as the scream, and the head shakes with the loudness and cocks slowly so it never
+    sets like a statue.
+  - It is decoded while you are near (the perch state), because `lazyBuf` returns null on its first call and the
+    crow screams only once a game.
+  - The synthesised scream (`sfxCrowScreamSynth`) stays as the fallback if it hasn't decoded.
+- **THE SCREAM IS LOUD** ("MAKE THE SCREAM WAY LOUDER ... SCARY AND LOUD"). Through the effects bus it was 0.8 × 0.15
+  (his effects slider) × 0.8 (`SFX_TRIM`) × 0.5 (his volume): about 5 % of full scale, under Henry's.
+  `crowScreamPlay` builds it as:
+  - the recording itself;
+  - the same recording at 0.7x, low-passed, under it;
+  - a sub-bass drop (95 → 34 Hz) and a noise slap on the first breath;
+  - all of it through a tanh saturator and a fast 8:1 compressor, whose output ceiling is known (`CROW_SCREAM_CEIL`,
+    measured), then a gain worked out from the bus at that moment, so it lands at `CROW_SCREAM_PEAK` (0.8) of full
+    scale at ANY slider.
+
+  A limiter BEFORE the bus was tried first and capped it before the slider cut it again: measured 0.105, barely
+  over the surf (0.08). Measured at the speakers by `sh tools/crowlevel.sh` (silent, its own Chrome, port 4233):
+  0.81 against 0.09 for everything else. Then "a little too loud": `CROW_SCREAM_PEAK` 0.8 → 0.6, measured 0.62
+  against 0.08. Then "turn down the crow scream some more": 0.42. The peak follows `CROW_SCREAM_PEAK` one to one, so set it
+  to the level you want measured.
+- **The scream, from where you stand, was a dark lump.** Beak-on, from 1.4 m and a metre above it, an open beak
+  doesn't read. So during the scream the clip is pushed to 6.5 → 6.95: the wings flare half open, a threat
+  silhouette. The view is pulled onto its head (`crowPullLook`), and then let go when it flies.
+  - The zoom came out ("dont do the zoom in"), then went back in: "zoom in on the crow and have the screen shake so it
+    emphasizes the scare". `crowZoom(k)` works out `crowFov` from the head's distance so that `CROW_ZOOM_SPAN`
+    (0.55 m) fills the screen's height. That is about 16° from the far petting spot (2.2 m) and 29° from 1.4 m. At
+    0.8 m the post filled half the frame.
+    - The lens creeps to 0.18 while the crow turns, snaps in on the first breath (the fov rate is 14 while
+      `crowFovK` is up), and lets go over the echo and the first 0.8 s of flight (`C.zoomK0`).
+    - The pull onto its head stiffens to 16/s once zoomed: at 16° any drift shows.
+  - **The shake is held, not kicked.** `trauma` decays at 1.7/s, so `addTrauma` alone is gone in a third of a second.
+    During the scream `trauma` is floored every frame: 0.72 for the first 0.25 s, then 0.36 + 0.2 × the recording's
+    loudness (about 0.5), released with the scream. The shake is trauma² × 0.15 m, so about 4 cm, which is about 1.2°
+    at 2 m: visible but not sickening at 16°. Traced by the `crowZoomTrace` probe (fov and trauma every 0.25 s, from
+    both spots).
+- **Probing it needs dev mode.** Teleporting a probe onto the pier crosses the crab pack's trigger, and `packCut`
+  freezes everything, so no prompt shows (`crowHoverS` names the flag).
+- **Once a game**: `crowGone` is saved. `crowReset()` on a restore hides it, or stands it back on its post for a
+  checkpoint from before it flew.
+- **The achievement** (2026-11-14, the owner: "when the crow flys away and is out of sight have a rare xbox achievement come
+  up and have it say 'Get scared by big crow.'"): in `updateCrow`'s fly, once (`C.ach`), after 1.2 s of flight, when the
+  bird leaves the frame (projected NDC past ±1.02), is more than 34 m off (lost in the night), or 6 s on regardless.
+  `showAchievement('Rare achievement unlocked', '50 - Get scared by big crow.')`, the Seagull Slayer's toast and chime.
+  `crowGone` is in `RARE_ACHIEVEMENTS`, so the end stats count it. Measured (`crowZoomTrace`): it fires at 4.2 s of
+  flight, 34 m off. A load never flies the crow again, so it never fires twice.
+- **AND THE SKY ANSWERS** (2026-11-14, the owner: "make a lightening strike in the distance and be loud after the crow
+  flies away then the achievement"). At the out-of-sight moment `crowStorm()` replaces the toast. The storm's strike was
+  pulled out of `updateLightning` into `boltStrike(dir, dist, thunderIn)`, so the crow's strike is the same flash, fog and
+  cold light. It lands out over the sea the way the crow flew, dist 0.3, with its thunder 1.1 s on. `bolt.loud` makes
+  `sfxThunder` run through a compressor and a bus-relative gain (`THUNDER_CEIL` 0.42, measured: 0.5 put a 0.55 strike at
+  0.46). `bolt.onThunder` (fired whether or not the storm is `on`) adds the shake and starts the toast 1.6 s into the
+  roll. Measured (`sh tools/crowlevel.sh`): strike, thunder 1.1 s later at 0.54 peak (against 0.11 for everything else),
+  achievement 1.6 s after that.
+- **CROWS AT THE DOCK** (2026-11-15, the owner's "Crow Sound Effect"). First built as songbirds coming up the beach
+  crossfading into crows on the pier; the same day: "take out the pretty bird chirp audio and delete it for good. just
+  have the crow make noise when you get near and on the fisherman dock" — the songbird files (`dock-birds-1..3`) are
+  deleted, not kept. `updateDockBirds` (from `animateFrame` beside the lightning, wall-clock dt; state `DOCKB` and
+  `DOCK_BIRDS` at the top of the file — `DKB` was already the dark knight's bone-name helper, and the clash took the
+  page). Not a loop: the file is two caws in 8.5 s of silence, cut at its silences, mono, −1 dBFS (`dock-crow-1..3`),
+  played one at a time by `playSampleAt`, pitched ±8 %. Weight `wc`: smoothstep 80 → 24 m from (DOCK_X, DOCK_Z), 1 on
+  the pier or in the shed (`onPier || onDock`), 0 while the crow on the post turns on you; eased over `tau` 1.6 s. Off
+  the pier they call from within 8 m of the dock itself; on it, seaward of you 6–18 m. Gain 6.0 (2.6 measured 0.02–0.04:
+  unheard). Measured (`CL_Q="?m=dock" sh tools/crowlevel.sh`): first caw ~80 m off, 0.07–0.13 peaks walking up and on
+  the boards against 0.08 for surf and music, 18 caws in the walk, the weight 0.2 a dozen seconds after running off.
+- **A BLOW STARTS THE SCARE TOO** (2026-11-15, the owner: "make hitting the crow on the dock do the scare too").
+  `crowStrike(P)` in `digImpactCore`, after `traderStrike`: the swing's aim ray against the crow's `proxy` sphere
+  (0.36 m + 0.12 × power, within reach + 0.45) while it is on its post or already turning/screaming on you; `hitConnect`
+  at 0.4, `sfxBirdHit`, and `crowPet()` (which only starts it from `perch`, so a second blow is only the thud).
+  Measured (`CL_Q="?m=hit" sh tools/crowlevel.sh`, a shovel light swing from the pier 1.2 m off): perch → look on the
+  blow, then the scream, the flight, the strike at 2.0 s, the achievement at 4.7 s.
+- **THE CAWS ARE THE CROW'S** (2026-11-15, the owner: "make the crow sounds come from the crow actually on the dock in a
+  directional sense. once the crow flies away the crow sounds should stop. make them happen closer to the dock too i
+  heard it too far away"). `updateDockBirds` plays every caw at `CROW.g`'s position (`playSampleAt` pans it and dulls
+  it by distance), only while it is perched; on its scream and flight the caw under way is stopped (`DOCKB.src`) and
+  nothing more plays — `crowGone`, 'fly' and 'gone' all return. `DOCK_BIRDS` near 8 / far 34 m from the CROW (was 24 / 80
+  from the dock), hear 40, tau 1.2. Measured (`CL_Q="?m=dock" sh tools/crowlevel.sh`): the weight 0.01 at 30 m, the first
+  caw ~12 m off, 0.08–0.16 peaks on the boards against 0.09 for surf and music, 8 caws in the walk.
+- **The caws a little lower** (2026-11-15, "turn the crow sounds down a little dont turn down the scream"):
+  `DOCK_BIRDS.crowGain` 6.0 → 4.5 (−2.5 dB). Measured on the pier: 0.08–0.12 peaks (were 0.08–0.16) against 0.08 for
+  surf and music. The scream is its own chain (`CROW_SCREAM_PEAK` 0.42), untouched.

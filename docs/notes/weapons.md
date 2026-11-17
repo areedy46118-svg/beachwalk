@@ -2953,3 +2953,7 @@ after the swing ran out started a fresh forehand from rest. Now:
   wider than the shaft, 3 cm proud, lumped and pitted by noise, skewed and ground flat on one side, grimed with vertex
   colour (its own material, `vertexColors`). Measure in the frame `w` puts it in (o.matrixWorld — `w` has no parent yet);
   in w's local frame the long axis is not y and the first try made a lens the length of the club.
+
+- **The sawn-off hits a little harder** (2026-11-15, the owner: "make the shotgun hit a little harder"): `SG_PELLET_DMG`
+  3.1 → 3.6 (+16 %; nine pellets a stride off 28 → 32). The falloff (`sgFall`, `SG_FULL` 4.5 / `SG_FAR` 24), the spread
+  and the pellet count are as they were; the pliosaur's share reads the same constant.

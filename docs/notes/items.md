@@ -1227,3 +1227,8 @@ belly (`sh tools/probe.sh whaleWave`): wave at 500.18 = your feet, 101 splash dr
   within 4.5 m, nearest first, 70 ms a hop, each from the last. Bolts: `zapArc` (a 12-bolt pool in the scene + a pooled light,
   its own rAF while live). Probe `shockProc` (patch `w.Math.random`, the game's own — the probe page's Math is another
   realm): red 29→27.2, two awake darks 19→18.1, the sleeping one and the one 10 m off untouched.
+
+- **The Lucky Ring says its number** (2026-11-15, the owner: "'random chance to do no damage' is too confusing … i need
+  a % chance"): `LUCK_P` 0.18 → 0.15, the text "15% chance an enemy hit does no damage." — the number in `desc` is
+  written by hand, so change both together. The 5 s `LUCK_GAP` is left out of the text on purpose (a hidden safety
+  rule; in a pack's flurry it pulls the real rate well under 15%, one on one it is about 15%).

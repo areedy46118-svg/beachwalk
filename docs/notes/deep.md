@@ -401,3 +401,53 @@ you dropped this.' then have him throw the water wartifact on the beach with the
   lays it by the needle (`seaRelic` 0 with `deepDone` now counts, as `null` did).
 - Measured (`deepRescue`): the blinks at 2 and 4 s (veil 0.71, 1.00); the face 0.57 at 6.5 s, 0.85 to the black; his card
   12.0 s after the black; it lies 1.50 m from you, takeable.
+
+## 2026-11-14 (sixth round) — eyelids, a glimpse, the throw seen
+The owner: "make the snorkelers face blend in and be more blurry when he saves you you should only get a quick glimpse of
+him and get a cutscene of him throwing you the arrtifact. make him saving you look and be way better its awfu even the
+blinks are bad improve this whole scene".
+- **EYELIDS, NOT A FADE** (`eyeLids(k)`, two fixed divs at z 12, curved (`border-radius` 50%/42%), feathered by a
+  dark `box-shadow`, `k` 0..1 → 0..62 vh each): the blinks were the whole picture dipping to black. `drownLid(T)`: resting
+  more shut as the air goes (0 → 0.5 over 4.5–8.2 s), slow blinks over it (`DROWN_BLINKS` 2.3/4.3/6.0/7.4 s, 0.55 →
+  1.1 s long), nearly shut by 8.45, a flutter half open across `DROWN_GLIMPSE` 8.55–9.45 (≈0.4–0.5, a tremble on it),
+  shut by 10.0; `DROWN_T` 10.4. The veil only darkens the water now (≤ 0.38). Blur 0.5 → 5 px, saturation and brightness
+  down. Waking (`washLid`): shut, half open, sinking shut, open, one real blink at 2.6–3.0, open; the black goes in 0.3 s.
+  `eyeLids(0)` at the black, at `endDeep` and in `deepLeave`. The canvas renders do not have them: the probe draws them.
+- **His face, a glimpse** (`deepFaceStep`, `deepFaceTex`): only inside the glimpse; the cut-out's face BLURRED into its
+  own 128-px texture (`filter: blur(3.5px)`, oval `destination-in` mask), tinted 0x5d8791 (the water), ≤ 0.4 opacity,
+  rushing from 2.6 m to 0.9 m, out of the murk above. With it: a surge, bubbles, a heart thud. In the black: hauled up
+  (surge, bubbles) and out (a splash at 1.7 s).
+- **The throw, seen** (`seaGift` 'windup' → 'throw'): `keyCut` with `sea` (you frozen, the camera turned not moved, as the
+  snorkeler's key throw): on him as he heaves 0.3 m up out of the water (0.7 s), a splash as it leaves him, the lens
+  following the artifact up and over (fov 34 → 60 → 34) and holding on it in the sand 1.1 s. `updateKeyCut` returns for a
+  `sea` cut; `updateSeaGift` runs it.
+- Probe `deepRescue` (now with the lids drawn on its stills): the glimpse at lid 0.39–0.46, face 0.27–0.5 (0.4 max now);
+  his card 12 s after the black; it lies 1.5 m from you.
+- **The last blink: his face on you** (2026-11-14, "just have the last blink of seeing the snorkeler save you have his
+  face cover the whole screen like he has a hold on you close"): in the glimpse he comes in from 1.5 m to 0.5 m in its
+  first third and holds there, sized off the lens's own height at that distance (× 1.8, wider on a wide screen) — the
+  blurred face fills the picture between the lids, at 0.62, rocking a little. Still only the glimpse (8.55–9.45 s).
+
+## 2026-11-15 — his face, readable
+The owner: "make you see the snorkeler able to be seen a little better when he saves you i cant tell its him at all.
+still keep it similar." At the glimpse his face was two blurs deep: its own texture at 3.5 px, and the whole canvas at
+4.6 px (`k` 0.9 of the drowning's filter), at a third of its colour, 78 % bright, under a 0.35 veil, tinted 0x5d8791 and
+at 0.62 — a teal smudge between lids open to 0.39. Now: the face texture at 1.4 px, tinted 0x9ab8c0, opacity 0.88; while
+it is up (`face`, `deepFaceStep`'s 0..1) the canvas blur is × (1 − 0.55·face), saturation + 0.35·face, brightness +
+0.15·face, the veil halved; the lids open to ~0.27–0.33 (0.93 − 0.6, was − 0.5); `DROWN_GLIMPSE` 8.55–9.75 (was 9.45).
+Same rush in, same rocking, same sounds, the card 12.0 s after the black as before. Probe `deepRescue` draws its stills
+through the game's own canvas filter now (`cv.style.filter`) and takes them across the glimpse.
+
+## 2026-11-15 — the dead can be hit, and a blade takes limbs off
+The owner: "make it so i can slice and hit the mutants bodies in the water." `deadStrike(P)` in `digImpactCore`, after
+`plioStrike`: the swing's aim ray against every floating piece's sphere (radius × (1.15 + 0.15·power) + 0.08, within
+reach + 0.35 — the pieces' meshes have `raycast` off, so it is spheres, as their physics is); the nearest is knocked
+along the swing (v += aim × (1.6 + 2.6·power) × 1.35 for a heavy × min(2.2, `inv`): limbs and gibs fly further than a
+body), spun (1.2 + 2.2·power), `flail` 1.6, three blood puffs at the blow, `fleshHit` low, `katHit` under a blade,
+`hitConnect` 0.6 / 0.9. **A blade on a body** (`deadSever`): of `DEAD_SEVER` (head, arms, forearms, thighs, shins) not
+already off and not under a cut bone, the one whose limb's middle is nearest the blow, within 0.75·k + 0.35 m: baked off
+by `bakeLimb` with the body's own `u` (kept on `body.u` now; `body.cut` a Set of what has gone, seeded with
+`spec.cut`), capped both ends (`deadCap`), bleeding from both, thrown with the swing, its home where it was cut; the bone
+scaled to 0.0001 and the sway under it dropped — the same tear the bodies were built with. Probe `deadHit` (katana, 1.7
+m off, three swings each at two bodies): moved 6.1–6.4 m, 2 and 3 limbs off, `deadStep` ≤ 0.01 ms. A death reloads the
+page, so a body is whole again only as it was built.
