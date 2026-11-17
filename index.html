@@ -1002,6 +1002,24 @@
   /* and a worn ring being dragged back lights the grid it can land in */
   #inv-grid.takes .islot:not(.filled) { border-color: #ffffff; border-style: dashed; background: rgba(255,255,255,0.05); }
   #invpanel .rings .rslot .label { display: none; }
+  /* THE KEYCHAIN, the pack's bottom-right corner: the ring itself, live (`kcFrame`), standing up out of the rings' row */
+  #invpanel .rings #keychain-box {
+    margin-left: auto; position: relative; width: clamp(220px, 20vw, 290px); height: clamp(170px, 24vh, 240px); margin-top: -0.4rem;   /* (not pulled up over the pane: it covered the selection's Drop) */
+    border: 1px solid rgba(255, 255, 255, 0.28); cursor: pointer; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 40%, rgba(34, 34, 38, 0.95) 0%, rgba(0, 0, 0, 0.92) 75%);
+    transition: border-color 0.15s;
+  }
+  #invpanel .rings #keychain-box:hover { border-color: rgba(255, 255, 255, 0.6); }
+  #invpanel .rings #keychain-box.sel { border-color: #ffffff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5); }
+  #keychain-box canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #keychain-box .kc-top { position: absolute; left: 10px; top: 8px; right: 10px; display: flex; font-size: 0.66rem; letter-spacing: 0.3em; text-transform: uppercase; pointer-events: none; }
+  #keychain-box .kc-count { margin-left: auto; color: rgba(255, 255, 255, 0.5); letter-spacing: 0.15em; }
+  #keychain-box .kc-name { position: absolute; left: 0; right: 0; bottom: 7px; text-align: center; font-size: 0.66rem; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(255, 255, 255, 0.85); pointer-events: none; text-shadow: 0 0 6px #000; }
+  #keychain-box .kc-arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 30px; height: 44px; background: transparent; border: 0; color: rgba(255, 255, 255, 0.55); font: inherit; font-size: 1.5rem; cursor: pointer; }
+  #keychain-box .kc-arrow:hover { color: #ffffff; }
+  #keychain-box .kc-arrow:disabled { opacity: 0; pointer-events: none; }
+  #keychain-box #kc-prev { left: 2px; } #keychain-box #kc-next { right: 2px; }
+  #keychain-box.none .kc-name { color: rgba(255, 255, 255, 0.35); }
 
   /* THE PACK — Tab. Black and white and one hairline, like the dialogue:
      a grid of ten square slots, and beside it a pane for the selected item
@@ -1799,6 +1817,15 @@
       <div class="rings" id="pack-rings">
         <span class="rlabel">Rings</span>
         <div class="rslots"></div>
+        <!-- THE KEYCHAIN, in the pack's own bottom-right corner (2026-11-15, the owner: "make the keychain actually be in the
+             corner of the inventory and not another menu to go into"): the ring itself, live, with every key you carry on it.
+             Scroll over it or drag across it to turn it; click it and the key at the bottom is the pack's selection. -->
+        <div id="keychain-box" title="">
+          <canvas id="kc-canvas"></canvas>
+          <div class="kc-top"><span class="kc-lab">Keys</span><span class="kc-count"></span></div>
+          <button type="button" class="kc-arrow" id="kc-prev">&lsaquo;</button><button type="button" class="kc-arrow" id="kc-next">&rsaquo;</button>
+          <div class="kc-name"></div>
+        </div>
       </div>
       <div class="tip">
         <span><b>Click</b> select</span>
@@ -1810,6 +1837,7 @@
     </div>
   </div>
   <div id="invghost"></div>
+  <!-- THE KEYCHAIN, looked through: the ring and its keys in 3-D, turned to the one you want (`openKeyChain`) -->
 
   <!-- THE SHOP. A dialogue with a price on every line is a conversation you
        are having about buying something; a SHOP is a thing you look at. The

@@ -850,3 +850,8 @@ theme, the whale's leaving song and the lighthouse track (`startLighthouseTrack`
   room and in every built place (`inFort`, `inC13`, `inThrone`, `inDun`, `insideDrain`, `inBunker`, `inUndercroft`,
   `inCat`, `inTavern`, `inWhale`, `inSewer`); else the old `inWater` + feet under 0.35. (The wave's own surface is NOT a
   test for it: standing in the surf your feet are 0.18–0.52 over `waterSurfaceAt` — `wadeCheck`.)
+
+## 2026-11-14 — the owner's electricity
+`tools/elec_sound.py` (afconvert + plain Python): six zaps cut where the crackle peaks, a 2.7 s shock off the loudest run,
+a crossfaded loop padded REC_PAD each end for `recLoop`. All sewer sparks/zaps and `sfxSmashElectronics` use them with the
+old synth as the fallback when a buffer is not in yet.

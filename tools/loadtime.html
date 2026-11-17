@@ -49,6 +49,12 @@ async function load(setup) {
     const R = w.performance.getEntriesByType('resource').slice(rs0).filter((e) => /assets|models/.test(e.name)).map((e) => e.name.split('/').pop() + ' ' + Math.round(e.transferSize / 1024) + 'kB ' + Math.round(e.startTime - (t0 - performance.timeOrigin + w.performance.timeOrigin - performance.timeOrigin)) + '+' + Math.round(e.duration) + 'ms');
     log('whale files fetched after the trigger', R.length, JSON.stringify(R.slice(0, 20)));
     log('whale lag spans', JSON.stringify(b.lag().slice(-12).map((e) => e[1] + ':' + String(e[2]).slice(0, 30))));
+  } else if (AT === 'sewer') {
+    // a checkpoint in the sewer, its levers down and the lair's door open (2026-11-16: "it took a while to load when resetting from checkpoint")
+    const b = w.__bw; b.loadSewer();
+    for (let i = 0; i < 2400 && !b.sewS().ready; i++) { b.frame(1); await sleep(25); }
+    b.sewRestore({ lv: 15, d2: 1, kt: 1, ls: 1 }); b.placeInSewer(); for (let i = 0; i < 30; i++) b.frame(1);
+    log('in the sewer', b.sewS().ready, b.saveRoomS ? b.saveRoomS() : '');
   } else { w.__bw.camera.position.set(8, 1.7, -60); }
   await sleep(500);
   w.__bw.saveCheckpoint();
@@ -68,7 +74,7 @@ async function load(setup) {
       if (!b) continue;
       const g = b.startGate ? b.startGate() : null;
       if (g && !(i % 40)) { const s = 'parts ' + JSON.stringify(g.parts) + ' left ' + g.left; if (s !== last) { log(T.toFixed(1), s); last = s; } }
-      if (b.restoreS) { flags.n++; const q = b.restoreS(); if (q.restore) flags.restore++; if (!(i % 8)) log(T.toFixed(1), 'near', q.nearLeft, 'all', q.allLeft, 'audio', q.ctx, 'hold', q.bootHold); }
+      if (b.restoreS) { flags.n++; const q = b.restoreS(); if (q.restore) flags.restore++; if (!(i % 8)) { const G = b.bootGateS ? b.bootGateS() : {}; log(T.toFixed(1), 'near', q.nearLeft, 'all', q.allLeft, 'hold', q.bootHold, 'gate', JSON.stringify({ rr: G.roomRestore, r: G.restore, wb: G.warmBlock, rw: G.roomWarm, look: G.look, smooth: G.smooth, idle: G.idle })); } }
       if (!b.frozen() && b.state().introDone) { up = T; break; }
       if (AT === 'whale' && b.SKRIM && b.SKRIM.u && b.SKRIM.u.model && !(b.SKRIM.u.clipsPending > 0) && !flags.sk) { flags.sk = T; log(T.toFixed(1), 'Skrim in (model and clips)'); }
     }

@@ -686,8 +686,9 @@ export function makeDrainageTunnelHome(opts = {}) {
   T.add(HW);
   {
     const FW = 3.7, FH = 4.3, FX = -0.06, FT = 0.62, HR = BORE_R + 0.02, R1 = HR + 0.5, AX = FX - 0.08;
-    // the bore's outside, buried in the bank, under the coping's line
-    const shell = xCyl(2.95, 2.85, 4.7, 11, M.rock, true);
+    /* the bore's outside, buried in the bank. (2026-11-14: at r 2.95 its top stood 0.8 m out of the cliff's top — 3.3 m,
+     * measured by ray — a dark hump above the coping from the beach. 2.05 keeps it under the sand.) */
+    const shell = xCyl(2.05, 2.05, 4.7, 11, M.rock, true);
     shell.position.set(2.3, PIPE_CY, 0);
     { const uv = shell.geometry.getAttribute('uv'); for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 7, uv.getY(i) * 2); }
     HW.add(shell);
@@ -732,12 +733,17 @@ export function makeDrainageTunnelHome(opts = {}) {
     HW.add(slab(0.12, 0.14, 2 * (FW - 0.7), M.rock, FX - 0.06, 3.45, 0));
     // the coping, overhanging the face and the piers
     HW.add(slab(1.0, 0.26, 2 * FW + 0.36, M.rock, FX + 0.31, FH + 0.13, 0));
-    /* THE WINGS: stepping down into the bank either side, set back off the
-     * face so its ends read, each step capped */
+    /* THE WINGS: stepping down into the bank either side, set back off the face so its ends read, each step capped —
+     * and run BACK INTO the bank (2026-11-14, the owner: "just take the geometry and extend it back to the sandwall but
+     * dont make it blocky ... keep the same shape"). The cliff's face stands at x 15.1-16.2 here (by ray; the wings'
+     * fronts at 14.24): 0.7 m deep they stood free of it with sky between. Same steps, same heights, `WD` deep, so each
+     * runs into the sand. (A first try held them all at the cliff's height — "too thick"; a second bent the sand wall
+     * forward onto them instead — not wanted either.) */
+    const WD = 2.6;
     [[3.3, 1.0], [2.3, 0.9], [1.35, 0.9]].reduce((z0, [h, w]) => {
       for (const s of [-1, 1]) {
-        HW.add(slab(0.7, h + 0.5, w, M.face, FX + 0.45, (h - 0.5) / 2, s * (z0 + w / 2)));
-        HW.add(slab(0.84, 0.18, w + 0.06, M.rock, FX + 0.43, h + 0.09, s * (z0 + w / 2)));
+        HW.add(slab(WD, h + 0.5, w, M.face, FX + 0.1 + WD / 2, (h - 0.5) / 2, s * (z0 + w / 2)));
+        HW.add(slab(WD + 0.14, 0.18, w + 0.06, M.rock, FX + 0.03 + (WD + 0.14) / 2, h + 0.09, s * (z0 + w / 2)));
       }
       return z0 + w;
     }, FW);
@@ -747,11 +753,8 @@ export function makeDrainageTunnelHome(opts = {}) {
       const m = new THREE.Mesh(g, mat); m.position.set(FX - 0.006, y, z); HW.add(m);
     };
     for (const [z, w, h] of [[-2.55, 1.3, 2.4], [-0.9, 1.1, 1.0], [0.6, 1.4, 1.1], [2.2, 1.2, 2.8]]) decal(M.damp, w, h, FH - h / 2, z);
-    for (const s of [-1, 1]) {
-      const wp = xCyl(0.05, 0.05, 0.22, 8, M.rust, true); wp.position.set(FX - 0.1, 1.55, s * 2.55); HW.add(wp);
-      const wv = new THREE.Mesh(new THREE.CircleGeometry(0.045, 8), M.void); wv.rotation.y = -Math.PI / 2; wv.position.set(FX - 0.2, 1.55, s * 2.55); HW.add(wv);
-      decal(M.stain, 0.36, 1.1, 1.0, s * 2.55);
-    }
+    // (the weep pipes either side of the ring and the rust stains under them are gone, 2026-11-14: the owner's "missing
+    // textures on things such as the pipes out front" — two bare stubs and a red-brown blot on the brick)
 
     // ---- the beacon: a red lamp so you can find it from down the beach ----
     // Emissive only, no PointLight — it has to be visible from a long way off
@@ -949,27 +952,10 @@ export function makeDrainageTunnelHome(opts = {}) {
       p.rotation.set(rnd(i) * 3, rnd(i + 1) * 3, rnd(i + 2) * 3);
       IN.add(p);
     }
-    const stick = slab(0.9, 0.05, 0.07, M.wood, 2.4, FLOOR_Y + 0.03, -0.85, 0, 0.5, 0.04);
-    IN.add(stick);
-    /* WHAT THE FLOW HAS DUMPED: a tyre half in the silt, broken brick, bottles,
-     * a rag caught on a joint, a sodden board — things the water brought in
-     * and left where it slackened, against the walls and the joints. */
-    {
-      const tyre = new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.09, 8, 16), M.dark);
-      tyre.position.set(5.2, FLOOR_Y + 0.3, 1.02); tyre.rotation.set(-Math.PI / 2 + 0.95, 0, 0.15); IN.add(tyre);   // leant up the curve of the wall, out of the walk
-      for (let i = 0; i < 9; i++) {
-        const bk = slab(0.2, 0.06, 0.1, M.brickM, 1.5 + rnd(i * 7.3) * 14, FLOOR_Y + 0.03, (rnd(i * 2.1) < 0.5 ? -1 : 1) * (0.55 + rnd(i * 5.5) * 0.3),
-          rnd(i) * 0.4, rnd(i * 3.1) * TAU, rnd(i * 4.2) * 0.3);
-        IN.add(bk);
-      }
-      for (let i = 0; i < 4; i++) {
-        const bt = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.035, 0.22, 7), M.water);
-        bt.position.set(3 + i * 3.4 + rnd(i) * 1.2, FLOOR_Y + 0.035, (rnd(i * 6.6) - 0.5) * 1.3);
-        bt.rotation.set(Math.PI / 2, rnd(i * 2.5) * TAU, 0); IN.add(bt);
-      }
-      for (const x of [3.55, 9.1]) IN.add(slab(0.32, 0.012, 0.22, M.cloth, x, FLOOR_Y + 0.01, (x > 5 ? -1 : 1) * 0.62, 0, 0.6, 0.05));
-      IN.add(slab(1.3, 0.035, 0.22, M.wood, 12.6, FLOOR_Y + 0.02, -0.7, 0, -0.35, 0.03));
-    }
+    /* (WHAT THE FLOW HAD DUMPED — a tyre, a stick, broken brick, bottles, rags, a board — is gone, 2026-11-14: the owner,
+     * "random items and geometry in the tunnel that needs to be taken out". The silt floor meets the wall at |z| 0.89 and
+     * several stood past it: the tyre's middle at 1.02 and the stick's end were in the brick, the rest read as litter
+     * dropped on a set.) */
     bakeScatter(IN);
   }
 
@@ -993,22 +979,11 @@ export function makeDrainageTunnelHome(opts = {}) {
         w: (0.55 + t * 2.3) * fade,
       };
     };
-    // a damp dip, barely darker than the beach and with soft edges
-    const pos = [], idx = [];
-    for (let i = 0; i < N; i++) {
-      const t = i / (N - 1), c = centre(t);
-      pos.push(c.x, 0.010, c.z - c.w,  c.x, 0.004, c.z,  c.x, 0.010, c.z + c.w);
-    }
-    for (let i = 0; i < N - 1; i++) {
-      const a = i * 3, b = (i + 1) * 3;
-      idx.push(a, a + 1, b + 1, a, b + 1, b, a + 1, a + 2, b + 2, a + 1, b + 2, b + 1);
-    }
-    const bed = new THREE.BufferGeometry();
-    bed.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    bed.setIndex(idx);
-    bed.computeVertexNormals();
-    ER.add(new THREE.Mesh(bed, M.wetsand));
-
+    T.userData.scourPath = centre;   // (main.js sculpts the ground of the scour along it: `drainScour`)
+    /* (THE GROUND OF IT — the damp dip, the berms, the older braided courses, the rills, the slumped scarp and the sand
+     * banked against the wall — is one sculpted patch in the beach's own sand and shader now, built in main.js
+     * (`drainScour`), 2026-11-14: the owner, "more detailed with the erosion and not as plastic looking and ameteurish".
+     * They were flat plates and low-poly lumps in flat colours, each with its own hard edge on the sand.) */
     // the last thread of water, only near the mouth where it still runs
     const wp = [], wi = [], WN = 10;
     for (let i = 0; i < WN; i++) {
@@ -1025,23 +1000,6 @@ export function makeDrainageTunnelHome(opts = {}) {
     wg.computeVertexNormals();
     ER.add(new THREE.Mesh(wg, M.water));
 
-    // Low banks along both edges. Boxes read as flat plates dropped on the
-    // beach, so these are squashed low-poly lumps in the beach's own sand.
-    const mound = (w, h, d, mat, x, y, z, ry) => {
-      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0), mat);
-      m.scale.set(w, h, d);
-      m.position.set(x, y, z);
-      m.rotation.set(0, ry, 0);
-      return m;
-    };
-    for (let i = 0; i < 30; i++) {
-      const t = rnd(i * 2.3), c = centre(t), sg = i % 2 ? 1 : -1;
-      const h = 0.10 + rnd(i * 5.7) * 0.16 * (1 - t * 0.4);
-      ER.add(mound(1.5 + rnd(i * 3.1) * 2.4, h, 0.8 + rnd(i * 7.9) * 1.3, M.drysand,
-        c.x + (rnd(i * 9.2) - 0.5) * 1.2, h * 0.16,
-        c.z + sg * (c.w + 0.2 + rnd(i * 4.5) * 0.8),
-        rnd(i * 1.7) * 3.1));
-    }
     // gravel the flow has sorted out along the edges
     for (let i = 0; i < 40; i++) {
       const t = rnd(i * 6.1), c = centre(t);
@@ -1053,16 +1011,15 @@ export function makeDrainageTunnelHome(opts = {}) {
       k.rotation.set(rnd(i) * 3, rnd(i + 3) * 3, rnd(i + 7) * 3);
       ER.add(k);
     }
-    // a few blocks fallen off the headwall, close in where they'd actually be
-    for (let i = 0; i < 6; i++) {
-      const s = rnd(i * 11.7);
-      const r = 0.26 + s * 0.34;
-      const k = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), M.rock);
-      k.position.set(-1.3 - rnd(i * 3.3) * 3.0, r * 0.34,
-        (i % 2 ? 1 : -1) * (2.1 + rnd(i * 5.5) * 2.2));
-      k.scale.set(1, 0.55 + s * 0.25, 0.88);
-      k.rotation.set((s - 0.5) * 0.4, s * 3, (rnd(i) - 0.5) * 0.3);
-      ER.add(k);
+    /* what has fallen off the headwall, close in where it would: broken courses of its own brick and a lump of its
+     * concrete, tipped and half sunk (they were dodecahedrons in a flat grey — pebbles the size of a chair) */
+    for (let i = 0; i < 5; i++) {
+      const sz = rnd(i * 11.7), sg = i % 2 ? 1 : -1;
+      const w = 0.45 + sz * 0.4, h = 0.16 + sz * 0.12, d = 0.28 + rnd(i * 2.9) * 0.18;
+      const bk = slab(w, h, d, i === 2 ? M.rock : M.face, -1.1 - rnd(i * 3.3) * 2.6, h * 0.18, sg * (2.0 + rnd(i * 5.5) * 2.2),
+        (rnd(i * 7.1) - 0.5) * 0.5, sz * 3.1, (rnd(i) - 0.5) * 0.45);
+      if (i !== 2) { const u = bk.geometry.getAttribute('uv'); for (let k = 0; k < u.count; k++) u.setXY(k, u.getX(k) * w * 0.35, u.getY(k) * h * 0.35); }
+      ER.add(bk);
     }
     // the scour pool at the lip, shallow and soft
     const pool = new THREE.Mesh(new THREE.CircleGeometry(1.3, 14), M.water);
@@ -1070,44 +1027,6 @@ export function makeDrainageTunnelHome(opts = {}) {
     pool.position.set(-1.6, 0.012, 0);
     pool.scale.set(1, 1, 0.66);
     ER.add(pool);
-    // Braided side channels: the flow has wandered and left older, drier
-    // courses either side of the live one. Cheap, and it's what actually
-    // makes a scour read as scour rather than as one drawn line.
-    for (const sg of [-1, 1]) {
-      const bp = [], bi = [], BN = 14;
-      for (let i = 0; i < BN; i++) {
-        const t = 0.18 + (i / (BN - 1)) * 0.8, c = centre(t);
-        const off = sg * (c.w * 0.72 + 0.35 + Math.sin(t * 5.2 + sg) * 0.5);
-        const hw = 0.18 + t * 0.55;
-        bp.push(c.x, 0.008, c.z + off - hw, c.x, 0.008, c.z + off + hw);
-      }
-      for (let i = 0; i < BN - 1; i++) {
-        const a = i * 2, b2 = (i + 1) * 2;
-        bi.push(a, a + 1, b2 + 1, a, b2 + 1, b2);
-      }
-      const bg = new THREE.BufferGeometry();
-      bg.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
-      bg.setIndex(bi);
-      bg.computeVertexNormals();
-      ER.add(new THREE.Mesh(bg, M.wetsand));
-    }
-    // rills running off the banks into the main channel
-    for (let i = 0; i < 14; i++) {
-      const t = 0.1 + rnd(i * 4.8) * 0.85, c = centre(t), sg = i % 2 ? 1 : -1;
-      const len = 0.5 + rnd(i * 2.6) * 1.1;
-      ER.add(slab(len, 0.006, 0.10 + rnd(i * 6.2) * 0.12, M.wetsand,
-        c.x + (rnd(i * 3.9) - 0.5) * 0.9, 0.009,
-        c.z + sg * (c.w + 0.3 + rnd(i * 7.4) * 0.9),
-        0, sg * (0.5 + rnd(i) * 0.7), 0));
-    }
-    // a low scarp where the bank has been undercut and slumped
-    for (let i = 0; i < 12; i++) {
-      const t = rnd(i * 5.4), c = centre(t), sg = i % 2 ? 1 : -1;
-      const h = 0.07 + rnd(i * 2.8) * 0.12;
-      ER.add(mound(0.7 + rnd(i * 3.6) * 1.0, h, 0.3 + rnd(i * 8.1) * 0.5, M.drysand,
-        c.x + (rnd(i * 9.7) - 0.5) * 0.7, h * 0.2,
-        c.z + sg * (c.w + 0.05), rnd(i * 2.2) * 3.1));
-    }
     // coarser lag gravel left where the flow dropped it, out toward the sea
     for (let i = 0; i < 22; i++) {
       const t = 0.45 + rnd(i * 7.7) * 0.55, c = centre(t);
@@ -1120,24 +1039,9 @@ export function makeDrainageTunnelHome(opts = {}) {
       ER.add(k);
     }
 
-    // sand slumped away from the foot of the concrete
-    for (let i = 0; i < 9; i++) {
-      const s = rnd(i * 8.8), sg = i % 2 ? 1 : -1;
-      ER.add(mound(0.9 + s * 1.2, 0.14 + s * 0.2, 0.9 + s * 1.3, M.drysand,
-        -0.7 - s * 1.0, 0.02 + s * 0.03, sg * (1.7 + s * 2.3), s * 3.1));
-    }
   }
 
-  // ---- seaweed and wrack piled at the mouth (photo 1) --------------------
-  for (let i = 0; i < 16; i++) {
-    const a = (rnd(i * 4.7) - 0.5) * 3.2;
-    const w = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + rnd(i * 2.4) * 0.2, 0), M.seaweed);
-    w.position.set(-0.35 - rnd(i * 5.5) * 1.3, 0.05, a);
-    w.scale.set(1.6, 0.28, 1.0);
-    w.rotation.y = rnd(i) * 3;
-    ER.add(w);
-  }
-
+  // (the wrack at the mouth — sixteen squashed icosahedrons — went with the rest of the lumps; the scour's tone has it)
   bakeScatter(ER);
 
   // ================= the threshold — a steel door standing open ===========

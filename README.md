@@ -558,42 +558,57 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The sewer under the drain** — where the pipe behind the grate comes out
   now (the crawl, behind black, and you are at the foot of a ladder). A big
   red-brick sewer built from Elbolillo's PSX kit to the owner's sketch: a
-  channel of black water between two walks, grated off past the ladder and
+  channel of black water between two walks, a little railed footbridge of boards on
+  steel across it a few steps from the ladder and another over the branch's mouth (the far
+  walk goes on past it to the dead end). The branch's grate is broken open over its far walk:
+  past it a dim stretch (one lamp dead, one going) with a shut steel door in its wall, and a
+  second grate at its end, through which more of the sewer — a junction, a tunnel off it —
+  can be seen and not reached. Grated off past the ladder and
   down a branch, ending in a dead end with a generator on its ledge under a
   dim lamp you can see from the ladder. Across the channel, through a door's
   short passage and a grate door, a small storeroom is flooded to your feet
   and **live** — an electric box on its far wall, square across from the
-  gate with its DANGER sign to you, hangs its wires over the chest under it
-  and into the water, it crackles blue, and stepping in kills you (**Locked. The lock is
-  humming.**). A cable runs out of the box, over the vault and along the
+  gate with its DANGER sign to you, hangs its wires down the wall and into
+  the water — torn, their ends stripped and splayed, spitting sparks — it
+  crackles blue, and standing in it takes a bar of health a second, the first
+  the moment you step in (**Locked. The lock is humming.**). The chest is in
+  the room's far left corner as you look in through the gate, glowing faintly,
+  with a lamp hung in the middle of the room. A cable runs out of the box, over the vault and along the
   left wall to four knife-switch levers, each with an old hanging lamp over
-  it and a red pilot blinking so you can find them in the dark. **Hold to pull the
+  it and a red pilot blinking so you can find them in the dark. Over the far
+  walk, the second bridge, the storeroom and down the branch hang dimmer lamps, and coming
+  down only a few burn — the ladder's, the generator's, the bridge's and the failing one
+  down the branch: each lever you pull wakes the next stretch across the channel, a lamp at
+  a time with a crack and a stutter, and the generator puts every one of them out. Every lamp lays a soft pool of light on the floor under it that shows
+  from anywhere down the tunnel, and the air round and under it glows — worked out
+  along each pixel's view, so it has no shape of its own. The murk lies low on the
+  water and the walks, thickening with distance, with no edge anywhere. Two jars of blood
+  stand on the walk where it turns into the branch, a syringe dropped beside
+  them (**Take the jar**). **Hold to pull the
   lever** (hold E: let go and its spring takes it back up, creaking; take
   it again and it goes on from there): they are rusted stiff, and it comes
   down in jerks over two and a half seconds held — a grab and a clunk, a creak and a strain, a second clunk,
   then the slam ringing off down the tunnel (the owner's lever recording,
   in the sewer's echo) — and lights its lamp; with all four down, **Turn off the generator** on
-  its button: the hum winds down, the lamps die one by one back toward you,
+  its button: the hum winds down, every lamp in the place dies one by one back toward you,
   the water goes dead and the gate's lock lets go. Walk back by the
-  **Flashlight** left switched on on the generator's ledge (**Take the
-  flashlight**: an old army-green angle-head torch whose warm beam swings a
-  beat behind your look and stutters now and then; it lights its pool and
-  a faint spill round it, and the dust in the air), **Pick up the plank** by the
-  ladder and **Lay the plank across** the channel, **Open the gate**, and the
-  chest under the box has five jars of blood. **Climb the ladder** to go
+  cracked **Glowstick** lying lit on the generator's ledge (**Take the
+  glowstick**), over the bridge, **Open the gate**, and the chest in the
+  corner has **The Shock Ring** lying in it. **Climb the ladder** to go
   back. It is dark: a murk lies on the water, the lamps stand cones of lit
   air with dust hanging in them and now and then stutter, a sub drone sits
   under the hum, pipes groan, something heavy lands somewhere far off, and
   rats run, over the drip and wet air of the owner's sewer recording. Far
   walls fall away into the dark; what you see is near you or under a lamp.
-  Saved on the way in; the levers, the generator, the gate, the chest
-  and where you laid the plank are kept.
+  Saved on the way in; the levers, the generator, the gate and the chest
+  are kept. In the storeroom and its passage you are safe from the thing in
+  the water: it will come up and watch you, but it does not come for you there.
 - **The thing in the water** — it is there before you start: head and
   shoulders out of the water past the north grate, watching you through
   the bars (stare at it, or walk up to the bars, and it sinks away). Pull
   the first lever and it heard it: it goes under there with a splash (or,
-  if it was not watching, a heavy splash far down the water), and four
-  seconds later it is hunting you. It never moves while you are looking at
+  if it was not watching, a heavy splash far down the water), and a second
+  and a half later it is hunting you. It never moves while you are looking at
   the water it is in; when you are not, it swims, and all it leaves is its
   wake, a V of waves on the water spreading and running off on the flow. It comes up somewhere in the channel or the branch out of your
   sight, and only while you are NOT looking: a ring on the water and a
@@ -601,18 +616,67 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   surface, then the rest of it, its arms coming up and out at you, the
   sloshing louder and closer together. Turn and catch it and it holds a
   breath — long enough to be sure you saw it — and goes under with a splash
-  you cannot miss, and does not come up there again. Leave it seven and a
-  half seconds unseen and it comes out of the water at you, takes hold of
+  you cannot miss, and does not come up there again — and is back up
+  somewhere else within a few seconds. Leave it ten seconds unseen and it comes out of the water at you, takes hold of
   you face to face and drags you over the edge and down into the water,
-  where the light goes murky green and your air goes up past you. It is cleverer about where it
+  where the light goes murky green and your air goes up past you — and then
+  its mouth comes onto you, a crunch, and black. It can be killed: the failing
+  lamp down the branch past the steel door drops onto the walk as you come to
+  it, spitting sparks and little arcs on its cable — **Kick the lamp into the water**: it scrapes
+  off the walk and tumbles over the lip on its cable, splashes, goes under and bobs
+  back — and with the power on the whole water goes live: a white flash, bolts thrown out along
+  the channel and leaping up out of it and up its walls, veins of current crawling over the
+  surface, the tunnel strobing cold, and it screams, and it floats up dead where it was
+  stalking you from. With the power off nothing happens until you **Turn the
+  generator back on**. Floating dead, it has a key on a cord lying on its back, glinting softly:
+  **Take the key off its back**. That **Steel Door Key** opens the
+  steel door down the branch (**Unlock the steel door**), which swings in on its lair — a low brick
+  room that stinks of it — an animal's den: the bones of three men heaped on earth and bone chips
+  in the far corner, a nest of filthy torn rags in the other, a skeleton sat against the wall with
+  its knees up where it died and another fallen flat and rotted where it lay, bones dragged about
+  the floor, filth gathered along the walls, old stains and blood soaked into the floor, a drag
+  mark from the door to the bed, damp and streaks down the brick, a few claw gouges over the nest
+  and the heap, and flies, under a dim amber light. It has its own air — flies thick over the heap and the
+  dead, a low wet hum, drips, now and then something settling on the bone pile — and the first
+  time you step in, a sting, a bone knocked off the heap and a big rat bursting out from behind
+  it and across the floor in front of you into a gap at the foot of the wall, the flies going up
+  and the light stuttering. Across the top of the heap lies the **Bone
+  Mace** (**Take the bone mace**). It is cleverer about where it
   rises the longer it hunts (behind you, at a fair distance, a clear line to
   you; sometimes past the grates, where it can only stand and watch), and
-  once the generator is off it rises twice as often and in five and a half
-  seconds. Every sound it makes is placed in 3-D in the tunnel's echo: its
+  once the generator is off it rises oftener still and in eight seconds. Every sound it makes is placed in 3-D in the tunnel's echo: its
   breathing under the water when it is near (and once it is up), the wake it
   lays swimming between places, its heart-pounding approach in yours, and
   your torch stuttering as it comes.
   (Dev mode plays the scare and lets you live.)
+- **The Shock Ring** — in the storeroom's chest: a band set with five blue crystals, a charge
+  jumping between them as you turn it over in the examine screen. Worn, any blow of yours that
+  lands on something already fighting you has a 7.5% chance to electrocute it — a jolt on top of
+  the blow — and the shock jumps on to up to four others fighting you within a few metres, each
+  for half that, in bolts from one to the next. It never touches anything asleep, calm, friendly
+  or on your side.
+- **The keychain** — keys no longer take pack slots. They hang on a live 3-D keychain in the
+  pack's bottom-right corner: a steel split ring on a short chain, polished metal, every key you
+  carry threaded on it by a jump ring through its bow (found from the key's own shape, so each
+  hangs the right way up). Scroll over it, drag across it or use its ‹ › to turn the ring: the key
+  you are on comes round to the bottom and forward, the rest swing under gravity as they are
+  dragged round (a key past the end climbs over the top, riding out in front of the ring) and
+  settle hanging plumb. Click it and that key is the pack's selection — its picture, name and
+  use in the side pane with **Inspect** and **Hold** — and the arrow keys turn it. A key is still
+  used up by the door it opens.
+- **The Bone Mace** — a thigh bone off something big, bound for a grip: a heavy, two-handed blunt
+  weapon. Slow to lift, fast through the blow, and it carries on past and slows in the air before
+  it can be hauled back; click again after a blow and its weight swings it back the other way from
+  where it stopped — right to left, left to right, a figure of eight for as long as you keep it going
+  (a heavy's back-swing hits harder). It trails your turns, and you walk slower carrying it and
+  slower still swinging. A click is a heavy sweep (2), a held click
+  a bigger one (4). **Shift + hold** raises it up over your shoulder — you all but plant your feet,
+  and it takes three seconds to reach full, trembling more the longer you hold — and letting go
+  brings it over and down the middle onto what you are aiming at for up to 20: a full one kills
+  the smaller mutants outright on a direct hit and flings what it kills. Every blow lands as a smash: a long freeze, the world shaken, the
+  lens punched, a slam drops you a hand's breadth; a slam into the floor still thuds and throws grit.
+  A slam held past about four-fifths of full also sends a **shockwave** through the ground: a ring of grit
+  out to about two and a half metres, jolting everything in it (6 at the middle, less further out).
 - **The overflow culvert** — the pipe's old destination, still built behind
   the tunnel home but no longer reached: a brick barrel vault over standing
   water, a plank bridge, moonlight through gratings in the crown, and a
@@ -1069,6 +1133,35 @@ normalised, mono AAC 96 kbps, 110 KB in all.
 
 "Climbing Rope Snap Sound Effect" — the owner's file; the line parting in the deep (`assets/line-snap.m4a`, 2.84–3.40 s of it,
 10 KB). **No licence came with it — confirm it before a release.**
+
+"Electricity Sound Effect xd (Thx for 1M Views!)" — the owner's file; every spark, zap and live wire
+(`assets/elec-zap1-6.m4a`, `assets/elec-shock.m4a`, `assets/elec-loop.m4a`, cut by `tools/elec_sound.py`).
+**No licence came with it — confirm it before a release.**
+
+This work is based on ["Bone Mace"](https://sketchfab.com/3d-models/bone-mace-d508f97a0faa4cc99329dce5d334a53c)
+by Ruslan Malovsky licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the club on the
+heap in the sewer thing's lair (`assets/bone-mace.glb`, `tools/bone_mace_pack.py`, 266 KB).
+
+This work is based on ["Magic Ring"](https://sketchfab.com/3d-models/magic-ring-e21a9ec79de54ce0ba010d15c3109fad)
+by [Snicks](https://sketchfab.com/snicks) licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — The Shock Ring
+(`assets/shock-ring.glb`, `tools/gltfpack.py --tex 512 --normal-tex 256`, 0.28 MB).
+
+This work is based on ["Skeletons"](https://sketchfab.com/3d-models/skeletons-a271192a8b2a4cf4a4bf7c9f9a3eddbc)
+by [DDFun](https://sketchfab.com/DDFun) licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the
+two whole dead in the sewer thing's lair (`assets/skeleton-remains.glb`, `tools/gltfpack.py --tex 512 --normal-tex 512`, 0.69 MB).
+
+"Skeleton Pre-cut" by [Maxime66410](https://sketchfab.com/3d-models/skeleton-pre-cut-c6aae66fa4674394beda981f46eee415),
+Sketchfab Standard licence — the bones on the lair's heap and floor, a skeleton in its eighteen pieces
+(`assets/skeleton-bones.glb`, `tools/gltfpack.py --tex 512 --normal-tex 256`, 1.2 MB).
+
+This work is based on ["Sandman key"](https://sketchfab.com/3d-models/sandman-key-b592e9af729d4ea49ef658433b7253af)
+by [Blascool](https://sketchfab.com/Blascool) licensed under [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/)
+— the Steel Door Key off the sewer thing's back (`assets/sandman-key.glb`, `tools/gltfpack.py --tex 512 --normal-tex 256`, 141 KB).
+
+This work is based on ["Keyring Key Ring"](https://sketchfab.com/3d-models/keyring-key-ring-0eb1d373ab604bcd97981fe8244da71f)
+by [YouniqueĪdeaStudio](https://sketchfab.com/sinnervoncrawsz) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the keychain's split ring (`assets/key-ring.glb`,
+`tools/gltfpack.py --decimate 12000`, 140 KB).
 
 "Xbox Rare Achievement" (a clip by ArthurBR, the owner's file) — the chime under the Seagull Slayer toast
 (`assets/achievement-rare.m4a`, 1.0–7.4 s of it, AAC, 82 KB). **The console's sound: Microsoft's — confirm it before a release.**
@@ -1762,7 +1855,7 @@ drainage tunnel home above it (`assets/sewer-tex/`, copied out of the glb by
 The **thing in the sewer's water** is the owner's "monster" model (`assets/sewer-monster.glb`,
 `tools/sewer_monster_pack.py`: base colour 1024, normal 512, no clip — posed in the game), its sloshes, splash,
 leap and the drip bed his recordings (`tools/sewer_monster_sound.py`: `sew-slosh1..8`, `sew-splash`, `sew-leap`,
-`sew-drip-bed`, and its breath, `sew-breath1..2`, from his "Monster Breathing"). The **flashlight** is the Fulton out of his "FlashlightFBX" pack (`assets/flashlight.glb`,
+`sew-drip-bed`; its breath, `sew-breath1..6`, from his "SEWER MONSTER BREATHING", and its death cry, `sew-death`, from his "SEWER MONSTER DEATH" — `tools/sewer_monster_voice.py`). The **flashlight** is the Fulton out of his "FlashlightFBX" pack (`assets/flashlight.glb`,
 `tools/flashlight_pack.py`).
 
 This work is based on ["Simple Generator(Fixed)"](https://sketchfab.com/3d-models/simple-generatorfixed-eda91f75faae470e8d6461e0e6fc86fa)

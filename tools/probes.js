@@ -5292,3 +5292,744 @@ export async function deepRescue({ w, b, log, sleep, shot }) {
   log('done: gift over', !b.seaGiftS(), 'artifact', JSON.stringify(S), 'from you', S.spot ? Math.hypot(S.spot[0] - C.position.x, S.spot[1] - C.position.z).toFixed(2) : '-');
   shot('rs_lying', 640, 1.4);
 }
+
+// the sewer's lair (2026-11-14): the door open, looked at from the doorway and round the room; and the lamps by levers down
+export async function sewLair({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  log('sewer ready', b.sewS().ready);
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  const view = async (name, lx, lz, yaw, pitch, n = 20, gain = 1) => { b.sewSet(lx, lz, yaw, pitch); for (let i = 0; i < n; i++) { b.sewSet(lx, lz, yaw, pitch); b.frame(1); await sleep(5); } b.sewSet(lx, lz, yaw, pitch); shot(name, 800, gain); };
+  // the lamps: none down, two down, all four down, the generator off
+  for (const [lv, nm] of [[0, 'lv0'], [3, 'lv2'], [15, 'lv4']]) {
+    b.sewRestore({ lv }); b.placeInSewer();
+    for (let i = 0; i < 30; i++) b.frame(1);
+    await view('sw_' + nm, 0.6, 1.2, 0, -0.05, 40, 1.4);
+    await view('sw_' + nm + 'b', 2.4, -16, 0.35, -0.05, 20, 1.4);
+    const P = b.sewG().P; log(nm, 'lit', P.emerg.filter((l) => l.want).length, '/', P.emerg.length);
+  }
+  // a pull, live: the far side wakes a lamp at a time
+  b.sewRestore({ lv: 0 }); b.placeInSewer(); for (let i = 0; i < 10; i++) b.frame(1);
+  b.sewPullLeverNow && b.sewPullLeverNow(0);
+  const P = b.sewG().P, seq = [];
+  for (let i = 0; i < 240; i++) { b.frame(1); if (i % 30 === 0) seq.push(P.emerg.filter((l) => l.want).length); }
+  log('after one pull, lit over 4 s:', seq.join(','));
+  // the lair, its door open
+  b.sewRestore({ lv: 15, d2: 1, kt: 1 }); b.placeInSewer();
+  for (let i = 0; i < 30; i++) b.frame(1);
+  await view('lair_door', 12.6, -31.7, 0, -0.12, 30, 1.0);
+  await view('lair_doorB', 12.6, -31.7, 0, -0.12, 2, 1.8);
+  await view('lair_bed', 13.4, -33.4, 0.75, -0.3, 10, 1.6);
+  await view('lair_hung', 12.2, -35.9, -2.35, 0.05, 10, 1.6);
+  await view('lair_east', 12.0, -35.2, -1.5707, -0.1, 10, 1.6);
+  await view('lair_west', 14.6, -35.6, 1.5707, -0.15, 10, 1.6);
+  await view('lair_south', 13.0, -33.0, 0.0, -0.25, 10, 1.6);
+  b.settings.devMode = false;
+}
+
+// the lair's dead and its walls, close, with a work light and a narrower lens (2026-11-14)
+export async function sewLairClose({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  b.sewRestore({ lv: 15, d2: 1, kt: 1 }); b.placeInSewer(); for (let i = 0; i < 30; i++) b.frame(1);
+  const T = b.THREE, C = b.camera, X = b.sewG().SEW_X, Y = b.sewG().SEW_Y, Z = b.sewG().SEW_Z, F = -0.7;
+  const amb = new T.AmbientLight(0xffffff, 1.6);
+  const look = async (name, from, at, lit, gain = 1.2) => {
+    if (lit) b.scene.add(amb); else b.scene.remove(amb);
+    for (let i = 0; i < 6; i++) { b.sewSet(from[0], from[2], 0, 0); b.frame(1); }
+    C.position.set(X + from[0], Y + from[1], Z + from[2]); C.lookAt(X + at[0], Y + at[1], Z + at[2]); C.fov = 60; C.updateProjectionMatrix(); C.updateMatrixWorld(true);
+    shot(name, 800, gain);
+  };
+  for (let i = 0; i < 400 && !(b.sewG().P.remains); i++) { b.frame(1); await sleep(30); }   // (the bones' files)
+  for (let i = 0; i < 60; i++) { b.frame(1); await sleep(20); }
+  await look('lc_sit', [11.5, F + 1.3, -33.4], [10.4, F + 0.4, -33.85], true);
+  await look('lc_sit2', [10.9, F + 0.5, -34.9], [10.4, F + 0.3, -33.85], true);
+  await look('lc_heap', [13.0, F + 1.2, -34.2], [14.35, F + 0.15, -35.3], true);
+  await look('lc_heap2', [14.4, F + 0.45, -33.4], [14.35, F + 0.15, -35.3], true);
+  await look('lc_lie', [13.3, F + 1.1, -34.6], [12.45, F + 0.15, -35.55], true);
+  await look('lc_bed', [12.6, F + 1.2, -35.0], [11.1, F + 0.1, -36.6], true);
+  await look('lc_room', [12.6, F + 1.65, -32.4], [12.8, F + 0.4, -35.5], false, 1.5);
+  await look('lc_room2', [15.3, F + 1.65, -37.2], [11.5, F + 0.6, -33.2], false, 1.5);
+  await look('lc_room3', [11.0, F + 1.65, -33.0], [14.0, F + 0.3, -36.0], false, 1.5);
+  C.fov = 105; C.updateProjectionMatrix();
+  b.settings.devMode = false;
+}
+
+// the dead thing's back: the key's shine and its column, from the walk (2026-11-14)
+export async function sewBackKey({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  b.sewRestore({ lv: 15 }); b.placeInSewer(); for (let i = 0; i < 30; i++) b.frame(1);
+  b.sewSet(1.8, -20, 0, 0); for (let i = 0; i < 30; i++) b.frame(1);
+  b.sewElectrocute();
+  for (let i = 0; i < 2400 && !((b.sewMon().deadT || 0) > 8); i++) { b.frame(1); if (i % 20 === 0) await sleep(1); }
+  const m = b.sewMon(), P = b.sewG().P, T = b.THREE, kp = new T.Vector3(); P.backKey.getWorldPosition(kp);
+  log('dead', b.sewLampS().dead, 'key visible', P.backKey.visible, 'at', kp.toArray().map((v) => +v.toFixed(2)).join(','), 'deadT', m.deadT && m.deadT.toFixed(1));
+  const X = b.sewG().SEW_X, Y = b.sewG().SEW_Y, Z = b.sewG().SEW_Z, lx = kp.x - X, lz = kp.z - Z;
+  { const k = P.backKey; k.updateMatrixWorld(true); const bb = new T.Box3().setFromObject(k); let meshes = 0, vis = true, spr = 0; k.traverse((o) => { if (o.isMesh) meshes++; if (o.isSprite) spr = Math.max(spr, o.material.opacity); }); for (let o = k; o; o = o.parent) if (!o.visible) vis = false;
+    const mb = new T.Box3().setFromObject(b.sewMon().g);
+    log('key bbox y', (bb.min.y - Y).toFixed(2), (bb.max.y - Y).toFixed(2), 'size', bb.getSize(new T.Vector3()).toArray().map((v) => v.toFixed(2)).join(','), 'meshes', meshes, 'vis', vis, 'glint', spr.toFixed(2), '| monster y', (mb.min.y - Y).toFixed(2), (mb.max.y - Y).toFixed(2)); }
+  const side = lx > 0 ? 1.85 : -1.85;
+  const C = b.camera;
+  { const k = P.backKey, M = b.sewMon(); log('backKeySet', P.backKeySet, 'k local', k.position.toArray().map((v) => v.toFixed(2)).join(','), 'parent', k.parent && k.parent.name, 'body scale', M.body.scale.x.toFixed(2));
+    const rc = new T.Raycaster(new T.Vector3(kp.x, kp.y + 2.5, kp.z), new T.Vector3(0, -1, 0), 0, 5);
+    let km = []; k.traverse((o) => { if (o.isMesh) { const bb = new T.Box3().setFromObject(o); km.push((o.name || o.geometry.type) + ' ' + (bb.min.y - Y).toFixed(2) + '..' + (bb.max.y - Y).toFixed(2) + ' v' + o.visible + ' op' + (o.material.opacity ?? 1)); } });
+    log('key meshes', km.join(' | ')); }
+  { const amb = new T.AmbientLight(0xffffff, 1.6); b.scene.add(amb); C.position.set(kp.x + 0.55, kp.y + 0.45, kp.z + 0.5); C.lookAt(kp); C.fov = 60; C.updateProjectionMatrix(); C.updateMatrixWorld(true); shot('bk_close', 800, 1.0); b.scene.remove(amb); }
+  for (const [nm, dz, gain] of [['bk_near', 2.0, 1.0], ['bk_far', 5.5, 1.0], ['bk_near_lit', 2.0, 1.0]]) {
+    const lit = nm.endsWith('lit'); const amb = new T.AmbientLight(0xffffff, 1.4); if (lit) b.scene.add(amb);
+    b.sewSet(side, lz + dz, 0, 0); b.frame(1);
+    C.position.set(X + side, Y - 0.7 + 1.62, Z + lz + dz); C.lookAt(kp); C.fov = 70; C.updateProjectionMatrix(); C.updateMatrixWorld(true);
+    shot(nm, 800, gain); if (lit) b.scene.remove(amb);
+  }
+  C.fov = 105; C.updateProjectionMatrix();
+  b.settings.devMode = false;
+}
+
+// the bone mace's swings frame by frame beside the military shovel's (2026-11-14): contact sheets of the game's own frame
+export async function maceFrames({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera;
+  w.__clockOn();
+  const sheet = (name, tiles, cols = 6, tw = 300) => {
+    const th = Math.round(tw * tiles[0].height / tiles[0].width), rows = Math.ceil(tiles.length / cols);
+    const c = w.document.createElement('canvas'); c.width = cols * tw; c.height = rows * th; const g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.font = '14px monospace';
+    tiles.forEach((t, i) => { g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th, tw, th); g.fillText(t.lab, (i % cols) * tw + 4, ((i / cols) | 0) * th + 16); });
+    const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000);
+    for (let i = 0; i < n; i++) console.log('[PBIMG]', name, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  };
+  const grab = (lab) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 400; c.height = Math.round(400 * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.5)'; g.drawImage(src, 0, 0, c.width, c.height); c.lab = lab; return c; };
+  const place = () => { C.position.set(4, 1.7, -30); b.camBaseY = 1.7; b.look(0, -0.05); };
+  const run = async (item, nm) => {
+    if (!b.state().inventory || true) { try { b.addToInventory(item); } catch (e) {} }
+    if (b.equippedS() !== item) b.toggleEquip(item);
+    for (let i = 0; i < 90; i++) { place(); w.__adv(1); }
+    // a light cut, every 3rd frame
+    let tiles = []; b.attackAction();
+    for (let f = 0; f < 66; f++) { place(); w.__adv(1); if (f % 3 === 0) tiles.push(grab('L' + f)); }
+    sheet(nm + '_light', tiles);
+    for (let i = 0; i < 60; i++) { place(); w.__adv(1); }
+    // the second cut of the combo
+    tiles = []; b.attackAction(); for (let f = 0; f < 6; f++) { place(); w.__adv(1); } b.attackAction();
+    for (let f = 0; f < 66; f++) { place(); w.__adv(1); if (f % 3 === 0) tiles.push(grab('C' + f)); }
+    sheet(nm + '_combo', tiles);
+    for (let i = 0; i < 60; i++) { place(); w.__adv(1); }
+    // a heavy: held 1.1 s, then let go
+    tiles = []; log(nm, 'wind', b.startWind());
+    for (let f = 0; f < 66; f++) { place(); w.__adv(1); if (f % 6 === 0) tiles.push(grab('W' + f)); }
+    b.releaseWind();
+    var T = b.THREE, A = b.armRig, M = item.gripModel, cam = b.vmCamera;
+    var P = (y) => { if (!M) return '-'; const v = new T.Vector3(0, y, 0); M.localToWorld(v); const c = v.clone().project(cam); return c.x.toFixed(2) + ',' + c.y.toFixed(2); };
+    for (let f = 0; f < 72; f++) { place(); w.__adv(1); if (f % 3 === 0) tiles.push(grab('H' + f)); if (f % 6 === 0) log(nm, 'H' + f, 'rot', A.rotation.x.toFixed(2), A.rotation.y.toFixed(2), A.rotation.z.toFixed(2), 'pos', A.position.x.toFixed(2), A.position.y.toFixed(2), A.position.z.toFixed(2), 'head', P(-0.21), 'cord', P(0.84), 'mount', M ? M.position.y.toFixed(2) : '-'); }
+    sheet(nm + '_heavy', tiles);
+    for (let i = 0; i < 60; i++) { place(); w.__adv(1); }
+    // the Shift slam: held to full (3 s), then let go
+    const kd = (down) => w.dispatchEvent(new w.KeyboardEvent(down ? 'keydown' : 'keyup', { code: 'ShiftLeft', key: 'Shift', bubbles: true }));
+    tiles = []; kd(true); log(nm, 'slam wind', b.startWind());
+    for (let f = 0; f < 192; f++) { place(); w.__adv(1); if (f % 16 === 0) tiles.push(grab('S' + f)); }
+    log(nm, 'slam overhead', b.windOverhead);
+    b.releaseWind(); kd(false);
+    for (let f = 0; f < 90; f++) { place(); w.__adv(1); if (f % 3 === 0) tiles.push(grab('R' + f)); if (f % 9 === 0) log(nm, 'R' + f, 'head', P(-0.21), 'cord', P(0.84), 'dip', (b.state().slamDip ?? '').toString()); }
+    sheet(nm + '_slam', tiles);
+    for (let i = 0; i < 60; i++) { place(); w.__adv(1); }
+  };
+  if (new URLSearchParams(w.parent.location.search).get('mil')) await run(b.militaryItem, 'mil');
+  await run(b.maceItem, 'mace');
+  b.settings.devMode = false;
+}
+
+// where the mace's two ends land on the screen for a sweep of arm pitches/yaws (2026-11-14): the pose signs, measured
+export async function maceAxes({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  w.__clockOn();
+  b.addToInventory(b.maceItem); b.toggleEquip(b.maceItem);
+  for (let i = 0; i < 90; i++) w.__adv(1);
+  const T = b.THREE, A = b.armRig, M = b.maceItem.gripModel, cam = b.vmCamera;
+  const base = A.rotation.clone(), bp = A.position.clone();
+  const bb = new T.Box3(); M.updateMatrixWorld(true);
+  const inv = new T.Matrix4().copy(M.matrixWorld).invert();
+  M.traverse((o) => { if (o.isMesh) { o.geometry.computeBoundingBox(); const g = o.geometry.boundingBox.clone().applyMatrix4(new T.Matrix4().multiplyMatrices(inv, o.matrixWorld)); bb.union(g); } });
+  log('mace local y', bb.min.y.toFixed(2), bb.max.y.toFixed(2), '(+y is the cord end)');
+  const P = (y) => { const v = new T.Vector3(0, y, 0); M.localToWorld(v); const c = v.clone().project(cam); return c.x.toFixed(2) + ',' + c.y.toFixed(2) + ' z' + v.applyMatrix4(cam.matrixWorldInverse).z.toFixed(2); };
+  const Q = (y) => { const v = new T.Vector3(0, y, 0); M.localToWorld(v); return v.project(cam); };
+  for (const px of [-0.9, -1.2]) for (const yw of [-0.4, 0, 0.4, 0.8, 1.2]) { let row = 'p' + px + ' y' + yw + ':'; for (const rl of [-0.6, -0.3, 0, 0.3, 0.6]) {
+    A.rotation.set(base.x + px, base.y + yw, base.z + rl); A.updateMatrixWorld(true); cam.updateMatrixWorld(true);
+    const h = Q(bb.min.y), c = Q(bb.max.y); row += ' r' + rl + '(' + (c.x - h.x).toFixed(2) + ',' + (c.y - h.y).toFixed(2) + ')';
+  } log(row); }
+  A.rotation.copy(base);
+}
+
+// the lair's scare on the way in, and its air (2026-11-15)
+export async function lairScare({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  b.sewRestore({ lv: 15, d2: 1, kt: 1 }); b.placeInSewer(); for (let i = 0; i < 30; i++) b.frame(1);
+  for (let i = 0; i < 300 && !(b.sewG().P.remains); i++) { b.frame(1); await sleep(30); }
+  const P = b.sewG().P;
+  // walk in from the passage
+  b.sewSet(12.6, -31.6, 0, -0.15); for (let i = 0; i < 10; i++) b.frame(1);
+  log('before: scare', !!P.scare);
+  b.sewSet(12.6, -32.1, 0, -0.15); b.frame(1);
+  log('at the threshold: scare', !!P.scare);
+  const cam = () => b.sewSet(12.6, -32.1, 0.25, -0.32);
+  for (const tt of [0.3, 0.5, 0.7, 0.9, 1.1, 1.3]) { if (!P.scare) break; P.scare.t = tt; cam(); b.frame(1); const r = P.scare && P.scare.rat; if (tt === 0.7 && r) { const T = b.THREE, C = b.camera, amb = new T.AmbientLight(0xffffff, 1.4); b.scene.add(amb); const wp = r.getWorldPosition(new T.Vector3()); C.position.set(wp.x + 0.5, wp.y + 0.35, wp.z + 0.45); C.lookAt(wp); C.fov = 50; C.updateProjectionMatrix(); C.updateMatrixWorld(true); shot('ls_rat', 800, 1.2); b.scene.remove(amb); C.fov = 105; C.updateProjectionMatrix(); } log('t', tt, 'rat', r ? r.visible + ' ' + r.position.x.toFixed(2) + ',' + r.position.y.toFixed(3) + ',' + r.position.z.toFixed(2) : '-'); shot('ls_' + Math.round(tt * 10), 800, 1.6); }
+  for (let f = 0; f < 150; f++) b.frame(1);
+  log('after: scare', !!P.scare, 'burst', P.flyBurst);
+  b.sewSet(12.6, -31.6, 0, 0); b.frame(1); b.sewSet(12.6, -32.1, 0, 0); for (let f = 0; f < 20; f++) b.frame(1);
+  log('second time in: scare', !!P.scare);
+  // the rat itself, close, under a work light
+  { const r = b.sewG().P.scare ? null : null; }
+  b.settings.devMode = false;
+}
+
+// the keychain, frame by frame: five keys, a step right, a step left, a wrap past the end (2026-11-15)
+export async function kcFrames({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 200 && !(b.kcG && b.bootLeft().parsing === 0); i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  const ks = [b.sewKeyItem, b.cellKeyItem, b.skullKeyItem, b.boatKeyItem, b.pavKeyItem, b.storeKeyItem].filter(Boolean);
+  for (const k of ks) b.addToInventory(k);
+  b.openPack(); await sleep(400);
+  const K = b.kcG(); log('keys', K.items.length, K.items.map((i) => i.name).join(' | '), 'ring', !!K.ringModel);
+  const cv = K.r.domElement; K.r.setSize(960, 600, false); K.cam.aspect = 960 / 600; K.cam.updateProjectionMatrix();
+  let t = performance.now();
+  const adv = (n) => { for (let i = 0; i < n; i++) { t += 16.7; b.kcFrame(t); } };
+  const tiles = [];
+  const grab = (lab) => { const c = w.document.createElement('canvas'); c.width = 320; c.height = 200; const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 320, 200); g.imageSmoothingQuality = 'high'; g.drawImage(cv, cv.width * 0.36, cv.height * 0.02, cv.width * 0.28, cv.height * 0.58, 0, 0, 320, 200 * 0.58 / 0.28 * (cv.width / cv.height) * (200 / 320) > 200 ? 200 : 200); g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 4, 14); tiles.push(c); };
+  adv(120); grab('rest');
+  // the hand moved (the cursor across the pack) and let go: the ring swings, the keys hang plumb and swing after it
+  const full = []; const grabF = (lab) => { const c2 = w.document.createElement('canvas'); c2.width = 320; c2.height = 200; const g2 = c2.getContext('2d'); g2.drawImage(cv, 0, 0, 320, 200); g2.fillStyle = '#fff'; g2.font = '12px monospace'; g2.fillText(lab, 4, 14); full.push(c2); };
+  K.mx = 1; for (let f = 0; f < 36; f += 3) { adv(3); grab('M' + f); if (f % 6 === 0) grabF('M' + f); log('m f', f, 'aR', K.aR.toFixed(3), 'hx', K.hx.toFixed(3), 'th0', K.keys[0].th.toFixed(3)); }
+  K.mx = 0; for (let f = 0; f < 60; f += 6) { adv(6); grab('B' + f); grabF('B' + f); log('b f', f, 'aR', K.aR.toFixed(3), 'th0', K.keys[0].th.toFixed(3)); }
+  for (const [d, lab] of [[1, 'R'], [-1, 'L'], [-1, 'W']]) { b.kcStep(d); for (let f = 0; f < 42; f += 3) { adv(3); grab(lab + f); } adv(60); grab(lab + ' settled'); }
+  const cols = 6, rows = Math.ceil(tiles.length / cols), c = w.document.createElement('canvas'); c.width = cols * 320; c.height = rows * 200;
+  const g = c.getContext('2d'); tiles.forEach((tl, i) => g.drawImage(tl, (i % cols) * 320, ((i / cols) | 0) * 200));
+  { const cc = w.document.createElement('canvas'); cc.width = 6 * 320; cc.height = Math.ceil(full.length / 6) * 200; const gg = cc.getContext('2d'); full.forEach((tl, i) => gg.drawImage(tl, (i % 6) * 320, ((i / 6) | 0) * 200));
+    const dd = cc.toDataURL('image/jpeg', 0.82).split(',')[1], nn = Math.ceil(dd.length / 8000); for (let i = 0; i < nn; i++) console.log('[PBIMG]', 'kc_full', i + '/' + nn, dd.slice(i * 8000, (i + 1) * 8000)); }
+  const d = c.toDataURL('image/jpeg', 0.82).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'kc_frames', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  // a close look at the hang, settled
+  adv(240); K.r.setSize(1200, 700, false); const cam = K.cam.clone(); cam.aspect = 1200 / 700; cam.position.set(0.0, -0.10, 0.30); cam.lookAt(0, -0.10, 0); cam.updateProjectionMatrix(); K.r.render(K.sc, cam);
+  const d2 = cv.toDataURL('image/jpeg', 0.85).split(',')[1], n2 = Math.ceil(d2.length / 8000);
+  for (let i = 0; i < n2; i++) console.log('[PBIMG]', 'kc_close', i + '/' + n2, d2.slice(i * 8000, (i + 1) * 8000));
+  log('thick', K.keys.map((k) => k.thick.toFixed(4) + '/' + (k.beta || 0).toFixed(2)).join(' '));
+  // the same, from the side and from three-quarters above: are they clear of each other and the wire?
+  const shots = [['kc_side', [0.30, -0.08, 0.02]], ['kc_3q', [0.20, 0.06, 0.22]], ['kc_3qL', [-0.20, -0.02, 0.22]], ['kc_top', [0.0, 0.25, 0.012]], ['kc_under', [0.0, -0.40, 0.012]]];
+  for (const [nm, pp] of shots) { cam.position.set(...pp); cam.lookAt(0, -0.10, 0); K.r.render(K.sc, cam);
+    const d3 = cv.toDataURL('image/jpeg', 0.85).split(',')[1], n3 = Math.ceil(d3.length / 8000); for (let i = 0; i < n3; i++) console.log('[PBIMG]', nm, i + '/' + n3, d3.slice(i * 8000, (i + 1) * 8000)); }
+  // and one turned half a step (a key on its way up and over), from the front and three-quarters
+  b.kcStep(1); for (let i = 0; i < 9; i++) { t += 16.7; b.kcFrame(t); } K.r.setSize(1200, 700, false);
+  for (const [nm, pp] of [['kc_turnF', [0.0, -0.06, 0.30]], ['kc_turn3q', [0.22, 0.04, 0.22]]]) { cam.position.set(...pp); cam.lookAt(0, -0.06, 0); K.r.render(K.sc, cam);
+    const d3 = cv.toDataURL('image/jpeg', 0.85).split(',')[1], n3 = Math.ceil(d3.length / 8000); for (let i = 0; i < n3; i++) console.log('[PBIMG]', nm, i + '/' + n3, d3.slice(i * 8000, (i + 1) * 8000)); }
+}
+
+// walking the lair by the keys: in through the door, round the heap and the dead, to the nest and out (2026-11-15)
+export async function lairWalk({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  w.eval(await (await fetch('/tools/sewer.js?' + Date.now())).text().then((t) => t.replace(/^const b = window.__bw;/m, 'var b = window.__bw;')));
+  b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  b.sewRestore({ lv: 15, d2: 1, kt: 1, ls: 1 }); b.placeInSewer(); for (let i = 0; i < 30; i++) b.frame(1);
+  b.sewSet(12.6, -27.5, 0, 0); for (let i = 0; i < 10; i++) b.frame(1);
+  const r = await w.__sw.route([[12.6, -30.2], [12.6, -32.8], [13.0, -34.0], [12.9, -36.5], [11.9, -36.8], [11.1, -36.4], [10.8, -35.0], [11.2, -33.2], [15.2, -33.2], [15.2, -36.8], [14.0, -37.0], [12.6, -33.0], [12.6, -29.6]], { maxSec: 12 });
+  for (const q of r) log(JSON.stringify(q));
+  // into the heap and the sitting one: you should be stopped short of them
+  const r2 = await w.__sw.route([[13.0, -35.3], [14.35, -35.3]], { maxSec: 5 });
+  log('into the heap:', JSON.stringify(r2[1]));
+  b.settings.devMode = false;
+}
+
+// the mace against bodies: a full Shift slam on a red mutant (hp 13) with a dark one (hp 8) beside it, then a light and a heavy
+export async function maceFight({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  w.__clockOn();
+  b.addToInventory(b.maceItem); b.toggleEquip(b.maceItem); w.__adv(60);
+  const C = b.camera, kd = (down) => w.dispatchEvent(new w.KeyboardEvent(down ? 'keydown' : 'keyup', { code: 'ShiftLeft', key: 'Shift', bubbles: true }));
+  const trial = async (label, how, kinds) => {
+    C.position.set(4, 1.7, -40); b.camBaseY = 1.7; b.look(0, -0.12);
+    const us = kinds.map(([k, dx, dz]) => b.mutSpawnTest(4 + dx, -40 + dz, k));
+    w.__adv(2);
+    for (const u of us) { u.st.awake = false; }
+    const hp0 = us.map((u) => u.st.hp);
+    const aim = () => { C.position.set(4, 1.7, -40); b.camBaseY = 1.7; b.lookAt(us[0].g.position.x, 1.0, us[0].g.position.z); };
+    aim();
+    if (how === 'slam') { kd(true); b.startWind(); for (let f = 0; f < 190; f++) { aim(); w.__adv(1); } b.releaseWind(); kd(false); }
+    else if (how === 'heavy') { b.startWind(); for (let f = 0; f < 80; f++) { aim(); w.__adv(1); } b.releaseWind(); }
+    else b.attackAction();
+    let mid = ''; for (let f = 0; f < 50; f++) { aim(); w.__adv(1); if ((f === 16 || f === 22 || f === 28) && label === 'slam') shot('mf_slam_' + f, 800, 1.4); if (f === 30) mid = us.map((u) => Math.max(0, u.st.hp).toFixed(1) + (u.st.alive ? '' : '✝')).join(','); }
+    log(label, 'just after the blow:', mid);
+    log(label, kinds.map(([k], i) => `${k} ${hp0[i]}→${Math.max(0, us[i].st.hp).toFixed(1)}${us[i].st.alive ? '' : ' DEAD'}`).join(' | '));
+    for (const u of us) { u.g.visible = false; u.st.alive = false; }
+    w.__adv(30);
+  };
+  await trial('slam', 'slam', [['red', 0, -2.0], ['dark', 1.6, -2.4], ['dark', 0, -6]]);
+  await trial('light', 'light', [['red', 0, -1.8]]);
+  await trial('heavy', 'heavy', [['red', 0, -1.8]]);
+  b.settings.devMode = false;
+}
+
+// the kick and the big electrocution, frame by frame, in the game's own frames (hands' scene and all) (2026-11-15)
+export async function sewKickShock({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  b.sewRestore({ lv: 15, ll: 1 }); b.placeInSewer(); for (let i = 0; i < 20; i++) b.frame(1);
+  w.__clockOn();
+  const grab = (lab, gain = 1.3) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 400; c.height = Math.round(400 * src.height / src.width); const g = c.getContext('2d'); g.filter = `brightness(${gain})`; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '13px monospace'; g.fillText(lab, 4, 15); return c; };
+  const sheet = (name, tiles, cols = 5) => {
+    const tw = tiles[0].width, th = tiles[0].height, rows = Math.ceil(tiles.length / cols), c = w.document.createElement('canvas'); c.width = cols * tw; c.height = rows * th;
+    const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+    const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000);
+    for (let i = 0; i < n; i++) console.log('[PBIMG]', name, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  };
+  const LP = b.sewG().P.fallLamp.hold.position.clone(); log('lamp at', LP.x.toFixed(2), LP.y.toFixed(2), LP.z.toFixed(2));
+  const ex = LP.x - 1.7, ez = -30.15, ey = -0.7 + 1.62;
+  const yaw0 = Math.atan2(-(LP.x - ex), -(LP.z + 0.35 - ez)), pit0 = Math.atan2(LP.y - ey, Math.hypot(LP.x - ex, LP.z + 0.35 - ez));
+  const at = () => b.sewSet(ex, ez, yaw0, pit0);
+  for (let i = 0; i < 30; i++) { at(); w.__adv(1); }
+  let tiles = [];
+  const work = new b.THREE.AmbientLight(0xffffff, 1.3); b.scene.add(work);
+  b.sewKickLamp();
+  for (let f = 0; f < 110; f++) { at(); w.__adv(1); if (f % 3 === 0 && f >= 6 && f < 81) tiles.push(grab('k' + f, 1.0)); }
+  b.scene.remove(work);
+  sheet('kick', tiles);
+  // and the lamp alone, close, from the side, under a work light: the throw, the splash, the bob
+  { b.sewRestore({ lv: 15, ll: 1 }); b.placeInSewer(); for (let i = 0; i < 6; i++) w.__adv(1);
+    const tx = 15.9, ty = -0.95, tz = -29.25, cx = 17.6, cz = -30.6, ey2 = -0.7 + 1.62;
+    const yw = Math.atan2(-(tx - cx), -(tz - cz)), pt = Math.atan2(ty - ey2, Math.hypot(tx - cx, tz - cz));
+    const side = () => b.sewSet(cx, cz, yw, pt);
+    const work = new b.THREE.AmbientLight(0xffffff, 1.6); b.scene.add(work);
+    { const H = b.sewG().P.fallLamp.hold, T = b.THREE; H.updateMatrixWorld(true); const bb = new T.Box3().setFromObject(H); const X = b.sewG().SEW_X, Z = b.sewG().SEW_Z, Y = b.sewG().SEW_Y;
+      let vis = true; for (let o = H; o; o = o.parent) if (!o.visible) vis = false;
+      log('lamp bbox local', (bb.min.x - X).toFixed(2), (bb.min.y - Y).toFixed(2), (bb.min.z - Z).toFixed(2), '→', (bb.max.x - X).toFixed(2), (bb.max.y - Y).toFixed(2), (bb.max.z - Z).toFixed(2), 'visible', vis, 'kids', H.children.length); }
+    const t2 = []; b.sewKickLamp();
+    for (let f = 0; f < 100; f++) { side(); w.__adv(1); if (f >= 8 && f % 3 === 0 && f < 98) t2.push(grab('L' + f, 1.0)); if (f % 6 === 0) { const H = b.sewG().P.fallLamp.hold; log('f', f, H.position.x.toFixed(2), H.position.y.toFixed(2), H.position.z.toFixed(2), 'rx', H.rotation.x.toFixed(2)); } }
+    b.scene.remove(work); sheet('lampside', t2, 6); }
+  log('after the kick: ll', b.sewLampS().ll, 'dead', b.sewLampS().dead);
+  // the electrocution from down the walk, looking along the branch's water
+  const at2 = () => b.sewSet(10.5, -30.1, -1.45, -0.28);
+  tiles = [];
+  b.sewRestore({ lv: 15, ll: 1 }); b.placeInSewer(); for (let i = 0; i < 10; i++) { at2(); w.__adv(1); }
+  b.sewKickLamp();
+  for (let f = 0; f < 200; f++) { at2(); w.__adv(1); if ((f >= 40 && f < 70 && f % 3 === 0) || (f >= 70 && f % 12 === 0)) tiles.push(grab('s' + f, 1.0)); }
+  sheet('shock', tiles);
+  b.settings.devMode = false;
+}
+
+// the storeroom's live water and wires, from the gate: frames where an arc is up (2026-11-15)
+export async function storeArcs({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  b.sewRestore({ lv: 0 }); b.placeInSewer(); w.__clockOn();
+  const S = b.sewG().SEW, P = b.sewG().P;
+  const at = () => b.sewSet(S.GATE_X - 0.7, S.DOOR_Z, -Math.PI / 2, -0.32);
+  let n = 0;
+  for (let f = 0; f < 900 && n < 6; f++) { at(); w.__adv(1); if (P.arcs.some((a) => a.life > 0) && f % 2 === 0) { shot('st_' + n, 800, 1.0); n++; f += 25; } }
+  log('arc frames', n);
+}
+
+// the lair as you see it (no work light), and low views along the floor at the dead and the heap for anything floating (2026-11-15)
+export async function lairLook2({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  b.sewRestore({ lv: 15, d2: 1, kt: 1, ls: 1 }); b.placeInSewer(); for (let i = 0; i < 30; i++) b.frame(1);
+  for (let i = 0; i < 400 && !(b.sewG().P.remains); i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 60; i++) { b.frame(1); await sleep(15); }
+  const T = b.THREE, C = b.camera, X = b.sewG().SEW_X, Y = b.sewG().SEW_Y, Z = b.sewG().SEW_Z, F = -0.7;
+  const amb = new T.AmbientLight(0xffffff, 1.5);
+  const look = async (name, from, at, lit, gain, fov = 75) => {
+    if (lit) b.scene.add(amb); else b.scene.remove(amb);
+    for (let i = 0; i < 6; i++) { b.sewSet(from[0], from[2], 0, 0); b.frame(1); }
+    C.position.set(X + from[0], Y + from[1], Z + from[2]); C.lookAt(X + at[0], Y + at[1], Z + at[2]); C.fov = fov; C.updateProjectionMatrix(); C.updateMatrixWorld(true);
+    shot(name, 800, gain);
+  };
+  await look('l2_door', [12.6, F + 1.62, -32.0], [13.0, F + 0.3, -35.8], false, 1.5, 90);
+  await look('l2_heap', [13.2, F + 1.55, -34.6], [15.2, F + 0.2, -37.0], false, 1.6);
+  await look('l2_nest', [13.2, F + 1.55, -34.4], [10.9, F + 0.1, -36.9], false, 1.6);
+  await look('l2_west', [13.4, F + 1.55, -33.4], [10.2, F + 0.4, -33.9], false, 1.6);
+  await look('l2_heapLit', [13.2, F + 1.55, -34.6], [15.2, F + 0.2, -37.0], true, 1.0);
+  await look('l2_doorLit', [12.6, F + 1.62, -32.0], [13.0, F + 0.3, -35.8], true, 1.0, 90);
+  await look('l2_lowsit', [11.4, F + 0.18, -34.9], [10.4, F + 0.15, -33.85], true, 1.0, 60);
+  await look('l2_lowlie', [13.6, F + 0.15, -35.2], [12.35, F + 0.1, -35.35], true, 1.0, 60);
+  await look('l2_lowheap', [13.3, F + 0.25, -36.3], [15.0, F + 0.25, -37.1], true, 1.0, 60);
+  await look('l2_lownest', [12.3, F + 0.15, -36.2], [10.9, F + 0.08, -36.9], true, 1.0, 60);
+  C.fov = 105; C.updateProjectionMatrix();
+  b.settings.devMode = false;
+}
+
+// the Shock Ring in the examine screen: frames of its arcs (2026-11-15)
+export async function shockInspect({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 300 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  const it = b.shockRingItem; b.addToInventory(it);
+  b.openInspect(it.inspectModel, { ...(it.inspectOpts ? it.inspectOpts() : {}), name: it.name, desc: it.desc });
+  const cv = b.renderer.domElement, tiles = [];
+  for (let f = 0; f < 60; f++) { await sleep(55); b.frame(1); if (f % 6 === 3) { const c = w.document.createElement('canvas'); c.width = 400; c.height = Math.round(400 * cv.height / cv.width); c.getContext('2d').drawImage(cv, 0, 0, c.width, c.height); tiles.push(c); } }
+  log('gems', b.shockGemsS().length, 'arcs visible', b.shockArcsS() && b.shockArcsS().visible);
+  const cols = 4, tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th;
+  const g = c.getContext('2d'); tiles.forEach((tl, i) => g.drawImage(tl, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'ring', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+// the Shock Ring's charge, forced: a red fighting you, two darks fighting you near it, one dark asleep near it (must be spared)
+export async function shockProc({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  w.__clockOn();
+  b.addToInventory(b.shockRingItem); log('wear', b.wearRing(b.shockRingItem), 'rings', (b.ringsS ? b.ringsS() : []).map((r) => r.name).join(','));
+  const C = b.camera; C.position.set(4, 1.7, -40); b.camBaseY = 1.7;
+  const u0 = b.mutSpawnTest(4, -42.5, 'red'), u1 = b.mutSpawnTest(5.4, -43.4, 'dark'), u2 = b.mutSpawnTest(2.6, -44.2, 'dark'), u3 = b.mutSpawnTest(4.2, -45.2, 'dark'), far = b.mutSpawnTest(4, -52, 'dark');
+  w.__adv(2);
+  for (const u of [u0, u1, u2, far]) { u.st.awake = true; }
+  u3.st.awake = false;                               // asleep: must not be touched
+  for (const u of [u0, u1, u2, u3, far]) u.st.atk = 99;  // (hold them still)
+  const hp0 = [u0, u1, u2, u3, far].map((u) => u.st.hp);
+  b.lookAt(4, 1.2, -43);
+  log('ring worn', b.state().rings || '?', 'u0', u0.st.alive, u0.st.awake, !!u0.st.struck, u0.g.visible, !!u0.retired, JSON.stringify(Object.keys(u0.kind).filter((k) => /friend|ally|baby/.test(k))));
+  const R = w.Math.random; w.Math.random = () => 0.01;      // (the game's own Math: it runs in the frame)
+  const fired = b.shockRingProc(u0, 3, false);
+  w.Math.random = R;
+  for (let f = 0; f < 20; f++) { w.__adv(1); await sleep(20); if (f === 4) shot('shock_proc', 800, 1.3); }
+  log('fired', fired, 'hp', ['red', 'dark1', 'dark2', 'asleep', 'far'].map((n, i) => n + ' ' + hp0[i] + '→' + [u0, u1, u2, u3, far][i].st.hp.toFixed(1)).join(' | '));
+  b.settings.devMode = false;
+}
+
+// the Shock Ring on the jars in the storeroom's chest (2026-11-15)
+export async function chestRing({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  for (let i = 0; i < 200 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  b.sewRestore({ lv: 15, gen: 1, gate: 1, chest: 1 }); b.placeInSewer();   // (gen: 1 is OFF in the save's own sense) for (let i = 0; i < 30; i++) b.frame(1);
+  const S = b.sewG().SEW, P = b.sewG().P, T = b.THREE, C = b.camera, X = b.sewG().SEW_X, Y = b.sewG().SEW_Y, Z = b.sewG().SEW_Z;
+  log('ring visible', P.ringWorld && P.ringWorld.visible, 'kids', P.ringWorld && P.ringWorld.children.length, 'local', P.ringWorld.position.toArray().map((v) => v.toFixed(3)).join(','));
+  const amb = new T.AmbientLight(0xffffff, 1.2); b.scene.add(amb);
+  const cp = new T.Vector3(); P.ringWorld.getWorldPosition(cp);
+  b.sewSet(cp.x - X - 0.9, cp.z - Z + 0.4, 0, 0); b.frame(1);
+  { const bb = new T.Box3().setFromObject(P.ringWorld); log('ring bbox y', (bb.min.y - Y).toFixed(3), (bb.max.y - Y).toFixed(3), 'size', bb.getSize(new T.Vector3()).toArray().map((v) => v.toFixed(3)).join(',')); }
+  C.position.set(cp.x - 0.15, cp.y + 0.55, cp.z + 0.1); C.lookAt(cp); C.fov = 55; C.updateProjectionMatrix(); C.updateMatrixWorld(true);
+  log('cam', (C.position.x - X).toFixed(2), (C.position.y - Y).toFixed(2), (C.position.z - Z).toFixed(2), 'cp', (cp.x - X).toFixed(2), (cp.y - Y).toFixed(2), (cp.z - Z).toFixed(2), 'inSewer', b.sewS().lx, 'worldVis', b.sewG().world.visible, 'fog', b.scene.fog && b.scene.fog.density, 'parent', P.ringWorld.parent ? (P.ringWorld.parent.type + ' ' + P.ringWorld.parent.children.length) : 'none');
+  shot('chest_ring', 800, 1.0); b.scene.remove(amb); C.fov = 105; C.updateProjectionMatrix();
+}
+
+// the first bridge from the walk, as you come down the tunnel: does the deck sit in the dark with the rest (2026-11-16)
+export async function bridgeLook({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  for (let i = 0; i < 200 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  const S = b.sewG().SEW;
+  for (const [lv, nm] of [[0, 'br_off'], [15, 'br_on']]) {
+    b.sewRestore({ lv }); b.placeInSewer(); for (let i = 0; i < 30; i++) b.frame(1);
+    for (let i = 0; i < 20; i++) { b.sewSet(-1.85, S.BRIDGE_Z + 3.2, -0.35, -0.35); b.frame(1); }
+    shot(nm, 800, 1.4);
+  }
+  b.settings.devMode = false;
+}
+
+// the mace's momentum: three clicks in a row (forehand, back, forehand), then one let run out — every 3rd frame (2026-11-16)
+export async function maceCombo({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  w.__clockOn();
+  const C = b.camera;
+  b.addToInventory(b.maceItem); b.toggleEquip(b.maceItem);
+  const place = () => { C.position.set(4, 1.7, -30); b.camBaseY = 1.7; b.look(0, -0.05); };
+  for (let i = 0; i < 100; i++) { place(); w.__adv(1); }
+  const tiles = [];
+  const grab = (lab) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 320; c.height = Math.round(320 * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.5)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 4, 14); c.lab = lab; return c; };
+  const clicks = [0, 22, 46];      // (frames: each after the blow before, inside the follow-through)
+  let f = 0;
+  for (; f < 150; f++) {
+    if (clicks.includes(f)) { b.attackAction(); log('click at', f, 'digT', b.state().digT ?? '?', 'combo', b.comboStep); }
+    place(); w.__adv(1);
+    if (f % 3 === 0) { tiles.push(grab('F' + f + (clicks.includes(f) ? '*' : ''))); const M = b.maceItem.gripModel, T = b.THREE, cam = b.vmCamera, Pj = (y) => { const v = new T.Vector3(0, y, 0); M.localToWorld(v); v.project(cam); return v.x.toFixed(2) + ',' + v.y.toFixed(2); };
+      if (f >= 12 && f <= 45) log('f', f, 'digT', (+b.state().digT).toFixed(2), 'combo', b.comboStep, 'head', Pj(-0.21), 'cord', Pj(0.84)); }
+  }
+  const cols = 8, tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th;
+  const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'combo', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  b.settings.devMode = false;
+}
+
+// the sea against the rocks: the stones the surf reaches at both walls, and a strip of one wave striking them (2026-11-16)
+export async function rockWash({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 300 && !b.rockSurfS().length; i++) { b.frame(1); await sleep(30); }
+  const L = b.rockSurfS(), U = b.oceanUniforms.uTime;
+  log('stones with surf', L.length, 'small (r<0.6)', L.filter((r) => r.r < 0.6).length);
+  w.__clockOn();
+  const C = b.camera, at = +(new URLSearchParams(w.parent.location.search).get('wall') || 0);
+  const WZ = at ? b.ROCK_Z : 60, dz = at ? 1 : -1;     // the wall behind the drain (60) or the one past the mutants
+  const near = L.filter((r) => Math.abs(r.z - WZ) < 16).sort((a, c) => a.x - c.x);
+  log('wall', WZ, near.map((r) => `(${r.x.toFixed(1)},${r.z.toFixed(1)}) r${r.r.toFixed(2)} top${r.top.toFixed(2)} ph${r.ph.toFixed(2)}`).join(' '));
+  const T0 = +(new URLSearchParams(w.parent.location.search).get('t') || (11.6 + 139.6 * 2));
+  const Q = new URLSearchParams(w.parent.location.search), cam = (Q.get('cam') || '5.5,1.7,16,0.5,-0.3,10').split(',').map(Number);
+  const place = () => { C.position.set(cam[0], cam[1], WZ + dz * cam[2]); b.camBaseY = cam[1]; b.lookAt(cam[3], cam[4], WZ + dz * cam[5]); };
+  U.value = T0; for (let i = 0; i < 30; i++) { place(); w.__adv(1); U.value = T0 + i / 60; }
+  const tiles = [];
+  const grab = (lab) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 480; c.height = Math.round(480 * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.2)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 4, 14); return c; };
+  const EV = +(Q.get('every') || 15), NF = +(Q.get('frames') || 300);
+  for (let f = 0; f < NF; f++) { place(); w.__adv(1); if (f % EV === 0) tiles.push(grab('t ' + (U.value).toFixed(2) + ' shore ' + b.shoreLineJS(WZ + dz * 10, U.value).toFixed(1))); }
+  const cols = 4, tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th;
+  const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'wash' + at, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  b.settings.devMode = false;
+}
+
+// the mace's momentum, without and with a second press (2026-11-16): one click let run out (the swing back), then a click
+// and a HOLD in its follow-through (a heavy carried on, wound up the far side) — every 3rd frame, with the head on screen
+export async function maceMomentum({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  w.__clockOn();
+  const C = b.camera;
+  b.addToInventory(b.maceItem); b.toggleEquip(b.maceItem);
+  const place = () => { C.position.set(4, 1.7, -30); b.camBaseY = 1.7; b.look(0, -0.05); };
+  for (let i = 0; i < 100; i++) { place(); w.__adv(1); }
+  const grab = (lab) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = +(new URLSearchParams(w.parent.location.search).get('tw') || 280); c.height = Math.round(c.width * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.5)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 4, 14); return c; };
+  const M = b.maceItem.gripModel, T = b.THREE, head = () => { const v = new T.Vector3(0, -0.21, 0); M.localToWorld(v); v.project(b.vmCamera); return v.x.toFixed(2) + ',' + v.y.toFixed(2); };
+  const sheet = (name, tiles, cols = 8) => { const tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th;
+    const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+    const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', name, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); };
+  // 1: one click, let it run out
+  let tiles = [];
+  b.attackAction();
+  const Q = new URLSearchParams(w.parent.location.search), F0 = +(Q.get('f0') || 0), F1 = +(Q.get('f1') || 72), EV = +(Q.get('every') || 3);
+  for (let f = 0; f < F1; f++) { place(); w.__adv(1); if (f >= F0 && f % EV === 0) { tiles.push(grab('F' + f + ' t' + (+b.state().digT || 0).toFixed(2))); log('one f', f, 'digT', (+b.state().digT || 0).toFixed(2), 'head', head()); } }
+  sheet('one', tiles);
+  for (let i = 0; i < 40; i++) { place(); w.__adv(1); }
+  // 2: click, then press-and-hold in the follow-through (a carried heavy), release after 50 frames
+  tiles = [];
+  b.attackAction();
+  for (let f = 0; f < 120; f++) {
+    if (f === 26) { const ok = b.startWind(); log('hold at', f, 'started', ok); }
+    if (f === 80) b.releaseWind();
+    place(); w.__adv(1);
+    if (f % 4 === 0) { tiles.push(grab('H' + f + (f >= 26 && f < 80 ? ' hold' : ''))); log('heavy f', f, 'digT', (+b.state().digT || 0).toFixed(2), 'head', head()); }
+  }
+  sheet('carry', tiles);
+  b.settings.devMode = false;
+}
+
+// the bone mace alone on grey, from the side and end-on, to see the whole model (2026-11-16: "the end of the club is cut off")
+export async function maceAlone({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 200 && !b.maceItem.inspectModel.children.length; i++) { b.frame(1); await sleep(30); }
+  const T = b.THREE, sc = new T.Scene(); sc.background = new T.Color(0x555a60);
+  sc.add(new T.HemisphereLight(0xffffff, 0x444444, 2.2)); const dl = new T.DirectionalLight(0xffffff, 1.5); dl.position.set(1, 2, 3); sc.add(dl);
+  const m = b.maceItem.inspectModel.clone(true); sc.add(m); m.updateMatrixWorld(true);
+  const bb = new T.Box3().setFromObject(m), c = bb.getCenter(new T.Vector3()), sz = bb.getSize(new T.Vector3());
+  log('bbox', sz.toArray().map((v) => v.toFixed(3)).join(','));
+  log('cap', JSON.stringify(w.__bwMaceCap));
+  m.traverse((o) => { if (o.isMesh) log('mesh', o.name, 'idx', o.geometry.index ? o.geometry.index.count : 'none', 'pos', o.geometry.attributes.position.count, 'capped', !!o.geometry.userData.capped); });
+  const cam = new T.PerspectiveCamera(30, 1280 / 720, 0.001, 100);
+  const top = new T.Vector3(c.x, bb.max.y - 0.05, c.z);
+  for (const [nm, dir, at, k] of [['side', [1, 0, 0.2], c, 2.2], ['front', [0, 0, 1], c, 2.2], ['ends', [0.6, 0.5, 0.6], c, 2.2], ['tipA', [0.5, 0.9, 0.6], top, 0.35], ['tipB', [-0.6, 0.2, -0.5], top, 0.35]]) {
+    const d = new T.Vector3(...dir).normalize().multiplyScalar(Math.max(sz.x, sz.y, sz.z) * k);
+    cam.position.copy(at).add(d); cam.lookAt(at);
+    const save = b.scene; b.renderer.render(sc, cam);
+    const src = b.renderer.domElement, cv = w.document.createElement('canvas'); cv.width = 640; cv.height = 360; cv.getContext('2d').drawImage(src, 0, 0, 640, 360);
+    const dd = cv.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(dd.length / 8000);
+    for (let i = 0; i < n; i++) console.log('[PBIMG]', 'mace_' + nm, i + '/' + n, dd.slice(i * 8000, (i + 1) * 8000));
+  }
+}
+
+// the mace's two holds (plain heavy, Shift slam) and their releases: is the head, and the charge's glint, in the frame? (2026-11-16)
+export async function maceHolds({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  w.__clockOn();
+  const C = b.camera;
+  b.addToInventory(b.maceItem); b.toggleEquip(b.maceItem);
+  const place = () => { C.position.set(4, 1.7, -30); b.camBaseY = 1.7; b.look(0, -0.05); };
+  for (let i = 0; i < 100; i++) { place(); w.__adv(1); }
+  const grab = (lab) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 300; c.height = Math.round(300 * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.4)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 4, 14); return c; };
+  const M = b.maceItem.gripModel, T = b.THREE, pj = (y) => { const v = new T.Vector3(0, y, 0); M.localToWorld(v); v.project(b.vmCamera); return v.x.toFixed(2) + ',' + v.y.toFixed(2); };
+  const gl = () => { const g = b.tipGlint; if (!g.visible) return 'off'; const v = g.position.clone().project(b.vmCamera); return v.x.toFixed(2) + ',' + v.y.toFixed(2); };
+  const sheet = (name, tiles, cols = 6) => { const tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th;
+    const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+    const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', name, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); };
+  for (const shift of [false, true]) {
+    const tiles = [];
+    if (shift) w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'ShiftLeft', key: 'Shift' }));
+    b.startWind();
+    for (let f = 0; f < 240; f++) {
+      place(); w.__adv(1);
+      if (f % 24 === 0) { tiles.push(grab((shift ? 'S' : 'H') + f + ' hold')); log(shift ? 'slam' : 'heavy', 'hold f', f, 'head', pj(-0.21), 'cord', pj(0.6), 'glint', gl()); }
+    }
+    b.releaseWind();
+    if (shift) w.dispatchEvent(new w.KeyboardEvent('keyup', { code: 'ShiftLeft', key: 'Shift' }));
+    for (let f = 0; f < 72; f++) { place(); w.__adv(1); if (f % 4 === 0) tiles.push(grab((shift ? 'S' : 'H') + 'r' + f)); }
+    for (let i = 0; i < 60; i++) { place(); w.__adv(1); }
+    sheet(shift ? 'slamHold' : 'heavyHold', tiles);
+  }
+  b.settings.devMode = false;
+}
+
+// poses held still for the mace, labelled: a grid to read the axes off (2026-11-16). ?set=<json list of [label, pose]>
+export async function maceGrid({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  b.addToInventory(b.maceItem); b.toggleEquip(b.maceItem);
+  const C = b.camera, place = () => { C.position.set(4, 1.7, -30); b.camBaseY = 1.7; b.look(0, -0.05); };
+  for (let i = 0; i < 90; i++) { place(); w.__adv(1); }
+  const set = JSON.parse(decodeURIComponent(new URLSearchParams(w.parent.location.search).get('set')));
+  const M = b.maceItem.gripModel, T = b.THREE, pj = (y) => { const v = new T.Vector3(0, y, 0); M.localToWorld(v); v.project(b.vmCamera); return v.x.toFixed(2) + ',' + v.y.toFixed(2); };
+  const tiles = [];
+  for (const [lab, pose] of set) {
+    w.__bwPose = pose; for (let i = 0; i < 3; i++) { place(); w.__adv(1); }
+    const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 300; c.height = Math.round(300 * src.height / src.width);
+    const g = c.getContext('2d'); g.filter = 'brightness(1.4)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '11px monospace'; g.fillText(lab, 4, 13);
+    // the crosshair
+    g.strokeStyle = '#f44'; g.beginPath(); g.moveTo(c.width / 2 - 5, c.height / 2); g.lineTo(c.width / 2 + 5, c.height / 2); g.moveTo(c.width / 2, c.height / 2 - 5); g.lineTo(c.width / 2, c.height / 2 + 5); g.stroke();
+    tiles.push(c); log(lab, 'head', pj(-0.21), 'cord', pj(0.6));
+  }
+  w.__bwPose = null;
+  const cols = 5, tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th;
+  const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'grid', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+// the keychain's clearances, measured: each key's surface sampled into 1.5 mm cells, and the cells two keys share (or a key
+// and the ring and its chain, or a key and another key's jump ring) counted — at rest and through a turn (2026-11-16)
+export async function kcClip({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 200 && !(b.kcG && b.bootLeft().parsing === 0); i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  const ks = [b.sewKeyItem, b.cellKeyItem, b.skullKeyItem, b.boatKeyItem, b.pavKeyItem, b.storeKeyItem].filter(Boolean);
+  for (const k of ks) b.addToInventory(k);
+  b.openPack(); await sleep(400);
+  const K = b.kcG(), T = b.THREE; let t = performance.now();
+  const adv = (n) => { for (let i = 0; i < n; i++) { t += 16.7; b.kcFrame(t); } };
+  const C = 0.0015, A = new T.Vector3(), B = new T.Vector3(), D = new T.Vector3(), P = new T.Vector3();
+  const cells = (root, skip) => { const S = new Set(); root.updateMatrixWorld(true);
+    root.traverse((o) => { if (!o.isMesh || (skip && skip(o))) return; let vis = true; for (let q = o; q; q = q.parent) if (q.visible === false) vis = false; if (!vis) return;
+      const pa = o.geometry.attributes.position, ix = o.geometry.index, n = ix ? ix.count : pa.count;
+      for (let j = 0; j + 2 < n; j += 3) {
+        A.fromBufferAttribute(pa, ix ? ix.getX(j) : j).applyMatrix4(o.matrixWorld); B.fromBufferAttribute(pa, ix ? ix.getX(j + 1) : j + 1).applyMatrix4(o.matrixWorld); D.fromBufferAttribute(pa, ix ? ix.getX(j + 2) : j + 2).applyMatrix4(o.matrixWorld);
+        const L = Math.max(A.distanceTo(B), B.distanceTo(D), D.distanceTo(A)), m = Math.min(24, Math.ceil(L / C) + 1);
+        for (let u = 0; u <= m; u++) for (let v = 0; v <= m - u; v++) { P.copy(A).multiplyScalar(1 - (u + v) / m).addScaledVector(B, u / m).addScaledVector(D, v / m);
+          S.add(Math.floor(P.x / C) + ',' + Math.floor(P.y / C) + ',' + Math.floor(P.z / C)); }
+      } });
+    return S; };
+  const shared = (a, b2) => { let n = 0; for (const c of a) if (b2.has(c)) n++; return n; };
+  const report = (lab) => {
+    const keyIds = new Set(K.keys.map((k) => k.pivot.uuid));
+    const ring = cells(K.ring, (o) => { for (let q = o; q && q !== K.ring; q = q.parent) if (keyIds.has(q.uuid)) return true; return false; });
+    const ties = K.keys.map((k) => cells(k.tieG, (o) => o.parent !== k.tieG));     // its jump ring only
+    const keys = K.keys.map((k) => cells(k.bendG));
+    const out = [];
+    K.keys.forEach((k, i) => { const r = shared(keys[i], ring); if (r) { let sx = 0, sy = 0, sz = 0; for (const c of keys[i]) if (ring.has(c)) { const v = c.split(',').map(Number); sx += v[0]; sy += v[1]; sz += v[2]; }
+      out.push(K.items[i].name + '×ring ' + r + ' @' + [sx, sy, sz].map((q) => (q / r * C - (q === sx ? K.ring.position.x : q === sy ? K.ring.position.y : 0)).toFixed(3)).join(',') + ' phi' + (k.phi * 57.3).toFixed(0)); } });
+    for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) { const n = shared(keys[i], keys[j]); if (n) out.push(K.items[i].name + '×' + K.items[j].name + ' ' + n); }
+    for (let i = 0; i < keys.length; i++) for (let j = 0; j < keys.length; j++) if (i !== j) { const n = shared(keys[i], ties[j]); if (n) out.push(K.items[i].name + '×ring of ' + K.items[j].name + ' ' + n); }
+    log(lab, out.length ? out.join(' | ') : 'CLEAR');
+    if (out.length) log('   at', K.keys.map((k, i) => K.items[i].name.slice(0, 5) + ' phi' + (k.phi * 57.3).toFixed(0) + ' th' + (k.th * 57.3).toFixed(0) + ' ps' + (k.ps * 57.3).toFixed(0) + ' up' + (k.near).toFixed(2)).join(' | '), 'ang', K.ang.toFixed(2), 'aR', (K.aR * 57.3).toFixed(0));
+  };
+  adv(240); report('rest');
+  { const keyIds = new Set(K.keys.map((k) => k.pivot.uuid));
+    const ring = cells(K.ring, (o) => { for (let q = o; q && q !== K.ring; q = q.parent) if (keyIds.has(q.uuid)) return true; return false; });
+    // the ring's depth along its lowest part, in the ring's own frame (the ring is at the origin, rotated only by its swing)
+    let z0 = 1e9, z1 = -1e9, n = 0; for (const c of ring) { const [x, y, z] = c.split(',').map(Number); if (y * C < -0.05) { z0 = Math.min(z0, z * C); z1 = Math.max(z1, z * C); n++; } }
+    log('ring bottom z', z0.toFixed(4), z1.toFixed(4), 'cells', n, 'parts', K.ring.children.filter((o) => !keyIds.has(o.uuid)).map((o) => (o.name || o.type) + (o.visible ? '' : '(hidden)')).join(','));
+    K.keys.forEach((k, i) => { const kc2 = cells(k.bendG); let a = 1e9, b2 = -1e9; for (const c of kc2) { const z = +c.split(',')[2] * C; a = Math.min(a, z); b2 = Math.max(b2, z); } log(K.items[i].name, 'z', a.toFixed(4), b2.toFixed(4), 'beta', k.beta.toFixed(2), 'thick', k.thick.toFixed(4)); });
+    // which ring cells the Cell key shares: where they are
+    const kc1 = cells(K.keys[1].bendG); const sh = []; for (const c of kc1) if (ring.has(c)) sh.push(c.split(',').map((v) => (+v * C).toFixed(3)).join(',')); log('cell×ring at', sh.slice(0, 8).join(' '));
+  }
+  // shaken: the hand thrown across and back (the cursor), the ring and keys swinging
+  for (const [mx, lab] of [[1.2, 'shake R'], [-1.2, 'shake L'], [0, 'shake back']]) { K.mx = mx; for (const f of [8, 16, 30]) { adv(f === 8 ? 8 : f === 16 ? 8 : 14); report(lab + ' f' + f); } }
+  if (new URLSearchParams(w.parent.location.search).get('dense')) {
+    let bad = 0, n = 0; const rep2 = (lab) => { const was = bad; const L = []; const lg = log; report.quiet = true; n++; return lab; };
+    for (const d of [1, 1, 1, 1, -1, -1, -1, -1]) { b.kcStep(d); for (let f = 0; f < 44; f += 2) { adv(2); report('dense ' + d + ' f' + f); } }
+    K.mx = 1.2; for (let f = 0; f < 40; f += 2) { adv(2); report('dense shake f' + f); } K.mx = -1.2; for (let f = 0; f < 40; f += 2) { adv(2); report('dense shake2 f' + f); }
+    b.kcStep(1); K.mx = 0; for (let f = 0; f < 44; f += 2) { adv(2); report('dense shake+step f' + f); }
+  } else
+  for (let s = 0; s < K.keys.length; s++) { b.kcStep(1); for (const f of [6, 12, 20, 60]) { adv(f === 6 ? 6 : f - (f === 12 ? 6 : f === 20 ? 12 : 20)); report('step' + (s + 1) + ' f' + f); } }
+}
+
+// the sewer thing's voice (2026-11-16): its six breaths and its death loaded, the breaths played in turn while it is about,
+// and the death cry (not the scream) from where it went down when the lamp goes in the water
+export async function sewVoice({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  for (let i = 0; i < 200 && !((b.sampleBanks.sewBreath || []).filter(Boolean).length === 6 && (b.sampleBanks.sewDeath || [])[0]); i++) await sleep(50);
+  const SB = b.sampleBanks;
+  log('breaths', (SB.sewBreath || []).filter(Boolean).map((x) => x.duration.toFixed(2)).join(' '), 'death', SB.sewDeath && SB.sewDeath[0] ? SB.sewDeath[0].duration.toFixed(2) : 'MISSING');
+  // every buffer started, by which bank it came from
+  const ctx = b.audioCtx, name = (buf) => { for (const [k, v] of Object.entries(SB)) { const i = (v || []).indexOf(buf); if (i >= 0) return k + (v.length > 1 ? i + 1 : ''); } return null; };
+  const played = []; const orig = ctx.createBufferSource.bind(ctx);
+  ctx.createBufferSource = () => { const s = orig(); const st = s.start.bind(s); s.start = (...a) => { const n = s.buffer && name(s.buffer); if (n && /^sew(Breath|Death)/.test(n)) played.push(n + '@' + performance.now().toFixed(0)); return st(...a); }; return s; };
+  let scream = 0; const sc = b.sfxSewScream; // (the module's own binding is what fires; count the scream through its gain path instead)
+  b.sewRestore({ lv: 15, ll: 1 }); b.placeInSewer();
+  for (let i = 0; i < 1500 && played.filter((p) => p.startsWith('sewBreath')).length < 4; i++) { b.frame(1); await sleep(16); }
+  log('breaths played', played.filter((p) => p.startsWith('sewBreath')).map((p) => p.split('@')[0]).join(' '));
+  log('monster', JSON.stringify(b.sewMonS()));
+  played.length = 0;
+  b.sewElectrocute();
+  for (let i = 0; i < 80; i++) { b.frame(1); await sleep(16); }
+  log('after the shock', played.map((p) => p.split('@')[0]).join(' ') || 'nothing', 'dead', b.sewLampS().dead);
+  b.settings.devMode = false;
+}

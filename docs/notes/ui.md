@@ -950,3 +950,72 @@ on the second, fired 19 frames later, the card shown on that frame.
   say "Move the mouse to turn it over".
 - **The ship's key is "Captain's Chest Key", no description** (was "Captain's Key" / "Off the hook over her hold"). Old
   saves: `ITEM_RENAMED` for the pack, and `PICKUP_RENAMED` for its taken-pickup id (label @ place).
+
+## 2026-11-14/15 — the keychain
+- Keys (`isKey`) stay in `inventory` (doors still `inventory.includes`) but take no pack slot: `packCount()` counts the rest
+  and every `INV_MAX` test uses it; `keyChain()` lists them. `#keychain-btn` in `#pack-rings`, the overlay `#keychain` with
+  its own WebGLRenderer (`kcBuild`), opened only from the open pack; a capture-phase keydown owns the keyboard while up.
+- **Real hanging.** Each key is a damped pendulum off the point where it sits on the ring (in-plane `th`, toward you `ps`),
+  driven only by that point's acceleration (finite difference, smoothed, × `DRIVE` 0.42 — at 1 a key flailed 2.2 rad going
+  over the top), G 4.7 / ℓ 0.085 / damping 5.5, substepped at 240 Hz. No idle wobble: at rest it hangs plumb. The ring angle
+  is a critically damped spring (ω 7) on `K.target`, which only ever counts on; `kcPhi(d, n, step)` maps a key's place
+  cyclically so the seam between last and first is over the TOP of the ring (Hermite into it) — the old version jumped the
+  angle by n on a wrap and teleported every key. Measured: max swing ≈ 0.5 rad, settled in ~0.7 s, no frame jumps.
+- **Threaded like a real one.** The ring is the owner's split ring (`assets/key-ring.glb`, decimated by clustering, so it
+  has no normals: `computeVertexNormals`), scaled so the middle of its wire (radial spread of its vertices) is at R. The
+  chain's first link and each key's jump ring go round that 4.7 mm wire (axis along the wire). The key's hole is found by
+  rasterising the key flat into a 72² grid and flooding empty cells from the edge: enclosed cells in the top third are the
+  hole, and the key hangs with the hole's top edge resting on the jump ring's lower bend (a hook with no closed hole hangs
+  by its top). Models are cleaned of `hitProxy`, sprites, clear materials and `bwKeepHidden` before measuring (the cell
+  key's 0.35 m aim ball made it a speck); a key whose model is not in yet gets `makeLairKey()` and is rebuilt when it lands
+  (`K.sig` includes each model's mesh count).
+- **Reflective metal** (the owner: "make the surface reflective"): this renderer has its own environment (`kcEnv`, a
+  float equirect studio through PMREM), so the steel is metalness 1 / roughness 0.2 and the key clones are converted to
+  metal (0.92) — their own materials, so the game's copies stay dielectric. A flat dark iron as metal is black: its
+  lightness is lifted to 0.42.
+- `key-ring.glb` is in `ASSET_REACH` at 60 so it is in the near chain (the keychain can open from the first key).
+
+## 2026-11-15 — the keychain moves into the pack's corner
+- The owner: "make the keychain actually be in the corner of the inventory and not another menu". The overlay
+  (`#keychain`, its Back/Hold/desc and its capture-phase keydown that ate the pack's keys) is gone. `#keychain-box` sits at
+  the end of the rings' row with `#kc-canvas` in it; `openPack` calls `openKeyChain` (now: start drawing), `closePack`
+  `closeKeyChain` (stop, and drop `packKeySel`). Pulled up over the pane with a negative margin it covered the selection's
+  Drop button, so it stands in the row (the row grows).
+- `packKeySel`: a click on the ring (pointerdown + pointerup without a 46 px drag) makes its current key the pack's
+  selection (`selectKeyChain`); `renderPackDetail` draws the key (Inspect, Hold/Holster); slot and ring selections clear
+  it; `kcStep` re-renders the pane while it is selected. Wheel: deltas gathered to 30 px, then a 140 ms beat (a trackpad
+  swipe was six keys). Drag: a key per 46 px. Arrow keys turn it only while it is selected.
+- Framing for the small box: Hc 0.31 / Wc 0.34, the content filling 80 % of its height, a little above the middle for the
+  name label; camera drift cut to 0.012.
+- Keys flipped round the top rode through the ring's wire: a key's attach point now moves out in front of the ring by
+  0.045 × smoothstep(sin φ, -0.55, 0.35). The bow is the end with an enclosed hole (`findHang` returns hole counts low and
+  high): the Captain's Chest Key hung by its bit under the wider-end guess. Only for long things (aspect > 1.9) — the Skull
+  Key's eye sockets are low holes too. A near-round thing keeps its face to you (thin-axis turn only below 0.8×).
+
+## The keychain hangs from a hand (2026-11-16)
+"Smoother and have the keys move like in real life when you look at them like they have gravity." `kcFrame`: the ring is a
+pendulum (LR 0.22, damping 1.5) off a hand that follows the cursor on a spring (`kc.mx/my`, from a window pointermove
+while the pack is open, relative to the box); each key is driven by its attach point's acceleration IN THE WORLD (the
+ring's swing included) and drawn at `th − aR`, so it hangs plumb whichever way the ring tilts. Key damping 5.5 → 2.4 (a
+key swings two or three times and settles), drive 0.6, with a soft bind past 1.2 / 1.0 rad. Opening the pack gives the
+ring and keys a small random swing. The camera looks round with the cursor at 0.03 of its distance (0.10 panned the ring
+across the box). The sewer key is the "Steel Door Key" now (`was: ['Lair key']` for old saves).
+
+## Keys all one way, and never through each other or the ring (2026-11-16)
+- "All the keys facing the same way": no per-key yaw any more (`yaw: 0`), and the bit goes RIGHT on every key — measured in
+  the lower 42 % of the key against the hole's line; a key whose bit is left is turned about its own axis and its hole found
+  again (after the upside-down check, which mirrors x).
+- "Make sure the keys aren't clipping through each other or the chain": `kcClip` measures it — each key's surface sampled
+  into 1.5 mm cells, and shared cells counted against the ring + chain, every other key, and every other key's jump ring;
+  `&dense=1` checks every 2nd frame through 8 turns and two hard shakes (238 checks). Before: through the ring at rest,
+  through each other on every turn. What fixed it, in order of what the numbers showed:
+  - Each key hangs on its OWN side of the ring's plane (alternately front/behind), its middle `KC_WIRE_R + thick/2 + KC_GAP`
+    out: the jump ring turns about the wire (`tieG`, pivot on the wire) and the key turns back under it (`bendG`) to hang
+    plumb. A key never changes side (the selected one used to swing to the front — through the wire).
+  - `KC_WIRE_R` is 0.0105, not the wire's 2.35 mm: the split ring as drawn is ±1 cm deep (two turns and a pitch).
+  - Each jump ring is sized to its key (the Skull Key is 3.2 cm thick: no lean of a 12.5 mm ring could carry it clear).
+  - A key carried up the side and over the top FLOPS OUT on its side (its body tilted out under the jump ring, the jump
+    ring's lean capped at 1.35 rad — added up, lean and flop hung it from above the wire, into the chain's first link), and
+    is set out by the bow's rim × sin(tilt), or the rim above its hang point tips back into the wire.
+  - The swing binds from 0.6 rad, and the keys are 0.12 long, not 0.14 (as long as the ring is wide: a 16° swing reached the
+    next key on its side). Result: 238/238 clear.

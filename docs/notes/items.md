@@ -1215,3 +1215,15 @@ belly (`sh tools/probe.sh whaleWave`): wave at 500.18 = your feet, 101 splash dr
 - **The katana sells for 4 jars** (`SELL_ROWS` 'katana', `traderSell`); an artifact set in it comes back to the pack
   first (`artOnWeaponLeaving`, in `removeFromInventory`).
 - **The screwdriver's glow**: `addItemShine` size 0.8 → 1.6, strength 1 → 3.2, lift 1.8, through 0.7.
+
+## 2026-11-15 — The Shock Ring
+- Snicks' "Magic Ring" → `assets/shock-ring.glb`. Its crystals are found by k-means (k 5) on the crystal mesh's vertices
+  (`shockGems`, in the ring's own frame). In the examine screen (`inspecting && inspectModel === shockRing`) `shockArcLoop`
+  (its own rAF) re-draws 2–4 bolts between neighbouring stones every 45–95 ms, arched over them, turned to `inspectCamera`
+  (`sewArcPath`/`sewArcRibbon`, shared with the sewer). `shockArcs.userData.bwKeepHidden` keeps them out of the held copy.
+- Worn: `shockRingProc(u, blowDmg, crab)` from `bladeHitMutant` (main blow only) and the crab hit, only if the target was
+  already a foe BEFORE the blow (`shockFoe`: alive, awake, not struck/retired, not friendly/ally/baby, not `minoAlly`,
+  `elvRunImmune`, `gargImmune`). `SHOCK` P 0.12, GAP 0.3 s, main jolt max(1.5, 0.6 × blow), chain 0.5 × that to up to 4 foes
+  within 4.5 m, nearest first, 70 ms a hop, each from the last. Bolts: `zapArc` (a 12-bolt pool in the scene + a pooled light,
+  its own rAF while live). Probe `shockProc` (patch `w.Math.random`, the game's own — the probe page's Math is another
+  realm): red 29→27.2, two awake darks 19→18.1, the sleeping one and the one 10 m off untouched.
