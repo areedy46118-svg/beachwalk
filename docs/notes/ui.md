@@ -1086,3 +1086,56 @@ across the box). The sewer key is the "Steel Door Key" now (`was: ['Lair key']` 
   the ring's fill (`hpCharge`) — they carry on from where they were. `tools/hphold.js`: hurt to 1; 40 s in the pack 1,
   40 s in the menu 1, 40 s playing 4. (A probe must load `burntest.js` and step `__adv(1)`: `b.frame(1)` in a tight loop
   is no time at all, and nothing mends.)
+- **The hand-drawn HUD** (2026-11-17, the owner: "i want the health and stamina bar to have a more hand drawn feel … i dont
+  want you to change the game or size of anything"): health, stamina, the hotbar frames and the blood-jar count are the
+  owner's own marker drawings, photographed (IMG_7188 four boxes = health, 7189 long bar = stamina, 7190 six-cell strip =
+  hotbar, 7191 numerals 1–10 = the jar count). `tools/hand_hud_pack.py` cuts them into WHITE ALPHA MASKS in
+  `assets/hud/` at 2× the drawn size, and the CSS colours them with `mask` + a background colour — so the ink can be
+  moonlight, red, green, gold or the blood's blue without a second set of art. Sizes are unchanged: `#health i` 84 × 16,
+  `#stamina` 420 × 15 (and `STAM_BAR_W`), `#hotbar .slot` 72², the digits 22 px tall.
+  - Pillow on this Mac is an x86_64 build: run the packer as `arch -x86_64 python3 -E tools/hand_hud_pack.py …` (plain
+    `python3` fails to dlopen `_imaging`). The inputs are the HEICs converted with `sips -s format png -Z 2400`; the
+    crop boxes in the script are in that 2400-wide frame.
+  - The packer levels each drawing (`deskew`), sets the marker weight to a target px at the drawn size (`set_stroke`,
+    erode/dilate), and scales the bars to height with only the MIDDLE third stretched (`fit3`) — a plain stretch to
+    28:1 made the end strokes four times fatter than the long ones.
+  - Each bar has two masks: `-ink` (the line) and `-shape` (the filled outline, flood-filled from outside). The shape
+    masks the track and the fill; the ink is drawn OVER it (`#health i b`, `#stamina::after`, `#hotbar .slot::after`).
+  - **A mask cuts off its own element's glow**, filter and box-shadow alike (CSS applies filter → clip → mask). So the
+    stamina's track + fill live in `.sbody` (masked) and the state glows are `filter: drop-shadow` on `#stamina`,
+    outside it; the jar count's blue glow is a filter on `.amt`, not on the glyphs. The states recolour the ink by
+    `--ink` (stamina) and `--c` (hotbar — so the artifacts' injected `--c` gold/orange colour the drawn frame for free;
+    their `border-color` now does nothing, their box-shadows still glow).
+  - Hotbar frames cycle by `:nth-child(6n+k)` (six drawn cells; slots 7–8 reuse 1–2); an empty slot is `display:none`
+    but still counts, so a slot keeps its drawing whatever is carried. `updateBloodReadout` writes one `<i class="g gN">`
+    per character of `N + 'x'` (the x is drawn by the packer in the same stroke — none was on the paper).
+  - **The hotbar's boxes are REBUILT, not cut** (same day, the owner: "the hotbar looks bad fix the boxes and make them
+    more straight i cant even see the number of the item"). The six drawn cells had kinked, zigzag dividers and a 3.5 px
+    line that sat on the slot number. Straightening the drawn walls in place (slide each row onto the wall's median)
+    failed on that strip — the jogs pinched, a cell caught its neighbour's wall, the top and bottom lines dropped out.
+    `draw_box` now lays four dead-straight strokes, each carrying the THICKNESS PROFILE of the matching line on the
+    paper (`profile_rows` / `profile_cols`, clamped to 0.6–1.3× the median so a jog or a crossing doesn't read as fat),
+    each edge roughened on its own, a slight tilt per line; 2.5 px at 72. `.num` moved 3/5 → 6/8 and `.count` 5/2 →
+    8/5, both `z-index: 3`, so neither sits on the line. The health, stamina and digit masks are unchanged by this.
+  - **The hotbar's slot numbers are the drawn numerals too** (same day, "now add the written numbers for the hotbar"):
+    `renderHotbar` writes `<span class="num"><i class="hd hdN"></i></span>`. `.hd` / `.hd0`–`.hd9` / `.hdx` in index.html
+    are a GENERAL glyph — `currentColor`, width from the drawing's own aspect, as tall as the context's `height` — so the
+    held slot's white `.num` colour still works; the dark halo is `filter: drop-shadow` on `.num` (a mask eats a
+    text-shadow and its own filter). The pack grid's `.islot .num` and the stack `.count` are still Georgia.
+  - **Thinner borders opened the first health box** (same day, "make the drawn health and stamina borders … a little
+    thinner and more subtle" → 1.8 px / 1.6 px, ink alpha 0.55; then "i just started with a health missing"). At 1.8 px
+    the first box's outline broke at a thin spot, `shape_of`'s flood from outside ran in, and its `-shape` mask was the
+    line alone (22 % cover vs 83–91 %): the box drew EMPTY at full health. `frame` now takes the shape from the
+    full-weight line BEFORE `set_stroke`, then pulls it in by the same erosion so the edges still meet. Check after any
+    stroke change: every `-shape.png` should be well over half solid.
+- **Fewer words** (2026-11-17, the owner): the pack's detail panel no longer says "Drag onto another item to combine" under
+  Drop (the bottom tip row still says "Drop onto another item to combine"), and the hotbar's label — on hover and as the
+  wheel walks it — is the item's name alone, no " — holster" / " — equip" / " — use" (`renderHotbar`).
+- **The HUD fits the screen** (2026-11-17, the owner: "make the hud naturally adjust to whatever screen you play on … switching
+  laptops … can make the hud overlap"). `hudFit` (inline at the foot of index.html, on load and `resize`) sets `--hud`: 1
+  from 1400×820 to 1920×1080 (the sizes it was tuned at), proportionally smaller below (floor 0.4), up to 1.35 above, and
+  capped at `(W − 64) / 1300` so the health block (~410 px from the left) never meets the centred stamina bar; `--hud-gear`
+  bounds the hotbar column by the height (`(H − 40) / 790`, replacing the two max-height steps). `#vitals`, `#stamwrap`,
+  `#prompt`, the tips, `#blood`, `#autosave` (the `scale` property: its slide-in owns `transform`) and `#gear` scale about
+  their own corners. Measured gaps health→stamina: 1920×1080 344 px, 1440×900 104, 1280×720 96 (0.88), 1024×768 56
+  (0.73), 614 wide 42 (0.42) — they overlapped below ~1300 wide before.

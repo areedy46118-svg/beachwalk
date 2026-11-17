@@ -1158,3 +1158,54 @@ SWINGING HIS WEAPON. HITS IS WHEN HE IS HIT. SOUNDS DONT HAVE TO PLAY EVERYTIME 
   `FARM_VOX_CAP` 3 → 4. The shouts and the farmers' death cries are untouched. Recounted: farmers' grunts 53/66 blows
   (was 22/69), cries 33/36; shouts 5 in 90 s, deaths 1/6; the orc 7/7 swings, 17/24 hits (the rest blocked); the
   gargoyles' attack bank 40 times in 51 s (was 18). `musictest farmers` and `mino` PASS.
+- **The tavern has its own tune** (2026-11-17, the owner's "tavern music"): `LOOP_SONGS.tavern`, looped from the cut in
+  (`inTavern`) until you leave or die, low (0.3 on the music slider). Details in `docs/notes/audio.md`.
+
+## 2026-11-17 — the drinkers' bottles, seats and hands; two dancers by the storeroom; the storage key
+The owner: "the farmers bottles in the tavern are upside down when drinking fix this. also make sure they sit on the
+chairs not clip through them", then "make sure farmers hands dont clip through their bodies while sitting and drinking".
+All MEASURED in the pane through the real loop (`tools/tavdrink.js` `__tavSetup`; skinned vertices via
+`getVertexPosition`, classed by their heaviest bone; the drinkers are culled `g.visible = false` once the camera is
+parked for a still — force it for a render).
+- **THE BOTTLE WAS END FOR END.** In the hand's own frame, world up while sitting is −X (−0.83..−0.87 on all four) and
+  fist-to-mouth mid-drink is −X (−0.96..−0.98); `TAV_DRINK_GRIP` laid the bottle along +X — neck DOWN at the table (lip
+  0.26 m under the base) and base-first to the face. Now `x: 0.09, rz: +π/2`.
+- **THE DRINK KEYS NO LONGER REACH THE MOUTH.** `fDrink`/`fSwig`/`fToast` (DR1-3, solved once against an older
+  composition) lift the fist from 0.69 to 0.90 m with the head at 1.30. `tavSip` is a two-bone reach (arm, forearm) plus
+  a wrist turn, run after the mixer in `updateTavDrinkers`: the bottle's LIP on the mouth (head bone + 0.07 up + 0.11
+  fwd) with its base up and out at ~37° (`TAV_SIP_DIR`; 56° put the base over his head and the elbow by his ear), the
+  elbow out to his right and down off his own body. Its weight follows the clip's own drink keys (`TAV_SIP_K`). Between
+  drinks the same reach STANDS THE BOTTLE ON THE TABLE in front of his right side (`TAV_REST_AT`; the sit put bases 5-9 cm
+  inside the top, 0.843): `tavSipW` gives [drink share, table share], the table's 1 − drink and nothing during the toast
+  (`TAV_REST_K`). Measured: lip-mouth 0 cm (the short `ol`... d2: 5-7 cm, his arm's reach), base 0.4 cm over the top,
+  upright; the right arm 0.21+ m from the spine line throughout.
+- **THE LEFT HAND ON THE TABLE**: `tavLeftHand`, the same reach, wrist on the boards in front of his left side, palm down
+  (`makeBasis`: +Y the fingers toward the table's middle, +Z the palm side down), except during `fWipe` (`TAV_LEFT_K`). It
+  hung 26 cm UNDER the top inside the edge on two of them; now −0.1..+3.5 cm over it, 0.23+ m off the trunk.
+- **THE SEAT**: the chair's top is 0.49, its backrest slats 0.18-0.20 behind its middle. They sat 9-14 cm IN the seat and
+  their backs 4-8 cm through the slats. `SIT` hipY −0.33 → −0.21, thighs −1.50 → −1.18, feet −0.40 → −0.10 (on the balls
+  of the feet: lowering the knees alone would have sunk the thighs' front into the seat edge), `TAV_DRINK_SEAT` −0.07 →
+  +0.04. Measured on hip/thigh-weighted vertices (a robe hangs below the seat whatever): contact 0.48-0.53, feet
+  −0.9..+1.0 cm, backs 0.14-0.18. The right forearm also crossed the belly at rest (3-5 cm off the spine line): `armR`
+  forward and out (right −0.45, fwd −0.30).
+- **TWO DANCERS** (`buildTavDancers`, `updateTavDancers`, `tavDancerProvoke`, `tavDanceClip`): the owner's "Hip Hop
+  Dancing" and "Snake Hip Hop Dance" (Mixamo, 8.3 s each) → `tools/ntar_moves.py -- dance` → `assets/dance-moves.json`
+  (325 KB; KEEP_YAW both, nothing windowed: travel 0.18 / 0.09 m, yaw drift −14° / +5° across a loop). Retargeted with
+  `ntarRetarget` from the BIND (`authorFarmerClips` appends `kind.dance`'s clip), the clip's travel ADDED INTO the hips'
+  track (model X/Z in the hips' parent frame per metre × the hip-height ratio) so the steps land as drawn. Farmers 12
+  (`ol`) and 7 (`ka`), bare-handed, at room-local (−8.5, 6.8) and (−6.3, 6.8) facing down the hall (yaw π), in front of
+  the storeroom door. Hit either and both come for you (measured: from 4 m to 1.1 m and swinging in 3 s). Built only
+  once the pack is in (it is also in the tavern's checkpoint files). Kill total + 2.
+- **"TAVERN STORAGE KEY"** (was the Storeroom key: it opens the room with the Artifact of the Flame's chest): `was`
+  keeps old saves; the pickup's ID stays 'Take the storeroom key' (`statHad` asks it, and `takenPickups` is keyed on
+  it) with the new wording as `data.label`. It lies under `DROP_SHINE` now (glint + column), `dropShine` on taking it.
+- **The bottle in the palm, and the hand flat** (same day: "fix the farmers hands too they look weird at the tables",
+  "make bottles in hands better"). The farmers' hand frame is NOT the one the grip was written for: fingers +Y, palm +X
+  on the right (`FARM_BASE.palm` [0.9, 0, −0.42], `palmLeft` mirrored), thumb on −Z (measured: thumb1 z −0.040, index1
+  −0.029, pinky1 +0.045). The bottle stood off the side of the hand with the fist closed on air (a star of fingers from
+  above), and `tavLeftHand`'s "+Z palm down" laid the hand on its edge. `TAV_DRINK_GRIP` is now across the palm, neck past
+  the thumb (rx −π/2, at (0.045, 0.085, 0.09)); the left hand's turn maps the hand's (fingers, `palmLeft`) onto (the
+  table's middle, down); `TAV_DRINK_HANDS` L 0.32. Seen: fingers wrapped round the bottle's lower body, the left hand flat.
+- **The dancers moved** (same day: "a little further from the door more towards the center of the room but not in the way"):
+  (−8.8, 4.8) and (−6.0, 4.8), 4 m out from the door, a 2.8 m lane between them, 1.95 m from the nearest table's edge and
+  2.05 m from the nearest chair. (Their save keys move with them, as every creature's does.)

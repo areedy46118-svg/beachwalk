@@ -533,3 +533,8 @@ folding a hot helper's time into its caller (the props' `step` hid `pushOutOfSol
   clips by his fight's own travel per clip, not a carried test.
 
 **ONE LAUNCH ENTRY (2026-11-14).** The owner removed the `beachwalk-test` (4199) entry from `.claude/launch.json`; only `beachwalk` (4173), his game, is left. Do not add a second one back: test headless with `tools/probe.sh` on a port of its own.
+- **`musictest.sh` can test the WRONG GAME** (2026-11-17). It starts `serve.py 4212` and points Chrome at 4212 — but if
+  4212 is already taken (a server left by another worktree's run, here `sewer-tunnel-refinement` from 01:04), `serve.py`
+  quietly moves to 4213 (`serve.log`'s first line says where it really is) and Chrome tests the OTHER checkout: a new
+  scenario simply never appears in the output and `restart` failed at 0. Read `serve.log`'s port before trusting a run;
+  `lsof -nP -iTCP:4212 -sTCP:LISTEN` shows who holds it. Re-run the script's three steps on a free port.

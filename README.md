@@ -1034,6 +1034,13 @@ behind its two lattice doors are built in the game.
 The great window behind its throne is the owner's own stained-glass picture
 (`assets/throne-window.jpg`, set into a border band and a tympanum by
 `tools/throne_window.js` from `tools/throne_window_src.jpg`).
+The health boxes, the stamina bar, the hotbar's frames and the blood-jar count's
+numerals are the owner's own marker drawings (`assets/hud/`, cut into masks by
+`tools/hand_hud_pack.py`).
+The tune that loops in the tavern is the owner's own "tavern music"
+(`assets/tavern-music.m4a`, made a seamless loop by `tools/tavern_music_pack.py`).
+The two men dancing by the tavern's storeroom dance the owner's Mixamo "Hip Hop Dancing" and "Snake Hip Hop Dance"
+(`assets/dance-moves.json`, `tools/ntar_moves.py -- dance`).
 
 This work is based on ["Dante Beast FPSC Pack"](https://sketchfab.com/3d-models/dante-beast-fpsc-pack-e7f36a2fdeab49999c9e65b12f38228d)
 by [DanteGuy](https://sketchfab.com/temptecn) licensed under

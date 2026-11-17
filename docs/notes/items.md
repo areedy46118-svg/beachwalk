@@ -1232,3 +1232,30 @@ belly (`sh tools/probe.sh whaleWave`): wave at 500.18 = your feet, 101 splash dr
   a % chance"): `LUCK_P` 0.18 → 0.15, the text "15% chance an enemy hit does no damage." — the number in `desc` is
   written by hand, so change both together. The 5 s `LUCK_GAP` is left out of the text on purpose (a hidden safety
   rule; in a pack's flurry it pulls the real rate well under 15%, one on one it is about 15%).
+
+## 2026-11-17 — the keys match their models, and every one inspects
+The owner: "the keys need to match the models some dont look the same and dont show up when inspected". Nine keys
+(`isKey`): Skull, Rusted, Captain's Chest, Lost, Pavilion, Storeroom, Iron (gargoyles'), Steel Door (sewer), Cell.
+- **Five are tinted copies of the one scan** (`keyModel`, `assets/key.glb`): `fillLostKey`, `fillPavKey`,
+  `fillStoreKey`, `fillGargKey`, `fillCellKey` — and each was called only where its key is LAID DOWN in the world. A key
+  come by any other way (a checkpoint, a save from after the pickup) had an EMPTY `inspectModel`: `itemIcon` waited on it
+  for ever (a blank tile), `kcSync` hung a plain stand-in on the ring (`makeLairKey`), and Inspect showed nothing.
+  Measured on a fresh page: lost/iron/cell 0 meshes, icon empty. Now `fillKeyModels()` (beside `cellKey`) fills all five;
+  asked by the scan's own load, the icon retry, `itemIcon` for a key, `kcSync`, `inspectFromPack`, `inspectHeld`. Each
+  filler is idempotent and a no-op until the scan is in; the calls are try/caught (asked during the module's evaluation,
+  the later `const`s are in their dead zone). `PACK_FILES` maps all six scan keys to `key.glb` so a load fetches it first.
+- **The icon render framed things that are not the item.** `renderItemIcon` switches every part visible, which switched
+  on the pickup glint (a Sprite, additive) and the invisible `hitProxy` aim sphere — the Captain's Chest Key came out a
+  speck in a white halo. It now drops sprites, `hitProxy` and fully clear meshes (the three `kcSync` already dropped), and
+  renders with each shine's BASE emissive (`addItemShine` pulses the emissive of the very materials the clone shares while
+  the thing is still out to be found: rendered then, the brass key was silver — and an icon is kept). `ICON_CACHE_V` v10,
+  so every browser renders its icons once more.
+- The five scan keys still look alike in their icons: their tints are emissive lifts over the same rust map, which the
+  icon's studio light swamps (the iron key's darker colour does show). They are the same object; that is the model.
+- **Renamed (same day, the owner)**: Cell key → "Henry's cell key", Iron key → "Castle door key", Pavilion key → "Fancy
+  house gate key", the snorkeler's Lost key → "Spare fancy house gate key", Storeroom key → "Tavern storage key". Each
+  keeps its old name in `was` (an old save finds it by name) and its pickup keeps its old wording as the interactable's
+  ID (the `label` argument: `takenPickups` and `statHad` are keyed on it) with the new wording as `data.label`.
+  `PACK_FILES` maps both names to `key.glb`. The examine screen shows a key's name and no description
+  (`inspectFromPack`, `inspectHeld`). The Captain's Chest Key wears the scan's own finish once taken (`boatKeyPlain`): it
+  hangs as bright brass so it reads in the wreck, and in your hands it now looks like every other key.

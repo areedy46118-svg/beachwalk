@@ -2199,3 +2199,17 @@ BEHIND MYLES."
   spot). (2) `farmUnstick` (in `farmUnitPre`): a man wanting you whose steps were turned or refused 8+ times while he
   made under 0.35 m in 1.2 s walks to the nearest point of `FARM_SPINE` he can see (3 s at most), then fights on. After:
   that spot 12-13 s (the rest of it is men holding their turn next to you), nothing sent back.
+
+## 2026-11-17 — after the second gargoyle, four of the town's men through the door
+The owner: "after killing 2 gargoyles you hear a rare phrase from the farmers coming from the door you just came through
+and its 4 farmers coming to attack you and myles you shouldnt hear the phrase until they are spawned in coming at you".
+`gargRaidStart` from `gargDied` when the second is down in a LIVE fight (`GARG.phase === 1`, never on a restore): roster
+0, 3, 1, 7 (axe, sword, rake, axe) as `gargRaid0-3` (`c13Body`, awake), put 1.8-3.2 m inside `C13_DOOR` (the east
+tower door you came in by), two on you and two on Myles while he is with you (`MINO.ally`, visible). `minoFoes` lists
+them. `updateGargRaid` plays ONE `FARM_VOX.shout` from the doorway on the first frame one of them has his model in and is
+visible — `voiced` is only set when `farmVox` actually started it (retried up to 4 s). Leaving the court mid-fight
+(`GARG.phase` back to 0) clears them (`gargRaidClear`: retired AND spliced out of `mutants`, which a save otherwise writes
+as dead); their keys are kept dead only from a save after the fight (like the gargoyles'). Kill total + 4.
+Harness: `tools/minotaur.js` `__ggBoot`; with Myles joined the gargoyles refused `hurtMutant`/`killMutant` from the
+harness, so `__bw.gargRaidStart()` was called directly. Measured: four in, the shout voiced, foes you/Myles/…/Myles,
+Myles' foe one of them; he killed three in ~6 s (his blows on a farmer are `dkFling`, as in the fort).

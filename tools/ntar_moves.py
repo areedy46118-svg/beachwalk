@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'sword', 'skrim') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'sword', 'skrim', 'dance') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 # (the owner keeps the packs on the Desktop now; a set may say so)
@@ -201,6 +201,14 @@ CLIPS = [
     ('Knocked Out',             'knockOut','enough heavies to the head and he goes over'),
     ('Getting Up',              'getUp',   'and back onto his feet'),
     ('Hit On Side Of Head',     'hitHead', 'rare: caught on the side of the head'),
+]
+# ---- AND TWO MEN DANCING IN THE TAVERN (2026-11-17, the owner: "have two farmers each using these dance moves in the
+# tavern near the front of the storage room. make these animations exact"). Two Mixamo dances loose in ~/Downloads, each
+# a performance to be watched, so NOTHING is cut or turned: the body's own spins are kept as drawn (`KEEP_YAW`), the window
+# is only the held tail Mixamo pads a take with, and the travel goes out for the game to put back into the hips.
+DANCE_CLIPS = [
+    ('Hip Hop Dancing',      'danceA', 'hip hop'),
+    ('Snake Hip Hop Dance',  'danceB', 'the snake'),
 ]
 if SET == 'wong': CLIPS = WONG_CLIPS
 if SET == 'drunk': CLIPS = DRUNK_CLIPS
@@ -427,6 +435,11 @@ if SET == 'demon':
     # three. A fight wants the blow, read off the hands' own speed curves.
     WINDOW = {'feed': (52, 200), 'zAtk': (6, 50), 'zBite': (6, 44), 'zBite2': (0, 50), 'zNeck': (6, 58), 'zAtkB': (8, 56),
               'zPunch': (0, 35), 'zPunch2': (6, 70), 'zKick': (4, 45), 'zKick2': (10, 60), 'zButt': (4, 50)}
+if SET == 'dance':
+    CLIPS = DANCE_CLIPS
+    KEEP_YAW = {c[1] for c in CLIPS}
+    FORCE_FLAT_YAW = set()
+    WINDOW = {}
 if SET in ('wong', 'drunk'):
     # THE TWO LOOSE CLIPS ARE PERFORMANCES, the beast's `Die_1` again, and the
     # hips say where the move is (the log prints the curve). `Flying Kick`

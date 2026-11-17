@@ -246,25 +246,38 @@
      the white Georgia capitals the banners use, and blades rather than
      hairlines. It was monospace scratches from the first build. The bar you
      spend is a moonlit blade in a dark track, cut on the slant at both ends. */
+  /* HAND-DRAWN (2026-11-17, the owner: "i want the health and stamina bar to have a more hand drawn feel"): the
+     owner's long marker bar (`assets/hud/stam-*`, cut by `tools/hand_hud_pack.py`), same 420 × 15. `.sbody` is the
+     track and the blade, masked to the drawing's filled outline; `::after` is the ink over it. The states colour the
+     ink (`--ink`) and glow through `filter` on #stamina, which sits outside the mask and so is not cut off by it. */
   #stamina {
     width: 420px;               /* (300 × 11 → 360 × 13 → 420 × 15, 2026-11-15, the owner: "make health and stamina look a little bigger", then "make health stamina and the ring section on the hud bigger") — and `STAM_BAR_W` in main.js */
     height: 15px;
     max-width: 62vw;            /* (a narrow window keeps it on the screen) */
-    background: linear-gradient(180deg, rgba(4, 6, 11, 0.86), rgba(16, 21, 31, 0.86));
-    box-shadow: inset 0 0 0 1px rgba(176, 194, 224, 0.26), inset 0 1px 3px rgba(0, 0, 0, 0.9);
-    clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
-    padding: 2px 5px;
+    --ink: rgba(220, 228, 242, 0.55);   /* (0.92 until 2026-11-17: "a little thinner and more subtle") */
+    position: relative;
     box-sizing: border-box;
-    overflow: hidden;
     opacity: 0.6;
-    transition: opacity 0.35s ease;
+    transition: opacity 0.35s ease, filter 0.25s ease;
     flex: none;
+  }
+  #stamina .sbody {
+    position: absolute; inset: 0; overflow: hidden;
+    padding: 2px 3px; box-sizing: border-box;
+    background: linear-gradient(180deg, rgba(4, 6, 11, 0.86), rgba(16, 21, 31, 0.86));
+    -webkit-mask: url(assets/hud/stam-shape.png) center / 100% 100% no-repeat; mask: url(assets/hud/stam-shape.png) center / 100% 100% no-repeat;
+  }
+  #stamina::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: var(--ink);
+    -webkit-mask: url(assets/hud/stam-ink.png) center / 100% 100% no-repeat; mask: url(assets/hud/stam-ink.png) center / 100% 100% no-repeat;
+    transition: background 0.25s ease;
   }
   #stamina.show { opacity: 1; }
   #stamina.hit { animation: guardTick 0.42s ease-out; }
   #stamina.hit #stamina-fill { animation: guardFill 0.42s ease-out; }
   @keyframes guardTick {
-    0%   { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.95); transform: scaleY(2.0); }
+    0%   { filter: brightness(1.8) drop-shadow(0 0 4px rgba(255,255,255,0.95)); transform: scaleY(2.0); }
     100% { transform: none; }
   }
   @keyframes guardFill { 0% { background: #fff; } 100% { } }
@@ -276,13 +289,13 @@
     transform-origin: left center;
     transition: transform 0.08s linear, background 0.25s ease;
   }
-  /* the spliff: a strong unmistakable green, the fill AND the track, glowing */
+  /* the spliff: a strong unmistakable green, the fill AND the ink, glowing */
   #stamina-fill.buff { background: linear-gradient(180deg, #d4ffc8 0%, #4ef04a 40%, #12a02a 100%); box-shadow: 0 0 10px rgba(70, 255, 90, 0.95), 0 0 3px rgba(190, 255, 170, 0.9); }
-  #stamina.buff { opacity: 1; box-shadow: inset 0 0 0 1px rgba(110, 255, 120, 0.85), inset 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 12px rgba(60, 230, 80, 0.55); }
+  #stamina.buff { opacity: 1; --ink: rgba(141, 255, 138, 0.75); filter: drop-shadow(0 0 6px rgba(60, 230, 80, 0.6)); }
   #stamina-fill.low { background: linear-gradient(180deg, #ffd8b8 0%, #e08a5c 45%, #8a3c22 100%); }
-  /* too little left to block or to swing: red, and the track with it */
+  /* too little left to block or to swing: red, and the ink with it */
   #stamina-fill.out { background: linear-gradient(180deg, #ffb0a0 0%, #e0402e 45%, #7a1210 100%); box-shadow: 0 0 8px rgba(230, 60, 40, 0.75); }
-  #stamina.out { opacity: 1; box-shadow: inset 0 0 0 1px rgba(240, 90, 70, 0.75), inset 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 10px rgba(200, 40, 30, 0.35); }
+  #stamina.out { opacity: 1; --ink: rgba(255, 122, 102, 0.8); filter: drop-shadow(0 0 5px rgba(200, 40, 30, 0.45)); }
   /* 8 toggles the top walk speed, and a toggle you cannot see the state of is
      a toggle nobody trusts. The HUD's own language: mono, letter-spaced,
      hairline box, no colour. */
@@ -320,8 +333,14 @@
      it, and a GHOST — the pale part of a segment you have just lost lingers a
      beat and drains after the blood does, so a hit is a thing you watch
      happen to the bar rather than a number that changed. */
+  /* THE HUD FITS THE SCREEN IT IS ON (2026-11-17, the owner: "make the hud naturally adjust to whatever screen you play on
+     to fit well. i noticed switching laptops and things can make the hud overlap"). One scale, `--hud`, worked out from the
+     window by the script at the foot of this page (`hudFit`): 1 on an ordinary screen, smaller on a small one, a little
+     larger on a big one, and never so large that the health block and the stamina bar meet; the hotbar column has its own
+     (`--hud-gear`), bounded by the window's height. Every block scales about its own corner. */
   #vitals {
     position: fixed; left: 22px; bottom: 20px;
+    transform: scale(var(--hud, 1)); transform-origin: left bottom;
     display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
     z-index: 5; pointer-events: none;
   }
@@ -330,7 +349,7 @@
      its own line under the prompt, low enough that the health block's row
      never meets it. */
   #stamwrap {
-    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) scale(var(--hud, 1)); transform-origin: 50% 100%;
     display: flex; align-items: center; gap: 10px;
     z-index: 5; pointer-events: none;
   }
@@ -343,15 +362,28 @@
     z-index: 5; pointer-events: none;
     opacity: 0; transition: opacity 0.5s ease;
   }
+  /* HAND-DRAWN (2026-11-17, the owner: "i want the health and stamina bar to have a more hand drawn feel"): each box
+     is one of the owner's four marker boxes (`assets/hud/hp1..4`, cut by `tools/hand_hud_pack.py`), same 84 × 16.
+     The box's own filled outline masks the track and the blood; its ink is drawn over them in moonlight. */
   #health i {
     display: block; width: 84px; height: 16px;   /* (60 × 12 → 72 × 14 → 84 × 16, 2026-11-15: "a little bigger", then "bigger") */
+    --shape: url(assets/hud/hp1-shape.png); --ink: url(assets/hud/hp1-ink.png);
     background: linear-gradient(180deg, rgba(4, 6, 11, 0.9), rgba(18, 22, 32, 0.9));
-    box-shadow: inset 0 0 0 1px rgba(176, 194, 224, 0.22), inset 0 1px 3px rgba(0, 0, 0, 0.9);
-    clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+    -webkit-mask: var(--shape) center / 100% 100% no-repeat; mask: var(--shape) center / 100% 100% no-repeat;
     position: relative; overflow: hidden;
   }
+  #health i:nth-child(2) { --shape: url(assets/hud/hp2-shape.png); --ink: url(assets/hud/hp2-ink.png); }
+  #health i:nth-child(3) { --shape: url(assets/hud/hp3-shape.png); --ink: url(assets/hud/hp3-ink.png); }
+  #health i:nth-child(4) { --shape: url(assets/hud/hp4-shape.png); --ink: url(assets/hud/hp4-ink.png); }
+  #health i b {
+    position: absolute; inset: 0; z-index: 1;
+    background: rgba(220, 228, 242, 0.55);   /* (0.92 until 2026-11-17: "a little thinner and more subtle") */
+    -webkit-mask: var(--ink) center / 100% 100% no-repeat; mask: var(--ink) center / 100% 100% no-repeat;
+    transition: background 0.25s ease;
+  }
+  #health.hurt i b { background: rgba(255, 214, 204, 0.75); }
   #health i::before, #health i::after {
-    content: ''; position: absolute; inset: 1px 3px;
+    content: ''; position: absolute; inset: 1px 2px;
     transform-origin: left center; transform: scaleX(var(--f, 1));
   }
   /* the ghost: the same fraction, but it waits and then drains */
@@ -376,7 +408,7 @@
      that fills once as it writes, the word beside it, and it is gone. It
      is never a button — there is no manual save in this game. */
   #autosave {
-    position: fixed; top: 24px; right: 26px;
+    position: fixed; top: 24px; right: 26px; transform-origin: right top; scale: var(--hud, 1);
     display: flex; align-items: center; gap: 9px;
     z-index: 6; pointer-events: none;
     opacity: 0; transform: translateY(-6px);
@@ -506,8 +538,8 @@
   #prompt {
     position: fixed;
     left: 50%;
-    bottom: 3.5rem;
-    transform: translateX(-50%);
+    bottom: calc(22px + (3.5rem - 22px) * var(--hud, 1));
+    transform: translateX(-50%) scale(var(--hud, 1)); transform-origin: 50% 100%;
     pointer-events: none;
     z-index: 6;
   }
@@ -558,7 +590,7 @@
   }
   /* the first crab fight's controls: one row along the bottom, over the stamina strip */
   #fighttip, #digtip, #packtip {
-    position: fixed; left: 50%; bottom: 118px; transform: translateX(-50%);
+    position: fixed; left: 50%; bottom: calc(118px * var(--hud, 1)); transform: translateX(-50%) scale(var(--hud, 1)); transform-origin: 50% 100%;
     pointer-events: none; z-index: 6;
     display: flex; gap: 2.4em; justify-content: center;
     font: 16px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;   /* (11px until 2026-10-13: "make tutorial text bigger") */
@@ -788,27 +820,23 @@
   }
   #hotbar.hidden { opacity: 0; pointer-events: none; }
   /* eight 72 px slots and the rings are ~700 px tall: a short window gets the column back down to what fits */
-  @media (max-height: 780px) { #gear { transform: translateY(-50%) scale(0.86); transform-origin: left center; } }
-  @media (max-height: 640px) { #gear { transform: translateY(-50%) scale(0.72); transform-origin: left center; } }
+  /* (the two max-height steps, 0.86 and 0.72, are `--hud-gear` now: any height, not two) */
+  #gear { transform: translateY(-50%) scale(var(--hud-gear, 1)); transform-origin: left center; }
   /* A SLOT IS DARK GLASS WITH ITS CORNERS BRACKETED, in the moonlight the
      whole game is lit by; the held one stands out to the right with a lit
      edge and a mark beside it. */
+  /* HAND-DRAWN (2026-11-17, the owner: "the last screenshot will be for the hotbar"): each slot's frame is one cell of
+     the owner's marker strip (`assets/hud/slot1..6-ink`, cut by `tools/hand_hud_pack.py`; slots 7 and 8 reuse 1 and 2),
+     drawn by `::after` in `--c`, so every state that sets `--c` (hover, held, the artifacts' gold, the flame's orange)
+     colours the ink. Same 72 px square, dark glass inside it. */
   #hotbar .slot {
-    --c: rgba(214, 224, 240, 0.42);
+    --c: rgba(214, 224, 240, 0.62);
+    --ink: url(assets/hud/slot1-ink.png);
     width: 72px;                /* (62 until 2026-11-15, the owner: "make health stamina and the hotbar bigger on the screen not too much tho") */
     height: 72px;
     box-sizing: border-box;
-    border: 1px solid rgba(170, 188, 218, 0.14);
-    background:
-      linear-gradient(var(--c), var(--c)) left 0 top 0 / 11px 1px no-repeat,
-      linear-gradient(var(--c), var(--c)) left 0 top 0 / 1px 11px no-repeat,
-      linear-gradient(var(--c), var(--c)) right 0 top 0 / 11px 1px no-repeat,
-      linear-gradient(var(--c), var(--c)) right 0 top 0 / 1px 11px no-repeat,
-      linear-gradient(var(--c), var(--c)) left 0 bottom 0 / 11px 1px no-repeat,
-      linear-gradient(var(--c), var(--c)) left 0 bottom 0 / 1px 11px no-repeat,
-      linear-gradient(var(--c), var(--c)) right 0 bottom 0 / 11px 1px no-repeat,
-      linear-gradient(var(--c), var(--c)) right 0 bottom 0 / 1px 11px no-repeat,
-      radial-gradient(circle at 50% 38%, rgba(30, 40, 60, 0.62), rgba(4, 6, 10, 0.88) 78%);
+    border: 0 solid transparent;
+    background: radial-gradient(circle at 50% 38%, rgba(30, 40, 60, 0.62), rgba(4, 6, 10, 0.88) 78%) center / calc(100% - 8px) calc(100% - 8px) no-repeat;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -818,11 +846,21 @@
        element starts at its final state and no transition ever runs */
     transition: border-color 0.13s ease, box-shadow 0.13s ease, transform 0.13s ease;
   }
-  #hotbar .slot:hover { --c: rgba(240, 245, 255, 0.75); }
+  #hotbar .slot::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: var(--c);
+    -webkit-mask: var(--ink) center / 100% 100% no-repeat; mask: var(--ink) center / 100% 100% no-repeat;
+    transition: background 0.13s ease;
+  }
+  #hotbar .slot:nth-child(6n+2) { --ink: url(assets/hud/slot2-ink.png); }
+  #hotbar .slot:nth-child(6n+3) { --ink: url(assets/hud/slot3-ink.png); }
+  #hotbar .slot:nth-child(6n+4) { --ink: url(assets/hud/slot4-ink.png); }
+  #hotbar .slot:nth-child(6n+5) { --ink: url(assets/hud/slot5-ink.png); }
+  #hotbar .slot:nth-child(6n)   { --ink: url(assets/hud/slot6-ink.png); }
+  #hotbar .slot:hover { --c: rgba(240, 245, 255, 0.85); }
   #hotbar .slot.equipped {
     --c: #ffffff;
-    border-color: rgba(214, 224, 240, 0.34);
-    box-shadow: 0 0 14px rgba(140, 172, 232, 0.30), inset 0 0 16px rgba(140, 172, 232, 0.14);
+    background: radial-gradient(circle at 50% 38%, rgba(52, 66, 96, 0.70), rgba(6, 9, 16, 0.88) 78%) center / calc(100% - 8px) calc(100% - 8px) no-repeat;
     transform: translateX(4px);
   }
   #hotbar .slot.equipped::before {
@@ -831,15 +869,20 @@
     box-shadow: 0 0 8px rgba(190, 210, 255, 0.9);
   }
   #hotbar .slot img { width: calc(100% - 4px); height: calc(100% - 4px); object-fit: cover; image-rendering: auto; display: block; }
+  /* (in off the drawn line, 2026-11-17, "i cant even see the number of the item": it sat on the ink at 3/5) */
+  /* (in off the drawn line, 2026-11-17, "i cant even see the number of the item": it sat on the ink at 3/5)
+     The number is the owner's own drawn numeral (`.hd`, 2026-11-17: "now add the written numbers for the hotbar"); the
+     glyph is masked, so its dark halo is a filter on .num, outside the mask. */
   #hotbar .slot .num {
     position: absolute;
-    top: 3px;
-    left: 5px;
-    font: italic 14px/1 Georgia, "Times New Roman", serif;
-    color: rgba(220, 230, 246, 0.70);
-    text-shadow: 0 1px 3px #000, 0 0 6px #000;
-    z-index: 1;
+    top: 6px;
+    left: 8px;
+    display: flex;
+    color: rgba(226, 234, 248, 0.86);
+    filter: drop-shadow(0 1px 1px #000) drop-shadow(0 0 3px #000);
+    z-index: 3;
   }
+  #hotbar .slot .num .hd { height: 15px; }
   #hotbar .slot.equipped .num { color: #ffffff; }
   #hotbar .slot .label {
     position: absolute;
@@ -922,6 +965,7 @@
     position: fixed;
     left: 1.1rem;
     top: 1.0rem;
+    transform: scale(var(--hud, 1)); transform-origin: left top;
     z-index: 6;
     display: none;
     align-items: center;
@@ -942,13 +986,44 @@
     color: #5fa8ff;
     text-shadow: 0 0 14px rgba(70, 150, 255, 0.55), 0 2px 10px rgba(0, 0, 0, 1);
   }
+  /* THE OWNER'S DRAWN NUMERALS as a glyph anywhere: `<i class="hd hd3">`, as tall as its context sets `height`,
+     in `currentColor`, its width from the drawing's own proportions (`assets/hud/d*.png`, `tools/hand_hud_pack.py`). */
+  .hd { display: block; background-color: currentColor; -webkit-mask-position: center; mask-position: center; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+  .hd0 { aspect-ratio: 34 / 64; -webkit-mask-image: url(assets/hud/d0.png); mask-image: url(assets/hud/d0.png); }
+  .hd1 { aspect-ratio: 25 / 64; -webkit-mask-image: url(assets/hud/d1.png); mask-image: url(assets/hud/d1.png); }
+  .hd2 { aspect-ratio: 35 / 64; -webkit-mask-image: url(assets/hud/d2.png); mask-image: url(assets/hud/d2.png); }
+  .hd3 { aspect-ratio: 26 / 64; -webkit-mask-image: url(assets/hud/d3.png); mask-image: url(assets/hud/d3.png); }
+  .hd4 { aspect-ratio: 29 / 64; -webkit-mask-image: url(assets/hud/d4.png); mask-image: url(assets/hud/d4.png); }
+  .hd5 { aspect-ratio: 35 / 64; -webkit-mask-image: url(assets/hud/d5.png); mask-image: url(assets/hud/d5.png); }
+  .hd6 { aspect-ratio: 29 / 64; -webkit-mask-image: url(assets/hud/d6.png); mask-image: url(assets/hud/d6.png); }
+  .hd7 { aspect-ratio: 28 / 64; -webkit-mask-image: url(assets/hud/d7.png); mask-image: url(assets/hud/d7.png); }
+  .hd8 { aspect-ratio: 28 / 64; -webkit-mask-image: url(assets/hud/d8.png); mask-image: url(assets/hud/d8.png); }
+  .hd9 { aspect-ratio: 27 / 64; -webkit-mask-image: url(assets/hud/d9.png); mask-image: url(assets/hud/d9.png); }
+  .hdx { aspect-ratio: 46 / 64; -webkit-mask-image: url(assets/hud/dx.png); mask-image: url(assets/hud/dx.png); }
+  /* HAND-DRAWN DIGITS (2026-11-17, the owner: "use the numbers for the jar numbers but keep it blue how it is"): the
+     count is drawn from the owner's marker numerals (`assets/hud/d0..d9`, and an x in the same stroke), each glyph a
+     blue box masked by the drawing; the glow moved from text-shadow to a filter on the row, outside the masks. */
+  #blood .amt { display: inline-flex; align-items: flex-end; gap: 1px; filter: drop-shadow(0 0 7px rgba(70, 150, 255, 0.55)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.95)); }
+  #blood .amt #blood-amt { display: inline-flex; align-items: flex-end; gap: 1px; }
+  #blood .amt .g { display: block; height: 22px; background: #5fa8ff; -webkit-mask-position: center; mask-position: center; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+  #blood .amt .g0 { width: 11.7px; -webkit-mask-image: url(assets/hud/d0.png); mask-image: url(assets/hud/d0.png); }
+  #blood .amt .g1 { width: 8.6px; -webkit-mask-image: url(assets/hud/d1.png); mask-image: url(assets/hud/d1.png); }
+  #blood .amt .g2 { width: 12.0px; -webkit-mask-image: url(assets/hud/d2.png); mask-image: url(assets/hud/d2.png); }
+  #blood .amt .g3 { width: 8.9px; -webkit-mask-image: url(assets/hud/d3.png); mask-image: url(assets/hud/d3.png); }
+  #blood .amt .g4 { width: 10.0px; -webkit-mask-image: url(assets/hud/d4.png); mask-image: url(assets/hud/d4.png); }
+  #blood .amt .g5 { width: 12.0px; -webkit-mask-image: url(assets/hud/d5.png); mask-image: url(assets/hud/d5.png); }
+  #blood .amt .g6 { width: 10.0px; -webkit-mask-image: url(assets/hud/d6.png); mask-image: url(assets/hud/d6.png); }
+  #blood .amt .g7 { width: 9.6px; -webkit-mask-image: url(assets/hud/d7.png); mask-image: url(assets/hud/d7.png); }
+  #blood .amt .g8 { width: 9.6px; -webkit-mask-image: url(assets/hud/d8.png); mask-image: url(assets/hud/d8.png); }
+  #blood .amt .g9 { width: 9.3px; -webkit-mask-image: url(assets/hud/d9.png); mask-image: url(assets/hud/d9.png); }
+  #blood .amt .gx { width: 15.8px; -webkit-mask-image: url(assets/hud/dx.png); mask-image: url(assets/hud/dx.png); }
   #blood .amt .unit { display: none; }
 
   /* A STACK'S COUNT, on whichever slot the icon was drawn into — the hotbar,
      the pack grid or a ring. Bottom right, over the icon, in the HUD's own
      square monospace so it reads as a quantity and not as a label. */
   /* (bigger, 2026-10-14: "make the number of stacked items bigger" — 0.9/0.78 rem were lost on the icons) */
-  #hotbar .slot .count { font-size: 1.3rem; right: 5px; bottom: 2px; }
+  #hotbar .slot .count { font-size: 1.3rem; right: 8px; bottom: 5px; z-index: 3; }   /* (5/2 until 2026-11-17: in off the drawn line) */
   .slot .count, .islot .count, .rslot .count {
     position: absolute;
     right: 5px;
@@ -1779,13 +1854,13 @@
        narrow window it ran straight into the health bar. Here it is always
        in the same place and the two read as a pair. -->
   <div id="vitals">
-    <div id="health"><i></i><i></i><i></i><i></i><i class="xtra" style="display:none"></i></div>
+    <div id="health"><i><b></b></i><i><b></b></i><i><b></b></i><i><b></b></i><i class="xtra" style="display:none"><b></b></i></div>
     <div class="vrow">
       <div id="ammo"></div>
     </div>
   </div>
   <div id="stamwrap">
-    <div id="stamina"><div id="stamina-fill"></div></div>
+    <div id="stamina"><div class="sbody"><div id="stamina-fill"></div></div></div>
     <div id="fastwalk">FAST</div>
   </div>
   <div id="autosave">
@@ -1803,7 +1878,7 @@
 
   <div id="blood">
     <div id="blood-jar"></div>
-    <span class="amt"><span id="blood-amt">0</span><span class="unit" id="blood-unit">jars</span></span>
+    <span class="amt"><span id="blood-amt"><i class="g g0"></i><i class="g gx"></i></span><span class="unit" id="blood-unit">jars</span></span>
   </div>
 
   <div id="invpanel">
@@ -2016,5 +2091,26 @@
   }
   </script>
   <script type="module" src="./main.js"></script>
+<script>
+/* THE HUD'S SCALE, FROM THE WINDOW (see `#vitals` above). 1 from 1400 x 820 up to 1920 x 1080 — the sizes the HUD was
+   tuned at — smaller below in proportion, up to 1.35x above; and never larger than lets the health block (about 410 px
+   from the left edge) clear the stamina bar (420 px, up to ~550 with a bigger reserve) centred on the bottom. The hotbar
+   column (up to eight 72 px slots and the rings, ~760 px) gets the same, bounded by the window's height. */
+(function () {
+  const root = document.documentElement;
+  function hudFit() {
+    const W = window.innerWidth || 1400, H = window.innerHeight || 820;
+    let k = Math.min(W / 1400, H / 820);
+    k = k >= 1 ? Math.min(1.35, Math.max(1, Math.min(W / 1920, H / 1080))) : Math.max(0.4, k);
+    k = Math.min(k, Math.max(0.3, (W - 64) / 1300));            // the health block and the stamina bar never meet
+    const g = Math.min(k, Math.max(0.35, (H - 40) / 790));      // and the hotbar column fits the height
+    root.style.setProperty('--hud', k.toFixed(3));
+    root.style.setProperty('--hud-gear', g.toFixed(3));
+  }
+  hudFit();
+  window.addEventListener('resize', hudFit);
+  window.hudFit = hudFit;
+})();
+</script>
 </body>
 </html>

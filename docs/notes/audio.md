@@ -902,3 +902,21 @@ on the beach left the opening song; beach → fort under the black took it out a
 `tools/elec_sound.py` (afconvert + plain Python): six zaps cut where the crackle peaks, a 2.7 s shock off the loudest run,
 a crossfaded loop padded REC_PAD each end for `recLoop`. All sewer sparks/zaps and `sfxSmashElectronics` use them with the
 old synth as the fallback when a buffer is not in yet.
+
+## 2026-11-17 — the tavern's tune
+- **`LOOP_SONGS.tavern`** (the owner's "tavern music": "add this to the tavern when you walk in make it loop. have it
+  subtle but heard"). `startTavernSong` (its own gain to the speakers, so musictest can name it) from `inTavern` until you
+  leave (out over 2.5 s) or die (1.5 s); up a 2.5 s x² curve; fetched while you are in the keep, whose door is the way in.
+  Level 0.3 on the music slider (the farmers' is 0.6).
+- The mp3 (26.35 s, 192 kbps) came **21 dB under the other songs**: peaks −22.3 dB, ~−37 dB loudness by a crude
+  ungated block RMS. `tools/tavern_music_pack.py` (afconvert + plain Python): the sounding span 0.016–26.319 s (the
+  encoder's silent head and tail cut), its last 30 ms crossfaded equal-power into its first (the wrap jumps from ~0.012
+  RMS to ~0.004), +20.8 dB to peak −1.5, padded 1 s each end with its own wrap → `assets/tavern-music.m4a`, looped on
+  [1.0, 27.2728]. `loopSongPlay` now honours a `loopStart` (and starts there) and a `note` for its `musicNote`.
+- Python's `wave` cannot read what `afconvert -f WAVE -d LEI16` writes (WAVE_FORMAT_EXTENSIBLE, 65534): the packer
+  reads the RIFF chunks itself.
+- musictest `tavern` (placed by `ROOM_BACK.tav`, floor 0.0008 like the farmers': low and on a curve).
+- **The orc's death, louder** (2026-11-17, "make the orc death sound louder"): `ORC_VOX.die` gain 1.10 → 2.80 (+8.1 dB).
+  Measured (afconvert + Python, the loudest quarter of 0.1 s blocks): `orc-die1` −15.2 dB, his hits `orc-hit1/5`
+  −14.8/−14.4 at gain 1.30 — so his death was ~2 dB UNDER his own cries — and `pal-die1` −16.9 at 3.8. At 2.8 it lands
+  with the paladin's (≈ −6.3 vs −5.3 before distance). `farmVox` has no cap on a role's gain.

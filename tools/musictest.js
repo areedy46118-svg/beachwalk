@@ -10,7 +10,7 @@
  * owner's checkpoint (`beachwalk.save`) itself. */
 (function () {
   const W = window, sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', loadTavern: 'startMusic', loadDeep: 'startMusic', marauder: 'startMarauderFight', farmers: 'startFarmersFight', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong', skrim: 'startSkrimSong', skrimFight: 'startSkrimFightMusic' };
+  const want = { restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', loadTavern: 'startMusic', loadDeep: 'startMusic', marauder: 'startMarauderFight', farmers: 'startFarmersFight', tavern: 'startTavernSong', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong', skrim: 'startSkrimSong', skrimFight: 'startSkrimFightMusic' };
   /* (2026-10-24, the owner: the opening song plays on the first load into the game and NOT on a respawn) — 'checkpoint'
    * is a death's respawn and passes SILENT; 'load' is a checkpoint loaded without a death and must play it */
   /* (2026-11-14, the owner: "the very first spawn music in the game should not play when reloading any checkpoint ever only
@@ -117,6 +117,18 @@
         note = 'in the castle, fight started ' + b.farmFightS().started;
         W.__mtFloor = 0.0008;
         await drive(b, 60); peak = await listen(want[sc], 12000);
+      } else if (sc === 'tavern') {
+        // (2026-11-17, the owner's "tavern music": "add this to the tavern when you walk in make it loop. have it subtle
+        // but heard") — placed in the tavern; it comes up a 2.5 s curve, low
+        const { b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+        try { await b.audioCtx.resume(); } catch (e) { /* the boot helper suspends it */ }
+        const RB = b.ROOM_BACK.tav; RB.load();
+        for (let i = 0; i < 300 && !RB.ready(); i++) { b.frame(2); await sleep(50); }
+        if (!RB.ready()) return { scenario: sc, pass: false, note: 'the tavern never loaded' };
+        b.clearRoomFlags(); RB.place(); await drive(b, 30);
+        note = b.tavState().inTavern ? 'in the tavern' : 'NOT IN THE TAVERN';
+        W.__mtFloor = 0.0008;
+        await drive(b, 60); peak = await listen(want[sc], 12000);
       } else if (sc === 'samurai') {
         const { b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
         b.settings.devMode = true;
@@ -210,7 +222,7 @@
       for (const k of ['beachwalk.load', 'beachwalk.skipIntro', 'beachwalk.died']) sessionStorage.removeItem(k);
     }
     const others = W.__sfDests.map((d) => d.who).filter((v, i, a) => a.indexOf(v) === i).join(',');
-    const floor = { skrim: 0.0012, skrimFight: 0.00025, farmers: 0.0008 }[sc] || 0.004;   // (the farmers' comes up an 8 s curve: 0.0008 is it under way)   // (his fight's music is low and comes in over 7 s)   // (his song is played low by the owner's word: 0.55, not 1.9)
+    const floor = { skrim: 0.0012, skrimFight: 0.00025, farmers: 0.0008, tavern: 0.0008 }[sc] || 0.004;   // (the tavern's is low by the owner's word, and up a 2.5 s curve)   // (the farmers' comes up an 8 s curve: 0.0008 is it under way)   // (his fight's music is low and comes in over 7 s)   // (his song is played low by the owner's word: 0.55, not 1.9)
     return { scenario: sc, pass: silent[sc] ? peak <= 0.004 : peak > floor, peak, who: want[sc], note: note + (silent[sc] ? ' (wants silence)' : ''), heard: others };
   };
 })();

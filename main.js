@@ -202,7 +202,7 @@ const BW_FROM = (() => {
     const ROOM_Z = { keep: 215, tav: 215, uc: 640 + BEACH_EXT, dojo: 742 + BEACH_EXT, cat: 745 + BEACH_EXT, bunker: 333, whale: 995 + BEACH_EXT, deep: 814 + BEACH_EXT };
     const ROOM_FILES = {
       keep: ['keep.glb', 'dock.glb'],
-      tav: ['tavern.glb', 'keep.glb', 'dock.glb', 'wong.glb', 'drunk.glb', 'orc.glb', 'wedding-ring.glb'],
+      tav: ['tavern.glb', 'keep.glb', 'dock.glb', 'wong.glb', 'drunk.glb', 'orc.glb', 'wedding-ring.glb', 'dance-moves.json'],
       uc: ['tunnel.glb', 'church.glb', 'cave.glb', 'knight.glb', 'sol.glb', 'octopus-ring.glb'],
       dojo: ['courtyard.glb', 'samurai.glb', 'portal.glb'],
       cat: ['catacombs.glb', 'crawler.glb', 'skull-key.glb', 'limbs.glb', 'benali.glb', 'bloody-blade.glb'],
@@ -223,6 +223,9 @@ const BW_FROM = (() => {
       'Forgotten Wedding Ring': 'wedding-ring.glb', 'Ring of Connection': 'connection-ring.glb', 'Skull Key': 'skull-key.glb',
       'Rusted Key': 'key.glb', 'The Great Crab Call': 'crab-call.glb', 'Mutant Fang': 'fang.glb',
       'The Shock Ring': 'shock-ring.glb', 'Bone Mace': 'bone-mace.glb', 'Steel Door Key': 'sandman-key.glb', 'Lair key': 'sandman-key.glb',
+      // (2026-11-17: and every key that is a tinted copy of the one scan — `fillKeyModels`)
+      'Lost key': 'key.glb', 'Pavilion key': 'key.glb', 'Storeroom key': 'key.glb', 'Iron key': 'key.glb', 'Cell key': 'key.glb', "Captain's Chest Key": 'key.glb',
+      'Spare fancy house gate key': 'key.glb', 'Fancy house gate key': 'key.glb', 'Castle door key': 'key.glb', "Henry's cell key": 'key.glb', 'Tavern storage key': 'key.glb',   // (the names since 2026-11-17)
     };
     const f = d.flags || {};
     const walked = f.beachZ != null ? -f.beachZ : d.room ? (ROOM_Z[d.room] || 0) : -d.pos[2];
@@ -1227,6 +1230,13 @@ const LOOP_SONGS = {
               max: 1.6, fadeIn: 1.5, fadeOut: 7, loopEnd: 113.684, vol: null, cur: null },
   farmers: { url: 'assets/farmers-fight.m4a', level: 0.6, max: 1.0, fadeIn: 0.25, fadeOut: 5,   // (8 s in until 2026-11-14: "make the music to the farmer fight start instantly when you walk in")
               loopEnd: 88.615, vol: null, cur: null },
+  /* THE TAVERN'S OWN TUNE (2026-11-17, the owner's "tavern music": "add this to the tavern when you walk in make it loop.
+   * have it subtle but heard"): from the cut that puts you inside (`inTavern`) until you leave or die, up a slow curve and
+   * out as you go. The mp3 came 21 dB under the others (peaks −22 dB): `tools/tavern_music_pack.py` raised it to peak
+   * at −1.5 like them, crossfaded its wrap and padded it a second each end, so it loops on [loopStart, loopEnd]; played
+   * low (the farmers' is 0.6). */
+  tavern: { url: 'assets/tavern-music.m4a', level: 0.3, max: 0.6, fadeIn: 2.5, fadeOut: 2.5, note: 'tavern music',
+            loopStart: 1.0, loopEnd: 27.2728, vol: null, cur: null },
 };
 let wreckThemeVol = null;
 
@@ -11951,14 +11961,15 @@ function renderHotbar() {
     const src = item ? itemIcon(item) : null;
     if (c.item !== item || c.count !== count || c.src !== src) {
       c.item = item; c.count = count; c.src = src;
-      c.el.innerHTML = `<span class="num">${i + 1}</span>` + (item ? iconHTML(item) : '');
+      // the slot's number in the owner's hand-drawn numerals (2026-11-17, "now add the written numbers for the hotbar")
+      c.el.innerHTML = `<span class="num" aria-label="${i + 1}"><i class="hd hd${i + 1}"></i></span>` + (item ? iconHTML(item) : '');
       if (item) {
         const lab = document.createElement('span');
         lab.className = 'label';
         c.el.appendChild(lab); c.lab = lab;
       } else c.lab = null;
     }
-    if (c.lab) c.lab.textContent = item.name + (item.viewmodel ? (item === equipped ? ' — holster' : ' — equip') : ' — use');
+    if (c.lab) c.lab.textContent = item.name;   // just the name (2026-11-17, the owner: "take out the '- holster' text when scrolling just have the item name"; it read " — holster" / " — equip" / " — use")
     const sel = wheelCursor >= 0 ? i === wheelCursor : (!!item && item === equipped) || (!equipped && !!item && i === restSlot);
     c.el.classList.toggle('empty', !item);
     c.el.classList.toggle('art', !!(item && isArtWeapon(item) && item.artifact));
@@ -12166,6 +12177,16 @@ function renderItemIcon(model, { rotX = -0.5, rotY = 0.7, flip = false } = {}) {
   // ...except a subtree that is hidden on purpose, which must also stay
   // out of the fit: it is what the tile is framed against
   m.traverse((o) => { if (o.userData.bwKeepHidden) o.visible = false; else o.visible = true; });
+  /* AND NOTHING THAT IS NOT THE THING (2026-11-17, the keys: "some dont look the same"): the pickup's glint (a Sprite,
+   * additive), the invisible aim sphere a small pickup carries (`hitProxy`) and any fully clear mesh were switched on with
+   * the rest and FRAMED — the Captain's Chest Key came out a speck in a white halo. `kcSync` drops the same three. */
+  const junk = [];
+  m.traverse((o) => { const mt = o.material; if (o.isSprite || o.name === 'hitProxy' || (mt && !Array.isArray(mt) && mt.transparent && mt.opacity === 0)) junk.push(o); });
+  for (const o of junk) o.removeFromParent();
+  /* and its own colour, not the glint's pulse: a shine (`addItemShine`) lifts the emissive of the very materials the clone
+   * shares while the thing is still out to be found — rendered then, a brass key was silver for good (the icon is kept) */
+  const lent = [];
+  for (const sh of shinies) { let r = model; while (r && r !== sh.root) r = r.parent; if (r) for (const e of sh.mats) { lent.push([e.m, e.m.emissive.clone()]); e.m.emissive.copy(e.base); } }
   m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.setScalar(1);
   iconFit.clear();
   iconFit.position.set(0, 0, 0); iconFit.scale.setScalar(1);
@@ -12326,6 +12347,7 @@ function renderItemIcon(model, { rotX = -0.5, rotY = 0.7, flip = false } = {}) {
   g.drawImage(tmp, 0, 0);
   // what the fit actually achieved, for the harness to read back
   renderItemIcon.lastFit = seen;
+  for (const [mt, em] of lent) mt.emissive.copy(em);     // (the glint's pulse goes back on: the thing is still out there)
   return c.toDataURL('image/webp', 0.9);
 }
 /* The icon an item shows. Rendered on first ask and kept — items whose model
@@ -12365,10 +12387,11 @@ function iconDrawable(model) {
  * your hands. Every icon this browser has ever rendered is kept (it is the
  * same picture every time: the same model through the same lens), so a load
  * draws them at once. `ICON_CACHE_V` goes up whenever the icon rig changes. */
-const ICON_CACHE_V = 'v9';     // v7: the ammo tiles are studio-lit metal (`ammoStudio`); v8: the rod is the scan; v9: the map is a lit folded sheet
+const ICON_CACHE_V = 'v10';    // v10 (2026-11-17): no glint, aim sphere or glint-lifted colour in a render — the keys     // v7: the ammo tiles are studio-lit metal (`ammoStudio`); v8: the rod is the scan; v9: the map is a lit folded sheet
 const iconCacheKey = (item) => 'beachwalk.icon.' + ICON_CACHE_V + '.' + (item.id || item.name);
 function itemIcon(item) {
   if (item._icon) return item._icon;
+  if (item.isKey) fillKeyModels();
   const model = item.iconModel || item.inspectModel;
   if (model) {
     let cached = null;
@@ -12406,6 +12429,7 @@ function itemIcon(item) {
 let iconsPending = false;
 setInterval(() => {
   if (!iconsPending) return;
+  fillKeyModels();
   let ready = false, stillWaiting = false;
   /* EVERYTHING THAT DRAWS AN ICON, not just the pack. A worn ring is in
    * `rings` and not in `inventory`, so the one item on the HUD that is never
@@ -12655,6 +12679,7 @@ function findRecipe(x, y) {
 const invDetailEl = document.getElementById('inv-detail');
 let packSel = -1, packRingSel = -1;   // a worn ring may be the selection instead of a slot of the pack
 function inspectFromPack(item) {
+  if (item.isKey) fillKeyModels();
   const model = item.inspectModel;
   if (!model) return;
   const opts = item.inspectOpts ? item.inspectOpts() : {};
@@ -12665,11 +12690,12 @@ function inspectFromPack(item) {
    * reason. Same trap the combine recipes hit. */
   packReturnLock = false;
   closePack();
-  openInspect(model, { ...opts, name: item.name, desc: item.desc || '' });
+  openInspect(model, { ...opts, name: item.name, desc: item.isKey ? '' : (item.desc || '') });   // (a key: its name alone, 2026-11-17, the owner)
 }
 function inspectHeld(item) {
+  if (item.isKey) fillKeyModels();
   const opts = item.inspectOpts ? item.inspectOpts() : {};
-  openInspect(item.inspectModel, { ...opts, name: item.name, desc: item.desc || '' });
+  openInspect(item.inspectModel, { ...opts, name: item.name, desc: item.isKey ? '' : (item.desc || '') });   // (a key: its name alone)
 }
 function renderPackDetail() {
   if (!invDetailEl) return;
@@ -12733,8 +12759,7 @@ function renderPackDetail() {
     <button type="button" class="act insp">Inspect</button>
     ${isArt ? artHTML : `<button type="button" class="act hold">${verb}</button>`}
     <button type="button" class="act drop">Drop</button>
-    ${(item.count | 0) > 1 ? `<button type="button" class="act dropall">Drop all · ${item.count}</button>` : ''}
-    <div class="hint">Drag onto another item to combine</div>`;
+    ${(item.count | 0) > 1 ? `<button type="button" class="act dropall">Drop all · ${item.count}</button>` : ''}`;   // (no "Drag onto another item to combine" under Drop, 2026-11-17, the owner)
   const canInspect = !!item.inspectModel;
   const bI = invDetailEl.querySelector('.insp'), bH = invDetailEl.querySelector('.hold');
   bI.disabled = !canInspect;
@@ -13058,6 +13083,7 @@ function kcPutRing(K) {
 // the keys on the ring, rebuilt only when what you carry has changed
 const KC_WIRE_R = 0.0105, KC_GAP = 0.003;    // the split ring's coil, half its depth as drawn (measured, `kcClip`: ±1 cm — two turns of wire, and a pitch), and the air left between it and a key
 function kcSync() {
+  fillKeyModels();
   const K = kcBuild(), items = keyChain();
   // (rebuilt too when a key's model has landed since: the cell key's is filled only when its world first stands)
   const meshes = (m) => { let n = 0; if (m) m.traverse((o) => { if (o.isMesh) n++; }); return n; };
@@ -20889,7 +20915,13 @@ let jarSpin = 0, bloodPulse = 0;
  * "blood jar" beside a picture of one were the label naming its own drawing.
  * "1x" is what a tally reads as, and it is the blood's own blue. */
 function updateBloodReadout() {
-  bloodAmtEl.textContent = bloodJars + 'x';
+  /* in the owner's own hand-drawn numerals (2026-11-17), one masked glyph each (index.html `#blood .amt .g`); the count stays in aria-label */
+  const txt = bloodJars + 'x';
+  if (bloodAmtEl.dataset.txt !== txt) {
+    bloodAmtEl.dataset.txt = txt;
+    bloodAmtEl.innerHTML = [...txt].map((ch) => `<i class="g g${ch}"></i>`).join('');
+    bloodAmtEl.setAttribute('aria-label', txt);
+  }
   if (bloodUnitEl) bloodUnitEl.textContent = '';
 }
 /* ONE DOOR, because there are two ways to come by a jar now — bleeding the
@@ -22577,6 +22609,7 @@ bwGlb('assets/key.glb', (gltf) => {
   const m = new THREE.Mesh(geo, mat);
   m.scale.setScalar(0.20 / Math.max(size.x, size.y, size.z));    // a key you can see from standing
   keyModel.add(m);
+  fillKeyModels(); iconsPending = true;                           // and every key built off it (`fillKeyModels`), icons asked again
 });
 /* AND IT OPENS NOTHING, FOR NOW. It was "A Rusted Key" with no lock, then
  * the key to the sea chest in the wreck; the owner gave the chest to the
@@ -26135,6 +26168,8 @@ function statKillTotal() {
     + 1 + 1 + 1                                   // Umbra, the well man, Dante
     + 1                                           // Skrim, in the whale (its seven demons and two parasites are gone)
     + 3 + TAV_DRINK_FROM.length                   // Wong, the drunk and the orc; the drinkers
+    + TAV_DANCE_FROM.length                       // the two dancing by the storeroom door
+    + GARG_RAID_FROM.length                       // the four through XIII's door after the second gargoyle
     + FARM_ROSTER.length                          // the castle's farmers
     + 1 + PACK_SPOTS.length                       // the crab on its own, and the pack
     + 1                                           // the thing in the deep
@@ -26318,13 +26353,13 @@ function updateSkrimFightMusic() {
 function loopSongPlay(k) {
   const L = LOOP_SONGS[k], ctx = audioCtx, buf = lazyBuf(L.url); if (!buf || L.cur) return;
   L.vol.gain.value = Math.min(L.max, settings.volume * settings.musicVolume * L.level);
-  musicNote(k + ' fight', L.vol.gain.value);
+  musicNote(L.note || k + ' fight', L.vol.gain.value);
   const t = ctx.currentTime + 0.02, env = ctx.createGain(), up = new Float32Array(48);
   for (let i = 0; i < 48; i++) up[i] = Math.max(0.0001, (i / 47) ** 2);           // up a slow (x²) curve
   env.gain.value = 0.0001; env.gain.setValueCurveAtTime(up, t, L.fadeIn);
   env.connect(L.vol);
-  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.loopStart = 0; src.loopEnd = Math.min(L.loopEnd, buf.duration);
-  src.connect(env); src.start(t);
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true; src.loopStart = L.loopStart || 0; src.loopEnd = Math.min(L.loopEnd, buf.duration);
+  src.connect(env); src.start(t, L.loopStart || 0);
   L.cur = { src, env };
 }
 function startMarauderFight() {
@@ -26336,6 +26371,11 @@ function startFarmersFight() {
   const ctx = audioCtx, L = LOOP_SONGS.farmers; if (!ctx || L.cur || !lazyBuf(L.url)) return;
   if (!L.vol) { L.vol = ctx.createGain(); L.vol.connect(ctx.destination); }
   loopSongPlay('farmers');
+}
+function startTavernSong() {
+  const ctx = audioCtx, L = LOOP_SONGS.tavern; if (!ctx || L.cur || !lazyBuf(L.url)) return;
+  if (!L.vol) { L.vol = ctx.createGain(); L.vol.connect(ctx.destination); }
+  loopSongPlay('tavern');
 }
 function loopSongStop(k, secs) {
   const L = LOOP_SONGS[k], C = L.cur; L.cur = null;
@@ -26355,8 +26395,11 @@ function updateLoopSongs() {
   const fUp = inFort && !farmFight.done;
   if (!farmFight.done && !inFort && camera.position.z < TRADER2_Z + 160) lazyBuf(LOOP_SONGS.farmers.url);
   if (inThrone && !!U && !U.retired && U.st.alive) lazyBuf(LOOP_SONGS.marauder.url);   // (decoded before the chain parts, so it starts on it)
+  // (the tavern's fetched while you are in the keep, whose door is the way in)
+  if (inKeep) lazyBuf(LOOP_SONGS.tavern.url);
   for (const [k, on, start, gone] of [['marauder', uUp, startMarauderFight, !!U && (U.retired || !U.st.alive)],
-                                     ['farmers', fUp, startFarmersFight, farmFight.done]]) {
+                                     ['farmers', fUp, startFarmersFight, farmFight.done],
+                                     ['tavern', inTavern, startTavernSong, !inTavern]]) {
     const L = LOOP_SONGS[k];
     if (on) lazyBuf(L.url);
     if (on && !L.cur && !dying && !ended && !replaying && !applyingSave) start();
@@ -28655,6 +28698,7 @@ const KEY_HANG = { y: -0.34, k: 1.4, rot: [0, Math.PI / 2, -Math.PI / 2] };
      * dark key-shaped hole. Brighter brass, a stronger glint. */
     mat.emissiveIntensity = 1.5;
     if (!boatKeyTaken) addItemShine(boatKey, { size: 0.5, height: 0, strength: 4.2, lift: 1.4 });
+    else boatKeyPlain();                                  // (taken before its scan landed: a restore)
   }, undefined, () => {});
 }
 /* ---- the key off the hook --------------------------------------------
@@ -28712,6 +28756,19 @@ function dropShipKey() {
   hit.name = 'hitProxy'; hit.visible = false; boatKey.add(hit);
   addInteractable(boatKey, "Take the Captain's Chest Key", 'inventory', { keepSize: true, onActivate: takeShipKey });
 }
+/* IN YOUR HANDS IT IS A KEY LIKE THE REST (2026-11-17, the owner: "fix the captains chest key icon its different then the
+ * rest"). It hangs in the wreck as bright brass so it reads in the dark there (its loader); once taken it wears the scan's
+ * own finish, the Rusted Key's (`keyModel`), so its icon, its place on the ring, your hand and the examine screen look like
+ * every other key's. Asked as it is taken, when its scan lands after a restore, and by `fillKeyModels`. */
+function boatKeyPlain() {
+  if (!boatKeyTaken || boatKey.userData.plain || !keyModel.children.length) return;
+  let km = null; boatKey.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy' && !km) km = o; });
+  if (!km) return;
+  km.material = keyModel.children[0].material.clone();
+  boatKey.userData.plain = true;
+  boatKeyItem._icon = null; try { localStorage.removeItem(iconCacheKey(boatKeyItem)); } catch (e) {}
+  iconsPending = true;
+}
 function takeShipKey() {
   if (boatKeyTaken) return;
   boatKeyTaken = true;
@@ -28721,6 +28778,7 @@ function takeShipKey() {
   const hp = boatKey.getObjectByName('hitProxy'); if (hp) boatKey.remove(hp);
   dropShine(boatKey);
   boatKey.position.set(0, 0, 0); boatKey.rotation.set(0, 0, 0); boatKey.scale.setScalar(1);
+  boatKeyPlain();
   /* A SPENT KEY IS NOT HANDED BACK. The restore replays this pickup, and a
    * save written after the chest was opened has the key already used up. */
   const f = restore && restore.flags;
@@ -33194,7 +33252,8 @@ function fillLostKey() {
   lostKeyModel.add(m);
 }
 const lostKeyItem = {
-  isKey: true, id: 'lostKey', name: 'Lost key', desc: 'He found it up the beach. It has to fit somewhere.', icon: makeKeyIcon(),
+  isKey: true, id: 'lostKey', name: 'Spare fancy house gate key', was: ['Lost key'],   // (renamed 2026-11-17, the owner)
+  desc: 'He found it up the beach. It has to fit somewhere.', icon: makeKeyIcon(),
   use: () => toggleEquip(lostKeyItem),
 };
 holdable(lostKeyItem, lostKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
@@ -33212,7 +33271,8 @@ function fillPavKey() {
   return true;
 }
 const pavKeyItem = {
-  isKey: true, id: 'pavKey', name: 'Pavilion key', desc: 'It was in his fist when he went down. Wet, and as cold as the well. The pavilion’s gate.', icon: makeKeyIcon(),
+  isKey: true, id: 'pavKey', name: 'Fancy house gate key', was: ['Pavilion key'],   // (renamed 2026-11-17, the owner)
+  desc: 'It was in his fist when he went down. Wet, and as cold as the well. The pavilion’s gate.', icon: makeKeyIcon(),
   use: () => toggleEquip(pavKeyItem),
 };
 holdable(pavKeyItem, pavKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
@@ -33232,7 +33292,8 @@ function fillStoreKey() {
   return true;
 }
 const storeKeyItem = {
-  isKey: true, id: 'storeKey', name: 'Storeroom key', desc: 'Old iron. A door in the tavern has a lock this size.', icon: makeKeyIcon(),
+  isKey: true, id: 'storeKey', name: 'Tavern storage key', was: ['Storeroom key'],   // (renamed 2026-11-17, the owner: the key to the room the flame's artifact is in)
+  desc: 'Old iron. A door in the tavern has a lock this size.', icon: makeKeyIcon(),
   use: () => toggleEquip(storeKeyItem),
 };
 holdable(storeKeyItem, storeKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
@@ -33246,7 +33307,8 @@ function lostKeyLie(x, z, quiet) {
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; W.add(hit);
   addItemShine(W, { ...DROP_SHINE, height: 0.45 });
-  addInteractable(W, 'Take the Lost key', 'inventory', {
+  addInteractable(W, 'Take the Lost key', 'inventory', {   // (the old wording is the pickup's saved id: a save that took it keeps it taken)
+    label: 'Take the spare fancy house gate key',
     onActivate: () => {
       scene.remove(W); removeInteractable(W); hovered = null;
       snorkKey.state = 2;
@@ -38558,7 +38620,7 @@ const FARM_VOX = {
 const ORC_VOX = {
   swing: { bank: 'orcSwing', p: 0.90, gain: 1.25, ref: 8,  far: 45, pri: 1, gap: 0.12, own: 0.5 },
   hurt:  { bank: 'orcHit',   p: 1,    gain: 1.30, ref: 8,  far: 50, pri: 2, gap: 0.10, own: 0.25 },
-  die:   { bank: 'orcDie',   p: 1,    gain: 1.10, ref: 10, far: 70, pri: 3, gap: 0,    own: 0 },
+  die:   { bank: 'orcDie',   p: 1,    gain: 2.80, ref: 10, far: 70, pri: 3, gap: 0,    own: 0 },   // (1.10 until 2026-11-17, the owner: "make the orc death sound louder" — the take is as loud as his hit cries (−15.2 dB loud-quarter RMS vs −14.6) and played UNDER them (1.10 vs 1.30); +8.1 dB puts it with the paladin's death (pal-die1 −16.9 at 3.8))
 };
 /* AND THE GARGOYLES (2026-11-16, the owner: "DO THE SAME FOR THE GARGOYLES. ADD THAT HUCKLE THAT SAY "DROP" BEHIND MYLES
  * SOUND TO WHEN THE GARGOYLE LANDS BEHIND MYLES"). Their recordings take the place of the synthesised scream
@@ -48553,7 +48615,7 @@ function saveCheckpoint(spot) {
       stats: { kill: [...endStats.kill], item: [...endStats.item], jars: endStats.jars },
       // (a gargoyle's death only once all four are dead: a fight left unfinished is four on their walls — 2026-11-17, the
       // owner: "ONLY ONE GARGOYLE SPAWNED WHEN LOADING THE CHECKPOINT")
-      deadUnits: [...new Set([...deadUnitKeys, ...mutants.filter((u) => !u.st.alive && u.saveKey && !u.kind.undying).map((u) => u.saveKey)])].filter((k) => GARG.phase === 2 || !k.startsWith('gargoyle@')),
+      deadUnits: [...new Set([...deadUnitKeys, ...mutants.filter((u) => !u.st.alive && u.saveKey && !u.kind.undying).map((u) => u.saveKey)])].filter((k) => GARG.phase === 2 || !(k.startsWith('gargoyle@') || k.startsWith('gargRaid'))),
       dealerWon, tavFight: tavScene.phase >= 9,
       beachZ: +(inRoom() ? lastBeachZ : camera.position.z).toFixed(2),
       // he went into the sea and he does not come back out of it
@@ -48810,7 +48872,7 @@ function beginRestoreQuiet() {
   if (f.ringSlots > RING_SLOTS) RING_SLOTS = f.ringSlots;
   wreckSaveDone = bz <= WRECK_SAVE_Z + 1;
   fortSaveDone = bz <= FORT_Z + FORT_GATE.z + 14.5;          // the castle's gate: a save made there, or past it, is that save
-  for (const k of f.deadUnits || []) if ((f.garg || 0) >= 2 || !k.startsWith('gargoyle@')) deadUnitKeys.add(k);   // (an older save's dead gargoyles from an unfinished fight: all four back)
+  for (const k of f.deadUnits || []) if ((f.garg || 0) >= 2 || !(k.startsWith('gargoyle@') || k.startsWith('gargRaid'))) deadUnitKeys.add(k);   // (an older save's dead gargoyles from an unfinished fight: all four back — and the men who came through the door after them)
   if (f.stats) { for (const k of f.stats.kill || []) endStats.kill.add(k); for (const k of f.stats.item || []) endStats.item.add(k); }
   else for (const k of f.deadUnits || []) if (k !== scp096.saveKey && !(k === babyUnit.saveKey && f.catBaby)) endStats.kill.add(k);   // a save from before the tally
   endStats.jars = f.stats && f.stats.jars != null ? f.stats.jars : (d.took || []).filter((id) => /^Take the jar[@#]/.test(id)).length;   // (a save from before the count: what it had picked up)
@@ -50136,7 +50198,7 @@ function musicGuard() {
   for (const k in LOOP_SONGS) { const L = LOOP_SONGS[k]; fix(L.vol, Math.min(L.max, v * L.level)); }
   fix(wlVol, v * WL_LEVEL);
   fix(wreckThemeVol, v * WRECK_THEME_LEVEL);
-  const playing = musicSrc || samScore || passSrc || endSong || wlSrc || (minoSong && !minoSong.done) || (skrimSong && !skrimSong.done) || !!skrimFightM || !!LOOP_SONGS.marauder.cur || !!LOOP_SONGS.farmers.cur;
+  const playing = musicSrc || samScore || passSrc || endSong || wlSrc || (minoSong && !minoSong.done) || (skrimSong && !skrimSong.done) || !!skrimFightM || !!LOOP_SONGS.marauder.cur || !!LOOP_SONGS.farmers.cur || !!LOOP_SONGS.tavern.cur;
   if (playing && ctx.state === 'suspended' && started && !frozen()) ctx.resume().catch(() => {});
 }
 function animateFrame() {
@@ -80798,6 +80860,7 @@ function updateTavern(dt) {
   if (tavWallsDirty) { tavWallsDirty = false; tavWalls = null; buildKeepWalls(TAV_SITE); }
   tavRoam(dt);
   updateTavDrinkers(dt);
+  updateTavDancers(dt);
   tavThrownHits();
   tavCrush(dt);
   const p = camera.position, S = TAV_SITE;
@@ -81752,13 +81815,17 @@ function placeTavStoreKey() {
   const hit = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hit.name = 'hitProxy'; hit.visible = false; g.add(hit);
   scene.add(g);
-  addItemShine(g, { size: 0.6, height: 0.12, strength: 1.3, lift: 0.2 });
+  // lit like a dropped thing (2026-11-17, the owner: "make that key light up like a dropped item where it is found"): the
+  // drops' own glint and column (`DROP_SHINE`, as the dealer's cell key and the rusted key have), taken off with it
+  addItemShine(g, { ...DROP_SHINE, height: 0.45 });
   tavStoreKey = { g, filled: fillStoreKey() };
-  addInteractable(g, 'Take the storeroom key', 'inventory', {
+  addInteractable(g, 'Take the storeroom key', 'inventory', {   // (the old wording is the pickup's saved id, and `statHad` asks it)
+    label: 'Take the tavern storage key',
     gives: storeKeyItem, far: 3.2,
     when: () => inTavern,
     onActivate: () => {
       sfxThud(0.03);
+      dropShine(g);                                  // (its column stands in the scene, not on the key: unhung with it)
       scene.remove(g); removeInteractable(g); hovered = null;
       addToInventory(storeKeyItem);
     },
@@ -81875,6 +81942,11 @@ const WONG_MOVES_URL = 'assets/wong-moves.json', DRUNK_MOVES_URL = 'assets/drunk
 const ORC_MOVES_URL = 'assets/orc-moves.json';
 let wongMoves = null, drunkMoves = null, wongMovesLate = null, drunkMovesLate = null;
 let orcMoves = null, orcMovesLate = null;
+/* the two dances (`tools/ntar_moves.py -- dance`): the men by the storeroom door wait for them (`buildTavDancers`) */
+let danceMoves = null;
+bwFetch('assets/dance-moves.json', 216).then((buf) => {
+  try { danceMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { /* */ }
+}, () => {});
 bwFetch(ORC_MOVES_URL, 216).then((buf) => {
   try { orcMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { return; }
   if (orcMovesLate) { orcMovesLate(); orcMovesLate = null; }
@@ -88508,6 +88580,7 @@ function minoFoes() {
   // `knDuel`, the owner's "the minataur doesnt even fight when im attacking the knights")
   if (inC13) for (const k of knUnits) if (k.st.alive && !k.retired && k.st.awake && k.g.visible !== false) L.push(k);
   if (inC13) for (const k of GARG.units) if (k.st.alive && !k.retired && k.gp && !['perch', 'wake', 'drop'].includes(k.gp.mode)) L.push(k);
+  if (inC13 && gargRaid) for (const k of gargRaid.units) if (k.st.alive && !k.retired && k.st.awake && k.model) L.push(k);   // (the men through the door after the gargoyles)
   return L;
 }
 /* WHOM HE GOES FOR: the nearest of them to him, and sooner one that is on you or on him; kept two and a half seconds, and
@@ -90473,6 +90546,72 @@ function gargDied(u) {
   g.airBreak = true;
   // the last of them: the arch door's key falls out of it as it breaks
   if (!gargAlive().length && GARG.phase === 1) gargDropKey(u.g.position.x, u.g.position.y + 0.3, u.g.position.z, false);
+  // and with the second of them down, the town's men come through the door behind you (`gargRaidStart`)
+  if (GARG.phase === 1 && !applyingSave && !replaying && GARG.units.filter((x) => x === u || !x.st.alive).length >= GARG_RAID_AT) gargRaidStart();
+}
+/* ---- AFTER THE SECOND GARGOYLE, FOUR OF THE TOWN'S MEN COME THROUGH THE DOOR YOU CAME IN BY (2026-11-17, the owner:
+ * "after killing 2 gargoyles you hear a rare phrase from the farmers coming from the door you just came through and its 4
+ * farmers coming to attack you and myles you shouldnt hear the phrase until they are spawned in coming at you"). The door
+ * is XIII's east tower door (`C13_DOOR`, the one from the first castle); four armed men of the first castle's roster are
+ * put just inside it, awake — two on you, two on him while he is with you (`MINO`) — and he fights them (`minoFoes`). One
+ * of their rare shouts (`FARM_VOX.shout`) comes from the doorway on the first frame one of them is THERE (his model in and
+ * moving), never before. Once a fight: only while the gargoyles' fight is live (phase 1, which no restore puts back);
+ * leaving the court mid-fight takes them away again with the gargoyles' reset, not counted as killed. */
+const GARG_RAID_AT = 2;                    // gargoyles down when they come
+const GARG_RAID_FROM = [0, 3, 1, 7];       // the roster's hacker (axe), brawler (sword), stabber (rake), jumper (axe)
+let gargRaid = null;                       // { units, said, x, z }
+function gargRaidKind(i) {
+  const name = 'gargRaid' + i;
+  if (MUT_KINDS[name]) return name;
+  const b = MUT_KINDS['farmer' + GARG_RAID_FROM[i]];
+  MUT_KINDS[name] = Object.assign({}, b, { c13Body: true, fortBody: false, wakeAt: 0, solo: true, frenzy: false, voice: Object.assign({}, b.voice) });
+  return name;
+}
+function gargRaidStart() {
+  if (gargRaid || !inC13) return;
+  const D = C13_DOOR, sx = -D.nz, sz = D.nx;                       // (n points into the court; s is across the doorway)
+  const units = [];
+  [[1.8, -0.9], [1.8, 0.9], [3.2, -1.4], [3.2, 1.4]].forEach(([f, sd], i) => {
+    let lx = D.x + D.nx * f + sx * sd, lz = D.z + D.nz * f + sz * sd;
+    if (!c13Open(lx, lz)) {
+      search: for (let r = 0.3; r <= 3; r += 0.3) for (let k = 0; k < 12; k++) {
+        const a = k / 12 * Math.PI * 2, x = lx + Math.cos(a) * r, z = lz + Math.sin(a) * r;
+        if (c13Open(x, z)) { lx = x; lz = z; break search; }
+      }
+    }
+    const w = c13W(lx, lz);
+    const u = makeMutant(+w.x.toFixed(1), +w.z.toFixed(1), gargRaidKind(i), C13_Y + c13PaveAt(lx, lz));
+    if (u.retired) return;
+    u.kind.voice.unit = u;                                         // (his voice from him: `farmVox`)
+    u.g.rotation.y = Math.atan2(D.nx, D.nz); u.g.visible = true;
+    u.st.awake = true; u.st.cool = 0.5 + i * 0.3;
+    const M = MINO.u, withMe = !!(M && M.st.alive && !M.retired && MINO.ally && M.g.visible !== false);
+    if (withMe && i % 2 === 1) { u.st.foe = M; u.st.mine = false; } else { u.st.mine = true; u.st.foe = null; }
+    units.push(u);
+  });
+  const w = c13W(D.x + D.nx * 0.4, D.z + D.nz * 0.4);
+  gargRaid = { units, said: false, x: w.x, z: w.z };
+}
+function updateGargRaid() {
+  const R = gargRaid; if (!R) return;
+  if (!R.said) {
+    const u = R.units.find((x) => x.model && x.mixer && x.st.alive && x.g.visible);
+    if (u) {
+      farmVoxLast[FARM_VOX.shout.bank] = -99;                      // (a shout from anyone long ago is no reason to keep this one)
+      if (u.kind.voice.voxT) u.kind.voice.voxT.shout = -99;
+      // said only once it has actually started (a mouth busy or a bank not in: the next frame, for up to 4 s)
+      R.tries = (R.tries || 0) + 1;
+      R.voiced = farmVox('shout', u.kind.voice, { x: R.x, z: R.z, p: 1 });
+      R.said = R.voiced || R.tries > 240;
+    }
+  }
+}
+function gargRaidClear() {
+  const R = gargRaid; if (!R) return;
+  for (const u of R.units) {
+    if (u.st.alive && !u.retired) { retireUnit(u); const k = mutants.indexOf(u); if (k >= 0) mutants.splice(k, 1); }   // (out of `mutants`: a save would list a retired man as dead)
+  }
+  gargRaid = null;
 }
 // the break's sound from where it falls, `off` seconds into it (its crackle skipped when it is already nearly down)
 function gargBreakSound(u, k, off) {
@@ -90751,7 +90890,8 @@ function fillGargKey() {
   return true;
 }
 const gargKeyItem = {
-  isKey: true, id: 'archKey', name: 'Iron key', desc: 'It fell out of the last of the gargoyles as it broke. The arch door in the east court.', icon: makeKeyIcon(),
+  isKey: true, id: 'archKey', name: 'Castle door key', was: ['Iron key'],   // (renamed 2026-11-17, the owner)
+  desc: 'It fell out of the last of the gargoyles as it broke. The arch door in the east court.', icon: makeKeyIcon(),
   use: () => toggleEquip(gargKeyItem),
 };
 holdable(gargKeyItem, gargKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
@@ -90768,7 +90908,8 @@ function gargDropKey(x, y, z, quiet) {
   gargKey = { g, v: new THREE.Vector3((Math.random() - 0.5) * 1.4, 2.4, (Math.random() - 0.5) * 1.4), w: 10, st: quiet ? 'lie' : 'fall', bounced: 0 };
   addItemShine(g, { ...DROP_SHINE, height: 0.45, strength: 5.5 });   // (lit like every dropped thing from the moment it falls: 2026-10-30, the owner)
   if (!quiet && !applyingSave && !replaying) playSample('ringDrop', 1.0);
-  addInteractable(g, 'Take the iron key', 'inventory', {
+  addInteractable(g, 'Take the iron key', 'inventory', {   // (the old wording is the pickup's saved id)
+    label: 'Take the castle door key',
     gives: gargKeyItem, far: 3.2,
     when: () => inC13 && !!gargKey && gargKey.st === 'lie',
     onActivate: () => {
@@ -91033,12 +91174,13 @@ function updateGargoyles(dt) {
       // (the door no longer gives by itself: the last one dropped its key, `gargDropKey`)
     }
     // leaving the court mid-fight puts them back on the walls, whole, for when you come back
-    if (!inC13 && !fortBusy) { GARG.phase = 0; GARG.wingless = null; for (const u of gargAlive()) { u.st.hp = u.kind.hp; gargMend(u); gargPerch(u); } }
+    if (!inC13 && !fortBusy) { GARG.phase = 0; GARG.wingless = null; for (const u of gargAlive()) { u.st.hp = u.kind.hp; gargMend(u); gargPerch(u); } gargRaidClear(); }
   }
+  updateGargRaid();
 }
 queueMicrotask(() => window.__bw && Object.defineProperty(window.__bw, 'magAmmo', { get: () => magAmmo, set: (v) => { magAmmo = v; }, configurable: true }));
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { gargBodyTurnT: gargBodyTurn, gargKeyS: () => gargKey, gargTakeKey: () => { const K = gargKey; if (!K) return; const it = interactables.find((x) => x.root === K.g); if (it && it.data && it.data.onActivate) it.data.onActivate(); else if (it && it.onActivate) it.onActivate(); }, gargSaveS: () => (GARG.phase === 2 ? (GARG.keyTaken ? 3 : 2) : 0), gargKeyItem }));
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { GARG, placeGargoyles, gargTryDoor, gargFindPerches, gargLockedS: () => gargLocked(), gargLegal, gargSpot,
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { gargRaidS: () => gargRaid, gargRaidStart, gargRaidClear, GARG, placeGargoyles, gargTryDoor, gargFindPerches, gargLockedS: () => gargLocked(), gargLegal, gargSpot,
   gargStrikePose, gargRouteDbg: (u) => { const G = gargGrid(), aim = gargAim(u, new THREE.Vector3()), at = gargSpot(aim.x, aim.z, aim.y - 0.6, 3.1, Math.atan2(u.g.position.x - aim.x, u.g.position.z - aim.z), new THREE.Vector3()); const D = at ? gargDistFrom(G, at) : null, c = gargCell(G, u.g.position.x, u.g.position.z), gc = at ? gargCell(G, at.x, at.z) : -1; const r = at ? gargRoute(u, at, new THREE.Vector3()) : null;
     return { c, cOk: c >= 0 ? G.ok[c] : 'out', Dc: D && c >= 0 ? D[c] : 'n', gc, gcOk: gc >= 0 ? G.ok[gc] : 'out', at: at && [at.x - C13_X, at.y, at.z - C13_Z].map((v) => +v.toFixed(1)), r: r && [r.x - C13_X, r.y, r.z - C13_Z].map((v) => +v.toFixed(1)), over: u.gp.over, mode: u.gp.mode }; },
   gargWhy: (x, y, z) => ({ mask: maskAt(C13_M, x, z), court: c13CourtAt(x, z), pass: c13PassBlocked(x, z), wall: !!keepWallNear(x, z, 1.0, y - 0.3, y + 1.9, C13_SITE), wall6: !!keepWallNear(x, z, 0.6, y - 0.3, y + 1.9, C13_SITE) }) }));
@@ -95928,10 +96070,22 @@ function fillCellKey() {
   return true;
 }
 const cellKeyItem = {
-  isKey: true, id: 'cellKey', name: 'Cell key', desc: 'It was on the Dealer. Heavy brass, a long plain bit — a cell door, somewhere.', icon: makeKeyIcon(),
+  isKey: true, id: 'cellKey', name: "Henry's cell key", was: ['Cell key'],   // (renamed 2026-11-17, the owner)
+  desc: 'It was on the Dealer. Heavy brass, a long plain bit — a cell door, somewhere.', icon: makeKeyIcon(),
   use: () => toggleEquip(cellKeyItem),
 };
 holdable(cellKeyItem, cellKeyModel, { scale: 1.1, pos: [0, -0.02, 0], rot: [0.5, 0.3, 0.7] });
+/* EVERY KEY OFF THE ONE SCAN IS FILLED THE MOMENT THE SCAN IS IN (2026-11-17, the owner: "the keys need to match the models
+ * some dont look the same and dont show up when inspected"). The lost, pavilion, storeroom, iron and cell keys are tinted
+ * copies of `keyModel`, and each was filled only where its key is LAID DOWN in the world — so a key you came by any other
+ * way (a checkpoint, a save from after its pickup) carried an EMPTY model: no icon (`itemIcon` waits on it for ever), a
+ * plain stand-in on the keychain (`kcSync`'s `makeLairKey`), and nothing on the examine screen. Asked by the scan's own
+ * load, the icon retry, the keychain and Inspect; each filler is idempotent and does nothing until the scan has landed. */
+function fillKeyModels() {
+  for (const f of [() => fillLostKey(), () => fillPavKey(), () => fillStoreKey(), () => fillGargKey(), () => fillCellKey(), () => boatKeyPlain()]) {
+    try { f(); } catch (e) { /* (asked while the module is still being read: what it fills is declared later) */ }
+  }
+}
 const cellKey = { state: 0, x: 0, y: 0, z: 0, world: null, prop: null };     // 0 on him, 1 lying where he fell, 2 taken
 function cellKeyLie(x, y, z, quiet, fromY) {
   const fill = () => { if (!cellKeyModel.children.length && !fillCellKey()) setTimeout(fill, 1500); };
@@ -95956,7 +96110,8 @@ function cellKeyLie(x, y, z, quiet, fromY) {
     hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; W.add(hit);
     addItemShine(W, { size: 2.0, height: 0.5, strength: 4.2, lift: 1.6, through: 0.7, beacon: 1 });
   }
-  addInteractable(W, 'Take the Cell key', 'inventory', {
+  addInteractable(W, 'Take the Cell key', 'inventory', {   // (the old wording is the pickup's saved id)
+    label: "Take Henry's cell key",
     onActivate: () => {
       if (cellKey.prop) { cellKey.prop.dead = true; cellKey.prop = null; }
       scene.remove(W); removeInteractable(W); hovered = null;
@@ -99313,7 +99468,8 @@ function wellKeyLie(x, z, quiet, fromY) {
     hit.name = 'hitProxy'; hit.visible = false; hit.position.y = 0.05; W.add(hit);
     addItemShine(W, { size: 2.0, height: 0.5, strength: 4.2, lift: 1.6, through: 0.7, beacon: 1 });   // (was 1.2 / 2.8 and nothing else: lost in the dark beside the body)
   }
-  addInteractable(W, 'Take the Pavilion key', 'inventory', {
+  addInteractable(W, 'Take the Pavilion key', 'inventory', {   // (the old wording is the pickup's saved id)
+    label: 'Take the fancy house gate key',
     onActivate: () => {
       if (wellKey.prop) { wellKey.prop.dead = true; wellKey.prop = null; }
       scene.remove(W); removeInteractable(W); hovered = null;
@@ -106986,8 +107142,8 @@ let wongUnit = null, drunkUnit = null, orcUnit = null, tavMug = null;
 // everyone at the bar, in one place, so nothing can be updated for two of three
 const tavCast = () => (wongUnit ? [wongUnit, drunkUnit, orcUnit].filter(Boolean) : []);
 // and everybody in the hall who can walk into the furniture: the bar's three and the two at the table
-let tavDrinkers = [];
-const tavPeople = () => tavCast().concat(tavDrinkers);
+let tavDrinkers = [], tavDancers = [];
+const tavPeople = () => tavCast().concat(tavDrinkers, tavDancers);
 const tavScene = { t: 0, phase: 0, started: false };
 /* HIS NAME ON HIS SHIRT (the owner, 2026-10-10: "a real name tag like he's at
  * work, not floating, that you can inspect"). A plastic badge, 75 by 28 mm,
@@ -107116,6 +107272,7 @@ function buildTavCast() {
     u.g.visible = inTavern; u.pathO = { x: TAV_X, z: TAV_Z };
   }
   buildTavDrinkers();
+  buildTavDancers();
   if (grammyState === 1 && grammyAt) placeGrammyAt(grammyAt);
   // a save from before the photo existed, with him already dead: it is on the flags where he fell
   else if (grammyState === 0 && orcUnit && orcUnit.retired) {
@@ -107179,7 +107336,162 @@ function tavBottleToHand(u) {
  * wrong way") and sat it 7 cm up the palm, on the heel of the hand. The neck
  * goes out the thumb side now and the fist closes round the lower body, so
  * the base hangs 9 cm under it. */
-const TAV_DRINK_GRIP = { x: -0.09, y: 0.135, z: 0.048, rx: 0, ry: 0, rz: -Math.PI / 2 };
+/* AND THE NECK GOES THE OTHER WAY (2026-11-17, the owner: "the farmers bottles in the tavern are upside down when drinking
+ * fix this"). Measured in the hand's own frame on all four men: world UP while he sits is −X (−0.83..−0.87), and the way
+ * from his fist to his mouth mid-drink is −X too (−0.96..−0.98) — the bottle lay along +X, so it hung neck-down at the
+ * table (lip 0.26 m BELOW the base) and went to his face base-first. Turned end for end about the fist: the neck along −X,
+ * the base 9 cm out the other side so the fist still closes round the lower body. */
+/* AND IN THE PALM, NOT BESIDE IT (same day, the owner: "make bottles in hands better", "fix the farmers hands too they
+ * look weird at the tables"). The grip above assumed this rig's palm faced +Z; the farmers' kind says (and the knuckles
+ * measure) it faces +X on the right hand (`FARM_BASE.palm` [0.9, 0, −0.42]) — the fingers run +Y, the thumb is on −Z
+ * (thumb1 z −0.040, index1 −0.029, pinky1 +0.045). So the bottle stood off the side of the hand and the fist closed on
+ * air ("a star of fingers"). Now its axis runs ACROSS the palm, neck out past the thumb (−Z), 4.5 cm off the palm in the
+ * hollow of the fist (y 0.085, the knuckles at ~0.095), the base 9 cm out on the little finger's side. */
+const TAV_DRINK_GRIP = { x: 0.045, y: 0.085, z: 0.09, rx: -Math.PI / 2, ry: 0, rz: 0 };   // (x 0.09, y 0.135, z 0.048, rz π/2 before)
+/* THE BOTTLE TO THE MOUTH. The drink keys (`fDrink`, `fSwig`, `fToast`, from `farmKeyDefs`) were solved against a
+ * composition that is not the one the game builds clips with any more: measured, they lift the fist from 0.69 m to 0.90 m
+ * — the chest — with the head at 1.30, so even the right way up the bottle never reached him. So over the clip, while it
+ * is in its drink, the right arm reaches (two bones, the elbow out to his right and down) and the wrist turns so the
+ * bottle's LIP is on his mouth with the base up and out in front (`TAV_SIP_DIR`); how far it reaches follows the clip's
+ * own drink keys (`TAV_SIP_K`: half at DR1, all of it from DR2), so the head tipping back, the toast and the rest of the
+ * clip are its own. */
+const TAV_SIP_K = {
+  fDrink: [[0, 0], [0.25, 0.55], [0.42, 1], [0.70, 1], [0.86, 0.55], [1, 0]],
+  fSwig:  [[0, 0], [0.18, 0.55], [0.30, 1], [0.78, 1], [0.88, 0.55], [1, 0]],
+  fToast: [[0, 0], [0.32, 0], [0.48, 0.55], [0.58, 1], [0.78, 1], [0.90, 0.55], [1, 0]],
+};
+/* AND BETWEEN DRINKS IT STANDS ON THE TABLE. Measured, the sit pose put the bottle's base 5-9 cm INSIDE the table top
+ * (top 0.843, bases 0.75-0.79) on three of the four men and 3 cm over it on the fourth — the rigs differ — so the same
+ * reach stands it upright on the boards in front of his right side (`TAV_REST_AT`). How much: all of it while he sits
+ * (`fSit`, `fWipe`), handing over to the drink as the drink takes it (1 − the drink), and none while he raises a toast. */
+const TAV_REST_K = { fToast: [[0, 1], [0.12, 0], [0.88, 0], [1, 1]] };
+const TAV_REST_AT = { in: 0.16, right: 0.14, lift: 0.004 };   // in from the table's edge toward its middle, to his right, over the top
+const TAV_SIP_DIR = { fwd: 0.80, up: 0.60 };    // from the lip toward the base: up and out in front, ~37° above level (56° put the base over his head and the elbow up by his ear)
+const TAV_SIP_MOUTH = { up: 0.07, fwd: 0.11 };   // the mouth off the head bone, in his own frame
+const TAV_BOTTLE_LIP = 0.307, TAV_BOTTLE_FIST = 0.09;   // along the bottle from its base (`tavBottleParts`)
+const _sip = { up: new THREE.Vector3(0, 1, 0), fw: new THREE.Vector3(), rt: new THREE.Vector3(), d: new THREE.Vector3(), m: new THREE.Vector3(),
+  S: new THREE.Vector3(), E: new THREE.Vector3(), H: new THREE.Vector3(), G: new THREE.Vector3(), L: new THREE.Vector3(), T: new THREE.Vector3(),
+  a: new THREE.Vector3(), b: new THREE.Vector3(), n: new THREE.Vector3(), v: new THREE.Vector3(), wT: new THREE.Vector3(), q: new THREE.Quaternion(), pq: new THREE.Quaternion(),
+  wq: new THREE.Quaternion(), hq: new THREE.Quaternion(), qa: [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()] };
+function tavKeyW(K, f) {
+  for (let i = 0; i < K.length - 1; i++) if (f <= K[i + 1][0]) { const s = (f - K[i][0]) / Math.max(1e-6, K[i + 1][0] - K[i][0]); const e = s * s * (3 - 2 * s); return K[i][1] + (K[i + 1][1] - K[i][1]) * e; }
+  return K[K.length - 1][1];
+}
+// [the drink's share, the table's share] of the reach, by where the clip is
+function tavSipW(u) {
+  const a = u.cur; if (!a) return [0, 1];
+  const c = a.getClip(), f = THREE.MathUtils.clamp(a.time / c.duration, 0, 1);
+  const w = TAV_SIP_K[c.name] ? tavKeyW(TAV_SIP_K[c.name], f) : 0;
+  const r = TAV_REST_K[c.name] ? Math.min(tavKeyW(TAV_REST_K[c.name], f), 1 - w) : 1 - w;
+  return [w, r];
+}
+// a bone's world rotation set, by its local one
+function sipSetWorldQ(bone, wq) { bone.parent.getWorldQuaternion(_sip.pq).invert(); bone.quaternion.copy(_sip.pq.multiply(wq)); bone.updateMatrixWorld(true); }
+function tavSip(u) {
+  const D = u.drink, bt = D && D.bottle; if (!bt || !u.model) return;
+  const [wd, wr] = tavSipW(u), w = Math.min(1, wd + wr); if (w <= 0.001) return;
+  const k = wd / Math.max(1e-6, wd + wr);                 // how far from the table to his mouth
+  const bn = (n) => { let r = null; u.model.traverse((o) => { if (!r && o.isBone && o.name.startsWith('mixamorig' + n + '_')) r = o; }); return r; };   // (each bone has its own suffix)
+  const B = u.sipB || (u.sipB = { arm: bn('RightArm'), fore: bn('RightForeArm'), hand: bn('RightHand'), head: bn('Head') });
+  if (!B.arm || !B.fore || !B.hand || !B.head) return;
+  const P = _sip, bones = [B.arm, B.fore, B.hand];
+  for (let i = 0; i < 3; i++) P.qa[i].copy(bones[i].quaternion);       // the clip's own, to blend from
+  u.model.updateMatrixWorld(true);
+  const y = u.g.rotation.y;
+  P.fw.set(Math.sin(y), 0, Math.cos(y)); P.rt.set(-Math.cos(y), 0, Math.sin(y));   // (his right: measured off his own shoulders)
+  B.head.getWorldPosition(P.m).addScaledVector(P.up, TAV_SIP_MOUTH.up).addScaledVector(P.fw, TAV_SIP_MOUTH.fwd);
+  P.d.copy(P.fw).multiplyScalar(TAV_SIP_DIR.fwd).addScaledVector(P.up, TAV_SIP_DIR.up).normalize();
+  // the drink: the fist's point on the bottle, the lip on his mouth (`P.T`), the axis down into it (−`P.d`)
+  P.T.copy(P.m).addScaledVector(P.d, TAV_BOTTLE_LIP - TAV_BOTTLE_FIST);
+  // the table: upright on the boards in front of his right side
+  const t = D.table, tx = D.sx - t.cx, tz = D.sz - t.cz, tl = Math.hypot(tx, tz) || 1, edge = t.r - TAV_REST_AT.in;
+  P.a.set(t.cx + tx / tl * edge, t.top + TAV_REST_AT.lift + TAV_BOTTLE_FIST, t.cz + tz / tl * edge).addScaledVector(P.rt, TAV_REST_AT.right);
+  P.T.lerp(P.a, 1 - k);
+  P.d.lerp(P.n.set(0, -1, 0), 1 - k).normalize();         // (−d is the axis: straight up at the table)
+  P.wT.copy(P.T);                                          // (kept: the loop reuses P.T)
+  for (let it = 0; it < 3; it++) {
+    // the wrist: the bottle's axis (base to lip) down into his mouth
+    bt.localToWorld(P.a.set(0, 0, 0)); bt.localToWorld(P.b.set(0, TAV_BOTTLE_LIP, 0));
+    P.v.subVectors(P.b, P.a).normalize();
+    P.q.setFromUnitVectors(P.v, P.n.copy(P.d).negate());
+    B.hand.getWorldQuaternion(P.hq); P.hq.premultiply(P.q); sipSetWorldQ(B.hand, P.hq);
+    // and the arm, so the fist's point lands where it goes: two bones, the elbow out to his right and down
+    bt.localToWorld(P.G.set(0, TAV_BOTTLE_FIST, 0));
+    B.arm.getWorldPosition(P.S); B.fore.getWorldPosition(P.E); B.hand.getWorldPosition(P.H);
+    P.L.copy(P.H).add(P.T).sub(P.G);                                       // the hand's own target
+    const la = P.S.distanceTo(P.E), lb = P.E.distanceTo(P.H);
+    P.n.subVectors(P.L, P.S); const dist = THREE.MathUtils.clamp(P.n.length(), Math.abs(la - lb) + 1e-3, la + lb - 1e-3); P.n.normalize();
+    P.v.copy(P.S).addScaledVector(P.rt, 0.40).addScaledVector(P.fw, 0.15).addScaledVector(P.up, -0.30).sub(P.S);   // (the elbow's way: out to his right, forward and down, off his own body)
+    P.v.addScaledVector(P.n, -P.v.dot(P.n)).normalize();
+    const ca = THREE.MathUtils.clamp((la * la + dist * dist - lb * lb) / (2 * la * dist), -1, 1), sa = Math.sqrt(1 - ca * ca);
+    P.a.copy(P.S).addScaledVector(P.n, la * ca).addScaledVector(P.v, la * sa);   // the elbow's new place
+    B.hand.getWorldQuaternion(P.hq);                                       // (kept: the wrist was set above)
+    P.q.setFromUnitVectors(P.b.subVectors(P.E, P.S).normalize(), P.G.subVectors(P.a, P.S).normalize());
+    B.arm.getWorldQuaternion(P.wq); P.wq.premultiply(P.q); sipSetWorldQ(B.arm, P.wq);
+    B.fore.getWorldPosition(P.E); B.hand.getWorldPosition(P.H);
+    P.T.copy(P.S).addScaledVector(P.n, dist);
+    P.q.setFromUnitVectors(P.b.subVectors(P.H, P.E).normalize(), P.G.subVectors(P.T, P.E).normalize());
+    B.fore.getWorldQuaternion(P.wq); P.wq.premultiply(P.q); sipSetWorldQ(B.fore, P.wq);
+    sipSetWorldQ(B.hand, P.hq);
+    P.T.copy(P.wT);
+  }
+  // and only as far as the clip is in its drink
+  if (w < 0.999) for (let i = 0; i < 3; i++) { P.q.copy(bones[i].quaternion); bones[i].quaternion.copy(P.qa[i]).slerp(P.q, w); }
+  u.model.updateMatrixWorld(true);
+}
+/* AND THE LEFT HAND ON THE TABLE (2026-11-17, the owner: "make sure farmers hands dont clip through their bodies while
+ * sitting and drinking"). The sit's "left forearm on the table" was solved for the old seat; measured since, on two of
+ * the four the hand hung 26 cm under the table's top inside its edge and on the others 10-15 cm under. The same two-bone
+ * reach lays the wrist on the boards in front of his left side, palm down (this rig's hand: +Y down the fingers, +Z the
+ * palm's side), fingers toward the middle of the table, the elbow out to his left — except while that hand wipes his
+ * mouth (`fWipe`). */
+const TAV_LEFT_K = { fWipe: [[0, 1], [0.22, 0], [0.78, 0], [1, 1]] };
+const TAV_LEFT_AT = { in: 0.11, left: 0.20, lift: 0.035 };
+const _lh = { X: new THREE.Vector3(), Y: new THREE.Vector3(), Z: new THREE.Vector3(), M: new THREE.Matrix4(), M2: new THREE.Matrix4(), q0: [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()] };
+function tavLeftHand(u) {
+  const D = u.drink; if (!D || !u.model) return;
+  const a = u.cur, c = a && a.getClip(); if (!c) return;
+  const f = THREE.MathUtils.clamp(a.time / c.duration, 0, 1);
+  const w = TAV_LEFT_K[c.name] ? tavKeyW(TAV_LEFT_K[c.name], f) : 1; if (w <= 0.001) return;
+  const bn = (n) => { let r = null; u.model.traverse((o) => { if (!r && o.isBone && o.name.startsWith('mixamorig' + n + '_')) r = o; }); return r; };
+  const B = u.lhB || (u.lhB = { arm: bn('LeftArm'), fore: bn('LeftForeArm'), hand: bn('LeftHand') });
+  if (!B.arm || !B.fore || !B.hand) return;
+  const P = _sip, L = _lh, bones = [B.arm, B.fore, B.hand];
+  for (let i = 0; i < 3; i++) L.q0[i].copy(bones[i].quaternion);
+  u.model.updateMatrixWorld(true);
+  const y = u.g.rotation.y, t = D.table;
+  P.fw.set(Math.sin(y), 0, Math.cos(y)); P.rt.set(-Math.cos(y), 0, Math.sin(y));
+  const tx = D.sx - t.cx, tz = D.sz - t.cz, tl = Math.hypot(tx, tz) || 1, edge = t.r - TAV_LEFT_AT.in;
+  P.wT.set(t.cx + tx / tl * edge, t.top + TAV_LEFT_AT.lift, t.cz + tz / tl * edge).addScaledVector(P.rt, -TAV_LEFT_AT.left);
+  /* palm down, the fingers toward the table's middle and a little in toward his right. The hand's own frame: +Y down the
+   * fingers, the palm along the kind's `palmLeft` (−X-ish on this rig — a +Z "palm" laid the hand on its edge). The turn is
+   * the one that takes (fingers, palm) in the hand onto (toward the middle, down) in the world. */
+  const pl = u.kind.palmLeft || u.kind.palm || [0, 0, 1];
+  L.Y.set(0, 1, 0); L.Z.set(pl[0], pl[1], pl[2]); L.Z.addScaledVector(L.Y, -L.Z.dot(L.Y)).normalize(); L.X.crossVectors(L.Y, L.Z);
+  L.M.makeBasis(L.Y, L.Z, L.X);                                           // the hand's (fingers, palm, side), as columns
+  P.v.set(-tx / tl, 0, -tz / tl).addScaledVector(P.rt, 0.3).normalize(); P.n.set(0, -1, 0); P.a.crossVectors(P.v, P.n);
+  L.M2.makeBasis(P.v, P.n, P.a);                                         // where they go in the world
+  L.M2.multiply(L.M.transpose()); P.hq.setFromRotationMatrix(L.M2);
+  for (let it = 0; it < 2; it++) {
+    sipSetWorldQ(B.hand, P.hq);
+    B.arm.getWorldPosition(P.S); B.fore.getWorldPosition(P.E); B.hand.getWorldPosition(P.H);
+    const la = P.S.distanceTo(P.E), lb = P.E.distanceTo(P.H);
+    P.n.subVectors(P.wT, P.S); const dist = THREE.MathUtils.clamp(P.n.length(), Math.abs(la - lb) + 1e-3, la + lb - 1e-3); P.n.normalize();
+    P.v.copy(P.rt).multiplyScalar(-0.40).addScaledVector(P.fw, 0.10).addScaledVector(P.up, -0.30);   // the elbow: out to his left and down
+    P.v.addScaledVector(P.n, -P.v.dot(P.n)).normalize();
+    const ca = THREE.MathUtils.clamp((la * la + dist * dist - lb * lb) / (2 * la * dist), -1, 1), sa = Math.sqrt(1 - ca * ca);
+    P.a.copy(P.S).addScaledVector(P.n, la * ca).addScaledVector(P.v, la * sa);
+    P.q.setFromUnitVectors(P.b.subVectors(P.E, P.S).normalize(), P.G.subVectors(P.a, P.S).normalize());
+    B.arm.getWorldQuaternion(P.wq); P.wq.premultiply(P.q); sipSetWorldQ(B.arm, P.wq);
+    B.fore.getWorldPosition(P.E); B.hand.getWorldPosition(P.H);
+    P.T.copy(P.S).addScaledVector(P.n, dist);
+    P.q.setFromUnitVectors(P.b.subVectors(P.H, P.E).normalize(), P.G.subVectors(P.T, P.E).normalize());
+    B.fore.getWorldQuaternion(P.wq); P.wq.premultiply(P.q); sipSetWorldQ(B.fore, P.wq);
+  }
+  sipSetWorldQ(B.hand, P.hq);
+  if (w < 0.999) for (let i = 0; i < 3; i++) { P.q.copy(bones[i].quaternion); bones[i].quaternion.copy(L.q0[i]).slerp(P.q, w); }
+  u.model.updateMatrixWorld(true);
+}
 function tavDropBottle(u) {
   const D = u.drink; if (!D || !D.bottle || !D.bottle.parent) return;
   D.bottle.getWorldPosition(_mgP);
@@ -107233,8 +107545,8 @@ function buildTavDrinkers() {
   // each knows the man across his table, to raise a bottle to
   for (const u of tavDrinkers) u.drink.mate = tavDrinkers.find((o) => o !== u && o.drink.table === u.drink.table) || null;
 }
-const TAV_DRINK_SEAT = -0.07;   // his hips at the back of the seat, the chair's middle under his thighs
-const TAV_DRINK_HANDS = { R: 1.05, L: 0.55 };   // the fist round the bottle, and a hand at rest (per-hand `life.grip`)
+const TAV_DRINK_SEAT = 0.04;    // his origin a little forward of the chair's middle (−0.07 until 2026-11-17: measured, his back went 4-8 cm through the backrest's slats)
+const TAV_DRINK_HANDS = { R: 1.0, L: 0.32 };   // (L 0.55: a hand flat on the boards is barely curled)   // the fist round the bottle, and a hand at rest (per-hand `life.grip`)
 function tavDrinkerProvoke(src, by) {
   const other = by && by.st && !tavDrinkers.includes(by) ? by : null;     // a man from the bar; else it was you
   for (const d of tavDrinkers) {
@@ -107287,6 +107599,8 @@ function updateTavDrinkers(dt) {
         D.after = Math.random() < 0.4 ? 'fWipe' : null;
       } else if (!u.cur || u.cur !== u.clips.fSit) mutPlay(u, 'fSit', true);
       u.mixer.update(dt);
+      tavSip(u);                                   // the bottle on the table, and to his mouth while the clip is in its drink
+      tavLeftHand(u);                              // and the other hand on the table
       continue;
     }
     /* THE MAN WHO BROKE THEIR TABLE IS DOWN, AND THAT WAS THE QUARREL. They
@@ -107295,6 +107609,99 @@ function updateTavDrinkers(dt) {
       const f = u.st.foe;
       if (!f || !f.st || !f.st.alive) { u.st.awake = false; u.st.atk = -1; u.st.foe = null; }
     }
+  }
+}
+/* ---- TWO MEN DANCING BY THE STOREROOM DOOR (2026-11-17, the owner: "have two farmers each using these dance moves in the
+ * tavern near the front of the storage room. make these animations exact. if hit they attack you"). The owner's two Mixamo
+ * dances (`assets/dance-moves.json`, `tools/ntar_moves.py -- dance`: nothing cut, every spin of the body kept as drawn),
+ * retargeted onto two bare-handed farmers' own rigs the way the castle's motion capture is (`ntarRetarget`, from the
+ * BIND), with the dance's own travel put back INTO the hips — a gait leaves that to the game, a dance is the clip's
+ * (`tavDanceClip`). They dance on the spot in front of the door, facing the hall, until one of them is hit; then both
+ * stop and come for you, as the drinkers do. What you kill stays killed (the save key every creature carries). */
+const TAV_DANCE_FROM = [12, 7];                                   // two bare-handed men the drinkers are not
+const TAV_DANCE_AT = [{ x: -8.8, z: 4.8 }, { x: -6.0, z: 4.8 }];  // room-local, 4 m out from the storeroom door (x -7.4, its face z 8.6) toward the hall's middle, a 2.8 m lane between them to the door, 2.9 m off the nearest table (6.8 until 2026-11-17: "a little further from the door more towards the center of the room but not in the way")
+const TAV_DANCE_YAW = Math.PI;                                    // facing down the hall, away from the door
+const TAV_DANCE_SRC = { mDanceA: 'danceA', mDanceB: 'danceB' };
+function tavDancerKind(i) {
+  const name = 'tavDancer' + i;
+  if (MUT_KINDS[name]) return name;
+  const b = MUT_KINDS['farmer' + TAV_DANCE_FROM[i]], dance = i ? 'mDanceB' : 'mDanceA';
+  MUT_KINDS[name] = Object.assign({}, b, {
+    tav: true, fortBody: false, frenzy: false, wakeAt: 0, solo: true,
+    provoke: (u) => tavDancerProvoke(u), first: dance, sleepIdle: null, dance,
+    tool: null,          // dancing bare-handed
+    tint: 0, emis: 0.22, rim: [0.055, 0.046, 0.034],              // lit for the baked hall, as the drinkers are
+    hp: b.hp + 1,
+  });
+  return name;
+}
+const TAV_DANCE_CLIPS = {};     // rig file + dance -> the clip (shared, as `FARM_CLIPS` are)
+function tavDanceClip(u, m, R0) {
+  const nm = u.kind.dance, key = u.kind.file + ':' + nm;
+  if (TAV_DANCE_CLIPS[key]) return TAV_DANCE_CLIPS[key];
+  const C = danceMoves && danceMoves.clips[TAV_DANCE_SRC[nm]]; if (!C) return null;
+  const J = R0.J;
+  // his hips' height at the BIND against the file's, which is what scales the file's metres onto him (`ntarRetarget`'s own)
+  const held = R0.bones.map((b) => [b, b.quaternion.clone(), b.position.clone()]);
+  for (const b of R0.bones) { const k = R0.bind.get(b); b.quaternion.copy(k.q); b.position.copy(k.p); }
+  m.updateMatrixWorld(true);
+  const mwp = m.getWorldPosition(new THREE.Vector3());
+  const hipWorld = J.hip ? J.hip.getWorldPosition(new THREE.Vector3()).y - mwp.y : 0;
+  for (const [b, q, p] of held) { b.quaternion.copy(q); b.position.copy(p); }
+  m.updateMatrixWorld(true);
+  const [clip] = ntarRetarget(u, m, R0.bones, R0.bind, J, R0.hipUp, R0.hipPos, { fps: danceMoves.fps, clips: { [nm]: C } });
+  if (!clip) return null;
+  /* AND THE FEET STAY WHERE HE PUT THEM: the dance's own travel, into the hips' track — the model's own X and Z in the
+   * hips' parent's frame, per metre, the hips' height ratio applied like the lift's */
+  const T = u.clipTravel[nm], tr = J.hip && clip.tracks.find((t) => t.name === J.hip.name + '.position');
+  const hk = (C.restPos && C.restPos.Hips && C.restPos.Hips[1] > 0.05 && hipWorld > 0.05) ? hipWorld / C.restPos.Hips[1] : 1;
+  if (T && tr && J.hip.parent) {
+    const pq = J.hip.parent.getWorldQuaternion(new THREE.Quaternion()).invert(), ps = J.hip.parent.getWorldScale(new THREE.Vector3());
+    const gq = m.getWorldQuaternion(new THREE.Quaternion());
+    const ax = new THREE.Vector3(1, 0, 0).applyQuaternion(gq).applyQuaternion(pq).divideScalar(Math.max(1e-6, ps.y));
+    const az = new THREE.Vector3(0, 0, 1).applyQuaternion(gq).applyQuaternion(pq).divideScalar(Math.max(1e-6, ps.y));
+    const n = Math.min(T.length, tr.values.length / 3);
+    for (let i = 0; i < n; i++) {
+      const x = T[i][0] * hk, z = T[i][1] * hk;
+      tr.values[i * 3] += ax.x * x + az.x * z; tr.values[i * 3 + 1] += ax.y * x + az.y * z; tr.values[i * 3 + 2] += ax.z * x + az.z * z;
+    }
+  }
+  delete u.clipTravel[nm]; u.clipSpeed[nm] = 0;                     // (the game slides nothing: it is all in the hips)
+  TAV_DANCE_CLIPS[key] = clip;
+  return clip;
+}
+function buildTavDancers() {
+  if (tavDancers.length || !danceMoves || !tavBuilt) return;
+  const fy = TAV_Y + TAV_FLOOR;
+  TAV_DANCE_AT.forEach((A, i) => {
+    const x = TAV_X + A.x, z = TAV_Z + A.z;
+    const u = makeMutant(x, z, tavDancerKind(i), fy);
+    u.packList = tavDancers;
+    u.g.rotation.y = TAV_DANCE_YAW; u.g.visible = inTavern; u.pathO = { x: TAV_X, z: TAV_Z };
+    if (u.retired || !u.st.alive) return;
+    u.dance = { x, z, yaw: TAV_DANCE_YAW };
+    u.holdAnim = true;
+    tavDancers.push(u);
+  });
+}
+function tavDancerProvoke(src) {
+  for (const d of tavDancers) {
+    if (!d.st.alive || d.st.awake) continue;
+    d.st.awake = true; d.st.mine = true; d.st.foe = null; d.st.cool = 0.9; d.st.step = 0;
+    d.holdAnim = false;
+    d.st.roar = 0.6; d.st.roarClip = d.kind.anim.roar;
+    if (d === src) sfxMutRoar(Math.hypot(camera.position.x - d.g.position.x, camera.position.z - d.g.position.z), d.kind.voice);
+  }
+}
+function updateTavDancers(dt) {
+  if (!tavDancers.length) buildTavDancers();
+  for (const u of tavDancers) {
+    const D = u.dance; if (!D || !u.st.alive || u.st.awake || !u.mixer || !u.clips) continue;
+    const a = u.clips[u.kind.dance]; if (!a) continue;
+    u.g.position.x = D.x; u.g.position.z = D.z; u.g.rotation.y = D.yaw;
+    u.holdAnim = true;
+    if (u.cur !== a) { const p = mutPlay(u, u.kind.dance, true); if (p) { p.paused = false; p.timeScale = 1; } }
+    u.mixer.update(dt);
   }
 }
 /* AND A BAR FIGHT DOES NOT STAY AT THE BAR. Left alone the two of them
@@ -107792,12 +108199,19 @@ function farmKeyDefs() {
    * head tipping back rather than the chest leaning away). The sit holds the
    * bottle low in front, on the table, not at the chin. */
   const SIT = { chest: { right: 0.14 }, neck: { right: 0.04 }, head: { right: 0.02 },
-    thighL: { right: -1.50, fwd: 0.08 }, calfL: { right: 1.45 }, footL: { right: -0.40 },
-    thighR: { right: -1.50, fwd: -0.08 }, calfR: { right: 1.45 }, footR: { right: -0.40 },
+    thighL: { right: -1.18, fwd: 0.08 }, calfL: { right: 1.45 }, footL: { right: -0.10 },
+    thighR: { right: -1.18, fwd: -0.08 }, calfR: { right: 1.45 }, footR: { right: -0.10 },   // (the toes down to the boards: on the balls of his feet)
     // the left forearm on the table in front of him, palm down (solved: the old numbers stood it upright with the open hand at his chin)
     armL: { right: -0.80, fwd: 0.58, up: -0.59 }, foreL: { right: -0.45 }, handL: { right: -0.30, fwd: 0.30, up: -0.30 },
     // and the bottle rests on the table in the right fist, the forearm level (bent further the neck pointed at his nose)
-    armR: { right: -0.22, fwd: -0.10, up: 0.10 }, foreR: { right: -0.72 }, handR: { right: 0.15 }, hipY: -0.33 };
+    armR: { right: -0.45, fwd: -0.30, up: 0.10 }, foreR: { right: -0.72 }, handR: { right: 0.15 }, hipY: -0.21 };
+  /* (armR right −0.22, fwd −0.10 until 2026-11-17, "make sure farmers hands dont clip through their bodies while sitting":
+   * measured, the right elbow sat tucked 16 cm off the spine and the forearm crossed his belly — its vertices 3-5 cm from
+   * the trunk's centre line. Forward and out, clear of his side.) */
+  /* (hipY −0.33 and the thighs −1.50 until 2026-11-17, the owner: "make sure they sit on the chairs not clip through them":
+   * measured against the tavern's chair — seat top 0.49, backrest slats 0.18-0.20 behind its middle — the four sat with
+   * their undersides at 0.35-0.40, 9-14 cm INTO the seat. Up 12 cm, the thighs sloped a touch down to the knee so the
+   * feet stay on the boards; and `TAV_DRINK_SEAT` forward, off the backrest.) */
   D.fSit = [3.4, [[0, SIT], [0.5, M(SIT, { chest: { right: 0.20, up: 0.06 }, head: { right: 0.08, up: 0.18 } })], [1, SIT]], true];
   /* AND SOLVED AGAIN WITH THE REAL GRIP. The first solve was done before
    * the bottle's grip was re-measured off the hand (`TAV_DRINK_GRIP`): the
@@ -108467,7 +108881,9 @@ function authorFarmerClips(u, m) {
     if (u.cur) u.cur.setEffectiveWeight(1);
     return true;
   };
-  return mc ? FARM_CLIPS[u.kind.file].concat(mc) : FARM_CLIPS[u.kind.file];
+  const dance = u.kind.dance ? tavDanceClip(u, m, R0) : null;     // (the two by the storeroom door: their own dance)
+  const base = mc ? FARM_CLIPS[u.kind.file].concat(mc) : FARM_CLIPS[u.kind.file];
+  return dance ? base.concat([dance]) : base;
 }
 function farmMeasureTool(o, inv) {
   const g = o.geometry.clone().applyMatrix4(inv.clone().multiply(o.matrixWorld));
@@ -118641,7 +119057,7 @@ window.__bw = {
   catMemory, catThrowBones, catKickBones, catFloorSmooth, catPickTarget, catBeginAct, get catAmbushAt() { return catAmbushAt; }, set catAmbushAt(v) { catAmbushAt = v; },
   catEat: () => catSpots.eat.map((k) => [catG.nodes[k].x - CAT_X, catG.nodes[k].f - CAT_Y, catG.nodes[k].z - CAT_Z].map((v) => +v.toFixed(1))), catWoke: () => crawlerUnit && crawlerUnit.catWoke,
   get catG() { return catG; }, catRandomNode,
-  tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; }, get tavDrinkers() { return tavDrinkers; }, get tavChairs() { return tavChairs; }, get tavTables() { return tavTables; }, smashTavChair, smashTavTable, TAV_DRINK_GRIP, tavDrinkerProvoke, get tavCastUnits() { return tavCast(); },
+  tavScene, tavProvoke, buildTavCast, get tavMug() { return tavMug; }, get tavDrinkers() { return tavDrinkers; }, get tavDancers() { return tavDancers; }, get tavChairs() { return tavChairs; }, get tavTables() { return tavTables; }, smashTavChair, smashTavTable, TAV_DRINK_GRIP, tavDrinkerProvoke, get tavCastUnits() { return tavCast(); },
   tavState: () => ({ inTavern, ready: tavReady, built: tavBuilt, walk: !!tavWalk, cells: tavCells ? tavCells.size : 0, busy: tavBusy, t: +tavT.toFixed(2),
     walls: tavWalls && { faces: tavWalls.v.length / 9, cells: tavWalls.map.size }, repair: tavWalk && { storeys: tavWalk.storeys, ms: tavWalk.built },
     tables: tavTables.map((t) => ({ x: +(t.cx - TAV_X).toFixed(2), z: +(t.cz - TAV_Z).toFixed(2), r: +t.r.toFixed(2), top: +(t.top - TAV_Y).toFixed(2), pieces: t.pieces.length, kinds: t.pieces.map((p) => p.userData.part).join(','), dead: t.dead })),
@@ -119106,6 +119522,6 @@ function wbHookTick(dt) {
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   DOCK_DECK, drownLid, washLid, DROWN_GLIMPSE, keyLineS: () => keyLine, seaGiftS: () => seaGift, seaS: () => ({ state: seaState, world: !!sea.world, spot: sea.spot }), deepFaceS: () => deepFace, traderArmAim, traderBonesS: () => traderBones, traderRigS: () => traderRig, magModel, bunkerG: () => inBunker && inBunker.group, landFloat, traderSell, SNORK_X, SNORK_Z, wellLookStart, wellLeave, WELL_RIM_Y, WELL_S, TRADER_RAGE, traderStruck, traderStrike, playerWading, aimHere: () => camera.getWorldDirection(_aimD), dead, deadPlace, deadBloodAdd, deadLoad, deepRaysS: () => deepRays, plioAmbush, deadLiveSeen, fishingRodS: () => fishingRod, plioLoad, deepRestore, thrFightOn, luckyBlow, gemItemS: () => gemItem, setLuckAt: (v) => { luckAt = v; }, sfxStepBunker, startDealerPickup, cineWalkAway,
   cineS: () => ({ hold: cineHold, walkOff: cineWalkOff, fov: +camera.fov.toFixed(2), want: dialogFov, at: cineAt.toArray().map((v) => +v.toFixed(2)) }),
-  hpS: () => hp, setHp: (v) => { hp = v; }, LOOP_SONGS, katanaItemS: () => katanaItem, dealerU: () => dealer, SELL_ROWS, migrateSave, jarsS: () => bloodJars,
+  hpS: () => hp, setHp: (v) => { hp = v; }, pavKeyItem, storeKeyItem, fillKeyModels, LOOP_SONGS, katanaItemS: () => katanaItem, dealerU: () => dealer, SELL_ROWS, migrateSave, jarsS: () => bloodJars,
 }));
 moduleDone = true;   // (the last line: see `bootRoomsAsked`)
