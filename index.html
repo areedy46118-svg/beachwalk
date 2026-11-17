@@ -4,6 +4,15 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Beach Walk</title>
+<link rel="preload" as="image" href="assets/title-B.png">
+<link rel="preload" as="image" href="assets/title-E.png">
+<link rel="preload" as="image" href="assets/title-A.png">
+<link rel="preload" as="image" href="assets/title-C.png">
+<link rel="preload" as="image" href="assets/title-H.png">
+<link rel="preload" as="image" href="assets/title-W.png">
+<link rel="preload" as="image" href="assets/title-A2.png">
+<link rel="preload" as="image" href="assets/title-L.png">
+<link rel="preload" as="image" href="assets/title-K.png">
 <script>
   /* A CHECKPOINT LOAD NEVER SHOWS THE TITLE. The card is in the page and the
      game only takes it down once main.js has run, which is the whole of the
@@ -168,12 +177,11 @@
   #intro-title.out { opacity: 0; transition: opacity 3.6s ease-in-out; }
   #intro-title h1 {
     display: inline-block; margin: 0; font-weight: 500; line-height: 1;
-    font-size: clamp(1.1rem, 6.2vw, 6rem); white-space: nowrap;
-    letter-spacing: 0.36em; text-indent: 0.36em; color: #f4f4f4;
-    text-shadow: 0 0 2px rgba(255,255,255,0.55), 0 2px 26px rgba(0,0,0,0.5);
-    -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='m' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='11' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 2.6 -0.55'/></filter><rect width='160' height='160' filter='url(%23m)'/></svg>");
-    mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='m' x='0' y='0' width='100%25' height='100%25'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='11' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 2.6 -0.55'/></filter><rect width='160' height='160' filter='url(%23m)'/></svg>");
-    -webkit-mask-size: 160px 160px; mask-size: 160px 160px;
+    font-size: clamp(1.4rem, 7.4vw, 8rem); white-space: nowrap;   /* (6.2vw, 6rem until 2026-11-17: "make the title text bigger") */
+    letter-spacing: 0.36em; text-indent: 0.36em; color: transparent;
+    /* (the owner's hand-drawn letters, 2026-11-17: the shadow it had as text, now as filters on the drawn shapes; the
+       print-noise mask is off — the brush is its own texture) */
+    filter: drop-shadow(0 0 2px rgba(255,255,255,0.55)) drop-shadow(0 2px 26px rgba(0,0,0,0.5));
   }
   /* THE GLOW IS ITS OWN LAYER. The letters carry a noise mask so they read
      printed, and a mask takes the text-shadow with it — so the glow was
@@ -184,11 +192,10 @@
   #intro-title .t-stack > * { grid-area: 1 / 1; }
   #intro-title .t-glow {
     margin: 0; font-weight: 500; line-height: 1; pointer-events: none; user-select: none;
-    font-size: clamp(1.1rem, 6.2vw, 6rem); white-space: nowrap;
+    font-size: clamp(1.4rem, 7.4vw, 8rem); white-space: nowrap;   /* (6.2vw, 6rem until 2026-11-17: "make the title text bigger") */
     letter-spacing: 0.36em; text-indent: 0.36em;
-    color: rgba(214, 226, 255, 0.85);
-    text-shadow: 0 0 0.35em rgba(190, 208, 255, 0.55), 0 0 1.1em rgba(150, 175, 240, 0.35);
-    filter: blur(0.09em);
+    color: transparent;
+    filter: blur(0.09em) drop-shadow(0 0 0.35em rgba(190, 208, 255, 0.55)) drop-shadow(0 0 1.1em rgba(150, 175, 240, 0.35));
     opacity: 0.5;
     animation: t-breathe 7s ease-in-out infinite alternate;
   }
@@ -200,6 +207,29 @@
   #intro-title h1 span:nth-child(4) { opacity: 0.74; transform: translateY(-1px) scaleX(0.96); }
   #intro-title h1 span:nth-child(6) { transform: translateY(2px); }
   #intro-title h1 span:nth-child(8) { opacity: 0.86; }
+  /* THE OWNER'S OWN LETTERS (2026-11-17: "replace the title screen letters with these but keep them in the original spots
+     … give them the glow and make them the same color … i just want a more hand drawn feel"). His brush-drawn BEACH
+     WALK, cut letter by letter from the photo (`assets/title-*.png`, white on clear). Every letter's box is still the
+     Helvetica letter — kept, invisible, so the spacing and the small per-letter nudges above are exactly where they
+     were — and the drawn letter is laid into the glyph's own box (its advance less the tracking) as a mask: the front
+     in the title's white, the glow copy behind in its own cold blue, blurred as before. */
+  #intro-title .t-stack span { position: relative; }
+  #intro-title .t-stack span::before {
+    content: ''; position: absolute; left: 0; right: 0.36em; top: 0.04em; bottom: 0.02em;
+    -webkit-mask-position: center; mask-position: center; -webkit-mask-size: contain; mask-size: contain;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  }
+  #intro-title h1 span::before { background: #f4f4f4; }
+  #intro-title .t-glow span::before { background: rgba(214, 226, 255, 0.85); }
+  #intro-title .t-stack span:nth-child(1)::before { -webkit-mask-image: url(assets/title-B.png); mask-image: url(assets/title-B.png); }
+  #intro-title .t-stack span:nth-child(2)::before { -webkit-mask-image: url(assets/title-E.png); mask-image: url(assets/title-E.png); }
+  #intro-title .t-stack span:nth-child(3)::before { -webkit-mask-image: url(assets/title-A.png); mask-image: url(assets/title-A.png); }
+  #intro-title .t-stack span:nth-child(4)::before { -webkit-mask-image: url(assets/title-C.png); mask-image: url(assets/title-C.png); }
+  #intro-title .t-stack span:nth-child(5)::before { -webkit-mask-image: url(assets/title-H.png); mask-image: url(assets/title-H.png); }
+  #intro-title .t-stack span:nth-child(6)::before { -webkit-mask-image: url(assets/title-W.png); mask-image: url(assets/title-W.png); }
+  #intro-title .t-stack span:nth-child(7)::before { -webkit-mask-image: url(assets/title-A2.png); mask-image: url(assets/title-A2.png); }
+  #intro-title .t-stack span:nth-child(8)::before { -webkit-mask-image: url(assets/title-L.png); mask-image: url(assets/title-L.png); }
+  #intro-title .t-stack span:nth-child(9)::before { -webkit-mask-image: url(assets/title-K.png); mask-image: url(assets/title-K.png); }
   #intro p { position: relative; }
   #intro p {
     max-width: 38ch;

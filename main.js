@@ -12680,10 +12680,10 @@ function renderPackDetail() {
       invDetailEl.className = 'detail';
       invDetailEl.innerHTML = `<div class="big">${iconHTML(key)}</div>
         <div class="name">${key.name}</div>
-        ${key.desc ? `<div class="desc">${key.desc}</div>` : ''}
+        ${''/* (no description for a key — 2026-11-17, the owner: "take out key descriptions") */}
         <button type="button" class="act insp">Inspect</button>
         <button type="button" class="act hold">${key === equipped ? 'Holster' : 'Hold'}</button>
-        <div class="hint">On the keychain · scroll or drag the ring to turn it</div>`;
+        <div class="hint">On the keychain · click a key, or turn the ring with the arrows</div>`;
       const bI = invDetailEl.querySelector('.insp');
       bI.disabled = !key.inspectModel;
       bI.addEventListener('click', (e) => { e.stopPropagation(); inspectFromPack(key); });
@@ -13204,7 +13204,7 @@ function kcText() {
   const K = kc, it = K && K.items[K.sel];
   kcEl.querySelector('.kc-name').textContent = it ? it.name : 'No keys yet';
   kcEl.querySelector('.kc-count').textContent = K && K.items.length ? `${K.sel + 1} / ${K.items.length}` : '';
-  kcEl.title = it ? 'Scroll or drag to turn the ring · click to select' : 'Every key you find hangs here until you use it';
+  kcEl.title = it ? 'Click a key, or turn the ring with the arrows, scroll or a drag' : 'Every key you find hangs here until you use it';
   document.getElementById('kc-prev').disabled = document.getElementById('kc-next').disabled = !K || K.items.length < 2;
 }
 const kcCurrent = () => (kc && kc.items[kc.sel]) || null;
@@ -13385,7 +13385,28 @@ window.addEventListener('pointermove', (e) => {
   const dx = e.clientX - kcDrag.x;
   if (Math.abs(dx) >= 46) { kcStep(dx < 0 ? 1 : -1); kcDrag.x = e.clientX; kcDrag.moved = true; }
 });
-window.addEventListener('pointerup', () => { if (kcDrag && !kcDrag.moved && kcOpen) selectKeyChain(); kcDrag = null; });
+/* A KEY IS CLICKED, NOT THE RING (2026-11-17, the owner: "have it so i can click each key to see them in my pack as well as
+ * use the arrows"): a click without a drag picks the key under the cursor (a ray from the ring's own camera through every
+ * key hanging on it), the ring turns the short way round to bring it to the front, and it is the pack's selection; a click
+ * on the ring itself, or between keys, takes the one at the front as before. */
+const _kcRay = new THREE.Raycaster(), _kcNdc = new THREE.Vector2();
+function kcKeyAt(x, y) {
+  const K = kc; if (!K || !K.keys.length) return -1;
+  const b = kcEl.querySelector('#kc-canvas').getBoundingClientRect(); if (!b.width) return -1;
+  _kcNdc.set((x - b.left) / b.width * 2 - 1, -((y - b.top) / b.height) * 2 + 1);
+  K.sc.updateMatrixWorld(true); _kcRay.setFromCamera(_kcNdc, K.cam);
+  let best = -1, bd = 1e9;
+  K.keys.forEach((k, i) => { const h = _kcRay.intersectObject(k.pivot, true)[0]; if (h && h.distance < bd) { bd = h.distance; best = i; } });
+  return best;
+}
+window.addEventListener('pointerup', (e) => {
+  if (kcDrag && !kcDrag.moved && kcOpen) {
+    const i = kcKeyAt(e.clientX, e.clientY), K = kc;
+    if (i >= 0 && K && K.items.length > 1 && i !== K.sel) { const n = K.items.length; let d = ((i - K.sel) % n + n) % n; if (d > n / 2) d -= n; kcStep(d); }
+    selectKeyChain();
+  }
+  kcDrag = null;
+});
 // where the cursor is, relative to the ring's box: the hand holding the chain follows it (`kcFrame`)
 window.addEventListener('pointermove', (e) => {
   if (!kcOpen || !kc) return;
@@ -13395,12 +13416,16 @@ window.addEventListener('pointermove', (e) => {
   kc.my = THREE.MathUtils.clamp((e.clientY - (b.top + b.height / 2)) / s, -1.2, 1.2);
 });
 kcEl.addEventListener('click', (e) => e.stopPropagation());
-// and with the ring selected, the arrow keys turn it
+// and the arrow keys turn it whenever the pack is open, the key they bring round coming up as the selection (2026-11-17:
+// they waited for the ring to be clicked first)
 window.addEventListener('keydown', (e) => {
-  if (!kcOpen || !packKeySel) return;
-  if (e.code === 'ArrowRight') { kcStep(1); e.preventDefault(); }
-  else if (e.code === 'ArrowLeft') { kcStep(-1); e.preventDefault(); }
+  if (!kcOpen || !kc || !kc.items.length) return;
+  if (e.code !== 'ArrowRight' && e.code !== 'ArrowLeft') return;
+  e.preventDefault();
+  if (packKeySel) kcStep(e.code === 'ArrowRight' ? 1 : -1); else selectKeyChain();   // (the first press selects the key at the front)
+  if (!packKeySel) selectKeyChain();
 });
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { kcS: () => kc, kcKeyAt, packKeySelS: () => packKeySel }));
 
 // ------------------------------------------------------------------
 // First-person view model (rendered in its own overlay scene)

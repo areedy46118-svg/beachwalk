@@ -1,0 +1,14 @@
+<!doctype html><meta charset="utf-8"><title>title shot</title>
+<!-- THE TITLE, ALONE (2026-11-17). Not part of the game. The game in a frame with its intro's name shown on black, for a
+     headless screenshot: chrome --headless --screenshot --virtual-time-budget=9000 http://localhost:PORT/tools/titleshot.html -->
+<style>html, body { margin: 0; background: #000; } iframe { width: 1280px; height: 720px; border: 0; display: block; }</style>
+<iframe id="f" src="/index.html"></iframe>
+<script>
+const f = document.getElementById('f');
+f.addEventListener('load', () => setTimeout(() => {
+  const d = f.contentDocument, st = d.createElement('style');
+  st.textContent = '#intro { display: flex !important; opacity: 1 !important; position: fixed; inset: 0; background: #000; z-index: 99; } #intro-video, #intro-text, #overlay { display: none !important; } #intro-title { opacity: 1 !important; transition: none !important; } #intro-title .t-glow { animation: none !important; opacity: 0.6 !important; }';
+  d.head.appendChild(st);
+  d.getElementById('intro-title').classList.add('on');
+}, 2500));
+</script>

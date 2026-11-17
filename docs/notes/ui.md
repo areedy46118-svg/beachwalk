@@ -1086,3 +1086,27 @@ across the box). The sewer key is the "Steel Door Key" now (`was: ['Lair key']` 
   the ring's fill (`hpCharge`) — they carry on from where they were. `tools/hphold.js`: hurt to 1; 40 s in the pack 1,
   40 s in the menu 1, 40 s playing 4. (A probe must load `burntest.js` and step `__adv(1)`: `b.frame(1)` in a tight loop
   is no time at all, and nothing mends.)
+
+- **The title in the owner's hand** (2026-11-17, a photo of BEACH WALK in brush: "replace the title screen letters with
+  these but keep them in the original spots … give them the glow and make them the same color … a more hand drawn
+  feel"). `assets/title-{B,E,A,C,H,W,A2,L,K}.png` (white on clear, 240 px tall, 92 KB in all): cut from the photo by
+  ink against the paper (rows by ink per line; letters by empty columns, the touching A·C·H and W·A split at their
+  thinnest column), solid to the stroke's edge and ~3 px bolder (soft, thin ink read grey at title size), stray flecks
+  of a neighbour's stroke dropped (components under 5 % of the letter; the W's last 6 columns). In `index.html` every
+  title letter is still its Helvetica glyph, transparent, so the tracking and the per-letter nudges are where they were;
+  `::before` lays the drawn letter into the glyph's box (`right: 0.36em`, the tracking) as a mask — the front `#f4f4f4`,
+  the glow copy its old blue and blur. Text-shadow would have drawn the old Helvetica, so both shadows are `filter:
+  drop-shadow` now; the print-noise mask is off. Preloaded in `<head>` so the name is whole on the frame it lands.
+  `tools/titleshot.html` (headless `--screenshot`) shows the title alone; pin `#intro-title` and the glow's breath, or
+  two shots differ by the intro's own fades.
+- **The title bigger** (2026-11-17, "make the title text bigger"): both layers' `font-size` clamp(1.1rem, 6.2vw, 6rem) →
+  clamp(1.4rem, 7.4vw, 8rem). The name is ~12 of its own em wide with the tracking: 8.2vw ran edge to edge at 1280
+  (`tools/titleshot.html`); 7.4vw leaves ~6 % a side, and 8rem holds it to ~80 % on a wide screen.
+
+## Keys clicked on the ring, no descriptions (2026-11-17, "take out key descriptions and have it so i can click each key to see them in my pack as well as use the arows")
+- The pane shows a key's name and Inspect / Hold, no `desc`. `kcKeyAt(x, y)`: a ray from the ring's own camera through every
+  key's `pivot`; a click without a drag on a key turns the ring the short way to it (`kcStep(d)`, d the cyclic
+  difference folded to ±n/2) and selects it; a click on the ring or between keys takes the front one, as before. The
+  arrows work whenever the pack is open (they waited for the ring to be clicked): the first press selects the front key,
+  each after turns. `tools/kcpick.js` (three keys, each projected and clicked): picked = clicked = front, selected, no
+  description; Right 0 → 1, Left back. `__bw.kcS`, `kcKeyAt`, `packKeySelS` exposed for it.
