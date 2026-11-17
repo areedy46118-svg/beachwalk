@@ -1132,3 +1132,29 @@ z 8.39 from the middle and both slants; opened, a walk in straight away reaches 
 own body — so it settled on the corpse's height and stayed when the body went. Only `bunkerFloorAt` sets the floor now,
 and `dropGrammy`'s fallback is the orc's feet, not its middle. It plays the octopus ring's sting (`ringDrop`) unless a
 save is being put back. Measured: dropped at 1.6 m, it lies 0.04 m over the flags.
+
+
+## The orc's voice (2026-11-16, the owner's recordings)
+
+The owner: "DO THE SAME FOR THE ORC. MAKE THE ONE LABELED DEATH SOUND PLAY WITH THE OCTOPUS RING DRROP SOUND. SWINGS IS HIM
+SWINGING HIS WEAPON. HITS IS WHEN HE IS HIT. SOUNDS DONT HAVE TO PLAY EVERYTIME UNLESS ITS THE DEATH SOUND".
+- Cut by the farmers' packer with named sets: `tools/farmer_voice_pack.py "<Bounced Files>" "ORC SWINGS=orc-swing"
+  "ORC HITS=orc-hit" "ORC DEATH SOUND=orc-die"` → 7 swings (three are 0.9-1.5 s, one continuous heave each — checked on a
+  50 ms envelope), 11 hits, 1 death; 276 KB. Quieter than the farmers' bounces (-22 to -30 dBFS RMS), levelled to -18.
+- His voice is `farm: true, vox: ORC_VOX`, so it goes through `farmVox` (see castle.md, "The farmers' voices"): the swing
+  grunt at the strike at 0.5 (not twice inside 1.4 s), the hurt in `sfxMutHit` at 0.7, the tell and laugh silent; his
+  ROAR keeps the synthesised bellow (`farmVoxRole`: a `vox` with no `shout`). `farmVoxLast` is keyed by bank, so the
+  farmers' gaps and his are apart. `V.unit` is set where `orcUnit` is made.
+- THE TAVERN'S CAST NEVER CALL `sfxMutDie`: they are `bossDeath`, and that branch of `finishMutant` returns without a
+  word. His death cry is therefore in `finishMutant` beside `maybeDropGrammy` (`u === orcUnit`, not on a restore), so it
+  starts on the same frame as the portrait's `ringDrop` — and on every death, even one after the portrait has gone.
+- Measured, `tools/orcvox.js` (the tavern loaded, him provoked onto you, you 2.6 m off him for 30 s then hitting him
+  every 2.5 s): grunts on 2 of his 4 blows, cries on 5 of 9 blows taken (some are blocked), the death cry at 53.00 s and
+  the ring's sting at 53.00 s. `musictest loadTavern` and `farmers` PASS.
+
+- **ONLY THE RARE ONES ARE RARE** (2026-11-17, the owner: "MAKE SURE ONLY RARE DIALOG IS RARE I NEED THE NORMAL ONES A
+  LITTLE LOUDER AND WAY MORE FREQUENT"). The swing grunts and hit cries (farmers 0.42/0.75 → 0.9/1, orc 0.5/0.7 → 0.9/1)
+  and the gargoyles' attack/cry (0.55/0.85 → 0.9/1) went up to nearly always, gain ×1.3 (+2.3 dB), own gaps 0.25-1 s,
+  `FARM_VOX_CAP` 3 → 4. The shouts and the farmers' death cries are untouched. Recounted: farmers' grunts 53/66 blows
+  (was 22/69), cries 33/36; shouts 5 in 90 s, deaths 1/6; the orc 7/7 swings, 17/24 hits (the rest blocked); the
+  gargoyles' attack bank 40 times in 51 s (was 18). `musictest farmers` and `mino` PASS.

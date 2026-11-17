@@ -995,3 +995,24 @@ on the second, fired 19 frames later, the card shown on that frame.
   72 × 14 → 84 × 16 (gap 6, padding 9/18/9/12), `#stamina` 360 × 13 → 420 × 15 (`STAM_BAR_W` 420; `max-width: 62vw` so
   a narrow window keeps it), `#rings .rslot` 42 → 52 (gap 8), the RINGS label 0.58 → 0.68 rem. Still only the drawing:
   no value changed. (Not seen in a still: the probes draw the canvas, not the page.)
+- **Items open centred in the inspect view** (2026-11-15, "ITEMS SHOULD START CENTERED WHEN INSPECTING"). Probe
+  `inspectCentre` (every `__bw` item with an `inspectModel`, opened as the pack opens it, the drawn pixels' box against
+  the frame's middle): up to 11 % off, and the numbers moved with the ORDER they were opened in. Three causes:
+  1. **The stale pivot.** `inspectSetModel` reset the pivot's position and rotation but `inspectFit.updateMatrixWorld`
+     multiplies by the pivot's matrixWorld — the LAST item's, turned however it was left: each item was measured
+     through the previous one's turn. `inspectScene.updateMatrixWorld(true)` first.
+  2. **The box.** `Box3.setFromObject` counts the invisible `hitProxy`, sprites and a split part's whole file.
+     `inspectBounds` walks only drawn meshes, each vertex its own index reaches, skinned ones posed — used for the
+     CENTRE. The SIZE is still the old whole box: the screwdriver and the chest key sit inside their glow sprites, and
+     framed by the steel alone the halo filled the screen.
+  3. **Perspective.** Opened turned toward you (`rotX`, `rotY`), a long thing's near end draws bigger: centred in 3D
+     the shells and the water sat 7–11 % toward it. `inspectCentreOnScreen` projects the drawn vertices at the opening
+     turn and slides the pivot in the camera's plane until the outline's box is on the middle (two passes).
+  Measured after: every item within 0.5 % (the artifacts 2 %; the screwdriver's steel centred, its halo above it).
+  The three keys with no model loaded in a fresh boot draw nothing in the probe (as before). `inspectPivot` is on `__bw`.
+
+- **No mending while the game is stopped** (2026-11-17, "HEALTH SHOULD NOT RECHARGED WHILE IN PACK OR PAUSED"): `hpHeld`
+  (pack, menu, shop, note, inspecting) in the HUD tick stops both the wait-then-a-point mend (`sinceHurt`/`regenAcc`) and
+  the ring's fill (`hpCharge`) — they carry on from where they were. `tools/hphold.js`: hurt to 1; 40 s in the pack 1,
+  40 s in the menu 1, 40 s playing 4. (A probe must load `burntest.js` and step `__adv(1)`: `b.frame(1)` in a tight loop
+  is no time at all, and nothing mends.)

@@ -1,0 +1,56 @@
+<!doctype html><meta charset="utf-8"><title>farm hit level</title>
+<!-- THE FARMERS' HIT CRY, MEASURED AT THE SPEAKERS (2026-11-17, the owner: "I CANT HEAR THE FARMERS HIT SOUNDS"). Not part
+     of the game. Run by tools/farmhitlvl.sh (its own headless Chrome, silent, port 4234, its own profile and save).
+     In the first castle with the fight on: a farmer stood 1.6 m in front of you, and blows on him as yours land them
+     (the blade's `katHit`, then `hurtMutant`: the flesh hit, the body, his cry), each heard three ways — everything,
+     everything but the cry, the cry alone — the loudest sample reaching the output in three windows after the blow.
+     Prints "[FH] ...". -->
+<body>
+<script type="module">
+await import('/tools/silentframe.js');
+const log = (...a) => console.log('[FH]', ...a);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+try {
+  await window.__sfLoad(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+  let w; for (let i = 0; i < 120; i++) { await sleep(250); w = window.__sfW(); if (w && w.__bw) break; }
+  w.eval(await (await fetch('/tools/fortboot.js?' + Date.now())).text());
+  log('boot', JSON.stringify(await w.__fortBoot()));
+  const b = w.__bw, ctx = b.audioCtx;
+  await w.AudioContext.prototype.resume.call(ctx);          // (fortboot suspends it; the measure needs it running)
+  b.settings.devMode = true;
+  const peak = () => { let m = 0; for (const d of window.__sfDests) m = Math.max(m, window.__sfLvl(d.an)); return m; };
+  const run = async (ms) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { b.frame(1); await sleep(16); } };
+  // farmers out
+  for (let i = 0; i < 60 && !b.farmUnitsS().some((u) => u.st.alive && u.farm.out && u.model); i++) await run(500);
+  let base = 0; { const t0 = performance.now(); while (performance.now() - t0 < 1500) { b.frame(1); await sleep(16); base = Math.max(base, peak()); } }
+  log('outputs', window.__sfDests.map((d, i) => i + ':' + d.who).join(' '));
+  log('ctx', ctx.state, '| settings volume', b.settings.volume, 'effects', b.settings.sfxVolume, '| the street before any blow, loudest', base.toFixed(4));
+  const cam = b.camera.position;
+  const banks = b.sampleBanks, keep = { farmHit: banks.farmHit, katHit: banks.katHit, fleshHit: banks.fleshHit, farmSwing: banks.farmSwing };
+  const R = {}; let cries = 0;
+  const S0 = w.AudioBufferSourceNode.prototype.start;
+  w.AudioBufferSourceNode.prototype.start = function (...a) { if (this.buffer && keep.farmHit.includes(this.buffer)) cries++; return S0.apply(this, a); };
+  for (const mode of ['all', 'noCry', 'cryOnly', 'all', 'noCry', 'cryOnly', 'all', 'noCry', 'cryOnly']) {
+    const u = b.farmUnitsS().find((x) => x.st.alive && x.farm.out && x.model);
+    if (!u) { log('no farmer out'); break; }
+    // hush the others' grunts so the windows are this blow's
+    banks.farmSwing = [];
+    banks.farmHit = mode === 'noCry' ? [] : keep.farmHit;
+    banks.katHit = mode === 'cryOnly' ? [] : keep.katHit;
+    banks.fleshHit = mode === 'cryOnly' ? [] : keep.fleshHit;
+    await run(900);
+    const f = new b.THREE.Vector3(); b.camera.getWorldDirection(f); f.y = 0; f.normalize();
+    u.g.position.set(cam.x + f.x * 1.6, u.g.position.y, cam.z + f.z * 1.6);
+    if (u.kind.voice) { u.kind.voice.mouth = null; u.kind.voice.voxT = {}; }
+    if (mode !== 'cryOnly') b.playSample('katHit', 1.0, 0.05, 1);
+    u.st.hp = 99; const c0 = cries; b.hurtMutant(u, 0, 0.5); const cried = cries > c0;
+    const W = [0, 0, 0], t0 = performance.now(), PD = window.__sfDests.map(() => 0);
+    while (performance.now() - t0 < 900) { const dt = performance.now() - t0, p = peak(); W[dt < 120 ? 0 : dt < 350 ? 1 : 2] = Math.max(W[dt < 120 ? 0 : dt < 350 ? 1 : 2], p); window.__sfDests.forEach((d, i) => { PD[i] = Math.max(PD[i], window.__sfLvl(d.an)); }); b.frame(1); await sleep(12); }
+    (R[mode] = R[mode] || []).push(W);
+    log(mode.padEnd(8), cried ? 'CRIED' : 'silent', 'loudest 0-120 ms', W[0].toFixed(4), '| 120-350 ms', W[1].toFixed(4), '| 350-900 ms', W[2].toFixed(4), '| by output', PD.map((v, i) => i + '=' + v.toFixed(3)).filter((x) => !x.endsWith('=0.000')).join(' '));
+  }
+  Object.assign(banks, keep);
+  for (const m in R) { const a = R[m], av = (i) => (a.reduce((s, x) => s + x[i], 0) / a.length).toFixed(4); log('MEAN', m.padEnd(8), av(0), av(1), av(2)); }
+} catch (e) { log('ERROR', e && e.stack || e); }
+log('DONE');
+</script>

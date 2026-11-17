@@ -6183,3 +6183,191 @@ export async function gullyWalk({ w, b, log, sleep }) {
   }
   log('GULLY samples', n, 'off the land', nul, 'steepest rise/run', worst.toFixed(2), 'at', at, 'top floor', prev && prev.f.toFixed(2));
 }
+
+// WHERE EACH ITEM SITS IN THE INSPECT VIEW (2026-11-15, the owner: "ITEMS SHOULD START CENTERED WHEN INSPECTING"): every
+// item on `__bw` with an inspect model, opened as the pack opens it, one frame drawn, and the box of its drawn pixels
+// against the frame's middle (as a share of the frame: 0 is centred)
+export async function inspectCentre({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  w.requestAnimationFrame = () => 0;
+  const items = [], seen = new Set();
+  for (const k of Object.keys(b)) { let v; try { v = b[k]; } catch (e) { continue; } if (v && typeof v === 'object' && v.inspectModel && v.name && !seen.has(v)) { seen.add(v); items.push(v); } }
+  log('items with an inspect model', items.length);
+  const cv = b.renderer.domElement, rows = [];
+  const only = new URLSearchParams(location.search).get('only');
+  for (const it of items) {
+    if (only && !only.split(',').includes(it.name)) continue;
+    const opts = it.inspectOpts ? it.inspectOpts() : {};
+    b.openInspect(it.inspectModel, { ...opts, name: it.name, desc: '' });
+    for (let i = 0; i < 3; i++) b.frame(1);
+    if (b.inspectPivot) log('  dbg', it.name, 'pivot', b.inspectPivot.position.toArray().map((v) => +v.toFixed(3)).join(','), 'cam', b.inspectCamera.position.toArray().map((v) => +v.toFixed(2)).join(','), 'inspecting', b.state().inspecting);
+    b.renderer.render(b.inspectScene, b.inspectCamera);
+    const c2 = document.createElement('canvas'); c2.width = 320; c2.height = Math.round(320 * cv.height / cv.width);
+    const g = c2.getContext('2d'); g.drawImage(cv, 0, 0, c2.width, c2.height);
+    const d = g.getImageData(0, 0, c2.width, c2.height).data;
+    let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+    for (let y = 0; y < c2.height; y++) for (let x = 0; x < c2.width; x++) { const o = (y * c2.width + x) * 4; if (Math.abs(d[o] - 5) + Math.abs(d[o + 1] - 7) + Math.abs(d[o + 2] - 14) > 24) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+    const cx = x1 >= 0 ? ((x0 + x1) / 2 / c2.width - 0.5) : NaN, cy = y1 >= 0 ? ((y0 + y1) / 2 / c2.height - 0.5) : NaN;
+    rows.push([it.name, +cx.toFixed(3), +cy.toFixed(3), x1 >= 0 ? +((x1 - x0) / c2.width).toFixed(2) : 0, x1 >= 0 ? +((y1 - y0) / c2.height).toFixed(2) : 0]);
+    if (Math.abs(cx) > 0.06 || Math.abs(cy) > 0.06 || only) {   // (the inspect frame itself: `shot` draws the world)
+      g.strokeStyle = 'rgba(255,0,0,0.6)'; g.beginPath(); g.moveTo(c2.width / 2, 0); g.lineTo(c2.width / 2, c2.height); g.moveTo(0, c2.height / 2); g.lineTo(c2.width, c2.height / 2); g.stroke();
+      g.strokeStyle = 'rgba(0,255,0,0.7)'; g.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      const dd = c2.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(dd.length / 8000);
+      for (let q = 0; q < n; q++) console.log('[PBIMG]', 'insp_' + it.name.replace(/[^a-z0-9]+/gi, '_'), q + '/' + n, dd.slice(q * 8000, (q + 1) * 8000));
+    }
+    b.closeInspect(); b.frame(1);
+  }
+  rows.sort((a, c) => Math.hypot(c[1], c[2]) - Math.hypot(a[1], a[2]));
+  for (const r of rows) log('ITEM', r[0], 'off x', r[1], 'y', r[2], '| size', r[3], r[4]);
+}
+
+// what the inspect fit sees in one item (?k=name): each mesh, visible to the root, its material's visibility, its vertex box
+export async function inspectParts({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const k = new URLSearchParams(location.search).get('k');
+  let it = null; for (const key of Object.keys(b)) { let v; try { v = b[key]; } catch (e) { continue; } if (v && typeof v === 'object' && v.inspectModel && v.name === k) it = v; }
+  if (!it) { log('no item', k); return; }
+  const T = b.THREE, m = it.inspectModel; m.updateMatrixWorld(true);
+  m.traverse((o) => {
+    if (!o.isMesh && !o.isSprite) return;
+    let vis = true; for (let q = o; q && q !== m.parent; q = q.parent) if (!q.visible) vis = false;
+    const ms = [].concat(o.material); const bb = new T.Box3().setFromObject(o); const s = bb.getSize(new T.Vector3());
+    log('PART', o.name || o.type, 'vis', vis, 'sprite', !!o.isSprite, 'mat', ms.map((x) => x && (x.type + ' v' + x.visible + ' t' + x.transparent + ' o' + x.opacity)).join(';'), 'size', s.toArray().map((x) => x.toFixed(3)).join(','), 'verts', o.geometry && o.geometry.attributes.position && o.geometry.attributes.position.count, 'idx', o.geometry && o.geometry.index ? o.geometry.index.count : '-', 'range', o.geometry && JSON.stringify(o.geometry.drawRange));
+  });
+}
+
+// BURNING THE PUPPET IS AN ACHIEVEMENT (2026-11-15, "make burning the puppet be an achievment 'Burn the puppet.'"): at his
+// fire with the puppet in hand, thrown in on the fake clock; when the toast shows and what it says, and the rare count
+export async function pupBurnAch({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  b.settings.devMode = true;
+  const C = b.camera; C.position.set(9.2 - 1.6, 1.7, -697.0 + 1.2); b.camBaseY = 1.7;
+  b.loadElvPuppet();
+  for (let i = 0; i < 300 && !b.pupReadyS(); i++) { b.frame(1); await sleep(40); }
+  log('puppet ready', b.pupReadyS());
+  b.elvCarryBegin(true); for (let i = 0; i < 5; i++) b.frame(1);
+  w.__clockOn();
+  b.elvThrowPuppet();
+  const el = w.document.getElementById('ach'); let tAch = null;
+  for (let f = 0; f < 60 * 12; f++) { w.__adv(1); if (!tAch && el && el.className.includes('on')) { tAch = f / 60; break; } }
+  log('burned', b.elvBurnedS(), '| toast at', tAch === null ? 'NEVER' : tAch.toFixed(2) + ' s after the throw', '|', el && el.textContent.replace(/\s+/g, ' ').trim());
+  const st = b.statLines ? b.statLines() : null;
+  if (st) log('stats rare', JSON.stringify(st.find((r) => /RARE/.test(r[0]))));
+}
+
+// THE CRAB SCAN AFTER A DEATH IN THE WHALE (2026-11-15, "the horshoe crab model doesnt appear when breaking skrims flesh
+// piles"): a checkpoint written in the belly, reloaded as a death reloads, and whether the horseshoe crab scan (limule.glb,
+// which the heaps' crabs are copies of) is in while you are still inside, and how long it took
+export async function whaleCrab({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  b.settings.devMode = true;
+  const R = b.ROOM_BACK.whale; R.load(); for (let i = 0; i < 400 && !R.ready(); i++) { b.frame(1); await sleep(50); }
+  b.clearRoomFlags(); R.place(); await sleep(1500);
+  b.saveCheckpoint(); log('saved in', b.devRoom());
+  sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1');
+  const f = document.getElementById('g'); f.contentWindow.location.reload(); await sleep(500);
+  let w2 = null, b2 = null; for (let i = 0; i < 600; i++) { await sleep(50); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.state) { b2 = w2.__bw; break; } } catch (e) {} }
+  for (let i = 0; i < 600 && !b2.state().started; i++) { try { b2.beginGame(); } catch (e) {} await sleep(100); }
+  const t0 = performance.now(); let at = null;
+  for (let i = 0; i < 600; i++) { await sleep(50); if (b2.hcrab && b2.hcrab.children.length) { at = (performance.now() - t0) / 1000; break; } }
+  log('reloaded into', b2.devRoom(), '| crab scan in', at === null ? 'NOT after 30 s' : at.toFixed(1) + ' s after start', '| still in the whale', b2.devRoom() === 'whale');
+  // and then break the heaps that hold crabs, as a blow does, and look at what lies there
+  const S = b2.SKQ; for (let i = 0; i < 400 && !S.piles.length; i++) { await sleep(30); }
+  for (let i = 0; i < 100; i++) await sleep(16);
+  if (!S.loot) for (const p of S.piles) { b2.skqLootOut(p, true); break; }
+  log('piles', S.piles.length, 'loot', JSON.stringify(S.loot), 'broke', S.broke, 'taken', S.lootTaken);
+  for (const p of S.piles) {
+    if (!S.loot || S.loot[p.i] !== 'crab') continue;
+    b2.skqPileHit(p, 4, 0, -1);
+    await sleep(800);
+    const L = S.lootW[p.i]; let M0 = null, vis = true; if (L) { L.traverse((o) => { if (!M0 && o.isMesh && o.name !== 'hitProxy') M0 = o; }); for (let q = L; q; q = q.parent) if (!q.visible) vis = false; }
+    log('  heap', p.i, 'gone', p.gone, '| drop', !!L, 'crab mesh', !!M0, 'visible', vis, 'in scene', !!(L && L.parent), M0 ? 'verts ' + M0.geometry.attributes.position.count : '');
+  }
+}
+
+// THE CRABS OUT OF SKRIM'S HEAPS, LOOKED AT (2026-11-15): in the belly, every heap's loot put out, and for each crab what
+// the drop holds (meshes, sizes, visibility up the chain, where it sits against the floor) and a still from 1.4 m
+export async function heapCrabs({ w, b, log, sleep, shot }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  b.settings.devMode = true;
+  const R = b.ROOM_BACK.whale; R.load(); for (let i = 0; i < 400 && !R.ready(); i++) { b.frame(1); await sleep(50); }
+  b.clearRoomFlags(); R.place();
+  const S = b.SKQ; for (let i = 0; i < 400 && !S.piles.length; i++) { b.frame(1); await sleep(30); }
+  log('piles', S.piles.length, 'hcrab children', b.hcrab.children.length, b.hcrab.children.map((c) => c.name || c.type).join(','));
+  for (const p of S.piles) b.skqLootOut(p, true);
+  log('loot', JSON.stringify(S.loot));
+  w.requestAnimationFrame = () => 0;
+  const T = b.THREE, C = b.camera;
+  for (const k in S.lootW) {
+    const g = S.lootW[k]; if (!g) continue;
+    let meshes = 0, vis = true; const box = new T.Box3();
+    g.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy') { meshes++; box.expandByObject(o); } });
+    for (let q = g; q; q = q.parent) if (!q.visible) vis = false;
+    const sz = box.getSize(new T.Vector3()), gp = g.position;
+    log('DROP', k, S.loot[k], 'meshes', meshes, 'visible', vis, 'inScene', !!g.parent, 'at', gp.toArray().map((v) => v.toFixed(2)).join(','), 'box y', box.min.y.toFixed(2), box.max.y.toFixed(2), 'size', sz.toArray().map((v) => v.toFixed(2)).join(','));
+    C.position.set(gp.x + 1.0, gp.y + 1.1, gp.z + 1.0); b.camBaseY = C.position.y; b.lookAt(gp.x, gp.y + 0.05, gp.z);
+    for (let i = 0; i < 4; i++) b.frame(1);
+    shot('hc_' + k + '_' + S.loot[k], 480, 1.6);
+  }
+}
+
+// THE CRAB OUT OF A BROKEN HEAP, SEEN FROM WHERE YOU BROKE IT (2026-11-15): each crab heap broken as a blow breaks it,
+// the camera 2.2 m back where you swung from, a frame with the crab and one without: how many pixels it is
+export async function heapCrabSeen({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 2400 && b.startGate().left > 0; i++) { b.frame(1); await sleep(16); }
+  b.settings.devMode = true;
+  const R = b.ROOM_BACK.whale; R.load(); for (let i = 0; i < 400 && !R.ready(); i++) { b.frame(1); await sleep(50); }
+  b.clearRoomFlags(); R.place();
+  const S = b.SKQ; for (let i = 0; i < 400 && !S.piles.length; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 400 && !(b.hcrab.children.length); i++) { b.frame(1); await sleep(30); }
+  w.__clockOn();
+  const T = b.THREE, C = b.camera, cv = b.renderer.domElement;
+  const grab = () => { b.renderer.render(b.scene, C); const c2 = document.createElement('canvas'); c2.width = 320; c2.height = 180; const g = c2.getContext('2d'); g.drawImage(cv, 0, 0, 320, 180); return { c2, d: g.getImageData(0, 0, 320, 180).data }; };
+  b.SKQ.loot || (b.skqLootOut && 0);
+  for (const p of S.piles) {
+    if (!S.loot) { b.skqLootOut(p, true); }
+  }
+  for (const p of S.piles) {
+    if (!S.loot || S.loot[p.i] !== 'crab') continue;
+    const wx = b.WHALE_X + p.x, wz = b.WHALE_Z - p.s;
+    // stand 2.2 m off it on the side toward the whale's mouth, eyes at 1.7 over the floor, and break it
+    const sx = wx, sz = wz + 2.2;
+    const place = () => { C.position.set(sx, b.skrimFloorW(sx, sz) + 1.7, sz); b.camBaseY = C.position.y; b.lookAt(wx, b.skrimFloorW(wx, wz) + 0.2, wz); };
+    place(); for (let i = 0; i < 5; i++) { place(); w.__adv(1); }
+    b.skqPileHit(p, 4, 0, -1);
+    for (let i = 0; i < 90; i++) { place(); w.__adv(1); }        // the meat lands
+    const L = S.lootW[p.i];
+    if (!L) { log('heap', p.i, 'no crab out'); continue; }
+    let M0 = null; L.traverse((o) => { if (!M0 && o.isMesh && o.name !== 'hitProxy') M0 = o; });
+    const lpz = L.position.clone();
+    const A = grab(); M0.visible = false; const B = grab(); M0.visible = true;
+    { const spr = []; L.traverse((o) => { if (o.isSprite) { spr.push(o); o.visible = false; } }); const A2 = grab(); M0.visible = false; const B2 = grab(); M0.visible = true; for (const o of spr) o.visible = true;
+      let dd = 0; for (let i = 0; i < A2.d.length; i += 4) if (Math.abs(A2.d[i] - B2.d[i]) + Math.abs(A2.d[i + 1] - B2.d[i + 1]) + Math.abs(A2.d[i + 2] - B2.d[i + 2]) > 30) dd++;
+      log('  crab pixels with the shine hidden', dd);
+      const dn = A2.c2.toDataURL('image/jpeg', 0.85).split(',')[1], nn = Math.ceil(dn.length / 8000); for (let q = 0; q < nn; q++) console.log('[PBIMG]', 'hcn_' + p.i, q + '/' + nn, dn.slice(q * 8000, (q + 1) * 8000)); }
+    { const v = new T.Vector3(), P2 = M0.geometry.attributes.position, bb = new T.Box3(); M0.updateMatrixWorld(true); for (let i = 0; i < P2.count; i += 3) { v.fromBufferAttribute(P2, i).applyMatrix4(M0.matrixWorld); bb.expandByPoint(v); } log('  crab mesh by its vertices: y', bb.min.y.toFixed(3), bb.max.y.toFixed(3), 'size', bb.getSize(v).toArray().map((x) => x.toFixed(3)).join(','), 'verts', P2.count, 'scale', M0.getWorldScale(new T.Vector3()).x.toFixed(3)); }
+    { const sv = C.position.clone(); C.position.set(lpz.x + 0.35, lpz.y + 0.45, lpz.z + 0.45); C.lookAt(lpz.x, lpz.y + 0.03, lpz.z); C.updateMatrixWorld(true); const Z = grab(); const dz = Z.c2.toDataURL('image/jpeg', 0.85).split(',')[1], nz = Math.ceil(dz.length / 8000); for (let q = 0; q < nz; q++) console.log('[PBIMG]', 'hcz_' + p.i, q + '/' + nz, dz.slice(q * 8000, (q + 1) * 8000)); C.position.copy(sv); b.lookAt(wx, b.skrimFloorW(wx, wz) + 0.2, wz); }
+    let diff = 0; for (let i = 0; i < A.d.length; i += 4) if (Math.abs(A.d[i] - B.d[i]) + Math.abs(A.d[i + 1] - B.d[i + 1]) + Math.abs(A.d[i + 2] - B.d[i + 2]) > 30) diff++;
+    const lp = L.position.clone(); const pr = lp.clone().project(C);
+    { // the drawn floor under it against where it sits: a ray down onto everything drawn but the drop itself
+      const ms = []; b.scene.traverse((o) => { if (!o.isMesh || o.name === 'hitProxy') return; let v = true; for (let q = o; q; q = q.parent) { if (!q.visible) v = false; if (q === L) v = false; } if (v) ms.push(o); });
+      const rc = new T.Raycaster(new T.Vector3(lp.x, lp.y + 3, lp.z), new T.Vector3(0, -1, 0), 0, 6);
+      const h = rc.intersectObjects(ms, false).filter((q) => !/Sprite/.test(q.object.type));
+      const cb = new T.Box3(); L.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy' && !/shine|Sprite/i.test(o.name + o.type)) cb.expandByObject(o); });
+      L.traverse((o) => { if (!o.isMesh && !o.isSprite) return; const bb = new T.Box3().setFromObject(o); const sz = bb.getSize(new T.Vector3()); let vis = true; for (let q = o; q && q !== L.parent; q = q.parent) if (!q.visible) vis = false; log('    part', o.name || '-', o.type, 'vis', vis, 'mat', o.material && o.material.type, 'y', bb.min.y.toFixed(3), bb.max.y.toFixed(3), 'size', sz.toArray().map((v) => v.toFixed(3)).join(','), 'renderOrder', o.renderOrder, 'depthTest', o.material && o.material.depthTest); });
+      log('  heap', p.i, 'drawn floor', h.length ? h[0].point.y.toFixed(3) + ' (' + (h[0].object.name || h[0].object.type) + ')' : '-', '| the floor it was put on', b.skrimFloorW(lp.x, lp.z).toFixed(3), '| crab box y', cb.min.y.toFixed(3), cb.max.y.toFixed(3), 'size', cb.getSize(new T.Vector3()).toArray().map((v) => v.toFixed(2)).join(','));
+    }
+    log('HEAP', p.i, 'crab pixels', diff, 'of 57600', '| crab at screen', pr.x.toFixed(2), pr.y.toFixed(2), '| dist', lp.distanceTo(C.position).toFixed(2));
+    const d2 = A.c2.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d2.length / 8000);
+    for (let q = 0; q < n; q++) console.log('[PBIMG]', 'hcs_' + p.i, q + '/' + n, d2.slice(q * 8000, (q + 1) * 8000));
+  }
+}

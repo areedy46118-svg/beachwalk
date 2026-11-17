@@ -1318,3 +1318,21 @@ the chain as he hangs". Probe `skrimHang` (PB_PORT=4231): phases, his feet over 
   gone. The mist now has `uClr[6]` (local x, local z, radius) and parts within 1.1 m of each thing lying out
   (`skqMistClear` in `skqTick`, off `SKQ.lootW`). Also `crabRimSeat` waits 400 tries for a scan that lands late (a load
   into the whale), not 40.
+
+## 2026-11-15 — a new song for Skrim's fight
+The owner, "new skrim fight song.mp3" (Desktop): "replace skrim fight music with this delte the old file to save space."
+Packed over `assets/skrim-fight.m4a` (the old 111 s one is gone, 2.25 → 0.78 MB): 38.2 s, stereo AAC 160k 48 kHz,
+−1.2 dB so it measures what the old one did (−14.0 LUFS integrated, ffmpeg ebur128; it came in at −12.8), so
+`SKRIM_FIGHT_LEVEL` 0.25 and the 7 s fade-in hold. No silence at either end (silencedetect −50 dB), so the passes'
+1.5 s crossfade (`SKRIM_FIGHT_XF`) loops it as it did the old. Music test 14/14 (skrimFight PASS).
+
+## 2026-11-15 — "the horshoe crab model doesnt appear when breaking skrims flesh piles" (not reproduced)
+Looked at every way in: a fresh game (probe `heapCrabs`, `heapCrabSeen`) and a death's reload into the belly (`whaleCrab`,
+which also breaks the crab heaps after the reload). Every time: the crab scan (`limule.glb`) is in within 0.3–0.7 s of
+the start, all three crab heaps (of TWELVE piles now — the loot is {0: crab, 1: water, 3: crab, 7: crab}, the
+artifact in the farthest) put out a drop with the 41,390-vertex crab in it, visible, on the drawn floor (`skrimFloorW`
+equals the floor mesh to 2 mm). From where you swing (2.3 m) it is small: ~90 px of a 320×180 frame, a pale shell at
+the foot of the drop's beam — up close it is the beach's crab, the right way up. `BW_WHALE_FILES` and the belly's
+`ROOM_FILES` name `limule` now anyway (a held far parse would have left the drops empty after a death in there; the A/B
+showed it was not held in practice — it ranks near off the spawn). Probes left: `heapCrabs`, `heapCrabSeen` (pixels with
+and without the crab, the floor under it, a close-up), `whaleCrab`.

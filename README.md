@@ -837,7 +837,7 @@ you while it loads; the first click takes the mouse back.
 | `assets/end-theme.m4a` | The end's song, from the moment the stats come up, played once (AAC 192 kbps, the first 63.8 s of the owner's "5451 beachwalk" MP3: the piece before its silence, the loud reprise after it cut) |
 | `assets/minotaur-death.m4a` | The minotaur's death, once, from the first moment you see him going down in Castle XIII's court, on through his last words — faded in, and out as he dies (AAC 160 kbps, 55.8 s: the owner's "minotaur death music" MP3, whole) |
 | `assets/skrim-spotting.m4a` | Skrim's, once, from the moment you first see him digging in the whale, slowly away as you talk to him (AAC 160 kbps, the owner's "skrim spotting" MP3 raised 16 dB to the minotaur's level) |
-| `assets/skrim-fight.m4a` | Skrim's fight, looped from his getting up to fight until he dies, a long fade then (AAC 160 kbps, the owner's "skrim fight" MP3 raised 6 dB) |
+| `assets/skrim-fight.m4a` | Skrim's fight, looped from his getting up to fight until he dies, a long fade then (AAC 160 kbps, the owner's "new skrim fight song" MP3, 38 s, lowered 1.2 dB to the old one's −14 LUFS; it replaced the first "skrim fight" on 2026-11-15) |
 | `assets/marauder-fight.m4a` | The marauder's fight in the throne room, looped on the bar from his standing up until he dies, a long fade then (AAC 160 kbps, 45 bars: the owner's "real boss battle 95 bpm", raised 11 dB, its trailing silence cut) |
 | `assets/farmers-fight.m4a` | The farmers' fight in the first castle, faded in as it starts and looped on the bar until it is won (AAC 160 kbps, 48 bars: the owner's "madeinabyss 130bpm") |
 | `assets/skrim-chain-*.m4a` | Skrim's chains: a crack, two lashes and two heavy crashes cut from the owner's "Chain Whip Rifle (Fantasy Weapon SFX Preview)" MP3, faded, mono, levelled (AAC 128 kbps). Supplied by the owner; check its licence before redistributing |
@@ -906,6 +906,26 @@ cutlass, the treasure chest and the stocked anchor were left in the pack.
 
 The gulls' calls and cries (`assets/gull-call1–5.m4a`, `assets/gull-cry1–2.m4a`)
 are cut from the owner's own gull recording at its own silences.
+
+The farmers' voices (`assets/farm-swing1–10.m4a`, `farm-hit1–14`, `farm-shout1–9`,
+`farm-die1–5`) are the owner's own "FARMER SOUND EFFECTS", each take cut at its own
+silences and levelled by `tools/farmer_voice_pack.py`: a grunt on some of their
+blows, a cry when one is hit, now and then a shout off in the street, and now and
+then a man's last sound as he goes down.
+
+The tavern orc's voice (`assets/orc-swing1–7.m4a`, `orc-hit1–11`, `orc-die1`) is the
+owner's own "ORC SWINGS / HITS / DEATH SOUND", cut the same way: a grunt on about
+half his swings, a cry on most hits, and his death cry every time, with the octopus
+ring's sting as the portrait drops.
+
+The gargoyles' voices (`assets/garg-attack1–8.m4a`, `garg-die1–9`) and the "drop"
+one says as it lands behind Myles (`assets/garg-drop1.m4a`) are the owner's own
+"GARGOYLE ATTACK SOUNDS / DEATH SOUNDS / DROP BEHIND MYLES SOUND", cut the same way.
+
+The paladin's voice in the farmers' fight (`assets/pal-attack1–9.m4a`, `pal-hurt1–9`,
+`pal-phrase1–4`, `pal-die1`) and Myles's (`assets/myles-grunt1–13.m4a`, `myles-talk1–2`,
+`myles-die1`) are the owner's own "PALADIN …" and "MYLES …" bounces, cut the same way
+(Myles's death kept whole, its breaths and all).
 
 Three of the red alien's moves — the compass kick, the side handspring and
 the knockdown — are Mixamo animations (Adobe), retargeted onto his rig by
@@ -1111,13 +1131,24 @@ dropped and the beach stands in for it). The braziers, the torches and the
 postern on its back wall are built in the game; the postern is its own back
 door, copied.
 
-This work is based on ["Farmers pack Low-Poly"](https://sketchfab.com/3d-models/farmers-pack-low-poly-3c259264e6fe46a4bb33fecce4ece039)
-by [KIFIR](https://sketchfab.com/kifir) licensed under
-[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/) — **NON-COMMERCIAL**
-— the twenty men who come out of the castle's doors (`assets/farmer-woodman.glb`,
-`farmer-farmman.glb`, `farmer-workman.glb`: one of the three each, through
-`tools/gltfpack.py --nodes`, with the other two skeletons pruned). The pack
-ships no animation; every move they make is authored in the game.
+The dark knight in the first castle's street is ["Paladin"](https://sketchfab.com/3d-models/paladin-4f1c320f2cec49dc9bf38c6aad2d8ea9)
+by [DJMaesen](https://sketchfab.com/bumstrum) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) (`assets/paladin-knight.glb`, through
+`tools/paladin_pack.py`: his rig renamed onto the old knight's, his hands closed, his bastard sword set in his fist).
+Catholomew's Infinity Blade knight (`assets/dark-knight.glb`, CC-BY-NC-4.0) is no longer loaded.
+
+The twenty men who come out of the castle's doors are tt-3D's
+["Low Poly Medieval Europe Starter Pack - 5 Feudal Characters"](https://www.fab.com/listings/dde840ad-2cc5-4081-93e2-38f53dae5545)
+(Fab, **Standard License**; the listing marks it AI-generated) — two knights, a
+hooded man, an old man and a woman in mail (`assets/farmer-knight.glb`,
+`farmer-axeknight.glb`, `farmer-hood.glb`, `farmer-elder.glb`, `farmer-woman.glb`,
+through `tools/garrison_pack.py`, which renames their rig into Mixamo's naming).
+Every move they make is motion capture retargeted in the game or authored there.
+
+Their swords, axes, maces and spears are built in the game (`farmWeapon` in
+`main.js`); nothing of KIFIR's ["Farmers pack Low-Poly"](https://sketchfab.com/3d-models/farmers-pack-low-poly-3c259264e6fe46a4bb33fecce4ece039)
+(CC-BY-NC-4.0) is loaded any more — its three files (`assets/farmer-woodman.glb`,
+`farmer-farmman.glb`, `farmer-workman.glb`) are still in the folder, unused.
 
 This work is based on ["Blue Whale - Textured"](https://sketchfab.com/3d-models/blue-whale-textured-d24d19021c724c3a9134eebcb76b0e0f)
 by [Bohdan Lvov](https://sketchfab.com/ostapblendercg) licensed under

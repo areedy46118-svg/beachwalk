@@ -627,3 +627,14 @@ eyes and scream with its mouth open then fly away." Alexei Ostapenko's "Crow" (S
 - **The caws a little lower** (2026-11-15, "turn the crow sounds down a little dont turn down the scream"):
   `DOCK_BIRDS.crowGain` 6.0 → 4.5 (−2.5 dB). Measured on the pier: 0.08–0.12 peaks (were 0.08–0.16) against 0.08 for
   surf and music. The scream is its own chain (`CROW_SCREAM_PEAK` 0.42), untouched.
+- **The scream and its thunder, lower** (2026-11-15, "make the crow scream and thunder after less loud"):
+  `CROW_SCREAM_PEAK` 0.42 → 0.30, `CROW_STORM.loud` 0.55 → 0.38 (both land at their number of full scale at any slider).
+  Measured (`sh tools/crowlevel.sh`): the scream 0.31 (was ~0.42), the thunder 0.42 (was 0.54–0.78), against 0.09–0.14
+  for everything else there. Music test 14/14.
+
+- **The scream, lower again** (2026-11-17, "TURN THE CROW SCREAM DOWN MORE"): `CROW_SCREAM_PEAK` 0.30 → 0.20. Measured
+  (`sh tools/crowlevel.sh`): the scream 0.21 (was 0.31), against 0.11 for everything else there; the thunder after it
+  untouched at 0.42, so it is now about twice the scream. Music test `restart` PASS.
+- **The crow's scare, a little down again** (2026-11-17, "TURN DOWN A CROW SCARE A LITTLE"): `CROW_SCREAM_PEAK` 0.20 → 0.16,
+  `CROW_STORM.loud` 0.38 → 0.30. Measured (`tools/crowlevel.sh`): the scream 0.19 (was 0.21), the thunder 0.38 (was
+  0.42), everything else there 0.07. Neither follows its number one to one any more (the sub and the noise under them).

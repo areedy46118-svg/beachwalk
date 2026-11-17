@@ -850,3 +850,50 @@ theme, the whale's leaving song and the lighthouse track (`startLighthouseTrack`
   room and in every built place (`inFort`, `inC13`, `inThrone`, `inDun`, `insideDrain`, `inBunker`, `inUndercroft`,
   `inCat`, `inTavern`, `inWhale`, `inSewer`); else the old `inWater` + feet under 0.35. (The wave's own surface is NOT a
   test for it: standing in the surf your feet are 0.18–0.52 over `waterSurfaceAt` — `wadeCheck`.)
+
+
+## The sound never stays off (2026-11-17, "THE AUDIO CUT OUT AGAIN WHEN FIGHTING THE FARMERS … IT SHOULD NEVER DO THIS")
+- Not reproduced: `tools/farmaudio.js` (`audiowatch` on the farmers' fight in REAL time into a null sink, `&secs=60` and
+  `&secs=150&heavy=1`, every farmer killed, the dark knight come): no non-finite param, nothing thrown, the context
+  running in all 1,500 samples, master never silent, 57-104 nodes/s (peak 142 in a tenth; the October cut-out was ~1,500
+  in 0.7 s). The probe's `s` parameter is the probe's own — name yours something else (`secs`).
+- `audioWatchdog()` (from `animateFrame`, once a second, playing, page shown, not `loadSilent`/restoring): a context not
+  'running' is asked back through the REAL resume (`audioRealResume`; `musicGuard` only did it while music played and
+  nothing was frozen — 'interrupted' between pieces stayed silent); a gate, master or effects bus at nothing two checks
+  running is put back on the sliders; a non-finite sample on the master is noted. All logged: `__bw.audioDog()` and
+  "[audio]" warnings in the console — READ THESE FIRST the next time he says the sound went.
+- `tools/audiodog.js`: suspended behind the game's back → running inside 2.5 s; master and effects bus zeroed → back
+  inside 3.5 s; and over 12 s of the fight nothing in the game calls suspend (only `loadSilenceTick` may).
+
+## The castles' sea (2026-11-17, "WHEN IN THE CASTLE THE WAVE VOLUME SHOULD BE LOW LIKE ITS IN THE DISTANCE")
+`castleSeaK` in `beachBedK`: in either castle the surf is `CASTLE_WALLS` 0.6 / (1 + (distance from the waterline −
+10 m) / 6), fight or no fight, and `waveLP` (a low-pass after `waveBusGain`, new) closes from 9 kHz at the gate toward
+500 Hz deep in; outside a castle 20 kHz and the old levels. Measured (`tools/castlesea.js`): 56 % of the waves slider at
+the gate (x 10), 27 % where you come in, 22 % at x 20, 15 % at the street's far walls (was a flat 35 % until the fight
+was done, then 100 %).
+
+## Myles, the paladin (voices: castle.md); the hit cry level trap
+The bounces arrive 10-20 dB under the farmers' (-33 to -38 mean with their silences): the packer levels each take, so
+the gains in the tables are the same story — ~3 for a take to reach ~0.1 at the speakers from 3-4 m.
+
+## The music stops at a loading screen (2026-11-17, "MUSIC SHOULD STOP PLAYING WHEN GOING THROUGH A LOADING SCREEN AND PLAY WHATEVER IS SUPPOSED TO PLAY FOR THAT SECTION")
+`cutMusicTick` (from `animateFrame`, after `deepLive` — it reads handles declared far down): when `#blackout` goes past
+0.5 it notes the section (`saveRoom() || 'beach'`) and which event pieces are playing (opening song, samurai score,
+passing, Myles's song, Skrim's two, `wlSrc`, the wreck theme); at full black, if the section is now another, those
+same pieces fade out (0.6-0.8 s) — a piece started in the black or after it is not touched, nor the castles'
+`LOOP_SONGS` (already their section's own in `updateLoopSongs`), nor the ending. A black within one section (a
+cutscene) changes nothing. Logged as "loading screen A -> B: out …" in `__bw.musicLog()`. `tools/cutmusic.js`: a black
+on the beach left the opening song; beach → fort under the black took it out and the farmers' fight came in.
+`__bw.startMusic` is exposed for that probe. Full `musictest` 14/14 after.
+- Also 2026-11-17: the throne room's `LOOP_SONGS.marauder` level 0.6 → 1.1 (max 1.0 → 1.6, ~+5 dB, "TURN UP MUSIC IN
+  THRONE ROOM"); Dante's voice `vol` 2.8 and his chain scream's `playSampleAt` gain 1.0 → 2.8 (~+9 dB, "TURN UP …
+  DANTES SOUNDS I SENT": his hurt went out at ~0.7 of the take, below where the farmers' cry was measured buried).
+- **The waves, a little down overall** (2026-11-17, "TURN OVERALL WAVE VOLUME DOWN A LITTLE BIT"): `WAVE_TRIM` 0.8 on the wave bus
+  under the slider (both places it is set), ~-2 dB everywhere, the owner's waves 15 % unchanged. Measured
+  (`tools/castlesea.js`): the bus at the castle gate 0.0838 → 0.0670.
+- **Dante, a little more** (2026-11-17, "A LITTLE LOUDER ESPECIALLY HIS FIRST SCREAM IN THE CUTSCENE NOT TOO MUCH"): `vol`
+  2.8 → 3.4 (+1.7 dB), the cut-loose scream's own `playSampleAt('danteChain', … pick: 0)` 2.8 → 4.0 (+3 dB).
+- **Myles goes down on his death sound** (2026-11-17, "MAKE MYLES ALSO MAKE THE DEATH SOUND WHEN HE IS ABOUT TO DROP HIS
+  WEAPONS AND CROUCH"): `minoGoDown` plays `MYLES_VOX.die` as well as `minoLetGo`. Its 5.4 s take then held his mouth
+  through his first lines and they went unvoiced (3 of 5): `talk` is pri 4 now — a new line always speaks, cutting
+  whatever he was making. `tools/mylesvox.js`: the death at going down, five lines five takes, the death again dying.

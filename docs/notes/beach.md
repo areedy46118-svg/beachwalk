@@ -2463,3 +2463,19 @@ you see it as you come level with the gully, as his screenshot did.
   out — off a nearest-filtered map its slopes are huge at any scale. **Trap:** an edit appended a comment to the line
   holding the paint gradient's `addColorStop`s and commented them out — the canvas had no base, the box came out
   camouflage. Three "fixes" did nothing before the code was read; read the line before tuning the material.
+
+## 2026-11-15 — "Burn the puppet." is a rare achievement
+The owner: "make burning the puppet be an achievment 'Burn the puppet.'" In `elvFireTick`, once he has landed on the fire
+and 4.8 s on (his thrashing died into twitches, still burning in front of you): `showAchievement('Rare achievement
+unlocked', '50 - Burn the puppet.')`, the crow's and the gulls' toast and chime, once (`R.ach`; the throw only happens
+live, and `elvBurned` is saved, so a load never burns him again; not while `replaying`/`applyingSave`). `RARE_ACHIEVEMENTS`
+counts `elvBurned` for the end stats. Probe `pupBurnAch` (at his fire, the puppet in hand via `elvCarryBegin`, thrown on
+the fake clock): toast 4.95 s after the throw. `elvCarryBegin`, `elvBurnedS`, `pupReadyS` are on `__bw`.
+
+**THE PUPPET IS ON HIS BED (2026-11-17, the owner: "MAKE SURE THE PUPPET IS ALWAYS ON THE BED").** A fresh game, measured
+(`tools/pupbed2.js`): culled far off (`cullBeyondFog`, which hides and restores him with the rest), on his bed and drawn
+from 560 m in and in the room. The hole was a LOAD: a save made while you carried him (`elvStage` 2) put him back in
+your arms only once his model loaded — which happens at the house — so a load anywhere else had him in nobody's arms and
+off the bed; and one that had run (4) had nowhere to be. A load now turns 2 and 4 into 1: on the bed for the taking.
+(`tools/pupbed3.js` reloads such a save; in the probe's reloaded page the boot's parse queue crawls and the house never
+loads in 30 s — a harness limit, the stage itself came back 1 both ways.)

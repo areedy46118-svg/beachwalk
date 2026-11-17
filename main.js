@@ -208,7 +208,7 @@ const BW_FROM = (() => {
       cat: ['catacombs.glb', 'crawler.glb', 'skull-key.glb', 'limbs.glb', 'benali.glb', 'bloody-blade.glb'],
       bunker: ['bunker.glb', 'dealer.glb'],
       deep: ['pliosaur.glb', 'fishing-rod.glb'],   // (and the rods floating in it, 2026-11-14: only the rod uses that file)              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
-      whale: ['whale.glb', 'skrim.glb', 'crying-head.glb', 'skrim-moves.json', 'demon-moves.json', 'knight-moves.json', 'ntar-moves.json', 'wong-moves.json', 'orc-moves.json', 'drunk-moves.json', 'umbra-moves.json', 'crawler-moves.json'],
+      whale: ['whale.glb', 'skrim.glb', 'crying-head.glb', 'limule.glb', 'skrim-moves.json', 'demon-moves.json', 'knight-moves.json', 'ntar-moves.json', 'wong-moves.json', 'orc-moves.json', 'drunk-moves.json', 'umbra-moves.json', 'crawler-moves.json'],
     };
     /* AND WHAT YOU ARE CARRYING COMES WITH YOU (2026-10-19, the owner, twice: "i loaded a checkpoint and my weapons were
      * invisible"). A held thing is a copy of its world model, and the world model was ranked by where it LIES — the
@@ -300,10 +300,11 @@ const ASSET_REACH = {
   'assets/bloody-blade.glb': 765 + BEACH_EXT,      // and his sword, in the thing's back
   'assets/spliff.glb': 160,            // the third cache, the trader's table and the crate on the keep's pier
   'assets/umbra.glb': 905 + BEACH_EXT,
-  'assets/farmer-woodman.glb': 1005 + BEACH_EXT, 'assets/farmer-farmman.glb': 1005 + BEACH_EXT, 'assets/farmer-workman.glb': 1005 + BEACH_EXT,   // the twenty in the castle's houses
+  'assets/farmer-knight.glb': 1005 + BEACH_EXT, 'assets/farmer-axeknight.glb': 1005 + BEACH_EXT, 'assets/farmer-hood.glb': 1005 + BEACH_EXT,   // the twenty in the castle's houses
+  'assets/farmer-elder.glb': 1005 + BEACH_EXT, 'assets/farmer-woman.glb': 1005 + BEACH_EXT,
   'assets/castle13.glb': 1080 + BEACH_EXT,         // Castle XIII, through the first castle's back door
   'assets/throne.glb': 1150 + BEACH_EXT,           // and the throne room through its west court
-  'assets/dark-knight.glb': 1005 + BEACH_EXT,     // the dark knight in the first castle's street (the paladin's place, 2026-10-19: his files no longer fetched)
+  'assets/paladin-knight.glb': 1005 + BEACH_EXT,  // the dark knight in the first castle's street — DJMaesen's paladin since 2026-11-16 (`dark-knight.glb` no longer fetched)
   'assets/minotaur.glb': 980 + BEACH_EXT,        // and the minotaur waiting at its gate (2026-10-28)
   'assets/gargoyle.glb': 1060 + BEACH_EXT,       // and the four on the walls of Castle XIII's east court (2026-10-28)
   'assets/knight-man.glb': 1085 + BEACH_EXT,       // and the two swordsmen who hold its west court (the flail knight's, 2026-10-19)
@@ -476,7 +477,7 @@ const bwInCastle = () => inC13 || inFort || inThrone;
  * whole world's far rest still to come: 48 s of parses and warms while you walk up to him, 52 frames over 33 ms, the worst
  * 307 (`tools/loadtime.sh 1 <out> whale`). In the belly it waits for you to leave, parses and warms both; its own files
  * (the whale, Skrim, the crying heads and their moves) come through. */
-const BW_WHALE_FILES = /(whale|skrim|crying-head|demon-moves)/;
+const BW_WHALE_FILES = /(whale|skrim|crying-head|demon-moves|limule)/;   // (limule: the horseshoe crabs out of his heaps are its copies — held, they came out empty after a death in here, 2026-11-15)
 /* and in the deep, now a checkpoint stands there (2026-11-13, the snap: `deepSnapSave`): a death to the pliosaur loads you
  * into its fight, and the far rest is not parsed through it; its own (the pliosaur, the whale that takes you) come through */
 const BW_DEEP_FILES = /(pliosaur|whale)/;
@@ -1098,11 +1099,13 @@ let musicEl = null, musicEnvGain = null, musicVolGain = null, musicStarted = fal
 const CHASE_GRACE = 25000, CHASE_GRACE_R = 5;
 let chaseGraceUntil = 0;
 let waveBusGain = null;   // sub-mix for surf ambience + water-step splashes
+let waveLP = null;        // and the low-pass after it: the sea heard from a distance (`castleSeaK`)
 let windDuck = null;      // the wind's last stage: the bunker pulls it down
 let sfxBusGain = null;    // sub-mix for every one-shot effect
 /* every effect a little lower, by the owner's word: under the slider, so the
  * slider still reads what it reads and nothing else in the mix moved */
 const SFX_TRIM = 0.8;
+const WAVE_TRIM = 0.8;   // (the waves a little down under every slider setting, ~-2 dB — 2026-11-17, the owner: "TURN OVERALL WAVE VOLUME DOWN A LITTLE BIT")
 let ucVerbGain = null;    // the church's tail on that sub-mix, 0 on the beach (see updateUndercroftCut)
 let pipeVerbGain = null, shipVerbGain = null;   // the drain's concrete and the wreck's hull, the same kind of send (`updateSpaceAudio`)
 // every sfx routes here instead of straight at the speakers
@@ -1143,7 +1146,7 @@ function sfxPosOut(P, base) {
   const g = ctx.createGain(); g.gain.value = ref / (ref + Math.max(0, d - ref)); g.connect(head); head = g;
   return (P.node = head);
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { sfxAt, sfxOut, musicLog: () => musicLog.map((e) => e.join(' ')), restoreS: () => ({ restore: !!restore || !!roomRestore || applyingSave || replaying, bootHold, bootLookDone, introQuiet, introStarted, nearLeft: bootLeft(), allLeft: startLeft(), ctx: audioCtx ? audioCtx.state : 'none', bg: bgLoadMode, bgOk: bgLoadOk(), bgAge: Math.round(performance.now() - bgLoadLast), nearPend: bwNearPending(), awake: mutants.filter((u) => u.st && u.st.alive && u.st.awake && u.g.visible && Math.abs(u.g.position.x - camera.position.x) < 30 && Math.abs(u.g.position.z - camera.position.z) < 30).map((u) => u.kindName).join('+') + '|' + crabs.filter((u) => u.st && u.st.alive && u.st.awake && Math.abs(u.g.position.z - camera.position.z) < 30).length }) }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { sfxAt, sfxOut, startMusic, musicLog: () => musicLog.map((e) => e.join(' ')), restoreS: () => ({ restore: !!restore || !!roomRestore || applyingSave || replaying, bootHold, bootLookDone, introQuiet, introStarted, nearLeft: bootLeft(), allLeft: startLeft(), ctx: audioCtx ? audioCtx.state : 'none', bg: bgLoadMode, bgOk: bgLoadOk(), bgAge: Math.round(performance.now() - bgLoadLast), nearPend: bwNearPending(), awake: mutants.filter((u) => u.st && u.st.alive && u.st.awake && u.g.visible && Math.abs(u.g.position.x - camera.position.x) < 30 && Math.abs(u.g.position.z - camera.position.z) < 30).map((u) => u.kindName).join('+') + '|' + crabs.filter((u) => u.st && u.st.alive && u.st.awake && Math.abs(u.g.position.z - camera.position.z) < 30).length }) }));
 const sfxOut = () => {
   const b = sfxOutBase();
   return sfxPos && b !== sfxSink && audioCtx ? sfxPosOut(sfxPos, b) : b;
@@ -1205,6 +1208,7 @@ let wbHook = null;   // Skrim's hook in the beached whale's side, and its chain 
 // Skrim's fight: from his getting up to fight until he is dead, looped (passes laid over each other's ends), not loud, a
 // long fade as he dies (2026-10-30, the owner's "skrim fight": "play once you fight skrim on loop not too loud. slow fade
 // it once he dies"). His file packed +6 dB (peaks −2.1 dB, mean −16.8 — the samurai's score is −15.5), and played under it.
+// (the file is the owner's "new skrim fight song" since 2026-11-15: 38 s, packed to the old one's −14 LUFS so these levels hold)
 const SKRIM_FIGHT = 'assets/skrim-fight.m4a', SKRIM_FIGHT_LEVEL = 0.25,   // (0.6 → 0.4 → 0.25 the same night: "turn the music down some more too", then "lower skrim fight music more")
      SKRIM_FIGHT_IN = 7,   // (0.95, in over 1.2 s, until 2026-10-30: "make the skrim fight music fade in slowly and make it lower volume")
       SKRIM_FIGHT_MAX = 1.0, SKRIM_FIGHT_XF = 1.5, SKRIM_FIGHT_FADE = 9;
@@ -1217,8 +1221,8 @@ let skrimFightVol = null, skrimFightM = null;
  * (`musicGuard`). `updateLoopSongs`: the marauder's from his take up (`thrScene.phase` 4) to his death (a long fade) or
  * your leaving the hall; the farmers' from the fight's start (`farmFight.started`, 0.8 s inside the gate) to its end. */
 const LOOP_SONGS = {
-  marauder: { url: 'assets/marauder-fight.m4a', level: 0.6,   // (0.3 until 2026-11-15: "the music i added at the farmers fight and throne room should be louder")
-              max: 1.0, fadeIn: 1.5, fadeOut: 7, loopEnd: 113.684, vol: null, cur: null },
+  marauder: { url: 'assets/marauder-fight.m4a', level: 1.1,   // (0.3 until 2026-11-15: "the music i added at the farmers fight and throne room should be louder"; 0.6 until 2026-11-17: "TURN UP MUSIC IN THRONE ROOM")
+              max: 1.6, fadeIn: 1.5, fadeOut: 7, loopEnd: 113.684, vol: null, cur: null },
   farmers: { url: 'assets/farmers-fight.m4a', level: 0.6, max: 1.0, fadeIn: 0.25, fadeOut: 5,   // (8 s in until 2026-11-14: "make the music to the farmer fight start instantly when you walk in")
               loopEnd: 88.615, vol: null, cur: null },
 };
@@ -8382,9 +8386,13 @@ function updateHurt(dt) {
    * brighter the more of you is gone, with a flash on the hit. It is the
    * only colour on the screen, which is what makes it read. */
   const mx = maxHp();
+  /* NO MENDING WHILE THE GAME IS STOPPED (2026-11-17, the owner: "HEALTH SHOULD NOT RECHARGED WHILE IN PACK OR PAUSED"): the
+   * pack, the pause menu, the shop, a note, an item turned in the hand — the world waits, and so does your health (the
+   * wait to mend and the ring's fill alike); it goes on from where it was when you close it. */
+  const hpHeld = invOpen || menuOpen || shopOpen || noteOpen || inspecting;
   if (hpCharge > 0) {
     if (hp < hpChargeLast - 0.01 || dying || hpCharge > mx + 0.01) { hpCharge = 0; hp = Math.floor(hp + 1e-6); }   // hurt, or the ring came off: it stops where it is
-    else {
+    else if (!hpHeld) {
       hp = Math.min(hpCharge, hp + dt * HP_CHARGE_RATE);
       if (Math.floor(hp + 1e-6) > Math.floor(hpChargeLast + 1e-6)) sfxHpTick();
       if (hp >= hpCharge - 1e-4) { hp = hpCharge; hpCharge = 0; }
@@ -8407,7 +8415,7 @@ function updateHurt(dt) {
   }
   healthEl.style.opacity = (introDone && !ended && !dying) ? (hp < mx ? 1 : 0.7) : 0;
   healthEl.classList.toggle('hurt', hurtFlash > 0.55);
-  if (!dying && !ended && introDone && hp < mx) {
+  if (!dying && !ended && introDone && hp < mx && !hpHeld) {
     sinceHurt += dt;
     if (sinceHurt > REGEN_DELAY) {
       regenAcc += dt;
@@ -10155,6 +10163,73 @@ inspectPivot.add(inspectFit);
 
 let inspectModel = null, inspectRotX = 0, inspectRotY = 0, inspectDist = 3.3, inspectAuto = 0;
 
+/* WHAT IS DRAWN, MEASURED (2026-11-15, the owner: "ITEMS SHOULD START CENTERED WHEN INSPECTING"). `Box3.setFromObject`
+ * counts everything under the model, visible or not — a pickup's invisible `hitProxy` sphere (bigger than the thing and
+ * set off it), its shine sprite, its glint — and only a geometry's own box, which for a split part is the WHOLE file's
+ * (the .44's rounds) and for a skinned one the bind pose. Measured (probe `inspectCentre`): the shells, the water, the
+ * portrait, the katana, the peg opened 6–11 % of the frame off its middle. This walks only meshes that are drawn
+ * (visible to the root, not a proxy, not a sprite, points or line, not an invisible material), each vertex its own index
+ * reaches (so a split part is only itself), posed through its bones if skinned, in world space. */
+const _ibV = new THREE.Vector3();
+function inspectBounds(root) {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3(); box.makeEmpty();
+  root.traverse((o) => {
+    if (!o.isMesh || o.isSprite || o.isPoints || o.isLine || o.name === 'hitProxy') return;
+    for (let q = o; q && q !== root.parent; q = q.parent) if (!q.visible) return;
+    const ms = Array.isArray(o.material) ? o.material : [o.material];
+    if (ms.every((m) => !m || !m.visible || (m.transparent && m.opacity <= 0.02) || m.isSpriteMaterial)) return;
+    const g = o.geometry, pos = g && g.attributes.position; if (!pos) return;
+    const idx = g.index, skin = o.isSkinnedMesh;
+    if (skin) o.skeleton.update();
+    const n = idx ? idx.count : pos.count, step = n > 240000 ? Math.ceil(n / 240000) : 1;
+    const r0 = g.drawRange.start, r1 = Math.min(n, g.drawRange.start + g.drawRange.count);
+    for (let k = r0; k < r1; k += step) {
+      const i = idx ? idx.getX(k) : k;
+      _ibV.fromBufferAttribute(pos, i);
+      if (skin) o.applyBoneTransform(i, _ibV);
+      _ibV.applyMatrix4(o.matrixWorld); box.expandByPoint(_ibV);
+    }
+  });
+  if (box.isEmpty()) box.setFromObject(root);           // (nothing drawn found: the old measure, rather than none)
+  return box;
+}
+/* AND CENTRED AS YOU SEE IT. A thing opens turned toward you (`rotX`, `rotY`), and through the lens the near end of a
+ * long one is drawn bigger than the far end: centred in 3D, the shells and the water opened 7–11 % of the frame off the
+ * middle, toward their near ends (probe `inspectCentre`, the drawn pixels' box). So, at the turn it opens with, every
+ * drawn vertex is projected and the whole is slid (the pivot, in the camera's plane) until the outline's box sits on the
+ * frame's middle — twice, since the slide changes the perspective a little. It turns about that point after. */
+const _icV = new THREE.Vector3();
+function inspectCentreOnScreen() {
+  const root = inspectModel; if (!root) return;
+  inspectPivot.position.set(0, 0, 0);
+  inspectPivot.rotation.set(inspectRotX, inspectRotY, 0);
+  inspectCamera.position.set(0, 0, inspectDist); inspectCamera.lookAt(0, 0, 0);
+  inspectCamera.updateMatrixWorld(true);
+  const tanH = Math.tan(THREE.MathUtils.degToRad(inspectCamera.fov) / 2);
+  for (let pass = 0; pass < 2; pass++) {
+    inspectScene.updateMatrixWorld(true);
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    root.traverse((o) => {
+      if (!o.isMesh || o.isSprite || o.isPoints || o.isLine || o.name === 'hitProxy') return;
+      for (let q = o; q && q !== root.parent; q = q.parent) if (!q.visible) return;
+      const ms = Array.isArray(o.material) ? o.material : [o.material];
+      if (ms.every((m) => !m || !m.visible || (m.transparent && m.opacity <= 0.02) || m.isSpriteMaterial)) return;
+      const g = o.geometry, pos = g && g.attributes.position; if (!pos) return;
+      const idx = g.index, skin = o.isSkinnedMesh, n = idx ? idx.count : pos.count, step = Math.max(1, Math.ceil(n / 60000));
+      for (let k = 0; k < n; k += step) {
+        const i = idx ? idx.getX(k) : k;
+        _icV.fromBufferAttribute(pos, i); if (skin) o.applyBoneTransform(i, _icV);
+        _icV.applyMatrix4(o.matrixWorld).project(inspectCamera);
+        if (_icV.x < x0) x0 = _icV.x; if (_icV.x > x1) x1 = _icV.x; if (_icV.y < y0) y0 = _icV.y; if (_icV.y > y1) y1 = _icV.y;
+      }
+    });
+    if (x1 < x0) return;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    inspectPivot.position.x -= cx * tanH * inspectCamera.aspect * inspectDist;
+    inspectPivot.position.y -= cy * tanH * inspectDist;
+  }
+}
 function inspectSetModel(model) {
   if (inspectModel === model) return;
   if (inspectModel) inspectFit.remove(inspectModel);
@@ -10162,14 +10237,19 @@ function inspectSetModel(model) {
   model.position.set(0, 0, 0);
   model.rotation.set(0, 0, 0);
   model.scale.setScalar(1);
-  inspectPivot.rotation.set(0, 0, 0);
+  inspectPivot.rotation.set(0, 0, 0); inspectPivot.position.set(0, 0, 0);
   inspectFit.position.set(0, 0, 0);
   inspectFit.scale.setScalar(1);
   inspectFit.add(model);
-  inspectFit.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(model);
-  const size = box.getSize(new THREE.Vector3());
-  const centre = box.getCenter(new THREE.Vector3());
+  /* THE WHOLE CHAIN, NOT JUST THE FIT. `inspectFit.updateMatrixWorld` multiplies by the pivot's matrixWorld — which is
+   * the LAST item's, turned however it was left and slid wherever it was centred: the reset above only set the pivot's
+   * position and rotation, not its matrix. Every item was measured through the previous one's turn, and opened off by
+   * it (the "ITEMS SHOULD START CENTERED" of 2026-11-15; probe `inspectCentre` run in a different order moved them). */
+  inspectScene.updateMatrixWorld(true);
+  // (its SIZE as it always was — the whole of it, glow and all: the screwdriver and the chest key sit inside their halos,
+  // and framed by the steel alone the halo filled the screen; its CENTRE off what is drawn)
+  const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+  const centre = inspectBounds(model).getCenter(new THREE.Vector3());
   const k = 1.7 / (Math.max(size.x, size.y, size.z) || 1);
   inspectFit.scale.setScalar(k);
   inspectFit.position.copy(centre).multiplyScalar(-k);
@@ -10196,6 +10276,7 @@ function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEqu
   inspectRotX = rotX; inspectRotY = rotY; inspectDist = 3.3; inspectAuto = 0;
   inspectCamera.aspect = window.innerWidth / window.innerHeight;
   inspectCamera.updateProjectionMatrix();
+  inspectCentreOnScreen();
   inspectEl.classList.add('show');
   promptEl.classList.remove('show');
   crosshair.className = '';
@@ -22830,6 +22911,8 @@ function showDialogNode(id) {
   const node = dialogScript[id];
   if (!node) { endDialog(); return; }
   if (node.say) node.say();                   // a recorded line, from wherever the speaker is
+  // Myles says something on every new line of his that has words (the owner's two "dialog sounds", either: `MYLES_VOX.talk`)
+  if (dialogScript === MINO_NPC.script && !node.speaker && MINO.u && (typeof node.text === 'function' || (node.text && node.text.trim()))) farmVox('talk', MINO.u.kind.voice);
   clearTimeout(dialogEndTimer);
   dialogChoicesEl.innerHTML = '';
   dialogCanDismiss = false; dialogNextId = null;
@@ -23056,8 +23139,9 @@ function startAmbientAudio() {
   // water-step splashes both pass through here so the Wave volume slider
   // can pull them down together, under the master volume.
   waveBusGain = ctx.createGain();
-  waveBusGain.gain.value = settings.waveVolume;
-  waveBusGain.connect(masterGain);
+  waveBusGain.gain.value = settings.waveVolume * WAVE_TRIM;
+  waveLP = ctx.createBiquadFilter(); waveLP.type = 'lowpass'; waveLP.frequency.value = 20000; waveLP.Q.value = 0.5;
+  waveBusGain.connect(waveLP).connect(masterGain);
   // every one-shot effect (dig, steps, crab, glass…) goes through here, so
   // the SFX slider governs them and none of them can out-shout the mix.
   sfxBusGain = ctx.createGain();
@@ -23374,6 +23458,30 @@ const SAMPLES = {
    * idling, and every other gull on the beach (`sfxGull`); `gullCry` the two
    * long harsh ones — the stoop's tell, a hurt, a death (`sfxGullShriek`). */
   gullCall: Array.from({ length: 5 }, (_, i) => `assets/gull-call${i + 1}.m4a`),
+  /* THE FARMERS' OWN VOICES (2026-11-16, the owner's "FARMER SOUND EFFECTS", cut and levelled by
+   * `tools/farmer_voice_pack.py`): a grunt with a blow, a man struck, a shout off in the street, a man going down. How
+   * often each is heard is `FARM_VOX`. */
+  farmSwing: Array.from({ length: 10 }, (_, i) => `assets/farm-swing${i + 1}.m4a`),
+  farmHit: Array.from({ length: 14 }, (_, i) => `assets/farm-hit${i + 1}.m4a`),
+  farmShout: Array.from({ length: 9 }, (_, i) => `assets/farm-shout${i + 1}.m4a`),
+  farmDie: Array.from({ length: 5 }, (_, i) => `assets/farm-die${i + 1}.m4a`),
+  // and the tavern's orc (the owner's "ORC SWINGS / HITS / DEATH SOUND", the same packer): `ORC_VOX`
+  orcSwing: Array.from({ length: 7 }, (_, i) => `assets/orc-swing${i + 1}.m4a`),
+  orcHit: Array.from({ length: 11 }, (_, i) => `assets/orc-hit${i + 1}.m4a`),
+  orcDie: ['assets/orc-die1.m4a'],
+  // and the gargoyles (the owner's "GARGOYLE ATTACK / DEATH SOUNDS" and the "drop" behind Myles): `GARG_VOX`
+  gargAttack: Array.from({ length: 8 }, (_, i) => `assets/garg-attack${i + 1}.m4a`),
+  gargDie: Array.from({ length: 9 }, (_, i) => `assets/garg-die${i + 1}.m4a`),
+  gargDrop: ['assets/garg-drop1.m4a'],
+  // and the paladin, the big knight in the farmers' fight (the owner's "PALADIN ATTACK / TAKING DAMAGE / RARE PHRASES / DEATH"): `PAL_VOX`
+  palAttack: Array.from({ length: 9 }, (_, i) => `assets/pal-attack${i + 1}.m4a`),
+  palHurt: Array.from({ length: 9 }, (_, i) => `assets/pal-hurt${i + 1}.m4a`),
+  palPhrase: Array.from({ length: 4 }, (_, i) => `assets/pal-phrase${i + 1}.m4a`),
+  palDie: ['assets/pal-die1.m4a'],
+  // and Myles (the owner's "MYLES ATTACKS AND TAKING DAMAGE / DIALOG / DEATH"): `MYLES_VOX`
+  mylesGrunt: Array.from({ length: 13 }, (_, i) => `assets/myles-grunt${i + 1}.m4a`),
+  mylesTalk: ['assets/myles-talk1.m4a', 'assets/myles-talk2.m4a'],
+  mylesDie: ['assets/myles-die1.m4a'],
   gullCry: ['assets/gull-cry1.m4a', 'assets/gull-cry2.m4a'],
   /* THE THING IN THE SEWER'S WATER (2026-10-23, the owner's slosh, splash and jump recordings, `tools/sewer_monster_sound.py`):
    * the sloshes it makes coming up, the splash of it going back under, the burst of it coming out at you */
@@ -24918,6 +25026,7 @@ const RARE_ACHIEVEMENTS = [
   () => gullSlayer,                                       // Seagull Slayer: every gull on the lighthouse's rock you can reach
   () => billyState === 2,                                 // Reunited lost friends: Billy back with the Very Old Fisherman
   () => crowGone,                                         // Get scared by big crow.: petted the crow on the pier's post, and it screamed and flew
+  () => elvBurned,                                        // Burn the puppet.: carried Elvédor's puppet to his fire and threw it in (2026-11-15)
 ];
 function statLines() {
   const tally = (list) => list.filter(statHad).length;
@@ -34381,6 +34490,29 @@ function measureGaits(u, only) {
      * a stride of zero. The first build of this did exactly that, wrote
      * nothing, and set its own "measured" flag on the way out. */
     a.reset(); a.play(); a.enabled = true; a.setEffectiveWeight(1); a.paused = true;
+    /* (`kind.gaitContact`, 2026-11-16, the garrison: the speed a planted foot moves at WHILE IT IS PLANTED — within 1.5 cm
+     * of its own lowest — and not the lower foot's travel averaged over the cycle. The average counts the swing foot as it
+     * skims past and a run's flight, and came out 15-20 % under the contact speed on a walk and a side-step and 40-60 %
+     * under on a run (measured, `tools/garrison.js&m=contact`): every gait played too fast for the body, feet sliding
+     * back under it. The median of the contact frames is what the body has to move at for the foot to stand still.) */
+    if (u.kind.gaitContact) {
+      const NN = 120, S = [[], []];
+      for (let i = 0; i <= NN; i++) {
+        a.time = dur * i / NN; u.mixer.update(0); u.g.updateMatrixWorld(true);
+        _mgI.copy(u.g.matrixWorld).invert();
+        S[0].push(R.getWorldPosition(new THREE.Vector3()).applyMatrix4(_mgI)); S[1].push(L.getWorldPosition(new THREE.Vector3()).applyMatrix4(_mgI));
+      }
+      const vs = [];
+      for (const F of S) {
+        let lo = Infinity; for (const q of F) lo = Math.min(lo, q.y);
+        for (let i = 1; i < F.length; i++) if (F[i].y < lo + 0.015 && F[i - 1].y < lo + 0.015) vs.push(Math.hypot(F[i].x - F[i - 1].x, F[i].z - F[i - 1].z) * NN / dur);
+      }
+      vs.sort((x, y) => x - y);
+      const sp = vs.length >= 6 ? vs[vs.length >> 1] : 0;
+      if (sp > 0.15) u.clipSpeed[nm] = sp;
+      a.stop(); a.enabled = false; a.setEffectiveWeight(0);
+      continue;
+    }
     let pr = null, pl = null, last = null, back = 0;
     for (let i = 0; i <= 40; i++) {
       a.time = dur * i / 40; u.mixer.update(0); u.g.updateMatrixWorld(true);
@@ -34449,7 +34581,7 @@ function velGaitAnim(u, dt, N) {
    * which is the whole of "they slide". Whatever carried it this frame — the
    * hold, the separation, a wall — the step is cut back to what the stride
    * being played can cover. */
-  const capFor = (nm) => { const c = spd(nm); return c > 0.2 ? c * rHi : 0; };
+  const capFor = (nm) => { const c = spd(nm); const v = c > 0.2 ? c * rHi : 0; return u.kind.runMax && v > u.kind.runMax ? u.kind.runMax : v; };   // (`runMax`: a pace the fight was balanced at, kept when a stride is measured truer)
   const capStep = (cap) => {
     const il2 = Math.hypot(ix, iz);
     if (!cap || il2 <= cap || dt <= 1e-4 || px0 === undefined) return;
@@ -34480,7 +34612,8 @@ function velGaitAnim(u, dt, N) {
     const nm = u._vgRun ? G.run : G.walk;
     capStep(capFor(u.kind.gaitBands ? nm : (G.run || nm)));
     const a = mutPlay(u, nm, true);
-    if (a) { a.paused = false; a.timeScale = rate(nm, f, 1); }
+    // (the rate off the CAPPED speed when `runMax` holds the body under its stride: off the asked-for one the feet ran on ahead)
+    if (a) { a.paused = false; a.timeScale = rate(nm, u.kind.runMax ? Math.min(f, u.kind.runMax) : f, 1); }
   } else if (mode === 'back') {
     const nm = N.back || G.walk;
     capStep(capFor(nm));
@@ -36533,6 +36666,10 @@ function finishMutant(u) {
   mutDrop(u);
   maybeDropFang(u);
   maybeDropGrammy(u);
+  /* the orc's death cry, EVERY time, with the portrait's drop and its ring sting (the owner, 2026-11-16) — here, since
+   * the tavern's cast go down by the boss's branch below, which says nothing (`ORC_VOX`) */
+  if (u === orcUnit && !applyingSave && !replaying) farmVox('die', u.kind.voice);
+  if (u.kind === MUT_KINDS.darkKnight && !applyingSave && !replaying) farmVox('die', u.kind.voice, { x: u.g.position.x, z: u.g.position.z });   // (the paladin's, every time: `PAL_VOX`)
   if (u.kind.garg) { gargDied(u); return; }        // it goes back to stone and falls (`gargDeadStep`)
   /* A BOSS DIES AT DIFFERENT ODDS. Both branches ragdoll and both can take
    * a limb; what separates them is the RATES and the fact that a boss is
@@ -37132,6 +37269,7 @@ function mutVoiceOK() {
   _mutVoiceT.push(now); return true;
 }
 function mutVox(role, dist = 0, V = MUT_VOICE) {
+  if (V && V.farm) return farmVoxRole(role, V, dist);
   if (sfxPos) dist = 0;                          // (placed by the scope it was played in: `sfxAt`)
   const ctx = audioCtx; if (!ctx || !V || !V.rec) return false;
   const R = MUT_VOX[role]; if (!R) return false;
@@ -37156,6 +37294,120 @@ function mutVox(role, dist = 0, V = MUT_VOICE) {
   src.connect(lp).connect(g).connect(sfxOut());
   src.start(now);
   return true;
+}
+/* THE FARMERS SPEAK IN THE OWNER'S VOICE (2026-11-16: "MAKE THESE THE FARMERS SWING SOUNDS AND RANDOMIZE THEM THEY DONT
+ * NEED TO HAPPEN EVERY SWING … THE RARE BACKROUND SHOUTS CAN HAPPEN FROM ANY GUY BUT ARE RARE TO HEAR SAME WITH THE RARE
+ * DEATH SOUNDS. BLEND ALL THESE WELL"). Four banks, and every man draws on them through ONE MOUTH:
+ *   swing  a grunt with the blow, at its strike, on nine swings in ten — never two from one man inside 0.5 s
+ *   hurt   a man struck, every hit (his mouth and the cap allowing)
+ *   die    a man going down, about three deaths in ten, and not two inside 3.5 s; the rest go down with the hit's cry
+ *   shout  off in the street, now and then: behind a shut door, a man coming through it, a man out on the far side of the
+ *          fight — 8-18 s apart at the closest, so a fight of a minute and a half hears five or six
+ * A man has one mouth: a louder cause (a death over a cry over a grunt) cuts what he was saying with a 40 ms fade, a
+ * lesser one waits for it; and no more than three of them at once, whatever the street is doing. Each man's takes are
+ * pitched a few per cent by his own voice (`V.pitch`: the brute lower, the maniac higher), so the same ten grunts are
+ * twenty men. The synthesised throat they had before is silent for them — the tell, the laugh and the war cry, which
+ * against the real voices was the one thing that did not fit — except the woman's (`kw`), whose voice these are not. */
+const FARM_VOX = {
+  swing: { bank: 'farmSwing', p: 0.90, gain: 2.00, ref: 6,  far: 45, pri: 1, gap: 0.12, own: 0.5 },   // (1.05 worked out at ~0.04 at the speakers, under the street's 0.05)
+  hurt:  { bank: 'farmHit',   p: 1,    gain: 3.60, ref: 7,  far: 50, pri: 2, gap: 0.10, own: 0.25 },   // (1.2 measured 0.05-0.06 at the speakers, the street's own level — "I CANT HEAR THE FARMERS HIT SOUNDS", 2026-11-17; 3.0 measured 0.09-0.11; `tools/farmhitlvl.sh`)
+  die:   { bank: 'farmDie',   p: 0.30, gain: 1.00, ref: 9,  far: 60, pri: 3, gap: 3.5,  own: 0 },
+  shout: { bank: 'farmShout', p: 1,    gain: 0.85, ref: 10, far: 70, pri: 1, gap: 0,    own: 4 },
+};
+/* AND THE ORC (2026-11-16, the owner: "DO THE SAME FOR THE ORC. MAKE THE ONE LABELED DEATH SOUND PLAY WITH THE OCTOPUS RING
+ * DROP SOUND … SOUNDS DONT HAVE TO PLAY EVERYTIME UNLESS ITS THE DEATH SOUND"). His voice names this table (`V.vox`):
+ * a grunt on nine swings in ten, a cry on every hit, and his death EVERY time — in `finishMutant`, the same frame as the
+ * portrait's drop and its `ringDrop` sting. He has no shout, so his roar keeps the synthesised bellow (`farmVoxRole`). */
+const ORC_VOX = {
+  swing: { bank: 'orcSwing', p: 0.90, gain: 1.25, ref: 8,  far: 45, pri: 1, gap: 0.12, own: 0.5 },
+  hurt:  { bank: 'orcHit',   p: 1,    gain: 1.30, ref: 8,  far: 50, pri: 2, gap: 0.10, own: 0.25 },
+  die:   { bank: 'orcDie',   p: 1,    gain: 1.10, ref: 10, far: 70, pri: 3, gap: 0,    own: 0 },
+};
+/* AND THE GARGOYLES (2026-11-16, the owner: "DO THE SAME FOR THE GARGOYLES. ADD THAT HUCKLE THAT SAY "DROP" BEHIND MYLES
+ * SOUND TO WHEN THE GARGOYLE LANDS BEHIND MYLES"). Their recordings take the place of the synthesised scream
+ * (`sfxScpScream`) everywhere a gargoyle used it: its cue before a dive, rake or bite (`attack`, nine in ten, not
+ * twice from one inside 1 s: the owner wanted them "WAY MORE FREQUENT", 2026-11-17); off the wall as it wakes, a blow of its that lands, its wings breaking (`cry`: always); and its death, EVERY time, as it breaks in the air (`gargDied`). Four
+ * of them share one kind, so each has its own voice and its own mouth (`gargVoice`). The "drop" is `gargDrop`, played
+ * once where the scripted one lands behind Myles (`gargSceneStep`). */
+const GARG_VOX = {
+  attack: { bank: 'gargAttack', p: 0.90, gain: 1.30, ref: 10, far: 60, pri: 1, gap: 0.3,  own: 1.0 },
+  cry:    { bank: 'gargAttack', p: 1,    gain: 1.30, ref: 10, far: 60, pri: 2, gap: 0.1,  own: 0.4 },
+  die:    { bank: 'gargDie',    p: 1,    gain: 1.15, ref: 12, far: 70, pri: 3, gap: 0,    own: 0 },
+};
+const gargVoice = (u) => u.gVox || (u.gVox = { vox: GARG_VOX, unit: u });
+/* AND THE PALADIN (2026-11-17, the owner: "USE THESE FOR THE PALADIN AKA THE BIG KNIGHT IN THE FARMERS FIGHT"): a grunt on
+ * most of his blows, a cry on every one that lands on him, his death every time (in `finishMutant`: he goes down by the
+ * boss's branch, which says nothing), and his phrases RARE — one at most every 14 s, on a roar now and then and off his
+ * own clock while he fights (`updateDarkKnight`, every 14-30 s at 0.6). Levels set from the farmers' measurement at the
+ * speakers (`tools/farmhitlvl.sh`): a take at gain ~3 from 3.5 m reaches ~0.1, twice the street. */
+/* AND MYLES (2026-11-17, the owner: "MYLES DAMAGE TAKING AND HITS ARE IN THE SAME FILE JUST RANDOMIZE THEM. HIS DIALOG
+ * SOUND SHOULD PLAY EITHER OF THOSE JUST ONCE EVERY NEW DIALOG MESSAGE. MAKE HIS DEATH SOUND HAPPEN WHEN HE LAYS DOWN AND
+ * DIES"). One bank for his blows and his hurts (`mylesGrunt`, at random); one of his two talking sounds on every new line
+ * of his that has words (`showDialogNode`); his death in place of the borrowed last breath, as he goes (`minoLetGo`). */
+const MYLES_VOX = {
+  swing: { bank: 'mylesGrunt', p: 0.7, gain: 2.8, ref: 8,  far: 55, pri: 1, gap: 0.15, own: 0.8 },
+  hurt:  { bank: 'mylesGrunt', p: 1,   gain: 3.0, ref: 8,  far: 55, pri: 2, gap: 0.10, own: 0.35 },
+  talk:  { bank: 'mylesTalk',  p: 1,   gain: 2.4, ref: 6,  far: 40, pri: 4, gap: 0,    own: 0 },   // (pri 4: a new line is always voiced, over the death sound he gives as he goes down)
+  die:   { bank: 'mylesDie',   p: 1,   gain: 3.2, ref: 8,  far: 60, pri: 3, gap: 3,    own: 3 },
+};
+const PAL_VOX = {
+  swing: { bank: 'palAttack', p: 0.85, gain: 3.0, ref: 8,  far: 55, pri: 1, gap: 0.15, own: 0.6 },
+  hurt:  { bank: 'palHurt',   p: 1,    gain: 3.2, ref: 8,  far: 55, pri: 2, gap: 0.10, own: 0.3 },
+  shout: { bank: 'palPhrase', p: 1,    gain: 3.6, ref: 14, far: 80, pri: 2, gap: 14,   own: 14 },
+  die:   { bank: 'palDie',    p: 1,    gain: 3.8, ref: 12, far: 80, pri: 3, gap: 3,    own: 3 },
+};
+/* ONLY THE RARE ONES ARE RARE (2026-11-17, the owner: "MAKE SURE ONLY RARE DIALOG IS RARE I NEED THE NORMAL ONES A LITTLE
+ * LOUDER AND WAY MORE FREQUENT"): the swing grunts, the hit cries and the gargoyles' attacks went to 0.9-1 and +2.3-2.5 dB
+ * (gain x1.3), their gaps cut to what keeps one take from stepping on itself; four voices at once, not three. The
+ * farmers' shouts and death cries — the bounces he named RARE — are untouched. (Odds before: farm 0.42/0.75, orc
+ * 0.5/0.7, gargoyle 0.55/0.85.) */
+const FARM_VOX_CAP = 4;
+const farmVoxLast = {}, farmVoxOn = [];
+let farmShoutGap = 6;                                        // (the first can come early; then 8-18 s)
+function farmVox(role, V, { x, z, dist = 0, muffle = false, p } = {}) {
+  const ctx = audioCtx, R = V && (V.vox || FARM_VOX)[role]; if (!ctx || !R) return false;
+  const bank = (sampleBanks[R.bank] || []).filter(Boolean); if (!bank.length) return false;
+  const now = ctx.currentTime;
+  if (now - (farmVoxLast[R.bank] ?? -99) < (R.bank === 'farmShout' ? farmShoutGap : R.gap)) return false;
+  const T = V.voxT || (V.voxT = {});
+  if (now - (T[role] ?? -99) < R.own) return false;
+  if (Math.random() >= (p ?? R.p)) return false;
+  const M = V.mouth;
+  if (M && M.end > now && M.pri >= R.pri) return false;
+  while (farmVoxOn.length && farmVoxOn[0].end <= now) farmVoxOn.shift();
+  if (farmVoxOn.length >= FARM_VOX_CAP && R.pri < 2) return false;   // (the cap is for grunts and shouts: a man you hit always answers)
+  if (x === undefined && V.unit) { x = V.unit.g.position.x; z = V.unit.g.position.z; }
+  else if (x === undefined && sfxPos) { x = sfxPos.x; z = sfxPos.z; }
+  const d = x !== undefined ? Math.hypot(x - camera.position.x, z - camera.position.z) : dist;
+  if (d > R.far) return false;
+  if (M && M.end > now) { M.g.gain.setTargetAtTime(0, now, 0.012); try { M.src.stop(now + 0.06); } catch (e) {} M.end = now; }
+  const src = ctx.createBufferSource();
+  src.buffer = bank[(Math.random() * bank.length) | 0];
+  const rate = THREE.MathUtils.clamp(Math.pow((V.pitch || 124) / 124, 0.25), 0.93, 1.07) * (1 + (Math.random() - 0.5) * 0.04);
+  src.playbackRate.value = rate;
+  const k = Math.min(1, d / R.far);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
+  lp.frequency.value = Math.min(9000 * Math.pow(700 / 9000, k), muffle ? 620 : 9e9);
+  const g = ctx.createGain(); g.gain.value = R.gain * (muffle ? 0.75 : 1) / (1 + d / R.ref);
+  let dst = sfxOutBase();
+  if (x !== undefined && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.85, -1, 1); sp.connect(dst); dst = sp; }
+  src.connect(lp).connect(g).connect(dst);
+  src.start(now);
+  const end = now + src.buffer.duration / rate;
+  V.mouth = { src, g, pri: R.pri, end };
+  farmVoxOn.push({ end }); farmVoxOn.sort((a, b) => a.end - b.end);
+  farmVoxLast[R.bank] = now; T[role] = now;
+  if (R.bank === 'farmShout') farmShoutGap = 8 + Math.random() * 10;
+  return true;
+}
+// the roles the shared creature voice asks for, as a farmer says them (true: said, or kept quiet — never the synth)
+function farmVoxRole(role, V, dist) {
+  if (role === 'roar' && V.vox && !V.vox.shout) return false;          // (the orc: no shout of his own, so his bellow)
+  if (role === 'die') farmVox('die', V, { dist });
+  else if (role === 'hurt') farmVox('hurt', V, { dist });
+  else if (role === 'roar') farmVox('shout', V, { dist, p: 0.35 });     // a war cry, now and then
+  else if (role === 'laugh') farmVox('shout', V, { dist, p: 0.12 });    // and a blow landed, once in a while
+  return true;                                                          // (the tell and the breath: the grunt at the strike says it)
 }
 function sfxMutTell(dist = 0, W = MUT_WIND, V = MUT_VOICE) {
   if (sfxPos) dist = 0;                          // (placed by the scope it was played in: `sfxAt`)
@@ -37282,6 +37534,7 @@ function sfxMutHit(V = MUT_VOICE) {
   const t = ctx.currentTime, out = sfxOut();
   if (V.cat && Math.random() < 0.65) catCue('catHurt', { gain: 0.85, ref: 6, far: 25, cut: true });   // and he says so, most times
   if (V.rec && Math.random() < 0.7) mutVox('hurt', 0, V);                  // the owner's mutants cry out
+  if (V.farm) farmVox('hurt', V);                                          // and the farmers (their own odds: `FARM_VOX`)
   /* THE DEALER, HIT: the owner's own grunts, one at random off eight. */
   if (V.grunt) playSample(V.grunt, 0.85, 0.05);
   playSample('fleshHit', 0.75, 0.06, 0.72 * V.f);   // the owner's own, pitched to the voice
@@ -39186,6 +39439,16 @@ function updateMutRagdoll(u, dt) {
    * the cut left them. */
   for (const q of r.parts) if (q.pin && r.byName[q.pin.name] === q.pin) ragHang(q.bone, q.pin.bone, q.off);
   if (r.orphans) for (const o of r.orphans) if (r.byName[o.host.name] === o.host) ragHang(o.bone, o.host.bone, o.off);
+  /* AND A FOREST'S ROOTS STAY ON THE BODY (2026-11-16, the samurai). His upper arms and thighs are root bones, each placed
+   * on its own particle above, and the shoulder plate it hangs off is hung on the chest — so as he fell the two drifted
+   * apart and the skin between them stretched: measured, `tools/samhonest.js&kill=1`, the collar 17.8x its idle length
+   * on the ground. Positions only; each keeps the turn the body gave it — and a limb cut off the body (`ragCut`: its
+   * parts are gone from the body) is left where the cut left it. */
+  if (u.fkCarry) {
+    const has = (bn) => { for (const q of r.parts) for (let b = q.bone; b && b.isBone; b = b.parent) if (b === bn) return true; return false; };
+    if (!r.fkHad) r.fkHad = new Map();
+    u.fkCarry((c) => { const h = has(c); if (!r.fkHad.has(c)) r.fkHad.set(c, h); return h || !r.fkHad.get(c); });
+  }
 }
 /* A BONE PUT BACK ON ANOTHER BONE, at the offset it had when the body died —
  * the katana's own pin, which is the only way to move a bone whose parent is
@@ -39920,6 +40183,7 @@ function updateMutantUnit(u, dt) {
     }
     if (was < A.wind && t >= A.wind) {
       sfxMutSwing(u.kind.voice);
+      if (u.kind.voice && u.kind.voice.farm) farmVox('swing', u.kind.voice, { x: p.x, z: p.z });   // the grunt with it, on some
       u.st.landed = false;
     }
     /* THE BLOW IS WHERE THE WEAPON IS. The pack lands a hit on a distance
@@ -40287,7 +40551,10 @@ function updateMutantUnit(u, dt) {
         const forced = u.st.forceSwing && u.kind.use[u.st.forceSwing] && u.atk[u.st.forceSwing] ? u.st.forceSwing : null;
         u.st.forceSwing = null;
         if (forced) pick = forced;
-        else if (u.st.swings > 0) {
+        /* (and a `warpPick` kind draws its FIRST blow too, 2026-11-16: the first was always the first key in `use`, and a
+         * blow dropped as out of reach never counts as thrown — so with the paladin's short cut first in his list, from
+         * 4.6 m he threw it, dropped it, and threw it again for as long as you stood there; measured, two loads in three) */
+        else if (u.st.swings > 0 || u.kind.warpPick) {
           /* AND IT DRAWS FROM THE SWINGS THAT CAN ACTUALLY REACH YOU. The
            * draw was over everything it owns, so at three metres it could
            * roll its shortest swing, throw it at the air, and — because the
@@ -40310,7 +40577,7 @@ function updateMutantUnit(u, dt) {
             if (u.kind.stopPick && AK.stop) w *= 0.15 + 0.85 * Math.exp(-Math.pow((dist - AK.stop) / u.kind.stopPick, 2));
             /* (`kind.warpPick`: a swing that carries him, `A.rmFrom`, is thrown from where its stretched or shrunk step lands
              * it — the dark knight's, 2026-10-29: the long strings from five and six metres, the cuts in place from two) */
-            if (u.kind.warpPick && AK.rmFrom) { const o = Math.max(0, AK.rmFrom[0] - dist, dist - AK.rmFrom[1]); w *= 0.05 + 0.95 * Math.exp(-Math.pow(o / 0.45, 2)); }
+            if (u.kind.warpPick && AK.rmFrom) { const o = Math.max(0, AK.rmFrom[0] - dist, dist - AK.rmFrom[1]); if (o > 0.15) continue; w *= 0.05 + 0.95 * Math.exp(-Math.pow(o / 0.45, 2)); }   // (out of its own ground by more than a hand: not drawn at all, 2026-11-16 — weighted down, the paladin still threw a sweep meant for 2.7-3.3 m from 4.1)
             if (u.kind.smart) {
               /* ---- WHAT MAKES A CREATURE READ AS A FIGHTER RATHER THAN AS A
                * WEIGHTED DIE. Two things, and both of them are things the
@@ -40343,6 +40610,21 @@ function updateMutantUnit(u, dt) {
           if (tot > 0) {
             let r = Math.random() * tot;
             for (const k in ok) { r -= ok[k]; if (r <= 0) { pick = k; break; } }
+          } else if (u.kind.warpPick) {
+            /* (nothing fits where he stands. The longest blow was the answer, and on the dark knight made bigger
+             * (2026-11-17: 3.1 m, every blow's ground from 3.2 m out) that was a LEAP thrown from 1.3 m, again and
+             * again — measured, 15 of 15 swings in one 40 s stand. A charge is never thrown inside its own run-up
+             * (`minDist`); of the rest, the blow whose ground is nearest to where he is.) */
+            let best = 1e9, far = -1, farK = null;
+            for (const k in u.kind.use) {
+              const AK = u.atk[k] || MUT_ATTACKS[k];
+              if (u.kind.clipGated && (!u.clips[k] || (u.atk[k] && u.atk[k].skip))) continue;
+              if (AK.reach > far) { far = AK.reach; farK = k; }
+              if (AK.minDist && dist < AK.minDist) continue;
+              const o = AK.rmFrom ? Math.max(0, AK.rmFrom[0] - dist, dist - AK.rmFrom[1]) : Math.abs((AK.stop || AK.reach) - dist);
+              if (o < best) { best = o; pick = k; }
+            }
+            if (best === 1e9) pick = farK;
           } else {
             let far = -1;
             for (const k in u.kind.use) {
@@ -46867,6 +47149,7 @@ function update(dt, rawDt = dt) {
   updateThroneBoss(dt);     // and the marauder on his throne, on the hall's floor
   updateDante(dt);          // and the beast at the foot of his dais, and its chain
   if (window.__samDbg) window.__samDbg('mut');
+  if (inDojo && samurai && samurai.st && samurai.st.alive && !samurai.rag) samFountOut(samurai.g.position, 0.6);    // (the fountain: after every move — firm, so a lunge slides round the rim, never up the tiers)
   pinSamuraiSword();        // whatever moved his arm last is what the sword hangs off
   samTwoHand(dt);           // and his left hand goes onto the handle behind the right
   if (window.__samDbg) window.__samDbg('two');
@@ -47027,7 +47310,9 @@ function saveCheckpoint(spot) {
       packDone: packPhase === 2, mutDone: mutPhase === 2,
       // everything you have killed, by name (the thing in the catacombs does not stay dead)
       stats: { kill: [...endStats.kill], item: [...endStats.item], jars: endStats.jars },
-      deadUnits: [...new Set([...deadUnitKeys, ...mutants.filter((u) => !u.st.alive && u.saveKey && !u.kind.undying).map((u) => u.saveKey)])],
+      // (a gargoyle's death only once all four are dead: a fight left unfinished is four on their walls — 2026-11-17, the
+      // owner: "ONLY ONE GARGOYLE SPAWNED WHEN LOADING THE CHECKPOINT")
+      deadUnits: [...new Set([...deadUnitKeys, ...mutants.filter((u) => !u.st.alive && u.saveKey && !u.kind.undying).map((u) => u.saveKey)])].filter((k) => GARG.phase === 2 || !k.startsWith('gargoyle@')),
       dealerWon, tavFight: tavScene.phase >= 9,
       beachZ: +(inRoom() ? lastBeachZ : camera.position.z).toFixed(2),
       // he went into the sea and he does not come back out of it
@@ -47284,7 +47569,7 @@ function beginRestoreQuiet() {
   if (f.ringSlots > RING_SLOTS) RING_SLOTS = f.ringSlots;
   wreckSaveDone = bz <= WRECK_SAVE_Z + 1;
   fortSaveDone = bz <= FORT_Z + FORT_GATE.z + 14.5;          // the castle's gate: a save made there, or past it, is that save
-  for (const k of f.deadUnits || []) deadUnitKeys.add(k);
+  for (const k of f.deadUnits || []) if ((f.garg || 0) >= 2 || !k.startsWith('gargoyle@')) deadUnitKeys.add(k);   // (an older save's dead gargoyles from an unfinished fight: all four back)
   if (f.stats) { for (const k of f.stats.kill || []) endStats.kill.add(k); for (const k of f.stats.item || []) endStats.item.add(k); }
   else for (const k of f.deadUnits || []) if (k !== scp096.saveKey && !(k === babyUnit.saveKey && f.catBaby)) endStats.kill.add(k);   // a save from before the tally
   endStats.jars = f.stats && f.stats.jars != null ? f.stats.jars : (d.took || []).filter((id) => /^Take the jar[@#]/.test(id)).length;   // (a save from before the count: what it had picked up)
@@ -47482,7 +47767,11 @@ function updateRestore(dt) {
    * what registers whatever was inside it */
   for (const i of f.crates || []) if (crates[i] && !crates[i].broken) breakCrate(crates[i], 1, true);
   if (f.dojoWon) dojoWon = true;
-  elvStage = f.elvStage || 0; elvJarGiven = !!f.elvJar; elvGreeted = !!f.elvGreeted || elvStage > 0; elvLantern = !!f.elvLantern; elvBurned = !!f.elvBurned; elvFridgeTaken = !!f.elvFridge; crowGone = !!f.crowGone; crowReset();
+  /* (THE PUPPET IS ON HIS BED, 2026-11-17, the owner: "MAKE SURE THE PUPPET IS ALWAYS ON THE BED". A save made while you
+   * carried him (2) put him back in your arms only once his model had loaded — and it loads at the house, so a load
+   * anywhere else had him in nobody's arms and off his bed: gone. One that had run (4, the man dead) had nowhere to be.
+   * Either comes back sat on the bed for the taking.) */
+  elvStage = f.elvStage || 0; if (elvStage === 2 || elvStage === 4) elvStage = 1; elvJarGiven = !!f.elvJar; elvGreeted = !!f.elvGreeted || elvStage > 0; elvLantern = !!f.elvLantern; elvBurned = !!f.elvBurned; elvFridgeTaken = !!f.elvFridge; crowGone = !!f.crowGone; crowReset();
   if (f.fortFarm) farmRetireAll();
   if (f.catDoor) catDoorOpen = true;
   if (f.tavStore) { tavStoreOpen = true; if (tavStore) openTavStore(true); }
@@ -47738,12 +48027,23 @@ function applySavedInventoryInner(d, loud, hand) {
  * open to the sea, keeps a little of it near the outfall. */
 function indoors() { return inTavern || inCat || inUndercroft || !!inBunker || inWhale || inThrone || inDun || inDeep || inSewer; }
 /* (2026-11-15, the owner: "the wave audio should be lower in the farmer fight"): inside the fort until the fight is
- * done the surf is `FORT_SURF` of itself (the bus's own 0.45 s glide takes it down and back) */
-const FORT_SURF = 0.35;
+ * done the surf was `FORT_SURF` of itself.
+ * THE SEA FROM INSIDE A CASTLE IS THE SEA FROM WHERE THE CASTLE IS (2026-11-17, the owner: "WHEN IN THE CASTLE THE WAVE
+ * VOLUME SHOULD BE LOW LIKE ITS IN THE DISTANCE RELATIVE TO WHERE IT IS IN THE GAME"). In either castle (the first, and
+ * XIII), fight or no fight: how far you stand from the waterline (`shoreLineJS`, the sea is -x) sets it — level falling
+ * off past `CASTLE_SEA_NEAR` metres like a source at a distance, `CASTLE_WALLS` more for the walls between, and the top
+ * of it gone (`waveLP`: 9 kHz at the gate down toward 500 Hz deep in) — so the gate hears the beach, the far streets a
+ * murmur. Outside a castle nothing changes. */
+const FORT_SURF = 0.35, CASTLE_SEA_NEAR = 10, CASTLE_SEA_FALL = 6, CASTLE_WALLS = 0.6;
+function castleSeaD() { return (inFort || inC13) ? Math.max(0, camera.position.x - shoreLineJS(camera.position.z, 0)) : 0; }
+function castleSeaK() {
+  if (!inFort && !inC13) return 1;
+  return CASTLE_WALLS / (1 + Math.max(0, castleSeaD() - CASTLE_SEA_NEAR) / CASTLE_SEA_FALL);
+}
 function beachBedK() {
   if (indoors()) return 0;
   return (1 - 0.97 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 - 0.72 * wellAirK)   // in the well's fog the sea goes a long way off
-    * (inFort && !farmFight.done ? FORT_SURF : 1);
+    * castleSeaK();
 }
 function windBedK() {
   if (indoors()) return 0;
@@ -47751,7 +48051,8 @@ function windBedK() {
 }
 function updateBeachBed() {
   const ctx = audioCtx; if (!ctx) return;
-  if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * beachBedK(), ctx.currentTime, 0.45);
+  if (waveBusGain) waveBusGain.gain.setTargetAtTime(settings.waveVolume * WAVE_TRIM * beachBedK(), ctx.currentTime, 0.45);
+  if (waveLP) waveLP.frequency.setTargetAtTime((inFort || inC13) ? Math.max(500, 9000 * Math.exp(-Math.max(0, castleSeaD() - CASTLE_SEA_NEAR) / 14)) : 20000, ctx.currentTime, 0.45);
   if (windDuck) windDuck.gain.setTargetAtTime(windBedK(), ctx.currentTime, 0.45);
   updateForestBed();
 }
@@ -48470,6 +48771,35 @@ function updateDojoAtmos(dt, t) {
  * eight seconds of real time at full black outside the intro, a death, the ending, a load or a
  * restore — and then it lets go: a crawl stuck mid-cut is run to its end (placed, if it never was),
  * and the black comes off. Real time, so a starved or stalled frame clock cannot hold it either. */
+/* THE MUSIC STOPS AT A LOADING SCREEN (2026-11-17, the owner: "MUSIC SHOULD STOP PLAYING WHEN GOING THROUGH A LOADING SCREEN
+ * AND PLAY WHATEVER IS SUPPOSED TO PLAY FOR THAT SECTION"). The castles' fight songs were already the section's own
+ * (`updateLoopSongs` keeps each to its castle); every other piece starts on its moment and fades on its own clock, and a
+ * cut taken while one played carried it into the next place — Myles's song into the throne room, the opening song into
+ * the first castle. When the black goes up, what is playing and which section you are in are noted; if you come out of
+ * it somewhere else (`saveRoom`), those pieces go out under the black. A piece the new section starts — in the black or
+ * after it — is not one of them, and a black inside one section (a cutscene) does not touch the music. */
+const cutMus = { on: false, room: null, P: null, done: false };
+function cutMusicTick() {
+  if (!deepLive || !audioCtx || !introDone || dying || ended || replaying || applyingSave || bootHold > 0) { cutMus.on = false; return; }
+  const op = parseFloat(blackoutEl.style.opacity || '0'), room = saveRoom() || 'beach';
+  if (!cutMus.on) {
+    if (op >= 0.5) Object.assign(cutMus, { on: true, room, done: false, P: { musicSrc, samScore, passSrc, minoSong, skrimSong, skrimFightM, wlSrc, wrTh } });
+    return;
+  }
+  if (op < 0.3) { cutMus.on = false; cutMus.P = null; return; }
+  if (cutMus.done || op < 0.95 || room === cutMus.room) return;
+  cutMus.done = true;
+  const P = cutMus.P, t = audioCtx.currentTime, out = [];
+  if (P.musicSrc && musicSrc === P.musicSrc && musicEnvGain) { holdParam(musicEnvGain.gain, t); musicEnvGain.gain.linearRampToValueAtTime(0.0001, t + 0.6); try { musicSrc.stop(t + 0.7); } catch (e) {} out.push('opening'); }
+  if (P.samScore && samScore === P.samScore) { stopSamScore(0.6); out.push('samurai'); }
+  if (P.passSrc && passSrc === P.passSrc) { stopPassing(0.6); out.push('passing'); }
+  if (P.minoSong && minoSong === P.minoSong && !minoSong.done) { minoSongFade(0.8); out.push('myles'); }
+  if (P.skrimSong && skrimSong === P.skrimSong && !skrimSong.done) { skrimSongFade(0.8); out.push('skrim'); }
+  if (P.skrimFightM && skrimFightM === P.skrimFightM) { stopSkrimFightMusic(0.8); out.push('skrim fight'); }
+  if (P.wlSrc && wlSrc === P.wlSrc) { wlFade(0.6); out.push('wl'); }
+  if (P.wrTh && wrTh === P.wrTh) { stopWreckTheme(0.6); out.push('wreck'); }
+  if (out.length) musicNote('loading screen ' + cutMus.room + ' -> ' + room + ': out ' + out.join(', '), 0);
+}
 let blackSince = 0;
 function blackGuard() {
   const op = parseFloat(blackoutEl.style.opacity || '0');
@@ -48509,6 +48839,35 @@ function loadSilenceTick() {
   if (loadSilent()) { if (ctx.state === 'running') { ctx.suspend().catch(() => {}); loadHeld = true; } }
   else if (loadHeld) { loadHeld = false; if (audioRealResume) audioRealResume().catch(() => {}); }
 }
+/* THE SOUND NEVER STAYS OFF (2026-11-17, the owner: "THE AUDIO CUT OUT AGAIN WHEN FIGHTING THE FARMERS CHECK THIS NOW IT
+ * SHOULD NEVER DO THIS"). Measured headless (`tools/farmaudio.js`, the fight in real time into a null sink, 60 and 150 s,
+ * every farmer killed, the dark knight come): no non-finite param, nothing thrown, the context running throughout,
+ * 57-104 nodes/s (peak 142 in 0.1 s; the October cut-out was ~1,500 in 0.7 s) — it does not happen there. What can
+ * take a real machine's sound away and keep it away: the browser or the OS moving the context to 'suspended' or
+ * 'interrupted' (a device change, a hitch), which `musicGuard` only asked back while a piece of music played and nothing
+ * was frozen; or a level left at nothing. Once a second, playing, the page shown and no load holding the sound
+ * (`loadSilent`), this asks the context back, and a gate, master or effects bus that has sat at nothing for two checks
+ * in a row is put back on the sliders. Every repair, and any non-finite sample on the master (a poisoned mix), is
+ * logged — `__bw.audioDog()`, and "[audio]" in the console — so the next cut-out says what it was. */
+let audioDogT = 0, audioDogAn = null, audioDogBuf = null;
+const audioDogLog = [], audioDogLow = { gate: 0, master: 0, sfx: 0 };
+function audioDogNote(what) {
+  audioDogLog.push([Math.round(performance.now()), what]); if (audioDogLog.length > 40) audioDogLog.shift();
+  console.warn('[audio] ' + what);
+}
+function audioWatchdog() {
+  const ctx = audioCtx; if (!ctx || ctx.state === 'closed' || !started || document.hidden || !masterGain) return;
+  const now = performance.now(); if (now < audioDogT) return; audioDogT = now + 1000;
+  if (loadSilent() || replaying || applyingSave) return;
+  if (ctx.state !== 'running') { audioDogNote('context ' + ctx.state + ': resumed'); (audioRealResume || ctx.resume.bind(ctx))().catch(() => {}); return; }
+  const low = (k, bad, fix) => { if (bad) { if (++audioDogLow[k] >= 2) { audioDogLow[k] = 0; audioDogNote(k + ' at nothing: put back'); fix(); } } else audioDogLow[k] = 0; };
+  low('gate', introDone && gameAudioGate && gameAudioGate.gain.value < 0.05, () => openGameAudio(0.6));
+  low('master', settings.volume > 0.02 && masterGain.gain.value < settings.volume * 0.05, () => fadeInMaster(0.6));
+  low('sfx', sfxBusGain && settings.sfxVolume > 0.02 && sfxBusGain.gain.value < settings.sfxVolume * SFX_TRIM * 0.3, () => sfxBusGain.gain.setTargetAtTime(settings.sfxVolume * SFX_TRIM, ctx.currentTime, 0.05));
+  if (!audioDogAn) { audioDogAn = ctx.createAnalyser(); audioDogAn.fftSize = 256; audioDogBuf = new Float32Array(256); masterGain.connect(audioDogAn); }
+  audioDogAn.getFloatTimeDomainData(audioDogBuf);
+  for (let i = 0; i < audioDogBuf.length; i++) if (!Number.isFinite(audioDogBuf[i])) { audioDogNote('non-finite samples on the master'); break; }
+}
 const musicLog = [];
 function musicNote(name, level) {
   musicLog.push([Math.round(performance.now()), name, +(+level || 0).toFixed(3), audioCtx ? audioCtx.state : 'none']);
@@ -48539,6 +48898,8 @@ function animateFrame() {
   vcSync();
   loadSilenceTick();
   musicGuard();
+  audioWatchdog();
+  cutMusicTick();
   blackGuard();
   updateStartGate();
   updateBootGate();                      // runs through the intro now: the reveal waits on it
@@ -48919,6 +49280,7 @@ function mutClampX(u, p, dt) {
      * stops attacking even when you get close" — he was never deciding not
      * to attack, he was never allowed to close. */
     pushOutOfDojo(p, 0.34, p.y);
+    samFountOut(p, 9);                         // and out of the fountain's pool, which the walk grid calls floor
     /* AND HE MAY NOT LEAVE THE ROOM. Outside the model there are no faces to
      * push off and no grid to stand on, so nothing held him: chasing a player
      * who had himself been knocked out of the courtyard he walked twenty-seven
@@ -55717,6 +56079,23 @@ const DOJO_MOON = new THREE.Vector3(-Math.sin(DOJO_IN_YAW - 0.38) * Math.cos(0.5
  * also the flood's seed, because whatever else moves, the fountain is the
  * middle of this room. */
 const DOJO_FOUNT = { x: -0.947, z: -0.015 };   // measured off the fountain island's own bounds
+/* AND THE SAMURAI WALKS ROUND IT (2026-11-16, the owner: "make the samurai navigate around the fountain too he gets on
+ * top of it alot"). Its bottom basin is r 0.86-0.90 with a rim 0.20 high — under `YARD_STEP`, so to the walk grid the
+ * whole pool was floor and only the 0.2 m pedestal a wall: his routes ran across it and his lunges stood him in the
+ * water against the pedestal. For him the basin is solid: off his nav grid (`buildDojoNav`), a blocked line
+ * (`dojoClearAhead`), and a push out of it after everything that moves him (`updateMutant`'s dojo clamp). You can
+ * still wade in it. */
+const SAM_FOUNT_R = 0.95;              // the basin's lip, world metres off the fountain's axis
+function dojoFountD(x, z) { return Math.hypot(x - (DOJO_X + DOJO_FOUNT.x), z - (DOJO_Z + DOJO_FOUNT.z)); }
+/* out of the pool to his body's width off its lip, at most `cap` metres this call. It runs in his clamp AND once a frame
+ * after everything that moves him (`update`): a swing's lunge and step-back never pass through the clamp, and measured,
+ * that is where he was standing in it — 0.8-1.1 m off the axis, on the rim, mid-cut. */
+function samFountOut(p, cap) {
+  const fx = DOJO_X + DOJO_FOUNT.x, fz = DOJO_Z + DOJO_FOUNT.z, fd = dojoFountD(p.x, p.z), fr = SAM_FOUNT_R + 0.34;
+  if (fd >= fr) return;
+  const ax = fd > 1e-3 ? (p.x - fx) / fd : 1, az = fd > 1e-3 ? (p.z - fz) / fd : 0, k = Math.min(fr - fd, cap);
+  p.x += ax * k; p.z += az * k;
+}
 const YARD_STATUE = 'node_0005_jo2_0';
 const YARD_HEAD = { x: 0.00, y: 2.167, z: 3.72 };
 const YARD_SINK = 0.30;                // how far the point is buried in the head
@@ -57585,6 +57964,7 @@ function buildDojoNav() {
       const x = dsX(w.x0 + (i + 0.5) * w.cell), z = dsZ(w.z0 + (j + 0.5) * w.cell);
       const f = DOJO_Y + st[0] * DOJO_S;
       if (dojoWallNear(x, z, YARD_NAV_R, f + YARD_STEP + 0.04, f + 1.75)) continue;
+      if (dojoFountD(x, z) < SAM_FOUNT_R + YARD_NAV_R) continue;   // the fountain's pool is not floor to him
       // he fights in the same room you do: a route that leaves the arena is a
       // boss who has left the fight, which is the headland's own lesson
       if (dojoArena && !dojoInArena(x, z)) continue;
@@ -58683,9 +59063,13 @@ function dojoClearAhead(x, z, dx, dz, dist, r, feet) {
   if (!dojoWalls) return true;
   const step = 0.30;
   let d = 0, px = x, pz = z, pf = feet;
+  const f0 = dojoFountD(x, z);
   while (d < dist) {
     d = Math.min(dist, d + step);
     const nx = x + dx * d, nz = z + dz * d;
+    // (the fountain's pool: blocked where the line goes deeper into it than he already is — from inside, out is open)
+    const fd = dojoFountD(nx, nz);
+    if (fd < SAM_FOUNT_R + r && fd < f0 - 0.01) return false;
     const st = dojoStoreyAt(nx, nz, pf, YARD_STEP);
     if (!st || st.f < pf - YARD_DROP) return false;
     if (dojoWallNear(nx, nz, r, st.f + YARD_STEP + 0.04, st.f + 1.75)) return false;
@@ -59976,7 +60360,7 @@ function authorSamuraiStrafe(u, m, gltf) {
 /* The beats: to the belt, up behind the head, HELD (the tell), the snap out,
  * across and down through, and home. The snap is short on purpose — a throw
  * is a whip, slow into the cock and fast out of it. */
-const SAM_THROW_DUR = 1.15, SAM_THROW_KEYS = [0.18, 0.44, 0.58, 0.63, 0.68, 0.82];
+const SAM_THROW_DUR = 1.15, SAM_THROW_KEYS = [0.18, 0.44, 0.53, 0.62, 0.68, 0.82];   // (the hold ended 0.58 and the elbow led at 0.63 until 2026-11-16: a three-frame snap)
 const SAM_THROW_AT = 0.68 / SAM_THROW_DUR;
 /* AND THE BODY TURNS INTO IT. On this rig the arms are roots apart from the
  * chest, so a twist of the spine would leave the shoulders behind; the turn is
@@ -60007,9 +60391,13 @@ function samuraiThrowClip(u, m, R) {
    * it is what makes the release read as a throw. */
   const targets = [
     { h: T(sL, 0.18, -0.92, 0.04) },                                   // the belt, on his left hip
-    { h: T(sR, -0.12, 0.34, -0.02), e: T(sL, 0.02, 0.30, 0.28) },      // up behind his head, the elbow high and out: loaded
-    { h: T(sR, -0.18, 0.38, -0.04), e: T(sL, -0.04, 0.33, 0.30) },     // held there, drawn a little further: the tell
-    { h: T(sL, 0.16, 0.44, 0.02), e: T(sL, 0.46, 0.20, 0.10) },        // the elbow comes through first; the hand is still back
+    /* (2026-11-16, the owner: "HIS ARMS KEEP ROTATION PASSED HIS HEAD WHEN THROWING". The cock had the LEFT hand behind
+     * the RIGHT side of his head — the arm wrapped across and behind it — and the snap out of it turned the upper arm
+     * 0.7-0.85 rad a frame. It is cocked beside his OWN ear now, elbow up and out, and the snap starts earlier (`K[2]`);
+     * the release, the star's start and the tell are where they were.) */
+    { h: T(sL, -0.12, 0.30, -0.10), e: T(sL, 0.00, 0.14, 0.32) },     // up beside his left ear, the elbow high and out: loaded
+    { h: T(sL, -0.17, 0.33, -0.10), e: T(sL, -0.05, 0.17, 0.33) },    // held there, drawn a little further back: the tell
+    { h: T(sL, 0.12, 0.40, -0.02), e: T(sL, 0.42, 0.18, 0.14) },      // the elbow comes through first; the hand is still back
     { h: T(sL, 1.00, 0.08, 0.02) },                                    // and the forearm snaps out: released straight at you
     { h: T(sR, 0.62, -0.52, 0.08) },                                   // whipped on through, across and down past the right hip
   ];
@@ -60488,6 +60876,9 @@ function samArmLife(u, saved) {
   turn(L.B['DEF-forearmL'], -0.07 * amp * Math.sin(ph + 0.7) * w);
 }
 { const K = MUT_KINDS.samurai; K.postClip = (u, saved) => samArmLife(u, saved); }
+/* (2026-11-16: a pass here made only his steel score, judged his blows on screen and backed him off through close
+ * wind-ups — and the owner's word was that the fight felt worse: "I LIKED THE FIGHT JUST THE ANIMATIONS WERE BAD". All of
+ * it is out; his blows score exactly as they did. See docs/notes/dojo.md.) */
 /* (2026-10-14: `samUpright`, a straightening of his stoop in the guard, is GONE — it turned his spine while
  * his shoulders, which are roots, kept the clip's turn, and it looked worse. The folding was the forest
  * roots carried at their BIND-pose offsets; see `fkIdle` in `installLife`.) */
@@ -60987,8 +61378,11 @@ function samSmoothPose(dt) {
       B[i].position.addScaledVector(S.offP[i], w);
     }
     u.model.updateMatrixWorld(true);
-    pinSamuraiSword();
   }
+  // the root bones back on the chest and hips they hang off, every frame — the blend above and the aim's shoulder turn
+  // (`shoulderFollow`, after the mixer's own carry) both move what they hang off without them (`installLife`)
+  if (u.fkCarry) u.fkCarry();
+  pinSamuraiSword();
   for (let i = 0; i < B.length; i++) {
     S.prevQ[i].copy(S.lastQ[i]); S.prevP[i].copy(S.lastP[i]);              // (lastQ is what was finally drawn: `samKeepClear` writes it too)
     S.lastQ[i].copy(B[i].quaternion); S.lastP[i].copy(B[i].position);
@@ -61025,8 +61419,13 @@ function samTwoHand(dt) {
    * every swing; between them (and walking, circling, standing) the guard is
    * eased in, and it eases out the moment a cut starts, so the cut leaves from
    * it. The roar and the reels keep their own arms. */
-  const gw = (want && !running && st.atk < 0 && !(st.roar > 0) && !(st.recoil > 0) && !(st.stun > 0) && !((st.down || 0) > 0) && !u.thr && !(st.immob > 0)) ? 1 : 0;
-  S.g += (gw - S.g) * Math.min(1, dt * (gw > S.g ? 5 : 11));
+  /* (and back into it through the TAIL of a cut's recovery, 2026-11-16 — well past the blow's window, and only when no
+   * chained cut is coming: waiting for the swing to end left the idle's own one-handed carry on him for a beat after every
+   * string, the blade over his shoulder or pointing behind him. Nothing here is the blow: it is tested in its window.) */
+  const Arec = st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
+  const tail = !!Arec && !(st.chainAt > 0) && st.atk > Arec.wind + Arec.strike + 0.15 + (Arec.recover || 0.3) * 0.35;
+  const gw = (want && !running && (st.atk < 0 || tail) && !(st.roar > 0) && !(st.recoil > 0) && !(st.stun > 0) && !((st.down || 0) > 0) && !u.thr && !(st.immob > 0)) ? 1 : 0;
+  S.g += (gw - S.g) * Math.min(1, dt * (gw > S.g ? 9 : 11));   // (in at 5 until 2026-11-16: for half a second after every string the idle's own one-handed carry showed, the blade over his shoulder or behind him)
   const ry = u.g.rotation.y;
   _skF.set(Math.sin(ry), 0, Math.cos(ry));
   _skR.set(Math.cos(ry), 0, -Math.sin(ry));            // his LEFT (his right hand is on -x when he faces +z)
@@ -61051,7 +61450,20 @@ function samTwoHand(dt) {
     pinSamuraiSword();
     samKat.getWorldPosition(_skA); S.tip.getWorldPosition(_skB);
     _skU.subVectors(_skB, _skA).normalize();
-    _skV.copy(_skF).multiplyScalar(Math.cos(0.52)); _skV.y = Math.sin(0.52); _skV.normalize();
+    /* (AT YOU, 2026-11-16, the owner: "HIS BLADE SHOULD ACTUALLY FACE YOU WHEN FIGHTING". It was his own forward tipped up
+     * 30 degrees — from a hilt at his belt that is over your head, and off you whenever he was not square to you: measured,
+     * 30 degrees off the line to your chest at the median. Now that line itself, from his sword fist to your chest.) */
+    S.hr.getWorldPosition(_skC);
+    _skV.copy(camera.position); _skV.y -= 0.45; _skV.sub(_skC);
+    if (_skV.lengthSq() < 1e-4) _skV.copy(_skF);
+    { // within a cone in front of him (55 degrees across, 35 up or down): at a man beside or behind him the point would go
+      // through his own body, and he comes round to face you at his own pace anyway
+      const hz = Math.hypot(_skV.x, _skV.z) || 1e-4, yaw = Math.atan2(_skV.x, _skV.z), fy = Math.atan2(_skF.x, _skF.z);
+      let dy = Math.atan2(Math.sin(yaw - fy), Math.cos(yaw - fy)); dy = THREE.MathUtils.clamp(dy, -0.96, 0.96);
+      const pt = THREE.MathUtils.clamp(Math.atan2(_skV.y, hz), -0.61, 0.61), y2 = fy + dy;
+      _skV.set(Math.sin(y2) * Math.cos(pt), Math.sin(pt), Math.cos(y2) * Math.cos(pt));
+    }
+    _skV.normalize();
     _skQ.setFromUnitVectors(_skU, _skV);
     _skP.identity().slerp(_skQ, S.g);
     samWorldTurn(S.hr, _skP.clone());
@@ -61147,7 +61559,7 @@ function samKeepClear() {
  * your points and a lens full of blood. It does not home — step out of its
  * line and it goes past — so every answer the fight teaches still works.
  * ===================================================================== */
-const SHUR = { SPEED: 17.5, DMG: 1, BACK_DMG: 5, R: 0.13, LIFE: 1.5 };
+const SHUR = { SPEED: 17.5, DMG: 1, BACK_DMG: 5, R: 0.13, LIFE: 1.5, HIT: 0.46 };
 const shurikens = [];
 let shurGeo = null, shurMat = null, shurHand = null;
 function shurMesh() {
@@ -61258,7 +61670,7 @@ function updateShuriken(dt) {
         continue;
       }
     }
-    if (miss < 0.46) {
+    if (miss < SHUR.HIT) {
       shurDrop(b, false);
       sfxShurStick(b.p);
       damagePlayer(SHUR.DMG);
@@ -80506,7 +80918,8 @@ function installLife(u, m, J) {
         const nxt = b.children.find((c) => c.isBone);
         if (nxt) {
           const wq = wrist.getWorldQuaternion(new THREE.Quaternion()), bq = b.getWorldQuaternion(new THREE.Quaternion()).invert();
-          const palmL = new THREE.Vector3(...u.kind.palm).applyQuaternion(wq).applyQuaternion(bq).normalize();   // the palm, in this bone's frame
+          // (`palmLeft`: a rig whose hands are not mirror images in their own frames — the garrison's — names the left one too)
+          const palmL = new THREE.Vector3(...(wrist === B.handL && u.kind.palmLeft ? u.kind.palmLeft : u.kind.palm)).applyQuaternion(wq).applyQuaternion(bq).normalize();   // the palm, in this bone's frame
           const dirL = nxt.position.clone().normalize();                                                        // the bone, in its own frame
           const a = new THREE.Vector3().crossVectors(dirL, palmL);
           if (a.lengthSq() > 1e-6) { ax = a.normalize(); sign = 1; }
@@ -80570,14 +80983,24 @@ function installLife(u, m, J) {
     lifeApply(u, B, dt, saved);
     if (u.kind.postClip) u.kind.postClip(u, saved);   // a kind's own correction of the clip, before the roots are carried
     if (fk.length) {                            // never gated on visibility: a culled body is still the body the fight hits with
-      for (const f of fk) {
-        saved.push({ b: f.c, q: f.c.quaternion.clone(), p: f.c.position.clone() });
-        f.pb.updateWorldMatrix(true, false);
-        const w = _lfV.copy(f.off).applyMatrix4(f.pb.matrixWorld);
-        f.c.parent.updateWorldMatrix(true, false);
-        f.c.position.copy(f.c.parent.worldToLocal(w));
-        f.c.updateMatrixWorld(true);
-      }
+      for (const f of fk) saved.push({ b: f.c, q: f.c.quaternion.clone(), p: f.c.position.clone() });
+      u.fkCarry();
+    }
+  };
+  /* AND AGAIN AFTER ANYTHING THAT MOVES HIS BODY LATER (2026-11-16, the owner: "his model keeps stretching"). The
+   * carry above runs inside the mixer; the samurai's smoother (`samSmoothPose`) then blends his spine on its own and
+   * each root's POSITION on its own, linearly, so for the fifth of a second after every switch the shoulders, upper
+   * arms and hip plates slid off the chest — measured, `tools/samhonest.js`: up to 0.53 m off their sockets (99th
+   * percentile 0.34) against 0.06 with the post-mixer layers off, and the skin between them stretched 6-9x its idle
+   * length on the guard and the walk (1.5 and 5.4 off). `u.fkCarry()` puts them back; the smoother calls it last. */
+  u.fkCarry = (keep) => {
+    for (const f of fk) {
+      if (keep && !keep(f.c)) continue;
+      f.pb.updateWorldMatrix(true, false);
+      const w = _lfV.copy(f.off).applyMatrix4(f.pb.matrixWorld);
+      f.c.parent.updateWorldMatrix(true, false);
+      f.c.position.copy(f.c.parent.worldToLocal(w));
+      f.c.updateMatrixWorld(true);
     }
   };
 }
@@ -80947,7 +81370,7 @@ MUT_KINDS.orc = Object.assign({}, TAV_CAST_COMMON, {
   alias: { idle2: 'idleB', walk2: 'walkB', run2: 'runB', roar2: 'draw', die2: 'die', back: 'walk', calm: 'idle',
            hit: 'hit', hitBig: 'hitBig', hitSide: 'hitB', hitBack: 'hitB', hitHead: 'hitB', block: 'block', blockC: 'brace' },
   provoke: tavProvoke,
-  voice: { f: 0.70, growl: 1.45, rasp: 1.15, throat: 'bellow' },
+  voice: { f: 0.70, growl: 1.45, rasp: 1.15, throat: 'bellow', farm: true, vox: ORC_VOX },   // (the owner's recordings: `ORC_VOX`)
 });
 
 /* ------------------------------------------------------------------ the Umbra Marauder
@@ -82709,6 +83132,21 @@ function fortKeepOut(u, p) {
   if (ok(p.x, p.z)) { L.x = p.x; L.z = p.z; return; }
   if (ok(p.x, L.z)) { p.z = L.z; L.x = p.x; return; }
   if (ok(L.x, p.z)) { p.x = L.x; L.z = p.z; return; }
+  /* AND ROUND IT, NOT INTO IT (2026-11-17, the owner with a screenshot of the street: "MAKE THEM GET STUCK ON THESE
+   * BUILDINGS LESS"). Against a face that runs on a slant, or into a corner, neither axis slides, and the move went back:
+   * a man pressing at you through a house front every frame for as long as you stood beyond it. The same stride turned
+   * 30°, 57°, 80° off his line, his last good side first (kept, so he follows the wall instead of twitching), takes
+   * him along the face and round its end; 110° and 140° back him out of a corner along one of its walls. Measured
+   * (`tools/farmstuck.js&at=5`, you north of the houses): 308 moves sent back and one man 15 s on one spot. */
+  const dx = p.x - L.x, dz = p.z - L.z;
+  if (dx * dx + dz * dz > 1e-8) {
+    const sd = u.st.fortSide || (Math.random() < 0.5 ? 1 : -1);
+    for (const a of [0.52, -0.52, 1.0, -1.0, 1.4, -1.4, 1.9, 2.45, -1.9, -2.45]) {   // (110° and 140° last: out of a corner along one wall)
+      const aa = a * sd, c = Math.cos(aa), sn = Math.sin(aa), x = L.x + dx * c - dz * sn, z = L.z + dx * sn + dz * c;
+      if (ok(x, z)) { p.x = x; p.z = z; L.x = x; L.z = z; u.st.fortSide = Math.sign(aa); u.st.fkoTurn = (u.st.fkoTurn || 0) + 1; return; }
+    }
+  }
+  u.st.fkoBack = (u.st.fkoBack || 0) + 1;
   p.x = L.x; p.z = L.z;
 }
 
@@ -85595,7 +86033,7 @@ MUT_KINDS.knMan = Object.assign({}, KN_BASE, {
   gaits: { walk: ['sWalk'], run: ['sRun'], idle: ['sIdleB', 'sIdleC'], strafeL: ['sStr2', 'sStr3'], strafeR: ['sStr1', 'sStr4'] },
   alias: { ...knAliasOf('km'), idle: 'sIdleB', idle2: 'sIdleC', walk2: 'sWalk', run2: 'sRunB', roar: 'sRoar', roar2: 'sRoar', die2: 'sDieB', back: 'sWalkB', calm: 'sIdleB',
            strafeL: 'sStr2', strafeR: 'sStr1', hit: 'sHitB', hitBig: 'sHitC', hitSide: 'sHitB', hitBack: 'sHitB', hitHead: 'sHitB', parry: 'sHitC' },
-  voice: { f: 1.05, growl: 0.8, rasp: 0.9, throat: 'bellow' },
+  voice: { f: 1.05, growl: 0.8, rasp: 0.9, throat: 'bellow', farm: true, pitch: 128 },   // (the farmers' recordings, for now — 2026-11-17, the owner: "GIVE THE TWO NIGHTS GAURDING THE THRONE ROOM THE FARMERS SOUNDS TOO FOR NOW")
 });
 MUT_KINDS.knIron = Object.assign({}, KN_BASE, {
   use: { kiChop: 0.36, kiSweep: 0.27, kiSpin: 0.20, kiCharge: 0.17 }, chainMax: 2,   // (two in a string now: "harder")   // (and his kick out too: never landed, never seen)
@@ -85617,7 +86055,7 @@ MUT_KINDS.knIron = Object.assign({}, KN_BASE, {
   gaits: { walk: ['sWalk'], run: ['sRun'], idle: ['sIdle', 'sIdleD'], strafeL: ['sStr2'], strafeR: ['sStr1'] },
   alias: { ...knAliasOf('ki'), idle: 'sIdle', idle2: 'sIdleD', walk2: 'sWalk', run2: 'sRun', roar: 'sRoar', roar2: 'sRoar', die2: 'sDie', back: 'sWalkB', calm: 'sIdle',
            strafeL: 'sStr2', strafeR: 'sStr1', hit: 'sHitB', hitBig: 'sHitC', hitSide: 'sHitB', hitBack: 'sHitB', hitHead: 'sHitB', parry: 'sHitC' },
-  voice: { f: 0.72, growl: 1.3, rasp: 1.1, throat: 'bellow' },
+  voice: { f: 0.72, growl: 1.3, rasp: 1.1, throat: 'bellow', farm: true, pitch: 104 },   // (the farmers' recordings, for now, a little lower: `farmVox`)
 });
 /* (NOT parsed at boot, as the flail knight was: nine megabytes and 95k vertices behind the loading screen for a fight two
  * castles down the walk. Their files come by distance (`'assets/knight-man.glb'` in the reach table) and each is parsed
@@ -85666,6 +86104,7 @@ function placeSwordKnights() {
     const u = makeMutant(+w.x.toFixed(1), +w.z.toFixed(1), kind, C13_Y + c13PaveAt(p.x, p.z));
     if (!u.retired && [...deadUnitKeys].some((k) => k.startsWith(kind + '@'))) retireUnit(u);   // (his key moves with the court's dressing: dead under any key is dead)
     u.knPost = post;
+    u.kind.voice.unit = u;                             // (where his voice comes from: `farmVox`)
     knUnits.push(u);
     if (u.retired) continue;
     u.g.rotation.y = post.yaw; u.g.visible = false;
@@ -85861,16 +86300,28 @@ function authorDkClips(u, m) {
   else { const was = swordMovesLate; swordMovesLate = () => { if (was) was(); lay(swordMoves); }; }
   return [];
 }
+/* HIS BODY IS THE PALADIN'S NOW (2026-11-16, the owner: "make this the dark knights model … his size should be the same
+ * scale as him … any missing or bad animations just replace them"). DJMaesen's "Paladin" (CC-BY-4.0 — commercial use
+ * allowed, where the Infinity Blade knight was NC) through `tools/paladin_pack.py`: his rig renamed to the MF names
+ * above so every joint, map and rule here finds its bone; his hands closed in the rest pose; his bastard sword seated in
+ * the right fist on `b_MF_Weapon_R` (so `dkSeat` finds the blade as before); no shield. Same `h`. What could not come
+ * with him are the eight strings recorded on Infinity Blade's own rig (`dkC0`-`dkC7`, `dkS*` below): they are out of his
+ * `use` and their share of his blows is the pack's. */
 MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
-  glb: 'assets/dark-knight.glb', c13Body: false, fortBody: true, preParse: false,
+  glb: 'assets/paladin-knight.glb', c13Body: false, fortBody: true, preParse: false,
   joints: DK_JOINTS, rag: DK_RAG, pre: dkSeat, author: authorDkClips,
-  h: 2.70, hp: 90, hitR: 0.9, body: 0.72, lungeStop: 2.0, landSlop: 0.5, limbR: 0.33, foeLimbR: 0.6, lungeLead: 0.18, closeBody: true,
-  speedK: 1.0, aggr: 3.2, press: 0.96, chainMax: 4,   // (2.4 / 0.9 / 3 until 2026-11-14, the owner: "make him better and more aggressive too")
+  /* BIGGER AND MEANER (2026-11-17, the owner: "MAKE THE PALADIN KNIGHT BIGGER AND MORE AGREESSIVE HE SHOULD BE SCARY"): 2.70 →
+   * 2.95 m with his body to match; harder pressing, longer strings, fewer pauses. Measured (`tools/dkpick.js`, 40 s stood
+   * 3 m off him, three runs each): before 14-16 swings, 10-13 landed; now 16-18, 11 landed every run. NOT faster feet or
+   * turns: speedK 1.15 / turnMax 3.4 put him at 4.5-5 m throwing into the air (0 of 15 landed in two runs of three) — his
+   * steps are measured at his own pace; and NOT 3.1 m: one run in three drifted out to 5 m and landed 2 of 13. */
+  h: 2.95, hp: 90, hitR: 0.95, body: 0.78, lungeStop: 2.0, landSlop: 0.5, limbR: 0.33, foeLimbR: 0.6, lungeLead: 0.18, closeBody: true,
+  speedK: 1.0, aggr: 4.2, press: 1.0, chainMax: 5,   // (2.4 / 0.9 / 3 until 2026-11-14, the owner: "make him better and more aggressive too"; 3.2 / 0.96 / 4 until 2026-11-17)
   /* A KNIGHT, NOT A DANCER (2026-10-19, round 3; the owner: "make the dark knights connectivity way more tight hes all
    * over the place and his arm is moving weird on some swings just fix his animations and ai"). He circles, side-steps,
    * feints and sizes you up a third as often; he closes to his blow, throws it, recovers, and comes again. */
   circle: 0.04, step: 0.04, feint: 0.03, sizeUp: 0.04, restless: 0.4,
-  regroup: 0.1, regroupT: [0.5, 0.9], sideKeep: 0.45,   // (2026-10-29: he resets between strings, and circles both ways; 2026-11-14: less of it, shorter — 0.45 / 0.9-1.7 — the side-steps were most of his skate, and he presses instead)
+  regroup: 0.05, regroupT: [0.4, 0.7], sideKeep: 0.45,   // (2026-10-29: he resets between strings, and circles both ways; 2026-11-14: less of it, shorter — 0.45 / 0.9-1.7 — the side-steps were most of his skate, and he presses instead)
   /* HIS FEET STAY WHERE THEY ARE PUT (2026-10-19, the owner: "the dark knight is sliding around a lot fix this so moves
    * more natural"). Measured (`tools/probes.js dkSkate`, a planted foot's speed over the paving): moving 3.37 m/s with the
    * body at 2.04 (96 % of frames skating), a third of every swing skating, `dkSweep`'s body sliding 2.3 m/s through the
@@ -85894,21 +86345,21 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
   // through an overhead's cock the tip is behind him, and its bearing then is no aim at all)
   turnMax: 2.8, yawK: 0, aimK: 0.3, aimFront: 0.3, aimDrop: 0.22, hitFront: 0.3, hitOnScreen: true, fade: 0.30,
   poise: 16, poiseBack: 2.2, poiseWait: 0.9, parryK: 0.9, recoilK: 0.55, stunK: 0.75, blockCost: 0.7, block: 0.45, heavyBlock: true,
-  fidgetK: 0.03, fidgetGap: 6.0, opening: 0.4, gapRate: 0.7,   // (opening 0.7, gap-closers 0.35 a second, fidgets 0.05 until 2026-11-14: "more aggressive")
+  fidgetK: 0.01, fidgetGap: 8.0, opening: 0.25, gapRate: 0.7,   // (opening 0.7, gap-closers 0.35 a second, fidgets 0.05 until 2026-11-14: "more aggressive"; 0.4 / 0.7 / 0.03 until 2026-11-17)
   rig: { arm: DKB('UpperArm_R'), fore: DKB('Forearm_R'), hand: DKB('Hand_R'), tip: 'kn_tip', armL: DKB('UpperArm_L'), foreL: DKB('Forearm_L'), handL: DKB('Hand_L'), tipL: 'dk_shield', head: DKB('Head'),
          limbs: [[DKB('Thigh_R'), DKB('Calf_R'), DKB('Foot_R'), DKB('Foot_R')]] },
   emis: 0.30, rim: [0.075, 0.075, 0.085], gamma: 0.82,   // (black plate in a night street: lifted until he reads against the paving, measured)
   anim: { idle: 'sIdle', walk: 'sWalk', run: 'sRun', roar: 'sRoar', die: 'sDie', back: 'sWalkB', rate: 1.0, lean: 0.03, strafeK: 1.0 },
   // (`sRunB` runs BACKWARDS, −2.34 m — as a run his feet went the wrong way at 9-11 m/s; `sStr3`/`sStr4` are running
   // side-steps of 2.9 m/s played at 0.7× under a body of 1.8: walking ones only, the body held to their stride)
-  gaits: { walk: ['sWalk'], run: ['sRun'], idle: ['sIdle', 'sIdleB', 'sBlockI'], strafeL: ['sStr2'], strafeR: ['sStr1'] },
+  gaits: { walk: ['sWalk'], run: ['sRun'], idle: ['sIdle', 'sIdleB'], strafeL: ['sStr2'], strafeR: ['sStr1'] },   // (no `sBlockI` among his idles since 2026-11-16: a crouch behind a shield the paladin does not carry)
   alias: { idle: 'sIdle', idle2: 'sIdleB', walk2: 'sWalk', run2: 'sRun', roar: 'sRoar', roar2: 'sCast', die2: 'sDieB', back: 'sWalkB', calm: 'sIdle',
            strafeL: 'sStr2', strafeR: 'sStr1', hit: 'sHit', hitBig: 'sHitC', hitSide: 'sHitB', hitBack: 'sHit', hitHead: 'sHitB',
            block: 'sBlockI', blockC: 'sCBlock', parry: 'sHitC' },
   stunClip: 'sHitC', first: 'sIdle', sleepIdle: 'sIdle', wakeAt: 0,
-  voice: { f: 0.66, growl: 1.35, rasp: 1.2, throat: 'bellow' },
+  voice: { f: 0.66, growl: 1.35, rasp: 1.2, throat: 'bellow', farm: true, vox: PAL_VOX },   // (the owner's recordings: `PAL_VOX`)
   /* HIS OWN STRINGS, trimmed of the long stand before the first blow where it was long (`slice`, seconds of the clip) */
-  slice: [['dkC0', 'dkS0', 0.9, 4.33], ['dkC3', 'dkS3', 1.6, 4.63], ['dkC6', 'dkS6', 3.6, 7.97], ['dkC7', 'dkS7', 1.5, 4.97]],
+  slice: [],   // (his own strings were sliced here: `dkC0`/`dkC3`/`dkC6`/`dkC7` — gone with the Infinity Blade body, 2026-11-16)
   // (no `dkLunge`, no `dkKick` — round 3: under the tight blow test the lunge landed at alternate stand-offs and low, the
   // kick only from 1.4 m, inside his own reach; neither reads as his)
   /* (2026-10-29: no `dkS5` — five seconds of string with its second blow 2.4 s after the first, out of a dead stand, and
@@ -85916,9 +86367,10 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
    * back into its blows — its blade fell 0.7-1.0 m short at 3.5 m on every one against a man standing (`dkMove`). The long strings
    * that carry him in, `dkS7` and `dkS3`, are what he throws from five and six metres now — `warpPick` — and the pack's
    * quick cuts from two and three.) */
-  use: { dkS0: 0.08, dkS1: 0.09, dkS2: 0.08, dkS3: 0.08, dkS7: 0.09,
-         dkCut: 0.11, dkSweep: 0.09, dkSpin: 0.06, dkRise: 0.08, dkTurn: 0.05, dkLeap: 0.05 },
-  rage: { aggr: 3.0, speedK: 1.1, press: 0.95, chainMax: 3, circle: 0.08 }, rageClip: 'sRoar', rageDur: 1.9,
+  /* (the strings' share given to the pack, 2026-11-16; and the LUNGE back in: the strings were what carried him two and
+   * three metres onto a man backing off — measured, `dkMove back`, 0 of 8 contacts landed without them, 57 % before) */
+  use: { dkCut: 0.19, dkSweep: 0.14, dkSpin: 0.10, dkRise: 0.16, dkTurn: 0.10, dkLeap: 0.07, dkLunge: 0.09 },
+  rage: { aggr: 4.8, speedK: 1.1, press: 1.0, chainMax: 5, circle: 0.04 }, rageClip: 'sRoar', rageDur: 1.9,   // (3.0 / 1.1 / 0.95 / 3 until 2026-11-17: his rage was CALMER than him)
 });
 /* HIS BLOWS. The contacts are MEASURED on his own blade (`tools/probes.js` `dkContacts`/`dkPack`: every frame the blade's
  * nearest pass to a body two metres in front of him, chest to eye) — his strings land two and three times (`more`), and
@@ -86248,8 +86700,16 @@ function dkBuildTravel(u) {
     // the forward step to the blow, and all the ground the feet cover on the way (`dkWalkSwing` shares its correction over it)
     const iH = Math.round(A.hit * (T.length - 1)); let path = 0; for (let j = 1; j <= iH; j++) path += Math.abs(T[j][1] - T[j - 1][1]);
     const s = T[iH][1], W = A.hold ? DK_WARP_HOLD : DK_WARP;
-    A.rmFrom = [Math.max(0.9, A.stop + s - W * path - 0.3), A.stop + s + W * path + 0.3];
-    A.reach = Math.max(A.hold ? A.reach : 0, A.rmFrom[1] + 0.2);
+    /* (the far edge is what the step reliably carries, not all it might stretch to: thrown from the stand-off + step + a
+     * whole stretch + 0.3, the paladin's blows came down from 3.3-3.6 m, 0.6-0.95 short, on a man standing still — he
+     * counted himself in range and swung at air; 2026-11-16, `dkMove still`. He walks that last half metre in first.) */
+    /* (and its FAR edge is its own step shrunk, never stretched, 2026-11-16: traced blow by blow on the paladin
+     * (`tools/dkwalk.js`), a step asked to stretch delivers two thirds of the plan at best — from 4.3 m his turn
+     * arrived at 3.0 against a 2.85 stand-off, and from 5 m every long blow came down 0.6-1.3 short. He walks in on his
+     * own feet, which is sure, and a blow's step may only be shortened to land: `s` × 0.6 (a hold, a leap or a lunge,
+     * ×0.8) past the stand-off is as far out as it is thrown.) */
+    A.rmFrom = [Math.max(0.9, A.stop + s - W * path - 0.3), A.stop + Math.max(0, s) * (A.hold ? 0.8 : 0.6) + 0.15];
+    A.reach = A.rmFrom[1] + 0.05;   // (+0.2, and a hold's own reach kept, until 2026-11-16: in range on paper where nothing he owns lands, he swung at air)
     if (u.kind.use[k] && !A.minDist) { far = Math.max(far, A.reach); ringA += (A.stop + s) * u.kind.use[k]; ringW += u.kind.use[k]; }
   }
   if (far) u.maxReach = far;
@@ -86408,6 +86868,8 @@ function updateDarkKnight(dt) {
   }
   u.g.visible = true;
   dkWalkSwing(u, dt);
+  // his phrases, now and then while he fights (the owner's "RARE PHRASES": `PAL_VOX.shout`)
+  if (dk.stage >= 1 && (dk.phraseT = (dk.phraseT ?? 8 + Math.random() * 8) - dt) <= 0) { dk.phraseT = 14 + Math.random() * 16; farmVox('shout', u.kind.voice, { x: u.g.position.x, z: u.g.position.z, p: 0.6 }); }
   if (dk.stage === 1) {
     if (u.st.foe === null || !u.st.foe.st.alive) { const nx = dk.victims.find((f) => f.st.alive); if (nx) u.st.foe = nx; }
     const near = Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z) < 5;
@@ -86687,7 +87149,7 @@ MUT_KINDS.minotaur = Object.assign({}, KN_BASE, {
   alias: { idle: 'mIdle', idle2: 'oIdle', walk2: 'mWalk', run2: 'oRun', roar: 'dRoar', roar2: 'oRoar', die2: 'oDie', back: 'oWalkB', calm: 'mIdle',
            strafeL: 'oStrL', strafeR: 'oStrR', hit: 'oHit', hitBig: 'oHitBig', hitSide: 'oHitB', hitBack: 'oHit', hitHead: 'oHitB', parry: 'oHitBig' },
   stunClip: 'oHitBig', first: 'mIdle', sleepIdle: 'mIdle', wakeAt: 0,
-  voice: { f: 0.58, growl: 1.5, rasp: 1.0, throat: 'bellow' },
+  voice: { f: 0.58, growl: 1.5, rasp: 1.0, throat: 'bellow', farm: true, vox: MYLES_VOX },   // (the owner's recordings: `MYLES_VOX`)
   use: {},
   landFn: (u, A, dist, was) => minoLandsOn(u, A, dist, was),
 });
@@ -87206,6 +87668,7 @@ function minoPost() {
 function placeMinotaur() {
   const P = MINO.post = minoPost();
   const u = MINO.u = makeMutant(P.key[0], P.key[1], 'minotaur', beachGroundAt(P.x, P.z));
+  u.kind.voice.unit = u;                               // (where his voice comes from: `farmVox`)
   u.g.position.set(P.x, beachGroundAt(P.x, P.z), P.z); u.g.rotation.y = P.yaw; u.g.visible = false;
   if (u.retired) { MINO.stage = 'killed'; return; }                                // you killed him (a no): he stays dead
   const prox = new THREE.Mesh(new THREE.BoxGeometry(1.3, 2.4, 1.3), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
@@ -87226,6 +87689,10 @@ const MINO_POSE = {
 };
 function minoGoDown(u) {
   MINO.stage = 'down'; MINO.t = 0; MINO.kneel = true; MINO.lieT = undefined; MINO.lieTalk = false;   // (his song waits for your question now, `hurt`)
+  // and you hear that he is hurt: his death sound as the swords go and he goes to his knee (2026-11-17, the owner: "MAKE
+  // MYLES ALSO MAKE THE DEATH SOUND WHEN HE IS ABOUT TO DROP HIS WEAPONS AND CROUCH SO YOU CAN TELL HES HURT") — and
+  // again as he dies (`minoLetGo`)
+  if (!applyingSave && !replaying && u && u.kind.voice) farmVox('die', u.kind.voice, { x: u.g.position.x, z: u.g.position.z });
   MINO.offering = false; MINO.sketchGiven = false;
   u.st.foe = null; u.st.atk = -1; u.st.awake = false; u.st.roar = 0; u.holdAnim = true;
   if (mutToken === u) mutToken = null;
@@ -87332,7 +87799,9 @@ function minoLetGo(u) {
   MINO.stage = 'dying'; MINO.t = 0;
   // the lens stays on him through it
   cineHold = true; dialogHead = u.bones.head; dialogTarget = u.bones.head.getWorldPosition(new THREE.Vector3()); dialogFov = 30;
-  if (!minoLastBreath(u)) sfxBenLastBreath(u.g.position.x, u.g.position.z);
+  // his own death, the owner's (`MYLES_VOX.die`); the borrowed last breath only if it is not in
+  if (!applyingSave && !replaying && farmVox('die', u.kind.voice, { x: u.g.position.x, z: u.g.position.z })) updateMinoBreath(false);
+  else if (!minoLastBreath(u)) sfxBenLastBreath(u.g.position.x, u.g.position.z);
   mutPlay(u, MINO.sketchGiven ? 'mnDieO' : 'mnDie', false);
 }
 // the pool: Ben's spills, spreading out from under his belly over most of a minute
@@ -88107,6 +88576,8 @@ function gargSceneStep(dt) {
       S.phase = 'crouch'; S.t = 0; gargScenePut(u, to);
       gargDust(p.x, to.y + 0.1, p.z, 0.8);
       sfxAt(p.x, p.z, () => { sfxSlam(0.35); sfxPlankKnock(p.x, p.z, 3); });
+      // and its "drop", as it lands behind him (the owner's own line; the take is 6 dB under the rest, so lifted here)
+      playSampleAt('gargDrop', p.x, p.z, { gain: 1.8, ref: 6, far: 40, jitter: 0 });
     }
   } else if (S.phase === 'crouch') {
     hold('gPerch'); faceTo(c.x, c.z, 3);                    // (it watches you over his shoulder)
@@ -88460,7 +88931,7 @@ function gargUnitPre(u, dt) {
     if (g.t >= 0 && !g.cracked) {
       g.cracked = true; sfxGargCrack(p.x, p.z);
       gargDust(p.x, p.y - 0.2, p.z, 0.4);
-      if ((GARG.voiceT -= 1) < 0 || g.i === 0) { GARG.voiceT = 1; sfxAt(p.x, p.z, () => sfxScpScream(0, u.kind.voice)); }
+      if ((GARG.voiceT -= 1) < 0 || g.i === 0) { GARG.voiceT = 1; farmVox('cry', gargVoice(u)); }   // (the owner's, `GARG_VOX`)
     }
     if (g.t > 0.45) {
       g.mode = 'drop'; g.t = 0; g.from = p.clone();
@@ -88508,7 +88979,7 @@ function gargUnitPre(u, dt) {
       g.mode = 'tell'; g.t = 0; g.vel.multiplyScalar(0.2); g.sway = Math.random() < 0.5 ? -1 : 1;
       // (each move its own cue: the dive a screech, the rake a hiss of beats, the bite a low one, held)
       if (g.kind === 'rake') { sfxGargWing(p.x, p.z, 1.6); sfxGargWing(p.x, p.z, 1.2); }
-      else sfxAt(p.x, p.z, () => sfxScpScream(0, u.kind.voice));
+      farmVox('attack', gargVoice(u));                    // (and its voice, the owner's, on most: `GARG_VOX`)
     }
   } else if (g.mode === 'tell') {
     // THE TELL, held long enough to read, each move's own: the dive — reared back and up, wings high, its feet drawn up
@@ -88717,7 +89188,7 @@ function gargLand(u) {
   }
   playSampleAt('katHit', u.g.position.x, u.g.position.z, { gain: 0.9, ref: 6, far: 30, rate: u.gp.kind === 'bite' ? 1.25 : 0.9 });
   mutLandBlow(u, 1);
-  if (!T) { addTrauma(0.22); sfxAt(u.g.position.x, u.g.position.z, () => sfxScpScream(0, u.kind.voice)); }   // (you feel it land: the owner could not tell they had hit him)
+  if (!T) { addTrauma(0.22); farmVox('cry', gargVoice(u)); }   // (you feel it land: the owner could not tell they had hit him)
   u.hitAt = performance.now();
 }
 /* ---- DEATH: it goes back to stone in the air — the wings stop, the eyes go out — and falls, and the statue BREAKS on
@@ -88742,6 +89213,7 @@ function gargDied(u) {
   // a break it has not had last time
   let k; do { k = (Math.random() * GARG_BREAKS.length) | 0; } while (k === gargBreakLast && GARG_BREAKS.length > 1);
   gargBreakLast = k; g.brk = k; g.sndAt = null;
+  if (!applyingSave && !replaying) farmVox('die', gargVoice(u));        // its death cry, every one (the owner's, `GARG_VOX`)
   // (its pose is stone now and does not move: cut it into its pieces here, so the frame it lands only throws them —
   // measured, doing all of it on the landing was a 23 ms frame)
   g.pre = gargBake(u);
@@ -88871,19 +89343,42 @@ function gargShatter(u, air = false) {
     const isTrunk = keys.includes('hips') || keys.includes('chest');
     _gsA.set(b.m.position.x - cx, 0, b.m.position.z - cz); const L = _gsA.length() || 1; _gsA.multiplyScalar(1 / L);
     // (in the air: the blow's push carried most of the way, the limbs burst outward harder — nothing under them to stop them)
-    const k = (isTrunk ? 0.4 + Math.random() * 0.6 : 1.8 + Math.random() * 2.6) * (air ? 1.35 : 1), carry = air ? 0.8 : 0.25;
-    b.v.set(_gsA.x * k + g.vel.x * carry, (isTrunk ? 0.8 : 1.6 + Math.random() * 2.8) * (air ? 0.7 : 1) + Math.max(0, b.m.position.y - cy) * 0.8, _gsA.z * k + g.vel.z * carry);
-    b.w.set((Math.random() - 0.5) * (isTrunk ? 3 : 11), (Math.random() - 0.5) * (isTrunk ? 2 : 8), (Math.random() - 0.5) * (isTrunk ? 3 : 11));
+    // (turned up 2026-11-17, the owner: "TURN UP BREAK EFFECTS ON THE GARGOYLES": thrown ~40 % harder, spun ~45 % faster)
+    const k = (isTrunk ? 0.6 + Math.random() * 0.9 : 2.6 + Math.random() * 3.4) * (air ? 1.35 : 1), carry = air ? 0.8 : 0.25;
+    b.v.set(_gsA.x * k + g.vel.x * carry, (isTrunk ? 1.1 : 2.2 + Math.random() * 3.4) * (air ? 0.7 : 1) + Math.max(0, b.m.position.y - cy) * 0.8, _gsA.z * k + g.vel.z * carry);
+    b.w.set((Math.random() - 0.5) * (isTrunk ? 4.5 : 16), (Math.random() - 0.5) * (isTrunk ? 3 : 12), (Math.random() - 0.5) * (isTrunk ? 4.5 : 16));
     born.push(b);
   }
   const grp = { u, bits: born, subs: GARG_BREAKS[g.brk].subs.map((t) => t - GARG_BREAKS[g.brk].peak), t: 0, merged: null, still: 0 };
   GARG.breaks = GARG.breaks || []; GARG.breaks.push(grp);
   for (const b of born) b.grp = grp;
   // dust, the shake
-  gargDust(cx, air ? Math.max(fl, cy - 0.7) : fl, cz, 1.0);
+  // (and more of it: twice the dust, a burst of it where it broke as well as below, a spray of chips, a harder shake felt further off)
+  gargDust(cx, air ? Math.max(fl, cy - 0.7) : fl, cz, 2.2);
+  if (air) gargDust(cx, cy - 0.3, cz, 1.2);
+  gargChips(cx, cy, cz, g.vel, air ? 70 : 50);
   sfxKillThud(1.3);
-  const d = Math.hypot(camera.position.x - cx, camera.position.z - cz); if (d < 12) addTrauma(0.32 * (1 - d / 12));
+  const d = Math.hypot(camera.position.x - cx, camera.position.z - cz); if (d < 18) addTrauma(0.55 * (1 - d / 18));
+  if (d < 7) hitstop = Math.max(hitstop, 0.05);
   if (!g.sndAt) gargBreakSound(u, g.brk, GARG_BREAKS[g.brk].peak);    // (killed on the ground: straight into the smash)
+}
+/* CHIPS OFF THE BREAK (2026-11-17, "TURN UP BREAK EFFECTS"): small stone shards out of where it came apart, all ways and
+ * up, carried a little with the blow, down onto the court's own paving (`restAt`: `gargFloor`) — the gibs' machinery. */
+let gargChipMat = null;
+function gargChips(x, y, z, v, n) {
+  if (!gargChipMat) gargChipMat = new THREE.MeshStandardMaterial({ color: 0x8e8b84, roughness: 0.95, metalness: 0, flatShading: true, emissive: 0x1b1a18 });
+  for (let i = 0; i < n; i++) {
+    const r = 0.015 + Math.random() * Math.random() * 0.07;
+    const m = new THREE.Mesh(new THREE.TetrahedronGeometry(r, 0), gargChipMat);
+    m.position.set(x + (Math.random() - 0.5) * 0.5, y + (Math.random() - 0.5) * 0.6, z + (Math.random() - 0.5) * 0.5);
+    m.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(m);
+    const a = Math.random() * Math.PI * 2, sp = 1.2 + Math.random() * 4.2;
+    gibs.push({ m, half: r * 0.5, rest: C13_Y + C13_FLOOR, restAt: gargFloor,
+      vel: new THREE.Vector3(Math.cos(a) * sp + (v ? v.x * 0.35 : 0), 1.0 + Math.random() * 3.6, Math.sin(a) * sp + (v ? v.z * 0.35 : 0)),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26),
+      life: 240, bleed: false, wait: Math.random() * 0.03 });
+  }
 }
 /* A PIECE: the parts it is made of (their triangles centred on the piece, kept in the frame they were cut in, so it can
  * come apart again), one mesh a material, and the handful of its own points that reach furthest each way — what it
@@ -89081,7 +89576,7 @@ function gargBreakWings(u) {
   }
   u.gWingGone = []; u.model.traverse((o) => { if (o.isBone && /^Arm_/.test(o.name)) u.gWingGone.push(o); });
   for (const b of u.gWingGone) b.scale.setScalar(0.001);
-  sfxGargCrack(P.x, P.z); sfxAt(P.x, P.z, () => sfxScpScream(0, u.kind.voice));
+  sfxGargCrack(P.x, P.z); farmVox('cry', gargVoice(u), { p: 1 });
   g.vel.set(g.vel.x * 0.3, Math.min(0, g.vel.y), g.vel.z * 0.3);
   addTrauma(0.15);
 }
@@ -94816,7 +95311,10 @@ MUT_KINDS.dante = {
            strafeL: 'walk', strafeR: 'walk', dA1: 'attack1', dA2: 'attack2', dA2m: 'attack2m', dA3: 'attack2', dA3m: 'attack2m' },
   stunClip: 'stun', first: 'idle', sleepIdle: 'idle',
   provoke: danteProvoke,
-  voice: { f: 0.70, growl: 1.6, rasp: 1.3, throat: 'bellow', rec: { roar: 'danteChain', hurt: 'danteHit', tell: 'danteHit', die: 'danteDeath' } },   // the owner's recordings, through `mutVox`
+  // (`vol` 2.8, 2026-11-17, the owner: "TURN UP … DANTES SOUNDS I SENT": his hurt went out at ~0.7 of the take, under where the
+  // farmers' cry was measured buried at the speakers — `tools/farmhitlvl.sh` — so all of him ~+9 dB; 3.4 the same day, "A LITTLE
+  // LOUDER ESPECIALLY HIS FIRST SCREAM IN THE CUTSCENE NOT TOO MUCH": +1.7 dB, and that scream's own play 2.8 → 4.0, +3 dB)
+  voice: { f: 0.70, growl: 1.6, rasp: 1.3, throat: 'bellow', vol: 3.4, rec: { roar: 'danteChain', hurt: 'danteHit', tell: 'danteHit', die: 'danteDeath' } },   // the owner's recordings, through `mutVox`
 };
 // where it stands (room-local): on the marauder's right at the foot of the dais, turned a little toward the hall's middle
 const DANTE_SPOT = { x: -2.30, z: -1.30, yaw: 0.30 };
@@ -99613,7 +100111,7 @@ function updateThroneScene(dt) {
     thrHeadToCamera(U, smooth01(0.0, 0.5, C.t));
     // the beast: idle, then rearing on the broken chain
     if (C.t < rageT) { mutPlay(D, 'idle', true); }
-    else { const a = mutPlay(D, 'rage', false); if (a && !C.raged) { C.raged = true; try { const dd = Math.hypot(camera.position.x - D.g.position.x, camera.position.z - D.g.position.z); if (!playSampleAt('danteChain', D.g.position.x, D.g.position.z, { gain: 1.0, ref: 10, far: 60, rate: 1, jitter: 0, lpNear: 12000, lpFar: 2500, pick: 0 })) sfxMutRoar(dd, D.kind.voice); } catch (e) {} } }
+    else { const a = mutPlay(D, 'rage', false); if (a && !C.raged) { C.raged = true; try { const dd = Math.hypot(camera.position.x - D.g.position.x, camera.position.z - D.g.position.z); if (!playSampleAt('danteChain', D.g.position.x, D.g.position.z, { gain: 4.0, ref: 10, far: 60, rate: 1, jitter: 0, lpNear: 12000, lpFar: 2500, pick: 0 })) sfxMutRoar(dd, D.kind.voice); } catch (e) {} } }
     D.mixer.update(dt);
     if (!C.snapped && C.t >= snapT) {
       C.snapped = true;
@@ -103807,6 +104305,7 @@ function buildTavCast() {
   wongUnit = makeMutant(TAV_X + TAV_WONG.x, TAV_Z + TAV_WONG.z, 'wong', fy);
   drunkUnit = makeMutant(TAV_X + TAV_DRUNK.x, TAV_Z + TAV_DRUNK.z, 'drunk', fy);
   orcUnit = makeMutant(TAV_X + TAV_ORC.x, TAV_Z + TAV_ORC.z, 'orc', fy);
+  orcUnit.kind.voice.unit = orcUnit;                   // (where his voice comes from: `farmVox`)
   wongUnit.g.rotation.y = Math.atan2(TAV_DRUNK.x - TAV_WONG.x, TAV_DRUNK.z - TAV_WONG.z);
 
   drunkUnit.g.rotation.y = Math.atan2(TAV_WONG.x - TAV_DRUNK.x, TAV_WONG.z - TAV_DRUNK.z);
@@ -104438,26 +104937,27 @@ loadPortal();
  * or five points of health, so a good exchange puts one down. They bleed like
  * nothing else in the game and a killing blow throws them across the street.
  */
-const FARM_FILE = { wood: 'assets/farmer-woodman.glb', farm: 'assets/farmer-farmman.glb', work: 'assets/farmer-workman.glb' };
-// the rig as three's loader spells it: `mixamorig:Hips_04` loses its colon; the suffix is the file's own
-const FARM_SFX = {
-  wood: { Hips: '04', Spine: '05', Spine1: '06', Spine2: '07', Neck: '08', Head: '09', HeadTop_End: '010', LeftShoulder: '011', LeftArm: '012', LeftForeArm: '013', LeftHand: '014', RightShoulder: '035', RightArm: '036', RightForeArm: '037', RightHand: '038', LeftUpLeg: '059', LeftLeg: '060', LeftFoot: '061', LeftToeBase: '062', RightUpLeg: '064', RightLeg: '065', RightFoot: '066', RightToeBase: '067' },
-  farm: { Hips: '070', Spine: '071', Spine1: '072', Spine2: '073', Neck: '074', Head: '075', HeadTop_End: '076', LeftShoulder: '077', LeftArm: '078', LeftForeArm: '079', LeftHand: '080', RightShoulder: '0100', RightArm: '0101', RightForeArm: '0102', RightHand: '0103', LeftUpLeg: '0121', LeftLeg: '0122', LeftFoot: '0123', LeftToeBase: '0124', RightUpLeg: '0126', RightLeg: '0128', RightFoot: '0129', RightToeBase: '0130' },
-  work: { Hips: '0132', Spine: '0133', Spine1: '0134', Spine2: '0135', Neck: '0136', Head: '0137', HeadTop_End: '0138', LeftShoulder: '0139', LeftArm: '0127', LeftForeArm: '0140', LeftHand: '0141', RightShoulder: '0163', RightArm: '0164', RightForeArm: '0165', RightHand: '0166', LeftUpLeg: '0186', LeftLeg: '0187', LeftFoot: '0188', LeftToeBase: '0189', RightUpLeg: '0191', RightLeg: '0192', RightFoot: '0193', RightToeBase: '0194' },
-};
-const FJ = (f, n) => 'mixamorig' + n + '_' + FARM_SFX[f][n];
+/* THE GARRISON (2026-11-16, the owner: "replace all the farmers with these"). The twenty are tt-3D's "Low Poly Medieval
+ * Europe Starter Pack" now — two knights, a hooded man, an old man in a surcoat and a woman in mail — packed by
+ * `tools/garrison_pack.py` onto the farmers' own naming, `mixamorig<Name>_<file>`, so every clip, seat and sweep below is
+ * theirs unchanged. The rig has no Spine1 (the retarget carries world turns, so nothing is lost) and one finger chain a
+ * hand; the packer adds unweighted Index1/Ring1/Pinky1 beside it for the tool seat, and HeadTop_End for the headbutt.
+ * The axe, the rake and the hammer ride in every file, lifted out of the old farmers' at 256 px. */
+const FARM_FILE = { kn: 'assets/farmer-knight.glb', ka: 'assets/farmer-axeknight.glb', hd: 'assets/farmer-hood.glb', ol: 'assets/farmer-elder.glb', kw: 'assets/farmer-woman.glb' };
+// the rig as three's loader spells it: the packer wrote every bone `mixamorig<Name>_<file>`
+const FJ = (f, n) => 'mixamorig' + n + '_' + f;
 const FARM_JN = { hip: 'Hips', waist: 'Spine', chest: 'Spine2', neck: 'Neck', head: 'Head', clavL: 'LeftShoulder', clavR: 'RightShoulder',
   armL: 'LeftArm', armR: 'RightArm', foreL: 'LeftForeArm', foreR: 'RightForeArm', handL: 'LeftHand', handR: 'RightHand',
   thighL: 'LeftUpLeg', thighR: 'RightUpLeg', calfL: 'LeftLeg', calfR: 'RightLeg', footL: 'LeftFoot', footR: 'RightFoot' };
 const farmJoints = (f) => { const o = {}; for (const k in FARM_JN) o[k] = FJ(f, FARM_JN[k]); return o; };
 const farmRag = (f) => {
   const o = {};
-  for (const n of ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm',
+  for (const n of ['Hips', 'Spine', 'Spine2', 'Neck', 'Head', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightShoulder', 'RightArm',
     'RightForeArm', 'RightHand', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase', 'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase']) o['Character1_' + n] = FJ(f, n);
   return o;
 };
 // the parts a man may keep or lose, by the file's own node names
-const FARM_PARTS = { wood: { hat: 'Object_19', bag: 'Object_17', hair: 'Object_11' }, farm: { hat: 'Object_107', bag: 'Object_109' }, work: { hat: 'Object_194', beard: 'Object_196' } };
+const FARM_PARTS = {};   // (the old farmers' hats, bags and beards; the garrison's men are one mesh each)
 
 /* ---- THE STANCE, AND EVERY MOVE.
  * They bind in an A-pose. The stance brings the arms down to the sides and
@@ -104752,7 +105252,7 @@ MUT_ATTACKS.fKick   = { wind: 0.34, strike: 0.10, recover: 0.34, hit: 0.436,  re
   A.axCut  = FM('mCut',  0.637, 0.42, 0.87, { wind: 0.50, clipRate: 1.9, chain: 'axCutD', chainP: 0.45 });
   A.axCutC = FM('mCutC', 0.432, 0.56, 1.35, { wind: 0.46, clipRate: 1.6, chain: 'axChop', chainP: 0.30, guardK: 1.0 });
   A.axCutD = FM('mCutD', 0.383, 0.44, 1.00, { wind: 0.44, clipRate: 1.6, chain: 'axCut', chainP: 0.45, guardK: 1.0 });
-  A.axChop = FM('mChop', 0.754, 0.40, 0.76, { wind: 0.62, clipRate: 1.9, recover: 0.44, guardK: 1.5 });
+  A.axChop = FM('mChop', 0.84, 0.40, 0.76, { wind: 0.62, clipRate: 1.9, recover: 0.44, guardK: 1.5 });   // (0.754 until 2026-11-16: see `hmChop` — the same capture, the head still over his own head there)
   A.axSpin = FM('mSpin', 0.578, 0.46, 1.21, { wind: 0.60, clipRate: 2.0, strike: 0.14, chain: 'axCut', chainP: 0.35, guardK: 1.3 });
   A.axLeap = FM('mLeap', 0.539, 0.65, 1.11, { wind: 0.90, clipRate: 1.2, recover: 0.50, reach: 5.2, lunge: 3.8, hold: true, minDist: 2.5, chain: 'axCut', chainP: 0.45, guardK: 1.5 });
   A.axKick = FM('mZKick', 0.442, 0.50, 0.74, { wind: 0.36, clipRate: 1.4, limbs: [2], chain: 'axCut', chainP: 0.35 });
@@ -104760,7 +105260,10 @@ MUT_ATTACKS.fKick   = { wind: 0.34, strike: 0.10, recover: 0.34, hit: 0.436,  re
   A.hmCut  = FM('mCut',  0.647, 0.41, 0.64, { wind: 0.52, clipRate: 1.9, chain: 'hmCutD', chainP: 0.45 });
   A.hmCutC = FM('mCutC', 0.422, 0.57, 1.04, { wind: 0.48, clipRate: 1.6, chain: 'hmChop', chainP: 0.30 });
   A.hmCutD = FM('mCutD', 0.373, 0.46, 0.77, { wind: 0.46, clipRate: 1.6, chain: 'hmCut', chainP: 0.45 });
-  A.hmChop = FM('mChop', 0.744, 0.40, 0.54, { wind: 0.66, clipRate: 1.9, recover: 0.46, guardK: 1.6 });
+  /* (the mace's chop counts at 0.84 of the clip, not 0.744, 2026-11-16 — "fix the chop": on the garrison's rig the capture's
+   * overhead still has the head above his own head at 0.744 (0.02 behind his face, measured `m=chopclip`) and only brings
+   * it out over the next tenth; landed 1 blow in 6, 0.6-0.8 off your eye) */
+  A.hmChop = FM('mChop', 0.84, 0.40, 0.54, { wind: 0.66, clipRate: 1.9, recover: 0.46, guardK: 1.6 });
   A.hmSpin = FM('mSpin', 0.569, 0.51, 0.94, { wind: 0.62, clipRate: 2.0, strike: 0.14, chain: 'hmCut', chainP: 0.35, guardK: 1.3 });
   A.hmLeap = FM('mLeap', 0.549, 0.64, 0.80, { wind: 0.92, clipRate: 1.2, recover: 0.50, reach: 5.0, lunge: 3.8, hold: true, minDist: 2.5, chain: 'hmCut', chainP: 0.45, guardK: 1.5 });
   // the rake, used as a spear
@@ -104791,15 +105294,31 @@ const FARM_MOVES = {
   axe:    { cut: 'axCut', cutC: 'axCutC', cutD: 'axCutD', chop: 'axChop', spin: 'axSpin', leap: 'axLeap', kick: 'axKick', thrust: 'axCutD', lunge: 'axLeap', swipe: 'axCutC', punch: 'axCut', jab: 'axCutD', hook: 'axCutC', kick2: 'axKick' },
   hammer: { cut: 'hmCut', cutC: 'hmCutC', cutD: 'hmCutD', chop: 'hmChop', spin: 'hmSpin', leap: 'hmLeap', kick: 'axKick', thrust: 'hmCutD', lunge: 'hmLeap', swipe: 'hmCutC', punch: 'hmCut', jab: 'hmCutD', hook: 'hmCutC', kick2: 'axKick' },
   rake:   { cut: 'rkCut', cutC: 'rkCut', cutD: 'rkCutD', chop: 'rkChop', spin: 'rkSwipe', leap: 'rkLunge', kick: 'axKick', thrust: 'rkThrust', lunge: 'rkLunge', swipe: 'rkSwipe', punch: 'rkThrust', jab: 'rkThrust', hook: 'rkSwipe', kick2: 'axKick' },
+  sword:  null,       // (set below: the axe's strokes — the great-sword captures are a sword's own)
   fist:   { cut: 'fsSwipe', cutC: 'fsHook', cutD: 'fsPunch', chop: 'fsHook', spin: 'fsSwipe', leap: 'fsKick2', kick: 'fsKick', thrust: 'fsPunch', lunge: 'fsKick2', swipe: 'fsSwipe', punch: 'fsPunch', jab: 'fsJab', hook: 'fsHook', kick2: 'fsKick2' },
 };
 
+FARM_MOVES.sword = FARM_MOVES.axe;
+
 /* ---- WHAT THEY HAVE IN COMMON, and the eight ways of being one. */
 const FARM_BASE = {
-  palm: [0, 0, 1],    // the hand bone's own +Z is the palm (measured for the bottle grip), so a fist closes the right way on both hands
+  /* THE PALM, MEASURED ON THE GARRISON'S RIG (2026-11-16, `tools/garrison.js&m=palm`: the normal of the plane of finger and
+   * thumb, the same on all five files to a few hundredths). Its hands are not mirror images in their own frames, so the
+   * left is named as well. (The old farmers' was [0, 0, 1] on both.) */
+  palm: [0.9, 0, -0.42], palmLeft: [-0.9, 0, -0.42], mitten: true,
   natural: true,      // their Mixamo swings play at the clip's own speed (`naturalSwings`)
   solo: true, fortBody: true, farmer: true, noSand: true, gaitBySpeed: true, velGait: true, gaitMax: 1.7, lungeK: 0.55, headPop: true, faceFix: 0, facingRef: 'mixamo',
   windWalkK: 0.35, smoothMove: true,   // (the wind-up's glide in cut to a third, the closing eased: "slide around … less")
+  /* AND THEIR FEET STAY WHERE THEY STEP (2026-11-16, with the garrison: "make animations and fighting better"). Measured
+   * (`tools/garrison.js&m=fight`, the old farmers and the new alike): the planted foot slid ~1 m/s on every walk and 2-4 on
+   * the side-steps. Mostly the stride they were matched to was 15-60 % short (`gaitContact`, below); and the fight moves
+   * them on a slant and between a walk's stride and a run's, so the dark knight's two answers as well (`velGaitAnim`): the
+   * step keeps its part along the axis being stepped (`axisLock`), and a man runs only when he is going at a run
+   * (`gaitBands`). */
+  axisLock: 0.8, gaitBands: true, gaitContact: true,   // (and each gait's stride is its planted foot's own speed: `measureGaits`)
+  /* (and no faster than the old farmers ran: their run had been held to 2.6-2.7 m/s by the short stride it was matched to,
+   * and with the true one the garrison ran at 3.5-3.9 — a different fight. The pace the owner balanced is kept.) */
+  runMax: 2.75,
   h: 1.84, hp: 4, dmg: 1, hitR: 0.62, body: 0.42, lungeStop: 1.05, landSlop: 0.45,
   speedK: 1.25, windK: 0.96, reachK: 1.0, aggr: 2.2, press: 0.85, chainMax: 2, pressMax: 3,
   frenzy: true, bursts: 2, holdR: 4.2, pressW: 1, pressT: 5,
@@ -104833,17 +105352,17 @@ const FARM_BASE = {
   anim: { idle: 'mIdle', walk: 'mWalk', run: 'mRun', roar: 'rCry', die: 'mHitBig', back: 'mWalk', rate: 1.0, lean: 0.0, strafeK: 1.0 },
   alias: { idle2: 'mIdleB', walk2: 'mWalkC', run2: 'mRunB', roar2: 'rShake', die2: 'mHitBig', calm: 'mIdle', hit: 'mHit', hitSide: 'mHitBig', hitBack: 'mHitBack',
            hitHead: 'mHit', hitBig: 'mHitBig', parry: 'mParry', block: 'mHit', blockC: 'mHit' },   // the knight's side-of-body and side-of-head reels spun them round: out
-  voice: { f: 1.0, growl: 0.9, rasp: 1.0, throat: 'man', pitch: 130, form: 1 },
+  voice: { f: 1.0, growl: 0.9, rasp: 1.0, throat: 'man', pitch: 130, form: 1, farm: true },   // (`farm`: the owner's recordings, `farmVox`)
 };
 const FARM_KINDS = {
-  brawler: { tool: null, moves: { punch: 0.28, jab: 0.24, hook: 0.14, kick: 0.16, kick2: 0.10, swipe: 0.08 }, idles: ['idle', 'idleC'], roar: 'rBeat', out: ['bCharge', 'bKick'],
+  brawler: { tool: 'sword', moves: { punch: 0.28, jab: 0.24, hook: 0.14, kick: 0.16, kick2: 0.10, swipe: 0.08 }, idles: ['idle', 'idleC'], roar: 'rBeat', out: ['bCharge', 'bKick'],
              hp: 5, speedK: 1.30, aggr: 2.1, windK: 0.94, poise: 3, bursts: 3, barLen: 0.12 },
   hacker:  { tool: 'axe', moves: { cut: 0.30, cutD: 0.26, cutC: 0.20, chop: 0.14, kick: 0.10 }, idles: ['idle'], roar: 'rCry', out: ['bCharge', 'bSprint'], hp: 4 },
   stabber: { tool: 'rake', at: 0.42, spear: 0.7, moves: { thrust: 0.34, cutD: 0.18, cut: 0.16, lunge: 0.12, swipe: 0.10, kick: 0.10 }, idles: ['idle', 'idleD'], roar: 'rShake', out: ['bSprint', 'bStumble'],
              hp: 4, reachK: 1.15, holdR: 4.8, lungeStop: 1.35 },
   smith:   { tool: 'hammer', moves: { chop: 0.24, cut: 0.26, cutD: 0.20, cutC: 0.16, kick: 0.14 }, idles: ['idleC'], roar: 'rBeat', out: ['bKick', 'bCharge'],
              hp: 6, speedK: 1.12, windK: 1.0, poise: 3 },
-  maniac:  { tool: 'axe', moves: { spin: 0.24, cut: 0.20, cutC: 0.18, leap: 0.14, cutD: 0.24 }, idles: ['idleB'], roar: 'rShake', out: ['bLeap', 'bSprint'],
+  maniac:  { tool: 'sword', moves: { spin: 0.24, cut: 0.20, cutC: 0.18, leap: 0.14, cutD: 0.24 }, idles: ['idleB'], roar: 'rShake', out: ['bLeap', 'bSprint'],
              hp: 3, speedK: 1.45, aggr: 2.4, windK: 0.9, feint: 0.18, chainMax: 3, pressW: 1.5 },
   coward:  { tool: 'rake', at: 0.30, spear: 0.7, moves: { thrust: 0.34, cut: 0.22, kick: 0.20, swipe: 0.24 }, idles: ['idleD'], roar: 'rCry', out: ['bStumble'],
              hp: 3, flank: true, circle: 0.5, feint: 0.25, pressW: 0.6, holdR: 5.5, speedK: 1.32 },
@@ -104851,29 +105370,29 @@ const FARM_KINDS = {
              hp: 8, h: 2.04, speedK: 1.06, windK: 1.08, poise: 5, recoilK: 0.7, dmgMoves: { chop: 2 }, bursts: 3, pressT: 8 },
   jumper:  { tool: 'axe', moves: { leap: 0.30, cut: 0.25, cutD: 0.25, cutC: 0.20 }, idles: ['idle', 'idleB'], roar: 'rCry', out: ['bLeap'], hp: 4, speedK: 1.36, aggr: 2.0 },
 };
-/* THE TWENTY. The first three are one of each file with his own tool, so
- * every tool has been measured before anyone who borrows it is dressed. */
+/* THE TWENTY. Five bodies (`FARM_FILE`) over eight temperaments: the knights take most of them, the woman in mail
+ * three with her voice a fifth up. Every file carries all three tools, so whoever loads first measures them. */
 const FARM_ROSTER = [
-  { f: 'wood', p: 'hacker',  h: 1.82, tint: 0x8f97aa, keep: { hat: 1, bag: 1 }, pitch: 128 },
-  { f: 'farm', p: 'stabber', h: 1.86, tint: 0x8a93a8, keep: { hat: 1, bag: 1 }, pitch: 120 },
-  { f: 'work', p: 'smith',   h: 1.80, tint: 0x949aa8, keep: { hat: 1, beard: 1 }, pitch: 112 },
-  { f: 'wood', p: 'brawler', h: 1.90, tint: 0x9a8f88, keep: { hair: 1 }, pitch: 104, bones: { Spine2: 1.12, LeftArm: 1.1, RightArm: 1.1, LeftForeArm: 1.08, RightForeArm: 1.08, Head: 0.94 } },
-  { f: 'farm', p: 'maniac',  h: 1.74, tint: 0x828ca3, keep: {}, pitch: 150, bones: { Head: 1.06, Spine2: 0.92 } },
-  { f: 'work', p: 'coward',  h: 1.68, tint: 0x8c9098, keep: { hat: 1 }, pitch: 158, bones: { Head: 1.1, Spine2: 0.88, LeftArm: 0.95, RightArm: 0.95 } },
-  { f: 'wood', p: 'brute',   h: 2.04, tint: 0x938a84, keep: { hat: 1 }, pitch: 92, tool: 'hammer', bones: { Spine2: 1.2, Spine1: 1.1, LeftArm: 1.14, RightArm: 1.14, Head: 0.9, LeftUpLeg: 1.05, RightUpLeg: 1.05 } },
-  { f: 'farm', p: 'jumper',  h: 1.78, tint: 0x8b95ab, keep: { hat: 1 }, pitch: 138 },
-  { f: 'work', p: 'maniac',  h: 1.84, tint: 0x8a8f9c, keep: { beard: 1 }, pitch: 132, tool: 'hammer', bones: { Neck: 1.15 } },
-  { f: 'wood', p: 'stabber', h: 1.88, tint: 0x8e96a6, keep: { hair: 1 }, pitch: 118, tool: 'rake' },
-  { f: 'farm', p: 'brawler', h: 1.92, tint: 0x908f94, keep: { bag: 1 }, pitch: 108, bones: { LeftArm: 1.12, RightArm: 1.12, Spine2: 1.08 } },
-  { f: 'work', p: 'hacker',  h: 1.79, tint: 0x8c93a4, keep: { hat: 1, beard: 1 }, pitch: 126, tool: 'axe' },
-  { f: 'wood', p: 'coward',  h: 1.70, tint: 0x8a8e9a, keep: { bag: 1, hair: 1 }, pitch: 162, tool: 'hammer', bones: { Head: 1.1, LeftLeg: 0.95, RightLeg: 0.95 } },
-  { f: 'farm', p: 'brute',   h: 2.02, tint: 0x8d9097, keep: { bag: 1 }, pitch: 96, tool: 'hammer', bones: { Spine2: 1.16, Neck: 0.9, LeftArm: 1.1, RightArm: 1.1, Head: 0.92 } },
-  { f: 'work', p: 'jumper',  h: 1.76, tint: 0x9096a4, keep: { beard: 1 }, pitch: 142, tool: 'axe', bones: { LeftUpLeg: 1.06, RightUpLeg: 1.06 } },
-  { f: 'wood', p: 'maniac',  h: 1.83, tint: 0x969092, keep: { hat: 1 }, pitch: 146 },
-  { f: 'farm', p: 'smith',   h: 1.84, tint: 0x8a93a2, keep: { hat: 1 }, pitch: 116, tool: 'hammer', bones: { LeftForeArm: 1.1, RightForeArm: 1.1 } },
-  { f: 'work', p: 'stabber', h: 1.90, tint: 0x8e94a0, keep: { hat: 1 }, pitch: 124, tool: 'rake', bones: { Spine1: 0.95 } },
-  { f: 'wood', p: 'jumper',  h: 1.80, tint: 0x8c96ac, keep: { hair: 1, bag: 1 }, pitch: 136 },
-  { f: 'farm', p: 'hacker',  h: 1.87, tint: 0x928e8c, keep: { hat: 1 }, pitch: 122, tool: 'axe' },
+  { f: 'ka', p: 'hacker',  h: 1.82, tint: 0x8f97aa, pitch: 128 },
+  { f: 'hd', p: 'stabber', h: 1.86, tint: 0x8a93a8, pitch: 120 },
+  { f: 'ol', p: 'smith',   h: 1.80, tint: 0x949aa8, pitch: 112 },
+  { f: 'kn', p: 'brawler', h: 1.90, tint: 0x9a8f88, pitch: 104, bones: { Spine2: 1.12, LeftArm: 1.1, RightArm: 1.1, LeftForeArm: 1.08, RightForeArm: 1.08, Head: 0.94 } },
+  { f: 'hd', p: 'maniac',  h: 1.74, tint: 0x828ca3, pitch: 150, bones: { Head: 1.06, Spine2: 0.92 } },
+  { f: 'kw', p: 'coward',  h: 1.68, tint: 0x8c9098, pitch: 228, bones: { Head: 1.1, Spine2: 0.88, LeftArm: 0.95, RightArm: 0.95 } },
+  { f: 'kn', p: 'brute',   h: 2.04, tint: 0x938a84, pitch: 92, tool: 'hammer', bones: { Spine2: 1.2, Spine1: 1.1, LeftArm: 1.14, RightArm: 1.14, Head: 0.9, LeftUpLeg: 1.05, RightUpLeg: 1.05 } },
+  { f: 'ka', p: 'jumper',  h: 1.78, tint: 0x8b95ab, pitch: 138 },
+  { f: 'ol', p: 'maniac',  h: 1.84, tint: 0x8a8f9c, pitch: 132, tool: 'hammer', bones: { Neck: 1.15 } },
+  { f: 'kn', p: 'stabber', h: 1.88, tint: 0x8e96a6, pitch: 118, tool: 'rake' },
+  { f: 'ka', p: 'brawler', h: 1.92, tint: 0x908f94, pitch: 108, bones: { LeftArm: 1.12, RightArm: 1.12, Spine2: 1.08 } },
+  { f: 'hd', p: 'hacker',  h: 1.79, tint: 0x8c93a4, pitch: 126, tool: 'axe' },
+  { f: 'ol', p: 'coward',  h: 1.70, tint: 0x8a8e9a, pitch: 162, tool: 'hammer', bones: { Head: 1.1, LeftLeg: 0.95, RightLeg: 0.95 } },
+  { f: 'ka', p: 'brute',   h: 2.02, tint: 0x8d9097, pitch: 96, tool: 'hammer', bones: { Spine2: 1.16, Neck: 0.9, LeftArm: 1.1, RightArm: 1.1, Head: 0.92 } },
+  { f: 'hd', p: 'jumper',  h: 1.76, tint: 0x9096a4, pitch: 142, tool: 'axe', bones: { LeftUpLeg: 1.06, RightUpLeg: 1.06 } },
+  { f: 'kw', p: 'maniac',  h: 1.83, tint: 0x969092, pitch: 216 },
+  { f: 'kn', p: 'smith',   h: 1.84, tint: 0x8a93a2, pitch: 116, tool: 'hammer', bones: { LeftForeArm: 1.1, RightForeArm: 1.1 } },
+  { f: 'ol', p: 'stabber', h: 1.90, tint: 0x8e94a0, pitch: 124, tool: 'rake', bones: { Spine1: 0.95 } },
+  { f: 'kw', p: 'jumper',  h: 1.80, tint: 0x8c96ac, pitch: 206 },
+  { f: 'kn', p: 'hacker',  h: 1.87, tint: 0x928e8c, pitch: 122, tool: 'axe' },
 ];
 FARM_ROSTER.forEach((R, i) => {
   const P = FARM_KINDS[R.p];
@@ -104891,7 +105410,7 @@ FARM_ROSTER.forEach((R, i) => {
   for (const k in use) if (MUT_ATTACKS[k] && MUT_ATTACKS[k].clip) alias[k] = MUT_ATTACKS[k].clip;
   MUT_KINDS['farmer' + i] = Object.assign({}, FARM_BASE, P, {
     glb: FARM_FILE[R.f], file: R.f, keep: R.keep, tool, at: P.at, spear: tool === 'rake' ? P.spear || 0.7 : 0, bones,
-    h: R.h, tint: R.tint, use, alias, swDmg,
+    h: R.h, tint: null, use, alias, swDmg,   // (no tint: the pack's own colours, 2026-11-16)
     /* a man's walk and a man's jog; only the maniac keeps the hunched run */
     gaits: { walk: ['mHWalk', 'mWalkC'], run: R.p === 'maniac' ? ['mRun', 'mHRun'] : ['mHRun', 'mRunB'],
              idle: R.p === 'coward' ? ['mIdle', 'mDIdle', 'mHIdle'] : R.p === 'brute' || R.p === 'smith' ? ['mIdle', 'mHIdle'] : ['mIdle', 'mIdleB', 'mHIdle'],
@@ -104905,7 +105424,7 @@ FARM_ROSTER.forEach((R, i) => {
     rag: farmRag(R.f),
     rig: { arm: J.armR, fore: J.foreR, hand: J.handR, armL: J.armL, foreL: J.foreL, handL: J.handL, head: J.head,
            limbs: [[J.thighR, J.calfR, J.footR, FJ(R.f, 'RightToeBase')], [J.thighL, J.calfL, J.footL, FJ(R.f, 'LeftToeBase')], [J.chest, J.neck, J.head, FJ(R.f, 'HeadTop_End')]] },
-    voice: Object.assign({}, FARM_BASE.voice, { pitch: R.pitch, form: 1.04 - (R.h - 1.84) * 0.4, growl: 0.8 + Math.random() * 0.25 }),
+    voice: Object.assign({}, FARM_BASE.voice, { pitch: R.pitch, form: 1.04 - (R.h - 1.84) * 0.4, growl: 0.8 + Math.random() * 0.25, farm: R.f !== 'kw' }),
   });
 });
 
@@ -104938,7 +105457,7 @@ const FARM_GRIT_GLSL = `
     return normalize(abs(det) * sn - sign(det) * (dh.x * r1 + dh.y * r2));
   }`;
 function farmGrit(mm, u) {
-  if (u.kind.tint) mm.color.lerp(new THREE.Color(0x9e978e), 0.65);   // off the cold grade: the castle is lit by fire
+  // (2026-11-16: no tint and no lerp off it — the garrison wears the pack's own colours; see the map_fragment below)
   mm.aoMapIntensity = 1.55;
   if (mm.normalScale) mm.normalScale.set(2.1, 2.1);
   const rnd = mulberry32((u.saveKey || u.kind.name || 'farm').split('').reduce((a, ch) => a * 31 + ch.charCodeAt(0) | 0, 7));
@@ -104948,23 +105467,24 @@ function farmGrit(mm, u) {
   mm.onBeforeCompile = (sh, r) => {
     if (prev) prev(sh, r);
     Object.assign(sh.uniforms, U);
-    sh.vertexShader = 'varying vec3 vFgP;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vFgP = position;');
+    sh.vertexShader = 'varying vec3 vFgP;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vFgP = position * 100.0;');   // (the garrison is metres; every number below was written in the old files' centimetres
     sh.fragmentShader = FARM_GRIT_GLSL + '\n' + sh.fragmentShader
       .replace('#include <map_fragment>', `#include <map_fragment>
         /* AND THE PACK'S POSTER COLOURS GO (2026-10-14, the owner: "the farmers look too cartoonish make them match the
          * style better"): the flat bright albedo of a low-poly pack washed most of the way to grey and its darks pushed
          * down, so the cloth and skin read as worn things under firelight and not as painted toys. */
-        { float fgL0 = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          diffuseColor.rgb = pow(mix(vec3(fgL0), diffuseColor.rgb, 0.5), vec3(1.12)); }
+        /* (2026-11-16, the garrison: "looks nothing like them in the picture". The wash above was for a cartoon pack's
+         * poster colours; this pack is already painted steel and dull cloth, and washed and darkened it was a grey
+         * smear. It wears its own map now, and the dirt below is a light layer over it, not a coat.) */
         vec3 fgP = vFgP * 0.01 + uFgSeed;
         float fgMot = fgF(fgP * 7.0), fgBig = fgF(fgP * 1.9 + 4.0), fgFine = fgN(fgP * 85.0);
         float fgHt = clamp(vFgP.y / 182.0, 0.0, 1.0);
         // ONE multiplier for the colour AND the lift: the emissive reads the raw map, and would put back every stain on the dark side
-        vec3 fgMul = vec3(0.70 + 0.38 * fgMot + 0.14 * fgBig + 0.12 * (fgFine - 0.5));
+        vec3 fgMul = vec3(0.90 + 0.14 * fgMot + 0.06 * fgBig + 0.05 * (fgFine - 0.5));
         float fgMud = smoothstep(0.36, 0.02, fgHt + (fgMot - 0.5) * 0.24 + (fgBig - 0.5) * 0.10);
-        fgMul *= mix(vec3(1.0), vec3(0.50, 0.42, 0.33), fgMud * 0.82);
+        fgMul *= mix(vec3(1.0), vec3(0.50, 0.42, 0.33), fgMud * 0.45);
         float fgSoot = smoothstep(0.60, 0.74, fgF(fgP * 3.2 + 11.0));
-        fgMul *= mix(vec3(1.0), vec3(0.42, 0.40, 0.38), fgSoot * 0.6);
+        fgMul *= mix(vec3(1.0), vec3(0.42, 0.40, 0.38), fgSoot * 0.25);
         float fgBl = smoothstep(0.64, 0.73, fgF(fgP * 4.4 + 3.1)) * smoothstep(0.30, 0.60, fgHt);
         float fgSp = smoothstep(0.88, 0.93, fgN(fgP * 46.0 + 7.7)) * smoothstep(0.50, 0.66, fgF(fgP * 2.6 + 1.0));
         /* DRIED blood: nearly black, a little brown — at a wet red it read as
@@ -104990,11 +105510,79 @@ function farmGrit(mm, u) {
         float fgGrain = fgN(fgP * 340.0), fgFold = fgN(vec3(fgP.x * 38.0, fgP.y * 9.0, fgP.z * 38.0));
         normal = fgBump(-vViewPosition, normal, (fgFine * 0.0007 + fgMot * 0.0016 + fgMud * 0.0012 + fgGrain * 0.00022 + fgFold * 0.0014));`);
   };
-  mm.customProgramCacheKey = () => 'farmGrit4' + (mm.isMeshStandardMaterial ? 's' : 'b');
+  mm.customProgramCacheKey = () => 'farmGrit5' + (mm.isMeshStandardMaterial ? 's' : 'b');
 }
 const FARM_TEX = {};                        // material name -> the maps the first copy uploaded
-const FARM_TOOLS = {};                      // 'axe' | 'rake' | 'hammer' -> the tool, measured in the model's own units
-const FARM_TOOL_RE = { axe: /AXE/, rake: /Rake/, hammer: /Object004/ };
+const FARM_TOOLS = {};                      // 'sword' | 'axe' | 'hammer' | 'rake' -> the weapon (`farmWeapon`), in metres
+/* ---- THE GARRISON'S WEAPONS (2026-11-16, the owner: "give them all new weapons the weapons are horrible they face the
+ * wrong ways and dont reach the player ever"). The farm tools were lifted out of the old farmers' files and MEASURED to
+ * find out which end was the head and which way its face pointed — a guess off the vertices, and on the new men the
+ * guess and the seat disagreed. These are built here, so nothing about them is guessed: each lies along +Y from the
+ * butt (y 0) to its point or head (`hi`), its edge (or striking face) along +X (`bT`), and `farmArm` seats that edge
+ * along the man's fingers, the head out past his thumb. The keys are the fighting roles they always were — `axe` the
+ * cutters, `hammer` the crushers, `rake` the thrusters — and the shapes are a soldier's: a bearded war axe, a flanged
+ * mace, a spear, and an arming sword (new, `sword`, on the axe's strokes). Low-poly and flat-shaded, as the men are;
+ * vertex colours on one material, so a weapon is one draw. */
+const _fwCol = new THREE.Color();
+function farmWeaponPart(geo, col, x = 0, y = 0, z = 0, ry = 0) {
+  const g = (geo.index ? geo.toNonIndexed() : geo);
+  if (ry) g.rotateY(ry);
+  g.translate(x, y, z);
+  const n = g.attributes.position.count, c = new Float32Array(n * 3); _fwCol.setHex(col);
+  for (let i = 0; i < n; i++) { c[i * 3] = _fwCol.r; c[i * 3 + 1] = _fwCol.g; c[i * 3 + 2] = _fwCol.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color'].includes(k)) g.deleteAttribute(k);
+  return g;
+}
+function farmWeaponFlat(pts, depth, col) {   // a flat plate in the XY plane, `depth` thick along Z, centred on Z
+  const sh = new THREE.Shape(); pts.forEach(([x, y], i) => (i ? sh.lineTo(x, y) : sh.moveTo(x, y))); sh.closePath();
+  const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false }); g.translate(0, 0, -depth / 2);
+  return farmWeaponPart(g, col);
+}
+const FW_STEEL = 0x8d939b, FW_DARK = 0x4a4d52, FW_WOOD = 0x5a3f28, FW_LEATHER = 0x3a2a1e, FW_BRASS = 0x8a6e3a;
+let farmWeaponMat = null;
+function farmWeapon(key) {
+  if (FARM_TOOLS[key]) return FARM_TOOLS[key];
+  const P = [], box = (w, h, d, x, y, z, col, ry) => P.push(farmWeaponPart(new THREE.BoxGeometry(w, h, d), col, x, y, z, ry));
+  const cyl = (r0, r1, h, y, col, seg = 7) => P.push(farmWeaponPart(new THREE.CylinderGeometry(r1, r0, h, seg), col, 0, y + h / 2, 0));
+  let hi;
+  if (key === 'sword') {                     // an arming sword, a metre from pommel to point
+    box(0.046, 0.04, 0.046, 0, 0.02, 0, FW_BRASS);                                   // the pommel
+    cyl(0.017, 0.015, 0.18, 0.04, FW_LEATHER);                                       // the grip
+    box(0.24, 0.026, 0.034, 0, 0.233, 0, FW_DARK);                                   // the cross, across the edge
+    P.push(farmWeaponFlat([[-0.026, 0.245], [0.026, 0.245], [0.019, 0.90], [0, 1.0], [-0.019, 0.90]], 0.009, FW_STEEL));
+    hi = 1.0;
+  } else if (key === 'axe') {                // a double-bitted war axe on an 85 cm haft
+    /* (TWO BITS, 2026-11-16: with one, his forehand and back-hand cuts came in with the bit behind or square to the stroke —
+     * measured, 0.04 and 0.05 of the way to edge-first — and turning a single bit right round in his fist mid-fight is
+     * the twirl that was just taken out. A double axe leads with whichever bit the cut needs, as the sword does.) */
+    box(0.032, 0.85, 0.026, 0, 0.425, 0, FW_WOOD);
+    box(0.036, 0.15, 0.034, 0, 0.09, 0, FW_LEATHER);                                 // the wrapped grip
+    box(0.05, 0.17, 0.042, 0, 0.745, 0, FW_DARK);                                    // the eye round the haft
+    const bit = [[0.02, 0.665], [0.07, 0.67], [0.15, 0.60], [0.205, 0.63], [0.215, 0.74], [0.20, 0.84], [0.13, 0.80], [0.07, 0.82], [0.02, 0.825]];
+    P.push(farmWeaponFlat(bit, 0.012, FW_STEEL));
+    P.push(farmWeaponFlat(bit.map(([x, y]) => [-x, y]).reverse(), 0.012, FW_STEEL));
+    hi = 0.85;
+  } else if (key === 'hammer') {             // a flanged mace
+    box(0.03, 0.62, 0.03, 0, 0.31, 0, FW_WOOD);
+    box(0.036, 0.15, 0.036, 0, 0.09, 0, FW_LEATHER);
+    cyl(0.038, 0.038, 0.15, 0.6, FW_DARK);
+    for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; box(0.052, 0.13, 0.012, Math.cos(a) * 0.048, 0.675, -Math.sin(a) * 0.048, FW_STEEL, a); }
+    box(0.03, 0.04, 0.03, 0, 0.77, 0, FW_STEEL);                                     // the knob
+    hi = 0.79;
+  } else {                                   // 'rake': a spear, two metres and a leaf head
+    cyl(0.019, 0.016, 1.84, 0, FW_WOOD);
+    cyl(0.022, 0.022, 0.06, 0, FW_DARK);                                             // the butt cap
+    cyl(0.021, 0.014, 0.09, 1.80, FW_DARK);                                          // the socket
+    P.push(farmWeaponFlat([[-0.012, 1.875], [0.012, 1.875], [0.036, 1.97], [0, 2.14], [-0.036, 1.97]], 0.014, FW_STEEL));
+    hi = 2.14;
+  }
+  const g = mergeGeometries(P, false);
+  g.computeVertexNormals();
+  if (!farmWeaponMat) farmWeaponMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, flatShading: true,   // (0.55 flared the spear's shaft white under the moon)
+    emissive: 0x1a1c20, emissiveIntensity: 1 });   // (METALNESS IS A TRAP: steel is a light rough dielectric with a lift of its own)
+  return (FARM_TOOLS[key] = { g, mat: farmWeaponMat, ax: new THREE.Vector3(0, 1, 0), c: new THREE.Vector3(), lo: 0, hi, bT: new THREE.Vector3(1, 0, 0) });
+}
 function farmPre(u, gltf) {
   const m = gltf.scene, K = u.kind;
   m.updateMatrixWorld(true);
@@ -105100,7 +105688,7 @@ function authorFarmerClips(u, m) {
   farmArm(u, m);
   installLife(u, m, J);
   if (u.life) u.life.grip = u.farmTool ? FARM_FIST : null;     // a fist round the handle; a bare hand is the claws' fist
-  if (u.farmTool) { farmSeatTool(u, m, FARM_FIST); u.farmToolBase = { p: u.farmTool.position.clone(), q: u.farmTool.quaternion.clone() }; }
+  if (u.farmTool) { farmCurlToHandle(u, m); farmSeatTool(u, m, FARM_FIST); u.farmToolBase = { p: u.farmTool.position.clone(), q: u.farmTool.quaternion.clone() }; }
   u.packList = u.packList || farmUnits;
   const mc = farmMocap(u, R0);
   if (!mc) u.parLate = () => {
@@ -105142,17 +105730,13 @@ function farmMeasureTool(o, inv) {
  * thumb and forward, gripped near the end — nearer the middle for a rake,
  * which is used like a spear. Rigid in the hand from then on, so every pose
  * carries it. Its head is the tip the fight aims and sweeps with. */
+const FARM_CANT = { sword: 0.5, axe: 0.39, hammer: 0.39 };   // (of a right angle: 45°, 35°, 35° from the knuckles' line toward the forearm's)
 function farmArm(u, m) {
   const K = u.kind;
   m.updateMatrixWorld(true);
   const inv = m.matrixWorld.clone().invert();
-  let own = null;
-  for (const o of u.farmLoose || []) for (const k in FARM_TOOL_RE) if (FARM_TOOL_RE[k].test(o.name)) {
-    if (!FARM_TOOLS[k]) FARM_TOOLS[k] = farmMeasureTool(o, inv);
-    if (k === K.tool) own = o;
-  }
   for (const o of u.farmLoose || []) o.removeFromParent();
-  const want = K.tool ? FARM_TOOLS[K.tool] : null;
+  const want = K.tool ? farmWeapon(K.tool) : null;
   if (!want) return;
   const hand = m.getObjectByName(FJ(K.file, 'RightHand'));
   const bone = (re) => { let r = null; m.traverse((b) => { if (!r && b.isBone && re.test(b.name)) r = b; }); return r; };
@@ -105170,6 +105754,16 @@ function farmArm(u, m) {
   if (K.spear) {
     const fore = m.getObjectByName(FJ(K.file, 'RightForeArm'));
     if (fore) { const fa = W(hand).sub(W(fore)).normalize(); grip = fa.multiplyScalar(K.spear).addScaledVector(grip, 1 - K.spear).normalize(); }
+  } else if (FARM_CANT[K.tool]) {
+    /* AND A CUTTING WEAPON IS CANTED FORWARD IN THE FIST (2026-11-17, the owner: "THEY STILL ARE NOT CORRECTLY SWINGING OR
+     * FACING THE RIGHT WAY LOOK AT HOW PEOPLE USE THESE WEAPONS"). Square across the knuckles, the blade stood straight up
+     * out of his fist all through the cut while the arm went out under it (filmed, `garrison.js&m=film`: frames 48-54 of
+     * the sword's cut, a torch held up, not a blade swung). A man cutting breaks his wrist so the weapon carries on along
+     * the arm at the blow — a sword most (it is fenced along the forearm), an axe or a mace haft a little less (a hammer
+     * grip stands it up more) — and at rest it rides point-forward and down, not straight up. The handle is turned
+     * `FARM_CANT` of a right angle from the knuckles' line onto the forearm's. */
+    const fore = m.getObjectByName(FJ(K.file, 'RightForeArm'));
+    if (fore) { const fa = W(hand).sub(W(fore)).normalize(), a = FARM_CANT[K.tool] * Math.PI / 2; grip = grip.multiplyScalar(Math.cos(a)).addScaledVector(fa.addScaledVector(grip, -fa.dot(grip)).normalize(), Math.sin(a)).normalize(); }
   }
   const bitW = (K.spear ? new THREE.Vector3(0, -1, 0) : fing.clone()).addScaledVector(grip, -(K.spear ? -grip.y : fing.dot(grip))).normalize();
   const mT = new THREE.Matrix4().makeBasis(want.ax, want.bT, new THREE.Vector3().crossVectors(want.ax, want.bT));
@@ -105179,9 +105773,7 @@ function farmArm(u, m) {
   const L = want.hi - want.lo;
   const gp = want.c.clone().addScaledVector(want.ax, want.lo + L * (K.at || 0.16));
   const Mw = new THREE.Matrix4().makeTranslation(palm.x, palm.y, palm.z).multiply(Rm).multiply(new THREE.Matrix4().makeScale(sc, sc, sc)).multiply(new THREE.Matrix4().makeTranslation(-gp.x, -gp.y, -gp.z));
-  // his own tool wears the material he was dressed in; a borrowed one wears its owner's
-  const mat = own ? own.material : want.mat;
-  const mesh = new THREE.Mesh(want.g, mat);
+  const mesh = new THREE.Mesh(want.g, want.mat);
   mesh.name = 'farmTool'; mesh.frustumCulled = false;
   hand.matrixWorld.clone().invert().multiply(Mw).decompose(mesh.position, mesh.quaternion, mesh.scale);
   hand.add(mesh);
@@ -105196,6 +105788,32 @@ function farmArm(u, m) {
  * (`FARM_FIST`), and with it closed the handle is moved to where the fingers wrap — the middle of the four fingers'
  * joints, knuckle to tip — so they close round it. */
 const FARM_FIST = 1.5;
+/* THE FINGERS CLOSE ROUND THE HANDLE (2026-11-16, the owner: "the weapons arent even held correctly have them in their
+ * hands actually"). The curl turned each joint about an axis made from the kind's `palm`, and on the garrison's mitten
+ * that palm is a guess off the thumb with a tilt in it — measured on the drawn mesh (`tools/garrison.js&m=inhand`): the
+ * handle went through the hand, but the fingertips stood 10-17 cm off it, and on a third of the men curled to the PALM'S
+ * side of it rather than round it. So for the weapon hand the axis is not guessed at all: each finger joint turns about
+ * the axis that carries the bone toward the handle's line, which closes the fist on the handle by construction. */
+function farmCurlToHandle(u, m) {
+  const S = u.life, mesh = u.farmTool, W = FARM_TOOLS[u.kind.tool];
+  if (!S || !mesh || !W) return;
+  m.updateMatrixWorld(true);
+  const ax = W.ax.clone().transformDirection(mesh.matrixWorld), o = new THREE.Vector3(0, u.farmGrip ? u.farmGrip.y : 0, 0).applyMatrix4(mesh.matrixWorld);
+  const p = new THREE.Vector3(), c = new THREE.Vector3(), d = new THREE.Vector3(), h = new THREE.Vector3(), q = new THREE.Quaternion();
+  for (const f of S.fingers) {
+    if (!f.R) continue;
+    const kid = f.b.children.find((x) => x.isBone);
+    if (!kid) continue;
+    f.b.getWorldPosition(p); kid.getWorldPosition(c);
+    d.subVectors(c, p).normalize();                                        // the bone
+    h.subVectors(o, p); h.addScaledVector(ax, -h.dot(ax));                 // to the handle's line, square to it
+    const a = new THREE.Vector3().crossVectors(d, h);
+    if (a.lengthSq() < 1e-10) continue;
+    f.b.getWorldQuaternion(q).invert();
+    f.ax = a.normalize().applyQuaternion(q).normalize();                   // in the bone's own frame
+    f.sign = 1;
+  }
+}
 function farmSeatTool(u, m, G) {
   const S = u.life, mesh = u.farmTool, hand = mesh && mesh.parent;
   if (!S || !mesh || !hand || !u.farmPalm) return;
@@ -105203,7 +105821,9 @@ function farmSeatTool(u, m, G) {
   for (const f of fs) f.b.quaternion.multiply(_lfQ.setFromAxisAngle(f.ax || _lfX, f.sign * G * f.k));
   m.updateMatrixWorld(true);
   const c = new THREE.Vector3(), v = new THREE.Vector3(); let n = 0;
-  m.traverse((b) => { if (b.isBone && /RightHand(Index|Middle|Ring|Pinky)[1-4]_/.test(b.name)) { c.add(b.getWorldPosition(v)); n++; } });
+  // (a mitten rig — the garrison's — closes ONE chain; its placeholder index and little finger bones are knuckles that never move)
+  const fre = u.kind.mitten ? /RightHandMiddle[2-4]_/ : /RightHand(Index|Middle|Ring|Pinky)[1-4]_/;
+  m.traverse((b) => { if (b.isBone && fre.test(b.name)) { c.add(b.getWorldPosition(v)); n++; } });
   fs.forEach((f, i) => f.b.quaternion.copy(keep[i]));
   m.updateMatrixWorld(true);
   if (!n) return;
@@ -105511,6 +106131,47 @@ function farmBurstStep(u, dt) {
     st.fortHome = { x: p.x, z: p.z };
   }
 }
+/* OUT OF A POCKET, BACK TO THE STREET (2026-11-17, "MAKE THEM GET STUCK ON THESE BUILDINGS LESS"). With you on the far
+ * side of a house the way to you ran into its walls, and turning his stride along a face (`fortKeepOut`) only walked a
+ * man up and down a dead end — measured (`tools/farmstuck.js&at=5`): 42-44 s on one spot. A man who wants you, whose
+ * steps the wall rule has been turning or refusing, and who has made under 0.35 m in 1.2 s, walks to the nearest point
+ * of the street's middle line (`FARM_SPINE`) he can see, and fights on from there. */
+function farmUnstick(u, dt) {
+  const st = u.st, p = u.g.position, F = u.farm;
+  if (F.unstick) {
+    const U = F.unstick; U.t += dt;
+    const dx = U.x - p.x, dz = U.z - p.z, d = Math.hypot(dx, dz);
+    if (d < 0.7 || U.t > 3 || !st.alive || st.stun > 0 || st.recoil > 0) { F.unstick = null; F.stk = null; return false; }
+    const v = Math.min(d, 2.3 * dt);
+    p.x += dx / d * v; p.z += dz / d * v;
+    fortKeepOut(u, p);
+    let dy = Math.atan2(dx, dz) - u.g.rotation.y; while (dy > Math.PI) dy -= Math.PI * 2; while (dy < -Math.PI) dy += Math.PI * 2;
+    u.g.rotation.y += dy * Math.min(1, dt * 8);
+    mutPlay(u, u.kind.anim.run || u.kind.anim.walk, true);
+    if (u.mixer) u.mixer.update(dt);
+    return true;
+  }
+  if (!st.alive || !st.awake || st.atk >= 0 || st.stun > 0 || st.down > 0 || u.rag) { F.stk = null; return false; }
+  const want = Math.hypot(p.x - camera.position.x, p.z - camera.position.z) > (u.maxReach || 2.5) + 1;
+  const S = F.stk || (F.stk = { x: p.x, z: p.z, t: 0, w: (st.fkoTurn || 0) + (st.fkoBack || 0) });
+  S.t += dt;
+  if (S.t < 1.2) return false;
+  const moved = Math.hypot(p.x - S.x, p.z - S.z), walled = (st.fkoTurn || 0) + (st.fkoBack || 0) - S.w;
+  F.stk = null;
+  if (!want || moved > 0.35 || walled < 8) return false;
+  // the nearest point of the street's line he can see from where he is
+  let best = null, bd = 1e9;
+  for (let i = 0; i + 1 < FARM_SPINE.length; i++) {
+    const a = fortW(FARM_SPINE[i][0], FARM_SPINE[i][1]), c = fortW(FARM_SPINE[i + 1][0], FARM_SPINE[i + 1][1]), L = Math.hypot(c.x - a.x, c.z - a.z);
+    for (let t = 0; t <= L; t += 1) {
+      const x = a.x + (c.x - a.x) * t / L, z = a.z + (c.z - a.z) * t / L, d = Math.hypot(x - p.x, z - p.z);
+      if (d < bd && d > 0.8 && !keepHitsWall(p.x, p.z, x, z, p.y + 0.8, FORT_SITE)) { bd = d; best = { x, z }; }
+    }
+  }
+  if (!best) return false;
+  F.unstick = { x: best.x, z: best.z, t: 0 };
+  return true;
+}
 /* THE FARMERS' OWN BRANCH of the unit update: behind the door they are
  * nothing at all (parked, hidden, not ticked); coming out they belong to the
  * burst; out, they are a pack — the demons' director, on their own list. */
@@ -105524,6 +106185,7 @@ function farmUnitPre(u, dt) {
     return true;
   }
   if (u.farm.burst) { farmBurstStep(u, dt); return true; }
+  if (inFort && u.farm.out && farmUnstick(u, dt)) return true;   // (a man in a pocket walks back to the street)
   if (!u.st.alive) return false;
   u.g.visible = !!(fortWorld && fortWorld.visible);
   // on the cobbles under him (the pack's own branch returns before anything else would set it)
@@ -105713,15 +106375,20 @@ function farmBellSpot() { const s = FARM_SPINE[0]; return fortW(s[0], s[1]); }
 function farmCrowdTick(dt) {
   if ((farmFight.crowdT = (farmFight.crowdT || 2) - dt) > 0) return;
   const left = farmUnits.filter((u) => u.st.alive && !u.farm.out).length;
-  farmFight.crowdT = left ? 1.6 + Math.random() * 3.2 * (1 + 4 / (left + 1)) : 9;
-  if (!left) return;
+  farmFight.crowdT = left ? 1.6 + Math.random() * 3.2 * (1 + 4 / (left + 1)) : 3 + Math.random() * 4;
+  /* AND WITH EVERY DOOR EMPTY, A MAN OUT ON THE FAR SIDE OF IT (the owner's shouts, rare: `farmVox`'s own gap) */
+  if (!left) {
+    const far = farmUnits.filter((u) => u.st.alive && u.farm.out && u.g.visible && Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z) > 5);
+    if (far.length) { const u = far[(Math.random() * far.length) | 0]; farmVox('shout', u.kind.voice, { p: 0.45 }); }
+    return;
+  }
   const shut = farmDoors.filter((D) => !D.open && D.out);
   if (!shut.length) return;
   const D = shut[(Math.random() * shut.length) | 0], p = fortW(D.cx, D.cz);
   const dd = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
   if (dd > 30) return;
   const V = Object.assign({}, FARM_BASE.voice, { pitch: 100 + Math.random() * 60, form: 0.95 + Math.random() * 0.15 });
-  sfxMutRoar(dd + 9, V);
+  farmVox('shout', V, { x: p.x, z: p.z, muffle: true, p: 0.4 });     // behind the door, now and then (it was a synth cry every 2-5 s)
   if (Math.random() < 0.45) { D.rat = 0.05 + Math.random() * 0.04; D.ratV = 0; sfxPlankKnock(p.x, p.z, 3.5); }
 }
 function farmFightDone() { return farmFight.done || !farmUnits.length; }
@@ -105775,26 +106442,134 @@ function farmRollMeasure(u) {
   u.mixer.update(0);
   return out;
 }
+/* AND EVERY BLOW STOPS WHERE HIS OWN WEAPON REACHES (2026-11-16, "they dont reach the player ever"). Each swing's `stop`
+ * was `Z + 0.32`, Z the head's distance in front of him at the contact as MEASURED ON THE OLD FARMERS with their tools —
+ * and these are other men with other arms and other weapons. Measured live (`tools/garrison.js&m=duel`), a stand-off off
+ * the raw contact pose is no rule at all: in play the arm's aim (`aimBar`) swings the weapon about the SHOULDER toward
+ * your face, so a sword thrown from where its raw head was 0.6 short came to 0.07 of your eye and a mace 0.6 off. What
+ * the aim can do is fixed by the shoulder and the chain beyond it: the tip comes to (your eye's distance from his
+ * shoulder) − (shoulder to tip). So each man poses every swing at its contact (`A.hit`), takes his right shoulder and the
+ * weapon's head in his own frame, and stands where that leaves `FARM_REACH_GAP` between the head and your eye — on
+ * screen, past the near plane — judged there (`hitFront`). A kick (no aim on a leg) stands off its toe + `FARM_KICK_GAP`.
+ * His reaches and ring are re-derived from the new stops, as `makeMutant` derives them. */
+const FARM_REACH_GAP = 0.25, FARM_KICK_GAP = 0.3, FARM_STOP_MIN = 0.95;
+/* (the wide back-hand slash, `mCutC`, swings in on a flatter arc than the shoulder rule allows for: measured, it came to
+ * 0.05-0.14 of your eye on every weapon where the rest came to 0.15-0.45, so it stands a little further off) */
+const FARM_REACH_GAP_CLIP = { mCutC: 0.42 };
+/* (and an overhead chop is thrown from closer than anything else: it comes down in front of your face from over HIS, and
+ * from the general floor the mace's fell short every time — 2026-11-16) */
+const FARM_STOP_MIN_CLIP = { mChop: 0.80 };
+function farmReachSet(u) {
+  const tip = u.bones && u.bones.tip;
+  if (!tip || !u.mixer || !u.clips || !u.atk || u.farmReachDone) return;
+  u.farmReachDone = true;
+  let toe = null, sho = null; u.model.traverse((o) => { if (!o.isBone) return; if (!toe && /RightToeBase_/.test(o.name)) toe = o; if (!sho && /RightArm_/.test(o.name)) sho = o; });
+  const eyeY = playerEye() - (u.kind.aimDrop || 0), sv = new THREE.Vector3();
+  const saved = [];
+  for (const k in u.clips) { const a = u.clips[k]; saved.push([a, a.time, a.enabled, a.paused, a.getEffectiveWeight(), a.isRunning() || u.mixer._isActiveAction(a)]); }
+  const rot = u.model ? u.model.rotation.y : 0;
+  const inv = new THREE.Matrix4(), v = new THREE.Vector3(), out = {}, v0 = new THREE.Vector3(), v1 = new THREE.Vector3(), qw = new THREE.Quaternion(), trav = [];
+  for (const k in u.atk) {
+    const A = u.atk[k], a = u.clips[k] || (A.clip && u.clips[A.clip]);
+    if (!a || !(A.hit > 0.05)) continue;
+    const kick = A.limbs && A.limbs.some((i) => i >= 2);
+    if (kick && !toe) continue;
+    for (const x of Object.values(u.clips)) { x.stop(); x.enabled = false; x.setEffectiveWeight(0); }
+    a.reset(); a.play(); a.enabled = true; a.setEffectiveWeight(1); a.paused = true;
+    if (u.model) u.model.rotation.y = 0;
+    const dur0 = a.getClip().duration;
+    if (!kick && u.farmTool) {                                   // the head's travel into the contact, in the weapon's own seated frame
+      a.time = dur0 * Math.max(0, A.hit - 0.035); u.mixer.update(0); u.g.updateMatrixWorld(true); tip.getWorldPosition(v0);
+      a.time = dur0 * A.hit; u.mixer.update(0); u.g.updateMatrixWorld(true); tip.getWorldPosition(v1);
+      const tv = v1.sub(v0).applyQuaternion(u.farmTool.getWorldQuaternion(qw).invert());
+      if (Math.hypot(tv.x, tv.z) > 0.01) trav.push([Math.atan2(-tv.z, tv.x), (u.kind.use && u.kind.use[k]) || 0.05]);
+    }
+    a.time = dur0 * A.hit; u.mixer.update(0); u.g.updateMatrixWorld(true);
+    inv.copy(u.g.matrixWorld).invert();
+    (kick ? toe : tip).getWorldPosition(v).applyMatrix4(inv);
+    const Z = v.z;
+    if (kick) { if (!(Z > 0.2)) continue; A.stop = Math.max(FARM_STOP_MIN, Z + FARM_KICK_GAP); }
+    else {
+      if (!sho) continue;
+      sho.getWorldPosition(sv).applyMatrix4(inv);
+      const gap = FARM_REACH_GAP_CLIP[A.clip] ?? FARM_REACH_GAP, Rl = v.distanceTo(sv), k2 = (Rl + gap) ** 2 - sv.x * sv.x - (eyeY - sv.y) ** 2;
+      A.stop = Math.max(FARM_STOP_MIN_CLIP[A.clip] ?? FARM_STOP_MIN, sv.z + Math.sqrt(Math.max(0, k2)));
+    }
+    if (!A.minDist && !A.hold) A.reach = A.stop + 0.73;        // (the rows were written reach = Z + 1.05, stop = Z + 0.32)
+    out[k] = +A.stop.toFixed(2);
+    a.stop(); a.enabled = false; a.setEffectiveWeight(0);
+  }
+  for (const [a, t, en, pa, w, run] of saved) { if (run) a.play(); a.time = t; a.enabled = en; a.paused = pa; a.setEffectiveWeight(w); }
+  if (u.model) u.model.rotation.y = rot;
+  u.mixer.update(0);
+  const reaches = Object.values(u.atk).filter((a) => !a.minDist).map((a) => a.reach);
+  if (reaches.length) u.maxReach = Math.max(...reaches);
+  let w = 0, acc = 0;
+  for (const k in u.kind.use) { const a = u.atk[k]; if (!a || a.minDist) continue; acc += a.reach * u.kind.use[k]; w += u.kind.use[k]; }
+  if (w > 0) u.ring = acc / w;
+  u.farmReachZ = out;
+  /* AND THE EDGE IS SET IN HIS GRIP ONCE (2026-11-16, "the weapons blades face the wrong way"). A weapon does not turn in
+   * a fist (`farmToolRoll`), so it is seated with the roll his own strokes want: each stroke's head travel into its
+   * contact, in the weapon's frame, weighted by how often he throws it — for the double-edged sword either edge leading
+   * (the mean of twice the angle), for the axe's one bit the plain mean. The mace is flanged all round and the spear
+   * thrusts: they keep the knuckle seat. A turn about the handle's own line leaves the grip where it is. */
+  const T = u.farmTool, B = u.farmToolBase, tool = u.kind.tool;
+  if (T && B && trav.length && (tool === 'sword' || tool === 'axe')) {
+    const m2 = 2;   // (sword and double axe alike: either edge)
+    let cs = 0, sn = 0; for (const [th, wt] of trav) { cs += Math.cos(th * m2) * wt; sn += Math.sin(th * m2) * wt; }
+    const roll = Math.atan2(sn, cs) / m2;
+    B.q.multiply(new THREE.Quaternion().setFromAxisAngle(FARM_TOOLS[tool].ax, roll));
+    T.quaternion.copy(B.q); T.updateMatrixWorld(true);
+    u.farmSeatRoll = +roll.toFixed(2);
+  }
+}
+const _fwrT = new THREE.Vector3(), _fwrQ = new THREE.Quaternion(), _fwrR = new THREE.Quaternion();
 function farmToolRoll(u, dt) {
   const mesh = u.farmTool, B = u.farmToolBase, W = FARM_TOOLS[u.kind.tool];
   if (!mesh || !B || !W || !u.farmGrip) return;
-  if (!u.farmRollK && u.natDone) u.farmRollK = farmRollMeasure(u);
-  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
-  let want = 0;
-  if (A && u.farmRollK && u.farmRollK[st.swing] !== undefined) {
+  if (!u.farmRollK && u.natDone) { u.farmRollK = farmRollMeasure(u); farmReachSet(u); }
+  /* THE WEAPON DOES NOT TURN IN HIS FIST WHILE IT MOVES (2026-11-16, the owner: "they arent even holding or swinging them
+   * right … the weapons blades face the wrong way"). It used to be turned through every blow to follow the head, and the
+   * head's travel flips as a stroke reverses, so the roll chased it the long way round — measured
+   * (`tools/garrison.js&m=seat`), one spear wound through ten full turns in a fight, a mace head through half a turn in
+   * one stroke. Now the WRIST TURNS ONCE A SWING, the way a man sets his edge: an angle fixed when the swing starts, eased
+   * in through the draw (while the weapon is held back), held through the blow, eased out in the recovery. The angle is
+   * LEARNED, per man and per stroke, from how the head actually travels into the contact in play (his arm's aim changes
+   * it from what the clip alone shows): measured in the frame the weapon is seated in, so it does not chase itself. The
+   * sword and the double axe are two-edged and turn at most a quarter turn either way; the mace (flanged all round) and
+   * the spear (it thrusts) do not turn. */
+  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null, tool = u.kind.tool;
+  const R = u.farmRoll || (u.farmRoll = { ang: 0, tip: null, learn: {}, swing: null, want: 0 });
+  const turns = tool === 'sword' || tool === 'axe', two = turns, tipB = u.bones && u.bones.tip;   // (both two-edged now: the axe is double-bitted)
+  if (A && turns && !(A.limbs && A.limbs.some((i) => i >= 2))) {
     const t = st.atk, end = A.wind + A.strike;
-    const w = THREE.MathUtils.smoothstep(t, A.wind - 0.35, A.wind - 0.06) * (1 - THREE.MathUtils.smoothstep(t, end, end + Math.max(0.15, (A.recover || 0.4) * 0.5)));
-    want = u.farmRollK[st.swing] * w;
+    if (R.swing !== st.swing || t < 0.05) {                       // a new swing: its angle is fixed now
+      R.swing = st.swing;
+      const L = R.learn[st.swing];
+      const th = L ? Math.atan2(L.s, L.c) / 2 : 0;                  // (axial: within a quarter turn either way)
+      R.want = th;
+    }
+    // learn from the stroke's fast part into the contact, in the seated frame
+    if (tipB && R.tip && t > A.wind - 0.08 && t < end && dt > 0) {
+      tipB.getWorldPosition(_fwrT); _fwrT.sub(R.tip);
+      if (_fwrT.length() / dt > 1.2) {
+        mesh.parent.getWorldQuaternion(_fwrQ).multiply(B.q).invert();
+        _fwrT.applyQuaternion(_fwrQ);
+        const pl = Math.hypot(_fwrT.x, _fwrT.z);
+        if (pl > 1e-4) {
+          const th = Math.atan2(-_fwrT.z, _fwrT.x) * (two ? 2 : 1), L = R.learn[st.swing] || (R.learn[st.swing] = { c: 0, s: 0 });
+          L.c = L.c * 0.85 + Math.cos(th) * pl; L.s = L.s * 0.85 + Math.sin(th) * pl;
+        }
+      }
+    }
+    const w = THREE.MathUtils.smoothstep(t, 0.06, Math.max(0.1, A.wind - 0.12)) * (1 - THREE.MathUtils.smoothstep(t, end + 0.05, end + Math.max(0.2, (A.recover || 0.4) * 0.6)));
+    R.ang = R.want * w;
+  } else {
+    R.ang += (0 - R.ang) * Math.min(1, dt * 6); R.swing = null;
   }
-  const R = u.farmRoll || (u.farmRoll = { ang: 0 });
-  R.ang += (want - R.ang) * Math.min(1, dt * 18);
+  if (tipB) { if (!R.tip) R.tip = new THREE.Vector3(); tipB.getWorldPosition(R.tip); }
   mesh.position.copy(B.p); mesh.quaternion.copy(B.q);
-  if (Math.abs(R.ang) < 0.005) { R.ang = want === 0 ? 0 : R.ang; return; }
-  // turned about the handle's own line, through the grip, so the fist does not move on it
-  _frR.setFromAxisAngle(W.ax, R.ang);
-  mesh.quaternion.multiply(_frR);
-  _frD.copy(u.farmGrip).sub(_frC.copy(u.farmGrip).applyQuaternion(_frR)).multiply(mesh.scale).applyQuaternion(B.q);
-  mesh.position.add(_frD);
+  if (Math.abs(R.ang) > 0.003) mesh.quaternion.multiply(_fwrR.setFromAxisAngle(W.ax, R.ang));   // about the handle's own line: the grip stays put
 }
 /* THE FARMERS' ANIMATION, THINNED WHERE NOBODY IS LOOKING (2026-10-18, the owner: "performance in the castle is bad").
  * Twenty skinned men each ran their mixer every frame wherever they were — "the farmers' animation at 120 m" was the
@@ -105990,6 +106765,7 @@ if (FARM_ROSTER.length) {
     u.g.visible = false;
     u.farm = { out: false, burst: null };
     u.packList = farmUnits;
+    u.kind.voice.unit = u;                               // (where his voice comes from: `farmVox`)
     farmUnits.push(u);
   }
 }
@@ -106004,6 +106780,7 @@ const dkSlot = { unit: null, out: false };
 if (FARM_ROSTER.length) {
   const P = FARM_PARK();
   dkSlot.unit = makeMutant(P.x, P.z, 'darkKnight', P.y);
+  dkSlot.unit.kind.voice.unit = dkSlot.unit;            // (where his voice comes from: `farmVox`)
   dkSlot.unit.g.visible = false;
 }
 function dkDone() { const u = dkSlot.unit; return !u || u.retired || !u.st.alive; }
@@ -111361,7 +112138,7 @@ function updateDockBirds() {
  * away then the achievement"). Out over the sea the way it flew, a strike (`boltStrike`, the storm's own: the flash in
  * the sky, the fog, the beach lit cold), its thunder `CROW_STORM.thunder` s on and LOUD (`sfxThunder`'s `loud`), a shake
  * with it, and the achievement `ach` s into the roll. */
-const CROW_STORM = { dist: 0.3, thunder: 1.1, loud: 0.55, ach: 1.6 };
+const CROW_STORM = { dist: 0.3, thunder: 1.1, loud: 0.30, ach: 1.6 };   // (loud 0.55 until 2026-11-15: "make the crow scream and thunder after less loud"; 0.38 until 2026-11-17: "TURN DOWN A CROW SCARE A LITTLE")
 function crowStorm() {
   const C = CROW, d = C.dir || _cwkA.set(-1, 0, 0);
   boltStrike(_cwkB.set(d.x, 0.13, d.z), CROW_STORM.dist, CROW_STORM.thunder);
@@ -111409,7 +112186,7 @@ function crowZoom(k) {
  *  - the same recording a fifth down (0.7x), dark, under it: something bigger screaming with it;
  *  - a sub-bass hit and a noise slap on the first breath: the jolt;
  *  - all of it through a soft saturator (grit) and a fast hard compressor (dense, no peaks to spare), then `G`. */
-const CROW_SCREAM_PEAK = 0.42, CROW_SCREAM_CEIL = 0.61;   // (measured: 0.55 put it at 0.89; 0.8 was 'a little too loud', 0.6 'turn down some more', the owner)
+const CROW_SCREAM_PEAK = 0.16, CROW_SCREAM_CEIL = 0.61;   // (measured: 0.55 put it at 0.89; 0.8 was 'a little too loud', 0.6 'turn down some more', 0.42 'less loud', 0.30 'TURN THE CROW SCREAM DOWN MORE', 0.20 'TURN DOWN A CROW SCARE A LITTLE' — 2026-11-17, the owner)
 function crowScreamPlay(buf) {
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime + 0.01;
@@ -113695,7 +114472,7 @@ const ELV_FREE_USE = {}, ELV_HELD_USE = {};          // his swings, and the ones
     turnMax: 3.4, rag: ELV_RAG,
     rig: { arm: ELV_J.armR, fore: ELV_J.foreR, hand: ELV_J.handR, armL: ELV_J.armL, foreL: ELV_J.foreL, handL: ELV_J.handL, head: ELV_J.head,
            limbs: [[ELV_J.thighR, ELV_J.calfR, ELV_J.footR, 'RightToeBase'], [ELV_J.thighL, ELV_J.calfL, ELV_J.footL, 'LeftToeBase'], [ELV_J.chest, ELV_J.neck, ELV_J.head, 'HeadEnd']] },
-    voice: Object.assign({}, FARM_BASE.voice, { pitch: 122, form: 1.0, growl: 0.75 }),
+    voice: Object.assign({}, FARM_BASE.voice, { pitch: 122, form: 1.0, growl: 0.75, farm: false }),   // (his own throat, not the farmers' recordings)
     pre: (u, gltf) => elvPre(u, gltf), author: (u, m) => elvAuthor(u, m),
     provoke: (u) => elvProvoke(u),
   });
@@ -114639,6 +115416,10 @@ function elvFireTick(dt) {
     for (let k = 0; k < 40; k++) flameEmit(flameWorld, R.to.x + (Math.random() - 0.5) * 0.8, R.to.y + 0.2, R.to.z + (Math.random() - 0.5) * 0.8,
       { vx: (Math.random() - 0.5) * 1.2, vy: 1.5 + Math.random() * 2.5, vz: (Math.random() - 0.5) * 1.2, life: 0.25 + Math.random() * 0.3, size: 0.03 + Math.random() * 0.03, heat: 1.1, buoy: 0.6, drag: 1.2 });
   }
+  /* THE ACHIEVEMENT (2026-11-15, the owner: "make burning the puppet be an achievment 'Burn the puppet.'"): once his
+   * thrashing has died into twitches, with him still burning in front of you — the crow's rare toast and chime, once (the
+   * throw happens only live, and `elvBurned` is saved, so a load never burns him again) */
+  if (!R.ach && L > 4.8) { R.ach = true; if (!replaying && !applyingSave) showAchievement('Rare achievement unlocked', '50 - Burn the puppet.'); }
   // the struggle: all of him for the scream, dying away into twitches, then nothing
   const k = L < 2.6 ? 1 : L < 4.6 ? 1 - (L - 2.6) / 2.0 * 0.85 : Math.max(0, 0.15 - (L - 4.6) * 0.09);
   const tw = L > 3.2 && L < 5.4 && Math.sin(L * 23) > 0.92 ? 0.5 : 0;
@@ -114970,7 +115751,7 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   elvFieldS: () => elvField, elvPathNear, elvSurf, elvCarve, elvMistS: () => [elvMist, elvBeachMist], elvCampS: () => elvCamp,
   pupRunS: () => pupRun,
   elvCarryDbg: () => ({ blinkT: elvBlinkT, blinkZ: ELV_BLINK_Z, walked: elvWalked, land: elvLand, carrying: elvCarrying, caps: elvPupCarry ? elvPupCarry.rig.E.caps.length : -1, cap0: elvPupCarry && elvPupCarry.rig.E.caps[0] ? [elvPupCarry.rig.E.caps[0].cap.visible, +elvPupCarry.rig.E.caps[0].cap.scale.y.toFixed(3)] : null }),
-  houseWaterS: () => houseWater, houseWaterToggle, elvThrowPuppet, elvBurnS: () => elvBurn, elvAshS: () => elvAsh, elvFireHitS: () => elvFireHit,
+  houseWaterS: () => houseWater, houseWaterToggle, elvThrowPuppet, elvCarryBegin, elvBurnedS: () => elvBurned, pupReadyS: () => !!(elvPup && elvPup.src), elvBurnS: () => elvBurn, elvAshS: () => elvAsh, elvFireHitS: () => elvFireHit,
   elvPleaS: () => ({ i: elvPleaI, on: !!elvPlea, jaw: elvPleaJaw, look: elvPleaLook }), elvBurnFight, houseDreadNow: () => { houseDreadT = 0; },
   setElvStage: (v) => { elvStage = v; }, ELV_CARRY, pupLids, pupEyesAt,
 }));
@@ -115130,7 +115911,7 @@ window.__bw = {
   interactables, physProps, inventory, packByName, bottle: null, cliff, foot, lighthouse, city,
   castle, shovelWorld, viewmodel,
   hcrab, hcrabWorld, syringe, syringeWorld, bloodJar,
-  renderer, inspectScene, inspectCamera,
+  renderer, inspectScene, inspectCamera, inspectPivot,
   mounds, moundAt, revealMoundNear, makeGlowstick, inWater, shoreLineJS,
   sfxSplash, sfxStepPuddle, sfxStepUnder, bradly, startDialog, endDialog, heldGlow,
   crab, crabState, killCrab, damagePlayer, playerDied, burstCrab, addTrauma, updateGibs,
@@ -115351,7 +116132,7 @@ Object.assign(window.__bw, { farmCobble, farmUnits, farmFight, farmDoors, farmSe
   buildTribeFire, TRIBE_X, TRIBE_Z, startWhale, startSwallow, placeInWhale, placeOutOfWhale, buildWhale, whaleState: () => ({ inWhale, busy: whaleBusy, t: whaleT, built: !!whale, beach: !!wb, sw: wbSw && wbSw.t, jaw: wb && wb.jaw }), wbGet: () => wb, wbU, wbBermAt, startSwallow, wsState: () => ({ wsDone, wsR: +wsR.toFixed(3), wsM: +wsM.toFixed(3), wsSect: +wsSect.toFixed(3), on: WS_S.on, t: WS_S.on ? +wsTime().toFixed(2) : null, buf: !!WS_S.buf, src: !!wsSrc }), startSighting, wsReset: () => { wsDone = false; WS_S.on = false; WS_S.waitT = 0; }, WB_Z, WB_SNOUT_X, whFloor, whCx,
   umbraIgnite, umbraFireState: () => umbraFire, settleMounds, moundRole, moundSpotClear, closeShop, openShop, softLookState: () => softLook,
   poseRig, MUT_JOINTS, oceanUniforms, submersionAt, restYInWater, updateComfy,
-  audioGate: () => (gameAudioGate ? gameAudioGate.gain.value : null),
+  audioGate: () => (gameAudioGate ? gameAudioGate.gain.value : null), audioDog: () => audioDogLog.map((e) => e.join(' ')),
   spliffItem, gainSpliff, smokeSpliff, grammyItem, dropGrammy, extractKeepCrate, smashKeepCrate, throwSpliffButt, exhaleSmoke, spliffModel, grammyModel,
   spliffState: () => ({ smoking, smokeT, buff: spliffBuffT, count: spliffItem.count, crate: !!keepCrate, crateBroken: keepCrateBroken, keepSpliffTaken, grammyState, grammyAt, butts: spliffButts.length }),
   setSpliffBuff: (v) => { spliffBuffT = v; spliffEndAt = v > 0 ? Date.now() + v * 1000 : 0; },

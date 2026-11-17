@@ -1977,3 +1977,225 @@ sometimes fix this now. make him better and more aggressive too."
   `.farmers.level` 0.3 → 0.6 (+6 dB; `max` 1.0 never binds at the default 50 % × 25 %). The surf: `beachBedK` multiplies
   by `FORT_SURF` (0.35, −9 dB) while `inFort && !farmFight.done` — the fort is not `indoors()`, so the beach's bed was at
   full there; `updateBeachBed`'s 0.45 s glide takes it down and back. After the fight the yard has the full surf again.
+
+## The garrison replaces the farmers (2026-11-16, "replace all the farmers with these make animations and fighing better")
+tt-3D's Fab "Low Poly Medieval Europe Starter Pack" (Standard License, marked AI-generated). **The .blend is not what the
+listing names**: `Knight`, `Knight_axe`, `assasin` (hooded), `demonking` (an old man), `Knight_Woman` — 770-950 tris on
+one 256 px map each (the old farmers were ~7,500 tris with 1024 px maps and normals), one 34-bone rig with a thumb and
+ONE finger chain a hand. `tools/garrison_pack.py` (Blender) writes `assets/farmer-{knight,axeknight,hood,elder,woman}.glb`
+(~270 KB each, JPEG maps): transforms applied, bones renamed `mixamorig<Name>_<file>` so `FJ` is just
+`'mixamorig' + n + '_' + f` (no `FARM_SFX` table any more), unweighted Index1/Ring1/Pinky1 beside Middle1 (the tool seat
+reads the knuckle line off them) and HeadTop_End; the old farmers' axe/rake/hammer lifted into every file (they were
+CENTIMETRES with no scale node — scaled 0.01; maps to 256, metalness off). No Spine1: the retarget carries world turns,
+`farmRag` just leaves it out. `farmGrit` reads `position * 100` (it was written in the old files' centimetres).
+`FARM_PARTS` is empty. `tools/farmpose.js` still has the OLD suffix table — stale.
+- **Palm** (`tools/garrison.js&m=palm`): right (0.9, 0, -0.42), left (-0.9, 0, -0.42) in the hand frames — not mirror
+  images, so `installLife` takes `kind.palmLeft` (new) for the left hand. With [0,0,1] the mitten curled sideways.
+- **THE STRIDE WAS SHORT, FOR EVERY FARMER, OLD AND NEW.** `measureGaits` sums the LOWER toe's travel over the whole cycle;
+  that counts the swing foot skimming past and a run's flight, and came out 15-20 % under the speed the foot moves at while
+  it is planted on a walk or side-step, 40-60 % under on a run (`m=contact`: mHWalk 1.06 vs 1.26, mHRun 2.22 vs 3.11,
+  mRunB 2.11 vs 3.37). `kind.gaitContact` (new, opt-in, farmers only): the median speed of a toe within 1.5 cm of its own
+  lowest. Plus the dark knight's `axisLock` 0.8 and `gaitBands`. Planted-foot slip on the walks 1.30-1.84 (old farmers,
+  HEAD) → 0.83-1.0 m/s; the metric's floor is high (the toe rolls), so read it old against new, not against zero.
+- **AND THE PACE IS KEPT** (`kind.runMax` 2.75, new, in `velGaitAnim`'s `capFor`): the short stride had been capping their
+  run at 2.6-2.7 m/s; with the true one they ran 3.5-3.9 — a different fight. And the run's rate is taken off the CAPPED
+  speed when `runMax` binds (off the asked-for one the feet ran ahead: 1.05x on a body at 0.88x).
+- Fight, standing still a minute (`m=fight`): 10-13 hurts (the old 9-14), every one while somebody swings; the tool head
+  passes 0.24-0.44 m off your axis (the old went through you, 0.02-0.22; `hitFront` judges 0.30 in front, so the new
+  arrive in the picture); hand pops 4-12 a minute against the old 24. Hands, keyed clips (roars, bursts), death pieces:
+  stills in `m=hands`, `m=keyed&file=`, `m=kill`. `sh tools/musictest.sh <out> farmers,end` passes.
+- Probe traps: `u.g.visible` is false for a man still in his house — set it before a solo still; a man killed by
+  `hurtMutant` in a probe can be against a wall (the camera ends inside it).
+
+## The garrison, round 2 (2026-11-16, "the textures … is see through and looks nothing like them in the picture … give them all new weapons … they face the wrong ways and dont reach the player ever")
+- **SEE-THROUGH: every body material had its map's ALPHA wired into the shader** (the maps are 1.0 everywhere), so the
+  exporter wrote `alphaMode: BLEND` and three drew each man as glass. `tools/garrison_pack.py` cuts the link; the GLBs are
+  OPAQUE with JPEG maps (105-126 KB each, the old tools no longer in them). **Read a GLB's `alphaMode` after any pack.**
+- **"Nothing like the picture"**: the farmers' look was washing the pack. Gone: the per-man blue-grey `tint` (null in the
+  roster's kind), the `mm.color` lerp, the 50 % grey wash in `farmGrit`; mottling 0.70-1.2 → 0.90-1.04, mud 0.82 → 0.45,
+  soot 0.6 → 0.25 (cache key `farmGrit5`). Blood kept.
+- **WEAPONS ARE BUILT IN CODE** (`farmWeapon`, `FARM_TOOLS`): an arming sword (new key `sword`, the axe's strokes —
+  `FARM_MOVES.sword = FARM_MOVES.axe`), a bearded war axe (`axe`), a flanged mace (`hammer`), a 2.1 m spear (`rake`) —
+  each along +Y from the butt, edge on +X, one vertex-coloured material, no metalness. Brawlers and maniacs carry swords
+  (every man armed). `farmMeasureTool` is unused now.
+- **THE EDGE**: `farmToolRoll` turns the weapon about its handle so the edge faces your eye through the draw, and once
+  the head is travelling fast (> 1.6 m/s, from 0.16 s before the contact) turns it into that travel (rate 30 during a
+  blow). Measured in a natural fight (`m=fight`): edge-leads 0.50-0.82 (1 = edge square to the travel); traced, 0.8-1.0
+  in the fast part — the draw-to-strike reversal is the dip no wrist can follow.
+- **THE REACH** (`farmReachSet`, run once per man with his roll measure): the raw contact pose is no guide — in play the
+  arm's aim swings the chain about the shoulder at your face, so off the raw head a sword came to 0.07 of your eye and a
+  mace 0.6 off. The tip can come to |your eye − his shoulder| − |shoulder → tip|; each swing's stop solves that for
+  `FARM_REACH_GAP` 0.25 (`FARM_REACH_GAP_CLIP.mCutC` 0.42: the wide slash comes in flatter), kicks off the toe + 0.30,
+  never under 0.95; reach = stop + 0.73, then `maxReach`/`ring` re-derived. Measured one weapon at a time
+  (`m=duel&tools=…`): sword 16/18 land, head 0.31-0.46 from your eye; axe 14/16, 0.28-0.37; spear 15/16, 0.15-0.23; mace
+  10/16, 0.34 on the cut. Natural fight: 18 hurts in 90 s (12 a minute; the farmers were 10-13 — the pace kept).
+- **Probe trap**: a duel needs `me.st.foe = null` every frame and the dark knight sunk (`y -= 500`): with him only hidden,
+  the chosen man fought him for the whole run and threw nothing at you ("0 blows in 140 s").
+
+## The garrison's weapons, round 3 (2026-11-16: "they arent even holding or swinging them right … the weapons blades face the wrong way … have them in their hands actually")
+Probes in `tools/garrison.js`: `m=inhand` (the DRAWN hand — the body's vertices owned by the right hand's bones, skinned —
+against the handle's line, sampled on men OUT in the street through a fight), `m=seat` (the seat at the idle and the roll
+over each stroke), `m=duel&tools=…` (edge-first signed and "either edge", and "after its first" throw of each stroke),
+`m=film`, `m=fingers`.
+- **TRAPS IN MEASURING A HAND**: (1) r160's `Mesh.getVertexPosition` already SKINS a SkinnedMesh — calling
+  `applyBoneTransform` after it skins twice (a "hand" half a metre wide); (2) a man still in his house is not animated —
+  no mixer, no life layer, his fingers never close — so a hand measured there is the bind hand. Measure men who are out.
+- **THE TWIRL**: the roll that turned the weapon about its handle every frame to follow the head (and before that to face
+  your eye) chased a travel that flips as the stroke reverses: one spear wound ten full turns in a fight, a mace head half
+  a turn in one stroke. `farmToolRoll` now turns the wrist ONCE a swing: an angle fixed at the swing's start, eased in
+  over the draw, held through the blow, out in the recovery — learned per man and per stroke from the head's travel into
+  the contact in PLAY (in the seated frame, so it cannot chase itself; the aim changes the stroke from the clip's). Sword
+  and the axe turn at most a quarter turn (axial mean); mace and spear never turn. `farmReachSet` bakes the use-weighted
+  axial mean of every stroke's clip travel into the seat as a start.
+- **THE AXE IS DOUBLE-BITTED** (`farmWeapon('axe')`): with one bit his forehand and back-hand cuts came in bit-behind
+  (0.04-0.05) and only a half-turn flip in the fist could fix them. Now either bit leads.
+- **THE FIST CLOSES ON THE HANDLE** (`farmCurlToHandle`): the curl axis came from `kind.palm`, a guess off the thumb;
+  now each right-hand finger joint turns about the axis that carries the bone toward the handle's line. And on a mitten
+  rig (`kind.mitten`) `farmSeatTool` seats the handle in the curl of the one real chain (Middle2-4), not at the
+  placeholder Index1/Ring1/Pinky1 knuckles.
+- Measured after: handle 3-4 cm from the drawn hand's middle, fingertips closed to 2-4 cm off it, swinging or not; edge
+  (either) first 0.63-0.85 sword, 0.65-0.78 axe, mace 0.64-0.85; natural fight 21 hurts in 90 s (12-18 before).
+  **Still open**: the mace's overhead chop comes down low and short, 1 of 6 landing (0.6-0.8 off your eye).
+- **TRAP PAID (and caught by the probe, not the owner)**: a module-level `const _ftQ` already existed (line ~16040) and
+  the new one was a SyntaxError that stopped main.js loading at all. Grep any `_xx` scratch name before declaring it.
+
+## The farmers' chop; the dark knight's new body (2026-11-16)
+- **The chop** (`hmChop`, `axChop`, clip `mChop`): on the garrison's rig the capture's overhead still has the head above
+  his own head at 0.744 (`garrison.js&m=chopclip`: z −0.02, level with his face) and only brings it out over the next
+  tenth; the mace's landed 1 in 6, 0.6-0.8 off your eye. Contact at 0.84 now, and `FARM_STOP_MIN_CLIP.mChop` 0.80 (the
+  overhead comes down in front of your face from over his): mace 6 of 7 land at 0.35 m, axe and sword 2 of 2.
+- **THE DARK KNIGHT IS DJMAESEN'S PALADIN** (CC-BY-4.0) — `tools/paladin_pack.py` → `assets/paladin-knight.glb` (1.5 MB):
+  his 65-bone FBX rig renamed onto the MF names (`b_MF_*`) so `DK_JOINTS`/`DK_RAG`/`dkSeat`/`gaitToes` all find their
+  bones; **the file's scene pose is NOT its rest** (arms crossed holding the sword; the skin is bound in an A-pose) — the
+  pose is cleared before anything, or the crossed arms become the rest and every retarget is wrong; fists curled and
+  applied as the rest (nothing the game plays turns a finger); the bastard sword measured off its own vertices (guard =
+  widest band, grip between it and the pommel, edge = the blade's wide axis), its blade drawn out 1.26x past the guard,
+  seated in the right fist and skinned to a new `b_MF_Weapon_R`; maps 1024/512 JPEG, metalness cut; a 0.01 root node
+  (so `u.model.scale` reads 136.7 and `knBlade` 0.015 — model units, which is all `knBlade` is used in: culling).
+- **His Infinity Blade strings (`dkS*`, clips `dkC*` in the old file) could not come**: out of `use`, `slice` emptied; the
+  pack's share up, `dkLunge` back in, `sBlockI` out of his idles (a crouch behind a shield he does not carry).
+- **What made him miss, measured** (`tools/dkpick.js` — 40 s, you still at 3 m, every blow's start, stand-off and
+  contact distance; `tools/dkwalk.js` — one forced blow frame by frame; `tools/dkblade.js` — blade direction in the fist
+  per pose, both bodies; `tools/dkstudio.js` — him alone in his clips):
+  1. The blade in the fist already matched the old knight's direction pose by pose; it was SHORTER — 1.64 m hand to
+     tip against 2.0 — and every stand-off and step of his fight was tuned round the long one (`rmStop` is measured off
+     the blade, so it adapted, but the steps that had to carry him in did not). The blade is drawn out to 2.05.
+  2. **The first blow a creature throws is the first key in `use`, undrawn** — and a blow dropped as out of reach never
+     counts as thrown. With the short cut first, from 4.6 m he threw it, dropped it, and threw it again, for good (two
+     loads in three). `warpPick` kinds draw their first blow too.
+  3. A step asked to STRETCH delivers two thirds of the plan at best (from 4.3 m his turn arrived at 3.0 against 2.85).
+     `rmFrom`'s far edge is now the stand-off + the step × 0.6 (× 0.8 a hold) + 0.15 — shrunk, never stretched; a blow
+     more than 0.15 outside its `rmFrom` is not drawn at all; `A.reach` = `rmFrom[1]` + 0.05, so where nothing lands he
+     walks in. Standing still, three loads: 13/15, 12/15, 13/14 (the old knight 9/12).
+- `dkMove` after (two runs): still 60-100 %, strafe 89-90, drift 78-88, dodge 57-90; **back 0 %** (the old knight 57 %:
+  his long strings carried him 2-3 m onto a man backing off; the pack has nothing that does — open). Feet as before.
+
+
+## The farmers' voices (2026-11-16, the owner's recordings)
+
+The owner: "MAKE THESE THE FARMERS SWING SOUNDS AND RANDOMIZE THEM THEY DONT NEED TO HAPPEN EVERY SWING … THE ONE LABELED
+HITS IS WHEN THEY GET HIT … THE RARE BACKROUND SHOUTS CAN HAPPEN FROM ANY GUY BUT ARE RARE TO HEAR SAME WITH THE RARE DEATH
+SOUNDS. BLEND ALL THESE WELL". Four bounces (FARMER SWINGS / HITS / RARE BACKROUND SHOUTS / RARE DEATH SOUNDS .mp3),
+every take a voice 0.15-0.8 s long, quiet (-18 to -24 dBFS RMS).
+- `tools/farmer_voice_pack.py "<Bounced Files>"` cuts each take at its own silences (-42 dB, 0.18 s), keeps 40 ms before
+  and 150 ms after (never into a neighbour), levels each to -18 dBFS RMS under a -1.5 dBFS peak — the same level as the
+  Dealer's grunts — and writes mono AAC 96k: 10 swing, 14 hit, 9 shout, 5 die, 452 KB in all.
+- `farmVox(role, V, {x, z, dist, muffle, p})` plays them; `FARM_VOX` holds the odds and gaps. ONE MOUTH a man
+  (`V.mouth`): a higher `pri` (die 3 > hurt 2 > swing/shout 1) cuts what he was saying with a short fade, a lower one is
+  dropped; at most `FARM_VOX_CAP` = 3 farmer voices at once. Each man's takes are pitched by his `V.pitch`
+  ((pitch/124)^0.25, clamped 0.93-1.07). Position from `V.unit` (set where the twenty are made), else `sfxPos`, else `dist`.
+- Wired: the swing grunt at the strike (`was < A.wind && t >= A.wind`, beside `sfxMutSwing`); hurt in `sfxMutHit`; and
+  `mutVox` hands a `V.farm` voice to `farmVoxRole` — die → farmDie, roar → a shout at 0.35, laugh → a shout at 0.12, tell
+  and hunger silent. So the synthesised "man" throat is OFF for the farmers (it did not sit beside real voices). Shouts
+  share one gap, 8-18 s re-rolled after each (the first may come 6 s in). `farmCrowdTick`: behind a shut door, a muffled
+  shout (lowpass 620) at 0.4 per tick where it used to be a synth cry every 2-5 s; with every door empty, a man out
+  more than 5 m away at 0.45 every 3-7 s.
+- `farm: false` for the woman in mail (`kw` — these are a man's takes; she keeps the synth) and Elvédor, who borrows
+  `FARM_BASE.voice`.
+- Measured, `tools/farmvox.js&n=5400` (90 s standing in the street, a blow on a man every 2.5 s; the headless audio clock
+  is driven by the frames because the context is suspended): grunts on 22 of 69 blows (32 %), cries on 26 of 36 hits,
+  death cries on 4 of 7 kills (die at 0.33 then; set to 0.30 after), 5 shouts 13-24 s apart, never more than 3 voices.
+  `musictest farmers` PASS.
+
+
+## The gargoyles' voices and the "drop" (2026-11-16/17, the owner's recordings)
+
+The owner: "DO THE SAME FOR THE GARGOYLES. ADD THAT HUCKLE THAT SAY "DROP" BEHIND MYLES SOUND TO WHEN THE GARGOYLE LANDS
+BEHIND MYLES."
+- `tools/farmer_voice_pack.py "<Bounced Files>" "GARGOYLE ATTACK SOUNDS=garg-attack" "GARGOYLE DEATH SOUNDS=garg-die"
+  "GARGOYLE DROP BEHIND MYLES SOUND=garg-drop"` → 8 attacks (0.75-2.3 s), 9 deaths (0.6-2.05 s), 1 drop; 436 KB. The
+  death bounce opens on its first take with no silence before it, and the packer only knew sound as "after a silence's
+  end" — it now also keeps a take from 0 to the first silence. Two takes stopped at the -1.5 dBFS peak ceiling short of
+  -18 RMS: garg-attack6 (-24.8) and the drop (-24.1), which `playSampleAt` lifts with gain 1.8.
+- `GARG_VOX` through `farmVox`, each gargoyle its own voice and mouth (`gargVoice(u)` → `u.gVox`; the four share ONE
+  kind, so `kind.voice` would have been one mouth for all four). Every `sfxScpScream` a gargoyle made is gone:
+  `attack` at its tell (dive, rake and bite; the rake keeps its wing hiss too) at 0.55, own gap 2.5 s, any-two gap 1 s;
+  `cry` (the same bank, pri 2) as it cracks off the wall (still under `GARG.voiceT`), when a blow of its lands on you,
+  and its wings breaking (p 1); `die` in `gargDied`, every death, not on a restore. Hits ON a gargoyle stay the stone
+  `sfxGargSmack` (no recording for them).
+- The "drop": `gargSceneStep`'s fall, the frame it lands behind him (`S.phase` → 'crouch'), beside the slam and knock.
+- Measured, `tools/gargvox.js` (the door clicked through as `gargDoor` does, then the fight from the door, healed, a
+  9-damage blow every 3 s from 20 s): the drop at 7.90 s and the landing seen 7.92 (the next frame); at 0.65/0.6 s the
+  attack bank spoke 28 times in 51 s (every 1.8 s, and its takes run to 2 s) — at 0.55/1.0 18 times, gaps 1.3-3.5 s;
+  4 deaths, 4 death cries. `musictest mino` PASS.
+
+- **ONLY THE RARE ONES ARE RARE** (2026-11-17, the owner: "MAKE SURE ONLY RARE DIALOG IS RARE I NEED THE NORMAL ONES A
+  LITTLE LOUDER AND WAY MORE FREQUENT"). The swing grunts and hit cries (farmers 0.42/0.75 → 0.9/1, orc 0.5/0.7 → 0.9/1)
+  and the gargoyles' attack/cry (0.55/0.85 → 0.9/1) went up to nearly always, gain ×1.3 (+2.3 dB), own gaps 0.25-1 s,
+  `FARM_VOX_CAP` 3 → 4. The shouts and the farmers' death cries are untouched. Recounted: farmers' grunts 53/66 blows
+  (was 22/69), cries 33/36; shouts 5 in 90 s, deaths 1/6; the orc 7/7 swings, 17/24 hits (the rest blocked); the
+  gargoyles' attack bank 40 times in 51 s (was 18). `musictest farmers` and `mino` PASS.
+
+- **"I CANT HEAR THE FARMERS HIT SOUNDS"** (2026-11-17). They were playing (counted) but MEASURED AT THE SPEAKERS
+  (`sh tools/farmhitlvl.sh`: the silent frame, the first castle with the fight on, a farmer at 1.6 m, the blade's
+  `katHit` + `hurtMutant`, heard with and without the cry): at gain 1.2 the cry reached 0.05-0.06, the street's own
+  level before any blow (0.05: the fight's music, the other men), under the blade's impact (~0.075) — buried. Two
+  things: `FARM_VOX.hurt.gain` 1.2 → 3.6 (measured 0.10-0.11 alone, twice the street), and the voice cap
+  (`FARM_VOX_CAP`) now only drops pri-1 voices (grunts, shouts) — with nine grunts in ten, four men talking at once
+  dropped the cry of the man you hit. The swing grunt worked out the same way (0.8 peak × 1.05/(1+1.6/6) × the bus
+  0.15·0.8·0.5 ≈ 0.04): 1.05 → 2.0. The bus is linear (no compressor between `sfxBusGain` and `masterGain`), so a
+  voice's level at the speakers is take peak × gain/(1+d/ref) × sfxVolume × 0.8 × volume. `musictest farmers` PASS.
+
+
+## 2026-11-17 — gargoyles back whole on a load, their breaks louder; the paladin bigger; the farmers' weapons canted; voices
+- **ONLY ONE GARGOYLE ON A CHECKPOINT** ("ONLY ONE GARGOYLE SPAWNED WHEN LOADING THE CHECKPOINT"): gargoyles carry save
+  keys (`gargoyle@x,z`), and a save written with three of them dead listed them in `deadUnits` while `garg` stayed 0 —
+  the load stood the fight up with the one. A gargoyle's key is now saved only once all four are dead (`GARG.phase` 2),
+  and a load ignores gargoyle keys from a save whose `garg` < 2 (the owner's existing save mends itself). Probe
+  `tools/gargmid.js` (three killed, checkpoint, reloaded as a death) and `&old=1` (the save rewritten the old way): 4
+  alive on their walls both.
+- **BREAKS TURNED UP** (`gargShatter`): pieces thrown ~40 % harder and spun ~45 % faster, dust ×2.2 (+1.2 where it
+  broke in the air), `gargChips` (50-70 stone shards through the gibs, landing on `gargFloor`), shake 0.55 out to 18 m
+  (was 0.32 to 12), hitstop 0.05 within 7 m. `tools/gargbreak.js`: +105 objects on the break; break frame 30 ms, mean 6.4.
+- **THE PALADIN, BIGGER AND MEANER** — numbers in his kind's comment. The trap: `speedK`/`turnMax` up put him at 4.5-5 m
+  throwing air (his steps are measured at his pace), and a bigger body moved every blow's ground (`rmFrom`) out past 3.2 m
+  so that closer than that NOTHING qualified and the old fallback ("the longest") threw `dkLeap` from 1.3 m, fifteen
+  times running. `warpPick` kinds now fall back to the blow whose ground is nearest and never a charge inside its
+  `minDist`. `tools/dkpick.js` in threes: run-to-run spread is large (one run of a bad setting can look fine) — always
+  three.
+- **THE FARMERS' WEAPONS, CANTED** (`FARM_CANT`, `farmArm`): filmed (`garrison.js&m=film&tool=…`, frames 48-54 of a cut),
+  every cutting weapon stood straight up out of the fist through the blow — the handle square across the knuckles is
+  the fist's line, but a man cutting breaks his wrist so the weapon carries on along the arm at the blow, point forward
+  at rest. The handle is turned 45° (sword) / 35° (axe, mace) from the knuckles' line onto the forearm's. Refilmed: the
+  sword reaches forward along the arm through the cut. Duels after: sword 9/14 landed, axe 11/14; natural fight 19 hurts
+  in 90 s (21 before) — the pace kept. The mace duel printed nothing (unchecked).
+- **VOICES**: `PAL_VOX` (the paladin: grunt 0.85 of his blows — counted 14/23, every hit, phrases on his own clock every
+  14-30 s at 0.6 — 2 in 60 s, death every time in `finishMutant`, gap 3 so `sfxMutDie` cannot double it; `tools/palvox.js`)
+  and `MYLES_VOX` (one bank for his blows and hurts; a talk take on every line of his with words in `showDialogNode` —
+  counted 5 for 5 through `minoKneel`; his death in `minoLetGo` in place of the borrowed last breath, his breathing loop
+  stopped; `tools/mylesvox.js`). `farmVox`'s shout gap is now the farmers' only (`R.bank === 'farmShout'`).
+
+- **The two knights at the throne room's door** (`knMan`, `knIron`) speak in the farmers' recordings "for now" (the
+  owner, 2026-11-17): `voice.farm` (pitch 128 and 104), `u.kind.voice.unit` set in `placeSwordKnights`. Their synthesised
+  tell and laugh go quiet with it, their roar becomes a rare farmer shout (`farmVoxRole`). Not counted separately — the
+  same path as the farmers'.
+
+- **Round the houses, not into them** (2026-11-17, "MAKE THEM GET STUCK ON THESE BUILDINGS LESS", a screenshot of the
+  street). `tools/farmstuck.js&at=0..5` (you standing at six spots, 90 s each; "stuck" = out, wanting you, not busy,
+  under 0.25 m a second — it also counts men holding their turn, so read the wall counts beside it). From the middle and
+  the tower the wall rule turned nothing back; from north of the houses (`at=5`) it sent 308 moves back and one spot held
+  a man 15 s. (1) `fortKeepOut` after its two axis slides now tries the stride turned 30°/57°/80° (his last good side
+  first, kept), then 110°/140° on it — 308 sent back → 0; but alone it walked a man up and down a dead end (44 s on one
+  spot). (2) `farmUnstick` (in `farmUnitPre`): a man wanting you whose steps were turned or refused 8+ times while he
+  made under 0.35 m in 1.2 s walks to the nearest point of `FARM_SPINE` he can see (3 s at most), then fights on. After:
+  that spot 12-13 s (the rest of it is men holding their turn next to you), nothing sent back.

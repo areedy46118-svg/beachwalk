@@ -615,3 +615,64 @@ Then "make the samurai fight audio louder": `SAM_SCORE_LEVEL` 0.82 → 1.64 (+6 
 
 ## 2026-10-18 — the rain louder
 `dojoRainSound`: 0.30 → 0.42 of the dojo mix (+3 dB), the owner: "MAKE THE RAIN A LITTLE LOUDER IN SAMURAI FIGHT".
+
+## 2026-11-16 — the stretching, the hits nobody saw, and the fountain
+The owner: "his model keeps strecing and animatios look unatural … a few of his hits are bullshit too and his sword isnt
+even swung but you get hurt … fight him yourself", then "make the samurai navigate around the fountain too he gets on top
+of it alot". Harness: `tools/samhonest.js`, run headless — `PB_PORT=4231 sh tools/probe.sh
+'evalFile&f=/tools/samhonest.js&n=3600' <out>` (`raw=1` his post-mixer layers off, `kill=1` the ragdoll after,
+`nocarry=1` without the fix below, `fount=1` the fountain test, `side=<ratio>` solo side stills of the worst frames).
+It skins his meshes on the CPU every other frame and measures every edge against the IDLE pose (against the bind pose
+it is useless: the T-pose to any stance is 5x on the hip plates), the forest roots' drift off their idle offsets, and
+every blow that takes health: which part was in you, the steel's nearest approach, tip speed, on screen or not.
+- **THE STRETCH WAS THE FOREST ROOTS SLIPPING.** `installLife` carries the roots (shoulders, upper arms, breast and hip
+  plates, thighs) onto the chest and hips inside the mixer — and `samSmoothPose` then blends the spine's rotations and
+  each root's POSITION separately and linearly, and `shoulderFollow` turns the shoulder after the carry. Measured: roots
+  up to 0.53 m off their sockets (99th 0.34) with the layers on, 0.06 with them off; collar and hip skin 6-9x its idle
+  length in the guard and the walk (1.5 / 5.4 off). `u.fkCarry()` is the carry as a function; the smoother calls it
+  every frame after its blend. Drift now 0.000 everywhere. **The death ragdoll had the same bug**: each root on its own
+  particle, the shoulder plate hung on the chest, the collar 30.8x on the ground. `updateMutRagdoll` calls `fkCarry`
+  last (a limb `ragCut` took off is left alone). What is left (pelvis plate edges up to ~10x) is in the raw clips too
+  and is a few edges of the shirt under the armour — side stills of those frames look like a man.
+- **ONE BLOW IN SEVEN WAS SCORED ON HIS ARM.** 41 blows a minute hands-off: 5 cuts landed on his FOREARM or upper arm
+  from 0.65-0.85 m (inside his own stop) with the steel past your head, 2 more with the steel off the picture, 5 stars
+  from 2.3 m at 17.5 m/s (eight frames of flight). `kind.strikeSegs` (new, in `blowLands`): per chain, only its last N
+  segments count — `[1, 1, 2, 2]`: the wrist-to-tip for a cut, shin and foot for a kick. `hitOnScreen` on him (and the
+  benefit of the doubt now honours it too), `stepBack` 2.4 so a cut thrown from inside his stop backs off to it. Stars:
+  `SHUR.SPEED` 12.5, `SHUR.HIT` 0.36 (was 0.46), `SAM_THROW_BACK` 0.66 (thrown from 3-4 m), the fan ±0.14 (a man
+  standing still takes the first only). After: 33 a minute, every cut on visible steel 0.9-1.6 m off — the old count
+  less the dishonest ones, so the pace is his.
+- **THE FOUNTAIN'S POOL WAS FLOOR.** Bottom basin r 0.86-0.90, rim 0.20 high — under `YARD_STEP`, so only the 0.2 m
+  pedestal was a wall; and a swing's lunge and step-back never pass through `mutClampX`, so he lunged across it and
+  walked UP the tiers (y 1.46). `SAM_FOUNT_R` 0.95: off his nav grid, a blocked line in `dojoClearAhead` (only deeper
+  in — from inside, out is open), and `samFountOut` in his clamp AND once a frame in `update` after every mover (cap 0.6
+  m: at 0.16 a lunge still got in). 40 s with you put across it every 5 s: 0 frames in the pool, nearest 1.29 m, 48
+  swings. You can still wade in it.
+
+**THE HIT CHANGES ABOVE ARE REVERTED (2026-11-16, later; the owner: "THE SAMURAI FEELS EVEN WORSE NOW I LIKED THE FIGHT JUST
+THE UNIMATIONS WERE BAD").** Out again: `strikeSegs` (gone from `blowLands`), `hitOnScreen`, `stepBack` 2.4, and every
+shuriken change (17.5 m/s, 0.46 catch, `SAM_THROW_BACK` 0.50, fan ±0.085). KEPT: `u.fkCarry` after the smoother and in the
+ragdoll (looks only), and the fountain. Measured against HEAD with `tools/samhonest.js` (a minute, standing still): 45 hits
+both, the same mix, blade median 0.22 m both, thrown from 1.10 / 1.13 m — the fight is his old one; the root drift 0.535 →
+0. **When the owner asks about how a fight LOOKS, do not touch how it scores: he tunes the feel himself.**
+
+## His looks, round 3 (2026-11-16: "HIS WALK ANIMATION IS BAD HIS BLADE IS LIKE IN HIS STOMACH. HIS BLADE SHOULD ACTUALLY FACE YOU … HIS ARMS KEEP ROTATION PASSED HIS HEAD WHEN THROWING … DONT CHANGE THE FIGHT AT ALL")
+Probe: `tools/samlook.js` (`m=blade` steel to his core per clip and the guard's angle to your chest between swings, by
+clip and by why it was low; `m=throw` the throw forced from 6 m, per frame his left hand against his head and the upper
+arm's turn a frame, stills; `m=walk`, `m=pov`).
+- **The guard pointed over your head and off you**: `samTwoHand` aimed the point along HIS forward tipped up 0.52 rad —
+  from a belt-high hilt, above a standing man's head — median 31 degrees off the line hilt → your chest, p90 140. Now that
+  line itself, inside a cone in front of him (±0.96 rad across, ±0.61 up/down: at a man beside him the point went through
+  his body and `samKeepClear` turned it out again). Median 0.6 degrees, p90 58.
+- **The "blade in his stomach" was the gap after a string**: the guard eased back in at 5/s once the swing ENDED, so for
+  ~half a second the idle's own one-handed carry showed (blade over his shoulder or pointing back past his belly; every
+  low-guard frame was `openT`). In at 9/s now, and from the TAIL of a cut's recovery (`wind + strike + 0.15 + 0.35 ×
+  recover`, only with no chain queued) — after the blow's window, so nothing is scored differently. Frames > 90 degrees
+  off you: ~15 % → 6 % → under 1 % on the idle with the cone; walk 0.
+- **The throw**: the cock had his LEFT hand behind the RIGHT side of his head (`samuraiThrowClip` targets) and the snap
+  out of the hold took 3 frames (`K[2]` 0.58 → `K[3]` 0.63): the upper arm turned 0.68-0.85 rad in a frame. Cocked beside
+  his own left ear now, elbow up and out, and the hold ends at 0.53 (snap over 0.09 s). Worst turn 0.31 rad; his hand
+  never over his head. The release (`SAM_THROW_AT`, 0.68 s), the star's start (the hand at the release pose, untouched)
+  and the tell (glint from `K[1]` − 0.05, the ring at `K[1]`) are where they were.
+- **The fight is unchanged**, measured with `tools/samhonest.js` (a minute, standing still): 39, 46, 46, 43, 45 hits
+  against 41, 45, 45 before; the same move mix; steel 0.15-0.25 m against 0.22; thrown from 0.85-1.14 m against 1.10.
