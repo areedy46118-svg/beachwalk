@@ -2862,6 +2862,98 @@ streaks (`skSparks`, now with a size `k`) from `skSparkAt` along the line from w
 0.5–0.6, men 1. Skrim's own come off `skrimGuardFx` as before (`blockMutant`/`parryMutant` skip `kind.skrim`, so one burst).
 `spawnSparks` is left for your own blade's strikes and digs, which do land at the tip. `updateSkSparks` floors them at
 `camera.y − playerEye()` outside the whale. Probe `dealerSide&m=guard`: 6 bursts parrying, 8 blocking, stills at mid-blade.
+
+## 2026-11-14/15 — the bone mace
+- `maceItem` (`slam: true`, dmg 2/5, swingK 1.5, windRate 0.62, stamK 1.5, hitStopK 0.08), `orientMace` puts the cord end
+  at +Y and the knob (the head, the lip) at -0.21; the military rest rotation turns it so the handle is at the bottom.
+- **Its own slam** (`MACE_HOLD`, `MACE_LAND`, `MACE_BOUNCE`, `maceHoldPose`, `maceSlamTrack`). The shared overhead (grip
+  flipped to `VM_OVERHEAD_ROT`, hands slid to the neck by `gripY`) sent a club this long out to the horizon and back up
+  standing in the middle; the wind-in flopped it horizontal. `wantOh` is 0 for `slam`, so it is held by the handle
+  throughout and the poses do the turning. Track: hold → a short extra lift → quartic fall → bounce (0.07) → settle back a
+  third (to S + 0.20: the weight) → easeInOut home.
+- **Measured, not reasoned** (`tools/probes.js maceFrames` contact sheets + `maceAxes`): + pitch tips the head back toward
+  you; the arm is yawed -0.45 at rest so a pitch alone tips the club sideways (the poses yaw back ~+0.45). `landBlade`
+  TRANSLATES the arm until the lip (the head) is on the aim point, so the landing pose only sets the club's angle: past
+  -1.6 pitch the handle ends above the head (hanging upside down from the top of the frame); at -1.2 with yaw 0.6 / roll
+  0.7 the head is on the crosshair and the handle comes in from the bottom right.
+
+## 2026-11-15 — the mace made heavy
+- Plain hold = its heavy sweep (the slash cock); **Shift + hold = the slam**, charged at `slamRate` 0.36 (full in ~2.8 s),
+  `windOverhead` from Shift only. `toolDmgBase`: `dmgSlam` 18 × (0.3 + 0.7 × charge^1.6) when `digOverhead`; light 2.4,
+  heavy 5. `bladeRate` gives the mace its shape: windup ×1.55, strike ×0.72, through ×1.05, recovery ×1.45 (`swingK` 1.22);
+  the slam ×0.85 to the strike then ×1.35+. Walk speed ×0.9 carried, ×0.7 swinging, ×0.62 charging the sweep, ×0.38 raised
+  for the slam. `heavyVM`: look-lag ×1.5, settle ×0.6. Held-up tremble grows with the charge.
+- Impact on connect (`equipped.slam` block after the generic slam): hitstop 0.10–0.21 slam / 0.07–0.13 light, trauma,
+  fovKick, slamDip up to 0.24, vm impulse; every connect plays `smash` pitched down by power. A slam that meets nothing
+  (`!connected`) calls `maceGround`: thud, jolt, sparks/grit.
+- Measured headless (`maceFrames`, the slam sheet `mace_slam`): 3 s rise, a 3-frame hang, the fall in ~6 frames, the head on
+  the crosshair for ~27 frames with the bounce, ~30 frames home.
+- **Shockwave** (`maceShockwave`, `MACE_WAVE` MIN_P 0.82 / R 2.6 / DMG 0.55 of dmgSlam): on a slam's impact frame at
+  P ≥ 0.82, connected or not — every live mutant/crab within R of `landPoint()` not already in `blade.hits` takes
+  base × (1 − 0.6 d/R); a RingGeometry of grit (`maceRings`, canvas strip texture mapped inside→outside) expands over
+  0.42 s, ticked from the movement step so it finishes even if you put the mace away.
+- **Measured against bodies** (`tools/probes.js maceFight`, `mutSpawnTest`): a full Shift slam at dmgSlam 18 left a red
+  mutant (29 hp at this scale) on 1 — raised to **30**, it kills the red outright and the two darks beside and behind it
+  (the shockwave and the blade's cleave along its line). Light 2.4, the held sweep 5 — but only past `MUT_HEAVY` (P 0.85,
+  i.e. ~79 % charge): at `windRate` 0.62 that was a 1.27 s hold and a 1.17 s one came out as a light, so it is 0.7 now.
+- The shockwave ring sat at `landPoint()`'s own height — chest-high over the body, so it floated and read as far off; it is
+  on the floor now (`camera.y − playerEye()`). It is frozen through the slam's hitstop (game time) and opens after. Its
+  texture was a pale opaque band ("a plastic donut"): now a low-alpha grit front broken up by `destination-out` clods,
+  wrapped round the ring with a random turn, and on open ground (`!inRoom() && !bwInCastle()`) the sand's own puffs.
+- 2026-11-16, the owner: less damage, but a direct full slam one-hits the small ones, the wave weaker: dmgLight 2, dmgHeavy 4,
+  dmgSlam 20 (a full slam kills a dark mutant at 19, not a red at 29), `MACE_WAVE.DMG` 0.3 (6 at the middle). Shock Ring 7.5 %.
+- **Momentum (2026-11-16, the owner: "when you swing you use the momentum to swing back the other way … like Chivalry").** A
+  press after the blow, up to `MACE_CHAIN_LATEST` 0.86 of the swing, queues `'return'`; it fires when the follow-through has
+  run out (`p ≥ SLASH_THROUGH`), and `chainSwing` (mace branch) flips `slashDir`, alternates `comboStep`, carries a share
+  of the last swing's power (0.12 + 0.5 × digPower, ≤ 0.55 — a heavy's back-swing hits harder) and starts a FRESH swing from
+  the live pose (`startDig(carry, null, true)`, `maceChainSwing`: its rise runs at 0.95 not 1.55). Measured frame by frame
+  (`maceCombo`): going straight from the follow-through into the next blow drove the head up through the vertical in the
+  middle of the picture; rising into the mirrored cock first makes a figure of eight. The follow-through is longer (rate 1.5,
+  ease-out cubic, `throughPose` carries 10–18 % further round and lower), and a body it lands in pulls the through's end 55 %
+  back toward the blow (`_poseC`), so it stops short and the haul home starts from there.
+- The backhand's poses by sign alone were not a mirror on screen (the arm's own yaw and lean): the handle stood at 108° at
+  the blow against the forehand's 8°, and the follow-through dropped straight down. `MACE_BACK_ROLL` [1.1, 0.7] corrects the
+  roll at the blow and the through's end; measured after: head (0,0) with the handle at (−0.53, 0.12) against the
+  forehand's (0.51, 0.07).
+
+## The mace's momentum, felt this time (2026-11-16)
+The owner: "you didn't even change anything with the mace like I told you". The first pass had the figure-eight chain
+(`chainSwing`), but it only fired on a click inside a 0.3 s window (impact → digT 0.86), and EVERYTHING ELSE still felt the
+same: (1) the haul home without a click was the spade's `easeOutBack` — half-way to rest a few frames after the
+follow-through, then a bounce: the "instant reset"; (2) a hold during a swing went through `startWind`, which cancels the
+swing and forces the forehand (`comboStep = 0; slashDir = -1`), so a heavy threw the momentum away; (3) a click a moment
+after the swing ran out started a fresh forehand from rest. Now:
+- `maceSwingBack(out, from, rt)`: the recovery is a pendulum — cosine ease from the far end of the follow-through, the head
+  dipping low through the middle (pitch +0.34·sin, lift −0.07·sin), 9 % past rest and back. Recovery rate 1.45 → 1.8,
+  follow-through 1.5 → 1.75 (`bladeRate`).
+- The chain window is from the fall to the end of the swing (`MACE_CHAIN_LATEST` 1.0, and `digT >= windupEnd()` instead of
+  `digImpacted`); a click within 450 ms of a swing ending (`maceEndAt`) still goes the other way.
+- A hold during a mace swing (or within 450 ms of one) is a CARRIED heavy (`maceCarry` in `startWind`): wound up the side
+  the head is going (`-slashDir`), blended in over 0.24 of windT (`maceWindCarry`) instead of 0.10. Mirrored whole, the
+  backhand cock hung off the top-left corner for the whole hold: `MACE_BACK_COCK` (side +0.30, lift −0.10) brings it in.
+- `maceTurnK()` in `applyLook`: the look turns at 0.5 through the fall and follow-through, 0.75 for the rest of a swing,
+  0.78 while holding — the Chivalry turn cap.
+- Probe: `maceMomentum` (one click let run out; a click then a hold in its follow-through), sheets `one` and `carry`.
+
+## The mace crushes, and its end and its heavy hold (2026-11-16, round 2)
+- "Not as jabbing … a blunt force hit meant to crush": the mace no longer uses the blade's slashCock/Mark/Through (level
+  cock, laid flat across the middle with the arms pushed out — a poke). `maceCrush(out, 0|1|2, P, d)` with `MACE_CK`,
+  `MACE_CK_P`, `MACE_MK`, `MACE_TH` (forehand `f`, the momentum back-swing `b`): cocked UP over the shoulder, DOWN onto the
+  mark the way the slam lands (`landBlade` puts the head on the aim), on through low; the strike is quartic in like the
+  slam (hang, then drop). Read off held poses with `window.__bwPose` (a harness hook in `updateViewmodel`) and the probe
+  `maceGrid&set=<json [label, pose] list>`: on screen +side is right, +roll tilts the head left (CCW), and with no
+  `landBlade` the slam's landing pose sits at the bottom of the frame — a through pose is seen as it is, so it has to be
+  framed by itself (lower than lift ≈ −0.05 it left the frame for a quarter second).
+- "On a heavy swing the mace goes out of frame and you can't see the glint": the plain heavy's hold was the blade's level
+  cock, head at the right edge (x 0.99) and the rest off it, and `updateGlint` found nothing in frame to sit on. The mace's
+  own cock holds the head at (0.74, 0.85), the glint at (0.69, 0.63) — measured, `maceHolds`.
+- "The end of the club is cut off": the scan's grip end is a stepped saw cut. `maceCapEnd` (in `orientMace`, once per
+  geometry) brings every vertex past 7.5 cm from the end down onto a flat (the shaft is low-poly: its last ring under the
+  steps is 23 cm down, so cutting triangles took off a quarter of the club) and puts a worn end on it: an ellipsoid no
+  wider than the shaft, 3 cm proud, lumped and pitted by noise, skewed and ground flat on one side, grimed with vertex
+  colour (its own material, `vertexColors`). Measure in the frame `w` puts it in (o.matrixWorld — `w` has no parent yet);
+  in w's local frame the long axis is not y and the first try made a lens the length of the club.
+
 - **The sawn-off hits a little harder** (2026-11-15, the owner: "make the shotgun hit a little harder"): `SG_PELLET_DMG`
   3.1 → 3.6 (+16 %; nine pellets a stride off 28 → 32). The falloff (`sgFall`, `SG_FULL` 4.5 / `SG_FAR` 24), the spread
   and the pellet count are as they were; the pliosaur's share reads the same constant.

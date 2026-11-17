@@ -897,3 +897,8 @@ on the beach left the opening song; beach → fort under the black took it out a
   WEAPONS AND CROUCH"): `minoGoDown` plays `MYLES_VOX.die` as well as `minoLetGo`. Its 5.4 s take then held his mouth
   through his first lines and they went unvoiced (3 of 5): `talk` is pri 4 now — a new line always speaks, cutting
   whatever he was making. `tools/mylesvox.js`: the death at going down, five lines five takes, the death again dying.
+
+## 2026-11-14 — the owner's electricity
+`tools/elec_sound.py` (afconvert + plain Python): six zaps cut where the crackle peaks, a 2.7 s shock off the loudest run,
+a crossfaded loop padded REC_PAD each end for `recLoop`. All sewer sparks/zaps and `sfxSmashElectronics` use them with the
+old synth as the fallback when a buffer is not in yet.

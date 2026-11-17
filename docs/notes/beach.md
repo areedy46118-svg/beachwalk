@@ -1911,6 +1911,27 @@ stone within 40 m. **The rings are wound facing down: DoubleSide**, or nothing
 draws (a forced red fragment found it). The sea's clock can be set for a test
 through the ocean material's `uTime` (high tide at t ≈ 34.9 + 139.6 n).
 
+**THE WAVES CLIMB THE ROCKS AND GO OVER THEM (2026-11-16, the owner: "make sure the waves actually splash up and
+go over the rocks … right now it just phases through and looks like little pebbles").** Three things, one wave:
+- `rockWashGLSL` / `rkPhaseJS` / `rkStrengthJS` (by `waveGLSL`): each stone is struck by one wave per 5 s (`RK_F`),
+  its phase `fract(-x·0.11 + z·0.021)` of the stone's ORIGIN, so a front runs up the beach at ~1.8 m/s and the stones
+  go white seaward first. `rkClimb` is 0 → 1 in 0.3 s, then drains (exp) over ~2 s. No hash in the phase: a
+  `fract(sin(n)·43758)` of a world coordinate does not agree between float32 GLSL and JS doubles.
+- `rockWash(mat)` patches THE ROCKS' OWN MATERIAL (shared with `dressStone`'s throwables; gated to an origin inside
+  the beach's box so a stone in a room never sees the sea). Per fragment, wherever the water reaches
+  (`shoreLine − x + 0.9`): white foam under `wl + run·climb·face` (wl = the ocean's FACET height, `facetGLSL`, shared
+  with the rings now; face = more on the −x side; tongues of water new each wave), thinning toward the top and
+  streaking as it drains; a foam lap riding the waterline; and the band the waves keep wet darkened only to ~0.85
+  with a fresnel sky sheen. Darkening it hard (0.62) made the skirt stones black holes in the bright shallows —
+  that IS the "little pebbles" look. A stone lower than the climb is covered at the peak: the wave goes over it.
+- `buildRockSurf` takes every stone now (it skipped r < 0.3 or top < 0.12, which is all of the skirt) with rings
+  sized to the stone, driven by the same `rkClimb`. `updateRockSurf` throws water drops (`spawnSplash`, ripple off:
+  the ocean has 8 ripple slots and they belong to the player's wading) off the struck face once per wave, more and
+  higher off big masses, and over the top of a low one. The pale `spawnPuffs` spray was dropped: lit from behind it
+  read as dark shards in the air. `SPLASH_POOL` 110 → 170.
+- Probe: `sh tools/probe.sh "rockWash&t=295.6&cam=4.2,1.6,12.2,2.2,-0.2,8.6&every=15&frames=300" out` (camera
+  x,y,dz,lookX,lookY,lookDz from a wall; `wall=1` for THE WALL at `ROCK_Z`, else the one at z 60).
+
 **THE FIRST DIG CALLS THE FIRST CRAB (2026-10-14).** `revealMoundNear`: on the
 first find (not on a replay, not in dev mode, within 45 m) the loner
 (`crabUnit`, out at (−7.5, −20)) gets `called`, which lets it past its wake

@@ -769,3 +769,310 @@ levers".
 - Harness: `__bw.flashlightItem` is exposed for torch tests. Teleporting straight into the room off the centre line
   puts you back at the mouth ("walked into the concrete face") — enter with `__dr.at(…, 0, …)` then move. The preview
   pane's canvas can be ~300 px wide: judge small things after `renderer.setSize(1280, 760, false)`.
+
+**The bridge, the emergency lamps, the torn wires, the chest in the corner (2026-11-14)** — the owner: a bridge instead of
+the board; more lights on the room's side and one over the bridge, "lit up all the time"; the live water a bar a second, not
+death; the chest "in the left corner ... so the player can see it from outside the door"; the wires into the water, frayed,
+sparking; the thing stalking sooner but slower to leap; safe in the storeroom; "his eyes pop out of his head when he grabs
+you"; the flashlight back to a glowstick.
+- **The plank is gone** (its carry, lay, viewmodel, prop and save fields `plank`/`pz`, which old saves still carry and nothing
+  reads). The bridge is fixed at `SEW.BRIDGE_Z` (-3.7): steel channels on the lips, boards across, rails on posts over the
+  channel's edge (the end posts at |x| LIP - 0.06 so walking the lip is not snagged; no collision on them). Its rect in
+  `sewRects` is always there, `SEW_BRIDGE_HW` = BRIDGE_HW - PLAYER_R - 0.03 (0.19) off its line, with the plank's old funnel
+  onto it. Deck `SEW_BRIDGE_UP` 0.08 over the walk (`groundY`), wood step sound. The thing does not rise under it and does
+  not leap at you on it (the plank's rule, kept). Walked (`__sw.route`): across both ways and on and off at slants, no stall.
+- **THE DECK WAS BLACK** at the plank's 0x8a7a66 / emissive 0.16 — under the walk's mist sheets and in linear light the plank
+  map is ~0.05; a red MeshBasic override showed it drawn and in frame. 0xd2bc9a with its own map at 2.0 reads as boards.
+- **"Lit up all the time" was the light pool.** Only `LIGHT_SLOTS` (6) lamps light anything, the nearest, each to its range —
+  a lamp down the tunnel was a halo over a black walk. Each lamp now paints its pool (`lampPool`: an additive `glowTex` plane
+  clipped to the floor it lies on, uv centred on the lamp, `SEW_POOL_K`), full from afar and backing off within ~3-9 m where
+  the real light has it. Walk lamps lay one on the walk and a fainter one on the water (`walkPools`). Lamp range 7.5 -> 9.
+- **Emergency lamps** (`SEW.EMERG` over the far walk, the bridge's, one in the storeroom over the chest; `lp.always`,
+  `cutAt = Infinity`, `sewApplyState` forces them on): they burn after the generator is off, which is when the walk back to
+  the bridge and the room happens. **Measured from the ladder: at base 1.9 the frame's mean went 4.8 -> 23** (the place was a
+  lit corridor); 0.7 for the walk's and 1.4 for the bridge's gives 13.
+- **The chest** is at (7.06, -8.1), the far wall's south corner — left looking in through the gate from (4.15, -6.78), and in
+  the gate's frame from there (from the walk outside the door's passage it is still hidden: the passage shows only the box).
+  **By the box's glow and the walls' lift x 2.6 it was black under its own lamp** (red override: square in the frame): its own
+  map whole as emissive, `SEW_CHEST_LIFT` 0.8 (0.55 a faint shape, 1.0 pale). `Box_T` went to the north-east corner.
+- **The wires**: three down the wall's foot and out under the flood, one ripped short hanging a hand over it; each end a split
+  rubber collar and seven copper strands (`fray`); sparks oftener and more of them, the hanging one shedding them downward
+  (`s.hang`). The zap light moved out over the ends.
+- **Live water**: `sewZap()` is `damagePlayer(1, from)` every `SEW_ZAP_EVERY` (1 s) while in it, `from` a point 1.5 m deeper in
+  so the hurt's shove is back out onto the walk. Measured holding the body in it: 4 -> 3 at 0.04 s, 2 at 1.07, 1 at 2.14 (dev
+  mode stops at 1).
+- **The thing**: `FIRST` 1.5 (was 4), `GAP` [[3.5,7],[2.5,5]] (was [[7,13],[4,8]]), `RISE` [10, 8] (was [7.5, 5.5]), `BACK_IN`
+  4 coming back down into a hunt. `sewInStore()` (x > WALL + 0.3: the door's passage and the room): at the top of a rise it
+  lingers instead of leaping, and `sewMonLeap` refuses there too. Tested: risen in full with you at (6.0, -6.8) -> `linger`.
+- **The eyes**: the glow stands `SEWMON_EYE_OUT` (0.15) in front of the sockets so it shows across the water; at the grab, half
+  a metre off, that read as eyes floating off the face. `sewMonEyes()` lerps each glow from the socket (`SEWMON_EYE_IN` 0.035)
+  out to 0.15 over 0.9..2.8 m and shrinks it 0.14 -> 0.06; called from the pose and from the scare. At 0.74 m they sit in the
+  sockets, amber.
+- **The glowstick** (`makeGlowstick`, a pooled teal light `lpAlways` 12 and a halo) is on the ledge again; `gainGlowstick`. The
+  sewer's SpotLight is still built (a flashlight carried from an old save still uses it) but nothing lies on the ledge lit.
+- Harness: the zap's shove moves the camera between `go` and a still — look into the room with the power off
+  (`sewRestore({ lv: 15, gen: 1 })`), or the frame is from wherever it threw you.
+
+**The second round of the day (2026-11-14)** — the owner's screenshots: the pipes out front untextured, the front's wall not
+meeting the sand wall, random items and floating things in the tunnels, every light out with the generator "even on the
+other side", the storeroom's lamp in the middle, a glow on the chest, two jars and a syringe "on this corner", and the
+monster pulling you into its mouth before the black.
+- **The front**: measured by ray, the cliff along here is 3.3 m tall and its face stands at x 15.1-16.2 in the world;
+  the wings' fronts are at 14.24 and they were 0.7 m deep — sky showed between them and the sand. Three tries, the owner
+  steering: (1) wings held at the bank's height, 2.8 m deep: "too thick"; (2) the cliff bent forward onto the wings in
+  its vertex shader: not wanted; (3) **the same stepped wings, same heights, `WD` 2.6 m deep** (copings the full depth),
+  so each step runs back into the sand: "just take the geometry and extend it back to the sandwall ... keep the same
+  shape". (Note for (2): the cliff is snapped along z every CLIFF_PERIOD, so a local change to it has to be in world z in
+  the shader, never in its geometry.) The bore's shell was r 2.95 — its top at 4.11 stood 0.8 m out of the cliff, a dark
+  hump over the coping — r 2.05. The weep pipes and their rust stains are gone (the "pipes out front").
+- **The bore's dumped junk is gone** (tyre, stick, brick, bottles, rags, board): the silt meets the wall at |z| 0.89 and
+  the tyre's middle was at 1.02, the stick's end in the brick. The pebbles stay.
+- **The sewer's rubbish is gone** except the bags by the north grate and the storeroom's crates: `Trash_M`'s box ran out
+  to x 0.8, over the channel; `Pipe_003`'s end was in the wall; the tyre and brick pile read as dropped on a set.
+- **All lamps are on the generator again** (`cutAt` 2.6-3.6 s by distance from it, the room's last). Measured: 12 of 12
+  lit before the button, 0 of 12 six seconds after. The chest's glow (`sewP.chestGlow`, a warm sprite, until it is
+  looted) is not a light and stays.
+- **The storeroom's lamp** hangs in the middle of its crown now.
+- **"This corner"** was read off the last screenshot (a walk, the branch's grate on the right, the fillet's raised
+  corner): the far walk's inside corner into the branch. Two jars (`sewP.floorJars`, `sewFloorJars` bits, saved as `fj`)
+  and a syringe lying there as dressing (you always carry one; `addToInventory` would refuse a second).
+- **The bite** (`SEW_BITE`, `sewBiteBlack`, `sfxSewBite`): `SEW_DRAG.UNDER` 1.1 -> 1.6; over it the eyes' landing distance
+  goes 0.52 -> 0.06 and is lifted `DROP` 0.24 so the mouth comes to the lens, the look turned down onto it; a crunch at
+  0.62 of the way; a black div at z-index 19 (over `#death`'s red at 18, under the card at 60) fades in 0.45-0.95.
+  Measured in dev mode: 0.11, 0.53, 0.91 over the last half second, and gone again when dev mode lets you go.
+- **TRAP: a Sprite inside an interactable throws on the hover's ray** ("Raycaster.camera needs to be set"): `sewGlow`
+  sprites now carry a no-op `raycast`, and the ledge glowstick's are cleared.
+
+**The scour, and getting stuck (2026-11-14, later)** — the owner: the front "more detailed with the erosion and not as
+plastic looking and ameteurish ... blend better with the art style"; "I keep getting stuck on things in the sewer also
+especially on the storage room door".
+- **The scour is one sculpted patch in the beach's own sand** (`drainScour` in main.js, after `bakeStatic(drainTunnel)`):
+  a 0.2 m grid over x -14.2..-0.14, |z| 6.6 in the drain's frame, heights from the model's own channel path
+  (`userData.scourPath`): a damp floor, berms either side (fbm-broken), older braided courses cut through them, rills down
+  their flanks, sand banked against the headwall either side of the mouth, the flat pool, ripples and lumps. Uv is the
+  beach's (`SAND_UV`, as the whale's berm), the material `sandMat.clone()` through `sandShader`, so grain, wet edge,
+  moon road and cloud shade are the beach's own; wet/dry is a TONE per vertex (`aWet`, `aDry`) multiplied in before
+  tonemapping. Heights >= 0.004 (the beach is a plane at 0, recentred: a dip below it would be covered); the rim row is
+  sunk to -0.04 so there is no edge. Gone from the model: the wet strip, the braided plates, the rills, every icosahedron
+  mound and slump, the wrack lumps, the dodecahedron blocks (now five tipped, half-sunk pieces of the wall's own brick
+  and one of its concrete). Kept: the water thread, the pool, the gravel.
+- **THE STALL AT THE STOREROOM DOOR WAS THE FUNNEL.** `sewClamp` drew the body onto the door's line whenever `mx > 0` near
+  it — walking along the far walk past the door, the least drift toward the wall did it, every frame, and you stalled at
+  z -7.08 (walked: `__sw.route` from (2.1,-6.3) to (2.1,-7.6)). Both funnels (door and bridge) now need the move to be
+  mostly across (`|mx| > 1.2 |mz|`). Diagonal entries into the door from both sides and onto the bridge still work from
+  rest (walked).
+- **The open gate** swings to `SEW_GATE_OPEN` -2.45 (was -1.75: a metre straight into the room off the door's jamb), back
+  against the north side of the room's mouth, and is held off as a segment (`sewP.gateSeg`, R + 0.04), not its box.
+- **Harness: `__sw.route`'s legs time out, not stall, under `__bw.frame`** — 6 frames are ~0.04 s of game time, so a 3 m leg
+  at the default `maxSec` 8 ends short and reads as stuck. Use `maxSec: 40`. And a leg that turns straight back on the
+  last spends its first half-second braking: a "stall" there is the harness; try it from rest before believing it.
+
+**The haze, the mist, a second bridge (2026-11-14, last)** — the owner: "this weird fog line for the atmosphere", "the
+light effects look weird and too shaped ... you can see the triangles emitting from the light ... make it more ray traced
+and blended", and "another little bridge where that screenshot is to get on the other side and put a light over it".
+- **The mist sheets are gone.** Five flat Lambert planes at fixed heights drew a hard line wherever they met a wall, the
+  bridge or the frame. The fog chunk's ground mist does it alone now (`SEW_MIST` 0.85 / 0.7, was 0.6 / 0.65 under the
+  sheets).
+- **The lamps' cones are gone; the light in the air is computed** (`hazeVS`/`hazeFS`, made in `makeLamp` when it has a
+  `footY`): a card on the lamp's vertical axis turned to you about it (in the vertex shader), and per pixel the closed-form
+  in-scatter of a point light along that pixel's view ray, `(atan(s1/h) - atan(s0/h)) / h` with h the ray's nearest
+  approach to the bulb, weighted down below the shade, faded by the floor and with distance; its value is nothing
+  before the card's edges (`reach` on h, and the card's own margins), so no geometry shows. `hazeR` per lamp keeps the
+  card inside the walls at the lamp's height (walk lamps 1.25: the wall is 1.45 off; the room's 1.0; the bridge's 1.5;
+  the second bridge's 1.2). `SEW_BEAM_K` 0.16 (0.045 measured as nothing, 0.2 a soft glow round each lamp).
+- **The floor pools have soft edges** (`poolVS`/`poolFS`): a bell from the lamp, faded over 0.3 m to every edge of the
+  rectangle it lies on — the glow texture cut to the walk had drawn a straight line along the lip and the wall's foot.
+- **The second bridge** (`SEW.BRIDGE2_X` 1.9, along z across the branch's mouth at T_Z; `bridgeAt(M)` builds both): its
+  rect, the branch's far walk, the far walk on south to the dead end, and the inside corner's fillet are in `sewRects`;
+  its own funnel (along z, only heading onto it); `sewOnBridge` knows both; the thing does not rise under it. A lamp
+  over it on the generator's power. Walked: across both ways, on at slants, down the far walk to the dead end and back.
+- **The branch's grate is broken open over its far (south) walk** (the owner: "make the bars on this side broken and bent
+  in a way to where you can walk through it ... I want to put a new area over there", then "put the broken grate part on
+  the other side"). **The kit's bars are long boxes with corners only at their ends** (measured: 528 vertices in the whole
+  grate; a vertex-bend did nothing): that grate is rebuilt from tubes to the kit's own measure (`PROF_B`'s arch, a 0.21
+  frame, bars 0.1 across, uprights 0.4 apart, cross bars at the kit's 0.06 / 1.4 / 3.25) in the kit's metal, and over the
+  south walk (`SEW_GATE_BREAK.ZC` -1.9) the uprights bow away and spread in an eye, one is snapped with curled ends, the
+  cross bars over the eye are torn out with their ends curled. The branch's south walk runs on through to x 17.3
+  (`SEW_BRANCH_FAR`; the black where the branch runs on is at 17.9) — the next area goes there. Reached by the second
+  bridge. Walked: every hall, through the gap to the end and back, down the far walk to the dead end — no stalls (the one
+  miss was a point beside the solid bag in the far walk's corner).
+- Harness: a long `__sw.route` run passes 45 s — start it in a promise that writes `window.__rt` and poll that.
+- **Past the broken grate** (the owner: "add lights on that side and put a grate here blocking the player from leaving and
+  add more tunnels on the other side the player cant get to but can see. add a door here too to a new area ... have some
+  be broken"): the branch's end grate (rib + warped kit grate at `SEW.BR2` 17.94, where its last piece ends); past it a
+  length of tunnel, a T (`Serwers_001` at yaw pi/2, centre `T2_X` 27.37, its branch to the north, +z — kit z runs along
+  world x, kit -x along world +z), a tunnel off the T to `SIDE_END`, and the main line on to `BEYOND_END` 36.8, black planes
+  at both ends, water under all of it, `sewOpenAt` knowing it. Five lamps (`dead` never lights; `bad` stutters on and off
+  the whole time it has power), all on the generator — measured 17 of 18 lit (the dead one) and 0 six seconds after the cut.
+  The far walk stops at the end grate (`SEW_BRANCH_FAR`). **The door** (`SEW.DOOR2_X` 12.6, `sewP.door2`): a steel leaf in
+  a brick surround 0.75 deep — the wall leans out 0.65 m above the walk, and the surround fills to its straight — shut, its
+  prompt says something holds it from the other side; the next area is to hang off it. Walked past it hugging the wall,
+  to the end grate and back: no stalls.
+- **The grates are sealed to the tunnel**: a 0.25 m brick bulkhead in each grate's plane (north, the branch's broken one,
+  the end grate), outside = the egg section a hand bigger, inside = `PROF_B` a hand smaller, the tunnel's brick at its own
+  `uvRate`. (Block sits after `uvRate`'s declaration — before it was a dead-zone crash.)
+- **A second cable** from the generator's other end up the dead end, along the far wall's straight (y 1.9), over the crown
+  to clear the branch's mouth, through over the door at DOOR_Z - 0.24 into the same box; a spur north to the lamps beyond
+  the door; a drop up the vault to each `SEW.EMERG` lamp. Seen from the generator: both cables drop to it, one each end.
+
+**The ladder's lamp comes down, and the thing can be killed (2026-11-14)** — the owner: the "back light" falls and sparks,
+you kick it into the water on its cable; power on, it shocks the creature to death; power off, it does nothing until you
+turn the generator back on; it screams and floats up dead where it was.
+- `sewLL` 0 hanging / 1 on the walk / 2 in the water (saved `ll`); `sewMonDead`, `sewMonDeadAt` {x, z, yaw} (saved `md`).
+- **The fall** is the first lever's surge (`sewPullTick` sets `sewP.fallIn` 1.4 s): a stutter, a crack, it drops off its
+  rod (the rod stays) in 0.5 s and lies FLAT ALONG THE WALK (`SEW_LAMP_DOWN`, Euler order YXZ — tipped about z it stood its
+  shade up against the wall), its cable slack from the rod's end (`sewLampCable`, rebuilt while it moves). While there is
+  power it spits sparks (`sewLampSparks`, the droplet pool's sparks and a flash sprite). The ladder lamp is `dead` after.
+- **The kick** (`sewKickLamp`, its proxy on the lamp's `hold`): over the lip into the channel in 0.45 s, a splash; power on
+  -> `sewElectrocute`. `makeLamp` now hands back `hold`, `home`, `rodY`, `lampH`.
+- **Back on**: `sewCanRestart()` = power off, lamp in the water, thing alive; the button says "Turn the generator back on";
+  every lamp that was burning catches again (not the dead ones), the room's flood is live again, and `sewElectrocute`.
+- **`sewElectrocute`**: the channel's emissive lit blue and flickering for `SEW_SHOCK_T`, sparks over the water, zaps; the
+  thing dies where it was (in the channel x clamped in, laid along the longer reach of water; in the branch along it), its
+  sounds cut, the scream 0.4 s later. `sewMonTick` hands over to `sewMonDeadTick`: bind pose, eyes out, rising from under
+  over ~3 s to float face down (`body.rotation.x` 1.48), bobbing, ripples and bubbles. A restore puts it already floating.
+- Tested in the pane: power on — fell, kicked, dead at its spot (z -14.76), floating face down; power off — kicked, alive;
+  "back on" — dead at its spot, 16 lamps relit. Harness: `__bw.sewKickLamp`, `sewElectrocute`, `sewLampS()`.
+- **Moved to the branch's failing lamp** (the owner: "make it so it happens at this light and not the one near the door"):
+  `sewP.fallLamp` is the `bad` lamp at `SEW_FALL_LAMP_X` 15.2 over the branch's far walk; it falls when you come within
+  `SEW_FALL_NEAR` (6.5 m) along that walk past the broken grate (no longer the first lever's surge). It lands along the walk
+  (`SEW_LAMP_DOWN` ry pi/2 + 0.25) and the kick puts it in the branch's water (`SEW_LAMP_WET` z T_Z - 0.45). The ladder's lamp
+  is an ordinary lamp again. Tested: walked from the broken grate — it fell at ~8.7 m; kicked with the power on — the thing
+  died where it was in the main channel (z -10.2). The cable runs from the empty rod into the water.
+
+## 2026-11-14/15 — the lair, the back key, the lamps by lever, electricity
+- **The far lamps wake with the levers.** Every `sewP.emerg` lamp carries `need` (levers down before it catches);
+  `sewLampOn(lp)` = power + not dead + `sewLeversN() >= need`. Coming down: only the bridge's and the failing branch lamp
+  (need 0) of the 12, plus the ladder's and the generator's. A pull's lamp lighting calls `sewWakeFar()`, which gives each
+  newly allowed lamp a staggered `wakeIn` (0.55 + 0.42 k s); `sewApplyState` and the restart use `sewLampOn`. Measured
+  headless (`tools/probes.js sewLair`): 2/12 lit at 0 levers, 6 at 2, 11 at 4 (one is dead).
+- **The back key's beacon.** `addItemShine`'s `beacon` column lives in the SCENE, not under the root, and stood whenever the
+  root had a parent — so a hidden root (the key on the living monster's back) would have stood a light over the thing in
+  the water. `updateShines` now walks the root's ancestors and shows the column only if all are visible. The back key uses
+  strength 3, through 1.4, beacon 2.4 (at 2.2/1 it was a hair-line from the walk). `sewP.backKeyFit` rebuilds it when the
+  owner's key glb lands (`dropShine` then `addItemShine` again — the shine caches the materials it lifts).
+- **The lair** (`sewBuildLair`, `SEW_LAIR`). Corpses are built from joints (`body(sink, T, J, o)`: `miss` limbs → stump + red
+  cap, `open` = which way its front faces in its own frame → cavity + rib arcs, `guts`, `shirt`, `half`). The first build
+  was a stick man (13 cm torso, 4 cm arms); now a ribcage and belly ball on the trunk, arms 6.6/4.6 cm, legs 10/6.6 cm,
+  head 11 cm, plus rot patches. The hung one is its own group (`sewP.hung`, merged per material, a prop rect round it),
+  turned by `sewLairTick` with the flies (`sewP.flies`, Points) only within 9 m. Claw marks are thin diamonds (dark groove
+  over a paler rim, polygonOffset) on every inner wall face and the passage. Blood blots are fan meshes, the drag is
+  strips. The four green rot glow sprites came out: at room distance the additive cards read as pale squares. The lair
+  light sits low (F + 1.45, 0xa8b878): at F + 2.0 it put a lit disc on the crown and left the floor dark. Mace shine lift
+  0.12 (0.4 washed the bone into a white bar).
+- **Electricity**: `tools/elec_sound.py` cuts the owner's recording into `elecZap` (6), `elecShock` and `ELEC_LOOP`;
+  `sfxSewZap` picks shock for k ≥ 1, else a zap pitched by k; the box's buzz is the loop through `recLoop`;
+  `sfxSmashElectronics` plays a zap first.
+- **Headless looks** at the sewer: `sh tools/probe.sh sewLair | sewLairClose | sewBackKey` (own Chrome, the far chain
+  parses at full speed there — in a hidden or unfocused pane it crawls: rAF stops and `bwTurn` waits).
+
+## 2026-11-15 — the lair, again: an animal's den
+- The owner: "more detailed and not as plastic … nothing floating … get rid of the guy hanging, it's more like an animal".
+  The built corpses and the hung one are gone. Bones are the owner's scans: `skeleton-bones.glb` (Skeleton Pre-cut: 18
+  separate pieces, `SK_<Part>` node names, scaled so the whole is 1.72 m) thrown twice through `heapList` on the heap plus
+  eight dropped about the floor, merged into one mesh; `skeleton-remains.glb` (DDFun's sat skeleton, scaled 1.02 m tall)
+  twice — sat against the west wall (`SEW_LAIR.SIT_YAW`), and rotated onto its side by the nest.
+- **`restOn(g, x, z, yaw, roll, sink, upright)`** is the no-float rule: longest side level, rolled, yawed, pitched to the
+  slope between its two ends (`groundAt` = floor + heap mound + nest mound), then lowered so its lowest vertex — each
+  measured against the ground under THAT vertex — is `sink` into it. Gore, rags and the mace use `groundAt` too.
+- The heap is a displaced plane (`heapH`, 1.0 m radius, 0.30 high, rim sunk under the floor) in a canvas dirt texture full of
+  bone chips; on #2a241d with 260 chips it read as a black disc. Rags use a canvas weave texture with holes and eaten edges
+  cut by `alphaTest`; flat floor scraps read as grey tiles, so only six small crumpled ones remain near the nest.
+- Bone tint 0x9c958a (0xa69878 went orange under the lair light). A `//` comment pasted mid-line ate the rest of that line
+  and the whole module failed to parse ("Unexpected end of input") — check with the osascript JavaScriptCore trick.
+- **Lair air** (in `sewAudioTick`): `A.flyG` four detuned saws each with two slow FM wobbles through a 620 Hz band (flies),
+  `A.rotG` low sines; `lairK` = 1 in the room, 0.45 in the passage, 0.15 near the open door, `flyK` rises near the heap and
+  the dead and with `sewP.flyBurst`; a bone clatter off the heap every 12–30 s; drips sooner in there.
+- **The scare** (`sewLairScareTick`, flag `sewLairScared` saved as `ls`): crossing into the room (lz < Z1 + 0.35 near the
+  door's x) once — `sfxLairSting`, a bone clatter off the heap, `sfxRatShriek`, a procedural rat (`makeLairRat`, ×1.45:
+  life-size was lost at the 105° lens in the dark) along `LAIR_RAT_PATH` on `sewP.lairGround` into a dark gap at the west
+  wall's foot over 1.25 s, flies speeded and spread (`flyBurst`), the light SURGING as it stutters (a dip only blacked out
+  the one second you needed to see). `sewApplyState` clears a scare cut short by a restore. Probe: `lairScare` (sets
+  `P.scare.t` directly — `b.frame` dt in the headless harness is wall-clock and unreliable for a 1 s event).
+- Lair collision (`sewP.props`, walked by `tools/probes.js lairWalk`): heap ±0.55, the sat one and the tipped one small
+  boxes. At ±0.78 the heap and the tipped skeleton closed the way between them and the heap shut the east side.
+
+## 2026-11-15 — the kick and the electricity, redone
+- The owner: "make the light kick … more smooth and natural … not as stiff. … the lighting currently looks like it just blue;
+  not electric … When the big electrocution happens it needs to look like a big electrocution not just the water turning blue."
+- **The kick** (`SEW_KICK` HIT 0.17 / FLY 0.52 / SETTLE 1.1): your boot first (`vmBoot` in the hands' scene, `VM_BOOT_KEYS`,
+  drawn even with empty hands — the vm render's condition includes `vmBoot.visible`). Square on, the trouser leg hid the boot
+  (seen from behind); a leg built as a child pointing up stood in the view like a post. Now the foot is turned out (an instep
+  kick, yaw 0.95) and the shin is laid each frame from the boot's top to a hip under the frame. Struck at y −0.4 it showed
+  only its top at the frame's edge; it comes up into the lower third. Then the lamp: a ballistic arc solved to land in the
+  water at FLY (drags for its first 0.07 s), tumbling end over end (+1.1 rad at mid-flight) and slewing; under past its rest
+  and back up on a damped spring, rocking. Measured: up 0.11 m off the walk, in the water at 0.7 s, settled by 1.0 s, no jump.
+- **Arcs** (`sewArcsBuild`, `sewArc(a, b, o)`, `sewArcsTick`): 18 pooled ribbons, core + glow, additive, camera-facing,
+  midpoint-displaced paths with a fork, re-jagged every 20–55 ms while alive. `sewP.arcLight` (virtual, pooled) follows and
+  strobes. Used: the storeroom's frayed ends (rare, small), the fallen lamp's socket on the walk, the lamp in the water, the kick's
+  contact, and the electrocution (a 9-bolt blast + 3 up out of the water at once, then 1–4 crawling arcs a frame, some
+  round where the thing died, some leaping up, some up the channel's walls to its lip) with `sewFlash` (a DOM screen flash).
+  NB: `_swA…_swD` already existed at ~68000 (another feature's temps): the sewer's are `_elA…_elD`.
+- **The web** (`SEW_WEB_GLSL`, `sewWebPatch(sh, U, fall)`, uniforms `sewP.shockU` on the channel water and `sewP.floodU` on the
+  storeroom flood): warped sines read as a contour map; it is ridged value noise now (3 octaves, pow 22) — branching
+  filaments — lit only in patches, re-seeded each frame. The water's own emissive is near nothing (it was a flat blue sheet).
+- **The web is BOLTS now** (2026-11-16, the owner: "the electric texture is too squiggly and not rigid like a lightning"). Ridged
+  noise is smooth by construction: filaments that wander, worms. `SEW_WEB_FN` / `SEW_WEB_GLSL`: seven bolts out from the source,
+  each a lateral throw of PIECEWISE-LINEAR noise (`webK`: straight between knots, a hard kink at each; three octaves 1.5 / 4.1 /
+  10.5 a unit, amplitudes 0.46 / 0.15 / 0.045), pinned at the root, tapered to the tip, two forks each thrown off at a kink;
+  the distance is divided by √(1+slope²) so a steep jag keeps its width. `WEB_S` (0.24 / fall, clamped 0.28–1.5) scales it: long
+  along the channel, short round the storeroom wires. The channel's seed is HELD 40–90 ms (`sewWebSeed`) — re-rolled every
+  frame it was a strobe, not a bolt. The 3-D arcs went the same way: half the segments a metre (`o.seg * 0.5`), the
+  midpoint decay 0.55 → 0.45 (fewer fine wiggles), and no per-joint width jitter (it read as a wobble).
+- The storeroom's `boxLight` was 0.75 of 0x9fbcff and washed the flood blue: 0.4 of a near-neutral now; the cold white-blue
+  comes with the cracks (`zap`). Probes: `sewKickShock` (kick, the lamp from the side, the electrocution), `bootFrames`
+  (the boot alone on grey), `storeArcs`.
+
+- **The boot is gone again** (same day, the owner: "get rid of the boot and trousers"): `vmBoot`, `VM_BOOT_KEYS`, `vmBootPose` and the
+  vm render's `vmBoot.visible` condition are removed; the kick is a 0.08 s beat with the view dipping into it (`slamDip`), then the throw.
+
+## 2026-11-15 — the lair, a third time; the back key; the Shock Ring in the chest
+- The owner (screenshot): "the lair still look amateur at best and there are floating skeletons and geometry still … make it
+  all blend together and not look so ai slopish … the pile of bones in the corner".
+  * **Unlit decals glow.** Every flat stain was a `MeshBasicMaterial`: in a dark room an unlit decal shows its colours at full
+    strength — the blood read as glowing red blobs. Decals are lit (`MeshStandardMaterial`, roughness 1) now.
+  * The polygon blood pools, the red gore balls, the 60-odd black claw hatches and the wall-smear rectangles are gone. The floor
+    has ONE canvas texture (`toC` maps the room): filth at the walls, blurred old stains, blood soaked round the heap/nest/dead,
+    the drag from the door to the nest (blurred: hard-edged it read low down as a plank across the room), grit. Each wall has
+    one (rising damp, streaks from the crown, a rubbed band at shoulder height, stains by the nest). Eight claw sets, three
+    gouges each, low-contrast, only over the nest, the heap and by the door.
+  * The heap is in the far corner (`SEW_LAIR.PILE` 15.25/−37.05, `HEAP_R` 1.55, 0.48 high) against both walls; its bones only in
+    the room's quarter of the circle (`put` clamps to the walls), three passes of `heapList`. The dirt texture is muted (white
+    chips on near-black read as a speckled blanket); the rags faded greys/browns (bright colours made a quilt) and lying flat
+    (folds × 0.45).
+  * **The tipped skeleton floated**: the sat one rotated onto its side stood its ribcage 15–20 cm up on a knee and an elbow. The
+    second body is now the pre-cut skeleton laid on its back and every piece let down onto the floor in place (ribs collapsed,
+    skull rolled) — `lay`, per-piece lowest-vertex drop.
+  * Light 0xc4a274 (amber) 2.0, plus a faint 0.55 fill low over the heap; the green was a filter on the room.
+  * The mace lies down the heap's slope along the ground under both its ends (`setFromUnitVectors` to the end-to-end line); a
+    small shine (1.5 / 0.22).
+- **The back key**: no beacon (the owner: "slightly glow not have a huge column"). It was INSIDE him: the floating body's back
+  stands above where it hung (top −0.23, key −0.75). Once he has surfaced (`deadT` > 4.2) a ray straight down onto his own
+  meshes finds the back and the key is set 2 cm proud (`backKeySet`). A ray into the whole group hit his glow sprites and a
+  null bone and threw — meshes only, `rc.camera` set, try/catch. The cord is `MeshBasic` (no emissive), so the shine does not
+  turn it blue; lift 0.45 (0.9 bleached the brass).
+- **The Shock Ring** on the jars in the chest (`sewP.ringWorld` = `shockWorld`, saved as `sr` / `sewRingTaken`); see weapons.md.
+- **The chest holds the ring alone** (the owner: "get rid of the jars in there"): the five jars, their pick-up and shine are gone;
+  the empty `sewP.jars` group stays for an old save's `loot` flag. The ring lies flat on the chest floor where the jars stood
+  (CH-local y 0.09, ×2.8, a soft glint). A ray down onto the baked chest meshes for its height came out wrong (it sank out of
+  sight) and was dropped. NB twice this session a `// (…)` comment pasted onto the end of a statement line swallowed the code
+  after it on that line (`rw.visible = false; CH.add(rw);` — the ring was never in the chest). Put such comments on their own line.
+
+## 2026-11-16 — "east of the wall" is not the storeroom
+- The owner: walking near the bent grate made splash steps. `sewStepSnd` splashed for any `lx > SEW.WALL`, which was meant
+  as the storeroom's flood but is also every walk of the branch past the junction. Same mistake in `sewInStore` (the
+  monster's safe zone): the whole branch counted as the storeroom, so it never came for you along it. Both are the door's
+  passage and the room only now (x up to `ROOM_X1`, z within `ROOM_Z0..ROOM_Z1`).
+- The bridges' deck (`bridgeAt`'s `wood`) glowed: emissive white × its own map × 2.0 (set when the deck read black under the
+  old mist). The owner: "the bridge textures are too bright they pop out". It takes the kit's lift now (0x3e382f × map × 1,
+  a shade over `SEW_LIFT` because the plank map is darker than the brick), `retroTex`, and is in `sewP.lift` so it dims with
+  the walls when the power goes. Probe `bridgeLook`.
+
+## Its own voice (2026-11-16)
+The owner's "SEWER MONSTER BREATHING" (14.5 s) and "SEWER MONSTER DEATH" (3.2 s), cut by `tools/sewer_monster_voice.py`
+(plain Python on afconvert's PCM, as `sewer_monster_sound.py`): six breaths at the quiet between them (the 100 ms envelope
+under -60 dB at 2.3, 4.1, 6.4, 8.7, 10.1, 13.7 s) into `sew-breath1..6` (replacing the two takes of 2026-10-24; `sewMonBreath`
+plays them in order, so the recording's rhythm is kept), and the death 0-2.55 s into `sew-death`. `sfxSewDeath(x, z)` plays
+it from where it went down, 0.42 s after `sewElectrocute` — in place of `sfxSewScream`, which stays its scream when it comes
+for you (and stands in if the recording has not loaded). Probe `sewVoice`: all seven decode; breaths 2-5 played in turn while
+it lingered; the shock played `sewDeath`.

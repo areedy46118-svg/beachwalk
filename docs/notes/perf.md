@@ -1591,6 +1591,18 @@ program built, not GC (a trace with `disabled-by-default-v8.gc` shows nothing in
 `updateTexUpload`'s `texSubImage2D` (a GPU-process stall?). And `dress skrim.glb` (84-126 ms) / `beach draw 1` (123)
 on the paced far rest.
 
+## 2026-11-16 — a checkpoint in the sewer
+- `tools/loadtime.html` takes `?at=sewer` now (loads the sewer, levers down, lair door open, saves there) and logs the boot
+  gate (`bootGateS`: roomRestore, warmBlock, roomWarm, look, smooth) every few frames. Phases on a sewer checkpoint: the near
+  files in by ~3.0 s, the room's restore (waits for the sewer's build) to ~3.5, the room warm ~0.9 s, the 0.6 s fade.
+- Against the last commit, run from a `git archive HEAD` copy with the same tool (3 runs each): 4.92 s average then; 5.31 s
+  with the lair, the key, the ring and the arcs; 5.14 s after the lair's dressing became a warm step (`lair dress`: not in
+  any room's `WARM_ROOM_OWN` list, so on a room checkpoint it runs after the black, paced). The spans that grew: the sewer's
+  build (the last glb's callback, ~+12 ms) and `warm sewer compile` (~+10 ms, the new materials).
+- A deferred build must not use the room's `bake`: its buckets were merged when the room was built. `lairDress` batches its
+  own (`dBuckets`) and adds them itself; baked into the old buckets, the heap and the rags were never drawn.
+- The biggest single block in a sewer checkpoint's load is not the sewer's: `driftwood.glb` (~130 ms parse).
+
 ## 2026-11-15 — performance pass ("no lag at any moment … strictly performance")
 The owner: "optimize performance and load times of the entire game. i want no lag at any moment and the best
 performance possible. do this but do not change any gameplay or the look of anything strictly performance pass."
@@ -1631,3 +1643,10 @@ far rest after a keep/tavern checkpoint — one `texImage2D` each; splitting it 
 handling, and holding them risks the upload landing on the crabs' first frame in the fight. `dress skrim.glb` still reads
 66–78 ms under the probe's load (22 alone) and the farmers' 24–66; Elvédor himself at z −530 is 31 ms (a unit with a
 saved death: not moved to boot). The tavern's first frame after its black is the 2026-11-13 "Left" item.
+
+## The boot rooms wait for the module (2026-11-17)
+`animate()` is kicked at module time (~line 111000) and the boot rooms fire on the first frame past 3 s of page time.
+After the merge of 2026-11-17 the module took longer than that to evaluate, so the boot rooms ran on that FIRST,
+synchronous call — before `houseWorld` / `elvFieldMesh` (~114000) were declared: a dead-zone error swallowed by the
+try/catch, and the puppeteer's house and gully never built at boot. `moduleDone` (set on the module's last line) gates it.
+A check that only passes because evaluation happens to finish in time is a race.
