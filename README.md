@@ -971,6 +971,8 @@ cutlass, the treasure chest and the stocked anchor were left in the pack.
 The gulls' calls and cries (`assets/gull-call1–5.m4a`, `assets/gull-cry1–2.m4a`)
 are cut from the owner's own gull recording at its own silences.
 
+The title's letters (`assets/title-*.png`) are the owner's own brush lettering, cut from a photo.
+
 The farmers' voices (`assets/farm-swing1–10.m4a`, `farm-hit1–14`, `farm-shout1–9`,
 `farm-die1–5`) are the owner's own "FARMER SOUND EFFECTS", each take cut at its own
 silences and levelled by `tools/farmer_voice_pack.py`: a grunt on some of their
