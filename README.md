@@ -1917,3 +1917,4 @@ by [Alexei Ostapenko](https://sketchfab.com/alexanders823) licensed under
 seaward post (`assets/crow.glb`), and the giant one that takes Henry off the lighthouse's jetty.
 
 The crows at the dock (`assets/dock-crow-*.m4a`) are cut from the owner's own "Crow Sound Effect" recording.
+- **Castle props**: "Southern Gothic Scene Props" (https://sketchfab.com/3d-models/southern-gothic-scene-props-b2191c2fd25541f1be5e2b756123d922) by PickledCactusAlan, and "Medieval Market Asset Pack" (https://sketchfab.com/3d-models/medieval-market-asset-pack-006ffc4ac5f34a1782f567b07e6605f2) by vmatthew, both CC-BY-4.0 — barrels, crates, sacks, carts, pots and produce through both castles and the throne room, all breakable (`assets/castle-props-a.glb`, `-b.glb`).

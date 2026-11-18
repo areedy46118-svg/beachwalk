@@ -1076,3 +1076,17 @@ plays them in order, so the recording's rhythm is kept), and the death 0-2.55 s 
 it from where it went down, 0.42 s after `sewElectrocute` — in place of `sfxSewScream`, which stays its scream when it comes
 for you (and stands in if the recording has not loaded). Probe `sewVoice`: all seven decode; breaths 2-5 played in turn while
 it lingered; the shock played `sewDeath`.
+
+## The walks' step is the church tunnel's (2026-11-17)
+"Put the same footprints in the church tunnel in the sewer tunnel" — the church tunnel leaves no prints (its floor is stone,
+`sfxStepUnder`), so this is its STEP: the church's eleven recorded footfalls (`churchStep`, a walk down a stone corridor,
+tail and all, 0.62, alternate feet 0.86). `sfxStepSewer` plays them on the walks (the plank keeps `sfxStepWood`, the
+storeroom flood its splash); it was `sfxStepDrain`, the synthesised step. Probe `statsAndSteps`: walking the channel's
+walk played `churchStep` 11 times.
+
+## It floats dead (2026-11-17)
+"Floating lifeless and not as rigid … a standing pose." `sewMonDeadPose` (from `sewMonDeadTick`, every frame): the bind put
+back, then `sewAim` hangs each limb toward the world's down from where it is — arms (joint5 → joint6) down under the chest and a
+little forward, the elbows (joint6 → joint7) let go, the hands off the wrists, the legs (joint8 → joint9) trailing down and back,
+the knees slack, the neck and head hung into the water — each on its own slow sway phase; the first second jerks (the current),
+and it goes limp as it rises (`limp` 0.25–2.4 s). Probe `sewDeadPose` (the water hidden for the look: side, above, along).

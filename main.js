@@ -8194,7 +8194,7 @@ let bloodJars = 0, bloodSeen = false;
  * carried on the save (`stats`), because the end cannot read it back off the
  * pack: shovels and rings get sold, keys go into their locks, the peg goes
  * home. Never on a load or a replay, and never for dev mode's handout. */
-const endStats = { kill: new Set(), item: new Set(), jars: 0 };   // jars: every one that ever came to you, found, bled or paid
+const endStats = { kill: new Set(), item: new Set(), jars: 0 };   // jars: every one found or bled (not the trader's pay: `jarTotal`)
 // THE DEEP's flags (its section is near the end): read by `frozen()`, `inRoom()` and the gates long before it is declared
 let inDeep = false, deepLock = false, deepNoHands = false, deepCutOn = false, deepDone = false, deepRodOn = false, deepReelSpin = null, deepBend = 0, deepWorldRef = null, deepLive = false;   // live: its section has run (frames run while the module is still being read)
 let statHush = false, statReady = false;     // ready: the module has run to its end, every item exists
@@ -10811,6 +10811,7 @@ function updateHover() {
  * is in your hand. With nothing equipped and nothing held it still falls
  * through to interact, so a bare-handed player who clicks on a thing is not
  * left clicking at nothing. */
+const pickTally = () => { let n = inventory.length + (typeof rings !== 'undefined' ? rings.length : 0) + bloodJars; for (const it of inventory) n += (it.count || 0); return n; };
 function primaryAction() {                       // E / F
   if (wellClinch.on) { wellStruggle(); return; }   // held by the man from the well: every press is a wrench to get loose
   if (peeking) { endPeek(); return; }
@@ -10819,7 +10820,14 @@ function primaryAction() {                       // E / F
   if (hovered) {
     if (packFullFor(hovered)) { sayInventoryFull(); return; }     // no swapping, by the owner's word: a full pack just says so
     if (hovered.kind === 'physics') grab(hovered.prop);
-    else if (hovered.onActivate) hovered.onActivate();
+    else if (hovered.onActivate) {
+      /* THE PICKUP HAS A SOUND (2026-11-17, the owner: "make this the item pickup sound for all items except ones I have
+       * already gave you a sound to"): if the press put something in your pack — a slot, a stack, a ring, a jar — and none
+       * of the owner's recordings played for it (its own, where it has one), his pickup sound does */
+      const had = pickTally(), heard = samplePlays;
+      hovered.onActivate();
+      if (pickTally() > had && samplePlays === heard) playSample('pickup', 0.75, 0.04);
+    }
     return;
   }
   if (canWearHeld(equipped)) { wearRing(equipped); return; }
@@ -12387,7 +12395,7 @@ function iconDrawable(model) {
  * your hands. Every icon this browser has ever rendered is kept (it is the
  * same picture every time: the same model through the same lens), so a load
  * draws them at once. `ICON_CACHE_V` goes up whenever the icon rig changes. */
-const ICON_CACHE_V = 'v10';    // v10 (2026-11-17): no glint, aim sphere or glint-lifted colour in a render — the keys     // v7: the ammo tiles are studio-lit metal (`ammoStudio`); v8: the rod is the scan; v9: the map is a lit folded sheet
+const ICON_CACHE_V = 'v11';    // v11 (2026-11-18): v10's two bumps merged — the keys' clean renders and the Shock Ring's lit stones     // v10 (2026-11-17): no glint, aim sphere or glint-lifted colour in a render — the keys     // v7: the ammo tiles are studio-lit metal (`ammoStudio`); v8: the rod is the scan; v9: the map is a lit folded sheet
 const iconCacheKey = (item) => 'beachwalk.icon.' + ICON_CACHE_V + '.' + (item.id || item.name);
 function itemIcon(item) {
   if (item._icon) return item._icon;
@@ -14833,7 +14841,10 @@ const maceItem = {
   onDig: true, viewmodel: maceVM, inspectModel: maceInspect, lip: MACE_LIP, gripY: MACE_GRIP_Y, gripModel: maceModel,
   // (2026-11-16, the owner: "not do as much damage but be able to one hit little guys with a direct hit but the shockwave does not as
   // much damage" — a full slam takes a dark mutant (19 hp as they are) outright, not a red (29); the wave is a jolt, `MACE_WAVE.DMG`)
-  slam: true, dmgLight: 2, dmgHeavy: 4, dmgSlam: 20, swingK: 1.22, windRate: 0.7, slamRate: 0.36, hitStopK: 0.09, stamK: 1.5, heavyVM: 1,
+  // (2026-11-17, the owner: "not as overpowered in the start of the game, it is basically destroying people … more fluid and not as
+  // quick, a slow mace that hits heavy": the click 2 → 1.5, the heavy 4 → 3, a full slam 20 → 14 — two slams for a dark, not one —
+  // the whole swing 1.22 → 1.5 its time, and it costs more to swing)
+  slam: true, dmgLight: 1.5, dmgHeavy: 3, dmgSlam: 14, swingK: 1.5, windRate: 0.62, slamRate: 0.36, hitStopK: 0.09, stamK: 1.8, heavyVM: 1,
   use: () => toggleEquip(maceItem),
 };
 // a few steps past the drain (DRAIN_X / DRAIN_Z are declared much further
@@ -17287,7 +17298,7 @@ const bladeRate = (p, P) => {
    * it. So: a slow lift, a quick fall, a long haul back. The slam's track has its own hang at the top (`maceSlamTrack`). */
   if (equipped && equipped.slam) {
     if (digOverhead) return p < DIG_STRIKE ? 0.85 : 1.35 + 0.25 * P;
-    return p < windupEnd() ? (maceChainSwing ? 0.95 : 1.55) : p < DIG_STRIKE ? 0.72 : p < throughEnd() ? 1.75 : 1.8;   // (the through slowed: the head is seen to carry on and stop; the swing back is a swing, `maceSwingBack`)
+    return p < windupEnd() ? (maceChainSwing ? 1.15 : 1.55) : p < DIG_STRIKE ? 0.95 : p < throughEnd() ? 1.85 : 1.8;   // (the fall 0.72 → 0.95: it was a snap)   // (the through slowed: the head is seen to carry on and stop; the swing back is a swing, `maceSwingBack`)
   }
   if ((!isBlade() && !thrusting()) || digOverhead || !equipped.recoverK || equipped.rapier) return 1;
   if (p < DIG_STRIKE) return 1 + 0.25 * P;
@@ -17857,7 +17868,8 @@ function updateViewmodel(dt) {
        * it hangs at the top for longer and covers the last half of the drop in
        * a fifth of the time. That hang-then-drop is the whole read of a slam. */
       const st = (p - W) / (DIG_STRIKE - W);
-      poseMix(_pose, _poseA, _poseB, digOverhead || equipped.slam ? st * st * st * st : easeInCubic(st));   // (the mace hangs and drops like the slam)
+      // (the mace: gathers and falls — a smooth start into a fast end, not the slam's hang-and-drop, which on every click read as a snap)
+      poseMix(_pose, _poseA, _poseB, digOverhead ? st * st * st * st : equipped.slam ? st * st * (0.35 * (3 - 2 * st) + 0.65) : easeInCubic(st));
     } else if ((isCut || thr) && p < throughEnd()) {
       /* THE FOLLOW-THROUGH. A blade does not stop where it lands; it goes on
        * through and out the far side, slowing, and is brought back from
@@ -17974,13 +17986,15 @@ function updateViewmodel(dt) {
         // (a body it lands in takes most of the follow-through out of it: the through's end is brought back toward the blow,
         // so the swing stops short and the haul home starts from there, not from a reach it never made)
         if (connected && hitFlesh && slashing()) poseMix(_poseC, _poseB, _poseC, 0.45);
+        // (and a heavy blow lands like a boulder: the owner's recording, on a slam or a charged swing that connects)
+        if (connected && (digOverhead || P >= 0.45)) playSample('maceHeavy', 0.55 + Math.min(0.45, P * 0.45), 0.05, digOverhead ? 0.92 : 1.0);
         if (connected) {
           hitstop = Math.max(hitstop, digOverhead ? 0.10 + P * 0.11 : 0.07 + P * 0.06);
           addTrauma(digOverhead ? 0.45 + P * 0.5 : 0.28 + P * 0.3);
           fovKick = Math.max(fovKick, digOverhead ? 8 + P * 7 : 4.5 + P * 3);
           slamDip = Math.max(slamDip, digOverhead ? 0.13 + P * 0.11 : 0.04 + P * 0.04);
           vmImpulse(digOverhead ? -0.6 - P * 0.5 : -0.35);
-        } else if (digOverhead) maceGround(P);
+        } else if (digOverhead) { maceGround(P); if (P >= 0.45) playSample('maceHeavy', 0.4 + P * 0.3, 0.05, 0.9); }
         if (digOverhead && P >= MACE_WAVE.MIN_P) maceShockwave(P);   // a slam held long enough shakes the ground round it
       }
     }
@@ -20952,10 +20966,11 @@ function updateBloodReadout() {
 /* ONE DOOR, because there are two ways to come by a jar now — bleeding the
  * crab yourself, and the one somebody left in the first cache — and a tally
  * with two entrances is a tally that gets out of step with the corner. */
-function gainJar(n = 1) {
+function gainJar(n = 1, paid = false) {
   settleRestore();
   bloodJars += n;
-  if (statReady && !replaying && !applyingSave) endStats.jars += n;   // the end's "Jars obtained" (a load's replay is not a new jar)
+  // the end's "Jars obtained" (a load's replay is not a new jar; nor is the trader's money — `jarTotal`)
+  if (statReady && !replaying && !applyingSave && !paid) endStats.jars += n;
   bloodSeen = true;
   bloodPulse = 1;
   hudJar.userData.setFill(0.86);       // a jar is a jar: the icon is always full
@@ -22241,7 +22256,8 @@ holdable(connRingItem, connRing, { scale: 2.2, pos: [0, -0.02, 0], rot: [0.9, 0.
  * Worn: a blow of yours that lands on something already fighting you has `SHOCK.P` of loosing the charge (`shockRingProc`)
  * — the one you hit takes a jolt on top of the blow, and it jumps to up to `SHOCK.N` others fighting you within `SHOCK.R`,
  * each for a smaller jolt; never to anything asleep, calm, friendly or on your side (`shockFoe`). */
-const SHOCK = { P: 0.075, GAP: 0.3,   // (7.5 %: 2026-11-16, the owner — it was 12 %)
+const SHOCK = { P: 0.11, GAP: 0.3,   // (11 %: 2026-11-17, the owner — it was 7.5, and 12 before that)
+  STUN_P: 0.2, STUN_T: 1.1,           // one charge in five catches him: stunned that long, "rarely" (the owner)
   MAIN_K: 0.6, MAIN_MIN: 1.5, CHAIN_K: 0.5, R: 4.5, N: 4 };
 const shockRing = new THREE.Group(), shockWorld = new THREE.Group();
 let shockGems = [], shockArcs = null;
@@ -22255,8 +22271,12 @@ bwGlb('assets/shock-ring.glb', (gltf) => {
   gltf.scene.traverse((o) => {
     if (!o.isMesh) return;
     o.frustumCulled = false;
-    o.material.envMap = env; o.material.envMapIntensity = /crystal/i.test(o.material.name || '') ? 2.2 : 3.0; o.material.fog = true;
-    if (/crystal/i.test(o.material.name || '')) { o.material.emissive = new THREE.Color(0x2a3c66); o.material.emissiveIntensity = 0.6; }
+    o.material.envMap = env; o.material.envMapIntensity = /crystal/i.test(o.material.name || '') ? 2.6 : 3.4; o.material.fog = true;
+    /* (2026-11-17, the owner: "the model is not as faded looking in the inventory": the band read as dull dark bronze and
+     * the stones as two dim blue chips — the band brighter and a touch smoother, so the room's light runs on it, and the
+     * stones lit from inside, the blue of the charge they hold) */
+    if (/crystal/i.test(o.material.name || '')) { o.material.emissive = new THREE.Color(0x3d6dff); o.material.emissiveIntensity = 1.15; o.material.color.multiplyScalar(1.25); }
+    else { o.material.envMapIntensity = 4.6; o.material.roughness = Math.min(o.material.roughness ?? 0.4, 0.26); if (o.material.map) { o.material.emissiveMap = o.material.map; o.material.emissive = new THREE.Color(0x5a4630); } }   // (its map is a dark bronze: a colour over 1 does nothing, so its own map lifts it)
     o.material.needsUpdate = true;
   });
   if (pts.length) {
@@ -22318,7 +22338,8 @@ function makeShockRingIcon() {
 }
 const shockRingItem = {
   id: 'shockring', name: 'The Shock Ring', icon: makeShockRingIcon(), ring: true,
-  desc: '7.5% chance a hit electrocutes the enemy, the shock jumping to others fighting you nearby for less.',
+  iconRot: { rotX: 0.75, rotY: 0.25 },        // (its stones up and to you: from the side they were two dim chips)
+  desc: '11% chance a hit electrocutes the enemy — sometimes leaving them stunned — the shock jumping to others fighting you nearby for less.',
   use: () => toggleEquip(shockRingItem),
   inspectOpts: () => ({
     rotX: 0.55, rotY: 0.30,
@@ -22342,11 +22363,27 @@ function shockRingProc(u, blowDmg, crab = false) {
   shockAt = now;
   const main = Math.max(SHOCK.MAIN_MIN, blowDmg * SHOCK.MAIN_K), chain = main * SHOCK.CHAIN_K;
   const o = shockChest(u, _shU).clone();
-  // the one you hit: a crack of it from the head of your blow into him, and it lights him up
-  zapArc(_shV.copy(camera.position).addScaledVector(camera.getWorldDirection(_shV.clone()), 0.6).setY(camera.position.y - 0.25), o, 0.012, 0.16);
-  for (let i = 0; i < 3; i++) zapArc(o.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.6)), o, 0.007, 0.12);
+  /* (2026-11-17, the owner: "make the animations for the electricity more noticeable and impactful … sometimes get stunned
+   * by the shock but rarely … make the shock light up the area around too") The crack: a thick bolt from the head of your
+   * blow into him and two forks off it, the body crawling with arcs for a moment (and for as long as he is stunned), sparks
+   * thrown off him, a cold flash over the screen, and the light — a hard blue-white burst on everything round him that
+   * strobes with the bolts and dies with them. One in five he is caught in it: stunned, reeling, crackling. */
+  const from0 = _shV.copy(camera.position).addScaledVector(camera.getWorldDirection(_shV.clone()), 0.6).setY(camera.position.y - 0.25).clone();
+  zapArc(from0, o, 0.024, 0.3);
+  for (let i = 0; i < 2; i++) zapArc(from0.clone().lerp(o, 0.35 + Math.random() * 0.3), o.clone().add(new THREE.Vector3((Math.random() - 0.5) * 1.4, (Math.random() - 0.3) * 1.0, (Math.random() - 0.5) * 1.4)), 0.012, 0.22);
+  const stun = !crab && Math.random() < SHOCK.STUN_P;
+  zapCrackle(u, stun ? SHOCK.STUN_T : 0.55);
+  try { skSparks(o, _shV.set(0, 0, 0), true, 1.4); } catch (e) { /* sparks are never fatal */ }
+  zapFlash(o, 1.0);
+  sewFlash(0.22);
   if (crab) hurtCrab(u, main, 0.5); else hurtMutant(u, main, 0.5);
-  playSample('elecShock', 0.55, 0.06, 1.05); addTrauma(0.12); hitstop = Math.max(hitstop, 0.04);
+  if (stun && u.st.alive) {
+    u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; mutDrop(u);
+    u.st.stun = Math.max(u.st.stun || 0, SHOCK.STUN_T); u.st.stunMax = u.st.stun; u.st.cool = Math.max(u.st.cool || 0, 0.5);
+    flashMats(u.g);
+  }
+  playSample('elecShock', 0.85, 0.06, 1.0); playSample('elecZap', 0.6, 0.1, 0.9);
+  addTrauma(0.24); hitstop = Math.max(hitstop, 0.07); fovKick = Math.max(fovKick, 3.5);
   // and on to the others: the nearest first, each from the last it touched, a beat apart
   const hops = [];
   for (const m of mutants) if (m !== u && shockFoe(m) && m.g.position.distanceTo(u.g.position) < SHOCK.R) hops.push([m, false]);
@@ -22357,9 +22394,10 @@ function shockRingProc(u, blowDmg, crab = false) {
     const to = shockChest(m, new THREE.Vector3()), fr = from.clone(); from = to;
     setTimeout(() => {
       if (isCrab ? !shockCrab(m) : !shockFoe(m)) return;           // (it may have died, or calmed, in the beat)
-      zapArc(fr, shockChest(m, to), 0.01, 0.2);
+      zapArc(fr, shockChest(m, to), 0.016, 0.26);
+      zapCrackle(m, 0.35); zapFlash(to, 0.7); sewFlash(0.08);
       if (isCrab) hurtCrab(m, chain, 0.35); else hurtMutant(m, chain, 0.35);
-      playSample('elecZap', 0.4, 0.1, 1.1);
+      playSample('elecZap', 0.55, 0.1, 1.05);
     }, 70 + k * 70);
   });
   return true;
@@ -22370,17 +22408,33 @@ function zapArc(a, b, w = 0.01, life = 0.16) {
   if (!zapPool) {
     zapPool = [];
     const mat = (c, o2) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o2, blending: THREE.AdditiveBlending, depthWrite: false, fog: true, side: THREE.DoubleSide });
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 24; i++) {
       const mk = (m) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SEW_ARC_SEG * 2 * 6 * 3), 3)); g.setDrawRange(0, 0);
         const me = new THREE.Mesh(g, m); me.frustumCulled = false; me.raycast = () => {}; me.renderOrder = 7; me.visible = false; scene.add(me); return me; };
       zapPool.push({ core: mk(mat(0xf0f6ff, 1)), glow: mk(mat(0x4a7dff, 0.3)), life: 0, a: new THREE.Vector3(), b: new THREE.Vector3(), w: 0.01, regen: 0 });
     }
-    zapLight = new THREE.PointLight(0xc4dcff, 0, 7, 1.5); zapLight.userData.lpAlways = 20; scene.add(zapLight);
+    zapLight = new THREE.PointLight(0xc4dcff, 0, 13, 1.3); zapLight.userData.lpAlways = 20; scene.add(zapLight);
   }
   const Z = zapPool.find((q) => q.life <= 0) || zapPool[0];
   Z.a.copy(a); Z.b.copy(b); Z.w = w; Z.life = life; Z.regen = 0;
   zapDraw(Z);
-  zapLight.position.lerpVectors(a, b, 0.5); zapLight.intensity = 4;
+  zapLight.position.lerpVectors(a, b, 0.5); zapLight.intensity = Math.max(zapLight.intensity, 6);
+  if (!zapLive) { zapLive = true; requestAnimationFrame(zapTick); }
+}
+// the burst of light on everything round a struck body: hard, cold, strobing, gone in a third of a second
+let zapLightK = 0, zapLightT = 0;
+function zapFlash(at, k = 1) {
+  if (!zapPool) zapArc(at, at, 0.001, 0.001);
+  zapLight.position.copy(at); zapLight.position.y += 0.4;
+  zapLightK = Math.max(zapLightK, k); zapLightT = 0.34;
+  if (!zapLive) { zapLive = true; requestAnimationFrame(zapTick); }
+}
+// a body crawling with it: small arcs between points on him, a dozen a second, for `secs` (the stun's length)
+const zapCrawl = [];
+function zapCrackle(u, secs) {
+  if (!u || !u.g) return;
+  const c = zapCrawl.find((q) => q.u === u);
+  if (c) c.t = Math.max(c.t, secs); else zapCrawl.push({ u, t: secs, next: 0 });
   if (!zapLive) { zapLive = true; requestAnimationFrame(zapTick); }
 }
 function zapDraw(Z) {
@@ -22401,8 +22455,27 @@ function zapTick(t) {
     if (Z.regen <= 0) { Z.regen = 0.025 + Math.random() * 0.03; zapDraw(Z); }
     Z.core.material.opacity = 0.65 + Math.random() * 0.35; Z.glow.material.opacity = 0.18 + Math.random() * 0.2;
   }
-  zapLight.intensity = any ? 1.5 + Math.random() * 3 : Math.max(0, zapLight.intensity - dt * 30);
-  if (any || zapLight.intensity > 0) requestAnimationFrame(zapTick); else { zapLive = false; zapLast = 0; }
+  // the crawl over a struck body
+  for (let i = zapCrawl.length - 1; i >= 0; i--) {
+    const c = zapCrawl[i]; c.t -= dt; c.next -= dt;
+    if (c.t <= 0 || !c.u.g || !c.u.st || !c.u.st.alive) { zapCrawl.splice(i, 1); continue; }
+    any = true;
+    if (c.next <= 0) {
+      c.next = 0.06 + Math.random() * 0.06;
+      const h = (c.u.kind && c.u.kind.h) || 1.6, r = Math.min(0.6, ((c.u.kind && c.u.kind.body) || 0.5) * 0.7), g = c.u.g.position;
+      const p1 = new THREE.Vector3(g.x + (Math.random() - 0.5) * r * 2, g.y + h * (0.15 + Math.random() * 0.8), g.z + (Math.random() - 0.5) * r * 2);
+      const p2 = new THREE.Vector3(g.x + (Math.random() - 0.5) * r * 2, g.y + h * (0.15 + Math.random() * 0.8), g.z + (Math.random() - 0.5) * r * 2);
+      zapArc(p1, p2, 0.008, 0.1);
+      if (Math.random() < 0.3) zapLightK = Math.max(zapLightK, 0.35);
+      if (Math.random() < 0.18) playSample('elecZap', 0.18, 0.1, 1.2 + Math.random() * 0.3);
+    }
+  }
+  // the light: its burst strobing down, and a flicker while any bolt lives
+  if (zapLightT > 0) { zapLightT -= dt; if (zapLightT <= 0) zapLightK = 0; }
+  const burst = zapLightK * (zapLightT > 0 ? (0.55 + Math.random() * 0.45) * (0.4 + zapLightT / 0.34 * 0.6) : 0);
+  zapLight.intensity = Math.max(burst * 16, any ? 2 + Math.random() * 4 : Math.max(0, zapLight.intensity - dt * 40));
+  try { sewFlashTick(dt); } catch (e) { /* (the flash fades out of the sewer as well) */ }
+  if (any || zapLight.intensity > 0 || zapLightT > 0) requestAnimationFrame(zapTick); else { zapLive = false; zapLast = 0; }
 }
 let connRingGiven = false;
 function giveConnectionRing() {
@@ -24692,6 +24765,8 @@ const SAMPLES = {
    * wire spitting — and the loudest stretch for a line going into water. The steady run is a loop (`ELEC_LOOP`). */
   elecZap: Array.from({ length: 6 }, (_, i) => `assets/elec-zap${i + 1}.m4a`),
   elecShock: ['assets/elec-shock.m4a'],
+  maceHeavy: ['assets/mace-heavy.m4a'],           // the owner's "boulder impact hard 4": the mace's heavy blows (2026-11-17)
+  pickup: ['assets/pickup.m4a'],                  // the owner's "pickup sound 1": anything taken that has no sound of its own
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -24721,8 +24796,10 @@ function playSample(name, gain = 1, rateJitter = 0, rate = 1, delay = 0, dest = 
   // a blade's whoosh is delayed to the strike, so the bank needs the offset
   // the synthesised one has always had
   src.start(ctx.currentTime + Math.max(0, delay));
+  samplePlays++;
   return true;
 }
+let samplePlays = 0;          // every recording started: a pickup that played one of the owner's has its sound (`primaryAction`)
 /* A CUE FROM SOMEWHERE IN THE ROOM. `playSample` is for what happens in
  * your own hands; a creature's voice has a WHERE. Panned by its bearing,
  * quieter by its distance, and — the thing that says "far" more than the
@@ -26234,6 +26311,18 @@ const RARE_ACHIEVEMENTS = [
   () => crowGone,                                         // Get scared by big crow.: petted the crow on the pier's post, and it screamed and flew
   () => elvBurned,                                        // Burn the puppet.: carried Elvédor's puppet to his fire and threw it in (2026-11-15)
 ];
+/* EVERY JAR THERE IS (2026-11-17, the owner: "add total amount of jars and rare achievements at the end it doesn't show the
+ * total possible"). The jars out in the world and the ones bled out of every crab there is — what is FOUND, not what the
+ * trader pays (selling has no ceiling, so it is not counted in the line either, `gainJar`'s `paid`): the mounds that hold a
+ * jar, and a jar for every crab (the mounds' crabs, the beach's, the one on the rock's ledge, the wreck's hold, the three
+ * in Skrim's heap); the dojo's 1, the samurai's 3, the catacombs' 2, the tavern's bore 2 and grille 1, Skrim's 4,
+ * Elvédor's gift 1 and the 5 out of his coat, the bleeding rig's 3, the sewer's floor 2, the whale's crying jar 1. Add the
+ * next one here. */
+function jarTotal() {
+  const roles = mounds.map(moundRole);
+  const crabs = roles.filter((r) => r === 'crab').length + 1 /* beach */ + 1 /* rock ledge */ + 1 /* wreck hold */ + SKQ_LOOT.filter((k) => k === 'crab').length;
+  return roles.filter((r) => r === 'jar').length + crabs + 1 + 3 + 2 + 2 + 1 + 4 + 1 + 5 + 3 + 2 + 1;
+}
 function statLines() {
   const tally = (list) => list.filter(statHad).length;
   // (and every label in capitals: the owner's "make all the stat texts capitalized")
@@ -26243,8 +26332,8 @@ function statLines() {
     ['KEYS FOUND', tally(STAT_KEYS()), STAT_KEYS().length],
     ['WEAPONS FOUND', tally(STAT_WEAPONS()), STAT_WEAPONS().length],
     ['RINGS FOUND', tally(STAT_RINGS()), STAT_RINGS().length],
-    ['JARS OBTAINED', endStats.jars, null],                 // found, bled from crabs and paid at the trader: no total, it has no ceiling
-    ['RARE ACHIEVEMENTS', RARE_ACHIEVEMENTS.filter((f) => f()).length, null],
+    ['JARS OBTAINED', endStats.jars, jarTotal()],           // found and bled from crabs, out of every one there is (`jarTotal`)
+    ['RARE ACHIEVEMENTS', RARE_ACHIEVEMENTS.filter((f) => f()).length, RARE_ACHIEVEMENTS.length],
   ].map(([n, a, b]) => [n, b == null ? a : Math.min(a, b), b]);
 }
 function renderEndStats() {
@@ -48200,7 +48289,7 @@ function update(dt, rawDt = dt) {
    * arrive on top of it. It is gated on the undercroft on purpose — the
    * bunker's fight is fought between a desk and a work table and a jump
    * beside either of those is not a player breaking it. */
-  if (!onGround && (inUndercroft || inTavern || inThrone)) stompBreakables(0.5, true);
+  if (!onGround && (inUndercroft || inTavern || inThrone || inFort || inC13)) stompBreakables(0.5, true);   // (and the castles' props, `cpBreak`)
   /* AND THE DEALER'S DESK GOES IF YOU JUMP INTO IT. The loose stomp stays
    * off down there — eighteen breakables on a desk and a console bank, and a
    * hop beside a monitor is not a player breaking it — but the desk is the
@@ -48493,6 +48582,7 @@ function update(dt, rawDt = dt) {
    * own lunge carries him off the ridge for a frame every time. */
   updateScp(dt);
   updateGibs(dt);
+  cpTick(dt);                           // the castles' props: built as a job, and their pieces' physics
   updateSpurts(dt); updateBloodCloud(dt);
   updateBackSword(dt);
   updateGrammyFlutter(dt);
@@ -50312,7 +50402,7 @@ function animateFrame() {
      * z −600 (69 ms: three programs compiled, 75 meshes uploaded) and −629 (42 ms: eleven programs, 369 meshes). They
      * are built here with the rest, warmed (`elv …`, `house …`) and HIDDEN until you cross the lines they were built at,
      * where they come into sight exactly as before (`elvFieldShow`, `houseSeen`).) */
-    for (const f of [loadIsle, loadKeep, loadTavern, loadDungeon, loadThrone, loadJettyHenry, loadHouse, buildElvField]) {
+    for (const f of [loadIsle, loadKeep, loadTavern, loadDungeon, loadThrone, loadJettyHenry, loadHouse, buildElvField, loadCastleProps]) {
       try { f(); } catch (e) { console.warn('[bw] boot rooms', f.name, e); }
     }
   }
@@ -54680,60 +54770,60 @@ function traderSell(key) {
   if (key === 'fang') {
     fangItem.count = Math.max(0, (fangItem.count || 0) - 1);
     if (fangItem.count <= 0) removeFromInventory(fangItem); else { renderHotbar(); renderPack(); }
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = fangItem.count > 0 ? 'Another. Where are you getting these?' : 'A tooth. Fine. One jar.';
   } else if (key === 'grammy') {
     removeFromInventory(grammyItem);
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = "Somebody's grandmother. Four jars, and don't tell me about her.";
   } else if (key === 'wellPhoto') {
     removeFromInventory(wellPhotoItem);
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = "I know that face. Four jars. Don't bring me anything else from that well.";
   } else if (key === 'shovel') {
     removeFromInventory(shovelItem);
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = 'A toy spade. Two jars, and that is me being kind.';
   } else if (key === 'military') {
     removeFromInventory(militaryItem);
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = 'Army issue. Three jars. Try not to need it.';
   } else if (key === 'katana') {
     removeFromInventory(katanaItem);
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = "That's a real one. Four jars. Don't ask me where it ends up.";
   } else if (key === 'spliff') {
     sellFromStack(spliffItem);
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = spliffItem.count > 0 ? "Another one. You rolling these yourself?" : 'One jar. Smells like your whole night.';
   } else if (key === 'glow') {
     if (!glowstickItem.count) glowstickItem.count = 1;
     sellFromStack(glowstickItem);
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = inventory.includes(glowstickItem) ? 'More of these. Light your own way next time.' : 'A glowstick. One jar.';
   } else if (key === 'puppet') {
     elvCarryEnd();
     elvStage = 6;                       // sold: no bed, no arms, no fire (saved as it is)
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = 'He blinked. I saw him blink. Ten jars, and get your hands off him.';
   } else if (key === 'seashell') {
     const it = SELL_SHELL(); if (it) removeFromInventory(it);
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = SELL_SHELL() ? 'More shells. The beach is full of them, you know.' : 'A shell. One jar. Hold it to your ear on your own time.';
   } else if (key === 'water') {
     sellFromStack(waterBottleItem);
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = waterBottleItem.count > 0 ? 'More water. You know the sea is right there.' : 'Water. One jar. Fine.';
   } else if (r.ring) {
     const it = r.item();
     const ri = rings.indexOf(it);
     if (ri >= 0) { rings.splice(ri, 1); renderRings(); refreshUI(); }      // off your finger, across the counter
     else { if (equipped === it) toggleEquip(it); removeFromInventory(it); }
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = ri >= 0 ? 'Off your own finger. Three jars. Pleasure.' : 'A ring. Three jars. Pleasure.';  } else if (r.art) {
     const it = r.item();
     removeFromInventory(it); it.on = null;
-    gainJar(r.price);
+    gainJar(r.price, true);
     traderSaid = "Old work. Three jars, and I'm not asking where you got it.";
   }
 }
@@ -84114,6 +84204,7 @@ function fortFindSpot() {
 
 /* ---- WHERE THE DOORS PUT YOU. */
 function placeInFort(at) {
+  loadCastleProps();                     // (the castles' props, if the boot has not asked yet)
   inC13 = false;
   const o = at || fortSpot || fortW(FORT_MID.x, FORT_MID.z);
   const f = fortCourtAt(o.x, o.z) ?? (FORT_Y + FORT_FLOOR);
@@ -84330,6 +84421,7 @@ function updateFort(dt) {
   pushOutOfKeep(p, FORT_BODY, feet, up, S);
   keepWallPush(p, FORT_BODY, feet, S, up);
   fortPropPush(p, FORT_BODY);
+  cpPushPlayer(p, FORT_BODY, feet);         // the props, solid until they break
   {
     const cx = p.x - tx, cz = p.z - tz, cl = Math.hypot(cx, cz);
     if (cl > TAV_FIX && Math.hypot(tx - _preMove.x, tz - _preMove.z) < 0.5) { p.x = tx + cx / cl * TAV_FIX; p.z = tz + cz / cl * TAV_FIX; }
@@ -84440,6 +84532,7 @@ function fortClampPlayer() {
  * put back where he last stood on it. */
 function fortClampUnit(u, p) {
   if (!fortWalls) return;
+  cpUnitCrush(u, p, 'fort');                 // (a prop is never a wall to him: he goes through it, `cpUnitCrush`)
   const wx = p.x, wz = p.z, r = (u.kind.body || 0.9) * 0.75;
   pushOutOfKeep(p, r, p.y, 0.45, FORT_SITE);
   keepWallPush(p, r, p.y, FORT_SITE);
@@ -84699,6 +84792,7 @@ function c13CourtAt(x, z) {
 // the same, in the castle's own frame and metres, falling back to the nominal paving
 function c13PaveAt(lx, lz) { const f = c13CourtAt(C13_X + lx, C13_Z + lz); return f === null ? C13_FLOOR : f - C13_Y; }
 function placeInC13() {
+  loadCastleProps();                     // (the castles' props, if the boot has not asked yet)
   inC13 = true; inFort = false;
   const o = c13W(C13_SPAWN.x, C13_SPAWN.z);
   const f = c13CourtAt(o.x, o.z) ?? (C13_Y + C13_FLOOR);
@@ -84946,6 +85040,7 @@ function updateC13(dt) {
   pushOutOfKeep(p, FORT_BODY, feet, up, S);
   keepWallPush(p, FORT_BODY, feet, S, up);
   c13PropPush(p, FORT_BODY);
+  cpPushPlayer(p, FORT_BODY, feet);
   {
     const cx = p.x - tx, cz = p.z - tz, cl = Math.hypot(cx, cz);
     if (cl > TAV_FIX && Math.hypot(tx - _preMove.x, tz - _preMove.z) < 0.5) { p.x = tx + cx / cl * TAV_FIX; p.z = tz + cz / cl * TAV_FIX; }
@@ -84971,6 +85066,7 @@ function c13ClampPlayer() {
   pushOutOfKeep(p, FORT_BODY, feet, FORT_STEP, C13_SITE);
   keepWallPush(p, FORT_BODY, feet, C13_SITE, FORT_STEP);
   c13PropPush(p, FORT_BODY);
+  cpPushPlayer(p, FORT_BODY, feet);
   if (!keepFloorAt(p.x, p.z, feet, FORT_STEP, C13_SITE) || !maskAt(C13_M, p.x, p.z) || siteCrossed(C13_SITE, c13LastSpot, p, feet) || !siteOnMain(C13_SITE, p.x, p.z)) { p.x = c13LastSpot.x; p.z = c13LastSpot.z; }
   return true;
 }
@@ -87204,6 +87300,7 @@ function c13MayWake() {
 // the castle's stone holds him the way the first castle's holds the marauder
 function c13ClampUnit(u, p) {
   if (!c13Walls) return;
+  cpUnitCrush(u, p, 'c13');
   const wx = p.x, wz = p.z, r = (u.kind.body || 0.9) * 0.75;
   pushOutOfKeep(p, r, p.y, 0.45, C13_SITE);
   keepWallPush(p, r, p.y, C13_SITE);
@@ -91650,6 +91747,7 @@ function throneLeave() {
   setSkyDuck(0);
 }
 function placeInThrone(atExit) {
+  loadCastleProps();                     // (the castles' props, if the boot has not asked yet)
   inC13 = false; inFort = false; onIsle = false; insideTower = false; isleOnGallery = false;
   inThrone = true;
   thrWorld.visible = true;
@@ -91752,6 +91850,7 @@ function updateThrone(dt) {
   pushOutOfKeep(p, FORT_BODY, feet, up, S);
   keepWallPush(p, FORT_BODY, feet, S, up);
   pushOutOfThrFurn(p, FORT_BODY, feet);
+  cpPushPlayer(p, FORT_BODY, feet);
   {
     const cx = p.x - tx, cz = p.z - tz, cl = Math.hypot(cx, cz);
     if (cl > TAV_FIX && Math.hypot(tx - _preMove.x, tz - _preMove.z) < 0.5) { p.x = tx + cx / cl * TAV_FIX; p.z = tz + cz / cl * TAV_FIX; }
@@ -91776,6 +91875,7 @@ function thrClampPlayer() {
   pushOutOfKeep(p, FORT_BODY, feet, FORT_STEP, THR_SITE);
   keepWallPush(p, FORT_BODY, feet, THR_SITE, FORT_STEP);
   pushOutOfThrFurn(p, FORT_BODY, feet);
+  cpPushPlayer(p, FORT_BODY, feet);
   if (!keepFloorAt(p.x, p.z, feet, FORT_STEP, THR_SITE)) { p.x = thrLastSpot.x; p.z = thrLastSpot.z; }
   return true;
 }
@@ -93286,7 +93386,17 @@ function sewStepSnd() {
   const inFlood = lx > SEW.WALL + 0.05 && lx < SEW.ROOM_X1 + 0.3 && lz > SEW.ROOM_Z0 - 0.3 && lz < SEW.ROOM_Z1 + 0.3;
   if (inFlood) sfxSplash(0.4);
   else if (sewOnBridge()) sfxStepWood();
-  else sfxStepDrain();
+  else sfxStepSewer();
+}
+/* THE WALKS' STEP IS THE CHURCH TUNNEL'S (2026-11-17, the owner: "put the same footprints in the church tunnel in the sewer
+ * tunnel"): the church's eleven, cut from a walk down a stone corridor, corridor tail and all — the sewer's walks are a
+ * long stone tunnel too — at the church's level and the same alternate-foot weighting (`sfxStepUnder`). It was the
+ * synthesised step, which is the fallback before the bank is in. */
+function sfxStepSewer() {
+  stepAlt ^= 1;
+  if (playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return;
+  stepAlt ^= 1;
+  sfxStep();
 }
 /* STEPPING INTO LIVE WATER: the zap, the screen thrown, and A BAR OF YOU A SECOND while you stand in it (2026-11-14, the
  * owner: "if the player walks into the electric water get zapped and lose a bar of health per second" — it killed you
@@ -93898,6 +94008,38 @@ function sfxSewDeath(x, z) {
   src.connect(g).connect(sewPanner(SEW_X + x, SEW_Y + SEW.WATER + 0.25, SEW_Z + z)).connect(sewOut());
   src.start();
 }
+/* AND IT FLOATS LIKE A DEAD THING (2026-11-17, the owner: "make it so when the monster dies he's floating lifeless and not as
+ * rigid … he seems to be in a standing pose and should be a more floating pose dead in the water"). It was the bind pose
+ * — a man standing to attention — tipped onto its face. Every frame the bind is put back and the body hung from the water:
+ * arms dropped straight down under the chest and a little forward, the elbows let go, the hands hanging off the wrists; the
+ * legs trailing down and back from the hips, the knees slack; the neck and head hung down into the water. Each limb drifts
+ * on its own slow phase, as the water moves it. Through the shock (the first second) it jerks; it goes limp as it rises. */
+const _smdD = new THREE.Vector3(), _smdF = new THREE.Vector3(), _smdS = new THREE.Vector3(), _smdT = new THREE.Vector3();
+function sewMonDeadPose(t, now, yaw) {
+  const M = sewMon, B = M.bones; if (!B) return;
+  for (const [b, q] of M.bind) b.quaternion.copy(q);
+  M.g.updateMatrixWorld(true);
+  const limp = THREE.MathUtils.smoothstep(t, 0.25, 2.4);
+  const fwd = _smdF.set(Math.sin(yaw), 0, Math.cos(yaw)), right = _smdS.set(Math.cos(yaw), 0, -Math.sin(yaw));
+  const jerk = t < 1.1 ? (1.1 - t) * 0.5 : 0;           // the current still in it
+  const aim = (bone, tipBone, dx, dy, dz, k, ph) => {
+    const b = B[bone], tb = B[tipBone]; if (!b || !tb) return;
+    tb.getWorldPosition(_smdT);
+    const sw = Math.sin(now * 0.55 + ph) * 0.14, sw2 = Math.sin(now * 0.37 + ph * 1.7) * 0.1;
+    _smdD.set(0, dy, 0).addScaledVector(fwd, dz + sw).addScaledVector(right, dx + sw2);
+    if (jerk) _smdD.add(new THREE.Vector3((Math.random() - 0.5) * jerk, (Math.random() - 0.5) * jerk, (Math.random() - 0.5) * jerk));
+    sewAim(b, _smdT, _smdD, k * Math.max(limp, jerk ? 0.4 : 0));
+  };
+  for (const [s, sd, ph] of [['R', 1, 0], ['L', -1, 2.1]]) {
+    aim('joint5_' + s, 'joint6_' + s, sd * 0.28, -1, 0.22, 0.85, ph);        // the arm, down under the chest
+    aim('joint6_' + s, 'joint7_' + s, sd * 0.08, -1, 0.42, 0.8, ph + 0.7);   // the elbow let go
+    aim('joint7_' + s, 'joint34_' + s, 0, -1, 0.15, 0.6, ph + 1.3);          // the hand off the wrist
+    aim('joint8_' + s, 'joint9_' + s, sd * 0.16, -0.85, -0.55, 0.75, ph + 3); // the leg trailing down and back
+    aim('joint9_' + s, 'joint9Part2_' + s, sd * 0.04, -1, -0.25, 0.7, ph + 3.6);   // the knee slack
+  }
+  aim('joint4_M', 'Head_M', 0, -0.9, 0.55, 0.55, 5.2);                         // the neck, hanging
+  if (B.Head_M && M.mid) { M.mid.getWorldPosition(_smdT); _smdD.set(0, -1, 0).addScaledVector(fwd, 0.35); sewAim(B.Head_M, _smdT, _smdD, 0.5 * limp); }
+}
 // dead: under the water through the shock, then up slowly to the surface and floating there, face down, turning a little
 function sewMonDeadTick(dt) {
   const M = sewMon, D = sewMonDeadAt || { x: 0, z: 0, yaw: 0 }; if (!M) return;
@@ -93913,6 +94055,7 @@ function sewMonDeadTick(dt) {
   M.g.position.set(D.x, SEW.WATER - 1.05 + 0.92 * u + Math.sin(now * 0.8) * 0.012 * u, D.z);
   M.g.rotation.set(0, D.yaw + Math.sin(now * 0.21) * 0.04 * u, 0);
   M.body.rotation.set(1.48, 0, Math.sin(now * 0.37) * 0.05);
+  sewMonDeadPose(t, now, D.yaw);
   const dir = _sewLA.set(Math.sin(D.yaw), 0, Math.cos(D.yaw));
   if ((M.dIn = (M.dIn ?? 0) - dt) <= 0) {
     M.dIn = t < 4 ? 0.12 + Math.random() * 0.2 : 2 + Math.random() * 2.5;
@@ -97502,6 +97645,967 @@ function thrBottleLand(g, sp) {
       spin: new THREE.Vector3(Math.random() * 9, Math.random() * 9, Math.random() * 9), rest: g.m.position.y, life: 60, bleed: false });
   }
 }
+/* =====================================================================
+ * THE CASTLES' PROPS (2026-11-17, the owner: "put these props in the castle only where they actually make sense scatter
+ * them through each castle section make them all breakable with amazing physics. bodies thrown into them or if the
+ * player jumps through them will break them. dont let characters get stuck on them either … place them in areas where
+ * they aren't too much in the way. make this good.")
+ *
+ * TWO PACKS, ONE KIT. PickledCactusAlan's "Southern Gothic Scene Props" (barrels, crates, grain bags, a stool, a table,
+ * carts, a wheel — one wood atlas) and vmatthew's "Medieval Market Asset Pack" (a keg, crates and produce boxes, sacks,
+ * a wooden bucket, a handcart, a cart wheel, pots, bottles, a melon, apples, carrots, mushrooms), both CC-BY-4.0, packed
+ * by `tools/gltfpack.py` (assets/castle-props-a.glb, -b.glb; the commands are in docs/notes/castle.md). What a castle has
+ * no use for stays in the download: the modern chair, the rocking chairs, the fence, the decking, the market stall (the
+ * owner had XIII's stalls taken out once already, "just have the fountain").
+ *
+ * WHERE: never in the way. Each castle's open court is scanned for the strip along its walls (`cpScanSite`): a spot a
+ * hand's breadth to a metre off a straight stretch of wall, on flat paving, clear of every door and window, every route
+ * through (XIII's `C13_PATH`, the first castle's gate and back door, the farmers' house doors), the fountain, the
+ * braziers and each other — and a little SCENE is set down there with its back to the wall (`CP_SCENES`): barrels with a
+ * bucket, a crate stack, grain sacks, pots and jugs, a produce crate with a melon beside it, a cart with a wheel leaning
+ * on the stone, a table with stools and a bottle. The throne room gets wine and stores at its door end, off the runner.
+ *
+ * HOW THEY BREAK. Every one is a `physProps` entry with `onImpact`, the one door every breakable in this game has: the
+ * blade (`glassStrike`), a body thrown into it (`ragSmash`), a thrown thing (`hitProps`), a jump into it (the loose
+ * branch of `stompBreakables`, now asked in both castles) all break it. A creature walking into one smashes through it
+ * (`cpUnitCrush`, in each castle's own clamp) — nothing is ever stuck on a prop, because a prop is never a wall to them;
+ * you are held off it until it breaks (`cpPushPlayer`). What breaks comes apart into what it is made of: a barrel into
+ * staves round its axis, a crate into boards, a pot or a bottle into shards, a sack bursts and spills its grain, a melon
+ * splits — fractures cut once per kind (`cpFracture`) and reused. What stood on it falls: a crate stacked on a crate
+ * drops as a whole body and breaks where it lands; the produce, a bottle off a table, are thrown off and roll.
+ *
+ * THE PIECES ARE RIGID BODIES (`cpStep`). A box per piece, its eight corners against the floor under each one, with an
+ * impulse at every corner that is going into the floor (restitution, Coulomb friction, the angular velocity that comes
+ * of hitting on a corner), the walls of the castle pushed out of and bounced off, so a stave lands on its end, topples,
+ * rolls and lies down the way a stave does — never snapped flat. They go to sleep when still, wake when you walk
+ * through them (your feet kick them on), and fade out only when there are too many.
+ *
+ * Draws: the intact props are INSTANCED, one batch per kind and part per castle (a broken one is a zero matrix).
+ * ===================================================================== */
+const CP_URLS = { a: 'assets/castle-props-a.glb', b: 'assets/castle-props-b.glb' };
+// node: in the pack; size: what it measures here, by its height ('h') or its longest side in plan ('L');
+// mat: what it is made of (its break, its sound, how it bounces); frac: how it comes apart; n: how many pieces
+const CP_KINDS = {
+  barrel: { src: 'a', node: 'SM_Barrell', size: 0.92, by: 'h', mat: 'wood', frac: 'staves', n: 12, round: true },
+  barrel2: { src: 'a', node: 'SM_Barrell4', size: 0.92, by: 'h', mat: 'wood', frac: 'staves', n: 12, round: true },
+  keg: { src: 'b', node: 'Barrel1', size: 0.95, by: 'h', mat: 'wood', frac: 'staves', n: 12, round: true },
+  crate: { src: 'a', node: 'SM_Crate', size: 0.95, by: 'L', mat: 'wood', frac: 'boards', n: 9 },
+  crateOpen: { src: 'a', node: 'SM_Crate1', size: 1.0, by: 'L', mat: 'wood', frac: 'boards', n: 9 },
+  crateRoped: { src: 'a', node: 'SM_Crate_Roped', size: 1.1, by: 'L', mat: 'wood', frac: 'boards', n: 9 },
+  box1: { src: 'b', node: 'Box1', size: 0.42, by: 'h', mat: 'wood', frac: 'boards', n: 6 },
+  box2: { src: 'b', node: 'Box2', size: 0.58, by: 'h', mat: 'wood', frac: 'boards', n: 7 },
+  box3: { src: 'b', node: 'Box3', size: 0.78, by: 'h', mat: 'wood', frac: 'boards', n: 8 },
+  produceCrate: { src: 'b', node: 'Wooden_Crate', size: 0.66, by: 'L', mat: 'wood', frac: 'boards', n: 6 },
+  sandbag: { src: 'a', node: 'SM_Sandbag', size: 0.92, by: 'L', mat: 'sack', frac: 'burst', n: 4 },
+  sandbag1: { src: 'a', node: 'SM_Sandbag1', size: 0.92, by: 'L', mat: 'sack', frac: 'burst', n: 4 },
+  sack1: { src: 'b', node: 'Sack1', size: 0.6, by: 'h', mat: 'sack', frac: 'burst', n: 4, round: true },
+  sack2: { src: 'b', node: 'Sack2', size: 0.7, by: 'h', mat: 'sack', frac: 'burst', n: 4, round: true },
+  bucket: { src: 'b', node: 'Bucket', size: 0.42, by: 'h', mat: 'wood', frac: 'staves', n: 8, round: true },
+  stool: { src: 'a', node: 'SM_Stool', size: 0.5, by: 'h', mat: 'wood', frac: 'boards', n: 6, round: true },
+  table: { src: 'a', node: 'SM_Table', size: 0.8, by: 'h', mat: 'wood', frac: 'boards', n: 7, round: true },
+  cart: { src: 'a', node: 'SM_Cart', size: 2.9, by: 'L', mat: 'wood', frac: 'boards', n: 14 },
+  cartBroken: { src: 'a', node: 'SM_Cart_Broken', size: 2.9, by: 'L', mat: 'wood', frac: 'boards', n: 14 },
+  handcart: { src: 'b', node: 'Handcart', size: 1.8, by: 'L', mat: 'wood', frac: 'boards', n: 10 },
+  wheel: { src: 'b', node: 'Wheel', size: 1.0, by: 'h', mat: 'wood', frac: 'boards', n: 8 },
+  pot1: { src: 'b', node: 'Pottery1', size: 0.3, by: 'L', mat: 'clay', frac: 'shards', n: 8, round: true },
+  pot2: { src: 'b', node: 'Pottery2', size: 0.45, by: 'h', mat: 'clay', frac: 'shards', n: 9, round: true },
+  pot3: { src: 'b', node: 'Pottery3', size: 0.62, by: 'h', mat: 'clay', frac: 'shards', n: 11, round: true },
+  pot4: { src: 'b', node: 'Pottery4', size: 0.74, by: 'h', mat: 'clay', frac: 'shards', n: 10, round: true },
+  bottle1: { src: 'b', node: 'Bottle1', size: 0.34, by: 'h', mat: 'glass', frac: 'shards', n: 8, round: true },
+  bottle2: { src: 'b', node: 'Bottle2', size: 0.3, by: 'h', mat: 'glass', frac: 'shards', n: 7, round: true },
+  bottle3: { src: 'b', node: 'Bottle3', size: 0.32, by: 'h', mat: 'glass', frac: 'shards', n: 7, round: true },
+  melon: { src: 'b', node: 'Melon', size: 0.3, by: 'L', mat: 'veg', frac: 'split', n: 3, round: true },
+  apple1: { src: 'b', node: 'Apple1', size: 0.085, by: 'L', mat: 'veg', loose: true },
+  apple2: { src: 'b', node: 'Apple2', size: 0.08, by: 'L', mat: 'veg', loose: true },
+  apple3: { src: 'b', node: 'Apple3', size: 0.085, by: 'L', mat: 'veg', loose: true },
+  carrot1: { src: 'b', node: 'Carrot1', size: 0.19, by: 'L', mat: 'veg', loose: true },
+  carrot2: { src: 'b', node: 'Carrot2', size: 0.17, by: 'L', mat: 'veg', loose: true },
+  shroom1: { src: 'b', node: 'Shroom1', size: 0.09, by: 'L', mat: 'veg', loose: true },
+  shroom2: { src: 'b', node: 'Shroom2', size: 0.08, by: 'L', mat: 'veg', loose: true },
+};
+// how hard a blow it takes to break one, and how a piece of it bounces
+const CP_MAT = {
+  wood: { brk: 3.0, e: 0.28, mu: 0.6 }, clay: { brk: 1.6, e: 0.12, mu: 0.7 }, glass: { brk: 1.4, e: 0.15, mu: 0.4 },
+  sack: { brk: 2.4, e: 0.05, mu: 0.9 }, veg: { brk: 2.0, e: 0.3, mu: 0.5 },
+};
+const CP = { gl: { a: null, b: null }, asked: false, kinds: {}, sites: {}, bodies: [], ready: false, heaps: [] };
+const CP_MAX_BODIES = 150, CP_G = 15;
+
+function loadCastleProps() {
+  if (CP.asked) return;
+  CP.asked = true;
+  for (const k of ['a', 'b']) bwGlb(CP_URLS[k], (g) => { CP.gl[k] = g.scene; if (CP.gl.a && CP.gl.b) cpMakeKinds(); }, () => {});
+}
+/* A TRIANGLE TURNED AGAINST ITS OWN NORMALS. The packer's vertex clustering (`--decimate-each`) keeps the normals and can
+ * turn a triangle's winding over; drawn both sides, three then flips the normal of every face it sees from behind, and a
+ * keg seen from outside was lit as though from inside: black. Each triangle is wound to agree with its vertices' normals. */
+function cpWindByNormals(g) {
+  const P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+  let flipped = 0;
+  for (let t = 0; t + 2 < P.count; t += 3) {
+    a.fromBufferAttribute(P, t); b.fromBufferAttribute(P, t + 1); c.fromBufferAttribute(P, t + 2);
+    b.sub(a); c.sub(a); b.cross(c);
+    n.set(N.getX(t) + N.getX(t + 1) + N.getX(t + 2), N.getY(t) + N.getY(t + 1) + N.getY(t + 2), N.getZ(t) + N.getZ(t + 1) + N.getZ(t + 2));
+    if (b.dot(n) >= 0) continue;
+    flipped++;
+    for (const A of [P, N, U]) { if (!A) continue; for (let k = 0; k < A.itemSize; k++) { const x = A.array[(t + 1) * A.itemSize + k]; A.array[(t + 1) * A.itemSize + k] = A.array[(t + 2) * A.itemSize + k]; A.array[(t + 2) * A.itemSize + k] = x; } }
+  }
+  if (flipped) { P.needsUpdate = true; N.needsUpdate = true; if (U) U.needsUpdate = true; }
+  return flipped;
+}
+/* EACH KIND, BAKED: its meshes in the pack's frame, scaled to its size here, stood on y = 0 and centred in plan; one
+ * geometry per material (position, normal, uv), so an instanced batch per part draws it */
+function cpMakeKinds() {
+  const v = new THREE.Vector3();
+  for (const [name, K] of Object.entries(CP_KINDS)) {
+    const root = CP.gl[K.src]; root.updateMatrixWorld(true);
+    const node = root.getObjectByName(K.node); if (!node) { console.warn('[cprops] no node', K.node); continue; }
+    const byMat = new Map();
+    node.traverse((o) => {
+      if (!o.isMesh || !o.geometry.attributes.position) return;
+      let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      for (const a of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(a)) g.deleteAttribute(a);
+      if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      if (!g.attributes.normal) g.computeVertexNormals();
+      g.applyMatrix4(o.matrixWorld);
+      cpWindByNormals(g);
+      const m = o.material;
+      if (!byMat.has(m)) byMat.set(m, []);
+      byMat.get(m).push(g);
+    });
+    if (!byMat.size) continue;
+    const box = new THREE.Box3();
+    for (const L of byMat.values()) for (const g of L) { g.computeBoundingBox(); box.union(g.boundingBox); }
+    const sz = box.getSize(new THREE.Vector3());
+    const s = K.size / (K.by === 'h' ? sz.y : Math.max(sz.x, sz.z));
+    const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2, y0 = box.min.y;
+    const parts = [];
+    for (const [m, L] of byMat) {
+      const g = L.length > 1 ? mergeGeometries(L, false) : L[0];
+      g.translate(-cx, -y0, -cz); g.scale(s, s, s);
+      g.computeBoundingBox(); g.computeBoundingSphere();
+      parts.push({ geo: g, mat: cpMaterial(m, K) });
+    }
+    const hx = sz.x * s / 2, hz = sz.z * s / 2, h = sz.y * s;
+    CP.kinds[name] = { name, K, parts, hx, hz, h, r: Math.hypot(hx, hz), frac: null };
+  }
+  CP.ready = true;
+  for (const S of Object.values(CP.sites)) S.built = false;     // (a site may already have waited for them)
+}
+// the pack's material, made for these courts: no metal (there is no environment to reflect: a hoop went black), the
+// maps nearest-filtered like the rest of the game, both sides drawn (a piece of a shell is seen from inside), a little
+// lift off the black so a torchlit court shows the wood, not a hole
+const _cpMatCache = new Map();
+function cpMaterial(m, K) {
+  if (_cpMatCache.has(m)) return _cpMatCache.get(m);
+  const c = m.clone();
+  c.metalness = 0; c.metalnessMap = null;
+  c.roughness = Math.max(0.72, c.roughness ?? 0.85); c.roughnessMap = null;
+  c.side = THREE.DoubleSide;
+  for (const k of ['map', 'normalMap', 'aoMap', 'emissiveMap']) if (c[k]) retroTex(c[k]);
+  if (c.normalMap) c.normalScale = new THREE.Vector2(0.8, 0.8);
+  /* (the castles' stone is lit by its OWN emissive map, warmed inside XIII to about 0.23/0.20/0.18 of its map — the lamps
+   * barely move it — so a prop lit by the lamps alone stood black against bright stone: its map lifts it the same way,
+   * warm, the dark gothic atlas half again as much as the market's) */
+  c.emissive = new THREE.Color(K.mat === 'veg' ? 0x3a2a20 : K.src === 'a' ? 0x5c4a35 : 0x433628);
+  if (c.map) c.emissiveMap = c.map;
+  if (K.mat === 'glass') { c.roughness = 0.35; c.emissive = new THREE.Color(0x2a3a2a); }
+  _cpMatCache.set(m, c);
+  return c;
+}
+
+/* ---- WHERE THEY GO -------------------------------------------------- */
+// each castle: its frame, its stone, its floor, and what nothing may be set down in front of
+const CP_SITE_DEFS = {
+  fort: {
+    S: () => FORT_SITE, X: () => FORT_X, Y: () => FORT_Y, Z: () => FORT_Z, group: () => fortWorld, walk: () => fortWalk,
+    ready: () => !!(fortWorld && fortWalk && fortWalls && fortCells && FORT_SITE._main && FORT_SITE._main.done), here: () => inFort,
+    floor: (x, z) => fortCourtAt(x, z), nominal: () => FORT_Y + FORT_FLOOR, open: (x, z, strict) => cpOpenSky(x, z, FORT_SITE, FORT_FLOOR, strict),
+    avoid: (lx, lz) => {
+      if (Math.hypot(lx - FORT_GATE.xi, lz - FORT_GATE.zi) < 8) return true;           // inside the gate, and its leaves' swing
+      if (Math.hypot(lx - FORT_DOOR.x, lz - FORT_DOOR.z) < 5) return true;            // the back door, and the way to it
+      for (const D of farmDoors) if (Math.hypot(lx - D.cx, lz - D.cz) < 2.8) return true;   // a house's door (its middle, the castle's frame): a farmer comes out of it
+      if (cpFeatNear(fortWorld, lx, 1.3, lz, 1.5, 1.0, cpFortDoorMats())) return true;   // and every other door in it, in the farmers' doors' own materials
+      if (fortLife) for (const q of fortLife.props) if (Math.hypot(lx + FORT_X - q.x, lz + FORT_Z - q.z) < 2.0) return true;   // the braziers
+      return false;
+    },
+    scenes: ['barrels', 'crates', 'sacks', 'produce', 'cart', 'pottery', 'barrels', 'crates', 'sacks', 'table', 'cartHand'], max: 10,
+    singles: 7, single: ['barrel', 'barrel2', 'crate', 'crateOpen', 'sack1', 'sack2', 'box3', 'bucket'],
+    /* (its walk calls the arcades and the houses' rooms open too — seen from above, half the first scenes stood under a
+     * roof — so here everything stands under the sky, against a wall where one is in reach and at the street's own edge
+     * where the eaves start where it is not) */
+    sky: true,
+  },
+  c13: {
+    S: () => C13_SITE, X: () => C13_X, Y: () => C13_Y, Z: () => C13_Z, group: () => c13World, walk: () => c13Walk,
+    ready: () => !!(c13World && c13Walk && c13Walls && c13Cells && c13Thrive && c13Thrive.done && C13_SITE._main && C13_SITE._main.done), here: () => inC13,
+    floor: (x, z) => c13CourtAt(x, z), nominal: () => C13_Y + C13_FLOOR, open: (x, z, strict) => cpOpenSky(x, z, C13_SITE, C13_FLOOR, strict),
+    avoid: (lx, lz) => c13PathD(lx, lz) < 2.8 || c13FeatNear(lx, 1.4, lz, 1.6, 1.5) || c13Overlaps(lx, lz, 1.0),
+    scenes: ['produce', 'pottery', 'barrels', 'table', 'crates', 'sacks', 'cart', 'pottery', 'barrels', 'produce', 'crates', 'cartHand'], max: 11,
+    singles: 9, single: ['barrel', 'keg', 'pot3', 'pot4', 'sack1', 'box2', 'box3', 'crate', 'bucket'],
+  },
+  thr: {
+    S: () => THR_SITE, X: () => THR_X, Y: () => THR_Y, Z: () => THR_Z, group: () => thrWorld, walk: () => thrWalk,
+    ready: () => !!(thrWorld && thrWalk && thrWalls && thrCells && thrFurn.length), here: () => inThrone,
+    floor: (x, z) => thrStandY(x, z, THR_Y + 3.0), nominal: () => THR_Y + 2.19, open: (x, z) => thrStandY(x, z, THR_Y + 3.0) !== null,
+    // the door end only, off the runner, clear of the tables and the throne's dais
+    avoid: (lx, lz) => Math.abs(lx) < 2.6 || lz < 6 || lz > 18.6 || Math.hypot(lx - THR_SPAWN.x, lz - THR_SPAWN.z) < 3.0   // (not by the arched doors at the far end)
+      || thrFurn.some((F) => lx > F.box.min.x - 1.0 && lx < F.box.max.x + 1.0 && lz > F.box.min.z - 1.0 && lz < F.box.max.z + 1.0),
+    scenes: ['barrels', 'crates', 'sacks', 'pottery', 'barrels'], max: 5,
+    singles: 3, single: ['keg', 'barrel', 'crate'],
+  },
+};
+/* the doors' and windows' own vertices on a 0.6 m hash, for any of gogiart's castles (XIII's `c13Features`, generalised):
+ * nothing is set down in front of one */
+const _cpFeat = new Map();
+// the first castle's door materials: whatever the farmers' doors (lifted out of its own door meshes) are made of
+function cpFortDoorMats() {
+  if (CP.fortDoorMats) return CP.fortDoorMats;
+  // (a leaf is lifted with a little of its frame's stone: only what most of a leaf is made of is the door)
+  const cnt = new Map(); let all = 0;
+  for (const D of farmDoors) D.leaf.traverse((o) => { if (o.isMesh && o.material && o.geometry.index) { const n = o.geometry.index.count; cnt.set(o.material.name, (cnt.get(o.material.name) || 0) + n); all += n; } });
+  const S = new Set(); for (const [k, n] of cnt) if (n > all * 0.2) S.add(k);
+  console.log('[cprops] the first castle\'s door materials', [...S].join(','));
+  return (CP.fortDoorMats = S.size ? S : null);
+}
+function cpFeatNear(world, lx, ly, lz, r, ry, mats = null) {
+  let F = _cpFeat.get(world);
+  if (!F) {
+    F = new Set(); _cpFeat.set(world, F);
+    world.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(world.matrixWorld).invert(), M = new THREE.Matrix4(), v = new THREE.Vector3();
+    world.traverse((o) => {
+      if (!o.isMesh || !o.material || o.userData.bwGhost || !o.geometry.attributes.position) return;
+      if (mats ? !mats.has(o.material.name) : !/^acmat_(1|3|9|10|11|12|13|14|16|19|23)$/.test(o.material.name)) return;
+      M.multiplyMatrices(inv, o.matrixWorld);
+      const p = o.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).applyMatrix4(M); F.add(Math.floor(v.x / 0.6) + ',' + Math.floor(v.y / 0.6) + ',' + Math.floor(v.z / 0.6)); }
+    });
+    console.log('[cprops] features of', world.name, F.size);
+  }
+  for (let i = Math.floor((lx - r) / 0.6); i <= Math.floor((lx + r) / 0.6); i++)
+    for (let k = Math.floor((lz - r) / 0.6); k <= Math.floor((lz + r) / 0.6); k++)
+      for (let j = Math.floor((ly - ry) / 0.6); j <= Math.floor((ly + ry) / 0.6); j++) if (F.has(i + ',' + j + ',' + k)) return true;
+  return false;
+}
+const _cpV = new THREE.Vector3(), _cpQ = new THREE.Quaternion(), _cpM = new THREE.Matrix4(), _cpS = new THREE.Vector3(1, 1, 1);
+// an open court at its paving: floored there, and sky over it (a house is floored at the same height, under a roof)
+function cpOpenSky(x, z, S, floor, strict) {
+  // (and on the court you walk: the walk also holds the stone's own nooks, the space inside a wall, a tower's top)
+  if (!siteOnMain(S, x, z)) return false;
+  const fl = keepCellAt(x, z, S); if (!fl) return false;
+  // (sky over it, or the eaves along a house wall — anything but a house's own 17-19 m roof: the strip along a wall is under the eaves)
+  for (let k = 0; k < fl.length; k += 3) if (Math.abs(fl[k] - floor) < 0.3) { const rf = fl[k + 2] - fl[k]; return rf > 28 || (!strict && rf < 14); }
+  return false;
+}
+/* THE SCENES, laid out in a frame with its back to the wall: `u` along the wall, `n` out from it. Each item: a kind, its
+ * place [along, out], a turn (radians, about the up axis, from facing out), and `on`: the index of the item it stands
+ * on. `lean`: stood up against the wall (a wheel). `fill`: what is heaped in it. */
+const CP_SCENES = {
+  barrels: () => [
+    { k: cpPick(['barrel', 'barrel2', 'keg']), p: [0, 0.48], yaw: cpRand() * 6.3 },
+    { k: cpPick(['barrel', 'barrel2']), p: [0.82 + cpRand() * 0.1, 0.5], yaw: cpRand() * 6.3 },
+    { k: 'keg', p: [-0.85, 0.52], yaw: cpRand() * 6.3, opt: 0.6 },
+    { k: 'bucket', p: [1.45, 0.62], yaw: cpRand() * 6.3, opt: 0.7 },
+  ],
+  crates: () => [
+    { k: cpPick(['crate', 'crateRoped']), p: [0, 0.6], yaw: (cpRand() - 0.5) * 0.25 },
+    { k: cpPick(['box2', 'box1']), p: [0.05, 0.62], yaw: (cpRand() - 0.5) * 0.6, on: 0 },
+    { k: 'box3', p: [1.15, 0.5], yaw: (cpRand() - 0.5) * 0.4, opt: 0.8 },
+    { k: 'box1', p: [0.75, 1.15], yaw: cpRand() * 6.3, opt: 0.6 },
+  ],
+  sacks: () => [
+    { k: 'sandbag', p: [0, 0.55], yaw: Math.PI / 2 + (cpRand() - 0.5) * 0.3 },
+    { k: 'sandbag1', p: [0.05, 0.57], yaw: Math.PI / 2 + (cpRand() - 0.5) * 0.5, on: 0 },
+    { k: 'sack1', p: [0.95, 0.42], yaw: cpRand() * 6.3 },
+    { k: 'sack2', p: [1.5, 0.48], yaw: cpRand() * 6.3, opt: 0.7 },
+  ],
+  pottery: () => [
+    { k: 'pot3', p: [0, 0.42], yaw: cpRand() * 6.3 },
+    { k: 'pot4', p: [0.55, 0.36], yaw: cpRand() * 6.3 },
+    { k: 'pot2', p: [-0.5, 0.4], yaw: cpRand() * 6.3 },
+    { k: 'pot1', p: [0.25, 0.85], yaw: cpRand() * 6.3, opt: 0.8 },
+    { k: cpPick(['bottle1', 'bottle2', 'bottle3']), p: [-0.25, 0.85], yaw: cpRand() * 6.3, opt: 0.8 },
+  ],
+  produce: () => [
+    { k: 'produceCrate', p: [0, 0.48], yaw: (cpRand() - 0.5) * 0.3, fill: 'produce' },
+    { k: 'melon', p: [0.62, 0.52], yaw: cpRand() * 6.3 },
+    { k: 'melon', p: [0.75, 0.85], yaw: cpRand() * 6.3, opt: 0.5 },
+    { k: 'box1', p: [-0.72, 0.5], yaw: (cpRand() - 0.5) * 0.4, fill: 'produce', opt: 0.85 },
+    { k: 'sack1', p: [-1.3, 0.45], yaw: cpRand() * 6.3, opt: 0.6 },
+  ],
+  cart: () => [
+    { k: cpPick(['cart', 'cartBroken']), p: [0, 0.95], yaw: Math.PI / 2, along: true },
+    { k: 'wheel', p: [2.1, 0.22], yaw: 0, lean: true, opt: 0.8 },
+  ],
+  cartHand: () => [
+    { k: 'handcart', p: [0, 0.75], yaw: Math.PI / 2, along: true },
+    { k: cpPick(['sack1', 'sack2']), p: [1.35, 0.45], yaw: cpRand() * 6.3, opt: 0.7 },
+  ],
+  table: () => [
+    { k: 'table', p: [0, 0.95], yaw: cpRand() * 6.3 },
+    { k: 'stool', p: [-0.78, 1.0], yaw: cpRand() * 6.3 },
+    { k: 'stool', p: [0.8, 0.95], yaw: cpRand() * 6.3, opt: 0.8 },
+    { k: cpPick(['bottle2', 'bottle3']), p: [0.12, 0.92], yaw: cpRand() * 6.3, on: 0 },
+    { k: 'pot1', p: [-0.15, 1.08], yaw: cpRand() * 6.3, on: 0, opt: 0.7 },
+  ],
+};
+function cpPick(a) { return a[(cpRand() * a.length) | 0]; }
+// a seeded draw for the layout, so a castle is the same castle every time it is built
+let _cpSeed = 1;
+function cpRand() { _cpSeed = (_cpSeed * 16807) % 2147483647; return (_cpSeed - 1) / 2147483646; }
+
+/* THE STRIP ALONG THE WALLS: a spot every half metre of open court, the nearest wall at knee height between a hand and a
+ * metre off, the wall flat for a metre and a half either way, the floor flat, and nothing to keep clear of near it */
+function* cpScanSite(D, out) {
+  const S = D.S(), X = D.X(), Z = D.Z(), w = D.walk();
+  let t0 = performance.now();
+  for (let lz = w.z0 + 0.5; lz < w.z0 + w.gh * w.cell; lz += 0.5) {
+    if (performance.now() - t0 > 2.5) { yield; t0 = performance.now(); }
+    for (let lx = w.x0 + 0.5; lx < w.x0 + w.gw * w.cell; lx += 0.5) {
+      const x = X + lx, z = Z + lz;
+      if (!D.open(x, z, !!D.sky)) continue;       // (the strip along a house wall is under its eaves: allowed where the walk is honest about it)
+      const fy = D.floor(x, z); if (fy === null) continue;
+      let nx, nz, d;
+      const h = keepWallNear(x, z, 1.15, fy + 0.3, fy + 1.1, S);
+      if (h) { d = 1.15 - h.depth; if (d < 0.35 || d > 0.95) continue; nx = (x - h.x) / d; nz = (z - h.z) / d; }
+      else if (D.sky) {
+        // the street's edge: away from where the sky stops, within a metre and a quarter
+        let ex = 0, ez = 0, k = 0;
+        for (let q = 0; q < 12; q++) { const a = q / 12 * Math.PI * 2; if (!D.open(x + Math.sin(a) * 1.25, z + Math.cos(a) * 1.25, true)) { ex += Math.sin(a); ez += Math.cos(a); k++; } }
+        if (k < 2 || k > 6) continue;
+        const el = Math.hypot(ex, ez); if (el < 0.5) continue;
+        nx = -ex / el; nz = -ez / el; d = 0.5;
+      } else continue;
+      /* a COURT in front of it, not an alley: the half-disc out from the wall open paving for four metres nearly all round
+       * (a scene in a passage is a scene in the way) */
+      // and the open street just in front of it, under the sky (a room's floor under a roof never has it)
+      let sky = false;
+      for (const r of [1.0, 1.8, 2.6, 3.4]) if (D.open(x + nx * r, z + nz * r, true)) { sky = true; break; }
+      if (!sky) continue;
+      let open = 0, all = 0;
+      for (let q = -4; q <= 4; q++) {
+        const a = Math.atan2(nx, nz) + q * 0.36;
+        for (const r of [1.4, 2.4, 3.4]) { all++; const px = x + Math.sin(a) * r, pz = z + Math.cos(a) * r; if (D.open(px, pz, false)) { const f = D.floor(px, pz); if (f !== null && Math.abs(f - fy) < 0.4) open++; } }
+      }
+      if (open < all * 0.78) continue;
+      out.push({ lx, lz, x, z, fy, nx, nz, d });
+    }
+  }
+}
+// the wall behind is a straight run for `half` either way of the spot (the nearest wall from in front of each point is
+// straight back, on the plane), so a scene stands against a face, not in a corner or across a doorway
+function cpWallFlat(D, s, half) {
+  const S = D.S(), tx = -s.nz, tz = s.nx;
+  if (!keepWallNear(s.x, s.z, 1.15, s.fy + 0.3, s.fy + 1.1, S)) return true;   // (a street-edge spot: nothing behind it to be flat)
+  for (const k of [-1, -0.5, 0.5, 1]) {
+    const px = s.x + tx * half * k, pz = s.z + tz * half * k;
+    const fy = D.floor(px, pz); if (fy === null || Math.abs(fy - s.fy) > 0.12) return false;
+    const h = keepWallNear(px, pz, 1.3, s.fy + 0.3, s.fy + 1.1, S); if (!h) return false;
+    const dd = 1.3 - h.depth;
+    if (Math.abs(dd - s.d) > 0.3) return false;
+  }
+  return true;
+}
+// a prop of this kind fits here: on the open paving at the spot's height all round it, and in no stone
+function cpFits(D, kind, x, z, fy, yaw, top) {
+  const S = D.S(), c = Math.cos(yaw), s = Math.sin(yaw);
+  for (const [a, b] of [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const ox = a * kind.hx * 0.8, oz = b * kind.hz * 0.8;
+    const px = x + ox * c + oz * s, pz = z - ox * s + oz * c;
+    const W = CP.why || (CP.why = {});
+    if (!top) { if (!D.open(px, pz, !!D.sky)) { W.fOpen = (W.fOpen || 0) + 1; return false; } const f = D.floor(px, pz); if (f === null || Math.abs(f - fy) > 0.12) { W.fFloor = (W.fFloor || 0) + 1; return false; } }
+  }
+  if (keepWallNear(x, z, Math.max(0.12, Math.min(kind.hx, kind.hz) * 0.95), fy + 0.15, fy + Math.max(0.3, kind.h * 0.9), S)) { CP.why.fWall = (CP.why.fWall || 0) + 1; return false; }
+  return true;
+}
+/* A CASTLE'S PROPS ARE BUILT AS A JOB (the scan is tens of thousands of wall queries): a few milliseconds a frame from
+ * the moment the castle and the kit are both in — on the approach, not on the frame you walk in (`cpTick`) */
+function cpBuildSite(id) {
+  const D = CP_SITE_DEFS[id];
+  let site = CP.sites[id];
+  if (!site) site = CP.sites[id] = { id, D, props: [], built: false, job: null, group: null };
+  if (site.built || !CP.ready || !D.ready()) return;
+  if (!site.job) site.job = cpBuildSteps(site);
+  const t0 = performance.now();
+  while (performance.now() - t0 < 3) { if (site.job.next().done) { site.built = true; site.job = null; break; } }
+}
+function* cpBuildSteps(site) {
+  const id = site.id, D = site.D;
+  const all = [];
+  yield* cpScanSite(D, all);
+  _cpSeed = { fort: 1117, c13: 1313, thr: 4477 }[id];
+  const cand = all;
+  // shuffle, seeded
+  for (let i = cand.length - 1; i > 0; i--) { const j = (cpRand() * (i + 1)) | 0; [cand[i], cand[j]] = [cand[j], cand[i]]; }
+  const placed = [];
+  let si = 0, t0 = performance.now();
+  for (const s of cand) {
+    if (placed.length >= D.max) break;
+    if (performance.now() - t0 > 2.5) { yield; t0 = performance.now(); }
+    const R = CP.why || (CP.why = {});
+    if (placed.some((p) => Math.hypot(p.lx - s.lx, p.lz - s.lz) < 3.9)) { R.near = (R.near || 0) + 1; continue; }
+    if (D.avoid(s.lx, s.lz)) { R.avoid = (R.avoid || 0) + 1; continue; }
+    if (!cpWallFlat(D, s, 1.15)) { R.flat = (R.flat || 0) + 1; continue; }
+    const sceneName = D.scenes[si % D.scenes.length];
+    const before = site.props.length;
+    const n = cpLayScene(site, s, CP_SCENES[sceneName]());
+    if (n >= 2) { placed.push({ lx: s.lx, lz: s.lz, x: s.x, z: s.z, fy: s.fy, nx: s.nx, nz: s.nz, scene: sceneName }); si++; }
+    else { site.props.length = before; R.thin = (R.thin || 0) + 1; }   // (one prop alone is not a scene: none)
+  }
+  /* AND SINGLES, scattered along what is left of the strip: a barrel, a crate, a sack, a pot on its own, three metres
+   * clear of everything else — the court used, not decorated in clumps */
+  let singles = 0;
+  for (const s of cand) {
+    if (singles >= (D.singles || 0)) break;
+    if (performance.now() - t0 > 2.5) { yield; t0 = performance.now(); }
+    if (site.props.some((q) => Math.hypot(q.x - s.x, q.z - s.z) < 3.0) || D.avoid(s.lx, s.lz)) continue;
+    const k = cpPick(D.single || ['barrel', 'crate', 'sack1', 'pot3']);
+    const before = site.props.length;
+    const n = cpLayScene(site, s, [{ k, p: [0, CP.kinds[k] ? Math.max(CP.kinds[k].hx, CP.kinds[k].hz) + 0.12 : 0.5], yaw: cpRand() * 6.3 }]);
+    if (n >= 1) singles++; else site.props.length = before;
+  }
+  cpBatch(site);
+  site.placed = placed;
+  console.log('[cprops]', id, 'scenes', placed.length, 'props', site.props.length, 'from', cand.length, 'spots', JSON.stringify(CP.why)); CP.why = {};
+}
+// one scene at a wall spot: each item turned to the wall's frame, tested, and kept or left out
+function cpLayScene(site, s, items) {
+  const D = site.D, X = D.X(), Y = D.Y(), Z = D.Z();
+  const ux = -s.nz, uz = s.nx;                      // along the wall
+  const face = Math.atan2(s.nx, s.nz);              // a prop's +z turned out from the wall
+  const made = [];
+  let n = 0;
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (it.opt !== undefined && cpRand() > it.opt) { made.push(null); continue; }
+    const kind = CP.kinds[it.k]; if (!kind) { made.push(null); continue; }
+    // its distance out from the wall is measured to the spot's own wall distance: `p[1]` is metres off the stone
+    const out = it.p[1] - s.d, along = it.p[0];
+    let x = s.x + ux * along + s.nx * out, z = s.z + uz * along + s.nz * out, fy, base;
+    let yaw = face + (it.yaw || 0);
+    if (it.along) yaw = Math.atan2(ux, uz);         // its long side along the wall
+    const sup = it.on !== undefined ? made[it.on] : null;
+    if (it.on !== undefined && !sup) { made.push(null); continue; }
+    if (sup) {     // on what it stands on: its top, a little off its middle
+      const da = (along - items[it.on].p[0]) * 0.3;
+      base = sup.y + sup.kind.h; fy = sup.fy; x = sup.x + ux * da + (cpRand() - 0.5) * 0.08; z = sup.z + uz * da + (cpRand() - 0.5) * 0.08;
+    }
+    else { fy = D.floor(x, z); if (fy === null) { made.push(null); continue; } base = fy; }
+    if (!sup && !cpFits(D, kind, x, z, fy, yaw, false)) { made.push(null); CP.why.fit = (CP.why.fit || 0) + 1; continue; }
+    if (!sup && site.props.some((q) => !q.on && Math.hypot(q.x - x, q.z - z) < q.kind.r * 0.75 + kind.r * 0.75)) { made.push(null); continue; }
+    if (sup && (kind.hx > sup.kind.hx * 1.05 || kind.hz > sup.kind.hz * 1.05) && !sup.kind.K.round) { /* (wider than what it stands on) */ }
+    const P = { site: site.id, kind, x, z, y: base, fy, yaw, tilt: 0, on: sup, dead: false, fill: null, wn: [s.nx, s.nz] };
+    if (it.lean) {
+      // a wheel stood on its rim against the stone, leaning back into it
+      const T = 0.22;
+      P.lean = { T, ux, uz };
+      P.yaw = face;                                  // its face to the court, its rim along the wall
+      const off = 0.08 + Math.sin(T) * kind.h;       // its foot this far off the stone, so its top rests on it
+      P.x = s.x + ux * along + s.nx * (off - s.d); P.z = s.z + uz * along + s.nz * (off - s.d);
+      P.fy = D.floor(P.x, P.z); if (P.fy === null) { made.push(null); continue; }
+      P.y = P.fy;
+    }
+    if (it.fill === 'produce') P.fill = cpFillProduce(P);
+    site.props.push(P); made.push(P); n++;
+    if (sup) (sup.carries || (sup.carries = [])).push(P);
+  }
+  return n;
+}
+// a crate's heap: apples, carrots and mushrooms, each its own lump, lying in the crate's top
+function cpFillProduce(P) {
+  const k = P.kind, out = [];
+  const kinds = ['apple1', 'apple2', 'apple3', 'carrot1', 'carrot2', 'shroom1', 'shroom2'];
+  const n = Math.round((k.hx * k.hz) / 0.012);
+  for (let i = 0; i < Math.min(14, n); i++) {
+    const vk = CP.kinds[kinds[(cpRand() * kinds.length) | 0]]; if (!vk) continue;
+    const a = (cpRand() - 0.5) * 1.6 * (k.hx - 0.06), b = (cpRand() - 0.5) * 1.6 * (k.hz - 0.06);
+    out.push({ kind: vk, a, b, y: k.h * (0.62 + cpRand() * 0.3), yaw: cpRand() * 6.3, rx: (cpRand() - 0.5) * 1.2, rz: (cpRand() - 0.5) * 1.2 });
+  }
+  return out;
+}
+/* THE BATCHES: one InstancedMesh per kind and part per castle, under the castle's own group (so it shows and hides with
+ * it), every prop an instance; a produce heap's lumps in batches of their own */
+function cpPropMatrix(P, M) {
+  const Y = P.site; const D = CP_SITE_DEFS[Y];
+  const e = new THREE.Euler(0, P.yaw, 0, 'YXZ');
+  if (P.lean) e.set(0, P.yaw, 0, 'YXZ');
+  _cpQ.setFromEuler(e);
+  // (leant back: its top tipped toward the wall, about its own axis along the wall)
+  if (P.lean) { const t = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -P.lean.T); _cpQ.multiply(t); }
+  _cpV.set(P.x - D.X(), P.y - D.Y(), P.z - D.Z());
+  return M.compose(_cpV, _cpQ, _cpS);
+}
+function cpBatch(site) {
+  const D = site.D, G = new THREE.Group(); G.name = 'castleProps_' + site.id; G.userData.noBake = true;
+  D.group().add(G); site.group = G;
+  const byKind = new Map();
+  const addTo = (kind, entry) => { if (!byKind.has(kind.name)) byKind.set(kind.name, []); byKind.get(kind.name).push(entry); };
+  for (const P of site.props) {
+    addTo(P.kind, { P, M: cpPropMatrix(P, new THREE.Matrix4()) });
+    if (P.fill) for (const f of P.fill) {
+      const M = cpPropMatrix(P, new THREE.Matrix4());
+      const L = new THREE.Matrix4().compose(new THREE.Vector3(f.a, f.y, f.b), new THREE.Quaternion().setFromEuler(new THREE.Euler(f.rx, f.yaw, f.rz)), _cpS);
+      f.M = M.multiply(L);
+      addTo(f.kind, { f, M: f.M });
+    }
+  }
+  for (const [name, list] of byKind) {
+    const kind = CP.kinds[name];
+    for (const part of kind.parts) {
+      const im = new THREE.InstancedMesh(part.geo, part.mat, list.length);
+      im.name = 'cprop_' + name; im.userData.noBake = true; im.userData.bwGhost = true; im.raycast = () => {};
+      list.forEach((e, i) => im.setMatrixAt(i, e.M));
+      im.instanceMatrix.needsUpdate = true;
+      im.computeBoundingSphere(); if (im.boundingSphere) im.boundingSphere.radius += 1;
+      G.add(im);
+      list.forEach((e, i) => { const o = e.P || e.f; (o.inst || (o.inst = [])).push({ im, i }); });
+    }
+  }
+  // and each prop a breakable: a proxy box at its middle in the world, for the doors every breakable uses
+  for (const P of site.props) cpMakeProxy(P);
+}
+const _cpProxyMat = new THREE.MeshBasicMaterial({ visible: false });
+function cpMakeProxy(P) {
+  const k = P.kind, w = k.hx * 2, d = k.hz * 2, h = Math.max(0.08, k.h);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), _cpProxyMat);
+  m.userData.bwGhost = true; m.name = 'cpropProxy';
+  m.position.set(P.x, P.y + h / 2, P.z); m.rotation.y = P.yaw;
+  if (P.lean) { m.position.y = P.y + k.h * 0.5; m.scale.set(1, 1, 1); }
+  scene.add(m);
+  P.proxy = m;
+  P.box = new THREE.Box3().setFromObject(m);
+  P.prop = { mesh: m, box: P.box, radius: Math.max(0.15, k.r * 0.85), dead: false, held: false, thrown: false, pinned: true,
+    vel: new THREE.Vector3(), step: () => {}, onImpact: (speed) => { if (speed >= CP_MAT[k.K.mat].brk) cpBreak(P, speed); } };
+  physProps.push(P.prop);
+}
+
+/* ---- BREAKING ------------------------------------------------------- */
+/* A KIND'S FRACTURE, cut once (two ways, so two of the same never break alike): its triangles shared out among `n` seeds —
+ * round its axis and in two tiers for staves, the farthest-apart points of its own surface for boards, shards and a
+ * sack's tear — every piece its own geometry centred on itself, one group per material */
+function cpFracture(kind, variant) {
+  kind.frac = kind.frac || [];
+  if (kind.frac[variant]) return kind.frac[variant];
+  const K = kind.K, n = K.n || 6;
+  const tris = [];          // [part, a,b,c (9 floats), uv (6), nrm (9), centroid]
+  kind.parts.forEach((part, pi) => {
+    const P = part.geo.attributes.position, U = part.geo.attributes.uv, N = part.geo.attributes.normal;
+    for (let t = 0; t + 2 < P.count; t += 3) {
+      const c = [(P.getX(t) + P.getX(t + 1) + P.getX(t + 2)) / 3, (P.getY(t) + P.getY(t + 1) + P.getY(t + 2)) / 3, (P.getZ(t) + P.getZ(t + 1) + P.getZ(t + 2)) / 3];
+      tris.push({ pi, t, c });
+    }
+  });
+  const rnd = mulberry32(kind.name.length * 977 + variant * 131 + 7);
+  let assign;
+  if (K.frac === 'staves') {
+    const S = Math.max(3, Math.round(n / 2)), off = rnd() * 6.283, hs = kind.h * (0.42 + rnd() * 0.16);
+    assign = (c) => { const a = (Math.atan2(c[2], c[0]) + off + 6.283 * 4) % 6.283; return Math.floor(a / 6.283 * S) + (c[1] > hs ? S : 0); };
+  } else {
+    // farthest-point seeds over the surface (a random start), so every piece is compact
+    const seeds = [tris[(rnd() * tris.length) | 0].c];
+    const dmin = tris.map((T) => Infinity);
+    while (seeds.length < n) {
+      const s = seeds[seeds.length - 1];
+      let bi = 0, bd = -1;
+      for (let i = 0; i < tris.length; i++) {
+        const c = tris[i].c, d = (c[0] - s[0]) ** 2 + (c[1] - s[1]) ** 2 * (K.frac === 'boards' ? 0.6 : 1) + (c[2] - s[2]) ** 2;
+        if (d < dmin[i]) dmin[i] = d;
+        if (dmin[i] * (0.75 + rnd() * 0.5) > bd) { bd = dmin[i]; bi = i; }
+      }
+      seeds.push(tris[bi].c);
+    }
+    assign = (c) => { let b = 0, bd = Infinity; for (let i = 0; i < seeds.length; i++) { const s = seeds[i]; const d = (c[0] - s[0]) ** 2 + (c[1] - s[1]) ** 2 + (c[2] - s[2]) ** 2; if (d < bd) { bd = d; b = i; } } return b; };
+  }
+  const bins = new Map();
+  for (const T of tris) { const key = assign(T.c); if (!bins.has(key)) bins.set(key, []); bins.get(key).push(T); }
+  const pieces = [];
+  for (const list of bins.values()) {
+    if (list.length < 2) continue;
+    let cx = 0, cy = 0, cz = 0; for (const T of list) { cx += T.c[0]; cy += T.c[1]; cz += T.c[2]; }
+    cx /= list.length; cy /= list.length; cz /= list.length;
+    const pos = [], uv = [], nrm = [], groups = [];
+    for (let pi = 0; pi < kind.parts.length; pi++) {
+      const start = pos.length / 3;
+      const g = kind.parts[pi].geo, P = g.attributes.position, U = g.attributes.uv, N = g.attributes.normal;
+      for (const T of list) if (T.pi === pi) for (let k = 0; k < 3; k++) {
+        const i = T.t + k;
+        pos.push(P.getX(i) - cx, P.getY(i) - cy, P.getZ(i) - cz); uv.push(U.getX(i), U.getY(i)); nrm.push(N.getX(i), N.getY(i), N.getZ(i));
+      }
+      const cnt = pos.length / 3 - start; if (cnt) groups.push([start, cnt, pi]);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    for (const [s0, c0, mi] of groups) geo.addGroup(s0, c0, mi);
+    geo.computeBoundingBox(); geo.userData.shared = true;
+    const bb = geo.boundingBox;
+    pieces.push({ geo, c: new THREE.Vector3(cx, cy, cz), hx: Math.max(0.01, (bb.max.x - bb.min.x) / 2), hy: Math.max(0.01, (bb.max.y - bb.min.y) / 2), hz: Math.max(0.01, (bb.max.z - bb.min.z) / 2), off: bb.getCenter(new THREE.Vector3()) });
+  }
+  kind.frac[variant] = pieces;
+  return pieces;
+}
+// the materials a piece of this kind draws with, in its parts' order
+function cpMats(kind) { return kind.mats || (kind.mats = kind.parts.map((p) => p.mat)); }
+function cpHide(o) { if (!o.inst) return; for (const { im, i } of o.inst) { im.setMatrixAt(i, _cpZero); im.instanceMatrix.needsUpdate = true; } }
+const _cpZero = new THREE.Matrix4().makeScale(0, 0, 0);
+/* BREAK ONE. `speed` is the blow; `from` where it came from (you, if nobody else); the pieces go away from it. */
+function cpBreak(P, speed = 6, from = null, worldM = null) {
+  if (P.dead) return;
+  P.dead = true; if (P.prop) P.prop.dead = true;
+  cpHide(P);
+  if (P.proxy) { scene.remove(P.proxy); P.proxy.geometry.dispose(); }
+  const site = CP.sites[P.site], kind = P.kind, K = kind.K;
+  const M = worldM || cpWorldMatrix(P, new THREE.Matrix4());
+  const ctr = new THREE.Vector3(0, kind.h * 0.5, 0).applyMatrix4(M);
+  const src = from || camera.position;
+  let dx = ctr.x - src.x, dz = ctr.z - src.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+  const kick = Math.min(4.2, 0.7 + speed * 0.22);
+  const pieces = cpFracture(kind, (Math.random() * 2) | 0);
+  const mats = cpMats(kind), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
+  M.decompose(pos, q, sc);
+  const sorted = pieces.slice().sort((a, b) => b.c.y - a.c.y);
+  sorted.forEach((pc, i) => {
+    const m = new THREE.Mesh(pc.geo, mats);
+    m.position.copy(pc.c).applyMatrix4(M); m.quaternion.copy(q);
+    const ox = m.position.x - ctr.x, oz = m.position.z - ctr.z, ol = Math.hypot(ox, oz) || 1;
+    const hgt = THREE.MathUtils.clamp((pc.c.y) / Math.max(0.2, kind.h), 0, 1);
+    const burst = K.mat === 'clay' || K.mat === 'glass' ? 1.4 : K.mat === 'sack' ? 0.5 : 0.9;
+    const v = new THREE.Vector3(dx * kick * (0.35 + 0.65 * Math.random()) + ox / ol * burst * (0.6 + Math.random() * 0.8),
+      0.6 + hgt * kick * 0.55 + Math.random() * 0.8, dz * kick * (0.35 + 0.65 * Math.random()) + oz / ol * burst * (0.6 + Math.random() * 0.8));
+    const w = new THREE.Vector3((Math.random() - 0.5), (Math.random() - 0.5), (Math.random() - 0.5)).multiplyScalar(K.mat === 'wood' ? 9 : 14);
+    cpAddBody(m, site, K.mat, pc.hx, pc.hy, pc.hz, pc.off, v, w, i * 0.008, false);
+  });
+  // what was in it, and what stood on it
+  if (P.fill) for (const f of P.fill) cpLoose(f, site, M, dx, dz, kick);
+  if (P.carries) for (const C of P.carries) if (!C.dead) cpDrop(C);
+  // its sound, its grain, its juice
+  cpBreakSound(K.mat, kind, speed);
+  if (K.mat === 'sack') cpSpill(ctr, site, dx, dz);
+}
+// a prop's matrix in the world
+function cpWorldMatrix(P, M) {
+  const D = CP_SITE_DEFS[P.site];
+  cpPropMatrix(P, M);
+  M.premultiply(_cpM.makeTranslation(D.X(), D.Y(), D.Z()));
+  return M;
+}
+// a heap's lump goes loose: its instance hidden, a body of its own thrown up and out of the crate
+function cpLoose(f, site, parentM, dx, dz, kick) {
+  cpHide(f);
+  const D = CP_SITE_DEFS[site.id];
+  const M = f.M.clone().premultiply(_cpM.makeTranslation(D.X(), D.Y(), D.Z()));
+  const m = new THREE.Mesh(f.kind.parts[0].geo, cpMats(f.kind));
+  M.decompose(m.position, m.quaternion, m.scale);
+  const g = f.kind.parts[0].geo; g.userData.shared = true;
+  const bb = g.boundingBox;
+  const off = bb.getCenter(new THREE.Vector3());
+  const v = new THREE.Vector3(dx * kick * 0.5 + (Math.random() - 0.5) * 2.4, 1.4 + Math.random() * 2.2, dz * kick * 0.5 + (Math.random() - 0.5) * 2.4);
+  const w = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(12);
+  // (the lump's own geometry is not centred on itself: its offset rides as `off`)
+  cpAddBody(m, site, 'veg', (bb.max.x - bb.min.x) / 2, (bb.max.y - bb.min.y) / 2, (bb.max.z - bb.min.z) / 2, off, v, w, Math.random() * 0.05, true);
+}
+/* WHAT STOOD ON IT FALLS: the prop above goes over as ONE body — its own parts, its own weight — and breaks where it
+ * lands if it lands hard enough (`b.whole`) */
+function cpDrop(P) {
+  if (P.dead) return;
+  P.dead = true; if (P.prop) P.prop.dead = true;
+  cpHide(P);
+  if (P.proxy) { scene.remove(P.proxy); P.proxy.geometry.dispose(); }
+  const site = CP.sites[P.site], kind = P.kind;
+  const M = cpWorldMatrix(P, new THREE.Matrix4());
+  const G = new THREE.Group();
+  for (const part of kind.parts) { const m = new THREE.Mesh(part.geo, part.mat); m.position.y = -kind.h / 2; G.add(m); }
+  M.decompose(G.position, G.quaternion, G.scale);
+  G.position.add(new THREE.Vector3(0, kind.h / 2, 0).applyQuaternion(G.quaternion));
+  const v = new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.4, (Math.random() - 0.5) * 1.2);
+  const w = new THREE.Vector3((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 3);
+  const b = cpAddBody(G, site, kind.K.mat, kind.hx, kind.h / 2, kind.hz, null, v, w, 0.05, false);
+  if (b) { b.whole = P; b.group = true; }
+  if (P.fill) for (const f of P.fill) cpHide(f);
+  if (P.carries) for (const C of P.carries) if (!C.dead) cpDrop(C);
+}
+
+/* ---- THE PIECES' PHYSICS ---------------------------------------------- */
+function cpAddBody(m, site, mat, hx, hy, hz, off, v, w, wait, small) {
+  if (!site) return null;
+  // too many: the oldest still ones go first, fading
+  if (CP.bodies.length >= CP_MAX_BODIES) {
+    const old = CP.bodies.find((b) => b.sleep && !b.fade) || CP.bodies.find((b) => !b.fade);
+    if (old) old.fade = 0.0001;
+  }
+  m.userData.noBake = true; m.userData.bwGhost = true; m.raycast = () => {};
+  scene.add(m);
+  const M = CP_MAT[mat] || CP_MAT.wood;
+  const I = (hx * hx + hy * hy + hz * hz) * 2 / 9;
+  const b = { m, site: site.id, mat, hx, hy, hz, off: off || new THREE.Vector3(), v, w, wait, e: M.e, mu: M.mu, invI: 1 / Math.max(1e-4, I),
+    sleep: false, still: 0, age: 0, fade: 0, heard: 0, small, ground: false };
+  CP.bodies.push(b);
+  return b;
+}
+const _cpC = new THREE.Vector3(), _cpR = new THREE.Vector3(), _cpVr = new THREE.Vector3(), _cpT = new THREE.Vector3(), _cpJ = new THREE.Vector3(), _cpO = new THREE.Vector3();
+const CP_CORNERS = [[1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1], [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1]];
+function cpStep(b, dt) {
+  const D = CP_SITE_DEFS[b.site], m = b.m;
+  b.v.y -= CP_G * dt;
+  m.position.addScaledVector(b.v, dt);
+  // the turn: the quaternion integrated by the angular velocity (world)
+  const wl = b.w.length();
+  if (wl > 1e-5) { _cpQ.setFromAxisAngle(_cpT.copy(b.w).divideScalar(wl), wl * dt); m.quaternion.premultiply(_cpQ).normalize(); }
+  // the centre of its box, in the world (a lump's geometry is offset from its origin)
+  _cpO.copy(b.off).applyQuaternion(m.quaternion).add(m.position);
+  // the floor, under each corner that is through it: an impulse there
+  let pen = 0, contacts = 0, hit = 0;
+  const fy0 = D.floor(_cpO.x, _cpO.z);
+  for (const c of CP_CORNERS) {
+    _cpC.set(c[0] * b.hx, c[1] * b.hy, c[2] * b.hz).add(b.off).applyQuaternion(m.quaternion).add(m.position);
+    const fy = fy0 !== null ? fy0 : D.nominal();
+    const d = fy - _cpC.y; if (d <= 0) continue;
+    contacts++; pen = Math.max(pen, d);
+    _cpR.subVectors(_cpC, _cpO);
+    _cpVr.crossVectors(b.w, _cpR).add(b.v);
+    const vn = _cpVr.y;
+    if (vn >= 0) continue;
+    hit = Math.max(hit, -vn);
+    // normal impulse: (r x n) for n = up is (-rz, 0, rx)
+    const rxn2 = _cpR.z * _cpR.z + _cpR.x * _cpR.x;
+    const jn = -(1 + (-vn > 1.2 ? b.e : 0)) * vn / (1 + b.invI * rxn2);
+    b.v.y += jn;
+    b.w.x += b.invI * (-_cpR.z * jn); b.w.z += b.invI * (_cpR.x * jn);
+    // friction, against the sliding of that corner, no more than mu of the push
+    _cpVr.crossVectors(b.w, _cpR).add(b.v);
+    _cpT.set(_cpVr.x, 0, _cpVr.z);
+    const vt = _cpT.length();
+    if (vt > 1e-4) {
+      _cpT.divideScalar(vt);
+      _cpJ.crossVectors(_cpR, _cpT);
+      const jt = Math.min(vt / (1 + b.invI * _cpJ.lengthSq()), b.mu * jn);
+      b.v.addScaledVector(_cpT, -jt);
+      _cpJ.multiplyScalar(-jt * b.invI); b.w.add(_cpJ);
+    }
+  }
+  if (pen > 0) m.position.y += pen * 0.85;
+  b.ground = contacts > 0;
+  if (b.ground) { b.w.multiplyScalar(1 - Math.min(1, 1.6 * dt)); b.v.x *= 1 - Math.min(1, 0.8 * dt); b.v.z *= 1 - Math.min(1, 0.8 * dt); }
+  // the stone: pushed out of, and bounced off
+  if ((b.age * 60 | 0) % 2 === 0 || b.v.lengthSq() > 4) {
+    const r = Math.min(0.42, Math.max(b.hx, b.hz) * 0.9 + 0.02);
+    const h = keepWallNear(_cpO.x, _cpO.z, r, _cpO.y - b.hy * 0.8, _cpO.y + b.hy * 0.8, D.S());
+    if (h) {
+      let nx = _cpO.x - h.x, nz = _cpO.z - h.z; const nl = Math.hypot(nx, nz) || 1; nx /= nl; nz /= nl;
+      m.position.x += nx * h.depth; m.position.z += nz * h.depth;
+      const vn = b.v.x * nx + b.v.z * nz;
+      if (vn < 0) { b.v.x -= (1 + 0.35) * vn * nx; b.v.z -= (1 + 0.35) * vn * nz; b.w.multiplyScalar(0.8); hit = Math.max(hit, -vn * 0.6); }
+    }
+  }
+  return hit;
+}
+function cpTick(dt) {
+  if (!CP.asked) return;
+  // build a castle's props once it and the kit are both in
+  if (CP.ready) for (const id of ['fort', 'c13', 'thr']) if (!CP.sites[id] || !CP.sites[id].built) cpBuildSite(id);
+  if (CP.heaps.length) cpHeapTick(dt);
+  cpRagHits(dt);
+  if (!CP.bodies.length) return;
+  dt = Math.min(dt, 1 / 30);
+  const feet = camBaseY - playerEye(), psp = Math.hypot(velocity.x, velocity.z);
+  for (let i = CP.bodies.length - 1; i >= 0; i--) {
+    const b = CP.bodies[i];
+    b.m.visible = CP_SITE_DEFS[b.site].here();
+    if (b.fade) {
+      b.fade += dt;
+      const k = Math.max(0.001, 1 - b.fade / 1.2);
+      b.m.scale.setScalar(k);
+      if (b.fade >= 1.2) { scene.remove(b.m); CP.bodies.splice(i, 1); }
+      continue;
+    }
+    if (b.wait > 0) { b.wait -= dt; continue; }
+    b.age += dt;
+    // your feet: a still piece you walk through is kicked on
+    if (psp > 1.0 && Math.abs(b.m.position.y - feet) < 0.5) {
+      const dx = b.m.position.x - camera.position.x, dz = b.m.position.z - camera.position.z, d = Math.hypot(dx, dz);
+      if (d < 0.42 + Math.max(b.hx, b.hz)) {
+        const k = Math.min(2.6, psp * 0.55) * (b.small ? 1.2 : 0.7);
+        b.v.x += (dx / (d || 1)) * k + velocity.x * 0.25; b.v.z += (dz / (d || 1)) * k + velocity.z * 0.25; b.v.y += 0.6 + Math.random() * 0.6;
+        b.w.x += (Math.random() - 0.5) * 6; b.w.z += (Math.random() - 0.5) * 6;
+        b.sleep = false; b.still = 0;
+      }
+    }
+    if (b.sleep) continue;
+    const sub = b.v.lengthSq() > 25 ? 3 : 2;
+    let hit = 0;
+    for (let s = 0; s < sub; s++) hit = Math.max(hit, cpStep(b, dt / sub));
+    // heard landing, and a whole thing that lands hard comes apart where it lands
+    if (hit > 1.0) cpKnock(b, hit);
+    if (b.whole && hit > 2.2) {
+      const P = b.whole; b.whole = null;
+      const M = new THREE.Matrix4().compose(b.m.position.clone().add(new THREE.Vector3(0, -P.kind.h / 2, 0).applyQuaternion(b.m.quaternion)), b.m.quaternion, _cpS);
+      P.dead = false; scene.remove(b.m); CP.bodies.splice(i, 1);
+      cpBreak(P, hit * 2.2, null, M);
+      continue;
+    }
+    if ((b.mat === 'glass' || b.mat === 'clay') && b.small && hit > 3.2) { /* (a lump never shatters; a pot or bottle off a table does, as a prop) */ }
+    // asleep when it has been still on the ground a moment
+    if (b.ground && b.v.lengthSq() < 0.012 && b.w.lengthSq() < 0.06) { b.still += dt; if (b.still > 0.5) { b.sleep = true; b.v.set(0, 0, 0); b.w.set(0, 0, 0); } }
+    else b.still = 0;
+    if (b.age > 40 && b.sleep) b.fade = 0.0001;     // (debris clears after a while: the court is not a junkyard)
+  }
+}
+// the pieces knock as they land: wood dry, clay and glass a click, a sack's rag a pat, fruit a soft bump
+function cpKnock(b, sp) {
+  const now = performance.now();
+  if (now - b.heard < 140) return;
+  b.heard = now;
+  if (!audioCtx || Math.hypot(b.m.position.x - camera.position.x, b.m.position.z - camera.position.z) > 28) return;
+  if (b.mat === 'wood') sfxPlankKnock(b.m.position.x, b.m.position.z, sp, Math.max(b.hx, b.hy, b.hz) < 0.12);
+  else if (b.mat === 'clay' || b.mat === 'glass') sfxPlankKnock(b.m.position.x, b.m.position.z, sp * 0.6, true);
+  else if (b.mat === 'veg' && sp > 2) sfxCpThud(b.m.position.x, b.m.position.z, sp * 0.4);
+}
+
+/* ---- WHO BREAKS THEM, AND HOW YOU ARE HELD OFF THEM ---------------- */
+// a creature in a castle that walks into a prop goes THROUGH it — a prop is never a wall to them, so none is ever stuck
+const _cpUnitLast = new Map();
+function cpUnitCrush(u, p, id) {
+  if (!u || !u.st || !u.st.alive || u.rag) return;
+  const site = CP.sites[id]; if (!site || !site.props.length) return;
+  const last = _cpUnitLast.get(u); _cpUnitLast.set(u, { x: p.x, z: p.z });
+  const mvx = last ? p.x - last.x : 0, mvz = last ? p.z - last.z : 0;
+  const body = Math.min(0.8, (u.kind.body || 0.5) * 0.6);
+  for (const P of site.props) {
+    if (P.dead || P.on) continue;
+    const d = Math.hypot(p.x - P.x, p.z - P.z);
+    if (d > P.kind.r * 0.8 + body) continue;
+    _cpV.set(p.x - mvx * 8, p.y + 1, p.z - mvz * 8);     // (the pieces go the way he was going)
+    cpBreak(P, 6 + Math.hypot(mvx, mvz) * 60, _cpV);
+  }
+}
+/* A BODY THROWN INTO ONE BREAKS IT. `ragSmash` (every breakable's way) asks for a part within a sphere round the prop's
+ * middle, which a body sliding into a barrel's foot or coming down on a crate's corner can miss: here every moving part of
+ * a body in flight is asked against the prop's own footprint and height. */
+function cpRagHits(dt) {
+  const id = inFort ? 'fort' : inC13 ? 'c13' : inThrone ? 'thr' : null; if (!id || dt <= 0) return;
+  const site = CP.sites[id]; if (!site || !site.built) return;
+  for (const u of mutants) {
+    const R = u.rag; if (!R || R.asleep) continue;
+    for (const q of R.parts) {
+      const last = q._cpL || (q._cpL = q.p.clone());
+      const sp = last.distanceTo(q.p) / dt; last.copy(q.p);
+      if (sp < 2.0 || sp > 60) continue;
+      for (const P of site.props) {
+        if (P.dead) continue;
+        const k = P.kind;
+        if (q.p.y > P.y + k.h + 0.25 || q.p.y < P.y - 0.3) continue;
+        if (Math.hypot(q.p.x - P.x, q.p.z - P.z) > Math.max(k.hx, k.hz) * 0.9 + (q.r || 0.12)) continue;
+        cpBreak(P, 3 + sp * 1.2, _cpV.set(q.p.x - (q.p.x - last.x) * 4, q.p.y, q.p.z - (q.p.z - last.z) * 4));
+      }
+    }
+  }
+}
+// you: held off an intact prop (round ones as a disc, the rest as their own box), and never over one you are above
+function cpPushPlayer(p, r, feet) {
+  const id = inFort ? 'fort' : inC13 ? 'c13' : inThrone ? 'thr' : null; if (!id) return;
+  const site = CP.sites[id]; if (!site) return;
+  for (const P of site.props) {
+    if (P.dead || P.on) continue;
+    const k = P.kind;
+    if (feet > P.y + k.h - 0.08) continue;
+    if (k.K.round || P.lean) {
+      const rr = (P.lean ? 0.3 : Math.max(k.hx, k.hz) * 0.92) + r, dx = p.x - P.x, dz = p.z - P.z, d = Math.hypot(dx, dz);
+      if (d >= rr) continue;
+      if (d < 1e-4) { p.x += rr; continue; }
+      p.x = P.x + dx / d * rr; p.z = P.z + dz / d * rr;
+      continue;
+    }
+    const c = Math.cos(P.yaw), s = Math.sin(P.yaw);
+    const dx = p.x - P.x, dz = p.z - P.z;
+    const a = dx * c - dz * s, bb = dx * s + dz * c;       // into the prop's frame (its x, its z)
+    const oa = k.hx + r - Math.abs(a), ob = k.hz + r - Math.abs(bb);
+    if (oa <= 0 || ob <= 0) continue;
+    let na = a, nb = bb;
+    if (oa < ob) na = Math.sign(a || 1) * (k.hx + r); else nb = Math.sign(bb || 1) * (k.hz + r);
+    p.x = P.x + na * c + nb * s; p.z = P.z - na * s + nb * c;
+  }
+}
+
+/* ---- ITS SOUNDS ------------------------------------------------------- */
+function cpBreakSound(mat, kind, speed) {
+  try {
+    if (mat === 'wood') { if (kind.h > 0.7 || kind.r > 0.8) { if (!sfxTableBreak()) sfxCrateBreak(); } else sfxCrateBreak(); sfxCrateCrunch(Math.min(1.3, 0.6 + speed * 0.06)); }
+    else if (mat === 'glass') sfxGlassBreak();
+    else if (mat === 'clay') sfxClayBreak(kind.h);
+    else if (mat === 'sack') sfxSackBurst();
+    else if (mat === 'veg') sfxCpThud(camera.position.x, camera.position.z, 1.6, true);
+  } catch (e) { /* a sound is never fatal */ }
+}
+// fired clay giving: a sharp crack, brighter than wood and duller than glass, and the shards' rattle after it
+function sfxClayBreak(size = 0.5) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = ctx.createGain(); out.gain.value = 0.7; out.connect(sfxOut());
+  const crack = noiseBurst(0.12, (x) => Math.pow(1 - x, 3) * (0.4 + 0.6 * Math.random()));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.1; bp.frequency.setValueAtTime(3200 - size * 1400, t); bp.frequency.exponentialRampToValueAtTime(1100, t + 0.1);
+  const cg = ctx.createGain(); cg.gain.value = 0.55;
+  crack.connect(bp).connect(cg).connect(out); crack.start(t); crack.stop(t + 0.13);
+  // the body of the pot: a short hollow tone
+  const o = ctx.createOscillator(); o.type = 'triangle'; const f = 520 - size * 300;
+  o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.6, t + 0.08);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.16, t + 0.003); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.12);
+  for (let i = 0; i < 6; i++) {
+    const at = t + 0.08 + Math.random() * 0.4, n = noiseBurst(0.025, (x) => Math.pow(1 - x, 4));
+    const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 2400 + Math.random() * 2600; hp.Q.value = 2.5;
+    const g = ctx.createGain(); g.gain.value = 0.18 * Math.random();
+    n.connect(hp).connect(g).connect(out); n.start(at); n.stop(at + 0.03);
+  }
+}
+// a sack tearing open: a dull thump, and the grain pouring out in a hiss that dies away
+function sfxSackBurst() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = ctx.createGain(); out.gain.value = 0.8; out.connect(sfxOut());
+  const th = noiseBurst(0.14, (x) => Math.pow(1 - x, 2.5));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320;
+  const tg = ctx.createGain(); tg.gain.value = 0.6;
+  th.connect(lp).connect(tg).connect(out); th.start(t); th.stop(t + 0.15);
+  const tear = noiseBurst(0.18, (x) => (Math.random() < 0.4 ? 1 : 0.2) * Math.pow(1 - x, 1.5));
+  const tb = ctx.createBiquadFilter(); tb.type = 'bandpass'; tb.frequency.value = 1500; tb.Q.value = 0.7;
+  const rg = ctx.createGain(); rg.gain.value = 0.22;
+  tear.connect(tb).connect(rg).connect(out); tear.start(t + 0.01); tear.stop(t + 0.2);
+  const pour = noiseBurst(1.1, (x) => Math.pow(1 - x, 1.8) * (0.6 + 0.4 * Math.sin(x * 60)));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2600;
+  const pg = ctx.createGain(); pg.gain.value = 0.12;
+  pour.connect(hp).connect(pg).connect(out); pour.start(t + 0.05); pour.stop(t + 1.15);
+}
+// fruit on stone: a soft, wet bump (and a melon's split, bigger)
+function sfxCpThud(x, z, k = 1, split = false) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = ctx.createGain();
+  out.gain.value = Math.min(0.6, 0.15 * k); out.connect(sfxOut());
+  const n = noiseBurst(split ? 0.22 : 0.07, (q) => Math.pow(1 - q, 2.2));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = split ? 900 : 600;
+  n.connect(lp).connect(out); n.start(t); n.stop(t + (split ? 0.23 : 0.08));
+}
+// a burst sack's grain: thrown out with the tear, and a low heap where it lands
+function cpSpill(at, site, dx, dz) {
+  // (no puffs: the sand clods are lit by the moon and read as blue chips in a torchlit court)
+  const fy = CP_SITE_DEFS[site.id].floor(at.x, at.z);
+  if (fy === null) return;
+  const g = new THREE.ConeGeometry(0.34 + Math.random() * 0.1, 0.09, 9, 1);
+  g.translate(0, 0.045, 0);
+  const m = new THREE.Mesh(g, _cpGrainMat);
+  m.position.set(at.x + dx * 0.15, fy, at.z + dz * 0.15); m.scale.set(1, 0.001, 1);
+  m.userData.noBake = true; m.userData.bwGhost = true; m.raycast = () => {};
+  scene.add(m);
+  CP.heaps.push({ m, site: site.id, t: 0 });
+}
+const _cpGrainMat = new THREE.MeshStandardMaterial({ color: 0x8a7a52, roughness: 1, flatShading: true, emissive: 0x1a150c });
+function cpHeapTick(dt) {
+  for (const H of CP.heaps) {
+    H.m.visible = CP_SITE_DEFS[H.site].here();
+    if (H.t < 0.6) { H.t += dt; H.m.scale.y = Math.min(1, H.t / 0.6); }
+  }
+}
+
 // the room's floor, for anything thrown or falling in it
 const _floorBeforeDun = bunkerFloorAt;
 bunkerFloorAt = (x, z, y) => {
@@ -97992,6 +99096,7 @@ function thrStandY(x, z, y) {
 // the hall's stone holds him the way the castles' hold their own; a table or a chair in his way goes over
 function thrClampUnit(u, p) {
   if (!thrWalls || !u.st.awake) return;
+  cpUnitCrush(u, p, 'thr');
   const wx = p.x, wz = p.z, r = (u.kind.body || 0.9) * 0.75;
   pushOutOfKeep(p, r, p.y, 0.45, THR_SITE);
   keepWallPush(p, r, p.y, THR_SITE);
@@ -119262,7 +120367,7 @@ window.__bw = {
   },
   blinkNow: () => { blinkT = 0; },
   get glowstickItem() { return glowstickItem; },
-  openMenu, closeMenu, showEnd, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
+  openMenu, closeMenu, showEnd, bwGlb, CP, cpBreak, loadCastleProps, CP_SITE_DEFS, loadC13, loadThrone, mutRagdoll, fortClampUnitS: fortClampUnit, cpMutants: () => mutants, renderItemIcon, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
   openInspect, closeInspect, startExtraction,
   get shovelItem() { return shovelItem; }, get crabItem() { return crabItem; }, get syringeItem() { return syringeItem; }, get jarItem() { return jarItem; }, get weddingItem() { return weddingItem; }, wearRing, get speedK() { return speedK(); },
   state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), hp, equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),

@@ -1163,3 +1163,12 @@ across the box). The sewer key is the "Steel Door Key" now (`was: ['Lair key']` 
   arrows work whenever the pack is open (they waited for the ring to be clicked): the first press selects the front key,
   each after turns. `tools/kcpick.js` (three keys, each projected and clicked): picked = clicked = front, selected, no
   description; Right 0 → 1, Left back. `__bw.kcS`, `kcKeyAt`, `packKeySelS` exposed for it.
+
+
+## The end's totals (2026-11-17)
+"Add total amount of jars and rare achievements at the end, it doesn't show the total possible": RARE ACHIEVEMENTS is
+x / `RARE_ACHIEVEMENTS.length`; JARS OBTAINED is x / `jarTotal()` — every jar found or bled (the mounds' jars by `moundRole`,
+a jar per crab: the mounds', beach, rock ledge, wreck hold, Skrim's heap `SKQ_LOOT`; plus the fixed ones listed at
+`jarTotal`) = 35 today. The trader's pay no longer counts toward the line (`gainJar(n, paid)`, every `traderSell` sale): it
+has no ceiling, and a count with a total has to be of things that do. A NEW JAR ANYWHERE MUST BE ADDED TO `jarTotal`.
+Probe `statsAndSteps`: the card reads "JARS OBTAINED 0/35 | RARE ACHIEVEMENTS 0/3".

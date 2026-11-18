@@ -920,3 +920,9 @@ old synth as the fallback when a buffer is not in yet.
   Measured (afconvert + Python, the loudest quarter of 0.1 s blocks): `orc-die1` −15.2 dB, his hits `orc-hit1/5`
   −14.8/−14.4 at gain 1.30 — so his death was ~2 dB UNDER his own cries — and `pal-die1` −16.9 at 3.8. At 2.8 it lands
   with the paladin's (≈ −6.3 vs −5.3 before distance). `farmVox` has no cap on a role's gain.
+
+## The pickup sound, and the mace's heavy (2026-11-17)
+`pickup` (the owner's "pickup sound 1", assets/pickup.m4a): `primaryAction` counts what is carried (`pickTally`: slots, rings,
+jars, stack counts) and the recordings started (`samplePlays`, bumped in `playSample`) around a pickup's `onActivate`; if
+something came into the pack and none of the owner's recordings played, `pickup` does — so an item with its own recorded
+sound keeps it. `maceHeavy` (his "boulder impact hard 4", assets/mace-heavy.m4a) on the mace's heavy blows (weapons.md).

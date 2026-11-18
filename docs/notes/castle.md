@@ -2213,3 +2213,47 @@ as dead); their keys are kept dead only from a save after the fight (like the ga
 Harness: `tools/minotaur.js` `__ggBoot`; with Myles joined the gargoyles refused `hurtMutant`/`killMutant` from the
 harness, so `__bw.gargRaidStart()` was called directly. Measured: four in, the shout voiced, foes you/Myles/…/Myles,
 Myles' foe one of them; he killed three in ~6 s (his blows on a farmer are `dkFling`, as in the fort).
+
+## The castles' props (2026-11-17)
+"Put these props in the castle only where they actually make sense … all breakable with amazing physics … bodies thrown into
+them or the player jumping through them will break them … don't let characters get stuck on them … not too much in the way."
+The `CASTLE PROPS` section (`CP`, `CP_KINDS`, `CP_SITE_DEFS`, `CP_SCENES`, `cpBuildSite`/`cpBuildSteps`, `cpBreak`,
+`cpFracture`, `cpStep`, `cpTick`, `cpUnitCrush`, `cpPushPlayer`, `cpRagHits`).
+- **The kit.** PickledCactusAlan's "Southern Gothic Scene Props" and vmatthew's "Medieval Market Asset Pack" (CC-BY-4.0):
+  `arch -x86_64 /usr/bin/python3 tools/gltfpack.py <sg>/scene.gltf assets/castle-props-a.glb --tex 1024 --normal-tex 512
+  --drop-mr --nodes '^(SM_Barrell|SM_Barrell4|SM_Crate|SM_Crate1|SM_Crate2|SM_Crate_Roped|SM_Sandbag|SM_Sandbag1|SM_Sandbag2|
+  SM_Bucket|SM_Stool|SM_Table|SM_Cart|SM_Cart_Broken|SM_Wheel_Solo)$' --decimate-each 99999 --decimate-for 'SM_Cart=1800'
+  --decimate-for 'SM_Crate(1)?_M|SM_Crate_Roped=1200' --decimate-for 'SM_Barrell=1700' --decimate-for 'SM_Bucket=1100'
+  --keep-uv` (2.7 MB) and the market pack the same way at `--tex 512 --normal-tex 256 --drop-mr`, its props by name
+  (`Handcart=1500`, `Wheel=1000`, `Barrel1=1600`) → castle-props-b.glb (2.5 MB). Left in the download: the modern and
+  rocking chairs, fence, decking, shutters, the cross, the shackles, and the market STALL (the owner had XIII's taken out).
+  Scales are all over the place between the two packs (the market's are ~2x): every kind is sized to a real height or
+  length in `CP_KINDS` (`propSheet` renders them all with their sizes).
+- **The vertex clustering turns triangles over** with their normals unchanged; drawn both sides, a keg seen from outside
+  was lit from inside — black. `cpWindByNormals` winds every triangle to its normals at bake time.
+- **The courts' stone is lit by its own emissive map** (XIII's warmed ~0.23/0.20/0.18 of its map inside), so props lit only
+  by lamps stood black against bright stone: their maps are their emissive too (gothic atlas 0x5c4a35, market 0x433628).
+- **Placement** (`cpScanSite`, a sliced job): a spot every half metre, on the court you walk (`siteOnMain`), the wall at knee
+  height 0.35–0.95 m off, the open street in front of it under the sky, the wall flat for 1.15 m either side, nothing to
+  avoid (per castle `avoid`: XIII's `C13_PATH`/`c13FeatNear`/`c13Overlaps`; the first castle's gate (8 m), back door,
+  farmers' door middles (2.8 m), braziers, and every door in the farmers' doors' own materials (`cpFortDoorMats`: what most
+  of a lifted leaf is, acmat_16/14 — NOT XIII's numbering, which in the first castle hits 2,733 cells); the throne room's
+  door end off the runner and the tables). Scenes (`CP_SCENES`) laid in the wall's frame, every prop tested (`cpFits`), then
+  singles in what is left. **The first castle's walk calls its arcades and house rooms open too** — from above, half the first
+  scenes stood under a roof (`cpTop` renders it): there (`sky: true`) everything stands under the open sky, against a wall in
+  reach or at the street's edge where the eaves begin. Result: fort 10 scenes / 33 props, XIII 6 / ~29, throne 4 / 12
+  (`cpMap` draws a castle's court, avoid zones, doors and props from above).
+- **Breaking.** One `physProps` entry per prop (an invisible proxy box at its middle in the world, `bwGhost`) with
+  `onImpact` → `cpBreak` above a material's threshold (`CP_MAT`): the blade (`glassStrike`), `ragSmash`, thrown things, the
+  loose stomp (now in both castles). A body in flight is also asked against each prop's own footprint and height
+  (`cpRagHits`: `ragSmash`'s sphere round the middle missed a body sliding into a barrel's foot). Creatures smash through
+  (`cpUnitCrush` at the top of `fortClampUnit`/`c13ClampUnit`/`thrClampUnit`): a prop is never a wall to them, so nothing is
+  ever stuck. You are held off (`cpPushPlayer`, discs for round things, boxes for the rest). Fractures (`cpFracture`, two
+  variants a kind, cut once): staves round the axis in two tiers for barrels/buckets, farthest-point seeds for boards,
+  shards, a sack's tear, a melon's split. Stacked props drop as one body (`cpDrop`) and break where they land hard;
+  produce crates spill their lumps as bodies (`cpLoose`); a sack leaves a grain heap.
+- **Pieces** (`cpStep`): a box each, eight corners against the floor, impulse + Coulomb friction at every corner going in
+  (scalar inertia 2(hx²+hy²+hz²)/9), the castle's walls pushed out of and bounced off, kicked on by your feet, asleep when
+  still, faded after 40 s asleep or when over 150. Draws: intact props are instanced per kind/part per castle — +13–15 draws.
+- Probes: `castleProps&site=…`, `castleBreakClose`, `cpInteract` (walk into: held at 0.56 m; jump into: breaks; a farmer
+  walked through: breaks; the mace: breaks; a body thrown into a cart: breaks), `cpMap`, `cpTop`, `propSheet`, `cpMatDbg`.

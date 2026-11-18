@@ -1259,3 +1259,13 @@ The owner: "the keys need to match the models some dont look the same and dont s
   `PACK_FILES` maps both names to `key.glb`. The examine screen shows a key's name and no description
   (`inspectFromPack`, `inspectHeld`). The Captain's Chest Key wears the scan's own finish once taken (`boatKeyPlain`): it
   hangs as bright brass so it reads in the wreck, and in your hands it now looks like every other key.
+
+## The Shock Ring, round 2 (2026-11-17)
+"Not as faded looking in the inventory … 11% … the electricity more noticeable and impactful … sometimes stunned, rarely …
+light up the area." `SHOCK.P` 0.11, `STUN_P` 0.2 for `STUN_T` 1.1 s (the parry's reel: `st.stun`/`stunMax`, `flashMats`).
+The proc: a 0.024 bolt from the blow (life 0.3) with two forks, `zapCrackle` (small arcs over the body ~12/s for 0.55 s, or the
+stun), `skSparks`, `sewFlash(0.22)` (its fade now ticked from `zapTick` too, outside the sewer), and `zapFlash` — the zap
+light (13 m, decay 1.3) bursting to 16 and strobing down over 0.34 s; chain hops get their own crackle, flash and burst.
+The icon: the band's map is dark bronze (a colour over 1 does nothing), so its map is its emissive (0x5a4630) and env 4.6;
+the stones emit 0x3d6dff ×1.15; `iconRot` turns them up; `ICON_CACHE_V` v11 (v10 on its own; merged with the keys' v10 on 2026-11-18) re-renders the icons. Probes `shockProc`
+(strip), `ringIcons`.

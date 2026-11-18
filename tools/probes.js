@@ -86,7 +86,7 @@ export async function bodies({ w, b, log }) {
   const C = b.camera.position;
   const kinds = ['pale', 'red', 'dark', 'dealer'];
   for (const [i, kn] of kinds.entries()) {
-    const u = b.mutants.find((m) => m.kindName === kn); if (!u) { log(kn, 'none'); continue; }
+    const u = b.cpMutants().find((m) => m.kindName === kn); if (!u) { log(kn, 'none'); continue; }
     try { Object.defineProperty(u.g, 'visible', { get: () => true, set: () => {}, configurable: true }); } catch (e) {}
     const x = 8, z = -30 - i * 8; u.g.position.set(x, 0, z); C.set(x + 2.2, 1.7, z); b.lookAt(x, 1, z);
     Object.assign(u.st, { alive: true, struck: false, hp: 1, awake: false, atk: -1 });
@@ -435,7 +435,7 @@ export async function landChase({ w, b, log, sleep }) {
   for (let i = 0; i < 60; i++) { b.frame(2); await sleep(30); }
   const C = b.camera.position, put = (x, z) => { const L = b.elvLandS(x, z, 30); const f = L[0] ? b.elvLandS(x, z, 30)[1] : 0; C.set(x, f + 1.7, z); b.camBaseY = f + 1.7; };
   put(6, -672); for (let i = 0; i < 60; i++) { b.frame(2); await sleep(5); }
-  const M = () => b.mutants.filter((u) => u.st.alive && Math.abs(u.g.position.z + 690) < 40);
+  const M = () => b.cpMutants().filter((u) => u.st.alive && Math.abs(u.g.position.z + 690) < 40);
   log('units near', M().length, M().map((u) => (u.st.awake ? 'A' : 'z') + u.g.position.x.toFixed(1) + ',' + u.g.position.z.toFixed(1)).join(' '));
   for (const u of M()) { u.st.awake = true; u.st.roar = 0.5; u.st.cool = 0.3; }
   const P = b.ELV_PATH;
@@ -5755,7 +5755,10 @@ export async function shockProc({ w, b, log, sleep, shot }) {
   const R = w.Math.random; w.Math.random = () => 0.01;      // (the game's own Math: it runs in the frame)
   const fired = b.shockRingProc(u0, 3, false);
   w.Math.random = R;
-  for (let f = 0; f < 20; f++) { w.__adv(1); await sleep(20); if (f === 4) shot('shock_proc', 800, 1.3); }
+  const tiles = [];
+  for (let f = 0; f < 40; f++) { w.__adv(1); await sleep(20); if ([1, 3, 6, 10, 16, 24, 32, 39].includes(f)) { b.renderer.render(b.scene, b.camera); const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 400; c.height = Math.round(400 * src.height / src.width); const g = c.getContext('2d'); g.drawImage(src, 0, 0, c.width, c.height); g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText('f' + f + ' stun ' + (u0.st.stun || 0).toFixed(2), 4, 14); tiles.push(c); } }
+  { const cols = 4, tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th; const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+    const d = c.toDataURL('image/jpeg', 0.82).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'shock_strip', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
   log('fired', fired, 'hp', ['red', 'dark1', 'dark2', 'asleep', 'far'].map((n, i) => n + ' ' + hp0[i] + '→' + [u0, u1, u2, u3, far][i].st.hp.toFixed(1)).join(' | '));
   b.settings.devMode = false;
 }
@@ -7111,4 +7114,346 @@ export async function heapCrabSeen({ w, b, log, sleep }) {
     const d2 = A.c2.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d2.length / 8000);
     for (let q = 0; q < n; q++) console.log('[PBIMG]', 'hcs_' + p.i, q + '/' + n, d2.slice(q * 8000, (q + 1) * 8000));
   }
+}
+
+// the end's stats with their totals, and the sewer's step being the church tunnel's recording (2026-11-17)
+export async function statsAndSteps({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  // the sewer, walking up the channel's walk: which recordings the steps play
+  b.loadSewer(); for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  for (let i = 0; i < 200 && !(b.sampleBanks.churchStep || []).filter(Boolean).length; i++) await sleep(50);
+  const SB = b.sampleBanks, ctx = b.audioCtx, name = (buf) => { for (const [k, v] of Object.entries(SB)) if ((v || []).includes(buf)) return k; return null; };
+  const heard = {}; const orig = ctx.createBufferSource.bind(ctx);
+  ctx.createBufferSource = () => { const s = orig(); const st = s.start.bind(s); s.start = (...a) => { const n = s.buffer && name(s.buffer); if (n) heard[n] = (heard[n] || 0) + 1; return st(...a); }; return s; };
+  b.sewRestore({ lv: 0 }); b.placeInSewer(); for (let i = 0; i < 20; i++) { b.frame(1); await sleep(16); }
+  w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'KeyW', key: 'w' }));
+  for (let i = 0; i < 200; i++) { b.frame(1); await sleep(16); }
+  w.dispatchEvent(new w.KeyboardEvent('keyup', { code: 'KeyW', key: 'w' }));
+  log('steps in the sewer heard', JSON.stringify(heard), 'at', JSON.stringify(b.sewS()));
+  ctx.createBufferSource = orig;
+  // the end's card
+  b.placeOutOfSewer && b.placeOutOfSewer();
+  b.showEnd();
+  await sleep(300);
+  log('end stats:', [...w.document.querySelectorAll('#end-stats .row')].map((r) => r.textContent.replace(/\s+/g, ' ')).join(' | '));
+  shot('end_stats', 900, 1);
+  b.settings.devMode = false;
+}
+
+// every prop in the two castle packs on grey, labelled with its size (2026-11-17)
+export async function propSheet({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const T = b.THREE, load = (u) => new Promise((res) => b.bwGlb(u, res, () => res(null)));
+  const A = await load('assets/castle-props-a.glb'), B = await load('assets/castle-props-b.glb');
+  const sc = new T.Scene(); sc.background = new T.Color(0x5a5f66);
+  sc.add(new T.HemisphereLight(0xffffff, 0x445566, 2.4)); const dl = new T.DirectionalLight(0xffffff, 1.6); dl.position.set(2, 3, 4); sc.add(dl);
+  const cam = new T.PerspectiveCamera(35, 1, 0.01, 200);
+  const tiles = [];
+  for (const [tag, g] of [['A', A], ['B', B]]) {
+    if (!g) { log('missing', tag); continue; }
+    g.scene.updateMatrixWorld(true);
+    const root = g.scene.getObjectByName('RootNode') || g.scene;
+    for (const n of root.children) {
+      const bb = new T.Box3().setFromObject(n); if (bb.isEmpty()) continue;
+      const sz = bb.getSize(new T.Vector3()), c = bb.getCenter(new T.Vector3());
+      const holder = new T.Group(); const cl = n.clone(true); cl.applyMatrix4(n.parent.matrixWorld); holder.add(cl); sc.add(holder);
+      const R = Math.max(sz.x, sz.y, sz.z);
+      cam.position.copy(c).add(new T.Vector3(0.9, 0.6, 1.1).normalize().multiplyScalar(R * 2.0)); cam.lookAt(c); cam.near = R * 0.01; cam.far = R * 20; cam.updateProjectionMatrix();
+      b.renderer.setSize(300, 300, false); b.renderer.render(sc, cam);
+      const cv = w.document.createElement('canvas'); cv.width = 240; cv.height = 240; const g2 = cv.getContext('2d'); g2.drawImage(b.renderer.domElement, 0, 0, 240, 240);
+      g2.fillStyle = '#fff'; g2.font = '11px monospace'; g2.fillText(n.name.slice(0, 22), 4, 12); g2.fillText(sz.x.toFixed(2) + ' ' + sz.y.toFixed(2) + ' ' + sz.z.toFixed(2), 4, 236);
+      tiles.push(cv); sc.remove(holder);
+      log(tag, n.name, 'size', sz.x.toFixed(3), sz.y.toFixed(3), sz.z.toFixed(3));
+    }
+  }
+  const cols = 8, c = w.document.createElement('canvas'); c.width = cols * 240; c.height = Math.ceil(tiles.length / cols) * 240;
+  const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * 240, ((i / cols) | 0) * 240));
+  const d = c.toDataURL('image/jpeg', 0.82).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'props', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+// the castles' props (2026-11-17): each castle loaded, its props built, every scene looked at from the court, then one
+// of each kind broken and its pieces' physics watched — ?site=fort|c13|thr
+export async function castleProps({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  const Q = new URLSearchParams(w.parent.location.search), id = Q.get('site') || 'fort';
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true;
+  b.loadCastleProps();
+  if (id === 'fort') { b.loadFort(); for (let i = 0; i < 900 && !b.fortState().ready; i++) { b.frame(1); await sleep(30); } b.placeInFort(); }
+  if (id === 'c13') { b.loadFort(); b.loadC13(); for (let i = 0; i < 1500 && !(b.c13State().ready); i++) { b.frame(1); await sleep(30); } b.placeInC13(); }
+  if (id === 'thr') { b.loadFort(); b.loadC13(); b.loadThrone(); for (let i = 0; i < 1500 && !b.c13Dbg().thrReady; i++) { b.frame(1); await sleep(30); } b.placeInThrone(); }
+  const ov = w.document.getElementById('overlay'); if (ov) { ov.style.transition = 'none'; ov.style.opacity = '0'; }
+  const bl = w.document.getElementById('blackout'); if (bl) { bl.style.transition = 'none'; bl.style.opacity = '0'; }
+  let site = null;
+  for (let i = 0; i < 2500; i++) { b.frame(1); await sleep(16); site = b.CP.sites[id]; if (site && site.built) break; }
+  if (!site || !site.built) { log('NOT BUILT', id, 'kit', b.CP.ready, 'site', !!site, 'ready', b.CP_SITE_DEFS[id].ready()); return; }
+  log('built', id, 'scenes', site.placed.length, 'props', site.props.length, JSON.stringify(site.placed.map((p) => p.scene)));
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  const C = b.camera, tiles = [];
+  const grab = (lab, W = 400) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = W; c.height = Math.round(W * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.3)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 4, 14); return c; };
+  const sheet = (name, list, cols = 4) => { if (!list.length) return; const tw = list[0].width, th = list[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(list.length / cols) * th; const g = c.getContext('2d'); list.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th)); const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', name, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); };
+  // out from the wall along its normal, only as far as the floor stays open (a narrow street: not into the house opposite)
+  const D0 = b.CP_SITE_DEFS[id];
+  const view = (p, back = 4.2, up = 1.65) => { const nx = p.nx ?? p.wn[0], nz = p.nz ?? p.wn[1]; let t = 0.8; for (let q = 0.8; q <= back; q += 0.2) { if (!D0.open(p.x + nx * q, p.z + nz * q, false)) break; t = q; } C.position.set(p.x + nx * t, p.fy + up, p.z + nz * t); b.camBaseY = C.position.y; b.lookAt(p.x, p.fy + 0.4, p.z); };
+  const BK = +(Q.get('back') || 2.3), UP = +(Q.get('up') || 1.35);
+  // (the walk puts the camera back on the last legal spot every frame: placed, then rendered without a frame)
+  for (const p of site.placed) { w.__adv(1); view(p, BK, UP); b.renderer.render(b.scene, b.camera); tiles.push(grab(p.scene + ' ' + p.lx.toFixed(0) + ',' + p.lz.toFixed(0)));
+    const near = site.props.filter((q) => Math.hypot(q.x - p.x, q.z - p.z) < 3); const T = b.THREE;
+    log('scene', p.scene, 'spot', p.x.toFixed(2), p.z.toFixed(2), 'n', p.nx.toFixed(2), p.nz.toFixed(2), 'cam', C.position.x.toFixed(2), C.position.z.toFixed(2), 'props', near.map((q) => { const v = new T.Vector3(q.x, q.y + 0.3, q.z).project(C); return q.kind.name + '@' + q.x.toFixed(2) + ',' + q.z.toFixed(2) + ' scr ' + v.x.toFixed(2) + ',' + v.y.toFixed(2); }).join(' | ')); }
+  // and every single prop, from a step out in front of it
+  for (const P of site.props.filter((q) => !site.placed.some((p) => Math.hypot(p.x - q.x, p.z - q.z) < 2.6))) { w.__adv(1); view(P, 2.6, 1.4); b.renderer.render(b.scene, C); tiles.push(grab('single ' + P.kind.name)); }
+  sheet('scenes_' + id, tiles);
+  // break each scene's first prop, and watch
+  const brk = [];
+  for (const p of site.placed.slice(0, 4)) {
+    const P = site.props.filter((q) => !q.dead && Math.hypot(q.x - p.x, q.z - p.z) < 2.5)[0]; if (!P) continue;
+    for (let i = 0; i < 3; i++) { view(p, 3.2, 1.4); w.__adv(1); }
+    b.cpBreak(P, 8);
+    for (let f = 0; f < 90; f++) { w.__adv(1); if (f === 2 || f === 8 || f === 20 || f === 89) { view(p, 2.6, 1.3); b.renderer.render(b.scene, b.camera); brk.push(grab(P.kind.name + ' f' + f, 320)); } }
+    const B = b.CP.bodies; log('broke', P.kind.name, 'bodies', B.length, 'asleep', B.filter((q) => q.sleep).length, 'lowest above floor', Math.min(...B.map((q) => q.m.position.y - (b.CP_SITE_DEFS[id].floor(q.m.position.x, q.m.position.z) ?? 0))).toFixed(3));
+  }
+  sheet('breaks_' + id, brk, 4);
+  b.settings.devMode = false;
+}
+
+export async function castlePropsDbg({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadCastleProps();
+  b.loadFort(); for (let i = 0; i < 900 && !b.fortState().ready; i++) { b.frame(1); await sleep(30); } b.placeInFort();
+  for (const id of ['overlay', 'blackout']) { const e = w.document.getElementById(id); if (e) { e.style.transition = 'none'; e.style.opacity = '0'; } }
+  let site = null; for (let i = 0; i < 2500; i++) { b.frame(1); await sleep(16); site = b.CP.sites.fort; if (site && site.built) break; }
+  const G = site.group, P = site.props[0], T = b.THREE;
+  log('group parent', G.parent && G.parent.name, 'vis', G.visible, 'parentVis', G.parent.visible, 'kids', G.children.length, 'inFort', b.state().inFort);
+  const im = G.children[0], M = new T.Matrix4(); im.getMatrixAt(0, M); const v = new T.Vector3().setFromMatrixPosition(M);
+  log('im', im.name, 'count', im.count, 'inst0 local', v.toArray().map((q) => q.toFixed(2)).join(','), 'P', P.kind.name, P.x.toFixed(2), P.y.toFixed(2), P.z.toFixed(2), 'G world', G.getWorldPosition(new T.Vector3()).toArray().map((q) => q.toFixed(1)).join(','));
+  log('mat', im.material.type, 'map', !!im.material.map, 'vis', im.material.visible, 'opacity', im.material.opacity, 'geo verts', im.geometry.attributes.position.count, 'bs', im.boundingSphere && im.boundingSphere.radius.toFixed(1));
+  const C = b.camera;
+  for (let i = 0; i < 5; i++) { C.position.set(P.x + 1.8, P.y + 1.4, P.z + 1.8); b.camBaseY = C.position.y; b.lookAt(P.x, P.y + 0.4, P.z); b.frame(1); }
+  log('cam', C.position.toArray().map((q) => q.toFixed(1)).join(','));
+  shot('dbg_close', 640, 1.3);
+  // and with the prop's own matrix in the world
+  let n = 0; G.traverse((o) => { if (o.isInstancedMesh) n += o.count; });
+  log('instances total', n, 'frustumCulled', im.frustumCulled);
+  b.settings.devMode = false;
+}
+
+// close up: one prop of each kind asked for (?kinds=a,b,c), broken in front of the camera, every 4th frame for a second
+export async function castleBreakClose({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  const Q = new URLSearchParams(w.parent.location.search), id = Q.get('site') || 'c13', kinds = (Q.get('kinds') || 'barrel,crate,sack1,pot3').split(',');
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadCastleProps();
+  if (id === 'fort') { b.loadFort(); for (let i = 0; i < 900 && !b.fortState().ready; i++) { b.frame(1); await sleep(30); } b.placeInFort(); }
+  if (id === 'c13') { b.loadFort(); b.loadC13(); for (let i = 0; i < 1500 && !(b.c13State().ready); i++) { b.frame(1); await sleep(30); } b.placeInC13(); }
+  for (const e of ['overlay', 'blackout']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; } }
+  let site = null; for (let i = 0; i < 2500; i++) { b.frame(1); await sleep(16); site = b.CP.sites[id]; if (site && site.built) break; }
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  const C = b.camera, T = b.THREE, tiles = [];
+  const grab = (lab) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 360; c.height = Math.round(360 * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.35)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 4, 14); return c; };
+  for (const kn of kinds) {
+    const P = site.props.find((q) => !q.dead && q.kind.name === kn && !q.on) || site.props.find((q) => !q.dead && q.kind.name.startsWith(kn.replace(/\d$/, '')) && !q.on);
+    if (!P) { log('none of', kn); continue; }
+    const pl = site.placed.reduce((a, q) => (Math.hypot(q.x - P.x, q.z - P.z) < Math.hypot(a.x - P.x, a.z - P.z) ? q : a));
+    const at = () => { C.position.set(P.x + pl.nx * 1.5 - pl.nz * 0.5, P.fy + 1.05, P.z + pl.nz * 1.5 + pl.nx * 0.5); b.camBaseY = C.position.y; b.lookAt(P.x, P.fy + 0.3, P.z); };
+    w.__adv(1); at(); b.renderer.render(b.scene, C); tiles.push(grab(P.kind.name + ' intact'));
+    b.cpBreak(P, 8, new T.Vector3(P.x + pl.nx * 2, P.fy + 1, P.z + pl.nz * 2));
+    for (let f = 1; f <= 64; f++) { w.__adv(1); if (f % 9 === 0 || f === 3) { at(); b.renderer.render(b.scene, C); tiles.push(grab(P.kind.name + ' f' + f)); } }
+  }
+  const cols = 9, tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th;
+  const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'close_' + id, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  b.settings.devMode = false;
+}
+
+export async function cpMatDbg({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.loadCastleProps(); for (let i = 0; i < 400 && !b.CP.ready; i++) { b.frame(1); await sleep(30); }
+  for (const kn of ['keg', 'barrel', 'pot3', 'crate', 'box3', 'bucket', 'handcart', 'wheel']) {
+    const k = b.CP.kinds[kn]; if (!k) { log('missing', kn); continue; }
+    log(kn, k.parts.map((p) => { const m = p.mat, g = p.geo; const n = g.attributes.normal; let ny = 0; for (let i = 0; i < n.count; i += 7) ny += n.getY(i); return `${m.name}: col ${m.color.getHexString()} map ${!!m.map} nmap ${!!m.normalMap} em ${m.emissive.getHexString()} emap ${!!m.emissiveMap} rough ${m.roughness.toFixed(2)} metal ${m.metalness} vc ${m.vertexColors} tris ${g.attributes.position.count / 3} navgY ${(ny / (n.count / 7)).toFixed(2)}`; }).join(' || '));
+  }
+}
+
+// a castle from above: its open court (sky), the wall strip's candidate spots, what is avoided, the doors, and the scenes
+export async function cpMap({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  const Q = new URLSearchParams(w.parent.location.search), id = Q.get('site') || 'fort';
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadCastleProps();
+  if (id === 'fort') { b.loadFort(); for (let i = 0; i < 900 && !b.fortState().ready; i++) { b.frame(1); await sleep(30); } b.placeInFort(); }
+  if (id === 'c13') { b.loadFort(); b.loadC13(); for (let i = 0; i < 1500 && !(b.c13State().ready); i++) { b.frame(1); await sleep(30); } b.placeInC13(); }
+  let site = null; for (let i = 0; i < 2500; i++) { b.frame(1); await sleep(16); site = b.CP.sites[id]; if (site && site.built) break; }
+  const D = b.CP_SITE_DEFS[id], S = D.S(), W = D.walk(), X = D.X(), Z = D.Z();
+  const sc = 8, cw = Math.ceil(W.gw * W.cell * sc), ch = Math.ceil(W.gh * W.cell * sc);
+  const c = w.document.createElement('canvas'); c.width = cw; c.height = ch; const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, cw, ch);
+  const px = (lx) => (lx - W.x0) * sc, pz = (lz) => (lz - W.z0) * sc;
+  for (let lz = W.z0; lz < W.z0 + W.gh * W.cell; lz += 0.5) for (let lx = W.x0; lx < W.x0 + W.gw * W.cell; lx += 0.5) {
+    const x = X + lx, z = Z + lz;
+    const strict = D.open(x, z, true), loose = D.open(x, z, false);
+    if (!loose) continue;
+    g.fillStyle = strict ? (D.avoid(lx, lz) ? '#552222' : '#556655') : '#333344';
+    g.fillRect(px(lx), pz(lz), 0.5 * sc, 0.5 * sc);
+  }
+  for (const P of site.props) { g.fillStyle = '#ffcc33'; g.beginPath(); g.arc(px(P.x - X), pz(P.z - Z), Math.max(2, P.kind.r * sc), 0, 7); g.fill(); }
+  for (const p of site.placed) { g.fillStyle = '#fff'; g.font = '10px monospace'; g.fillText(p.scene, px(p.lx) + 4, pz(p.lz)); }
+  if (id === 'fort') { const fd = b.fortDbg.farmDoors; for (const d of fd) { g.strokeStyle = '#33aaff'; g.beginPath(); g.arc(px(d.cx), pz(d.cz), 2.8 * sc, 0, 7); g.stroke(); } }
+  const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'map_' + id, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  log('map', cw, ch, 'props', site.props.length);
+}
+
+// which of the first castle's materials stand right behind each single prop (a door?), and all its material names
+export async function fortMats({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadCastleProps();
+  b.loadFort(); for (let i = 0; i < 900 && !b.fortState().ready; i++) { b.frame(1); await sleep(30); } b.placeInFort();
+  let site = null; for (let i = 0; i < 2500; i++) { b.frame(1); await sleep(16); site = b.CP.sites.fort; if (site && site.built) break; }
+  const T = b.THREE, FW = b.scene.getObjectByName('fort'); FW.updateMatrixWorld(true);
+  const mats = new Map(), v = new T.Vector3();
+  FW.traverse((o) => { if (!o.isMesh || !o.material || !o.geometry.attributes.position) return; const k = o.material.name; mats.set(k, (mats.get(k) || 0) + o.geometry.attributes.position.count); });
+  log('materials', JSON.stringify([...mats.entries()].sort((a, c) => c[1] - a[1]).slice(0, 60)));
+  for (const P of site.props) {
+    const near = new Map();
+    FW.traverse((o) => { if (!o.isMesh || !o.material || o.name.startsWith('cprop')) return; const pa = o.geometry.attributes.position; if (!pa) return;
+      for (let i = 0; i < pa.count; i += 3) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); if (Math.hypot(v.x - P.x, v.z - P.z) < 1.4 && v.y > P.fy + 0.8 && v.y < P.fy + 2.2) near.set(o.material.name, (near.get(o.material.name) || 0) + 1); } });
+    log(P.kind.name, (P.x - b.CP_SITE_DEFS.fort.X()).toFixed(1), (P.z - b.CP_SITE_DEFS.fort.Z()).toFixed(1), JSON.stringify([...near.entries()].sort((a, c) => c[1] - a[1]).slice(0, 5)));
+  }
+}
+
+// straight down over each scene of a castle (?site), the props marked red, the spot white, its wall normal a yellow tick
+export async function cpTop({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  const Q = new URLSearchParams(w.parent.location.search), id = Q.get('site') || 'fort';
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadCastleProps();
+  if (id === 'fort') { b.loadFort(); for (let i = 0; i < 900 && !b.fortState().ready; i++) { b.frame(1); await sleep(30); } b.placeInFort(); }
+  if (id === 'c13') { b.loadFort(); b.loadC13(); for (let i = 0; i < 1500 && !(b.c13State().ready); i++) { b.frame(1); await sleep(30); } b.placeInC13(); }
+  let site = null; for (let i = 0; i < 2500; i++) { b.frame(1); await sleep(16); site = b.CP.sites[id]; if (site && site.built) break; }
+  const T = b.THREE, cam = new T.OrthographicCamera(-5, 5, 5, -5, 0.1, 80), mk = [];
+  const add = (x, y, z, c, r = 0.12) => { const m = new T.Mesh(new T.SphereGeometry(r, 8, 6), new T.MeshBasicMaterial({ color: c, depthTest: false })); m.renderOrder = 99; m.position.set(x, y, z); b.scene.add(m); mk.push(m); };
+  for (const P of site.props) add(P.x, P.y + 2, P.z, 0xff2222, 0.15);
+  for (const p of site.placed) { add(p.x, p.fy + 2, p.z, 0xffffff, 0.2); add(p.x + p.nx * 0.8, p.fy + 2, p.z + p.nz * 0.8, 0xffee00, 0.1); add(p.x + p.nx * 1.4, p.fy + 2, p.z + p.nz * 1.4, 0xffee00, 0.08); }
+  const tiles = [];
+  for (const p of site.placed) {
+    cam.position.set(p.x, p.fy + 30, p.z); cam.up.set(0, 0, -1); cam.lookAt(p.x, p.fy, p.z); cam.updateProjectionMatrix();
+    b.renderer.render(b.scene, cam);
+    const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 300; c.height = 300; const g = c.getContext('2d');
+    const s = Math.min(src.width, src.height); g.drawImage(src, (src.width - s) / 2, (src.height - s) / 2, s, s, 0, 0, 300, 300); g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(p.scene, 4, 14); tiles.push(c);
+  }
+  for (const m of mk) b.scene.remove(m);
+  const cols = 4, c = w.document.createElement('canvas'); c.width = cols * 300; c.height = Math.ceil(tiles.length / cols) * 300; const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * 300, ((i / cols) | 0) * 300));
+  const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'top_' + id, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+// who breaks the castles' props, measured (2026-11-17): a farmer walked through one, you walked into one (held off it),
+// you jumped into one, a body thrown into one, the blade swung at one — and the frame's draws with them up
+export async function cpInteract({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadCastleProps();
+  b.loadFort(); for (let i = 0; i < 900 && !b.fortState().ready; i++) { b.frame(1); await sleep(30); } b.placeInFort();
+  for (const e of ['overlay', 'blackout']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; } }
+  let site = null; for (let i = 0; i < 2500; i++) { b.frame(1); await sleep(16); site = b.CP.sites.fort; if (site && site.built) break; }
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  const C = b.camera, T = b.THREE, alive = () => site.props.filter((q) => !q.dead).length;
+  const free = site.props.filter((q) => !q.dead && !q.on && !q.carries);
+  // 1. you walk into one: held off it
+  { const P = free[0]; const nx = P.wn[0], nz = P.wn[1];
+    let minD = 9;
+    C.position.set(P.x + nx * 2.2, P.fy + 1.7, P.z + nz * 2.2); b.camBaseY = C.position.y; w.__adv(2); b.look(Math.atan2(nx, nz), -0.2);
+    w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'KeyW', key: 'w' }));
+    for (let f = 0; f < 120; f++) { b.look(Math.atan2(C.position.x - P.x, C.position.z - P.z), -0.2); w.__adv(1); minD = Math.min(minD, Math.hypot(C.position.x - P.x, C.position.z - P.z)); }
+    w.dispatchEvent(new w.KeyboardEvent('keyup', { code: 'KeyW', key: 'w' }));
+    log('walk into', P.kind.name, 'closest', minD.toFixed(2), 'its half-width', Math.max(P.kind.hx, P.kind.hz).toFixed(2), 'broken', P.dead); }
+  // 2. jump into one
+  { const P = free[1]; const before = P.dead;
+    C.position.set(P.x + P.wn[0] * 0.55, C.position.y, P.z + P.wn[1] * 0.55); b.camBaseY = C.position.y; w.__adv(2);
+    w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'Space', key: ' ' })); w.__adv(3); w.dispatchEvent(new w.KeyboardEvent('keyup', { code: 'Space', key: ' ' }));
+    for (let f = 0; f < 40; f++) { C.position.x += (P.x - C.position.x) * 0.15; C.position.z += (P.z - C.position.z) * 0.15; w.__adv(1); if (P.dead) break; }
+    log('jump into', P.kind.name, 'broken', P.dead, 'was', before); }
+  // 3. a body thrown into one: a farmer killed and flung at it
+  { const P = free.find((q) => q.kind.h > 0.8 && q !== free[0] && q !== free[1]) || free[2]; const u = b.cpMutants().find((m) => m.farm && m.st.alive) || b.cpMutants().find((m) => m.st.alive && m.kind.fortBody);
+    if (!u) log('no farmer to throw'); else {
+      u.g.position.set(P.x + P.wn[0] * 1.6, P.fy, P.z + P.wn[1] * 1.6); u.st.alive = true;
+      u.st.awake = true; u.g.visible = true; if (u.model) u.model.visible = true;
+      for (let f = 0; f < 12; f++) { u.g.position.set(P.x + P.wn[0] * 0.8, P.fy, P.z + P.wn[1] * 0.8); w.__adv(1); }
+      u.g.updateMatrixWorld(true);
+      w.__cpRagDbg = []; if (b.mutRagdoll) { b.mutRagdoll(u, P.wn[0], P.wn[1], 1.0); }
+      let md = 9, mh = 0;
+      for (let f = 0; f < 120 && !P.dead; f++) { w.__adv(1); if (u.rag) for (const q of u.rag.parts) { const d = Math.hypot(q.p.x - P.x, q.p.z - P.z); if (d < md) { md = d; mh = q.p.y - P.fy; } } }
+      log('ragdbg', JSON.stringify((w.__cpRagDbg || []).slice(0, 12)), 'n', (w.__cpRagDbg || []).length, 'inFort', w.__bw.state().inFort); w.__cpRagDbg = null;
+      log('body into', P.kind.name, 'broken', P.dead, 'rag', !!u.rag, 'closest part', md.toFixed(2), 'at height', mh.toFixed(2), 'prop radius', P.prop.radius.toFixed(2)); } }
+  // 4. a farmer walking through one
+  { const P = free[3]; const u = b.cpMutants().find((m) => m.st.alive && !m.rag && (m.farm || m.kind.fortBody));
+    if (!u) log('no walker'); else {
+      u.st.awake = true; const sx = P.x + P.wn[0] * 2, sz = P.z + P.wn[1] * 2;
+      for (let f = 0; f < 60 && !P.dead; f++) { const k = f / 40; u.g.position.set(sx + (P.x - sx) * k, P.fy, sz + (P.z - sz) * k); b.fortClampUnitS ? b.fortClampUnitS(u, u.g.position) : null; w.__adv(1); }
+      log('walked through', P.kind.name, 'broken', P.dead); } }
+  // 5. the blade
+  { const P = free[4]; C.position.set(P.x + P.wn[0] * 1.6, P.fy + 1.6, P.z + P.wn[1] * 1.6); b.camBaseY = C.position.y; b.lookAt(P.x, P.y + P.kind.h * 0.5, P.z);
+    b.addToInventory(b.maceItem); if (b.state().equipped !== 'Bone Mace') b.toggleEquip(b.maceItem); w.__adv(20);
+    for (let k = 0; k < 3 && !P.dead; k++) { C.position.set(P.x + P.wn[0] * 1.6, P.fy + 1.6, P.z + P.wn[1] * 1.6); b.lookAt(P.x, P.y + P.kind.h * 0.5, P.z); b.attackAction(); for (let f = 0; f < 50; f++) { C.position.set(P.x + P.wn[0] * 1.6, P.fy + 1.6, P.z + P.wn[1] * 1.6); b.lookAt(P.x, P.y + P.kind.h * 0.5, P.z); w.__adv(1); } }
+    log('blade at', P.kind.name, 'broken', P.dead); }
+  log('props standing', alive(), 'of', site.props.length, 'bodies', b.CP.bodies.length);
+  // draws in the street with every prop standing vs none
+  const info = b.renderer.info; info.autoReset = false;
+  C.position.set(site.placed[0].x + site.placed[0].nx * 4, site.placed[0].fy + 1.6, site.placed[0].z + site.placed[0].nz * 4); b.lookAt(site.placed[0].x, site.placed[0].fy, site.placed[0].z);
+  info.reset(); b.renderer.render(b.scene, C); const d1 = info.render.calls; site.group.visible = false; info.reset(); b.renderer.render(b.scene, C); const d0 = info.render.calls; site.group.visible = true; info.autoReset = true;
+  log('draws with the props', d1, 'without', d0);
+  b.settings.devMode = false;
+}
+
+// the rings' icons as the pack draws them (2026-11-17: "the shock ring is faded looking in the inventory")
+export async function ringIcons({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 300 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  await sleep(1500);
+  const items = [b.shockRingItem, b.goldRingItem].filter(Boolean);
+  const c = w.document.createElement('canvas'); c.width = 260 * items.length; c.height = 260; const g = c.getContext('2d');
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]; const url = b.renderItemIcon(it.iconModel || it.inspectModel, it.iconRot || {});
+    const im = new w.Image(); await new Promise((r) => { im.onload = r; im.src = url; }); g.drawImage(im, i * 260, 0, 260, 260);
+  }
+  const d = c.toDataURL('image/jpeg', 0.9).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'icons', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+// the sewer thing dead in the water (2026-11-17): from the side and from above, lit, at 0.5 / 1.5 / 3 / 7 s after the shock
+export async function sewDeadPose({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  for (const e of ['overlay', 'blackout']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; } }
+  b.sewRestore({ lv: 15 }); b.placeInSewer(); for (let i = 0; i < 30; i++) b.frame(1);
+  b.sewSet(1.8, -20, 0, 0); for (let i = 0; i < 30; i++) b.frame(1);
+  b.sewElectrocute();
+  const T = b.THREE, C = b.camera, tiles = [], amb = new T.AmbientLight(0xffffff, 1.5);
+  const grab = (lab) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 400; c.height = Math.round(400 * src.height / src.width); const g = c.getContext('2d'); g.drawImage(src, 0, 0, c.width, c.height); g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 4, 14); tiles.push(c); };
+  const shotAt = (lab) => {
+    const M = b.sewMon(), p = M.g.getWorldPosition(new T.Vector3()), yaw = b.sewLampS().at ? b.sewLampS().at.yaw : 0;
+    const fx = Math.sin(yaw), fz = Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    const mid = p.clone().addScaledVector(new T.Vector3(fx, 0, fz), 1.1);
+    b.scene.add(amb); const fov = C.fov;
+    const hid = []; b.sewG().world.traverse((o) => { if (o.isMesh && o.visible && o.material === b.sewG().P.waterMat) { o.visible = false; hid.push(o); } });
+    amb.intensity = 3.0;
+    C.fov = 60; C.updateProjectionMatrix();
+    C.position.copy(mid).addScaledVector(new T.Vector3(rx, 0, rz), 2.4); C.position.y = p.y + 0.9; C.lookAt(mid.x, p.y + 0.75, mid.z); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); grab(lab + ' side');
+    C.position.copy(mid).add(new T.Vector3(0, 3.5, 0.01)); C.lookAt(mid.x, mid.y, mid.z); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); grab(lab + ' above');
+    C.position.copy(mid).addScaledVector(new T.Vector3(fx, 0, fz), 2.6).addScaledVector(new T.Vector3(rx, 0, rz), 0.35); C.position.y = p.y + 0.55; C.lookAt(mid.x, p.y + 0.45, mid.z); C.updateMatrixWorld(true); b.renderer.render(b.scene, C); grab(lab + ' along');
+    for (const o of hid) o.visible = true;
+    b.scene.remove(amb); C.fov = fov; C.updateProjectionMatrix();
+  };
+  const marks = [0.6, 3, 7]; let mi = 0;
+  for (let i = 0; i < 9000 && mi < marks.length; i++) { b.frame(1); if (i % 10 === 0) await sleep(1); const t = b.sewMon().deadT || 0; if (t >= marks[mi]) { shotAt('t' + marks[mi]); mi++; } }
+  const cols = 4, tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th;
+  const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = c.toDataURL('image/jpeg', 0.82).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'deadpose', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  b.settings.devMode = false;
 }

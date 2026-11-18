@@ -2957,3 +2957,11 @@ after the swing ran out started a fresh forehand from rest. Now:
 - **The sawn-off hits a little harder** (2026-11-15, the owner: "make the shotgun hit a little harder"): `SG_PELLET_DMG`
   3.1 → 3.6 (+16 %; nine pellets a stride off 28 → 32). The falloff (`sgFall`, `SG_FULL` 4.5 / `SG_FAR` 24), the spread
   and the pellet count are as they were; the pliosaur's share reads the same constant.
+
+## The mace toned down and slowed (2026-11-17)
+"Not as overpowered in the start of the game … more fluid and not as quick." dmgLight 2 → 1.5, dmgHeavy 4 → 3, dmgSlam 20 → 14
+(a full slam: red 29 → 10.8 with its wave, darks 19 → 5 — two slams, not one), swingK 1.22 → 1.5, windRate 0.7 → 0.62, stamK
+1.8. `bladeRate`: the fall 0.72 → 0.95, a chained rise 0.95 → 1.15, the through 1.85. The light swing's fall eases
+st²·(0.35·(3−2st)+0.65) — a smooth start into a fast end — instead of the slam's st⁴ hang-and-drop (which on every click read
+as a snap). A swing is ~0.93 s (was ~0.75). The owner's "boulder impact hard 4" (`maceHeavy`) on a slam or charged swing
+(P ≥ 0.45) that connects, and softer on a slam into the ground. Probe `maceFight`, `maceMomentum`.
