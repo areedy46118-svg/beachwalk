@@ -1038,7 +1038,9 @@ The great window behind its throne is the owner's own stained-glass picture
 `tools/throne_window.js` from `tools/throne_window_src.jpg`).
 The health boxes, the stamina bar, the hotbar's frames and the blood-jar count's
 numerals are the owner's own marker drawings (`assets/hud/`, cut into masks by
-`tools/hand_hud_pack.py`).
+`tools/hand_hud_pack.py`); the pack's frames, rules, buttons, ring circles and the
+loop round the selection are drawn with the same marker (`assets/hud/pk-*`, built by
+`tools/hand_pack_pack.py` from the hotbar photo's strokes).
 The tune that loops in the tavern is the owner's own "tavern music"
 (`assets/tavern-music.m4a`, made a seamless loop by `tools/tavern_music_pack.py`).
 The two men dancing by the tavern's storeroom dance the owner's Mixamo "Hip Hop Dancing" and "Snake Hip Hop Dance"

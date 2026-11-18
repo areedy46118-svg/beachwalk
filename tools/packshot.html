@@ -1,0 +1,37 @@
+<!doctype html><meta charset="utf-8"><title>pack shot</title>
+<!-- THE PACK, OPEN (2026-11-18). Not part of the game. The game in a frame with a handful of things carried, a ring worn, a
+     key on the ring and the pack open, for a headless screenshot:
+       chrome --headless=new --screenshot=out.png --window-size=1440,900 --virtual-time-budget=40000 http://localhost:PORT/tools/packshot.html
+     ?w=1280&h=720 sizes the frame (and pass the same --window-size). -->
+<style>html, body { margin: 0; background: #000; overflow: hidden; } iframe { border: 0; display: block; }</style>
+<iframe id="f" src="/index.html"></iframe>
+<script>
+const q = new URLSearchParams(location.search), W = +(q.get('w') || 1440), H = +(q.get('h') || 900);
+const f = document.getElementById('f'); f.style.width = W + 'px'; f.style.height = H + 'px';
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+f.addEventListener('load', async () => {
+  const w = f.contentWindow;
+  for (let i = 0; i < 200 && !w.__bw; i++) await wait(100);
+  const b = w.__bw;
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) { /* not ready */ } b.frame(1); await wait(60); }
+  b.introDone = true;
+  for (const k of ['shovelItem', 'fishingRodItem', 'glowstickItem', 'waterBottleItem', 'syringeItem', 'katanaItem', 'cdItem', 'crabItem', 'jarItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
+  for (const k of ['keyItem', 'boatKeyItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
+  try { if (b.ringItem) b.addToInventory(b.ringItem); } catch (e) { /* */ }
+  for (let i = 0; i < 60; i++) { b.frame(1); await wait(30); }
+  const d = f.contentDocument, st = d.createElement('style');
+  st.textContent = '#overlay, #intro, #blackout { display: none !important; }';
+  d.head.appendChild(st);
+  b.openPack();
+  try { b.selectPackSlot(1); } catch (e) { /* */ }
+  if (q.get('st')) {   // the drag states, forced: an empty cell the thing could go in (dashed), a cell it combines with, a ring worn and picked
+    d.getElementById('inv-grid').classList.add('takes');
+    const sl = d.querySelectorAll('#inv-grid .islot'); if (sl[3]) sl[3].classList.add('combines');
+    const rs = d.querySelectorAll('#pack-rings .rslot'); if (rs[1]) rs[1].classList.add('wearable');
+  }
+  for (let i = 0; i < 40; i++) { b.frame(1); await wait(60); }
+  if (q.get('art')) {  // the artifacts' inked frames, forced onto three cells (the classes renderPack gives them): gold, flame, sea
+    const sl = d.querySelectorAll('#inv-grid .islot'); sl[0].classList.add('art'); sl[2].classList.add('art', 'fire'); sl[5].classList.add('art', 'sea');
+  }
+});
+</script>

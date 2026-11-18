@@ -1172,3 +1172,43 @@ a jar per crab: the mounds', beach, rock ledge, wreck hold, Skrim's heap `SKQ_LO
 `jarTotal`) = 35 today. The trader's pay no longer counts toward the line (`gainJar(n, paid)`, every `traderSell` sale): it
 has no ceiling, and a count with a total has to be of things that do. A NEW JAR ANYWHERE MUST BE ADDED TO `jarTotal`.
 Probe `statsAndSteps`: the card reads "JARS OBTAINED 0/35 | RARE ACHIEVEMENTS 0/3".
+
+## The pack in the owner's hand (2026-11-18, "what are some ideas on giving the inventory an art style that matches the game" → "do 1 and 4 make it good")
+Idea 1: the pack drawn with his marker, like the HUD. Idea 4: lit like the night it is opened in. Sizes and layout unchanged.
+- **The art**: `tools/hand_pack_pack.py` (`arch -x86_64 python3 -E tools/hand_pack_pack.py hotbar.png assets/hud`; the
+  input is IMG_7190 at 2400 wide, `sips -s format png -Z 2400 ~/Downloads/IMG_7190.HEIC`). It imports `hand_hud_pack`
+  for the cut and `draw_box`, so every stroke carries the THICKNESS PROFILE of a line on his paper (the strip's top,
+  bottom and walls), edges roughened, laid straight. Writes `assets/hud/pk-*` (~230 KB): six cells `pk-slot1..6` 288²
+  (cycled `:nth-child(6n+k)` like the hotbar), `pk-dash` (a dashed cell: where the thing you drag can go), `pk-sel` (a
+  loop circled round the cell, ends overlapping), `pk-big`, `pk-btn1..3`, `pk-leave`, `pk-ring1..2` (circles), `pk-kc`,
+  the long rules `pk-rule1..2` 2600×20, the short `pk-short1..2` 640×16, and `pk-vrule`. Seeded: re-running gives the
+  same files byte for byte.
+  - `loop()` is a superellipse (sq 2 a circle, ~3.6 a rounded square) whose wobble MUST be low-frequency (sines of 2, 3
+    and 5 bumps round the loop) plus the boxes' small edge noise. A per-sample random walk on the radius came out as a
+    jagged, hairy outline.
+  - **A long rule squeezed into a short element reads as dots** (2600 px of profile packed into ~250 px): the short
+    lines (the name's underline, the rules round what a thing does) use `pk-short*`.
+- **The CSS** is one block in index.html after the pack's own rules ("THE PACK IN THE OWNER'S HAND"), overriding them:
+  each thing's drawing is a `::after` (or `::before`) masked by its PNG, coloured `--c` (the hotbar's convention), so
+  states recolour the ink: hover brighter, selection white, empty cells dim, `combines` white with a glow, `.takes`
+  swaps the cell's `--ink` for `pk-dash`, and the artifacts' injected `#inv-grid .islot.art/.fire/.sea` rules got a
+  `--c` each (gold/orange/blue frames, measured in `tools/packshot.html?art=1`). Georgia (the hotbar label's face)
+  replaced the monospace; the slot numbers are his drawn numerals (`renderPack` writes `.hd` glyphs, one per digit).
+  - **The slot's `::after` used to be "IN HAND"**: it is the frame now, so `renderPack` writes `<span class="inhand">`.
+  - The selection is a loop circled round the cell (`.islot.sel::before`, inset −10px, a 0.22 s draw-in), the cell lit
+    from inside like a torch over it, the icon brighter (the others at 0.9). The grid has 10 px padding (and −10 margin)
+    so a loop on an outer cell is not cut by the grid's `overflow-y: auto`; `.islot` is `overflow: visible`.
+  - **Light**: a cool radial wash from the upper left (the moon), the corners down to 0.95 black, and film grain:
+    `#invpanel::after`, an inline SVG `feTurbulence` tile at 0.075, jumped in `steps(1)` (off under
+    `prefers-reduced-motion`). The panel rises 8 px as it opens.
+  - **TRAP: `#pack-leave` was given `position: relative` in the block, and the shop section's LATER
+    `#invpanel #pack-leave, #shoppanel #shop-leave { position: static }` (same specificity) won.** Its absolutely placed
+    drawn box then sized itself to `.panel` and drew a huge blurred frame round the whole pack. `#invpanel .head
+    #pack-leave` outweighs it, with `top/left: auto` (the base rule's `top: 1.6rem; left: 1.8rem` otherwise push it onto
+    slot 1). Any new pseudo-element frame: check that its host is positioned.
+- The masks load at boot (the pack's DOM exists from the start), so the first open has no missing frames.
+- `tools/packshot.html` (headless `--screenshot`, `--virtual-time-budget=60000`): the pack open with nine things and two
+  keys; `&st=1` forces the drag states, `&art=1` the artifact frames (forced AFTER the frames: renderPack redraws as
+  icons land and wipes classes set earlier). Per-pixel DOM, so it shows what a canvas grab cannot.
+- Not changed: on a screen under ~760 px tall the panel is taller than the window (top −44 px at 470×650), so its top
+  and bottom lines fall off the screen, as the old hairlines did.

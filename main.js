@@ -12834,7 +12834,10 @@ function renderPack() {
     const slot = document.createElement('div');
     slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '') + (item && isArtWeapon(item) && item.artifact ? ' art' : '') + (item && (item.artifact === flameArtItem || item === flameArtItem) ? ' fire' : '') + (item && seaArtItem && (item.artifact === seaArtItem || item === seaArtItem) ? ' sea' : '');
     slot.dataset.index = String(i);
-    slot.innerHTML = `<span class="num">${i + 1}</span>` + (item ? iconHTML(item) : '');
+    // the owner's drawn numerals, as on the hotbar (2026-11-18: the pack in his hand), and "in hand" a span of its own (the
+    // slot's ::after is its drawn frame now, ::before the circled selection)
+    slot.innerHTML = `<span class="num" aria-label="${i + 1}">${String(i + 1).split('').map((c) => `<i class="hd hd${c}"></i>`).join('')}</span>` +
+      (item && item === equipped ? '<span class="inhand">In hand</span>' : '') + (item ? iconHTML(item) : '');
     if (item) {
       // no name in the slot: the pane on the right names the selection
       // double-click goes straight to the examine screen
@@ -112051,19 +112054,19 @@ var ART_WHALE_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(ART_WHALE_SV
 #hotbar .slot.art.art1{box-shadow:0 0 15px rgba(255,200,70,.75),inset 0 0 16px rgba(255,200,70,.28)}
 #hotbar .slot.art.art2{--c:#ffe6a0;border-color:#ffd877;box-shadow:0 0 22px rgba(255,210,90,.95),inset 0 0 20px rgba(255,210,90,.38)}
 #hotbar .slot.art.artpulse{--c:#fff2c8;border-color:#ffe9a8;box-shadow:0 0 28px rgba(255,230,140,1),inset 0 0 22px rgba(255,230,140,.5)}
-#inv-grid .islot.art{border-color:rgba(255,206,96,.78);box-shadow:inset 0 0 0 1px rgba(255,206,96,.45),inset 0 0 14px rgba(255,190,70,.20)}
-#inv-grid .islot.art.sel{border-color:#ffd877;box-shadow:inset 0 0 0 1px #ffd877,inset 0 0 18px rgba(255,200,80,.32),0 0 10px rgba(255,200,80,.40)}
+#inv-grid .islot.art{--c:rgba(255,206,96,.86);border-color:rgba(255,206,96,.78);box-shadow:inset 0 0 0 1px rgba(255,206,96,.45),inset 0 0 14px rgba(255,190,70,.20)}
+#inv-grid .islot.art.sel{--c:#ffd877;border-color:#ffd877;box-shadow:inset 0 0 0 1px #ffd877,inset 0 0 18px rgba(255,200,80,.32),0 0 10px rgba(255,200,80,.40)}
 #hotbar .slot.fire,#hotbar .slot.fire.equipped,#hotbar .slot.art.fire{--c:#ff9a3c;border-color:rgba(255,128,36,.88);box-shadow:0 0 10px rgba(255,96,20,.50),inset 0 0 12px rgba(255,120,30,.22);animation:fireb 1.6s ease-in-out infinite alternate}
 #hotbar .slot.fire.equipped,#hotbar .slot.art.fire.equipped{border-color:#ffa24a;box-shadow:0 0 16px rgba(255,110,24,.70),inset 0 0 16px rgba(255,130,40,.30)}
 @keyframes fireb{from{border-color:rgba(255,118,30,.80);box-shadow:0 0 8px rgba(255,80,10,.40),inset 0 0 10px rgba(255,110,30,.18)}to{border-color:rgba(255,160,60,.95);box-shadow:0 0 14px rgba(255,120,30,.62),inset 0 0 14px rgba(255,140,50,.28)}}
-#inv-grid .islot.fire,#inv-grid .islot.art.fire{border-color:rgba(255,128,36,.88);box-shadow:inset 0 0 0 1px rgba(255,140,50,.50),inset 0 0 14px rgba(255,110,30,.24)}
-#inv-grid .islot.fire.sel,#inv-grid .islot.art.fire.sel{border-color:#ffa24a;box-shadow:inset 0 0 0 1px #ffa24a,inset 0 0 18px rgba(255,120,40,.36),0 0 10px rgba(255,110,30,.45)}
+#inv-grid .islot.fire,#inv-grid .islot.art.fire{--c:rgba(255,140,50,.92);border-color:rgba(255,128,36,.88);box-shadow:inset 0 0 0 1px rgba(255,140,50,.50),inset 0 0 14px rgba(255,110,30,.24)}
+#inv-grid .islot.fire.sel,#inv-grid .islot.art.fire.sel{--c:#ffa24a;border-color:#ffa24a;box-shadow:inset 0 0 0 1px #ffa24a,inset 0 0 18px rgba(255,120,40,.36),0 0 10px rgba(255,110,30,.45)}
 #hotbar .slot.sea,#hotbar .slot.sea.equipped,#hotbar .slot.art.sea{--c:#7fe0f2;border-color:rgba(70,196,226,.85);box-shadow:0 0 10px rgba(40,170,220,.45),inset 0 0 12px rgba(60,190,230,.20);animation:seab 2.4s ease-in-out infinite alternate}
 #hotbar .slot.sea.equipped,#hotbar .slot.art.sea.equipped{border-color:#8fe6f6;box-shadow:0 0 16px rgba(50,180,230,.65),inset 0 0 16px rgba(70,200,240,.28)}
 #hotbar .slot.art.sea.seacd{--c:rgba(127,224,242,.40);border-color:rgba(70,196,226,.28);box-shadow:none;animation:none}
 @keyframes seab{from{border-color:rgba(60,180,220,.75);box-shadow:0 0 7px rgba(30,150,210,.38),inset 0 0 9px rgba(50,170,220,.16)}to{border-color:rgba(130,226,246,.95);box-shadow:0 0 14px rgba(60,190,236,.60),inset 0 0 14px rgba(90,210,240,.28)}}
-#inv-grid .islot.sea,#inv-grid .islot.art.sea{border-color:rgba(70,196,226,.85);box-shadow:inset 0 0 0 1px rgba(90,206,236,.48),inset 0 0 14px rgba(50,170,220,.22)}
-#inv-grid .islot.sea.sel,#inv-grid .islot.art.sea.sel{border-color:#8fe6f6;box-shadow:inset 0 0 0 1px #8fe6f6,inset 0 0 18px rgba(70,200,240,.34),0 0 10px rgba(60,190,236,.45)}
+#inv-grid .islot.sea,#inv-grid .islot.art.sea{--c:rgba(90,206,236,.9);border-color:rgba(70,196,226,.85);box-shadow:inset 0 0 0 1px rgba(90,206,236,.48),inset 0 0 14px rgba(50,170,220,.22)}
+#inv-grid .islot.sea.sel,#inv-grid .islot.art.sea.sel{--c:#8fe6f6;border-color:#8fe6f6;box-shadow:inset 0 0 0 1px #8fe6f6,inset 0 0 18px rgba(70,200,240,.34),0 0 10px rgba(60,190,236,.45)}
 #inv-detail .artline{margin:6px 0 2px;font-size:.72rem;letter-spacing:.06em;color:#ffd97a;display:flex;align-items:center;gap:7px}
 #inv-detail .artline svg{width:38px;height:14px;flex:none;filter:drop-shadow(0 0 2px rgba(255,200,70,.7))}`;
   document.head.appendChild(st);
