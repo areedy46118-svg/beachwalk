@@ -936,3 +936,18 @@ sound keeps it. `maceHeavy` (his "boulder impact hard 4", assets/mace-heavy.m4a)
 - **The orc laughs as Wong vaults the bar** (2026-11-18): `tavProvoke` (not quiet) plays `samLaugh` — the one man's laugh in
   the game, the samurai's — from the orc, rate 0.82, gain 1.6, 0.25 s in. The orc has no laugh of his own (swings, hits, a
   death). The snorkeler's giggles (`snork-laugh*`) are the other choice.
+
+## 2026-11-18 — the owner's metal, the wreck's groans, the flies; the drain's drips (his)
+- `tools/metal_pack.py` cuts "31 Various Metal Sound Effects" at its silences (34 takes at 32 kHz — the cut is RATE-DEPENDENT:
+  at 22 kHz it found 32 and every index after the first few shifted, so re-measure before re-picking) and sorts by length,
+  peak and zero-crossing rate into `metalTick` (screws turning), `metalClink` (a screw landing), `metalHit` / `metalHeavy`
+  (`sfxPropHit('metal')` by speed), `metalScrape` (the grate lifted and dragged, `sfxLockerOpen`, the levers' strain at rate
+  0.72 under his lever takes), `metalRattle` (`sfxGateRattle`); `sfxKeyTurn` is a tick and a clink. Every one falls back to its
+  old synth only while the sample is not yet decoded (`playSample` returns false).
+- The wreck: `shipGroan` (his "Low Pitched Metal creaks…", the 18 s first take sliced into ~4.5 s pieces) aboard every 22–44 s at
+  0.07 + 0.11 × `shipMix`, rate 0.9, in place of `sfxHullGroan`; from the sand within 30 m, `playSampleAt` at the hull (gain 0.16,
+  lowpass 2400 → 500 with distance) every 28–58 s (`wreckGroanIn`).
+- The lair's flies: his recording (`FLIES_BED`) at flyK × 0.2 (~−35 dB against the beds' ~−23). The drain room and the bore play
+  his creepy-sewers drips (`SEW_DRIP_BED`) under his sewer bed; the synthesized drips/drone/groans/thuds/rats are out (drain.md).
+- The reach's breath (`pipeBreathTick`): 0.04 → ~0.5 only while the hand is going IN (held, not taken); it falls away in 0.12 s the
+  moment you let go or the fingers close — the loud breath at the grab is gone.

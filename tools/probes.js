@@ -8032,3 +8032,184 @@ export async function packHands({ w, b, log, sleep, shot }) {
   b.openPack(); await sleep(1400); b.closePack(); await sleep(900);
   log('done', JSON.stringify(b.ph()), 'errors', errs.length, errs.slice(0, 4).join(' | '));
 }
+
+// ANY VIEW OF THE BEACH (2026-11-18): `&cams=x,y,z,lx,ly,lz;...` (camera, look-at), `&t=` the sea's clock, `&tw=` tile width,
+// `&pick=nx,ny;...` (screen points, -1..1) raycast in the FIRST view and logged: what is drawn there, its chain of parents,
+// its material and where it is. `&dev=1` dev mode. One sheet of all the views.
+export async function view({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  const Q = new URLSearchParams(w.parent.location.search);
+  if (Q.get('dev')) b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 400 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  // (&natural=SECS: let the game run that long from the start as a player gets it — the opening and all — before looking)
+  const nat = +(Q.get('natural') || 0);
+  if (nat) { w.__clockOn(); for (let i = 0; i < nat * 60; i++) { w.__adv(1); if (i % 120 === 0) await sleep(20); } log('ran naturally', nat, 's; introDone', b.introDone, 'cam', b.camera.position.toArray().map((v) => v.toFixed(1)).join(',')); }
+  b.introDone = true;
+  for (const e of ['overlay', 'blackout', 'intro']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; el.style.display = 'none'; } }
+  w.__clockOn();
+  const T = b.THREE, C = b.camera, U = b.oceanUniforms.uTime;
+  const cams = (Q.get('cams') || '4,1.7,-20,0,0.5,-40').split(';').map((s) => s.split(',').map(Number));
+  if (Q.get('nomist')) { const m = b.scene.getObjectByName('drainMist'); if (m) m.traverse((o) => { if (o.material) o.material.visible = false; }); }   // the drain's murk off, for a before
+  const T0 = Q.get('t') !== null ? +Q.get('t') : null, tiles = [];
+  const tw = +(Q.get('tw') || 480);
+  for (let k = 0; k < cams.length; k++) {
+    const c = cams[k];
+    const place = () => { C.position.set(c[0], c[1], c[2]); b.camBaseY = c[1]; b.lookAt(c[3], c[4], c[5]); };
+    const sch = Q.get('school') ? Q.get('school').split(',').map(Number) : null;   // (&school=x,z,size[,kind]: one of the sea's under-surface shapes held there)
+    if (sch) { const U2 = b.oceanUniforms; U2.uSh.value[0].set(sch[0], sch[1], 0.6, sch[3] || 0); U2.uSh2.value[0].set(1, sch[2], 3.3, 0); }
+    const spl = Q.get('splash') ? Q.get('splash').split(',').map(Number) : null;   // (&splash=x,z: drops thrown there every frame, as the surf does)
+    for (let i = 0; i < (k ? 20 : 90); i++) { place(); if (T0 !== null) U.value = T0 + i / 60; if (spl) for (let q = 0; q < 3; q++) b.spawnSplash(spl[0] + (Math.random() - 0.5) * 6, spl[1] + (Math.random() - 0.5) * 6, 5, 0.7, 0, 1.2, b.waterSurfaceAt ? b.waterSurfaceAt(spl[0], spl[1]) : 0.02, false); w.__adv(1); }
+    place(); C.updateMatrixWorld(true); b.renderer.render(b.scene, C);
+    if (k === 0 && Q.get('pick')) {
+      const rc = new T.Raycaster();
+      for (const p of Q.get('pick').split(';')) {
+        const [nx, ny] = p.split(',').map(Number); rc.setFromCamera(new T.Vector2(nx, ny), C);
+        const hits = rc.intersectObjects(b.scene.children, true).filter((h) => h.object.visible && h.object.name !== 'hitProxy').slice(0, 3);
+        for (const h of hits) {
+          const chain = []; let o = h.object; while (o && chain.length < 5) { chain.push((o.name || o.type) + (o.isInstancedMesh ? '[inst ' + h.instanceId + ']' : '')); o = o.parent; }
+          const m = Array.isArray(h.object.material) ? h.object.material[0] : h.object.material;
+          log('PICK', p, 'd', h.distance.toFixed(1), chain.join(' < '), 'mat', (m && (m.name || m.type)) || '?', 'geo', h.object.geometry && h.object.geometry.type, 'at', h.point.toArray().map((v) => v.toFixed(2)).join(','));
+        }
+      }
+    }
+    if (k === 0 && Q.get('perf')) {   // the first view drawn 60 times, each waited out (gl.finish): ms a frame, GPU and all
+      const gl = b.renderer.getContext(); for (let i = 0; i < 10; i++) b.renderer.render(b.scene, C); gl.finish();
+      const t0 = performance.now(); for (let i = 0; i < 60; i++) { b.renderer.render(b.scene, C); gl.finish(); }
+      log('PERF ms/frame', ((performance.now() - t0) / 60).toFixed(2), 'canvas', b.renderer.domElement.width + 'x' + b.renderer.domElement.height);
+    }
+    const src = b.renderer.domElement, cv = w.document.createElement('canvas'); cv.width = tw; cv.height = Math.round(tw * src.height / src.width);
+    const g = cv.getContext('2d'); g.drawImage(src, 0, 0, cv.width, cv.height); g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(c.join(','), 6, 14);
+    tiles.push(cv);
+  }
+  const cols = Math.min(+(Q.get('cols') || 2), tiles.length), W0 = tiles[0].width, H0 = tiles[0].height, sh = w.document.createElement('canvas');
+  sh.width = cols * W0; sh.height = Math.ceil(tiles.length / cols) * H0;
+  const g = sh.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * W0, ((i / cols) | 0) * H0));
+  const d = sh.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', Q.get('name') || 'view', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+// THE REACH THROUGH THE GRATE (2026-11-18): stood at the outlet, the peek, F held for the reach — stills along it, and how
+// far in, the breath's level and whether the screwdriver came out into the pack. `&rel=2.5` lets go at 2.5 s and holds again.
+export async function pipeReach({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 400 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true;
+  for (const e of ['overlay', 'blackout', 'intro']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; el.style.display = 'none'; } }
+  w.__clockOn();
+  const T = b.THREE, C = b.camera;
+  let D = null; b.scene.traverse((o) => { if (!D && o.userData && o.userData.outlet && o.userData.nav) D = o; });
+  const F = D.userData.outlet; D.updateMatrixWorld(true);
+  const stand = F.localToWorld(new T.Vector3(0, 0, 1.3)); const tgt = F.localToWorld(new T.Vector3(0, 0, -2));
+  for (let i = 0; i < 60; i++) { C.position.set(stand.x, b.camBaseY = 1.62 + D.position.y + 0.05, stand.z); b.lookAt(tgt.x, tgt.y, tgt.z); w.__adv(1); }
+  log('taken before', b.screwdriverTaken, 'stand', stand.toArray().map((v) => v.toFixed(2)).join(','));
+  b.startPeek();
+  for (let i = 0; i < 70; i++) w.__adv(1);
+  const Q = new URLSearchParams(w.parent.location.search), rel = +(Q.get('rel') || 0);
+  const down = (on) => w.dispatchEvent(new w.KeyboardEvent(on ? 'keydown' : 'keyup', { code: 'KeyF', key: 'f' }));
+  const tiles = [];
+  const grab = (lab) => { b.renderer.render(b.scene, C); const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 400; c.height = Math.round(400 * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.6)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '13px monospace'; g.fillText(lab, 6, 16); tiles.push(c); };
+  grab('peek, before');
+  down(true);
+  let relDone = false;
+  const hand = b.pipeArmS().userData.hand, hp = new T.Vector3(), hp0 = new T.Vector3(), sdp = new T.Vector3(), sdp0 = new T.Vector3();
+  let maxStep = 0, maxAt = 0, maxAcc = 0, accAt = 0, lastStep = null, sdJump = 0, haveHand = false, haveSd = false;
+  for (let f = 1; f <= 60 * 7.5; f++) {
+    if (rel && !relDone && f === Math.round(rel * 60)) { down(false); relDone = true; for (let k = 0; k < 60; k++) w.__adv(1); log('let go 1 s: p', b.pipeReachS().p.toFixed(2)); down(true); }
+    w.__adv(1);
+    const R = b.pipeReachS();
+    // smoothness: the hand's step each frame (a jump is a spike) and its change (a jerk); the screwdriver's world place across the take
+    if (b.pipeArmS().visible) { hand.updateWorldMatrix(true, false); hand.getWorldPosition(hp); if (haveHand) { const st = hp.distanceTo(hp0); if (st > maxStep) { maxStep = st; maxAt = f / 60; } if (lastStep !== null && Math.abs(st - lastStep) > maxAcc) { maxAcc = Math.abs(st - lastStep); accAt = f / 60; } lastStep = st; } hp0.copy(hp); haveHand = true; } else { haveHand = false; lastStep = null; }
+    if (!b.screwdriverTaken) { b.screwdriverModel.updateWorldMatrix(true, false); b.screwdriverModel.getWorldPosition(sdp); if (haveSd && R.done && R.grab > 0.2 && R.grab < 0.36) sdJump = Math.max(sdJump, sdp.distanceTo(sdp0)); sdp0.copy(sdp); haveSd = true; }
+    if (f % 60 === 0 || f === 300 || f === 318) {
+      const br = R.br ? R.br.g.gain.value.toFixed(3) : '-';
+      log('t', (f / 60).toFixed(2), 'p', R.p.toFixed(2), 'done', R.done, 'grab', R.grab.toFixed(2), 'breath gain', br, 'peeking', b.peeking, 'taken', b.screwdriverTaken, 'fov', C.fov.toFixed(1));
+    }
+    if ([45, 120, 210, 285, 312, 330].includes(f)) grab('t ' + (f / 60).toFixed(2) + ' p ' + R.p.toFixed(2));
+  }
+  down(false);
+  log('SMOOTH hand max step/frame', maxStep.toFixed(4), 'm at', maxAt.toFixed(2), 's; max change of step', maxAcc.toFixed(4), 'at', accAt.toFixed(2), '; screwdriver moved across the take', sdJump.toFixed(4));
+  log('in pack', b.state().inventory ? b.state().inventory.join('|') : JSON.stringify(Object.keys(b.state())).slice(0, 200));
+  const cols = 4, tw = tiles[0].width, th = tiles[0].height, cv = w.document.createElement('canvas'); cv.width = cols * tw; cv.height = Math.ceil(tiles.length / cols) * th;
+  const g = cv.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = cv.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'reach', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+// THE HUNT, TIMED (2026-11-18): the sewer in dev mode (a leap is the scare and back under, not a death), stood still on the
+// walk, every change of the thing's state logged with the clock. `&lv=` levers bitmask, `&gen=1` the power off, `&secs=`.
+export async function sewHunt({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  const Q = new URLSearchParams(w.parent.location.search), lv = +(Q.get('lv') || 0), gen = +(Q.get('gen') || 0), secs = +(Q.get('secs') || 120);
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  for (const e of ['overlay', 'blackout']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; } }
+  b.sewRestore({ lv, gen }); b.placeInSewer(); for (let i = 0; i < 30; i++) b.frame(1);
+  const stay = !!Q.get('stay'), C = b.camera, cp = C.position.clone(), cq = C.quaternion.clone();
+  if (!stay) b.sewSet(1.8, -20, 0, 0);
+  log('stood at', C.position.toArray().map((v) => v.toFixed(2)).join(','));
+  w.__clockOn();
+  let last = '', rises = 0, leaps = 0, t = 0, sounds = 0;
+  const plays0 = b.samplePlaysS ? b.samplePlaysS() : 0;
+  for (let f = 0; f < secs * 60; f++) {
+    if (stay) { C.position.copy(cp); C.quaternion.copy(cq); } else b.sewSet(1.8, -20, 0, 0);
+    // (&look=1: turn to it whenever it stands watching behind the bars — the watcher should DIVE when looked at)
+    if (Q.get('look')) { const S0 = b.sewMonS(); if (S0 && (S0.st === 'watch' || S0.st === 'wrise')) { const M0 = b.sewMon(); M0.g.updateWorldMatrix(true, true); const hp0 = new b.THREE.Vector3(); (M0.bones && M0.bones.Head_M ? M0.bones.Head_M : M0.g).getWorldPosition(hp0); b.lookAt(hp0.x, hp0.y, hp0.z); } }
+    w.__adv(1); t += 1 / 60;
+    const S = b.sewMonS(); if (!S) continue;
+    const st = S.st + (S.scare ? '*' : '');
+    if (st !== last) {
+      if (S.st === 'rise') rises++;
+      if (S.scare && !last.endsWith('*')) leaps++;
+      log('t', t.toFixed(1), last, '->', st, 'at', S.x, S.z, 'next', S.next);
+      last = st;
+    }
+  }
+  log('SUMMARY lv', lv, 'gen off', !!gen, 'secs', secs, 'rises', rises, 'leaps', leaps);
+  b.settings.devMode = false;
+}
+
+// THE SEWER FROM ANYWHERE (2026-11-18): `&cams=lx,lz,yaw,pitch;...` in the sewer's own frame (`sewSet`), `&s=` a sewRestore
+// JSON as `&st=` (levers, gate, door…); one sheet. `&dy=` lifts the eye.
+export async function sewView({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  const Q = new URLSearchParams(w.parent.location.search);
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  for (const e of ['overlay', 'blackout']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; } }
+  b.sewRestore(JSON.parse(Q.get('st') || '{"lv":15}')); b.placeInSewer();
+  w.__clockOn();
+  log('lair dress run', b.runWarm ? b.runWarm('lair') : 'no hook');
+  for (let i = 0; i < 240; i++) { w.__adv(1); if (i % 20 === 0) await sleep(50); }
+  const cams = (Q.get('cams') || '4,-6,0,0').split(';').map((s) => s.split(',').map(Number)), tiles = [], tw = +(Q.get('tw') || 480), dy = +(Q.get('dy') || 0);
+  const mon = b.sewMon && b.sewMon(); if (mon && mon.g) mon.g.visible = false;
+  for (const nm of (Q.get('obj') || '').split(',').filter(Boolean)) {
+    const o = b.scene.getObjectByName(nm);
+    if (!o) { log('OBJ', nm, 'not found'); continue; }
+    o.updateWorldMatrix(true, true); const bb = new b.THREE.Box3().setFromObject(o), sx = 'SEW_X' in b ? b.SEW_X : 0;
+    const m = o.material || {};
+    log('OBJ', nm, 'verts', o.geometry ? o.geometry.attributes.position.count : '-', 'min', bb.min.toArray().map((v) => v.toFixed(2)).join(','), 'max', bb.max.toArray().map((v) => v.toFixed(2)).join(','), 'transparent', m.transparent, 'opacity', m.opacity, 'alphaTest', m.alphaTest, 'map', !!m.map, 'visible', o.visible);
+  }
+  for (const c of cams) {
+    for (let i = 0; i < 40; i++) { b.sewSet(c[0], c[1], c[2], c[3]); b.camera.position.y += dy; w.__adv(1); }
+    b.sewSet(c[0], c[1], c[2], c[3]); b.camera.position.y += dy; b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera);
+    const src = b.renderer.domElement, cv = w.document.createElement('canvas'); cv.width = tw; cv.height = Math.round(tw * src.height / src.width);
+    const g = cv.getContext('2d'); g.filter = 'brightness(' + (Q.get('gain') || 1.6) + ')'; g.drawImage(src, 0, 0, cv.width, cv.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(c.join(','), 6, 14);
+    tiles.push(cv);
+  }
+  const cols = Math.min(+(Q.get('cols') || 2), tiles.length), W0 = tiles[0].width, H0 = tiles[0].height, sh = w.document.createElement('canvas');
+  sh.width = cols * W0; sh.height = Math.ceil(tiles.length / cols) * H0;
+  const g = sh.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * W0, ((i / cols) | 0) * H0));
+  const d = sh.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', Q.get('name') || 'sew', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  b.settings.devMode = false;
+}

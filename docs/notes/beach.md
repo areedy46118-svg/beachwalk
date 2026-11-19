@@ -2500,3 +2500,33 @@ your arms only once his model loaded — which happens at the house — so a loa
 off the bed; and one that had run (4) had nowhere to be. A load now turns 2 and 4 into 1: on the bed for the taking.
 (`tools/pupbed3.js` reloads such a save; in the probe's reloaded page the boot's parse queue crawls and the house never
 loads in 30 s — a harness limit, the stage itself came back 1 both ways.)
+
+## 2026-11-18 — the loose rocks out, the crab's pocket, the sea's skin
+- **No loose chunks round the formations** (the owner: "get rid of these rocks because they look horrible in the water"): the
+  skirt and shed calls of the first formation, THE WALL and the wall behind the drain go through `noChunk`, which draws
+  nothing but eats the same four `rnd()` numbers `placeMass` would — so every heap's masses and aprons are exactly where they
+  were. (They were half-buried dark caps in the bright wash.)
+- **The crab at the foot of the back wall** (`ROCK_CRAB_AT`, "an invisible wall … doesnt let the player walk up to the rock
+  face and get the crab"): the big mass's one circle (6.4, 60.6, r 6.1) reached 1.53 m past the crab on open sand.
+  `clearCrabPocket()` (before `fillRockGaps`) pulls any circle r ≥ 2 back to 1.25 m off the crab; the gap filler then puts its
+  r 0.42 colliders back wherever real stone stands in the band given up. Measured: you can stand 0.1 m from it; a flood fill
+  from the beach (x −2.4…14.2, cells 0.2, player r 0.3) still stops at z 57.2 — no way through the wall.
+- **The sea's skin** ("flat blue plastic … the ripples … squiggly lines"): the vertex waves (and `waveHeightJS`) are
+  untouched; the fragment shader adds `seaGrad` — seven short travelling waves (9 m → 0.75 m), each at its deep-water speed
+  (ω = √(g k)), each dropped before it is finer than its pixel (`fw = length(fwidth(xz))`, aa = 1 − fw·k·0.55) — onto the
+  facet normal (×0.7, the low-poly shape kept). Real Schlick fresnel to a sky gradient, a 0.25 band on the facets (was 0.6),
+  green light in the risen water, wind slicks (long lanes where the chop dies), white torn off the tallest crests, a moon road
+  that sparkles off the skin (pow 300 ×2 + pow 60 ×0.07; a broad 46 lobe made white blotches near the camera), and through the
+  shallows the sand with light wandering on it. `rippleField` returns its SLOPE too (d wave / d distance, radial) and a ring is
+  shown by the light on it, not drawn as a line. The foam threads (one noise iso-line: the "squiggly lines") are the walls of
+  drifting cells (`seaCells`, F2 − F1) — WARPED (an even Voronoi net read as pool tiles) and torn by a noise mask. Cost
+  measured headless 793×446: ~1.7–2.8 ms old, 2.9–3.5 ms new on the same view.
+- `tools/probes.js view` (any camera on the beach, `&pick=` raycasts, `&nomist=1`, `&perf=1`) did all of the above.
+- **(later, 2026-11-18) No cells on the water.** The `seaCells` Voronoi walls — the shallows' light, the shore froth and the foam
+  lace — read as a honeycomb net laid over the sea (the owner: "stop texturing things with just circles"). All three are layered
+  `skN` noise now (soft drifting light patches; blotchy torn froth). `seaCells` is left defined and unused.
+- **The black "rocks" on the water near the spawn are NOT the formations' chunks** (those are gone, and a fresh boot shows none
+  there, headless or in the pane). In the owner's screenshot they are solid black low-poly shapes FLOATING at several heights over
+  the water and the sand — a burst of something mid-flight, not scenery. Ruled out by test: splash drops (pale at every scale,
+  against the moon too), footprints (never stamped in water), the throwables (three in the game), castle props (none near the
+  beach), the wreck/headland/dojo rocks (far), the syringe (extraction only). Still to find: ask what he did just before.

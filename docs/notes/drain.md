@@ -1095,3 +1095,65 @@ and it goes limp as it rises (`limp` 0.25–2.4 s). Probe `sewDeadPose` (the wat
 The owner: "take out the flashlight for good". Everything of it is gone (see items.md, same date): the sewer no longer
 builds the spot light that waited for a carried one (`sewP.flash`, `flashLedge`, `flashFill`), the sewer monster no longer
 writes `flashDread`, the dust takes only the glowstick in your hand.
+
+## 2026-11-18 — the drain breathes out; the screwdriver through the grate; the hunt; the lair dressed; the owner's sounds
+- **The drain's murk** (`drainMist`, `updateDrainMist` after `drainAir`): a cylinder the bore's size, its underside squashed flat
+  onto the walk, drawn by BACK faces; its shader intersects the view ray with the pipe (cylinder, both ends, the walk's plane)
+  and fogs by 9 noise samples along it (thin at the mouth, thick at the far end, heaviest low). `drainAir` only ever fogged the
+  camera's own air — why the tunnel was clear seen from the sand. `uK` = 1 − 0.55 `drainMix`. **The spill**: 72 billboards,
+  their whole life in the vertex shader (seed + clock), born in the mouth, over the lip, sunk to the sand, spread and gone 5–8 m
+  out, faded near the eye. Hidden past 150 m / in a room / in the sewer.
+- **The screwdriver is in the outlet's pipe** (`PIPE_SCREW` in the outlet's frame: 0.72 m in — any nearer and the grate's lower
+  flat hides it from the peek), not on the crate, and not a pickup: the peek opens to fov 24 tipped down when it is there, and
+  HOLDING LMB (or F) reaches (`pipeReachTick`, `PIPE_REACH_T` 5 s; let go and it draws back over 1.4 s). The camera creeps to
+  the bars (fov only 24 → 30: widening it cancelled the push-in), the owner's six breaths (`sewBreath`) come up the pipe from
+  0.1 to ~1.35 gain, lowpass opening, the pipe's echo thinning. At the end the fingers close (0.3 s), `hand.attach` keeps it where
+  it lay (measured 0.0000 m move across the take), the arm draws out (0.9 s, eased), into the pack, the peek ends.
+  - **The arm** (`pipeArm`): lathe tubes (18 sides, smooth: the 7-sided flat one "looks like a hexagonal shape"), a cuff, a
+    sphere elbow (the open tube ends showed a hollow ring), a cupped ovoid palm, two-jointed capsule fingers. The hand and elbow
+    ride CatmullRom curves (`PIPE_HAND`, `PIPE_ELBOW`) sampled by ARC LENGTH (`getPointAt`: by parameter the pull-out surged —
+    max change of step 2.8 cm/frame → 0.37). Rolled against the screen's up, and toward the eye where the path climbs straight up
+    the screen (else the palm turned to you). The tremble is overlapping sines, not a random offset a frame.
+  - TRAP: rewriting the tick I dropped `U.hand.position.copy(...)` — the hand sat at the world origin and every smoothness number
+    read 0. A probe number of exactly zero is a probe bug or a code bug, never a result.
+  - Probe: `sh tools/probe.sh "pipeReach[&rel=2.5]" out` (stills, the hand's max step and change of step, the take's jump).
+- **The hunt** (the owner): it hunts from the moment the watcher first goes under (`M.watched`), not the first lever; LOOKED AT
+  (seenT > 0.45 s) or come up to, the watcher DIVES with the splash (`M.afterWatch` → under for `AFTER_WATCH` 3–5 s), and only
+  left forty seconds lets itself down. Time under between risings is `sewMonGap()`: GAP0 8–14 s × (1 − 0.15 per lever) × 0.42 with
+  the power off (4 levers + dark: 1.3–2.4 s). `sewHeat()` (0.35 + 0.16/lever, ×1.9 dark) quickens the ambient sloshes (and a
+  heavier splash now and then, `sewMonFarSlosh`), the breathing (heard to 13/16 m), the swim's sloshes and its speed. Every lever
+  after the first: a splash down the water and `nextIn` cut to ~1.4–2.2. RISE 12/10 s (was 10/8), FIRST 0.8, BACK_IN 2.5.
+  Measured (`sewHunt`): rise→leap 11.2 s lit, 9.3 s dark; watcher stared at → dive 0.4 s later → hunting 3.9 s after.
+- **Far lamps by lever**: `lp.lever` = the lever nearest each far-walk lamp along the tunnel; `sewLampOn` asks THAT lever
+  (`sewLeverDown`), so they light with it whatever the order (it was a count: the lamp facing lever 1 wanted two).
+- **The generator** moved to `GEN_Z` −43.39, its front 2 cm off the channel's end: the 18 cm of ledge in front of it read as a way
+  across to the other walk, and the ledge has no walk rect.
+- **The steel door's shimmer**: the jambs' inner faces and the header's underside were coplanar with the lair passage's walls and
+  ceiling (two brick mappings z-fighting). The passage stands 1 cm back.
+- **The drain room's dead tube light and its batten are gone** (the owner: "this light bar … makes no sense").
+- **The back key**: `far` 10, hit sphere 0.7, takeable 1.5 s after it turns over, no "a key on a cord…" line.
+- **The lair**: the corpses have no collision (only the heap). The bed is the owner's rags (`assets/rags.glb`, `tools/rags_pack.py`,
+  Frice CC-BY-NC): seven SHEETS draped vertex by vertex onto `groundAt` (minus a hollow where it lies) in layers, one BUNDLE at its
+  head (two of the five meshes are a third as tall as wide: laid flat they stood up as dark slabs), three dragged off. Lifted
+  0x4a3f30 off their own map — they land after `sewLightPass`, and at 0x15110c they were a black hole. The mace on the heap has its
+  own materials ×0x8e8474, half bedded, a faint glint only. **The poster** (`assets/lair-poster.jpg`, the owner's "HANG IN THERE!"
+  kitten, from the image he attached; a PASTED image is not saved to disk — ask for the file): 0.75 × 1.12 m on the south wall facing the door,
+  aged in a 512×768 canvas at load (washed toward paper, contrast given back; then GRIME FROM NOISE, no circles — the owner:
+  "stop texturing things with just circles": ragged water damage from the top, drip streaks, edge dirt, mildew patches, grit;
+  the lettering band spared half; creases, flyspecks, tape,
+  a torn corner by alphaTest, a curl off the wall). **The flies** are a ShaderMaterial on Points: a fly drawn per sprite (body
+  along its screen heading, a green sheen, beating wing blur; under ~5 px just a dark speck), darting with jinks, settling and
+  crawling now and then; the clock is the only per-frame work. `__bw.runWarm('lair')` runs the deferred dressing at once.
+- **Sounds, the owner's only** ("get rid of your sounds such as the dripping sound … use the ones i gave you"): the drain room and
+  the bore play his "creepy sewers" drips (`SEW_DRIP_BED`, `SEW_DRIP_LEVEL`) under his sewer bed; the synthesized drips are out in
+  the drain, the peek and the sewer (`sfxDrip` still serves the undercroft and the whale), the peek's synthesized drone is not
+  connected, and the sewer's synth sub drone, groans, thuds and rats are silent. Kept: the generator's hum, the elec loop (his),
+  the lair's rot hum. The flies are his "Flies Buzzing and Circling" (`FLIES_BED`, `tools/flies_pack.py`: the file sits near
+  −60 dB, looped 2.1–5.9 s, brought to −3 dBFS peak) at flyK × 0.2 — ~−35 dB in the room against the beds' ~−23.
+- Probes: `sewView` (`&cams=lx,lz,yaw,pitch;…`, `&st=` a sewRestore JSON — NOT `s`, which is the harness's scenario name,
+  `&obj=` names to report, `&dy=`), `sewHunt` (`&lv=&gen=&stay=1&look=1`).
+- **(later, 2026-11-18)** The drain's murk and spill were PALER than the night (0.14–0.18 / 0.30–0.44) and read as light — "it seems
+  like it is highlighting areas when its supposed to be obscuring". Both are now under what is behind them (volume 0.035–0.06,
+  spill 0.03–0.095), so they veil. The reach's hand has a noise-built skin map (tone, pores, creases, grime) as map + bump +
+  emissive, nails, a woven dirty sleeve; the rags are larger (sheets 1.8 / 1.1–1.55 m, bundle 0.8, scraps 0.7–0.95); the mace's
+  glint is back up a little (0.75 / 1.4 / lift 0.18) — dirtied with only a faint glint it could not be found.

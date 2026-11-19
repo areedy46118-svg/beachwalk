@@ -1710,15 +1710,10 @@ export function makeDrainageTunnelHome(opts = {}) {
 
   // ---- lights ------------------------------------------------------------
   // the tube over the room (photo 6) — dead now: the room is his lanterns'
+  /* (the dead tube, its batten, its end caps and its two rods are GONE — 2026-11-18, the owner: "get rid of this like light
+   * bar in the middle of the room it makes no sense to be there". The room is lit by the hurricane lantern and the candles;
+   * `tube` stays as a name, never added, for `userData.lights`.) */
   const tube = slab(0.9, 0.05, 0.09, M.dark, rcx + 0.4, ROOM_H - 0.42, 0.4);
-  R.add(tube);
-  /* and what holds it up: a steel batten over the tube, end caps, and two
-   * rods to the ceiling — it hung in the air on nothing */
-  R.add(slab(1.0, 0.05, 0.15, M.steel, rcx + 0.4, ROOM_H - 0.37, 0.4));
-  for (const s of [-1, 1]) {
-    R.add(slab(0.03, 0.08, 0.13, M.steel, rcx + 0.4 + s * 0.47, ROOM_H - 0.41, 0.4));
-    R.add(new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.36, 5), M.steel).translateX(rcx + 0.4 + s * 0.4).translateY(ROOM_H - 0.17).translateZ(0.4));
-  }
   /* A HURRICANE LANTERN ON A JOIST, the room's main light now: a screw-eye in
    * the joist, a wire, the bail, the cap and chimney, a warm globe in its
    * wire guard, the fuel font. Hung above head height (its foot at 2.05 m,
