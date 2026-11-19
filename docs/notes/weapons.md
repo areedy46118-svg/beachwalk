@@ -2965,3 +2965,32 @@ after the swing ran out started a fresh forehand from rest. Now:
 st²·(0.35·(3−2st)+0.65) — a smooth start into a fast end — instead of the slam's st⁴ hang-and-drop (which on every click read
 as a snap). A swing is ~0.93 s (was ~0.75). The owner's "boulder impact hard 4" (`maceHeavy`) on a slam or charged swing
 (P ≥ 0.45) that connects, and softer on a slam into the ground. Probe `maceFight`, `maceMomentum`.
+
+## 2026-11-18 — the mace's click and plain heavy: one straight sweep (`maceSweepTrack`, `MACE_SWEEP`)
+The owner: "take inspiration from this video with the mace light hits and regular heavy … keep the shift heavy the exact
+same. the light hits need more of a straight fluid swing it moves all over the place". The reference (a first-person UE4
+hammer set, watched frame by frame): a light swing is a 0.1 s cock, ONE fast sweep straight across the picture through the
+middle (~0.15 s), the handle trailing, then up from below into rest (~0.4 s); a heavy the same with a big wind pulled far
+back and a longer recovery.
+- Traced before (`maceMomentum`, the head on screen): up to (0.66, 0.75) for 0.22 s, down through (0.20, −0.16) — under the
+  crosshair — UP onto it for the blow (the aim pulling the head on), down to (−0.26, −0.66), and back along the BOTTOM of
+  the picture past rest. A zig-zag and a loop.
+- Now the head runs a straight line through the crosshair, on poses SOLVED for it (`tools/probes.js maceSolve`: five points
+  a line, each the pose putting the head there with the handle at a set screen angle, coordinate descent from the previous
+  point's answer; `__bwPose` holds a pose, the head is gripModel (0, −0.21, 0), the handle end (0, 0.6, 0)). Lines: forehand
+  in from the upper right (0.80, 0.50), out the lower left; the back-swing mirrored; the heavy's cocked higher (0.86, 0.78).
+  Catmull-Rom between keys; past the last key the line is extrapolated out of the frame, then `MACE_SWEEP_DOWN` (below the
+  frame on the right) and up into rest. After: (0.77, 0.54) → (0.51, 0.33) → (0.21, 0.12) → (0, 0) → (−0.61, −0.40) →
+  (−1.2, −0.77) out; the recovery all below y −1 until it rises at the right. The backhand heavy (−0.85, 0.76) → (0, 0) →
+  (0.74, −0.69) → out.
+- **Never blend the light and heavy lines**: solved apart they sit in different corners of the pose (yaw −1.1..−2.1 vs
+  +0.2, roll of the other sign); half-way, the head left the line after the blow. A swing follows the heavy line only if it
+  was released from a hold (`digCharged`); the HELD cock alone eases light → heavy by the charge (`maceSweepCock`).
+- Stage timing, damage, the hit test, the chain and the hold are as they were; `maceCrush` now only serves `MACE_CK`'s old
+  callers. The slam (`maceSlamTrack`) untouched. Walk speed charging: sweep 0.62 → 0.85, slam's raise 0.38 → 0.6 ("dont slow
+  down the player as much when charging up the bone mace").
+- **REVERTED the same day** (the owner: "revert the bone hits back it looks horrible keep the speed change"): `maceSweepTrack`,
+  `MACE_SWEEP` and the sweep's hold cock are gone; the click and the plain heavy are `maceCrush` again (traced after: the
+  same head path as before, frame for frame). KEPT: the charging walk speeds 0.85 / 0.6. The solver (`tools/probes.js
+  maceSolve`) is still there — what it made was straight on the screen and still looked wrong to him: a straight head path
+  is not what he wants from the mace.

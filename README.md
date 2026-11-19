@@ -1026,6 +1026,14 @@ Its braziers and torches are built in the game.
 It stands on the bluff behind the first castle, half again the size it was packed
 at; the passage through its middle wall and the ground under it are built in the game.
 
+This work is based on ["Temple USD Workflow Test 3"](https://sketchfab.com/3d-models/temple-usd-workflow-test-3-fc97645208974338ac0e9d113812f9ea)
+by [re1monsen](https://sketchfab.com/re1monsen) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the desert temple the
+crow on the stump carries you to (`assets/temple.glb`, packed by
+`tools/temple_pack.py`: its camels, its people and the sand heaped on its floor
+taken out, its three terrains baked into one seamless ground, textures to 512).
+The sky, the cloud deck, the light through it and the blowing sand are built in the game.
+
 This work is based on ["Throne Room"](https://sketchfab.com/3d-models/throne-room-247c37e6a9694ae891398911876f0c14)
 by [Uğur Yakışık](https://sketchfab.com/UgurYksk) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the hall through the
@@ -1890,8 +1898,7 @@ drainage tunnel home above it (`assets/sewer-tex/`, copied out of the glb by
 The **thing in the sewer's water** is the owner's "monster" model (`assets/sewer-monster.glb`,
 `tools/sewer_monster_pack.py`: base colour 1024, normal 512, no clip — posed in the game), its sloshes, splash,
 leap and the drip bed his recordings (`tools/sewer_monster_sound.py`: `sew-slosh1..8`, `sew-splash`, `sew-leap`,
-`sew-drip-bed`; its breath, `sew-breath1..6`, from his "SEWER MONSTER BREATHING", and its death cry, `sew-death`, from his "SEWER MONSTER DEATH" — `tools/sewer_monster_voice.py`). The **flashlight** is the Fulton out of his "FlashlightFBX" pack (`assets/flashlight.glb`,
-`tools/flashlight_pack.py`).
+`sew-drip-bed`; its breath, `sew-breath1..6`, from his "SEWER MONSTER BREATHING", and its death cry, `sew-death`, from his "SEWER MONSTER DEATH" — `tools/sewer_monster_voice.py`).
 
 This work is based on ["Simple Generator(Fixed)"](https://sketchfab.com/3d-models/simple-generatorfixed-eda91f75faae470e8d6461e0e6fc86fa)
 by [Blender3D](https://sketchfab.com/Blender3D) licensed under

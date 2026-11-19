@@ -926,3 +926,13 @@ old synth as the fallback when a buffer is not in yet.
 jars, stack counts) and the recordings started (`samplePlays`, bumped in `playSample`) around a pickup's `onActivate`; if
 something came into the pack and none of the owner's recordings played, `pickup` does — so an item with its own recorded
 sound keeps it. `maceHeavy` (his "boulder impact hard 4", assets/mace-heavy.m4a) on the mace's heavy blows (weapons.md).
+- **The raid's shout** (2026-11-18, "make the rare phrase when the farmers attack after the gargoyles louder it should be
+  heard in the direction they are coming from"): `farmVox` takes `boost`, `panK` and `force`; `updateGargRaid` plays it from
+  the doorway (`gargRaid.x/z`, 0.4 m into the court) at `boost` 3.5 (+11 dB over the shout's 0.85), panned fully (`panK` 1,
+  the rest 0.85), and `force` past the four-voice cap so a busy fight cannot drop it. Not measured at the speakers.
+- **Dante's running feet** (2026-11-18, "give dante deep thud footsteps when running"): `voice.thud` + `voice.unit` (set at
+  his spawn); `sfxMutStep` reads his speed off his body between steps and over 2.6 m/s plays `sfxDeepThud` — a 52 → 24 Hz
+  sine over 0.34 s, low-passed noise at 180 Hz, a short grit crunch. Inside `sfxAt` the bus is already placed: no second pan.
+- **The orc laughs as Wong vaults the bar** (2026-11-18): `tavProvoke` (not quiet) plays `samLaugh` — the one man's laugh in
+  the game, the samurai's — from the orc, rate 0.82, gain 1.6, 0.25 s in. The orc has no laugh of his own (swings, hits, a
+  death). The snorkeler's giggles (`snork-laugh*`) are the other choice.

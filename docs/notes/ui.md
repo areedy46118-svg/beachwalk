@@ -1212,3 +1212,158 @@ Idea 1: the pack drawn with his marker, like the HUD. Idea 4: lit like the night
   icons land and wipes classes set earlier). Per-pixel DOM, so it shows what a canvas grab cannot.
 - Not changed: on a screen under ~760 px tall the panel is taller than the window (top −44 px at 470×650), so its top
   and bottom lines fall off the screen, as the old hairlines did.
+- **`refreshUI()` does not redraw the hotbar** (2026-11-17, the owner: "stacked item numbers arent showing up in hotbar"). It
+  only toggles visibility. `renderHotbar` rebuilds a slot only when called, so a count changed with just `refreshUI()`
+  left the old number up until something else redrew it (equipping, scrolling): a second glowstick showed no "2",
+  dropping one off a stack (`dropItem`) kept the old number, and taking a dropped one back did the same. All three now
+  call `renderHotbar()`. Anything that changes an item's `count` must call `renderHotbar()` (the `gainX` helpers do).
+  A headless check: `addToInventory(glowstickItem)` with `count = 3`, `dropItem` it twice, and read `#hotbar .count`.
+- **The owner's alphabet is the game's font** (2026-11-18, "use this aplabet for all the letters in the game except the
+  setting for now … flip over the m for the w … start game and stats and death screen as well"). `tools/hand_font_pack.py`
+  (native `/usr/bin/python3 -E`: Pillow, numpy and fontTools all load there now; `-I` hides numpy) cuts the 25 marker
+  capitals (IMG_7204, no W) by CONNECTED INK — the X-Z row's tops dip into P-V's feet, so row bands fail; every letter is
+  one blob — levels the paper, sets one stroke weight, traces pixel-edge loops (RDP + one Chaikin pass) to TrueType at cap
+  700/1000, W = M turned over, lowercase = small caps (0.8), 0-9 from `assets/hud/d*.png` → `assets/hand-font.woff`
+  (15 KB). index.html: `@font-face 'BW Hand'` (preloaded, `font-display: block`) and `body :not(#menu, #menu *,
+  #intro-title, #intro-title *)` — NOT `body` itself, or `#menu` inherits it. Punctuation falls back to Georgia. Canvas
+  lettering on things in the world (engravings, labels) is untouched. Checked full-page (CDP screenshots): loading, START
+  GAME, the pack, the HUD, the end stats, the death card in it; settings in its monospace.
+- **"Hold" → "Equip"** in the pack's detail panel (`renderPack` and its button), "Holster" while held.
+- **Bigger** (2026-11-18, "make start game and death screen text bigger"): START GAME clamp(2.7rem, 4.8vw, 3.9rem) (was
+  1.9/3.4/2.7), YOU DIED clamp(3.6rem, 7.6vw, 6.2rem) (was 2.6/5.4/4.4), its buttons 1.4/2.6/2.0 (1.05/1.9/1.45), the ask 1.25/2.2/1.65.
+
+## The menu in the owner's hand, and every panel fitting its window (2026-11-18)
+"restyle the settings to match the pack's hand-drawn style … make every HUD element, the pack and the settings fit and
+look their best on any window size … have all this match the games style as well".
+- **The menu's dress** is one block after its own rules ("THE MENU IN THE OWNER'S HAND"), the pack's language: the
+  moonlit wash and the moving grain (`#menu::after`, `pkgrain`), the top/bottom lines `pk-rule1/2`, every button a
+  drawn box (`pk-btn1..3` cycled by `nth-child(3n…)`, `--c` ink; hover lights the inside, nothing fills solid), the
+  controls page's rows ruled by `pk-short1/2` at 0.22, the toggle a drawn box (`pk-slot3`) lit from inside when on.
+  **The words keep the menu's monospace** (asked to stay readable; the owner decides if it goes to his hand).
+- **A slider's drawn line is the INPUT's own background** (`pk-short1/2`, white as drawn, the input at 0.92): a mask on
+  `::-webkit-slider-runnable-track` clips the thumb, which lives inside the track — the thumbs vanished. The thumb is a
+  plain ring (2 px border, a lit dot): 288 px of marker loop squeezed to 15 px was a smudge on the line.
+- **Fit**: `hudFit` (foot of index.html) also works out `--fit-pack`, `--fit-shop`, `--fit-menu` from each panel's own
+  laid-out size (`offsetWidth`, and the menu's `scrollHeight`: `scale` leaves both alone, so it never feeds on itself):
+  the `--hud` scale (1 at the tuned sizes, up to 1.35 on a big screen) unless that runs it off the window (97 % × 95 %),
+  floor 0.5 (the menu 0.62, and below that it scrolls: its `max-height` is `94vh / --fit-menu`). `scale:` not
+  `transform:`, so it stacks with the pack's rise. A `ResizeObserver` on the panels and `document.fonts.ready` re-run it.
+- **A wide but short window** (`max-height: 860px` and `min-width: 900px`) lays the settings' sliders two to a line and
+  the buttons four across, and the controls page in two columns (keys 8.4rem): 1280×720 and 960×540 fit with nothing
+  scrolled. Before: the menu ran off the bottom at 1280×720 and the pack's top was cut at 960×540.
+- The fight/dig/pack tips sat under the panels and read through their dark: hidden while one is open
+  (`body:has(#menu.show, #invpanel.show, #shoppanel.show)`).
+- `sh tools/uishot.sh [out] ["menu pack ctl hud"]` (port 4215, own profile): full-page headless screenshots of each at
+  1280×720, 1440×900, 1920×1080, 960×540 and 2560×1440 (`tools/uishot.html?ui=…&w=&h=`).
+
+## The menu in his hand font, the shop in his drawn style (2026-11-18)
+- The owner chose the hand font for the settings over the monospace: `#menu` came out of the page-wide `BW Hand` rule's
+  `:not(...)` (only `#intro-title` is left out now). The shop was ALREADY in the hand: that rule is `!important` and
+  beat `#shoppanel`'s own monospace and `.say`'s Georgia.
+- "make the shop match the style we have now too also handwritten": block "THE SHOP IN THE OWNER'S HAND" after the
+  shop's rules — the pack's wash and grain, drawn top/bottom rules, the list/pane line, a drawn box per picture
+  (`pk-slot1..6` by `nth-child`), the chosen line's picture circled (`pk-sel`, the pack's `pkcircle`), drawn price chips
+  (`pk-btn*`, red `--c` when poor, `pk-dash` when owned), the big drawn frame on the pane's picture, the tab you are on
+  underlined by hand, Leave the pack's `pk-leave`.
+  - **The list/pane line lives on `.body`, not on `.list`**: the list scrolls, and a pseudo-element in it scrolls with it.
+    Its place is `right: calc(max(290px, 30%) + 2.2rem)` — the pane column is `minmax(290px, 30%)` plus the gap.
+  - **`#shop-leave` carries `top: 1.6rem; left: 1.8rem` from when it was absolutely placed**: made `position: relative`
+    for its drawn box, those offsets pushed it onto the tabs. `top: auto; left: auto` (the pack had the same trap).
+  - The thumbnail went `overflow: visible` so the circle isn't clipped; the list got 8 px of left padding for the loop.
+- `tools/uishot.html?ui=shop` opens the shop (`openShop(1)`); `sh tools/uishot.sh <dir> shop` shoots it at the five sizes.
+
+## The pack's pane, live (2026-11-18, "do 1 and 3 … make the item sounds not corny … impressive … amazing and intuitive")
+Section "THE PANE, LIVE" in `main.js`, just above `const invDetailEl` (it must be: `renderPack()` runs at module time and
+its `renderPackDetail` → `pvAttach` reads `pvShown`). CSS block "THE PANE, LIVE" in `index.html`, before the shop's.
+- **Its own renderer** (`pvBuild`, the keychain's pattern), a canvas moved into each new `.big` the pane's innerHTML makes
+  (`renderPackDetail` is now a wrapper: `renderPackDetail0` sets `pvShown`, `pvAttach(pvShown)` mounts). Drawn only while
+  the pack is open (`pvFrame` stops itself), at `RETRO_SCALE` with `image-rendering: pixelated`. The picture stays under
+  it until the model is drawable (`.big.live` hides it). Lights: the icon rig's, plus a `glint` directional and a `glow`
+  point light made once and only turned up/down. `sc.environment = ringEnv()` (THIS scene only): without it a metal with
+  no map of its own was a black hole (the Wedding Ring's band, the Skull Key).
+- **Fit** (`pvMount`/`pvSeat`): `pvProfile(item).pose` or by the box — long (a/b > 2.6) STANDS on its axis leaned 0.62
+  across the box and spins about itself; flat (c < 0.3 b) FACES you (the icon's rotation, turned till widest) and sways;
+  else LIES (pitch ~0.36) over a shadow. Sized to the largest it gets on screen as it turns, at `PV_FILL` 0.74.
+  - **Measure the orient group DETACHED** — `Box3` is world space; under the turning groups it took their turn and the
+    fit's last offset (every next item came out further off, pos in the 10⁵s).
+  - **`pvBox` counts only what is drawn** (`traverseVisible` + geometry boxes): `setFromObject` counts hidden parts and
+    the .44 fitted to its invisible muzzle flash was a speck.
+  - `pvProfile` matches by NAME; order matters — "syRINGe" was a ring.
+- **Behaviour**: selecting sets it DOWN (drops 0.42, bounces once at 0.22, rocks on a spring — a liquid one, `slosh`,
+  longer and softer); drag turns it (movementX, works with the pack's own cursor's synthetic events), its fling kept
+  and eased back to the auto spin; "drag to turn" breathes until the first drag; double-click examines. Metal `glint`s
+  every 4.5–8.5 s (the directional swept across at up to 9 — at 3.4 nobody could see it); glowing things (glowstick,
+  Flame, Sea, Whale faintly, the Shock Ring flickering with a crackle) light the box, tint its drawn frame and spill
+  `--pvglow` round it (`--pvk` the flicker), and their CELL glows in the grid (`.islot.glows`, `--glow`); the horseshoe
+  crab twitches now and then, Billy's motor turns over.
+- **Sounds** (`pvSfx(mat)`, all through `sfxOut()`): a thing SET DOWN in canvas — a filtered-noise contact, the body as
+  inharmonic partials (metal ~1:2.76:5.4:8.9, glass 1:2.32:4.25), wood/bone a knock damped in tens of ms, plastic a hollow
+  tock, paper a rustle in grains (`pvGrains`), a low thud for weight. Gains in the ring sound's range (`sfxRingOn`).
+  `pvSlosh` (lowpassed wash + chirping bubbles), `pvCrackle`, `pvMotor`, `sfxPackOpen(open)` (canvas and the flap).
+  Not listened to by me (headless is muted): judge them in the game.
+- **A thing new to the pack** (`_packSeen` on the item; more than two at once is a load and just appears): its box is
+  drawn round (`@property --pkdraw` swept in a conic mask over the ink, `mask-composite: intersect`), the thing set in,
+  and it is the selection — `--fd` carries the elapsed time so a re-render mid-draw continues it.
+- **Harness**: `__bw.pvS/pvShot/pvLook(item)/pvMore/pvDbg/pvSettle/pvSfx/pvSlosh/pvProfile/removeFromInventory`.
+  `sh tools/pvsheet.sh out.png` — every item in the pane, two turns each, pose and material (QS="strip=A|B" for 13 frames
+  of each one's first 1.3 s). `tools/uishot.html?ui=pack&sel=<name>` puts one in the pane; `&fresh=1` freezes a new
+  item's draw-in at 0.32 s. Probe `packLive` (sounds don't throw, the draw-in selects, it turns, a drag turns it, the
+  loop stops on close, no errors).
+
+## The settings in two columns at every size (2026-11-18, "make the settings more like this layout", his 1280×720 shot)
+- The short-window media query is `@media (min-width: 900px)` now: two sliders to a line, buttons four across, the
+  controls page in two columns, at every window wide enough; under 900 px one column.
+- And `hudFit` lets the MENU (only) grow to 59 % of the window's width, the share it has in his shot (still bounded by
+  97 % W / 95 % H): at the HUD's own scale (≤ 1.35) it sat small in the middle of a 1920 or 2560 screen.
+- The settings menu is in his hand font too now (`#menu` out of the page-wide rule's `:not()`).
+
+## The shop's pictures as the pack's; the settings smaller (2026-11-18, late)
+- "fix shop item icons like how they are in the pack": the shop's `.pic` showed the icon IMAGE — its own black tile
+  cropped inside the drawn frame — and the list's thumbs were 52 px. Now `renderShop` ends with
+  `pvAttach(it, shopDetailEl.querySelector('.pic'))`: the pack's live view (one renderer, its canvas moved into whichever
+  box is up; `pvAttach`/`pvFrame`/the parallax ask `invOpen || shopOpen`; double-click examines only in the pack — a
+  shop's thing is not yours). The `.big` rules are doubled for `#shoppanel .detail .pic` (the canvas, `.live`, the hint,
+  the glow); `.pic` is `min(100%, 300px)` square and not clipped; thumbs 66 px. An upgrade (no model) keeps its drawing.
+- "make the settings less big": the menu's fit is `min(1.25, 48 % of the width / its width)` (not the HUD scale, not
+  59 %). At 1280 that is 0.71, at 1920 1.07.
+
+## The pack on the paper in his hands (2026-11-18, IMG_7207: "put this as the canvas behind the inventory … an animation opening it up with the same sound effects in the video keep the hands … written style on this worn paper … retro", then "fix the left hand")
+- **The frames**: `ffmpeg -ss 1.80 -t 2.45 -i IMG_7207.MOV -vf "fps=30,scale=960:-1" frames/%03d.png`, then
+  `swift tools/hands_cutout.swift frames cut` (Vision "lift subject"; keeps only instances reaching the bottom edge — the
+  arms — and big ones overlapping them below the top band — the sheet), then `/usr/bin/python3 -E tools/pack_hands_pack.py
+  cut assets/hud/pack-hands.png` (313 KB, 14 frames 669×330 in a 4-wide sheet, 96-colour PNG). Frames 7-22 the opening
+  (8 frames: folded strip, snap, settle), 25-45 held (6, ping-ponged at 6 fps), REGISTERED on the paper's centroid so the
+  sheet stays put under the writing. The motion-blurred snap frames (11, 12, 15-17, 62-65) carried the table, the
+  notebook and the jar: not used. Closing plays the opening backwards (the video's own close blurs the same way).
+- **The clean-up, and the left hand**: a box cut for the notebook (`U<0.175, V<0.47`) took the TOP OFF HIS LEFT HAND (a
+  straight edge across the knuckles), and the jar beside it (lid over the thumb, body between palm and sheet) was kept as
+  skin — a second thumb. Now: the notebook goes only where it is not skin (`warm = (r−g)/r < 0.2`; skin ~0.38, paper
+  0.09-0.13); the jar by colour (dark red-black, lum < 0.30, or its rim lit purple, b > g — skin is never either), and
+  only the parts of it that TOUCH THE OUTSIDE (the crease between his thumb and finger is as dark but enclosed);
+  holes refilled only under 120 px (a big one is where the jar stood). Vision's person segmentation was tried for the
+  hands and took the table with them.
+- **The look**: skin vs paper by `warm` (not saturation: the shadowed sheet is as saturated as skin); the sheet recoloured
+  from its own crease shading (relative to the frame's median: the exposure wandered) to old paper, tea stains with tide
+  lines, browned ragged edges (distance transform), grime where the thumbs hold it, sparse foxing; a cool moon from the
+  upper left; 4×4 Bayer dither to 9 levels a channel; a one-pixel dark line round the silhouette; 1.14× wider than shot.
+  The tide lines at full strength read as a contour MAP — kept faint.
+- **In the game** (`PH` in main.js, `#pack-hands` in index.html): a canvas at the sprite's own size blown up pixelated,
+  sized so the whole sheet fits (height mostly), its middle on the window's; its own rAF loop only while shown. `phPlay`
+  from `openPack`/`closePack` — a close mid-opening folds back from the frame it got to. The panel is written into
+  `PH.write` (the sheet clear of both thumbs and the torn top, by eye): `packPaperFit` → hudFit's `--fit-pack`, placed
+  by `--pk-dx/dy`, `width: 960px` on paper (the sheet is nearer square than the screen, so a narrower panel scales up and
+  the words read bigger). It fades in at 0.44 s, when the snap is done.
+- **The ink** (`#invpanel.paper`, after the live-pane block): `--moon` becomes brown-black ink, so every drawn line turns
+  at once; each stroke's mask is intersected with `--brk` (SVG noise) so the pen skips. **TRAP: a `mask` shorthand
+  resets `mask-composite` to add** — stroke ADD noise is a solid box; the composite rule must come after every
+  shorthand (it is the block's last rule). Selection circled in dried oxblood with a drop-shadow second stroke; glows,
+  the artifacts' neon frames and the pane's light spill all off (inks instead).
+- **The pictures**: `renderItemIcon` also writes `lastClear`, the render with no tile (`itemIconClear`, cached under
+  `<key>.clear`; an old tile renders once more for it); `iconHTML(item, true)` in the pack, its ring row, the pane and
+  the drag ghost. Multiplied into the sheet, drained a little, a pencil shadow. The hotbar and the shop keep tiles.
+- **Sounds**: his two snaps (open 1.92-2.42 s, close 3.76-4.18 s), highpass 140, `afftdn`, faded, `assets/pack-open.m4a`
+  / `pack-close.m4a` (`SAMPLES.packOpen/packClose`); the old drawn grains are the fallback until they load.
+- The health and stamina showed through the dark round his arms: hidden while `#pack-hands.on`.
+- Harness: `tools/uishot.html` `&ph=open:0.3` (held still that far in; `held:t`, `close:t`) and `&at=x,y` (lists every
+  element under a point — `elementFromPoint` skips `pointer-events: none`); probe `packHands` (frames, breathing, the
+  mid-open close, clear pictures, errors). Reduced motion: no animation, the held sheet.

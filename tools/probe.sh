@@ -7,6 +7,8 @@ mkdir -p "$OUT"; rm -rf "$OUT/prof"
 PORT=${PB_PORT:-4213}
 python3 serve.py $PORT > "$OUT/serve.log" 2>&1 & SRV=$!
 sleep 1
+# One headless game at a time: three at once (each ~3 GB with its GPU) ran the Mac out of memory, 2026-11-18.
+for i in $(seq 1 900); do pgrep -qf -- "--headless=new" || break; [ $i = 1 ] && echo "waiting for the other headless Chrome to finish" >&2; sleep 1; done
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$OUT/prof" --no-first-run \
   --mute-audio --autoplay-policy=no-user-gesture-required --window-size=1280,760 --use-angle=metal --enable-logging=stderr --v=0 \
   "http://localhost:$PORT/tools/probe.html?s=$SC" > /dev/null 2> "$OUT/chrome.err" & CH=$!

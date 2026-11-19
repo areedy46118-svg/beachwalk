@@ -3630,3 +3630,18 @@ wingless gargoyle).
 - **The samurai is not a statue** (the 1948 note predates `installLife`): in a real fight he stands ~17% of frames and
   his head travels a median 146 mm within a still second. The "96% under 5 mm" was per frame, which a breathing head is.
 - Probes: `dealerSide` (fight, `&m=clip` the carry test and stills, `&m=guard`), `samStill` (`&m=clip`). See harness.md.
+
+## 2026-11-17 — every farmer's hands: open at rest, a fist in a fight
+The owner: "i need every farmers hands fixed not just the taverns" (after the tavern's: see tavern.md). `lifeApply`'s finger
+curl took `kind.claws` (1.25, ×1.35 busy) for a hand with no `life.grip`, and every armed farmer had `life.grip = FARM_FIST`
+(1.5) as ONE number, so his EMPTY hand closed as hard as the weapon hand, a hooked claw. Now `FARM_BASE` carries
+`handRest: 0.32` and `handFist: 1.0`; a kind with `handRest` curls by `handFist` while `st.alive && st.awake` and
+`handRest` otherwise, and `claws` is not read for its fingers. Armed farmers' grip is `{ R: FARM_FIST }`, so the weapon hand
+keeps its tuned fist (`farmCurlToHandle` / `farmSeatTool`) and the other hand falls to the base. Every farmer-derived kind
+inherits it (castle, garrison, the raid after the gargoyles, the tavern's; those set their own `TAV_*` grips per frame).
+- Measured INSIDE the real frame (the curl is applied before the render and undone after it, so a hand-made still
+  shows the unlifed pose; wrap `renderer.render` and read the bones in it). Awake castle men, left middle tip in the hand's
+  frame: along the fingers 0.047 → 0.083, toward the palm 0.049 → 0.065 (a hook back at the wrist → a fist); the weapon
+  hand unchanged (0.038 / 0.018). Asleep castle men far off do not run `lifeApply` at all: straight hands before and after.
+- The castle's camera is put back by the player clamp every frame (0.4-0.6 m): a still of a castle man's hand needs the
+  render hook AND a camera the room allows, or a measurement instead.

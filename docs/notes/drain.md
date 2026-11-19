@@ -1090,3 +1090,8 @@ back, then `sewAim` hangs each limb toward the world's down from where it is —
 little forward, the elbows (joint6 → joint7) let go, the hands off the wrists, the legs (joint8 → joint9) trailing down and back,
 the knees slack, the neck and head hung into the water — each on its own slow sway phase; the first second jerks (the current),
 and it goes limp as it rises (`limp` 0.25–2.4 s). Probe `sewDeadPose` (the water hidden for the look: side, above, along).
+
+## 2026-11-18 — the flashlight out of the game
+The owner: "take out the flashlight for good". Everything of it is gone (see items.md, same date): the sewer no longer
+builds the spot light that waited for a carried one (`sewP.flash`, `flashLedge`, `flashFill`), the sewer monster no longer
+writes `flashDread`, the dust takes only the glowstick in your hand.

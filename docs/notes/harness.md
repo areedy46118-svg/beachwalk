@@ -538,3 +538,6 @@ folding a hot helper's time into its caller (the props' `step` hid `pushOutOfSol
   quietly moves to 4213 (`serve.log`'s first line says where it really is) and Chrome tests the OTHER checkout: a new
   scenario simply never appears in the output and `restart` failed at 0. Read `serve.log`'s port before trusting a run;
   `lsof -nP -iTCP:4212 -sTCP:LISTEN` shows who holds it. Re-run the script's three steps on a free port.
+
+## One headless game at a time (2026-11-18)
+Three headless probes at once (templeWalk, templeSave, templeFlight on 4216/4217/4219), each a whole game on Metal at roughly 3 GB, on top of the owner's own game in the preview, ran his 24 GB Mac out of application memory and took the session down. `tools/probe.sh` and `tools/musictest.sh` now wait, before launching Chrome, while any `--headless=new` Chrome is running (up to 15 min). The other tools/*.sh launchers have no guard: run them one after another, never in the background side by side.

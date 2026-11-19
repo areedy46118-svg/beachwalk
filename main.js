@@ -59,6 +59,9 @@ const SWING_TRAILS = [];             // every blade trail made (`makeSwingTrail`
 const CROW = { g: null, m: null, mesh: null, mixer: null, act: null, head: null, jaw: null, st: 'perch', t: 0, perchT: 0, clipT0: 0, look: 0,
   mouth: null, jawAx: new THREE.Vector3(1, 0, 0), jawSign: 1, headFwd: new THREE.Vector3(0, 0, 1), vel: new THREE.Vector3(), proxy: null };
 let crowGone = false;
+// the desert temple and the crow on the stump that takes you there (their section is at the end of the file: up here because
+// a frame can run before the module has finished reading, and `inRoom`, `frozen` and the clamps ask for these then)
+let inTemple = false, tmpCut = null, tmpFlown = false, tmpModuleIn = false;
 let crowFovK = 0;                    // the view drawn in on the crow's face while it screams at you (1 = all the way: `crowFov`)
 let crowFov = 30;                    // (worked out each frame from how far you stand: `CROW_ZOOM_SPAN` of it fills the screen)
 // the dock's birds (`updateDockBirds`, near the crow; `DOCKB` — `DKB` is the dark knight's bones): up here because a frame can run before the module is read
@@ -207,7 +210,8 @@ const BW_FROM = (() => {
       dojo: ['courtyard.glb', 'samurai.glb', 'portal.glb'],
       cat: ['catacombs.glb', 'crawler.glb', 'skull-key.glb', 'limbs.glb', 'benali.glb', 'bloody-blade.glb'],
       bunker: ['bunker.glb', 'dealer.glb'],
-      deep: ['pliosaur.glb', 'fishing-rod.glb'],   // (and the rods floating in it, 2026-11-14: only the rod uses that file)              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
+      deep: ['pliosaur.glb', 'fishing-rod.glb'],
+      tmp: ['temple.glb', 'crow.glb'],   // (and the rods floating in it, 2026-11-14: only the rod uses that file)              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
       whale: ['whale.glb', 'skrim.glb', 'crying-head.glb', 'limule.glb', 'skrim-moves.json', 'demon-moves.json', 'knight-moves.json', 'ntar-moves.json', 'wong-moves.json', 'orc-moves.json', 'drunk-moves.json', 'umbra-moves.json', 'crawler-moves.json'],
     };
     /* AND WHAT YOU ARE CARRYING COMES WITH YOU (2026-10-19, the owner, twice: "i loaded a checkpoint and my weapons were
@@ -217,7 +221,7 @@ const BW_FROM = (() => {
      * swung and never saw. Measured, `vmAllFort`: the shovel and the peg built with no mesh in them. Every model in the
      * save's pack is fetched first, under the black. */
     const PACK_FILES = {
-      'Military Shovel': 'military-shovel.glb', 'Spare Peg': 'peg-leg.glb', 'Fishing rod': 'fishing-rod.glb', 'Screwdriver': 'screwdriver.glb', 'Flashlight': 'flashlight.glb',
+      'Military Shovel': 'military-shovel.glb', 'Spare Peg': 'peg-leg.glb', 'Fishing rod': 'fishing-rod.glb', 'Screwdriver': 'screwdriver.glb',
       '.44 Magnum': 'magnum.glb', 'The Sawed Off Shotgun': 'sawnoff.glb', 'Bloody Blade': 'bloody-blade.glb', 'Wax Spliff': 'spliff.glb',
       'The Octopus Ring': 'octopus-ring.glb', 'Gold Ring': 'gold-ring.glb', 'Gem Stone Ring': 'gem-ring.glb', 'The Lucky Ring': 'gem-ring.glb', 'Lucky bastards ring': 'gem-ring.glb', 'Old Ring': 'old-ring.glb',
       'Forgotten Wedding Ring': 'wedding-ring.glb', 'Ring of Connection': 'connection-ring.glb', 'Skull Key': 'skull-key.glb',
@@ -247,6 +251,7 @@ const ASSET_REACH = {
   'assets/pliosaur.glb': 814 + BEACH_EXT,         // on the end of the fisherman's line, at the tree             // the tree over the fisherman's old spot, past the five's fire
   'assets/fishing-rod.glb': 96,       // the fisherman's, at the dock
   'assets/crow.glb': 98,              // the crow on the pier's post (2026-11-14)
+  'assets/temple.glb': 1050 + BEACH_EXT,   // the desert the stump's crow takes you to, past the whale (2026-11-18)
   'assets/elvedor.glb': 626 + BEACH_EXT * 0.4,   // the puppeteer, on the sand in the stretch BEACH_EXT opened
   'assets/puppet-house.glb': 590 + BEACH_EXT * 0.4, 'assets/puppet.glb': 592 + BEACH_EXT * 0.4,   // and his house behind the dune, and the puppet on its bed
   'assets/octopus-ring.glb': 647 + BEACH_EXT,   // the knight drops it, so it is wanted where he is
@@ -262,7 +267,6 @@ const ASSET_REACH = {
   'assets/peg-leg.glb': 152,          // and what is inside it
   'assets/gull.glb': 152,             // the three that wheel over her
   'assets/dock.glb': 215,
-  'assets/flashlight.glb': 16,         // on the ledge by the sewer's generator, under the drain behind the spawn
   'assets/screwdriver.glb': 16,       // on the crate by the grate in the drain's room, behind the spawn (moved off the fisherman's table, 2026-10-22)
   'assets/keep.glb': 216,              // and where its boat goes: fetched on the walk up to the pier
   'assets/tavern.glb': 216,            // and the hall behind its door
@@ -490,9 +494,12 @@ const bwHoldHere = () => bwInCastle() || inWhale || inDeep;
 const bwHoldOwn = (url, reach) => (inWhale ? BW_WHALE_FILES.test(url) : inDeep ? BW_DEEP_FILES.test(url) : bwCastleOwn(url, reach));
 setInterval(() => { if (bwCastleHeld.length && !bwHoldHere()) for (const f of bwCastleHeld.splice(0)) f(); }, 400);
 const bwNearClear = () => new Promise((r) => { const chk = () => (bwNearPending() ? setTimeout(chk, 100) : r()); chk(); });
-function bwParseLater(url, bufP, job, onError) {
+/* `urgent`: THIS copy is wanted now, whatever its file's reach (2026-11-17, the tavern's six farmers: their files are the
+ * castle's, ranked ~800 m off, so after a tavern checkpoint they parsed in the far rest ~15 s after the black lifted and
+ * "didn't respawn"). Only that copy goes on the near chain; the castle's twenty copies of the same file stay far. */
+function bwParseLater(url, bufP, job, onError, urgent = false) {
   bufP.then((buf) => {
-    const reach = bwReach.get(url) ?? 0, near = reach <= BOOT_NEAR;
+    const reach = bwReach.get(url) ?? 0, near = urgent || reach <= BOOT_NEAR;
     bwParsing++; if (near) bwParsingNear++;
     const fin = () => { bwParsing--; if (near) bwParsingNear--; };
     const run = () => job(buf, reach);
@@ -544,6 +551,11 @@ for (const url of Object.keys(ASSET_REACH)) bwFetch(url);
 function bwSoon(url) {
   for (const job of bwWaiting) if (job.url === url) job.reach = -1;
   if (bwReach.has(url)) bwReach.set(url, -1);
+  bwPump();
+}
+/* the DOWNLOAD only, to the front: the parses keep their file's reach (an `urgent` copy asks for its own) */
+function bwFetchSoon(url) {
+  for (const job of bwWaiting) if (job.url === url) job.reach = -1;
   bwPump();
 }
 
@@ -829,6 +841,7 @@ function updateWhereAmI() {
   else if (inThrone) { room = 'throne'; ox = THR_X; oy = THR_Y; oz = THR_Z; group = thrWorld; }
   else if (inDun) { room = 'dungeon'; ox = DUN_X; oy = DUN_Y; oz = DUN_Z; group = dunWorld; }
   else if (inSewer) { room = 'sewer'; ox = SEW_X; oy = SEW_Y; oz = SEW_Z; group = sewWorld; }
+  else if (inTemple) { room = 'temple'; ox = TMP_X; oy = TMP_Y; oz = TMP_Z; group = tmpWorld; }
   else if (inFort || fortMaskAt(p.x, p.z + 3) || fortMaskAt(p.x, p.z - 3)) { room = inFort ? 'castle' : 'castle (outside)'; ox = FORT_X; oy = FORT_Y; oz = FORT_Z; }   // its own frame; no aim (a raycast is 300k triangles)
   const feet = camBaseY - playerEye();
   let aim = '';
@@ -1615,6 +1628,12 @@ THREE.UniformsLib.fog.fogTint = { value: FOG_TINT };
 THREE.UniformsLib.fog.fogKeep = { value: FOG_KEEP };
 THREE.UniformsLib.fog.fogKeep2 = { value: FOG_KEEP2 };
 THREE.UniformsLib.fog.fogGround = { value: FOG_GROUND };
+/* AND A CEILING ON IT (2026-11-18, the desert temple): `x` of the way short of the fog's own colour is as far as the fog
+ * goes, so a dune or a colonnade a kilometre off stays a dark shape in the haze instead of going into it. 0 is the
+ * stock fog to the bit, and it is 0 everywhere but the desert. (An `x` that is zero by default on purpose: a shader
+ * that somehow missed the uniform reads 0 too.) */
+const FOG_CAP = { x: 0, y: 0, z: 0, w: 0 };
+THREE.UniformsLib.fog.fogCap = { value: FOG_CAP };
 /* THE GROUND MIST READS A NOISE TEXTURE. Marched with hashed value noise it
  * was eight noises a step, six steps, four `sin` hashes a noise — about two
  * hundred hashes for every fogged fragment on the screen, overdraw included —
@@ -1659,6 +1678,7 @@ for (const k in THREE.ShaderLib) {
   if (u && u.fogDensity && !u.fogKeep2) u.fogKeep2 = { value: FOG_KEEP2 };
   if (u && u.fogDensity && !u.fogGround) u.fogGround = { value: FOG_GROUND };
   if (u && u.fogDensity && !u.fogNoise) u.fogNoise = { value: FOG_NOISE };
+  if (u && u.fogDensity && !u.fogCap) u.fogCap = { value: FOG_CAP };
 }
 /* the keep's mist, shared by the fog chunk and the keep's own sky: optical
  * depth of the layer along a ray from `o` in direction `d` for `L` metres */
@@ -1748,7 +1768,7 @@ const GROUND_MIST_GLSL = `
 THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogView;\n#endif';
 THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n\tvFogDepth = - mvPosition.z;\n\tvFogView = mvPosition.xyz;\n#endif';
 THREE.ShaderChunk.fog_pars_fragment = THREE.ShaderChunk.fog_pars_fragment.replace(
-  'varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogView;\n\tuniform vec4 fogMoon;\n\tuniform vec4 fogBolt;\n\tuniform vec4 fogTint;\n\tuniform vec4 fogKeep;\n\tuniform vec4 fogKeep2;\n\tuniform vec4 fogGround;\n\tuniform sampler2D fogNoise;\n' + KEEP_MIST_GLSL + GROUND_MIST_GLSL);
+  'varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogView;\n\tuniform vec4 fogMoon;\n\tuniform vec4 fogBolt;\n\tuniform vec4 fogTint;\n\tuniform vec4 fogKeep;\n\tuniform vec4 fogKeep2;\n\tuniform vec4 fogGround;\n\tuniform vec4 fogCap;\n\tuniform sampler2D fogNoise;\n' + KEEP_MIST_GLSL + GROUND_MIST_GLSL);
 THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 	vec3 fogCol = fogColor;
 	float fogK = 1.0;
@@ -1782,6 +1802,7 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 		float fogCK = max( dot( fogDirK, fogKeep.xyz ), 0.0 );
 		fogCol += min( fogKeep.w, 1.0 ) * vec3( 0.20, 0.17, 0.30 ) * ( 0.7 * pow( fogCK, 10.0 ) + 0.3 * pow( fogCK, 3.0 ) );
 	}
+	fogFactor = min( fogFactor, 1.0 - fogCap.x );
 	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogCol, fogFactor );
 	if ( fogGround.w > 0.0 ) {
 		vec3 fogDirG = normalize( ( vec4( vFogView, 0.0 ) * viewMatrix ).xyz );
@@ -6684,6 +6705,7 @@ function updateFarProps() {
    * their instances are wherever the game put them and a light leaving the
    * scene recompiles every material. Restored the frame you are back. */
   cullWorldInHall();
+  cullCastleUnseen();       // and inside a castle, the pieces of the world outside it that its walls never let you see
 }
 /* `update()` never reaches `updateFarProps` while you are in the hall — the
  * hall has its own walk and returns before it — so the hide is called from
@@ -6930,6 +6952,43 @@ function cullBeyondFog() {
  * the hall. Measured standing in the dojo courtyard: 219,648 triangles a
  * frame, of which the courtyard itself is 38,263. Three rooms have been added
  * since this was written and not one of them was on the list. */
+/* NOTHING YOU CANNOT SEE FROM INSIDE A CASTLE IS DRAWN THERE (2026-11-18, the owner: "fix castle performance now. certain
+ * sections do not have to load if they cant be seen yet"). The castles stand on the beach, so no room cull touched them:
+ * in the first castle's street all of Castle XIII (102 meshes), the lighthouse island (109), the vista and the cliff's rock
+ * were drawn every frame. MEASURED, not guessed (`tools/probes.js castleSeenIds`): every mesh drawn in its own flat colour
+ * from 17 spots spread over each castle's floor, at the eye and 4.5 m up, 8 yaws x 3 pitches, every pixel read back.
+ * What was never seen from ANY of them is listed here by name | vertices | world middle to 0.5 m, and hidden while you are
+ * inside; the pieces that do show over the walls (XIII's towers, the island's lamp) stay. A key that no longer matches
+ * (a model repacked) hides nothing, so the failure is only a lost saving. Re-run the probe after changing either castle,
+ * the island or the vista. Measured: fort 129 pieces, XIII 120 (the fort's own were already hidden in XIII). */
+const CASTLE_UNSEEN = { fort: new Set(["castle13|acmat_10|5451|62.5,7,-1250", "castle13|acmat_11|8679|74,5.5,-1260.5", "castle13|acmat_12|1344|74,5.5,-1260.5", "castle13|acmat_16|12351|74.5,5.5,-1261", "castle13|acmat_19|2976|105,5.5,-1275", "castle13|acmat_23|19|51,25.5,-1240", "castle13|acmat_0|3471|76,14.5,-1263", "castle13|acmat_13|798|74,5.5,-1260.5", "castle13|acmat_14|6899|74.5,5.5,-1261", "castle13|c13ArchFrame0|63|79,5,-1262", "castle13||63|79,5,-1262", "castle13|c13ArchFrame1|63|80.5,5,-1262", "castle13||63|80.5,5,-1262", "castle13|c13PassLining|119|80,5.5,-1262", "castle13|c13PassFloor|4|80,4,-1262", "castle13||32616|74.5,6.5,-1261", "castle13||1512|74.5,6.5,-1261", "castle13||1944|74.5,7,-1261", "castle13||7176|74,12.5,-1260.5", "castle13|c13Banner|377|35.5,10,-1243.5", "castle13|c13Banner|377|40,10,-1236.5", "castle13|c13Banner|377|115,10,-1266", "castle13|c13Banner|377|27.5,10,-1245.5", "castle13|c13Banner|377|101.5,10,-1258.5", "castle13|c13Banner|377|83,10,-1263.5", "castle13|c13Banner|377|64.5,10,-1267.5", "castle13|c13Banner|377|59,10,-1243", "castle13|c13Banner|377|69.5,10,-1254.5", "castle13|c13Banner|377|104.5,10,-1284", "castle13|c13Banner|377|35,10,-1262", "castle13|c13Banner|377|108,10,-1261", "castle13|c13Banner|377|120.5,10,-1270", "castle13||7920|74,9,-1262", "castle13||328|44,4.5,-1251.5", "castle13||125|44,5,-1251.5", "castle13||231|44,6,-1251.5", "castle13||102|44,6,-1251.5", "castle13||98|44,4.5,-1251.5", "castle13||50|44,4.5,-1251.5", "castle13||34|44,6,-1251.5", "castle13||504|78,22,-1269.5", "castle13|c13Carpet|4|42,4,-1245", "castle13|c13DoorSpill|4|37,4,-1242", "castle13||4|36.5,3.5,-1241.5", "castle13|c13Crest|4|36.5,8.5,-1241.5", "castle13||720|98.5,10,-1264", "isle||24|-6,23.5,-1271.5", "isle|isle_gull|372|-9,32,-1280.5", "isle|isle_gull|372|-9,30,-1267.5", "isle|isle_gull|372|-7,0,-1296", "isle|isle_gull|372|-26,2.5,-1260.5", "isle||24|19,21.5,-1254", "isle||24|19,21.5,-1252.5", "isle||24|19,22.5,-1253.5", "isle||24|19,22.5,-1253.5", "isle||24|19,20,-1253.5", "isle||24|19.5,21,-1253.5", "isle||24|19,21,-1254", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253", "isle||24|18.5,21,-1253", "isle||24|19,20.5,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,22,-1253.5", "isle||24|19,20.5,-1254", "isle||24|19,21,-1254", "isle||24|19,22,-1254", "isle||24|18.5,20.5,-1253", "isle||24|18.5,21,-1253", "isle||24|18.5,22,-1253", "isle||78|18.5,21,-1253", "isle||410|-4.5,28,-1275", "isle||1927|-4.5,34.5,-1275", "isle||30|-4.5,27,-1275", "isle||58|-4.5,40.5,-1275", "isle||1246|-4.5,33.5,-1275", "isle||64|-4.5,34,-1275", "isle||4|-4,40.5,-1274", "isle||24|-4,39.5,-1274", "isle||24|-4,39.5,-1274.5", "isle||34|-4,38.5,-1274", "isle||34|-4,39,-1274", "isle||34|-4,39,-1274", "isle||34|-4,39.5,-1274", "isle||34|-4,39.5,-1274", "isle||34|-4,40,-1274", "isle||34|-4,40,-1274", "isle||34|-4,40.5,-1274", "isle||63|-6,29,-1276", "isle||24|-6,29,-1276", "isle||63|-3.5,34,-1276", "isle||24|-3.5,34,-1276", "isle||63|-4.5,39,-1274", "isle||24|-4.5,39,-1274", "isle||24|-4,41.5,-1274", "isle||24|-2.5,28,-1275", "isle||24|-2.5,28,-1276", "isle||24|-2.5,29,-1275.5", "isle||24|-2.5,27,-1275.5", "isle||24|-2.5,29,-1275.5", "isle||24|-2.5,28,-1275", "isle||24|-2.5,28,-1275.5", "isle||24|-2.5,28,-1275.5", "isle||24|-2.5,28,-1276", "isle||24|-2.5,28,-1276", "isle||24|-2.5,27,-1275.5", "isle||24|-2.5,28.5,-1275.5", "isle||78|-2.5,28,-1276", "isle||63|-2,29.5,-1275.5", "vista||99|-6,0,-1397.5", "vista||34|-6,2,-1397.5", "vista||99|-12,-1,-1402.5", "vista||34|-12,1,-1403", "vista||120|39,0.5,-1318.5", "vista||120|43,0.5,-1327.5", "vista||120|50.5,1.5,-1338", "vista||120|48,1.5,-1349.5", "vista||120|39.5,1,-1363", "vista||120|40,1,-1371.5", "vista||120|43.5,2,-1387", "vista||120|41.5,2,-1394.5", "vista||120|40,1.5,-1406.5", "vista||288|23.5,3,-1351", "vista||540|23.5,3,-1351", "vista||1440|8,0.5,-1345.5", "vista||972|5.5,0,-1359", "rockSurf|rockSurf|9200|3.5,0,-346"]), c13: new Set(["isle|isle_house|6054|-6.5,26,-1267", "isle||24|-7,26,-1267", "isle||24|-8,23.5,-1262.5", "isle||24|-6,23.5,-1271.5", "isle||24|-2.5,23.5,-1266", "isle||24|-11.5,23.5,-1268", "isle|isle_Island|3852|-2,11.5,-1253.5", "isle|isle_props|10224|-12,22.5,-1266", "isle|isle_gull|372|-9,32,-1280.5", "isle|isle_gull|372|-9,30,-1267.5", "isle|isle_gull|372|-6,41.5,-1275", "isle|isle_gull|372|0,32,-1279", "isle|isle_gull|372|-6.5,41.5,-1274.5", "isle|isle_gull|372|-19,16,-1249.5", "isle|isle_gull|372|-19,16,-1248", "isle|isle_gull|372|-7,0,-1296", "isle|isle_gull|372|-26,2.5,-1260.5", "isle|isle_gull|372|-3,32.5,-1267", "isle|isle_gull|372|-4.5,44.5,-1275", "isle|isle_lamp|492|-8,23,-1258", "isle|isle_lambert1|60|0,29.5,-1279", "isle|isle_lighthouse|3960|-4.5,43,-1275", "isle|isle_walkway|29772|-12,11,-1257.5", "isle|isle_stairWall|384|-15,7.5,-1243.5", "isle|isle_lambert2|3000|-20,-1.5,-1237.5", "isle|isle_tower|19665|-4.5,33,-1275", "isle|isle_gallery|3121|-4.5,41.5,-1275", "isle|isleBridge|1440|13,16,-1253.5", "isle|isleBridgeFrame|1332|13,19,-1253.5", "isle|isleBridgePier|156|13.5,15,-1253.5", "isle|isleBridgeIron|31464|15,21,-1253.5", "isle||24|19,21.5,-1254", "isle||24|19,21.5,-1252.5", "isle||24|19,22.5,-1253.5", "isle||24|19,22.5,-1253.5", "isle||24|19,20,-1253.5", "isle||24|19.5,21,-1253.5", "isle||24|19,21,-1254", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253", "isle||24|18.5,21,-1253", "isle||24|19,20.5,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,22,-1253.5", "isle||24|19,20.5,-1254", "isle||24|19,21,-1254", "isle||24|19,22,-1254", "isle||24|18.5,20.5,-1253", "isle||24|18.5,21,-1253", "isle||24|18.5,22,-1253", "isle||78|18.5,21,-1253", "isle||24|18.5,23,-1252", "isle||24|18,23,-1252", "isle||24|18,23,-1252", "isle||24|18,23,-1252", "isle||19|18,23,-1252", "isle|islePosternDoor|522|18.5,21.5,-1253.5", "isle|isleStairRail|396|-18,8.5,-1243", "isle||410|-4.5,28,-1275", "isle||1927|-4.5,34.5,-1275", "isle||30|-4.5,27,-1275", "isle||58|-4.5,40.5,-1275", "isle||1246|-4.5,33.5,-1275", "isle||64|-4.5,34,-1275", "isle||4|-4,40.5,-1274", "isle||24|-4,39.5,-1274", "isle||24|-4,39.5,-1274.5", "isle||34|-4,38.5,-1274", "isle||34|-4,39,-1274", "isle||34|-4,39,-1274", "isle||34|-4,39.5,-1274", "isle||34|-4,39.5,-1274", "isle||34|-4,40,-1274", "isle||34|-4,40,-1274", "isle||34|-4,40.5,-1274", "isle||63|-6,29,-1276", "isle||24|-6,29,-1276", "isle||63|-3.5,34,-1276", "isle||24|-3.5,34,-1276", "isle||63|-4.5,39,-1274", "isle||24|-4.5,39,-1274", "isle||82|-4.5,41,-1275", "isle||3744|-4.5,41.5,-1275", "isle||24|-4,41.5,-1274", "isle||24|-2.5,28,-1275", "isle||24|-2.5,28,-1276", "isle||24|-2.5,29,-1275.5", "isle||24|-2.5,27,-1275.5", "isle||24|-2.5,29,-1275.5", "isle||24|-2.5,28,-1275", "isle||24|-2.5,28,-1275.5", "isle||24|-2.5,28,-1275.5", "isle||24|-2.5,28,-1276", "isle||24|-2.5,28,-1276", "isle||24|-2.5,27,-1275.5", "isle||24|-2.5,28.5,-1275.5", "isle||78|-2.5,28,-1276", "isle||63|-2,29.5,-1275.5", "vista||99|-6,-0.5,-1397.5", "vista||34|-6,1.5,-1397.5", "vista||99|-12,-0.5,-1402.5", "vista||34|-12,1.5,-1403", "vista||120|39,0.5,-1318.5", "vista||120|43,0.5,-1327.5", "vista||120|50.5,1.5,-1338", "vista||120|48,1.5,-1349.5", "vista||120|39.5,1,-1363", "vista||120|40,1,-1371.5", "vista||120|43.5,2,-1387", "vista||120|41.5,2,-1394.5", "vista||120|40,1.5,-1406.5", "vista||288|23.5,3,-1351", "vista||192|23.5,6,-1351", "vista||996|7.5,4,-1358", "vista||540|23.5,3,-1351", "vista||1440|8,0.5,-1345.5", "vista||972|5.5,0,-1359", "rockSurf|rockSurf|9200|3.5,0,-346"]) };
+const CASTLE_UNSEEN_GROUPS = { fort: ['castle13', 'isle', 'vista', 'rockSurf'], c13: ['isle', 'vista', 'rockSurf'] };
+let castleHid = null, castleHidAt = '', castleHidDone = null, castleHidN = 0;
+const _cstUB = new THREE.Box3(), _cstUC = new THREE.Vector3();
+function cullCastleUnseen() {
+  const at = inC13 ? 'c13' : inFort ? 'fort' : '';
+  if (at !== castleHidAt) {
+    if (castleHid) for (const o of castleHid) o.visible = true;
+    castleHid = at ? [] : null; castleHidAt = at; castleHidDone = at ? new Set() : null; castleHidN = 0;
+  }
+  if (!at || castleHidDone.size === CASTLE_UNSEEN_GROUPS[at].length) return;
+  if ((castleHidN++ % 30) !== 0) return;                    // a group still loading is asked again every half second
+  const K = CASTLE_UNSEEN[at];
+  for (const name of CASTLE_UNSEEN_GROUPS[at]) {
+    if (castleHidDone.has(name)) continue;
+    const top = scene.children.find((o) => o.name === name);
+    if (!top || !top.children.length) continue;
+    top.updateMatrixWorld(true);
+    top.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh || !o.visible || /^(cprop|hitProxy)/.test(o.name)) return;
+      _cstUB.setFromObject(o); _cstUB.getCenter(_cstUC);
+      const k = name + '|' + o.name + '|' + o.geometry.attributes.position.count + '|' + Math.round(_cstUC.x * 2) / 2 + ',' + Math.round(_cstUC.y * 2) / 2 + ',' + Math.round(_cstUC.z * 2) / 2;
+      if (K.has(k)) { o.visible = false; castleHid.push(o); }
+    });
+    castleHidDone.add(name);
+  }
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { castleHidS: () => castleHid }));
 function cullWorldInHall() {
   /* AND THE TAVERN AND THE KEEP AND THE CATACOMBS ARE ROOMS TOO — found
    * twice, independently, which is how sure a thing this is. Measured
@@ -6944,7 +7003,7 @@ function cullWorldInHall() {
    * door opens straight into the tavern, six kilometres away, and nothing
    * passes a beach frame between them, so whatever of the tavern's the keep
    * had switched off (its lamps, its cast) stayed off for the whole visit. */
-  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : inDun ? 9 : inDeep ? 10 : inSewer ? 11 : 0;
+  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : inDun ? 9 : inDeep ? 10 : inSewer ? 11 : inTemple ? 12 : 0;
   if (hallHid && hk !== hallKey) { for (const o of hallHid) o.visible = true; hallHid = null; }
   hallKey = hk;
   if (hk) {
@@ -8542,7 +8601,7 @@ function updateHurt(dt) {
 /* the sewer's thing in the water has you (`sewMonTick`): declared here, ahead of `frozen`, which reads it (the sewer's own
  * code is 77,000 lines further down, and a `let` read before its line runs is a dead-zone crash) */
 let sewScare = null;
-function frozen() { return bootHold > 0 || !!sewScare || (!!crabCut && crabCut.t >= CRAB_T.cut) || (!!hjCut && !hjCut.released) || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone || deepCutOn; }
+function frozen() { return bootHold > 0 || !!sewScare || (!!crabCut && crabCut.t >= CRAB_T.cut) || (!!hjCut && !hjCut.released) || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone || deepCutOn || !!tmpCut; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -10037,13 +10096,14 @@ function devGrantWeapons() {
   if (INV_MAX <= 12) { INV_MAX = 16; TRADER_STOCK.packSpace = 0; renderPack(); renderHotbar(); }
   statHush = true;
   try {
-    // (and the fishing rod, 2026-11-14: "make dev mode give me fishing rod")
-    for (const it of [shovelItem, militaryItem, bloodItem, pegItem, pavKeyItem, hornItem, skullKeyItem, fishingRodItem]) {
+    // (and the fishing rod, 2026-11-14: "make dev mode give me fishing rod"; and the bone mace, 2026-11-18: "give me the bonemace in dev mode as well")
+    for (const it of [shovelItem, militaryItem, bloodItem, pegItem, pavKeyItem, hornItem, skullKeyItem, fishingRodItem, maceItem]) {
       if (!it || inventory.includes(it)) continue;
       addToInventory(it);
     }
   } finally { statHush = false; }
   if (!equipped && inventory.includes(shovelItem)) toggleEquip(shovelItem);
+  bwSoon('assets/bone-mace.glb');      // (the mace's model is ranked by the sewer's lair it lies in: in your hand from the start, it is wanted now)
   /* AND A HUNDRED JARS TO SPEND, the owner's word: the shops are to be tried,
    * not saved up for. Topped up to the hundred, never cut down to it. Not
    * through `gainJar`, which settles a restore this can run in the middle of. */
@@ -10133,6 +10193,7 @@ function devLeaveRooms() {
   if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
   if (inSewer) placeOutOfSewer();
   if (inDeep) placeOutOfDeep();
+  if (inTemple) placeOutOfTemple();
 }
 /* AND THE LIGHTHOUSE (the owner: "a teleport to lighthouse in the settings
  * that brings me to exactly when i enter the lighthouse section"): out of
@@ -11563,14 +11624,14 @@ function dropItem(item, jitter = 0) {
    * where it was, so two fangs dropped went on counting as two in the save
    * and a third found meanwhile became three with two more lying on the sand. */
   const stacked = (item.count | 0) > 1;
-  if (stacked) { item.count--; refreshUI(); if (invOpen) renderPack(); }
+  if (stacked) { item.count--; renderHotbar(); refreshUI(); if (invOpen) renderPack(); }   // (the hotbar too, 2026-11-17: "stacked item numbers arent showing up in hotbar" — it kept the old number)
   else removeFromInventory(item);
   addItemShine(m, { ...DROP_SHINE, height: 0.35 });   // what you put down is marked like everything dropped
   addInteractable(m, 'Take the ' + (item.name || 'item').toLowerCase(), 'inventory', {
     onActivate: () => {
       scene.remove(m); removeInteractable(m); hovered = null;
       sfxThud(0.02);
-      if (inventory.includes(item)) { item.count = (item.count || 1) + 1; refreshUI(); if (invOpen) renderPack(); return; }
+      if (inventory.includes(item)) { item.count = (item.count || 1) + 1; renderHotbar(); refreshUI(); if (invOpen) renderPack(); return; }
       if (item.count !== undefined) item.count = 1;
       addToInventory(item);
       if (item.viewmodel) toggleEquip(item);
@@ -11617,7 +11678,7 @@ function groundUnder(x, z, atY) {
  * So the ray is cast at whatever room you are standing in, the floor comes
  * from `bunkerFloorAt` (which every room answers), and the beach's two walls
  * are only applied when you are on the beach. */
-const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone || inDun || inDeep || inSewer;
+const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone || inDun || inDeep || inSewer || inTemple;
 function dropTargets() {
   if (inUndercroft) return [undercroft];
   if (inBunker) return bunkers.map((b) => b.group).filter(Boolean);
@@ -11629,6 +11690,7 @@ function dropTargets() {
   if (inThrone) return thrWorld ? [thrWorld] : [];
   if (inDun) return dunWorld ? [dunWorld] : [];
   if (inSewer) return sewWorld ? [sewWorld] : [];
+  if (inTemple) return tmpG && tmpG.sand ? [tmpG.sand, tmpWorld] : [];
   return [sand, dock, DOCK_STEPS, driftGroup, rockGroup];
 }
 function dropPoint() {
@@ -12013,7 +12075,7 @@ function renderRings() {
       const slot = document.createElement('div');
       slot.className = 'rslot' + (item ? ' worn' : ' empty');
       if (item) {
-        slot.innerHTML = iconHTML(item);
+        slot.innerHTML = iconHTML(item, host !== ringSlotEls[0]);     // (the pack's row is on the paper: no tile)
         const lab = document.createElement('span');
         lab.className = 'label';
         lab.textContent = item.name + ' — take off';
@@ -12179,18 +12241,15 @@ const ICON_MIDY = 0.455;                // and where its middle sits: a little h
 const ICON_ROLL_AR = 2.6;               // and how long a thing has to be before it is laid across the diagonal
 const _iconV = new THREE.Vector3();
 function renderItemIcon(model, { rotX = -0.5, rotY = 0.7, flip = false } = {}) {
+  renderItemIcon.lastClear = null;
   if (!model) return null;
   initIconRig();
-  const m = model.clone(true);
-  // ...except a subtree that is hidden on purpose, which must also stay
-  // out of the fit: it is what the tile is framed against
-  m.traverse((o) => { if (o.userData.bwKeepHidden) o.visible = false; else o.visible = true; });
+  // (cloned the pane's way too, `iconCleanClone`: a subtree hidden on purpose stays hidden — it is what the tile is framed
+  // against — and the glint, the aim sphere and clear meshes are left out)
+  const m = iconCleanClone(model);
   /* AND NOTHING THAT IS NOT THE THING (2026-11-17, the keys: "some dont look the same"): the pickup's glint (a Sprite,
    * additive), the invisible aim sphere a small pickup carries (`hitProxy`) and any fully clear mesh were switched on with
    * the rest and FRAMED — the Captain's Chest Key came out a speck in a white halo. `kcSync` drops the same three. */
-  const junk = [];
-  m.traverse((o) => { const mt = o.material; if (o.isSprite || o.name === 'hitProxy' || (mt && !Array.isArray(mt) && mt.transparent && mt.opacity === 0)) junk.push(o); });
-  for (const o of junk) o.removeFromParent();
   /* and its own colour, not the glint's pulse: a shine (`addItemShine`) lifts the emissive of the very materials the clone
    * shares while the thing is still out to be found — rendered then, a brass key was silver for good (the icon is kept) */
   const lent = [];
@@ -12353,6 +12412,8 @@ function renderItemIcon(model, { rotX = -0.5, rotY = 0.7, flip = false } = {}) {
   tmp.width = tmp.height = ICON_PX;
   tmp.getContext('2d').putImageData(id, 0, 0);
   g.drawImage(tmp, 0, 0);
+  // and the thing alone, no tile: the pack is written on paper now (`itemIconClear`)
+  renderItemIcon.lastClear = tmp.toDataURL('image/webp', 0.9);
   // what the fit actually achieved, for the harness to read back
   renderItemIcon.lastFit = seen;
   for (const [mt, em] of lent) mt.emissive.copy(em);     // (the glint's pulse goes back on: the thing is still out there)
@@ -12395,8 +12456,29 @@ function iconDrawable(model) {
  * your hands. Every icon this browser has ever rendered is kept (it is the
  * same picture every time: the same model through the same lens), so a load
  * draws them at once. `ICON_CACHE_V` goes up whenever the icon rig changes. */
-const ICON_CACHE_V = 'v11';    // v11 (2026-11-18): v10's two bumps merged — the keys' clean renders and the Shock Ring's lit stones     // v10 (2026-11-17): no glint, aim sphere or glint-lifted colour in a render — the keys     // v7: the ammo tiles are studio-lit metal (`ammoStudio`); v8: the rod is the scan; v9: the map is a lit folded sheet
+const ICON_CACHE_V = 'v12';    // v12 (2026-11-18): the three artifacts rebuilt in the game's style     // v11 (2026-11-18): v10's two bumps merged — the keys' clean renders and the Shock Ring's lit stones     // v10 (2026-11-17): no glint, aim sphere or glint-lifted colour in a render — the keys     // v7: the ammo tiles are studio-lit metal (`ammoStudio`); v8: the rod is the scan; v9: the map is a lit folded sheet
 const iconCacheKey = (item) => 'beachwalk.icon.' + ICON_CACHE_V + '.' + (item.id || item.name);
+const iconClearKey = (item) => iconCacheKey(item) + '.clear';
+/* THE SAME PICTURE WITHOUT ITS TILE (2026-11-18): the pack is written on the sheet in his hands (`PH`), and a near-black
+ * tile on paper is a black square. The one render makes both; a tile kept from before there was a clear one renders
+ * again once, for this. Anything without a model keeps its tile (it is a drawing). */
+function itemIconClear(item) {
+  if (item._iconClear) return item._iconClear;
+  const tile = itemIcon(item);
+  if (item._iconClear) return item._iconClear;
+  let c = null; try { c = localStorage.getItem(iconClearKey(item)); } catch (e) {}
+  if (c) { item._iconClear = c; return c; }
+  const model = item.iconModel || item.inspectModel;
+  if (tile && tile.startsWith('data:') && model && iconDrawable(model)) {
+    renderItemIcon(model, item.iconRot || {});
+    if (renderItemIcon.lastClear) {
+      item._iconClear = renderItemIcon.lastClear;
+      try { localStorage.setItem(iconClearKey(item), item._iconClear); } catch (e) {}
+      return item._iconClear;
+    }
+  }
+  return tile;
+}
 function itemIcon(item) {
   if (item._icon) return item._icon;
   if (item.isKey) fillKeyModels();
@@ -12410,6 +12492,10 @@ function itemIcon(item) {
       if (url) {
         item._icon = url;
         try { localStorage.setItem(iconCacheKey(item), url); } catch (e) {}   // full is fine: it renders next time
+        if (renderItemIcon.lastClear) {
+          item._iconClear = renderItemIcon.lastClear;
+          try { localStorage.setItem(iconClearKey(item), item._iconClear); } catch (e) {}
+        }
         return url;
       }
     }
@@ -12455,8 +12541,8 @@ setInterval(() => {
  * through — the hotbar, the pack grid and the ring row all call it — so an
  * item carrying a `count` shows it in all three by construction rather than
  * by three loops remembering to. Only past one: a lone jar is a jar. */
-const iconHTML = (item) => {
-  const src = itemIcon(item) || '';
+const iconHTML = (item, clear = false) => {
+  const src = (clear && invPanelEl.classList.contains('paper') ? itemIconClear(item) : itemIcon(item)) || '';
   const icon = src.startsWith('data:') ? `<img src="${src}" alt="">` : src;
   return icon + (item.count > 1 ? `<span class="count">${item.count}</span>` : '');
 };
@@ -12684,6 +12770,438 @@ function findRecipe(x, y) {
  * Dragging still works exactly as it did — reorder, or drop one item on
  * another to combine — a drag just has to MOVE first (a still click
  * selects), so the two never fight. */
+/* ---- THE PANE, LIVE (2026-11-18, the owner: "do 1 and 3 make the item sounds not corny the reactions should be good too.
+ * this needs to be impressive. make it look amazing and intuitive"). The thing you have selected is not a picture any more:
+ * it is its own model, in the pane's drawn box, turning slowly under the same moon the pack's wash is lit by, drawn at the
+ * game's own pixel (`PV_RES` = `RETRO_SCALE`) so it is the object you carried, not a product shot. Drag it to turn it (it
+ * keeps the spin you gave it and eases back to its own); double-click it to examine it.
+ *
+ * Its own small renderer on its own canvas (the keychain's pattern, `kcBuild`): built the first time the pack shows a
+ * thing, drawn only while the pack is up, and the canvas MOVED into each new `.big` the pane's innerHTML makes. The model is
+ * the icon's (`iconModel || inspectModel`), cloned the icon's way (`iconCleanClone`) — never disposed: its geometry and
+ * materials are the world's.
+ *
+ * HOW IT IS SHOWN (`pvProfile(item).pose`, measured off the model's box unless named): a long thing (a blade, a rod, a key)
+ * STANDS on its long axis, leaned across the box's diagonal, and turns about itself — the way every inventory shows a sword;
+ * a flat thing (a photograph, a map, the CD) faces you and sways a little, never edge-on; anything else LIES, seen a
+ * little from above, and turns about the vertical, with its shadow under it.
+ *
+ * WHAT IT DOES. Selecting a thing SETS IT DOWN: it drops in, lands, rocks and settles, and the sound is that thing put down
+ * in a canvas bag — a short contact and then the material's own body (inharmonic partials for metal and glass, a damped knock
+ * for wood and bone, a hollow tock for plastic, a dry rustle for paper), quiet and dry: foley, not UI. Then, by what it is:
+ * metal catches the light now and then (a light sweeping across, flat faces flashing as it passes); a jar or a bottle sloshes
+ * when it lands or is spun hard (it rocks longer, and you hear the liquid and a bubble or two); the glowstick and the
+ * artifacts glow — their light in the box, spilled over the pane round it, and their cell in the grid glowing with them; the
+ * Shock Ring flickers and, now and then, ticks; the horseshoe crab, once in a while, twitches. */
+let pv = null, pvShown = null, pvTurned = false;
+const PV_RES = RETRO_SCALE;            // the world's own pixel
+const PV_FOV = 28, PV_D = 3.2, PV_FILL = 0.74;
+function pvProfile(item) {
+  if (item._pv) return item._pv;
+  const n = (item.name || '').toLowerCase();
+  const P = { mat: 'thing', pose: null, pitch: 0.36, glow: null, glowK: 0, slosh: 0, glint: false, twitch: null, crackle: false };
+  const has = (...w) => w.some((s) => n.includes(s));
+  if (has('katana', 'bloody blade')) Object.assign(P, { mat: 'steel', glint: true, pose: 'stand' });
+  else if (has('magnum', 'shotgun')) Object.assign(P, { mat: 'gun', glint: true, pose: 'lie', pitch: 0.24 });
+  else if (has('crab call')) Object.assign(P, { mat: 'shell' });
+  else if (has('horseshoe crab')) Object.assign(P, { mat: 'shell', pose: 'lie', pitch: 0.62, twitch: 'crab' });
+  else if (has('syringe')) Object.assign(P, { mat: 'glass', slosh: 0.45, pose: 'stand' });   // (before 'ring': syRINGe)
+  else if (has('shock ring')) Object.assign(P, { mat: 'ring', glint: true, pose: 'lie', pitch: 0.55, glow: 0x6fb8ff, glowK: 0.5, crackle: true });
+  else if (has('ring')) Object.assign(P, { mat: 'ring', glint: true, pose: 'lie', pitch: 0.55 });
+  else if (has('key')) Object.assign(P, { mat: 'key', glint: true, pose: 'stand' });
+  else if (has('sand shovel')) Object.assign(P, { mat: 'plastic', pose: 'stand' });
+  else if (has('shovel', 'screwdriver')) Object.assign(P, { mat: 'tool', glint: true, pose: 'stand' });
+  else if (has('mace', 'fang')) Object.assign(P, { mat: 'bone' });
+  else if (has('peg', 'fishing rod')) Object.assign(P, { mat: 'wood' });
+  else if (has('blood jar')) Object.assign(P, { mat: 'glass', slosh: 1 });
+  else if (has('water')) Object.assign(P, { mat: 'plastic', slosh: 0.8 });
+  else if (has('glowstick')) Object.assign(P, { mat: 'plastic', pose: 'stand', glow: 0x2fe9cf, glowK: 1 }   /* (GLOWSTICK_COLOR's, by value: that const is 6,000 lines down and a load's renderPack can come first) */);
+  else if (has('spliff')) Object.assign(P, { mat: 'paper' });
+  else if (has('portrait', 'sketch', 'map', 'memory')) Object.assign(P, { mat: 'paper', pose: 'face' });
+  else if (has('new cd')) Object.assign(P, { mat: 'plastic', pose: 'face' });
+  else if (has('billy')) Object.assign(P, { mat: 'plastic', pose: 'face', twitch: 'motor' });
+  else if (has('lantern')) Object.assign(P, { mat: 'tool', glint: true });
+  else if (has('artifact of the flame')) Object.assign(P, { mat: 'stone', glow: 0xff8a3a, glowK: 1 });
+  else if (has('artifact of the sea')) Object.assign(P, { mat: 'shell', glow: 0x4fb4ff, glowK: 0.9 });
+  else if (has('artifact')) Object.assign(P, { mat: 'bone', glow: 0xcfe0ff, glowK: 0.45 });
+  return (item._pv = P);
+}
+function pvBuild() {
+  if (pv) return pv;
+  const canvas = document.createElement('canvas'); canvas.className = 'pv';
+  const r = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'low-power' });
+  r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1) * PV_RES);
+  r.outputColorSpace = renderer.outputColorSpace; r.toneMapping = renderer.toneMapping; r.toneMappingExposure = renderer.toneMappingExposure;
+  const sc = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(PV_FOV, 1, 0.1, 20);
+  /* the icon rig's light (`initIconRig`, which every icon has been checked under), the key from the upper left where the
+   * pack's moon hangs; and the two that move, made once and only ever turned up or down (a light added is a recompile) */
+  sc.add(new THREE.AmbientLight(0x9fb0cc, 1.0));
+  const key = new THREE.DirectionalLight(0xf2f0ff, 2.1); key.position.set(-0.9, 1.1, 1.1);
+  const fill = new THREE.DirectionalLight(0x8aa2d6, 0.6); fill.position.set(1.3, -0.3, 0.8);
+  const rim = new THREE.DirectionalLight(0xe4eeff, 2.6); rim.position.set(0.5, 0.7, -1.4);
+  const under = new THREE.DirectionalLight(0x6f86b8, 0.5); under.position.set(0, -1, 0.3);
+  const glint = new THREE.DirectionalLight(0xffffff, 0);
+  const glow = new THREE.PointLight(0xffffff, 0, 4, 1.4); glow.position.set(0, 0.1, 0.9);
+  sc.add(key, fill, rim, under, glint, glow, new THREE.HemisphereLight(0x54688c, 0x141820, 0.55));
+  /* and the beach's own night to reflect (`ringEnv`, what the rings wear): the game's scene has none, so a metal with no map
+   * of its own was a black hole in the box — the Wedding Ring's band, the Skull Key. Only this scene; the world keeps none. */
+  sc.environment = ringEnv();
+  // lean (in the screen) → pitch (seen from above) → wob (the set-down's rock, the slosh) → yaw (the turn) → fit → orient → the model
+  const lean = new THREE.Group(), pitch = new THREE.Group(), wob = new THREE.Group(), yaw = new THREE.Group(), fit = new THREE.Group();
+  sc.add(lean); lean.add(pitch); pitch.add(wob); wob.add(yaw); yaw.add(fit);
+  // a soft pool of shadow under a thing lying down
+  const sc2 = document.createElement('canvas'); sc2.width = sc2.height = 64;
+  const g2 = sc2.getContext('2d'), gr = g2.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g2.fillStyle = gr; g2.fillRect(0, 0, 64, 64);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc2), transparent: true, depthWrite: false, opacity: 0.6 }));
+  shadow.rotation.x = -Math.PI / 2; pitch.add(shadow);
+  pv = { r, sc, cam, canvas, key, glint, glow, lean, pitch, wob, yaw, fit, shadow, item: null, model: null, want: null, P: null,
+    t: 0, last: 0, raf: 0, yawA: 0, yawV: 0, autoV: 0.32, pd: 0, w: 0, wV: 0, dropY: 0, dropV: 0, landed: true, shown: 0,
+    glintAt: 0, twitchAt: 0, crackAt: 0, sloshAt: 0, drag: null, mx: 0, my: 0, lmx: 0, lmy: 0, faceBase: 0, glowNow: 0 };
+  // TURNED BY HAND. The press is the canvas's; the move and the release are the window's (the pack's own cursor dispatches
+  // at whatever is under it, which a drag leaves)
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!pv.model) return;
+    e.preventDefault(); e.stopPropagation();
+    pv.drag = { x: e.clientX, y: e.clientY, v: 0, at: performance.now() };
+    pvTurned = true; const h = canvas.parentElement && canvas.parentElement.querySelector('.pvhint'); if (h) h.classList.add('gone');
+  });
+  window.addEventListener('pointermove', (e) => {
+    const big = canvas.parentElement;
+    if (big && (invOpen || shopOpen)) { const b = big.getBoundingClientRect(); pv.mx = THREE.MathUtils.clamp((e.clientX - (b.left + b.width / 2)) / (b.width || 1), -1.5, 1.5); pv.my = THREE.MathUtils.clamp((e.clientY - (b.top + b.height / 2)) / (b.height || 1), -1.5, 1.5); }
+    if (!pv.drag) return;
+    const dx = e.movementX || (e.clientX - pv.drag.x), dy = e.movementY || (e.clientY - pv.drag.y);
+    pv.drag.x = e.clientX; pv.drag.y = e.clientY;
+    const k = 6.2 / Math.max(120, canvas.clientWidth || 200);
+    pv.yawA += dx * k; pv.pd = THREE.MathUtils.clamp(pv.pd + dy * k * 0.6, -0.5, 0.5);
+    const now = performance.now(), dtm = Math.max(8, now - pv.drag.at); pv.drag.at = now;
+    pv.drag.v = pv.drag.v * 0.5 + (dx * k / (dtm / 1000)) * 0.5;
+  });
+  window.addEventListener('pointerup', () => {
+    if (!pv.drag) return;
+    pv.yawV = THREE.MathUtils.clamp(pv.drag.v, -14, 14);
+    if (pv.P && pv.P.slosh && Math.abs(pv.yawV) > 5) { pv.wV += Math.sign(pv.yawV) * 1.6 * pv.P.slosh; pvSlosh(pv.P.slosh * Math.min(1, Math.abs(pv.yawV) / 10)); }
+    pv.drag = null;
+  });
+  canvas.addEventListener('dblclick', (e) => { e.stopPropagation(); if (invOpen && pvShown && pvShown.inspectModel) inspectFromPack(pvShown); });   // (in the shop it is not yours to examine)
+  return pv;
+}
+// the clone, the way the icon is made: hidden-on-purpose parts kept hidden, the glint, the aim sphere and clear meshes left out
+function iconCleanClone(model) {
+  const m = model.clone(true);
+  m.traverse((o) => { o.visible = !o.userData.bwKeepHidden; });
+  const junk = [];
+  m.traverse((o) => { const mt = o.material; if (o.isSprite || o.name === 'hitProxy' || (mt && !Array.isArray(mt) && mt.transparent && mt.opacity === 0)) junk.push(o); });
+  for (const o of junk) o.removeFromParent();
+  m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.setScalar(1);
+  return m;
+}
+/* the box of what is DRAWN: `Box3.setFromObject` counts hidden parts too (the revolver's flash, a ring's sparkle), and the
+ * magnum fitted to its invisible muzzle flash came out a speck */
+const _pvB = new THREE.Box3();
+function pvBox(root) {
+  const b = new THREE.Box3();
+  root.traverseVisible((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    b.union(_pvB.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld));
+  });
+  return b.isEmpty() ? new THREE.Box3().setFromObject(root) : b;
+}
+const pvModelOf = (item) => { if (item.isKey) fillKeyModels(); return item.iconModel || item.inspectModel || null; };
+/* PUT IT IN THE BOX: its pose, then the fit — the largest the thing will ever be on screen as it turns (a lying thing's
+ * sweep round the vertical, a standing one's length across the lean) at PV_FILL of the box */
+function pvMount(item, model) {
+  const P = pvProfile(item);
+  const orient = new THREE.Group(), m = iconCleanClone(model);
+  orient.add(m); orient.updateMatrixWorld(true);
+  let b = pvBox(orient), s = b.getSize(new THREE.Vector3());
+  const dims = [s.x, s.y, s.z], srt = [...dims].sort((a, c) => c - a);
+  let pose = P.pose || (srt[0] > srt[1] * 2.6 ? 'stand' : srt[2] < srt[1] * 0.3 ? 'face' : 'lie');
+  if (pose === 'stand') {
+    const ax = dims.indexOf(srt[0]);
+    if (ax === 0) orient.rotation.z = Math.PI / 2; else if (ax === 2) orient.rotation.x = Math.PI / 2;
+    if (item.iconRot && item.iconRot.flip) orient.rotation.z += Math.PI;
+  } else if (pose === 'face') {
+    const R = item.iconRot || {};
+    orient.rotation.set(R.rotX ?? -0.5, R.rotY ?? 0.7, 0, 'ZXY');
+    orient.updateMatrixWorld(true);
+    // and its flat side to you: turned about the vertical till its box is widest
+    let best = 0, bw = -1;
+    for (let a = -1.6; a <= 1.6; a += 0.1) { const q = new THREE.Group(); q.rotation.y = a; q.add(orient); q.updateMatrixWorld(true); const w = pvBox(q).getSize(_iconV).x; if (w > bw + 1e-4) { bw = w; best = a; } q.remove(orient); }
+    const wrap = new THREE.Group(); wrap.rotation.y = best; wrap.add(orient); wrap.updateMatrixWorld(true);
+    return pvSeat(item, P, 'face', wrap, m);
+  }
+  orient.updateMatrixWorld(true);
+  return pvSeat(item, P, pose, orient, m);
+}
+function pvSeat(item, P, pose, orient, m) {
+  const K = pv;
+  /* measured ON ITS OWN, then put in: a box is in WORLD space, and under the turning groups it carried their turn (and the
+   * fit's last offset) into this one's — every next item came out further off the box */
+  orient.removeFromParent(); orient.updateMatrixWorld(true);
+  const b = pvBox(orient), s = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+  K.fit.clear(); K.fit.add(orient);
+  const pitch = pose === 'face' ? 0.06 : pose === 'stand' ? 0.14 : P.pitch, lean = pose === 'stand' ? 0.62 : 0;
+  const r = Math.hypot(s.x, s.z) / 2;
+  let W, H;
+  if (pose === 'face') { W = s.x * 1.04; H = s.y + s.z * 0.2; }
+  else {
+    const w0 = 2 * r, h0 = s.y * Math.cos(pitch) + 2 * r * Math.sin(pitch);
+    W = w0 * Math.cos(lean) + h0 * Math.sin(lean); H = w0 * Math.sin(lean) + h0 * Math.cos(lean);
+  }
+  const frame = 2 * PV_D * Math.tan(THREE.MathUtils.degToRad(PV_FOV / 2));
+  const k = PV_FILL * frame / Math.max(W, H, 1e-4);
+  K.fit.scale.setScalar(k); K.fit.position.copy(c).multiplyScalar(-k);
+  K.lean.rotation.z = -lean; K.pitch.rotation.x = pitch;
+  K.shadow.visible = pose === 'lie';
+  K.shadow.position.set(0, -(s.y / 2) * k * Math.cos(pitch) - 0.02, 0);
+  K.shadow.scale.set(2 * r * k * 1.05, 2 * r * k * 0.9, 1);
+  K.pose = pose; K.P = P; K.model = m; K.item = item;
+  K.yawA = pose === 'face' ? 0 : -0.75; K.yawV = pose === 'face' ? 0 : 2.6; K.autoV = pose === 'stand' ? 0.42 : 0.32; K.pd = 0;
+  K.dropY = 0.42; K.dropV = 0; K.landed = false; K.w = (Math.random() < 0.5 ? -1 : 1) * 0.05; K.wV = 0; K.shown = 0;
+  K.glintAt = 0.45; K.twitchAt = 4 + Math.random() * 6; K.crackAt = 1 + Math.random() * 3;
+  return m;
+}
+// the box the canvas is in this time: called after every rewrite of the pane — the pack's `.big`, or the shop's `.pic`
+// (2026-11-18, the owner: "fix shop item icons like how they are in the pack": the shop shows the thing turning too)
+function pvAttach(item, box = null) {
+  if (!(invOpen || shopOpen)) return;
+  const big = box || (invOpen && invDetailEl ? invDetailEl.querySelector('.big') : null);
+  const model = item && pvModelOf(item);
+  if (!big || !model) { if (pv) { pv.item = null; pv.want = null; pvGlowCss(null); } return; }
+  pvBuild();
+  big.appendChild(pv.canvas);
+  if (!pvTurned && !big.querySelector('.pvhint')) big.insertAdjacentHTML('beforeend', '<span class="pvhint">drag to turn</span>');
+  if (pv.item === item && pv.model) { big.classList.add('live'); pvGlowCss(pv.P); }
+  else {
+    pv.item = null; pv.model = null; pv.want = item; pv.fit.clear();
+    pvTry();
+  }
+  if (!pv.raf) { pv.last = 0; pv.raf = requestAnimationFrame(pvFrame); }
+}
+function pvTry() {
+  const item = pv.want; if (!item) return;
+  const model = pvModelOf(item);
+  if (!model || !iconDrawable(model)) return;          // (its scan has not landed: the picture stays till it does)
+  pv.want = null;
+  pvMount(item, model);
+  const big = pv.canvas.parentElement; if (big) big.classList.add('live');
+  pvGlowCss(pv.P);
+}
+function pvGlowCss(P) {
+  const big = pv && pv.canvas.parentElement;
+  if (!big) return;
+  big.classList.toggle('pv-glow', !!(P && P.glow));
+  if (P && P.glow) big.style.setProperty('--pvglow', '#' + new THREE.Color(P.glow).getHexString());
+}
+function pvFrame(now) {
+  const K = pv;
+  if (!(invOpen || shopOpen) || (!K.item && !K.want)) { K.raf = 0; return; }
+  K.raf = requestAnimationFrame(pvFrame);
+  const dt = Math.min(0.05, Math.max(0, (now - (K.last || now)) / 1000)); K.last = now;
+  pvStep(dt);
+}
+function pvStep(dt) {
+  const K = pv; K.t += dt;
+  if (K.want) { pvTry(); if (!K.item) return; }
+  const cv = K.canvas, cw = cv.clientWidth || cv.width / K.r.getPixelRatio(), ch = cv.clientHeight || cv.height / K.r.getPixelRatio();   // (detached: the harness's own size)
+  if (!cw || !ch) return;
+  if (cv.width !== Math.round(cw * K.r.getPixelRatio()) || cv.height !== Math.round(ch * K.r.getPixelRatio())) { K.r.setSize(cw, ch, false); K.cam.aspect = cw / ch; K.cam.updateProjectionMatrix(); }
+  const P = K.P; K.shown += dt;
+  // the turn: its own slow one, or yours eased back into it; a flat thing sways about facing you
+  if (!K.drag) {
+    if (K.pose === 'face') { const tgt = Math.sin(K.t * 0.5) * 0.38; K.yawV += ((tgt - K.yawA) * 5 - K.yawV * 3.2) * dt; }
+    else K.yawV += (K.autoV - K.yawV) * Math.min(1, dt * (Math.abs(K.yawV) > 3 ? 0.9 : 1.6));
+    K.yawA += K.yawV * dt;
+    K.pd -= K.pd * Math.min(1, dt * 3.2);
+  }
+  // set down: it drops the last few centimetres, lands, bounces once, and rocks to rest (a jar longer: what is in it moves)
+  if (!K.landed || K.dropY > 0 || Math.abs(K.dropV) > 0.01) {
+    K.dropV -= 9.5 * dt; K.dropY += K.dropV * dt;
+    if (K.dropY <= 0) {
+      K.dropY = 0;
+      if (!K.landed) { K.landed = true; pvSetDown(P, Math.min(1, -K.dropV / 2.6)); K.wV += (K.w > 0 ? 1 : -1) * (0.9 + (P.slosh || 0) * 1.4); if (P.slosh) pvSlosh(P.slosh * 0.8); }
+      K.dropV = -K.dropV * 0.22; if (K.dropV < 0.18) K.dropV = 0;
+    }
+  }
+  const wk = P.slosh ? 26 : 70, wd = P.slosh ? 2.2 : 7.5;
+  K.wV += (-K.w * wk - K.wV * wd) * dt; K.w += K.wV * dt;
+  // the crab: once in a while, the legs go — a jerk, a scrape of shell; Billy's motor turns over
+  if (P.twitch && K.landed && K.shown > K.twitchAt) {
+    K.twitchAt = K.shown + 6 + Math.random() * 9;
+    if (P.twitch === 'crab') { K.wV += (Math.random() < 0.5 ? -1 : 1) * 2.4; K.yawV += (Math.random() - 0.5) * 3; pvSfx('shell', 0.45, true); }
+    else { K.wV += 1.2; pvMotor(); }
+  }
+  // metal catches the light: a light swept across the front, the flat faces flashing as it passes
+  let gl = 0;
+  if (P.glint && K.landed) {
+    const u = (K.shown - K.glintAt) / 0.8;
+    if (u >= 0 && u <= 1) {
+      const a = -1.2 + u * 2.4; K.glint.position.set(Math.sin(a) * 1.4, 0.7 - u * 0.9, 1.1);
+      gl = Math.sin(Math.PI * u) ** 2 * 9;
+    } else if (u > 1) K.glintAt = K.shown + 4.5 + Math.random() * 4;
+  }
+  K.glint.intensity = gl;
+  // what gives off light
+  let gk = 0;
+  if (P.glow) {
+    const t = K.t;
+    if (P.crackle) {
+      gk = 0.35 + 0.1 * Math.sin(t * 9.1);
+      if (K.shown > K.crackAt) { K.crackAt = K.shown + 1.8 + Math.random() * 5; K.spark = 0.16; pvCrackle(); }
+      if (K.spark > 0) { K.spark -= dt; gk += 1.4 * (Math.random() < 0.6 ? 1 : 0.2); }
+    } else if (P.glow === 0xff8a3a) gk = 0.78 + 0.14 * Math.sin(t * 7.3) + 0.08 * Math.sin(t * 13.1 + 1) + (Math.random() - 0.5) * 0.08;
+    else gk = 0.85 + 0.1 * Math.sin(t * 1.6) + 0.05 * Math.sin(t * 3.9);
+    gk *= P.glowK;
+    K.glow.color.setHex(P.glow); K.glow.intensity = gk * 2.2;
+    const big = K.canvas.parentElement; if (big && Math.abs(gk - K.glowNow) > 0.01) { big.style.setProperty('--pvk', gk.toFixed(3)); K.glowNow = gk; }
+  } else K.glow.intensity = 0;
+  K.yaw.rotation.y = K.yawA;
+  K.pitch.rotation.x = (K.pose === 'face' ? 0.06 : K.pose === 'stand' ? 0.14 : P.pitch) + K.pd;
+  K.wob.rotation.z = K.w; K.wob.position.y = K.dropY;
+  K.shadow.material.opacity = 0.6 * Math.max(0, 1 - K.dropY * 2.2);
+  // you look round it a little as the cursor moves
+  K.lmx += (K.mx - K.lmx) * Math.min(1, dt * 3); K.lmy += (K.my - K.lmy) * Math.min(1, dt * 3);
+  K.cam.position.set(K.lmx * 0.22 + Math.sin(K.t * 0.23) * 0.03, -K.lmy * 0.16 + Math.sin(K.t * 0.31) * 0.02, PV_D);
+  K.cam.lookAt(0, 0, 0);
+  K.r.render(K.sc, K.cam);
+}
+
+/* THE SOUNDS OF THINGS IN A BAG. Every one is a thing being SET DOWN on canvas: a short contact (filtered noise, the
+ * surface), then the material's own body ringing or not — metal and glass as INHARMONIC partials (a ring's flexural modes
+ * run near 1 : 2.76 : 5.4 : 8.9; anything harmonic reads as a chime), wood and bone as a knock damped in tens of ms, plastic
+ * hollow and short, paper a rustle in grains — and the weight under it as a low thud. Quiet, dry, over in a fraction of a
+ * second: the pack has no "UI sounds", only the things in it. */
+let pvSfxLast = 0;
+function pvPartials(t, out, f0, ratios, decays, gains) {
+  const ctx = audioCtx;
+  ratios.forEach((r, i) => {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f0 * r * (1 + (Math.random() - 0.5) * 0.012);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gains[i], t + 0.0025);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decays[i]);
+    o.connect(g).connect(out); o.start(t); o.stop(t + decays[i] + 0.02);
+  });
+}
+function pvBand(t, out, dur, type, f, q, gain, env = (x) => Math.pow(1 - x, 3)) {
+  const ctx = audioCtx, s = noiseBurst(dur, env), bq = ctx.createBiquadFilter();
+  bq.type = type; bq.frequency.value = f; bq.Q.value = q;
+  const g = ctx.createGain(); g.gain.value = gain;
+  s.connect(bq).connect(g).connect(out); s.start(t); s.stop(t + dur);
+}
+const pvGrains = (n, tail = 1.5) => { const a = Array.from({ length: n }, () => (Math.random() < 0.4 ? 1 : 0.18 + Math.random() * 0.3)); return (x) => a[Math.min(n - 1, (x * n) | 0)] * Math.pow(1 - x, tail) * Math.min(1, x * 40); };
+function pvSfx(mat, k = 1, force = false) {
+  const ctx = audioCtx; if (!ctx || (!force && ctx.currentTime - pvSfxLast < 0.05)) return;
+  pvSfxLast = ctx.currentTime;
+  const t = ctx.currentTime + 0.005, out = sfxOut(), v = 0.55 + 0.45 * k, j = 1 + (Math.random() - 0.5) * 0.06;
+  const thud = (f, d, g) => pvBand(t, out, d, 'lowpass', f, 0.7, g * v, (x) => Math.pow(1 - x, 2));
+  switch (mat) {
+    case 'steel':
+      pvBand(t, out, 0.025, 'bandpass', 3200 * j, 1.2, 0.08 * v); thud(170, 0.07, 0.07);
+      pvPartials(t, out, 1650 * j, [1, 2.71, 5.2, 8.6], [0.22, 0.15, 0.09, 0.05], [0.016 * v, 0.011 * v, 0.006 * v, 0.003 * v]); break;
+    case 'gun':
+      pvBand(t, out, 0.03, 'bandpass', 2100 * j, 2, 0.11 * v); thud(140, 0.09, 0.1);
+      pvBand(t + 0.021, out, 0.016, 'bandpass', 3900 * j, 3, 0.045 * v);
+      pvPartials(t, out, 880 * j, [1, 2.43, 3.91], [0.07, 0.05, 0.03], [0.018 * v, 0.011 * v, 0.006 * v]); break;
+    case 'key': {
+      const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+      for (let i = 0; i < n; i++) {
+        const ti = t + i * (0.028 + Math.random() * 0.04), f = 2900 + Math.random() * 1300;
+        pvBand(ti, out, 0.01, 'highpass', 4200, 0.7, 0.03 * v);
+        pvPartials(ti, out, f, [1, 2.76, 5.4], [0.12, 0.07, 0.04], [0.011 * v / (i + 1), 0.006 * v / (i + 1), 0.003 * v / (i + 1)]);
+      }
+      thud(220, 0.04, 0.03); break;
+    }
+    case 'ring':
+      pvBand(t, out, 0.007, 'highpass', 5000, 0.7, 0.03 * v);
+      pvPartials(t, out, 2300 * j, [1, 2.76, 5.4, 8.9], [0.45, 0.28, 0.16, 0.09], [0.014 * v, 0.007 * v, 0.004 * v, 0.002 * v]);
+      pvPartials(t + 0.085, out, 2300 * j, [1, 2.76], [0.18, 0.1], [0.005 * v, 0.0025 * v]); break;
+    case 'glass':
+      pvBand(t, out, 0.008, 'highpass', 3500, 0.7, 0.05 * v); thud(210, 0.05, 0.04);
+      pvPartials(t, out, 1480 * j, [1, 2.32, 4.25, 6.63], [0.3, 0.18, 0.1, 0.06], [0.011 * v, 0.007 * v, 0.004 * v, 0.0025 * v]); break;
+    case 'plastic':
+      pvBand(t, out, 0.04, 'bandpass', 1500 * j, 4, 0.08 * v); pvBand(t, out, 0.006, 'highpass', 3000, 0.7, 0.02 * v);
+      pvPartials(t, out, 620 * j, [1, 1.93, 3.3], [0.05, 0.035, 0.02], [0.018 * v, 0.009 * v, 0.005 * v]); break;
+    case 'wood':
+      pvBand(t, out, 0.035, 'bandpass', 900 * j, 2.5, 0.09 * v); thud(180, 0.07, 0.06);
+      pvPartials(t, out, 360 * j, [1, 2.57, 4.2], [0.08, 0.05, 0.03], [0.028 * v, 0.013 * v, 0.006 * v]); break;
+    case 'bone':
+      pvBand(t, out, 0.025, 'bandpass', 1800 * j, 2, 0.08 * v); thud(200, 0.05, 0.04);
+      pvPartials(t, out, 780 * j, [1, 2.3, 3.7], [0.04, 0.03, 0.02], [0.016 * v, 0.009 * v, 0.004 * v]); break;
+    case 'shell':
+      pvBand(t, out, 0.012, 'bandpass', 2600 * j, 3, 0.06 * v); pvBand(t + 0.018, out, 0.01, 'bandpass', 3100 * j, 3, 0.04 * v);
+      pvPartials(t, out, 420 * j, [1, 2.1], [0.05, 0.03], [0.014 * v, 0.006 * v]); break;
+    case 'paper':
+      pvBand(t, out, 0.26, 'bandpass', 3600 * j, 0.7, 0.06 * v, pvGrains(14)); pvBand(t, out, 0.05, 'lowpass', 400, 0.7, 0.03 * v); break;
+    case 'stone':
+      pvBand(t, out, 0.03, 'bandpass', 1400 * j, 1.5, 0.09 * v); thud(150, 0.08, 0.08);
+      pvPartials(t, out, 520 * j, [1, 2.2, 3.6], [0.05, 0.035, 0.02], [0.02 * v, 0.01 * v, 0.005 * v]); break;
+    case 'tool':
+      pvBand(t, out, 0.03, 'bandpass', 2400 * j, 1.6, 0.08 * v); thud(160, 0.08, 0.07);
+      pvPartials(t, out, 1150 * j, [1, 2.6, 4.9], [0.1, 0.06, 0.035], [0.012 * v, 0.007 * v, 0.004 * v]); break;
+    default:
+      thud(260, 0.07, 0.07); pvBand(t, out, 0.02, 'bandpass', 1200, 1.2, 0.03 * v);
+  }
+}
+const pvSetDown = (P, k) => pvSfx(P.mat, k);
+// liquid moving in a closed thing: a low swell of wash, and a bubble or two (a sine chirping up: a bubble's own resonance)
+function pvSlosh(k) {
+  const ctx = audioCtx; if (!ctx || k <= 0.05) return;
+  if (ctx.currentTime - (pv ? pv.sloshAt : 0) < 0.4) return;
+  if (pv) pv.sloshAt = ctx.currentTime;
+  const t = ctx.currentTime + 0.02, out = sfxOut();
+  pvBand(t, out, 0.45, 'lowpass', 650, 0.9, 0.06 * k, (x) => Math.pow(Math.sin(Math.PI * Math.min(1, x * 1.3)), 1.5) * (0.65 + 0.35 * Math.sin(x * 31)));
+  const n = 1 + Math.round(Math.random() * 2 + k);
+  for (let i = 0; i < n; i++) {
+    const ti = t + 0.06 + Math.random() * 0.3, f = 230 + Math.random() * 300;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f, ti); o.frequency.exponentialRampToValueAtTime(f * 1.9, ti + 0.04);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, ti); g.gain.exponentialRampToValueAtTime(0.012 * k, ti + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, ti + 0.06);
+    o.connect(g).connect(out); o.start(ti); o.stop(ti + 0.08);
+  }
+}
+// the ring's stones arcing: a few ticks, very close together, high and quiet
+function pvCrackle() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime + 0.01, out = sfxOut();
+  for (let i = 0; i < 3 + (Math.random() * 3 | 0); i++) pvBand(t + Math.random() * 0.12, out, 0.006, 'highpass', 3800 + Math.random() * 2500, 0.8, 0.012 + Math.random() * 0.012);
+}
+// a small gearbox turning over inside a plastic fish
+function pvMotor() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime + 0.01, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(62, t); o.frequency.linearRampToValueAtTime(84, t + 0.16);
+  const bq = ctx.createBiquadFilter(); bq.type = 'bandpass'; bq.frequency.value = 520; bq.Q.value = 2.2;
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.014, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+  o.connect(bq).connect(g).connect(out); o.start(t); o.stop(t + 0.22);
+  pvBand(t + 0.19, out, 0.012, 'bandpass', 2200, 3, 0.03);
+}
+// the pack itself: the flap lifted and canvas moving; put back, shorter
+function sfxPackOpen(open) {
+  const ctx = audioCtx; if (!ctx) return;
+  if (playSample(open ? 'packOpen' : 'packClose', 1.0, 0.03)) return;     // his paper (the drawn grains only until it loads)
+  const t = ctx.currentTime + 0.005, out = sfxOut();
+  pvBand(t, out, open ? 0.36 : 0.22, 'bandpass', 2000, 0.6, 0.045, pvGrains(open ? 16 : 10, 1.2));
+  pvBand(t, out, open ? 0.3 : 0.18, 'lowpass', 700, 0.7, 0.03, pvGrains(open ? 9 : 6, 1.4));
+  pvBand(t + (open ? 0.05 : 0.13), out, 0.09, 'lowpass', 190, 0.8, 0.07, (x) => Math.pow(1 - x, 2.5));
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
+  pvS: () => pv && { item: pv.item && pv.item.name, pose: pv.pose, mat: pv.P && pv.P.mat, landed: pv.landed, yaw: +pv.yawA.toFixed(2), raf: !!pv.raf, live: !!(pv.canvas.parentElement && pv.canvas.parentElement.classList.contains('live')), w: pv.canvas.width, h: pv.canvas.height },
+  pvShot: () => { if (!pv || !pv.item) return null; pv.r.render(pv.sc, pv.cam); return pv.canvas.toDataURL('image/png'); },
+  /* the harness's look at any item in the pane, without the pack: mounted, settled `s` seconds, drawn */
+  pvLook: (item, s = 1.6, px = 240) => {
+    pvBuild(); const m = item && pvModelOf(item); if (!m || !iconDrawable(m)) return null;
+    pvMount(item, m); pv.r.setSize(px / pv.r.getPixelRatio(), px / pv.r.getPixelRatio(), false); pv.cam.aspect = 1; pv.cam.updateProjectionMatrix();
+    for (let i = 0; i < s * 60; i++) pvStep(1 / 60);
+    pv.r.render(pv.sc, pv.cam); return pv.canvas.toDataURL('image/png');
+  },
+  pvDbg: () => pv && { lost: pv.r.getContext().isContextLost(), k: +pv.fit.scale.x.toFixed(3), pos: pv.fit.position.toArray().map((v) => +v.toFixed(2)), calls: pv.r.info.render.calls, tris: pv.r.info.render.triangles, progs: pv.r.info.programs.length, kids: pv.fit.children.length },
+  pvMore: (s = 1, px = 240) => { if (!pv || !pv.item) return null; for (let i = 0; i < s * 60; i++) pvStep(1 / 60); pv.r.render(pv.sc, pv.cam); return pv.canvas.toDataURL('image/png'); },
+  removeFromInventory, pvSfx, pvSlosh, pvProfile, pvSettle: (s = 2) => { if (!pv) return; for (let i = 0; i < s * 60; i++) pvStep(1 / 60); },
+}));
+
 const invDetailEl = document.getElementById('inv-detail');
 let packSel = -1, packRingSel = -1;   // a worn ring may be the selection instead of a slot of the pack
 function inspectFromPack(item) {
@@ -12706,17 +13224,23 @@ function inspectHeld(item) {
   openInspect(item.inspectModel, { ...opts, name: item.name, desc: item.isKey ? '' : (item.desc || '') });   // (a key: its name alone)
 }
 function renderPackDetail() {
+  pvShown = null;
+  renderPackDetail0();
+  pvAttach(pvShown);
+}
+function renderPackDetail0() {
   if (!invDetailEl) return;
   if (packKeySel) {
     const key = kcCurrent();
     if (!key) packKeySel = false;
     else {
       invDetailEl.className = 'detail';
-      invDetailEl.innerHTML = `<div class="big">${iconHTML(key)}</div>
+      pvShown = key;
+      invDetailEl.innerHTML = `<div class="big">${iconHTML(key, true)}</div>
         <div class="name">${key.name}</div>
         ${''/* (no description for a key — 2026-11-17, the owner: "take out key descriptions") */}
         <button type="button" class="act insp">Inspect</button>
-        <button type="button" class="act hold">${key === equipped ? 'Holster' : 'Hold'}</button>
+        <button type="button" class="act hold">${key === equipped ? 'Holster' : 'Equip'}</button>
         <div class="hint">On the keychain · click a key, or turn the ring with the arrows</div>`;
       const bI = invDetailEl.querySelector('.insp');
       bI.disabled = !key.inspectModel;
@@ -12729,7 +13253,8 @@ function renderPackDetail() {
   if (packRingSel >= 0) {
     const ring = rings[packRingSel];
     invDetailEl.className = 'detail';
-    invDetailEl.innerHTML = `<div class="big">${iconHTML(ring)}</div>
+    pvShown = ring;
+    invDetailEl.innerHTML = `<div class="big">${iconHTML(ring, true)}</div>
       <div class="name">${ring.name}</div>
       ${ring.desc ? `<div class="desc">${ring.desc}</div>` : ''}
       <button type="button" class="act insp">Inspect</button>
@@ -12750,7 +13275,7 @@ function renderPackDetail() {
     return;
   }
   invDetailEl.className = 'detail';
-  const verb = item.viewmodel ? (item === equipped ? 'Holster' : 'Hold') : 'Use';
+  const verb = item.viewmodel ? (item === equipped ? 'Holster' : 'Equip') : 'Use';
   /* AN ARTIFACT IS SET INTO A WEAPON: one button for each weapon you carry,
    * the one in your hand first. A weapon with one in it says so, and lets it out. */
   const artWs = item.artifact === true ? inventory.filter(isArtWeapon).sort((a, b) => (b === equipped) - (a === equipped)).slice(0, 5) : [];
@@ -12760,7 +13285,8 @@ function renderPackDetail() {
     : '<div class="hint">Carry a weapon to set it in</div>';
   const artOnHTML = isArtWeapon(item) && item.artifact
     ? `<div class="artline">${item.artifact.svg || ART_WHALE_SVG}${item.artifact.name}</div><button type="button" class="act detach">Remove artifact</button>` : '';
-  invDetailEl.innerHTML = `<div class="big">${iconHTML(item)}</div>
+  pvShown = item;
+  invDetailEl.innerHTML = `<div class="big">${iconHTML(item, true)}</div>
     <div class="name">${item.name}</div>
     ${item.desc ? `<div class="desc">${item.desc}</div>` : ''}
     ${artOnHTML}
@@ -12828,16 +13354,27 @@ function renderPack() {
   if (!packSlots[packSel]) packSel = firstFilledSlot();
   const nSlots = Math.max(INV_MAX, packCount());
   for (const it of inventory) if (slotOf(it) < 0) placeInSlot(it, -1, nSlots);   // a thing taken over the top gets a cell
+  /* A THING NEW TO THE PACK IS DRAWN IN (2026-11-18): the first time the open pack shows it, its box is drawn round by hand
+   * and the thing set into it — and it is the selection, so the pane sets it down in front of you. More than two at once
+   * is a load, not a find: those are just there. */
+  const nowMs = performance.now();
+  if (invOpen) {
+    const fresh = inventory.filter((it) => !it._packSeen);
+    for (const it of fresh) { it._packSeen = true; if (fresh.length <= 2) it._freshAt = nowMs; }
+    if (fresh.length && fresh.length <= 2 && slotOf(fresh[fresh.length - 1]) >= 0) packSel = slotOf(fresh[fresh.length - 1]);
+  }
   kcUpdateBtn(); if (kcOpen) { kcSync(); kcText(); }
   for (let i = 0; i < nSlots; i++) {
     const item = packSlots[i];
     const slot = document.createElement('div');
     slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '') + (item && isArtWeapon(item) && item.artifact ? ' art' : '') + (item && (item.artifact === flameArtItem || item === flameArtItem) ? ' fire' : '') + (item && seaArtItem && (item.artifact === seaArtItem || item === seaArtItem) ? ' sea' : '');
     slot.dataset.index = String(i);
+    if (item && item._freshAt && nowMs - item._freshAt < 1100) { slot.classList.add('fresh'); slot.style.setProperty('--fd', -Math.round(nowMs - item._freshAt) + 'ms'); }
+    if (item) { const P = pvProfile(item); if (P.glow) { slot.classList.add('glows'); slot.style.setProperty('--glow', '#' + new THREE.Color(P.glow).getHexString()); } }
     // the owner's drawn numerals, as on the hotbar (2026-11-18: the pack in his hand), and "in hand" a span of its own (the
     // slot's ::after is its drawn frame now, ::before the circled selection)
     slot.innerHTML = `<span class="num" aria-label="${i + 1}">${String(i + 1).split('').map((c) => `<i class="hd hd${c}"></i>`).join('')}</span>` +
-      (item && item === equipped ? '<span class="inhand">In hand</span>' : '') + (item ? iconHTML(item) : '');
+      (item && item === equipped ? '<span class="inhand">In hand</span>' : '') + (item ? iconHTML(item, true) : '');
     if (item) {
       // no name in the slot: the pane on the right names the selection
       // double-click goes straight to the examine screen
@@ -12897,7 +13434,7 @@ function beginDrag(e) {
   dragArm = null;
   dragItem = item; dragFrom = from;
   if (dragRing >= 0) invGridEl.classList.add('takes');
-  invGhostEl.innerHTML = iconHTML(item);
+  invGhostEl.innerHTML = iconHTML(item, true);
   invGhostEl.style.left = e.clientX + 'px';
   invGhostEl.style.top = e.clientY + 'px';
   invGhostEl.classList.add('show');
@@ -12984,6 +13521,8 @@ function openPack() {
   if (held) dropHeld();
   renderPack();
   invPanelEl.classList.add('show');
+  phPlay(true);
+  sfxPackOpen(true);
   openKeyChain();                       // (the ring in the pack's corner, drawn while it is up)
   setPrompt('');
   crosshair.className = '';
@@ -12995,9 +13534,127 @@ function closePack() {
   invOpen = false;
   endDrag();
   invPanelEl.classList.remove('show');
+  phPlay(false);
+  sfxPackOpen(false);
   refreshUI();
   if (packReturnLock && !fallbackLook) regainLook();
 }
+
+/* ---- THE PACK IN HIS HANDS (2026-11-18, the owner's IMG_7207: "put this as the canvas behind the inventory … i want this as
+ * an animation opening it up with the same sound effects in the video keep the hands in it too the backround can go. have it
+ * a written style on this worn paper. make it retro too the hands should look retro"). His two hands come up holding a
+ * folded sheet, snap it open and hold it while the pack is written on it; closing folds it back down. The frames are
+ * `assets/hud/pack-hands.png` (`tools/pack_hands_pack.py`: cut out with Vision, the sheet aged and stained, moonlit,
+ * ordered-dithered to 330 px tall, a dark line round it), drawn on a canvas at the sprite's own size and blown up
+ * pixelated. Frames 0-7 the opening (0 the folded strip), 8-13 the held sheet, registered on the paper so it stays put
+ * under the writing while the hands breathe. `write` is the clear part of the sheet in sprite pixels: the pack's panel is
+ * scaled and placed into it (`packPaperFit`, read by `hudFit` in index.html). */
+const PH = { src: 'assets/hud/pack-hands.png', fw: 669, fh: 330, cols: 4, open: 8, idle: 6,
+  paper: [126.8, 22.0, 489.9, 281.1], write: [160, 42, 465, 270] };
+const PH_FPS = 15, PH_RISE = 0.13, PH_IDLE_FPS = 6, PH_CLOSE_FPS = 20, PH_DROP = 0.16;
+const phWrap = document.getElementById('pack-hands');
+const phCv = phWrap && phWrap.querySelector('canvas');
+const phG = phCv && phCv.getContext('2d');
+const ph = { img: null, ready: false, mode: 'off', t0: 0, from: 0, raf: 0, k: 1, left: 0, top: 0, last: -1 };
+if (phCv) {
+  phCv.width = PH.fw; phCv.height = PH.fh;
+  const im = new Image();
+  im.onload = () => { ph.img = im; ph.ready = true; invPanelEl.classList.add('paper'); phLayout(); window.hudFit && window.hudFit(); };
+  im.src = PH.src;
+}
+const phReduced = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+/* where the sheet sits: as big as the window lets the whole paper be (its height, mostly), its middle on the window's */
+function phLayout() {
+  if (!phCv) return;
+  const W = window.innerWidth || 1280, H = window.innerHeight || 720;
+  const [px0, py0, px1, py1] = PH.paper;
+  const k = Math.min((H * 0.955) / (py1 - py0), (W * 0.84) / (px1 - px0));
+  let left = W / 2 - ((px0 + px1) / 2) * k, top = H / 2 - ((py0 + py1) / 2) * k + H * 0.012;
+  top = Math.max(top, H - PH.fh * k);                     // the sleeves always run on off the bottom
+  ph.k = k; ph.left = left; ph.top = top;
+  phCv.style.width = `${PH.fw * k}px`; phCv.style.height = `${PH.fh * k}px`;
+  phCv.style.left = `${left}px`; phCv.style.top = `${top}px`;
+  const [wl, wt, wr, wb] = PH.write;
+  const cx = left + ((wl + wr) / 2) * k, cy = top + ((wt + wb) / 2) * k;
+  invPanelEl.style.setProperty('--pk-dx', `${(cx - W / 2).toFixed(1)}px`);
+  invPanelEl.style.setProperty('--pk-dy', `${(cy - H / 2).toFixed(1)}px`);
+}
+/* the pack's panel, scaled to the writing on the sheet (asked by hudFit with the panel's unscaled size) */
+window.packPaperFit = (pw, phh) => {
+  if (!ph.ready) return null;
+  const [wl, wt, wr, wb] = PH.write;
+  return Math.min(((wr - wl) * ph.k) / pw, ((wb - wt) * ph.k) / phh);
+};
+window.addEventListener('resize', () => { phLayout(); if (ph.mode !== 'off') phDraw(true); });
+function phFrame(i) {
+  if (!ph.img || i === ph.last) return;
+  ph.last = i;
+  const c = i % PH.cols, r = (i / PH.cols) | 0;
+  phG.clearRect(0, 0, PH.fw, PH.fh);
+  phG.drawImage(ph.img, c * PH.fw, r * PH.fh, PH.fw, PH.fh, 0, 0, PH.fw, PH.fh);
+}
+const phIdleSeq = (() => { const a = []; for (let i = 0; i < PH.idle; i++) a.push(PH.open + i); for (let i = PH.idle - 2; i > 0; i--) a.push(PH.open + i); return a; })();
+/* what shows at time t of the current mode: a frame, how far below its place the whole thing is (0-1 of the window), and
+ * the dark behind it */
+function phAt(t) {
+  const H = window.innerHeight || 720;
+  if (ph.mode === 'open') {
+    const ts = t - PH_RISE * (ph.from === 0 ? 1 : 0);
+    if (ts < 0) { const u = 1 - Math.pow(1 - t / PH_RISE, 3); return { f: 0, y: (1 - u) * 0.42 * H, dim: u }; }
+    const f = Math.min(PH.open - 1, ph.from + Math.floor(ts * PH_FPS));
+    if (f >= PH.open - 1 && ts * PH_FPS >= PH.open - ph.from) { ph.mode = 'held'; ph.t0 = performance.now() / 1000; return { f: PH.open, y: 0, dim: 1 }; }
+    return { f, y: 0, dim: 1 };
+  }
+  if (ph.mode === 'held') return { f: phIdleSeq[Math.floor(t * PH_IDLE_FPS) % phIdleSeq.length], y: 0, dim: 1 };
+  if (ph.mode === 'close') {
+    const f = ph.from - Math.floor(t * PH_CLOSE_FPS);
+    if (f >= 0) return { f, y: 0, dim: 1 };
+    const u = (t - (ph.from + 1) / PH_CLOSE_FPS) / PH_DROP;
+    if (u >= 1) return null;
+    const e = u * u;
+    return { f: 0, y: e * 0.45 * H, dim: 1 - u };
+  }
+  return null;
+}
+function phDraw(force) {
+  if (!phCv) return;
+  if (force) ph.last = -1;
+  const t = performance.now() / 1000 - ph.t0;
+  const s = phAt(t);
+  if (!s) { ph.mode = 'off'; phWrap.classList.remove('on'); ph.raf = 0; return; }
+  phFrame(s.f);
+  phCv.style.transform = s.y ? `translateY(${s.y.toFixed(1)}px)` : '';
+  phWrap.style.setProperty('--ph-dim', s.dim.toFixed(3));
+}
+function phLoop() { ph.raf = 0; phDraw(false); if (ph.mode !== 'off') ph.raf = requestAnimationFrame(phLoop); }
+/* open: from the folded strip (or from wherever a close had got to); close: back down the opening from where it is */
+function phPlay(open) {
+  if (!ph.ready || !phCv) return;
+  const now = performance.now() / 1000;
+  const cur = ph.mode === 'off' ? -1 : ph.last;
+  if (open) {
+    ph.from = (ph.mode === 'close' && cur > 0 && cur < PH.open) ? cur : 0;
+    ph.mode = phReduced() ? 'held' : 'open';
+  } else {
+    if (ph.mode === 'off') return;
+    ph.from = (cur >= 0 && cur < PH.open) ? cur : PH.open - 1;
+    ph.mode = phReduced() ? 'off' : 'close';
+    if (ph.mode === 'off') { phWrap.classList.remove('on'); return; }
+  }
+  ph.t0 = now; ph.last = -1;
+  phLayout();
+  phWrap.classList.add('on');
+  phDraw(true);
+  if (!ph.raf) ph.raf = requestAnimationFrame(phLoop);
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { ph: () => ({ ready: ph.ready, mode: ph.mode, f: ph.last, k: +ph.k.toFixed(3), on: phWrap.classList.contains('on'),
+    snd: ['packOpen', 'packClose'].map((n) => (sampleBanks[n] || []).filter(Boolean).length).join('/') }), phPlay, phLayout,
+  /* the harness: the hands held still at `t` seconds into a mode ('open' | 'held' | 'close'), the loop stopped */
+  phShow: (mode, t, from = mode === 'close' ? PH.open - 1 : 0) => {
+    if (ph.raf) cancelAnimationFrame(ph.raf); ph.raf = 0;
+    ph.mode = mode; ph.from = from; ph.t0 = performance.now() / 1000 - t;
+    phWrap.classList.add('on'); phLayout(); phDraw(true); return { mode: ph.mode, f: ph.last };
+  } }));
 
 /* ---- THE KEYCHAIN, LOOKED THROUGH (2026-11-14, the owner: "a cool little menu where you cycle through the chain and keys in a
  * cool 3d model like you are actually looking through the keys"). Its own small renderer on its own canvas over the pack
@@ -18943,7 +19600,7 @@ const glowstickItem = {
  * take the find off the floor and give you nothing. One lights your hand; the
  * other is yours to put down somewhere (G drops one off the stack). */
 function gainGlowstick() {
-  if (inventory.includes(glowstickItem)) { glowstickItem.count = (glowstickItem.count || 1) + 1; refreshUI(); if (invOpen) renderPack(); return; }
+  if (inventory.includes(glowstickItem)) { glowstickItem.count = (glowstickItem.count || 1) + 1; renderHotbar(); refreshUI(); if (invOpen) renderPack(); return; }
   addToInventory(glowstickItem);
   toggleEquip(glowstickItem);
 }
@@ -24341,6 +24998,7 @@ function updateDialogCam(dt) {
    * own sight picture buys. It comes off the setting rather than off a
    * constant, so it is the same zoom at any field of view the owner picks. */
   const wantFov = (mutCutFov > 0 ? mutCutFov
+    : tmpCut ? tmpCut.fov
     : keyCut ? keyCut.fov
     : thrCut ? thrCut.fov
     : (crabCut && crabCut.t >= CRAB_T.cut) ? crabCut.fov
@@ -24354,7 +25012,7 @@ function updateDialogCam(dt) {
     : settings.fov) + fovKick
     - settings.fov * (equipped && equipped.shotgun ? SG_ZOOM : MAG_ZOOM) * magAim;
   // and it arrives at a gun's pace, not a conversation's
-  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : crowFovK > 0.001 ? 14 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : tmpCut ? tmpCut.fovRate : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : crowFovK > 0.001 ? 14 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -24770,6 +25428,8 @@ const SAMPLES = {
   elecShock: ['assets/elec-shock.m4a'],
   maceHeavy: ['assets/mace-heavy.m4a'],           // the owner's "boulder impact hard 4": the mace's heavy blows (2026-11-17)
   pickup: ['assets/pickup.m4a'],                  // the owner's "pickup sound 1": anything taken that has no sound of its own
+  // the pack: the owner's own sheet of paper snapped open and folded shut (IMG_7207, 2026-11-18; `PH` below)
+  packOpen: ['assets/pack-open.m4a'], packClose: ['assets/pack-close.m4a'],
 };
 const sampleBanks = {};
 function loadSamples() {
@@ -27386,7 +28046,7 @@ function updateBreath(dt) {
       const P = breathPuffs.find((p) => p.t >= p.life);
       if (P) {
         camera.getWorldDirection(_brF); _brF.y = 0; _brF.normalize();
-        const lit = inSewer ? 0.3 + 0.7 * flashOn : Math.min(1, 0.35 + 0.45 * drainRoomK + 0.4 * flashOn);
+        const lit = inSewer ? 0.3 : Math.min(1, 0.35 + 0.45 * drainRoomK);
         P.s.position.copy(camera.position).addScaledVector(_brF, 0.3); P.s.position.y -= 0.2;
         P.s.position.x += (Math.random() - 0.5) * 0.03; P.s.position.z += (Math.random() - 0.5) * 0.03;
         P.v.copy(_brF).multiplyScalar(0.3 + Math.random() * 0.15);
@@ -27477,7 +28137,7 @@ function updateDrainBugs(dt) {
   if (!live) return;
   B.skit = Math.max(0, B.skit - dt);
   const px = camera.position.x - DRAIN_X, pz = camera.position.z - DRAIN_Z;
-  const torch = flashOn > 0.5;
+  const torch = false;                  // (no torch in the game since the flashlight went, 2026-11-18)
   camera.getWorldDirection(_bugF);
   for (const b of B.bugs) {
     b.t += dt;
@@ -28883,7 +29543,7 @@ function boatKeyPlain() {
   if (!km) return;
   km.material = keyModel.children[0].material.clone();
   boatKey.userData.plain = true;
-  boatKeyItem._icon = null; try { localStorage.removeItem(iconCacheKey(boatKeyItem)); } catch (e) {}
+  boatKeyItem._icon = boatKeyItem._iconClear = null; try { localStorage.removeItem(iconCacheKey(boatKeyItem)); localStorage.removeItem(iconClearKey(boatKeyItem)); } catch (e) {}
   iconsPending = true;
 }
 function takeShipKey() {
@@ -30377,90 +31037,8 @@ bwGlb('assets/screwdriver.glb', (gltf) => {
   });
   screwdriverModel.add(m);
 }, undefined, () => {});
-/* THE FLASHLIGHT (2026-10-23, the owner: "instead of the glowstick add the small green tube flashlight near the
- * generator. Make sure it looks good and the light blends into the atmosphere of the area"). The Fulton out of his
- * FlashlightFBX pack — the olive angle-head tube, packed by `tools/flashlight_pack.py` (0.19 m, stood on its foot, the
- * lens 0.17 up looking out along -x off the bend). It lies switched on, on the dead end's ledge by the generator where the
- * spare glowstick was, and in your hand it is a beam: in the sewer a real spot light (it lives in the sewer's world, so
- * it is only ever in the scene's lights down there, compiled with the rest of it, `sewP.flash`), warm and soft-edged,
- * swinging a beat behind your look, lighting the mist and the dust in the air; anywhere else a pooled lamp thrown a
- * couple of metres ahead of you (`flashGlow`), which costs no recompile. It stutters now and then, like an old battery. */
-/* (measured: 14 / 0.62 penumbra was a stage spot; and at decay 2 anything within two metres — the dead end's wall, the walk at
- * your feet — blew out to a white disc. Decay 1.25 at 2.8 throws the same light five metres out and a readable one at arm's length) */
-const FLASH = { LENS: [-0.0335, 0.169, 0], COLOR: 0xffdcaa, INT: 2.8, DECAY: 1.25, RANGE: 22, ANGLE: 0.52, PEN: 0.88, SPILL: 0.45 };
-const flashlightModel = new THREE.Group();
-flashlightModel.name = 'flashlight';
-function makeFlashlightIcon() {
-  const c = document.createElement('canvas'); c.width = c.height = 50;
-  const g = c.getContext('2d');
-  g.fillStyle = '#4a5233'; g.fillRect(20, 16, 11, 28);                 // the tube
-  g.fillStyle = '#3a4128'; g.fillRect(20, 40, 11, 4);
-  g.beginPath(); g.moveTo(20, 18); g.quadraticCurveTo(20, 6, 31, 6); g.lineTo(31, 17); g.quadraticCurveTo(31, 17, 31, 18); g.closePath(); g.fill();
-  g.fillStyle = '#566040'; g.fillRect(14, 4, 17, 11);                  // the bent head
-  g.fillStyle = '#ffe9c0'; g.beginPath(); g.ellipse(13, 9.5, 2.5, 5, 0, 0, Math.PI * 2); g.fill();   // the lens
-  g.fillStyle = '#202418'; g.fillRect(31, 24, 3, 8);                   // the switch
-  return c.toDataURL();
-}
-const flashlightItem = {
-  id: 'flashlight', name: 'Flashlight', desc: 'An angle-head torch, army green, left on by the sewer\'s generator', icon: makeFlashlightIcon(),
-  use: () => toggleEquip(flashlightItem),
-};
-// held upright out in front, the head bent over and the lens looking where you look
-holdable(flashlightItem, flashlightModel, { scale: 1.45, pos: [0.0, -0.075, 0.02], rot: [0.06, -Math.PI / 2, 0.0] });
-const flashLensMats = [];
-bwGlb('assets/flashlight.glb', (gltf) => {
-  const m = gltf.scene;
-  m.traverse((o) => {
-    if (!o.isMesh || !o.material) return;
-    const mat = o.material;
-    mat.metalness = 0; mat.roughness = Math.max(0.55, mat.roughness ?? 0.7);
-    if (/002/.test(mat.name)) { mat.emissive = new THREE.Color(FLASH.COLOR); mat.emissiveIntensity = 1.6; flashLensMats.push(mat); }   // the lens, lit
-    else { mat.emissive = mat.color.clone().multiplyScalar(0.25); mat.emissiveIntensity = 1; }   // (a dark thing in a dark place is still a thing)
-    mat.needsUpdate = true;
-  });
-  flashlightModel.add(m);
-}, undefined, () => {});
-// off the sewer: a lamp thrown ahead of you (pooled, so it is free)
-const flashGlow = new THREE.PointLight(FLASH.COLOR, 0, 9, 1.5);
-scene.add(flashGlow);
-let flashOn = 0, flashFlick = 0, flashFlickIn = 9;
-/* AND IT FAILS WHEN IT IS NEAR (2026-10-24, the owner's pick of the ideas): the thing in the sewer's water writes how
- * close it is to having you (`sewMonTick`: rising unseen, nearer, further up) and the torch stutters with it — more
- * often, deeper — a cue that is also the threat */
-let flashDread = 0;
-const _flF = new THREE.Vector3(), _flR = new THREE.Vector3(), _flAim = new THREE.Vector3(0, 0, -1), _flP = new THREE.Vector3();
-function updateFlashlight(dt) {
-  const on = equipped === flashlightItem && !held && !dying;
-  flashOn += ((on ? 1 : 0) - flashOn) * Math.min(1, dt * 9);
-  // an old battery: now and then it dims and catches
-  if ((flashFlickIn -= dt * (1 + flashDread * 14)) <= 0) { flashFlickIn = 8 + Math.random() * 18; flashFlick = (0.12 + Math.random() * 0.3) * (1 + flashDread * 1.5); }
-  let k = flashOn;
-  if (flashFlick > 0) { flashFlick -= dt; k *= Math.random() < 0.5 ? 0.35 - 0.25 * flashDread : 0.85; }
-  if (flashDread > 0.05) k *= 1 - flashDread * (Math.random() < 0.25 ? 0.55 : 0.12);
-  for (const m of flashLensMats) m.emissiveIntensity = 0.3 + 1.3 * Math.max(k, flashlightModel.userData.ledgeOn ? 1 : 0);
-  camera.getWorldDirection(_flF);
-  // the beam swings a beat behind the look, the way a hand does
-  _flAim.lerp(_flF, Math.min(1, dt * 14)).normalize();
-  _flR.crossVectors(_flF, camera.up).normalize();
-  const sp = inSewer && sewP.flash;
-  if (sp) {
-    flashGlow.intensity = 0;
-    if (!sewP.flashLedge) {
-      sp.intensity = FLASH.INT * k;
-      if (k > 0.01) {
-        sp.position.set(camera.position.x - SEW_X, camera.position.y - SEW_Y, camera.position.z - SEW_Z).addScaledVector(_flR, 0.16).addScaledVector(_flF, 0.15);
-        sp.position.y -= 0.17;
-        sp.target.position.copy(sp.position).addScaledVector(_flAim, 6);
-        // and what it lights gives some back: a faint warm spill round the pool, so the dark at its edge is not a cut-out
-        flashGlow.intensity = FLASH.SPILL * k;
-        flashGlow.position.copy(camera.position).addScaledVector(_flAim, 1.6);
-      }
-    }
-    return;
-  }
-  flashGlow.intensity = 3.2 * k;
-  if (k > 0.01) flashGlow.position.copy(camera.position).addScaledVector(_flAim, 2.2).addScaledVector(_flR, 0.1);
-}
+/* (THE FLASHLIGHT — the angle-head torch off the sewer's generator, 2026-10-23 — is gone for good, 2026-11-18, the owner: "take
+ * out the flashlight for good": its item, its model, its beam and the sewer's spot light for it. A save that carried it loses it.) */
 /* ON THE CRATE BY THE GRATE (2026-10-22, the owner: "put the screwdriver in the sewer room on the table near the
  * grate"). It lay on the fisherman's table up the beach (y 2.59 at x 10.3, z -220); it is in the drain's room now,
  * on the crate he eats off a stride from the grate in the back wall — laid along the top's far edge, between the
@@ -36738,6 +37316,9 @@ function makeMutant(x, z, kindName, y = 0) {
   // ONE download per model, parsed once per copy: a skinned mesh cannot be cloned
   const src = kind.glb || 'assets/mutant.glb';
   if (!mutGlbWait[src]) mutGlbWait[src] = bwFetch(src);
+  /* the tavern's people are built when the hall is, and are wanted when it is: their copies first, under the black */
+  const urgent = !!kind.tav;
+  if (urgent) bwFetchSoon(src);
   const loader = new GLTFLoader();
   /* AND THE PARSES ARE SPREAD OVER FRAMES, NOT FIRED TOGETHER. Twenty-three
    * models finish downloading between 2.8 s and 4.5 s and every one of them
@@ -36760,7 +37341,7 @@ function makeMutant(x, z, kindName, y = 0) {
     return got
       .then((gltf) => { if (!u.kind.pre) return gltf; bwSpan('pre ' + src.split('/').pop(), () => u.kind.pre(u, gltf)); u._preDone = true; return bwTurn().then(() => gltf); })
       .then((gltf) => bwSpan('dress ' + src.split('/').pop(), () => dressMutant(u, gltf)));
-  });
+  }, undefined, urgent);
   /* AND WHAT YOU KILLED STAYS KILLED. A creature is named by what it is and
    * where it was put, which is the same every load; a checkpoint written
    * after it died lists it, and it is never stood back up — not by the
@@ -37423,9 +38004,9 @@ function mutLandBlow(u, dmg) {
   // the minotaur's blows on the castle's men, and theirs on him (he goes down at the end, not in the fight: `MINO_FLOOR`)
   if (f && f.st.alive && u.kind.mino) { minoLand(u, f, dmg); return; }
   if (f && f.st.alive && f.kind.mino) { hurtMutant(f, Math.max(0, Math.min(dmg, f.st.hp - Math.ceil(f.kind.hp * MINO_FLOOR))), 0, u); return; }
-  if (f && f.st.alive && u.kind === MUT_KINDS.darkKnight && f.kind.farmer) { dkFling(u, f); return; }
+  if (f && f.st.alive && kindIs(u.kind, MUT_KINDS.darkKnight) && f.kind.farmer) { dkFling(u, f); return; }
   // (a farmer's blow on the dark knight: it wounds him, never below two fifths — the kill is yours, `dkTownFights`)
-  if (f && f.st.alive && f.kind === MUT_KINDS.darkKnight && u.kind.farmer) { hurtMutant(f, Math.max(0, Math.min(dmg, f.st.hp - Math.ceil(f.kind.hp * 0.4))), 0, u); return; }
+  if (f && f.st.alive && kindIs(f.kind, MUT_KINDS.darkKnight) && u.kind.farmer) { hurtMutant(f, Math.max(0, Math.min(dmg, f.st.hp - Math.ceil(f.kind.hp * 0.4))), 0, u); return; }
   if (f && f.st.alive) { hurtMutant(f, dmg, 0, u); return; }
   /* A BLOW THAT FOLLOWS A BLOW TOO CLOSE TO BE ANSWERED. The Marauder's
    * combo throws its second and fourth blades 0.13 s after the one before,
@@ -38085,7 +38666,7 @@ function finishMutant(u) {
   /* the orc's death cry, EVERY time, with the portrait's drop and its ring sting (the owner, 2026-11-16) — here, since
    * the tavern's cast go down by the boss's branch below, which says nothing (`ORC_VOX`) */
   if (u === orcUnit && !applyingSave && !replaying) farmVox('die', u.kind.voice);
-  if (u.kind === MUT_KINDS.darkKnight && !applyingSave && !replaying) farmVox('die', u.kind.voice, { x: u.g.position.x, z: u.g.position.z });   // (the paladin's, every time: `PAL_VOX`)
+  if (kindIs(u.kind, MUT_KINDS.darkKnight) && !applyingSave && !replaying) farmVox('die', u.kind.voice, { x: u.g.position.x, z: u.g.position.z });   // (the paladin's, every time: `PAL_VOX`)
   if (u.kind.garg) { gargDied(u); return; }        // it goes back to stone and falls (`gargDeadStep`)
   /* A BOSS DIES AT DIFFERENT ODDS. Both branches ragdoll and both can take
    * a limb; what separates them is the RATES and the fact that a boss is
@@ -38780,7 +39361,7 @@ const PAL_VOX = {
 const FARM_VOX_CAP = 4;
 const farmVoxLast = {}, farmVoxOn = [];
 let farmShoutGap = 6;                                        // (the first can come early; then 8-18 s)
-function farmVox(role, V, { x, z, dist = 0, muffle = false, p } = {}) {
+function farmVox(role, V, { x, z, dist = 0, muffle = false, p, boost = 1, panK = 0.85, force = false } = {}) {   // (`boost`, `panK`, `force`: one line that must be heard, from where it is — the raid's shout)
   const ctx = audioCtx, R = V && (V.vox || FARM_VOX)[role]; if (!ctx || !R) return false;
   const bank = (sampleBanks[R.bank] || []).filter(Boolean); if (!bank.length) return false;
   const now = ctx.currentTime;
@@ -38791,7 +39372,7 @@ function farmVox(role, V, { x, z, dist = 0, muffle = false, p } = {}) {
   const M = V.mouth;
   if (M && M.end > now && M.pri >= R.pri) return false;
   while (farmVoxOn.length && farmVoxOn[0].end <= now) farmVoxOn.shift();
-  if (farmVoxOn.length >= FARM_VOX_CAP && R.pri < 2) return false;   // (the cap is for grunts and shouts: a man you hit always answers)
+  if (farmVoxOn.length >= FARM_VOX_CAP && R.pri < 2 && !force) return false;   // (the cap is for grunts and shouts: a man you hit always answers)
   if (x === undefined && V.unit) { x = V.unit.g.position.x; z = V.unit.g.position.z; }
   else if (x === undefined && sfxPos) { x = sfxPos.x; z = sfxPos.z; }
   const d = x !== undefined ? Math.hypot(x - camera.position.x, z - camera.position.z) : dist;
@@ -38804,9 +39385,9 @@ function farmVox(role, V, { x, z, dist = 0, muffle = false, p } = {}) {
   const k = Math.min(1, d / R.far);
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
   lp.frequency.value = Math.min(9000 * Math.pow(700 / 9000, k), muffle ? 620 : 9e9);
-  const g = ctx.createGain(); g.gain.value = R.gain * (muffle ? 0.75 : 1) / (1 + d / R.ref);
+  const g = ctx.createGain(); g.gain.value = R.gain * boost * (muffle ? 0.75 : 1) / (1 + d / R.ref);
   let dst = sfxOutBase();
-  if (x !== undefined && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.85, -1, 1); sp.connect(dst); dst = sp; }
+  if (x !== undefined && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(x, z) * panK, -1, 1); sp.connect(dst); dst = sp; }
   src.connect(lp).connect(g).connect(dst);
   src.start(now);
   const end = now + src.buffer.duration / rate;
@@ -38919,6 +39500,16 @@ function sfxMutStep(dist = 0, V = MUT_VOICE) {
     }
   }
   if (V.scrape) { const u = crawlerUnit; sfxClawScrape(dist, u ? panTo(u.g.position.x, u.g.position.z) : undefined); return; }
+  /* A BIG MAN RUNNING LANDS ON EVERY STEP (2026-11-18, the owner: "give dante deep thud footsteps when running"): his speed is
+   * read off his own body between one step and the next; over a jog (2.6 m/s) each foot is a deep thud — a sub-bass drop
+   * from 52 to 24 Hz held a third of a second, a dull low thump of the flags under it and a short crunch of grit — loud and
+   * near, panned to him; walking, the ordinary step. */
+  if (V.thud && V.unit && V.unit.g) {
+    const u = V.unit, p = u.g.position, now = ctx.currentTime, L = V._stepAt;
+    const sp = L && now - L.t < 1.5 ? Math.hypot(p.x - L.x, p.z - L.z) / Math.max(0.05, now - L.t) : 0;
+    V._stepAt = { x: p.x, z: p.z, t: now };
+    if (sp > 2.6) { sfxDeepThud(sfxPos ? 0 : Math.hypot(p.x - camera.position.x, p.z - camera.position.z), panTo(p.x, p.z)); return; }
+  }
   const t = ctx.currentTime, out = sfxOut(), g0 = 0.85 / (1 + dist / 8);
   // a boot on a steel floor, not a wet foot on sand: the room is the reason
   // you can hear him coming without turning round
@@ -38944,6 +39535,24 @@ function sfxMutStep(dist = 0, V = MUT_VOICE) {
   o.frequency.setValueAtTime(66 * V.f, t); o.frequency.exponentialRampToValueAtTime(31 * V.f, t + 0.11);
   const og = ctx.createGain(); og.gain.setValueAtTime(g0 * 0.9 * V.growl, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
   o.connect(og).connect(out); o.start(t); o.stop(t + 0.18);
+}
+function sfxDeepThud(dist, pan = 0) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, g0 = 1.6 / (1 + dist / 10);
+  let out = sfxOut();
+  if (!sfxPos && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(pan * 0.8, -1, 1); sp.connect(out); out = sp; }   // (inside `sfxAt` the bus is already placed at him)
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(52 + Math.random() * 6, t); o.frequency.exponentialRampToValueAtTime(24, t + 0.28);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(g0 * 1.1, t + 0.008); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.36);
+  const n = noiseBurst(0.22, (x) => Math.pow(1 - x, 3.2));
+  const nf = ctx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 180 + Math.random() * 40;
+  const ng = ctx.createGain(); ng.gain.value = g0 * 1.3;
+  n.connect(nf).connect(ng).connect(out); n.start(t); n.stop(t + 0.22);
+  const c = noiseBurst(0.06, (x) => Math.pow(1 - x, 5));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.value = 900 + Math.random() * 300; cf.Q.value = 0.9;
+  const cg = ctx.createGain(); cg.gain.value = g0 * 0.22;
+  c.connect(cf).connect(cg).connect(out); c.start(t); c.stop(t + 0.06);
 }
 function sfxMutHit(V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
@@ -40960,6 +41569,10 @@ function updateMutantUnit(u, dt) {
   if (u.kind.cat && u.catAvOn && dist > 2.6 && u.st.atk < 0) face = u.catMoveYaw;
   // (`u.faceOff`: in a swing, faced off your line by the bearing its blade lands at — the dark knight's, `dkWalkSwing`, 2026-10-29)
   if (u.faceOff && u.st.atk >= 0) face += u.faceOff;
+  /* (AND IT IS STILL WHAT IT WAS: every `u.kind === MUT_KINDS.x` stopped matching the moment the copy went in. Measured
+   * 2026-11-18 (`minoPaladin`): at 40 % the paladin raged, `updateDarkKnight` returned on its first line for the rest of
+   * the fight (his travel, his swings' tracking, his foes, his phrases), Myles dropped him from his list and stood idle, and
+   * his death cry could never play. Ask `kindIs(u.kind, MUT_KINDS.x)`.) */
   /* THE SECOND WIND, for any kind that declares one. `u.kind` is replaced by
    * a copy with the rage's fields in it — every number below reads off
    * `u.kind`, so the swap is the whole mechanism — and it announces itself:
@@ -40967,7 +41580,7 @@ function updateMutantUnit(u, dt) {
   if (u.kind.rage && !u.st.raged && u.st.awake && u.st.hp <= u.kind.hp * (u.kind.rageAt || 0.5)) {
     u.st.raged = true;
     const wk0 = u.kind.windK || 1;
-    u.kind = Object.assign({}, u.kind, u.kind.rage, { rage: null });
+    u.kind = Object.assign({}, u.kind, u.kind.rage, { rage: null, base: u.kind.base || u.kind });   // (`base`: what it was — `kindIs`)
     // the swing table was scaled by `windK` when he was built, so a rage that quickens it rescales it
     const wr = (u.kind.windK || 1) / wk0;
     if (wr !== 1 && u.atk) for (const k in u.atk) { u.atk[k].wind *= wr; u.atk[k].recover *= wr; }
@@ -41742,7 +42355,7 @@ function updateMutantUnit(u, dt) {
      * standing at 2.5 m swinging into the lid (measured: 0.85 s still with a
      * two-waypoint route in his hands and a wall at hip height between). */
     if (u.st.closeIn > 0) u.st.closeIn -= dt;          // a planted kind that dropped a swing walks in before it is "near" again
-    const near = dist <= (u.maxReach || A.reach) && !(u.kind.planted && u.st.closeIn > 0) && !(u.kind.cat && (Math.abs((camBaseY - playerEye()) - u.g.position.y) > 1.2 || u.path)) && !(u.kind.tav && u.path);   // (the tavern's too: a carpet between is not reach)
+    const near = dist <= (u.maxReach || A.reach) && !((u.kind.planted || u.kind.warpPick) && u.st.closeIn > 0) && !(u.kind.cat && (Math.abs((camBaseY - playerEye()) - u.g.position.y) > 1.2 || u.path)) && !(u.kind.tav && u.path);   // (the tavern's too: a carpet between is not reach)
     /* WHOSE TURN IT IS. One of them swings and the others circle: three
      * tells at once is not three times the fight, it is no fight at all,
      * because there is nothing to read. Whoever is nearest and ready takes
@@ -41963,7 +42576,7 @@ function updateMutantUnit(u, dt) {
       }
       if (wantSwing && maySwing) {
         u.st.sinceSize = (u.st.sinceSize || 0) + 1;
-        let pick = u.kind.use.attack ? 'attack' : Object.keys(u.kind.use)[0];
+        let pick = u.kind.use.attack ? 'attack' : Object.keys(u.kind.use)[0], pickNone = false;
         const forced = u.st.forceSwing && u.kind.use[u.st.forceSwing] && u.atk[u.st.forceSwing] ? u.st.forceSwing : null;
         u.st.forceSwing = null;
         if (forced) pick = forced;
@@ -42041,6 +42654,13 @@ function updateMutantUnit(u, dt) {
               if (o < best) { best = o; pick = k; }
             }
             if (best === 1e9) pick = farK;
+            /* (AND FROM TOO FAR HE WALKS IN, he does not swing at the air — 2026-11-18, the owner: "the paladins attacks like
+             * always miss … his jump swing never land hes far away". Measured, `dkFight`: every blow thrown from 3.7-4.1 m, the
+             * cut, sweep, rise and spin (their ground 1.8-2.7) 0 of 9 — this branch handed them over as "the nearest ground"
+             * however far off it was, and `near` (inside his LONGEST reach, the leap's 6 m) had stopped his walk at four. Now a
+             * blow whose ground is more than 0.6 m nearer than he is is not thrown: he closes for half a second (`closeIn`,
+             * which un-nears a warp kind as it does a planted one) and draws again. Too CLOSE is still the nearest ground.) */
+            else if (best > 0.6) { const AK = u.atk[pick] || MUT_ATTACKS[pick]; const g = AK.rmFrom ? AK.rmFrom[1] : (AK.stop || AK.reach); if (dist > g) { pickNone = true; u.st.closeIn = 0.5; } }
           } else {
             let far = -1;
             for (const k in u.kind.use) {
@@ -42049,12 +42669,14 @@ function updateMutantUnit(u, dt) {
             }
           }
         }
-        u.st.lastSwing = pick;
-        u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
-        u.st.side = 0; u.st.sideT = 0; u.st.sizing = false;   // (a circle, a regroup's included, ends when the swing begins)
-        if (u.kind.frenzy && mutToken !== u) u.st.frenzyCool = 1.3 + Math.random() * 1.3;   // a swing out of turn: not another straight away
-        u.st.feint = (!forced && u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
-        sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
+        if (!pickNone) {
+          u.st.lastSwing = pick;
+          u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
+          u.st.side = 0; u.st.sideT = 0; u.st.sizing = false;   // (a circle, a regroup's included, ends when the swing begins)
+          if (u.kind.frenzy && mutToken !== u) u.st.frenzyCool = 1.3 + Math.random() * 1.3;   // a swing out of turn: not another straight away
+          u.st.feint = (!forced && u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
+          sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
+        }
       } else if (!wantSwing && maySwing && (u.kind.baits !== undefined
                    ? Math.random() < u.kind.baits
                    : (u.kind.use.attack4 && Math.random() > u.kind.circle))) {
@@ -43145,7 +43767,7 @@ bwGlb('assets/fishing-rod.glb', (gltf) => {
   while (fishingRod.children.length) fishingRod.remove(fishingRod.children[0]);
   fishingRod.add(R);
   if (fishingRodItem.viewmodel) fishingRodItem.viewmodel.userData.make();
-  fishingRodItem._icon = null; iconsPending = true;
+  fishingRodItem._icon = fishingRodItem._iconClear = null; iconsPending = true;
 }, (e) => console.warn('[bw] fishing rod', e));
 
 /* ---- AND IT CASTS -------------------------------------------------------
@@ -44493,6 +45115,7 @@ function spawnBunker(x, y, z, yaw = 0, opts) {
  * whatever displaces you calls this immediately afterwards. */
 const _cpL = new THREE.Vector3();
 function clampPlayerToRoom() {
+  if (tmpClampPlayer()) return;          // the desert temple's columns and the walk's edge
   if (fortClampPlayer()) return;
   if (c13ClampPlayer()) return;          // the castle's stone answers a knockback in its courtyard
   if (thrClampPlayer()) return;
@@ -48152,7 +48775,7 @@ function update(dt, rawDt = dt) {
     * (elvCarrying ? 0.78 : 1)          // a man in your arms: you go a little slower (2026-10-16, the owner)
     /* and a club that heavy: you carry it a little slower, swing it slower still, and raised for the slam you all but
      * plant your feet (2026-11-15, the owner: "make it feel heavy to use") */
-    * (equipped && equipped.slam ? (winding ? (windOverhead ? 0.38 : 0.62) : digT > 0 ? 0.7 : 0.9) : 1);
+    * (equipped && equipped.slam ? (winding ? (windOverhead ? 0.6 : 0.85) : digT > 0 ? 0.7 : 0.9) : 1);   // (charging 0.38 / 0.62 until 2026-11-18, the owner: "dont slow down the player as much when charging up the bone mace")
 
   camera.getWorldDirection(forward);
   forward.y = 0; forward.normalize();
@@ -48197,7 +48820,7 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!deepLock && !(elvReady && elvLand) && !inDeep && !insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inDun && !inSewer && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
+  if (!deepLock && !(elvReady && elvLand) && !inDeep && !insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inDun && !inSewer && !inTemple && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -48247,6 +48870,7 @@ function update(dt, rawDt = dt) {
   tickFort(dt);             // and the castle across the beach at the headland's foot: solid outside, walked inside
   updateC13Arch(dt); updateThrone(dt); updateDungeon(dt);   // the arched door in Castle XIII, and the throne room behind it
   updateSewer(dt);          // and the sewer through the drain's pipe
+  updateTemple(dt);         // and the desert the stump's crow takes you to
   updateHenryJetty(dt);     // and Henry, once he is out, at the sea end of the lighthouse's jetty
   updateFishSpot(dt);       // the fisherman's old spot: the tree's sway and the fish out past it
   updateFeathers(dt);       // a gull's, drifting down
@@ -48346,6 +48970,7 @@ function update(dt, rawDt = dt) {
         else if (inWhale) sfxStepWhale();
         else if (inFort || inC13 || inThrone || inDun) sfxStepCat();
         else if (inSewer) sewStepSnd();
+        else if (inTemple) { if (tmpOnPodium(camera.position.x - TMP_X, camera.position.z - TMP_Z)) sfxStepCat(); else sfxStepSand(); }
         else sfxStep();
       });
     }
@@ -48474,6 +49099,8 @@ function update(dt, rawDt = dt) {
         sfxStepCat();                      // the courtyard's cobbles: stone, and no print
       } else if (inSewer) {
         sewStepSnd();                      // the walks' concrete, the plank's board, or the flood
+      } else if (inTemple) {
+        if (tmpOnPodium(camera.position.x - TMP_X, camera.position.z - TMP_Z)) sfxStepCat(); else sfxStepSand();   // the temple's floor, or the desert's sand (no print: its sand is not the beach's)
       } else {
         stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
         sfxStepSand();
@@ -48544,7 +49171,6 @@ function update(dt, rawDt = dt) {
   updateKatanaShine(rawDt);     // the steel in your hand, on the same clock
   updateFlashes(rawDt);
   updateHeldGlow(dt);
-  updateFlashlight(dt);
   updateBreath(dt); updateDrainBugs(dt);   // (after the torch, so its aim is this frame's)
   updateDialogCam(dt);
   updatePack(dt);
@@ -48558,6 +49184,8 @@ function update(dt, rawDt = dt) {
   seaLiftOff();             // the sea's wave holds things up in the air: taken off before they update...
   updateCrab(dt);
   updateMutant(dt);
+  thrownHits();             // a thing you threw that reaches a creature hits him (and a bottle breaks on him)
+  farmCarryAll(dt);         // the farmers' weapons held in the carry, now their hands are where this frame puts them
   if (elvReady) updateElvManPose(dt);    // Elvédor's face and his puppet hand, on whatever his clips just did
   wellManClear(dt);          // after the chase has moved him: the well is solid to him
   if (wellUnit && wellUnit.g.visible) wellManAir(wellUnit);   // and the pounce's flight on top of where it put him
@@ -48653,7 +49281,7 @@ const _saveV = new THREE.Vector3();
  * table (`updateRoomRestore`) rather than one special case. */
 const saveRoom = () => (inKeep ? 'keep' : inTavern ? 'tav' : inCat ? 'cat'
   : inDojo ? 'dojo' : inUndercroft ? 'uc' : inBunker ? 'bunker' : inWhale ? 'whale'
-  : inThrone ? 'thr' : inDun ? 'dun' : inSewer ? 'sewer' : inC13 ? 'c13' : inFort ? 'fort' : inDeep ? 'deep' : null);
+  : inThrone ? 'thr' : inDun ? 'dun' : inSewer ? 'sewer' : inTemple ? 'tmp' : inC13 ? 'c13' : inFort ? 'fort' : inDeep ? 'deep' : null);
 /* AND THE TWO CASTLES ARE PLACES TOO. They stand on the beach, not in a room,
  * so a save inside one used to be a position on the sand — and restored as
  * one, the castle's footprint is a wall from outside, so the body came back
@@ -48698,6 +49326,7 @@ function autosaveNow(spot) {
   saveCheckpoint(spot);
 }
 function saveCheckpoint(spot) {
+  if (tmpCut) return;                  // (never mid-flight: the crow's cut ends on the dune and saves there itself)
   calmChasers();
   const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
   const data = {
@@ -48784,7 +49413,7 @@ function saveCheckpoint(spot) {
        * fight you have already won does not un-happen when you load, and a
        * sword you have already taken off its stand is not on it again. */
       dojoWon, heroSword: heroSwordTaken,
-      elvStage: elvStage === 2 ? 2 : elvStage, elvJar: elvJarGiven, elvGreeted, elvLantern, elvBurned, elvFridge: elvFridgeTaken, crowGone,
+      elvStage: elvStage === 2 ? 2 : elvStage, elvJar: elvJarGiven, elvGreeted, elvLantern, elvBurned, elvFridge: elvFridgeTaken, crowGone, tmpFlown,
       fortFarm: farmFight.done,           // the twenty in the castle's houses: all down, stays down
       /* AND A BOX YOU BROKE STAYS BROKEN. It was never on the save, which
        * did not matter while the crate only held a ring the beach could do
@@ -49192,7 +49821,7 @@ function updateRestore(dt) {
    * carried him (2) put him back in your arms only once his model had loaded — and it loads at the house, so a load
    * anywhere else had him in nobody's arms and off his bed: gone. One that had run (4, the man dead) had nowhere to be.
    * Either comes back sat on the bed for the taking.) */
-  elvStage = f.elvStage || 0; if (elvStage === 2 || elvStage === 4) elvStage = 1; elvJarGiven = !!f.elvJar; elvGreeted = !!f.elvGreeted || elvStage > 0; elvLantern = !!f.elvLantern; elvBurned = !!f.elvBurned; elvFridgeTaken = !!f.elvFridge; crowGone = !!f.crowGone; crowReset();
+  elvStage = f.elvStage || 0; if (elvStage === 2 || elvStage === 4) elvStage = 1; elvJarGiven = !!f.elvJar; elvGreeted = !!f.elvGreeted || elvStage > 0; elvLantern = !!f.elvLantern; elvBurned = !!f.elvBurned; elvFridgeTaken = !!f.elvFridge; crowGone = !!f.crowGone; crowReset(); tmpFlown = !!f.tmpFlown; if (tmpModuleIn) tmpReset();
   if (f.fortFarm) farmRetireAll();
   if (f.catDoor) catDoorOpen = true;
   if (f.tavStore) { tavStoreOpen = true; if (tavStore) openTavStore(true); }
@@ -49270,7 +49899,7 @@ function packByName(name) {
   for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
                     syringeItem, waterBottleItem, fishingRodItem, magnumItem, shotgunItem, fangItem, oldRingItem,
-                    spliffItem, grammyItem, lostKeyItem, gemItem, whaleArtItem, storeKeyItem, flameArtItem, seaArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem, cellKeyItem, goldRingItem, connRingItem, screwdriverItem, flashlightItem, billyItem, mylesItem, gargKeyItem, maceItem, sewKeyItem, shockRingItem]) {
+                    spliffItem, grammyItem, lostKeyItem, gemItem, whaleArtItem, storeKeyItem, flameArtItem, seaArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem, cellKeyItem, goldRingItem, connRingItem, screwdriverItem, billyItem, mylesItem, gargKeyItem, maceItem, sewKeyItem, shockRingItem]) {
     if (it === beachMapItem && !BEACH_MAP_ON) continue;                            // the chart is out for now
     if (it && (it.name === name || (it.was && it.was.includes(name)))) return it;   // `was`: what a save made before a rename calls it
   }
@@ -49462,13 +50091,13 @@ function castleSeaK() {
   return CASTLE_WALLS / (1 + Math.max(0, castleSeaD() - CASTLE_SEA_NEAR) / CASTLE_SEA_FALL);
 }
 function beachBedK() {
-  if (indoors()) return 0;
+  if (indoors() || inTemple) return 0;          // (no sea in the desert)
   return (1 - 0.97 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 - 0.72 * wellAirK)   // in the well's fog the sea goes a long way off
     * castleSeaK();
 }
 function windBedK() {
   if (indoors()) return 0;
-  return (1 - 0.9 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 + 0.9 * airGust) * (1 - 0.45 * wellAirK);
+  return (1 - 0.9 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 + 0.9 * airGust) * (1 - 0.45 * wellAirK) * (inTemple ? 1.5 : 1);   // (the desert's wind is the loudest thing in it)
 }
 function updateBeachBed() {
   const ctx = audioCtx; if (!ctx) return;
@@ -50366,7 +50995,7 @@ function animateFrame() {
   /* and in the whale's belly, the deep, or any room you reach through a cut, for you to leave it (2026-11-13: loaded into the
    * tavern, the drain's far warm ran the frame the black lifted — a 237 ms frame for a room nobody there can see; the far
    * rest's warms are the beach's and come in on it after, paced, as after any checkpoint) */
-  else if (bgLoadMode && (inWhale || inDeep || inKeep || inTavern || inUndercroft || inDojo || inCat || !!inBunker || inThrone || inDun || inSewer)) { /* (`bwHoldHere` holds the whale's and the deep's parses too) */ }
+  else if (bgLoadMode && (inWhale || inDeep || inKeep || inTavern || inUndercroft || inDojo || inCat || !!inBunker || inThrone || inDun || inSewer || inTemple)) { /* (`bwHoldHere` holds the whale's and the deep's parses too) */ }
   else if (warmRunStep()) {
     if (bgLoadMode && performance.now() - warmRan < 1) bgLoadLast = performance.now();     // (stamped only when a step RAN this frame: a held compile reports "alive" every frame, and stamped then the parses never got a turn)
     /* one view of one room, and nothing else this frame — EXCEPT behind the
@@ -50440,7 +51069,7 @@ function animateFrame() {
   try { updateSkrimLife(rawDt); updateSkrimMood(rawDt); } catch (e) { bwFrameErr(e); }
   try { wbHookTick(rawDt); } catch (e) { bwFrameErr(e); }   // (his hook in the whale's side, and its chain in the wind)   // (Skrim digs and his light comes up through a dialogue's freeze)
   updateHatch(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updatePackTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); updateTempleCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updatePackTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -50483,7 +51112,7 @@ function animateFrame() {
   if (hRoll) camera.rotateZ(-hRoll);
   renderer.autoClear = false;
   // a film has nobody's hands in it: the whale's farewell is shown without what you are holding
-  if (!_cutCam && (viewmodel.visible || elvCarrying) && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t >= CRAB_T.cut)) {   // (and the puppet in your arms, which is not a held item)
+  if (!_cutCam && (viewmodel.visible || elvCarrying) && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t >= CRAB_T.cut) && !tmpCut) {   // (and the puppet in your arms, which is not a held item)
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);
   }
@@ -54902,6 +55531,7 @@ function renderShop() {
     (have > 0 ? `<div class="have">You have ${have}</div>` : '') +
     (r ? `<button class="buy${st.poor ? ' poor' : ''}"${st.ok ? '' : ' disabled'}>${st.label}</button>` : '') +
     (shopMode === 'sell' && have > 1 ? `<button class="buy all">Sell all ${have} · +${jarsTxt(have * r.price)}</button>` : '');
+  pvAttach(it, shopDetailEl.querySelector('.pic'));          // (the thing itself, turning: the pack's live view)
   const btns = shopDetailEl.querySelectorAll('.buy');
   if (btns[0]) btns[0].addEventListener('click', shopConfirm);
   if (btns[1]) btns[1].addEventListener('click', () => {
@@ -78223,6 +78853,7 @@ function clearRoomFlags() {
   if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
   if (inSewer) placeOutOfSewer();
   if (inDeep) placeOutOfDeep();
+  if (inTemple) placeOutOfTemple();
 }
 const ROOM_BACK = {
   /* `spots` are the doors a save can be written at, and each is the SAME
@@ -78299,6 +78930,10 @@ const ROOM_BACK = {
            place: () => placeInSewer(), seat: () => {}, spots: { sewIn: () => {} } },
   /* and the deep, from the moment the line snaps (2026-11-13, the owner: "add checkpoint when the fishing rod snaps in
    * the water too"): at the bottom of the long pull, the line gone, before it comes (`deepSnapSave`, `deepRestore`) */
+  // the desert the stump's crow takes you to (2026-11-18): standing where you were, or at the screenshot
+  tmp:  { grp: () => tmpWorld, at: () => [TMP_X, TMP_Z], ready: () => tmpReady, load: () => loadTemple(),
+          place: () => placeInTemple(), seat: (p) => { tmpLastFloor = p[1] - playerEye(); tmpLastSpot.x = p[0]; tmpLastSpot.z = p[2]; },
+          spots: {} },
   deep: { grp: () => deep.world, at: () => [DEEP.x, DEEP.z], ready: () => plio.ready && !!deep.world && ((!!dead.gltf && deadSkinsIn()) || dead.failed), load: () => { bwSoon('assets/pliosaur.glb'); plioLoad(); deepAmbLoad(); deadLoad(); },
           place: () => deepRestore(), seat: () => {}, spots: { deepSnap: () => {} } },
 };
@@ -80112,22 +80747,29 @@ function buildTavPlank() {
  * and he drops his quarrel and turns on you for it, which is what a bottle
  * thrown into a bar fight is for. It is the drone throw's own shape, at bar
  * scale. */
-function tavThrownHits() {
-  for (const u of tavPeople()) {
-    if (!u || !u.st.alive || !u.st.awake) continue;
-    const c = u.g.position, h = (u.kind.h || 1.8);
-    for (const p of physProps) {
-      if (!p.onImpact || p.dead || p.held || p.pinned || !p.mesh.parent) continue;
-      /* and only a thing YOU threw: a bottle the brawl knocked off a table is
-       * going just as fast, and it made the man it landed on "yours" — so he
-       * dropped his quarrel and came for you for something you never did. */
-      if (!p.thrown) continue;
-      const v = p.vel.length(); if (v < 3.2) continue;
-      const q = p.mesh.position;
-      if (Math.abs(q.x - c.x) > 0.75 || Math.abs(q.z - c.z) > 0.75) continue;
-      if (q.y < c.y + 0.25 || q.y > c.y + h) continue;
-      hurtMutant(u, 1, 0.4);                          // it is YOUR blow: the confirm, and he turns on you for it
-      p.onImpact(Math.max(6, v));
+function tavThrownHits() { thrownHits(); }   // (now `thrownHits`, for every creature in the game; also from `update`)
+/* AND EVERYWHERE ELSE TOO (2026-11-18, the owner: "have throwing a bottle at an enemy connect and hurt them also break on
+ * impact"). Only the tavern ever asked, and only of its own people while they were awake: a bottle thrown at anything else
+ * — a farmer, a knight, a mutant, a sleeping drinker — went through him. Now any thing YOU threw (`p.thrown`), moving
+ * faster than a lob, that reaches any living creature that is drawn — inside his body's own radius, between his knees and
+ * the top of his head — is a blow (`hurtMutant`: the confirm, it wakes him, he turns on you), 1, or 2 thrown hard; a thing
+ * that breaks (`onImpact`: a bottle, a pot, a castle prop) breaks ON him, and anything else bounces off and drops. One hit
+ * a throw. */
+function thrownHits() {
+  for (const p of physProps) {
+    if (!p.thrown || p.dead || p.held || p.pinned || !p.mesh.parent) continue;
+    const v = p.vel.length(); if (v < 3.2) continue;
+    const q = p.mesh.position;
+    for (const u of mutants) {
+      if (!u || !u.st || !u.st.alive || u.retired || !u.g.visible || u.st.struck) continue;
+      const c = u.g.position, r = Math.max(0.55, (u.kind.body || 0.45) + 0.3), h = (u.kind.h || 1.8);
+      if (Math.abs(q.x - c.x) > r || Math.abs(q.z - c.z) > r) continue;
+      if (q.y < c.y + 0.25 || q.y > c.y + h + 0.1) continue;
+      hurtMutant(u, v > 9 ? 2 : 1, 0.4);              // it is YOUR blow: the confirm, and he turns on you for it
+      p.thrown = false;
+      if (p.onImpact) p.onImpact(Math.max(6, v));
+      else { p.vel.x *= -0.25; p.vel.z *= -0.25; p.vel.y = Math.min(p.vel.y, 0) - 0.5; }   // off him, and down
+      break;
     }
   }
 }
@@ -82501,7 +83143,10 @@ function lifeApply(u, B, dt, saved) {
   if (S.fingers.length) {
     // a hand that is HOLDING something closes round it instead (`life.grip`, set by whoever owns the beat)
     // `life.grip` may be one number for both hands or `{ R, L }` — a man with a bottle in one fist and nothing in the other
-    const base = (u.kind.claws || 0) * (busy ? 1.35 : 1.0), G = S.grip;
+    /* (a kind with `handRest` has HANDS, not claws — every farmer, 2026-11-17, the owner: "i need every farmers hands fixed":
+     * open at rest, a fist once he is fighting; an empty hand of an armed man the same, his weapon hand its own grip) */
+    const HR = u.kind.handRest;
+    const base = HR != null ? (st.alive && st.awake ? u.kind.handFist : HR) : (u.kind.claws || 0) * (busy ? 1.35 : 1.0), G = S.grip;
     const curlR = G == null ? base : (typeof G === 'number' ? G : (G.R != null ? G.R : base));
     const curlL = G == null ? base : (typeof G === 'number' ? G : (G.L != null ? G.L : base));
     for (const f of S.fingers) { saved.push({ b: f.b, q: f.b.quaternion.clone(), p: null }); f.b.quaternion.multiply(_lfQ.setFromAxisAngle(f.ax || _lfX, f.sign * (f.R ? curlR : curlL) * f.k)); }
@@ -88141,6 +88786,11 @@ function dkBuildTravel(u) {
     A.rmStop = cs.map((f, i) => Bl[i] ? Bl[i].R + 0.2 : A.rmStop0 - (Z ? at(Z, f) : 0));
     A.rmYaw = cs.map((f, i) => Bl[i] ? THREE.MathUtils.clamp(Bl[i].b, -0.9, 0.9) : 0);
     A.stop = A.rmStop[0];
+    /* (AND THE LEAP COMES DOWN ON YOU, not at its sword's end — 2026-11-18, the owner: "his jump swing never land hes far
+     * away". Its stand-off is where the blade's TIP crosses your height + 0.2, which for the leap's long chop was 3.22 m: it
+     * grazed a man who stood still and missed one who stepped back. Swept (`dkStopSweepLeap`, twice): it lands at every
+     * stand-off from 1.5 to 3.3, near the middle of the picture. 2.4: on you, with a step of room either way.) */
+    if (k === 'dkLeap' && A.stop > 2.4) { A.stop = 2.4; A.rmStop[0] = 2.4; }
     // the forward step to the blow, and all the ground the feet cover on the way (`dkWalkSwing` shares its correction over it)
     const iH = Math.round(A.hit * (T.length - 1)); let path = 0; for (let j = 1; j <= iH; j++) path += Math.abs(T[j][1] - T[j - 1][1]);
     const s = T[iH][1], W = A.hold ? DK_WARP_HOLD : DK_WARP;
@@ -88290,9 +88940,10 @@ function dkTownFights(u, dt) {
   if (pest) { if (u.st.foe !== pest) { u.st.foe = pest; u.st.mine = false; dk.pickT = now; } }
   else if (u.st.foe) { u.st.foe = null; u.st.mine = true; dk.pickT = now; }
 }
+function kindIs(k, K) { return !!k && (k === K || k.base === K); }   // a kind, or its rage's copy of it (see the second wind)
 function updateDarkKnight(dt) {
   const u = dkSlot.unit;
-  if (!u || u.retired || u.kind !== MUT_KINDS.darkKnight) return;
+  if (!u || u.retired || !kindIs(u.kind, MUT_KINDS.darkKnight)) return;
   if (u.kind.natural && !u.natDone && u.clips && !(u.clipsPending > 0)) u.natDone = naturalSwings(u);
   if (u.natDone && !u.dkTravel && u.model && !(u.clipsPending > 0)) u.dkTravel = dkBuildTravel(u);   // (his swings' own travel, once: 2026-10-29)
   const W = u.texW || (u.texW = {});
@@ -88325,7 +88976,7 @@ function updateDarkKnight(dt) {
 }
 /* A CHECKPOINT IN THE STREET: the load's black waits until he is on it with his three (measured, 2026-10-19: put there
  * at 2.6 s, the black lifting at 3.1 — half a second from the owner's "i see them clip in") */
-bootStageHold = () => { const u = dkSlot.unit; return !!(inFort && u && u.kind === MUT_KINDS.darkKnight && u.st.alive && !u.retired && !dkSlot.out && !dkDone()); };
+bootStageHold = () => { const u = dkSlot.unit; return !!(inFort && u && kindIs(u.kind, MUT_KINDS.darkKnight) && u.st.alive && !u.retired && !dkSlot.out && !dkDone()); };
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { dkS: () => ({ dk, u: dkSlot.unit }), dkStage1, dkTurn, dkSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'darkKnight', y), mutSpawnTest: (x, z, kind, y = 0) => makeMutant(x, z, kind, y), mutantsS: () => mutants, magAmmoS: () => ({ ammo: magAmmo, t: magT, busy: magBusy(), sg: sgCh.slice() }), loadGunsTest: () => { magAmmo = 6; sgCh = [1, 1]; } }));
 
 /* =====================================================================
@@ -88699,7 +89350,7 @@ function minoFoes() {
   if (inFort) {
     for (const f of farmUnits) if (f.st.alive && !f.retired && f.farm && f.farm.out && !f.farm.burst && f.st.awake && f.g.visible) L.push(f);
     const d = dkSlot.unit;
-    if (d && d.kind === MUT_KINDS.darkKnight && d.st.alive && !d.retired && dkSlot.out && d.g.visible) L.push(d);
+    if (d && kindIs(d.kind, MUT_KINDS.darkKnight) && d.st.alive && !d.retired && dkSlot.out && d.g.visible) L.push(d);
   }
   // (`visible !== false`, as three draws it: the light knight's was `undefined` — drawn, but never on his list; measured,
   // `knDuel`, the owner's "the minataur doesnt even fight when im attacking the knights")
@@ -88725,8 +89376,12 @@ function minoPickFoe(u, dt) {
     // (not a man the dark knight is already cutting down: he was gone by the time the blow came, and it fell on air)
     if (D && D !== f && D.st.alive && D.st.foe === f && D.st.atk >= 0) continue;
     const dU = Math.hypot(f.g.position.x - P.x, f.g.position.z - P.z), dMe = Math.hypot(f.g.position.x - me.x, f.g.position.z - me.z);
-    if (dU > 24 || dMe > 16) continue;                                    // (at your side: not off down the street on his own)
-    const sc = -dU - dMe * 0.4 + (f.st.foe === u ? 3 : 0) + (!f.st.foe && dMe < 4 ? 5 : 0) - (minoSpent(f) ? 30 : 0) + (f.kind === MUT_KINDS.darkKnight ? 6 : 0) + (f.knOnMino ? 8 : 0);   // (the knight first: he is the street's real fight; in XIII, the one on him)
+    // (at your side: not off down the street on his own — but a man who is ON HIM he fights wherever you are: 2026-11-18, the
+    // owner, "make myles actually attack the paladin too he just stands there when hes the only enemy left". Measured,
+    // `minoPaladin`: he fought the paladin 90 → 42, the fight drifted past 16 m from you, and he stood idle with the paladin
+    // still swinging at him)
+    if (dU > 24 || (dMe > 16 && f.st.foe !== u)) continue;
+    const sc = -dU - dMe * 0.4 + (f.st.foe === u ? 3 : 0) + (!f.st.foe && dMe < 4 ? 5 : 0) - (minoSpent(f) ? 30 : 0) + (kindIs(f.kind, MUT_KINDS.darkKnight) ? 6 : 0) + (f.knOnMino ? 8 : 0);   // (the knight first: he is the street's real fight; in XIII, the one on him)
     if (sc > bs) { bs = sc; best = f; }
   }
   if (best !== u.st.foe) { u.st.foe = best; if (best) { MINO.pickT = 2.5; u.st.awake = true; u.st.mine = false; } }
@@ -88763,7 +89418,7 @@ function minoDraws(u, dt) {
      * awake, the iron knight is woken onto him, unless he is already yours.) */
     if (!on && knUnits.some((k) => k.st.alive && k.st.awake)) {
       const free = knUnits.filter((k) => k.st.alive && !k.retired && !k.knYours);
-      on = free.find((k) => k.kind === MUT_KINDS.knIron) || free.find((k) => k.st.awake) || null;
+      on = free.find((k) => kindIs(k.kind, MUT_KINDS.knIron)) || free.find((k) => k.st.awake) || null;
       if (on) on.knOnMino = true;
     }
     if (on && on.st.foe !== u && on.st.atk < 0) { on.st.foe = u; on.st.mine = false; on.st.awake = true; }
@@ -90726,7 +91381,8 @@ function updateGargRaid() {
       if (u.kind.voice.voxT) u.kind.voice.voxT.shout = -99;
       // said only once it has actually started (a mouth busy or a bank not in: the next frame, for up to 4 s)
       R.tries = (R.tries || 0) + 1;
-      R.voiced = farmVox('shout', u.kind.voice, { x: R.x, z: R.z, p: 1 });
+      // (louder, and from the doorway they come through, panned all the way: 2026-11-18, the owner: "make the rare phrase when the farmers attack after the gargoyles louder it should be heard in the direction they are coming from")
+      R.voiced = farmVox('shout', u.kind.voice, { x: R.x, z: R.z, p: 1, boost: 3.5, panK: 1, force: true });
       R.said = R.voiced || R.tries > 240;
     }
   }
@@ -92735,9 +93391,8 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
 
   /* THE GLOWSTICK on the ledge by the generator, cracked and lying there lit: in the dark after the power goes it is the
    * one light at the far end, and the thing you walk to (2026-11-14, the owner: "change the flashlight to the glowstick
-   * item" — the angle-head flashlight that lay here from 2026-10-23 is gone; a save that already took it keeps it). Its
-   * save flag is `glow`, as it always was. The sewer's spot light stays built (and dark): a flashlight carried from an old
-   * save still throws its beam with it (`updateFlashlight`). */
+   * item" — the angle-head flashlight that lay here from 2026-10-23 is gone, and since 2026-11-18 gone from the game). Its
+   * save flag is `glow`, as it always was. (The sewer's spot light for a carried flashlight went with it, 2026-11-18.) */
   {
     const fl = makeGlowstick(); fl.position.set(-1.95, S.WALK + 0.03, S.GEN_Z - 0.38); fl.rotation.y = 0.7; W.add(fl);
     fl.traverse((o) => { if (o.isSprite) o.raycast = () => {}; });
@@ -92747,9 +93402,7 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
     const hp = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
     hp.name = 'hitProxy'; hp.visible = false; hp.position.y = 0.05; fl.add(hp);
     addItemShine(fl, { ...DROP_SHINE, height: 0.3 });
-    sewP.glow = fl; sewP.flashLedge = false;
-    const spot = new THREE.SpotLight(FLASH.COLOR, 0, FLASH.RANGE, FLASH.ANGLE, FLASH.PEN, FLASH.DECAY);
-    W.add(spot, spot.target); sewP.flash = spot;
+    sewP.glow = fl;
     addInteractable(fl, 'Take the glowstick', 'default', {
       when: () => inSewer && !sewGlowTaken,
       onActivate: () => { sewGlowTaken = true; sfxGlassPick(); fl.removeFromParent(); removeInteractable(fl); hovered = null; gainGlowstick(); },
@@ -93236,7 +93889,6 @@ function sewApplyState() {
   if (sewP.ringWorld) sewP.ringWorld.visible = sewChestOpen && !sewRingTaken;
   (sewP.floorJars || []).forEach((j, i) => { const gone = !!((sewFloorJars >> i) & 1); j.visible = !gone; if (gone) removeInteractable(j); });
   if (sewGlowTaken && sewP.glow && sewP.glow.parent) { sewP.glow.removeFromParent(); removeInteractable(sewP.glow); }
-  if (sewGlowTaken) { sewP.flashLedge = false; flashlightModel.userData.ledgeOn = false; }
 }
 function sewRestore(s) {
   s = s || {};
@@ -93706,14 +94358,6 @@ function updateSewer(dt) {
   sewP.boxLight.intensity = live ? 0.4 + 0.02 * Math.sin(now * 2.3) + zap * 0.35 : 0;
   sewP.floodMat.emissiveIntensity = live ? zap * 0.04 : 0;   // (the web carries the light now, `floodU`)
   if (sewP.floodU) sewP.floodU.value.x = live ? Math.max(0, sewP.floodU.value.x - dt * 7) : 0;
-  // the flashlight on the ledge: its beam back up the tunnel, the lens lit, stuttering like the one in your hand will
-  if (sewP.flashFill && sewP.flashFill()) sewP.flashFill = null;
-  if (sewP.flashLedge && sewP.flash) {
-    const F = sewP.flash, A = sewP.flashAt;
-    F.position.copy(A.lens); F.target.position.copy(A.lens).addScaledVector(A.aim, 6);
-    F.intensity = FLASH.INT * 0.75 * (flashFlick > 0 ? 0.5 : 1);
-    flashlightModel.userData.ledgeOn = true;
-  }
   // the gate swings in, the lid comes up
   if (sewDoor2Open) { sewLairTick(dt, now); sewLairScareTick(dt); }
   if (sewDoor2Open && sewDoor2Swing < 1 && sewP.door2) { sewDoor2Swing = Math.min(1, sewDoor2Swing + dt / 1.6); sewP.door2.rotation.y = SEW_DOOR2_OPEN * (1 - Math.pow(1 - sewDoor2Swing, 3)); }   // (heavy: it goes slowly and settles)
@@ -93727,10 +94371,8 @@ function updateSewer(dt) {
     for (const lp of sewP.lamps) srcs.push([lp.L.position, lp.L.color, lp.L.intensity]);
     srcs.push([sewP.boxLight.position, sewP.boxLight.color, sewP.boxLight.intensity], [sewP.zap.position, sewP.zap.color, sewP.zap.intensity]);
     _sewHeld.set(heldGlow.position.x - SEW_X, heldGlow.position.y - SEW_Y, heldGlow.position.z - SEW_Z);
-    // (the glowstick in your hand, or the flashlight's beam a couple of metres out, where the dust in it is lit)
-    const F = sewP.flash;
-    if (F && F.intensity > 0.05) { _sewHeld.copy(F.target.position).sub(F.position).normalize().multiplyScalar(2.2).add(F.position); srcs.push([_sewHeld, F.color, F.intensity * 0.05]); }
-    else srcs.push([_sewHeld, heldGlow.color, heldGlow.intensity * 0.6]);
+    // (the glowstick in your hand)
+    srcs.push([_sewHeld, heldGlow.color, heldGlow.intensity * 0.6]);
     for (let k = 0; k < U.uL.value.length; k++) {
       const s = srcs[k];
       if (s && s[2] > 0.01) { U.uL.value[k].copy(s[0]); U.uLC.value[k].set(s[1].r * s[2], s[1].g * s[2], s[1].b * s[2]); }
@@ -93996,7 +94638,7 @@ function sewElectrocute() {
     z = yaw === 0 ? Math.min(z, 16.3 - 2.9) : Math.max(z, SEW.CH_END + 3.1);
   }
   sewMonDead = true; sewMonDeadAt = { x, z, yaw }; sewP.backKeySet = false;
-  M.deadT = 0; M._deadPosed = false; M.press = 0; flashDread = 0;
+  M.deadT = 0; M._deadPosed = false; M.press = 0;
   if (M.aud) { M.aud.g.gain.value = 0; M.aud.tin.gain.value = 0; }
   setTimeout(() => { if (inSewer) sfxSewDeath(x, z); }, 420);
 }
@@ -94512,7 +95154,7 @@ function sewMonSpray(x, z, k) {
 function sewMonReset(leaving = false) {
   const M = sewMon; if (!M) return;
   M.st = 'off'; M.t = 0; M.h = SEWMON.HID; M.g.visible = false; M.flare = 0; M.intro = -1; M.faceL.intensity = 0;
-  M.placed = false; M.path = null; M.press = 0; flashDread = 0; M.seenT = 0; M.hunt = 0;
+  M.placed = false; M.path = null; M.press = 0; M.seenT = 0; M.hunt = 0;
   // (its sound runs only while you are down there: leaving, the loops are stopped and let go, not left at nought)
   if (M.aud) {
     M.aud.tin.gain.value = 0;
@@ -94914,10 +95556,9 @@ function sewMonTick(dt) {
   const brR = upNow ? 13 : 9, brNear = M.placed && M.st !== 'dive' && M.st !== 'sink' ? Math.pow(THREE.MathUtils.clamp(1 - dist / brR, 0, 1), 1.2) : 0;
   if ((M.brIn -= dt) <= 0 && brNear > 0.03) { M.brIn = 4.2 + Math.random() * 2.2; sewMonBreath(brNear, !upNow || M.h < SEWMON.PEEK); }
   /* THE PRESSURE: the longer it has been coming up unseen, the louder and quicker your heart and the thin ringing in your
-   * ears; caught, it drains away. And the torch goes with it (`flashDread`). */
+   * ears; caught, it drains away. */
   const up = M.st === 'rise' ? Math.min(1, M.t / k(SEWMON.RISE)) : M.st === 'linger' ? 0.45 : 0;
   M.press += ((up > 0 ? up : 0) - M.press) * Math.min(1, dt * (up > M.press ? 1.6 : 2.8));
-  flashDread = (M.st === 'rise' || M.st === 'linger') ? THREE.MathUtils.clamp(1 - dist / 14, 0, 1) * (0.3 + 0.7 * up) : flashDread * Math.max(0, 1 - dt * 3);
   if (M.press > 0.08 && (M.hbIn -= dt) <= 0) {
     M.hbIn = 60 / (62 + 70 * M.press);
     sfxSewHeart(0.04 + 0.22 * M.press * M.press);
@@ -95068,7 +95709,7 @@ function sewScareTick(dt) {
   lookEuler.setFromQuaternion(camera.quaternion);
   { const near = sewMonEyes(); for (const e2 of M.eyes) e2.glow.material.opacity = 0.85 * (0.55 + 0.45 * near); }
   if (u >= 1 && !C.hit) {
-    C.hit = true; C.hitT = C.t; C.dir = new THREE.Vector3().copy(_smTip).sub(camera.position).normalize(); M.press = 0; flashDread = 0;
+    C.hit = true; C.hitT = C.t; C.dir = new THREE.Vector3().copy(_smTip).sub(camera.position).normalize(); M.press = 0;
     if (M.aud) M.aud.tin.gain.value = 0;
     sfxSewScream(); addTrauma(1); hurtFlash = 1; fovKick = Math.max(fovKick, 12);
   }
@@ -97828,7 +98469,7 @@ const CP_SITE_DEFS = {
     avoid: (lx, lz) => {
       if (Math.hypot(lx - FORT_GATE.xi, lz - FORT_GATE.zi) < 8) return true;           // inside the gate, and its leaves' swing
       if (Math.hypot(lx - FORT_DOOR.x, lz - FORT_DOOR.z) < 5) return true;            // the back door, and the way to it
-      for (const D of farmDoors) if (Math.hypot(lx - D.cx, lz - D.cz) < 2.8) return true;   // a house's door (its middle, the castle's frame): a farmer comes out of it
+      for (const D of farmDoors) if (Math.hypot(lx - D.cx, lz - D.cz) < 4.5) return true;   // a house's door (its middle, the castle's frame): a farmer comes out of it (2.8 until 2026-11-18, the owner: "the breakables in the castle dont have to be inside where the farmers come from only where you fight")
       if (cpFeatNear(fortWorld, lx, 1.3, lz, 1.5, 1.0, cpFortDoorMats())) return true;   // and every other door in it, in the farmers' doors' own materials
       if (fortLife) for (const q of fortLife.props) if (Math.hypot(lx + FORT_X - q.x, lz + FORT_Z - q.z) < 2.0) return true;   // the braziers
       return false;
@@ -97839,6 +98480,7 @@ const CP_SITE_DEFS = {
      * roof — so here everything stands under the sky, against a wall where one is in reach and at the street's own edge
      * where the eaves start where it is not) */
     sky: true,
+    fightOnly: true,   // and nothing near a ROOF at all: only the open street you fight in (`cpFits`)
   },
   c13: {
     S: () => C13_SITE, X: () => C13_X, Y: () => C13_Y, Z: () => C13_Z, group: () => c13World, walk: () => c13Walk,
@@ -98021,6 +98663,20 @@ function cpFits(D, kind, x, z, fy, yaw, top) {
     if (!top) { if (!D.open(px, pz, !!D.sky)) { W.fOpen = (W.fOpen || 0) + 1; return false; } const f = D.floor(px, pz); if (f === null || Math.abs(f - fy) > 0.12) { W.fFloor = (W.fFloor || 0) + 1; return false; } }
   }
   if (keepWallNear(x, z, Math.max(0.12, Math.min(kind.hx, kind.hz) * 0.95), fy + 0.15, fy + Math.max(0.3, kind.h * 0.9), S)) { CP.why.fWall = (CP.why.fWall || 0) + 1; return false; }
+  /* ONLY WHERE YOU FIGHT (2026-11-18, the owner: "dont have to be inside where the farmers come from"): mapped from above
+   * (`cpMap`), eight of the first castle's stood under the arcades and in the houses' doorways. A wall behind a prop is
+   * fine (not walkable at all); walkable floor round it that is mostly under a roof is a house or an arcade: refused. */
+  if (!top && D.fightOnly) {
+    // (every point under a roof within 1.4 m refused them ALL: the eaves run a strip along every wall of the street. So: of
+    // the walkable floor round it, at 1 and 2 m, most must be under the sky — a street, not an arcade or a doorway)
+    let walk = 0, sky = 0;
+    for (const r of [1.0, 2.0]) for (let k = 0; k < 12; k++) {
+      const a = k * Math.PI / 6, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      if (!D.open(px, pz, false)) continue;
+      walk++; if (D.open(px, pz, true)) sky++;
+    }
+    if (!walk || sky < walk * 0.8 || !D.open(x, z, true) || D.avoid(x - D.X(), z - D.Z())) { CP.why.fRoof = (CP.why.fRoof || 0) + 1; return false; }   // (and each prop clear of the doors, not only its scene's spot)
+  }
   return true;
 }
 /* A CASTLE'S PROPS ARE BUILT AS A JOB (the scan is tens of thousands of wall queries): a few milliseconds a frame from
@@ -98100,6 +98756,7 @@ function cpLayScene(site, s, items) {
     if (!sup && site.props.some((q) => !q.on && Math.hypot(q.x - x, q.z - z) < q.kind.r * 0.75 + kind.r * 0.75)) { made.push(null); continue; }
     if (sup && (kind.hx > sup.kind.hx * 1.05 || kind.hz > sup.kind.hz * 1.05) && !sup.kind.K.round) { /* (wider than what it stands on) */ }
     const P = { site: site.id, kind, x, z, y: base, fy, yaw, tilt: 0, on: sup, dead: false, fill: null, wn: [s.nx, s.nz] };
+    if (it.lean && D.fightOnly) { made.push(null); continue; }   // (not in the first castle's fight: on the open street's edge there is no stone to lean on and it stood in the air — 2026-11-18, the owner: "take out the floating wooden wheel in the farmers fight section")
     if (it.lean) {
       // a wheel stood on its rim against the stone, leaning back into it
       const T = 0.22;
@@ -99369,7 +100026,7 @@ MUT_KINDS.dante = {
   // (`vol` 2.8, 2026-11-17, the owner: "TURN UP … DANTES SOUNDS I SENT": his hurt went out at ~0.7 of the take, under where the
   // farmers' cry was measured buried at the speakers — `tools/farmhitlvl.sh` — so all of him ~+9 dB; 3.4 the same day, "A LITTLE
   // LOUDER ESPECIALLY HIS FIRST SCREAM IN THE CUTSCENE NOT TOO MUCH": +1.7 dB, and that scream's own play 2.8 → 4.0, +3 dB)
-  voice: { f: 0.70, growl: 1.6, rasp: 1.3, throat: 'bellow', vol: 3.4, rec: { roar: 'danteChain', hurt: 'danteHit', tell: 'danteHit', die: 'danteDeath' } },   // the owner's recordings, through `mutVox`
+  voice: { f: 0.70, growl: 1.6, rasp: 1.3, throat: 'bellow', vol: 3.4, thud: true, rec: { roar: 'danteChain', hurt: 'danteHit', tell: 'danteHit', die: 'danteDeath' } },   // the owner's recordings, through `mutVox`
 };
 // where it stands (room-local): on the marauder's right at the foot of the dais, turned a little toward the hall's middle
 const DANTE_SPOT = { x: -2.30, z: -1.30, yaw: 0.30 };
@@ -102670,8 +103327,10 @@ function updateIsleMagic(dt) {
   const want = near ? 1 : 0, wantTop = near && isleOnGallery ? 1 : near && insideTower ? 0.25 : 0;
   isleMagicK += (want - isleMagicK) * Math.min(1, dt * (want > isleMagicK ? 0.55 : 1.5));
   if (oceanFar) {
-    oceanFar.visible = near || isleMagicK > 0.003 || !!crabCut;   // the far sea, wherever the air is clear enough to see it
-    if (oceanFar.visible) oceanFar.userData.skirt.scale.y = Math.max(2, camera.position.y - OCEAN_Y + 2);   // up to the eye: the horizon's band, filled
+    /* (and under the crow's flight, 2026-11-18, the owner: "an endless sea … i can see the end where the world cuts off": a
+     * hundred and fifty metres up, the 2.2 km tile's edge and the bare sky under the horizon were in view) */
+    oceanFar.visible = near || isleMagicK > 0.003 || !!crabCut || (!!tmpCut && !tmpCut.room);   // the far sea, wherever the air is clear enough to see it
+    if (oceanFar.visible) oceanFar.userData.skirt.scale.y = Math.max(2, camera.position.y - OCEAN_Y + 2, tmpCut && !tmpCut.room ? 180 : 0);   // up to the eye: the horizon's band, filled (in the crow's flight up to its ceiling of cloud, 172 m)
   }
   isleTopK += (wantTop - isleTopK) * Math.min(1, dt * 0.6);
   if (isleMagicK < 0.003) { isleMagicK = 0; oceanUniforms.uCalm.value = 0; if (isleMagicG.visible) isleMagicG.visible = false; isleMagicWind(0); return; }
@@ -103817,6 +104476,7 @@ function isleRestoreAt(x, y, z) {
 let danteUnit = null;
 {
   danteUnit = makeMutant(THR_X + DANTE_SPOT.x, THR_Z + DANTE_SPOT.z, 'dante', THR_Y + 2.69);
+  danteUnit.kind.voice.unit = danteUnit;   // (his feet ask how fast he is going: `sfxMutStep`'s thud)
   danteUnit.g.rotation.y = DANTE_SPOT.yaw;
   danteUnit.g.visible = false;
 }
@@ -108679,6 +109339,11 @@ function buildTavDrinkers() {
   for (const u of tavDrinkers) u.drink.mate = tavDrinkers.find((o) => o !== u && o.drink.table === u.drink.table) || null;
 }
 const TAV_DRINK_SEAT = 0.04;    // his origin a little forward of the chair's middle (−0.07 until 2026-11-17: measured, his back went 4-8 cm through the backrest's slats)
+/* AND EVERY OTHER TAVERN FARMER'S HANDS ARE HANDS TOO (2026-11-17, the owner: "fix all their hands like you did for the ones
+ * sitting"). Bare-handed, a farmer's fingers take the brawlers' claw (`claws` 1.25, ×1.35 in a blow): the dancers danced
+ * with hooked fingers and a drinker who got up kept a half-open left. At rest — dancing, standing about — the drinkers'
+ * flat hand; in a fight, a fist closed as hard as the one round the bottle. */
+const TAV_REST_HANDS = { R: 0.32, L: 0.32 }, TAV_FIST_HANDS = { R: 1.0, L: 1.0 };
 const TAV_DRINK_HANDS = { R: 1.0, L: 0.32 };   // (L 0.55: a hand flat on the boards is barely curled)   // the fist round the bottle, and a hand at rest (per-hand `life.grip`)
 function tavDrinkerProvoke(src, by) {
   const other = by && by.st && !tavDrinkers.includes(by) ? by : null;     // a man from the bar; else it was you
@@ -108736,6 +109401,7 @@ function updateTavDrinkers(dt) {
       tavLeftHand(u);                              // and the other hand on the table
       continue;
     }
+    if (u.life) u.life.grip = u.st.awake ? TAV_FIST_HANDS : TAV_REST_HANDS;   // up off the chair: a fist to fight, a hand to stand about
     /* THE MAN WHO BROKE THEIR TABLE IS DOWN, AND THAT WAS THE QUARREL. They
      * stand about after; hit one and it starts again, with you. */
     if (u.st.awake && !u.st.mine && u.st.roar <= 0) {
@@ -108829,6 +109495,7 @@ function tavDancerProvoke(src) {
 function updateTavDancers(dt) {
   if (!tavDancers.length) buildTavDancers();
   for (const u of tavDancers) {
+    if (u.life && u.st.alive) u.life.grip = u.st.awake ? TAV_FIST_HANDS : TAV_REST_HANDS;   // a dancer's hands are open; a fight's are fists
     const D = u.dance; if (!D || !u.st.alive || u.st.awake || !u.mixer || !u.clips) continue;
     const a = u.clips[u.kind.dance]; if (!a) continue;
     u.g.position.x = D.x; u.g.position.z = D.z; u.g.rotation.y = D.yaw;
@@ -108963,6 +109630,10 @@ function tavProvoke(u, quiet) {
     wongUnit.st.vault = { t: 0, x0: wongUnit.g.position.x, z0: wongUnit.g.position.z,
       x1: TAV_X + TAV_VAULT_TO.x, z1: TAV_Z + TAV_VAULT_TO.z, y: wongUnit.g.position.y };
     wongUnit.st.roar = 0; wongUnit.holdAnim = true;
+    /* AND THE ORC LAUGHS AT HIM (2026-11-18, the owner: "make the orc do the laugh sound when wong jumps over the bar"): the
+     * one man's laugh the game has (the samurai's, `samLaugh`), slowed to the orc's size, from where the orc stands, as Wong
+     * leaves the floor. Not on a restore's quiet provoke. */
+    if (!quiet && orcUnit && orcUnit.st.alive) playSampleAt('samLaugh', orcUnit.g.position.x, orcUnit.g.position.z, { gain: 1.6, ref: 9, far: 45, rate: 0.82, jitter: 0.03, delay: 0.25 });
   }
   tavScene.phase = 9;
   if (tavMug && tavMug.parent) tavMugSmash();
@@ -109620,6 +110291,7 @@ const FARM_BASE = {
    * thumb, the same on all five files to a few hundredths). Its hands are not mirror images in their own frames, so the
    * left is named as well. (The old farmers' was [0, 0, 1] on both.) */
   palm: [0.9, 0, -0.42], palmLeft: [-0.9, 0, -0.42], mitten: true,
+  handRest: 0.32, handFist: 1.0,   // a man's hand, not the brawlers' claw (`claws` is no longer read for a farmer's fingers): the drinkers' flat hand at rest, their bottle fist in a fight
   natural: true,      // their Mixamo swings play at the clip's own speed (`naturalSwings`)
   solo: true, fortBody: true, farmer: true, noSand: true, gaitBySpeed: true, velGait: true, gaitMax: 1.7, lungeK: 0.55, headPop: true, faceFix: 0, facingRef: 'mixamo',
   windWalkK: 0.35, smoothMove: true,   // (the wind-up's glide in cut to a third, the closing eased: "slide around … less")
@@ -110001,7 +110673,7 @@ function authorFarmerClips(u, m) {
   }
   farmArm(u, m);
   installLife(u, m, J);
-  if (u.life) u.life.grip = u.farmTool ? FARM_FIST : null;     // a fist round the handle; a bare hand is the claws' fist
+  if (u.life) u.life.grip = u.farmTool ? { R: FARM_FIST } : null;     // a fist round the handle; the other hand (and a bare one) by `handRest` / `handFist` (FARM_FIST on both until 2026-11-17: the empty hand was a hard claw)
   if (u.farmTool) { farmCurlToHandle(u, m); farmSeatTool(u, m, FARM_FIST); u.farmToolBase = { p: u.farmTool.position.clone(), q: u.farmTool.quaternion.clone() }; }
   u.packList = u.packList || farmUnits;
   const mc = farmMocap(u, R0);
@@ -110886,6 +111558,67 @@ function farmToolRoll(u, dt) {
   if (tipB) { if (!R.tip) R.tip = new THREE.Vector3(); tipB.getWorldPosition(R.tip); }
   mesh.position.copy(B.p); mesh.quaternion.copy(B.q);
   if (Math.abs(R.ang) > 0.003) mesh.quaternion.multiply(_fwrR.setFromAxisAngle(W.ax, R.ang));   // about the handle's own line: the grip stays put
+  u.farmCarried = false;                 // the seat (and the swing's turn) is fresh this frame: the carry goes on top of it (`farmCarryAll`)
+}
+/* A MAN CARRIES HIS WEAPON; HE DOES NOT LET THE RUN SWING IT (2026-11-18, the owner: "make them actually hold their weapons
+ * better … they run with there weapons facing all weird directions look up how people hold and swing weapons"). Between
+ * blows the weapon was fixed in the fist at its seat, so it went wherever the run's arm-pump put the hand: blades back
+ * over the shoulder, down at the knee, out sideways. A man running with one holds it STILL in front of him and lets the
+ * arm move under it: a sword up and forward from a low guard, point high and its edge to the front; an axe or a mace
+ * head-up before the shoulder, haft upright, the face to the front; a spear levelled at whatever he is running at, point
+ * a little high. Outside a swing the weapon is eased into that carry about the point in his fist (the grip does not move);
+ * the moment a swing starts it eases back out, fast, to the seat the swings and their reach were measured on — the blows
+ * are exactly what they were. Directions in his own frame: forward, up, his right. */
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { FARM_CARRY }));
+const FARM_CARRY = {
+  sword:  { f: 0.55, u: 0.80, r: 0.12 },
+  axe:    { f: 0.28, u: 0.93, r: 0.10 },
+  hammer: { f: 0.28, u: 0.93, r: 0.10 },
+  rake:   { f: 0.93, u: 0.30, r: 0.06 },
+};
+const _fcyQ = new THREE.Quaternion(), _fcyP = new THREE.Quaternion(), _fcyD = new THREE.Quaternion(), _fcyM = new THREE.Matrix4();
+const _fcyX = new THREE.Vector3(), _fcyY = new THREE.Vector3(), _fcyZ = new THREE.Vector3(), _fcyF = new THREE.Vector3(), _fcyG = new THREE.Vector3(), _fcyS = new THREE.Vector3();
+/* run AFTER the creatures' mixers (`update` → `updateMutant`): the carry is set against where the hand IS this frame — before
+ * them, it was a frame behind the run's arm and shook */
+function farmCarryAll(dt) {
+  if (inFort) for (const u of farmUnits) if (u.farmTool && u.farm && u.farm.out && u.g.visible) farmCarry(u, dt);
+  if (inC13 && gargRaid) for (const u of gargRaid.units) if (u.farmTool && u.st.alive && u.g.visible) farmCarry(u, dt);   // the four through XIII's door carry theirs the same way
+}
+function farmCarry(u, dt) {
+  const mesh = u.farmTool, B = u.farmToolBase, C = FARM_CARRY[u.kind.tool];
+  if (!mesh || !B || !C || !mesh.parent || !u.farmGrip) return;
+  if (u.farmCarried) { mesh.position.copy(B.p); mesh.quaternion.copy(B.q); }   // (the roll did not run since the last carry: never carry a carry)
+  u.farmCarried = true;
+  const st = u.st;
+  const free = st.alive && !u.rag && !(st.atk >= 0) && !(st.stun > 0) && !((st.down || 0) > 0) && !(st.recoil > 0) && !st.vault;
+  const k = u.farmCarryK = (u.farmCarryK || 0) + ((free ? 1 : 0) - (u.farmCarryK || 0)) * Math.min(1, dt * (free ? 5 : 16));
+  if (k < 0.01) return;
+  /* "forward" is NOT his root's yaw: in the strafe clips the body stands side-on to it, up to 90° off (measured,
+   * `tools/probes.js farmFacing`: the hips' +Z square to the root mid-strafe), and a spear carried along the root went
+   * across his chest. A man closing on someone holds his weapon AT them: toward his foe while he fights, else the way his
+   * chest faces. (His right is -X when he faces +Z.) */
+  let fx = 0, fz = 0;
+  if (st.awake && st.alive) { const fp = mutFoePos(u); fx = fp.x - u.g.position.x; fz = fp.z - u.g.position.z; }
+  if (Math.hypot(fx, fz) < 0.3) {
+    if (u.farmChest === undefined) { u.farmChest = null; u.model && u.model.traverse((o) => { if (!u.farmChest && o.isBone && /Spine2(_|$)/.test(o.name)) u.farmChest = o; }); }
+    if (u.farmChest) { u.farmChest.updateWorldMatrix(true, false); _fcyF.set(0, 0, 1).transformDirection(u.farmChest.matrixWorld); fx = _fcyF.x; fz = _fcyF.z; }
+    if (Math.hypot(fx, fz) < 1e-3) { fx = Math.sin(u.g.rotation.y); fz = Math.cos(u.g.rotation.y); }
+  }
+  const fl = Math.hypot(fx, fz), sy = fx / fl, cy = fz / fl;
+  _fcyF.set(sy, 0, cy);
+  _fcyY.set(sy * C.f - cy * C.r, C.u, cy * C.f + sy * C.r).normalize();          // the handle, butt to head
+  _fcyX.copy(_fcyF).addScaledVector(_fcyY, -_fcyF.dot(_fcyY)).normalize();       // the edge / face: to the front, square to the handle
+  _fcyZ.crossVectors(_fcyX, _fcyY);
+  _fcyM.makeBasis(_fcyX, _fcyY, _fcyZ); _fcyD.setFromRotationMatrix(_fcyM);     // the carry, in the world
+  mesh.parent.updateWorldMatrix(true, false);
+  mesh.parent.getWorldQuaternion(_fcyP);
+  _fcyQ.copy(_fcyP).multiply(mesh.quaternion);                                    // the seat, in the world
+  _fcyQ.slerp(_fcyD, k);
+  // the point in his fist stays where it is: the grip, in the hand's frame, before and after
+  mesh.getWorldScale(_fcyS);
+  _fcyG.set(0, u.farmGrip.y, 0).multiply(mesh.scale).applyQuaternion(mesh.quaternion).add(mesh.position);
+  mesh.quaternion.copy(_fcyP.invert().multiply(_fcyQ));
+  mesh.position.copy(_fcyG).sub(_fcyS.set(0, u.farmGrip.y, 0).multiply(mesh.scale).applyQuaternion(mesh.quaternion));
 }
 /* THE FARMERS' ANIMATION, THINNED WHERE NOBODY IS LOOKING (2026-10-18, the owner: "performance in the castle is bad").
  * Twenty skinned men each ran their mixer every frame wherever they were — "the farmers' animation at 120 m" was the
@@ -111153,19 +111886,235 @@ function isArtWeapon(it) { return !!it && !!(it.onDig || it.gun); }
 // the WHALE'S weapon: the chain, the hold and the HUD are its alone (the flame's is `flameWeapon`)
 function artWeapon() { return isArtWeapon(equipped) && equipped.artifact && equipped.artifact === whaleArtItem ? equipped : null; }
 
-/* THE ARTIFACT IS A THING SOMEBODY MADE, NOT A SHAPE. The first one was a
- * smooth gold torus with twelve cone spikes round it and a white lathe in the
- * middle — every part a primitive with no surface on it, which is exactly
- * what the owner's "it looks like AI" was. A sailor's relic out of a whale's
- * belly is SCRIMSHAW: a disc of whalebone with a whale cut into it and the
- * cuts filled with lamp-black, set in a bronze bezel the sea has been at for
- * a century — verdigris in every recess, the high edges rubbed back to
- * metal, a crust of barnacles on one side, a tarred cord through the bail,
- * and the whale's eye inlaid with a stone that still holds a little of the
- * light from the heal. Every surface is DRAWN, colour and relief in one pass
- * (the wreck's rule: the line that is dark and the line that is deep are the
- * same line), so the engraving catches the light as the thing turns. */
-const ART_R = 0.040;                       // the bone face; the bezel stands proud round it
+/* ---- THE ARTIFACTS, IN THE GAME'S OWN HAND (2026-11-18, the owner: "the artifacts look awful they look like ai slop
+ * completely revamp this with the game style in mind"). The three were engraved bronze medallions drawn at 1024 px —
+ * gradients, normal maps, lettering round the rim, glossy reflections: a jeweller's render dropped into a game of
+ * flat-shaded low-poly things and 64-pixel maps. Now each is a THING made the way the rest of the beach is made: a few
+ * dozen faces, `flatShading`, coloured from a handful of tones painted pixel by pixel into a 32–64 px map read NEAREST
+ * (`retroTex`), no normal map, no environment, no words — and each its own shape, so the three are told apart at a
+ * glance:
+ *   the Whale — a sperm whale's TOOTH, a crude whale scratched into its side and the scratches inked (a sailor's
+ *     scrimshaw, out of a belly), a chip of blue stone for the whale's eye, tarred cord round the root;
+ *   the Flame — a lump of black glass with the fire still in its cracks, a frozen tongue of it breaking out of the top,
+ *     a strap of iron round it;
+ *   the Sea — a scallop, ribbed and pale, cupping a blue pearl.
+ * The old contract holds, so every place they lie keeps working (the belly, the sand, the chest, Skrim's hand): the
+ * front faces +Z (they are laid face up by turning them −90° about x), about the medallion's size (8–9 cm), and
+ * `userData.pearl` is the mesh that glows (the Sea's is named `seaPearl`: a clone's userData is copied as JSON). */
+const artPxSet = (g, x, y, c) => { g.fillStyle = c; g.fillRect(x, y, 1, 1); };
+function artPx(w, h, paint) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = false; paint(g, w, h);
+  const t = retroTex(new THREE.CanvasTexture(c), { repeatWrap: false }); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+// flat-shaded, matte, and lifted a little by its own colour so it reads in the night (the medallions' `lift`)
+function artMat(map, { lift = 0.14, rough = 0.85, side = THREE.FrontSide, color = 0xffffff } = {}) {
+  return new THREE.MeshStandardMaterial({ map, color, flatShading: true, roughness: rough, metalness: 0, side,
+    emissive: new THREE.Color(0xffffff), emissiveMap: map, emissiveIntensity: lift });
+}
+const artFlat = (color, { lift = 0.25, rough = 0.85, emissive = null, ei = 1 } = {}) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: rough, metalness: 0,
+  emissive: emissive != null ? emissive : new THREE.Color(color).multiplyScalar(lift), emissiveIntensity: emissive != null ? ei : 1 });
+// a stone or a pearl: a few facets that light from inside
+const artGem = (color, glow, ei = 1.6) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.25, metalness: 0, emissive: glow, emissiveIntensity: ei });
+// a hash for a vertex, by where it is: the same corner moved the same way in every face it belongs to (a polyhedron's faces are not shared)
+const artJit = (x, y, z, seed) => { let h = Math.imul((Math.round(x * 1e4) * 73856093) ^ (Math.round(y * 1e4) * 19349663) ^ (Math.round(z * 1e4) * 83492791) ^ seed, 2654435761); h ^= h >>> 15; return ((h >>> 0) % 10000) / 10000; };
+
+/* THE WHALE: a tooth. Seven sides round, ten rings along an arch, flattened front to back, a point at one end and the
+ * hollow root at the other. Its map: 32 round (u, the +Z face at u 0.25) by 64 along (v, the root at the bottom). */
+const ART_TOOTH = { L: 0.092, R0: 0.0165, BEND: 0.016, FLAT: 0.72, N: 7, K: 10 };
+function artToothAt(t, a, out) {
+  const T = ART_TOOTH, r = T.R0 * Math.pow(1 - t, 0.72) * (t < 0.12 ? 0.86 + 1.17 * t : 1);
+  return out.set((t - 0.5) * T.L, Math.sin(Math.PI * t) * T.BEND - T.BEND * 0.5 + Math.cos(a) * r, Math.sin(a) * r * T.FLAT);
+}
+// the whale, head left, as the knife cut it: '#' the outline, '=' the jaw, 'o' the eye (where the stone goes), '-' hatching
+const ART_WHALE_PX = [
+  '..############..............',
+  '.#............####..........',
+  '#..o..............###.....##',
+  '#.....................##.##.',
+  '#.......................###.',
+  '#=====..................##..',
+  '.#.....................#.##.',
+  '..##...............####.....',
+  '....###############.........',
+];
+function artToothMap() {
+  return artPx(32, 64, (g, W, H) => {
+    const tones = ['#efe6cf', '#e3d7b8', '#d4c49e', '#c2ad80', '#a98f60'];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const v = 1 - (y + 0.5) / H, n = artJit(x, y, 0, 7);
+      // old ivory: browner toward the root, whiter at the point, a mottle of a few tones
+      let k = (1 - v) * 2.2 + n * 1.6 - 0.6; if (v > 0.85) k -= 0.8;
+      artPxSet(g, x, y, tones[Math.max(0, Math.min(4, Math.round(k)))]);
+    }
+    const ink = '#2b2118', ox = 4, oy = 14, Hs = ART_WHALE_PX.length;
+    ART_WHALE_PX.forEach((row, sy) => [...row].forEach((ch, sx) => {
+      if (ch === '.') return;
+      const cx = ox + (Hs - 1 - sy), cy = oy + sx;          // turned a quarter clockwise: the head toward the point
+      artPxSet(g, cx, cy, ch === '-' ? '#7d6a4c' : ch === 'o' ? '#1a140e' : ink);
+    }));
+    // one line of sea under it, toward the root (more than the outline and a line read as stripes at this size)
+    for (let x = 3; x < 14; x++) artPxSet(g, x, 47 + (x % 3 === 0 ? -1 : 0), ink);
+  });
+}
+const ART_TOOTH_EYE = { t: 1 - (14 + 3 + 0.5) / 64, a: (2 * Math.PI) * (4 + (ART_WHALE_PX.length - 1 - 2) + 0.5) / 32 };
+function makeWhaleArtifact() {
+  const g = new THREE.Group(); g.name = 'whaleArtifact';
+  const T = ART_TOOTH, N = T.N, K = T.K, p = new THREE.Vector3();
+  const pos = [], uv = [], idx = [];
+  for (let k = 0; k <= K; k++) for (let j = 0; j <= N; j++) {
+    const t = k / K, a = (j / N) * Math.PI * 2;
+    artToothAt(t, a, p); pos.push(p.x, p.y, p.z); uv.push(j / N, t);
+  }
+  for (let k = 0; k < K; k++) for (let j = 0; j < N; j++) {
+    const a = k * (N + 1) + j, b = a + N + 1;
+    idx.push(a, a + 1, b, a + 1, b + 1, b);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
+  geo.computeVertexNormals();
+  g.add(new THREE.Mesh(geo, artMat(artToothMap(), { lift: 0.16 })));
+  // the root: hollow, dark where the pulp was
+  const rp = [], c0 = artToothAt(0, 0, new THREE.Vector3()).clone(); c0.y -= Math.cos(0) * T.R0 * 0.86; c0.x += 0.0025;
+  for (let j = 0; j < N; j++) {
+    const a0 = (j / N) * Math.PI * 2, a1 = ((j + 1) / N) * Math.PI * 2;
+    const A = artToothAt(0, a0, new THREE.Vector3()), B = artToothAt(0, a1, new THREE.Vector3());
+    rp.push(c0.x, c0.y, c0.z, B.x, B.y, B.z, A.x, A.y, A.z);
+  }
+  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rp, 3)); rg.computeVertexNormals();
+  g.add(new THREE.Mesh(rg, artFlat(0x3e2c1c, { lift: 0.3 })));
+  // tarred cord: three turns round the root, and a loop to hang it by
+  const cord = artFlat(0x2a1f16, { lift: 0.35 });
+  for (const t of [0.07, 0.12, 0.17]) {
+    artToothAt(t, 0, p); const r = T.R0 * Math.pow(1 - t, 0.72) * (t < 0.12 ? 0.86 + 1.17 * t : 1);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.0006, 0.0013, 3, 8), cord);
+    ring.position.set(p.x, p.y - Math.cos(0) * r, 0); ring.rotation.y = Math.PI / 2 + (t - 0.12) * 1.2; ring.scale.set(1, 1, T.FLAT * 1.08);
+    g.add(ring);
+  }
+  const loop = new THREE.Mesh(new THREE.TorusGeometry(0.0078, 0.0013, 3, 8), cord);
+  artToothAt(0, 0, p); loop.position.set(-T.L / 2 - 0.0085, p.y - T.R0 * 0.86 + 0.002, 0); loop.rotation.set(0.25, 0.4, 0); g.add(loop);
+  // the whale's eye: a chip of blue stone set where the knife left a hole for it
+  const eye = new THREE.Mesh(new THREE.OctahedronGeometry(0.0024, 0), artGem(0x9fdcff, 0x2f8fe0, 1.6));
+  const E = ART_TOOTH_EYE; artToothAt(E.t, E.a, eye.position);
+  eye.position.y += Math.cos(E.a) * 0.0007; eye.position.z += Math.sin(E.a) * 0.0007; eye.scale.set(1, 1, 0.6); eye.rotation.z = 0.4;
+  g.add(eye);
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  g.userData.pearl = eye;
+  return g;
+}
+
+/* THE FLAME: black glass, the size of a fist's middle, cracked, and the fire still in the cracks. An icosahedron pulled
+ * out of true (each corner by a hash of where it is, so faces stay closed), flattened to lie face up; its map dark glass
+ * in three tones with the cracks walked through it, and the cracks again as its glow; a frozen tongue of the fire
+ * breaking out of the top, and a strap of iron round its middle. */
+function artFlameMaps() {
+  const walks = [];
+  /* (cracks, not a camouflage: at 32 px a crack pixel was a quarter of a face — 64 px, six long thin walks that
+   * branch once, the bright yellow only where two meet) */
+  const S = 64;
+  { const rnd = mulberry32(4417);
+    for (let i = 0; i < 6; i++) {
+      let x = rnd() * S, y = rnd() * S, d = rnd() * 6.28; const w = [];
+      for (let s = 0; s < 22 + rnd() * 16; s++) { w.push([x | 0, y | 0, s % 9 === 4]); d += (rnd() - 0.5) * 0.9; x = (x + Math.cos(d) + S) % S; y = (y + Math.sin(d) + S) % S;
+        if (s === 10) { let bx = x, by = y, bd = d + 1.1; for (let k = 0; k < 8; k++) { w.push([bx | 0, by | 0, false]); bd += (rnd() - 0.5) * 0.8; bx = (bx + Math.cos(bd) + S) % S; by = (by + Math.sin(bd) + S) % S; } } }
+      walks.push(w);
+    } }
+  const map = artPx(S, S, (g) => {
+    const tones = ['#0c0a0e', '#141117', '#1d181f', '#2a2329'];
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) artPxSet(g, x, y, tones[Math.min(3, Math.floor(artJit(x >> 2, y >> 2, 1, 31) * 3.2 + artJit(x, y, 3, 9) * 0.6))]);
+    for (const w of walks) for (const [x, y, hot] of w) artPxSet(g, x, y, hot ? '#ffd27a' : '#e8641a');
+  });
+  const glow = artPx(S, S, (g) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+    for (const w of walks) for (const [x, y, hot] of w) artPxSet(g, x, y, hot ? '#ffcc66' : '#ff5a10');
+  });
+  return { map, glow };
+}
+function makeFlameArtifact() {
+  const g = new THREE.Group(); g.name = 'flameArtifact';
+  const geo = new THREE.IcosahedronGeometry(0.031, 0), P = geo.attributes.position;
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i), k = 0.86 + 0.22 * artJit(x, y, z, 5);
+    P.setXYZ(i, x * k * 1.08, y * k, z * k * 0.86);
+  }
+  geo.computeVertexNormals();
+  const M = artFlameMaps();
+  const glass = new THREE.MeshStandardMaterial({ map: M.map, flatShading: true, roughness: 0.3, metalness: 0, emissive: new THREE.Color(0xffffff), emissiveMap: M.glow, emissiveIntensity: 1.5 });
+  g.add(new THREE.Mesh(geo, glass));
+  // the fire, frozen as it broke out: three tongues of it, the middle one tallest
+  const fireM = artGem(0xffa040, 0xff5a10, 1.9), tipM = artGem(0xffe2a0, 0xffb040, 1.6);
+  let core = null;
+  for (const [x, h, lean, z] of [[0, 0.03, 0.05, 0.006], [-0.009, 0.018, 0.42, 0.004], [0.010, 0.02, -0.36, 0.005]]) {
+    const t = new THREE.Mesh(new THREE.OctahedronGeometry(0.0055, 0), x === 0 ? fireM : tipM);
+    t.scale.set(1, h / 0.011, 0.75); t.position.set(x, 0.022 + h * 0.32, z); t.rotation.z = lean; g.add(t);
+    if (!core) core = t;
+  }
+  // the strap: black iron round its middle, and a ring at the top to hang it by
+  const iron = artFlat(0x2b2724, { lift: 0.3, rough: 0.6 });
+  const strap = new THREE.Mesh(new THREE.TorusGeometry(0.0315, 0.0019, 3, 10), iron);
+  strap.rotation.x = Math.PI / 2; strap.scale.set(1.06, 0.86, 1); strap.position.y = -0.004; g.add(strap);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.0062, 0.0014, 3, 8), iron); ring.position.set(-0.026, 0.012, 0); ring.rotation.y = 0.5; g.add(ring);
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  g.userData.pearl = core;
+  return g;
+}
+
+/* THE SEA: a scallop, its inside to you, cupping a blue pearl. A fan of nine ribs from the hinge — every other line of
+ * the fan raised, so the ribs are in the shape and not only in the paint — dished so the rim stands up round the pearl,
+ * two ears at the hinge. Its map: the ribs in two tones, growth rings across them, the sea's grey-green toward the lip. */
+const ART_SHELL = { R: 0.046, SPAN: 0.98, RIBS: 9, K: 6, HY: -0.03 };
+function artShellZ(r, a) { const S = ART_SHELL, q = Math.min(1, r / S.R); return 0.02 * Math.pow(q, 1.4) + 0.007 * (a / S.SPAN) * (a / S.SPAN) * q; }
+function makeSeaArtifact() {
+  const g = new THREE.Group(); g.name = 'seaArtifact';
+  const S = ART_SHELL, C = S.RIBS * 2, pos = [], uv = [], idx = [];
+  for (let k = 0; k <= S.K; k++) for (let j = 0; j <= C; j++) {
+    // (the lip SCALLOPED: each rib runs out past the hollow beside it — a straight edge over straight pleats was a paper fan)
+    const r = 0.004 + (S.R - 0.004) * (k / S.K) + (k === S.K ? (j % 2 ? 0.0026 : -0.0008) : 0), a = -S.SPAN + 2 * S.SPAN * (j / C);
+    const ridge = j % 2 ? 0.0026 * (r / S.R) : 0;
+    pos.push(Math.sin(a) * r, S.HY + Math.cos(a) * r, artShellZ(r, a) + ridge); uv.push(j / C, k / S.K);
+  }
+  for (let k = 0; k < S.K; k++) for (let j = 0; j < C; j++) {
+    const a = k * (C + 1) + j, b = a + C + 1;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const map = artPx(18, 8, (gg) => {
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 18; x++) {
+      const k = 1 - (y + 0.5) / 8;                                 // (canvas top is the lip)
+      /* a scallop's colour runs in GROWTH RINGS across it, warm, the ribs only a shade apart (in grey radial bars it was a
+       * paper fan); the sea's grey-green worn into the lip */
+      const ring = ['#b98a72', '#e8cdb6', '#d4a68a', '#efd9c4', '#c99a80', '#e6c6ad', '#d8b49c', '#c7a089'][y];
+      let c = ring;
+      if (x % 2 === 0) c = new THREE.Color(ring).multiplyScalar(0.9).getStyle();
+      if (y === 0 && x % 2) c = '#a9b2aa';
+      if (artJit(x, y, 2, 11) > 0.9) c = '#f4e6d6';
+      artPxSet(gg, x, y, c);
+    }
+  });
+  const shellM = artMat(map, { lift: 0.18, side: THREE.DoubleSide });
+  g.add(new THREE.Mesh(geo, shellM));
+  // the ears at the hinge
+  const ear = new THREE.BufferGeometry();
+  ear.setAttribute('position', new THREE.Float32BufferAttribute([
+    -0.0015, S.HY + 0.001, 0.0005, -0.0145, S.HY - 0.002, 0.0012, -0.012, S.HY + 0.008, 0.0016,
+    -0.0015, S.HY + 0.001, 0.0005, -0.012, S.HY + 0.008, 0.0016, -0.003, S.HY + 0.009, 0.0014,
+    0.0015, S.HY + 0.001, 0.0005, 0.012, S.HY + 0.008, 0.0016, 0.0145, S.HY - 0.002, 0.0012,
+    0.0015, S.HY + 0.001, 0.0005, 0.003, S.HY + 0.009, 0.0014, 0.012, S.HY + 0.008, 0.0016], 3));
+  ear.computeVertexNormals();
+  g.add(new THREE.Mesh(ear, artFlat(0xb39a86, { lift: 0.22 })));
+  ear.setAttribute('uv', new THREE.Float32BufferAttribute(new Array(24).fill(0.5), 2));
+  // the pearl, sat in the dish
+  const pearl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.0082, 1), artGem(0x9fe6ff, 0x2aa8ff, 1.5));
+  pearl.name = 'seaPearl';
+  const pr = 0.024; pearl.position.set(0, S.HY + pr, artShellZ(pr, 0) + 0.0085); g.add(pearl);
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  g.userData.pearl = pearl;
+  return g;
+}
+
 function artNoise2(seed) {
   // a cheap value noise on a 64-cell lattice, tiled, for the drawn maps
   const N = 64, v = new Float32Array(N * N), rnd = mulberry32(seed);
@@ -111196,278 +112145,6 @@ function artNormalFrom(hc, strength) {
   return t;
 }
 const artCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d', { willReadFrequently: true })]; };
-// bone: ivory gone yellow at the edge, growth lines, pores, stains and a few cracks — drawn into a colour and a height canvas together
-function artBone(g, hg, S, seed, edgeDark = 1) {
-  const rnd = mulberry32(seed), nz = artNoise2(seed + 7), c = S / 2;
-  g.fillStyle = '#d4c6a2'; g.fillRect(0, 0, S, S);
-  hg.fillStyle = 'rgb(150,150,150)'; hg.fillRect(0, 0, S, S);
-  // a mottle of yellowing, broken by noise, pixel by pixel at a quarter scale
-  const q = S / 4, [mc, mg] = artCanvas(q, q), im = mg.createImageData(q, q);
-  for (let y = 0; y < q; y++) for (let x = 0; x < q; x++) {
-    const n = artFbm(nz, x / 18, y / 18, 4), r = Math.hypot(x - q / 2, y - q / 2) / (q / 2), o = (y * q + x) * 4;
-    const k = Math.min(1, Math.max(0, (n - 0.35) * 1.6 + r * r * 0.55 * edgeDark));
-    im.data[o] = 214 - 70 * k; im.data[o + 1] = 198 - 82 * k; im.data[o + 2] = 160 - 92 * k; im.data[o + 3] = 255 * (0.35 + 0.65 * k);
-  }
-  mg.putImageData(im, 0, 0); g.imageSmoothingEnabled = true; g.drawImage(mc, 0, 0, S, S);
-  // growth lines: long faint waves across the bone, raised and lowered a touch
-  /* faint, and not many: bone has growth lines, but a hundred and seventy of
-   * them strong enough to see read as WOOD grain on the first build */
-  for (let i = 0; i < 46; i++) {
-    const y0 = rnd() * S, amp = 6 + rnd() * 18, fr = 0.003 + rnd() * 0.007, ph = rnd() * 9, dark = rnd() < 0.5;
-    const col = dark ? `rgba(120,96,62,${0.025 + rnd() * 0.04})` : `rgba(255,250,232,${0.04 + rnd() * 0.05})`;
-    g.strokeStyle = col; g.lineWidth = 2 + rnd() * 5; hg.strokeStyle = dark ? 'rgba(135,135,135,0.18)' : 'rgba(165,165,165,0.18)'; hg.lineWidth = g.lineWidth;
-    for (const ctx of [g, hg]) { ctx.beginPath(); for (let x = 0; x <= S; x += 8) { const y = y0 + Math.sin(x * fr + ph) * amp + Math.sin(x * fr * 3.1 + ph * 2) * amp * 0.25; x ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
-  }
-  // pores
-  for (let i = 0; i < 2600; i++) {
-    const x = rnd() * S, y = rnd() * S, r = 0.5 + rnd() * 1.1;
-    g.fillStyle = `rgba(80,60,36,${0.08 + rnd() * 0.16})`; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
-    hg.fillStyle = 'rgba(95,95,95,0.6)'; hg.beginPath(); hg.arc(x, y, r, 0, 6.283); hg.fill();
-  }
-  // stains: tea-brown where it lay in the gut
-  for (let i = 0; i < 9; i++) {
-    const x = rnd() * S, y = rnd() * S, r = S * (0.05 + rnd() * 0.14), gr = g.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, `rgba(96,62,28,${0.10 + rnd() * 0.16})`); gr.addColorStop(1, 'rgba(96,62,28,0)');
-    g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-  // cracks: from the rim inward, a wandering hairline with a paler lip
-  for (let i = 0; i < 7; i++) {
-    let a = rnd() * 6.283, rr = c * (0.97 - rnd() * 0.05), x = c + Math.cos(a) * rr, y = c + Math.sin(a) * rr, dir = a + Math.PI + (rnd() - 0.5) * 0.9;
-    const len = S * (0.05 + rnd() * 0.16), pts = [[x, y]];
-    for (let s = 0; s < len; s += 6) { dir += (rnd() - 0.5) * 0.7; x += Math.cos(dir) * 6; y += Math.sin(dir) * 6; pts.push([x, y]); }
-    for (const [ctx, col, w] of [[g, 'rgba(235,224,196,0.5)', 3.2], [g, 'rgba(48,32,18,0.85)', 1.4], [hg, 'rgb(40,40,40)', 2.0]]) {
-      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); pts.forEach(([px, py], k) => (k ? ctx.lineTo(px, py) : ctx.moveTo(px, py))); ctx.stroke();
-    }
-  }
-}
-function artFaceMaps() {
-  const S = 1024, c = S / 2;
-  const [cc, g] = artCanvas(S, S), [hc, hg] = artCanvas(S, S);
-  artBone(g, hg, S, 431);
-  const rnd = mulberry32(977);
-  /* THE ENGRAVING. Every cut is drawn twice — lamp-black into the colour and
-   * a groove into the height — so the ink sits IN the line. */
-  const ink = (w = 3.5, a = 0.9) => { g.strokeStyle = `rgba(26,19,12,${a})`; g.lineWidth = w; hg.strokeStyle = 'rgb(70,70,70)'; hg.lineWidth = w * 1.15; };
-  const both = (fn) => { for (const ctx of [g, hg]) { ctx.save(); fn(ctx); ctx.restore(); } };
-  const strokeBoth = (path) => both((ctx) => { ctx.lineCap = 'round'; ctx.lineJoin = 'round'; path(ctx); ctx.stroke(); });
-  // the border: two rings and a rope between them, and the words a sailor cut round it
-  ink(5); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(c, c, 495, 0, 6.283); });
-  ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(c, c, 452, 0, 6.283); });
-  ink(2.4, 0.85);
-  for (let i = 0; i < 120; i++) {               // the rope, a twist every three degrees
-    const a = i / 120 * 6.283, a2 = a + 0.034;
-    if (a > 3.55 && a < 5.87) continue;            // the top arc carries the words instead
-    strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(c + Math.cos(a) * 458, c + Math.sin(a) * 458); ctx.quadraticCurveTo(c + Math.cos(a + 0.03) * 476, c + Math.sin(a + 0.03) * 476, c + Math.cos(a2) * 490, c + Math.sin(a2) * 490); });
-  }
-  const words = 'WHAT THE SEA TAKES IT KEEPS';
-  g.font = 'bold 34px Georgia, "Times New Roman", serif'; hg.font = g.font;
-  const span = 2.18, a0 = -Math.PI / 2 - span / 2;
-  for (let i = 0; i < words.length; i++) {
-    const a = a0 + span * (i + 0.5) / words.length;
-    both((ctx) => { ctx.translate(c + Math.cos(a) * 474, c + Math.sin(a) * 474); ctx.rotate(a + Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = ctx === g ? 'rgba(26,19,12,0.88)' : 'rgb(70,70,70)'; ctx.fillText(words[i], 0, 0); });
-  }
-  // the moon, a crescent hatched across
-  both((ctx) => {
-    ctx.beginPath(); ctx.arc(318, 268, 62, 0, 6.283); ctx.moveTo(346 + 56, 252); ctx.arc(346, 252, 56, 0, 6.283); ctx.clip('evenodd');
-    ctx.strokeStyle = ctx === g ? 'rgba(26,19,12,0.75)' : 'rgb(80,80,80)'; ctx.lineWidth = 2;
-    for (let k = -80; k < 80; k += 7) { ctx.beginPath(); ctx.moveTo(250 + k, 200); ctx.lineTo(390 + k, 340); ctx.stroke(); }
-  });
-  ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(318, 268, 62, 0.62, 5.42); ctx.arc(346, 252, 56, 4.9, 0.98, true); });
-  for (const [sx, sy, s] of [[440, 210, 11], [520, 168, 7], [610, 236, 9], [230, 380, 6], [705, 180, 6]]) {   // stars
-    ink(2.2); strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(sx - s, sy); ctx.lineTo(sx + s, sy); ctx.moveTo(sx, sy - s); ctx.lineTo(sx, sy + s); });
-  }
-  // THE WHALE, side on, swimming right: the silhouette, then hatching inside it
-  const whale = (ctx) => {
-    /* A WHALE IS DEEP AND BLUNT. The first outline was slim and pointed and it
-     * read as a fish: a humpback is a third as deep as it is long, its head is
-     * a rounded wedge, and the body is widest well forward of the middle. */
-    ctx.beginPath();
-    ctx.moveTo(832, 500);
-    ctx.bezierCurveTo(830, 452, 792, 414, 722, 408);       // the blunt head, up to the crown
-    ctx.bezierCurveTo(620, 400, 470, 414, 382, 446);       // the back, falling away
-    ctx.lineTo(362, 426); ctx.lineTo(346, 456);             // the small hump of a fin
-    ctx.bezierCurveTo(314, 468, 292, 476, 270, 482);       // the tail stock
-    ctx.bezierCurveTo(242, 450, 208, 416, 168, 402);       // upper fluke
-    ctx.bezierCurveTo(186, 444, 206, 478, 222, 494);       // the notch
-    ctx.bezierCurveTo(204, 516, 182, 552, 164, 590);       // lower fluke
-    ctx.bezierCurveTo(208, 568, 246, 532, 272, 512);
-    ctx.bezierCurveTo(342, 550, 452, 592, 562, 594);       // the belly
-    ctx.bezierCurveTo(672, 596, 770, 574, 812, 542);       // the throat
-    ctx.bezierCurveTo(830, 528, 836, 514, 832, 500);       // the chin
-    ctx.closePath();
-  };
-  // a wash of grime pooled in the figure first, so it reads as cut deeper than the bone round it
-  g.save(); whale(g); g.clip(); g.fillStyle = 'rgba(70,52,30,0.22)'; g.fillRect(0, 0, S, S); g.restore();
-  hg.save(); whale(hg); hg.clip(); hg.fillStyle = 'rgba(128,128,128,0.6)'; hg.fillRect(0, 0, S, S); hg.restore();
-  // hatching: along the back, denser toward the top (the light is from below in the sea)
-  both((ctx) => {
-    whale(ctx); ctx.clip(); ctx.lineWidth = 1.8;
-    for (let k = 0; k < 28; k++) {
-      const y = 412 + k * 6.2, a = Math.max(0.10, 0.85 - k * 0.035);
-      ctx.strokeStyle = ctx === g ? `rgba(26,19,12,${a})` : `rgba(80,80,80,${a})`;
-      ctx.beginPath(); for (let x = 150; x <= 840; x += 10) { const yy = y + Math.sin(x * 0.011 + k) * 3 + (x - 500) * (x - 500) * 0.00008 * (k < 8 ? -1 : 0.4); x === 150 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy); } ctx.stroke();
-    }
-    // the throat pleats, parallel to the belly
-    ctx.lineWidth = 2.2;
-    for (let k = 0; k < 9; k++) {
-      ctx.strokeStyle = ctx === g ? 'rgba(26,19,12,0.85)' : 'rgb(72,72,72)';
-      ctx.beginPath(); ctx.moveTo(814 - k * 7, 530 + k * 5); ctx.bezierCurveTo(740, 560 + k * 3.4, 640, 580 + k * 1.6, 520, 580 + k * 1.2); ctx.stroke();
-    }
-  });
-  ink(4.5); strokeBoth(whale);
-  ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(830, 506); ctx.bezierCurveTo(792, 512, 748, 520, 704, 518); });     // the mouth
-  ink(3.4); strokeBoth((ctx) => {                                                                                               // the flipper
-    ctx.beginPath(); ctx.moveTo(664, 560); ctx.bezierCurveTo(640, 600, 596, 640, 536, 660); ctx.bezierCurveTo(576, 626, 612, 594, 628, 562); ctx.closePath(); });
-  // the spout, fanning up off the blowhole
-  ink(2.2, 0.8);
-  for (let k = -4; k <= 4; k++) strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(706, 404); ctx.quadraticCurveTo(706 + k * 10, 362, 706 + k * 26, 334 + Math.abs(k) * 7); });
-  // the sea under it: three rows of curling crests
-  for (let row = 0; row < 3; row++) {
-    const y = 700 + row * 50, off = row * 34;
-    for (let x = 120 + off; x < 900; x += 92) {
-      const r2 = Math.hypot(x - c, y - c); if (r2 > 430) continue;
-      ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(x - 40, y + 10); ctx.bezierCurveTo(x - 20, y - 16, x + 18, y - 22, x + 30, y - 4); ctx.arc(x + 20, y - 2, 10, 0, Math.PI * 1.4, true); });
-    }
-  }
-  // the eye: a ring cut for the stone (`ART_EYE`)
-  ink(2.6); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(738, 474, 12, 0, 6.283); });
-  // and the ink worn out of the high places by a century of thumbs and grit
-  const nz = artNoise2(55);
-  const [wc, wg] = artCanvas(256, 256), wi = wg.createImageData(256, 256);
-  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) { const n = artFbm(nz, x / 14, y / 14, 3), o = (y * 256 + x) * 4; wi.data[o] = 214; wi.data[o + 1] = 200; wi.data[o + 2] = 168; wi.data[o + 3] = Math.max(0, (n - 0.58) * 520); }
-  wg.putImageData(wi, 0, 0); g.globalAlpha = 0.55; g.drawImage(wc, 0, 0, S, S); g.globalAlpha = 1;
-  // the bevel at the rim, in the height only: a soft shoulder down to the bezel
-  const gr = hg.createRadialGradient(c, c, 470, c, c, 512); gr.addColorStop(0, 'rgba(150,150,150,0)'); gr.addColorStop(1, 'rgba(60,60,60,1)');
-  hg.fillStyle = gr; hg.fillRect(0, 0, S, S);
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
-  return { map, normalMap: artNormalFrom(hc, 4.2) };
-}
-function artBackMaps() {
-  const S = 512, c = S / 2, [cc, g] = artCanvas(S, S), [hc, hg] = artCanvas(S, S);
-  artBone(g, hg, S, 1201, 1.4);
-  // the back is rough-cut: a spiral turned into it, and a maker's mark
-  for (let k = 0; k < 2; k++) {
-    const ctx = k ? hg : g; ctx.strokeStyle = k ? 'rgb(90,90,90)' : 'rgba(60,44,26,0.55)'; ctx.lineWidth = 3;
-    ctx.beginPath(); for (let a = 0; a < 6.283 * 5; a += 0.05) { const r = 18 + a * 7.4; const x = c + Math.cos(a) * r, y = c + Math.sin(a) * r; a ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke();
-  }
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
-  return { map, normalMap: artNormalFrom(hc, 3.0) };
-}
-// bronze: dark metal with verdigris in the recesses and the high places rubbed bright; the metalness map is black wherever it has turned to salt
-function artBronzeMaps() {
-  const W = 512, H = 128, [cc, g] = artCanvas(W, H), [mc, mgc] = artCanvas(W, H), [hc, hg] = artCanvas(W, H);
-  const nz = artNoise2(301), nz2 = artNoise2(302), im = g.createImageData(W, H), mi = mgc.createImageData(W, H), hi = hg.createImageData(W, H), rnd = mulberry32(303);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const o = (y * W + x) * 4, n = artFbm(nz, x / 22, y / 22, 4), n2 = artFbm(nz2, x / 7, y / 7, 3);
-    const crown = 1 - Math.abs(y / H - 0.42) * 2.2;                   // the outer face of the bezel, where hands and sand wore it
-    const verd = Math.min(1, Math.max(0, (n - 0.44 + (1 - crown) * 0.22) * 3.2));
-    const bright = Math.max(0, crown) * Math.max(0, 1 - verd * 1.6) * (0.5 + n2 * 0.7);
-    let r = 84 + 70 * bright + n2 * 18, gg = 60 + 52 * bright + n2 * 12, b = 32 + 26 * bright + n2 * 8;
-    r = r * (1 - verd) + (58 + 40 * n2) * verd; gg = gg * (1 - verd) + (128 + 46 * n2) * verd; b = b * (1 - verd) + (108 + 30 * n2) * verd;
-    im.data[o] = r; im.data[o + 1] = gg; im.data[o + 2] = b; im.data[o + 3] = 255;
-    const met = (1 - verd) * 255; mi.data[o] = 0; mi.data[o + 1] = 120 + verd * 120; mi.data[o + 2] = met; mi.data[o + 3] = 255;   // glTF order: G roughness, B metalness
-    const hgt = 150 + n2 * 50 - verd * 30; hi.data[o] = hi.data[o + 1] = hi.data[o + 2] = hgt; hi.data[o + 3] = 255;
-  }
-  g.putImageData(im, 0, 0); mgc.putImageData(mi, 0, 0); hg.putImageData(hi, 0, 0);
-  for (let i = 0; i < 420; i++) {                                     // pits
-    const x = rnd() * W, y = rnd() * H, r = 0.6 + rnd() * 1.6;
-    g.fillStyle = 'rgba(28,20,10,0.6)'; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
-    hg.fillStyle = 'rgb(70,70,70)'; hg.beginPath(); hg.arc(x, y, r, 0, 6.283); hg.fill();
-  }
-  for (let i = 0; i < 60; i++) {                                      // scratches through the patina
-    const x = rnd() * W, y = rnd() * H, a = (rnd() - 0.5) * 0.6, l = 8 + rnd() * 30;
-    g.strokeStyle = `rgba(214,170,96,${0.25 + rnd() * 0.35})`; g.lineWidth = 0.8;
-    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
-  }
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = THREE.RepeatWrapping; map.repeat.set(3, 1);
-  const mr = new THREE.CanvasTexture(mc); mr.wrapS = THREE.RepeatWrapping; mr.repeat.set(3, 1);
-  const nm = artNormalFrom(hc, 2.4); nm.wrapS = THREE.RepeatWrapping; nm.repeat.set(3, 1);
-  return { map, mr, normalMap: nm };
-}
-function artCrustMaps() {
-  const S = 128, [cc, g] = artCanvas(S, S), [hc, hg] = artCanvas(S, S), rnd = mulberry32(88), nz = artNoise2(89);
-  const im = g.createImageData(S, S), hi = hg.createImageData(S, S);
-  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const o = (y * S + x) * 4, n = artFbm(nz, x / 6, y / 6, 3);
-    im.data[o] = 170 + n * 60; im.data[o + 1] = 164 + n * 54; im.data[o + 2] = 150 + n * 44; im.data[o + 3] = 255;
-    hi.data[o] = hi.data[o + 1] = hi.data[o + 2] = 90 + n * 140; hi.data[o + 3] = 255;
-  }
-  g.putImageData(im, 0, 0); hg.putImageData(hi, 0, 0);
-  for (let i = 0; i < 40; i++) { g.strokeStyle = `rgba(70,60,48,${0.3 + rnd() * 0.3})`; g.lineWidth = 1; const y = rnd() * S; g.beginPath(); g.moveTo(0, y); g.lineTo(S, y + (rnd() - 0.5) * 20); g.stroke(); }
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping;
-  const nm = artNormalFrom(hc, 3.4); nm.wrapS = nm.wrapT = THREE.RepeatWrapping;
-  return { map, normalMap: nm };
-}
-// the whale's eye on the face, in metres: the ring cut for it at canvas (744, 466) on a 1024 face of radius ART_R
-const ART_EYE = new THREE.Vector2((738 / 1024 - 0.5) * 2 * ART_R, (0.5 - 474 / 1024) * 2 * ART_R);
-function makeWhaleArtifact() {
-  const g = new THREE.Group(); g.name = 'whaleArtifact';
-  const env = ringEnv();
-  const R = ART_R, T = 0.0034;                // the bone's half thickness at the rim
-  const face = artFaceMaps(), back = artBackMaps(), bz = artBronzeMaps(), crust = artCrustMaps();
-  const lift = (m, k) => { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = k; return m; };
-  const boneF = lift(new THREE.MeshStandardMaterial({ map: face.map, normalMap: face.normalMap, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.62, metalness: 0, envMap: env, envMapIntensity: 0.35 }), 0.16);
-  const boneB = lift(new THREE.MeshStandardMaterial({ map: back.map, normalMap: back.normalMap, roughness: 0.78, metalness: 0, envMap: env, envMapIntensity: 0.25 }), 0.12);
-  const bronze = lift(new THREE.MeshStandardMaterial({ map: bz.map, metalnessMap: bz.mr, roughnessMap: bz.mr, normalMap: bz.normalMap, normalScale: new THREE.Vector2(1.2, 1.2),
-    metalness: 1, roughness: 1, envMap: env, envMapIntensity: 1.9 }), 0.10);
-  const crustM = lift(new THREE.MeshStandardMaterial({ map: crust.map, normalMap: crust.normalMap, normalScale: new THREE.Vector2(1.5, 1.5), roughness: 0.92, metalness: 0 }), 0.10);
-  const cordM = new THREE.MeshStandardMaterial({ color: 0x2c2218, roughness: 0.85, metalness: 0, emissive: 0x140d07, emissiveIntensity: 1 });
-  const stoneM = new THREE.MeshStandardMaterial({ color: 0x9fdcff, roughness: 0.08, metalness: 0, emissive: 0x2f8fe0, emissiveIntensity: 1.6, envMap: env, envMapIntensity: 1.4 });
-  // lathe about Y turned so its axis is +Z, with a planar uv off x and y for the faces
-  const lathe = (pts, seg) => { const geo = new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), seg); geo.rotateX(Math.PI / 2); return geo; };
-  const planarUV = (geo) => { const p = geo.attributes.position, uv = new Float32Array(p.count * 2); for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / (2 * R) + 0.5; uv[i * 2 + 1] = p.getY(i) / (2 * R) + 0.5; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
-  // the face: domed, falling to the rim; the back flatter
-  const fp = [], bp = [];
-  for (let k = 0; k <= 24; k++) { const r = R * k / 24, d = Math.cos((k / 24) * Math.PI / 2); fp.push([r, T + 0.0022 * d]); bp.push([r, -T - 0.0009 * d]); }
-  const faceGeo = planarUV(lathe(fp.reverse(), 96)); faceGeo.computeVertexNormals();
-  const backGeo = planarUV(lathe(bp, 96)); backGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(faceGeo, boneF), new THREE.Mesh(backGeo, boneB));
-  const edge = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 2 * T, 96, 1, true), boneB); edge.rotation.x = Math.PI / 2; g.add(edge);
-  // THE BEZEL: a closed section turned round the disc — a lip over the front of the bone, a heavy outer face, a step behind
-  const sec = [[R - 0.0016, T + 0.0006], [R + 0.0006, T + 0.0024], [R + 0.0044, T + 0.0018], [R + 0.0066, T], [R + 0.0070, -T + 0.0004], [R + 0.0058, -T - 0.0016],
-               [R + 0.0010, -T - 0.0018], [R - 0.0004, -T - 0.0004], [R - 0.0004, T - 0.0006], [R - 0.0016, T + 0.0006]];
-  const bezGeo = lathe(sec, 128); bezGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(bezGeo, bronze));
-  // rivets round the front lip, every forty-five degrees but one lost
-  const rivGeo = new THREE.SphereGeometry(0.0021, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2); rivGeo.rotateX(Math.PI / 2);
-  for (let i = 0; i < 8; i++) {
-    if (i === 5) continue;
-    const a = i / 8 * Math.PI * 2 + 0.2, rv = new THREE.Mesh(rivGeo, bronze);
-    rv.position.set(Math.cos(a) * (R + 0.0034), Math.sin(a) * (R + 0.0034), T + 0.0019); rv.scale.set(1, 1, 0.75); g.add(rv);
-  }
-  // the bail at the top, a heavy loop cast with it, and the tarred cord through it, frayed where it parted
-  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.0072, 0.0021, 12, 32), bronze);
-  bail.position.set(0, R + 0.0118, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
-  const cordCurve = new THREE.CatmullRomCurve3([[-0.011, R + 0.028, 0.004], [-0.004, R + 0.016, 0.002], [0, R + 0.0118, -0.0005], [0.005, R + 0.017, -0.003], [0.012, R + 0.026, -0.001], [0.017, R + 0.022, 0.003]].map((p) => new THREE.Vector3(...p)));
-  const cord = new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 48, 0.0013, 8, false), cordM); g.add(cord);
-  for (let i = 0; i < 7; i++) {                                         // the frayed end
-    const fr = new THREE.Mesh(new THREE.CylinderGeometry(0.00025, 0.00012, 0.006 + (i % 3) * 0.002, 4), cordM);
-    fr.position.set(0.017 + Math.cos(i) * 0.0008, R + 0.022 - 0.003, 0.003 + Math.sin(i) * 0.0008); fr.rotation.set(0.4 * Math.sin(i * 2.1), 0, 0.5 + 0.3 * Math.cos(i * 1.7)); g.add(fr);
-  }
-  // barnacles crusted on the lower left of the bezel: little volcanoes with their plates shut
-  const rnd = mulberry32(4242);
-  for (let i = 0; i < 11; i++) {
-    const a = Math.PI * (1.06 + rnd() * 0.38), s = 0.0016 + rnd() * 0.0024;
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.45, s, s * 1.3, 7, 1, false), crustM);
-    const rr = R + 0.0042 + rnd() * 0.0028, z = (rnd() - 0.3) * 0.004;
-    bar.position.set(Math.cos(a) * rr, Math.sin(a) * rr, z);
-    bar.lookAt(bar.position.clone().multiplyScalar(2).setZ(z + 0.01)); bar.rotateX(Math.PI / 2);
-    g.add(bar);
-    const plate = new THREE.Mesh(new THREE.ConeGeometry(s * 0.42, s * 0.35, 4), crustM);
-    plate.position.copy(bar.position).addScaledVector(bar.position.clone().setZ(0).normalize(), s * 0.62);
-    plate.quaternion.copy(bar.quaternion); g.add(plate);
-  }
-  // THE EYE: a cabochon set where the whale's eye is cut, still holding a little of the heal's light
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0011, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), stoneM);
-  eye.rotation.x = Math.PI / 2; eye.scale.set(1, 1, 0.55);
-  eye.position.set(ART_EYE.x, ART_EYE.y, T + 0.0016); g.add(eye);
-  const setting = new THREE.Mesh(new THREE.TorusGeometry(0.00118, 0.00028, 8, 24), bronze);
-  setting.position.copy(eye.position); setting.position.z -= 0.0002; g.add(setting);
-  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
-  g.userData.pearl = eye;
-  return g;
-}
 function makeArtIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const x = c.getContext('2d');
@@ -112034,7 +112711,7 @@ artHudEl.innerHTML = '<b></b><i></i><i></i><i></i><span><u></u></span>';
  * that writes to it can fail. */
 /* THE ARTIFACT'S MARK IS A WHALE: a small yellow one, flukes up, on the slot
  * of the weapon it is set in and beside its name in the pack */
-var ART_WHALE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 8 122 44"><defs><linearGradient id="bwWg" x1="0" y1="14" x2="0" y2="40" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5c3d0e"/><stop offset=".30" stop-color="#a77624"/><stop offset=".58" stop-color="#dcae4c"/><stop offset=".80" stop-color="#f3d68c"/><stop offset="1" stop-color="#fdeec0"/></linearGradient><linearGradient id="bwWf" x1="40" y1="34" x2="72" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f1d184"/><stop offset=".6" stop-color="#d9a945"/><stop offset="1" stop-color="#9a6a1c"/></linearGradient></defs><path fill="url(#bwWg)" stroke="#2e1d04" stroke-width=".7" stroke-linejoin="round" d="M3 27C6 23.5 12 21 20 19.5 30 17.4 44 15.6 58 15.2 68 15 76 15.6 82 16L84.6 15C85.4 14.2 86.6 14.2 87.2 15.1L88.5 16.8C95 18.2 101 20 106 21.6 108 22 110 21.6 112 20.8 114.4 19.8 117.4 18.2 121 16.4 120.6 18.6 119.2 20.4 117.4 21.6L116.2 22.6 116.8 23.4 114.6 23.8 115 24.6 111.6 24.6C109.4 24.8 107 25.4 104 26.4 96 29.4 86 33 74 35.6 64 37.8 54 39.4 44 39.4 32 39.4 20 37.4 12 34 7 32 4 29.6 3 27Z"/><g fill="none" stroke="#7a5310" stroke-width=".45" stroke-linecap="round" opacity=".9"><path d="M6.4 30.2C14 33.2 28 35.4 47 36.2"/><path d="M8.8 31.8C17 34.4 30 36.4 48.6 37.4"/><path d="M12.4 33.4C20 35.6 32 37.4 50 38.4"/><path d="M17.6 35.2C25 36.9 35 38.2 49 39"/></g><path fill="url(#bwWf)" stroke="#2e1d04" stroke-width=".6" stroke-linejoin="round" d="M40 33.6C50 37.8 60 42.6 72 47.2 73.4 47.8 72.4 48.8 70.8 48.6 66 47.8 62 46.8 58 45.2A1.5 1.5 0 0 1 55.4 44.2A1.5 1.5 0 0 1 52.8 43A1.5 1.5 0 0 1 50.2 41.8A1.5 1.5 0 0 1 47.6 40.4A1.5 1.5 0 0 1 45 39C42 37.8 39.6 37 37.6 36Z"/><path fill="none" stroke="#fff4c8" stroke-width=".4" opacity=".6" d="M44 36.4C53 40.4 62 44.2 70.6 47.4"/><path fill="none" stroke="#1f1302" stroke-width=".85" stroke-linecap="round" d="M3.6 27.2C10 28.8 18 29.8 26.4 30.2 27.6 30.3 28.6 30.6 29.2 31.2"/><path fill="none" stroke="#3b2605" stroke-width=".4" d="M29.4 27.2c.9-.6 2.2-.6 3 .1"/><ellipse cx="30.9" cy="28.1" rx=".85" ry=".6" fill="#140c01"/><circle cx="30.6" cy="27.9" r=".22" fill="#fff3c4"/><g fill="#4a3109"><circle cx="7" cy="24.6" r=".62"/><circle cx="10.6" cy="23" r=".7"/><circle cx="14.2" cy="21.8" r=".68"/><circle cx="17.8" cy="20.8" r=".62"/><circle cx="21.4" cy="20.1" r=".55"/><circle cx="6.2" cy="29.4" r=".5"/><circle cx="9.4" cy="30.6" r=".45"/></g><g fill="#3d2806" opacity=".55"><circle cx="5" cy="27.6" r=".5"/><circle cx="5.8" cy="28.4" r=".35"/><circle cx="37" cy="33.6" r=".35"/><circle cx="66" cy="20.4" r=".3"/><circle cx="67" cy="21" r=".22"/></g><g fill="#fff1c0"><circle cx="11.4" cy="31.6" r=".4"/><circle cx="13.6" cy="32.4" r=".3"/><circle cx="41.6" cy="35.2" r=".38"/><circle cx="43" cy="36.2" r=".28"/><circle cx="73" cy="46.6" r=".3"/></g><path fill="none" stroke="#fff1b8" stroke-width=".5" stroke-linecap="round" opacity=".55" d="M22 19.2C34 17 48 15.8 64 15.6"/><path fill="none" stroke="#3b2605" stroke-width=".45" opacity=".7" d="M90 19.6C96 21 101 22.4 105.4 23.6M104 24.6C108 23.8 112 22.6 117.8 19.6"/><g fill="none" stroke="#6d480d" stroke-width=".35" opacity=".55"><path d="M60 22c4 1 8 1.2 12 .6"/><path d="M48 24.4c3 .9 6 .9 9 .3"/><path d="M78 24.6c3 .5 6 .4 8-.4"/></g></svg>';
+var ART_WHALE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2.5 16.5c3.5-6.5 10-10 19-11-2.5 3.5-6 7.5-9.5 9.5-3.5 2-6.5 2.6-9.5 1.5z" fill="#e6dcc0" stroke="#2b2118" stroke-width="1.1" stroke-linejoin="round"/><path d="M4.6 17.4l-1.6 2.3M6.4 17.2l-.8 2.6" stroke="#2a1f16" stroke-width="1.2" stroke-linecap="round"/><path d="M8 14.6c2.4-1.6 4.8-2.6 7.4-3.4" stroke="#2b2118" stroke-width=".8" fill="none" stroke-dasharray="1.4 .9"/><rect x="13.6" y="9.6" width="1.8" height="1.8" fill="#6fc4ff"/></svg>';   // (2026-11-18: a flat mark of the thing itself, the way the pack draws, not a gold gradient)
 var ART_WHALE_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(ART_WHALE_SVG);
 {
   const st = document.createElement('style');
@@ -112368,7 +113045,7 @@ function sfxArtRise() {
 // the harness's handles on the artifact
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { whaleArtItem, art, artFrozen, attachArtifact, detachArtifact, artImmobilize, artRelease, artSpawnWorld, artCount, artState: () => artState, setArtState: (v) => { artState = v; } }));
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { connRingItem, giveConnectionRing, connBonus, connState: () => connStreak,
-  screwdriverItem, screwdriverModel, flashlightItem, billyItem, billySet, grateSet, unscrew, takeBilly, returnBilly, mountBillyHome,
+  screwdriverItem, screwdriverModel, billyItem, billySet, grateSet, unscrew, takeBilly, returnBilly, mountBillyHome,
   liftGrate, startPipe, billyAsked, billyState: () => billyState, grateOff: () => grateOff, pipeBusy: () => pipeBusy,
   takeShipKey, dropShipKey, BILLY_SCRIPT, FISHERMAN_SCRIPT_REF: () => FISHERMAN_SCRIPT }));
 
@@ -112768,118 +113445,6 @@ function flameTick(dt) {
   flameStep(flameWorld, dt, _fmxA);
 }
 // the burn on a creature's health bar is drawn by the bar itself: the health goes down
-/* THE MEDALLION. The whale's is scrimshaw out of a belly; this one is out of
- * a fire — a disc of black volcanic glass gone grey with soot at the rim,
- * a flame cut into it and the cuts run full of gold, and at the heart of the
- * flame a fire opal that still has heat in it. Set in the same bronze, but
- * blackened, with no sea on it. */
-let _flameFace = null, _flameBz = null;
-function artFlameFaceMaps() {
-  if (_flameFace) return _flameFace;
-  /* drawn at 512 with every stroke in 1024's coordinates (a half-scale
-   * transform), because the stone is a per-pixel loop and a megapixel of it
-   * is a second of the page doing nothing */
-  const S = 1024, c = S / 2, N = 512;
-  const [cc, g] = artCanvas(N, N), [hc, hg] = artCanvas(N, N);
-  // the glass: near-black with a cold sheen, mottled with soot, a few conchoidal ripples
-  const nz = artNoise2(311);
-  const img = g.createImageData(N, N), himg = hg.createImageData(N, N);
-  for (let yy = 0; yy < N; yy++) for (let xx = 0; xx < N; xx++) {
-    const x = xx * 2, y = yy * 2;
-    const n = artFbm(nz, x / 90, y / 90, 4), m = artFbm(nz, x / 22 + 40, y / 22, 3);
-    const r = Math.hypot(x - c, y - c) / c;
-    const soot = Math.max(0, r - 0.6) * 1.6;
-    const v = 14 + n * 22 + m * 10 - soot * 10, o = (yy * N + xx) * 4;
-    img.data[o] = v * 1.05; img.data[o + 1] = v * 0.98; img.data[o + 2] = v * 1.02; img.data[o + 3] = 255;
-    const hv = 128 + (n - 0.5) * 40 + Math.sin(r * 38 + n * 6) * 6;
-    himg.data[o] = himg.data[o + 1] = himg.data[o + 2] = hv; himg.data[o + 3] = 255;
-  }
-  g.putImageData(img, 0, 0); hg.putImageData(himg, 0, 0);
-  g.setTransform(N / S, 0, 0, N / S, 0, 0); hg.setTransform(N / S, 0, 0, N / S, 0, 0);
-  const gold = (ctx, w) => { ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = ctx === g ? '#c9973a' : 'rgb(60,60,60)'; };
-  const both = (fn) => { for (const ctx of [g, hg]) { ctx.save(); fn(ctx); ctx.restore(); } };
-  // the border: two rings and a band of tongues between them
-  both((ctx) => { gold(ctx, 7); ctx.beginPath(); ctx.arc(c, c, 492, 0, 6.283); ctx.stroke(); gold(ctx, 4); ctx.beginPath(); ctx.arc(c, c, 446, 0, 6.283); ctx.stroke(); });
-  for (let i = 0; i < 48; i++) {
-    const a = i / 48 * 6.283;
-    both((ctx) => { gold(ctx, 3); ctx.translate(c, c); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(-10, 450); ctx.quadraticCurveTo(-4, 470, 0, 488); ctx.quadraticCurveTo(4, 470, 10, 450); ctx.stroke(); });
-  }
-  // the flame: three tongues, the middle tallest, each with a line of gold down it
-  const tongue = (ctx, x0, h, w, lean) => {
-    ctx.beginPath(); ctx.moveTo(x0 - w, 700);
-    ctx.bezierCurveTo(x0 - w * 1.3, 700 - h * 0.45, x0 - w * 0.2 + lean * 0.4, 700 - h * 0.7, x0 + lean, 700 - h);
-    ctx.bezierCurveTo(x0 + w * 0.5 + lean * 0.3, 700 - h * 0.62, x0 + w * 1.25, 700 - h * 0.4, x0 + w, 700);
-    ctx.closePath();
-  };
-  for (const [x0, h, w, lean] of [[c, 470, 120, -20], [c - 120, 300, 80, -50], [c + 120, 320, 80, 46]]) {
-    both((ctx) => { tongue(ctx, x0, h, w, lean); ctx.fillStyle = ctx === g ? 'rgba(201,151,58,0.22)' : 'rgb(110,110,110)'; ctx.fill(); gold(ctx, 6); ctx.stroke();
-      gold(ctx, 2.5); ctx.beginPath(); ctx.moveTo(x0, 690); ctx.quadraticCurveTo(x0 + lean * 0.5, 700 - h * 0.5, x0 + lean * 0.9, 700 - h * 0.92); ctx.stroke(); });
-  }
-  // the coals under it: a row of cut lozenges
-  for (let i = -3; i <= 3; i++) both((ctx) => { gold(ctx, 3); ctx.beginPath(); const x = c + i * 62, y = 744; ctx.moveTo(x - 24, y); ctx.lineTo(x, y - 16); ctx.lineTo(x + 24, y); ctx.lineTo(x, y + 16); ctx.closePath(); ctx.stroke(); });
-  // the words round the top
-  const words = 'WHAT BURNS IS NOT LOST';
-  g.font = 'bold 34px Georgia, "Times New Roman", serif'; hg.font = g.font;
-  const span = 2.0, a0 = -Math.PI / 2 - span / 2;
-  for (let i = 0; i < words.length; i++) {
-    const a = a0 + span * (i + 0.5) / words.length;
-    both((ctx) => { ctx.translate(c + Math.cos(a) * 470, c + Math.sin(a) * 470); ctx.rotate(a + Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = ctx === g ? '#c9973a' : 'rgb(60,60,60)'; ctx.fillText(words[i], 0, 0); });
-  }
-  // the ring the opal sits in, where the middle tongue thickens
-  both((ctx) => { gold(ctx, 4); ctx.beginPath(); ctx.arc(c, 520, 24, 0, 6.283); ctx.stroke(); });
-  // gold rubbed dull in the high places
-  const [wc, wg] = artCanvas(256, 256), wi = wg.createImageData(256, 256);
-  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) { const n = artFbm(nz, x / 14 + 9, y / 14, 3), o = (y * 256 + x) * 4; wi.data[o] = 30; wi.data[o + 1] = 26; wi.data[o + 2] = 22; wi.data[o + 3] = Math.max(0, (n - 0.55) * 400); }
-  wg.putImageData(wi, 0, 0); g.globalAlpha = 0.5; g.drawImage(wc, 0, 0, S, S); g.globalAlpha = 1;
-  const gr = hg.createRadialGradient(c, c, 470, c, c, 512); gr.addColorStop(0, 'rgba(150,150,150,0)'); gr.addColorStop(1, 'rgba(60,60,60,1)');
-  hg.fillStyle = gr; hg.fillRect(0, 0, S, S);
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
-  return (_flameFace = { map, normalMap: artNormalFrom(hc, 4.6) });
-}
-function makeFlameArtifact() {
-  const g = new THREE.Group(); g.name = 'flameArtifact';
-  const env = ringEnv();
-  const R = ART_R, T = 0.0034;
-  const face = artFlameFaceMaps(), bz = _flameBz || (_flameBz = artBronzeMaps());
-  const glassF = new THREE.MeshStandardMaterial({ map: face.map, normalMap: face.normalMap, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.22, metalness: 0, envMap: env, envMapIntensity: 0.9,
-    emissive: new THREE.Color(0xffffff), emissiveMap: face.map, emissiveIntensity: 0.22 });
-  const glassB = new THREE.MeshStandardMaterial({ color: 0x141214, roughness: 0.35, metalness: 0, envMap: env, envMapIntensity: 0.6, emissive: 0x050404, emissiveIntensity: 1 });
-  const bronze = new THREE.MeshStandardMaterial({ map: bz.map, metalnessMap: bz.mr, roughnessMap: bz.mr, normalMap: bz.normalMap, normalScale: new THREE.Vector2(1.2, 1.2),
-    metalness: 1, roughness: 1, envMap: env, envMapIntensity: 1.5, color: 0x6a4a3a, emissive: new THREE.Color(0xffffff), emissiveMap: bz.map, emissiveIntensity: 0.06 });
-  const opalM = new THREE.MeshStandardMaterial({ color: 0xff6a1a, roughness: 0.06, metalness: 0, emissive: 0xff4a10, emissiveIntensity: 1.8, envMap: env, envMapIntensity: 1.3 });
-  const cordM = new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 0.85, metalness: 0, emissive: 0x0c0906, emissiveIntensity: 1 });
-  const lathe = (pts, seg) => { const geo = new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), seg); geo.rotateX(Math.PI / 2); return geo; };
-  const planarUV = (geo) => { const p = geo.attributes.position, uv = new Float32Array(p.count * 2); for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / (2 * R) + 0.5; uv[i * 2 + 1] = p.getY(i) / (2 * R) + 0.5; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
-  const fp = [], bp = [];
-  for (let k = 0; k <= 24; k++) { const r = R * k / 24, d = Math.cos((k / 24) * Math.PI / 2); fp.push([r, T + 0.0026 * d]); bp.push([r, -T - 0.0009 * d]); }
-  const faceGeo = planarUV(lathe(fp.reverse(), 96)); faceGeo.computeVertexNormals();
-  const backGeo = lathe(bp, 96); backGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(faceGeo, glassF), new THREE.Mesh(backGeo, glassB));
-  const edge = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 2 * T, 96, 1, true), glassB); edge.rotation.x = Math.PI / 2; g.add(edge);
-  const sec = [[R - 0.0016, T + 0.0006], [R + 0.0006, T + 0.0024], [R + 0.0044, T + 0.0018], [R + 0.0066, T], [R + 0.0070, -T + 0.0004], [R + 0.0058, -T - 0.0016],
-               [R + 0.0010, -T - 0.0018], [R - 0.0004, -T - 0.0004], [R - 0.0004, T - 0.0006], [R - 0.0016, T + 0.0006]];
-  const bezGeo = lathe(sec, 128); bezGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(bezGeo, bronze));
-  // six claws over the face instead of rivets: it was made to hold something that might move
-  for (let i = 0; i < 6; i++) {
-    const a = i / 6 * Math.PI * 2 + Math.PI / 6;
-    const cl = new THREE.Mesh(new THREE.ConeGeometry(0.0022, 0.0062, 6), bronze);
-    cl.position.set(Math.cos(a) * (R + 0.0006), Math.sin(a) * (R + 0.0006), T + 0.0024);
-    cl.rotation.z = a + Math.PI / 2; cl.rotateX(Math.PI / 2 - 0.35); g.add(cl);
-  }
-  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.0072, 0.0021, 12, 32), bronze);
-  bail.position.set(0, R + 0.0118, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
-  const cordCurve = new THREE.CatmullRomCurve3([[-0.012, R + 0.026, 0.003], [-0.004, R + 0.016, 0.002], [0, R + 0.0118, -0.0005], [0.005, R + 0.016, -0.003], [0.013, R + 0.028, -0.001]].map((p) => new THREE.Vector3(...p)));
-  g.add(new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 48, 0.0012, 8, false), cordM));
-  // the opal at the heart of the flame (the face's own ring is cut for it)
-  const opal = new THREE.Mesh(new THREE.SphereGeometry(0.0021, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), opalM);
-  opal.rotation.x = Math.PI / 2; opal.scale.set(1, 1, 0.6);
-  opal.position.set(0, (0.5 - 520 / 1024) * 2 * R, T + 0.0024); g.add(opal);
-  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
-  g.userData.pearl = opal;
-  return g;
-}
 function makeFlameArtIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const x = c.getContext('2d');
@@ -112889,7 +113454,7 @@ function makeFlameArtIcon() {
   x.fillStyle = gr; x.beginPath(); x.moveTo(24, 46); x.bezierCurveTo(20, 36, 30, 32, 32, 18); x.bezierCurveTo(36, 30, 46, 34, 40, 46); x.closePath(); x.fill();
   return c.toDataURL();
 }
-var ART_FLAME_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 21c-3-2-3-6 0-9 0 2 1 3 2 3-1-3 1-7 4-9-1 3 3 5 3 9 0 3-2 5-4 6 1-2 0-3-1-4 0 2-1 3-4 4z" fill="#ff9a2a" stroke="#c9973a" stroke-width="0.8"/></svg>';
+var ART_FLAME_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.4 9.4 13.6 2.6 15.4 9z" fill="#ffb04a" stroke="#3a1a08" stroke-width=".7" stroke-linejoin="round"/><path d="M4.5 15.5 7.6 9.6 12.6 8.6 18.2 10.8 19.6 15.8 14.6 19.8 8.2 19.6z" fill="#1b171c" stroke="#d9c7b4" stroke-width="1" stroke-linejoin="round"/><path d="M8.6 12.4l2.6 2 1.4-1.8 2.8 2.8M11.2 14.4l-.6 3" stroke="#ff7a1a" stroke-width="1.2" fill="none" stroke-linejoin="round"/><path d="M4.8 14.8 19.4 14.4" stroke="#5a524c" stroke-width="1.1"/></svg>';   // (2026-11-18: a flat mark of the thing itself, the way the pack draws, not a gold gradient)
 const flameArtModel = makeFlameArtifact();
 flameArtItem = {
   id: 'flameArtifact', name: 'Artifact of the Flame', icon: makeFlameArtIcon(), artifact: true, svg: ART_FLAME_SVG,
@@ -112930,112 +113495,6 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaWaveDbg: (x,
 let seaState = 0;      // 0 not given yet, 1 lying in the sand at `sea.spot`, 2 yours (in the pack, set in a weapon, or sold)
 function seaWeapon() { return isArtWeapon(equipped) && !!seaArtItem && equipped.artifact === seaArtItem ? equipped : null; }
 
-/* THE MEDALLION: the same bronze as the other two, green with the sea, round a disc of abalone — a great wave
- * cut into the nacre and the cuts run with silver, and in the curl of the wave a blue pearl. */
-let _seaFace = null, _seaBz = null;
-function artSeaFaceMaps() {
-  if (_seaFace) return _seaFace;
-  const S = 1024, c = S / 2, N = 512;           // (drawn at 512 in 1024's coordinates, like the flame's)
-  const [cc, g] = artCanvas(N, N), [hc, hg] = artCanvas(N, N);
-  const nz = artNoise2(523);
-  const img = g.createImageData(N, N), himg = hg.createImageData(N, N);
-  for (let yy = 0; yy < N; yy++) for (let xx = 0; xx < N; xx++) {
-    const x = xx * 2, y = yy * 2;
-    const n = artFbm(nz, x / 120, y / 120, 4), m = artFbm(nz, x / 30 + 17, y / 30, 3);
-    const r = Math.hypot(x - c, y - c) / c;
-    const band = Math.sin(n * 14 + r * 9), k = 0.5 + 0.5 * band, rim = 1 - Math.max(0, r - 0.72) * 1.4, o = (yy * N + xx) * 4;
-    img.data[o] = (16 + 34 * (1 - k) + m * 14) * rim; img.data[o + 1] = (48 + 74 * k + m * 22) * rim; img.data[o + 2] = (72 + 56 * k + 34 * (1 - k) + m * 18) * rim; img.data[o + 3] = 255;
-    himg.data[o] = himg.data[o + 1] = himg.data[o + 2] = 128 + (n - 0.5) * 30 + band * 5; himg.data[o + 3] = 255;
-  }
-  g.putImageData(img, 0, 0); hg.putImageData(himg, 0, 0);
-  g.setTransform(N / S, 0, 0, N / S, 0, 0); hg.setTransform(N / S, 0, 0, N / S, 0, 0);
-  const silver = (ctx, w) => { ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = ctx === g ? '#cfdcd8' : 'rgb(60,60,60)'; };
-  const both = (fn) => { for (const ctx of [g, hg]) { ctx.save(); fn(ctx); ctx.restore(); } };
-  // the border: two rings, and a run of little breaking waves between them
-  both((ctx) => { silver(ctx, 7); ctx.beginPath(); ctx.arc(c, c, 492, 0, 6.283); ctx.stroke(); silver(ctx, 4); ctx.beginPath(); ctx.arc(c, c, 446, 0, 6.283); ctx.stroke(); });
-  for (let i = 0; i < 40; i++) {
-    const a = i / 40 * 6.283;
-    both((ctx) => { silver(ctx, 3); ctx.translate(c, c); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(-18, 458); ctx.quadraticCurveTo(-6, 486, 10, 470); ctx.quadraticCurveTo(4, 462, 12, 456); ctx.stroke(); });
-  }
-  // the wave: the face rising from the left, over the top and curling down into itself
-  const curl = (ctx) => {
-    ctx.beginPath(); ctx.moveTo(190, 720);
-    ctx.bezierCurveTo(270, 700, 340, 600, 420, 480); ctx.bezierCurveTo(480, 385, 600, 300, 705, 330);
-    ctx.bezierCurveTo(800, 360, 812, 460, 738, 486); ctx.bezierCurveTo(686, 504, 652, 452, 694, 428);
-  };
-  both((ctx) => { curl(ctx); ctx.lineTo(694, 428); ctx.bezierCurveTo(760, 470, 830, 600, 840, 720); ctx.closePath();
-    ctx.fillStyle = ctx === g ? 'rgba(207,220,216,0.16)' : 'rgb(108,108,108)'; ctx.fill(); silver(ctx, 6); curl(ctx); ctx.stroke(); });
-  // the lines down its face, and the claws of foam off the crest
-  for (let i = 1; i <= 3; i++) both((ctx) => { silver(ctx, 2.5); ctx.beginPath(); ctx.moveTo(220 + i * 70, 720); ctx.bezierCurveTo(300 + i * 60, 680, 370 + i * 40, 560 + i * 10, 470 + i * 50, 430 + i * 30); ctx.stroke(); });
-  for (let i = 0; i < 7; i++) {
-    const x = 470 + i * 42, y = 400 - Math.sin(i / 6 * Math.PI) * 70;
-    both((ctx) => { silver(ctx, 2.5); ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 6, y - 34, x + 26, y - 30); ctx.stroke(); });
-  }
-  // the sea under it: three swells across
-  for (let j = 0; j < 3; j++) both((ctx) => { silver(ctx, 3); ctx.beginPath(); const y = 760 + j * 44, w = 300 - j * 50;
-    for (let x = c - w; x <= c + w; x += 6) { const yy = y + Math.sin((x - c) / 34) * 9; if (x === c - w) ctx.moveTo(x, yy); else ctx.lineTo(x, yy); } ctx.stroke(); });
-  // the words round the top
-  const words = 'WHAT THE SEA TAKES IT GIVES BACK';
-  g.font = 'bold 30px Georgia, "Times New Roman", serif'; hg.font = g.font;
-  const span = 2.5, a0 = -Math.PI / 2 - span / 2;
-  for (let i = 0; i < words.length; i++) {
-    const a = a0 + span * (i + 0.5) / words.length;
-    both((ctx) => { ctx.translate(c + Math.cos(a) * 470, c + Math.sin(a) * 470); ctx.rotate(a + Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = ctx === g ? '#cfdcd8' : 'rgb(60,60,60)'; ctx.fillText(words[i], 0, 0); });
-  }
-  // the ring the pearl sits in, in the curl
-  both((ctx) => { silver(ctx, 4); ctx.beginPath(); ctx.arc(SEA_PEARL[0], SEA_PEARL[1], 24, 0, 6.283); ctx.stroke(); });
-  const gr = hg.createRadialGradient(c, c, 470, c, c, 512); gr.addColorStop(0, 'rgba(150,150,150,0)'); gr.addColorStop(1, 'rgba(60,60,60,1)');
-  hg.fillStyle = gr; hg.fillRect(0, 0, S, S);
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
-  return (_seaFace = { map, normalMap: artNormalFrom(hc, 4.2) });
-}
-const SEA_PEARL = [712, 420];                  // where the pearl sits on the face, in the face's 1024 coordinates
-function makeSeaArtifact() {
-  const g = new THREE.Group(); g.name = 'seaArtifact';
-  const env = ringEnv();
-  const R = ART_R, T = 0.0034;
-  const face = artSeaFaceMaps(), bz = _seaBz || (_seaBz = artBronzeMaps());
-  const nacreF = new THREE.MeshStandardMaterial({ map: face.map, normalMap: face.normalMap, normalScale: new THREE.Vector2(1.5, 1.5), roughness: 0.16, metalness: 0, envMap: env, envMapIntensity: 1.1,
-    emissive: new THREE.Color(0xffffff), emissiveMap: face.map, emissiveIntensity: 0.3 });
-  const nacreB = new THREE.MeshStandardMaterial({ color: 0x10202a, roughness: 0.3, metalness: 0, envMap: env, envMapIntensity: 0.7, emissive: 0x04090c, emissiveIntensity: 1 });
-  const bronze = new THREE.MeshStandardMaterial({ map: bz.map, metalnessMap: bz.mr, roughnessMap: bz.mr, normalMap: bz.normalMap, normalScale: new THREE.Vector2(1.2, 1.2),
-    metalness: 1, roughness: 1, envMap: env, envMapIntensity: 1.5, color: 0x5e7466, emissive: new THREE.Color(0xffffff), emissiveMap: bz.map, emissiveIntensity: 0.07 });
-  const pearlM = new THREE.MeshStandardMaterial({ color: 0x9fe6ff, roughness: 0.08, metalness: 0, emissive: 0x2aa8ff, emissiveIntensity: 1.5, envMap: env, envMapIntensity: 1.3 });
-  const cordM = new THREE.MeshStandardMaterial({ color: 0x14191a, roughness: 0.85, metalness: 0, emissive: 0x070909, emissiveIntensity: 1 });
-  const lathe = (pts, seg) => { const geo = new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), seg); geo.rotateX(Math.PI / 2); return geo; };
-  const planarUV = (geo) => { const p = geo.attributes.position, uv = new Float32Array(p.count * 2); for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / (2 * R) + 0.5; uv[i * 2 + 1] = p.getY(i) / (2 * R) + 0.5; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
-  const fp = [], bp = [];
-  for (let k = 0; k <= 24; k++) { const r = R * k / 24, d = Math.cos((k / 24) * Math.PI / 2); fp.push([r, T + 0.0026 * d]); bp.push([r, -T - 0.0009 * d]); }
-  const faceGeo = planarUV(lathe(fp.reverse(), 96)); faceGeo.computeVertexNormals();
-  const backGeo = lathe(bp, 96); backGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(faceGeo, nacreF), new THREE.Mesh(backGeo, nacreB));
-  const edge = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 2 * T, 96, 1, true), nacreB); edge.rotation.x = Math.PI / 2; g.add(edge);
-  const sec = [[R - 0.0016, T + 0.0006], [R + 0.0006, T + 0.0024], [R + 0.0044, T + 0.0018], [R + 0.0066, T], [R + 0.0070, -T + 0.0004], [R + 0.0058, -T - 0.0016],
-               [R + 0.0010, -T - 0.0018], [R - 0.0004, -T - 0.0004], [R - 0.0004, T - 0.0006], [R - 0.0016, T + 0.0006]];
-  const bezGeo = lathe(sec, 128); bezGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(bezGeo, bronze));
-  // eight rivets round the bezel, and barnacles crusted over two of them
-  for (let i = 0; i < 8; i++) {
-    const a = i / 8 * Math.PI * 2 + Math.PI / 8;
-    const rv = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 10, 8), bronze);
-    rv.position.set(Math.cos(a) * (R + 0.0032), Math.sin(a) * (R + 0.0032), T + 0.0022); g.add(rv);
-  }
-  for (const [a, s] of [[3.6, 1], [3.9, 0.7], [4.15, 0.85], [0.5, 0.6]]) {
-    const b = new THREE.Mesh(new THREE.ConeGeometry(0.0026 * s, 0.003 * s, 7, 1, true), nacreB);
-    b.position.set(Math.cos(a) * (R + 0.004), Math.sin(a) * (R + 0.004), T + 0.0012); b.rotation.x = Math.PI / 2; g.add(b);
-  }
-  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.0072, 0.0021, 12, 32), bronze);
-  bail.position.set(0, R + 0.0118, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
-  const cordCurve = new THREE.CatmullRomCurve3([[-0.012, R + 0.026, 0.003], [-0.004, R + 0.016, 0.002], [0, R + 0.0118, -0.0005], [0.005, R + 0.016, -0.003], [0.013, R + 0.028, -0.001]].map((p) => new THREE.Vector3(...p)));
-  g.add(new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 48, 0.0012, 8, false), cordM));
-  const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.0024, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), pearlM);
-  pearl.rotation.x = Math.PI / 2; pearl.scale.set(1, 1, 0.7); pearl.name = 'seaPearl';
-  pearl.position.set((SEA_PEARL[0] / 1024 - 0.5) * 2 * R, (0.5 - SEA_PEARL[1] / 1024) * 2 * R, T + 0.0024); g.add(pearl);
-  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
-  g.userData.pearl = pearl;
-  return g;
-}
 function makeSeaArtIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const x = c.getContext('2d');
@@ -113047,12 +113506,12 @@ function makeSeaArtIcon() {
   x.fillStyle = '#bff0ff'; x.beginPath(); x.arc(41, 29, 2, 0, Math.PI * 2); x.fill();
   return c.toDataURL();
 }
-var ART_SEA_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 19c2-1 3-4 5-8 2-4 6-7 10-6 3 1 4 5 1 6-2 1-3-1-2-2 1 2 3 5 4 10z" fill="#4cc4dc" stroke="#9fdff0" stroke-width="0.8"/><path d="M2 21c2-1 4-1 6 0s4 1 6 0 4-1 6 0" fill="none" stroke="#7fd8ea" stroke-width="1"/></svg>';
+var ART_SEA_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 20.5 3.6 11.4C4.4 6.8 7.8 4 12 4s7.6 2.8 8.4 7.4z" fill="#d9c7b4" stroke="#2b2118" stroke-width="1.1" stroke-linejoin="round"/><path d="M12 20.5 6.2 7.4M12 20.5 9 5.2M12 20.5V4.2M12 20.5 15 5.2M12 20.5 17.8 7.4" stroke="#a88f7c" stroke-width=".8"/><path d="M9.6 20.6h4.8" stroke="#2b2118" stroke-width="1.1"/><circle cx="12" cy="13.2" r="2.4" fill="#9fe6ff" stroke="#1d6f99" stroke-width=".7"/></svg>';   // (2026-11-18: a flat mark of the thing itself, the way the pack draws, not a gold gradient)
 const seaArtModel = makeSeaArtifact();
 seaArtItem = {
   id: 'seaArtifact', name: 'Artifact of the Sea', icon: makeSeaArtIcon(), artifact: true, svg: ART_SEA_SVG,
   desc: `Set into a weapon · A parry sends out a wave that lifts every enemy near you · ${SEA_CD}s to return`,
-  inspectModel: seaArtModel, iconRot: { x: 0.12, y: -0.35 },
+  inspectModel: seaArtModel, iconRot: { rotX: 0.45, rotY: 0.18 },   // (looking into the cup, the pearl in it: from the side a scallop is a fan)
   use: () => {
     if (isArtWeapon(equipped)) { if (attachArtifact(seaArtItem, equipped)) seaWarm(); }
     else artSay('Hold a weapon to set it in');
@@ -120086,7 +120545,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); updateTempleCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* AND THE WARM CHAIN, THE FAR-CULL AND EVERY WALL-CLOCK CUT LIVE IN
@@ -120657,4 +121116,1040 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   cineS: () => ({ hold: cineHold, walkOff: cineWalkOff, fov: +camera.fov.toFixed(2), want: dialogFov, at: cineAt.toArray().map((v) => +v.toFixed(2)) }),
   hpS: () => hp, setHp: (v) => { hp = v; }, pavKeyItem, storeKeyItem, fillKeyModels, LOOP_SONGS, katanaItemS: () => katanaItem, dealerU: () => dealer, SELL_ROWS, migrateSave, jarsS: () => bloodJars,
 }));
+/* ==================================================================================================================
+ * THE DESERT TEMPLE, AND THE CROW ON THE STUMP THAT TAKES YOU THERE (2026-11-18, the owner: "add the crow again on a
+ * tree stump before the castle but after the whale. when interacted with have it grab you and fly you far over the
+ * ocean very high up until you cant see anything but clouds have the clouds open up in a dramatic theatrical way to
+ * this temple where you are then dropped and stand up to look exactly where this screenshot is ... make it so the floors
+ * blend ... it should look like a huge desert. make sure all colliders are good and its actually walkable ... use fog
+ * and things to hide any flaws in the distance. the temple closest in the screenshot should be cleared out of the piles
+ * of sand on it to where it seems to be an area to fight in ... i dont wanna fall through the map or clip through any
+ * visible walls or floors").
+ *
+ * THE PLACE (`assets/temple.glb`, `tools/temple_pack.py`: re1monsen's "Temple USD Workflow Test 3", CC-BY-4.0, without
+ * its camels, its people, the sand heaped on its floor and its three overlapping terrains). A far-off room like every
+ * other (`TMP_X/Y/Z`; `inTemple` in `inRoom`, the hall cull, the clamps, the save table), in its own frame: the
+ * temple's centre at 0, its podium's floor at `TMP_FLOOR`, 26 m across.
+ *  - THE GROUND IS ONE SURFACE: a non-uniform grid baked from the model's three terrains (near, mid, far — three
+ *    resolutions laid over each other, a ten-metre cliff where the near one ended), blended in the packer. The mesh
+ *    and the walk are the SAME triangles (`tmpSand`: the quad split on the same diagonal), so where you see sand is
+ *    exactly where you stand. The podium is a disc at its floor's height (`TMP_POD_R`); the sand round it is let
+ *    down to a 0.36 m step.
+ *  - SOLIDS are a 0.25 m grid of cells (`tmpG.cell`, built at load from the columns' and the fallen pieces' own
+ *    triangles between knee and head height over the ground under them), pushed out of along the whole step, so no
+ *    speed walks through a column.
+ *  - THE FAR WORLD IS DRAWN NEARER: past `TMP_CMP.R0` from the viewpoint every vertex is pulled in along its line of
+ *    sight from the eye there (and its height with it), so the colonnades kilometres off keep exactly the bearing and
+ *    size they have in the owner's screenshot inside the camera's 5 km. Nothing walkable is touched (`TMP_WALK_R`).
+ *  - THE AIR: a pale overcast dome of its own, the scene's fog at a haze that is CAPPED (`FOG_CAP`, one new term in
+ *    the shared fog chunk: off everywhere else) so the far dunes and colonnades stay dark shapes in it, as in the
+ *    screenshot, and a sandstorm that thickens toward the walk's edge and turns you back at it.
+ *
+ * THE FLIGHT (`tmpCut`, phases in `TMP_T`): the crow screams and goes up off its stump; a beat; it takes you from
+ * behind and climbs out over the sea into the cloud until there is nothing but white; out of the white you are over a
+ * sea of cloud, and it opens under you — the deck parting from the middle outward, light coming down through the gap
+ * onto the temple — and it carries you down through it and lets go over the dune. You fall, you lie a moment, you
+ * stand, and you are looking at what the screenshot looks at (`TMP_VIEW`), the lens wide of the screenshot's own
+ * and let out to yours as the game hands you back. A checkpoint there (`tmpFlown`: the crow never takes you twice).
+ * ================================================================================================================== */
+const TMP_X = 28000, TMP_Y = 600, TMP_Z = 28000;
+/* THE TEMPLE YOU CAN WALK TO, 2.4 TIMES ITS FIRST SIZE (2026-11-18, the owner: "i wanted the temple way bigger theres going
+ * to be a fight there … the one temple you can walk to"): the rotunda and its podium only (the far colonnades are drawn at
+ * their own size: `tmpBuild` takes the scale back out of them). Its podium 63 m across, its roof ring 49 m up, its floor
+ * 1.94 m over the room's zero; the sand drifted up against its foot to a step under it (`temple_pack.py --scale`). */
+const TMP_SCALE = 2.4;
+const TMP_FLOOR = 0.81 * TMP_SCALE, TMP_POD_R = 13.1 * TMP_SCALE;   // the podium's floor and its edge (room frame, measured off the model at 1×)
+const TMP_WALK_R = 420, TMP_STORM_R = 300;          // how far from the temple you can go; where the storm starts to thicken
+// (was 140 / 88 — 2026-11-18, the owner: "i want that area way bigger … it should feel grand". 420 from the temple keeps every walkable
+// metre inside `TMP_CMP.R0` (560 from the viewpoint, 54 m off it), where the far world is drawn nearer)
+const TMP_VIEW = { x: -54 * TMP_SCALE, z: 0, turn: 0.17, pitch: 0.135, fov: 40 };   // (as far back as the temple is bigger: the screenshot's framing kept)   // the owner's screenshot: where, how far left of the temple, the lens
+const TMP_CMP = { R0: 560, Q: 0.4 };                // past R0 (from the viewpoint) the world is drawn nearer, Q of the way
+const TMP_FOG = { color: new THREE.Color(0xa9acb0), density: 0.0036, cap: 0.32 };
+const TMP_CELL = 0.25, TMP_GRID_R = 48 * TMP_SCALE;  // the solids' grid: its cell and its half-width
+const TMP_STUMP = { x: 10.5, z: WB_Z - 35 };        // the crow's stump: on the dry sand between the whale (across the beach at WB_Z) and the castle's front (~WB_Z - 55)
+let tmpWorld = null, tmpReady = false, tmpLoading = false, tmpG = null, tmpSky = null, tmpClouds = null, tmpRays = null;
+let tmpLastFloor = null, _tmpLight = null, _tmpFogSaved = null;
+const tmpLastSpot = { x: 0, z: 0 };
+const _tmpV = new THREE.Vector3(), _tmpW = new THREE.Vector3(), _tmpQ = new THREE.Quaternion(), _tmpE = new THREE.Euler(0, 0, 0, 'YXZ');
+const tmpEyeY = () => tmpSandRaw(TMP_VIEW.x, TMP_VIEW.z) + EYE_HEIGHT;     // the viewpoint's eye, room frame
+// the yaw that faces from the viewpoint to the temple, and the screenshot's own
+const tmpViewYaw = () => Math.atan2(TMP_VIEW.x, TMP_VIEW.z) + TMP_VIEW.turn;
+
+// ---- the ground --------------------------------------------------------------------------------------------------
+function tmpIdx(ax, v) {
+  let a = 0, b = ax.length - 1;
+  if (v <= ax[0]) return 0;
+  if (v >= ax[b]) return b - 1;
+  while (b - a > 1) { const m = (a + b) >> 1; if (ax[m] <= v) a = m; else b = m; }
+  return a;
+}
+// the sand under (lx, lz), off the same two triangles a quad of the mesh is drawn as
+function tmpSandRaw(lx, lz) {
+  const G = tmpG; if (!G) return 0;
+  const ax = G.ax, N = G.N, H = G.H, i = tmpIdx(ax, lx), j = tmpIdx(ax, lz);
+  const fx = THREE.MathUtils.clamp((lx - ax[i]) / (ax[i + 1] - ax[i]), 0, 1), fz = THREE.MathUtils.clamp((lz - ax[j]) / (ax[j + 1] - ax[j]), 0, 1);
+  const a = H[j * N + i], b = H[j * N + i + 1], c = H[(j + 1) * N + i], d = H[(j + 1) * N + i + 1];
+  return fx + fz <= 1 ? a + fx * (b - a) + fz * (c - a) : d + (1 - fx) * (c - d) + (1 - fz) * (b - d);
+}
+const tmpOnPodium = (lx, lz) => lx * lx + lz * lz < TMP_POD_R * TMP_POD_R;
+function tmpFloorAt(lx, lz) { return tmpOnPodium(lx, lz) ? TMP_FLOOR : tmpSandRaw(lx, lz); }
+// a solid cell's top over the ground under it, or -1 (room frame)
+function tmpCellTop(lx, lz) {
+  const G = tmpG; if (!G || !G.cell) return -1e9;
+  const n = G.cn, i = Math.floor((lx + TMP_GRID_R) / TMP_CELL), j = Math.floor((lz + TMP_GRID_R) / TMP_CELL);
+  if (i < 0 || j < 0 || i >= n || j >= n) return -1e9;
+  return G.cell[j * n + i];
+}
+/* OUT OF THE SOLIDS: every solid cell within a body's reach whose top is over a step above the feet pushes the body
+ * out to its edge (the nearest point of the cell's square). Twice, for a corner between two. */
+function tmpPushOut(p, feet) {
+  const G = tmpG; if (!G || !G.cell) return false;
+  const n = G.cn, R = PLAYER_R; let moved = false;
+  for (let it = 0; it < 3; it++) {
+    const lx = p.x - TMP_X, lz = p.z - TMP_Z;
+    const i0 = Math.floor((lx - R + TMP_GRID_R) / TMP_CELL), i1 = Math.floor((lx + R + TMP_GRID_R) / TMP_CELL);
+    const j0 = Math.floor((lz - R + TMP_GRID_R) / TMP_CELL), j1 = Math.floor((lz + R + TMP_GRID_R) / TMP_CELL);
+    let px = 0, pz = 0;
+    for (let j = Math.max(0, j0); j <= Math.min(n - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(n - 1, i1); i++) {
+      const top = G.cell[j * n + i]; if (top <= feet + ROCK_STEP) continue;
+      const x0 = i * TMP_CELL - TMP_GRID_R, z0 = j * TMP_CELL - TMP_GRID_R;
+      const cx = THREE.MathUtils.clamp(lx, x0, x0 + TMP_CELL), cz = THREE.MathUtils.clamp(lz, z0, z0 + TMP_CELL);
+      let dx = lx - cx, dz = lz - cz; const d = Math.hypot(dx, dz);
+      if (d >= R) continue;
+      if (d < 1e-5) { dx = lx - (x0 + TMP_CELL / 2); dz = lz - (z0 + TMP_CELL / 2); const e = Math.hypot(dx, dz) || 1; px += dx / e * R; pz += dz / e * R; }
+      else { px += dx / d * (R - d); pz += dz / d * (R - d); }
+    }
+    if (!px && !pz) break;
+    const k = Math.min(1, R / Math.max(1e-6, Math.hypot(px, pz)));
+    p.x += px * k; p.z += pz * k; moved = true;
+  }
+  return moved;
+}
+// the walk's edge, and the step from where you were to where you are taken in short legs so nothing is passed through
+function tmpWalk(p, feet) {
+  const fx = _preMove.x, fz = _preMove.z, dx = p.x - fx, dz = p.z - fz, L = Math.hypot(dx, dz);
+  const legs = Math.max(1, Math.ceil(L / 0.15));
+  let x = fx, z = fz;
+  for (let k = 1; k <= legs; k++) {
+    _tmpV.set(x + dx / legs, 0, z + dz / legs);
+    tmpPushOut(_tmpV, feet);
+    x = _tmpV.x; z = _tmpV.z;
+  }
+  // (and never ending a step with the middle of the body in a solid: measured, 2 frames in 69,000 at dev speed did, in a
+  // corner between two cells — the step is refused instead)
+  if (tmpCellTop(x - TMP_X, z - TMP_Z) > feet + ROCK_STEP) { x = fx; z = fz; }
+  p.x = x; p.z = z;
+  const lx = p.x - TMP_X, lz = p.z - TMP_Z, r = Math.hypot(lx, lz);
+  if (r > TMP_WALK_R) { p.x = TMP_X + lx * TMP_WALK_R / r; p.z = TMP_Z + lz * TMP_WALK_R / r; }
+}
+function tmpClampPlayer() {
+  if (!inTemple || !tmpReady || !tmpModuleIn) return false;
+  const p = camera.position;
+  tmpPushOut(p, camBaseY - playerEye() - TMP_Y);
+  const lx = p.x - TMP_X, lz = p.z - TMP_Z, r = Math.hypot(lx, lz);
+  if (r > TMP_WALK_R) { p.x = TMP_X + lx * TMP_WALK_R / r; p.z = TMP_Z + lz * TMP_WALK_R / r; }
+  return true;
+}
+
+// ---- the far world, drawn nearer ---------------------------------------------------------------------------------
+// (x, y, z) in the room's frame, pulled in toward the viewpoint's eye past R0; returns the factor (1 inside)
+function tmpPull(v, eyeY) {
+  const dx = v.x - TMP_VIEW.x, dz = v.z - TMP_VIEW.z, r = Math.hypot(dx, dz);
+  if (r <= TMP_CMP.R0) return 1;
+  const k = (TMP_CMP.R0 + (r - TMP_CMP.R0) * TMP_CMP.Q) / r;
+  v.x = TMP_VIEW.x + dx * k; v.z = TMP_VIEW.z + dz * k; v.y = eyeY + (v.y - eyeY) * k;
+  return k;
+}
+
+// ---- the build ---------------------------------------------------------------------------------------------------
+function tmpRetro(m) {
+  // the game's look on the model's PBR: no shine (there is nothing to reflect), flat facets, nearest texels
+  m.metalness = 0; m.roughness = 1; m.metalnessMap = null; m.roughnessMap = null; m.envMapIntensity = 0;
+  m.flatShading = true;
+  for (const k of ['map', 'normalMap']) if (m[k]) { m[k].magFilter = THREE.NearestFilter; m[k].minFilter = THREE.NearestMipmapNearestFilter; m[k].anisotropy = 1; m[k].needsUpdate = true; }
+  if (m.normalScale) m.normalScale.multiplyScalar(0.6);
+  m.needsUpdate = true;
+}
+function loadTemple() {
+  if (tmpWorld || tmpLoading || !tmpModuleIn) return;
+  tmpLoading = true;
+  bwGlb('assets/temple.glb', (gltf) => {
+    const P = gltf.parser, X = (gltf.scene.userData && gltf.scene.userData.bw_desert) || (P.json.scenes[0].extras || {}).bw_desert;
+    if (!X) { console.warn('[bw] temple: no desert data'); tmpLoading = false; return; }
+    Promise.all([P.getDependency('bufferView', X.heights), P.getDependency('bufferView', X.axis), P.getDependency('texture', X.sand)]).then(([hb, ab, sandTex]) => {
+      tmpBuild(gltf, X, new Float32Array(hb.slice(0)), new Float32Array(ab.slice(0)), sandTex);
+    }).catch((e) => { console.warn('[bw] temple', e); tmpLoading = false; });
+  }, () => { tmpLoading = false; });
+}
+function tmpBuild(gltf, X, H, ax, sandTex) {
+  const W = tmpWorld = new THREE.Group(); W.name = 'temple';
+  W.position.set(TMP_X, TMP_Y, TMP_Z); W.visible = false;
+  scene.add(W);
+  const N = X.n;
+  tmpG = { N, ax: Array.from(ax), H, cell: null, cn: 0 };
+  const eyeY = tmpEyeY();
+  // THE MODEL: its own frame times K, the temple's centre on the room's origin
+  const root = gltf.scene, K = X.K, C = X.C;
+  root.scale.setScalar(K * TMP_SCALE); root.position.set(-C[0] * K * TMP_SCALE, -C[1] * K * TMP_SCALE, -C[2] * K * TMP_SCALE);
+  const mats = new Set();
+  root.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; for (const m of [].concat(o.material)) mats.add(m); } });
+  for (const m of mats) { tmpRetro(m); if (m.color) m.color.multiplyScalar(0.62); }
+  W.add(root); W.updateMatrixWorld(true);
+  // the black "mirror" disc at the floor's middle is the floor's own centre stone now
+  const byName = (n) => { let r = null; root.traverse((o) => { if (!r && o.name === n) r = o; }); return r; };
+  const disc = byName('temple010_10'); if (disc) disc.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.normalMap = null; o.material.color.setRGB(0.08, 0.08, 0.085); o.material.roughness = 1; } });
+  // THE FAR COLONNADES, pulled in along the eye's line from the viewpoint (the same bearing, the same size on screen)
+  const inv = W.matrixWorld.clone().invert();
+  // (at their 1× size and place: the root's TMP_SCALE is for the near temple, taken back out of these two here)
+  const unS = new THREE.Matrix4().makeScale(1 / TMP_SCALE, 1 / TMP_SCALE, 1 / TMP_SCALE);
+  for (const n of ['temple025_25', 'temple026_26']) {
+    const o = byName(n); if (!o) continue;
+    const bb = new THREE.Box3().setFromObject(o).applyMatrix4(inv).applyMatrix4(unS), c = bb.getCenter(new THREE.Vector3()), c2 = c.clone();
+    const k = tmpPull(c2, eyeY);
+    const T = new THREE.Matrix4().makeTranslation(c2.x, c2.y, c2.z).multiply(new THREE.Matrix4().makeScale(k, k, k)).multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z));
+    const parentInRoom = inv.clone().multiply(o.parent.matrixWorld), objInRoom = unS.clone().multiply(inv).multiply(o.matrixWorld);
+    o.matrixAutoUpdate = false;
+    o.matrix.copy(parentInRoom.clone().invert().multiply(T).multiply(objInRoom));
+    o.matrixWorldNeedsUpdate = true;
+  }
+  // THE SAND: one mesh, the grid's own vertices (pulled in far off), its own two triangles a quad, the model's sand
+  {
+    const pos = new Float32Array(N * N * 3), uv = new Float32Array(N * N * 2), idx = new Uint32Array((N - 1) * (N - 1) * 6);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const k = j * N + i; _tmpV.set(ax[i], H[k], ax[j]); tmpPull(_tmpV, eyeY);
+      pos[k * 3] = _tmpV.x; pos[k * 3 + 1] = _tmpV.y; pos[k * 3 + 2] = _tmpV.z;
+      uv[k * 2] = ax[i] / 4.5; uv[k * 2 + 1] = ax[j] / 4.5;
+    }
+    let q = 0;
+    for (let j = 0; j < N - 1; j++) for (let i = 0; i < N - 1; i++) {
+      const a = j * N + i, b = a + 1, c = a + N, d = c + 1;
+      idx[q++] = a; idx[q++] = c; idx[q++] = b; idx[q++] = b; idx[q++] = c; idx[q++] = d;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.BufferAttribute(idx, 1));
+    g.computeVertexNormals(); g.computeBoundingSphere();
+    retroTex(sandTex); sandTex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.MeshStandardMaterial({ map: sandTex, color: new THREE.Color(0.5, 0.485, 0.46), roughness: 1, metalness: 0, flatShading: true });
+    const sand = new THREE.Mesh(g, m); sand.name = 'desertSand'; sand.frustumCulled = false;
+    W.add(sand); tmpG.sand = sand;
+  }
+  // THE SKY: a pale overcast of its own, brighter at the horizon, slow cloud moving in it (no fog: it IS the haze)
+  {
+    const g = new THREE.SphereGeometry(4200, 32, 16);
+    const m = new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false,
+      uniforms: { uT: { value: 0 }, uHor: { value: new THREE.Color(0xc4c6c9) }, uTop: { value: new THREE.Color(0x8b9097) }, uK: { value: 1 } },
+      vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w * 0.99999; }',
+      fragmentShader: `uniform float uT; uniform vec3 uHor; uniform vec3 uTop; uniform float uK; varying vec3 vD;
+        float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+        void main(){
+          float y = max(vD.y, 0.0);
+          vec3 c = mix(uHor, uTop, pow(y, 0.55));
+          vec2 p = vD.xz / (0.25 + y) * 2.2 + vec2(uT * 0.004, uT * 0.0015);
+          float cl = n(p) * 0.55 + n(p * 2.1) * 0.3 + n(p * 4.3) * 0.15;
+          c *= 0.86 + 0.24 * cl * smoothstep(0.0, 0.25, y);
+          c = mix(c, uHor * 0.92, smoothstep(0.08, -0.04, vD.y));          // under the horizon: the haze
+          gl_FragColor = vec4(c * uK, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+    });
+    tmpSky = new THREE.Mesh(g, m); tmpSky.frustumCulled = false; tmpSky.renderOrder = -10; tmpSky.raycast = () => {};
+    W.add(tmpSky);
+  }
+  // THE CLOUD DECK the crow brings you out over, and the light that comes down through it when it parts
+  tmpClouds = tmpMakeClouds(); W.add(tmpClouds.g);
+  tmpRays = tmpMakeRays(); W.add(tmpRays);
+  // THE SOLIDS: the columns, the fallen block and the fallen columns, between knee and head height over the ground
+  tmpBuildSolids(root, byName, inv);
+  tmpReady = true; tmpLoading = false;
+  console.info('[bw] temple: ready, grid', N, 'solid cells', tmpG.solidN);
+}
+function tmpBuildSolids(root, byName, inv) {
+  const n = Math.round(TMP_GRID_R * 2 / TMP_CELL), cell = new Float32Array(n * n).fill(-1e9), E = -1e8;
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), Pp = new THREE.Vector3();
+  let solidN = 0;
+  const mark = (x, y, z) => {
+    const i = Math.floor((x + TMP_GRID_R) / TMP_CELL), j = Math.floor((z + TMP_GRID_R) / TMP_CELL);
+    if (i < 0 || j < 0 || i >= n || j >= n) return;
+    const g = tmpFloorAt(x, z);
+    if (y < g + 0.3 || y > g + 2.4) return;             // under the knee, or over the head: not in the way
+    const k = j * n + i; if (cell[k] < E) solidN++;
+    cell[k] = Math.max(cell[k], y);
+  };
+  for (const name of ['temple002_2', 'temple006_6']) {   // (the three fallen columns, .007–.009, are out of the pack: 2026-11-18, room for the fight)
+    const grp = byName(name); if (!grp) { console.warn('[bw] temple: no', name); continue; }
+    grp.traverse((o) => {
+      if (!o.isMesh) return;
+      const M = inv.clone().multiply(o.matrixWorld), g = o.geometry, P = g.attributes.position, I = g.index;
+      const tri = (I ? I.count : P.count) / 3;
+      for (let t = 0; t < tri; t++) {
+        A.fromBufferAttribute(P, I ? I.getX(t * 3) : t * 3).applyMatrix4(M);
+        B.fromBufferAttribute(P, I ? I.getX(t * 3 + 1) : t * 3 + 1).applyMatrix4(M);
+        C.fromBufferAttribute(P, I ? I.getX(t * 3 + 2) : t * 3 + 2).applyMatrix4(M);
+        // sampled at a tenth of a metre over its face (a column's sides are vertical: they have no footprint to fill)
+        const L = Math.max(A.distanceTo(B), B.distanceTo(C), C.distanceTo(A)), s = Math.min(400, Math.max(1, Math.ceil(L / 0.1)));
+        for (let u = 0; u <= s; u++) for (let v = 0; u + v <= s; v++) {
+          const a = u / s, b = v / s;
+          Pp.copy(A).multiplyScalar(1 - a - b).addScaledVector(B, a).addScaledVector(C, b);
+          mark(Pp.x, Pp.y, Pp.z);
+        }
+      }
+    });
+  }
+  /* AND THE INSIDES ARE SOLID TOO: a column's shell marks a ring of cells, and the push-out stops a body at the ring —
+   * but a hollow ring is a place a knock-back could set you down in. Every run of free cells closed off on both sides
+   * in both directions, inside a short reach, is filled at the lower of its walls' tops. */
+  const fill = new Float32Array(cell);
+  const reach = Math.round(3.2 * TMP_SCALE / TMP_CELL);   // (a column's shell is as much wider as the temple is bigger)
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const k = j * n + i; if (cell[k] > E) continue;
+    let w = -1e9, e = -1e9, s = -1e9, no = -1e9;
+    for (let d = 1; d <= reach && i - d >= 0; d++) if (cell[k - d] > E) { w = cell[k - d]; break; }
+    if (w < E) continue;
+    for (let d = 1; d <= reach && i + d < n; d++) if (cell[k + d] > E) { e = cell[k + d]; break; }
+    if (e < E) continue;
+    for (let d = 1; d <= reach && j - d >= 0; d++) if (cell[k - d * n] > E) { s = cell[k - d * n]; break; }
+    if (s < E) continue;
+    for (let d = 1; d <= reach && j + d < n; d++) if (cell[k + d * n] > E) { no = cell[k + d * n]; break; }
+    if (no < E) continue;
+    fill[k] = Math.min(w, e, s, no); solidN++;
+  }
+  tmpG.cell = fill; tmpG.cn = n; tmpG.solidN = solidN;
+}
+// a soft round puff, drawn once into a small canvas (the game's own way: small, quantised, nearest)
+/* A SEA OF CLOUD: layered sheets of drifting noise, lit from above (bright crowns, grey hollows), and a HOLE in them whose
+ * radius is `part` — torn, not cut: its edge is pushed in and out by a coarser noise, so the deck comes apart in
+ * ragged lobes from the middle outward, a curtain drawn back. The same sheets serve the beach's night (dark, moonlit
+ * from above, no hole): the ceiling you are carried up into. */
+const TMP_CLOUD_GLSL = `
+  float ch(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float cn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(ch(i), ch(i + vec2(1, 0)), f.x), mix(ch(i + vec2(0, 1)), ch(i + vec2(1, 1)), f.x), f.y); }
+  float cf(vec2 p){ float a = 0.0, w = 0.5; for (int i = 0; i < 5; i++) { a += w * cn(p); p = p * 2.03 + vec2(17.1, 9.3); w *= 0.5; } return a; }`;
+function tmpCloudSheet(y, seed, lit, dark, R) {
+  const g = new THREE.PlaneGeometry(R * 2, R * 2, 1, 1); g.rotateX(-Math.PI / 2); g.translate(0, y, 0);
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
+    uniforms: { uT: { value: 0 }, uHole: { value: -200 }, uK: { value: 0 }, uC: { value: new THREE.Vector2(0, 0) }, uLit: { value: lit }, uDark: { value: dark }, uSeed: { value: seed }, uR: { value: R },
+      uFogC: { value: new THREE.Color() }, uFogD: { value: 0 }, fogMoon: THREE.UniformsLib.fog.fogMoon, fogTint: THREE.UniformsLib.fog.fogTint },
+    vertexShader: 'varying vec3 vW; varying vec3 vL; void main(){ vL = position; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: `uniform float uT; uniform float uHole; uniform float uK; uniform vec2 uC; uniform vec3 uLit; uniform vec3 uDark; uniform float uSeed; uniform float uR; uniform vec3 uFogC; uniform float uFogD; uniform vec4 fogMoon; uniform vec4 fogTint; varying vec3 vW; varying vec3 vL;
+      ${TMP_CLOUD_GLSL}
+      void main(){
+        vec2 p = vL.xz * 0.0068 + vec2(uSeed * 3.7 + uT * 0.006, uSeed * 1.3 + uT * 0.002);
+        float n = cf(p), n2 = cf(p * 2.7 + 5.0);
+        float dens = smoothstep(0.38, 0.66, n + 0.12 * n2);
+        float d = length(vL.xz - uC) + (cf(vL.xz * 0.006 + uSeed) - 0.5) * 260.0;
+        float a = dens * smoothstep(uHole, uHole + 110.0, d) * smoothstep(uR, uR * 0.62, length(vL.xz)) * uK;
+        vec3 c = mix(uDark, uLit, smoothstep(0.42, 0.8, n * 0.8 + n2 * 0.35));
+        /* (the night's ceiling, 2026-11-18: thickening into the scene's own fog with distance and SOLID there, so it meets
+         * the fogged sea in one colour all round — an endless horizon, not a sheet's edge with sky under it) */
+        /* (and into the game's LIT fog — the shared chunk lifts the base colour toward the moonlit horizon; the base colour
+         * alone was darker than the fogged sea under it, and the seam was a line round the world) */
+        if (uFogD > 0.0) {
+          vec3 fd = normalize(vW - cameraPosition); float fs = max(dot(fd, fogMoon.xyz), 0.0);
+          vec3 fc = (uFogC + fogMoon.w * (vec3(0.0090, 0.0195, 0.0480) + vec3(0.060, 0.108, 0.255) * (0.6 * pow(fs, 10.0) + 0.4 * pow(fs, 3.0)))) * fogTint.xyz;
+          float dd = length(vW - cameraPosition) * uFogD; float h = 1.0 - exp(-dd * dd); c = mix(c, fc, h); a = max(a, h * uK);
+        }
+        gl_FragColor = vec4(c, a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.raycast = () => {}; mesh.renderOrder = 2;
+  return mesh;
+}
+function tmpMakeClouds() {
+  const g = new THREE.Group(), sheets = [];
+  for (const [y, seed, k] of [[214, 0.3, 0.86], [232, 1.7, 0.95], [251, 4.1, 1.0]]) {
+    const sh = tmpCloudSheet(y, seed, new THREE.Color(0.97 * k, 0.97 * k, 0.98 * k), new THREE.Color(0.34 * k, 0.36 * k, 0.40 * k), 2600);
+    sh.position.x = TMP_VIEW.x * 0.25; sheets.push(sh); g.add(sh);
+  }
+  const C = { g, sheets, part: 0, show: 0 };
+  g.visible = false;
+  return C;
+}
+function tmpCloudsPose(C, t) {
+  const e = C.part * C.part * (3 - 2 * C.part);
+  C.sheets.forEach((sh, i) => { const U = sh.material.uniforms; U.uT.value = t; U.uK.value = C.show; U.uHole.value = -200 + e * (760 - i * 70); });
+}
+// light through the gap: a few long pale cones from the cloud's underside onto the temple, added, no fog
+function tmpMakeRays() {
+  const g = new THREE.Group();
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide,
+    uniforms: { uK: { value: 0 } },
+    vertexShader: 'varying float vY; varying vec3 vN; varying vec3 vV; void main(){ vY = uv.y; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform float uK; varying float vY; varying vec3 vN; varying vec3 vV; void main(){ float f = abs(dot(normalize(vN), normalize(vV))); float a = uK * 0.03 * f * f * f * smoothstep(0.0, 0.5, vY) * (0.35 + 0.65 * vY); gl_FragColor = vec4(vec3(0.95, 0.94, 0.9) * a, 1.0); }',
+  });
+  let seed = 3; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 9; i++) {
+    const h = 230, geo = new THREE.CylinderGeometry(26 + rnd() * 26, 9 + rnd() * 8, h, 20, 1, true);
+    geo.translate(0, h / 2, 0);
+    const c = new THREE.Mesh(geo, m); c.raycast = () => {}; c.frustumCulled = false;
+    c.position.set((rnd() - 0.5) * 46, -2, (rnd() - 0.5) * 46);
+    c.rotation.set((rnd() - 0.5) * 0.25, 0, (rnd() - 0.5) * 0.25 - 0.12);
+    g.add(c);
+  }
+  g.userData.m = m; g.visible = false;
+  return g;
+}
+
+/* THE AIR MOVES. Grains: eight hundred points in a box round you, carried on the wind a little over the sand (each one
+ * set down on the ground where it comes back in at the box's upwind face). Banks: fourteen big faint puffs of blown
+ * dust rolling over the dunes 30..140 m off, low, the sand's own grey — the storm's edge seen from inside it. */
+const TMP_WIND = new THREE.Vector3(0.84, 0, -0.54);     // the way it blows (room frame): across your view, left to right
+/* THE DESERT'S AIR (rebuilt 2026-11-18, the owner: "make particle effects in the desert more realistic"). It was 800 grey
+ * specks at one size and fourteen quantised puff sprites circling you — confetti and cartoon clouds. Sand moves the way
+ * it really does, in three layers, all on one gusting wind (`tmpGust`, layered slow sines: lulls and surges):
+ *   SALTATION — the sand itself running: thin ribbons a hand to a knee over the ground, streaming downwind and fading,
+ *     thick in a gust and nearly gone in a lull (one buffer of quads, each turned on the wind's axis to face you);
+ *   DUST — fine motes hanging in the air, faint and warm, drifting and wandering (points, small, many);
+ *   WALLS — far off, low soft walls of blown dust sliding across the dunes downwind (smooth noise, not puffs).
+ * Every part is a single draw; the ribbons and motes are moved on the CPU in a few hundred µs. */
+let tmpAir = null;
+function tmpStreakTex() {
+  const W = 64, H = 16, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'), img = x.createImageData(W, H), nz = artNoise2(919);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const u = i / (W - 1), v = j / (H - 1);
+    const along = Math.pow(Math.sin(Math.PI * u), 0.8) * (0.55 + 0.45 * u), across = Math.exp(-Math.pow((v - 0.5) * 3.4, 2));
+    const grain = 0.55 + 0.45 * artFbm(nz, i / 3, j / 2, 3);
+    const k = (j * W + i) * 4; img.data[k] = img.data[k + 1] = img.data[k + 2] = 255; img.data[k + 3] = Math.round(255 * along * across * grain);
+  }
+  x.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function tmpWallTex() {
+  const W = 128, H = 48, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'), img = x.createImageData(W, H), nz = artNoise2(733);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const u = i / (W - 1), v = j / (H - 1);
+    const n = artFbm(nz, i / 16, j / 9, 4);
+    const top = 0.25 + 0.55 * n;                                   // a ragged top, thick at the foot
+    const a = Math.min(1, Math.max(0, (v - (1 - top)) / 0.35)) * Math.pow(Math.sin(Math.PI * u), 0.6) * (0.6 + 0.4 * n);
+    const k = (j * W + i) * 4; img.data[k] = img.data[k + 1] = img.data[k + 2] = 255; img.data[k + 3] = Math.round(255 * a);
+  }
+  x.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const TMP_SALT_N = 260, TMP_DUST_N = 1400, TMP_WALL_N = 16;
+function tmpAirBuild() {
+  let seed = 41; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // saltation ribbons: four corners each, written every frame
+  const sg = new THREE.BufferGeometry(), sp = new Float32Array(TMP_SALT_N * 12), sc = new Float32Array(TMP_SALT_N * 16), su = new Float32Array(TMP_SALT_N * 8), si = [];
+  for (let i = 0; i < TMP_SALT_N; i++) { su.set([0, 0, 1, 0, 1, 1, 0, 1], i * 8); const b = i * 4; si.push(b, b + 1, b + 2, b, b + 2, b + 3); }
+  sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); sg.setAttribute('color', new THREE.BufferAttribute(sc, 4)); sg.setAttribute('uv', new THREE.BufferAttribute(su, 2)); sg.setIndex(si);
+  const salt = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ map: tmpStreakTex(), vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  salt.frustumCulled = false; salt.raycast = () => {}; salt.renderOrder = 3;
+  const S = []; for (let i = 0; i < TMP_SALT_N; i++) S.push({ x: 0, z: 0, h: 0, life: 0, age: 1e9, L: 1, w: 0.2, sp: 1, a: 0 });
+  // dust motes
+  const dg = new THREE.BufferGeometry(), dp = new Float32Array(TMP_DUST_N * 3);
+  dg.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+  const dust = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0x8f8778, size: 0.016, sizeAttenuation: true, transparent: true, opacity: 0.32, depthWrite: false }));
+  dust.frustumCulled = false; dust.raycast = () => {};
+  // far walls of blown dust
+  const wt = tmpWallTex(), walls = [];
+  for (let i = 0; i < TMP_WALL_N; i++) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: wt, color: new THREE.Color(0.66, 0.6, 0.52), transparent: true, depthWrite: false, opacity: 0 }));
+    m.raycast = () => {}; const len = 70 + rnd() * 110; m.scale.set(len, len * (0.16 + rnd() * 0.1), 1); m.center.set(0.5, 0.08);
+    walls.push({ m, d: 60 + rnd() * 260, along: (rnd() * 2 - 1) * 300, k: 0.10 + rnd() * 0.14, ph: rnd() * 6.28, v: 6 + rnd() * 6 });
+  }
+  tmpAir = { salt, S, dust, walls, rnd, seeded: false, gust: 0.5 };
+  tmpWorld.add(salt, dust); for (const w of walls) tmpWorld.add(w.m);
+}
+// the wind's strength: layered slow sines, so it surges and lulls and never repeats in a way you would notice
+function tmpGust(t) { return THREE.MathUtils.clamp(0.42 + 0.3 * Math.sin(t * 0.23) + 0.2 * Math.sin(t * 0.61 + 1.7) + 0.14 * Math.sin(t * 1.37 + 0.4) + 0.08 * Math.sin(t * 2.9), 0, 1); }
+const _tairF = new THREE.Vector3(), _tairS = new THREE.Vector3(), _tairC = new THREE.Vector3();
+function tmpAirTick(dt, on) {
+  if (!tmpAir) { if (!on) return; tmpAirBuild(); }
+  const A = tmpAir;
+  A.salt.visible = A.dust.visible = on; for (const w of A.walls) w.m.visible = on;
+  if (!on) return;
+  const t = performance.now() * 0.001, g = tmpGust(t); A.gust = g;
+  const cx = camera.position.x - TMP_X, cy = camera.position.y - TMP_Y, cz = camera.position.z - TMP_Z;
+  const wx = TMP_WIND.x, wz = TMP_WIND.z, speed = 3.5 + 9 * g;
+  // the wind bed rises with it (`airGust`, the beach's own gust channel)
+  airGust = Math.max(airGust, 0.45 * Math.max(0, g - 0.45) / 0.55);
+  // SALTATION: born upwind of you or round you, running downwind a second or two, fading in and out; more in a gust
+  const R = 24, SP = A.salt.geometry.attributes.position, SC = A.salt.geometry.attributes.color;
+  camera.getWorldDirection(_tairF);
+  const want = 0.25 + 0.75 * g * g;
+  for (let i = 0; i < A.S.length; i++) {
+    const s = A.S[i];
+    s.age += dt;
+    if (s.age > s.life || Math.abs(s.x - cx) > R * 1.3 || Math.abs(s.z - cz) > R * 1.3) {
+      if (!A.seeded || A.rnd() < want * dt * 6 || !A.seeded) {
+        const r = Math.sqrt(A.rnd()) * R, a = A.rnd() * 6.283;
+        s.x = cx + Math.cos(a) * r - wx * 4; s.z = cz + Math.sin(a) * r - wz * 4;
+        s.life = 0.7 + A.rnd() * 1.6; s.age = A.seeded ? 0 : A.rnd() * s.life;
+        s.L = 0.5 + A.rnd() * 1.4; s.w = 0.12 + A.rnd() * 0.32; s.h = Math.pow(A.rnd(), 2.6) * 0.22; s.sp = 0.75 + A.rnd() * 0.5; s.a = 0.1 + A.rnd() * 0.2;
+        // (never at your feet: a ribbon a metre off the lens was a white slash across the screen — rain, not sand)
+        { const ex = s.x - cx, ez = s.z - cz, ed = Math.hypot(ex, ez); if (ed < 3) { const k = 3 / Math.max(0.01, ed); s.x = cx + ex * k; s.z = cz + ez * k; } }
+      } else { s.age = 1e9; }
+    }
+    let al = 0;
+    if (s.age <= s.life) {
+      s.x += wx * speed * s.sp * dt; s.z += wz * speed * s.sp * dt;
+      const fade = Math.sin(Math.PI * Math.min(1, s.age / s.life));
+      al = s.a * fade * (0.35 + 0.65 * g) * smooth01(2.5, 5, Math.hypot(s.x - cx, s.z - cz));
+    }
+    // turned about the wind's axis to face you, lying a hand to a knee over the ground under it
+    const y = tmpFloorAt(s.x, s.z) + 0.04 + s.h;
+    _tairC.set(s.x, y + s.w * 0.5, s.z);
+    _tairS.set(wx, 0, wz).cross(_tairF.set(_tairC.x - cx, _tairC.y - cy, _tairC.z - cz)).normalize().multiplyScalar(s.w * 0.5);
+    if (_tairS.y < 0) _tairS.negate();
+    const hx = wx * s.L * 0.5, hz = wz * s.L * 0.5, o = i * 12;
+    SP.array[o] = _tairC.x - hx - _tairS.x; SP.array[o + 1] = _tairC.y - _tairS.y; SP.array[o + 2] = _tairC.z - hz - _tairS.z;
+    SP.array[o + 3] = _tairC.x + hx - _tairS.x; SP.array[o + 4] = _tairC.y - _tairS.y; SP.array[o + 5] = _tairC.z + hz - _tairS.z;
+    SP.array[o + 6] = _tairC.x + hx + _tairS.x; SP.array[o + 7] = _tairC.y + _tairS.y; SP.array[o + 8] = _tairC.z + hz + _tairS.z;
+    SP.array[o + 9] = _tairC.x - hx + _tairS.x; SP.array[o + 10] = _tairC.y + _tairS.y; SP.array[o + 11] = _tairC.z - hz + _tairS.z;
+    for (let k = 0; k < 4; k++) SC.array.set([0.62, 0.56, 0.47, al], i * 16 + k * 4);   // (the sand's own colour lifted a little: white read as rain)
+  }
+  SP.needsUpdate = true; SC.needsUpdate = true;
+  // DUST: fine motes round you, carried slower than the sand and wandering in the eddies
+  const DP = A.dust.geometry.attributes.position, DR = 18, dv = speed * 0.45;
+  for (let i = 0; i < TMP_DUST_N; i++) {
+    let x = DP.array[i * 3], y = DP.array[i * 3 + 1], z = DP.array[i * 3 + 2];
+    if (!A.seeded || Math.abs(x - cx) > DR || Math.abs(z - cz) > DR || y < -50) {
+      x = cx + (A.rnd() * 2 - 1) * DR; z = cz + (A.rnd() * 2 - 1) * DR;
+      if (A.seeded) { x = cx - wx * DR * 0.98 + (A.rnd() - 0.5) * DR * 2 * Math.abs(wz); z = cz - wz * DR * 0.98 + (A.rnd() - 0.5) * DR * 2 * Math.abs(wx); }
+      y = tmpFloorAt(x, z) + 0.1 + Math.pow(A.rnd(), 1.8) * 4.5;
+      if (Math.hypot(x - cx, y - cy, z - cz) < 1.6) y = -100;   // (none at your face: a mote a hand off the lens was a square; it comes again)
+    }
+    const ph = i * 0.731;
+    x += (wx * dv + Math.sin(t * 0.9 + ph) * 0.35) * dt; z += (wz * dv + Math.cos(t * 0.7 + ph * 1.3) * 0.35) * dt;
+    y += Math.sin(t * 1.1 + ph * 2.1) * 0.12 * dt;
+    DP.array[i * 3] = x; DP.array[i * 3 + 1] = y; DP.array[i * 3 + 2] = z;
+  }
+  DP.needsUpdate = true;
+  A.dust.material.opacity = 0.16 + 0.24 * g;
+  // WALLS: far off, sliding downwind across the dunes, thicker in a surge; round again upwind when they have gone by
+  for (const w of A.walls) {
+    w.along += w.v * (0.5 + g) * dt;
+    if (w.along > 320) { w.along = -320; w.d = 60 + A.rnd() * 260; }
+    const sx = -wz, sz = wx;                                     // (across the wind: walls stand side on to it)
+    const x = cx + wx * w.along + sx * w.d * (w.ph > 3.14 ? 1 : -1), z = cz + wz * w.along + sz * w.d * (w.ph > 3.14 ? 1 : -1);
+    w.m.position.set(x, tmpSandRaw(x, z) - 0.5, z);
+    const edge = 1 - smooth01(240, 320, Math.abs(w.along));
+    w.m.material.opacity = w.k * edge * (0.4 + 0.8 * g) * (0.75 + 0.25 * Math.sin(t * 0.17 + w.ph));
+  }
+  A.seeded = true;
+}
+
+// ---- in and out --------------------------------------------------------------------------------------------------
+function templeEnter() {
+  if (!_tmpFogSaved) {
+    _tmpFogSaved = { color: scene.fog.color.clone(), density: scene.fog.density, sky: sky.visible || !!(hallHid && hallHid.includes(sky)) };
+    scene.fog.color.copy(TMP_FOG.color); scene.fog.density = TMP_FOG.density; sky.visible = false;
+  }
+  FOG_CAP.x = 1 - TMP_FOG.cap;
+  if (!_tmpLight) {
+    _tmpLight = { mc: moonLight.color.clone(), mi: moonLight.intensity, mp: moonLight.position.clone(), ri: rakeLight.intensity, fi: cliffFill.intensity,
+      ac: skyAmbient.color.clone(), ai: skyAmbient.intensity, hs: skyHemi.color.clone(), hg: skyHemi.groundColor.clone(), hi: skyHemi.intensity };
+    // an overcast day: the sun a brightness high behind the cloud, the sky's grey from everywhere, the sand's own back from under
+    moonLight.color.setHex(0xe6e2da); moonLight.intensity = 1.25; moonLight.position.set(-60, 160, -90);
+    rakeLight.intensity = 0; cliffFill.intensity = 0;
+    skyAmbient.color.setHex(0x8c9097); skyAmbient.intensity = 0.55;
+    skyHemi.color.setHex(0xc4c8ce); skyHemi.groundColor.setHex(0x2e2a25); skyHemi.intensity = 0.95;
+  }
+}
+function templeLeave() {
+  if (_tmpFogSaved) {
+    scene.fog.color.copy(_tmpFogSaved.color); scene.fog.density = _tmpFogSaved.density; sky.visible = _tmpFogSaved.sky;
+    _tmpFogSaved = null;
+  }
+  FOG_CAP.x = 0;
+  if (_tmpLight) {
+    const S = _tmpLight;
+    moonLight.color.copy(S.mc); moonLight.intensity = S.mi; moonLight.position.copy(S.mp); rakeLight.intensity = S.ri; cliffFill.intensity = S.fi;
+    skyAmbient.color.copy(S.ac); skyAmbient.intensity = S.ai; skyHemi.color.copy(S.hs); skyHemi.groundColor.copy(S.hg); skyHemi.intensity = S.hi;
+    _tmpLight = null;
+  }
+}
+// standing at the screenshot (a restore, a dev jump, and the flight's last frame)
+function placeInTemple() {
+  if (!tmpReady) return false;
+  inC13 = false; inFort = false; onIsle = false; insideTower = false; isleOnGallery = false;
+  mushWhere = 'out'; mushInYard = false;
+  inTemple = true; tmpWorld.visible = true;
+  templeEnter();
+  try { renderer.compile(tmpWorld, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  const V = TMP_VIEW, f = tmpFloorAt(V.x, V.z);
+  groundY = TMP_Y + f; tmpLastFloor = groundY; tmpLastSpot.x = TMP_X + V.x; tmpLastSpot.z = TMP_Z + V.z;
+  camera.position.set(TMP_X + V.x, groundY + playerEye(), TMP_Z + V.z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(V.pitch, tmpViewYaw(), 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
+  _preMove.set(camera.position.x, 0, camera.position.z);
+  return true;
+}
+function placeOutOfTemple() {
+  inTemple = false;
+  if (tmpWorld) tmpWorld.visible = false;
+  templeLeave();
+}
+function updateTemple(dt) {
+  if (!tmpModuleIn) return;
+  if (!tmpWorld) {
+    // fetched from the stump's reach (or straight away when a save is in the desert: `ROOM_BACK.tmp`)
+    if (!inRoom() && Math.abs(camera.position.z - TMP_STUMP.z) < 200) loadTemple();
+    return;
+  }
+  const flying = tmpCut && tmpCut.room;
+  tmpWorld.visible = inTemple || !!flying;
+  if (!tmpReady || !(inTemple || flying)) return;
+  const p = camera.position, t = performance.now() * 0.001;
+  tmpSky.position.set(p.x - TMP_X, p.y - TMP_Y, p.z - TMP_Z);
+  tmpSky.material.uniforms.uT.value = t;
+  tmpClouds.g.visible = tmpClouds.show > 0.001;
+  if (tmpClouds.g.visible) tmpCloudsPose(tmpClouds, t);
+  tmpRays.visible = tmpRays.userData.m.uniforms.uK.value > 0.001;
+  tmpAirTick(Math.min(dt, 0.05), inTemple && (!tmpCut || (tmpCut.room && tmpCut.t > TMP_T.down - 2)));
+  if (!inTemple || tmpCut) return;
+  // THE STORM AT THE EDGE: the air thickens past TMP_STORM_R and turns you back at TMP_WALK_R
+  const lx = p.x - TMP_X, lz = p.z - TMP_Z, r = Math.hypot(lx, lz), st = smooth01(TMP_STORM_R, TMP_WALK_R, r);
+  scene.fog.density = TMP_FOG.density * (1 + 5.5 * st);
+  FOG_CAP.x = (1 - TMP_FOG.cap) * (1 - st);
+  airGust = Math.max(airGust, 0.6 * st);
+  // THE WALK: from where you were to where you are, round the solids, inside the edge, on the ground under you
+  let feet = camBaseY - playerEye() - TMP_Y;
+  if (onGround && tmpLastFloor !== null && feet < tmpLastFloor - TMP_Y) feet = tmpLastFloor - TMP_Y;
+  tmpWalk(p, feet);
+  const lx2 = p.x - TMP_X, lz2 = p.z - TMP_Z;
+  let f = tmpFloorAt(lx2, lz2);
+  const ct = tmpCellTop(lx2, lz2); if (ct > -1e8 && ct <= feet + ROCK_STEP + 0.01) f = Math.max(f, ct);   // (something low under you is floor)
+  groundY = TMP_Y + f; tmpLastFloor = groundY; tmpLastSpot.x = p.x; tmpLastSpot.z = p.z;
+}
+
+// ---- the stump and its crow ---------------------------------------------------------------------------------------
+/* A STUMP: a short sawn trunk, flared at its foot into four roots, grey and split like driftwood (the beach's own wood),
+ * its top a face of rings; built here, flat-shaded, a few hundred triangles. */
+const TC = { based: false, collider: null, g: null, crow: null, m: null, mesh: null, mixer: null, A: {}, act: null, head: null, feet: [], base: 0, top: 0, proxy: null };
+function tmpStumpMesh() {
+  const g = new THREE.Group();
+  const bark = new THREE.MeshStandardMaterial({ color: 0x4a443d, roughness: 1, metalness: 0, flatShading: true });
+  { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+    x.fillStyle = '#6e6252'; x.fillRect(0, 0, 64, 64);
+    for (let r = 30; r > 2; r -= 3 + (r % 5 === 0 ? 1 : 0)) { x.strokeStyle = r % 2 ? '#4f463b' : '#5e5446'; x.lineWidth = 1.4; x.beginPath(); x.ellipse(32 + (30 - r) * 0.06, 32, r, r * 0.94, 0, 0, Math.PI * 2); x.stroke(); }
+    x.strokeStyle = '#2c2621'; x.lineWidth = 2; x.beginPath(); x.moveTo(32, 32); x.lineTo(61, 22); x.stroke();
+    var top = new THREE.MeshStandardMaterial({ map: retroTex(new THREE.CanvasTexture(c), { repeatWrap: false }), roughness: 1, metalness: 0, flatShading: true }); }
+  top.map.colorSpace = THREE.SRGBColorSpace;
+  const H = 0.78, trunk = new THREE.CylinderGeometry(0.42, 0.55, H, 11, 3);
+  // rough the bark: each vertex in or out a little, more toward the foot
+  const P = trunk.attributes.position; let seed = 5; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < P.count; i++) { const y = P.getY(i); if (Math.abs(Math.abs(y) - H / 2) < 1e-4 && y > 0) continue; const k = 1 + (rnd() - 0.5) * 0.12 * (1.2 - y / H); P.setX(i, P.getX(i) * k); P.setZ(i, P.getZ(i) * k); }
+  trunk.translate(0, H / 2, 0); trunk.computeVertexNormals();
+  const tm = new THREE.Mesh(trunk, [bark, top, bark]); g.add(tm);
+  for (let r = 0; r < 4; r++) {
+    const a = r * Math.PI / 2 + 0.4 + rnd() * 0.3, L = 0.55 + rnd() * 0.35;
+    const root = new THREE.ConeGeometry(0.2, L, 6); root.rotateZ(-Math.PI / 2 + 0.32); root.translate(L * 0.42, 0.1, 0);
+    const m = new THREE.Mesh(root, bark); m.rotation.y = a; g.add(m);
+  }
+  return { g, top: H };
+}
+function tmpStumpSetup() {
+  const S = tmpStumpMesh(); TC.g = S.g; TC.top = S.top;
+  // stood on whatever is under it (the beach's sand here is its own height: asked by a ray, not assumed)
+  const y = 0;                                      // (the beach's ground there is asked when you come near: `updateStumpCrow`)
+  TC.base = y;
+  TC.g.position.set(TMP_STUMP.x, y - 0.06, TMP_STUMP.z); TC.g.rotation.y = 0.7;
+  scene.add(TC.g);
+  farProps.push({ obj: TC.g, z: TMP_STUMP.z, d: 260 });
+  TC.collider = { x: TMP_STUMP.x, z: TMP_STUMP.z, r: 0.52, top: y + S.top, mat: 'wood' }; rockColliders.push(TC.collider);
+  bwGlb('assets/crow.glb', (gltf) => {
+    const m = gltf.scene, g = new THREE.Group(); g.name = 'stumpCrow'; g.rotation.order = 'YXZ';
+    let sk = null;
+    m.traverse((o) => {
+      if (o.isSkinnedMesh && !sk) sk = o;
+      if (!o.isMesh) return;
+      o.frustumCulled = false; o.castShadow = false; o.raycast = () => {};
+      const mt = o.material;   // the dock crow's dress (dock.md): solid, a breath of its own map, no shine
+      mt.metalness = 0; mt.roughness = 0.62; mt.envMapIntensity = 0;
+      mt.color = new THREE.Color(0.68, 0.74, 0.9);
+      mt.transparent = false; mt.depthWrite = true; mt.opacity = 1; mt.alphaTest = 0;
+      if (mt.map) { mt.emissiveMap = mt.map; mt.emissive = new THREE.Color(0.55, 0.6, 0.7); mt.emissiveIntensity = 0.45; }
+      mt.needsUpdate = true;
+    });
+    g.add(m);
+    const mixer = new THREE.AnimationMixer(m), clip = gltf.animations[0], A = {};
+    if (clip) {
+      for (const [name, [t0, t1]] of Object.entries(HJ_BIRD_CUTS)) A[name] = mixer.clipAction(hjClipCut(clip, name, t0, t1, name !== 'landing'));
+      A.stand = mixer.clipAction(clip); A.stand.play(); A.stand.paused = true; A.stand.time = CROW_STAND_T;
+      if (A.landing) { A.landing.setLoop(THREE.LoopOnce); A.landing.clampWhenFinished = true; }
+    }
+    mixer.update(0);
+    // stood on the stump at a big crow's height, its feet's middle on the stump's middle (the dock crow's way)
+    g.updateMatrixWorld(true);
+    const bb = skinnedBounds(m); m.scale.multiplyScalar(TC_H / Math.max(1e-4, bb.size.y));
+    g.updateMatrixWorld(true); if (sk) sk.skeleton.update();
+    if (sk) { const P = sk.geometry.attributes.position, v = new THREE.Vector3(), pts = []; let lowY = 1e9;
+      for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); sk.applyBoneTransform(i, v); v.applyMatrix4(sk.matrixWorld); pts.push(v.clone()); lowY = Math.min(lowY, v.y); }
+      const ft = new THREE.Vector3(); let n = 0; for (const q of pts) if (q.y < lowY + 0.02) { ft.add(q); n++; }
+      ft.divideScalar(Math.max(1, n)); ft.y = lowY; g.worldToLocal(ft); m.position.sub(ft); }
+    TC.standScale = m.scale.x; TC.standPos = m.position.clone();
+    TC.crow = g; TC.m = m; TC.mesh = sk; TC.mixer = mixer; TC.A = A;
+    TC.feet = sk ? sk.skeleton.bones.filter((b) => /_[LR]_Foot_/.test(b.name)) : [];
+    tmpCrowPerch();
+    scene.add(g);
+    farProps.push({ obj: g, z: TMP_STUMP.z, d: 260 });
+    const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.y = 0.5; g.add(proxy); TC.proxy = proxy;
+    addInteractable(g, 'Approach the crow', 'default', { far: 3.4, mid: true, when: () => !tmpFlown && !tmpCut && !frozen() && !inRoom(), onActivate: startTempleFlight });
+    g.visible = !tmpFlown;
+  }, (e) => console.warn('[bw] stump crow', e));
+}
+const TC_CARRY = 2.6;                                // how much bigger it is in the air than it looked on the stump (you never see the change: it is above you)
+const TC_H = 0.95;                                   // the stump's crow standing, crown to toe: a big one, as the pier's is
+function tmpCrowPerch() {
+  const C = TC; if (!C.crow) return;
+  C.m.scale.setScalar(C.standScale); C.m.position.copy(C.standPos);
+  C.crow.position.set(TMP_STUMP.x, C.base - 0.06 + C.top, TMP_STUMP.z);
+  C.crow.rotation.set(0, Math.atan2(-1, 0.25), 0);  // looking up the beach, the way you come (+z), a little toward the sea
+  C.mixer.stopAllAction(); if (C.A.stand) { C.A.stand.reset().play(); C.A.stand.paused = true; C.A.stand.time = CROW_STAND_T; } C.mixer.update(0);
+  C.crow.visible = !tmpFlown;
+}
+function updateStumpCrow(dt) {
+  const C = TC; if (!C.crow || tmpCut) return;
+  if (!C.based && Math.abs(camera.position.z - TMP_STUMP.z) < 220) {
+    // stood on the beach's own ground there (the whale's berm and the heaped banks are ground: `update`'s rule)
+    C.based = true;
+    const y = Math.max(wbBerm ? wbBermAt(TMP_STUMP.x, TMP_STUMP.z) : 0, sandMoundAt(TMP_STUMP.x, TMP_STUMP.z));
+    C.base = y; C.g.position.y = y - 0.06; C.collider.top = y + C.top;
+    if (C.crow.visible) tmpCrowPerch();
+  }
+  if (!C.crow.visible) return;
+  // a living thing on a post: it shifts, it turns its head to you when you are near (a slow idle off the clip's own peck)
+  const p = camera.position, d = Math.hypot(p.x - TMP_STUMP.x, p.z - TMP_STUMP.z);
+  if (d < 40 && C.A.stand) {
+    C.idle = (C.idle || 0) + dt;
+    const want = Math.atan2(p.x - TMP_STUMP.x, p.z - TMP_STUMP.z);
+    let dy = want - C.crow.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    if (d < 14) C.crow.rotation.y += dy * Math.min(1, dt * 1.2);
+    C.A.stand.time = CROW_STAND_T + 0.6 + 0.6 * (0.5 + 0.5 * Math.sin(C.idle * 0.9));
+    C.mixer.update(0);
+  }
+}
+
+// ---- the flight ---------------------------------------------------------------------------------------------------
+const TMP_T = { scream: 1.3, up: 2.3, beat: 2.9, grab: 3.25, climb: 9.7, white: 10.9, deck: 12.6, part: 17.6, down: 24.6, drop: 25.35, lie: 26.6, stand: 29.2 };
+const TMP_BEACH_KEYS = [[0, 0, 0, 0], [0.5, -2, 3.5, -1], [2.0, -14, 20, -6], [4.5, -55, 75, -20], [7.0, -120, 150, -40], [10.0, -210, 240, -65]];
+function tmpHermite(keys, t, out) {
+  let i = 0; while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
+  const k0 = keys[Math.max(0, i - 1)], k1 = keys[i], k2 = keys[i + 1], k3 = keys[Math.min(keys.length - 1, i + 2)];
+  const u = THREE.MathUtils.clamp((t - k1[0]) / (k2[0] - k1[0]), 0, 1), u2 = u * u, u3 = u2 * u;
+  const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2, dt = k2[0] - k1[0];
+  const tan = (a, b, c) => (c[0] - a[0] > 1e-6 ? (c[b] - a[b]) / (c[0] - a[0]) : 0) * dt;
+  const v = [1, 2, 3].map((b) => h00 * k1[b] + h10 * tan(k0, b, k2) + h01 * k2[b] + h11 * tan(k1, b, k3));
+  return out.set(v[0], v[1], v[2]);
+}
+function startTempleFlight() {
+  if (tmpCut || tmpFlown || frozen() || !TC.crow) return;
+  if (!tmpReady) loadTemple();                       // (it is fetched from 200 m; this is the floor under that)
+  const p = camera.position;
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  document.body.classList.add('tmp-cine');
+  tmpCut = { t: 0, room: false, P0: p.clone(), yaw0: e.y, pitch0: e.x, fov: settings.fov, fovRate: 3, ph: '', white: 0, wind: null, crowFrom: TC.crow.position.clone(), shaken: {} };
+  blocking = false;
+  try { if (document.pointerLockElement) { /* the look stays locked: the mouse is ignored, the cut holds the camera */ } } catch (e2) { /* */ }
+  /* (no scream here: 2026-11-18, the owner, "only do the crow scream when he drops you" — it shifts on the stump, at
+   * the stump, and goes) */
+  try { sfxAt(TMP_STUMP.x, TMP_STUMP.z, () => sfxCrowRustle(), { ref: 3 }); } catch (e2) { /* */ }
+}
+function tmpScreech(k) {
+  const ctx = audioCtx; if (!ctx) return;
+  const buf = CROW_SCREAM_URL && lazyBuf(CROW_SCREAM_URL);
+  if (!buf) { try { sfxCrowScreamSynth(); } catch (e) { /* */ } return; }
+  const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = 0.92;
+  const g = ctx.createGain(); g.gain.value = 0.9 * k;
+  s.connect(g).connect(sfxOut()); s.start(); s.stop(ctx.currentTime + 4.2);
+}
+// the air going past: a long noise, band-passed, its level and its pitch the speed
+function tmpWindStart() {
+  const ctx = audioCtx; if (!ctx) return null;
+  const n = noiseBurst(4, () => 1); n.loop = true;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.6;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  const g = ctx.createGain(); g.gain.value = 0;
+  n.connect(bp).connect(lp).connect(g).connect(sfxOut()); n.start();
+  return { n, bp, g };
+}
+function tmpWindSet(W, level, pitch) {
+  if (!W || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  W.g.gain.setTargetAtTime(level, t, 0.15); W.bp.frequency.setTargetAtTime(pitch, t, 0.2);
+}
+function tmpWindStop(W) { if (!W || !audioCtx) return; const t = audioCtx.currentTime; W.g.gain.setTargetAtTime(0, t, 0.6); try { W.n.stop(t + 3); } catch (e) { /* */ } }
+// the cloud opening: a slow swell under everything (two detuned saws, dark, rising and opening)
+function tmpSwell() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), D = 7.5;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 3; lp.frequency.setValueAtTime(160, t); lp.frequency.exponentialRampToValueAtTime(1300, t + D * 0.6); lp.frequency.exponentialRampToValueAtTime(400, t + D);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + D * 0.45); g.gain.setValueAtTime(0.16, t + D * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+  lp.connect(g).connect(out);
+  for (const [f, d] of [[55, 0], [55.4, 0.4], [82.4, -0.3], [110.2, 0.2]]) {
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = d * 10;
+    o.connect(lp); o.start(t); o.stop(t + D + 0.1);
+  }
+}
+const _tcFwd = new THREE.Vector3(), _tcUp = new THREE.Vector3(0, 1, 0);
+// the crow over the camera, its feet on your shoulders, flying the way you are carried
+function tmpCrowCarry(pos, dir, flap) {
+  const C = TC; if (!C.crow) return;
+  if (C.mode !== 'carry') {
+    C.mode = 'carry';
+    C.m.scale.setScalar(C.standScale * TC_CARRY);                // a crow big enough to carry you (its feet stay its feet)
+    C.m.position.copy(C.standPos).multiplyScalar(TC_CARRY);
+    C.mixer.stopAllAction(); if (C.A.fly) C.A.fly.reset().play();
+    C.crow.visible = true;
+  }
+  if (C.A.fly) C.A.fly.timeScale = flap;
+  C.crow.position.copy(pos).addScaledVector(_tcUp, 1.25).addScaledVector(dir, 0.15);
+  C.crow.rotation.set(-0.12, Math.atan2(dir.x, dir.z), 0);
+}
+function updateTempleCut(dt) {
+  if (!tmpModuleIn) return;
+  updateStumpCrow(dt);
+  const T = tmpCut; if (!T || menuOpen) return;
+  T.t += dt;
+  const t = T.t, C = TC, cam = camera;
+  if (C.mixer) C.mixer.update(dt);
+  const whiteEl = tmpWhiteEl();
+  // ---------------------------------------------------------------- on the beach
+  if (!T.room) {
+    const yawTo = (x, z) => Math.atan2(-(x - cam.position.x), -(z - cam.position.z));
+    if (t < TMP_T.grab) {
+      /* IT COMES FOR YOU, IN SIGHT ALL THE WAY (2026-11-18, the owner: "make it look like he picks you up — he disappears
+       * for a second"): it went straight up off the stump and was HIDDEN from 2.3 s to the grab, a wingbeat sounding from
+       * nowhere. Now: it looks at you and shifts on the stump; lifts off up and back over it; turns at the top of its
+       * climb; and comes down at you out of the sky, talons first, growing as it comes, onto your shoulders — the lens
+       * on it the whole way. Its wings are heard from where it is (`sfxAt`), and only near. */
+      const cw = C.crow;
+      if (!T.ck) {
+        const S = new THREE.Vector3(TMP_STUMP.x, C.base + C.top, TMP_STUMP.z), P = T.P0;
+        const d = new THREE.Vector3(S.x - P.x, 0, S.z - P.z); if (d.lengthSq() < 1e-6) d.set(0, 0, -1); d.normalize();
+        const sd = new THREE.Vector3(-d.z, 0, d.x), tS = TMP_T.scream, k = (o) => [o[0], o[1].x, o[1].y, o[1].z];
+        T.ck = [[tS, S], [tS + 0.5, S.clone().addScaledVector(d, 2.4).add(_tcUp.clone().multiplyScalar(3.4))],
+          [tS + 1.05, S.clone().addScaledVector(d, 3.4).addScaledVector(sd, 2.2).add(_tcUp.clone().multiplyScalar(7.6))],
+          [tS + 1.6, P.clone().addScaledVector(d, 2.3).add(_tcUp.clone().multiplyScalar(3.5))],
+          [TMP_T.grab, P.clone().add(_tcUp.clone().multiplyScalar(1.25))]].map(k);
+        T.ck.unshift([0, ...T.ck[0].slice(1)]);
+      }
+      if (t < TMP_T.scream) {
+        // on the stump: its head to you, a shift of the wings
+        if (C.A.stand) { C.A.stand.time = CROW_STAND_T + 1.6 + 0.9 * smooth01(0, 0.5, t); }
+        T.lookYaw = yawTo(cw.position.x, cw.position.z); T.lookPitch = Math.atan2(cw.position.y + 0.6 - cam.position.y, Math.hypot(cw.position.x - cam.position.x, cw.position.z - cam.position.z));
+      } else {
+        if (C.mode !== 'up') { C.mode = 'up'; C.mixer.stopAllAction(); if (C.A.fly) C.A.fly.reset().play(); try { sfxAt(TMP_STUMP.x, TMP_STUMP.z, () => sfxCrowWings(), { ref: 4 }); } catch (e) { /* */ } }
+        const u = t - TMP_T.scream;
+        tmpHermite(T.ck, t, cw.position); tmpHermite(T.ck, t + 0.04, _tmpW); _tmpW.sub(cw.position);
+        const hz = Math.hypot(_tmpW.x, _tmpW.z);
+        cw.rotation.set(THREE.MathUtils.clamp(-Math.atan2(_tmpW.y, hz + 1e-4), -0.9, 0.9) - (t > TMP_T.grab - 0.35 ? 0.5 * smooth01(TMP_T.grab - 0.35, TMP_T.grab, t) : 0), Math.atan2(_tmpW.x, _tmpW.z), 0);
+        // (bigger as it comes: you never see the change, it is turning away and then coming at you)
+        const gs = THREE.MathUtils.lerp(1, TC_CARRY, smooth01(0.4, 1.9, u));
+        C.m.scale.setScalar(C.standScale * gs); C.m.position.copy(C.standPos).multiplyScalar(gs);
+        if (C.A.fly) C.A.fly.timeScale = t > TMP_T.grab - 0.6 ? 1.5 : 1.15;
+        cw.visible = true;
+        const dcw = cw.position.distanceTo(cam.position);
+        if (!T.shaken.dive && t > TMP_T.scream + 1.25 && dcw < 8) { T.shaken.dive = true; try { sfxAt(cw.position.x, cw.position.z, () => sfxCrowWings(), { ref: 4 }); } catch (e) { /* */ } }
+        T.lookYaw = yawTo(cw.position.x, cw.position.z);
+        T.lookPitch = Math.min(1.25, Math.atan2(cw.position.y + 0.2 - cam.position.y, Math.hypot(cw.position.x - cam.position.x, cw.position.z - cam.position.z) + 0.01));
+      }
+      // the lens: on it, a beat behind (quicker as it comes in)
+      const k = Math.min(1, dt * (t > TMP_T.grab - 0.7 ? 6 : 3.2));
+      _tmpE.setFromQuaternion(cam.quaternion, 'YXZ');
+      let dy = T.lookYaw - _tmpE.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      _tmpE.set(_tmpE.x + (T.lookPitch - _tmpE.x) * k, _tmpE.y + dy * k, 0, 'YXZ');
+      cam.quaternion.setFromEuler(_tmpE);
+      T.fov = Math.min(settings.fov, 62);
+      return;
+    }
+    // ---- taken
+    if (!T.shaken.grab) {
+      T.shaken.grab = true; addTrauma(0.75); try { sfxGasp(); } catch (e) { /* */ }   // (no scream: that is the drop's)
+      try { sfxCrowWings(); } catch (e) { /* */ }
+      T.wind = tmpWindStart(); _tmpE.setFromQuaternion(cam.quaternion, 'YXZ'); T.yawG = _tmpE.y; T.pitchG = _tmpE.x; T.P0.copy(cam.position);
+      if (!tmpReady) loadTemple();
+    }
+    const u = t - TMP_T.grab;
+    tmpHermite(TMP_BEACH_KEYS, u, _tmpV);
+    cam.position.copy(T.P0).add(_tmpV);
+    tmpHermite(TMP_BEACH_KEYS, u + 0.05, _tmpW); _tcFwd.subVectors(_tmpW, _tmpV).normalize();
+    // looking: down at the beach falling away; UP at what has you (its belly and its wings beating over you against the
+    // stars); then out to sea, the horizon tilting with the wingbeat
+    const yaw = THREE.MathUtils.lerp(T.yawG, Math.PI / 2 - 0.25, smooth01(0.2, 3.0, u));
+    const upK = smooth01(0.55, 1.35, u) * (1 - smooth01(2.9, 4.4, u));
+    // (out of the look up at it as it came down on you: the yank of being lifted takes the eye down to the falling sand)
+    const pitch = THREE.MathUtils.lerp(T.pitchG ?? 1.1, THREE.MathUtils.lerp(THREE.MathUtils.lerp(-0.95, -0.32, smooth01(2.9, 5.5, u)), 1.12, upK), smooth01(0, 0.55, u)) + 0.03 * Math.sin(u * 7.0);
+    _tmpE.set(pitch, yaw, 0.06 * Math.sin(u * 3.5 + 0.6), 'YXZ'); cam.quaternion.setFromEuler(_tmpE);
+    tmpCrowCarry(cam.position, _tcFwd, 1.1);
+    T.fov = Math.min(settings.fov, 84);
+    tmpWindSet(T.wind, 0.05 + 0.12 * smooth01(0, 3, u), 380 + 520 * smooth01(0, 6, u));
+    if (Math.floor(u / 0.62) !== T.beatN) { T.beatN = Math.floor(u / 0.62); try { sfxCrowWings(); } catch (e) { /* */ } }
+    // up into the cloud: dark puffs come past thicker and thicker, and then the cloud is all there is (the night's fog is
+    // left as it is: tinted, it made the sea a flat pale plane with a hard edge on the stars)
+    tmpNightClouds(T, cam.position, u);
+    T.white = smooth01(TMP_T.climb, TMP_T.white, t);
+    whiteEl.style.background = '#1c222c';
+    whiteEl.style.opacity = T.white.toFixed(3);
+    if (t >= TMP_T.white + 0.25) tmpToRoom(T);
+    return;
+  }
+  // ---------------------------------------------------------------- over the desert
+  const R = t - TMP_T.white - 0.25;
+  const V = TMP_VIEW, vf = TMP_Y + tmpFloorAt(V.x, V.z);
+  const yawV = tmpViewYaw(), fx = -Math.sin(yawV - TMP_VIEW.turn), fz = -Math.cos(yawV - TMP_VIEW.turn);   // toward the temple
+  // the path in the room's frame: from far back over the deck, down through the gap, onto the dune
+  const keys = T.keys || (T.keys = [
+    [0, -fx * 150, 318, -fz * 150], [3.0, -fx * 138, 306, -fz * 138], [6.0, -fx * 118, 246, -fz * 118],
+    [8.5, -fx * 92, 150, -fz * 92], [10.2, -fx * 50, 62, -fz * 50], [11.0, -fx * 18, 20, -fz * 18], [11.4, -fx * 4, 4.6, -fz * 4], [11.5, -fx * 1.0, 3.4, -fz * 1.0]]);
+  const down = TMP_T.down - TMP_T.white - 0.25;
+  { const k = smooth01(0, 0.9, R); whiteEl.style.background = `rgb(${Math.round(28 + (201 - 28) * k)},${Math.round(34 + (204 - 34) * k)},${Math.round(44 + (209 - 44) * k)})`; }
+  whiteEl.style.opacity = (1 - smooth01(0.9, 2.3, R)).toFixed(3);
+  tmpClouds.show = 1 - smooth01(down - 3.5, down - 0.3, R);     // (gone by the dune: the screenshot's sky has no ceiling, and a sheet 230 m up crossed the far colonnades)
+  tmpClouds.part = smooth01(TMP_T.deck - TMP_T.white, TMP_T.part - TMP_T.white, R);
+  tmpRays.userData.m.uniforms.uK.value = smooth01(TMP_T.deck - TMP_T.white + 1.2, TMP_T.part - TMP_T.white, R) * (1 - smooth01(down - 2.5, down + 0.5, R));
+  if (!T.shaken.swell && t >= TMP_T.deck) { T.shaken.swell = true; tmpSwell(); }
+  // the fog: the cloud's own white thinning to the desert's haze as you come out under the deck
+  const clear = smooth01(3.0, 6.0, R), last = smooth01(down - 2.5, down, R);
+  scene.fog.color.copy(_tmpCloudCol).lerp(TMP_FOG.color, clear);
+  scene.fog.density = THREE.MathUtils.lerp(0.0012, TMP_FOG.density, last);
+  FOG_CAP.x = (1 - TMP_FOG.cap);
+  if (R < down) {
+    // carried: the time on the path runs at the deck's pace, then the dive's
+    const s = R < 3.4 ? R * 0.55 : 1.87 + (R - 3.4) * (11.5 - 1.87) / (down - 3.4);
+    tmpHermite(keys, Math.min(11.5, s), _tmpV);
+    cam.position.set(TMP_X + V.x + _tmpV.x, vf + _tmpV.y, TMP_Z + V.z + _tmpV.z);
+    tmpHermite(keys, Math.min(11.55, s + 0.05), _tmpW); _tcFwd.subVectors(_tmpW, _tmpV); if (_tcFwd.lengthSq() < 1e-8) _tcFwd.set(fx, -0.2, fz); _tcFwd.normalize();
+    // looking down into the gap at the temple, then rising to the screenshot as you come in over the dune
+    const lookK = smooth01(down - 4.5, down, R);
+    const tx = TMP_X - cam.position.x, ty = TMP_Y + 8 - cam.position.y, tz = TMP_Z - cam.position.z;
+    const yawT = Math.atan2(-tx, -tz), pitchT = Math.atan2(ty, Math.hypot(tx, tz));
+    // (and first, up: the crow over you black against the lit cloud, before the deck opens under you)
+    const upK = smooth01(1.2, 2.2, R) * (1 - smooth01(3.6, 4.8, R));
+    _tmpE.set(THREE.MathUtils.lerp(THREE.MathUtils.lerp(Math.max(-1.35, pitchT), -0.35, lookK), 1.05, upK), yawT + (yawV - yawT) * lookK, 0.05 * Math.sin(R * 3.1) * (1 - lookK), 'YXZ');
+    cam.quaternion.setFromEuler(_tmpE);
+    tmpCrowCarry(cam.position, _tcFwd, 0.9 + 0.5 * lookK);
+    if (Math.floor(R / 0.7) !== T.beatN) { T.beatN = Math.floor(R / 0.7); try { sfxCrowWings(); } catch (e) { /* */ } }
+    tmpWindSet(T.wind, 0.16 - 0.08 * lookK, 700 - 300 * lookK);
+    T.fov = Math.min(settings.fov, THREE.MathUtils.lerp(80, 70, lookK));
+    T.relY = cam.position.y; T.vy = -3;
+    return;
+  }
+  // ---- let go: the crow goes on over the temple; you drop, land, lie, and get up
+  if (!T.shaken.drop) {
+    T.shaken.drop = true; tmpScreech(0.35); tmpWindSet(T.wind, 0.03, 300);
+    C.mode = 'away'; T.awayFrom = C.crow.position.clone();
+  }
+  if (C.mode === 'away') {
+    const a = t - TMP_T.drop;
+    C.crow.position.copy(T.awayFrom).add(_tmpV.set(fx * (a * 16 + a * a * 2), a * 5 + a * a * 1.5, fz * (a * 16 + a * a * 2)));
+    C.crow.rotation.set(-0.25, Math.atan2(fx, fz), 0);
+    if (a > 9) { C.crow.visible = false; C.mode = 'gone'; }
+  }
+  const eye = playerEye(), groundW = vf;
+  if (t < TMP_T.lie - 0.6 && T.relY > groundW + 0.35) {
+    // falling
+    T.vy -= 18 * dt; T.relY = Math.max(groundW + 0.35, T.relY + T.vy * dt);
+    cam.position.set(TMP_X + V.x, T.relY, TMP_Z + V.z);
+    _tmpE.setFromQuaternion(cam.quaternion, 'YXZ'); _tmpE.x = THREE.MathUtils.lerp(_tmpE.x, -0.75, Math.min(1, dt * 4)); cam.quaternion.setFromEuler(_tmpE);
+    return;
+  }
+  if (!T.shaken.land) {
+    T.shaken.land = true; T.landT = t; addTrauma(0.9); try { sfxThud(1.2); } catch (e) { /* */ } try { sfxBodySlam(1.1); } catch (e) { /* */ }
+    try { spawnPuffs(TMP_X + V.x, TMP_Z + V.z, 14, fx, fz, groundW + 0.05); } catch (e) { /* */ }
+    tmpWindStop(T.wind); T.wind = null;
+    whiteEl.style.background = '#000'; T.blink = 1;
+  }
+  // on the sand: the eye 35 cm up, the view in the sand and rolled over, a blink of black; then up, onto the screenshot
+  const lt = t - T.landT, standK = smooth01(TMP_T.lie - T.landT + (T.landT - TMP_T.lie), TMP_T.stand - T.landT, lt);
+  const up = smooth01(1.1, TMP_T.stand - T.landT, lt);
+  whiteEl.style.opacity = (0.85 * (1 - smooth01(0.08, 0.9, lt)) + 0.5 * Math.max(0, Math.sin(Math.min(1, Math.max(0, (lt - 1.0) / 0.35)) * Math.PI))).toFixed(3);
+  cam.position.set(TMP_X + V.x, groundW + THREE.MathUtils.lerp(0.35, eye, up * up * (3 - 2 * up)), TMP_Z + V.z);
+  _tmpE.set(THREE.MathUtils.lerp(-1.15, TMP_VIEW.pitch, smooth01(0.9, TMP_T.stand - T.landT, lt)), yawV + 0.5 * (1 - up), THREE.MathUtils.lerp(0.45, 0, smooth01(0.6, 2.2, lt)), 'YXZ');
+  cam.quaternion.setFromEuler(_tmpE);
+  T.fov = THREE.MathUtils.lerp(70, TMP_VIEW.fov, smooth01(1.4, TMP_T.stand - T.landT, lt));
+  T.fovRate = 2.2;
+  void standK;
+  if (t >= TMP_T.stand + 1.4) tmpFinish(T);
+}
+const _tmpCloudCol = new THREE.Color(0x9a9da3);
+/* THE NIGHT'S CLOUD on the way up: the air clears as you rise out of the beach's mist (so the moonlit sea opens under
+ * you and the ceiling shows over you), and two sheets of cloud — dark, moonlit on their crowns — hang 150 and 172 m
+ * up across your path. You are carried up into the lower one, and then it is all there is. */
+function tmpNightClouds(T, at, u) {
+  if (!T.night) {
+    const g = new THREE.Group();
+    for (const [y, seed] of [[150, 2.2], [172, 6.4]]) {
+      const sh = tmpCloudSheet(y, seed, new THREE.Color(0.20, 0.23, 0.31), new THREE.Color(0.05, 0.06, 0.08), 4700);   // (out to the far sea's ring: 1800 left a band of bare sky under it)
+      sh.material.uniforms.uK.value = 0.97; g.add(sh);
+    }
+    tmpHermite(TMP_BEACH_KEYS, 7.0, _tmpW);
+    g.position.set(T.P0.x + _tmpW.x, T.P0.y, T.P0.z + _tmpW.z);
+    scene.add(g); T.night = g;
+  }
+  for (const sh of T.night.children) { const U = sh.material.uniforms; U.uT.value = u * 2; U.uFogC.value.copy(scene.fog.color); U.uFogD.value = Math.min(scene.fog.density, 0.0028) * 0.55; }   // (gentler than the sea's: the moonlit cloud over you still reads, and by its far edge it is all fog)
+  if (!T.fog0) T.fog0 = scene.fog.density;
+  scene.fog.density = THREE.MathUtils.lerp(T.fog0, 0.0028, smooth01(0.6, 4.0, u));
+}
+function tmpWhiteEl() {
+  let el = document.getElementById('tmp-white');
+  if (!el) { el = document.createElement('div'); el.id = 'tmp-white'; el.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9;opacity:0;background:#c9ccd1'; document.body.appendChild(el); }
+  return el;
+}
+// out of the white over the desert: the beach's world left behind, the room's taken up (behind the white, as any cut)
+function tmpToRoom(T) {
+  if (!tmpReady) { T.t = TMP_T.white + 0.2; return; }     // held in the white until the place is there
+  clearRoomFlags();
+  inTemple = true; tmpWorld.visible = true; T.room = true;
+  templeEnter();
+  scene.fog.color.copy(_tmpCloudCol); scene.fog.density = 0.0016;
+  try { renderer.compile(tmpWorld, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  TC.crow.visible = true;
+  if (T.night) { scene.remove(T.night); for (const sh of T.night.children) { sh.material.dispose(); sh.geometry.dispose(); } T.night = null; }
+}
+function tmpFinish(T) {
+  tmpFlown = true;
+  tmpWhiteEl().style.opacity = '0'; tmpWhiteEl().style.background = '#c9ccd1';
+  tmpClouds.show = 0; tmpRays.userData.m.uniforms.uK.value = 0;
+  if (T.wind) tmpWindStop(T.wind);
+  placeInTemple();
+  // (the lens is the screenshot's still: `wantFov` lets it out to yours from here at the cut's own rate)
+  camera.fov = TMP_VIEW.fov; camera.updateProjectionMatrix();
+  tmpCut = null;
+  document.body.classList.remove('tmp-cine');
+  if (TC.crow) TC.crow.visible = false;
+  autosaveNow();
+  catchBreath();
+}
+// a load: the crow on its stump, or gone; a cut in the air is never resumed (a save is never written in one)
+function tmpReset() {
+  if (tmpCut) { if (tmpCut.wind) tmpWindStop(tmpCut.wind); if (tmpCut.night) scene.remove(tmpCut.night); tmpCut = null; tmpWhiteEl().style.opacity = '0'; }
+  document.body.classList.remove('tmp-cine');
+  if (tmpClouds) tmpClouds.show = 0;
+  if (tmpRays) tmpRays.userData.m.uniforms.uK.value = 0;
+  TC.mode = null; tmpCrowPerch();
+}
+// a dev jump: straight to the screenshot
+function devTemple() {
+  if (!tmpReady) { loadTemple(); return false; }
+  clearRoomFlags(); return placeInTemple();
+}
+// the room's floor, for anything thrown or falling in it
+const _floorBeforeTemple = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => (inTemple && tmpReady && Math.abs(x - TMP_X) < 400 && Math.abs(z - TMP_Z) < 400
+  ? TMP_Y + Math.max(tmpFloorAt(x - TMP_X, z - TMP_Z), y !== undefined && tmpCellTop(x - TMP_X, z - TMP_Z) <= y - TMP_Y + 0.05 ? tmpCellTop(x - TMP_X, z - TMP_Z) : -1e9)
+  : _floorBeforeTemple(x, z, y));
+tmpStumpSetup();
+tmpModuleIn = true;
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
+  TMP_X, TMP_Y, TMP_Z, TMP_VIEW, TMP_T, TMP_FOG, TMP_WALK_R, TMP_SCALE, TMP_POD_R, TMP_FLOOR, TC, ocean, oceanFar, loadTemple, placeInTemple, placeOutOfTemple, devTemple, startTempleFlight, tmpFloorAt, tmpSandRaw, tmpCellTop, tmpViewYaw, tmpEyeY,
+  tmpS: () => ({ ready: tmpReady, inTemple, flown: tmpFlown, cut: tmpCut ? +tmpCut.t.toFixed(2) : -1, room: !!(tmpCut && tmpCut.room), solid: tmpG ? tmpG.solidN : 0, fz: frozen(), why: { bootHold, pack: packCut, mut: mutCut, wb: !!wbSw, hatch: hatchBusy, portal: portalCut, crab: !!crabCut, hj: !!hjCut, well: wellLook.on, key: !!keyCut, thr: !!thrCut, fare: !!wbFareCut } }),
+  tmpG: () => ({ world: tmpWorld, G: tmpG, clouds: tmpClouds, rays: tmpRays, sky: tmpSky }),
+}));
+
 moduleDone = true;   // (the last line: see `bootRoomsAsked`)

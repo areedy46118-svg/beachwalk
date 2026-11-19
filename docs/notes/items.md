@@ -1269,3 +1269,38 @@ light (13 m, decay 1.3) bursting to 16 and strobing down over 0.34 s; chain hops
 The icon: the band's map is dark bronze (a colour over 1 does nothing), so its map is its emissive (0x5a4630) and env 4.6;
 the stones emit 0x3d6dff ×1.15; `iconRot` turns them up; `ICON_CACHE_V` v11 (v10 on its own; merged with the keys' v10 on 2026-11-18) re-renders the icons. Probes `shockProc`
 (strip), `ringIcons`.
+- **Dev mode hands over the Bone Mace too** (2026-11-18, the owner): `devGrantWeapons` adds `maceItem` and `bwSoon`s
+  `assets/bone-mace.glb` (ranked by the sewer's lair it lies in: in your hand from the start it would be an empty group).
+- **A thrown thing hits whoever it reaches** (2026-11-18, "have throwing a bottle at an enemy connect and hurt them also break on
+  impact"): `thrownHits` (from `update` after `updateMutant`, and from the tavern's own tick) replaces the tavern-only, awake-only
+  `tavThrownHits`: any `p.thrown` prop over 3.2 m/s inside any living drawn creature's body (radius `body` + 0.3, ≥ 0.55; knees
+  to the top of the head) is `hurtMutant` 1 (2 over 9 m/s), once a throw; `onImpact` breaks it on him, else it bounces off.
+  Measured (`bottleThrow`): a bottle at a sleeping drinker 6 → 4, awake, the bottle shattered. Not measured in the castles: a
+  tavern bottle carried there does not simulate (its room's props sleep outside it), and no castle prop was in reach.
+
+## The artifacts rebuilt in the game's style; the flashlight gone (2026-11-18)
+"The artifacts look awful they look like ai slop completely revamp this with the game style in mind. take out the
+flashlight for good too."
+- **The three medallions** (1024 px engraved faces, normal maps, Georgia lettering round the rim, bronze with env maps)
+  were a jeweller's render in a flat-shaded low-poly game. Section "THE ARTIFACTS, IN THE GAME'S OWN HAND" (where the
+  whale's builder was): each a few dozen faces, `flatShading`, matte, coloured from a handful of tones painted pixel by
+  pixel into 18–64 px maps read nearest (`artPx` → `retroTex`), no normal map, no environment, no words; lifted by their
+  own colour to read at night (`artMat`). Three different SHAPES so they are told apart at a glance:
+  - Whale: a sperm whale's tooth (`ART_TOOTH`, 7 sides × 10 rings on an arch, flattened), a whale scratched into its
+    side as a 28×9 pixel outline (`ART_WHALE_PX`, turned a quarter so the head is toward the point) — hatching and a
+    sea and stars read as STRIPES at this size and were cut — a blue chip of stone in the eye (`ART_TOOTH_EYE`,
+    computed from the sprite's own pixel so it lands in it), three turns of tarred cord and a loop.
+  - Flame: black glass, an icosahedron pulled out of true by a hash of each corner's POSITION (a polyhedron's faces
+    share no vertices: jitter by index tears it), 64 px cracks as thin walks that glow (`emissiveMap` of the cracks
+    alone — at 32 px a crack pixel was a quarter of a face and read as camouflage), three frozen tongues of fire, an
+    iron strap and ring.
+  - Sea: a scallop (`ART_SHELL`), every other line of the fan raised and the LIP scalloped (each rib runs out past its
+    hollow), dished; warm growth-ring bands with the ribs only a shade apart (grey radial bars over straight pleats
+    read as a paper fan); its icon looks into the cup (`iconRot { rotX 0.45, rotY 0.18 }`). The pearl `seaPearl`.
+  - The contract kept: front +Z, ~9 cm, `userData.pearl` the glowing mesh — so the belly, the sand, the tavern chest and
+    Skrim's hand needed no change. `ICON_CACHE_V` → v12. The pane's marks (`ART_*_SVG`) are flat silhouettes of the new
+    things. Probe `artLook` (all three on the night sand at ×4.2, and their icons).
+- **The flashlight is gone for good**: item, model, `assets/flashlight.glb`, `tools/flashlight_pack.py`, its README credit,
+  `updateFlashlight`, `flashGlow` (a point light always in the scene: one fewer for every material now), the sewer's spot
+  light for a carried one (`sewP.flash`), the ledge code and `flashDread`. The drain's bugs' `torch` is `false`. A save
+  that carried one loses it (`packByName` no longer knows it).

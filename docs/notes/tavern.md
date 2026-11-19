@@ -1209,3 +1209,18 @@ parked for a still — force it for a render).
 - **The dancers moved** (same day: "a little further from the door more towards the center of the room but not in the way"):
   (−8.8, 4.8) and (−6.0, 4.8), 4 m out from the door, a 2.8 m lane between them, 1.95 m from the nearest table's edge and
   2.05 m from the nearest chair. (Their save keys move with them, as every creature's does.)
+
+## 2026-11-17 — the farmers after a tavern checkpoint; every tavern farmer's hands
+- **"FARMERS DIDNT RESPAWN UPON RELOADING TAVERN CHECKPOINT."** They did respawn, alive, but with NO MODEL: their files are
+  the castle's (`farmer-elder` / `-knight` / `-hood.glb`, `ASSET_REACH` ~1005 + BEACH_EXT), so on a tavern load they sat
+  in the far queue behind ~130 steps, and `updateMutantUnit` returns on its first line (`!u.mixer`), so they were never
+  shown (`g.visible` false). Measured headless (silent frame, save in the hall, kill all six, reload): models in ~15 s
+  AFTER the black lifted. Adding the files to `BW_FROM`'s `ROOM_FILES.tav` would also hold the black for the castle's
+  twenty copies, so `bwParseLater` takes `urgent` (that copy goes on the near chain whatever its file's reach) and
+  `bwFetchSoon` moves only the download to the front; `makeMutant` passes both for any `kind.tav`. Now all six are in,
+  alive and drawn when the black lifts; the black holds ~1 s longer (5.2 → 6.2 s, one run each). musictest all PASS.
+- **Their hands** (same day: "fix all their hands like you did for the ones sitting"). A bare-handed farmer with no
+  `life.grip` curls by `claws` (1.25, ×1.35 busy): the dancers danced with hooked claws. `TAV_REST_HANDS` {0.32, 0.32}
+  (the drinkers' flat hand) while dancing or standing about, `TAV_FIST_HANDS` {1.0, 1.0} once awake, set each frame in
+  `updateTavDancers` and in `updateTavDrinkers` once a drinker is off his chair. Seen close up (FOV 28, 0.5 m off each
+  hand): open relaxed hands on both dancers. The castle's farmers are unchanged.
