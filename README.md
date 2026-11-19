@@ -1041,6 +1041,13 @@ numerals are the owner's own marker drawings (`assets/hud/`, cut into masks by
 `tools/hand_hud_pack.py`); the pack's frames, rules, buttons, ring circles and the
 loop round the selection are drawn with the same marker (`assets/hud/pk-*`, built by
 `tools/hand_pack_pack.py` from the hotbar photo's strokes).
+The rags the thing in the sewer sleeps on are "rags pack" by Frice
+(https://sketchfab.com/3d-models/rags-pack-b5dfec6e7fda4450822024bd06662ff4, CC-BY-NC-4.0;
+`assets/rags.glb`, repacked by `tools/rags_pack.py`). The lair's flies are the owner's
+"Flies Buzzing and Circling" (`assets/flies-bed.m4a`, looped by `tools/flies_pack.py`).
+The metal — screws, the drain's grate, gates, doors, struck steel — is the owner's
+"31 Various Metal Sound Effects" (`assets/metal-*.m4a`, cut and sorted by `tools/metal_pack.py`),
+and the wreck's groans his "Low Pitched Metal creaks and stress Groans" (`assets/ship-groan*.m4a`).
 The tune that loops in the tavern is the owner's own "tavern music"
 (`assets/tavern-music.m4a`, made a seamless loop by `tools/tavern_music_pack.py`).
 The two men dancing by the tavern's storeroom dance the owner's Mixamo "Hip Hop Dancing" and "Snake Hip Hop Dance"
