@@ -2298,3 +2298,10 @@ The `CASTLE PROPS` section (`CP`, `CP_KINDS`, `CP_SITE_DEFS`, `CP_SCENES`, `cpBu
   a moving camera reads as a dodge; not a measure of anything, removed.
 - **The cart's spare wheel** (`CP_SCENES.cart`, `lean`) is not set in the first castle (`fightOnly`): on the open street's
   edge there was no stone to lean on and it stood in the air.
+
+## The paladin goes over (2026-11-19, the owner: "make the paladin fall like the church knight if hit with enough heavies like him")
+- `MUT_KINDS.darkKnight`: `knockClip: 'knock'`, `knockAfter: 5`, `knockLapse: 7`, `knock: NTAR_KNOCK` — the church knight's
+  rule (heavies that LAND, five inside a stretch, the tally lapsing after seven idle seconds). His move set has no fall,
+  so `authorDkClips` retargets `ntar-moves.json`'s `knock` (the motion-captured fall onto the back, rotations undergone)
+  onto his rig through `DK_RAG`, as every knockdown here is made. `tools/dkknock.js`: down on the fifth heavy (2.07 s
+  left), up again ~3 s later.

@@ -8030,6 +8030,14 @@ export async function packHands({ w, b, log, sleep, shot }) {
   log('closed mid-open at', mid, 'folding from', b.ph().f, b.ph().mode);
   await sleep(900);
   b.openPack(); await sleep(1400); b.closePack(); await sleep(900);
+  // inspect from the pack: the sheet held aside, then back onto it when the thing is put away (2026-11-19)
+  b.openPack(); await sleep(1400); try { b.selectPackSlot(0); } catch (e) { /* */ } await sleep(200);
+  const bt = d.querySelector('#inv-detail .act.insp'); if (bt) bt.click(); await sleep(700);
+  const st = b.state();
+  log('inspecting', st.inspecting, 'pack open', st.invOpen, 'aside', d.getElementById('pack-hands').classList.contains('aside'), JSON.stringify(b.ph()), 'lens', b.inspectCamera.filmOffset.toFixed(2));
+  b.closeInspect(); await sleep(700);
+  log('put away: pack open', b.state().invOpen, 'aside', d.getElementById('pack-hands').classList.contains('aside'), JSON.stringify(b.ph()), 'panel', getComputedStyle(d.querySelector('#invpanel .panel')).opacity, 'lens', b.inspectCamera.filmOffset.toFixed(2));
+  b.closePack(); await sleep(900);
   log('done', JSON.stringify(b.ph()), 'errors', errs.length, errs.slice(0, 4).join(' | '));
 }
 
@@ -8195,7 +8203,7 @@ export async function sewView({ w, b, log, sleep }) {
   for (const nm of (Q.get('obj') || '').split(',').filter(Boolean)) {
     const o = b.scene.getObjectByName(nm);
     if (!o) { log('OBJ', nm, 'not found'); continue; }
-    o.updateWorldMatrix(true, true); const bb = new b.THREE.Box3().setFromObject(o), sx = 'SEW_X' in b ? b.SEW_X : 0;
+    o.updateWorldMatrix(true, true); const bb = new b.TB3.Box3().setFromObject(o), sx = 'SEW_X' in b ? b.SEW_X : 0;
     const m = o.material || {};
     log('OBJ', nm, 'verts', o.geometry ? o.geometry.attributes.position.count : '-', 'min', bb.min.toArray().map((v) => v.toFixed(2)).join(','), 'max', bb.max.toArray().map((v) => v.toFixed(2)).join(','), 'transparent', m.transparent, 'opacity', m.opacity, 'alphaTest', m.alphaTest, 'map', !!m.map, 'visible', o.visible);
   }
@@ -8212,4 +8220,162 @@ export async function sewView({ w, b, log, sleep }) {
   const d = sh.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
   for (let i = 0; i < n; i++) console.log('[PBIMG]', Q.get('name') || 'sew', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
   b.settings.devMode = false;
+}
+
+/* THE TITLE'S BEDROOM (2026-11-19): with &title=1 the cover stays and `TB` builds; logs what it found (the window, the desk,
+ * which way is out) and draws it from its own camera and from any `&cams=x,y,z,lx,ly,lz;...` (ROOM coordinates), one
+ * sheet. `&fl=1` with a flash. */
+export async function titleRoom({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const T = b.TB; if (!T || !T.ready) { log('not ready', T && T.on); return; }
+  const v = (p) => p.toArray().map((x) => +x.toFixed(2)).join(',');
+  log('window', v(T.win.c), 'size', v(T.win.s), 'axis', T.win.ax, 'out', v(T.out), 'desk top', T.desk.top.toFixed(3), 'desk c', v(T.desk.c), 'cam', v(T.camBase), 'look', v(T.look));
+  const mats = {}; T.sc.traverse((o) => { if (o.isMesh && o.material && o.material.name) { const bb = new b.TB3.Box3().setFromObject(o); (mats[o.material.name] = mats[o.material.name] || []).push(v(bb.min) + ' / ' + v(bb.max)); } });
+  for (const k of Object.keys(mats)) log('mat', k, mats[k].slice(0, 3).join(' | '));
+  { const P = []; T.sc.traverse((o) => { if (o.isMesh && o.material.name === 'Pattern') { const A = o.geometry.attributes.position, V = new b.TB3.Vector3(); for (let i = 0; i < A.count; i++) { V.fromBufferAttribute(A, i).applyMatrix4(o.matrixWorld); if (Math.hypot(V.x - T.desk.photo.x, V.z - T.desk.photo.z) < 0.6 && V.y < T.desk.top + 0.4) P.push(V.clone()); } } });
+    const lo = P.filter((p) => p.y < T.desk.top + 0.025), hi = P.filter((p) => p.y >= T.desk.top + 0.04);
+    const c = (L) => { const m = new b.TB3.Vector3(); L.forEach((p) => m.add(p)); return L.length ? v(m.multiplyScalar(1 / L.length)) : '-'; };
+    const bx = (L) => { const B = new b.TB3.Box3(); L.forEach((p) => B.expandByPoint(p)); return L.length ? v(B.min) + ' / ' + v(B.max) : '-'; };
+    log('plate', c(lo), bx(lo), 'cup', c(hi), bx(hi)); }
+  { const sb = new b.TB3.Box3().setFromObject(T.syr), pb = new b.TB3.Box3().setFromObject(T.phone); log('syringe', v(sb.min), '/', v(sb.max), 'phone', v(pb.min), '/', v(pb.max)); }
+  if (Q.get('box')) { const q = Q.get('box').split(',').map(Number), B = new b.TB3.Box3(new b.TB3.Vector3(q[0], q[1], q[2]), new b.TB3.Vector3(q[3], q[4], q[5]));
+    T.sc.traverse((o) => { if (!o.isMesh) return; const bb = new b.TB3.Box3().setFromObject(o); if (bb.intersectsBox(B)) log('in box:', o.name || '-', o.material && o.material.name, v(bb.min), '/', v(bb.max), 'verts', o.geometry.attributes.position.count); }); }
+  if (Q.get('shift')) { const v = Q.get('shift').split(',').map(Number); b.IC_SHIFT[0] = [v[0], v[1]]; b.IC_SHIFT[1] = [v[2], v[3]]; b.IC_SHIFT[2] = [v[4], v[5]]; }
+  const cams = (Q.get('cams') || '').split(';').filter(Boolean).map((s) => s.split(',').map(Number));
+  const shots = [];
+  const grab = () => { b.tbRender(); const c = w.document.createElement('canvas'); c.width = 480; c.height = 270; c.getContext('2d').drawImage(T.el, 0, 0, 480, 270); return c; };
+  T.raf && w.cancelAnimationFrame(T.raf); T.raf = 0;
+  if (Q.get('amb')) T.amb.intensity = +Q.get('amb');
+  if (Q.get('nogrow')) b.TB_DESK_GROW && (b.TB_DESK_GROW.x = 1);
+  if (Q.get('fl')) { T.flash = 0.9; T.spot.intensity = 1.1 + 0.9 * 16; T.amb.intensity = 0.55 + 0.9 * 1.6; T.sky.material.uniforms.flash.value = 0.9; T.post.material.uniforms.flash.value = 0.9; }
+  shots.push(grab());
+  for (const c of cams) { T.cam.position.set(c[0], c[1], c[2]); T.cam.lookAt(c[3], c[4], c[5]); if (c[6]) { T.cam.fov = c[6]; T.cam.updateProjectionMatrix(); } shots.push(grab()); }
+  const cols = 2, sh = w.document.createElement('canvas'); sh.width = 480 * cols; sh.height = 270 * Math.ceil(shots.length / cols);
+  const g = sh.getContext('2d'); shots.forEach((s, i) => g.drawImage(s, (i % cols) * 480, ((i / cols) | 0) * 270));
+  const d = sh.toDataURL('image/jpeg', 0.88).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'title', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+/* THE TITLE'S BEDROOM, LEFT (2026-11-19): with &title=1, wait for the room and for START, press it (the call at the desk
+ * starts: `IC`), skip it with Enter, and see the room torn down with the cover (its renderer, its canvas, its rain) and
+ * nothing thrown. */
+export async function titleStart({ w, b, log, sleep }) {
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 120)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const st = w.document.querySelector('#overlay .start');
+  for (let i = 0; i < 900 && st.classList.contains('loading'); i++) await sleep(100);
+  log('room ready', b.TB.ready, 'canvas', !!w.document.getElementById('title-room'), 'start says', st.textContent.trim(), 'rain sound', !!b.TB.rainAudio);
+  st.click(); await sleep(2500);
+  log('after START: room on (the call at the desk)', b.TB.on, 'call', b.IC.on, b.IC.atDesk);
+  w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'Enter', key: 'Enter' }));     // (skipped: the intro, and the room goes)
+  await sleep(7000);
+  log('torn down: canvas', !!w.document.getElementById('title-room'), 'renderer', !!b.TB.r, 'errors', errs.length, errs.slice(0, 3).join(' | '));
+}
+
+/* THE CALL AT THE DESK (2026-11-19): with &title=1, wait for the room and the call's pieces, press START, and draw the
+ * scene at the recording's times `&ts=1,25,30,...` (seeked: the clock is the recording's), one sheet; logs what ran. */
+export async function callShots({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 160)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const st = w.document.querySelector('#overlay .start');
+  for (let i = 0; i < 900 && st.classList.contains('loading'); i++) await sleep(100);
+  for (let i = 0; i < 100 && !b.icCanRun(); i++) await sleep(100);
+  log('desk cleared verts', b.TB.cleared, 'room', b.TB.ready, 'call can run', b.icCanRun(), 'buf', !!b.IC.buf);
+  st.click();
+  for (let i = 0; i < 60 && !(b.IC.on && b.IC.start); i++) await sleep(100);
+  log('call on', b.IC.on, 'audio started', !!b.IC.src, 't', b.icNow().toFixed(2));
+  await sleep(1800);
+  log('at the desk', b.IC.atDesk, 't', b.icNow().toFixed(2));
+  const T = b.TB; T.raf && w.cancelAnimationFrame(T.raf); T.raf = 0;
+  const ctx = b.audioCtx, IC = b.IC;
+  const ts = (Q.get('ts') || '2,22,26,27.5,30,41.5,42.8,44,50,58.9,62,66,68.8,71').split(',').map(Number);
+  const shots = [], tw = +(Q.get('tw') || 480), th = Math.round(tw * T.vh / T.vw);
+  if (Q.get('shift')) { const v = Q.get('shift').split(',').map(Number); b.IC_SHIFT[0] = [v[0], v[1]]; b.IC_SHIFT[1] = [v[2], v[3]]; b.IC_SHIFT[2] = [v[4], v[5]]; }
+  const cams = (Q.get('cams') || '').split(';').filter(Boolean).map((s) => s.split(',').map(Number));
+  const runs = cams.length ? cams.flatMap((c) => ts.map((t) => [c, t])) : ts.map((t) => [null, t]);
+  for (const [cm, t] of runs) {
+    if (cm) { b.IC_CAM.eye.set(cm[0], cm[1], cm[2]); b.IC_CAM.look.set(cm[3], cm[4], cm[5]); T.cam.fov = cm[6]; T.cam.updateProjectionMatrix(); IC.phone3 = null; T.cam.position.copy(b.IC_CAM.eye); T.cam.lookAt(b.IC_CAM.look); T.cam.updateMatrixWorld(true); }
+    IC.press = performance.now() - 1000 * (Q.get('since') ? +Q.get('since') : 30);   // (past the glide down unless &since=)
+    if (IC.paint) IC.paint.visible = !(Q.get('nopaint') && t === ts[ts.length - 1]);
+    for (let k = 6; k >= 0; k--) { IC.start = ctx.currentTime - (t - k / 30); b.icFrame(1 / 30, 0); }
+    b.tbRender();
+    const c = w.document.createElement('canvas'); c.width = tw; c.height = th; const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false; g.drawImage(T.el, 0, 0, tw, th); g.fillStyle = '#ff0'; g.font = '11px monospace'; g.fillText(t.toFixed(1) + (cm ? ' ' + cm.join(',') : ''), 4, 12);
+    shots.push(c);
+  }
+  IC.start = ctx.currentTime - 1e3;
+  const cols = +(Q.get('cols') || 3), sh = w.document.createElement('canvas'); sh.width = tw * cols; sh.height = th * Math.ceil(shots.length / cols);
+  const g = sh.getContext('2d'); shots.forEach((s, i) => g.drawImage(s, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = sh.toDataURL('image/jpeg', 0.88).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'call', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  log('errors', errs.length, errs.slice(0, 4).join(' | '));
+}
+
+/* THE CALL, IN REAL TIME (2026-11-19): with &title=1, START, and the whole of it played as a player sees it — then the
+ * intro takes over (the black, his waves), the room is torn down, and nothing threw. `&skip=s` presses Enter at s. */
+export async function callRun({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 160)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 300 && !(b.icCanRun && b.icCanRun()); i++) await sleep(100);
+  const st = w.document.querySelector('#overlay .start');
+  for (let i = 0; i < 900 && st.classList.contains('loading'); i++) await sleep(100);
+  st.click();
+  const skip = +(Q.get('skip') || 0), t0 = performance.now(); let slow = 0, last = performance.now(), frames = 0;
+  const intro = w.document.getElementById('intro');
+  while (performance.now() - t0 < 90000) {
+    await sleep(500);
+    const t = b.icNow(); frames++;
+    if (performance.now() - last > 900) slow++; last = performance.now();
+    if (frames % 10 === 0) log('t', t.toFixed(1), 'at desk', b.IC.atDesk, 'ctx', b.audioCtx.state, 'intro black', intro.classList.contains('show'));
+    if (skip && t > skip && !b.IC.ended) { w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'Enter', key: 'Enter' })); log('Enter at', t.toFixed(1)); }
+    if (b.IC.ended && intro.classList.contains('show')) break;
+  }
+  log('ended', b.IC.ended, 'at', b.icNow().toFixed(1), 'the intro black down', intro.classList.contains('show'));
+  await sleep(6000);
+  const vid = w.document.getElementById('intro-video');
+  // the waves: every frame the compositor presents, for 18 s — a gap is a frame the eye sees held
+  if (vid && vid.requestVideoFrameCallback) {
+    const gaps = []; let last = 0, n = 0; const q0 = vid.getVideoPlaybackQuality ? vid.getVideoPlaybackQuality() : null;
+    const cb = (now, md) => { if (last) { const g = now - last; if (g > 60) gaps.push(Math.round(g) + '@' + md.mediaTime.toFixed(2)); } last = now; n++; if (n < 2000) vid.requestVideoFrameCallback(cb); };
+    vid.requestVideoFrameCallback(cb); await sleep(18000); n = 9999;
+    const q1 = vid.getVideoPlaybackQuality ? vid.getVideoPlaybackQuality() : null;
+    log('waves: frames', n === 9999 ? 'measured' : n, 'dropped', q1 && q0 ? q1.droppedVideoFrames - q0.droppedVideoFrames : '?', 'of', q1 && q0 ? q1.totalVideoFrames - q0.totalVideoFrames : '?', 'gaps>60ms', gaps.length, gaps.slice(0, 12).join(' '));
+  }
+  log('then: room torn down', !b.TB.on, 'call stopped', !b.IC.on, 'waves on', vid && vid.classList.contains('on'), 'errors', errs.length, errs.slice(0, 4).join(' | '));
+}
+
+/* WHAT FLICKERS (2026-11-19, the owner: "the textures on the walls still flicker"): the title's room drawn N times along
+ * its own breathing (the camera moves a few mm), each frame read back, and every pixel's change frame to frame summed:
+ * a sheet of the room and of where it changes (hot = flickers). `&n=` frames, `&amp=` the breathing scale. */
+export async function flicker({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const T = b.TB; T.raf && w.cancelAnimationFrame(T.raf); T.raf = 0;
+  const n = +(Q.get("n") || 24), amp = +(Q.get("amp") || 1), W = T.vw, H = T.vh;
+  const r = T.r, gl = r.getContext(), px = new Uint8Array(W * H * 4); let prev = null; const acc = new Float32Array(W * H);
+  T.flash = 0; T.spot.intensity = 2.2; T.amb.intensity = 0.9;
+  for (let i = 0; i < n; i++) {
+    const t = i / 30;
+    T.cam.position.copy(T.camBase); T.cam.position.y += Math.sin(t * 0.9 * 30) * 0.004 * amp;
+    T.cam.lookAt(T.look.x + Math.sin(t * 0.21 * 30) * 0.006 * amp, T.look.y + Math.sin(t * 0.9 * 30 - 0.6) * 0.003 * amp, T.look.z);
+    b.tbRender();
+    r.setRenderTarget(null); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    if (prev) for (let k = 0; k < W * H; k++) { const d = Math.abs(px[k * 4] - prev[k * 4]) + Math.abs(px[k * 4 + 1] - prev[k * 4 + 1]) + Math.abs(px[k * 4 + 2] - prev[k * 4 + 2]); acc[k] += d; }
+    prev = px.slice();
+  }
+  // where it moved smoothly the change is small and spread; flicker is large changes back and forth
+  const c = w.document.createElement('canvas'); c.width = W * 2; c.height = H; const g = c.getContext('2d');
+  g.drawImage(T.el, 0, 0, W, H);
+  const im = g.createImageData(W, H); let hot = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = (H - 1 - y) * W + x, v = Math.min(255, acc[k] / n * 2.2), o = (y * W + x) * 4;
+    im.data[o] = v; im.data[o + 1] = v * 0.3; im.data[o + 2] = 0; im.data[o + 3] = 255; if (v > 60) hot++; }
+  g.putImageData(im, W, 0);
+  log('frames', n, 'pixels flickering (>60)', hot, 'of', W * H);
+  const d = c.toDataURL('image/jpeg', 0.9).split(',')[1], m = Math.ceil(d.length / 8000);
+  for (let i = 0; i < m; i++) console.log('[PBIMG]', 'flicker', i + '/' + m, d.slice(i * 8000, (i + 1) * 8000));
 }

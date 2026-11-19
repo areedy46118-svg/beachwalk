@@ -1367,3 +1367,94 @@ its `renderPackDetail` → `pvAttach` reads `pvShown`). CSS block "THE PANE, LIV
 - Harness: `tools/uishot.html` `&ph=open:0.3` (held still that far in; `held:t`, `close:t`) and `&at=x,y` (lists every
   element under a point — `elementFromPoint` skips `pointer-events: none`); probe `packHands` (frames, breathing, the
   mid-open close, clear pictures, errors). Reduced motion: no animation, the held sheet.
+
+## The paper pack darker and in marker; inspect beside the sheet; bare arms (2026-11-19, "make the pack more able to be seen and marker like drawing of the lines darker the inspect should still have the paper beside it. make that blue sleeve on the right arm be skin color and fix the skin spiking out on the other left arm. make everything more visible in the pack but still have it blend")
+- **Marker**: every stroke's mask is its drawing three times — at 0, 1.1 px right, 1.1 px down, ADDED — then INTERSECTED with
+  the skip noise (`--brk`, now `-6R + 4.8`: fewer skips). One generic rule, the block's last (`--mk` per element names
+  its drawing). **A drop-shadow cannot thicken a masked stroke: CSS filters run BEFORE the mask.** A thing new to the pack
+  keeps its draw-in (`.islot.fresh::after`, its own three-layer mask after the generic one). Ink `rgba(14,9,4,.96)`, words
+  `#120b04` with `-webkit-text-stroke: .35px`, empty cells .52, the verbs' boxes full ink.
+- **Things**: `mix-blend-mode: hard-light` (was multiply, which turned anything pale — the water bottle — into paper):
+  each keeps its own light and dark and the sheet's grain shows through; saturate .92, contrast 1.12, sepia .1.
+- **Inspect from the pack** (`inspectFromPack`): while the sheet is held, the pack goes as `closePack` would (`packAside`)
+  but the sheet stays — `#pack-hands.aside` slides it left (translate −27vw, scale .68, no dim), the examine scene's lens
+  slides a quarter-screen (`inspectCamera.filmOffset`, set at the render only; `inspectCentreOnScreen` zeroes it to centre
+  on the true lens) so the thing turns on the right, and its words sit over it (z 14, above his arm). Putting it away
+  (`closeInspect`) re-opens the pack quietly (`openPack(true)`: no snap, the sheet only slides back — `phPlay` returns for
+  a held sheet). `phDraw` folds a held sheet that nothing is on (no pack, no look). Probe `packHands` covers it.
+- **Arms** (`pack_hands_pack.py`): the sleeves are bare forearm — his forearm's colour just above the cuff, shaded by the
+  cloth's folds at 60 %, a little shadow toward the frame's edge, drained like the hands (both arms, so the opening's two
+  arms match). The left wrist's spur (the jar's edge): a diamond opening of 4 took its tip and left the wedge; a DISK of
+  radius 8 rounds that stretch of the arm.
+- `tools/uishot.html`: `&still=1` turns transitions off (a headless `--screenshot` can land mid-fade: the panel came out
+  blank once), `&insp=1` inspects the selected thing from the pack, `&insp=2` a plain inspect. A plain inspect of the
+  shovel is as dark headless as the aside one.
+- (2026-11-19, "still show the inventory to the left on the paper while inspecting"): `packAside` keeps `#invpanel.show`
+  and adds `.aside` — the whole pack layer is carried with the sheet (translate −27vw 4vh, scale .68) about the SAME point,
+  the canvas's middle (`--ph-ox/oy`, set in `phLayout`), not clickable (a click puts the thing away), its grain hidden
+  (the grain is screen-sized: aside it showed as a box). Every way out removes `.aside`/`.show` (`phPlay`, the fold guard
+  in `phDraw`, `closeInspect`).
+
+## The sheet bigger, the writing readable (2026-11-19, "make the pack bigger by having the paper bigger the little bit of the top can be trimmed by the screen. make evrything on the pack more visible it seems hard to read make it blend well still with the game and notes style")
+- `phLayout`: the sheet 1.12 of the window's height (was 0.955), its foot at 98.5 %, the torn top off the screen. The
+  panel fits the part of `PH.write` that is ON the screen (`ph.wv`, clamped to 3-97 % of the height) — `packPaperFit`
+  and `--pk-dx/dy` read it — so nothing written runs off the top.
+- In the note's hand still, every size up and in full ink (index.html, under "THE PACK ON THE PAPER"): h2 1.32 rem, the
+  name 1.36, the verbs 1, the hints 0.92 and no longer a dimmed italic, slot numbers 0.9; the marker's stroke 0.5 px.
+
+- **Inspect aside, its old size** (2026-11-19, "the size of the pack when inspecting can go back to how it was it blocks
+  the models now"): the sheet grew to 1.12 of the window, and aside at 0.68 of it it covered the thing turning. Both
+  `#pack-hands.aside canvas` and `#invpanel.paper.aside` at 0.58 (0.68 × 0.955 / 1.12: the size it was).
+- **The sleeves their own colour** (2026-11-19, "make the sleeves their original color in the inventory"): the same day's
+  bare-forearm repaint in `pack_hands_pack.py` undone (`sl = rgb * 0.85`); the left wrist's disk opening kept. Re-made
+  from `~/Desktop/BEACHWALK ASSETS/IMG_7207.MOV` by the docstring's three steps; its JSON is the game's `PH` unchanged.
+- **Names fit** (2026-11-19, "some of the names get cut off in the inventory fix this but keep the pack all the same"):
+  `packFitName` after `renderPackDetail` and in `kcText`: one line as drawn, a name too wide for its place stepped down 7 %
+  at a time (no smaller than 55 %), nothing else moves. `tools/packnames.js`: every slot and every key, none cut ("Spare
+  fancy house gate key" 21.76 → 14.08 px in the pane).
+
+## The inspect fits the screen, whatever the screen (2026-11-19, the owner, a wide window: the bone mace half behind his hand, its words off the right edge — "THIS SHOULD ADJUST TO EVERYSCREEN PERFECTLY. I CANT HAVE ITEMS BEING CUT OFF WHILE INSPECTING")
+- `inspectLayout()` (on `openInspect` and every resize): from the pack, the sheet aside is scaled (`--aside-s`, 0.58 down to
+  0.36; `--aside-tx` −27 % of the width) until his hand's right-most pixel — read off the frame on `phCv`
+  (`inspectHandRight`) — stops at 55 % of the width; the free box is right of it (the whole width otherwise), under the
+  name and words, over the hint; the words are centred on it and wrap to it; the thing's whole turning size (1.7 x 1.12 at
+  the opening distance) is fitted to the box by the lens's `zoom` (out only) and slid onto its middle by a VIEW OFFSET
+  (`inspectApplyView`) — the old `filmOffset` slide was a fixed quarter of the screen. `inspectCentreOnScreen` clears
+  the view first (it centres on the true lens). Checked headless at 800x600, 1000x650, 1280x1024, 1440x900,
+  1920x1080, 2560x1080 (`uishot.html?ui=pack&insp=1&sel=Bone%20Mace`).
+- **Grammy orc's photo, the back** is written in the owner's alphabet ('BW Hand'): drawn at load in Georgia, then again
+  when `document.fonts.load` has it (the texture's canvas redrawn, `needsUpdate`). `tools/grammyback.js` dumps it.
+
+## Picking a thing in the pack is paper (2026-11-19, the owner: "when clicking through items in the pack have the paper sounds i dont want the claude sound effects")
+- `sfxPackPaper()`: one of his sketchbook page turns (`packPaper` = `assets/intro/flip1-3.m4a`, the call's, cut off his own
+  clip) at 0.4 (they are ~9 dB over `pack-open.m4a`'s mean), ±7 % rate, none within 70 ms of the last — on a slot, a ring
+  or the key ring becoming the selection (`selectPackSlot`, `selectRingSlot`, `selectKeyChain`; not re-clicking the
+  same one). The synthesized sounds of the pane (`pvSfx`'s set-down knocks and rings, `pvSlosh`, `pvCrackle`,
+  `pvMotor`) are off behind `PV_SYNTH`. `tools/packpaper.js`: 8 picks → 6 page turns (one already selected, one empty),
+  0 other buffers, 0 oscillators.
+
+## 2026-11-19 (later): the achievement's face, artifacts' squares, the spliff's green, the wrist, the crab
+- **The achievement pop-up keeps the console's face**: `#ach, #ach *` are out of the 'BW Hand' rule ("RARE ACHEIVEMENT TEXT
+  SHOULD GO BACK TO HOW IT WAS NOT HANDDRAWN").
+- **Artifact squares in the pack** in the hotbar's colours: whale #ffd46a, fire #ff9a3c, water #7fe0f2 (`#invpanel.paper
+  #inv-grid .islot.art/.fire/.sea`), a shade stronger when picked.
+- **The spliff's stamina green** deeper and softer: #3aa83c, a 5 px 0.45 glow (was #4ef04a, 10 px 0.95).
+- **The pack's left wrist**: the inner wrist's spur rounding in `tools/pack_hands_pack.py` is a disk of 16 now (8 left a
+  knob of skin standing out under his palm in the held frames); the sheet rebuilt from IMG_7207 (Desktop, BEACHWALK
+  ASSETS) — its paper rects unchanged.
+- **A crab being drained does not turn with the cursor** (the inspect's `pointermove` returns while `extracting`), and
+  does not drift either (the idle drift is off while extracting: its `inspectAuto = 999` "no drift" turned it instead).
+- **The pack's left wrist, the patch** ("fix the patch of skin sticking out the left wrist too way more"): the bare wrist
+  between the heel of his palm and the cuff bulged out (a gentle bump no opening takes). `clean()` now trims his inner
+  edge, row by row, from the deepest point of the notch under the palm (searched within 0.22 of the frame above the cuff)
+  to the cuff's inner corner, to the straight line between them — on the arm's own piece only (the one the cuff is in), so
+  the fingers and the paper are untouched. (Raising the cuff instead left a blocky step in the opening frames.)
+- **The pack's left wrist FLAT like the right** ("look at how flat the right side wrist is and do that"): in the held frames
+  (source 13 on) the inner edge from the heel of the palm (the edge's farthest point out, 0.18-0.36 of the frame above the
+  cuff) to the cuff's inner corner IS the straight line between them: past it cut, short of it filled with the skin at its
+  edge (`clean`, writing `a` in place). The SLEEVE there is dark AND grey (`warm < 0.1`): his shaded forearm is as dark but
+  warm, and taken for the sleeve it put the "cuff" 160 px too high, so nothing happened.
+- **Achievements**: "Piss off the dealer" as he takes the well man's portrait (`dealerTakePortrait`, `dealerPissed`, saved)
+  and "Free Henry" as his cell is unlocked (`henryFree` ≥ 1); both in `RARE_ACHIEVEMENTS`.
+- **"Nothing bites here"** (`landFloat`): the float down anywhere outside the spot's water (`FISH_GLOW`, 0.85 of its r),
+  until the deep has had you.

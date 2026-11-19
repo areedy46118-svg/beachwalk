@@ -91,8 +91,43 @@ def clean(a, n):
         sz = nd.sum(np.ones_like(holes), holes, range(1, k + 1))
         keep |= np.isin(holes, 1 + np.nonzero(sz < 120)[0])
     # and the barb the jar's edge left under his left wrist: thin spurs there are pared off
-    zone = (U < 0.26) & (V > 0.45) & (V < 0.85)
-    keep &= ~(zone & ~nd.binary_opening(keep, iterations=4))
+    # (a diamond of 4 took the tip and left the wedge: the inner edge of the arm there is rounded by a disk of 8 instead —
+    # the forearm is far wider than that, a spur is not; 2026-11-19, "fix the skin spiking out on the other left arm")
+    zone = (U < 0.26) & (V > 0.45) & (V < 0.88)
+    # (and a disk of 16: a knob of skin still stood out of the inner wrist under his palm through the held frames —
+    # 2026-11-19, "the left hand of the inventorys skin pokes out right near his wrist")
+    yy, xx = np.ogrid[-16:17, -16:17]
+    keep &= ~(zone & ~nd.binary_opening(keep, structure=(xx * xx + yy * yy) <= 256))
+    # (and his left wrist FLAT, as his right is — 2026-11-19, the owner: "the bump of skin on the left wrist needs to go look at
+    # how flat the right side wrist is and do that": the right's inner edge runs in one straight line from the heel of the
+    # palm into the cuff; the left's dipped in under the palm and bulged out above the cuff. Held frames (13 on): from the
+    # heel — the inner edge's farthest point out, 0.18-0.36 of the frame above the cuff — to the cuff's inner corner, the
+    # edge IS the straight line: past it cut, short of it filled with the skin at its edge.)
+    sl = keep & (lum < 0.2) & (warm < 0.1) & (V > 0.5) & (U < 0.30)          # (the sleeve: dark AND grey — his shaded forearm is as dark, but warm)
+    sl = nd.binary_opening(sl, iterations=2)
+    arm = keep & (U < 0.33) & (V > 0.40) & ((warm > 0.17) | sl)
+    if n >= 13 and sl.any() and arm.any():
+        al_, ak_ = nd.label(arm)
+        ids = np.unique(al_[sl & arm]); ids = ids[ids > 0]
+        if len(ids): arm = np.isin(al_, ids)
+        ys, xs = np.nonzero(sl); right = xs > np.percentile(xs, 55)
+        yC = int(ys[right].min()) if right.any() else int(ys.min())
+        xin = np.full(arm.shape[0], -1)
+        for y in np.nonzero(arm.any(1))[0]: xin[y] = np.nonzero(arm[y])[0].max()
+        cand = [y for y in range(max(0, yC - int(0.36 * H0)), yC - int(0.18 * H0)) if xin[y] >= 0]
+        if cand and xin[yC] >= 0:
+            yH = max(cand, key=lambda y: xin[y]); xH, xC = xin[yH], xin[yC]
+            for y in range(yH + 1, yC):
+                lim = xH + (xC - xH) * (y - yH) / max(1, yC - yH)
+                if xin[y] < 0: continue
+                if xin[y] > lim + 0.5:
+                    cut = np.arange(arm.shape[1]) > lim
+                    keep[y] &= ~(cut & arm[y])
+                elif xin[y] < lim - 0.5:
+                    src = a[y, max(0, xin[y] - 2), :3].copy()
+                    x1 = int(np.floor(lim))
+                    a[y, xin[y] + 1:x1 + 1, :3] = src; a[y, xin[y] + 1:x1 + 1, 3] = 1.0
+                    keep[y, xin[y] + 1:x1 + 1] = True
     return keep
 
 
@@ -138,6 +173,8 @@ def shade(a, keep, n):
     # the hands: night skin, a little drained; the sleeves near black
     skin = rgb * np.array([0.92, 0.88, 0.86], np.float32)
     skin = skin * 0.85 + skin.mean(-1, keepdims=True) * 0.15
+    # the sleeves their own colour, as filmed (2026-11-19, the owner: "make the sleeves their original color in the
+    # inventory" — the same day's bare-forearm repaint, "make that blue sleeve on the right arm be skin color", undone)
     sl = rgb * 0.85
     out = pap * paperw[..., None] + skin * skinw[..., None] + sl * sleeve[..., None]
     # the moon: high on the left; a cool cast over everything, the far corner falling away

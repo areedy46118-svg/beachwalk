@@ -951,3 +951,21 @@ sound keeps it. `maceHeavy` (his "boulder impact hard 4", assets/mace-heavy.m4a)
   his creepy-sewers drips (`SEW_DRIP_BED`) under his sewer bed; the synthesized drips/drone/groans/thuds/rats are out (drain.md).
 - The reach's breath (`pipeBreathTick`): 0.04 → ~0.5 only while the hand is going IN (held, not taken); it falls away in 0.12 s the
   moment you let go or the fingers close — the loud breath at the grab is gone.
+
+## The bedroom's rain down (2026-11-19, the owner: "make the rain less loud in the start scene too")
+- `TB_RAIN` 0.9 → 0.5 under the title, `TB_RAIN_CALL` 0.42 → 0.24 under his call (−5.1 dB each). Measured
+  (`tools/titlerain.js`, the rain's node after its fade-up, through the room's sea bus and master at the default
+  sliders): −38.6 dBFS RMS at the speakers (was −33.5). The musictest's "storm under the title" is read 0.1 s in, before
+  the rain has faded up: it is not the rain's level.
+
+## 2026-11-19 (later): doors and lifts, the orc before the fight
+- **`doorUse(fn)`**: a door's or lift's use that does not play the key in a lock (`sfxLockOpen` stamps `lockSndAt`) plays
+  his `pickup` sound. On: the lighthouse and dock doors, Elvédor's house doors, the catacombs' door (open), the tavern
+  in/out, the three castle gates, the dungeon in/out, the bunker hatch, both lifts. `tools/doorsnd.js` counts it.
+- **The orc as Wong vaults the bar**: one of the owner's orc grunts (`orcSwing`, rate 0.96, gain 1.9) — it was the
+  samurai's laugh slowed down.
+- **Then all of them his pickup** ("take out the claude sounds with doors and the lifts … the tavern lift is still just a
+  claude sound"): `sfxTavernDoor`, `sfxLift` and `sfxDoor` (every room's door, the keep's and the throne room's lifts,
+  the lighthouse's door, the fridge) now call `doorPick()` — his pickup sound once, not within 250 ms of the last, and
+  nothing within 1.5 s of a key turning in a lock (`lockSndAt`): a keyed door is the unlock sound alone. `doorUse` plays
+  it only if the door's own use did not (`doorSndAt`). Their synthesized bodies are left below an early return.

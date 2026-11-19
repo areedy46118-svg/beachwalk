@@ -10,8 +10,9 @@ const log = (...a) => console.log('[PB]', ...a);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const f = document.getElementById('g');
 for (const k of ['beachwalk.load', 'beachwalk.died']) sessionStorage.removeItem(k);
-sessionStorage.setItem('beachwalk.skipIntro', '1');
+if (new URLSearchParams(location.search).get('title')) sessionStorage.removeItem('beachwalk.skipIntro'); else sessionStorage.setItem('beachwalk.skipIntro', '1');   // (&title=1: the title screen stays, the bedroom behind START GAME is built)
 for (const kv of new URLSearchParams(location.search).getAll('ls')) { const i = kv.indexOf(':'); localStorage.setItem(kv.slice(0, i), kv.slice(i + 1)); }   // (&ls=key:value: set in the game's storage before it boots)
+{ const q = new URLSearchParams(location.search); if (q.get('fw')) { f.style.width = q.get('fw') + 'px'; f.style.height = q.get('fh') + 'px'; } }   // (&fw=&fh=: the game's window size; PB_WIN for probe.sh's)
 f.src = '/index.html';
 let w = null; for (let i = 0; i < 400; i++) { await sleep(50); try { w = f.contentWindow; if (w.__bw) break; } catch (e) {} }
 const b = w.__bw;

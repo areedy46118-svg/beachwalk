@@ -67,6 +67,16 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   intro — quiet for a second before each moment the intro is timed to — and
   the intro's last black holds until it is all in, so the walk opens with
   nothing left to build.
+- **The call (the opening cutscene)** — START GAME stands over a dark bedroom in a
+  storm; pressed, the room dips and comes back looking down at the desk while the
+  owner's recording plays (`assets/intro/call.m4a`, 70 s): the voicemail on the phone,
+  the call picked up and held at his ear, the syringe squirted, the sketchbook flipped
+  to BEACH WALK — his own hands, cut out of his clips (`tools/intro_cut_pack.py`,
+  `assets/intro/left.webp` / `right.webp`), painted onto the table through the desk's
+  view so the camera glides down from the title without a cut and glances at the
+  window and the bed; the syringe is the game's own model, the phone a ringing iPhone,
+  the page flips are the clip's own sounds; then a push in on the page, black, and
+  the intro below (its waves now one seamless MSE timeline). Enter skips it. `IC` in main.js.
 - **Opening music** — `assets/backrooms.m4a` swells in over ~7 s once the
   world appears, holds, then fades back out (~30 s total). Routed through a
   Web Audio gain chain so the volume slider still works. `MUSIC_*` consts.
@@ -1033,6 +1043,15 @@ crow on the stump carries you to (`assets/temple.glb`, packed by
 `tools/temple_pack.py`: its camels, its people and the sand heaped on its floor
 taken out, its three terrains baked into one seamless ground, textures to 512).
 The sky, the cloud deck, the light through it and the blowing sand are built in the game.
+
+This work is based on ["Bedroom"](https://sketchfab.com/3d-models/bedroom-13df3d6c33014cccaad3ae8c1f251f6a)
+by [jimbogies](https://sketchfab.com/jimbogies) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the room behind START GAME
+(`assets/bedroom.glb`, packed by `tools/bedroom_pack.py`: tangents, normal and
+roughness maps dropped, textures to 256, the photo in the frame on the desk
+replaced with the owner's own). The storm, the rain, the light through the window,
+the syringe and the phone on the desk are built in the game; the plate and cup are
+taken off the desk and its draped table replaced with a bigger plain one, for the call.
 
 This work is based on ["Throne Room"](https://sketchfab.com/3d-models/throne-room-247c37e6a9694ae891398911876f0c14)
 by [Uğur Yakışık](https://sketchfab.com/UgurYksk) licensed under

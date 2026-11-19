@@ -56,7 +56,7 @@
      brush lettering. Lettering painted onto things IN the
      world (the artifacts' engravings, a can's label) is canvas, not this. */
   @font-face { font-family: 'BW Hand'; src: url(assets/hand-font.woff) format('woff'); font-display: block; }
-  body :not(#intro-title, #intro-title *) { font-family: 'BW Hand', Georgia, "Times New Roman", serif !important; }
+  body :not(#intro-title, #intro-title *, #ach, #ach *) { font-family: 'BW Hand', Georgia, "Times New Roman", serif !important; }   /* (#ach: the achievement pop-up keeps the console's own face — 2026-11-19, "RARE ACHEIVEMENT TEXT SHOULD GO BACK TO HOW IT WAS NOT HANDDRAWN") */
   html.resuming, html.resuming body { background: #000; }
   html.resuming #overlay { display: none !important; }
   html.resuming #blackout { opacity: 1; }
@@ -122,6 +122,12 @@
     user-select: none;
   }
   #overlay.hidden { opacity: 0; pointer-events: none; }
+  /* THE BEDROOM BEHIND START GAME (2026-11-19, `TB` in main.js): its own canvas at a third of the screen, blown up hard-edged;
+     the words over it with a shadow so they read on the dark room */
+  #overlay #title-room { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; image-rendering: pixelated; image-rendering: crisp-edges; opacity: 0; transition: opacity 2.4s ease; pointer-events: none; }
+  #overlay.room #title-room { opacity: 1; }
+  #overlay .start { position: relative; z-index: 1; } #overlay #bootbar { z-index: 1; }
+  #overlay.room .start { text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 0, 0, 0.9); }
   #overlay .start {
     font: inherit;
     font-size: clamp(2.7rem, 4.8vw, 3.9rem);     /* (2026-10-17, the owner: "make START GAME bigger on screen"; again 2026-11-18, in his own letters: 1.9/3.4/2.7 → 2.7/4.8/3.9) */
@@ -180,6 +186,12 @@
     transition: opacity 4.5s ease-in-out, transform 34s linear;
   }
   #intro video.on { opacity: 1; transform: scale(1.09); }
+  /* (2026-11-19, the owner: "make the waves video look better"): graded toward the bedroom it comes out of — a little
+     colder and deeper, the highlights' glitter kept — and a vignette over it so the eye sits on the water's road */
+  #intro video { filter: contrast(1.07) saturate(0.86) brightness(0.94); will-change: opacity, transform; }
+  #intro::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+    background: radial-gradient(ellipse 75% 70% at 50% 46%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.5) 100%); }
+  #intro-title, #intro-text { z-index: 2; }
   #intro video.out { opacity: 0; transform: scale(1.09); transition: opacity 7s ease-in-out, transform 34s linear; }
   /* the name, landing on the drop: there on one frame, no effect */
   #intro-title {
@@ -335,8 +347,10 @@
     transition: transform 0.08s linear, background 0.25s ease;
   }
   /* the spliff: a strong unmistakable green, the fill AND the ink, glowing */
-  #stamina-fill.buff { background: linear-gradient(180deg, #d4ffc8 0%, #4ef04a 40%, #12a02a 100%); box-shadow: 0 0 10px rgba(70, 255, 90, 0.95), 0 0 3px rgba(190, 255, 170, 0.9); }
-  #stamina.buff { opacity: 1; --ink: rgba(141, 255, 138, 0.75); filter: drop-shadow(0 0 6px rgba(60, 230, 80, 0.6)); }
+  /* (less bright, 2026-11-19, the owner: "the staminia green after a spliff should be less bright": still plainly green, a
+     deeper green and a soft glow — it was #4ef04a and a 10 px 0.95 halo) */
+  #stamina-fill.buff { background: linear-gradient(180deg, #a6d89c 0%, #3aa83c 40%, #146a22 100%); box-shadow: 0 0 5px rgba(60, 190, 70, 0.45), 0 0 2px rgba(150, 220, 140, 0.4); }
+  #stamina.buff { opacity: 1; --ink: rgba(120, 200, 118, 0.6); filter: drop-shadow(0 0 3px rgba(50, 170, 60, 0.35)); }
   #stamina-fill.low { background: linear-gradient(180deg, #ffd8b8 0%, #e08a5c 45%, #8a3c22 100%); }
   /* too little left to block or to swing: red, and the ink with it */
   #stamina-fill.out { background: linear-gradient(180deg, #ffb0a0 0%, #e0402e 45%, #7a1210 100%); box-shadow: 0 0 8px rgba(230, 60, 40, 0.75); }
@@ -1588,13 +1602,42 @@
   }
   #pack-hands.on { display: block; }
   body:has(#pack-hands.on) #vitals, body:has(#pack-hands.on) #stamina { opacity: 0; transition: opacity 0.15s; }   /* (they showed through the dark round his arms) */
-  #pack-hands canvas { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; will-change: transform; }
+  #pack-hands canvas { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; will-change: transform;
+    transition: translate 0.42s cubic-bezier(0.3, 0.7, 0.2, 1), scale 0.42s cubic-bezier(0.3, 0.7, 0.2, 1); }
+  /* INSPECT FROM THE PACK: the sheet held off to the left, the thing turning on the right (the lens is slid a quarter of
+     the screen in main.js); no dark over the examine scene, and its words over the thing */
+  #pack-hands.aside { background: none; }
+  /* (0.58: the size it was aside before the sheet itself grew to 1.12 of the window — 0.68 × 0.955 / 1.12; at 0.68 of the
+     bigger sheet it covered the thing being turned, 2026-11-19, the owner: "the size of the pack when inspecting can go back
+     to how it was it blocks the models now") */
+  #pack-hands.aside canvas { translate: var(--aside-tx, -27vw) 4vh; scale: var(--aside-s, 0.58); }   /* (both set per screen by `inspectLayout`) */
+  /* the pack stays written on the sheet, carried aside with it about the same point (`--ph-ox/oy`, the canvas's middle) */
+  #invpanel.paper { transform-origin: var(--ph-ox, 50%) var(--ph-oy, 50%); transition: opacity 0.18s ease, translate 0.42s cubic-bezier(0.3, 0.7, 0.2, 1), scale 0.42s cubic-bezier(0.3, 0.7, 0.2, 1); }
+  #invpanel.paper.aside { translate: var(--aside-tx, -27vw) 4vh; scale: var(--aside-s, 0.58); pointer-events: none; }
+  #invpanel.paper.aside::after { opacity: 0; }   /* (the grain is the size of the screen: carried aside it showed as a box in the dark) */
+  /* (and over his arm, which crosses the bottom: the examine layer above the sheet, its vignette off so the paper is not dimmed) */
+  body:has(#pack-hands.aside) #inspect { z-index: 14; background: none; }
   #invpanel.paper {
-    --moon: rgba(34, 22, 12, 0.84);
-    --inkc: #24160b; --inkdim: rgba(36, 24, 13, 0.55); --blood: rgba(92, 22, 14, 0.9);
-    --brk: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -6 0 0 0 4.1'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23b)'/%3E%3C/svg%3E");
+    --moon: rgba(14, 9, 4, 0.96);
+    --inkc: #120b04; --inkdim: rgba(20, 13, 6, 0.74); --blood: rgba(104, 20, 12, 0.96);
+    --brk: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -6 0 0 0 4.8'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23b)'/%3E%3C/svg%3E");
     background: none; color: var(--inkc);
   }
+  /* the words in marker too: a hair of stroke round every letter */
+  #invpanel.paper .panel { -webkit-text-stroke: 0.5px currentColor; }
+  /* (2026-11-19, the owner: "make evrything on the pack more visible it seems hard to read make it blend well still with the
+     game and notes style"): every word on the sheet bigger and in full ink — the hints were a dimmed italic at 0.7 rem —
+     in the note's own hand, the marker a little heavier */
+  #invpanel.paper h2 { font-size: 1.32rem; letter-spacing: 0.34em; }
+  #invpanel.paper .head .count { font-size: 0.95rem; }
+  #invpanel.paper .detail .name { font-size: 1.36rem; letter-spacing: 0.14em; }
+  #invpanel.paper .detail .desc { font-size: 1.04rem; line-height: 1.35; }
+  #invpanel.paper .detail .act, #invpanel.paper #pack-leave { font-size: 1rem; letter-spacing: 0.28em; }
+  #invpanel.paper .detail .hint, #invpanel.paper .tip { font-size: 0.92rem; font-style: normal; color: rgba(18, 11, 5, 0.86) !important; }
+  #invpanel.paper .islot .num { font-size: 0.9rem; }
+  #invpanel.paper .rings .rlabel { font-size: 1.08rem; }
+  #invpanel.paper .detail .big .pvhint { font-size: 0.82rem; color: rgba(18, 11, 5, 0.8); }
+  #invpanel.paper #keychain-box .kc-top, #invpanel.paper #keychain-box .kc-count, #invpanel.paper #keychain-box .kc-name { font-size: 0.92rem; }
   #invpanel.paper::after { opacity: 0.05; }
   /* (narrower than the dark pack's: the sheet is nearer square than the screen, and a panel its shape is scaled up more,
      so the writing reads bigger) */
@@ -1602,66 +1645,45 @@
   #invpanel.paper .panel { translate: var(--pk-dx, 0px) var(--pk-dy, 0px); opacity: 0; transition: opacity 0.12s ease, transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1); }
   /* (written on once the sheet is open: the snap is done 0.46 s in — `PH_RISE` + five frames at 15 fps) */
   #invpanel.paper.show .panel { opacity: 1; transition: opacity 0.2s ease 0.44s, transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) 0.40s; }
-  /* the ink, broken where the pen skipped on the grain */
-  #invpanel.paper .panel::before, #invpanel.paper .rings::before, #invpanel.paper .body::after, #invpanel.paper .detail .name::after,
-  #invpanel.paper .detail .desc::before, #invpanel.paper .detail .desc::after {
-    -webkit-mask: var(--mk, url(assets/hud/pk-rule1.png)) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-    mask: var(--mk, url(assets/hud/pk-rule1.png)) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-  }
-  #invpanel.paper .panel::after, #invpanel.paper .rings::before, #invpanel.paper .detail .desc::before { --mk: url(assets/hud/pk-rule2.png); }
-  #invpanel.paper .panel::after {
-    -webkit-mask: url(assets/hud/pk-rule2.png) center / 100% 100% no-repeat, var(--brk) 40px 0 / 160px 160px repeat;
-    mask: url(assets/hud/pk-rule2.png) center / 100% 100% no-repeat, var(--brk) 40px 0 / 160px 160px repeat;
-  }
+  /* each stroke's own drawing (`--mk`); the mask itself is the block's LAST rule */
+  #invpanel.paper .panel::before { --mk: url(assets/hud/pk-rule1.png); }
+  #invpanel.paper .panel::after, #invpanel.paper .rings::before { --mk: url(assets/hud/pk-rule2.png); }
   #invpanel.paper .body::after { --mk: url(assets/hud/pk-vrule.png); }
   #invpanel.paper .detail .name::after, #invpanel.paper .detail .desc::after { --mk: url(assets/hud/pk-short1.png); }
   #invpanel.paper .detail .desc::before { --mk: url(assets/hud/pk-short2.png); }
-  #invpanel.paper .islot::after, #invpanel.paper .detail .act::after, #invpanel.paper #pack-leave::after {
-    -webkit-mask: var(--ink) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-    mask: var(--ink) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-  }
-  #invpanel.paper .detail .big::after {
-    -webkit-mask: url(assets/hud/pk-big.png) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-    mask: url(assets/hud/pk-big.png) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-  }
-  #invpanel.paper .rings .rslot::after {
-    -webkit-mask: url(assets/hud/pk-ring1.png) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-    mask: url(assets/hud/pk-ring1.png) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-  }
-  #invpanel.paper .rings .rslot:nth-child(2n)::after { -webkit-mask-image: url(assets/hud/pk-ring2.png), var(--brk); mask-image: url(assets/hud/pk-ring2.png), var(--brk); }
-  #invpanel.paper .rings #keychain-box::after {
-    -webkit-mask: url(assets/hud/pk-kc.png) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-    mask: url(assets/hud/pk-kc.png) center / 100% 100% no-repeat, var(--brk) 0 0 / 160px 160px repeat;
-  }
+  #invpanel.paper .islot::after, #invpanel.paper .detail .act::after, #invpanel.paper #pack-leave::after { --mk: var(--ink); }
+  #invpanel.paper .detail .big::after { --mk: url(assets/hud/pk-big.png); }
+  #invpanel.paper .rings .rslot::after { --mk: url(assets/hud/pk-ring1.png); }
+  #invpanel.paper .rings .rslot:nth-child(2n)::after { --mk: url(assets/hud/pk-ring2.png); }
+  #invpanel.paper .rings #keychain-box::after { --mk: url(assets/hud/pk-kc.png); }
+  #invpanel.paper .islot.sel::before { --mk: url(assets/hud/pk-sel.png); }
   /* the words */
   #invpanel.paper h2 { color: var(--inkc); text-shadow: none; }
   #invpanel.paper .head .count, #invpanel.paper .detail .hint, #invpanel.paper .tip { color: var(--inkdim); }
-  #invpanel.paper .tip b { color: rgba(30, 19, 10, 0.85); }
+  #invpanel.paper .tip b { color: var(--inkc); }
   #invpanel.paper .detail .name { color: var(--inkc); text-shadow: none; }
-  #invpanel.paper .detail .desc, #invpanel.paper .detail { color: rgba(32, 21, 11, 0.88); }
+  #invpanel.paper .detail .desc, #invpanel.paper .detail { color: rgba(18, 11, 5, 0.94); }
   #invpanel.paper .rings .rlabel { color: var(--inkc); text-shadow: none; }
-  #invpanel.paper .islot .num { color: rgba(36, 24, 13, 0.78); filter: none; }
+  #invpanel.paper .islot .num { color: rgba(18, 11, 5, 0.92); filter: none; }
   #invpanel.paper .islot.sel .num { color: var(--blood); }
   #invpanel.paper .islot .inhand { color: var(--blood); text-shadow: none; }
   #invpanel.paper .islot .count, #invpanel.paper .rslot .count { color: var(--inkc); text-shadow: none; }
   /* the cells: no glass, only the ink — and the things pressed into the sheet */
   #invpanel.paper .islot, #invpanel.paper .islot.sel, #invpanel.paper .detail .big,
   #invpanel.paper .rings .rslot, #invpanel.paper .rings #keychain-box { background: none; box-shadow: none; }
-  #invpanel.paper .islot:not(.filled) { --c: rgba(36, 24, 13, 0.30); }
+  #invpanel.paper .islot:not(.filled) { --c: rgba(20, 13, 6, 0.52); }
   #invpanel.paper .islot.filled:hover { --c: rgba(18, 10, 4, 0.96); }
   #invpanel.paper .islot img, #invpanel.paper .detail .big img, #invpanel.paper .rings .rslot img, body:has(#invpanel.paper) #invghost img {
-    mix-blend-mode: multiply;
-    filter: saturate(0.68) contrast(1.08) brightness(0.94) sepia(0.14) drop-shadow(1px 3px 1.5px rgba(40, 24, 10, 0.42));
+    mix-blend-mode: hard-light;
+    filter: saturate(0.92) contrast(1.12) sepia(0.1) drop-shadow(1px 3px 1.5px rgba(30, 18, 8, 0.5));
   }
-  #invpanel.paper .islot.filled:hover img { filter: saturate(0.8) contrast(1.1) sepia(0.1) drop-shadow(1px 3px 1.5px rgba(40, 24, 10, 0.5)); }
-  #invpanel.paper .islot.sel img { filter: saturate(0.85) contrast(1.12) sepia(0.08) drop-shadow(1px 3px 2px rgba(40, 24, 10, 0.55)); }
-  #invpanel.paper .detail .big canvas.pv, #invpanel.paper #keychain-box canvas { mix-blend-mode: multiply; filter: saturate(0.75) contrast(1.06) sepia(0.1); }
+  #invpanel.paper .islot.filled:hover img { filter: saturate(1) contrast(1.16) sepia(0.06) drop-shadow(1px 3px 1.5px rgba(30, 18, 8, 0.55)); }
+  #invpanel.paper .islot.sel img { filter: saturate(1) contrast(1.18) sepia(0.05) drop-shadow(1px 3px 2px rgba(30, 18, 8, 0.6)); }
+  #invpanel.paper .detail .big canvas.pv, #invpanel.paper #keychain-box canvas { mix-blend-mode: hard-light; filter: saturate(0.92) contrast(1.1) sepia(0.08); }
   /* circled in dried blood, the pen gone round twice; a smudge of graphite where the hand rested */
   #invpanel.paper .islot.sel { --c: rgba(20, 12, 6, 0.95); background: radial-gradient(ellipse at 50% 55%, rgba(60, 38, 18, 0.16), rgba(60, 38, 18, 0) 70%) center / calc(100% - 10px) calc(100% - 10px) no-repeat; }
   #invpanel.paper .islot.sel::before {
     background: var(--blood); opacity: 0.9;
-    -webkit-mask: url(assets/hud/pk-sel.png) center / 100% 100% no-repeat, var(--brk) 30px 50px / 120px 120px repeat;
-    mask: url(assets/hud/pk-sel.png) center / 100% 100% no-repeat, var(--brk) 30px 50px / 120px 120px repeat;
     filter: drop-shadow(2px 1.5px 0 rgba(70, 18, 10, 0.45));
   }
   @keyframes pkcircle { from { opacity: 0; transform: scale(1.06) rotate(-2deg); } to { opacity: 0.9; transform: none; } }
@@ -1672,21 +1694,24 @@
   #invpanel.paper .islot.glows { --c: color-mix(in srgb, var(--glow) 25%, #24160b); }
   #invpanel.paper .detail .big.pv-glow::before { display: none; }
   #invpanel.paper .detail .big.pv-glow::after { background: color-mix(in srgb, var(--pvglow) 25%, #24160b); }
-  #invpanel.paper #inv-grid .islot.art { --c: rgba(112, 74, 12, 0.92); box-shadow: none; }
-  #invpanel.paper #inv-grid .islot.art.sel { --c: rgba(96, 60, 6, 1); box-shadow: none; }
-  #invpanel.paper #inv-grid .islot.fire, #invpanel.paper #inv-grid .islot.art.fire { --c: rgba(122, 40, 12, 0.92); box-shadow: none; }
-  #invpanel.paper #inv-grid .islot.fire.sel, #invpanel.paper #inv-grid .islot.art.fire.sel { --c: rgba(110, 30, 6, 1); }
-  #invpanel.paper #inv-grid .islot.sea, #invpanel.paper #inv-grid .islot.art.sea { --c: rgba(22, 56, 86, 0.92); box-shadow: none; }
-  #invpanel.paper #inv-grid .islot.sea.sel, #invpanel.paper #inv-grid .islot.art.sea.sel { --c: rgba(14, 44, 76, 1); }
+  /* (the artifacts' squares in the HOTBAR's own colours — 2026-11-19, the owner: "in the inventory give the square around an
+     artifact weapon the same color as the hotbar. blue for water yellow for whale orange for fire": gold #ffd46a, orange
+     #ff9a3c, blue #7fe0f2, as `#hotbar .slot.art/.fire/.sea` draw them; a little stronger when it is the one picked) */
+  #invpanel.paper #inv-grid .islot.art { --c: #ffd46a; box-shadow: none; }
+  #invpanel.paper #inv-grid .islot.art.sel { --c: #ffc94a; box-shadow: none; }
+  #invpanel.paper #inv-grid .islot.fire, #invpanel.paper #inv-grid .islot.art.fire { --c: #ff9a3c; box-shadow: none; }
+  #invpanel.paper #inv-grid .islot.fire.sel, #invpanel.paper #inv-grid .islot.art.fire.sel { --c: #ff8a24; }
+  #invpanel.paper #inv-grid .islot.sea, #invpanel.paper #inv-grid .islot.art.sea { --c: #7fe0f2; box-shadow: none; }
+  #invpanel.paper #inv-grid .islot.sea.sel, #invpanel.paper #inv-grid .islot.art.sea.sel { --c: #5fd4ec; }
   /* the verbs: ink boxes; a hover presses the pen harder and greys the paper under it */
-  #invpanel.paper .detail .act, #invpanel.paper #pack-leave { --c: rgba(34, 22, 12, 0.80); color: var(--inkc); }
+  #invpanel.paper .detail .act, #invpanel.paper #pack-leave { --c: var(--moon); color: var(--inkc); }
   #invpanel.paper .detail .act::before, #invpanel.paper #pack-leave::before { background: radial-gradient(ellipse at 50% 50%, rgba(60, 38, 18, 0.20), rgba(60, 38, 18, 0) 75%); }
   #invpanel.paper .detail .act:hover, #invpanel.paper #pack-leave:hover { --c: rgba(14, 8, 3, 1); color: #120a04; text-shadow: none; }
-  #invpanel.paper .detail .act:disabled:hover { --c: rgba(34, 22, 12, 0.80); }
+  #invpanel.paper .detail .act:disabled:hover { --c: var(--moon); }
   #invpanel.paper .detail .act:disabled { opacity: 0.45; }
   #invpanel.paper .detail .big .pvhint { color: var(--inkdim); text-shadow: none; }
   /* rings and keys */
-  #invpanel.paper .rings .rslot { --c: rgba(36, 24, 13, 0.45); }
+  #invpanel.paper .rings .rslot { --c: rgba(20, 13, 6, 0.7); }
   #invpanel.paper .rings .rslot.worn { --c: rgba(30, 19, 10, 0.85); }
   #invpanel.paper .rings .rslot.sel { --c: var(--blood); filter: none; }
   #invpanel.paper .rings .rslot.wearable { --c: rgba(14, 8, 3, 1); filter: none; }
@@ -1697,13 +1722,22 @@
   #invpanel.paper #keychain-box .kc-arrow { color: var(--inkdim); }
   #invpanel.paper #keychain-box .kc-arrow:hover { color: var(--inkc); }
   @media (prefers-reduced-motion: reduce) { #invpanel.paper.show .panel { transition: none; } }
-  /* (LAST: every `mask` shorthand above resets the composite to "add", and stroke + noise added is a solid box) */
+  /* (LAST, so no `mask` shorthand after it resets the composite — stroke ADD noise was a solid box.) THE MARKER: every stroke
+     laid down three times a hair apart (its own drawing, again 1.1 px right and 1.1 px down, ADDED), then broken where the
+     pen skipped on the grain (`--brk`, INTERSECTED). A drop-shadow cannot thicken a masked stroke: the filter runs first. */
   #invpanel.paper .panel::before, #invpanel.paper .panel::after, #invpanel.paper .rings::before, #invpanel.paper .body::after,
   #invpanel.paper .detail .name::after, #invpanel.paper .detail .desc::before, #invpanel.paper .detail .desc::after,
   #invpanel.paper .islot::after, #invpanel.paper .detail .big::after, #invpanel.paper .detail .act::after, #invpanel.paper #pack-leave::after,
-  #invpanel.paper .rings .rslot::after, #invpanel.paper .rings #keychain-box::after, #invpanel.paper .islot.sel::before,
-  #invpanel.paper .rings .rslot:nth-child(2n)::after, #invpanel.paper .islot.fresh::after {
-    -webkit-mask-composite: source-in; mask-composite: intersect;
+  #invpanel.paper .rings .rslot::after, #invpanel.paper .rings #keychain-box::after, #invpanel.paper .islot.sel::before {
+    -webkit-mask: var(--brk) 0 0 / 160px 160px repeat, var(--mk) 1.1px 0 / 100% 100% no-repeat, var(--mk) 0 1.1px / 100% 100% no-repeat, var(--mk) 0 0 / 100% 100% no-repeat;
+    mask: var(--brk) 0 0 / 160px 160px repeat, var(--mk) 1.1px 0 / 100% 100% no-repeat, var(--mk) 0 1.1px / 100% 100% no-repeat, var(--mk) 0 0 / 100% 100% no-repeat;
+    -webkit-mask-composite: source-in, source-over, source-over; mask-composite: intersect, add, add;
+  }
+  /* (and a thing new to the pack keeps its box drawn round by hand: the sweep over the marker) */
+  #invpanel.paper .islot.fresh::after {
+    -webkit-mask: conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0), var(--ink) 1.1px 0 / 100% 100% no-repeat, var(--ink) center / 100% 100% no-repeat;
+    mask: conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0), var(--ink) 1.1px 0 / 100% 100% no-repeat, var(--ink) center / 100% 100% no-repeat;
+    -webkit-mask-composite: source-in, source-over; mask-composite: intersect, add;
   }
   /* ---- THE SHOP, in the pack's own hand ------------------------------ */
   #shoppanel {

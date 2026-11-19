@@ -2530,3 +2530,357 @@ loads in 30 s — a harness limit, the stage itself came back 1 both ways.)
   the water and the sand — a burst of something mid-flight, not scenery. Ruled out by test: splash drops (pale at every scale,
   against the moon too), footprints (never stamped in water), the throwables (three in the game), castle props (none near the
   beach), the wreck/headland/dojo rocks (far), the syringe (extraction only). Still to find: ask what he did just before.
+
+## The bedroom behind START GAME (2026-11-19, the owner: "render this room for the starting screen that says START GAME have it thunder and raining outside the window and make it dark and depressing in the room … that exact screenshot … sitting in a chair at a desk … a full blue syringe … an iphone on the desk … retro", then IMG_7208 "make this the pic … where that girl is", and "start game should be shown overtop of the scene in the room while you hear and see the rain and thunder out the window i will ad a cutscene here after so be ready")
+- **The model**: jimbogies's "Bedroom" (Sketchfab, CC-BY-4.0, README). Source kept in `incoming/bedroom-2026-11-19/`
+  (gitignored) with the owner's photo. `/usr/bin/python3 -E tools/bedroom_pack.py SRC/scene.gltf tmp1.glb 256 --photo
+  SRC/IMG_7208.jpg --photo-crop 0.267,0.275,0.756,0.813`, then `tools/glbquant.py tmp1.glb tmp2.glb` and gzip whole →
+  `assets/bedroom.glb` 1.76 MB (70 MB raw: tangents, normal and metal-roughness maps dropped, colour maps to 256).
+  **It is in INCHES** (SketchUp: the ceiling at 96): `room.scale = 0.0254`. The frame's picture ("Girl") is stored
+  UPSIDE DOWN (its UVs turn it back): the owner's print is cropped out of his hand and turned 180° the same way;
+  checked in a render (hair up, the sleeve and the "Prestige" signature bottom right).
+- **`TB`** (main.js, after `const overlay`): its OWN WebGLRenderer on `canvas#title-room` inside `#overlay` (the world's
+  boot under the cover untouched), drawn 300 px tall into a render target, then a pass that lifts (×1.7), drains
+  (saturation .38, less in a flash), cools, crushes the blacks, vignettes and Bayer-dithers to 14 levels; CSS blows it up
+  pixelated. Started by `setTimeout(tbStart, 0)` — after the module ran, so a checkpoint load (`instantStart`, set at
+  the module's foot) and `skipIntro` never build it. Torn down by `tbStop` from `leaveTitle` (rain faded, everything
+  disposed 4 s later, after the cover's fade). Probes: `titleRoom` (`PB_Q='&title=1'`: what it found, the view, `&cams=`
+  candidates in room metres, `&fl=1` a flash), `titleStart` (START pressed: torn down, no errors).
+  `tools/probe.html &title=1` keeps the title (no `skipIntro`); `tools/probe.sh` passes `$PB_Q`.
+- **Found from the model, not typed in**: the window (material `window`; its thinnest axis is its normal, out is away
+  from the room's middle), the desk (the photo `Girl` leans on it; the leaf `Pattern` is all over the room, so only its
+  vertices within 0.6 m of the photo: the plate and the cup).
+- **The camera is SOLVED**: four marks in his screenshot (photo, cup, plate, window sill) against their room positions,
+  least squares (scipy) for position, yaw, pitch and lens. His shot is STANDING (1.84 m, 34°, two metres back); held to
+  a seated 1.15 m it fits nearly as well — eye (1.83, 1.15, 1.69), look (2.185, 0.788, 2.549), 54.5° — 0.45 m from the
+  desk's edge: "sitting in a chair at a desk". Guessing cameras (six rounds) never got the window and the desk both in.
+- **The storm**: a sky sheet 5.5 m out (noise clouds, a low town glow, the flash); 2,600 rain streaks (LineSegments, CPU,
+  a little wind) between it and the glass; a wet-glass sheet just inside the pane (beads and runs, shader); one
+  shadow-casting SpotLight from high outside (BasicShadowMap: the panes drawn hard on the bed) — base 2.2, a strike adds
+  16 in 3-4 pulses; thunder is the beach's `sfxThunder` 0.25-1.8 s after; strikes every 6-16 s. The rain is heard as
+  filtered noise on the sea's bus (`tbRainAudio`; the title surf is not started under the room) — synthesized: there is
+  no rain recording in the game.
+- **The desk**: `makeSyringe()` full (`setFill(1)`), 0.19 m, its clear barrel frosted (the clear glass vanished at this
+  size and left a speck of blue), its plastic darkened ×0.55 (lost on the white cloth), its fluid glowing, a soft contact
+  shadow (no light reaches the desk to throw one); a phone (box + a lock-screen canvas: 3:12, "Missed call (4)") with a
+  faint glow light.
+- **For the cutscene to come**: everything is on `TB` (`TB.sc`, `TB.cam`, `TB.r`, `TB.camBase`/`TB.look`, `tbRender`);
+  START currently runs `runIntro`, whose `leaveTitle` calls `tbStop`. A cutscene in this room means NOT calling `tbStop`
+  there but after it, and driving `TB.cam` from its own clock.
+
+## The call: the opening at the desk (2026-11-19, the owner: "after clicking start this audio should play. it should show the desk with a full needle the sketchbook … and the phone use the hands in this like we did for the inventory … at 28 seconds … the phone is up to his ear … at 41 seconds he should pick up the needle and squirt it … 'i have like a thousand sketches' … flipping the pages … 'i think i have an idea' the last page should flip showing the beachwalk sketch … after this audio ends the waves of the beachwalk intro scene can be shown"; then "you can take those plates off the table for room", "just make the table bigger")
+- **The beats are the recording's**, measured, not guessed: macOS 26's on-device `SpeechTranscriber` (SpeechAnalyzer) gives
+  word times WITHOUT a privacy prompt (the old `SFSpeechRecognizer` from a CLI dies in TCC: no usage string); the
+  ringtone is two flat −30 dB stretches in a 0.1 s RMS print (21.4-23.0, 24.7-26.5). The transcriber's first word of
+  each phrase swallows the silence before it ("Hello?" 27.06-28.62: really 27.3). The scratch script is gone; rebuild
+  it from `SpeechTranscriber(locale:, transcriptionOptions: [], reportingOptions: [], attributeOptions: [.audioTimeRange])`
+  + `AssetInventory.assetInstallationRequest` + `SpeechAnalyzer.analyzeSequence(from: AVAudioFile)`.
+- **Audio**: his mp3 (−24 LUFS, peak −6.9) +6 dB through a limiter → `assets/intro/call.m4a` (AAC 128k, −18 LUFS, peak
+  −1.2). Decoded early (`icDecode` in `tbLoop` once there is a context), straight to `ctx.destination` at the intro song's
+  level (`icGain`: master ×2, capped) — `IC.vol` is in `musicGuard`, `musicNote('call')`, musictest scenario `call`.
+- **TRAP, found here: everything under the title was SILENT.** The bedroom's rain (`waveBusGain`) and thunder
+  (`sfxOut`) ran into the master, and the master runs through `gameAudioGate`, which is 0 until `introDone`. The
+  "rain sound true" check of the first pass only saw the node exist. The room now has its own path (`tbBus`: `TB.bus` →
+  destination at the master's level, `TB.sfx` at the effects slider, `TB.rainBus` at the waves', both ×`TB_STORM_LIFT`);
+  the thunder is steered there by `tbScope` inside `sfxOutBase`. musictest `call` measures it ("the storm under the
+  title 0.0041"). Anything new heard before the beach must not go through the master.
+- **The hands** (`tools/intro_cut_pack.py`, its docstring has the commands): each clip at 12 fps is warped frame by frame
+  onto a reference frame by a homography of the TABLE PLANE (SIFT on the wood, arm masked; 150-680 inliers; the
+  blurred at-ear frames 56+ held as shot) — so the book and the phone stay put while the camera wandered (the book drifts
+  ~130 px down and 20 % bigger over IMG_7214 otherwise). Kept: Vision instances reaching the bottom (the arm); the book by
+  colour (white, unsaturated AND smooth — the table's glare is as pale but warmer, the rug as pale but patterned); the
+  phone where Vision dropped it (dark, neutral, touching his fingers); his knee out. Vision is NOT consistent frame to
+  frame (the book in some frames, merged with the arm in others): never pick instances by id. The arm runs past the
+  clip's border by edge replication, darkened with distance (`past_edge`) — each layer is pinned to its screen corner
+  by its `anchor` so the clip's own border is off screen; shifting a layer inward showed the cut (the at-ear hand
+  smeared into a bar). The at-ear phone showed the table through its glass (blur): non-skin there painted dark.
+- **The pen is the syringe**: its ends hand-marked on keyframes in the reference frame (`PEN`; auto-tracking took the
+  sleeve's edge), its black pixels taken out along a band, and the grinder behind its top end (it came with the hand
+  mask). main.js draws the syringe (`icSyringe`: rod, thumb rest, flange, barrel, the blue on the glow canvas, hub,
+  needle) under the hand while it lies, over it while held; the squirt is a jet and drops on the glow canvas.
+- **In the room** (`IC`, after `tbStop`): two canvases the size of `TB.rt` — one lit by the room (`light` 0.2 + the
+  lightning + the phone), one by its own light (the phone's screen, the blue, the squirt) — composited over the room
+  INSIDE the render target, so the post pass drains and dithers them with it. The lying phone's screen is drawn through
+  the four corners the packer found (voicemail wave and progress 0-19.6, off, the call pulsing 21.35+, the phone
+  buzzing on the table during the rings); the lifted phone's call screen is baked into its frames. `TB.phoneL` moves
+  under the 2D phone (unprojected onto the desk) and glows with it.
+- **The desk**: the plate and cup removed (`tbClearDesk`: every vertex standing on the table's top but the photo, then
+  the WHOLE connected piece each belongs to — half a cup left a fan of spikes); the model's table is a DRAPED cloth —
+  stretched, its folds smeared into strips — so it is hidden and a plain box at its height stands in (`TB_DESK`,
+  1.54 × 1.0 m, the linen map tiled, darkened ×0.62, receiveShadow off: the storm light's hard shadow stepped across it).
+  Camera `IC_CAM` (eye 1.62, 1.2, 1.92 → 1.6, 0.46, 2.6, 46°) found with the probe's `&cams=`.
+- **Flow**: `beginGame` → `runCall` when `icCanRun()` (room built, sheets and json in, a context, the bytes) else
+  `runIntro` as before. `introQuiet` is set (the world under the cover is not drawn) and `introHoldNow` holds the boot's
+  parses 2.2 s before each beat (`IC_BEATS`). At 71.5 s, or Enter, `icFinish` → `runIntro` (its black fades over the
+  room, then `leaveTitle` → `tbStop` → `icStop`).
+- Probes: `callShots` (&title=1, `&ts=` seeked on the recording's clock, `&cams=ex,ey,ez,lx,ly,lz,fov;…`, `&shift=`),
+  `callRun` (real time: START to the waves, `&skip=s` presses Enter), `titleStart` (now skips with Enter);
+  `titleRoom &box=` lists meshes in a box, `&amb=` lifts the room's ambient to see it.
+
+## The call, round two (2026-11-19, the owner: the mirror and the wall right of the window "flickering" on the title; "the phone and syringe are off"; "use an actual syringe model from the game. it shows through his hand"; "glance out the window and at his bed while on the phone"; "the sketches need to be seen way better"; "use the page flip sounds from the audio of the video"; "make the hands and items look better this is all cheap looking"; "no loading screen it should seamlessly look down towards the table … from the position of the start game"; "make his hand go back to idle"; then "a dramatic zoom into the last beachwalk page … then it goes to black then open up to the waves video make the waves video look better too i see it lag sometimes"; "make it look like a real iphone screen and someones calling too")
+- **Painted on the table, not on the screen.** Everything of the LEFT clip (book, hand) is drawn on a canvas in the DESK
+  CAMERA's view (`IC.deskCam`, `IC_CAM`), and that canvas is projected onto a 14 m plane at the table's height
+  (`IC.paint`: each fragment projected by `deskVP` into the desk view, depthTest off, after the room). A flat book is then
+  on the table from ANY viewpoint (the title shows it; the glide down from the title needs no cut, and the push-in on
+  BEACH WALK is a real camera move over a flat page), and a hand drawn there stays exact for any camera that only ROTATES
+  about the desk eye (the glances, `IC_GLANCE`: `icHead` slerps the desk pose toward the window / the bed). The RIGHT
+  clip stays a screen overlay (`IC.ear`): at his ear it turns with his head.
+- **The syringe is the game's model** (`TB.syrPose` +Z = needle, the cap hidden): lying, its pen's two ends onto the table
+  plane (held a pen's 0.13 m apart: the clip's pen is foreshortened); held, the two rays out to the depth that puts them
+  0.13 m apart (`icPoseSyringe`). Lying it is on layer 0 in the room pass (under the painted hand); held it goes to layer 1
+  and a pass of its own after the hands, depth cleared — the lights carry layer 1 too. **TRAP: a second `render` of a
+  scene with a `background` repaints it even with `autoClear` off** — the held pass blacked the frame until the
+  background was nulled around it. The squirt is drawn in the desk view from the model's tip (`parts.tipZ`).
+- **The phone is a 3D iPhone** placed on the four corners the packer found for the lying phone in the clip (so his hand
+  picks it up from exactly there, hidden from frame 19), its screen `iosScreen` at 180×390: 'incoming' (Matthew, mobile,
+  Remind Me / Message, slide to answer with the shine), 'vm' (the Phone app's Voicemail, his message playing: scrubber,
+  speaker on, pause), 'lock' (3:12, three missed calls). Under the title it RINGS — the screen, a buzz on the table every
+  1.7 s (`tbBuzz`, a 150 Hz rattle on the room's effects path) and the phone jittering. Anything scheduled on a
+  SUSPENDED AudioContext lands all at once when it resumes: the buzz and the thunder only fire while it is 'running'. The
+  clip's lifted phone has the same call screen baked in (`ios_call` in the packer).
+- **The title view** turned a little right and widened (64°, look 1.9, 0.72, 2.6) so the ringing phone is in it.
+- **Flicker**: the room's maps were nearest-only (`retroTex`) — they crawled as the camera breathed; mipmapped now
+  (magnified still nearest), the near plane 0.03 → 0.06, the mirror's glass polygon-offset in front of its frame, the
+  spot's shadow bias −0.004 / normalBias 0.02. The props sat 9 mm INSIDE the new table (the old top, 0.481, from the
+  plate): `TB.desk.top` is the new table's.
+- **The left hand's timeline** (`IC_LSEG`): in and up (2-52), the syringe down (82-95, `pendown` sound), then the reach-in
+  frames BACKWARD (15→2) — his hand goes down out of shot, idle — the book alone, and at 57.45 frame 119 slides up from
+  below (`IC_LIN`) and the flips play straight through at 9.7 fps so the last turn lands on "I think I got one in mind"
+  (no more hand parked on the corner). The packer dropped 96-118.
+- **Sounds off his clip** (`assets/intro/flip1-3.m4a`, `pendown.m4a`: IMG_7214's audio at 10.72, 14.02, 18.22, 7.5 s;
+  highpass 200, afftdn, +24 dB, a gate, a limiter — the room's hiss is 20 dB under a page) scheduled on the recording's
+  clock where their frames play (`IC_SFX`).
+- **The look of the hands** (`grade`): the edge soft (blurred alpha before the downscale) instead of the hard cut and
+  black line ("a sticker"), crisp inside, 0.56 / 0.533 of the clips (the room renders 400 tall now, `TB.H`), a soft
+  shadow under each frame on the table (canvas `filter: blur() brightness(0)`, farther and fainter when held up). The
+  sketches: `ink_up` flattens the paper to its own shading and darkens every pencil line over 6 % below it.
+- **The end**: BEACH WALK, his hand gone, then `IC_ZOOM` (70.95-72.75): the eye pushed to 0.11 m from the page,
+  accelerating (^2.4), the lens 46 → 30°, a strike; black on the frame it fills the view; `runIntro`. The waves video is
+  started playing at the push-in (`IC.vidWarm`, not re-seeked by `runIntro`) and the boot is HELD through the whole song
+  after a call (`introHoldNow`: `IC.handed`) — it had the call's 70 s.
+- **The waves' lag was the LOOP**: `callRun` measures every presented frame (requestVideoFrameCallback): no drops, but
+  67-83 ms holds at mediaTime 0.10, every wrap. Now Media Source Extensions append the 8.6 s clip again and again at
+  k·8.6 − 1/15 (`introWavesSeamless`; the asset re-muxed fragmented, frames unchanged): 540 frames, 0 gaps. Graded a
+  little colder and deeper and vignetted (`#intro video` filter, `#intro::after`).
+
+## The call, round three (2026-11-19, the owner: the "weird sound that wasnt rain" under START GAME; "make the cuts cleaner i see some stuff … phasing in and out while he flips pages" (185, 189, 225: "things coming through above the sketchbook paper"); "i need to tell what the pictures are"; "position everything on the table better it can be more centered and the picture frame out of the way a little"; "the second time he looks towards the bed have him look at the poster above his bed"; "the syringe should be in his hand not shown through it"; "have him glance at the syringe … inspect it then squirt it a little longer"; "have each beep of the phone during the voicemails he uses his hand to press a button to skip each message"; "make end zoom better and less corny"; "the textures on the walls still flicker")
+- **The weird sound was `tbBuzz`** (a synthesized 150 Hz rattle for the phone shaking): gone. The phone still shakes, silently.
+- **The rug in the raised pages**: the book's colour mask (pale, unsaturated) joined the raised page to the rug behind it.
+  Measured: the page's local spread (9 px window) 0.001-0.004, the rug's 0.02-0.06. Above the binding (ref y < 455) only
+  smooth paper or Vision's arm is kept; the whole cut is then one connected piece (plus anything a quarter its size).
+- **The sketches readable**: the book at 0.70 of the clip (was 0.56; the right clip 0.667), `ink_up` thresholded at 5 %
+  with every line dilated a pixel at 0.7 — and applied where Vision's arm swallowed the page too. The sheets are split
+  at 4096 square (`left-0..2.webp`, a 7th number in each rect): a WebP stops at 16383.
+- **In his hand, for real**: along the pen the packer reads where its black shows (in front of his hand) and where skin
+  covers the line (a finger over it); those fingers near the line are cut as their own frames ('f31' …). Drawn: shadows →
+  his hand → the syringe (layer 1, depth cleared) → those fingers → the right hand. Drawn UNDER the hand instead, the
+  syringe vanished behind the palm (the barrel is twice the pen's width); drawn over all of it, it "showed through".
+- **The inspect**: frames 31-43 back and forth at 7 fps while he holds it up (`IC_LSEG` 'pp' with its own rate), the head
+  turned 0.8 of the way to where he holds it (`IC.syrLook`, posed once from pen frame 37 — following the syringe frame to
+  frame made the head jitter at 12 fps), the squirt 43.25-44.4.
+- **The taps**: the voicemail's four beeps (1.2 kHz, 0.15 s: 5.13, 9.14, 13.29, 17.89) each get his right hand up from
+  below (frame 17), a finger on the phone (frame 18) as it beeps, and down again; the phone dips a mm; the Phone app's
+  voicemail moves on a message (`iosScreen` 'vm' takes `{ m, p, len }`).
+- **Glances** now window (30.4-36.2), syringe (41.25-45.7), the POSTER over the bed (`TB.poster`, the 'Poster' material's
+  middle; 48.7-53.7).
+- **Centred**: the desk camera to x 1.48 at 50°, the table out to x 0.42; his photo moved −0.42, +0.1 m (`tbMovePhoto`:
+  only pieces WHOLLY inside its box move, so the wall it stands near stays).
+- **The end, calmer**: no lightning, no lens warp; a beat on the page, then one even push (`icEase`) from 71.2 to 75.4 to
+  0.38 of the way to the page, the lens 50 → 40°, the room fading from 73.9; black; the intro.
+- **The flicker, measured** (probe `flicker`: the room drawn 30 times along its breathing, every pixel's frame-to-frame
+  change summed into a heat map): not the walls' textures or z-fighting but thin bright EDGES (the mirror's gilt frame,
+  the window's) crawling a pixel as the camera breathed at 400 px. The room is drawn at 2× into `TB.rt` and averaged
+  down by the pass (`TB.vw/vh` is the view's own size, what the clips are placed in), and the camera no longer breathes
+  under the title or at the desk.
+
+## The call, round four (2026-11-19, the owner: "the hand doesnt even reach the phone the stuff isnt on the table right its laggy as shit … the syringe part lookd horrible … the old phone pickup was better. space out the 'oh yeah' reply a little later"; then "the phone held to the ear should look like the last version before this. his phone shouldnt already be in his hand when clicking off the voicemails and his hand should actually touch the phone on the table")
+- **The desk camera back** to round two's (eye 1.62, 1.2, 1.92 → 1.6, 0.46, 2.6, 46°). Round three's centring (1.48 / 50°)
+  moved the painted LEFT clip with the desk camera, but the RIGHT clip is a SCREEN overlay pinned to the corner: its hand
+  reached where the phone was in screen space while the 3D phone now stood elsewhere (stills: the hand at the frame's
+  edge, the phone cut off at the top right). Back: the hand comes down on the lying phone at 25.0 s and lifts it at 25.4.
+  **A camera change at the desk breaks the right clip's registration — the right clip has no 3D to follow it.**
+- **The taps** borrowed clip frames 17/18, which carry the clip's own phone: a second phone in his hand over the Voicemail.
+  `icTapFrame(key)`: a copy of each with the dark, unskinned pixels inside `R.screen` (grown 1.25 about its middle) made
+  clear — a fingertip on the real phone. Stills at 4.95/5.13/9.14: one phone.
+- **At his ear**: the frames from 44 on drawn at 0.8 (`icBlit`'s new `k, kx, ky`, about the bottom-right corner): round
+  three's sheet is at 0.667 of the clip, round two drew 0.533. The source clips are not in the repo and the packer's work
+  dir is gone, so the old frames cannot be re-made; it stays a dark shape (the phone's back, close to the lens).
+- **The syringe readable**: glass opacity 0.5 → 0.32 (0xe6eef4), the blue's emissive 1.4 → 3.0 (0x2a6bff: it survives the
+  pass's drain), the plastic ×0.55 → ×0.85, held at scale 1 (was 0.85). It reads as a syringe, the blue down the barrel.
+- **The lag, measured** (`tools/calljank.js`: every rAF from START to the call's end, held frames and long callbacks with
+  the recording's time): 24 frames held 50-217 ms, 22 of them in 0-5.6 s (the boot's first parses after START), plus
+  100 ms at 39.4 and 59.5 (the left sheets' first draws: an Image is decoded on first draw). The 2x target was NOT it
+  (`tools/callperf.js`: the room 0.4 ms a frame at 1x, 0.6 at 2x headless) — it is back to 1x anyway (`tbSize`), the
+  camera no longer breathing at the desk. Each sheet is now an ImageBitmap as soon as it loads (`icLoad`; `icImgOk` and
+  `icTapFrame` take either): 39.4 and 59.5 gone. `icHoldNow` holds the boot the call's first 8 s: the glide is clean;
+  the boot's parses then land at 9.9-14.1 s (18 held, worst 233 ms — the voicemail, the phone lying still). Open: they
+  have to land somewhere in the call (after it the song holds them too, and the end black is capped at 20 s).
+- **"Oh, yeah?" half a second later**: word times by `SpeechTranscriber` (the Swift is in the notes' round one; this
+  round's: `AssetInventory.assetInstallationRequest` then `SpeechAnalyzer.analyzeSequence`, each run's
+  `audioTimeRange`); by silencedetect the reply is 56.02-56.62, then 1.0 s before "Dude, I have like a thousand sketches"
+  (57.64). `call.m4a` re-cut: 0.5 s of the pause before it (55.60-56.10, room tone, not digital silence) inserted at
+  56.10, the same 0.5 s taken out of the pause after (57.10-57.57; three 10 ms crossfades allowed for): the reply at
+  56.51, and everything from 57.64 to the end where it was — no beat after it moves. The original is not kept in the repo.
+
+## The call, round five (2026-11-19, the owner: "the zoom in on the book should be faster and zoom so close it turns to black like a movie trailer. clean up the cuts i saw things i shouldnt especially the needle just have his hand and the needle shown … clean up all the traces … take the phone out of his hand before he picks it up … make the stektchbook not retro so the pictures are seen better. the phone is clipping into the wall move everything closer on the table to the player")
+- **The source clips are on the Desktop** (`~/Desktop/BEACHWALK ASSETS/IMG_7209.MOV`, `IMG_7214.MOV`; round four thought them
+  gone). The packer's work dir is rebuilt in a few minutes (its docstring): frames at 540 for Vision and the homographies,
+  and now ALSO at full size (`v2h`, `v3h`) — every mask is made at 540 as before and the colour is warped from the
+  1080-wide frame by the same homography at 2x (`warpH`), the mask upsampled linearly (`up`). Sheets at `KL` 1.6 / `KR` 1.5
+  sprite px a view px (`meta.L.k`, `meta.R.k`; main.js divides every rect by it). 2.9 MB as before (WebP q82); ~0.4 GB
+  decoded as ImageBitmaps during the call, closed in `icStop`.
+- **Sharp, not retro**: the room renders at its 400 px into `TB.rt` (nearest now); his clips — the paint, the shadow, the
+  held syringe, the fingers, the right hand — into `TB.rtHi` at the screen's size (`TB.Q` = up to 1080 tall / 400,
+  HalfFloat, premultiplied), and the post pass lays rtHi over the room BEFORE the grade, dithering only the room's own
+  pixels (`bayer(lp)`, `mix(quantised, smooth, o.a)`). The IC canvases are `TB.Q` times the view and drawn in view units
+  through `setTransform`, smoothed (`icCanvasSize`). Each redraw is a big upload, so the paint and the ear canvas redraw
+  only when their frame/offset changes (`IC.paintSig`, `IC.earSig`). Measured (`calljank.js`): 4288 frames / 73 s, the
+  held ones still only the boot's at 9.7-13.1 s.
+- **Nothing popping in at the syringe**: the book is cut ONCE (`b1`) and drawn under the frames up to 95, which are his
+  ARM ALONE — the book's paper (inside its static mask) and its dark edge (2-10), all paper-white anywhere (a page edge in
+  his fingers in 6 and 119), the pen's black, everything not skin along the pen (its end seen head-on — the "cap" in 37 —
+  and 55 px round its marked tip: the hand-marked `PEN` is ~30 px off there), anything not joined to the arm
+  (`keep_biggest`), pin-holes filled. `h119` is the same for the hand sliding back in at 57.45 (the old slide moved the
+  whole frame, book and all). A small dark nub stays on his fingertip in 37, under the syringe.
+- **The phone out of his hand**: `h17`/`h18` — the reach frames with the clip's phone (where it lies, grown 7 px, all but
+  skin) cut out — for the taps (`h17` alone; frame 16 has no Vision instance) and the reach before he lifts it at 24.95.
+  `icTapFrame` (the JS clean-up) is gone.
+- **Clean edges** (`grade`): the mask taken ~a pixel inside his outline, the edge band's colour taken from just inside it
+  (nearest-interior fill: no fringe of table or rug), a soft one-pixel falloff, NO dark rim (it read as an outline); the
+  right hand's cuff opened (3 at the ear) and kept to its biggest piece.
+- **Off the wall**: the phone his clip gives is 0.27 x 0.41 m on this table (the clip was shot far closer than the desk
+  eye), its far end 5 cm into the wall (z 3.09, wall 3.04, `tools/callgeo.js`). `IC_CAM` moved 0.25 m back (eye z 1.67,
+  look z 2.35): everything placed through it — phone, book, syringe, both hands — comes with it, the right hand still on
+  the phone. `TB_DESK.z0` 1.98 → 1.58 so its near edge stays out of the shot. The table's top is 3 mm over the old one's
+  (`tbGrowDesk`): the old table's front strip, flush with it at z 2.17, z-fought it in a dark line across the desk.
+- **The end, a trailer's** (`IC_ZOOM` 70.95-72.25): a whip onto the word (the turn done by 1/3), then the distance
+  shrinks by a growing RATIO (`D * (end/D)^(z^2)`, to 4 mm) — the page grows faster and faster — aimed at the MIDDLE OF THE
+  THICKEST STROKE (`icInkAt`: the b245 sprite's ink, a two-pass chamfer distance map, its deepest point a little toward
+  the page's right); from ~0.77 the stroke is wider than the view and it is black ink, the post's fade finishes it from
+  0.94. The near plane follows the distance down. Aimed at the darkest 6x6 patch instead it landed between letters on
+  grey paper. His phone hand drops out of the shot as the push starts.
+
+## The title, square and the same on every screen (2026-11-19, the owner, an ultra-wide START screen: "the phone looks huge the syringe isnt even on the table … just center the stuff on the table for the start please it should look good as a start screen. it should look symetrical and it looks different for different screens make it all the same"; "you can change the camera angle a little … but still see some of the window"; "make his hand switching the messages faster")
+- **Why it looked wrong**: where his clips put things is right only from the chair. Seen from anywhere else the clip's phone
+  is 0.27 x 0.41 m and the book half a metre; and the syringe, placed through the desk camera, lay past the table's edge
+  from the title's side-on view. The title's 64° VERTICAL lens showed far more room on a wide screen.
+- **The title's own layout** (`icTitleLayout`, `icPropsAt(k)`): on the MIRROR's axis (`TB.mirrorX`, the MirrorGlass box,
+  1.67): the sketchbook in the middle at 0.30 m, square (its sides from the smallest box round its pixels' places on the
+  table, turned a degree at a time; which side is its top from where the sprite's top lands — a spread fit came out on
+  the slant, and the box alone turned it 90° on a 16:9 screen, the clip's book having another shape on the table there),
+  the phone at its real size to its right and the syringe to its left, `IC_TITLE_GAP` 0.27 out, at `TB_TITLE_Z` 2.2; his
+  photo moved onto the axis, leaning at the mirror's foot. The book is a mesh of its own until the paint takes over: its
+  sprite on a 16 x 16 grid, each point lerped from its title place to where the paint lays it (`icRay` of the sprite
+  point) — identical at the end. START's look-down (`IC_GLIDE`) carries every prop from the title's place to the clip's
+  with the camera (`icPropsAt(k)` with the glide's eased k): they grow as it comes down; no jump at the hand-over.
+- **The lens** (`tbTitleFov`): the horizontal angle held (`TB_TITLE_HFOV` 78) up to 16:9; wider than that 16:9's VERTICAL
+  angle is held instead — an ultra-wide sees more at the sides (more window), never less of the desk (holding the width
+  there cut the book's front off at 2.39:1). Camera `TB_TITLE_CAM` (eye y 1.12, z 1.38; look y 0.45, z 2.8, on the axis):
+  the window's lower part in the top left at every shape. Checked at 1280x720, 2000x837, 1024x768 (`probe.html` takes
+  `&fw=&fh=` now, `probe.sh` `PB_WIN`).
+- **The taps quicker** (`IC_TAP`, `icTapUp`): up in 0.18 s, on 0.12, gone in 0.2 (was 0.42 / 0.32 / 0.41).
+
+## Under START GAME: the rain down again, the phone dark, the cabinet's glass (2026-11-19, the owner: "THE RAIN IS WAY TOO LOUD AND THE PHONE IS GLITCHING WHILE IN THE START GAME MENU. ALSO FIX THE FLASHING TEXTURES ON THE WALLS! WHEN HE GLANCES AT THE POSTER YOU CAN SEE A CABINET TO THE RIGHT OF THE WINDOW AND THE TEXTURES ARE FLASHING CRAZY"; "DONT HAVE THE PHONE RINGING IN THE START GAME PART JUST HAVE IT BLACK")
+- **Rain** `TB_RAIN` 0.5 → 0.18, `TB_RAIN_CALL` 0.24 → 0.09: −47.6 dBFS RMS at the speakers at the default sliders
+  (`tools/titlerain.js`; −33.5 this morning, −38.6 after the first cut).
+- **The phone under the title is off**: `icPhoneScreen(t, true)` draws it black once (`'off'`) and lights nothing; no
+  buzz-shake (`icTitleFrame`); the screen starts black at its making. From START the voicemail is on it at once (it showed
+  'incoming' for the first 0.6 s). Checked untouched with `tools/titlecheck.html` (the probe page itself presses START:
+  run it as `PB_PAGE=titlecheck.html sh tools/probe.sh x <out>`): screen off, moved 0, light 0.
+- **The cabinet right of the window flashed** (`tools/glanceflicker.js`: the call stepped at 60 fps through a glance,
+  every pixel's change summed into a heat map; raycast through the hot panel): its `GlassDoors` and its pale front panel
+  ('material') lie in ONE plane, z 2.828, and z-fought for every pixel as his head drifted — 14450 flashing pixels at the
+  poster's hold. The glass is now polygon-offset in front (as `MirrorGlass` is): 225. Then the drift during a glance
+  (`icHead`, ±0.015/0.03 rad) taken out — it walked the mirror's gilt edge a pixel to and fro at the room's 400 px: the
+  window's hold 7623 → 0, the poster's → 85, the syringe's 243 (the squirt itself).
+
+## The call, round six (2026-11-19, the owner: "I HATE HOW ALL THE STUFF SLIDES TO DIFFERENT POSITIONS FROM THE START GAME POINT … THE SYRINGE IS STILL OFF THE TABLE … HAVE THE PHONE BE ON THE VOICEMAILS IN THE START … DONT HAVE IT VIBRATING … I SEE THE RAIN THROUGH THE MIRROR ABOVE THE TABLE … MAKE THE SYNRGE A CLEANE CUT … FIX THE RIGHT FINGER WHEN PRESSING THE VOICEMAIL. MAKE THE IPHONE PICKUP LOOK BETTER … THE PAGES THAT ARE FLIPPED SHOULD STAY ABOVE THE SKETCHBOOK … SKETCHBOOK TEXTS AND DRAWING ARENT FLICKERING"; "MAKE THE SYRINGE BE THE LAYER UNDER THE LEFT HAND")
+- **One layout, no slide**: the title's own layout (`icTitleLayout`, `icPropsAt`) is gone. His clips make the props as big as
+  the desk eye's height over the table makes them, so the eye is LOWER: `IC_CAM` eye (1.66, 0.97, 1.67) → look (1.64,
+  0.23, 2.35), 0.48 m over the desk (was 0.71): the phone ~0.18 x 0.28 m, the book ~0.34, on the mirror's axis. The
+  title's camera frames that same layout.
+- **The same on every screen**: his clips are placed in one 16:9 frame in the middle of the view (`icClipFrame`), not on
+  the screen's corners; the desk lens holds that frame (`icDeskFov`: the vertical angle at ≥16:9, wider below), so the
+  props lie in one place whatever the window. Past the frame (a wider or taller screen) the post pass darkens softly to
+  the edge at the desk (`frame`/`pillar` uniforms, coming in with the glide), and his sleeves fade out past the clips'
+  edges (packer `edge_fade`, the canvases reach 220 / 260 px past them: `L_OFF`, `L_SIZE`, `R_SIZE`). Checked 1280x720,
+  2000x837, 1024x768 (`probe.html &fw=&fh=`, `PB_WIN`; `tools/titlecheck.html` for the untouched title: `PB_PAGE`).
+- **The title phone**: the Phone app's voicemail drawn once (`icPhoneScreen(t, true)`: 'vm', message 1 at its start),
+  still. The flicker over the table was the RAIN in the window, 2600 one-pixel lines sparkling at 400 px — each drop is a
+  soft streak now (a 14 mm quad, bright head, fading tail, opacity 0.3; `tools/mirrorlook.html` heat 2015 → 823). The
+  mirror itself is opaque and never changed frame to frame.
+- **The syringe is DRAWN along the pen** (`icSyringe2D`), UNDER his hand (the pen was cut out of it, so it shows where
+  the pen did): the packer FINDS the pen in each frame (`track_pen`: its dark grey non-skin pixels near the marked line,
+  a line refitted without strays, ends at the 1st/99th percentiles, width from the spread; median over neighbours) —
+  `pens[k] = [ax, ay, bx, by, held, width]`. The game's model is hidden. The squirt starts at the drawn needle's end.
+  Anything not skin up at his hand that does not run down into his sleeve is cut (the ring off the pen's end in 37).
+- **The taps**: `h17`/`h18` cut the clip's phone by COLOUR (neutral and dark), not by skin_of (it wants lit skin and took
+  his shaded fingers off over the phone). No clip frame has a pointing finger (14-16 are blurred reaches).
+- **To his ear**: the clip's 50-55 and 74 (a black slab, the phone a hand's width from the lens) are gone: frame 43 goes up
+  and out to the right (`IC_TOEAR` 27.2-27.75), the at-ear frames come up into the corner after it.
+- **The turned pages stay**: `white_book` keeps any big white piece beside the book (the rings part the turned stack from
+  it), and the frames' and 245/b245's piece filters keep pieces down to 6 % (`keep_biggest(.., near=30, frac=0.06)`).
+- **The sketches steady**: each page pixel is the median of it and its neighbours' frames (`cachedH`, away from his hand),
+  and `ink_up` has a soft knee (−3.5 %, ×3.4, ^0.85) instead of a cut at 5 % — lines at the cut came and went.
+- **Memory**: the sheets are 2048 square (a first draw uploads a sheet whole: 64 MB at 4096 held frames 70-100 ms) and
+  GROUPED by when they are drawn (`lgroup`: 'T' the book alone, 'S' the syringe, 'F0'-'F3' the flips in quarters;
+  `m.L.groups`): `icSheetsFor(t)` decodes a group ahead of its time and lets it go after (`icSheetTimes`), and each new
+  bitmap is drawn a pixel of on a frame of its own to upload it ahead of need (`IC.warmQ`).
+
+## The well man's zoom, back (2026-11-19, "give the well guy his old zoom in when he is reavealed")
+- `wellReveal` holds the lens on his face (34°) and opts into `cineWalkAway`; it took where you stood at once, and the
+  next frame's clamp moved the camera 0.8 m (x 15 → 14.2): counted as walking away, the zoom let go on the first frame.
+  `cineWalkAway` now takes the spot over the next 4 frames (`cineAtWait`). `tools/wellzoom.js`: 105 → 34.2, held.
+- **And off the main thread**: a bitmap made from an `<img>` decoded ON the main thread — each part's decode held a frame
+  80-100 ms (33, 55, 59, 62 s) even at 2048 sheets. Each sheet is fetched as a Blob (`icLoad`), the Image made from its
+  object URL, and `createImageBitmap(blob)` decodes off-thread: `calljank.js` then holds only the boot's 10-14 s frames.
+
+## The call, the syringe: the game's model, under his whole hand (2026-11-19, the owner: "THE SYRINGE IN THE START CUTSCENE IS SO BAD … ITS SHOWN THROUGH THE HAND … USE THE REAL 3D MODEL … THE HAND SHOULD BE THE LAYER OVE THE SYRINGE ALWAYS")
+- **Why it showed through**: the pen was cut OUT of his hand, leaving holes the syringe was seen through. The packer now fills
+  them: inside his hand's outline (closed by 7) near the tracked line, on the pen's own pixels (dilated 2; the ring off his
+  fingertip in 37 came back as skin when it was not limited), the hand is put back and its colour painted from the skin
+  round it (`fills`, `cv2.inpaint`, TELEA r7, at full size). The front-fingers layer is gone.
+- **The model** (`icPoseSyringe`): `TB.syrPose` along the tracked pen; its length = the lying pen's length on the table in
+  this view (`IC.penLen`, scale `Ls / 0.19`); lying, both ends on the cloth; held, its middle 0.8 of the way down the
+  middle ray to the table and the ends out along their own rays the length apart (a quadratic in the split, the smaller
+  root, ±0.6 of the depth) — a pen turned toward him comes out turned toward him.
+- **The layers** (`tbRender`, into `TB.rtHi`): shadows → the book lying still (`IC.front`/`IC.fcx`, from the syringe
+  frames on and under the title) → the syringe (layer 1, depth cleared) → his hand and the turning book (`IC.paint`).
+  The squirt comes off the model's tip, projected.
+
+## The call of the crow (2026-11-19, the owner: "MAKE THE HORN CALLED 'The call of the crow' take out the end beach cutscene and take out the great horshoe crab coming up from the water scene. take out the tree stump with the crow as well. when the horn is blown on top of the light house is where the crow should grab you and take you to the desert use the same music there for now but have it fade when u land at the desert. put another merchant right in front of the lighthouse door … while in the desert make it say 'e to end game'")
+- `hornItem.name` 'The call of the crow' (id 'crabCall', `was: ['The Great Crab Call']` for saves; the model table has both
+  names). All three ways the horn was blown up top (`blowCrabCall`, E anywhere on top, the lamp) call `crowCallFromTop()`:
+  the horn, then `startTempleFlight(true)`. `startCrabCut` / `updateCrabCut` / `startWakeCut` stay in the file, reached
+  from nowhere.
+- **From the top** (`tmpCut.fromTop`): no stump phase; the crow comes in out of the sky over the sea (keys from 46 m out and
+  26 m up, round to 26/15, down onto your shoulders at `TMP_T.grab`), then the same climb, cloud and desert. The
+  lighthouse's music (`lhGain`) fades over ~3 s as you are dropped.
+- **No stump**: `tmpStumpSetup` builds no stump, collider or "Approach the crow"; the crow is loaded and kept hidden
+  (`updateStumpCrow` hides it outside the flight).
+- **A merchant at the lighthouse's door**: a third bake of the trader (`bakeTraderInto`, `trader3World`, `trader3Try`), on
+  the deck 2.1 m out from the door and 1.35 m to its side, turned up the deck, in `isleWorld`; `openShop(3)` — the beach
+  man's stock. Not part of the hit-him temper (one man, two places, there).
+- **The desert, for now**: `updateHover` shows "E — End game" there (outside the flight); `primaryAction` → `showEnd()`.
+  `tools/crowcall.js`: on the isle, the horn, the flight (crow in sight), inTemple, the prompt, E → the end card.
+
+## 2026-11-19 (last): the syringe off the book, nothing but his arm, the crow's scream, the puppet down
+- **Further from the book** ("syringe is too close to the book"): `IC_SYR_OFF` [-18, 3] view px — the syringe, and his hand
+  in the frames up to 95 (he takes it from where it lies), to the left; the book where it was. `IC.syrLook` the same.
+- **Nothing but his arm in the pick-up frames** ("clean up all the weird little spots … nothing but the hand and syringe"):
+  the fill's closing 7 → 5 (it bridged past his fingertips); a fill that came out not skin is cleared (`badH`); small dark
+  pieces (< 260 px) up at his hand that do not run down into his sleeve go (a size limit: the sleeve's light folds split
+  it into big dark pieces, and without one the rule cut holes in it); the outline closed and holes filled, ONE piece kept;
+  along the pen a stricter skin (warm > 0.105, not yellow: the pen's silver passes `skin_of` at ~0.08), and pale grey and
+  yellow there cleared (slivers past his fingertips in 34-52; the yellow at the needle end in 37).
+- **The crow's own scream when it drops you** ("not the claude sound"): `tmpScreech` never falls back to the synthesized
+  shriek — it waits up to 2 s for his recording (asked for at the flight's start) — and at 0.8 (was 0.35).
+- **The puppet can be put down** (`elvDropPuppet`, G while carrying him): laid on his back where you look (`dropPoint`),
+  "Pick him up" (E) carries him again, the same stage. Not saved. `tools/pupdrop.js`.
+- **And what the slivers were** (measured on frame 46's mask, dumped by running `left()` on [1, 46] only): the pen's own
+  pale EDGES, two thin beige strips along its line between his index fingertip and his thumb — warm enough (~0.08-0.11)
+  to pass every colour test, so no colour rule takes them (one over the whole hand took his cooler-lit hand off entirely
+  in some frames, reverted). They are thin: along the pen's line (within 13 px, t 0.05-1.3) the cut is OPENED by 3 —
+  2-4 px strips go, a finger crossing the line stays. A hole is filled only with his skin on both sides of the pen within
+  7 px, and a painted fill must come out plainly skin (warm > 0.105). A few px of nub can remain at the fingertip in
+  34/37/52, where the syringe is.

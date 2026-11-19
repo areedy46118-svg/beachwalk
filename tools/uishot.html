@@ -18,7 +18,7 @@ f.addEventListener('load', async () => {
   for (const k of ['shovelItem', 'fishingRodItem', 'glowstickItem', 'waterBottleItem', 'syringeItem', 'katanaItem', 'cdItem', 'crabItem', 'jarItem', 'keyItem', 'ringItem', 'shockRingItem', 'maceItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
   for (let i = 0; i < 40; i++) { b.frame(1); await wait(30); }
   const d = f.contentDocument, st = d.createElement('style');
-  st.textContent = '#overlay, #intro, #blackout { display: none !important; }';
+  st.textContent = '#overlay, #intro, #blackout { display: none !important; }' + (q.get('still') ? ' *, *::before, *::after { transition: none !important; }' : '');   // &still=1: transitions off (a headless shot can land mid-fade)
   d.head.appendChild(st);
   if (UI === 'pack' && q.get('fresh')) {
     // &fresh=1: a thing taken while the pack was shut, its box caught mid-draw (the animations frozen at 0.32 s)
@@ -41,8 +41,12 @@ f.addEventListener('load', async () => {
     const lab = d.createElement('div'); lab.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;background:#fff;color:#000;font:14px monospace;padding:4px';
     const hits = [...d.body.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(), cs = w.getComputedStyle(e); return r.width && r.left <= x && r.right >= x && r.top <= y && r.bottom >= y && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity > 0; })
       .map((e) => `${e.tagName.toLowerCase()}#${e.id}.${String(e.className).slice(0, 20)} z${w.getComputedStyle(e).zIndex}`);
-    lab.textContent = (el ? `${el.tagName}#${el.id} | ` : '') + hits.slice(-8).join(' , '); d.body.appendChild(lab);
+    const pn = d.querySelector('#invpanel .panel'), pcs = pn && w.getComputedStyle(pn);
+    lab.textContent = (el ? `${el.tagName}#${el.id} | ` : '') + hits.slice(-8).join(' , ') + (pcs ? ` || panel op ${pcs.opacity} vis ${pcs.visibility} tr ${pcs.translate} sc ${pcs.scale} inv ${b.state().invOpen}` : ''); d.body.appendChild(lab);
   }
+  // &insp=1: the selected thing inspected from the pack (the sheet held aside beside it)
+  if (q.get('insp') === '2') { b.closePack(); for (let i = 0; i < 20; i++) { b.frame(1); await wait(60); } b.openInspect(b.shovelItem.inspectModel, { name: 'plain' }); for (let i = 0; i < 20; i++) { b.frame(1); await wait(60); } }
+  else if (q.get('insp')) { for (let i = 0; i < 30; i++) { b.frame(1); await wait(60); } const bt = d.querySelector('#inv-detail .act.insp'); if (bt) bt.click(); for (let i = 0; i < 20; i++) { b.frame(1); await wait(60); } }
   if (UI === 'shop') b.openShop(1);
   if (UI === 'menu' || UI === 'ctl') { b.openMenu(); if (UI === 'ctl') d.getElementById('m-controls').click(); }
   for (let i = 0; i < 30; i++) { b.frame(1); await wait(60); }
