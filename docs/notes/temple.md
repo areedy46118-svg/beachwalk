@@ -176,3 +176,104 @@ pillars …" and then "only do the crow scream when he drops you".
   21-22 where a column is in the way); `templeSave` restores at −129.6, 7.67 with the flight done and no second
   flight; `templeFlight` lands at −129.6 and stands at 7.7, the rotunda filling the 40° lens as before. `tmpS().flown`
   reads false on the probe's last line only because `tmpFinish` runs after it (the save reads it true).
+
+## 2026-11-19 — the Ancient King comes down (`KING`, `kingTick`, `kingCut`, `kingDown`)
+"make him hover down when you get in the temple at the end" / "he hovers already on skecthfab" / "make a bright light and
+dramatic when he is shown this is the final boss it should look insane" / "make it look less ai please".
+- **The model**: Kaan Tezcan's "Free Character - Ancient King" (CC-BY-4.0, credited in README): a Character Creator rig
+  (CC_Base_*, 102 bones, `*_scaleCompensation` nodes between them), 38.6k verts, 11 materials of 4K PNGs (~250 MB), 3.2 m
+  tall, A-pose, facing +Z. `tools/gltfpack.py --tex 512 --normal-tex 128 --quality 82 --drop-mr --clips
+  '1703142081216_TempMotion=hover'` then `glbquant.py --only=POSITION,NORMAL,TEXCOORD_0`, gzipped → `assets/ancient-king.glb`
+  2.59 MB (the clip +0.25). His one clip, which looks like a placeholder by its name, IS his Sketchfab hover (4 s, every bone
+  and his face's blend shapes): `KING.mixer` loops it. (A hand-made levitation pose came first — axes in his frame carried
+  into each bone through its bind pose — and went when the owner pointed at the clip.) `tools/kingshot.html` looks at the
+  file on its own (inflate + the game's dequantize).
+- **The descent**: in `tmpWorld` (the room frame); stepping inside `KING_TRIGGER` (0.9 of the podium's radius) of the
+  middle starts it — down from `KING_FROM` 62 m through the rotunda's open ring (sky over the middle: a ray up meets nothing),
+  ease-out over `KING_DESC` 7.5 s, turning to you, to `KING_HOVER` 0.85 m. `kingCut` is in `frozen()` (declared at the top of
+  the module with `tmpFlown`: `frozen()` reads it), the eye is taken with `cineHold` + `dialogHead` (his head bone) and
+  `dialogFov` 50 → 24 as he comes. `kingDown` saved in the flags (restore: already there; `KING.placed` reset).
+  `kingTick` never runs during `tmpCut` (the flight drives the room's light itself).
+- **The showing, in light** (`KFX`, `kingLight`): ambient/hemi drawn down, the temple sky's `uK` to storm (1 − 0.62 d), the
+  fog darker, the sun swung to straight overhead and up 2.4 — all off `templeEnter`'s own values each frame, `templeLeave`
+  restores the night. A faint dust shaft (additive open cylinder, FRONT faces only — both faces made a white wall he was lost
+  in — 3D value noise, peak 0.26), a warm pooled lamp on him (`lpAlways`). Landing: `airGust` (the temple's own sand), trauma,
+  fovKick, the owner's `maceHeavy`. The first version (glow disc, motes, striped shaft, floor ring, white DOM flash, puffs that
+  came out as black shards) was "AI"-looking: removed.
+- Probe `tools/kingtemple.js` (PB_PORT 4265): on the podium at r 26, the descent from your eye, down at 8.67 s, hover 0.85,
+  let go; close stills. Size after: 447.5 MB.
+- **His moves once he is down** (`kingAct`, `KING.mode`; "make the final god boss sometimes flip over your head and land
+  behind you like this" — Mixamo Front Flip; "sometimes run up the pillar to the very top of the temple and sit up top
+  looking at you like this for 3 seconds then he hovers back down to fight" — Mixamo Wall Run; "give him the same float down
+  like how he does when u first see him just that animation not the effects"). `tools/ntar_moves.py -- king` →
+  `assets/king-moves.json` (flip 1.67 s / 6.5 m travel / hips up 1.3; wallRun 1.63 s / hips up 2.3), retargeted in the game
+  by `ntarRetarget` with a stand-in unit (`kind.rag` = `kingRag()`, Wong's Mixamo→CC_Base map on his numbering;
+  `facingRef: 'mixamo'`; it writes `clipSpeed`, `clipTravel` AND `clipAz` per clip — all three must exist) onto the bind
+  `poseRig` read before his hover played. Modes: hover → flip (you 3.5–11 m off, landing 4.5 m behind you inside the podium;
+  an arc of 3.2 m over the clip's own rise) / glide → climb (wall run ×0.55 up the nearest pillar's inner face) → perch (3 s
+  on the ring's LIP, your eye taken with `kingLook` at fov 18) → drop (his first descent's ease-out for the height,
+  turning at its 0.55, the lens 18 → 48, no light). No blow lands on you yet.
+- **The pillars and the ring** (`KING_PILLARS`, `tools/kingpillars.js` + `tools/kinglip.js`, rays: the solids grid has no
+  tall cells): 11, from 21° every 32.7°, inner face 23.0 m out, ~3 m wide. The ring on them is 6 m thick (underside 36.8)
+  and STEPPED: inner lip at 22.0 m, 43.1 high; 46+ past 24.5. Perched on the high flat he was hidden by the ring's own
+  bulk from the podium; on the lip, crouched, toes at 43.1, he shows against the sky.
+- **TRAP: `setEffectiveWeight(0)` is for good.** `kingFeetAt` (where the wall run's feet are at its end, to land them on
+  the lip) zeroed every other action with it, and three's fades multiply `weight`: the hover's fade-in after the perch
+  multiplied nothing and he came down in his bind pose. Each action's `.weight` is saved and put back now.
+- Probe `tools/kingmoves.js` (PB_PORT 4269): 54 s with you 8 m off — flips at 3.8, 12.7, 34.2, 48.1 s, climb 20.8 → perch
+  24.6 → drop 27.5 → down 31.9.
+- **No "E – End game"** ("take out e to end game at the end end when the boss dies"): the prompt and its action are gone;
+  `kingDied()` is the door — his look let go, `showEnd()` 2.5 s on. Nothing calls it until his fight is built.
+
+## 2026-11-20 — the Ancient King as a real fight
+- **He is a creature now** (`MUT_KINDS.king`, KN_BASE): `natural` swings off his own takes, contacts measured by
+  `tools/ntar_moves.py -- king` (it now logs every local maximum of the hands', knees' and toes' speed: `PEAKS`), several
+  per take through `A.more` (natHold must be 0 for `more` to be timed — `naturalSwings` skips `moreT` when it holds). His
+  own moves run through a new door, `kind.drive` (`kingDrive`, ahead of the AI in `updateMutantUnit`; true holds the AI off),
+  `st.puppet` makes him untouchable (`hurtMutantCore`), `kind.onDeath` takes his death (`finishMutant`), `kind.kingBody` his
+  clamp (`mutClampX`).
+- **Three traps, each of which made him look broken:**
+  1. `dressMutant` never ran `bwDequant` — his glbquant'd mesh came in as raw −1..1 under the skin: spikes. Now every
+     creature's file is dequantized on dress (a no-op for files that are not quantized).
+  2. `skinnedBounds` measured him 2 cm tall through his scale-compensation nodes and scaled him 170×: `kind.fixScale`.
+  3. **Every joint of his hangs off a scale-compensation NODE, not a bone**, so `ntarRetarget` took each for a root and solved
+     it against its parent's BIND world while that parent turned — rotations compounded down every chain ("hes flying
+     around", his idle lying 40° over). `kind.boneGaps` solves such a joint against the nearest bone above it as it is that
+     frame, through the gap's fixed turn. Check any new Character Creator / Sketchfab rig for non-bone parents.
+- `calmChasers` (every save) put him back to sleep after his descent's autosave: exempt (`kingBody`), and the drive keeps him awake.
+- Probes: `tools/kingfight.js` (the whole fight end to end: descent stills, 20 s stood in front of him, a forced flip, climb,
+  death, credits), `tools/kingclips.js` (each clip at five moments, side on, nothing else running), `tools/kingdress.js`,
+  `tools/kingroot.js`, `tools/kingbind.js`. Measured standing still in front of him: 11-15 swings and 6-10 hits in 20-24 s.
+- His death (the owner): the Being Electrocuted take's FALL only, no lightning, the light gathering in him, then a bright
+  soft burst (a sprite, additive, no depth test) and the screen white, pieces thrown (`KING_PIECES`, limbs in two each), then
+  `kingCredits` (#credits, 48 s, Enter/Space/Esc/click) into `showEnd`; the end song starts with the credits.
+- The final fight's air (`KA`, `kingAtmos`): black and white is a CSS filter on the game canvas (the probe's stills must draw
+  it in: `g.filter = src.style.filter`), ground mist sheets, colossal columns 170-460 m out, ash, three faint shafts,
+  `body.king-cine` letterbox bars. `kingAtmosOff` in `templeLeave`.
+- Dev: "Teleport to desert temple (dev)" in the menu (`devTeleportTemple`), the king reset to not-yet-come.
+
+## 2026-11-20 later — the king fought for real (`tools/kingduel.js`), the pillar slam, the end
+- **"He never hit me" was three things, measured by fighting him** (`kingduel.js`: you kept 1.4-3.4 m off him with the
+  katana, cutting when he is not mid-blow, `&guard=1` raising the guard through his contact windows; per blow, the nearest
+  his striking limbs came to your body capsule, its height against your eye, its place on screen):
+  1. at 3.4 m tall these man-against-man takes struck 2.6-3.5 m up, over your head — he is 2.6 m now (`fixScale` 0.8125);
+  2. the blows land a metre out to his SIDE (the uppercut's fist 67° off his nose) and only 0.9-1.1 m in front of him, while
+     he stood 2.0-2.3 m off — `kingMeasureBlows` poses each blow at its contact once his clips are in and sets its turn
+     (`A.faceOff`, applied after `dkRootMotion`, which zeroes `u.faceOff`) and its stand-off (`stop` = reach + 0.42);
+  3. `dkRootMotion` was rewritten to need `A.rmStop` tables, so `rm` blows stood where their wind-up began: his blows close
+     with a plain `lunge` now. (The probe's own trap: posing an action that is not scheduled poses nothing — `play()` it.)
+  After: unguarded, 37 health lost in 40 s; guarded, 10, with blocks registering. The knee combo is out of his rotation (its
+  blows come down 2.5 m up whatever he does); the uppercut's jab is not a contact (thrown before he has stepped in).
+- **The pillar**, at half of him only, no cutscene: sprint, wall run, then he steps up onto the lip (its top found by a ray
+  down onto the temple — 43.6 m, r 22.85; the old perch 21.75 m out stood him on air), stands in his idle 2.6 s, and
+  `kSlam` (Mixamo "Mutant Jump Attack", `ntar_moves.py -- king`): the gather to f18 at its own speed, the airborne frames
+  stretched over a 1.9 s fall on a hopped arc to 1.6 m short of where you stood, the slam on f47 (`kingSlamImpact`: the
+  mace's heavy impact twice, rings of sand, 2 health inside 4 m unless guarded, a shove), and its recovery as an opening.
+- The death: the white comes up whole at the burst and holds; `showEnd` fades the stats in over it, the owner's hand-drawn
+  BEACHWALK (`#end-title`, the title's own letter images) above them. No credits. No towers.
+- The crow after the drop flies on over the temple at a crow's pace into the haze (`tmpCrowAway`, 25 s, past the cut's end —
+  `tmpFinish` no longer hides it); your landing has the mace's heavy impact under it.
+- The crow's drop (round two, the owner: "put a checkpoint when the crow drops you and have the crow fly above the pillar like
+  it was but he dissapears by flying further even after the cutscene"): its first climb back (16 m/s, rising over the
+  pillars), on past the cut until 16 s (~770 m out, 470 up); and a checkpoint written AS YOU HIT THE SAND (`saveCheckpoint`
+  refuses inside the cut, so the cut is let go for the write; room 'tmp'). `tools/crowdrop.js`.

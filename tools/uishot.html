@@ -17,6 +17,11 @@ f.addEventListener('load', async () => {
   b.introDone = true;
   for (const k of ['shovelItem', 'fishingRodItem', 'glowstickItem', 'waterBottleItem', 'syringeItem', 'katanaItem', 'cdItem', 'crabItem', 'jarItem', 'keyItem', 'ringItem', 'shockRingItem', 'maceItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
   for (let i = 0; i < 40; i++) { b.frame(1); await wait(30); }
+  // &keys=name,name: those keys on the ring too (by their names: `packByName`); &kc=1: the keychain picked in the pack
+  for (const nm of (q.get('keys') || '').split(',').filter(Boolean)) { try { const it = b.packByName(nm); if (it && !b.inventory.includes(it)) b.addToInventory(it); } catch (e) { /* */ } }
+  for (let i = 0; i < 20; i++) { b.frame(1); await wait(30); }
+  // &eq=name: that thing taken into the hand and put away again before the pack opens (`toggleEquip` twice)
+  for (const nm of (q.get('eq') || '').split(',').filter(Boolean)) { try { const it = b.packByName(nm); if (it) { b.toggleEquip(it); for (let i = 0; i < 30; i++) { b.frame(1); await wait(30); } if (q.get('eqkeep') !== '1') b.toggleEquip(it); for (let i = 0; i < 10; i++) { b.frame(1); await wait(30); } } } catch (e) { /* */ } }
   const d = f.contentDocument, st = d.createElement('style');
   st.textContent = '#overlay, #intro, #blackout { display: none !important; }' + (q.get('still') ? ' *, *::before, *::after { transition: none !important; }' : '');   // &still=1: transitions off (a headless shot can land mid-fade)
   d.head.appendChild(st);
@@ -32,6 +37,8 @@ f.addEventListener('load', async () => {
     // &sel=<item name>: that one in the pane (the live view settles before the shot)
     const sel = q.get('sel');
     if (sel) for (let i = 0; i < 24; i++) { b.selectPackSlot(i); if (b.pvS && b.pvS() && b.pvS().item === sel) break; }
+    if (q.get('kc')) { for (let i = 0; i < 10; i++) { b.frame(1); await wait(50); } const kb = d.getElementById('keychain-box'); if (kb) { const r = kb.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height * 0.3; kb.dispatchEvent(new w.PointerEvent('pointerdown', { button: 0, clientX: x, clientY: y, bubbles: true })); w.dispatchEvent(new w.PointerEvent('pointerup', { button: 0, clientX: x, clientY: y, bubbles: true })); }
+      for (let i = 0; i < (+q.get('kcn') || 0); i++) { w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'ArrowRight', key: 'ArrowRight' })); for (let j = 0; j < 12; j++) { b.frame(1); await wait(40); } } }   // &kcn=N: the ring turned N keys on
     if (b.pvSettle) for (let i = 0; i < 40; i++) { b.frame(1); await wait(50); }
   }
   // &ph=open:0.2 — the hands held still that far into the opening (or close:t, held:t); &at=x,y names what is on top there

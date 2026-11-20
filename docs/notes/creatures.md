@@ -3645,3 +3645,9 @@ inherits it (castle, garrison, the raid after the gargoyles, the tavern's; those
   hand unchanged (0.038 / 0.018). Asleep castle men far off do not run `lifeApply` at all: straight hands before and after.
 - The castle's camera is put back by the player clamp every frame (0.4-0.6 m): a still of a castle man's hand needs the
   render hook AND a camera the room allows, or a measurement instead.
+
+## 2026-11-20 — creature files: dequantize, fixed scale, joints under non-bone nodes
+- `dressMutant` runs `bwDequant` now (a glbquant'd creature came in torn into spikes). `kind.fixScale` skips `skinnedBounds`.
+- `kind.boneGaps` (`ntarRetarget`): a joint whose parent is a non-bone node hanging under a bone is solved against that bone
+  as it is each frame — see temple.md, the king. Without it every rotation compounds down the chain.
+- New kind hooks: `drive(u, dt)` (runs first; true holds the AI off), `onDeath(u)`, `kingBody` clamp; `st.puppet` untouchable.

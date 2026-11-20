@@ -1,0 +1,34 @@
+<!doctype html><meta charset="utf-8"><title>hook shot</title>
+<!-- SKRIM'S HOOK ON ITS OWN (2026-11-19, the owner: "show me a model of one of skrim hooks … i might make it a weapon"). Not
+     part of the game. `skrim_hook` out of assets/skrim.glb in its bind pose, lit plainly, from four sides on grey, with its
+     size. Run: PB_PAGE=hookshot.html sh tools/probe.sh x <out>  → <out>/hook.jpg -->
+<script type="importmap">{ "imports": { "three": "/vendor/three/three.module.js", "three/addons/loaders/GLTFLoader.js": "/vendor/three/GLTFLoader.js", "three/addons/utils/BufferGeometryUtils.js": "/vendor/three/BufferGeometryUtils.js" } }</script>
+<body style="margin:0;background:#000">
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const log = (...a) => console.log('[PB]', ...a);
+const gltf = await new GLTFLoader().loadAsync('/assets/skrim.glb');
+let src = null; gltf.scene.traverse((o) => { if (!src && o.isMesh && /hook/i.test(o.name)) src = o; });
+if (!src) { log('no hook mesh', JSON.stringify((() => { const n = []; gltf.scene.traverse((o) => o.isMesh && n.push(o.name)); return n; })())); log('DONE'); throw 0; }
+gltf.scene.updateMatrixWorld(true);
+const geo = src.geometry.clone(); geo.applyMatrix4(src.matrixWorld);
+const mesh = new THREE.Mesh(geo, src.material); geo.computeBoundingBox();
+const bb = geo.boundingBox, size = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
+mesh.position.sub(c);
+log('mesh', src.name, 'verts', geo.attributes.position.count, 'size', size.toArray().map((v) => v.toFixed(3)).join(' x '), 'material', (src.material.name || '?'), 'map', !!src.material.map);
+const R = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); R.setSize(1600, 420); R.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(R.domElement);
+const sc = new THREE.Scene(); sc.background = new THREE.Color(0x5a5f66); sc.add(mesh);
+sc.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.6)); const d = new THREE.DirectionalLight(0xffffff, 2.2); d.position.set(2, 3, 4); sc.add(d);
+const r = Math.max(size.x, size.y, size.z) * 0.62, cam = new THREE.PerspectiveCamera(30, 1, 0.001, 100);
+R.setScissorTest(true);
+[[0, 0], [Math.PI / 2, 0], [Math.PI, 0], [0.6, 0.9]].forEach(([yaw, pitch], i) => {
+  cam.position.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)).multiplyScalar(r / Math.tan(THREE.MathUtils.degToRad(15)));
+  cam.lookAt(0, 0, 0); cam.aspect = 1; cam.updateProjectionMatrix();
+  R.setViewport(i * 400, 10, 400, 400); R.setScissor(i * 400, 0, 400, 420); R.render(sc, cam);
+});
+const dURL = R.domElement.toDataURL('image/jpeg', 0.9).split(',')[1], n = Math.ceil(dURL.length / 8000);
+for (let i = 0; i < n; i++) console.log('[PBIMG]', 'hook', i + '/' + n, dURL.slice(i * 8000, (i + 1) * 8000));
+log('DONE');
+</script>

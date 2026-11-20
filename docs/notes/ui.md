@@ -1458,3 +1458,42 @@ its `renderPackDetail` → `pvAttach` reads `pvShown`). CSS block "THE PANE, LIV
   and "Free Henry" as his cell is unlocked (`henryFree` ≥ 1); both in `RARE_ACHIEVEMENTS`.
 - **"Nothing bites here"** (`landFloat`): the float down anywhere outside the spot's water (`FISH_GLOW`, 0.85 of its r),
   until the deep has had you.
+
+## The pack's ink heavier, its numbers bigger (2026-11-19, "make lines and font thicker and more noticeable on the pack the numbers are very small too")
+- Every marker stroke is laid SIX times now (0, 1.1 px right/down, 1.6 diagonal, 2.2 right/down — the `--mk` mask layers,
+  ADDED, then `--brk` INTERSECTED; composites `intersect, add ×5`); the fresh-item draw-in four. Letters: text-stroke 0.85 px
+  (0.5), every size a step up (h2 1.46, name 1.5, desc 1.14, verbs 1.1, hints 1.02, rings 1.2, keys 1.04).
+- The slot numbers are his drawn digits (`.hd` masks, `aspect-ratio` per digit), so their size is a HEIGHT: 13 → 21 px
+  (`#invpanel.paper .islot .num .hd`), and heavier by a drop-shadow of their own ink on `.num` — on the parent, because a
+  filter on the masked box itself runs before its mask. Stack counts (Georgia) 1.45 rem.
+- `sh tools/uishot.sh <dir> 'pack&still=1'` (the `&still=1` rides in the ui name; without it a shot can land mid-fade and come
+  out blank).
+- **DROP hidden at 960×540** (older than the above; the owner: "Yes, fix it"): `#invpanel .body` is `clamp(300px, 54vh,
+  640px)` and `.detail .big` 28vh — off the WINDOW's height while the words are rem — so in a short window the body sat at
+  its 300 px floor and the pane (overflow-y auto) scrolled its last verb out of sight. The paper pack is scaled to the sheet
+  as a whole (`packPaperFit`), so its body is a fixed 570 px and the preview min(100%, 280 px): the same layout at every
+  size, only scaled. Shot at 960×540, 1280×720, 1440×900, 1920×1080, 2560×1440: all three verbs, nothing cut.
+
+## 2026-11-19 (late) — the keys black in the pack; the left wrist not ruled straight
+- **"the keys are glitched fix this now"** (a key drawn black over another on the ring, a black bar through the gate key in the
+  box): `ringEnv()` is a PMREM render target of the GAME's renderer, and the pack's live view (`pvBuild`: `sc.environment`)
+  and some keys' own materials (the Skull Key's, given it so it was not a black hole) carried it into OTHER WebGL contexts,
+  where it does not exist: metal reflected nothing — black. Headless Chrome tolerated it (the bug never showed in a probe,
+  at any size, any keys, after holding them); the owner's Chrome on the Mac's GPU did not. Now `ringEnvFor(r)` makes the
+  same night per renderer (cached), `pvBuild` uses its own, `pvSeat` swaps any carried env on cloned materials
+  (`envSwapFor`: shared materials stay the world's), and the keychain's metal copies drop a carried env (`envMap = null`; its
+  scene has `kcEnv`). Any new canvas with a renderer of its own: never hand it the game's env.
+- `tools/uishot.html`: `&keys=name,name` (keys on the ring, by `packByName`), `&kc=1` (the keychain picked, by a real
+  pointerdown/up — a click does nothing there), `&kcn=N` (the ring turned N keys), `&eq=name` (held and put away first).
+- **The left wrist** ("make his left hand less straight it looks unatural … i just wanted that patch of skin fixed better"):
+  `pack_hands_pack.py`'s heel-to-cuff line is bowed in (0.022 W0 at its middle) and only what stands PAST it is cut; the dip
+  under the palm is no longer filled out to the line. Re-made from `~/Desktop/BEACHWALK ASSETS/IMG_7207.MOV` (the docstring's
+  steps); `PH` unchanged.
+
+## 2026-11-20 — the keychain does not turn; the menu holds a cutscene; the credits
+- The keychain: each key keeps its place on the ring (`mid` at the bottom), the one you are on comes forward `KC_FWD`
+  (0.045 m) and turns its face to you. The ring no longer carries the chosen key round (the owner: "not flip around").
+- **The menu holds a cutscene still** (`cutNow`, `cutPause`): the menu may open in any cut now (the pointer-lock handler's
+  list of cuts that refused it is gone); while open over one, `animateFrame` skips `update` and every cut updater, the audio
+  context is suspended (`loadSilent` returns true while `cutPaused`, so nothing resumes it — the watchdog, a key, a click),
+  and the intro's cues are let go and set again off the song's clock (`introHold`), the waves video paused.

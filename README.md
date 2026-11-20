@@ -1044,6 +1044,13 @@ crow on the stump carries you to (`assets/temple.glb`, packed by
 taken out, its three terrains baked into one seamless ground, textures to 512).
 The sky, the cloud deck, the light through it and the blowing sand are built in the game.
 
+This work is based on ["Free  Character - Ancient King"](https://sketchfab.com/3d-models/free-character-ancient-king-546ccde61eab4a11920f69c20cbbe454)
+by [Kaan Tezcan](https://sketchfab.com/kaanTezcan) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Ancient King who comes down
+into the desert temple (`assets/ancient-king.glb`, packed by `tools/gltfpack.py` and
+`tools/glbquant.py`: textures to 512, normal maps to 128, metal-rough dropped, gzipped; his
+own hover motion kept). The light he comes down in is built in the game.
+
 This work is based on ["Bedroom"](https://sketchfab.com/3d-models/bedroom-13df3d6c33014cccaad3ae8c1f251f6a)
 by [jimbogies](https://sketchfab.com/jimbogies) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the room behind START GAME

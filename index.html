@@ -124,6 +124,7 @@
   #overlay.hidden { opacity: 0; pointer-events: none; }
   /* THE BEDROOM BEHIND START GAME (2026-11-19, `TB` in main.js): its own canvas at a third of the screen, blown up hard-edged;
      the words over it with a shadow so they read on the dark room */
+  #overlay { overflow: hidden; }   /* (the call's picture covers the screen and is trimmed at its edges: `tbSize`) */
   #overlay #title-room { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; image-rendering: pixelated; image-rendering: crisp-edges; opacity: 0; transition: opacity 2.4s ease; pointer-events: none; }
   #overlay.room #title-room { opacity: 1; }
   #overlay .start { position: relative; z-index: 1; } #overlay #bootbar { z-index: 1; }
@@ -162,6 +163,13 @@
   body.tmp-cine #hud, body.tmp-cine #vitals, body.tmp-cine #stamwrap, body.tmp-cine #crosshair, body.tmp-cine #promptmid, body.tmp-cine #prompt,
   body.tmp-cine #blood, body.tmp-cine #ehp, body.tmp-cine #fighttip, body.tmp-cine #digtip, body.tmp-cine #packtip, body.tmp-cine #hotbar, body.tmp-cine #rings,
   body.tmp-cine #health, body.tmp-cine #ammo, body.tmp-cine #gear, body.tmp-cine #dread, body.tmp-cine #hurt, body.tmp-cine #hurt-blood { opacity: 0 !important; }
+  /* and the Ancient King's cutscenes (his coming down, the perch, his death): the HUD away, and the picture framed in bars */
+  body.king-cine #hud, body.king-cine #vitals, body.king-cine #stamwrap, body.king-cine #crosshair, body.king-cine #promptmid, body.king-cine #prompt,
+  body.king-cine #blood, body.king-cine #ehp, body.king-cine #fighttip, body.king-cine #digtip, body.king-cine #packtip, body.king-cine #hotbar, body.king-cine #rings,
+  body.king-cine #health, body.king-cine #ammo, body.king-cine #gear, body.king-cine #dread, body.king-cine #hurt, body.king-cine #hurt-blood { opacity: 0 !important; }
+  body::before, body::after { content: ''; position: fixed; left: 0; right: 0; height: 0; background: #000; z-index: 8; pointer-events: none; transition: height 1.4s cubic-bezier(.4, 0, .2, 1); }
+  body::before { top: 0; } body::after { bottom: 0; }
+  body.king-cine::before, body.king-cine::after { height: 10.5vh; }
   #intro {
     position: fixed;
     inset: 0;
@@ -1624,24 +1632,37 @@
     background: none; color: var(--inkc);
   }
   /* the words in marker too: a hair of stroke round every letter */
-  #invpanel.paper .panel { -webkit-text-stroke: 0.5px currentColor; }
+  #invpanel.paper .panel { -webkit-text-stroke: 0.85px currentColor; }   /* (0.5: "make lines and font thicker and more noticeable on the pack", 2026-11-19) */
   /* (2026-11-19, the owner: "make evrything on the pack more visible it seems hard to read make it blend well still with the
      game and notes style"): every word on the sheet bigger and in full ink — the hints were a dimmed italic at 0.7 rem —
      in the note's own hand, the marker a little heavier */
-  #invpanel.paper h2 { font-size: 1.32rem; letter-spacing: 0.34em; }
-  #invpanel.paper .head .count { font-size: 0.95rem; }
-  #invpanel.paper .detail .name { font-size: 1.36rem; letter-spacing: 0.14em; }
-  #invpanel.paper .detail .desc { font-size: 1.04rem; line-height: 1.35; }
-  #invpanel.paper .detail .act, #invpanel.paper #pack-leave { font-size: 1rem; letter-spacing: 0.28em; }
-  #invpanel.paper .detail .hint, #invpanel.paper .tip { font-size: 0.92rem; font-style: normal; color: rgba(18, 11, 5, 0.86) !important; }
-  #invpanel.paper .islot .num { font-size: 0.9rem; }
-  #invpanel.paper .rings .rlabel { font-size: 1.08rem; }
-  #invpanel.paper .detail .big .pvhint { font-size: 0.82rem; color: rgba(18, 11, 5, 0.8); }
-  #invpanel.paper #keychain-box .kc-top, #invpanel.paper #keychain-box .kc-count, #invpanel.paper #keychain-box .kc-name { font-size: 0.92rem; }
+  /* (and again, a step up and heavier — 2026-11-19, the owner: "make lines and font thicker and more noticeable on the pack the
+     numbers are very small too": the slot numbers 0.9 -> 1.3 rem and the counts with them) */
+  #invpanel.paper h2 { font-size: 1.46rem; letter-spacing: 0.32em; }
+  #invpanel.paper .head .count { font-size: 1.08rem; }
+  #invpanel.paper .detail .name { font-size: 1.5rem; letter-spacing: 0.12em; }
+  #invpanel.paper .detail .desc { font-size: 1.14rem; line-height: 1.33; }
+  #invpanel.paper .detail .act, #invpanel.paper #pack-leave { font-size: 1.1rem; letter-spacing: 0.26em; }
+  #invpanel.paper .detail .hint, #invpanel.paper .tip { font-size: 1.02rem; font-style: normal; color: rgba(18, 11, 5, 0.9) !important; }
+  /* (the slot numbers are his drawn digits — masks, `.hd`, sized by their height — so the size is the digit's height: 13 -> 21 px;
+     and the pen heavier by a shadow of their own ink on the NUMBER, not the digit: a filter runs before a mask on the same box) */
+  #invpanel.paper .islot .num { top: 6px; left: 7px; gap: 2px; }
+  #invpanel.paper .islot .num .hd { height: 21px; }
+  #invpanel.paper .islot .count, #invpanel.paper .rslot .count { font-size: 1.45rem; }
+  #invpanel.paper .rings .rlabel { font-size: 1.2rem; }
+  #invpanel.paper .detail .big .pvhint { font-size: 0.94rem; color: rgba(18, 11, 5, 0.86); }
+  #invpanel.paper #keychain-box .kc-top, #invpanel.paper #keychain-box .kc-count, #invpanel.paper #keychain-box .kc-name { font-size: 1.04rem; }
   #invpanel.paper::after { opacity: 0.05; }
   /* (narrower than the dark pack's: the sheet is nearer square than the screen, and a panel its shape is scaled up more,
      so the writing reads bigger) */
   #invpanel.paper .panel { width: 960px; }
+  /* (and one height, in the panel's own pixels, at every window — 2026-11-19, the owner, of DROP missing at 960×540: the
+     body was `clamp(300px, 54vh, 640px)` and the preview 28vh, both off the WINDOW's height, while the words are rem; in a
+     short window the body sat at its 300 px floor and the pane scrolled its last verb out of sight. The whole panel is
+     scaled to the sheet anyway (`packPaperFit`), so fixed here it is the same picture on every screen, only bigger or
+     smaller: 1080p's own 583 px, near enough, and its preview) */
+  #invpanel.paper .body { height: 570px; }
+  #invpanel.paper .detail .big { width: min(100%, 280px); }
   #invpanel.paper .panel { translate: var(--pk-dx, 0px) var(--pk-dy, 0px); opacity: 0; transition: opacity 0.12s ease, transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1); }
   /* (written on once the sheet is open: the snap is done 0.46 s in — `PH_RISE` + five frames at 15 fps) */
   #invpanel.paper.show .panel { opacity: 1; transition: opacity 0.2s ease 0.44s, transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) 0.40s; }
@@ -1664,7 +1685,7 @@
   #invpanel.paper .detail .name { color: var(--inkc); text-shadow: none; }
   #invpanel.paper .detail .desc, #invpanel.paper .detail { color: rgba(18, 11, 5, 0.94); }
   #invpanel.paper .rings .rlabel { color: var(--inkc); text-shadow: none; }
-  #invpanel.paper .islot .num { color: rgba(18, 11, 5, 0.92); filter: none; }
+  #invpanel.paper .islot .num { color: rgba(18, 11, 5, 0.96); filter: drop-shadow(0.9px 0 0 currentColor) drop-shadow(0 0.9px 0 currentColor); }
   #invpanel.paper .islot.sel .num { color: var(--blood); }
   #invpanel.paper .islot .inhand { color: var(--blood); text-shadow: none; }
   #invpanel.paper .islot .count, #invpanel.paper .rslot .count { color: var(--inkc); text-shadow: none; }
@@ -1729,15 +1750,16 @@
   #invpanel.paper .detail .name::after, #invpanel.paper .detail .desc::before, #invpanel.paper .detail .desc::after,
   #invpanel.paper .islot::after, #invpanel.paper .detail .big::after, #invpanel.paper .detail .act::after, #invpanel.paper #pack-leave::after,
   #invpanel.paper .rings .rslot::after, #invpanel.paper .rings #keychain-box::after, #invpanel.paper .islot.sel::before {
-    -webkit-mask: var(--brk) 0 0 / 160px 160px repeat, var(--mk) 1.1px 0 / 100% 100% no-repeat, var(--mk) 0 1.1px / 100% 100% no-repeat, var(--mk) 0 0 / 100% 100% no-repeat;
-    mask: var(--brk) 0 0 / 160px 160px repeat, var(--mk) 1.1px 0 / 100% 100% no-repeat, var(--mk) 0 1.1px / 100% 100% no-repeat, var(--mk) 0 0 / 100% 100% no-repeat;
-    -webkit-mask-composite: source-in, source-over, source-over; mask-composite: intersect, add, add;
+    /* (laid five times now, out to 2.2 px: "make lines … thicker and more noticeable on the pack", 2026-11-19) */
+    -webkit-mask: var(--brk) 0 0 / 160px 160px repeat, var(--mk) 2.2px 0 / 100% 100% no-repeat, var(--mk) 0 2.2px / 100% 100% no-repeat, var(--mk) 1.6px 1.6px / 100% 100% no-repeat, var(--mk) 1.1px 0 / 100% 100% no-repeat, var(--mk) 0 1.1px / 100% 100% no-repeat, var(--mk) 0 0 / 100% 100% no-repeat;
+    mask: var(--brk) 0 0 / 160px 160px repeat, var(--mk) 2.2px 0 / 100% 100% no-repeat, var(--mk) 0 2.2px / 100% 100% no-repeat, var(--mk) 1.6px 1.6px / 100% 100% no-repeat, var(--mk) 1.1px 0 / 100% 100% no-repeat, var(--mk) 0 1.1px / 100% 100% no-repeat, var(--mk) 0 0 / 100% 100% no-repeat;
+    -webkit-mask-composite: source-in, source-over, source-over, source-over, source-over, source-over; mask-composite: intersect, add, add, add, add, add;
   }
   /* (and a thing new to the pack keeps its box drawn round by hand: the sweep over the marker) */
   #invpanel.paper .islot.fresh::after {
-    -webkit-mask: conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0), var(--ink) 1.1px 0 / 100% 100% no-repeat, var(--ink) center / 100% 100% no-repeat;
-    mask: conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0), var(--ink) 1.1px 0 / 100% 100% no-repeat, var(--ink) center / 100% 100% no-repeat;
-    -webkit-mask-composite: source-in, source-over; mask-composite: intersect, add;
+    -webkit-mask: conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0), var(--ink) 2.2px 0 / 100% 100% no-repeat, var(--ink) 0 2.2px / 100% 100% no-repeat, var(--ink) 1.1px 0 / 100% 100% no-repeat, var(--ink) center / 100% 100% no-repeat;
+    mask: conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0), var(--ink) 2.2px 0 / 100% 100% no-repeat, var(--ink) 0 2.2px / 100% 100% no-repeat, var(--ink) 1.1px 0 / 100% 100% no-repeat, var(--ink) center / 100% 100% no-repeat;
+    -webkit-mask-composite: source-in, source-over, source-over, source-over; mask-composite: intersect, add, add, add;
   }
   /* ---- THE SHOP, in the pack's own hand ------------------------------ */
   #shoppanel {
@@ -2423,6 +2445,12 @@
   #end p { font-size: 0.9rem; letter-spacing: 0.1em; opacity: 0.7; max-width: 32ch; line-height: 1.8; }
   /* the tally, above the way back */
   /* (2026-10-15, the owner: "make final stats and walk again way bigger on the screen") */
+  /* HIS BEACHWALK OVER THE STATS (2026-11-20, the owner: "above the stats put my beachwalk text sorta big"): his own drawn letters,
+     the title's, in a row, with the title's soft glow */
+  #end-title { display: flex; align-items: flex-end; justify-content: center; gap: clamp(0.25rem, 1.1vw, 1rem); margin-bottom: clamp(0.6rem, 3vh, 2.4rem);
+    filter: drop-shadow(0 0 2px rgba(255,255,255,0.55)) drop-shadow(0 0 22px rgba(170, 190, 240, 0.35)); }
+  #end-title img { height: clamp(2.6rem, 9vh, 6.5rem); width: auto; }
+  #end-title img:nth-child(5) { margin-right: clamp(0.6rem, 2.6vw, 2.4rem); }
   #end-stats { display: grid; gap: clamp(0.7rem, 1.6vh, 1.1rem); min-width: min(40rem, 88vw); font-size: clamp(1.25rem, 2.7vw, 2.1rem); letter-spacing: 0.12em; }
   #end-stats { color: #fff; text-transform: uppercase; }
   #end-stats .row { display: flex; justify-content: space-between; gap: 3rem; border-bottom: 1px solid rgba(255, 255, 255, 0.22); padding-bottom: 0.45rem; }
@@ -2661,6 +2689,7 @@
         <button id="m-shop" class="secondary wide">Teleport to shop (dev)</button>
         <button id="m-shop2" class="secondary wide">Teleport to castle merchant (dev)</button>
         <button id="m-isle" class="secondary wide">Teleport to lighthouse (dev)</button>
+        <button id="m-temple" class="secondary wide">Teleport to desert temple (dev)</button>
       </div>
     </div>
     <!-- THE CONTROLS HAVE THEIR OWN PAGE. They were a line of small print
@@ -2698,6 +2727,7 @@
   <div id="end">
     <h1>The Lighthouse</h1>
     <p>You reach the light at the end of the beach. The rest is another walk.</p>
+    <div id="end-title" aria-label="BEACHWALK"><img src="assets/title-B.png" alt=""><img src="assets/title-E.png" alt=""><img src="assets/title-A.png" alt=""><img src="assets/title-C.png" alt=""><img src="assets/title-H.png" alt=""><img src="assets/title-W.png" alt=""><img src="assets/title-A2.png" alt=""><img src="assets/title-L.png" alt=""><img src="assets/title-K.png" alt=""></div>
     <div id="end-stats"></div>
     <button id="end-restart">Walk again</button>
   </div>

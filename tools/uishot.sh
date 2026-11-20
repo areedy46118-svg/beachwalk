@@ -17,3 +17,4 @@ for S in 1280x720 1440x900 1920x1080 960x540 2560x1440; do
   done
 done
 kill $SRV 2>/dev/null
+rm -rf "$OUT/prof"   # (each is ~400 MB and nothing reads it after, 2026-11-19)

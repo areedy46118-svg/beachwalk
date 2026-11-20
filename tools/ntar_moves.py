@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'sword', 'skrim', 'dance') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'sword', 'skrim', 'dance', 'king') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser('~/Downloads')
 # (the owner keeps the packs on the Desktop now; a set may say so)
@@ -583,6 +583,9 @@ SKRIM_CLIPS = [
     ('Standing Jump Running',            'jumpRun',     'a running jump', _M),
     ('Standing Jump Running Landing',    'jumpLand',    'a running jump, and the landing', _M),
     ('Standing Land To Standing Idle',   'land',        'landing, and standing', _M),
+    # (2026-11-19, the owner's Mixamo "Stylish Flip": "have skrim flip off the hook like this if not shot off while hanging
+    # after his creatures are killed" — loose in ~/Downloads)
+    ('Stylish Flip',                     'flipOff',     'off his hook, turning over, to the floor', ''),
 ]
 if SET == 'skrim':
     CLIPS = SKRIM_CLIPS
@@ -604,7 +607,7 @@ if SET == 'skrim':
     # (idle2 43 deg, idle4 76 deg, both ending 0) are left to the default rule.
     _SP = ('m1A1', 'm1A2', 'm1A3', 'm2A1', 'm2A2', 'm2A3', 'm2A4', 'm2A5', 'area1', 'area2', 'cast1', 'cast2')
     KEEP_YAW = {'dieB', 'dieF', 'dieL', 'dieR', 'turnL', 'turnR', 'crouchTurnL', 'crouchTurnR',
-                'blockStart', 'blockEnd', 'toCrouch', 'fromCrouch', 'land'} | set(_SP)
+                'blockStart', 'blockEnd', 'toCrouch', 'fromCrouch', 'land', 'flipOff'} | set(_SP)   # (the flip's turn is the flip)
     RAMP_YAW = set(_SP)
     FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW - {'idle2', 'idle4'}
     WINDOW = {}
@@ -615,6 +618,56 @@ if SET == 'skrim':
     for _c in _SP:
         CONTACT[_c] = ('LeftHand', 'RightHand')     # whichever hand is thrown hardest
 
+
+# ---- THE ANCIENT KING, THE LAST OF THEM (2026-11-19): the owner's Mixamo "Front Flip" — "make the final god boss sometimes
+# flip over your head and land behind you like this". His rig is a Character Creator one (CC_Base_*: `assets/ancient-king.glb`),
+# mapped in the game by `KING_RAG`. The turn over is the move (its yaw kept); the travel is measured and left to the game.
+KING_CLIPS = [
+    ('Front Flip', 'flip', 'over your head', ''),
+    # ("have the final god boss sometimes run up the pillar to the very top of the temple and sit up top looking at you like
+    # this for 3 seconds then he hovers back down to fight")
+    ('Wall Run', 'wallRun', 'up a pillar', ''),
+    # ---- AND HIS FIGHT (2026-11-20, the owner: "give him good animations i am adding all of them make sure they look exactly
+    # like this and visibly connect so they can be blocked"): the Mixamo Locomotion Pack (its own subfolder of ~/Downloads)
+    # for every way he stands and moves, and seven takes loose in ~/Downloads for his blows and his death.
+    ('idle',                 'kIdle',   'standing, his fists ready', 'Locomotion Pack'),
+    ('walking',              'kWalk',   'walking at you', 'Locomotion Pack'),
+    ('running',              'kRun',    'running', 'Locomotion Pack'),
+    ('left strafe',          'kStrL',   'circling left, quick', 'Locomotion Pack'),
+    ('right strafe',         'kStrR',   'circling right, quick', 'Locomotion Pack'),
+    ('left strafe walking',  'kStrWL',  'circling left', 'Locomotion Pack'),
+    ('right strafe walking', 'kStrWR',  'circling right', 'Locomotion Pack'),
+    ('left turn',            'kTurnL',  'turning on the spot, left', 'Locomotion Pack'),
+    ('right turn',           'kTurnR',  'turning on the spot, right', 'Locomotion Pack'),
+    ('left turn 90',         'kTurn90L', 'a quarter turn left', 'Locomotion Pack'),
+    ('right turn 90',        'kTurn90R', 'a quarter turn right', 'Locomotion Pack'),
+    ('jump',                 'kJump',   'a jump', 'Locomotion Pack'),
+    ('Fast Run',             'kSprint', 'flat out at you', ''),
+    ('Surprise Uppercut',    'kUpper',  'the uppercut', ''),
+    ('Flying Bicycle Kick',  'kBike',   'off the floor, both feet', ''),
+    ('Flying Knee Punch Combo', 'kKnee', 'the knee, then the fists', ''),
+    ('Brutal Assassination', 'kAssn',   'the kill', ''),
+    ('Kicking',              'kKick',   'the kicks', ''),
+    ('Being Electrocuted',   'kShock',  'his death: the lightning through him', ''),
+    # (2026-11-20, the owner: "dont have him float down make him jump down and slam using this mutant jump when he runs up the
+    # pillars … have the impact huge when he slams down")
+    ('Mutant Jump Attack',   'kSlam',   'off the pillar and down onto you, both fists', ''),
+]
+if SET == 'king':
+    CLIPS = KING_CLIPS
+    REST_FWD = True
+    TAKE_FROM_ACTION = True
+    # (his death keeps its own turn — there is no heading of a body falling — and the turns are pivots, de-yawed: the game
+    # turns him; the uppercut ends 60 degrees round, which the game would undo with a snap, so it is de-yawed too)
+    KEEP_YAW = {'flip', 'wallRun', 'kShock', 'kSlam'}
+    FORCE_FLAT_YAW = {'kTurnL', 'kTurnR', 'kTurn90L', 'kTurn90R', 'kUpper'}
+    # the electrocution is 10.6 s: the first second is him standing, the last two lying still (the hips, measured: down by
+    # f252). The rest is the death.
+    WINDOW = {'kShock': (24, 256)}
+    CONTACT = {}
+    PEAKS = ('LeftHand', 'RightHand', 'LeftLeg', 'RightLeg', 'LeftToeBase', 'RightToeBase')
+    for _c in ('kUpper', 'kBike', 'kKnee', 'kAssn', 'kKick', 'kSlam'):
+        CONTACT[_c] = PEAKS
 
 if 'HIP_FROM_TAKE' not in globals(): HIP_FROM_TAKE = set()
 if 'TAKE_FROM_ACTION' not in globals(): TAKE_FROM_ACTION = False
@@ -864,6 +917,16 @@ def main():
                     if sp > best: best, bi, bcb = sp, i, c
             contact = r4(bi / max(1, end))
             cb = bcb
+            if 'PEAKS' in globals():
+                pk = []
+                for c in cbs:
+                    sp = [0.0] + [(tips[c][i] - tips[c][i - 1]).length for i in range(1, end + 1)]
+                    for i in range(2, end - 1):
+                        if sp[i] >= best * 0.45 and sp[i] >= max(sp[i - 2:i + 3]):
+                            pk.append((i, c, sp[i], tips[c][i]))
+                pk.sort()
+                for i, c, v, P in pk:
+                    log('     peak f%3d %-13s %.3f m/f  at (%.2f, %.2f, %.2f)' % (i, c, v, P.x, P.y, P.z))
             log('   contact: %s fastest at frame %d of %d (%.3f m/frame) -> hit %.3f'
                 % (cb, bi, end, best, contact))
 

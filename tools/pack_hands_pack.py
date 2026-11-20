@@ -117,17 +117,17 @@ def clean(a, n):
         cand = [y for y in range(max(0, yC - int(0.36 * H0)), yC - int(0.18 * H0)) if xin[y] >= 0]
         if cand and xin[yC] >= 0:
             yH = max(cand, key=lambda y: xin[y]); xH, xC = xin[yH], xin[yC]
+            # (NOT ruled straight — 2026-11-19, later, the owner: "make his left hand less straight it looks unatural in the
+            # inventory i just wanted that patch of skin fixed better": the line from the heel to the cuff is bowed IN a little
+            # through its middle, the way a wrist narrows under the palm, and only what stands out PAST it — the knob of skin —
+            # is cut; the natural dip under the palm is left as it is, no longer filled out to the line)
             for y in range(yH + 1, yC):
-                lim = xH + (xC - xH) * (y - yH) / max(1, yC - yH)
+                u = (y - yH) / max(1, yC - yH)
+                lim = xH + (xC - xH) * u - 0.022 * W0 * np.sin(np.pi * u)
                 if xin[y] < 0: continue
                 if xin[y] > lim + 0.5:
                     cut = np.arange(arm.shape[1]) > lim
                     keep[y] &= ~(cut & arm[y])
-                elif xin[y] < lim - 0.5:
-                    src = a[y, max(0, xin[y] - 2), :3].copy()
-                    x1 = int(np.floor(lim))
-                    a[y, xin[y] + 1:x1 + 1, :3] = src; a[y, xin[y] + 1:x1 + 1, 3] = 1.0
-                    keep[y, xin[y] + 1:x1 + 1] = True
     return keep
 
 

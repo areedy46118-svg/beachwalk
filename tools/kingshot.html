@@ -1,0 +1,48 @@
+<!doctype html><meta charset="utf-8"><title>king shot</title>
+<!-- THE ANCIENT KING ON HIS OWN (2026-11-19): assets/ancient-king.glb (gzipped, quantized: inflated and dequantized here the
+     game's way), lit plainly from four sides, his size, which way he faces, and where his main bones are in the rest pose.
+     Not part of the game. Run: PB_PAGE=kingshot.html sh tools/probe.sh x <out>  → <out>/king.jpg; `&pose=hover` the hover. -->
+<script type="importmap">{ "imports": { "three": "/vendor/three/three.module.js", "three/addons/loaders/GLTFLoader.js": "/vendor/three/GLTFLoader.js", "three/addons/utils/BufferGeometryUtils.js": "/vendor/three/BufferGeometryUtils.js" } }</script>
+<body style="margin:0;background:#000">
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const log = (...a) => console.log('[PB]', ...a);
+let buf = await (await fetch('/assets/ancient-king.glb')).arrayBuffer();
+if (new Uint8Array(buf)[0] === 0x1f) buf = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+const gltf = await new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej));
+// the game's dequantize (`bwDequant`): int16 attributes back to floats across the range in the primitive's extras
+gltf.scene.traverse((o) => {
+  const g = o.geometry, Q = g && g.userData && g.userData.bwQ; if (!Q) return;
+  for (const name in Q) {
+    const key = name === 'POSITION' ? 'position' : name === 'NORMAL' ? 'normal' : 'uv'; const A = g.attributes[key]; if (!A) continue;
+    const n = A.itemSize, R = Q[name], out = new Float32Array(A.count * n);
+    for (let i = 0; i < A.count; i++) for (let c = 0; c < n; c++) { const v = c === 0 ? A.getX(i) : c === 1 ? A.getY(i) : c === 2 ? A.getZ(i) : A.getW(i); out[i * n + c] = R[c] + (v + 1) * 0.5 * (R[n + c] - R[c]); }
+    g.setAttribute(key, new THREE.BufferAttribute(out, n));
+  }
+  g.computeBoundingBox(); g.computeBoundingSphere();
+});
+const root = gltf.scene; root.updateMatrixWorld(true);
+const box = new THREE.Box3().setFromObject(root), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+log('size', size.toArray().map((v) => v.toFixed(3)).join(' x '), 'min', box.min.toArray().map((v) => v.toFixed(2)).join(','), 'meshes', (() => { let n = 0; root.traverse((o) => o.isSkinnedMesh && n++); return n; })());
+const B = {}; root.traverse((o) => { if (o.isBone) B[o.name] = o; });
+const want = ['CC_Base_Hip', 'CC_Base_Head', 'CC_Base_L_Hand', 'CC_Base_R_Hand', 'CC_Base_L_Foot', 'CC_Base_R_Foot', 'CC_Base_L_Upperarm', 'CC_Base_R_Upperarm', 'CC_Base_L_Forearm', 'CC_Base_Spine01'];
+const findB = (w) => Object.values(B).find((b) => b.name.startsWith(w + '_') && !b.name.includes('scaleCompensation'));
+const P = new THREE.Vector3();
+log('bones', Object.keys(B).length, want.map((w) => { const b = findB(w); return b ? w + ' ' + b.getWorldPosition(P).toArray().map((v) => v.toFixed(2)).join(',') : w + ' -'; }).join(' | '));
+log('all bone names', Object.keys(B).filter((n) => !n.includes('scaleCompensation')).join(' '));
+const R = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); R.setSize(1600, 520); R.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(R.domElement);
+const sc = new THREE.Scene(); sc.background = new THREE.Color(0x5a5f66); sc.add(root);
+root.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; const ms = Array.isArray(o.material) ? o.material : [o.material]; ms.forEach((m) => { m.metalness = 0; }); } });
+sc.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.8)); const d = new THREE.DirectionalLight(0xffffff, 2.2); d.position.set(2, 3, 4); sc.add(d);
+const r = Math.max(size.x, size.y, size.z) * 0.6, cam = new THREE.PerspectiveCamera(30, 400 / 520, 0.01, 100);
+R.setScissorTest(true);
+[[0, 0], [Math.PI / 2, 0], [Math.PI, 0], [-Math.PI / 2, 0]].forEach(([yaw], i) => {
+  cam.position.set(c.x + Math.sin(yaw) * r * 3.8, c.y, c.z + Math.cos(yaw) * r * 3.8); cam.lookAt(c); cam.aspect = 400 / 520; cam.updateProjectionMatrix();
+  R.setViewport(i * 400, 0, 400, 520); R.setScissor(i * 400, 0, 400, 520); R.render(sc, cam);
+});
+const dURL = R.domElement.toDataURL('image/jpeg', 0.9).split(',')[1], n = Math.ceil(dURL.length / 8000);
+for (let i = 0; i < n; i++) console.log('[PBIMG]', 'king', i + '/' + n, dURL.slice(i * 8000, (i + 1) * 8000));
+log('DONE');
+</script>

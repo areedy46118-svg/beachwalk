@@ -6461,6 +6461,15 @@ export async function skrimHang({ w, b, log, sleep, shot }) {
     if (shoot && H && H.ph === 'fall' && H.t > 0.35 && !did.fallShot) { did.fallShot = 1; eye('shot_fall', P.x, P.y + 1, P.z); }
     if (shoot && H && H.ph === 'down' && H.t > 0.3 && !did.downShot) { did.downShot = 1; eye('shot_down', P.x, P.y + 0.8, P.z); const hp2 = u.st.hp; b.hurtMutantTest(u, 5, 0.6); log('cut him while down', hp2, '->', u.st.hp); }
     if (ph === 'lower' && H.t > 0.6 && !did.low) { did.low = 1; eye('hang_lower', P.x, P.y + 1.2, P.z); }
+    // (2026-11-19) the flip off the hook: from across the gut at four beats, and his feet over the floor at its landing frame
+    if (ph === 'flip') for (const tf of [0.25, 0.6, 1.0, 1.3, 1.46, 1.8]) {
+      if (H.t < tf || did['f' + tf]) continue; did['f' + tf] = 1;
+      const keep = cam.clone(), kq = C.quaternion.clone(), kf = C.fov;
+      C.fov = 55; C.updateProjectionMatrix(); C.position.set(P.x + 8, b.skrimFloorW(P.x, P.z) + 3, P.z + 1); C.lookAt(P.x, b.skrimFloorW(P.x, P.z) + 2.6, P.z); C.updateMatrixWorld(true); shot('flip_' + tf, 480, 1.8);
+      C.position.copy(keep); C.quaternion.copy(kq); C.fov = kf; C.updateProjectionMatrix();
+      const ft = ['Character1_LeftToeBase', 'Character1_RightToeBase'].map((n) => u.model.getObjectByName(n).getWorldPosition(new T()).y - b.skrimFloorW(P.x, P.z));
+      log('flip t', H.t.toFixed(2), 'toes over floor', ft.map((v) => v.toFixed(2)).join(' / '), 'origin over floor', (P.y - b.skrimFloorW(P.x, P.z)).toFixed(2));
+    }
     // close on him from along the gut and from across it: his weight on his fist, the swing, the chain
     for (const [tag, ph0, t0] of [['reel', 'reel', 0.3], ['catch', 'hang', 0.12], ['h1', 'hang', 0.7], ['h2', 'hang', 1.5], ['h3', 'hang', 4.2]]) {
       if (!H || H.ph !== ph0 || H.t < t0 || did['c' + tag]) continue; did['c' + tag] = 1;
@@ -8136,7 +8145,7 @@ export async function pipeReach({ w, b, log, sleep }) {
       const br = R.br ? R.br.g.gain.value.toFixed(3) : '-';
       log('t', (f / 60).toFixed(2), 'p', R.p.toFixed(2), 'done', R.done, 'grab', R.grab.toFixed(2), 'breath gain', br, 'peeking', b.peeking, 'taken', b.screwdriverTaken, 'fov', C.fov.toFixed(1));
     }
-    if ([45, 120, 210, 285, 312, 330].includes(f)) grab('t ' + (f / 60).toFixed(2) + ' p ' + R.p.toFixed(2));
+    if ((Q.get('at') ? Q.get('at').split(',').map(Number) : [45, 120, 210, 285, 302, 318, 330, 342, 354, 366]).includes(f)) grab('t ' + (f / 60).toFixed(2) + ' p ' + R.p.toFixed(2) + ' g ' + R.grab.toFixed(2) + (b.pipeHandS && b.pipeHandS().visible ? ' arm' : ''));
   }
   down(false);
   log('SMOOTH hand max step/frame', maxStep.toFixed(4), 'm at', maxAt.toFixed(2), 's; max change of step', maxAcc.toFixed(4), 'at', accAt.toFixed(2), '; screwdriver moved across the take', sdJump.toFixed(4));
@@ -8312,6 +8321,7 @@ export async function callShots({ w, b, log, sleep }) {
   const g = sh.getContext('2d'); shots.forEach((s, i) => g.drawImage(s, (i % cols) * tw, ((i / cols) | 0) * th));
   const d = sh.toDataURL('image/jpeg', 0.88).split(',')[1], n = Math.ceil(d.length / 8000);
   for (let i = 0; i < n; i++) console.log('[PBIMG]', 'call', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  log('view', T.vw, T.vh, T.Q && T.Q.toFixed(2), 'cam fov', T.cam.fov.toFixed(1), 'desk fov', IC.deskCam && IC.deskCam.fov.toFixed(1), 'win', w.innerWidth, w.innerHeight, 'boxK', T.boxK, 'el', T.el && T.el.style.cssText.slice(0, 120), 'on', IC.on, 'ended', IC.ended, 'atDesk', IC.atDesk, 'cam', T.cam.position.toArray().map((v) => v.toFixed(2)).join(','), 'eye', b.IC_CAM.eye.toArray().map((v) => v.toFixed(2)).join(','), 'cv', IC.cv && IC.cv.width + 'x' + IC.cv.height, 'ecv', IC.ecv && IC.ecv.width + 'x' + IC.ecv.height, 'paint', IC.paint && IC.paint.visible, 'rt', T.rt && T.rt.width + 'x' + T.rt.height, 'r', T.r.domElement.width + 'x' + T.r.domElement.height);
   log('errors', errs.length, errs.slice(0, 4).join(' | '));
 }
 
@@ -8378,4 +8388,38 @@ export async function flicker({ w, b, log, sleep }) {
   log('frames', n, 'pixels flickering (>60)', hot, 'of', W * H);
   const d = c.toDataURL('image/jpeg', 0.9).split(',')[1], m = Math.ceil(d.length / 8000);
   for (let i = 0; i < m; i++) console.log('[PBIMG]', 'flicker', i + '/' + m, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+/* THE CALL'S LEFT HAND, IN REAL TIME (2026-11-20, the owner: "the left hand in the start cutscene is missing"): START, and
+ * the call played on its own clock as a player sees it, a still of the desk's canvas at each `&ts=` second of the recording
+ * (rendered once more at that moment so the canvas holds it), with which left sheet the frame wants and what it is (a bitmap,
+ * an Image, decoded or not). */
+export async function callLive({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 160)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const st = w.document.querySelector('#overlay .start');
+  for (let i = 0; i < 900 && st.classList.contains('loading'); i++) await sleep(100);
+  for (let i = 0; i < 100 && !b.icCanRun(); i++) await sleep(100);
+  st.click();
+  const T = b.TB, IC = b.IC, ts = (Q.get('ts') || '30,36,39.5,42,45,52,59,62,66,69').split(',').map(Number);
+  const tw = +(Q.get('tw') || 480), th = Math.round(tw * T.vh / T.vw), shots = [];
+  const kind = (i) => !i ? 'none' : (w.ImageBitmap && i instanceof w.ImageBitmap) ? 'bm' + i.width : (i.complete && i.naturalWidth ? 'img' : 'img-undecoded');
+  for (const t of ts) {
+    for (let i = 0; i < 1200 && !(b.icNow() >= t) && !IC.ended; i++) await sleep(25);
+    if (IC.ended) { log('call ended before', t); break; }
+    if (!Q.get('cov')) { b.tbRender();
+    const c = w.document.createElement('canvas'); c.width = tw; c.height = th; const g = c.getContext('2d');
+    g.drawImage(T.el, 0, 0, tw, th); g.fillStyle = '#ff0'; g.font = '11px monospace'; g.fillText(b.icNow().toFixed(1), 4, 12);
+    shots.push(c); }
+    let cov = -1; if (Q.get('cov') && IC.ecv) { const g2 = IC.ecv.getContext('2d'), W2 = IC.ecv.width, H2 = IC.ecv.height, d2 = g2.getImageData(Math.floor(W2 * 0.5), Math.floor(H2 * 0.3), Math.floor(W2 * 0.5), Math.floor(H2 * 0.7)).data; cov = 0; for (let i = 3; i < d2.length; i += 16) if (d2[i] > 40) cov++; }
+    if (Q.get('cov')) { log('t', b.icNow().toFixed(2), 'right layer px', cov, 'earSig', String(IC.earSig).slice(0, 40)); continue; }
+    log('t', b.icNow().toFixed(2), 'left sheets', (IC.imgL || []).map(kind).join(' '), 'paint', !!(IC.paint && IC.paint.visible), 'x', !!IC.x);
+  }
+  if (shots.length) { const cols = 3, sh = w.document.createElement('canvas'); sh.width = tw * cols; sh.height = th * Math.ceil(shots.length / cols);
+  const g = sh.getContext('2d'); shots.forEach((s, i) => g.drawImage(s, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = sh.toDataURL('image/jpeg', 0.88).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'live', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
+  log('errors', errs.length, errs.slice(0, 4).join(' | '));
 }

@@ -2884,3 +2884,60 @@ loads in 30 s — a harness limit, the stage itself came back 1 both ways.)
   2-4 px strips go, a finger crossing the line stays. A hole is filled only with his skin on both sides of the pen within
   7 px, and a painted fill must come out plainly skin (warm > 0.105). A few px of nub can remain at the fingertip in
   34/37/52, where the syringe is.
+
+## 2026-11-19 (late) — the call: the stray white, the phone at the ear on a wide screen, the reveal's sound, the syringe
+- **The white above the book** (the owner's 21:9 screenshot of the first turn): ragged white off the table, joined to the
+  book at its spiral, standing over its top edge for frames 119-130 (58.3-59.3 s), and corner bits off the raised page in
+  134/136, the table's tan on the turning page in 132/133. The packer's work folder is gone, so `tools/intro_cut_fix.py`
+  mends the shipped sheets (alpha only; re-saved q92): flat frames — nothing over the book's own top edge, read off clean
+  frames 121/123/125/126 in canvas px, only in the book's columns (his arm's left alone; 131 excluded: his fingers really
+  rise there); the raised page — what a 12 px opening strips from the top 80 px; the tan — sat > 0.3, r−b > 0.22, in the
+  page's box. The general "drop separate pieces" pass found nothing (it is all one piece) and an opening alone would have
+  cost frame 234 58k px.
+- **The phone at his ear, on a wide screen** ("fix the phone to the right too it should look like hes actually on the
+  phone"): the at-ear frames' right and bottom are the video's edge, pinned to the 16:9 clip frame's corner — on 21:9 that
+  stood in the middle of the right half, cut off straight. Carried to the SCREEN's corner as the hand goes up (`earK`, the
+  scale's pivot with it), and the post pass's soft pillar no longer darkens his layer right of the frame
+  (`mix(pf, 1, o.a · step past the frame's right)`) — pinned there it was a grey ghost. His left sleeve still fades on the left.
+- **The reveal** (`assets/intro/reveal.m4a`, the owner's "page flip title reveal sound", 7.4 s, steady ~−19 dB for 3.7 s):
+  cut to 4 s with a 1.1 s fade from 2.9, in `IC_SFX` at 69.6 (his last words end at 69.5) — through the push into the black,
+  gone as the waves come up. On the call's clock and envelope: a skip before it never sounds it.
+- **The syringe** ("make the syringe animation better too"): held, it eases to each pose (`IC_SYR_EASE` 16/s — the clip's
+  tracked pen stepped at 12 fps and jittered), a quarter longer than the pen he filmed (`IC_SYR_HELD`); the squirt a soft
+  blue glow round a bright thread (4.2 + 1.8 px) and bigger drops. `icPoseSyringe` takes `dt` now.
+- **Probes**: `callShots` with `PB_WIN=1760,780 PB_Q='&title=1&fw=1720&fh=720&ts=…'` is the owner's 21:9.
+
+## 2026-11-20 — the call: three voicemails, the reveal to the waves, the phone at his ear, one picture on every screen
+- The last beep (17.89) was a fourth, silent message in the Phone app ("4 new messages", "4 of 4", Mom): three messages now,
+  the last beep closes the voicemail to the lock screen.
+- **The reveal was cut by the recording's end**: it went through `IC.env`, which `src.onended` disconnects at 70.57 s, a
+  second after the reveal began. Its own path now (`IC.rev` → `vol`), the owner's whole 7.4 s take, full for 3.9 s and out
+  over 3.5 — 69.6 to 77.0, as his waves come up; a skip takes it down with the voice.
+- The phone at his ear: the at-ear frames hold almost no phone (the video's edge cuts it). The hand is drawn `IC_EAR_IN` in
+  from the corner and the phone's back is DRAWN on from the clip's cut edge past the screen's (`icEarPhone`: a dark slab,
+  its rim, the camera block), over the edge so his fingertips tuck behind its rim.
+- His left arm: painted on the table (the 3D pass), so the overlay's exemption never covered it, and the left pillar faded it
+  to black on a wide screen. The pillar darkens only right and top now.
+- One picture on every screen (the owner: "objects are changing size and place when changing screen size"): from START the
+  view eases into a centred 16:9 box (`TB.boxK` off the time since START, `tbSize` styles `#title-room`), black round it.
+- (and the desk's props — the syringe, the phone — were placed ONCE, under the title, through the title's shape of view: when
+  the view eased into its 16:9 frame they stayed where the old shape put them, and on a 4:3 screen the book came out bigger and
+  lower with his hands nowhere. `icFrame` places them again whenever the view's size changes — a resize mid-call included.
+  Measured: 21:9, 16:9 and 4:3 all 711×400 at fov 46 now, the same picture.)
+- (later the same day, the owner: "make it always be full screen … but fit to all monitors": the 16:9 picture COVERS the
+  screen — a wide one loses a strip off the top (three quarters of it, the far wall) and the bottom; a tall one off each side.
+  `#overlay { overflow: hidden }`.)
+- The desk's mess (`tbClutter`): cans, pens, a highlighter, balled paper, two emptied copies of the syringe — placed where the
+  desk view sees the table and his hands, the book and the phone are not (`tools/deskmap.js` maps the view onto the table:
+  z 1.85-2.7, x 2.37-0.89 along the top). Built after the syringe (it clones it).
+- (the mess kept off the phone: the highlighter lay across it — the phone is placed by `icPlaceProps` after the mess, so that
+  slides anything inside its footprint plus 7 cm off it, away from its middle)
+- (the phone at his ear, round three, the owner: "the phone fix you did is awful just take whats already there … it keep
+  flashing in and out": the drawn phone and the inward shift are gone. The flash was the lift: frame 43 carried up and OUT of
+  the picture left the right side EMPTY 27.45-27.75 s, then a smaller hand popped in under it — measured, `callLive &cov=1`,
+  the right layer's pixels to 0. Now frame 43 crossfades into at-ear frame 90 in place over `IC_TOEAR`.)
+- **The intro song begins on the BEACH WALK page** (`IC_SONG_AT` 69.6, scheduled on the call's audio clock by
+  `startIntroSong(0, at)`); the reveal sound is gone (and its file). `icFinish` hands the playing song to `runIntro(early)`,
+  which holds the black and brings the waves and the name in TOGETHER, at once, on its drop (7.39). Measured
+  (`tools/callsong.js`): waves and title on at ctx 77.0-77.5 against a drop due at 77.44. An Enter skip lets the early song
+  go (0.6 s) and the intro starts its own as before.
