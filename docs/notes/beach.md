@@ -2941,3 +2941,28 @@ loads in 30 s — a harness limit, the stage itself came back 1 both ways.)
   which holds the black and brings the waves and the name in TOGETHER, at once, on its drop (7.39). Measured
   (`tools/callsong.js`): waves and title on at ctx 77.0-77.5 against a drop due at 77.44. An Enter skip lets the early song
   go (0.6 s) and the intro starts its own as before.
+
+## 2026-11-20 later — the call: the phone to his ear as the video has it; the sketchbook's trims cleaned
+The owner: "FIX WHEN HE IS ON THE PHONE IN THE START CUTSCENE JUST MAKE IT LOOK EXACTLY LIKE THE VIDEOS ALSO CLEAN UP THE
+TEXTBOOK EDITS AND TRIMS YOU DID … CLEAN UP THE CUTSCENE AS MUCH AS YOU CAN".
+- **IMG_7209 at the ear** (frames 56-110 at 12 fps): the phone a hand's width from the lens — a dark tinted glass slab with
+  a crisp black bezel down the right of the picture, his thumb over its top edge, fingers in front, the palm under it. The
+  packer's Vision cut had kept the fingers and a sliver (the glass is blurred and shows the table through it): a hand with
+  nothing in it. `tools/intro_ear_recut.py` re-cuts 56-99: the glass from a HAND-MARKED quad per keyframe (`PHONE`, 56 62
+  70 80 90 99, full-size clip px, in between by the frame — Hough on the bezel latched onto the frame's own edge, and a
+  difference against the empty table pulled in the floor and chair: the camera swings), filled with the clip's own pixels
+  darkened (bezel and lights kept); his hand by skin HUE (0-11, the wood is 12-20 — a looser (r-g)/r test took the table),
+  the pale palm grown only under the glass. Then graded, carried past the clip's edge and packed as the packer does; the
+  right sheets repacked whole (79 frames, 4 sheets, 0.6 MB).
+- **The lift**: the old crossfade 43 → 90 is gone; the clip's own lift plays — 43, 50-54 (Vision's, their wrist blots
+  inpainted, 50's chair over the phone cut), 56-80 once at 14 fps, 80-99 rocking at 8 (`IC_RSEG`). 44-46 dropped: the
+  table and the chair cut in with him, and colour tests on the GRADED sprite cannot tell his pale skin from paper or grey.
+  The at-ear 0.8 size eases in over the lift (`1 - 0.2·earK`) so 43 → 50 does not jump.
+- **The sketchbook** (`tools/intro_book_clean.py OLD_DIR`, OLD_DIR = the left sheets and cut.json from git bb45533): the
+  trims of `intro_cut_fix.py` stand (they took the stray white); what they tore — 132's turning page — is not shown (132
+  aliased to 133 in cut.json). Every flip frame: tan chips of the table on the paper's OUTER edge and nowhere near his hand
+  out, specks apart out. NOT the paper's outline smoothed (an opening ate his fingers: his hand is as pale as the page in the
+  grade) and nothing inside the page repainted (his hand is as warm as the wood in places). Re-saved q84/alpha 90 (q92/100
+  added 0.4 MB with the game at 449).
+- Probe trap: `callShots` seeks by running 7 frames at each time, so the squirt's drops (life ~1.5 s) survive from 43.6 to
+  the flips and sit over his arm as blue dots — not in real playback.

@@ -3066,3 +3066,24 @@ be how the hook should be held".
 - The thrown hook digs (the owner: "dig up mounds"): where it comes down on the beach `hookWorldStrike` tears a dig hole and
   opens a mound there (`revealMoundNear`), a splash in the surf; it also strikes the merchant (`traderStrike`) as a cut does.
   `tools/hookmound.js`: a mound 8 m off opened on arrival.
+
+## 2026-11-20 — Skrim's hook: walls in every room, the drag on everything, a click hauls it back
+The owner: "SKRIMS HOOK SHOULD COLLIDE WITH WALLS TOO AND COME BACK FROM THE POINT IT HITS. ALSO MAKE THE PROJECTILE HOOK THE
+ENEMY AND BRING THEM CLOSER THAT ISNT WORKING. MAKE CLICKING AGAIN WHILE LAUNCHED PULL THE HOOK BACK."
+- **Walls**: the throw's trace is the gun's (`magTrace` → `nearestSolidHit`), which knows walls only where a room has a wall
+  index (`activeHitSites`: keep, tavern, catacombs, throne, dungeon, the castle, the bunker, the island, the house). Everywhere
+  else — the temple's pillars, the undercroft, the whale, the dojo, the sewer — the iron flew through stone.
+  `hookWallHit` (once, as it leaves): the temple off its solid grid (`tmpCellTop` over the floor by 0.6 m: pillars, not the
+  sand), any other such room off its drawn model (`dropTargets`, no points, sprites or see-through). 2-3 ms a throw,
+  measured in the undercroft (`tools/hookwalls.js`); a pillar 6.3 m off stopped it and it came home from there
+  (`tools/hookpull.js &temple=1&k=wall`). A wall hit with no face (the grid) leaves no scar (`stampScar` needs `hit.face`).
+- **The drag**: `hookBite`'s pull refused anything with `bossDeath` — and `KN_BASE` has it, so every knight-built fighter (the
+  king, the dark knight, the paladin, the samurai, the knights) took the iron and did not move. Now everything under 3.4 m
+  that is not stone, held, down or a puppet; a boss reels 0.8 / 0.6 (against 1.4 / 1.3) at the bite and the landing. The king
+  in his own run-down (`hunt`) or turn is a puppet: the hook ends it (`kingBackToFight`) and hauls him. Measured: the pale one
+  4 → 1.5 m, a knight 9.4 → 2.2, the king 7.9 → 2.5 (`tools/hookpull.js &k=`). (The dark knight on the BEACH does not move:
+  his `fortBody` clamp refuses every step outside the castle — a probe artefact, not the hook.)
+- **The recall** (`hookRecall`, on the press in the canvas `pointerdown`, before the swing latch): from flight, a wall or a
+  body (let go), straight home at `HOOK_RECALL` 30 m/s with no lie; in the whip, simply kept. The release of that same click
+  would have thrown a cut once it was home: `startDig` refuses for 450 ms after a recall (`HK.recallAt`). Measured: 9.9 m out
+  in a body, home 0.38 s after the click.

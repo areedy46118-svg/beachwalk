@@ -35,7 +35,7 @@ function near(i) {
   }
   return [best, bh, bp];
 }
-const rec = {}, prevHp = () => b.state().hp; let hp0 = prevHp(), lastSw = null, swN = 0, cutT = 0, clipSw = 0, lastClip = null, spikes = 0, lastP = u.g.position.clone(), lastV = 0, turnMax = 0, lastYaw = u.g.rotation.y;
+const rec = {}, prevHp = () => b.state().hp; let hp0 = prevHp(), lastSw = null, swN = 0, cutT = 0, clipSw = 0, lastClip = null, spikes = 0, lastP = u.g.position.clone(), lastV = 0, turnMax = 0, lastYaw = u.g.rotation.y + (u.model ? u.model.rotation.y : 0);
 let stam0 = 0, hpLast = prevHp(), totalLost = 0;
 for (let f = 0; f < 60 * SECS; f++) {
   const p = u.g.position, st = u.st;
@@ -74,7 +74,7 @@ for (let f = 0; f < 60 * SECS; f++) {
   // his motion
   const cn = u.cur && u.cur.getClip().name; if (cn !== lastClip) { clipSw++; lastClip = cn; }
   const v = Math.hypot(p.x - lastP.x, p.z - lastP.z) * 60; if (Math.abs(v - lastV) > 4) spikes++; lastV = v; lastP.copy(p);
-  let dy = u.g.rotation.y - lastYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); turnMax = Math.max(turnMax, Math.abs(dy) * 60); lastYaw = u.g.rotation.y;
+  const vy = u.g.rotation.y + (u.model ? u.model.rotation.y : 0); let dy = vy - lastYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); if (Math.abs(dy) * 60 > 8) log('  snap', (Math.abs(dy) * 60).toFixed(1), 'rad/s at', (f / 60).toFixed(2), 's mode', b.kingS().mode, 'swing', st.atk >= 0 ? st.swing + ' t ' + st.atk.toFixed(2) : '-', 'clip', u.cur && u.cur.getClip().name, 'stun', (st.stun || 0).toFixed(2), 'recoil', (st.recoil || 0).toFixed(2)); turnMax = Math.max(turnMax, Math.abs(dy) * 60); lastYaw = vy;
 }
 for (const k in rec) { const r = rec[k]; log(k.padEnd(8), 'contacts', r.n, 'HIT', r.hit, 'blocked', r.blk, 'missed', r.miss, '| nearest m', r.near.slice(0, 8).join(' '), '| height vs eye', r.h.slice(0, 8).join(' '), '| screen', r.scr.slice(0, 5).join(' ')); }
 log('health taken', totalLost, 'swings', swN, 'his hp', u.st.hp, 'clip changes/s', (clipSw / SECS).toFixed(2), 'speed spikes/s', (spikes / SECS).toFixed(2), 'max turn rad/s', turnMax.toFixed(1), 'errors', errs.length, errs.slice(0, 3).join(' | '));

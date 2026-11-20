@@ -9058,8 +9058,13 @@ const IC_LIN = [57.45, 58.05];                   // his left hand coming back up
 /* (then up to his ear WITHOUT the clip's frames of it on the way — 50-55 and 74 were the phone a hand's width from the lens,
  * a black slab over half the screen: "make the iphone pickup look better too", 2026-11-19. He looks at it (43) and it
  * goes up and out to the right of the shot, `IC_TOEAR`; the at-ear frames come up into the corner after it) */
-const IC_RSEG = [[24.95, 17, 43, 12], [27.2, '43'], [27.75, 90, 99, 'pp']];
-const IC_TOEAR = [27.2, 27.75];
+/* (AND UP TO HIS EAR AS THE VIDEO HAS IT — 2026-11-20, the owner: "FIX WHEN HE IS ON THE PHONE … JUST MAKE IT LOOK EXACTLY LIKE
+ * THE VIDEOS": the clip's own lift, 50-54, the phone turned in his hand toward his ear; then at his ear, 56-99, re-cut with the
+ * phone's glass whole — a dark slab down the right of the picture, his fingers over its top, his palm under it
+ * (`tools/intro_ear_recut.py`) — played through once and then rocking gently on its last part while he talks. The crossfade
+ * and the frames that were a hand with nothing in it are gone.) */
+const IC_RSEG = [[24.95, 17, 43, 12], [27.12, '50'], [27.2, '51'], [27.28, '52'], [27.36, '53'], [27.44, '54'], [27.52, 56, 80, 14], [29.24, 80, 99, 'pp', 8]];
+const IC_TOEAR = [27.12, 27.6];
 const IC_SQUIRT = [43.25, 44.4];                 // the plunger in, and the blue out of the needle ("squirt it a little longer")
 const IC_RING = [[21.4, 23.0], [24.7, 25.0]];    // the ringtone, measured off the file
 const IC_REST = 46.0;                            // the syringe down where he put it, from here
@@ -9545,7 +9550,7 @@ function icFrame(dt, F) {
   /* (up to his ear: the phone in his hand held where it is and crossfaded into his hand at his ear, in place — carried up and out
    * of the picture, the right side stood EMPTY for a third of a second before a smaller hand popped in under it, the owner's
    * "it keep flashing in and out", 2026-11-20; `icToEar` below) */
-  const toEar = tt >= IC_TOEAR[0] && tt < IC_TOEAR[1] && R.frames['90'] ? icEase((tt - IC_TOEAR[0]) / (IC_TOEAR[1] - IC_TOEAR[0])) : -1;
+  const toEar = -1;                                                        // (no crossfade now: the clip's own lift plays, `IC_RSEG`)
   /* AT HIS EAR IT IS IN THE SCREEN'S CORNER, NOT THE CLIP'S (2026-11-19, the owner, on a 21:9 screen: "fix the phone to the
    * right too it should look like hes actually on the phone"). The at-ear frames are the clip's own corner of the picture,
    * their right and bottom the video's edge — pinned to the 16:9 frame's corner, on a wide screen that edge stood in the
@@ -9579,7 +9584,7 @@ function icFrame(dt, F) {
     ex.globalAlpha = 1 - toEar; icBlit(ex, IC.imgR, R.frames, rk, rx, ry, rn < 50 ? [6, 8, 5, 0.38 * (1 - toEar)] : null, null, rn >= 44 ? 0.8 : 1, earX, earY);
     ex.globalAlpha = toEar; icBlit(ex, IC.imgR, R.frames, '90', rx, ry, null, null, 0.8, earX, earY);
     ex.globalAlpha = 1;
-  } else if (eDirty && rk !== 'p') icBlit(ex, IC.imgR, R.frames, rk, rx, ry, rn < 50 ? [6, 8, 5, 0.38] : null, null, rn >= 44 ? 0.8 : 1, earX, earY);
+  } else if (eDirty && rk !== 'p') icBlit(ex, IC.imgR, R.frames, rk, rx, ry, rn < 50 ? [6, 8, 5, 0.38] : null, null, rn >= 44 ? 1 - 0.2 * earK : 1, earX, earY);   // (the at-ear size eased in over the lift: no jump off 43)
   if (rn >= 19 && rn <= 43) glow = 0.5;                                // the call on its screen, facing him
   if (rn >= 50) glow = 0;
   if (eDirty && reach >= 0) icBlit(ex, IC.imgR, R.frames, R.frames.h17 ? 'h17' : '17', rx, ry + reach, [6, 8, 5, 0.38]);   // his arm, coming up into the shot
@@ -11457,6 +11462,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
    * if the pointer moved six pixels on the way — right for a shovel, and
    * for a trigger it is a gun that goes off when you let go of it. */
   if (e.button === 0 && started && !frozen() && magHeld()) { magTrigger = true; magFire(); return; }
+  if (e.button === 0 && started && !frozen() && hookHeld() && HK.st !== 'idle' && hookRecall()) return;   // Skrim's hook out on its chain: the click hauls it back
   /* AND RIGHT CLICK IS THE SIGHTS. It is the guard on everything else, and
    * nothing about a revolver parries a claw. */
   if (e.button === 2 && started && !frozen() && magHeld()) { magAiming = true; return; }
@@ -17503,6 +17509,7 @@ const HOOK_SCALE = 1.3, HOOK_GRIP_Z = 0.065;      // his size ×1.3 in your fist
 /* (THROWN EVERY TIME, SLOW HOME — 2026-11-19, the owner: "make it able to be thrown every time but it takes a little to come
  * back to you with the hook": no wait after it is home (`HOOK_CD` 0, was 6 s); what it costs is the trip back — it lies where
  * it landed `HOOK_LIE` s, then is hauled in gathering to `HOOK_BACK` 12 m/s (was 30, at once): ~1.5 s home from 14 m) */
+const HOOK_RECALL = 30;                       // (m/s: hauled back by a click, `hookRecall`)
 const HOOK_RANGE = [6, 14], HOOK_SPEED = 36, HOOK_BACK = 12, HOOK_LIE = 0.3, HOOK_CD = 0, HOOK_DMG = 1.5, HOOK_BLEED = 1.35, HOOK_STAM = 0.18, HOOK_STRING = 4;
 /* HELD AS THE OWNER CHOSE (2026-11-19, "the point of the hook should face the enemy while holding the hook", then, of the
  * contact sheet: "the top left shot of this should be how the hook should be held"): upright in the fist, a question mark —
@@ -17642,6 +17649,10 @@ function hookThrow(charge) {
     for (const pp of physProps) { if (!pp.onImpact || pp.dead || pp.held || !pp.mesh.parent) continue; const x = digRay.intersectObject(pp.mesh, true)[0]; if (x && (!best || x.distance < best.t)) best = { kind: 'prop', t: x.distance, point: x.point.clone() }; }
     if (best) HK.to = best;
   }
+  /* AND IT STOPS ON THE WALL (2026-11-20, the owner: "SKRIMS HOOK SHOULD COLLIDE WITH WALLS TOO AND COME BACK FROM THE POINT IT
+   * HITS"): the trace above knows the walls only of the rooms with a wall index — the temple's pillars, the whale, the church
+   * and the rest it flew through. `hookWallHit` asks those too; the iron stops there and comes home from it. */
+  { const lim = HK.to ? HK.to.t : D, wh = hookWallHit(camera.position, HK.aim, lim); if (wh) HK.to = wh; }
   /* AND ON HIM WHERE IT STRUCK, NOT IN HIS MIDDLE (2026-11-19, "make the connection of the hook and hit visibley connect
    * better"): the round's point is on his body's AXIS — the hook sat hidden inside him. It goes on his skin on the side it
    * came from (his body's radius out toward you, a hand of it sunk in), kept in HIS frame so it stays there as he turns and
@@ -17659,6 +17670,28 @@ function hookThrow(charge) {
   if (inCombat()) stamina = Math.max(0, stamina - HOOK_STAM);
   playSample('katSwing', 0.5, 0.06, 0.82);
   return true;
+}
+/* THE ROOM'S OWN STONE down a line from `O` along `dir`, nearer than `lim`: the desert temple off its solid grid (a cell
+ * standing over the floor by more than a step — a pillar, a wall; not the floor, where the iron simply lands), and every
+ * other room without a wall index off its own drawn model (`dropTargets`, once, as the throw leaves). Null if clear. */
+function hookWallHit(O, dir, lim) {
+  if (inTemple && tmpG && tmpG.cell) {
+    for (let t = 0.3; t < lim; t += 0.2) {
+      const x = O.x + dir.x * t, y = O.y + dir.y * t, z = O.z + dir.z * t, lx = x - TMP_X, lz = z - TMP_Z;
+      const top = tmpCellTop(lx, lz);
+      if (top > y - TMP_Y && top > tmpFloorAt(lx, lz) + 0.6) return { kind: 'solid', t, point: new THREE.Vector3(x, y, z), hit: null, surface: 'rock' };
+    }
+    return null;
+  }
+  if (!inRoom() || inKeep || inTavern || inCat || inThrone || inDun || inBunker) return null;   // (those have their walls in the trace)
+  digRay.set(O, dir); digRay.far = lim;
+  let best = null;
+  for (const o of dropTargets()) {
+    if (!o || !o.visible) continue;
+    const h = digRay.intersectObject(o, true).find((x) => x.object.visible && x.object.name !== 'hitProxy' && !x.object.isPoints && !x.object.isSprite && !(x.object.material && x.object.material.transparent && x.object.material.opacity < 0.5));
+    if (h && (!best || h.distance < best.distance)) best = h;
+  }
+  return best ? { kind: 'solid', t: best.distance, point: best.point.clone(), hit: best, surface: 'rock' } : null;
 }
 // the whip is over: it leaves the fist at the bottom of it
 function hookLaunch() {
@@ -17696,7 +17729,7 @@ function hookBite(h) {
   if (h.kind === 'gull') { isleBirdPoof(h.B, 30); return false; }
   if (h.kind === 'hglass') { elvBreakPane(h.P, camera.position); return false; }
   if (h.kind === 'solid') {
-    stampScar(h.hit, h.surface); sfxPropHit(h.surface || 'rock', 7); sfxChainClang(false, 0.55); hookImpact(HK.p.x, HK.p.z, 0.7, false);
+    if (h.hit && h.hit.face) stampScar(h.hit, h.surface); sfxPropHit(h.surface || 'rock', 7); sfxChainClang(false, 0.55); hookImpact(HK.p.x, HK.p.z, 0.7, false);
     spawnPuffs(h.point.x, h.point.z, 3, -HK.aim.x, -HK.aim.z, h.point.y, 0x9aa3ae);
     return false;
   }
@@ -17711,16 +17744,21 @@ function hookBite(h) {
   if (!u.kind) { hurtCrab(u, 4, P); return false; }
   if (u.kind.gunBlock && gunBlocks(u)) { umbraDeflect(u, HK.p.clone()); return false; }
   if (u.kind.skrim) skrimShot(u, HK.aim);
+  // (the king run down on you, or turning round to: the hook stops him in it and he is hauled — `kingBackToFight`)
+  if (u.kind.kingBody && (KING.mode === 'hunt' || KING.mode === 'turn')) kingBackToFight(u, false);
   u.st.mine = true;
   const died = hurtMutant(u, HOOK_DMG, P);
   if (died || !u.st.alive) return false;
   if (!u.kind.stone) bleedBuild(u, 0.4, 0.6);                   // a hook in the meat: a cut's bleed (`hurtMutant`, held) and more, short of a burst on its own
   hitstop = Math.max(hitstop, 0.06); addTrauma(0.18);
-  // dragged in: not the great things (they keep their feet and tear it out), not one held still by the artifact
-  const pull = !u.kind.bossDeath && (u.kind.h || 1.8) < 3.4 && !(u.st.immob > 0) && !((u.st.down || 0) > 0) && u.catDown === undefined;
+  /* dragged in: not the great things (they keep their feet and tear it out), not one held still by the artifact or the stone.
+   * (THE BOSSES TOO — 2026-11-20, the owner: "MAKE THE PROJECTILE HOOK THE ENEMY AND BRING THEM CLOSER THAT ISNT WORKING": it
+   * refused anything with `bossDeath`, and every knight-built fighter has it — the king, the dark knight, the paladin, the
+   * samurai — so the iron went in and nothing came. A boss is hauled the same, and reels half as long at the end of it.) */
+  const pull = (u.kind.h || 1.8) < 3.4 && !u.kind.stone && !(u.st.immob > 0) && !((u.st.down || 0) > 0) && u.catDown === undefined && !u.st.puppet;
   if (!pull) return false;
   _hkD.set(camera.position.x - u.g.position.x, 0, camera.position.z - u.g.position.z).normalize();
-  sgStagger(u, _hkD.clone().negate(), 1.4);      // off his feet toward you, out of whatever he was swinging
+  sgStagger(u, _hkD.clone().negate(), u.kind.bossDeath ? 0.8 : 1.4);      // off his feet toward you, out of whatever he was swinging
   return true;
 }
 function hookTick(dt) {
@@ -17760,14 +17798,14 @@ function hookTick(dt) {
         if ((HK.dragT -= dt) <= 0) { HK.dragT = 0.24; sfxChainDrag(u.g.position.x, u.g.position.z, 0.26, 0.8); }
       } else if (live) {
         u.st.flinchPush = null;
-        sgStagger(u, _hkD.clone().negate(), 1.3);   // and he lands reeling, in reach of your cut
+        sgStagger(u, _hkD.clone().negate(), u.kind.bossDeath ? 0.6 : 1.3);   // and he lands reeling, in reach of your cut
         sprayBlood(HK.p.x, HK.p.y, HK.p.z, _hkD.x, _hkD.z, 3, 1.0);
         playSample('fleshHit', 0.8, 0.05, 0.9);
         HK.st = 'back'; HK.t = 0; HK.slack = 0.12;
       }
     }
   } else if (HK.st === 'back') {
-    _hkV.copy(HK.hand).sub(HK.p); const d = _hkV.length(), sp = HK.t < HOOK_LIE ? 0 : Math.min(HOOK_BACK, 3 + (HK.t - HOOK_LIE) * 18);
+    _hkV.copy(HK.hand).sub(HK.p); const d = _hkV.length(), sp = HK.recall ? Math.min(HOOK_RECALL, 10 + (HK.t - HOOK_LIE) * 60) : HK.t < HOOK_LIE ? 0 : Math.min(HOOK_BACK, 3 + (HK.t - HOOK_LIE) * 18);
     HK.slack = Math.max(0.02, HK.slack - dt * 0.5);
     if (live) { if (d <= sp * dt + 0.25) { hookHome(false); return; } HK.p.addScaledVector(_hkV, sp * dt / d); }
   }
@@ -17815,8 +17853,21 @@ function hookWorldStrike() {
   if (hit) hookImpact(HK.p.x, HK.p.z, 0.8, false);
   return hit;
 }
+/* A CLICK WHILE IT IS OUT HAULS IT BACK (2026-11-20, the owner: "MAKE CLICKING AGAIN WHILE LAUNCHED PULL THE HOOK BACK"): from
+ * wherever it is — in flight, on a wall, in a body (which it lets go) — straight home at once, quicker than it comes back
+ * on its own. Not out of the fist yet (the whip): it is simply kept. */
+function hookRecall() {
+  if (!hookHeld() || HK.st === 'idle') return false;
+  if (HK.st === 'whip') { HK.recallAt = performance.now(); hookHome(true); return true; }
+  if (HK.st === 'back' && HK.recall) return true;
+  if (HK.st === 'bite' && HK.u) HK.u.st.flinchPush = null;
+  HK.st = 'back'; HK.t = HOOK_LIE; HK.recall = true; HK.recallAt = performance.now(); HK.u = null; HK.to = null; HK.slack = 0.3;
+  sfxChainRattle(camera.position.x, camera.position.z, 0.5, 1.0); sfxChainDrag(HK.p.x, HK.p.z, 0.35, 1.2); vmImpulse(0.35);
+  return true;
+}
 // home: in the fist again, and the wait begins
 function hookHome(quiet) {
+  HK.recall = false;
   HK.st = 'idle'; HK.u = null; HK.to = null; HK.cd = HOOK_CD;
   if (HK.armT >= 0) HK.armT = Math.max(HK.armT, 10);       // (the arm comes home from wherever it was: `hookArmPose`)
   if (HK.links) HK.links.visible = false; if (HK.fly) HK.fly.visible = false;
@@ -19084,7 +19135,7 @@ let maceChainSwing = false;              // the swing under way is the mace's mo
 function startDig(power = 0, fromPose = null, chained = false) {
   if (inCat) catNoiseAt(camera.position.x, camera.position.z, 15 + power * 6);   // the thing in the catacombs hears a swing
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
-  if (hookHeld() && HK.st !== 'idle') return;           // (out on its chain)
+  if (hookHeld() && (HK.st !== 'idle' || performance.now() - (HK.recallAt || 0) < 450)) return;           // (out on its chain; or just hauled back by the click whose release this is)
   if (!chained) maceChainSwing = false;
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
@@ -44857,7 +44908,7 @@ function updateMutantUnit(u, dt) {
     if (A.lunge > 0 && t >= A.wind - air - lead && t < A.wind + tail && dist > stop) {
       u.dir.set(dx / dist, 0, dz / dist);
       let sp = A.lunge / (air + lead + tail);
-      if (A.air != null && t < A.wind) sp = (dist - stop) / Math.max(0.06, A.wind - t);
+      if (A.air != null && t < A.wind) sp = (dist - stop) / Math.max(0.06, A.wind - t) + (u.kind.kingBody ? u.st.recede || 0 : 0);   // (the king's leap leads a man running from him: `kingDrive`)
       /* and with a lead it CLOSES THE GAP THAT IS THERE: a fixed speed from
        * wherever the swing was thrown left him half a metre short whenever
        * your last blow's knockback had put you back a step. Up to the
@@ -44897,7 +44948,7 @@ function updateMutantUnit(u, dt) {
      * and the stop are distances, so they still close what is there. */
     if (u.kind.smoothMove && dt > 0) {
       const vx = (p.x - _mvx) / dt, vz = (p.z - _mvz) / dt, k = 1 - Math.exp(-dt * 14);
-      if (!u.mvS || t <= dt * 1.5) u.mvS = { x: 0, z: 0 };       // each swing starts from standing
+      if (!u.mvS || (t <= dt * 1.5 && !(u.kind.kingBody && A.air != null))) u.mvS = { x: 0, z: 0 };       // each swing starts from standing (but the king's leap out of a run carries the run: `kingHuntStep`)
       u.mvS.x += (vx - u.mvS.x) * k; u.mvS.z += (vz - u.mvS.z) * k;
       p.x = _mvx + u.mvS.x * dt; p.z = _mvz + u.mvS.z * dt;
     }
@@ -44977,8 +45028,11 @@ function updateMutantUnit(u, dt) {
        * the state lasts. It is the same trap `swingOf` was written for,
        * one line further down. */
       u.st.chainAt = (A.chain && u.atk[A.chain] && u.st.chainN < u.kind.chainMax
-                      && Math.random() < A.chainP && dist < A.reach + 2.2)
+                      && Math.random() < A.chainP && dist < (u.kind.kingBody ? u.atk[A.chain].reach + 0.6 : A.reach + 2.2))
         ? A.wind + A.strike + A.recover * 0.42 : -1;
+      /* (the king's strings are several blows in one take — the bicycle's second kick at 0.70 s — and the chain at the
+       * first's recovery cut the take before its second blow came: measured, `kingstudy.js`, 4 of 4 second kicks never thrown) */
+      if (u.st.chainAt > 0 && u.kind.kingBody && A.moreT && A.moreT.length) u.st.chainAt = Math.max(u.st.chainAt, Math.max(...A.moreT) + A.strike + 0.1);
     }
     if (u.st.chainAt > 0 && t >= u.st.chainAt && u.atk[A.chain]) {
       u.st.swings++;
@@ -124000,7 +124054,7 @@ window.__bw = {
   get crouching() { return crouching; }, set crouching(v) { crouching = v; },
   set airborne(v) { onGround = !v; vy = 0; },
   get ucVerb() { return ucVerbGain ? ucVerbGain.gain.value : null; },   // in the ORIGINAL literal: Object.assign copies a getter's value     // the harness dropping the player from a height: a fall off a ledge is never a landing here, only a jump is
-  startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateFace() { return gateFace; }, pipeReachS: () => pipeReach, pipeArmS: () => pipeArm, pipeHandS: () => pipeHand, phS: () => PRH, hookItem, hookVM, hookModel, HK, HD, skHook, hookThrow, hookRawS: () => hookRaw, crates, moundsS: () => mounds, skHookDrop, setHookLift: (v) => { HOOK_HEAVY_LIFT = v; }, runWarm: (pre) => { let n = 0; for (let i = warmSteps.length - 1; i >= 0; i--) if (warmSteps[i][0].startsWith(pre)) { const st = warmSteps.splice(i, 1)[0]; st[1](); n++; } return n; }, get screwdriverTaken() { return screwdriverTaken; },
+  startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateFace() { return gateFace; }, pipeReachS: () => pipeReach, pipeArmS: () => pipeArm, pipeHandS: () => pipeHand, phS: () => PRH, hookItem, hookVM, hookModel, HK, HD, skHook, hookThrow, hookRecallS: () => hookRecall(), hookRawS: () => hookRaw, crates, moundsS: () => mounds, skHookDrop, setHookLift: (v) => { HOOK_HEAVY_LIFT = v; }, runWarm: (pre) => { let n = 0; for (let i = warmSteps.length - 1; i >= 0; i--) if (warmSteps[i][0].startsWith(pre)) { const st = warmSteps.splice(i, 1)[0]; st[1](); n++; } return n; }, get screwdriverTaken() { return screwdriverTaken; },
   get ringProp() { return ringProp; },
   armRig, shovelItem, startWind, releaseWind,
   crate, ringItem, ringWorld, rings, breakCrate, wearRing,
@@ -125446,13 +125500,24 @@ MUT_KINDS.king = Object.assign({}, KN_BASE, {
    * feet, nearly every opening taken, strings four deep and six once he is angry, a poise that breaks late and mends fast, a
    * parry window under the pack's. What keeps him fair is the same as ever: every blow is the animator's own take at its own
    * speed, the tell is the wind-up you can see, and each contact can be guarded or parried on its beat. */
-  h: 2.6, hp: 180, dmg: 1, hitR: 0.85, body: 0.5, lungeStop: 1.2, landSlop: 0.45, limbR: 0.40, foeLimbR: 0.62, lungeLead: 0.18, closeBody: true, stopPick: 0.6,
+  h: 2.6, hp: 180, dmg: 1, hitR: 0.85, body: 0.5, lungeStop: 1.2, landSlop: 0.45, limbR: 0.40, foeLimbR: 0.62, closeBody: true, stopPick: 0.6,
+  /* (2026-11-20, round 3, the owner: "MAKE ALL HIS HITS ACTUALLY CONNECT". Studied frame by frame, `tools/kingstudy.js`: from
+   * his stand-off every blow went through your face — kick 0.10 m, bicycle 0.06-0.14, uppercut 0.14-0.28 — and every miss was
+   * thrown from 1.8-2.1 m with the closing starting 0.18 s before the contact at 2.6 m/s, so he arrived half a metre short.
+   * He closes through the last half of the wind-up now, as fast as it takes, and a blow that passes your face lands: `kingLands`) */
+  comboGrace: 0.85, noDash: true, lungeLead: 0.55, lungeMax: 7.5, landFn: (u, A, dist, was) => kingLands(u, A),
+  // (and he follows you round to the last instant: his aim was set at four fifths of the wind-up, and a step to the side put
+  // his fist 0.3-0.5 m past your ear — measured, `kingstudy.js &walk=1`)
+  trackT: 0.05, trackRate: 10,
   speedK: 1.7, aggr: 5.4, press: 1.2, chainMax: 5, opening: 0.18,
-  circle: 0.05, step: 0.05, feint: 0.08, sizeUp: 0.03, restless: 0.35, regroup: 0.10, regroupT: [0.5, 0.9], sideKeep: 0.45,
+  circle: 0.05, step: 0.05, feint: 0, sizeUp: 0.03, restless: 0.35, regroup: 0.10, regroupT: [0.5, 0.9], sideKeep: 0.45,
   velGait: true, gaitBands: true, gaitMax: 1.6, smoothMove: true, noSkate: true, lungeMax: 2.6, stepBack: 0,
   gaitToes: ['CC_Base_L_ToeBase_08', 'CC_Base_R_ToeBase_023'],
   turnMax: 3.8, yawK: 0.8, aimK: 0.5, aimFront: 0.32, aimDrop: 0.05, hitFront: 0.3, hitOnScreen: true, fade: 0.3,
-  poise: 30, poiseBack: 3.4, poiseWait: 0.7, parryK: 0.85, recoilK: 0.4, stunK: 0.6, blockCost: 0.8, block: 0.28,
+  poise: 30, poiseBack: 3.4, poiseWait: 0.7, parryK: 0.85, recoilK: 0.4, stunK: 0.6, block: 0.28,
+  /* (a block costs a quarter of your bar and a little: now every blow of his arrives, the old 0.8 — two thirds of the bar for
+   * his kick — broke your guard on the second blow of every string, and the third went through. Measured, `kingduel.js &guard=1`) */
+  blockCost: 0.55,
   fidgetK: 0.02, fidgetGap: 6.0, gapRate: 1.0,
   knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 5, knockLapse: 7, knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
   // limbs: 0 his right arm, 1 his left, 2 his right leg, 3 his left (the leg's chain runs to the toe, the knee in it)
@@ -125472,7 +125537,7 @@ MUT_KINDS.king = Object.assign({}, KN_BASE, {
   voice: { f: 0.48, growl: 1.7, rasp: 1.3, throat: 'bellow' },
   use: {},
   // AT HALF OF HIM HE STOPS HOLDING BACK: quicker feet, quicker hands, longer strings (`kingRage` is the light of it)
-  rage: { aggr: 6.8, speedK: 2.0, press: 1.3, chainMax: 7, windK: 0.88, poiseBack: 4.2, circle: 0.02, feint: 0.04, opening: 0.1 },
+  rage: { aggr: 6.8, speedK: 2.0, press: 1.3, chainMax: 7, windK: 0.88, poiseBack: 4.2, circle: 0.02, feint: 0, opening: 0.1 },
   onRage: (u) => kingRage(u), rageClip: 'kIdle', rageDur: 0.5,
 });
 /* HIS BLOWS, each its own take, with the contacts measured off it (`tools/ntar_moves.py -- king` logs every local maximum of
@@ -125487,22 +125552,31 @@ MUT_KINDS.king = Object.assign({}, KN_BASE, {
  * (its first contact is the tell). */
 {
   const P = (clip, hit, o) => Object.assign({ clip, hit, rate: 1.0, fluid: true, strike: 0.2, reach: 3.0, lunge: 0.5, stop: 2.2, limbs: [0, 1], dmg: 1, guardK: 1.5, chain: null }, o || {});
-  MUT_ATTACKS.kgUpper = P('kUpper', 0.466, { rate: 1.12, dmg: 2, guardK: 1.9, chain: 'kgKick', chainP: 0.45 });   // (its jab at 0.137 is a feint: thrown before he has stepped in, it never reaches you — not a contact)
+  MUT_ATTACKS.kgUpper = P('kUpper', 0.466, { rate: 1.12, dmg: 2, guardK: 1.3, chain: 'kgKick', chainP: 0.62 });   // (its jab at 0.137 is a feint: thrown before he has stepped in, it never reaches you — not a contact)
   MUT_ATTACKS.kgKnee = P('kKnee', 0.266, { more: [0.405, 0.481], rate: 1.05, limbs: [0, 1, 2], reach: 5.6, minDist: 3.0, hold: true, chain: 'kgUpper', chainP: 0.30 });
-  MUT_ATTACKS.kgKick = P('kKick', 0.625, { natHold: 0.10, cockF: 0.7, rate: 1.08, limbs: [2, 3], dmg: 2, guardK: 1.8, reach: 4.8, chain: 'kgBike', chainP: 0.40 });
-  MUT_ATTACKS.kgBike = P('kBike', 0.44, { more: [0.94], rate: 0.72, limbs: [2, 3], chain: 'kgUpper', chainP: 0.40 });
-  MUT_ATTACKS.kgAssn = P('kAssn', 0.277, { more: [0.649], rate: 1.12, limbs: [0, 2], dmg: 2, guardK: 2.0 });
+  MUT_ATTACKS.kgKick = P('kKick', 0.625, { natHold: 0.10, cockF: 0.7, rate: 1.08, limbs: [2, 3], dmg: 2, guardK: 1.25, reach: 4.8, chain: 'kgBike', chainP: 0.6 });
+  /* THE BICYCLE, FLOWN (2026-11-20, the owner: "he does it too fast he should fly and kick a few times"). The take is one
+   * cycle of the move made to loop — 17 frames, a kick a foot — and played once it was two kicks in 0.7 s. `kBikeAir`
+   * (`tools/king_bike_loop.py`) is the cycle three times: six kicks, right, left, right, left, right, left, at 0.7 of its
+   * speed — 2.3 s off the floor, a kick every 0.38 s, him lifted and driving at you through it (`kingAirBike`). Each kick
+   * is its own contact; a quarter of the guard each would be one and a half bars, so each costs a little (`guardK`), and
+   * the health is the string's, not six blows' (`comboGrace`: the kicks between still land — the flash, the knock). */
+  const BIKE = { more: [15, 23, 31, 39, 47].map((i) => i / 48), rate: 0.7, limbs: [2, 3], guardK: 0.5, airBike: true };
+  MUT_ATTACKS.kgBike = P('kBikeAir', 7 / 48, Object.assign({}, BIKE, { chain: 'kgUpper', chainP: 0.55 }));
+  // (the bicycle thrown out of a flat-out run — `kingHuntStep`: the gap crossed in the air, never drawn in the ordinary way)
+  MUT_ATTACKS.kgRun = P('kBikeAir', 7 / 48, Object.assign({}, BIKE, { hold: true, air: 0.33, lunge: 3, minDist: 2.0, reach: 3.4, chain: 'kgUpper', chainP: 0.5 }));
+  MUT_ATTACKS.kgAssn = P('kAssn', 0.277, { more: [0.649], rate: 1.12, limbs: [0, 2], dmg: 2, guardK: 1.4, chain: 'kgKick', chainP: 0.5 });
   /* (each closes to its stand-off through its wind-up, `lunge` with `lungeLead`, eased by `smoothMove` — not the dark knight's
    * recorded step, `dkRootMotion`, which now asks a blow for `rmStop` tables these do not have: with `rm` set and no lunge he
    * stood where the wind-up began and the blow came down short) */
   for (const k of ['kgKick', 'kgAssn', 'kgUpper', 'kgBike']) MUT_ATTACKS[k].lunge = 1.6;
   // where he stands for each (his stand-off from you as the blow lands)
-  const STOP = { kgUpper: 2.0, kgKnee: 2.2, kgKick: 2.3, kgBike: 2.0, kgAssn: 2.0 };
+  const STOP = { kgUpper: 2.0, kgKnee: 2.2, kgKick: 2.3, kgBike: 2.0, kgAssn: 2.0, kgRun: 2.0 };
   for (const k in STOP) { const A = MUT_ATTACKS[k]; A.stop = STOP[k]; A.reach = Math.max(A.hold ? A.reach : 0, STOP[k] + 0.6); }
   for (const k in STOP) { MUT_ATTACKS[k].w = 0.1; MUT_KINDS.king.alias[k] = MUT_ATTACKS[k].clip; }
   // (the stand-offs above are first guesses: `kingMeasureBlows` sets each from where the blow's own limb reaches, once his clips are in)
   /* (no knee combo: a flying knee whose blows come down 2.5 m up never touches you whatever he does — measured, `kingreach.js`) */
-  MUT_KINDS.king.use = { kgUpper: 0.30, kgKick: 0.26, kgBike: 0.24, kgAssn: 0.20 };
+  MUT_KINDS.king.use = { kgUpper: 0.30, kgKick: 0.26, kgBike: 0.24, kgAssn: 0.20, kgRun: 0 };
 }
 
 const KING = { u: null, mode: 'wait', mt: 0, yaw: 0, spot: new THREE.Vector3(), cd: 6, climbCd: 18, climbs: 0, look: false, dead: false, placed: false, landing: false, thud: false };
@@ -125520,10 +125594,14 @@ const kFloor = (x, z) => TMP_Y + tmpFloorAt(x - TMP_X, z - TMP_Z);    // the roo
 const kingSmooth = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
 function kingFace(u, want, dt, rate) { let dy = want - KING.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); KING.yaw += dy * Math.min(1, dt * rate); u.g.rotation.set(0, KING.yaw, 0); }
 const kingToYou = (u) => Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
-// held to the rotunda: inside the pillars, on the floor
+/* where he may go: after you, wherever you go — out between the pillars and over the sand — kept out of the stone the way you
+ * are (`tmpPushOut`), on the floor. (He was held inside 20.6 m while you could walk 420: with your back to a pillar or a step
+ * outside the ring every blow came down short — measured, `kingstudy.js`, 2.2 m off you through five swings in a row.) */
+const KING_ROAM_R = TMP_WALK_R;      // (the owner: "he should get you anywhere in the desert")
 function kingClampUnit(u, p) {
-  const dx = p.x - TMP_X, dz = p.z - TMP_Z, r = Math.hypot(dx, dz), R = KING_PILLARS.face - 2.4;
+  const dx = p.x - TMP_X, dz = p.z - TMP_Z, r = Math.hypot(dx, dz), R = KING_ROAM_R;
   if (r > R) { p.x = TMP_X + dx / r * R; p.z = TMP_Z + dz / r * R; }
+  tmpPushOut(p, p.y - TMP_Y);
   if (!(u.st.down > 0)) p.y = kFloor(p.x, p.z);
 }
 // the lowest of his feet under his group's origin at clip time t (sampled; every action's weight and time put back)
@@ -125670,15 +125748,57 @@ function kingMeasureBlows(u) {
     for (const li of A.limbs || [0, 1]) for (const bn of CH[li] || []) { if (!bn) continue; bn.getWorldPosition(v).applyMatrix4(inv); const r = Math.hypot(v.x, v.z); if (!best || r > best.r) best = { r, x: v.x, z: v.z, y: v.y }; }
     if (!best) continue;
     A.faceOff = -Math.atan2(best.x, Math.max(0.05, best.z));
-    A.stop = Math.max(0.95, best.r + 0.42); A.reach = Math.max(A.hold ? A.reach : 0, A.stop + 0.7);
+    A.stop = Math.max(0.95, best.r + 0.42); A.reach = Math.max(A.hold ? A.reach : 0, A.stop + 0.45);   // (he throws it from where his closing can still make the stand-off: the owner, "he should know when hes close to hit")
     out.push(k + ' reach ' + best.r.toFixed(2) + ' h ' + best.y.toFixed(2) + ' turn ' + (A.faceOff * 57.3).toFixed(0) + ' stop ' + A.stop.toFixed(2));
   }
   for (const [x, [w, tt, en]] of ws) { x.weight = w; x.time = tt; x.enabled = en; }
   u.mixer.update(0);
   u.maxReach = Math.max(...Object.values(u.atk).filter((a) => !a.minDist).map((a) => a.reach));
-  u.ring = Object.values(u.atk).reduce((s, a) => s + a.reach, 0) / Math.max(1, Object.keys(u.atk).length);
+  { const near = Object.values(u.atk).filter((a) => !a.minDist); u.ring = near.reduce((s, a) => s + a.reach, 0) / Math.max(1, near.length); }
   KING.blows = out.join(' | ');
   return true;
+}
+/* HIS BLOW LANDS WHERE YOU SEE IT LAND (`kind.landFn`). The game's own test first (`blowLands`: the limb through your body,
+ * in the picture); and besides it, the striking limb — every segment of the arm or leg that throws it — passing within
+ * `KING_FACE_R` of the point just ahead of your eye, in front of the lens and on screen: a fist or a boot in your face is a
+ * blow, whatever the body under the camera says. Measured (`kingstudy.js`): his landed blows pass 0.06-0.28 m off that point,
+ * his misses 0.6 m and more — the test sits in the gap. */
+const KING_FACE_R = 0.38, _klA = new THREE.Vector3(), _klB = new THREE.Vector3(), _klP = new THREE.Vector3(), _klF = new THREE.Vector3(), _klE = new THREE.Vector3();
+function kingLands(u, A) {
+  if (blowLands(u)) return true;
+  if (u.st.foe || !blowHeightOK(u)) return false;
+  camera.getWorldDirection(_klF);
+  _klE.copy(camera.position).addScaledVector(_klF, 0.25);
+  const all = mutLimbs(u), chains = A && A.limbs && A.limbs.length ? A.limbs.map((i) => all[i]).filter(Boolean) : all;
+  for (const L of chains) {
+    const pts = [L.arm, L.fore, L.hand, L.tip].filter(Boolean);
+    for (let i = 1; i < pts.length; i++) {
+      drawnPos(u, pts[i - 1], _klA); drawnPos(u, pts[i], _klB);
+      for (let k = 0; k <= 6; k++) {
+        _klP.lerpVectors(_klA, _klB, k / 6);
+        if (_klP.distanceTo(_klE) > KING_FACE_R) continue;
+        const ahead = (_klP.x - camera.position.x) * _klF.x + (_klP.y - camera.position.y) * _klF.y + (_klP.z - camera.position.z) * _klF.z;
+        if (ahead > 0.06 && onScreenPt(_klP)) { (u.hitPt || (u.hitPt = new THREE.Vector3())).copy(_klP); u.hitAt = performance.now(); return true; }
+      }
+    }
+  }
+  return false;
+}
+/* OFF THE FLOOR THROUGH THE BICYCLE (`A.airBike`): lifted into it over its first fifth of a second and down out of it at its
+ * end (his feet never touch in the take — he kicks lying back on the air), and driving on at you between the kicks, so a
+ * step back does not take you out of a string that is meant to run you over. The lift is the model's, inside his group. */
+const KING_BIKE_LIFT = 0.3;
+function kingAirBike(u, dt) {
+  const A = u.st.atk >= 0 && u.atk ? u.atk[u.st.swing] : null;
+  if (!u.model) return;
+  if (!A || !A.airBike) { u.model.position.y += (0 - u.model.position.y) * Math.min(1, dt * 12); return; }
+  const t = u.st.atk, T = A.wind + A.strike + A.recover;
+  u.model.position.y = KING_BIKE_LIFT * kingSmooth(t / 0.22) * (1 - kingSmooth((t - (T - 0.3)) / 0.3));
+  if (t > A.wind && t < T - 0.3) {
+    const p = u.g.position, dx = camera.position.x - p.x, dz = camera.position.z - p.z, d = Math.hypot(dx, dz) || 1;
+    const go = Math.min(4.5, Math.max(0, d - A.stop) * 5) * dt;
+    if (go > 0) { p.x += dx / d * go; p.z += dz / d * go; kingClampUnit(u, p); }
+  }
 }
 function kingDrive(u, dt) {
   if (!u.natDone) u.natDone = naturalSwings(u);
@@ -125687,11 +125807,19 @@ function kingDrive(u, dt) {
   if (!(inTemple && tmpReady)) { u.g.visible = false; return true; }
   const M = KING.mode;
   KING.mt += dt;
+  // how fast you are getting away from him (m/s along the line from him to you, eased): his leap leads you by it
+  { const c = camera.position, p = u.g.position, dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz) || 1;
+    if (KING.lastC && dt > 0) { const v = ((c.x - KING.lastC.x) * dx + (c.z - KING.lastC.z) * dz) / d / dt; u.st.recede = (u.st.recede || 0) + (Math.max(0, Math.min(9, v)) - (u.st.recede || 0)) * Math.min(1, dt * 8); }
+    (KING.lastC || (KING.lastC = new THREE.Vector3())).copy(c); }
   if (M === 'fight') {
     u.st.puppet = false; u.st.awake = true; u.g.visible = true;     // (awake whatever a save's calm says: `calmChasers`)
     dkRootMotion(u); kingClampUnit(u, u.g.position);
     // turned into the blow he is throwing, so its fist or foot comes at you down the line (`kingMeasureBlows`; after the step, which zeroes it)
-    { const A = u.st.atk >= 0 && u.atk ? u.atk[u.st.swing] : null; u.faceOff = A && A.faceOff ? A.faceOff : 0; }
+    { const A = u.st.atk >= 0 && u.atk ? u.atk[u.st.swing] : null; u.faceOff = A && A.faceOff ? A.faceOff : 0;
+      /* (a blow you have run out of before it comes is let go, and he comes after you again: measured, sprinting away, his
+       * uppercut came down 6.7 m behind you — `kingstudy.js &flee=5.71`) */
+      if (A && u.st.atk < A.wind - 0.12) { const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z); if (d > A.reach + 1.6 && kingHuntStart(u)) return true; } }
+    kingAirBike(u, dt);
     KING.yaw = u.g.rotation.y;
     return kingChoose(u, dt);
   }
@@ -125701,6 +125829,7 @@ function kingDrive(u, dt) {
   if (M === 'ready') { u.g.visible = true; if (!frozen()) kingFace(u, kingToYou(u), dt, 1.2); u.g.position.y = kFloor(u.g.position.x, u.g.position.z); }
   else if (M === 'descend') kingDescendStep(u, dt);
   else if (M === 'flip') kingFlipStep(u, dt);
+  else if (M === 'hunt') kingHuntStep(u, dt);
   else if (M === 'turn') kingTurnStep(u, dt);
   else if (M === 'run') kingRunStep(u, dt);
   else if (M === 'climb') kingClimbStep(u, dt);
@@ -125719,17 +125848,76 @@ function kingChoose(u, dt) {
   const p = u.g.position, c = camera.position, dist = Math.hypot(c.x - p.x, c.z - p.z), frac = st.hp / MUT_KINDS.king.hp;
   // UP A PILLAR AT HALF OF HIM, once, and down on you from it (the owner, 2026-11-20: "he should do this half health")
   if (KING.climbs === 0 && frac <= 0.5) return kingRunStart(u);
-  // OVER YOUR HEAD, from three and a half to ten metres
+  // OVER YOUR HEAD, from three and a half to eight metres, now and then
   if (KING.cd <= 0) {
-    if (dist > 3.5 && dist < 10 && Math.random() < 0.55 && kingFlipStart(u)) return true;
-    KING.cd = 1.5;
+    if (dist > 3.5 && dist < 8 && Math.random() < 0.4 && kingFlipStart(u)) return true;
+    KING.cd = 2.5;
   }
+  // RUN YOU DOWN: anywhere in the desert, faster than you can sprint (the owner: "he should get you anywhere in the desert")
+  if ((dist > KING_HUNT.from || (dist > 2.2 && kingLineBlocked(u))) && kingHuntStart(u)) return true;   // (and round a pillar that stands between)
   return false;
 }
 function kingTakeOver(u) {
   mutDrop(u);
+  if (u.model) u.model.position.y = 0;          // (down out of the bicycle's lift, if a move of his own cuts it short)
   const st = u.st; st.atk = -1; st.chainAt = -1; st.chained = false; st.chainN = 0; st.side = 0; st.back = 0; st.feint = 0; st.flinchPush = null;
   st.puppet = true;
+}
+
+// ---- THE HUNT: flat out at you (Fast Run) from wherever you have got to, and out of the run straight into a blow
+const KING_HUNT = { from: 4.6, to: 2.1, sp: 7.8 };          // (you sprint at 5.71: `RUN_SPEED`)
+function kingHuntStart(u) {
+  kingTakeOver(u);
+  KING.huntP = null; KING.huntChk = 0;
+  KING.mode = 'hunt'; KING.mt = 0;
+  const a = kingPlay(u, 'kSprint', true), cs = (u.clipSpeed && u.clipSpeed.kSprint) || KING_HUNT.sp;
+  if (a) a.timeScale = THREE.MathUtils.clamp(KING_HUNT.sp / cs, 0.8, 1.5);      // (his feet at the ground's pace)
+  return true;
+}
+/* ROUND THE STONE (2026-11-20): the hunt ran straight at you, and with a pillar between he pressed into it for the run's
+ * whole 25 s — four times over, measured (`tools/kingbot.js`), after his slam put a pillar between you. The way ahead is
+ * felt a stride and a half out on the temple's solid grid; blocked, he bears off to one side (the same side while it is
+ * still blocked, so he goes ROUND rather than dithering) at the first bearing that is clear. */
+function kingSolidAt(x, z, y) { const lx = x - TMP_X, lz = z - TMP_Z; return tmpCellTop(lx, lz) > Math.max(y - TMP_Y, tmpFloorAt(lx, lz)) + 0.6; }
+function kingSteer(u, dx, dz, look, out) {
+  const p = u.g.position, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d, L = Math.min(look, d);
+  const free = (vx, vz) => !kingSolidAt(p.x + vx * L, p.z + vz * L, p.y) && !kingSolidAt(p.x + vx * L * 0.5, p.z + vz * L * 0.5, p.y);
+  if (free(ux, uz)) { KING.avoid = 0; return out.set(ux, 0, uz); }
+  const side = KING.avoid || (Math.random() < 0.5 ? 1 : -1);
+  for (const a of [0.45, 0.8, 1.15, 1.5, 1.9]) for (const sg of [side, -side]) {
+    const c = Math.cos(a * sg), sn = Math.sin(a * sg), vx = ux * c + uz * sn, vz = -ux * sn + uz * c;
+    if (free(vx, vz)) { KING.avoid = sg; return out.set(vx, 0, vz); }
+  }
+  return out.set(ux, 0, uz);
+}
+// is there stone on the straight line from him to you (half-metre steps)
+function kingLineBlocked(u) {
+  const p = u.g.position, c = camera.position, dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz);
+  for (let t = 0.6; t < d - 0.4; t += 0.5) if (kingSolidAt(p.x + dx / d * t, p.z + dz / d * t, p.y)) return true;
+  return false;
+}
+const _kSt = new THREE.Vector3();
+function kingHuntStep(u, dt) {
+  const p = u.g.position, c = camera.position, dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz) || 1;
+  const dir = kingSteer(u, dx, dz, 2.2, _kSt);
+  { let dy = Math.atan2(dir.x, dir.z) - KING.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); KING.yaw += Math.sign(dy) * Math.min(Math.abs(dy) * Math.min(1, dt * 9), 6.5 * dt); u.g.rotation.set(0, KING.yaw, 0); }   // (round to where he runs no faster than a man turns: 25 rad/s measured, a snap)
+  const blocked = d < 30 && kingLineBlocked(u);
+  const s = Math.min(KING_HUNT.sp * Math.min(1, KING.mt / 0.25 + 0.35), blocked ? 99 : Math.max(0, d - KING_HUNT.to + 0.3)) * dt;
+  p.x += dir.x * s; p.z += dir.z * s;
+  u.mvS = { x: dir.x * s / Math.max(dt, 1e-4), z: dir.z * s / Math.max(dt, 1e-4) };   // (his speed, for the leap out of it)
+  kingClampUnit(u, p);
+  if ((u.st.stepT = (u.st.stepT || 0) - dt) <= 0) { u.st.stepT = 0.3; sfxMutStep(d, u.kind.voice); }
+  // (stuck all the same — a corner the feeler cannot see round: back to the fight, which draws again)
+  KING.huntP = KING.huntP || p.clone();
+  if ((KING.huntChk = (KING.huntChk || 0) + dt) > 1.0) { const moved = p.distanceTo(KING.huntP); KING.huntP.copy(p); KING.huntChk = 0; if (moved < 1.5 && d > KING_HUNT.to + 0.5) { KING.avoid = -(KING.avoid || 1); } }
+  if (d <= KING_HUNT.to && !blocked || KING.mt > 12) {
+    // in range: out of the run and into the air at you, the flying bicycle (`kgRun`), the last of the gap crossed in it
+    kingBackToFight(u, false);
+    if (u.atk.kgRun && u.clips.kgRun) {
+      const st = u.st; st.swing = 'kgRun'; st.atk = 0; st.chained = false; st.chainN = 0; st.wait = 0; st.lastSwing = 'kgRun'; st.side = 0; st.sideT = 0; st.sizing = false; st.landed = false;
+      mutToken = u; sfxMutTell(d, u.atk.kgRun.wind, u.kind.voice);
+    }
+  }
 }
 
 // ---- OVER YOUR HEAD (the Front Flip): from where he stands, over you, down 4.5 m behind you, facing away; then round
@@ -125741,7 +125929,7 @@ function kingFlipStart(u) {
   KING.mode = 'flip'; KING.mt = 0; KING.f0 = p.clone(); KING.f1 = new THREE.Vector3(bx, kFloor(bx, bz), bz); KING.fLand = false;
   KING.yaw = Math.atan2(dx, dz); u.g.rotation.set(0, KING.yaw, 0);
   const a = kingPlay(u, 'flip', false); KING.fDur = a ? a.getClip().duration : 1.6;
-  KING.cd = 8 + Math.random() * 5;
+  KING.cd = 13 + Math.random() * 6;      // (8-13 was a third of the fight spent in the air or turning round: `kingstudy.js`)
   playSample('katSwing', 0.7, 0.04, 0.55);
   return true;
 }
@@ -125758,7 +125946,7 @@ function kingTurnStart(u) {
   let dy = kingToYou(u) - KING.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
   if (Math.abs(dy) < 0.5) { kingBackToFight(u); return; }
   const big = Math.abs(dy) > 2.0, name = (dy > 0 ? (big ? 'kTurnL' : 'kTurn90L') : (big ? 'kTurnR' : 'kTurn90R'));
-  const a = kingPlay(u, name, false, 1.35); KING.tDur = a ? a.getClip().duration / 1.35 : 0.8;
+  const a = kingPlay(u, name, false, 1.9); KING.tDur = a ? a.getClip().duration / 1.9 : 0.55;
   KING.mode = 'turn'; KING.mt = 0; KING.y0 = KING.yaw;
 }
 function kingTurnStep(u, dt) {
@@ -125768,9 +125956,11 @@ function kingTurnStep(u, dt) {
   u.g.position.y = kFloor(u.g.position.x, u.g.position.z);
   if (KING.mt >= KING.tDur) kingBackToFight(u);
 }
-function kingBackToFight(u) {
+function kingBackToFight(u, attack = true) {
   kingPlay(u, 'kIdle', true);
-  KING.mode = 'fight'; KING.mt = 0; u.st.puppet = false; u.st.cool = Math.max(u.st.cool || 0, 0.15);
+  KING.mode = 'fight'; KING.mt = 0; u.st.puppet = false; u.st.cool = attack ? 0 : Math.max(u.st.cool || 0, 0.15);
+  // (out of the flip, round and straight into you: the turn is the tell, the blow follows it — not a breather)
+  if (attack) { u.st.forceSwing = Math.random() < 0.5 ? 'kgKick' : 'kgUpper'; u.st.openT = 0; mutToken = u; }
 }
 
 // ---- UP A PILLAR: flat out to the foot of the nearest one, up its face, three seconds on the ring's lip
@@ -125902,10 +126092,12 @@ function kingSlamRecStep(u, dt) {
   const a = u.clips.kSlam;
   u.g.position.y = kFloor(u.g.position.x, u.g.position.z);
   u.st.puppet = false;                                    // (the recovery is an opening: he can be cut in it)
-  if (u.st.recoil > 0 || u.st.stun > 0 || (u.st.down || 0) > 0 || !a || KING.mt >= (a.getClip().duration - KING_SLAM.land) * 0.92) kingBackToFight(u);
+  if (u.st.recoil > 0 || u.st.stun > 0 || (u.st.down || 0) > 0 || !a || KING.mt >= (a.getClip().duration - KING_SLAM.land) * 0.92) kingBackToFight(u, !(u.st.recoil > 0 || u.st.stun > 0 || (u.st.down || 0) > 0));
 }
 // ---- HIS DEATH: the lightning through him, and he comes apart
 function kingDeath(u) {
+  if (u.model) u.model.position.y = 0;
+  lazyBuf(END_SONG);                                 // (the stats' song in hand for the burst, `kingExplode`)
   KING.mode = 'dying'; KING.mt = 0; KING.dead = true; KING.boomed = false;
   u.st.puppet = true;
   kingCut = { t: 0, death: true };                   // (you are held for it: `frozen`)
@@ -125977,6 +126169,9 @@ function kingExplode(u) {
   KFX.flash = 2.4; addTrauma(1); fovKick = Math.max(fovKick, 9); airGust = Math.max(airGust, 1.6);
   playSample('maceHeavy', 1.0, 0.02, 0.45); playSample('smash', 0.8, 0.05, 0.55);
   if (typeof sfxThunder === 'function') { try { sfxThunder(0.0, 0, 1); } catch (e) { /* */ } }
+  // (and the stats' song comes in WITH the light — 2026-11-20, the owner: "have the final boss explosion start the beachwalk
+  // stats music"; fetched as he starts to die, `kingDeath`; `showEnd` finds it already playing)
+  startEndSong();
   setTimeout(() => kingDied(), 1500);              // (a beat of the white first)
 }
 /* THE END IS HIS DEATH (2026-11-19, the owner: "take out e to end game at the end end when the boss dies"): the credits, then the
@@ -126226,7 +126421,7 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   TMP_X, TMP_Y, TMP_Z, TMP_VIEW, TMP_T, TMP_FOG, TMP_WALK_R, TMP_SCALE, TMP_POD_R, TMP_FLOOR, TC, ocean, oceanFar, loadTemple, placeInTemple, placeOutOfTemple, devTemple, startTempleFlight, crowCallFromTop, trader3World, tmpFloorAt, tmpSandRaw, tmpCellTop, tmpViewYaw, tmpEyeY,
   tmpS: () => ({ ready: tmpReady, inTemple, flown: tmpFlown, cut: tmpCut ? +tmpCut.t.toFixed(2) : -1, room: !!(tmpCut && tmpCut.room), solid: tmpG ? tmpG.solidN : 0, fz: frozen(), why: { bootHold, pack: packCut, mut: mutCut, wb: !!wbSw, hatch: hatchBusy, portal: portalCut, crab: !!crabCut, hj: !!hjCut, well: wellLook.on, key: !!keyCut, thr: !!thrCut, fare: !!wbFareCut } }),
   tmpG: () => ({ world: tmpWorld, G: tmpG, clouds: tmpClouds, rays: tmpRays, sky: tmpSky }),
-  kingDied, KING, KFX, kingS: () => ({ cut: kingCut ? +kingCut.t.toFixed(2) : -1, down: kingDown, mode: KING.mode, hp: KING.u ? KING.u.st.hp : -1, alive: KING.u ? KING.u.st.alive : null, atk: KING.u ? KING.u.st.atk : null, swing: KING.u ? KING.u.st.swing : null }), KING_TRIGGER, KING_PILLARS, setKingDown: (v) => { kingDown = !!v; KING.placed = false; }, devTeleportTemple, kingFlipStart, kingRunStart, kingExplode, kingBlowsS: () => KING.blows, blowLandsS: (u) => blowLands(u), blowHeightOKS: (u) => blowHeightOK(u), camBaseS: () => camBaseY, kingFeetAtS: kingFeetAt, mutTokenS: () => mutToken,
+  kingDied, KING, KFX, kingS: () => ({ cut: kingCut ? +kingCut.t.toFixed(2) : -1, down: kingDown, mode: KING.mode, hp: KING.u ? KING.u.st.hp : -1, alive: KING.u ? KING.u.st.alive : null, atk: KING.u ? KING.u.st.atk : null, swing: KING.u ? KING.u.st.swing : null }), KING_TRIGGER, KING_PILLARS, setKingDown: (v) => { kingDown = !!v; KING.placed = false; }, devTeleportTemple, kingFlipStart, kingRunStart, kingExplode, kingBlowsS: () => KING.blows, kingLineBlockedS: (u) => kingLineBlocked(u), blowLandsS: (u) => blowLands(u), blowHeightOKS: (u) => blowHeightOK(u), camBaseS: () => camBaseY, kingFeetAtS: kingFeetAt, mutTokenS: () => mutToken,
 }));
 
 moduleDone = true;   // (the last line: see `bootRoomsAsked`)

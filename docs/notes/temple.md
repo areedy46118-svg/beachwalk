@@ -277,3 +277,48 @@ dramatic when he is shown this is the final boss it should look insane" / "make 
   it was but he dissapears by flying further even after the cutscene"): its first climb back (16 m/s, rising over the
   pillars), on past the cut until 16 s (~770 m out, 470 up); and a checkpoint written AS YOU HIT THE SAND (`saveCheckpoint`
   refuses inside the cut, so the cut is let go for the write; room 'tmp'). `tools/crowdrop.js`.
+
+## 2026-11-20 round 3 — the king studied frame by frame (`tools/kingstudy.js`): every blow connects, the hunt, the bicycle flown
+The owner: "THE FINAL BOSS FIGHT IS NOT GOOD MAKE ALL HIS HITS ACTUALLY CONNECT … STUDY HIS MOVEMENTS AND HIT BOXES WITH GREAT
+DETAIL … HE SHOULD GET YOU ANYWHERE IN THE DESERT … FIX THE BICYCLE KICK … HE SHOULD FLY AND KICK A FEW TIMES".
+- `kingstudy.js` records every swing every frame: his distance, the striking ends in the CAMERA's frame, the nearest any
+  striking segment comes to the point 0.25 m ahead of the lens, the game's hit test, health taken; then per blow and where
+  his time goes. Options in its header (`walk`, `flee`, `guard`, `only`, `shots`, `strip`).
+- **From his stand-off every blow already went through your face** (kick 0.10 m, bicycle 0.06, uppercut 0.14). Every miss was:
+  1. **thrown from too far**: `lungeLead` 0.18 at `lungeMax` 2.6 closed nothing — he arrived 0.5 m short. Now 0.55 / 7.5,
+     and a blow's `reach` is stop + 0.45 (was + 0.7): he throws from where the closing can make it;
+  2. **held to a 20.6 m circle while you could walk 420**: back to a pillar, or outside the ring, he stood 2.2 m off swinging
+     at air for five blows running. `kingClampUnit` now lets him roam `TMP_WALK_R`, kept out of stone by `tmpPushOut`;
+  3. **aim set at 0.8 of the wind-up**: a sidestep put the fist 0.3-0.5 m past your ear. `trackT` 0.05 / `trackRate` 10;
+  4. **the chain cut the bicycle's second kick** (`chainAt` at the first's recovery): for `kingBody`, after its last `moreT`.
+- `kingLands` (`kind.landFn`): `blowLands`, or any striking segment within 0.38 m of the point ahead of the lens, in front of
+  it and on screen (landed blows pass 0.05-0.28 m off it, misses 0.6+).
+- **His time**: a third of the fight went on flips and their slow turn round. Flips every 13-19 s, the turn at 1.9x, and out
+  of it straight into a blow (`kingBackToFight(u, true)`: `forceSwing`, cool 0). No feints (they read as misses).
+- **The hunt** (`KING_HUNT`): past 4.6 m he sprints at 7.8 m/s (you sprint 5.71), at 2.1 m into `kgRun` — the flown bicycle
+  with `air` 0.33, its leap leading you by `u.st.recede` (your speed away from him, measured in `kingDrive`), and
+  `smoothMove` NOT zeroing his run's speed at the swing's start (it did: he braked to 0 at take-off and fell 1 m short). A blow
+  you outrun before its contact is dropped and he hunts again. `noDash` (the generic dash threw the first `use` key — the
+  uppercut — from 6 m). Sprinting away nonstop: caught by the flying kick 6 of 7.
+- **The bicycle**: Mixamo's take is ONE CYCLE made to loop (17 frames, f17 = f1, hips level: measured off
+  `~/Desktop/BEACHWALK ASSETS/Flying Bicycle Kick.fbx`). `tools/king_bike_loop.py` writes `kBikeAir` (three cycles, six
+  kicks at idx 7,15,…,47 of 48) into king-moves.json; played at 0.7 — 2.3 s off the floor, a kick each 0.38 s, lifted 0.3 m
+  (`kingAirBike`, the model inside his group; more and the kicks pass over your eye) and driving at you between kicks.
+  `comboGrace` 0.85 so six kicks are ~2 health, the rest land as grazes; `guardK` 0.5 a kick.
+- **The guard**: `blockCost` 0.8 x `guardK` 1.8-2.0 was two thirds of the bar a block — broken by the 2nd blow of every
+  string. Now 0.55 and `guardK` 1.0-1.4 (bike 0.5): a string can be held; the parry is still free and still stuns him.
+- **Measured after**: standing, 17 of 18 swings land at contact (6-19 cm off your eye); strafing at 2.5 m/s, 14 of 15;
+  guarding, 18 blocks and 10 health in 40 s; fighting back unguarded, 28 health in 40 s; visible turn max 4.5 rad/s
+  (`kingduel.js` now measures group + model yaw — the aim's fold into the heading is a group jump nobody sees).
+- **Played by a bot that knows how** (`tools/kingbot.js`: katana, 1.6-2.4 m off, each contact parried on the beat with
+  `&skill=`, blocked otherwise, `&miss=` of them not answered, cuts in his openings; your health topped up at 2, a "death" =
+  4 health taken): skill 0.6 / miss 0.1 — dead in 122-145 s for 7-10 health (~2 deaths); skill 0.25 / miss 0.2 — dead in
+  207 s for 44 (~11 deaths). (Bot traps: deciding per swing NAME reused one roll for every later kick — key it per swing; a
+  2-point blow at 2 health is the death screen, which looks exactly like a frozen king.)
+- **Round the pillars**: his slam put a pillar between you and his straight-line hunt pressed into it for its whole 25 s, four
+  times running. `kingSteer` feels 2.2 m ahead on the solid grid and bears off to one side (kept while blocked) at the first
+  clear bearing; a blocked line hunts even inside 4.6 m (`kingLineBlocked`), the hunt keeps running while the line is
+  blocked, ends at 12 s. `tools/kingpillar.js`: reached you round a pillar in 1.8-2.7 s (never, before).
+- **The stats' song starts at his burst** (the owner: "have the final boss explosion start the beachwalk stats music"):
+  `kingDeath` asks for `END_SONG` (`lazyBuf`), `kingExplode` calls `startEndSong()`; `showEnd` finds it playing. musictest
+  `kingEnd` (the king killed in the temple, the burst, the song at the speakers).

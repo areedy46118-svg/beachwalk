@@ -10,7 +10,7 @@
  * owner's checkpoint (`beachwalk.save`) itself. */
 (function () {
   const W = window, sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const want = { call: 'go', restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', loadTavern: 'startMusic', loadDeep: 'startMusic', marauder: 'startMarauderFight', farmers: 'startFarmersFight', tavern: 'startTavernSong', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', mino: 'startMinoSong', skrim: 'startSkrimSong', skrimFight: 'startSkrimFightMusic' };
+  const want = { call: 'go', restart: 'startMusic', checkpoint: 'startMusic', load: 'startMusic', loadTavern: 'startMusic', loadDeep: 'startMusic', marauder: 'startMarauderFight', farmers: 'startFarmersFight', tavern: 'startTavernSong', samurai: 'startSamScore', samuraiBack: 'startSamScore', church: 'startPassing', end: 'startEndSong', kingEnd: 'startEndSong', mino: 'startMinoSong', skrim: 'startSkrimSong', skrimFight: 'startSkrimFightMusic' };
   /* (2026-10-24, the owner: the opening song plays on the first load into the game and NOT on a respawn) — 'checkpoint'
    * is a death's respawn and passes SILENT; 'load' is a checkpoint loaded without a death and must play it */
   /* (2026-11-14, the owner: "the very first spawn music in the game should not play when reloading any checkpoint ever only
@@ -185,6 +185,16 @@
         for (let i = 0; i < 3000 && !b.state().ended; i++) { off += 16.7; b.frame(1); if (!(i % 20)) await sleep(2); }
         w.performance.now = () => real() + off;
         note += b.state().ended ? ', stats up' : ', NEVER ENDED';
+        peak = await listen(want[sc], 8000);
+      } else if (sc === 'kingEnd') {
+        // (2026-11-20, the owner: "have the final boss explosion start the beachwalk stats music"): the king killed, the burst
+        const { w, b } = await boot(() => sessionStorage.setItem('beachwalk.skipIntro', '1'));
+        b.settings.devMode = false; b.devTeleportTemple();
+        for (let i = 0; i < 900 && !(b.KING.u && b.KING.u.ready); i++) { b.frame(1); await sleep(40); }
+        const u = b.KING.u; b.setKingDown(true); for (let i = 0; i < 30; i++) { b.frame(1); await sleep(5); }
+        b.KING.mode = 'fight'; u.st.awake = true; u.st.puppet = false; b.hurtMutantTest(u, 9999);
+        for (let i = 0; i < 900 && b.KING.mode !== 'gone'; i++) { b.frame(1); if (!(i % 10)) await sleep(2); }
+        note = 'the king burst: mode ' + b.KING.mode;
         peak = await listen(want[sc], 8000);
       } else if (sc === 'mino') {
         // (2026-10-29, the owner's "minotaur death music": once — now when you ask him "What's wrong?" on his knee, fading in)
