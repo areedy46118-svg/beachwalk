@@ -9243,7 +9243,7 @@ function icCanvases() {
     fragmentShader: `uniform sampler2D cut, glow; uniform float light; uniform vec3 tint; varying vec4 vP; ${lit}
       void main(){
         if (vP.w <= 0.) discard;
-        vec2 uv = vP.xy / vP.w * .5 + .5;
+        vec2 uv = (vP.xy / vP.w * .5 + .5 + ${IC_PM.toFixed(4)}) / ${(1 + IC_PM).toFixed(4)};
         if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) discard;
         vec4 c = texture2D(cut, uv), g = texture2D(glow, uv);
         float a = max(c.a, g.a); if (a < .003) discard;
@@ -9259,7 +9259,7 @@ function icCanvases() {
     uniforms: { cut: { value: tx(IC.scv) }, deskVP: pm.uniforms.deskVP },
     vertexShader: pm.vertexShader,
     fragmentShader: `uniform sampler2D cut; varying vec4 vP;
-      void main(){ if (vP.w <= 0.) discard; vec2 uv = vP.xy / vP.w * .5 + .5;
+      void main(){ if (vP.w <= 0.) discard; vec2 uv = (vP.xy / vP.w * .5 + .5 + ${IC_PM.toFixed(4)}) / ${(1 + IC_PM).toFixed(4)};
         if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) discard;
         float a = texture2D(cut, uv).a; if (a < .003) discard; gl_FragColor = vec4(0., 0., 0., a); }`,
     transparent: true, depthTest: false, depthWrite: false,
@@ -9271,7 +9271,7 @@ function icCanvases() {
     uniforms: { cut: { value: tx(IC.fcv) }, deskVP: pm.uniforms.deskVP, light: pm.uniforms.light, tint: pm.uniforms.tint },
     vertexShader: pm.vertexShader,
     fragmentShader: `uniform sampler2D cut; uniform float light; uniform vec3 tint; varying vec4 vP; ${lit}
-      void main(){ if (vP.w <= 0.) discard; vec2 uv = vP.xy / vP.w * .5 + .5;
+      void main(){ if (vP.w <= 0.) discard; vec2 uv = (vP.xy / vP.w * .5 + .5 + ${IC_PM.toFixed(4)}) / ${(1 + IC_PM).toFixed(4)};
         if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) discard;
         vec4 c = texture2D(cut, uv); if (c.a < .003) discard; gl_FragColor = vec4(litc(c) * c.a, c.a); }`,
     transparent: true, depthTest: false, depthWrite: false,
@@ -9290,10 +9290,21 @@ function icCanvases() {
 }
 /* (the canvases at the SCREEN's size — `TB.Q` of the room's 400 px view — drawn in the view's own units through a
  * transform, smoothed: his clips are packed at `meta.k` sprite px a view px) */
+/* (AND PAST THE DESK VIEW'S FRAME, LEFT AND BELOW — 2026-11-20, the owner, of the syringe glance: "this left arm is cut off way
+ * too much in this shot it should be his full arm shown". What is painted on the table is projected from the desk view, and
+ * the projection stopped at that view's frame: when his head turns up and left to the syringe, the frame's bottom-left comes
+ * into the picture and his arm ended on it — a thin strip of sleeve with the table beyond. The table's canvases run
+ * `IC_PM` of the view further left and down (the shader maps into them), and his sleeve is carried on out into it,
+ * `icSleeveOut`.) */
+const IC_PM = 0.45;
 function icCanvasSize() {
   const Q = TB.Q || 1, w = Math.round(TB.vw * Q), h = Math.round(TB.vh * Q);
-  for (const c of [IC.cv, IC.gcv, IC.ecv, IC.scv, IC.fcv]) { c.width = w; c.height = h; }
-  for (const x of [IC.x, IC.gx, IC.ex, IC.sx, IC.fcx]) { x.setTransform(Q, 0, 0, Q, 0, 0); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; }
+  const pw = Math.round(TB.vw * (1 + IC_PM) * Q), ph = Math.round(TB.vh * (1 + IC_PM) * Q);
+  IC.ecv.width = w; IC.ecv.height = h;
+  for (const c of [IC.cv, IC.gcv, IC.scv, IC.fcv]) { c.width = pw; c.height = ph; }
+  IC.ex.setTransform(Q, 0, 0, Q, 0, 0);
+  for (const x of [IC.x, IC.gx, IC.sx, IC.fcx]) x.setTransform(Q, 0, 0, Q, Math.round(TB.vw * IC_PM * Q), 0);
+  for (const x of [IC.x, IC.gx, IC.ex, IC.sx, IC.fcx]) { x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; }
   IC.cvQ = Q; IC.cvW = TB.vw; IC.cvH = TB.vh; IC.paintSig = IC.earSig = '';
 }
 // the layers' place in the desk view: L's anchor on its bottom-left corner, R's on its bottom-right
@@ -9377,6 +9388,50 @@ function icBlit(x, imgs, frames, key, ox, oy, sh, shx, k = 1, kx = 0, ky = 0, im
   }
   x.drawImage(img, sx, sy, r[2], r[3], dx, dy, dw, dh);
 }
+/* HIS SLEEVE ON PAST THE FRAME, to his shoulder (`IC_PM`): where his arm crosses the desk view's bottom edge and its left edge
+ * (read off the paint just inside them), the same width carried straight on out the way it was going, in its own colour,
+ * a little darker as it goes — into the margin only, under nothing. */
+function icSleeveOut(x, W, H) {
+  const Q = IC.cvQ || 1, ox = Math.round(W * IC_PM * Q), cv = IC.cv, L = Math.max(W, H) * IC_PM * 1.6;
+  let g; try { g = cv.getContext('2d', { willReadFrequently: true }); } catch (e) { return; }
+  const run = (data, n, step) => {                               // the longest opaque run along a line of pixels, and its colour
+    let best = null, a = -1, col = [0, 0, 0], cn = 0, bc = null;
+    for (let i = 0; i <= n; i++) {
+      const on = i < n && data[i * step + 3] > 200;
+      if (on) { if (a < 0) { a = i; col = [0, 0, 0]; cn = 0; } col[0] += data[i * step]; col[1] += data[i * step + 1]; col[2] += data[i * step + 2]; cn++; }
+      else if (a >= 0) { if (!best || i - a > best[1] - best[0]) { best = [a, i]; bc = col.map((v) => v / cn); } a = -1; }
+    }
+    return best ? { a: best[0] / Q, b: best[1] / Q, c: bc } : null;
+  };
+  const row = (y) => run(g.getImageData(ox, Math.round(y * Q), Math.round(W * Q), 1).data, Math.round(W * Q), 4);
+  const col = (xx) => run(g.getImageData(ox + Math.round(xx * Q), 0, 1, Math.round(H * Q)).data, Math.round(H * Q), 4);
+  const B = row(H - 1.5), B2 = row(H - 26), Lf = col(1.5), L2 = col(26);
+  if (!B && !Lf) return;
+  /* ONE BAND, the sleeve's two outlines where they leave the frame (on the bottom edge, the left, or one on each round the
+   * corner) carried on the way his arm runs (its middle on the edge against its middle 25 px inside) — a separate block off
+   * each edge and the corner filled was a grey wedge, not an arm */
+  let p0, p1, c;
+  if (B && Lf && B.a < 3 && Lf.b > H - 3) { p0 = [B.b + 1, H - 1]; p1 = [1, Lf.a - 1]; c = B.c.map((v, i) => (v * (B.b - B.a) + Lf.c[i] * (Lf.b - Lf.a)) / (B.b - B.a + Lf.b - Lf.a)); }
+  else if (B && (!Lf || B.b - B.a >= Lf.b - Lf.a)) { p0 = [B.b + 1, H - 1]; p1 = [B.a - 1, H - 1]; c = B.c; }
+  else { p0 = [1, Lf.b + 1]; p1 = [1, Lf.a - 1]; c = Lf.c; }
+  const mid = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2];
+  let mIn = null;                                                   // (its middle a little inside the frame)
+  if (B2 && L2 && B && Lf && B.a < 3) mIn = [((B2.a + B2.b) / 2 + 26) / 2, (H - 26 + (L2.a + L2.b) / 2) / 2];
+  else if (B2 && B) mIn = [(B2.a + B2.b) / 2, H - 26];
+  else if (L2 && Lf) mIn = [26, (L2.a + L2.b) / 2];
+  let dx = mIn ? mid[0] - mIn[0] : -0.6, dy = mIn ? mid[1] - mIn[1] : 0.8;
+  if (dx > 0) dx *= 0.3; if (dy < 0) dy *= 0.3;                    // (out of the frame: left and down, toward his shoulder)
+  const dl = Math.hypot(dx, dy) || 1, ux = dx / dl, uy = dy / dl;
+  x.save();
+  x.beginPath(); x.rect(-W * IC_PM, 0, W * IC_PM, H * (1 + IC_PM)); x.rect(0, H, W, H * IC_PM); x.clip();
+  x.filter = 'blur(1.2px)';
+  const k = (f) => `rgb(${Math.round(c[0] * f)},${Math.round(c[1] * f)},${Math.round(c[2] * f)})`;
+  const gr = x.createLinearGradient(mid[0], mid[1], mid[0] + ux * L, mid[1] + uy * L);
+  gr.addColorStop(0, k(0.88)); gr.addColorStop(0.5, k(0.66)); gr.addColorStop(1, k(0.48));
+  x.fillStyle = gr; x.beginPath();
+  x.moveTo(p0[0], p0[1]); x.lineTo(p1[0], p1[1]); x.lineTo(p1[0] + ux * L, p1[1] + uy * L); x.lineTo(p0[0] + ux * L, p0[1] + uy * L); x.closePath(); x.fill();
+  x.restore();
+}
 /* the left: the book (and his hand when it is there) painted on the table; the squirt's blue */
 function icDrawPaint(t, dt = 0) {
   const L = IC.meta.L, x = IC.x, gx = IC.gx, sx = IC.sx, W = TB.vw, H = TB.vh;
@@ -9396,13 +9451,13 @@ function icDrawPaint(t, dt = 0) {
   const squirting = held && sq > 0.02 && sq < 1, sig = lk + '|' + lift + '|' + (IC.cvQ || 1);
   if (sig === IC.paintSig && !squirting && !IC.drops.length && !IC.dropsWere) return;
   IC.paintSig = sig; IC.dropsWere = IC.drops.length > 0 || squirting;
-  x.clearRect(0, 0, W, H); gx.clearRect(0, 0, W, H); sx.clearRect(0, 0, W, H); IC.fcx.clearRect(0, 0, W, H);
+  for (const c of [x, gx, sx, IC.fcx]) c.clearRect(-W * IC_PM, 0, W * (1 + IC_PM), H * (1 + IC_PM));   // (and the margin, `IC_PM`)
   /* (THE LAYERS, 2026-11-19, the owner: "the hand should be the layer over the syringe always … use the real 3D model":
    * the book cut once lies UNDER everything on a canvas of its own (`IC.fcx`, the `IC.front` pass), the game's syringe
    * model over it (`icPoseSyringe`, its own pass), and his hand — whole, the pen's holes filled with his skin by the
    * packer — over both (`IC.x`, the paint): the syringe shows only past his fingers) */
   if (lk === 'b1' || lk === 'h119' || (/^\d+$/.test(lk) && +lk <= 95)) icBlit(IC.fcx, IC.imgL, L.frames, 'b1', lx, ly, [5, 7, 4, 0.42], sx);
-  if (lk !== 'b1') icBlit(x, IC.imgL, L.frames, lk, lx + (syrSec ? sox : 0), ly + lift + (syrSec ? soy : 0), held ? [16, 22, 7, 0.32] : [5, 7, 4, 0.42], sx);
+  if (lk !== 'b1') { icBlit(x, IC.imgL, L.frames, lk, lx + (syrSec ? sox : 0), ly + lift + (syrSec ? soy : 0), held ? [16, 22, 7, 0.32] : [5, 7, 4, 0.42], sx); icSleeveOut(x, W, H); }
   // the squirt: a jet, then drops falling away (in the desk view, from the needle's tip)
   if (held && sq > 0.02 && sq < 1) {
     const tip = new THREE.Vector3(0, 0, TB.syrTip).applyMatrix4(TB.syrModel.matrixWorld), base = new THREE.Vector3(0, 0, 0).applyMatrix4(TB.syrModel.matrixWorld);

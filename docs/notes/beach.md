@@ -2966,3 +2966,13 @@ TEXTBOOK EDITS AND TRIMS YOU DID … CLEAN UP THE CUTSCENE AS MUCH AS YOU CAN".
   added 0.4 MB with the game at 449).
 - Probe trap: `callShots` seeks by running 7 frames at each time, so the squirt's drops (life ~1.5 s) survive from 43.6 to
   the flips and sit over his arm as blue dots — not in real playback.
+- **His left arm in the syringe glance** (the owner: "this left arm is cut off way too much in this shot it should be his
+  full arm shown", a still at 43.6): what is painted on the table is a projective texture from the desk view (`deskVP`), and
+  its shader discarded everything outside that view's frame — as his head turns up and left to the syringe the frame's
+  bottom-left comes into the picture and his arm ended on it, a thin strip. The table's canvases (`IC.cv/gcv/scv/fcv`) are
+  now `IC_PM` 0.45 of the view wider on the left and taller below (the shaders map `uv` into them, the transform offsets the
+  drawing, every clear covers the margin; the screen-space `IC.ecv` is unchanged), and `icSleeveOut` carries his sleeve on
+  into that margin after each left frame: its two outlines where they leave the frame (bottom, left, or one each round the
+  corner — read off the paint 1.5 px inside, the colour with them) as ONE band along the arm's own run (middle on the edge
+  against middle 25 px in), darkening toward his shoulder, blurred 1.2 px, clipped to the margin. A block off each edge plus
+  the corner filled read as a grey wedge. Rest frames are unchanged (the margin is off screen).
