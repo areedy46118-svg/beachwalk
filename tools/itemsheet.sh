@@ -1,6 +1,7 @@
 #!/bin/sh
 # Every item, its name and its description, as one picture: sh tools/itemsheet.sh [out.png]   (headless, own port 4217)
 # The keys alone: QS=keys=1 WS=1500,760 sh tools/itemsheet.sh out.png
+# The weapons with their stats: QS=weapons=1 WS=1900,1090 sh tools/itemsheet.sh out.png
 OUT=${1:-/tmp/bw-items.png}; PORT=${PB_PORT:-4217}; D=$(mktemp -d)
 cd "$(dirname "$0")/.." || exit 1
 python3 serve.py $PORT > "$D/serve.log" 2>&1 & SRV=$!

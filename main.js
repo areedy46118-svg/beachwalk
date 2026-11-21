@@ -12665,11 +12665,10 @@ const pickTally = () => { let n = inventory.length + (typeof rings !== 'undefine
  * owner's recordings played for it (its own, where it has one), his pickup sound does; a KEY taken is his keys' sound
  * (2026-11-21, "ALSO WHEN YOU PICK UP A KEY USE THESE": `keyJingle`). */
 function takeNow(it) {
-  const had = pickTally(), heard = samplePlays, keys0 = keyChain().length;
+  const had = pickTally(), heard = samplePlays;
   hovered = it;
   it.onActivate();
-  if (keyChain().length > keys0) playSample('keyJingle', 0.7, 0.05);
-  else if (pickTally() > had && samplePlays === heard) playSample('pickup', 0.75, 0.04);
+  if (pickTally() > had && samplePlays === heard) playSample('pickup', 0.75, 0.04);   // (a key has rung its own already: `addToInventory`)
 }
 /* HIS HAND GOES OUT FOR IT (2026-11-21, the owner: "use this same animation but sped up when you pick up any item the left hand
  * should come out real fast and grab it with the item pickup sound"). The reach through the grate (`PRH`, his own filmed arm),
@@ -12715,10 +12714,12 @@ function lightAt(p, out) {
  * Which: what a hand does — a door, a lock, a lid, a chest, a lift, a lever thrown at once, a valve, a button, the fridge,
  * the TV, the idol's touch. Not talk, not a crawl or a climb, not a hold-to-pull lever (its own hands). The reach goes for
  * the thing's middle — its hit box's, or its own — not its origin, which on a door is the hinge.) */
-const HG_USE = /door|cell|chest|\blid\b|fridge|\bTV\b|valve|button|lever|\blift\b|turn on|unlock|^open|^touch$|look inside|^enter|leave the throne|locked|barred|barricaded/i;
-const HG_NOT = /^talk|crawl|climb|hold to|sail|^pet$|kick|throw it/i;
+// (and not a look in — the well, the sewer's grate: "the well and the sewer look in dont need the left hand interact animation",
+// 2026-11-21: you lean and look, the hand has nothing to take hold of)
+const HG_USE = /door|cell|chest|\blid\b|fridge|\bTV\b|valve|button|lever|\blift\b|hoist|turn on|unlock|^open|^touch$|^enter|leave the throne|locked|barred|barricaded/i;
+const HG_NOT = /^talk|crawl|climb|hold to|sail|^pet$|kick|throw it|^look/i;
 function handUses(it) {
-  if (!it || it.kind === 'inventory' || it.kind === 'physics' || !it.onActivate) return false;
+  if (!it || it.kind === 'inventory' || it.kind === 'physics' || it.kind === 'look' || !it.onActivate) return false;
   const l = typeof it.label === 'function' ? it.label() : it.label;
   return !!l && HG_USE.test(l) && !HG_NOT.test(l);
 }
@@ -14081,6 +14082,10 @@ function addToInventory(item, over = false) {
    * be lost for it, so a full pack grows a slot for it rather than refusing. */
   if (!item.isKey && packCount() >= INV_MAX && !over) return false;
   inventory.push(item);
+  /* (A KEY SOUNDS LIKE THE KEYS IN THE PACK, however it came — 2026-11-21, the owner: "when picking up a key use the key sound
+   * effects from the pack": his own jingle, `sfxKeyChain`, at the one door every key comes in by; a restore's replay is
+   * silent anyway (`sfxOut`), dev mode's handing-over is hushed) */
+  if (item.isKey && !statHush) sfxKeyChain();
   startPackTip();                       // the first one in: where the pack is (`packTip`)
   statItem(item);
   placeInSlot(item, -1, Math.max(INV_MAX, inventory.length));
@@ -16458,6 +16463,11 @@ let hookItem = null;                     // Skrim's hook (below the Bloody Blade
 const katLike = () => equipped === katanaItem || (bloodItem !== null && equipped === bloodItem) || (hookItem !== null && equipped === hookItem);
 const hookHeld = () => hookItem !== null && equipped === hookItem;
 const bloodHeld = () => bloodItem !== null && equipped === bloodItem;
+/* HOW MUCH BLEED A CUT BUILDS, BY WHAT IS IN YOUR HAND (`bleedBuild`'s `k`): the Bloody Blade 1, Skrim's hook `HOOK_BLEED`, and the
+ * katana `KAT_BLEED` (2026-11-21, the owner: "make the katana do bleed damage too ... make it less bleed than the bloody
+ * blade": 0.6 a cut, 1 a heavy, against the Bloody Blade's 1 and 1.7). Nothing else bleeds them. */
+const KAT_BLEED = 0.6;
+const weaponBleedK = () => (bloodHeld() ? 1 : hookHeld() ? HOOK_BLEED : equipped === katanaItem ? KAT_BLEED : 0);
 const restRot = () => (katLike() ? VM_KAT_REST_ROT
   : equipped && equipped.thrust ? VM_PEG_REST_ROT : VM_MIL_REST_ROT);
 /* The gun never goes through this at all: nothing it does raises a guard,
@@ -17394,6 +17404,10 @@ const militaryItem = {
   name: 'Military Shovel', desc: 'A heavy metal shovel', icon: makeMilShovelIcon(), onDig: true, viewmodel: militaryVM,   // (the owner's words, 2026-11-21)
   inspectModel: milInspect, lip: MIL_LIP,   // already blade up: no flip
   gripY: MIL_GRIP_Y, gripModel: milModel,   // (held at the D-grip for a cut, slid to the neck for the overhead: `gripY`)
+  /* (STEEL HITS A LITTLE HARDER THAN PLASTIC — 2026-11-21, the owner: "make military shovel do more damage then the toy shovel not
+   * by alot make it balanced": a quarter more than the toy's 1 / 2, still well under the katana's 2 / 3 — a dark mutant (8) in
+   * seven cuts not eight, a red (13) in six heavies not seven) */
+  dmgLight: 1.25, dmgHeavy: 2.5,
   use: () => toggleEquip(militaryItem),
 };
 /* ---- THE BONE MACE -------------------------------------------------------
@@ -17654,7 +17668,7 @@ function updateKatanaShine(dt) {
 }
 toolMount.add(katanaVM);
 const katanaItem = {
-  name: 'Katana', desc: 'A Holy Blade', icon: makeKatanaIcon(), onDig: true, viewmodel: katanaVM,
+  name: 'Katana', desc: `A Holy Blade · Bleed Build Up +${KAT_BLEED} Per Hit, +${+(1.7 * KAT_BLEED).toFixed(1)} Per Heavy · A Bleed Burst Takes 17% Of Their Health`, icon: makeKatanaIcon(),   // (its bleed, 2026-11-21: `KAT_BLEED`) onDig: true, viewmodel: katanaVM,
   inspectModel: katInspect, lip: KAT_LIP, iconRot: { flip: true },   // point up, hilt at the bottom
   blade: true, dmgLight: 2, dmgHeavy: 3, windRate: 1.3, gore: 1.4, swingK: 0.9, recoverK: 4.0, glintSpan: 0.60, alternate: true,
   use: () => toggleEquip(katanaItem),
@@ -18015,6 +18029,18 @@ function hookThrow(charge) {
     const ch = digRay.intersectObject(cliff, false)[0];
     if (ch) HK.to = { kind: 'solid', t: ch.distance, point: ch.point.clone(), hit: ch, surface: 'sand' };
   }
+  /* AND THE MOUNDS AND THE BANKS (2026-11-21, the owner: "make projectile hooking the mounds more responsive it sometimes clips
+   * through"): the trace asks the flat sand's mesh, and the heaps of sand and the banks stand up out of it as meshes and heights
+   * of their own — the iron went in one side and out the other. Down the line every 15 cm, where the ground there (`driftAt`,
+   * the mounds, the berm) is above the line, it lands: on it, a thing to be pulled to. */
+  if (!inRoom()) {
+    const lim = HK.to ? HK.to.t : D, O = camera.position;
+    for (let t = 0.6; t < lim; t += 0.15) {
+      const x = O.x + HK.aim.x * t, y = O.y + HK.aim.y * t, z = O.z + HK.aim.z * t;
+      const g = Math.max(driftAt(x, z), sandMoundAt(x, z), wbBermAt(x, z));
+      if (y <= g + 0.02 && g > 0.15) { HK.to = { kind: 'solid', t, point: new THREE.Vector3(x, g, z), hit: null, surface: 'sand' }; break; }
+    }
+  }
   /* AND THE KING ON HIS WAY UP A PILLAR, from as far as the chain will pay out to him (2026-11-21, the owner: "MAKE IT SO YOU
    * CAN GRAB THE FINAL BOSS OFF THE WALL WHEN HES RUNNNING UP IT WITH THE HOOK"): past the throw's own reach, and the
    * pillar's face behind him does not stop it (`kingTornStart` from the bite) */
@@ -18199,10 +18225,25 @@ function hookZipEnd(arrived) {
   if (arrived) { sfxChainSlap(HK.zipA.x, HK.zipA.z, 0.6); vmImpulse(-0.6); addTrauma(0.08); }
 }
 // (from the player's move, after the walk and the shoves, before the clamps)
+/* (THE CHAIN DOES NOT CARRY YOU THROUGH THINGS — 2026-11-21, the owner: "i shouldnt be able to hook and clip through things using
+ * the boost. i just hooked over the pavillon wall and clipped through it". At up to 17 m/s the pull moved you half a metre in a
+ * frame, past the middle of a wall, and the push-out after it finished the job on the far side. Now the pull and what it
+ * carries you on with go in steps of `HOOK_STEP`, each pushed out of the solids as you are — a wall stops it. And the
+ * pavilion's yard is its gate's: `mushYardBar`.) */
+const HOOK_STEP = 0.1;
+function hookStepSolid(dx, dz) {
+  const c = camera.position, n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / HOOK_STEP));
+  const feet = camBaseY - playerEye(), solid = !insideTower && !insideDrain && !inBunker && !inUndercroft;
+  /* (and a room's own walls, step by step: the tavern's, the keep's — kept by the room's walk, not the solids, and a pull of half a
+   * metre a frame went through them: 2026-11-21, the owner: "i should never glitch through the tavern like this even using the
+   * hook") */
+  const room = inRoom();
+  for (let i = 0; i < n; i++) { c.x += dx / n; c.z += dz / n; if (solid) pushOutOfSolids(c, feet, PLAYER_R * 0.85, feet + playerHeight()); if (room) clampPlayerToRoom(); }
+}
 function hookZipMove(dt, canMove) {
   const c = camera.position;
   if (HK.carry && HK.carry.lengthSq() > 0.0004) {
-    c.addScaledVector(HK.carry, dt);
+    hookStepSolid(HK.carry.x * dt, HK.carry.z * dt);
     HK.carry.multiplyScalar(Math.exp(-dt * (onGround ? 9 : 1.6)));
   }
   if (onGround && HK.st !== 'zip') HK.zipUsed = false;
@@ -18216,7 +18257,7 @@ function hookZipMove(dt, canMove) {
   const sp = Math.min(HOOK_ZIP.max, 7 + (HOOK_ZIP.max - 7) * Math.min(1, HK.zipT / HOOK_ZIP.ramp));
   _hzD.multiplyScalar(1 / d);
   HK.zipV.set(_hzD.x * sp, _hzD.y * sp, _hzD.z * sp);
-  c.x += HK.zipV.x * dt; c.z += HK.zipV.z * dt;
+  hookStepSolid(HK.zipV.x * dt, HK.zipV.z * dt);
   vy = Math.max(HK.zipV.y, HOOK_ZIP.down) + P_GRAV * dt;                  // (the climb or the drop is the chain's; gravity is taken back out this frame)
   onGround = false;
   fovKick = Math.max(fovKick, 4 + 3 * Math.min(1, sp / HOOK_ZIP.max));
@@ -22008,6 +22049,7 @@ addToInventory(syringeItem);
 let extracting = false, extractT = 0;
 const extractRig = new THREE.Group();
 const _hinge = new THREE.Vector3(0, 0.036, -0.116);          // where the needle bites
+const _exV = new THREE.Vector3();
 function startExtraction() {
   if (inspecting) return;
   inspecting = true; extracting = true; extractT = 0;
@@ -22025,9 +22067,19 @@ function startExtraction() {
 
   inspectSetModel(extractRig);
   // frame on the crab, not the crab+syringe pair
-  extractRig.updateMatrixWorld(true);
-  const cb = new THREE.Box3().setFromObject(hcrab).getCenter(new THREE.Vector3());
-  inspectFit.position.copy(cb).multiplyScalar(-inspectFit.scale.x);
+  /* (IN THE MIDDLE OF THE SCREEN — 2026-11-21, the owner: "show the horshoe crab drain in the middle of the screen not to the
+   * right": its middle was its BOX's, hidden parts and all, read through whatever the turntable and the fit were last left at;
+   * it is what is drawn of it (`inspectBounds`, as every examined thing is centred), measured with the fit square and at 1) */
+  const kFit = inspectFit.scale.x;
+  inspectFit.position.set(0, 0, 0); inspectFit.scale.setScalar(1); inspectPivot.rotation.set(0, 0, 0); inspectPivot.position.set(0, 0, 0);
+  inspectScene.updateMatrixWorld(true);
+  /* (and its middle is its SHELL's: the box's middle takes in the long dark tail, which is nothing against the black, and the
+   * shell you see sat right of the middle. The mean of its vertices — the tail is a few, the shell is most of them) */
+  const cb = new THREE.Vector3(); let nv = 0;
+  hcrab.traverse((o) => { if (!o.isMesh || !o.visible || o.name === 'hitProxy') return; const P = o.geometry.attributes.position; for (let i = 0; i < P.count; i++) { cb.add(_exV.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld)); nv++; } });
+  if (nv) cb.multiplyScalar(1 / nv); else inspectBounds(hcrab).getCenter(cb);
+  inspectFit.scale.setScalar(kFit);
+  inspectFit.position.copy(cb).multiplyScalar(-kFit);
   inspectRotX = 0.62; inspectRotY = 0.55; inspectDist = 4.2; inspectAuto = 999;   // no idle drift
   inspectCamera.aspect = window.innerWidth / window.innerHeight;
   inspectCamera.updateProjectionMatrix();
@@ -22194,39 +22246,78 @@ const GLOWSTICK_COLOR = 0x2fe9cf;   // cold teal, matched to the reference
 const GLOWSTICK_LEN = 0.24;         // big enough to read on the sand
 const GLOWSTICK_RADIUS = 0.022;
 const GLOWSTICK_GLOW = 2.0;         // metres — the light's reach on the ground
-function makeGlowstick() {
-  const g = new THREE.Group();
-  // translucent casing + a lit inner core
-  const casing = new THREE.Mesh(
-    new THREE.CylinderGeometry(GLOWSTICK_RADIUS, GLOWSTICK_RADIUS, GLOWSTICK_LEN, 10),
-    new THREE.MeshBasicMaterial({ color: 0x5cc0b0, transparent: true, opacity: 0.30, fog: false })
-  );
-  casing.rotation.z = Math.PI / 2;                    // lie flat, along X
-  const core = new THREE.Mesh(
-    new THREE.CylinderGeometry(GLOWSTICK_RADIUS * 0.5, GLOWSTICK_RADIUS * 0.5, GLOWSTICK_LEN + 0.006, 8),
-    new THREE.MeshBasicMaterial({ color: 0x3f9a8e, fog: false })   // dimmer, the owner's word: a cracked light-stick, not a lamp
-  );
-  core.rotation.z = Math.PI / 2;
-  const capMat = new THREE.MeshStandardMaterial({ color: 0x172523, roughness: 1, flatShading: true });
-  for (const s of [-1, 1]) {
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(GLOWSTICK_RADIUS * 1.15, GLOWSTICK_RADIUS * 1.15, 0.012, 10), capMat);
-    cap.rotation.z = Math.PI / 2; cap.position.x = s * (GLOWSTICK_LEN / 2 + 0.004);
-    g.add(cap);
+/* THE GLOWSTICK, THE SHAPE OF THE OWNER'S PICTURE (2026-11-21: Sketchfab's "Glow Stick" by Grishmanovskij Anton — "make the
+ * glowstick model way better like this", then "make it look exactly like the model but the colors we had"). Its shape, drawn
+ * here (not that model): a slender tube, fourteen of its own widths long; at its foot a squared-off sleeve a little wider,
+ * with a seam round the top of it; at its head the tube pressed flat into a paddle with a round hole through it, and over
+ * that an open hook curled like a question mark. In the colours it always had — the teal casing you see through, the dimmer
+ * lit core in it (the owner's "a cracked light-stick, not a lamp"), and its ends in the casing's teal. Lying along X, its middle at
+ * the origin, `GLOWSTICK_LEN` long as before, so every hand, floor and crate that held one holds this. */
+/* (AND GIVEN A BODY — 2026-11-21, the owner: "improve the models look": it is unlit — it is the light — so its roundness is
+ * painted on: every part's colours fall from a lit side to a shadowed one by its own normals against one direction
+ * (`gsShade`), a streak of highlight down the casing; the core's ends rounded; three grip rings on the sleeve and its foot
+ * bevelled; the paddle's edges bevelled; the hook rounder.) */
+const GS_LIGHT = new THREE.Vector3(0.55, 0.35, 0.76).normalize();
+function gsShade(geo, base, hi, lo, streak = 0) {
+  geo = geo.index ? geo.toNonIndexed() : geo; geo.computeVertexNormals();
+  const N = geo.attributes.normal, col = new Float32Array(N.count * 3), B = new THREE.Color(base), H = new THREE.Color(hi), Lo = new THREE.Color(lo), c = new THREE.Color(), n = new THREE.Vector3();
+  for (let i = 0; i < N.count; i++) {
+    const k = n.fromBufferAttribute(N, i).dot(GS_LIGHT);
+    c.copy(B);
+    if (k > 0) c.lerp(H, Math.min(1, k * k * 0.75 + (streak && k > 0.93 ? streak : 0))); else c.lerp(Lo, Math.min(1, -k * 0.85));
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
   }
-  g.add(casing, core);
-  // the glow it throws on the ground — a soft, even teal pool (low decay so
-  // it doesn't clip to white at the centre under the film tonemap)
-  // NB: no light in here on purpose. Adding a light to the scene at runtime
-  // changes the lighting state, which forces every material in the game to
-  // recompile — measured at ~940 ms of hard freeze on the first frame after.
-  // The glow comes from `groundGlow` below, which exists from startup.
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return geo;
+}
+function makeGlowstick(withHalo = true) {
+  const g = new THREE.Group(), L = GLOWSTICK_LEN, h = L / 2, R = L / 28;          // (14 widths: R is half of one)
+  const stick = new THREE.Group(); stick.rotation.z = Math.PI / 2;              // built up +Y, lying along X as it always has
+  g.add(stick);
+  // the colours it always had: the teal casing you see through, the dimmer lit core in it; the ends in the casing's teal
+  const casingMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.34, fog: false, depthWrite: false });
+  const coreMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });   // dimmer, the owner's word: a cracked light-stick, not a lamp
+  const capMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.82, fog: false });
+  const CAS = [0x5cc0b0, 0xbff3ea, 0x23574f], CORE = [0x3f9a8e, 0x7fd8c8, 0x1e4d47], END = [0x4aa898, 0x9fe6d8, 0x1d4a43];
+  const SLV = 0.034, TAB = 0.026;                                               // the sleeve's length, the paddle's
+  const y0 = -h + SLV, y1 = h - TAB;                                            // the tube between them
+  // the tube: the casing (a streak of light down it), and the lit core inside it, its ends rounded
+  const casing = new THREE.Mesh(gsShade(new THREE.CylinderGeometry(R, R, y1 - y0, 18, 1, true), ...CAS, 0.5), casingMat);
+  casing.position.y = (y0 + y1) / 2; casing.renderOrder = 2; stick.add(casing);
+  const cr = R * 0.62, cl = y1 - y0 - cr * 1.2;
+  const core = new THREE.Mesh(gsShade(new THREE.CapsuleGeometry(cr, cl, 4, 14), ...CORE), coreMat); core.position.y = (y0 + y1) / 2; stick.add(core);
+  // its foot: the sleeve — bevelled at the bottom, a seam at its top, three grip rings round it
+  const sp = [[0, -h], [R * 1.05, -h], [R * 1.22, -h + 0.003], [R * 1.24, -h + 0.006], [R * 1.24, y0 - 0.002], [R * 1.31, y0 - 0.0015], [R * 1.31, y0 + 0.001], [R * 1.08, y0 + 0.002]].map(([r, y]) => new THREE.Vector2(r, y));
+  stick.add(new THREE.Mesh(gsShade(new THREE.LatheGeometry(sp, 18), ...END), capMat));
+  for (const f of [0.3, 0.48, 0.66]) {
+    const ring = new THREE.Mesh(gsShade(new THREE.TorusGeometry(R * 1.24, R * 0.07, 4, 18), ...END), capMat);
+    ring.rotation.x = Math.PI / 2; ring.position.y = -h + SLV * f; stick.add(ring);
+  }
+  // its head: the tube pressed flat — a paddle with a hole through it (a shape with a hole, given its thickness, its edges eased)
+  const pw = R * 1.6, ph = TAB, rr = R * 0.5;
+  const pad = new THREE.Shape();
+  pad.moveTo(-pw / 2, 0); pad.lineTo(pw / 2, 0); pad.lineTo(pw / 2, ph - rr); pad.quadraticCurveTo(pw / 2, ph, pw / 2 - rr, ph);
+  pad.lineTo(-pw / 2 + rr, ph); pad.quadraticCurveTo(-pw / 2, ph, -pw / 2, ph - rr); pad.lineTo(-pw / 2, 0);
+  const hole = new THREE.Path(); hole.absarc(0, ph * 0.58, R * 0.36, 0, Math.PI * 2, true); pad.holes.push(hole);
+  const padGeo = new THREE.ExtrudeGeometry(pad, { depth: R * 0.4, bevelEnabled: true, bevelThickness: R * 0.1, bevelSize: R * 0.08, bevelSegments: 1, curveSegments: 12 });
+  padGeo.translate(0, 0, -R * 0.2);
+  const paddle = new THREE.Mesh(gsShade(padGeo, ...END), capMat); paddle.position.y = y1 - 0.002; stick.add(paddle);
+  // where the tube is pinched into it: a shoulder, round going flat
+  const sh = new THREE.Mesh(gsShade(new THREE.CylinderGeometry(R * 0.72, R * 1.02, 0.007, 18), ...END), capMat); sh.position.y = y1 + 0.0015; stick.add(sh);
+  // and the hook over it: a curl open to one side, standing in the paddle's plane
+  const hook = new THREE.Mesh(gsShade(new THREE.TorusGeometry(R * 0.62, R * 0.27, 8, 22, Math.PI * 1.45), ...END), capMat);
+  hook.position.set(R * 0.1, y1 + ph + R * 0.55, 0); hook.rotation.z = -Math.PI * 0.62; stick.add(hook);
+  const stem = new THREE.Mesh(gsShade(new THREE.CylinderGeometry(R * 0.27, R * 0.27, R * 0.5, 8), ...END), capMat);
+  stem.position.set(-R * 0.45, y1 + ph + R * 0.05, 0); stick.add(stem);
+  // (no light in here on purpose: a light entering the scene recompiles every material — ~940 ms measured. The glow on the
+  // ground is `groundGlow`, made at startup; in your hand, `heldGlow`.)
   // faint additive halo so the stick itself blooms a little
   const halo = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTex, color: GLOWSTICK_COLOR, transparent: true, opacity: 0.07,
     depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
   }));
   halo.scale.setScalar(0.4);
-  g.add(halo);
+  if (withHalo) g.add(halo);      // (not on the examine screen's copy: the halo is four of its widths and the stick was framed as a speck in it)
   return g;
 }
 function makeGlowstickIcon() {
@@ -22247,7 +22338,7 @@ function makeGlowstickIcon() {
 const glowstickVM = makeGlowstick();
 glowstickVM.scale.setScalar(1.5);
 glowstickVM.position.set(0.01, 0.0, 0.01);
-glowstickVM.rotation.set(0, 0, 1.15);
+glowstickVM.rotation.set(0, 0, 1.15 + Math.PI);   // (end for end, 2026-11-21, the owner: "flip it around when holding it": the sleeve in the fist, the hook up)
 glowstickVM.visible = false;
 toolMount.add(glowstickVM);
 
@@ -22306,7 +22397,7 @@ function updateHeldGlow(dt) {
 
 const glowstickItem = {
   name: 'Glowstick', desc: 'Lights the way', icon: makeGlowstickIcon(), viewmodel: glowstickVM,   // (the owner's words, 2026-11-21)
-  inspectModel: makeGlowstick(),
+  inspectModel: makeGlowstick(false), iconV: 'tube6',   // (the new stick drawn for its icon, not the stored old one)
   use: () => toggleEquip(glowstickItem),
 };
 /* A SECOND ONE STACKS. There are two on the walk now — the crate's and the
@@ -26052,7 +26143,7 @@ function dropSkullKey(sx, sy, sz, yaw, tries = 0) {
       hovered = null;
       addToInventory(skullKeyItem);
       if (skullLamp) { skullLamp.removeFromParent(); skullLamp = null; }
-      sfxThud(0.03);
+      /* (his keys' sound, not a thud: `addToInventory`) */
     },
   });
   skullLamp = new THREE.PointLight(0xdfe8ff, 2.2, 3.4, 2);
@@ -28215,10 +28306,10 @@ function playSample(name, gain = 1, rateJitter = 0, rate = 1, delay = 0, dest = 
   // a blade's whoosh is delayed to the strike, so the bank needs the offset
   // the synthesised one has always had
   src.start(ctx.currentTime + Math.max(0, delay));
-  samplePlays++;
+  samplePlays++; sampleLog.push(name); if (sampleLog.length > 24) sampleLog.shift();
   return true;
 }
-let samplePlays = 0;          // every recording started: a pickup that played one of the owner's has its sound (`primaryAction`)
+let samplePlays = 0; const sampleLog = [];   // (the last few started, by bank: for the probes)          // every recording started: a pickup that played one of the owner's has its sound (`primaryAction`)
 /* A CUE FROM SOMEWHERE IN THE ROOM. `playSample` is for what happens in
  * your own hands; a creature's voice has a WHERE. Panned by its bearing,
  * quieter by its distance, and — the thing that says "far" more than the
@@ -32817,7 +32908,7 @@ function takeShipKey() {
    * save written after the chest was opened has the key already used up. */
   const f = restore && restore.flags;
   if (replaying && f && f.chest) return;
-  sfxThud(0.03);
+  /* (his keys' sound, not a thud: `addToInventory`) */
   addToInventory(boatKeyItem);
 }
 // the surface of the broken basket's pieces under (x, z) — a ray down onto the pieces themselves, moving or settled into
@@ -37269,7 +37360,7 @@ function lostKeyLie(x, z, quiet) {
       scene.remove(W); removeInteractable(W); hovered = null;
       snorkKey.state = 2;
       addToInventory(lostKeyItem);
-      sfxThud(0.03);
+      /* (his keys' sound, not a thud: `addToInventory`) */
     },
   });
   snorkKey.state = 1;
@@ -38194,6 +38285,24 @@ function sfxGateHinge(opening) {
     og.gain.exponentialRampToValueAtTime(0.0001, t + at + dur);
     o.connect(og).connect(out); o.start(t + at); o.stop(t + at + dur + 0.02);
   }
+}
+/* THE YARD IS THE GATE'S (2026-11-21, the owner, having hooked over its wall: "u should need the key to acess this"). A step that
+ * takes you in across the yard's wall line (`WALL_R` round the column) is undone unless it goes in through the gate's own
+ * opening with the gate open — at any height below the room upstairs, so over the top of the wall on the chain is a step
+ * across it too; the pull that tried is ended and its carry dropped. Out is always free (a gate shut behind you must not
+ * shut you in), and a jump of more than two metres in a frame is a placing — a load, the dungeon's door — not a step. */
+const _myG = new THREE.Vector3();
+function mushYardBar() {
+  if (mushWhere !== 'out' || !MGATE) return;
+  const M = MUSH, feet = camBaseY - playerEye();
+  if (feet > M.H_ROOM - 0.4) return;
+  const c = camera.position, d0 = Math.hypot(_preMove.x - MUSH_X, _preMove.z - MUSH_Z), d1 = Math.hypot(c.x - MUSH_X, c.z - MUSH_Z);
+  if (!(d0 >= M.WALL_R && d1 < M.WALL_R) || Math.hypot(c.x - _preMove.x, c.z - _preMove.z) > 2) return;
+  _myG.set(MUSH_X + MGATE.x + Math.sin(MGATE.shut) * MGATE.w / 2, 0, MUSH_Z + MGATE.z + Math.cos(MGATE.shut) * MGATE.w / 2);
+  if ((gateOpen || devKeys()) && Math.hypot(c.x - _myG.x, c.z - _myG.z) < MGATE.w / 2 + 0.35) return;   // through the gate
+  c.x = _preMove.x; c.z = _preMove.z;
+  if (HK.st === 'zip') hookZipEnd(false);
+  if (HK.carry) HK.carry.set(0, 0, 0);
 }
 function toggleGate() {
   gateOpen = !gateOpen;
@@ -41645,7 +41754,7 @@ function hurtMutantAt(u, dmg, P = 0, from = null) {
   if (u.kind.garg && u.gp && u.st && u.st.alive) { if (!from) u.gp.aggro = 'you'; else if (from.kind && from.kind.mino) u.gp.aggro = 'mino'; }
   let r; try { r = hurtMutantCore(u, dmg, P, from); } finally { noBlood = false; }
   if (!from && u.st && (r || u.st.hp < hp0)) artCount(u, r);
-  if (!from && (bloodHeld() || hookHeld()) && !r && u.st.alive && !u.st.struck && u.st.hp < hp0 && !u.kind.baby && !u.kind.stone) bleedBuild(u, P, hookHeld() ? HOOK_BLEED : 1);
+  if (!from && weaponBleedK() > 0 && !r && u.st.alive && !u.st.struck && u.st.hp < hp0 && !u.kind.baby && !u.kind.stone) bleedBuild(u, P, weaponBleedK());
   if (!r && u.st && u.st.alive && u.st.hp < hp0 && u.kind.flinch) mutFlinch(u, P, from);
   if (u.kind.skrim && u.st && u.st.hp < hp0 && (SKRIM.stage === 'dig' || SKRIM.stage === 'deal' || SKRIM.stage === 'meet' || SKRIM.stage === 'talk' || SKRIM.stage === 'leave')) { if (dialogOpen) endDialog(); skrimFight(); }   // (and on his way out with it: "he walks out and leaves unless hit", 2026-10-30)
   if (u.kind.garg && u.gp && u.st && u.st.hp < hp0) {
@@ -52195,6 +52304,7 @@ function update(dt, rawDt = dt) {
   // you stand on it. Done after updateTower() so a rock simply beats the sand.
   // Skipped inside the drainage tunnel home — there are no beach rocks in
   // there, and pushOutOfRocks would shove you about inside the pipe.
+  mushYardBar();            // (the pavilion's yard: in by its gate, open, and no other way)
   if (!insideTower && !insideDrain && !inBunker && !inUndercroft) {
     const feet = camBaseY - playerEye();
     pushOutOfRocks(feet);
@@ -58848,7 +58958,7 @@ const SELL_ROWS = [
   // (2026-11-13, the owner: "make it so the katana can be sold for 4 jars"; an artifact set in it comes back to the pack first: `artOnWeaponLeaving`)
   { key: 'katana', item: () => katanaItem, name: 'Katana', price: 4, sum: 'A Holy Blade',
     count: () => (inventory.includes(katanaItem) ? 1 : 0),
-    desc: 'The samurai\'s blade. Fast, and it cuts: click for a light hit, hold Shift for a charged heavy.' },
+    desc: 'The samurai\'s blade. Fast, and it cuts, and what it cuts bleeds: click for a light hit, hold Shift for a charged heavy.' },
   { key: 'spliff', item: () => spliffItem, name: 'Wax Spliff', price: 1, sum: 'One jar each',
     count: () => (inventory.includes(spliffItem) ? spliffItem.count || 0 : 0),
     desc: 'Light it and take one hit: your stamina recovers 40% faster for four minutes. They stack.' },
@@ -82214,7 +82324,10 @@ function pullKeepLever() {
   L.state = L.dir > 0 ? 'rising' : 'falling';
   L.t = L.dir > 0 ? 0 : 1;
   L.creak = 0;
-  sfxKeepLever(L.first && L.dir < 0);
+  /* (HIS ITEM SOUND, AND NOTHING MADE UP — 2026-11-21, the owner: "give the tavern lift the left hand animation also the item
+   * sound when used take out the claude sound": the lever's synthesised clack, the rope running out, the creaks on the way
+   * and the thud at the stop are gone; the pickup sound, once, as his hand takes the rope — `doorPick`, as every door and lift) */
+  doorPick();
   L.first = false;
 }
 
@@ -82239,10 +82352,10 @@ function updateKeepLift(dt) {
     if (L.y > feetY && L.y < feetY + 1.7) { const d = L.y - feetY; camBaseY += d; cp.y += d; vy = Math.max(vy, 0); }
   }
   L.creak += dt;
-  if (L.creak > 1.15) { L.creak = 0; sfxKeepCreak(); }
+  if (L.creak > 1.15) L.creak = 0;
   if ((L.dir > 0 && L.t >= 1) || (L.dir < 0 && L.t <= 0)) {
     L.state = L.dir > 0 ? 'up' : 'down';
-    sfxKeepThud();
+    /* (the thud at the stop: his item sound was the use) */
     /* THERE IS NO CHECKPOINT AT THE TOP OF THE HOIST ANY MORE, on the
      * owner's word: the island saves at the tavern's door, going in and
      * coming out, and nowhere between the pier and it. */
@@ -86126,7 +86239,7 @@ function placeTavStoreKey() {
     gives: storeKeyItem, far: 3.2,
     when: () => inTavern,
     onActivate: () => {
-      sfxThud(0.03);
+      /* (his keys' sound, not a thud: `addToInventory`) */
       dropShine(g);                                  // (its column stands in the scene, not on the key: unhung with it)
       scene.remove(g); removeInteractable(g); hovered = null;
       addToInventory(storeKeyItem);
@@ -100758,7 +100871,7 @@ function cellKeyLie(x, y, z, quiet, fromY) {
       scene.remove(W); removeInteractable(W); hovered = null;
       cellKey.state = 2;
       addToInventory(cellKeyItem);
-      sfxThud(0.03);
+      /* (his keys' sound, not a thud: `addToInventory`) */
       setTimeout(() => { if (!dying) autosaveNow(); }, 400);
     },
   });
@@ -104026,7 +104139,11 @@ const wellParts = { bucket: null, handle: null, bolts: null, crank: null, rope: 
  * 0.082 as authored. Raised 0.19 the handle hangs 8 cm under the drum, and OUR rope runs between them from the start
  * (`wellSetBucket(0)`); the authored one is hidden. */
 const WELL_BUCKET_LIFT = 0.12;         // the bucket wound up under the drum (authored, it hung in the mouth; 0.44 until 2026-11-14)
-const WELL_DRUM_Y = 0.30, WELL_HANDLE_TOP = 0.082 + WELL_BUCKET_LIFT;   // (the drum: under its coil, which reaches 0.356)
+const WELL_DRUM_Y = 0.29, WELL_HANDLE_TOP = 0.082 + WELL_BUCKET_LIFT;   // (where the rope leaves the drum: level with its axle, off its side)
+/* (the axle and the coil round it, in the model's frame — measured, `tools/wellrope.js`; the rope leaves the coil off its -z side,
+ * where the authored one hung: `WELL_ROPE_Z`, the coil's own radius out, so it hangs OFF the drum, not out of its middle) */
+const WELL_AXLE_Y = 0.290, WELL_COIL_R = 0.068, WELL_ROPE_Z = -0.052;
+const WELL_ROPE_X = -0.088, WELL_HANDLE_Z = -0.036;   // (the handle's top, measured: x -0.156..-0.028, z -0.044..-0.027 — the rope runs from the drum's side down onto it)
 const WELL_BUCKET_Y0 = -0.17 + WELL_BUCKET_LIFT;   // its bottom, where it hangs
 /* THE SHAFT IS THE PARAPET'S WIDTH (2026-10-12). The ring has two inward
  * faces: its stone parapet at r 0.43 and, inside that, a narrow tube at
@@ -104318,7 +104435,7 @@ bwGlb('assets/well.glb', (gltf) => {
   // our own rope, the one the bucket hangs from: it pays out as the bucket goes down
   const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 1, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0x5a4a34, roughness: 1 }));
   wellMurkPatch(rope.material);
-  rope.position.set(-0.08, 0.26, -0.02); rope.scale.y = 0.001; rope.visible = false;
+  rope.position.set(WELL_ROPE_X, 0.26, WELL_ROPE_Z); rope.scale.y = 0.001; rope.visible = false;
   m.add(rope); wellParts.myRope = rope;
   /* (the authored rope keeps its coil round the drum; what hung from it — down to where the bucket was authored, out
    * under the bucket now — is cut from its index: every triangle under the drum) */
@@ -104330,7 +104447,12 @@ bwGlb('assets/well.glb', (gltf) => {
       const g = o.geometry, P = g.attributes.position, ix = g.index.array, keep = [];
       M.multiplyMatrices(inv, o.matrixWorld);
       const y = (i) => v.fromBufferAttribute(P, i).applyMatrix4(M).y;
-      for (let t = 0; t < ix.length; t += 3) if ((y(ix[t]) + y(ix[t + 1]) + y(ix[t + 2])) / 3 > WELL_DRUM_Y - 0.01) keep.push(ix[t], ix[t + 1], ix[t + 2]);
+      /* (THE WHOLE COIL, ROUND — 2026-11-21, the owner: "the rope wrap around cut off": cut at the drum's middle height, the
+       * coil's lower half went with the hanging rope and what was left was an arch floating over the axle. Measured
+       * (`tools/wellrope.js`): the axle at y 0.290, z 0, radius 0.037; the coil out to ~0.063 round it. What is kept is what
+       * lies within `WELL_COIL_R` of the axle — the coil, all the way round — and the rope that hung from it goes) */
+      const r = (i) => { v.fromBufferAttribute(P, i).applyMatrix4(M); return Math.hypot(v.y - WELL_AXLE_Y, v.z); };
+      for (let t = 0; t < ix.length; t += 3) if (Math.max(r(ix[t]), r(ix[t + 1]), r(ix[t + 2])) <= WELL_COIL_R) keep.push(ix[t], ix[t + 1], ix[t + 2]);
       g.setIndex(keep);
     });
   }
@@ -104455,7 +104577,7 @@ function wellEmptyLookIt() {
 // the bucket at the bottom (a save past the choice): nothing on the rope, the rope paid out into the dark
 function wellBucketDown() {
   for (const k of ['bucket', 'handle', 'bolts']) if (wellParts[k]) wellParts[k].visible = false;
-  if (wellParts.myRope) { wellParts.myRope.visible = true; wellParts.myRope.scale.y = 9; wellParts.myRope.position.y = WELL_DRUM_Y - 4.5; }
+  if (wellParts.myRope) { const r = wellParts.myRope; r.visible = true; r.scale.y = 9; r.position.set(WELL_ROPE_X, WELL_DRUM_Y - 4.5, WELL_ROPE_Z); r.rotation.set(0, 0, 0); }
 }
 
 /* ---- THE MAN FROM THE WELL ------------------------------------------ */
@@ -104943,8 +105065,9 @@ function wellRopeStop() {
 function wellSetBucket(depth) {
   for (const k of ['bucket', 'handle', 'bolts']) { const o = wellParts[k]; if (o) { if (o.userData.y0 === undefined) o.userData.y0 = o.position.y; o.position.y = o.userData.y0 - depth; o.visible = depth < 6.0; } }   // (by 5 m down the murk has all of it: it goes out, it is not switched off)
   const r = wellParts.myRope; if (!r) return;
-  const top = WELL_DRUM_Y, bottom = WELL_HANDLE_TOP - depth;
-  r.scale.y = Math.max(0.001, top - bottom); r.position.y = (top + bottom) / 2;
+  const top = WELL_DRUM_Y, bottom = WELL_HANDLE_TOP - 0.006 - depth, dz = WELL_ROPE_Z - WELL_HANDLE_Z, dy = Math.max(0.001, top - bottom);
+  // (off the drum's side and down onto the handle's top: a hair of a slant while it is wound up, plumb once it is down)
+  r.scale.y = Math.hypot(dy, dz); r.position.set(WELL_ROPE_X, (top + bottom) / 2, (WELL_ROPE_Z + WELL_HANDLE_Z) / 2); r.rotation.x = Math.atan2(dz, dy);
 }
 function wellRopeSway(a) {
   const r = wellParts.myRope; if (r) { r.rotation.z = a; r.rotation.x = a * 0.6; }
@@ -105097,7 +105220,7 @@ function wellKeyLie(x, z, quiet, fromY) {
       scene.remove(W); removeInteractable(W); hovered = null;
       wellKey.state = 2;
       addToInventory(pavKeyItem);
-      sfxThud(0.03);
+      /* (his keys' sound, not a thud: `addToInventory`) */
     },
   });
   if (!quiet) { spawnPuffs(x, z, 3, 0, -1, 0.06); try { playSample('sandHit', 0.4, 0.1, 1.5); } catch (e) {} setTimeout(() => { if (!dying) autosaveNow(); }, 1500); }   // and he is dead: that is kept
@@ -116487,7 +116610,7 @@ function artHitFrozen(u, dmg, P) {
   if (!heavy) worldSparks(_artV, 8);
   if (heavy) artRelease(u, true);
   else { st.immob = Math.max(0.3, st.immob - 0.12); sfxArtCrack(_artV.x, _artV.z); }
-  if (bloodHeld() || hookHeld()) bleedBuild(u, P, hookHeld() ? HOOK_BLEED : 1);
+  if (weaponBleedK() > 0) bleedBuild(u, P, weaponBleedK());
   return false;
 }
 /* Held: nothing of the fight runs, the clips do not advance, and the body
@@ -127993,7 +128116,7 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   TMP_X, TMP_Y, TMP_Z, TMP_VIEW, TMP_T, TMP_FOG, TMP_WALK_R, TMP_SCALE, TMP_POD_R, TMP_FLOOR, TC, ocean, oceanFar, loadTemple, placeInTemple, placeOutOfTemple, devTemple, startTempleFlight, crowCallFromTop, trader3World, tmpFloorAt, tmpSandRaw, tmpCellTop, tmpViewYaw, tmpEyeY,
   tmpS: () => ({ ready: tmpReady, inTemple, flown: tmpFlown, cut: tmpCut ? +tmpCut.t.toFixed(2) : -1, room: !!(tmpCut && tmpCut.room), solid: tmpG ? tmpG.solidN : 0, fz: frozen(), why: { bootHold, pack: packCut, mut: mutCut, wb: !!wbSw, hatch: hatchBusy, portal: portalCut, crab: !!crabCut, hj: !!hjCut, well: wellLook.on, key: !!keyCut, thr: !!thrCut, fare: !!wbFareCut } }),
   tmpG: () => ({ world: tmpWorld, G: tmpG, clouds: tmpClouds, rays: tmpRays, sky: tmpSky }),
-  kingDied, KING, KFX, KA, TMP_ATM, tmpAirS: () => tmpAir, scarTexS: scarTex, makeSpaceIR, WHALE_VERB, CLIFF_BLOCK_X, CLIFF_X, kingRunStart, kingTornStart, kingDust, kingOnRay, KD, tmpStepOnStone, sfxStepTemple, packSlotsS: () => packSlots, UCS: () => UC, MUSH_XS: () => MUSH_X, dunDoorMeshS: () => dunDoorMesh, dunBusyS: () => dunBusy, MUSH_ZS: () => MUSH_Z, loadDungeonS: () => loadDungeon(), ucIdolS: () => ({ touched: ucTouched, tip: +ucTipT.toFixed(2), broke: ucBroke, at: ucIdolProxy ? ucIdolProxy.getWorldPosition(new THREE.Vector3()).toArray().map((v) => +v.toFixed(2)) : null }), ucIdolStrikeS: (P) => { camera.getWorldDirection(_aimD); return ucIdolStrike(P); }, ucIdolNearS: (x, y, z) => ucIdolNear(new THREE.Vector3(x, y, z), 0.1), inUndercroftS: () => inUndercroft, enterUndercroft, MOUNT_FRONT_X, MOUNT_MOUTH_Z, UC_X, UC_Y, UC_Z, bottleSloshS: () => bottleSloshN, smokeSpliffS: () => smokeSpliff(), lightAtS: (x, y, z) => lightAt(new THREE.Vector3(x, y, z), new THREE.Color()).toArray().map((v) => +v.toFixed(3)), HG, SNORK_X, SNORK_Z, snorkS: () => ({ met: snorkMet, want: snorkWant, up: +snorkUp.toFixed(2) }), waterPlaneOf, drinkWaterS: () => drinkWater(), farmVoxTrackedS: () => farmVoxTracked, kingS: () => ({ cut: kingCut ? +kingCut.t.toFixed(2) : -1, down: kingDown, mode: KING.mode, hp: KING.u ? KING.u.st.hp : -1, alive: KING.u ? KING.u.st.alive : null, atk: KING.u ? KING.u.st.atk : null, swing: KING.u ? KING.u.st.swing : null }), KING_TRIGGER, KING_PILLARS, setKingDown: (v) => { kingDown = !!v; KING.placed = false; }, devTeleportTemple, kingFlipStart, kingRunStart, kingExplode, kingBlowsS: () => KING.blows, kingLineBlockedS: (u) => kingLineBlocked(u), blowLandsS: (u) => blowLands(u), blowHeightOKS: (u) => blowHeightOK(u), camBaseS: () => camBaseY, kingFeetAtS: kingFeetAt, mutTokenS: () => mutToken,
+  kingDied, KING, KFX, KA, TMP_ATM, tmpAirS: () => tmpAir, scarTexS: scarTex, makeSpaceIR, WHALE_VERB, CLIFF_BLOCK_X, CLIFF_X, kingRunStart, kingTornStart, kingDust, kingOnRay, KD, tmpStepOnStone, sfxStepTemple, packSlotsS: () => packSlots, UCS: () => UC, MUSH_XS: () => MUSH_X, dunDoorMeshS: () => dunDoorMesh, dunBusyS: () => dunBusy, hookZipAtS: (x, y, z) => { HK.p.set(x, y, z); HK.airThrow = true; return hookZipStart(); }, HKS: () => HK, toolDmgBaseS: (heavy) => toolDmgBase(heavy), keepLiftS: () => keepLift ? { state: keepLift.state, proxies: keepLiftParts && keepLiftParts.proxies } : null, hookThrowS: (c) => hookThrow(c), tavInfoS: () => ({ walk: !!tavWalk, last: tavLastSpot ? [tavLastSpot.x, tavLastSpot.z] : null, floor: (x, z, f) => keepFloorAt(x, z, f, TAV_STEP, TAV_SITE) }), MGATES: () => MGATE, gateOpenS: () => gateOpen, wellGS: () => wellG, wellPartsS: () => wellParts, wellBucketDownS: () => wellBucketDown(), wellSetBucketS: (d) => wellSetBucket(d), sampleLogS: () => sampleLog.slice(), takeNowS: (it) => takeNow(it), handUsesS: (label, kind) => handUses({ label, kind: kind || "default", onActivate: () => {} }), MUSH_ZS: () => MUSH_Z, loadDungeonS: () => loadDungeon(), ucIdolS: () => ({ touched: ucTouched, tip: +ucTipT.toFixed(2), broke: ucBroke, at: ucIdolProxy ? ucIdolProxy.getWorldPosition(new THREE.Vector3()).toArray().map((v) => +v.toFixed(2)) : null }), ucIdolStrikeS: (P) => { camera.getWorldDirection(_aimD); return ucIdolStrike(P); }, ucIdolNearS: (x, y, z) => ucIdolNear(new THREE.Vector3(x, y, z), 0.1), inUndercroftS: () => inUndercroft, enterUndercroft, MOUNT_FRONT_X, MOUNT_MOUTH_Z, UC_X, UC_Y, UC_Z, bottleSloshS: () => bottleSloshN, smokeSpliffS: () => smokeSpliff(), lightAtS: (x, y, z) => lightAt(new THREE.Vector3(x, y, z), new THREE.Color()).toArray().map((v) => +v.toFixed(3)), HG, SNORK_X, SNORK_Z, snorkS: () => ({ met: snorkMet, want: snorkWant, up: +snorkUp.toFixed(2) }), waterPlaneOf, drinkWaterS: () => drinkWater(), farmVoxTrackedS: () => farmVoxTracked, kingS: () => ({ cut: kingCut ? +kingCut.t.toFixed(2) : -1, down: kingDown, mode: KING.mode, hp: KING.u ? KING.u.st.hp : -1, alive: KING.u ? KING.u.st.alive : null, atk: KING.u ? KING.u.st.atk : null, swing: KING.u ? KING.u.st.swing : null }), KING_TRIGGER, KING_PILLARS, setKingDown: (v) => { kingDown = !!v; KING.placed = false; }, devTeleportTemple, kingFlipStart, kingRunStart, kingExplode, kingBlowsS: () => KING.blows, kingLineBlockedS: (u) => kingLineBlocked(u), blowLandsS: (u) => blowLands(u), blowHeightOKS: (u) => blowHeightOK(u), camBaseS: () => camBaseY, kingFeetAtS: kingFeetAt, mutTokenS: () => mutToken,
 }));
 
 moduleDone = true;   // (the last line: see `bootRoomsAsked`)

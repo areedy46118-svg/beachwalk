@@ -36,6 +36,32 @@ if (BIG) {
   document.head.appendChild(st);
 }
 if (ONLY_KEYS) { document.querySelector('h1').textContent = 'Every key — its name and its description'; G.style.gridTemplateColumns = 'repeat(3, 1fr)'; }
+/* ?weapons=1: every weapon as a stat card — what it would show if the game displayed its numbers (2026-11-21, the owner: "show
+   me a screenshot of all weapons with there stats if it were to display damage stats etc."). The melee numbers are read off
+   the items themselves (`dmgLight`, `dmgHeavy`, `swingK`, `windRate`, `reachK`, `stamK`; a tool without one is the shovel's
+   1 / 2 / 1); the guns' and the specials' from main.js's constants, written here: MAG_DMG 14, MAG_CAP 6, MAG_RANGE 80;
+   SG_PELLETS 9 × SG_PELLET_DMG 3.6, two barrels; HOOK_DMG 1.5 thrown 6–14 m, HOOK_BLEED 1.35; the Bloody Blade's bleed 1 and
+   gore +30 %; BLEED_PCT 17 %; the mace's slam 14 and its wave 0.3 of it; the peg's tip +0.2, parry window ×0.75, stagger ×1.3,
+   haste ×1.35 for 5 s. Bars are against the strongest of the set. */
+const WEAPONS = Q.get('weapons') === '1';
+if (WEAPONS) {
+  const st = document.createElement('style');
+  st.textContent = 'html, body { font-size: 20px; } h1 { font-size: 30px; } #g { grid-template-columns: repeat(3, 1fr) !important; gap: 16px; } .c { grid-template-columns: 150px 1fr; padding: 14px; min-height: 0; } .c img { width: 150px; height: 150px; } .n { font-size: 26px; } .row { display: grid; grid-template-columns: 150px 1fr 64px; align-items: center; gap: 8px; font-size: 17px; margin: 3px 0; } .row .k { color: #b9ab98; } .bar { height: 10px; background: #15120f; border-radius: 5px; overflow: hidden; } .bar i { display: block; height: 100%; background: linear-gradient(90deg, #8a3b22, #e0a055); } .row .v { text-align: right; color: #fff3dc; font-variant-numeric: tabular-nums; } .sp { margin-top: 8px; font-size: 16px; color: #e6dccb; line-height: 1.35; } .sp b { color: #f0c27a; font-weight: normal; } .kind { font: 13px monospace; color: #9c8f80; margin-bottom: 6px; } .row.txt { grid-template-columns: 150px 1fr; } .row.txt .v { text-align: left; }';
+  document.head.appendChild(st);
+  document.querySelector('h1').textContent = 'Weapons — their numbers, as the game would show them';
+}
+const WSTAT = {
+  'Toy Shovel': { kind: 'melee', sp: 'A plastic kids toy. The baseline every other weapon is measured against.' },
+  'Military Shovel': { kind: 'melee', sp: 'Steel: a quarter harder than the toy shovel, the same speed. Its overhead slides your grip up to the neck.' },
+  'Katana': { kind: 'melee', bleed: 0.6, sp: 'Three-cut combo that crosses and comes back. Bleed <b>+0.6 a hit, +1 a heavy</b> (the Bloody Blade\'s is 1 and 1.7). <b>Gore ×1.4</b>.' },
+  'Bloody Blade': { kind: 'melee', bleed: 1, sp: 'Bleed builds <b>+1 a hit, +1.7 a heavy</b>; a full bleed bursts for <b>17 % of their health</b>. <b>Gore +30 %</b>.' },
+  "Skrim's Hook": { kind: 'melee', bleed: 1.35, sp: 'Four-cut string. Bleed <b>+1.35 a hit, +2.3 a heavy</b>. Shift heavy <b>throws it 6–14 m</b> for <b>1.5</b> and drags them to you.' },
+  'Bone Mace': { kind: 'melee', sp: 'Hold the overhead <b>3 s for a 14-damage slam</b>, with a shockwave of up to <b>4.2</b> round it. Costs <b>×1.8 stamina</b>.' },
+  'Spare Peg': { kind: 'melee', sp: 'A thrust: the <b>tip adds +0.2</b>. Parry window <b>−25 %</b>, parry stagger <b>+30 %</b>; after a parry <b>attack speed +35 % for 5 s</b>.' },
+  '.44 Magnum': { kind: 'gun', dmg: 14, cap: '6 rounds (starts with 4)', range: '80 m', sp: 'One round is <b>14</b> — near five katana heavies.' },
+  'The Sawed Off Shotgun': { kind: 'gun', dmg: 32.4, cap: '2 shells', range: 'falls off with distance', sp: '<b>9 pellets × 3.6</b>: 32 point blank, less as they spread.' },
+};
+
 f.addEventListener('load', async () => {
   const w = f.contentWindow;
   for (let i = 0; i < 200 && !w.__bw; i++) await wait(100);
@@ -43,7 +69,7 @@ f.addEventListener('load', async () => {
   for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) { } b.frame(1); await wait(60); }
   const extra = { 'Blood Jar': () => b.jarItem, 'Bone Mace': () => b.maceItem, 'Steel Door Key': () => b.sewKeyItem };
   let n = 0;
-  let LIST = ONLY_KEYS ? KEYS : NAMES;
+  let LIST = ONLY_KEYS ? KEYS : WEAPONS ? Object.keys(WSTAT) : NAMES;
   if (BIG) { const all = NAMES.concat(KEYS); LIST = all.slice((PAGE - 1) * PER, PAGE * PER); document.querySelector('h1').textContent = `Every item and key — page ${PAGE} of ${Math.ceil(all.length / PER)}`; }
   for (const nm of LIST) {
     const it = b.packByName(nm) || (extra[nm] && extra[nm]());
@@ -55,6 +81,17 @@ f.addEventListener('load', async () => {
     const pic = a || it.icon || '';
     const kind = it.isKey ? 'key' + (ONLY_KEYS ? '' : ' — the pack shows its name only') : it.ring ? 'ring' : '';
     const desc = (it.desc || '').trim();
+    if (WEAPONS) {
+      const W = WSTAT[nm], bar = (k, v, max, txt) => `<div class="row"><span class="k">${k}</span><span class="bar"><i style="width:${Math.max(3, Math.min(100, v / max * 100)).toFixed(0)}%"></i></span><span class="v">${txt}</span></div>`;
+      let rows = '';
+      if (W.kind === 'melee') {
+        const L = it.dmgLight || 1, H = it.dmgHeavy || 2, sw = 1 / (it.swingK || 1), ch = it.windRate || 1, rk = it.reachK || 1, stam = it.stamK || 1;
+        rows = bar('Light hit', L, 3, L) + bar('Heavy hit', H, 3, H) + bar('Swing speed', sw, 1.4, Math.round(sw * 100) + '%') + bar('Charge speed', ch, 1.6, Math.round(ch * 100) + '%')
+          + bar('Reach', rk, 1.4, '×' + rk) + bar('Stamina cost', stam, 1.8, '×' + stam) + bar('Bleed a hit', W.bleed || 0, 1.4, W.bleed ? '+' + W.bleed : '—');
+      } else rows = bar('Damage', W.dmg, 32.4, W.dmg) + `<div class="row txt"><span class="k">Holds</span><span class="v">${W.cap}</span></div><div class="row txt"><span class="k">Range</span><span class="v">${W.range}</span></div>`;
+      cell.innerHTML = `<img src="${pic}"><div><div class="n">${it.name}</div><div class="kind">${W.kind === 'gun' ? 'firearm' : 'melee'}</div>${rows}<div class="sp">${W.sp}</div></div>`;
+      n++; continue;
+    }
     cell.innerHTML = `<img src="${pic}"><div><div class="n">${it.name}</div>${kind ? `<div class="i">${kind}</div>` : ''}<div class="d ${desc ? '' : 'none'}">${desc || '(no description)'}</div></div>`;
     n++;
   }

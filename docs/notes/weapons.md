@@ -3103,3 +3103,24 @@ LIKE THE HOOK PULLS ME IN … A GOOD WAY TO MOVE FAST DONT MAKE IT TOO MUCH … 
 - `tools/hookzip.js` (`&d=`, `&up=`, `&dir=floor`, `&ground=1`): from 4 m in the air at the sand wall, there in 0.37 s at
   up to 18 m/s and lifted at it; from 9 m, 9 m; down at the sand, 7.8 m along it at up to 19; standing, none. (The cliff is
   3.2 m: an upward throw clears it — nothing to pull to.)
+
+## 2026-11-21: Skrim's hook does not take you through things
+
+- The pull and its carry move you in `HOOK_STEP` 0.1 m steps (`hookStepSolid`), each pushed out of the solids and, in a room,
+  through the room's own clamp (`clampPlayerToRoom`) — at 17 m/s a frame's half metre went past a wall's middle and the
+  push-out finished it on the far side ("i just hooked over the pavillon wall and clipped through it", "i should never glitch
+  through the tavern like this even using the hook"). `tools/hookthrough.js`: twelve pulls round the tavern at points through its
+  walls, every one ends on its floor.
+- The pavilion's yard is its gate's: `mushYardBar` (pavilion.md). `tools/yardbar.js`.
+- The mounds and the banks: the throw marches its line every 15 cm against `driftAt` / `sandMoundAt` / `wbBermAt` and lands on
+  the ground where it is above the line (the trace only knew the flat sand's mesh, so it went through a heap). The apron
+  before the entrance rock: lands on it from in front; from the side the rock is met first.
+- **The military shovel hits a quarter harder than the toy** ("make military shovel do more damage then the toy shovel not by alot
+  make it balanced"): `dmgLight` 1.25, `dmgHeavy` 2.5 (the toy's default 1 / 2; the katana 2 / 3), the same speed. A dark
+  mutant (8) in 7 cuts not 8; a red (13) in 11 cuts / 6 heavies, not 13 / 7. `tools/shoveldmg.js`.
+- **The katana bleeds them, less than the Bloody Blade** ("make the katana do bleed damage too and edit its description. make it
+  less bleed than the bloody blade"): `weaponBleedK()` is the one answer to "how much bleed does a cut build" — the Bloody
+  Blade 1, Skrim's hook `HOOK_BLEED` 1.35, the katana `KAT_BLEED` 0.6 (a heavy ×1.7: 1.0), nothing else — asked by both
+  places a hit builds bleed (`hurtMutantAt`, and a hit on one the Artifact holds). Its description: "A Holy Blade · Bleed Build
+  Up +0.6 Per Hit, +1 Per Heavy · A Bleed Burst Takes 17% Of Their Health"; the shop's line says it bleeds them too.
+  `tools/katbleed.js`: a red mutant, a cut then a heavy — katana 0.60 / +1.02, Bloody Blade 1.00 / +1.70, toy shovel 0.

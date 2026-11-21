@@ -3033,3 +3033,9 @@ FRAME is `TB.H` tall (his clips are in those pixels: with the view at `TB.H` the
 - The bed's copy: `elvPlaceBed` updates the house's matrices before its rays (a house never drawn has them stale); a restore
   shows the bed's copy again (a pickup hid it and nothing re-showed it) and takes up one put down.
 - Elvédor's light-bill line is cut: "YES! THATS AWESOME!" ends it (`end` 2600).
+- **The well's rope** (`tools/wellrope.js`, close stills from either side and the parts measured in the model's own frame): the
+  axle is at y 0.290, z 0, r 0.037; the coil round it out to ~0.063. The load cut the authored rope at the drum's middle
+  height, so the coil's lower half went and an arch floated over the axle ("the rope wrap around cut off"); now what is kept is
+  within `WELL_COIL_R` 0.068 of the axle. Our rope came out of the drum's MIDDLE (z −0.02); it leaves its side now
+  (`WELL_ROPE_Z` −0.052, where the authored one hung) and runs onto the handle's top (x −0.092, z −0.036, measured) — a slant
+  while wound up, plumb once paid out (`wellSetBucket`, `wellBucketDown`).

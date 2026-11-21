@@ -761,3 +761,11 @@ which is the lag.
 - Measured with the real walk (`setFallbackLook(true)`, `keys.KeyW`, `step`, a jump every 37–45 ticks, 900 ticks
   each) from 18 starts along both sides: 0 crossings, worst step 0.15 m. The tide is subtle on screen, as asked — it
   covers the low sand at the necks; the rocks still stand out of it.
+
+## 2026-11-21: the hoist by hand, and his sound
+
+"give the tavern lift the left hand animation also the item sound when used take out the claude sound": the hoist ("Raise /
+Lower the hoist", `pullKeepLever`) is on the hand's reach (`HG_USE` 'hoist'); its synthesised lever clack and rope run-out
+(`sfxKeepLever`), the creaks on the way (`sfxKeepCreak`) and the thud at the stop (`sfxKeepThud`) are no longer called —
+`doorPick()` (his pickup sound) once, on the use, as every door and lift. `tools/keephoist.js`: hand out, the hoist going at
+0.3 s, the only recording over the ride `pickup`.

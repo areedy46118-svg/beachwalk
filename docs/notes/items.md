@@ -1378,7 +1378,7 @@ make the fiji label face you when holding". "Fiji Water Bottle" (Diego T. Yamagu
   that keeps the clip's left border and knee cut off the screen is taken along the turned lines. The out is CLOSED
   (`nC`), down and left; the thing goes with it as a copy (`HG.ghost`, glints off) at its own depth in the camera's frame.
 - **The same reach for what you use** (`handUses` / `HG_USE`): doors, locks, lids, chests, the lift, levers, valves, buttons,
-  the fridge, the TV, the idol's touch — `onActivate` on the close (if `when` still holds) instead of `takeNow`; aimed at the
+  the fridge, the TV, the idol's touch (not a "Look inside": the well, the sewer's grate) — `onActivate` on the close (if `when` still holds) instead of `takeNow`; aimed at the
   hit box's middle (`hgTarget`), not the origin (a door's is its hinge). Dungeon door: hand out 0.07 s, used at 0.27 s.
 - **Fiji water, by volume**: the water's skin is rays out from the bottle's axis against the shell AND the label cards
   (40 rings × 32), nearest hit less 1.6 mm, closed top and bottom — it cannot stand outside the plastic. A fixed cloud of
@@ -1394,3 +1394,21 @@ make the fiji label face you when holding". "Fiji Water Bottle" (Diego T. Yamagu
   0.05–0.16 gain pitched 1.6–2.1. Held still: none; slow turn: ~1; flicks: 7 in 2 s.
 - **A spliff is spent at the breath out**, with its buff, not at the flick; and `toggleEquip` ends a smoke that is put away
   (the hand's own update never runs again for it, so a spent one sat in the pack at 0).
+- **A key sounds like the keys in the pack, however it comes** (`addToInventory`: `sfxKeyChain` for anything `isKey`, hushed in
+  dev mode's handing-over, silent in a replay by `sfxOut`); the synth thud each key's own take played is gone, and `takeNow`
+  no longer rings a second jingle. `tools/keypick.js`: all six keys → `keyJingle` only; a shovel → `pickup`.
+- **The crab's draw in the middle of the screen**: `startExtraction` centred the crab's BOX — its long dark tail, nothing
+  against the black, pulled the middle off the shell, which sat right. Now the mean of its vertices (the shell is most of
+  them), measured with the fit and the turntable square. `tools/crabdraw.js` (a still with the middle line).
+- The well and the sewer's "Look inside" are not hand reaches (`HG_NOT` `^look`, and the well's `'look'` kind).
+- **The glowstick remade** to the owner's picture (Sketchfab's "Glow Stick" by Grishmanovskij Anton — its SHAPE drawn here, not
+  that model: "make it look exactly like the model but the colors we had"): a slender tube 14 widths long (R = LEN/28), a
+  squared sleeve at the foot with a seam, the head pressed flat into a paddle with a round hole (an extruded shape with a
+  hole) under an open hook (a 1.45π torus arc and a stem). In the old colours: the see-through teal casing (0x5cc0b0, 0.3)
+  over the dimmer core (0x3f9a8e); the ends in the casing's teal, less see-through (0x4aa898, 0.78) — the old caps' dark
+  plastic made them nothing against the night. A first pass in bright mint (`toneMapped: false`) was the picture's colour,
+  not ours. The examine screen's copy has no halo (`makeGlowstick(false)`): four widths of glow framed the stick as a speck.
+  Then ("flip it around when holding it and improve the models look"): held end for end (`glowstickVM` z + π: the sleeve in
+  the fist, the hook up); and a body painted on, since it is unlit — `gsShade` colours every part from its own normals against
+  one direction (lit side, shadowed side, a streak down the casing), the core a capsule, three grip rings and a bevelled foot
+  on the sleeve, the paddle bevelled, the hook rounder. `iconV` 'tube6'. `tools/glowshot.js` (examine, close; in hand, close).
