@@ -11,7 +11,7 @@ sleep 1
   --mute-audio --autoplay-policy=no-user-gesture-required --window-size=1280,760 --use-angle=metal --enable-logging=stderr --v=0 \
   "http://localhost:$PORT/tools/probe.html?s=$SC" > /dev/null 2> "$OUT/chrome.err" & CH=$!
 for i in $(seq 1 ${PB_WAIT:-300}); do sleep 1; grep -q "\[PB\] DONE" "$OUT/chrome.err" && break; done
-kill $CH $SRV 2>/dev/null; sleep 1; pkill -f "user-data-dir=$OUT/prof" 2>/dev/null
+kill $CH $SRV 2>/dev/null; sleep 1; pkill -f "user-data-dir=$OUT/prof" 2>/dev/null; sleep 1; rm -rf "$OUT/prof"   # (its throwaway Chrome profile is ~0.5 GB: never left behind, 2026-11-20)
 grep -o "\[PB\] .*" "$OUT/chrome.err" | sed 's/", source.*//'
 python3 - "$OUT" <<'PY'
 import re, sys, base64, collections

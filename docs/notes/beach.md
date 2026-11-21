@@ -2525,8 +2525,12 @@ loads in 30 s — a harness limit, the stage itself came back 1 both ways.)
 - **(later, 2026-11-18) No cells on the water.** The `seaCells` Voronoi walls — the shallows' light, the shore froth and the foam
   lace — read as a honeycomb net laid over the sea (the owner: "stop texturing things with just circles"). All three are layered
   `skN` noise now (soft drifting light patches; blotchy torn froth). `seaCells` is left defined and unused.
-- **The black "rocks" on the water near the spawn are NOT the formations' chunks** (those are gone, and a fresh boot shows none
-  there, headless or in the pane). In the owner's screenshot they are solid black low-poly shapes FLOATING at several heights over
-  the water and the sand — a burst of something mid-flight, not scenery. Ruled out by test: splash drops (pale at every scale,
-  against the moon too), footprints (never stamped in water), the throwables (three in the game), castle props (none near the
-  beach), the wreck/headland/dojo rocks (far), the syringe (extraction only). Still to find: ask what he did just before.
+- **THE BLACK "ROCKS" IN THE WATER WERE THE DRAIN'S GRAVEL** (found 2026-11-18 after four asks; the owner: "its right out front of
+  the sewer opening. it only happens when the tide comes in … stop being impatient and wait for the waves to come up"). The drain
+  model's outflow run (`models/drainage-tunnel-home.js`, the ER group) laid 40 + 22 `DodecahedronGeometry` cobbles sunk to a
+  third of their height in the sand toward the sea. At high tide the sand there is DISCARDED (seaward of `shoreLine`) and every
+  buried lump stood over the water as a black chunk. Both loops are gone. Lessons: (1) anything half-buried in the beach sand
+  is a floating lump when the tide covers it — clip it at the shore or keep it above the high-water line (~x 8.6); (2) the
+  beach's tide peaks at uTime ≈ 34.9 + 139.6 n — render a shoreline complaint AT HIGH TIDE (`view&t=34.9`), never at a random
+  clock; (3) scenery can live in a room's own model file, not only in main.js's rock code — grep the models too. The wrong
+  guesses on the way (formation chunks, splashes, gibs, footprints, the under-surface school) were each ruled out by test.

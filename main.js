@@ -27925,7 +27925,7 @@ function drainAir() {
  *  - THE SPILL: soft puffs born just inside the mouth, rolling out over the lip, sinking and spreading over the sand in
  *    front of it and thinning away five to eight metres out. Billboards computed whole in the vertex shader from a seed
  *    and the clock (no per-frame CPU), faded near the eye so a puff never flattens across the screen. */
-const DRAIN_MIST = { volD: 0.1, puffs: 72, puffA: 0.17 };
+const DRAIN_MIST = { volD: 0.13, puffs: 110, puffA: 0.34 };   // (2026-11-18 last: seen, and of one even night-fog tone — see the colours below)
 const drainMistU = { uT: { value: 0 }, uK: { value: 1 } };
 const drainMist = (() => {
   const g = new THREE.Group(); g.name = 'drainMist';
@@ -27963,9 +27963,11 @@ const drainMist = (() => {
           tau += (0.35 + 0.9 * along) * (1.55 - 1.05 * up) * (0.45 + 1.1 * drift) * dt;
         }
         float al = 1.0 - exp(-tau * ${DRAIN_MIST.volD.toFixed(3)} * uK * 9.0);
-        // (darker than what is behind it, so it HIDES — 2026-11-18, the owner: "it seems like it is highlighting areas when its supposed
-        // to be obscuring": at 0.14-0.18 it was paler than the night and read as light)
-        vec3 near = vec3(0.035, 0.045, 0.06), deep = vec3(0.022, 0.026, 0.022);
+        /* NIGHT FOG HAS ONE BRIGHTNESS OF ITS OWN (2026-11-18, the owner, twice: "it seems like it is highlighting areas when its
+         * supposed to be obscuring", then "what happened to the fog in the tunnel and seeping out"): at 0.14-0.18 it was paler than
+         * everything and glowed; at 0.035-0.06 it vanished into the dark. A moonlit grey-blue a little over the dark brick and
+         * under the lit water: it greys the dark and dims the bright — it OBSCURES, and it is seen. */
+        vec3 near = vec3(0.07, 0.082, 0.1), deep = vec3(0.05, 0.056, 0.05);
         float along0 = clamp((ro.x + rd.x * t0 - uX.x) / (uX.y - uX.x), 0.0, 1.0);
         gl_FragColor = vec4(mix(near, deep, along0), al * 0.92);
       }`,
@@ -27992,7 +27994,7 @@ const drainMist = (() => {
         float y = mix(uFloor + 0.22 + aSeed.y * 0.55, 0.05 + aSeed.w * 0.32, smoothstep(-0.2, 2.2, -lx));   // sinks to the sand as it leaves
         float z = (aSeed.z - 0.5) * 1.5 * (1.0 + out_ * 2.6 + age * 0.8) + sin(uT * 0.13 + aSeed.x * 6.28) * 0.35 * (0.3 + out_);
         vec4 c = modelMatrix * vec4(lx, y, z, 1.0);
-        float sz = (0.9 + aSeed.y * 0.5) * (1.0 + age * 2.2 + out_ * 1.0);
+        float sz = (1.1 + aSeed.y * 0.6) * (1.0 + age * 2.4 + out_ * 1.2);
         vec4 mv = viewMatrix * c;
         float dcam = -mv.z;
         mv.xy += position.xy * sz * vec2(1.0, 0.62);
@@ -28011,7 +28013,7 @@ const drainMist = (() => {
         float a = smoothstep(1.0, 0.15, r + (wisp - 0.5) * 0.55);
         a *= a * vA * uA * uK;
         if (a < 0.002) discard;
-        vec3 col = mix(vec3(0.03, 0.035, 0.032), vec3(0.055, 0.07, 0.095), vOut);    // the pipe's murk, then the night's own haze: under what is behind it, so it veils (2026-11-18)
+        vec3 col = mix(vec3(0.055, 0.06, 0.056), vec3(0.075, 0.09, 0.115), vOut);    // the pipe's murk, then the night's own fog: one even tone, a touch over the dark sand, under the lit water (2026-11-18)
         gl_FragColor = vec4(col, a);
       }`,
     transparent: true, depthWrite: false, fog: false,
@@ -121038,7 +121040,7 @@ window.__bw = {
   get crouching() { return crouching; }, set crouching(v) { crouching = v; },
   set airborne(v) { onGround = !v; vy = 0; },
   get ucVerb() { return ucVerbGain ? ucVerbGain.gain.value : null; },   // in the ORIGINAL literal: Object.assign copies a getter's value     // the harness dropping the player from a height: a fall off a ledge is never a landing here, only a jump is
-  startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateFace() { return gateFace; }, pipeReachS: () => pipeReach, pipeArmS: () => pipeArm, runWarm: (pre) => { let n = 0; for (let i = warmSteps.length - 1; i >= 0; i--) if (warmSteps[i][0].startsWith(pre)) { const st = warmSteps.splice(i, 1)[0]; st[1](); n++; } return n; }, get screwdriverTaken() { return screwdriverTaken; },
+  startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateFace() { return gateFace; }, pipeReachS: () => pipeReach, pipeArmS: () => pipeArm, gibsN: () => gibs.length + '/' + bloodDrops.length + ' rubble ' + (typeof rubbleN === 'function' ? rubbleN() : '-'), crabsS: () => crabs.map((u) => `${u.pack ? 'P' : 'C'}(${u.g.position.x.toFixed(1)},${u.g.position.z.toFixed(1)} ${u.st.alive ? 'alive' : 'dead'} hp${u.st.hp})`), runWarm: (pre) => { let n = 0; for (let i = warmSteps.length - 1; i >= 0; i--) if (warmSteps[i][0].startsWith(pre)) { const st = warmSteps.splice(i, 1)[0]; st[1](); n++; } return n; }, get screwdriverTaken() { return screwdriverTaken; },
   get ringProp() { return ringProp; },
   armRig, shovelItem, startWind, releaseWind,
   crate, ringItem, ringWorld, rings, breakCrate, wearRing,

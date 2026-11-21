@@ -7475,6 +7475,12 @@ export async function view({ w, b, log, sleep }) {
   for (const e of ['overlay', 'blackout', 'intro']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; el.style.display = 'none'; } }
   w.__clockOn();
   const T = b.THREE, C = b.camera, U = b.oceanUniforms.uTime;
+  // (&walk=x0,z0,x1,z1,secs[;...]: WALK the camera along it as a player does — crossing the triggers — before looking)
+  if (Q.get('walk')) for (const leg of Q.get('walk').split(';').map((s) => s.split(',').map(Number))) {
+    const [x0, z0, x1, z1, sec] = leg, n = Math.round(sec * 60);
+    for (let i = 0; i <= n; i++) { const u = i / n; C.position.set(x0 + (x1 - x0) * u, b.camBaseY || 1.7, z0 + (z1 - z0) * u); b.lookAt(x1, 1.2, z1); w.__adv(1); if (i % 120 === 0) await sleep(10); }
+    log('walked to', x1, z1, 'crabs', (b.crabsS ? b.crabsS() : []).map((c) => c).join(' '), 'gibs', b.gibsN ? b.gibsN() : '?');
+  }
   const cams = (Q.get('cams') || '4,1.7,-20,0,0.5,-40').split(';').map((s) => s.split(',').map(Number));
   if (Q.get('nomist')) { const m = b.scene.getObjectByName('drainMist'); if (m) m.traverse((o) => { if (o.material) o.material.visible = false; }); }   // the drain's murk off, for a before
   const T0 = Q.get('t') !== null ? +Q.get('t') : null, tiles = [];
