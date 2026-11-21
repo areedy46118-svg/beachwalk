@@ -1157,6 +1157,12 @@ writes `flashDread`, the dust takes only the glowstick in your hand.
   spill 0.03–0.095), so they veil. The reach's hand has a noise-built skin map (tone, pores, creases, grime) as map + bump +
   emissive, nails, a woven dirty sleeve; the rags are larger (sheets 1.8 / 1.1–1.55 m, bundle 0.8, scraps 0.7–0.95); the mace's
   glint is back up a little (0.75 / 1.4 / lift 0.18) — dirtied with only a faint glint it could not be found.
+- **(last, 2026-11-18) The fog, third pass**: too pale glowed, too dark vanished ("what happened to the fog in the tunnel and seeping
+  out"). Night fog has ONE brightness of its own — a moonlit grey-blue a touch over the dark brick and sand and under the lit water,
+  so it greys the dark and dims the bright: volume 0.07/0.082/0.10 → 0.05/0.056/0.05 deep, density 0.13; the spill 110 puffs at
+  0.34, larger, 0.055–0.115. Compared with and without (`view&nomist=1`): fog visibly rolls out over the sand and fills the bore.
+- **The outflow's gravel is gone** (the black lumps over the water at high tide — beach.md).
+
 
 ## 2026-11-19 — the reach through the grate is his own arm (IMG_8446)
 The owner: "trim this hand out again and make it the grab for the sewer screwdriver instead of the model you have. make it

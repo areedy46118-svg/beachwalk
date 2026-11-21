@@ -1000,17 +1000,11 @@ export function makeDrainageTunnelHome(opts = {}) {
     wg.computeVertexNormals();
     ER.add(new THREE.Mesh(wg, M.water));
 
-    // gravel the flow has sorted out along the edges
-    for (let i = 0; i < 40; i++) {
-      const t = rnd(i * 6.1), c = centre(t);
-      const r = 0.04 + rnd(i * 3.7) * (0.07 + t * 0.10);
-      const k = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), M.cobble);
-      k.position.set(c.x + (rnd(i * 8.3) - 0.5) * 1.8, r * 0.35,
-        c.z + (rnd(i * 4.9) - 0.5) * (c.w * 2.3));
-      k.scale.y = 0.45 + rnd(i * 2.2) * 0.3;
-      k.rotation.set(rnd(i) * 3, rnd(i + 3) * 3, rnd(i + 7) * 3);
-      ER.add(k);
-    }
+    /* (NO GRAVEL — 2026-11-18, the owner, four times: "get rid of these rocks because they look horrible in the water … its right
+     * out front of the sewer opening. it only happens when the tide comes in". The forty pebbles along the flow's edges and the
+     * twenty-two lag cobbles out toward the sea were dodecahedrons sunk to a third of their height in the sand; when the tide
+     * covers the run the sand there is not drawn (the sand shader discards seaward of `shoreLine`) and every one stood over
+     * the water as a black lump. They are gone; the scour's own tone and relief carry the run.) */
     /* what has fallen off the headwall, close in where it would: broken courses of its own brick and a lump of its
      * concrete, tipped and half sunk (they were dodecahedrons in a flat grey — pebbles the size of a chair) */
     for (let i = 0; i < 5; i++) {
@@ -1027,17 +1021,6 @@ export function makeDrainageTunnelHome(opts = {}) {
     pool.position.set(-1.6, 0.012, 0);
     pool.scale.set(1, 1, 0.66);
     ER.add(pool);
-    // coarser lag gravel left where the flow dropped it, out toward the sea
-    for (let i = 0; i < 22; i++) {
-      const t = 0.45 + rnd(i * 7.7) * 0.55, c = centre(t);
-      const r = 0.05 + rnd(i * 4.3) * 0.09;
-      const k = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), M.cobble);
-      k.position.set(c.x + (rnd(i * 6.9) - 0.5) * 2.4, r * 0.3,
-        c.z + (rnd(i * 3.1) - 0.5) * (c.w * 2.6));
-      k.scale.y = 0.4 + rnd(i * 5.5) * 0.25;
-      k.rotation.set(rnd(i) * 3, rnd(i + 2) * 3, rnd(i + 5) * 3);
-      ER.add(k);
-    }
 
   }
 
