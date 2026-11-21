@@ -587,3 +587,10 @@ README credit with it (Henry's scream's credit kept). `loadJettyHenry` parses `a
   feet, was yanked with every stroke; not during the flare, whose talons reach); pitch and bank are eased (rate 7/s)
   instead of set straight off the Hermite's velocity, whose turn rate jumps where its pieces meet. Probe `hjCrow`: it
   comes down over him talons out, takes him at the hands 0.2 m off its feet, carries him out along the eagle's track.
+
+## 2026-11-21: footprints to Henry's door
+
+`dunPrints(doorR)`, laid when the dungeon's door is (`placeDunDoor`): 19 bare prints (the beach's own shape, filled pale sand —
+a dark print is nothing on the yard's dark slabs — opacity 0.3) from the steps' side, round the column past the pavilion's
+door, to the foot of the dungeon's door; the first three smaller and fainter. `farProps` like the door. `tools/dunprints.js`
+(stills down the ring corridor, and E at the door: the hand out, the door used at 0.27 s).

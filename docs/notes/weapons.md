@@ -3087,3 +3087,19 @@ ENEMY AND BRING THEM CLOSER THAT ISNT WORKING. MAKE CLICKING AGAIN WHILE LAUNCHE
   body (let go), straight home at `HOOK_RECALL` 30 m/s with no lie; in the whip, simply kept. The release of that same click
   would have thrown a cut once it was home: `startDig` refuses for 450 ms after a recall (`HK.recallAt`). Measured: 9.9 m out
   in a body, home 0.38 s after the click.
+
+## 2026-11-21 — Skrim's hook pulls you in from the air (`hookZipStart`, `hookZipMove`, `HOOK_ZIP`)
+The owner: "IF I SHOOT THE HOOK AND CONNECT WITH SOMETHING EVEN A WALL OR FLOOR WHILE MID AIR FROM A JUMP IT BRINGS ME FORWARD
+LIKE THE HOOK PULLS ME IN … A GOOD WAY TO MOVE FAST DONT MAKE IT TOO MUCH … DONT MAKE IT LAGGY AND WEIRD".
+- Thrown in the air (`HK.airThrow` at the release, or still in the air when it lands), the iron arriving on anything not a
+  creature — a wall, a prop, the sand wall (`cliff`, also new: `surface: 'sand'`), the beach's sand (`HK.surfEnd`), a room's
+  floor (`hookFloorAt`: the temple's, the gut's — the trace knows walls there, not ground) — and 2.6 m or more off: the chain
+  goes taut (state `'zip'`, the iron held where it bit) and you are hauled at it, 7 → 17 m/s over 0.25 s, the climb or drop
+  the chain's (`vy`, gravity taken back out that frame, down capped at −8), the lens kicked wide with the speed, a rattle each
+  0.16 s. Let go 1.9 m short, after 1.1 s, when stopped on the way (progress under a quarter of the pace for 0.12 s), on
+  putting it away or a menu; carried on at 0.55 of the pull (decaying 1.6/s in the air, 9 on the ground), off a wall or up
+  to a ledge lifted (vy ≥ 3.4), and the chain recalled. Once a time in the air (`HK.zipUsed`, cleared on the ground). It
+  moves you as a shove does, before every clamp and push-out (`clampPlayerToRoom` in it, the solids after).
+- `tools/hookzip.js` (`&d=`, `&up=`, `&dir=floor`, `&ground=1`): from 4 m in the air at the sand wall, there in 0.37 s at
+  up to 18 m/s and lifted at it; from 9 m, 9 m; down at the sand, 7.8 m along it at up to 19; standing, none. (The cliff is
+  3.2 m: an upward throw clears it — nothing to pull to.)

@@ -1671,3 +1671,47 @@ tris), the lighthouse island (109), the vista and the cliff's rock were drawn; i
   black, the crab GLB parsed again for it. `tools/loadtime.sh 3`: playable at 5.29 / 4.91 / 4.85 s with it, 5.02 / 4.99 /
   4.52 without — about 0.2 s slower on average (inside the run-to-run spread, but on the wrong side), so it went. Anything
   shown on a load must not parse or upload on the main thread while the load does.
+
+## 2026-11-21 — 123 MB off by gzip, inflated in workers; the opening's stutters; the castles' boot steps
+The owner: "can you optimize what we have so far so it runs best as possible make sure nothing changes but better
+performance also see if we can get some more space but make sure nothing changes visually or gameplay wise".
+- **Measured first** (M4 Pro headless, 1920x1080, GPU-synced): tours `beach:-150` 5.5/7.9/10.3 ms (med/p95/max), `tmp` 2.9,
+  `whale` 5.0, `fort` 7.3/9.8/20.1 — none over 33; the CPU share of a frame a fraction of a ms. The king's fight
+  (`tools/kingperf.js &parts=1`, the air held at full): 3.6-4.1 ms, and each of its parts (ground mist, ash, shafts, the
+  B&W filter, beam/cloud) inside the run-to-run noise when off. GPU-bound and already cheap: the steady frames were left.
+- **SPACE: every .glb and moves .json stored gzipped** (`tools/gz_assets.py --write`; 112 files, 359.2 → 235.8 MB; the
+  shipped game 450.7 → 326.4 MB by du). Byte for byte the same inside: each compressed at 9 with mtime 0, inflated and
+  compared before it was written. Every read of them goes through `bwFetch` → `bwGunzip` (and `bedroom.glb`'s, and the
+  dead's `bwGot` path, and `models/viewer.html`'s own gunzip); NOT gzipped: `assets/intro/cut.json` and
+  `assets/hud/pipe-hand.json` (read with `fetch(...).json()`). Tools that read them back: `tools/bwio.py`
+  (`read_json`/`write_json`, gz-aware, write gzipped); `ntar_moves.py`'s merge and `king_bike_loop.py` use it. **Any
+  other packer that reads an asset .glb/.json must inflate it first** (`gzip -dc`, or `bwio.read_bytes`).
+- **THE TRAP: the browser inflates one stream at a time.** `tools/gzbench.js`: ~450 MB/s, four at once four times as long;
+  the first gzipped build came up 0.9 s LATER at a beach checkpoint (playable 4.71-5.10 → 5.70-5.85). `bwGunzip` now hands
+  each file (transferred) to a pool of 2-4 workers (`BW_GZ_N`, `bwGzWorkers`), each its own DecompressionStream; the stream
+  on the main thread only if no worker can be made. After: playable 4.60-4.73 s, worst frame after it 35-39 ms (was 21-91),
+  none over 50 (`tools/loadtime.sh 3`).
+- **THE OPENING STUTTERED 250 FRAMES OVER 25 MS** (`tools/callhitch.js`: START on the real clock to 8 s into the waves; the
+  same on HEAD 5561974, a `git worktree` beside it): three stretches — 9-15 s (the world's boot under the call), 39-47 and
+  57-69 s (10 a second, steady). `tools/callprof.js &a=&b=` (the sampler inside the slow frames only):
+  1. **`icSleeveOut` (mine, 2026-11-20) read four edge lines back off the paint canvas with `getImageData` on every redraw
+     of the paint — a GPU canvas: each read a stall.** At the read the paint holds one draw, his frame (`icBlit` returns
+     it, `bp`); the same draw is made into one-pixel CPU canvases (`icScanLine`, the transform shifted onto the line) and
+     read there. `IC.scanCheck` compares the old read beside it over a whole call: the runs' ends the same in 95 % of reads,
+     one device pixel over in the rest, the colour within 1/255 — under the band's 1.2 px blur. (A GPU line canvas differs
+     the same way: a one-pixel canvas samples the frame a hair differently from a screen-sized one. Not bit-exact; nothing
+     to see.) The 39-47 and 57-69 s stretches: gone.
+  2. **`buildFortTorches` → `fortWallAlong` → `keepWallNear`: 475 ms** — eight torches walking 5 cm steps along 4.5 m,
+     each step scanning every face in nine cells of the castle's index. `keepWallNear(…, band)`: each cell's faces that can
+     answer the band (steep, reaching into lo..hi) filtered once, in the cell's order — the loop sees exactly what it kept.
+  3. **`buildFortMask` / `buildC13Mask`'s `morph`: 277 + 179 ms** — a 3x3 square grown and shrunk by a nine-neighbour
+     loop. Now rows then columns (a square's max is the max of its rows' maxes; outside the grid still empty). Checked: the
+     old and new beside each other on 481 random grids through the same eight passes, 0 cells differ.
+  Proved on the game (`tools/fortcheck.js`, this build against HEAD's worktree): the castle mask's checksum over every
+  cell and all eight torch lights to 1e-5 m — identical. After: 257 → 65-71 frames over 25 ms through the opening, all of
+  them now in 9-15 s (model parses, dresses, texture uploads of the boot: its design, not changed). Worst still ~250 ms.
+- **The king's arrival**: one 28 ms frame as his descent began — 32 textures uploading on his first draw. `kingTick`
+  hands them to `renderer.initTexture` one a frame from when he is made (`KING.texQ`), while you walk up. `tools/kinghitch.js`
+  (his whole descent and 12 s of fight on the real clock): 0 frames over 25 ms.
+- Also: Skrim's hook into the beach's SAND WALL (`hookThrow`: the cliff's own mesh down the throw, `surface: 'sand'` —
+  a thump and its sand, no clang; whale.md/weapons.md). `tools/hookcliff.js`: thrown at it from 5 m, stopped at 6.8 m.

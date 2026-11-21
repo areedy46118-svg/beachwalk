@@ -1304,3 +1304,93 @@ flashlight for good too."
   `updateFlashlight`, `flashGlow` (a point light always in the scene: one fewer for every material now), the sewer's spot
   light for a carried one (`sewP.flash`), the ledge code and `flashDread`. The drain's bugs' `torch` is `false`. A save
   that carried one loses it (`packByName` no longer knows it).
+
+## 2026-11-21 — the Rusted Key out for good
+The owner: "take the rusted key out for good". It opened nothing since the captain's key took the sea chest, and nothing had
+laid it in the world since the dock's crate went (2026-10-18). Out: `keyItem`, its hold pose, `dropKey`, its end-tally case
+(`statHad`), the fisherman's "Do you know about this key?" (all four menus) and his answer node, and its places in
+`packByName`'s list, the icon pre-warm and `__bw`. `keyModel` (and `keyWorld`, holding it) STAY: every other key's shape is
+built from it (`fillKeyModels`). A save that names "Rusted Key" skips it on load (the restore passes over an unknown name).
+Checked: boots with no errors, `packByName('Rusted Key')` null, the Skull Key and the rest found. Test pages no longer add it.
+- **The readable sheet** ("make it big enough i can read too in the screenshots"): `QS="big=1&page=N" WS=1800,1060 sh
+  tools/itemsheet.sh out.png` — every item then every key, twelve a page, three across, 22-27 px words. `tmp-preview/items-page1-4.png`.
+- (2026-11-21, the owner's words) **Toy Shovel** (was "Sand shovel"; `was`, `ITEM_RENAMED`, and its pickup "Take the toy shovel" in
+  `PICKUP_RENAMED` so an older save's taken-list follows it; the trader's list and the pane's 'plastic' profile know both names)
+  "A plastic kids toy"; Military Shovel "A heavy metal shovel"; Glowstick "Lights the way"; New Cd "A random cd"; Bottle of water
+  "Heals you to full health. One time use" (it does: `hp = maxHp()`, one bottle a drink); Horseshoe crab "Can be drained using
+  the syringe". `ITEM_RENAMED` also carries 'Bleeding syringe' → 'Syringe'.
+- **The magnum comes with four** (was three): the trader's sale sets `magAmmo = 4` and says "Four in it."
+
+## 2026-11-21 — the bottle of water is a Fiji bottle, full, and it sloshes
+The owner: "use this as the water bottle model make it full of water and will slosh around when held or drank or inspected.
+make the fiji label face you when holding". "Fiji Water Bottle" (Diego T. Yamaguchi, CC-BY-4.0, README).
+- `tools/fiji_bottle_pack.py ~/Downloads/fiji_water_bottle assets/fiji-bottle.glb`: node transforms baked, stood up +Y on y = 0,
+  0.205 m tall (the old bottle's: every hand, floor and box fits), the FIJI label turned to +Z, textures 256x512 / 128x256,
+  the transmission map dropped, gz (192 KB). The loader writes its names' spaces as `_` (`transparent_bottle`).
+- `models/water-bottle.js`: `makeWaterBottle()` returns its group at once (it is asked for while the module loads) and is
+  filled by `setWaterBottleSource` when the glb lands (`bwGlb` in main.js, after `holdable`): every group made so far, the
+  hand's made again (`viewmodel.userData.make`), the icon drawn again (`iconV: 'fiji'` in `iconCacheKey`, and the water mesh
+  is `bwKeepHidden` so an icon never renders the empty group first and caches it).
+- **The water**: the model has NO plastic behind its labels (they are cards): the shell drawn smaller was a hollow frame. It
+  is a closed 8-sided column just inside (flats on the bottle's faces), cut by a plane in the bottle's frame (`uPlane`,
+  `onBeforeCompile`), its back faces drawn as the surface. The plane is a spring per copy (`slosh`, from the material's
+  `onBeforeRender`): it wants level under the scene's gravity less the bottle's own acceleration — swung, it lags, overshoots,
+  rocks back. Per copy because three re-sends a material's uniforms only when the material changes between draws: a copy
+  sharing one gets its own on its first draw. State in a `WeakMap`, NOT `material.userData` (a clone of the bottle serialises
+  userData, and the owner in it was circular — it threw inside the icon warm). The hand's scene is drawn in the camera's frame:
+  `setWaterGravity` gives it the world's down turned by the camera. Measured (`tools/fijibottle.js`): after a swing the
+  surface swings 5° ↔ 19° off the bottle's axis and settles; tilted 60° the water lies level.
+- Held: `holdable` rot y 0 (was 0.5) — the label faces you. Drinking, the water runs to the cap end.
+
+## 2026-11-21 — his hand out for every pickup; keys clicked near; the hook hails the snorkeler
+- **Every pickup is his hand** ("use this same animation but sped up when you pick up any item the left hand should come out real
+  fast and grab it with the item pickup sound"): `primaryAction` on an `'inventory'` thing starts `handGrab` (when his arm's
+  sheet is in, not in a peek): the grate's reach (`PRH`, `pipeHandPlace(fi, drop, at)`) fast — in 0.2 s, close 0.06, out 0.2
+  (`HG_T`) — its grip on the thing where it is now, with the thing's depth (in front of it is drawn over his fingers), lit for
+  the night (`HG_TINT`); the take itself (`takeNow`: `onActivate`, the pickup / key sound) as the fingers shut. `handGrabTick`
+  after `updateHover` (`rawDt`; `dt` is declared below there). `tools/handgrab.js`: the toy shovel taken at 0.22 s, the hand gone
+  by 0.35.
+- **Keys clicked near** ("clicking the keys should be easier"): `kcKeyAt` — a ray that misses every key takes the key whose
+  length on the screen (its box's long axis, bow to tip) passes nearest the cursor, within a fifth of the box's width. Keys hang
+  ~10 px apart in a 174 px box: aimed at the middle, 3 of 3 (`tools/kcclick.js`).
+- **The hook hails the snorkeler** ("make shooting the hook get the snorkelers attention"): `hookThrow` — a throw whose line passes
+  within 3.2 m of him calls `snorkHail` (the rod's own rule, made one door) when the iron gets there. `tools/snorkhook.js`: met,
+  up, talking.
+
+## 2026-11-21 (later): the hand, the bottle, the spliff, two lost viewmodels
+
+- **A comment at a line's end ate two weapons.** The bleed numbers added to the Bloody Blade's and the Spare Peg's `desc` came
+  with a `// (…)` comment that ran on to the end of the line — and the line went on with `icon:`, `onDig:` and `viewmodel:`.
+  So both items had no viewmodel: "the bloody blade keeps dissapearing in my hand and i cant equip it". Moved to lines of
+  their own. A check that catches it: every `-` item line in `git diff` against its `+` line, comparing the keys left of any
+  `//` (both were the only two). `tools/devweap.js` now equips every weapon by item and reads its viewmodel's meshes.
+- **The left hand's light is the light where the thing is** (`lightAt`): every lit light summed at the point — ambient and
+  hemisphere as they are, directional halved (a hand turned more or less toward it), point/spot by three's own fall-off and
+  range — over π, as three's lambert takes it. On the beach that is (0.049, 0.071, 0.121): the hand comes out the sandcastle's
+  brightness. By a pool lamp at 0.7 m it clamps (1.1) warm. Its colour is quantised as every painted texture is (16 steps a
+  channel, sRGB top four bits) before it is lit.
+- **The hand's outline**: `tools/pipe_hand_pack.py` kept a hard 0/255 alpha at sprite px — a staircase wherever the hand is drawn
+  bigger than a sprite px (a pickup lays it at the thing's distance). It keeps the box-downscaled coverage of the full-res
+  smoothed mask now; the shader's `c.a < .5` on a linear sample is then the full-res curve at any size. Re-run from
+  `~/Desktop/BEACHWALK ASSETS/IMG_8446.MOV` (ffmpeg 12 fps 640 wide, `scene_cutout.swift labels`): the json came out byte
+  for byte the same before the change, so only the alpha moved.
+- **The hand rolled and really gripping**: `HG_ROLL` 14° about the grip (`pipeHandPlace(fi, drop, at, roll, dx)`); the size
+  that keeps the clip's left border and knee cut off the screen is taken along the turned lines. The out is CLOSED
+  (`nC`), down and left; the thing goes with it as a copy (`HG.ghost`, glints off) at its own depth in the camera's frame.
+- **The same reach for what you use** (`handUses` / `HG_USE`): doors, locks, lids, chests, the lift, levers, valves, buttons,
+  the fridge, the TV, the idol's touch — `onActivate` on the close (if `when` still holds) instead of `takeNow`; aimed at the
+  hit box's middle (`hgTarget`), not the origin (a door's is its hinge). Dungeon door: hand out 0.07 s, used at 0.27 s.
+- **Fiji water, by volume**: the water's skin is rays out from the bottle's axis against the shell AND the label cards
+  (40 rings × 32), nearest hit less 1.6 mm, closed top and bottom — it cannot stand outside the plastic. A fixed cloud of
+  3000 points inside it is the volume: each frame the surface goes where `fill × full` of them lie under it (`kth`
+  quickselect on their projections). Turned 0–270° the share under it stays 0.92–0.94 (`tools/waterbox.js`'s own grid
+  count). The plane through the axis at the fill's height lost water whenever it was turned. The shape is module state
+  (`SHAPE`), never `userData` (a clone serialises that).
+- **`bwKeepHidden` on the water only until the bottle is filled**: before, it is the group's one mesh and an icon taken then is
+  of nothing (the icon came out an empty 694-byte webp); after, the pack's and the shop's renders leave flagged parts out,
+  so it must be off. `iconV` 'fiji3'.
+- **Drinking drains it** (`drinkFill`): full to empty from `DRINK_UP` 0.3 s to `DRINK_DUR` − 0.42.
+- **The slosh is heard**: `setWaterSloshSound` — the surface spring's speed past 2.2 rising, at most every 0.32 s, `slosh` at
+  0.05–0.16 gain pitched 1.6–2.1. Held still: none; slow turn: ~1; flicks: 7 in 2 s.
+- **A spliff is spent at the breath out**, with its buff, not at the flick; and `toggleEquip` ends a smoke that is put away
+  (the hand's own update never runs again for it, so a spent one sat in the pack at 0).

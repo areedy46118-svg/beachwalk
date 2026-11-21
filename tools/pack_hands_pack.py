@@ -72,6 +72,8 @@ def clean(a, n):
     # the jar by his left hand (its lid over the thumb, its body between the palm and the sheet): dark red-black, its rim
     # lit purple. Skin is never darker than ~0.36 here and never bluer than it is green.
     jar = (U < 0.25) & (V > 0.30) & (V < 0.76) & (warm > 0.2) & ((lum < 0.30) | (rgb[..., 2] > rgb[..., 1] + 0.01))
+    # (and its deep red a little further right, in the snap's blurred frames — dark and redder than any skin: 2026-11-21)
+    jar |= (U < 0.45) & (V > 0.30) & (V < 0.76) & (warm > 0.5) & (lum < 0.25)
     # only the dark that reaches the outside: the crease between his thumb and finger is as dark, but the hand closes round it
     jl, jk = nd.label(nd.binary_dilation(jar, iterations=2))
     if jk:
@@ -94,40 +96,75 @@ def clean(a, n):
     # (a diamond of 4 took the tip and left the wedge: the inner edge of the arm there is rounded by a disk of 8 instead —
     # the forearm is far wider than that, a spur is not; 2026-11-19, "fix the skin spiking out on the other left arm")
     zone = (U < 0.26) & (V > 0.45) & (V < 0.88)
-    # (and a disk of 16: a knob of skin still stood out of the inner wrist under his palm through the held frames —
-    # 2026-11-19, "the left hand of the inventorys skin pokes out right near his wrist")
-    yy, xx = np.ogrid[-16:17, -16:17]
-    keep &= ~(zone & ~nd.binary_opening(keep, structure=(xx * xx + yy * yy) <= 256))
-    # (and his left wrist FLAT, as his right is — 2026-11-19, the owner: "the bump of skin on the left wrist needs to go look at
-    # how flat the right side wrist is and do that": the right's inner edge runs in one straight line from the heel of the
-    # palm into the cuff; the left's dipped in under the palm and bulged out above the cuff. Held frames (13 on): from the
-    # heel — the inner edge's farthest point out, 0.18-0.36 of the frame above the cuff — to the cuff's inner corner, the
-    # edge IS the straight line: past it cut, short of it filled with the skin at its edge.)
-    sl = keep & (lum < 0.2) & (warm < 0.1) & (V > 0.5) & (U < 0.30)          # (the sleeve: dark AND grey — his shaded forearm is as dark, but warm)
-    sl = nd.binary_opening(sl, iterations=2)
-    arm = keep & (U < 0.33) & (V > 0.40) & ((warm > 0.17) | sl)
-    if n >= 13 and sl.any() and arm.any():
-        al_, ak_ = nd.label(arm)
-        ids = np.unique(al_[sl & arm]); ids = ids[ids > 0]
-        if len(ids): arm = np.isin(al_, ids)
-        ys, xs = np.nonzero(sl); right = xs > np.percentile(xs, 55)
-        yC = int(ys[right].min()) if right.any() else int(ys.min())
-        xin = np.full(arm.shape[0], -1)
-        for y in np.nonzero(arm.any(1))[0]: xin[y] = np.nonzero(arm[y])[0].max()
-        cand = [y for y in range(max(0, yC - int(0.36 * H0)), yC - int(0.18 * H0)) if xin[y] >= 0]
-        if cand and xin[yC] >= 0:
-            yH = max(cand, key=lambda y: xin[y]); xH, xC = xin[yH], xin[yC]
-            # (NOT ruled straight — 2026-11-19, later, the owner: "make his left hand less straight it looks unatural in the
-            # inventory i just wanted that patch of skin fixed better": the line from the heel to the cuff is bowed IN a little
-            # through its middle, the way a wrist narrows under the palm, and only what stands out PAST it — the knob of skin —
-            # is cut; the natural dip under the palm is left as it is, no longer filled out to the line)
-            for y in range(yH + 1, yC):
-                u = (y - yH) / max(1, yC - yH)
-                lim = xH + (xC - xH) * u - 0.022 * W0 * np.sin(np.pi * u)
-                if xin[y] < 0: continue
-                if xin[y] > lim + 0.5:
-                    cut = np.arange(arm.shape[1]) > lim
-                    keep[y] &= ~(cut & arm[y])
+    # THE LEFT WRIST AS FILMED (2026-11-21, the owner: "MAKE THE LEFT HAND WHEN OPENING THE INVENTORY MATCH THE ORIGINAL VIDEO
+    # BETTER"). The 2026-11-19 passes — a disk-16 opening, then the heel-to-cuff line cut — pared the "knob" off his inner
+    # wrist and with it the hand's real width. Measured against the frames: the knob was never extra skin. The jar test above
+    # takes the shaded skin of the wrist crease (warm, under 0.30) for the jar and bites a NOTCH out of the hand's lower
+    # edge just above the wrist; what stood below the notch was the hand's true edge, left as a spur. In the video that edge
+    # is one smooth diagonal from the heel of the palm to the cuff. So the notch is filled back: the arm alone (skin and
+    # sleeve, never the paper, so it does not bridge to the sheet) closed by a disk of 14 in the wrist's zone, and a filled
+    # pixel takes the colour of the nearest skin (what is behind the crease in the frame is the jar).
+    rgbw = a[..., :3]
+    warmw = (rgbw[..., 0] - rgbw[..., 1]) / (rgbw[..., 0] + 1e-6)
+    _, _, lumw = hsv_bits(rgbw)
+    navy = (rgbw[..., 2] > rgbw[..., 0] + 0.008) & (lumw < 0.32) & (V > 0.6)
+    arm = keep & (U < 0.33) & (V > 0.30) & ((warmw > 0.17) | navy)
+    yy, xx = np.ogrid[-14:15, -14:15]
+    fill = zone & nd.binary_closing(arm, structure=(xx * xx + yy * yy) <= 196, iterations=1) & ~keep
+    if fill.any():
+        skin = arm & ~navy & (lumw > 0.30)
+        _, (iy, ix) = nd.distance_transform_edt(~skin, return_indices=True)
+        a[fill, :3] = a[iy[fill], ix[fill], :3]     # (every filled pixel: the jar's lit rim is red, not dark, and showed)
+        a[fill, 3] = 1
+        keep = keep | fill
+    # (and the spur's last tip, a few pixels proud of the filled edge: a disk of 9 rounds it — the arm is far wider)
+    yy, xx = np.ogrid[-9:10, -9:10]
+    keep &= ~(zone & ~nd.binary_opening(keep, structure=(xx * xx + yy * yy) <= 81))
+    # THE GAP BY THE RIGHT THUMB (2026-11-21, the owner, his cursor on it: "FIX SEEING THROUGH THE PAPER WHERE MY CURSOR IS …
+    # BY THE RIGHT THUMB"): where the sheet runs in under his right thumb the cut left a sliver of the table between the paper's
+    # edge and the hand (sprite x ~467-478, y ~157-192 in the held frames; shut in some, open to the outside in others) — the
+    # game's black through it. The right hand's stretch is closed (a disk of 10: the sliver is ~16 px wide) and what is filled
+    # takes the colour of the nearest of the sheet or the skin beside it.
+    zr = (U > 0.64) & (U < 0.88) & (V > 0.30) & (V < 0.82)
+    yy, xx = np.ogrid[-10:11, -10:11]
+    gap = zr & nd.binary_closing(keep, structure=(xx * xx + yy * yy) <= 100, iterations=1) & ~keep
+    if gap.any():
+        _, (gy, gx) = nd.distance_transform_edt(~keep, return_indices=True)
+        a[gap, :3] = a[gy[gap], gx[gap], :3]; a[gap, 3] = 1
+        keep = keep | gap
+    # THE WRIST'S INNER EDGE SMOOTHED INTO ITSELF (2026-11-21, the owner, his cursor on it: "THIS LITTLE SKIN POKING OUT HAS TO
+    # BE FLATTENED AND BLEND IN WITH THE WRIST"). Past the fill a small knob still stood out of the inner wrist (V ~0.77) with
+    # a dip over it. Row by row the arm's inner edge (its right-most pixel) is smoothed along its own run — a median over 41
+    # rows, then a gaussian of 8 — so it keeps the wrist's curve (a ruled line looked unnatural, 2026-11-19) and loses the
+    # knob and the dip: what stands past it is cut, what falls short is filled with the skin beside it, eased in and out over
+    # the stretch's ends so nothing steps.
+    if n >= 13:
+        armk = keep & (U < 0.33) & ((warmw > 0.17) | navy)
+        lab2, k2 = nd.label(armk)
+        if k2:
+            big2 = 1 + int(np.argmax(nd.sum(armk, lab2, range(1, k2 + 1))))
+            armk = lab2 == big2
+            y0, y1 = int(0.60 * H0), int(0.93 * H0)
+            rows = np.arange(y0, y1)
+            xin = np.array([np.nonzero(armk[y])[0].max() if armk[y].any() else -1 for y in rows], np.float32)
+            ok = xin >= 0
+            if ok.sum() > 40:
+                xs = np.interp(rows, rows[ok], xin[ok])
+                sm = nd.gaussian_filter1d(nd.median_filter(xs, size=41, mode='nearest'), 8, mode='nearest')
+                ramp = np.clip(np.minimum(rows - y0, y1 - 1 - rows) / 18.0, 0, 1)
+                tgt = xs + (sm - xs) * ramp
+                skin2 = armk & (lumw > 0.30) & (warmw > 0.17)
+                _, (iy2, ix2) = nd.distance_transform_edt(~skin2, return_indices=True)
+                cols = np.arange(W0)
+                for j, y in enumerate(rows):
+                    if not ok[j]: continue
+                    t = int(round(tgt[j])); x = int(xin[j])
+                    if x > t:                                   # standing out: cut back to the edge
+                        keep[y] &= ~((cols > t) & (cols <= x) & armk[y])
+                    elif x < t:                                 # falling short: filled with the skin beside it
+                        f = (cols > x) & (cols <= t) & ~keep[y]
+                        if f.any():
+                            a[y, f, :3] = a[iy2[y, f], ix2[y, f], :3]; a[y, f, 3] = 1; keep[y] |= f
     return keep
 
 
@@ -141,7 +178,17 @@ def paper_centroid(a, keep):
 def shade(a, keep, n):
     rgb = a[..., :3]
     mx, sat, lum = hsv_bits(rgb)
-    sleeve = keep & (lum < 0.2) & (V > 0.5)
+    # (the sleeve: dark, OR the navy of it — 2026-11-21, the owner: "KEEP THE BLUE SLEEVE IN TOO LIKE THE RIGHT HAND". Under
+    # 0.2 alone took only its shadowed folds; the lit cloth, 0.2-0.32 and blue over red, was painted as skin or as paper,
+    # and the sleeve came out a grey-brown on both arms. Skin is never bluer than red, and the paper is pale.)
+    dark = keep & (lum < 0.2) & (V > 0.5)
+    navy = keep & (V > 0.5) & (rgb[..., 2] > rgb[..., 0] + 0.008) & (lum < 0.32)
+    # (only the cloth that runs off the bottom of the frame — the cuffs come in from there; the jar's lit rim is as blue)
+    nl, nk = nd.label(nd.binary_opening(navy | dark, iterations=1))
+    sleeve = dark
+    if nk:
+        low = np.unique(nl[-3:][nl[-3:] > 0])
+        sleeve = dark | (navy & np.isin(nl, low))
     warm = (rgb[..., 0] - rgb[..., 1]) / (rgb[..., 0] + 1e-6)          # skin runs red over green; the paper barely
     skinw = np.clip((warm - 0.19) / 0.07, 0, 1) * keep * (~sleeve)
     paperw = (1 - skinw) * keep * (~sleeve)
@@ -175,19 +222,25 @@ def shade(a, keep, n):
     skin = skin * 0.85 + skin.mean(-1, keepdims=True) * 0.15
     # the sleeves their own colour, as filmed (2026-11-19, the owner: "make the sleeves their original color in the
     # inventory" — the same day's bare-forearm repaint, "make that blue sleeve on the right arm be skin color", undone)
+    # (and as BLUE as filmed: the moon's fall-off below darkens the bottom corners by a third, which put the navy at black —
+    # the cloth is lifted back by it and its blue a little stronger, so it reads as the sleeve it is through the dither)
+    # (the blue cloth only — a dark bit that is not blue, a crease's shadow, the jar's red, stays as it was: rgb × 0.85)
+    blue = sleeve & (rgb[..., 2] > rgb[..., 0] + 0.004)
     sl = rgb * 0.85
+    sb = rgb * 1.05
+    sl = np.where(blue[..., None], sb + (sb.mean(-1, keepdims=True) - sb) * -0.6, sl)
     out = pap * paperw[..., None] + skin * skinw[..., None] + sl * sleeve[..., None]
     # the moon: high on the left; a cool cast over everything, the far corner falling away
     moon = np.clip(1.08 - 0.42 * np.hypot(U - 0.18, (V + 0.25) * 0.8), 0.55, 1.05)
-    out = out * moon[..., None] * np.array([0.93, 0.96, 1.03], np.float32)
-    return out, pm
+    out = out * (moon + (1 - moon) * 0.6 * blue)[..., None] * np.array([0.93, 0.96, 1.03], np.float32)
+    return out, pm, blue
 
 
 BAYER = (np.array([[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]], np.float32) + 0.5) / 16 - 0.5
 LEVELS = 9
 
 
-def retro(rgb, keep, rh):
+def retro(rgb, keep, rh, sleeve=None):
     rw = int(round(rh * 16 / 9 * STRETCH))
     im = Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8)).resize((rw, rh), Image.BOX)
     al = Image.fromarray((keep * 255).astype(np.uint8)).resize((rw, rh), Image.BOX)
@@ -196,7 +249,13 @@ def retro(rgb, keep, rh):
     a = nd.binary_opening(a, iterations=1) | (nd.binary_erosion(a, iterations=1))
     # ordered dither down to a few levels a channel
     th = np.tile(BAYER, (rh // 4 + 1, rw // 4 + 1))[:rh, :rw][..., None]
-    c = np.clip(np.floor(c * (LEVELS - 1) + 0.5 + th * 0.9) / (LEVELS - 1), 0, 1)
+    # (the sleeves at finer steps — 2026-11-21: the navy is so dark that at 9 levels a channel every pixel of it came out
+    # black or the one grey above it, on both arms; at 25 it keeps its blue and its folds, dithered the same way)
+    lv = np.full((rh, rw, 1), LEVELS - 1, np.float32)
+    if sleeve is not None:
+        sm = np.asarray(Image.fromarray((sleeve * 255).astype(np.uint8)).resize((rw, rh), Image.BOX), np.float32) / 255 > 0.5
+        lv[sm] = 24
+    c = np.clip(np.floor(c * lv + 0.5 + th * 0.9) / lv, 0, 1)
     # a one-pixel dark line round the whole silhouette
     ring = nd.binary_dilation(a, iterations=1) & ~a
     rgba = np.zeros((rh, rw, 4), np.float32)
@@ -221,8 +280,8 @@ for n in OPEN + IDLE:
         if dy < 0: a[dy:, :] = a[dy - 1:dy, :]
         if dx > 0: a[:, :dx] = a[:, dx:dx + 1]
         if dx < 0: a[:, dx:] = a[:, dx - 1:dx]
-    rgb, pm = shade(a, keep, n)
-    spr, rw = retro(rgb, keep, RH)
+    rgb, pm, slv = shade(a, keep, n)
+    spr, rw = retro(rgb, keep, RH, slv)
     frames.append(spr)
     if n == IDLE[0]:
         ys, xs = np.nonzero(pm)

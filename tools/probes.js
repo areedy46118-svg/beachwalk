@@ -7806,7 +7806,7 @@ export async function templeFlight({ w, b, log, sleep, shot }) {
   await ev('/tools/burntest.js'); w.__clockOn();
   b.settings.devMode = true;    // (the probe lands past the pack's swim-in: dev mode skips it)
   for (let i = 0; i < 400 && !(b.tmpS().ready && b.TC.crow); i++) { b.loadTemple(); w.__adv(1); await sleep(50); }
-  const T = b.TC, sx = T.g.position.x, sz = T.g.position.z, C = b.camera;
+  const T = b.TC, sx = (T.g || T.crow).position.x, sz = (T.g || T.crow).position.z, C = b.camera;   // (the crow's own place: `TC.g` is no more)
   C.position.set(sx - 0.8, 1.7, sz + 3.2); b.lookAt(sx, 1.2, sz); w.__adv(40);
   C.position.set(sx - 0.8, 1.7, sz + 3.2); b.lookAt(sx, 1.2, sz); w.__adv(2);
   log('stump', sx.toFixed(1), sz.toFixed(1), 'base', T.base.toFixed(2), 'crow', T.crow.position.toArray().map((v) => +v.toFixed(2)).join(','), 'vis', T.crow.visible);
@@ -7830,7 +7830,7 @@ export async function templeFlight({ w, b, log, sleep, shot }) {
       if (s.cut < 0) break;
     }
   }
-  const s = b.tmpS(); log('end', JSON.stringify(s), 'frozen?', b.state && JSON.stringify(b.state()).slice(0, 120));
+  const s = b.tmpS(); log('end after', (n / 60).toFixed(1), 's of real time;', JSON.stringify(s), 'frozen?', b.state && JSON.stringify(b.state()).slice(0, 120));
   w.__adv(120);
   const p = C.position; log('after 2s', (p.x - b.TMP_X).toFixed(2), (p.y - b.TMP_Y).toFixed(2), (p.z - b.TMP_Z).toFixed(2), 'fov', C.fov.toFixed(1));
   shot('f19_after', 640);

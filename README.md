@@ -1060,6 +1060,10 @@ replaced with the owner's own). The storm, the rain, the light through the windo
 the syringe and the phone on the desk are built in the game; the plate and cup are
 taken off the desk and its draped table replaced with a bigger plain one, for the call.
 
+This work is based on ["Fiji Water Bottle"](https://sketchfab.com/3d-models/fiji-water-bottle-219204daeb2f446ebbc3837df97e0a8a)
+by [Diego T. Yamaguchi](https://sketchfab.com/freshlybaked) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the bottle of water (`assets/fiji-bottle.glb`).
+
 This work is based on ["Throne Room"](https://sketchfab.com/3d-models/throne-room-247c37e6a9694ae891398911876f0c14)
 by [Uğur Yakışık](https://sketchfab.com/UgurYksk) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the hall through the

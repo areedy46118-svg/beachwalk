@@ -1361,3 +1361,101 @@ frame and after; fighting at 16.2 s; his hook back in his fist.
 - The flip set his hang chain to 'fall', which hauls it into his fist 1.3 s in — mid-flip, so the chain whipped round with
   his turning hand. A new hang-chain state, 'loose': hung from its hook in the vault, the free end swinging under it, until
   he has landed; then 'fall' (torn out and hauled in). A safety turns any 'loose' chain to 'fall' once his hang is over.
+
+## 2026-11-21 — Skrim's own voice; hooked off his chain he vanished
+The owner, with six bounces ("SKRIM ATTACK SOUNDS / TAKING DAMAGE SOUNDS / RARE RANDOM FIGHT PHRASES / FIGHT STARTS
+DIALOG / DIALOG SOUNDS / WHEN HE HANGS FROM CEILING TO SPAWN CRABS"): "use these for skrims audio … he dissapeared when i
+hit him off the chain hanging fix this".
+- **THE VANISH.** `tools/skrimhookoff.js&m=hook` (in the whale, him at 49 % up his chain, Skrim's hook thrown at him for
+  real): the bite tore him off (`skrimShot`) and then hauled him (`flinchPush` from the hook's `'bite'`). The shove runs
+  through `mutClampX`, which had no branch for him, so the BEACH's clamp put him 14,986 m away on the sand on the next
+  frame: alive, culled, the fight unwinnable. Same trap as the gargoyles (castle.md). Now `mutClampX` has a Skrim branch
+  (`skrimInGut(…, 0.6)`, else back to `u.skLegal`, his last legal spot), which also covers the shotgun's shove and any
+  flinch. And `hookBite` does not haul him when the bite takes him off the chain (`offChain`): his fall is
+  `skrimShot`'s, given a push toward you (`k` = (d − 2.4) / 1.6, capped 2.2: he comes down a stride or two off you).
+  Measured after: fall 1.2 s from 5.3 m, the crouch, up at +2.8 s, fighting, visible throughout.
+- **THE VOICE** is `farm: true, vox: SKRIM_VOX` (`farmVox`, one mouth; `voice.unit` set where he is made). Cut by
+  `tools/farmer_voice_pack.py "<Bounced Files>" "SKRIM ATTACK SOUNDS=skrim-attack" "SKRIM TAKING DAMAGE SOUNDS=skrim-hurt"
+  "SKRIM RARE RANDOM FIGHT PHRASES=skrim-phrase" "SKRIM FIGHT STARTS DIALOG=skrim-start" "SKRIM DIALOG SOUNDS=skrim-talk"
+  "SKRIM WHEN HE HANGS FROM CEILING TO SPAWN CRABS=skrim-hang"` → 10 / 10 / 5 / 1 / 3 / 1 takes, 580 KB. (hurt3/hurt4 are
+  0.17 s apart but two onsets on a 50 ms envelope: kept apart.)
+  Wired: `swing` at the hook's swish (`skrimHookStep`) and every throw's release (`skrimFire`, i 0), and forced on the
+  heave up into the vault (`skrimHangStart`) and the flip off it; `hurt` through `sfxMutHit` and on being torn off;
+  `start` in `skrimFight` and `skqFightStanding` (both of his roars there); `hang` where the first head comes down the
+  chain (the old `H.roared` roar); `talk` in `showDialogNode` on a line of his with words (`*Digging*` is silent);
+  `shout` (rare phrases) off his own clock in `skrimFightStep`, 10-18 s then 16-32 s at 0.6, retried in 3-6 s when not
+  said, gap 14. Every `sfxMutRoar` in his code is gone.
+- (later the same night, "skrim death sound.mp3": "use this for skrims death") `assets/skrim-die1.m4a` (one take, 2.06 s,
+  28 KB), `SKRIM_VOX.die` (pri 5: over anything he was saying, gain 3.4), played in `finishMutant` beside the paladin's
+  (a boss's branch says nothing of its own), not on a restore. `&m=fight&secs=12&kill=1`: `skrimDie` on the killing blow.
+- Measured (`&m=fight`, frame-driven audio clock — the headless context's `currentTime` never moves, and with it every
+  gap holds forever after the first take): his talk 1 on his answer, start 1, 26 cries on 30 cuts, 16 grunts, 3 phrases
+  in 75 s. `&m=hook`: start, hang, the cry torn off. (The heave grunt was eaten there by the start line's mouth: in that
+  probe he hangs a second after the fight begins.)
+
+## 2026-11-21 — the gut's reverb (`whaleVerbTick`, `WHALE_VERB`)
+The owner: "ADD A SUBLTE REVERB ON ALL SOUNDS IN THE WHALE MATCHING THE SOUND OF THE DEMENSIONS OF THE INSIDDE … JUST DONT
+OVERDO IT MAKE IT PERFECT ONLY ADD TO I LIKE HOW THEY ARE NOW".
+- A parallel send off the effects bus (every effect, voice and step in there — the dry sound untouched), as the church's,
+  drain's and wreck's are: 150 Hz high-pass, 2.6 kHz low-pass into a convolver of `makeSpaceIR(1.55 s, decay 3.6, dark 0.82,
+  pre 22 ms, flutter 34 ms × 6, k 0.2)` — walls ~12 m off and a vault, a big closed body of air, flesh drinking the highs —
+  then `WHALE_VERB` 0.42 to the master. Skrim's two songs go straight to the destination and stay dry.
+- Made on entering the whale, faded in 0.18 s; faded out on leaving and taken OFF the bus 2.5 s later (a convolver costs the
+  audio thread heard or not). `__bw.spaceVerb.whale`.
+- Pitched against the rooms already liked (`tools/whaleverb.js`: the owner's flesh hit and a step rendered offline through
+  each send, wet RMS re the dry): over the sound — wreck −15.3/−16.0 dB, drain −11.9/−13.1, the whale −17.1/−19.8 (at 0.2
+  first it was −23/−26 and gone by 0.3 s: not heard); 0.1-0.4 s after — wreck −59/−43, drain −25/−20, whale −39/−30;
+  0.4-1 s — −87/−71, −34/−28, −53/−42. Just under the wreck in level, its tail between the two. musictest skrim, skrimFight,
+  load: PASS.
+
+## 2026-11-21 — Skrim comes over a little faster
+The owner: "MAKE SKRIM WALK TO YOU A LITTLE FASTER WHEN HE COMES TO TALK TO YOU AFTER YOU GRAB THE ARTIFACT". His speed in
+'meet' is his walk clip's own root motion (`skrimMix`: his feet carry him), so it is the clip's rate: `SK_MEET_RATE` 1.75
+(was 1.45, in `skrimGait`); `SK_MEET_SPD` 2.6 (was 2.2) is only the way he wants to go, for picking the clip. Probe
+`skrimQ` (m=give, PB_PORT=4223): moved 0.9 → 2.1 → 3.2 → 4.5 m per 0.5 s, ~2.4 m/s (was ~2.1), feet still locking (`lock`
+counts every half second), the talk opening at 1.52 m.
+
+## 2026-11-21 (later) — Skrim: blood tells, his voice placed, the flesh in his fist, his heap struck, jars only if paid
+- **THE TELLS NEVER SHOWED** — not once in the whale. `cullWorldInHall` hides every scene child > 1500 m from you on entering a
+  room; the tells (and `SKC.dust`, his puffs, and any pooled hook) are PARKED at y −1000 when unused, i.e. at the origin
+  ~21 km off — so made before you came in they were hidden for the visit. `o.userData.hallKeep` now exempts a pool from that
+  cull (set on the tells, the drops `SKB`, `SKC.dust`, the hooks). Any pooled effect parked far off needs it.
+- **BLOOD BEFORE THE HOOKS** ("THERE SHOULD BE A INDICATION WHERE SKRIMS HOOKS ARE ABOUT TO COME OUT OF THE GROUND SOME SORT
+  OF BLOOD EFFECT", then "MAKE THEM MORE REAL AND SUBTLE THEY SHOULD ALSO FORM TO THE GROUND NOT JUST LOOK LIKE A FLAT PNG"):
+  `skcTell` is a pool of blood now — `SKB_TELLS` 24 discs of `SKC_TELL_RINGS` 7 × `SKC_TELL_SEG` 40, every vertex put on the
+  floor under it when placed (`skcTellLay`, also as the pit's tell follows you), the heap pools' wet black-red lit
+  (`MeshStandardMaterial` 0x7a0c0a, emissive 0x2c0302, roughness 0.08, `whPoolMap` alpha, fog off — the gut's fog greyed it
+  to nothing at 3 m), drawn after the ground mist (renderOrder 8 > 6), spreading by a reveal through its ragged edge (`uR` in
+  an `onBeforeCompile` on `alphamap_fragment`), and drops spat up out of it (`skbSpit`, `SKB_N` 140 sprites) faster as it
+  comes, a spray at the burst, then soaking away. Timing untouched: the pit's and the ring's tells as before; the line gets a
+  tell at his feet through its wind-up and one under each chain for its own `i * 0.085` beat (`T.auto`). `tools/skrimblood.js`.
+- **HIS VOICE FOLLOWS HIM** ("MAKE HIS AUDIO DIRECTIONAL"): `farmVox` pans a line once at its start; with `V.track` (his
+  voice) it goes through an HRTF `PannerNode` instead, placed in your view's frame (his head minus the camera, by the
+  camera's inverse rotation; listener faces −Z) every frame he speaks (`farmVoxTrack` from `updateSpaceAudio`), its own
+  distance law off — `farmVoxPlace` keeps the gain and muffle up to date. `tools/skrimvoxdir.js`: ahead −z, turned right →
+  −x (on your left), 180 → +z, left → +x; 20 m off, gain 3.2/(1+20/14). Headless: the audio clock never runs, so a
+  `setTargetAtTime` never lands — the probe makes it a set.
+- **"DONT HAVE SKRIMS TAKE DAMAGE AUDIO FOR THE CRABS"**: not reproduced. `tools/crabvox.js` (frame-driven audio clock — his
+  mouth is "busy" for ever with the opening line otherwise, so even the control hit played nothing): his fight at 49%, all
+  five of his heads killed by cryStrike and then by real katana swings — his hurt bank 0 times; the control (him hit) 1.
+  The heads' own sound is `cryVoice` (shriek + fleshHit). Asked the owner which crabs.
+- **THE FLESH IN HIS FIST** ("LOOK HOW BAD THIS LOOKS"): it was put on the wrist JOINT, at 0.07-0.12 m lumps ×1.5 — hanging
+  under and through his hand. `skrimGripChunk` seats it as `skrimGrip` seats a bone: in the palm, 8 cm past the wrist along
+  the forearm's line, 1.2 cm into the palm, its long side across the hand; lumps 0.038-0.054. `tools/skrimchunk.js`.
+- **HIS HEAP STRUCK, NEVER BROKEN** ("MAKE HIS PILE ABLE TO BE HIT BUT IT DOESNT BREAK"): `skrimPileStrike` after
+  `skqPileStrike` in `digImpactCore`; his heap is `SKQ.home` (a pile record for `skqShape`/`skqThrow`, its group the bones'
+  parent): wet hit, slosh, blood, pieces, a wobble (decayed in `skqTick`), no hits counted. Not when he is on the aim line
+  nearer than its middle. `tools/skrimpile.js`. A swing from the heap's far side reaches him behind it (he starts the fight).
+- **THE JARS** ("THE 4 JARS SHOULD ONLY DROP WHEN KILLING SKRIM IF YOU GAVE HIM THE 4 JARS"): `skrimJarsOut` only if
+  `SKRIM.paid`; otherwise `jarsDone` with none (saved as an empty list, so a reload drops none either).
+- **THE HOOK'S GLOW**: `skHookPlace` uses `DROP_SHINE` (glint and column), `lift` kept at 0.22.
+- **UP OFF THE FLIP** ("make him stand up smoother he just legs to standing from a landing pose"): the landing was hard-cut in
+  and the fight took him the next frame. Now `land` crossfades in from the flip over 0.3 s at 0.9, and `k.rise` (in the fight
+  step, after `k.hang`) holds the fight off until 86 % of it has played. `skrimHang`: flip, landing at 1.47 s, fighting after.
+- **THE CEILING CRABS AND HIS CRY — FOUND** (the owner: "His ceiling crabs"): a sword cannot reach them on the chain (they let go
+  0.75 m under his fist, ~6 m up), so they are met with the GUN or the HOOK — and `magTrace` (the revolver's, every shotgun
+  pellet's and the hook's one trace) did not know them: the round went on up the chain into HIM hung just over it —
+  `skrimShot` (torn off, `skrimVox('hurt')`) and his hurt. Now each live head is a ball (r 0.34) on the line in `magTrace`
+  (`kind: 'cry'`), nearer wins: `magRoundHits` / the shotgun's pellet loop / `hookBite` kill it (`cryKill`) and the round stops
+  in it. `tools/crabvox.js &gun=1`: a round at a crab on the chain — trace 'cry', the head dead, his hp 98 → 98; his hurt only
+  on the control hit.

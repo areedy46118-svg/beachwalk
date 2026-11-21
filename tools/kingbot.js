@@ -26,7 +26,7 @@ let deaths = 0, parries = 0, blocks = 0, taken = 0, cuts = 0, hooks = 0, stagger
 let mode = '', minute = [];
 const T0 = performance.now();
 const parryHook = b.parryCountS ? null : null;
-let lastRec = 0, stunT = 0, recT = 0, swT = 0, swId = 0, lastAtk = -1, lastSwK = null;
+const swN = {}; let lastRec = 0, stunT = 0, recT = 0, swT = 0, swId = 0, lastAtk = -1, lastSwK = null;
 for (let f = 0; f < 60 * SECS; f++) {
   const now = f / 60, p = u.g.position, M = b.kingS().mode;
   if (!st.alive || M === 'dying' || M === 'gone') { log('HE IS DOWN at', now.toFixed(1), 's'); break; }
@@ -36,7 +36,7 @@ for (let f = 0; f < 60 * SECS; f++) {
   b.lookAt(p.x, p.y + 1.7, p.z);
   // his contacts: each decided once — parry it, block it, or miss it
   const A = st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
-  if (A && (lastAtk < 0 || st.atk < lastAtk || st.swing !== lastSwK)) swId++;
+  if (A && (lastAtk < 0 || st.atk < lastAtk || st.swing !== lastSwK)) { swId++; swN[st.swing] = (swN[st.swing] || 0) + 1; }
   lastAtk = st.atk; lastSwK = st.swing;
   let guard = false, fresh = false;
   if (A) {
@@ -73,4 +73,5 @@ for (let f = 0; f < 60 * SECS; f++) {
   if (f % (60 * 20) === 0 && f) log('t', now.toFixed(0), 's | his hp', st.hp.toFixed(0), '| your deaths', deaths, 'taken', taken, '| parries', parries, 'blocks', blocks, 'staggers', staggers, '| cuts', cuts, 'hooks', hooks);
 }
 const dc = {}; for (const v of decided.values()) dc[v] = (dc[v] || 0) + 1; log('his swings', swId, 'contacts decided', JSON.stringify(dc), 'his stun time', stunT.toFixed(1), 's, recoil time', recT.toFixed(1), 's, swinging', swT.toFixed(1), 's');
+log('his blows by kind', JSON.stringify(swN));
 log('END', st.alive ? 'he lives, hp ' + st.hp.toFixed(0) : 'dead', '| your deaths', deaths, 'health taken', taken, '| parries', parries, 'blocks', blocks, 'staggers', staggers, 'cuts', cuts, 'hooks', hooks, '| errors', errs.length, errs.slice(0, 3).join(' | '));

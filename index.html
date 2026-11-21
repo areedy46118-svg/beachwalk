@@ -124,7 +124,7 @@
   #overlay.hidden { opacity: 0; pointer-events: none; }
   /* THE BEDROOM BEHIND START GAME (2026-11-19, `TB` in main.js): its own canvas at a third of the screen, blown up hard-edged;
      the words over it with a shadow so they read on the dark room */
-  #overlay { overflow: hidden; }   /* (the call's picture covers the screen and is trimmed at its edges: `tbSize`) */
+  #overlay { overflow: hidden; overflow: clip; }   /* (the call's picture covers the screen and is trimmed at its edges: `tbSize`; `clip`, not only hidden: a taller-than-the-screen view on a narrow screen was SCROLLED by focus — START's button — 66 px up, 2026-11-21) */
   #overlay #title-room { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; image-rendering: pixelated; image-rendering: crisp-edges; opacity: 0; transition: opacity 2.4s ease; pointer-events: none; }
   #overlay.room #title-room { opacity: 1; }
   #overlay .start { position: relative; z-index: 1; } #overlay #bootbar { z-index: 1; }
@@ -145,7 +145,7 @@
   }
   #overlay .start:hover, #overlay .start:focus-visible { text-shadow: 0 0 12px rgba(255,255,255,0.45); outline: none; }
   #overlay.starting .start { opacity: 0; pointer-events: none; }
-  #overlay .start.loading { opacity: 0.55; cursor: default; pointer-events: none; text-shadow: none; font-size: 0.78em; letter-spacing: 0.34em; }
+  #overlay .start.loading { opacity: 0.8; cursor: default; pointer-events: none; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 0, 0, 0.9); font-size: clamp(3.4rem, 7vw, 6.2rem); letter-spacing: 0.22em; text-indent: 0.22em; }   /* (way bigger — 2026-11-21, the owner: "MAKE THE LOADING PERCENTAGE IN THE START BE WAY BIGGER"; it was 0.78 of START GAME at 0.55) */
   #overlay .start { transition: opacity 1.2s ease; }
   /* the load, hidden: one hairline along the foot of the black, gone when the game is ready */
   #bootbar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255,255,255,0.04); transition: opacity 1.2s ease; }
@@ -1662,6 +1662,14 @@
      scaled to the sheet anyway (`packPaperFit`), so fixed here it is the same picture on every screen, only bigger or
      smaller: 1080p's own 583 px, near enough, and its preview) */
   #invpanel.paper .body { height: 570px; }
+  /* (and the key ring's box the same — 2026-11-21, the owner: "on smaller screens the inventory looks more zoomed in i need it
+     to look the same always": its clamp off the window's vw/vh made the panel shorter on a small window, and the shorter
+     panel was scaled up more to fill the sheet. 1080p's own 290 × 240, in the panel's pixels) */
+  #invpanel.paper .rings #keychain-box { width: 290px; height: 240px; }
+  #invpanel.paper .panel { flex: none; }
+  /* the hotbar's five on the sheet: shaded in pencil, the only boxes with a number (`renderPack`) */
+  #invpanel.paper #inv-grid .islot.hb { background: repeating-linear-gradient(135deg, rgba(24, 15, 6, 0.13) 0 1.6px, transparent 1.6px 7px); }
+  #invpanel #inv-grid .islot.hb { background-color: rgba(255, 255, 255, 0.05); }   /* (a flex item: on a window narrower than its 960 px it was squeezed to the window, and reflowed) */
   #invpanel.paper .detail .big { width: min(100%, 280px); }
   #invpanel.paper .panel { translate: var(--pk-dx, 0px) var(--pk-dy, 0px); opacity: 0; transition: opacity 0.12s ease, transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1); }
   /* (written on once the sheet is open: the snap is done 0.46 s in — `PH_RISE` + five frames at 15 fps) */
@@ -1738,7 +1746,7 @@
   #invpanel.paper .rings .rslot.wearable { --c: rgba(14, 8, 3, 1); filter: none; }
   #invpanel.paper .rings #keychain-box { --c: var(--moon); }
   #invpanel.paper .rings #keychain-box:hover { --c: rgba(18, 10, 4, 0.96); }
-  #invpanel.paper .rings #keychain-box.sel { --c: var(--blood); }
+  #invpanel.paper .rings #keychain-box.sel { --c: var(--inkc); }   /* (black, not oxblood — 2026-11-21, the owner: "stop making the square around the keys red"; its square is his own drawing now, `tools/pk_from_drawing.py`) */
   #invpanel.paper #keychain-box .kc-top, #invpanel.paper #keychain-box .kc-count, #invpanel.paper #keychain-box .kc-name { color: var(--inkc); text-shadow: none; }
   #invpanel.paper #keychain-box .kc-arrow { color: var(--inkdim); }
   #invpanel.paper #keychain-box .kc-arrow:hover { color: var(--inkc); }
@@ -2173,7 +2181,7 @@
     user-select: none;
     -webkit-font-smoothing: antialiased;
   }
-  #menu.show { opacity: 1; pointer-events: auto; }
+  #menu.show { opacity: 1; pointer-events: auto; z-index: 21; }   /* (over the intro's black and its waves, 20, and the death's red, 18 — 2026-11-21, the owner: paused in the wave scene, the menu opened UNDER the intro and the paused waves looked frozen) */
   #menu .panel {
     width: min(92vw, 540px);
     max-height: 92vh;
@@ -2341,14 +2349,16 @@
   #menu input[type="range"] { background: url(assets/hud/pk-short1.png) center / 100% 7px no-repeat; opacity: 0.92; }
   #menu .row:nth-of-type(2n) input[type="range"] { background-image: url(assets/hud/pk-short2.png); }
   #menu input[type="range"]::-webkit-slider-runnable-track { height: 7px; background: transparent; }
+  /* (HIS OWN DRAWN DOT, 2026-11-21: IMG_7227, his black marker dot with the little eye in it, turned white —
+     tools/pk_thumb_pack.py. The glow follows its own outline, not a box) */
   #menu input[type="range"]::-webkit-slider-thumb {
-    width: 15px; height: 15px; margin-top: -4px; border-radius: 50%; box-sizing: border-box;
-    border: 2px solid #e8eef8; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8), 0 0 7px rgba(160, 185, 230, 0.45);
-    background: radial-gradient(circle, #ffffff 0 2px, rgba(120, 142, 186, 0.6) 3px, #05070b 5.5px);
+    width: 17px; height: 17px; margin-top: -5px; border: 0; border-radius: 0; box-sizing: border-box;
+    background: url(assets/hud/pk-thumb.png) center / contain no-repeat; box-shadow: none;
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9)) drop-shadow(0 0 4px rgba(160, 185, 230, 0.4));
   }
   /* (the drawn ring was 288 px of marker squeezed into 15: it came out as a smudge on the line. A thumb is a ring) */
   #menu input[type="range"]::-moz-range-track { height: 2px; background: var(--moon); }
-  #menu input[type="range"]::-moz-range-thumb { width: 15px; height: 15px; border-radius: 50%; background: radial-gradient(circle, #fff 0 2.5px, #05070b 3.5px); border: 1.5px solid #eef2f8; }
+  #menu input[type="range"]::-moz-range-thumb { width: 17px; height: 17px; border-radius: 0; border: 0; background: url(assets/hud/pk-thumb.png) center / contain no-repeat; }
   #menu input[type="range"]:hover::-webkit-slider-thumb { filter: drop-shadow(0 0 5px rgba(190, 210, 255, 0.7)); }
   #menu input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 0; filter: drop-shadow(0 0 5px rgba(190, 210, 255, 0.9)); }
   /* the toggle: a drawn box, lit from inside and inked white when on */
@@ -2589,6 +2599,7 @@
       <div class="tip">
         <span><b>Click</b> select</span>
         <span><b>Double-click</b> inspect</span>
+        <span><b>1–5</b> your hotbar</span>
         <span><b>Drag</b> reorder</span>
         <span><b>Drop</b> onto another item to combine</span>
         <span><b>Drop</b> a ring on a ring slot to wear it</span>
@@ -2800,7 +2811,9 @@
       let want = sel === '#menu .panel' ? Math.min(1.25, (W * 0.48) / pw) : k;
       // (the pack is written on the sheet in his hands: as big as the clear part of the paper takes it — `packPaperFit`)
       if (sel === '#invpanel .panel' && window.packPaperFit) { const f = window.packPaperFit(pw, ph); if (f) want = f; }
-      const s = Math.max(min, Math.min(want, (W * 0.97) / pw, (H * 0.95) / ph));
+      // (the pack on the sheet has no floor: it is the sheet's size on every screen, however small — a floor made it bigger
+      //  than the sheet's clear part on a small window, 2026-11-21)
+      const s = sel === '#invpanel .panel' && window.packPaperFit && window.packPaperFit(pw, ph) ? want : Math.max(min, Math.min(want, (W * 0.97) / pw, (H * 0.95) / ph));
       root.style.setProperty(v, s.toFixed(3));
     }
   }

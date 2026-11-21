@@ -16,7 +16,7 @@ f.addEventListener('load', async () => {
   for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) { /* not ready */ } b.frame(1); await wait(60); }
   b.introDone = true;
   for (const k of ['shovelItem', 'fishingRodItem', 'glowstickItem', 'waterBottleItem', 'syringeItem', 'katanaItem', 'cdItem', 'crabItem', 'jarItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
-  for (const k of ['keyItem', 'boatKeyItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
+  for (const k of ['boatKeyItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
   try { if (b.ringItem) b.addToInventory(b.ringItem); } catch (e) { /* */ }
   for (let i = 0; i < 60; i++) { b.frame(1); await wait(30); }
   const d = f.contentDocument, st = d.createElement('style');

@@ -1185,3 +1185,11 @@ just like we have been with the retro style and same time as the sewer grab is n
   is faded out over the first 40% of the pull. Moved 0.0004 m across the take (`pipeReach` probe).
 - The 3D `pipeArm` is the fallback until the sheet is in. Probe: `PB_PORT=4231 sh tools/probe.sh pipeReach <out>`
   (`&at=` frame list for the stills).
+
+## 2026-11-21 — the hand between the bars
+The owner: "make the hand go in between the bars to grab the screwdriver and actually have it grab". The reach quad (`pipeHand`)
+was drawn over everything, so his hand lay ON the grate. It is depth-tested now with a depth of its own per pixel
+(`gl_FragDepth`, `useDepth`): the lens's 0.15 m for the arm, the screwdriver's distance for his fingers round the grip (within
+~0.1 of the screen's height of `reach.xy`, the grip's place on the screen) — the forearm stays over the bar it comes past, the
+fingers go down past the grate's flat to the screwdriver, and it comes out in them (as before). A line from the lower left to
+the grip, tried first, put the near bar across his wrist. `pipeReach` probe stills.

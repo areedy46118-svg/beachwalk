@@ -1497,3 +1497,126 @@ its `renderPackDetail` → `pvAttach` reads `pvShown`). CSS block "THE PANE, LIV
   list of cuts that refused it is gone); while open over one, `animateFrame` skips `update` and every cut updater, the audio
   context is suspended (`loadSilent` returns true while `cutPaused`, so nothing resumes it — the watchdog, a key, a click),
   and the intro's cues are let go and set again off the song's clock (`introHold`), the waves video paused.
+
+## 2026-11-21 — the menu over the intro's waves
+The owner: "I JUST TRIED TO PAUSE DURING THE WAVE SCENE AND DIDNT SEE THE SETTINGS IT JUST FROZE". Two things: the game's
+keydown handler returned on `!introDone` before anything, so Escape did nothing over the waves; and a click there (taking the
+pointer) then Escape (letting it go → `pointerlockchange` → `openMenu`) opened the menu at z 13 UNDER `#intro` (z 20) while
+`cutPause` held the waves and the song — a still screen with nothing on it. Now `#menu.show` is z 21 (over the intro and the
+death's red, 18; hidden it stays at 13), and Escape opens/shuts the menu over the waves (`introStarted && !introDone`, not
+during the call, which keeps its Enter skip). `tools/intromenu.js`: the menu on top at the middle, a corner and low; the video
+held at 1.50 s while it is up, playing on after.
+
+## 2026-11-21 — the pack's left hand as filmed; the sleeves navy
+The owner: "MAKE THE LEFT HAND WHEN OPENING THE INVENTORY MATCH THE ORIGINAL VIDEO BETTER JUST KEEP THE BLUE SLEEVE IN TOO
+LIKE THE RIGHT HAND". Re-made from `~/Desktop/BEACHWALK ASSETS/IMG_7207.MOV` (the docstring's three steps; `PH` unchanged).
+- **The "knob" on his left wrist was never extra skin.** Laid over the frames: the jar test (warm > 0.2, lum < 0.30) takes the
+  shaded skin of the wrist crease for the jar and bites a NOTCH out of the hand's lower edge just above the wrist; the hand's
+  true edge below the notch was left standing as a spur. The 2026-11-19 cures (a disk-16 opening, then the heel-to-cuff line
+  cut, bowed) pared the spur and with it the hand's real width — the hand came out a thin banana against the video's broad
+  one. Both are gone. Now the ARM alone (skin + navy, never the paper — a closing of the whole silhouette bridged the palm to
+  the sheet) is closed by a disk of 14 in the wrist's zone, every filled pixel takes the colour of the nearest skin (behind the
+  crease in the frame is the jar: dark, or its lit rim red), and a disk-9 opening rounds the spur's last tip.
+- The jar's deep red (warm > 0.5, lum < 0.25) is jar out to U 0.45 (it sat right of the old box in the snap's blurred frames).
+- **The sleeves were grey-black on BOTH arms**: the 9-level dither put the dark navy at black or the one grey above it.
+  The sleeve is also the lit navy cloth (blue over red, lum < 0.32) in the pieces that run off the frame's bottom (the jar's
+  rim is as blue); that BLUE cloth only is lifted back from the moon's fall-off by 0.6, its saturation ×1.6, and dithered at
+  25 levels. Not every dark pixel: the dark-bucket "sleeve" (lum < 0.2) also holds a crease/jar speck by the right
+  fingers in frame 7, which a boost or a fine dither turned bright red — those keep rgb × 0.85 and 9 levels.
+  Held frame: the cuffs (20,18,27)/(22,21,31) were (14,13,12)/(12,12,11).
+- Checking: `tmp-preview/pack-lefthand.jpg` (the opening in the game at 0.12 s and 0.30 s, then old vs new frames).
+- **The knob on the left wrist, flattened** (same day, the owner with his cursor on it: "THIS LITTLE SKIN POKING OUT HAS TO
+  BE FLATTENED AND BLEND IN WITH THE WRIST"): past the fill a small knob still stood out of the inner wrist (V ~0.77, sprite
+  ~(86,255) in the held frames) with a dip over it. `clean()` (frames 13 on) now smooths the arm's inner edge along its own
+  run, rows V 0.60-0.93: the right-most arm pixel per row, a median over 41 rows then a gaussian of 8, eased in/out over 18
+  rows at the ends — past it cut, short of it filled with the nearest skin. It keeps the wrist's curve (the ruled line of
+  2026-11-19 looked unnatural). Mapping a screenshot point to the sheet: `phLayout` — k = min(1.12 H / (paper y1 − y0),
+  0.96 W / (paper x1 − x0)), left = W/2 − paper-mid-x · k, top = 0.985 H − paper y1 · k. `tmp-preview/pack-wrist.jpg`
+  (2000x837, his window's shape). A tiny ledge where the palm meets the sheet stays in two snap frames (13, 14).
+
+## 2026-11-21 (later) — five in the hotbar; big boxes; the key forward and his jingle; the gap by the right thumb
+- **"MAKE ONLY 5 ITEMS IN HOTBAR"**: `hotbarN()` is 5 always (6, 8 with the trader's pockets); the strip hides its slots past
+  it (`renderHotbar`, display none). Keys 1-5. The pack keeps 12 / 16 slots.
+- **"MAKE THE ITEM BOXES OF THE INVENTORY BIGGER THERE IS ALL THIS SPACE"**: the grid is 4 across (`renderPack`): twelve are
+  three full rows, sixteen four, held to 556 px wide so four rows fit the 570 px body. `tmp-preview/pack-bigboxes.jpg`.
+- **THE KEY FORWARD** ("IT SHOULD BE NOTICEABLE"): `KC_FWD` 0.045 → 0.11, and the key grows ×1.2 as it comes (×1.35 with a
+  drop ran into its name under the ring: it hangs from its bow, so it grows downward). `tmp-preview/keychain-forward.jpg`.
+- **HIS KEYS' SOUND** ("New Recording 4.m4a": "USE THESE THREE SOUNDS AS THE KEY SOUND WHEN SIFTING THROUGH … WHEN YOU PICK UP
+  A KEY"): three takes at 1.11-1.55, 2.69-3.05, 4.44-4.84 s (silencedetect −38 dB), cut with 20 ms either side, 8/60 ms fades,
+  mono AAC 96k → `assets/key-jingle1-3.m4a` (6-7 KB each), `SAMPLES.keyJingle`. `sfxKeyChain` (turning the ring, and clicking
+  it: `selectKeyChain`) plays one at 0.55; `primaryAction` plays one at 0.7 when the press added a key (`keyChain()` grew),
+  instead of the generic pickup.
+- **SEEING THROUGH THE PAPER BY THE RIGHT THUMB**: a sliver of the table between the sheet's edge and his right hand where it
+  runs under the thumb (sprite ~467-478, 157-192; shut in some held frames, open in others). `clean()` closes the right
+  hand's stretch (U 0.64-0.88, V 0.30-0.82) by a disk of 10 and fills from the nearest kept pixel. 0 transparent pixels in
+  that box after, all six held frames.
+- **HIS SQUARE ROUND THE KEYS, HIS LINE FOR EVERY RULE** (the owner's photo `~/Downloads/IMG_7224.HEIC`, a square and a line in
+  black marker: "make this the square around the keys and use this drawn black line to improve the inventories hand drawn
+  feel. stop making the square around the keys red"): `tools/pk_from_drawing.py` reads the ink against the paper's own local
+  level (a wide max-filter, blurred: the shadow and the tone drop out), finds the two marks, and writes the masks the CSS
+  already strokes with: `pk-kc.png` (the square, eroded 19 px of 580 — his full stroke at that size buried the label and the
+  name), `pk-rule1/2`, `pk-vrule`, `pk-short1/2` (the line; 2 mirrored). The key box selected is `--inkc`, not `--blood`.
+  Its label, count, name and arrows moved inside the marker's width (`#invpanel.paper #keychain-box .kc-top` 24 px, the
+  name 19 px up, the arrows 14 px in). `tmp-preview/pack-drawn-lines.jpg`. The old masks are in git.
+- **The key box, again** ("the kay section looks bad make it fit better lik the old square"): his square's marker is ~4 % of its
+  width each side — round the key box a heavy frame crowding everything, and eroded it went to blots. `pk-kc.png` is built
+  from his LINE now (`pk_from_drawing.py`): four different stretches of it, 9 px of 580 / 480, along the edges 2 px in,
+  each overrunning its corner — the old frame's weight (~6 px at the edge) in his marker. The labels' paper offsets went
+  back to the old (`.kc-top` 10 px, the name 10 px up). The selected key lifted 0.016 m × its come-forward so its tip stays
+  off its name (`k.pivot.position.y`). `tmp-preview/pack-keybox.jpg`.
+- **The key box back to the old one** (the owner: "just go back to the old one"): `pk-kc.png` restored from git;
+  `pk_from_drawing.py` no longer writes it. His line stays in the rules; the key box stays black when selected.
+- **His key sounds only** ("WHERE ARE MY KEY SOUNDS WHEN INTERACTING WITH THE KEYS IN THE INVENTORY? TAKE OUT THE CLAUDE SOUNDS"):
+  measured headless, every key action in the pack (clicking the ring, the ‹ › buttons, the arrow keys, the wheel on the ring)
+  played his `keyJingle` and no oscillator — the game he heard was running the code from before them (a reload brings them).
+  `sfxKeyChain`'s synthesised fallback jingle is deleted: his takes or nothing.
+
+## 2026-11-21 (late) — the hook in the box; the item sheet; the syringe; the title's storm and its big hand-drawn %
+- **Skrim's hook in the pack's box** ("THE TEXTURES … ARE GLITCHED"): the inspect copy carried the world copy's night glow (white
+  over its map at 0.17) and env ×1.6 into the pane's strong lamps — bleached pink-white. `hookInspect` now: emissive 0.03,
+  env 0.45, metalness 0.18, roughness 0.58, colour 0.82 (the fist's is 0.03 / 0.78). Its maps are mipmapped (474×512), the
+  env is swapped per canvas (`envSwapFor`). If the owner still sees corruption it is his GPU's alone (headless never shows it).
+  `uishot.html &first=name` puts a thing in the pack before the usual twelve. `tmp-preview/hook-pane.jpg`.
+- **"SHOW ME A SCREENSHOT OF EVERY ITEM AND ITS DESCRIPTION"**: `tools/itemsheet.html` / `itemsheet.sh [out.png]` — every item's
+  pane picture, its name, its `desc` (keys: the pack shows the name only). `tmp-preview/items-all.png`.
+- **The syringe**: name 'Syringe' (`was: ['Bleeding syringe']` — saves store names, `packByName`), desc 'Used to draw blood from
+  horseshoe crabs'. The shotgun: "A sawed-off twelve-bore" (was sawn-off).
+- **"MAKE THE LOADING PERCENTAGE IN THE START BE WAY BIGGER"**: `#overlay .start.loading` clamp(3.4rem, 7vw, 6.2rem) at 0.8 with
+  the title's shadow (was 0.78 em of START GAME at 0.55).
+- **"HAVE THE RAIN AND THUNDER PLAYING WHEN IT SAYS 'START GAME'"**: the audio was made on the first press (`primeMenuAudio`);
+  now `startAmbientAudio()` (and a resume) is tried as START GAME is shown (`updateStartGate`) under the bedroom, not on a
+  death's or a checkpoint's load. Where the browser allows sound without a press the storm is on at once; where it does not,
+  the context waits suspended and the first press resumes it as before. musictest: all 17 PASS.
+- **A hand-drawn %** ("use some of my stuff to make the % look handdrawn too"): 'BW Hand' had no % (63 glyphs; the browser
+  drew one from the next family). `tools/hand_font_add_pct.py assets/hand-font.woff` adds `percent` to the font as it is: his
+  drawn 0 (`d0.png`) twice, small, and a stroke of his marker line (`pk-rule1.png`) on the slant, traced the font's own way
+  (`glyph_from`, one stroke weight). `tmp-preview/loading-pct.jpg`.
+- **The keys' sheet** ("show me all keys with there descriptions too"): `QS=keys=1 WS=1500,760 sh tools/itemsheet.sh out.png` —
+  all nine (Rusted, Skull, Captain's Chest, Fancy house gate, Spare fancy house gate, Tavern storage, Castle door, Steel Door,
+  Henry's cell). `tmp-preview/keys-all.png`. The Captain's Chest Key has no description.
+- **The Bloody Blade's bleed in its words** ("add the amount of bleed to the bloody blades description"): "Bleed Build Up +1 Per
+  Hit, +1.7 Per Heavy · A Bleed Burst Takes 17% Of Their Health · Amplifies Gore 30%" (`bleedBuild`, `BLEED_PCT` — written
+  out: `BLEED_PCT` is declared far below the item and a template reading it would be a dead-zone crash).
+- (same day) **The hook's bleed in numbers**: "Quick, Short Cuts · Bleed Build Up +1.35 Per Hit, +2.3 Per Heavy · A Bleed Burst
+  Takes 17% Of Their Health · Shift + Hold: …" (`HOOK_BLEED` 1.35 × `bleedBuild`'s 1 / 1.7; the throw's bite is a light hit).
+  **The gate keys in his words**: "Opens the gate to the fancy house." / the spare "A second key that opens the gate to the fancy house."
+- **A long description fits the pane** (the owner, of the hook's: "end after drag them to you" — its words ran down the pane and
+  Inspect / Hold / Drop went off its foot): `packFitDesc` after `renderPackDetail` — 7 % smaller a step (no smaller than 62 %,
+  line-height 1.2) until the pane's last button is inside it. `tmp-preview/hook-desc.jpg`.
+- (same day) The hook's description shortened (no throw, no drag): 'Quick, Short Cuts · Bleed Build Up +1.35 Per Hit, +2.3 Per Heavy · A Bleed Burst Takes 17% Of Their Health'. Captain's Chest Key: 'Opens a chest on the shipwreck'.
+- (same day) **Stats only** for the Spare Peg ('Tip Damage +27% · Parry Stagger +30% · Parry Window −25% · After A Parry: Attack Speed +35% For 5s') and the hook ('Bleed Build Up +1.35 Per Hit, +2.3 Per Heavy · A Bleed Burst Takes 17% Of Their Health') — no words about how they hit.
+
+## 2026-11-21 (later): the pack the same picture on every screen; the slider thumb; the hotbar marked
+
+- "on smaller screens the inventory looks more zoomed in": three things scaled the pack off the WINDOW instead of the sheet —
+  the key ring's box (`clamp(…20vw…, …24vh…)`) changed the panel's height and so its fit; the writing went in the part of
+  the sheet ON the screen (a 16:9 window cuts its torn top, a 4:3 one does not); and the 0.5 floor on `--fit-pack`. Now
+  the box is 290 × 240 panel px, the writing rect is always the one a 16:9 window leaves (`PH_WRITE_TOP`/`_BOT`, in sheet
+  px), the pack has no floor, and `.panel { flex: none }` (a flex item narrower than its 960 px window was squeezed and
+  reflowed). `tools/packsame.js` (PB_WIN + PB_Q=&fw=&fh=) measures every part against the sheet: 800×450, 960×540,
+  1024×768, 1440×900 and 1920×1080 agree to the third decimal.
+- The settings slider's thumb is his drawn dot (IMG_7227) turned white: `tools/pk_thumb_pack.py` → `assets/hud/pk-thumb.png`
+  (64 px, soft edge, the eye the menu's dark), 17 px, a drop-shadow for its glow.
+- The hotbar's five in the pack: only they are numbered, and pencil-shaded (`.hb`); the tip says "1–5 your hotbar".
+- Dev mode gives ten things to a five-slot strip: the fighting weapons are swapped into the strip (`devGrantWeapons`), so the
+  mace, the hook and the rest can be drawn.

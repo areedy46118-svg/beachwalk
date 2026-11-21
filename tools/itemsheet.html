@@ -1,0 +1,63 @@
+<!doctype html><meta charset="utf-8"><title>items</title>
+<!-- EVERY ITEM, ITS NAME AND ITS DESCRIPTION (2026-11-21, the owner: "SHOW ME A SCREENSHOT OF EVERY ITEM AND ITS DESCRIPTION SO I CAN
+     CHANGE THEM"). Not part of the game. Each item's picture from the pack's own pane (`__bw.pvLook`), its name, and the words the
+     pack and the inspect show under it (`item.desc`; a key shows its name alone). sh tools/itemsheet.sh [out.png] -->
+<style>
+html, body { margin: 0; background: #1b1714; color: #e9e1d2; font: 15px/1.35 Georgia, serif; }
+iframe { position: absolute; left: -4000px; width: 1280px; height: 720px; border: 0; }
+h1 { font: 22px Georgia, serif; margin: 18px 22px 6px; letter-spacing: 0.04em; }
+#g { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; padding: 12px 22px 22px; }
+.c { background: #2a241f; border: 1px solid #4a4038; border-radius: 6px; padding: 10px; display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: start; min-height: 128px; }
+.c img { width: 120px; height: 120px; image-rendering: pixelated; background: #11100e; border-radius: 4px; }
+.n { font-size: 17px; font-weight: bold; color: #fff3dc; margin-bottom: 4px; }
+.i { font: 11px monospace; color: #9c8f80; margin-bottom: 6px; }
+.d { font-size: 14px; color: #e6dccb; } .d.none { color: #8d7d6c; font-style: italic; }
+</style>
+<h1>Every item — its name and its description</h1>
+<div id="g"></div><iframe id="f" src="/index.html"></iframe>
+<script>
+const f = document.getElementById('f'), G = document.getElementById('g');
+sessionStorage.setItem('beachwalk.skipIntro', '1');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const NAMES = ['Toy Shovel', 'Military Shovel', 'Katana', 'Bloody Blade', "Skrim's Hook", 'Bone Mace', 'Spare Peg', '.44 Magnum', 'The Sawed Off Shotgun', 'Screwdriver',
+  'Fishing rod', 'Glowstick', 'Syringe', 'Horseshoe crab', 'Blood Jar', 'Bottle of water', 'Wax Spliff', 'Mutant Fang', 'New Cd',
+  'Big Mouth Billy Bass', 'Memory of grammy orc', 'Homeowners Portrait', 'The Great Crab Call', 'Artifact of the Whale', 'Artifact of the Flame', 'Artifact of the Sea',
+  'The Octopus Ring', 'Forgotten Wedding Ring', 'Old Ring', 'Lucky bastards ring', 'Gold Ring', 'Ring of Connection', 'The Shock Ring'];
+// ?keys=1: the keys alone, every one in the game (2026-11-21, the owner: "show me all keys with there descriptions too")
+const KEYS = ['Skull Key', "Captain's Chest Key", 'Fancy house gate key', 'Spare fancy house gate key', 'Tavern storage key',
+  'Castle door key', 'Steel Door Key', "Henry's cell key"];
+const Q = new URLSearchParams(location.search), ONLY_KEYS = Q.get('keys') === '1';
+/* ?big=1&page=N (from 1): everything, keys too, twelve to a page, three across, at a size you can read off a screenshot
+   (2026-11-21, the owner: "make it big enough i can read too in the screenshots") */
+const BIG = Q.get('big') === '1', PAGE = +(Q.get('page') || 1), PER = 12;
+if (BIG) {
+  const st = document.createElement('style');
+  st.textContent = 'html, body { font-size: 22px; } #g { grid-template-columns: repeat(3, 1fr) !important; gap: 16px; } .c { grid-template-columns: 170px 1fr; min-height: 190px; padding: 14px; } .c img { width: 170px; height: 170px; } .n { font-size: 27px; } .d { font-size: 22px; line-height: 1.35; } .i { font-size: 15px; } h1 { font-size: 28px; }';
+  document.head.appendChild(st);
+}
+if (ONLY_KEYS) { document.querySelector('h1').textContent = 'Every key — its name and its description'; G.style.gridTemplateColumns = 'repeat(3, 1fr)'; }
+f.addEventListener('load', async () => {
+  const w = f.contentWindow;
+  for (let i = 0; i < 200 && !w.__bw; i++) await wait(100);
+  const b = w.__bw;
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) { } b.frame(1); await wait(60); }
+  const extra = { 'Blood Jar': () => b.jarItem, 'Bone Mace': () => b.maceItem, 'Steel Door Key': () => b.sewKeyItem };
+  let n = 0;
+  let LIST = ONLY_KEYS ? KEYS : NAMES;
+  if (BIG) { const all = NAMES.concat(KEYS); LIST = all.slice((PAGE - 1) * PER, PAGE * PER); document.querySelector('h1').textContent = `Every item and key — page ${PAGE} of ${Math.ceil(all.length / PER)}`; }
+  for (const nm of LIST) {
+    const it = b.packByName(nm) || (extra[nm] && extra[nm]());
+    const cell = document.createElement('div'); cell.className = 'c'; G.appendChild(cell);
+    if (!it) { cell.innerHTML = `<div></div><div><div class="n">${nm}</div><div class="d none">(not found in the game)</div></div>`; continue; }
+    let a = null;
+    for (let k = 0; k < 50 && !a; k++) { try { a = b.pvLook(it); } catch (e) { break; } if (!a) { b.frame(2); await wait(120); } }
+    if (a) a = b.pvMore(1.0) || a;
+    const pic = a || it.icon || '';
+    const kind = it.isKey ? 'key' + (ONLY_KEYS ? '' : ' — the pack shows its name only') : it.ring ? 'ring' : '';
+    const desc = (it.desc || '').trim();
+    cell.innerHTML = `<img src="${pic}"><div><div class="n">${it.name}</div>${kind ? `<div class="i">${kind}</div>` : ''}<div class="d ${desc ? '' : 'none'}">${desc || '(no description)'}</div></div>`;
+    n++;
+  }
+  document.title = 'done ' + n;
+});
+</script>
