@@ -1336,3 +1336,28 @@ the foot of the drop's beam — up close it is the beach's crab, the right way u
 `ROOM_FILES` name `limule` now anyway (a held far parse would have left the drops empty after a death in there; the A/B
 showed it was not held in practice — it ranks near off the spawn). Probes left: `heapCrabs`, `heapCrabSeen` (pixels with
 and without the crab, the floor under it, a close-up), `whaleCrab`.
+
+## 2026-11-19 — Skrim drops his hook
+"make skrim drop this weapon too", then "give the hook octopus drop sound with drop item glow also have the sword item sound
+when picked up". `skHook` {state 0 fist / 1 floor / 2 yours, at}, `skHookTick` (from `skqTick`): 0.45 s after he dies his
+`skrim_hook` mesh is hidden and a copy leaves his 'hook' bone, turning over, onto the gut's floor 1.1 m toward you
+(`skrimFloorW`, `skqInGut`), the octopus ring's `ringDrop`, the item glow on it from the moment it leaves him. "Take Skrim's
+Hook" (`it.gives` → `hookItem` for a full pack) equips it — `toggleEquip` plays the katana's draw for anything katana-like.
+Saved `skHook`/`skHookAt` in `saveCheckpoint`'s flags, put back in `beginRestoreQuiet`; laid on the first frame in the whale.
+A save from before this with him dead: it falls the first time you are in there. Probe `tools/skhookdrop.js` (PB_PORT 4257):
+2 cm over the floor, his hand empty, taken (pack + hand), laid again as a restore lays it.
+
+## 2026-11-19 — Skrim flips off his hook (`skrimFlipStart`, `skrimFlipStep`, clip `flipOff`)
+"have skrim flip off the hook like this if not shot off while hanging after his creatures are killed" (Mixamo "Stylish
+Flip", loose in ~/Downloads; `SKRIM_CLIPS` + `KEEP_YAW`, `tools/ntar_moves.py -- skrim` merges: the Pro Magic Pack's 56 are
+kept as built). The clip is a flip off a ledge: 2 s, hips +0.39 then −2.3, landing at 0.73. When his five are dead and he
+was not shot off, he lets go (the chain `'fall'`s, hauled in as ever), the clip HARD-switched in (`skrimHardPlay`: every
+other action stopped, full weight — a fade from the hang is half hanging), his feet at the landing frame measured upright
+(`skrimFeetAt`) and his body carried from the hang (no speed at the top, q²) down to where they meet the floor, 1.6 m
+toward you; out of it the same way into `land`. Probe `skrimHang` (PB_PORT 4231): toes 0.00 over the floor at the landing
+frame and after; fighting at 16.2 s; his hook back in his fist.
+
+## 2026-11-20 — Skrim lets go of his chain to flip
+- The flip set his hang chain to 'fall', which hauls it into his fist 1.3 s in — mid-flip, so the chain whipped round with
+  his turning hand. A new hang-chain state, 'loose': hung from its hook in the vault, the free end swinging under it, until
+  he has landed; then 'fall' (torn out and hauled in). A safety turns any 'loose' chain to 'fall' once his hang is over.

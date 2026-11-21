@@ -1,0 +1,61 @@
+<!doctype html><meta charset="utf-8"><title>ui shot</title>
+<!-- THE MENU / THE PACK / THE HUD AT A WINDOW SIZE (2026-11-18). Not part of the game. For a headless full-page screenshot:
+       sh tools/uishot.sh   (every size, menu + pack + hud, into /tmp/bw-ui)
+     ?ui=menu|pack|ctl|hud|shop  &w=1280&h=720 (pass the same --window-size). -->
+<style>html, body { margin: 0; background: #000; overflow: hidden; } iframe { border: 0; display: block; }</style>
+<iframe id="f" src="/index.html"></iframe>
+<script>
+const q = new URLSearchParams(location.search), W = +(q.get('w') || 1440), H = +(q.get('h') || 900), UI = q.get('ui') || 'menu';
+const f = document.getElementById('f'); f.style.width = W + 'px'; f.style.height = H + 'px';
+sessionStorage.setItem('beachwalk.skipIntro', '1');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+f.addEventListener('load', async () => {
+  const w = f.contentWindow;
+  for (let i = 0; i < 200 && !w.__bw; i++) await wait(100);
+  const b = w.__bw;
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) { /* not ready */ } b.frame(1); await wait(60); }
+  b.introDone = true;
+  for (const k of ['shovelItem', 'fishingRodItem', 'glowstickItem', 'waterBottleItem', 'syringeItem', 'katanaItem', 'cdItem', 'crabItem', 'jarItem', 'keyItem', 'ringItem', 'shockRingItem', 'maceItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
+  for (let i = 0; i < 40; i++) { b.frame(1); await wait(30); }
+  // &keys=name,name: those keys on the ring too (by their names: `packByName`); &kc=1: the keychain picked in the pack
+  for (const nm of (q.get('keys') || '').split(',').filter(Boolean)) { try { const it = b.packByName(nm); if (it && !b.inventory.includes(it)) b.addToInventory(it); } catch (e) { /* */ } }
+  for (let i = 0; i < 20; i++) { b.frame(1); await wait(30); }
+  // &eq=name: that thing taken into the hand and put away again before the pack opens (`toggleEquip` twice)
+  for (const nm of (q.get('eq') || '').split(',').filter(Boolean)) { try { const it = b.packByName(nm); if (it) { b.toggleEquip(it); for (let i = 0; i < 30; i++) { b.frame(1); await wait(30); } if (q.get('eqkeep') !== '1') b.toggleEquip(it); for (let i = 0; i < 10; i++) { b.frame(1); await wait(30); } } } catch (e) { /* */ } }
+  const d = f.contentDocument, st = d.createElement('style');
+  st.textContent = '#overlay, #intro, #blackout { display: none !important; }' + (q.get('still') ? ' *, *::before, *::after { transition: none !important; }' : '');   // &still=1: transitions off (a headless shot can land mid-fade)
+  d.head.appendChild(st);
+  if (UI === 'pack' && q.get('fresh')) {
+    // &fresh=1: a thing taken while the pack was shut, its box caught mid-draw (the animations frozen at 0.32 s)
+    b.openPack(); for (let i = 0; i < 5; i++) { b.frame(1); await wait(40); } b.closePack(); await wait(100);
+    b.removeFromInventory(b.maceItem); b.addToInventory(b.hornItem);
+    const fz = d.createElement('style'); fz.textContent = '#invpanel .islot.fresh::after, #invpanel .islot.fresh img { animation-play-state: paused !important; animation-delay: -0.32s !important; } #invpanel .islot.fresh img { animation-delay: 0.1s !important; }';
+    d.head.appendChild(fz);
+    b.openPack();
+  } else if (UI === 'pack') {
+    b.openPack(); try { b.selectPackSlot(1); } catch (e) { /* */ }
+    // &sel=<item name>: that one in the pane (the live view settles before the shot)
+    const sel = q.get('sel');
+    if (sel) for (let i = 0; i < 24; i++) { b.selectPackSlot(i); if (b.pvS && b.pvS() && b.pvS().item === sel) break; }
+    if (q.get('kc')) { for (let i = 0; i < 10; i++) { b.frame(1); await wait(50); } const kb = d.getElementById('keychain-box'); if (kb) { const r = kb.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height * 0.3; kb.dispatchEvent(new w.PointerEvent('pointerdown', { button: 0, clientX: x, clientY: y, bubbles: true })); w.dispatchEvent(new w.PointerEvent('pointerup', { button: 0, clientX: x, clientY: y, bubbles: true })); }
+      for (let i = 0; i < (+q.get('kcn') || 0); i++) { w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'ArrowRight', key: 'ArrowRight' })); for (let j = 0; j < 12; j++) { b.frame(1); await wait(40); } } }   // &kcn=N: the ring turned N keys on
+    if (b.pvSettle) for (let i = 0; i < 40; i++) { b.frame(1); await wait(50); }
+  }
+  // &ph=open:0.2 — the hands held still that far into the opening (or close:t, held:t); &at=x,y names what is on top there
+  if (q.get('ph') && b.phShow) { const [m, t] = q.get('ph').split(':'); b.phShow(m, +t); if (m !== 'held') d.getElementById('invpanel').style.opacity = m === 'open' && +t > 0.35 ? '' : '0'; }
+  if (q.get('at')) {
+    const [x, y] = q.get('at').split(',').map(Number); const el = d.elementFromPoint(x, y);
+    const lab = d.createElement('div'); lab.style.cssText = 'position:fixed;left:8px;top:8px;z-index:99;background:#fff;color:#000;font:14px monospace;padding:4px';
+    const hits = [...d.body.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(), cs = w.getComputedStyle(e); return r.width && r.left <= x && r.right >= x && r.top <= y && r.bottom >= y && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity > 0; })
+      .map((e) => `${e.tagName.toLowerCase()}#${e.id}.${String(e.className).slice(0, 20)} z${w.getComputedStyle(e).zIndex}`);
+    const pn = d.querySelector('#invpanel .panel'), pcs = pn && w.getComputedStyle(pn);
+    lab.textContent = (el ? `${el.tagName}#${el.id} | ` : '') + hits.slice(-8).join(' , ') + (pcs ? ` || panel op ${pcs.opacity} vis ${pcs.visibility} tr ${pcs.translate} sc ${pcs.scale} inv ${b.state().invOpen}` : ''); d.body.appendChild(lab);
+  }
+  // &insp=1: the selected thing inspected from the pack (the sheet held aside beside it)
+  if (q.get('insp') === '2') { b.closePack(); for (let i = 0; i < 20; i++) { b.frame(1); await wait(60); } b.openInspect(b.shovelItem.inspectModel, { name: 'plain' }); for (let i = 0; i < 20; i++) { b.frame(1); await wait(60); } }
+  else if (q.get('insp')) { for (let i = 0; i < 30; i++) { b.frame(1); await wait(60); } const bt = d.querySelector('#inv-detail .act.insp'); if (bt) bt.click(); for (let i = 0; i < 20; i++) { b.frame(1); await wait(60); } }
+  if (UI === 'shop') b.openShop(1);
+  if (UI === 'menu' || UI === 'ctl') { b.openMenu(); if (UI === 'ctl') d.getElementById('m-controls').click(); }
+  for (let i = 0; i < 30; i++) { b.frame(1); await wait(60); }
+});
+</script>

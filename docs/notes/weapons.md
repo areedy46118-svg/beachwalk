@@ -2965,3 +2965,125 @@ after the swing ran out started a fresh forehand from rest. Now:
 st²·(0.35·(3−2st)+0.65) — a smooth start into a fast end — instead of the slam's st⁴ hang-and-drop (which on every click read
 as a snap). A swing is ~0.93 s (was ~0.75). The owner's "boulder impact hard 4" (`maceHeavy`) on a slam or charged swing
 (P ≥ 0.45) that connects, and softer on a slam into the ground. Probe `maceFight`, `maceMomentum`.
+
+## 2026-11-18 — the mace's click and plain heavy: one straight sweep (`maceSweepTrack`, `MACE_SWEEP`)
+The owner: "take inspiration from this video with the mace light hits and regular heavy … keep the shift heavy the exact
+same. the light hits need more of a straight fluid swing it moves all over the place". The reference (a first-person UE4
+hammer set, watched frame by frame): a light swing is a 0.1 s cock, ONE fast sweep straight across the picture through the
+middle (~0.15 s), the handle trailing, then up from below into rest (~0.4 s); a heavy the same with a big wind pulled far
+back and a longer recovery.
+- Traced before (`maceMomentum`, the head on screen): up to (0.66, 0.75) for 0.22 s, down through (0.20, −0.16) — under the
+  crosshair — UP onto it for the blow (the aim pulling the head on), down to (−0.26, −0.66), and back along the BOTTOM of
+  the picture past rest. A zig-zag and a loop.
+- Now the head runs a straight line through the crosshair, on poses SOLVED for it (`tools/probes.js maceSolve`: five points
+  a line, each the pose putting the head there with the handle at a set screen angle, coordinate descent from the previous
+  point's answer; `__bwPose` holds a pose, the head is gripModel (0, −0.21, 0), the handle end (0, 0.6, 0)). Lines: forehand
+  in from the upper right (0.80, 0.50), out the lower left; the back-swing mirrored; the heavy's cocked higher (0.86, 0.78).
+  Catmull-Rom between keys; past the last key the line is extrapolated out of the frame, then `MACE_SWEEP_DOWN` (below the
+  frame on the right) and up into rest. After: (0.77, 0.54) → (0.51, 0.33) → (0.21, 0.12) → (0, 0) → (−0.61, −0.40) →
+  (−1.2, −0.77) out; the recovery all below y −1 until it rises at the right. The backhand heavy (−0.85, 0.76) → (0, 0) →
+  (0.74, −0.69) → out.
+- **Never blend the light and heavy lines**: solved apart they sit in different corners of the pose (yaw −1.1..−2.1 vs
+  +0.2, roll of the other sign); half-way, the head left the line after the blow. A swing follows the heavy line only if it
+  was released from a hold (`digCharged`); the HELD cock alone eases light → heavy by the charge (`maceSweepCock`).
+- Stage timing, damage, the hit test, the chain and the hold are as they were; `maceCrush` now only serves `MACE_CK`'s old
+  callers. The slam (`maceSlamTrack`) untouched. Walk speed charging: sweep 0.62 → 0.85, slam's raise 0.38 → 0.6 ("dont slow
+  down the player as much when charging up the bone mace").
+- **REVERTED the same day** (the owner: "revert the bone hits back it looks horrible keep the speed change"): `maceSweepTrack`,
+  `MACE_SWEEP` and the sweep's hold cock are gone; the click and the plain heavy are `maceCrush` again (traced after: the
+  same head path as before, frame for frame). KEPT: the charging walk speeds 0.85 / 0.6. The solver (`tools/probes.js
+  maceSolve`) is still there — what it made was straight on the screen and still looked wrong to him: a straight head path
+  is not what he wants from the mace.
+
+## 2026-11-19 — Skrim's hook, a weapon (`hookItem`)
+The owner: "make 'Skrims hook' a weapon give it the katana swings for now but the shift heavy should shoot the hook like
+skrim does with the chain attached … not able to be spammed. the more you charge the shift heavy the further … the throw
+hook should bring the enemy closer … held like skrim does and throw like him … not as far as the sword but more bleed and
+fast speed … balanced but a very good late game weapon"; then "the point of the hook should face the enemy", "make the glint
+on the tip", "the hook is really bright make it match the game", and of the contact sheet "the top left shot of this should
+be how the hook should be held".
+- **THE MODEL**: `assets/skrim-hook.glb` (`tools/hook_pack.py`): `skrim_hook` out of skrim.glb, unskinned, on its handle end
+  (pommel at z 0), +Z out along it, its patch of his cloth albedo cropped and scaled to 256 (44 KB). Its point, by geodesic
+  distance along the mesh from the pommel: (-0.082, 0.032, 0.253); the point's own tangent (0.46, -0.01, -0.89) — a hook's
+  point aims back down at its handle.
+- **THE HOLD** (`fitHook`): the katana's frame like the Bloody Blade (fist at the origin round the handle's middle,
+  `HOOK_GRIP_Z`; length down -Y), ×1.3, turned `HOOK_TURN` 1.18 about its length (Euler 'ZXY' with `HOOK_LEAN` 0 outside it):
+  upright, a question mark, its curl opening down the lens (dot with the lens forward 0.99) — the owner's pick off the sheet.
+  `tools/hookaim.js` measures any turn/lean: point, where it aims, the curl's top, in the lens's frame. A lean of 0.35 aimed
+  the point dead ahead but was not his pick. The view-model copy is dimmed (emissive 0.03, colour 0.78): the VM scene has lamps
+  of its own and at the world copy's 0.17 it was the brightest thing on screen.
+- **NUMBERS**: katana's dmg 2/3; `swingK` 0.72 (a light cut 33 frames to the katana's 46), `recoverK` 3.4, `reachK` 0.8,
+  `HOOK_BLEED` 1.35 a cut (`bleedBuild(u, P, k)` — `k` new; `hurtMutant`'s and the artifact-frozen path's bleed ask
+  `bloodHeld() || hookHeld()`). `glintSpan` 0.04 and `HOOK_LIP` on the point, so the glint stays on the tip. `katLike()`
+  includes it (declared `let hookItem` beside `bloodItem`).
+- **THE THROW** (`HK`, `hookThrow`, `hookTick`, `hookLay`): Shift + hold, LATCHED at `startWind` (`HK.wind`: held and ready)
+  so the pose cannot flip mid-hold; `katStabbing()` and `wantOh` skip it (`hookThrowWind`), its cock is `hookCockPose` (up
+  over the right shoulder, the arm circling faster as it fills, `sfxChainWhirl` once a turn). Release → 'whip' (0.12 s: the
+  view model has no arm, so the throw IS the hook coming over in the fist) → 'out' (36 m/s from your fist — the VM hand
+  projected and put 0.8 m down the lens's ray; at 0.45 the first links filled the corner) at what `magTrace` found within
+  `HOOK_RANGE` 6–14 m by charge → 'bite' (`hookBite`: the round's table — damage 2, a little extra bleed, `sgStagger`; the
+  great things — `bossDeath` or h ≥ 3.4 — and the frozen/down keep their feet) → hauled in by `flinchPush` steered each frame
+  (v = min(22, 1 + (d − 2.1)·6.5), d ≈ 0) until 2.3 m, then staggered in reach → 'back' (30 m/s) → home, then `HOOK_CD` 6 s
+  in which a Shift hold is the katana's stab. `startDig`/`startWind` refuse while it is out. Stamina `HOOK_STAM`. Sounds are
+  Skrim's own chain set (`sfxChainPayout`/`Bite`/`Drag`/`Slap`/`Rattle`). Measured (`tools/hookweapon.js`, pale mutant at
+  8.9 m): out 0.16 s, hauled 8.9 → 1.5 m in 0.45 s, home at 0.85 s, landed reeling.
+- **THE CHAIN**: one InstancedMesh of Skrim's link (`skcLinkGeo`, built lazily — its constants are declared far below), a
+  bowed line hand→hook with sag by slack and a travelling ripple; lit from within more than his (on the night beach his level
+  was black). A 10-link verlet dangle off the pommel in the view model (`hookDangle`, `HD`; gravity is the world's down taken
+  into the lens's frame).
+- **PROBE CLOCK TRAP**: `b.frame(1)` headless steps a tiny dt (windT 0.27 in 70 frames); fixed-step tests eval
+  `tools/burntest.js` and use `w.__clockOn()` + `w.__adv(n)`. And `toggleEquip` of the item already in hand UNEQUIPS it.
+- **THE CHARGE'S LOOK** (same night): "have the bloody tip face down when charged" → a half roll about its length through the
+  hold; "the hook tip should face left when charged" → measured (`tools/hookroll.js`: the point's on-screen aim per roll at
+  full charge, and stills): NO roll aims the point itself left — a hook's point curls back at its handle, which is on the
+  right — and then "it should look like this top middle screenshot when charged": the UNROLLED hold. `HK.roll` stays 0 (the
+  markers still turn with it if it ever is not). The glint's in-shot test is 0.97/0.95 for the hook (0.82/0.80 walked the
+  light down onto the pommel while the point sat at the frame's right edge over the shoulder).
+- Dev mode grants it (`devGrantWeapons`).
+- **(late, the same night)** "make it able to be thrown every time but it takes a little to come back" → `HOOK_CD` 0, the
+  return lies `HOOK_LIE` 0.3 s then gathers to `HOOK_BACK` 12 m/s (was 30 at once). "make the hook swing 4 times with lights"
+  → `HOOK_STRING` 4: the 'return' chain is allowed while `comboStep < 3` on the hook (`katBack()` reads its parity, so the
+  poses alternate); TRAP: a chained swing passes `_pose` as its from-pose and `startDig` marks it `digCharged`, which the
+  return branch refuses — the katana never noticed (its backhand never chains); the hook's chain clears it. Measured
+  (`tools/hookcombo.js`): steps 0,1,2,3,0… against the katana's 0,1. "fix the hooks regular heavy … higher up and more
+  straight horizontal" / "it should be straight across": the plain hold's cock and cut have their lift HELD at 0.36 and pitch
+  at −0.34, roll ×0.05 (`tools/hookheavy.js` varied the mid-cut pose: only lift brings it up; pitch only turns it end-on),
+  `slashRot` keeps the light grip, and `katFace` skips the hook (it aims the KATANA's 0.755 m point). Damage after: light
+  1.5, heavy 3, throw 1.5. Looks: the hook at 512 with its normal map (`hook_pack.py`), metalness 0.3 off `ringEnv()`; the
+  chains iron (metal 0.75, roughness ~0.37, `ringEnv()`, smooth). No made whirl while charging. The throw hits the whale's
+  heaps (`skqPileStrike`'s test down its line → `skqPileHit`), and sits on his SKIN on the side it came from, in his frame
+  (`HK.uo`, `hookOnHim`) — the round's point is his axis, inside him.
+
+## 2026-11-20 — the hook's throw strikes what a cut strikes; the heavy through the crosshair
+- The throw's trace is the gun's (`magTrace`: bodies, walls). It now stops on the nearest crate or impact prop down the line
+  (`HK.to.kind === 'prop'`) and, where the iron arrives, runs the swing's own world tests along the throw (`hookWorldStrike`:
+  `aimFarOver` stretches `aimRay`'s reach to the throw's length; crates, the sandcastle, glass and props, bones, the crying
+  heads, the crow, gulls, bodies on the sand). `tools/hookcrate.js`: a crate 9 m off broken on arrival.
+- The regular heavy's lift `HOOK_HEAVY_LIFT` 0.36 → 0.14: the point crossed the picture 0.28-0.33 above the middle; now
+  within ±0.02 of it (`tools/hookheavyline.js`, `&lift=` sweeps; the crossing is linear in the lift, 1.33 ndc a unit).
+- The hook landing (`hookImpact`): Skrim's recorded chain crash pitched down, his crack a hair after, the flesh hit, the links
+  rattling at your hand; a longer hitstop (0.11 on flesh), shake, lens kick, the view model jerked.
+- The thrown hook digs (the owner: "dig up mounds"): where it comes down on the beach `hookWorldStrike` tears a dig hole and
+  opens a mound there (`revealMoundNear`), a splash in the surf; it also strikes the merchant (`traderStrike`) as a cut does.
+  `tools/hookmound.js`: a mound 8 m off opened on arrival.
+
+## 2026-11-20 — Skrim's hook: walls in every room, the drag on everything, a click hauls it back
+The owner: "SKRIMS HOOK SHOULD COLLIDE WITH WALLS TOO AND COME BACK FROM THE POINT IT HITS. ALSO MAKE THE PROJECTILE HOOK THE
+ENEMY AND BRING THEM CLOSER THAT ISNT WORKING. MAKE CLICKING AGAIN WHILE LAUNCHED PULL THE HOOK BACK."
+- **Walls**: the throw's trace is the gun's (`magTrace` → `nearestSolidHit`), which knows walls only where a room has a wall
+  index (`activeHitSites`: keep, tavern, catacombs, throne, dungeon, the castle, the bunker, the island, the house). Everywhere
+  else — the temple's pillars, the undercroft, the whale, the dojo, the sewer — the iron flew through stone.
+  `hookWallHit` (once, as it leaves): the temple off its solid grid (`tmpCellTop` over the floor by 0.6 m: pillars, not the
+  sand), any other such room off its drawn model (`dropTargets`, no points, sprites or see-through). 2-3 ms a throw,
+  measured in the undercroft (`tools/hookwalls.js`); a pillar 6.3 m off stopped it and it came home from there
+  (`tools/hookpull.js &temple=1&k=wall`). A wall hit with no face (the grid) leaves no scar (`stampScar` needs `hit.face`).
+- **The drag**: `hookBite`'s pull refused anything with `bossDeath` — and `KN_BASE` has it, so every knight-built fighter (the
+  king, the dark knight, the paladin, the samurai, the knights) took the iron and did not move. Now everything under 3.4 m
+  that is not stone, held, down or a puppet; a boss reels 0.8 / 0.6 (against 1.4 / 1.3) at the bite and the landing. The king
+  in his own run-down (`hunt`) or turn is a puppet: the hook ends it (`kingBackToFight`) and hauls him. Measured: the pale one
+  4 → 1.5 m, a knight 9.4 → 2.2, the king 7.9 → 2.5 (`tools/hookpull.js &k=`). (The dark knight on the BEACH does not move:
+  his `fortBody` clamp refuses every step outside the castle — a probe artefact, not the hook.)
+- **The recall** (`hookRecall`, on the press in the canvas `pointerdown`, before the swing latch): from flight, a wall or a
+  body (let go), straight home at `HOOK_RECALL` 30 m/s with no lie; in the whip, simply kept. The release of that same click
+  would have thrown a cut once it was home: `startDig` refuses for 450 ms after a recall (`HK.recallAt`). Measured: 9.9 m out
+  in a body, home 0.38 s after the click.

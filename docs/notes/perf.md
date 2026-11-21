@@ -1650,3 +1650,24 @@ After the merge of 2026-11-17 the module took longer than that to evaluate, so t
 synchronous call — before `houseWorld` / `elvFieldMesh` (~114000) were declared: a dead-zone error swallowed by the
 try/catch, and the puppeteer's house and gully never built at boot. `moduleDone` (set on the module's last line) gates it.
 A check that only passes because evaluation happens to finish in time is a race.
+
+## 2026-11-18 — inside a castle, nothing outside it that its walls hide (`cullCastleUnseen`, `CASTLE_UNSEEN`)
+The owner: "fix castle performance now. certain sections do not have to load if they cant be seen yet". The castles stand
+on the beach, so `cullWorldInHall` never touched them: in the first castle's street all of Castle XIII (102 meshes, 307k
+tris), the lighthouse island (109), the vista and the cliff's rock were drawn; in XIII the island, vista and rock.
+- Whole groups CAN be seen (`tools/probes.js castleSeen`, each group toggled, pixels compared): from the fort street XIII
+  0.86 % of pixels (its towers over the wall), the island 0.5 %. So per MESH: `castleSeenIds` draws every mesh in its own
+  flat colour (everything else black, depth kept, no fog, `outputColorSpace` linear and no tone mapping or the ids come
+  back scrambled — the first run read ZERO seen), from 17 spots spread over each castle's walk at 1.65 and 4.5 m, 8 yaws x 3
+  pitches, every pixel. Never-seen meshes are keyed `group|name|vertices|world middle to 0.5 m` (names repeat) and hidden
+  while `inFort` / `inC13`, put back on leaving; cprops and aim spheres are left out (they come and go). A stale key hides
+  nothing. Re-run `castleSeenIds` after changing either castle, the island or the vista and paste its KEYS.
+- `castleCullCheck`: fort 91 hidden, draws 369 → 340, 11 pixels of 8.5 M changed over 24 views; XIII 113 hidden, draws
+  233 → 195, 0 pixels changed. (The fort itself is already hidden in XIII.)
+- Fewer props too: the fort's breakables are only on the open street now (34 → 20; castle.md).
+- 7.6 MB of never-fetched models moved to `incoming/unused-2026-11-18/` (dark-knight.glb, farmer-farmman/-woodman/-workman.glb).
+- **A spinnable crab on the loading screen was tried and taken out** (2026-11-18, the owner: "if it makes the loading screen
+  longer dont do it. dont have it for the very start loading screen"). Its own small WebGL renderer over a checkpoint load's
+  black, the crab GLB parsed again for it. `tools/loadtime.sh 3`: playable at 5.29 / 4.91 / 4.85 s with it, 5.02 / 4.99 /
+  4.52 without — about 0.2 s slower on average (inside the run-to-run spread, but on the wrong side), so it went. Anything
+  shown on a load must not parse or upload on the main thread while the load does.

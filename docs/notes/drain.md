@@ -1091,6 +1091,11 @@ little forward, the elbows (joint6 → joint7) let go, the hands off the wrists,
 the knees slack, the neck and head hung into the water — each on its own slow sway phase; the first second jerks (the current),
 and it goes limp as it rises (`limp` 0.25–2.4 s). Probe `sewDeadPose` (the water hidden for the look: side, above, along).
 
+## 2026-11-18 — the flashlight out of the game
+The owner: "take out the flashlight for good". Everything of it is gone (see items.md, same date): the sewer no longer
+builds the spot light that waited for a carried one (`sewP.flash`, `flashLedge`, `flashFill`), the sewer monster no longer
+writes `flashDread`, the dust takes only the glowstick in your hand.
+
 ## 2026-11-18 — the drain breathes out; the screwdriver through the grate; the hunt; the lair dressed; the owner's sounds
 - **The drain's murk** (`drainMist`, `updateDrainMist` after `drainAir`): a cylinder the bore's size, its underside squashed flat
   onto the walk, drawn by BACK faces; its shader intersects the view ray with the pipe (cylinder, both ends, the walk's plane)
@@ -1157,3 +1162,32 @@ and it goes limp as it rises (`limp` 0.25–2.4 s). Probe `sewDeadPose` (the wat
   so it greys the dark and dims the bright: volume 0.07/0.082/0.10 → 0.05/0.056/0.05 deep, density 0.13; the spill 110 puffs at
   0.34, larger, 0.055–0.115. Compared with and without (`view&nomist=1`): fog visibly rolls out over the sand and fills the bore.
 - **The outflow's gravel is gone** (the black lumps over the water at high tide — beach.md).
+
+
+## 2026-11-19 — the reach through the grate is his own arm (IMG_8446)
+The owner: "trim this hand out again and make it the grab for the sewer screwdriver instead of the model you have. make it
+just like we have been with the retro style and same time as the sewer grab is now make sure its clean cut".
+- **THE CUT** (`tools/pipe_hand_pack.py`; frames at 12 fps, 640 wide portrait, Vision labels by `scene_cutout.swift`):
+  frames 14..70 (the reach to the blue thing on his table, 66 his fingers on it, 70 closed). Vision lumps his KNEE (black
+  trousers, below y ≈ 870) in with the arm and value cannot split them (sleeve shadow 0.12–0.16, trousers 0.08–0.14): the
+  mask is cut at `YCUT` 850 and main.js keeps that line under the screen. Edge-replicating the frame past its borders (tried)
+  made flat blocks; instead the clip's left border and `ycut` are laid off the screen. White things (the blue thing's cap,
+  the candle and book behind his hand) go by warmth: skin is r−b ≥ 0.16 however bright, they are ~0.04 (`mx > 0.8 &
+  r−b < 0.11`; at 0.62 it ate the sleeve's lit edge, by saturation it ate his knuckles). Outline Gaussian-smoothed (Vision's
+  knuckles were ragged), no dither (the game's own low-res frame is the retro look; a dither in the sprite moirés), colour
+  carried past the edge, WebP lossy + lossless alpha: 57 frames, 109 KB. `grip` in the json = where the blue thing sat at
+  frame 66: the screwdriver goes there.
+- **IN THE GAME** (`pipeHand`, `pipeHandPlace`, `PRH` — `PH` was already the pack's): a camera-facing quad 15 cm out, drawn
+  last (transparent, renderOrder 1e6, no depth test — over the bars, right: the near arm IS in front of them, the hand in
+  the gap), its ShaderMaterial with `tonemapping_fragment` + `colorspace_fragment`, alpha-tested at 0.5 for a clean edge,
+  tinted `PH_TINT` and darker toward the hand down the pipe (`PH_SHADE`). Scale: the clip's own lens (a phone's ~65° tall)
+  against the peek's 24–30° (`camera.fov` there), so his hand comes out the screwdriver's size; never smaller than keeps the
+  left border and `ycut` off-screen. Each frame the clip's grip is put on the screwdriver's place on the screen.
+  Frames: the reach follows `R.p` (the same 5 s; up from below for the first 7%), the close over grab 0..0.3, the pull-out
+  plays the reach backward with a drop off the bottom (the clip's own pull-back is a motion-blurred smear).
+- **THE SCREWDRIVER IN HIS FINGERS**: at the take its view depth and its turn against the lens are measured — AFTER the
+  camera's creep for that frame (measured at the top of the tick it jumped 0.38 m: `updatePeek` places the camera before
+  `pipeReachTick` moves it) — then it rides the frame's tip offset by the grip, closing in to 0.45 m; the gap left at the take
+  is faded out over the first 40% of the pull. Moved 0.0004 m across the take (`pipeReach` probe).
+- The 3D `pipeArm` is the fallback until the sheet is in. Probe: `PB_PORT=4231 sh tools/probe.sh pipeReach <out>`
+  (`&at=` frame list for the stills).

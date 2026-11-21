@@ -31,6 +31,7 @@ game belongs in this file, and this file should stay under ~25 KB.
 | the whale (sand, belly, farewell) | `docs/notes/whale.md` |
 | the deep: the bite at the fishing spot, the drag, swimming, the pliosaur, the whale's swallow | `docs/notes/deep.md` |
 | the castles, farmers, flail knight, throne room | `docs/notes/castle.md` |
+| the desert temple, the crow on the stump and its flight | `docs/notes/temple.md` |
 | creatures in general: rigs, retargeting, clips, ragdolls, fight AI | `docs/notes/creatures.md` |
 | weapons, the view model, swings, guard, gun, rod | `docs/notes/weapons.md` |
 | items and pickups | `docs/notes/items.md` |
@@ -114,7 +115,7 @@ Tiny props carry an invisible `hitProxy` sphere so they're easy to aim at.
 `primaryAction()` (click / `E` / `F`) routes grab / throw / take / dig.
 
 **Rooms are far-off places, not scenes.** Every interior (bunker, undercroft,
-catacombs, dojo, keep, tavern, whale, throne room, the dungeon behind the pavilion) stands
+catacombs, dojo, keep, tavern, whale, throne room, the dungeon behind the pavilion, the desert temple) stands
 thousands of metres out on the same scene, entered by a cut behind black.
 `inRoom()`, `indoors()`, `clearRoomFlags`, `cullWorldInHall`, `bunkerFloorAt`
 and the cliff clamp all have to know about every room. Rooms are placed at

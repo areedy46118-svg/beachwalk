@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>title check</title>
+<!-- THE TITLE, UNTOUCHED (2026-11-19). Not part of the game. The game in a frame, START never pressed; after 4 s the phone's
+     screen, whether it moved, its light, and a still of the room ("[TC]" lines; "[PBIMG] title" for tools/probe.sh's
+     reassembly). Run: open headless at /tools/titlecheck.html (as probe.sh does, with s= unused). -->
+<body style="margin:0;background:#000"><iframe id="g" style="width:1280px;height:720px;border:0"></iframe>
+<script type="module">
+const log = (...a) => console.log('[PB]', ...a), sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+sessionStorage.removeItem('beachwalk.skipIntro'); sessionStorage.removeItem('beachwalk.load');
+const f = document.getElementById('g'); f.src = '/index.html';
+let w = null; for (let i = 0; i < 400; i++) { await sleep(50); try { w = f.contentWindow; if (w.__bw) break; } catch (e) {} }
+const b = w.__bw; for (let i = 0; i < 300 && !(b.TB && b.TB.ready && b.IC.props); i++) await sleep(100);
+await sleep(4000);
+const T = b.TB, ph = T.phone, p0 = ph.position.clone(), d0 = ph.userData.drawn; await sleep(900);
+log('call on', b.IC.on, '| phone screen', d0, ph.userData.drawn, '| moved', ph.position.distanceTo(p0).toFixed(5), '| light', T.phoneL.intensity.toFixed(3));
+b.tbRender(); const c = document.createElement('canvas'); c.width = 800; c.height = Math.round(800 * T.el.height / T.el.width); c.getContext('2d').drawImage(T.el, 0, 0, c.width, c.height);
+const d = c.toDataURL('image/jpeg', 0.9).split(',')[1], n = Math.ceil(d.length / 8000);
+for (let i = 0; i < n; i++) console.log('[PBIMG]', 'title', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+log('DONE');
+</script>

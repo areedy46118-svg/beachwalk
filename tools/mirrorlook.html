@@ -1,0 +1,29 @@
+<!doctype html><meta charset="utf-8"><title>mirror look</title>
+<!-- WHAT MOVES IN THE MIRROR (2026-11-19, the owner: "I SEE THE RAIN THROUGH THE MIRROR ABOVE THE TABLE FIX THIS TEXTURE IT
+     SHOULD NOT BE FLICKERING LIKE THAT"). Not part of the game. The title left running (START never pressed), its camera
+     turned onto the mirror from the desk; 40 real frames read back as they are drawn, every pixel's change summed: the
+     frame and a heat map ("[PBIMG] mirror"). Run: PB_PAGE=mirrorlook.html sh tools/probe.sh x <out> -->
+<body style="margin:0;background:#000"><iframe id="g" style="width:1280px;height:720px;border:0"></iframe>
+<script type="module">
+const log = (...a) => console.log('[PB]', ...a), sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+sessionStorage.removeItem('beachwalk.skipIntro'); sessionStorage.removeItem('beachwalk.load');
+const f = document.getElementById('g'); f.src = '/index.html';
+let w = null; for (let i = 0; i < 400; i++) { await sleep(50); try { w = f.contentWindow; if (w.__bw) break; } catch (e) {} }
+const b = w.__bw; for (let i = 0; i < 300 && !(b.TB && b.TB.ready && b.IC.props); i++) await sleep(100);
+const T = b.TB; if (!new URLSearchParams(location.search).get('title')) { T.camBase.set(1.62, 1.05, 2.0); T.look.set(1.67, 1.15, 3.03); T.cam.fov = 50; T.cam.updateProjectionMatrix(); }   // (&title=1: the title's own view)
+await sleep(1500);
+const r = T.r, gl = r.getContext(), W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, px = new Uint8Array(W * H * 4), acc = new Float32Array(W * H); let prev = null, n = 0;
+const R0 = b.tbRender;
+await new Promise((res) => { const step = () => { R0(); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  if (prev) for (let k = 0; k < W * H; k++) acc[k] += Math.abs(px[k * 4] - prev[k * 4]) + Math.abs(px[k * 4 + 1] - prev[k * 4 + 1]) + Math.abs(px[k * 4 + 2] - prev[k * 4 + 2]);
+  prev = px.slice(); if (++n < 40) w.requestAnimationFrame(step); else res(); }; w.requestAnimationFrame(step); });
+const s = 0.5, w2 = Math.round(W * s), h2 = Math.round(H * s), c = document.createElement('canvas'); c.width = w2 * 2; c.height = h2; const g = c.getContext('2d');
+R0(); g.drawImage(T.el, 0, 0, w2, h2);
+const hc = document.createElement('canvas'); hc.width = W; hc.height = H; const hg = hc.getContext('2d'), im = hg.createImageData(W, H); let hot = 0;
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = (H - 1 - y) * W + x, v = Math.min(255, acc[k] / n * 2.5), o = (y * W + x) * 4; im.data[o] = v; im.data[o + 1] = v * 0.3; im.data[o + 3] = 255; if (v > 60) hot++; }
+hg.putImageData(im, 0, 0); g.drawImage(hc, w2, 0, w2, h2);
+log('frames', n, 'hot', hot);
+const d = c.toDataURL('image/jpeg', 0.88).split(',')[1], m = Math.ceil(d.length / 8000);
+for (let i = 0; i < m; i++) console.log('[PBIMG]', 'mirror', i + '/' + m, d.slice(i * 8000, (i + 1) * 8000));
+log('DONE');
+</script>

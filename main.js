@@ -59,6 +59,11 @@ const SWING_TRAILS = [];             // every blade trail made (`makeSwingTrail`
 const CROW = { g: null, m: null, mesh: null, mixer: null, act: null, head: null, jaw: null, st: 'perch', t: 0, perchT: 0, clipT0: 0, look: 0,
   mouth: null, jawAx: new THREE.Vector3(1, 0, 0), jawSign: 1, headFwd: new THREE.Vector3(0, 0, 1), vel: new THREE.Vector3(), proxy: null };
 let crowGone = false;
+// the desert temple and the crow on the stump that takes you there (their section is at the end of the file: up here because
+// a frame can run before the module has finished reading, and `inRoom`, `frozen` and the clamps ask for these then)
+let inTemple = false, tmpCut = null, tmpFlown = false, tmpModuleIn = false;
+let kingCut = null, kingDown = false;
+let cutPaused = false, introHold = null;   // the menu over a cutscene holds it still (`cutPause`; up here: `loadSilent` reads it)   // the Ancient King coming down into the temple (up here: `frozen()` reads it, and saves)
 let crowFovK = 0;                    // the view drawn in on the crow's face while it screams at you (1 = all the way: `crowFov`)
 let crowFov = 30;                    // (worked out each frame from how far you stand: `CROW_ZOOM_SPAN` of it fills the screen)
 // the dock's birds (`updateDockBirds`, near the crow; `DOCKB` — `DKB` is the dark knight's bones): up here because a frame can run before the module is read
@@ -207,7 +212,8 @@ const BW_FROM = (() => {
       dojo: ['courtyard.glb', 'samurai.glb', 'portal.glb'],
       cat: ['catacombs.glb', 'crawler.glb', 'skull-key.glb', 'limbs.glb', 'benali.glb', 'bloody-blade.glb'],
       bunker: ['bunker.glb', 'dealer.glb'],
-      deep: ['pliosaur.glb', 'fishing-rod.glb'],   // (and the rods floating in it, 2026-11-14: only the rod uses that file)              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
+      deep: ['pliosaur.glb', 'fishing-rod.glb'],
+      tmp: ['temple.glb', 'crow.glb', 'ancient-king.glb', 'king-moves.json'],   // (and the rods floating in it, 2026-11-14: only the rod uses that file)              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
       whale: ['whale.glb', 'skrim.glb', 'crying-head.glb', 'limule.glb', 'skrim-moves.json', 'demon-moves.json', 'knight-moves.json', 'ntar-moves.json', 'wong-moves.json', 'orc-moves.json', 'drunk-moves.json', 'umbra-moves.json', 'crawler-moves.json'],
     };
     /* AND WHAT YOU ARE CARRYING COMES WITH YOU (2026-10-19, the owner, twice: "i loaded a checkpoint and my weapons were
@@ -217,11 +223,11 @@ const BW_FROM = (() => {
      * swung and never saw. Measured, `vmAllFort`: the shovel and the peg built with no mesh in them. Every model in the
      * save's pack is fetched first, under the black. */
     const PACK_FILES = {
-      'Military Shovel': 'military-shovel.glb', 'Spare Peg': 'peg-leg.glb', 'Fishing rod': 'fishing-rod.glb', 'Screwdriver': 'screwdriver.glb', 'Flashlight': 'flashlight.glb',
+      'Military Shovel': 'military-shovel.glb', 'Spare Peg': 'peg-leg.glb', 'Fishing rod': 'fishing-rod.glb', 'Screwdriver': 'screwdriver.glb',
       '.44 Magnum': 'magnum.glb', 'The Sawed Off Shotgun': 'sawnoff.glb', 'Bloody Blade': 'bloody-blade.glb', 'Wax Spliff': 'spliff.glb',
       'The Octopus Ring': 'octopus-ring.glb', 'Gold Ring': 'gold-ring.glb', 'Gem Stone Ring': 'gem-ring.glb', 'The Lucky Ring': 'gem-ring.glb', 'Lucky bastards ring': 'gem-ring.glb', 'Old Ring': 'old-ring.glb',
       'Forgotten Wedding Ring': 'wedding-ring.glb', 'Ring of Connection': 'connection-ring.glb', 'Skull Key': 'skull-key.glb',
-      'Rusted Key': 'key.glb', 'The Great Crab Call': 'crab-call.glb', 'Mutant Fang': 'fang.glb',
+      'Rusted Key': 'key.glb', 'The Great Crab Call': 'crab-call.glb', 'The call of the crow': 'crab-call.glb', 'Mutant Fang': 'fang.glb',
       'The Shock Ring': 'shock-ring.glb', 'Bone Mace': 'bone-mace.glb', 'Steel Door Key': 'sandman-key.glb', 'Lair key': 'sandman-key.glb',
       // (2026-11-17: and every key that is a tinted copy of the one scan — `fillKeyModels`)
       'Lost key': 'key.glb', 'Pavilion key': 'key.glb', 'Storeroom key': 'key.glb', 'Iron key': 'key.glb', 'Cell key': 'key.glb', "Captain's Chest Key": 'key.glb',
@@ -247,6 +253,7 @@ const ASSET_REACH = {
   'assets/pliosaur.glb': 814 + BEACH_EXT,         // on the end of the fisherman's line, at the tree             // the tree over the fisherman's old spot, past the five's fire
   'assets/fishing-rod.glb': 96,       // the fisherman's, at the dock
   'assets/crow.glb': 98,              // the crow on the pier's post (2026-11-14)
+  'assets/temple.glb': 1050 + BEACH_EXT,   // the desert the stump's crow takes you to, past the whale (2026-11-18)
   'assets/elvedor.glb': 626 + BEACH_EXT * 0.4,   // the puppeteer, on the sand in the stretch BEACH_EXT opened
   'assets/puppet-house.glb': 590 + BEACH_EXT * 0.4, 'assets/puppet.glb': 592 + BEACH_EXT * 0.4,   // and his house behind the dune, and the puppet on its bed
   'assets/octopus-ring.glb': 647 + BEACH_EXT,   // the knight drops it, so it is wanted where he is
@@ -262,7 +269,6 @@ const ASSET_REACH = {
   'assets/peg-leg.glb': 152,          // and what is inside it
   'assets/gull.glb': 152,             // the three that wheel over her
   'assets/dock.glb': 215,
-  'assets/flashlight.glb': 16,         // on the ledge by the sewer's generator, under the drain behind the spawn
   'assets/screwdriver.glb': 16,       // on the crate by the grate in the drain's room, behind the spawn (moved off the fisherman's table, 2026-10-22)
   'assets/keep.glb': 216,              // and where its boat goes: fetched on the walk up to the pier
   'assets/tavern.glb': 216,            // and the hall behind its door
@@ -490,9 +496,12 @@ const bwHoldHere = () => bwInCastle() || inWhale || inDeep;
 const bwHoldOwn = (url, reach) => (inWhale ? BW_WHALE_FILES.test(url) : inDeep ? BW_DEEP_FILES.test(url) : bwCastleOwn(url, reach));
 setInterval(() => { if (bwCastleHeld.length && !bwHoldHere()) for (const f of bwCastleHeld.splice(0)) f(); }, 400);
 const bwNearClear = () => new Promise((r) => { const chk = () => (bwNearPending() ? setTimeout(chk, 100) : r()); chk(); });
-function bwParseLater(url, bufP, job, onError) {
+/* `urgent`: THIS copy is wanted now, whatever its file's reach (2026-11-17, the tavern's six farmers: their files are the
+ * castle's, ranked ~800 m off, so after a tavern checkpoint they parsed in the far rest ~15 s after the black lifted and
+ * "didn't respawn"). Only that copy goes on the near chain; the castle's twenty copies of the same file stay far. */
+function bwParseLater(url, bufP, job, onError, urgent = false) {
   bufP.then((buf) => {
-    const reach = bwReach.get(url) ?? 0, near = reach <= BOOT_NEAR;
+    const reach = bwReach.get(url) ?? 0, near = urgent || reach <= BOOT_NEAR;
     bwParsing++; if (near) bwParsingNear++;
     const fin = () => { bwParsing--; if (near) bwParsingNear--; };
     const run = () => job(buf, reach);
@@ -544,6 +553,11 @@ for (const url of Object.keys(ASSET_REACH)) bwFetch(url);
 function bwSoon(url) {
   for (const job of bwWaiting) if (job.url === url) job.reach = -1;
   if (bwReach.has(url)) bwReach.set(url, -1);
+  bwPump();
+}
+/* the DOWNLOAD only, to the front: the parses keep their file's reach (an `urgent` copy asks for its own) */
+function bwFetchSoon(url) {
+  for (const job of bwWaiting) if (job.url === url) job.reach = -1;
   bwPump();
 }
 
@@ -829,6 +843,7 @@ function updateWhereAmI() {
   else if (inThrone) { room = 'throne'; ox = THR_X; oy = THR_Y; oz = THR_Z; group = thrWorld; }
   else if (inDun) { room = 'dungeon'; ox = DUN_X; oy = DUN_Y; oz = DUN_Z; group = dunWorld; }
   else if (inSewer) { room = 'sewer'; ox = SEW_X; oy = SEW_Y; oz = SEW_Z; group = sewWorld; }
+  else if (inTemple) { room = 'temple'; ox = TMP_X; oy = TMP_Y; oz = TMP_Z; group = tmpWorld; }
   else if (inFort || fortMaskAt(p.x, p.z + 3) || fortMaskAt(p.x, p.z - 3)) { room = inFort ? 'castle' : 'castle (outside)'; ox = FORT_X; oy = FORT_Y; oz = FORT_Z; }   // its own frame; no aim (a raycast is 300k triangles)
   const feet = camBaseY - playerEye();
   let aim = '';
@@ -1161,6 +1176,7 @@ const sfxOutBase = () => {
     if (!sfxSink) { sfxSink = audioCtx.createGain(); sfxSink.gain.value = 0; }
     return sfxSink;
   }
+  if (tbScope && TB.sfx) return TB.sfx;              // (the bedroom's thunder: the game's gate is shut under the title)
   if (stepScope && sfxBusGain) {
     if (!stepBus) { stepBus = audioCtx.createGain(); stepBus.gain.value = STEP_VOL; stepBus.connect(sfxBusGain); }
     return stepBus;
@@ -1172,7 +1188,7 @@ const sfxOutBase = () => {
  * number over all of them is a gain the steps go through on the way to the
  * effects bus: `stepSnd(fn)` runs a footfall with `sfxOut()` pointed at it. */
 const STEP_VOL = 0.72;
-let stepScope = false, stepBus = null;
+let stepScope = false, stepBus = null, tbScope = false;
 function stepSnd(fn) { const was = stepScope; stepScope = true; try { fn(); } finally { stepScope = was; } }
 let lhEl = null, lhGain = null, lhStarted = false;
 const LH_TRACK_LEVEL = 0.55;   // the lighthouse track sits under everything else
@@ -1615,6 +1631,12 @@ THREE.UniformsLib.fog.fogTint = { value: FOG_TINT };
 THREE.UniformsLib.fog.fogKeep = { value: FOG_KEEP };
 THREE.UniformsLib.fog.fogKeep2 = { value: FOG_KEEP2 };
 THREE.UniformsLib.fog.fogGround = { value: FOG_GROUND };
+/* AND A CEILING ON IT (2026-11-18, the desert temple): `x` of the way short of the fog's own colour is as far as the fog
+ * goes, so a dune or a colonnade a kilometre off stays a dark shape in the haze instead of going into it. 0 is the
+ * stock fog to the bit, and it is 0 everywhere but the desert. (An `x` that is zero by default on purpose: a shader
+ * that somehow missed the uniform reads 0 too.) */
+const FOG_CAP = { x: 0, y: 0, z: 0, w: 0 };
+THREE.UniformsLib.fog.fogCap = { value: FOG_CAP };
 /* THE GROUND MIST READS A NOISE TEXTURE. Marched with hashed value noise it
  * was eight noises a step, six steps, four `sin` hashes a noise — about two
  * hundred hashes for every fogged fragment on the screen, overdraw included —
@@ -1659,6 +1681,7 @@ for (const k in THREE.ShaderLib) {
   if (u && u.fogDensity && !u.fogKeep2) u.fogKeep2 = { value: FOG_KEEP2 };
   if (u && u.fogDensity && !u.fogGround) u.fogGround = { value: FOG_GROUND };
   if (u && u.fogDensity && !u.fogNoise) u.fogNoise = { value: FOG_NOISE };
+  if (u && u.fogDensity && !u.fogCap) u.fogCap = { value: FOG_CAP };
 }
 /* the keep's mist, shared by the fog chunk and the keep's own sky: optical
  * depth of the layer along a ray from `o` in direction `d` for `L` metres */
@@ -1748,7 +1771,7 @@ const GROUND_MIST_GLSL = `
 THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogView;\n#endif';
 THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n\tvFogDepth = - mvPosition.z;\n\tvFogView = mvPosition.xyz;\n#endif';
 THREE.ShaderChunk.fog_pars_fragment = THREE.ShaderChunk.fog_pars_fragment.replace(
-  'varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogView;\n\tuniform vec4 fogMoon;\n\tuniform vec4 fogBolt;\n\tuniform vec4 fogTint;\n\tuniform vec4 fogKeep;\n\tuniform vec4 fogKeep2;\n\tuniform vec4 fogGround;\n\tuniform sampler2D fogNoise;\n' + KEEP_MIST_GLSL + GROUND_MIST_GLSL);
+  'varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogView;\n\tuniform vec4 fogMoon;\n\tuniform vec4 fogBolt;\n\tuniform vec4 fogTint;\n\tuniform vec4 fogKeep;\n\tuniform vec4 fogKeep2;\n\tuniform vec4 fogGround;\n\tuniform vec4 fogCap;\n\tuniform sampler2D fogNoise;\n' + KEEP_MIST_GLSL + GROUND_MIST_GLSL);
 THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 	vec3 fogCol = fogColor;
 	float fogK = 1.0;
@@ -1782,6 +1805,7 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 		float fogCK = max( dot( fogDirK, fogKeep.xyz ), 0.0 );
 		fogCol += min( fogKeep.w, 1.0 ) * vec3( 0.20, 0.17, 0.30 ) * ( 0.7 * pow( fogCK, 10.0 ) + 0.3 * pow( fogCK, 3.0 ) );
 	}
+	fogFactor = min( fogFactor, 1.0 - fogCap.x );
 	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogCol, fogFactor );
 	if ( fogGround.w > 0.0 ) {
 		vec3 fogDirG = normalize( ( vec4( vFogView, 0.0 ) * viewMatrix ).xyz );
@@ -6706,6 +6730,7 @@ function updateFarProps() {
    * their instances are wherever the game put them and a light leaving the
    * scene recompiles every material. Restored the frame you are back. */
   cullWorldInHall();
+  cullCastleUnseen();       // and inside a castle, the pieces of the world outside it that its walls never let you see
 }
 /* `update()` never reaches `updateFarProps` while you are in the hall — the
  * hall has its own walk and returns before it — so the hide is called from
@@ -6952,6 +6977,43 @@ function cullBeyondFog() {
  * the hall. Measured standing in the dojo courtyard: 219,648 triangles a
  * frame, of which the courtyard itself is 38,263. Three rooms have been added
  * since this was written and not one of them was on the list. */
+/* NOTHING YOU CANNOT SEE FROM INSIDE A CASTLE IS DRAWN THERE (2026-11-18, the owner: "fix castle performance now. certain
+ * sections do not have to load if they cant be seen yet"). The castles stand on the beach, so no room cull touched them:
+ * in the first castle's street all of Castle XIII (102 meshes), the lighthouse island (109), the vista and the cliff's rock
+ * were drawn every frame. MEASURED, not guessed (`tools/probes.js castleSeenIds`): every mesh drawn in its own flat colour
+ * from 17 spots spread over each castle's floor, at the eye and 4.5 m up, 8 yaws x 3 pitches, every pixel read back.
+ * What was never seen from ANY of them is listed here by name | vertices | world middle to 0.5 m, and hidden while you are
+ * inside; the pieces that do show over the walls (XIII's towers, the island's lamp) stay. A key that no longer matches
+ * (a model repacked) hides nothing, so the failure is only a lost saving. Re-run the probe after changing either castle,
+ * the island or the vista. Measured: fort 129 pieces, XIII 120 (the fort's own were already hidden in XIII). */
+const CASTLE_UNSEEN = { fort: new Set(["castle13|acmat_10|5451|62.5,7,-1250", "castle13|acmat_11|8679|74,5.5,-1260.5", "castle13|acmat_12|1344|74,5.5,-1260.5", "castle13|acmat_16|12351|74.5,5.5,-1261", "castle13|acmat_19|2976|105,5.5,-1275", "castle13|acmat_23|19|51,25.5,-1240", "castle13|acmat_0|3471|76,14.5,-1263", "castle13|acmat_13|798|74,5.5,-1260.5", "castle13|acmat_14|6899|74.5,5.5,-1261", "castle13|c13ArchFrame0|63|79,5,-1262", "castle13||63|79,5,-1262", "castle13|c13ArchFrame1|63|80.5,5,-1262", "castle13||63|80.5,5,-1262", "castle13|c13PassLining|119|80,5.5,-1262", "castle13|c13PassFloor|4|80,4,-1262", "castle13||32616|74.5,6.5,-1261", "castle13||1512|74.5,6.5,-1261", "castle13||1944|74.5,7,-1261", "castle13||7176|74,12.5,-1260.5", "castle13|c13Banner|377|35.5,10,-1243.5", "castle13|c13Banner|377|40,10,-1236.5", "castle13|c13Banner|377|115,10,-1266", "castle13|c13Banner|377|27.5,10,-1245.5", "castle13|c13Banner|377|101.5,10,-1258.5", "castle13|c13Banner|377|83,10,-1263.5", "castle13|c13Banner|377|64.5,10,-1267.5", "castle13|c13Banner|377|59,10,-1243", "castle13|c13Banner|377|69.5,10,-1254.5", "castle13|c13Banner|377|104.5,10,-1284", "castle13|c13Banner|377|35,10,-1262", "castle13|c13Banner|377|108,10,-1261", "castle13|c13Banner|377|120.5,10,-1270", "castle13||7920|74,9,-1262", "castle13||328|44,4.5,-1251.5", "castle13||125|44,5,-1251.5", "castle13||231|44,6,-1251.5", "castle13||102|44,6,-1251.5", "castle13||98|44,4.5,-1251.5", "castle13||50|44,4.5,-1251.5", "castle13||34|44,6,-1251.5", "castle13||504|78,22,-1269.5", "castle13|c13Carpet|4|42,4,-1245", "castle13|c13DoorSpill|4|37,4,-1242", "castle13||4|36.5,3.5,-1241.5", "castle13|c13Crest|4|36.5,8.5,-1241.5", "castle13||720|98.5,10,-1264", "isle||24|-6,23.5,-1271.5", "isle|isle_gull|372|-9,32,-1280.5", "isle|isle_gull|372|-9,30,-1267.5", "isle|isle_gull|372|-7,0,-1296", "isle|isle_gull|372|-26,2.5,-1260.5", "isle||24|19,21.5,-1254", "isle||24|19,21.5,-1252.5", "isle||24|19,22.5,-1253.5", "isle||24|19,22.5,-1253.5", "isle||24|19,20,-1253.5", "isle||24|19.5,21,-1253.5", "isle||24|19,21,-1254", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253", "isle||24|18.5,21,-1253", "isle||24|19,20.5,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,22,-1253.5", "isle||24|19,20.5,-1254", "isle||24|19,21,-1254", "isle||24|19,22,-1254", "isle||24|18.5,20.5,-1253", "isle||24|18.5,21,-1253", "isle||24|18.5,22,-1253", "isle||78|18.5,21,-1253", "isle||410|-4.5,28,-1275", "isle||1927|-4.5,34.5,-1275", "isle||30|-4.5,27,-1275", "isle||58|-4.5,40.5,-1275", "isle||1246|-4.5,33.5,-1275", "isle||64|-4.5,34,-1275", "isle||4|-4,40.5,-1274", "isle||24|-4,39.5,-1274", "isle||24|-4,39.5,-1274.5", "isle||34|-4,38.5,-1274", "isle||34|-4,39,-1274", "isle||34|-4,39,-1274", "isle||34|-4,39.5,-1274", "isle||34|-4,39.5,-1274", "isle||34|-4,40,-1274", "isle||34|-4,40,-1274", "isle||34|-4,40.5,-1274", "isle||63|-6,29,-1276", "isle||24|-6,29,-1276", "isle||63|-3.5,34,-1276", "isle||24|-3.5,34,-1276", "isle||63|-4.5,39,-1274", "isle||24|-4.5,39,-1274", "isle||24|-4,41.5,-1274", "isle||24|-2.5,28,-1275", "isle||24|-2.5,28,-1276", "isle||24|-2.5,29,-1275.5", "isle||24|-2.5,27,-1275.5", "isle||24|-2.5,29,-1275.5", "isle||24|-2.5,28,-1275", "isle||24|-2.5,28,-1275.5", "isle||24|-2.5,28,-1275.5", "isle||24|-2.5,28,-1276", "isle||24|-2.5,28,-1276", "isle||24|-2.5,27,-1275.5", "isle||24|-2.5,28.5,-1275.5", "isle||78|-2.5,28,-1276", "isle||63|-2,29.5,-1275.5", "vista||99|-6,0,-1397.5", "vista||34|-6,2,-1397.5", "vista||99|-12,-1,-1402.5", "vista||34|-12,1,-1403", "vista||120|39,0.5,-1318.5", "vista||120|43,0.5,-1327.5", "vista||120|50.5,1.5,-1338", "vista||120|48,1.5,-1349.5", "vista||120|39.5,1,-1363", "vista||120|40,1,-1371.5", "vista||120|43.5,2,-1387", "vista||120|41.5,2,-1394.5", "vista||120|40,1.5,-1406.5", "vista||288|23.5,3,-1351", "vista||540|23.5,3,-1351", "vista||1440|8,0.5,-1345.5", "vista||972|5.5,0,-1359", "rockSurf|rockSurf|9200|3.5,0,-346"]), c13: new Set(["isle|isle_house|6054|-6.5,26,-1267", "isle||24|-7,26,-1267", "isle||24|-8,23.5,-1262.5", "isle||24|-6,23.5,-1271.5", "isle||24|-2.5,23.5,-1266", "isle||24|-11.5,23.5,-1268", "isle|isle_Island|3852|-2,11.5,-1253.5", "isle|isle_props|10224|-12,22.5,-1266", "isle|isle_gull|372|-9,32,-1280.5", "isle|isle_gull|372|-9,30,-1267.5", "isle|isle_gull|372|-6,41.5,-1275", "isle|isle_gull|372|0,32,-1279", "isle|isle_gull|372|-6.5,41.5,-1274.5", "isle|isle_gull|372|-19,16,-1249.5", "isle|isle_gull|372|-19,16,-1248", "isle|isle_gull|372|-7,0,-1296", "isle|isle_gull|372|-26,2.5,-1260.5", "isle|isle_gull|372|-3,32.5,-1267", "isle|isle_gull|372|-4.5,44.5,-1275", "isle|isle_lamp|492|-8,23,-1258", "isle|isle_lambert1|60|0,29.5,-1279", "isle|isle_lighthouse|3960|-4.5,43,-1275", "isle|isle_walkway|29772|-12,11,-1257.5", "isle|isle_stairWall|384|-15,7.5,-1243.5", "isle|isle_lambert2|3000|-20,-1.5,-1237.5", "isle|isle_tower|19665|-4.5,33,-1275", "isle|isle_gallery|3121|-4.5,41.5,-1275", "isle|isleBridge|1440|13,16,-1253.5", "isle|isleBridgeFrame|1332|13,19,-1253.5", "isle|isleBridgePier|156|13.5,15,-1253.5", "isle|isleBridgeIron|31464|15,21,-1253.5", "isle||24|19,21.5,-1254", "isle||24|19,21.5,-1252.5", "isle||24|19,22.5,-1253.5", "isle||24|19,22.5,-1253.5", "isle||24|19,20,-1253.5", "isle||24|19.5,21,-1253.5", "isle||24|19,21,-1254", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,21,-1253", "isle||24|18.5,21,-1253", "isle||24|19,20.5,-1253.5", "isle||24|19,21,-1253.5", "isle||24|19,22,-1253.5", "isle||24|19,20.5,-1254", "isle||24|19,21,-1254", "isle||24|19,22,-1254", "isle||24|18.5,20.5,-1253", "isle||24|18.5,21,-1253", "isle||24|18.5,22,-1253", "isle||78|18.5,21,-1253", "isle||24|18.5,23,-1252", "isle||24|18,23,-1252", "isle||24|18,23,-1252", "isle||24|18,23,-1252", "isle||19|18,23,-1252", "isle|islePosternDoor|522|18.5,21.5,-1253.5", "isle|isleStairRail|396|-18,8.5,-1243", "isle||410|-4.5,28,-1275", "isle||1927|-4.5,34.5,-1275", "isle||30|-4.5,27,-1275", "isle||58|-4.5,40.5,-1275", "isle||1246|-4.5,33.5,-1275", "isle||64|-4.5,34,-1275", "isle||4|-4,40.5,-1274", "isle||24|-4,39.5,-1274", "isle||24|-4,39.5,-1274.5", "isle||34|-4,38.5,-1274", "isle||34|-4,39,-1274", "isle||34|-4,39,-1274", "isle||34|-4,39.5,-1274", "isle||34|-4,39.5,-1274", "isle||34|-4,40,-1274", "isle||34|-4,40,-1274", "isle||34|-4,40.5,-1274", "isle||63|-6,29,-1276", "isle||24|-6,29,-1276", "isle||63|-3.5,34,-1276", "isle||24|-3.5,34,-1276", "isle||63|-4.5,39,-1274", "isle||24|-4.5,39,-1274", "isle||82|-4.5,41,-1275", "isle||3744|-4.5,41.5,-1275", "isle||24|-4,41.5,-1274", "isle||24|-2.5,28,-1275", "isle||24|-2.5,28,-1276", "isle||24|-2.5,29,-1275.5", "isle||24|-2.5,27,-1275.5", "isle||24|-2.5,29,-1275.5", "isle||24|-2.5,28,-1275", "isle||24|-2.5,28,-1275.5", "isle||24|-2.5,28,-1275.5", "isle||24|-2.5,28,-1276", "isle||24|-2.5,28,-1276", "isle||24|-2.5,27,-1275.5", "isle||24|-2.5,28.5,-1275.5", "isle||78|-2.5,28,-1276", "isle||63|-2,29.5,-1275.5", "vista||99|-6,-0.5,-1397.5", "vista||34|-6,1.5,-1397.5", "vista||99|-12,-0.5,-1402.5", "vista||34|-12,1.5,-1403", "vista||120|39,0.5,-1318.5", "vista||120|43,0.5,-1327.5", "vista||120|50.5,1.5,-1338", "vista||120|48,1.5,-1349.5", "vista||120|39.5,1,-1363", "vista||120|40,1,-1371.5", "vista||120|43.5,2,-1387", "vista||120|41.5,2,-1394.5", "vista||120|40,1.5,-1406.5", "vista||288|23.5,3,-1351", "vista||192|23.5,6,-1351", "vista||996|7.5,4,-1358", "vista||540|23.5,3,-1351", "vista||1440|8,0.5,-1345.5", "vista||972|5.5,0,-1359", "rockSurf|rockSurf|9200|3.5,0,-346"]) };
+const CASTLE_UNSEEN_GROUPS = { fort: ['castle13', 'isle', 'vista', 'rockSurf'], c13: ['isle', 'vista', 'rockSurf'] };
+let castleHid = null, castleHidAt = '', castleHidDone = null, castleHidN = 0;
+const _cstUB = new THREE.Box3(), _cstUC = new THREE.Vector3();
+function cullCastleUnseen() {
+  const at = inC13 ? 'c13' : inFort ? 'fort' : '';
+  if (at !== castleHidAt) {
+    if (castleHid) for (const o of castleHid) o.visible = true;
+    castleHid = at ? [] : null; castleHidAt = at; castleHidDone = at ? new Set() : null; castleHidN = 0;
+  }
+  if (!at || castleHidDone.size === CASTLE_UNSEEN_GROUPS[at].length) return;
+  if ((castleHidN++ % 30) !== 0) return;                    // a group still loading is asked again every half second
+  const K = CASTLE_UNSEEN[at];
+  for (const name of CASTLE_UNSEEN_GROUPS[at]) {
+    if (castleHidDone.has(name)) continue;
+    const top = scene.children.find((o) => o.name === name);
+    if (!top || !top.children.length) continue;
+    top.updateMatrixWorld(true);
+    top.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh || !o.visible || /^(cprop|hitProxy)/.test(o.name)) return;
+      _cstUB.setFromObject(o); _cstUB.getCenter(_cstUC);
+      const k = name + '|' + o.name + '|' + o.geometry.attributes.position.count + '|' + Math.round(_cstUC.x * 2) / 2 + ',' + Math.round(_cstUC.y * 2) / 2 + ',' + Math.round(_cstUC.z * 2) / 2;
+      if (K.has(k)) { o.visible = false; castleHid.push(o); }
+    });
+    castleHidDone.add(name);
+  }
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { castleHidS: () => castleHid }));
 function cullWorldInHall() {
   /* AND THE TAVERN AND THE KEEP AND THE CATACOMBS ARE ROOMS TOO — found
    * twice, independently, which is how sure a thing this is. Measured
@@ -6966,7 +7028,7 @@ function cullWorldInHall() {
    * door opens straight into the tavern, six kilometres away, and nothing
    * passes a beach frame between them, so whatever of the tavern's the keep
    * had switched off (its lamps, its cast) stayed off for the whole visit. */
-  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : inDun ? 9 : inDeep ? 10 : inSewer ? 11 : 0;
+  const hk = inUndercroft ? 2 : inDojo ? 3 : inKeep ? 4 : inTavern ? 5 : inCat ? 6 : inWhale ? 7 : inThrone ? 8 : inDun ? 9 : inDeep ? 10 : inSewer ? 11 : inTemple ? 12 : 0;
   if (hallHid && hk !== hallKey) { for (const o of hallHid) o.visible = true; hallHid = null; }
   hallKey = hk;
   if (hk) {
@@ -8250,6 +8312,1433 @@ ocean.add(oceanFar);
 // DOM refs + state
 // ------------------------------------------------------------------
 const overlay = document.getElementById('overlay');
+/* ---- THE TITLE'S BEDROOM (2026-11-19, the owner: "render this room for the starting screen that says START GAME have it
+ * thunder and raining outside the window and make it dark and depressing in the room. have the rain pouring visibly as it
+ * says start game on the screen with that exact screenshot make it like the player is sitting in a chair at a desk the
+ * desk is where these plates are in the shot. have a full blue syringe sitting in the shot too on the desk. make this
+ * whole scene retro looking. add a iphone on the desk as well im going to add aa cutscene here but render this first").
+ * jimbogies's "Bedroom" (CC-BY-4.0, README), `assets/bedroom.glb` (`tools/bedroom_pack.py`, 1.8 MB), drawn behind START
+ * GAME on a renderer of its own (so the world's boot under the cover is untouched) at a third of the screen, ordered-
+ * dithered and drained in a pass of its own, blown up pixelated. The window, the desk (the table with the plates) and the
+ * room are found from the model's own pieces, so the storm outside, the light through the glass and the props on the desk
+ * are placed off them. A cold storm light falls through the window (one shadow-casting spot, hard-edged: the panes are
+ * drawn on the bed), the lightning flashes it, the sky and the rain; the thunder is the beach's own (`sfxThunder`). Torn
+ * down for good when the title goes (`tbStop` from `leaveTitle`); never built for a load that skips the title. */
+const TB = { on: false, ready: false, gone: false, el: null, r: null, sc: null, cam: null, rt: null, post: null, raf: 0, t0: 0, last: 0,
+  win: null, desk: null, out: null, spot: null, amb: null, sky: null, rain: null, phoneL: null, flash: 0, bolt: { next: 3.5, t: -1, pulses: [] },
+  camBase: null, look: null, rainAudio: null, H: 400 };
+const tbNow = () => performance.now() / 1000;
+function tbStart() {
+  if (TB.on || TB.gone || instantStart || skipIntro || introStarted) return;
+  TB.on = true;
+  const cv = document.createElement('canvas');
+  cv.id = 'title-room'; overlay.insertBefore(cv, overlay.firstChild); TB.el = cv;
+  const r = new THREE.WebGLRenderer({ canvas: cv, antialias: false, alpha: false, powerPreference: 'high-performance' });
+  r.setPixelRatio(1); r.shadowMap.enabled = true; r.shadowMap.type = THREE.BasicShadowMap;
+  r.outputColorSpace = THREE.LinearSRGBColorSpace;          // (the dither pass encodes; the scene is drawn linear into `rt`)
+  TB.r = r;
+  TB.sc = new THREE.Scene(); TB.sc.background = new THREE.Color(0x000000);
+  TB.cam = new THREE.PerspectiveCamera(64, 16 / 9, 0.06, 40);   // (54.5 the solved lens; 64 and turned a little right, so his phone is in the shot too)   // (near 0.03 left the mirror and the wall fighting for depth)
+  TB.rt = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: true, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+  /* HIS HANDS AND THE SKETCHBOOK SHARP (2026-11-19, the owner: "make the stektchbook not retro so the pictures are seen
+   * better"): the room is drawn at its retro 400 px (`TB.rt`), his clips — the book, the hands, the syringe in his
+   * fingers — at the screen's own size into `TB.rtHi` (premultiplied, half float: the dark of his sleeve does not band),
+   * and the pass lays them over the room before the grade: the room keeps its fat pixels and its dither, his things are
+   * graded with it but drawn smooth. */
+  TB.rtHi = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: true, type: THREE.HalfFloatType });
+  TB.post = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms: { t: { value: TB.rt.texture }, hi: { value: TB.rtHi.texture }, res: { value: new THREE.Vector2(4, 4) }, flash: { value: 0 }, time: { value: 0 }, fade: { value: 1 },
+      frame: { value: new THREE.Vector4(0, 0, 1, 1) }, pillar: { value: 0 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
+    fragmentShader: `uniform sampler2D t, hi; uniform vec2 res; uniform float flash, time, fade, pillar; uniform vec4 frame; varying vec2 vUv;
+      float bayer(vec2 p){ vec2 q = mod(floor(p), 4.); int i = int(q.x + q.y * 4.);
+        float m[16]; m[0]=0.;m[1]=8.;m[2]=2.;m[3]=10.;m[4]=12.;m[5]=4.;m[6]=14.;m[7]=6.;m[8]=3.;m[9]=11.;m[10]=1.;m[11]=9.;m[12]=15.;m[13]=7.;m[14]=13.;m[15]=5.;
+        for (int k = 0; k < 16; k++) if (k == i) return (m[k] + .5) / 16.; return .5; }
+      void main(){
+        vec2 lp = floor(vUv * res);
+        vec4 o = texture2D(hi, vUv);
+        vec3 c = texture2D(t, (lp + .5) / res).rgb * (1. - o.a) + o.rgb;     // his things over the room, before the grade
+        c = pow(max(c * 1.7, 0.), vec3(1. / 2.2));                             // to the screen's curve (lifted: dark, not black)
+        float l = dot(c, vec3(.299, .587, .114));
+        c = mix(vec3(l), c, .38 - .2 * flash);                                // drained: a room nobody cares for (and a flash bleaches it)
+        c *= vec3(.86, .95, 1.1);                                             // and cold
+        c = max(c - .018, 0.) * 1.06;                                         // the blacks crushed
+        vec2 q = vUv - .5; c *= 1. - dot(q * vec2(1.1, 1.3), q * vec2(1.1, 1.3)) * 1.5;
+        c *= fade;
+        // (at the desk, past the 16:9 frame his clips are placed in: down to dark at the screen's edge — a wide screen and a
+        // tall one see the same picture, his sleeves fading off into it, icClipFrame)
+        // (and NOT on the left or at the foot, 2026-11-20, the owner: "make the left arm not be cut off like that in the start
+        // cutscenes": his left arm comes in from there, painted on the table, and the pillar faded it to black mid-sleeve)
+        vec2 po = vec2(max(vUv.x - frame.x - frame.z, 0.), max(vUv.y - frame.y - frame.w, 0.)) / max(frame.xy, vec2(1e-4));
+        // (but not his phone hand at his ear, right of the frame: pinned to the screen's corner on a wide screen it sat in
+        // the dark of it, a grey ghost of a hand — 2026-11-19, "it should look like hes actually on the phone". Nothing of
+        // his left reaches the right side, so his sleeve still fades off into the left one.)
+        float pf = 1. - pillar * smoothstep(0., 1., clamp(max(po.x, po.y), 0., 1.));
+        c *= mix(pf, 1., o.a * smoothstep(frame.x + frame.z - .01, frame.x + frame.z + .01, vUv.x));
+        float d = bayer(lp) - .5;
+        float L = 14.; c = mix(floor(c * L + .5 + d * .95) / L, c, o.a);      // few levels a channel, ordered-dithered on the room's own pixels (his things smooth)
+        gl_FragColor = vec4(clamp(c, 0., 1.), 1.); }`,
+    depthTest: false, depthWrite: false }));
+  TB.postSc = new THREE.Scene(); TB.postSc.add(TB.post);
+  TB.postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  tbSize(); window.addEventListener('resize', tbSize);
+  fetch('assets/bedroom.glb').then((x) => x.arrayBuffer()).then(bwGunzip)
+    .then((buf) => new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej)))
+    .then((gl) => { if (TB.on) tbBuild(gl.scene); })
+    .catch((e) => console.warn('[title] the bedroom did not load', e));
+  icLoad();
+  TB.t0 = TB.last = tbNow();
+  TB.raf = requestAnimationFrame(tbLoop);
+}
+/* the title's lens: the SAME WIDTH of the room on every screen up to 16:9 (its horizontal angle held; a tall one gains a
+ * little top and bottom) — the desk laid out the same whatever the window */
+const TB_TITLE_HFOV = 78, TB_TITLE_CAM = [1.12, 1.38, 0.45, 2.8];   // (eye y, z; look y, z — on the mirror's x; where the things lie)
+// (wider than 16:9 the HEIGHT is held instead, at 16:9's: an ultra-wide screen sees more of the room at the sides — more of
+// the window — never less of the desk; a 2.39:1 window cut the book's front edge off when the width was held there)
+const tbTitleFov = (aspect) => 2 * THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(TB_TITLE_HFOV / 2)) / Math.min(16 / 9, Math.max(1, aspect))));
+/* THE CALL IS ONE PICTURE ON EVERY SCREEN (2026-11-20, the owner: "the start cutscene should look the same on all screens the
+ * objects are changing size and place when changing screen size"). Under the title the room fills the screen; from START the
+ * view eases (`TB.boxK`, over the glide down to the desk) into one 16:9 picture — the desk, the book, his hands and the phone
+ * the same size and in the same place on a wide screen, a tall one and anything between. */
+function tbSize() {
+  if (!TB.r) return;
+  const SW = window.innerWidth || 1280, SH = window.innerHeight || 720;
+  const bk = IC.on && !IC.ended ? icEase(TB.boxK || 0) : 0;
+  let W = SW, H = SH;
+  /* (and FILLING the screen, not boxed — the owner the same day: "the cutscene doesnt fit my full screen make it always be full
+   * screen in the start cutscene but fit to all monitors": the 16:9 picture scaled to COVER the screen, so a wide one loses a
+   * strip of the far wall over the desk (three quarters of it off the top, the desk and his hands kept) and a tall one a strip
+   * off each side) */
+  const wide = SW / SH >= IC_ASPECT;
+  if (bk > 0) { const fw = wide ? SW : SH * IC_ASPECT, fh = wide ? SW / IC_ASPECT : SH; W = SW + (fw - SW) * bk; H = SH + (fh - SH) * bk; }
+  if (TB.el) {
+    if (bk > 0) Object.assign(TB.el.style, { left: ((SW - W) / 2).toFixed(1) + 'px', top: ((SH - H) * (wide ? 0.72 : 0.5)).toFixed(1) + 'px', width: W.toFixed(1) + 'px', height: H.toFixed(1) + 'px', inset: 'auto' });
+    else Object.assign(TB.el.style, { left: '', top: '', width: '', height: '', inset: '' });
+  }
+  const h = TB.H, w = Math.round(h * W / H);
+  /* drawn at TWICE the size and averaged down in the pass (2026-11-19, the owner: "the textures on the walls still
+   * flicker" — measured, `flicker` probe: not the walls but their thin bright edges, the mirror's gilt frame and the
+   * window's, crawling a pixel as the camera breathed; at twice the samples they hold). `TB.vw/vh`: the view's own size,
+   * what his clips are placed in. */
+  TB.vw = w; TB.vh = h;
+  // (the screen's own size, for his clips: up to 1080 tall)
+  TB.Q = Math.max(1, Math.min(2.7, Math.min(1080, H * Math.min(2, window.devicePixelRatio || 1)) / h));
+  const qw = Math.round(w * TB.Q), qh = Math.round(h * TB.Q);
+  TB.r.setSize(qw, qh, false); TB.rt.setSize(w, h); TB.rtHi.setSize(qw, qh);
+  TB.post.material.uniforms.res.value.set(w, h);   // (at 2x it was "laggy as shit", 2026-11-19: the camera no longer breathes at the desk, which was what made the edges crawl)
+  TB.cam.aspect = w / h;
+  if (!IC.on) TB.cam.fov = tbTitleFov(TB.cam.aspect);
+  TB.cam.updateProjectionMatrix();
+}
+const tbMeshes = (root, name) => { const out = []; root.traverse((o) => { if (o.isMesh && o.material && o.material.name === name) out.push(o); }); return out; };
+const tbBox = (list) => { const b = new THREE.Box3(); for (const o of list) b.expandByObject(o); return b; };
+function tbBuild(room) {
+  bwDequant(room);
+  room.scale.setScalar(0.0254);                             // (modelled in SketchUp in INCHES: the ceiling is at 96)
+  TB.sc.add(room);
+  room.updateMatrixWorld(true);
+  // the room's own materials, made plain (Lambert, nearest-filtered maps), and the night's glass
+  room.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material, glass = m.transparent || /window|Glass/i.test(m.name);
+    if (m.map) {                                           // (mipmapped: nearest-only, the mirror's frame and the wall crawled as
+      m.map.magFilter = THREE.NearestFilter;               // the camera breathed — "the textures … are flickering")
+      m.map.minFilter = THREE.LinearMipmapLinearFilter; m.map.generateMipmaps = true; m.map.anisotropy = 4; m.map.needsUpdate = true;
+    }
+    const n = new THREE.MeshLambertMaterial({ name: m.name, map: m.map || null, color: m.color.clone(), transparent: m.transparent, opacity: m.opacity, side: THREE.DoubleSide });
+    if (/^window$/.test(m.name)) { n.color.set(0x1a2633); n.opacity = 0.28; n.depthWrite = false; }
+    if (/GlassDoors/.test(m.name)) { n.color.set(0x10161d); n.opacity = 0.7; n.polygonOffset = true; n.polygonOffsetFactor = -2; n.polygonOffsetUnits = -4; }   // (in FRONT of the cabinet's pale panel: the two lie in one plane, z 2.828, and fought for every pixel — the whole cabinet flashed as his head drifted at the poster, 2026-11-19, "THE TEXTURES ARE FLASHING CRAZY")
+    if (/MirrorGlass/.test(m.name)) { n.color.set(0x6d7781); n.polygonOffset = true; n.polygonOffsetFactor = -2; n.polygonOffsetUnits = -4; }   // (a dull old mirror: at near black it read as a hole in the wall; and in FRONT of its frame's back)
+    o.material = n;
+    o.castShadow = !glass; o.receiveShadow = true;
+  });
+  const roomB = new THREE.Box3().setFromObject(room), rc = roomB.getCenter(new THREE.Vector3());
+  // the window: its thinnest axis is its normal, and out is away from the room's middle
+  const winB = tbBox(tbMeshes(room, 'window')), wc = winB.getCenter(new THREE.Vector3()), ws = winB.getSize(new THREE.Vector3());
+  const ax = ws.x < ws.z ? 'x' : 'z';
+  const out = new THREE.Vector3(); out[ax] = Math.sign(wc[ax] - rc[ax]) || 1;
+  TB.win = { c: wc, s: ws, ax }; TB.out = out;
+  // the desk: the table the photo leans on, and on it the leaf-pattern plate and cup (the same pattern is all over the
+  // room, so only its vertices within 0.6 m of the photo)
+  const girlB = tbBox(tbMeshes(room, 'Girl')), gc = girlB.getCenter(new THREE.Vector3());
+  const patB = new THREE.Box3(), _v = new THREE.Vector3();
+  for (const o of tbMeshes(room, 'Pattern')) {
+    const P = o.geometry.attributes.position;
+    for (let i = 0; i < P.count; i++) { _v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); if (Math.hypot(_v.x - gc.x, _v.z - gc.z) < 0.6 && Math.abs(_v.y - girlB.min.y) < 0.4) patB.expandByPoint(_v); }
+  }
+  if (patB.isEmpty()) patB.copy(girlB);
+  const pc = patB.getCenter(new THREE.Vector3());
+  TB.desk = { top: Math.min(patB.min.y, girlB.min.y), c: pc, b: patB, photo: gc };
+  { const pb = tbBox(tbMeshes(room, 'Poster')); if (!pb.isEmpty()) TB.poster = pb.getCenter(new THREE.Vector3()); }
+  { const mb = tbBox(tbMeshes(room, 'MirrorGlass')); TB.mirrorX = mb.isEmpty() ? 1.67 : (mb.min.x + mb.max.x) / 2; }   // (the title's axis)
+  tbClearDesk(room, girlB);
+  const side = new THREE.Vector3(-out.z, 0, out.x);         // along the wall
+  // the storm outside: a sky, and the rain falling between it and the glass
+  const span = Math.max(ws.x, ws.z), sky = new THREE.Mesh(new THREE.PlaneGeometry(span * 10, ws.y * 8), new THREE.ShaderMaterial({
+    uniforms: { flash: { value: 0 }, time: { value: 0 } }, depthWrite: false,
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+    fragmentShader: `uniform float flash, time; varying vec2 vUv;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+        return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+      void main(){
+        vec2 p = vUv * vec2(6., 3.) + vec2(time * .03, 0.);
+        float c = n(p) * .5 + n(p * 2.1) * .3 + n(p * 4.3) * .2;
+        vec3 col = mix(vec3(.018, .022, .03), vec3(.07, .08, .1), smoothstep(.3, .8, c) * (.4 + .6 * vUv.y));
+        col += vec3(.03, .028, .025) * (1. - vUv.y);                          // a town's glow low under the cloud
+        col += vec3(.55, .6, .75) * flash * (.35 + .65 * smoothstep(.3, .9, c));
+        gl_FragColor = vec4(col, 1.); }` }));
+  sky.position.copy(wc).addScaledVector(out, 5.5);
+  sky.lookAt(wc); TB.sc.add(sky); TB.sky = sky;
+  const N = 2600, pos = new Float32Array(N * 6), vel = new Float32Array(N);
+  /* (each drop a soft STREAK, not a line — 2026-11-19, the owner: "fix this texture it should not be flickering like that":
+   * 2600 one-pixel lines at the room's 400 px sparkled on and off as they fell. Now a quad ~2 px wide (14 mm across the
+   * window), bright at its head and fading up its tail, fainter: rain seen through glass) */
+  const qv = new Float32Array(N * 12), qa = new Float32Array(N * 4), qi = new Uint32Array(N * 6);
+  for (let i = 0; i < N; i++) { qa.set([1, 1, 0, 0], i * 4); qi.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 1, i * 4 + 3, i * 4 + 2], i * 6); }
+  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.BufferAttribute(qv, 3)); rg.setAttribute('head', new THREE.BufferAttribute(qa, 1)); rg.setIndex(new THREE.BufferAttribute(qi, 1));
+  const rain = new THREE.Mesh(rg, new THREE.ShaderMaterial({
+    uniforms: { opacity: { value: 0.3 }, color: { value: new THREE.Color(0xb4c2d6) } },
+    vertexShader: 'attribute float head; varying float vH; void main(){ vH = head; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+    fragmentShader: 'uniform float opacity; uniform vec3 color; varying float vH; void main(){ gl_FragColor = vec4(color, opacity * (.15 + .85 * vH * vH)); }',
+    transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  rain.frustumCulled = false; TB.sc.add(rain);
+  rain.userData.qv = qv;
+  TB.rain = { mesh: rain, pos, vel, N, side, w: span * 4, d0: 0.25, d1: 4.8, y0: wc.y - ws.y * 3, y1: wc.y + ws.y * 2.5 };
+  for (let i = 0; i < N; i++) tbDrop(i, true);
+  // and on the glass: drops beaded on it, runs coming down it (a shader on a sheet just inside the pane)
+  const wet = new THREE.Mesh(new THREE.PlaneGeometry(ax === 'z' ? ws.x : ws.z, ws.y), new THREE.ShaderMaterial({
+    uniforms: { time: { value: 0 }, flash: { value: 0 } }, transparent: true, depthWrite: false,
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+    fragmentShader: `uniform float time, flash; varying vec2 vUv;
+      float h(float n){ return fract(sin(n * 91.7) * 43758.5453); }
+      float h2(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 15731.743); }
+      void main(){
+        float a = 0.;
+        // beads: a grid of cells, a drop in some
+        vec2 g = vUv * vec2(26., 38.), i = floor(g), f = fract(g) - .5;
+        float r = h2(i); if (r > .55) { vec2 o = vec2(h2(i + 3.1), h2(i + 7.7)) - .5; a += smoothstep(.16, .05, length(f - o * .5)) * .6; }
+        // runs: columns, each with a drop sliding down and a wet trail above it
+        float cols = 34., c = floor(vUv.x * cols), x = fract(vUv.x * cols) - .5;
+        float sp = .08 + h(c) * .14, y = fract(h(c + 9.) - time * sp);
+        float wob = sin(vUv.y * 40. + c) * .08;
+        float line = smoothstep(.12, .02, abs(x + wob));
+        float head = smoothstep(.035, .0, abs(vUv.y - y)) * line;
+        float trail = smoothstep(0., .25, vUv.y - y) * smoothstep(.45, .25, vUv.y - y) * line * .35;
+        a += (head + trail) * step(.35, h(c + 2.));
+        vec3 col = vec3(.62, .7, .82) * (.45 + 1.4 * flash);
+        gl_FragColor = vec4(col, clamp(a, 0., 1.) * .55); }` }));
+  wet.position.copy(wc).addScaledVector(out, -0.03);
+  wet.lookAt(wc.clone().addScaledVector(out, -1)); TB.sc.add(wet); TB.wet = wet;
+  // light: a cold storm-light through the window from high outside, hard-shadowed; the room otherwise near dark
+  TB.amb = new THREE.AmbientLight(0x3a4658, 0.9); TB.sc.add(TB.amb);
+  TB.hemi = new THREE.HemisphereLight(0x50607a, 0x0a0806, 0.25); TB.sc.add(TB.hemi);
+  const spot = new THREE.SpotLight(0x7f95c8, 2.2, 0, 0.62, 0.55, 0);
+  spot.position.copy(wc).addScaledVector(out, 3.2).add(new THREE.Vector3(0, ws.y * 1.4, 0)).addScaledVector(side, -span * 0.4);
+  spot.target.position.copy(wc).addScaledVector(out, -2.2).setY(TB.desk.top - 0.2);
+  spot.castShadow = true; spot.shadow.mapSize.set(1024, 1024); spot.shadow.camera.near = 0.5; spot.shadow.camera.far = 14; spot.shadow.bias = -0.004; spot.shadow.normalBias = 0.02;
+  TB.sc.add(spot, spot.target); TB.spot = spot;
+  // the desk: the syringe, full and blue, and his phone, face up and lit
+  const syr = makeSyringe(); syr.userData.setFill(1);
+  // (read at a title's size and in the dark: the barrel's clear glass vanished and left a speck of blue, so the glass is
+  // frosted whiter, the fluid glows a little, its own colour)
+  syr.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const m = o.material = o.material.clone();
+    /* (2026-11-19, the owner: "the syringe part lookd horrible": in his hand it read as a dark pen — the glass frosted
+     * half opaque over a dim blue, the plastic darkened to nearly black. Clearer glass, the blue glowing through it hard
+     * enough to stay blue after the room's grade drains it, the plastic only a little down) */
+    if (m.transparent && m.opacity < 0.3) { m.opacity = 0.32; m.color.set(0xe6eef4); m.emissive && m.emissive.set(0x10161c); }
+    if (m.color && m.color.getHex() === 0x2f7bff) { m.emissive.set(0x2a6bff); m.emissiveIntensity = 3.0; m.opacity = 1; }
+    else if (!m.transparent && m.color) m.color.multiplyScalar(0.85);   // (its pale plastic: ×0.55 was lost on the white cloth, and black in his hand)
+  });
+  syr.userData.parts.cap.visible = false;                     // (uncapped: he squirts it)
+  syr.updateMatrixWorld(true);
+  const sb = new THREE.Box3().setFromObject(syr), sl = sb.getSize(new THREE.Vector3());
+  const sk = 0.19 / Math.max(sl.x, sl.y, sl.z);
+  syr.scale.setScalar(sk);
+  // its pose: a group whose +Z is the needle (`icPoseSyringe` lays it where his clip has the pen, or puts it in his hand)
+  const syrG = new THREE.Group(); syrG.add(syr); TB.sc.add(syrG);
+  TB.syrModel = syr; TB.syrPose = syrG; TB.syrTip = syr.userData.parts.tipZ; TB.syrR = Math.max(sl.x, sl.y) * sk / 2;
+  syrG.position.set(2.0, TB.desk.top + TB.syrR, 2.46); syrG.lookAt(2.0 + Math.sin(-0.62), TB.desk.top + TB.syrR, 2.46 + Math.cos(-0.62));
+  syrG.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  TB.syr = syrG;
+  // and it sits ON the cloth: a soft dark under it (no light reaches the desk to throw one)
+  { const c = document.createElement('canvas'); c.width = c.height = 32; const x = c.getContext('2d');
+    const gr = x.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = gr; x.fillRect(0, 0, 32, 32);
+    const sh = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.05), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+    sh.rotation.set(-Math.PI / 2, 0, 0); sh.position.set(syrG.position.x, TB.desk.top + 0.002, syrG.position.z);
+    TB.sc.add(sh); TB.syrSh = sh; }
+  const ph = tbPhone(); TB.sc.add(ph);
+  ph.position.set(1.6, TB.desk.top + 0.004, 2.56);           // (right of the plate, face up)
+  ph.rotation.y = 0.45;
+  TB.phone = ph;
+  try { tbClutter(); } catch (e) { console.warn('[room] clutter', e); }   // (after the syringe: two of its emptied copies are in the mess)
+  TB.phoneL = new THREE.PointLight(0x9fb8ff, 0.06, 0.9, 2); TB.phoneL.position.copy(ph.position).add(new THREE.Vector3(0, 0.12, 0)); TB.sc.add(TB.phoneL);
+  for (const l of [TB.amb, TB.hemi, TB.spot, TB.phoneL]) l.layers.enable(1);   // (the syringe in his hand is drawn in a pass of its own, layer 1)
+  // sat at the desk, the owner's screenshot: SOLVED, not guessed — the photo, the cup, the plate and the window's sill
+  // marked in his shot and the camera fitted to them by least squares with the eye held at a seated 1.15 m (his shot was
+  // taken standing, 1.84 m and a 34° lens, from two metres back; seated it is 0.45 m from the desk's edge and a 54.5° lens,
+  // every mark within 0.03 of the screen of where it is in his). Room metres.
+  /* (and then square on to the mirror, 2026-11-19, the owner: "the phone looks huge the syringe isnt even on the table …
+   * just center the stuff on the table for the start please it should look good as a start screen. it should look
+   * symetrical and it looks different for different screens make it all the same": the eye on the mirror's axis, the
+   * things on the desk in the middle of it (`IC_CAM` is on the mirror's axis too), and the same width of it on every screen,
+   * `tbTitleFov`) */
+  const mx = TB.mirrorX || 1.67;
+  const eye = new THREE.Vector3(mx, TB_TITLE_CAM[0], TB_TITLE_CAM[1]), look = new THREE.Vector3(mx, TB_TITLE_CAM[2], TB_TITLE_CAM[3]);
+  TB.camBase = eye; TB.look = look;
+  TB.cam.fov = tbTitleFov(TB.cam.aspect); TB.cam.updateProjectionMatrix();
+  TB.cam.position.copy(eye); TB.cam.lookAt(look);
+  try { TB.r.compile(TB.sc, TB.cam); } catch (e) { /* */ }
+  TB.ready = true;
+  overlay.classList.add('room');
+}
+/* THE PLATES OFF THE DESK (2026-11-19, the owner: "you can take those plates off the table for room"): everything standing
+ * on the linen table's top but his photo — the plate and the cup — folded to nothing where it stands (each such mesh's
+ * geometry cloned first, in case the model shares it with something elsewhere). The table's top, found from its linen: */
+function tbClearDesk(room, photoB) {
+  const lin = new THREE.Box3(), _v = new THREE.Vector3();
+  for (const o of tbMeshes(room, 'Linen')) { const b = new THREE.Box3().setFromObject(o); if (b.max.y < 0.6 && b.min.z > 1.5) lin.union(b); }
+  if (lin.isEmpty()) return;
+  const top = lin.max.y, keep = photoB.clone().expandByScalar(0.03);
+  const inside = (p) => p.x > lin.min.x && p.x < lin.max.x && p.z > lin.min.z && p.z < lin.max.z - 0.06 && p.y > top + 0.002 && p.y < top + 0.14 && !keep.containsPoint(p);
+  let n = 0;
+  room.traverse((o) => {
+    if (!o.isMesh) return;
+    const P = o.geometry.attributes.position, hit = [];
+    for (let i = 0; i < P.count; i++) { _v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); if (inside(_v)) hit.push(i); }
+    if (!hit.length) return;
+    // the WHOLE piece a touched vertex belongs to (a cup reaches above the box: half of one was a fan of spikes) — joined
+    // by its triangles and by vertices at one place
+    const par = new Int32Array(P.count); for (let i = 0; i < P.count; i++) par[i] = i;
+    const find = (a) => { while (par[a] !== a) a = par[a] = par[par[a]]; return a; }, join = (a, b) => { a = find(a); b = find(b); if (a !== b) par[a] = b; };
+    const I = o.geometry.index, T = I ? I.count : P.count, at = (k) => (I ? I.getX(k) : k);
+    for (let k = 0; k + 2 < T; k += 3) { join(at(k), at(k + 1)); join(at(k), at(k + 2)); }
+    const same = new Map();
+    for (let i = 0; i < P.count; i++) { const key = Math.round(P.getX(i) * 1e3) + ',' + Math.round(P.getY(i) * 1e3) + ',' + Math.round(P.getZ(i) * 1e3); const j = same.get(key); if (j === undefined) same.set(key, i); else join(i, j); }
+    const size = new Map(); for (let i = 0; i < P.count; i++) { const r = find(i); size.set(r, (size.get(r) || 0) + 1); }
+    const roots = new Set(hit.map(find)), gone = [];
+    for (let i = 0; i < P.count; i++) { const r = find(i); if (roots.has(r) && size.get(r) < 20000) gone.push(i); }
+    for (const i of hit) if (!roots.has(find(i)) || size.get(find(i)) >= 20000) gone.push(i);
+    o.geometry = o.geometry.clone();
+    const Q = o.geometry.attributes.position, x = Q.getX(gone[0]), y = Q.getY(gone[0]), z = Q.getZ(gone[0]);
+    for (const i of gone) Q.setXYZ(i, x, y, z);
+    Q.needsUpdate = true; o.geometry.computeBoundingSphere(); n += gone.length;
+  });
+  TB.cleared = n;
+  tbGrowDesk(room, lin);
+  // (under the mirror, on the title's axis — leaning at its foot, 2026-11-19, "it should look symetrical": it was 0.2 m off it)
+  tbMovePhoto(room, photoB.clone().expandByScalar(0.06), new THREE.Vector3((TB.mirrorX || 1.67) - photoB.getCenter(new THREE.Vector3()).x, 0, 0.1));
+}
+/* his photo, a little out of the way (2026-11-19, the owner: "the picture frame out of the way a little"): back toward
+ * the wall and over to the phone's side, the frame and the picture together — every piece standing in its box moved
+ * whole, as `tbClearDesk` takes pieces */
+function tbMovePhoto(room, box, d) {
+  const _v = new THREE.Vector3(), inv = new THREE.Matrix4(), b = box.clone().expandByScalar(0.01);
+  room.traverse((o) => {
+    if (!o.isMesh) return;
+    const P = o.geometry.attributes.position, hit = [];
+    for (let i = 0; i < P.count; i++) { _v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); if (b.containsPoint(_v)) hit.push(i); }
+    if (!hit.length) return;
+    // only pieces wholly inside the box (a wall or the table that merely touches it stays)
+    const par = new Int32Array(P.count); for (let i = 0; i < P.count; i++) par[i] = i;
+    const find = (a) => { while (par[a] !== a) a = par[a] = par[par[a]]; return a; }, join = (a, c) => { a = find(a); c = find(c); if (a !== c) par[a] = c; };
+    const I = o.geometry.index, T = I ? I.count : P.count, at = (k) => (I ? I.getX(k) : k);
+    for (let k = 0; k + 2 < T; k += 3) { join(at(k), at(k + 1)); join(at(k), at(k + 2)); }
+    const inside = new Uint8Array(P.count); for (const i of hit) inside[i] = 1;
+    const bad = new Set(); for (let i = 0; i < P.count; i++) if (!inside[i]) bad.add(find(i));
+    const move = hit.filter((i) => !bad.has(find(i)));
+    if (!move.length) return;
+    o.geometry = o.geometry.clone(); inv.copy(o.matrixWorld).invert();
+    const Q = o.geometry.attributes.position;
+    for (const i of move) { _v.fromBufferAttribute(Q, i).applyMatrix4(o.matrixWorld).add(d).applyMatrix4(inv); Q.setXYZ(i, _v.x, _v.y, _v.z); }
+    Q.needsUpdate = true; o.geometry.computeBoundingSphere(); o.geometry.computeBoundingBox();
+  });
+  TB.desk.photo.add(d);
+}
+/* AND THE TABLE BIGGER (2026-11-19, the owner: "just make the table bigger"): the model's table is a draped cloth, and
+ * stretched its folds smeared into a fan of strips — so it is hidden and a plain cloth-covered table of the size the desk
+ * needs stands in its place, at its height (the photo, the syringe and the phone on it as before), its edge by the bed
+ * where the old one's was, wider away from the bed and a little deeper toward his chair. Room metres. */
+const TB_DESK = { x0: 0.42, x1: 2.36, z0: 1.58, z1: 3.0 };   // (wider away from the bed: x0 was 0.82; z0 1.98 until the desk view moved back 0.25 m — its near edge came into the shot)
+/* HIS DESK, LIVED AT (2026-11-20, the owner: "add pens and cans all over the table and make the room more messy do not make it
+ * look ai slop"). Ordinary leavings, not set dressing: drink cans (a couple of kinds, one crushed, one on its side, two by the bed),
+ * pens and a highlighter dropped at odd angles, balled-up pages, a pen cap. Plain shapes in the room's own flat, nearest-filtered
+ * look; labels painted small and dull, no brand on any of them. Everything sits round the back of the desk and its outer
+ * corners — never where his hands, the book and the phone are painted (`icDrawPaint`: the table between x 1.2 and 2.1, z 1.9
+ * and 2.65, room metres), so nothing stands through a clip — and a few on the floor by the desk and the bed. Seeded, so it is
+ * the same mess every time. */
+function tbClutter() {
+  const D = TB_DESK, top = TB.desk.top; let seed = 4471;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const tex = (w, h, draw) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; return t; };
+  // can labels: a band, a stripe, a dull mark — three kinds, no words
+  const label = (base, band, mark) => tex(64, 32, (x, w, h) => {
+    x.fillStyle = base; x.fillRect(0, 0, w, h);
+    x.fillStyle = band; x.fillRect(0, h * 0.34, w, h * 0.3);
+    x.fillStyle = mark; for (let i = 0; i < 3; i++) x.fillRect(8 + i * 20, h * 0.12, 9, h * 0.14);
+    x.fillStyle = 'rgba(255,255,255,0.18)'; x.fillRect(0, h * 0.82, w, 2);
+  });
+  const LBL = [label('#7a1d1d', '#c9c2b8', '#3b0d0d'), label('#1f2f22', '#7cbf3a', '#0d150e'), label('#232a3a', '#9aa6b8', '#c7a33a')];
+  const metal = new THREE.MeshLambertMaterial({ color: 0x8c8f94, flatShading: true });
+  const G = new THREE.Group(); G.name = 'deskClutter';
+  const can = (x, z, y0, lying, yaw, kind, crush) => {
+    const r = 0.033, h = crush ? 0.085 : 0.122;
+    const g = new THREE.CylinderGeometry(r, r, h, 12, crush ? 3 : 1, false);
+    if (crush) { const P = g.attributes.position; for (let i = 0; i < P.count; i++) { const k = 1 - 0.35 * Math.abs(Math.sin(P.getY(i) * 40 + P.getX(i) * 30)) * (Math.abs(P.getY(i)) < h * 0.3 ? 1 : 0.3); P.setX(i, P.getX(i) * k); P.setZ(i, P.getZ(i) * (0.75 + 0.25 * k)); } g.computeVertexNormals(); }
+    const m = new THREE.Mesh(g, [new THREE.MeshLambertMaterial({ map: LBL[kind], flatShading: true }), metal, metal]);
+    const lidG = new THREE.CylinderGeometry(r * 0.86, r, 0.008, 12); const lid = new THREE.Mesh(lidG, metal); lid.position.y = h / 2 + 0.004; m.add(lid);
+    if (lying) { m.rotation.set(0, yaw, Math.PI / 2); m.position.set(x, y0 + r, z); }
+    else { m.rotation.y = yaw; m.position.set(x, y0 + h / 2, z); }
+    m.castShadow = true; G.add(m);
+  };
+  const pen = (x, z, yaw, col, len = 0.142, hi = false) => {
+    const r = hi ? 0.0075 : 0.0048;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 6), new THREE.MeshLambertMaterial({ color: col, flatShading: true }));
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.15, r * 1.15, len * 0.28, 6), new THREE.MeshLambertMaterial({ color: hi ? 0x2a2a2a : col, flatShading: true }));
+    cap.position.y = len * 0.36; m.add(cap);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(r, len * 0.08, 6), new THREE.MeshLambertMaterial({ color: 0xb8b4aa, flatShading: true })); tip.position.y = -len * 0.54; tip.rotation.x = Math.PI; m.add(tip);
+    m.rotation.set(0, yaw, Math.PI / 2); m.rotateX((rnd() - 0.5) * 0.1);
+    m.position.set(x, top + r, z); m.castShadow = true; G.add(m);
+  };
+  const paper = (x, z, y0, s) => {
+    const g = new THREE.IcosahedronGeometry(s, 1), P = g.attributes.position;
+    for (let i = 0; i < P.count; i++) { const k = 0.72 + rnd() * 0.5; P.setXYZ(i, P.getX(i) * k, P.getY(i) * k * 0.85, P.getZ(i) * k); }
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0xd8d4c8, flatShading: true }));
+    m.position.set(x, y0 + s * 0.7, z); m.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6); m.castShadow = true; G.add(m);
+  };
+  /* WHAT THE DESK VIEW SEES (measured, `tools/deskmap.js`): the table from z 1.85 at the foot of the picture to 2.7 at its
+   * top, x 2.37 (left) to 0.89 (right) along the top. The book lies left of middle (x 1.66-2.25, z 2.0-2.38), the phone
+   * right (x 1.0-1.35, z 2.2-2.6), the syringe at the left edge. So: a crowd above the book, more along the top, one in the
+   * far right corner past the phone, a few low in the middle; and further back, out of the call's view, what the title sees. */
+  can(2.27, 2.60, top, false, 0.4, 0, false); can(2.08, 2.67, top, false, 1.9, 0, true); can(1.97, 2.52, top, true, 0.9, 1, false);
+  can(1.43, 2.64, top, false, 2.6, 2, false); can(0.95, 2.62, top, false, 0.2, 1, false);
+  paper(1.78, 2.61, top, 0.032); paper(1.29, 2.56, top, 0.028); paper(1.62, 1.88, top, 0.026);
+  pen(2.18, 2.46, 0.4, 0x15161a); pen(1.70, 2.50, 2.0, 0x1b2f6b); pen(1.12, 2.64, 0.25, 0xb8c43a, 0.12, true);
+  pen(1.53, 1.93, 1.0, 0x15161a); pen(1.37, 2.00, 0.3, 0x7a1d1d);
+  { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.0055, 0.04, 6), new THREE.MeshLambertMaterial({ color: 0x1b2f6b, flatShading: true })); c.rotation.set(0, 0.7, Math.PI / 2); c.position.set(2.0, top + 0.0055, 2.44); G.add(c); }
+  // (behind, for the title's view of the room)
+  can(2.24, 2.88, top, false, 0.4, 0, false); can(1.86, 2.92, top, false, 2.6, 2, true); can(1.02, 2.88, top, false, 0.2, 1, false); can(0.70, 2.92, top, true, 2.2, 0, true);
+  paper(1.58, 2.93, top, 0.03); paper(1.25, 2.90, top, 0.04); pen(1.47, 2.80, 1.95, 0x15161a); pen(0.66, 2.62, 2.2, 0x15161a);
+  /* TWO EMPTY SYRINGES (the owner, the same day: "add like two empty syringes on the table too scattered"): the game's own
+   * syringe, its blue gone (the barrel's glass only, the plunger pushed home), lying where they were dropped */
+  if (TB.syrModel) for (const [x, z, yaw] of [[1.60, 2.57, 1.3], [1.46, 1.94, -0.6]]) {
+    const e = TB.syrModel.clone(true);
+    e.traverse((o) => { if (!o.isMesh || !o.material) return; o.material = o.material.clone();
+      if (o.material.emissive && o.material.emissiveIntensity > 1) { o.material.emissive.set(0x000000); o.material.emissiveIntensity = 0; o.material.color.set(0xcfd6dc); o.material.transparent = true; o.material.opacity = 0.3; } });
+    const g = new THREE.Group(); g.add(e);
+    g.position.set(x, top + (TB.syrR || 0.008), z); g.lookAt(x + Math.sin(yaw), top + (TB.syrR || 0.008), z + Math.cos(yaw));
+    G.add(g);
+  }
+  // and the floor by the desk and the bed
+  can(2.55, 2.40, 0, true, 1.3, 0, false); can(0.30, 2.15, 0, true, 2.6, 2, true); can(0.18, 2.55, 0, false, 0.9, 1, false);
+  paper(2.62, 2.05, 0, 0.04); paper(0.36, 1.75, 0, 0.035); paper(2.48, 2.78, 0, 0.03);
+  G.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+  TB.sc.add(G); TB.clutter = G;
+}
+function tbGrowDesk(room, lin) {
+  let mat = null;
+  for (const o of tbMeshes(room, 'Linen')) {
+    const b = new THREE.Box3().setFromObject(o);
+    if (b.max.y < 0.6 && b.min.z > 1.5) { o.visible = false; mat = o.material; }   // (the table's cloth, not the bed's)
+  }
+  if (!mat) return;
+  const top = lin.max.y + 0.003, D = TB_DESK;           // (3 mm over the old table: its front edge's strip, flush with the top at z 2.17, fought the new top for depth — a dark line across it)
+  TB.desk.top = top;                                      // (what stands on it stands on THIS: the props sank into it at 0.481)
+  const m = mat.clone(); m.color.multiplyScalar(0.62);   // (a grey cloth in a dark room, not a lit slab)
+  if (m.map) { m.map = m.map.clone(); m.map.wrapS = m.map.wrapT = THREE.RepeatWrapping; m.map.repeat.set(3, 2); m.map.needsUpdate = true; }
+  const box = new THREE.Mesh(new THREE.BoxGeometry(D.x1 - D.x0, top, D.z1 - D.z0), m);
+  box.position.set((D.x0 + D.x1) / 2, top / 2, (D.z0 + D.z1) / 2);
+  box.castShadow = true; box.receiveShadow = false;     // (the storm light's hard shadow would fall across it in steps)
+  TB.sc.add(box); TB.deskBox = box;
+}
+function tbDrop(i, anywhere) {
+  const R = TB.rain, w = TB.win, a = Math.random();
+  const along = (Math.random() - 0.5) * R.w, depth = R.d0 + Math.random() * (R.d1 - R.d0);
+  const y = anywhere ? R.y0 + Math.random() * (R.y1 - R.y0) : R.y1 + Math.random() * 0.6;
+  const p = new THREE.Vector3().copy(w.c).addScaledVector(R.side, along).addScaledVector(TB.out, depth); p.y = y;
+  const L = 0.3 + a * 0.3;
+  R.pos.set([p.x, p.y, p.z, p.x + R.side.x * 0.03, p.y - L, p.z + R.side.z * 0.03], i * 6);
+  R.vel[i] = 7.5 + a * 3.5;
+}
+/* HIS PHONE: an iPhone, face up (2026-11-19, the owner: "make it look like a real iphone screen and someones calling too it
+ * looks fake in the start"). The body at an iPhone's size, a thin black bezel, the Dynamic Island, and a screen drawn the
+ * way iOS draws it, at 180 x 390 (an iPhone's 19.5:9): under the title Matthew is CALLING (slide to answer — and it
+ * shakes on the table, silently), after START his voicemail plays in the Phone app, then the lock screen's three missed calls,
+ * then he calls again (`iosScreen`, `icPhoneScreen`). */
+function tbPhone() {
+  const g = new THREE.Group();
+  const W = 0.0716, D = 0.147, T = 0.0078;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(W, T, D), new THREE.MeshLambertMaterial({ color: 0x1d1f23 }));
+  body.position.y = T / 2; g.add(body);
+  const bez = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.97, D * 0.985), new THREE.MeshBasicMaterial({ color: 0x050506 }));
+  bez.rotation.x = -Math.PI / 2; bez.position.y = T + 0.0002; g.add(bez);
+  const c = document.createElement('canvas'); c.width = 180; c.height = 390;
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+  { const x = c.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, 180, 390); } tex.needsUpdate = true;   // (dark until the call puts something on it)
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.93, D * 0.96), new THREE.MeshBasicMaterial({ map: tex, color: 0xc4ccda }));
+  scr.rotation.x = -Math.PI / 2; scr.position.y = T + 0.0004; g.add(scr);
+  g.userData.cv = c; g.userData.tex = tex;              // (`icPhoneScreen` draws on it)
+  return g;
+}
+const IOS_FONT = '-apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif';
+function iosHandset(x, cx, cy, s, rot, col) {
+  x.save(); x.translate(cx, cy); x.rotate(rot); x.strokeStyle = col; x.lineWidth = s * 0.34; x.lineCap = 'round';
+  x.beginPath(); x.arc(0, s * 0.42, s * 0.62, Math.PI * 1.16, Math.PI * 1.84); x.stroke(); x.restore();
+}
+function iosRound(x, X, Y, w, h, r) { x.beginPath(); x.moveTo(X + r, Y); x.arcTo(X + w, Y, X + w, Y + h, r); x.arcTo(X + w, Y + h, X, Y + h, r); x.arcTo(X, Y + h, X, Y, r); x.arcTo(X, Y, X + w, Y, r); x.closePath(); }
+// one frame of his iPhone's screen: 'incoming' (a call: slide to answer), 'vm' (the Phone app, his voicemail playing,
+// `t` seconds in), 'lock' (the lock screen, three missed calls)
+function iosScreen(x, mode, t, vm = { m: 0, p: 0, len: 4.5 }) {
+  const W = 180, H = 390, F = (w, px) => `${w} ${px}px ${IOS_FONT}`;
+  x.save(); x.textBaseline = 'alphabetic';
+  // the wallpaper (blurred under a call, plain on the lock screen), or the app's black
+  if (mode === 'vm') { x.fillStyle = '#000'; x.fillRect(0, 0, W, H); }
+  else {
+    const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#26304a'); g.addColorStop(0.55, '#141a2a'); g.addColorStop(1, '#07090f');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    for (const [cx, cy, r, col] of [[40, 120, 120, 'rgba(92,70,150,0.35)'], [150, 260, 130, 'rgba(30,110,130,0.28)']]) {
+      const rg = x.createRadialGradient(cx, cy, 0, cx, cy, r); rg.addColorStop(0, col); rg.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = rg; x.fillRect(0, 0, W, H);
+    }
+    if (mode === 'incoming') { x.fillStyle = 'rgba(8,10,16,0.35)'; x.fillRect(0, 0, W, H); }
+  }
+  // the status bar and the island
+  x.fillStyle = '#000'; iosRound(x, 62, 9, 56, 16, 8); x.fill();
+  x.fillStyle = '#fff'; x.font = F(600, 12); x.textAlign = 'left'; if (mode !== 'lock') x.fillText('3:12', 20, 22);
+  for (let i = 0; i < 4; i++) x.fillRect(128 + i * 3.4, 19 - i * 2, 2.2, 3 + i * 2);
+  x.strokeStyle = 'rgba(255,255,255,0.55)'; x.lineWidth = 1; iosRound(x, 145.5, 13.5, 18, 9, 2.5); x.stroke();
+  x.fillStyle = '#fff'; iosRound(x, 147, 15, 9, 6, 1.5); x.fill(); x.fillRect(164.5, 16.5, 1.5, 3);
+  x.textAlign = 'center';
+  if (mode === 'incoming') {
+    x.fillStyle = '#fff'; x.font = F(300, 30); x.fillText('Matthew', W / 2, 96);
+    x.fillStyle = 'rgba(235,235,245,0.62)'; x.font = F(400, 14); x.fillText('mobile', W / 2, 117);
+    for (const [cx, lab] of [[52, 'Remind Me'], [128, 'Message']]) {
+      x.fillStyle = 'rgba(255,255,255,0.2)'; x.beginPath(); x.arc(cx, 282, 15, 0, 7); x.fill();
+      x.fillStyle = '#fff'; x.font = F(400, 10); x.fillText(lab, cx, 312);
+      x.fillStyle = 'rgba(255,255,255,0.85)'; if (lab === 'Message') { iosRound(x, cx - 6, 276, 12, 9, 3); x.fill(); } else { x.beginPath(); x.arc(cx, 282, 5.5, 0, 7); x.lineWidth = 1.6; x.strokeStyle = '#fff'; x.stroke(); }
+    }
+    // slide to answer: the pill, the green knob, the words with the shine running across them
+    x.fillStyle = 'rgba(255,255,255,0.16)'; iosRound(x, 16, 330, 148, 40, 20); x.fill();
+    x.fillStyle = '#34c759'; x.beginPath(); x.arc(36, 350, 17, 0, 7); x.fill();
+    iosHandset(x, 36, 350, 13, 0, '#fff');
+    const sh = ((t * 0.55) % 1.4) * 150 - 20, tg = x.createLinearGradient(sh - 30, 0, sh + 30, 0);
+    tg.addColorStop(0, 'rgba(255,255,255,0.45)'); tg.addColorStop(0.5, 'rgba(255,255,255,1)'); tg.addColorStop(1, 'rgba(255,255,255,0.45)');
+    x.fillStyle = tg; x.font = F(400, 15); x.fillText('slide to answer', 104, 355);
+  } else if (mode === 'vm') {
+    x.textAlign = 'left'; x.fillStyle = '#fff'; x.font = F(700, 27); x.fillText('Voicemail', 14, 74);
+    x.fillStyle = 'rgba(84,84,88,0.65)'; x.fillRect(14, 84, 166, 0.8);
+    // (his THREE messages, 2026-11-20, the owner: "there is another voicemail message after the actual 3 that has no sound. get rid
+    // of that one keep the original 3": it read "4 new messages" and the last beep moved it on to a fourth, silent)
+    x.fillStyle = '#fff'; x.font = F(600, 15); x.fillText(vm.m ? 'Matthew' : 'Voicemail', 14, 106);
+    x.fillStyle = 'rgba(235,235,245,0.6)'; x.font = F(400, 12); x.fillText(vm.m ? 'mobile · ' + vm.m + ' of 3' : '3 new messages', 14, 122);
+    x.textAlign = 'right'; x.fillText(['3:11 AM', '3:09 AM', '3:06 AM', '3:02 AM'][vm.m] || '', 166, 106);
+    const dur = vm.len, p = Math.max(0, Math.min(1, vm.p));
+    x.fillStyle = 'rgba(235,235,245,0.3)'; x.fillRect(14, 146, 152, 2.5);
+    x.fillStyle = '#fff'; x.fillRect(14, 146, 152 * p, 2.5); x.beginPath(); x.arc(14 + 152 * p, 147.2, 5, 0, 7); x.fill();
+    const ss = Math.floor(p * dur), rr = Math.max(0, Math.ceil(dur - p * dur));
+    x.fillStyle = 'rgba(235,235,245,0.6)'; x.font = F(400, 10); x.textAlign = 'left'; x.fillText('0:' + String(ss).padStart(2, '0'), 14, 164);
+    x.textAlign = 'right'; x.fillText('-0:' + String(rr).padStart(2, '0'), 166, 164);
+    // speaker (on), play/pause (playing), delete
+    x.fillStyle = '#0a84ff'; x.beginPath(); x.arc(30, 190, 13, 0, 7); x.fill();
+    x.fillStyle = '#fff'; x.fillRect(24, 186, 4, 8); x.beginPath(); x.moveTo(28, 186); x.lineTo(33, 182); x.lineTo(33, 198); x.lineTo(28, 194); x.fill();
+    x.fillStyle = '#fff'; x.fillRect(84, 182, 4, 16); x.fillRect(92, 182, 4, 16);
+    x.strokeStyle = '#ff453a'; x.lineWidth = 1.6; iosRound(x, 145, 184, 12, 14, 2); x.stroke(); x.fillStyle = '#ff453a'; x.fillRect(143, 181, 16, 1.6);
+    x.fillStyle = 'rgba(84,84,88,0.65)'; x.fillRect(14, 214, 166, 0.8);
+    let y = 240;
+    for (const [who, when] of [['Matthew', '3:09 AM'], ['Matthew', '3:06 AM'], ['Matthew', '3:02 AM']].slice(vm.m)) {
+      x.textAlign = 'left'; x.fillStyle = '#fff'; x.font = F(600, 14); x.fillText(who, 14, y);
+      x.fillStyle = 'rgba(235,235,245,0.6)'; x.font = F(400, 11); x.fillText('mobile', 14, y + 15);
+      x.textAlign = 'right'; x.fillText(when, 166, y);
+      x.fillStyle = 'rgba(84,84,88,0.65)'; x.fillRect(14, y + 24, 166, 0.8); y += 36;
+    }
+    x.fillStyle = 'rgba(28,28,30,0.96)'; x.fillRect(0, 346, W, 44);
+    const tabs = ['Favorites', 'Recents', 'Contacts', 'Keypad', 'Voicemail'];
+    tabs.forEach((lab, k) => { const cx = 18 + k * 36, on = k === 4; x.fillStyle = on ? '#0a84ff' : 'rgba(235,235,245,0.55)';
+      x.beginPath(); x.arc(cx, 360, 5.5, 0, 7); x.fill(); x.font = F(500, 7); x.textAlign = 'center'; x.fillText(lab, cx, 376); });
+  } else {                                                // the lock screen: the time, and the calls he did not take
+    x.fillStyle = 'rgba(255,255,255,0.85)'; x.font = F(600, 13); x.fillText('Wednesday, November 19', W / 2, 52);
+    x.fillStyle = '#fff'; x.font = F(200, 70); x.fillText('3:12', W / 2, 122);
+    x.fillStyle = 'rgba(52,52,60,0.62)'; iosRound(x, 18, 254, 144, 8, 4); x.fill();
+    x.fillStyle = 'rgba(58,58,66,0.78)'; iosRound(x, 10, 196, 160, 58, 13); x.fill();
+    x.fillStyle = '#34c759'; iosRound(x, 18, 206, 20, 20, 5); x.fill(); iosHandset(x, 28, 216, 11, 0, '#fff');
+    x.textAlign = 'left'; x.fillStyle = '#fff'; x.font = F(600, 12); x.fillText('Missed Call', 46, 216);
+    x.font = F(400, 12); x.fillText('Matthew (3)', 46, 233);
+    x.fillStyle = 'rgba(235,235,245,0.6)'; x.font = F(400, 10); x.textAlign = 'right'; x.fillText('now', 162, 216);
+    for (const cx of [38, 142]) { x.fillStyle = 'rgba(255,255,255,0.18)'; x.beginPath(); x.arc(cx, 350, 17, 0, 7); x.fill(); }
+    x.fillStyle = '#fff'; iosRound(x, 35, 342, 6, 14, 2); x.fill(); iosRound(x, 134, 345, 16, 11, 2.5); x.fill();
+    x.fillStyle = '#26304a'; x.beginPath(); x.arc(142, 350.5, 3.2, 0, 7); x.fill();
+  }
+  x.fillStyle = 'rgba(255,255,255,0.85)'; iosRound(x, 62, 380, 56, 4, 2); x.fill();    // the home bar
+  x.restore();
+}
+function tbStrike() {
+  const B = TB.bolt;
+  B.t = 0; B.pulses = [[0, 0.07, 1], [0.11, 0.05, 0.55], [0.2, 0.16, 0.9]];
+  if (Math.random() < 0.4) B.pulses.push([0.42, 0.1, 0.5]);
+  const dist = 0.15 + Math.random() * 0.6;
+  setTimeout(() => { if (TB.on && audioCtx && audioCtx.state === 'running' && tbBus()) { tbScope = true; try { sfxThunder(dist, -0.3 + Math.random() * 0.2, 0); } finally { tbScope = false; } } }, 250 + dist * 2600);
+  B.next = 6 + Math.random() * 10;
+}
+function tbLoop() {
+  TB.raf = 0;
+  if (!TB.on) return;
+  const now = tbNow(), dt = Math.min(0.1, now - TB.last), t = now - TB.t0; TB.last = now;
+  TB.raf = requestAnimationFrame(tbLoop);
+  if (document.hidden) return;
+  if (audioCtx && !TB.rainAudio) tbRainAudio();
+  if (!TB.ready) { TB.r.setRenderTarget(null); TB.r.setClearColor(0x000000, 1); TB.r.clear(); return; }
+  // the storm
+  const B = TB.bolt;
+  B.next -= dt; if (B.next <= 0 && B.t < 0) tbStrike();
+  let f = 0;
+  if (B.t >= 0) { B.t += dt; for (const [a, d, k] of B.pulses) if (B.t >= a && B.t < a + d) f = Math.max(f, k * (1 - (B.t - a) / d * 0.5)); if (B.t > 1) B.t = -1; }
+  TB.flash += (f - TB.flash) * (f > TB.flash ? 1 : Math.min(1, dt * 14));
+  const F = TB.flash;
+  TB.spot.intensity = 2.2 + F * 16; TB.amb.intensity = 0.9 + F * 1.6; TB.hemi.intensity = 0.25 + F * 0.8;
+  TB.sky.material.uniforms.flash.value = F; TB.sky.material.uniforms.time.value = t;
+  TB.wet.material.uniforms.flash.value = F; TB.wet.material.uniforms.time.value = t;
+  TB.post.material.uniforms.flash.value = F;
+  TB.rain.mesh.material.uniforms.opacity.value = 0.3 + F * 0.3;
+  if (IC.on) icFrame(dt, F);
+  else if (audioCtx && IC.bytes && !IC.buf && !IC.decoding) icDecode();
+  // the rain: down, a little with the wind, and round again
+  const R = TB.rain;
+  for (let i = 0; i < R.N; i++) {
+    const k = i * 6, v = R.vel[i] * dt;
+    R.pos[k + 1] -= v; R.pos[k + 4] -= v;
+    R.pos[k] += R.side.x * v * 0.08; R.pos[k + 3] += R.side.x * v * 0.08; R.pos[k + 2] += R.side.z * v * 0.08; R.pos[k + 5] += R.side.z * v * 0.08;
+    if (R.pos[k + 4] < R.y0) tbDrop(i, false);
+    // (its streak: the head at the bottom, the tail up the line, 7 mm either side along the wall)
+    const q = R.mesh.userData.qv, o = i * 12, hw = 0.007, sx = R.side.x * hw, sz = R.side.z * hw;
+    q[o] = R.pos[k + 3] - sx; q[o + 1] = R.pos[k + 4]; q[o + 2] = R.pos[k + 5] - sz;
+    q[o + 3] = R.pos[k + 3] + sx; q[o + 4] = R.pos[k + 4]; q[o + 5] = R.pos[k + 5] + sz;
+    q[o + 6] = R.pos[k] - sx; q[o + 7] = R.pos[k + 1]; q[o + 8] = R.pos[k + 2] - sz;
+    q[o + 9] = R.pos[k] + sx; q[o + 10] = R.pos[k + 1]; q[o + 11] = R.pos[k + 2] + sz;
+  }
+  R.mesh.geometry.attributes.position.needsUpdate = true;
+  if (!IC.props && IC.meta) icPlaceProps();
+  if (!IC.on) {                                         // sat still, breathing
+    TB.cam.position.copy(TB.camBase); TB.cam.lookAt(TB.look);   // (held still: its breathing made every thin edge crawl)
+      icTitleFrame();
+  }
+  tbRender();
+}
+function tbRender() {
+  const r = TB.r;
+  r.setRenderTarget(TB.rt); r.setClearColor(0x000000, 1); r.clear();
+  TB.cam.layers.set(0); r.render(TB.sc, TB.cam);
+  r.setRenderTarget(TB.rtHi); r.setClearColor(0x000000, 0); r.clear();
+  r.autoClear = false;
+  const paintOn = !!IC.paint;
+  if (paintOn) {                                        // the table, painted through the desk's own view: first the shadows
+    IC.pmat.uniforms.deskVP.value.multiplyMatrices(IC.deskCam.projectionMatrix, IC.deskCam.matrixWorldInverse);
+    r.render(IC.shadow, TB.cam);
+  }
+  /* then the book lying still (`IC.front`), the syringe — the game's model, sharp, on layer 1 (the room's black
+   * background would be drawn again by this pass: it is lifted for it) — and his hand OVER it, always (2026-11-19, the
+   * owner: "the hand should be the layer over the syringe always in the cutscene") */
+  if (paintOn) r.render(IC.front, TB.cam);
+  if (TB.syrPose && TB.syrPose.visible && TB.syrPose.userData.layer1) {
+    const bg = TB.sc.background; TB.sc.background = null;
+    r.clearDepth(); TB.cam.layers.set(1); r.render(TB.sc, TB.cam); TB.cam.layers.set(0); TB.sc.background = bg;
+  }
+  if (paintOn) r.render(IC.paint, TB.cam);             // the hands, the turning book, the squirt
+  if (IC.on && IC.ear) r.render(IC.ear, TB.postCam);    // his right hand (with the phone, at his ear)
+  r.autoClear = true; r.setClearColor(0x000000, 1);
+  r.setRenderTarget(null); r.render(TB.postSc, TB.postCam);
+}
+/* the bedroom's own way to the speakers: the game's gate (`gameAudioGate`) is shut until the beach is up, and the storm
+ * and the call are heard before it. The master's level and the effects' and the sea's sliders, as the game's are. */
+function tbBus() {
+  const ctx = audioCtx; if (!ctx) return null;
+  if (!TB.bus) {
+    TB.bus = ctx.createGain(); TB.bus.gain.value = document.hidden ? 0 : settings.volume; TB.bus.connect(ctx.destination);
+    TB.sfx = ctx.createGain(); TB.sfx.gain.value = settings.sfxVolume * SFX_TRIM * TB_STORM_LIFT; TB.sfx.connect(TB.bus);
+    TB.rainBus = ctx.createGain(); TB.rainBus.gain.value = settings.waveVolume * WAVE_TRIM * TB_STORM_LIFT; TB.rainBus.connect(TB.bus);
+  }
+  return TB.bus;
+}
+const TB_STORM_LIFT = 2.2;     // (the storm is the room's whole sound: a little over the sliders' beach)
+// the rain's own level under the title, and under his call (0.9 / 0.42 until 2026-11-19, the owner: "make the rain less loud in the start scene too": −5 dB;
+// then "THE RAIN IS WAY TOO LOUD": −9 dB more, 0.5 / 0.24 → 0.18 / 0.09)
+const TB_RAIN = 0.18, TB_RAIN_CALL = 0.09;
+/* the rain heard: noise, the hiss high and the roar low, under the title only (the sea's bus, as the title's surf was) */
+function tbRainAudio() {
+  const ctx = audioCtx; if (!ctx || !tbBus()) return;
+  const len = ctx.sampleRate * 3, buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); let b = 0; for (let i = 0; i < len; i++) { const w = Math.random() * 2 - 1; b = 0.97 * b + 0.03 * w; d[i] = w * 0.6 + b * 2.2; } }
+  const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 380;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 5200;
+  const roar = ctx.createBiquadFilter(); roar.type = 'lowpass'; roar.frequency.value = 520;
+  const g = ctx.createGain(); g.gain.value = 0.0001;
+  const gr = ctx.createGain(); gr.gain.value = 0.55;
+  src.connect(hp).connect(lp).connect(g); src.connect(roar).connect(gr).connect(g);
+  g.connect(TB.rainBus);
+  src.start();
+  g.gain.exponentialRampToValueAtTime(TB_RAIN, ctx.currentTime + 2.5);
+  TB.rainAudio = { src, g };
+}
+function tbStop() {
+  if (!TB.on) return;
+  TB.on = false; TB.gone = true;
+  if (TB.raf) cancelAnimationFrame(TB.raf); TB.raf = 0;
+  window.removeEventListener('resize', tbSize);
+  if (TB.rainAudio && audioCtx) {
+    const a = TB.rainAudio; a.g.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 0.6);
+    setTimeout(() => { try { a.src.stop(); } catch (e) { /* */ } }, 3000);
+  }
+  icStop();
+  if (TB.bus) { const b = TB.bus; setTimeout(() => { try { b.disconnect(); } catch (e) { /* */ } }, 4000); TB.bus = TB.sfx = TB.rainBus = null; }
+  // (after the cover's own fade: it carries the room out with it)
+  setTimeout(() => {
+    if (TB.sc) TB.sc.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+    if (TB.rt) TB.rt.dispose(); if (TB.rtHi) TB.rtHi.dispose();
+    if (TB.r) { TB.r.dispose(); TB.r.forceContextLoss(); }
+    if (TB.el) TB.el.remove();
+    TB.sc = TB.r = TB.rt = TB.el = null;
+  }, 4000);
+}
+/* ---- THE CALL: THE OPENING, AT THE DESK (2026-11-19, the owner: "after clicking start this audio should play. it should
+ * show the desk with a full needle the sketchbook from the last video and the phone use the hands in this like we did for
+ * the inventory and take the pick up the phone animation from video 2. have at 28 seconds on the audio the phone is up to
+ * his ear keep it by his ear the whole time that will be his right hand. the third video will be his left hand. the pen in
+ * the video will be the needle … at 41 seconds he should pick up the needle and squirt it to see if its full making some
+ * blue blood squirt out. when he gets to saying "i have like a thousand sketches" make him start flipping the pages of his
+ * sketches … when he says "i think i have an idea" the last page should flip showing the beachwalk sketch in the video.
+ * after this audio ends the waves of the beachwalk intro scene can be shown and the game starts from there").
+ * START, and the bedroom stays: the words go, the room dips to black and comes back looking down at the desk, and his
+ * recording (`assets/intro/call.m4a`, 70.5 s) plays. His hands are HIS, cut out of his two clips (`tools/intro_cut_pack.py`:
+ * IMG_7209 the right, the phone; IMG_7214 the left, the pen and the sketchbook), held still on the table plane, graded and
+ * drawn into the room's own render (a canvas over the desk, lit by the room — the lightning lights them too — then the
+ * same drained, dithered pass), so the room, the storm and his hands are one picture. The pen is drawn over as the
+ * syringe, full and blue. Every beat is on the RECORDING'S clock (word times measured off the file):
+ *   0-19.6 the voicemail on the speaker ("You have 3 missed calls from Matthew") — the phone lit on the desk;
+ *   21.4 and 24.7 it rings — it buzzes, the call on its screen; 24.9 he picks it up, looks at it, and it is at his ear by
+ *   27.8 ("Hello?" 27.3) and stays there to the end;
+ *   41.0 ("Man, I'm gonna need a few more days") he picks up the syringe; 42.6 squirts it — blue — and puts it down;
+ *   58.4 ("I have like a thousand sketches") he starts flipping; 68.6 ("I think I got one in mind") the last page turns:
+ *   BEACH WALK; the recording ends at 70.5, a beat on the page, and the intro (`runIntro`: black, his waves, his song).
+ * Enter skips to the intro. */
+const IC_DUR = 70.51;
+const IC = { meta: null, imgL: null, imgR: null, bytes: null, buf: null, decoding: false, on: false, atDesk: false, ended: false,
+  press: 0, start: 0, env: null, vol: null, src: null, fx: null, sfx: {}, sfxDone: {}, drops: [], props: false, skipKey: null,
+  cv: null, x: null, gcv: null, gx: null, ecv: null, ex: null, paint: null, ear: null, deskCam: null, glide: 0, struck: false };
+// the camera at the desk: sat in the chair, looking down at what is on it (room metres)
+/* (and the whole of it 0.25 m back toward his chair, 2026-11-19, the owner: "the phone is clipping into the wall move
+ * everything closer on the table to the player": the phone his clip gives is 0.27 x 0.41 m on this table and its far
+ * end stood 5 cm into the wall. Everything of his clips is placed through this camera, so moving it moves them all
+ * with it — the phone, the book, the syringe, his hands — and the right hand stays on the phone.) */
+/* (and LOWER, and on the mirror's axis — 2026-11-19, the owner: "I HATE HOW ALL THE STUFF SLIDES TO DIFFERENT POSITIONS
+ * FROM THE START GAME POINT … THE SYRINGE IS STILL OFF THE TABLE": one layout, title to the end. What his clips put on
+ * the table is as big as this eye's height over it makes it — from 0.71 m the phone was 0.27 x 0.41 m — so the eye is
+ * 0.48 m over the desk (bent over it, as you sit at a desk): everything 0.68 of the size, the same on the screen; and
+ * the whole of it slid across under the mirror, so the title, square on to the mirror, has it in the middle.) */
+const IC_CAM = { eye: new THREE.Vector3(1.66, 0.97, 1.67), look: new THREE.Vector3(1.64, 0.23, 2.35), fov: 46 };   // (round 3 moved it to 1.48 / 50° to centre his things, and the hand drawn over the screen from his clip no longer met the phone the camera now saw elsewhere — "the hand doesnt even reach the phone … the old phone pickup was better", 2026-11-19: back where his clips were shot from)
+const IC_SHIFT = [[0, 10], [0, 40]];             // (px of the desk view: each hand's clip off its corner)
+const IC_GLIDE = 3.4;                            // START: from where the title sat, down to the desk, this long
+/* while he is on the phone he looks away and back, as you do (2026-11-19, the owner: "he should glance out the window and
+ * at his bed while on the phone before turning the pages just make it more natural"): out of the window at "whoa, you're
+ * up" (the lightning answers him), back at "the book?"; at the bed at "I mean, have you even started?", back to the desk
+ * at "Dude, I'm working on it right now". [out from, there by, leaves at, back by, what at] — the head turns about the
+ * eye, so what is drawn on the table stays exactly on it. */
+/* (and, the owner's second word: "the second time he looks towards the bed have him look at the poster above his bed";
+ * "have him glance at the syringe hes not turning his head and make him inspect it") — [.., what, how far] */
+const IC_GLANCE = [[30.4, 31.7, 34.8, 36.2, 'win', 1], [41.25, 42.15, 44.75, 45.7, 'syr', 0.8], [48.7, 50.0, 52.3, 53.7, 'poster', 1]];
+// his clips' frames on the recording's clock: [t, from, to, fps] (to < from runs it backward) or [t, key] (one frame)
+// (he holds it up and looks it over, slowly turning it — 31 to 43 and back at 7 fps — before the squirt; then down,
+// and his hand back down out of the shot: the reach in, backward)
+const IC_LSEG = [[39.33, 2, 31, 12], [41.75, 31, 43, 'pp', 7], [44.6, 43, 52, 12], [45.4, 82, 95, 12], [46.6, 15, 2, 12],
+  [47.8, 'b1'], [58.05, 119, 221, 9.7], [68.6, 221, 245, 12], [70.7, 'b245']];
+const IC_LIN = [57.45, 58.05];                   // his left hand coming back up into the shot, to flip
+/* (then up to his ear WITHOUT the clip's frames of it on the way — 50-55 and 74 were the phone a hand's width from the lens,
+ * a black slab over half the screen: "make the iphone pickup look better too", 2026-11-19. He looks at it (43) and it
+ * goes up and out to the right of the shot, `IC_TOEAR`; the at-ear frames come up into the corner after it) */
+/* (AND UP TO HIS EAR AS THE VIDEO HAS IT — 2026-11-20, the owner: "FIX WHEN HE IS ON THE PHONE … JUST MAKE IT LOOK EXACTLY LIKE
+ * THE VIDEOS": the clip's own lift, 50-54, the phone turned in his hand toward his ear; then at his ear, 56-99, re-cut with the
+ * phone's glass whole — a dark slab down the right of the picture, his fingers over its top, his palm under it
+ * (`tools/intro_ear_recut.py`) — played through once and then rocking gently on its last part while he talks. The crossfade
+ * and the frames that were a hand with nothing in it are gone.) */
+const IC_RSEG = [[24.95, 17, 43, 12], [27.12, '50'], [27.2, '51'], [27.28, '52'], [27.36, '53'], [27.44, '54'], [27.52, 56, 80, 14], [29.24, 80, 99, 'pp', 8]];
+const IC_TOEAR = [27.12, 27.6];
+const IC_SQUIRT = [43.25, 44.4];                 // the plunger in, and the blue out of the needle ("squirt it a little longer")
+const IC_RING = [[21.4, 23.0], [24.7, 25.0]];    // the ringtone, measured off the file
+const IC_REST = 46.0;                            // the syringe down where he put it, from here
+/* THE VOICEMAILS, SKIPPED (2026-11-19, the owner: "have each beep of the phone during the voicemails he uses his hand to
+ * press a button to skip each message"): the four beeps, measured off the file (1.2 kHz, 0.15 s each) — at each his
+ * right hand comes up out of the shot, a finger on the phone as it beeps, and goes again; the Phone app moves on a
+ * message. */
+const IC_BEEPS = [5.13, 9.14, 13.29, 17.89];
+/* (quick about it, 2026-11-19, the owner: "make his hand switching the messages faster it shuld be like hes quick to skip
+ * them": up in 0.18 s, a 0.12 s press, gone in 0.2 — it was 0.42 / 0.32 / 0.41) [up from, on at, off at, gone by] (s about the beep) */
+const IC_TAP = [0.24, 0.06, 0.06, 0.26];
+const icTapUp = (tt, b) => (tt < b - IC_TAP[1] ? (b - IC_TAP[1] - tt) / (IC_TAP[0] - IC_TAP[1]) : tt > b + IC_TAP[2] ? (tt - b - IC_TAP[2]) / (IC_TAP[3] - IC_TAP[2]) : 0);
+// the sounds off his own clip: the pages (IMG_7214 10.7, 14.0, 18.2 s) and the syringe put down (7.5 s), each where its frame plays
+/* AND THEN INTO THE PAGE (2026-11-19, the owner: "after that have a dramatic zoom into the last beachwalk page after you see
+ * it then it goes to black then open up to the waves video"): his hand gone, a beat on BEACH WALK, then the head pushes in
+ * on the page — slow, then faster, the lens narrowing, the lightning on it — and the instant it fills the view, black;
+ * the intro's black is already down when it takes over, and the waves open up out of it. */
+/* (and then, the owner: "make end zoom better and less corny"): no lightning, no lens warp, no slam — a beat on the page,
+ * then one slow, even push in on it, and the room going dark around it while it is still coming */
+/* (and then, the owner's third word: "the zoom in on the book should be faster and zoom so close it turns to black like a
+ * movie trailer"): a beat on the page, then a push that starts slow and keeps accelerating — straight into the thickest
+ * stroke of BEACH WALK's ink, until the black of the marker is the whole screen: that black is the cut. */
+const IC_ZOOM = [70.95, 72.25];
+/* (the reveal sound that once played on the page is gone: his intro song begins there now, `IC_SONG_AT`) */
+const IC_SFX = [['pendown', 46.15, 0.55], ['flip1', 59.14, 0.8], ['flip2', 63.22, 0.8], ['flip3', 68.42, 0.85]];
+const IC_SONG_AT = 69.6;                         // (the intro's song begins here, on the BEACH WALK page: `icStartAudio`)
+// (the boot's parses and warms are held just before each beat, as the intro's are: a frozen frame there would be seen)
+const IC_BEATS = [3.0, 9.1, 17.9, 25.0, 27.8, 31.0, 41.0, 43.3, 49.0, 58.2, 68.6, 71.2];
+function icLoad() {
+  if (IC.meta || IC.loading) return; IC.loading = true;
+  /* (each sheet DECODED ONCE, up front, as an ImageBitmap — 2026-11-19, "its laggy as shit": an Image is decoded on its
+   * first draw, and the left sheets' first draws (39.4 s, the syringe; 59.5 s, the flips) held the frame 100 ms each,
+   * measured, `tools/calljank.js`. The Image stands in until its bitmap is made.) */
+  /* (and decoded only for the part of the call that draws them, 2026-11-19: the sheets at the screen's sharpness with his
+   * sleeves running on past the clips are ~0.6 GB decoded. `m.L.groups` names each sheet's part — 'T' the book alone, kept
+   * from the title on; 'S' the syringe, made 6 s before it and let go after it; 'F' the flips and the end, made 8 s before
+   * them — `icSheetsFor(t)`; the right hand's sheets are kept throughout) */
+  // (each sheet fetched as its bytes: a bitmap made from the BYTES is decoded off the main thread — made from an <img> it
+  // was decoded on it, and every part's decode held a frame 80-100 ms, `tools/calljank.js` at 33, 55, 59, 62 s)
+  const img = (src, arr, n, now) => { const i = new Image(); i.decoding = 'async';
+    fetch(src).then((r) => r.blob()).then((bl) => { i._blob = bl; i.onload = () => { if (now) icBitmap(arr, n); }; i.src = URL.createObjectURL(bl); }).catch(() => { i.src = src; });
+    return i; };
+  fetch('assets/intro/cut.json').then((r) => r.json()).then((m) => {
+    IC.imgL = []; IC.imgR = []; IC.elL = []; IC.elR = [];
+    const gl = m.L.groups || [];
+    for (let n = 0; n < (m.L.sheets || 1); n++) IC.imgL[n] = IC.elL[n] = img('assets/intro/left-' + n + '.webp', IC.imgL, n, !gl[n] || gl[n] === 'T');
+    for (let n = 0; n < (m.R.sheets || 1); n++) IC.imgR[n] = IC.elR[n] = img('assets/intro/right-' + n + '.webp', IC.imgR, n, true);
+    IC.meta = m;
+  }).catch((e) => console.warn('[call] no cut.json', e));
+  // (the sheets, once the cut says how many: `IC.imgL[n]`, `IC.imgR[n]`)
+  fetch('assets/intro/call.m4a').then((r) => (r.ok ? r.arrayBuffer() : null)).then((b) => { IC.bytes = b; }).catch(() => {});
+  for (const [k] of IC_SFX) fetch('assets/intro/' + k + '.m4a').then((r) => (r.ok ? r.arrayBuffer() : null)).then((b) => { IC.sfx[k] = b; }).catch(() => {});
+}
+function icDecode() {
+  IC.decoding = true;
+  audioCtx.decodeAudioData(IC.bytes.slice(0)).then((b) => { IC.buf = b; }).catch((e) => console.warn('[call] the recording did not decode', e));
+  for (const k in IC.sfx) if (IC.sfx[k] instanceof ArrayBuffer) audioCtx.decodeAudioData(IC.sfx[k].slice(0)).then((b) => { IC.sfx[k] = b; }).catch(() => {});
+}
+const icImgOk = (a) => !!a && a.every((i) => i && ((i.complete && i.naturalWidth > 0) || (window.ImageBitmap && i instanceof ImageBitmap && i.width > 0)));
+// a sheet made a bitmap (decoded once, off the thread), or let go back to its undecoded Image
+function icBitmap(arr, n) {
+  const el = (arr === IC.imgL ? IC.elL : IC.elR)[n];
+  if (!el || !window.createImageBitmap || arr[n] !== el || el._bm) return;
+  el._bm = true;
+  createImageBitmap(el._blob || el).then((bm) => { if (arr[n] === el && el._bm) { arr[n] = bm; (IC.warmQ || (IC.warmQ = [])).push(bm); } else bm.close(); }, () => { el._bm = false; });
+}
+function icUnbitmap(arr, n) {
+  const el = (arr === IC.imgL ? IC.elL : IC.elR)[n], cur = arr[n];
+  if (!el) return; el._bm = false;
+  if (cur !== el) { arr[n] = el; if (cur && cur.close) cur.close(); }
+}
+// (the recording's seconds each part's sheets are held: the syringe's 6 s before it; each quarter of the flips 2.5 s before
+// its first frame plays, let go just after its last — two quarters at most at once)
+const icFlipT = (n) => (n <= 221 ? 58.05 + (n - 119) / 9.7 : 68.6 + (n - 221) / 12);
+function icSheetTimes(g) {
+  if (g === 'S') return [33.0, 48.5];
+  const m = /^F(\d)$/.exec(g || ''); if (!m) return [-1e9, 1e9];
+  const c = +m[1], a = 119 + 32 * c;
+  return [(c ? icFlipT(a) : IC_LIN[0]) - 2.5, c === 3 ? 1e9 : icFlipT(a + 31) + 0.4];
+}
+function icSheetsFor(t) {
+  const g = IC.meta && IC.meta.L.groups; if (!g || !IC.imgL) return;
+  for (let n = 0; n < g.length; n++) {
+    const [a, b] = icSheetTimes(g[n]);
+    if (t >= a && t < b) icBitmap(IC.imgL, n); else if (g[n] !== 'T') icUnbitmap(IC.imgL, n);
+  }
+}
+function icCanRun() { return !!(TB.on && TB.ready && IC.meta && IC.props && icImgOk(IC.imgL) && icImgOk(IC.imgR) && audioCtx && (IC.buf || IC.bytes)); }
+const icNow = () => (IC.start && audioCtx ? audioCtx.currentTime - IC.start : -9);
+function icHoldNow() {
+  if (!IC.on || IC.ended) return false;
+  const t = icNow();
+  if (t < 8) return true;     // (the glide down to the desk and the voicemail's start: 22 frames held 50-217 ms there, measured — the boot's first parses after START)
+  for (const c of IC_BEATS) if (t > c - 1.6 && t < c + 0.3) return true;
+  return false;
+}
+const icGain = () => Math.min(1.25, settings.volume * 2.0);   // (his voice, loud and clear: the master's level, as his intro song)
+function icStartAudio() {
+  const ctx = audioCtx; if (!ctx) return;
+  const go = (buf) => {
+    if (!IC.on || IC.ended || !buf) return;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const env = ctx.createGain(), vol = ctx.createGain();
+    vol.gain.value = document.hidden ? 0 : icGain();
+    src.connect(env).connect(vol).connect(ctx.destination);
+    const t = ctx.currentTime + 0.05;
+    src.start(t); IC.src = src; IC.env = env; IC.vol = vol; IC.start = t;
+    src.onended = () => { try { env.disconnect(); } catch (e) { /* */ } };
+    musicNote('call', vol.gain.value);
+    // his clip's own sounds, each scheduled on the recording's clock (the pages turning, the syringe put down)
+    IC.fx = ctx.createGain(); IC.fx.gain.value = 0.55; IC.fx.connect(env);
+    for (const [k, at, g] of IC_SFX) {
+      const b = IC.sfx[k]; if (!(b instanceof AudioBuffer)) continue;
+      const s = ctx.createBufferSource(); s.buffer = b; const gg = ctx.createGain(); gg.gain.value = g;
+      s.connect(gg).connect(IC.fx); s.start(t + at);
+    }
+    /* HIS SONG BEGINS ON THE PAGE (2026-11-20, the owner: "have the intro music play on the page that says beachwalk then have
+     * the waves come in exactly where the text shows up on the beat drop. take out the old sound on the beachwalk textbook
+     * page"): the intro's song, scheduled on this clock for the moment BEACH WALK is turned up (`IC_SONG_AT`), through the
+     * push into the page and the black; the intro takes it as its own (`runIntro`'s `early`), and the waves and the name
+     * come in together on its drop. The reveal sound is gone. */
+    IC.song = startIntroSong(0, t + IC_SONG_AT);
+  };
+  if (IC.buf) go(IC.buf);
+  else ctx.decodeAudioData(IC.bytes.slice(0)).then((b) => { IC.buf = b; go(b); }).catch(() => icFinish(true));
+}
+/* START: the words fade, and from right where the title sat he looks down to the desk — no black, no cut
+ * (2026-11-19, the owner: "once hitting start game there should be no loading screen it should seamlessly look down
+ * towards the table after that from the position of the start game") — and the recording starts */
+function runCall() {
+  IC.on = true; IC.ended = false; IC.press = performance.now(); IC.glide = 0;
+  introQuiet = true;                                  // (the world under the cover is not drawn: the room has the GPU)
+  overlay.classList.add('starting');
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  if (TB.rainAudio && audioCtx) TB.rainAudio.g.gain.setTargetAtTime(TB_RAIN_CALL, audioCtx.currentTime, 1.2);   // (the rain down under his voice)
+  IC.from = { p: TB.cam.position.clone(), q: TB.cam.quaternion.clone(), fov: TB.cam.fov };
+  setTimeout(icStartAudio, 250);
+  IC.skipKey = (e) => {
+    if (IC.ended || e.repeat || (e.code !== 'Enter' && e.code !== 'NumpadEnter')) return;
+    if (performance.now() - IC.press < 300) return;
+    icFinish(true);
+  };
+  window.addEventListener('keydown', IC.skipKey, true);
+}
+/* THE DESK AS HE SEES IT FROM THE CHAIR: a camera of its own at the desk's pose. His clips were cut for that view, so
+ * that is the view everything of them is placed in: the left hand and the book are PAINTED ON THE TABLE through it (a
+ * plane at the table's height, textured by projecting each point into this camera) — the book lies flat on the table
+ * from wherever it is seen, so the title already shows it and the glide down needs no cut; and while the head only TURNS
+ * about this eye (the glances), whatever is drawn is exactly where it was. The right hand, at his ear for most of it,
+ * is drawn on the screen (it turns with his head). */
+function icDeskCam() {
+  const c = IC.deskCam || (IC.deskCam = new THREE.PerspectiveCamera(IC_CAM.fov, 1, 0.05, 60));
+  c.aspect = TB.vw / TB.vh; c.fov = icDeskFov(c.aspect); c.updateProjectionMatrix();
+  c.position.copy(IC_CAM.eye); c.lookAt(IC_CAM.look); c.updateMatrixWorld(true);
+  return c;
+}
+// a desk-view pixel → the point on a horizontal plane at height y (or, with `dist`, that far along the ray)
+function icRay(px, py, y, dist) {
+  const c = IC.deskCam, W = TB.vw, H = TB.vh;
+  const v = new THREE.Vector3(px / W * 2 - 1, -(py / H * 2 - 1), 0.5).unproject(c).sub(c.position).normalize();
+  if (dist) return c.position.clone().addScaledVector(v, dist);
+  const k = (y - c.position.y) / v.y; return c.position.clone().addScaledVector(v, k);
+}
+function icCanvases() {
+  const mk = () => { const c = document.createElement('canvas'); const x = c.getContext('2d'); return [c, x]; };
+  [IC.cv, IC.x] = mk(); [IC.gcv, IC.gx] = mk(); [IC.ecv, IC.ex] = mk(); [IC.scv, IC.sx] = mk(); [IC.fcv, IC.fcx] = mk();
+  icCanvasSize();
+  const tx = (c) => { const t = new THREE.CanvasTexture(c); t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; return t; };   // (linear: the push in on the page magnifies it)
+  const lit = `vec3 litc(vec4 c){ return pow(c.rgb, vec3(2.2)) * light * tint; }`;
+  const uni = () => ({ light: { value: 0.22 }, tint: { value: new THREE.Vector3(0.8, 0.87, 1.0) } });
+  // the table, painted: the left hand, the book, the blue out of the needle
+  const pm = new THREE.ShaderMaterial({
+    uniforms: { cut: { value: tx(IC.cv) }, glow: { value: tx(IC.gcv) }, deskVP: { value: new THREE.Matrix4() }, ...uni() },
+    vertexShader: `uniform mat4 deskVP; varying vec4 vP;
+      void main(){ vec4 w = modelMatrix * vec4(position, 1.); vP = deskVP * w; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform sampler2D cut, glow; uniform float light; uniform vec3 tint; varying vec4 vP; ${lit}
+      void main(){
+        if (vP.w <= 0.) discard;
+        vec2 uv = (vP.xy / vP.w * .5 + .5 + ${IC_PM.toFixed(4)}) / ${(1 + IC_PM).toFixed(4)};
+        if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) discard;
+        vec4 c = texture2D(cut, uv), g = texture2D(glow, uv);
+        float a = max(c.a, g.a); if (a < .003) discard;
+        gl_FragColor = vec4(mix(litc(c) * c.a, pow(g.rgb, vec3(2.2)) * 1.25, g.a), a); }`,
+    transparent: true, depthTest: false, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor });
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(14, 14), pm);
+  plane.rotation.x = -Math.PI / 2; plane.position.set(IC_CAM.eye.x, TB.desk.top + 0.0015, IC_CAM.eye.z + 5);
+  IC.paint = new THREE.Scene(); IC.paint.add(plane); IC.pmat = pm;
+  // the shadows his hand and the book throw on the table: painted the same way, BEFORE the syringe in his fingers, so
+  // the syringe is over its own hand's shadow and under the hand
+  const sm = new THREE.ShaderMaterial({
+    uniforms: { cut: { value: tx(IC.scv) }, deskVP: pm.uniforms.deskVP },
+    vertexShader: pm.vertexShader,
+    fragmentShader: `uniform sampler2D cut; varying vec4 vP;
+      void main(){ if (vP.w <= 0.) discard; vec2 uv = (vP.xy / vP.w * .5 + .5 + ${IC_PM.toFixed(4)}) / ${(1 + IC_PM).toFixed(4)};
+        if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) discard;
+        float a = texture2D(cut, uv).a; if (a < .003) discard; gl_FragColor = vec4(0., 0., 0., a); }`,
+    transparent: true, depthTest: false, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor });
+  const sp = new THREE.Mesh(plane.geometry, sm); sp.rotation.copy(plane.rotation); sp.position.copy(plane.position);
+  IC.shadow = new THREE.Scene(); IC.shadow.add(sp); IC.smat = sm;
+  // and the fingers that were in front of the pen in his clip: over the syringe in his hand (`tools/intro_cut_pack.py`'s 'f' frames)
+  const fm = new THREE.ShaderMaterial({
+    uniforms: { cut: { value: tx(IC.fcv) }, deskVP: pm.uniforms.deskVP, light: pm.uniforms.light, tint: pm.uniforms.tint },
+    vertexShader: pm.vertexShader,
+    fragmentShader: `uniform sampler2D cut; uniform float light; uniform vec3 tint; varying vec4 vP; ${lit}
+      void main(){ if (vP.w <= 0.) discard; vec2 uv = (vP.xy / vP.w * .5 + .5 + ${IC_PM.toFixed(4)}) / ${(1 + IC_PM).toFixed(4)};
+        if (uv.x < 0. || uv.x > 1. || uv.y < 0. || uv.y > 1.) discard;
+        vec4 c = texture2D(cut, uv); if (c.a < .003) discard; gl_FragColor = vec4(litc(c) * c.a, c.a); }`,
+    transparent: true, depthTest: false, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor });
+  const fp = new THREE.Mesh(plane.geometry, fm); fp.rotation.copy(plane.rotation); fp.position.copy(plane.position);
+  IC.front = new THREE.Scene(); IC.front.add(fp); IC.fmat = fm;
+  // and the screen: his right hand
+  const em = new THREE.ShaderMaterial({
+    uniforms: { cut: { value: tx(IC.ecv) }, ...uni() },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
+    fragmentShader: `uniform sampler2D cut; uniform float light; uniform vec3 tint; varying vec2 vUv; ${lit}
+      void main(){ vec4 c = texture2D(cut, vUv); if (c.a < .003) discard; gl_FragColor = vec4(litc(c) * c.a, c.a); }`,
+    transparent: true, depthTest: false, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor });
+  IC.ear = new THREE.Scene(); IC.ear.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), em)); IC.emat = em;
+}
+/* (the canvases at the SCREEN's size — `TB.Q` of the room's 400 px view — drawn in the view's own units through a
+ * transform, smoothed: his clips are packed at `meta.k` sprite px a view px) */
+/* (AND PAST THE DESK VIEW'S FRAME, LEFT AND BELOW — 2026-11-20, the owner, of the syringe glance: "this left arm is cut off way
+ * too much in this shot it should be his full arm shown". What is painted on the table is projected from the desk view, and
+ * the projection stopped at that view's frame: when his head turns up and left to the syringe, the frame's bottom-left comes
+ * into the picture and his arm ended on it — a thin strip of sleeve with the table beyond. The table's canvases run
+ * `IC_PM` of the view further left and down (the shader maps into them), and his sleeve is carried on out into it,
+ * `icSleeveOut`.) */
+const IC_PM = 0.45;
+function icCanvasSize() {
+  const Q = TB.Q || 1, w = Math.round(TB.vw * Q), h = Math.round(TB.vh * Q);
+  const pw = Math.round(TB.vw * (1 + IC_PM) * Q), ph = Math.round(TB.vh * (1 + IC_PM) * Q);
+  IC.ecv.width = w; IC.ecv.height = h;
+  for (const c of [IC.cv, IC.gcv, IC.scv, IC.fcv]) { c.width = pw; c.height = ph; }
+  IC.ex.setTransform(Q, 0, 0, Q, 0, 0);
+  for (const x of [IC.x, IC.gx, IC.sx, IC.fcx]) x.setTransform(Q, 0, 0, Q, Math.round(TB.vw * IC_PM * Q), 0);
+  for (const x of [IC.x, IC.gx, IC.ex, IC.sx, IC.fcx]) { x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; }
+  IC.cvQ = Q; IC.cvW = TB.vw; IC.cvH = TB.vh; IC.paintSig = IC.earSig = '';
+}
+// the layers' place in the desk view: L's anchor on its bottom-left corner, R's on its bottom-right
+/* THE SAME ON EVERY SCREEN (2026-11-19, the owner: "it looks different for different screens make it all the same"): his
+ * clips are placed in ONE 16:9 frame in the middle of the view (`icClipFrame`), not on the screen's own corners — on a
+ * wider screen the view runs on past it at the sides, on a taller one above and below it, and the desk's lens is chosen
+ * so that frame always shows the same piece of the room (`icDeskFov`). So the phone, the book and the syringe lie in one
+ * place on the table whatever the window; his sleeves carry on past the frame (the packer's canvases reach past the
+ * clips' edges). [x, y, w, h] in the view's px. */
+const IC_ASPECT = 16 / 9;
+function icClipFrame() {
+  const w = TB.vw, h = TB.vh;
+  return w / h >= IC_ASPECT ? [(w - h * IC_ASPECT) / 2, 0, h * IC_ASPECT, h] : [0, (h - w / IC_ASPECT) / 2, w, w / IC_ASPECT];
+}
+const icDeskFov = (aspect) => (aspect >= IC_ASPECT ? IC_CAM.fov : 2 * THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(IC_CAM.fov / 2)) * IC_ASPECT / aspect)));
+function icPlace(L, isR) {
+  const [fx, fy, fw, fh] = icClipFrame(), k = IC_SHIFT[isR ? 1 : 0];
+  return isR ? [fx + fw - L.anchor[0] + k[0], fy + fh - L.anchor[1] + k[1]] : [fx - L.anchor[0] + k[0], fy + fh - L.anchor[1] + k[1]];
+}
+/* THE SYRINGE AND THE PHONE ON THE DESK ARE REAL (the game's syringe model, and the phone): placed where his clips have
+ * the pen and the phone lying, so the title shows them there, his hand picks them up from exactly there, and the
+ * syringe in his fingers is the same model posed along the pen (2026-11-19, the owner: "use an actual syringe model from
+ * the game. it shows through his hand too"). Once the cut's numbers and the room are both in. */
+function icPlaceProps() {
+  if (IC.props || !IC.meta || !TB.ready) return;
+  IC.props = true;
+  icDeskCam(); icCanvases();
+  const L = IC.meta.L, R = IC.meta.R, [lx, ly] = icPlace(L, false), [rx, ry] = icPlace(R, true);
+  /* (the syringe is DRAWN now, along the pen his clip has — `icSyringe2D`; the model is not shown. Where he holds it up to
+   * look it over, for the head's glance: 0.45 m out along the ray to the middle of the pen in frame 37) */
+  { const p = L.pen['37']; IC.syrLook = icRay(lx + IC_SYR_OFF[0] + (p[0] + p[2]) / 2, ly + IC_SYR_OFF[1] + (p[1] + p[3]) / 2, 0, 0.45); }
+  icPoseSyringe(lx + IC_SYR_OFF[0], ly + IC_SYR_OFF[1], L.pen.b1, 0);
+  // the phone: its four corners onto the table
+  const top = TB.desk.top, q = R.screen.map(([x, y]) => icRay(rx + x, ry + y, top + 0.004));
+  const c = q.reduce((a, b) => a.add(b), new THREE.Vector3()).multiplyScalar(0.25);
+  const up = q[0].clone().add(q[1]).multiplyScalar(0.5).sub(q[3].clone().add(q[2]).multiplyScalar(0.5));   // toward its top end
+  const len = up.length() / 0.93, wid = q[0].distanceTo(q[1]) / 0.9;   // (the screen is 0.93 of its length, 0.9 of its width)
+  const ph = TB.phone;
+  ph.position.set(c.x, top, c.z); ph.rotation.set(0, Math.atan2(-up.x, -up.z), 0);
+  ph.scale.set(wid / 0.0716, 1, len / 0.147);
+  IC.phoneAt = ph.position.clone();
+  /* (nothing of the desk's mess lies on the phone — 2026-11-20, the owner: "pen shouldnt cover the phone": the phone is put
+   * where his clip has it, after the mess was laid, so anything within its footprint and a margin is slid off it, away from
+   * its middle) */
+  if (TB.clutter) {
+    const R = Math.hypot(len, wid) / 2 + 0.07, _c = new THREE.Vector3();
+    for (const o of TB.clutter.children) {
+      o.getWorldPosition(_c); if (_c.y > top + 0.2) continue;
+      const dx = _c.x - c.x, dz = _c.z - c.z, d = Math.hypot(dx, dz);
+      if (d < R) { const k = (R - d) / (d || 1); o.position.x += (d ? dx : 1) * k; o.position.z += (d ? dz : 0) * k; }
+    }
+  }
+  TB.phoneL.position.copy(ph.position).add(new THREE.Vector3(0, 0.12, 0)); TB.phoneL.distance = 1.4;
+  icDrawPaint(0);
+}
+
+function icSegFrame(segs, t, before) {
+  if (t < segs[0][0]) return before;
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const s = segs[i]; if (t < s[0]) continue;
+    if (s.length === 2) return s[1];
+    const n = Math.abs(s[2] - s[1]), dir = Math.sign(s[2] - s[1]) || 1;
+    if (s[3] === 'pp') { const k = Math.floor((t - s[0]) * (s[4] || 12)), p = k % (2 * n || 1); return String(s[1] + (p <= n ? p : 2 * n - p)); }
+    return String(s[1] + dir * Math.min(Math.floor((t - s[0]) * s[3]), n));
+  }
+  return before;
+}
+// a frame, with its shadow on the table under it first (softer and farther when it is held up off the table)
+function icBlit(x, imgs, frames, key, ox, oy, sh, shx, k = 1, kx = 0, ky = 0, img0 = null) {
+  const r = frames[key]; if (!r) return;
+  // (`k`: drawn at k of its size about the point kx, ky — the clip's frames pinned to a screen corner keep that corner;
+  // `img0`: a cleaned copy of the frame drawn instead, at 0, 0 of it)
+  const img = img0 || imgs[r[6] || 0], sx = img0 ? 0 : r[0], sy = img0 ? 0 : r[1];
+  const K = (IC.meta.L.frames === frames ? IC.meta.L.k : IC.meta.R.k) || 1;   // (sprite px a view px)
+  let dx = ox + r[4] / K, dy = oy + r[5] / K, dw = r[2] / K, dh = r[3] / K;
+  if (k !== 1) { dx = kx + (dx - kx) * k; dy = ky + (dy - ky) * k; dw *= k; dh *= k; }
+  if (sh) {
+    const s = shx || x;                               // (its shadow on a canvas of its own, when it is to go under things)
+    s.save(); s.filter = `blur(${sh[2] * (IC.cvQ || 1)}px) brightness(0)`; s.globalAlpha = sh[3];
+    s.drawImage(img, sx, sy, r[2], r[3], dx + sh[0], dy + sh[1], dw, dh); s.restore();
+  }
+  x.drawImage(img, sx, sy, r[2], r[3], dx, dy, dw, dh);
+}
+/* HIS SLEEVE ON PAST THE FRAME, to his shoulder (`IC_PM`): where his arm crosses the desk view's bottom edge and its left edge
+ * (read off the paint just inside them), the same width carried straight on out the way it was going, in its own colour,
+ * a little darker as it goes — into the margin only, under nothing. */
+function icSleeveOut(x, W, H) {
+  const Q = IC.cvQ || 1, ox = Math.round(W * IC_PM * Q), cv = IC.cv, L = Math.max(W, H) * IC_PM * 1.6;
+  let g; try { g = cv.getContext('2d', { willReadFrequently: true }); } catch (e) { return; }
+  const run = (data, n, step) => {                               // the longest opaque run along a line of pixels, and its colour
+    let best = null, a = -1, col = [0, 0, 0], cn = 0, bc = null;
+    for (let i = 0; i <= n; i++) {
+      const on = i < n && data[i * step + 3] > 200;
+      if (on) { if (a < 0) { a = i; col = [0, 0, 0]; cn = 0; } col[0] += data[i * step]; col[1] += data[i * step + 1]; col[2] += data[i * step + 2]; cn++; }
+      else if (a >= 0) { if (!best || i - a > best[1] - best[0]) { best = [a, i]; bc = col.map((v) => v / cn); } a = -1; }
+    }
+    return best ? { a: best[0] / Q, b: best[1] / Q, c: bc } : null;
+  };
+  const row = (y) => run(g.getImageData(ox, Math.round(y * Q), Math.round(W * Q), 1).data, Math.round(W * Q), 4);
+  const col = (xx) => run(g.getImageData(ox + Math.round(xx * Q), 0, 1, Math.round(H * Q)).data, Math.round(H * Q), 4);
+  const B = row(H - 1.5), B2 = row(H - 26), Lf = col(1.5), L2 = col(26);
+  if (!B && !Lf) return;
+  /* ONE BAND, the sleeve's two outlines where they leave the frame (on the bottom edge, the left, or one on each round the
+   * corner) carried on the way his arm runs (its middle on the edge against its middle 25 px inside) — a separate block off
+   * each edge and the corner filled was a grey wedge, not an arm */
+  let p0, p1, c;
+  if (B && Lf && B.a < 3 && Lf.b > H - 3) { p0 = [B.b + 1, H - 1]; p1 = [1, Lf.a - 1]; c = B.c.map((v, i) => (v * (B.b - B.a) + Lf.c[i] * (Lf.b - Lf.a)) / (B.b - B.a + Lf.b - Lf.a)); }
+  else if (B && (!Lf || B.b - B.a >= Lf.b - Lf.a)) { p0 = [B.b + 1, H - 1]; p1 = [B.a - 1, H - 1]; c = B.c; }
+  else { p0 = [1, Lf.b + 1]; p1 = [1, Lf.a - 1]; c = Lf.c; }
+  const mid = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2];
+  let mIn = null;                                                   // (its middle a little inside the frame)
+  if (B2 && L2 && B && Lf && B.a < 3) mIn = [((B2.a + B2.b) / 2 + 26) / 2, (H - 26 + (L2.a + L2.b) / 2) / 2];
+  else if (B2 && B) mIn = [(B2.a + B2.b) / 2, H - 26];
+  else if (L2 && Lf) mIn = [26, (L2.a + L2.b) / 2];
+  let dx = mIn ? mid[0] - mIn[0] : -0.6, dy = mIn ? mid[1] - mIn[1] : 0.8;
+  if (dx > 0) dx *= 0.3; if (dy < 0) dy *= 0.3;                    // (out of the frame: left and down, toward his shoulder)
+  const dl = Math.hypot(dx, dy) || 1, ux = dx / dl, uy = dy / dl;
+  x.save();
+  x.beginPath(); x.rect(-W * IC_PM, 0, W * IC_PM, H * (1 + IC_PM)); x.rect(0, H, W, H * IC_PM); x.clip();
+  x.filter = 'blur(1.2px)';
+  const k = (f) => `rgb(${Math.round(c[0] * f)},${Math.round(c[1] * f)},${Math.round(c[2] * f)})`;
+  const gr = x.createLinearGradient(mid[0], mid[1], mid[0] + ux * L, mid[1] + uy * L);
+  gr.addColorStop(0, k(0.88)); gr.addColorStop(0.5, k(0.66)); gr.addColorStop(1, k(0.48));
+  x.fillStyle = gr; x.beginPath();
+  x.moveTo(p0[0], p0[1]); x.lineTo(p1[0], p1[1]); x.lineTo(p1[0] + ux * L, p1[1] + uy * L); x.lineTo(p0[0] + ux * L, p0[1] + uy * L); x.closePath(); x.fill();
+  x.restore();
+}
+/* the left: the book (and his hand when it is there) painted on the table; the squirt's blue */
+function icDrawPaint(t, dt = 0) {
+  const L = IC.meta.L, x = IC.x, gx = IC.gx, sx = IC.sx, W = TB.vw, H = TB.vh;
+  const [lx, ly] = icPlace(L, false);
+  let lk = icSegFrame(IC_LSEG, t, 'b1'), lift = 0;
+  if (t >= IC_LIN[0] && t < IC_LIN[1]) { lk = L.frames.h119 ? 'h119' : '119'; const k = (IC_LIN[1] - t) / (IC_LIN[1] - IC_LIN[0]); lift = Math.round(k * k * 150); }
+  let pen = L.pen[lk] || L.pen.b1;
+  if (t > IC_REST && !pen[4] && (lk === 'b1' || +lk < 22)) pen = L.pen['95'];   // (put down where he put it, not where it began)
+  const sq = (t - IC_SQUIRT[0]) / (IC_SQUIRT[1] - IC_SQUIRT[0]);
+  const push = t < IC_SQUIRT[0] ? 0 : Math.min(0.08, Math.max(0, sq) * 0.08);
+  const held = pen[4];
+  /* (the syringe further from the book — 2026-11-19, the owner: "syringe is too close to the book": it, and his hand in
+   * the frames he takes it and puts it back, a little to the left: `IC_SYR_OFF`, view px; the book stays) */
+  const syrSec = /^\d+$/.test(lk) && +lk <= 95, [sox, soy] = IC_SYR_OFF;
+  icPoseSyringe(lx + sox, ly + soy, pen, push, dt);
+  // (redrawn only when what is on it changes: the canvases are the screen's size now, and each redraw is an upload)
+  const squirting = held && sq > 0.02 && sq < 1, sig = lk + '|' + lift + '|' + (IC.cvQ || 1);
+  if (sig === IC.paintSig && !squirting && !IC.drops.length && !IC.dropsWere) return;
+  IC.paintSig = sig; IC.dropsWere = IC.drops.length > 0 || squirting;
+  for (const c of [x, gx, sx, IC.fcx]) c.clearRect(-W * IC_PM, 0, W * (1 + IC_PM), H * (1 + IC_PM));   // (and the margin, `IC_PM`)
+  /* (THE LAYERS, 2026-11-19, the owner: "the hand should be the layer over the syringe always … use the real 3D model":
+   * the book cut once lies UNDER everything on a canvas of its own (`IC.fcx`, the `IC.front` pass), the game's syringe
+   * model over it (`icPoseSyringe`, its own pass), and his hand — whole, the pen's holes filled with his skin by the
+   * packer — over both (`IC.x`, the paint): the syringe shows only past his fingers) */
+  if (lk === 'b1' || lk === 'h119' || (/^\d+$/.test(lk) && +lk <= 95)) icBlit(IC.fcx, IC.imgL, L.frames, 'b1', lx, ly, [5, 7, 4, 0.42], sx);
+  if (lk !== 'b1') { icBlit(x, IC.imgL, L.frames, lk, lx + (syrSec ? sox : 0), ly + lift + (syrSec ? soy : 0), held ? [16, 22, 7, 0.32] : [5, 7, 4, 0.42], sx); icSleeveOut(x, W, H); }
+  // the squirt: a jet, then drops falling away (in the desk view, from the needle's tip)
+  if (held && sq > 0.02 && sq < 1) {
+    const tip = new THREE.Vector3(0, 0, TB.syrTip).applyMatrix4(TB.syrModel.matrixWorld), base = new THREE.Vector3(0, 0, 0).applyMatrix4(TB.syrModel.matrixWorld);
+    const p = tip.clone().project(IC.deskCam), q = base.clone().project(IC.deskCam);
+    const tx = (p.x * 0.5 + 0.5) * W, ty = (0.5 - p.y * 0.5) * H, ux = tx - (q.x * 0.5 + 0.5) * W, uy = ty - (0.5 - q.y * 0.5) * H, ul = Math.hypot(ux, uy) || 1;
+    if (sq < 1) {
+      const n = Math.min(10, Math.floor(dt * 120) + 1);
+      for (let i = 0; i < n + 1; i++) { const sp = 130 + Math.random() * 140 * (1 - sq * 0.6);
+        IC.drops.push({ x: tx, y: ty, vx: ux / ul * sp + (Math.random() - 0.5) * 26, vy: uy / ul * sp + (Math.random() - 0.5) * 26, life: 1.5, r: 0.9 + Math.random() * 1.1 }); }
+    }
+    if (sq < 0.75) {
+      // (the jet: a soft blue glow round a bright thread, arcing over — "make the syringe animation better too")
+      const len = 18 + 46 * Math.min(1, sq * 3) * (1 - sq);
+      const jet = () => { gx.beginPath(); gx.moveTo(tx, ty); gx.quadraticCurveTo(tx + ux / ul * len * 0.7, ty + uy / ul * len * 0.7, tx + ux / ul * len, ty + uy / ul * len + len * 0.35); gx.stroke(); };
+      gx.lineCap = 'round';
+      gx.strokeStyle = 'rgba(80,150,255,0.35)'; gx.lineWidth = 4.2; jet();
+      gx.strokeStyle = '#a8d0ff'; gx.lineWidth = 1.8; jet();
+    }
+  }
+  for (let i = IC.drops.length - 1; i >= 0; i--) {
+    const d = IC.drops[i]; d.vy += 420 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.life -= dt;
+    if (d.life <= 0 || d.y > H + 4) { IC.drops.splice(i, 1); continue; }
+    const r = d.r || 1;
+    gx.fillStyle = d.life > 1.1 ? '#a8d0ff' : '#4a8cff'; gx.beginPath(); gx.ellipse(d.x, d.y, r, r * (d.vy > 160 ? 1.7 : 1.1), 0, 0, Math.PI * 2); gx.fill();
+  }
+  IC.pmat.uniforms.cut.value.needsUpdate = true; IC.pmat.uniforms.glow.value.needsUpdate = true; IC.smat.uniforms.cut.value.needsUpdate = true; IC.fmat.uniforms.cut.value.needsUpdate = true;
+}
+/* THE SYRINGE: THE GAME'S MODEL, ALONG HIS PEN (2026-11-19, the owner: "use the real 3d model we have in game it looks so
+ * corny right now"). The packer finds the pen in every frame (`track_pen`: its ends in the desk view); the model lies
+ * with its two ends there. On the table, both ends on the cloth (raised by its barrel). In his fingers, its middle at
+ * 0.8 of the way down the middle ray to the table (where a hand holds a thing up off it), the two ends out along their
+ * own rays so they stand its length apart — a pen turned toward him comes out turned toward him. Its length is the pen
+ * lying on the table's length in this view (`IC.penLen`), so the syringe is his pen's size, not a fixed 0.19 m. */
+/* AND IN HIS FINGERS IT MOVES LIKE A THING HELD (2026-11-19, later, the owner: "make the syringe animation better too").
+ * Posed straight off the clip's tracked pen it stepped at the clip's 12 frames a second and jittered with the tracking, and
+ * at the pen's size, turned up toward him, it was a dark hairline in his fingers. Held, it now eases to each pose (`IC_SYR_EASE`
+ * a second — off the table into his fingers is a short glide, not a jump), and it is a quarter longer than the pen he filmed
+ * (`IC_SYR_HELD`: a syringe and its plunger are), its middle where his fingers are. On the table it is still put exactly
+ * where the clip has it. */
+const _icA = new THREE.Vector3(), _icB = new THREE.Vector3(), _icE = new THREE.Vector3(), _icSP = new THREE.Vector3(), _icSQ = new THREE.Quaternion();
+const IC_SYR_OFF = [-18, 3], IC_SYR_EASE = 16, IC_SYR_HELD = 1.25;
+function icPoseSyringe(lx, ly, pen, push, dt = 0) {
+  const S = TB.syrPose; if (!S || !pen) return;
+  const top = TB.desk.top, c = IC.deskCam;
+  if (!IC.penLen) { const p = IC.meta.L.pen.b1; IC.penLen = Math.max(0.05, icRay(lx + p[0], ly + p[1], top).distanceTo(icRay(lx + p[2], ly + p[3], top))); }
+  const Ls = IC.penLen * 1.04, sc = Ls / 0.19;
+  const ax = lx + pen[0], ay = ly + pen[1], bx = lx + pen[2], by = ly + pen[3];
+  if (!pen[4]) {
+    const y = top + TB.syrR * sc;
+    _icA.copy(icRay(ax, ay, y)); _icB.copy(icRay(bx, by, y));
+    const m = _icA.clone().sub(_icB); m.y = 0; m.setLength(Ls); const mid = _icA.clone().add(_icB).multiplyScalar(0.5);
+    _icA.copy(mid).addScaledVector(m, 0.5); _icB.copy(mid).addScaledVector(m, -0.5);
+  } else {
+    const E = c.position, ra = icRay(ax, ay, 0, 1).sub(E).normalize(), rb = icRay(bx, by, 0, 1).sub(E).normalize();
+    const rm = ra.clone().add(rb).normalize(), dm = Math.max(0.12, (top - E.y) / Math.min(-0.05, rm.y) * 0.8);
+    const u = ra.clone().sub(rb), w = ra.clone().add(rb);
+    const A2 = w.dot(w), B2 = 2 * dm * u.dot(w), C2 = dm * dm * u.dot(u) - Ls * Ls, disc = B2 * B2 - 4 * A2 * C2;
+    let dl = -B2 / (2 * A2);
+    if (disc >= 0) { const r1 = (-B2 + Math.sqrt(disc)) / (2 * A2), r2 = (-B2 - Math.sqrt(disc)) / (2 * A2); dl = Math.abs(r1) < Math.abs(r2) ? r1 : r2; }
+    dl = THREE.MathUtils.clamp(dl, -dm * 0.6, dm * 0.6);
+    _icA.copy(E).addScaledVector(ra, dm + dl); _icB.copy(E).addScaledVector(rb, dm - dl);
+  }
+  // where it should be this frame: then, in his hand, eased there from where it was
+  _icSP.copy(_icA).add(_icB).multiplyScalar(0.5);
+  const pq = S.quaternion.clone(), pp = S.position.clone(), ps = S.scale.x;
+  S.position.copy(_icSP); S.lookAt(_icA); _icSQ.copy(S.quaternion);     // (+Z, the needle, to the pen's upper end)
+  const want = sc * (pen[4] ? IC_SYR_HELD : 1);
+  if (pen[4] && dt > 0 && S.userData.posed) {
+    const k = 1 - Math.exp(-dt * IC_SYR_EASE);
+    S.position.copy(pp).lerp(_icSP, k); S.quaternion.copy(pq).slerp(_icSQ, k); S.scale.setScalar(ps + (want - ps) * k);
+  } else S.scale.setScalar(want);
+  S.userData.posed = true;
+  S.updateMatrixWorld(true);
+  TB.syrModel.userData.setFill(1 - push);
+  if (!S.userData.layer1) { S.userData.layer1 = true; S.traverse((o) => o.layers.set(1)); }
+  S.visible = true;
+  if (TB.syrSh) { TB.syrSh.visible = !pen[4]; TB.syrSh.scale.setScalar(sc); TB.syrSh.position.set(S.position.x, top + 0.002, S.position.z); TB.syrSh.rotation.set(-Math.PI / 2, 0, Math.atan2(-(_icA.z - _icB.z), _icA.x - _icB.x)); }
+}
+/* the phone's screen through the call (on the recording's clock): still ringing as START is pressed, then the voicemail
+ * playing on the speaker, the lock screen and its missed calls, and Matthew calling again */
+function icPhoneScreen(t, title) {
+  const ph = TB.phone; if (!ph || !ph.userData.cv) return 0;
+  /* (under the title it is DARK, 2026-11-19, the owner: "DONT HAVE THE PHONE RINGING IN THE START GAME PART JUST HAVE IT
+   * BLACK" — it rang and shook there, and the little screen shimmered at the room's 400 px: "the phone is glitching";
+   * from START his voicemail is on it) */
+  /* (then: "HAVE THE PHONE BE ON THE VOICEMAILS IN THE START NOT BLACK BUT DONT HAVE IT VIBRATING HAVE IT STILL": the
+   * Phone app's voicemail, his first message at its start, drawn once — no ring, no shake, no progress moving) */
+  if (title) {
+    if (ph.userData.drawn !== 'vmTitle') { ph.userData.drawn = 'vmTitle'; iosScreen(ph.userData.cv.getContext('2d'), 'vm', 0.6, { m: 0, p: 0, len: 4.5 }); ph.userData.tex.needsUpdate = true; }
+    return 0.42;
+  }
+  // (the last beep is the end of them: the voicemail shut, the lock screen — not a fourth message)
+  const vmEnd = IC_BEEPS[IC_BEEPS.length - 1] + 0.15;
+  const mode = t < vmEnd ? 'vm' : t < 21.35 ? 'lock' : 'incoming';
+  const key = mode + (mode === 'lock' ? '' : Math.floor(t * 15));
+  // (in the Phone app: which message is playing — one more at each beep but the last — and how far into it)
+  const m = Math.min(IC_BEEPS.length - 1, IC_BEEPS.filter((b) => t >= b).length), a = m ? IC_BEEPS[m - 1] + 0.15 : 0.6, z = IC_BEEPS[m];
+  if (ph.userData.drawn !== key) { ph.userData.drawn = key; iosScreen(ph.userData.cv.getContext('2d'), mode, t, { m, p: (t - a) / (z - a), len: z - a }); ph.userData.tex.needsUpdate = true; }
+  return mode === 'incoming' ? 0.55 : mode === 'vm' ? 0.42 : 0.3;
+}
+const _icQ = new THREE.Quaternion(), _icQ2 = new THREE.Quaternion(), _icM = new THREE.Matrix4();
+const icEase = (k) => { k = Math.min(1, Math.max(0, k)); return k * k * k * (k * (k * 6 - 15) + 10); };
+// where his head is turned at t (the desk's own pose when he is not glancing)
+function icHead(t, out) {
+  const deskQ = IC.deskCam.quaternion;
+  out.copy(deskQ);
+  for (const [a, b, c, d, what, far] of IC_GLANCE) {
+    if (t <= a || t >= d) continue;
+    const k = (t < b ? icEase((t - a) / (b - a)) : t < c ? 1 : 1 - icEase((t - c) / (d - c))) * far;
+    const tgt = what === 'win' ? TB.win.c.clone().add(new THREE.Vector3(-0.15, -0.1, 0))
+      : what === 'syr' ? (IC.syrLook || TB.syrPose.position).clone()
+        : TB.poster ? TB.poster.clone() : new THREE.Vector3(4.9, 1.45, 1.95);   // (the poster above his bed)
+    _icM.lookAt(IC_CAM.eye, tgt, THREE.Object3D.DEFAULT_UP); _icQ2.setFromRotationMatrix(_icM);
+    // (no drift while looking: at the room's 400 px it walked every thin bright edge a pixel to and fro — the mirror's gilt
+    // frame flashed through the whole stare, 2026-11-19, "fix the flashing textures on the walls")
+    out.slerp(_icQ2, k);
+  }
+  return out;
+}
+function icFrame(dt, F) {
+  const since = (performance.now() - IC.press) / 1000, t = icNow(), tt = Math.max(0, t);
+  if (!IC.deskCam || !IC.meta) return;
+  if (IC.on && !IC.ended && (TB.boxK || 0) < 1) { TB.boxK = Math.min(1, Math.max(0, (performance.now() - IC.press) / 1600)); tbSize(); }   // (into its 16:9 frame over the glide's first 1.6 s: `tbSize`)
+  if (IC.cvW !== TB.vw || IC.cvH !== TB.vh || IC.cvQ !== TB.Q) { icCanvasSize(); icDeskCam(); IC.props = false; icPlaceProps(); }   // (the window was resized, or the view eased into its frame: the desk's props placed again for it)
+  // ---- the head: down from the title to the desk, then the glances, then still
+  const k = icEase(since / IC_GLIDE);
+  IC.atDesk = since > IC_GLIDE;
+  icHead(tt, _icQ);
+  TB.cam.position.lerpVectors(IC.from.p, IC_CAM.eye, k);
+  TB.cam.quaternion.slerpQuaternions(IC.from.q, _icQ, k);
+  const fov = IC.from.fov + (IC.deskCam.fov - IC.from.fov) * k;
+  if (Math.abs(TB.cam.fov - fov) > 1e-4) { TB.cam.fov = fov; TB.cam.updateProjectionMatrix(); }
+  { const [fx, fy, fw, fh] = icClipFrame(), U = TB.post.material.uniforms; U.frame.value.set(fx / TB.vw, fy / TB.vh, fw / TB.vw, fh / TB.vh); U.pillar.value = k; }   // (the soft pillars come in as he looks down)
+  // the lightning answers him at the window, once
+  if (!IC.struck && tt > IC_GLANCE[0][1] + 0.4) { IC.struck = true; if (TB.bolt.t < 0) tbStrike(); }
+  // ---- the left: painted on the table
+  icSheetsFor(tt);
+  // (a sheet just decoded is drawn once, a pixel of it, on a frame of its own — its upload to the GPU, ahead of need)
+  if (IC.warmQ && IC.warmQ.length) { const bm = IC.warmQ.shift(); try { const c = IC.warmC || (IC.warmC = document.createElement('canvas')); c.width = c.height = 1; c.getContext('2d').drawImage(bm, 0, 0, 1, 1, 0, 0, 1, 1); } catch (e) { /* closed */ } }
+  icDrawPaint(tt, dt);
+  // ---- the right: the phone on the desk (its screen lit, ringing), then his hand with it at his ear
+  const R = IC.meta.R, ex = IC.ex, W = TB.vw, H = TB.vh;
+  let rk = icSegFrame(IC_RSEG, tt, 'p'); const rn = +rk || 0, [rx0, ry0] = icPlace(R, true);
+  let ry = ry0 + (tt > IC_ZOOM[0] ? Math.round(Math.min(1, (tt - IC_ZOOM[0]) / 0.45) ** 2 * 320) : 0), rx = rx0;   // (the call over, his phone hand drops out of the shot as the push starts)
+  /* (up to his ear: the phone in his hand held where it is and crossfaded into his hand at his ear, in place — carried up and out
+   * of the picture, the right side stood EMPTY for a third of a second before a smaller hand popped in under it, the owner's
+   * "it keep flashing in and out", 2026-11-20; `icToEar` below) */
+  const toEar = -1;                                                        // (no crossfade now: the clip's own lift plays, `IC_RSEG`)
+  /* AT HIS EAR IT IS IN THE SCREEN'S CORNER, NOT THE CLIP'S (2026-11-19, the owner, on a 21:9 screen: "fix the phone to the
+   * right too it should look like hes actually on the phone"). The at-ear frames are the clip's own corner of the picture,
+   * their right and bottom the video's edge — pinned to the 16:9 frame's corner, on a wide screen that edge stood in the
+   * middle of the right half, a phone and a hand cut off straight down, held out in front of him. Carried out to the
+   * SCREEN's corner as the hand goes up (`earK`), so the edge is off the screen and the phone is at the side of your head. */
+  const [cfx, cfy, cfw, cfh] = icClipFrame(), earK = tt < IC_TOEAR[0] ? 0 : tt >= IC_TOEAR[1] ? 1 : icEase((tt - IC_TOEAR[0]) / (IC_TOEAR[1] - IC_TOEAR[0]));
+  /* (his own at-ear frames, as the video has them — 2026-11-20, the owner: "take whats already there and fix it … it should just
+   * look like the video we sent on the right with the phone up". The drawn phone and the inward shift are gone; the call is one
+   * 16:9 picture covering the screen now (`tbSize`), so the clip's frame IS the screen and these sit where the video put them.) */
+  const earX = cfx + cfw + (W - cfx - cfw) * earK, earY = cfy + cfh + (H - cfy - cfh) * earK;
+  rx += Math.round((W - cfx - cfw) * earK); ry += Math.round((H - cfy - cfh) * earK);
+  if (rn && rn < 19 && R.frames['h' + rn]) rk = 'h' + rn;              // (his fingers on it, the clip's phone out of them: the real one is there)
+  let glow = icPhoneScreen(tt);
+  const ph = TB.phone;
+  if (ph && IC.phoneAt) {
+    ph.visible = rn < 19;
+    ph.position.copy(IC.phoneAt);
+    for (const [a, b] of IC_RING) if (tt > a && tt < b) { const j = Math.floor(tt * 34) & 1; ph.position.x += j ? 0.0015 : -0.0015; ph.position.z += j ? -0.001 : 0.001; }   // it buzzes on the table
+
+  }
+  /* (his phone at his ear at the size it was before the clips were made bigger, 2026-11-19, the owner: "the phone held to
+   * the ear should look like the last version before this": the sheet is at 0.667 of the clip, round two drew 0.533) */
+  // (what is on the screen canvas this frame: redrawn only when it changes)
+  let esig = rk + '|' + (IC.cvQ || 1) + '|' + ry + '|' + rx + '|' + (toEar >= 0 ? Math.round(toEar * 40) : -1);
+  const reach = tt < IC_RSEG[0][0] && tt > IC_RSEG[0][0] - 0.4 ? Math.round(((IC_RSEG[0][0] - tt) / 0.4) ** 2 * 140) : -1;
+  esig += '|' + reach;
+  for (const b of IC_BEEPS) if (tt >= b - IC_TAP[0] && tt <= b + IC_TAP[3]) esig += '|' + Math.round(icTapUp(tt, b) ** 2 * 150);
+  const eDirty = esig !== IC.earSig; IC.earSig = esig;
+  if (eDirty) ex.clearRect(0, 0, W, H);
+  if (eDirty && rk !== 'p' && toEar >= 0) {
+    ex.globalAlpha = 1 - toEar; icBlit(ex, IC.imgR, R.frames, rk, rx, ry, rn < 50 ? [6, 8, 5, 0.38 * (1 - toEar)] : null, null, rn >= 44 ? 0.8 : 1, earX, earY);
+    ex.globalAlpha = toEar; icBlit(ex, IC.imgR, R.frames, '90', rx, ry, null, null, 0.8, earX, earY);
+    ex.globalAlpha = 1;
+  } else if (eDirty && rk !== 'p') icBlit(ex, IC.imgR, R.frames, rk, rx, ry, rn < 50 ? [6, 8, 5, 0.38] : null, null, rn >= 44 ? 1 - 0.2 * earK : 1, earX, earY);   // (the at-ear size eased in over the lift: no jump off 43)
+  if (rn >= 19 && rn <= 43) glow = 0.5;                                // the call on its screen, facing him
+  if (rn >= 50) glow = 0;
+  if (eDirty && reach >= 0) icBlit(ex, IC.imgR, R.frames, R.frames.h17 ? 'h17' : '17', rx, ry + reach, [6, 8, 5, 0.38]);   // his arm, coming up into the shot
+  for (const b of IC_BEEPS) {                                            // a finger on the phone at each beep: next message
+    if (tt < b - IC_TAP[0] || tt > b + IC_TAP[3]) continue;
+    const up = icTapUp(tt, b);
+    const fk = R.frames.h17 ? 'h17' : '17';                              // (his hand coming down, fingers on it: the clip's own phone cut out of it)
+    if (eDirty) icBlit(ex, IC.imgR, R.frames, fk, rx, ry + Math.round(up * up * 150), [6, 8, 5, 0.38 * (1 - up)]);
+    if (tt > b - 0.05 && tt < b + 0.1 && ph) ph.position.y = TB.desk.top - 0.0008;   // (pressed)
+  }
+  if (eDirty) IC.emat.uniforms.cut.value.needsUpdate = true;
+  if (TB.phoneL) {
+    if (rn >= 19 && rn < 50) TB.phoneL.position.copy(TB.cam.position).add(new THREE.Vector3(-0.12, -0.15, 0.25));
+    TB.phoneL.intensity += (glow * 0.9 - TB.phoneL.intensity) * Math.min(1, dt * 10);
+  }
+  const light = 0.22 + F * 1.6 + TB.phoneL.intensity * 0.05;
+  IC.pmat.uniforms.light.value = light; IC.emat.uniforms.light.value = light;
+  // the end: a beat on BEACH WALK, then the push into its ink, faster and faster, until the ink is all there is
+  if (tt > IC_ZOOM[0] && !IC.ended) {
+    if (!IC.zoomAt) {
+      const [px, py] = icInkAt(), [lx, ly] = icPlace(IC.meta.L, false);
+      IC.zoomAt = icRay(lx + px, ly + py, TB.desk.top);
+      IC.zoomFrom = { p: TB.cam.position.clone(), q: TB.cam.quaternion.clone(), fov: TB.cam.fov, near: TB.cam.near };
+      try { const pv = introVideoEl.play(); if (pv && pv.catch) pv.catch(() => {}); IC.vidWarm = true; } catch (e) { /* */ }   // (the waves decoding before they are seen)
+    }
+    const z = Math.min(1, (tt - IC_ZOOM[0]) / (IC_ZOOM[1] - IC_ZOOM[0])), A = IC.zoomAt, F0 = IC.zoomFrom;
+    // (the distance shrinks by a growing RATIO — the page grows faster and faster on the screen: a fly-in that hits, no
+    // ease out; from ~0.77 of it the stroke is wider than the view and it is black ink, 4 mm off the paper at the end)
+    const D = F0.p.distanceTo(A), end = 0.004, dist = D * Math.pow(end / D, z * z), e = (D - dist) / (D - end);
+    TB.cam.position.copy(A).addScaledVector(F0.p.clone().sub(A).normalize(), dist);
+    _icM.lookAt(TB.cam.position, A, THREE.Object3D.DEFAULT_UP); _icQ2.setFromRotationMatrix(_icM);
+    TB.cam.quaternion.slerpQuaternions(F0.q, _icQ2, icEase(Math.min(1, z * 3)));   // (onto the word quickly — a whip, not a wander)
+    TB.cam.fov = F0.fov + (36 - F0.fov) * e; TB.cam.near = Math.min(F0.near, dist * 0.3);
+    TB.cam.updateProjectionMatrix();
+    TB.post.material.uniforms.fade.value = 1 - Math.max(0, (z - 0.94) / 0.06);   // (the last frames already ink: the rest of the way to black)
+    if (z >= 1) { TB.post.material.uniforms.fade.value = 0; icFinish(false); }
+  }
+}
+/* where to push in: the MIDDLE of the thickest stroke on the last page — the ink of 'b245' read off its sprite, a
+ * distance map of it (two-pass chamfer), its deepest point (a little toward the page's right, nearest his view's middle).
+ * Aimed between strokes the push ended on grey paper. Returns L's canvas px. */
+function icInkAt() {
+  const L = IC.meta.L, r = L.frames.b245, K = L.k || 1, img = IC.imgL[r[6] || 0];
+  const fb = [r[4] / K + r[2] / K * 0.52, r[5] / K + r[3] / K * 0.62];
+  try {
+    const w = r[2], h = r[3], c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, r[0], r[1], w, h, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data, D = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) D[i] = d[i * 4 + 3] > 250 && d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2] < 3 * 80 ? 1e6 : 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; if (!D[i]) continue;
+      D[i] = Math.min(D[i], x ? D[i - 1] + 1 : 1, y ? D[i - w] + 1 : 1, x && y ? D[i - w - 1] + 1.414 : 1, y && x < w - 1 ? D[i - w + 1] + 1.414 : 1); }
+    for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) { const i = y * w + x; if (!D[i]) continue;
+      D[i] = Math.min(D[i], x < w - 1 ? D[i + 1] + 1 : 1, y < h - 1 ? D[i + w] + 1 : 1, x < w - 1 && y < h - 1 ? D[i + w + 1] + 1.414 : 1, y < h - 1 && x ? D[i + w - 1] + 1.414 : 1); }
+    let best = -1e9, bx = -1, by = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = D[y * w + x]; if (v < 2) continue;
+      const sc = v - Math.hypot(x / w - 0.7, y / h - 0.6) * 3; if (sc > best) { best = sc; bx = x; by = y; } }
+    if (bx < 0) return fb;
+    IC.inkR = D[by * w + bx] / K;                                    // (its half-width, view px)
+    return [r[4] / K + bx / K, r[5] / K + by / K];
+  } catch (e) { return fb; }
+}
+/* under the title, before START: the desk as it is — the book lying there, and Matthew calling: the phone lit, buzzing on
+ * the table a beat at a time, as an iPhone does */
+function icTitleFrame() {
+  if (!IC.props || IC.on) return;
+  const tt = tbNow() - TB.t0, ph = TB.phone;
+  const glow = icPhoneScreen(tt, true);
+  if (ph && IC.phoneAt) ph.position.copy(IC.phoneAt);  // (still: no ringing, no buzzing on the table under the title)
+  // (it buzzed out loud too, a synthesized rattle: the owner, 2026-11-19, "i heard a weird sound that wasnt rain when the
+  // game started and showed the start game i hated it take it out" — it only shakes now, silently)
+  TB.phoneL.intensity = glow * 0.8;
+  const F = TB.flash; IC.pmat.uniforms.light.value = 0.22 + F * 1.6;
+}
+function icFinish(skipped) {
+  if (IC.ended) return; IC.ended = true; IC.handed = true;
+  // (skipped: the song the page was to begin is let go, and the intro starts its own; played out: the intro takes it)
+  const early = !skipped && IC.song && introSong ? IC.song : null;
+  if (skipped && IC.song && introSong) endIntroSong(0.6);
+  IC.song = null;
+  window.removeEventListener('keydown', IC.skipKey, true);
+  if (skipped && IC.env && audioCtx) {
+    const g = IC.env.gain, t = audioCtx.currentTime; holdParam(g, t); g.linearRampToValueAtTime(0, t + 0.8);
+    const s = IC.src; setTimeout(() => { try { s.stop(); } catch (e) { /* */ } }, 1000);
+  }
+  runIntro(early);
+}
+function icStop() {
+  IC.on = false; IC.atDesk = false;
+  if (IC.skipKey) window.removeEventListener('keydown', IC.skipKey, true);
+  if (IC.src && !IC.ended) { try { IC.src.stop(); } catch (e) { /* */ } }
+  for (const m of [IC.pmat, IC.emat, IC.smat, IC.fmat]) if (m) { for (const k in m.uniforms) { const v = m.uniforms[k].value; if (v && v.isTexture) v.dispose(); } m.dispose(); }
+  IC.paint = IC.ear = IC.shadow = IC.front = IC.pmat = IC.emat = IC.smat = IC.fmat = IC.fcv = IC.cv = IC.gcv = IC.ecv = IC.scv = IC.x = IC.gx = IC.ex = IC.sx = null; IC.drops.length = 0; IC.props = false;
+  setTimeout(() => {
+    for (const a of [IC.imgL, IC.imgR]) for (const i of a || []) if (window.ImageBitmap && i instanceof ImageBitmap) i.close();   // (~0.4 GB decoded: let it go now)
+    IC.imgL = IC.imgR = IC.buf = IC.bytes = null; IC.sfx = {};
+  }, 4000);
+}
+setTimeout(tbStart, 0);       // after the module has run: a checkpoint load (`instantStart`, set at its foot) never builds it
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { TB, tbRender, tbStop, TB3: THREE, IC, IC_CAM, IC_SHIFT, icCanRun, icNow, icFrame, icDrawPaint, icInkAt, icPlace }));
 const crosshair = document.getElementById('crosshair');
 const promptEl = document.getElementById('prompt');
 const promptMidEl = document.getElementById('promptmid');
@@ -8635,7 +10124,7 @@ function updateHurt(dt) {
 /* the sewer's thing in the water has you (`sewMonTick`): declared here, ahead of `frozen`, which reads it (the sewer's own
  * code is 77,000 lines further down, and a `let` read before its line runs is a dead-zone crash) */
 let sewScare = null;
-function frozen() { return bootHold > 0 || !!sewScare || (!!crabCut && crabCut.t >= CRAB_T.cut) || (!!hjCut && !hjCut.released) || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone || deepCutOn; }
+function frozen() { return bootHold > 0 || !!sewScare || (!!crabCut && crabCut.t >= CRAB_T.cut) || (!!hjCut && !hjCut.released) || noteOpen || menuOpen || dialogOpen || invOpen || shopOpen || inspecting || peeking || wellLook.on || packCut || !!keyCut || !!thrCut || !!wbFareCut || mutCut || hatchBusy || ucBusy || portalCut || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || !!wbSw || roomRestore || dying || ended || !introDone || deepCutOn || !!tmpCut || !!kingCut; }
 function refreshUI() {
   const playing = started && !menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !dying && !ended;
   hotbarEl.classList.toggle('hidden', !playing || inventory.length === 0);
@@ -8900,7 +10389,9 @@ document.addEventListener('pointerlockchange', () => {
     if (invOpen) { closePack(); if (started && !fallbackLook) regainLook(); return; }
     // an intentional exit (note / menu / dialogue / death) is handled by
     // those; a stray exit while still playing means the user hit Esc → menu
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !packCut && !keyCut && !thrCut && !wbFareCut && !(hjCut && !hjCut.released) && !mutCut && !portalCut && !hatchBusy && !ucBusy && !wbSw && !dying) openMenu();
+    /* (and in a cutscene too, which the menu now holds still — 2026-11-20, the owner: "make the cutscene freeze when entering
+     * the settings in any cutscene even the starting one": `cutPaused`) */
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !dying) openMenu();
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -9313,6 +10804,7 @@ function endIntroAudio() {
   setTimeout(() => { try { d.o.stop(); d.o2.stop(); d.trem.stop(); } catch (e) {} }, 1800);
 }
 function leaveTitle() {
+  tbStop();                                        // (the bedroom behind START GAME goes with the cover)
   camera.position.copy(spawnPos);
   camera.quaternion.copy(spawnQuat);
   camBaseY = EYE_HEIGHT;
@@ -9360,6 +10852,7 @@ function beginGame() {
     if (!instantStart) startMusic(0.72);
     return;
   }
+  if (icCanRun()) { runCall(); return; }           // the call at the desk first (`IC`); it hands on to the intro itself
   runIntro();
 }
 /* ---- THE INTRO: THE OWNER'S WAVES AND HIS WHOLE SONG ----------------------
@@ -9377,6 +10870,36 @@ function beginGame() {
  * count, and the reveal waits on `bootReady` instead — thirty seconds of song
  * is thirty seconds of boot nobody sees. */
 const introVideoEl = document.getElementById('intro-video');
+/* THE WAVES NEVER WRAP (2026-11-19, the owner: "i see it lag sometimes"). Measured (`callRun`, every frame the compositor
+ * presented): none dropped, but at every loop of the 8.6 s clip the picture HELD for 67-83 ms — the element's own `loop`
+ * seeks back to the start, and a seek is a stall. So the clip is played as ONE timeline: Media Source Extensions, the same
+ * file appended again and again, each copy laid one clip-length on (`timestampOffset`; its frames run 0.067-8.633 s, so
+ * copy k starts at k·8.6 exactly where copy k-1 ends), a dozen seconds always ahead and the played part let go. The file
+ * is a fragmented MP4 for it (`-c copy -movflags +frag_keyframe+empty_moov+default_base_moof`: every frame unchanged); a
+ * browser without MSE plays it as before, `loop` and all. */
+(function introWavesSeamless() {
+  const type = 'video/mp4; codecs="avc1.640032"', D = 8.6, LEAD = 1 / 15;
+  if (!introVideoEl || !window.MediaSource || !MediaSource.isTypeSupported(type)) return;
+  fetch(introVideoEl.getAttribute('src')).then((r) => (r.ok ? r.arrayBuffer() : null)).then((bytes) => {
+    if (!bytes) return;
+    const ms = new MediaSource();
+    ms.addEventListener('sourceopen', () => {
+      let sb; try { sb = ms.addSourceBuffer(type); } catch (e) { console.warn('[waves] no source buffer', e); return; }
+      let k = 0;
+      const more = () => {
+        if (sb.updating || ms.readyState !== 'open') return;
+        const v = introVideoEl, B = sb.buffered, end = B.length ? B.end(B.length - 1) : 0;
+        if (B.length && B.start(0) < v.currentTime - 14) { try { sb.remove(0, v.currentTime - 10); } catch (e) { /* */ } return; }
+        if (end - v.currentTime < 14 && k < 400) { sb.timestampOffset = k * D - LEAD; k++; try { sb.appendBuffer(bytes); } catch (e) { console.warn('[waves] append', e); } }
+      };
+      sb.addEventListener('updateend', more);
+      introVideoEl.addEventListener('timeupdate', more);
+      more();
+    }, { once: true });
+    introVideoEl.removeAttribute('loop'); introVideoEl.loop = false;
+    introVideoEl.src = URL.createObjectURL(ms);
+  }).catch(() => { /* the plain file, looping, as before */ });
+})();
 const introTitleEl = document.getElementById('intro-title');
 const INTRO_CUE = {
   black: 1.5,            // START GAME has faded and the black is down; the song and the waves begin
@@ -9388,7 +10911,7 @@ const INTRO_CUE = {
   reveal: 4.5,           // and the beach comes up this slowly
   skip: 1.0,             // Enter: the song and the waves go out this fast, and the beach comes up
 };
-function runIntro() {
+function runIntro(early = null) {        // (`early`: the song already begun on the call's page — the waves and the name on its drop)
   introTextEl.innerHTML = '';
   introTitleEl.className = ''; introVideoEl.className = '';
   introVideoEl.style.transition = '';
@@ -9405,7 +10928,14 @@ function runIntro() {
   // song time: seconds since the song started (before it has, negative)
   const now = () => (audioCtx && startAt.ctx ? audioCtx.currentTime - startAt.ctx : (performance.now() - startAt.perf) / 1000);
   introSongNow = () => (startAt.perf ? now() : null);
-  const cue = (at, fn) => { timers.push(setTimeout(() => { if (!skipped) fn(); }, Math.max(0, (at - now()) * 1000))); };
+  const cues = [];
+  const arm = (c) => { c.id = setTimeout(() => { c.done = true; if (!skipped) c.fn(); }, Math.max(0, (c.at - now()) * 1000)); timers.push(c.id); };
+  const cue = (at, fn) => { const c = { at, fn, done: false, id: 0 }; cues.push(c); if (!cutPaused) arm(c); };
+  // (held by the menu: the song's clock stops with the sound, the cues are let go and set again off it, the waves wait)
+  introHold = {
+    pause: () => { for (const c of cues) if (!c.done) clearTimeout(c.id); try { introVideoEl.pause(); } catch (e) { /* */ } },
+    resume: () => { if (done || skipped) return; for (const c of cues) if (!c.done) arm(c); if (songOn) { const pv = introVideoEl.play(); if (pv && pv.catch) pv.catch(() => {}); } },
+  };
   const finish = () => {
     if (done) return; done = true;
     introQuiet = false;                           // the song is over and the screen is black: anything held runs now
@@ -9442,7 +10972,26 @@ function runIntro() {
    * song fades up out of silence over the same seconds the waves fade up out
    * of the black, so the music and the picture arrive as one thing. Every beat
    * after is on the SONG'S clock, so a slow decode cannot pull them apart. */
-  timers.push(setTimeout(() => {
+  if (early) {
+    // the song is already playing (from the BEACH WALK page): the black holds, and on its drop the waves and the name come in
+    // together, at once — then all of it on as before
+    overlay.classList.add('hidden'); leaveTitle();
+    startAt.perf = performance.now();
+    songOn = true;
+    early.then((t) => {
+      if (skipped) return;
+      if (t) { startAt.ctx = t.start; startAt.dur = t.dur; }
+      if (!IC.vidWarm) { try { introVideoEl.currentTime = 0; } catch (e) {} }
+      cue(INTRO_CUE.drop, () => {
+        const pv = introVideoEl.play(); if (pv && pv.catch) pv.catch(() => {});
+        introVideoEl.style.transition = 'none'; introVideoEl.classList.add('on'); void introVideoEl.offsetWidth; introVideoEl.style.transition = '';
+        introTitleEl.classList.add('on');
+      });
+      cue(INTRO_CUE.nameOut, () => introTitleEl.classList.add('out'));
+      cue(INTRO_CUE.wavesOut, () => { introVideoEl.classList.add('out'); introVideoEl.classList.remove('on'); });
+      cue(startAt.dur + INTRO_CUE.hold, finish);
+    });
+  } else timers.push(setTimeout(() => {
     if (skipped) return;
     overlay.classList.add('hidden'); leaveTitle();
     startAt.perf = performance.now();
@@ -9450,7 +10999,7 @@ function runIntro() {
     startIntroSong(INTRO_CUE.fadeIn).then((t) => {
       if (skipped) return;
       if (t) { startAt.ctx = t.start; startAt.dur = t.dur; }
-      try { introVideoEl.currentTime = 0; } catch (e) {}
+      if (!IC.vidWarm) { try { introVideoEl.currentTime = 0; } catch (e) {} }   // (rolling since the push in: a seek is a hitch)
       const pv = introVideoEl.play(); if (pv && pv.catch) pv.catch(() => {});
       introVideoEl.classList.add('on');            // up out of the black with the song
       cue(INTRO_CUE.drop, () => introTitleEl.classList.add('on'));   // there on one frame: no flash, no letters flying in
@@ -9495,7 +11044,7 @@ function duckForIntro(on) {
 const introSongBytes = fetch('assets/beachwalk-intro.m4a').then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
 let introSongBuf = null, introSong = null;
 const introSongGain = () => Math.min(1.25, settings.volume * 2.0);
-function startIntroSong(fadeIn = 0) {
+function startIntroSong(fadeIn = 0, at = 0) {        // (`at`: a time on the audio clock to begin on — the call's BEACHWALK page, `IC_SONG_AT`)
   const ctx = audioCtx; if (!ctx) return Promise.resolve(null);
   const env = ctx.createGain(), vol = ctx.createGain();
   env.gain.value = fadeIn > 0 ? 0 : 1;
@@ -9508,7 +11057,7 @@ function startIntroSong(fadeIn = 0) {
       if (!buf || me.dead) return null;
       introSongBuf = buf;
       const src = ctx.createBufferSource(); src.buffer = buf; src.connect(env);
-      const t = ctx.currentTime + 0.05;
+      const t = Math.max(ctx.currentTime + 0.05, at || 0);
       if (fadeIn > 0) {                          // up out of silence with the waves
         env.gain.setValueAtTime(0, t);
         env.gain.linearRampToValueAtTime(1, t + fadeIn);
@@ -9571,6 +11120,11 @@ const bootBarEl = document.querySelector('#bootbar i');
 const REVEAL_WAIT_MAX = 20000;
 let introSongNow = null;              // the intro's song clock while it plays, else null
 function introHoldNow() {
+  if (icHoldNow()) return true;
+  /* AFTER THE CALL THE WAVES ARE LEFT ALONE (2026-11-19, the owner: "make the waves video look better too i see it lag
+   * sometimes"): the boot had the call's seventy seconds to load under; what is left waits for the black at the end
+   * (`loadOwed` holds the reveal for it), so nothing parses, warms or uploads while his waves play. */
+  if (IC.handed && introQuiet && introSongNow && introSongNow() !== null) return true;
   if (!introQuiet || !introSongNow) return false;
   const t = introSongNow();
   if (t === null) return false;
@@ -9912,7 +11466,7 @@ window.addEventListener('keydown', (e) => {
     if (peeking && pipeReach.done) return;
     primaryAction();
   }
-  else if (e.code === 'KeyG') { if (deepLock) { /* nothing leaves your hands down there */ } else if (held) dropHeld(); else if (equipped) dropEquipped(); }
+  else if (e.code === 'KeyG') { if (deepLock) { /* nothing leaves your hands down there */ } else if (elvCarrying) elvDropPuppet(); else if (held) dropHeld(); else if (equipped) dropEquipped(); }
   else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped && !deepNoHands) toggleEquip(equipped); }
   else if (e.code === 'KeyR') magReload();          // and six of them go back in
   else if (/^Digit[1-8]$/.test(e.code)) { if (+e.code.slice(5) <= hotbarN()) useSlot(+e.code.slice(5) - 1); }
@@ -9963,6 +11517,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
    * if the pointer moved six pixels on the way — right for a shovel, and
    * for a trigger it is a gun that goes off when you let go of it. */
   if (e.button === 0 && started && !frozen() && magHeld()) { magTrigger = true; magFire(); return; }
+  if (e.button === 0 && started && !frozen() && hookHeld() && HK.st !== 'idle' && hookRecall()) return;   // Skrim's hook out on its chain: the click hauls it back
   /* AND RIGHT CLICK IS THE SIGHTS. It is the guard on everything else, and
    * nothing about a revolver parries a claw. */
   if (e.button === 2 && started && !frozen() && magHeld()) { magAiming = true; return; }
@@ -10132,13 +11687,14 @@ function devGrantWeapons() {
   if (INV_MAX <= 12) { INV_MAX = 16; TRADER_STOCK.packSpace = 0; renderPack(); renderHotbar(); }
   statHush = true;
   try {
-    // (and the fishing rod, 2026-11-14: "make dev mode give me fishing rod")
-    for (const it of [shovelItem, militaryItem, bloodItem, pegItem, pavKeyItem, hornItem, skullKeyItem, fishingRodItem]) {
+    // (and the fishing rod, 2026-11-14: "make dev mode give me fishing rod"; and the bone mace, 2026-11-18: "give me the bonemace in dev mode as well")
+    for (const it of [shovelItem, militaryItem, bloodItem, pegItem, pavKeyItem, hornItem, skullKeyItem, fishingRodItem, maceItem, hookItem]) {   // (and Skrim's hook, 2026-11-19)
       if (!it || inventory.includes(it)) continue;
       addToInventory(it);
     }
   } finally { statHush = false; }
   if (!equipped && inventory.includes(shovelItem)) toggleEquip(shovelItem);
+  bwSoon('assets/bone-mace.glb');      // (the mace's model is ranked by the sewer's lair it lies in: in your hand from the start, it is wanted now)
   /* AND A HUNDRED JARS TO SPEND, the owner's word: the shops are to be tried,
    * not saved up for. Topped up to the hundred, never cut down to it. Not
    * through `gainJar`, which settles a restore this can run in the middle of. */
@@ -10228,6 +11784,7 @@ function devLeaveRooms() {
   if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
   if (inSewer) placeOutOfSewer();
   if (inDeep) placeOutOfDeep();
+  if (inTemple) placeOutOfTemple();
 }
 /* AND THE LIGHTHOUSE (the owner: "a teleport to lighthouse in the settings
  * that brings me to exactly when i enter the lighthouse section"): out of
@@ -10294,16 +11851,36 @@ const mShop2Btn = document.getElementById('m-shop2');
 mShop2Btn.addEventListener('click', () => { if (devTeleportShop(2)) closeMenu(); });
 const mIsleBtn = document.getElementById('m-isle');
 mIsleBtn.addEventListener('click', () => { if (devTeleportIsle()) closeMenu(); });
+const mTempleBtn = document.getElementById('m-temple');
+mTempleBtn.addEventListener('click', () => { if (devTeleportTemple()) closeMenu(); });
 applySettings();
 syncMenuInputs();
 
+/* THE MENU HOLDS A CUTSCENE STILL (2026-11-20, the owner: "make the cutscene freeze when entering the settings in any cutscene
+ * even the starting one"). While it is open in one (`cutNow`): the frame does not run the game or any cut (`animateFrame`), the
+ * sound's clock stops (the call at the desk runs on it, and so does every sound a cut has scheduled), and the intro's song, its
+ * cues and his waves wait (`introHold`). All of it goes on from where it was when the menu shuts. */
+function cutNow() {
+  return !!(kingCut || tmpCut || packCut || keyCut || thrCut || wbFareCut || (hjCut && !hjCut.released) || mutCut || portalCut || hatchBusy || ucBusy || wbSw || crabCut
+    || sailBusy || tavBusy || fortBusy || caveBusy || catBusy || pipeBusy || whaleBusy || thrBusy || dunBusy || deepCutOn || cineHold
+    || (IC.on && !IC.ended) || (introStarted && !introDone));
+}
+function cutPause(on) {
+  if (on === cutPaused) return;
+  cutPaused = on;
+  const ctx = audioCtx;
+  if (on) { if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {}); if (introHold) introHold.pause(); }
+  else { if (ctx && ctx.state === 'suspended' && !loadSilent()) ctx.resume().catch(() => {}); if (introHold) introHold.resume(); clock.getDelta(); }
+}
 function openMenu() {
   if (ended || menuOpen) return;
+  if (cutNow()) cutPause(true);
   menuOpen = true;
   mCheckpointBtn.disabled = !hasCheckpoint();
   mShopBtn.disabled = devShopBusy();
   mShop2Btn.disabled = mShopBtn.disabled;
   mIsleBtn.disabled = mShopBtn.disabled;
+  mTempleBtn.disabled = mShopBtn.disabled;
   menuReturnLock = !fallbackLook && started;
   if (locked) document.exitPointerLock();
   if (held) dropHeld();
@@ -10315,6 +11892,7 @@ function openMenu() {
 function closeMenu() {
   if (!menuOpen) return;
   menuOpen = false;
+  cutPause(false);
   menuEl.classList.remove('show');
   if (document.activeElement && menuEl.contains(document.activeElement)) document.activeElement.blur();   // or Space clicks it again
   refreshUI();
@@ -10407,6 +11985,7 @@ function inspectBounds(root) {
 const _icV = new THREE.Vector3();
 function inspectCentreOnScreen() {
   const root = inspectModel; if (!root) return;
+  if (inspectCamera.view || inspectCamera.zoom !== 1 || inspectCamera.filmOffset) { inspectCamera.clearViewOffset(); inspectCamera.zoom = 1; inspectCamera.filmOffset = 0; inspectCamera.updateProjectionMatrix(); IV.applied = ''; }   // (centred on the true lens; the render slides and sizes it into its place, `inspectApplyView`)
   inspectPivot.position.set(0, 0, 0);
   inspectPivot.rotation.set(inspectRotX, inspectRotY, 0);
   inspectCamera.position.set(0, 0, inspectDist); inspectCamera.lookAt(0, 0, 0);
@@ -10483,6 +12062,7 @@ function openInspect(model, { rotX = -0.55, rotY = 0.7, equipLabel = null, onEqu
   inspectCamera.updateProjectionMatrix();
   inspectCentreOnScreen();
   inspectEl.classList.add('show');
+  IV.cx = IV.cy = 0; IV.z = 1; inspectLayout();
   promptEl.classList.remove('show');
   crosshair.className = '';
   crosshair.style.display = 'none';
@@ -10499,6 +12079,13 @@ function closeInspect() {
   { const d = inspectEl.querySelector('.idesc'); if (d) { d.textContent = ''; d.style.display = 'none'; } }
   crosshair.style.display = '';
   refreshUI();
+  if (inspectBackToPack) {                   // looked at from the pack, the sheet held aside: back onto it
+    inspectBackToPack = false;
+    openPack(true);
+    if (invOpen) return;
+    invPanelEl.classList.remove('show');
+    phPlay(false);
+  }
   if (inspectReturnLock && !fallbackLook) regainLook();
 }
 // The object turns with the mouse (no button: 2026-11-14); the LEFT button puts it away. The right button still
@@ -10521,6 +12108,7 @@ function closeInspect() {
   let iFresh = true;
   inspectEl.addEventListener('pointermove', (e) => {
     if (!inspecting) { iFresh = true; return; }
+    if (extracting) return;                 // (the crab being drained holds still: "when draining a horseshoe crab dont let the models spin with the cursor", 2026-11-19)
     let dx = e.movementX, dy = e.movementY;
     if (!dx && !dy) { dx = iFresh ? 0 : e.clientX - lastX; dy = iFresh ? 0 : e.clientY - lastY; }
     iFresh = false; lastX = e.clientX; lastY = e.clientY;
@@ -10550,6 +12138,63 @@ function closeInspect() {
     inspectDist = Math.max(2.0, Math.min(7, inspectDist + e.deltaY * 0.003));
   }, { passive: false });
 }
+/* THE THING FITS THE SCREEN, WHATEVER THE SCREEN (2026-11-19, the owner, a wide window: the bone mace half behind his
+ * hand and its words running off the right edge — "THIS SHOULD ADJUST TO EVERYSCREEN PERFECTLY. I CANT HAVE ITEMS BEING
+ * CUT OFF WHILE INSPECTING"). Worked out on opening and on every resize, from the screen as it is:
+ *  - from the pack, the sheet in his hands goes aside, scaled down (to 0.36 at the least) until his hand's right-most
+ *    pixel — read off the frame he is holding it in — stops at 55 % of the width;
+ *  - the free box is right of that (the whole width without it), under the name and the words, over the hint line;
+ *  - the words are centred on that box and wrap to its width;
+ *  - the thing's whole turning size (its fitted 1.7, +12 % for the near end's perspective) is made to fit that box —
+ *    the lens zoomed out if it has to be, never in — and slid onto its middle (a view offset: the centring and the
+ *    turning are untouched). */
+const IV = { cx: 0, cy: 0, z: 1, applied: '' };
+function inspectHandRight() {
+  if (!phCv || !phCv.width) return 0;
+  try {
+    const n = 4, w = Math.ceil(phCv.width / n), h = Math.ceil(phCv.height / n), c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(phCv, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data;
+    for (let x = w - 1; x >= 0; x--) for (let y = 0; y < h; y++) if (d[(y * w + x) * 4 + 3] > 40) return Math.min(1, (x + 1) / w);
+  } catch (e) { /* */ }
+  return 1;
+}
+function inspectLayout() {
+  if (!inspecting) return;
+  const W = window.innerWidth || 1280, H = window.innerHeight || 720, m = Math.max(14, W * 0.012);
+  let L = m;
+  if (inspectBackToPack && ph.ready && phCv) {
+    const cw = PH.fw * ph.k, ox = ph.left + cw / 2, xr = ph.left + inspectHandRight() * cw, tx = -0.27 * W;
+    let s = 0.58; const right = (k) => ox + (xr - ox) * k + tx;
+    if (right(s) > 0.55 * W && xr > ox) s = Math.max(0.36, (0.55 * W - ox - tx) / (xr - ox));
+    document.documentElement.style.setProperty('--aside-s', s.toFixed(3));
+    document.documentElement.style.setProperty('--aside-tx', tx.toFixed(1) + 'px');
+    L = Math.max(m, right(s) + m);
+  }
+  const R = W - m, cx = (L + R) / 2, mw = Math.max(120, R - L - 2 * m);
+  for (const sel of ['.iname', '.idesc', '.hint']) {
+    const el = inspectEl.querySelector(sel); if (!el) continue;
+    el.style.left = cx.toFixed(1) + 'px'; el.style.maxWidth = mw.toFixed(0) + 'px';
+    if (sel !== '.idesc') { el.style.whiteSpace = 'normal'; el.style.textAlign = 'center'; el.style.width = 'max-content'; }
+  }
+  let T = m * 3, B = H - m * 3;
+  for (const sel of ['.iname', '.idesc']) { const el = inspectEl.querySelector(sel); if (el && el.style.display !== 'none' && el.textContent) T = Math.max(T, el.getBoundingClientRect().bottom + m); }
+  { const el = inspectEl.querySelector('.hint'); if (el && el.textContent) B = Math.min(B, el.getBoundingClientRect().top - m); }
+  if (B - T < H * 0.3) T = Math.max(m, B - H * 0.3);
+  const fw = R - L, fh = B - T, tanH = Math.tan(THREE.MathUtils.degToRad(inspectCamera.fov) / 2);
+  const ppu = H / (2 * 3.3 * tanH);                                   // (px a unit, at the distance it opens at)
+  IV.z = Math.min(1, Math.min(fw, fh) / (1.7 * 1.12 * ppu));
+  IV.cx = (L + R) / 2 - W / 2; IV.cy = (T + B) / 2 - H / 2;
+  IV.applied = '';
+}
+function inspectApplyView() {
+  const W = window.innerWidth || 1280, H = window.innerHeight || 720, key = IV.cx + ',' + IV.cy + ',' + IV.z + ',' + W + ',' + H;
+  if (key === IV.applied) return; IV.applied = key;
+  inspectCamera.aspect = W / H; inspectCamera.zoom = IV.z; inspectCamera.filmOffset = 0;
+  if (IV.cx || IV.cy) inspectCamera.setViewOffset(W, H, -IV.cx, -IV.cy, W, H); else inspectCamera.clearViewOffset();
+  inspectCamera.updateProjectionMatrix();
+}
+window.addEventListener('resize', () => { if (inspecting) setTimeout(inspectLayout, 0); });
 function updateInspect(dt) {
   if (!inspecting) return;
   if (extracting) {
@@ -10558,7 +12203,7 @@ function updateInspect(dt) {
     if (extractT >= 1) finishExtraction();
   }
   inspectAuto += dt;
-  const idle = inspectAuto > 1.2 ? (inspectAuto - 1.2) * 0.2 : 0;   // a slow drift once you let go
+  const idle = !extracting && inspectAuto > 1.2 ? (inspectAuto - 1.2) * 0.2 : 0;   // a slow drift once you let go (not while a crab is drained: its 999 meant to stop the drift turned it half round instead)
   inspectPivot.rotation.set(inspectRotX, inspectRotY + idle, 0);
   inspectCamera.position.z = inspectDist;
   inspectCamera.lookAt(0, 0, 0);
@@ -10710,6 +12355,7 @@ function addInteractable(root, label, kind, data) {
     else if (/Wax Spliff/i.test(label)) it.gives = () => spliffItem;
     else if (/Mutant Fang/i.test(label)) it.gives = () => fangItem;
     else if (/Bloody Blade/i.test(label)) it.gives = () => bloodItem;
+    else if (/Skrim's Hook/i.test(label)) it.gives = () => hookItem;
   }
   interactables.push(it);
   // everything you can put in the pack gets the same floor and the same glint
@@ -10796,6 +12442,7 @@ function updateHover() {
   if (wellClinch.on) { hovered = null; return; }  // the hold owns the prompt
   if (wellLook.on && wellLook.quiet && wellLook.phase === 'peer') { hovered = null; setPrompt(kbd('E') + 'Step back'); return; }
   if (helmOwnsPrompt) { hovered = null; crosshair.className = ''; return; }
+  // (no "E – End game" in the desert any more — 2026-11-19, the owner: "take out e to end game at the end end when the boss dies": `kingDied`)
   if (frozen() || (!locked && !fallbackLook)) {
     hovered = null; crosshair.className = ''; setPrompt(''); return;
   }
@@ -10847,7 +12494,7 @@ function updateHover() {
     setPrompt(kbd('LMB') + 'Put it on');
   } else if (atLighthouseTop() && inventory.includes(hornItem) && !ended && !(equipped && equipped.onPull)) {
     crosshair.className = 'active';
-    setPrompt(kbd('E') + 'Blow the Great Crab Call');
+    setPrompt(kbd('E') + 'Blow the call of the crow');
   } else if (equipped && equipped.onDrain && inventory.includes(syringeItem) && (equipped.count || 0) > 0) {
     // (2026-10-14, the owner: "while holding a horsehoe crab make it say 'click to drain' if you have a syringe on you")
     crosshair.className = 'active';
@@ -10927,7 +12574,7 @@ function primaryAction() {                       // E / F
   }
   if (canWearHeld(equipped)) { wearRing(equipped); return; }
   // ANYWHERE ON TOP OF THE LIGHTHOUSE, the horn in the pack: E blows it (2026-10-14, "not just looking at the light")
-  if (atLighthouseTop() && inventory.includes(hornItem) && !ended) { startCrabCut(); return; }
+  if (atLighthouseTop() && inventory.includes(hornItem) && !ended && !tmpCut) { crowCallFromTop(); return; }
   if (equipped && equipped.onListen) { if (listening) stopListening(true); else listenToShell(); }
   if (equipped && equipped.onDrink) drinkWater();
   if (equipped && equipped.onSmoke) smokeSpliff();
@@ -10988,8 +12635,8 @@ function attackAction() {                        // left mouse
        * has carried to and comes back the other way: right to left, left to right, for as long as you keep it going, a heavy
        * as well as a light. Fired when the follow-through has run out (`chainSwing`), the head stopped and turning. */
       queuedSwing = 'return';
-    } else if (slashing() && equipped.alternate && !digOverhead && !katBack() && !digCharged && digT < RETURN_LATEST) {
-      queuedSwing = 'return';                  // fires at the follow-through, from the left
+    } else if (slashing() && equipped.alternate && !digOverhead && (hookHeld() ? comboStep < 3 : !katBack()) && !digCharged && digT < RETURN_LATEST) {
+      queuedSwing = 'return';                  // fires at the follow-through, from the left (Skrim's hook: four of them, `HOOK_STRING`)
     } else if ((isBlade() || (equipped.thrust && !digOverhead)) && !digOverhead && digT >= FORE_EARLY && !winding) {
       /* AND THE LAST STRETCH OF A RECOVERY IS THE NEXT THRUST'S WIND-UP. A
        * blade has been able to leave early from the end of its own recovery
@@ -11658,14 +13305,14 @@ function dropItem(item, jitter = 0) {
    * where it was, so two fangs dropped went on counting as two in the save
    * and a third found meanwhile became three with two more lying on the sand. */
   const stacked = (item.count | 0) > 1;
-  if (stacked) { item.count--; refreshUI(); if (invOpen) renderPack(); }
+  if (stacked) { item.count--; renderHotbar(); refreshUI(); if (invOpen) renderPack(); }   // (the hotbar too, 2026-11-17: "stacked item numbers arent showing up in hotbar" — it kept the old number)
   else removeFromInventory(item);
   addItemShine(m, { ...DROP_SHINE, height: 0.35 });   // what you put down is marked like everything dropped
   addInteractable(m, 'Take the ' + (item.name || 'item').toLowerCase(), 'inventory', {
     onActivate: () => {
       scene.remove(m); removeInteractable(m); hovered = null;
       sfxThud(0.02);
-      if (inventory.includes(item)) { item.count = (item.count || 1) + 1; refreshUI(); if (invOpen) renderPack(); return; }
+      if (inventory.includes(item)) { item.count = (item.count || 1) + 1; renderHotbar(); refreshUI(); if (invOpen) renderPack(); return; }
       if (item.count !== undefined) item.count = 1;
       addToInventory(item);
       if (item.viewmodel) toggleEquip(item);
@@ -11712,7 +13359,7 @@ function groundUnder(x, z, atY) {
  * So the ray is cast at whatever room you are standing in, the floor comes
  * from `bunkerFloorAt` (which every room answers), and the beach's two walls
  * are only applied when you are on the beach. */
-const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone || inDun || inDeep || inSewer;
+const inRoom = () => inBunker || inDojo || inUndercroft || inKeep || inTavern || inCat || inWhale || inThrone || inDun || inDeep || inSewer || inTemple;
 function dropTargets() {
   if (inUndercroft) return [undercroft];
   if (inBunker) return bunkers.map((b) => b.group).filter(Boolean);
@@ -11724,6 +13371,7 @@ function dropTargets() {
   if (inThrone) return thrWorld ? [thrWorld] : [];
   if (inDun) return dunWorld ? [dunWorld] : [];
   if (inSewer) return sewWorld ? [sewWorld] : [];
+  if (inTemple) return tmpG && tmpG.sand ? [tmpG.sand, tmpWorld] : [];
   return [sand, dock, DOCK_STEPS, driftGroup, rockGroup];
 }
 function dropPoint() {
@@ -12108,7 +13756,7 @@ function renderRings() {
       const slot = document.createElement('div');
       slot.className = 'rslot' + (item ? ' worn' : ' empty');
       if (item) {
-        slot.innerHTML = iconHTML(item);
+        slot.innerHTML = iconHTML(item, host !== ringSlotEls[0]);     // (the pack's row is on the paper: no tile)
         const lab = document.createElement('span');
         lab.className = 'label';
         lab.textContent = item.name + ' — take off';
@@ -12274,18 +13922,15 @@ const ICON_MIDY = 0.455;                // and where its middle sits: a little h
 const ICON_ROLL_AR = 2.6;               // and how long a thing has to be before it is laid across the diagonal
 const _iconV = new THREE.Vector3();
 function renderItemIcon(model, { rotX = -0.5, rotY = 0.7, flip = false } = {}) {
+  renderItemIcon.lastClear = null;
   if (!model) return null;
   initIconRig();
-  const m = model.clone(true);
-  // ...except a subtree that is hidden on purpose, which must also stay
-  // out of the fit: it is what the tile is framed against
-  m.traverse((o) => { if (o.userData.bwKeepHidden) o.visible = false; else o.visible = true; });
+  // (cloned the pane's way too, `iconCleanClone`: a subtree hidden on purpose stays hidden — it is what the tile is framed
+  // against — and the glint, the aim sphere and clear meshes are left out)
+  const m = iconCleanClone(model);
   /* AND NOTHING THAT IS NOT THE THING (2026-11-17, the keys: "some dont look the same"): the pickup's glint (a Sprite,
    * additive), the invisible aim sphere a small pickup carries (`hitProxy`) and any fully clear mesh were switched on with
    * the rest and FRAMED — the Captain's Chest Key came out a speck in a white halo. `kcSync` drops the same three. */
-  const junk = [];
-  m.traverse((o) => { const mt = o.material; if (o.isSprite || o.name === 'hitProxy' || (mt && !Array.isArray(mt) && mt.transparent && mt.opacity === 0)) junk.push(o); });
-  for (const o of junk) o.removeFromParent();
   /* and its own colour, not the glint's pulse: a shine (`addItemShine`) lifts the emissive of the very materials the clone
    * shares while the thing is still out to be found — rendered then, a brass key was silver for good (the icon is kept) */
   const lent = [];
@@ -12448,6 +14093,8 @@ function renderItemIcon(model, { rotX = -0.5, rotY = 0.7, flip = false } = {}) {
   tmp.width = tmp.height = ICON_PX;
   tmp.getContext('2d').putImageData(id, 0, 0);
   g.drawImage(tmp, 0, 0);
+  // and the thing alone, no tile: the pack is written on paper now (`itemIconClear`)
+  renderItemIcon.lastClear = tmp.toDataURL('image/webp', 0.9);
   // what the fit actually achieved, for the harness to read back
   renderItemIcon.lastFit = seen;
   for (const [mt, em] of lent) mt.emissive.copy(em);     // (the glint's pulse goes back on: the thing is still out there)
@@ -12490,8 +14137,29 @@ function iconDrawable(model) {
  * your hands. Every icon this browser has ever rendered is kept (it is the
  * same picture every time: the same model through the same lens), so a load
  * draws them at once. `ICON_CACHE_V` goes up whenever the icon rig changes. */
-const ICON_CACHE_V = 'v11';    // v11 (2026-11-18): v10's two bumps merged — the keys' clean renders and the Shock Ring's lit stones     // v10 (2026-11-17): no glint, aim sphere or glint-lifted colour in a render — the keys     // v7: the ammo tiles are studio-lit metal (`ammoStudio`); v8: the rod is the scan; v9: the map is a lit folded sheet
+const ICON_CACHE_V = 'v12';    // v12 (2026-11-18): the three artifacts rebuilt in the game's style     // v11 (2026-11-18): v10's two bumps merged — the keys' clean renders and the Shock Ring's lit stones     // v10 (2026-11-17): no glint, aim sphere or glint-lifted colour in a render — the keys     // v7: the ammo tiles are studio-lit metal (`ammoStudio`); v8: the rod is the scan; v9: the map is a lit folded sheet
 const iconCacheKey = (item) => 'beachwalk.icon.' + ICON_CACHE_V + '.' + (item.id || item.name);
+const iconClearKey = (item) => iconCacheKey(item) + '.clear';
+/* THE SAME PICTURE WITHOUT ITS TILE (2026-11-18): the pack is written on the sheet in his hands (`PH`), and a near-black
+ * tile on paper is a black square. The one render makes both; a tile kept from before there was a clear one renders
+ * again once, for this. Anything without a model keeps its tile (it is a drawing). */
+function itemIconClear(item) {
+  if (item._iconClear) return item._iconClear;
+  const tile = itemIcon(item);
+  if (item._iconClear) return item._iconClear;
+  let c = null; try { c = localStorage.getItem(iconClearKey(item)); } catch (e) {}
+  if (c) { item._iconClear = c; return c; }
+  const model = item.iconModel || item.inspectModel;
+  if (tile && tile.startsWith('data:') && model && iconDrawable(model)) {
+    renderItemIcon(model, item.iconRot || {});
+    if (renderItemIcon.lastClear) {
+      item._iconClear = renderItemIcon.lastClear;
+      try { localStorage.setItem(iconClearKey(item), item._iconClear); } catch (e) {}
+      return item._iconClear;
+    }
+  }
+  return tile;
+}
 function itemIcon(item) {
   if (item._icon) return item._icon;
   if (item.isKey) fillKeyModels();
@@ -12505,6 +14173,10 @@ function itemIcon(item) {
       if (url) {
         item._icon = url;
         try { localStorage.setItem(iconCacheKey(item), url); } catch (e) {}   // full is fine: it renders next time
+        if (renderItemIcon.lastClear) {
+          item._iconClear = renderItemIcon.lastClear;
+          try { localStorage.setItem(iconClearKey(item), item._iconClear); } catch (e) {}
+        }
         return url;
       }
     }
@@ -12550,8 +14222,8 @@ setInterval(() => {
  * through — the hotbar, the pack grid and the ring row all call it — so an
  * item carrying a `count` shows it in all three by construction rather than
  * by three loops remembering to. Only past one: a lone jar is a jar. */
-const iconHTML = (item) => {
-  const src = itemIcon(item) || '';
+const iconHTML = (item, clear = false) => {
+  const src = (clear && invPanelEl.classList.contains('paper') ? itemIconClear(item) : itemIcon(item)) || '';
   const icon = src.startsWith('data:') ? `<img src="${src}" alt="">` : src;
   return icon + (item.count > 1 ? `<span class="count">${item.count}</span>` : '');
 };
@@ -12779,6 +14451,451 @@ function findRecipe(x, y) {
  * Dragging still works exactly as it did — reorder, or drop one item on
  * another to combine — a drag just has to MOVE first (a still click
  * selects), so the two never fight. */
+/* ---- THE PANE, LIVE (2026-11-18, the owner: "do 1 and 3 make the item sounds not corny the reactions should be good too.
+ * this needs to be impressive. make it look amazing and intuitive"). The thing you have selected is not a picture any more:
+ * it is its own model, in the pane's drawn box, turning slowly under the same moon the pack's wash is lit by, drawn at the
+ * game's own pixel (`PV_RES` = `RETRO_SCALE`) so it is the object you carried, not a product shot. Drag it to turn it (it
+ * keeps the spin you gave it and eases back to its own); double-click it to examine it.
+ *
+ * Its own small renderer on its own canvas (the keychain's pattern, `kcBuild`): built the first time the pack shows a
+ * thing, drawn only while the pack is up, and the canvas MOVED into each new `.big` the pane's innerHTML makes. The model is
+ * the icon's (`iconModel || inspectModel`), cloned the icon's way (`iconCleanClone`) — never disposed: its geometry and
+ * materials are the world's.
+ *
+ * HOW IT IS SHOWN (`pvProfile(item).pose`, measured off the model's box unless named): a long thing (a blade, a rod, a key)
+ * STANDS on its long axis, leaned across the box's diagonal, and turns about itself — the way every inventory shows a sword;
+ * a flat thing (a photograph, a map, the CD) faces you and sways a little, never edge-on; anything else LIES, seen a
+ * little from above, and turns about the vertical, with its shadow under it.
+ *
+ * WHAT IT DOES. Selecting a thing SETS IT DOWN: it drops in, lands, rocks and settles, and the sound is that thing put down
+ * in a canvas bag — a short contact and then the material's own body (inharmonic partials for metal and glass, a damped knock
+ * for wood and bone, a hollow tock for plastic, a dry rustle for paper), quiet and dry: foley, not UI. Then, by what it is:
+ * metal catches the light now and then (a light sweeping across, flat faces flashing as it passes); a jar or a bottle sloshes
+ * when it lands or is spun hard (it rocks longer, and you hear the liquid and a bubble or two); the glowstick and the
+ * artifacts glow — their light in the box, spilled over the pane round it, and their cell in the grid glowing with them; the
+ * Shock Ring flickers and, now and then, ticks; the horseshoe crab, once in a while, twitches. */
+let pv = null, pvShown = null, pvTurned = false;
+const PV_RES = RETRO_SCALE;            // the world's own pixel
+const PV_FOV = 28, PV_D = 3.2, PV_FILL = 0.74;
+function pvProfile(item) {
+  if (item._pv) return item._pv;
+  const n = (item.name || '').toLowerCase();
+  const P = { mat: 'thing', pose: null, pitch: 0.36, glow: null, glowK: 0, slosh: 0, glint: false, twitch: null, crackle: false };
+  const has = (...w) => w.some((s) => n.includes(s));
+  if (has('katana', 'bloody blade')) Object.assign(P, { mat: 'steel', glint: true, pose: 'stand' });
+  else if (has('magnum', 'shotgun')) Object.assign(P, { mat: 'gun', glint: true, pose: 'lie', pitch: 0.24 });
+  else if (has('crab call')) Object.assign(P, { mat: 'shell' });
+  else if (has('horseshoe crab')) Object.assign(P, { mat: 'shell', pose: 'lie', pitch: 0.62, twitch: 'crab' });
+  else if (has('syringe')) Object.assign(P, { mat: 'glass', slosh: 0.45, pose: 'stand' });   // (before 'ring': syRINGe)
+  else if (has('shock ring')) Object.assign(P, { mat: 'ring', glint: true, pose: 'lie', pitch: 0.55, glow: 0x6fb8ff, glowK: 0.5, crackle: true });
+  else if (has('ring')) Object.assign(P, { mat: 'ring', glint: true, pose: 'lie', pitch: 0.55 });
+  else if (has('key')) Object.assign(P, { mat: 'key', glint: true, pose: 'stand' });
+  else if (has('sand shovel')) Object.assign(P, { mat: 'plastic', pose: 'stand' });
+  else if (has('shovel', 'screwdriver')) Object.assign(P, { mat: 'tool', glint: true, pose: 'stand' });
+  else if (has('mace', 'fang')) Object.assign(P, { mat: 'bone' });
+  else if (has('peg', 'fishing rod')) Object.assign(P, { mat: 'wood' });
+  else if (has('blood jar')) Object.assign(P, { mat: 'glass', slosh: 1 });
+  else if (has('water')) Object.assign(P, { mat: 'plastic', slosh: 0.8 });
+  else if (has('glowstick')) Object.assign(P, { mat: 'plastic', pose: 'stand', glow: 0x2fe9cf, glowK: 1 }   /* (GLOWSTICK_COLOR's, by value: that const is 6,000 lines down and a load's renderPack can come first) */);
+  else if (has('spliff')) Object.assign(P, { mat: 'paper' });
+  else if (has('portrait', 'sketch', 'map', 'memory')) Object.assign(P, { mat: 'paper', pose: 'face' });
+  else if (has('new cd')) Object.assign(P, { mat: 'plastic', pose: 'face' });
+  else if (has('billy')) Object.assign(P, { mat: 'plastic', pose: 'face', twitch: 'motor' });
+  else if (has('lantern')) Object.assign(P, { mat: 'tool', glint: true });
+  else if (has('artifact of the flame')) Object.assign(P, { mat: 'stone', glow: 0xff8a3a, glowK: 1 });
+  else if (has('artifact of the sea')) Object.assign(P, { mat: 'shell', glow: 0x4fb4ff, glowK: 0.9 });
+  else if (has('artifact')) Object.assign(P, { mat: 'bone', glow: 0xcfe0ff, glowK: 0.45 });
+  return (item._pv = P);
+}
+function pvBuild() {
+  if (pv) return pv;
+  const canvas = document.createElement('canvas'); canvas.className = 'pv';
+  const r = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: 'low-power' });
+  r.setPixelRatio(Math.min(2, window.devicePixelRatio || 1) * PV_RES);
+  r.outputColorSpace = renderer.outputColorSpace; r.toneMapping = renderer.toneMapping; r.toneMappingExposure = renderer.toneMappingExposure;
+  const sc = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(PV_FOV, 1, 0.1, 20);
+  /* the icon rig's light (`initIconRig`, which every icon has been checked under), the key from the upper left where the
+   * pack's moon hangs; and the two that move, made once and only ever turned up or down (a light added is a recompile) */
+  sc.add(new THREE.AmbientLight(0x9fb0cc, 1.0));
+  const key = new THREE.DirectionalLight(0xf2f0ff, 2.1); key.position.set(-0.9, 1.1, 1.1);
+  const fill = new THREE.DirectionalLight(0x8aa2d6, 0.6); fill.position.set(1.3, -0.3, 0.8);
+  const rim = new THREE.DirectionalLight(0xe4eeff, 2.6); rim.position.set(0.5, 0.7, -1.4);
+  const under = new THREE.DirectionalLight(0x6f86b8, 0.5); under.position.set(0, -1, 0.3);
+  const glint = new THREE.DirectionalLight(0xffffff, 0);
+  const glow = new THREE.PointLight(0xffffff, 0, 4, 1.4); glow.position.set(0, 0.1, 0.9);
+  sc.add(key, fill, rim, under, glint, glow, new THREE.HemisphereLight(0x54688c, 0x141820, 0.55));
+  /* and the beach's own night to reflect (`ringEnv`, what the rings wear): the game's scene has none, so a metal with no map
+   * of its own was a black hole in the box — the Wedding Ring's band, the Skull Key. Only this scene; the world keeps none. */
+  sc.environment = ringEnvFor(r);       // (its OWN: the game's is another context's texture — `ringEnvFor`)
+  // lean (in the screen) → pitch (seen from above) → wob (the set-down's rock, the slosh) → yaw (the turn) → fit → orient → the model
+  const lean = new THREE.Group(), pitch = new THREE.Group(), wob = new THREE.Group(), yaw = new THREE.Group(), fit = new THREE.Group();
+  sc.add(lean); lean.add(pitch); pitch.add(wob); wob.add(yaw); yaw.add(fit);
+  // a soft pool of shadow under a thing lying down
+  const sc2 = document.createElement('canvas'); sc2.width = sc2.height = 64;
+  const g2 = sc2.getContext('2d'), gr = g2.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g2.fillStyle = gr; g2.fillRect(0, 0, 64, 64);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc2), transparent: true, depthWrite: false, opacity: 0.6 }));
+  shadow.rotation.x = -Math.PI / 2; pitch.add(shadow);
+  pv = { r, sc, cam, canvas, key, glint, glow, lean, pitch, wob, yaw, fit, shadow, item: null, model: null, want: null, P: null,
+    t: 0, last: 0, raf: 0, yawA: 0, yawV: 0, autoV: 0.32, pd: 0, w: 0, wV: 0, dropY: 0, dropV: 0, landed: true, shown: 0,
+    glintAt: 0, twitchAt: 0, crackAt: 0, sloshAt: 0, drag: null, mx: 0, my: 0, lmx: 0, lmy: 0, faceBase: 0, glowNow: 0 };
+  // TURNED BY HAND. The press is the canvas's; the move and the release are the window's (the pack's own cursor dispatches
+  // at whatever is under it, which a drag leaves)
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!pv.model) return;
+    e.preventDefault(); e.stopPropagation();
+    pv.drag = { x: e.clientX, y: e.clientY, v: 0, at: performance.now() };
+    pvTurned = true; const h = canvas.parentElement && canvas.parentElement.querySelector('.pvhint'); if (h) h.classList.add('gone');
+  });
+  window.addEventListener('pointermove', (e) => {
+    const big = canvas.parentElement;
+    if (big && (invOpen || shopOpen)) { const b = big.getBoundingClientRect(); pv.mx = THREE.MathUtils.clamp((e.clientX - (b.left + b.width / 2)) / (b.width || 1), -1.5, 1.5); pv.my = THREE.MathUtils.clamp((e.clientY - (b.top + b.height / 2)) / (b.height || 1), -1.5, 1.5); }
+    if (!pv.drag) return;
+    const dx = e.movementX || (e.clientX - pv.drag.x), dy = e.movementY || (e.clientY - pv.drag.y);
+    pv.drag.x = e.clientX; pv.drag.y = e.clientY;
+    const k = 6.2 / Math.max(120, canvas.clientWidth || 200);
+    pv.yawA += dx * k; pv.pd = THREE.MathUtils.clamp(pv.pd + dy * k * 0.6, -0.5, 0.5);
+    const now = performance.now(), dtm = Math.max(8, now - pv.drag.at); pv.drag.at = now;
+    pv.drag.v = pv.drag.v * 0.5 + (dx * k / (dtm / 1000)) * 0.5;
+  });
+  window.addEventListener('pointerup', () => {
+    if (!pv.drag) return;
+    pv.yawV = THREE.MathUtils.clamp(pv.drag.v, -14, 14);
+    if (pv.P && pv.P.slosh && Math.abs(pv.yawV) > 5) { pv.wV += Math.sign(pv.yawV) * 1.6 * pv.P.slosh; pvSlosh(pv.P.slosh * Math.min(1, Math.abs(pv.yawV) / 10)); }
+    pv.drag = null;
+  });
+  canvas.addEventListener('dblclick', (e) => { e.stopPropagation(); if (invOpen && pvShown && pvShown.inspectModel) inspectFromPack(pvShown); });   // (in the shop it is not yours to examine)
+  return pv;
+}
+// the clone, the way the icon is made: hidden-on-purpose parts kept hidden, the glint, the aim sphere and clear meshes left out
+function iconCleanClone(model) {
+  const m = model.clone(true);
+  m.traverse((o) => { o.visible = !o.userData.bwKeepHidden; });
+  const junk = [];
+  m.traverse((o) => { const mt = o.material; if (o.isSprite || o.name === 'hitProxy' || (mt && !Array.isArray(mt) && mt.transparent && mt.opacity === 0)) junk.push(o); });
+  for (const o of junk) o.removeFromParent();
+  m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.setScalar(1);
+  return m;
+}
+/* the box of what is DRAWN: `Box3.setFromObject` counts hidden parts too (the revolver's flash, a ring's sparkle), and the
+ * magnum fitted to its invisible muzzle flash came out a speck */
+const _pvB = new THREE.Box3();
+function pvBox(root) {
+  const b = new THREE.Box3();
+  root.traverseVisible((o) => {
+    if (!o.isMesh || !o.geometry) return;
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    b.union(_pvB.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld));
+  });
+  return b.isEmpty() ? new THREE.Box3().setFromObject(root) : b;
+}
+const pvModelOf = (item) => { if (item.isKey) fillKeyModels(); return item.iconModel || item.inspectModel || null; };
+/* PUT IT IN THE BOX: its pose, then the fit — the largest the thing will ever be on screen as it turns (a lying thing's
+ * sweep round the vertical, a standing one's length across the lean) at PV_FILL of the box */
+function pvMount(item, model) {
+  const P = pvProfile(item);
+  const orient = new THREE.Group(), m = iconCleanClone(model);
+  orient.add(m); orient.updateMatrixWorld(true);
+  let b = pvBox(orient), s = b.getSize(new THREE.Vector3());
+  const dims = [s.x, s.y, s.z], srt = [...dims].sort((a, c) => c - a);
+  let pose = P.pose || (srt[0] > srt[1] * 2.6 ? 'stand' : srt[2] < srt[1] * 0.3 ? 'face' : 'lie');
+  if (pose === 'stand') {
+    const ax = dims.indexOf(srt[0]);
+    if (ax === 0) orient.rotation.z = Math.PI / 2; else if (ax === 2) orient.rotation.x = Math.PI / 2;
+    if (item.iconRot && item.iconRot.flip) orient.rotation.z += Math.PI;
+  } else if (pose === 'face') {
+    const R = item.iconRot || {};
+    orient.rotation.set(R.rotX ?? -0.5, R.rotY ?? 0.7, 0, 'ZXY');
+    orient.updateMatrixWorld(true);
+    // and its flat side to you: turned about the vertical till its box is widest
+    let best = 0, bw = -1;
+    for (let a = -1.6; a <= 1.6; a += 0.1) { const q = new THREE.Group(); q.rotation.y = a; q.add(orient); q.updateMatrixWorld(true); const w = pvBox(q).getSize(_iconV).x; if (w > bw + 1e-4) { bw = w; best = a; } q.remove(orient); }
+    const wrap = new THREE.Group(); wrap.rotation.y = best; wrap.add(orient); wrap.updateMatrixWorld(true);
+    return pvSeat(item, P, 'face', wrap, m);
+  }
+  orient.updateMatrixWorld(true);
+  return pvSeat(item, P, pose, orient, m);
+}
+function pvSeat(item, P, pose, orient, m) {
+  const K = pv;
+  /* measured ON ITS OWN, then put in: a box is in WORLD space, and under the turning groups it carried their turn (and the
+   * fit's last offset) into this one's — every next item came out further off the box */
+  orient.removeFromParent(); orient.updateMatrixWorld(true);
+  const b = pvBox(orient), s = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+  K.fit.clear(); K.fit.add(orient);
+  envSwapFor(orient, K.r);                // (a key's or a ring's own env is the game renderer's: this canvas's own instead)
+  const pitch = pose === 'face' ? 0.06 : pose === 'stand' ? 0.14 : P.pitch, lean = pose === 'stand' ? 0.62 : 0;
+  const r = Math.hypot(s.x, s.z) / 2;
+  let W, H;
+  if (pose === 'face') { W = s.x * 1.04; H = s.y + s.z * 0.2; }
+  else {
+    const w0 = 2 * r, h0 = s.y * Math.cos(pitch) + 2 * r * Math.sin(pitch);
+    W = w0 * Math.cos(lean) + h0 * Math.sin(lean); H = w0 * Math.sin(lean) + h0 * Math.cos(lean);
+  }
+  const frame = 2 * PV_D * Math.tan(THREE.MathUtils.degToRad(PV_FOV / 2));
+  const k = PV_FILL * frame / Math.max(W, H, 1e-4);
+  K.fit.scale.setScalar(k); K.fit.position.copy(c).multiplyScalar(-k);
+  K.lean.rotation.z = -lean; K.pitch.rotation.x = pitch;
+  K.shadow.visible = pose === 'lie';
+  K.shadow.position.set(0, -(s.y / 2) * k * Math.cos(pitch) - 0.02, 0);
+  K.shadow.scale.set(2 * r * k * 1.05, 2 * r * k * 0.9, 1);
+  K.pose = pose; K.P = P; K.model = m; K.item = item;
+  K.yawA = pose === 'face' ? 0 : -0.75; K.yawV = pose === 'face' ? 0 : 2.6; K.autoV = pose === 'stand' ? 0.42 : 0.32; K.pd = 0;
+  K.dropY = 0.42; K.dropV = 0; K.landed = false; K.w = (Math.random() < 0.5 ? -1 : 1) * 0.05; K.wV = 0; K.shown = 0;
+  K.glintAt = 0.45; K.twitchAt = 4 + Math.random() * 6; K.crackAt = 1 + Math.random() * 3;
+  return m;
+}
+// the box the canvas is in this time: called after every rewrite of the pane — the pack's `.big`, or the shop's `.pic`
+// (2026-11-18, the owner: "fix shop item icons like how they are in the pack": the shop shows the thing turning too)
+function pvAttach(item, box = null) {
+  if (!(invOpen || shopOpen)) return;
+  const big = box || (invOpen && invDetailEl ? invDetailEl.querySelector('.big') : null);
+  const model = item && pvModelOf(item);
+  if (!big || !model) { if (pv) { pv.item = null; pv.want = null; pvGlowCss(null); } return; }
+  pvBuild();
+  big.appendChild(pv.canvas);
+  if (!pvTurned && !big.querySelector('.pvhint')) big.insertAdjacentHTML('beforeend', '<span class="pvhint">drag to turn</span>');
+  if (pv.item === item && pv.model) { big.classList.add('live'); pvGlowCss(pv.P); }
+  else {
+    pv.item = null; pv.model = null; pv.want = item; pv.fit.clear();
+    pvTry();
+  }
+  if (!pv.raf) { pv.last = 0; pv.raf = requestAnimationFrame(pvFrame); }
+}
+function pvTry() {
+  const item = pv.want; if (!item) return;
+  const model = pvModelOf(item);
+  if (!model || !iconDrawable(model)) return;          // (its scan has not landed: the picture stays till it does)
+  pv.want = null;
+  pvMount(item, model);
+  const big = pv.canvas.parentElement; if (big) big.classList.add('live');
+  pvGlowCss(pv.P);
+}
+function pvGlowCss(P) {
+  const big = pv && pv.canvas.parentElement;
+  if (!big) return;
+  big.classList.toggle('pv-glow', !!(P && P.glow));
+  if (P && P.glow) big.style.setProperty('--pvglow', '#' + new THREE.Color(P.glow).getHexString());
+}
+function pvFrame(now) {
+  const K = pv;
+  if (!(invOpen || shopOpen) || (!K.item && !K.want)) { K.raf = 0; return; }
+  K.raf = requestAnimationFrame(pvFrame);
+  const dt = Math.min(0.05, Math.max(0, (now - (K.last || now)) / 1000)); K.last = now;
+  pvStep(dt);
+}
+function pvStep(dt) {
+  const K = pv; K.t += dt;
+  if (K.want) { pvTry(); if (!K.item) return; }
+  const cv = K.canvas, cw = cv.clientWidth || cv.width / K.r.getPixelRatio(), ch = cv.clientHeight || cv.height / K.r.getPixelRatio();   // (detached: the harness's own size)
+  if (!cw || !ch) return;
+  if (cv.width !== Math.round(cw * K.r.getPixelRatio()) || cv.height !== Math.round(ch * K.r.getPixelRatio())) { K.r.setSize(cw, ch, false); K.cam.aspect = cw / ch; K.cam.updateProjectionMatrix(); }
+  const P = K.P; K.shown += dt;
+  // the turn: its own slow one, or yours eased back into it; a flat thing sways about facing you
+  if (!K.drag) {
+    if (K.pose === 'face') { const tgt = Math.sin(K.t * 0.5) * 0.38; K.yawV += ((tgt - K.yawA) * 5 - K.yawV * 3.2) * dt; }
+    else K.yawV += (K.autoV - K.yawV) * Math.min(1, dt * (Math.abs(K.yawV) > 3 ? 0.9 : 1.6));
+    K.yawA += K.yawV * dt;
+    K.pd -= K.pd * Math.min(1, dt * 3.2);
+  }
+  // set down: it drops the last few centimetres, lands, bounces once, and rocks to rest (a jar longer: what is in it moves)
+  if (!K.landed || K.dropY > 0 || Math.abs(K.dropV) > 0.01) {
+    K.dropV -= 9.5 * dt; K.dropY += K.dropV * dt;
+    if (K.dropY <= 0) {
+      K.dropY = 0;
+      if (!K.landed) { K.landed = true; pvSetDown(P, Math.min(1, -K.dropV / 2.6)); K.wV += (K.w > 0 ? 1 : -1) * (0.9 + (P.slosh || 0) * 1.4); if (P.slosh) pvSlosh(P.slosh * 0.8); }
+      K.dropV = -K.dropV * 0.22; if (K.dropV < 0.18) K.dropV = 0;
+    }
+  }
+  const wk = P.slosh ? 26 : 70, wd = P.slosh ? 2.2 : 7.5;
+  K.wV += (-K.w * wk - K.wV * wd) * dt; K.w += K.wV * dt;
+  // the crab: once in a while, the legs go — a jerk, a scrape of shell; Billy's motor turns over
+  if (P.twitch && K.landed && K.shown > K.twitchAt) {
+    K.twitchAt = K.shown + 6 + Math.random() * 9;
+    if (P.twitch === 'crab') { K.wV += (Math.random() < 0.5 ? -1 : 1) * 2.4; K.yawV += (Math.random() - 0.5) * 3; pvSfx('shell', 0.45, true); }
+    else { K.wV += 1.2; pvMotor(); }
+  }
+  // metal catches the light: a light swept across the front, the flat faces flashing as it passes
+  let gl = 0;
+  if (P.glint && K.landed) {
+    const u = (K.shown - K.glintAt) / 0.8;
+    if (u >= 0 && u <= 1) {
+      const a = -1.2 + u * 2.4; K.glint.position.set(Math.sin(a) * 1.4, 0.7 - u * 0.9, 1.1);
+      gl = Math.sin(Math.PI * u) ** 2 * 9;
+    } else if (u > 1) K.glintAt = K.shown + 4.5 + Math.random() * 4;
+  }
+  K.glint.intensity = gl;
+  // what gives off light
+  let gk = 0;
+  if (P.glow) {
+    const t = K.t;
+    if (P.crackle) {
+      gk = 0.35 + 0.1 * Math.sin(t * 9.1);
+      if (K.shown > K.crackAt) { K.crackAt = K.shown + 1.8 + Math.random() * 5; K.spark = 0.16; pvCrackle(); }
+      if (K.spark > 0) { K.spark -= dt; gk += 1.4 * (Math.random() < 0.6 ? 1 : 0.2); }
+    } else if (P.glow === 0xff8a3a) gk = 0.78 + 0.14 * Math.sin(t * 7.3) + 0.08 * Math.sin(t * 13.1 + 1) + (Math.random() - 0.5) * 0.08;
+    else gk = 0.85 + 0.1 * Math.sin(t * 1.6) + 0.05 * Math.sin(t * 3.9);
+    gk *= P.glowK;
+    K.glow.color.setHex(P.glow); K.glow.intensity = gk * 2.2;
+    const big = K.canvas.parentElement; if (big && Math.abs(gk - K.glowNow) > 0.01) { big.style.setProperty('--pvk', gk.toFixed(3)); K.glowNow = gk; }
+  } else K.glow.intensity = 0;
+  K.yaw.rotation.y = K.yawA;
+  K.pitch.rotation.x = (K.pose === 'face' ? 0.06 : K.pose === 'stand' ? 0.14 : P.pitch) + K.pd;
+  K.wob.rotation.z = K.w; K.wob.position.y = K.dropY;
+  K.shadow.material.opacity = 0.6 * Math.max(0, 1 - K.dropY * 2.2);
+  // you look round it a little as the cursor moves
+  K.lmx += (K.mx - K.lmx) * Math.min(1, dt * 3); K.lmy += (K.my - K.lmy) * Math.min(1, dt * 3);
+  K.cam.position.set(K.lmx * 0.22 + Math.sin(K.t * 0.23) * 0.03, -K.lmy * 0.16 + Math.sin(K.t * 0.31) * 0.02, PV_D);
+  K.cam.lookAt(0, 0, 0);
+  K.r.render(K.sc, K.cam);
+}
+
+/* THE SOUNDS OF THINGS IN A BAG. Every one is a thing being SET DOWN on canvas: a short contact (filtered noise, the
+ * surface), then the material's own body ringing or not — metal and glass as INHARMONIC partials (a ring's flexural modes
+ * run near 1 : 2.76 : 5.4 : 8.9; anything harmonic reads as a chime), wood and bone as a knock damped in tens of ms, plastic
+ * hollow and short, paper a rustle in grains — and the weight under it as a low thud. Quiet, dry, over in a fraction of a
+ * second: the pack has no "UI sounds", only the things in it. */
+let pvSfxLast = 0;
+function pvPartials(t, out, f0, ratios, decays, gains) {
+  const ctx = audioCtx;
+  ratios.forEach((r, i) => {
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f0 * r * (1 + (Math.random() - 0.5) * 0.012);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(gains[i], t + 0.0025);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decays[i]);
+    o.connect(g).connect(out); o.start(t); o.stop(t + decays[i] + 0.02);
+  });
+}
+function pvBand(t, out, dur, type, f, q, gain, env = (x) => Math.pow(1 - x, 3)) {
+  const ctx = audioCtx, s = noiseBurst(dur, env), bq = ctx.createBiquadFilter();
+  bq.type = type; bq.frequency.value = f; bq.Q.value = q;
+  const g = ctx.createGain(); g.gain.value = gain;
+  s.connect(bq).connect(g).connect(out); s.start(t); s.stop(t + dur);
+}
+const pvGrains = (n, tail = 1.5) => { const a = Array.from({ length: n }, () => (Math.random() < 0.4 ? 1 : 0.18 + Math.random() * 0.3)); return (x) => a[Math.min(n - 1, (x * n) | 0)] * Math.pow(1 - x, tail) * Math.min(1, x * 40); };
+function pvSfx(mat, k = 1, force = false) {
+  const ctx = audioCtx; if (!PV_SYNTH || !ctx || (!force && ctx.currentTime - pvSfxLast < 0.05)) return;
+  pvSfxLast = ctx.currentTime;
+  const t = ctx.currentTime + 0.005, out = sfxOut(), v = 0.55 + 0.45 * k, j = 1 + (Math.random() - 0.5) * 0.06;
+  const thud = (f, d, g) => pvBand(t, out, d, 'lowpass', f, 0.7, g * v, (x) => Math.pow(1 - x, 2));
+  switch (mat) {
+    case 'steel':
+      pvBand(t, out, 0.025, 'bandpass', 3200 * j, 1.2, 0.08 * v); thud(170, 0.07, 0.07);
+      pvPartials(t, out, 1650 * j, [1, 2.71, 5.2, 8.6], [0.22, 0.15, 0.09, 0.05], [0.016 * v, 0.011 * v, 0.006 * v, 0.003 * v]); break;
+    case 'gun':
+      pvBand(t, out, 0.03, 'bandpass', 2100 * j, 2, 0.11 * v); thud(140, 0.09, 0.1);
+      pvBand(t + 0.021, out, 0.016, 'bandpass', 3900 * j, 3, 0.045 * v);
+      pvPartials(t, out, 880 * j, [1, 2.43, 3.91], [0.07, 0.05, 0.03], [0.018 * v, 0.011 * v, 0.006 * v]); break;
+    case 'key': {
+      const n = 2 + (Math.random() < 0.5 ? 1 : 0);
+      for (let i = 0; i < n; i++) {
+        const ti = t + i * (0.028 + Math.random() * 0.04), f = 2900 + Math.random() * 1300;
+        pvBand(ti, out, 0.01, 'highpass', 4200, 0.7, 0.03 * v);
+        pvPartials(ti, out, f, [1, 2.76, 5.4], [0.12, 0.07, 0.04], [0.011 * v / (i + 1), 0.006 * v / (i + 1), 0.003 * v / (i + 1)]);
+      }
+      thud(220, 0.04, 0.03); break;
+    }
+    case 'ring':
+      pvBand(t, out, 0.007, 'highpass', 5000, 0.7, 0.03 * v);
+      pvPartials(t, out, 2300 * j, [1, 2.76, 5.4, 8.9], [0.45, 0.28, 0.16, 0.09], [0.014 * v, 0.007 * v, 0.004 * v, 0.002 * v]);
+      pvPartials(t + 0.085, out, 2300 * j, [1, 2.76], [0.18, 0.1], [0.005 * v, 0.0025 * v]); break;
+    case 'glass':
+      pvBand(t, out, 0.008, 'highpass', 3500, 0.7, 0.05 * v); thud(210, 0.05, 0.04);
+      pvPartials(t, out, 1480 * j, [1, 2.32, 4.25, 6.63], [0.3, 0.18, 0.1, 0.06], [0.011 * v, 0.007 * v, 0.004 * v, 0.0025 * v]); break;
+    case 'plastic':
+      pvBand(t, out, 0.04, 'bandpass', 1500 * j, 4, 0.08 * v); pvBand(t, out, 0.006, 'highpass', 3000, 0.7, 0.02 * v);
+      pvPartials(t, out, 620 * j, [1, 1.93, 3.3], [0.05, 0.035, 0.02], [0.018 * v, 0.009 * v, 0.005 * v]); break;
+    case 'wood':
+      pvBand(t, out, 0.035, 'bandpass', 900 * j, 2.5, 0.09 * v); thud(180, 0.07, 0.06);
+      pvPartials(t, out, 360 * j, [1, 2.57, 4.2], [0.08, 0.05, 0.03], [0.028 * v, 0.013 * v, 0.006 * v]); break;
+    case 'bone':
+      pvBand(t, out, 0.025, 'bandpass', 1800 * j, 2, 0.08 * v); thud(200, 0.05, 0.04);
+      pvPartials(t, out, 780 * j, [1, 2.3, 3.7], [0.04, 0.03, 0.02], [0.016 * v, 0.009 * v, 0.004 * v]); break;
+    case 'shell':
+      pvBand(t, out, 0.012, 'bandpass', 2600 * j, 3, 0.06 * v); pvBand(t + 0.018, out, 0.01, 'bandpass', 3100 * j, 3, 0.04 * v);
+      pvPartials(t, out, 420 * j, [1, 2.1], [0.05, 0.03], [0.014 * v, 0.006 * v]); break;
+    case 'paper':
+      pvBand(t, out, 0.26, 'bandpass', 3600 * j, 0.7, 0.06 * v, pvGrains(14)); pvBand(t, out, 0.05, 'lowpass', 400, 0.7, 0.03 * v); break;
+    case 'stone':
+      pvBand(t, out, 0.03, 'bandpass', 1400 * j, 1.5, 0.09 * v); thud(150, 0.08, 0.08);
+      pvPartials(t, out, 520 * j, [1, 2.2, 3.6], [0.05, 0.035, 0.02], [0.02 * v, 0.01 * v, 0.005 * v]); break;
+    case 'tool':
+      pvBand(t, out, 0.03, 'bandpass', 2400 * j, 1.6, 0.08 * v); thud(160, 0.08, 0.07);
+      pvPartials(t, out, 1150 * j, [1, 2.6, 4.9], [0.1, 0.06, 0.035], [0.012 * v, 0.007 * v, 0.004 * v]); break;
+    default:
+      thud(260, 0.07, 0.07); pvBand(t, out, 0.02, 'bandpass', 1200, 1.2, 0.03 * v);
+  }
+}
+const pvSetDown = (P, k) => pvSfx(P.mat, k);
+// liquid moving in a closed thing: a low swell of wash, and a bubble or two (a sine chirping up: a bubble's own resonance)
+function pvSlosh(k) {
+  const ctx = audioCtx; if (!PV_SYNTH || !ctx || k <= 0.05) return;
+  if (ctx.currentTime - (pv ? pv.sloshAt : 0) < 0.4) return;
+  if (pv) pv.sloshAt = ctx.currentTime;
+  const t = ctx.currentTime + 0.02, out = sfxOut();
+  pvBand(t, out, 0.45, 'lowpass', 650, 0.9, 0.06 * k, (x) => Math.pow(Math.sin(Math.PI * Math.min(1, x * 1.3)), 1.5) * (0.65 + 0.35 * Math.sin(x * 31)));
+  const n = 1 + Math.round(Math.random() * 2 + k);
+  for (let i = 0; i < n; i++) {
+    const ti = t + 0.06 + Math.random() * 0.3, f = 230 + Math.random() * 300;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(f, ti); o.frequency.exponentialRampToValueAtTime(f * 1.9, ti + 0.04);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, ti); g.gain.exponentialRampToValueAtTime(0.012 * k, ti + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, ti + 0.06);
+    o.connect(g).connect(out); o.start(ti); o.stop(ti + 0.08);
+  }
+}
+// the ring's stones arcing: a few ticks, very close together, high and quiet
+function pvCrackle() {
+  const ctx = audioCtx; if (!PV_SYNTH || !ctx) return;
+  const t = ctx.currentTime + 0.01, out = sfxOut();
+  for (let i = 0; i < 3 + (Math.random() * 3 | 0); i++) pvBand(t + Math.random() * 0.12, out, 0.006, 'highpass', 3800 + Math.random() * 2500, 0.8, 0.012 + Math.random() * 0.012);
+}
+// a small gearbox turning over inside a plastic fish
+function pvMotor() {
+  const ctx = audioCtx; if (!PV_SYNTH || !ctx) return;
+  const t = ctx.currentTime + 0.01, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(62, t); o.frequency.linearRampToValueAtTime(84, t + 0.16);
+  const bq = ctx.createBiquadFilter(); bq.type = 'bandpass'; bq.frequency.value = 520; bq.Q.value = 2.2;
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.014, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+  o.connect(bq).connect(g).connect(out); o.start(t); o.stop(t + 0.22);
+  pvBand(t + 0.19, out, 0.012, 'bandpass', 2200, 3, 0.03);
+}
+/* PICKING A THING IN THE PACK IS PAPER (2026-11-19, the owner: "when clicking through items in the pack have the paper
+ * sounds i dont want the claude sound effects"): one of his sketchbook's page turns (the call's, off his own clip), soft
+ * (they are ~9 dB over the sheet's own open), a little varied, never two on top of each other inside 70 ms. The made-up
+ * set-down sounds below (`pvSfx`: a material's knock or ring as the thing landed in the pane; the jar's slosh, the
+ * lantern's crackle, Billy's motor, the crab's scrape) are off: `PV_SYNTH`. */
+const PV_SYNTH = false;
+let packPaperAt = 0;
+function sfxPackPaper() {
+  const ctx = audioCtx; if (!ctx || ctx.currentTime - packPaperAt < 0.07) return;
+  packPaperAt = ctx.currentTime;
+  playSample('packPaper', 0.4, 0.07);
+}
+// the pack itself: the flap lifted and canvas moving; put back, shorter
+function sfxPackOpen(open) {
+  const ctx = audioCtx; if (!ctx) return;
+  if (playSample(open ? 'packOpen' : 'packClose', 1.0, 0.03)) return;     // his paper (the drawn grains only until it loads)
+  const t = ctx.currentTime + 0.005, out = sfxOut();
+  pvBand(t, out, open ? 0.36 : 0.22, 'bandpass', 2000, 0.6, 0.045, pvGrains(open ? 16 : 10, 1.2));
+  pvBand(t, out, open ? 0.3 : 0.18, 'lowpass', 700, 0.7, 0.03, pvGrains(open ? 9 : 6, 1.4));
+  pvBand(t + (open ? 0.05 : 0.13), out, 0.09, 'lowpass', 190, 0.8, 0.07, (x) => Math.pow(1 - x, 2.5));
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
+  pvS: () => pv && { item: pv.item && pv.item.name, pose: pv.pose, mat: pv.P && pv.P.mat, landed: pv.landed, yaw: +pv.yawA.toFixed(2), raf: !!pv.raf, live: !!(pv.canvas.parentElement && pv.canvas.parentElement.classList.contains('live')), w: pv.canvas.width, h: pv.canvas.height },
+  pvShot: () => { if (!pv || !pv.item) return null; pv.r.render(pv.sc, pv.cam); return pv.canvas.toDataURL('image/png'); },
+  /* the harness's look at any item in the pane, without the pack: mounted, settled `s` seconds, drawn */
+  pvLook: (item, s = 1.6, px = 240) => {
+    pvBuild(); const m = item && pvModelOf(item); if (!m || !iconDrawable(m)) return null;
+    pvMount(item, m); pv.r.setSize(px / pv.r.getPixelRatio(), px / pv.r.getPixelRatio(), false); pv.cam.aspect = 1; pv.cam.updateProjectionMatrix();
+    for (let i = 0; i < s * 60; i++) pvStep(1 / 60);
+    pv.r.render(pv.sc, pv.cam); return pv.canvas.toDataURL('image/png');
+  },
+  pvDbg: () => pv && { lost: pv.r.getContext().isContextLost(), k: +pv.fit.scale.x.toFixed(3), pos: pv.fit.position.toArray().map((v) => +v.toFixed(2)), calls: pv.r.info.render.calls, tris: pv.r.info.render.triangles, progs: pv.r.info.programs.length, kids: pv.fit.children.length },
+  pvMore: (s = 1, px = 240) => { if (!pv || !pv.item) return null; for (let i = 0; i < s * 60; i++) pvStep(1 / 60); pv.r.render(pv.sc, pv.cam); return pv.canvas.toDataURL('image/png'); },
+  removeFromInventory, pvSfx, pvSlosh, pvProfile, pvSettle: (s = 2) => { if (!pv) return; for (let i = 0; i < s * 60; i++) pvStep(1 / 60); },
+}));
+
 const invDetailEl = document.getElementById('inv-detail');
 let packSel = -1, packRingSel = -1;   // a worn ring may be the selection instead of a slot of the pack
 function inspectFromPack(item) {
@@ -12792,8 +14909,22 @@ function inspectFromPack(item) {
    * Turning, zooming and clicking out were all dead for exactly this
    * reason. Same trap the combine recipes hit. */
   packReturnLock = false;
-  closePack();
+  /* AND THE SHEET STAYS UP BESIDE IT (2026-11-19, the owner: "the inspect should still have the paper beside it"): the
+   * writing goes, his hands hold the paper off to the left while the thing turns on the right, and putting it away
+   * brings the pack back onto the sheet (`closeInspect`). Without the sheet (not loaded, reduced motion) as before. */
+  if (ph.ready && ph.mode === 'held' && !phReduced()) { packAside(); inspectBackToPack = true; }   // (and the pack stays written on it: "still show the inventory to the left on the paper while inspecting")
+  else closePack();
   openInspect(model, { ...opts, name: item.name, desc: item.isKey ? '' : (item.desc || '') });   // (a key: its name alone, 2026-11-17, the owner)
+}
+let inspectBackToPack = false;
+/* the pack shut as `closePack` shuts it, but the sheet kept in his hands, slid aside — no fold, no sound, no look regained */
+function packAside() {
+  closeKeyChain();
+  invOpen = false;
+  endDrag();
+  invPanelEl.classList.add('aside');          // (still shown, carried aside with the sheet, not to be clicked: a click puts the thing away)
+  phWrap.classList.add('aside');
+  refreshUI();
 }
 function inspectHeld(item) {
   if (item.isKey) fillKeyModels();
@@ -12801,17 +14932,34 @@ function inspectHeld(item) {
   openInspect(item.inspectModel, { ...opts, name: item.name, desc: item.isKey ? '' : (item.desc || '') });   // (a key: its name alone)
 }
 function renderPackDetail() {
+  pvShown = null;
+  renderPackDetail0();
+  pvAttach(pvShown);
+  packFitName(invDetailEl && invDetailEl.querySelector('.name'));
+}
+/* A NAME FITS ITS PLACE (2026-11-19, the owner: "some of the names get cut off in the inventory fix this but keep the pack
+ * all the same"): one line, as the pack draws it, and only a name too long for its place is set smaller — 7 % a step,
+ * no smaller than 55 % of its own size — so nothing moves and a short name is as it was. */
+function packFitName(el) {
+  if (!el) return;
+  el.style.fontSize = '';
+  const base = parseFloat(getComputedStyle(el).fontSize) || 16;
+  let fs = base;
+  for (let k = 0; k < 12 && el.scrollWidth > el.clientWidth + 1 && fs > base * 0.55; k++) { fs *= 0.93; el.style.fontSize = fs.toFixed(2) + 'px'; }
+}
+function renderPackDetail0() {
   if (!invDetailEl) return;
   if (packKeySel) {
     const key = kcCurrent();
     if (!key) packKeySel = false;
     else {
       invDetailEl.className = 'detail';
-      invDetailEl.innerHTML = `<div class="big">${iconHTML(key)}</div>
+      pvShown = key;
+      invDetailEl.innerHTML = `<div class="big">${iconHTML(key, true)}</div>
         <div class="name">${key.name}</div>
         ${''/* (no description for a key — 2026-11-17, the owner: "take out key descriptions") */}
         <button type="button" class="act insp">Inspect</button>
-        <button type="button" class="act hold">${key === equipped ? 'Holster' : 'Hold'}</button>
+        <button type="button" class="act hold">${key === equipped ? 'Holster' : 'Equip'}</button>
         <div class="hint">On the keychain · click a key, or turn the ring with the arrows</div>`;
       const bI = invDetailEl.querySelector('.insp');
       bI.disabled = !key.inspectModel;
@@ -12824,7 +14972,8 @@ function renderPackDetail() {
   if (packRingSel >= 0) {
     const ring = rings[packRingSel];
     invDetailEl.className = 'detail';
-    invDetailEl.innerHTML = `<div class="big">${iconHTML(ring)}</div>
+    pvShown = ring;
+    invDetailEl.innerHTML = `<div class="big">${iconHTML(ring, true)}</div>
       <div class="name">${ring.name}</div>
       ${ring.desc ? `<div class="desc">${ring.desc}</div>` : ''}
       <button type="button" class="act insp">Inspect</button>
@@ -12845,7 +14994,7 @@ function renderPackDetail() {
     return;
   }
   invDetailEl.className = 'detail';
-  const verb = item.viewmodel ? (item === equipped ? 'Holster' : 'Hold') : 'Use';
+  const verb = item.viewmodel ? (item === equipped ? 'Holster' : 'Equip') : 'Use';
   /* AN ARTIFACT IS SET INTO A WEAPON: one button for each weapon you carry,
    * the one in your hand first. A weapon with one in it says so, and lets it out. */
   const artWs = item.artifact === true ? inventory.filter(isArtWeapon).sort((a, b) => (b === equipped) - (a === equipped)).slice(0, 5) : [];
@@ -12855,7 +15004,8 @@ function renderPackDetail() {
     : '<div class="hint">Carry a weapon to set it in</div>';
   const artOnHTML = isArtWeapon(item) && item.artifact
     ? `<div class="artline">${item.artifact.svg || ART_WHALE_SVG}${item.artifact.name}</div><button type="button" class="act detach">Remove artifact</button>` : '';
-  invDetailEl.innerHTML = `<div class="big">${iconHTML(item)}</div>
+  pvShown = item;
+  invDetailEl.innerHTML = `<div class="big">${iconHTML(item, true)}</div>
     <div class="name">${item.name}</div>
     ${item.desc ? `<div class="desc">${item.desc}</div>` : ''}
     ${artOnHTML}
@@ -12902,12 +15052,14 @@ function renderPackDetail() {
 }
 function selectRingSlot(i) {
   packKeySel = false; kcUpdateBtn();
+  if (rings[i] && packRingSel !== i) sfxPackPaper();
   packRingSel = rings[i] ? i : -1;
   for (const s of invGridEl.querySelectorAll('.islot')) s.classList.remove('sel');
   renderRings();
   renderPackDetail();
 }
 function selectPackSlot(i) {
+  if (packSlots[i] && (packSel !== i || packRingSel >= 0 || packKeySel)) sfxPackPaper();
   packRingSel = -1; packKeySel = false; kcUpdateBtn();
   for (const s of document.querySelectorAll('#pack-rings .rslot')) s.classList.remove('sel');
   packSel = packSlots[i] ? i : -1;
@@ -12923,16 +15075,27 @@ function renderPack() {
   if (!packSlots[packSel]) packSel = firstFilledSlot();
   const nSlots = Math.max(INV_MAX, packCount());
   for (const it of inventory) if (slotOf(it) < 0) placeInSlot(it, -1, nSlots);   // a thing taken over the top gets a cell
+  /* A THING NEW TO THE PACK IS DRAWN IN (2026-11-18): the first time the open pack shows it, its box is drawn round by hand
+   * and the thing set into it — and it is the selection, so the pane sets it down in front of you. More than two at once
+   * is a load, not a find: those are just there. */
+  const nowMs = performance.now();
+  if (invOpen) {
+    const fresh = inventory.filter((it) => !it._packSeen);
+    for (const it of fresh) { it._packSeen = true; if (fresh.length <= 2) it._freshAt = nowMs; }
+    if (fresh.length && fresh.length <= 2 && slotOf(fresh[fresh.length - 1]) >= 0) packSel = slotOf(fresh[fresh.length - 1]);
+  }
   kcUpdateBtn(); if (kcOpen) { kcSync(); kcText(); }
   for (let i = 0; i < nSlots; i++) {
     const item = packSlots[i];
     const slot = document.createElement('div');
     slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '') + (item && isArtWeapon(item) && item.artifact ? ' art' : '') + (item && (item.artifact === flameArtItem || item === flameArtItem) ? ' fire' : '') + (item && seaArtItem && (item.artifact === seaArtItem || item === seaArtItem) ? ' sea' : '');
     slot.dataset.index = String(i);
+    if (item && item._freshAt && nowMs - item._freshAt < 1100) { slot.classList.add('fresh'); slot.style.setProperty('--fd', -Math.round(nowMs - item._freshAt) + 'ms'); }
+    if (item) { const P = pvProfile(item); if (P.glow) { slot.classList.add('glows'); slot.style.setProperty('--glow', '#' + new THREE.Color(P.glow).getHexString()); } }
     // the owner's drawn numerals, as on the hotbar (2026-11-18: the pack in his hand), and "in hand" a span of its own (the
     // slot's ::after is its drawn frame now, ::before the circled selection)
     slot.innerHTML = `<span class="num" aria-label="${i + 1}">${String(i + 1).split('').map((c) => `<i class="hd hd${c}"></i>`).join('')}</span>` +
-      (item && item === equipped ? '<span class="inhand">In hand</span>' : '') + (item ? iconHTML(item) : '');
+      (item && item === equipped ? '<span class="inhand">In hand</span>' : '') + (item ? iconHTML(item, true) : '');
     if (item) {
       // no name in the slot: the pane on the right names the selection
       // double-click goes straight to the examine screen
@@ -12992,7 +15155,7 @@ function beginDrag(e) {
   dragArm = null;
   dragItem = item; dragFrom = from;
   if (dragRing >= 0) invGridEl.classList.add('takes');
-  invGhostEl.innerHTML = iconHTML(item);
+  invGhostEl.innerHTML = iconHTML(item, true);
   invGhostEl.style.left = e.clientX + 'px';
   invGhostEl.style.top = e.clientY + 'px';
   invGhostEl.classList.add('show');
@@ -13071,7 +15234,7 @@ window.addEventListener('pointerup', (e) => {
   renderHotbar(); renderPack();
 });
 
-function openPack() {
+function openPack(quiet = false) {
   if (invOpen || ended || dying || !introDone || deepNoHands) return;
   invOpen = true;
   packReturnLock = locked;
@@ -13079,6 +15242,8 @@ function openPack() {
   if (held) dropHeld();
   renderPack();
   invPanelEl.classList.add('show');
+  phPlay(true);
+  if (!quiet) sfxPackOpen(true);              // (back from looking at a thing: the sheet never folded)
   openKeyChain();                       // (the ring in the pack's corner, drawn while it is up)
   setPrompt('');
   crosshair.className = '';
@@ -13090,9 +15255,137 @@ function closePack() {
   invOpen = false;
   endDrag();
   invPanelEl.classList.remove('show');
+  phPlay(false);
+  sfxPackOpen(false);
   refreshUI();
   if (packReturnLock && !fallbackLook) regainLook();
 }
+
+/* ---- THE PACK IN HIS HANDS (2026-11-18, the owner's IMG_7207: "put this as the canvas behind the inventory … i want this as
+ * an animation opening it up with the same sound effects in the video keep the hands in it too the backround can go. have it
+ * a written style on this worn paper. make it retro too the hands should look retro"). His two hands come up holding a
+ * folded sheet, snap it open and hold it while the pack is written on it; closing folds it back down. The frames are
+ * `assets/hud/pack-hands.png` (`tools/pack_hands_pack.py`: cut out with Vision, the sheet aged and stained, moonlit,
+ * ordered-dithered to 330 px tall, a dark line round it), drawn on a canvas at the sprite's own size and blown up
+ * pixelated. Frames 0-7 the opening (0 the folded strip), 8-13 the held sheet, registered on the paper so it stays put
+ * under the writing while the hands breathe. `write` is the clear part of the sheet in sprite pixels: the pack's panel is
+ * scaled and placed into it (`packPaperFit`, read by `hudFit` in index.html). */
+const PH = { src: 'assets/hud/pack-hands.png', fw: 669, fh: 330, cols: 4, open: 8, idle: 6,
+  paper: [126.8, 22.0, 489.9, 281.1], write: [160, 42, 465, 270] };
+const PH_FPS = 15, PH_RISE = 0.13, PH_IDLE_FPS = 6, PH_CLOSE_FPS = 20, PH_DROP = 0.16;
+const phWrap = document.getElementById('pack-hands');
+const phCv = phWrap && phWrap.querySelector('canvas');
+const phG = phCv && phCv.getContext('2d');
+const ph = { img: null, ready: false, mode: 'off', t0: 0, from: 0, raf: 0, k: 1, left: 0, top: 0, last: -1 };
+if (phCv) {
+  phCv.width = PH.fw; phCv.height = PH.fh;
+  const im = new Image();
+  im.onload = () => { ph.img = im; ph.ready = true; invPanelEl.classList.add('paper'); phLayout(); window.hudFit && window.hudFit(); };
+  im.src = PH.src;
+}
+const phReduced = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+/* where the sheet sits: as big as the window lets the whole paper be (its height, mostly), its middle on the window's */
+function phLayout() {
+  if (!phCv) return;
+  const W = window.innerWidth || 1280, H = window.innerHeight || 720;
+  const [px0, py0, px1, py1] = PH.paper;
+  /* THE SHEET BIGGER (2026-11-19, the owner: "make the pack bigger by having the paper bigger the little bit of the top
+   * can be trimmed by the screen"): 1.12 of the window's height, its foot near the bottom, its torn top running off;
+   * what is written on it fits the part of it that is ON the screen (`ph.wv`) */
+  const k = Math.min((H * 1.12) / (py1 - py0), (W * 0.96) / (px1 - px0));
+  let left = W / 2 - ((px0 + px1) / 2) * k, top = H * 0.985 - py1 * k;
+  top = Math.max(top, H - PH.fh * k);                     // the sleeves always run on off the bottom
+  ph.k = k; ph.left = left; ph.top = top;
+  phCv.style.width = `${PH.fw * k}px`; phCv.style.height = `${PH.fh * k}px`;
+  phCv.style.left = `${left}px`; phCv.style.top = `${top}px`;
+  // (the sheet held aside turns about its canvas's middle: the pack written on it is carried about the same point)
+  invPanelEl.style.setProperty('--ph-ox', `${(left + (PH.fw * k) / 2).toFixed(1)}px`);
+  invPanelEl.style.setProperty('--ph-oy', `${(top + (PH.fh * k) / 2).toFixed(1)}px`);
+  const [wl, wt, wr, wb] = PH.write;
+  ph.wv = [left + wl * k, Math.max(top + wt * k, H * 0.03), left + wr * k, Math.min(top + wb * k, H * 0.97)];   // (on the screen)
+  const cx = (ph.wv[0] + ph.wv[2]) / 2, cy = (ph.wv[1] + ph.wv[3]) / 2;
+  invPanelEl.style.setProperty('--pk-dx', `${(cx - W / 2).toFixed(1)}px`);
+  invPanelEl.style.setProperty('--pk-dy', `${(cy - H / 2).toFixed(1)}px`);
+}
+/* the pack's panel, scaled to the writing on the sheet (asked by hudFit with the panel's unscaled size) */
+window.packPaperFit = (pw, phh) => {
+  if (!ph.ready) return null;
+  const v = ph.wv; if (!v) return null;
+  return Math.min((v[2] - v[0]) / pw, (v[3] - v[1]) / phh);
+};
+window.addEventListener('resize', () => { phLayout(); if (ph.mode !== 'off') phDraw(true); });
+function phFrame(i) {
+  if (!ph.img || i === ph.last) return;
+  ph.last = i;
+  const c = i % PH.cols, r = (i / PH.cols) | 0;
+  phG.clearRect(0, 0, PH.fw, PH.fh);
+  phG.drawImage(ph.img, c * PH.fw, r * PH.fh, PH.fw, PH.fh, 0, 0, PH.fw, PH.fh);
+}
+const phIdleSeq = (() => { const a = []; for (let i = 0; i < PH.idle; i++) a.push(PH.open + i); for (let i = PH.idle - 2; i > 0; i--) a.push(PH.open + i); return a; })();
+/* what shows at time t of the current mode: a frame, how far below its place the whole thing is (0-1 of the window), and
+ * the dark behind it */
+function phAt(t) {
+  const H = window.innerHeight || 720;
+  if (ph.mode === 'open') {
+    const ts = t - PH_RISE * (ph.from === 0 ? 1 : 0);
+    if (ts < 0) { const u = 1 - Math.pow(1 - t / PH_RISE, 3); return { f: 0, y: (1 - u) * 0.42 * H, dim: u }; }
+    const f = Math.min(PH.open - 1, ph.from + Math.floor(ts * PH_FPS));
+    if (f >= PH.open - 1 && ts * PH_FPS >= PH.open - ph.from) { ph.mode = 'held'; ph.t0 = performance.now() / 1000; return { f: PH.open, y: 0, dim: 1 }; }
+    return { f, y: 0, dim: 1 };
+  }
+  if (ph.mode === 'held') return { f: phIdleSeq[Math.floor(t * PH_IDLE_FPS) % phIdleSeq.length], y: 0, dim: 1 };
+  if (ph.mode === 'close') {
+    const f = ph.from - Math.floor(t * PH_CLOSE_FPS);
+    if (f >= 0) return { f, y: 0, dim: 1 };
+    const u = (t - (ph.from + 1) / PH_CLOSE_FPS) / PH_DROP;
+    if (u >= 1) return null;
+    const e = u * u;
+    return { f: 0, y: e * 0.45 * H, dim: 1 - u };
+  }
+  return null;
+}
+function phDraw(force) {
+  if (!phCv) return;
+  if (force) ph.last = -1;
+  if (ph.mode === 'held' && !invOpen && !inspecting) { invPanelEl.classList.remove('show'); phPlay(false); return; }   // (whatever shut the pack or the look: fold it)
+  const t = performance.now() / 1000 - ph.t0;
+  const s = phAt(t);
+  if (!s) { ph.mode = 'off'; phWrap.classList.remove('on'); ph.raf = 0; return; }
+  phFrame(s.f);
+  phCv.style.transform = s.y ? `translateY(${s.y.toFixed(1)}px)` : '';
+  phWrap.style.setProperty('--ph-dim', s.dim.toFixed(3));
+}
+function phLoop() { ph.raf = 0; phDraw(false); if (ph.mode !== 'off') ph.raf = requestAnimationFrame(phLoop); }
+/* open: from the folded strip (or from wherever a close had got to); close: back down the opening from where it is */
+function phPlay(open) {
+  if (!ph.ready || !phCv) return;
+  const now = performance.now() / 1000;
+  const cur = ph.mode === 'off' ? -1 : ph.last;
+  phWrap.classList.remove('aside'); invPanelEl.classList.remove('aside');
+  if (open && ph.mode === 'held') return;               // (it was held aside, beside a thing looked at: it only slides back)
+  if (open) {
+    ph.from = (ph.mode === 'close' && cur > 0 && cur < PH.open) ? cur : 0;
+    ph.mode = phReduced() ? 'held' : 'open';
+  } else {
+    if (ph.mode === 'off') return;
+    ph.from = (cur >= 0 && cur < PH.open) ? cur : PH.open - 1;
+    ph.mode = phReduced() ? 'off' : 'close';
+    if (ph.mode === 'off') { phWrap.classList.remove('on'); return; }
+  }
+  ph.t0 = now; ph.last = -1;
+  phLayout();
+  phWrap.classList.add('on');
+  phDraw(true);
+  if (!ph.raf) ph.raf = requestAnimationFrame(phLoop);
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { ph: () => ({ ready: ph.ready, mode: ph.mode, f: ph.last, k: +ph.k.toFixed(3), on: phWrap.classList.contains('on'),
+    snd: ['packOpen', 'packClose'].map((n) => (sampleBanks[n] || []).filter(Boolean).length).join('/') }), phPlay, phLayout,
+  /* the harness: the hands held still at `t` seconds into a mode ('open' | 'held' | 'close'), the loop stopped */
+  phShow: (mode, t, from = mode === 'close' ? PH.open - 1 : 0) => {
+    if (ph.raf) cancelAnimationFrame(ph.raf); ph.raf = 0;
+    ph.mode = mode; ph.from = from; ph.t0 = performance.now() / 1000 - t;
+    phWrap.classList.add('on'); phLayout(); phDraw(true); return { mode: ph.mode, f: ph.last };
+  } }));
 
 /* ---- THE KEYCHAIN, LOOKED THROUGH (2026-11-14, the owner: "a cool little menu where you cycle through the chain and keys in a
  * cool 3d model like you are actually looking through the keys"). Its own small renderer on its own canvas over the pack
@@ -13218,7 +15511,7 @@ function kcSync() {
     // its own materials, made metal for this room (out in the game they stay dielectric): its colour and maps kept
     m.traverse((o) => {
       if (!o.isMesh) return;
-      const conv = (mt) => { if (!mt || !mt.isMeshStandardMaterial) return mt; const c = mt.clone(); c.metalness = 0.92; c.metalnessMap = null; c.roughness = Math.min(0.5, Math.max(0.24, mt.roughness * 0.6)); c.envMapIntensity = 1.2; if (c.emissive && !c.emissiveMap) c.emissive.setHex(0x000000); if (!c.map) { const hsl = {}; c.color.getHSL(hsl); c.color.setHSL(hsl.h, hsl.s, Math.max(hsl.l, 0.42)); } return c; };   // (a flat dark iron as metal reflected nothing: black)
+      const conv = (mt) => { if (!mt || !mt.isMeshStandardMaterial) return mt; const c = mt.clone(); c.envMap = null; /* (no env of its own: the ring's room is the scene's, and a key's own was the game renderer's — black here) */ c.metalness = 0.92; c.metalnessMap = null; c.roughness = Math.min(0.5, Math.max(0.24, mt.roughness * 0.6)); c.envMapIntensity = 1.2; if (c.emissive && !c.emissiveMap) c.emissive.setHex(0x000000); if (!c.map) { const hsl = {}; c.color.getHSL(hsl); c.color.setHSL(hsl.h, hsl.s, Math.max(hsl.l, 0.42)); } return c; };   // (a flat dark iron as metal reflected nothing: black)
       o.material = Array.isArray(o.material) ? o.material.map(conv) : conv(o.material);
     });
     m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.setScalar(1); m.updateMatrixWorld(true);
@@ -13335,6 +15628,7 @@ function kcSync() {
 function kcText() {
   const K = kc, it = K && K.items[K.sel];
   kcEl.querySelector('.kc-name').textContent = it ? it.name : 'No keys yet';
+  packFitName(kcEl.querySelector('.kc-name'));
   kcEl.querySelector('.kc-count').textContent = K && K.items.length ? `${K.sel + 1} / ${K.items.length}` : '';
   kcEl.title = it ? 'Click a key, or turn the ring with the arrows, scroll or a drag' : 'Every key you find hangs here until you use it';
   document.getElementById('kc-prev').disabled = document.getElementById('kc-next').disabled = !K || K.items.length < 2;
@@ -13344,6 +15638,7 @@ const kcCurrent = () => (kc && kc.items[kc.sel]) || null;
  * own pane — its picture, its name, what it is for, Inspect and Hold — and turning the ring changes it there */
 function selectKeyChain() {
   if (!kcCurrent()) return;
+  if (!packKeySel) sfxPackPaper();
   packKeySel = true; packSel = -1; packRingSel = -1;
   for (const s2 of invGridEl.querySelectorAll('.islot')) s2.classList.remove('sel');
   for (const s2 of document.querySelectorAll('#pack-rings .rslot')) s2.classList.remove('sel');
@@ -13382,6 +15677,7 @@ function kcPhi(d, n, step) {
   else f = step * d;
   return -Math.PI / 2 + f;
 }
+const KC_FWD = 0.045;       // how far the key you are on comes forward off the ring, toward you (m)
 function kcFrame(now) {
   if (!kcOpen) return;
   const K = kc; K.raf = requestAnimationFrame(kcFrame);
@@ -13416,14 +15712,19 @@ function kcFrame(now) {
     const ox = K.hx + LR * sr, oy = K.hy + LR * (1 - cr);                 // the ring's middle
     // the hand holding the chain: a slow, small drift
     const rx = Math.sin(tt * 0.7) * 0.0016 + Math.sin(tt * 1.93) * 0.0005, ry = Math.sin(tt * 1.31) * 0.0005, rz = Math.sin(tt * 0.53) * 0.0012;
+    /* THE RING DOES NOT TURN (2026-11-20, the owner: "make the keychain not flip around the key chain when selected just have it
+     * come forward a little"). Each key keeps its own place on the ring — the middle one at the bottom, the rest a step apart
+     * either side, as it hung before — and the one you are on swings out toward you a little (`k.on`, eased), turned to face
+     * you. (Was the whole ring turning the chosen key round to the bottom, the last one carried up and over the top.) */
+    const mid = Math.floor((n - 1) / 2);
     K.keys.forEach((k, i) => {
-      const d = i - K.ang, phi = kcPhi(d, n, step);
-      const W = n % 2 ? n / 2 : n / 2 + 0.5, dc = n > 1 ? ((d - (W - n)) % n + n) % n + (W - n) : 0;
-      const near = Math.max(0, 1 - Math.abs(dc)), ease = near * near * (3 - 2 * near);
+      const d = i - mid, phi = kcPhi(d, n, step);
+      k.on = (k.on || 0) + ((i === K.sel ? 1 : 0) - (k.on || 0)) * Math.min(1, h2 * 9);
+      const ease = k.on * k.on * (3 - 2 * k.on);
       /* (and one carried up the side and over the top rides out IN FRONT of the ring, the way a key flipped round a ring
        * swings clear of it: hung from up there at the ring's own depth it hung straight down through the wire) */
       const up = THREE.MathUtils.smoothstep(Math.sin(phi), -0.55, 0.35);
-      const lx = rx + Math.cos(phi) * K.R, ly = ry + Math.sin(phi) * K.R, pz = rz;
+      const lx = rx + Math.cos(phi) * K.R, ly = ry + Math.sin(phi) * K.R, pz = rz + KC_FWD * ease;   // (the one you are on, forward)
       /* (its depth is the jump ring's lean now: its own side of the ring at rest; the one you are on swung out in front; one
        * carried up and over the top swung well out in front, clear of the wire it hangs across. Was a slide of the whole key
        * off the wire, jump ring and all, and the keys at the ring's plane cut through each other and the ring.) */
@@ -13866,7 +16167,9 @@ const VM_PEG_REST_ROT = [-3.798, -1.726, 0.918];
  * built after the katana's own and a `const` read before its line is a
  * dead-zone crash. */
 let bloodItem = null;
-const katLike = () => equipped === katanaItem || (bloodItem !== null && equipped === bloodItem);
+let hookItem = null;                     // Skrim's hook (below the Bloody Blade): the katana's move set too, and a throw of its own
+const katLike = () => equipped === katanaItem || (bloodItem !== null && equipped === bloodItem) || (hookItem !== null && equipped === hookItem);
+const hookHeld = () => hookItem !== null && equipped === hookItem;
 const bloodHeld = () => bloodItem !== null && equipped === bloodItem;
 const restRot = () => (katLike() ? VM_KAT_REST_ROT
   : equipped && equipped.thrust ? VM_PEG_REST_ROT : VM_MIL_REST_ROT);
@@ -13921,7 +16224,8 @@ const restRot = () => (katLike() ? VM_KAT_REST_ROT
 const slashRot = () => {
   if (!katLike()) return VM_SLASH_ROT;
   if (katBack()) return KAT_CUT_ROT_B;
-  for (let i = 0; i < 3; i++) _katRot[i] = KAT_CUT_ROT_A0[i] + (KAT_CUT_ROT_A1[i] - KAT_CUT_ROT_A0[i]) * digPower;
+  // (Skrim's hook keeps the light cut's level grip through a heavy too: the heavy's own tilt was the katana's diagonal)
+  for (let i = 0; i < 3; i++) _katRot[i] = KAT_CUT_ROT_A0[i] + (KAT_CUT_ROT_A1[i] - KAT_CUT_ROT_A0[i]) * (hookHeld() ? 0 : digPower);
   return _katRot;
 };
 shovelVM.rotation.set(VM_MIL_REST_ROT[0], VM_MIL_REST_ROT[1], VM_MIL_REST_ROT[2]);
@@ -14207,7 +16511,10 @@ function updateGlint(dt) {
    * the frame's corner through the whole wind-up, and a glint placed at 0.94
    * was cut in half and read as nothing — the owner: "I don't see it for the
    * shovels") */
-  const inFrame = (v) => { _glintN.copy(v).project(vmCamera); return Math.abs(_glintN.x) < 0.82 && Math.abs(_glintN.y) < 0.80; };
+  // (Skrim's hook: held over the shoulder its point sits out at the frame's right edge, and walked in from 0.82 the light
+  // landed on the pommel — "make the glint on the tip of the hook": on its point while any of the point is on the screen)
+  const gLim = hookHeld() ? [0.97, 0.95] : [0.82, 0.80];
+  const inFrame = (v) => { _glintN.copy(v).project(vmCamera); return Math.abs(_glintN.x) < gLim[0] && Math.abs(_glintN.y) < gLim[1]; };
   /* Walk the edge from the point back toward the hand and hold at the first
    * stretch of it actually in shot: a wound pose often carries the very tip
    * past the frame, and a glint you cannot see is not a glint. */
@@ -15232,6 +17539,494 @@ bloodItem = {
   use: () => toggleEquip(bloodItem),
 };
 
+/* ---- SKRIM'S HOOK (2026-11-19) ------------------------------------------------------------------------------------------
+ * The owner: "i want to make 'Skrims hook' a weapon give it the katana swings for now but the shift heavy should shoot the
+ * hook like skrim does with the chain attached but make this not able to be spammed. the more you charge the shift heavy the
+ * further it should go make it a good distance but not too crazy. the throw hook should bring the enemy closer to you as
+ * skrims hook does. the hook itself should be held like skrim does and throw like him make these animations good. i want the
+ * swing of the hook to be not as far as the sword but more bleed and fast speed. make it balanced but a very good late game
+ * weapon." And: "make skrim drop this weapon too" (`skHookDrop`).
+ * His own iron (`tools/hook_pack.py`: `skrim_hook` out of his model, on the end of its handle, +Z out along it) fitted into
+ * the katana's frame like the Bloody Blade — the fist round the middle of the handle at the origin, the length down -Y, the
+ * curl of it turned to the edge's side (-X) like a sickle — so `katLike()` answers yes and every katana cut, guard and recovery
+ * is its. Its own numbers: quicker (`swingK` 0.72 to the katana's 0.9, recovery 3.4 to 4), shorter (`reachK` 0.8), and every
+ * cut that draws blood builds the bleed by `HOOK_BLEED` (the Bloody Blade's by 1). A short length of his chain hangs off the
+ * pommel and swings with you (`hookDangle`), as his does off his fist.
+ * Its Shift heavy is not the drawn stab: the hook is whirled up over your shoulder on its chain (`hookCockPose`) and thrown
+ * overhand (`hookThrow`), further the longer it was held (`HOOK_RANGE`), down the crosshair; what it bites is hauled back to
+ * you on the chain and arrives in front of you reeling (`hookTick`'s 'bite'). Not a thing to throw again at once: out and
+ * back, and then `HOOK_CD` seconds more before the hold is a throw again (till then a Shift hold is the katana's stab). */
+/* (the regular heavy's height through the cut: 0.36 put the point across the picture at 0.28-0.33 above the middle — the
+ * owner, 2026-11-20: "make the regular heavy swing through where the cursor is on the middle of the screen its above it right
+ * now"; measured, `tools/hookheavyline.js`) */
+let HOOK_HEAVY_LIFT = 0.14;      // (0.14: across the middle, ndc y −0.01 to +0.02 through the cut)
+const HOOK_SCALE = 1.3, HOOK_GRIP_Z = 0.065;      // his size ×1.3 in your fist (his hand is bigger than yours; at 1.5 it filled the frame); the fist round the middle of the handle
+/* (THROWN EVERY TIME, SLOW HOME — 2026-11-19, the owner: "make it able to be thrown every time but it takes a little to come
+ * back to you with the hook": no wait after it is home (`HOOK_CD` 0, was 6 s); what it costs is the trip back — it lies where
+ * it landed `HOOK_LIE` s, then is hauled in gathering to `HOOK_BACK` 12 m/s (was 30, at once): ~1.5 s home from 14 m) */
+const HOOK_RECALL = 30;                       // (m/s: hauled back by a click, `hookRecall`)
+const HOOK_RANGE = [6, 14], HOOK_SPEED = 36, HOOK_BACK = 12, HOOK_LIE = 0.3, HOOK_CD = 0, HOOK_DMG = 1.5, HOOK_BLEED = 1.35, HOOK_STAM = 0.18, HOOK_STRING = 4;
+/* HELD AS THE OWNER CHOSE (2026-11-19, "the point of the hook should face the enemy while holding the hook", then, of the
+ * contact sheet: "the top left shot of this should be how the hook should be held"): upright in the fist, a question mark —
+ * turned about its own length (`HOOK_TURN` 1.18) so its curl opens down the lens and in toward the middle of the frame, the
+ * point at what you face. Measured with `tools/hookaim.js`: the curl's dot with the lens's forward 0.99. (A lean back in the
+ * fist, tried for a point aimed dead ahead, was not his pick: `HOOK_LEAN` 0.) The trail and the glint ride the point itself
+ * (its end, found along the mesh: (-0.082, 0.032, 0.253) of its own) and the back of the curl; `glintSpan` short, so the light
+ * stays on the point ("make the glint on the tip of the hook"). */
+const HOOK_TURN = 1.18, HOOK_LEAN = 0;
+const HOOK_LIP = [[-0.002, -0.244, 0.114], [0.062, -0.384, 0.138]];   // the point, and the back of the curl (in the fist's frame)
+const hookModel = new THREE.Group(), hookInspect = new THREE.Group(), hookWorld = new THREE.Group();
+let hookRaw = null;                                // his mesh, on its handle end, +Z out along it — what is thrown
+const hookFill = [];                               // anything that wanted a copy before the model was in
+function fitHook(m) {
+  const inner = new THREE.Group(); inner.add(m); m.position.set(0, 0, -HOOK_GRIP_Z);
+  inner.rotation.x = Math.PI / 2;                  // out along it (+Z) to down the blade (-Y)
+  const fit = new THREE.Group(); fit.add(inner);
+  fit.rotation.set(HOOK_LEAN, HOOK_TURN, 0, 'ZXY');  // turned about its length, then leaned back in the fist: the point at them
+  fit.scale.setScalar(HOOK_SCALE);
+  return fit;
+}
+function hookMesh() {
+  const m = new THREE.Mesh(hookRaw.geometry, hookRaw.material.clone());   // (its own material: the one lying on the floor glints)
+  m.castShadow = false; m.receiveShadow = false;
+  return m;
+}
+bwGlb('assets/skrim-hook.glb', (gltf) => {
+  let src = null; gltf.scene.traverse((o) => { if (!src && o.isMesh) src = o; });
+  if (!src) return;
+  // (METALNESS IS A TRAP: none, and its own map lit a little, so his iron reads at night — the screwdriver's way)
+  const mat = src.material; mat.metalness = 0; mat.roughness = 0.6;
+  mat.emissive = new THREE.Color(0xffffff); mat.emissiveMap = mat.map; mat.emissiveIntensity = 0.17;
+  // (its iron catching the night, with its own relief now: "make the hook textures look better" — a little metal off the
+  // game's env, only as much as keeps the red of the handle red)
+  mat.metalness = 0.3; mat.roughness = 0.48; mat.envMap = ringEnv(); mat.envMapIntensity = 1.6; if (mat.normalMap) mat.normalScale.set(1.2, 1.2);
+  mat.needsUpdate = true;
+  hookRaw = src;
+  /* (in your fist, its own light down to the game's: the view model has lamps of its own, and at the world copy's level it
+   * was the brightest thing on the screen — the owner: "the hook is really bright make it match the game") */
+  const vm = hookMesh(); vm.material.emissiveIntensity = 0.03; vm.material.color.setScalar(0.78);
+  hookModel.add(fitHook(vm));
+  hookInspect.add(fitHook(hookMesh()));
+  hookWorld.add(fitHook(hookMesh()));
+  for (const f of hookFill) f();
+  hookFill.length = 0;
+});
+function makeHookIcon() {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d'); g.lineCap = 'round';
+  g.strokeStyle = '#8c3a24'; g.lineWidth = 5.5;                   // the handle
+  g.beginPath(); g.moveTo(9, 41); g.lineTo(19, 30); g.stroke();
+  g.fillStyle = '#a36a3c'; g.beginPath(); g.arc(8, 42, 3.4, 0, Math.PI * 2); g.fill();   // its knob
+  g.strokeStyle = '#b8bcc0'; g.lineWidth = 2.6;                   // the collar
+  g.beginPath(); g.moveTo(17, 28); g.lineTo(22, 33); g.stroke();
+  g.strokeStyle = '#c8ccd0'; g.lineWidth = 3.4;                   // the iron, up and over into the curl
+  g.beginPath(); g.moveTo(20, 30); g.lineTo(27, 21); g.arc(32, 15, 8, Math.PI * 0.8, Math.PI * 2.15); g.stroke();
+  g.strokeStyle = '#7a1410'; g.lineWidth = 2.6;                   // the point, bloodied
+  g.beginPath(); g.arc(32, 15, 8, Math.PI * 1.85, Math.PI * 2.15); g.stroke();
+  return c.toDataURL();
+}
+const hookVM = new THREE.Group();
+hookVM.add(hookModel);
+hookVM.position.copy(katanaVM.position);
+hookVM.rotation.copy(katanaVM.rotation);
+hookVM.visible = false;
+toolMount.add(hookVM);
+hookItem = {
+  name: "Skrim's Hook", desc: `Quick, Short Cuts · Bleed Build Up ×${HOOK_BLEED} · Shift + Hold: Throw It On Its Chain And Drag Them To You`,
+  icon: makeHookIcon(), onDig: true, viewmodel: hookVM, inspectModel: hookInspect, lip: HOOK_LIP,
+  /* (scaled after the four-cut string and the throw with no wait — 2026-11-19, "scale the weapon damage after these changes":
+   * a light cut 1.5 (the katana's 2) — four of them quicker than its two, each building bleed ×1.35; the level heavy 3, as
+   * the katana's; the throw `HOOK_DMG` 1.5) */
+  blade: true, dmgLight: 1.5, dmgHeavy: 3, windRate: 1.45, gore: 1.3, swingK: 0.72, recoverK: 3.4, reachK: 0.8, glintSpan: 0.04, alternate: true,
+  use: () => toggleEquip(hookItem),
+};
+/* THE THROW. One hook, one chain: 'idle' (in your fist), 'whip' (the overhand swing still holding it — there is no arm drawn,
+ * so the throw IS the hook coming over in the fist, `HOOK_WHIP`), 'out' (flying at what the crosshair was on when it left, or
+ * to its range), 'bite' (in a body, hauling it in), 'back' (coming home to the hand). `cd` the wait after it is home. */
+const HOOK_WHIP = 0.12;
+const HK = { st: 'idle', t: 0, cd: 0, wind: false, p: new THREE.Vector3(), hand: new THREE.Vector3(), aim: new THREE.Vector3(),
+  to: null, end: new THREE.Vector3(), u: null, uy: 0, dragT: 0, armT: -1, rel: [0, 0, 0, 0, 0, 0], fly: null, links: null, spin: 0, slack: 0 };
+const hookReady = () => HK.st === 'idle' && HK.cd <= 0;
+const hookThrowWind = () => winding && windOverhead && HK.wind;      // this hold is a throw (latched as it began: `startWind`)
+const _hkV = new THREE.Vector3(), _hkW = new THREE.Vector3(), _hkD = new THREE.Vector3(), _hkM = new THREE.Matrix4(), _hkA = new THREE.Vector3(), _hkB = new THREE.Vector3(), _hkC = new THREE.Vector3(), _hkQ = new THREE.Quaternion(), _hkS = new THREE.Vector3();
+const HOOK_LINKS = 220, HOOK_PITCH = 0.076;          // his links
+function hookInit() {
+  if (HK.links || !hookRaw) return !!HK.links;
+  // (lit from within a little more than his: out on the night beach his own level was a black line)
+  /* (IRON, NOT BROWN PLASTIC — 2026-11-19, "make the chain look better too": smooth-shaded round bar, a dark steel that takes
+   * the night's light off `ringEnv()` (it draws in the game's own renderer, whose env that is), some links rusted) */
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8a8c90, roughness: 0.38, metalness: 0.75, envMap: ringEnv(), envMapIntensity: 2.2, emissive: 0x15140f, vertexColors: true });
+  const L = new THREE.InstancedMesh(skcLinkGeo(), mat, HOOK_LINKS); L.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  L.frustumCulled = false; L.raycast = () => {}; L.userData.bwGhost = true; L.name = 'hookChain'; L.count = 0; L.visible = false;
+  const col = new THREE.Color(); for (let i = 0; i < HOOK_LINKS; i++) { const r = Math.random(), q = Math.random(); if (q < 0.18) col.setRGB(0.95 + r * 0.2, 0.55 + r * 0.1, 0.36 + r * 0.06); else col.setRGB(0.82 + r * 0.18, 0.84 + r * 0.18, 0.88 + r * 0.16); L.setColorAt(i, col); }
+  scene.add(L); HK.links = L;
+  const F = new THREE.Group(); F.name = 'hookFly'; F.visible = false;
+  const m = hookMesh(); m.scale.setScalar(HOOK_SCALE); m.raycast = () => {}; m.material.emissiveIntensity = 0.5; F.add(m);
+  scene.add(F); HK.fly = F;
+  return true;
+}
+// where your fist is, in the world: the hand in the view model's own picture, found on the screen and put 80 cm down that ray
+// (nearer, the first links were a hand across filling the corner of the frame)
+function hookHandWorld(out) {
+  hookVM.updateWorldMatrix(true, false);
+  hookVM.getWorldPosition(_hkV).project(vmCamera);
+  _hkW.set(THREE.MathUtils.clamp(_hkV.x, -1.2, 1.2), THREE.MathUtils.clamp(_hkV.y, -1.2, 1.2), 0.5).unproject(camera).sub(camera.position).normalize();
+  return out.copy(camera.position).addScaledVector(_hkW, 0.8);
+}
+function hookThrow(charge) {
+  if (!hookInit()) return false;
+  const D = THREE.MathUtils.lerp(HOOK_RANGE[0], HOOK_RANGE[1], charge);
+  camera.getWorldDirection(HK.aim);
+  const h = magTrace(HK.aim);                               // the nearest body, wall or sand down the crosshair
+  HK.to = h && h.t <= D && h.kind !== 'sand' ? h : null;
+  /* AND WHAT A CUT WOULD HIT, IT HITS (2026-11-19, the owner: "the hook didn't hit the flesh piles when i throw it make this be
+   * like a real attack"): the whale's heaps along the throw's line, nearer than whatever else it found (a swing's own test,
+   * `skqPileStrike`, from the eye down the throw) */
+  if (inWhale && SKQ.piles && SKQ.piles.length) {
+    const lim = HK.to ? HK.to.t : D, O = camera.position;
+    for (const p of SKQ.piles) {
+      if (p.gone) continue;
+      _hkW.set(WHALE_X + p.x, WHALE_Y + p.y + 0.32 * p.K * p.g.scale.y, WHALE_Z - p.s);
+      const t = THREE.MathUtils.clamp(_hkW.clone().sub(O).dot(HK.aim), 0, lim);
+      if (_hkW.distanceTo(O.clone().addScaledVector(HK.aim, t)) > 0.5 + 0.6 * p.K || t >= lim) continue;
+      HK.to = { kind: 'pile', p, t, point: O.clone().addScaledVector(HK.aim, t) };
+    }
+  }
+  /* AND A CRATE, OR ANYTHING ELSE A CUT BREAKS (2026-11-20, the owner: "the hook projectile needs to hit things like crates it
+   * should be like a normal does just from far away at anything have it react how a hit would"): the trace above is the gun's
+   * — bodies and walls — so the iron flew through a crate. It stops on the nearest box or prop down the line (`crates`, the
+   * props that break on a blow), and where it arrives the swing's own tests are run along the chain (`hookWorldStrike`). */
+  {
+    const lim = HK.to ? HK.to.t : D;
+    digRay.set(camera.position, HK.aim); digRay.far = lim;
+    let best = null;
+    for (const c of crates) { if (c.broken) continue; const x = digRay.intersectObject(c.group, true)[0]; if (x && (!best || x.distance < best.t)) best = { kind: 'prop', t: x.distance, point: x.point.clone() }; }
+    for (const pp of physProps) { if (!pp.onImpact || pp.dead || pp.held || !pp.mesh.parent) continue; const x = digRay.intersectObject(pp.mesh, true)[0]; if (x && (!best || x.distance < best.t)) best = { kind: 'prop', t: x.distance, point: x.point.clone() }; }
+    if (best) HK.to = best;
+  }
+  /* AND IT STOPS ON THE WALL (2026-11-20, the owner: "SKRIMS HOOK SHOULD COLLIDE WITH WALLS TOO AND COME BACK FROM THE POINT IT
+   * HITS"): the trace above knows the walls only of the rooms with a wall index — the temple's pillars, the whale, the church
+   * and the rest it flew through. `hookWallHit` asks those too; the iron stops there and comes home from it. */
+  { const lim = HK.to ? HK.to.t : D, wh = hookWallHit(camera.position, HK.aim, lim); if (wh) HK.to = wh; }
+  /* AND ON HIM WHERE IT STRUCK, NOT IN HIS MIDDLE (2026-11-19, "make the connection of the hook and hit visibley connect
+   * better"): the round's point is on his body's AXIS — the hook sat hidden inside him. It goes on his skin on the side it
+   * came from (his body's radius out toward you, a hand of it sunk in), kept in HIS frame so it stays there as he turns and
+   * is dragged (`hookOnHim`) */
+  if (HK.to && HK.to.kind === 'foe') {
+    const u = HK.to.u; HK.u = u; HK.uy = THREE.MathUtils.clamp(HK.to.point.y - u.g.position.y, 0.3, (u.kind ? u.kind.h || 1.8 : 0.5) * 0.85);
+    const R = Math.max(0.18, (u.kind && (u.kind.body || u.kind.hitR * 0.5)) || 0.36) * 0.8;
+    _hkV.set(camera.position.x - u.g.position.x, 0, camera.position.z - u.g.position.z).normalize().multiplyScalar(R);
+    const yw = u.g.rotation.y, c = Math.cos(-yw), sn = Math.sin(-yw);
+    HK.uo = [_hkV.x * c + _hkV.z * sn, HK.uy, -_hkV.x * sn + _hkV.z * c];
+  } else HK.u = null;
+  HK.end.copy(camera.position).addScaledVector(HK.aim, HK.to ? HK.to.t : h && h.kind === 'sand' && h.t < D ? h.t : D);
+  HK.st = 'whip'; HK.t = 0; HK.armT = 0; HK.spin = 0; HK.slack = 0.2; HK.charge = charge;
+  for (let i = 0; i < 6; i++) HK.rel[i] = _pose[i];
+  if (inCombat()) stamina = Math.max(0, stamina - HOOK_STAM);
+  playSample('katSwing', 0.5, 0.06, 0.82);
+  return true;
+}
+/* THE ROOM'S OWN STONE down a line from `O` along `dir`, nearer than `lim`: the desert temple off its solid grid (a cell
+ * standing over the floor by more than a step — a pillar, a wall; not the floor, where the iron simply lands), and every
+ * other room without a wall index off its own drawn model (`dropTargets`, once, as the throw leaves). Null if clear. */
+function hookWallHit(O, dir, lim) {
+  if (inTemple && tmpG && tmpG.cell) {
+    for (let t = 0.3; t < lim; t += 0.2) {
+      const x = O.x + dir.x * t, y = O.y + dir.y * t, z = O.z + dir.z * t, lx = x - TMP_X, lz = z - TMP_Z;
+      const top = tmpCellTop(lx, lz);
+      if (top > y - TMP_Y && top > tmpFloorAt(lx, lz) + 0.6) return { kind: 'solid', t, point: new THREE.Vector3(x, y, z), hit: null, surface: 'rock' };
+    }
+    return null;
+  }
+  if (!inRoom() || inKeep || inTavern || inCat || inThrone || inDun || inBunker) return null;   // (those have their walls in the trace)
+  digRay.set(O, dir); digRay.far = lim;
+  let best = null;
+  for (const o of dropTargets()) {
+    if (!o || !o.visible) continue;
+    const h = digRay.intersectObject(o, true).find((x) => x.object.visible && x.object.name !== 'hitProxy' && !x.object.isPoints && !x.object.isSprite && !(x.object.material && x.object.material.transparent && x.object.material.opacity < 0.5));
+    if (h && (!best || h.distance < best.distance)) best = h;
+  }
+  return best ? { kind: 'solid', t: best.distance, point: best.point.clone(), hit: best, surface: 'rock' } : null;
+}
+// the whip is over: it leaves the fist at the bottom of it
+function hookLaunch() {
+  hookHandWorld(HK.p);
+  HK.st = 'out'; HK.t = 0;
+  sfxChainPayout(camera.position.x, camera.position.z, 0.9 + 0.3 * HK.charge);
+  vmImpulse(-0.4); fovKick = Math.max(fovKick, 2.5);
+}
+// what it bites, as the round's own table: a body, a wall, a bird, the glass
+// where the hook is on him: his offset (`HK.uo`, in his own frame) turned with him
+function hookOnHim(u, out) {
+  const o = HK.uo || [0, HK.uy, 0], yw = u.g.rotation.y, c = Math.cos(yw), s = Math.sin(yw);
+  return out.set(u.g.position.x + o[0] * c + o[2] * s, u.g.position.y + o[1], u.g.position.z - o[0] * s + o[2] * c);
+}
+/* THE HOOK LANDING, HEARD AND FELT (2026-11-20, the owner: "make the hook projectile feel more impactful when it hits. use skrims
+ * chains impact sounds for this blend it nice"): his recorded heavy chain crash under it, pitched down, the crack a hair after
+ * on its top, the meat of it on flesh (`flesh`) — and the line snapping taut back at your fist: the links rattling at your
+ * hand, the view model jerked forward, the lens kicked, and the world held on it a beat longer than a cut. */
+function hookImpact(x, z, k = 1, flesh = true) {
+  playSampleAt('skChainSlam', x, z, { gain: 1.05 * k, ref: 7, far: 60, rate: 0.8 + Math.random() * 0.08, jitter: 0 });
+  playSampleAt('skChainCrack', x, z, { gain: 0.5 * k, ref: 7, far: 60, rate: 0.92 + Math.random() * 0.1, jitter: 0, delay: 0.018 });
+  if (flesh) { playSampleAt('fleshHit', x, z, { gain: 0.9 * k, ref: 5, far: 45, rate: 0.68, jitter: 0.03, delay: 0.008 }); playSample('katHit', 0.55 * k, 0.04, 0.72); }
+  sfxChainRattle(camera.position.x, camera.position.z, 0.55 * k, 0.85);
+  hitstop = Math.max(hitstop, flesh ? 0.11 : 0.06); addTrauma(0.32 * k); fovKick = Math.max(fovKick, 4.5 * k); vmImpulse(-0.9 * k);
+}
+function hookBite(h) {
+  const P = 0.6;
+  if (h.kind === 'pile') {
+    skqPileHit(h.p, 2, HK.aim.x, HK.aim.z);
+    sprayBlood(HK.p.x, HK.p.y, HK.p.z, HK.aim.x, HK.aim.z, 8, 1.8); hookImpact(HK.p.x, HK.p.z, 0.9, true);
+    hitConnect(0.6, 0.6);
+    return false;
+  }
+  if (h.kind === 'plio') { plioHurt(HOOK_DMG * 2, 0.4, h.point); return false; }
+  if (h.kind === 'gull') { isleBirdPoof(h.B, 30); return false; }
+  if (h.kind === 'hglass') { elvBreakPane(h.P, camera.position); return false; }
+  if (h.kind === 'solid') {
+    if (h.hit && h.hit.face) stampScar(h.hit, h.surface); sfxPropHit(h.surface || 'rock', 7); sfxChainClang(false, 0.55); hookImpact(HK.p.x, HK.p.z, 0.7, false);
+    spawnPuffs(h.point.x, h.point.z, 3, -HK.aim.x, -HK.aim.z, h.point.y, 0x9aa3ae);
+    return false;
+  }
+  if (h.kind !== 'foe') return false;
+  const u = h.u;
+  if (!u.st || !u.st.alive) return false;
+  hookImpact(HK.p.x, HK.p.z, 1.0, true);
+  // (the bite seen: a burst out of him where it went in, and the frame held on it)
+  sprayBlood(HK.p.x, HK.p.y, HK.p.z, HK.aim.x, HK.aim.z, 12, 2.2);   // (not back at you as well: those drops came at the lens, a pale square hanging in the frame)
+  if (h.u && h.u.g) spawnPuffs(HK.p.x, HK.p.z, 3, -HK.aim.x, -HK.aim.z, HK.p.y, [0.45, 0.08, 0.06]);
+  if (u.gull) { hurtGull(u, 4, 0.5); return false; }
+  if (!u.kind) { hurtCrab(u, 4, P); return false; }
+  if (u.kind.gunBlock && gunBlocks(u)) { umbraDeflect(u, HK.p.clone()); return false; }
+  if (u.kind.skrim) skrimShot(u, HK.aim);
+  // (the king run down on you, or turning round to: the hook stops him in it and he is hauled — `kingBackToFight`)
+  if (u.kind.kingBody && (KING.mode === 'hunt' || KING.mode === 'turn')) kingBackToFight(u, false);
+  u.st.mine = true;
+  const died = hurtMutant(u, HOOK_DMG, P);
+  if (died || !u.st.alive) return false;
+  if (!u.kind.stone) bleedBuild(u, 0.4, 0.6);                   // a hook in the meat: a cut's bleed (`hurtMutant`, held) and more, short of a burst on its own
+  hitstop = Math.max(hitstop, 0.06); addTrauma(0.18);
+  /* dragged in: not the great things (they keep their feet and tear it out), not one held still by the artifact or the stone.
+   * (THE BOSSES TOO — 2026-11-20, the owner: "MAKE THE PROJECTILE HOOK THE ENEMY AND BRING THEM CLOSER THAT ISNT WORKING": it
+   * refused anything with `bossDeath`, and every knight-built fighter has it — the king, the dark knight, the paladin, the
+   * samurai — so the iron went in and nothing came. A boss is hauled the same, and reels half as long at the end of it.) */
+  const pull = (u.kind.h || 1.8) < 3.4 && !u.kind.stone && !(u.st.immob > 0) && !((u.st.down || 0) > 0) && u.catDown === undefined && !u.st.puppet;
+  if (!pull) return false;
+  _hkD.set(camera.position.x - u.g.position.x, 0, camera.position.z - u.g.position.z).normalize();
+  sgStagger(u, _hkD.clone().negate(), u.kind.bossDeath ? 0.8 : 1.4);      // off his feet toward you, out of whatever he was swinging
+  return true;
+}
+function hookTick(dt) {
+  if (HK.cd > 0 && HK.st === 'idle') HK.cd = Math.max(0, HK.cd - dt);
+  if (HK.armT >= 0) HK.armT += dt;
+  if (HK.st === 'idle') { if (HK.links) HK.links.visible = false; if (HK.fly) HK.fly.visible = false; return; }
+  if (!hookHeld()) { hookHome(true); return; }       // put away mid-throw: it is simply back
+  hookHandWorld(HK.hand);
+  HK.t += dt;
+  const live = !frozen();
+  if (HK.st === 'whip') { if (live && HK.t >= HOOK_WHIP) hookLaunch(); else { if (HK.links) HK.links.visible = false; if (HK.fly) HK.fly.visible = false; return; } }
+  if (HK.st === 'out') {
+    // at what it was thrown at: the body where it is now, or the point
+    if (HK.u) { if (!HK.u.st.alive || !HK.u.g.visible) { HK.u = null; HK.to = null; } else hookOnHim(HK.u, HK.end); }
+    _hkV.copy(HK.end).sub(HK.p); const d = _hkV.length(), step = HOOK_SPEED * dt;
+    HK.slack = Math.max(0.02, HK.slack - dt * 0.6);
+    if (live) {
+      if (d <= step) {
+        HK.p.copy(HK.end);
+        const body = HK.to && (HK.to.kind === 'foe' || HK.to.kind === 'pile' || HK.to.kind === 'plio' || HK.to.kind === 'gull');
+        const world = !body && hookWorldStrike();
+        const bit = !world && HK.to ? hookBite(HK.u ? Object.assign({}, HK.to, { u: HK.u }) : HK.to) : false;
+        if (bit) { HK.st = 'bite'; HK.t = 0; HK.dragT = 0; HK.slack = 0; sfxChainDrag(HK.p.x, HK.p.z, 0.5, 1); }
+        else { HK.st = 'back'; HK.t = 0; HK.slack = 0.35; if (!HK.to) sfxChainSlap(HK.p.x, HK.p.z, 0.5); }
+      } else HK.p.addScaledVector(_hkV, step / d);
+    }
+  } else if (HK.st === 'bite') {
+    const u = HK.u;
+    if (!u || !u.st.alive || !u.g.visible) { HK.st = 'back'; HK.t = 0; HK.slack = 0.3; }
+    else {
+      hookOnHim(u, HK.p);
+      _hkD.set(camera.position.x - u.g.position.x, 0, camera.position.z - u.g.position.z);
+      const d = _hkD.length(); _hkD.multiplyScalar(1 / (d || 1));
+      // hauled in hand over hand: fast, and slowing into the last stride, stopped a body's length off you
+      if (live && d > 2.3 && HK.t < 1.1) {
+        u.st.flinchPush = { x: _hkD.x, z: _hkD.z, v: Math.min(22, 1 + (d - 2.1) * 6.5), d: 0.001 };
+        if ((HK.dragT -= dt) <= 0) { HK.dragT = 0.24; sfxChainDrag(u.g.position.x, u.g.position.z, 0.26, 0.8); }
+      } else if (live) {
+        u.st.flinchPush = null;
+        sgStagger(u, _hkD.clone().negate(), u.kind.bossDeath ? 0.6 : 1.3);   // and he lands reeling, in reach of your cut
+        sprayBlood(HK.p.x, HK.p.y, HK.p.z, _hkD.x, _hkD.z, 3, 1.0);
+        playSample('fleshHit', 0.8, 0.05, 0.9);
+        HK.st = 'back'; HK.t = 0; HK.slack = 0.12;
+      }
+    }
+  } else if (HK.st === 'back') {
+    _hkV.copy(HK.hand).sub(HK.p); const d = _hkV.length(), sp = HK.recall ? Math.min(HOOK_RECALL, 10 + (HK.t - HOOK_LIE) * 60) : HK.t < HOOK_LIE ? 0 : Math.min(HOOK_BACK, 3 + (HK.t - HOOK_LIE) * 18);
+    HK.slack = Math.max(0.02, HK.slack - dt * 0.5);
+    if (live) { if (d <= sp * dt + 0.25) { hookHome(false); return; } HK.p.addScaledVector(_hkV, sp * dt / d); }
+  }
+  hookLay(dt);
+}
+/* WHAT A CUT WOULD BREAK, THE HOOK BREAKS — from as far as it flew. The swing's own tests (the ones `digImpactCore` runs
+ * after the bodies), run down the throw's line out to where the iron arrived: a crate, the sandcastle, a bottle or a pane,
+ * the bones in the catacombs, the crying heads, the crow, the gulls, a body on the sand. Each answers as it does to a blow —
+ * its own break, sound and lens — with a heavy's weight. True if one did. */
+function hookWorldStrike() {
+  const keep = _aimD.clone(), P = 0.75, kp = digPower;
+  _aimD.copy(HK.aim); aimFarOver = camera.position.distanceTo(HK.end) + 0.45; digPower = P;
+  let hit = false;
+  try {
+    hit = isleBirdStrike(P) || deadStrike(P) || traderStrike(P) || crowStrike(P) || castleStrike(P) || crateStrike(P) || glassStrike()
+      || (elvReady && houseGlassStrike()) || catBoneStrike(P) || cryStrike(P) || gullStrike(P);
+    if (!hit) {
+      // the dead on the sand: the nearest joint on the line takes it
+      aimRay(P);
+      let best = null, bq = null, bestT = Infinity;
+      for (const u of mutants) {
+        if (u.st.alive || !u.rag) continue;
+        for (const q of u.rag.parts) {
+          const t = THREE.MathUtils.clamp(_hitC.copy(q.p).sub(_aimO).dot(_aimD), 0, digRay.far);
+          if (q.p.distanceTo(_hitC.copy(_aimO).addScaledVector(_aimD, t)) < 0.5 && t < bestT) { bestT = t; best = u; bq = q; }
+        }
+      }
+      if (best) { ragHit(best, bq, P, HK.aim.x, HK.aim.z); hit = true; }
+    }
+    /* AND THE SAND, AS A SPADE DIGS IT (2026-11-20, the owner: "skrims hook should collide with everything like a weapon would
+     * when thrown and dig up mounds"): where the iron comes down on the beach it tears a hole the way a cut into the sand does,
+     * and a mound there is opened (`revealMoundNear`); in the surf, a splash */
+    if (!hit && !inRoom()) {
+      aimRay(P);
+      const sh = digRay.intersectObject(sand, false)[0];
+      if (sh && sh.point.x > WADE_X + 0.2 && sh.point.x < CLIFF_BLOCK_X + 1.5 && sh.point.distanceTo(HK.end) < 1.5) {
+        const x = sh.point.x, z = sh.point.z, fx = HK.aim.x, fz = HK.aim.z, fl = Math.hypot(fx, fz) || 1;
+        if (inWater(x, z)) { spawnSplash(x, z, 30, fx / fl, fz / fl, 2.0); sfxSplash(1.3); }
+        else { stampDigHole(x, z, fx / fl, fz / fl); spawnPuffs(x, z, 30, fx / fl, fz / fl); sfxDigImpact(P); revealMoundNear(x, z, fx / fl, fz / fl); }
+        hit = true;
+      }
+    }
+  } catch (e) { console.warn('[hook] world strike', e); }
+  aimFarOver = 0; _aimD.copy(keep); digPower = kp;
+  if (hit) hookImpact(HK.p.x, HK.p.z, 0.8, false);
+  return hit;
+}
+/* A CLICK WHILE IT IS OUT HAULS IT BACK (2026-11-20, the owner: "MAKE CLICKING AGAIN WHILE LAUNCHED PULL THE HOOK BACK"): from
+ * wherever it is — in flight, on a wall, in a body (which it lets go) — straight home at once, quicker than it comes back
+ * on its own. Not out of the fist yet (the whip): it is simply kept. */
+function hookRecall() {
+  if (!hookHeld() || HK.st === 'idle') return false;
+  if (HK.st === 'whip') { HK.recallAt = performance.now(); hookHome(true); return true; }
+  if (HK.st === 'back' && HK.recall) return true;
+  if (HK.st === 'bite' && HK.u) HK.u.st.flinchPush = null;
+  HK.st = 'back'; HK.t = HOOK_LIE; HK.recall = true; HK.recallAt = performance.now(); HK.u = null; HK.to = null; HK.slack = 0.3;
+  sfxChainRattle(camera.position.x, camera.position.z, 0.5, 1.0); sfxChainDrag(HK.p.x, HK.p.z, 0.35, 1.2); vmImpulse(0.35);
+  return true;
+}
+// home: in the fist again, and the wait begins
+function hookHome(quiet) {
+  HK.recall = false;
+  HK.st = 'idle'; HK.u = null; HK.to = null; HK.cd = HOOK_CD;
+  if (HK.armT >= 0) HK.armT = Math.max(HK.armT, 10);       // (the arm comes home from wherever it was: `hookArmPose`)
+  if (HK.links) HK.links.visible = false; if (HK.fly) HK.fly.visible = false;
+  if (!quiet) { sfxChainRattle(camera.position.x, camera.position.z, 0.35, 0.7); vmImpulse(-0.35); }
+}
+// the iron in flight, and the chain from your fist to it: a curve that sags with its slack and ripples as it runs
+function hookLay(dt) {
+  const F = HK.fly, L = HK.links; if (!F || !L) return;
+  F.visible = true; L.visible = true;
+  _hkA.copy(HK.p).sub(HK.hand); const len = _hkA.length() || 0.001; _hkA.multiplyScalar(1 / len);
+  // the hook: its handle end at the chain, out along it the way it goes (and turning over in the air on the way out)
+  F.position.copy(HK.p);
+  _hkB.copy(HK.p).add(_hkA); F.lookAt(_hkB);
+  if (HK.st === 'out') HK.spin += dt * 9;
+  F.rotateZ(HK.spin);
+  // the chain: hand -> hook, sagging under a little gravity (slack x length), a travelling ripple while it pays out
+  const n = Math.min(HOOK_LINKS, Math.max(2, Math.round(len / HOOK_PITCH)));
+  const sag = HK.slack * Math.min(len, 12) * 0.35, now = performance.now() * 0.001;
+  _hkS.set(0, 1, 0); if (Math.abs(_hkA.y) > 0.95) _hkS.set(1, 0, 0);
+  _hkC.crossVectors(_hkA, _hkS).normalize();                // across the chain, level
+  let px = HK.hand.x, py = HK.hand.y, pz = HK.hand.z;
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const rip = (HK.st === 'out' ? 0.05 : 0.015) * Math.sin(t * 18 - now * 30) * Math.sin(Math.PI * t);
+    _hkV.copy(HK.hand).addScaledVector(_hkA, len * t);
+    _hkV.y -= sag * 4 * t * (1 - t);
+    _hkV.addScaledVector(_hkC, rip);
+    // the link's long axis (its +Y) along the chain here
+    const t2 = (i + 1.5) / n;
+    _hkW.copy(HK.hand).addScaledVector(_hkA, len * t2); _hkW.y -= sag * 4 * t2 * (1 - t2);
+    _hkW.sub(_hkV).normalize();
+    _hkB.crossVectors(_hkW, _hkS); if (_hkB.lengthSq() < 1e-6) _hkB.set(1, 0, 0); _hkB.normalize();
+    _hkD.crossVectors(_hkB, _hkW);
+    if (i & 1) _hkM.makeBasis(_hkD, _hkW, _hkB.negate()); else _hkM.makeBasis(_hkB, _hkW, _hkD);   // a quarter turn link to link
+    _hkS.set(0, 1, 0); if (Math.abs(_hkA.y) > 0.95) _hkS.set(1, 0, 0);
+    _hkM.setPosition(_hkV);
+    L.setMatrixAt(i, _hkM);
+    px = _hkV.x; py = _hkV.y; pz = _hkV.z;
+  }
+  L.count = n; L.instanceMatrix.needsUpdate = true;
+}
+/* THE ARM. Wound: up over your right shoulder and back, the hook whirled round on its chain faster as the hold fills (the
+ * way he swings it up before he lets it go). Let go: an overhand whip down through the middle of the frame, the arm left out
+ * along the throw while the chain is out, and home with the hook. */
+const HOOK_THROWN = [0.32, 0.02, -0.22, 0.18, -0.2, -0.12];
+function hookCockPose(out, e, strain) {
+  const w = windT * (6 + 10 * e);
+  out[0] = -(0.32 + 0.95 * e) + strain * 0.8;
+  out[1] = 0.05 + 0.13 * e + 0.045 * e * Math.cos(w);
+  out[2] = 0.30 * e;
+  out[3] = -0.22 * e + 0.16 * e * Math.sin(w) + strain;
+  out[4] = 0.10 * e;
+  out[5] = 0.13 * e + 0.05 * e * Math.sin(w);
+  // (no made whirl round each turn any more — 2026-11-19, the owner: "take that claude sound effect off the hook when charging it")
+}
+const hookArmOn = () => HK.armT >= 0;
+function hookArmPose(out) {
+  const t = HK.armT;
+  if (t < 0.13) { const k = t / 0.13; poseMix(out, HK.rel, HOOK_THROWN, k * k * k); return; }        // the whip
+  if (HK.st !== 'idle' && t < 10) { poseMix(out, HOOK_THROWN, REST_POSE, Math.min(0.35, (t - 0.13) * 0.6)); return; }   // out along it
+  const k = Math.min(1, (t - 10) / 0.35);                                                              // and home with it
+  poseMix(out, HOOK_THROWN, REST_POSE, 0.35 + 0.65 * easeInOutCubic(k));
+  if (k >= 1) HK.armT = -1;
+}
+/* AND HIS CHAIN OFF THE POMMEL, swinging. Ten links, a little verlet in the view model's own world (the lens's frame), with
+ * the real down turned into it so it hangs toward the ground whichever way you look, and the arm's moves fling it. */
+const HD = { n: 10, seg: 0.032, p: [], q: [], links: null, ready: false };
+function hookDangle(dt) {
+  if (!HD.links) {
+    if (!hookRaw || typeof skcLinkGeo !== 'function') return;
+    const mat = new THREE.MeshStandardMaterial({ color: 0x8a8c90, roughness: 0.36, metalness: 0.75, envMap: ringEnv(), envMapIntensity: 2.0, emissive: 0x100f0c, vertexColors: true });   // (iron, as the thrown chain's)
+    HD.links = new THREE.InstancedMesh(skcLinkGeo(), mat, HD.n); HD.links.frustumCulled = false; HD.links.raycast = () => {};
+    vmScene.add(HD.links);
+    for (let i = 0; i <= HD.n; i++) { HD.p.push(new THREE.Vector3()); HD.q.push(new THREE.Vector3()); }
+  }
+  const on = hookHeld() && viewmodel.visible && (HK.st === 'idle' || HK.st === 'whip') && hookModel.children.length > 0;
+  HD.links.visible = on;
+  if (!on) { HD.ready = false; return; }
+  // the pommel: up the handle from the fist (the fit's +Y), in the view model's world
+  hookVM.updateWorldMatrix(true, false);
+  hookVM.localToWorld(_hkA.set(0, (HOOK_GRIP_Z + 0.004) * HOOK_SCALE, 0));
+  if (!HD.ready) { for (let i = 0; i <= HD.n; i++) { HD.p[i].copy(_hkA); HD.p[i].y -= i * HD.seg; HD.q[i].copy(HD.p[i]); } HD.ready = true; }
+  _hkQ.copy(camera.quaternion).invert(); _hkB.set(0, -9.8, 0).applyQuaternion(_hkQ).applyQuaternion(vmCamera.quaternion);
+  const h = Math.min(dt, 1 / 30);
+  HD.p[0].copy(_hkA);
+  for (let i = 1; i <= HD.n; i++) {
+    const P = HD.p[i], Q = HD.q[i];
+    _hkV.copy(P).sub(Q).multiplyScalar(0.97); Q.copy(P); P.add(_hkV).addScaledVector(_hkB, h * h);
+  }
+  for (let k = 0; k < 6; k++) for (let i = 1; i <= HD.n; i++) {
+    const A = HD.p[i - 1], B = HD.p[i]; _hkV.copy(B).sub(A); const d = _hkV.length() || 1e-6, c = (d - HD.seg) / d;
+    if (i === 1) B.addScaledVector(_hkV, -c); else { A.addScaledVector(_hkV, c * 0.5); B.addScaledVector(_hkV, -c * 0.5); }
+  }
+  for (let i = 0; i < HD.n; i++) {
+    _hkW.copy(HD.p[i + 1]).sub(HD.p[i]).normalize(); _hkV.copy(HD.p[i]).lerp(HD.p[i + 1], 0.5);
+    _hkS.set(1, 0, 0); if (Math.abs(_hkW.x) > 0.9) _hkS.set(0, 0, 1);
+    _hkC.crossVectors(_hkW, _hkS).normalize(); _hkD.crossVectors(_hkC, _hkW);
+    if (i & 1) _hkM.makeBasis(_hkD, _hkW, _hkC.negate()); else _hkM.makeBasis(_hkC, _hkW, _hkD);
+    _hkM.scale(_hkS.set(0.42, 0.42, 0.42)); _hkM.setPosition(_hkV);
+    HD.links.setMatrixAt(i, _hkM);
+  }
+  HD.links.instanceMatrix.needsUpdate = true;
+}
+
 /* ---- THE SPARE PEG ----------------------------------------------------
  * The third weapon, and the one that is not a swing. Both shovels chop and
  * the katana cuts; every attack this one has is a THRUST, which is the only
@@ -15856,7 +18651,7 @@ const KAT_STAB = [[-0.435, 0.060, 0.45, -0.284, 0.061, 0.067],      // hauled ba
  * a metre out: a handle that comes at your face is not a wind-up, it is a
  * camera clip. */
 const katStabbing = () => thrusting()
-  || !!(katLike() && (digOverhead || (winding && windOverhead)));
+  || !!(katLike() && (digOverhead || (winding && windOverhead && !hookThrowWind())));
 /* AND THE PEG'S OWN DRAW IS LOWER, LONGER AND STRAIGHTER. The sword's thrust
  * is a two-handed drive off the hip with the tsuka hauled past the body; this
  * is one hand carrying a stick, so the wind-up gathers it back close and
@@ -16194,6 +18989,7 @@ let maceEndAt = -1e9;                    // when the last mace swing ran out: a 
  * camera at impact meant a swing landed wherever you had drifted to looking
  * by then, which is the whole "it doesn't hit what I aimed at" feel. */
 const _aimO = new THREE.Vector3(), _aimD = new THREE.Vector3();
+let aimFarOver = 0;                     // (set only while the hook's throw runs the swing's tests from afar)
 /* Where the blade lands. The DIRECTION is locked at the moment you commit —
  * the blade arrives 150–200 ms after the click and by then you have looked
  * somewhere else — but the ORIGIN is wherever you are standing now. It used
@@ -16216,6 +19012,7 @@ function aimRay(P) {
    * still the longest blow in the game.) */
   const heavyReach = equipped && equipped.rapier ? 0.8 : DIG_HEAVY_REACH;
   digRay.far = (DIG_REACH + P * heavyReach) * ((equipped && equipped.reachK) || 1) * (pegLunging() ? 1.15 : 1);
+  if (aimFarOver > 0) digRay.far = aimFarOver;     // (the hook's throw: the swing's own tests, out along the chain — `hookWorldStrike`)
   return digRay;
 }
 /* WHERE THE BLADE LANDS ON SCREEN. The poses put the blade at a fixed spot
@@ -16382,13 +19179,18 @@ function chainSwing() {
     return;
   }
   digT = 0;
-  comboStep = 1; slashDir = -1; lastSlashAt = performance.now();
+  /* (SKRIM'S HOOK STRINGS FOUR — 2026-11-19, the owner: "make the hook swing 4 times with lights instead of 2 like the
+   * swords": forehand, backhand, forehand, backhand, each chained off the last one's follow-through as the katana's second
+   * is; `katBack()` reads the step's parity, so the poses alternate on their own) */
+  comboStep = hookHeld() ? Math.min(HOOK_STRING - 1, comboStep + 1) : 1; slashDir = -1; lastSlashAt = performance.now();
   startDig(0, _pose, true);
+  if (hookHeld()) digCharged = false;      // (a chained cut is a light one: left "charged" by its from-pose, it would not chain on)
 }
 let maceChainSwing = false;              // the swing under way is the mace's momentum carried on (`chainSwing`): its rise is quicker
 function startDig(power = 0, fromPose = null, chained = false) {
   if (inCat) catNoiseAt(camera.position.x, camera.position.z, 15 + power * 6);   // the thing in the catacombs hears a swing
   if (digT > 0 || !equipped || !equipped.onDig || frozen()) return;
+  if (hookHeld() && (HK.st !== 'idle' || performance.now() - (HK.recallAt || 0) < 450)) return;           // (out on its chain; or just hauled back by the click whose release this is)
   if (!chained) maceChainSwing = false;
   camera.getWorldDirection(_aimD);            // the angle; aimRay() takes the position
   digPower = THREE.MathUtils.clamp(power, 0, 1);
@@ -16495,12 +19297,14 @@ function startWind() {
    * latch came round. */
   if (equipped && equipped.thrust && !equipped.rapier) return false;
   if (winding || !equipped || !equipped.onDig || frozen()) return false;
+  if (hookHeld() && HK.st !== 'idle') return false;    // (the hook is out on its chain: nothing in your fist to swing)
   // (the mace: a hold during a swing is a heavy carried on from it — wound up the far side, the way the head is already going)
   const maceCarry = !!(equipped.slam && slashing() && ((digT > 0 && digT >= windupEnd()) || performance.now() - maceEndAt < 450));
   const carryDir = -slashDir;
   if (digT > 0) { if (!swingLanded() && !maceCarry) return false; cancelSwing(); }
   for (let i = 0; i < 6; i++) _windFrom[i] = _pose[i];   // the haul leaves from here, not from a snap
   winding = true; windT = 0; windFull = false; windOverhead = false; maceWindCarry = maceCarry;
+  HK.wind = hookHeld() && hookReady(); HK.whirlN = -1;   // (Skrim's hook: a Shift hold now is a throw — or, still cooling, the katana's stab)
   if (equipped.rapier) { pegStage = 0; pegQueued = false; pegLastStage = 0; pegHighK = 0; pegQW.copy(pegQ); }
   /* A HEAVY IS ALWAYS THE FOREHAND. The combo alternates the light cuts —
    * that is the point of it — but a charge is a pose you HOLD, and a held
@@ -16521,6 +19325,10 @@ function releaseWind() {
    * imbroccata (stage 5, raised by the temple) had only the Shift hold to live
    * on, which the lunge needs more — it is the peg's way in from range. */
   if (equipped && equipped.rapier) pegStage = 4;
+  if (hookHeld() && windOverhead && HK.wind) {          // Skrim's hook: thrown on its chain, not swung (`hookThrow`)
+    HK.wind = false; const c = Math.min(1, windT / WIND_FULL); windT = 0;
+    if (hookThrow(c)) return;
+  }
   flameRelease(Math.min(1, windT / WIND_FULL));      // a full shift heavy with the flames up: the swing burns
   // even a tap off the right button carries a bit more than a plain dig
   startDig(0.3 + 0.7 * Math.min(1, windT / WIND_FULL), _pose);
@@ -17816,11 +20624,18 @@ function updateViewmodel(dt) {
    * cooldown, the reload, the aim blend and the lens spring all have to go
    * on running through a frame where the hands are not drawn at all. */
   updateGun(dt);
+  hookTick(dt);                // Skrim's hook on its chain runs on whatever the hands are doing
+  hookModel.visible = HK.st === 'idle' || HK.st === 'whip';
+  /* (WOUND, IT IS NOT ROLLED. "have the bloody tip face down when charged" rolled it half a turn about its length through the
+   * hold; then "the hook tip should face left when charged", and of the contact sheet "it should look like this top middle
+   * screenshot when charged" — the hold unrolled, up over the shoulder with the curl end-on to the left. `tools/hookroll.js`
+   * shows any roll at full charge, with stills. `HK.roll` stays 0; the markers below still turn with it if it ever is not.) */
+  hookModel.rotation.y = HK.roll || 0;
   // your hands are out of it while someone is talking to you, or while you
   // are turning something over — both are close-up shots of something else
   const show = !!equipped && !held && !dialogOpen && !inspecting;
   viewmodel.visible = show;
-  if (!show) { winding = false; windT = 0; updateTrail(dt, false); return; }
+  if (!show) { winding = false; windT = 0; updateTrail(dt, false); if (HD.links) HD.links.visible = false; return; }
   vmSelfHeal();
   if (winding) {
     if (frozen()) { winding = false; windT = 0; }
@@ -17899,6 +20714,9 @@ function updateViewmodel(dt) {
       // (held up it trembles more the longer it is held, before the full mark's shake: the arms giving under it)
       maceHoldPose(_pose, e, strain + Math.sin(windT * 31) * 0.014 * windCharge + Math.sin(windT * 17.3) * 0.008 * windCharge);
       slamDip = Math.max(slamDip, 0.02 * e);
+    } else if (hookThrowWind()) {
+      hookCockPose(_pose, e, strain);                     // Skrim's hook: whirled up over the shoulder on its chain
+      slamDip = Math.max(slamDip, 0.03 * e);
     } else if (windOverhead && katLike()) {
       /* THE STAB IS DRAWN, NOT HAULED. You have to be able to SEE what you
        * are charging: the sword comes back level with the point already on
@@ -18116,7 +20934,7 @@ function updateViewmodel(dt) {
      * `easeOutBack`, which is more than half-way home a few frames past the
      * through, so a return chained "a beat later" left from a half-recovered
      * pose and only ever swept the right of the screen. */
-    else if (queuedSwing === 'return' && p >= SLASH_THROUGH && slashing() && (equipped.slam || !katBack())) chainSwing();
+    else if (queuedSwing === 'return' && p >= SLASH_THROUGH && slashing() && (equipped.slam || (hookHeld() ? comboStep < 3 : !katBack()))) chainSwing();
     /* AND THE STRING GOES ON WHILE THE BUTTON IS DOWN. It links just past
      * the contact — late enough that the blow you have just thrown is over
      * and its damage dealt, early enough that the arm is still travelling,
@@ -18132,6 +20950,8 @@ function updateViewmodel(dt) {
     if (equipped.shotgun) sgPose(_pose); else magPose(_pose);
   } else if (equipped && equipped.rapier) {
     pegGuardPose(_pose);                 // en garde, and breathing
+  } else if (hookHeld() && hookArmOn()) {
+    hookArmPose(_pose);                  // the hook's throw: the whip, out along the chain, and home with it
   } else {
     for (let i = 0; i < 6; i++) _pose[i] = 0;
   }
@@ -18178,6 +20998,21 @@ function updateViewmodel(dt) {
   const BA = blockAt(), BP = blockPose();
   const bH = Math.tan((vmCamera.fov * Math.PI) / 360) * -BA.z;
   const blkX = bH * vmCamera.aspect * BA.x, blkY = bH * BA.y;
+  /* SKRIM'S HOOK'S HEAVY GOES ACROSS HIGH AND LEVEL (2026-11-19, the owner: "fix the hooks regular heavy its bad it should
+   * swing higher up and be more straight horizontal"). The plain hold's cock and cut are the katana's, which come down
+   * through the frame on a diagonal; on the hook the whole of it is lifted, its pitch's travel halved and raised, and most
+   * of its roll taken out, so it sweeps across at shoulder height — a hook swung flat at a body. The light cuts are left. */
+  if (hookHeld() && slashing() && !windOverhead && !digOverhead && ((winding && !hookThrowWind()) || (digT > 0 && digPower >= 0.3))) {
+    const hk = winding ? Math.min(1, windT / WIND_IN) : 1;
+    // (measured, `tools/hookcombo.js`: halving the pitch's travel still cut down a quarter of the frame to the bottom middle; the
+    // pitch is now held near one value, the arm up a hand higher, the roll nearly gone — the sweep is the yaw and the side alone)
+    // (`tools/hookheavy.js`, the mid-cut pose varied: only LIFT brought it up — more pitch just turned the hook end-on, away
+    // from you; +0.42 in all puts his fist into the frame and the hook upright at shoulder height through the sweep)
+    // (and STRAIGHT ACROSS — "the regular heavy should [not] swoop down it should be straight across": its height and its pitch
+    // are not added to but HELD, the same through the cock, the cut and the follow-through, and the roll gone — what is left to
+    // move it is the yaw and the side, a level sweep from right to left at the height of the cock)
+    _pose[1] += (HOOK_HEAVY_LIFT - _pose[1]) * hk; _pose[0] += (-0.34 - _pose[0]) * hk; _pose[3] *= 1 - 0.95 * hk;
+  }
   if (window.__bwPose) for (let i = 0; i < 6; i++) _pose[i] = window.__bwPose[i];   // (a harness hook: a pose held still to be measured)
   armRig.rotation.x = ARM_ROT_X + _pose[0] + vmLagX * lagK + ear * EP[0] + sipTilt + blk * BP[0] + ring;
   armRig.rotation.y = -0.45 + _pose[2] + vmLagY * lagK + ear * EP[2] + blk * BP[2];
@@ -18190,6 +21025,7 @@ function updateViewmodel(dt) {
     ARM_BASE.z + _pose[4] + ear * (AT.z - ARM_BASE.z) + blk * (BA.z - ARM_BASE.z)
   );
   if (equipped && equipped.onCast) rodArmPose(dt);   // the rod's cast and reel, on top of its carry
+  hookDangle(dt);                                   // Skrim's chain off the hook's pommel
   if (inDeep) deepVmPose(dt);                       // and in the deep, whatever you hold swims
   if (equipped === spliffItem) {
     /* the flick: once it is down from the mouth the hand snaps forward and
@@ -18205,7 +21041,12 @@ function updateViewmodel(dt) {
     sandModel.position.y = gy;
     trailTip.position.y = trailRoot.position.y = -0.21 + gy;
   }
-  if (katLike()) {
+  if (hookHeld()) {
+    // (the hook's markers on its point and the back of its curl, turned with its roll: `HK.roll`)
+    const c = Math.cos(HK.roll || 0), sn = Math.sin(HK.roll || 0);
+    for (const [mk, L] of [[trailTip, HOOK_LIP[0]], [trailRoot, HOOK_LIP[1]]]) mk.position.set(L[0] * c + L[2] * sn, L[1], -L[0] * sn + L[2] * c);
+  }
+  if (katLike() && !hookHeld()) {
     // the grip IS the origin, so nothing slides; the markers simply sit on
     // the last stretch of the edge, where the trail is drawn from
     trailTip.position.y = KAT_TIP;
@@ -18237,7 +21078,7 @@ function updateViewmodel(dt) {
    * while the arm is coming home. */
   const wantOh = thrusting() ? ((winding || digT > 0) ? 1 : 0)
   : equipped && equipped.slam ? 0      // (the mace is held by its handle through the slam: its poses do the turning, `maceHoldPose`)
-  : (winding && windOverhead) || (digT > 0 && digOverhead && !(pegFinish() && digT >= PEG_GRIP_HOME)) ? 1 : 0;
+  : (winding && windOverhead && !hookThrowWind()) || (digT > 0 && digOverhead && !(pegFinish() && digT >= PEG_GRIP_HOME)) ? 1 : 0;   // (the hook's throw is held in its carry grip: the arm does it)
   /* AND THE GRIP COMES HOME WITH THE ARM. It used to turn back to the carry
    * only once the swing had ended — a second motion after the arm had
    * already stopped, which is a twitch. On a blade it starts back over the
@@ -18328,7 +21169,7 @@ function updateViewmodel(dt) {
      * solve put it on screen — so every line, target and window measured
      * for the move set still holds, and only the angle of the steel to the
      * thing it is going through has changed. */
-    if (katLike() && slBlend > 0.001 && !katStabbing()) katFace(slBlend * (1 - ohBlend) * (1 - blk) * katFaceW());
+    if (katLike() && !hookHeld() && slBlend > 0.001 && !katStabbing()) katFace(slBlend * (1 - ohBlend) * (1 - blk) * katFaceW());   // (not the hook: it aims the KATANA's point, 0.755 out, and pitched the short hook down through its cut)
     if (blk > 0.001) {
       const BR = katLike() ? KAT_BLOCK_ROT : VM_REST_ROT;
       _blkQ.setFromEuler(_blkE.set(BR[0], BR[1], BR[2]));
@@ -18501,11 +21342,11 @@ let lhDoorEntry = null;
   lighthouse.userData.doorLamp = { light: doorLamp, halo: lampHalo, bulb };
 
   addInteractable(lhDoor, 'Open the door', 'action', {
-    onActivate: () => {
+    onActivate: doorUse(() => {
       doorOpen = !doorOpen;
       lhDoorEntry.label = doorOpen ? 'Close the door' : 'Open the door';
       sfxDoor(doorOpen);
-    },
+    }),
   });
   lhDoorEntry = interactables[interactables.length - 1];
 }
@@ -19042,7 +21883,7 @@ const glowstickItem = {
  * take the find off the floor and give you nothing. One lights your hand; the
  * other is yours to put down somewhere (G drops one off the stack). */
 function gainGlowstick() {
-  if (inventory.includes(glowstickItem)) { glowstickItem.count = (glowstickItem.count || 1) + 1; refreshUI(); if (invOpen) renderPack(); return; }
+  if (inventory.includes(glowstickItem)) { glowstickItem.count = (glowstickItem.count || 1) + 1; renderHotbar(); refreshUI(); if (invOpen) renderPack(); return; }
   addToInventory(glowstickItem);
   toggleEquip(glowstickItem);
 }
@@ -21307,10 +24148,10 @@ if (lhParts.lampProxy) {
   /* AND NOW IT IS THE HORN THAT ENDS IT (2026-10-13, the owner: "make this be blown on top of the
    * lighthouse instead of touching the light"). With the Great Crab Call on you the light is where you
    * blow it; without it, the light is only warm glass. */
-  addInteractable(lhParts.lampProxy, () => (inventory.includes(hornItem) ? 'Blow the Great Crab Call' : 'Put your hand on the light'), 'action', {
+  addInteractable(lhParts.lampProxy, () => (inventory.includes(hornItem) ? 'Blow the call of the crow' : 'Put your hand on the light'), 'action', {
     onActivate: () => {
       if (ended) return;
-      if (inventory.includes(hornItem)) startCrabCut();
+      if (inventory.includes(hornItem)) crowCallFromTop();
       else sayInventoryFull('Warm glass. Something has to be called from up here');
     },
   });
@@ -21960,8 +24801,22 @@ function makeWornGold(invSize) {
   m.customProgramCacheKey = () => 'wornGold';
   return m;
 }
-function ringEnv() {
-  if (ringEnvTex) return ringEnvTex;
+/* ONE PER CANVAS (2026-11-19, the owner, of the pack: "the keys are glitched fix this now" — a key drawn black over another,
+ * a black bar through the gate key in the box). The env is a PMREM render target, and a texture made in one WebGL context
+ * does not exist in another: the pack's live view (`pvBuild`) and the keychain have renderers of their own, and given the
+ * game's renderer's env (as `scene.environment`, or on a key's own material — the Skull Key's, the cell key's) their metal
+ * reflected nothing and drew black. (Headless Chrome happened to tolerate it; the owner's did not.) `ringEnvFor(r)` makes the
+ * same night for the renderer that will draw it; `ringEnv()` is the game's own. */
+const _ringEnvBy = new WeakMap();
+function ringEnvFor(r) {
+  if (!r || r === renderer) return ringEnv();
+  let t = _ringEnvBy.get(r); if (t) return t;
+  const pm = new THREE.PMREMGenerator(r); t = pm.fromEquirectangular(ringEnvSrc()).texture; pm.dispose();
+  _ringEnvBy.set(r, t); return t;
+}
+let _ringEnvSrcTex = null;
+function ringEnvSrc() {
+  if (_ringEnvSrcTex) return _ringEnvSrcTex;
   const W = 128, H = 64, data = new Uint8Array(W * H * 4), d = new THREE.Vector3();
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const phi = (y / (H - 1)) * Math.PI, theta = (x / (W - 1)) * Math.PI * 2;
@@ -21979,10 +24834,24 @@ function ringEnv() {
   tex.mapping = THREE.EquirectangularReflectionMapping;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
+  return (_ringEnvSrcTex = tex);
+}
+function ringEnv() {
+  if (ringEnvTex) return ringEnvTex;
   const pm = new THREE.PMREMGenerator(renderer);
-  ringEnvTex = pm.fromEquirectangular(tex).texture;
-  pm.dispose(); tex.dispose();
+  ringEnvTex = pm.fromEquirectangular(ringEnvSrc()).texture;
+  pm.dispose();
   return ringEnvTex;
+}
+// a model copied into another canvas: any material carrying the game's env gets its own copy with that canvas's (shared
+// materials stay as they are — the thing out in the world still wears the game's)
+function envSwapFor(root, r) {
+  const mine = ringEnvFor(r), seen = new Map();
+  root.traverse((o) => {
+    if (!o.isMesh || !o.material) return;
+    const fix = (m) => { if (!m || !m.envMap || m.envMap === mine) return m; let c = seen.get(m); if (!c) { c = m.clone(); c.envMap = mine; seen.set(m, c); } return c; };
+    o.material = Array.isArray(o.material) ? o.material.map(fix) : fix(o.material);
+  });
 }
 const WED_ENV = 4.2;              // swept in the pane: at 1.6 the band is still a dark hoop and at 3.2 it is dark face-on
 const wedRing = new THREE.Group();
@@ -23642,9 +26511,9 @@ function grammyTear(g, W, H) {
   }
   g.restore();
 }
-function grammyBackCanvas() {
+function grammyBackCanvas(c0) {
   const W = 256, H = 320;
-  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const c = c0 || document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
   const rnd = mulberry32(0x3317);
   g.fillStyle = '#d9cba8'; g.fillRect(0, 0, W, H);
@@ -23656,11 +26525,14 @@ function grammyBackCanvas() {
   }
   // the back is seen from behind, so it is drawn mirrored to read the right way round
   g.save(); g.translate(W, 0); g.scale(-1, 1);
-  g.fillStyle = 'rgba(58, 52, 60, 0.78)';
-  g.font = 'italic 34px Georgia, serif';
-  g.save(); g.translate(W * 0.2, H * 0.36); g.rotate(-0.08); g.fillText('Grammy', 0, 0); g.restore();
-  g.font = 'italic 17px Georgia, serif';
-  g.save(); g.translate(W * 0.3, H * 0.47); g.rotate(-0.06); g.fillText('keep her close', 0, 0); g.restore();
+  /* (in the owner's own letters, the game's 'BW Hand' — 2026-11-19, "THE BACK WRITING ON THE GRAMMY ORC PHOTO CAN BE
+   * CHANGED TO MY HAND WRITTEN LETTERS TOO"; Georgia until the font is in, then the back is drawn again) */
+  const hand = document.fonts && document.fonts.check('30px "BW Hand"');
+  g.fillStyle = 'rgba(52, 46, 56, 0.82)';
+  g.font = hand ? '40px "BW Hand"' : 'italic 34px Georgia, serif';
+  g.save(); g.translate(W * 0.18, H * 0.36); g.rotate(-0.08); g.fillText('Grammy', 0, 0); g.restore();
+  g.font = hand ? '21px "BW Hand"' : 'italic 17px Georgia, serif';
+  g.save(); g.translate(W * 0.24, H * 0.48); g.rotate(-0.06); g.fillText('keep her close', 0, 0); g.restore();
   g.restore();
   for (const [u0, v0, u1, v1] of GRAMMY_FOLDS) {
     g.strokeStyle = 'rgba(80, 60, 35, 0.35)'; g.lineWidth = 1.5;
@@ -23705,6 +26577,7 @@ new THREE.ImageLoader().load('assets/grammy-orc.jpg', (img) => {
   front.colorSpace = THREE.SRGBColorSpace; front.anisotropy = 4;
   const back = new THREE.CanvasTexture(grammyBackCanvas());
   back.colorSpace = THREE.SRGBColorSpace;
+  if (document.fonts) document.fonts.load('40px "BW Hand"').then(() => { grammyBackCanvas(back.image); back.needsUpdate = true; }).catch(() => {});
   const geo = grammyGeometry();
   const mk = (map, side) => new THREE.MeshStandardMaterial({
     map, side, alphaTest: 0.5, roughness: 0.92, metalness: 0, flatShading: true,
@@ -23732,6 +26605,7 @@ const grammyItem = {
   use: () => toggleEquip(grammyItem),
 };
 holdable(grammyItem, grammyModel, { scale: 1.9, pos: [-0.04, 0.05, -0.02], rot: [0.25, 0.35, 0.10] });
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { grammyModel }));   // (tools/grammyback.js)
 /* 0: still in his pocket, 1: on the floor where it came to rest, 2: yours
  * (and then perhaps the trader's). On the save, with where it lies, so a
  * checkpoint in the tavern puts it back on the flags rather than in him. */
@@ -24412,7 +27286,11 @@ let cineHold = false;                            // ...and may keep the lens aft
  * scene itself goes on — he still stares, he still comes. */
 let cineWalkOff = false;
 const cineAt = new THREE.Vector3();
-function cineWalkAway() { cineWalkOff = true; cineAt.copy(camera.position); }
+// (where you stand is taken a few frames AFTER the scene asks: the well's reveal puts the camera down and the next frame's
+// clamp moves it on — counted as walking away, the stare's zoom let go at once: "give the well guy his old zoom in when he
+// is reavealed", 2026-11-19)
+function cineWalkAway() { cineWalkOff = true; cineAtWait = 4; cineAt.copy(camera.position); }
+let cineAtWait = 0;
 const _lookM = new THREE.Matrix4(), _lookQ = new THREE.Quaternion();
 /* AT THE HELM THE LENS LEANS IN. The puzzle's stars are 190 m out over the
  * sea, and at the walk's own field of view (105) each one is three or four
@@ -24440,6 +27318,7 @@ function updateDialogCam(dt) {
    * own sight picture buys. It comes off the setting rather than off a
    * constant, so it is the same zoom at any field of view the owner picks. */
   const wantFov = (mutCutFov > 0 ? mutCutFov
+    : tmpCut ? tmpCut.fov
     : keyCut ? keyCut.fov
     : thrCut ? thrCut.fov
     : (crabCut && crabCut.t >= CRAB_T.cut) ? crabCut.fov
@@ -24453,13 +27332,14 @@ function updateDialogCam(dt) {
     : settings.fov) + fovKick
     - settings.fov * (equipped && equipped.shotgun ? SG_ZOOM : MAG_ZOOM) * magAim;
   // and it arrives at a gun's pace, not a conversation's
-  const rate = mutCutFov > 0 ? 14 : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : crowFovK > 0.001 ? 14 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : tmpCut ? tmpCut.fovRate : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : crowFovK > 0.001 ? 14 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
   }
   if (!cineHold) cineWalkOff = false;                                            // (a scene that let go on its own)
-  if (cineHold && cineWalkOff && !dialogOpen && Math.hypot(camera.position.x - cineAt.x, camera.position.z - cineAt.z) > 0.7) {
+  if (cineAtWait > 0) { cineAtWait--; cineAt.copy(camera.position); }
+  if (cineHold && cineWalkOff && !cineAtWait && !dialogOpen && Math.hypot(camera.position.x - cineAt.x, camera.position.z - cineAt.z) > 0.7) {
     cineHold = false; cineWalkOff = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV;
   }
   if ((dialogOpen || cineHold) && dialogTarget) {
@@ -24577,7 +27457,7 @@ function startAmbientAudio() {
   noise.connect(tsurf).connect(swell);
   noise.connect(trum).connect(swell);
   swell.connect(titleSurfGain).connect(waveBusGain);
-  if (!introStarted) titleSurfGain.gain.exponentialRampToValueAtTime(1.6, ctx.currentTime + 3.5);
+  if (!introStarted && !TB.on) titleSurfGain.gain.exponentialRampToValueAtTime(1.6, ctx.currentTime + 3.5);   // (not under the bedroom: rain there, `tbRainAudio`)
   gameAudioGate = ctx.createGain(); gameAudioGate.gain.value = introDone ? 1 : 0;
   masterGain.connect(gameAudioGate).connect(ctx.destination);
   noise.start(); lfo.start(); lfo2.start(); swLfo.start();
@@ -24869,6 +27749,9 @@ const SAMPLES = {
   elecShock: ['assets/elec-shock.m4a'],
   maceHeavy: ['assets/mace-heavy.m4a'],           // the owner's "boulder impact hard 4": the mace's heavy blows (2026-11-17)
   pickup: ['assets/pickup.m4a'],                  // the owner's "pickup sound 1": anything taken that has no sound of its own
+  // the pack: the owner's own sheet of paper snapped open and folded shut (IMG_7207, 2026-11-18; `PH` below)
+  packOpen: ['assets/pack-open.m4a'], packClose: ['assets/pack-close.m4a'],
+  packPaper: ['assets/intro/flip1.m4a', 'assets/intro/flip2.m4a', 'assets/intro/flip3.m4a'],   // (his sketchbook's pages, off his clip: picking a thing in the pack)
   /* THE OWNER'S METAL (2026-11-18, "use these metal sounds for the screws and moving the grate. also use it for any other metal
    * sounds the game needs. we want to replace most of the ai sounds you created"): his "31 Various Metal Sound Effects", cut and
    * sorted by `tools/metal_pack.py`; the synthesized metal (`sfxPropHit` 'metal', the screws, the grate, the gate rattle, the
@@ -26070,6 +28953,7 @@ function sfxSplash(power = 1) {
 // a dry chitinous rattle as the thing wakes up and starts moving
 // the tower door — a long timber groan on the hinges, then the latch
 function sfxDoor(opening) {
+  doorPick(); return;                                     // (his pickup sound: `doorPick`)
   const ctx = audioCtx; if (!ctx) return;
   if (playSample(opening ? 'doorOpen' : 'doorClose', 0.85, 0.05)) return;
   const t = ctx.currentTime;
@@ -26363,7 +29247,7 @@ function sfxBloodGained() {
  * jars the first time you walk in. What you HAVE is the stats sets above,
  * joined with the flags a save from before them already carried. */
 function STAT_KEYS() { return [boatKeyItem, skullKeyItem, lostKeyItem, pavKeyItem, storeKeyItem, cellKeyItem, sewKeyItem]; }
-function STAT_WEAPONS() { return [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, magnumItem, shotgunItem, maceItem]; }
+function STAT_WEAPONS() { return [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, magnumItem, shotgunItem, maceItem, hookItem]; }
 function STAT_RINGS() { return [ringItem, weddingItem, gemItem, oldRingItem, goldRingItem, connRingItem, shockRingItem]; }   // (+ Billy's Ring of Connection, 2026-10-18: it can be had, so it is counted)
 const statName = (it) => it && (it.id || it.name);
 function statItem(it) {
@@ -26411,6 +29295,7 @@ function statHad(it) {
     case militaryItem: return tookLabel('Take the military shovel');
     case katanaItem: return heroSwordTaken;
     case bloodItem: return bbState === 2;
+    case hookItem: return skHook.state === 2;
     case pegItem: return pegTaken || pegReturned;
     case magnumItem: return TRADER_STOCK.gun === 0;
     case shotgunItem: return TRADER_STOCK.shotgun === 0;
@@ -26426,6 +29311,8 @@ const RARE_ACHIEVEMENTS = [
   () => billyState === 2,                                 // Reunited lost friends: Billy back with the Very Old Fisherman
   () => crowGone,                                         // Get scared by big crow.: petted the crow on the pier's post, and it screamed and flew
   () => elvBurned,                                        // Burn the puppet.: carried Elvédor's puppet to his fire and threw it in (2026-11-15)
+  () => dealerPissed,                                     // Piss off the dealer: handed him the well man's portrait (2026-11-19)
+  () => henryFree >= 1,                                   // Free Henry: his cell unlocked (2026-11-19)
 ];
 /* EVERY JAR THERE IS (2026-11-17, the owner: "add total amount of jars and rare achievements at the end it doesn't show the
  * total possible"). The jars out in the world and the ones bled out of every crab there is — what is FOUND, not what the
@@ -27152,7 +30039,7 @@ function updatePeek(dt) {
     camera.position.copy(_peekHome);
     camera.quaternion.copy(_peekHomeQ);
     if (gateFace) gateFace.visible = false;
-    pipeArm.visible = false; pipeBreathStop();
+    pipeArm.visible = false; pipeHand.visible = false; pipeBreathStop();
   }
 }
 /* ---- REACHING IN FOR IT (2026-11-18) ------------------------------------
@@ -27236,6 +30123,65 @@ const pipeArm = (() => {
   scene.add(A);
   return A;
 })();
+/* HIS OWN ARM THROUGH THE GRATE (2026-11-19, the owner: IMG_8446 — "trim this hand out again and make it the grab for the
+ * sewer screwdriver instead of the model you have. make it just like we have been with the retro style and same time as the
+ * sewer grab is now make sure its clean cut"). The 3D arm above is only the fallback now (the sheet not loaded yet): the reach
+ * is his filmed arm (`tools/pipe_hand_pack.py`), a quad held in front of the lens, drawn last — over the bars, which is right:
+ * the near arm IS in front of them, the hand in the gap — and through the game's own low-res frame, which is its retro look.
+ * Its frames follow the reach (`R.p`: hold and it goes in, let go and it comes back, the same five seconds), close on the grab,
+ * and play backward fast as it comes out with the screwdriver at his fingers. Laid at the clip's own lens (a phone's ~65 deg
+ * tall) against the peek's narrow one, so his hand comes out the screwdriver's size where it lies, the clip's grip (where the
+ * blue thing was in his fingers) on the screwdriver; and never smaller than keeps the clip's left border and the knee cut
+ * (`ycut`) off the screen. Shaded darker toward the hand, which is down in the pipe. */
+const PRH = { m: null, ready: false, s: 1, ox: 0, oy: 0, t: 1, hold: null };
+const PH_LENS = Math.tan(THREE.MathUtils.degToRad(32.5));        // half the clip's tall angle
+const PH_D = 0.15;                                               // the quad's distance in front of the eye (past the 0.1 near plane)
+const PH_TINT = [0.3, 0.29, 0.31], PH_SHADE = [0.75, 1.0];        // the drain's dark on his arm; the hand (in the pipe) .. the shoulder
+const _phV = new THREE.Vector3(), _phQ = new THREE.Quaternion();
+const pipeHand = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0.5, -0.5, 0), new THREE.ShaderMaterial({
+  uniforms: { map: { value: null }, rect: { value: new THREE.Vector4(0, 0, 1, 1) }, box: { value: new THREE.Vector4(0, 0, 1, 1) },
+    grip: { value: new THREE.Vector2() }, fh: { value: 1 }, tint: { value: new THREE.Color(...PH_TINT) }, shade: { value: new THREE.Vector2(...PH_SHADE) } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+  fragmentShader: `uniform sampler2D map; uniform vec4 rect, box; uniform vec2 grip, shade; uniform float fh; uniform vec3 tint; varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(map, rect.xy + vUv * rect.zw);
+      if (c.a < .5) discard;                                                   // a clean edge, no fringe
+      vec2 px = box.xy + vec2(vUv.x, 1. - vUv.y) * box.zw;                     // in the clip's frame (sprite px, y down)
+      float k = mix(shade.x, shade.y, smoothstep(.04, .55, distance(px, grip) / fh));
+      gl_FragColor = vec4(c.rgb * tint * k, 1.);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  transparent: true, depthTest: false, depthWrite: false, fog: false }));
+pipeHand.name = 'pipeHand'; pipeHand.visible = false; pipeHand.frustumCulled = false; pipeHand.renderOrder = 1e6; pipeHand.raycast = () => {};
+scene.add(pipeHand);
+fetch('assets/hud/pipe-hand.json').then((r) => r.json()).then((m) => {
+  PRH.m = m;
+  new THREE.TextureLoader().load('assets/hud/pipe-hand.webp', (t) => {
+    t.colorSpace = THREE.SRGBColorSpace; t.minFilter = t.magFilter = THREE.LinearFilter; t.generateMipmaps = false;
+    const u = pipeHand.material.uniforms; u.map.value = t; u.grip.value.set(m.grip[0], m.grip[1]); u.fh.value = m.H;
+    try { renderer.initTexture(t); } catch (e) { /* uploaded on first sight instead */ }
+    PRH.ready = true;
+  });
+}).catch((e) => console.warn('[drain] his arm for the reach did not load', e));
+// frame `fi` (0 = the clip's FIRST) laid for this frame's camera, `drop` half-heights down (in from / out to below the screen)
+function pipeHandPlace(fi, drop) {
+  const M = PRH.m, f = M.frames[fi], u = pipeHand.material.uniforms, F = drainTunnel.userData.outlet;
+  camera.updateMatrixWorld(true);
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), asp = camera.aspect;
+  F.localToWorld(_phV.set(...PIPE_SCREW.at)).applyMatrix4(camera.matrixWorldInverse);      // where it lies, on the screen
+  const Tx = -_phV.x / _phV.z / t, Ty = -_phV.y / _phV.z / t;
+  const gx = M.grip[0], gy = M.grip[1];
+  const s = Math.max(2 * PH_LENS / M.H / t, (Tx + asp) / gx * 1.02, (Ty + 1) / (M.ycut - gy) * 1.02);
+  PRH.s = s; PRH.t = t; PRH.ox = Tx - s * gx; PRH.oy = Ty + s * gy - drop;
+  const k = PH_D * t;                                            // half-heights to metres, at the quad
+  pipeHand.position.copy(camera.localToWorld(_phV.set((PRH.ox + s * f[4]) * k, (PRH.oy - s * f[5]) * k, -PH_D)));
+  pipeHand.quaternion.copy(camera.quaternion);
+  pipeHand.scale.set(s * f[2] * k, s * f[3] * k, 1);
+  u.rect.value.set(f[0] / M.SW, 1 - (f[1] + f[3]) / M.SH, f[2] / M.SW, f[3] / M.SH);
+  u.box.value.set(f[4], f[5], f[2], f[3]);
+  pipeHand.visible = true;
+}
 // lay a segment from a to b
 function pipeSeg(m, a, b) {
   m.position.copy(a); const L = a.distanceTo(b);
@@ -27280,7 +30226,7 @@ const _prE = new THREE.Vector3(), _prW = new THREE.Vector3(), _prT = new THREE.V
 const easeIO = (x) => x * x * (3 - 2 * x);
 function pipeReachTick(dt, e) {
   const R = pipeReach, F = drainTunnel.userData.outlet;
-  if (!F || (!pipeReachOn() && !R.done)) { pipeArm.visible = false; return; }
+  if (!F || (!pipeReachOn() && !R.done)) { pipeArm.visible = false; pipeHand.visible = false; return; }
   const ready = !peekLeaving && peekT >= 1;
   if (!R.done) {
     // it goes in at the pace you hold for, and comes back out a little quicker than it went (and eased both ways: `ks`)
@@ -27294,26 +30240,29 @@ function pipeReachTick(dt, e) {
   if (R.done) {
     R.grab += dt;
     out = easeIO(THREE.MathUtils.clamp((R.grab - 0.35) / 0.9, 0, 1));
-    if (R.grab >= 0.26 && !screwdriverTaken && screwdriverModel.parent !== U.hand) {
+    if (R.grab >= 0.26 && !screwdriverTaken && !PRH.hold && screwdriverModel.parent !== U.hand) {
       dropShine(screwdriverModel);
-      U.hand.updateMatrixWorld(true);
-      U.hand.attach(screwdriverModel);                  // kept where it lies: the hand closed on it, it did not fly to it
+      if (PRH.ready) PRH.hold = { z: 0, q: null };       // his fingers closed on it: from here it rides at them (measured below, once the camera is placed)
+      else {
+        U.hand.updateMatrixWorld(true);
+        U.hand.attach(screwdriverModel);                // kept where it lies: the hand closed on it, it did not fly to it
+      }
       addTrauma(0.06);
     }
     if (R.grab >= 1.2 && !screwdriverTaken) {
-      U.hand.remove(screwdriverModel);
-      scene.add(screwdriverModel);
+      if (screwdriverModel.parent === U.hand) { U.hand.remove(screwdriverModel); scene.add(screwdriverModel); }
+      PRH.hold = null;
       stowScrewdriver();
       addToInventory(screwdriverItem);
       playSample('pickup', 0.75, 0.04);
       sfxThud(0.03);
     }
-    if (R.grab >= 1.45) { R.done = false; R.p = 0; pipeArm.visible = false; pipeBreathStop(); endPeek(); return; }
+    if (R.grab >= 1.45) { R.done = false; R.p = 0; pipeArm.visible = false; pipeHand.visible = false; pipeBreathStop(); endPeek(); return; }
   }
   const k = R.done ? 1 - out : R.p;                 // how far in: the reach, and back out after the grab
   const ks = easeIO(k);
   pipeBreathTick(dt, R.done ? 0 : R.p);
-  if (k <= 0.002 && !R.done) { pipeArm.visible = false; return; }
+  if (k <= 0.002 && !R.done) { pipeArm.visible = false; pipeHand.visible = false; return; }
   // the camera creeps in to the bars and tips down after the hand
   F.localToWorld(_prA.set(-0.07 * ks, 0.10 * ks, 0.78 - 0.42 * ks));
   F.localToWorld(_prB.set(0.0, -0.21, -0.85));
@@ -27324,6 +30273,36 @@ function pipeReachTick(dt, e) {
   const tr = 0.0011 * ks * ks;
   camera.position.x += tr * (Math.sin(now * 17.3) + 0.6 * Math.sin(now * 29.1 + 1.3));
   camera.position.y += tr * (Math.sin(now * 13.7 + 0.7) + 0.6 * Math.sin(now * 23.9 + 2.1));
+  if (PRH.ready) {
+    // HIS ARM: the reach's frames at the pace you hold (up from below the screen at the very start), the fingers closing on
+    // the grab (0 -> 0.3), and out backward, fast, dropping away under the screen with it in his fingers
+    const M = PRH.m, nR = M.grab - M.first, nC = M.close - M.first;
+    let fi, drop = 0;
+    if (!R.done) { fi = Math.round(R.p * nR); drop = 2.4 * (1 - easeIO(THREE.MathUtils.clamp(R.p / 0.07, 0, 1))); }
+    else if (R.grab < 0.35) fi = nR + Math.round(easeIO(THREE.MathUtils.clamp(R.grab / 0.3, 0, 1)) * (nC - nR));
+    else { fi = out < 0.1 ? nC : Math.round(nR * (1 - (out - 0.1) / 0.9)); drop = 2.6 * out * out; }
+    pipeArm.visible = false;
+    pipeHandPlace(fi, drop);
+    if (PRH.hold && !PRH.hold.q) {
+      // (where it lay, against THIS frame's lens — the creep has moved the camera since the top of the tick — and kept turned so)
+      _phV.copy(screwdriverModel.position).applyMatrix4(camera.matrixWorldInverse);
+      PRH.hold.z = -_phV.z; PRH.hold.q = camera.quaternion.clone().invert().multiply(screwdriverModel.quaternion);
+      PRH.hold.d = [0, 0];
+      { const tp = M.tip[fi], tG = M.tip[nR]; const ux = -_phV.x / _phV.z / PRH.t, uy = -_phV.y / _phV.z / PRH.t;
+        PRH.hold.d = [ux - (PRH.ox + PRH.s * (tp[0] + M.grip[0] - tG[0])), uy - (PRH.oy - PRH.s * (tp[1] + M.grip[1] - tG[1]))]; }   // (what is left between: it does not jump)
+    }
+    if (PRH.hold && !screwdriverTaken) {
+      // at his fingers: the clip's grip carried on with its tip (the hand nears and grows as it comes back), nearer the eye
+      const tp = M.tip[fi], tG = M.tip[nR], big = 1;
+      const gx = tp[0] + (M.grip[0] - tG[0]) * big, gy = tp[1] + (M.grip[1] - tG[1]) * big;
+      const z = THREE.MathUtils.lerp(PRH.hold.z, 0.45, easeIO(out));
+      const dk = 1 - easeIO(THREE.MathUtils.clamp(out / 0.4, 0, 1));              // (the gap at the take, closed as it comes out)
+      screwdriverModel.position.copy(camera.localToWorld(_phV.set((PRH.ox + PRH.s * gx + PRH.hold.d[0] * dk) * PRH.t * z, (PRH.oy - PRH.s * gy + PRH.hold.d[1] * dk) * PRH.t * z, -z)));
+      screwdriverModel.quaternion.copy(camera.quaternion).multiply(PRH.hold.q);
+    }
+    return;
+  }
+  pipeHand.visible = false;
   // the arm: shoulder below and right of the eye, the elbow and the hand each on their curve
   pipeArm.visible = true;
   camera.updateMatrixWorld(true);
@@ -27697,7 +30676,7 @@ function updateBreath(dt) {
       const P = breathPuffs.find((p) => p.t >= p.life);
       if (P) {
         camera.getWorldDirection(_brF); _brF.y = 0; _brF.normalize();
-        const lit = inSewer ? 0.3 + 0.7 * flashOn : Math.min(1, 0.35 + 0.45 * drainRoomK + 0.4 * flashOn);
+        const lit = inSewer ? 0.3 : Math.min(1, 0.35 + 0.45 * drainRoomK);
         P.s.position.copy(camera.position).addScaledVector(_brF, 0.3); P.s.position.y -= 0.2;
         P.s.position.x += (Math.random() - 0.5) * 0.03; P.s.position.z += (Math.random() - 0.5) * 0.03;
         P.v.copy(_brF).multiplyScalar(0.3 + Math.random() * 0.15);
@@ -27788,7 +30767,7 @@ function updateDrainBugs(dt) {
   if (!live) return;
   B.skit = Math.max(0, B.skit - dt);
   const px = camera.position.x - DRAIN_X, pz = camera.position.z - DRAIN_Z;
-  const torch = flashOn > 0.5;
+  const torch = false;                  // (no torch in the game since the flashlight went, 2026-11-18)
   camera.getWorldDirection(_bugF);
   for (const b of B.bugs) {
     b.t += dt;
@@ -29327,7 +32306,7 @@ function boatKeyPlain() {
   if (!km) return;
   km.material = keyModel.children[0].material.clone();
   boatKey.userData.plain = true;
-  boatKeyItem._icon = null; try { localStorage.removeItem(iconCacheKey(boatKeyItem)); } catch (e) {}
+  boatKeyItem._icon = boatKeyItem._iconClear = null; try { localStorage.removeItem(iconCacheKey(boatKeyItem)); localStorage.removeItem(iconClearKey(boatKeyItem)); } catch (e) {}
   iconsPending = true;
 }
 function takeShipKey() {
@@ -30821,90 +33800,8 @@ bwGlb('assets/screwdriver.glb', (gltf) => {
   });
   screwdriverModel.add(m);
 }, undefined, () => {});
-/* THE FLASHLIGHT (2026-10-23, the owner: "instead of the glowstick add the small green tube flashlight near the
- * generator. Make sure it looks good and the light blends into the atmosphere of the area"). The Fulton out of his
- * FlashlightFBX pack — the olive angle-head tube, packed by `tools/flashlight_pack.py` (0.19 m, stood on its foot, the
- * lens 0.17 up looking out along -x off the bend). It lies switched on, on the dead end's ledge by the generator where the
- * spare glowstick was, and in your hand it is a beam: in the sewer a real spot light (it lives in the sewer's world, so
- * it is only ever in the scene's lights down there, compiled with the rest of it, `sewP.flash`), warm and soft-edged,
- * swinging a beat behind your look, lighting the mist and the dust in the air; anywhere else a pooled lamp thrown a
- * couple of metres ahead of you (`flashGlow`), which costs no recompile. It stutters now and then, like an old battery. */
-/* (measured: 14 / 0.62 penumbra was a stage spot; and at decay 2 anything within two metres — the dead end's wall, the walk at
- * your feet — blew out to a white disc. Decay 1.25 at 2.8 throws the same light five metres out and a readable one at arm's length) */
-const FLASH = { LENS: [-0.0335, 0.169, 0], COLOR: 0xffdcaa, INT: 2.8, DECAY: 1.25, RANGE: 22, ANGLE: 0.52, PEN: 0.88, SPILL: 0.45 };
-const flashlightModel = new THREE.Group();
-flashlightModel.name = 'flashlight';
-function makeFlashlightIcon() {
-  const c = document.createElement('canvas'); c.width = c.height = 50;
-  const g = c.getContext('2d');
-  g.fillStyle = '#4a5233'; g.fillRect(20, 16, 11, 28);                 // the tube
-  g.fillStyle = '#3a4128'; g.fillRect(20, 40, 11, 4);
-  g.beginPath(); g.moveTo(20, 18); g.quadraticCurveTo(20, 6, 31, 6); g.lineTo(31, 17); g.quadraticCurveTo(31, 17, 31, 18); g.closePath(); g.fill();
-  g.fillStyle = '#566040'; g.fillRect(14, 4, 17, 11);                  // the bent head
-  g.fillStyle = '#ffe9c0'; g.beginPath(); g.ellipse(13, 9.5, 2.5, 5, 0, 0, Math.PI * 2); g.fill();   // the lens
-  g.fillStyle = '#202418'; g.fillRect(31, 24, 3, 8);                   // the switch
-  return c.toDataURL();
-}
-const flashlightItem = {
-  id: 'flashlight', name: 'Flashlight', desc: 'An angle-head torch, army green, left on by the sewer\'s generator', icon: makeFlashlightIcon(),
-  use: () => toggleEquip(flashlightItem),
-};
-// held upright out in front, the head bent over and the lens looking where you look
-holdable(flashlightItem, flashlightModel, { scale: 1.45, pos: [0.0, -0.075, 0.02], rot: [0.06, -Math.PI / 2, 0.0] });
-const flashLensMats = [];
-bwGlb('assets/flashlight.glb', (gltf) => {
-  const m = gltf.scene;
-  m.traverse((o) => {
-    if (!o.isMesh || !o.material) return;
-    const mat = o.material;
-    mat.metalness = 0; mat.roughness = Math.max(0.55, mat.roughness ?? 0.7);
-    if (/002/.test(mat.name)) { mat.emissive = new THREE.Color(FLASH.COLOR); mat.emissiveIntensity = 1.6; flashLensMats.push(mat); }   // the lens, lit
-    else { mat.emissive = mat.color.clone().multiplyScalar(0.25); mat.emissiveIntensity = 1; }   // (a dark thing in a dark place is still a thing)
-    mat.needsUpdate = true;
-  });
-  flashlightModel.add(m);
-}, undefined, () => {});
-// off the sewer: a lamp thrown ahead of you (pooled, so it is free)
-const flashGlow = new THREE.PointLight(FLASH.COLOR, 0, 9, 1.5);
-scene.add(flashGlow);
-let flashOn = 0, flashFlick = 0, flashFlickIn = 9;
-/* AND IT FAILS WHEN IT IS NEAR (2026-10-24, the owner's pick of the ideas): the thing in the sewer's water writes how
- * close it is to having you (`sewMonTick`: rising unseen, nearer, further up) and the torch stutters with it — more
- * often, deeper — a cue that is also the threat */
-let flashDread = 0;
-const _flF = new THREE.Vector3(), _flR = new THREE.Vector3(), _flAim = new THREE.Vector3(0, 0, -1), _flP = new THREE.Vector3();
-function updateFlashlight(dt) {
-  const on = equipped === flashlightItem && !held && !dying;
-  flashOn += ((on ? 1 : 0) - flashOn) * Math.min(1, dt * 9);
-  // an old battery: now and then it dims and catches
-  if ((flashFlickIn -= dt * (1 + flashDread * 14)) <= 0) { flashFlickIn = 8 + Math.random() * 18; flashFlick = (0.12 + Math.random() * 0.3) * (1 + flashDread * 1.5); }
-  let k = flashOn;
-  if (flashFlick > 0) { flashFlick -= dt; k *= Math.random() < 0.5 ? 0.35 - 0.25 * flashDread : 0.85; }
-  if (flashDread > 0.05) k *= 1 - flashDread * (Math.random() < 0.25 ? 0.55 : 0.12);
-  for (const m of flashLensMats) m.emissiveIntensity = 0.3 + 1.3 * Math.max(k, flashlightModel.userData.ledgeOn ? 1 : 0);
-  camera.getWorldDirection(_flF);
-  // the beam swings a beat behind the look, the way a hand does
-  _flAim.lerp(_flF, Math.min(1, dt * 14)).normalize();
-  _flR.crossVectors(_flF, camera.up).normalize();
-  const sp = inSewer && sewP.flash;
-  if (sp) {
-    flashGlow.intensity = 0;
-    if (!sewP.flashLedge) {
-      sp.intensity = FLASH.INT * k;
-      if (k > 0.01) {
-        sp.position.set(camera.position.x - SEW_X, camera.position.y - SEW_Y, camera.position.z - SEW_Z).addScaledVector(_flR, 0.16).addScaledVector(_flF, 0.15);
-        sp.position.y -= 0.17;
-        sp.target.position.copy(sp.position).addScaledVector(_flAim, 6);
-        // and what it lights gives some back: a faint warm spill round the pool, so the dark at its edge is not a cut-out
-        flashGlow.intensity = FLASH.SPILL * k;
-        flashGlow.position.copy(camera.position).addScaledVector(_flAim, 1.6);
-      }
-    }
-    return;
-  }
-  flashGlow.intensity = 3.2 * k;
-  if (k > 0.01) flashGlow.position.copy(camera.position).addScaledVector(_flAim, 2.2).addScaledVector(_flR, 0.1);
-}
+/* (THE FLASHLIGHT — the angle-head torch off the sewer's generator, 2026-10-23 — is gone for good, 2026-11-18, the owner: "take
+ * out the flashlight for good": its item, its model, its beam and the sewer's spot light for it. A save that carried it loses it.) */
 /* ON THE CRATE BY THE GRATE (2026-10-22, the owner: "put the screwdriver in the sewer room on the table near the
  * grate"). It lay on the fisherman's table up the beach (y 2.59 at x 10.3, z -220); it is in the drain's room now,
  * on the crate he eats off a stride from the grate in the back wall — laid along the top's far edge, between the
@@ -34878,7 +37775,26 @@ function keyUsed(item) {
  * through its keeper and stopping against the case with a dull heavy clunk
  * the wood of the door answers. Everything is dry and close: it is in your
  * hands. The bolt is where the doors wait, so it must stay at 0.64. */
+/* A DOOR OR A LIFT WITHOUT A LOCK TO TURN GETS THE PICKUP SOUND (2026-11-19, the owner: "give the lifts and doors that
+ * dont have the unlock sound the item pickup sound"): `doorUse(fn)` runs the door's own use, and if the key-in-a-lock
+ * did not play inside it (`lockSndAt` unchanged), his pickup sound does */
+let lockSndAt = -1, doorSndAt = -1;
+function doorUse(fn) {
+  return (...a) => { const t0 = lockSndAt, d0 = doorSndAt; const r = fn(...a); if (lockSndAt === t0 && doorSndAt === d0) doorPick(); return r; };
+}
+/* AND NOTHING MADE UP (2026-11-19, the owner: "take out the claude sounds with doors and the lifts just have the item
+ * sound unless its a door that gets unlock which will be the unlock sound. the tavern lift is still just a claude sound"):
+ * every door's and lift's own sound — the tavern's latch and hinge, the lift's chain, the tower door's creak, all of them
+ * synthesized — is his pickup sound now, once; and a door a key has just opened (the key in the lock inside 1.5 s) has
+ * that alone. */
+function doorPick() {
+  const now = performance.now();
+  if (now - lockSndAt < 1500 || now - doorSndAt < 250) return;
+  doorSndAt = now;
+  playSample('pickup', 0.75, 0.04);
+}
 function sfxLockOpen() {
+  lockSndAt = performance.now();
   const ctx = audioCtx; if (!ctx) return;
   /* THE OWNER'S OWN KEY IN A LOCK (`unlock`, 3.3 s). Its turn lands at
    * 0.72 s, under the doors' own wait of 0.85-0.9. What follows is the
@@ -36724,6 +39640,10 @@ function mutStartPose(u) {
 }
 function dressMutant(u, gltf) {
   const m = u.model = gltf.scene;
+  /* (a file packed by `tools/glbquant.py` carries its positions, normals and uvs as int16 — `bwGlb` turns them back into
+   * floats and this path never did: the king's came in as raw -1..1 under his skin, a body torn into spikes. A file that
+   * is not quantized is untouched.) */
+  bwDequant(m);
   /* A KIND MAY PREPARE ITS FILE FIRST: take parts away, centre a model the
    * source laid off its own origin, share maps a copy already uploaded. It
    * runs before anything below measures the thing (`pre`, the farmers). */
@@ -36909,7 +39829,10 @@ function dressMutant(u, gltf) {
    * saucer stands six hundred metres up and came out 547 m over its own
    * floor. Every creature whose group is not at y = 0 needs this line. */
   u.g.updateMatrixWorld(true);
-  const b = skinnedBounds(m);
+  /* (a kind may say its own scale and seat, `fixScale`: the king's Character Creator rig has scale-compensation nodes between
+   * its bones, and measured through them his skinned bounds came out 2 cm tall — he was scaled 170x and torn apart. His file is
+   * in metres, his feet at its origin.) */
+  const b = u.kind.fixScale ? { size: { y: u.kind.h / u.kind.fixScale }, min: { y: u.g.position.y } } : skinnedBounds(m);
   const s = u.kind.h / Math.max(0.001, b.size.y);
   m.scale.setScalar(s);
   /* Stood on its own feet — and the feet are measured in the GROUP's frame,
@@ -37188,6 +40111,9 @@ function makeMutant(x, z, kindName, y = 0) {
   // ONE download per model, parsed once per copy: a skinned mesh cannot be cloned
   const src = kind.glb || 'assets/mutant.glb';
   if (!mutGlbWait[src]) mutGlbWait[src] = bwFetch(src);
+  /* the tavern's people are built when the hall is, and are wanted when it is: their copies first, under the black */
+  const urgent = !!kind.tav;
+  if (urgent) bwFetchSoon(src);
   const loader = new GLTFLoader();
   /* AND THE PARSES ARE SPREAD OVER FRAMES, NOT FIRED TOGETHER. Twenty-three
    * models finish downloading between 2.8 s and 4.5 s and every one of them
@@ -37210,7 +40136,7 @@ function makeMutant(x, z, kindName, y = 0) {
     return got
       .then((gltf) => { if (!u.kind.pre) return gltf; bwSpan('pre ' + src.split('/').pop(), () => u.kind.pre(u, gltf)); u._preDone = true; return bwTurn().then(() => gltf); })
       .then((gltf) => bwSpan('dress ' + src.split('/').pop(), () => dressMutant(u, gltf)));
-  });
+  }, undefined, urgent);
   /* AND WHAT YOU KILLED STAYS KILLED. A creature is named by what it is and
    * where it was put, which is the same every load; a checkpoint written
    * after it died lists it, and it is never stood back up — not by the
@@ -37873,9 +40799,9 @@ function mutLandBlow(u, dmg) {
   // the minotaur's blows on the castle's men, and theirs on him (he goes down at the end, not in the fight: `MINO_FLOOR`)
   if (f && f.st.alive && u.kind.mino) { minoLand(u, f, dmg); return; }
   if (f && f.st.alive && f.kind.mino) { hurtMutant(f, Math.max(0, Math.min(dmg, f.st.hp - Math.ceil(f.kind.hp * MINO_FLOOR))), 0, u); return; }
-  if (f && f.st.alive && u.kind === MUT_KINDS.darkKnight && f.kind.farmer) { dkFling(u, f); return; }
+  if (f && f.st.alive && kindIs(u.kind, MUT_KINDS.darkKnight) && f.kind.farmer) { dkFling(u, f); return; }
   // (a farmer's blow on the dark knight: it wounds him, never below two fifths — the kill is yours, `dkTownFights`)
-  if (f && f.st.alive && f.kind === MUT_KINDS.darkKnight && u.kind.farmer) { hurtMutant(f, Math.max(0, Math.min(dmg, f.st.hp - Math.ceil(f.kind.hp * 0.4))), 0, u); return; }
+  if (f && f.st.alive && kindIs(f.kind, MUT_KINDS.darkKnight) && u.kind.farmer) { hurtMutant(f, Math.max(0, Math.min(dmg, f.st.hp - Math.ceil(f.kind.hp * 0.4))), 0, u); return; }
   if (f && f.st.alive) { hurtMutant(f, dmg, 0, u); return; }
   /* A BLOW THAT FOLLOWS A BLOW TOO CLOSE TO BE ANSWERED. The Marauder's
    * combo throws its second and fourth blades 0.13 s after the one before,
@@ -38209,7 +41135,7 @@ function hurtMutantAt(u, dmg, P = 0, from = null) {
   if (u.kind.garg && u.gp && u.st && u.st.alive) { if (!from) u.gp.aggro = 'you'; else if (from.kind && from.kind.mino) u.gp.aggro = 'mino'; }
   let r; try { r = hurtMutantCore(u, dmg, P, from); } finally { noBlood = false; }
   if (!from && u.st && (r || u.st.hp < hp0)) artCount(u, r);
-  if (!from && bloodHeld() && !r && u.st.alive && !u.st.struck && u.st.hp < hp0 && !u.kind.baby && !u.kind.stone) bleedBuild(u, P);
+  if (!from && (bloodHeld() || hookHeld()) && !r && u.st.alive && !u.st.struck && u.st.hp < hp0 && !u.kind.baby && !u.kind.stone) bleedBuild(u, P, hookHeld() ? HOOK_BLEED : 1);
   if (!r && u.st && u.st.alive && u.st.hp < hp0 && u.kind.flinch) mutFlinch(u, P, from);
   if (u.kind.skrim && u.st && u.st.hp < hp0 && (SKRIM.stage === 'dig' || SKRIM.stage === 'deal' || SKRIM.stage === 'meet' || SKRIM.stage === 'talk' || SKRIM.stage === 'leave')) { if (dialogOpen) endDialog(); skrimFight(); }   // (and on his way out with it: "he walks out and leaves unless hit", 2026-10-30)
   if (u.kind.garg && u.gp && u.st && u.st.hp < hp0) {
@@ -38245,6 +41171,7 @@ function mutFlinch(u, P = 0, from = null) {
 }
 function hurtMutantCore(u, dmg, P = 0, from = null) {
   if (!u.st.alive || u.st.struck || elvRunImmune(u)) return false;
+  if (u.st.puppet) return false;                    // in a move of its own (the king's flip, his climb, his coming down): untouchable
   if (!from && minoAlly(u)) return false;           // the minotaur, on your side: your blade and your shot go through him
   if (gargImmune(u)) return false;                  // a gargoyle still stone
   if (u.kind.skrim && skrimHung(u)) return false;   // Skrim up his chain, out of reach (`SK_HANG`)
@@ -38532,10 +41459,11 @@ function finishMutant(u) {
   mutDrop(u);
   maybeDropFang(u);
   maybeDropGrammy(u);
+  if (u.kind.onDeath) { u.kind.onDeath(u); return; }   // a death of its own (the king's: `kingDeath`)
   /* the orc's death cry, EVERY time, with the portrait's drop and its ring sting (the owner, 2026-11-16) — here, since
    * the tavern's cast go down by the boss's branch below, which says nothing (`ORC_VOX`) */
   if (u === orcUnit && !applyingSave && !replaying) farmVox('die', u.kind.voice);
-  if (u.kind === MUT_KINDS.darkKnight && !applyingSave && !replaying) farmVox('die', u.kind.voice, { x: u.g.position.x, z: u.g.position.z });   // (the paladin's, every time: `PAL_VOX`)
+  if (kindIs(u.kind, MUT_KINDS.darkKnight) && !applyingSave && !replaying) farmVox('die', u.kind.voice, { x: u.g.position.x, z: u.g.position.z });   // (the paladin's, every time: `PAL_VOX`)
   if (u.kind.garg) { gargDied(u); return; }        // it goes back to stone and falls (`gargDeadStep`)
   /* A BOSS DIES AT DIFFERENT ODDS. Both branches ragdoll and both can take
    * a limb; what separates them is the RATES and the fact that a boss is
@@ -38741,9 +41669,9 @@ function bleedMax(u) {
   const m = u.hpMax || u.kind.hp || 6;
   return (3.2 + Math.min(2.8, m / 28)) * (u.kind.bleedRes || 1) * (1 + 0.33 * (u.st.bleedProcs || 0));
 }
-function bleedBuild(u, P) {
+function bleedBuild(u, P, k = 1) {
   const st = u.st;
-  st.bleed = (st.bleed || 0) + (P >= MUT_HEAVY || digOverhead ? 1.7 : 1.0);
+  st.bleed = (st.bleed || 0) + (P >= MUT_HEAVY || digOverhead ? 1.7 : 1.0) * k;   // (`k`: Skrim's hook builds it quicker, `HOOK_BLEED`)
   st.bleedT = 0;
   if (st.bleed >= bleedMax(u)) bleedProc(u);
 }
@@ -39230,7 +42158,7 @@ const PAL_VOX = {
 const FARM_VOX_CAP = 4;
 const farmVoxLast = {}, farmVoxOn = [];
 let farmShoutGap = 6;                                        // (the first can come early; then 8-18 s)
-function farmVox(role, V, { x, z, dist = 0, muffle = false, p } = {}) {
+function farmVox(role, V, { x, z, dist = 0, muffle = false, p, boost = 1, panK = 0.85, force = false } = {}) {   // (`boost`, `panK`, `force`: one line that must be heard, from where it is — the raid's shout)
   const ctx = audioCtx, R = V && (V.vox || FARM_VOX)[role]; if (!ctx || !R) return false;
   const bank = (sampleBanks[R.bank] || []).filter(Boolean); if (!bank.length) return false;
   const now = ctx.currentTime;
@@ -39241,7 +42169,7 @@ function farmVox(role, V, { x, z, dist = 0, muffle = false, p } = {}) {
   const M = V.mouth;
   if (M && M.end > now && M.pri >= R.pri) return false;
   while (farmVoxOn.length && farmVoxOn[0].end <= now) farmVoxOn.shift();
-  if (farmVoxOn.length >= FARM_VOX_CAP && R.pri < 2) return false;   // (the cap is for grunts and shouts: a man you hit always answers)
+  if (farmVoxOn.length >= FARM_VOX_CAP && R.pri < 2 && !force) return false;   // (the cap is for grunts and shouts: a man you hit always answers)
   if (x === undefined && V.unit) { x = V.unit.g.position.x; z = V.unit.g.position.z; }
   else if (x === undefined && sfxPos) { x = sfxPos.x; z = sfxPos.z; }
   const d = x !== undefined ? Math.hypot(x - camera.position.x, z - camera.position.z) : dist;
@@ -39254,9 +42182,9 @@ function farmVox(role, V, { x, z, dist = 0, muffle = false, p } = {}) {
   const k = Math.min(1, d / R.far);
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass';
   lp.frequency.value = Math.min(9000 * Math.pow(700 / 9000, k), muffle ? 620 : 9e9);
-  const g = ctx.createGain(); g.gain.value = R.gain * (muffle ? 0.75 : 1) / (1 + d / R.ref);
+  const g = ctx.createGain(); g.gain.value = R.gain * boost * (muffle ? 0.75 : 1) / (1 + d / R.ref);
   let dst = sfxOutBase();
-  if (x !== undefined && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.85, -1, 1); sp.connect(dst); dst = sp; }
+  if (x !== undefined && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(x, z) * panK, -1, 1); sp.connect(dst); dst = sp; }
   src.connect(lp).connect(g).connect(dst);
   src.start(now);
   const end = now + src.buffer.duration / rate;
@@ -39369,6 +42297,16 @@ function sfxMutStep(dist = 0, V = MUT_VOICE) {
     }
   }
   if (V.scrape) { const u = crawlerUnit; sfxClawScrape(dist, u ? panTo(u.g.position.x, u.g.position.z) : undefined); return; }
+  /* A BIG MAN RUNNING LANDS ON EVERY STEP (2026-11-18, the owner: "give dante deep thud footsteps when running"): his speed is
+   * read off his own body between one step and the next; over a jog (2.6 m/s) each foot is a deep thud — a sub-bass drop
+   * from 52 to 24 Hz held a third of a second, a dull low thump of the flags under it and a short crunch of grit — loud and
+   * near, panned to him; walking, the ordinary step. */
+  if (V.thud && V.unit && V.unit.g) {
+    const u = V.unit, p = u.g.position, now = ctx.currentTime, L = V._stepAt;
+    const sp = L && now - L.t < 1.5 ? Math.hypot(p.x - L.x, p.z - L.z) / Math.max(0.05, now - L.t) : 0;
+    V._stepAt = { x: p.x, z: p.z, t: now };
+    if (sp > 2.6) { sfxDeepThud(sfxPos ? 0 : Math.hypot(p.x - camera.position.x, p.z - camera.position.z), panTo(p.x, p.z)); return; }
+  }
   const t = ctx.currentTime, out = sfxOut(), g0 = 0.85 / (1 + dist / 8);
   // a boot on a steel floor, not a wet foot on sand: the room is the reason
   // you can hear him coming without turning round
@@ -39394,6 +42332,24 @@ function sfxMutStep(dist = 0, V = MUT_VOICE) {
   o.frequency.setValueAtTime(66 * V.f, t); o.frequency.exponentialRampToValueAtTime(31 * V.f, t + 0.11);
   const og = ctx.createGain(); og.gain.setValueAtTime(g0 * 0.9 * V.growl, t); og.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
   o.connect(og).connect(out); o.start(t); o.stop(t + 0.18);
+}
+function sfxDeepThud(dist, pan = 0) {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, g0 = 1.6 / (1 + dist / 10);
+  let out = sfxOut();
+  if (!sfxPos && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(pan * 0.8, -1, 1); sp.connect(out); out = sp; }   // (inside `sfxAt` the bus is already placed at him)
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(52 + Math.random() * 6, t); o.frequency.exponentialRampToValueAtTime(24, t + 0.28);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(g0 * 1.1, t + 0.008); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.34);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.36);
+  const n = noiseBurst(0.22, (x) => Math.pow(1 - x, 3.2));
+  const nf = ctx.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 180 + Math.random() * 40;
+  const ng = ctx.createGain(); ng.gain.value = g0 * 1.3;
+  n.connect(nf).connect(ng).connect(out); n.start(t); n.stop(t + 0.22);
+  const c = noiseBurst(0.06, (x) => Math.pow(1 - x, 5));
+  const cf = ctx.createBiquadFilter(); cf.type = 'bandpass'; cf.frequency.value = 900 + Math.random() * 300; cf.Q.value = 0.9;
+  const cg = ctx.createGain(); cg.gain.value = g0 * 0.22;
+  c.connect(cf).connect(cg).connect(out); c.start(t); c.stop(t + 0.06);
 }
 function sfxMutHit(V = MUT_VOICE) {
   const ctx = audioCtx; if (!ctx) return;
@@ -41348,6 +44304,8 @@ function updateMutantUnit(u, dt) {
   }
   // the young one in the catacombs never fights: everything it does is its own (`updateBaby`)
   if (u.kind.baby && !u.st.struck && updateBaby(u, dt)) return;
+  // a kind with moves of its own the fight does not know runs them first, and may hold the fight off this frame (`kingDrive`)
+  if (u.kind.drive && u.kind.drive(u, dt)) return;
   const p = u.g.position;
   if (!u.st.alive) {
     u.st.deadT += dt;
@@ -41410,6 +44368,10 @@ function updateMutantUnit(u, dt) {
   if (u.kind.cat && u.catAvOn && dist > 2.6 && u.st.atk < 0) face = u.catMoveYaw;
   // (`u.faceOff`: in a swing, faced off your line by the bearing its blade lands at — the dark knight's, `dkWalkSwing`, 2026-10-29)
   if (u.faceOff && u.st.atk >= 0) face += u.faceOff;
+  /* (AND IT IS STILL WHAT IT WAS: every `u.kind === MUT_KINDS.x` stopped matching the moment the copy went in. Measured
+   * 2026-11-18 (`minoPaladin`): at 40 % the paladin raged, `updateDarkKnight` returned on its first line for the rest of
+   * the fight (his travel, his swings' tracking, his foes, his phrases), Myles dropped him from his list and stood idle, and
+   * his death cry could never play. Ask `kindIs(u.kind, MUT_KINDS.x)`.) */
   /* THE SECOND WIND, for any kind that declares one. `u.kind` is replaced by
    * a copy with the rage's fields in it — every number below reads off
    * `u.kind`, so the swap is the whole mechanism — and it announces itself:
@@ -41417,7 +44379,7 @@ function updateMutantUnit(u, dt) {
   if (u.kind.rage && !u.st.raged && u.st.awake && u.st.hp <= u.kind.hp * (u.kind.rageAt || 0.5)) {
     u.st.raged = true;
     const wk0 = u.kind.windK || 1;
-    u.kind = Object.assign({}, u.kind, u.kind.rage, { rage: null });
+    u.kind = Object.assign({}, u.kind, u.kind.rage, { rage: null, base: u.kind.base || u.kind });   // (`base`: what it was — `kindIs`)
     // the swing table was scaled by `windK` when he was built, so a rage that quickens it rescales it
     const wr = (u.kind.windK || 1) / wk0;
     if (wr !== 1 && u.atk) for (const k in u.atk) { u.atk[k].wind *= wr; u.atk[k].recover *= wr; }
@@ -42003,7 +44965,7 @@ function updateMutantUnit(u, dt) {
     if (A.lunge > 0 && t >= A.wind - air - lead && t < A.wind + tail && dist > stop) {
       u.dir.set(dx / dist, 0, dz / dist);
       let sp = A.lunge / (air + lead + tail);
-      if (A.air != null && t < A.wind) sp = (dist - stop) / Math.max(0.06, A.wind - t);
+      if (A.air != null && t < A.wind) sp = (dist - stop) / Math.max(0.06, A.wind - t) + (u.kind.kingBody ? u.st.recede || 0 : 0);   // (the king's leap leads a man running from him: `kingDrive`)
       /* and with a lead it CLOSES THE GAP THAT IS THERE: a fixed speed from
        * wherever the swing was thrown left him half a metre short whenever
        * your last blow's knockback had put you back a step. Up to the
@@ -42043,7 +45005,7 @@ function updateMutantUnit(u, dt) {
      * and the stop are distances, so they still close what is there. */
     if (u.kind.smoothMove && dt > 0) {
       const vx = (p.x - _mvx) / dt, vz = (p.z - _mvz) / dt, k = 1 - Math.exp(-dt * 14);
-      if (!u.mvS || t <= dt * 1.5) u.mvS = { x: 0, z: 0 };       // each swing starts from standing
+      if (!u.mvS || (t <= dt * 1.5 && !(u.kind.kingBody && A.air != null))) u.mvS = { x: 0, z: 0 };       // each swing starts from standing (but the king's leap out of a run carries the run: `kingHuntStep`)
       u.mvS.x += (vx - u.mvS.x) * k; u.mvS.z += (vz - u.mvS.z) * k;
       p.x = _mvx + u.mvS.x * dt; p.z = _mvz + u.mvS.z * dt;
     }
@@ -42123,8 +45085,11 @@ function updateMutantUnit(u, dt) {
        * the state lasts. It is the same trap `swingOf` was written for,
        * one line further down. */
       u.st.chainAt = (A.chain && u.atk[A.chain] && u.st.chainN < u.kind.chainMax
-                      && Math.random() < A.chainP && dist < A.reach + 2.2)
+                      && Math.random() < A.chainP && dist < (u.kind.kingBody ? u.atk[A.chain].reach + 0.6 : A.reach + 2.2))
         ? A.wind + A.strike + A.recover * 0.42 : -1;
+      /* (the king's strings are several blows in one take — the bicycle's second kick at 0.70 s — and the chain at the
+       * first's recovery cut the take before its second blow came: measured, `kingstudy.js`, 4 of 4 second kicks never thrown) */
+      if (u.st.chainAt > 0 && u.kind.kingBody && A.moreT && A.moreT.length) u.st.chainAt = Math.max(u.st.chainAt, Math.max(...A.moreT) + A.strike + 0.1);
     }
     if (u.st.chainAt > 0 && t >= u.st.chainAt && u.atk[A.chain]) {
       u.st.swings++;
@@ -42192,7 +45157,7 @@ function updateMutantUnit(u, dt) {
      * standing at 2.5 m swinging into the lid (measured: 0.85 s still with a
      * two-waypoint route in his hands and a wall at hip height between). */
     if (u.st.closeIn > 0) u.st.closeIn -= dt;          // a planted kind that dropped a swing walks in before it is "near" again
-    const near = dist <= (u.maxReach || A.reach) && !(u.kind.planted && u.st.closeIn > 0) && !(u.kind.cat && (Math.abs((camBaseY - playerEye()) - u.g.position.y) > 1.2 || u.path)) && !(u.kind.tav && u.path);   // (the tavern's too: a carpet between is not reach)
+    const near = dist <= (u.maxReach || A.reach) && !((u.kind.planted || u.kind.warpPick) && u.st.closeIn > 0) && !(u.kind.cat && (Math.abs((camBaseY - playerEye()) - u.g.position.y) > 1.2 || u.path)) && !(u.kind.tav && u.path);   // (the tavern's too: a carpet between is not reach)
     /* WHOSE TURN IT IS. One of them swings and the others circle: three
      * tells at once is not three times the fight, it is no fight at all,
      * because there is nothing to read. Whoever is nearest and ready takes
@@ -42413,7 +45378,7 @@ function updateMutantUnit(u, dt) {
       }
       if (wantSwing && maySwing) {
         u.st.sinceSize = (u.st.sinceSize || 0) + 1;
-        let pick = u.kind.use.attack ? 'attack' : Object.keys(u.kind.use)[0];
+        let pick = u.kind.use.attack ? 'attack' : Object.keys(u.kind.use)[0], pickNone = false;
         const forced = u.st.forceSwing && u.kind.use[u.st.forceSwing] && u.atk[u.st.forceSwing] ? u.st.forceSwing : null;
         u.st.forceSwing = null;
         if (forced) pick = forced;
@@ -42491,6 +45456,13 @@ function updateMutantUnit(u, dt) {
               if (o < best) { best = o; pick = k; }
             }
             if (best === 1e9) pick = farK;
+            /* (AND FROM TOO FAR HE WALKS IN, he does not swing at the air — 2026-11-18, the owner: "the paladins attacks like
+             * always miss … his jump swing never land hes far away". Measured, `dkFight`: every blow thrown from 3.7-4.1 m, the
+             * cut, sweep, rise and spin (their ground 1.8-2.7) 0 of 9 — this branch handed them over as "the nearest ground"
+             * however far off it was, and `near` (inside his LONGEST reach, the leap's 6 m) had stopped his walk at four. Now a
+             * blow whose ground is more than 0.6 m nearer than he is is not thrown: he closes for half a second (`closeIn`,
+             * which un-nears a warp kind as it does a planted one) and draws again. Too CLOSE is still the nearest ground.) */
+            else if (best > 0.6) { const AK = u.atk[pick] || MUT_ATTACKS[pick]; const g = AK.rmFrom ? AK.rmFrom[1] : (AK.stop || AK.reach); if (dist > g) { pickNone = true; u.st.closeIn = 0.5; } }
           } else {
             let far = -1;
             for (const k in u.kind.use) {
@@ -42499,12 +45471,14 @@ function updateMutantUnit(u, dt) {
             }
           }
         }
-        u.st.lastSwing = pick;
-        u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
-        u.st.side = 0; u.st.sideT = 0; u.st.sizing = false;   // (a circle, a regroup's included, ends when the swing begins)
-        if (u.kind.frenzy && mutToken !== u) u.st.frenzyCool = 1.3 + Math.random() * 1.3;   // a swing out of turn: not another straight away
-        u.st.feint = (!forced && u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
-        sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
+        if (!pickNone) {
+          u.st.lastSwing = pick;
+          u.st.swing = pick; u.st.atk = 0; u.st.chained = false; u.st.chainN = 0; u.st.wait = 0;
+          u.st.side = 0; u.st.sideT = 0; u.st.sizing = false;   // (a circle, a regroup's included, ends when the swing begins)
+          if (u.kind.frenzy && mutToken !== u) u.st.frenzyCool = 1.3 + Math.random() * 1.3;   // a swing out of turn: not another straight away
+          u.st.feint = (!forced && u.st.swings > 1 && Math.random() < u.kind.feint) ? 0.55 + Math.random() * 0.2 : 0;
+          sfxMutTell(dist, u.atk[pick].wind, u.kind.voice);
+        }
       } else if (!wantSwing && maySwing && (u.kind.baits !== undefined
                    ? Math.random() < u.kind.baits
                    : (u.kind.use.attack4 && Math.random() > u.kind.circle))) {
@@ -43191,7 +46165,7 @@ bwGlb('assets/dock.glb', (gltf) => {
     pivot.attach(doorMesh);
     dockDoor = pivot;
     addInteractable(pivot, 'Open the door', 'action', {
-      onActivate: () => {
+      onActivate: doorUse(() => {
         dockDoorOpen = !dockDoorOpen;
         dockDoorEntry.label = dockDoorOpen ? 'Close the door' : 'Open the door';
         sfxDoor(dockDoorOpen);
@@ -43200,7 +46174,7 @@ bwGlb('assets/dock.glb', (gltf) => {
          * hello to a man who is already looking at you. Once only; after
          * that he is an interactable like anyone else. */
         if (dockDoorOpen && !fishermanMet) setTimeout(talkToFisherman, 620);
-      },
+      }),
     });
     dockDoorEntry = interactables[interactables.length - 1];
   }
@@ -43595,7 +46569,7 @@ bwGlb('assets/fishing-rod.glb', (gltf) => {
   while (fishingRod.children.length) fishingRod.remove(fishingRod.children[0]);
   fishingRod.add(R);
   if (fishingRodItem.viewmodel) fishingRodItem.viewmodel.userData.make();
-  fishingRodItem._icon = null; iconsPending = true;
+  fishingRodItem._icon = fishingRodItem._iconClear = null; iconsPending = true;
 }, (e) => console.warn('[bw] fishing rod', e));
 
 /* ---- AND IT CASTS -------------------------------------------------------
@@ -43731,6 +46705,9 @@ function landFloat(g) {
   deep.spotT = 0;
   rod.st = 'down'; rod.wet = g.wet; rod.surface = g.y; rod.bobT = 0; rod.nibWait = 5 + Math.random() * 9;
   rod.pos.y = g.y;
+  /* (anywhere but the X, it says so — 2026-11-19, the owner: "make when casting the rod not at the fishing spot it says
+   * 'Nothing bites here'": the float down away from the spot's water, or on dry ground) */
+  if (!deepDone && Math.hypot(rod.pos.x - FISH_GLOW.x, rod.pos.z - FISH_GLOW.z) > FISH_GLOW.r * 0.85) flashPrompt('Nothing bites here', 2200);
   /* AND A FLOAT CAST ON HIM HAILS HIM (2026-11-14, the owner: "make throwing the fishing line at the snorkeler prompt the
    * dialog too"): the same as a thing thrown near him — inside 3.2 m, in the water — he comes up and talks; met already
    * and treading water, he talks again */
@@ -44943,6 +47920,7 @@ function spawnBunker(x, y, z, yaw = 0, opts) {
  * whatever displaces you calls this immediately afterwards. */
 const _cpL = new THREE.Vector3();
 function clampPlayerToRoom() {
+  if (tmpClampPlayer()) return;          // the desert temple's columns and the walk's edge
   if (fortClampPlayer()) return;
   if (c13ClampPlayer()) return;          // the castle's stone answers a knockback in its courtyard
   if (thrClampPlayer()) return;
@@ -45418,7 +48396,7 @@ const bunkerHome = spawnBunker(HATCH_X + 1.05, BUNKER_Y, HATCH_Z + 3.3, 0, {
   },
 });
 bunkerHome.group.visible = false;
-addInteractable(hatch, 'To Enter Bunker', 'action', { onActivate: enterBunker, when: () => !inBunker && !hatchBusy });
+addInteractable(hatch, 'To Enter Bunker', 'action', { onActivate: doorUse(enterBunker), when: () => !inBunker && !hatchBusy });
 
 // ------------------------------------------------------------------
 // The Blue Blood Dealer. He is already down there, standing at the far end
@@ -45554,7 +48532,10 @@ function dealerTakePortrait() {
   removeFromInventory(wellPhotoItem);
   wellPhotoTaken = true;
   dealerRage = true;
+  // (a rare one — 2026-11-19, the owner: "give an acheivement for giving the dealer the potrait that says 'Piss off the dealer'")
+  if (!dealerPissed) { dealerPissed = true; if (!replaying && !applyingSave) showAchievement('Rare achievement unlocked', '50 - Piss off the dealer'); }
 }
+let dealerPissed = false;                            // (on the save: `dealerPissed`)
 // close on the mask: a tighter lens than anyone else gets, held on the head
 // bone rather than on the spot he was standing when he started talking
 const DEALER_NPC = { name: 'Blue Blood Dealer', script: DEALER_SCRIPT, sprite: dealer.g, headY: 1.80, fov: 13,
@@ -48602,7 +51583,7 @@ function update(dt, rawDt = dt) {
     * (elvCarrying ? 0.78 : 1)          // a man in your arms: you go a little slower (2026-10-16, the owner)
     /* and a club that heavy: you carry it a little slower, swing it slower still, and raised for the slam you all but
      * plant your feet (2026-11-15, the owner: "make it feel heavy to use") */
-    * (equipped && equipped.slam ? (winding ? (windOverhead ? 0.38 : 0.62) : digT > 0 ? 0.7 : 0.9) : 1);
+    * (equipped && equipped.slam ? (winding ? (windOverhead ? 0.6 : 0.85) : digT > 0 ? 0.7 : 0.9) : 1);   // (charging 0.38 / 0.62 until 2026-11-18, the owner: "dont slow down the player as much when charging up the bone mace")
 
   camera.getWorldDirection(forward);
   forward.y = 0; forward.normalize();
@@ -48647,7 +51628,7 @@ function update(dt, rawDt = dt) {
    * applied you hit an invisible wall 4.6 m short of her bow while
    * standing on her own deck. Her bulwark keeps you aboard. */
   updateTugBow();           // her stem stands past WADE_X: moves the wade line, before the clamp reads it
-  if (!deepLock && !(elvReady && elvLand) && !inDeep && !insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inDun && !inSewer && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
+  if (!deepLock && !(elvReady && elvLand) && !inDeep && !insideTower && !insideDrain && !inBunker && !inDojo && !inUndercroft && !inKeep && !inTavern && !inCat && !inWhale && !inThrone && !inDun && !inSewer && !inTemple && !inFort && !inC13 && !onDock && !onShip && !atTugBow && !onTug && !onIsle && mushWhere === 'out' && !mushInYard) {    // (the castle's courtyard runs into the dune) the pier's sea end is past WADE_X; the pavilion's yard and back room stand past the cliff line; the saucer and the dojo are not on the beach at all
     camera.position.x = Math.min(camera.position.x, CLIFF_BLOCK_X);
     camera.position.x = Math.max(camera.position.x, WADE_X);
   }
@@ -48697,6 +51678,7 @@ function update(dt, rawDt = dt) {
   tickFort(dt);             // and the castle across the beach at the headland's foot: solid outside, walked inside
   updateC13Arch(dt); updateThrone(dt); updateDungeon(dt);   // the arched door in Castle XIII, and the throne room behind it
   updateSewer(dt);          // and the sewer through the drain's pipe
+  updateTemple(dt);         // and the desert the stump's crow takes you to
   updateHenryJetty(dt);     // and Henry, once he is out, at the sea end of the lighthouse's jetty
   updateFishSpot(dt);       // the fisherman's old spot: the tree's sway and the fish out past it
   updateFeathers(dt);       // a gull's, drifting down
@@ -48796,6 +51778,7 @@ function update(dt, rawDt = dt) {
         else if (inWhale) sfxStepWhale();
         else if (inFort || inC13 || inThrone || inDun) sfxStepCat();
         else if (inSewer) sewStepSnd();
+        else if (inTemple) { if (tmpOnPodium(camera.position.x - TMP_X, camera.position.z - TMP_Z)) sfxStepCat(); else sfxStepSand(); }
         else sfxStep();
       });
     }
@@ -48924,6 +51907,8 @@ function update(dt, rawDt = dt) {
         sfxStepCat();                      // the courtyard's cobbles: stone, and no print
       } else if (inSewer) {
         sewStepSnd();                      // the walks' concrete, the plank's board, or the flood
+      } else if (inTemple) {
+        if (tmpOnPodium(camera.position.x - TMP_X, camera.position.z - TMP_Z)) sfxStepCat(); else sfxStepSand();   // the temple's floor, or the desert's sand (no print: its sand is not the beach's)
       } else {
         stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
         sfxStepSand();
@@ -48994,7 +51979,6 @@ function update(dt, rawDt = dt) {
   updateKatanaShine(rawDt);     // the steel in your hand, on the same clock
   updateFlashes(rawDt);
   updateHeldGlow(dt);
-  updateFlashlight(dt);
   updateBreath(dt); updateDrainBugs(dt);   // (after the torch, so its aim is this frame's)
   updateDialogCam(dt);
   updatePack(dt);
@@ -49008,6 +51992,8 @@ function update(dt, rawDt = dt) {
   seaLiftOff();             // the sea's wave holds things up in the air: taken off before they update...
   updateCrab(dt);
   updateMutant(dt);
+  thrownHits();             // a thing you threw that reaches a creature hits him (and a bottle breaks on him)
+  farmCarryAll(dt);         // the farmers' weapons held in the carry, now their hands are where this frame puts them
   if (elvReady) updateElvManPose(dt);    // Elvédor's face and his puppet hand, on whatever his clips just did
   wellManClear(dt);          // after the chase has moved him: the well is solid to him
   if (wellUnit && wellUnit.g.visible) wellManAir(wellUnit);   // and the pounce's flight on top of where it put him
@@ -49103,7 +52089,7 @@ const _saveV = new THREE.Vector3();
  * table (`updateRoomRestore`) rather than one special case. */
 const saveRoom = () => (inKeep ? 'keep' : inTavern ? 'tav' : inCat ? 'cat'
   : inDojo ? 'dojo' : inUndercroft ? 'uc' : inBunker ? 'bunker' : inWhale ? 'whale'
-  : inThrone ? 'thr' : inDun ? 'dun' : inSewer ? 'sewer' : inC13 ? 'c13' : inFort ? 'fort' : inDeep ? 'deep' : null);
+  : inThrone ? 'thr' : inDun ? 'dun' : inSewer ? 'sewer' : inTemple ? 'tmp' : inC13 ? 'c13' : inFort ? 'fort' : inDeep ? 'deep' : null);
 /* AND THE TWO CASTLES ARE PLACES TOO. They stand on the beach, not in a room,
  * so a save inside one used to be a position on the sand — and restored as
  * one, the castle's footprint is a wall from outside, so the body came back
@@ -49131,7 +52117,7 @@ const saveRoom = () => (inKeep ? 'keep' : inTavern ? 'tav' : inCat ? 'cat'
 function calmChasers() {
   chaseGraceUntil = performance.now() + CHASE_GRACE;
   for (const u of mutants) {
-    if (!u.st.alive || !u.st.awake || u.st.foe || u.kind.cat || u.kind.baby || u.kind.mino || u.kind.garg) continue;
+    if (!u.st.alive || !u.st.awake || u.st.foe || u.kind.cat || u.kind.baby || u.kind.mino || u.kind.garg || u.kind.kingBody) continue;
     u.st.awake = false; u.st.atk = -1; u.st.roar = 0; u.st.cool = 0; u.st.chainAt = -1; u.st.chained = false;
     u.st.side = 0; u.st.back = 0; u.st.dash = 0; u.st.sprint = 0; u.st.feint = 0; u.path = null;
     mutDrop(u);
@@ -49148,6 +52134,7 @@ function autosaveNow(spot) {
   saveCheckpoint(spot);
 }
 function saveCheckpoint(spot) {
+  if (tmpCut) return;                  // (never mid-flight: the crow's cut ends on the dune and saves there itself)
   calmChasers();
   const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
   const data = {
@@ -49190,7 +52177,7 @@ function saveCheckpoint(spot) {
       smileGone: smilePhase === 2, smileWatch: smileWatch === 2 ? 2 : 0,
       well: wellPhase,                  // 0 untouched, 1 the bucket is down and he is coming, 2 he is up
       wellStare: wellPhase === 2 && wellStalk.stare > 0 && !!wellUnit && wellUnit.st.alive && !wellUnit.retired,   // written at the reveal: he has not come yet
-      cellKey: cellKey.state, cellKeyAt: [+cellKey.x.toFixed(2), +cellKey.y.toFixed(2), +cellKey.z.toFixed(2)], henryFree: henryFree === 1 ? 2 : henryFree, henryJetty: hjTaken ? 1 : 0, henryRing: henryRingTaken ? 1 : 0,   // the Dealer's key to Henry's cell; Henry let out; Henry off the jetty
+      cellKey: cellKey.state, cellKeyAt: [+cellKey.x.toFixed(2), +cellKey.y.toFixed(2), +cellKey.z.toFixed(2)], henryFree: henryFree === 1 ? 2 : henryFree, dealerPissed: dealerPissed ? 1 : 0, henryJetty: hjTaken ? 1 : 0, henryRing: henryRingTaken ? 1 : 0,   // the Dealer's key to Henry's cell; Henry let out; Henry off the jetty
       wellKey: wellKey.state, wellKeyAt: [+wellKey.x.toFixed(2), +wellKey.z.toFixed(2)],   // his key: 0 not dropped, 1 on the sand where he fell, 2 taken
       caveDone,
       whaleSighted: wsDone,
@@ -49216,6 +52203,7 @@ function saveCheckpoint(spot) {
       bb: bbState, bbAt, benDead,
       garg: GARG.phase === 2 ? (GARG.keyTaken ? 3 : 2) : 0,  // the four on XIII's east court walls: all dead (2), and the key they dropped taken (3)
       skrimSong: SKRIM.songDone ? 1 : 0,   // his song heard (once a game)
+      skHook: skHook.state, skHookAt: skHook.state === 1 ? skHook.at : null,   // his hook: in his fist, on the floor (where), or yours
       skrimJars: SKRIM.jarsDone ? (SKRIM.jars || []).filter((j) => j.jar.parent).map((j) => [+j.x.toFixed(2), +j.z.toFixed(2)]) : 0,   // his four jars, where they still lie
       skrim: (SKRIM.stage === 'deal' || SKRIM.stage === 'meet' || SKRIM.stage === 'talk') ? 'deal' : SKRIM.paid ? 'paid' : 0,   // Skrim in the whale: held to his deal, or paid his four jars (dead: by his key)
       cry: crySave(),                  // the crying heads at the gut's back: the nest woken, which are dead, their jar taken (2026-10-30)
@@ -49234,7 +52222,7 @@ function saveCheckpoint(spot) {
        * fight you have already won does not un-happen when you load, and a
        * sword you have already taken off its stand is not on it again. */
       dojoWon, heroSword: heroSwordTaken,
-      elvStage: elvStage === 2 ? 2 : elvStage, elvJar: elvJarGiven, elvGreeted, elvLantern, elvBurned, elvFridge: elvFridgeTaken, crowGone,
+      elvStage: elvStage === 2 ? 2 : elvStage, elvJar: elvJarGiven, elvGreeted, elvLantern, elvBurned, elvFridge: elvFridgeTaken, crowGone, tmpFlown, kingDown,
       fortFarm: farmFight.done,           // the twenty in the castle's houses: all down, stays down
       /* AND A BOX YOU BROKE STAYS BROKEN. It was never on the save, which
        * did not matter while the crate only held a ring the beach could do
@@ -49448,6 +52436,7 @@ function beginRestoreQuiet() {
   for (const u of knUnits) if (!u.retired && [...deadUnitKeys].some((k) => k.startsWith(u.kind.glb === MUT_KINDS.knMan.glb ? 'knMan@' : 'knIron@'))) retireUnit(u);   // their keys move with the court's dressing
   if (f.dealerWon) dealerWon = true;
   henryFree = f.henryFree || 0;
+  dealerPissed = !!f.dealerPissed;
   hjTaken = !!f.henryJetty; if (hj && hjTaken) hj.w.visible = false;
   henryRingTaken = !!f.henryRing; henryRingOwed = henryFree === 2 && !henryRingTaken;   // a save from before he gave it, with him gone: it is yours
   if (henry && henryFree === 2) { henry.w.visible = false; henry.free = null; }
@@ -49482,7 +52471,8 @@ function beginRestoreQuiet() {
   spliffBuffT = Math.max(0, (spliffEndAt - Date.now()) / 1000);
   if (f.c13Arch) openC13Arch(true);
   if (f.skrimSong) SKRIM.songDone = true;
-  if (f.skrimJars) { SKRIM.jarsDone = true; SKRIM.jarsAt = f.skrimJars; }   // (laid again on the first frame in the whale: `skrimJarsBack`)
+  if (f.skrimJars) { SKRIM.jarsDone = true; SKRIM.jarsAt = f.skrimJars; }
+  if (f.skHook) { skHook.state = f.skHook | 0; skHook.at = Array.isArray(f.skHookAt) ? f.skHookAt : null; skHook.put = false; skHook.hid = false; if (skHook.state === 1 && !skHook.at) skHook.state = 0; }   // (laid on the first frame in the whale: `skHookTick`)   // (laid again on the first frame in the whale: `skrimJarsBack`)
   if (f.skrim === 'deal') { SKRIM.stage = 'deal'; SKRIM.deal = true; SKRIM.paid = true; } else if (f.skrim === 'paid') SKRIM.paid = true;
   skqRestore(f);                       // (the heaps searched, the artifact, him gone with it: `skqRestore`)
   cryRestore(f);                       // (the crying heads: woken, dead, their jar — `cryRestore`)
@@ -49642,7 +52632,7 @@ function updateRestore(dt) {
    * carried him (2) put him back in your arms only once his model had loaded — and it loads at the house, so a load
    * anywhere else had him in nobody's arms and off his bed: gone. One that had run (4, the man dead) had nowhere to be.
    * Either comes back sat on the bed for the taking.) */
-  elvStage = f.elvStage || 0; if (elvStage === 2 || elvStage === 4) elvStage = 1; elvJarGiven = !!f.elvJar; elvGreeted = !!f.elvGreeted || elvStage > 0; elvLantern = !!f.elvLantern; elvBurned = !!f.elvBurned; elvFridgeTaken = !!f.elvFridge; crowGone = !!f.crowGone; crowReset();
+  elvStage = f.elvStage || 0; if (elvStage === 2 || elvStage === 4) elvStage = 1; elvJarGiven = !!f.elvJar; elvGreeted = !!f.elvGreeted || elvStage > 0; elvLantern = !!f.elvLantern; elvBurned = !!f.elvBurned; elvFridgeTaken = !!f.elvFridge; crowGone = !!f.crowGone; crowReset(); tmpFlown = !!f.tmpFlown; kingDown = !!f.kingDown; kingCut = null; KING.placed = false; if (KING.u && KING.mode !== 'gone') { KING.mode = 'wait'; } kingLook(false); if (tmpModuleIn) tmpReset();
   if (f.fortFarm) farmRetireAll();
   if (f.catDoor) catDoorOpen = true;
   if (f.tavStore) { tavStoreOpen = true; if (tavStore) openTavStore(true); }
@@ -49717,10 +52707,10 @@ function packByName(name) {
    * The shells, the note and the blood jar are BUILT at the moment they are
    * taken and have no standing object to hand back; they are also not things
    * a fight depends on. The three dig tools are, and they are all here. */
-  for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, pegItem, glowstickItem, ringItem,
+  for (const it of [shovelItem, militaryItem, katanaItem, bloodItem, hookItem, pegItem, glowstickItem, ringItem,
                     weddingItem, keyItem, boatKeyItem, skullKeyItem, cdItem, crabItem,
                     syringeItem, waterBottleItem, fishingRodItem, magnumItem, shotgunItem, fangItem, oldRingItem,
-                    spliffItem, grammyItem, lostKeyItem, gemItem, whaleArtItem, storeKeyItem, flameArtItem, seaArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem, cellKeyItem, goldRingItem, connRingItem, screwdriverItem, flashlightItem, billyItem, mylesItem, gargKeyItem, maceItem, sewKeyItem, shockRingItem]) {
+                    spliffItem, grammyItem, lostKeyItem, gemItem, whaleArtItem, storeKeyItem, flameArtItem, seaArtItem, beachMapItem, pavKeyItem, wellPhotoItem, hornItem, cellKeyItem, goldRingItem, connRingItem, screwdriverItem, billyItem, mylesItem, gargKeyItem, maceItem, sewKeyItem, shockRingItem]) {
     if (it === beachMapItem && !BEACH_MAP_ON) continue;                            // the chart is out for now
     if (it && (it.name === name || (it.was && it.was.includes(name)))) return it;   // `was`: what a save made before a rename calls it
   }
@@ -49912,13 +52902,13 @@ function castleSeaK() {
   return CASTLE_WALLS / (1 + Math.max(0, castleSeaD() - CASTLE_SEA_NEAR) / CASTLE_SEA_FALL);
 }
 function beachBedK() {
-  if (indoors()) return 0;
+  if (indoors() || inTemple) return 0;          // (no sea in the desert)
   return (1 - 0.97 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 - 0.72 * wellAirK)   // in the well's fog the sea goes a long way off
     * castleSeaK();
 }
 function windBedK() {
   if (indoors()) return 0;
-  return (1 - 0.9 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 + 0.9 * airGust) * (1 - 0.45 * wellAirK);
+  return (1 - 0.9 * drainMix) * (1 - bunkerMix) * (1 - dojoMix) * (1 - ucMix) * (1 + 0.9 * airGust) * (1 - 0.45 * wellAirK) * (inTemple ? 1.5 : 1);   // (the desert's wind is the loudest thing in it)
 }
 function updateBeachBed() {
   const ctx = audioCtx; if (!ctx) return;
@@ -50709,7 +53699,7 @@ function blackGuard() {
  * the page has been clicked (the START press, or the death card's). Whatever was started during the load (a restored
  * piece of music) begins from its first note when the sound comes up. */
 let audioRealResume = null, loadHeld = false;
-function loadSilent() { return (!introStarted && !startReady) || bootHold > 0 || (deathWait && !instantStart && !introStarted); }
+function loadSilent() { return (!introStarted && !startReady) || bootHold > 0 || (deathWait && !instantStart && !introStarted) || cutPaused; }   // (and the menu over a cutscene: its sound held with it, `cutPause`)
 function loadSilenceTick() {
   const ctx = audioCtx; if (!ctx || ctx.state === 'closed') return;
   if (loadSilent()) { if (ctx.state === 'running') { ctx.suspend().catch(() => {}); loadHeld = true; } }
@@ -50766,7 +53756,9 @@ function musicGuard() {
   for (const k in LOOP_SONGS) { const L = LOOP_SONGS[k]; fix(L.vol, Math.min(L.max, v * L.level)); }
   fix(wlVol, v * WL_LEVEL);
   fix(wreckThemeVol, v * WRECK_THEME_LEVEL);
-  const playing = musicSrc || samScore || passSrc || endSong || wlSrc || (minoSong && !minoSong.done) || (skrimSong && !skrimSong.done) || !!skrimFightM || !!LOOP_SONGS.marauder.cur || !!LOOP_SONGS.farmers.cur || !!LOOP_SONGS.tavern.cur;
+  fix(IC.vol, hidden ? 0 : icGain());                                // the call at the desk (his voice: the master's level)
+  fix(TB.bus, hidden ? 0 : settings.volume);                          // and the bedroom's storm under it
+  const playing = musicSrc || samScore || passSrc || endSong || wlSrc || (minoSong && !minoSong.done) || (skrimSong && !skrimSong.done) || !!skrimFightM || !!LOOP_SONGS.marauder.cur || !!LOOP_SONGS.farmers.cur || !!LOOP_SONGS.tavern.cur || (IC.on && !IC.ended && !!IC.src);
   if (playing && ctx.state === 'suspended' && started && !frozen()) ctx.resume().catch(() => {});
 }
 function animateFrame() {
@@ -50817,7 +53809,7 @@ function animateFrame() {
   /* and in the whale's belly, the deep, or any room you reach through a cut, for you to leave it (2026-11-13: loaded into the
    * tavern, the drain's far warm ran the frame the black lifted — a 237 ms frame for a room nobody there can see; the far
    * rest's warms are the beach's and come in on it after, paced, as after any checkpoint) */
-  else if (bgLoadMode && (inWhale || inDeep || inKeep || inTavern || inUndercroft || inDojo || inCat || !!inBunker || inThrone || inDun || inSewer)) { /* (`bwHoldHere` holds the whale's and the deep's parses too) */ }
+  else if (bgLoadMode && (inWhale || inDeep || inKeep || inTavern || inUndercroft || inDojo || inCat || !!inBunker || inThrone || inDun || inSewer || inTemple)) { /* (`bwHoldHere` holds the whale's and the deep's parses too) */ }
   else if (warmRunStep()) {
     if (bgLoadMode && performance.now() - warmRan < 1) bgLoadLast = performance.now();     // (stamped only when a step RAN this frame: a held compile reports "alive" every frame, and stamped then the parses never got a turn)
     /* one view of one room, and nothing else this frame — EXCEPT behind the
@@ -50887,11 +53879,13 @@ function animateFrame() {
    * owner crawled into the church tunnel and got a black screen he could not
    * even open the menu from. The exception is reported once per message and
    * the rest of the frame goes on. */
+  if (!cutPaused) {
   try { update(dt, rawDt); } catch (e) { bwFrameErr(e); }
   try { updateSkrimLife(rawDt); updateSkrimMood(rawDt); } catch (e) { bwFrameErr(e); }
   try { wbHookTick(rawDt); } catch (e) { bwFrameErr(e); }   // (his hook in the whale's side, and its chain in the wind)   // (Skrim digs and his light comes up through a dialogue's freeze)
   updateHatch(rawDt); updateUndercroftCut(rawDt);
-  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updatePackTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); updateTempleCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt); updateFightTip(rawDt); updateDigTip(rawDt); updatePackTip(rawDt); updateWheelCommit(); updateCatDread(rawDt); updateBleed(rawDt); updateEnemyBars(rawDt); updateSamuraiEyes(rawDt);
+  }   // (the menu over a cutscene: nothing of the game or the cut moves, `cutPaused`)
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   /* After everything that may have moved a lamp or the player, and before
@@ -50915,6 +53909,9 @@ function animateFrame() {
   }
   if (inspecting) {
     updateInspect(dt);
+    /* (the sheet held aside on the left: the thing drawn a quarter of the screen right — the lens slid, not the thing, so
+     * the centring and the turning are untouched) */
+    inspectApplyView();
     renderer.render(inspectScene, inspectCamera);
     sharpenFrame();
     return;
@@ -50934,7 +53931,7 @@ function animateFrame() {
   if (hRoll) camera.rotateZ(-hRoll);
   renderer.autoClear = false;
   // a film has nobody's hands in it: the whale's farewell is shown without what you are holding
-  if (!_cutCam && (viewmodel.visible || elvCarrying) && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t >= CRAB_T.cut)) {   // (and the puppet in your arms, which is not a held item)
+  if (!_cutCam && (viewmodel.visible || elvCarrying) && !(wbFareCut && wbFareCut.cue && wbFareCut.cue.cut) && !(crabCut && crabCut.t >= CRAB_T.cut) && !tmpCut) {   // (and the puppet in your arms, which is not a held item)
     renderer.clearDepth();
     renderer.render(vmScene, vmCamera);
   }
@@ -51116,6 +54113,7 @@ function catSqueeze(u, p, pv, dt) {
   M.scale.x = ud.sx0 * u.catSq;
 }
 function mutClampX(u, p, dt) {
+  if (u.kind.kingBody) { kingClampUnit(u, p); return; }   // the temple's rotunda
   if (u.kind.whaleBody) { demonClamp(u, p); return; }   // the belly's walls, not the beach's
   if (u.kind.thrBody) { thrClampUnit(u, p); return; }   // the throne room's stone, not the beach's
   if (u.kind.fortBody && fortWalls) { fortClampUnit(u, p); return; }   // the castle's stone, not the surf and the dune
@@ -51818,10 +54816,20 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src, opt) {
     const kW = new Array(nb), kPW = new Array(nb), kTr = new Array(nb), kTw = new Array(nb), kLag = new Int32Array(nb);
     const kA = new Array(nb), kBW = new Array(nb), kTwO = new Array(nb), kFo = new Uint8Array(nb), kKeep = new Array(nb), kV = new Array(nb);
     for (let j = 0; j < nb; j++) { const b = bones[j]; let w = W.get(b); if (!w) { w = new THREE.Quaternion(); W.set(b, w); } kW[j] = w; }
+    /* A JOINT WHOSE PARENT IS NOT A BONE BUT HANGS UNDER ONE (`kind.boneGaps`, 2026-11-20). The king's Character Creator
+     * export puts a scale-compensation node between every joint and the one above it, so every joint read as a ROOT here and
+     * was solved against its parent's world AS BOUND — while that parent turned with the clip. Each joint's own turn landed
+     * on top of all its ancestors' again: the owner's "hes flying around … his rig has to be messed up", his idle lying 40°
+     * over. Such a joint is solved against the nearest bone above it as it is THIS frame, through the gap's fixed turn. */
+    const kAnc = new Array(nb), kOff = new Array(nb), kPq = new Array(nb);
     for (let j = 0; j < nb; j++) {
       const b = bones[j];
       const pb = b.parent && b.parent.isBone ? b.parent : null;
       kPW[j] = pb ? W.get(pb) : rootW.get(b);
+      if (!pb && u.kind.boneGaps) {
+        let ab = b.parent; while (ab && ab !== m && !ab.isBone) ab = ab.parent;
+        if (ab && ab.isBone && bW.get(ab)) { kAnc[j] = W.get(ab); kOff[j] = bW.get(ab).clone().invert().multiply(rootW.get(b)); kPq[j] = new THREE.Quaternion(); }
+      }
       const tw = twinP.get(b);
       const mx = tw ? mxOf[tw.name] : mxOf[b.name];
       kTr[j] = (mx && C.d[mx]) || null; kTw[j] = !!tw; kLag[j] = tw ? (TW.lag || 0) : 0;
@@ -51831,7 +54839,7 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src, opt) {
     }
     for (let i = 0; i < n; i++) {
       for (let j = 0; j < nb; j++) {                 // m.traverse order: parents first
-        const pW = kPW[j], tr = kTr[j], w = kW[j];
+        const pW = kAnc[j] ? kPq[j].copy(kAnc[j]).multiply(kOff[j]) : kPW[j], tr = kTr[j], w = kW[j];
         if (tr) {
           const o = (kTw[j] ? Math.max(0, i - kLag[j]) : i) * 4;
           _d.set(tr[o], tr[o + 1], tr[o + 2], tr[o + 3]);
@@ -55365,6 +58373,7 @@ function renderShop() {
     (have > 0 ? `<div class="have">You have ${have}</div>` : '') +
     (r ? `<button class="buy${st.poor ? ' poor' : ''}"${st.ok ? '' : ' disabled'}>${st.label}</button>` : '') +
     (shopMode === 'sell' && have > 1 ? `<button class="buy all">Sell all ${have} · +${jarsTxt(have * r.price)}</button>` : '');
+  pvAttach(it, shopDetailEl.querySelector('.pic'));          // (the thing itself, turning: the pack's live view)
   const btns = shopDetailEl.querySelectorAll('.buy');
   if (btns[0]) btns[0].addEventListener('click', shopConfirm);
   if (btns[1]) btns[1].addEventListener('click', () => {
@@ -55485,8 +58494,12 @@ trader2World.position.set(TRADER2_X, 0, TRADER2_Z);
 trader2World.rotation.y = -Math.PI / 2;
 scene.add(trader2World);
 function buildTrader2() {
-  if (!traderRig || trader2World.userData.built) return;
-  trader2World.userData.built = true;
+  bakeTraderInto(trader2World);
+  trader3Try();
+}
+function bakeTraderInto(world) {
+  if (!traderRig || world.userData.built) return;
+  world.userData.built = true;
   traderWorld.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(traderWorld.matrixWorld).invert(), v = new THREE.Vector3();
   traderRig.traverse((o) => {
@@ -55505,8 +58518,28 @@ function buildTrader2() {
     for (const gr of src.groups) g.addGroup(gr.start, gr.count, gr.materialIndex);
     g.computeVertexNormals();
     const mesh = new THREE.Mesh(g, o.material);
-    trader2World.add(mesh);
+    world.add(mesh);
   });
+}
+/* A THIRD OF HIM, AT THE LIGHTHOUSE'S DOOR (2026-11-19, the owner: "put another merchant right in front of the lighthouse
+ * door as well"): baked as the castle's is, stood on the deck two metres out from the door and a little to its side (not in
+ * the way in), turned to whoever comes up the deck; he sells what the beach's man sells (`openShop(3)`). Built when both
+ * the man and the island are in; he goes with the island when it is culled. */
+const trader3World = new THREE.Group(); trader3World.name = 'trader3';
+function trader3Try() {
+  if (!traderRig || !isleWorld || trader3World.userData.placed) return;
+  trader3World.userData.placed = true;
+  const A = ISLE_DOOR_A, r0 = ISLE_TOWER_R(ISLE_FLOOR + 1) + 0.04, dx = Math.sin(A), dz = Math.cos(A), sx = Math.cos(A), sz = -Math.sin(A);
+  const x = ISLE_AXIS.x + dx * (r0 + 2.1) + sx * 1.35, z = ISLE_AXIS.z + dz * (r0 + 2.1) + sz * 1.35;
+  let y = ISLE_FLOOR; try { const f = isleFloorAt(x, z); if (Number.isFinite(f)) y = f; } catch (e) { /* */ }
+  trader3World.position.set(x, y, z);
+  trader3World.rotation.y = A - 0.35;
+  bakeTraderInto(trader3World);
+  isleWorld.add(trader3World);
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.9, TRADER_H, 0.9), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false; hit.position.y = TRADER_H / 2;
+  const h = new THREE.Group(); h.add(hit); trader3World.add(h);
+  addInteractable(h, 'Buy something', 'npc', { far: 5.0, when: () => !dialogOpen && !shopOpen && onIsle, onActivate: () => openShop(3) });
 }
 const traderHit = new THREE.Group();
 {
@@ -65711,7 +68744,7 @@ function buildCatSandDoor() {
     label: () => (catDoorOpen || devKeys() ? 'Enter the catacombs' : 'The door is locked.'),
     bare: () => !catDoorOpen && !devKeys(),
     when: () => !inCat && !catBusy && !caveBusy && catSandDoorFitted,
-    onActivate: () => { if (catDoorOpen || devKeys()) startCatReturn(); else sfxThud(0.02); },
+    onActivate: () => { if (catDoorOpen || devKeys()) doorUse(startCatReturn)(); else sfxThud(0.02); },
   });
   fitCatSandDoor();
 }
@@ -78686,6 +81719,7 @@ function clearRoomFlags() {
   if (inDun) { inDun = false; if (dunWorld) dunWorld.visible = false; dungeonLeave(); }
   if (inSewer) placeOutOfSewer();
   if (inDeep) placeOutOfDeep();
+  if (inTemple) placeOutOfTemple();
 }
 const ROOM_BACK = {
   /* `spots` are the doors a save can be written at, and each is the SAME
@@ -78762,6 +81796,10 @@ const ROOM_BACK = {
            place: () => placeInSewer(), seat: () => {}, spots: { sewIn: () => {} } },
   /* and the deep, from the moment the line snaps (2026-11-13, the owner: "add checkpoint when the fishing rod snaps in
    * the water too"): at the bottom of the long pull, the line gone, before it comes (`deepSnapSave`, `deepRestore`) */
+  // the desert the stump's crow takes you to (2026-11-18): standing where you were, or at the screenshot
+  tmp:  { grp: () => tmpWorld, at: () => [TMP_X, TMP_Z], ready: () => tmpReady, load: () => loadTemple(),
+          place: () => placeInTemple(), seat: (p) => { tmpLastFloor = p[1] - playerEye(); tmpLastSpot.x = p[0]; tmpLastSpot.z = p[2]; },
+          spots: {} },
   deep: { grp: () => deep.world, at: () => [DEEP.x, DEEP.z], ready: () => plio.ready && !!deep.world && ((!!dead.gltf && deadSkinsIn()) || dead.failed), load: () => { bwSoon('assets/pliosaur.glb'); plioLoad(); deepAmbLoad(); deadLoad(); },
           place: () => deepRestore(), seat: () => {}, spots: { deepSnap: () => {} } },
 };
@@ -80575,22 +83613,29 @@ function buildTavPlank() {
  * and he drops his quarrel and turns on you for it, which is what a bottle
  * thrown into a bar fight is for. It is the drone throw's own shape, at bar
  * scale. */
-function tavThrownHits() {
-  for (const u of tavPeople()) {
-    if (!u || !u.st.alive || !u.st.awake) continue;
-    const c = u.g.position, h = (u.kind.h || 1.8);
-    for (const p of physProps) {
-      if (!p.onImpact || p.dead || p.held || p.pinned || !p.mesh.parent) continue;
-      /* and only a thing YOU threw: a bottle the brawl knocked off a table is
-       * going just as fast, and it made the man it landed on "yours" — so he
-       * dropped his quarrel and came for you for something you never did. */
-      if (!p.thrown) continue;
-      const v = p.vel.length(); if (v < 3.2) continue;
-      const q = p.mesh.position;
-      if (Math.abs(q.x - c.x) > 0.75 || Math.abs(q.z - c.z) > 0.75) continue;
-      if (q.y < c.y + 0.25 || q.y > c.y + h) continue;
-      hurtMutant(u, 1, 0.4);                          // it is YOUR blow: the confirm, and he turns on you for it
-      p.onImpact(Math.max(6, v));
+function tavThrownHits() { thrownHits(); }   // (now `thrownHits`, for every creature in the game; also from `update`)
+/* AND EVERYWHERE ELSE TOO (2026-11-18, the owner: "have throwing a bottle at an enemy connect and hurt them also break on
+ * impact"). Only the tavern ever asked, and only of its own people while they were awake: a bottle thrown at anything else
+ * — a farmer, a knight, a mutant, a sleeping drinker — went through him. Now any thing YOU threw (`p.thrown`), moving
+ * faster than a lob, that reaches any living creature that is drawn — inside his body's own radius, between his knees and
+ * the top of his head — is a blow (`hurtMutant`: the confirm, it wakes him, he turns on you), 1, or 2 thrown hard; a thing
+ * that breaks (`onImpact`: a bottle, a pot, a castle prop) breaks ON him, and anything else bounces off and drops. One hit
+ * a throw. */
+function thrownHits() {
+  for (const p of physProps) {
+    if (!p.thrown || p.dead || p.held || p.pinned || !p.mesh.parent) continue;
+    const v = p.vel.length(); if (v < 3.2) continue;
+    const q = p.mesh.position;
+    for (const u of mutants) {
+      if (!u || !u.st || !u.st.alive || u.retired || !u.g.visible || u.st.struck) continue;
+      const c = u.g.position, r = Math.max(0.55, (u.kind.body || 0.45) + 0.3), h = (u.kind.h || 1.8);
+      if (Math.abs(q.x - c.x) > r || Math.abs(q.z - c.z) > r) continue;
+      if (q.y < c.y + 0.25 || q.y > c.y + h + 0.1) continue;
+      hurtMutant(u, v > 9 ? 2 : 1, 0.4);              // it is YOUR blow: the confirm, and he turns on you for it
+      p.thrown = false;
+      if (p.onImpact) p.onImpact(Math.max(6, v));
+      else { p.vel.x *= -0.25; p.vel.z *= -0.25; p.vel.y = Math.min(p.vel.y, 0) - 0.5; }   // off him, and down
+      break;
     }
   }
 }
@@ -81708,7 +84753,7 @@ function buildKeepDoor() {
   addInteractable(proxy, 'Enter the keep', 'default', {
     mid: true, far: 3.6,
     when: () => inKeep && !sailBusy && !tavBusy,
-    onActivate: () => startTavern(1),
+    onActivate: doorUse(() => startTavern(1)),
   });
 }
 /* AND THE WALL YOU ARRIVE THROUGH IS THE DOOR YOU CAME IN BY. The spawn
@@ -81952,7 +84997,7 @@ function buildTavDoor() {
   addInteractable(proxy, 'Back to the terrace', 'default', {
     mid: true, far: 3.2,
     when: () => inTavern && !tavBusy,
-    onActivate: () => startTavern(-1),
+    onActivate: doorUse(() => startTavern(-1)),
   });
 }
 
@@ -82474,6 +85519,7 @@ function buildTavShelfAt() {
  * a second, and the door meeting the frame. Nothing above two kilohertz but
  * the latch. */
 function sfxTavernDoor() {
+  doorPick(); return;                                     // (his pickup sound: `doorPick`)
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime, out = sfxOut();
   for (const [at, f, lv] of [[0, 900, 0.30], [0.05, 520, 0.24]]) {
@@ -82964,7 +86010,10 @@ function lifeApply(u, B, dt, saved) {
   if (S.fingers.length) {
     // a hand that is HOLDING something closes round it instead (`life.grip`, set by whoever owns the beat)
     // `life.grip` may be one number for both hands or `{ R, L }` — a man with a bottle in one fist and nothing in the other
-    const base = (u.kind.claws || 0) * (busy ? 1.35 : 1.0), G = S.grip;
+    /* (a kind with `handRest` has HANDS, not claws — every farmer, 2026-11-17, the owner: "i need every farmers hands fixed":
+     * open at rest, a fist once he is fighting; an empty hand of an armed man the same, his weapon hand its own grip) */
+    const HR = u.kind.handRest;
+    const base = HR != null ? (st.alive && st.awake ? u.kind.handFist : HR) : (u.kind.claws || 0) * (busy ? 1.35 : 1.0), G = S.grip;
     const curlR = G == null ? base : (typeof G === 'number' ? G : (G.R != null ? G.R : base));
     const curlL = G == null ? base : (typeof G === 'number' ? G : (G.L != null ? G.L : base));
     for (const f of S.fingers) { saved.push({ b: f.b, q: f.b.quaternion.clone(), p: null }); f.b.quaternion.multiply(_lfQ.setFromAxisAngle(f.ax || _lfX, f.sign * (f.R ? curlR : curlL) * f.k)); }
@@ -84776,7 +87825,7 @@ function buildFortDoors() {
   addInteractable(mk(FORT_GATE.xi, FORT_FLOOR + fk(1.7), FORT_GATE.zi - 0.35, fk(3.0), fk(3.4), 0.6), 'Leave the castle', 'default', {
     mid: true, far: 3.8,
     when: () => inFort && !fortBusy,
-    onActivate: () => startFort(-1, 'gate'),
+    onActivate: doorUse(() => startFort(-1, 'gate')),
   });
   // the back door, from the courtyard: the way on to the lighthouse
   addInteractable(mk(FORT_DOOR.x, FORT_FLOOR + fk(1.7), FORT_DOOR.z + 0.35, fk(1.6), fk(3.4), 0.6),
@@ -84786,13 +87835,13 @@ function buildFortDoors() {
     when: () => inFort && !fortBusy,
     /* THE BACK DOOR GOES ON INTO THE NEXT CASTLE (the owner's word): Castle
      * XIII, the same builder's, a little way down the coast past the tower */
-    onActivate: () => { if (!fortBackBarred() && c13Ready) startFort(1, 'c13'); },
+    onActivate: () => { if (!fortBackBarred() && c13Ready) doorUse(() => startFort(1, 'c13'))(); },
   });
   // and the gate from the beach, for anyone who reaches for E rather than walking into it
   addInteractable(mk(FORT_GATE.x, FORT_FLOOR + fk(1.7), FORT_GATE.z + 0.35, fk(3.0), fk(3.4), 0.6), 'Enter the castle', 'default', {
     mid: true, far: 3.8,
     when: () => !inFort && !fortBusy && !inRoom(),
-    onActivate: () => startFort(1),
+    onActivate: doorUse(() => startFort(1)),
   });
 }
 
@@ -85282,7 +88331,7 @@ function buildC13Doors() {
   addInteractable(p, 'Back to the first castle', 'default', {
     mid: true, far: 3.8,
     when: () => inC13 && !fortBusy,
-    onActivate: () => startFort(1, 'fromC13'),
+    onActivate: doorUse(() => startFort(1, 'fromC13')),
   });
 }
 /* ---- THE PASSAGE BETWEEN THE CASTLES. From the first castle's back door
@@ -88205,6 +91254,11 @@ function authorDkClips(u, m) {
   u.clipsPending = 1;
   if (swordMoves) lay(swordMoves);
   else { const was = swordMovesLate; swordMovesLate = () => { if (was) was(); lay(swordMoves); }; }
+  /* AND HE CAN BE PUT ON HIS BACK (2026-11-19, the owner: "make the paladin fall like the church knight if hit with enough
+   * heavies like him"): the motion-captured fall onto the back (`ntar-moves.json`'s `knock`, the same rotations-undergone
+   * retarget every knockdown here uses) onto his rig — `knockAfter` heavies landed in a stretch, as the knight */
+  const knockIn = () => { if (u.retired || !u.mixer) return; for (const c of mk({ ...ntarMoves, clips: { knock: ntarMoves.clips.knock } })) if (c.name === 'knock') u.clips.knock = u.mixer.clipAction(c); };
+  if (ntarMoves) bwTurn().then(knockIn); else { const prev = ntarMovesLate; ntarMovesLate = () => { if (prev) prev(); knockIn(); }; }
   return [];
 }
 /* HIS BODY IS THE PALADIN'S NOW (2026-11-16, the owner: "make this the dark knights model … his size should be the same
@@ -88222,6 +91276,7 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
    * 3 m off him, three runs each): before 14-16 swings, 10-13 landed; now 16-18, 11 landed every run. NOT faster feet or
    * turns: speedK 1.15 / turnMax 3.4 put him at 4.5-5 m throwing into the air (0 of 15 landed in two runs of three) — his
    * steps are measured at his own pace; and NOT 3.1 m: one run in three drifted out to 5 m and landed 2 of 13. */
+  knockClip: 'knock', knockAfter: 5, knockLapse: 7, knock: NTAR_KNOCK,   // (on his back after five landed heavies inside seven seconds, as the church knight: `authorDkClips` gives him the fall)
   h: 2.95, hp: 90, hitR: 0.95, body: 0.78, lungeStop: 2.0, landSlop: 0.5, limbR: 0.33, foeLimbR: 0.6, lungeLead: 0.18, closeBody: true,
   speedK: 1.0, aggr: 4.2, press: 1.0, chainMax: 5,   // (2.4 / 0.9 / 3 until 2026-11-14, the owner: "make him better and more aggressive too"; 3.2 / 0.96 / 4 until 2026-11-17)
   /* A KNIGHT, NOT A DANCER (2026-10-19, round 3; the owner: "make the dark knights connectivity way more tight hes all
@@ -88604,6 +91659,11 @@ function dkBuildTravel(u) {
     A.rmStop = cs.map((f, i) => Bl[i] ? Bl[i].R + 0.2 : A.rmStop0 - (Z ? at(Z, f) : 0));
     A.rmYaw = cs.map((f, i) => Bl[i] ? THREE.MathUtils.clamp(Bl[i].b, -0.9, 0.9) : 0);
     A.stop = A.rmStop[0];
+    /* (AND THE LEAP COMES DOWN ON YOU, not at its sword's end — 2026-11-18, the owner: "his jump swing never land hes far
+     * away". Its stand-off is where the blade's TIP crosses your height + 0.2, which for the leap's long chop was 3.22 m: it
+     * grazed a man who stood still and missed one who stepped back. Swept (`dkStopSweepLeap`, twice): it lands at every
+     * stand-off from 1.5 to 3.3, near the middle of the picture. 2.4: on you, with a step of room either way.) */
+    if (k === 'dkLeap' && A.stop > 2.4) { A.stop = 2.4; A.rmStop[0] = 2.4; }
     // the forward step to the blow, and all the ground the feet cover on the way (`dkWalkSwing` shares its correction over it)
     const iH = Math.round(A.hit * (T.length - 1)); let path = 0; for (let j = 1; j <= iH; j++) path += Math.abs(T[j][1] - T[j - 1][1]);
     const s = T[iH][1], W = A.hold ? DK_WARP_HOLD : DK_WARP;
@@ -88753,9 +91813,10 @@ function dkTownFights(u, dt) {
   if (pest) { if (u.st.foe !== pest) { u.st.foe = pest; u.st.mine = false; dk.pickT = now; } }
   else if (u.st.foe) { u.st.foe = null; u.st.mine = true; dk.pickT = now; }
 }
+function kindIs(k, K) { return !!k && (k === K || k.base === K); }   // a kind, or its rage's copy of it (see the second wind)
 function updateDarkKnight(dt) {
   const u = dkSlot.unit;
-  if (!u || u.retired || u.kind !== MUT_KINDS.darkKnight) return;
+  if (!u || u.retired || !kindIs(u.kind, MUT_KINDS.darkKnight)) return;
   if (u.kind.natural && !u.natDone && u.clips && !(u.clipsPending > 0)) u.natDone = naturalSwings(u);
   if (u.natDone && !u.dkTravel && u.model && !(u.clipsPending > 0)) u.dkTravel = dkBuildTravel(u);   // (his swings' own travel, once: 2026-10-29)
   const W = u.texW || (u.texW = {});
@@ -88788,7 +91849,7 @@ function updateDarkKnight(dt) {
 }
 /* A CHECKPOINT IN THE STREET: the load's black waits until he is on it with his three (measured, 2026-10-19: put there
  * at 2.6 s, the black lifting at 3.1 — half a second from the owner's "i see them clip in") */
-bootStageHold = () => { const u = dkSlot.unit; return !!(inFort && u && u.kind === MUT_KINDS.darkKnight && u.st.alive && !u.retired && !dkSlot.out && !dkDone()); };
+bootStageHold = () => { const u = dkSlot.unit; return !!(inFort && u && kindIs(u.kind, MUT_KINDS.darkKnight) && u.st.alive && !u.retired && !dkSlot.out && !dkDone()); };
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { dkS: () => ({ dk, u: dkSlot.unit }), dkStage1, dkTurn, dkSpawnTest: (x, z, y = 0) => makeMutant(x, z, 'darkKnight', y), mutSpawnTest: (x, z, kind, y = 0) => makeMutant(x, z, kind, y), mutantsS: () => mutants, magAmmoS: () => ({ ammo: magAmmo, t: magT, busy: magBusy(), sg: sgCh.slice() }), loadGunsTest: () => { magAmmo = 6; sgCh = [1, 1]; } }));
 
 /* =====================================================================
@@ -89162,7 +92223,7 @@ function minoFoes() {
   if (inFort) {
     for (const f of farmUnits) if (f.st.alive && !f.retired && f.farm && f.farm.out && !f.farm.burst && f.st.awake && f.g.visible) L.push(f);
     const d = dkSlot.unit;
-    if (d && d.kind === MUT_KINDS.darkKnight && d.st.alive && !d.retired && dkSlot.out && d.g.visible) L.push(d);
+    if (d && kindIs(d.kind, MUT_KINDS.darkKnight) && d.st.alive && !d.retired && dkSlot.out && d.g.visible) L.push(d);
   }
   // (`visible !== false`, as three draws it: the light knight's was `undefined` — drawn, but never on his list; measured,
   // `knDuel`, the owner's "the minataur doesnt even fight when im attacking the knights")
@@ -89188,8 +92249,12 @@ function minoPickFoe(u, dt) {
     // (not a man the dark knight is already cutting down: he was gone by the time the blow came, and it fell on air)
     if (D && D !== f && D.st.alive && D.st.foe === f && D.st.atk >= 0) continue;
     const dU = Math.hypot(f.g.position.x - P.x, f.g.position.z - P.z), dMe = Math.hypot(f.g.position.x - me.x, f.g.position.z - me.z);
-    if (dU > 24 || dMe > 16) continue;                                    // (at your side: not off down the street on his own)
-    const sc = -dU - dMe * 0.4 + (f.st.foe === u ? 3 : 0) + (!f.st.foe && dMe < 4 ? 5 : 0) - (minoSpent(f) ? 30 : 0) + (f.kind === MUT_KINDS.darkKnight ? 6 : 0) + (f.knOnMino ? 8 : 0);   // (the knight first: he is the street's real fight; in XIII, the one on him)
+    // (at your side: not off down the street on his own — but a man who is ON HIM he fights wherever you are: 2026-11-18, the
+    // owner, "make myles actually attack the paladin too he just stands there when hes the only enemy left". Measured,
+    // `minoPaladin`: he fought the paladin 90 → 42, the fight drifted past 16 m from you, and he stood idle with the paladin
+    // still swinging at him)
+    if (dU > 24 || (dMe > 16 && f.st.foe !== u)) continue;
+    const sc = -dU - dMe * 0.4 + (f.st.foe === u ? 3 : 0) + (!f.st.foe && dMe < 4 ? 5 : 0) - (minoSpent(f) ? 30 : 0) + (kindIs(f.kind, MUT_KINDS.darkKnight) ? 6 : 0) + (f.knOnMino ? 8 : 0);   // (the knight first: he is the street's real fight; in XIII, the one on him)
     if (sc > bs) { bs = sc; best = f; }
   }
   if (best !== u.st.foe) { u.st.foe = best; if (best) { MINO.pickT = 2.5; u.st.awake = true; u.st.mine = false; } }
@@ -89226,7 +92291,7 @@ function minoDraws(u, dt) {
      * awake, the iron knight is woken onto him, unless he is already yours.) */
     if (!on && knUnits.some((k) => k.st.alive && k.st.awake)) {
       const free = knUnits.filter((k) => k.st.alive && !k.retired && !k.knYours);
-      on = free.find((k) => k.kind === MUT_KINDS.knIron) || free.find((k) => k.st.awake) || null;
+      on = free.find((k) => kindIs(k.kind, MUT_KINDS.knIron)) || free.find((k) => k.st.awake) || null;
       if (on) on.knOnMino = true;
     }
     if (on && on.st.foe !== u && on.st.atk < 0) { on.st.foe = u; on.st.mine = false; on.st.awake = true; }
@@ -91189,7 +94254,8 @@ function updateGargRaid() {
       if (u.kind.voice.voxT) u.kind.voice.voxT.shout = -99;
       // said only once it has actually started (a mouth busy or a bank not in: the next frame, for up to 4 s)
       R.tries = (R.tries || 0) + 1;
-      R.voiced = farmVox('shout', u.kind.voice, { x: R.x, z: R.z, p: 1 });
+      // (louder, and from the doorway they come through, panned all the way: 2026-11-18, the owner: "make the rare phrase when the farmers attack after the gargoyles louder it should be heard in the direction they are coming from")
+      R.voiced = farmVox('shout', u.kind.voice, { x: R.x, z: R.z, p: 1, boost: 3.5, panK: 1, force: true });
       R.said = R.voiced || R.tries > 240;
     }
   }
@@ -91876,7 +94942,7 @@ function loadThrone() {
       addInteractable(p, () => (thrFightOn() ? 'The way is barred.' : 'Use Lift'), 'default', {
         mid: true, far: 4.2, bare: () => thrFightOn(),
         when: () => inThrone && !thrBusy,
-        onActivate: () => { if (!thrFightOn()) startThrone(-1, 'lh'); },
+        onActivate: () => { if (!thrFightOn()) doorUse(() => startThrone(-1, 'lh'))(); },
       });
     }
     // and the door you came in by, at the hall's near end behind where you arrive: it goes back out the same way
@@ -92156,6 +95222,7 @@ function startThrone(dir, to) {
  * with a lurch; three seconds of chain running over a sheave with the drum's
  * low grind under it, rising or falling; the stop, and the gate again. */
 function sfxLift(up) {
+  doorPick(); return;                                     // (his pickup sound: `doorPick`)
   const ctx = audioCtx; if (!ctx) return;
   const t = ctx.currentTime + 0.05, out = sfxOut();
   const gate = (at) => {
@@ -93203,9 +96270,8 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
 
   /* THE GLOWSTICK on the ledge by the generator, cracked and lying there lit: in the dark after the power goes it is the
    * one light at the far end, and the thing you walk to (2026-11-14, the owner: "change the flashlight to the glowstick
-   * item" — the angle-head flashlight that lay here from 2026-10-23 is gone; a save that already took it keeps it). Its
-   * save flag is `glow`, as it always was. The sewer's spot light stays built (and dark): a flashlight carried from an old
-   * save still throws its beam with it (`updateFlashlight`). */
+   * item" — the angle-head flashlight that lay here from 2026-10-23 is gone, and since 2026-11-18 gone from the game). Its
+   * save flag is `glow`, as it always was. (The sewer's spot light for a carried flashlight went with it, 2026-11-18.) */
   {
     const fl = makeGlowstick(); fl.position.set(-1.95, S.WALK + 0.03, S.GEN_Z - 0.38); fl.rotation.y = 0.7; W.add(fl);
     fl.traverse((o) => { if (o.isSprite) o.raycast = () => {}; });
@@ -93215,9 +96281,7 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
     const hp = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
     hp.name = 'hitProxy'; hp.visible = false; hp.position.y = 0.05; fl.add(hp);
     addItemShine(fl, { ...DROP_SHINE, height: 0.3 });
-    sewP.glow = fl; sewP.flashLedge = false;
-    const spot = new THREE.SpotLight(FLASH.COLOR, 0, FLASH.RANGE, FLASH.ANGLE, FLASH.PEN, FLASH.DECAY);
-    W.add(spot, spot.target); sewP.flash = spot;
+    sewP.glow = fl;
     addInteractable(fl, 'Take the glowstick', 'default', {
       when: () => inSewer && !sewGlowTaken,
       onActivate: () => { sewGlowTaken = true; sfxGlassPick(); fl.removeFromParent(); removeInteractable(fl); hovered = null; gainGlowstick(); },
@@ -93705,7 +96769,6 @@ function sewApplyState() {
   if (sewP.ringWorld) sewP.ringWorld.visible = sewChestOpen && !sewRingTaken;
   (sewP.floorJars || []).forEach((j, i) => { const gone = !!((sewFloorJars >> i) & 1); j.visible = !gone; if (gone) removeInteractable(j); });
   if (sewGlowTaken && sewP.glow && sewP.glow.parent) { sewP.glow.removeFromParent(); removeInteractable(sewP.glow); }
-  if (sewGlowTaken) { sewP.flashLedge = false; flashlightModel.userData.ledgeOn = false; }
 }
 function sewRestore(s) {
   s = s || {};
@@ -94173,14 +97236,6 @@ function updateSewer(dt) {
   sewP.boxLight.intensity = live ? 0.4 + 0.02 * Math.sin(now * 2.3) + zap * 0.35 : 0;
   sewP.floodMat.emissiveIntensity = live ? zap * 0.04 : 0;   // (the web carries the light now, `floodU`)
   if (sewP.floodU) sewP.floodU.value.x = live ? Math.max(0, sewP.floodU.value.x - dt * 7) : 0;
-  // the flashlight on the ledge: its beam back up the tunnel, the lens lit, stuttering like the one in your hand will
-  if (sewP.flashFill && sewP.flashFill()) sewP.flashFill = null;
-  if (sewP.flashLedge && sewP.flash) {
-    const F = sewP.flash, A = sewP.flashAt;
-    F.position.copy(A.lens); F.target.position.copy(A.lens).addScaledVector(A.aim, 6);
-    F.intensity = FLASH.INT * 0.75 * (flashFlick > 0 ? 0.5 : 1);
-    flashlightModel.userData.ledgeOn = true;
-  }
   // the gate swings in, the lid comes up
   if (sewDoor2Open) { sewLairTick(dt, now); sewLairScareTick(dt); }
   if (sewDoor2Open && sewDoor2Swing < 1 && sewP.door2) { sewDoor2Swing = Math.min(1, sewDoor2Swing + dt / 1.6); sewP.door2.rotation.y = SEW_DOOR2_OPEN * (1 - Math.pow(1 - sewDoor2Swing, 3)); }   // (heavy: it goes slowly and settles)
@@ -94194,10 +97249,8 @@ function updateSewer(dt) {
     for (const lp of sewP.lamps) srcs.push([lp.L.position, lp.L.color, lp.L.intensity]);
     srcs.push([sewP.boxLight.position, sewP.boxLight.color, sewP.boxLight.intensity], [sewP.zap.position, sewP.zap.color, sewP.zap.intensity]);
     _sewHeld.set(heldGlow.position.x - SEW_X, heldGlow.position.y - SEW_Y, heldGlow.position.z - SEW_Z);
-    // (the glowstick in your hand, or the flashlight's beam a couple of metres out, where the dust in it is lit)
-    const F = sewP.flash;
-    if (F && F.intensity > 0.05) { _sewHeld.copy(F.target.position).sub(F.position).normalize().multiplyScalar(2.2).add(F.position); srcs.push([_sewHeld, F.color, F.intensity * 0.05]); }
-    else srcs.push([_sewHeld, heldGlow.color, heldGlow.intensity * 0.6]);
+    // (the glowstick in your hand)
+    srcs.push([_sewHeld, heldGlow.color, heldGlow.intensity * 0.6]);
     for (let k = 0; k < U.uL.value.length; k++) {
       const s = srcs[k];
       if (s && s[2] > 0.01) { U.uL.value[k].copy(s[0]); U.uLC.value[k].set(s[1].r * s[2], s[1].g * s[2], s[1].b * s[2]); }
@@ -94463,7 +97516,7 @@ function sewElectrocute() {
     z = yaw === 0 ? Math.min(z, 16.3 - 2.9) : Math.max(z, SEW.CH_END + 3.1);
   }
   sewMonDead = true; sewMonDeadAt = { x, z, yaw }; sewP.backKeySet = false;
-  M.deadT = 0; M._deadPosed = false; M.press = 0; flashDread = 0;
+  M.deadT = 0; M._deadPosed = false; M.press = 0;
   if (M.aud) { M.aud.g.gain.value = 0; M.aud.tin.gain.value = 0; }
   setTimeout(() => { if (inSewer) sfxSewDeath(x, z); }, 420);
 }
@@ -94986,7 +98039,7 @@ function sewMonSpray(x, z, k) {
 function sewMonReset(leaving = false) {
   const M = sewMon; if (!M) return;
   M.st = 'off'; M.t = 0; M.h = SEWMON.HID; M.g.visible = false; M.flare = 0; M.intro = -1; M.faceL.intensity = 0;
-  M.placed = false; M.path = null; M.press = 0; flashDread = 0; M.seenT = 0; M.hunt = 0;
+  M.placed = false; M.path = null; M.press = 0; M.seenT = 0; M.hunt = 0;
   // (its sound runs only while you are down there: leaving, the loops are stopped and let go, not left at nought)
   if (M.aud) {
     M.aud.tin.gain.value = 0;
@@ -95416,10 +98469,9 @@ function sewMonTick(dt) {
   const brR = upNow ? 16 : 13, brNear = M.placed && M.st !== 'dive' && M.st !== 'sink' ? Math.pow(THREE.MathUtils.clamp(1 - dist / brR, 0, 1), 1.1) : 0;
   if ((M.brIn -= dt) <= 0 && brNear > 0.02) { M.brIn = (3.4 + Math.random() * 2.0) / (0.85 + 0.25 * sewHeat()); sewMonBreath(Math.max(brNear, 0.12), !upNow || M.h < SEWMON.PEEK); }
   /* THE PRESSURE: the longer it has been coming up unseen, the louder and quicker your heart and the thin ringing in your
-   * ears; caught, it drains away. And the torch goes with it (`flashDread`). */
+   * ears; caught, it drains away. */
   const up = M.st === 'rise' ? Math.min(1, M.t / k(SEWMON.RISE)) : M.st === 'linger' ? 0.45 : 0;
   M.press += ((up > 0 ? up : 0) - M.press) * Math.min(1, dt * (up > M.press ? 1.6 : 2.8));
-  flashDread = (M.st === 'rise' || M.st === 'linger') ? THREE.MathUtils.clamp(1 - dist / 14, 0, 1) * (0.3 + 0.7 * up) : flashDread * Math.max(0, 1 - dt * 3);
   if (M.press > 0.08 && (M.hbIn -= dt) <= 0) {
     M.hbIn = 60 / (62 + 70 * M.press);
     sfxSewHeart(0.04 + 0.22 * M.press * M.press);
@@ -95570,7 +98622,7 @@ function sewScareTick(dt) {
   lookEuler.setFromQuaternion(camera.quaternion);
   { const near = sewMonEyes(); for (const e2 of M.eyes) e2.glow.material.opacity = 0.85 * (0.55 + 0.45 * near); }
   if (u >= 1 && !C.hit) {
-    C.hit = true; C.hitT = C.t; C.dir = new THREE.Vector3().copy(_smTip).sub(camera.position).normalize(); M.press = 0; flashDread = 0;
+    C.hit = true; C.hitT = C.t; C.dir = new THREE.Vector3().copy(_smTip).sub(camera.position).normalize(); M.press = 0;
     if (M.aud) M.aud.tin.gain.value = 0;
     sfxSewScream(); addTrauma(1); hurtFlash = 1; fovKick = Math.max(fovKick, 12);
   }
@@ -96412,7 +99464,7 @@ function loadDungeon() {
     const q = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.4, 0.5), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
     q.position.set(1.62, F + 1.2, Z1 - 0.75); q.name = 'hitProxy'; q.visible = false; q.userData.bwGhost = true;
     dunWorld.add(q);
-    addInteractable(q, 'Leave', 'default', { mid: true, far: 3.4, when: () => inDun && !dunBusy, onActivate: () => startDungeon(-1) });
+    addInteractable(q, 'Leave', 'default', { mid: true, far: 3.4, when: () => inDun && !dunBusy, onActivate: doorUse(() => startDungeon(-1)) });
     // the door itself, for the pavilion: the one at +z, cut out of the pair and stood on its own
     root.traverse((o) => {
       if (!o.isMesh || o.material !== wood || dunDoorOut) return;
@@ -96463,7 +99515,7 @@ function placeDunDoor() {
   farProps.push({ obj: w, z: MUSH_Z, d: 320 });
   const p = new THREE.Mesh(new THREE.BoxGeometry(0.5, 2.3, 1.5), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
   p.position.set(-0.2, 1.15, 0); p.name = 'hitProxy'; p.visible = false; w.add(p);
-  addInteractable(p, 'Open the door', 'default', { mid: true, far: 3.2, when: () => !inRoom() && !dunBusy, onActivate: () => startDungeon(1) });
+  addInteractable(p, 'Open the door', 'default', { mid: true, far: 3.2, when: () => !inRoom() && !dunBusy, onActivate: doorUse(() => startDungeon(1)) });
   dunDoorMesh.userData.r = r;
 }
 let dunTo = null;
@@ -97024,6 +100076,8 @@ function buildDunGate(root, mats) {
       if (inventory.includes(cellKeyItem)) { keyUsed(cellKeyItem); removeInventoryKey(cellKeyItem); }
       try { sfxLockOpen(); } catch (e) {}
       dunGate.open = true; henryFree = 1; henry.free = { phase: 'wait', t: 0 };
+      // (a rare one — 2026-11-19, the owner: "and one when unlocking henry that says 'Free Henry'")
+      if (!replaying && !applyingSave) showAchievement('Rare achievement unlocked', '50 - Free Henry');
       autosaveNow();
     },
   });
@@ -98528,7 +101582,7 @@ const CP_SITE_DEFS = {
     avoid: (lx, lz) => {
       if (Math.hypot(lx - FORT_GATE.xi, lz - FORT_GATE.zi) < 8) return true;           // inside the gate, and its leaves' swing
       if (Math.hypot(lx - FORT_DOOR.x, lz - FORT_DOOR.z) < 5) return true;            // the back door, and the way to it
-      for (const D of farmDoors) if (Math.hypot(lx - D.cx, lz - D.cz) < 2.8) return true;   // a house's door (its middle, the castle's frame): a farmer comes out of it
+      for (const D of farmDoors) if (Math.hypot(lx - D.cx, lz - D.cz) < 4.5) return true;   // a house's door (its middle, the castle's frame): a farmer comes out of it (2.8 until 2026-11-18, the owner: "the breakables in the castle dont have to be inside where the farmers come from only where you fight")
       if (cpFeatNear(fortWorld, lx, 1.3, lz, 1.5, 1.0, cpFortDoorMats())) return true;   // and every other door in it, in the farmers' doors' own materials
       if (fortLife) for (const q of fortLife.props) if (Math.hypot(lx + FORT_X - q.x, lz + FORT_Z - q.z) < 2.0) return true;   // the braziers
       return false;
@@ -98539,6 +101593,7 @@ const CP_SITE_DEFS = {
      * roof — so here everything stands under the sky, against a wall where one is in reach and at the street's own edge
      * where the eaves start where it is not) */
     sky: true,
+    fightOnly: true,   // and nothing near a ROOF at all: only the open street you fight in (`cpFits`)
   },
   c13: {
     S: () => C13_SITE, X: () => C13_X, Y: () => C13_Y, Z: () => C13_Z, group: () => c13World, walk: () => c13Walk,
@@ -98721,6 +101776,20 @@ function cpFits(D, kind, x, z, fy, yaw, top) {
     if (!top) { if (!D.open(px, pz, !!D.sky)) { W.fOpen = (W.fOpen || 0) + 1; return false; } const f = D.floor(px, pz); if (f === null || Math.abs(f - fy) > 0.12) { W.fFloor = (W.fFloor || 0) + 1; return false; } }
   }
   if (keepWallNear(x, z, Math.max(0.12, Math.min(kind.hx, kind.hz) * 0.95), fy + 0.15, fy + Math.max(0.3, kind.h * 0.9), S)) { CP.why.fWall = (CP.why.fWall || 0) + 1; return false; }
+  /* ONLY WHERE YOU FIGHT (2026-11-18, the owner: "dont have to be inside where the farmers come from"): mapped from above
+   * (`cpMap`), eight of the first castle's stood under the arcades and in the houses' doorways. A wall behind a prop is
+   * fine (not walkable at all); walkable floor round it that is mostly under a roof is a house or an arcade: refused. */
+  if (!top && D.fightOnly) {
+    // (every point under a roof within 1.4 m refused them ALL: the eaves run a strip along every wall of the street. So: of
+    // the walkable floor round it, at 1 and 2 m, most must be under the sky — a street, not an arcade or a doorway)
+    let walk = 0, sky = 0;
+    for (const r of [1.0, 2.0]) for (let k = 0; k < 12; k++) {
+      const a = k * Math.PI / 6, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      if (!D.open(px, pz, false)) continue;
+      walk++; if (D.open(px, pz, true)) sky++;
+    }
+    if (!walk || sky < walk * 0.8 || !D.open(x, z, true) || D.avoid(x - D.X(), z - D.Z())) { CP.why.fRoof = (CP.why.fRoof || 0) + 1; return false; }   // (and each prop clear of the doors, not only its scene's spot)
+  }
   return true;
 }
 /* A CASTLE'S PROPS ARE BUILT AS A JOB (the scan is tens of thousands of wall queries): a few milliseconds a frame from
@@ -98800,6 +101869,7 @@ function cpLayScene(site, s, items) {
     if (!sup && site.props.some((q) => !q.on && Math.hypot(q.x - x, q.z - z) < q.kind.r * 0.75 + kind.r * 0.75)) { made.push(null); continue; }
     if (sup && (kind.hx > sup.kind.hx * 1.05 || kind.hz > sup.kind.hz * 1.05) && !sup.kind.K.round) { /* (wider than what it stands on) */ }
     const P = { site: site.id, kind, x, z, y: base, fy, yaw, tilt: 0, on: sup, dead: false, fill: null, wn: [s.nx, s.nz] };
+    if (it.lean && D.fightOnly) { made.push(null); continue; }   // (not in the first castle's fight: on the open street's edge there is no stone to lean on and it stood in the air — 2026-11-18, the owner: "take out the floating wooden wheel in the farmers fight section")
     if (it.lean) {
       // a wheel stood on its rim against the stone, leaning back into it
       const T = 0.22;
@@ -100069,7 +103139,7 @@ MUT_KINDS.dante = {
   // (`vol` 2.8, 2026-11-17, the owner: "TURN UP … DANTES SOUNDS I SENT": his hurt went out at ~0.7 of the take, under where the
   // farmers' cry was measured buried at the speakers — `tools/farmhitlvl.sh` — so all of him ~+9 dB; 3.4 the same day, "A LITTLE
   // LOUDER ESPECIALLY HIS FIRST SCREAM IN THE CUTSCENE NOT TOO MUCH": +1.7 dB, and that scream's own play 2.8 → 4.0, +3 dB)
-  voice: { f: 0.70, growl: 1.6, rasp: 1.3, throat: 'bellow', vol: 3.4, rec: { roar: 'danteChain', hurt: 'danteHit', tell: 'danteHit', die: 'danteDeath' } },   // the owner's recordings, through `mutVox`
+  voice: { f: 0.70, growl: 1.6, rasp: 1.3, throat: 'bellow', vol: 3.4, thud: true, rec: { roar: 'danteChain', hurt: 'danteHit', tell: 'danteHit', die: 'danteDeath' } },   // the owner's recordings, through `mutVox`
 };
 // where it stands (room-local): on the marauder's right at the foot of the dais, turned a little toward the hall's middle
 const DANTE_SPOT = { x: -2.30, z: -1.30, yaw: 0.30 };
@@ -102847,6 +105917,7 @@ function loadIsle() {
     const GAL = isleBuildGallery(isleWorld);
     const DOOR = isleBuildDoor(isleWorld);
     isleWorld.userData = { inner, IN, GAL, DOOR, BR };
+    trader3Try();
     inner.traverse((o) => { o.userData.bwGhost = true; });             // the walk outside never meets the inside
     DOOR.leaf.traverse((o) => { o.userData.bwGhost = true; });         // nor the door: whether it is open is asked of the door (the index was built with it shut)
     for (const o of isleWorld.children) if (o.isMesh && /Ring|Torus/.test(o.geometry.type)) o.userData.bwGhost = true;
@@ -102856,7 +105927,7 @@ function loadIsle() {
     addInteractable(BR.proxy, 'Use Lift', 'default', {
       mid: true, far: 3.6,
       when: () => onIsle && !thrBusy && !isleCut,
-      onActivate: () => startThrone(1, 'isle'),
+      onActivate: doorUse(() => startThrone(1, 'isle')),
     });
     { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowT, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.75, fog: false }));
       s.position.copy(BR.lantern); s.scale.setScalar(1.4); s.userData.bwGhost = true; isleWorld.add(s); BR.glow = s; }
@@ -103370,8 +106441,10 @@ function updateIsleMagic(dt) {
   const want = near ? 1 : 0, wantTop = near && isleOnGallery ? 1 : near && insideTower ? 0.25 : 0;
   isleMagicK += (want - isleMagicK) * Math.min(1, dt * (want > isleMagicK ? 0.55 : 1.5));
   if (oceanFar) {
-    oceanFar.visible = near || isleMagicK > 0.003 || !!crabCut;   // the far sea, wherever the air is clear enough to see it
-    if (oceanFar.visible) oceanFar.userData.skirt.scale.y = Math.max(2, camera.position.y - OCEAN_Y + 2);   // up to the eye: the horizon's band, filled
+    /* (and under the crow's flight, 2026-11-18, the owner: "an endless sea … i can see the end where the world cuts off": a
+     * hundred and fifty metres up, the 2.2 km tile's edge and the bare sky under the horizon were in view) */
+    oceanFar.visible = near || isleMagicK > 0.003 || !!crabCut || (!!tmpCut && !tmpCut.room);   // the far sea, wherever the air is clear enough to see it
+    if (oceanFar.visible) oceanFar.userData.skirt.scale.y = Math.max(2, camera.position.y - OCEAN_Y + 2, tmpCut && !tmpCut.room ? 180 : 0);   // up to the eye: the horizon's band, filled (in the crow's flight up to its ceiling of cloud, 172 m)
   }
   isleTopK += (wantTop - isleTopK) * Math.min(1, dt * 0.6);
   if (isleMagicK < 0.003) { isleMagicK = 0; oceanUniforms.uCalm.value = 0; if (isleMagicG.visible) isleMagicG.visible = false; isleMagicWind(0); return; }
@@ -103574,11 +106647,14 @@ function hornIcon() {
   return c.toDataURL();
 }
 const hornItem = {
-  id: 'crabCall', name: 'The Great Crab Call', icon: hornIcon(), clickInspect: true,
-  desc: "A pilgrim's horn of fired clay. Something very old answers it",
+  /* (THE CALL OF THE CROW, 2026-11-19, the owner: "make the horn called 'The call of the crow' … when the horn is blown on
+   * top of the light house is where the crow should grab you and take you to the desert": its id kept for the saves, its
+   * old name in `was`) */
+  id: 'crabCall', name: 'The call of the crow', was: ['The Great Crab Call'], icon: hornIcon(), clickInspect: true,
+  desc: "A pilgrim's horn of fired clay. Blown from up high, something with wings answers it",
   use: () => toggleEquip(hornItem),
   onPull: () => blowCrabCall(),           // held, a click blows it
-  pullLabel: () => (atLighthouseTop() ? 'Blow the Great Crab Call' : 'Blow the horn'),
+  pullLabel: () => (atLighthouseTop() ? 'Blow the call of the crow' : 'Blow the horn'),
 };
 holdable(hornItem, hornModel, { scale: 0.62, pos: [0.04, -0.06, 0.02], rot: [0.15, 0.85, 0.25] });
 /* 0 still on him, 1 lying where it fell (`hornAt`), 2 yours — on the save, so a
@@ -103604,7 +106680,7 @@ function hornLie(x, y, z, quiet) {
     playSample('ringDrop', 0.95);
   } else w.position.y += 0.03;
   addItemShine(w, { ...DROP_SHINE, height: 0.5 });
-  addInteractable(w, 'Take the Great Crab Call', 'inventory', {
+  addInteractable(w, 'Take the call of the crow', 'inventory', {
     onActivate: () => {
       if (hornProp) hornProp.dead = true;
       scene.remove(w); removeInteractable(w); hovered = null;
@@ -103636,8 +106712,8 @@ let hornCool = 0;
  * there at all — the lantern's floor, the hatch — not only on the ring. */
 function atLighthouseTop() { return onIsle && (isleOnGallery || camBaseY - playerEye() > ISLE_GALLERY - 1.4); }
 function blowCrabCall() {
-  if (crabCut || frozen() || ended) return;
-  if (atLighthouseTop()) { startCrabCut(); return; }
+  if (crabCut || tmpCut || frozen() || ended) return;
+  if (atLighthouseTop()) { crowCallFromTop(); return; }
   if (performance.now() < hornCool) return;
   hornCool = performance.now() + 4500;
   sfxCrabHorn(0.55);
@@ -103795,6 +106871,20 @@ function crabBuildGiant() {
   crabMist = crabMistSprites(46);
   try { if (renderer.compileAsync) renderer.compileAsync(G, camera, scene); } catch (e) { /* a warm is never fatal */ }
   return true;
+}
+/* THE HORN ON TOP OF THE LIGHTHOUSE CALLS THE CROW (2026-11-19, the owner: "take out the end beach cutscene and take out the
+ * great horshoe crab coming up from the water scene … when the horn is blown on top of the light house is where the crow
+ * should grab you and take you to the desert"): the horn sounds, and the crow comes in out of the sky over the sea, takes
+ * you off the gallery and carries you up through the cloud to the desert (`startTempleFlight(true)`). The crab's rising
+ * and the morning on the beach after it (`startCrabCut` → `startWakeCut`) are no longer reached from anywhere. */
+function crowCallFromTop() {
+  if (tmpCut || ended || frozen()) return;
+  if (!inventory.includes(hornItem)) return;
+  if (held) dropHeld();
+  if (equipped !== hornItem) toggleEquip(hornItem);
+  sfxCrabHorn(1.0); addTrauma(0.1);
+  hovered = null; setPrompt('');
+  startTempleFlight(true);
 }
 function startCrabCut() {
   if (crabCut || ended) return;
@@ -104517,6 +107607,7 @@ function isleRestoreAt(x, y, z) {
 let danteUnit = null;
 {
   danteUnit = makeMutant(THR_X + DANTE_SPOT.x, THR_Z + DANTE_SPOT.z, 'dante', THR_Y + 2.69);
+  danteUnit.kind.voice.unit = danteUnit;   // (his feet ask how fast he is going: `sfxMutStep`'s thud)
   danteUnit.g.rotation.y = DANTE_SPOT.yaw;
   danteUnit.g.visible = false;
 }
@@ -106280,6 +109371,7 @@ function skrimHangStep(u, dt) {
     }
     return;
   }
+  if (H.ph === 'flip') { skrimFlipStep(u, H, dt); return; }
   if (H.ph === 'fall') {                                     // shot off it: down like a dropped weight, righting as he goes
     H.fv.y -= 9.8 * dt; p.addScaledVector(H.fv, dt);
     const yq = new THREE.Quaternion().setFromAxisAngle(_skhY, H.yaw ?? u.g.rotation.y);
@@ -106324,6 +109416,9 @@ function skrimHangStep(u, dt) {
       if (!H.roared) { H.roared = true; sfxAt(p.x, p.z, () => sfxMutRoar(1.6, u.kind.voice), { ref: 8, far: 60 }); }
     }
     if (H.n >= SK_HANG.n && H.t > SK_HANG.first + SK_HANG.n * SK_HANG.gap + 0.5 && !crySummonAlive()) {
+      // (2026-11-19, the owner: "have skrim flip off the hook like this if not shot off while hanging after his creatures are
+      // killed" — his Mixamo "Stylish Flip": `skrimFlipStart`; lowered down the chain only if the clip is not in)
+      if (u.clips.flipOff) { skrimFlipStart(u, H); return; }
       H.ph = 'lower'; H.t = 0; H.gl = H.gy; sfxChainRattle(p.x, p.z, SK_HANG.lower, 0.8);
     }
   } else if (H.ph === 'lower') {                             // down the chain, slipping it through his fist, onto his feet
@@ -106376,6 +109471,80 @@ function skrimHangStep(u, dt) {
     u.g.updateMatrixWorld(true);
     if (i) skrimHangPose(u, H, true);
     L.getWorldPosition(_skhA); p.x += H.G.x - _skhA.x; p.y += H.G.y - _skhA.y; p.z += H.G.z - _skhA.z;
+  }
+  skrimFace(u, dt, true);
+}
+/* OFF THE HOOK IN A FLIP (2026-11-19, the owner, with Mixamo's "Stylish Flip": "have skrim flip off the hook like this if not
+ * shot off while hanging after his creatures are killed"). His five dead and him still up there: he lets go — the hook torn
+ * out of the vault and down after him on its chain, hauled in as ever — and turns over in the air on his way down, a stride
+ * toward you, onto his feet, into the fight. The clip (`flipOff`, 2 s, out of `tools/ntar_moves.py -- skrim`) drops his hips
+ * 2.3 m of its own (it is a flip off a ledge) and lands at 0.73 of it; the rest of the height is his body's, falling: from the
+ * hang to where the clip's feet, measured at its landing frame, meet the floor (`H.fEnd`). Switched to at once, not faded
+ * (a fade from the hang would have him half hanging, half flipping), and out of it the same way into the clip's own landing. */
+const SK_FLIP_LAND = 0.73;
+function skrimHardPlay(u, name, loop) {
+  const a = mutPlay(u, name, loop); if (!a) return null;
+  for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].stop();
+  a.stopFading(); a.setEffectiveWeight(1);
+  return a;
+}
+// the lowest of his feet under his group's origin, upright, at the clip's time t (sampled: the pose is put back after)
+function skrimFeetAt(u, a, t) {
+  const p = u.g.position, J = u.skJ || {};
+  a.time = t; u.mixer.update(0); u.g.updateMatrixWorld(true);
+  let lo = 1e9;
+  for (const n of ['Character1_LeftToeBase', 'Character1_RightToeBase', 'Character1_LeftFoot', 'Character1_RightFoot']) {
+    const b = u.model.getObjectByName(n); if (b) lo = Math.min(lo, b.getWorldPosition(_skhV).y - p.y);
+  }
+  return lo < 1e8 ? lo : 0;
+}
+function skrimFlipStart(u, H) {
+  const p = u.g.position, c = camera.position;
+  H.ph = 'flip'; H.t = 0; H.landed = false;
+  /* HE LETS GO OF IT (2026-11-20, the owner: "skrims flip needs to be fixed he should flip off the chain not swing it as he
+   * comes down"). It was torn out with him ('fall'), and 1.3 s into that the chain is hauled into his fist — which was in the
+   * middle of the flip, so the chain whipped round with his turning hand all the way down. Now it is left hanging from its
+   * hook in the vault, its loose end swinging under it ('loose'), and only once he is on his feet is it torn down and hauled in. */
+  if (H.C) { H.C.st = 'loose'; H.C.st0 = H.C.t; }
+  H.fq0 = u.g.quaternion.clone(); H.fp0 = p.clone();
+  H.yaw = Math.atan2(c.x - p.x, c.z - p.z);
+  const a = skrimHardPlay(u, 'flipOff', false);
+  const dur = a.getClip().duration; H.fDur = dur; H.tL = dur * SK_FLIP_LAND;
+  // measured upright: where his feet are at the landing frame, and at the start
+  u.g.quaternion.setFromAxisAngle(_skhY, H.yaw); if (u.model) u.model.rotation.y = 0;
+  H.fEnd = skrimFeetAt(u, a, H.tL);
+  a.time = 0; u.mixer.update(0);
+  u.g.quaternion.copy(H.fq0);
+  // where he comes down: a stride and a half toward you, in the gut
+  const dx = c.x - p.x, dz = c.z - p.z, L = Math.hypot(dx, dz) || 1, go = Math.max(0, Math.min(1.6, L - 2.2));
+  let tx = p.x + dx / L * go, tz = p.z + dz / L * go; if (!skqInGut(tx, tz, 0.6)) { tx = p.x; tz = p.z; }
+  H.fx = tx; H.fz = tz;
+  H.fyEnd = skrimFloorW(tx, tz) - H.fEnd;                     // his origin when his feet are on the floor at the landing frame
+  sfxChainRattle(p.x, p.z, 0.7, 1.0); playSampleAt('fleshHit', H.A.x, H.A.z, { gain: 0.8, ref: 8, far: 60, rate: 0.55 });
+  sfxAt(p.x, p.z, () => sfxMutRoar(1.1, u.kind.voice), { ref: 8, far: 60 });
+}
+function skrimFlipStep(u, H, dt) {
+  const k = u.sk, p = u.g.position, a = u.clips.flipOff;
+  // upright out of the hang's tilt, quickly; facing where he faced when he let go
+  u.g.quaternion.copy(H.fq0).slerp(_skhQ.setFromAxisAngle(_skhY, H.yaw), Math.min(1, H.t / 0.3));
+  if (u.model) u.model.rotation.y = 0;
+  u.mixer.update(dt);
+  // down: no speed at the top (he lets go), gathering to the landing frame; across to where he lands
+  const q = Math.min(1, H.t / H.tL), e = q * q * (3 - 2 * q);
+  p.set(H.fp0.x + (H.fx - H.fp0.x) * e, H.fp0.y + (H.fyEnd - H.fp0.y) * q * q, H.fp0.z + (H.fz - H.fp0.z) * e);
+  if (!H.landed && H.t >= H.tL) {
+    H.landed = true;
+    const fl = skrimFloorW(p.x, p.z);
+    playSampleAt('fleshHit', p.x, p.z, { gain: 1, ref: 6, far: 50, rate: 0.45 }); playSampleAt('slosh', p.x, p.z, { gain: 0.7, ref: 6, far: 50, rate: 0.5 });
+    skcPuff(p.x, fl, p.z, 6, 1.3); addTrauma(0.3);
+  }
+  if (H.t >= H.fDur || !a || !a.isRunning()) {
+    // out of the clip's end (crouched off the landing) into its own landing to standing, on his feet on the floor
+    u.g.rotation.set(0, H.yaw, 0); p.set(H.fx, skrimFloorW(H.fx, H.fz), H.fz);
+    const b = skrimHardPlay(u, 'land', false); if (b) b.timeScale = 1.1;
+    if (H.C && H.C.st === 'loose') { H.C.st = 'fall'; H.C.st0 = H.C.t; sfxChainRattle(H.A.x, H.A.z, 0.8, 0.9); }   // (on his feet: now he pulls it down)
+    k.hang = null; k.cd = 0.7; k.armT = 0; k.reactT = 0.5;
+    u.mixer.update(0);
   }
   skrimFace(u, dt, true);
 }
@@ -107344,7 +110513,73 @@ function skqTick(dt) {
   if (SKQ.gave && !SKQ.gone && !u.st.alive && (SKQ.dropT += dt) > 0.6) skqDropFromHim(u);
   if (SKRIM.jarsAt) { const at = SKRIM.jarsAt; SKRIM.jarsAt = null; skrimJarsOut(u, at); }   // (a restore: the ones still lying there)
   if (!u.st.alive && !SKRIM.jarsDone && (SKRIM.jarT = (SKRIM.jarT || 0) + dt) > 0.75) skrimJarsOut(u);
+  skHookTick(u, dt);                // and his hook out of his fist
   if (SKRIM.jars) SKRIM.jars = SKRIM.jars.filter((j) => j.jar.parent);   // (the ones you have taken drop off the list the save keeps)
+}
+/* AND HIS HOOK FALLS OUT OF HIS FIST (2026-11-19, the owner: "make skrim drop this weapon too"). As he goes down the iron he
+ * swung leaves his hand, turning over, and lies on the gut's floor a stride toward you with the glint on it, to be taken —
+ * `hookItem`. Saved (`skHook`): 0 in his fist, 1 on the floor (where: `at`), 2 yours; a save that has it out of his fist
+ * keeps his hand empty. (A save from before this, him already dead: it falls the first time you are in there.) */
+const skHook = { state: 0, at: null, obj: null, fall: null, put: false };
+function skHookHide(u) {
+  const h = u && u.model && u.model.getObjectByName('skrim_hook');
+  if (h) h.visible = false;
+  return !!h;
+}
+function skHookTick(u, dt) {
+  if (skHook.state && !skHook.hid) skHook.hid = skHookHide(u);
+  if (skHook.state === 1 && !skHook.obj && skHook.at && !skHook.put) { skHook.put = true; skHookPlace(skHook.at, null); }
+  if (skHook.state === 0 && !u.st.alive && (SKRIM.jarT || 0) > 0.45) skHookDrop(u);
+  const F = skHook.fall, w = skHook.obj;
+  if (!F || !w) return;
+  F.t += dt;
+  const k = Math.min(1, F.t / F.T);
+  w.position.set(F.a.x + (F.b.x - F.a.x) * k, F.a.y + (F.b.y - F.a.y) * k + F.h * 4 * k * (1 - k), F.a.z + (F.b.z - F.a.z) * k);
+  w.rotation.set(F.rx * (1 - k), F.yaw + F.ry * (1 - k), F.rz * (1 - k));       // turning over in the air, and down flat
+  if (k >= 1) { skHook.fall = null; w.rotation.set(0, F.yaw, 0); skHook.at = [w.position.x, w.position.y, w.position.z, F.yaw]; skHookTakeable(w); }
+}
+function skHookDrop(u) {
+  skHook.state = 1; skHook.hid = skHookHide(u);
+  const P = new THREE.Vector3(), bone = u.model && u.model.getObjectByName('hook');
+  if (bone) bone.getWorldPosition(P); else P.copy(u.g.position).setY(u.g.position.y + 1.1);
+  if (!(Math.abs(P.x) < 1e7)) P.copy(u.g.position).setY(u.g.position.y + 1.1);
+  // a stride toward you, on the floor of the gut
+  const c = camera.position, dx = c.x - P.x, dz = c.z - P.z, L = Math.hypot(dx, dz) || 1;
+  let x = P.x + dx / L * 1.1, z = P.z + dz / L * 1.1; if (!skqInGut(x, z, 0.5)) { x = u.g.position.x; z = u.g.position.z; }
+  const yaw = Math.atan2(dx, dz) + (Math.random() - 0.5) * 1.2, f = skrimFloorW(x, z) + 0.02;
+  if (applyingSave || replaying || !hookRaw) { skHook.at = [x, f, z, yaw]; skHook.put = false; return; }
+  playSample('ringDrop', 1.0);
+  const w = skHookPlace([P.x, P.y, P.z, yaw], true);
+  skHook.fall = { t: 0, T: 0.6, a: P.clone(), b: new THREE.Vector3(x, f, z), h: 0.9, yaw, rx: 7 + Math.random() * 3, ry: (Math.random() - 0.5) * 5, rz: 3 + Math.random() * 3 };
+  w.position.copy(P);
+}
+// the iron lying: on its side, its curl flat on the floor (its own +Z along the floor, the curl's plane level)
+function skHookPlace(at, falling) {
+  if (!hookRaw) { hookFill.push(() => { if (skHook.state === 1 && !skHook.obj) skHookPlace(at, falling); }); return null; }
+  const w = new THREE.Group(); w.name = 'skrimHookDropped';
+  const m = hookMesh(); m.scale.setScalar(HOOK_SCALE); m.rotation.z = Math.PI / 4; m.position.set(0, 0.035, -0.25); w.add(m);
+  w.position.set(at[0], at[1], at[2]); w.rotation.y = at[3] || 0;
+  scene.add(w); skHook.obj = w;
+  addItemShine(w, { size: 1.0, height: 0.12, strength: 1.6, lift: 0.22, through: true });   // the dropped thing's glow, falling too
+  if (!falling) skHookTakeable(w);
+  return w;
+}
+function skHookTakeable(w) {
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.7), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.set(0, 0.08, 0); w.add(proxy);
+  addInteractable(w, "Take Skrim's Hook", 'inventory', {
+    keepSize: true,
+    onActivate: () => {
+      if (skHook.state === 2) return;
+      skHook.state = 2; skHook.at = null;
+      dropShine(w); scene.remove(w); removeInteractable(w); skHook.obj = null;
+      hovered = null;
+      if (!inventory.includes(hookItem)) addToInventory(hookItem);
+      // into your hand with the sword's sound (the owner: "have the sword item sound when picked up"): `toggleEquip` plays the
+      // katana's draw for anything katana-like; and if it was somehow already there, the draw all the same
+      if (equipped !== hookItem) toggleEquip(hookItem); else playSample('katDraw', 0.9, 0.03);
+    },
+  });
 }
 // the walk of a heap search, on the checkpoint: `skrimQ`
 function skqSave() {
@@ -108443,6 +111678,10 @@ function skcTick(C, dt) {
       skcSim(C, dt, Math.max(0.01, A.distanceTo(C.p) * 1.05 / (n - 1)), A, C.p, false);
     } else if (C.st === 'set') {
       skcSim(C, dt, Math.max(0.01, A.distanceTo(C.to) * 1.002 / (n - 1)), A, C.to, false);   // (taut: his weight is on it)
+    } else if (C.st === 'loose') {   // let go of in his flip: hanging from its hook in the vault, the loose end swinging free under it
+      if (C.seg == null) C.seg = skcLen(C) / (n - 1);
+      skcSim(C, dt, C.seg, null, C.to, true);
+      if (!(u.sk && u.sk.hang && u.sk.hang.C === C)) { C.st = 'fall'; C.st0 = C.t; }   // (his flip over or cut short, however: down it comes)
     } else {                         // 'fall': loose of the vault and down in coils, then pulled in to his fist
       if (C.seg == null) C.seg = skcLen(C) / (n - 1);
       const k = C.t - C.st0;
@@ -109379,6 +112618,11 @@ function buildTavDrinkers() {
   for (const u of tavDrinkers) u.drink.mate = tavDrinkers.find((o) => o !== u && o.drink.table === u.drink.table) || null;
 }
 const TAV_DRINK_SEAT = 0.04;    // his origin a little forward of the chair's middle (−0.07 until 2026-11-17: measured, his back went 4-8 cm through the backrest's slats)
+/* AND EVERY OTHER TAVERN FARMER'S HANDS ARE HANDS TOO (2026-11-17, the owner: "fix all their hands like you did for the ones
+ * sitting"). Bare-handed, a farmer's fingers take the brawlers' claw (`claws` 1.25, ×1.35 in a blow): the dancers danced
+ * with hooked fingers and a drinker who got up kept a half-open left. At rest — dancing, standing about — the drinkers'
+ * flat hand; in a fight, a fist closed as hard as the one round the bottle. */
+const TAV_REST_HANDS = { R: 0.32, L: 0.32 }, TAV_FIST_HANDS = { R: 1.0, L: 1.0 };
 const TAV_DRINK_HANDS = { R: 1.0, L: 0.32 };   // (L 0.55: a hand flat on the boards is barely curled)   // the fist round the bottle, and a hand at rest (per-hand `life.grip`)
 function tavDrinkerProvoke(src, by) {
   const other = by && by.st && !tavDrinkers.includes(by) ? by : null;     // a man from the bar; else it was you
@@ -109436,6 +112680,7 @@ function updateTavDrinkers(dt) {
       tavLeftHand(u);                              // and the other hand on the table
       continue;
     }
+    if (u.life) u.life.grip = u.st.awake ? TAV_FIST_HANDS : TAV_REST_HANDS;   // up off the chair: a fist to fight, a hand to stand about
     /* THE MAN WHO BROKE THEIR TABLE IS DOWN, AND THAT WAS THE QUARREL. They
      * stand about after; hit one and it starts again, with you. */
     if (u.st.awake && !u.st.mine && u.st.roar <= 0) {
@@ -109529,6 +112774,7 @@ function tavDancerProvoke(src) {
 function updateTavDancers(dt) {
   if (!tavDancers.length) buildTavDancers();
   for (const u of tavDancers) {
+    if (u.life && u.st.alive) u.life.grip = u.st.awake ? TAV_FIST_HANDS : TAV_REST_HANDS;   // a dancer's hands are open; a fight's are fists
     const D = u.dance; if (!D || !u.st.alive || u.st.awake || !u.mixer || !u.clips) continue;
     const a = u.clips[u.kind.dance]; if (!a) continue;
     u.g.position.x = D.x; u.g.position.z = D.z; u.g.rotation.y = D.yaw;
@@ -109663,6 +112909,12 @@ function tavProvoke(u, quiet) {
     wongUnit.st.vault = { t: 0, x0: wongUnit.g.position.x, z0: wongUnit.g.position.z,
       x1: TAV_X + TAV_VAULT_TO.x, z1: TAV_Z + TAV_VAULT_TO.z, y: wongUnit.g.position.y };
     wongUnit.st.roar = 0; wongUnit.holdAnim = true;
+    /* AND THE ORC LAUGHS AT HIM (2026-11-18, the owner: "make the orc do the laugh sound when wong jumps over the bar"): the
+     * one man's laugh the game has (the samurai's, `samLaugh`), slowed to the orc's size, from where the orc stands, as Wong
+     * leaves the floor. Not on a restore's quiet provoke. */
+    // (his OWN voice now, 2026-11-19, the owner: "the orc used the samurai laugh when they were about to fight use an orc
+    // sound instead": one of the owner's orc grunts, `orcSwing`, a take at random)
+    if (!quiet && orcUnit && orcUnit.st.alive) playSampleAt('orcSwing', orcUnit.g.position.x, orcUnit.g.position.z, { gain: 1.9, ref: 9, far: 45, rate: 0.96, jitter: 0.03, delay: 0.25 });
   }
   tavScene.phase = 9;
   if (tavMug && tavMug.parent) tavMugSmash();
@@ -110320,6 +113572,7 @@ const FARM_BASE = {
    * thumb, the same on all five files to a few hundredths). Its hands are not mirror images in their own frames, so the
    * left is named as well. (The old farmers' was [0, 0, 1] on both.) */
   palm: [0.9, 0, -0.42], palmLeft: [-0.9, 0, -0.42], mitten: true,
+  handRest: 0.32, handFist: 1.0,   // a man's hand, not the brawlers' claw (`claws` is no longer read for a farmer's fingers): the drinkers' flat hand at rest, their bottle fist in a fight
   natural: true,      // their Mixamo swings play at the clip's own speed (`naturalSwings`)
   solo: true, fortBody: true, farmer: true, noSand: true, gaitBySpeed: true, velGait: true, gaitMax: 1.7, lungeK: 0.55, headPop: true, faceFix: 0, facingRef: 'mixamo',
   windWalkK: 0.35, smoothMove: true,   // (the wind-up's glide in cut to a third, the closing eased: "slide around … less")
@@ -110701,7 +113954,7 @@ function authorFarmerClips(u, m) {
   }
   farmArm(u, m);
   installLife(u, m, J);
-  if (u.life) u.life.grip = u.farmTool ? FARM_FIST : null;     // a fist round the handle; a bare hand is the claws' fist
+  if (u.life) u.life.grip = u.farmTool ? { R: FARM_FIST } : null;     // a fist round the handle; the other hand (and a bare one) by `handRest` / `handFist` (FARM_FIST on both until 2026-11-17: the empty hand was a hard claw)
   if (u.farmTool) { farmCurlToHandle(u, m); farmSeatTool(u, m, FARM_FIST); u.farmToolBase = { p: u.farmTool.position.clone(), q: u.farmTool.quaternion.clone() }; }
   u.packList = u.packList || farmUnits;
   const mc = farmMocap(u, R0);
@@ -111586,6 +114839,67 @@ function farmToolRoll(u, dt) {
   if (tipB) { if (!R.tip) R.tip = new THREE.Vector3(); tipB.getWorldPosition(R.tip); }
   mesh.position.copy(B.p); mesh.quaternion.copy(B.q);
   if (Math.abs(R.ang) > 0.003) mesh.quaternion.multiply(_fwrR.setFromAxisAngle(W.ax, R.ang));   // about the handle's own line: the grip stays put
+  u.farmCarried = false;                 // the seat (and the swing's turn) is fresh this frame: the carry goes on top of it (`farmCarryAll`)
+}
+/* A MAN CARRIES HIS WEAPON; HE DOES NOT LET THE RUN SWING IT (2026-11-18, the owner: "make them actually hold their weapons
+ * better … they run with there weapons facing all weird directions look up how people hold and swing weapons"). Between
+ * blows the weapon was fixed in the fist at its seat, so it went wherever the run's arm-pump put the hand: blades back
+ * over the shoulder, down at the knee, out sideways. A man running with one holds it STILL in front of him and lets the
+ * arm move under it: a sword up and forward from a low guard, point high and its edge to the front; an axe or a mace
+ * head-up before the shoulder, haft upright, the face to the front; a spear levelled at whatever he is running at, point
+ * a little high. Outside a swing the weapon is eased into that carry about the point in his fist (the grip does not move);
+ * the moment a swing starts it eases back out, fast, to the seat the swings and their reach were measured on — the blows
+ * are exactly what they were. Directions in his own frame: forward, up, his right. */
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { FARM_CARRY }));
+const FARM_CARRY = {
+  sword:  { f: 0.55, u: 0.80, r: 0.12 },
+  axe:    { f: 0.28, u: 0.93, r: 0.10 },
+  hammer: { f: 0.28, u: 0.93, r: 0.10 },
+  rake:   { f: 0.93, u: 0.30, r: 0.06 },
+};
+const _fcyQ = new THREE.Quaternion(), _fcyP = new THREE.Quaternion(), _fcyD = new THREE.Quaternion(), _fcyM = new THREE.Matrix4();
+const _fcyX = new THREE.Vector3(), _fcyY = new THREE.Vector3(), _fcyZ = new THREE.Vector3(), _fcyF = new THREE.Vector3(), _fcyG = new THREE.Vector3(), _fcyS = new THREE.Vector3();
+/* run AFTER the creatures' mixers (`update` → `updateMutant`): the carry is set against where the hand IS this frame — before
+ * them, it was a frame behind the run's arm and shook */
+function farmCarryAll(dt) {
+  if (inFort) for (const u of farmUnits) if (u.farmTool && u.farm && u.farm.out && u.g.visible) farmCarry(u, dt);
+  if (inC13 && gargRaid) for (const u of gargRaid.units) if (u.farmTool && u.st.alive && u.g.visible) farmCarry(u, dt);   // the four through XIII's door carry theirs the same way
+}
+function farmCarry(u, dt) {
+  const mesh = u.farmTool, B = u.farmToolBase, C = FARM_CARRY[u.kind.tool];
+  if (!mesh || !B || !C || !mesh.parent || !u.farmGrip) return;
+  if (u.farmCarried) { mesh.position.copy(B.p); mesh.quaternion.copy(B.q); }   // (the roll did not run since the last carry: never carry a carry)
+  u.farmCarried = true;
+  const st = u.st;
+  const free = st.alive && !u.rag && !(st.atk >= 0) && !(st.stun > 0) && !((st.down || 0) > 0) && !(st.recoil > 0) && !st.vault;
+  const k = u.farmCarryK = (u.farmCarryK || 0) + ((free ? 1 : 0) - (u.farmCarryK || 0)) * Math.min(1, dt * (free ? 5 : 16));
+  if (k < 0.01) return;
+  /* "forward" is NOT his root's yaw: in the strafe clips the body stands side-on to it, up to 90° off (measured,
+   * `tools/probes.js farmFacing`: the hips' +Z square to the root mid-strafe), and a spear carried along the root went
+   * across his chest. A man closing on someone holds his weapon AT them: toward his foe while he fights, else the way his
+   * chest faces. (His right is -X when he faces +Z.) */
+  let fx = 0, fz = 0;
+  if (st.awake && st.alive) { const fp = mutFoePos(u); fx = fp.x - u.g.position.x; fz = fp.z - u.g.position.z; }
+  if (Math.hypot(fx, fz) < 0.3) {
+    if (u.farmChest === undefined) { u.farmChest = null; u.model && u.model.traverse((o) => { if (!u.farmChest && o.isBone && /Spine2(_|$)/.test(o.name)) u.farmChest = o; }); }
+    if (u.farmChest) { u.farmChest.updateWorldMatrix(true, false); _fcyF.set(0, 0, 1).transformDirection(u.farmChest.matrixWorld); fx = _fcyF.x; fz = _fcyF.z; }
+    if (Math.hypot(fx, fz) < 1e-3) { fx = Math.sin(u.g.rotation.y); fz = Math.cos(u.g.rotation.y); }
+  }
+  const fl = Math.hypot(fx, fz), sy = fx / fl, cy = fz / fl;
+  _fcyF.set(sy, 0, cy);
+  _fcyY.set(sy * C.f - cy * C.r, C.u, cy * C.f + sy * C.r).normalize();          // the handle, butt to head
+  _fcyX.copy(_fcyF).addScaledVector(_fcyY, -_fcyF.dot(_fcyY)).normalize();       // the edge / face: to the front, square to the handle
+  _fcyZ.crossVectors(_fcyX, _fcyY);
+  _fcyM.makeBasis(_fcyX, _fcyY, _fcyZ); _fcyD.setFromRotationMatrix(_fcyM);     // the carry, in the world
+  mesh.parent.updateWorldMatrix(true, false);
+  mesh.parent.getWorldQuaternion(_fcyP);
+  _fcyQ.copy(_fcyP).multiply(mesh.quaternion);                                    // the seat, in the world
+  _fcyQ.slerp(_fcyD, k);
+  // the point in his fist stays where it is: the grip, in the hand's frame, before and after
+  mesh.getWorldScale(_fcyS);
+  _fcyG.set(0, u.farmGrip.y, 0).multiply(mesh.scale).applyQuaternion(mesh.quaternion).add(mesh.position);
+  mesh.quaternion.copy(_fcyP.invert().multiply(_fcyQ));
+  mesh.position.copy(_fcyG).sub(_fcyS.set(0, u.farmGrip.y, 0).multiply(mesh.scale).applyQuaternion(mesh.quaternion));
 }
 /* THE FARMERS' ANIMATION, THINNED WHERE NOBODY IS LOOKING (2026-10-18, the owner: "performance in the castle is bad").
  * Twenty skinned men each ran their mixer every frame wherever they were — "the farmers' animation at 120 m" was the
@@ -111853,19 +115167,235 @@ function isArtWeapon(it) { return !!it && !!(it.onDig || it.gun); }
 // the WHALE'S weapon: the chain, the hold and the HUD are its alone (the flame's is `flameWeapon`)
 function artWeapon() { return isArtWeapon(equipped) && equipped.artifact && equipped.artifact === whaleArtItem ? equipped : null; }
 
-/* THE ARTIFACT IS A THING SOMEBODY MADE, NOT A SHAPE. The first one was a
- * smooth gold torus with twelve cone spikes round it and a white lathe in the
- * middle — every part a primitive with no surface on it, which is exactly
- * what the owner's "it looks like AI" was. A sailor's relic out of a whale's
- * belly is SCRIMSHAW: a disc of whalebone with a whale cut into it and the
- * cuts filled with lamp-black, set in a bronze bezel the sea has been at for
- * a century — verdigris in every recess, the high edges rubbed back to
- * metal, a crust of barnacles on one side, a tarred cord through the bail,
- * and the whale's eye inlaid with a stone that still holds a little of the
- * light from the heal. Every surface is DRAWN, colour and relief in one pass
- * (the wreck's rule: the line that is dark and the line that is deep are the
- * same line), so the engraving catches the light as the thing turns. */
-const ART_R = 0.040;                       // the bone face; the bezel stands proud round it
+/* ---- THE ARTIFACTS, IN THE GAME'S OWN HAND (2026-11-18, the owner: "the artifacts look awful they look like ai slop
+ * completely revamp this with the game style in mind"). The three were engraved bronze medallions drawn at 1024 px —
+ * gradients, normal maps, lettering round the rim, glossy reflections: a jeweller's render dropped into a game of
+ * flat-shaded low-poly things and 64-pixel maps. Now each is a THING made the way the rest of the beach is made: a few
+ * dozen faces, `flatShading`, coloured from a handful of tones painted pixel by pixel into a 32–64 px map read NEAREST
+ * (`retroTex`), no normal map, no environment, no words — and each its own shape, so the three are told apart at a
+ * glance:
+ *   the Whale — a sperm whale's TOOTH, a crude whale scratched into its side and the scratches inked (a sailor's
+ *     scrimshaw, out of a belly), a chip of blue stone for the whale's eye, tarred cord round the root;
+ *   the Flame — a lump of black glass with the fire still in its cracks, a frozen tongue of it breaking out of the top,
+ *     a strap of iron round it;
+ *   the Sea — a scallop, ribbed and pale, cupping a blue pearl.
+ * The old contract holds, so every place they lie keeps working (the belly, the sand, the chest, Skrim's hand): the
+ * front faces +Z (they are laid face up by turning them −90° about x), about the medallion's size (8–9 cm), and
+ * `userData.pearl` is the mesh that glows (the Sea's is named `seaPearl`: a clone's userData is copied as JSON). */
+const artPxSet = (g, x, y, c) => { g.fillStyle = c; g.fillRect(x, y, 1, 1); };
+function artPx(w, h, paint) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = false; paint(g, w, h);
+  const t = retroTex(new THREE.CanvasTexture(c), { repeatWrap: false }); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+// flat-shaded, matte, and lifted a little by its own colour so it reads in the night (the medallions' `lift`)
+function artMat(map, { lift = 0.14, rough = 0.85, side = THREE.FrontSide, color = 0xffffff } = {}) {
+  return new THREE.MeshStandardMaterial({ map, color, flatShading: true, roughness: rough, metalness: 0, side,
+    emissive: new THREE.Color(0xffffff), emissiveMap: map, emissiveIntensity: lift });
+}
+const artFlat = (color, { lift = 0.25, rough = 0.85, emissive = null, ei = 1 } = {}) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: rough, metalness: 0,
+  emissive: emissive != null ? emissive : new THREE.Color(color).multiplyScalar(lift), emissiveIntensity: emissive != null ? ei : 1 });
+// a stone or a pearl: a few facets that light from inside
+const artGem = (color, glow, ei = 1.6) => new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.25, metalness: 0, emissive: glow, emissiveIntensity: ei });
+// a hash for a vertex, by where it is: the same corner moved the same way in every face it belongs to (a polyhedron's faces are not shared)
+const artJit = (x, y, z, seed) => { let h = Math.imul((Math.round(x * 1e4) * 73856093) ^ (Math.round(y * 1e4) * 19349663) ^ (Math.round(z * 1e4) * 83492791) ^ seed, 2654435761); h ^= h >>> 15; return ((h >>> 0) % 10000) / 10000; };
+
+/* THE WHALE: a tooth. Seven sides round, ten rings along an arch, flattened front to back, a point at one end and the
+ * hollow root at the other. Its map: 32 round (u, the +Z face at u 0.25) by 64 along (v, the root at the bottom). */
+const ART_TOOTH = { L: 0.092, R0: 0.0165, BEND: 0.016, FLAT: 0.72, N: 7, K: 10 };
+function artToothAt(t, a, out) {
+  const T = ART_TOOTH, r = T.R0 * Math.pow(1 - t, 0.72) * (t < 0.12 ? 0.86 + 1.17 * t : 1);
+  return out.set((t - 0.5) * T.L, Math.sin(Math.PI * t) * T.BEND - T.BEND * 0.5 + Math.cos(a) * r, Math.sin(a) * r * T.FLAT);
+}
+// the whale, head left, as the knife cut it: '#' the outline, '=' the jaw, 'o' the eye (where the stone goes), '-' hatching
+const ART_WHALE_PX = [
+  '..############..............',
+  '.#............####..........',
+  '#..o..............###.....##',
+  '#.....................##.##.',
+  '#.......................###.',
+  '#=====..................##..',
+  '.#.....................#.##.',
+  '..##...............####.....',
+  '....###############.........',
+];
+function artToothMap() {
+  return artPx(32, 64, (g, W, H) => {
+    const tones = ['#efe6cf', '#e3d7b8', '#d4c49e', '#c2ad80', '#a98f60'];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const v = 1 - (y + 0.5) / H, n = artJit(x, y, 0, 7);
+      // old ivory: browner toward the root, whiter at the point, a mottle of a few tones
+      let k = (1 - v) * 2.2 + n * 1.6 - 0.6; if (v > 0.85) k -= 0.8;
+      artPxSet(g, x, y, tones[Math.max(0, Math.min(4, Math.round(k)))]);
+    }
+    const ink = '#2b2118', ox = 4, oy = 14, Hs = ART_WHALE_PX.length;
+    ART_WHALE_PX.forEach((row, sy) => [...row].forEach((ch, sx) => {
+      if (ch === '.') return;
+      const cx = ox + (Hs - 1 - sy), cy = oy + sx;          // turned a quarter clockwise: the head toward the point
+      artPxSet(g, cx, cy, ch === '-' ? '#7d6a4c' : ch === 'o' ? '#1a140e' : ink);
+    }));
+    // one line of sea under it, toward the root (more than the outline and a line read as stripes at this size)
+    for (let x = 3; x < 14; x++) artPxSet(g, x, 47 + (x % 3 === 0 ? -1 : 0), ink);
+  });
+}
+const ART_TOOTH_EYE = { t: 1 - (14 + 3 + 0.5) / 64, a: (2 * Math.PI) * (4 + (ART_WHALE_PX.length - 1 - 2) + 0.5) / 32 };
+function makeWhaleArtifact() {
+  const g = new THREE.Group(); g.name = 'whaleArtifact';
+  const T = ART_TOOTH, N = T.N, K = T.K, p = new THREE.Vector3();
+  const pos = [], uv = [], idx = [];
+  for (let k = 0; k <= K; k++) for (let j = 0; j <= N; j++) {
+    const t = k / K, a = (j / N) * Math.PI * 2;
+    artToothAt(t, a, p); pos.push(p.x, p.y, p.z); uv.push(j / N, t);
+  }
+  for (let k = 0; k < K; k++) for (let j = 0; j < N; j++) {
+    const a = k * (N + 1) + j, b = a + N + 1;
+    idx.push(a, a + 1, b, a + 1, b + 1, b);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
+  geo.computeVertexNormals();
+  g.add(new THREE.Mesh(geo, artMat(artToothMap(), { lift: 0.16 })));
+  // the root: hollow, dark where the pulp was
+  const rp = [], c0 = artToothAt(0, 0, new THREE.Vector3()).clone(); c0.y -= Math.cos(0) * T.R0 * 0.86; c0.x += 0.0025;
+  for (let j = 0; j < N; j++) {
+    const a0 = (j / N) * Math.PI * 2, a1 = ((j + 1) / N) * Math.PI * 2;
+    const A = artToothAt(0, a0, new THREE.Vector3()), B = artToothAt(0, a1, new THREE.Vector3());
+    rp.push(c0.x, c0.y, c0.z, B.x, B.y, B.z, A.x, A.y, A.z);
+  }
+  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rp, 3)); rg.computeVertexNormals();
+  g.add(new THREE.Mesh(rg, artFlat(0x3e2c1c, { lift: 0.3 })));
+  // tarred cord: three turns round the root, and a loop to hang it by
+  const cord = artFlat(0x2a1f16, { lift: 0.35 });
+  for (const t of [0.07, 0.12, 0.17]) {
+    artToothAt(t, 0, p); const r = T.R0 * Math.pow(1 - t, 0.72) * (t < 0.12 ? 0.86 + 1.17 * t : 1);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.0006, 0.0013, 3, 8), cord);
+    ring.position.set(p.x, p.y - Math.cos(0) * r, 0); ring.rotation.y = Math.PI / 2 + (t - 0.12) * 1.2; ring.scale.set(1, 1, T.FLAT * 1.08);
+    g.add(ring);
+  }
+  const loop = new THREE.Mesh(new THREE.TorusGeometry(0.0078, 0.0013, 3, 8), cord);
+  artToothAt(0, 0, p); loop.position.set(-T.L / 2 - 0.0085, p.y - T.R0 * 0.86 + 0.002, 0); loop.rotation.set(0.25, 0.4, 0); g.add(loop);
+  // the whale's eye: a chip of blue stone set where the knife left a hole for it
+  const eye = new THREE.Mesh(new THREE.OctahedronGeometry(0.0024, 0), artGem(0x9fdcff, 0x2f8fe0, 1.6));
+  const E = ART_TOOTH_EYE; artToothAt(E.t, E.a, eye.position);
+  eye.position.y += Math.cos(E.a) * 0.0007; eye.position.z += Math.sin(E.a) * 0.0007; eye.scale.set(1, 1, 0.6); eye.rotation.z = 0.4;
+  g.add(eye);
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  g.userData.pearl = eye;
+  return g;
+}
+
+/* THE FLAME: black glass, the size of a fist's middle, cracked, and the fire still in the cracks. An icosahedron pulled
+ * out of true (each corner by a hash of where it is, so faces stay closed), flattened to lie face up; its map dark glass
+ * in three tones with the cracks walked through it, and the cracks again as its glow; a frozen tongue of the fire
+ * breaking out of the top, and a strap of iron round its middle. */
+function artFlameMaps() {
+  const walks = [];
+  /* (cracks, not a camouflage: at 32 px a crack pixel was a quarter of a face — 64 px, six long thin walks that
+   * branch once, the bright yellow only where two meet) */
+  const S = 64;
+  { const rnd = mulberry32(4417);
+    for (let i = 0; i < 6; i++) {
+      let x = rnd() * S, y = rnd() * S, d = rnd() * 6.28; const w = [];
+      for (let s = 0; s < 22 + rnd() * 16; s++) { w.push([x | 0, y | 0, s % 9 === 4]); d += (rnd() - 0.5) * 0.9; x = (x + Math.cos(d) + S) % S; y = (y + Math.sin(d) + S) % S;
+        if (s === 10) { let bx = x, by = y, bd = d + 1.1; for (let k = 0; k < 8; k++) { w.push([bx | 0, by | 0, false]); bd += (rnd() - 0.5) * 0.8; bx = (bx + Math.cos(bd) + S) % S; by = (by + Math.sin(bd) + S) % S; } } }
+      walks.push(w);
+    } }
+  const map = artPx(S, S, (g) => {
+    const tones = ['#0c0a0e', '#141117', '#1d181f', '#2a2329'];
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) artPxSet(g, x, y, tones[Math.min(3, Math.floor(artJit(x >> 2, y >> 2, 1, 31) * 3.2 + artJit(x, y, 3, 9) * 0.6))]);
+    for (const w of walks) for (const [x, y, hot] of w) artPxSet(g, x, y, hot ? '#ffd27a' : '#e8641a');
+  });
+  const glow = artPx(S, S, (g) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+    for (const w of walks) for (const [x, y, hot] of w) artPxSet(g, x, y, hot ? '#ffcc66' : '#ff5a10');
+  });
+  return { map, glow };
+}
+function makeFlameArtifact() {
+  const g = new THREE.Group(); g.name = 'flameArtifact';
+  const geo = new THREE.IcosahedronGeometry(0.031, 0), P = geo.attributes.position;
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i), k = 0.86 + 0.22 * artJit(x, y, z, 5);
+    P.setXYZ(i, x * k * 1.08, y * k, z * k * 0.86);
+  }
+  geo.computeVertexNormals();
+  const M = artFlameMaps();
+  const glass = new THREE.MeshStandardMaterial({ map: M.map, flatShading: true, roughness: 0.3, metalness: 0, emissive: new THREE.Color(0xffffff), emissiveMap: M.glow, emissiveIntensity: 1.5 });
+  g.add(new THREE.Mesh(geo, glass));
+  // the fire, frozen as it broke out: three tongues of it, the middle one tallest
+  const fireM = artGem(0xffa040, 0xff5a10, 1.9), tipM = artGem(0xffe2a0, 0xffb040, 1.6);
+  let core = null;
+  for (const [x, h, lean, z] of [[0, 0.03, 0.05, 0.006], [-0.009, 0.018, 0.42, 0.004], [0.010, 0.02, -0.36, 0.005]]) {
+    const t = new THREE.Mesh(new THREE.OctahedronGeometry(0.0055, 0), x === 0 ? fireM : tipM);
+    t.scale.set(1, h / 0.011, 0.75); t.position.set(x, 0.022 + h * 0.32, z); t.rotation.z = lean; g.add(t);
+    if (!core) core = t;
+  }
+  // the strap: black iron round its middle, and a ring at the top to hang it by
+  const iron = artFlat(0x2b2724, { lift: 0.3, rough: 0.6 });
+  const strap = new THREE.Mesh(new THREE.TorusGeometry(0.0315, 0.0019, 3, 10), iron);
+  strap.rotation.x = Math.PI / 2; strap.scale.set(1.06, 0.86, 1); strap.position.y = -0.004; g.add(strap);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.0062, 0.0014, 3, 8), iron); ring.position.set(-0.026, 0.012, 0); ring.rotation.y = 0.5; g.add(ring);
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  g.userData.pearl = core;
+  return g;
+}
+
+/* THE SEA: a scallop, its inside to you, cupping a blue pearl. A fan of nine ribs from the hinge — every other line of
+ * the fan raised, so the ribs are in the shape and not only in the paint — dished so the rim stands up round the pearl,
+ * two ears at the hinge. Its map: the ribs in two tones, growth rings across them, the sea's grey-green toward the lip. */
+const ART_SHELL = { R: 0.046, SPAN: 0.98, RIBS: 9, K: 6, HY: -0.03 };
+function artShellZ(r, a) { const S = ART_SHELL, q = Math.min(1, r / S.R); return 0.02 * Math.pow(q, 1.4) + 0.007 * (a / S.SPAN) * (a / S.SPAN) * q; }
+function makeSeaArtifact() {
+  const g = new THREE.Group(); g.name = 'seaArtifact';
+  const S = ART_SHELL, C = S.RIBS * 2, pos = [], uv = [], idx = [];
+  for (let k = 0; k <= S.K; k++) for (let j = 0; j <= C; j++) {
+    // (the lip SCALLOPED: each rib runs out past the hollow beside it — a straight edge over straight pleats was a paper fan)
+    const r = 0.004 + (S.R - 0.004) * (k / S.K) + (k === S.K ? (j % 2 ? 0.0026 : -0.0008) : 0), a = -S.SPAN + 2 * S.SPAN * (j / C);
+    const ridge = j % 2 ? 0.0026 * (r / S.R) : 0;
+    pos.push(Math.sin(a) * r, S.HY + Math.cos(a) * r, artShellZ(r, a) + ridge); uv.push(j / C, k / S.K);
+  }
+  for (let k = 0; k < S.K; k++) for (let j = 0; j < C; j++) {
+    const a = k * (C + 1) + j, b = a + C + 1;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const map = artPx(18, 8, (gg) => {
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 18; x++) {
+      const k = 1 - (y + 0.5) / 8;                                 // (canvas top is the lip)
+      /* a scallop's colour runs in GROWTH RINGS across it, warm, the ribs only a shade apart (in grey radial bars it was a
+       * paper fan); the sea's grey-green worn into the lip */
+      const ring = ['#b98a72', '#e8cdb6', '#d4a68a', '#efd9c4', '#c99a80', '#e6c6ad', '#d8b49c', '#c7a089'][y];
+      let c = ring;
+      if (x % 2 === 0) c = new THREE.Color(ring).multiplyScalar(0.9).getStyle();
+      if (y === 0 && x % 2) c = '#a9b2aa';
+      if (artJit(x, y, 2, 11) > 0.9) c = '#f4e6d6';
+      artPxSet(gg, x, y, c);
+    }
+  });
+  const shellM = artMat(map, { lift: 0.18, side: THREE.DoubleSide });
+  g.add(new THREE.Mesh(geo, shellM));
+  // the ears at the hinge
+  const ear = new THREE.BufferGeometry();
+  ear.setAttribute('position', new THREE.Float32BufferAttribute([
+    -0.0015, S.HY + 0.001, 0.0005, -0.0145, S.HY - 0.002, 0.0012, -0.012, S.HY + 0.008, 0.0016,
+    -0.0015, S.HY + 0.001, 0.0005, -0.012, S.HY + 0.008, 0.0016, -0.003, S.HY + 0.009, 0.0014,
+    0.0015, S.HY + 0.001, 0.0005, 0.012, S.HY + 0.008, 0.0016, 0.0145, S.HY - 0.002, 0.0012,
+    0.0015, S.HY + 0.001, 0.0005, 0.003, S.HY + 0.009, 0.0014, 0.012, S.HY + 0.008, 0.0016], 3));
+  ear.computeVertexNormals();
+  g.add(new THREE.Mesh(ear, artFlat(0xb39a86, { lift: 0.22 })));
+  ear.setAttribute('uv', new THREE.Float32BufferAttribute(new Array(24).fill(0.5), 2));
+  // the pearl, sat in the dish
+  const pearl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.0082, 1), artGem(0x9fe6ff, 0x2aa8ff, 1.5));
+  pearl.name = 'seaPearl';
+  const pr = 0.024; pearl.position.set(0, S.HY + pr, artShellZ(pr, 0) + 0.0085); g.add(pearl);
+  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  g.userData.pearl = pearl;
+  return g;
+}
+
 function artNoise2(seed) {
   // a cheap value noise on a 64-cell lattice, tiled, for the drawn maps
   const N = 64, v = new Float32Array(N * N), rnd = mulberry32(seed);
@@ -111896,278 +115426,6 @@ function artNormalFrom(hc, strength) {
   return t;
 }
 const artCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d', { willReadFrequently: true })]; };
-// bone: ivory gone yellow at the edge, growth lines, pores, stains and a few cracks — drawn into a colour and a height canvas together
-function artBone(g, hg, S, seed, edgeDark = 1) {
-  const rnd = mulberry32(seed), nz = artNoise2(seed + 7), c = S / 2;
-  g.fillStyle = '#d4c6a2'; g.fillRect(0, 0, S, S);
-  hg.fillStyle = 'rgb(150,150,150)'; hg.fillRect(0, 0, S, S);
-  // a mottle of yellowing, broken by noise, pixel by pixel at a quarter scale
-  const q = S / 4, [mc, mg] = artCanvas(q, q), im = mg.createImageData(q, q);
-  for (let y = 0; y < q; y++) for (let x = 0; x < q; x++) {
-    const n = artFbm(nz, x / 18, y / 18, 4), r = Math.hypot(x - q / 2, y - q / 2) / (q / 2), o = (y * q + x) * 4;
-    const k = Math.min(1, Math.max(0, (n - 0.35) * 1.6 + r * r * 0.55 * edgeDark));
-    im.data[o] = 214 - 70 * k; im.data[o + 1] = 198 - 82 * k; im.data[o + 2] = 160 - 92 * k; im.data[o + 3] = 255 * (0.35 + 0.65 * k);
-  }
-  mg.putImageData(im, 0, 0); g.imageSmoothingEnabled = true; g.drawImage(mc, 0, 0, S, S);
-  // growth lines: long faint waves across the bone, raised and lowered a touch
-  /* faint, and not many: bone has growth lines, but a hundred and seventy of
-   * them strong enough to see read as WOOD grain on the first build */
-  for (let i = 0; i < 46; i++) {
-    const y0 = rnd() * S, amp = 6 + rnd() * 18, fr = 0.003 + rnd() * 0.007, ph = rnd() * 9, dark = rnd() < 0.5;
-    const col = dark ? `rgba(120,96,62,${0.025 + rnd() * 0.04})` : `rgba(255,250,232,${0.04 + rnd() * 0.05})`;
-    g.strokeStyle = col; g.lineWidth = 2 + rnd() * 5; hg.strokeStyle = dark ? 'rgba(135,135,135,0.18)' : 'rgba(165,165,165,0.18)'; hg.lineWidth = g.lineWidth;
-    for (const ctx of [g, hg]) { ctx.beginPath(); for (let x = 0; x <= S; x += 8) { const y = y0 + Math.sin(x * fr + ph) * amp + Math.sin(x * fr * 3.1 + ph * 2) * amp * 0.25; x ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
-  }
-  // pores
-  for (let i = 0; i < 2600; i++) {
-    const x = rnd() * S, y = rnd() * S, r = 0.5 + rnd() * 1.1;
-    g.fillStyle = `rgba(80,60,36,${0.08 + rnd() * 0.16})`; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
-    hg.fillStyle = 'rgba(95,95,95,0.6)'; hg.beginPath(); hg.arc(x, y, r, 0, 6.283); hg.fill();
-  }
-  // stains: tea-brown where it lay in the gut
-  for (let i = 0; i < 9; i++) {
-    const x = rnd() * S, y = rnd() * S, r = S * (0.05 + rnd() * 0.14), gr = g.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, `rgba(96,62,28,${0.10 + rnd() * 0.16})`); gr.addColorStop(1, 'rgba(96,62,28,0)');
-    g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-  // cracks: from the rim inward, a wandering hairline with a paler lip
-  for (let i = 0; i < 7; i++) {
-    let a = rnd() * 6.283, rr = c * (0.97 - rnd() * 0.05), x = c + Math.cos(a) * rr, y = c + Math.sin(a) * rr, dir = a + Math.PI + (rnd() - 0.5) * 0.9;
-    const len = S * (0.05 + rnd() * 0.16), pts = [[x, y]];
-    for (let s = 0; s < len; s += 6) { dir += (rnd() - 0.5) * 0.7; x += Math.cos(dir) * 6; y += Math.sin(dir) * 6; pts.push([x, y]); }
-    for (const [ctx, col, w] of [[g, 'rgba(235,224,196,0.5)', 3.2], [g, 'rgba(48,32,18,0.85)', 1.4], [hg, 'rgb(40,40,40)', 2.0]]) {
-      ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); pts.forEach(([px, py], k) => (k ? ctx.lineTo(px, py) : ctx.moveTo(px, py))); ctx.stroke();
-    }
-  }
-}
-function artFaceMaps() {
-  const S = 1024, c = S / 2;
-  const [cc, g] = artCanvas(S, S), [hc, hg] = artCanvas(S, S);
-  artBone(g, hg, S, 431);
-  const rnd = mulberry32(977);
-  /* THE ENGRAVING. Every cut is drawn twice — lamp-black into the colour and
-   * a groove into the height — so the ink sits IN the line. */
-  const ink = (w = 3.5, a = 0.9) => { g.strokeStyle = `rgba(26,19,12,${a})`; g.lineWidth = w; hg.strokeStyle = 'rgb(70,70,70)'; hg.lineWidth = w * 1.15; };
-  const both = (fn) => { for (const ctx of [g, hg]) { ctx.save(); fn(ctx); ctx.restore(); } };
-  const strokeBoth = (path) => both((ctx) => { ctx.lineCap = 'round'; ctx.lineJoin = 'round'; path(ctx); ctx.stroke(); });
-  // the border: two rings and a rope between them, and the words a sailor cut round it
-  ink(5); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(c, c, 495, 0, 6.283); });
-  ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(c, c, 452, 0, 6.283); });
-  ink(2.4, 0.85);
-  for (let i = 0; i < 120; i++) {               // the rope, a twist every three degrees
-    const a = i / 120 * 6.283, a2 = a + 0.034;
-    if (a > 3.55 && a < 5.87) continue;            // the top arc carries the words instead
-    strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(c + Math.cos(a) * 458, c + Math.sin(a) * 458); ctx.quadraticCurveTo(c + Math.cos(a + 0.03) * 476, c + Math.sin(a + 0.03) * 476, c + Math.cos(a2) * 490, c + Math.sin(a2) * 490); });
-  }
-  const words = 'WHAT THE SEA TAKES IT KEEPS';
-  g.font = 'bold 34px Georgia, "Times New Roman", serif'; hg.font = g.font;
-  const span = 2.18, a0 = -Math.PI / 2 - span / 2;
-  for (let i = 0; i < words.length; i++) {
-    const a = a0 + span * (i + 0.5) / words.length;
-    both((ctx) => { ctx.translate(c + Math.cos(a) * 474, c + Math.sin(a) * 474); ctx.rotate(a + Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = ctx === g ? 'rgba(26,19,12,0.88)' : 'rgb(70,70,70)'; ctx.fillText(words[i], 0, 0); });
-  }
-  // the moon, a crescent hatched across
-  both((ctx) => {
-    ctx.beginPath(); ctx.arc(318, 268, 62, 0, 6.283); ctx.moveTo(346 + 56, 252); ctx.arc(346, 252, 56, 0, 6.283); ctx.clip('evenodd');
-    ctx.strokeStyle = ctx === g ? 'rgba(26,19,12,0.75)' : 'rgb(80,80,80)'; ctx.lineWidth = 2;
-    for (let k = -80; k < 80; k += 7) { ctx.beginPath(); ctx.moveTo(250 + k, 200); ctx.lineTo(390 + k, 340); ctx.stroke(); }
-  });
-  ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(318, 268, 62, 0.62, 5.42); ctx.arc(346, 252, 56, 4.9, 0.98, true); });
-  for (const [sx, sy, s] of [[440, 210, 11], [520, 168, 7], [610, 236, 9], [230, 380, 6], [705, 180, 6]]) {   // stars
-    ink(2.2); strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(sx - s, sy); ctx.lineTo(sx + s, sy); ctx.moveTo(sx, sy - s); ctx.lineTo(sx, sy + s); });
-  }
-  // THE WHALE, side on, swimming right: the silhouette, then hatching inside it
-  const whale = (ctx) => {
-    /* A WHALE IS DEEP AND BLUNT. The first outline was slim and pointed and it
-     * read as a fish: a humpback is a third as deep as it is long, its head is
-     * a rounded wedge, and the body is widest well forward of the middle. */
-    ctx.beginPath();
-    ctx.moveTo(832, 500);
-    ctx.bezierCurveTo(830, 452, 792, 414, 722, 408);       // the blunt head, up to the crown
-    ctx.bezierCurveTo(620, 400, 470, 414, 382, 446);       // the back, falling away
-    ctx.lineTo(362, 426); ctx.lineTo(346, 456);             // the small hump of a fin
-    ctx.bezierCurveTo(314, 468, 292, 476, 270, 482);       // the tail stock
-    ctx.bezierCurveTo(242, 450, 208, 416, 168, 402);       // upper fluke
-    ctx.bezierCurveTo(186, 444, 206, 478, 222, 494);       // the notch
-    ctx.bezierCurveTo(204, 516, 182, 552, 164, 590);       // lower fluke
-    ctx.bezierCurveTo(208, 568, 246, 532, 272, 512);
-    ctx.bezierCurveTo(342, 550, 452, 592, 562, 594);       // the belly
-    ctx.bezierCurveTo(672, 596, 770, 574, 812, 542);       // the throat
-    ctx.bezierCurveTo(830, 528, 836, 514, 832, 500);       // the chin
-    ctx.closePath();
-  };
-  // a wash of grime pooled in the figure first, so it reads as cut deeper than the bone round it
-  g.save(); whale(g); g.clip(); g.fillStyle = 'rgba(70,52,30,0.22)'; g.fillRect(0, 0, S, S); g.restore();
-  hg.save(); whale(hg); hg.clip(); hg.fillStyle = 'rgba(128,128,128,0.6)'; hg.fillRect(0, 0, S, S); hg.restore();
-  // hatching: along the back, denser toward the top (the light is from below in the sea)
-  both((ctx) => {
-    whale(ctx); ctx.clip(); ctx.lineWidth = 1.8;
-    for (let k = 0; k < 28; k++) {
-      const y = 412 + k * 6.2, a = Math.max(0.10, 0.85 - k * 0.035);
-      ctx.strokeStyle = ctx === g ? `rgba(26,19,12,${a})` : `rgba(80,80,80,${a})`;
-      ctx.beginPath(); for (let x = 150; x <= 840; x += 10) { const yy = y + Math.sin(x * 0.011 + k) * 3 + (x - 500) * (x - 500) * 0.00008 * (k < 8 ? -1 : 0.4); x === 150 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy); } ctx.stroke();
-    }
-    // the throat pleats, parallel to the belly
-    ctx.lineWidth = 2.2;
-    for (let k = 0; k < 9; k++) {
-      ctx.strokeStyle = ctx === g ? 'rgba(26,19,12,0.85)' : 'rgb(72,72,72)';
-      ctx.beginPath(); ctx.moveTo(814 - k * 7, 530 + k * 5); ctx.bezierCurveTo(740, 560 + k * 3.4, 640, 580 + k * 1.6, 520, 580 + k * 1.2); ctx.stroke();
-    }
-  });
-  ink(4.5); strokeBoth(whale);
-  ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(830, 506); ctx.bezierCurveTo(792, 512, 748, 520, 704, 518); });     // the mouth
-  ink(3.4); strokeBoth((ctx) => {                                                                                               // the flipper
-    ctx.beginPath(); ctx.moveTo(664, 560); ctx.bezierCurveTo(640, 600, 596, 640, 536, 660); ctx.bezierCurveTo(576, 626, 612, 594, 628, 562); ctx.closePath(); });
-  // the spout, fanning up off the blowhole
-  ink(2.2, 0.8);
-  for (let k = -4; k <= 4; k++) strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(706, 404); ctx.quadraticCurveTo(706 + k * 10, 362, 706 + k * 26, 334 + Math.abs(k) * 7); });
-  // the sea under it: three rows of curling crests
-  for (let row = 0; row < 3; row++) {
-    const y = 700 + row * 50, off = row * 34;
-    for (let x = 120 + off; x < 900; x += 92) {
-      const r2 = Math.hypot(x - c, y - c); if (r2 > 430) continue;
-      ink(3); strokeBoth((ctx) => { ctx.beginPath(); ctx.moveTo(x - 40, y + 10); ctx.bezierCurveTo(x - 20, y - 16, x + 18, y - 22, x + 30, y - 4); ctx.arc(x + 20, y - 2, 10, 0, Math.PI * 1.4, true); });
-    }
-  }
-  // the eye: a ring cut for the stone (`ART_EYE`)
-  ink(2.6); strokeBoth((ctx) => { ctx.beginPath(); ctx.arc(738, 474, 12, 0, 6.283); });
-  // and the ink worn out of the high places by a century of thumbs and grit
-  const nz = artNoise2(55);
-  const [wc, wg] = artCanvas(256, 256), wi = wg.createImageData(256, 256);
-  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) { const n = artFbm(nz, x / 14, y / 14, 3), o = (y * 256 + x) * 4; wi.data[o] = 214; wi.data[o + 1] = 200; wi.data[o + 2] = 168; wi.data[o + 3] = Math.max(0, (n - 0.58) * 520); }
-  wg.putImageData(wi, 0, 0); g.globalAlpha = 0.55; g.drawImage(wc, 0, 0, S, S); g.globalAlpha = 1;
-  // the bevel at the rim, in the height only: a soft shoulder down to the bezel
-  const gr = hg.createRadialGradient(c, c, 470, c, c, 512); gr.addColorStop(0, 'rgba(150,150,150,0)'); gr.addColorStop(1, 'rgba(60,60,60,1)');
-  hg.fillStyle = gr; hg.fillRect(0, 0, S, S);
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
-  return { map, normalMap: artNormalFrom(hc, 4.2) };
-}
-function artBackMaps() {
-  const S = 512, c = S / 2, [cc, g] = artCanvas(S, S), [hc, hg] = artCanvas(S, S);
-  artBone(g, hg, S, 1201, 1.4);
-  // the back is rough-cut: a spiral turned into it, and a maker's mark
-  for (let k = 0; k < 2; k++) {
-    const ctx = k ? hg : g; ctx.strokeStyle = k ? 'rgb(90,90,90)' : 'rgba(60,44,26,0.55)'; ctx.lineWidth = 3;
-    ctx.beginPath(); for (let a = 0; a < 6.283 * 5; a += 0.05) { const r = 18 + a * 7.4; const x = c + Math.cos(a) * r, y = c + Math.sin(a) * r; a ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke();
-  }
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
-  return { map, normalMap: artNormalFrom(hc, 3.0) };
-}
-// bronze: dark metal with verdigris in the recesses and the high places rubbed bright; the metalness map is black wherever it has turned to salt
-function artBronzeMaps() {
-  const W = 512, H = 128, [cc, g] = artCanvas(W, H), [mc, mgc] = artCanvas(W, H), [hc, hg] = artCanvas(W, H);
-  const nz = artNoise2(301), nz2 = artNoise2(302), im = g.createImageData(W, H), mi = mgc.createImageData(W, H), hi = hg.createImageData(W, H), rnd = mulberry32(303);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const o = (y * W + x) * 4, n = artFbm(nz, x / 22, y / 22, 4), n2 = artFbm(nz2, x / 7, y / 7, 3);
-    const crown = 1 - Math.abs(y / H - 0.42) * 2.2;                   // the outer face of the bezel, where hands and sand wore it
-    const verd = Math.min(1, Math.max(0, (n - 0.44 + (1 - crown) * 0.22) * 3.2));
-    const bright = Math.max(0, crown) * Math.max(0, 1 - verd * 1.6) * (0.5 + n2 * 0.7);
-    let r = 84 + 70 * bright + n2 * 18, gg = 60 + 52 * bright + n2 * 12, b = 32 + 26 * bright + n2 * 8;
-    r = r * (1 - verd) + (58 + 40 * n2) * verd; gg = gg * (1 - verd) + (128 + 46 * n2) * verd; b = b * (1 - verd) + (108 + 30 * n2) * verd;
-    im.data[o] = r; im.data[o + 1] = gg; im.data[o + 2] = b; im.data[o + 3] = 255;
-    const met = (1 - verd) * 255; mi.data[o] = 0; mi.data[o + 1] = 120 + verd * 120; mi.data[o + 2] = met; mi.data[o + 3] = 255;   // glTF order: G roughness, B metalness
-    const hgt = 150 + n2 * 50 - verd * 30; hi.data[o] = hi.data[o + 1] = hi.data[o + 2] = hgt; hi.data[o + 3] = 255;
-  }
-  g.putImageData(im, 0, 0); mgc.putImageData(mi, 0, 0); hg.putImageData(hi, 0, 0);
-  for (let i = 0; i < 420; i++) {                                     // pits
-    const x = rnd() * W, y = rnd() * H, r = 0.6 + rnd() * 1.6;
-    g.fillStyle = 'rgba(28,20,10,0.6)'; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
-    hg.fillStyle = 'rgb(70,70,70)'; hg.beginPath(); hg.arc(x, y, r, 0, 6.283); hg.fill();
-  }
-  for (let i = 0; i < 60; i++) {                                      // scratches through the patina
-    const x = rnd() * W, y = rnd() * H, a = (rnd() - 0.5) * 0.6, l = 8 + rnd() * 30;
-    g.strokeStyle = `rgba(214,170,96,${0.25 + rnd() * 0.35})`; g.lineWidth = 0.8;
-    g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
-  }
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = THREE.RepeatWrapping; map.repeat.set(3, 1);
-  const mr = new THREE.CanvasTexture(mc); mr.wrapS = THREE.RepeatWrapping; mr.repeat.set(3, 1);
-  const nm = artNormalFrom(hc, 2.4); nm.wrapS = THREE.RepeatWrapping; nm.repeat.set(3, 1);
-  return { map, mr, normalMap: nm };
-}
-function artCrustMaps() {
-  const S = 128, [cc, g] = artCanvas(S, S), [hc, hg] = artCanvas(S, S), rnd = mulberry32(88), nz = artNoise2(89);
-  const im = g.createImageData(S, S), hi = hg.createImageData(S, S);
-  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-    const o = (y * S + x) * 4, n = artFbm(nz, x / 6, y / 6, 3);
-    im.data[o] = 170 + n * 60; im.data[o + 1] = 164 + n * 54; im.data[o + 2] = 150 + n * 44; im.data[o + 3] = 255;
-    hi.data[o] = hi.data[o + 1] = hi.data[o + 2] = 90 + n * 140; hi.data[o + 3] = 255;
-  }
-  g.putImageData(im, 0, 0); hg.putImageData(hi, 0, 0);
-  for (let i = 0; i < 40; i++) { g.strokeStyle = `rgba(70,60,48,${0.3 + rnd() * 0.3})`; g.lineWidth = 1; const y = rnd() * S; g.beginPath(); g.moveTo(0, y); g.lineTo(S, y + (rnd() - 0.5) * 20); g.stroke(); }
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping;
-  const nm = artNormalFrom(hc, 3.4); nm.wrapS = nm.wrapT = THREE.RepeatWrapping;
-  return { map, normalMap: nm };
-}
-// the whale's eye on the face, in metres: the ring cut for it at canvas (744, 466) on a 1024 face of radius ART_R
-const ART_EYE = new THREE.Vector2((738 / 1024 - 0.5) * 2 * ART_R, (0.5 - 474 / 1024) * 2 * ART_R);
-function makeWhaleArtifact() {
-  const g = new THREE.Group(); g.name = 'whaleArtifact';
-  const env = ringEnv();
-  const R = ART_R, T = 0.0034;                // the bone's half thickness at the rim
-  const face = artFaceMaps(), back = artBackMaps(), bz = artBronzeMaps(), crust = artCrustMaps();
-  const lift = (m, k) => { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = k; return m; };
-  const boneF = lift(new THREE.MeshStandardMaterial({ map: face.map, normalMap: face.normalMap, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.62, metalness: 0, envMap: env, envMapIntensity: 0.35 }), 0.16);
-  const boneB = lift(new THREE.MeshStandardMaterial({ map: back.map, normalMap: back.normalMap, roughness: 0.78, metalness: 0, envMap: env, envMapIntensity: 0.25 }), 0.12);
-  const bronze = lift(new THREE.MeshStandardMaterial({ map: bz.map, metalnessMap: bz.mr, roughnessMap: bz.mr, normalMap: bz.normalMap, normalScale: new THREE.Vector2(1.2, 1.2),
-    metalness: 1, roughness: 1, envMap: env, envMapIntensity: 1.9 }), 0.10);
-  const crustM = lift(new THREE.MeshStandardMaterial({ map: crust.map, normalMap: crust.normalMap, normalScale: new THREE.Vector2(1.5, 1.5), roughness: 0.92, metalness: 0 }), 0.10);
-  const cordM = new THREE.MeshStandardMaterial({ color: 0x2c2218, roughness: 0.85, metalness: 0, emissive: 0x140d07, emissiveIntensity: 1 });
-  const stoneM = new THREE.MeshStandardMaterial({ color: 0x9fdcff, roughness: 0.08, metalness: 0, emissive: 0x2f8fe0, emissiveIntensity: 1.6, envMap: env, envMapIntensity: 1.4 });
-  // lathe about Y turned so its axis is +Z, with a planar uv off x and y for the faces
-  const lathe = (pts, seg) => { const geo = new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), seg); geo.rotateX(Math.PI / 2); return geo; };
-  const planarUV = (geo) => { const p = geo.attributes.position, uv = new Float32Array(p.count * 2); for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / (2 * R) + 0.5; uv[i * 2 + 1] = p.getY(i) / (2 * R) + 0.5; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
-  // the face: domed, falling to the rim; the back flatter
-  const fp = [], bp = [];
-  for (let k = 0; k <= 24; k++) { const r = R * k / 24, d = Math.cos((k / 24) * Math.PI / 2); fp.push([r, T + 0.0022 * d]); bp.push([r, -T - 0.0009 * d]); }
-  const faceGeo = planarUV(lathe(fp.reverse(), 96)); faceGeo.computeVertexNormals();
-  const backGeo = planarUV(lathe(bp, 96)); backGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(faceGeo, boneF), new THREE.Mesh(backGeo, boneB));
-  const edge = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 2 * T, 96, 1, true), boneB); edge.rotation.x = Math.PI / 2; g.add(edge);
-  // THE BEZEL: a closed section turned round the disc — a lip over the front of the bone, a heavy outer face, a step behind
-  const sec = [[R - 0.0016, T + 0.0006], [R + 0.0006, T + 0.0024], [R + 0.0044, T + 0.0018], [R + 0.0066, T], [R + 0.0070, -T + 0.0004], [R + 0.0058, -T - 0.0016],
-               [R + 0.0010, -T - 0.0018], [R - 0.0004, -T - 0.0004], [R - 0.0004, T - 0.0006], [R - 0.0016, T + 0.0006]];
-  const bezGeo = lathe(sec, 128); bezGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(bezGeo, bronze));
-  // rivets round the front lip, every forty-five degrees but one lost
-  const rivGeo = new THREE.SphereGeometry(0.0021, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2); rivGeo.rotateX(Math.PI / 2);
-  for (let i = 0; i < 8; i++) {
-    if (i === 5) continue;
-    const a = i / 8 * Math.PI * 2 + 0.2, rv = new THREE.Mesh(rivGeo, bronze);
-    rv.position.set(Math.cos(a) * (R + 0.0034), Math.sin(a) * (R + 0.0034), T + 0.0019); rv.scale.set(1, 1, 0.75); g.add(rv);
-  }
-  // the bail at the top, a heavy loop cast with it, and the tarred cord through it, frayed where it parted
-  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.0072, 0.0021, 12, 32), bronze);
-  bail.position.set(0, R + 0.0118, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
-  const cordCurve = new THREE.CatmullRomCurve3([[-0.011, R + 0.028, 0.004], [-0.004, R + 0.016, 0.002], [0, R + 0.0118, -0.0005], [0.005, R + 0.017, -0.003], [0.012, R + 0.026, -0.001], [0.017, R + 0.022, 0.003]].map((p) => new THREE.Vector3(...p)));
-  const cord = new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 48, 0.0013, 8, false), cordM); g.add(cord);
-  for (let i = 0; i < 7; i++) {                                         // the frayed end
-    const fr = new THREE.Mesh(new THREE.CylinderGeometry(0.00025, 0.00012, 0.006 + (i % 3) * 0.002, 4), cordM);
-    fr.position.set(0.017 + Math.cos(i) * 0.0008, R + 0.022 - 0.003, 0.003 + Math.sin(i) * 0.0008); fr.rotation.set(0.4 * Math.sin(i * 2.1), 0, 0.5 + 0.3 * Math.cos(i * 1.7)); g.add(fr);
-  }
-  // barnacles crusted on the lower left of the bezel: little volcanoes with their plates shut
-  const rnd = mulberry32(4242);
-  for (let i = 0; i < 11; i++) {
-    const a = Math.PI * (1.06 + rnd() * 0.38), s = 0.0016 + rnd() * 0.0024;
-    const bar = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.45, s, s * 1.3, 7, 1, false), crustM);
-    const rr = R + 0.0042 + rnd() * 0.0028, z = (rnd() - 0.3) * 0.004;
-    bar.position.set(Math.cos(a) * rr, Math.sin(a) * rr, z);
-    bar.lookAt(bar.position.clone().multiplyScalar(2).setZ(z + 0.01)); bar.rotateX(Math.PI / 2);
-    g.add(bar);
-    const plate = new THREE.Mesh(new THREE.ConeGeometry(s * 0.42, s * 0.35, 4), crustM);
-    plate.position.copy(bar.position).addScaledVector(bar.position.clone().setZ(0).normalize(), s * 0.62);
-    plate.quaternion.copy(bar.quaternion); g.add(plate);
-  }
-  // THE EYE: a cabochon set where the whale's eye is cut, still holding a little of the heal's light
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0011, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), stoneM);
-  eye.rotation.x = Math.PI / 2; eye.scale.set(1, 1, 0.55);
-  eye.position.set(ART_EYE.x, ART_EYE.y, T + 0.0016); g.add(eye);
-  const setting = new THREE.Mesh(new THREE.TorusGeometry(0.00118, 0.00028, 8, 24), bronze);
-  setting.position.copy(eye.position); setting.position.z -= 0.0002; g.add(setting);
-  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
-  g.userData.pearl = eye;
-  return g;
-}
 function makeArtIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const x = c.getContext('2d');
@@ -112373,7 +115631,7 @@ function artHitFrozen(u, dmg, P) {
   if (!heavy) worldSparks(_artV, 8);
   if (heavy) artRelease(u, true);
   else { st.immob = Math.max(0.3, st.immob - 0.12); sfxArtCrack(_artV.x, _artV.z); }
-  if (bloodHeld()) bleedBuild(u, P);
+  if (bloodHeld() || hookHeld()) bleedBuild(u, P, hookHeld() ? HOOK_BLEED : 1);
   return false;
 }
 /* Held: nothing of the fight runs, the clips do not advance, and the body
@@ -112734,7 +115992,7 @@ artHudEl.innerHTML = '<b></b><i></i><i></i><i></i><span><u></u></span>';
  * that writes to it can fail. */
 /* THE ARTIFACT'S MARK IS A WHALE: a small yellow one, flukes up, on the slot
  * of the weapon it is set in and beside its name in the pack */
-var ART_WHALE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 8 122 44"><defs><linearGradient id="bwWg" x1="0" y1="14" x2="0" y2="40" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5c3d0e"/><stop offset=".30" stop-color="#a77624"/><stop offset=".58" stop-color="#dcae4c"/><stop offset=".80" stop-color="#f3d68c"/><stop offset="1" stop-color="#fdeec0"/></linearGradient><linearGradient id="bwWf" x1="40" y1="34" x2="72" y2="48" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f1d184"/><stop offset=".6" stop-color="#d9a945"/><stop offset="1" stop-color="#9a6a1c"/></linearGradient></defs><path fill="url(#bwWg)" stroke="#2e1d04" stroke-width=".7" stroke-linejoin="round" d="M3 27C6 23.5 12 21 20 19.5 30 17.4 44 15.6 58 15.2 68 15 76 15.6 82 16L84.6 15C85.4 14.2 86.6 14.2 87.2 15.1L88.5 16.8C95 18.2 101 20 106 21.6 108 22 110 21.6 112 20.8 114.4 19.8 117.4 18.2 121 16.4 120.6 18.6 119.2 20.4 117.4 21.6L116.2 22.6 116.8 23.4 114.6 23.8 115 24.6 111.6 24.6C109.4 24.8 107 25.4 104 26.4 96 29.4 86 33 74 35.6 64 37.8 54 39.4 44 39.4 32 39.4 20 37.4 12 34 7 32 4 29.6 3 27Z"/><g fill="none" stroke="#7a5310" stroke-width=".45" stroke-linecap="round" opacity=".9"><path d="M6.4 30.2C14 33.2 28 35.4 47 36.2"/><path d="M8.8 31.8C17 34.4 30 36.4 48.6 37.4"/><path d="M12.4 33.4C20 35.6 32 37.4 50 38.4"/><path d="M17.6 35.2C25 36.9 35 38.2 49 39"/></g><path fill="url(#bwWf)" stroke="#2e1d04" stroke-width=".6" stroke-linejoin="round" d="M40 33.6C50 37.8 60 42.6 72 47.2 73.4 47.8 72.4 48.8 70.8 48.6 66 47.8 62 46.8 58 45.2A1.5 1.5 0 0 1 55.4 44.2A1.5 1.5 0 0 1 52.8 43A1.5 1.5 0 0 1 50.2 41.8A1.5 1.5 0 0 1 47.6 40.4A1.5 1.5 0 0 1 45 39C42 37.8 39.6 37 37.6 36Z"/><path fill="none" stroke="#fff4c8" stroke-width=".4" opacity=".6" d="M44 36.4C53 40.4 62 44.2 70.6 47.4"/><path fill="none" stroke="#1f1302" stroke-width=".85" stroke-linecap="round" d="M3.6 27.2C10 28.8 18 29.8 26.4 30.2 27.6 30.3 28.6 30.6 29.2 31.2"/><path fill="none" stroke="#3b2605" stroke-width=".4" d="M29.4 27.2c.9-.6 2.2-.6 3 .1"/><ellipse cx="30.9" cy="28.1" rx=".85" ry=".6" fill="#140c01"/><circle cx="30.6" cy="27.9" r=".22" fill="#fff3c4"/><g fill="#4a3109"><circle cx="7" cy="24.6" r=".62"/><circle cx="10.6" cy="23" r=".7"/><circle cx="14.2" cy="21.8" r=".68"/><circle cx="17.8" cy="20.8" r=".62"/><circle cx="21.4" cy="20.1" r=".55"/><circle cx="6.2" cy="29.4" r=".5"/><circle cx="9.4" cy="30.6" r=".45"/></g><g fill="#3d2806" opacity=".55"><circle cx="5" cy="27.6" r=".5"/><circle cx="5.8" cy="28.4" r=".35"/><circle cx="37" cy="33.6" r=".35"/><circle cx="66" cy="20.4" r=".3"/><circle cx="67" cy="21" r=".22"/></g><g fill="#fff1c0"><circle cx="11.4" cy="31.6" r=".4"/><circle cx="13.6" cy="32.4" r=".3"/><circle cx="41.6" cy="35.2" r=".38"/><circle cx="43" cy="36.2" r=".28"/><circle cx="73" cy="46.6" r=".3"/></g><path fill="none" stroke="#fff1b8" stroke-width=".5" stroke-linecap="round" opacity=".55" d="M22 19.2C34 17 48 15.8 64 15.6"/><path fill="none" stroke="#3b2605" stroke-width=".45" opacity=".7" d="M90 19.6C96 21 101 22.4 105.4 23.6M104 24.6C108 23.8 112 22.6 117.8 19.6"/><g fill="none" stroke="#6d480d" stroke-width=".35" opacity=".55"><path d="M60 22c4 1 8 1.2 12 .6"/><path d="M48 24.4c3 .9 6 .9 9 .3"/><path d="M78 24.6c3 .5 6 .4 8-.4"/></g></svg>';
+var ART_WHALE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2.5 16.5c3.5-6.5 10-10 19-11-2.5 3.5-6 7.5-9.5 9.5-3.5 2-6.5 2.6-9.5 1.5z" fill="#e6dcc0" stroke="#2b2118" stroke-width="1.1" stroke-linejoin="round"/><path d="M4.6 17.4l-1.6 2.3M6.4 17.2l-.8 2.6" stroke="#2a1f16" stroke-width="1.2" stroke-linecap="round"/><path d="M8 14.6c2.4-1.6 4.8-2.6 7.4-3.4" stroke="#2b2118" stroke-width=".8" fill="none" stroke-dasharray="1.4 .9"/><rect x="13.6" y="9.6" width="1.8" height="1.8" fill="#6fc4ff"/></svg>';   // (2026-11-18: a flat mark of the thing itself, the way the pack draws, not a gold gradient)
 var ART_WHALE_URL = 'data:image/svg+xml;utf8,' + encodeURIComponent(ART_WHALE_SVG);
 {
   const st = document.createElement('style');
@@ -113068,7 +116326,7 @@ function sfxArtRise() {
 // the harness's handles on the artifact
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { whaleArtItem, art, artFrozen, attachArtifact, detachArtifact, artImmobilize, artRelease, artSpawnWorld, artCount, artState: () => artState, setArtState: (v) => { artState = v; } }));
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { connRingItem, giveConnectionRing, connBonus, connState: () => connStreak,
-  screwdriverItem, screwdriverModel, flashlightItem, billyItem, billySet, grateSet, unscrew, takeBilly, returnBilly, mountBillyHome,
+  screwdriverItem, screwdriverModel, billyItem, billySet, grateSet, unscrew, takeBilly, returnBilly, mountBillyHome,
   liftGrate, startPipe, billyAsked, billyState: () => billyState, grateOff: () => grateOff, pipeBusy: () => pipeBusy,
   takeShipKey, dropShipKey, BILLY_SCRIPT, FISHERMAN_SCRIPT_REF: () => FISHERMAN_SCRIPT }));
 
@@ -113468,118 +116726,6 @@ function flameTick(dt) {
   flameStep(flameWorld, dt, _fmxA);
 }
 // the burn on a creature's health bar is drawn by the bar itself: the health goes down
-/* THE MEDALLION. The whale's is scrimshaw out of a belly; this one is out of
- * a fire — a disc of black volcanic glass gone grey with soot at the rim,
- * a flame cut into it and the cuts run full of gold, and at the heart of the
- * flame a fire opal that still has heat in it. Set in the same bronze, but
- * blackened, with no sea on it. */
-let _flameFace = null, _flameBz = null;
-function artFlameFaceMaps() {
-  if (_flameFace) return _flameFace;
-  /* drawn at 512 with every stroke in 1024's coordinates (a half-scale
-   * transform), because the stone is a per-pixel loop and a megapixel of it
-   * is a second of the page doing nothing */
-  const S = 1024, c = S / 2, N = 512;
-  const [cc, g] = artCanvas(N, N), [hc, hg] = artCanvas(N, N);
-  // the glass: near-black with a cold sheen, mottled with soot, a few conchoidal ripples
-  const nz = artNoise2(311);
-  const img = g.createImageData(N, N), himg = hg.createImageData(N, N);
-  for (let yy = 0; yy < N; yy++) for (let xx = 0; xx < N; xx++) {
-    const x = xx * 2, y = yy * 2;
-    const n = artFbm(nz, x / 90, y / 90, 4), m = artFbm(nz, x / 22 + 40, y / 22, 3);
-    const r = Math.hypot(x - c, y - c) / c;
-    const soot = Math.max(0, r - 0.6) * 1.6;
-    const v = 14 + n * 22 + m * 10 - soot * 10, o = (yy * N + xx) * 4;
-    img.data[o] = v * 1.05; img.data[o + 1] = v * 0.98; img.data[o + 2] = v * 1.02; img.data[o + 3] = 255;
-    const hv = 128 + (n - 0.5) * 40 + Math.sin(r * 38 + n * 6) * 6;
-    himg.data[o] = himg.data[o + 1] = himg.data[o + 2] = hv; himg.data[o + 3] = 255;
-  }
-  g.putImageData(img, 0, 0); hg.putImageData(himg, 0, 0);
-  g.setTransform(N / S, 0, 0, N / S, 0, 0); hg.setTransform(N / S, 0, 0, N / S, 0, 0);
-  const gold = (ctx, w) => { ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = ctx === g ? '#c9973a' : 'rgb(60,60,60)'; };
-  const both = (fn) => { for (const ctx of [g, hg]) { ctx.save(); fn(ctx); ctx.restore(); } };
-  // the border: two rings and a band of tongues between them
-  both((ctx) => { gold(ctx, 7); ctx.beginPath(); ctx.arc(c, c, 492, 0, 6.283); ctx.stroke(); gold(ctx, 4); ctx.beginPath(); ctx.arc(c, c, 446, 0, 6.283); ctx.stroke(); });
-  for (let i = 0; i < 48; i++) {
-    const a = i / 48 * 6.283;
-    both((ctx) => { gold(ctx, 3); ctx.translate(c, c); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(-10, 450); ctx.quadraticCurveTo(-4, 470, 0, 488); ctx.quadraticCurveTo(4, 470, 10, 450); ctx.stroke(); });
-  }
-  // the flame: three tongues, the middle tallest, each with a line of gold down it
-  const tongue = (ctx, x0, h, w, lean) => {
-    ctx.beginPath(); ctx.moveTo(x0 - w, 700);
-    ctx.bezierCurveTo(x0 - w * 1.3, 700 - h * 0.45, x0 - w * 0.2 + lean * 0.4, 700 - h * 0.7, x0 + lean, 700 - h);
-    ctx.bezierCurveTo(x0 + w * 0.5 + lean * 0.3, 700 - h * 0.62, x0 + w * 1.25, 700 - h * 0.4, x0 + w, 700);
-    ctx.closePath();
-  };
-  for (const [x0, h, w, lean] of [[c, 470, 120, -20], [c - 120, 300, 80, -50], [c + 120, 320, 80, 46]]) {
-    both((ctx) => { tongue(ctx, x0, h, w, lean); ctx.fillStyle = ctx === g ? 'rgba(201,151,58,0.22)' : 'rgb(110,110,110)'; ctx.fill(); gold(ctx, 6); ctx.stroke();
-      gold(ctx, 2.5); ctx.beginPath(); ctx.moveTo(x0, 690); ctx.quadraticCurveTo(x0 + lean * 0.5, 700 - h * 0.5, x0 + lean * 0.9, 700 - h * 0.92); ctx.stroke(); });
-  }
-  // the coals under it: a row of cut lozenges
-  for (let i = -3; i <= 3; i++) both((ctx) => { gold(ctx, 3); ctx.beginPath(); const x = c + i * 62, y = 744; ctx.moveTo(x - 24, y); ctx.lineTo(x, y - 16); ctx.lineTo(x + 24, y); ctx.lineTo(x, y + 16); ctx.closePath(); ctx.stroke(); });
-  // the words round the top
-  const words = 'WHAT BURNS IS NOT LOST';
-  g.font = 'bold 34px Georgia, "Times New Roman", serif'; hg.font = g.font;
-  const span = 2.0, a0 = -Math.PI / 2 - span / 2;
-  for (let i = 0; i < words.length; i++) {
-    const a = a0 + span * (i + 0.5) / words.length;
-    both((ctx) => { ctx.translate(c + Math.cos(a) * 470, c + Math.sin(a) * 470); ctx.rotate(a + Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = ctx === g ? '#c9973a' : 'rgb(60,60,60)'; ctx.fillText(words[i], 0, 0); });
-  }
-  // the ring the opal sits in, where the middle tongue thickens
-  both((ctx) => { gold(ctx, 4); ctx.beginPath(); ctx.arc(c, 520, 24, 0, 6.283); ctx.stroke(); });
-  // gold rubbed dull in the high places
-  const [wc, wg] = artCanvas(256, 256), wi = wg.createImageData(256, 256);
-  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) { const n = artFbm(nz, x / 14 + 9, y / 14, 3), o = (y * 256 + x) * 4; wi.data[o] = 30; wi.data[o + 1] = 26; wi.data[o + 2] = 22; wi.data[o + 3] = Math.max(0, (n - 0.55) * 400); }
-  wg.putImageData(wi, 0, 0); g.globalAlpha = 0.5; g.drawImage(wc, 0, 0, S, S); g.globalAlpha = 1;
-  const gr = hg.createRadialGradient(c, c, 470, c, c, 512); gr.addColorStop(0, 'rgba(150,150,150,0)'); gr.addColorStop(1, 'rgba(60,60,60,1)');
-  hg.fillStyle = gr; hg.fillRect(0, 0, S, S);
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
-  return (_flameFace = { map, normalMap: artNormalFrom(hc, 4.6) });
-}
-function makeFlameArtifact() {
-  const g = new THREE.Group(); g.name = 'flameArtifact';
-  const env = ringEnv();
-  const R = ART_R, T = 0.0034;
-  const face = artFlameFaceMaps(), bz = _flameBz || (_flameBz = artBronzeMaps());
-  const glassF = new THREE.MeshStandardMaterial({ map: face.map, normalMap: face.normalMap, normalScale: new THREE.Vector2(1.6, 1.6), roughness: 0.22, metalness: 0, envMap: env, envMapIntensity: 0.9,
-    emissive: new THREE.Color(0xffffff), emissiveMap: face.map, emissiveIntensity: 0.22 });
-  const glassB = new THREE.MeshStandardMaterial({ color: 0x141214, roughness: 0.35, metalness: 0, envMap: env, envMapIntensity: 0.6, emissive: 0x050404, emissiveIntensity: 1 });
-  const bronze = new THREE.MeshStandardMaterial({ map: bz.map, metalnessMap: bz.mr, roughnessMap: bz.mr, normalMap: bz.normalMap, normalScale: new THREE.Vector2(1.2, 1.2),
-    metalness: 1, roughness: 1, envMap: env, envMapIntensity: 1.5, color: 0x6a4a3a, emissive: new THREE.Color(0xffffff), emissiveMap: bz.map, emissiveIntensity: 0.06 });
-  const opalM = new THREE.MeshStandardMaterial({ color: 0xff6a1a, roughness: 0.06, metalness: 0, emissive: 0xff4a10, emissiveIntensity: 1.8, envMap: env, envMapIntensity: 1.3 });
-  const cordM = new THREE.MeshStandardMaterial({ color: 0x1c1712, roughness: 0.85, metalness: 0, emissive: 0x0c0906, emissiveIntensity: 1 });
-  const lathe = (pts, seg) => { const geo = new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), seg); geo.rotateX(Math.PI / 2); return geo; };
-  const planarUV = (geo) => { const p = geo.attributes.position, uv = new Float32Array(p.count * 2); for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / (2 * R) + 0.5; uv[i * 2 + 1] = p.getY(i) / (2 * R) + 0.5; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
-  const fp = [], bp = [];
-  for (let k = 0; k <= 24; k++) { const r = R * k / 24, d = Math.cos((k / 24) * Math.PI / 2); fp.push([r, T + 0.0026 * d]); bp.push([r, -T - 0.0009 * d]); }
-  const faceGeo = planarUV(lathe(fp.reverse(), 96)); faceGeo.computeVertexNormals();
-  const backGeo = lathe(bp, 96); backGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(faceGeo, glassF), new THREE.Mesh(backGeo, glassB));
-  const edge = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 2 * T, 96, 1, true), glassB); edge.rotation.x = Math.PI / 2; g.add(edge);
-  const sec = [[R - 0.0016, T + 0.0006], [R + 0.0006, T + 0.0024], [R + 0.0044, T + 0.0018], [R + 0.0066, T], [R + 0.0070, -T + 0.0004], [R + 0.0058, -T - 0.0016],
-               [R + 0.0010, -T - 0.0018], [R - 0.0004, -T - 0.0004], [R - 0.0004, T - 0.0006], [R - 0.0016, T + 0.0006]];
-  const bezGeo = lathe(sec, 128); bezGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(bezGeo, bronze));
-  // six claws over the face instead of rivets: it was made to hold something that might move
-  for (let i = 0; i < 6; i++) {
-    const a = i / 6 * Math.PI * 2 + Math.PI / 6;
-    const cl = new THREE.Mesh(new THREE.ConeGeometry(0.0022, 0.0062, 6), bronze);
-    cl.position.set(Math.cos(a) * (R + 0.0006), Math.sin(a) * (R + 0.0006), T + 0.0024);
-    cl.rotation.z = a + Math.PI / 2; cl.rotateX(Math.PI / 2 - 0.35); g.add(cl);
-  }
-  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.0072, 0.0021, 12, 32), bronze);
-  bail.position.set(0, R + 0.0118, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
-  const cordCurve = new THREE.CatmullRomCurve3([[-0.012, R + 0.026, 0.003], [-0.004, R + 0.016, 0.002], [0, R + 0.0118, -0.0005], [0.005, R + 0.016, -0.003], [0.013, R + 0.028, -0.001]].map((p) => new THREE.Vector3(...p)));
-  g.add(new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 48, 0.0012, 8, false), cordM));
-  // the opal at the heart of the flame (the face's own ring is cut for it)
-  const opal = new THREE.Mesh(new THREE.SphereGeometry(0.0021, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), opalM);
-  opal.rotation.x = Math.PI / 2; opal.scale.set(1, 1, 0.6);
-  opal.position.set(0, (0.5 - 520 / 1024) * 2 * R, T + 0.0024); g.add(opal);
-  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
-  g.userData.pearl = opal;
-  return g;
-}
 function makeFlameArtIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const x = c.getContext('2d');
@@ -113589,7 +116735,7 @@ function makeFlameArtIcon() {
   x.fillStyle = gr; x.beginPath(); x.moveTo(24, 46); x.bezierCurveTo(20, 36, 30, 32, 32, 18); x.bezierCurveTo(36, 30, 46, 34, 40, 46); x.closePath(); x.fill();
   return c.toDataURL();
 }
-var ART_FLAME_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9 21c-3-2-3-6 0-9 0 2 1 3 2 3-1-3 1-7 4-9-1 3 3 5 3 9 0 3-2 5-4 6 1-2 0-3-1-4 0 2-1 3-4 4z" fill="#ff9a2a" stroke="#c9973a" stroke-width="0.8"/></svg>';
+var ART_FLAME_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12.4 9.4 13.6 2.6 15.4 9z" fill="#ffb04a" stroke="#3a1a08" stroke-width=".7" stroke-linejoin="round"/><path d="M4.5 15.5 7.6 9.6 12.6 8.6 18.2 10.8 19.6 15.8 14.6 19.8 8.2 19.6z" fill="#1b171c" stroke="#d9c7b4" stroke-width="1" stroke-linejoin="round"/><path d="M8.6 12.4l2.6 2 1.4-1.8 2.8 2.8M11.2 14.4l-.6 3" stroke="#ff7a1a" stroke-width="1.2" fill="none" stroke-linejoin="round"/><path d="M4.8 14.8 19.4 14.4" stroke="#5a524c" stroke-width="1.1"/></svg>';   // (2026-11-18: a flat mark of the thing itself, the way the pack draws, not a gold gradient)
 const flameArtModel = makeFlameArtifact();
 flameArtItem = {
   id: 'flameArtifact', name: 'Artifact of the Flame', icon: makeFlameArtIcon(), artifact: true, svg: ART_FLAME_SVG,
@@ -113630,112 +116776,6 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaWaveDbg: (x,
 let seaState = 0;      // 0 not given yet, 1 lying in the sand at `sea.spot`, 2 yours (in the pack, set in a weapon, or sold)
 function seaWeapon() { return isArtWeapon(equipped) && !!seaArtItem && equipped.artifact === seaArtItem ? equipped : null; }
 
-/* THE MEDALLION: the same bronze as the other two, green with the sea, round a disc of abalone — a great wave
- * cut into the nacre and the cuts run with silver, and in the curl of the wave a blue pearl. */
-let _seaFace = null, _seaBz = null;
-function artSeaFaceMaps() {
-  if (_seaFace) return _seaFace;
-  const S = 1024, c = S / 2, N = 512;           // (drawn at 512 in 1024's coordinates, like the flame's)
-  const [cc, g] = artCanvas(N, N), [hc, hg] = artCanvas(N, N);
-  const nz = artNoise2(523);
-  const img = g.createImageData(N, N), himg = hg.createImageData(N, N);
-  for (let yy = 0; yy < N; yy++) for (let xx = 0; xx < N; xx++) {
-    const x = xx * 2, y = yy * 2;
-    const n = artFbm(nz, x / 120, y / 120, 4), m = artFbm(nz, x / 30 + 17, y / 30, 3);
-    const r = Math.hypot(x - c, y - c) / c;
-    const band = Math.sin(n * 14 + r * 9), k = 0.5 + 0.5 * band, rim = 1 - Math.max(0, r - 0.72) * 1.4, o = (yy * N + xx) * 4;
-    img.data[o] = (16 + 34 * (1 - k) + m * 14) * rim; img.data[o + 1] = (48 + 74 * k + m * 22) * rim; img.data[o + 2] = (72 + 56 * k + 34 * (1 - k) + m * 18) * rim; img.data[o + 3] = 255;
-    himg.data[o] = himg.data[o + 1] = himg.data[o + 2] = 128 + (n - 0.5) * 30 + band * 5; himg.data[o + 3] = 255;
-  }
-  g.putImageData(img, 0, 0); hg.putImageData(himg, 0, 0);
-  g.setTransform(N / S, 0, 0, N / S, 0, 0); hg.setTransform(N / S, 0, 0, N / S, 0, 0);
-  const silver = (ctx, w) => { ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = ctx === g ? '#cfdcd8' : 'rgb(60,60,60)'; };
-  const both = (fn) => { for (const ctx of [g, hg]) { ctx.save(); fn(ctx); ctx.restore(); } };
-  // the border: two rings, and a run of little breaking waves between them
-  both((ctx) => { silver(ctx, 7); ctx.beginPath(); ctx.arc(c, c, 492, 0, 6.283); ctx.stroke(); silver(ctx, 4); ctx.beginPath(); ctx.arc(c, c, 446, 0, 6.283); ctx.stroke(); });
-  for (let i = 0; i < 40; i++) {
-    const a = i / 40 * 6.283;
-    both((ctx) => { silver(ctx, 3); ctx.translate(c, c); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(-18, 458); ctx.quadraticCurveTo(-6, 486, 10, 470); ctx.quadraticCurveTo(4, 462, 12, 456); ctx.stroke(); });
-  }
-  // the wave: the face rising from the left, over the top and curling down into itself
-  const curl = (ctx) => {
-    ctx.beginPath(); ctx.moveTo(190, 720);
-    ctx.bezierCurveTo(270, 700, 340, 600, 420, 480); ctx.bezierCurveTo(480, 385, 600, 300, 705, 330);
-    ctx.bezierCurveTo(800, 360, 812, 460, 738, 486); ctx.bezierCurveTo(686, 504, 652, 452, 694, 428);
-  };
-  both((ctx) => { curl(ctx); ctx.lineTo(694, 428); ctx.bezierCurveTo(760, 470, 830, 600, 840, 720); ctx.closePath();
-    ctx.fillStyle = ctx === g ? 'rgba(207,220,216,0.16)' : 'rgb(108,108,108)'; ctx.fill(); silver(ctx, 6); curl(ctx); ctx.stroke(); });
-  // the lines down its face, and the claws of foam off the crest
-  for (let i = 1; i <= 3; i++) both((ctx) => { silver(ctx, 2.5); ctx.beginPath(); ctx.moveTo(220 + i * 70, 720); ctx.bezierCurveTo(300 + i * 60, 680, 370 + i * 40, 560 + i * 10, 470 + i * 50, 430 + i * 30); ctx.stroke(); });
-  for (let i = 0; i < 7; i++) {
-    const x = 470 + i * 42, y = 400 - Math.sin(i / 6 * Math.PI) * 70;
-    both((ctx) => { silver(ctx, 2.5); ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 6, y - 34, x + 26, y - 30); ctx.stroke(); });
-  }
-  // the sea under it: three swells across
-  for (let j = 0; j < 3; j++) both((ctx) => { silver(ctx, 3); ctx.beginPath(); const y = 760 + j * 44, w = 300 - j * 50;
-    for (let x = c - w; x <= c + w; x += 6) { const yy = y + Math.sin((x - c) / 34) * 9; if (x === c - w) ctx.moveTo(x, yy); else ctx.lineTo(x, yy); } ctx.stroke(); });
-  // the words round the top
-  const words = 'WHAT THE SEA TAKES IT GIVES BACK';
-  g.font = 'bold 30px Georgia, "Times New Roman", serif'; hg.font = g.font;
-  const span = 2.5, a0 = -Math.PI / 2 - span / 2;
-  for (let i = 0; i < words.length; i++) {
-    const a = a0 + span * (i + 0.5) / words.length;
-    both((ctx) => { ctx.translate(c + Math.cos(a) * 470, c + Math.sin(a) * 470); ctx.rotate(a + Math.PI / 2); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = ctx === g ? '#cfdcd8' : 'rgb(60,60,60)'; ctx.fillText(words[i], 0, 0); });
-  }
-  // the ring the pearl sits in, in the curl
-  both((ctx) => { silver(ctx, 4); ctx.beginPath(); ctx.arc(SEA_PEARL[0], SEA_PEARL[1], 24, 0, 6.283); ctx.stroke(); });
-  const gr = hg.createRadialGradient(c, c, 470, c, c, 512); gr.addColorStop(0, 'rgba(150,150,150,0)'); gr.addColorStop(1, 'rgba(60,60,60,1)');
-  hg.fillStyle = gr; hg.fillRect(0, 0, S, S);
-  const map = new THREE.CanvasTexture(cc); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 8;
-  return (_seaFace = { map, normalMap: artNormalFrom(hc, 4.2) });
-}
-const SEA_PEARL = [712, 420];                  // where the pearl sits on the face, in the face's 1024 coordinates
-function makeSeaArtifact() {
-  const g = new THREE.Group(); g.name = 'seaArtifact';
-  const env = ringEnv();
-  const R = ART_R, T = 0.0034;
-  const face = artSeaFaceMaps(), bz = _seaBz || (_seaBz = artBronzeMaps());
-  const nacreF = new THREE.MeshStandardMaterial({ map: face.map, normalMap: face.normalMap, normalScale: new THREE.Vector2(1.5, 1.5), roughness: 0.16, metalness: 0, envMap: env, envMapIntensity: 1.1,
-    emissive: new THREE.Color(0xffffff), emissiveMap: face.map, emissiveIntensity: 0.3 });
-  const nacreB = new THREE.MeshStandardMaterial({ color: 0x10202a, roughness: 0.3, metalness: 0, envMap: env, envMapIntensity: 0.7, emissive: 0x04090c, emissiveIntensity: 1 });
-  const bronze = new THREE.MeshStandardMaterial({ map: bz.map, metalnessMap: bz.mr, roughnessMap: bz.mr, normalMap: bz.normalMap, normalScale: new THREE.Vector2(1.2, 1.2),
-    metalness: 1, roughness: 1, envMap: env, envMapIntensity: 1.5, color: 0x5e7466, emissive: new THREE.Color(0xffffff), emissiveMap: bz.map, emissiveIntensity: 0.07 });
-  const pearlM = new THREE.MeshStandardMaterial({ color: 0x9fe6ff, roughness: 0.08, metalness: 0, emissive: 0x2aa8ff, emissiveIntensity: 1.5, envMap: env, envMapIntensity: 1.3 });
-  const cordM = new THREE.MeshStandardMaterial({ color: 0x14191a, roughness: 0.85, metalness: 0, emissive: 0x070909, emissiveIntensity: 1 });
-  const lathe = (pts, seg) => { const geo = new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), seg); geo.rotateX(Math.PI / 2); return geo; };
-  const planarUV = (geo) => { const p = geo.attributes.position, uv = new Float32Array(p.count * 2); for (let i = 0; i < p.count; i++) { uv[i * 2] = p.getX(i) / (2 * R) + 0.5; uv[i * 2 + 1] = p.getY(i) / (2 * R) + 0.5; } geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo; };
-  const fp = [], bp = [];
-  for (let k = 0; k <= 24; k++) { const r = R * k / 24, d = Math.cos((k / 24) * Math.PI / 2); fp.push([r, T + 0.0026 * d]); bp.push([r, -T - 0.0009 * d]); }
-  const faceGeo = planarUV(lathe(fp.reverse(), 96)); faceGeo.computeVertexNormals();
-  const backGeo = lathe(bp, 96); backGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(faceGeo, nacreF), new THREE.Mesh(backGeo, nacreB));
-  const edge = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 2 * T, 96, 1, true), nacreB); edge.rotation.x = Math.PI / 2; g.add(edge);
-  const sec = [[R - 0.0016, T + 0.0006], [R + 0.0006, T + 0.0024], [R + 0.0044, T + 0.0018], [R + 0.0066, T], [R + 0.0070, -T + 0.0004], [R + 0.0058, -T - 0.0016],
-               [R + 0.0010, -T - 0.0018], [R - 0.0004, -T - 0.0004], [R - 0.0004, T - 0.0006], [R - 0.0016, T + 0.0006]];
-  const bezGeo = lathe(sec, 128); bezGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(bezGeo, bronze));
-  // eight rivets round the bezel, and barnacles crusted over two of them
-  for (let i = 0; i < 8; i++) {
-    const a = i / 8 * Math.PI * 2 + Math.PI / 8;
-    const rv = new THREE.Mesh(new THREE.SphereGeometry(0.0016, 10, 8), bronze);
-    rv.position.set(Math.cos(a) * (R + 0.0032), Math.sin(a) * (R + 0.0032), T + 0.0022); g.add(rv);
-  }
-  for (const [a, s] of [[3.6, 1], [3.9, 0.7], [4.15, 0.85], [0.5, 0.6]]) {
-    const b = new THREE.Mesh(new THREE.ConeGeometry(0.0026 * s, 0.003 * s, 7, 1, true), nacreB);
-    b.position.set(Math.cos(a) * (R + 0.004), Math.sin(a) * (R + 0.004), T + 0.0012); b.rotation.x = Math.PI / 2; g.add(b);
-  }
-  const bail = new THREE.Mesh(new THREE.TorusGeometry(0.0072, 0.0021, 12, 32), bronze);
-  bail.position.set(0, R + 0.0118, 0); bail.rotation.y = Math.PI / 2; g.add(bail);
-  const cordCurve = new THREE.CatmullRomCurve3([[-0.012, R + 0.026, 0.003], [-0.004, R + 0.016, 0.002], [0, R + 0.0118, -0.0005], [0.005, R + 0.016, -0.003], [0.013, R + 0.028, -0.001]].map((p) => new THREE.Vector3(...p)));
-  g.add(new THREE.Mesh(new THREE.TubeGeometry(cordCurve, 48, 0.0012, 8, false), cordM));
-  const pearl = new THREE.Mesh(new THREE.SphereGeometry(0.0024, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), pearlM);
-  pearl.rotation.x = Math.PI / 2; pearl.scale.set(1, 1, 0.7); pearl.name = 'seaPearl';
-  pearl.position.set((SEA_PEARL[0] / 1024 - 0.5) * 2 * R, (0.5 - SEA_PEARL[1] / 1024) * 2 * R, T + 0.0024); g.add(pearl);
-  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
-  g.userData.pearl = pearl;
-  return g;
-}
 function makeSeaArtIcon() {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const x = c.getContext('2d');
@@ -113747,12 +116787,12 @@ function makeSeaArtIcon() {
   x.fillStyle = '#bff0ff'; x.beginPath(); x.arc(41, 29, 2, 0, Math.PI * 2); x.fill();
   return c.toDataURL();
 }
-var ART_SEA_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 19c2-1 3-4 5-8 2-4 6-7 10-6 3 1 4 5 1 6-2 1-3-1-2-2 1 2 3 5 4 10z" fill="#4cc4dc" stroke="#9fdff0" stroke-width="0.8"/><path d="M2 21c2-1 4-1 6 0s4 1 6 0 4-1 6 0" fill="none" stroke="#7fd8ea" stroke-width="1"/></svg>';
+var ART_SEA_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 20.5 3.6 11.4C4.4 6.8 7.8 4 12 4s7.6 2.8 8.4 7.4z" fill="#d9c7b4" stroke="#2b2118" stroke-width="1.1" stroke-linejoin="round"/><path d="M12 20.5 6.2 7.4M12 20.5 9 5.2M12 20.5V4.2M12 20.5 15 5.2M12 20.5 17.8 7.4" stroke="#a88f7c" stroke-width=".8"/><path d="M9.6 20.6h4.8" stroke="#2b2118" stroke-width="1.1"/><circle cx="12" cy="13.2" r="2.4" fill="#9fe6ff" stroke="#1d6f99" stroke-width=".7"/></svg>';   // (2026-11-18: a flat mark of the thing itself, the way the pack draws, not a gold gradient)
 const seaArtModel = makeSeaArtifact();
 seaArtItem = {
   id: 'seaArtifact', name: 'Artifact of the Sea', icon: makeSeaArtIcon(), artifact: true, svg: ART_SEA_SVG,
   desc: `Set into a weapon · A parry sends out a wave that lifts every enemy near you · ${SEA_CD}s to return`,
-  inspectModel: seaArtModel, iconRot: { x: 0.12, y: -0.35 },
+  inspectModel: seaArtModel, iconRot: { rotX: 0.45, rotY: 0.18 },   // (looking into the cup, the pearl in it: from the side a scallop is a fan)
   use: () => {
     if (isArtWeapon(equipped)) { if (attachArtifact(seaArtItem, equipped)) seaWarm(); }
     else artSay('Hold a weapon to set it in');
@@ -118927,7 +121967,7 @@ function tvShowTick(dt) {
     T.audio.mg.gain.setTargetAtTime(0.08 + 0.04 * Math.sin(t * 0.37) + T.laugh * 0.05, audioCtx.currentTime, 0.3);
   }
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { tvShowS: () => tvShow, elvMocapS: () => ELV_MOCAP_SET, pupLidsS: (E, k) => pupLids(E, k), pupBlinkK, elvLandS: (x, z, y) => [elvInLand(x, z), elvLandFloorAt(x, z, y, 0.45), elvLand], ELV_PATH, tvShowOn, tvShowTick, loadElvPuppet: () => loadElvPuppet(), pupCarryS: () => elvPupCarry, HOUSE_X, HOUSE_Y, HOUSE_Z }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { elvDropPuppet, elvPickUp, loadElvPuppet, pupDropS: () => ({ pup: !!(elvPup && elvPup.src), carry: !!elvPupCarry, carrying: elvCarrying, dropped: !!elvDropped, stage: elvStage }), tvShowS: () => tvShow, elvMocapS: () => ELV_MOCAP_SET, pupLidsS: (E, k) => pupLids(E, k), pupBlinkK, elvLandS: (x, z, y) => [elvInLand(x, z), elvLandFloorAt(x, z, y, 0.45), elvLand], ELV_PATH, tvShowOn, tvShowTick, loadElvPuppet: () => loadElvPuppet(), pupCarryS: () => elvPupCarry, HOUSE_X, HOUSE_Y, HOUSE_Z }));
 function buildHouseDoors(root) {
   const groups = new Map();
   root.traverse((o) => {
@@ -118958,7 +121998,7 @@ function buildHouseDoors(root) {
       far: 2.6,
       label: () => (D.open ? 'Close the door' : 'Open the door'),
       when: () => elvLand && !frozen(),
-      onActivate: () => elvDoorToggle(D),
+      onActivate: doorUse(() => elvDoorToggle(D)),
     });
     elvDoors.push(D);
     try { houseDoorSill(root, D); } catch (e) { /* the flicker is not the door */ }
@@ -120340,6 +123380,37 @@ function pupBurnPose(I, t, k) {
     A('shin' + s, 'foot' + s, -0.35 + 1.1 * k * S(11.7, o + 6), -1, sz * 0.12);
   }
 }
+/* HE CAN BE PUT DOWN (2026-11-19, the owner: "make the puppet able to be dropped"): G with him in your arms lays him on his
+ * back on the ground where you are looking (`dropPoint`, on whatever is there), and E on him takes him up again — the same
+ * carry, the same stage. (Not on the save: a load finds him as the stage says.) */
+let elvDropped = null;
+function elvDropPuppet() {
+  if (!elvCarrying || elvBurn || !elvPup || !elvPup.src || frozen()) return;
+  hovered = null;
+  elvCarryEnd();
+  const I = pupMakeInstance();
+  I.root.scale.setScalar(PUP_K);
+  const dp = dropPoint(), yaw = Math.atan2(camera.position.x - dp.x, camera.position.z - dp.z) + Math.PI / 2;
+  I.root.quaternion.copy(pupLieQ(new THREE.Quaternion(), yaw));
+  I.root.position.set(0, 0, 0); I.root.updateMatrixWorld(true);
+  const mid = I.rig.B.spine.getWorldPosition(new THREE.Vector3()), bb = new THREE.Box3().setFromObject(I.root);
+  I.root.position.set(dp.x - mid.x, dp.y - bb.min.y + 0.01, dp.z - mid.z);
+  scene.add(I.root);
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.5), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  hit.name = 'hitProxy'; hit.visible = false;
+  const hg = new THREE.Group(); hg.position.set(dp.x, dp.y + 0.15, dp.z); hg.add(hit); scene.add(hg);   // (over his middle, where he lies)
+  elvDropped = { I, hg };
+  sfxThud(0.04);
+  addInteractable(hg, 'Pick him up', 'default', {
+    when: () => !!elvDropped && !elvCarrying && !frozen(),
+    onActivate: () => {
+      if (!elvDropped) return;
+      scene.remove(elvDropped.I.root); scene.remove(elvDropped.hg); removeInteractable(elvDropped.hg); elvDropped = null; hovered = null;
+      sfxThud(0.04);
+      elvCarryBegin(false);
+    },
+  });
+}
 function elvThrowPuppet() {
   if (!elvCarrying || elvBurn || !elvPup || !elvPup.src) return;
   if (elvPlea) elvPleaStop(0.04);
@@ -120786,7 +123857,7 @@ window.__bw = {
     if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
     oceanUniforms.uTime.value += dt;
     update(dt, rawDt); updateHatch(rawDt); updateUndercroftCut(rawDt);
-    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt);
+    updateIdol(rawDt); knightStepOut(rawDt); knightCrush(rawDt); knightSpoilsDrop(); updatePortalCut(rawDt); updateSailCut(rawDt); updateBootHold(rawDt); updateRoomRestore(); updateRestoreGuard(rawDt); updateTavernCut(rawDt); updateFortCut(rawDt); updateCaveIn(rawDt); updateCatCut(rawDt); updatePipeCut(rawDt); updateWhaleCut(rawDt); updateThroneCut(rawDt); updateDungeonCut(rawDt); updateTempleCut(rawDt); if (deepLive) updateDeep(rawDt); updateThroneScene(rawDt); updateCrabCut(rawDt); updateWhaleLife(rawDt); updateWhaleBeach(rawDt); updateWreckApproach(rawDt); updateDojoAudio(rawDt);
     updateLightPool();
   },
   /* AND THE WARM CHAIN, THE FAR-CULL AND EVERY WALL-CLOCK CUT LIVE IN
@@ -121040,11 +124111,13 @@ window.__bw = {
   get crouching() { return crouching; }, set crouching(v) { crouching = v; },
   set airborne(v) { onGround = !v; vy = 0; },
   get ucVerb() { return ucVerbGain ? ucVerbGain.gain.value : null; },   // in the ORIGINAL literal: Object.assign copies a getter's value     // the harness dropping the player from a height: a fall off a ledge is never a landing here, only a jump is
-  startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateFace() { return gateFace; }, pipeReachS: () => pipeReach, pipeArmS: () => pipeArm, gibsN: () => gibs.length + '/' + bloodDrops.length + ' rubble ' + (typeof rubbleN === 'function' ? rubbleN() : '-'), crabsS: () => crabs.map((u) => `${u.pack ? 'P' : 'C'}(${u.g.position.x.toFixed(1)},${u.g.position.z.toFixed(1)} ${u.st.alive ? 'alive' : 'dead'} hp${u.st.hp})`), runWarm: (pre) => { let n = 0; for (let i = warmSteps.length - 1; i >= 0; i--) if (warmSteps[i][0].startsWith(pre)) { const st = warmSteps.splice(i, 1)[0]; st[1](); n++; } return n; }, get screwdriverTaken() { return screwdriverTaken; },
+  startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateFace() { return gateFace; }, pipeReachS: () => pipeReach, pipeArmS: () => pipeArm, pipeHandS: () => pipeHand, phS: () => PRH, hookItem, hookVM, hookModel, HK, HD, skHook, hookThrow, hookRecallS: () => hookRecall(), hookRawS: () => hookRaw, crates, moundsS: () => mounds, skHookDrop, setHookLift: (v) => { HOOK_HEAVY_LIFT = v; }, gibsN: () => gibs.length + '/' + bloodDrops.length + ' rubble ' + (typeof rubbleN === 'function' ? rubbleN() : '-'), crabsS: () => crabs.map((u) => `${u.pack ? 'P' : 'C'}(${u.g.position.x.toFixed(1)},${u.g.position.z.toFixed(1)} ${u.st.alive ? 'alive' : 'dead'} hp${u.st.hp})`), runWarm: (pre) => { let n = 0; for (let i = warmSteps.length - 1; i >= 0; i--) if (warmSteps[i][0].startsWith(pre)) { const st = warmSteps.splice(i, 1)[0]; st[1](); n++; } return n; }, get screwdriverTaken() { return screwdriverTaken; },
   get ringProp() { return ringProp; },
   armRig, shovelItem, startWind, releaseWind,
   crate, ringItem, ringWorld, rings, breakCrate, wearRing,
   get crateBroken() { return crates[0].broken; }, crates, get ringsFound() { return ringsFound; }, set ringsFound(v) { ringsFound = v; }, get knightSpoils() { return knightSpoils; }, get knightUnit() { return knightUnit; },
+  comboStepS: () => comboStep,
+  poseS: () => _pose.slice(),
   get digT() { return digT; }, get digPower() { return digPower; }, get winding() { return winding; },
   CORPSE_X, CORPSE_Z,
   get lhParts() { return lhParts; },
@@ -121357,4 +124430,2055 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   cineS: () => ({ hold: cineHold, walkOff: cineWalkOff, fov: +camera.fov.toFixed(2), want: dialogFov, at: cineAt.toArray().map((v) => +v.toFixed(2)) }),
   hpS: () => hp, setHp: (v) => { hp = v; }, pavKeyItem, storeKeyItem, fillKeyModels, LOOP_SONGS, katanaItemS: () => katanaItem, dealerU: () => dealer, SELL_ROWS, migrateSave, jarsS: () => bloodJars,
 }));
+/* ==================================================================================================================
+ * THE DESERT TEMPLE, AND THE CROW ON THE STUMP THAT TAKES YOU THERE (2026-11-18, the owner: "add the crow again on a
+ * tree stump before the castle but after the whale. when interacted with have it grab you and fly you far over the
+ * ocean very high up until you cant see anything but clouds have the clouds open up in a dramatic theatrical way to
+ * this temple where you are then dropped and stand up to look exactly where this screenshot is ... make it so the floors
+ * blend ... it should look like a huge desert. make sure all colliders are good and its actually walkable ... use fog
+ * and things to hide any flaws in the distance. the temple closest in the screenshot should be cleared out of the piles
+ * of sand on it to where it seems to be an area to fight in ... i dont wanna fall through the map or clip through any
+ * visible walls or floors").
+ *
+ * THE PLACE (`assets/temple.glb`, `tools/temple_pack.py`: re1monsen's "Temple USD Workflow Test 3", CC-BY-4.0, without
+ * its camels, its people, the sand heaped on its floor and its three overlapping terrains). A far-off room like every
+ * other (`TMP_X/Y/Z`; `inTemple` in `inRoom`, the hall cull, the clamps, the save table), in its own frame: the
+ * temple's centre at 0, its podium's floor at `TMP_FLOOR`, 26 m across.
+ *  - THE GROUND IS ONE SURFACE: a non-uniform grid baked from the model's three terrains (near, mid, far — three
+ *    resolutions laid over each other, a ten-metre cliff where the near one ended), blended in the packer. The mesh
+ *    and the walk are the SAME triangles (`tmpSand`: the quad split on the same diagonal), so where you see sand is
+ *    exactly where you stand. The podium is a disc at its floor's height (`TMP_POD_R`); the sand round it is let
+ *    down to a 0.36 m step.
+ *  - SOLIDS are a 0.25 m grid of cells (`tmpG.cell`, built at load from the columns' and the fallen pieces' own
+ *    triangles between knee and head height over the ground under them), pushed out of along the whole step, so no
+ *    speed walks through a column.
+ *  - THE FAR WORLD IS DRAWN NEARER: past `TMP_CMP.R0` from the viewpoint every vertex is pulled in along its line of
+ *    sight from the eye there (and its height with it), so the colonnades kilometres off keep exactly the bearing and
+ *    size they have in the owner's screenshot inside the camera's 5 km. Nothing walkable is touched (`TMP_WALK_R`).
+ *  - THE AIR: a pale overcast dome of its own, the scene's fog at a haze that is CAPPED (`FOG_CAP`, one new term in
+ *    the shared fog chunk: off everywhere else) so the far dunes and colonnades stay dark shapes in it, as in the
+ *    screenshot, and a sandstorm that thickens toward the walk's edge and turns you back at it.
+ *
+ * THE FLIGHT (`tmpCut`, phases in `TMP_T`): the crow screams and goes up off its stump; a beat; it takes you from
+ * behind and climbs out over the sea into the cloud until there is nothing but white; out of the white you are over a
+ * sea of cloud, and it opens under you — the deck parting from the middle outward, light coming down through the gap
+ * onto the temple — and it carries you down through it and lets go over the dune. You fall, you lie a moment, you
+ * stand, and you are looking at what the screenshot looks at (`TMP_VIEW`), the lens wide of the screenshot's own
+ * and let out to yours as the game hands you back. A checkpoint there (`tmpFlown`: the crow never takes you twice).
+ * ================================================================================================================== */
+const TMP_X = 28000, TMP_Y = 600, TMP_Z = 28000;
+/* THE TEMPLE YOU CAN WALK TO, 2.4 TIMES ITS FIRST SIZE (2026-11-18, the owner: "i wanted the temple way bigger theres going
+ * to be a fight there … the one temple you can walk to"): the rotunda and its podium only (the far colonnades are drawn at
+ * their own size: `tmpBuild` takes the scale back out of them). Its podium 63 m across, its roof ring 49 m up, its floor
+ * 1.94 m over the room's zero; the sand drifted up against its foot to a step under it (`temple_pack.py --scale`). */
+const TMP_SCALE = 2.4;
+const TMP_FLOOR = 0.81 * TMP_SCALE, TMP_POD_R = 13.1 * TMP_SCALE;   // the podium's floor and its edge (room frame, measured off the model at 1×)
+const TMP_WALK_R = 420, TMP_STORM_R = 300;          // how far from the temple you can go; where the storm starts to thicken
+// (was 140 / 88 — 2026-11-18, the owner: "i want that area way bigger … it should feel grand". 420 from the temple keeps every walkable
+// metre inside `TMP_CMP.R0` (560 from the viewpoint, 54 m off it), where the far world is drawn nearer)
+const TMP_VIEW = { x: -54 * TMP_SCALE, z: 0, turn: 0.17, pitch: 0.135, fov: 40 };   // (as far back as the temple is bigger: the screenshot's framing kept)   // the owner's screenshot: where, how far left of the temple, the lens
+const TMP_CMP = { R0: 560, Q: 0.4 };                // past R0 (from the viewpoint) the world is drawn nearer, Q of the way
+const TMP_FOG = { color: new THREE.Color(0xa9acb0), density: 0.0036, cap: 0.32 };
+const TMP_CELL = 0.25, TMP_GRID_R = 48 * TMP_SCALE;  // the solids' grid: its cell and its half-width
+const TMP_STUMP = { x: 10.5, z: WB_Z - 35 };        // the crow's stump: on the dry sand between the whale (across the beach at WB_Z) and the castle's front (~WB_Z - 55)
+let tmpWorld = null, tmpReady = false, tmpLoading = false, tmpG = null, tmpSky = null, tmpClouds = null, tmpRays = null;
+let tmpLastFloor = null, _tmpLight = null, _tmpFogSaved = null;
+const tmpLastSpot = { x: 0, z: 0 };
+const _tmpV = new THREE.Vector3(), _tmpW = new THREE.Vector3(), _tmpQ = new THREE.Quaternion(), _tmpE = new THREE.Euler(0, 0, 0, 'YXZ');
+const tmpEyeY = () => tmpSandRaw(TMP_VIEW.x, TMP_VIEW.z) + EYE_HEIGHT;     // the viewpoint's eye, room frame
+// the yaw that faces from the viewpoint to the temple, and the screenshot's own
+const tmpViewYaw = () => Math.atan2(TMP_VIEW.x, TMP_VIEW.z) + TMP_VIEW.turn;
+
+// ---- the ground --------------------------------------------------------------------------------------------------
+function tmpIdx(ax, v) {
+  let a = 0, b = ax.length - 1;
+  if (v <= ax[0]) return 0;
+  if (v >= ax[b]) return b - 1;
+  while (b - a > 1) { const m = (a + b) >> 1; if (ax[m] <= v) a = m; else b = m; }
+  return a;
+}
+// the sand under (lx, lz), off the same two triangles a quad of the mesh is drawn as
+function tmpSandRaw(lx, lz) {
+  const G = tmpG; if (!G) return 0;
+  const ax = G.ax, N = G.N, H = G.H, i = tmpIdx(ax, lx), j = tmpIdx(ax, lz);
+  const fx = THREE.MathUtils.clamp((lx - ax[i]) / (ax[i + 1] - ax[i]), 0, 1), fz = THREE.MathUtils.clamp((lz - ax[j]) / (ax[j + 1] - ax[j]), 0, 1);
+  const a = H[j * N + i], b = H[j * N + i + 1], c = H[(j + 1) * N + i], d = H[(j + 1) * N + i + 1];
+  return fx + fz <= 1 ? a + fx * (b - a) + fz * (c - a) : d + (1 - fx) * (c - d) + (1 - fz) * (b - d);
+}
+const tmpOnPodium = (lx, lz) => lx * lx + lz * lz < TMP_POD_R * TMP_POD_R;
+function tmpFloorAt(lx, lz) { return tmpOnPodium(lx, lz) ? TMP_FLOOR : tmpSandRaw(lx, lz); }
+// a solid cell's top over the ground under it, or -1 (room frame)
+function tmpCellTop(lx, lz) {
+  const G = tmpG; if (!G || !G.cell) return -1e9;
+  const n = G.cn, i = Math.floor((lx + TMP_GRID_R) / TMP_CELL), j = Math.floor((lz + TMP_GRID_R) / TMP_CELL);
+  if (i < 0 || j < 0 || i >= n || j >= n) return -1e9;
+  return G.cell[j * n + i];
+}
+/* OUT OF THE SOLIDS: every solid cell within a body's reach whose top is over a step above the feet pushes the body
+ * out to its edge (the nearest point of the cell's square). Twice, for a corner between two. */
+function tmpPushOut(p, feet) {
+  const G = tmpG; if (!G || !G.cell) return false;
+  const n = G.cn, R = PLAYER_R; let moved = false;
+  for (let it = 0; it < 3; it++) {
+    const lx = p.x - TMP_X, lz = p.z - TMP_Z;
+    const i0 = Math.floor((lx - R + TMP_GRID_R) / TMP_CELL), i1 = Math.floor((lx + R + TMP_GRID_R) / TMP_CELL);
+    const j0 = Math.floor((lz - R + TMP_GRID_R) / TMP_CELL), j1 = Math.floor((lz + R + TMP_GRID_R) / TMP_CELL);
+    let px = 0, pz = 0;
+    for (let j = Math.max(0, j0); j <= Math.min(n - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(n - 1, i1); i++) {
+      const top = G.cell[j * n + i]; if (top <= feet + ROCK_STEP) continue;
+      const x0 = i * TMP_CELL - TMP_GRID_R, z0 = j * TMP_CELL - TMP_GRID_R;
+      const cx = THREE.MathUtils.clamp(lx, x0, x0 + TMP_CELL), cz = THREE.MathUtils.clamp(lz, z0, z0 + TMP_CELL);
+      let dx = lx - cx, dz = lz - cz; const d = Math.hypot(dx, dz);
+      if (d >= R) continue;
+      if (d < 1e-5) { dx = lx - (x0 + TMP_CELL / 2); dz = lz - (z0 + TMP_CELL / 2); const e = Math.hypot(dx, dz) || 1; px += dx / e * R; pz += dz / e * R; }
+      else { px += dx / d * (R - d); pz += dz / d * (R - d); }
+    }
+    if (!px && !pz) break;
+    const k = Math.min(1, R / Math.max(1e-6, Math.hypot(px, pz)));
+    p.x += px * k; p.z += pz * k; moved = true;
+  }
+  return moved;
+}
+// the walk's edge, and the step from where you were to where you are taken in short legs so nothing is passed through
+function tmpWalk(p, feet) {
+  const fx = _preMove.x, fz = _preMove.z, dx = p.x - fx, dz = p.z - fz, L = Math.hypot(dx, dz);
+  const legs = Math.max(1, Math.ceil(L / 0.15));
+  let x = fx, z = fz;
+  for (let k = 1; k <= legs; k++) {
+    _tmpV.set(x + dx / legs, 0, z + dz / legs);
+    tmpPushOut(_tmpV, feet);
+    x = _tmpV.x; z = _tmpV.z;
+  }
+  // (and never ending a step with the middle of the body in a solid: measured, 2 frames in 69,000 at dev speed did, in a
+  // corner between two cells — the step is refused instead)
+  if (tmpCellTop(x - TMP_X, z - TMP_Z) > feet + ROCK_STEP) { x = fx; z = fz; }
+  p.x = x; p.z = z;
+  const lx = p.x - TMP_X, lz = p.z - TMP_Z, r = Math.hypot(lx, lz);
+  if (r > TMP_WALK_R) { p.x = TMP_X + lx * TMP_WALK_R / r; p.z = TMP_Z + lz * TMP_WALK_R / r; }
+}
+function tmpClampPlayer() {
+  if (!inTemple || !tmpReady || !tmpModuleIn) return false;
+  const p = camera.position;
+  tmpPushOut(p, camBaseY - playerEye() - TMP_Y);
+  const lx = p.x - TMP_X, lz = p.z - TMP_Z, r = Math.hypot(lx, lz);
+  if (r > TMP_WALK_R) { p.x = TMP_X + lx * TMP_WALK_R / r; p.z = TMP_Z + lz * TMP_WALK_R / r; }
+  return true;
+}
+
+// ---- the far world, drawn nearer ---------------------------------------------------------------------------------
+// (x, y, z) in the room's frame, pulled in toward the viewpoint's eye past R0; returns the factor (1 inside)
+function tmpPull(v, eyeY) {
+  const dx = v.x - TMP_VIEW.x, dz = v.z - TMP_VIEW.z, r = Math.hypot(dx, dz);
+  if (r <= TMP_CMP.R0) return 1;
+  const k = (TMP_CMP.R0 + (r - TMP_CMP.R0) * TMP_CMP.Q) / r;
+  v.x = TMP_VIEW.x + dx * k; v.z = TMP_VIEW.z + dz * k; v.y = eyeY + (v.y - eyeY) * k;
+  return k;
+}
+
+// ---- the build ---------------------------------------------------------------------------------------------------
+function tmpRetro(m) {
+  // the game's look on the model's PBR: no shine (there is nothing to reflect), flat facets, nearest texels
+  m.metalness = 0; m.roughness = 1; m.metalnessMap = null; m.roughnessMap = null; m.envMapIntensity = 0;
+  m.flatShading = true;
+  for (const k of ['map', 'normalMap']) if (m[k]) { m[k].magFilter = THREE.NearestFilter; m[k].minFilter = THREE.NearestMipmapNearestFilter; m[k].anisotropy = 1; m[k].needsUpdate = true; }
+  if (m.normalScale) m.normalScale.multiplyScalar(0.6);
+  m.needsUpdate = true;
+}
+function loadTemple() {
+  if (tmpWorld || tmpLoading || !tmpModuleIn) return;
+  tmpLoading = true;
+  bwGlb('assets/temple.glb', (gltf) => {
+    const P = gltf.parser, X = (gltf.scene.userData && gltf.scene.userData.bw_desert) || (P.json.scenes[0].extras || {}).bw_desert;
+    if (!X) { console.warn('[bw] temple: no desert data'); tmpLoading = false; return; }
+    Promise.all([P.getDependency('bufferView', X.heights), P.getDependency('bufferView', X.axis), P.getDependency('texture', X.sand)]).then(([hb, ab, sandTex]) => {
+      tmpBuild(gltf, X, new Float32Array(hb.slice(0)), new Float32Array(ab.slice(0)), sandTex);
+    }).catch((e) => { console.warn('[bw] temple', e); tmpLoading = false; });
+  }, () => { tmpLoading = false; });
+}
+function tmpBuild(gltf, X, H, ax, sandTex) {
+  const W = tmpWorld = new THREE.Group(); W.name = 'temple';
+  W.position.set(TMP_X, TMP_Y, TMP_Z); W.visible = false;
+  scene.add(W);
+  const N = X.n;
+  tmpG = { N, ax: Array.from(ax), H, cell: null, cn: 0 };
+  const eyeY = tmpEyeY();
+  // THE MODEL: its own frame times K, the temple's centre on the room's origin
+  const root = gltf.scene, K = X.K, C = X.C;
+  root.scale.setScalar(K * TMP_SCALE); root.position.set(-C[0] * K * TMP_SCALE, -C[1] * K * TMP_SCALE, -C[2] * K * TMP_SCALE);
+  const mats = new Set();
+  root.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; for (const m of [].concat(o.material)) mats.add(m); } });
+  for (const m of mats) { tmpRetro(m); if (m.color) m.color.multiplyScalar(0.62); }
+  W.add(root); W.updateMatrixWorld(true);
+  // the black "mirror" disc at the floor's middle is the floor's own centre stone now
+  const byName = (n) => { let r = null; root.traverse((o) => { if (!r && o.name === n) r = o; }); return r; };
+  const disc = byName('temple010_10'); if (disc) disc.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.material.normalMap = null; o.material.color.setRGB(0.08, 0.08, 0.085); o.material.roughness = 1; } });
+  // THE FAR COLONNADES, pulled in along the eye's line from the viewpoint (the same bearing, the same size on screen)
+  const inv = W.matrixWorld.clone().invert();
+  // (at their 1× size and place: the root's TMP_SCALE is for the near temple, taken back out of these two here)
+  const unS = new THREE.Matrix4().makeScale(1 / TMP_SCALE, 1 / TMP_SCALE, 1 / TMP_SCALE);
+  for (const n of ['temple025_25', 'temple026_26']) {
+    const o = byName(n); if (!o) continue;
+    const bb = new THREE.Box3().setFromObject(o).applyMatrix4(inv).applyMatrix4(unS), c = bb.getCenter(new THREE.Vector3()), c2 = c.clone();
+    const k = tmpPull(c2, eyeY);
+    const T = new THREE.Matrix4().makeTranslation(c2.x, c2.y, c2.z).multiply(new THREE.Matrix4().makeScale(k, k, k)).multiply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z));
+    const parentInRoom = inv.clone().multiply(o.parent.matrixWorld), objInRoom = unS.clone().multiply(inv).multiply(o.matrixWorld);
+    o.matrixAutoUpdate = false;
+    o.matrix.copy(parentInRoom.clone().invert().multiply(T).multiply(objInRoom));
+    o.matrixWorldNeedsUpdate = true;
+  }
+  // THE SAND: one mesh, the grid's own vertices (pulled in far off), its own two triangles a quad, the model's sand
+  {
+    const pos = new Float32Array(N * N * 3), uv = new Float32Array(N * N * 2), idx = new Uint32Array((N - 1) * (N - 1) * 6);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const k = j * N + i; _tmpV.set(ax[i], H[k], ax[j]); tmpPull(_tmpV, eyeY);
+      pos[k * 3] = _tmpV.x; pos[k * 3 + 1] = _tmpV.y; pos[k * 3 + 2] = _tmpV.z;
+      uv[k * 2] = ax[i] / 4.5; uv[k * 2 + 1] = ax[j] / 4.5;
+    }
+    let q = 0;
+    for (let j = 0; j < N - 1; j++) for (let i = 0; i < N - 1; i++) {
+      const a = j * N + i, b = a + 1, c = a + N, d = c + 1;
+      idx[q++] = a; idx[q++] = c; idx[q++] = b; idx[q++] = b; idx[q++] = c; idx[q++] = d;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(new THREE.BufferAttribute(idx, 1));
+    g.computeVertexNormals(); g.computeBoundingSphere();
+    retroTex(sandTex); sandTex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.MeshStandardMaterial({ map: sandTex, color: new THREE.Color(0.5, 0.485, 0.46), roughness: 1, metalness: 0, flatShading: true });
+    const sand = new THREE.Mesh(g, m); sand.name = 'desertSand'; sand.frustumCulled = false;
+    W.add(sand); tmpG.sand = sand;
+  }
+  // THE SKY: a pale overcast of its own, brighter at the horizon, slow cloud moving in it (no fog: it IS the haze)
+  {
+    const g = new THREE.SphereGeometry(4200, 32, 16);
+    const m = new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite: false, fog: false,
+      uniforms: { uT: { value: 0 }, uHor: { value: new THREE.Color(0xc4c6c9) }, uTop: { value: new THREE.Color(0x8b9097) }, uK: { value: 1 } },
+      vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w * 0.99999; }',
+      fragmentShader: `uniform float uT; uniform vec3 uHor; uniform vec3 uTop; uniform float uK; varying vec3 vD;
+        float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+        void main(){
+          float y = max(vD.y, 0.0);
+          vec3 c = mix(uHor, uTop, pow(y, 0.55));
+          vec2 p = vD.xz / (0.25 + y) * 2.2 + vec2(uT * 0.004, uT * 0.0015);
+          float cl = n(p) * 0.55 + n(p * 2.1) * 0.3 + n(p * 4.3) * 0.15;
+          c *= 0.86 + 0.24 * cl * smoothstep(0.0, 0.25, y);
+          c = mix(c, uHor * 0.92, smoothstep(0.08, -0.04, vD.y));          // under the horizon: the haze
+          gl_FragColor = vec4(c * uK, 1.0);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+    });
+    tmpSky = new THREE.Mesh(g, m); tmpSky.frustumCulled = false; tmpSky.renderOrder = -10; tmpSky.raycast = () => {};
+    W.add(tmpSky);
+  }
+  // THE CLOUD DECK the crow brings you out over, and the light that comes down through it when it parts
+  tmpClouds = tmpMakeClouds(); W.add(tmpClouds.g);
+  tmpRays = tmpMakeRays(); W.add(tmpRays);
+  // THE SOLIDS: the columns, the fallen block and the fallen columns, between knee and head height over the ground
+  tmpBuildSolids(root, byName, inv);
+  tmpReady = true; tmpLoading = false;
+  console.info('[bw] temple: ready, grid', N, 'solid cells', tmpG.solidN);
+}
+function tmpBuildSolids(root, byName, inv) {
+  const n = Math.round(TMP_GRID_R * 2 / TMP_CELL), cell = new Float32Array(n * n).fill(-1e9), E = -1e8;
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), Pp = new THREE.Vector3();
+  let solidN = 0;
+  const mark = (x, y, z) => {
+    const i = Math.floor((x + TMP_GRID_R) / TMP_CELL), j = Math.floor((z + TMP_GRID_R) / TMP_CELL);
+    if (i < 0 || j < 0 || i >= n || j >= n) return;
+    const g = tmpFloorAt(x, z);
+    if (y < g + 0.3 || y > g + 2.4) return;             // under the knee, or over the head: not in the way
+    const k = j * n + i; if (cell[k] < E) solidN++;
+    cell[k] = Math.max(cell[k], y);
+  };
+  for (const name of ['temple002_2', 'temple006_6']) {   // (the three fallen columns, .007–.009, are out of the pack: 2026-11-18, room for the fight)
+    const grp = byName(name); if (!grp) { console.warn('[bw] temple: no', name); continue; }
+    grp.traverse((o) => {
+      if (!o.isMesh) return;
+      const M = inv.clone().multiply(o.matrixWorld), g = o.geometry, P = g.attributes.position, I = g.index;
+      const tri = (I ? I.count : P.count) / 3;
+      for (let t = 0; t < tri; t++) {
+        A.fromBufferAttribute(P, I ? I.getX(t * 3) : t * 3).applyMatrix4(M);
+        B.fromBufferAttribute(P, I ? I.getX(t * 3 + 1) : t * 3 + 1).applyMatrix4(M);
+        C.fromBufferAttribute(P, I ? I.getX(t * 3 + 2) : t * 3 + 2).applyMatrix4(M);
+        // sampled at a tenth of a metre over its face (a column's sides are vertical: they have no footprint to fill)
+        const L = Math.max(A.distanceTo(B), B.distanceTo(C), C.distanceTo(A)), s = Math.min(400, Math.max(1, Math.ceil(L / 0.1)));
+        for (let u = 0; u <= s; u++) for (let v = 0; u + v <= s; v++) {
+          const a = u / s, b = v / s;
+          Pp.copy(A).multiplyScalar(1 - a - b).addScaledVector(B, a).addScaledVector(C, b);
+          mark(Pp.x, Pp.y, Pp.z);
+        }
+      }
+    });
+  }
+  /* AND THE INSIDES ARE SOLID TOO: a column's shell marks a ring of cells, and the push-out stops a body at the ring —
+   * but a hollow ring is a place a knock-back could set you down in. Every run of free cells closed off on both sides
+   * in both directions, inside a short reach, is filled at the lower of its walls' tops. */
+  const fill = new Float32Array(cell);
+  const reach = Math.round(3.2 * TMP_SCALE / TMP_CELL);   // (a column's shell is as much wider as the temple is bigger)
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const k = j * n + i; if (cell[k] > E) continue;
+    let w = -1e9, e = -1e9, s = -1e9, no = -1e9;
+    for (let d = 1; d <= reach && i - d >= 0; d++) if (cell[k - d] > E) { w = cell[k - d]; break; }
+    if (w < E) continue;
+    for (let d = 1; d <= reach && i + d < n; d++) if (cell[k + d] > E) { e = cell[k + d]; break; }
+    if (e < E) continue;
+    for (let d = 1; d <= reach && j - d >= 0; d++) if (cell[k - d * n] > E) { s = cell[k - d * n]; break; }
+    if (s < E) continue;
+    for (let d = 1; d <= reach && j + d < n; d++) if (cell[k + d * n] > E) { no = cell[k + d * n]; break; }
+    if (no < E) continue;
+    fill[k] = Math.min(w, e, s, no); solidN++;
+  }
+  tmpG.cell = fill; tmpG.cn = n; tmpG.solidN = solidN;
+}
+// a soft round puff, drawn once into a small canvas (the game's own way: small, quantised, nearest)
+/* A SEA OF CLOUD: layered sheets of drifting noise, lit from above (bright crowns, grey hollows), and a HOLE in them whose
+ * radius is `part` — torn, not cut: its edge is pushed in and out by a coarser noise, so the deck comes apart in
+ * ragged lobes from the middle outward, a curtain drawn back. The same sheets serve the beach's night (dark, moonlit
+ * from above, no hole): the ceiling you are carried up into. */
+const TMP_CLOUD_GLSL = `
+  float ch(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float cn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(ch(i), ch(i + vec2(1, 0)), f.x), mix(ch(i + vec2(0, 1)), ch(i + vec2(1, 1)), f.x), f.y); }
+  float cf(vec2 p){ float a = 0.0, w = 0.5; for (int i = 0; i < 5; i++) { a += w * cn(p); p = p * 2.03 + vec2(17.1, 9.3); w *= 0.5; } return a; }`;
+function tmpCloudSheet(y, seed, lit, dark, R) {
+  const g = new THREE.PlaneGeometry(R * 2, R * 2, 1, 1); g.rotateX(-Math.PI / 2); g.translate(0, y, 0);
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
+    uniforms: { uT: { value: 0 }, uHole: { value: -200 }, uK: { value: 0 }, uC: { value: new THREE.Vector2(0, 0) }, uLit: { value: lit }, uDark: { value: dark }, uSeed: { value: seed }, uR: { value: R },
+      uFogC: { value: new THREE.Color() }, uFogD: { value: 0 }, fogMoon: THREE.UniformsLib.fog.fogMoon, fogTint: THREE.UniformsLib.fog.fogTint },
+    vertexShader: 'varying vec3 vW; varying vec3 vL; void main(){ vL = position; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader: `uniform float uT; uniform float uHole; uniform float uK; uniform vec2 uC; uniform vec3 uLit; uniform vec3 uDark; uniform float uSeed; uniform float uR; uniform vec3 uFogC; uniform float uFogD; uniform vec4 fogMoon; uniform vec4 fogTint; varying vec3 vW; varying vec3 vL;
+      ${TMP_CLOUD_GLSL}
+      void main(){
+        vec2 p = vL.xz * 0.0068 + vec2(uSeed * 3.7 + uT * 0.006, uSeed * 1.3 + uT * 0.002);
+        float n = cf(p), n2 = cf(p * 2.7 + 5.0);
+        float dens = smoothstep(0.38, 0.66, n + 0.12 * n2);
+        float d = length(vL.xz - uC) + (cf(vL.xz * 0.006 + uSeed) - 0.5) * 260.0;
+        float a = dens * smoothstep(uHole, uHole + 110.0, d) * smoothstep(uR, uR * 0.62, length(vL.xz)) * uK;
+        vec3 c = mix(uDark, uLit, smoothstep(0.42, 0.8, n * 0.8 + n2 * 0.35));
+        /* (the night's ceiling, 2026-11-18: thickening into the scene's own fog with distance and SOLID there, so it meets
+         * the fogged sea in one colour all round — an endless horizon, not a sheet's edge with sky under it) */
+        /* (and into the game's LIT fog — the shared chunk lifts the base colour toward the moonlit horizon; the base colour
+         * alone was darker than the fogged sea under it, and the seam was a line round the world) */
+        if (uFogD > 0.0) {
+          vec3 fd = normalize(vW - cameraPosition); float fs = max(dot(fd, fogMoon.xyz), 0.0);
+          vec3 fc = (uFogC + fogMoon.w * (vec3(0.0090, 0.0195, 0.0480) + vec3(0.060, 0.108, 0.255) * (0.6 * pow(fs, 10.0) + 0.4 * pow(fs, 3.0)))) * fogTint.xyz;
+          float dd = length(vW - cameraPosition) * uFogD; float h = 1.0 - exp(-dd * dd); c = mix(c, fc, h); a = max(a, h * uK);
+        }
+        gl_FragColor = vec4(c, a);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.raycast = () => {}; mesh.renderOrder = 2;
+  return mesh;
+}
+function tmpMakeClouds() {
+  const g = new THREE.Group(), sheets = [];
+  for (const [y, seed, k] of [[214, 0.3, 0.86], [232, 1.7, 0.95], [251, 4.1, 1.0]]) {
+    const sh = tmpCloudSheet(y, seed, new THREE.Color(0.97 * k, 0.97 * k, 0.98 * k), new THREE.Color(0.34 * k, 0.36 * k, 0.40 * k), 2600);
+    sh.position.x = TMP_VIEW.x * 0.25; sheets.push(sh); g.add(sh);
+  }
+  const C = { g, sheets, part: 0, show: 0 };
+  g.visible = false;
+  return C;
+}
+function tmpCloudsPose(C, t) {
+  const e = C.part * C.part * (3 - 2 * C.part);
+  C.sheets.forEach((sh, i) => { const U = sh.material.uniforms; U.uT.value = t; U.uK.value = C.show; U.uHole.value = -200 + e * (760 - i * 70); });
+}
+// light through the gap: a few long pale cones from the cloud's underside onto the temple, added, no fog
+function tmpMakeRays() {
+  const g = new THREE.Group();
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide,
+    uniforms: { uK: { value: 0 } },
+    vertexShader: 'varying float vY; varying vec3 vN; varying vec3 vV; void main(){ vY = uv.y; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform float uK; varying float vY; varying vec3 vN; varying vec3 vV; void main(){ float f = abs(dot(normalize(vN), normalize(vV))); float a = uK * 0.03 * f * f * f * smoothstep(0.0, 0.5, vY) * (0.35 + 0.65 * vY); gl_FragColor = vec4(vec3(0.95, 0.94, 0.9) * a, 1.0); }',
+  });
+  let seed = 3; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 9; i++) {
+    const h = 230, geo = new THREE.CylinderGeometry(26 + rnd() * 26, 9 + rnd() * 8, h, 20, 1, true);
+    geo.translate(0, h / 2, 0);
+    const c = new THREE.Mesh(geo, m); c.raycast = () => {}; c.frustumCulled = false;
+    c.position.set((rnd() - 0.5) * 46, -2, (rnd() - 0.5) * 46);
+    c.rotation.set((rnd() - 0.5) * 0.25, 0, (rnd() - 0.5) * 0.25 - 0.12);
+    g.add(c);
+  }
+  g.userData.m = m; g.visible = false;
+  return g;
+}
+
+/* THE AIR MOVES. Grains: eight hundred points in a box round you, carried on the wind a little over the sand (each one
+ * set down on the ground where it comes back in at the box's upwind face). Banks: fourteen big faint puffs of blown
+ * dust rolling over the dunes 30..140 m off, low, the sand's own grey — the storm's edge seen from inside it. */
+const TMP_WIND = new THREE.Vector3(0.84, 0, -0.54);     // the way it blows (room frame): across your view, left to right
+/* THE DESERT'S AIR (rebuilt 2026-11-18, the owner: "make particle effects in the desert more realistic"). It was 800 grey
+ * specks at one size and fourteen quantised puff sprites circling you — confetti and cartoon clouds. Sand moves the way
+ * it really does, in three layers, all on one gusting wind (`tmpGust`, layered slow sines: lulls and surges):
+ *   SALTATION — the sand itself running: thin ribbons a hand to a knee over the ground, streaming downwind and fading,
+ *     thick in a gust and nearly gone in a lull (one buffer of quads, each turned on the wind's axis to face you);
+ *   DUST — fine motes hanging in the air, faint and warm, drifting and wandering (points, small, many);
+ *   WALLS — far off, low soft walls of blown dust sliding across the dunes downwind (smooth noise, not puffs).
+ * Every part is a single draw; the ribbons and motes are moved on the CPU in a few hundred µs. */
+let tmpAir = null;
+function tmpStreakTex() {
+  const W = 64, H = 16, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'), img = x.createImageData(W, H), nz = artNoise2(919);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const u = i / (W - 1), v = j / (H - 1);
+    const along = Math.pow(Math.sin(Math.PI * u), 0.8) * (0.55 + 0.45 * u), across = Math.exp(-Math.pow((v - 0.5) * 3.4, 2));
+    const grain = 0.55 + 0.45 * artFbm(nz, i / 3, j / 2, 3);
+    const k = (j * W + i) * 4; img.data[k] = img.data[k + 1] = img.data[k + 2] = 255; img.data[k + 3] = Math.round(255 * along * across * grain);
+  }
+  x.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function tmpWallTex() {
+  const W = 128, H = 48, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d'), img = x.createImageData(W, H), nz = artNoise2(733);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const u = i / (W - 1), v = j / (H - 1);
+    const n = artFbm(nz, i / 16, j / 9, 4);
+    const top = 0.25 + 0.55 * n;                                   // a ragged top, thick at the foot
+    const a = Math.min(1, Math.max(0, (v - (1 - top)) / 0.35)) * Math.pow(Math.sin(Math.PI * u), 0.6) * (0.6 + 0.4 * n);
+    const k = (j * W + i) * 4; img.data[k] = img.data[k + 1] = img.data[k + 2] = 255; img.data[k + 3] = Math.round(255 * a);
+  }
+  x.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const TMP_SALT_N = 260, TMP_DUST_N = 1400, TMP_WALL_N = 16;
+function tmpAirBuild() {
+  let seed = 41; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // saltation ribbons: four corners each, written every frame
+  const sg = new THREE.BufferGeometry(), sp = new Float32Array(TMP_SALT_N * 12), sc = new Float32Array(TMP_SALT_N * 16), su = new Float32Array(TMP_SALT_N * 8), si = [];
+  for (let i = 0; i < TMP_SALT_N; i++) { su.set([0, 0, 1, 0, 1, 1, 0, 1], i * 8); const b = i * 4; si.push(b, b + 1, b + 2, b, b + 2, b + 3); }
+  sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); sg.setAttribute('color', new THREE.BufferAttribute(sc, 4)); sg.setAttribute('uv', new THREE.BufferAttribute(su, 2)); sg.setIndex(si);
+  const salt = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ map: tmpStreakTex(), vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  salt.frustumCulled = false; salt.raycast = () => {}; salt.renderOrder = 3;
+  const S = []; for (let i = 0; i < TMP_SALT_N; i++) S.push({ x: 0, z: 0, h: 0, life: 0, age: 1e9, L: 1, w: 0.2, sp: 1, a: 0 });
+  // dust motes
+  const dg = new THREE.BufferGeometry(), dp = new Float32Array(TMP_DUST_N * 3);
+  dg.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+  const dust = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0x8f8778, size: 0.016, sizeAttenuation: true, transparent: true, opacity: 0.32, depthWrite: false }));
+  dust.frustumCulled = false; dust.raycast = () => {};
+  // far walls of blown dust
+  const wt = tmpWallTex(), walls = [];
+  for (let i = 0; i < TMP_WALL_N; i++) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: wt, color: new THREE.Color(0.66, 0.6, 0.52), transparent: true, depthWrite: false, opacity: 0 }));
+    m.raycast = () => {}; const len = 70 + rnd() * 110; m.scale.set(len, len * (0.16 + rnd() * 0.1), 1); m.center.set(0.5, 0.08);
+    walls.push({ m, d: 60 + rnd() * 260, along: (rnd() * 2 - 1) * 300, k: 0.10 + rnd() * 0.14, ph: rnd() * 6.28, v: 6 + rnd() * 6 });
+  }
+  tmpAir = { salt, S, dust, walls, rnd, seeded: false, gust: 0.5 };
+  tmpWorld.add(salt, dust); for (const w of walls) tmpWorld.add(w.m);
+}
+// the wind's strength: layered slow sines, so it surges and lulls and never repeats in a way you would notice
+function tmpGust(t) { return THREE.MathUtils.clamp(0.42 + 0.3 * Math.sin(t * 0.23) + 0.2 * Math.sin(t * 0.61 + 1.7) + 0.14 * Math.sin(t * 1.37 + 0.4) + 0.08 * Math.sin(t * 2.9), 0, 1); }
+const _tairF = new THREE.Vector3(), _tairS = new THREE.Vector3(), _tairC = new THREE.Vector3();
+function tmpAirTick(dt, on) {
+  if (!tmpAir) { if (!on) return; tmpAirBuild(); }
+  const A = tmpAir;
+  A.salt.visible = A.dust.visible = on; for (const w of A.walls) w.m.visible = on;
+  if (!on) return;
+  const t = performance.now() * 0.001, g = tmpGust(t); A.gust = g;
+  const cx = camera.position.x - TMP_X, cy = camera.position.y - TMP_Y, cz = camera.position.z - TMP_Z;
+  const wx = TMP_WIND.x, wz = TMP_WIND.z, speed = 3.5 + 9 * g;
+  // the wind bed rises with it (`airGust`, the beach's own gust channel)
+  airGust = Math.max(airGust, 0.45 * Math.max(0, g - 0.45) / 0.55);
+  // SALTATION: born upwind of you or round you, running downwind a second or two, fading in and out; more in a gust
+  const R = 24, SP = A.salt.geometry.attributes.position, SC = A.salt.geometry.attributes.color;
+  camera.getWorldDirection(_tairF);
+  const want = 0.25 + 0.75 * g * g;
+  for (let i = 0; i < A.S.length; i++) {
+    const s = A.S[i];
+    s.age += dt;
+    if (s.age > s.life || Math.abs(s.x - cx) > R * 1.3 || Math.abs(s.z - cz) > R * 1.3) {
+      if (!A.seeded || A.rnd() < want * dt * 6 || !A.seeded) {
+        const r = Math.sqrt(A.rnd()) * R, a = A.rnd() * 6.283;
+        s.x = cx + Math.cos(a) * r - wx * 4; s.z = cz + Math.sin(a) * r - wz * 4;
+        s.life = 0.7 + A.rnd() * 1.6; s.age = A.seeded ? 0 : A.rnd() * s.life;
+        s.L = 0.5 + A.rnd() * 1.4; s.w = 0.12 + A.rnd() * 0.32; s.h = Math.pow(A.rnd(), 2.6) * 0.22; s.sp = 0.75 + A.rnd() * 0.5; s.a = 0.1 + A.rnd() * 0.2;
+        // (never at your feet: a ribbon a metre off the lens was a white slash across the screen — rain, not sand)
+        { const ex = s.x - cx, ez = s.z - cz, ed = Math.hypot(ex, ez); if (ed < 3) { const k = 3 / Math.max(0.01, ed); s.x = cx + ex * k; s.z = cz + ez * k; } }
+      } else { s.age = 1e9; }
+    }
+    let al = 0;
+    if (s.age <= s.life) {
+      s.x += wx * speed * s.sp * dt; s.z += wz * speed * s.sp * dt;
+      const fade = Math.sin(Math.PI * Math.min(1, s.age / s.life));
+      al = s.a * fade * (0.35 + 0.65 * g) * smooth01(2.5, 5, Math.hypot(s.x - cx, s.z - cz));
+    }
+    // turned about the wind's axis to face you, lying a hand to a knee over the ground under it
+    const y = tmpFloorAt(s.x, s.z) + 0.04 + s.h;
+    _tairC.set(s.x, y + s.w * 0.5, s.z);
+    _tairS.set(wx, 0, wz).cross(_tairF.set(_tairC.x - cx, _tairC.y - cy, _tairC.z - cz)).normalize().multiplyScalar(s.w * 0.5);
+    if (_tairS.y < 0) _tairS.negate();
+    const hx = wx * s.L * 0.5, hz = wz * s.L * 0.5, o = i * 12;
+    SP.array[o] = _tairC.x - hx - _tairS.x; SP.array[o + 1] = _tairC.y - _tairS.y; SP.array[o + 2] = _tairC.z - hz - _tairS.z;
+    SP.array[o + 3] = _tairC.x + hx - _tairS.x; SP.array[o + 4] = _tairC.y - _tairS.y; SP.array[o + 5] = _tairC.z + hz - _tairS.z;
+    SP.array[o + 6] = _tairC.x + hx + _tairS.x; SP.array[o + 7] = _tairC.y + _tairS.y; SP.array[o + 8] = _tairC.z + hz + _tairS.z;
+    SP.array[o + 9] = _tairC.x - hx + _tairS.x; SP.array[o + 10] = _tairC.y + _tairS.y; SP.array[o + 11] = _tairC.z - hz + _tairS.z;
+    for (let k = 0; k < 4; k++) SC.array.set([0.62, 0.56, 0.47, al], i * 16 + k * 4);   // (the sand's own colour lifted a little: white read as rain)
+  }
+  SP.needsUpdate = true; SC.needsUpdate = true;
+  // DUST: fine motes round you, carried slower than the sand and wandering in the eddies
+  const DP = A.dust.geometry.attributes.position, DR = 18, dv = speed * 0.45;
+  for (let i = 0; i < TMP_DUST_N; i++) {
+    let x = DP.array[i * 3], y = DP.array[i * 3 + 1], z = DP.array[i * 3 + 2];
+    if (!A.seeded || Math.abs(x - cx) > DR || Math.abs(z - cz) > DR || y < -50) {
+      x = cx + (A.rnd() * 2 - 1) * DR; z = cz + (A.rnd() * 2 - 1) * DR;
+      if (A.seeded) { x = cx - wx * DR * 0.98 + (A.rnd() - 0.5) * DR * 2 * Math.abs(wz); z = cz - wz * DR * 0.98 + (A.rnd() - 0.5) * DR * 2 * Math.abs(wx); }
+      y = tmpFloorAt(x, z) + 0.1 + Math.pow(A.rnd(), 1.8) * 4.5;
+      if (Math.hypot(x - cx, y - cy, z - cz) < 1.6) y = -100;   // (none at your face: a mote a hand off the lens was a square; it comes again)
+    }
+    const ph = i * 0.731;
+    x += (wx * dv + Math.sin(t * 0.9 + ph) * 0.35) * dt; z += (wz * dv + Math.cos(t * 0.7 + ph * 1.3) * 0.35) * dt;
+    y += Math.sin(t * 1.1 + ph * 2.1) * 0.12 * dt;
+    DP.array[i * 3] = x; DP.array[i * 3 + 1] = y; DP.array[i * 3 + 2] = z;
+  }
+  DP.needsUpdate = true;
+  A.dust.material.opacity = 0.16 + 0.24 * g;
+  // WALLS: far off, sliding downwind across the dunes, thicker in a surge; round again upwind when they have gone by
+  for (const w of A.walls) {
+    w.along += w.v * (0.5 + g) * dt;
+    if (w.along > 320) { w.along = -320; w.d = 60 + A.rnd() * 260; }
+    const sx = -wz, sz = wx;                                     // (across the wind: walls stand side on to it)
+    const x = cx + wx * w.along + sx * w.d * (w.ph > 3.14 ? 1 : -1), z = cz + wz * w.along + sz * w.d * (w.ph > 3.14 ? 1 : -1);
+    w.m.position.set(x, tmpSandRaw(x, z) - 0.5, z);
+    const edge = 1 - smooth01(240, 320, Math.abs(w.along));
+    w.m.material.opacity = w.k * edge * (0.4 + 0.8 * g) * (0.75 + 0.25 * Math.sin(t * 0.17 + w.ph));
+  }
+  A.seeded = true;
+}
+
+// ---- in and out --------------------------------------------------------------------------------------------------
+function templeEnter() {
+  if (!_tmpFogSaved) {
+    _tmpFogSaved = { color: scene.fog.color.clone(), density: scene.fog.density, sky: sky.visible || !!(hallHid && hallHid.includes(sky)) };
+    scene.fog.color.copy(TMP_FOG.color); scene.fog.density = TMP_FOG.density; sky.visible = false;
+  }
+  FOG_CAP.x = 1 - TMP_FOG.cap;
+  if (!_tmpLight) {
+    _tmpLight = { mc: moonLight.color.clone(), mi: moonLight.intensity, mp: moonLight.position.clone(), ri: rakeLight.intensity, fi: cliffFill.intensity,
+      ac: skyAmbient.color.clone(), ai: skyAmbient.intensity, hs: skyHemi.color.clone(), hg: skyHemi.groundColor.clone(), hi: skyHemi.intensity };
+    // an overcast day: the sun a brightness high behind the cloud, the sky's grey from everywhere, the sand's own back from under
+    moonLight.color.setHex(0xe6e2da); moonLight.intensity = 1.25; moonLight.position.set(-60, 160, -90);
+    rakeLight.intensity = 0; cliffFill.intensity = 0;
+    skyAmbient.color.setHex(0x8c9097); skyAmbient.intensity = 0.55;
+    skyHemi.color.setHex(0xc4c8ce); skyHemi.groundColor.setHex(0x2e2a25); skyHemi.intensity = 0.95;
+  }
+}
+function templeLeave() {
+  if (typeof kingLook === 'function') kingLook(false);
+  if (typeof kingAtmosOff === 'function') kingAtmosOff();
+  if (_tmpFogSaved) {
+    scene.fog.color.copy(_tmpFogSaved.color); scene.fog.density = _tmpFogSaved.density; sky.visible = _tmpFogSaved.sky;
+    _tmpFogSaved = null;
+  }
+  FOG_CAP.x = 0;
+  if (_tmpLight) {
+    const S = _tmpLight;
+    moonLight.color.copy(S.mc); moonLight.intensity = S.mi; moonLight.position.copy(S.mp); rakeLight.intensity = S.ri; cliffFill.intensity = S.fi;
+    skyAmbient.color.copy(S.ac); skyAmbient.intensity = S.ai; skyHemi.color.copy(S.hs); skyHemi.groundColor.copy(S.hg); skyHemi.intensity = S.hi;
+    _tmpLight = null;
+  }
+}
+// standing at the screenshot (a restore, a dev jump, and the flight's last frame)
+function placeInTemple() {
+  if (!tmpReady) return false;
+  inC13 = false; inFort = false; onIsle = false; insideTower = false; isleOnGallery = false;
+  mushWhere = 'out'; mushInYard = false;
+  inTemple = true; tmpWorld.visible = true;
+  templeEnter();
+  try { renderer.compile(tmpWorld, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  const V = TMP_VIEW, f = tmpFloorAt(V.x, V.z);
+  groundY = TMP_Y + f; tmpLastFloor = groundY; tmpLastSpot.x = TMP_X + V.x; tmpLastSpot.z = TMP_Z + V.z;
+  camera.position.set(TMP_X + V.x, groundY + playerEye(), TMP_Z + V.z);
+  camBaseY = camera.position.y; vy = 0; onGround = true;
+  lookEuler.set(V.pitch, tmpViewYaw(), 0, lookEuler.order);
+  camera.quaternion.setFromEuler(lookEuler);
+  velocity.set(0, 0, 0); knockback.set(0, 0, 0); crouching = false;
+  _preMove.set(camera.position.x, 0, camera.position.z);
+  return true;
+}
+function placeOutOfTemple() {
+  inTemple = false;
+  if (tmpWorld) tmpWorld.visible = false;
+  templeLeave();
+}
+function updateTemple(dt) {
+  if (!tmpModuleIn) return;
+  if (!tmpWorld) {
+    // fetched from the stump's reach (or straight away when a save is in the desert: `ROOM_BACK.tmp`)
+    if (!inRoom() && Math.abs(camera.position.z - TMP_STUMP.z) < 200) loadTemple();
+    return;
+  }
+  const flying = tmpCut && tmpCut.room;
+  tmpWorld.visible = inTemple || !!flying;
+  if (!tmpReady || !(inTemple || flying)) return;
+  const p = camera.position, t = performance.now() * 0.001;
+  tmpSky.position.set(p.x - TMP_X, p.y - TMP_Y, p.z - TMP_Z);
+  tmpSky.material.uniforms.uT.value = t;
+  tmpClouds.g.visible = tmpClouds.show > 0.001;
+  if (tmpClouds.g.visible) tmpCloudsPose(tmpClouds, t);
+  tmpRays.visible = tmpRays.userData.m.uniforms.uK.value > 0.001;
+  tmpAirTick(Math.min(dt, 0.05), inTemple && (!tmpCut || (tmpCut.room && tmpCut.t > TMP_T.down - 2)));
+  if (inTemple && !tmpCut) kingTick(dt);     // the Ancient King: comes down when you are in, and hovers there (never in the flight: it drives the room's light itself)
+  if (!inTemple || tmpCut) return;
+  // THE STORM AT THE EDGE: the air thickens past TMP_STORM_R and turns you back at TMP_WALK_R
+  const lx = p.x - TMP_X, lz = p.z - TMP_Z, r = Math.hypot(lx, lz), st = smooth01(TMP_STORM_R, TMP_WALK_R, r);
+  scene.fog.density = TMP_FOG.density * (1 + 5.5 * st);
+  FOG_CAP.x = (1 - TMP_FOG.cap) * (1 - st);
+  airGust = Math.max(airGust, 0.6 * st);
+  // THE WALK: from where you were to where you are, round the solids, inside the edge, on the ground under you
+  let feet = camBaseY - playerEye() - TMP_Y;
+  if (onGround && tmpLastFloor !== null && feet < tmpLastFloor - TMP_Y) feet = tmpLastFloor - TMP_Y;
+  tmpWalk(p, feet);
+  const lx2 = p.x - TMP_X, lz2 = p.z - TMP_Z;
+  let f = tmpFloorAt(lx2, lz2);
+  const ct = tmpCellTop(lx2, lz2); if (ct > -1e8 && ct <= feet + ROCK_STEP + 0.01) f = Math.max(f, ct);   // (something low under you is floor)
+  groundY = TMP_Y + f; tmpLastFloor = groundY; tmpLastSpot.x = p.x; tmpLastSpot.z = p.z;
+}
+
+// ---- the stump and its crow ---------------------------------------------------------------------------------------
+/* A STUMP: a short sawn trunk, flared at its foot into four roots, grey and split like driftwood (the beach's own wood),
+ * its top a face of rings; built here, flat-shaded, a few hundred triangles. */
+const TC = { based: false, collider: null, g: null, crow: null, m: null, mesh: null, mixer: null, A: {}, act: null, head: null, feet: [], base: 0, top: 0, proxy: null };
+function tmpStumpMesh() {
+  const g = new THREE.Group();
+  const bark = new THREE.MeshStandardMaterial({ color: 0x4a443d, roughness: 1, metalness: 0, flatShading: true });
+  { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+    x.fillStyle = '#6e6252'; x.fillRect(0, 0, 64, 64);
+    for (let r = 30; r > 2; r -= 3 + (r % 5 === 0 ? 1 : 0)) { x.strokeStyle = r % 2 ? '#4f463b' : '#5e5446'; x.lineWidth = 1.4; x.beginPath(); x.ellipse(32 + (30 - r) * 0.06, 32, r, r * 0.94, 0, 0, Math.PI * 2); x.stroke(); }
+    x.strokeStyle = '#2c2621'; x.lineWidth = 2; x.beginPath(); x.moveTo(32, 32); x.lineTo(61, 22); x.stroke();
+    var top = new THREE.MeshStandardMaterial({ map: retroTex(new THREE.CanvasTexture(c), { repeatWrap: false }), roughness: 1, metalness: 0, flatShading: true }); }
+  top.map.colorSpace = THREE.SRGBColorSpace;
+  const H = 0.78, trunk = new THREE.CylinderGeometry(0.42, 0.55, H, 11, 3);
+  // rough the bark: each vertex in or out a little, more toward the foot
+  const P = trunk.attributes.position; let seed = 5; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < P.count; i++) { const y = P.getY(i); if (Math.abs(Math.abs(y) - H / 2) < 1e-4 && y > 0) continue; const k = 1 + (rnd() - 0.5) * 0.12 * (1.2 - y / H); P.setX(i, P.getX(i) * k); P.setZ(i, P.getZ(i) * k); }
+  trunk.translate(0, H / 2, 0); trunk.computeVertexNormals();
+  const tm = new THREE.Mesh(trunk, [bark, top, bark]); g.add(tm);
+  for (let r = 0; r < 4; r++) {
+    const a = r * Math.PI / 2 + 0.4 + rnd() * 0.3, L = 0.55 + rnd() * 0.35;
+    const root = new THREE.ConeGeometry(0.2, L, 6); root.rotateZ(-Math.PI / 2 + 0.32); root.translate(L * 0.42, 0.1, 0);
+    const m = new THREE.Mesh(root, bark); m.rotation.y = a; g.add(m);
+  }
+  return { g, top: H };
+}
+/* (NO STUMP, 2026-11-19, the owner: "take out the tree stump with the crow as well": the crow is only the one the horn
+ * calls from the lighthouse's top — loaded here, hidden until then; `tmpStumpMesh` is no longer built) */
+function tmpStumpSetup() {
+  TC.top = 0; TC.base = 0; TC.based = true;
+  bwGlb('assets/crow.glb', (gltf) => {
+    const m = gltf.scene, g = new THREE.Group(); g.name = 'stumpCrow'; g.rotation.order = 'YXZ';
+    let sk = null;
+    m.traverse((o) => {
+      if (o.isSkinnedMesh && !sk) sk = o;
+      if (!o.isMesh) return;
+      o.frustumCulled = false; o.castShadow = false; o.raycast = () => {};
+      const mt = o.material;   // the dock crow's dress (dock.md): solid, a breath of its own map, no shine
+      mt.metalness = 0; mt.roughness = 0.62; mt.envMapIntensity = 0;
+      mt.color = new THREE.Color(0.68, 0.74, 0.9);
+      mt.transparent = false; mt.depthWrite = true; mt.opacity = 1; mt.alphaTest = 0;
+      if (mt.map) { mt.emissiveMap = mt.map; mt.emissive = new THREE.Color(0.55, 0.6, 0.7); mt.emissiveIntensity = 0.45; }
+      mt.needsUpdate = true;
+    });
+    g.add(m);
+    const mixer = new THREE.AnimationMixer(m), clip = gltf.animations[0], A = {};
+    if (clip) {
+      for (const [name, [t0, t1]] of Object.entries(HJ_BIRD_CUTS)) A[name] = mixer.clipAction(hjClipCut(clip, name, t0, t1, name !== 'landing'));
+      A.stand = mixer.clipAction(clip); A.stand.play(); A.stand.paused = true; A.stand.time = CROW_STAND_T;
+      if (A.landing) { A.landing.setLoop(THREE.LoopOnce); A.landing.clampWhenFinished = true; }
+    }
+    mixer.update(0);
+    // stood on the stump at a big crow's height, its feet's middle on the stump's middle (the dock crow's way)
+    g.updateMatrixWorld(true);
+    const bb = skinnedBounds(m); m.scale.multiplyScalar(TC_H / Math.max(1e-4, bb.size.y));
+    g.updateMatrixWorld(true); if (sk) sk.skeleton.update();
+    if (sk) { const P = sk.geometry.attributes.position, v = new THREE.Vector3(), pts = []; let lowY = 1e9;
+      for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); sk.applyBoneTransform(i, v); v.applyMatrix4(sk.matrixWorld); pts.push(v.clone()); lowY = Math.min(lowY, v.y); }
+      const ft = new THREE.Vector3(); let n = 0; for (const q of pts) if (q.y < lowY + 0.02) { ft.add(q); n++; }
+      ft.divideScalar(Math.max(1, n)); ft.y = lowY; g.worldToLocal(ft); m.position.sub(ft); }
+    TC.standScale = m.scale.x; TC.standPos = m.position.clone();
+    TC.crow = g; TC.m = m; TC.mesh = sk; TC.mixer = mixer; TC.A = A;
+    TC.feet = sk ? sk.skeleton.bones.filter((b) => /_[LR]_Foot_/.test(b.name)) : [];
+    tmpCrowPerch();
+    scene.add(g);
+    g.visible = false;
+  }, (e) => console.warn('[bw] stump crow', e));
+}
+const TC_CARRY = 2.6;                                // how much bigger it is in the air than it looked on the stump (you never see the change: it is above you)
+const TC_H = 0.95;                                   // the stump's crow standing, crown to toe: a big one, as the pier's is
+function tmpCrowPerch() {
+  const C = TC; if (!C.crow) return;
+  C.m.scale.setScalar(C.standScale); C.m.position.copy(C.standPos);
+  C.crow.position.set(TMP_STUMP.x, C.base - 0.06 + C.top, TMP_STUMP.z);
+  C.crow.rotation.set(0, Math.atan2(-1, 0.25), 0);  // looking up the beach, the way you come (+z), a little toward the sea
+  C.mixer.stopAllAction(); if (C.A.stand) { C.A.stand.reset().play(); C.A.stand.paused = true; C.A.stand.time = CROW_STAND_T; } C.mixer.update(0);
+  C.crow.visible = false;                             // (hidden until the horn calls it)
+}
+function updateStumpCrow(dt) {
+  const C = TC; if (!C.crow || tmpCut) return;
+  if (C.crow.visible) C.crow.visible = false;         // (no stump to stand on: it is only ever in the air, carrying you)
+  return;
+  if (!C.based && Math.abs(camera.position.z - TMP_STUMP.z) < 220) {
+    // stood on the beach's own ground there (the whale's berm and the heaped banks are ground: `update`'s rule)
+    C.based = true;
+    const y = Math.max(wbBerm ? wbBermAt(TMP_STUMP.x, TMP_STUMP.z) : 0, sandMoundAt(TMP_STUMP.x, TMP_STUMP.z));
+    C.base = y; C.g.position.y = y - 0.06; C.collider.top = y + C.top;
+    if (C.crow.visible) tmpCrowPerch();
+  }
+  if (!C.crow.visible) return;
+  // a living thing on a post: it shifts, it turns its head to you when you are near (a slow idle off the clip's own peck)
+  const p = camera.position, d = Math.hypot(p.x - TMP_STUMP.x, p.z - TMP_STUMP.z);
+  if (d < 40 && C.A.stand) {
+    C.idle = (C.idle || 0) + dt;
+    const want = Math.atan2(p.x - TMP_STUMP.x, p.z - TMP_STUMP.z);
+    let dy = want - C.crow.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    if (d < 14) C.crow.rotation.y += dy * Math.min(1, dt * 1.2);
+    C.A.stand.time = CROW_STAND_T + 0.6 + 0.6 * (0.5 + 0.5 * Math.sin(C.idle * 0.9));
+    C.mixer.update(0);
+  }
+}
+
+// ---- the flight ---------------------------------------------------------------------------------------------------
+const TMP_T = { scream: 1.3, up: 2.3, beat: 2.9, grab: 3.25, climb: 9.7, white: 10.9, deck: 12.6, part: 17.6, down: 24.6, drop: 25.35, lie: 26.6, stand: 29.2 };
+const TMP_BEACH_KEYS = [[0, 0, 0, 0], [0.5, -2, 3.5, -1], [2.0, -14, 20, -6], [4.5, -55, 75, -20], [7.0, -120, 150, -40], [10.0, -210, 240, -65]];
+function tmpHermite(keys, t, out) {
+  let i = 0; while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
+  const k0 = keys[Math.max(0, i - 1)], k1 = keys[i], k2 = keys[i + 1], k3 = keys[Math.min(keys.length - 1, i + 2)];
+  const u = THREE.MathUtils.clamp((t - k1[0]) / (k2[0] - k1[0]), 0, 1), u2 = u * u, u3 = u2 * u;
+  const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2, dt = k2[0] - k1[0];
+  const tan = (a, b, c) => (c[0] - a[0] > 1e-6 ? (c[b] - a[b]) / (c[0] - a[0]) : 0) * dt;
+  const v = [1, 2, 3].map((b) => h00 * k1[b] + h10 * tan(k0, b, k2) + h01 * k2[b] + h11 * tan(k1, b, k3));
+  return out.set(v[0], v[1], v[2]);
+}
+function startTempleFlight(fromTop = false) {
+  if (tmpCut || tmpFlown || (frozen() && !fromTop) || !TC.crow) return;
+  if (!tmpReady) loadTemple();                       // (it is fetched from 200 m; this is the floor under that)
+  const p = camera.position;
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  document.body.classList.add('tmp-cine');
+  lazyBuf(CROW_SCREAM_URL);                          // (his scream, decoded before the drop)
+  tmpCut = { t: 0, room: false, P0: p.clone(), yaw0: e.y, pitch0: e.x, fov: settings.fov, fovRate: 3, ph: '', white: 0, wind: null, crowFrom: TC.crow.position.clone(), shaken: {}, fromTop };
+  blocking = false;
+  try { if (document.pointerLockElement) { /* the look stays locked: the mouse is ignored, the cut holds the camera */ } } catch (e2) { /* */ }
+  /* (no scream here: 2026-11-18, the owner, "only do the crow scream when he drops you" — it shifts on the stump, at
+   * the stump, and goes) */
+  if (fromTop) { TC.crow.visible = false; return; }                 // (it comes in out of the sky: `updateTempleCut`)
+  try { sfxAt(TMP_STUMP.x, TMP_STUMP.z, () => sfxCrowRustle(), { ref: 3 }); } catch (e2) { /* */ }
+}
+/* (HIS crow scream, always — 2026-11-19, the owner: "give the crow scream when you get dropped not the claude sound": when
+ * the recording was not yet decoded the drop played a synthesized shriek. It is asked for when the flight starts, and if it
+ * is still on its way at the drop it plays the moment it lands, within 2 s, or not at all) */
+function tmpScreech(k, tries = 0) {
+  const ctx = audioCtx; if (!ctx) return;
+  const buf = CROW_SCREAM_URL && lazyBuf(CROW_SCREAM_URL);
+  if (!buf) { if (tries < 20) setTimeout(() => tmpScreech(k, tries + 1), 100); return; }
+  const s = ctx.createBufferSource(); s.buffer = buf; s.playbackRate.value = 0.92;
+  const g = ctx.createGain(); g.gain.value = 0.9 * k;
+  s.connect(g).connect(sfxOut()); s.start(); s.stop(ctx.currentTime + 4.2);
+}
+// the air going past: a long noise, band-passed, its level and its pitch the speed
+function tmpWindStart() {
+  const ctx = audioCtx; if (!ctx) return null;
+  const n = noiseBurst(4, () => 1); n.loop = true;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500; bp.Q.value = 0.6;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400;
+  const g = ctx.createGain(); g.gain.value = 0;
+  n.connect(bp).connect(lp).connect(g).connect(sfxOut()); n.start();
+  return { n, bp, g };
+}
+function tmpWindSet(W, level, pitch) {
+  if (!W || !audioCtx) return;
+  const t = audioCtx.currentTime;
+  W.g.gain.setTargetAtTime(level, t, 0.15); W.bp.frequency.setTargetAtTime(pitch, t, 0.2);
+}
+function tmpWindStop(W) { if (!W || !audioCtx) return; const t = audioCtx.currentTime; W.g.gain.setTargetAtTime(0, t, 0.6); try { W.n.stop(t + 3); } catch (e) { /* */ } }
+// the cloud opening: a slow swell under everything (two detuned saws, dark, rising and opening)
+function tmpSwell() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut(), D = 7.5;
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 3; lp.frequency.setValueAtTime(160, t); lp.frequency.exponentialRampToValueAtTime(1300, t + D * 0.6); lp.frequency.exponentialRampToValueAtTime(400, t + D);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + D * 0.45); g.gain.setValueAtTime(0.16, t + D * 0.6); g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+  lp.connect(g).connect(out);
+  for (const [f, d] of [[55, 0], [55.4, 0.4], [82.4, -0.3], [110.2, 0.2]]) {
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = d * 10;
+    o.connect(lp); o.start(t); o.stop(t + D + 0.1);
+  }
+}
+const _tcFwd = new THREE.Vector3(), _tcUp = new THREE.Vector3(0, 1, 0);
+// the crow over the camera, its feet on your shoulders, flying the way you are carried
+function tmpCrowCarry(pos, dir, flap) {
+  const C = TC; if (!C.crow) return;
+  if (C.mode !== 'carry') {
+    C.mode = 'carry';
+    C.m.scale.setScalar(C.standScale * TC_CARRY);                // a crow big enough to carry you (its feet stay its feet)
+    C.m.position.copy(C.standPos).multiplyScalar(TC_CARRY);
+    C.mixer.stopAllAction(); if (C.A.fly) C.A.fly.reset().play();
+    C.crow.visible = true;
+  }
+  if (C.A.fly) C.A.fly.timeScale = flap;
+  C.crow.position.copy(pos).addScaledVector(_tcUp, 1.25).addScaledVector(dir, 0.15);
+  C.crow.rotation.set(-0.12, Math.atan2(dir.x, dir.z), 0);
+}
+/* THE CROW, AWAY (2026-11-20, the owner: "make the crow be seen flying away still after dropping you"): it was put away with
+ * the cut, five seconds into its climb off over the pillars, while you were still getting up. It keeps its climb, and flies on
+ * after the cut ends until the haze has it (16 s). */
+function tmpCrowAway(dt) {
+  const C = TC; if (C.mode !== 'away' || !C.crow || !C.awayT0) return;
+  const a = (performance.now() - C.awayT0) / 1000, [fx, fz] = C.awayDir;
+  C.crow.visible = inTemple || !!tmpCut;
+  // (its first path, up over the pillars as it was — the owner: "have the crow fly above the pillar like it was but he disappears
+  // by flying further even after the cutscene" — and on past the cut's end until it is lost in the haze)
+  C.crow.position.copy(tmpCut ? tmpCut.awayFrom : (C.awayFrom || C.crow.position)).add(_tmpV.set(fx * (a * 16 + a * a * 2), a * 5 + a * a * 1.5, fz * (a * 16 + a * a * 2)));
+  if (tmpCut) C.awayFrom = tmpCut.awayFrom.clone();
+  C.crow.rotation.set(-0.25, Math.atan2(fx, fz), 0);
+  if (C.mixer && !tmpCut) C.mixer.update(dt);
+  if (a > 16) { C.crow.visible = false; C.mode = 'gone'; C.awayT0 = 0; }
+}
+function updateTempleCut(dt) {
+  if (!tmpModuleIn) return;
+  updateStumpCrow(dt);
+  tmpCrowAway(dt);
+  const T = tmpCut; if (!T || menuOpen) return;
+  T.t += dt;
+  const t = T.t, C = TC, cam = camera;
+  if (C.mixer) C.mixer.update(dt);
+  const whiteEl = tmpWhiteEl();
+  // ---------------------------------------------------------------- on the beach
+  if (!T.room) {
+    const yawTo = (x, z) => Math.atan2(-(x - cam.position.x), -(z - cam.position.z));
+    if (t < TMP_T.grab) {
+      /* IT COMES FOR YOU, IN SIGHT ALL THE WAY (2026-11-18, the owner: "make it look like he picks you up — he disappears
+       * for a second"): it went straight up off the stump and was HIDDEN from 2.3 s to the grab, a wingbeat sounding from
+       * nowhere. Now: it looks at you and shifts on the stump; lifts off up and back over it; turns at the top of its
+       * climb; and comes down at you out of the sky, talons first, growing as it comes, onto your shoulders — the lens
+       * on it the whole way. Its wings are heard from where it is (`sfxAt`), and only near. */
+      const cw = C.crow;
+      if (!T.ck && T.fromTop) {
+        // (from the lighthouse's top: out of the night over the sea, high, round in a long dive onto your shoulders)
+        const P = T.P0, sea = new THREE.Vector3(-1, 0, 0.25).normalize(), sd = new THREE.Vector3(-sea.z, 0, sea.x), k = (o) => [o[0], o[1].x, o[1].y, o[1].z];
+        T.ck = [[0, P.clone().addScaledVector(sea, 46).addScaledVector(sd, -14).add(_tcUp.clone().multiplyScalar(26))],
+          [1.2, P.clone().addScaledVector(sea, 26).addScaledVector(sd, 6).add(_tcUp.clone().multiplyScalar(15))],
+          [TMP_T.grab - 0.9, P.clone().addScaledVector(sea, 5).add(_tcUp.clone().multiplyScalar(4.2))],
+          [TMP_T.grab, P.clone().add(_tcUp.clone().multiplyScalar(1.25))]].map(k);
+        T.ck.unshift([-1, ...T.ck[0].slice(1)]);
+        try { sfxCrowWings(); } catch (e) { /* */ }
+      }
+      if (!T.ck) {
+        const S = new THREE.Vector3(TMP_STUMP.x, C.base + C.top, TMP_STUMP.z), P = T.P0;
+        const d = new THREE.Vector3(S.x - P.x, 0, S.z - P.z); if (d.lengthSq() < 1e-6) d.set(0, 0, -1); d.normalize();
+        const sd = new THREE.Vector3(-d.z, 0, d.x), tS = TMP_T.scream, k = (o) => [o[0], o[1].x, o[1].y, o[1].z];
+        T.ck = [[tS, S], [tS + 0.5, S.clone().addScaledVector(d, 2.4).add(_tcUp.clone().multiplyScalar(3.4))],
+          [tS + 1.05, S.clone().addScaledVector(d, 3.4).addScaledVector(sd, 2.2).add(_tcUp.clone().multiplyScalar(7.6))],
+          [tS + 1.6, P.clone().addScaledVector(d, 2.3).add(_tcUp.clone().multiplyScalar(3.5))],
+          [TMP_T.grab, P.clone().add(_tcUp.clone().multiplyScalar(1.25))]].map(k);
+        T.ck.unshift([0, ...T.ck[0].slice(1)]);
+      }
+      if (t < TMP_T.scream && !T.fromTop) {
+        // on the stump: its head to you, a shift of the wings
+        if (C.A.stand) { C.A.stand.time = CROW_STAND_T + 1.6 + 0.9 * smooth01(0, 0.5, t); }
+        T.lookYaw = yawTo(cw.position.x, cw.position.z); T.lookPitch = Math.atan2(cw.position.y + 0.6 - cam.position.y, Math.hypot(cw.position.x - cam.position.x, cw.position.z - cam.position.z));
+      } else {
+        if (C.mode !== 'up') { C.mode = 'up'; C.mixer.stopAllAction(); if (C.A.fly) C.A.fly.reset().play(); try { sfxAt(cw.position.x, cw.position.z, () => sfxCrowWings(), { ref: 4 }); } catch (e) { /* */ } }
+        const u = t - TMP_T.scream;
+        tmpHermite(T.ck, t, cw.position); tmpHermite(T.ck, t + 0.04, _tmpW); _tmpW.sub(cw.position);
+        const hz = Math.hypot(_tmpW.x, _tmpW.z);
+        cw.rotation.set(THREE.MathUtils.clamp(-Math.atan2(_tmpW.y, hz + 1e-4), -0.9, 0.9) - (t > TMP_T.grab - 0.35 ? 0.5 * smooth01(TMP_T.grab - 0.35, TMP_T.grab, t) : 0), Math.atan2(_tmpW.x, _tmpW.z), 0);
+        // (bigger as it comes: you never see the change, it is turning away and then coming at you)
+        const gs = THREE.MathUtils.lerp(1, TC_CARRY, smooth01(0.4, 1.9, u));
+        C.m.scale.setScalar(C.standScale * gs); C.m.position.copy(C.standPos).multiplyScalar(gs);
+        if (C.A.fly) C.A.fly.timeScale = t > TMP_T.grab - 0.6 ? 1.5 : 1.15;
+        cw.visible = true;
+        const dcw = cw.position.distanceTo(cam.position);
+        if (!T.shaken.dive && t > TMP_T.scream + 1.25 && dcw < 8) { T.shaken.dive = true; try { sfxAt(cw.position.x, cw.position.z, () => sfxCrowWings(), { ref: 4 }); } catch (e) { /* */ } }
+        T.lookYaw = yawTo(cw.position.x, cw.position.z);
+        T.lookPitch = Math.min(1.25, Math.atan2(cw.position.y + 0.2 - cam.position.y, Math.hypot(cw.position.x - cam.position.x, cw.position.z - cam.position.z) + 0.01));
+      }
+      // the lens: on it, a beat behind (quicker as it comes in)
+      const k = Math.min(1, dt * (t > TMP_T.grab - 0.7 ? 6 : 3.2));
+      _tmpE.setFromQuaternion(cam.quaternion, 'YXZ');
+      let dy = T.lookYaw - _tmpE.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      _tmpE.set(_tmpE.x + (T.lookPitch - _tmpE.x) * k, _tmpE.y + dy * k, 0, 'YXZ');
+      cam.quaternion.setFromEuler(_tmpE);
+      T.fov = Math.min(settings.fov, 62);
+      return;
+    }
+    // ---- taken
+    if (!T.shaken.grab) {
+      T.shaken.grab = true; addTrauma(0.75); try { sfxGasp(); } catch (e) { /* */ }   // (no scream: that is the drop's)
+      try { sfxCrowWings(); } catch (e) { /* */ }
+      T.wind = tmpWindStart(); _tmpE.setFromQuaternion(cam.quaternion, 'YXZ'); T.yawG = _tmpE.y; T.pitchG = _tmpE.x; T.P0.copy(cam.position);
+      if (!tmpReady) loadTemple();
+    }
+    const u = t - TMP_T.grab;
+    tmpHermite(TMP_BEACH_KEYS, u, _tmpV);
+    cam.position.copy(T.P0).add(_tmpV);
+    tmpHermite(TMP_BEACH_KEYS, u + 0.05, _tmpW); _tcFwd.subVectors(_tmpW, _tmpV).normalize();
+    // looking: down at the beach falling away; UP at what has you (its belly and its wings beating over you against the
+    // stars); then out to sea, the horizon tilting with the wingbeat
+    const yaw = THREE.MathUtils.lerp(T.yawG, Math.PI / 2 - 0.25, smooth01(0.2, 3.0, u));
+    const upK = smooth01(0.55, 1.35, u) * (1 - smooth01(2.9, 4.4, u));
+    // (out of the look up at it as it came down on you: the yank of being lifted takes the eye down to the falling sand)
+    const pitch = THREE.MathUtils.lerp(T.pitchG ?? 1.1, THREE.MathUtils.lerp(THREE.MathUtils.lerp(-0.95, -0.32, smooth01(2.9, 5.5, u)), 1.12, upK), smooth01(0, 0.55, u)) + 0.03 * Math.sin(u * 7.0);
+    _tmpE.set(pitch, yaw, 0.06 * Math.sin(u * 3.5 + 0.6), 'YXZ'); cam.quaternion.setFromEuler(_tmpE);
+    tmpCrowCarry(cam.position, _tcFwd, 1.1);
+    T.fov = Math.min(settings.fov, 84);
+    tmpWindSet(T.wind, 0.05 + 0.12 * smooth01(0, 3, u), 380 + 520 * smooth01(0, 6, u));
+    if (Math.floor(u / 0.62) !== T.beatN) { T.beatN = Math.floor(u / 0.62); try { sfxCrowWings(); } catch (e) { /* */ } }
+    // up into the cloud: dark puffs come past thicker and thicker, and then the cloud is all there is (the night's fog is
+    // left as it is: tinted, it made the sea a flat pale plane with a hard edge on the stars)
+    tmpNightClouds(T, cam.position, u);
+    T.white = smooth01(TMP_T.climb, TMP_T.white, t);
+    whiteEl.style.background = '#1c222c';
+    whiteEl.style.opacity = T.white.toFixed(3);
+    if (t >= TMP_T.white + 0.25) tmpToRoom(T);
+    return;
+  }
+  // ---------------------------------------------------------------- over the desert
+  const R = t - TMP_T.white - 0.25;
+  const V = TMP_VIEW, vf = TMP_Y + tmpFloorAt(V.x, V.z);
+  const yawV = tmpViewYaw(), fx = -Math.sin(yawV - TMP_VIEW.turn), fz = -Math.cos(yawV - TMP_VIEW.turn);   // toward the temple
+  // the path in the room's frame: from far back over the deck, down through the gap, onto the dune
+  const keys = T.keys || (T.keys = [
+    [0, -fx * 150, 318, -fz * 150], [3.0, -fx * 138, 306, -fz * 138], [6.0, -fx * 118, 246, -fz * 118],
+    [8.5, -fx * 92, 150, -fz * 92], [10.2, -fx * 50, 62, -fz * 50], [11.0, -fx * 18, 20, -fz * 18], [11.4, -fx * 4, 4.6, -fz * 4], [11.5, -fx * 1.0, 3.4, -fz * 1.0]]);
+  const down = TMP_T.down - TMP_T.white - 0.25;
+  { const k = smooth01(0, 0.9, R); whiteEl.style.background = `rgb(${Math.round(28 + (201 - 28) * k)},${Math.round(34 + (204 - 34) * k)},${Math.round(44 + (209 - 44) * k)})`; }
+  whiteEl.style.opacity = (1 - smooth01(0.9, 2.3, R)).toFixed(3);
+  tmpClouds.show = 1 - smooth01(down - 3.5, down - 0.3, R);     // (gone by the dune: the screenshot's sky has no ceiling, and a sheet 230 m up crossed the far colonnades)
+  tmpClouds.part = smooth01(TMP_T.deck - TMP_T.white, TMP_T.part - TMP_T.white, R);
+  tmpRays.userData.m.uniforms.uK.value = smooth01(TMP_T.deck - TMP_T.white + 1.2, TMP_T.part - TMP_T.white, R) * (1 - smooth01(down - 2.5, down + 0.5, R));
+  if (!T.shaken.swell && t >= TMP_T.deck) { T.shaken.swell = true; tmpSwell(); }
+  // the fog: the cloud's own white thinning to the desert's haze as you come out under the deck
+  const clear = smooth01(3.0, 6.0, R), last = smooth01(down - 2.5, down, R);
+  scene.fog.color.copy(_tmpCloudCol).lerp(TMP_FOG.color, clear);
+  scene.fog.density = THREE.MathUtils.lerp(0.0012, TMP_FOG.density, last);
+  FOG_CAP.x = (1 - TMP_FOG.cap);
+  if (R < down) {
+    // carried: the time on the path runs at the deck's pace, then the dive's
+    const s = R < 3.4 ? R * 0.55 : 1.87 + (R - 3.4) * (11.5 - 1.87) / (down - 3.4);
+    tmpHermite(keys, Math.min(11.5, s), _tmpV);
+    cam.position.set(TMP_X + V.x + _tmpV.x, vf + _tmpV.y, TMP_Z + V.z + _tmpV.z);
+    tmpHermite(keys, Math.min(11.55, s + 0.05), _tmpW); _tcFwd.subVectors(_tmpW, _tmpV); if (_tcFwd.lengthSq() < 1e-8) _tcFwd.set(fx, -0.2, fz); _tcFwd.normalize();
+    // looking down into the gap at the temple, then rising to the screenshot as you come in over the dune
+    const lookK = smooth01(down - 4.5, down, R);
+    const tx = TMP_X - cam.position.x, ty = TMP_Y + 8 - cam.position.y, tz = TMP_Z - cam.position.z;
+    const yawT = Math.atan2(-tx, -tz), pitchT = Math.atan2(ty, Math.hypot(tx, tz));
+    // (and first, up: the crow over you black against the lit cloud, before the deck opens under you)
+    const upK = smooth01(1.2, 2.2, R) * (1 - smooth01(3.6, 4.8, R));
+    _tmpE.set(THREE.MathUtils.lerp(THREE.MathUtils.lerp(Math.max(-1.35, pitchT), -0.35, lookK), 1.05, upK), yawT + (yawV - yawT) * lookK, 0.05 * Math.sin(R * 3.1) * (1 - lookK), 'YXZ');
+    cam.quaternion.setFromEuler(_tmpE);
+    tmpCrowCarry(cam.position, _tcFwd, 0.9 + 0.5 * lookK);
+    if (Math.floor(R / 0.7) !== T.beatN) { T.beatN = Math.floor(R / 0.7); try { sfxCrowWings(); } catch (e) { /* */ } }
+    tmpWindSet(T.wind, 0.16 - 0.08 * lookK, 700 - 300 * lookK);
+    T.fov = Math.min(settings.fov, THREE.MathUtils.lerp(80, 70, lookK));
+    T.relY = cam.position.y; T.vy = -3;
+    return;
+  }
+  // ---- let go: the crow goes on over the temple; you drop, land, lie, and get up
+  if (!T.shaken.drop) {
+    T.shaken.drop = true; tmpScreech(0.8); tmpWindSet(T.wind, 0.03, 300);
+    // (the lighthouse's music, which the call went out on, fades as you come down onto the sand — 2026-11-19, "use the same
+    // music there for now but have it fade when u land at the desert")
+    if (lhGain && audioCtx) { holdParam(lhGain.gain, audioCtx.currentTime); lhGain.gain.setTargetAtTime(0.0001, audioCtx.currentTime, 1.4); }
+    C.mode = 'away'; T.awayFrom = C.crow.position.clone();
+  }
+  if (C.mode === 'away' && !C.awayT0) { C.awayT0 = performance.now(); C.awayDir = [fx, fz]; }   // (its flight off runs on past the cut: `tmpCrowAway`)
+  const eye = playerEye(), groundW = vf;
+  if (t < TMP_T.lie - 0.6 && T.relY > groundW + 0.35) {
+    // falling
+    T.vy -= 18 * dt; T.relY = Math.max(groundW + 0.35, T.relY + T.vy * dt);
+    cam.position.set(TMP_X + V.x, T.relY, TMP_Z + V.z);
+    _tmpE.setFromQuaternion(cam.quaternion, 'YXZ'); _tmpE.x = THREE.MathUtils.lerp(_tmpE.x, -0.75, Math.min(1, dt * 4)); cam.quaternion.setFromEuler(_tmpE);
+    return;
+  }
+  if (!T.shaken.land) {
+    T.shaken.land = true; T.landT = t; addTrauma(0.9); try { sfxThud(1.2); } catch (e) { /* */ } try { sfxBodySlam(1.1); } catch (e) { /* */ }
+    playSample('maceHeavy', 0.95, 0.03, 0.78);       // (the mace's heavy impact under it — 2026-11-20, the owner: "use the mace heavy impact sound for when you are dropped in the desert")
+    /* A CHECKPOINT AS YOU HIT THE SAND (2026-11-20, the owner: "put a checkpoint when the crow drops you"): written now, not when
+     * you are up — a save is never written inside the cut (`saveCheckpoint`), so it is let out of it for the write; the room
+     * is the temple and a load stands you at its screenshot, as the cut's end does (it saves again there) */
+    { tmpFlown = true; const keep = tmpCut; tmpCut = null; try { autosaveNow(); } finally { tmpCut = keep; } }
+    try { spawnPuffs(TMP_X + V.x, TMP_Z + V.z, 14, fx, fz, groundW + 0.05); } catch (e) { /* */ }
+    tmpWindStop(T.wind); T.wind = null;
+    whiteEl.style.background = '#000'; T.blink = 1;
+  }
+  // on the sand: the eye 35 cm up, the view in the sand and rolled over, a blink of black; then up, onto the screenshot
+  const lt = t - T.landT, standK = smooth01(TMP_T.lie - T.landT + (T.landT - TMP_T.lie), TMP_T.stand - T.landT, lt);
+  const up = smooth01(1.1, TMP_T.stand - T.landT, lt);
+  whiteEl.style.opacity = (0.85 * (1 - smooth01(0.08, 0.9, lt)) + 0.5 * Math.max(0, Math.sin(Math.min(1, Math.max(0, (lt - 1.0) / 0.35)) * Math.PI))).toFixed(3);
+  cam.position.set(TMP_X + V.x, groundW + THREE.MathUtils.lerp(0.35, eye, up * up * (3 - 2 * up)), TMP_Z + V.z);
+  _tmpE.set(THREE.MathUtils.lerp(-1.15, TMP_VIEW.pitch, smooth01(0.9, TMP_T.stand - T.landT, lt)), yawV + 0.5 * (1 - up), THREE.MathUtils.lerp(0.45, 0, smooth01(0.6, 2.2, lt)), 'YXZ');
+  cam.quaternion.setFromEuler(_tmpE);
+  T.fov = THREE.MathUtils.lerp(70, TMP_VIEW.fov, smooth01(1.4, TMP_T.stand - T.landT, lt));
+  T.fovRate = 2.2;
+  void standK;
+  if (t >= TMP_T.stand + 1.4) tmpFinish(T);
+}
+const _tmpCloudCol = new THREE.Color(0x9a9da3);
+/* THE NIGHT'S CLOUD on the way up: the air clears as you rise out of the beach's mist (so the moonlit sea opens under
+ * you and the ceiling shows over you), and two sheets of cloud — dark, moonlit on their crowns — hang 150 and 172 m
+ * up across your path. You are carried up into the lower one, and then it is all there is. */
+function tmpNightClouds(T, at, u) {
+  if (!T.night) {
+    const g = new THREE.Group();
+    for (const [y, seed] of [[150, 2.2], [172, 6.4]]) {
+      const sh = tmpCloudSheet(y, seed, new THREE.Color(0.20, 0.23, 0.31), new THREE.Color(0.05, 0.06, 0.08), 4700);   // (out to the far sea's ring: 1800 left a band of bare sky under it)
+      sh.material.uniforms.uK.value = 0.97; g.add(sh);
+    }
+    tmpHermite(TMP_BEACH_KEYS, 7.0, _tmpW);
+    g.position.set(T.P0.x + _tmpW.x, T.P0.y, T.P0.z + _tmpW.z);
+    scene.add(g); T.night = g;
+  }
+  for (const sh of T.night.children) { const U = sh.material.uniforms; U.uT.value = u * 2; U.uFogC.value.copy(scene.fog.color); U.uFogD.value = Math.min(scene.fog.density, 0.0028) * 0.55; }   // (gentler than the sea's: the moonlit cloud over you still reads, and by its far edge it is all fog)
+  if (!T.fog0) T.fog0 = scene.fog.density;
+  scene.fog.density = THREE.MathUtils.lerp(T.fog0, 0.0028, smooth01(0.6, 4.0, u));
+}
+function tmpWhiteEl() {
+  let el = document.getElementById('tmp-white');
+  if (!el) { el = document.createElement('div'); el.id = 'tmp-white'; el.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9;opacity:0;background:#c9ccd1'; document.body.appendChild(el); }
+  return el;
+}
+// out of the white over the desert: the beach's world left behind, the room's taken up (behind the white, as any cut)
+function tmpToRoom(T) {
+  if (!tmpReady) { T.t = TMP_T.white + 0.2; return; }     // held in the white until the place is there
+  clearRoomFlags();
+  inTemple = true; tmpWorld.visible = true; T.room = true;
+  templeEnter();
+  scene.fog.color.copy(_tmpCloudCol); scene.fog.density = 0.0016;
+  try { renderer.compile(tmpWorld, camera, scene); } catch (e) { /* a warm is never fatal */ }
+  TC.crow.visible = true;
+  if (T.night) { scene.remove(T.night); for (const sh of T.night.children) { sh.material.dispose(); sh.geometry.dispose(); } T.night = null; }
+}
+function tmpFinish(T) {
+  tmpFlown = true;
+  tmpWhiteEl().style.opacity = '0'; tmpWhiteEl().style.background = '#c9ccd1';
+  tmpClouds.show = 0; tmpRays.userData.m.uniforms.uK.value = 0;
+  if (T.wind) tmpWindStop(T.wind);
+  placeInTemple();
+  // (the lens is the screenshot's still: `wantFov` lets it out to yours from here at the cut's own rate)
+  camera.fov = TMP_VIEW.fov; camera.updateProjectionMatrix();
+  tmpCut = null;
+  document.body.classList.remove('tmp-cine');
+  // (the crow is not put away here: it is still flying off over the temple, `tmpCrowAway`)
+  autosaveNow();
+  catchBreath();
+}
+// a load: the crow on its stump, or gone; a cut in the air is never resumed (a save is never written in one)
+function tmpReset() {
+  if (tmpCut) { if (tmpCut.wind) tmpWindStop(tmpCut.wind); if (tmpCut.night) scene.remove(tmpCut.night); tmpCut = null; tmpWhiteEl().style.opacity = '0'; }
+  document.body.classList.remove('tmp-cine');
+  if (tmpClouds) tmpClouds.show = 0;
+  if (tmpRays) tmpRays.userData.m.uniforms.uK.value = 0;
+  TC.mode = null; tmpCrowPerch();
+}
+// a dev jump: straight to the screenshot
+function devTemple() {
+  if (!tmpReady) { loadTemple(); return false; }
+  clearRoomFlags(); return placeInTemple();
+}
+// the room's floor, for anything thrown or falling in it
+const _floorBeforeTemple = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => (inTemple && tmpReady && Math.abs(x - TMP_X) < 400 && Math.abs(z - TMP_Z) < 400
+  ? TMP_Y + Math.max(tmpFloorAt(x - TMP_X, z - TMP_Z), y !== undefined && tmpCellTop(x - TMP_X, z - TMP_Z) <= y - TMP_Y + 0.05 ? tmpCellTop(x - TMP_X, z - TMP_Z) : -1e9)
+  : _floorBeforeTemple(x, z, y));
+/* ---- THE ANCIENT KING (2026-11-19; his fight 2026-11-20) -----------------------------------------------------------------------
+ * The owner's model ("Free Character - Ancient King", Kaan Tezcan, CC-BY-4.0: `assets/ancient-king.glb`, his own clip kept as
+ * 'hover'), a Character Creator rig (CC_Base_*), and his moves out of `tools/ntar_moves.py -- king` (`assets/king-moves.json`):
+ * the Mixamo Locomotion Pack (his idle, walk, run, the strafes, the turns, the jump) and the owner's takes — Fast Run, Surprise
+ * Uppercut, Flying Bicycle Kick, Flying Knee Punch Combo, Brutal Assassination, Kicking, Being Electrocuted, Front Flip, Wall Run.
+ *
+ * THE OWNER, 2026-11-20: "make him float down out of a mist in the air you shouldnt see him spawn it should be very bright where
+ * he comes from. he should float down to his FEET and start walking and fighting hes not floating during the fight he should only
+ * float when he comes off the perch. give him good animations … make sure they look exactly like this and visibly connect so they
+ * can be blocked. make the being electrocuted his death animation have him explode after that with peices of his body flying
+ * then the end credits. make this fight hard he is the final boss."
+ *
+ * SO HE IS A CREATURE NOW (`MUT_KINDS.king`), fought by the same machinery as every boss on the walk — the guard, the parry, the
+ * poise, the blow that has to pass through you (`blowLands`), the stagger, the knockdown — with his clips played at their own
+ * speed (`natural`) and each blow's contacts MEASURED off the take (`more`: the knee combo and the assassination land more than
+ * once). What is his own runs through `kind.drive` (`kingDrive`, ahead of the fight AI in `updateMutantUnit`): while it holds
+ * him (`st.puppet`, and nothing lands on him) he is in a move the fight does not know —
+ *   'wait'     not yet come: unseen;
+ *   'descend'  out of a bright mist high over the open ring (`KFX.mist`), floating down in his hover, onto his feet (the jump's
+ *              landing, `KING_LAND0`), a beat, and the fight (`kingCut` holds you and your eye; Enter skips it, `kingSkip`);
+ *   'ready'    a restore after he came down: stood waiting, the fight on as you step up;
+ *   'flip'     over your head and down behind you (Front Flip), then round to face you ('turn', the pack's 180s);
+ *   'run'      at half of him, flat out (Fast Run) to the nearest pillar, 'climb' up it (Wall Run), 'perch' on the ring's lip on
+ *              his feet, 'leap' off it and down onto you (Mutant Jump Attack), the slam, and 'slamRec' — no cutscene, no float;
+ *   'dying'    the Being Electrocuted take's fall (no lightning: the owner's word), the light gathering in him, and 'gone':
+ *              he bursts into a bright light and comes apart (`kingExplode`); then the stats (`showEnd`). */
+const KING_RAG = {
+  Character1_Hips: 'CC_Base_Hip_02', Character1_Spine: 'CC_Base_Waist_033', Character1_Spine1: 'CC_Base_Spine01_034', Character1_Spine2: 'CC_Base_Spine02_035',
+  Character1_Neck: 'CC_Base_NeckTwist01_036', Character1_Head: 'CC_Base_Head_038',
+  Character1_RightShoulder: 'CC_Base_R_Clavicle_073', Character1_RightArm: 'CC_Base_R_Upperarm_074', Character1_RightForeArm: 'CC_Base_R_Forearm_077', Character1_RightHand: 'CC_Base_R_Hand_081',
+  Character1_LeftShoulder: 'CC_Base_L_Clavicle_049', Character1_LeftArm: 'CC_Base_L_Upperarm_050', Character1_LeftForeArm: 'CC_Base_L_Forearm_051', Character1_LeftHand: 'CC_Base_L_Hand_055',
+  Character1_RightUpLeg: 'CC_Base_R_Thigh_018', Character1_RightLeg: 'CC_Base_R_Calf_021', Character1_RightFoot: 'CC_Base_R_Foot_022', Character1_RightToeBase: 'CC_Base_R_ToeBase_023',
+  Character1_LeftUpLeg: 'CC_Base_L_Thigh_04', Character1_LeftLeg: 'CC_Base_L_Calf_05', Character1_LeftFoot: 'CC_Base_L_Foot_06', Character1_LeftToeBase: 'CC_Base_L_ToeBase_08',
+};
+const KING_JOINTS = {
+  hip: 'CC_Base_Hip_02', waist: 'CC_Base_Waist_033', chest: 'CC_Base_Spine02_035', neck: 'CC_Base_NeckTwist01_036', head: 'CC_Base_Head_038',
+  clavL: 'CC_Base_L_Clavicle_049', clavR: 'CC_Base_R_Clavicle_073', armL: 'CC_Base_L_Upperarm_050', armR: 'CC_Base_R_Upperarm_074',
+  foreL: 'CC_Base_L_Forearm_051', foreR: 'CC_Base_R_Forearm_077', thighL: 'CC_Base_L_Thigh_04', thighR: 'CC_Base_R_Thigh_018',
+  calfL: 'CC_Base_L_Calf_05', calfR: 'CC_Base_R_Calf_021', footL: 'CC_Base_L_Foot_06', footR: 'CC_Base_R_Foot_022',
+};
+// his moves are fetched with his room, not at boot (`ROOM_FILES.tmp` names the file); he is made once they are in
+const KING_MOVES_URL = 'assets/king-moves.json';
+let kingMoves = null, kingMovesLate = null, kingMovesAsked = false;
+function kingMovesFetch() {
+  if (kingMovesAsked) return; kingMovesAsked = true;
+  bwFetch(KING_MOVES_URL, 886).then((buf) => {
+    try { kingMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { console.warn('[king] his moves did not parse', e); return; }
+    if (kingMovesLate) { const f = kingMovesLate; kingMovesLate = null; f(); }
+  }, (e) => console.warn('[king] his moves did not load', e));
+}
+// the pack's reels (the knight's: his flinches, the parry's reel, the fall and the get-up) under his own, which win on a name
+function authorKingClips(u, m) {
+  const R = poseRig(u, m, null, KING_JOINTS, {});
+  const clips = tavRetargetAll(u, R, () => kingMoves, (f) => { kingMovesLate = f; });
+  installLife(u, m, KING_JOINTS);
+  return clips;
+}
+MUT_KINDS.king = Object.assign({}, KN_BASE, {
+  /* 2.6 m (his file's 3.2 at 0.8125, `fixScale`). He was 3.4: these are a man's takes against a man, and at 3.4 m his
+   * uppercut came through 2.7 m up, his kick 2.6, his knee 3.5 — over your head, every one (the owner, 2026-11-20: "he never
+   * even hit me"). At 2.6 they arrive at your head and chest. */
+  glb: 'assets/ancient-king.glb', fixScale: 0.8125, boneGaps: true, kingBody: true,
+  c13Body: false, fortBody: false, preParse: false, solo: true,
+  pre: null, author: authorKingClips, joints: KING_JOINTS, rag: KING_RAG, cutout: true,
+  drive: (u, dt) => kingDrive(u, dt), onDeath: (u) => kingDeath(u),
+  /* THE LAST OF THEM, AND THE HARDEST: more of him than anything on the walk (180 against the marauder's 115), quick on his
+   * feet, nearly every opening taken, strings four deep and six once he is angry, a poise that breaks late and mends fast, a
+   * parry window under the pack's. What keeps him fair is the same as ever: every blow is the animator's own take at its own
+   * speed, the tell is the wind-up you can see, and each contact can be guarded or parried on its beat. */
+  h: 2.6, hp: 180, dmg: 1, hitR: 0.85, body: 0.5, lungeStop: 1.2, landSlop: 0.45, limbR: 0.40, foeLimbR: 0.62, closeBody: true, stopPick: 0.6,
+  /* (2026-11-20, round 3, the owner: "MAKE ALL HIS HITS ACTUALLY CONNECT". Studied frame by frame, `tools/kingstudy.js`: from
+   * his stand-off every blow went through your face — kick 0.10 m, bicycle 0.06-0.14, uppercut 0.14-0.28 — and every miss was
+   * thrown from 1.8-2.1 m with the closing starting 0.18 s before the contact at 2.6 m/s, so he arrived half a metre short.
+   * He closes through the last half of the wind-up now, as fast as it takes, and a blow that passes your face lands: `kingLands`) */
+  comboGrace: 0.85, noDash: true, lungeLead: 0.55, lungeMax: 7.5, landFn: (u, A, dist, was) => kingLands(u, A),
+  // (and he follows you round to the last instant: his aim was set at four fifths of the wind-up, and a step to the side put
+  // his fist 0.3-0.5 m past your ear — measured, `kingstudy.js &walk=1`)
+  trackT: 0.05, trackRate: 10,
+  speedK: 1.7, aggr: 5.4, press: 1.2, chainMax: 5, opening: 0.18,
+  circle: 0.05, step: 0.05, feint: 0, sizeUp: 0.03, restless: 0.35, regroup: 0.10, regroupT: [0.5, 0.9], sideKeep: 0.45,
+  velGait: true, gaitBands: true, gaitMax: 1.6, smoothMove: true, noSkate: true, lungeMax: 2.6, stepBack: 0,
+  gaitToes: ['CC_Base_L_ToeBase_08', 'CC_Base_R_ToeBase_023'],
+  turnMax: 3.8, yawK: 0.8, aimK: 0.5, aimFront: 0.32, aimDrop: 0.05, hitFront: 0.3, hitOnScreen: true, fade: 0.3,
+  poise: 30, poiseBack: 3.4, poiseWait: 0.7, parryK: 0.85, recoilK: 0.4, stunK: 0.6, block: 0.28,
+  /* (a block costs a quarter of your bar and a little: now every blow of his arrives, the old 0.8 — two thirds of the bar for
+   * his kick — broke your guard on the second blow of every string, and the third went through. Measured, `kingduel.js &guard=1`) */
+  blockCost: 0.55,
+  fidgetK: 0.02, fidgetGap: 6.0, gapRate: 1.0,
+  knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 5, knockLapse: 7, knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
+  // limbs: 0 his right arm, 1 his left, 2 his right leg, 3 his left (the leg's chain runs to the toe, the knee in it)
+  rig: { arm: KING_RAG.Character1_RightArm, fore: KING_RAG.Character1_RightForeArm, hand: KING_RAG.Character1_RightHand,
+         armL: KING_RAG.Character1_LeftArm, foreL: KING_RAG.Character1_LeftForeArm, handL: KING_RAG.Character1_LeftHand, head: KING_RAG.Character1_Head,
+         limbs: [[KING_RAG.Character1_RightUpLeg, KING_RAG.Character1_RightLeg, KING_RAG.Character1_RightFoot, KING_RAG.Character1_RightToeBase],
+                 [KING_RAG.Character1_LeftUpLeg, KING_RAG.Character1_LeftLeg, KING_RAG.Character1_LeftFoot, KING_RAG.Character1_LeftToeBase]] },
+  // stone under a lit sky: his own maps, a breath of lift, a faint cold edge (METALNESS IS A TRAP)
+  emis: 0.05, rim: [0.03, 0.03, 0.036], gamma: 1.0,
+  matMore: (mm) => { mm.roughness = 0.82; },
+  anim: { idle: 'kIdle', walk: 'kWalk', run: 'kRun', roar: 'kIdle', die: 'kShock', back: 'kWalk', rate: 1.0, lean: 0.03, strafeK: 1.0 },
+  gaits: { walk: ['kWalk'], run: ['kRun', 'kSprint'], idle: ['kIdle'], strafeL: ['kStrWL', 'kStrL'], strafeR: ['kStrWR', 'kStrR'] },
+  alias: { idle: 'kIdle', idle2: 'kIdle', walk2: 'kWalk', run2: 'kSprint', roar: 'kIdle', roar2: 'kIdle', die2: 'kShock', back: 'kWalk', calm: 'kIdle',
+           strafeL: 'kStrWL', strafeR: 'kStrWR', hit: 'hit', hitBig: 'hitBig', hitSide: 'hitSide', hitBack: 'hitBack', hitHead: 'hitHead', parry: 'parry',
+           block: 'block', blockC: 'blockC' },
+  stunClip: 'parry', first: 'kIdle', sleepIdle: 'kIdle', wakeAt: 0,
+  voice: { f: 0.48, growl: 1.7, rasp: 1.3, throat: 'bellow' },
+  use: {},
+  // AT HALF OF HIM HE STOPS HOLDING BACK: quicker feet, quicker hands, longer strings (`kingRage` is the light of it)
+  rage: { aggr: 6.8, speedK: 2.0, press: 1.3, chainMax: 7, windK: 0.88, poiseBack: 4.2, circle: 0.02, feint: 0, opening: 0.1 },
+  onRage: (u) => kingRage(u), rageClip: 'kIdle', rageDur: 0.5,
+});
+/* HIS BLOWS, each its own take, with the contacts measured off it (`tools/ntar_moves.py -- king` logs every local maximum of
+ * the hands', knees' and toes' speed; the frame each striking end is moving fastest, as a fraction of the take):
+ *   the uppercut     a left jab at 0.137 and the right hand up through you at 0.466;
+ *   the knee combo   the flying knee at 0.266 (the punch beside it four frames earlier is the same blow), then the right fist
+ *                    at 0.405 and the left at 0.481 — a leap that crosses four metres of its own (`rm`);
+ *   the kicks        the high one at 0.625, off a step and a turn (3.9 m of its own travel);
+ *   the bicycle      a quick double off the floor, the right foot at 0.44 and the left at its end;
+ *   the assassination the low kick to your legs at 0.277 and the right hand at 0.649 — the slowest, and two of your four.
+ * Played at their own speed or a touch over (`rate`); a single blow holds its wind-up a beat (`natHold`), a string does not
+ * (its first contact is the tell). */
+{
+  const P = (clip, hit, o) => Object.assign({ clip, hit, rate: 1.0, fluid: true, strike: 0.2, reach: 3.0, lunge: 0.5, stop: 2.2, limbs: [0, 1], dmg: 1, guardK: 1.5, chain: null }, o || {});
+  MUT_ATTACKS.kgUpper = P('kUpper', 0.466, { rate: 1.12, dmg: 2, guardK: 1.3, chain: 'kgKick', chainP: 0.62 });   // (its jab at 0.137 is a feint: thrown before he has stepped in, it never reaches you — not a contact)
+  MUT_ATTACKS.kgKnee = P('kKnee', 0.266, { more: [0.405, 0.481], rate: 1.05, limbs: [0, 1, 2], reach: 5.6, minDist: 3.0, hold: true, chain: 'kgUpper', chainP: 0.30 });
+  MUT_ATTACKS.kgKick = P('kKick', 0.625, { natHold: 0.10, cockF: 0.7, rate: 1.08, limbs: [2, 3], dmg: 2, guardK: 1.25, reach: 4.8, chain: 'kgBike', chainP: 0.6 });
+  /* THE BICYCLE, FLOWN (2026-11-20, the owner: "he does it too fast he should fly and kick a few times"). The take is one
+   * cycle of the move made to loop — 17 frames, a kick a foot — and played once it was two kicks in 0.7 s. `kBikeAir`
+   * (`tools/king_bike_loop.py`) is the cycle three times: six kicks, right, left, right, left, right, left, at 0.7 of its
+   * speed — 2.3 s off the floor, a kick every 0.38 s, him lifted and driving at you through it (`kingAirBike`). Each kick
+   * is its own contact; a quarter of the guard each would be one and a half bars, so each costs a little (`guardK`), and
+   * the health is the string's, not six blows' (`comboGrace`: the kicks between still land — the flash, the knock). */
+  const BIKE = { more: [15, 23, 31, 39, 47].map((i) => i / 48), rate: 0.7, limbs: [2, 3], guardK: 0.5, airBike: true };
+  MUT_ATTACKS.kgBike = P('kBikeAir', 7 / 48, Object.assign({}, BIKE, { chain: 'kgUpper', chainP: 0.55 }));
+  // (the bicycle thrown out of a flat-out run — `kingHuntStep`: the gap crossed in the air, never drawn in the ordinary way)
+  MUT_ATTACKS.kgRun = P('kBikeAir', 7 / 48, Object.assign({}, BIKE, { hold: true, air: 0.33, lunge: 3, minDist: 2.0, reach: 3.4, chain: 'kgUpper', chainP: 0.5 }));
+  MUT_ATTACKS.kgAssn = P('kAssn', 0.277, { more: [0.649], rate: 1.12, limbs: [0, 2], dmg: 2, guardK: 1.4, chain: 'kgKick', chainP: 0.5 });
+  /* (each closes to its stand-off through its wind-up, `lunge` with `lungeLead`, eased by `smoothMove` — not the dark knight's
+   * recorded step, `dkRootMotion`, which now asks a blow for `rmStop` tables these do not have: with `rm` set and no lunge he
+   * stood where the wind-up began and the blow came down short) */
+  for (const k of ['kgKick', 'kgAssn', 'kgUpper', 'kgBike']) MUT_ATTACKS[k].lunge = 1.6;
+  // where he stands for each (his stand-off from you as the blow lands)
+  const STOP = { kgUpper: 2.0, kgKnee: 2.2, kgKick: 2.3, kgBike: 2.0, kgAssn: 2.0, kgRun: 2.0 };
+  for (const k in STOP) { const A = MUT_ATTACKS[k]; A.stop = STOP[k]; A.reach = Math.max(A.hold ? A.reach : 0, STOP[k] + 0.6); }
+  for (const k in STOP) { MUT_ATTACKS[k].w = 0.1; MUT_KINDS.king.alias[k] = MUT_ATTACKS[k].clip; }
+  // (the stand-offs above are first guesses: `kingMeasureBlows` sets each from where the blow's own limb reaches, once his clips are in)
+  /* (no knee combo: a flying knee whose blows come down 2.5 m up never touches you whatever he does — measured, `kingreach.js`) */
+  MUT_KINDS.king.use = { kgUpper: 0.30, kgKick: 0.26, kgBike: 0.24, kgAssn: 0.20, kgRun: 0 };
+}
+
+const KING = { u: null, mode: 'wait', mt: 0, yaw: 0, spot: new THREE.Vector3(), cd: 6, climbCd: 18, climbs: 0, look: false, dead: false, placed: false, landing: false, thud: false };
+/* measured (`tools/kingpillars.js`, `tools/kinglip.js`): room frame, x = sin a, z = cos a. The ring on the pillars is 6 m
+ * thick (its underside 36.8 m over the floor) and stepped: its inner lip 22.0 m out at 43.1 m, rising to 46+ past 24.5 m.
+ * He perches on the LIP, crouched with his toes at its edge, leaning out over you (`lipR`, `lip`). */
+const KING_PILLARS = { n: 11, a0: THREE.MathUtils.degToRad(21), face: 23.0, lipR: 21.75, lip: 43.1 };
+const KING_FROM = 62, KING_HOVER = 0.8, KING_DESC = 7.5, KING_MIST_IN = 1.6, KING_TRIGGER = TMP_POD_R * 0.9;
+const KING_LAND0 = 1.13;          // (the jump's clip time, s, just before its feet come down: f34 of 66; down at f40, settled by f60)
+const KING_SHOCK_RATE = 1.25;     // the electrocution, a quarter over its own speed: 6.2 s of it
+const KFX = { built: false, beam: null, lamp: null, mist: null, mistK: 0, mistAt: new THREE.Vector3(), dark: 0, sun: 0, beamK: 0, flash: 0,
+  at: new THREE.Vector3(), ball: null };
+const _kV = new THREE.Vector3(), _kW = new THREE.Vector3(), _kCol = new THREE.Color();
+const kFloor = (x, z) => TMP_Y + tmpFloorAt(x - TMP_X, z - TMP_Z);    // the room's floor under a world point
+const kingSmooth = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+function kingFace(u, want, dt, rate) { let dy = want - KING.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); KING.yaw += dy * Math.min(1, dt * rate); u.g.rotation.set(0, KING.yaw, 0); }
+const kingToYou = (u) => Math.atan2(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+/* where he may go: after you, wherever you go — out between the pillars and over the sand — kept out of the stone the way you
+ * are (`tmpPushOut`), on the floor. (He was held inside 20.6 m while you could walk 420: with your back to a pillar or a step
+ * outside the ring every blow came down short — measured, `kingstudy.js`, 2.2 m off you through five swings in a row.) */
+const KING_ROAM_R = TMP_WALK_R;      // (the owner: "he should get you anywhere in the desert")
+function kingClampUnit(u, p) {
+  const dx = p.x - TMP_X, dz = p.z - TMP_Z, r = Math.hypot(dx, dz), R = KING_ROAM_R;
+  if (r > R) { p.x = TMP_X + dx / r * R; p.z = TMP_Z + dz / r * R; }
+  tmpPushOut(p, p.y - TMP_Y);
+  if (!(u.st.down > 0)) p.y = kFloor(p.x, p.z);
+}
+// the lowest of his feet under his group's origin at clip time t (sampled; every action's weight and time put back)
+function kingFeetAt(u, a, t) {
+  const ws = new Map(); for (const k in u.clips) { const x = u.clips[k]; if (!ws.has(x)) ws.set(x, [x.weight, x.time, x.enabled]); }
+  for (const [x] of ws) x.weight = x === a ? 1 : 0;
+  a.enabled = true; a.time = t; u.mixer.update(0); u.g.updateMatrixWorld(true);
+  let lo = 1e9; for (const n of ['LeftToeBase', 'RightToeBase', 'LeftFoot', 'RightFoot']) { const b = u.model.getObjectByName(KING_RAG['Character1_' + n]); if (b) lo = Math.min(lo, b.getWorldPosition(_kW).y); }
+  for (const [x, [w, tt, en]] of ws) { x.weight = w; x.time = tt; x.enabled = en; }
+  u.mixer.update(0);
+  return lo < 1e8 ? lo - u.g.position.y : 0;
+}
+function kingPlay(u, name, loop, ts = 1, at = null) {
+  const a = mutPlay(u, name, loop); if (!a) return null;
+  a.timeScale = ts; if (at !== null) a.time = at;
+  return a;
+}
+
+// ---- made, placed, and the trigger (from `updateTemple`, while you are in the room)
+function kingTick(dt) {
+  if (!tmpReady) return;
+  kingMovesFetch();
+  if (!KING.u) {
+    if (!kingMoves || !knightMoves || !ntarMoves) return;      // (all his clips in before he is made: the fight's names are aliased once, as he is dressed)
+    KING.u = makeMutant(TMP_X, TMP_Z, 'king', kFloor(TMP_X, TMP_Z));
+    KING.u.g.visible = false;
+    return;
+  }
+  const u = KING.u;
+  if (!u.ready || !u.mixer) return;
+  kingFxBuild(u);
+  if (!KING.placed) kingPlace(u);
+  const c = camera.position, lr = Math.hypot(c.x - TMP_X, c.z - TMP_Z);
+  if (KING.mode === 'wait' && !kingCut && !tmpCut && !frozen() && lr < KING_TRIGGER) kingBeginDescent(u);
+  if (KING.mode === 'ready' && !frozen() && lr < KING_TRIGGER * 1.25) kingFightOn(u);
+  kingFxShow(dt);
+  kingAtmos(dt);
+}
+function kingPlace(u) {
+  KING.placed = true;
+  const c = camera.position, lx = c.x - TMP_X, lz = c.z - TMP_Z, r = Math.hypot(lx, lz);
+  // where he comes down: the podium's middle (or, if you are standing on it, six metres off you toward it)
+  if (r < 6) { const ux = r > 0.01 ? -lx / r : 1, uz = r > 0.01 ? -lz / r : 0; KING.spot.set(c.x + ux * 6, 0, c.z + uz * 6); } else KING.spot.set(TMP_X, 0, TMP_Z);
+  KING.spot.y = kFloor(KING.spot.x, KING.spot.z);
+  KING.yaw = Math.atan2(c.x - KING.spot.x, c.z - KING.spot.z);
+  u.g.position.copy(KING.spot); u.g.rotation.set(0, KING.yaw, 0);
+  KFX.at.set(KING.spot.x - TMP_X, 0, KING.spot.z - TMP_Z);
+  u.st.puppet = true;
+  if (KING.dead) { KING.mode = 'gone'; u.g.visible = false; return; }
+  if (kingDown) { KING.mode = 'ready'; kingPlay(u, 'kIdle', true); u.cur && u.cur.setEffectiveWeight(1); }
+  else { KING.mode = 'wait'; u.g.visible = false; }
+}
+function kingFightOn(u) {
+  KING.mode = 'fight'; KING.mt = 0;
+  u.st.puppet = false; u.st.awake = true; u.st.mine = true; u.st.cool = 0.5; u.st.atk = -1;
+  u.g.visible = true;
+  KING.cd = 6 + Math.random() * 3;
+}
+
+// ---- THE COMING DOWN
+function kingBeginDescent(u) {
+  KING.mode = 'descend'; KING.mt = 0; KING.landing = false; KING.thud = false;
+  kingCut = { t: 0 };
+  const top = KING.spot.y + KING_FROM;
+  KFX.mistAt.set(KING.spot.x, top + 1.0, KING.spot.z);
+  cineHold = true; dialogHead = null; dialogTarget = KFX.mistAt.clone(); dialogFov = 50;
+  if (held) dropHeld();
+  u.g.position.set(KING.spot.x, top, KING.spot.z); u.g.visible = false;
+  kingPlay(u, 'hover', true); if (u.cur) { u.cur.stopFading(); u.cur.setEffectiveWeight(1); }
+  KING.yaw = kingToYou(u) + 0.9; u.g.rotation.set(0, KING.yaw, 0);
+  kingSkipArm();
+}
+// ENTER: down at once, on his feet, the fight on ("make the start cutscene skippable with enter as well")
+function kingSkipArm() {
+  if (KING.skipKey) window.removeEventListener('keydown', KING.skipKey, true);
+  KING.skipKey = (e) => {
+    if (e.repeat || (e.code !== 'Enter' && e.code !== 'NumpadEnter')) return;
+    if (KING.mode !== 'descend' || !KING.u || KING.mt < 0.3 || menuOpen) return;
+    e.preventDefault(); e.stopPropagation();
+    kingDescentDone(KING.u, true);
+  };
+  window.addEventListener('keydown', KING.skipKey, true);
+}
+function kingDescentDone(u, skipped) {
+  if (KING.skipKey) { window.removeEventListener('keydown', KING.skipKey, true); KING.skipKey = null; }
+  u.g.position.set(KING.spot.x, KING.spot.y, KING.spot.z); u.g.visible = true;
+  if (skipped) {
+    KING.yaw = kingToYou(u); u.g.rotation.set(0, KING.yaw, 0);
+    kingPlay(u, 'kIdle', true); if (u.cur) { u.cur.stopFading(); u.cur.setEffectiveWeight(1); }
+    for (const k in u.clips) if (u.clips[k] !== u.cur) u.clips[k].stop();
+    KFX.mistK = 0; KFX.dark = 0.45; KFX.sun = 0.55; KFX.beamK = 0.35;
+  }
+  kingCut = null; kingDown = true;
+  cineHold = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV;
+  kingFightOn(u);
+  autosaveNow();
+}
+function kingDescendStep(u, dt) {
+  const t = KING.mt, tIn = KING_MIST_IN, tTouch = tIn + KING_DESC;
+  if (kingCut) kingCut.t = t;
+  const d = Math.max(0, Math.min(1, (t - tIn) / KING_DESC)), e = 1 - Math.pow(1 - d, 3);      // slowing all the way down
+  const hov = KING_HOVER * (1 - kingSmooth((t - (tTouch - 0.9)) / 0.9));                  // the hover's lift let go as his feet come down
+  u.g.position.set(KING.spot.x, KING.spot.y + KING_FROM * (1 - e) + hov, KING.spot.z);
+  u.g.visible = t > 0.9;                         // (inside the mist by then: never seen to appear)
+  kingFace(u, kingToYou(u), dt, 0.55);
+  // the room goes down round him and the sun comes over the top; the mist gathers, holds, and thins as he comes out of it
+  KFX.dark = Math.min(1, t / 1.4); KFX.sun = THREE.MathUtils.smoothstep(t, 0.2, 2.2);
+  KFX.mistK = Math.min(1, t / 0.8) * (1 - kingSmooth((t - (tIn + 2.2)) / 5.5));
+  KFX.beamK = Math.min(1, t / 0.9) * (t > tTouch ? 1 - 0.6 * Math.min(1, (t - tTouch) / 1.6) : 1);
+  // your eye: on the light, then on him as he comes out of it, the lens closing in
+  if (t > tIn + 1.2 && !dialogHead && u.bones && u.bones.head) dialogHead = u.bones.head;
+  dialogFov = THREE.MathUtils.lerp(50, 26, THREE.MathUtils.smoothstep(d, 0.35, 1));
+  // and his legs: out of the hover into the jump's landing as his feet come down — he lands on them
+  if (!KING.landing && t >= tTouch - 0.2) { KING.landing = true; kingPlay(u, 'kJump', false, 1, KING_LAND0); }
+  if (!KING.thud && t >= tTouch) {
+    KING.thud = true;
+    addTrauma(0.55); fovKick = Math.max(fovKick, 5); airGust = Math.max(airGust, 1.0);
+    playSample('maceHeavy', 0.85, 0.03, 0.62);
+    spawnPuffs(KING.spot.x, KING.spot.z, 16, 0, 0, KING.spot.y + 0.1, [0.62, 0.56, 0.46]);
+  }
+  if (KING.landing && t >= tTouch + 0.75 && u.cur === u.clips.kJump) kingPlay(u, 'kIdle', true);
+  if (t >= tTouch + 1.9) kingDescentDone(u, false);
+}
+
+// ---- THE DRIVE: everything of his own, ahead of the fight AI (`updateMutantUnit`); true holds the AI off this frame
+/* WHERE EACH BLOW LANDS, MEASURED ON HIM (2026-11-20, "make all his hits visually connect"): each blow posed alone at its
+ * contact (`hit`, the main one), the furthest-forward point of the limbs it strikes with, in his own frame. Two things are
+ * read off it: the TURN that puts that point on the line to you (`faceOff`: the uppercut's fist lands a metre out to his
+ * side — he turns into it), and the STAND-OFF it lands at (its reach, plus your body's width and a little: `stop`, which the
+ * closing and his recorded step both aim at). Measured once, when his clips are in; every action's weight and time put back. */
+function kingMeasureBlows(u) {
+  const RAG = u.kind.rag, bone = (n) => u.model.getObjectByName(RAG['Character1_' + n]);
+  const CH = [['RightArm', 'RightForeArm', 'RightHand'], ['LeftArm', 'LeftForeArm', 'LeftHand'], ['RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'], ['LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase']].map((c) => c.map(bone));
+  const ws = new Map(); for (const k in u.clips) { const x = u.clips[k]; if (!ws.has(x)) ws.set(x, [x.weight, x.time, x.enabled]); }
+  const inv = new THREE.Matrix4(), v = new THREE.Vector3(), out = [];
+  for (const k in u.atk) {
+    const A = u.atk[k], a = u.clips[A.clip]; if (!a) continue;
+    const was = a.isScheduled();
+    for (const [x] of ws) x.weight = x === a ? 1 : 0;
+    if (!was) a.play();
+    a.enabled = true; a.paused = false; a.setEffectiveWeight(1); a.time = a.getClip().duration * A.hit; u.mixer.update(0); u.g.updateMatrixWorld(true); inv.copy(u.g.matrixWorld).invert();
+    if (!was) a.stop();
+    let best = null;
+    for (const li of A.limbs || [0, 1]) for (const bn of CH[li] || []) { if (!bn) continue; bn.getWorldPosition(v).applyMatrix4(inv); const r = Math.hypot(v.x, v.z); if (!best || r > best.r) best = { r, x: v.x, z: v.z, y: v.y }; }
+    if (!best) continue;
+    A.faceOff = -Math.atan2(best.x, Math.max(0.05, best.z));
+    A.stop = Math.max(0.95, best.r + 0.42); A.reach = Math.max(A.hold ? A.reach : 0, A.stop + 0.45);   // (he throws it from where his closing can still make the stand-off: the owner, "he should know when hes close to hit")
+    out.push(k + ' reach ' + best.r.toFixed(2) + ' h ' + best.y.toFixed(2) + ' turn ' + (A.faceOff * 57.3).toFixed(0) + ' stop ' + A.stop.toFixed(2));
+  }
+  for (const [x, [w, tt, en]] of ws) { x.weight = w; x.time = tt; x.enabled = en; }
+  u.mixer.update(0);
+  u.maxReach = Math.max(...Object.values(u.atk).filter((a) => !a.minDist).map((a) => a.reach));
+  { const near = Object.values(u.atk).filter((a) => !a.minDist); u.ring = near.reduce((s, a) => s + a.reach, 0) / Math.max(1, near.length); }
+  KING.blows = out.join(' | ');
+  return true;
+}
+/* HIS BLOW LANDS WHERE YOU SEE IT LAND (`kind.landFn`). The game's own test first (`blowLands`: the limb through your body,
+ * in the picture); and besides it, the striking limb — every segment of the arm or leg that throws it — passing within
+ * `KING_FACE_R` of the point just ahead of your eye, in front of the lens and on screen: a fist or a boot in your face is a
+ * blow, whatever the body under the camera says. Measured (`kingstudy.js`): his landed blows pass 0.06-0.28 m off that point,
+ * his misses 0.6 m and more — the test sits in the gap. */
+const KING_FACE_R = 0.38, _klA = new THREE.Vector3(), _klB = new THREE.Vector3(), _klP = new THREE.Vector3(), _klF = new THREE.Vector3(), _klE = new THREE.Vector3();
+function kingLands(u, A) {
+  if (blowLands(u)) return true;
+  if (u.st.foe || !blowHeightOK(u)) return false;
+  camera.getWorldDirection(_klF);
+  _klE.copy(camera.position).addScaledVector(_klF, 0.25);
+  const all = mutLimbs(u), chains = A && A.limbs && A.limbs.length ? A.limbs.map((i) => all[i]).filter(Boolean) : all;
+  for (const L of chains) {
+    const pts = [L.arm, L.fore, L.hand, L.tip].filter(Boolean);
+    for (let i = 1; i < pts.length; i++) {
+      drawnPos(u, pts[i - 1], _klA); drawnPos(u, pts[i], _klB);
+      for (let k = 0; k <= 6; k++) {
+        _klP.lerpVectors(_klA, _klB, k / 6);
+        if (_klP.distanceTo(_klE) > KING_FACE_R) continue;
+        const ahead = (_klP.x - camera.position.x) * _klF.x + (_klP.y - camera.position.y) * _klF.y + (_klP.z - camera.position.z) * _klF.z;
+        if (ahead > 0.06 && onScreenPt(_klP)) { (u.hitPt || (u.hitPt = new THREE.Vector3())).copy(_klP); u.hitAt = performance.now(); return true; }
+      }
+    }
+  }
+  return false;
+}
+/* OFF THE FLOOR THROUGH THE BICYCLE (`A.airBike`): lifted into it over its first fifth of a second and down out of it at its
+ * end (his feet never touch in the take — he kicks lying back on the air), and driving on at you between the kicks, so a
+ * step back does not take you out of a string that is meant to run you over. The lift is the model's, inside his group. */
+const KING_BIKE_LIFT = 0.3;
+function kingAirBike(u, dt) {
+  const A = u.st.atk >= 0 && u.atk ? u.atk[u.st.swing] : null;
+  if (!u.model) return;
+  if (!A || !A.airBike) { u.model.position.y += (0 - u.model.position.y) * Math.min(1, dt * 12); return; }
+  const t = u.st.atk, T = A.wind + A.strike + A.recover;
+  u.model.position.y = KING_BIKE_LIFT * kingSmooth(t / 0.22) * (1 - kingSmooth((t - (T - 0.3)) / 0.3));
+  if (t > A.wind && t < T - 0.3) {
+    const p = u.g.position, dx = camera.position.x - p.x, dz = camera.position.z - p.z, d = Math.hypot(dx, dz) || 1;
+    const go = Math.min(4.5, Math.max(0, d - A.stop) * 5) * dt;
+    if (go > 0) { p.x += dx / d * go; p.z += dz / d * go; kingClampUnit(u, p); }
+  }
+}
+function kingDrive(u, dt) {
+  if (!u.natDone) u.natDone = naturalSwings(u);
+  if (u.natDone && !u.kgMeasured) u.kgMeasured = kingMeasureBlows(u);
+
+  if (!(inTemple && tmpReady)) { u.g.visible = false; return true; }
+  const M = KING.mode;
+  KING.mt += dt;
+  // how fast you are getting away from him (m/s along the line from him to you, eased): his leap leads you by it
+  { const c = camera.position, p = u.g.position, dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz) || 1;
+    if (KING.lastC && dt > 0) { const v = ((c.x - KING.lastC.x) * dx + (c.z - KING.lastC.z) * dz) / d / dt; u.st.recede = (u.st.recede || 0) + (Math.max(0, Math.min(9, v)) - (u.st.recede || 0)) * Math.min(1, dt * 8); }
+    (KING.lastC || (KING.lastC = new THREE.Vector3())).copy(c); }
+  if (M === 'fight') {
+    u.st.puppet = false; u.st.awake = true; u.g.visible = true;     // (awake whatever a save's calm says: `calmChasers`)
+    dkRootMotion(u); kingClampUnit(u, u.g.position);
+    // turned into the blow he is throwing, so its fist or foot comes at you down the line (`kingMeasureBlows`; after the step, which zeroes it)
+    { const A = u.st.atk >= 0 && u.atk ? u.atk[u.st.swing] : null; u.faceOff = A && A.faceOff ? A.faceOff : 0;
+      /* (a blow you have run out of before it comes is let go, and he comes after you again: measured, sprinting away, his
+       * uppercut came down 6.7 m behind you — `kingstudy.js &flee=5.71`) */
+      if (A && u.st.atk < A.wind - 0.12) { const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z); if (d > A.reach + 1.6 && kingHuntStart(u)) return true; } }
+    kingAirBike(u, dt);
+    KING.yaw = u.g.rotation.y;
+    return kingChoose(u, dt);
+  }
+  u.st.puppet = true;
+  if (M === 'wait') { u.g.visible = false; return true; }
+  if (M === 'gone') { u.g.visible = false; return true; }
+  if (M === 'ready') { u.g.visible = true; if (!frozen()) kingFace(u, kingToYou(u), dt, 1.2); u.g.position.y = kFloor(u.g.position.x, u.g.position.z); }
+  else if (M === 'descend') kingDescendStep(u, dt);
+  else if (M === 'flip') kingFlipStep(u, dt);
+  else if (M === 'hunt') kingHuntStep(u, dt);
+  else if (M === 'turn') kingTurnStep(u, dt);
+  else if (M === 'run') kingRunStep(u, dt);
+  else if (M === 'climb') kingClimbStep(u, dt);
+  else if (M === 'perch') kingPerchStep(u, dt);
+  else if (M === 'leap') kingLeapStep(u, dt);
+  else if (M === 'slamRec') { kingSlamRecStep(u, dt); if (KING.mode !== 'slamRec') return false; u.mixer.update(dt); return true; }
+  else if (M === 'dying') kingDyingStep(u, dt);
+  u.mixer.update(dt);
+  return true;
+}
+// in the fight: whether he goes into a move of his own this frame
+function kingChoose(u, dt) {
+  const st = u.st;
+  KING.cd -= dt; KING.climbCd -= dt;
+  if (!st.alive || st.atk >= 0 || st.stun > 0 || st.recoil > 0 || (st.down || 0) > 0 || st.roar > 0 || st.struck || frozen()) return false;
+  const p = u.g.position, c = camera.position, dist = Math.hypot(c.x - p.x, c.z - p.z), frac = st.hp / MUT_KINDS.king.hp;
+  // UP A PILLAR AT HALF OF HIM, once, and down on you from it (the owner, 2026-11-20: "he should do this half health")
+  if (KING.climbs === 0 && frac <= 0.5) return kingRunStart(u);
+  // OVER YOUR HEAD, from three and a half to eight metres, now and then
+  if (KING.cd <= 0) {
+    if (dist > 3.5 && dist < 8 && Math.random() < 0.4 && kingFlipStart(u)) return true;
+    KING.cd = 2.5;
+  }
+  // RUN YOU DOWN: anywhere in the desert, faster than you can sprint (the owner: "he should get you anywhere in the desert")
+  if ((dist > KING_HUNT.from || (dist > 2.2 && kingLineBlocked(u))) && kingHuntStart(u)) return true;   // (and round a pillar that stands between)
+  return false;
+}
+function kingTakeOver(u) {
+  mutDrop(u);
+  if (u.model) u.model.position.y = 0;          // (down out of the bicycle's lift, if a move of his own cuts it short)
+  const st = u.st; st.atk = -1; st.chainAt = -1; st.chained = false; st.chainN = 0; st.side = 0; st.back = 0; st.feint = 0; st.flinchPush = null;
+  st.puppet = true;
+}
+
+// ---- THE HUNT: flat out at you (Fast Run) from wherever you have got to, and out of the run straight into a blow
+const KING_HUNT = { from: 4.6, to: 2.1, sp: 7.8 };          // (you sprint at 5.71: `RUN_SPEED`)
+function kingHuntStart(u) {
+  kingTakeOver(u);
+  KING.huntP = null; KING.huntChk = 0;
+  KING.mode = 'hunt'; KING.mt = 0;
+  const a = kingPlay(u, 'kSprint', true), cs = (u.clipSpeed && u.clipSpeed.kSprint) || KING_HUNT.sp;
+  if (a) a.timeScale = THREE.MathUtils.clamp(KING_HUNT.sp / cs, 0.8, 1.5);      // (his feet at the ground's pace)
+  return true;
+}
+/* ROUND THE STONE (2026-11-20): the hunt ran straight at you, and with a pillar between he pressed into it for the run's
+ * whole 25 s — four times over, measured (`tools/kingbot.js`), after his slam put a pillar between you. The way ahead is
+ * felt a stride and a half out on the temple's solid grid; blocked, he bears off to one side (the same side while it is
+ * still blocked, so he goes ROUND rather than dithering) at the first bearing that is clear. */
+function kingSolidAt(x, z, y) { const lx = x - TMP_X, lz = z - TMP_Z; return tmpCellTop(lx, lz) > Math.max(y - TMP_Y, tmpFloorAt(lx, lz)) + 0.6; }
+function kingSteer(u, dx, dz, look, out) {
+  const p = u.g.position, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d, L = Math.min(look, d);
+  const free = (vx, vz) => !kingSolidAt(p.x + vx * L, p.z + vz * L, p.y) && !kingSolidAt(p.x + vx * L * 0.5, p.z + vz * L * 0.5, p.y);
+  if (free(ux, uz)) { KING.avoid = 0; return out.set(ux, 0, uz); }
+  const side = KING.avoid || (Math.random() < 0.5 ? 1 : -1);
+  for (const a of [0.45, 0.8, 1.15, 1.5, 1.9]) for (const sg of [side, -side]) {
+    const c = Math.cos(a * sg), sn = Math.sin(a * sg), vx = ux * c + uz * sn, vz = -ux * sn + uz * c;
+    if (free(vx, vz)) { KING.avoid = sg; return out.set(vx, 0, vz); }
+  }
+  return out.set(ux, 0, uz);
+}
+// is there stone on the straight line from him to you (half-metre steps)
+function kingLineBlocked(u) {
+  const p = u.g.position, c = camera.position, dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz);
+  for (let t = 0.6; t < d - 0.4; t += 0.5) if (kingSolidAt(p.x + dx / d * t, p.z + dz / d * t, p.y)) return true;
+  return false;
+}
+const _kSt = new THREE.Vector3();
+function kingHuntStep(u, dt) {
+  const p = u.g.position, c = camera.position, dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz) || 1;
+  const dir = kingSteer(u, dx, dz, 2.2, _kSt);
+  { let dy = Math.atan2(dir.x, dir.z) - KING.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); KING.yaw += Math.sign(dy) * Math.min(Math.abs(dy) * Math.min(1, dt * 9), 6.5 * dt); u.g.rotation.set(0, KING.yaw, 0); }   // (round to where he runs no faster than a man turns: 25 rad/s measured, a snap)
+  const blocked = d < 30 && kingLineBlocked(u);
+  const s = Math.min(KING_HUNT.sp * Math.min(1, KING.mt / 0.25 + 0.35), blocked ? 99 : Math.max(0, d - KING_HUNT.to + 0.3)) * dt;
+  p.x += dir.x * s; p.z += dir.z * s;
+  u.mvS = { x: dir.x * s / Math.max(dt, 1e-4), z: dir.z * s / Math.max(dt, 1e-4) };   // (his speed, for the leap out of it)
+  kingClampUnit(u, p);
+  if ((u.st.stepT = (u.st.stepT || 0) - dt) <= 0) { u.st.stepT = 0.3; sfxMutStep(d, u.kind.voice); }
+  // (stuck all the same — a corner the feeler cannot see round: back to the fight, which draws again)
+  KING.huntP = KING.huntP || p.clone();
+  if ((KING.huntChk = (KING.huntChk || 0) + dt) > 1.0) { const moved = p.distanceTo(KING.huntP); KING.huntP.copy(p); KING.huntChk = 0; if (moved < 1.5 && d > KING_HUNT.to + 0.5) { KING.avoid = -(KING.avoid || 1); } }
+  if (d <= KING_HUNT.to && !blocked || KING.mt > 12) {
+    // in range: out of the run and into the air at you, the flying bicycle (`kgRun`), the last of the gap crossed in it
+    kingBackToFight(u, false);
+    if (u.atk.kgRun && u.clips.kgRun) {
+      const st = u.st; st.swing = 'kgRun'; st.atk = 0; st.chained = false; st.chainN = 0; st.wait = 0; st.lastSwing = 'kgRun'; st.side = 0; st.sideT = 0; st.sizing = false; st.landed = false;
+      mutToken = u; sfxMutTell(d, u.atk.kgRun.wind, u.kind.voice);
+    }
+  }
+}
+
+// ---- OVER YOUR HEAD (the Front Flip): from where he stands, over you, down 4.5 m behind you, facing away; then round
+function kingFlipStart(u) {
+  const c = camera.position, p = u.g.position, dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz) || 1;
+  const bx = c.x + dx / d * 4.5, bz = c.z + dz / d * 4.5;
+  if (Math.hypot(bx - TMP_X, bz - TMP_Z) > KING_PILLARS.face - 4) return false;
+  kingTakeOver(u);
+  KING.mode = 'flip'; KING.mt = 0; KING.f0 = p.clone(); KING.f1 = new THREE.Vector3(bx, kFloor(bx, bz), bz); KING.fLand = false;
+  KING.yaw = Math.atan2(dx, dz); u.g.rotation.set(0, KING.yaw, 0);
+  const a = kingPlay(u, 'flip', false); KING.fDur = a ? a.getClip().duration : 1.6;
+  KING.cd = 13 + Math.random() * 6;      // (8-13 was a third of the fight spent in the air or turning round: `kingstudy.js`)
+  playSample('katSwing', 0.7, 0.04, 0.55);
+  return true;
+}
+function kingFlipStep(u, dt) {
+  const s = Math.min(1, KING.mt / KING.fDur), q = kingSmooth((s - 0.18) / 0.6), p = u.g.position;
+  // across over you and up: the clip turns him over, the arc takes him over your head
+  p.set(KING.f0.x + (KING.f1.x - KING.f0.x) * q, KING.f0.y + (KING.f1.y - KING.f0.y) * q + 2.2 * Math.sin(Math.PI * q), KING.f0.z + (KING.f1.z - KING.f0.z) * q);
+  u.g.rotation.set(0, KING.yaw, 0);
+  if (!KING.fLand && s > 0.8) { KING.fLand = true; addTrauma(0.3); playSample('maceHeavy', 0.55, 0.04, 0.7); airGust = Math.max(airGust, 0.6); spawnPuffs(p.x, p.z, 8, 0, 0, KING.f1.y + 0.1, [0.62, 0.56, 0.46]); }
+  if (s >= 1) kingTurnStart(u);
+}
+// round to you on the spot: the pack's turn that fits what is left (the 180, or the quarter), turned by the game over its length
+function kingTurnStart(u) {
+  let dy = kingToYou(u) - KING.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  if (Math.abs(dy) < 0.5) { kingBackToFight(u); return; }
+  const big = Math.abs(dy) > 2.0, name = (dy > 0 ? (big ? 'kTurnL' : 'kTurn90L') : (big ? 'kTurnR' : 'kTurn90R'));
+  const a = kingPlay(u, name, false, 1.9); KING.tDur = a ? a.getClip().duration / 1.9 : 0.55;
+  KING.mode = 'turn'; KING.mt = 0; KING.y0 = KING.yaw;
+}
+function kingTurnStep(u, dt) {
+  let dy = kingToYou(u) - KING.y0; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  const k = kingSmooth(KING.mt / KING.tDur);
+  KING.yaw = KING.y0 + dy * k; u.g.rotation.set(0, KING.yaw, 0);
+  u.g.position.y = kFloor(u.g.position.x, u.g.position.z);
+  if (KING.mt >= KING.tDur) kingBackToFight(u);
+}
+function kingBackToFight(u, attack = true) {
+  kingPlay(u, 'kIdle', true);
+  KING.mode = 'fight'; KING.mt = 0; u.st.puppet = false; u.st.cool = attack ? 0 : Math.max(u.st.cool || 0, 0.15);
+  // (out of the flip, round and straight into you: the turn is the tell, the blow follows it — not a breather)
+  if (attack) { u.st.forceSwing = Math.random() < 0.5 ? 'kgKick' : 'kgUpper'; u.st.openT = 0; mutToken = u; }
+}
+
+// ---- UP A PILLAR: flat out to the foot of the nearest one, up its face, three seconds on the ring's lip
+function kingRunStart(u) {
+  const p = u.g.position, a0 = Math.atan2(p.x - TMP_X, p.z - TMP_Z);
+  let best = 0, bd = 1e9;
+  for (let i = 0; i < KING_PILLARS.n; i++) { const a = KING_PILLARS.a0 + i * Math.PI * 2 / KING_PILLARS.n; const dd = Math.abs(Math.atan2(Math.sin(a - a0), Math.cos(a - a0))); if (dd < bd) { bd = dd; best = a; } }
+  kingTakeOver(u);
+  KING.pa = best; KING.mode = 'run'; KING.mt = 0;
+  const R = KING_PILLARS.face - 1.6;
+  KING.rB = new THREE.Vector3(TMP_X + Math.sin(best) * R, 0, TMP_Z + Math.cos(best) * R);
+  kingPlay(u, 'kSprint', true);
+  KING.climbs++; KING.climbCd = 28 + Math.random() * 10; KING.cd = 4;
+  sfxAt(p.x, p.z, () => sfxMutRoar(0.4, u.kind.voice), { ref: 10, far: 80 });
+  return true;
+}
+function kingRunStep(u, dt) {
+  const p = u.g.position, dx = KING.rB.x - p.x, dz = KING.rB.z - p.z, d = Math.hypot(dx, dz);
+  const sp = (u.clipSpeed && u.clipSpeed.kSprint) || 8.5;
+  kingFace(u, Math.atan2(dx, dz), dt, 8);
+  if (d > 0.05) { const s = Math.min(d, sp * dt); p.x += dx / d * s; p.z += dz / d * s; }
+  p.y = kFloor(p.x, p.z);
+  if (d < 0.45 || KING.mt > 6) {
+    // at the foot: up the face as fast as the run goes (slowed: a man running up a wall forty metres is a long run)
+    KING.mode = 'climb'; KING.mt = 0; KING.yaw = KING.pa; u.g.rotation.set(0, KING.yaw, 0);
+    const a = kingPlay(u, 'wallRun', false, 0.55); if (a) { a.stopFading(); a.setEffectiveWeight(1); for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].stop(); }
+    KING.cDur = a ? a.getClip().duration / 0.55 : 3;
+    KING.cEnd = a ? kingFeetAt(u, a, a.getClip().duration - 1e-3) : 0;      // where his feet are, under him, as the run ends
+    KING.c0 = p.clone();
+  }
+}
+function kingClimbStep(u, dt) {
+  const s = Math.min(1, KING.mt / KING.cDur), top = TMP_Y + tmpFloorAt(0, 0) + KING_PILLARS.lip;
+  const up = kingSmooth(s / 0.85), over = kingSmooth((s - 0.78) / 0.22), R = KING_PILLARS.face - 1.6 + (KING_PILLARS.lipR - KING_PILLARS.face + 1.6) * over;   // (up the face, and over onto the ring's lip)
+  u.g.position.set(TMP_X + Math.sin(KING.pa) * R, KING.c0.y + (top - KING.cEnd - KING.c0.y) * up, TMP_Z + Math.cos(KING.pa) * R);
+  u.g.rotation.set(0, KING.yaw, 0);
+  if (s >= 1) {
+    /* ON HIS FEET ON THE LIP (the owner: "he should stand better on the top it looked like he was floating"): the run's last
+     * frame held 21.75 m out stood him on air just inside the lip's edge. He steps up onto the lip itself — its top found by
+     * a ray down onto the temple, a stride in from the edge — and stands there in his idle, turned to you. No cutscene: you
+     * watch him or you do not ("the run up the pillars should not turn to a cut scene"). */
+    KING.mode = 'perch'; KING.mt = 0; addTrauma(0.06);
+    const r = KING_PILLARS.lipR + 1.1, x = TMP_X + Math.sin(KING.pa) * r, z = TMP_Z + Math.cos(KING.pa) * r;
+    KING.pFrom = u.g.position.clone(); KING.pTo = new THREE.Vector3(x, kingLipY(x, z, top), z);
+    kingPlay(u, 'kIdle', true);
+  }
+}
+const _kRay = new THREE.Raycaster(), _kDown = new THREE.Vector3(0, -1, 0);
+// the top of the ring under a point, by a ray down onto the temple (or the measured lip, if the ray finds nothing near it)
+function kingLipY(x, z, guess) {
+  if (!tmpWorld) return guess;
+  _kRay.set(_kV.set(x, guess + 12, z), _kDown); _kRay.far = 30;
+  const hits = _kRay.intersectObject(tmpWorld, true).filter((h) => h.object.isMesh && !h.object.material.transparent);
+  const h = hits.find((q) => Math.abs(q.point.y - guess) < 6);
+  return h ? h.point.y : guess;
+}
+function kingPerchStep(u, dt) {
+  const k = kingSmooth(KING.mt / 0.45);
+  u.g.position.lerpVectors(KING.pFrom, KING.pTo, k);
+  kingFace(u, kingToYou(u), dt, 2.4);
+  if (KING.mt >= 2.6) kingLeapStart(u);
+}
+/* DOWN ON YOU (2026-11-20, the owner: "dont have him float down make him jump down and slam using this mutant jump when he runs up
+ * the pillars … have the impact huge when he slams down"). The Mutant Jump Attack (`kSlam`): its gather on the lip at its own
+ * speed (to f18), then the flight — the clip's airborne frames stretched over the fall, him on an arc off the ring to where you
+ * stood as he left it (a beat of lead, inside the pillars) — and the slam on its own frame (f47): the ground shakes, the sand goes
+ * up in a ring, and anything inside four metres of it is hit for two (guarded, it is a block). Then the clip's own recovery: an
+ * opening, and he can be cut in it. */
+const KING_SLAM = { off: 18 / 30, land: 47 / 30, air: 1.9, hop: 6, R: 4.0, dmg: 2 };
+function kingLeapStart(u) {
+  const c = camera.position, p = u.g.position;
+  KING.mode = 'leap'; KING.mt = 0; KING.l0 = p.clone(); KING.lAir = false; KING.lHit = false;
+  const a = kingPlay(u, 'kSlam', false, 1, 0); if (a) { a.stopFading(); a.setEffectiveWeight(1); for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].stop(); }
+  KING.yaw = kingToYou(u); u.g.rotation.set(0, KING.yaw, 0);
+  sfxAt(p.x, p.z, () => sfxMutRoar(0.3, u.kind.voice), { ref: 14, far: 120 });
+}
+function kingLeapStep(u, dt) {
+  const a = u.clips.kSlam, t = KING.mt, S = KING_SLAM, p = u.g.position, c = camera.position;
+  if (!KING.lAir) {
+    // the gather on the lip, still turning to you; where he will land is fixed as his feet leave
+    kingFace(u, kingToYou(u), dt, 3);
+    if (t >= S.off) {
+      KING.lAir = true; KING.lt = 0;
+      // (a stride and a half short of you, on his side: on you, he came down with the lens inside him)
+      const fx = c.x - p.x, fz = c.z - p.z, fl = Math.hypot(fx, fz) || 1;
+      let lx = c.x - fx / fl * 1.6 - TMP_X, lz = c.z - fz / fl * 1.6 - TMP_Z; const rr = Math.hypot(lx, lz), R = KING_PILLARS.face - 4, kk = rr > R ? R / rr : 1;
+      lx *= kk; lz *= kk;
+      const tx = TMP_X + lx, tz = TMP_Z + lz;
+      KING.l1 = new THREE.Vector3(tx, kFloor(tx, tz), tz);
+      const drop = KING.l0.y - KING.l1.y;
+      KING.lg = 2 * (drop + S.hop * S.air) / (S.air * S.air);       // the gravity that brings him down from the lip in `air` seconds off a hop of `hop`
+      playSample('katSwing', 0.9, 0.04, 0.45);
+    }
+    return;
+  }
+  KING.lt += dt;
+  const q = Math.min(1, KING.lt / S.air);
+  if (a) { a.paused = false; a.timeScale = 0; a.time = S.off + (S.land - S.off) * q; }     // the clip's flight, stretched over his
+  const y = KING.l0.y + S.hop * KING.lt - 0.5 * KING.lg * KING.lt * KING.lt;
+  p.set(KING.l0.x + (KING.l1.x - KING.l0.x) * q, Math.max(KING.l1.y, y), KING.l0.z + (KING.l1.z - KING.l0.z) * q);
+  kingFace(u, Math.atan2(KING.l1.x - KING.l0.x, KING.l1.z - KING.l0.z), dt, 4);
+  if (q >= 1 && !KING.lHit) {
+    KING.lHit = true; p.copy(KING.l1);
+    kingSlamImpact(u);
+    if (a) { a.timeScale = 1; a.time = S.land; }
+    KING.mode = 'slamRec'; KING.mt = 0;
+  }
+}
+function kingSlamImpact(u) {
+  const p = u.g.position, c = camera.position, d = Math.hypot(c.x - p.x, c.z - p.z), S = KING_SLAM;
+  addTrauma(1); fovKick = Math.max(fovKick, 12); airGust = Math.max(airGust, 2.2); KFX.flash = Math.max(KFX.flash, 0.35);
+  // (the mace's heavy impact, the owner's word: "use that sound for the final bosses ground slam" — twice, low and lower, with the sand under it)
+  playSample('maceHeavy', 1.0, 0.02, 0.62); playSample('maceHeavy', 0.85, 0.02, 0.42); playSample('sandHit', 0.8, 0.05, 0.5);
+  if (typeof sfxThunder === 'function') { try { sfxThunder(0.05, 0, 0.8); } catch (e) { /* the boom is not the blow */ } }
+  // the sand up in a ring round him, and a second ring further out
+  for (let i = 0; i < 18; i++) { const a = i / 18 * Math.PI * 2; spawnPuffs(p.x + Math.sin(a) * 1.4, p.z + Math.cos(a) * 1.4, 3, Math.sin(a), Math.cos(a), p.y + 0.1, [0.72, 0.68, 0.6]); }
+  for (let i = 0; i < 26; i++) { const a = i / 26 * Math.PI * 2; spawnPuffs(p.x + Math.sin(a) * 4.2, p.z + Math.cos(a) * 4.2, 2, Math.sin(a), Math.cos(a), p.y + 0.1, [0.66, 0.62, 0.55]); }
+  // you, inside it
+  if (d < S.R && !dying) {
+    if (blocking && guardSees(p)) blockMutant(u);
+    else {
+      mutLandBlow(u, S.dmg);
+      const k = (1 - d / S.R) * 9 + 4, dx = (c.x - p.x) / (d || 1), dz = (c.z - p.z) / (d || 1);
+      knockback.x += dx * k; knockback.z += dz * k;
+    }
+  }
+}
+function kingSlamRecStep(u, dt) {
+  const a = u.clips.kSlam;
+  u.g.position.y = kFloor(u.g.position.x, u.g.position.z);
+  u.st.puppet = false;                                    // (the recovery is an opening: he can be cut in it)
+  if (u.st.recoil > 0 || u.st.stun > 0 || (u.st.down || 0) > 0 || !a || KING.mt >= (a.getClip().duration - KING_SLAM.land) * 0.92) kingBackToFight(u, !(u.st.recoil > 0 || u.st.stun > 0 || (u.st.down || 0) > 0));
+}
+// ---- HIS DEATH: the lightning through him, and he comes apart
+function kingDeath(u) {
+  if (u.model) u.model.position.y = 0;
+  lazyBuf(END_SONG);                                 // (the stats' song in hand for the burst, `kingExplode`)
+  KING.mode = 'dying'; KING.mt = 0; KING.dead = true; KING.boomed = false;
+  u.st.puppet = true;
+  kingCut = { t: 0, death: true };                   // (you are held for it: `frozen`)
+  if (KING.skipKey) { window.removeEventListener('keydown', KING.skipKey, true); KING.skipKey = null; }
+  u.g.position.y = kFloor(u.g.position.x, u.g.position.z);
+  KING.yaw = u.g.rotation.y;
+  const a = kingPlay(u, 'kShock', false, KING_SHOCK_RATE); if (a) { a.stopFading(); a.setEffectiveWeight(1); for (const k in u.clips) if (u.clips[k] !== a) u.clips[k].stop(); }
+  KING.sDur = a ? a.getClip().duration / KING_SHOCK_RATE : 6;
+  kingLook(true, 38);
+  /* NO LIGHTNING (2026-11-20, the owner: "dont make him actually electricute at death just have him fall like that then
+   * explode into a bright light"): the take's own fall, a cry, and the light (`kingExplode`). */
+  addTrauma(0.4);
+  sfxAt(u.g.position.x, u.g.position.z, () => sfxMutRoar(0.1, u.kind.voice), { ref: 10, far: 80 });
+}
+function kingDyingStep(u, dt) {
+  const t = KING.mt;
+  if (kingCut) kingCut.t = t;
+  // the light gathering in him as he goes down: the lamp on him warming and climbing through the last of the fall
+  const g = THREE.MathUtils.smoothstep(t, KING.sDur * 0.55, KING.sDur * 0.98);
+  if (KFX.lamp) { KFX.lamp.color.setHex(0xfff1d6); KFX.lamp.intensity = 4 + 40 * g * g; }
+  if (!KING.boomed && t >= KING.sDur * 0.98) { KING.boomed = true; kingExplode(u); }
+}
+const KING_PIECES = [
+  { bone: 'Character1_LeftForeArm', name: 'forearm', y: 0.62, r: 0.09, len: 2.2, w: 0.7 }, { bone: 'Character1_RightForeArm', name: 'forearm', y: 0.62, r: 0.09, len: 2.2, w: 0.7 },
+  { bone: 'Character1_LeftArm', name: 'arm', y: 0.72, r: 0.11, len: 2.6, w: 1.0 }, { bone: 'Character1_RightArm', name: 'arm', y: 0.72, r: 0.11, len: 2.6, w: 1.0 },
+  { bone: 'Character1_LeftLeg', name: 'leg', y: 0.30, r: 0.12, len: 2.4, w: 1.0 }, { bone: 'Character1_RightLeg', name: 'leg', y: 0.30, r: 0.12, len: 2.4, w: 1.0 },
+  { bone: 'Character1_LeftUpLeg', name: 'thigh', y: 0.42, r: 0.14, len: 2.4, w: 1.2 }, { bone: 'Character1_RightUpLeg', name: 'thigh', y: 0.42, r: 0.14, len: 2.4, w: 1.2 },
+  MUT_BISECT,
+  { bone: 'Character1_Hips', name: 'torso', y: 0.50, r: 0.20, len: 1.9, w: 2.0 },
+];
+/* HE COMES APART: the electrocution played out, a white flash, and every piece of him thrown off at once — the head burst, the
+ * arms and legs in two pieces each, the chest and the hips (each baked off the skin where it is: `mutSever`, the blast's throw,
+ * `killBlast`), chunks and dust all round, and the thunder. Then the credits. */
+function kingExplode(u) {
+  KING.mode = 'gone'; KING.mt = 0;
+  const p = u.g.position, H = u.kind.h || 3.4, oy = p.y + H * 0.35;
+  u.st.killBlast = 1; u.st.killGore = 1.4;
+  u.g.updateMatrixWorld(true);
+  const r = () => { const a = Math.random() * Math.PI * 2; return [Math.cos(a), Math.sin(a)]; };
+  try {
+    burstHead(u, ...r());
+    for (const L of KING_PIECES) { const [dx, dz] = r(); mutSever(u, L, dx, dz, 1.6 + Math.random() * 1.2); }
+  } catch (e) { console.warn('[king] apart', e); }
+  u.model.visible = false;                            // (what is left of him is in the pieces)
+  // chunks and splinters of him, every way
+  const meat = mutGibMat(u);
+  for (let i = 0; i < 46; i++) {
+    const bone = i % 4 === 0, rr = (bone ? 0.07 : 0.05 + Math.random() * 0.06) * (0.6 + Math.random() * 0.8);
+    const g = new THREE.Mesh(GIB_ICO, bone ? SKULL_MAT : meat);
+    g.scale.set(rr * (1 + Math.random() * 0.9), rr * (0.45 + Math.random() * 0.6), rr * (1 + Math.random() * 0.5));
+    g.position.set(p.x + (Math.random() - 0.5) * 0.6, oy + Math.random() * H * 0.5, p.z + (Math.random() - 0.5) * 0.6);
+    g.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+    scene.add(g);
+    const [dx, dz] = r(), sp = 3 + Math.random() * 9;
+    gibs.push({ m: g, vel: new THREE.Vector3(dx * sp, 2 + Math.random() * 7, dz * sp), spin: new THREE.Vector3((Math.random() - 0.5) * 24, (Math.random() - 0.5) * 24, (Math.random() - 0.5) * 24), rest: rr * 0.5, life: 60 });
+  }
+  spawnPuffs(p.x, p.z, 26, 0, 0, p.y + 0.2, [0.86, 0.82, 0.74]);
+  /* INTO A BRIGHT LIGHT: a ball of it out of him, swelling past you, the room and the screen gone white, and slowly back */
+  const gcv = document.createElement('canvas'); gcv.width = gcv.height = 128;
+  { const gx = gcv.getContext('2d'), gr = gx.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,248,232,0.9)'); gr.addColorStop(0.6, 'rgba(255,236,200,0.35)'); gr.addColorStop(1, 'rgba(255,230,190,0)'); gx.fillStyle = gr; gx.fillRect(0, 0, 128, 128); }
+  const gtex = new THREE.CanvasTexture(gcv); gtex.colorSpace = THREE.SRGBColorSpace;
+  const ball = new THREE.Sprite(new THREE.SpriteMaterial({ map: gtex, color: 0xffffff, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, fog: false }));
+  ball.position.set(p.x, oy + H * 0.15, p.z); ball.renderOrder = 9; ball.frustumCulled = false; scene.add(ball);
+  KFX.ball = { m: ball, t: 0 };
+  /* (at its brightest it IS the screen — 2026-11-20, the owner: "have his explosion at peak brightness cover the screen then fade
+   * to black with the stats showing": the white comes up whole in a quarter second and holds; the end's black, with the stats
+   * and his BEACHWALK, fades in over it, `kingDied`) */
+  const wh = tmpWhiteEl(); wh.style.background = '#fffaf0'; wh.style.transition = 'opacity 0.28s ease-out'; wh.style.opacity = '1';
+  KFX.flash = 2.4; addTrauma(1); fovKick = Math.max(fovKick, 9); airGust = Math.max(airGust, 1.6);
+  playSample('maceHeavy', 1.0, 0.02, 0.45); playSample('smash', 0.8, 0.05, 0.55);
+  if (typeof sfxThunder === 'function') { try { sfxThunder(0.0, 0, 1); } catch (e) { /* */ } }
+  // (and the stats' song comes in WITH the light — 2026-11-20, the owner: "have the final boss explosion start the beachwalk
+  // stats music"; fetched as he starts to die, `kingDeath`; `showEnd` finds it already playing)
+  startEndSong();
+  setTimeout(() => kingDied(), 1500);              // (a beat of the white first)
+}
+/* THE END IS HIS DEATH (2026-11-19, the owner: "take out e to end game at the end end when the boss dies"): the credits, then the
+ * end and its stats (`showEnd`). The one door his death goes through. */
+function kingDied() {
+  if (ended) return;
+  kingLook(false); kingCut = null;
+  showEnd();                 // (straight to the stats: no credits — the owner, 2026-11-20, "take those credits out at the end just show the stats")
+  setTimeout(() => { const wh = tmpWhiteEl(); wh.style.transition = 'none'; wh.style.opacity = '0'; }, 2600);   // (under the end's black by then)
+}
+// at half of him: the light through the ring flares and he comes on (`rage`)
+function kingRage(u) {
+  KFX.flash = Math.max(KFX.flash, 0.6); addTrauma(0.35);
+  sfxAt(u.g.position.x, u.g.position.z, () => sfxMutRoar(0.2, u.kind.voice), { ref: 10, far: 80 });
+  if (typeof sfxThunder === 'function') { try { sfxThunder(0.15, 0, 0.6); } catch (e) { /* */ } }
+}
+/* your eye on him (the perch, the float down from it, his death): `cineHold` + his head, a closer lens. Let go when he is down,
+ * and by `templeLeave` and a restore if you are taken out of it mid-move. */
+function kingLook(on, fov = 30) {
+  const hb = KING.u && KING.u.bones && KING.u.bones.head;
+  if (on) { KING.look = true; cineHold = true; dialogHead = hb || null; dialogTarget = dialogTarget || new THREE.Vector3(); dialogFov = fov; return; }
+  if (!KING.look) return;
+  KING.look = false; cineHold = false; dialogTarget = null; dialogHead = null; dialogFov = DIALOG_FOV;
+}
+
+// ---- THE LIGHT OF HIM: the shaft through the ring, the lamp on him, the mist he comes out of
+function kingMistTex() {
+  const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+  const g = cv.getContext('2d');
+  for (let i = 0; i < 46; i++) {
+    const x = 64 + (Math.random() - 0.5) * 70, y = 64 + (Math.random() - 0.5) * 50, r = 14 + Math.random() * 30;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(255,255,255,0.16)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  // a soft edge all round, so no sprite shows its square
+  const d = g.getImageData(0, 0, 128, 128), A = d.data;
+  for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) { const r = Math.hypot(x - 63.5, y - 63.5) / 64, k = Math.max(0, 1 - r * r); A[(y * 128 + x) * 4 + 3] *= k; }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function kingFxBuild(u) {
+  if (KFX.built) return; KFX.built = true;
+  // THE SHAFT: the light in the air of the ring — an open cylinder, additive, faint, broken by drifting noise like dust in a sunbeam
+  const bg = new THREE.CylinderGeometry(7.5, 4.8, 150, 40, 1, true); bg.translate(0, 75, 0);
+  const beam = new THREE.Mesh(bg, new THREE.ShaderMaterial({
+    uniforms: { uK: { value: 0 }, uT: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.FrontSide, fog: false,
+    vertexShader: 'varying vec2 vUv; varying vec3 vN, vV, vW; void main(){ vUv = uv; vec4 wp = modelMatrix * vec4(position, 1.); vW = wp.xyz; vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - wp.xyz); gl_Position = projectionMatrix * viewMatrix * wp; }',
+    fragmentShader: `uniform float uK, uT; varying vec2 vUv; varying vec3 vN, vV, vW;
+      float h(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+      float n(vec3 p){ vec3 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+        return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z); }
+      void main(){
+        float edge = pow(abs(dot(normalize(vN), normalize(vV))), 1.6);
+        vec3 q = vW * 0.11 + vec3(uT * 0.05, -uT * 0.11, uT * 0.03);
+        float dust = 0.45 + 0.55 * (n(q) * 0.6 + n(q * 2.3) * 0.4);
+        float foot = mix(1.0, 0.3, smoothstep(0., 1., vUv.y));
+        gl_FragColor = vec4(vec3(1., .93, .8) * edge * dust * foot * uK, 1.); }` }));
+  beam.frustumCulled = false; beam.raycast = () => {}; beam.renderOrder = 5; beam.visible = false; tmpWorld.add(beam); KFX.beam = beam;
+  // a warm lamp on him (the pool takes it: `lpAlways`, so he is lit from across the floor)
+  const lamp = new THREE.PointLight(0xffd9a0, 0, 40, 1.6); lamp.userData.lpAlways = 220; lamp.position.set(0, 4.0, 1.4);
+  u.g.add(lamp); KFX.lamp = lamp;
+  /* THE MIST HE COMES OUT OF ("make him float down out of a mist in the air you shouldnt see him spawn it should be very bright
+   * where he comes from"): a bank of soft cloud lit from inside, hung in the open ring over where he will land, white-gold and
+   * bright against the storm; he is in it before he is drawn, and comes down out of its underside. Dense sprites under him (they
+   * draw over him: transparent after solid), a few glowing ones through it, all of it thinning as he comes clear. */
+  const tex = kingMistTex(), mist = new THREE.Group(); mist.visible = false;
+  for (let i = 0; i < 26; i++) {
+    const glow = i < 6, m = new THREE.SpriteMaterial({ map: tex, color: glow ? 0xfff2d8 : 0xf4eee4, transparent: true, depthWrite: false, fog: false, opacity: 0,
+      blending: glow ? THREE.AdditiveBlending : THREE.NormalBlending });
+    const s = new THREE.Sprite(m), a = Math.random() * Math.PI * 2, r = glow ? Math.random() * 4 : 3 + Math.random() * 12;
+    s.position.set(Math.cos(a) * r, glow ? (Math.random() - 0.3) * 3 : -2.5 + Math.random() * 5.5, Math.sin(a) * r);
+    const sz = (glow ? 14 + Math.random() * 8 : 9 + Math.random() * 9) * 1.5; s.scale.set(sz, sz * (0.6 + Math.random() * 0.3), 1);   // (×1.5: a bank of cloud over the ring, not a puff)
+    s.userData = { base: glow ? 0.55 : (s.position.y < 0 && r < 6 ? 0.95 : 0.75), spin: (Math.random() - 0.5) * 0.08, ph: Math.random() * 6 };
+    s.renderOrder = glow ? 8 : 7; s.raycast = () => {};
+    mist.add(s);
+  }
+  scene.add(mist); KFX.mist = mist;
+}
+// the room's light under him: `dark` draws it down, `sun` swings the sun overhead and turns it up (off `templeEnter`'s own values)
+function kingLight() {
+  const d = KFX.dark, s = KFX.sun, f = KFX.flash;
+  skyAmbient.intensity = 0.55 * (1 - 0.72 * d) + 2.2 * f; skyHemi.intensity = 0.95 * (1 - 0.7 * d) + 0.8 * f;
+  moonLight.intensity = 1.25 * (1 - 0.45 * d) + 2.4 * s + 3 * f; moonLight.color.setHex(0xe6e2da).lerp(_kCol.setHex(0xfff0d0), s);
+  moonLight.position.set(-60 * (1 - s), 160, -90 * (1 - s) + 0.01);
+  scene.fog.color.copy(TMP_FOG.color).multiplyScalar(1 - 0.5 * d);
+  if (tmpSky) tmpSky.material.uniforms.uK.value = 1 - 0.62 * d;     // the overcast itself goes to storm
+}
+function kingFxShow(dt) {
+  if (!KFX.built) return;
+  const M = KING.mode, shown = M !== 'wait' || !!kingCut;
+  if (M !== 'wait' && M !== 'descend') {
+    // after: the shaft fainter, the room a shade down, the sun still over him
+    const r = Math.min(1, dt * 0.8);
+    KFX.dark += (0.45 - KFX.dark) * r; KFX.sun += (0.55 - KFX.sun) * r; KFX.beamK += (0.35 - KFX.beamK) * r;
+    KFX.mistK = Math.max(0, KFX.mistK - dt * 0.3);
+  } else if (M === 'wait') { KFX.dark = KFX.sun = KFX.beamK = KFX.mistK = 0; }
+  KFX.flash = Math.max(0, KFX.flash - dt * 1.1);
+  if (KFX.ball) {
+    const B = KFX.ball; B.t += dt; const k = B.t / 1.6;
+    B.m.scale.setScalar(1 + 60 * (1 - Math.pow(1 - Math.min(1, k), 3))); B.m.material.opacity = Math.max(0, 1 - k * k);
+    if (k >= 1) { scene.remove(B.m); B.m.material.map.dispose(); B.m.material.dispose(); KFX.ball = null; }
+  }
+  kingLight();
+  const t = performance.now() * 0.001, B = KFX.beam, k = KFX.beamK;
+  B.visible = shown && k > 0.002; B.position.set(KFX.at.x, tmpFloorAt(KFX.at.x, KFX.at.z), KFX.at.z);   // (the shaft stays where he came down: he does not)
+  B.material.uniforms.uK.value = 0.26 * k; B.material.uniforms.uT.value = t;
+  if (KFX.lamp && M !== 'dying') { KFX.lamp.color.setHex(0xffd9a0); KFX.lamp.intensity = shown && M !== 'gone' ? 4 + 6 * k : 0; }
+  const mist = KFX.mist;
+  mist.visible = KFX.mistK > 0.003;
+  if (mist.visible) {
+    mist.position.copy(KFX.mistAt);
+    for (const s of mist.children) {
+      const U = s.userData; s.material.opacity = U.base * KFX.mistK * (0.85 + 0.15 * Math.sin(t * 0.4 + U.ph));
+      s.material.rotation += U.spin * dt; s.position.x += Math.sin(t * 0.2 + U.ph) * dt * 0.15;
+    }
+  }
+}
+
+/* ---- THE LAST FIGHT'S AIR (2026-11-20, the owner: "make the whole final fight in black and white and make it look more
+ * atmospheric … i need mist and things. you should feel the scale of the area … it should be breathtaking and beautifully
+ * dramatic … all the effects you add should not be bad or corny it should feel like fromsoft areas. this part should feel
+ * like a movie"). Nothing that glows, sparkles or pulses; weather and distance:
+ *   - THE COLOUR GOES as he comes (`KA.k`, over the descent's first seconds): the picture to black and white, the contrast
+ *     up a little, the blacks a little deeper — a CSS filter on the game's canvas, so the HUD keeps its own;
+ *   - GROUND MIST: four sheets of slow fbm laid over the floor at different heights, thin inside the pillars where the
+ *     fight is and thick out past them, drifting down the desert's own wind, each one let go where your eye passes through it;
+
+ *   (no towers: the colossal columns out in the storm are gone — the owner, 2026-11-20, "take out all the … towers in the desert")
+ *   - ASH falling slowly through it all, and three faint slanted shafts from the overcast onto the sand round the ring;
+ *   - and his cutscenes framed: letterbox bars in and out (`#cine-bars`), the HUD away. */
+const KA = { built: false, k: 0, mist: [], ash: null, shafts: [], t: 0 };
+function kaMistMat(y, scale, k, seed) {
+  return new THREE.ShaderMaterial({
+    uniforms: { uT: { value: 0 }, uK: { value: 0 }, uCam: { value: new THREE.Vector3() }, uC: { value: new THREE.Color(0xd9dad8) }, uS: { value: scale }, uSeed: { value: seed }, uL: { value: k } },
+    transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
+    vertexShader: 'varying vec3 vW; void main(){ vec4 wp = modelMatrix * vec4(position, 1.); vW = wp.xyz; gl_Position = projectionMatrix * viewMatrix * wp; }',
+    fragmentShader: `uniform float uT, uK, uS, uSeed, uL; uniform vec3 uCam, uC; varying vec3 vW;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7)) + uSeed) * 43758.5453); }
+      float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+        return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+      float fbm(vec2 p){ float a = 0., w = .5; for (int i = 0; i < 5; i++) { a += w * n(p); p = p * 2.03 + 17.1; w *= .5; } return a; }
+      void main(){
+        vec2 c = vW.xz - vec2(${TMP_X.toFixed(1)}, ${TMP_Z.toFixed(1)});
+        vec2 wind = vec2(${TMP_WIND.x.toFixed(3)}, ${TMP_WIND.z.toFixed(3)});
+        vec2 p = c * uS + wind * uT * uS * 2.2;
+        float m = fbm(p) * .7 + fbm(p * 2.6 - wind * uT * uS * 1.3) * .3;
+        float d = smoothstep(.38, .82, m);
+        float r = length(c);
+        float ring = mix(.42, 1., smoothstep(14., 60., r)) * (1. - smoothstep(170., 230., r));
+        float lay = smoothstep(.0, 1.0, abs(uCam.y - vW.y));            // let go where your eye passes through it
+        float near = smoothstep(3., 16., length(uCam.xz - vW.xz));
+        gl_FragColor = vec4(uC, d * ring * lay * near * uK * uL); }` });
+}
+const kaRand = (() => { let s = 7331; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
+function kaBuild() {
+  if (KA.built || !tmpWorld) return; KA.built = true;
+  // GROUND MIST
+  const F = TMP_FLOOR;
+  for (const [y, sc, k, sd] of [[F + 0.3, 0.020, 0.95, 1.3], [F + 0.9, 0.016, 0.75, 4.1], [F + 2.9, 0.010, 0.55, 7.7], [F + 6.5, 0.006, 0.40, 11.9]]) {
+    const m = new THREE.Mesh(new THREE.CircleGeometry(230, 48), kaMistMat(y, sc, k, sd));
+    m.rotation.x = -Math.PI / 2; m.position.set(0, y, 0); m.renderOrder = 4; m.frustumCulled = false; m.raycast = () => {}; m.visible = false;
+    tmpWorld.add(m); KA.mist.push(m);
+  }
+  // ASH
+  const N = 900, ag = new THREE.BufferGeometry(), ap = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) { ap[i * 3] = (kaRand() - 0.5) * 120; ap[i * 3 + 1] = kaRand() * 40; ap[i * 3 + 2] = (kaRand() - 0.5) * 120; }
+  ag.setAttribute('position', new THREE.BufferAttribute(ap, 3));
+  KA.ash = new THREE.Points(ag, new THREE.PointsMaterial({ color: 0xe4e2dc, size: 0.07, sizeAttenuation: true, transparent: true, opacity: 0, depthWrite: false }));
+  KA.ash.frustumCulled = false; KA.ash.raycast = () => {}; KA.ash.visible = false; tmpWorld.add(KA.ash);
+  KA.ashV = Array.from({ length: N }, () => [0.4 + kaRand() * 0.7, kaRand() * 6.28, 0.3 + kaRand() * 0.6]);
+  // THREE FAINT SHAFTS from the overcast, slanted, onto the sand round the ring
+  for (const [a, d, tilt] of [[0.6, 58, 0.32], [2.5, 74, 0.26], [4.4, 52, 0.36]]) {
+    const g = new THREE.CylinderGeometry(3.2, 6.5, 160, 24, 1, true); g.translate(0, 80, 0);
+    const m = new THREE.Mesh(g, KFX.beam ? KFX.beam.material.clone() : new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 }));
+    m.position.set(Math.sin(a) * d, tmpSandRaw(Math.sin(a) * d, Math.cos(a) * d), Math.cos(a) * d);
+    m.rotation.set(0, a + 0.4, tilt, 'YXZ'); m.frustumCulled = false; m.raycast = () => {}; m.renderOrder = 5; m.visible = false;
+    tmpWorld.add(m); KA.shafts.push(m);
+  }
+}
+// on while he is coming, fighting, dying; the colour back only when you leave the room
+function kaWant() { return !!kingCut || (KING.mode !== 'wait' && !!KING.u); }
+function kingAtmos(dt) {
+  kaBuild(); if (!KA.built) return;
+  const want = inTemple && kaWant() ? 1 : 0;
+  KA.k += (want - KA.k) * Math.min(1, dt / (want ? 2.2 : 0.6));
+  if (KA.k < 0.002 && !want) KA.k = 0;
+  const k = KA.k, t = (KA.t += dt), cam = camera.position;
+  // the colour goes
+  renderer.domElement.style.filter = k > 0.002 ? `grayscale(${k.toFixed(3)}) contrast(${(1 + 0.24 * k).toFixed(3)}) brightness(${(1 - 0.06 * k).toFixed(3)})` : '';
+  for (const m of KA.mist) {
+    m.visible = k > 0.002;
+    const U = m.material.uniforms; U.uT.value = t; U.uK.value = k; U.uCam.value.copy(cam);
+  }
+  // ash: drifting down the wind round you, slowly, wrapped about the camera
+  const A = KA.ash; A.visible = k > 0.002; A.material.opacity = 0.55 * k;
+  if (A.visible) {
+    const P = A.geometry.attributes.position, lx = cam.x - TMP_X, ly = cam.y - TMP_Y, lz = cam.z - TMP_Z;
+    for (let i = 0; i < P.count; i++) {
+      const v = KA.ashV[i];
+      let x = P.getX(i) + (TMP_WIND.x * 1.6 + Math.sin(t * v[2] + v[1]) * 0.25) * dt, y = P.getY(i) - v[0] * dt, z = P.getZ(i) + (TMP_WIND.z * 1.6 + Math.cos(t * v[2] + v[1]) * 0.25) * dt;
+      if (x - lx > 60) x -= 120; else if (x - lx < -60) x += 120;
+      if (z - lz > 60) z -= 120; else if (z - lz < -60) z += 120;
+      if (y < ly - 6) y += 40; else if (y > ly + 34) y -= 40;
+      P.setXYZ(i, x, y, z);
+    }
+    P.needsUpdate = true;
+  }
+  for (const m of KA.shafts) { m.visible = k > 0.002; if (m.material.uniforms) { m.material.uniforms.uK.value = 0.11 * k; m.material.uniforms.uT.value = t; } }
+  // his cutscenes framed: the bars, and the HUD away
+  const cine = !!kingCut || KING.look;
+  document.body.classList.toggle('king-cine', inTemple && cine);
+}
+function kingAtmosOff() {
+  KA.k = 0; renderer.domElement.style.filter = '';
+  for (const m of KA.mist) m.visible = false;
+  if (KA.ash) KA.ash.visible = false;
+  for (const m of KA.shafts) m.visible = false;
+  document.body.classList.remove('king-cine');
+}
+// a dev jump: to the temple, the king not yet come (`m-temple`, "make a teleport to desert too for when i test this fight")
+function devTeleportTemple() {
+  if (devShopBusy()) return false;
+  devLeaveRooms();
+  kingDown = false; kingCut = null; KING.placed = false; KING.dead = false; KING.climbs = 0; KING.climbCd = 18;
+  if (KING.u) {
+    const u = KING.u; KING.u = null;
+    retireUnit(u); const i = mutants.indexOf(u); if (i >= 0) mutants.splice(i, 1);
+  }
+  tmpFlown = true;
+  blackoutEl.style.opacity = '1';
+  const go = () => {
+    if (!tmpReady) { setTimeout(go, 200); return; }
+    clearRoomFlags(); placeInTemple();
+    blackoutEl.style.opacity = '0';
+    catchBreath();
+  };
+  if (!tmpReady) loadTemple();
+  go();
+  return true;
+}
+tmpStumpSetup();
+tmpModuleIn = true;
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
+  TMP_X, TMP_Y, TMP_Z, TMP_VIEW, TMP_T, TMP_FOG, TMP_WALK_R, TMP_SCALE, TMP_POD_R, TMP_FLOOR, TC, ocean, oceanFar, loadTemple, placeInTemple, placeOutOfTemple, devTemple, startTempleFlight, crowCallFromTop, trader3World, tmpFloorAt, tmpSandRaw, tmpCellTop, tmpViewYaw, tmpEyeY,
+  tmpS: () => ({ ready: tmpReady, inTemple, flown: tmpFlown, cut: tmpCut ? +tmpCut.t.toFixed(2) : -1, room: !!(tmpCut && tmpCut.room), solid: tmpG ? tmpG.solidN : 0, fz: frozen(), why: { bootHold, pack: packCut, mut: mutCut, wb: !!wbSw, hatch: hatchBusy, portal: portalCut, crab: !!crabCut, hj: !!hjCut, well: wellLook.on, key: !!keyCut, thr: !!thrCut, fare: !!wbFareCut } }),
+  tmpG: () => ({ world: tmpWorld, G: tmpG, clouds: tmpClouds, rays: tmpRays, sky: tmpSky }),
+  kingDied, KING, KFX, kingS: () => ({ cut: kingCut ? +kingCut.t.toFixed(2) : -1, down: kingDown, mode: KING.mode, hp: KING.u ? KING.u.st.hp : -1, alive: KING.u ? KING.u.st.alive : null, atk: KING.u ? KING.u.st.atk : null, swing: KING.u ? KING.u.st.swing : null }), KING_TRIGGER, KING_PILLARS, setKingDown: (v) => { kingDown = !!v; KING.placed = false; }, devTeleportTemple, kingFlipStart, kingRunStart, kingExplode, kingBlowsS: () => KING.blows, kingLineBlockedS: (u) => kingLineBlocked(u), blowLandsS: (u) => blowLands(u), blowHeightOKS: (u) => blowHeightOK(u), camBaseS: () => camBaseY, kingFeetAtS: kingFeetAt, mutTokenS: () => mutToken,
+}));
+
 moduleDone = true;   // (the last line: see `bootRoomsAsked`)

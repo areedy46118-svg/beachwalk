@@ -10,5 +10,5 @@ sleep 1
   --mute-audio --autoplay-policy=no-user-gesture-required --window-size=1280,760 --use-angle=metal --enable-logging=stderr --v=0 \
   "http://localhost:4233/tools/crowlevel.html$Q" > /dev/null 2> "$OUT/chrome.err" & CH=$!
 for i in $(seq 1 240); do sleep 1; grep -q "\[CL\] DONE" "$OUT/chrome.err" && break; done
-kill $CH $SRV 2>/dev/null; sleep 1; pkill -f "user-data-dir=$OUT/prof" 2>/dev/null; sleep 1; rm -rf "$OUT/prof"   # (its throwaway Chrome profile is ~0.5 GB: never left behind, 2026-11-20)
+kill $CH $SRV 2>/dev/null; sleep 1; pkill -f "user-data-dir=$OUT/prof" 2>/dev/null; sleep 1; rm -rf "$OUT/prof"   # (each is ~400 MB and nothing reads it after: 124 left behind were 49 GB, 2026-11-19)
 grep -o "\[CL\].*" "$OUT/chrome.err" | sed 's/", source.*//'

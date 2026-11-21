@@ -67,6 +67,16 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   intro — quiet for a second before each moment the intro is timed to — and
   the intro's last black holds until it is all in, so the walk opens with
   nothing left to build.
+- **The call (the opening cutscene)** — START GAME stands over a dark bedroom in a
+  storm; pressed, the room dips and comes back looking down at the desk while the
+  owner's recording plays (`assets/intro/call.m4a`, 70 s): the voicemail on the phone,
+  the call picked up and held at his ear, the syringe squirted, the sketchbook flipped
+  to BEACH WALK — his own hands, cut out of his clips (`tools/intro_cut_pack.py`,
+  `assets/intro/left.webp` / `right.webp`), painted onto the table through the desk's
+  view so the camera glides down from the title without a cut and glances at the
+  window and the bed; the syringe is the game's own model, the phone a ringing iPhone,
+  the page flips are the clip's own sounds; then a push in on the page, black, and
+  the intro below (its waves now one seamless MSE timeline). Enter skips it. `IC` in main.js.
 - **Opening music** — `assets/backrooms.m4a` swells in over ~7 s once the
   world appears, holds, then fades back out (~30 s total). Routed through a
   Web Audio gain chain so the volume slider still works. `MUSIC_*` consts.
@@ -1026,6 +1036,30 @@ Its braziers and torches are built in the game.
 It stands on the bluff behind the first castle, half again the size it was packed
 at; the passage through its middle wall and the ground under it are built in the game.
 
+This work is based on ["Temple USD Workflow Test 3"](https://sketchfab.com/3d-models/temple-usd-workflow-test-3-fc97645208974338ac0e9d113812f9ea)
+by [re1monsen](https://sketchfab.com/re1monsen) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the desert temple the
+crow on the stump carries you to (`assets/temple.glb`, packed by
+`tools/temple_pack.py`: its camels, its people and the sand heaped on its floor
+taken out, its three terrains baked into one seamless ground, textures to 512).
+The sky, the cloud deck, the light through it and the blowing sand are built in the game.
+
+This work is based on ["Free  Character - Ancient King"](https://sketchfab.com/3d-models/free-character-ancient-king-546ccde61eab4a11920f69c20cbbe454)
+by [Kaan Tezcan](https://sketchfab.com/kaanTezcan) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Ancient King who comes down
+into the desert temple (`assets/ancient-king.glb`, packed by `tools/gltfpack.py` and
+`tools/glbquant.py`: textures to 512, normal maps to 128, metal-rough dropped, gzipped; his
+own hover motion kept). The light he comes down in is built in the game.
+
+This work is based on ["Bedroom"](https://sketchfab.com/3d-models/bedroom-13df3d6c33014cccaad3ae8c1f251f6a)
+by [jimbogies](https://sketchfab.com/jimbogies) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the room behind START GAME
+(`assets/bedroom.glb`, packed by `tools/bedroom_pack.py`: tangents, normal and
+roughness maps dropped, textures to 256, the photo in the frame on the desk
+replaced with the owner's own). The storm, the rain, the light through the window,
+the syringe and the phone on the desk are built in the game; the plate and cup are
+taken off the desk and its draped table replaced with a bigger plain one, for the call.
+
 This work is based on ["Throne Room"](https://sketchfab.com/3d-models/throne-room-247c37e6a9694ae891398911876f0c14)
 by [Uğur Yakışık](https://sketchfab.com/UgurYksk) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the hall through the
@@ -1897,8 +1931,7 @@ drainage tunnel home above it (`assets/sewer-tex/`, copied out of the glb by
 The **thing in the sewer's water** is the owner's "monster" model (`assets/sewer-monster.glb`,
 `tools/sewer_monster_pack.py`: base colour 1024, normal 512, no clip — posed in the game), its sloshes, splash,
 leap and the drip bed his recordings (`tools/sewer_monster_sound.py`: `sew-slosh1..8`, `sew-splash`, `sew-leap`,
-`sew-drip-bed`; its breath, `sew-breath1..6`, from his "SEWER MONSTER BREATHING", and its death cry, `sew-death`, from his "SEWER MONSTER DEATH" — `tools/sewer_monster_voice.py`). The **flashlight** is the Fulton out of his "FlashlightFBX" pack (`assets/flashlight.glb`,
-`tools/flashlight_pack.py`).
+`sew-drip-bed`; its breath, `sew-breath1..6`, from his "SEWER MONSTER BREATHING", and its death cry, `sew-death`, from his "SEWER MONSTER DEATH" — `tools/sewer_monster_voice.py`).
 
 This work is based on ["Simple Generator(Fixed)"](https://sketchfab.com/3d-models/simple-generatorfixed-eda91f75faae470e8d6461e0e6fc86fa)
 by [Blender3D](https://sketchfab.com/Blender3D) licensed under

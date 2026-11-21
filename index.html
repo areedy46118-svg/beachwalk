@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Beach Walk</title>
+<link rel="preload" as="font" type="font/woff" href="assets/hand-font.woff" crossorigin>
 <link rel="preload" as="image" href="assets/title-B.png">
 <link rel="preload" as="image" href="assets/title-E.png">
 <link rel="preload" as="image" href="assets/title-A.png">
@@ -46,6 +47,16 @@
   }, true);
 </script>
 <style>
+  /* THE OWNER'S OWN ALPHABET (2026-11-18: "use this aplabet for all the letters in the game except the setting for now …
+     flip over the m for the w … use this for the start game and stats and death screen as well"): marker capitals off
+     his sketchbook, traced into a font by `tools/hand_font_pack.py` (W is his M turned over, lowercase the same letters
+     as small capitals, 0-9 the HUD's drawn digits; punctuation is not in it and falls back to Georgia). Every piece of
+     text on the page takes it — the cover, the HUD, the pack, the dialogues, the stats, the death card, and since
+     2026-11-18 the settings menu too (the owner chose it over the monospace) — except the title, which is already his
+     brush lettering. Lettering painted onto things IN the
+     world (the artifacts' engravings, a can's label) is canvas, not this. */
+  @font-face { font-family: 'BW Hand'; src: url(assets/hand-font.woff) format('woff'); font-display: block; }
+  body :not(#intro-title, #intro-title *, #ach, #ach *) { font-family: 'BW Hand', Georgia, "Times New Roman", serif !important; }   /* (#ach: the achievement pop-up keeps the console's own face — 2026-11-19, "RARE ACHEIVEMENT TEXT SHOULD GO BACK TO HOW IT WAS NOT HANDDRAWN") */
   html.resuming, html.resuming body { background: #000; }
   html.resuming #overlay { display: none !important; }
   html.resuming #blackout { opacity: 1; }
@@ -61,15 +72,15 @@
   #deathcard.fadein { animation: dcIn 0.7s ease both; }
   @keyframes dcIn { from { opacity: 0; } to { opacity: 1; } }
   #deathcard.gone { opacity: 0; pointer-events: none; }
-  #deathcard h1 { font-size: clamp(2.6rem, 5.4vw, 4.4rem); font-weight: 500; letter-spacing: 0.42em; text-indent: 0.42em; text-transform: uppercase; color: #fff; }
+  #deathcard h1 { font-size: clamp(3.6rem, 7.6vw, 6.2rem);   /* (2.6/5.4/4.4 until 2026-11-18, the owner: "make start game and death screen text bigger") */ font-weight: 500; letter-spacing: 0.42em; text-indent: 0.42em; text-transform: uppercase; color: #fff; }
   #deathcard .opts { display: flex; flex-direction: column; align-items: center; gap: 0.9rem; }
-  #deathcard button { font: inherit; font-size: clamp(1.05rem, 1.9vw, 1.45rem); font-weight: 500; letter-spacing: 0.32em; text-indent: 0.32em; text-transform: uppercase;
+  #deathcard button { font: inherit; font-size: clamp(1.4rem, 2.6vw, 2.0rem); font-weight: 500; letter-spacing: 0.32em; text-indent: 0.32em; text-transform: uppercase;
     color: #7d7d7d; background: none; border: none; padding: 0.7rem 1.4rem; cursor: pointer; transition: opacity 0.6s ease, color 0.2s ease, text-shadow 0.2s ease; }
   /* both grey until the cursor is on one (2026-10-18, the owner); still loading or not, they look the same and both click */
   #deathcard button:hover, #deathcard button:focus-visible { color: #fff; text-shadow: 0 0 12px rgba(255,255,255,0.45); outline: none; }
   #deathcard h1, #deathcard .opts { transition: opacity 0.6s ease; }
   #deathcard .ask { display: none; flex-direction: column; align-items: center; gap: 1.6rem; }
-  #deathcard .ask p { font-size: clamp(0.95rem, 1.6vw, 1.2rem); letter-spacing: 0.28em; text-indent: 0.28em; text-transform: uppercase; color: #d8d8d8; margin: 0; }
+  #deathcard .ask p { font-size: clamp(1.25rem, 2.2vw, 1.65rem); letter-spacing: 0.28em; text-indent: 0.28em; text-transform: uppercase; color: #d8d8d8; margin: 0; }
   #deathcard.asking > .opts { display: none; }
   #deathcard.asking .ask { display: flex; }
   #deathcard.early h1, #deathcard.early .opts, html.dcgo #deathcard h1, html.dcgo #deathcard .opts { opacity: 0; pointer-events: none; }   /* clicked before the load was done: only the hairline is left */
@@ -111,9 +122,16 @@
     user-select: none;
   }
   #overlay.hidden { opacity: 0; pointer-events: none; }
+  /* THE BEDROOM BEHIND START GAME (2026-11-19, `TB` in main.js): its own canvas at a third of the screen, blown up hard-edged;
+     the words over it with a shadow so they read on the dark room */
+  #overlay { overflow: hidden; }   /* (the call's picture covers the screen and is trimmed at its edges: `tbSize`) */
+  #overlay #title-room { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; image-rendering: pixelated; image-rendering: crisp-edges; opacity: 0; transition: opacity 2.4s ease; pointer-events: none; }
+  #overlay.room #title-room { opacity: 1; }
+  #overlay .start { position: relative; z-index: 1; } #overlay #bootbar { z-index: 1; }
+  #overlay.room .start { text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 0, 0, 0.9); }
   #overlay .start {
     font: inherit;
-    font-size: clamp(1.9rem, 3.4vw, 2.7rem);     /* (2026-10-17, the owner: "make START GAME bigger on screen") */
+    font-size: clamp(2.7rem, 4.8vw, 3.9rem);     /* (2026-10-17, the owner: "make START GAME bigger on screen"; again 2026-11-18, in his own letters: 1.9/3.4/2.7 → 2.7/4.8/3.9) */
     font-weight: 500;
     letter-spacing: 0.42em;
     text-indent: 0.42em;
@@ -141,6 +159,17 @@
   body.wake-cine #hud, body.wake-cine #vitals, body.wake-cine #stamwrap, body.wake-cine #crosshair, body.wake-cine #promptmid, body.wake-cine #prompt,
   body.wake-cine #blood, body.wake-cine #ehp, body.wake-cine #fighttip, body.wake-cine #digtip, body.wake-cine #packtip, body.wake-cine #hotbar, body.wake-cine #rings,
   body.wake-cine #health, body.wake-cine #ammo, body.wake-cine #gear, body.wake-cine #autosave, body.wake-cine #dread, body.wake-cine #hurt, body.wake-cine #hurt-blood { opacity: 0 !important; }
+  /* and the crow's flight to the desert temple (`tmpCut`): the same, the length of it */
+  body.tmp-cine #hud, body.tmp-cine #vitals, body.tmp-cine #stamwrap, body.tmp-cine #crosshair, body.tmp-cine #promptmid, body.tmp-cine #prompt,
+  body.tmp-cine #blood, body.tmp-cine #ehp, body.tmp-cine #fighttip, body.tmp-cine #digtip, body.tmp-cine #packtip, body.tmp-cine #hotbar, body.tmp-cine #rings,
+  body.tmp-cine #health, body.tmp-cine #ammo, body.tmp-cine #gear, body.tmp-cine #dread, body.tmp-cine #hurt, body.tmp-cine #hurt-blood { opacity: 0 !important; }
+  /* and the Ancient King's cutscenes (his coming down, the perch, his death): the HUD away, and the picture framed in bars */
+  body.king-cine #hud, body.king-cine #vitals, body.king-cine #stamwrap, body.king-cine #crosshair, body.king-cine #promptmid, body.king-cine #prompt,
+  body.king-cine #blood, body.king-cine #ehp, body.king-cine #fighttip, body.king-cine #digtip, body.king-cine #packtip, body.king-cine #hotbar, body.king-cine #rings,
+  body.king-cine #health, body.king-cine #ammo, body.king-cine #gear, body.king-cine #dread, body.king-cine #hurt, body.king-cine #hurt-blood { opacity: 0 !important; }
+  body::before, body::after { content: ''; position: fixed; left: 0; right: 0; height: 0; background: #000; z-index: 8; pointer-events: none; transition: height 1.4s cubic-bezier(.4, 0, .2, 1); }
+  body::before { top: 0; } body::after { bottom: 0; }
+  body.king-cine::before, body.king-cine::after { height: 10.5vh; }
   #intro {
     position: fixed;
     inset: 0;
@@ -165,6 +194,12 @@
     transition: opacity 4.5s ease-in-out, transform 34s linear;
   }
   #intro video.on { opacity: 1; transform: scale(1.09); }
+  /* (2026-11-19, the owner: "make the waves video look better"): graded toward the bedroom it comes out of — a little
+     colder and deeper, the highlights' glitter kept — and a vignette over it so the eye sits on the water's road */
+  #intro video { filter: contrast(1.07) saturate(0.86) brightness(0.94); will-change: opacity, transform; }
+  #intro::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+    background: radial-gradient(ellipse 75% 70% at 50% 46%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.5) 100%); }
+  #intro-title, #intro-text { z-index: 2; }
   #intro video.out { opacity: 0; transform: scale(1.09); transition: opacity 7s ease-in-out, transform 34s linear; }
   /* the name, landing on the drop: there on one frame, no effect */
   #intro-title {
@@ -320,8 +355,10 @@
     transition: transform 0.08s linear, background 0.25s ease;
   }
   /* the spliff: a strong unmistakable green, the fill AND the ink, glowing */
-  #stamina-fill.buff { background: linear-gradient(180deg, #d4ffc8 0%, #4ef04a 40%, #12a02a 100%); box-shadow: 0 0 10px rgba(70, 255, 90, 0.95), 0 0 3px rgba(190, 255, 170, 0.9); }
-  #stamina.buff { opacity: 1; --ink: rgba(141, 255, 138, 0.75); filter: drop-shadow(0 0 6px rgba(60, 230, 80, 0.6)); }
+  /* (less bright, 2026-11-19, the owner: "the staminia green after a spliff should be less bright": still plainly green, a
+     deeper green and a soft glow — it was #4ef04a and a 10 px 0.95 halo) */
+  #stamina-fill.buff { background: linear-gradient(180deg, #a6d89c 0%, #3aa83c 40%, #146a22 100%); box-shadow: 0 0 5px rgba(60, 190, 70, 0.45), 0 0 2px rgba(150, 220, 140, 0.4); }
+  #stamina.buff { opacity: 1; --ink: rgba(120, 200, 118, 0.6); filter: drop-shadow(0 0 3px rgba(50, 170, 60, 0.35)); }
   #stamina-fill.low { background: linear-gradient(180deg, #ffd8b8 0%, #e08a5c 45%, #8a3c22 100%); }
   /* too little left to block or to swing: red, and the ink with it */
   #stamina-fill.out { background: linear-gradient(180deg, #ffb0a0 0%, #e0402e 45%, #7a1210 100%); box-shadow: 0 0 8px rgba(230, 60, 40, 0.75); }
@@ -1515,6 +1552,215 @@
   #invpanel .rings #keychain-box.sel { --c: #ffffff; box-shadow: none; }
   #keychain-box .kc-top { z-index: 3; top: 10px; left: 13px; right: 13px; } #keychain-box .kc-name { z-index: 3; bottom: 10px; } #keychain-box .kc-arrow { z-index: 3; }
   /* the item that follows the cursor while dragging */
+  /* ---- THE PANE, LIVE (2026-11-18, "do 1 and 3 … make it look amazing and intuitive"): the selected thing is its own
+     model turning in the pane's drawn box (`pvBuild` in main.js, a small renderer of its own drawn at the game's pixel). The
+     picture stays under it until the model is there (`.live`). Drag turns it; "drag to turn" breathes until you have. */
+  #invpanel .detail .big canvas.pv, #shoppanel .detail .pic canvas.pv {
+    position: absolute; inset: 5px; width: calc(100% - 10px); height: calc(100% - 10px); display: block; z-index: 1;
+    image-rendering: pixelated; cursor: grab; touch-action: none;
+  }
+  #invpanel .detail .big canvas.pv:active, #shoppanel .detail .pic canvas.pv:active { cursor: grabbing; }
+  #invpanel .detail .big img, #shoppanel .detail .pic img { transition: opacity 0.25s ease; }
+  #invpanel .detail .big.live img, #shoppanel .detail .pic.live img { opacity: 0; }
+  #invpanel .detail .big::after, #shoppanel .detail .pic::after { z-index: 2; }
+  #invpanel .detail .big .pvhint, #shoppanel .detail .pic .pvhint {
+    position: absolute; left: 0; right: 0; bottom: 10px; z-index: 3; pointer-events: none; text-align: center;
+    font-size: 0.56rem; letter-spacing: 0.3em; text-transform: uppercase; color: rgba(214, 224, 240, 0.5);
+    text-shadow: 0 1px 3px #000; animation: pvhint 3.4s ease-in-out infinite; transition: opacity 0.5s ease;
+  }
+  #invpanel .detail .big .pvhint.gone, #shoppanel .detail .pic .pvhint.gone { opacity: 0 !important; animation: none; }
+  @keyframes pvhint { 0%, 100% { opacity: 0.22; } 50% { opacity: 0.6; } }
+  /* a thing that gives off light lights its box, and its light spills over the pane round it (`--pvk` is its flicker) */
+  #invpanel .detail .big.pv-glow::before, #shoppanel .detail .pic.pv-glow::before {
+    content: ''; position: absolute; inset: -42%; z-index: 0; pointer-events: none; mix-blend-mode: screen;
+    background: radial-gradient(circle at 50% 50%, var(--pvglow) 0%, transparent 60%); opacity: calc(var(--pvk, 0.8) * 0.3);
+  }
+  #invpanel .detail .big.pv-glow::after, #shoppanel .detail .pic.pv-glow::after { background: color-mix(in srgb, var(--pvglow) 45%, var(--moon)); }
+  /* …and its cell in the grid glows with it, open or not */
+  #invpanel .islot.glows { --c: color-mix(in srgb, var(--glow) 55%, var(--moon)); animation: pkglow 3.2s ease-in-out infinite alternate; }
+  #invpanel .islot.glows.sel { --c: #ffffff; }
+  @keyframes pkglow {
+    from { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--glow) 30%, transparent)); }
+    to { filter: drop-shadow(0 0 11px color-mix(in srgb, var(--glow) 62%, transparent)); }
+  }
+  /* A THING NEW TO THE PACK: its box drawn round by hand (a sweep uncovering the marker), then the thing set into it */
+  @property --pkdraw { syntax: '<angle>'; inherits: false; initial-value: 360deg; }
+  #invpanel .islot.fresh::after {
+    -webkit-mask: var(--ink) center / 100% 100% no-repeat, conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0);
+    -webkit-mask-composite: source-in;
+    mask: var(--ink) center / 100% 100% no-repeat, conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0);
+    mask-composite: intersect;
+    animation: pkdraw 0.62s cubic-bezier(0.45, 0, 0.25, 1) var(--fd, 0ms) both;
+  }
+  @keyframes pkdraw { from { --pkdraw: 0deg; } to { --pkdraw: 360deg; } }
+  #invpanel .islot.fresh img { animation: pkset 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.25) calc(var(--fd, 0ms) + 420ms) both; }
+  @keyframes pkset { from { opacity: 0; transform: translateY(-9px) scale(0.9) rotate(-4deg); } to { opacity: 1; transform: none; } }
+  /* ---- THE PACK ON THE PAPER IN HIS HANDS (2026-11-18, the owner's IMG_7207: "put this as the canvas behind the inventory …
+     have it a written style on this worn paper. make it retro too", and the grit pass: "the inventory looks way too
+     cartoonish and corny how can we grit it up"). His hands snap a stained sheet open (`PH` in main.js, a retro sprite on
+     `#pack-hands`) and the pack is WRITTEN on it: every drawn line, box and loop turns from moonlit chalk to brown-black
+     ink, broken by the paper's tooth (`--brk`, a noise mask cut out of each stroke); the things are pressed into the
+     sheet (multiplied, drained a little by the moonlight, a pencil shadow under each); the selection is circled in dried
+     oxblood with a second scratch of the pen beside it; nothing glows any more. Only while the sheet has loaded
+     (`#invpanel.paper`): before that the old dark pack stands. */
+  #pack-hands {
+    position: fixed; inset: 0; z-index: 13; pointer-events: none; display: none; overflow: hidden;
+    background: radial-gradient(ellipse 75% 80% at 50% 52%, rgba(0, 0, 0, 0.50), rgba(0, 0, 0, 0.88) 100%);
+    opacity: var(--ph-dim, 1);
+  }
+  #pack-hands.on { display: block; }
+  body:has(#pack-hands.on) #vitals, body:has(#pack-hands.on) #stamina { opacity: 0; transition: opacity 0.15s; }   /* (they showed through the dark round his arms) */
+  #pack-hands canvas { position: absolute; image-rendering: pixelated; image-rendering: crisp-edges; will-change: transform;
+    transition: translate 0.42s cubic-bezier(0.3, 0.7, 0.2, 1), scale 0.42s cubic-bezier(0.3, 0.7, 0.2, 1); }
+  /* INSPECT FROM THE PACK: the sheet held off to the left, the thing turning on the right (the lens is slid a quarter of
+     the screen in main.js); no dark over the examine scene, and its words over the thing */
+  #pack-hands.aside { background: none; }
+  /* (0.58: the size it was aside before the sheet itself grew to 1.12 of the window — 0.68 × 0.955 / 1.12; at 0.68 of the
+     bigger sheet it covered the thing being turned, 2026-11-19, the owner: "the size of the pack when inspecting can go back
+     to how it was it blocks the models now") */
+  #pack-hands.aside canvas { translate: var(--aside-tx, -27vw) 4vh; scale: var(--aside-s, 0.58); }   /* (both set per screen by `inspectLayout`) */
+  /* the pack stays written on the sheet, carried aside with it about the same point (`--ph-ox/oy`, the canvas's middle) */
+  #invpanel.paper { transform-origin: var(--ph-ox, 50%) var(--ph-oy, 50%); transition: opacity 0.18s ease, translate 0.42s cubic-bezier(0.3, 0.7, 0.2, 1), scale 0.42s cubic-bezier(0.3, 0.7, 0.2, 1); }
+  #invpanel.paper.aside { translate: var(--aside-tx, -27vw) 4vh; scale: var(--aside-s, 0.58); pointer-events: none; }
+  #invpanel.paper.aside::after { opacity: 0; }   /* (the grain is the size of the screen: carried aside it showed as a box in the dark) */
+  /* (and over his arm, which crosses the bottom: the examine layer above the sheet, its vignette off so the paper is not dimmed) */
+  body:has(#pack-hands.aside) #inspect { z-index: 14; background: none; }
+  #invpanel.paper {
+    --moon: rgba(14, 9, 4, 0.96);
+    --inkc: #120b04; --inkdim: rgba(20, 13, 6, 0.74); --blood: rgba(104, 20, 12, 0.96);
+    --brk: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='b'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -6 0 0 0 4.8'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23b)'/%3E%3C/svg%3E");
+    background: none; color: var(--inkc);
+  }
+  /* the words in marker too: a hair of stroke round every letter */
+  #invpanel.paper .panel { -webkit-text-stroke: 0.85px currentColor; }   /* (0.5: "make lines and font thicker and more noticeable on the pack", 2026-11-19) */
+  /* (2026-11-19, the owner: "make evrything on the pack more visible it seems hard to read make it blend well still with the
+     game and notes style"): every word on the sheet bigger and in full ink — the hints were a dimmed italic at 0.7 rem —
+     in the note's own hand, the marker a little heavier */
+  /* (and again, a step up and heavier — 2026-11-19, the owner: "make lines and font thicker and more noticeable on the pack the
+     numbers are very small too": the slot numbers 0.9 -> 1.3 rem and the counts with them) */
+  #invpanel.paper h2 { font-size: 1.46rem; letter-spacing: 0.32em; }
+  #invpanel.paper .head .count { font-size: 1.08rem; }
+  #invpanel.paper .detail .name { font-size: 1.5rem; letter-spacing: 0.12em; }
+  #invpanel.paper .detail .desc { font-size: 1.14rem; line-height: 1.33; }
+  #invpanel.paper .detail .act, #invpanel.paper #pack-leave { font-size: 1.1rem; letter-spacing: 0.26em; }
+  #invpanel.paper .detail .hint, #invpanel.paper .tip { font-size: 1.02rem; font-style: normal; color: rgba(18, 11, 5, 0.9) !important; }
+  /* (the slot numbers are his drawn digits — masks, `.hd`, sized by their height — so the size is the digit's height: 13 -> 21 px;
+     and the pen heavier by a shadow of their own ink on the NUMBER, not the digit: a filter runs before a mask on the same box) */
+  #invpanel.paper .islot .num { top: 6px; left: 7px; gap: 2px; }
+  #invpanel.paper .islot .num .hd { height: 21px; }
+  #invpanel.paper .islot .count, #invpanel.paper .rslot .count { font-size: 1.45rem; }
+  #invpanel.paper .rings .rlabel { font-size: 1.2rem; }
+  #invpanel.paper .detail .big .pvhint { font-size: 0.94rem; color: rgba(18, 11, 5, 0.86); }
+  #invpanel.paper #keychain-box .kc-top, #invpanel.paper #keychain-box .kc-count, #invpanel.paper #keychain-box .kc-name { font-size: 1.04rem; }
+  #invpanel.paper::after { opacity: 0.05; }
+  /* (narrower than the dark pack's: the sheet is nearer square than the screen, and a panel its shape is scaled up more,
+     so the writing reads bigger) */
+  #invpanel.paper .panel { width: 960px; }
+  /* (and one height, in the panel's own pixels, at every window — 2026-11-19, the owner, of DROP missing at 960×540: the
+     body was `clamp(300px, 54vh, 640px)` and the preview 28vh, both off the WINDOW's height, while the words are rem; in a
+     short window the body sat at its 300 px floor and the pane scrolled its last verb out of sight. The whole panel is
+     scaled to the sheet anyway (`packPaperFit`), so fixed here it is the same picture on every screen, only bigger or
+     smaller: 1080p's own 583 px, near enough, and its preview) */
+  #invpanel.paper .body { height: 570px; }
+  #invpanel.paper .detail .big { width: min(100%, 280px); }
+  #invpanel.paper .panel { translate: var(--pk-dx, 0px) var(--pk-dy, 0px); opacity: 0; transition: opacity 0.12s ease, transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  /* (written on once the sheet is open: the snap is done 0.46 s in — `PH_RISE` + five frames at 15 fps) */
+  #invpanel.paper.show .panel { opacity: 1; transition: opacity 0.2s ease 0.44s, transform 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) 0.40s; }
+  /* each stroke's own drawing (`--mk`); the mask itself is the block's LAST rule */
+  #invpanel.paper .panel::before { --mk: url(assets/hud/pk-rule1.png); }
+  #invpanel.paper .panel::after, #invpanel.paper .rings::before { --mk: url(assets/hud/pk-rule2.png); }
+  #invpanel.paper .body::after { --mk: url(assets/hud/pk-vrule.png); }
+  #invpanel.paper .detail .name::after, #invpanel.paper .detail .desc::after { --mk: url(assets/hud/pk-short1.png); }
+  #invpanel.paper .detail .desc::before { --mk: url(assets/hud/pk-short2.png); }
+  #invpanel.paper .islot::after, #invpanel.paper .detail .act::after, #invpanel.paper #pack-leave::after { --mk: var(--ink); }
+  #invpanel.paper .detail .big::after { --mk: url(assets/hud/pk-big.png); }
+  #invpanel.paper .rings .rslot::after { --mk: url(assets/hud/pk-ring1.png); }
+  #invpanel.paper .rings .rslot:nth-child(2n)::after { --mk: url(assets/hud/pk-ring2.png); }
+  #invpanel.paper .rings #keychain-box::after { --mk: url(assets/hud/pk-kc.png); }
+  #invpanel.paper .islot.sel::before { --mk: url(assets/hud/pk-sel.png); }
+  /* the words */
+  #invpanel.paper h2 { color: var(--inkc); text-shadow: none; }
+  #invpanel.paper .head .count, #invpanel.paper .detail .hint, #invpanel.paper .tip { color: var(--inkdim); }
+  #invpanel.paper .tip b { color: var(--inkc); }
+  #invpanel.paper .detail .name { color: var(--inkc); text-shadow: none; }
+  #invpanel.paper .detail .desc, #invpanel.paper .detail { color: rgba(18, 11, 5, 0.94); }
+  #invpanel.paper .rings .rlabel { color: var(--inkc); text-shadow: none; }
+  #invpanel.paper .islot .num { color: rgba(18, 11, 5, 0.96); filter: drop-shadow(0.9px 0 0 currentColor) drop-shadow(0 0.9px 0 currentColor); }
+  #invpanel.paper .islot.sel .num { color: var(--blood); }
+  #invpanel.paper .islot .inhand { color: var(--blood); text-shadow: none; }
+  #invpanel.paper .islot .count, #invpanel.paper .rslot .count { color: var(--inkc); text-shadow: none; }
+  /* the cells: no glass, only the ink — and the things pressed into the sheet */
+  #invpanel.paper .islot, #invpanel.paper .islot.sel, #invpanel.paper .detail .big,
+  #invpanel.paper .rings .rslot, #invpanel.paper .rings #keychain-box { background: none; box-shadow: none; }
+  #invpanel.paper .islot:not(.filled) { --c: rgba(20, 13, 6, 0.52); }
+  #invpanel.paper .islot.filled:hover { --c: rgba(18, 10, 4, 0.96); }
+  #invpanel.paper .islot img, #invpanel.paper .detail .big img, #invpanel.paper .rings .rslot img, body:has(#invpanel.paper) #invghost img {
+    mix-blend-mode: hard-light;
+    filter: saturate(0.92) contrast(1.12) sepia(0.1) drop-shadow(1px 3px 1.5px rgba(30, 18, 8, 0.5));
+  }
+  #invpanel.paper .islot.filled:hover img { filter: saturate(1) contrast(1.16) sepia(0.06) drop-shadow(1px 3px 1.5px rgba(30, 18, 8, 0.55)); }
+  #invpanel.paper .islot.sel img { filter: saturate(1) contrast(1.18) sepia(0.05) drop-shadow(1px 3px 2px rgba(30, 18, 8, 0.6)); }
+  #invpanel.paper .detail .big canvas.pv, #invpanel.paper #keychain-box canvas { mix-blend-mode: hard-light; filter: saturate(0.92) contrast(1.1) sepia(0.08); }
+  /* circled in dried blood, the pen gone round twice; a smudge of graphite where the hand rested */
+  #invpanel.paper .islot.sel { --c: rgba(20, 12, 6, 0.95); background: radial-gradient(ellipse at 50% 55%, rgba(60, 38, 18, 0.16), rgba(60, 38, 18, 0) 70%) center / calc(100% - 10px) calc(100% - 10px) no-repeat; }
+  #invpanel.paper .islot.sel::before {
+    background: var(--blood); opacity: 0.9;
+    filter: drop-shadow(2px 1.5px 0 rgba(70, 18, 10, 0.45));
+  }
+  @keyframes pkcircle { from { opacity: 0; transform: scale(1.06) rotate(-2deg); } to { opacity: 0.9; transform: none; } }
+  #invpanel.paper .islot.combines { --c: var(--blood); filter: none; background: radial-gradient(ellipse at 50% 50%, rgba(92, 22, 14, 0.14), transparent 70%); }
+  #invpanel.paper #inv-grid.takes .islot:not(.filled) { --c: rgba(30, 19, 10, 0.8); }
+  /* no light in a written thing: a glowing one is only written darker; the artifacts in their own inks */
+  #invpanel.paper .islot.glows, #invpanel.paper .islot.glows.sel { animation: none; filter: none; }
+  #invpanel.paper .islot.glows { --c: color-mix(in srgb, var(--glow) 25%, #24160b); }
+  #invpanel.paper .detail .big.pv-glow::before { display: none; }
+  #invpanel.paper .detail .big.pv-glow::after { background: color-mix(in srgb, var(--pvglow) 25%, #24160b); }
+  /* (the artifacts' squares in the HOTBAR's own colours — 2026-11-19, the owner: "in the inventory give the square around an
+     artifact weapon the same color as the hotbar. blue for water yellow for whale orange for fire": gold #ffd46a, orange
+     #ff9a3c, blue #7fe0f2, as `#hotbar .slot.art/.fire/.sea` draw them; a little stronger when it is the one picked) */
+  #invpanel.paper #inv-grid .islot.art { --c: #ffd46a; box-shadow: none; }
+  #invpanel.paper #inv-grid .islot.art.sel { --c: #ffc94a; box-shadow: none; }
+  #invpanel.paper #inv-grid .islot.fire, #invpanel.paper #inv-grid .islot.art.fire { --c: #ff9a3c; box-shadow: none; }
+  #invpanel.paper #inv-grid .islot.fire.sel, #invpanel.paper #inv-grid .islot.art.fire.sel { --c: #ff8a24; }
+  #invpanel.paper #inv-grid .islot.sea, #invpanel.paper #inv-grid .islot.art.sea { --c: #7fe0f2; box-shadow: none; }
+  #invpanel.paper #inv-grid .islot.sea.sel, #invpanel.paper #inv-grid .islot.art.sea.sel { --c: #5fd4ec; }
+  /* the verbs: ink boxes; a hover presses the pen harder and greys the paper under it */
+  #invpanel.paper .detail .act, #invpanel.paper #pack-leave { --c: var(--moon); color: var(--inkc); }
+  #invpanel.paper .detail .act::before, #invpanel.paper #pack-leave::before { background: radial-gradient(ellipse at 50% 50%, rgba(60, 38, 18, 0.20), rgba(60, 38, 18, 0) 75%); }
+  #invpanel.paper .detail .act:hover, #invpanel.paper #pack-leave:hover { --c: rgba(14, 8, 3, 1); color: #120a04; text-shadow: none; }
+  #invpanel.paper .detail .act:disabled:hover { --c: var(--moon); }
+  #invpanel.paper .detail .act:disabled { opacity: 0.45; }
+  #invpanel.paper .detail .big .pvhint { color: var(--inkdim); text-shadow: none; }
+  /* rings and keys */
+  #invpanel.paper .rings .rslot { --c: rgba(20, 13, 6, 0.7); }
+  #invpanel.paper .rings .rslot.worn { --c: rgba(30, 19, 10, 0.85); }
+  #invpanel.paper .rings .rslot.sel { --c: var(--blood); filter: none; }
+  #invpanel.paper .rings .rslot.wearable { --c: rgba(14, 8, 3, 1); filter: none; }
+  #invpanel.paper .rings #keychain-box { --c: var(--moon); }
+  #invpanel.paper .rings #keychain-box:hover { --c: rgba(18, 10, 4, 0.96); }
+  #invpanel.paper .rings #keychain-box.sel { --c: var(--blood); }
+  #invpanel.paper #keychain-box .kc-top, #invpanel.paper #keychain-box .kc-count, #invpanel.paper #keychain-box .kc-name { color: var(--inkc); text-shadow: none; }
+  #invpanel.paper #keychain-box .kc-arrow { color: var(--inkdim); }
+  #invpanel.paper #keychain-box .kc-arrow:hover { color: var(--inkc); }
+  @media (prefers-reduced-motion: reduce) { #invpanel.paper.show .panel { transition: none; } }
+  /* (LAST, so no `mask` shorthand after it resets the composite — stroke ADD noise was a solid box.) THE MARKER: every stroke
+     laid down three times a hair apart (its own drawing, again 1.1 px right and 1.1 px down, ADDED), then broken where the
+     pen skipped on the grain (`--brk`, INTERSECTED). A drop-shadow cannot thicken a masked stroke: the filter runs first. */
+  #invpanel.paper .panel::before, #invpanel.paper .panel::after, #invpanel.paper .rings::before, #invpanel.paper .body::after,
+  #invpanel.paper .detail .name::after, #invpanel.paper .detail .desc::before, #invpanel.paper .detail .desc::after,
+  #invpanel.paper .islot::after, #invpanel.paper .detail .big::after, #invpanel.paper .detail .act::after, #invpanel.paper #pack-leave::after,
+  #invpanel.paper .rings .rslot::after, #invpanel.paper .rings #keychain-box::after, #invpanel.paper .islot.sel::before {
+    /* (laid five times now, out to 2.2 px: "make lines … thicker and more noticeable on the pack", 2026-11-19) */
+    -webkit-mask: var(--brk) 0 0 / 160px 160px repeat, var(--mk) 2.2px 0 / 100% 100% no-repeat, var(--mk) 0 2.2px / 100% 100% no-repeat, var(--mk) 1.6px 1.6px / 100% 100% no-repeat, var(--mk) 1.1px 0 / 100% 100% no-repeat, var(--mk) 0 1.1px / 100% 100% no-repeat, var(--mk) 0 0 / 100% 100% no-repeat;
+    mask: var(--brk) 0 0 / 160px 160px repeat, var(--mk) 2.2px 0 / 100% 100% no-repeat, var(--mk) 0 2.2px / 100% 100% no-repeat, var(--mk) 1.6px 1.6px / 100% 100% no-repeat, var(--mk) 1.1px 0 / 100% 100% no-repeat, var(--mk) 0 1.1px / 100% 100% no-repeat, var(--mk) 0 0 / 100% 100% no-repeat;
+    -webkit-mask-composite: source-in, source-over, source-over, source-over, source-over, source-over; mask-composite: intersect, add, add, add, add, add;
+  }
+  /* (and a thing new to the pack keeps its box drawn round by hand: the sweep over the marker) */
+  #invpanel.paper .islot.fresh::after {
+    -webkit-mask: conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0), var(--ink) 2.2px 0 / 100% 100% no-repeat, var(--ink) 0 2.2px / 100% 100% no-repeat, var(--ink) 1.1px 0 / 100% 100% no-repeat, var(--ink) center / 100% 100% no-repeat;
+    mask: conic-gradient(from 210deg, #000 var(--pkdraw), transparent 0), var(--ink) 2.2px 0 / 100% 100% no-repeat, var(--ink) 0 2.2px / 100% 100% no-repeat, var(--ink) 1.1px 0 / 100% 100% no-repeat, var(--ink) center / 100% 100% no-repeat;
+    -webkit-mask-composite: source-in, source-over, source-over, source-over; mask-composite: intersect, add, add, add;
+  }
   /* ---- THE SHOP, in the pack's own hand ------------------------------ */
   #shoppanel {
     position: fixed;
@@ -1699,6 +1945,126 @@
     color: rgba(255, 255, 255, 0.32);
   }
   #shoppanel .tip b { color: rgba(255, 255, 255, 0.72); font-weight: 400; }
+  /* ---- THE SHOP IN THE OWNER'S HAND (2026-11-18, "make the shop match the style we have now too also handwritten"):
+     the pack's dress on the shop — the moonlit wash and the grain, the top and bottom lines and the line between the list
+     and the pane drawn with his marker, each picture in one of the six drawn boxes, the chosen line's picture CIRCLED as
+     the pack circles its cell, prices and the buy button drawn round (`--c`: red ink when you can't pay), Leave the
+     pack's drawn Leave. The words are his hand (the page-wide rule). Sizes and layout unchanged. */
+  #shoppanel {
+    --moon: rgba(214, 224, 240, 0.62);
+    color: #eef2f8;
+    background:
+      radial-gradient(ellipse 70% 60% at 24% 12%, rgba(70, 92, 130, 0.30), rgba(70, 92, 130, 0) 70%),
+      radial-gradient(ellipse 120% 95% at 50% 46%, rgba(2, 3, 6, 0.70) 38%, rgba(0, 0, 0, 0.95) 100%);
+    overflow: hidden;
+  }
+  #shoppanel::after {
+    content: ''; position: absolute; inset: -60px; pointer-events: none; z-index: 0; opacity: 0.075;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.6 -0.35'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation: pkgrain 0.9s steps(1) infinite;
+  }
+  @media (prefers-reduced-motion: reduce) { #shoppanel::after { animation: none; } }
+  #shoppanel .panel { position: relative; z-index: 1; border-top: 0; border-bottom: 0; }
+  #shoppanel .panel::before, #shoppanel .panel::after, #shoppanel .body::after, #shoppanel .row::after,
+  #shoppanel .detail .nm::after, #shoppanel .tab.on::after {
+    content: ''; position: absolute; pointer-events: none; background: var(--moon);
+    -webkit-mask: url(assets/hud/pk-rule1.png) center / 100% 100% no-repeat; mask: url(assets/hud/pk-rule1.png) center / 100% 100% no-repeat;
+  }
+  #shoppanel .panel::before { left: -4px; right: -4px; top: 0; height: 10px; }
+  #shoppanel .panel::after { left: -4px; right: -4px; bottom: 0; height: 10px; -webkit-mask-image: url(assets/hud/pk-rule2.png); mask-image: url(assets/hud/pk-rule2.png); }
+  /* the line between the list and the pane: on the body, not the list (the list scrolls, and a line in it would go too) */
+  #shoppanel .body { position: relative; }
+  #shoppanel .list { border-right: 0; }
+  #shoppanel .body::after {
+    right: calc(max(290px, 30%) + 2.2rem); top: 0; bottom: 0; width: 10px; margin-right: -5px; opacity: 0.75;
+    -webkit-mask-image: url(assets/hud/pk-vrule.png); mask-image: url(assets/hud/pk-vrule.png);
+  }
+  #shoppanel h2 { color: #f2f5fa; }
+  /* the tab you are on: underlined by hand */
+  #shoppanel .tab { position: relative; border-bottom: 0; color: rgba(214, 224, 240, 0.7); }
+  #shoppanel .tab:hover { color: #ffffff; }
+  #shoppanel .tab.on { color: #ffffff; text-shadow: 0 0 14px rgba(160, 185, 230, 0.45), 0 1px 6px rgba(0, 0, 0, 0.9); }
+  #shoppanel .tab.on::after { left: -3px; right: -3px; bottom: -2px; height: 7px; -webkit-mask-image: url(assets/hud/pk-short1.png); mask-image: url(assets/hud/pk-short1.png); background: #ffffff; }
+  #shoppanel .head .jars { color: rgba(214, 224, 240, 0.5); }
+  #shoppanel .say { font-style: italic; color: rgba(214, 224, 240, 0.6); }
+  /* a line: ruled under by hand, faint; the picture in a drawn box */
+  #shoppanel .row { position: relative; border-bottom: 0; color: rgba(226, 234, 248, 0.84); }
+  #shoppanel .row::after { left: 0; right: 0; bottom: -3px; height: 6px; opacity: 0.22; -webkit-mask-image: url(assets/hud/pk-short1.png); mask-image: url(assets/hud/pk-short1.png); }
+  #shoppanel .row:nth-child(2n)::after { -webkit-mask-image: url(assets/hud/pk-short2.png); mask-image: url(assets/hud/pk-short2.png); }
+  #shoppanel .row .thumb {
+    --c: var(--moon); --ink: url(assets/hud/pk-slot1.png);
+    border: 0; overflow: visible;
+    background: radial-gradient(circle at 50% 40%, rgba(30, 40, 60, 0.55), rgba(4, 6, 10, 0.86) 76%) center / calc(100% - 6px) calc(100% - 6px) no-repeat;
+  }
+  #shoppanel .row .thumb img { width: calc(100% - 6px); height: calc(100% - 6px); margin: 3px; }
+  #shoppanel .row .thumb::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2; background: var(--c); transition: background 0.12s ease;
+    -webkit-mask: var(--ink) center / 100% 100% no-repeat; mask: var(--ink) center / 100% 100% no-repeat;
+  }
+  #shoppanel .row:nth-child(6n+2) .thumb { --ink: url(assets/hud/pk-slot2.png); }
+  #shoppanel .row:nth-child(6n+3) .thumb { --ink: url(assets/hud/pk-slot3.png); }
+  #shoppanel .row:nth-child(6n+4) .thumb { --ink: url(assets/hud/pk-slot4.png); }
+  #shoppanel .row:nth-child(6n+5) .thumb { --ink: url(assets/hud/pk-slot5.png); }
+  #shoppanel .row:nth-child(6n)   .thumb { --ink: url(assets/hud/pk-slot6.png); }
+  #shoppanel .row:hover { background: radial-gradient(ellipse 60% 120% at 20% 50%, rgba(170, 195, 240, 0.08), rgba(170, 195, 240, 0) 80%); }
+  #shoppanel .row:hover .thumb { --c: rgba(240, 245, 255, 0.88); }
+  /* the chosen line: lit from the left like a torch held over it, its picture circled */
+  #shoppanel .row.sel { box-shadow: none; color: #ffffff; background: radial-gradient(ellipse 70% 140% at 12% 50%, rgba(120, 142, 186, 0.22), rgba(120, 142, 186, 0) 80%); }
+  #shoppanel .row.sel .thumb { --c: #ffffff; }
+  #shoppanel .row.sel .thumb::before {
+    content: ''; position: absolute; inset: -8px; pointer-events: none; z-index: 3; background: #ffffff; opacity: 0.92;
+    -webkit-mask: url(assets/hud/pk-sel.png) center / 100% 100% no-repeat; mask: url(assets/hud/pk-sel.png) center / 100% 100% no-repeat;
+    animation: pkcircle 0.22s ease-out;
+  }
+  #shoppanel .list { padding-left: 8px; }      /* (room for the loop on the pictures) */
+  @keyframes shopFlash { 0% { background: rgba(160, 205, 255, 0.32); } 100% { background: rgba(120, 142, 186, 0.1); } }
+  /* the price: a small drawn box; red ink when you can't pay, a dashed one when it's gone */
+  #shoppanel .row .pr { --c: rgba(226, 234, 248, 0.7); --ink: url(assets/hud/pk-btn1.png); position: relative; border: 0; padding: 0.38rem 0.8rem; }
+  #shoppanel .row:nth-child(3n+2) .pr { --ink: url(assets/hud/pk-btn2.png); }
+  #shoppanel .row:nth-child(3n) .pr { --ink: url(assets/hud/pk-btn3.png); }
+  #shoppanel .row .pr::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--c);
+    -webkit-mask: var(--ink) center / 100% 100% no-repeat; mask: var(--ink) center / 100% 100% no-repeat;
+  }
+  #shoppanel .row.poor .pr { --c: rgba(255, 138, 128, 0.75); border: 0; }
+  #shoppanel .row.out .pr { --c: rgba(214, 224, 240, 0.5); --ink: url(assets/hud/pk-dash.png); border: 0; }
+  /* the pane: the picture in the big drawn box, the name underlined by hand */
+  #shoppanel .detail { overflow-x: hidden; }
+  #shoppanel .detail .pic { position: relative; border: 0; background: radial-gradient(circle at 50% 40%, rgba(26, 34, 52, 0.7), #000 78%); overflow: visible; width: min(100%, 300px); align-self: center; }
+  /* (the picture as the pack's is: the render's own tile, not a black square cropped inside the drawn frame) */
+  #shoppanel .detail .pic img { width: calc(100% - 10px); height: calc(100% - 10px); object-fit: cover; }
+  #shoppanel .row .thumb { width: 66px; height: 66px; }
+  #shoppanel .detail .pic::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--moon);
+    -webkit-mask: url(assets/hud/pk-big.png) center / 100% 100% no-repeat; mask: url(assets/hud/pk-big.png) center / 100% 100% no-repeat;
+  }
+  #shoppanel .detail .nm { position: relative; color: #f4f6fa; text-shadow: 0 0 12px rgba(160, 185, 230, 0.3); padding-bottom: 0.2rem; }
+  #shoppanel .detail .nm::after { left: 8%; right: 8%; bottom: -4px; height: 7px; -webkit-mask-image: url(assets/hud/pk-short1.png); mask-image: url(assets/hud/pk-short1.png); }
+  #shoppanel .detail .ds { color: rgba(226, 234, 248, 0.82); }
+  #shoppanel .detail .have { color: rgba(214, 224, 240, 0.7); font-style: italic; }
+  /* the buy button and Leave: drawn round, lit inside on hover, nothing fills solid */
+  #shoppanel .detail .buy, #shoppanel .head #shop-leave {
+    --c: rgba(214, 224, 240, 0.78); --ink: url(assets/hud/pk-btn2.png);
+    position: relative; border: 0; color: #eef2f8; transition: color 0.1s ease, text-shadow 0.1s ease;
+  }
+  #shoppanel .detail .buy, #shoppanel .detail .buy:not(.all) { background: transparent; }
+  #shoppanel .detail .buy.all { --ink: url(assets/hud/pk-btn3.png); }
+  #shoppanel .head #shop-leave { --ink: url(assets/hud/pk-leave.png); background: transparent; top: auto; left: auto; }   /* (its old absolute top/left would push a relative box onto the tabs) */
+  #shoppanel .detail .buy::after, #shoppanel .head #shop-leave::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--c); transition: background 0.1s ease;
+    -webkit-mask: var(--ink) center / 100% 100% no-repeat; mask: var(--ink) center / 100% 100% no-repeat;
+  }
+  #shoppanel .detail .buy::before, #shoppanel .head #shop-leave::before {
+    content: ''; position: absolute; inset: 5px; pointer-events: none; opacity: 0; transition: opacity 0.12s ease;
+    background: radial-gradient(ellipse at 50% 50%, rgba(170, 195, 240, 0.22), rgba(170, 195, 240, 0) 75%);
+  }
+  #shoppanel .detail .buy:not(:disabled):hover, #shoppanel .detail .buy:not(.all):not(:disabled):hover, #shoppanel .head #shop-leave:hover {
+    --c: #ffffff; background: transparent; color: #ffffff; text-shadow: 0 0 10px rgba(190, 210, 255, 0.7);
+  }
+  #shoppanel .detail .buy:not(:disabled):hover::before, #shoppanel .head #shop-leave:hover::before { opacity: 1; }
+  #shoppanel .detail .buy.poor:disabled { --c: rgba(255, 138, 128, 0.7); border: 0; }
+  #shoppanel .tip { font-style: italic; color: rgba(214, 224, 240, 0.45); }
+  #shoppanel .tip b { font-style: normal; color: rgba(226, 234, 248, 0.78); }
   #invghost {
     position: fixed;
     z-index: 20;
@@ -1934,6 +2300,120 @@
     line-height: 1.8;
   }
 
+  /* ---- THE MENU IN THE OWNER'S HAND (2026-11-18, "restyle the settings to match the pack … have all this match the
+     games style"): the pack's dress on the menu — the same moonlit wash and moving grain behind it, its top and bottom
+     lines and every button drawn with his marker (`assets/hud/pk-*`, coloured `--c` as in the pack), a slider a drawn
+     line with a drawn ring on it, a toggle a drawn box that lights from inside. The words are in his hand too (the
+     owner's choice, 2026-11-18). Sizes and order unchanged. */
+  #menu {
+    --moon: rgba(214, 224, 240, 0.62);
+    color: #eef2f8;
+    background:
+      radial-gradient(ellipse 70% 60% at 24% 12%, rgba(70, 92, 130, 0.30), rgba(70, 92, 130, 0) 70%),
+      radial-gradient(ellipse 120% 95% at 50% 46%, rgba(2, 3, 6, 0.80) 38%, rgba(0, 0, 0, 0.96) 100%);
+    overflow: hidden;
+  }
+  #menu::after {
+    content: ''; position: absolute; inset: -60px; pointer-events: none; z-index: 0; opacity: 0.075;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.6 -0.35'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    animation: pkgrain 0.9s steps(1) infinite;
+  }
+  @media (prefers-reduced-motion: reduce) { #menu::after { animation: none; } }
+  #menu .panel {
+    position: relative; z-index: 1; border-top: 0; border-bottom: 0; padding: 1.7rem 0.9rem 1.5rem;
+    max-height: calc(94vh / var(--fit-menu, 1));
+  }
+  #menu .panel::before, #menu .panel::after, #menu .ctl::after {
+    content: ''; position: absolute; pointer-events: none; background: var(--moon);
+    -webkit-mask: url(assets/hud/pk-rule1.png) center / 100% 100% no-repeat; mask: url(assets/hud/pk-rule1.png) center / 100% 100% no-repeat;
+  }
+  #menu .panel::before { left: 0; right: 0; top: 0; height: 10px; }
+  #menu .panel::after { left: 0; right: 0; bottom: 0; height: 10px; -webkit-mask-image: url(assets/hud/pk-rule2.png); mask-image: url(assets/hud/pk-rule2.png); }
+  #menu .panel { background: transparent; }
+  /* (a scrolling panel: the bottom line rides the end of the content, which is where the eye looks for it) */
+  #menu h2 { color: #f2f5fa; letter-spacing: 0.42em; font-size: 0.98rem; text-shadow: 0 0 14px rgba(160, 185, 230, 0.35); }
+  #menu .row label { color: rgba(214, 224, 240, 0.66); }
+  #menu .row label .val { color: #f4f6fa; text-shadow: 0 0 8px rgba(160, 185, 230, 0.3); }
+  /* the slider: a drawn line, a drawn ring with a lit centre */
+  #menu input[type="range"] { height: 20px; }
+  /* (the line is the input's own background, the white mask drawn as it is, a touch dimmed by the dark under it: a
+     mask on the TRACK clips the thumb, which lives inside it, and the thumb vanished) */
+  #menu input[type="range"] { background: url(assets/hud/pk-short1.png) center / 100% 7px no-repeat; opacity: 0.92; }
+  #menu .row:nth-of-type(2n) input[type="range"] { background-image: url(assets/hud/pk-short2.png); }
+  #menu input[type="range"]::-webkit-slider-runnable-track { height: 7px; background: transparent; }
+  #menu input[type="range"]::-webkit-slider-thumb {
+    width: 15px; height: 15px; margin-top: -4px; border-radius: 50%; box-sizing: border-box;
+    border: 2px solid #e8eef8; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.8), 0 0 7px rgba(160, 185, 230, 0.45);
+    background: radial-gradient(circle, #ffffff 0 2px, rgba(120, 142, 186, 0.6) 3px, #05070b 5.5px);
+  }
+  /* (the drawn ring was 288 px of marker squeezed into 15: it came out as a smudge on the line. A thumb is a ring) */
+  #menu input[type="range"]::-moz-range-track { height: 2px; background: var(--moon); }
+  #menu input[type="range"]::-moz-range-thumb { width: 15px; height: 15px; border-radius: 50%; background: radial-gradient(circle, #fff 0 2.5px, #05070b 3.5px); border: 1.5px solid #eef2f8; }
+  #menu input[type="range"]:hover::-webkit-slider-thumb { filter: drop-shadow(0 0 5px rgba(190, 210, 255, 0.7)); }
+  #menu input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 0; filter: drop-shadow(0 0 5px rgba(190, 210, 255, 0.9)); }
+  /* the toggle: a drawn box, lit from inside and inked white when on */
+  #menu input[type="checkbox"] {
+    width: 19px; height: 19px; border: 0;
+    background: url(assets/hud/pk-slot3.png) center / 100% 100% no-repeat; opacity: 0.75;
+  }
+  #menu input[type="checkbox"]:checked {
+    opacity: 1; border: 0;
+    background: url(assets/hud/pk-slot3.png) center / 100% 100% no-repeat, radial-gradient(circle, #ffffff 0 3px, rgba(150, 175, 225, 0.6) 4.5px, rgba(4, 6, 10, 0) 8px);
+    filter: drop-shadow(0 0 5px rgba(190, 210, 255, 0.55));
+  }
+  /* the buttons: each a drawn box (three hands, cycled), the inside lit on hover; nothing fills solid */
+  #menu button {
+    --c: rgba(214, 224, 240, 0.72); --ink: url(assets/hud/pk-btn1.png);
+    position: relative; border: 0; background: transparent; color: #eef2f8;
+    transition: color 0.1s ease, text-shadow 0.1s ease;
+  }
+  #menu .buttons button:nth-child(3n+2) { --ink: url(assets/hud/pk-btn2.png); }
+  #menu .buttons button:nth-child(3n) { --ink: url(assets/hud/pk-btn3.png); }
+  #menu .buttons button.secondary { --c: rgba(214, 224, 240, 0.42); color: rgba(226, 234, 248, 0.72); }
+  #menu button::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; background: var(--c); transition: background 0.1s ease;
+    -webkit-mask: var(--ink) center / 100% 100% no-repeat; mask: var(--ink) center / 100% 100% no-repeat;
+  }
+  #menu button::before {
+    content: ''; position: absolute; inset: 5px; pointer-events: none; opacity: 0; transition: opacity 0.12s ease;
+    background: radial-gradient(ellipse at 50% 50%, rgba(170, 195, 240, 0.22), rgba(170, 195, 240, 0) 75%);
+  }
+  #menu button:not([disabled]):hover { --c: #ffffff; background: transparent; color: #ffffff; text-shadow: 0 0 10px rgba(190, 210, 255, 0.7); border-color: transparent; }
+  #menu button:not([disabled]):hover::before { opacity: 1; }
+  /* the controls page: a drawn rule under each line, faint */
+  #menu .ctl { position: relative; border-bottom: 0; color: rgba(214, 224, 240, 0.74); }
+  #menu .ctl::after { left: 0; right: 0; bottom: -3px; height: 6px; opacity: 0.22; -webkit-mask-image: url(assets/hud/pk-short1.png); mask-image: url(assets/hud/pk-short1.png); }
+  #menu .ctl:nth-of-type(2n)::after { -webkit-mask-image: url(assets/hud/pk-short2.png); mask-image: url(assets/hud/pk-short2.png); }
+  #menu .ctl .key { color: #f4f6fa; }
+  #menu .ctl-group { color: rgba(214, 224, 240, 0.42); }
+  #menu .tip { font-style: italic; color: rgba(214, 224, 240, 0.45); }
+
+  /* ---- EVERY PANEL FITS ITS WINDOW (2026-11-18, "make every HUD element, the pack and the settings fit and look their
+     best on any window size"). `--fit-pack`, `--fit-shop` and `--fit-menu` are worked out at the foot of this page
+     from each panel's own laid-out size: the `--hud` scale (1 at the sizes the panels were tuned at, up to 1.35 on a big
+     screen) unless that would run it off the window, then as small as it must be (never under 0.55; the menu scrolls
+     below that). `scale` (not `transform`) so it stacks with the pack's rise as it opens. */
+  #invpanel .panel { scale: var(--fit-pack, 1); }
+  #shoppanel .panel { scale: var(--fit-shop, 1); }
+  #menu .panel { scale: var(--fit-menu, 1); }
+  /* THE SETTINGS IN TWO COLUMNS, at every size wide enough for them (2026-11-18, the owner, of the 1280×720 shot: "make
+     the settings more like this layout"): the sliders two to a line, the toggle across, the buttons four across, the
+     controls page in two columns. It was only for a short window; a tall one fell back to one narrow column. Under
+     900 px wide it is still one column. */
+  @media (min-width: 900px) {
+    #menu .panel.settings { width: min(92vw, 860px); display: grid; grid-template-columns: 1fr 1fr; column-gap: 2.6rem; align-content: start; }
+    #menu .panel.settings > h2, #menu .panel.settings > .row.toggle, #menu .panel.settings > .buttons { grid-column: 1 / -1; }
+    #menu .panel.settings > .row.toggle:empty { display: none; }
+    #menu .panel.settings > .buttons { grid-template-columns: repeat(4, 1fr); }
+    #menu .panel.settings > .buttons button.wide { grid-column: span 2; }
+    #menu .panel.controls { width: min(92vw, 860px); columns: 2; column-gap: 2.6rem; }
+    #menu .panel.controls > h2, #menu .panel.controls > .buttons { column-span: all; }
+    #menu .panel.controls .ctl { grid-template-columns: 8.4rem 1fr; }
+    #menu .panel.controls > .ctl-group { break-after: avoid; } #menu .panel.controls > .ctl { break-inside: avoid; }
+  }
+  /* (the fight/dig/pack tips sit under the panels and read through their dark: not while a panel is open) */
+  body:has(#menu.show, #invpanel.show, #shoppanel.show) :is(#fighttip, #digtip, #packtip) { opacity: 0 !important; }
+
   /* end screen */
   #end {
     position: fixed;
@@ -1965,6 +2445,12 @@
   #end p { font-size: 0.9rem; letter-spacing: 0.1em; opacity: 0.7; max-width: 32ch; line-height: 1.8; }
   /* the tally, above the way back */
   /* (2026-10-15, the owner: "make final stats and walk again way bigger on the screen") */
+  /* HIS BEACHWALK OVER THE STATS (2026-11-20, the owner: "above the stats put my beachwalk text sorta big"): his own drawn letters,
+     the title's, in a row, with the title's soft glow */
+  #end-title { display: flex; align-items: flex-end; justify-content: center; gap: clamp(0.25rem, 1.1vw, 1rem); margin-bottom: clamp(0.6rem, 3vh, 2.4rem);
+    filter: drop-shadow(0 0 2px rgba(255,255,255,0.55)) drop-shadow(0 0 22px rgba(170, 190, 240, 0.35)); }
+  #end-title img { height: clamp(2.6rem, 9vh, 6.5rem); width: auto; }
+  #end-title img:nth-child(5) { margin-right: clamp(0.6rem, 2.6vw, 2.4rem); }
   #end-stats { display: grid; gap: clamp(0.7rem, 1.6vh, 1.1rem); min-width: min(40rem, 88vw); font-size: clamp(1.25rem, 2.7vw, 2.1rem); letter-spacing: 0.12em; }
   #end-stats { color: #fff; text-transform: uppercase; }
   #end-stats .row { display: flex; justify-content: space-between; gap: 3rem; border-bottom: 1px solid rgba(255, 255, 255, 0.22); padding-bottom: 0.45rem; }
@@ -2074,6 +2560,7 @@
     <span class="amt"><span id="blood-amt"><i class="g g0"></i><i class="g gx"></i></span><span class="unit" id="blood-unit">jars</span></span>
   </div>
 
+  <div id="pack-hands"><canvas></canvas></div>
   <div id="invpanel">
     <div class="panel">
       <div class="head"><button id="pack-leave" type="button">Leave</button><h2>Pack</h2><span class="count">Tab / Esc &nbsp;close</span></div>
@@ -2202,6 +2689,7 @@
         <button id="m-shop" class="secondary wide">Teleport to shop (dev)</button>
         <button id="m-shop2" class="secondary wide">Teleport to castle merchant (dev)</button>
         <button id="m-isle" class="secondary wide">Teleport to lighthouse (dev)</button>
+        <button id="m-temple" class="secondary wide">Teleport to desert temple (dev)</button>
       </div>
     </div>
     <!-- THE CONTROLS HAVE THEIR OWN PAGE. They were a line of small print
@@ -2239,6 +2727,7 @@
   <div id="end">
     <h1>The Lighthouse</h1>
     <p>You reach the light at the end of the beach. The rest is another walk.</p>
+    <div id="end-title" aria-label="BEACHWALK"><img src="assets/title-B.png" alt=""><img src="assets/title-E.png" alt=""><img src="assets/title-A.png" alt=""><img src="assets/title-C.png" alt=""><img src="assets/title-H.png" alt=""><img src="assets/title-W.png" alt=""><img src="assets/title-A2.png" alt=""><img src="assets/title-L.png" alt=""><img src="assets/title-K.png" alt=""></div>
     <div id="end-stats"></div>
     <button id="end-restart">Walk again</button>
   </div>
@@ -2299,9 +2788,31 @@
     const g = Math.min(k, Math.max(0.35, (H - 40) / 790));      // and the hotbar column fits the height
     root.style.setProperty('--hud', k.toFixed(3));
     root.style.setProperty('--hud-gear', g.toFixed(3));
+    // the pack, the shop and the menu: the HUD's scale, unless it runs the panel off the window (measured unscaled:
+    // `scale` leaves offsetWidth/scrollHeight alone, so this never feeds on itself)
+    for (const [sel, v, min] of PANELS) {
+      const p = document.querySelector(sel); if (!p) continue;
+      const pw = p.offsetWidth, ph = sel === '#menu .panel' ? p.scrollHeight : p.offsetHeight;
+      if (!pw || !ph) continue;
+      /* (the menu: as much of the window as it takes in the owner's 1280×720 shot, 59 % of the width, whatever the window —
+       * at the HUD's scale it sat small in the middle of a big screen; 2026-11-18, "make the settings more like this layout") */
+      /* (then "make the settings less big": 48 % of the width, never past 1.25× — at 59 % it filled a big screen) */
+      let want = sel === '#menu .panel' ? Math.min(1.25, (W * 0.48) / pw) : k;
+      // (the pack is written on the sheet in his hands: as big as the clear part of the paper takes it — `packPaperFit`)
+      if (sel === '#invpanel .panel' && window.packPaperFit) { const f = window.packPaperFit(pw, ph); if (f) want = f; }
+      const s = Math.max(min, Math.min(want, (W * 0.97) / pw, (H * 0.95) / ph));
+      root.style.setProperty(v, s.toFixed(3));
+    }
   }
+  const PANELS = [['#invpanel .panel', '--fit-pack', 0.5], ['#shoppanel .panel', '--fit-shop', 0.5], ['#menu .panel', '--fit-menu', 0.62]];
   hudFit();
   window.addEventListener('resize', hudFit);
+  window.addEventListener('load', hudFit);
+  if (window.ResizeObserver) {   // a panel's content changes size (the shop's list, the menu's pages, the fonts landing)
+    const ro = new ResizeObserver(() => hudFit());
+    const watch = () => { for (const [sel] of PANELS) { const p = document.querySelector(sel); if (p) ro.observe(p); } };
+    watch(); document.fonts && document.fonts.ready.then(hudFit);
+  }
   window.hudFit = hudFit;
 })();
 </script>

@@ -2257,3 +2257,51 @@ The `CASTLE PROPS` section (`CP`, `CP_KINDS`, `CP_SITE_DEFS`, `CP_SCENES`, `cpBu
   still, faded after 40 s asleep or when over 150. Draws: intact props are instanced per kind/part per castle — +13–15 draws.
 - Probes: `castleProps&site=…`, `castleBreakClose`, `cpInteract` (walk into: held at 0.56 m; jump into: breaks; a farmer
   walked through: breaks; the mace: breaks; a body thrown into a cart: breaks), `cpMap`, `cpTop`, `propSheet`, `cpMatDbg`.
+
+## 2026-11-18 — props only where you fight; weapons carried, not swung by the run
+- **Props** ("the breakables in the castle dont have to be inside where the farmers come from only where you fight"):
+  `cpMap` showed eight of the fort's in the arcades and house doorways (the walk calls them open). `CP_SITE_DEFS.fort` now
+  has `fightOnly`: in `cpFits` the prop's middle must be under open sky, 80 % of the walkable floor round it at 1 and 2 m
+  too (a wall behind it is not walkable, so wall-backed street props stay), and each PROP is asked `avoid` (doors were only
+  asked of the scene's spot); the farmers' door clearance 2.8 → 4.5 m. "Any roof within 1.4 m" refused all of them: the
+  eaves run a strip along every wall. Fort 34 → 20, all on the street. XIII's were all in its open court already.
+- **The carry** (`farmCarry`, `farmCarryAll`, `FARM_CARRY`; "they run with their weapons facing all weird directions").
+  Between blows the weapon sat at its seat in the fist and went wherever the run's arm-pump put the hand. Measured
+  (`farmCarryCheck`, 600 frames of the fort fight, dev mode): axes and maces pointed DOWN 86-94 % of frames and backward
+  23 %, the spear down 81 %, the direction wandering ~1°/frame. Now, outside a swing (`st.atk < 0`, not stunned/down/
+  recoiling/ragdolled) the weapon eases (5/s in, 16/s out) about the point in his fist to a carry: sword up and forward
+  (f .55 u .80), axe and mace upright before the shoulder (f .28 u .93), spear levelled at his foe (f .93 u .30), edge to
+  the front. After: never backward or down, 0.1-0.4°/frame. The swings start from the seat, so blows and reach are as
+  they were. Runs AFTER `updateMutant` (the mixers), or it lags the arm by a frame.
+- **"Forward" is not the root's yaw**: in the strafe clips the hips' +Z stands square to it (`farmFacing`), and a spear
+  carried along the root went across his chest. Toward his foe (`mutFoePos`) while awake, else his chest's (Spine2) +Z.
+- Also for the four through XIII's door (`gargRaid.units`). `farmCarryState` lists every man out: weapon drawn, carry k.
+
+## 2026-11-18 — the paladin's rage hid him from his own code; his blows from too far; the leap closer; Myles stays on him
+- **THE RAGE COPY BROKE EVERY `kind === MUT_KINDS.darkKnight`.** The second wind (`u.kind.rage`, at `rageAt` 0.4 for him)
+  replaces `u.kind` with a copy, so from 40 % on: `updateDarkKnight` returned on its first line (his travel, swing tracking,
+  foes, phrases — all off), `minoFoes` dropped him (Myles stood idle with the paladin swinging at him: `minoPaladin`, foe
+  cleared by `minoPickFoe` at hp 38-42), `dkFling` stopped, and his DEATH CRY could never play (he dies below 40 %). The copy
+  now carries `base` (the kind it was) and `kindIs(k, K)` matches either; all 7 dark-knight checks and the one `knIron` use
+  it. Raged duel (`dkFightRage` / `dkFightRageOld`): 15/28 landed → 21/24.
+- **Myles fights a man who is on him wherever you are**: `minoPickFoe`'s "within 16 m of you" no longer drops a foe whose
+  `st.foe` is Myles. After both fixes `minoPaladin`: Myles on the paladin the whole 30 s, 90 → 15 (his 16 % floor: the kill is
+  yours).
+- **No blow from out of range** (`dkFight`: every blow thrown from 3.7-4.1 m — he counts as `near` inside his LONGEST reach,
+  the leap's 6 m — and the warp kind's "nothing fits" fallback handed over the cut/sweep/rise/spin, 0 of 9 landing). When the
+  nearest blow's ground is > 0.6 m nearer than he is, he does not swing: `closeIn` 0.5 s (which now un-nears a `warpPick`
+  kind as it did a planted one) and draws again. Standing duels after: 13/25, 21/26, 18/25 (17/28 before). The sweep is still
+  the weak one (2 of 13 over four runs) — not looked at yet.
+- **The leap lands ON you**: its stand-off is the blade tip's reach + 0.2 = 3.22 m (it grazed a man standing still).
+  `dkStopSweepLeap`: lands at every stand-off 1.5-3.3. Capped at 2.4: 5/5, dead centre of the picture (`dkSwingsLeap` 12/12
+  at 3.22 before, 0.17-0.49 m from the eye). A duel that backs the camera off during the wind-up read 0/14 for EVERY blow —
+  a moving camera reads as a dodge; not a measure of anything, removed.
+- **The cart's spare wheel** (`CP_SCENES.cart`, `lean`) is not set in the first castle (`fightOnly`): on the open street's
+  edge there was no stone to lean on and it stood in the air.
+
+## The paladin goes over (2026-11-19, the owner: "make the paladin fall like the church knight if hit with enough heavies like him")
+- `MUT_KINDS.darkKnight`: `knockClip: 'knock'`, `knockAfter: 5`, `knockLapse: 7`, `knock: NTAR_KNOCK` — the church knight's
+  rule (heavies that LAND, five inside a stretch, the tally lapsing after seven idle seconds). His move set has no fall,
+  so `authorDkClips` retargets `ntar-moves.json`'s `knock` (the motion-captured fall onto the back, rotations undergone)
+  onto his rig through `DK_RAG`, as every knockdown here is made. `tools/dkknock.js`: down on the fifth heavy (2.07 s
+  left), up again ~3 s later.

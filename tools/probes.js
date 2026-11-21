@@ -994,10 +994,14 @@ export async function dkFight({ w, b, log, sleep }) {
   const u = b.dkS().u; for (const f of b.dkS().dk.victims) { f.st.awake = false; f.g.visible = false; f.g.position.x += 60; }
   for (const f of b.farmUnitsS()) f.st.awake = false;
   b.dkTurn(u, true);
+  if (w.__dkRage) u.st.hp = Math.floor(u.kind.hp * 0.35);         // (2026-11-18: already in his rage — `dkFightRage`; `__dkOld` undoes `kindIs`)
   const C = b.camera.position, P = u.g.position, home = [P.x + Math.sin(u.g.rotation.y) * (w.__fightR || 3), P.z + Math.cos(u.g.rotation.y) * (w.__fightR || 3)];
-  const per = {}; let last = { swing: null, atk: -1 }, hitAt = 0, hurts = 0, hp0 = b.state().hp, landed = 0;
+  const per = {}; let last = { swing: null, atk: -1 }, hitAt = 0, hurts = 0, hp0 = b.state().hp, landed = 0, far = {};
   for (let f = 0; f < 60 * 45; f++) {
-    b.lookAt(P.x, C.y - 0.2, P.z); w.__adv(1); C.x = home[0]; C.z = home[1];
+    if (w.__dkOld && u.kind.base) u.kind.base = undefined;
+    b.lookAt(P.x, C.y - 0.2, P.z); w.__adv(1);
+    C.x = home[0]; C.z = home[1];
+    { const A = u.st.atk >= 0 && u.atk[u.st.swing]; if (A && Math.abs(u.st.atk - A.wind) < 0.009) { const d = Math.hypot(P.x - C.x, P.z - C.z); (far[u.st.swing] || (far[u.st.swing] = [])).push(d.toFixed(1)); } }
     for (const g of b.farmUnitsS()) g.st.awake = false;
     if (u.st.atk >= 0 && (last.swing !== u.st.swing || u.st.atk < last.atk)) { const s = per[u.st.swing] || (per[u.st.swing] = { n: 0, land: 0, scr: [] }); s.n++; last.cur = s; }
     if (u.hitAt && u.hitAt !== hitAt && last.cur) { hitAt = u.hitAt; last.cur.land++; if (u.hitPt) { const q = u.hitPt.clone().project(b.camera); last.cur.scr.push(q.x.toFixed(2) + ',' + q.y.toFixed(2) + (q.z > 1 ? 'B' : '')); } }
@@ -1006,8 +1010,11 @@ export async function dkFight({ w, b, log, sleep }) {
   }
   for (const [k, s] of Object.entries(per)) log(k, 'thrown', s.n, 'contacts landed', s.land, 'screen', s.scr.slice(0, 5).join(' '));
   { let th = 0, ld = 0; for (const s2 of Object.values(per)) { th += s2.n; ld += Math.min(s2.n, s2.land); } log('thrown', th, 'with a contact landed', ld); }
-  log('hurts', hurts, 'in 45 s');
+  log('hurts', hurts, 'in 45 s', 'raged', !!u.st.raged);
+  for (const [k, v] of Object.entries(far)) log('  ', k, 'his distance from you at the blow', v.slice(0, 8).join(' '));
 }
+export async function dkFightRage(ctx) { ctx.w.__dkRage = true; return dkFight(ctx); }
+export async function dkFightRageOld(ctx) { ctx.w.__dkRage = true; ctx.w.__dkOld = true; return dkFight(ctx); }
 
 // THE SOUNDS OF A CHECKPOINT LOAD: a checkpoint saved (holding the katana, the shovel and rings in the pack), then loaded
 // the way a death loads it, in a silent frame that logs every source started — and who started it — for the first 12 s
@@ -6454,6 +6461,15 @@ export async function skrimHang({ w, b, log, sleep, shot }) {
     if (shoot && H && H.ph === 'fall' && H.t > 0.35 && !did.fallShot) { did.fallShot = 1; eye('shot_fall', P.x, P.y + 1, P.z); }
     if (shoot && H && H.ph === 'down' && H.t > 0.3 && !did.downShot) { did.downShot = 1; eye('shot_down', P.x, P.y + 0.8, P.z); const hp2 = u.st.hp; b.hurtMutantTest(u, 5, 0.6); log('cut him while down', hp2, '->', u.st.hp); }
     if (ph === 'lower' && H.t > 0.6 && !did.low) { did.low = 1; eye('hang_lower', P.x, P.y + 1.2, P.z); }
+    // (2026-11-19) the flip off the hook: from across the gut at four beats, and his feet over the floor at its landing frame
+    if (ph === 'flip') for (const tf of [0.25, 0.6, 1.0, 1.3, 1.46, 1.8]) {
+      if (H.t < tf || did['f' + tf]) continue; did['f' + tf] = 1;
+      const keep = cam.clone(), kq = C.quaternion.clone(), kf = C.fov;
+      C.fov = 55; C.updateProjectionMatrix(); C.position.set(P.x + 8, b.skrimFloorW(P.x, P.z) + 3, P.z + 1); C.lookAt(P.x, b.skrimFloorW(P.x, P.z) + 2.6, P.z); C.updateMatrixWorld(true); shot('flip_' + tf, 480, 1.8);
+      C.position.copy(keep); C.quaternion.copy(kq); C.fov = kf; C.updateProjectionMatrix();
+      const ft = ['Character1_LeftToeBase', 'Character1_RightToeBase'].map((n) => u.model.getObjectByName(n).getWorldPosition(new T()).y - b.skrimFloorW(P.x, P.z));
+      log('flip t', H.t.toFixed(2), 'toes over floor', ft.map((v) => v.toFixed(2)).join(' / '), 'origin over floor', (P.y - b.skrimFloorW(P.x, P.z)).toFixed(2));
+    }
     // close on him from along the gut and from across it: his weight on his fist, the swing, the chain
     for (const [tag, ph0, t0] of [['reel', 'reel', 0.3], ['catch', 'hang', 0.12], ['h1', 'hang', 0.7], ['h2', 'hang', 1.5], ['h3', 'hang', 4.2]]) {
       if (!H || H.ph !== ph0 || H.t < t0 || did['c' + tag]) continue; did['c' + tag] = 1;
@@ -7458,6 +7474,582 @@ export async function sewDeadPose({ w, b, log, sleep }) {
   b.settings.devMode = false;
 }
 
+// (2026-11-18, the castle performance pass) can each big far group be SEEN from inside a castle? Every 45° of yaw at three
+// pitches, the frame rendered with and without it; the pixels that change (of 1/16 sampled) are what hiding it would cost.
+export async function castleSeen({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
+  const R = b.renderer, gl = R.getContext(), cvs = R.domElement;
+  const grab = () => { const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, px = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+  const tops = () => b.scene.children.filter((o) => o.visible && /castle13|isle|fort|vista|rockSurf|throneRoom/.test(o.name || ''));
+  const test = async (where) => {
+    for (let i = 0; i < 40; i++) w.__adv(1);
+    w.requestAnimationFrame = () => 0;
+    const home = b.camera.position.clone(), names = tops().map((o) => o.name);
+    const cost = {}; for (const n of names) cost[n] = [0, 0];
+    for (let k = 0; k < 8; k++) for (const pitch of [-0.15, 0.15, 0.5]) {
+      b.camera.position.copy(home); b.look(k * Math.PI / 4, pitch); w.__adv(1); b.camera.position.copy(home); b.look(k * Math.PI / 4, pitch); b.camera.updateMatrixWorld(true);
+      R.render(b.scene, b.camera); const a = grab();
+      for (const o of tops()) {
+        o.visible = false; R.render(b.scene, b.camera); const c = grab(); o.visible = true;
+        let d = 0, n = 0; for (let i = 0; i < a.length; i += 64) { n++; if (Math.abs(a[i] - c[i]) + Math.abs(a[i + 1] - c[i + 1]) + Math.abs(a[i + 2] - c[i + 2]) > 12) d++; }
+        cost[o.name][0] += d; cost[o.name][1] += n;
+      }
+    }
+    log(where, Object.entries(cost).map(([k, v]) => k + ' ' + (100 * v[0] / v[1]).toFixed(3) + '%').join('  '));
+  };
+  await test('fort street');
+  for (let i = 0; i < 60 && !b.c13State().ready; i++) await sleep(300);
+  b.placeInC13(); for (let i = 0; i < 400 && !b.c13State().walls; i++) { w.__adv(1); await sleep(5); }
+  await sleep(1500);
+  await test('XIII court');
+}
+
+// (2026-11-18) which meshes are EVER seen from inside each castle: every mesh drawn in its own flat colour (everything else
+// black, depth kept, no fog), from ~16 walkable spots spread over the castle's floor (at the eye and 3 m up), 8 yaws × 3 pitches.
+export async function castleSeenIds({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
+  const T = b.THREE, R = b.renderer, gl = R.getContext();
+  const grab = () => { const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, px = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+  const run = async (id, watch) => {
+    for (let i = 0; i < 40; i++) w.__adv(1);
+    w.requestAnimationFrame = () => 0;
+    const D = b.CP_SITE_DEFS[id], W = D.walk(), X = D.X(), Z = D.Z();
+    const pts = [];
+    for (let gz = 0; gz < W.gh; gz += 2) for (let gx = 0; gx < W.gw; gx += 2) { const lx = W.x0 + (gx + 0.5) * W.cell, lz = W.z0 + (gz + 0.5) * W.cell; if (D.open(X + lx, Z + lz, false)) { const f = D.floor(X + lx, Z + lz); if (f !== null) pts.push([X + lx, f, Z + lz]); } }
+    const step = Math.max(1, Math.floor(pts.length / 16)), use = pts.filter((_, i) => i % step === 0).slice(0, 18);
+    // the meshes of the groups we watch, each its own colour id
+    const meshes = [], keep = new Map();
+    for (const g of watch) { const top = b.scene.children.find((o) => o.name === g); if (!top) { log('no group', g); continue; } top.traverse((o) => { if (o.isMesh) meshes.push([g, o]); }); }
+    const black = new T.MeshBasicMaterial({ color: 0, fog: false });
+    const idMat = meshes.map((_, i) => new T.MeshBasicMaterial({ toneMapped: false, color: new T.Color().setRGB(((i + 1) & 255) / 255, (((i + 1) >> 8) & 255) / 255, 0.5, T.LinearSRGBColorSpace), fog: false, side: T.DoubleSide }));
+    const all = []; b.scene.traverse((o) => { if (o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || o.isPoints || o.isSprite || o.isLine) all.push(o); });
+    for (const o of all) keep.set(o, o.material);
+    const mi = new Map(meshes.map(([, o], i) => [o, i]));
+    for (const o of all) o.material = mi.has(o) ? idMat[mi.get(o)] : black;
+    const fog = b.scene.fog, bg = b.scene.background; b.scene.fog = null; b.scene.background = new T.Color(0);
+    const ocs = R.outputColorSpace, otm = R.toneMapping; R.outputColorSpace = T.LinearSRGBColorSpace; R.toneMapping = T.NoToneMapping;   // (the ids, read back exactly)
+    const seen = new Uint32Array(meshes.length);
+    for (const [x, f, z] of use) for (const up of [1.65, 4.5]) for (let k = 0; k < 8; k++) for (const pitch of [-0.2, 0.15, 0.55]) {
+      b.camera.position.set(x, f + up, z); b.camera.rotation.set(pitch, k * Math.PI / 4, 0, 'YXZ'); b.camera.updateMatrixWorld(true);
+      R.render(b.scene, b.camera); const px = grab();
+      for (let i = 0; i < px.length; i += 4) { if (px[i + 2] < 100 || px[i + 2] > 155) continue; const id = px[i] + (px[i + 1] << 8) - 1; if (id >= 0 && id < seen.length) seen[id]++; }
+    }
+    for (const o of all) o.material = keep.get(o); b.scene.fog = fog; b.scene.background = bg; R.outputColorSpace = ocs; R.toneMapping = otm;
+    const byG = {};
+    meshes.forEach(([g, o], i) => { const e = byG[g] || (byG[g] = { n: 0, seen: 0, tris: 0, unseenTris: 0, unseen: [] }); const t = (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; e.n++; e.tris += t; if (seen[i]) e.seen++; else { e.unseenTris += t; e.unseen.push(o.name); } });
+    for (const g in byG) { const e = byG[g]; log(id, g, 'meshes seen', e.seen + '/' + e.n, 'tris unseen', Math.round(e.unseenTris / 1000) + 'k of ' + Math.round(e.tris / 1000) + 'k', 'from', use.length, 'spots'); if (g === 'castle13' || g === 'fort') log(id, g, 'UNSEEN', JSON.stringify(e.unseen)); }
+    // the never-seen ones as KEYS the game can match: name | vertices | world middle to 0.5 m (cprops and aim spheres left out: they come and go)
+    const _bx = new T.Box3(), _c = new T.Vector3();
+    const keys = meshes.filter(([, o], i) => !seen[i] && !/^(cprop|hitProxy)/.test(o.name) && !o.isInstancedMesh).map(([g, o]) => { _bx.setFromObject(o); _bx.getCenter(_c); return g + '|' + o.name + '|' + o.geometry.attributes.position.count + '|' + Math.round(_c.x * 2) / 2 + ',' + Math.round(_c.y * 2) / 2 + ',' + Math.round(_c.z * 2) / 2; });
+    log(id, 'KEYS', JSON.stringify(keys));
+  };
+  await run('fort', ['castle13', 'isle', 'vista', 'rockSurf']);
+  for (let i = 0; i < 60 && !b.c13State().ready; i++) await sleep(300);
+  b.placeInC13(); for (let i = 0; i < 400 && !b.c13State().walls; i++) { w.__adv(1); await sleep(5); }
+  await sleep(1500);
+  await run('c13', ['isle', 'vista', 'rockSurf', 'fort', 'fortAir']);
+}
+
+// (2026-11-18) the castles' unseen-piece cull: how many hidden, the draws, and every view's pixels with it on and off
+export async function castleCullCheck({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
+  const R = b.renderer, gl = R.getContext();
+  const grab = () => { const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, px = new Uint8Array(W * H * 4); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+  const check = async (where) => {
+    for (let i = 0; i < 120; i++) w.__adv(1);
+    const hid = b.castleHidS() || []; log(where, 'hidden pieces', hid.length);
+    w.requestAnimationFrame = () => 0;
+    const home = b.camera.position.clone(); let worst = 0, sum = 0, n = 0, dOn = 0, dOff = 0;
+    for (let k = 0; k < 8; k++) for (const pitch of [-0.15, 0.15, 0.5]) {
+      b.camera.position.copy(home); b.camera.rotation.set(pitch, k * Math.PI / 4, 0, 'YXZ'); b.camera.updateMatrixWorld(true);
+      R.info.autoReset = false; R.info.reset(); R.render(b.scene, b.camera); dOn += R.info.render.calls; const a = grab();
+      for (const o of hid) o.visible = true; R.info.reset(); R.render(b.scene, b.camera); dOff += R.info.render.calls; const c = grab(); for (const o of hid) o.visible = false;
+      R.info.autoReset = true;
+      let d = 0, m = 0; for (let i = 0; i < a.length; i += 4) { m++; if (Math.abs(a[i] - c[i]) + Math.abs(a[i + 1] - c[i + 1]) + Math.abs(a[i + 2] - c[i + 2]) > 12) d++; }
+      worst = Math.max(worst, d); sum += d; n += m;
+    }
+    log(where, 'draws with/without the cull', Math.round(dOn / 24), '/', Math.round(dOff / 24), 'changed pixels: total', sum, 'of', n, 'worst view', worst);
+  };
+  await check('fort street');
+  for (let i = 0; i < 60 && !b.c13State().ready; i++) await sleep(300);
+  b.placeInC13(); for (let i = 0; i < 400 && !b.c13State().walls; i++) { w.__adv(1); await sleep(5); }
+  await sleep(1500);
+  await check('XIII court');
+}
+
+// (2026-11-18) the farmers' weapons between blows: where each points in his own frame, every rendered frame, the fight on
+// (?old=1: the carry off, as before). Backward = handle's forward part < -0.3; down = its up part < -0.3; wander = how far
+// the direction moves frame to frame (degrees, mean).
+export async function farmCarryCheck({ w, b, log, sleep }) {
+  const old = new URLSearchParams(w.parent.location.search).get('old') === '1';
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
+  b.settings.devMode = true;                                   // nobody swings: the run and the stand are what is measured
+  if (old) for (const k in b.FARM_CARRY) delete b.FARM_CARRY[k];
+  const T = b.THREE, R = b.renderer, prev = new Map(), S = {};
+  const R0 = R.render.bind(R); let on = false;
+  R.render = (sc, cam) => {
+    if (on) for (const u of b.farmUnitsS()) {
+      if (!u.farmTool || !u.farm || !u.farm.out || !u.st.alive || !u.g.visible || u.st.atk >= 0) continue;
+      const t = u.kind.tool, e = S[t] || (S[t] = { n: 0, back: 0, down: 0, wander: 0, wn: 0, up: 0, fwd: 0 });
+      u.farmTool.updateWorldMatrix(true, false);
+      const ax = new T.Vector3(0, 1, 0).transformDirection(u.farmTool.matrixWorld);
+      const y = u.g.rotation.y, f = Math.sin(y) * ax.x + Math.cos(y) * ax.z;
+      e.n++; e.up += ax.y; e.fwd += f; if (f < -0.3) e.back++; if (ax.y < -0.3) e.down++;
+      const p = prev.get(u); if (p) { e.wander += Math.acos(Math.max(-1, Math.min(1, p.dot(ax)))) * 57.3; e.wn++; } prev.set(u, ax.clone());
+    }
+    R0(sc, cam);
+  };
+  on = true;
+  for (let i = 0; i < 600; i++) { w.__adv(1); b.heal(); if (i % 30 === 0) await sleep(5); }
+  on = false;
+  for (const t in S) { const e = S[t]; log(old ? 'OLD' : 'NEW', t.padEnd(6), 'frames', e.n, 'backward', (100 * e.back / e.n).toFixed(0) + '%', 'down', (100 * e.down / e.n).toFixed(0) + '%', 'mean up', (e.up / e.n).toFixed(2), 'mean fwd', (e.fwd / e.n).toFixed(2), 'wander', (e.wander / Math.max(1, e.wn)).toFixed(1) + '°/frame'); }
+}
+
+// (2026-11-18) the farmers coming down the street with their weapons carried: four stills from the player's eye, the nearest out
+export async function farmCarryShot({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
+  b.settings.devMode = true; b.settings.fov = 28;
+  b.scene.add(new b.THREE.AmbientLight(0xffffff, 2.5));          // (a probe's light, for the still only)
+  for (let n = 0; n < 4; n++) {
+    for (let i = 0; i < 70; i++) { w.__adv(1); b.heal(); }
+    const c = b.camera.position, out = b.farmUnitsS().filter((u) => u.farmTool && u.farm && u.farm.out && u.st.alive && u.g.visible).sort((a, d) => a.g.position.distanceTo(c) - d.g.position.distanceTo(c));
+    const u = out[n % Math.max(1, out.length)]; if (!u) { log('none out'); continue; }
+    const p = u.g.position; b.lookAt(p.x, p.y + 1.1, p.z); w.__adv(1); b.lookAt(p.x, p.y + 1.1, p.z); w.__adv(1);
+    shot('carry' + n); log('still', n, u.kind.tool, 'dist', u.g.position.distanceTo(c).toFixed(1), 'clip', u.cur && u.cur.getClip().name);
+  }
+}
+
+// (2026-11-18) which way a farmer's body faces against his root's yaw: the hips' and the chest's local axes in his (fwd, right)
+export async function farmFacing({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
+  b.settings.devMode = true;
+  for (let i = 0; i < 200; i++) { w.__adv(1); b.heal(); }
+  const T = b.THREE;
+  for (const u of b.farmUnitsS().filter((x) => x.farm && x.farm.out && x.st.alive).slice(0, 6)) {
+    u.model.updateMatrixWorld(true);
+    let hips = null, sp = null; u.model.traverse((o) => { if (o.isBone && /Hips(_|$)/.test(o.name) && !hips) hips = o; if (o.isBone && /Spine2(_|$)/.test(o.name) && !sp) sp = o; });
+    const y = u.g.rotation.y, F = new T.Vector3(Math.sin(y), 0, Math.cos(y)), Rt = new T.Vector3(-Math.cos(y), 0, Math.sin(y));
+    const rep = (bn) => ['x', 'y', 'z'].map((a) => { const v = new T.Vector3(a === 'x' ? 1 : 0, a === 'y' ? 1 : 0, a === 'z' ? 1 : 0).transformDirection(bn.matrixWorld); return a + '(' + v.dot(F).toFixed(2) + ',' + v.dot(Rt).toFixed(2) + ',' + v.y.toFixed(2) + ')'; }).join(' ');
+    const c = b.camera.position, toCam = new T.Vector3(c.x - u.g.position.x, 0, c.z - u.g.position.z).normalize();
+    log(u.kindName, u.kind.tool, 'clip', u.cur && u.cur.getClip().name, 'root-fwd·toCam', F.dot(toCam).toFixed(2), 'hips', hips && rep(hips), 'chest', sp && rep(sp), 'model rotY', u.model.rotation.y.toFixed(2));
+  }
+}
+
+// (2026-11-18) every farmer out: his weapon there, drawn, in which hand, its carry weight, where it points, how far the head is from his hand
+export async function farmCarryState({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
+  log('boot', JSON.stringify(await w.__fortBoot())); w.__clockOn();
+  b.settings.devMode = true;
+  for (let i = 0; i < 280; i++) { w.__adv(1); b.heal(); }
+  const T = b.THREE;
+  for (const u of b.farmUnitsS().filter((x) => x.farm && x.farm.out && x.st.alive)) {
+    const m = u.farmTool; if (!m) { log(u.kindName, 'NO TOOL'); continue; }
+    let vis = true; for (let o = m; o; o = o.parent) if (!o.visible) vis = false;
+    m.updateWorldMatrix(true, false);
+    const ax = new T.Vector3(0, 1, 0).transformDirection(m.matrixWorld), hp = new T.Vector3().setFromMatrixPosition(m.parent.matrixWorld), mp = new T.Vector3().setFromMatrixPosition(m.matrixWorld);
+    log(u.kindName, u.kind.tool, 'drawn', vis, 'parent', m.parent && m.parent.name, 'k', (u.farmCarryK || 0).toFixed(2), 'axis up', ax.y.toFixed(2), 'scale', m.getWorldScale(new T.Vector3()).x.toFixed(3), 'butt→hand', mp.distanceTo(hp).toFixed(2), 'clip', u.cur && u.cur.getClip().name, 'awake', u.st.awake, 'atk', u.st.atk);
+  }
+}
+
+// (2026-11-18, the owner: "make myles actually attack the paladin too he just stands there when hes the only enemy left")
+// him at your side in the first castle's street, every farmer down, only the dark knight (the paladin) left; hands off.
+export async function minoPaladin({ w, b, log, sleep }) {
+  w.eval(await (await fetch('/tools/minotaur.js?' + Date.now())).text());
+  await w.__mnGate(4.5);
+  w.eval(await (await fetch('/tools/c13shot.js?' + Date.now())).text());
+  const M = b.MINO, u = M.u, cam = b.camera.position;
+  M.stage = 'inside'; M.ally = true; u.g.visible = false;
+  b.placeInFort(); w.__c13Step(20);
+  for (let i = 0; i < 240; i++) { w.__c13Step(1); b.heal(); }
+  for (const f of b.farmUnitsS()) if (f.st.alive) { try { b.killMutant(f); } catch (e) { f.st.alive = false; } }
+  for (let i = 0; i < 60; i++) { w.__c13Step(1); b.heal(); }
+  const D = b.dkS().u, home = [cam.x, cam.z];
+  log('farmers alive', b.farmUnitsS().filter((f) => f.st.alive).length, 'dk', !!D, D && D.st.hp, 'out', b.dkS().out, 'kind is darkKnight', D && D.kind === b.MUT_KINDS.darkKnight);
+  let sw = 0, last = null, la = -1, dsw = 0, dl = null, dla = -1;
+  { let cur = u.st.foe, told = 0; Object.defineProperty(u.st, 'foe', { configurable: true, get: () => cur, set: (v) => { if (cur === D && v !== D && told < 3) { told++; log('FOE DROPPED (paladin hp ' + D.st.hp + ') ->', v ? v.kindName : v, (new Error().stack || '').split('\n').slice(2, 7).map((x) => x.trim().replace(/\(?http[^)]*main\.js:/, '@')).join(' < ')); } cur = v; } }); }
+  for (let k = 0; k < 30; k++) {
+    for (let i = 0; i < 60; i++) {
+      cam.x = home[0]; cam.z = home[1]; w.__c13Step(1); b.heal();
+      if (u.st.atk >= 0 && (u.st.swing !== last || u.st.atk < la)) sw++;
+      last = u.st.atk >= 0 ? u.st.swing : null; la = u.st.atk;
+      if (D.st.atk >= 0 && (D.st.swing !== dl || D.st.atk < dla)) dsw++;
+      dl = D.st.atk >= 0 ? D.st.swing : null; dla = D.st.atk;
+    }
+    if (k % 3 === 2) log(k + 1 + 's', 'myles foe', u.st.foe ? (u.st.foe === D ? 'PALADIN' : u.st.foe.kindName) : 'none', 'foes listed', b.minoFoes ? b.minoFoes().length : '?', 'his swings', sw, 'd to paladin', Math.hypot(u.g.position.x - D.g.position.x, u.g.position.z - D.g.position.z).toFixed(1), 'paladin hp', D.st.hp + '/' + D.kind.hp, 'paladin foe', D.st.foe === u ? 'MYLES' : D.st.foe ? D.st.foe.kindName : (D.st.mine ? 'you' : 'none'), 'paladin swings', dsw, 'paladin from you', Math.hypot(D.g.position.x - home[0], D.g.position.z - home[1]).toFixed(1), '| slot.out', b.dkSlotS().out, 'vis', D.g.visible, 'ret', !!D.retired, '| myles hp', u.st.hp + '/' + u.kind.hp, 'down', u.st.down, 'MINO', JSON.stringify(Object.fromEntries(Object.entries(M).filter(([k, v]) => typeof v !== 'object' && typeof v !== 'function'))).slice(0, 260));
+    if (!D.st.alive) { log('paladin down'); break; }
+  }
+}
+export async function dkSwingsLeap(ctx) { ctx.w.__dkKeys = ['dkLeap', 'dkLeap', 'dkLeap', 'dkLeap']; return dkSwings(ctx); }   // (2026-11-18: the leap, twelve throws)
+export async function dkStopSweepLeap(ctx) { ctx.w.__dkKeys = ['dkLeap', 'dkLeap']; return dkStopSweep(ctx); }   // (2026-11-18: the leap's stand-off, twice over)
+
+// (2026-11-18, the owner: "the light hits need more of a straight fluid swing it moves all over the place") SOLVE the mace's
+// sweep: for points along a straight line through the crosshair, the pose (pitch, lift, yaw, roll, push, side) that puts the
+// head there with the handle trailing at a set screen angle — coordinate descent from the previous point's answer, so the
+// poses run on smoothly. Prints `SWEEP <json>` for `MACE_SWEEP` in main.js.
+export async function maceSolve({ w, b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  b.addToInventory(b.maceItem); b.toggleEquip(b.maceItem);
+  const C = b.camera, place = () => { C.position.set(4, 1.7, -30); b.camBaseY = 1.7; b.look(0, -0.05); };
+  for (let i = 0; i < 90; i++) { place(); w.__adv(1); }
+  const M = b.maceItem.gripModel, T = b.THREE, src = b.renderer.domElement, asp = src.width / src.height;
+  const pj = (y) => { const v = new T.Vector3(0, y, 0); M.localToWorld(v); v.project(b.vmCamera); return [v.x, v.y]; };
+  const evalP = (pose) => { w.__bwPose = pose; place(); w.__adv(1); place(); w.__adv(1); const h = pj(-0.21), c = pj(0.6); return { h, a: Math.atan2(c[1] - h[1], (c[0] - h[0]) * asp) }; };
+  const angD = (a, b2) => { let d = a - b2; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+  const solve = (seed, tx, ty, ta, prev) => {
+    let x = seed.slice(), best = 1e9;
+    const cost = (p) => { const r = evalP(p); let c = (r.h[0] - tx) ** 2 + (r.h[1] - ty) ** 2 + 0.06 * angD(r.a, ta) ** 2; if (prev) for (let i = 0; i < 6; i++) c += 0.004 * (p[i] - prev[i]) ** 2; return c; };
+    best = cost(x); let step = 0.25;
+    for (let it = 0; it < 22 && step > 0.004; it++) {
+      let moved = false;
+      for (let i = 0; i < 6; i++) for (const s of [1, -1]) { const y = x.slice(); y[i] += s * step; const c = cost(y); if (c < best) { best = c; x = y; moved = true; } }
+      if (!moved) step *= 0.5;
+    }
+    const r = evalP(x);
+    return { pose: x.map((v) => +v.toFixed(3)), head: r.h.map((v) => +v.toFixed(2)), ang: +(r.a * 57.3).toFixed(0), err: +Math.sqrt(best).toFixed(3) };
+  };
+  const D2R = Math.PI / 180, out = {};
+  // forehand: in from the upper right, through the crosshair, out to the lower left; the handle trails down and to the right
+  const lines = {
+    fL: { c: [0.80, 0.50], e: [-0.85, -0.55], a: [-55, -25, -12, -5, 0], seed: [0.75, 0.25, 0.45, 0.08, 0.06, -0.22] },
+    fH: { c: [0.86, 0.78], e: [-0.85, -0.78], a: [-70, -35, -15, -6, 0], seed: [0.80, 0.27, 0.45, 0.03, 0.08, -0.22] },
+    bL: { c: [-0.80, 0.50], e: [0.85, -0.55], a: [-125, -155, -168, -175, 180], seed: [0.72, 0.24, 0.40, 1.35, 0.06, -0.40] },
+    bH: { c: [-0.86, 0.78], e: [0.85, -0.78], a: [-110, -145, -165, -174, 180], seed: [0.80, 0.27, 0.40, 1.43, 0.08, -0.38] },
+  };
+  for (const [k, L] of Object.entries(lines)) {
+    const keys = []; let seed = L.seed, prev = null;
+    for (let i = 0; i < 5; i++) {
+      const s = i / 4, f = s <= 0.5 ? s / 0.5 : (s - 0.5) / 0.5;
+      const tx = s <= 0.5 ? L.c[0] * (1 - f) : L.e[0] * f, ty = s <= 0.5 ? L.c[1] * (1 - f) : L.e[1] * f;
+      const r = solve(seed, tx, ty, L.a[i] * D2R, prev);
+      keys.push(r.pose); seed = r.pose; prev = r.pose;
+      log(k, i, 'target', tx.toFixed(2), ty.toFixed(2), 'got', r.head.join(','), 'handle', r.ang + '°', 'err', r.err);
+    }
+    // and below the frame, on the way home (the head drops out of the bottom and comes up into rest)
+    const low = solve(keys[4], k[0] === 'f' ? 0.25 : 0.70, -1.25, (k[0] === 'f' ? -20 : -160) * D2R, keys[4]);
+    log(k, 'low', 'got', low.head.join(','), 'err', low.err);
+    out[k] = { keys, low: low.pose };
+  }
+  w.__bwPose = null;
+  log('SWEEP', JSON.stringify(out));
+}
+
+// (2026-11-18, the owner: "have throwing a bottle at an enemy connect and hurt them also break on impact") a breakable thing
+// thrown at 12 m/s from 3 m at a sleeping drinker in the tavern, and one at a farmer in the first castle's street
+export async function bottleThrow({ w, b, log, sleep }) {
+  w.eval(await (await fetch('/tools/tavdrink.js?' + Date.now())).text());
+  await w.__tavSetup();
+  b.settings.devMode = false;
+  const T = b.THREE, throwAt = async (u, label) => {
+    const P = b.physProps.find((p) => p.onImpact && !p.dead && !p.held && p.mesh.parent && Math.hypot(p.mesh.position.x - u.g.position.x, p.mesh.position.z - u.g.position.z) < 25)
+      || b.physProps.find((p) => p.onImpact && !p.dead && !p.held && p.mesh.parent && /bottle/i.test(p.mesh.name || '') );   // (or a tavern bottle carried over)
+    if (!P) { log(label, 'no breakable prop near'); return; }
+    const c = u.g.position, from = new T.Vector3(c.x + 3, c.y + 1.3, c.z);
+    P.mesh.position.copy(from); P.vel.set(-12, 1.2, 0); P.thrown = true; P.asleep = false; if (P.wake) P.wake();
+    const hp0 = u.st.hp, aw0 = u.st.awake;
+    for (let i = 0; i < 40; i++) { b.frame(1); await sleep(5); if (P.dead || u.st.hp < hp0) break; }
+    for (let i = 0; i < 10; i++) b.frame(1);
+    log(label, u.kindName, 'hp', hp0, '→', u.st.hp, 'awake', aw0, '→', u.st.awake, 'prop broke', !!P.dead || !P.mesh.parent, 'still thrown', !!P.thrown);
+  };
+  await throwAt(b.tavDrinkers[0], 'tavern drinker');
+  w.eval(await (await fetch('/tools/burntest.js?' + Date.now())).text());
+  w.eval(await (await fetch('/tools/fortboot.js?' + Date.now())).text());
+  try { log('fort', JSON.stringify(await w.__fortBoot())); } catch (e) { log('fort boot', e.message); return; }
+  w.__clockOn(); b.settings.devMode = true;
+  for (let i = 0; i < 400 && !(b.CP.sites.fort && b.CP.sites.fort.built); i++) { w.__adv(1); await sleep(2); }
+  const f = b.farmUnitsS().find((x) => x.st.alive && x.farm && x.farm.out && x.g.visible);
+  if (f) await throwAt(f, 'fort farmer'); else { const d = b.dkS().u; if (d && d.st.alive) { d.g.visible = true; await throwAt(d, 'fort paladin'); } else log('no one in the street'); }
+}
+
+// THE DESERT TEMPLE (2026-11-18): loaded, stood at the screenshot's spot with its lens, and a still; the floor and the solids
+export async function temple({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.tmpS().ready; i++) { b.loadTemple(); b.frame(1); await sleep(100); }
+  log('temple', JSON.stringify(b.tmpS()));
+  b.devTemple(); for (let i = 0; i < 20; i++) b.frame(1);
+  const C = b.camera, V = b.TMP_VIEW;
+  log('at', C.position.toArray().map((v) => +v.toFixed(2)).join(','), 'floor', b.tmpFloorAt(V.x, V.z).toFixed(2), 'eye', b.tmpEyeY().toFixed(2));
+  C.fov = V.fov; C.aspect = 1280 / 720; C.updateProjectionMatrix();
+  window.requestAnimationFrame = () => 0;
+  await sleep(300); C.fov = V.fov; C.updateProjectionMatrix();
+  shot('arrive', 960);
+  C.fov = 75; C.updateProjectionMatrix(); shot('arrive75', 960);
+  // from the podium's edge looking in, and from the middle looking out
+  const X = b.TMP_X, Y = b.TMP_Y, Z = b.TMP_Z;
+  C.position.set(X - 18, Y + b.tmpFloorAt(-18, 0) + 1.7, Z); b.lookAt(X, Y + 3, Z); C.updateMatrixWorld(true); shot('podium', 960);
+  C.position.set(X + 2, Y + 0.81 + 1.7, Z + 2); b.lookAt(X - 60, Y + 4, Z - 30); C.updateMatrixWorld(true); shot('fromin', 960);
+  C.position.set(X - 120, Y + 70, Z + 90); b.lookAt(X, Y, Z); C.updateMatrixWorld(true); shot('aerial', 960);
+}
+export async function templeProfile({ b, log, sleep }) {
+  for (let i = 0; i < 300 && !b.tmpS().ready; i++) { b.loadTemple(); b.frame(1); await sleep(100); }
+  const row = []; for (let x = -90; x <= -10; x += 4) row.push(x + ':' + b.tmpSandRaw(x, 0).toFixed(1)); log('x', row.join(' '));
+  for (const z of [-30, -15, 15, 30]) { const r = []; for (let x = -90; x <= -10; x += 8) r.push(b.tmpSandRaw(x, z).toFixed(1)); log('z', z, r.join(' ')); }
+  log('solid', b.tmpS().solid);
+}
+// THE CROW'S FLIGHT, end to end on a fake clock: stood at the stump, the crow taken, stills through every phase
+export async function templeFlight({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  b.settings.devMode = true;    // (the probe lands past the pack's swim-in: dev mode skips it)
+  for (let i = 0; i < 400 && !(b.tmpS().ready && b.TC.crow); i++) { b.loadTemple(); w.__adv(1); await sleep(50); }
+  const T = b.TC, sx = T.g.position.x, sz = T.g.position.z, C = b.camera;
+  C.position.set(sx - 0.8, 1.7, sz + 3.2); b.lookAt(sx, 1.2, sz); w.__adv(40);
+  C.position.set(sx - 0.8, 1.7, sz + 3.2); b.lookAt(sx, 1.2, sz); w.__adv(2);
+  log('stump', sx.toFixed(1), sz.toFixed(1), 'base', T.base.toFixed(2), 'crow', T.crow.position.toArray().map((v) => +v.toFixed(2)).join(','), 'vis', T.crow.visible);
+  shot('f00_stump', 640);
+  log('state', JSON.stringify(b.state()));
+  b.startTempleFlight();
+  log('after start', JSON.stringify(b.tmpS()));
+  const marks = [[0.8, 'f01_stump'], [1.7, 'f02_lift'], [2.3, 'f02b_climb'], [2.65, 'f02c_turn'], [2.95, 'f03_dive'], [3.18, 'f03b_talons'], [3.6, 'f03c_taken'], [4.9, 'f04_lookup'], [7.2, 'f05_sea'], [9.4, 'f06_ceiling'], [10.3, 'f07_cloud'],
+    [12.0, 'f08_lookup2'], [13.6, 'f09_deck'], [15.6, 'f10_parting'], [17.6, 'f11_open'], [20.0, 'f12_down'], [23.0, 'f13_dune'], [25.2, 'f14_drop'], [26.0, 'f15_land'],
+    [27.4, 'f16_lie'], [28.6, 'f17_rise'], [30.2, 'f18_stood']];
+  let mi = 0, n = 0;
+  while (mi < marks.length && n < 60 * 45) {
+    w.__adv(1); n++;
+    const s = b.tmpS();
+    if (s.cut < 0 || s.cut >= marks[mi][0]) {
+      const p = C.position, e = new (C.rotation.constructor)().setFromQuaternion(C.quaternion, 'YXZ');
+      log(marks[mi][1], 't', s.cut, 'room', s.room, 'in', s.inTemple, 'pos', (p.x - (s.room || s.inTemple ? b.TMP_X : 0)).toFixed(1), (p.y - (s.room || s.inTemple ? b.TMP_Y : 0)).toFixed(1), (p.z - (s.room || s.inTemple ? b.TMP_Z : 0)).toFixed(1),
+        'pitch', e.x.toFixed(2), 'yaw', e.y.toFixed(2), 'fov', C.fov.toFixed(1), 'white', (w.document.getElementById('tmp-white') || { style: {} }).style.opacity, 'fog', b.scene.fog.density.toFixed(4));
+      shot(marks[mi][1], 640);
+      mi++;
+      if (s.cut < 0) break;
+    }
+  }
+  const s = b.tmpS(); log('end', JSON.stringify(s), 'frozen?', b.state && JSON.stringify(b.state()).slice(0, 120));
+  w.__adv(120);
+  const p = C.position; log('after 2s', (p.x - b.TMP_X).toFixed(2), (p.y - b.TMP_Y).toFixed(2), (p.z - b.TMP_Z).toFixed(2), 'fov', C.fov.toFixed(1));
+  shot('f19_after', 640);
+}
+export async function stumpGrid({ w, b, log }) {
+  const f = b.fortMaskAt || w.__bwFortMask; log('fortMaskAt', typeof f, 'wbBermAt', typeof b.wbBermAt, 'gate', JSON.stringify(b.FORT_GATE));
+  for (let z = -1090; z >= -1180; z -= 5) { let row = ''; for (let x = -4; x <= 44; x += 2) row += f && f(x, z) ? '#' : (b.wbBermAt && b.wbBermAt(x, z) > 0.05 ? 'w' : '.'); log(String(z).padStart(6), row); }
+}
+// THE DESERT, WALKED: from the arrival every way out to the edge, round and through the temple, at walking and at dev
+// speed; any frame where the feet are under the floor there, where the body is inside a solid cell, or the body is
+// past the edge, is counted; and the drops (a frame's feet more than 0.6 m under the last)
+export async function templeWalk({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  b.settings.devMode = true;
+  for (let i = 0; i < 400 && !b.tmpS().ready; i++) { b.loadTemple(); w.__adv(1); await sleep(50); }
+  b.devTemple(); w.__adv(10);
+  const X = b.TMP_X, Y = b.TMP_Y, Z = b.TMP_Z, C = b.camera, keys = w.__bwKeys || null;
+  const st = { frames: 0, under: 0, inSolid: 0, past: 0, drops: 0, maxUnder: 0 };
+  const check = () => {
+    const lx = C.position.x - X, lz = C.position.z - Z, feet = C.position.y - 1.7 - Y, f = b.tmpFloorAt(lx, lz), ct = b.tmpCellTop(lx, lz);
+    st.frames++;
+    if (feet < f - 0.12) { st.under++; st.maxUnder = Math.max(st.maxUnder, f - feet); }
+    if (ct > -1e8 && ct > feet + 0.45 && feet < ct) st.inSolid++;
+    if (Math.hypot(lx, lz) > b.TMP_WALK_R + 0.5) st.past++;
+  };
+  // drive: put the player's wanted step straight onto the camera (as a frame of movement would) and let the room answer
+  const walk = async (tx, tz, speed, maxF = 60 * 150) => {
+    for (let i = 0; i < maxF; i++) {
+      const lx = C.position.x - X, lz = C.position.z - Z, dx = tx - lx, dz = tz - lz, d = Math.hypot(dx, dz);
+      if (d < 0.6) return true;
+      b.lookAt(X + tx, C.position.y, Z + tz);
+      const k = Math.min(d, speed / 60);
+      C.position.x += dx / d * k; C.position.z += dz / d * k;
+      w.__adv(1); check();
+    }
+    return false;
+  };
+  const S = b.TMP_SCALE || 1;   // (the temple's own legs at its size: 2026-11-18 it is 2.4× — onto the podium, round the columns, across the floor)
+  const route = [[-30 * S, 0], [-14 * S, 0], [0, 0], [5 * S, 6 * S], [11.5 * S, 0], [0, -11 * S], [-11 * S, 0], [0, 11 * S], [20 * S, 0], [60, 0], [139, 0], [0, 0], [-25 * S, 12 * S], [-27 * S, 16 * S], [-30 * S, 20 * S], [-20 * S, 5 * S], [6 * S, -24 * S], [7 * S, -30 * S], [0, 0],
+    [-100, -100], [0, 0], [100, 100], [0, 0], [0, -150], [0, 0], [-56, 0],
+    [300, 0], [419, 30], [0, 0], [-290, 290], [-200, -330], [0, -440], [0, 0], [-56, 0]];   // (2026-11-18: out to the 420 m edge, and past it)
+  for (const [sp, name] of [[4.5, 'walk'], [40, 'dev fast']]) {
+    let stuck = 0; for (const [x, z] of route) if (!(await walk(x, z, sp))) stuck++;
+    log(name, JSON.stringify(st), 'unreached', stuck);
+  }
+  // a column, walked at head on from every side: where the body stops
+  const stops = [];
+  const SC = b.TMP_SCALE || 1; for (let a = 0; a < 6.28; a += 0.785) { C.position.set(X + Math.cos(a) * 4 * SC, Y + b.tmpFloorAt(Math.cos(a) * 4 * SC, Math.sin(a) * 4 * SC) + 1.7, Z + Math.sin(a) * 4 * SC); w.__adv(2); await walk(Math.cos(a) * 18 * SC, Math.sin(a) * 18 * SC, 4.5, 400 * SC); stops.push(Math.hypot(C.position.x - X, C.position.z - Z).toFixed(1)); }
+  log('outward from the middle, stopped at r', stops.join(' '));
+}
+// THE CHECKPOINT AT THE TEMPLE: the flight run to its end (it saves), then the page loaded into that checkpoint the menu's
+// way; where it stands you, whether the crow is back on its stump, whether the flight could start again
+export async function templeSave({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  b.settings.devMode = true;
+  for (let i = 0; i < 400 && !(b.tmpS().ready && b.TC.crow); i++) { b.loadTemple(); w.__adv(1); await sleep(50); }
+  const T = b.TC, C = b.camera; C.position.set(T.g.position.x - 0.8, 1.7, T.g.position.z + 3.2); w.__adv(5);
+  b.startTempleFlight();
+  for (let i = 0; i < 60 * 40 && b.tmpS().cut >= 0; i++) w.__adv(1);
+  const sv = JSON.parse(localStorage.getItem('beachwalk.save') || 'null');
+  log('flown', JSON.stringify(b.tmpS()).slice(0, 80), 'save room', sv && sv.room, 'pos', sv && sv.pos.join(','), 'flag', sv && sv.flags && sv.flags.tmpFlown);
+  // into the checkpoint, the menu's way
+  sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1');
+  const f = document.getElementById('g'); f.src = '/index.html?' + Date.now();
+  let w2 = null; for (let i = 0; i < 600; i++) { await sleep(100); try { w2 = f.contentWindow; if (w2.__bw && w2 !== w) break; } catch (e) { /* */ } }
+  const b2 = w2.__bw;
+  for (let i = 0; i < 600 && !(b2.tmpS && b2.tmpS().inTemple && b2.state().introDone); i++) { try { b2.beginGame(); } catch (e) { /* */ } await sleep(100); }
+  for (let i = 0; i < 100; i++) { b2.frame(1); await sleep(20); }
+  const p = b2.camera.position;
+  log('restored', JSON.stringify(b2.tmpS()).slice(0, 90), 'at', (p.x - b2.TMP_X).toFixed(2), (p.y - b2.TMP_Y).toFixed(2), (p.z - b2.TMP_Z).toFixed(2), 'floor', b2.tmpFloorAt(p.x - b2.TMP_X, p.z - b2.TMP_Z).toFixed(2), 'crow visible', b2.TC.crow ? b2.TC.crow.visible : 'not loaded');
+  b2.startTempleFlight(); log('a second flight?', b2.tmpS().cut);
+  b2.renderer.render(b2.scene, b2.camera);
+  const src = b2.renderer.domElement, c = document.createElement('canvas'); c.width = 640; c.height = 360; c.getContext('2d').drawImage(src, 0, 0, 640, 360);
+  const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'restored', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+/* THE PACK'S LIVE PANE (2026-11-18): every material's set-down sound and the slosh run without a throw; a thing taken while
+ * the pack is shut is drawn in and selected when it opens; the pane's thing turns on its own, and a drag turns it. */
+export async function packLive({ w, b, log, sleep }) {
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 120)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) { /* */ } b.frame(1); await sleep(50); }
+  b.introDone = true;
+  log('audio', b.restoreS().ctx);
+  for (const k of ['katanaItem', 'jarItem', 'shockRingItem']) b.addToInventory(b[k]);
+  b.openPack(); await sleep(400);
+  log('open 1', JSON.stringify(b.pvS()), 'fresh cells', w.document.querySelectorAll('#inv-grid .islot.fresh').length);
+  b.closePack(); await sleep(200);
+  b.addToInventory(b.glowstickItem);
+  b.openPack(); await sleep(150);
+  const fr = [...w.document.querySelectorAll('#inv-grid .islot.fresh')].map((s) => s.dataset.index);
+  log('open 2: fresh', fr.join(','), 'selected', w.document.querySelector('#inv-grid .islot.sel') && w.document.querySelector('#inv-grid .islot.sel').dataset.index, 'pane', JSON.stringify(b.pvS()));
+  await sleep(900);
+  const y0 = b.pvS().yaw; await sleep(1000); const y1 = b.pvS().yaw;
+  log('turns on its own', (y1 - y0).toFixed(2), 'rad/s');
+  const cv = w.document.querySelector('canvas.pv'), r = cv.getBoundingClientRect();
+  const P = (t, x, y, mx) => new w.PointerEvent(t, { bubbles: true, clientX: x, clientY: y, movementX: mx, pointerId: 1, isPrimary: true });
+  cv.dispatchEvent(P('pointerdown', r.left + 50, r.top + 50, 0));
+  for (let i = 0; i < 8; i++) { w.dispatchEvent(P('pointermove', r.left + 50 + i * 12, r.top + 50, 12)); await sleep(16); }
+  const yd = b.pvS().yaw; w.dispatchEvent(P('pointerup', r.left + 146, r.top + 50, 0)); await sleep(300);
+  log('drag turned it', (yd - y1).toFixed(2), 'then spinning', (b.pvS().yaw - yd).toFixed(2), 'hint gone', !!w.document.querySelector('.pvhint.gone'));
+  for (const m of ['steel', 'gun', 'key', 'ring', 'glass', 'plastic', 'wood', 'bone', 'shell', 'paper', 'stone', 'tool', 'thing']) b.pvSfx(m, 1, true);
+  b.pvSlosh(1);
+  for (let i = 0; i < 16; i++) { b.selectPackSlot(i); await sleep(120); }
+  b.closePack(); await sleep(300);
+  log('closed, loop stopped', !b.pvS().raf, 'errors', errs.length, errs.slice(0, 4).join(' | '));
+}
+
+/* THE THREE ARTIFACTS ON THE SAND (2026-11-18): each at its world size (×4.2), laid as the game lays them (face up and
+ * tilted toward you), a metre and a half in front of you on the night beach; and the pack's icons of them. */
+export async function artLook({ w, b, log, sleep, shot }) {
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 120)); oe(...a); };
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) { /* */ } b.frame(1); await sleep(50); }
+  b.introDone = true; b.settings.devMode = true;
+  for (let i = 0; i < 60; i++) { b.frame(1); await sleep(30); }
+  const T = w.THREE || b.THREE, C = b.camera, g = [];
+  const mk = [b.makeWhaleArtifact || (() => b.whaleArtItem.inspectModel.clone(true)), b.makeFlameArtifact, b.makeSeaArtifact];
+  const fx = C.position.x, fz = C.position.z;
+  mk.forEach((f, i) => {
+    const m = f(); m.scale.setScalar(4.2); m.rotation.set(-Math.PI / 2 + 0.7, 0, 0);
+    const x = fx - 0.55 + i * 0.55, z = fz - 1.5;
+    const grp = new m.constructor(); grp.add(m); grp.position.set(x, (b.beachGroundAt ? b.beachGroundAt(x, z) : 0) + 0.06, z);
+    b.scene.add(grp); g.push(grp);
+  });
+  b.lookAt(fx, (b.beachGroundAt ? b.beachGroundAt(fx, fz - 1.5) : 0) + 0.05, fz - 1.5);
+  for (let i = 0; i < 20; i++) { b.frame(1); await sleep(30); }
+  shot('artSand', 960);
+  log('icons', ['whaleArtItem', 'flameArtItem', 'seaArtItem'].map((k) => (b.itemIcon(b[k]) || '').length).join(','), 'errors', errs.length, errs.slice(0, 3).join(' | '));
+  const c = w.document.createElement('canvas'); c.width = 3 * 160; c.height = 160; const x = c.getContext('2d');
+  for (const [i, k] of ['whaleArtItem', 'flameArtItem', 'seaArtItem'].entries()) { const im = new w.Image(); im.src = b.itemIcon(b[k]); await new Promise((r) => { im.onload = r; im.onerror = r; }); x.drawImage(im, i * 160, 0, 160, 160); }
+  const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'artIcons', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+/* THE DESERT'S AIR (2026-11-18): stills where you stand up, low on the sand looking along the wind, and far out looking
+ * back at the temple — the sand running, the dust, the walls of it far off. */
+export async function templeAir({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  b.settings.devMode = true;
+  for (let i = 0; i < 400 && !b.tmpS().ready; i++) { b.loadTemple(); w.__adv(1); await sleep(50); }
+  b.devTemple(); w.__adv(60 * 4);
+  const X = b.TMP_X, Y = b.TMP_Y, Z = b.TMP_Z, C = b.camera;
+  const at = async (lx, lz, tx, ty, tz, name) => {
+    C.position.set(X + lx, Y + b.tmpFloorAt(lx, lz) + 1.7, Z + lz); w.__adv(2);
+    b.lookAt(X + tx, Y + ty, Z + tz); w.__adv(60 * 3); shot(name, 960);
+  };
+  await at(-54, 0, 0, 8, 0, 'air_view');
+  await at(-30, 12, -30 + 0.84 * 20, b.tmpFloorAt(-14, 1) - 0.4, 12 - 0.54 * 20, 'air_low');
+  await at(-230, 140, 0, 10, 0, 'air_far');
+  log('air', JSON.stringify(b.tmpS()).slice(0, 80));
+}
+
+/* WHAT IS THE LINE AT THE HORIZON in the crow's flight (2026-11-18): the flight run to 7.2 s, then the same frame drawn with
+ * each layer taken away in turn. */
+export async function horizonDbg({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js'); w.__clockOn();
+  b.settings.devMode = true;
+  for (let i = 0; i < 400 && !(b.tmpS().ready && b.TC.crow); i++) { b.loadTemple(); w.__adv(1); await sleep(50); }
+  const T = b.TC, C = b.camera; C.position.set(T.g.position.x - 0.8, 1.7, T.g.position.z + 3.2); w.__adv(5);
+  b.startTempleFlight();
+  for (let i = 0; i < 60 * 40 && b.tmpS().cut >= 0 && b.tmpS().cut < 7.2; i++) w.__adv(1);
+  window.requestAnimationFrame = () => 0;
+  const night = []; b.scene.traverse((o) => { if (o.material && o.material.uniforms && o.material.uniforms.uFogD) night.push(o); });
+  const of = b.oceanFar || null;
+  const px = () => { b.renderer.render(b.scene, b.camera); const g = b.renderer.getContext(), H = g.drawingBufferHeight, W = g.drawingBufferWidth, out = [];
+    for (const fy of [0.66, 0.62, 0.58, 0.55, 0.52, 0.5]) { const a = new Uint8Array(4); g.readPixels(W >> 1, Math.round(H * fy), 1, 1, g.RGBA, g.UNSIGNED_BYTE, a); out.push(fy + ':' + [...a.slice(0, 3)].join('/')); } return out.join(' '); };
+  log('fog', b.scene.fog.density.toFixed(4), b.scene.fog.color.getHexString(), 'night sheets', night.length, 'oceanFar', !!of, of && of.visible);
+  log('all', px()); shot('h_all', 640);
+  for (const o of night) o.visible = false; log('no night', px()); shot('h_nonight', 640); for (const o of night) o.visible = true;
+  if (of) { of.visible = false; log('no far sea', px()); shot('h_nofar', 640); of.visible = true; }
+  b.ocean.visible = false; log('no ocean', px()); shot('h_noocean', 640); b.ocean.visible = true;
+  const sky = b.scene.children.filter((o) => o.isMesh && o.material && o.material.side === 1 && o.geometry && o.geometry.type.includes('Sphere'));
+  log('sky domes', sky.length);
+}
+
+/* THE PACK IN HIS HANDS (2026-11-18, IMG_7207): the sheet loads, the hands snap it open and hold it, a close folds it away
+ * and the overlay goes; a close half way through the opening folds back from where it got to; the sounds are his. */
+export async function packHands({ w, b, log, sleep, shot }) {
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 120)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) { /* */ } b.frame(1); await sleep(50); }
+  b.introDone = true;
+  for (const k of ['katanaItem', 'jarItem', 'shockRingItem', 'glowstickItem']) b.addToInventory(b[k]);
+  await sleep(1500);
+  const d = w.document;
+  log('loaded', JSON.stringify(b.ph()), 'paper class', d.getElementById('invpanel').classList.contains('paper'), 'fit', getComputedStyle(d.documentElement).getPropertyValue('--fit-pack'));
+  const seen = [];
+  b.openPack();
+  for (let i = 0; i < 14; i++) { await sleep(60); seen.push(b.ph().f); }
+  log('opening frames', seen.join(','), 'now', JSON.stringify(b.ph()));
+  await sleep(900); const s1 = b.ph().f; await sleep(420);
+  log('held, breathing', s1, '->', b.ph().f, 'mode', b.ph().mode, 'panel opacity', getComputedStyle(d.querySelector('#invpanel .panel')).opacity);
+  const imgs = [...d.querySelectorAll('#inv-grid .islot img')].map((im) => im.src.slice(0, 22));
+  log('slot pictures', imgs.length, 'clear (webp) ones', imgs.filter((s) => s.includes('webp')).length);
+  b.closePack();
+  const cl = []; for (let i = 0; i < 10; i++) { await sleep(50); cl.push(b.ph().f); }
+  log('closing frames', cl.join(','), 'then', JSON.stringify(b.ph()));
+  await sleep(600);
+  log('after close', JSON.stringify(b.ph()));
+  b.openPack(); await sleep(260); const mid = b.ph().f; b.closePack(); await sleep(40);
+  log('closed mid-open at', mid, 'folding from', b.ph().f, b.ph().mode);
+  await sleep(900);
+  b.openPack(); await sleep(1400); b.closePack(); await sleep(900);
+  // inspect from the pack: the sheet held aside, then back onto it when the thing is put away (2026-11-19)
+  b.openPack(); await sleep(1400); try { b.selectPackSlot(0); } catch (e) { /* */ } await sleep(200);
+  const bt = d.querySelector('#inv-detail .act.insp'); if (bt) bt.click(); await sleep(700);
+  const st = b.state();
+  log('inspecting', st.inspecting, 'pack open', st.invOpen, 'aside', d.getElementById('pack-hands').classList.contains('aside'), JSON.stringify(b.ph()), 'lens', b.inspectCamera.filmOffset.toFixed(2));
+  b.closeInspect(); await sleep(700);
+  log('put away: pack open', b.state().invOpen, 'aside', d.getElementById('pack-hands').classList.contains('aside'), JSON.stringify(b.ph()), 'panel', getComputedStyle(d.querySelector('#invpanel .panel')).opacity, 'lens', b.inspectCamera.filmOffset.toFixed(2));
+  b.closePack(); await sleep(900);
+  log('done', JSON.stringify(b.ph()), 'errors', errs.length, errs.slice(0, 4).join(' | '));
+}
+
 // ANY VIEW OF THE BEACH (2026-11-18): `&cams=x,y,z,lx,ly,lz;...` (camera, look-at), `&t=` the sea's clock, `&tw=` tile width,
 // `&pick=nx,ny;...` (screen points, -1..1) raycast in the FIRST view and logged: what is drawn there, its chain of parents,
 // its material and where it is. `&dev=1` dev mode. One sheet of all the views.
@@ -7559,7 +8151,7 @@ export async function pipeReach({ w, b, log, sleep }) {
       const br = R.br ? R.br.g.gain.value.toFixed(3) : '-';
       log('t', (f / 60).toFixed(2), 'p', R.p.toFixed(2), 'done', R.done, 'grab', R.grab.toFixed(2), 'breath gain', br, 'peeking', b.peeking, 'taken', b.screwdriverTaken, 'fov', C.fov.toFixed(1));
     }
-    if ([45, 120, 210, 285, 312, 330].includes(f)) grab('t ' + (f / 60).toFixed(2) + ' p ' + R.p.toFixed(2));
+    if ((Q.get('at') ? Q.get('at').split(',').map(Number) : [45, 120, 210, 285, 302, 318, 330, 342, 354, 366]).includes(f)) grab('t ' + (f / 60).toFixed(2) + ' p ' + R.p.toFixed(2) + ' g ' + R.grab.toFixed(2) + (b.pipeHandS && b.pipeHandS().visible ? ' arm' : ''));
   }
   down(false);
   log('SMOOTH hand max step/frame', maxStep.toFixed(4), 'm at', maxAt.toFixed(2), 's; max change of step', maxAcc.toFixed(4), 'at', accAt.toFixed(2), '; screwdriver moved across the take', sdJump.toFixed(4));
@@ -7626,7 +8218,7 @@ export async function sewView({ w, b, log, sleep }) {
   for (const nm of (Q.get('obj') || '').split(',').filter(Boolean)) {
     const o = b.scene.getObjectByName(nm);
     if (!o) { log('OBJ', nm, 'not found'); continue; }
-    o.updateWorldMatrix(true, true); const bb = new b.THREE.Box3().setFromObject(o), sx = 'SEW_X' in b ? b.SEW_X : 0;
+    o.updateWorldMatrix(true, true); const bb = new b.TB3.Box3().setFromObject(o), sx = 'SEW_X' in b ? b.SEW_X : 0;
     const m = o.material || {};
     log('OBJ', nm, 'verts', o.geometry ? o.geometry.attributes.position.count : '-', 'min', bb.min.toArray().map((v) => v.toFixed(2)).join(','), 'max', bb.max.toArray().map((v) => v.toFixed(2)).join(','), 'transparent', m.transparent, 'opacity', m.opacity, 'alphaTest', m.alphaTest, 'map', !!m.map, 'visible', o.visible);
   }
@@ -7643,4 +8235,197 @@ export async function sewView({ w, b, log, sleep }) {
   const d = sh.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
   for (let i = 0; i < n; i++) console.log('[PBIMG]', Q.get('name') || 'sew', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
   b.settings.devMode = false;
+}
+
+/* THE TITLE'S BEDROOM (2026-11-19): with &title=1 the cover stays and `TB` builds; logs what it found (the window, the desk,
+ * which way is out) and draws it from its own camera and from any `&cams=x,y,z,lx,ly,lz;...` (ROOM coordinates), one
+ * sheet. `&fl=1` with a flash. */
+export async function titleRoom({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const T = b.TB; if (!T || !T.ready) { log('not ready', T && T.on); return; }
+  const v = (p) => p.toArray().map((x) => +x.toFixed(2)).join(',');
+  log('window', v(T.win.c), 'size', v(T.win.s), 'axis', T.win.ax, 'out', v(T.out), 'desk top', T.desk.top.toFixed(3), 'desk c', v(T.desk.c), 'cam', v(T.camBase), 'look', v(T.look));
+  const mats = {}; T.sc.traverse((o) => { if (o.isMesh && o.material && o.material.name) { const bb = new b.TB3.Box3().setFromObject(o); (mats[o.material.name] = mats[o.material.name] || []).push(v(bb.min) + ' / ' + v(bb.max)); } });
+  for (const k of Object.keys(mats)) log('mat', k, mats[k].slice(0, 3).join(' | '));
+  { const P = []; T.sc.traverse((o) => { if (o.isMesh && o.material.name === 'Pattern') { const A = o.geometry.attributes.position, V = new b.TB3.Vector3(); for (let i = 0; i < A.count; i++) { V.fromBufferAttribute(A, i).applyMatrix4(o.matrixWorld); if (Math.hypot(V.x - T.desk.photo.x, V.z - T.desk.photo.z) < 0.6 && V.y < T.desk.top + 0.4) P.push(V.clone()); } } });
+    const lo = P.filter((p) => p.y < T.desk.top + 0.025), hi = P.filter((p) => p.y >= T.desk.top + 0.04);
+    const c = (L) => { const m = new b.TB3.Vector3(); L.forEach((p) => m.add(p)); return L.length ? v(m.multiplyScalar(1 / L.length)) : '-'; };
+    const bx = (L) => { const B = new b.TB3.Box3(); L.forEach((p) => B.expandByPoint(p)); return L.length ? v(B.min) + ' / ' + v(B.max) : '-'; };
+    log('plate', c(lo), bx(lo), 'cup', c(hi), bx(hi)); }
+  { const sb = new b.TB3.Box3().setFromObject(T.syr), pb = new b.TB3.Box3().setFromObject(T.phone); log('syringe', v(sb.min), '/', v(sb.max), 'phone', v(pb.min), '/', v(pb.max)); }
+  if (Q.get('box')) { const q = Q.get('box').split(',').map(Number), B = new b.TB3.Box3(new b.TB3.Vector3(q[0], q[1], q[2]), new b.TB3.Vector3(q[3], q[4], q[5]));
+    T.sc.traverse((o) => { if (!o.isMesh) return; const bb = new b.TB3.Box3().setFromObject(o); if (bb.intersectsBox(B)) log('in box:', o.name || '-', o.material && o.material.name, v(bb.min), '/', v(bb.max), 'verts', o.geometry.attributes.position.count); }); }
+  if (Q.get('shift')) { const v = Q.get('shift').split(',').map(Number); b.IC_SHIFT[0] = [v[0], v[1]]; b.IC_SHIFT[1] = [v[2], v[3]]; b.IC_SHIFT[2] = [v[4], v[5]]; }
+  const cams = (Q.get('cams') || '').split(';').filter(Boolean).map((s) => s.split(',').map(Number));
+  const shots = [];
+  const grab = () => { b.tbRender(); const c = w.document.createElement('canvas'); c.width = 480; c.height = 270; c.getContext('2d').drawImage(T.el, 0, 0, 480, 270); return c; };
+  T.raf && w.cancelAnimationFrame(T.raf); T.raf = 0;
+  if (Q.get('amb')) T.amb.intensity = +Q.get('amb');
+  if (Q.get('nogrow')) b.TB_DESK_GROW && (b.TB_DESK_GROW.x = 1);
+  if (Q.get('fl')) { T.flash = 0.9; T.spot.intensity = 1.1 + 0.9 * 16; T.amb.intensity = 0.55 + 0.9 * 1.6; T.sky.material.uniforms.flash.value = 0.9; T.post.material.uniforms.flash.value = 0.9; }
+  shots.push(grab());
+  for (const c of cams) { T.cam.position.set(c[0], c[1], c[2]); T.cam.lookAt(c[3], c[4], c[5]); if (c[6]) { T.cam.fov = c[6]; T.cam.updateProjectionMatrix(); } shots.push(grab()); }
+  const cols = 2, sh = w.document.createElement('canvas'); sh.width = 480 * cols; sh.height = 270 * Math.ceil(shots.length / cols);
+  const g = sh.getContext('2d'); shots.forEach((s, i) => g.drawImage(s, (i % cols) * 480, ((i / cols) | 0) * 270));
+  const d = sh.toDataURL('image/jpeg', 0.88).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'title', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+/* THE TITLE'S BEDROOM, LEFT (2026-11-19): with &title=1, wait for the room and for START, press it (the call at the desk
+ * starts: `IC`), skip it with Enter, and see the room torn down with the cover (its renderer, its canvas, its rain) and
+ * nothing thrown. */
+export async function titleStart({ w, b, log, sleep }) {
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 120)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const st = w.document.querySelector('#overlay .start');
+  for (let i = 0; i < 900 && st.classList.contains('loading'); i++) await sleep(100);
+  log('room ready', b.TB.ready, 'canvas', !!w.document.getElementById('title-room'), 'start says', st.textContent.trim(), 'rain sound', !!b.TB.rainAudio);
+  st.click(); await sleep(2500);
+  log('after START: room on (the call at the desk)', b.TB.on, 'call', b.IC.on, b.IC.atDesk);
+  w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'Enter', key: 'Enter' }));     // (skipped: the intro, and the room goes)
+  await sleep(7000);
+  log('torn down: canvas', !!w.document.getElementById('title-room'), 'renderer', !!b.TB.r, 'errors', errs.length, errs.slice(0, 3).join(' | '));
+}
+
+/* THE CALL AT THE DESK (2026-11-19): with &title=1, wait for the room and the call's pieces, press START, and draw the
+ * scene at the recording's times `&ts=1,25,30,...` (seeked: the clock is the recording's), one sheet; logs what ran. */
+export async function callShots({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 160)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const st = w.document.querySelector('#overlay .start');
+  for (let i = 0; i < 900 && st.classList.contains('loading'); i++) await sleep(100);
+  for (let i = 0; i < 100 && !b.icCanRun(); i++) await sleep(100);
+  log('desk cleared verts', b.TB.cleared, 'room', b.TB.ready, 'call can run', b.icCanRun(), 'buf', !!b.IC.buf);
+  st.click();
+  for (let i = 0; i < 60 && !(b.IC.on && b.IC.start); i++) await sleep(100);
+  log('call on', b.IC.on, 'audio started', !!b.IC.src, 't', b.icNow().toFixed(2));
+  await sleep(1800);
+  log('at the desk', b.IC.atDesk, 't', b.icNow().toFixed(2));
+  const T = b.TB; T.raf && w.cancelAnimationFrame(T.raf); T.raf = 0;
+  const ctx = b.audioCtx, IC = b.IC;
+  const ts = (Q.get('ts') || '2,22,26,27.5,30,41.5,42.8,44,50,58.9,62,66,68.8,71').split(',').map(Number);
+  const shots = [], tw = +(Q.get('tw') || 480), th = Math.round(tw * T.vh / T.vw);
+  if (Q.get('shift')) { const v = Q.get('shift').split(',').map(Number); b.IC_SHIFT[0] = [v[0], v[1]]; b.IC_SHIFT[1] = [v[2], v[3]]; b.IC_SHIFT[2] = [v[4], v[5]]; }
+  const cams = (Q.get('cams') || '').split(';').filter(Boolean).map((s) => s.split(',').map(Number));
+  const runs = cams.length ? cams.flatMap((c) => ts.map((t) => [c, t])) : ts.map((t) => [null, t]);
+  for (const [cm, t] of runs) {
+    if (cm) { b.IC_CAM.eye.set(cm[0], cm[1], cm[2]); b.IC_CAM.look.set(cm[3], cm[4], cm[5]); T.cam.fov = cm[6]; T.cam.updateProjectionMatrix(); IC.phone3 = null; T.cam.position.copy(b.IC_CAM.eye); T.cam.lookAt(b.IC_CAM.look); T.cam.updateMatrixWorld(true); }
+    IC.press = performance.now() - 1000 * (Q.get('since') ? +Q.get('since') : 30);   // (past the glide down unless &since=)
+    if (IC.paint) IC.paint.visible = !(Q.get('nopaint') && t === ts[ts.length - 1]);
+    for (let k = 6; k >= 0; k--) { IC.start = ctx.currentTime - (t - k / 30); b.icFrame(1 / 30, 0); }
+    b.tbRender();
+    const c = w.document.createElement('canvas'); c.width = tw; c.height = th; const g = c.getContext('2d');
+    g.imageSmoothingEnabled = false; g.drawImage(T.el, 0, 0, tw, th); g.fillStyle = '#ff0'; g.font = '11px monospace'; g.fillText(t.toFixed(1) + (cm ? ' ' + cm.join(',') : ''), 4, 12);
+    shots.push(c);
+  }
+  IC.start = ctx.currentTime - 1e3;
+  const cols = +(Q.get('cols') || 3), sh = w.document.createElement('canvas'); sh.width = tw * cols; sh.height = th * Math.ceil(shots.length / cols);
+  const g = sh.getContext('2d'); shots.forEach((s, i) => g.drawImage(s, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = sh.toDataURL('image/jpeg', 0.88).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'call', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  log('view', T.vw, T.vh, T.Q && T.Q.toFixed(2), 'cam fov', T.cam.fov.toFixed(1), 'desk fov', IC.deskCam && IC.deskCam.fov.toFixed(1), 'win', w.innerWidth, w.innerHeight, 'boxK', T.boxK, 'el', T.el && T.el.style.cssText.slice(0, 120), 'on', IC.on, 'ended', IC.ended, 'atDesk', IC.atDesk, 'cam', T.cam.position.toArray().map((v) => v.toFixed(2)).join(','), 'eye', b.IC_CAM.eye.toArray().map((v) => v.toFixed(2)).join(','), 'cv', IC.cv && IC.cv.width + 'x' + IC.cv.height, 'ecv', IC.ecv && IC.ecv.width + 'x' + IC.ecv.height, 'paint', IC.paint && IC.paint.visible, 'rt', T.rt && T.rt.width + 'x' + T.rt.height, 'r', T.r.domElement.width + 'x' + T.r.domElement.height);
+  log('errors', errs.length, errs.slice(0, 4).join(' | '));
+}
+
+/* THE CALL, IN REAL TIME (2026-11-19): with &title=1, START, and the whole of it played as a player sees it — then the
+ * intro takes over (the black, his waves), the room is torn down, and nothing threw. `&skip=s` presses Enter at s. */
+export async function callRun({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 160)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 300 && !(b.icCanRun && b.icCanRun()); i++) await sleep(100);
+  const st = w.document.querySelector('#overlay .start');
+  for (let i = 0; i < 900 && st.classList.contains('loading'); i++) await sleep(100);
+  st.click();
+  const skip = +(Q.get('skip') || 0), t0 = performance.now(); let slow = 0, last = performance.now(), frames = 0;
+  const intro = w.document.getElementById('intro');
+  while (performance.now() - t0 < 90000) {
+    await sleep(500);
+    const t = b.icNow(); frames++;
+    if (performance.now() - last > 900) slow++; last = performance.now();
+    if (frames % 10 === 0) log('t', t.toFixed(1), 'at desk', b.IC.atDesk, 'ctx', b.audioCtx.state, 'intro black', intro.classList.contains('show'));
+    if (skip && t > skip && !b.IC.ended) { w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'Enter', key: 'Enter' })); log('Enter at', t.toFixed(1)); }
+    if (b.IC.ended && intro.classList.contains('show')) break;
+  }
+  log('ended', b.IC.ended, 'at', b.icNow().toFixed(1), 'the intro black down', intro.classList.contains('show'));
+  await sleep(6000);
+  const vid = w.document.getElementById('intro-video');
+  // the waves: every frame the compositor presents, for 18 s — a gap is a frame the eye sees held
+  if (vid && vid.requestVideoFrameCallback) {
+    const gaps = []; let last = 0, n = 0; const q0 = vid.getVideoPlaybackQuality ? vid.getVideoPlaybackQuality() : null;
+    const cb = (now, md) => { if (last) { const g = now - last; if (g > 60) gaps.push(Math.round(g) + '@' + md.mediaTime.toFixed(2)); } last = now; n++; if (n < 2000) vid.requestVideoFrameCallback(cb); };
+    vid.requestVideoFrameCallback(cb); await sleep(18000); n = 9999;
+    const q1 = vid.getVideoPlaybackQuality ? vid.getVideoPlaybackQuality() : null;
+    log('waves: frames', n === 9999 ? 'measured' : n, 'dropped', q1 && q0 ? q1.droppedVideoFrames - q0.droppedVideoFrames : '?', 'of', q1 && q0 ? q1.totalVideoFrames - q0.totalVideoFrames : '?', 'gaps>60ms', gaps.length, gaps.slice(0, 12).join(' '));
+  }
+  log('then: room torn down', !b.TB.on, 'call stopped', !b.IC.on, 'waves on', vid && vid.classList.contains('on'), 'errors', errs.length, errs.slice(0, 4).join(' | '));
+}
+
+/* WHAT FLICKERS (2026-11-19, the owner: "the textures on the walls still flicker"): the title's room drawn N times along
+ * its own breathing (the camera moves a few mm), each frame read back, and every pixel's change frame to frame summed:
+ * a sheet of the room and of where it changes (hot = flickers). `&n=` frames, `&amp=` the breathing scale. */
+export async function flicker({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const T = b.TB; T.raf && w.cancelAnimationFrame(T.raf); T.raf = 0;
+  const n = +(Q.get("n") || 24), amp = +(Q.get("amp") || 1), W = T.vw, H = T.vh;
+  const r = T.r, gl = r.getContext(), px = new Uint8Array(W * H * 4); let prev = null; const acc = new Float32Array(W * H);
+  T.flash = 0; T.spot.intensity = 2.2; T.amb.intensity = 0.9;
+  for (let i = 0; i < n; i++) {
+    const t = i / 30;
+    T.cam.position.copy(T.camBase); T.cam.position.y += Math.sin(t * 0.9 * 30) * 0.004 * amp;
+    T.cam.lookAt(T.look.x + Math.sin(t * 0.21 * 30) * 0.006 * amp, T.look.y + Math.sin(t * 0.9 * 30 - 0.6) * 0.003 * amp, T.look.z);
+    b.tbRender();
+    r.setRenderTarget(null); gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    if (prev) for (let k = 0; k < W * H; k++) { const d = Math.abs(px[k * 4] - prev[k * 4]) + Math.abs(px[k * 4 + 1] - prev[k * 4 + 1]) + Math.abs(px[k * 4 + 2] - prev[k * 4 + 2]); acc[k] += d; }
+    prev = px.slice();
+  }
+  // where it moved smoothly the change is small and spread; flicker is large changes back and forth
+  const c = w.document.createElement('canvas'); c.width = W * 2; c.height = H; const g = c.getContext('2d');
+  g.drawImage(T.el, 0, 0, W, H);
+  const im = g.createImageData(W, H); let hot = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const k = (H - 1 - y) * W + x, v = Math.min(255, acc[k] / n * 2.2), o = (y * W + x) * 4;
+    im.data[o] = v; im.data[o + 1] = v * 0.3; im.data[o + 2] = 0; im.data[o + 3] = 255; if (v > 60) hot++; }
+  g.putImageData(im, W, 0);
+  log('frames', n, 'pixels flickering (>60)', hot, 'of', W * H);
+  const d = c.toDataURL('image/jpeg', 0.9).split(',')[1], m = Math.ceil(d.length / 8000);
+  for (let i = 0; i < m; i++) console.log('[PBIMG]', 'flicker', i + '/' + m, d.slice(i * 8000, (i + 1) * 8000));
+}
+
+/* THE CALL'S LEFT HAND, IN REAL TIME (2026-11-20, the owner: "the left hand in the start cutscene is missing"): START, and
+ * the call played on its own clock as a player sees it, a still of the desk's canvas at each `&ts=` second of the recording
+ * (rendered once more at that moment so the canvas holds it), with which left sheet the frame wants and what it is (a bitmap,
+ * an Image, decoded or not). */
+export async function callLive({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search);
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 160)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('uncaught ' + e.message));
+  for (let i = 0; i < 300 && !(b.TB && b.TB.ready); i++) await sleep(100);
+  const st = w.document.querySelector('#overlay .start');
+  for (let i = 0; i < 900 && st.classList.contains('loading'); i++) await sleep(100);
+  for (let i = 0; i < 100 && !b.icCanRun(); i++) await sleep(100);
+  st.click();
+  const T = b.TB, IC = b.IC, ts = (Q.get('ts') || '30,36,39.5,42,45,52,59,62,66,69').split(',').map(Number);
+  const tw = +(Q.get('tw') || 480), th = Math.round(tw * T.vh / T.vw), shots = [];
+  const kind = (i) => !i ? 'none' : (w.ImageBitmap && i instanceof w.ImageBitmap) ? 'bm' + i.width : (i.complete && i.naturalWidth ? 'img' : 'img-undecoded');
+  for (const t of ts) {
+    for (let i = 0; i < 1200 && !(b.icNow() >= t) && !IC.ended; i++) await sleep(25);
+    if (IC.ended) { log('call ended before', t); break; }
+    if (!Q.get('cov')) { b.tbRender();
+    const c = w.document.createElement('canvas'); c.width = tw; c.height = th; const g = c.getContext('2d');
+    g.drawImage(T.el, 0, 0, tw, th); g.fillStyle = '#ff0'; g.font = '11px monospace'; g.fillText(b.icNow().toFixed(1), 4, 12);
+    shots.push(c); }
+    let cov = -1; if (Q.get('cov') && IC.ecv) { const g2 = IC.ecv.getContext('2d'), W2 = IC.ecv.width, H2 = IC.ecv.height, d2 = g2.getImageData(Math.floor(W2 * 0.5), Math.floor(H2 * 0.3), Math.floor(W2 * 0.5), Math.floor(H2 * 0.7)).data; cov = 0; for (let i = 3; i < d2.length; i += 16) if (d2[i] > 40) cov++; }
+    if (Q.get('cov')) { log('t', b.icNow().toFixed(2), 'right layer px', cov, 'earSig', String(IC.earSig).slice(0, 40)); continue; }
+    log('t', b.icNow().toFixed(2), 'left sheets', (IC.imgL || []).map(kind).join(' '), 'paint', !!(IC.paint && IC.paint.visible), 'x', !!IC.x);
+  }
+  if (shots.length) { const cols = 3, sh = w.document.createElement('canvas'); sh.width = tw * cols; sh.height = th * Math.ceil(shots.length / cols);
+  const g = sh.getContext('2d'); shots.forEach((s, i) => g.drawImage(s, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = sh.toDataURL('image/jpeg', 0.88).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'live', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
+  log('errors', errs.length, errs.slice(0, 4).join(' | '));
 }

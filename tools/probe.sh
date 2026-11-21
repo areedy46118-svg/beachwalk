@@ -1,5 +1,6 @@
 #!/bin/sh
 # Run a scenario of tools/probes.js in a headless Chrome of its own (never the owner's pane or save) and write its stills.
+#   sh tools/probe.sh <scenario> [outdir]      (PB_Q: more of the probe page's query, '&title=1&cams=...')
 #   sh tools/probe.sh <scenario> [outdir]      (PB_PORT: its server's port, 4213 unless given: two probes at once need two)
 SC=$1; OUT=${2:-/tmp/bw-probe}
 cd "$(dirname "$0")/.." || exit 1
@@ -7,11 +8,13 @@ mkdir -p "$OUT"; rm -rf "$OUT/prof"
 PORT=${PB_PORT:-4213}
 python3 serve.py $PORT > "$OUT/serve.log" 2>&1 & SRV=$!
 sleep 1
+# One headless game at a time: three at once (each ~3 GB with its GPU) ran the Mac out of memory, 2026-11-18.
+for i in $(seq 1 900); do pgrep -qf -- "--headless=new" || break; [ $i = 1 ] && echo "waiting for the other headless Chrome to finish" >&2; sleep 1; done
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --user-data-dir="$OUT/prof" --no-first-run \
-  --mute-audio --autoplay-policy=no-user-gesture-required --window-size=1280,760 --use-angle=metal --enable-logging=stderr --v=0 \
-  "http://localhost:$PORT/tools/probe.html?s=$SC" > /dev/null 2> "$OUT/chrome.err" & CH=$!
+  --mute-audio --autoplay-policy=no-user-gesture-required --window-size=${PB_WIN:-1280,760} --use-angle=metal --enable-logging=stderr --v=0 \
+  "http://localhost:$PORT/tools/${PB_PAGE:-probe.html}?s=$SC$PB_Q" > /dev/null 2> "$OUT/chrome.err" & CH=$!
 for i in $(seq 1 ${PB_WAIT:-300}); do sleep 1; grep -q "\[PB\] DONE" "$OUT/chrome.err" && break; done
-kill $CH $SRV 2>/dev/null; sleep 1; pkill -f "user-data-dir=$OUT/prof" 2>/dev/null; sleep 1; rm -rf "$OUT/prof"   # (its throwaway Chrome profile is ~0.5 GB: never left behind, 2026-11-20)
+kill $CH $SRV 2>/dev/null; sleep 1; pkill -f "user-data-dir=$OUT/prof" 2>/dev/null; sleep 1; rm -rf "$OUT/prof"   # (each is ~400 MB and nothing reads it after: 124 left behind were 49 GB, 2026-11-19)
 grep -o "\[PB\] .*" "$OUT/chrome.err" | sed 's/", source.*//'
 python3 - "$OUT" <<'PY'
 import re, sys, base64, collections
