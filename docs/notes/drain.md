@@ -1298,3 +1298,11 @@ just like we have been with the retro style and same time as the sewer grab is n
   along it — the opening rise too). (3) The tool at his fingers came in to 0.45 m, behind the grate (~0.3 m from the eye):
   it slid behind the lower bar half way out. It comes to 0.2 m now. `PH_ROT` 1.42 → 0.75: his LEFT arm up from the bottom
   left, the hand reaching up and right — not a hand held sideways.
+
+## 2026-11-21 — the hand between the bars
+The owner: "make the hand go in between the bars to grab the screwdriver and actually have it grab". The reach quad (`pipeHand`)
+was drawn over everything, so his hand lay ON the grate. It is depth-tested now with a depth of its own per pixel
+(`gl_FragDepth`, `useDepth`): the lens's 0.15 m for the arm, the screwdriver's distance for his fingers round the grip (within
+~0.1 of the screen's height of `reach.xy`, the grip's place on the screen) — the forearm stays over the bar it comes past, the
+fingers go down past the grate's flat to the screwdriver, and it comes out in them (as before). A line from the lower left to
+the grip, tried first, put the near bar across his wrist. `pipeReach` probe stills.

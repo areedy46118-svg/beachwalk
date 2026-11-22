@@ -322,3 +322,187 @@ DETAIL … HE SHOULD GET YOU ANYWHERE IN THE DESERT … FIX THE BICYCLE KICK …
 - **The stats' song starts at his burst** (the owner: "have the final boss explosion start the beachwalk stats music"):
   `kingDeath` asks for `END_SONG` (`lazyBuf`), `kingExplode` calls `startEndSong()`; `showEnd` finds it playing. musictest
   `kingEnd` (the king killed in the temple, the burst, the song at the speakers).
+
+## 2026-11-21 — the king torn off the pillar, the bicycle rare, three new blows, the entrance rebuilt, his sand, the new stone
+The owner: "MAKE IT SO YOU CAN GRAB THE FINAL BOSS OFF THE WALL WHEN HES RUNNNING UP IT WITH THE HOOK AND HELL STOP. ALL THE
+PARTICLE EFFECTS AND EFFECTS NEED TO BE IMPROVED NOW. HE SHOULD FLOAT DOWN MORE THEATRICAL. HE DOES THE BYCICLE KICK WAY TOO
+MUCH THAT SHOULD BE KINDA RARE ADD MORE ANIMATIONS WHERE SOME FALL SHORT JUST MAKE THEM GOOD. HE SHOULD EMERGE FROM THE FOG IN
+THE START BETTER TOO IT LOOKS HORRIBLE IT HAS TO MATCH THE GAME WITH THE BEAUTY OF SEEING THE WALL OR LIGHTHOUSE. MAKE IT
+MAJESTIC AND NOT AI SLOP"; then, with a render of a dry-stacked stone sphere, "can you do a new texture for the temples".
+- **Torn off the pillar** (`kingTornStart` / `kingTornStep`, mode `'torn'`): `hookThrow` asks `kingOnRay` (his body's axis
+  against the throw's line, 34 m, r 1.25 climbing) while he runs to or climbs a pillar and his feet are under 30 m — past
+  the throw's own 14 m and past the pillar face behind him. The iron flies at 2.2× after him while he climbs (he goes up at
+  ~14 m/s: at 1× it reached him at 40 m, INSIDE the ring's 6 m of stone — he fell hidden). The bite: he goes over backwards
+  (`knockOut`'s fall stretched over the drop, g 16), a push toward you, the crash (`kingDust` 1.15, maceHeavy, trauma 0.75),
+  the clip's lie + 0.5 s as an opening (puppet off), `getUp` at 1.15, and back into a blow. `KING.climbs` spent:
+  he never goes up again (so no slam that fight). Run to the pillar and hooked: just stopped (`kingBackToFight`).
+  `tools/kinghookwall.js` (`&at=`, `&d=`, `&none=1`): hooked 12.7 m up → torn at 21.5, down 1.7 s later, up and fighting
+  at +3.5 s, 1.5 damage.
+- **The bicycle rare**: `use.kgBike` 0.24 → 0.06 and 0 for 20 s after any (`kingBikeOK`, `KING.bikeAt` set by
+  `kingAirBike`), the kick's chain into it (0.6) now into the 360 (0.45), and the hunt's arrival the new flying kick (`kgFly`)
+  with the flown bicycle (`kgRun`) only a quarter of the time, 20 s apart.
+- **Three new blows** (`ntar_moves.py -- king`, now `NTAR_SRC='~/Desktop/BEACHWALK ASSETS' NTAR_ONLY=a,b` to build just
+  those from another folder; king-moves.json +115 KB): `kFlyKick` → `kgFly` (hit f8/45, the hunt's arrival, `air` 0.3),
+  `kCrescent` → `kgCres` (f30/63), `k360` → `kg360` (f20/52). `kingbot.js` (skill 0.6) now counts his blows: of 55 — kick 17,
+  uppercut 12, 360 9, crescent 8, assassination 6, bicycle 2, flying kick 1; dead in 129 s for 13 health (122-145 before).
+- **The entrance** (`kingDescendStep`): a CLOUD CEILING over the ring (`KFX.cloud`, a 42 m disc 50 m up, two scales of
+  fbm, dense and storm-grey, brighter only where thin; `uOpen` tears a ragged hole; inside it the light itself, not the grey
+  sky — that drew a dark hole ringed in bright cloud) lit from behind by `KFX.glowS` (additive) which gathers over 2.4 s
+  (`KING_MIST_IN`); him from 53 m through the hole on smootherstep over `KING_DESC` 10 s, dark against it (his lamp moved
+  over and behind him, `KFX.rim`, until he is down); the cloud coming away off him (`kingWisp`, 34 pooled sprites); a hang
+  of 0.9 s a hand over the floor (`KING_HANG`), the floor stirring under him from 7 m (`kingDust` small, flat), and the
+  settle; the landing a slow billow (`slow`) and the ground mist BLOWN BACK in a widening ring (`kaMistMat`'s `uPush`, 2 →
+  17 m over 2.6 s, back in 10). The lens 60° on the cloud, in to 24° as he comes through it, 27-30° down. The shaft only from
+  tIn + 3 s (from below its walls drew rings). `tools/kingentry.js` (`&at=`, `&from=`): 16 stills.
+- **His sand** (`kingDust`, `KD`, `kdTick` from `kingTick`): a flat billow rolling out along the floor (up to 80 soft
+  sprites, flattened 0.6, eased in over 0.24 s — all of it starting together read as a bright clump; tinted by the room's
+  light `1 − 0.4·KFX.dark` — unlit pale sprites glowed in his dark), grit on arcs under gravity that bounces once and
+  stops, a faint shock ring on the floor for k ≥ 0.55. Used for the landing (1.4 slow), the slam (1.3 + a fast low 0.6),
+  the flip's landing (0.6), the torn crash (1.15), his sprint's strides (0.16). The beach's `spawnPuffs` (spinning clods)
+  are out of his fight. `tools/kingdust.js` shows sizes alone.
+- **The stone** (`TMP_STONE`, `tmpStoneMat`, `assets/temple-stone.webp` 768² 52 KB from `tools/temple_stone.py`):
+  courses 0.10-0.22 m, stones 0.12-0.95 m (four in ten short), thin dark joints with a little sand, worn round edges,
+  chips, grit, dark weathering blotches, a top-lit relief baked in. Laid triplanar in the ROOM's frame (`uTO` subtracted in
+  the vertex shader: world coords are thousands out) — the model's UVs are a baked atlas — over every textured material
+  of the temple and the far colonnades, 3 m a tile, ×0.95, with 0.32 of the model's own map kept as shading normalised to
+  its mean (×7.5) so the carved bands read through. Nearest up close, mipmapped off (or the courses crawl). The black disc
+  is cloned off with its `onBeforeCompile` cleared. `tools/templestone.js`: stills far, near, of the colonnade.
+
+## 2026-11-21 later — his stride at his pace, the reveal through the cloud, the carved floor uncovered, his look and aim
+The owner: "SOMETIMES THE final boss run animation looks realy fast but he doesnt run that fast make him match the animation.
+make the entrance more of a reaveal with the fog when he floats down its like he just clips out it should blend and be
+impressive looking. add the old center part of the temple fight in the temple but have the new texture … THERE WAS AN OLD
+CENTER PEICE IN THE MODEL … JUST THE GROUND"; then "GIVE THE FINAL BOSS WALK ANIMATIONS THAT DONT LOOK SO FREE ASSET LIKE …
+SOME SUBTLE DIFFERENCES … PERSONALITY. MAKE THE HIT CONNECTIONS BETTER TOO HE SHOULD NOT MISS ALOT".
+- **The stride** (`kingStride`): the sprint's rate was set once at the hunt's start for flat out; his feet pounded at full
+  pace while he gathered speed, eased into his last stride, turned or pressed into stone. Now every frame from the ground he
+  actually covered (after the clamp), eased over 0.1 s, against `clipSpeed.kSprint` (5.33 m/s in the take, ~7.7 at his
+  size); the run to the pillar too. `tools/kingwalk.js`: sprinting 7.5-7.7 m/s, the clip at ~1.0.
+- **The reveal**: one cloud sheet cut him across as he passed it. Now four sheets 1.6 m apart (densities 1 / .72 / .48 /
+  .26, their holes a little wider each lower), each thinned in a soft ragged hollow round him while he is in its plane
+  (`uHim`), and his body DISSOLVED in over the cloud's depth (`KFX.fade`): a screen-space interleaved-gradient dither in all
+  his materials (`kingFadeSetup`, compiled at his making while hidden; at 1 it discards nothing). The cloud off him is added
+  light now (additive, `0xfff4e4`, 0.32): tone-mapped, a "white" normal sprite still greyed the light it crossed — a smear
+  trailing him. `tools/kingentry.js`: a shadow forming in the light 4.3-5.3 s, solid at 5.8.
+- **THE CARVED FLOOR WAS NEVER SEEN.** The model's middle is a BOWL: stepped rings down to a carved floor at 0.48 (room m)
+  — a ring of hexagonal medallions, a ring of bright stones (`Object_10`), the altar ring, the black disc at 0.93 — while
+  the walk is flat at the podium's top, `TMP_FLOOR` 1.944, and the desert sand was laid over the bowl at 1.58
+  (`tools/templeheights.js`; `tools/templefloor.js` draws each piece alone and the room without its sand). Now the bowl's
+  pieces (`TMP_BOWL_Z`: Object_8/6/9/7/10/21/31) have every vertex inside `TMP_BOWL_R` 20.75 laid flat AT the walk's height,
+  stacked 2 mm apart in their top-down order (their own geometry clones), and the drawn sand inside the rim is put a metre
+  under (the walk is `tmpSandRaw`/`tmpFloorAt`'s, untouched). They wear the new stone in `carved` mode (below). The walk,
+  the fight and every clamp unchanged.
+- **The carved pieces** (`TMP_CARVED`: the podium `temple001_1`, the altar ring `temple004_4`, the column-base ring
+  `Object_14`) on their own material copies (`onBeforeCompile` cleared first — a clone carries the hook and the stone would
+  go in twice): the model's carving as the pattern (keep 0.9, normalised to that map's OWN mean, `tmpMapMean`) and the stone
+  flattened to its mean colour (`uTF` 0.75, `textureLod(…, 12)`), so the bands read in the new stone's colour.
+- **His look and bearing** (`kingPersona`, `kind.postClip`, after the mixer): chest up and back 0.06, chin down 0.09, a
+  breath in the chest, his head on you with a lag (rate 4.5, ±0.95 yaw, the neck 35 %), the walk's arm swing eased 35 %
+  toward each upper arm's running mean. All but the look ease out through any blow, stagger or knockdown (`KP.w`), the look
+  at a third — a blow is the measured one. Not until `kingMeasureBlows` has run.
+- **His aim leads you** (`mutFoePos`, `kingBody`): through his wind-up he turns and closes on you + your step's velocity
+  over the time left to contact (≤ 0.5 s). `kingstudy.js &walk=1`, 60 s: blows that took health 25/28 → 30/30; in their
+  window the uppercut 2/6 → 5/6, the assassination 4/6 → 4/4.
+- (round two, the owner: "FIX THE TEXTURES IN THE CENTER DONT MAKE IT GLOW LIKE THAT AND THE CENTER ISNT EVEN TEXTURED. MAKE ME
+  WALK LIKE THE OLD FLOOR I FEELL LIKE THE MOVEMENT WAS WORSE. BLEND THE TEMPLE TEXURES FLAWLESSY"):
+  - the carving laid at `TMP_BOWL_Y` = TMP_FLOOR − 0.36 (1.584: where the sand floor was SEEN), not at the walk's 1.944 — that
+    put the ground you see 0.36 m nearer your eye, and walking felt different. The walk is as it always was; you are over the
+    bowl's floor as you were over the sand.
+  - the ring of stones (`Object_10`, `TMP_PLAIN`) is plain stone with no emissive: normalised to its dark mean in `carved`
+    mode, its light stones went to white. Carved lights now clamp at 1.22 (1.5 before), keep 0.8.
+  - the black disc wears the stone: its own material, colour 0.66/`TMP_STONE.norm` (the carved floor's tone round it), the
+    courses half-flattened (`tmpStoneMat(m, false, 0.45)` — `flat` is a new third argument). The old code that blackened it
+    after (`'tmpDisc'`) is gone.
+  - the flat stack held apart by `polygonOffset` (factor −rank, units −2·rank, the disc −8/−16) as well as its 2 mm steps.
+
+## 2026-11-21 latest — his run at the take's pace, the bicycle cut to four kicks, his blows retimed, pillars struck, the stone aged
+The owner: "HIS RUN ANIMATIONS SHOULDNT SLOW DOWN HE SHOULD RUN FAST LIKE THE ANIMATION WAS. MAKE THE BICYLCE KICK BETTER ITS
+TOO LONG AND HARD TO READ AS AN ATTACK. MAKE THE CLAW HIT THE PILLARS TOO. MAKE HIS ANIMATIONS MORE UNIQUE … NOT STOCK MIXAMO";
+then "THE TEXTURES OF THE TEMPLE NEED TO LOOK MORE REALISTIC AND WORN THEY ARE SUPPOSED TO BE ANCIENT".
+- **The run**: `kingStride` (the clip slowed to his speed) is GONE — it matched the wrong way. The sprint plays at
+  `KING_HUNT.sp / clipSpeed` from the first stride, and he runs at that pace too: no gathering ramp, no easing into the mark
+  (`s = min(sp·dt, d − to + 0.3)`).
+- **The bicycle**: `king_bike_loop.py 2` (a cycles argument now) — two cycles, four kicks (idx 7, 15, 23, 31 of 32), at 0.8:
+  ~1.3 s off the floor (2.3 before); a readable hop into it (`kingAirBike`: +0.35 m on a half-sine over the first 0.3 s).
+- **Retimed blows** (`natHold`, `mutClipTime`'s fluid curve: an eased draw, a held cock — the tell — the strike accelerating
+  into the contact frame, the follow-through leaving it at that speed and settling): `kgUpper` 0.10/cock 0.62, `kgCres`
+  0.09/0.7, `kg360` 0.10/0.58 (`kgKick` had it). Strings with `more` contacts can't take it (it drops `moreT`). Into the
+  sprint his chest leans 0.11 from the waist (`kingPersona`, hunt).
+- `kingstudy.js` after: standing 32/32 blows took health, strafing 31/31; the bicycle's four kicks in window. musictest kingEnd PASS.
+- **Pillars**: `nearestSolidHit` marches the temple's solids grid along the blade's line (as `hookWallHit`), a `'rock'` hit
+  with a world normal (`n`) for the scar. `tools/pillarcut.js`: hook, light and heavy into a pillar from 1.1 m — struck
+  (hitstop 0.05 / 0.105) and scarred; at open air, nothing.
+- **The stone, ancient** (`tools/temple_stone.py`): edges eaten back irregularly (`wob`), chips bigger and more, the rounding
+  0.065 m (0.035), fine pitting, hairline cracks through one stone in five (wandering, soft), sand packed into most joints,
+  sun-bleached stones and pale salt crust; relief gain 2.5. In the shader (`tmpStoneMat`, room space): a macro variation
+  metres across (×0.82-1.16) so no tile repeats; sand banked up the foot of every face to ~1.1 m over the seen floor (`uTB`)
+  and in patches on the floors; grime above it to ~5 m; faint vertical streaks down the faces. 60 KB.
+
+## 2026-11-21 — the desert alive: the low sun, cloud shadows, sand off the crests, the air still at the ring; the sky's rays out
+The owner chose four of the options ("DO THOSE"), then: "TAKE THOSE RAYS OF LIGHT OUT FROM THE SKY".
+- **The sun** (`TMP_SUN`, 9° up, ahead and right of the crow's landing): in `tmpSky` a warm wide glow (pow 10), a tighter
+  one (pow 90) and a disc, both veiled where the sky's own cloud crosses (`veil`). The key light from its side but higher
+  (`TMP_SUN_L`, 42°) at 1.6, warm 0xf0dcc2 — `templeEnter` and `kingLight` (which re-lights every frame). At 32°/1.35 the
+  flat sand lost a third of its light (measured off the stills); 42°/1.6 matches the old overcast key (1.25 at ~55°).
+- **Cloud shadows** (`TMP_CS_GLSL`, `tmpCloudShade`, clock `TMP_CS`): two-scale noise ~200 m across moving downwind at 8 m/s,
+  up to 30 % darker; in the sand's shader (its own `onBeforeCompile`, cache key `tmpSandCS`) and the stone's (not on the
+  far colonnades hung up in the haze, `vTP.y < 200`).
+- **Sand off the crests** (`tmpCrestTick`, `TMP_CREST_N` 90 ribbons, one draw): the ridges found once off `tmpSandRaw` —
+  higher than 16 m up and down the wind by 0.5 m (`tools/dunecrest.js`: the dunes are broad swells; at 6 m none qualify) —
+  104 of them; born 25-200 m off you, mostly ahead (`fw`), never within 55 m of the middle; running downwind, rising,
+  lengthening ×3.2 and spreading ×3.5. They were there at α 0.2 and not seen (pale on a pale sky, faint on dark dunes):
+  α 0.28-0.45, (0.6, 0.53, 0.42).
+- **The air goes still** (`TMP_ATM.still`: 1 past 60 m from the middle, eased to 0 by 22): the gust ×(0.12 + 0.88·still) —
+  the ground's sand, the dust, the walls — and the wind's sound ×(0.22 + 0.78·still) in `windBedK`. The crests' own wind
+  is the unstilled gust (they are out on the dunes).
+- **The fight's three slanted shafts are gone** (`KA.shafts` held hidden). The descent's beam down the ring stays.
+- `tools/desertatm.js` (`&full=1` the plumes at full α): five views on the real loop; worst frame ~20-28 ms headless as before.
+  `KING.probeHold` (a probe's) keeps him from coming while a probe stands in the ring.
+- **The flight's rays down through the gap (`tmpRays`) are out too** (held at 0): "TAKE THOSE RAYS OF LIGHT OUT FROM THE SKY".
+
+## 2026-11-21 — the crow's flight longer (`TMP_STRETCH`, `tmpCutRate`)
+The owner: "MAKE THE CROWS FLIGHT LONGER AND SEEM MORE SIGNIFICANT". The cut keys everything off its own clock, so the clock is
+slowed where the flight should breathe: out over the night sea and up into the cloud ×0.62 (grab+0.4 → climb−0.5), across the
+cloud sea in the low sun ×0.45 (deck+0.5 → part), the first of the way down ×0.8 (part → down−3), each eased over 0.5 s. The
+wings, the wind and the sounds run on real time. Over the cloud sea, once, the crow's cry far ahead (`tmpScreech(0.32)` at
+deck+2.6). `templeFlight` (fixed again: `TC.g` is gone, it reads `TC.crow`): 38.6 s of real time from the scream to standing
+(29 before), lands at −129.6, stands at 7.7, the lens back after; the low sun over the parted deck.
+- **The dev teleport lands at the temple's edge** (2026-11-21, the owner: "I SPAWNED FAR AWAY FROM THE TEMPLE WHEN TELEPORTING"
+  → "Temple's edge"): `placeInTemple(true)` — on the sand 4 m off the podium (r 35.4, outside `KING_TRIGGER` 28.3) on the
+  crow's line in, facing the middle, pitch 0.06. The crow's landing, a restore and `devTemple` keep the screenshot's dune
+  (`TMP_VIEW`, −129.6). `tools/tmpspawn.js`.
+
+## 2026-11-21 — "he teleported": the push-out off the pillars, capped; the temple checkpoint timed
+- The owner: "THE FINAL BOSS JUST LAGGED FIX THAT IT WAS LIKE HE TELEPORTED". `tools/kinghitch.js &fight=60` (the real loop,
+  walking off every 8 s so he hunts; his speed per frame by mode, frames over 25 ms): no stall in the fight, but the HUNT
+  reached 19.8 m/s against a 7.8 sprint — `tmpPushOut` (in `kingClampUnit`) putting him clear of a pillar his steering had
+  brushed in one frame. Now `KING_PUSH_MAX` 0.16 m a frame caps the push-out's correction (a body in stone eases out over a
+  few frames), and `kingHuntStep` never steps into stone: the whole step, or along it on one axis, or none (`kingSolidAt`).
+  After: hunt top 11.5 m/s (the sprint and frame noise), the flown bicycle's leap 12.7 (its lead, as built), fighting 3.6.
+- The owner: "LOADING SCREEN IS WAY TOO LONG FOR THE TEMPLE CHECKPOINT". `tools/loadall.sh N <out> tmp,tmpKing` (new: `tmp`,
+  and `tmpKing` — the king's landing autosave, the one every death in his fight loads): playable at 4.09-4.43 s and
+  4.28-4.35 s, no frame over 50 ms after — the same as the beach's checkpoints. Not reproduced headless on this build.
+
+## 2026-11-21 — the desert grey all the time; its steps
+- "it should always be black and white at the desert too": `tmpFilter()` (called from `updateTemple` after `kingTick`,
+  so in the room and over it on the crow's flight once it has cut to the desert) writes `grayscale(1)` on the canvas, plus
+  the fight's contrast/brightness from `KA.k`; `kingAtmos` no longer writes the filter. `kingAtmosOff` (on leaving) clears
+  it. `tools/desertgrey.js`: beach none → arrived grey → he comes / fights grey + deeper → left none.
+- "while walking on the temple ground use the church footsteps but have the ambience match … on the sand … sand":
+  `sfxStepTemple` — stone (the podium, or `groundY` standing > 0.08 proud of `tmpSandRaw`: a block's top) plays the
+  church's step with its nave tail gated off (whole for 70 ms, gone by 0.2 s, no room added: open air), sand plays the
+  beach's `sandStep`. `tools/tmpsteps.js` (counts which bank's buffer played at spots on/off the podium). Beware in a
+  probe: after setting the camera the walk's step-down guard keeps `camBaseY` up — ask `groundY`, not the feet.
+
+## 2026-11-21 (later) — the king: held in the gold; his footfalls; the quieter burst
+- **IMMOBILIZE** ("IMMOBILIZE JUST BROKE THE FINAL BOSS WHERE HIS ANIMATION IS MESSED UP AND SPINNING AROUND"): the generic
+  creature update ran a kind's own `drive` BEFORE its `st.immob` check, so `kingDrive` went on turning, stepping and playing
+  him under the hold while `artPin` put him back each frame. A kind with `drive` now takes `artHold` first. `tools/kingimmob.js`:
+  2.3 s held, max moved 0.010 m / turned 0.005 rad (the strain), then the same blow on from its frame.
+- **HIS STEPS** ("GIVE THE FINAL BOSS THE SAME FOOTSTEP SOUNDS THE PLAYER HAS IN THIS AREA MAKE THEM MATCH HIS STEPS"):
+  `kingSteps` (from `kingTick`): each toe's height over the floor under it; a step when one lifted > 0.09 over its rest and
+  comes back < 0.035, ≥ 0.16 s apart, through `sfxAt` from the foot — `kingStepSnd`: the church step gated as the player's on
+  stone (podium, or a block's top), the sand step on sand. Not while held, descending, dying. `tools/kingsteps.js`: 26 in 12 s
+  (sprint 0.12-0.18 s apart, fighting ~0.28).
+- **THE BURST QUIETER** ("SO YOU CAN HEAR THE START OF THE STATS SONG"): `kingExplode`'s thunder `loud` 1 → 0.35 (`loud` is
+  absolute, past the sliders), maceHeavy 1 → 0.55, smash 0.8 → 0.45. musictest kingEnd 0.0163 → 0.0543.

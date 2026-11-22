@@ -2305,3 +2305,12 @@ The `CASTLE PROPS` section (`CP`, `CP_KINDS`, `CP_SITE_DEFS`, `CP_SCENES`, `cpBu
   so `authorDkClips` retargets `ntar-moves.json`'s `knock` (the motion-captured fall onto the back, rotations undergone)
   onto his rig through `DK_RAG`, as every knockdown here is made. `tools/dkknock.js`: down on the fifth heavy (2.07 s
   left), up again ~3 s later.
+
+## 2026-11-21 — the paladin's fall is the church knight's own
+The owner: "the paladins fall is bad". `tools/dkfall.js` (one spawned on the beach, five heavies, his knockdown and death
+from the side every 0.15-0.2 s, his hips' and feet's height over the sand logged): with NTAR's `knock` he lay on his back
+with his legs STIFF UP IN THE AIR, feet 0.9-1.3 m over the sand, the whole lie — then the rise, which for NTAR's clip is
+its fall played backwards, flung them to 2 m and had him standing 0.3 s later. Now `authorDkClips` retargets the church
+knight's Mixamo `knockOut` and `getUp` (`knight-moves.json`) through `DK_RAG`, and his kind has the knight's own beats
+(`knockClip: 'knockOut'`, `riseClip: 'getUp'`, `knock: { fall 1.27, lie 0.34, rise 1.33, land 0.78 }`). Measured: flat on
+his back, feet 0.24 m, a roll to a knee from 0.8 s, standing at 1.5. His death (the ragdoll) was already fine.

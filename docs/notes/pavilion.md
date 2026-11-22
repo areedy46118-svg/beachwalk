@@ -587,3 +587,18 @@ README credit with it (Henry's scream's credit kept). `loadJettyHenry` parses `a
   feet, was yanked with every stroke; not during the flare, whose talons reach); pitch and bank are eased (rate 7/s)
   instead of set straight off the Hermite's velocity, whose turn rate jumps where its pieces meet. Probe `hjCrow`: it
   comes down over him talons out, takes him at the hands 0.2 m off its feet, carries him out along the eagle's track.
+
+## 2026-11-21: footprints to Henry's door
+
+`dunPrints(doorR)`, laid when the dungeon's door is (`placeDunDoor`): 19 bare prints (the beach's own shape, filled pale sand —
+a dark print is nothing on the yard's dark slabs — opacity 0.3) from the steps' side, round the column past the pavilion's
+door, to the foot of the dungeon's door; the first three smaller and fainter. `farProps` like the door. `tools/dunprints.js`
+(stills down the ring corridor, and E at the door: the hand out, the door used at 0.27 s).
+
+## 2026-11-21: the yard is the gate's
+
+`mushYardBar` (after the move, before the rocks' push-out): a frame's step that crosses the yard's wall line (`WALL_R` round the
+column) INWARD is undone unless it goes through the gate's own opening with the gate open (or dev mode's keys) — at any height
+below the upper room (`H_ROOM` − 0.4), so over the wall's top on the chain counts; the pull is ended, its carry dropped. Out
+is always free; a move over 2 m in a frame is a placing (a load, the dungeon's door), not a step. `tools/yardbar.js`: over the
+top and at the shut gate — outside; the gate open — in.

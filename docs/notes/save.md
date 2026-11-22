@@ -370,3 +370,13 @@ fetched first, under the black. After: all ten weapons draw after a castle reloa
 `saveRoom()` → 'deep' and `ROOM_BACK.deep` (spot 'deepSnap'): the one save written between the bite and the sand, at the
 line's snap. Details in deep.md. `tools/loadall.sh` times a load from every checkpoint place (the beach at five
 stretches and every `ROOM_BACK` room at its door's spot); see perf.md.
+
+## 2026-11-21 — the temple checkpoint's long black: "settled" was a fixed 34 ms
+- The owner: "LOADING SCREEN IS WAY TOO LONG FOR THE TEMPLE CHECKPOINT" (a fresh checkpoint load — the menu's restart).
+  Headless it came up in 4.0-4.3 s either way in (`tools/loadall.sh … tmp,tmpKing`, now with `&menu=1` for the menu's
+  path, no death card). The cause was the hold's LAST gate: twelve frames in a row under 34 ms. A room that just draws at
+  ~36 ms on a given screen never gets twelve, so the black held to `BOOT_HOLD_ALL_MAX` (30 s) with everything in.
+  `&slow=38` (new: every frame made ≥ 38 ms, once a frame) on the old code: **34.9 s**. Now a frame is settled under
+  max(34, 1.35 × the median of the last 24), and the settling waits at most `BOOT_SETTLE_MAX` 1.5 s once all else is in:
+  the same slow run 9.9-10.2 s — the rest is the busy-wait starving the downloads too, which a slow GPU would not.
+  Normal-speed loads unchanged (it can only release sooner): tmp 4.7, whale 4.8, beach-60 5.1.

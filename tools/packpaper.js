@@ -3,7 +3,7 @@
  * synthesized (oscillators, noise buffers through the pack's band filters). Run:
  *   PB_PORT=4251 sh tools/probe.sh 'evalFile&f=/tools/packpaper.js' <out> */
 const ctx = b.audioCtx; try { await w.AudioContext.prototype.resume.call(ctx); } catch (e) { /* */ }
-for (const k of ['shovelItem', 'glowstickItem', 'waterBottleItem', 'syringeItem', 'keyItem', 'ringItem', 'jarItem', 'crabItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
+for (const k of ['shovelItem', 'glowstickItem', 'waterBottleItem', 'syringeItem', 'ringItem', 'jarItem', 'crabItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
 for (let i = 0; i < 100 && !(b.sampleBanks.packPaper || []).filter(Boolean).length; i++) { b.frame(1); await sleep(50); }
 log('paper takes loaded', (b.sampleBanks.packPaper || []).filter(Boolean).length);
 b.openPack(); for (let i = 0; i < 40; i++) { b.frame(1); await sleep(30); }

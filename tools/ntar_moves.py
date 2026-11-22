@@ -62,7 +62,8 @@ from mathutils import Vector, Quaternion, Matrix
 #   blender -b -P tools/ntar_moves.py -- knight
 SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'sword', 'skrim', 'dance', 'king') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
-SRC = os.path.expanduser('~/Downloads')
+SRC = os.path.expanduser(os.environ.get('NTAR_SRC', '~/Downloads'))   # (NTAR_SRC: another folder of the owner's, e.g. '~/Desktop/BEACHWALK ASSETS')
+ONLY = set(filter(None, os.environ.get('NTAR_ONLY', '').split(',')))   # (NTAR_ONLY=a,b: build just these clips; the rest kept as they are)
 # (the owner keeps the packs on the Desktop now; a set may say so)
 FPS = 30
 
@@ -652,6 +653,12 @@ KING_CLIPS = [
     # (2026-11-20, the owner: "dont have him float down make him jump down and slam using this mutant jump when he runs up the
     # pillars … have the impact huge when he slams down")
     ('Mutant Jump Attack',   'kSlam',   'off the pillar and down onto you, both fists', ''),
+    # (2026-11-21, the owner: "HE DOES THE BYCICLE KICK WAY TOO MUCH THAT SHOULD BE KINDA RARE ADD MORE ANIMATIONS WHERE SOME
+    # FALL SHORT"): three more of his own, out of ~/Desktop/BEACHWALK ASSETS (NTAR_SRC) — the flying kick out of his sprint,
+    # a crescent kick, and the spinning high blow
+    ('Flying Kick',                     'kFlyKick',  'out of the run, one foot through you', ''),
+    ('Inside Crescent Kick',            'kCrescent', 'the leg swept round and down through you', ''),
+    ('Standing Melee Attack 360 High',  'k360',      'round on his heel, the arm through your head', ''),
 ]
 if SET == 'king':
     CLIPS = KING_CLIPS
@@ -666,7 +673,7 @@ if SET == 'king':
     WINDOW = {'kShock': (24, 256)}
     CONTACT = {}
     PEAKS = ('LeftHand', 'RightHand', 'LeftLeg', 'RightLeg', 'LeftToeBase', 'RightToeBase')
-    for _c in ('kUpper', 'kBike', 'kKnee', 'kAssn', 'kKick', 'kSlam'):
+    for _c in ('kUpper', 'kBike', 'kKnee', 'kAssn', 'kKick', 'kSlam', 'kFlyKick', 'kCrescent', 'k360'):
         CONTACT[_c] = PEAKS
 
 if 'HIP_FROM_TAKE' not in globals(): HIP_FROM_TAKE = set()
@@ -699,8 +706,9 @@ def main():
     out = {'fps': FPS, 'clips': {}}
     if os.path.exists(OUT):
         try:
-            with open(OUT) as fh:
-                prev = json.load(fh)
+            import gzip as _gz
+            _raw = open(OUT, 'rb').read()
+            prev = json.loads((_gz.decompress(_raw) if _raw[:2] == b'\x1f\x8b' else _raw).decode('utf-8'))   # (stored gzipped: `tools/gz_assets.py`)
             out['clips'] = prev.get('clips', {})
             log('merging into', len(out['clips']), 'clips already built')
         except Exception as e:
@@ -711,6 +719,8 @@ def main():
         # a clip may name a subfolder of ~/Downloads it was delivered in
         sub = entry[3] if len(entry) > 3 else ''
         path = os.path.join(SRC, sub, fname + '.fbx')
+        if ONLY and name not in ONLY:
+            continue
         if not os.path.exists(path):
             if name in out['clips']:
                 log('KEEPING', name, '- its source is gone from', os.path.dirname(path) or SRC)
@@ -966,8 +976,9 @@ def main():
 
     if missing and '--partial' not in sys.argv:          # (`--partial` writes what there is: a set whose clips are still on their way)
         sys.exit('no source and nothing already built for: ' + ', '.join(missing))
-    with open(OUT, 'w') as f:
-        json.dump(out, f, separators=(',', ':'))
+    import gzip as _gz
+    with open(OUT, 'wb') as f:                                   # (gzipped, as the game stores it and `bwGunzip` reads it)
+        f.write(_gz.compress(json.dumps(out, separators=(',', ':')).encode('utf-8'), 9, mtime=0))
     log('built', len(built), 'of', len(CLIPS), '-', ', '.join(built))
     log('wrote %s: %d clips, %.1f KB' % (os.path.relpath(OUT), len(out['clips']), os.path.getsize(OUT) / 1024))
 

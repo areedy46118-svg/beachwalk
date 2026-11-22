@@ -2030,3 +2030,11 @@ Traps met: the discard-splitting clones (`splitDiscards`) are made AFTER the las
 — set what a clone must carry on the original before it runs. A preview screenshot taken right after a render often
 shows the PREVIOUS render: take it twice. Candle flicker and lamp pooling move a reading by 3x between frames — compare
 regions within one frame, never across runs.
+
+## 2026-11-21: the idol struck; the crawl timed
+
+- A blow or Skrim's hook tips the idol (`ucIdolStrike` in `digImpactCore`, `ucIdolNear` in `hookTick`'s flight): as touched,
+  less the rocking beat (`UC_TIP_WAIT` − 0.12). `tools/ucidol.js`: struck when aimed at it, not when aimed away; broken ~1 s on.
+- "the church tunnel just froze my game" / "is laggy": `tools/ucperf.js` crawls in by the real door on the real clock and walks
+  the bore to the altar (1920×1080, `&hold=`): walk median 8.7–9.1 ms, worst 15.8, with nothing, the glowstick or the bottle;
+  one 55–79 ms frame at the crawl's start (a program compiled), and not even that on a second run. Not reproduced.

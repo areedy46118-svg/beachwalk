@@ -3022,3 +3022,56 @@ spalshing on".
 - Probe: `rockWash&wz=Z&cam=x,y,dz,lx,ly,ldz` (any stone, camera z = Z + dz; logs the most spray at once). Water views:
   the shoreline at z −22 is x 5.66 at t 33 and 2.54 at t 36 (high water about t 33, drawing back after) — aim the camera
   2–3 m landward of it, or the shot shows only sand. Shore view measured 4.0 ms a frame headless 793 x 446.
+
+## 2026-11-21 — black between the BEACH WALK page and the waves
+The owner: "i keep seeing the game after the sketch of beachwalk i need it to be black then the waves i see the hotbar too".
+The push into the ink ends the call on black (`TB.post` fade 0) and `icFinish(false)` → `runIntro(early)` hid the call's
+cover (`#overlay.hidden`, `leaveTitle`) on that frame, while `#intro`'s black only began its 1.5 s CSS fade up from 0:
+the beach and the hotbar (z 6, under `#intro`'s 20) showed through it. (The Enter-skip path was always right: its cover
+waits out `INTRO_CUE.black` before it goes.) Now the early branch puts `#intro.show` on with `transition: none` first.
+Measured, `tools/callblack.js` (the call in real time from START, every frame from 72 s until the waves are on: the cover,
+the intro's computed opacity): played out, the intro black 1.00 from the frame the call ends, 0 frames with the world
+showing, the waves at +4.9 s; `&skip=1` (Enter at 30 s), 0 frames as before.
+
+## 2026-11-21 — the shovel's glow on the sandcastle; a float thrown at a crab breaks
+- "THE ITEM GLOW IS ODD HERE ON THE TIP OF THE CASTLE": `addItemShine(shovelWorld, …)` hung its glint 0.5 m up the shaft — over
+  the keep's tower with the shovel's lean — showed a second sprite THROUGH the castle (`through`), and lifted the red toy's own
+  surfaces ×2.6 of a blue-white (pink). Now height 0.26 (on the shaft just out of the sand), size 1.2, no `through`, `lift` 0.3.
+- "THROWING A GLASS FLOAT AT A CRAB SHOULD BREAK AND KILL IT": `PhysProp`'s crab/mutant hit (incoming > 5) took 70 % of the body's
+  speed and it fell to the sand under the breaking speed — it bounced on, hit again (2 hp), and lay whole. The thing's own
+  `onImpact` now runs at the speed it hit with BEFORE the slow-down; if that broke it (`this.dead`) the crab takes `CRAB_HP`.
+  A landing-sound `onImpact` (keys, rings, the horn) breaks nothing and is 1 as before. `tools/floatcrab.js`: hp 2 → 0, broken.
+
+## 2026-11-21 — the call on a narrow screen: nothing cut, nothing resized
+The owner, a 3:2 window: "the syringe on a smaller screen is cut off i need the cutscene to look the same on all screens but still
+be full screen the objects shouldnt be changing size either". Covering a screen narrower than 16:9 cut the picture's SIDES —
+where the syringe and the phone are. `tbSize` now gives a narrow screen the whole width, the view drawn TALLER than the screen
+(2·SH − SW/(16:9)) and pinned to the top: its 16:9 frame (centred in the view, `icClipFrame`; the desk camera widened keeping
+the 16:9 width, `icDeskFov`) ends exactly at the screen's foot; the rest is room above the desk. The render is sized so the
+FRAME is `TB.H` tall (his clips are in those pixels: with the view at `TB.H` they grew the narrower the screen).
+- **Two old bugs found doing it**: `Object.assign(TB.el.style, {…, inset: 'auto'})` with `inset` LAST put `top`/`left` back to
+  auto — the view was placed by the overlay's centring all along (the wide case's "three quarters off the top" was a half).
+  `inset` first now. And `#overlay { overflow: clip }` (hidden lets focus scroll it).
+- `tools/callfit.js` (PB_Q='&title=1'): 16:9, 3:2, 4:3, 21:9 at one width — the desk the same size in each, nothing cut.
+
+## 2026-11-21 (later): the entrance rock's colliders; the puppet put down in the house; Elvédor's last line
+
+- **"i keep getting stuck right here"** (10.53, -734.66, the entrance rock's beach side): `rockShellColliders` marked every
+  2 m cell of each face's xz BOX — solid up to 1.5 m out from the drawn stone, a wall across the strip between it and the sea.
+  Now 0.5 m cells, a face marks only where its surface is at a body's height (`ROCK_BAND` −0.3..2.1, points over the face a
+  quarter cell apart), and what the outline closes in is filled by a flood from outside (the mouth shut for the flood, left
+  open after). `tools/rockstuck.js`: walks 24 ways from the spot through `pushOutOfSolids`, an ascii map, a still with the
+  colliders drawn. Forward-left along the rock's foot now goes the full 3 m (the old boxes stood at x 9 there).
+- **The puppet dropped upstairs vanished**: `dropPoint` cast only at the beach (sand, rocks) and clamped x to
+  `WADE_X`..`CLIFF_BLOCK_X` — the house is past the cliff, so he was put down on the beach. `dropTargets` has his house and
+  land when `elvLand`, no clamp there, and `groundUnder` asks `elvLandFloorAt` (every storey). "G to drop" flashes on the
+  pickup. `tools/pupfloor.js`.
+- The bed's copy: `elvPlaceBed` updates the house's matrices before its rays (a house never drawn has them stale); a restore
+  shows the bed's copy again (a pickup hid it and nothing re-showed it) and takes up one put down.
+- Elvédor's light-bill line is cut: "YES! THATS AWESOME!" ends it (`end` 2600).
+- **The well's rope** (`tools/wellrope.js`, close stills from either side and the parts measured in the model's own frame): the
+  axle is at y 0.290, z 0, r 0.037; the coil round it out to ~0.063. The load cut the authored rope at the drum's middle
+  height, so the coil's lower half went and an arch floated over the axle ("the rope wrap around cut off"); now what is kept is
+  within `WELL_COIL_R` 0.068 of the axle. Our rope came out of the drum's MIDDLE (z −0.02); it leaves its side now
+  (`WELL_ROPE_Z` −0.052, where the authored one hung) and runs onto the handle's top (x −0.092, z −0.036, measured) — a slant
+  while wound up, plumb once paid out (`wellSetBucket`, `wellBucketDown`).

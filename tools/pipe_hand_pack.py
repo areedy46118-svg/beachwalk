@@ -77,13 +77,20 @@ def retro(rgb, m):
     h, w = m.shape; rw, rh = int(round(w * S)), int(round(h * S))
     c = np.asarray(Image.fromarray((np.clip(rgb, 0, 1) * 255).astype(np.uint8)).resize((rw, rh), Image.BOX), np.float32) / 255
     ms = nd.gaussian_filter(nd.binary_erosion(m, iterations=2).astype(np.float32), 3.0) > 0.5
-    a = np.asarray(Image.fromarray((ms * 255).astype(np.uint8)).resize((rw, rh), Image.BOX), np.float32) / 255 > 0.5
-    a = nd.binary_opening(a, iterations=1)
+    soft = np.asarray(Image.fromarray((ms * 255).astype(np.uint8)).resize((rw, rh), Image.BOX), np.float32) / 255
+    a = nd.binary_opening(soft > 0.5, iterations=1)
     inner = nd.binary_erosion(a, iterations=1)
     if inner.any():
         idx = nd.distance_transform_edt(~inner, return_distances=False, return_indices=True)
         c = c[idx[0], idx[1]]
-    out = np.zeros((rh, rw, 4), np.uint8); out[..., :3] = (np.clip(c, 0, 1) * 255).astype(np.uint8); out[..., 3] = a * 255
+    # (THE OUTLINE KEPT SOFT, 2026-11-21, the owner: "make sure the cuts are clean like the outline of the hand is flawless":
+    #  a hard 0/255 alpha at sprite px is a staircase of whole sprite px wherever the hand is drawn bigger than that — the
+    #  grab lays it at the thing's distance, often two or three screen px a sprite px. The box-downscaled coverage of the
+    #  full-res smoothed mask is kept instead, so the shader's linear sample cut at .5 is the full-res curve at any size;
+    #  whatever the opening threw away stays thrown away.)
+    keep = nd.binary_dilation(a, iterations=1)
+    out = np.zeros((rh, rw, 4), np.uint8); out[..., :3] = (np.clip(c, 0, 1) * 255).astype(np.uint8)
+    out[..., 3] = (np.clip(soft, 0, 1) * keep * 255).round().astype(np.uint8)
     return out
 
 

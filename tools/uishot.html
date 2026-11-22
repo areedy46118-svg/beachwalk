@@ -15,7 +15,9 @@ f.addEventListener('load', async () => {
   const b = w.__bw;
   for (let i = 0; i < 200 && !b.state().started; i++) { try { b.beginGame(); } catch (e) { /* not ready */ } b.frame(1); await wait(60); }
   b.introDone = true;
-  for (const k of ['shovelItem', 'fishingRodItem', 'glowstickItem', 'waterBottleItem', 'syringeItem', 'katanaItem', 'cdItem', 'crabItem', 'jarItem', 'keyItem', 'ringItem', 'shockRingItem', 'maceItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
+  // &first=name: that thing in the pack before the usual ones (so it has a slot when they would fill it)
+  for (const nm of (q.get('first') || '').split(',').filter(Boolean)) { try { const it = b.packByName(nm); if (it && !b.inventory.includes(it)) b.addToInventory(it); } catch (e) { /* */ } }
+  for (const k of ['shovelItem', 'fishingRodItem', 'glowstickItem', 'waterBottleItem', 'syringeItem', 'katanaItem', 'cdItem', 'crabItem', 'jarItem', 'ringItem', 'shockRingItem', 'maceItem']) { try { if (b[k]) b.addToInventory(b[k]); } catch (e) { /* */ } }
   for (let i = 0; i < 40; i++) { b.frame(1); await wait(30); }
   // &keys=name,name: those keys on the ring too (by their names: `packByName`); &kc=1: the keychain picked in the pack
   for (const nm of (q.get('keys') || '').split(',').filter(Boolean)) { try { const it = b.packByName(nm); if (it && !b.inventory.includes(it)) b.addToInventory(it); } catch (e) { /* */ } }
