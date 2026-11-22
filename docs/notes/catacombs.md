@@ -888,3 +888,11 @@ Measured: killed, 75 s of frames later still `mode 'down'`, key in the save's `d
   it detours, else `catLose` (`window.__catBackstop` counts). A cancelled swing drops the token.
 - **Pushes may not cross drawn stone** (`pushHeld`, misc.md). Measured: 81 m of random walking and jumping, 0 caught,
   worst step 0.23 m.
+
+## 2026-11-22 — distant calls through the stone (`catDistantCall`)
+The owner: "i should hear the creature sounds more in the catacombs some roars in the distance that i sent make it direction
+and make sense with the walls". Every 12-30 s while he is not on you (not chase/stalk/flee/investigate/search, not raging): a
+`catFar` (62 %) or `catRoar` (38 %, rate 0.86) through `catPlayAt` — from HIM if he is 26-55 m of corridor off, else from a
+graph node 28-52 m of corridor from you and 14 m clear of him. MEASURED: the sound field reaches little — 362 nodes / 19 m from
+the landing, 16-377 nodes / 4-30 m from random spots — so most calls take the fallback: a node 24-40 m straight-line off,
+×2.2 gain, heard 'stone' (≤ 380 Hz, pan ×0.45, g ~0.1 before the gain). `tools/catcall.js`.

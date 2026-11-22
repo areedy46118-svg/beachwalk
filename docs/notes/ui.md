@@ -1620,3 +1620,33 @@ LIKE THE RIGHT HAND". Re-made from `~/Desktop/BEACHWALK ASSETS/IMG_7207.MOV` (th
 - The hotbar's five in the pack: only they are numbered, and pencil-shaded (`.hb`); the tip says "1–5 your hotbar".
 - Dev mode gives ten things to a five-slot strip: the fighting weapons are swapped into the strip (`devGrantWeapons`), so the
   mace, the hook and the rest can be drawn.
+
+## 2026-11-21 (late): the taunt on T (`TAUNT`, `tauntHand`, `tools/taunt_pack.py`)
+The owner: IMG_7232 — "trim the hand and arm out of this video and make this a taunt you can do when you hit "T" with the left
+arm. make the trims clean like the grab item one". The clip is portrait (1080×1920, 4.4 s); at 12 fps Vision's foreground
+instances give his arm ALONE from frame 16 to 45 (the trousers and shoes at the bottom are never an instance that comes in from
+the left/bottom edge) — except frame 42, where the instance touching the edge was the cabinet behind his hand (466 k px against
+~95 k): the packer keeps an instance only if it overlaps last frame's arm (dilated 40 px), and a frame left empty repeats the one
+before. The cut is `pipe_hand_pack.py`'s (`retro`: box-down to S 0.6, outline smoothed a pixel inside, the full-res coverage as
+alpha, colour carried past the edge). In game: a clone of `pipeHand`'s material (quantised, cut at .5, `tint` from `lightAt` a
+little in front of you, `shade` 1, no depth) on a second quad; laid with the clip's left and bottom borders just off the screen
+and the clip 1.12 × the screen's height (`TAUNT_TALL`), played at 12 fps × 1.12. `KeyT` was already in `navigator.keyboard.lock`
+— nothing else used it. Not while the grab's hand is out, in a peek, or dying.
+- **Round 2** (the owner: "the middle finger needs to be straight ahead towards the enemy make these animations match where you
+  are to lighting wise they seem too bright compared to where you are sometimes"): laid by the held fingertip (`tipH`, the hold's
+  mean) on `TAUNT_AT` (−0.42, 0.02 half-heights — just left of the middle), rolled `TAUNT_ROLL` −0.44 so the arm comes out of the
+  bottom-left corner toward the middle and the finger leans in, at the least scale that keeps the clip's left/bottom borders
+  (where the arm comes through) off the screen (`tauntScale`, per aspect). **THE LIGHT IS READ OFF THE PICTURE** (`handTint`,
+  `handLumSample`, for the taunt AND the grab): `lightAt`'s sum came out over 1 on the night beach and in the black cellar (it
+  counts every pooled lamp as reaching you and knows nothing of fog or grade) and the arm was drawn near white; now, on the
+  frame the hand comes out, right after the world is rendered, the middle-right of the frame (clear of the arm) is read
+  (`gl.readPixels`, every 4th pixel, to linear) and the tint is its mean × `HAND_LUM_K` (1.9/0.42), floored at 0.045 — the
+  moon's blue on the beach, a near-silhouette in the cellar. One read per hand, never per frame. `tools/taunttest.js`.
+
+## 2026-11-22 — the menu holds the game, the music plays; the rings bigger
+- "entering the setting should always freeze the game and keep the music playing": `openMenu` sets `menuHold` (the frame
+  skips `update` and every cut, beside `cutPaused`) — everywhere now, not only in a cut — and the AudioContext is NOT suspended
+  (that stopped the music). Only the opening still uses `cutPause` (its song and cues are one clock). In another cut its own
+  scheduled sounds are silenced by ducking the effects bus (`menuDucked`; the audio watchdog and the sfx slider leave it alone
+  while ducked). `tools/menuhold.js`.
+- The pack's ring circles 84 → 100 px, the heading 0.9 → 1.08 rem (paper: 1.2 → 1.42). The row's height is the keychain's 240.

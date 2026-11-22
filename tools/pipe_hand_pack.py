@@ -23,7 +23,10 @@ from PIL import Image
 from scipy import ndimage as nd
 
 W, OUT = sys.argv[1], sys.argv[2]
-FIRST, GRAB, CLOSE = 14, 66, 70          # the reach; his fingers on it; closed
+FIRST, GRAB, CLOSE = 16, 66, 70          # the reach; his fingers on it; closed
+# (16, not 14, 2026-11-21, the owner: "clean up the hand cut when grabbing the screwdriver make sure its just hand and arm in the
+#  trims": the clip's first two frames are his hand at rest round the thing he was holding, and the cut kept what showed in the
+#  gap between his thumb and fingers — a white scrap and a gold-brown thing off the table. From 16 the gap is open.)
 PAD = 0                                  # (the frame lands with its left and bottom borders off the screen)
 S = 0.6                                  # sprite px per frame px (about the game's own pixel on screen: it draws at 0.62)
 LEVELS = 9                               # (unused: the game's own low-res frame pixelates it — a dither of its own aliased into moire)

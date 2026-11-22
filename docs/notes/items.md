@@ -1411,4 +1411,14 @@ make the fiji label face you when holding". "Fiji Water Bottle" (Diego T. Yamagu
   Then ("flip it around when holding it and improve the models look"): held end for end (`glowstickVM` z + π: the sleeve in
   the fist, the hook up); and a body painted on, since it is unlit — `gsShade` colours every part from its own normals against
   one direction (lit side, shadowed side, a streak down the casing), the core a capsule, three grip rings and a bevelled foot
-  on the sleeve, the paddle bevelled, the hook rounder. `iconV` 'tube6'. `tools/glowshot.js` (examine, close; in hand, close).
+  on the sleeve, the paddle bevelled, the hook rounder. `iconV` 'tube6'. `tools/glowshot.js` (examine, close; in hand, close).- **The grab closes ON the thing** ("its kind of above all them"): the clip's grip (where the blue thing was in his fingers) is
+  high in the curl of the hand, so laid on the thing the fingertips closed above it. `HG_SINK` 0.1 half-heights: a pickup's
+  hand is laid that much under its grip (`pipeHandPlace`'s `at`), the thing in the cup between thumb and fingers.
+  `tools/handgrab.js &item=<regex>` (a shell on the sand from a stride off).
+
+## 2026-11-21 (late): the owner's drinking sound
+"make this the water drinking sound" (`New Recording 5.m4a`, 3.5 s, mostly room tone): kept 1.2–2.75 s — the small sips
+and the big gulp at 0.65–1.35 s of the cut — faded in/out, `assets/water-drink.m4a` (`waterDrink`). `drinkWater` plays it
+0.2 s after the press (`sfxGulp`, the synthesized swallow, only while it is loading); `DRINK_DUR` 1.45 → 2.0 so the bottle
+is still at the lips for the gulp and the level drains across it. `tools/drinksnd.js`. (`sfxGulp` is still the man's at
+113770 — not the bottle's.)

@@ -1,13 +1,17 @@
-/* THE PUPPET PUT DOWN (2026-11-19, "make the puppet able to be dropped"): his puppet loaded, picked up, G (as `elvDropPuppet`),
- * then E on him again. Run: PB_PORT=4253 sh tools/probe.sh 'evalFile&f=/tools/pupdrop.js' <out> */
+/* THE PUPPET PUT DOWN AGAINST A WALL (2026-11-22): inside Elvédor's house, a drop point a hand from a wall, laid across it —
+ * does his head or his feet cross the wall from his middle, is he above the floor. Run: PB_PORT=4223 PB_WAIT=400 sh
+ * tools/probe.sh 'evalFile&f=/tools/pupdrop.js' <out> */
 b.settings.devMode = true;
-b.loadElvPuppet();
-for (let i = 0; i < 300 && !(b.pupDropS().pup && b.pupDropS().carry); i++) { b.frame(1); await sleep(60); }
-log('loaded', JSON.stringify(b.pupDropS()));
-b.elvPickUp(); b.frame(2);
-log('picked up', JSON.stringify(b.pupDropS()));
-w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'KeyG', key: 'g' })); for (let i = 0; i < 6; i++) b.frame(1);
-const e = b.interactables.find((x) => (typeof x.label === 'function' ? x.label() : x.label) === 'Pick him up');
-log('after G', JSON.stringify(b.pupDropS()), '| pick-up entry', !!e, e ? e.root.position.toArray().map((v) => +v.toFixed(2)).join(',') : '', '| cam', b.camera.position.toArray().map((v) => +v.toFixed(2)).join(','));
-if (e) { e.onActivate(); b.frame(2); }
-log('after E', JSON.stringify(b.pupDropS()));
+for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+const C = b.camera, HX = b.HOUSE_X, HY = b.HOUSE_Y, HZ = b.HOUSE_Z;
+b.elvLandSet(true); C.position.set(HX, HY + 1.8, HZ); b.camBaseY = C.position.y;
+for (let i = 0; i < 2500; i++) { b.frame(1); await sleep(15); if (b.houseWallsS() && b.pupDropS().pup && i > 60) break; }
+log('walls', b.houseWallsS(), '| puppet', b.pupDropS().pup);
+const fy = b.groundUnderS(HX, HZ, HY + 0.6);
+for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+  // the first wall out from the middle of the room
+  let r = 0.2; while (r < 6 && !b.pupDropWallS(HX, HZ, HX + dx * r, HZ + dz * r, fy + 0.12)) r += 0.05;
+  const x = HX + dx * (r - 0.12), z = HZ + dz * (r - 0.12);
+  const yaw = Math.atan2(dx, dz) + Math.PI / 2;                       // (laid along the wall's normal: his head into it)
+  for (const yw of [yaw - Math.PI / 2, yaw]) log('wall at', r.toFixed(2), 'm', dx, dz, '| laid', JSON.stringify(b.pupLayTestS(x, fy, z, yw)));
+}

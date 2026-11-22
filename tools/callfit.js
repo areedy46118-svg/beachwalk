@@ -3,7 +3,8 @@
  * to each shape in turn (16:9, 3:2, 4:3, 21:9 at one width), START, and the picture as the screen shows it ~12 s in (at the
  * desk), each scaled to one width so sizes compare. Run: PB_PORT=4251 PB_Q='&title=1' PB_WAIT=400 sh tools/probe.sh 'evalFile&f=/tools/callfit.js' <out> */
 const f = w.frameElement, Q = new URLSearchParams(location.search), AT = +(Q.get('at') || 12);
-const sizes = [[1280, 720, '16:9'], [1280, 853, '3:2'], [1280, 960, '4:3'], [1280, 549, '21:9']];
+// (&sizes=1280x536,1280x720: other shapes — the owner's own window is 2000 x 837, 2.39:1)
+const sizes = Q.get('sizes') ? Q.get('sizes').split(',').map((z) => { const [a, c] = z.split('x').map(Number); return [a, c, (a / c).toFixed(2) + ':1']; }) : [[1280, 720, '16:9'], [1280, 853, '3:2'], [1280, 960, '4:3'], [1280, 549, '21:9']];
 const tiles = [];
 for (const [W, H, lab] of sizes) {
   f.style.width = W + 'px'; f.style.height = H + 'px';

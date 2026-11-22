@@ -2277,6 +2277,7 @@ export function makeDrainageTunnelHome(opts = {}) {
      * bridge over it and what stands on the walks (`updateDrain`) */
     cis: {
       X0: CIS_X0, X1: CIS_X1, HZ: CIS_HZ, WALK: CIS_WALK, CH_Z0, CH_Z1, BRX: CIS_BRX, BRW: CIS_BRW,
+      SPRING: FLOOR_Y + CIS_SPRING, CROWN: FLOOR_Y + CIS_CROWN,     // (its vault: walls up to the springing, arched to the crown — the head's roof, `drainRoofAt`)
       props: [
         [CIS_X0 + 2.85, CIS_HZ - 0.8, CIS_X0 + 3.55, CIS_HZ - 0.1],     // the soft crate
         [CIS_X1 - 0.95, CH_Z1 + 0.8, CIS_X1 - 0.55, CH_Z1 + 1.2],       // the sluice's wheel post

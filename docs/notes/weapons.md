@@ -3145,3 +3145,27 @@ LIKE THE HOOK PULLS ME IN … A GOOD WAY TO MOVE FAST DONT MAKE IT TOO MUCH … 
   places a hit builds bleed (`hurtMutantAt`, and a hit on one the Artifact holds). Its description: "A Holy Blade · Bleed Build
   Up +0.6 Per Hit, +1 Per Heavy · A Bleed Burst Takes 17% Of Their Health"; the shop's line says it bleeds them too.
   `tools/katbleed.js`: a red mutant, a cut then a heavy — katana 0.60 / +1.02, Bloody Blade 1.00 / +1.70, toy shovel 0.
+- **The hook's regular heavy, handle in, point out, at one angle all through** ("the handle should be more inward towards the
+  player and hook poking out more straightforward when swung", then "should swing all the way through at the angle of this middle
+  screenshot"): the held pitch `HOOK_HEAVY_PITCH` −0.69, the fist `HOOK_HEAVY_IN` 0.1 nearer and the sweep `HOOK_HEAVY_YAW` 0.4
+  round — laid on the ARM after the pose (`hookHvK`): added to `_pose` they built up, `_pose` carries over between frames. Lift
+  0.18 puts the point through the crosshair again (`tools/hookheavyline.js`: ±0.02). And `hookHeavyFace`: measured, the iron
+  keeps one turn to the LENS through the sweep, so it looks different at each place across the picture (end-on right of the
+  middle, side-on at the left); it is turned with the sight line to it by how far that line has swung from the cut's sixth
+  frame (`HOOK_MID_RAY` 0.712, −0.101) — the angle between the hook's length and the sight line holds 36–42° all the way (it
+  ran 36→76°). TRAP: it must run AFTER `toolVM.quaternion.copy(_gQ)` — the grip's turn is written there every frame, and
+  set before it was simply overwritten (the angle did not move whatever its sign). `tools/hookheavy2.js` (`&grid=`, `&at=`).
+
+## 2026-11-21 (late): the hook and the gulls — tight
+"make the seagulls hit boxes with the chain more tight if i fling the hook at them it hits them when it looks like a miss".
+`magTrace` finds a gull by `isleBirdOnRay` with a ball of the bird's bounding radius (0.36–0.82 m: its spread wings) + 0.14
+— the gun's forgiveness, so a throw a metre past a big one landed. `hookThrow` now keeps a gull target only if
+`hookGullTight`: the line meets the bird's own triangles (a raycast on `B.m`) or passes within 12 cm of its middle; else the
+throw flies on. Measured (`tools/gullhook.js`, 12 gulls × 8 bearings): 10 cm off the middle 96/96 both; 20 cm 96 → 51,
+30 cm 96 → 22, 40 cm 96 → 6 (the 6 are lines really crossing a wing). The gun keeps the old ball.
+
+## 2026-11-22 — the katana had no model and no swing (a comment ate them)
+"the katana didnt spawn when i grabbed it from the statue": `katanaItem`'s `onDig: true, viewmodel: katanaVM,` sat inside the
+`// (its bleed …)` comment on the line before (since 2026-11-21, in HEAD) — taken, it was in the pack with nothing in the hand.
+Split onto their own line. Swept for the same thing (a trailing `//` with `key: value,` pairs after it): one more, the final
+boss's `body, lungeStop, landSlop, limbR, foeLimbR, closeBody, stopPick` (his "hits connect" tuning of 11-20) — put back.

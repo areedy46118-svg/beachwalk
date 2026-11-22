@@ -1715,3 +1715,80 @@ performance also see if we can get some more space but make sure nothing changes
   (his whole descent and 12 s of fight on the real clock): 0 frames over 25 ms.
 - Also: Skrim's hook into the beach's SAND WALL (`hookThrow`: the cliff's own mesh down the throw, `surface: 'sand'` —
   a thump and its sand, no clang; whale.md/weapons.md). `tools/hookcliff.js`: thrown at it from 5 m, stopped at 6.8 m.
+
+## 2026-11-21: nothing loads under the call
+
+"intro cutscene lags bad when starting fix this now nothing shhould ever lag": START GAME lit with the near beach in
+(`bootLeft`) and the far rest (the lighthouse island, castles, driftwood, throne, their textures and warms) loaded behind the call
+from its eighth second — 77 frames over 25 ms, worst 286 (`tools/callhitch.js &spans=1` names them). The title's gate is now
+`startLeft` (everything; ~5.5 s more on this machine: near at 10.6 s, all at 16.1) and `icHoldNow` holds for the whole call.
+After: 1 frame over 25 ms (29, after the call). Checkpoint loads (`instantStart`) keep the near gate.
+
+## 2026-11-22 — the cellar checkpoint (see beach.md): room 'cel' ranks only its own files near; far rest held while `inCel`
+`loadall.sh cel`: 4.6-4.8 → 3.84 s playable; 8 s after, max frame 145 → 20 ms.
+
+## 2026-11-22 — "run perfectly on all computers" (no quality settings: the owner turned that down)
+
+The owner: "do all those except 2 do not ruin the game … i just want it to run well on everything not have to choose
+quality settings". So nothing here is a setting and nothing changes the look.
+- **Room checkpoint loads**: a checkpoint in a cut room (`BW_CUT_ROOMS`: keep tav uc dojo cat bunker whale deep cel tmp sewer
+  dun thr) ranks every file not in its `ROOM_FILES`/`PACK_FILES` at ≥ `BOOT_NEAR + 1`, so the room's own files and the pack's
+  come first, and `bwInCutRoom()` joins `bwHoldHere` — the far rest waits while you are in that room (`bwUnitNeeds(url)` lets a
+  file through when a unit within 100 m is still waiting for its model). Before → after, s playable (`loadall.sh`):
+  sewer 5.19→3.93, dun 4.97→3.52, cat 5.46→4.56, keep 6.47→5.72, dojo 4.69→4.05, whale 4.83→4.26, thr 4.81→4.33,
+  tav 7.53→7.20, bunker 7.26→7.01 (those two are near files + look-warm + settle; see their `LT_Q='&tl=1'` timelines).
+- **People already there** ("I HATE SEEING THE PEOPLE SPAWN IN"): `castGateHere(r)` after every walk-in placement holds the
+  cut's black (`castGate`, up to `CAST_WAIT_MAX` 5 s) until `castLoading(x, z, r)` says every unit in reach has its model and
+  clips, then fades 0.35 s; the tavern and the fort/C13 also pre-place (`castHold`). `tools/castrooms.js`: every room whole
+  in 0.03-0.80 s (fort 3.1 s on a fresh game).
+- **Texture cap** `TEX_CAP = 2048` (`bwCapTextures` in `bwGlb`): a map bigger than that is redrawn at 2048 — at 0.62 retro
+  scale no texel of a 4k map is ever seen.
+- **Draws** (`tools/trisdeep.js &w=45000&dep=3`: in-frustum meshes by top group and name path; `tools/mushdraws.js`: a group's
+  draws by material). One scene render at beach −600 was 278 calls / 552k tris: the pavilion 138 of them (90 materials, one draw
+  each after its bake, but the gate's 24 bars and 19 crack decals unmerged — the gate pivot is kept out of the bake for its
+  swing, the cracks were added after it) and the bunker hatch 61 (rivets, bolts, slabs, never baked). Now `bakeStatic` on the
+  gate's leaf, on `crackG` (renderOrder 1 put back on the merged mesh), on `hatchLid` and on `hatch` round the lid:
+  **185 calls**, same triangles. Each prop that swings is baked IN its pivot, never across it.
+- **Rooms** (`tools/drawsat.js &rooms=tav,thr&zs=-300`; note `clearRoomFlags` in a probe does NOT hide the room it leaves, so a
+  room visited earlier shows in the next one's count — not so in the game, where every exit hides its world):
+  - the tavern's two doors were 126 + 60 draws (every plank, strap and nail): `bakeStatic(G, …, { named, ghost, like })`
+    in each door's own frame — `opts.like` gives the merged mesh the pieces' name / `frustumCulled` / ghost, `opts.ghost`
+    lets a `bwGhost` leaf be baked (the store door's hinge is a ghost so the wall index never holds it);
+  - breakables (`tavPiece`: pieces are index subsets over one source mesh's shared attributes) — `furnWhole(grp, pieces)`
+    draws each standing thing as ONE extra geometry over the same buffers with the pieces' indices end to end (nothing
+    copied), hides the pieces (the smash reads their geometry and boxes, never `visible`; a ray still finds them, the whole
+    has a no-op `raycast`), and the whole leaves with the group when it breaks. Tavern tables, throne-room chairs, tables
+    and what stands on them (`F.items`).
+  Tavern 463 → 278 calls, throne room 293 → 145. `tools/furnwhole.js`: a table and a chair whole, then smashed — 91 gibs as
+  before, the group gone, stills alike.
+- **Animation is not the cost**: `tools/mixcost.js` timed every `AnimationMixer.update` — 0.01-0.25 ms a frame anywhere (beach
+  −900 the worst, five mixers). A half-rate rule for far units would save a tenth of a millisecond and make them step; not done.
+  The bone work is in the render (skeleton update), and `cullUnitModels` already hides every mutant outside the view.
+- **Memory — the decoded images** (`imgRel`, the biggest thing there was for a small machine). `tools/memexp.js` with `ps` on
+  the headless Chrome's processes (the sampler loop: `ps -axo rss,command | grep "$OUT/prof"`, `--type=renderer` and
+  `--type=gpu-process` summed, a `MARK` logged at each stage): at the beach after the far rest the PAGE was 5.2 GB (JS heap
+  only 1.0), GPU 2.2; with every room 6.8 + 2.9. Every GLB map's ImageBitmap stays whole in the page after three uploads it:
+  closing them took the page 5.2 → 3.1 GB. Closing outright is unsafe — readers of a model's map after load
+  (`gargCrackStep`, `minoMakeLids`, `tmpMapMean`, `buildKeepLights` on the sail over, the game's `texReady`) and any second
+  upload (a clone with other filters, a `needsUpdate`) would get a dead bitmap and draw black. So `bwCapTextures` registers
+  each ImageBitmap map ≥ `IMG_REL_MIN` (512) and chains `onUpdate` to stamp its first upload; `imgRelTick` (in `animate`,
+  ≤ 2 in flight, every 250 ms) swaps it `IMG_REL_WAIT` (20 s) after that for a HALF-size copy made by `createImageBitmap`'s
+  resize (off the main thread) and closes the full one. The GPU copy is untouched — nothing drawn changes; a reader gets a
+  real image (they all shrink to ≤ 512 anyway); a re-upload would be half as sharp, never black, and is counted
+  (`imgRel.reup`). The keep's 'Fortress' map is exempt (`IMG_REL_KEEP`). Every other reader runs inside its model's own
+  load, before any upload (`thrGrade`, the isle's stairs, the well). `tools/memrel.js`, every room: 824 swapped, 2.2 GB
+  freed, reup 0, no WebGL error; page 6.8 → 3.9 GB, GPU 2.9 → 1.95 (the crab's cap too). `tools/relfps.js`: real rAF
+  through the swaps, 0 frames over 50 ms, max 17 — the same as with it off (`&off=1`, `__bw.imgRelOn(false)`).
+- **The crab's maps were 4096** (`crab.glb` parses outside `bwGlb`, so it skipped the cap; the mutants' own parses too).
+  Both cap now: 270 MB of GPU for one crab. `tools/bigtex.js` lists anything still over `TEX_CAP`.
+- `bwGot` (every downloaded GLB, inflated, kept for re-parses: crabs, mutants, limule copies) is 365 MB over 108 files.
+  Letting it go saves 0.4 GB, but a unit spawned later would download again under the room holds — left as it is.
+- Two headless runs died ~20 s in with no log of their own (one a context loss → `reloadInto` after 4 s); the same probe
+  then ran clean twice, and the swap ran cleanly on its own for 87 s (`tools/relrun.js`). If it recurs, look there first.
+- A WebGL `glDrawElementsInstanced: Vertex buffer is not big enough` fires twice at every boot, from before any of this
+  (in the first probe of the day): some InstancedMesh's `count` is past its buffer. Not chased.
+- Checkpoint loads after all of it (`loadall.sh`): beach-60 4.98, -300 4.56, -600 4.39, -900 4.48, -1000 4.82, bunker 7.08,
+  uc 5.28, sewer 3.58, dun 4.02, dojo 4.10, cat 4.72, whale 4.17, keep 5.78, tav 7.10, fort 5.79, c13 4.65, thr 4.34, deep
+  4.98, tmp 4.25, cel 3.95. Every held room: 0 frames over 50 ms in the 8 s after; the beach still has its far parses
+  (beach-900: 7 over 50 — dressing skrim.glb 61 ms, church.glb 47).
+

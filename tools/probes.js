@@ -8165,6 +8165,7 @@ export async function pipeReach({ w, b, log, sleep }) {
       const br = R.br ? R.br.g.gain.value.toFixed(3) : '-';
       log('t', (f / 60).toFixed(2), 'p', R.p.toFixed(2), 'done', R.done, 'grab', R.grab.toFixed(2), 'breath gain', br, 'peeking', b.peeking, 'taken', b.screwdriverTaken, 'fov', C.fov.toFixed(1));
     }
+    if (Q.get('sd') && f >= 300 && f <= 372 && f % 6 === 0) { const sd = b.scene.getObjectByName('screwdriver'); const pv = sd ? sd.getWorldPosition(new T.Vector3()).project(C) : null; const ru = b.pipeHandS().material.uniforms.reach.value; log('SD f', f, 'grab', R.grab.toFixed(2), '| screwdriver', sd ? (sd.visible ? 'shown' : 'hidden') + ' parent ' + (sd.parent ? sd.parent.name || sd.parent.type : 'none') + ' ndc ' + pv.x.toFixed(2) + ',' + pv.y.toFixed(2) + ' z ' + (-sd.getWorldPosition(new T.Vector3()).applyMatrix4(C.matrixWorldInverse).z).toFixed(3) : 'none', '| reach', ru.toArray().map((v) => v.toFixed(2)).join(',')); }
     if ((Q.get('at') ? Q.get('at').split(',').map(Number) : [45, 120, 210, 285, 302, 318, 330, 342, 354, 366]).includes(f)) grab('t ' + (f / 60).toFixed(2) + ' p ' + R.p.toFixed(2) + ' g ' + R.grab.toFixed(2) + (b.pipeHandS && b.pipeHandS().visible ? ' arm' : ''));
   }
   down(false);

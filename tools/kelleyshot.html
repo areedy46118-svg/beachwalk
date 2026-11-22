@@ -1,0 +1,102 @@
+<!doctype html><meta charset="utf-8"><title>kelley</title>
+<!-- THE BASEMENT OF 813 KELLEY ROAD, LOOKED AT (2026-11-21, the owner: the cellar door behind Elvédor's house into this model's
+     basement). Not part of the game. ?src=<gltf> (default the raw download in incoming/kelley), ?mode=plan (the basement from
+     above, every part numbered and listed by its name) or ?mode=views&v=x,y,z,lx,ly,lz;… (eye views, model units), ?hide=a,b
+     (parts left out by name fragment), ?y0=-300 (the plan's cut height). Prints `[KS]` lines and draws the result to the page.
+     headless: chrome --headless=new --screenshot=out.png --window-size=1600,1000 --virtual-time-budget=20000 URL -->
+<style>html,body{margin:0;background:#111;color:#ddd;font:11px monospace}canvas{display:block}#lab{position:absolute;left:0;top:0;pointer-events:none}</style>
+<script type="importmap">{ "imports": { "three": "../vendor/three/three.module.js", "three/addons/loaders/GLTFLoader.js": "../vendor/three/GLTFLoader.js" } }</script>
+<canvas id="c"></canvas><canvas id="lab"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const Q = new URLSearchParams(location.search), MODE = Q.get('mode') || 'plan', Y0 = +(Q.get('y0') || -300);
+const HIDE = (Q.get('hide') || '').split(',').filter(Boolean), ONLY = (Q.get('only') || '').split(',').filter(Boolean);
+const W = innerWidth, H = innerHeight, cv = document.getElementById('c'), lab = document.getElementById('lab');
+cv.width = W; cv.height = H; lab.width = W; lab.height = H;
+const R = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true }); R.setSize(W, H, false);
+const sc = new THREE.Scene(); sc.background = new THREE.Color(0x181818);
+sc.add(new THREE.AmbientLight(0xffffff, 1.6)); const dl = new THREE.DirectionalLight(0xffffff, 1.5); dl.position.set(1, 3, 2); sc.add(dl);
+const g = await new GLTFLoader().loadAsync(Q.get('src') || '../incoming/kelley/scene.gltf');
+const root = g.scene; sc.add(root); if (Q.get('nometal')) root.traverse((o) => { if (o.material) o.material.metalness = 0; });
+if (Q.get('flat')) root.traverse((o) => { if (o.material) { o.material.flatShading = true; o.material.needsUpdate = true; } });
+if (Q.get('pose')) {   // a few joints bent, to see the weights: ?pose=1
+  const B = {}; root.traverse((o) => { if (o.isBone) B[o.name] = o; });
+  const r = (n, x, y, z) => { const b = B['Character1_' + n]; if (b) b.rotateX(x), b.rotateY(y), b.rotateZ(z); };
+  r('LeftArm', -0.9, 0, 0.5); r('LeftForeArm', -1.2, 0, 0); r('RightUpLeg', -0.9, 0, 0); r('RightLeg', 1.3, 0, 0); r('Head', 0, 0.6, 0.2); r('Spine', 0.3, 0, 0);
+  console.log('[KS] bones ' + Object.keys(B).length);
+}
+root.updateMatrixWorld(true); root.updateMatrixWorld(true);
+const parts = []; { const bb = new THREE.Box3().setFromObject(root); console.log('[KS] bounds ' + bb.min.toArray().map((v) => v.toFixed(2)) + ' .. ' + bb.max.toArray().map((v) => v.toFixed(2))); }
+root.traverse((o) => { if (!o.isMesh) return; if (HIDE.some((h) => o.name.includes(h)) || (ONLY.length && !ONLY.some((h) => o.name.includes(h)))) { o.visible = false; return; } const b = new THREE.Box3().setFromObject(o); parts.push({ o, b }); });
+const out = [];
+if (MODE === 'ortho') { // ?mode=ortho&ext=0.6&cy=0.5: front (+z) and side (+x) orthographic, a grid every 0.05 with labels every 0.1
+  const ext = +(Q.get('ext') || 0.6), cy = +(Q.get('cy') || 0.5), hw = W / 2;
+  R.setScissorTest(true);
+  [[0, 0, 5], [5, 0, 0]].forEach(([cx, _, cz], i) => {
+    const cam = new THREE.OrthographicCamera(-ext * hw / H, ext * hw / H, ext, -ext, 0.01, 50);
+    cam.position.set(cx, cy, cz); cam.lookAt(0, cy, 0); cam.updateMatrixWorld(true);
+    R.setViewport(i * hw, 0, hw, H); R.setScissor(i * hw, 0, hw, H); R.render(sc, cam);
+  });
+  const x2 = lab.getContext('2d'); x2.font = '11px monospace';
+  for (let i = 0; i < 2; i++) for (let v = -2; v <= 2.001; v += 0.05) {
+    const k = Math.round(v * 100) % 10 === 0;
+    const px = i * hw + hw / 2 + v * (H / 2) / ext, py = H / 2 - (v) * (H / 2) / ext;
+    x2.strokeStyle = k ? 'rgba(255,255,0,0.45)' : 'rgba(255,255,255,0.12)';
+    x2.beginPath(); x2.moveTo(px, 0); x2.lineTo(px, H); x2.stroke();
+    x2.beginPath(); x2.moveTo(i * hw, py); x2.lineTo(i * hw + hw, py); x2.stroke();
+    if (k) { x2.fillStyle = '#ff0'; x2.fillText(v.toFixed(1), px + 2, 12); x2.fillText((v + cy).toFixed(1), i * hw + 2, py - 2); }
+  }
+} else if (MODE === 'treads') { // the up-facing faces of the named meshes, grouped by height: where one can stand
+  const B = {}, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), n = new THREE.Vector3();
+  for (const p of parts) { if (!p.o.visible) continue; const g = p.o.geometry, P = g.attributes.position, I = g.index;
+    const cnt = I ? I.count : P.count;
+    for (let t = 0; t < cnt; t += 3) { const ix = (k) => (I ? I.getX(t + k) : t + k);
+      a.fromBufferAttribute(P, ix(0)).applyMatrix4(p.o.matrixWorld); b.fromBufferAttribute(P, ix(1)).applyMatrix4(p.o.matrixWorld); c.fromBufferAttribute(P, ix(2)).applyMatrix4(p.o.matrixWorld);
+      n.subVectors(b, a).cross(c.clone().sub(a)).normalize(); if (n.y < 0.95) continue;
+      const k = p.o.name.slice(0, 14) + ' y' + Math.round((a.y + b.y + c.y) / 3 / 5) * 5;
+      const q = B[k] || (B[k] = [1e9, -1e9, 1e9, -1e9]);
+      for (const v of [a, b, c]) { q[0] = Math.min(q[0], v.x); q[1] = Math.max(q[1], v.x); q[2] = Math.min(q[2], v.z); q[3] = Math.max(q[3], v.z); } } }
+  for (const k of Object.keys(B).sort()) out.push(k + ' x ' + B[k][0].toFixed(0) + '..' + B[k][1].toFixed(0) + ' z ' + B[k][2].toFixed(0) + '..' + B[k][3].toFixed(0));
+} else if (MODE === 'plan') {
+  // the basement alone: everything whose top is under the cut, the ceiling and the floor above left out
+  const bas = parts.filter((p) => p.b.max.y < Y0 + 1 && !/ceiling/i.test(p.o.material.name || ''));
+  for (const p of parts) p.o.visible = bas.includes(p);
+  const B = new THREE.Box3(); for (const p of bas) B.union(p.b);
+  const c = B.getCenter(new THREE.Vector3()), s = B.getSize(new THREE.Vector3()), k = Math.max(s.x / W, s.z / H) * 1.04;
+  const cam = new THREE.OrthographicCamera(-W / 2 * k, W / 2 * k, H / 2 * k, -H / 2 * k, 1, 10000);
+  cam.position.set(c.x, B.max.y + 500, c.z); cam.up.set(0, 0, -1); cam.lookAt(c.x, B.min.y, c.z); cam.updateMatrixWorld(true);
+  R.render(sc, cam);
+  const x2 = lab.getContext('2d'); x2.font = '11px monospace'; x2.textAlign = 'center';
+  bas.forEach((p, i) => {
+    const m = p.b.getCenter(new THREE.Vector3()).project(cam), sx = (m.x + 1) / 2 * W, sy = (1 - m.y) / 2 * H;
+    x2.fillStyle = '#000'; x2.fillText(i, sx + 1, sy + 1); x2.fillStyle = '#ff0'; x2.fillText(i, sx, sy);
+    out.push(`${i} ${p.o.name} [${p.o.material.name}] x ${p.b.min.x.toFixed(0)}..${p.b.max.x.toFixed(0)} y ${p.b.min.y.toFixed(0)}..${p.b.max.y.toFixed(0)} z ${p.b.min.z.toFixed(0)}..${p.b.max.z.toFixed(0)}`);
+  });
+  out.push(`plan x ${B.min.x.toFixed(0)}..${B.max.x.toFixed(0)} z ${B.min.z.toFixed(0)}..${B.max.z.toFixed(0)} (up the picture is -z)`);
+} else {
+  // eye views, side by side
+  const V = (Q.get('v') || '0,-700,0,0,-700,-400').split(';').map((s) => s.split(',').map(Number));
+  const n = V.length, cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols), tw = Math.floor(W / cols), th = Math.floor(H / rows);
+  const cam = new THREE.PerspectiveCamera(+(Q.get('fov') || 70), tw / th, +(Q.get('near') || 1), 20000);
+  R.setScissorTest(true);
+  V.forEach(([x, y, z, lx, ly, lz], i) => {
+    const ox = (i % cols) * tw, oy = H - (Math.floor(i / cols) + 1) * th;
+    R.setViewport(ox, oy, tw, th); R.setScissor(ox, oy, tw, th);
+    cam.position.set(x, y, z); cam.lookAt(lx, ly, lz); cam.updateMatrixWorld(true); R.render(sc, cam);
+    if (Q.get('pick')) { // what each part of the view is: a 7×5 grid of rays, the nearest mesh at each
+      const rc = new THREE.Raycaster(), seen = [];
+      for (let gy = 0; gy < 5; gy++) { const row = [];
+        for (let gx = 0; gx < 7; gx++) { rc.setFromCamera(new THREE.Vector2(-0.9 + gx * 0.3, 0.8 - gy * 0.4), cam);
+          const h = rc.intersectObjects(root.children, true).find((q) => q.object.visible);
+          row.push(h ? h.object.name.replace(/_[a-z0-9]+_0$/i, '') + '@' + h.point.toArray().map((v) => v.toFixed(0)).join(',') : '-'); }
+        out.push('view ' + i + ' row ' + gy + ': ' + row.join(' | ')); }
+    }
+  });
+  const x2 = lab.getContext('2d'); x2.font = '13px monospace'; x2.fillStyle = '#ff0';
+  V.forEach((v, i) => x2.fillText(i + ': ' + v.join(','), (i % cols) * tw + 6, Math.floor(i / cols) * th + 16));
+}
+for (const l of out) console.log('[KS] ' + l);
+console.log('[KS] DONE');
+document.title = 'done';
+</script>

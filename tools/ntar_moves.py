@@ -99,6 +99,17 @@ WONG_CLIPS = [
     # flying kick is the one blow of his that comes off the ground.
     ('Ginga Sideways To Au',  'ginga',   'the rocking step, sideways, up onto his hands', ''),
     ('Flying Kick',           'wFlyC',   'off the ground, both feet', ''),
+    # ---- (2026-11-22, the owner: "give the marionette this look around when he comes out of the washer": he wears this pack,
+    # `celMarMocap`, so it rides here)
+    ('Nervously Look Around', 'lookAround', 'the marionette out of the washer, looking round him', ''),
+    # (and the same day: "give the other puppets this run not the marionette" — the workshop's, `MUT_KINDS.cpup` as `mMRun`)
+    ('Mutant Run',            'mutantRun',  'the workshop puppets\' run, hunched and fast', ''),
+    # (and: "when you come back from the water section have the marionette laying on the beach and he gets up like this")
+    ('Situp To Idle',         'situp',      'the marionette up off the sand when you are back from the deep', ''),
+    # ("the puppet laying on the workshop desk should be in this pose")
+    ('Sleeping Idle',         'sleep',      'the workshop puppet lying on the workbench', ''),
+    # ("make this a marionettes idle stance")
+    ('Old Man Idle',          'oldIdle',    'the marionette standing: an old man\'s stoop', ''),
 ]
 DRUNK_CLIPS = [
     ('drunk idle',                'idle',     'swaying', 'Male Drunk Pack'),

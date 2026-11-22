@@ -1459,3 +1459,15 @@ counts every half second), the talk opening at 1.52 m.
   (`kind: 'cry'`), nearer wins: `magRoundHits` / the shotgun's pellet loop / `hookBite` kill it (`cryKill`) and the round stops
   in it. `tools/crabvox.js &gun=1`: a round at a crab on the chain — trace 'cry', the head dead, his hp 98 → 98; his hurt only
   on the control hit.
+
+## 2026-11-22 — Skrim's voice from where he is, near and far; the gut's echo by distance
+"skrims audio need to match where he is to you more his direction audio is bad. he should sound close if he is close and mesh
+all audio in the wahale better".
+- **THE EAR**: his voice is placed in the VIEW's frame (listener at the origin facing −Z) — and `sewListen` moves the one
+  listener to your world position and facing every frame in the sewer and never puts it back. After the sewer every line of his
+  came from wherever it left the ear. `earAtView` resets it each frame he speaks (not in the sewer).
+- **NEAR LAW** `voxNear(R, d)`: `(0.5 / (2/ref)^0.6) · (2/max(2,d))^0.6` — equal to the old `1/(1+d/ref)` at d = ref, +5 dB
+  at 2 m, the same past 14. `tools/skrimvoxdir.js`: ahead/left/behind/right right; 4.7 m 3.08, 20 m 1.31.
+- **DISTANCE WET** `whaleWet`/`whaleWetK`: every `playSampleAt` and his voice also feed the gut's verb (`whaleVerb.hp`) by
+  distance: 0 at 2 m → 0.8 at 22 (smoothstep), on top of the bus's even send. Guarded on `whaleVerb` first (`inWhale` is
+  declared at ~70600; `playSampleAt` runs long before).

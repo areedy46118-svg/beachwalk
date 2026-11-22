@@ -1313,3 +1313,38 @@ the grip, tried first, put the near bar across his wrist. `pipeReach` probe stil
   `UVR` 0.17 (the lair's `rate`). **Any box added to the sewer kit needs metric UVs** — `bake` keeps whatever the geometry
   brings. Probe: `sewUV&mat=<name>` (metres per UV on a material's faces; `&mat=` alone lists them all) and
   `&pick=lx,ly,lz,dx,dy,dz` (what a ray hits in the sewer's frame, its material and uv).
+
+## 2026-11-21: the reach's trims, the screwdriver in the fist, the way in sounds like the church's tunnel, the roof
+
+- **Just hand and arm**: the clip's first two frames (14, 15) were his hand at rest round the thing he had been holding, and the
+  cut kept what showed in the gap between thumb and fingers (a white scrap, a gold-brown thing off the table). The reach
+  starts at 16 (`pipe_hand_pack.py` FIRST). A colour test for "not skin, not sleeve" was tried and dropped: it ate the sleeve's
+  highlights in the later frames and missed the white.
+- **The screwdriver held, not through the hand**: out, the hand stays closed (`nC`) and drops away (the reach played backward
+  opened the fingers round a screwdriver still coming toward the lens). It is brought from its own depth to 0.45 m over the
+  first 35 % of the pull — through the grate with the fist, the bars no longer in front of it — and SCALED by that nearness
+  (`PRH.hold.s0 × z / hold.z`) so it keeps its size in the fingers (the sprite does not grow; a screwdriver that did came
+  out bigger than the fist and through it); its own size back as it is stowed. His fingers' depth follows it a hair in front
+  (`reach` set from its projection, z − 0.03); in the reach in, the fingers are 3 cm before its depth too.
+  `tools/probes.js pipeReach &sd=1` logs its place and the reach each 6 frames.
+- **Footsteps**: `sfxStepDrain` is `sfxStepSewer` — the church's eleven (the walks had them since 11-17; the drainage tunnel in
+  still played the synthesised sand step). `tools/drainsteps.js`: sand outside, `churchStep` from the mouth on.
+- **The roof**: a jump put the top of the head ~2.55 m up, into the pipe's curve (axis 1.16, r 1.42) and the culvert's vault
+  (springing 2.2, crown 3.05 — `cis.SPRING`/`CROWN`). `drainRoofAt` is the drain's shape; the roof clamp's `insideDrain`
+  branch stops the eye 0.22 under it, as the church tunnel's and the tavern's do.
+
+## 2026-11-22 — real wood and steel on the bridges and the steel door; the door clear of its jamb; the funnels nudge
+- "give these bridges realistic wood textures they look ai generated" / "give this door realistic metal textures too and make
+  sure it doent clip through the wall": the deck was the tavern's drawn plank, the steel flat colour. Now photographs as the
+  kit's walls are: `assets/sewer-tex/wood-boards.jpg` (256², from the bedroom's Wood_021, CC-BY jimbogies), the kit's own
+  `Metal.jpg` on the channels, rails, posts and the door, laid in METRES (`uvMetres`, `METAL_M` 0.9), all in `sewP.lift`.
+- **The door's leaf is a mapped kit surface now, and `sewLightPass` discards every mapped kit surface inside the doorway's cut
+  (`sewP.hole`)** — it vanished shut. `steelD.userData.noHole`.
+- **The clip**: hinged on the opening's west edge and swung 1.62 rad, the open leaf lay half its thickness (and 3° more) inside
+  the brick jamb's reveal. The pivot is `HI` 4.5 cm into the opening (the shut leaf covers the same span) and
+  `SEW_DOOR2_OPEN` is π/2 − 0.015: its back face 1.5 cm off the passage wall.
+- **"turning corners … i get shifted around a corner really fast like im being pull … in the door ways and the bridges"**: each
+  funnel in `sewClamp` set the offset from the way's line to 0.6-0.82 of itself EVERY FRAME. `toLine`: only the part past the
+  way's half-width, and at most 0.6 of this frame's step. `tools/sewpull.js` (both bridges and the side door at slants, by the
+  keys): every frame's move ≤ 0.042 m, an ordinary step; all reached.
+- `tools/sewwood.js`: stills (bridges, the door shut, open from inside and out; `__sw.light(true)` to see the materials).

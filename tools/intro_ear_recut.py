@@ -45,6 +45,36 @@ def phone_at(i):
     return np.float32(PHONE[ks[-1]])
 
 
+def gc_refine(im, hand, gl):
+    """THE FINGERS BY EACH FRAME'S OWN COLOURS (2026-11-22, the owner: "fix the fingers on the phone in the start cutscene they
+    are all messed up and the trims are bad"). The skin-hue cut above tore his fingers (the wood is as warm, the blurred edge
+    as pale as the paper): holes, loose bits, a ragged lump over the glass. GrabCut, seeded by it, learns this frame's skin, wood,
+    paper and rug and draws the line between them: sure-hand where the hue cut is solid, sure-not-hand far from him and on the
+    left of the picture, the rest for it to decide. Run at half size, the answer smoothed back up."""
+    H, Wd = hand.shape; s = 0.5
+    sm = cv2.resize(im, (int(Wd * s), int(H * s)), interpolation=cv2.INTER_AREA)
+    hs = cv2.resize(hand.astype(np.uint8), sm.shape[1::-1], interpolation=cv2.INTER_NEAREST) > 0
+    gs = cv2.resize(gl.astype(np.uint8), sm.shape[1::-1], interpolation=cv2.INTER_NEAREST) > 0
+    m = np.full(hs.shape, cv2.GC_BGD, np.uint8)
+    near = nd.binary_dilation(hs | gs, iterations=45)
+    m[near] = cv2.GC_PR_BGD
+    m[nd.binary_dilation(hs, iterations=4)] = cv2.GC_PR_FGD
+    m[nd.binary_erosion(hs, iterations=7)] = cv2.GC_FGD
+    m[nd.binary_erosion(gs, iterations=12)] = cv2.GC_FGD                 # (the glass: his, whatever shows through it)
+    m[:, :int(m.shape[1] * 0.3)] = cv2.GC_BGD
+    if not (m == cv2.GC_FGD).any(): return hand
+    bg, fg = np.zeros((1, 65), np.float64), np.zeros((1, 65), np.float64)
+    cv2.grabCut(cv2.cvtColor(sm, cv2.COLOR_RGB2BGR), m, None, bg, fg, 6, cv2.GC_INIT_WITH_MASK)
+    out = (m == cv2.GC_FGD) | (m == cv2.GC_PR_FGD)
+    out = cv2.GaussianBlur(cv2.resize(out.astype(np.float32), (Wd, H), interpolation=cv2.INTER_LINEAR), (0, 0), 2.5) > 0.5
+    out = nd.binary_fill_holes(out | gl) & ~gl | (out & gl & nd.binary_dilation(hand, iterations=6))
+    lb, n = nd.label(out | gl)
+    if n > 1:
+        sz = nd.sum(out | gl, lb, range(1, n + 1)); big = 1 + int(np.argmax(sz))
+        out &= lb == big                                                  # (one piece: him and the phone; nothing loose)
+    return out
+
+
 def cut(i):
     """frame i at full size: the glass (hand-marked, filled dark from the clip's own pixels — his bezel and the reflections
     stay), and his hand over it and under it (skin, joined to the glass or to the clip's edge)"""
@@ -75,11 +105,32 @@ def cut(i):
     grow = nd.binary_closing(grow, iterations=18); grow[:int(q[3][1]) - 220] = hand[:int(q[3][1]) - 220]   # (the closing only where the palm is)
     hand = nd.binary_fill_holes(grow)
     hand = nd.binary_opening(hand, iterations=3)
+    # (CLEAN TRIMS — 2026-11-21, the owner: "improve how its picked up too with better trims": his fingers over the glass's top came
+    #  out as loose pink blobs with the room showing between them and the phone, and ragged. A finger touching the glass is
+    #  joined to it — the gap closed only where both sides are his hand or the glass, never out into the room — the outline is
+    #  smoothed at full size (a blur cut at half), and what is left lying loose (under a fingertip's size) goes.)
+    gl = glassA > 0.5
+    hand = gc_refine(im, hand, gl)
+    bridge = nd.binary_closing(hand | gl, iterations=9) & ~gl & nd.binary_dilation(hand, iterations=9)
+    hand = hand | bridge
+    hand = cv2.GaussianBlur(hand.astype(np.float32), (0, 0), 3.0) > 0.5
+    lb3, n3 = nd.label(hand | gl)
+    if n3 > 1:
+        sz3 = nd.sum(hand | gl, lb3, range(1, n3 + 1))
+        keep = np.isin(lb3, [1 + j for j in range(n3) if sz3[j] >= 2500])
+        hand &= keep
     handA = cv2.GaussianBlur(hand.astype(np.float32), (0, 0), 1.5)
-    # the glass: the clip's own pixels, darkened and drained (as the packer's glass, with its bezel and lights left in)
-    neu = (lum * 0.32 + 0.035)[..., None] * np.array([0.92, 0.97, 1.06], np.float32)
-    dark = neu * 0.82 + f * 0.36 * 0.18
-    col = f * handA[..., None] + dark * (1 - handA[..., None])
+    # the glass: the clip's own light through it, drained of every colour and pressed flat — the table behind it (the paper,
+    # the red book) read through as orange chips and white blocks (2026-11-22, the owner: "the trims are bad"); a soft dark
+    # slab with only the faint shapes left, and his finger behind it where the cut above says he is
+    lb_ = cv2.GaussianBlur(lum, (0, 0), 6)
+    neu = (lb_ * 0.13 + 0.035)[..., None] * np.array([0.92, 0.97, 1.06], np.float32)
+    dark = neu
+    # (what is seen THROUGH the glass — the finger behind it, and the red book behind that on the first frames — is the glass's:
+    # darker and drained, as the real tint makes it; only his hand outside it keeps the clip's own colour)
+    thru = (cv2.GaussianBlur(glassA, (0, 0), 2) * (1 - cv2.GaussianBlur((hand & ~gl).astype(np.float32), (0, 0), 2)))[..., None]
+    fg_ = f * (1 - thru) + (lum[..., None] * 0.6 + f * 0.4) * 0.6 * thru
+    col = fg_ * handA[..., None] + dark * (1 - handA[..., None])
     a = np.maximum(glassA, handA)
     return a, np.clip(col * 255, 0, 255).astype(np.uint8)
 

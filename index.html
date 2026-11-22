@@ -145,7 +145,7 @@
   }
   #overlay .start:hover, #overlay .start:focus-visible { text-shadow: 0 0 12px rgba(255,255,255,0.45); outline: none; }
   #overlay.starting .start { opacity: 0; pointer-events: none; }
-  #overlay .start.loading { opacity: 0.8; cursor: default; pointer-events: none; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 0, 0, 0.9); font-size: clamp(3.4rem, 7vw, 6.2rem); letter-spacing: 0.22em; text-indent: 0.22em; }   /* (way bigger — 2026-11-21, the owner: "MAKE THE LOADING PERCENTAGE IN THE START BE WAY BIGGER"; it was 0.78 of START GAME at 0.55) */
+  #overlay .start.loading { opacity: 0.8; cursor: default; pointer-events: none; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.7), 0 0 18px rgba(0, 0, 0, 0.9); }   /* (START GAME's own size and spacing — 2026-11-21, the owner: "make the loading text the same size as start game"; it had been made bigger, clamp(3.4rem, 7vw, 6.2rem) at 0.22em) */
   #overlay .start { transition: opacity 1.2s ease; }
   /* the load, hidden: one hairline along the foot of the black, gone when the game is ready */
   #bootbar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(255,255,255,0.04); transition: opacity 1.2s ease; }
@@ -749,7 +749,7 @@
        in it was a fixed pixel count picked on a laptop: on a 2000 px window the line was 16 px in a 660 px column, a
        caption under the picture. Everything below is in em off this: ~21 px on a 2000 x 840 window, ~18 on a 1440
        laptop, never under 16. */
-    font-size: clamp(16px, calc(0.62vw + 0.55vh + 4px), 26px);
+    font-size: clamp(18px, calc(0.70vw + 0.62vh + 4.5px), 29px);   /* (a little bigger, 2026-11-22: "make dialog text a little bigger not too much" — about an eighth) */
     /* and its words cannot be selected: a click-drag or a double click on a line painted it the browser's blue
        (2026-10-16, the owner: "my dialog with the dealer was highlighted for some reason") */
     user-select: none; -webkit-user-select: none;
@@ -1116,16 +1116,16 @@
     margin-top: 1.4rem;
   }
   #invpanel .rings .rlabel {
-    font-size: 0.9rem;
+    font-size: 1.08rem;   /* (0.9, and the circles 84 px: a little bigger, 2026-11-22 — "make ring section bigger in the pack just the circles and text dont make it too big") */
     letter-spacing: 0.34em;
     text-transform: uppercase;
     color: #ffffff;
   }
-  #invpanel .rings .rslots { display: flex; gap: 12px; }
+  #invpanel .rings .rslots { display: flex; gap: 14px; }
   #invpanel .rings .rslot {
     position: relative;
-    width: 84px;
-    height: 84px;
+    width: 100px;
+    height: 100px;
     border: 1px solid rgba(255, 255, 255, 0.22);
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.55);
@@ -1218,6 +1218,29 @@
     letter-spacing: 0.2em;
     color: rgba(255, 255, 255, 0.4);
   }
+  /* ---- THE ENEMY LOG (2026-11-22): the switch in the pack's head, and the page it opens ---- */
+  #invpanel h2 { display: flex; gap: 1.6rem; align-items: baseline; }
+  #invpanel .pk-tab { all: unset; cursor: pointer; letter-spacing: 0.4em; text-transform: uppercase; font-size: 0.9rem; color: rgba(255, 255, 255, 0.45); padding-bottom: 3px; border-bottom: 2px solid transparent; }
+  #invpanel .pk-tab:hover { color: rgba(255, 255, 255, 0.8); }
+  #invpanel .pk-tab.on { color: #ffffff; border-bottom-color: rgba(255, 255, 255, 0.75); }
+  #invpanel .elog { display: none; grid-template-columns: minmax(220px, 30%) 1fr; gap: 2.2rem; height: clamp(300px, 54vh, 640px); }
+  #invpanel.log .elog { display: grid; }
+  #invpanel.log .body, #invpanel.log .rings, #invpanel.log .tip { display: none; }
+  #invpanel .elog-list { overflow-y: auto; display: flex; flex-direction: column; gap: 0.35rem; padding: 0.2rem 0.4rem 0.2rem 0.2rem; }
+  #invpanel .elog-row { all: unset; cursor: pointer; display: flex; gap: 0.9rem; align-items: baseline; padding: 0.45rem 0.6rem; color: rgba(255, 255, 255, 0.7); border-bottom: 1px solid rgba(255, 255, 255, 0.12); font-size: 1.05rem; }
+  #invpanel .elog-row:hover { color: #ffffff; background: rgba(255, 255, 255, 0.05); }
+  #invpanel .elog-row.sel { color: #ffffff; background: rgba(255, 255, 255, 0.09); }
+  #invpanel .elog-no { font-size: 0.72rem; opacity: 0.5; letter-spacing: 0.1em; }
+  #invpanel .elog-nm { flex: 1; letter-spacing: 0.08em; }
+  #invpanel .elog-n { font-size: 0.8rem; opacity: 0.6; }
+  #invpanel .elog-none { color: rgba(255, 255, 255, 0.45); padding: 0.6rem; letter-spacing: 0.1em; }
+  #invpanel .elog-view { position: relative; border: 1px solid rgba(255, 255, 255, 0.22); background: radial-gradient(ellipse at 50% 70%, rgba(70, 82, 110, 0.28), rgba(0, 0, 0, 0.35) 70%); overflow: hidden; }
+  #invpanel .elog-canvas { position: absolute; inset: 0; image-rendering: pixelated; cursor: grab; }
+  #invpanel .elog-canvas:active { cursor: grabbing; }
+  #invpanel .elog-name { position: absolute; left: 1rem; top: 0.8rem; font-size: 1.5rem; letter-spacing: 0.12em; color: #ffffff; pointer-events: none; text-shadow: 0 1px 4px #000; z-index: 1; }
+  #invpanel .elog-hint { position: absolute; right: 1rem; bottom: 0.7rem; font-size: 0.72rem; letter-spacing: 0.15em; color: rgba(255, 255, 255, 0.4); pointer-events: none; z-index: 1; }
+  #invpanel .elog-wait { display: none; position: absolute; inset: 0; align-items: center; justify-content: center; font-size: 2rem; color: rgba(255, 255, 255, 0.4); pointer-events: none; }
+  #invpanel .elog-view.waiting .elog-wait { display: flex; }
   /* ONE SIZE, WHATEVER IS SELECTED. The pane's buttons come and go with
      the item (an artifact has one per weapon, a weapon with one set in has
      another), and the panel used to grow and shrink with them and be
@@ -1649,7 +1672,7 @@
   #invpanel.paper .islot .num { top: 6px; left: 7px; gap: 2px; }
   #invpanel.paper .islot .num .hd { height: 21px; }
   #invpanel.paper .islot .count, #invpanel.paper .rslot .count { font-size: 1.45rem; }
-  #invpanel.paper .rings .rlabel { font-size: 1.2rem; }
+  #invpanel.paper .rings .rlabel { font-size: 1.42rem; }   /* (1.2: a little bigger, with the circles 84 -> 100 px, 2026-11-22) */
   #invpanel.paper .detail .big .pvhint { font-size: 0.94rem; color: rgba(18, 11, 5, 0.86); }
   #invpanel.paper #keychain-box .kc-top, #invpanel.paper #keychain-box .kc-count, #invpanel.paper #keychain-box .kc-name { font-size: 1.04rem; }
   #invpanel.paper::after { opacity: 0.05; }
@@ -2573,10 +2596,16 @@
   <div id="pack-hands"><canvas></canvas></div>
   <div id="invpanel">
     <div class="panel">
-      <div class="head"><button id="pack-leave" type="button">Leave</button><h2>Pack</h2><span class="count">Tab / Esc &nbsp;close</span></div>
+      <div class="head"><button id="pack-leave" type="button">Leave</button><h2><button type="button" class="pk-tab on" data-tab="pack">Pack</button><button type="button" class="pk-tab" data-tab="log">Enemy Log</button></h2><span class="count">Tab / Esc &nbsp;close</span></div>
       <div class="body">
         <div class="grid" id="inv-grid"></div>
         <div class="detail empty" id="inv-detail"></div>
+      </div>
+      <!-- THE ENEMY LOG (2026-11-22): what you (or your companion) have killed, a line a kind, and the chosen one standing in
+           its own box to turn and look at (`elogShow`) -->
+      <div class="elog" id="elog">
+        <div class="elog-list" id="elog-list"></div>
+        <div class="elog-view" id="elog-view"><div class="elog-name"></div><div class="elog-wait">…</div><div class="elog-hint">Drag to turn · Scroll to look closer</div></div>
       </div>
       <!-- WHAT YOU ARE WEARING BELONGS WITH WHAT YOU ARE CARRYING. The ring
            slots live under the hotbar, which is where you glance at them

@@ -562,3 +562,13 @@ after it kills Chrome (`pvsheet.sh` always did).
   `location.reload()` does nothing in the probe frame, so `dying` stays true — not a game bug.
 - `probe.sh`'s wait for "one headless at a time" (`pgrep -qf -- "--headless=new"`) let two run at once twice today; a probe
   whose page never ran its scenario (0 `[PB]` lines, a 404 in serve.log) was the second of a pair — run it again.
+## 2026-11-21: two traps from the cellar's puppet fight
+- **In dev mode no creature ever starts a swing** (`} else if (u.st.cool <= 0 && !settings.devMode) {` in the attack
+  decision). A probe that wants to see blows land turns dev mode OFF after the setup and keeps your health up itself
+  (`b.setHp(4)` each frame; `hp` above the max is clamped back down and reads as a hit every frame).
+- **Teleporting the camera every frame in a room** leaves the room's walk working out your feet on its own: in the cellar it
+  read them off the ceiling's storey (2.72) and every creature's blow scored "too high". Place once (`camera.position`,
+  `camBaseY`, the room's last floor/spot — `setCelLast`), then only turn (`b.lookAt`).
+- **Two declarations of one name** (`function cpDrop` already existed) kill the whole module in the browser, and the
+  osascript syntax check (non-module JS) does NOT catch it: also run
+  `grep -o "^function [A-Za-z0-9_]*\|^const [A-Za-z0-9_]*\|^let [A-Za-z0-9_]*" main.js | awk '{print $2}' | sort | uniq -d`.

@@ -3075,3 +3075,543 @@ FRAME is `TB.H` tall (his clips are in those pixels: with the view at `TB.H` the
   within `WELL_COIL_R` 0.068 of the axle. Our rope came out of the drum's MIDDLE (z −0.02); it leaves its side now
   (`WELL_ROPE_Z` −0.052, where the authored one hung) and runs onto the handle's top (x −0.092, z −0.036, measured) — a slant
   while wound up, plumb once paid out (`wellSetBucket`, `wellBucketDown`).
+
+## 2026-11-21 (night): the call on a very wide screen, its at-ear trims
+
+- "now the phone is off the screen on the intro cutscene ... when its on the table" (a 2.39:1 window): the 16:9 picture covers a
+  wide screen's width and loses height; 72 % of the loss came off the TOP, where the phone lies (132 of 184 px at 1280×536).
+  `IC_WIDE_TOP` 0.12 now — the spare comes off the bottom (the pens' far ends); the phone on the desk and in his hand is whole
+  at 12 s and 27 s (`tools/callfit.js &sizes=1280x536&at=`).
+- "improve how its picked up too with better trims": the at-ear frames (56–99) re-cut (`tools/intro_ear_recut.py`, from
+  `~/Desktop/BEACHWALK ASSETS/IMG_7209.MOV`, ffmpeg 12 fps to v2/ 540 wide and v2h/ full): a finger touching the glass joined
+  to it, the outline smoothed at full size, loose bits under a fingertip's size dropped. The shipped sheets before it are in
+  the session's scratchpad `intro_bak/`. Still what the clip shows: fingers over a dark slab a hand's width from the lens.
+  `tools/callpick.js` (the right third of the picture each half second through the pickup).
+
+## 2026-11-21 (night): the cellar under Elvédor's house (`CEL_*`, `tools/kelley_pack.py`, `tools/cellar.js`)
+The owner: an outdoor cellar door behind the house leading into pixelbutterfly's "813 Kelley Road" basement, spawning
+where his first screenshot stood (the top of the cellar stairs, looking down them); the body's table, the creature, the
+trash bags and "the wood pillars in the way" out; concrete steps; the kitchen door to the left of the spawn shut; looking
+back, as if you had just come through the cellar door; dark; the puppet lying on the workbench, painted as someone else.
+- **The file.** 13.7k tris, `KHR_materials_unlit`, its own 32–256 px maps (already retro). The stairs run down −x (tread
+  100 units, rise 80, top at y 0, cellar floor −900); the stairwell is x −370..1200, z −1110..−540, its landing x 730..1200
+  at the ground floor; the cellar is two halves split at x −690 (the laundry side −x, with the posts; the shelves, the
+  body's table and the workbench +x). The posts are islands of `Cube.229` (joists and posts in one mesh); the body is
+  `Plane.007` (sheet) over `clock.001` (the table); the creature is `Object_273`, the file's one skinned mesh.
+- **The packer** keeps y < −40 OR the stairwell box, CLIPPING triangles across either edge (the landing floor and the
+  stairwell walls are big triangles of meshes that run on across the house — centroid tests lose them). It drops the
+  landing's end wall (x 1200) so the bulkhead can be built there. Doors: `turn_leaf` turns a leaf about its hinge until its
+  free end points −x — the kitchen door (`Cube.211`) lands shut in the wall's line, the blue door at the stairs' foot
+  (`Cube.217`) lands flat against the laundry side's wall. The blue one HAD to move: half-open (55°) it narrowed its
+  doorway so the walk got you in by sliding and caught you coming back.
+- **SCALE IS THE DOORS'.** 0.003 m/unit (ceiling 2.4) looked right and was wrong: the header over the stairs' foot was 1.62
+  over the tread under it and the walk's head probe (feet + 1.68) refused the flight — stuck halfway down. 0.0034 makes
+  a door 2.1 m, the workbench 0.82, the ceiling 2.72, joists 2.38, a step 0.27 × 0.34, the landing 3.06.
+- **A PACKER PIPED INTO `head` NEVER WRITES ITS FILE.** `kelley_pack.py … 2>&1 | head -4` closed the pipe; the next log
+  line raised BrokenPipe and the .glb was the previous one. The blue door "did not turn" for a whole round because of it.
+- **The room** is the dungeon's pattern (`CEL_SITE` on the keep walk; `updateCellar` / `celClampPlayer` /
+  `updateCellarCut`; `ROOM_BACK.cel`, `saveRoom` 'cel', hall-hide key 13, `inRoom`, `indoors`, `dropTargets`,
+  `activeHitSites`, `bunkerFloorAt`, the beach clamp, both footstep lists (`sfxStepBunker`: concrete), `frozen`,
+  `devShopBusy`, `cutNow`, both `clearRoomFlags`). `CEL_X/Y/Z` 19000/650/19000. **`celLive`**: the loop runs frames
+  before the module reaches the house's constants — `updateCellar` read `HOUSE_Z` in its TDZ and threw every boot frame
+  until the guard (set at the end of the section).
+- **The bulkhead** (`buildCelBulkhead`): three steps of the stairs' material up from the landing's end, the stairwell's
+  walls carried on, and the same cellar-door model overhead (its floor and back dropped, `celDoorPart`), high at the house
+  and down to the far end; a thin moonlit line along the seam between the two leaves and at the low edge — without it the
+  slope read as a ceiling. The step boxes are `CEL_SITE.extra` floors; `CEL_XMAX` lets you onto the first step only (the
+  doors are over your head past it). "Leave" on the doors.
+- **Outside** the doors stand against the back wall's brick at x 39.68 (`tools/celhouse.js`: rays in from the yard), centre
+  z on the house, 1.6 wide, 0.9 high, 1.3 out; `celOutBlocks` in the lot's `legal` makes them solid. Their paint is dark
+  grey: colour ×1.7 and an emissive off the map, or under the moon they were a black wedge.
+- **The dark** took two rounds: lamps at 0.55–2.6 left every frame but the tube's black (the maps are dark and nothing
+  else lifts them). Now the tube 9 (failing: a stutter of 0.1–0.6 s every 2.5–8.5 s), the workbench bulb 4, the
+  bulkhead's moon 3.8, a bulb at the stairs' foot 2.6, `CEL_GLOW` 0.4 of each map as emissive, fog 0.1.
+- **The other puppet** (`loadCelPuppet`, `CEL_PUP_PAINT` by material name): bone-white wood, black hair, oxblood nose,
+  bottle-green sleeves and shoulders, a mustard shirt, oxblood trousers; on his back along the bench (`pupLieQ`), head to
+  −x, clear of the cans at its +x end. No interaction yet — the owner will say.
+- Measured (`tools/cellar.js`): doors refuse a walk at x 41.20; in → top step; down, through the blue door, the laundry
+  side, across to the bench, back, up, onto the first bulkhead step (x 4.25), out → the yard at x 41.83. A checkpoint in
+  it (`tools/cellarload.js`) loads back onto the landing with the puppet there. Musictest 17/17.
+- **His pose, round 2** (the owner: "make the puppet lay more natural his arms are too tucked make him seem like a laying
+  object"): arms fallen out from his sides onto the wood, the legs open with one knee crooked, the head rolled toward the
+  room, the chin a little down, the whole of him tipped 0.14 rad onto one side. Three things measured on the way
+  (`lieDbg` on his root, `tools/cellar.js` stills `in_pup*`): **the rig's `L` bones lie at −z of his own frame** (the
+  `pupAim` comment's "+z his left" does not hold for this rig's arms) — aimed +z the arms crossed his chest and the hands
+  lay folded on his belly; **a hand below his back held all of him off the bench** (seated by the whole box), so the limbs
+  are aimed level and he is seated by the box of his shirt, trousers and hair; **a hand bent at the wrist cannot lie flat
+  by a roll alone** — each hand is searched over a roll about the forearm AND a bend about the level line across it for
+  the pose where it stands least tall (the far hand had stood up off the wood like a wave).
+
+## 2026-11-21 (night, later): the one in the cellar's washer (`celWash`, `tools/marionette_rig.py`, `tools/washer.js`)
+The owner: a puppet "locked in the washer" — near the workbench's puppet the washer "start[s] being loud and jump[s] around
+like hes trying to get out"; hit the lock off; he "jumps out looks at you then runs up the stairs and leaves"; "rig the model
+properly"; then "have the washer puppet look retro i dont want it to seem like a ai model" and "make sure the puppets run
+animation isnt sideways".
+- **The washer** is the RIGHT machine of `Cube.209` (x > −1740 in the file), chained with `chain.009/010` and padlocked
+  (`Cylinder.009`). `kelley_pack.py` keys triangles by (material, part) and writes `washer_laundry`, `washerDoor_laundry`
+  (the raised panel, x −1700..−1430, y −848..−676, z ≥ −810), `washerLock_accessories`, `washerChains_accessories`; their
+  loose pieces stay out of the walk. **THE FRONT HAS THE DOOR PAINTED ON IT**: with the raised door down the hole still
+  looked shut, so the body's front face (z −810) is clipped round the opening; a BackSide box behind it is the drum.
+- In game (`buildCelWasher`): one group stood at the machine's middle (`CEL_WASH`) that hops (≤ 7.5 cm, only off the floor —
+  a blow in the air relaunched it to 25 cm and it read as a toy) and rocks; the door on a pivot at its bottom edge, straining
+  a few degrees at the chains; the lock and the chains RE-CENTRED on themselves (the packer bakes every vertex in room
+  space, so a mesh's origin is the room's: spun as it was, the padlock orbited the washer).
+- `celWash` 0 → 1 within 1.9 m of the bench puppet (fits of 1–5 blows: `metalHeavy`/`metalHit`/`danteChain` at the machine
+  and a synthesized drum boom, `sfxWasherThump`, through `sfxOut`), → 2 once he is out (saved; a load lays the lock and
+  chains on the floor and the door down and never loads him). The lock: `celLockStrike` in `digImpactCore`'s list (after
+  `ucIdolStrike`; it reads `_aimD`, which the swing sets — a probe must set it, `celLockStrikeS`), and the hook flying into
+  it; "A padlock" when pulled at only rattles ("It won't give. Hit it off.").
+- **The escape** (`updateCelEscape`): snap (lock flies and bounces twice, chains drop and settle flat) → kick (0.55 s:
+  the door slammed open from inside, falls under its weight and bounces on its hinge) → leap (the Wong's `jump` from 0.42 s,
+  its crouch, at 1.15×: carried out of the drum across its own airborne window 0.72–1.32 s, from low in the drum so he comes
+  out of the opening) → stare (`idle`, the body turned onto you at 2.6 rad/s and the head aimed at the camera, `celMarLook`)
+  → run (`run` ×1.12 along `CEL_MAR_PATH`: round the blue door, up the flight, onto the bulkhead's step; the floor off the
+  walk grid; a knock per stride) → the cellar doors bang (`doorClose` + `metalHeavy`) and he is gone. Measured: lock to gone
+  6.2 s.
+- **The rig** (`tools/marionette_rig.py`, Blender 5.2 background): the Tripo export is ONE fused shell (943 k verts welded);
+  joints read off `kelleyshot.html?mode=ortho` (front and side, a 5 cm grid) in three's frame; Mixamo's chain named
+  `Character1_*` so `ntarRetarget` maps it with no table (`kind: { facingRef: 'mixamo' }`). Weights by RULE, not bone heat:
+  the trunk cut by height (head / neck dowel / chest block / spine dowel / pelvis block), each limb to its nearest bone of
+  that limb with a 4 mm blend — wood, not rubber. Strings cut three ways: vertices further from their bone than that piece
+  is thick (RAD per bone, and the trunk's measured half-widths), hair-thin slivers after the collapse (> 3 cm long, < 3 mm
+  across, below the head), and crumbs under 60 verts. **Retro**: collapse to 6 k (3.9 k left), flat-shaded in game, the map
+  256 px cut to 24 colours (`marionette_retro.py`, median cut, no dither) and nearest-filtered. 251 KB on disk.
+- **THE RUN WAS SIDEWAYS** without `facingRef 'mixamo'`: the Wong's run travels (−2.95, 1.33) in its own frame — 66° off
+  his facing. With it the run's travel is +z, and `M.runYaw` (the retargeted clip's own travel angle) turns him down the
+  path whatever is left. Measured, `tools/washer.js`: shoulders' facing vs travel 14.7° mean (the run's own sway), 42° max at
+  the corners. `skinLocal` on his mesh (19 km out).
+
+## 2026-11-21 (latest): the puppet workshop — eight of Elvédor's puppet, a fight, then the washer (`MUT_KINDS.cpup`, `tools/pupfight.js`)
+The owner: seven more of Elvédor's puppet in other colours, "strung up on the walls and hangin from the ceiling all different
+unique poses … a puppet workshop"; inject the one on the workbench with a jar of blue blood, the syringe visibly in him, "his
+eyes light up blue and he jumps up to fight"; easy to kill, ragdolls flying across the room, "it should feel like hitting
+puppets"; the first one killed brings the rest down from where they hang, all at you, chaotic; the washer after.
+- **A creature kind**, `cpup` = Elvédor's (`MUT_KINDS.elvedor`: FARM_BASE + the brawler, his mocap set) with the puppet file.
+  `CP_RAG`: the puppet has no shoulders and its arms hang off `Bone001` (its whole back), so the back is Mixamo's `Spine2`,
+  `Bone002` the neck, `Bone003` the head; no Spine/Spine1/toes. **The file faces +x**: `cpPre` moves the scene's children
+  under a group turned −90° (the model's own yaw is the aim's, zeroed every frame). Paint per unit through `matMore`
+  (`cpMat`, `CP_PAINTS[u.cpPal]` by material name — every copy is its own parse, so its own materials). Clips built ONCE
+  (`cpMocap`, like `ELV_MOCAP_SET`) plus the Wong's `jump` (`mJumpUp`).
+- **The ragdoll's links**: `RAG_CHAIN` ties each joint to its listed parent, and a rig missing that parent left the joint
+  loose — the puppet's arms and back would have fallen off the body. Now a missing parent falls back up the chain
+  (`RAG_PARENT_OF`) to the nearest joint that is built (no change on a rig that has them all).
+- **Wood** (`kind.wood`, `voice.wood`): every blood path that skipped stone skips wood (`(kind.stone || kind.wood)`, 11
+  lines; the hook's pull is left alone so a hook still drags one); `sfxMutHit` a knock + a little `tableBreak`, `sfxMutDie`
+  wood going to pieces.
+- **The room**: `celBody` — drawn only while the cellar is, the cellar's walk for a floor, `celClampUnit` (wall push, the
+  cellar's x range, and a move that crosses a wall at knee or chest height from the last legal spot is put back: a punch's
+  lunge carried the first one through the stairwell wall onto the landing behind it), `CEL_SITE` in `mutRagdoll` so a body
+  thrown at a wall stops at it. The blows count from the shins up (`bodyLow` 1.55, `bodyLowArm` 1.35: 0.9 m tall, and the
+  man's from-your-chest-up rule let none land).
+- **Hung** (`CP_HANG`, `CP_POSES`): asleep, `holdAnim`, posed once with `pupAim` in the turned group's frame (+x his front,
+  −z his left — the `pupAim` comment's "+z left" is wrong for this rig); strings are thin cylinders from the head/hands/shins
+  (by pose) to the ceiling or a nail, a control bar over the ceiling ones; the ceiling ones turn a little on their strings.
+- **The injection** (`cpInject`/`cpInjectTick`): "Inject him with blue blood" (syringe + a jar; else a hint) — a jar spent, a
+  `makeSyringe` (the title's blue-glowing fill) driven into his chest along a slant from the room's side, the fill pushed
+  out, his eyes blue (`cpEyes`: whites and pupils emissive, not tone-mapped) with a small blue light at his head, a twitch,
+  then the static bench puppet is hidden and his fighter comes off the bench on the jump (`cpBenchJump`) and lands toward you.
+- **The rest**: `celPupFight` 0 → 1 (injected) → 2 when the first dies (or any is struck): each hung one twitches, its strings
+  go slack, it falls under gravity (`cpFallStep`), lands with a knock and comes → 3 all dead; 3 s later the washer
+  (`celWash` 1). Saved: 3 only; a load mid-fight is the fight not begun. They spawn when the cellar is built (their eight
+  parses out in the yard), not on the frame you walk in.
+
+- **What it took to make them fight** (`tools/pupfight.js`, all measured): (1) `fixScale: PUP_K` — the file's own scale node
+  made `skinnedBounds` read him a millimetre tall: scaled 920×, every bone NaN, punches thrown backwards; (2) `mutSeparate`
+  skips the hung/falling/held ones — at the man's 3 m spacing the seven on their strings held the first one off, walking
+  backwards from you; `sep` 0.75; (3) `celClampUnit` re-run after every unit's update and after the separation push (a punch's
+  lunge carried one through the stairwell wall); (4) **IN DEV MODE NOTHING EVER STARTS A SWING** (`!settings.devMode` in the
+  decision) — a probe must turn it off and keep your health up itself; (5) their blows are scored by `landFn` (within 1.25 m,
+  facing you, height ok) with the arm still aimed (`aimArm`): the man's aimed test asks his fist to pass through your body and a
+  0.9 m puppet's never reaches; (6) a probe that teleports the camera every frame leaves the walk reading your feet off the
+  ceiling's storey (2.72: the cellar's ceiling plane counts as a floor in the storeyed grid — unreachable in play) and every blow
+  is "too high": place once, then only turn (`setCelLast`). Then: 10/10 of the first one's blows land; seven on you landed 20
+  in 3 s, so `hitK` 0.12, `aggr` 1.8, `press` 0.7. A kill (`onDeath: cpDie`) is the ragdoll thrown along the blow (2.3 m),
+  dust, no blood, no gore (`bloodK`/`goreK` 0 too).
+- **The syringe**: a `makeSyringe` at 0.27 m, its glass frosted, the fill glowing. Two traps: giving a MeshBasicMaterial an
+  `emissive` throws in three's `refreshUniformsCommon` on EVERY frame (it has no such uniform), and changing the fill's
+  `toneMapped` recompiles it off an `onBeforeCompile` whose uniforms a clone does not carry.
+
+## 2026-11-21 (later) — the workshop's puppets made physical; the marionette on the swing and at your side
+
+The owner: hung puppets with real string physics you can shove, two upside down, personalities/proportions/colours, crazier
+and harder fighters that fly when smacked, breaking into pieces, no Dante sounds, darker cellar, the washer starting on its
+own; then "after the one in the washer runs away … hes on the swing out front facing you … the screen [like] skrim … 'You
+okay?' or 'What are you?' … hop off the swing and follow you like myles … break into peices" and "the washer one should
+always run to the swing if let out".
+- **HUNG = A PENDULUM** (`cpHang`, `cpSwingStep`, `cpSwingApply`): the whole unit, its bar and its strings rotate rigidly
+  about the hook (`S.piv`, ceiling y 2.6) or the wall nail; state is the bob's horizontal offset per metre `S.s`/`S.v`
+  (small-angle), twist `S.tw` for ceiling ones; a wall one is kept off the wall (`S.n`, reflect at 1.35 with a knock).
+  Loose limbs (not in a strung chain, `CP_CHAIN`) lag on springs driven by the bob's acceleration/9.8, applied as a world
+  turn premultiplied into the bone's local (`P⁻¹·D·P·q0`). Shove: your capsule against his middle (`S.C0` turned), pen
+  resolved into `s`, his speed raised to 1.15× yours along the normal. Measured: walking through the Host moved him 1.33 m.
+- **A BLOW ON A HUNG ONE** never hurts it: `kind.struckHung` in `hurtMutantCore` (before `hbT`) and `cpHungStrike` in
+  `digImpactCore`'s list (the fight's own test looks at `u.g` + h, and one hung by the ankles has his body BELOW his origin).
+  Before the injection it swings; after, it drops them all.
+- **FLIPPED** (`flip`): `q0 = yaw · rot(z, π)` (z is his front after `cpPre`); `y` is then his soles at the TOP. Drop:
+  `cpFallStep` falls his middle ballistically and slerps to upright over 0.42 s, standing on the floor if it gets there first.
+- **BUILDS** (`cpBuild`): bone scales (head, chest, upper arm, thigh — each scales its subtree) and `cpInner.scale`; the soles
+  put back on the origin by the foot bones' drop measured before/after. The retargeted clips have no scale tracks.
+- **CULLING TRAP FOR STILLS**: `cullUnitModels` hides `u.model` against the LAST frame's camera — a probe that moves the camera
+  and shoots must set every `model.visible = true` first (the Clown came out "missing").
+- **THE FIGHT** (`cpDrive`, from the `celBody` block): pounce (`cpLeap`: the Wong's jump 0.42→0.75 crouch, arc 0.55 + d·0.12
+  m, a third flip about the middle — `u.model` turned and offset by hc), skitter (`cpDash`, the strafe at 2.4×), and every
+  non-fatal blow throws it (`kind.onStruck` → `cpStruck` → `cpAir`: centre-based ballistic, tumble about the side axis,
+  walls via `keepHitsWall` x/z split reflect ×0.5 — over 5.5 m/s costs a point and can kill — into others (they fly too),
+  floor bounces, lies 0.55 s, yanked upright with a hop). `celClampUnit` skips `cpAir`/`cpLeap` (its floor test refused a
+  body in the air and teleported it home); the flight keeps `celHome` current itself. hp 3, hitK 0.17.
+- **BREAKING** (`cpShatter`): each mesh to the first bone of its line in `CP_PIECES`; each piece a group whose +x lies along
+  its bone (so the gibs' "rest FLAT" lays it along the floor), `half` measured in the group's frame, `cpGibConfine` (walls
+  and the cellar ceiling), `onLand` knocks; splinters + pegs (`cpSplinters`). The blue burst borrows the injection's light
+  (`cpBurst`) — never add a light. Measured: 11 pieces + 14 splinters (splinters sleep into the rubble).
+- **SOUNDS** (no Dante): `sfxCpSnap` (string), `sfxCpCrack` (break), `sfxCpKnock` (churchStep sample + wood), `sfxCelChain`
+  (the owner's metalHit, many small fast clicks) — the washer's chains use it too now.
+- **DARKER**: tube 6.2, bench 3.0, moon 2.6, stairs 1.5, washer 1.25; `CEL_GLOW` 0.26; fog 0.15. `celAmbience`: dust
+  (points lit by distance to the tube, flickering with it), creaks of the hung strings, drips, the house settling.
+- **THE WASHER** starts 2.2 s after the last puppet (`celWashKnown`: a prompt), fits of 4, hops to 11 cm and walks
+  (`W.dx/dz/dyaw`, small — the lock's hit test uses its build-time centre).
+- **THE MARIONETTE** (`MAR`, declared by the cellar's early lets — a restore can run before its section): 'none' → 'swing'
+  (set when the escape ends, and on any load with `celWash` 2 — the save already writes 2 once the lock is broken) → 'hop' →
+  'with' → 'dead'; saved as `marSt`. `MUT_KINDS.cmar` from `marionette.glb` (`fixScale` 1, Mixamo names → `MAR_J`, identity
+  `MAR_RAG`, Elvédor's capture + the Wong's jump via `ntarRetarget`, `facingRef 'mixamo'`), hp 18, dmg 2. On your side by
+  `u.cpAlly` in `minoAlly`. `kind.drive` = `marDrive` (true holds the fight; returns false while `st.struck` so
+  `finishMutant` runs — it did not, and he never died).
+- **ON THE SWING**: posed from `updateElvDressing` right after the seat's rotation (no frame lag): from the bind each frame,
+  `marAimW` chain (lean back on the forward swing, legs out; tucked on the back swing), hands by a two-bone reach to the rope
+  0.47 m over the seat, the hips set onto the seat, head on you (`marLook`). `elvSwing.amp` eases to 0.46 rad with a rider.
+  Facing (±x of the seat group) is chosen while you are > 24 m off. Skrim's walk-up: `marMood` (bars, a drone of its own).
+- **ENEMIES ON HIM**: a man's aimed test never touched a 1 m body (340 frames, 0 hits): `marOn`/`marLandsOn` in the fight's
+  land test (both lines). Measured after: one of Elvédor's kind took him 18 → 14 while he killed it (14 → 0).
+- **HIS DEATH** (`marShatter`): the skinned mesh baked per triangle by its first vertex's heaviest bone (`MAR_PIECE`) into
+  meshes attached to holders under the bones, then `cpShatter` (confine null, `restAt` the land/beach floor). 25 gibs.
+- Probes: `tools/pupfight.js`, `tools/pupcast.js` (the seven's portraits), `tools/marswing.js`.
+- **HANGING WEIGHT** (the owner: "give them hanging weight … natural like tension on the strings … swinging physics when you
+  walk by"): `cpSettle` in `cpHang`, before the strings are tied — each limb no string holds (`CP_CHAIN`) turned most of the
+  way to straight down (roots 0.62–0.7, lower halves 0.8; the drawn line kept a little), a strung one a little toward its
+  string (0.25; 0.12 on a nail), a head no string holds lolled 0.35 down. Uses `marAimW` (world-direction aim; defined in the
+  marionette's section — runtime only). The loose springs: drive ×1.5, damping 2.6 → 1.7. Walking past within 1.3 m stirs
+  them (your velocity as a draught), besides the shove. hitK 0.17 → 0.22 (19 landed blows in 3 s were all banked away).
+- **THE MARIONETTE AND ELVÉDOR** (`marElv`): with you, Elvédor within 14 m, a clear line (`elvLineClear`) — `MAR.elvOn`: he is
+  provoked (`kind.provoke`), his foe the marionette, and `marPickFoe` holds the marionette on him till one is down. If the
+  man dies with `st.hitBy` the marionette and the puppet is yours (`elvCarrying || elvDropped`) → `MAR.pupAsk`: "Talk to him"
+  opens `MAR_NPC.script.pup` ("What should I do with the puppet?" → "Throw it in the fire", `end: false`, a click closes it).
+  Measured (`tools/marelv.js`): he went for him at 4.7 s; the man died to him; the marionette came out of it at 4 of 18.
+  Probe trap: the harness clock (`__adv`) never lets a model load land — wait with `b.frame` + `sleep` first.
+- **THE SEA FROM ELVÉDOR'S LAND** (`elvSeaK`, `elvSeaLP`, in `updateBeachBed` on the wave bus only — the forest bed is
+  untouched): `ELV_DUNE` 0.7 × falloff past 12 m from the waterline (/9 m) × `ELV_HOUSE_WALLS` 0.4 inside (`houseInside`);
+  lowpass 9 kHz falling with distance (min 1.2 kHz), 700 Hz inside. Measured: gully mouth 0.68, the lot 0.26, the house 0.08.
+- **THE DRINK, AGAIN** (the owner: "make this the water drinking sound last time you didnt"): the first cut peaked at −25 dB
+  (mean −49) — inaudible under the effects slider. "New Recording 6" trimmed to its sip and gulp (1.2–2.8 s), faded,
+  normalised to −1 dB peak (mean −21): `assets/water-drink.m4a`, 14 KB. MEASURE A RECORDING'S LEVEL (`volumedetect`) before
+  shipping it.
+
+## 2026-11-22 — strings that are really tied, dimmer paint, the sad swing, companions through every door, the puppet's revenge
+
+- **EVERY STRING WAS NOTHING LONG AT THE CELLAR'S ORIGIN** until today: `cpStringSet(m, a, b)` was handed the shared `_pzV2`
+  as `a` and wrote `b − a` into `_pzV2` first (b − b = 0). Own scratch now (`_cpSD`). What looked like strings in earlier
+  stills was the bars' cords. NEVER pass a function a scratch vector it also writes. Measured after: the Host's head string
+  starts at its tie point to the millimetre, 1.04 m long.
+- **TIED ON THE SURFACE** (`cpTiePoint`): the furthest vertex, toward the hook, of the meshes whose first bone ancestor is the
+  tied bone — the crown, the fingertips, a heel — kept in the bone's frame (`S.att`). Strings are Lambert now (unlit, they
+  glowed white).
+- **PAINT IS LINEAR**: `color.setHex` converts sRGB → linear, so `CP_DIM` 0.55 was ~−5 dB as seen. 0.3 (≈ 0.58 as seen),
+  12 % toward a grime grey, no emissive, roughness ≥ 0.85, rim 0.008; the bench puppet the same (`loadCelPuppet`).
+- **HARDER / SPREAD**: hp 5; `sep` 1.25; `cpDrive` walks each toward its own eighth of a circle round you (by `cpPal`)
+  while 1.3–7 m off. Measured: seven at −118…140° round the player (a wall behind him).
+- **THE CELLAR DOOR** 2.6 × 1.4 × 2.15.
+- **THE SWING IS A PENDULUM** (`updateElvDressing`): angle + speed under g on L + 0.25, damped 0.16, the wind pushed near
+  its own period (empty: 0.1–0.25 rad as before), walking into the seat shoves it, a little twist on the ropes (`S.tw`,
+  `S.yaw0`), the hop off kicks it back (0.37 rad after). With him on it a pump holds `MAR_SWING_AMP` 0.07 (measured 0.056).
+- **HIM ON IT, SAD** (`marSwingStep`): facing whichever way along the swing is −x (the sea), slumped, a breath in it, head
+  down toward a point 30 m out and 9 m down (onto you only during the talk, `MAR.lookK`), hands loose low on the ropes
+  (`marReach` `low`), shins lagging the swing. TWO TRAPS: the seat's quaternion was read from `_mrQ` AFTER `marAimW` (which
+  writes it) — he sat beside and under the plank; and `u.mixer.update(0)` at the end re-sampled the idle he was made with
+  over the pose — he stood on the plank. The lift off the plank is measured every 1.5 s from the skin in the seat's frame,
+  ONLY vertices bound mostly to hips/spine/up-legs (his shins hang inside the plank's footprint: counting them lifted him
+  25 cm).
+- **COMPANIONS "TELEPORTING CLOSER"**: Myles's and the marionette's stuck test was "closing on you slower than 0.3 m/s" —
+  true whenever you simply out-walk them — and the rejoin put them at your shoulder the moment you looked away. Stuck is now
+  the companion's OWN displacement < ¼ of its intended move, for 2.5 s; and lost (> 28–30 m) or stuck only.
+- **THE MARIONETTE WALKS YOUR TRAIL** (`MAR.trail`, a point per 0.4 m with your feet's height): round the house, down the
+  gully, through rooms; every cut is a jump in the trail and he joins behind you on a floor near your feet
+  (`marFloorAt`: `bunkerFloorAt` in rooms, the courts in the castles); he goes everywhere but the deep. If he must be put
+  somewhere it is 8–12 m back along your trail, out of sight (`marBackAlong`). Stops at 1.7 m, sets off past 2.8, runs and
+  gains past 6. `marPost` keeps a fighting move on a room's floor. TRAP: an unwoken creature > 250 m off is never run
+  (`updateMutantUnit`'s far skip) — and something on the land put him back to sleep, so in the cellar he was frozen 27 km
+  away. He is kept awake while with you and the far skip passes `cpAlly`.
+- **HIS HEALTH**: `MAR.hp` mirrors him each frame, saved as `marHp`, applied when he is remade; his bar (green) shows once
+  he is hurt (`hbT` kept fresh; `updateEnemyBars` lets `cpAlly` through when hurt).
+- **THE PUPPET WHEN ELVÉDOR DIES** (`epupWatch`, `MUT_KINDS.epup` made on first use — `cpup` is declared further down and
+  read early it was undefined: "Cannot convert undefined or null to object" from `Object.keys(kind.use)`): yours (arms or
+  dropped) and within 13 m with the land clear → `sfxPupScream`, out of your arms / up off the floor as a fighter in his
+  own paint, at the marionette if his was the blow (`lastHitMine === false && st.hitBy`), else at you. `elvStage` 5 +
+  `elvBurned` (gone for good). The "What should I do with the puppet?" line only if he did NOT come alive (`epupWatch`
+  first in `marElv`: the marionette's frame can see the death before `updateMarionette` does). Measured: alive, on the
+  marionette 3.3 s, landed 4, broken by him.
+- **THE DROP** (`pupLayClear`): across your look, then turned ±¼/⅛, walked back toward you 15 cm at a time, until neither
+  head nor feet crosses a wall from his middle (`pupDropWall`: the house's, the cellar's); on the highest floor under the
+  three. `tools/pupdrop.js`: four walls of the ground floor, none crossed, 1 cm over the floor.
+- **THE CELLAR'S SOUND**: the owner's "Basement Storage Room Lights, Creaking, Wind" cut 3:20–4:36 into a 72 s loop on its
+  own equal-power crossfade (`assets/cellar-ambience.m4a`, 520 KB, −20.7 dB mean), `CEL_AMB_LEVEL` 0.45 on the effects bus
+  (≈ 4 dB under the drain's bed), lowpassed 6.5 kHz; `celVerbGain` (a 1.3 s dark concrete IR) 0.34 on the effects bus while
+  in; footsteps across the floor overhead (`sfxCelOverhead`) among the creaks and drips; the bench bulb turns a slow circle.
+- Probes: `tools/marsad.js`, `tools/marroom.js`, `tools/marelv.js` (Elvédor, the puppet, the sea), `tools/pupdrop.js`.
+- **THE BED PUPPET ON THE FLOOR** (the owner, twice): `elvPlaceBed` rayed down onto the mattress through `o.visible` meshes
+  only — out of sight from outside the house, the bedroom's are switched off, the ray found the floor (4.91, house-local)
+  and he sat on the boards in front of the bed. Every opaque mesh now. Measured after: the mattress (5.43) under him, his
+  feet over its edge. `tools/pupbed.js`.
+- **THE DROPPED PUPPET SHINES** faintly (`addItemShine` size 1.1, strength 1.1, lift 0.45), taken off on every way he leaves
+  the floor (`dropShine` before each `scene.remove(elvDropped.I.root)`).
+- **CELLAR COLLISIONS** (the owner: "the puppets cant clip through the walls or anything in the basement … their peices
+  should react … the physics and colliders have to be good"): `cpWallHit` — the move extended by the body's reach, at its
+  middle ±0.22, NEVER LOWER THAN A KNEE (the walk records its walls from about there up: low pieces slid under every wall),
+  and, `strict` for what flies and breaks, a move must END over the cellar's floor (`cpInRoom`: the room's corners by the
+  bulkhead have no wall in the grid, only no floor — pieces out at z 7–12). The room's two x ends bound pieces too. A piece
+  born through a wall (a limb against it as he broke) is pulled in toward his middle. Hung ones swung into a wall or the
+  shelves stop and come back (from their rest centre); falling ones too. Pieces are kicked by your feet and by bodies thrown
+  across them (`cpPiecesTick`, `cpBodyStirs`), and a body flying past a hung one sets it swinging. `tools/pupfight.js` now
+  throws all seven hard every way: 0 of ~715 airborne frames off the floor over three runs; pieces off the floor 0 / 0 / a
+  corner pile 5 cm into a wall strip.
+- **HEALTH** (the owner, twice): the workshop's puppets 7, Elvédor's puppet 6, the marionette 26.
+- **THE MARIONETTE ON CRABS** (`marCrabFight`): the crabs (the pack, Skrim's, any) are not the fight's creatures; one awake
+  within 12 m of you he goes for and hits with his own capture's blows (`hurtCrab`), `marKill` marking a crab his blow
+  finished. Measured: a woken crab dead in 3.4 s.
+
+## The Enemy Log (2026-11-22)
+"add a section in the pack that says ENEMY LOG … models … idle stance … spin around and inspect … ??? for now. only enemies
+you or your companion kill. do not give them a description either. characters i named with dialog can be named."
+- `#invpanel h2` holds two `.pk-tab` buttons; `#invpanel.log` hides `.body`, `.rings`, `.tip` and shows `#elog`.
+- `ELOG` (declared at the top of the module — a restore can run early): kinds → counts, order of first kill, `snap`
+  (the likeness), `pend` (stand-ins). Saved as `enemyLog` [[kind, n]…]. Keys: `kindName` (the workshop's `cpup`, the
+  revenge puppet `epup`…), `crab` for every crab. Names: `ELOG_NAMES` (Elvédor, Skrim, Myles, the Dealer), else "???".
+- `elogKill` from `finishMutant` (before `onDeath` — the puppets shatter and the copy must be whole) and `killCrab`:
+  yours (`lastHitMine !== false`) or a companion's (`st.hitBy` with `cpAlly` / `minoAlly`; a crab's `marKill`).
+- `elogSnap`: `cryClone` (the skinned copy rebound to its own bones), each material cloned with any hit-flash undone, and its
+  idle clip (`kind.anim.idle`, `idle`, `mHIdle`, `mIdle`, `kind.idles`, or any clip named idle). After a load:
+  `elogEnsure` makes a stand-in of the kind 40 km off (asleep: the far skip keeps the fight off it), runs its `parLate`,
+  takes the copy, retires it and takes it out of `mutants` (a crab out of `crabs`).
+- `elogView`: its own renderer (as `pvBuild`), at `PV_RES`, pixelated; a turn group, auto-spin 0.35, drag with the fling,
+  the wheel 0.45–1.6; fitted by `Box3.setFromObject(root, true)` (skinned, precise) after one mixer step; a shadow pool.
+- **THE ENEMY LOG'S BOX**: sized from `getBoundingClientRect`, which is the paper's scaled rect — the canvas came out smaller
+  than its box and sat in its corner. Its layout size (`clientWidth/Height`) and 100 %; fitted to the model's turning diagonal,
+  the camera level with its middle. Measured: centres at 0.50/0.51 and 0.52/0.48 of the box. (`pvFrame` was already right.)
+- **THE MARIONETTE, HARDER** ("he just stands there alot", "isnt attack enough", "make him jump like the other puppets
+  sometimes"): his kind line had been cut in half by a `//` an earlier edit put in its middle — `limbR … press` were a comment
+  and he ran on Elvédor's. Now aggr 3.2, press 1, speedK 1.9, lunge 1.35, chain 4; his `cool` held ≤ 0.12 and no circling
+  (`step/side/back` 0) while he has a foe; on crabs 0.12–0.32 s between blows at 1.5×. `marLeapMaybe`/`marLeapStep`: the
+  workshop's pounce at what he fights from 2–5.2 m, at most every 6–11 s and half the time; landing is 3 on a creature, a point
+  on a crab. Measured: an Elvédor-kind dead in 8.6 s with him idle 13 % of it; a crab with the pounce forced: 3 pounces.
+  CHECK AN EDITED LINE'S TAIL: a comment appended mid-line eats everything after it, silently.
+- **EVERY CRAB THAT CIRCLED YOU BROKE THE FRAME** (since 2026-11-21): `mutFoePos` (the king's aim-ahead) read `u.kind.kingBody`
+  and crabs call it from `flankDir` with no `kind` — "Cannot read properties of undefined (reading 'kingBody')" every frame,
+  the rest of that frame's update cut off. `u.kind &&`. `bwFrameErr` now prints the first lines of the stack.
+- **NOTHING OVER YOUR HEAD** (the owner: "i jumped out of the map at the church using the hook to fly up … i shouldnt clip
+  through any wall ever"): `playerHeadClamp`, after `camBaseY += vy * dt` whenever rising — a ray from 0.45 m over your feet to
+  0.24 over your eye (+0.05) against `dropTargets()`; a hit stops you under it (`vy` 0) and lets go of the hook's pull. NEEDS
+  `raycaster.camera` (the church's candle flames are sprites: without it the ray threw). `tools/hookchurch.js &direct=1`:
+  hauled straight up at a point past the vault, at the rock over the entry and under the nave's dome — the head stops 0.13 and
+  0.10 under it, still in the church.
+
+## 2026-11-22 (later) — the gargoyles' break, the puppet in the game's grain, an eerier cellar, vicious puppets; the merge
+- **THE MERGE** (the owner: "pull and merge first"): origin/main had three commits (the sea's foam, echo steps by floor
+  `placeStep`, the sewer door). The uncommitted work was backed up, stashed, main fast-forwarded to e3b27d8, the stash popped.
+  Seven conflicts in `main.js`: upstream's `sfxStepDrain` and `placeStep` kept (the cellar added to `placeStep`: the bunker's
+  step); upstream's two-way `pipeHandPlace` kept with ours' `HG_SINK` on a pickup's grip; upstream's screwdriver depth (0.2)
+  kept with ours' scale-by-nearness; the harness list both. The notes' two: both. The stash is kept (`git stash list`).
+- **THE GARGOYLES' BREAK** (`sfxPupBreak`): a random `stoneBreak` recording, whole, at 1.08–1.22×, lowpassed and quieter with
+  distance, panned; under it the wood crack at 0.45. For every puppet's death and the Marionette's.
+- **IN THE GAME'S GRAIN** (`pupRetro`): every copy of the puppet flat-shaded, paint stepped to 9 levels a channel as seen
+  (`PUP_STEPS`, through sRGB); the source in `loadElvPuppet` (the bed, the arms, the bench — clones carry it), the workshop's
+  parse in `cpPre`/`cpMat` (after the paint and the dim), the revenge puppet's `matMore`.
+- **EERIER** (`celAudioTick`): a bed under the recording (43.6 / 44.3 Hz triangles beating, 65.4, lowpassed 320 Hz, a 1864 Hz
+  whine swelling on a 22 s LFO) at `CEL_EERIE` 0.07; a whisper (the shell's recordings, 0.82–0.94×, band-passed 280–1700 Hz)
+  from one of the room's corners every 35–75 s. THE CLOWN WATCHES YOU (`cpWatch`): his loose head turns to follow you at
+  0.55 rad/s, up to 1.15 rad, only while your look is more than ~37° off him; look at him and it stops where it is.
+- **VICIOUS** ("jump on you way more and be faster and scarier they just walk regular"): the run is their only gait (`gaits`
+  walk → `mHRun`), speedK 2.5, runMax 5.6, aggr 3, lunge 1.4, hitK 0.4; a decision every 0.35–1.1 s: a pounce from 1.5–6.5 m
+  80 % (aimed where you will be, `velocity` × the flight), from beside you 50 % (a hop up and onto you, arc ≥ 0.9 m), no more
+  than three in the air; the dart sideways AND in. THE TOKEN HELD THEM BACK: the beach gives one creature at a time the right
+  to swing at you (`mutToken`), and the pack's out-of-turn rule (`demonFrenzyOK`) needs the pack's roles — six of seven circled.
+  `kind.swarm` (`cpSwarmOK`, in the swing decision's `maySwing`): up to three swinging at once, each a fifth of a second after the
+  last committed. `CPD` counts `cpDrive`'s gates for the probe. Measured, the seven on you for 3 s: 3 pounces, swinging
+  768 frames of the fight; 0 airborne frames off the floor.
+- **THE OWNER'S "do 1 2 6 7"** (from my list of what would make the scene):
+  1. `celBlackout(s)`: every lamp but the moon (`lamp(...).moon`) at 0 through `celDarkK`, the tube back on a stutter. 2.6 s
+     from `cpAllDown` (the six drop in it and are on their feet as it returns — measured: tube 0 through the drop, 5.98 and all
+     seven standing at 2.5 s), 0.5 s as the first comes up off the bench. Their eyes are the only light in it.
+  2. `cpTwitchTick`: before the fight, every 6–15 s one hung puppet jerks on its strings (the swing, the twist, a loose limb
+     kicked) with `sfxCpClicks` (the church step at 2.3–3.1×, a few, from where he hangs). Measured: two in 20 s. And
+     `sfxCelOverhead(true, 0.5)` with the drop: something small running the room's length over you (11–15 steps 0.15 s apart).
+  6. `celHush`: from his eyes lighting (t 1.3) to his landing off the bench, the recording and the drone taken out in a tenth of
+     a second and the room's noises and whispers held; back with the landing (measured: 0 at t 2.3, rising by 3.9).
+  7. `cpEyesLinger` in `cpDie`: his eye materials lit full, then held at 0.45 with a flicker for 2.5 s, out by 5.5 (`cpEyeFade`,
+     ticked from `cpBurstTick`). The pieces carry the same materials, so the glow is in them.
+- **SEWER JARS** at the jar's own size (×3.04, `BLEED.jarS`; they were ×1.55), set further apart, their aim sphere and shine
+  scaled back to the size they had (both are in the jar's frame).
+- **THE GRAB HAND'S HOLES**: since the merge a pickup's hand was depth-tested at the thing's own depth round the grip
+  (`useDepth` 1, main's for the grate's bars) — grass, a floor's lip, the thing's own nearer faces came through his fingers.
+  `useDepth` 0 for a pickup; the grate's reach keeps 1. (The sheet itself has no holes: measured, every frame's clear flood-
+  fills from its border.) The grab a little quicker: `HG_T` 0.55 s → 0.475.
+- **NOTHING YOU PUT DOWN IS LOST** (`dropOnFloor`, from `dropPoint`): straight down on the place's own meshes, a floor facing up
+  within 0.33 m under your feet (not the sewer's channel) and under your head, with nothing between your chest and it; pulled
+  back toward you 15 cm at a time off a wall; else at your feet. `tools/sewdrop.js`: the bottle at the wall went INTO the wall
+  (the sewer's floor formula is one height), and over the channel it hung in the air; now on the ledge and the walk.
+- **LAG**: the injection's 52 ms frame was three things in turn — the blue light ADDED to the scene (now made with the lamps:
+  `celInjL`), the eyes' unlit-glow material compiled as they lit (`cpEyes(model, 0)` at each one's setup and the bench's load),
+  and the syringe compiled on its first frame (built with the cellar, `cpSyrBuild`, and shown for `placeInCellar`'s compile).
+  The head clamp's ray through the church was 2.5 ms a rising frame: the ceiling kept per half-metre and floor (`_phCeil`).
+  Measured clean: breaking puppets (≤ 27 ms with six at once), leaving the cellar, the church, the sewer (`tools/spikes.js`,
+  `tools/exits.js`).
+- **THE CAMERA WATCHDOG** (`cameraWatchdog`, after every frame): place, turn, look, eye height, fall, lens — anything not a number
+  is put back to the last place you stood on the ground (every 0.25 s), any held camera let go, and the console says what. For the
+  owner's screen of nothing but fog after the pack in the well man's fight (not reproduced: `tools/wellpack.js` — his hold, the
+  pack open and shut — kept the camera sound). `_camGood` is a `var` made on first use (the loop runs before the module is read).
+- **THE WELL'S "Look inside"** never once he is up (`wellEmptyLookIt` takes it away at `wellPhase` ≥ 2; the first prompt has
+  `when: wellPhase === 0`). `tools/wellfight.js`: his checkpoint staged as a load stages it, he swings and hits (6–10 in 20 s).
+- **THE MACE CRUSHES** (`maceMark` at the killing blow in all three of `hurtMutantCore`'s kill sites — `killHitK`, where your
+  aim met him as a share of his height; `maceKillPower`, `sfxMaceCrunch`): a head blow bursts the head; every part of the throw
+  kicked by its nearness to the contact; a body blow lifted more, a low one sweeps the legs; an overhead drives him down. Its
+  own first-flight caps (vmax 18, travel 16; a slam 9 / 6) — the common cap had clipped the bigger throw to the same 3.6 m.
+  `tools/macefling.js`: hips thrown 5.1–5.3 m (the toy shovel 1.7–1.9), the head gone on the head blow. Damage untouched.
+- **THE BUNKER'S LADDER** plays the item sound (`pickup`) as you take it. **DIALOGUE TEXT** about an eighth bigger
+  (`#dialog` font-size clamp 18–29 px).
+- **STUCK IN THE WALLS, LOCKED OUT** (the owner: "puppet models are getting stuck in the walls and locking me out of
+  progression"): the wall-hung ones came down off their nails into the strip along the wall where the walk has no floor, and
+  the clamp had no home for them to go back to. `cpLegal` (the cellar's own floor, the clamp's rule — not a bench top, not the
+  stairs), `cpRescue` (rings out from where it is, five-point footprint legal), `cpNearYou`; asked on landing off the strings,
+  off a pounce, a dart, a throw, and every frame of the fight (`cpStuckTick`: 0.5 s off the floor → rescued; 20 s never within
+  3 m of you → put near you). The clamp only takes a legal spot as a home. `tools/pupfight.js`: three runs, none off the floor,
+  every fight finished.
+- **DARKER BY THEM**: tube 4.3, bench bulb 2.1, `CEL_GLOW` 0.2.
+- **THE OWNER'S PUPPET FOOTSTEPS** ("Puppet Footsteps 2"): ten steps cut at their onsets (`assets/puppet-step1..10.m4a`, 49 KB),
+  bank `pupStep`, played by `sfxMutStep` for a voice with `pupStep` (the gait's own cadence) and every 0.09 s of a dart.
+- **NO LITTLE SCREAM**: their voice is `mute` (`sfxMutTell/Roar/Laugh/Hunger` return for it) — the borrowed throat at `f` 1.4 was
+  a small shriek; and the string snap is a dry snap and a low thrum, not a falling twang.
+- **NO BLACKOUTS** (the owner: "take out the lights turning off"): both `celBlackout` calls gone (the function stays).
+- **SUBTLE EYES** ("corny right now it should be horror"): the whites keep their own colour with a breath of cold (0.06), the
+  pupils a small pale point (0.75, darkened); the injection's spill 0.45 (was 2.4), a break's 0.8 (was 3.5), the eyes in the
+  pieces 0.35 and out by 4.5 s.
+
+## 2026-11-22 (late) — the puppets' moves, the cellar door again, the prints, the swing, the marionette's waits and his fights
+- **FLUID PUPPETS** ("theyre legs are stuck up near theyre heads the animations are bad make them fluid and good"): the pounce
+  was the Wong's `mJumpUp` (a tuck, knees to the chest) with a somersault on 30 % — legs over heads all fight. Now `cpLeapStart`
+  plays their own `mHRun` through the air (a 0.12 s dip first, the stride slowed to 0.75 in the hang, the body pitched forward
+  up to 0.42 rad about its middle and upright again to land), no flip, and the run plays on into the fight's gait (no fade to
+  nothing at the landing). `cpClip` crossfades (0.16 s, `crossFadeTo`) instead of fade-out/fade-in; the dart's strafe at 1.55×
+  (was 2.4). Hung by the ankles (`cpSettle`, `H.flip`), a free thigh/shin lerps toward ITS up by 0.55 (it had settled "down",
+  i.e. at his head). The marionette's pounce the same. `tools/puprig.js`: leaps read as a run in the air, legs down.
+- **THE WASHER'S PADLOCK RINGS** ("a metal hit … like the metal shovel no matter the weapon"): `celLockBreak` plays `milHeavy`
+  unless the military shovel's own heavy just did (`rang`).
+- **CELLAR DOOR** 2.85 × 1.52 × 2.35 (`CEL_OUT`). The fence is ~1.5 m past its low edge; the exit spot (d + 0.85) still inside.
+- **FOOTPRINTS TO IT** ("from the side of the house", then "around the swings side"): `celOutPrints`, 35 of the beach's prints
+  (`foot.material`) on a Catmull-Rom from by the swing (−z side), along that wall 1 m off it, round the back corner, the last
+  pair facing the doors. Each tilted to the ground (`elvLandFloorAt` from `elvSurf + 0.3` up — from above, the eaves were the
+  floor). `tools/celprints.js`.
+- **THE SWING AND HIM** ("make the swing physics and colliders react to the marionette too"): in `updateElvDressing` he shoves
+  the seat as you do (`shove`), and off it the seat is a box to him (its width along the arc, its span + ropes across), pushed
+  out by the shallow side — a seat swinging into him pushes him and is pushed back.
+- **HIS HEALTH ACROSS A CHECKPOINT**: was right (`tools/marsave.js`, beach/tavern/cellar). Fixed the gap: a save while he was
+  being made after a load (`marPend`) wrote the stand-in's full bar; and he is made with the saved hp from the first frame.
+  A save with him at 0 hp writes 'dead'.
+- **HE WAITS ON THE SAND** ("not get pulled into the water … sitting on the beach waiting … only if you do the cast with him
+  there"): `rod.marThere` at the throw (`marWithYou(30)`), `marWaitBegin` at the bite: a spot of CLEAR sand near him
+  (`marSandClear`: a ray down from 3.5 m hits nothing but the sand — the fishing tree's trunk is right there and the first
+  went in it; prints and glows, `depthWrite` off, and his own body skipped), dry (shore + 3.2). `marSitStep`: knees up, hands
+  under them (`marReach`), head at the water; set on the SAND MESH's height read by ray (`groundUnder` said 0.5 there, a mound
+  the eye does not see). Up the frame `deepLock` lets go (`marWaitEnd`). Saved as `marWait` only while `deepLock`.
+  `tools/marwait.js`.
+- **THEY FIGHT HIM BACK** ("enemies should attack the marionette if hes hitting them … balanced … keep our difficulty the
+  same"): `marAggro` from `hurtMutantCore` when he is `from`: 55 %, not one you hurt in the last 2.5 s, never a boss or a sided
+  fight (`marAggroOK`), and only while there is room — a third of what is awake within 30 m of you, one at least
+  (`marAggroRoom`; `marDraws` now asks the same and only takes ones he is hitting). `marAggroTick` (from the unit's frame) sends
+  it back after 4-7 s if you are nearer by half or he has not hit it in 3 s; your blow takes it at once. `tools/maraggro.js`:
+  four runts, one on him at a time, he took 2 hits, the rest on you.
+- **THE CELLAR CHECKPOINT, FAST**: ranked by the beach's distance from the house it held its black for the church, tunnel,
+  knight, cave, rock mouth and Elvédor (all within 100 m of z 716). `bwFetch`: for room 'cel' only its own files
+  (+ `marionette.glb`, which ranked FAR and came late) and the pack's are near; `WARM_ROOM_OWN.cel`; and down there the far
+  rest waits (`BW_CEL_FILES`, `bwHoldHere`). `loadall.sh cel`: playable 4.6-4.8 → 3.84 s, the 8 s after: max frame 20 ms
+  (was 145, the driftwood's parse).
+
+## 2026-11-22 (night) — the call's at-ear fingers, the loud line; the crow's zoom; the crabs' cut and the gulls; the hung puppets balanced
+- **THE FINGERS AT HIS EAR** ("fix the fingers on the phone in the start cutscene they are all messed up and the trims are
+  bad"): `tools/intro_ear_recut.py` frames 56-99 — the skin-hue cut tore them (holes, loose bits, a ragged lump over the glass).
+  `gc_refine`: GrabCut at half size seeded by the hue cut (sure-hand where it is solid, sure-not far off and on the left third,
+  the glass sure-his), smoothed back up, one piece with the glass. The glass: the clip's light drained flat (`lum` blurred ×0.13
+  + 0.035) — no more table/red book through it; what shows THROUGH it (the finger behind) darkened and drained (`thru`).
+  Vision's foreground instances were tried first: they merge his hand with the paper under it in most of these frames.
+  Source re-extracted from `~/Desktop/BEACHWALK ASSETS/IMG_7209.MOV` (ffmpeg 12 fps v2/ and v2h/); the right sheets are 5 now.
+- **"DUDE I HAVE A THOUSAND SKETCHES RIGHT HERE"**: 44.0-51.0 s of `assets/intro/call.m4a` −4.5 dB (0.15 s ramps; ffmpeg
+  `volume` with `eval=frame`, AAC 128k): his three lines there −19…−21 → −23…−26 dB active, beside the caller's −26/−27 either
+  side. Sample-aligned with the old file (cross-correlation 0 ms at 1 s and 60 s). The original is in git (bb45533).
+- **THE CROW'S ZOOM** ("make the zoom in on the crow scare less long"): `CROW_ZOOM_HOLD` 1.2 s from the scream's first breath
+  (it was the whole 3.6 s + its echo); the hold on your look eases with it. The scream, beak and shake unchanged.
+- **THE GULLS THROUGH THE CRABS' CUT** ("dont make the seagulls freez … just have them fly and not attack"): the pack's swim-in
+  (`packCut`) is `frozen()`, and `updateGulls` returned on it — the wreck's three hung in the air. Now `calm`: they run, no
+  wake, no hunt, and one in its tell or stoop is put into 'pass'.
+- **THE HUNG PUPPETS UNDER THEIR STRINGS** ("it doesnt look like hed hang like this from where the string is"): in `cpHang`, a
+  ceiling-hung body is turned whole about its strings' centroid until its centre of mass (bone-weighted) is inside 0.45 of
+  their spread, and the hook/bar/cord moved over that — the butcher (chest + head) hung bent forward a hand in front of both;
+  plumb now. The flipped ones and the host (five strings) were already balanced; the wall ones lean on the wall. `tools/pupstrings.js`.
+- **THE ENEMY LOG DOES NOT LAG** (asked): `tools/elogcost.js` — the first kill of a kind (when its likeness is copied) and the
+  second have the same worst frame (5-15 ms: the death's ragdoll and gore); its viewer and stand-ins run only with the page open.
+
+## 2026-11-22 (late night) — the marionette looks round; the workshop puppets run on their own clip, feet planted
+- **"give the marionette this look around when he comes out of the washer"** (Mixamo "Nervously Look Around"): packed into the
+  Wong's set (`tools/ntar_moves.py -- wong`, `NTAR_ONLY=lookAround`; 5.7 s, 172 frames, travel 0.02 m), retargeted in
+  `celMarMocap` as `mLook`. `updateCelEscape`: leap → 'look' (the whole clip where he landed, head override off) → 'stare'
+  (1.9 s, turned to you) → run. `tools/washer.js` stills `esc_look1-4`.
+- **"the puppets feet slide give them animations keep marionette the same"** + **"give the other puppets this run not the
+  marionette"** (Mixamo "Mutant Run": 0.70 s loop, 2.06 m, `mutantRun` → `mMRun` in `ELV_MOCAP`, so every Elvédor-built kind
+  HAS it; only `cpup` uses it). Measured (`tools/pupslide.js`, the seven on you 10 s): the run (`mHRun`) played at feet 2.70
+  m/s while their bodies went 1.15 (453 of 565 frames sliding over 1 m/s), the backing walk's feet the wrong way, 958 frames
+  sliding in the idle (the "spread round you" drift moved them under it). Now `cpup` has `velGait` (the clip off the body's
+  own velocity in its frame, at the rate its foot keeps pace, the body capped to the stride), `gaitBands` + `gaitLo` 0.55
+  (the Mutant Run only when really going, the walk under it), `axisLock` 0.7 (the sideways drift mostly cut while it strides).
+  After: frames sliding over 1 m/s — run 25/135, walk 5/922, strafes 0-5, idle 16/1407. The pounce (`cpLeapStart`) plays
+  `mMRun` through the air. The DART is a hop now (0.13 m arc for its 0.2-0.3 s: 6.6 m/s is no strafe's stride).
+  `tools/pupfight.js`: blows land 15/17, pounces, spread round you, throws and breaks as before. The marionette (`cmar`) is
+  untouched: still `mHRun`.
+- `assets/wong-moves.json` 111.6 → 145.1 KB (gzipped).
+
+## 2026-11-22 (late night, later) — the marionette lies and sits up; the bench sleeps; his stance; the puppets' gait settled; Elvédor waits; the cellar
+- **"have the marionette laying on the beach and he gets up like this"** (Mixamo "Situp To Idle", 4.3 s, flat → standing; Wong set
+  `situp`, `ELV_MOCAP` `mSitup`): while the deep has you `marLieStep` holds its first frame where he waited, his feet to the
+  water; `deepLock` off → `marWaitEnd` starts `MAR.rise`, `marRiseStep` plays it through, then `marWaitDone(u, true)` (no snap
+  of his yaw or height: he turns to you following). The knees-up sit is the fallback. `tools/marwait.js` stills `rise_*`.
+- **The bench puppet asleep** (Mixamo "Sleeping Idle", `sleep` → `mSleep`): `celPupSleep` reads the hidden bench fighter's
+  pose a third in and copies it onto the still copy `celPup`, bone by bone RELATIVE TO THE HIPS' PARENT, the whole body turned
+  as the fighter's `Sketchfab_model` stands in his group (the fighter has a `cpTurn` node the copy has not), then along the
+  bench (head to −x) and seated by his back. TRAP: the fighter already had a clip playing — sampled with it, the sleep came out
+  a 50/50 blend, propped on an elbow: `stopAllAction` first. `tools/pupsleep.js`.
+- **His stance** (Mixamo "Old Man Idle", 8.3 s, `oldIdle` → `mOldIdle`): `MUT_KINDS.cmar` gaits/anim idle, `marIdleClip` at the
+  three places he stands, and the washer one's stare (`mOld` in `celMarMocap`). `tools/maridle.js`.
+- **"LOOK HOW THEY MOVE THEIR RIGS ARE OFF"**: measured — the drawn bones are the clips' to ≤2° (`tools/pupdiff.js`: nothing
+  procedural bends them) and the Mutant Run retargets true (`tools/pupangles.js`: knee bends and thigh swings equal the Mixamo
+  source's at the same frame; the source's stick figures from Blender, `fbxsticks.py` in the scratchpad). What was off: velGait
+  switched each puppet's gait 2.2 times a second (run/strafe L/strafe R/back), so they were always mid-blend. `kind.vgHold`
+  (0.45 s, idle half): a wanted gait must hold that long before it is taken — 0.76 switches a second. `tools/pupframes.js`
+  (your view of the fight, labelled), `tools/pupclips.js` (a clip on the rig, side and front).
+- **The padlock** says only "It won't give." (no "Hit it off").
+- **The kitchen door open again, and the ground floor back** ("make the door i said to close in the cellar open", then "build
+  the kitchen again"): `tools/kelley_pack.py` no longer turns `Cube.211` (its own part `kitchenDoor`, kept whole), and `WELL`
+  is the house's whole ground floor (x -2300..1200.5, z -1140..770, to the ceiling at 815): the living room behind the door,
+  the kitchen and its table, the bathroom; walkable. `kelley.glb` 0.58 → 0.96 MB; cellar checkpoint 3.84 → 3.91 s playable.
+  `tools/celkitchen.js`.
+- **Elvédor waits for the marionette's blow** ("elvedor shouldnt automatically attack me the marionette should hit him first"):
+  `marElv` no longer provokes him on sight — and `marAggroTick` (11-22's aggro) handed him to YOU at once, no blow of the
+  marionette's having landed. Now he is woken by the marionette's first blow (`provoke` in `hurtMutantCore`) and stays on him
+  (`marAggroTick` leaves him) unless you hit him. `tools/marelv.js`: wakes at frame 520 hit by him; on you 0 frames.
+- **The cellar's checkpoints** ("make a checkpoint leaving or entering the cellar"): already written both ways
+  (`updateCellarCut` → `autosaveNow`): in, room 'cel'; out, by the doors (`tools/celsave.js`). The game has no on-screen
+  checkpoint notice.
+- **The bench puppet stays dead** ("after killing the puppet that jumps off the table … his model shouldnt be there when coming
+  back"): `celBenchDead` (set in `cpDie`, saved as `celBench`); the copy hidden whenever it or the fight's end is true (it was hidden
+  only while the fighters were in memory); loaded after his death, no bench unit is made and the rest come down (`cpAllDown`).
+  A save mid-fight took the whole fight as not begun. `tools/benchdead.js`.
+- **The puppet in the fire** ("the puppets body should not be in the fire if not put in there"): `epup` (the puppet alive when it
+  sees Elvédor die) set `elvBurned` to take it off the stage — and `elvBurned` is what lays the black body on the logs on every
+  load after, and what the "Burn the puppet" achievement counts. Now only `elvStage` 5; the load-time provoke asks `elvBurned`.
+  A save already written with it set still shows the body.
+- **Weapons after a checkpoint** ("my weapons sometimes dont show up in my hand when loading a checkpoint"): Skrim's Hook and the
+  water bottle were not in `PACK_FILES` — fetched as far rest, and in a room that holds the far rest (whale, deep, cellar) not at
+  all while you stood there. Added (and the sea shell); and `bwHoldHere` never holds a file of `BW_FROM.first`. `tools/vmroom.js`
+  (`&item=&room=`): the hook in the cellar and the military shovel in the whale drawn from 0.5 s.

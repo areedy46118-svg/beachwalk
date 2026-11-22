@@ -724,6 +724,22 @@ Kill him before you have brought it back and the puppet is still yours to
 deal with — waiting on the bed, or still in your arms: throw it on the fire,
 or carry it all the way to the shop, where he buys it for ten jars.
 
+Behind the house, cellar doors lead down to his workshop. Seven painted
+puppets hang there, each with its own build and pose, two of them by their
+ankles. They swing on their strings when you walk into them or hit them.
+Inject the one on the bench with blue blood and he gets up and fights. Kill
+him and the rest snap their strings and come down: they leap at you, dart
+sideways, fly across the room when you hit them, and break apart at the
+joints when they die. Afterwards the chained washer starts kicking. Hit the
+padlock off and the wooden marionette inside leaps out, stares at you, and
+runs up the stairs. Outside, he is waiting on the swing in front of the house.
+Ask him "You okay?" or "What are you?" and he hops off and follows you. He
+fights beside you until he breaks.
+
+The pack has an **Enemy Log** beside it: every kind of thing you or a companion have killed,
+named if it is someone you have spoken to (else ???), standing in its idle in a box you can
+drag to turn and scroll to look closer.
+
 ## The bunker
 
 Halfway between the snorkeler and the tall one, on the dry sand, a steel lid
@@ -1187,6 +1203,30 @@ This work is based on ["Henry The Puppet Remastered"](https://sketchfab.com/3d-m
 by [3D_Garbage](https://sketchfab.com/JKJKJKSJDKJKSDJK) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — Elvédor's puppet
 (`assets/puppet.glb`, `tools/gltfpack.py --tex 512` with per-mesh `--decimate-for` budgets, 6.0 MB).
+The same puppet, repainted, lies on the workbench in the cellar under the house.
+
+This work is based on ["Outdoor Cellar Door"](https://sketchfab.com/3d-models/outdoor-cellar-door-1d8736ede47149c0be75c99e47266047)
+by [s4shko](https://sketchfab.com/s4shko_) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the cellar doors against the back of the house behind the
+dune, and the same doors overhead inside (`assets/cellar-door.glb`, `tools/gltfpack.py --tex 256 --normal-tex 128 --drop-mr`, 34 KB).
+
+This work is based on ["813 Kelley Road"](https://sketchfab.com/3d-models/813-kelley-road-3638a8a4bf65450e919db14dda6a93a2)
+by [pixelbutterfly](https://sketchfab.com/pixelb) licensed under
+[CC-BY-NC-SA-4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/) — the cellar under the house behind the dune
+(`assets/kelley.glb`, `tools/kelley_pack.py`: its stairwell and basement only, the body, its table, the creature, the
+trash bags and the posts taken out, the kitchen door shut and the blue door opened flat, 0.58 MB). **Non-commercial, and
+share-alike**: a modified version must carry the same licence, and the game may not be sold while it uses this file.
+
+This work is based on ["Wooden Marionette - Haunted Puppet Horror"](https://sketchfab.com/3d-models/wooden-marionette-haunted-puppet-horror-2513df68008f4f2e8fc8e23b194763c7)
+by [Pigcraft](https://sketchfab.com/s8819296) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the one locked in the cellar's washer (`assets/marionette.glb`,
+`tools/marionette_rig.py` in Blender then `tools/marionette_retro.py`: brought down from 1.9 M triangles to ~3.9 k and a
+24-colour 256 px map, its strings cut, rigged with a Mixamo-named skeleton and driven by the Wong's motion capture, 251 KB).
+Out of the washer he plays Mixamo's "Nervously Look Around", and the workshop's puppets run on Mixamo's "Mutant Run" (Adobe
+Mixamo terms), both retargeted by `tools/ntar_moves.py -- wong` into `assets/wong-moves.json`.
+
+The cellar's ambience (`assets/cellar-ambience.m4a`, 72 s looped from 3:20 of the owner's file "Basement Storage Room
+Lights, Creaking, Wind 15 Minutes of Ambience", 520 KB) came without a source or licence — both still need recording here.
 
 Elvédor himself (`assets/elvedor.glb`, from the owner's `BrettHughes.fbx`, converted in
 Blender, 2.2 MB) came without a licence file — its source and terms still need recording here.

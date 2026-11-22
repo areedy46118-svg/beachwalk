@@ -5,7 +5,7 @@ w.eval(await (await fetch('/tools/burntest.js?' + Date.now())).text());
 b.settings.devMode = true;
 for (let i = 0; i < 300 && !(b.state && b.state().started); i++) { b.frame(1); await sleep(50); }
 w.__clockOn(); w.__adv(60);
-const it = b.interactables.find((i) => /sand shovel/i.test(i.label || '')); if (!it) { log('no shovel'); } else {
+const it = b.interactables.find((i) => /(sand|toy) shovel/i.test(i.label || '')); if (!it) { log('no shovel'); } else {
   const S = it.root.getWorldPosition(new b.THREE.Vector3()), C = b.camera, tiles = [];
   for (const [d, a] of [[3.6, 0.35], [2.1, 0.2], [3.0, -0.6]]) {
     C.position.set(S.x + Math.sin(a) * d, 1.7, S.z + Math.cos(a) * d); b.camBaseY = 1.7; b.lookAt(S.x, 0.75, S.z);

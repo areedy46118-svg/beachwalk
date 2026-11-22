@@ -506,3 +506,14 @@ deck+2.6). `templeFlight` (fixed again: `TC.g` is gone, it reads `TC.crow`): 38.
   (sprint 0.12-0.18 s apart, fighting ~0.28).
 - **THE BURST QUIETER** ("SO YOU CAN HEAR THE START OF THE STATS SONG"): `kingExplode`'s thunder `loud` 1 → 0.35 (`loud` is
   absolute, past the sliders), maceHeavy 1 → 0.55, smash 0.8 → 0.45. musictest kingEnd 0.0163 → 0.0543.
+
+## 2026-11-21: the king harder, two more blows, quieter thunder, out of the cloud slowly
+
+- Harder and more aggressive (the owner): hp 230 (180), aggr 6.4 (5.4), press 1.35, chainMax 6, opening 0.24, restless 0.5,
+  regroup 0.06 for 0.35–0.65 s, fidgetGap 4, gapRate 1.25; angry: aggr 8, speedK 2.15, press 1.5, chainMax 8, windK 0.82.
+- Two more blows ("give him some other animations too when fighting"): `kgPunch` (the knight pack's `kPunch`, contact 0.56)
+  and `kgSwipe` (`kSwipe`, 0.60) — he carried them under his own takes (`tavRetargetAll`) and never threw them; stand-offs
+  1.8 / 1.9, `use` 0.14 / 0.13.
+- The thunder under every slam 0.8 → 0.3 of the ceiling (past the sliders), the rage's 0.6 → 0.3.
+- The descent's dissolve over 14 m of his fall (5.6: about a second), so he comes slowly out of the cloud; a skipped descent
+  (Enter) raises him out of a swirl of mist on the spot over 1.8 s (`KING.emerge`, in `kingFxShow`) rather than dropping him in.
