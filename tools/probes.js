@@ -8838,3 +8838,40 @@ export async function beachWalk({ w, b, log, sleep }) {
   for (let i = 0; i < n; i++) console.log('[PBIMG]', 'beach', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
   b.settings.devMode = false;
 }
+
+// the metres a UV unit spans on a material's faces in the sewer (2026-11-21: the steel door's surround and the lair's passage
+// mapped brick at their own scales — `&mat=brick_modern_01`): median over the baked mesh's triangles, by world edge / uv edge
+export async function sewUV({ w, b, log, sleep }) {
+  const Q = new URLSearchParams(w.parent.location.search), want = Q.has('mat') ? Q.get('mat') : 'brick_modern_01';   // (&mat= with nothing: every material)
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadSewer();
+  for (let i = 0; i < 900 && !b.sewS().ready; i++) { b.frame(1); await sleep(40); }
+  const W = b.sewG().world, T = b.THREE, out = {};
+  W.updateMatrixWorld(true);
+  W.traverse((o) => {
+    if (!o.isMesh || !o.geometry.attributes.uv) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      if (!m || !(m.name || '').includes(want)) continue;
+      const P = o.geometry.attributes.position, U = o.geometry.attributes.uv, rs = [];
+      const a = new T.Vector3(), c = new T.Vector3();
+      for (let i = 0; i + 1 < P.count && rs.length < 4000; i += 3) {
+        a.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); c.fromBufferAttribute(P, i + 1).applyMatrix4(o.matrixWorld);
+        const du = Math.hypot(U.getX(i) - U.getX(i + 1), U.getY(i) - U.getY(i + 1)), dw = a.distanceTo(c);
+        if (du > 1e-4 && dw > 0.05) rs.push(dw / du);
+      }
+      rs.sort((x, y) => x - y);
+      out[(o.name || '-') + '/' + m.name] = rs.length ? [rs[Math.floor(rs.length * 0.25)], rs[Math.floor(rs.length / 2)], rs[Math.floor(rs.length * 0.75)], rs.length].map((v) => +v.toFixed(3)) : 'no tris';
+    }
+  });
+  log('METRES PER UV (q25, median, q75, n)', JSON.stringify(out));
+  // (&pick=lx,ly,lz,dx,dy,dz;...: what a ray from there hits, in the sewer's own frame — its material, its map, metres per UV there)
+  for (const r of (Q.get('pick') || '').split(';').filter(Boolean)) {
+    const [x, y, z, dx, dy, dz] = r.split(',').map(Number), G = b.sewG();
+    const rc = new T.Raycaster(new T.Vector3(G.SEW_X + x, G.SEW_Y + y, G.SEW_Z + z), new T.Vector3(dx, dy, dz).normalize()); rc.camera = b.camera;
+    const h = rc.intersectObject(W, true).filter((q) => q.object.isMesh)[0];
+    if (!h) { log('PICK', r, 'nothing'); continue; }
+    const m = Array.isArray(h.object.material) ? h.object.material[h.face.materialIndex || 0] : h.object.material;
+    log('PICK', r, 'd', h.distance.toFixed(2), 'mat', m.name, 'map', m.map && m.map.image && (m.map.image.width + 'x' + m.map.image.height), 'rep', m.map && m.map.repeat.toArray().join(','), 'uv', h.uv && h.uv.toArray().map((v) => v.toFixed(2)).join(','));
+  }
+}

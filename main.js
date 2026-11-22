@@ -97479,7 +97479,21 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
     const brickBig = [...kmats.values()].find((m) => m.name === 'brick_modern_01') || iron;
     const conc = [...kmats.values()].find((m) => m.name === 'concrete_base') || iron;
     const steelD = new THREE.MeshStandardMaterial({ color: 0x3e3a34, roughness: 0.7, metalness: 0, emissive: 0x0b0a08 });
-    const box = (w, h, d, x, y, z, m) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); bake(g, m); return g; };
+    /* (laid in METRES on every face, at the wall's own brick scale — 2026-11-22, the owner: "the textures on this door are still
+     * messed up itnhpought you fixed it laready": the 1 cm set-back cured the passage's fight with the jambs, but the surround's
+     * boxes kept BoxGeometry's 0..1 per face, so the whole 5.9 m brick tile was squeezed onto each face — eighteen times across
+     * a jamb's 32 cm front, eight across its 75 cm reveal: a dense streaked smear. Measured off the wall beside it: 5.7 m a tile,
+     * the lair's `rate` 0.17.) */
+    const UVR = 0.17;
+    const box = (w, h, d, x, y, z, m) => {
+      const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z);
+      const P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv;
+      for (let i = 0; i < P.count; i++) {
+        const ax = Math.abs(N.getX(i)), ay = Math.abs(N.getY(i));
+        U.setXY(i, (ax > 0.5 ? P.getZ(i) : P.getX(i)) * UVR, (ay > 0.5 ? P.getZ(i) : P.getY(i)) * UVR);
+      }
+      bake(g, m); return g;
+    };
     for (const sx of [-1, 1]) box(0.32, OH + 0.35, D, X + sx * (OW + 0.16), S.WALK + (OH + 0.35) / 2, Z - D / 2, brickBig);
     box(2 * OW + 0.64, 0.35, D, X, S.WALK + OH + 0.175, Z - D / 2, brickBig);
     box(2 * OW + 0.74, 0.08, D + 0.04, X, S.WALK + OH + 0.39, Z - D / 2 + 0.02, conc);                 // a concrete lintel cap

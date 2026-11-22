@@ -1306,3 +1306,10 @@ was drawn over everything, so his hand lay ON the grate. It is depth-tested now 
 ~0.1 of the screen's height of `reach.xy`, the grip's place on the screen) — the forearm stays over the bar it comes past, the
 fingers go down past the grate's flat to the screwdriver, and it comes out in them (as before). A line from the lower left to
 the grip, tried first, put the near bar across his wrist. `pipeReach` probe stills.
+- **The steel door's surround, second time** (2026-11-22, the owner: "the textures on this door are still messed up itnhpought
+  you fixed it laready"). The 1 cm set-back (2026-11-18) only cured the passage's fight with the jambs. The surround's own
+  boxes kept BoxGeometry's 0..1 UVs per face, and this brick (`brick_modern_01`) is a 5.7 m tile on the wall beside it
+  (measured): squeezed onto a 32 cm jamb front it was 18× compressed, a dense streaked smear. Now laid in metres per face at
+  `UVR` 0.17 (the lair's `rate`). **Any box added to the sewer kit needs metric UVs** — `bake` keeps whatever the geometry
+  brings. Probe: `sewUV&mat=<name>` (metres per UV on a material's faces; `&mat=` alone lists them all) and
+  `&pick=lx,ly,lz,dx,dy,dz` (what a ray hits in the sewer's frame, its material and uv).
