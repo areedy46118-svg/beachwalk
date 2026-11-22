@@ -1172,7 +1172,10 @@ export function makeDrainageTunnelHome(opts = {}) {
        * the cliff is a single plane 23 m seaward of here, so the shaft runs
        * into nothing at all. The box has to be there or the sky dome, which
        * is centred on the player, shows through the open end of the throat. */
-      R.add(slab(2.0, 1.5, 1.5, M.void, ROOM_X1 + 8.7, oy, oz));
+      /* (its own copy, unfogged, 2026-11-21: ten metres off, the fog laid the room's fog colour on it — lighter than
+       * anything down an unlit pipe — and the end of the bore glowed as a pale disc. Nothing lights the air in there.) */
+      const voidEnd = M.void.clone(); voidEnd.fog = false;
+      R.add(slab(2.0, 1.5, 1.5, voidEnd, ROOM_X1 + 8.7, oy, oz));
     }
     R.add(slab(rlen + 0.6, 0.22, ROOM_HZ * 2 + 0.5, M.roomConc, rcx, ROOM_H + 0.11, 0)); // ceiling slab
     // The bulkhead's room side is the door's concrete, built for the pipe and
@@ -1286,14 +1289,20 @@ export function makeDrainageTunnelHome(opts = {}) {
        * water run away into black a few metres in and the cap never shows:
        * at the peek's 0.78 m back, 3 m down reads a quarter, 6 m a twentieth,
        * the far end nothing. A pipe with a visible end is a recess. */
+      /* AND THE AIR IN IT IS DARK TOO (2026-11-21, the owner: "make sure the sewer tunnel blend better when looking down it
+       * . right now it kind of has a strange highlighted affects in it when looking down it from in"). The darkening was
+       * applied BEFORE the fog, so the fog was laid over it whole: the room's fog colour is lighter than an unlit pipe, so
+       * the deeper you looked the paler it got — a glowing disc at the end and every joint ring a pale outline (measured:
+       * the glow went with the fog off, not with the lamp-lit fog or the mist off). Applied after the fog now, the air
+       * down the bore darkens with the walls: nothing lights it. */
       const PIPE_MURK = 0.62, PIPE_CLEAR = 1.3;
       const murk = (m) => {
         m.onBeforeCompile = (sh) => {
-          sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>',
-            '#include <opaque_fragment>\n  gl_FragColor.rgb *= exp(-max(0.0, length(vViewPosition) - ' +
+          sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>',
+            '#include <fog_fragment>\n  gl_FragColor.rgb *= exp(-max(0.0, length(vViewPosition) - ' +
             PIPE_CLEAR.toFixed(2) + ') * ' + PIPE_MURK.toFixed(2) + ');');
         };
-        m.customProgramCacheKey = () => 'pipeMurk';
+        m.customProgramCacheKey = () => 'pipeMurk2';
         return m;
       };
       const thTex = throatTex();

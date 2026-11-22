@@ -969,3 +969,30 @@ sound keeps it. `maceHeavy` (his "boulder impact hard 4", assets/mace-heavy.m4a)
   the lighthouse's door, the fridge) now call `doorPick()` — his pickup sound once, not within 250 ms of the last, and
   nothing within 1.5 s of a key turning in a lock (`lockSndAt`): a keyed door is the unlock sound alone. `doorUse` plays
   it only if the door's own use did not (`doorSndAt`). Their synthesized bodies are left below an early return.
+
+## 2026-11-21 — `?mute` (the preview pane is silent)
+The owner: "mute the sound when its in the preview". `BW_MUTED` (`?mute` in the address) makes the context's `destination`
+an own-property GainNode of 0 in front of the real one, set the moment the context is made: everything in the game
+connects to `ctx.destination` when it connects (a dozen routes — the master, the music, every song's own volume, the
+bedroom's bus), so one door mutes them all, and the levels, `musicGuard` and the audio watchdog (which listens at
+`masterGain`) see nothing different. A death's `location.reload()` keeps the query, so it stays muted. Open the pane at
+`http://localhost:4173/?mute`; the plain address plays as always.
+
+**ECHO STEPS, AND EVERY STEP BY WHERE YOU ARE (2026-11-21).** The owner: "use these footsteps to in the whole sewer area and
+tunnel make sure they blend in with the ambiance of the area and make sure the sound cues for it makes sense based on where you
+are walking. make sure you do that with all footstep sounds". His "Echo Footsteps Sound Effect.mp3" (8.1 s, nine hard-soled
+steps in a ringing space) is cut into `assets/sewer-step1-9.m4a` (onset found off a 10 ms RMS envelope, each to the next step
+less 30 ms or 0.85 s, levelled to one RMS with the peak capped at 0.9, the last 120 ms faded; AAC 96k mono, 104 KB), bank
+`echoStep`. `sfxStepEcho(gain, lp, tail, rate)`: through a lowpass (the damp eats the top) and, for a small room, its ring cut
+short (`tail` 0.3 = a brick box, 1 = a tunnel). `afconvert` decodes mp3 to WAV here and encodes AAC; there is no ffmpeg.
+- **`placeStep()` is the one list** (the walk's footfall and the landing's were two copies, and every place missing from
+  them fell to the BEACH'S SAND step and stamped a sand print: the wreck's deck, the tug, the lighthouse's shaft and iron
+  stair, the keep, the island, the dojo, the pavilion, the house behind the dune; the drain was the synthesised sand step
+  all the way in, the undercroft's rock tunnel too). Indoors/underground stone rings (echo steps), open-air stone is the
+  church's dry step (`sfxStepStone(enclosed)`), boards knock, iron rings, grass and earth hush (`sfxStepSoft`, the sand
+  recording low and dull, no print). Sites with drawn floors are asked what is under the boot (`siteFloorSurface(S)`: the
+  tavern's floor test generalised over `S.walls`' material names → `siteSurface`).
+- **The drain by floor** (`sfxStepDrain`): wet silt from the mouth (echo + a quiet wade, half open air at the mouth), his
+  boards (x 7.4 … BORE_LEN − 0.9, |z| < 0.42: a board's knock and the bore answering), the room (echo cut to 0.32), the
+  culvert past the grate (a tunnel again). **The sewer**: the walks ring (echo), the bridge knocks with the tunnel under it,
+  the flood splashes and the room answers.

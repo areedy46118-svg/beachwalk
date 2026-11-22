@@ -1094,6 +1094,7 @@ for (const type of ['pointerdown', 'mousedown', 'click', 'dblclick', 'auxclick',
   }, { capture: true });
 }
 let audioStarted = false, audioCtx = null, masterGain = null;
+const BW_MUTED = /[?&]mute(=|&|$)/.test(location.search);    // (`?mute`: the preview pane's address — no sound to the speakers)
 /* NOTHING OF THE GAME IS HEARD BEFORE THE GAME. Every sound in the world goes
  * through `masterGain`, and a dozen things write that gain (the slider, the
  * tab coming back, the resume after the first press, the intro's duck) — so
@@ -1672,6 +1673,44 @@ const FOG_NOISE = (() => {
   return t;
 })();
 THREE.UniformsLib.fog.fogNoise = { value: FOG_NOISE };
+/* THE LAMPS IN THE AIR (2026-11-21, the owner: "make the fog better and more detailed and realistic. the lights need to
+ * reflect through it realistically to create the atmosphere"). Fog does not only hide: it is lit by every lamp in it, and the
+ * light it scatters toward the eye is what makes a lamp in fog a glow with a body of lit air round it, beams of it between
+ * you and the lamp, a wall behind a lamp seen through brighter air than one beside it. Per pixel, for each of the six pooled
+ * point lights, the light scattered toward the eye along the view ray up to the surface, in CLOSED FORM: with the lamp at `S`
+ * and the ray's nearest pass `h` from it, ∫ dt / r² along the ray is (atan((L − t0)/h) + atan(t0/h)) / h — no marching. Shaped
+ * by a forward-scattering phase (Henyey–Greenstein, g 0.45: much brighter looking toward the lamp, as real mist is), cut
+ * off at the light's own range, dimmed by the fog between, and broken up by a drifting noise field read where the ray
+ * passes the lamp (`fogScat.y` how much), so the lit air has wisps and banks that roll through the light rather than a
+ * smooth ball. Laid on as a screen (1 − (1 − c)·e^−x), after tonemapping like all the fog, so it never clips.
+ * x = strength, y = how broken (0 smooth .. 1 wisps), z = the clock, w = on (0 on the beach and in every room but the
+ * drain and the sewer). Only where there are lights to read: `BW_LIT` is defined in the lit materials' light chunk. */
+const FOG_SCAT = { x: 0, y: 0.8, z: 0, w: 0 };
+const FOG_SCAT_K = { sew: 0.035, drain: 0.06, room: 0.08 };   // its strength in each
+THREE.UniformsLib.fog.fogScat = { value: FOG_SCAT };
+THREE.ShaderChunk.lights_pars_begin = '#define BW_LIT\n' + THREE.ShaderChunk.lights_pars_begin;
+const FOG_SCAT_GLSL = `
+	float bwScatN( vec3 p ) {
+		vec2 q = p.xz + p.y * vec2( 0.37, 0.71 );
+		float a = texture2D( fogNoise, ( q + 0.5 ) / 512.0 ).g;
+		float b = texture2D( fogNoise, ( q * 2.3 + vec2( 91.0, 17.0 ) - p.y * vec2( 1.22, 0.67 ) + 0.5 ) / 512.0 ).g;
+		return a * 0.65 + b * 0.35;
+	}
+	vec3 bwAirlight( vec3 rd, float rl, vec3 S, vec3 col, float range, float dens, vec4 sc ) {
+		float t0 = dot( S, rd );
+		float h = length( S - rd * t0 ); h = sqrt( h * h + 0.06 );      // (softened at the lamp: the bare 1/h blew out the bulb's surround)
+		float a = ( atan( ( rl - t0 ) / h ) + atan( t0 / h ) ) / h;
+		float hk = range > 0.0 ? pow( clamp( 1.0 - pow( h / range, 4.0 ), 0.0, 1.0 ), 2.0 ) : 1.0;
+		float tc = clamp( t0, 0.0, rl );
+		vec3 pw = cameraPosition + ( vec4( rd * tc, 0.0 ) * viewMatrix ).xyz;
+		float n = bwScatN( pw * 1.25 + vec3( 0.21, 0.05, -0.13 ) * sc.z );
+		n = 0.55 * n + 0.45 * bwScatN( pw * 0.45 - vec3( 0.08, -0.03, 0.11 ) * sc.z + 40.0 );
+		float ext = exp( - dens * dens * tc * tc );
+		float cs = dot( rd, normalize( S ) );
+		float ph = 0.3 * ( 1.0 - 0.2025 ) / pow( 1.2025 - 0.9 * cs, 1.5 );
+		return col * a * hk * ext * ph * mix( 1.0, smoothstep( 0.3, 0.72, n ) * 2.4, sc.y );
+	}
+`;
 for (const k in THREE.ShaderLib) {
   const u = THREE.ShaderLib[k].uniforms;
   if (u && u.fogDensity && !u.fogMoon) u.fogMoon = { value: FOG_MOON };
@@ -1682,6 +1721,7 @@ for (const k in THREE.ShaderLib) {
   if (u && u.fogDensity && !u.fogGround) u.fogGround = { value: FOG_GROUND };
   if (u && u.fogDensity && !u.fogNoise) u.fogNoise = { value: FOG_NOISE };
   if (u && u.fogDensity && !u.fogCap) u.fogCap = { value: FOG_CAP };
+  if (u && u.fogDensity && !u.fogScat) u.fogScat = { value: FOG_SCAT };
 }
 /* the keep's mist, shared by the fog chunk and the keep's own sky: optical
  * depth of the layer along a ray from `o` in direction `d` for `L` metres */
@@ -1771,7 +1811,7 @@ const GROUND_MIST_GLSL = `
 THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogView;\n#endif';
 THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n\tvFogDepth = - mvPosition.z;\n\tvFogView = mvPosition.xyz;\n#endif';
 THREE.ShaderChunk.fog_pars_fragment = THREE.ShaderChunk.fog_pars_fragment.replace(
-  'varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogView;\n\tuniform vec4 fogMoon;\n\tuniform vec4 fogBolt;\n\tuniform vec4 fogTint;\n\tuniform vec4 fogKeep;\n\tuniform vec4 fogKeep2;\n\tuniform vec4 fogGround;\n\tuniform vec4 fogCap;\n\tuniform sampler2D fogNoise;\n' + KEEP_MIST_GLSL + GROUND_MIST_GLSL);
+  'varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogView;\n\tuniform vec4 fogMoon;\n\tuniform vec4 fogBolt;\n\tuniform vec4 fogTint;\n\tuniform vec4 fogKeep;\n\tuniform vec4 fogKeep2;\n\tuniform vec4 fogGround;\n\tuniform vec4 fogCap;\n\tuniform vec4 fogScat;\n\tuniform sampler2D fogNoise;\n' + KEEP_MIST_GLSL + GROUND_MIST_GLSL + FOG_SCAT_GLSL);
 THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 	vec3 fogCol = fogColor;
 	float fogK = 1.0;
@@ -1823,6 +1863,25 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 		float tauM = bwMistDepth( cameraPosition, fogDirM, min( length( vFogView ), 420.0 ), fogKeep2 ) * fogKeep.w;
 		gl_FragColor.rgb = mix( gl_FragColor.rgb, bwMistCol( fogDirM, fogKeep.xyz, fogColor ), 1.0 - exp( - tauM ) );
 	}
+	/* (a light in your own hand — the glowstick, 0.7 m from the eye — starts every ray of the frame inside its brightest
+	 * air, and the fog in front of you went up as a lit wall: 2026-11-21, the owner, "turn down the glowstricks light
+	 * refraction on the fog wall". A light that close to the eye scatters a quarter as much; the lamps on the walls keep theirs.) */
+	#if defined( BW_LIT ) && NUM_POINT_LIGHTS > 0
+	if ( fogScat.w > 0.0 ) {
+		vec3 bwRd = normalize( vFogView ), bwSc = vec3( 0.0 ); float bwRl = length( vFogView );
+		#ifdef FOG_EXP2
+			float bwDn = fogDensity;
+		#else
+			float bwDn = 0.0;
+		#endif
+		#pragma unroll_loop_start
+		for ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {
+			bwSc += bwAirlight( bwRd, bwRl, pointLights[ i ].position, pointLights[ i ].color, pointLights[ i ].distance, bwDn, fogScat ) * mix( 0.28, 1.0, smoothstep( 0.9, 2.4, length( pointLights[ i ].position ) ) );
+		}
+		#pragma unroll_loop_end
+		gl_FragColor.rgb = 1.0 - ( 1.0 - gl_FragColor.rgb ) * exp( - bwSc * fogScat.x * fogScat.w );
+	}
+	#endif
 #endif`;
 
 const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 5000);
@@ -2058,6 +2117,38 @@ const SK_NOISE_TEX = /* glsl */`
   float skH(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
   float skN(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
     return textureLod(bwSkyTex, (i + u + 256.5) / 512.0, 0.0).r; }
+`;
+/* FOAM FROM NOISE (2026-11-21, the owner: "revamp the water to be more detailed and real looking espcecially the particles
+ * of the white caps and suds on the beach where the tide is"). ONE pattern for every white thing the sea makes — the bore
+ * where a wave breaks, the lines the backwash carries out, the caps on the crests, the suds left on the sand, the white
+ * round a stone and up its face — so they are all the same stuff. Real foam is rafts of bubbles with open water between
+ * them and holes of every size inside them: a warped fbm cut at a level set by how much foam the place wants (`cover`).
+ * Thin cover leaves torn strands and islands, thick cover a sheet with a few holes. Octaves finer than the pixel (fw,
+ * metres a pixel) are let go, or they sparkle. No cells, no circles (the owner, twice). `thick` is how far inside a raft
+ * the point is: the middle of one is denser and brighter than its lacy edge. `N` names the noise the shader has. */
+const foamGLSL = (N) => /* glsl */`
+  float bwFoamT(vec2 p, float t, float fw, float cover, out float thick) {
+    vec2 w = vec2(${N}(p * 0.45 + vec2(t * 0.04, 3.1)), ${N}(p * 0.45 + vec2(7.7, -t * 0.03))) - 0.5;
+    vec2 q = p + w * 1.4;
+    float f = ${N}(q * 1.1 + vec2(t * 0.06, 0.0)) * 0.33;
+    f += ${N}(q * 2.7 - vec2(0.0, t * 0.09) + 5.3) * 0.24;
+    float a3 = clamp(1.0 - fw * 5.0, 0.0, 1.0), a4 = clamp(1.0 - fw * 11.0, 0.0, 1.0), a5 = clamp(1.0 - fw * 24.0, 0.0, 1.0);
+    f += mix(0.5, ${N}(q * 6.3 + vec2(t * 0.13, -t * 0.05) + 1.7), a3) * 0.20;
+    f += mix(0.5, ${N}(q * 14.5 - vec2(t * 0.1, 0.0) + 9.1), a4) * 0.14;
+    f += mix(0.5, ${N}(q * 33.0 + t * 0.07), a5) * 0.09;
+    float c = clamp(cover, 0.0, 1.0);
+    float lvl = mix(0.72, 0.32, c);                        // the raft's edge: high = only the peaks, low = nearly all of it
+    float soft = 0.012 + fw * 0.3;
+    thick = smoothstep(lvl + 0.02, lvl + 0.14, f);
+    float raft = smoothstep(lvl - soft, lvl + soft, f);
+    /* and the LACE between and round the rafts: strands of bubbles (the ridges of two warped noises, torn where a third
+     * is low), only near a raft, so it frays out of one rather than drawing lines across open water */
+    float vein = a3 * (1.0 - abs(2.0 * ${N}(q * 7.5 + vec2(t * 0.07, 0.0) + 23.9) - 1.0));
+    float vs = 0.04 + fw * 1.0;
+    float lace = smoothstep(0.80 - vs, 0.80 + vs, vein) * smoothstep(lvl - 0.12, lvl - 0.02, f)
+               * smoothstep(0.45, 0.7, ${N}(q * 4.9 + 41.0));
+    return max(raft, lace * 0.6) * smoothstep(0.0, 0.1, c);
+  }
 `;
 const BW_NOISE_U = { value: FOG_NOISE };
 const SKY_CLOUDS_BODY = /* glsl */`
@@ -3689,7 +3780,7 @@ function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
     .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;')
     .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
   shader.fragmentShader = shader.fragmentShader
-    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nuniform float uSkyT;\nuniform vec3 uShallow;\nuniform float uEdgeK;\nuniform vec3 uWellHole;\nfloat wetMask;\nfloat bwFresh;\nfloat bwWeed;\nfloat bwShell;\nfloat bwFoam;\n' + noiseGLSL + shoreGLSL + CLOUD_SHADE_T + FORT_CUT_GLSL + decl)
+    .replace('#include <common>', '#include <common>\nvarying vec3 vWorldPos;\nuniform float uTime;\nuniform float uSkyT;\nuniform vec3 uShallow;\nuniform float uEdgeK;\nuniform vec3 uWellHole;\nfloat wetMask;\nfloat bwFresh;\nfloat bwWeed;\nfloat bwShell;\nfloat bwFoam;\n' + noiseGLSL + shoreGLSL + CLOUD_SHADE_T + foamGLSL('skN') + FORT_CUT_GLSL + decl)
     .replace('#include <clipping_planes_fragment>',
       `#include <clipping_planes_fragment>
        float bwLift = ${lift};
@@ -3702,9 +3793,8 @@ function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
        float fromShore = vWorldPos.x - bwShore;
        wetMask = smoothstep(16.0, -1.0, fromShore);
        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.72, 0.78, 0.9), wetMask);
-       vec2 fcell = floor(vWorldPos.xz * 20.0);
-       float spk = fract(sin(dot(fcell, vec2(12.9898, 78.233))) * 43758.5453);
-       diffuseColor.rgb += vec3(0.30, 0.36, 0.42) * step(0.992, spk) * wetMask * 0.5;
+       float spk = skN(vWorldPos.xz * 23.0 + 5.1);             // (a fleck of wet grain — a noise peak, not a hashed square)
+       diffuseColor.rgb += vec3(0.30, 0.36, 0.42) * smoothstep(0.90, 0.98, spk) * wetMask * 0.5;
        float sheen = smoothstep(2.6, 0.0, abs(fromShore - 0.4));
        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.60, 0.68, 0.85), sheen * 0.45);
        /* WHAT THE TIDE LEAVES. A wrack line where the high water last
@@ -3738,6 +3828,7 @@ function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
          bwFresh = 0.0;
          if (fromShore > -1.0 && fromShore < 8.0) {
            float foam = 0.0;
+           float fwS = length(fwidth(wxz));
            for (int k = 1; k <= 4; k++) {
              float sk = shoreLine(vWorldPos.z, uTime - 1.1 * float(k)) - bwLift;
              if (vWorldPos.x < sk) {
@@ -3746,20 +3837,25 @@ function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
                float within = clamp((vWorldPos.x - sk0) / max(sk - sk0, 0.05), 0.0, 1.0);
                float age = (float(k - 1) + within) / 4.0;
                bwFresh = max(bwFresh, 1.0 - age);
-               /* FOAM THAT BELONGS TO THE SAND: a thin film first — the bubbles
-                * the wave left, soft and uneven — with finer threads in it where
-                * the wave turned, both breaking up and sinking in as they age. */
-               float film = smoothstep(0.35, 0.85, skN(wxz * vec2(2.2, 0.9) + vec2(0.0, float(k) * 1.3))) * (0.55 + 0.45 * skN(wxz * 7.0));
-               float n = skN(wxz * vec2(6.0, 2.2) + vec2(0.0, float(k) * 1.7)) * 0.7 + skN(wxz * vec2(13.0, 5.0)) * 0.3;
-               float lace = smoothstep(0.495, 0.515, n) * (1.0 - smoothstep(0.530, 0.560, n));
-               lace *= smoothstep(0.25, 0.60, skN(wxz * 16.0 + float(k) * 3.1));
-               float nearTop = smoothstep(sk - 3.5, sk - 0.3, vWorldPos.x);
-               float fade = pow(1.0 - age, 1.6);
-               foam = (film * 0.45 + lace * 0.7) * nearTop * fade;
+               /* FOAM THAT BELONGS TO THE SAND: the suds the wave left, the sea's own foam (foamGLSL) lying still
+                * — thickest in a band where the wave turned, torn into lace below it, bursting and sinking in as it
+                * ages (its cover falls, so the rafts shrink and break into islands rather than fading as a sheet). */
                break;
              }
            }
-           foam *= step(bwShore + 0.05, vWorldPos.x) * (1.0 - smoothstep(8.0, 24.0, length(vWorldPos - cameraPosition)));
+           /* the suds lie along each line the water reached (k beats ago) — thickest just under it, fraying out down
+            * the beach below — and age away line by line. One sum over the lines, so no wave's band meets the next
+            * on a seam (it was the band the point fell in, and its edges were hard straight cuts across the suds). */
+           float sCovL = 0.0;
+           for (int k = 1; k <= 4; k++) {
+             float skL = shoreLine(vWorldPos.z, uTime - 1.1 * float(k)) - bwLift;
+             float dL = vWorldPos.x - skL + (skN(vec2(vWorldPos.z * 0.9, float(k) * 5.1)) - 0.5) * 0.5;
+             float rib = (1.0 - smoothstep(-0.05, 0.12, dL)) * smoothstep(-2.2, -0.2, dL);
+             sCovL = max(sCovL, rib * pow(1.0 - (float(k) - 0.5) / 4.5, 1.4));
+           }
+           float th;
+           foam = sCovL > 0.01 ? bwFoamT(wxz * vec2(0.8, 1.0), uTime * 0.15, fwS, sCovL * 0.5, th) * (0.45 + 0.4 * th) : 0.0;
+           foam *= smoothstep(bwShore, bwShore + 0.3, vWorldPos.x) * (1.0 - smoothstep(8.0, 24.0, length(vWorldPos - cameraPosition)));
            bwFoam = foam;
            bwFresh *= step(bwShore, vWorldPos.x);
          }
@@ -3782,9 +3878,10 @@ function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
          float mEl = asin(clamp(mR.y, -1.0, 1.0)) - asin(mM.y);
          float road = exp(-mAz * mAz / 0.0022) * exp(-mEl * mEl / 0.020);
          float film = smoothstep(9.0, 0.0, fromShore) * max(wetMask, 0.0) * (1.0 + bwFresh * 1.4);
-         vec2 gc = floor(vWorldPos.xz * vec2(9.0, 3.0));
-         float gl = fract(sin(dot(gc, vec2(41.3, 289.1)) + floor(uTime * 3.0) * 1.7) * 43758.5453);
-         float glint = step(0.93, gl) * exp(-mAz * mAz / 0.006);
+         /* (glints from noise peaks, drifting and flickering: they were a hashed grid of 11 x 33 cm cells and read as pale
+          * rectangles on the swash, 2026-11-21) */
+         float gl = skN(vWorldPos.xz * vec2(11.0, 4.0) + vec2(0.0, uTime * 0.7)) * smoothstep(0.35, 0.75, skN(vWorldPos.xz * vec2(3.0, 1.2) - vec2(uTime * 0.9, 0.0)));
+         float glint = smoothstep(0.62, 0.80, gl) * exp(-mAz * mAz / 0.006);
          gl_FragColor.rgb += vec3(0.62, 0.70, 0.86) * film * (road * 0.20 + glint * 0.55 * exp(-mEl * mEl / 0.05));
          // the glassy film on sand the water has just left: it gives back the sky at a grazing angle
          float fres = pow(1.0 - clamp(-mV.y, 0.0, 1.0), 4.0);
@@ -3794,8 +3891,10 @@ function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
           * tint there changed almost nothing you could see */
          gl_FragColor.rgb *= 1.0 - bwWeed * 0.30;
          gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * 1.6 + vec3(0.02), bwShell * 0.45);
-         // the foam LIGHTENS what is under it — the sand's own grain shows through — and takes a little sky
-         gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * 1.55 + vec3(0.018, 0.024, 0.034), clamp(bwFoam, 0.0, 1.0) * 0.6);
+         /* the suds are WHITE (2026-11-21): they lightened what was under them (x 1.55), and on dark wet sand at night
+          * that is still dark — the owner saw none. The sea's own foam colour now, the grain only showing through the lace. */
+         vec3 bwFoamC = vec3(0.18, 0.22, 0.29) * uEdgeK;
+         gl_FragColor.rgb = mix(gl_FragColor.rgb, bwFoamC + gl_FragColor.rgb * 0.25, clamp(bwFoam, 0.0, 1.0) * 0.85);
          /* AND THE WATER MEETS THE SAND WITH NO DARK LINE. The sand is drawn a
           * metre out under the sea's edge, above the sea's own plane, so that
           * strip showed as bare dark sand between the lit wet sand and the
@@ -3815,6 +3914,17 @@ function sandShader(shader, keep = 'false', decl = '', lift = '0.0') {
            gl_FragColor.rgb = mix(gl_FragColor.rgb, thin + gl_FragColor.rgb * 0.40, under * 0.85);
            gl_FragColor.rgb = mix(gl_FragColor.rgb, max(gl_FragColor.rgb, thin * 1.1) + vec3(0.035, 0.050, 0.065) * bub, lip * (0.35 + 0.25 * nearE));
            gl_FragColor.rgb += vec3(0.020, 0.030, 0.048) * margin * (0.5 + 0.5 * fres);
+           /* AND THE SURF'S WHITE IS ON IT (2026-11-21). This strip is what shows of the water's edge — the sea itself is
+            * under the sand here — so the bore was never seen: the wave broke and nothing white came up the beach. The
+            * sea's foam (foamGLSL) is drawn on the sheet: a band of it riding the edge, thickest as the water runs up,
+            * and torn suds over the sheet behind it. */
+           float rushS = clamp((shoreLine(vWorldPos.z, uTime + 0.35) - shoreLine(vWorldPos.z, uTime)) * 1.6, 0.0, 1.0);
+           float edgeB = exp(-pow((fS + 0.25) / 0.45, 2.0)) * (0.35 + 0.65 * smoothstep(0.25, 0.7, skN(vec2(vWorldPos.z * 0.35, uTime * 0.15) + 3.3)));
+           float sCov = max(edgeB * (0.22 + 0.38 * rushS), under * (0.20 + 0.45 * rushS) * smoothstep(0.3, 0.7, skN(vWorldPos.xz * 0.5 + vec2(uTime * 0.1, 0.0))));
+           sCov *= nearE * 0.6 + 0.4;
+           float sTh;
+           float sA = bwFoamT(vWorldPos.xz * vec2(0.62, 1.0), uTime, length(fwidth(vWorldPos.xz)), sCov, sTh);
+           gl_FragColor.rgb = mix(gl_FragColor.rgb, bwFoamC * (0.75 + 0.35 * sTh), sA * (0.55 + 0.4 * sTh));
          }
        }
        #include <tonemapping_fragment>`);
@@ -7623,13 +7733,103 @@ function updateSplashes(dt) {
     p.rot.x += p.vel.x * dt * 3; p.rot.z += p.vel.z * dt * 3;
     if (p.pos.y <= (p.base === undefined ? 0.02 : p.base)) p.life = 0;
     const k = Math.max(0, p.life / p.ttl);
-    const sc = p.sz * 0.055 * (0.35 + 0.65 * k);
+    const sc = p.sz * 0.04 * (0.35 + 0.65 * k);     // (0.055 until 2026-11-21: at that size a drop off a stone was a pale blue lump)
     _spq.setFromEuler(p.rot);
     _spm.compose(p.pos, _spq, _sps.set(sc, sc * 1.7, sc));
     splash.setMatrixAt(i, _spm);
     if (p.life <= 0) splash.setMatrixAt(i, _spm.makeScale(0, 0, 0));
   }
   if (any) splash.instanceMatrix.needsUpdate = true;
+}
+
+/* SPRAY (2026-11-21, the owner on the waves against the rocks: "update these effects"). What a wave throws off a stone
+ * is mostly not drops but a burst of fine spray: here each particle is a puff of it — a torn, lobed blob speckled with
+ * droplets (noise, no circle), that leaps, swells, drifts landward on the wind and thins away. It is lit the way spray
+ * is at night: dull against the dark, but glowing when the moon is behind it, which on this beach is the way you walk
+ * (the old \`spawnPuffs\` spray was shaded as a solid and read as dark shards for exactly that reason). One draw. */
+const SPRAY_POOL = 240;
+const sprayPts = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPRAY_POOL * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aA', new THREE.BufferAttribute(new Float32Array(SPRAY_POOL), 1).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aS', new THREE.BufferAttribute(new Float32Array(SPRAY_POOL), 1).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aR', new THREE.BufferAttribute(Float32Array.from({ length: SPRAY_POOL }, () => Math.random()), 1));
+  const m = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: true,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uPx: { value: 300 }, uMoon: { value: MOON_DIR.clone().normalize() } }]),
+    vertexShader: /* glsl */`
+      #include <fog_pars_vertex>
+      attribute float aA; attribute float aS; attribute float aR; uniform float uPx;
+      varying float vA; varying float vR; varying vec3 vV;
+      void main(){
+        vR = aR;
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vV = normalize(wp.xyz - cameraPosition);
+        vec4 mvPosition = viewMatrix * wp;
+        gl_Position = projectionMatrix * mvPosition;
+        gl_PointSize = clamp(aS * uPx / max(-mvPosition.z, 0.1), 1.0, 160.0);
+        vA = aA * smoothstep(0.3, 1.2, -mvPosition.z);
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */`
+      #include <fog_pars_fragment>
+      uniform vec3 uMoon; varying float vA; varying float vR; varying vec3 vV;
+      float spH(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
+      float spN(vec2 q) { vec2 i = floor(q), f = fract(q); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(spH(i), spH(i + vec2(1.0, 0.0)), f.x), mix(spH(i + vec2(0.0, 1.0)), spH(i + vec2(1.0, 1.0)), f.x), f.y); }
+      void main(){
+        vec2 q = gl_PointCoord - 0.5;
+        vec2 o = vec2(vR * 31.0, vR * 17.0);
+        float lob = spN(q * 3.5 + o) * 0.65 + spN(q * 7.0 + o * 1.7) * 0.35;
+        float body = 1.0 - smoothstep(0.12, 0.5, length(q) * (0.65 + 0.9 * lob));      // a torn puff, its edge eaten by noise
+        float drops = smoothstep(0.45, 0.85, spN(q * 14.0 + o * 2.3));                   // and it is drops, not smoke
+        float a = vA * body * mix(0.45, 1.0, drops);
+        if (a < 0.006) discard;
+        float back = pow(max(dot(vV, uMoon), 0.0), 5.0);                                 // the moon behind it
+        vec3 col = vec3(0.30, 0.37, 0.46) + vec3(0.52, 0.58, 0.66) * back + vec3(0.10, 0.12, 0.14) * drops;
+        gl_FragColor = vec4(col, a * 0.75);
+        #include <fog_fragment>
+      }`,
+  });
+  const pts = new THREE.Points(g, m);
+  pts.frustumCulled = false; pts.renderOrder = 3; pts.name = 'surfSpray';
+  pts.userData.bwGhost = true; pts.raycast = () => {};
+  scene.add(pts);
+  return pts;
+})();
+const sprays = Array.from({ length: SPRAY_POOL }, () => ({ life: 0, ttl: 1, pos: new THREE.Vector3(), vel: new THREE.Vector3(), sz: 1, base: 0 }));
+let sprayIdx = 0;
+function spawnSpray(x, y, z, n, dirX = 0, dirZ = 0, power = 1) {
+  for (let i = 0; i < n; i++) {
+    const p = sprays[sprayIdx]; sprayIdx = (sprayIdx + 1) % SPRAY_POOL;
+    p.ttl = p.life = 0.9 + Math.random() * 0.9;
+    p.sz = (0.35 + Math.random() * 0.5) * (0.6 + 0.5 * power);
+    p.base = y - 0.1;
+    p.pos.set(x + (Math.random() - 0.5) * 0.5, y + Math.random() * 0.15, z + (Math.random() - 0.5) * 0.5);
+    p.vel.set(dirX * 1.2 * power + (Math.random() - 0.5) * 1.4, (1.4 + Math.random() * 2.6) * (0.5 + 0.6 * power), dirZ * 1.2 * power + (Math.random() - 0.5) * 1.4);
+  }
+}
+function updateSpray(dt) {
+  const P = sprayPts.geometry.attributes.position, A = sprayPts.geometry.attributes.aA, S = sprayPts.geometry.attributes.aS;
+  let any = false;
+  for (let i = 0; i < SPRAY_POOL; i++) {
+    const p = sprays[i];
+    if (p.life <= 0) { if (A.array[i] !== 0) { A.array[i] = 0; any = true; } continue; }
+    any = true;
+    p.life -= dt;
+    p.vel.y -= 5.5 * dt;                                   // a mist falls slowly: the air holds it
+    p.vel.multiplyScalar(Math.max(0, 1 - 1.6 * dt));
+    p.vel.x += 0.6 * dt;                                    // and the wind off the sea takes it up the beach
+    p.pos.addScaledVector(p.vel, dt);
+    if (p.pos.y < p.base) { p.pos.y = p.base; p.vel.y = 0; }
+    const u = 1 - Math.max(0, p.life / p.ttl);              // 0 at birth, 1 at the end
+    P.setXYZ(i, p.pos.x, p.pos.y, p.pos.z);
+    A.array[i] = p.life > 0 ? Math.min(1, u * 8) * Math.pow(1 - u, 1.5) : 0;
+    S.array[i] = p.sz * (1 + 1.6 * u);
+  }
+  if (any) { P.needsUpdate = true; A.needsUpdate = true; S.needsUpdate = true; }
+  sprayPts.visible = !inRoom();
+  sprayPts.material.uniforms.uPx.value = renderer.getDrawingBufferSize(_airBuf).y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov || 75) / 2));
 }
 
 // ------------------------------------------------------------------
@@ -7860,6 +8060,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
     ${shoreGLSL}
     ${waveGLSL}
     ${FORT_CUT_GLSL}
+    ${foamGLSL('skN')}
     void main() {
       float shore = shoreLine(vWorld.z, uTime);
       if (vWorld.x > shore) discard;
@@ -7942,8 +8143,7 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       float crest = smoothstep(0.30, 0.80, wh) * smoothstep(0.55, 0.95, nF.y);
       crest = mix(crest, smoothstep(0.35, 0.55, crest), 0.6);
       col = mix(col, uCrest, crest * 0.36 * (1.0 - 0.85 * uCalm));
-      float cap = smoothstep(0.62, 0.95, wh) * smoothstep(0.55, 0.8, skN(wq * vec2(0.5, 1.4) + vec2(uTime * 0.25, -uTime * 0.6)));
-      col = mix(col, vec3(0.70, 0.78, 0.86), cap * 0.35 * smoothstep(160.0, 20.0, camDist) * (1.0 - uCalm));
+      // (the white torn off the biggest is drawn with the rest of the sea's foam, below — foamGLSL)
       /* AND OVER THE LIGHTHOUSE'S NIGHT THE SEA IS GLASS: the crests and the pale facets
        * laid down (from forty metres up they were blots), the water darker, and at a grazing
        * angle it holds the aurora's green toward the west and the sky's blue elsewhere */
@@ -7984,40 +8184,41 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       col += vec3(0.03, 0.04, 0.05) * max(rip, 0.0);
       col += vec3(0.34, 0.40, 0.48) * pow(max(rip, 0.0), 3.0) * 0.10;
 
-      // the churn where the waves break: a drifting froth, no longer stripes run along the beach
+      /* THE SEA'S WHITE, ONE STUFF (2026-11-21, foamGLSL): how much foam each place wants, then one cut of the foam
+       * pattern for all of it.
+       * - the BORE where the wave breaks: thickest on the uprush, a sheet with holes torn in it;
+       * - FOAM THAT REMEMBERS: every wave leaves a line where it reached, lying on the water, drifting out on the backwash
+       *   and thinning over a few seconds, so two or three older lines lie seaward of the one breaking now — each where
+       *   the waterline WAS, a little further out for every beat since;
+       * - a thin scum over the inner surf between them;
+       * - the WHITECAPS: torn off the tallest crests, and left behind them as a trail that thins (the crest a moment ago).
+       * Streaked across the beach (the backwash pulls it seaward) near the shore, along the wind out on the caps. */
       float fizz = skN(vWorld.xz * vec2(1.3, 0.9) + vec2(uTime * 0.9, -uTime * 0.35)) * 0.65 + skN(vWorld.xz * 3.3 - vec2(uTime * 1.4, 0.0)) * 0.35;
-      float band = smoothstep(3.5, 0.0, dist) * smoothstep(-1.8, 0.5, dist);
-      float shoreCells = camDist < 70.0 ? smoothstep(0.45, 0.72, skN(vWorld.xz * vec2(3.6, 2.4) + vec2(uTime * 0.6, uTime * 0.2)) * 0.65 + skN(vWorld.xz * 8.0 - uTime * 0.9) * 0.35) * smoothstep(0.3, 0.7, fizz) : 0.5;   // (froth from noise, no cells)
-      col = mix(col, vec3(0.78, 0.85, 0.92), clamp(band * smoothstep(0.30, 0.75, fizz) * (0.55 + 0.45 * shoreCells), 0.0, 0.85));
       float lace = smoothstep(0.0, 1.5, dist) * smoothstep(5.0, 1.5, dist);
-      col += vec3(0.14) * lace * (0.3 + 0.7 * skN(vWorld.xz * vec2(2.0, 1.2) + vec2(uTime * 0.8, uTime * 0.3)));
-
-      /* FOAM THAT REMEMBERS. Every wave leaves a line of lace where it
-       * reached, and that lace does not vanish with the wave: it lies on the
-       * water, drifts out on the backwash and thins away over a few seconds,
-       * so there are always two or three older lines lying seaward of the
-       * one breaking now. Each is where the waterline WAS, a little further
-       * out for every second since. (2026-11-18: the lace is the walls of drifting bubble cells, seaCells, over a
-       * froth — the single noise iso-line it used to draw read as white squiggles on the water.) */
-      if (dist > 0.2 && dist < 14.0 && camDist < 70.0) {
+      float rushF = clamp((shoreLine(vWorld.z, uTime + 0.35) - shore) * 1.6, 0.0, 1.0);
+      float fCov = smoothstep(3.2, 0.2, dist) * smoothstep(-1.8, 0.3, dist) * (0.55 + 0.45 * rushF) * (0.75 + 0.5 * fizz);
+      fCov = max(fCov, lace * 0.32 * smoothstep(0.3, 0.7, skN(vWorld.xz * 0.35 + vec2(uTime * 0.05, 0.0))));
+      if (dist > 0.2 && dist < 14.0 && camDist < 80.0) {
         float mem = 0.0;
-        vec2 lp = vWorld.xz * vec2(1.6, 1.0) + vec2(uTime * 0.12, uTime * 0.05);
-        float froth = smoothstep(0.40, 0.62, skN(lp));
-        // (the lace from noise, blotchy and torn, not cell walls: 2026-11-18, the owner on the honeycomb)
-        float walls = smoothstep(0.5, 0.74, skN(vWorld.xz * vec2(3.2, 2.2) + vec2(uTime * 0.14, uTime * 0.04)) * 0.6 + skN(vWorld.xz * 7.5 + vec2(-uTime * 0.1, uTime * 0.07)) * 0.4) * smoothstep(0.32, 0.72, skN(vWorld.xz * 1.1 + vec2(uTime * 0.2, 1.7)));
         for (int k = 1; k <= 5; k++) {
           float fk = float(k);
-          // where the waterline was k beats ago, carried out on the backwash since
           float lineX = shoreLine(vWorld.z, uTime - fk * 1.1) - fk * 0.55 - 0.5;
           float age = fk / 5.5;
-          float w = 0.45 + age * 0.9;                             // a ribbon that spreads and thins
-          float d = abs(vWorld.x - lineX + (skN(vec2(vWorld.z * 0.7, fk * 3.1)) - 0.5) * 0.8);
-          mem = max(mem, smoothstep(w, 0.0, d) * (1.0 - age) * (1.0 - age * 0.4));
+          float w = 0.55 + age * 1.1;                             // a ribbon that spreads and thins
+          float d = abs(vWorld.x - lineX + (skN(vec2(vWorld.z * 0.7, fk * 3.1)) - 0.5) * 0.9);
+          mem = max(mem, smoothstep(w, 0.0, d) * (1.0 - age) * (1.0 - age * 0.35));
         }
-        float far = smoothstep(70.0, 16.0, camDist);
-        float foam = mem * clamp(walls * (0.5 + 0.6 * froth) + froth * 0.22, 0.0, 1.0) * far;
-        col = mix(col, vec3(0.74, 0.82, 0.90), clamp(foam, 0.0, 1.0) * 0.72);
+        fCov = max(fCov, mem * 0.85 * smoothstep(80.0, 20.0, camDist));
       }
+      float capNow = smoothstep(0.62, 0.95, wh), capWas = smoothstep(0.66, 0.98, oceanWave(vWorld.xz + vec2(1.2, 0.4), uTime - 0.9));
+      float capLane = smoothstep(0.35, 0.65, skN(wq * vec2(0.09, 0.32) + vec2(uTime * 0.03, -uTime * 0.08)));
+      float capCov = max(capNow * 0.75, capWas * 0.45) * capLane * smoothstep(-4.0, -14.0, vWorld.x) * smoothstep(220.0, 25.0, camDist) * (1.0 - uCalm);
+      vec2 fp = mix(vWorld.xz * vec2(0.62, 1.0), wq * vec2(1.0, 0.5), step(fCov, capCov));
+      float fTh;
+      float fA = bwFoamT(fp, uTime, fw, max(fCov, capCov), fTh);
+      // lit as foam is: brightest in the middle of a raft, bluish and half-clear at its lace, a little of the moon's side
+      vec3 fC = mix(vec3(0.42, 0.52, 0.62), vec3(0.80, 0.86, 0.92), fTh) * (0.88 + 0.22 * ndl);
+      col = mix(col, fC, fA * (0.55 + 0.37 * fTh));
       col *= bwCloudShade(vWorld, uSkyT, 0.42);
       /* RAIN ON THE SEA. Under a squall the water loses its shine and, near
        * enough to see, is pocked all over by drops: a ring opening from each,
@@ -8047,9 +8248,9 @@ const ocean = new THREE.Mesh(oceanGeo, new THREE.ShaderMaterial({
       float rush = clamp((shoreLine(vWorld.z, uTime + 0.35) - shore) * 1.6, 0.0, 1.0);
       float plank = smoothstep(0.28, 0.72, skN(vWorld.xz * vec2(0.7, 0.45) + vec2(uTime * 0.35, -uTime * 0.12)));
       float breakB = smoothstep(4.0, 0.2, dist) * smoothstep(-1.0, 0.4, dist);
-      vec2 sc = floor(vWorld.xz * vec2(6.0, 4.0));
-      float sh = fract(sin(dot(sc, vec2(12.9898, 78.233)) + floor(uTime * 6.0) * 0.37) * 43758.5453);
-      float spark = step(0.95, sh);
+      /* (the sparks were a hashed GRID — 17 x 25 cm cells blinking on and off — and read as squares on the water, 2026-11-21,
+       * the owner: "get rid of these pixels that show up just square". Now the peaks of a fine drifting noise, flickering.) */
+      float spark = smoothstep(0.80, 0.95, skN(vWorld.xz * vec2(7.0, 5.0) + vec2(uTime * 1.1, -uTime * 0.5))) * smoothstep(0.45, 0.8, skN(vWorld.xz * 1.9 - vec2(0.0, uTime * 2.3)));
       col += ${BIO_COL} * breakB * (0.25 + 0.75 * rush) * (plank * 0.42 * (0.45 + 0.55 * fizz) + spark * 0.28 * plank);   // a hint, by the owner's word, not a neon line
       col += ${BIO_COL} * lace * plank * 0.06;
       /* THE WHALE'S HEALING going out across the water: a front of the sea's
@@ -8107,13 +8308,25 @@ scene.add(ocean);
  * burst of spray. All the stones are one mesh: one draw. */
 let rockSurf = null;
 const rockSurfList = [];
+/* AND EVERYTHING ELSE THE SEA BREAKS ON (2026-11-21, the owner: "do it for the rocks on the boat. and any other thing the
+ * waves should technically be spalshing on"): the stone the wreck struck and the line down her flanks, her bow's
+ * planking at the waterline, the dock's piles. Each is a circle { x, z, r, top } like a formation stone; the ring mesh
+ * is rebuilt when a batch lands (they arrive with their models), and the spray asks the same list. */
+const surfExtra = [];
+function addSurfSpots(list) {
+  surfExtra.push(...list);
+  if (!rockSurf) return;                                   // the formation's loader builds it, with these in it
+  scene.remove(rockSurf); rockSurf.geometry.dispose(); rockSurf.material.dispose();
+  rockSurf = null; rockSurfList.length = 0;
+  buildRockSurf();
+}
 /* (2026-11-16, the owner: "make sure the waves actually splash up and go over the rocks … right now it just phases
  * through and looks like little pebbles"). Every stone the sea reaches gets its ring now, the skirt's chunks too
  * (they were left out at r < 0.3 / top < 0.12, so the little ones stood in flat water like pebbles on glass), sized
  * to the stone; and the ring runs out with the stone's own wave (`rkClimb`), not a phase of its own. */
 function buildRockSurf() {
   if (rockSurf) return;
-  const list = surfRocks.filter((r) => r.x < 10.5 && r.x > -30 && r.r > 0.1);
+  const list = surfRocks.concat(surfExtra).filter((r) => r.x < 12 && r.x > -30 && r.r > 0.1);
   if (!list.length) return;
   const SEG = 40, RINGS = 4, pos = [], aT = [], aS = [], aP = [], idx = [];
   for (const R of list) {
@@ -8163,28 +8376,43 @@ function buildRockSurf() {
     fragmentShader: `
       #include <fog_pars_fragment>
       uniform float uTime;
+      uniform float uShipHalf; uniform vec2 uShipC; uniform float uShipHW[17];
       varying float vT; varying float vSeed; varying float vPh; varying vec3 vW;
+      bool bwInShip(vec2 p) {
+        if (uShipHalf <= 0.0) return false;
+        float lx = p.x - uShipC.x;
+        if (abs(lx) >= uShipHalf) return false;
+        float t = (lx + uShipHalf) / (2.0 * uShipHalf) * float(17 - 1);
+        int i0 = int(floor(t)); float f = t - float(i0), a = 0.0, b = 0.0;
+        for (int k = 0; k < 17; k++) { if (k == i0) a = uShipHW[k]; if (k == i0 + 1) b = uShipHW[k]; }
+        return abs(p.y - uShipC.y) < mix(a, b, f);
+      }
       ${noiseGLSL}
       ${shoreGLSL}
       ${rockWashGLSL}
       float sh2(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
       float sn2(vec2 q) { vec2 i = floor(q), f = fract(q); f = f * f * (3.0 - 2.0 * f);
         return mix(mix(sh2(i), sh2(i + vec2(1.0, 0.0)), f.x), mix(sh2(i + vec2(0.0, 1.0)), sh2(i + vec2(1.0, 1.0)), f.x), f.y); }
+      ${foamGLSL('sn2')}
       void main() {
         float wet = smoothstep(0.0, 1.4, shoreLine(vW.z, uTime) - vW.x);      // the water has to be there
         if (wet <= 0.0) discard;
+        if (bwInShip(vW.xz)) discard;                                          // (a ring on her hull's line stops at her planking)
         float surge = rkClimb(uTime, vPh) * rkStrength(uTime, vPh);
         float reach = 0.32 + 0.68 * surge;                                      // the white runs out as the wave strikes
-        float edge = 1.0 - smoothstep(reach * 0.30, reach, vT);
-        float froth = sn2(vW.xz * 3.1 + vec2(uTime * 0.35, -uTime * 0.21)) * 0.6 + sn2(vW.xz * 9.0 - vec2(uTime * 0.7)) * 0.4;
-        float al = edge * smoothstep(0.30, 0.78, froth + 0.38 * (1.0 - vT) + 0.25 * surge);
-        al *= wet * (0.45 + 0.55 * surge) * smoothstep(0.0, 0.14, vT);       // (no hard inner edge where the stone is narrower than its ring)
-        vec3 col = mix(vec3(0.36, 0.44, 0.53), vec3(0.74, 0.80, 0.86), smoothstep(0.45, 0.9, froth + 0.3 * surge));
-        gl_FragColor = vec4(col, clamp(al * 1.3, 0.0, 0.9));
+        float edge = 1.0 - smoothstep(reach * 0.25, reach, vT);
+        /* (2026-11-21) the sea's own foam (foamGLSL): a sheet against the stone as the wave strikes, torn into lace as
+         * it runs out and drains — it was a froth of two noises cut hard, which read as a necklace of white beads */
+        float cov = edge * (0.30 + 0.70 * surge + 0.30 * (1.0 - vT)) * wet * smoothstep(0.0, 0.14, vT);
+        float th;
+        float al = bwFoamT(vW.xz * 1.3 + vec2(vSeed * 37.0, 0.0), uTime, length(fwidth(vW.xz)), cov, th);
+        vec3 col = mix(vec3(0.40, 0.49, 0.58), vec3(0.80, 0.86, 0.91), th);
+        gl_FragColor = vec4(col, clamp(al * (0.55 + 0.4 * th), 0.0, 0.92));
         #include <fog_fragment>
       }`,
   });
   mat.uniforms.uTime = oceanUniforms.uTime; mat.uniforms.uOffset = oceanUniforms.uOffset;   // the sea's own clock and recentring, shared
+  mat.uniforms.uShipHalf = oceanUniforms.uShipHalf; mat.uniforms.uShipC = oceanUniforms.uShipC; mat.uniforms.uShipHW = oceanUniforms.uShipHW;
   rockSurf = new THREE.Mesh(geo, mat);
   rockSurf.name = 'rockSurf'; rockSurf.renderOrder = 3; rockSurf.frustumCulled = false;
   scene.add(rockSurf);
@@ -8195,14 +8423,17 @@ function buildRockSurf() {
  * lap of foam rides the waterline, and the band the waves wet is dark. A stone lower than the climb is covered
  * outright at the peak — the wave goes OVER it — and the white drains off it in streaks. Only on the beach (an
  * object's origin within the beach's box): the same stone in a room never sees the sea. */
-function rockWash(mat) {
+/* `perStone`: the stones are merged into one mesh (the wreck's), so each vertex carries its own stone's origin (`aRkO`,
+ * world xz) — the mesh's origin would strike every stone with the same wave at once. */
+function rockWash(mat, perStone = false) {
   const prev = mat.onBeforeCompile;
+  if (perStone) { const pk = mat.customProgramCacheKey.bind(mat); mat.customProgramCacheKey = () => pk() + '|rkStone'; }
   mat.onBeforeCompile = (sh, r) => {
     if (prev) prev(sh, r);
     sh.uniforms.uRkT = oceanUniforms.uTime; sh.uniforms.uRkOff = oceanUniforms.uOffset;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n varying vec3 vRkW; varying vec3 vRkN; varying vec3 vRkO;')
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n varying vec3 vRkW; varying vec3 vRkN; varying vec3 vRkO;' + (perStone ? ' attribute vec2 aRkO;' : ''))
       .replace('#include <project_vertex>', `#include <project_vertex>
-        vRkW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRkN = normalize(mat3(modelMatrix) * objectNormal); vRkO = modelMatrix[3].xyz;`);
+        vRkW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRkN = normalize(mat3(modelMatrix) * objectNormal); vRkO = ${perStone ? 'vec3(aRkO.x, 0.0, aRkO.y)' : 'modelMatrix[3].xyz'};`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
       varying vec3 vRkW; varying vec3 vRkN; varying vec3 vRkO;
       uniform float uRkT; uniform vec2 uRkOff;
@@ -8213,7 +8444,8 @@ function rockWash(mat) {
       ${rockWashGLSL}
       float rkH2(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
       float rkN2(vec2 q) { vec2 i = floor(q), f = fract(q); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(rkH2(i), rkH2(i + vec2(1.0, 0.0)), f.x), mix(rkH2(i + vec2(0.0, 1.0)), rkH2(i + vec2(1.0, 1.0)), f.x), f.y); }`)
+        return mix(mix(rkH2(i), rkH2(i + vec2(1.0, 0.0)), f.x), mix(rkH2(i + vec2(0.0, 1.0)), rkH2(i + vec2(1.0, 1.0)), f.x), f.y); }
+      ${foamGLSL('rkN2')}`)
       .replace('#include <tonemapping_fragment>', `{
         float rkSea = shoreLine(vRkW.z, uRkT) - vRkW.x + 0.9;                    // the water is here (a splash carries it past the line)
         if (abs(vRkO.x) < 1500.0 && abs(vRkO.z) < 2500.0 && rkSea > 0.0) {
@@ -8228,21 +8460,27 @@ function rockWash(mat) {
           float fingers = rkN2(vec2(side * 5.0, ph * 40.0 + floor(uRkT * ${RK_F.toFixed(2)} + ph) * 7.0)) - 0.5;   // tongues of water, new with every wave
           float top = wl + run * climb * face + (rag + fingers * 0.45) * climb;
           float cover = 1.0 - smoothstep(top - 0.06, top + 0.03, vRkW.y);
-          // the white breaks up as it drains (streaks running down) and thins toward the top of the climb
-          float streak = rkN2(vec2(side * 11.0, vRkW.y * 1.3 + uRkT * 1.6));
+          /* the white is the sea's own foam (\`foamGLSL\`, 2026-11-21) laid on the stone's face: a sheet as the wave
+           * strikes, thinning toward the top of the climb, and as it drains it is pulled into streaks running down (its
+           * pattern stretched down the face and sliding with the water); and a lap of it riding the waterline, always
+           * there where the sea is — that lap was a thin band of hard-cut froth and read as a row of white beads */
           float froth = rkN2(vRkW.xz * 6.0 + vec2(0.0, vRkW.y * 6.0) + uRkT * 0.6);
           float thin = smoothstep(top - 0.45, top, vRkW.y);
-          float foam = cover * smoothstep(0.25, 0.7, mix(froth, streak, 0.5) + climb * 0.75 - thin * 0.55) * (1.0 - 0.35 * thin);
-          // the lap of foam on the waterline, always there where the sea is
-          float lap = (1.0 - smoothstep(0.0, 0.09, abs(vRkW.y - wl - 0.03 - 0.05 * froth))) * smoothstep(0.35, 0.75, froth) * rkIn;
+          float lapB = (1.0 - smoothstep(0.02, 0.16, abs(vRkW.y - wl - 0.04))) * rkIn;
+          float fCov = max(cover * clamp(0.25 + climb * 0.95 - thin * 0.45, 0.0, 1.0), lapB * 0.75);
+          float fwR = length(fwidth(vRkW));
+          float drn = 1.0 - climb;
+          float rTh;
+          float foam = bwFoamT(vec2(side * 1.7, vRkW.y * mix(1.7, 0.55, drn) + uRkT * 0.45 * drn), uRkT, fwR, fCov, rTh);
+          float lap = 0.0;
           // the band the waves keep wet: dark, colder
           float wetB = (1.0 - smoothstep(wl + run * face * 0.85 - 0.1, wl + run * face * 0.85 + 0.08, vRkW.y)) * rkIn;
           // wet stone is darker but it SHINES: the sky off its faces (a fresnel sheen), or a stone in the bright
           // shallows is a black hole in the water — the "little pebbles" the owner saw
           float rkFr = pow(1.0 - abs(dot(normal, normalize(vViewPosition))), 2.5);
           gl_FragColor.rgb = gl_FragColor.rgb * mix(vec3(1.0), vec3(0.80, 0.85, 0.92), wetB) + vec3(0.07, 0.10, 0.15) * wetB * (0.35 + rkFr);
-          vec3 fc = vec3(0.50, 0.58, 0.66) * (0.85 + 0.3 * froth);
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, fc, clamp(max(foam * 0.92, lap * 0.8), 0.0, 1.0));
+          vec3 fc = mix(vec3(0.38, 0.46, 0.55), vec3(0.62, 0.69, 0.76), rTh);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, fc, clamp(foam * (0.6 + 0.35 * rTh), 0.0, 1.0));
         }
       }
       #include <tonemapping_fragment>`);
@@ -8270,9 +8508,10 @@ function updateRockSurf() {
       const a = (Math.random() - 0.5) * 2.0;
       const px = R.x - Math.cos(a) * R.r * 0.85, pz = R.z + Math.sin(a) * R.r * 0.85;
       const pw = (0.6 + big) * str;
-      spawnSplash(px, pz, 4 + Math.round(3 * pw), low ? 0.7 : -0.25, Math.sin(a) * 0.4, pw, wy, false);
+      spawnSplash(px, pz, 5 + Math.round(4 * pw), low ? 0.7 : -0.25, Math.sin(a) * 0.4, pw, wy, false);
+      spawnSpray(px, wy + 0.1, pz, 2 + Math.round(2.5 * pw), low ? 0.6 : 0.15, Math.sin(a) * 0.3, pw);   // and the spray that goes with them
     }
-    if (low) spawnSplash(R.x, R.z, 3 + Math.round(R.r * 4), 1.0, 0, 0.55 * str, R.top, false);   // and over the top
+    if (low) { spawnSplash(R.x, R.z, 3 + Math.round(R.r * 4), 1.0, 0, 0.55 * str, R.top, false); spawnSpray(R.x, R.top, R.z, 2 + Math.round(R.r * 2), 0.9, 0, 0.5 * str); }   // and over the top
     if (Math.hypot(R.x - cx, R.z - cz) < 16) addRipple(R.x - R.r, R.z, 0.8 * str);
   }
 }
@@ -17227,7 +17466,7 @@ bwGlb('assets/bone-mace.glb', (gltf) => {
   /* THE ONE LYING ON THE HEAP IS OF THE HEAP (2026-11-18, the owner: "make sure this blends better with the rest of the pile"):
    * its own materials (the hand's and the examine screen's keep theirs), its bone taken down to the heap's old yellowed
    * grey and dirtied, matte, its lift halved — a pale clean club on a pile of filthy bones read as a thing laid there for you */
-  maceWorld.traverse((o) => { if (!o.isMesh) return; const m = o.material = o.material.clone(); m.color.multiply(new THREE.Color(0x8e8474)); m.roughness = 0.95; m.metalness = 0; if (m.emissive) m.emissive.multiplyScalar(0.45); });
+  maceWorld.traverse((o) => { if (!o.isMesh) return; const m = o.material = o.material.clone(); m.color.multiply(new THREE.Color(0xb2a894));   /* (0x8e8474 dirtied it into the pile: on top of it now, a little cleaner, 2026-11-18) */ m.roughness = 0.95; m.metalness = 0; if (m.emissive) m.emissive.multiplyScalar(0.45); });
 }, undefined, () => {});
 const maceVM = new THREE.Group();
 maceVM.add(maceModel);
@@ -18284,6 +18523,7 @@ let guardShock = 0, guardShockV = 0;
  * force through your shoulders feels like from the inside. Applied around the
  * scene render and removed again, so it never leaks into the look state. */
 let hitRoll = 0;
+let maceLean = 0;                        // the view's lean into a mace blow (`updateViewmodel`)
 /* THE SLAM DIP. An overhead that lands drops the CAMERA ten centimetres and
  * lets it back up over a third of a second — your knees, not the shovel.
  * Applied around the scene render and removed, like the roll. */
@@ -18902,9 +19142,6 @@ function impactPose(out, P) {
   if (slashing() && equipped && equipped.slam) return maceCrush(out, 1, P, slashDir);
   if (slashing()) {
     slashMark(out, P, slashDir);
-    /* (the mace's backhand: mirrored by sign alone the arm's own turn and lean are not mirrored, and measured on the
-     * screen the handle stood up steep (108°) at the blow where the forehand's lies flat — turned back to lie along the line) */
-    if (equipped && equipped.slam && slashDir > 0) out[3] += MACE_BACK_ROLL[0];
     return out;
   }
   /* `lift` used to take the hand to -0.69 at full charge, which is below the
@@ -18944,19 +19181,27 @@ function throughPose(out, P) {
  * handle in from the bottom right, the head on what you aimed at — `landBlade` puts it there), and on down and across low
  * past it. The arms hardly reach (push ~0): the head's arc does the work. Forehand right to left; the momentum's
  * back-swing (`slashDir` > 0) is cocked up the left and comes down to the right. Index: pitch, lift, yaw, roll, push, side. */
-const MACE_CK = { f: [0.75, 0.25, 0.45, 0.08, 0.06, -0.22], b: [0.72, 0.24, 0.40, 1.35, 0.06, -0.40] };   // cocked (measured: head 0.66,0.75 / -0.18,0.28 on screen)
-const MACE_CK_P = { f: [0.05, 0.02, 0.0, -0.05, 0.02, 0.0], b: [0.08, 0.03, 0.0, 0.08, 0.02, 0.02] };  // + this × the charge (kept in the frame: the glint is on it)
-const MACE_MK = { f: [-1.2, -0.30, 0.75, 1.0, -0.04, 0.05], b: [-1.2, -0.30, 0.40, 0.35, -0.04, 0.02] };  // on the mark
-const MACE_TH = { f: [-1.2, -0.04, 0.85, 1.8, -0.02, -0.46], b: [-1.2, -0.05, 0.30, -0.6, -0.02, 0.12] };   // on through, low (in the frame: lower it went out of shot for a quarter second)
+/* AND IT IS SWUNG, NOT FLAILED (2026-11-21, the owner: "make the mace swing less of a flaily hit and more of a solid swing back
+ * and forth for both the light hit and heavy hit but keep the shift heavy slam … look at games such as Mordhau and Chivalry 2 …
+ * they should feel like they have weight"). The chop above came down to the bottom of the frame, turned the club over a whole
+ * radian of roll on the way, and the swing home looped it under the picture: a flail. Now a level sweep, the club held RIGID
+ * at a fixed lean and turned about the hand like a door on a hinge — with the arm pitched forward to level the pose's ROLL is
+ * a turn about the vertical (measured, `maceGrid`), so the strike and the follow-through are one rotation and nothing twists.
+ * Forehand: cocked up and laid back over the right shoulder, swept down across through the crosshair, out level to the left;
+ * the back-swing is lifted from there up over the left shoulder and comes across the other way, out on the right.
+ * The head crosses the middle at the blow both ways (`maceGrid`: forehand (0.07, 0.00), backhand (0.01, -0.02)). */
+const MACE_CK = { f: [0.62, 0.24, 0.32, -0.08, 0.07, -0.16], b: [0.2, 0.22, 0.0, 1.6, 0.08, -0.75] };   // cocked: over the right shoulder / up over the left
+const MACE_CK_P = { f: [-0.06, 0.02, -0.03, -0.08, 0.06, 0.0], b: [0.25, 0.04, 0.0, 0.05, 0.06, -0.05] };  // + this × the charge: further back (the head kept in the frame: the glint is on it)
+const MACE_MK = { f: [-1.0, 0.24, 0.0, 0.8, -0.12, -0.32], b: [-0.9, 0.22, 0.0, 1.15, -0.10, -0.32] };   // the blow: the head on the crosshair
+const MACE_TH = { f: [-1.05, 0.12, 0.0, 1.6, -0.04, -0.62], b: [-1.05, 0.12, 0.0, -0.55, -0.04, 0.32] };  // out the far side, level
 function maceCrush(out, which, P, d) {
   const k = d > 0 ? 'b' : 'f', A = which === 0 ? MACE_CK[k] : which === 1 ? MACE_MK[k] : MACE_TH[k];
   for (let i = 0; i < 6; i++) out[i] = A[i];
   if (which === 0) for (let i = 0; i < 6; i++) out[i] += MACE_CK_P[k][i] * P;
-  if (which === 1) { out[0] -= 0.10 * P; out[1] -= 0.03 * P; }                 // (a heavy comes down further)
-  if (which === 2) { out[3] += (d > 0 ? -0.1 : 0.1) * P; }   // (no lower for a heavy: it went out the bottom of the frame)
+  if (which === 1) out[4] -= 0.04 * P;                                     // (a heavy reaches further into it)
+  if (which === 2) out[3] += (d > 0 ? -0.15 : 0.2) * P;                    // (and carries further round)
   return out;
 }
-const MACE_BACK_ROLL = [1.1, 0.7];   // the backhand's roll corrections at the blow and at the end of the follow-through (measured, `maceCombo`)
 /* THE MACE IS NOT PUT BACK; IT SWINGS BACK (2026-11-16, the owner: "you didn't even change anything with the mace … when you
  * swing you use the momentum to swing back the other way … so you don't just instantly reset … like Chivalry"). Its haul home
  * was `easeOutBack` — the spade's — which is more than half-way to rest a few frames after the follow-through and bounces off
@@ -18964,12 +19209,14 @@ const MACE_BACK_ROLL = [1.1, 0.7];   // the backhand's roll corrections at the b
  * falls back the way it came like a weight on a rope: it gathers speed slowly (a sine in), swings LOW through the middle
  * (the pendulum's dip: the head drops forward and the hands sink under it), runs a little PAST rest on the other side and
  * comes back onto it. Click at any point of it and the next blow leaves from wherever the head is, the other way. */
+// (2026-11-21: no pendulum dip any more — the head dropping through the bottom of the frame on the way home was half of
+// the flail. The club is brought back UP first, rising out of the level sweep, and then carried round to the shoulder; and
+// the weight settles into the hands at the end.)
 function maceSwingBack(out, from, rt) {
-  const u = Math.min(1, rt / 0.82), k = 0.5 - 0.5 * Math.cos(Math.PI * u);      // the swing home: slow away, fast through, slow in
-  const over = rt > 0.82 ? 0.09 * Math.sin(Math.PI * (rt - 0.82) / 0.18) : 0;   // past rest and back onto it
-  poseMix(out, from, REST_POSE, k + over);
-  const dip = Math.sin(Math.PI * u);
-  out[0] += 0.34 * dip; out[1] -= 0.07 * dip; out[4] -= 0.03 * dip;
+  const k1 = 1 - Math.pow(1 - rt, 2.2), k2 = easeInOutCubic(rt);
+  for (let i = 0; i < 6; i++) out[i] = from[i] + (REST_POSE[i] - from[i]) * (i === 0 || i === 1 || i === 4 ? k1 : k2);
+  const st = rt > 0.75 ? Math.sin(Math.PI * (rt - 0.75) / 0.25) : 0;
+  out[0] += 0.05 * st; out[1] -= 0.012 * st;
   return out;
 }
 /* AND IT DRAGS AT YOUR TURN. A thing this heavy in the air does not come round as fast as your head would: while it is
@@ -18981,7 +19228,6 @@ const maceTurnK = () => {
   if (digT <= 0) return 1;
   return digT >= windupEnd() && digT < throughEnd() + 0.06 ? 0.5 : 0.75;
 };
-const MACE_BACK_COCK = [0.30, -0.10, 0.0];   // side, lift, roll added to the backhand heavy's cock
 let maceEndAt = -1e9;                    // when the last mace swing ran out: a click just after is still the swing coming back
 
 /* Where the swing is going is decided when you COMMIT it — the click, or the
@@ -20208,7 +20454,7 @@ const bladeRate = (p, P) => {
    * it. So: a slow lift, a quick fall, a long haul back. The slam's track has its own hang at the top (`maceSlamTrack`). */
   if (equipped && equipped.slam) {
     if (digOverhead) return p < DIG_STRIKE ? 0.85 : 1.35 + 0.25 * P;
-    return p < windupEnd() ? (maceChainSwing ? 1.15 : 1.55) : p < DIG_STRIKE ? 0.95 : p < throughEnd() ? 1.85 : 1.8;   // (the fall 0.72 → 0.95: it was a snap)   // (the through slowed: the head is seen to carry on and stop; the swing back is a swing, `maceSwingBack`)
+    return p < windupEnd() ? (maceChainSwing ? 1.6 : 1.55) : p < DIG_STRIKE ? 0.95 : p < throughEnd() ? 1.85 : 1.8;   // (the fall 0.72 → 0.95: it was a snap)   // (the through slowed: the head is seen to carry on and stop; the swing back is a swing, `maceSwingBack`)
   }
   if ((!isBlade() && !thrusting()) || digOverhead || !equipped.recoverK || equipped.rapier) return 1;
   if (p < DIG_STRIKE) return 1 + 0.25 * P;
@@ -20259,6 +20505,7 @@ function landBlade() {
    * and beside what you were looking at — "stabs the ground where the blade
    * isn't even connecting". Full weight and the long leash for the stab. */
   if (isBlade() && !katStabbing()) landK *= 0.34;
+  if (equipped && equipped.slam && slashing()) landK *= 0.34;   // (the mace's sweep crosses the crosshair already: only nudged, or it bends the line — 2026-11-21)
   if (landK <= 0) return;
   _landNdc.copy(landPoint()).project(camera);
   if (_landNdc.z > 1) return;             // behind you: leave the pose alone
@@ -20985,6 +21232,10 @@ function updateViewmodel(dt) {
   const AT = sip > 0 ? MA : EAR_AT, EP = sip > 0 ? MP : EAR_POSE;
   const earX = earH * vmCamera.aspect * AT.x, earY = earH * AT.y;
   hitRoll += (0 - hitRoll) * Math.min(1, dt * 9);
+  /* the mace's weight carries the head: the view leans a touch into the blow while it is falling and carrying through, and
+   * comes back level as it is brought home (2026-11-21, "they should feel like they have weight") */
+  { const mw = equipped && equipped.slam && slashing() && digT > 0 && digT >= windupEnd() && digT < throughEnd();
+    maceLean += ((mw ? -slashDir * (0.022 + 0.02 * digPower) : 0) - maceLean) * Math.min(1, dt * (mw ? 7 : 4)); }
   slamDip += (0 - slamDip) * Math.min(1, dt * 7);
   // the blow that landed on YOU, ringing out
   hurtShockV += (-HURT_K * hurtShock - HURT_D * hurtShockV) * dt;
@@ -27359,6 +27610,11 @@ function startAmbientAudio() {
   if (audioStarted) return;
   audioStarted = true;
   const ctx = audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  /* MUTED IN THE PREVIEW (2026-11-21, the owner: "mute the sound when its in the preview"): with `?mute` on the address every
+   * sound still runs — the levels, the music guard and the audio watchdog all see what they always do — but the context's
+   * `destination` is a gain of 0 in front of the speakers, so nothing reaches them. One door: everything here connects to
+   * `ctx.destination`, read when it connects. (A reload for a death keeps the address, so it stays muted.) */
+  if (BW_MUTED) { const out = ctx.destination, mute = ctx.createGain(); mute.gain.value = 0; mute.connect(out); Object.defineProperty(ctx, 'destination', { value: mute, configurable: true }); }
   { const real = ctx.resume.bind(ctx); audioRealResume = real; ctx.resume = () => (loadSilent() ? Promise.resolve() : real()); }   // (`loadSilenceTick`)
   const buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
   const data = buf.getChannelData(0);
@@ -27590,6 +27846,7 @@ const SAMPLES = {
    * measured, 99 % of the energy is below a kilohertz — one per footfall
    * at random, with the nave's reverb over them. */
   churchStep: Array.from({ length: 11 }, (_, i) => `assets/church-step${i + 1}.m4a`),
+  echoStep: Array.from({ length: 9 }, (_, i) => `assets/sewer-step${i + 1}.m4a`),   // the owner's echo footsteps (`sfxStepEcho`)
   /* THE CATACOMBS MONSTER'S OWN VOICE, SUPPLIED BY THE OWNER. Three
    * recordings, cut into cues along their own silences (ffmpeg's
    * silencedetect; 48 cues, a megabyte): the FAR growls, heard from
@@ -27748,7 +28005,8 @@ const SAMPLES = {
   elecZap: Array.from({ length: 6 }, (_, i) => `assets/elec-zap${i + 1}.m4a`),
   elecShock: ['assets/elec-shock.m4a'],
   maceHeavy: ['assets/mace-heavy.m4a'],           // the owner's "boulder impact hard 4": the mace's heavy blows (2026-11-17)
-  pickup: ['assets/pickup.m4a'],                  // the owner's "pickup sound 1": anything taken that has no sound of its own
+  pickup: ['assets/pickup.m4a'],
+  lairRat: ['assets/lair-rat.m4a'],               // the owner's "no-copyright" (2026-11-21): the rat bursting out in the lair (trimmed of its 0.47 s of silence)                  // the owner's "pickup sound 1": anything taken that has no sound of its own
   // the pack: the owner's own sheet of paper snapped open and folded shut (IMG_7207, 2026-11-18; `PH` below)
   packOpen: ['assets/pack-open.m4a'], packClose: ['assets/pack-close.m4a'],
   packPaper: ['assets/intro/flip1.m4a', 'assets/intro/flip2.m4a', 'assets/intro/flip3.m4a'],   // (his sketchbook's pages, off his clip: picking a thing in the pack)
@@ -28257,11 +28515,81 @@ function sfxStepUnder() {
   if (ucInWater()) {
     if (!playSample('wade', 0.5 * (stepAlt ? 1 : 0.86), 0.05, 0.88)) sfxStepPuddle();
     ucStepSplash();
+    sfxStepEcho(0.12, 1500, 0.8);                // (and the tunnel answers it)
     return;
   }
+  sfxStepStone(true, 0.48, 4200, 1);             // the tunnel's rock rings (it was the beach's sand step, 2026-11-21)
+}
+/* ECHO STEPS (2026-11-21, the owner: "@Echo Footsteps Sound Effect.mp3 use these footsteps to in the whole sewer area and
+ * tunnel make sure they blend in with the ambiance of the area and make sure the sound cues for it makes sense based on where
+ * you are walking. make sure you do that with all footstep sounds"). Nine hard-soled steps cut from his recording, each with
+ * its own echo tail (`assets/sewer-step1-9.m4a`: onset to the next step, levelled, the tail faded), the `echoStep` bank.
+ * Through a lowpass — the damp eats the top — and, for a small room, with its tail cut short: a long tunnel rings, a brick
+ * box does not. `tail` 1 is the whole ring, 0.3 a room's. */
+function sfxStepEcho(gain = 0.5, lp = 5200, tail = 1, rate = 1) {
+  const ctx = audioCtx; if (!ctx) return false;
+  stepAlt ^= 1;
+  const t = ctx.currentTime, f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; f.Q.value = 0.5;
+  const env = ctx.createGain(); env.gain.value = 1;
+  if (tail < 1) { env.gain.setValueAtTime(1, t + 0.05 + 0.45 * tail); env.gain.exponentialRampToValueAtTime(0.002, t + 0.12 + 0.6 * tail); }
+  f.connect(env).connect(sfxOut());
+  if (playSample('echoStep', gain * (stepAlt ? 1 : 0.86) * (0.92 + Math.random() * 0.16), 0.04, rate, 0, f)) return true;
+  stepAlt ^= 1;
+  return false;
+}
+/* the stone step for wherever you are: a tunnel or a hall rings (the echo steps), open air does not (the church's dry ones) */
+function sfxStepStone(enclosed, gain = 0.5, lp = 5000, tail = 1) {
+  if (enclosed && sfxStepEcho(gain, lp, tail)) return;
+  sfxStepCat();
+}
+/* WHAT IS UNDER THE BOOT, on any site with a drawn floor (`S.walls` keeps every face's material name — the tavern's way,
+ * `tavFloorMat`, for all of them): 'wood' / 'metal' / 'rock' / 'soft' / 'glass', or null off its floor. */
+function siteFloorSurface(S, x, z, feet) {
+  const W = S && S.walls; if (!W || !W.mat || !W.map) return null;
+  const v = W.v, i = Math.floor((x - S.X) / W.cell), j = Math.floor((z - S.Z) / W.cell), y0 = feet + 0.3;
+  let best = 1e9, bm = null;
+  for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+    const list = W.map.get(W.key(i + di, j + dj)); if (!list) continue;
+    for (const id of list) {
+      if (W.steep && W.steep[id]) continue;
+      const bo = id * 9, ax = v[bo], az = v[bo + 2], bx = v[bo + 3], bz = v[bo + 5], cx = v[bo + 6], cz = v[bo + 8];
+      const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); if (Math.abs(d) < 1e-9) continue;
+      const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d, l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d, l3 = 1 - l1 - l2;
+      if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+      const y = l1 * v[bo + 1] + l2 * v[bo + 4] + l3 * v[bo + 7];
+      if (y <= y0 && y0 - y < best) { best = y0 - y; bm = W.mat[id]; }
+    }
+  }
+  return bm == null || best > 0.8 ? null : siteSurface(bm);
+}
+/* a step on a site: boards knock, iron rings, grass and rugs hush, stone is the room's (`enclosed`: a hall or a tunnel rings) */
+function sfxStepSite(S, enclosed, tail = 1) {
+  const sf = siteFloorSurface(S, camera.position.x, camera.position.z, camBaseY - playerEye());
+  if (sf === 'wood') { sfxStepWood(); if (enclosed) sfxStepEcho(0.16, 1300, tail * 0.8); return; }
+  if (sf === 'metal') { sfxStepMetal(); return; }
+  if (sf === 'soft') { sfxStepSoft(); return; }
+  sfxStepStone(enclosed, 0.5, 5000, tail);
+}
+/* grass, earth, a rug: the sand recording, lower and duller, and no print */
+function sfxStepSoft() {
+  stepAlt ^= 1;
+  if (playSample('sandStep', 0.13 * (stepAlt ? 1 : 0.86) * (0.9 + Math.random() * 0.2), 0.06, 0.9)) return;
+  stepAlt ^= 1;
   sfxStep();
 }
-function sfxStepDrain() { sfxStep(); }
+/* THE DRAIN, BY WHAT IS UNDERFOOT (it was the beach's synthesised SAND step the whole way in): the concrete bore's wet silt
+ * from the mouth (the echo steps, the pipe ringing, a wet give under the heel), the dry way of boards he laid over the last
+ * stretch (a board's knock and the bore answering it), the room's paving (a brick box: the echo cut short), and the culvert
+ * past the grate (a long stone tunnel again). */
+function sfxStepDrain() {
+  const lx = camera.position.x - DRAIN_X, lz = camera.position.z - DRAIN_Z;
+  if (lx > DN.ROOM_X1) { sfxStepEcho(0.5, 4600, 1); return; }                                  // the culvert past the grate
+  if (lx > DN.DOOR_X + 0.44) { sfxStepEcho(0.46, 5200, 0.32); return; }                         // the room
+  if (lx > 7.4 && lx < DN.BORE_LEN - 0.9 && Math.abs(lz) < 0.42) { sfxStepWood(); sfxStepEcho(0.18, 1400, 0.9); return; }   // his boards
+  const mouth = THREE.MathUtils.smoothstep(lx, 0, 4);                                           // out at the mouth it is still half open air
+  if (!sfxStepEcho(0.44, 3600 + 1400 * (1 - mouth), 0.45 + 0.55 * mouth)) sfxStepCat();
+  playSample('wade', 0.10 * (stepAlt ? 1 : 0.86), 0.05, 1.12);                                  // the silt is wet
+}
 /* ON THE BEACH A STEP IS THE OWNER'S RECORDING — a real foot in real sand —
  * well under the mix (a footfall you hear a thousand times on the walk has to
  * be there and not be noticed), alternate feet a shade apart and a little
@@ -30049,7 +30377,8 @@ function updatePeek(dt) {
  * down the pipe and muffled at first, louder and nearer and clearer the further in your hand goes. Let go and the arm
  * draws back out and the breathing sinks away. At the end the fingers close on it, the arm comes out fast, it is in
  * your pack, and the breath you hear last is right there. */
-const PIPE_REACH_T = 5.0;
+const PIPE_SCREW_AT = [0.02, -0.251, -0.72];   // where the screwdriver lies in the pipe (`PIPE_SCREW`, declared further down, reads this)
+const PIPE_REACH_T = 6.5;          // (5 s until 2026-11-21, the owner: "have it take a little longer to grab the screwdriver")
 const pipeReach = { p: 0, grab: 0, done: false, br: null, brNext: 0, brPick: 0 };
 const pipeReachOn = () => !screwdriverTaken && !!drainTunnel.userData.outlet;
 const pipeHolding = () => !!((mouseBtns & 1) || keys['KeyF']);
@@ -30081,12 +30410,18 @@ const pipeArm = (() => {
       const wv = ((x >> 1) + (y >> 1)) % 2 ? 0.9 : 1.06, thread = 0.92 + 0.12 * hh(x, y >> 2);
       const dirt = vnz(x / N * 6, y / N * 6, 6) * 0.6 + vnz(x / N * 14, y / N * 14, 14) * 0.4;
       const k = wv * thread * (0.75 + 0.35 * dirt), i = (y * N + x) * 4;
-      d[i] = 92 * k; d[i + 1] = 96 * k; d[i + 2] = 106 * k; d[i + 3] = 255;
+      d[i] = 60 * k; d[i + 1] = 64 * k; d[i + 2] = 78 * k; d[i + 3] = 255;     // (his own dark navy hoodie, as in the clip)
     }
   });
   clothMap.repeat.set(3, 6); skinMap.repeat.set(1.5, 1.5);
-  const skin = new THREE.MeshStandardMaterial({ map: skinMap, bumpMap: skinMap, bumpScale: 0.6, color: 0xb08a72, roughness: 0.82, metalness: 0, emissive: 0x3a281c, emissiveMap: skinMap });
-  const cloth = new THREE.MeshStandardMaterial({ map: clothMap, bumpMap: clothMap, bumpScale: 1.0, color: 0xa8acb8, roughness: 1, metalness: 0, emissive: 0x15181e, emissiveMap: clothMap, side: THREE.DoubleSide });   // (two-sided: a sleeve's open end is cloth inside too)
+  const skin = new THREE.MeshStandardMaterial({ map: skinMap, bumpMap: skinMap, bumpScale: 0.6, color: 0x9c8a80, roughness: 0.82, metalness: 0, emissive: 0x423834, emissiveMap: skinMap });
+  const cloth = new THREE.MeshStandardMaterial({ map: clothMap, bumpMap: clothMap, bumpScale: 1.0, color: 0x9aa0b0, roughness: 1, metalness: 0, emissive: 0x1a1d26, emissiveMap: clothMap, side: THREE.DoubleSide });   // (two-sided: a sleeve's open end is cloth inside too)
+  /* BACK-LIT (2026-11-21): down the pipe the only light is the glow beyond the hand, so from behind the hand was a black lump
+   * on the handle. A rim of that glow round the edges (a fresnel term in the emissive) gives its outline and the fingers
+   * closing on the handle back, as a hand held against a light looks. */
+  const rim = (m, col, k) => { m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>',
+    `#include <emissivemap_fragment>\n totalEmissiveRadiance += vec3(${col.map((v) => v.toFixed(3)).join(',')}) * ${k.toFixed(3)} * pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.6);`); }; };
+  rim(skin, [0.78, 0.82, 0.9], 0.4);      // (not the sleeve: a tube seen down its length is ALL grazing, and it went white)
   const nail = new THREE.MeshStandardMaterial({ color: 0x9c8676, roughness: 0.6, metalness: 0, emissive: 0x241a14 });   // (dulled: brighter, they read as white dots)
   const A = new THREE.Group(); A.name = 'pipeArm'; A.visible = false;
   // a tapered, gently bellied tube along +z, 0..1 (a lathe: radius r0 at the base to r1 at the end, swelling by `belly`)
@@ -30095,10 +30430,15 @@ const pipeArm = (() => {
     const g = new THREE.LatheGeometry(pts, 18); g.rotateX(Math.PI / 2); g.computeVertexNormals();
     return new THREE.Mesh(g, mat);
   };
-  const upper = seg(0.05, 0.043, 0.08, cloth), fore = seg(0.043, 0.036, 0.05, cloth), wrist = seg(0.03, 0.027, 0.04, skin);
-  const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.008, 8, 18), cloth);      // the sleeve gathered at the wrist
+  /* (slimmer, 2026-11-21: the grate's middle opening is 12.6 cm clear between the bars — the sleeve goes through it with a
+   * centimetre or two to spare, as a real arm would have to) */
+  const upper = seg(0.042, 0.037, 0.06, cloth), fore = seg(0.037, 0.031, 0.05, cloth), wrist = seg(0.026, 0.024, 0.04, skin);
+  upper.userData.r0 = 0.042; upper.userData.r1 = 0.037; fore.userData.r0 = 0.037; fore.userData.r1 = 0.031; wrist.userData.r0 = 0.026; wrist.userData.r1 = 0.024;
+  const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.007, 8, 18), cloth);      // the sleeve gathered at the wrist
   const hand = new THREE.Group();
-  const palmG = new THREE.SphereGeometry(1, 18, 12); palmG.scale(0.042, 0.016, 0.052);
+  const palmG = new THREE.SphereGeometry(1, 18, 12);
+  { const P = palmG.attributes.position, v = new THREE.Vector3(); for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i); const n = Math.pow(Math.abs(v.x) ** 3 + Math.abs(v.y) ** 3 + Math.abs(v.z) ** 3, 1 / 3); P.setXYZ(i, v.x / n, v.y / n, v.z / n); } }   // a rounded box, not a ball (it read as a wooden knob)
+  palmG.scale(0.041, 0.014, 0.05);
   { const P = palmG.attributes.position; for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i); P.setY(i, y - 0.006 * (1 - (x / 0.042) ** 2) * (y < 0 ? 1 : 0.4)); } palmG.computeVertexNormals(); }   // cupped under
   const palm = new THREE.Mesh(palmG, skin); palm.position.z = 0.044; hand.add(palm);
   const knuckles = new THREE.Mesh(new THREE.CapsuleGeometry(0.011, 0.058, 4, 10), skin); knuckles.rotation.z = Math.PI / 2; knuckles.position.set(0, 0.002, 0.088); hand.add(knuckles);
@@ -30106,9 +30446,9 @@ const pipeArm = (() => {
   for (let i = 0; i < 4; i++) {
     const len = 0.03 - Math.abs(i - 1.4) * 0.004;
     const piv = new THREE.Group(); piv.position.set(-0.027 + i * 0.018, 0, 0.09);
-    const p1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.0085, len, 4, 10), skin); p1.rotation.x = Math.PI / 2; p1.position.z = len / 2 + 0.006; piv.add(p1);
+    const p1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.0092, len, 4, 10), skin); p1.rotation.x = Math.PI / 2; p1.position.z = len / 2 + 0.006; piv.add(p1);
     const j2 = new THREE.Group(); j2.position.z = len + 0.008; piv.add(j2);
-    const p2 = new THREE.Mesh(new THREE.CapsuleGeometry(0.0075, len * 0.75, 4, 10), skin); p2.rotation.x = Math.PI / 2; p2.position.z = len * 0.375 + 0.005; j2.add(p2);
+    const p2 = new THREE.Mesh(new THREE.CapsuleGeometry(0.0082, len * 0.75, 4, 10), skin); p2.rotation.x = Math.PI / 2; p2.position.z = len * 0.375 + 0.005; j2.add(p2);
     // the nail on its back, a little short of the tip, with the grime under its edge in the skin
     const nl = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), nail); nl.scale.set(0.0062, 0.0022, 0.0075); nl.position.set(0, 0.0068, len * 0.75 + 0.002); j2.add(nl);
     piv.userData.j2 = j2;
@@ -30116,7 +30456,7 @@ const pipeArm = (() => {
   }
   const thumbP = new THREE.Group(); thumbP.position.set(0.04, -0.006, 0.03); thumbP.rotation.y = 0.75;
   const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.0105, 0.04, 4, 10), skin); thumb.rotation.x = Math.PI / 2; thumb.position.z = 0.026; thumbP.add(thumb); hand.add(thumbP);
-  const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 10), cloth);        // the joint, rounded over, so the two lengths of sleeve meet
+  const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.039, 16, 10), cloth);        // the joint, rounded over, so the two lengths of sleeve meet
   A.add(upper, fore, wrist, cuff, elbow, hand);
   A.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.raycast = () => {}; } });
   A.userData = { upper, fore, wrist, cuff, elbow, hand, fingers, thumbP };
@@ -30133,10 +30473,13 @@ const pipeArm = (() => {
  * tall) against the peek's narrow one, so his hand comes out the screwdriver's size where it lies, the clip's grip (where the
  * blue thing was in his fingers) on the screwdriver; and never smaller than keeps the clip's left border and the knee cut
  * (`ycut`) off the screen. Shaded darker toward the hand, which is down in the pipe. */
-const PRH = { m: null, ready: false, s: 1, ox: 0, oy: 0, t: 1, hold: null };
+const PRH = { m: null, ready: false, s: 1, ox: 0, oy: 0, t: 1, hold: null, dx: 0, dy: 1 };
+/* (2026-11-21: switched off for the 3D arm for an hour, and back — the owner: "no still use the photo captured arm we provided
+ * just move it to where it makes sense". `pipeHandPlace` says where it went. The 3D arm is the fallback until it loads.) */
+const PIPE_FILMED = true;
 const PH_LENS = Math.tan(THREE.MathUtils.degToRad(32.5));        // half the clip's tall angle
 const PH_D = 0.15;                                               // the quad's distance in front of the eye (past the 0.1 near plane)
-const PH_TINT = [0.3, 0.29, 0.31], PH_SHADE = [0.75, 1.0];        // the drain's dark on his arm; the hand (in the pipe) .. the shoulder
+const PH_TINT = [0.26, 0.25, 0.27], PH_SHADE = [0.62, 1.0];        // the drain's dark on his arm; the hand (in the pipe) .. the shoulder
 const _phV = new THREE.Vector3(), _phQ = new THREE.Quaternion();
 const pipeHand = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0.5, -0.5, 0), new THREE.ShaderMaterial({
   uniforms: { map: { value: null }, rect: { value: new THREE.Vector4(0, 0, 1, 1) }, box: { value: new THREE.Vector4(0, 0, 1, 1) },
@@ -30155,7 +30498,7 @@ const pipeHand = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).translate(0.5, -0.
   transparent: true, depthTest: false, depthWrite: false, fog: false }));
 pipeHand.name = 'pipeHand'; pipeHand.visible = false; pipeHand.frustumCulled = false; pipeHand.renderOrder = 1e6; pipeHand.raycast = () => {};
 scene.add(pipeHand);
-fetch('assets/hud/pipe-hand.json').then((r) => r.json()).then((m) => {
+if (PIPE_FILMED) fetch('assets/hud/pipe-hand.json').then((r) => r.json()).then((m) => {
   PRH.m = m;
   new THREE.TextureLoader().load('assets/hud/pipe-hand.webp', (t) => {
     t.colorSpace = THREE.SRGBColorSpace; t.minFilter = t.magFilter = THREE.LinearFilter; t.generateMipmaps = false;
@@ -30165,19 +30508,71 @@ fetch('assets/hud/pipe-hand.json').then((r) => r.json()).then((m) => {
   });
 }).catch((e) => console.warn('[drain] his arm for the reach did not load', e));
 // frame `fi` (0 = the clip's FIRST) laid for this frame's camera, `drop` half-heights down (in from / out to below the screen)
+/* MOVED TO WHERE IT MAKES SENSE (2026-11-21, the owner: the reach "looks like you arent grabbing for the screwdriver" and
+ * "the hand is phasing through the bars", then "still use the photo captured arm we provided just move it to where it makes
+ * sense"). It was laid as filmed — his arm in from the LEFT edge, sweeping across the picture — so it crossed the bars, which
+ * stand down the pipe beyond the hand's wrist. Now the eye leans in over the grate's middle opening (`PIPE_EYE`: the two
+ * middle bars frame the picture's sides) and the clip is TURNED (`PH_ROT`, a quarter turn less a little) so his arm rises
+ * from the bottom of the screen, between those bars and over the lower flat — in front of the flat is right, the arm comes
+ * from below the eye and over it — to the screwdriver's HANDLE (`PIPE_GRIP_C`, not the tool's middle), his fingertips
+ * reaching away down the pipe. Sized for the handle's distance against how near his hand was to his phone (`PH_NEAR`), and
+ * never smaller than keeps the clip's left border (now under the screen) and the knee cut (now right of the arm) off the
+ * screen. `phScr` is the one clip-to-screen map (the screwdriver at his fingers uses it too). */
+/* (PH_ROT 1.42 until 2026-11-21: the arm straight up from the bottom read as a hand held SIDEWAYS — the owner: "make the
+ * animation not as sideways to start and offcentered a little to looklike you are using your left hand". It is his LEFT arm
+ * (filmed coming in from the left edge); turned 0.75 rad it comes up from the bottom LEFT, reaching up and right to the
+ * handle, the way a left hand goes through a grate in front of you.) */
+const PH_ROT = 0.75, PH_NEAR = 0.42;
+function phScr(cx, cy, out) {
+  const u = PRH.s * (cx - PRH.gx), v = -PRH.s * (cy - PRH.gy), c = Math.cos(PH_ROT), sn = Math.sin(PH_ROT);
+  out[0] = PRH.Tx + u * c - v * sn - PRH.drop * PRH.dx; out[1] = PRH.Ty + u * sn + v * c - PRH.drop * PRH.dy;
+  return out;
+}
+const _phP = [0, 0];
 function pipeHandPlace(fi, drop) {
   const M = PRH.m, f = M.frames[fi], u = pipeHand.material.uniforms, F = drainTunnel.userData.outlet;
   camera.updateMatrixWorld(true);
   const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), asp = camera.aspect;
-  F.localToWorld(_phV.set(...PIPE_SCREW.at)).applyMatrix4(camera.matrixWorldInverse);      // where it lies, on the screen
-  const Tx = -_phV.x / _phV.z / t, Ty = -_phV.y / _phV.z / t;
-  const gx = M.grip[0], gy = M.grip[1];
-  const s = Math.max(2 * PH_LENS / M.H / t, (Tx + asp) / gx * 1.02, (Ty + 1) / (M.ycut - gy) * 1.02);
-  PRH.s = s; PRH.t = t; PRH.ox = Tx - s * gx; PRH.oy = Ty + s * gy - drop;
+  F.localToWorld(_phV.copy(PIPE_GRIP_C)).applyMatrix4(camera.matrixWorldInverse);      // the handle, on the screen
+  const Tx = -_phV.x / _phV.z / t, Ty = -_phV.y / _phV.z / t, dist = -_phV.z;
+  PRH.gx = M.grip[0]; PRH.gy = M.grip[1]; PRH.Tx = Tx; PRH.Ty = Ty; PRH.t = t; PRH.drop = 0;
+  /* the way the arm runs back to the shoulder, on the screen: a drop (in from below at the start, back out at the end) slides
+   * the whole arm along it — down and to the left — so the hand never leaves its arm behind */
+  { const r = M.root[fi], du = r[0] - M.grip[0], dv = -(r[1] - M.grip[1]), c0 = Math.cos(PH_ROT), s0 = Math.sin(PH_ROT);
+    const X = du * c0 - dv * s0, Y = du * s0 + dv * c0, L = Math.hypot(X, Y) || 1; PRH.dx = -X / L; PRH.dy = -Y / L; }
+  // the size: his hand at the handle's distance; then grown until the clip's own edges are all off the screen
+  if (!PRH.minRoot) PRH.minRoot = Math.min(...M.root.map((r) => r[1]));
+  let sz = 2 * PH_LENS / M.H / t * (PH_NEAR / Math.max(0.2, dist));
+  const c = Math.cos(PH_ROT), sn = Math.sin(PH_ROT);
+  /* EVERY CUT EDGE OF THIS FRAME OFF THE SCREEN (2026-11-21, the owner: "cut out the hand and arm so it is all there and
+   * there are no floating parts"). The clip ends in two straight lines — its own left border (where the arm came into the
+   * phone's frame) and the knee cut (`ycut`) — and in the first frames the hand alone reaches the knee line: on screen that
+   * was a hand with its wrist sliced off square. Now the points of THIS frame's rect lying on either line are each pushed
+   * off whichever side of the screen is nearest (not only the bottom or right, which held for one turn of the clip only). */
+  // (a LINE must clear ONE side whole: its ends pushed off two different sides leave its middle across the corner)
+  const lines = [];
+  if (f[5] + f[3] >= M.ycut - 1.5) lines.push([[f[4], M.ycut], [f[4] + f[2], M.ycut]]);
+  if (f[4] <= 0.5) lines.push([[0, f[5]], [0, f[5] + f[3]]]);
+  for (const L of lines) {
+    let best = 1e9;
+    for (let side = 0; side < 4; side++) {
+      let need = 0;
+      for (const [px, py] of L) {
+        const du = px - PRH.gx, dv = -(py - PRH.gy), X = du * c - dv * sn, Y = du * sn + dv * c;     // where it goes, per unit size
+        const n = side === 0 ? (Y < -1e-6 ? (Ty + 1.04) / -Y : 1e9) : side === 1 ? (Y > 1e-6 ? (1.04 - Ty) / Y : 1e9)
+                : side === 2 ? (X > 1e-6 ? (asp + 0.04 - Tx) / X : 1e9) : (X < -1e-6 ? (Tx + asp + 0.04) / -X : 1e9);
+        need = Math.max(need, n);
+      }
+      best = Math.min(best, need);
+    }
+    if (best < 1e9) sz = Math.max(sz, best);
+  }
+  PRH.s = sz; PRH.drop = drop;
   const k = PH_D * t;                                            // half-heights to metres, at the quad
-  pipeHand.position.copy(camera.localToWorld(_phV.set((PRH.ox + s * f[4]) * k, (PRH.oy - s * f[5]) * k, -PH_D)));
-  pipeHand.quaternion.copy(camera.quaternion);
-  pipeHand.scale.set(s * f[2] * k, s * f[3] * k, 1);
+  phScr(f[4], f[5], _phP);                                       // the frame's top-left corner
+  pipeHand.position.copy(camera.localToWorld(_phV.set(_phP[0] * k, _phP[1] * k, -PH_D)));
+  pipeHand.quaternion.copy(camera.quaternion).multiply(_phQ.setFromAxisAngle(_prZ, PH_ROT));
+  pipeHand.scale.set(sz * f[2] * k, sz * f[3] * k, 1);
   u.rect.value.set(f[0] / M.SW, 1 - (f[1] + f[3]) / M.SH, f[2] / M.SW, f[3] / M.SH);
   u.box.value.set(f[4], f[5], f[2], f[3]);
   pipeHand.visible = true;
@@ -30203,7 +30598,7 @@ function pipeBreathTick(dt, k) {
   // (subtle — 2026-11-18, the owner: "make the breathing more subtle and stop when you pull your hand out": 0.04 to ~0.5, and it
   // falls away at once whenever the hand is not going IN)
   const goingIn = !pipeReach.done && pipeHolding();
-  B.g.gain.setTargetAtTime(k > 0.001 && goingIn ? 0.04 + 0.45 * k * k : 0, t, goingIn ? 0.3 : 0.12);
+  B.g.gain.setTargetAtTime(k > 0.001 && goingIn ? 0.025 + 0.27 * k * k : 0, t, goingIn ? 0.3 : 0.12);   // (fainter again, 2026-11-21: 0.04 + 0.45 k², "make the breathing sound a little more faint")
   B.lp.frequency.setTargetAtTime(420 + 6200 * k * k, t, 0.3);
   B.wet.gain.setTargetAtTime(0.45 * (1 - k), t, 0.3);            // the pipe answers it less the nearer it is
   pipeReach.brNext -= dt;
@@ -30220,8 +30615,33 @@ function pipeBreathStop() { if (pipeReach.br && audioCtx) pipeReach.br.g.gain.se
  * natural especiialy for the grab through the grate"): up into view from under the frame, through the middle gap of the
  * bars between the two flats, along over the invert, and down onto the screwdriver — the last point is where the hand has
  * to be for its palm to close ON it, so taking it is no jump. The elbow follows a curve of its own. */
-const PIPE_HAND = new THREE.CatmullRomCurve3([[0.07, -0.42, 0.5], [0.03, -0.17, 0.2], [0.014, -0.075, 0.06], [0.012, -0.15, -0.3], [0.012, -0.205, -0.62]].map((v) => new THREE.Vector3(...v)), false, 'centripetal');
-const PIPE_ELBOW = new THREE.CatmullRomCurve3([[0.12, -0.5, 0.62], [0.06, -0.2, 0.36], [0.03, -0.1, 0.24], [0.025, -0.08, 0.16]].map((v) => new THREE.Vector3(...v)), false, 'centripetal');
+/* THE WAY IN, REDONE (2026-11-21, the owner: the reach "looks like you arent grabbing for the screwdriver" and "the hand is
+ * phasing through the bars"). In the outlet's frame (x right on the screen, y up, -z down the pipe). The grate's bars stand at
+ * x = ±0.08 / ±0.24 (r 0.017, z 0.02) and its flats at y = ±0.16 (±0.02): the middle opening is 12.6 cm clear by 28. ONE way
+ * for the wrist — up from under the frame, through that opening, down along the pipe and onto the handle from above — and the
+ * forearm THREADED behind it along the same way (`pipeWayAt(s − PIPE_FORE)`), as an arm going through a hole is: whatever of
+ * it is in the opening is on the way, so nothing crosses the iron (`armFit` probe: the least clearance to any bar or flat).
+ * The eye leans in over the arm, in the top of the same opening (`PIPE_EYE`), the bars either side of the picture, so you
+ * look down your arm to the hand: from beside it, a bar or the sleeve was all there was to see.
+ * The grip is overhand on the red handle (`PIPE_GRIP_*`): fingers across it, palm down on it, closing behind and under it,
+ * the thumb wrapping the near side — the wrist's last point is where the hand must be for that, so nothing jumps. */
+const PIPE_SD_AX = new THREE.Vector3(0.969, 0, 0.248);                 // the screwdriver's long axis, toward its handle (F's frame)
+const PIPE_GRIP_C = new THREE.Vector3(...PIPE_SCREW_AT).addScaledVector(PIPE_SD_AX, 0.05);   // the handle's middle
+const PIPE_GRIP_F = new THREE.Vector3(0.248, 0, -0.969).multiplyScalar(Math.cos(0.42)).add(new THREE.Vector3(0, -Math.sin(0.42), 0)).normalize();   // the fingers' way: across it, tipped down
+const PIPE_GRIP_U = new THREE.Vector3().crossVectors(PIPE_SD_AX, PIPE_GRIP_F).normalize();             // the back of the hand
+const PIPE_GRIP_Q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(PIPE_GRIP_U, PIPE_GRIP_F), PIPE_GRIP_U, PIPE_GRIP_F));
+const PIPE_GRIP_W = PIPE_GRIP_C.clone().addScaledVector(PIPE_GRIP_F, -0.094).addScaledVector(PIPE_GRIP_U, 0.031);   // the wrist, for the palm to sit on it
+const PIPE_WAY = new THREE.CatmullRomCurve3([[0.07, -0.44, 0.42], [0.03, -0.17, 0.2], [0.0, -0.05, 0.04], [0.008, -0.105, -0.2], [0.03, -0.162, -0.46],
+  [PIPE_GRIP_W.x, PIPE_GRIP_W.y + 0.022, PIPE_GRIP_W.z + 0.03], PIPE_GRIP_W.toArray()].map((v) => new THREE.Vector3(...v)), false, 'centripetal');
+const PIPE_WAY_LEN = PIPE_WAY.getLength(), PIPE_FORE = 0.3;
+const PIPE_EYE = [0.0, 0.2, 0.32], PIPE_LOOK = [0.04, -0.1, -0.62], PIPE_SHOULDER = [0.0, -0.17, 0.0];   // (the eye's end, in F; the shoulder in the camera's frame)
+const _prD = new THREE.Vector3(), _prZ = new THREE.Vector3(0, 0, 1), _prQ2 = new THREE.Quaternion();
+// a point `s` metres along the way (behind its start: on back out along its first direction, under the screen)
+function pipeWayAt(s, out) {
+  if (s >= 0) return PIPE_WAY.getPointAt(Math.min(1, s / PIPE_WAY_LEN), out);
+  PIPE_WAY.getPointAt(0, out); PIPE_WAY.getPointAt(0.03, _prD);
+  return out.addScaledVector(_prD.sub(out).normalize(), s);
+}
 const _prE = new THREE.Vector3(), _prW = new THREE.Vector3(), _prT = new THREE.Vector3(), _prR = new THREE.Vector3(), _prUp = new THREE.Vector3();
 const easeIO = (x) => x * x * (3 - 2 * x);
 function pipeReachTick(dt, e) {
@@ -30235,12 +30655,13 @@ function pipeReachTick(dt, e) {
     if (R.p >= 1) { R.done = true; R.grab = 0; }
   }
   const U = pipeArm.userData, now = performance.now() * 0.001;
-  // the grab: the fingers close (0 -> 0.3), a beat, then the arm draws out with it (0.35 -> 1.25), and it is yours
+  // the grab: the fingers close round it (0 -> 0.45), a tug (0.45 -> 0.6), then the arm draws out with it (0.6 -> 1.8), turning
+  // it upright to bring it back through the opening, and it is yours (slower than it was, 2026-11-21: "take a little longer")
   let out = 0;
   if (R.done) {
     R.grab += dt;
-    out = easeIO(THREE.MathUtils.clamp((R.grab - 0.35) / 0.9, 0, 1));
-    if (R.grab >= 0.26 && !screwdriverTaken && !PRH.hold && screwdriverModel.parent !== U.hand) {
+    out = easeIO(THREE.MathUtils.clamp((R.grab - 0.6) / 1.2, 0, 1));
+    if (R.grab >= 0.38 && !screwdriverTaken && !PRH.hold && screwdriverModel.parent !== U.hand) {
       dropShine(screwdriverModel);
       if (PRH.ready) PRH.hold = { z: 0, q: null };       // his fingers closed on it: from here it rides at them (measured below, once the camera is placed)
       else {
@@ -30249,7 +30670,7 @@ function pipeReachTick(dt, e) {
       }
       addTrauma(0.06);
     }
-    if (R.grab >= 1.2 && !screwdriverTaken) {
+    if (R.grab >= 1.62 && !screwdriverTaken) {
       if (screwdriverModel.parent === U.hand) { U.hand.remove(screwdriverModel); scene.add(screwdriverModel); }
       PRH.hold = null;
       stowScrewdriver();
@@ -30257,18 +30678,20 @@ function pipeReachTick(dt, e) {
       playSample('pickup', 0.75, 0.04);
       sfxThud(0.03);
     }
-    if (R.grab >= 1.45) { R.done = false; R.p = 0; pipeArm.visible = false; pipeHand.visible = false; pipeBreathStop(); endPeek(); return; }
+    if (R.grab >= 1.9) { R.done = false; R.p = 0; pipeArm.visible = false; pipeHand.visible = false; pipeBreathStop(); endPeek(); return; }
   }
   const k = R.done ? 1 - out : R.p;                 // how far in: the reach, and back out after the grab
   const ks = easeIO(k);
   pipeBreathTick(dt, R.done ? 0 : R.p);
   if (k <= 0.002 && !R.done) { pipeArm.visible = false; pipeHand.visible = false; return; }
-  // the camera creeps in to the bars and tips down after the hand
-  F.localToWorld(_prA.set(-0.07 * ks, 0.10 * ks, 0.78 - 0.42 * ks));
-  F.localToWorld(_prB.set(0.0, -0.21, -0.85));
+  // the camera creeps in to the bars and tips down after the hand (and stays in while it comes back out with it: backing out
+  // under it, the opening shrank on the screen and swept a bar across his arm at the last)
+  { const ks = R.done ? 1 : easeIO(R.p);
+  F.localToWorld(_prA.set(PIPE_EYE[0] * ks, PIPE_EYE[1] * ks, 0.78 + (PIPE_EYE[2] - 0.78) * ks));
+  F.localToWorld(_prB.set(PIPE_LOOK[0] * ks, -0.21 + (PIPE_LOOK[1] + 0.21) * ks, -0.85 + (PIPE_LOOK[2] + 0.85) * ks));
   _prM.lookAt(_prA, _prB, camera.up); _prQ.setFromRotationMatrix(_prM);
   camera.position.lerp(_prA, ks * e);
-  camera.quaternion.slerp(_prQ, ks * e);
+  camera.quaternion.slerp(_prQ, ks * e); }
   // a tremble that grows as the hand goes in: slow overlapping waves, not a new random offset every frame
   const tr = 0.0011 * ks * ks;
   camera.position.x += tr * (Math.sin(now * 17.3) + 0.6 * Math.sin(now * 29.1 + 1.3));
@@ -30279,8 +30702,11 @@ function pipeReachTick(dt, e) {
     const M = PRH.m, nR = M.grab - M.first, nC = M.close - M.first;
     let fi, drop = 0;
     if (!R.done) { fi = Math.round(R.p * nR); drop = 2.4 * (1 - easeIO(THREE.MathUtils.clamp(R.p / 0.07, 0, 1))); }
-    else if (R.grab < 0.35) fi = nR + Math.round(easeIO(THREE.MathUtils.clamp(R.grab / 0.3, 0, 1)) * (nC - nR));
-    else { fi = out < 0.1 ? nC : Math.round(nR * (1 - (out - 0.1) / 0.9)); drop = 2.6 * out * out; }
+    else if (R.grab < 0.6) fi = nR + Math.round(easeIO(THREE.MathUtils.clamp(R.grab / 0.45, 0, 1)) * (nC - nR));
+    /* and out: the closed hand stays closed and the whole arm draws back the way it came, off the bottom left (it played the
+     * reach backward, and its first frames are the hand ALONE — a hand with a screwdriver floating off the screen without its
+     * arm, 2026-11-21, the owner: "no floating parts that lookout of place") */
+    else { fi = nC; drop = 3.2 * easeIO(out); }
     pipeArm.visible = false;
     pipeHandPlace(fi, drop);
     if (PRH.hold && !PRH.hold.q) {
@@ -30289,49 +30715,61 @@ function pipeReachTick(dt, e) {
       PRH.hold.z = -_phV.z; PRH.hold.q = camera.quaternion.clone().invert().multiply(screwdriverModel.quaternion);
       PRH.hold.d = [0, 0];
       { const tp = M.tip[fi], tG = M.tip[nR]; const ux = -_phV.x / _phV.z / PRH.t, uy = -_phV.y / _phV.z / PRH.t;
-        PRH.hold.d = [ux - (PRH.ox + PRH.s * (tp[0] + M.grip[0] - tG[0])), uy - (PRH.oy - PRH.s * (tp[1] + M.grip[1] - tG[1]))]; }   // (what is left between: it does not jump)
+        phScr(tp[0] + M.grip[0] - tG[0], tp[1] + M.grip[1] - tG[1], _phP); PRH.hold.d = [ux - _phP[0], uy - _phP[1]]; }   // (what is left between: it does not jump)
     }
     if (PRH.hold && !screwdriverTaken) {
       // at his fingers: the clip's grip carried on with its tip (the hand nears and grows as it comes back), nearer the eye
       const tp = M.tip[fi], tG = M.tip[nR], big = 1;
       const gx = tp[0] + (M.grip[0] - tG[0]) * big, gy = tp[1] + (M.grip[1] - tG[1]) * big;
-      const z = THREE.MathUtils.lerp(PRH.hold.z, 0.45, easeIO(out));
+      // (to 0.2 m, not 0.45: the grate stands ~0.3 m from the eye, and coming out under it at 0.45 the tool slid behind its lower
+      // bar and was gone from his fingers half way out — the arm is drawn over everything, the tool is not)
+      const z = THREE.MathUtils.lerp(PRH.hold.z, 0.2, easeIO(THREE.MathUtils.clamp(out * 2.2, 0, 1)));
       const dk = 1 - easeIO(THREE.MathUtils.clamp(out / 0.4, 0, 1));              // (the gap at the take, closed as it comes out)
-      screwdriverModel.position.copy(camera.localToWorld(_phV.set((PRH.ox + PRH.s * gx + PRH.hold.d[0] * dk) * PRH.t * z, (PRH.oy - PRH.s * gy + PRH.hold.d[1] * dk) * PRH.t * z, -z)));
+      phScr(gx, gy, _phP);
+      screwdriverModel.position.copy(camera.localToWorld(_phV.set((_phP[0] + PRH.hold.d[0] * dk) * PRH.t * z, (_phP[1] + PRH.hold.d[1] * dk) * PRH.t * z, -z)));
       screwdriverModel.quaternion.copy(camera.quaternion).multiply(PRH.hold.q);
     }
     return;
   }
   pipeHand.visible = false;
-  // the arm: shoulder below and right of the eye, the elbow and the hand each on their curve
   pipeArm.visible = true;
-  camera.updateMatrixWorld(true);
-  const S = camera.localToWorld(_prC.set(0.24, -0.36, 0.14));
-  PIPE_ELBOW.getPointAt(ks, _prE); F.localToWorld(_prE);           // (by arc length: an even pace along the way, no surges)
-  PIPE_HAND.getPointAt(ks, _prW); F.localToWorld(_prW);
-  _prR.copy(_prE).lerp(_prW, 0.9);
+  camera.updateMatrixWorld(true); F.updateMatrixWorld();
+  // the wrist along the way; the elbow threaded PIPE_FORE behind it along the same way; the shoulder by your cheek
+  const sW = ks * PIPE_WAY_LEN;
+  pipeWayAt(sW, _prW); pipeWayAt(sW - PIPE_FORE, _prE);
+  // the hand's frame in F: looking along its way, the back of the hand up (toward you where the way climbs the screen),
+  // turned onto the grip over the last stretch
+  pipeWayAt(Math.min(PIPE_WAY_LEN, sW + 0.035), _prT);
+  if (_prT.distanceToSquared(_prW) < 1e-8) { pipeWayAt(sW - 0.035, _prT); _prT.subVectors(_prW, _prT).add(_prW); }
+  const fw = _prT.sub(_prW).normalize();
+  const eyeF = F.worldToLocal(_prC.copy(camera.position)).sub(_prW).normalize();
+  const vert = Math.abs(fw.y);
+  _prUp.set(0, 1, 0).multiplyScalar(1 - vert).addScaledVector(eyeF, vert).normalize();
+  _prR.crossVectors(_prUp, fw).normalize(); _prUp.crossVectors(fw, _prR);
+  _prM.makeBasis(_prR, _prUp, fw); _prQ.setFromRotationMatrix(_prM);
+  _prQ.slerp(PIPE_GRIP_Q, THREE.MathUtils.smoothstep(ks, 0.8, 1));
+  // the tug (it is caught on nothing, but it is heavier than it looks), and on the way out the wrist turns it upright: the
+  // shaft stands up through the 28 cm of the opening instead of across the 12.6 cm between the bars
+  const tug = R.done ? Math.sin(Math.PI * THREE.MathUtils.clamp((R.grab - 0.45) / 0.2, 0, 1)) * 0.008 : 0;
+  _prW.addScaledVector(PIPE_GRIP_U, tug);
+  if (R.done && R.grab > 0.45) _prQ.multiply(_prQ2.setFromAxisAngle(_prZ, 1.45 * easeIO(THREE.MathUtils.clamp((R.grab - 0.5) / 0.45, 0, 1))));
+  F.localToWorld(_prW); F.localToWorld(_prE);
+  const S = camera.localToWorld(_prC.set(...PIPE_SHOULDER));
+  _prR.copy(_prE).lerp(_prW, 0.86);
   pipeSeg(U.upper, S, _prE); pipeSeg(U.fore, _prE, _prR); pipeSeg(U.wrist, _prR, _prW);
   U.cuff.position.copy(_prR); U.cuff.quaternion.copy(U.fore.quaternion); U.elbow.position.copy(_prE);
   U.hand.position.copy(_prW);
-  // the hand looks a little ahead along its own way in, and turns its palm down onto the thing at the end
-  PIPE_HAND.getPointAt(Math.min(1, ks + 0.06), _prT); F.localToWorld(_prT);
-  if (ks > 0.94) { F.localToWorld(_prB.set(PIPE_SCREW.at[0], PIPE_SCREW.at[1] + 0.01, PIPE_SCREW.at[2] - 0.11)); _prT.lerp(_prB, (ks - 0.94) / 0.06); }
-  if (_prT.distanceToSquared(_prW) < 1e-8) _prT.copy(_prW).sub(_prE).add(_prW);
-  // rolled against the SCREEN's up, so the back of the hand stays up and the palm down whichever way the path turns
-  // (and where the path climbs straight up the screen, toward the eye instead: the back of the hand to you, as a reach looks)
-  if (screwdriverModel.parent !== U.hand) {
-    _prUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
-    _prB.copy(_prT).sub(_prW).normalize(); const vert = Math.abs(_prB.dot(_prUp));
-    _prC.copy(camera.position).sub(_prW).normalize();
-    _prUp.multiplyScalar(1 - vert).addScaledVector(_prC, vert).normalize();
-    _prM.lookAt(_prT, _prW, _prUp); U.hand.quaternion.setFromRotationMatrix(_prM);
-  }
-  // feeling for it on the way (a slow ripple through the fingers), then closed on it, eased
-  const feel = 0.18 + 0.12 * Math.sin(now * 3.1) * ks;
-  const close = R.done ? easeIO(THREE.MathUtils.clamp(R.grab / 0.3, 0, 1)) : 0;
-  const curl = feel + (1.15 - feel) * close;
-  U.fingers.forEach((f, i) => { const c = curl + (R.done ? 0 : 0.06 * Math.sin(now * 3.1 - i * 0.6) * ks); f.rotation.x = c * 0.7; f.userData.j2.rotation.x = c * 0.9; });
-  U.thumbP.rotation.x = curl * 0.6;
+  F.getWorldQuaternion(U.hand.quaternion).multiply(_prQ);
+  // feeling its way (a slow ripple through the fingers), opening wide over the last of the way in, then closed round it
+  const open = THREE.MathUtils.smoothstep(ks, 0.7, 0.97);
+  const feel = (0.22 + 0.1 * Math.sin(now * 3.1) * ks) * (1 - open) - 0.08 * open;
+  const close = R.done ? easeIO(THREE.MathUtils.clamp(R.grab / 0.45, 0, 1)) : 0;
+  U.fingers.forEach((f, i) => {
+    const c = feel + (R.done ? 0 : 0.05 * Math.sin(now * 3.1 - i * 0.6) * ks * (1 - open));
+    const lag = THREE.MathUtils.clamp(close * 1.25 - i * 0.06, 0, 1);          // (the index first, the little finger last)
+    f.rotation.x = c + (1.2 - c) * lag; f.userData.j2.rotation.x = c * 1.1 + (1.35 - c * 1.1) * lag;
+  });
+  U.thumbP.rotation.x = 0.15 + 0.85 * close; U.thumbP.rotation.y = 0.75 - 0.45 * close + 0.2 * open * (1 - close);
 }
 
 function updateGateFace(dt) {
@@ -30904,7 +31342,7 @@ function drainAir() {
  *  - THE SPILL: soft puffs born just inside the mouth, rolling out over the lip, sinking and spreading over the sand in
  *    front of it and thinning away five to eight metres out. Billboards computed whole in the vertex shader from a seed
  *    and the clock (no per-frame CPU), faded near the eye so a puff never flattens across the screen. */
-const DRAIN_MIST = { volD: 0.13, puffs: 110, puffA: 0.34 };   // (2026-11-18 last: seen, and of one even night-fog tone — see the colours below)
+const DRAIN_MIST = { volD: 0.13, puffs: 150, puffA: 0.3 };   // (2026-11-18 last: seen, and of one even night-fog tone — see the colours below)
 const drainMistU = { uT: { value: 0 }, uK: { value: 1 } };
 const drainMist = (() => {
   const g = new THREE.Group(); g.name = 'drainMist';
@@ -30962,37 +31400,47 @@ const drainMist = (() => {
   for (let i = 0; i < N * 4; i++) seed[i] = rnd();
   ig.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seed, 4)); ig.instanceCount = N;
   const puffMat = new THREE.ShaderMaterial({
-    uniforms: Object.assign({ uFloor: { value: DN.FLOOR_Y }, uA: { value: DRAIN_MIST.puffA } }, drainMistU),
+    uniforms: Object.assign({ uFloor: { value: DN.FLOOR_Y }, uA: { value: DRAIN_MIST.puffA }, uMoon: { value: MOON_DIR } }, drainMistU),
     vertexShader: `
-      attribute vec4 aSeed; uniform float uT, uFloor; varying vec2 vUv; varying float vA; varying float vOut; varying vec2 vSd;
+      attribute vec4 aSeed; uniform float uT, uFloor; varying vec2 vUv; varying float vA; varying float vOut; varying vec2 vSd; varying vec3 vDir; varying float vLow;
       void main(){
         float life = 15.0 + aSeed.y * 9.0, age = fract(uT / life + aSeed.x);
-        float run = 4.8 + aSeed.w * 3.6;
+        float run = 5.5 + aSeed.w * 4.5;
         float lx = 0.4 + aSeed.z * 3.4 - age * (run + 2.6);                   // born in the mouth, out over the lip, on across the sand
         float out_ = smoothstep(0.0, 2.5, -lx);                                // 0 in the pipe, 1 out on the beach
-        float y = mix(uFloor + 0.22 + aSeed.y * 0.55, 0.05 + aSeed.w * 0.32, smoothstep(-0.2, 2.2, -lx));   // sinks to the sand as it leaves
-        float z = (aSeed.z - 0.5) * 1.5 * (1.0 + out_ * 2.6 + age * 0.8) + sin(uT * 0.13 + aSeed.x * 6.28) * 0.35 * (0.3 + out_);
+        float y = mix(uFloor + 0.22 + aSeed.y * 0.55, 0.02 + aSeed.w * 0.22, smoothstep(-0.2, 2.2, -lx));   // sinks to the sand as it leaves (lower, 2026-11-21: it is heavy, cold air)
+        float z = (aSeed.z - 0.5) * 1.5 * (1.0 + out_ * 3.2 + age * 1.0) + sin(uT * 0.13 + aSeed.x * 6.28) * 0.45 * (0.3 + out_);
         vec4 c = modelMatrix * vec4(lx, y, z, 1.0);
-        float sz = (1.1 + aSeed.y * 0.6) * (1.0 + age * 2.4 + out_ * 1.2);
+        float sz = (1.1 + aSeed.y * 0.6) * (1.0 + age * 2.4 + out_ * 1.5);
         vec4 mv = viewMatrix * c;
         float dcam = -mv.z;
         mv.xy += position.xy * sz * vec2(1.0, 0.62);
         gl_Position = projectionMatrix * mv;
-        vUv = uv; vOut = out_; vSd = aSeed.xy;
+        vUv = uv; vOut = out_; vSd = aSeed.xy; vDir = normalize(c.xyz - cameraPosition); vLow = position.y;
         vA = smoothstep(0.0, 0.14, age) * (1.0 - smoothstep(0.5, 1.0, age)) * smoothstep(0.7, 2.4, dcam);
       }`,
     fragmentShader: `
-      uniform float uA, uK; varying vec2 vUv; varying float vA; varying float vOut; varying vec2 vSd;
+      uniform float uA, uK, uT; uniform vec3 uMoon; varying vec2 vUv; varying float vA; varying float vOut; varying vec2 vSd; varying vec3 vDir; varying float vLow;
       float h2(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float n2(vec2 x){ vec2 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
         return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y); }
       void main(){
         vec2 q = vUv - 0.5; float r = length(q) * 2.0;
-        float wisp = n2(q * 3.2 + vSd * 40.0) * 0.6 + n2(q * 7.0 - vSd * 23.0) * 0.4;
-        float a = smoothstep(1.0, 0.15, r + (wisp - 0.5) * 0.55);
-        a *= a * vA * uA * uK;
+        // (finer, 2026-11-21: three octaves, the finest drifting through it, so a puff is torn wisps at its edge and not a disc)
+        vec2 dq = vec2(uT * 0.05, -uT * 0.02);
+        float wisp = n2(q * 3.2 + vSd * 40.0 + dq) * 0.5 + n2(q * 7.0 - vSd * 23.0 - dq * 2.0) * 0.32 + n2(q * 15.0 + vSd * 9.0 + dq * 3.5) * 0.18;
+        float a = smoothstep(1.0, 0.1, r + (wisp - 0.5) * 0.8);
+        a *= a * vA * uA * uK * (0.75 + 0.5 * smoothstep(0.3, -0.5, q.y));          // denser at its foot
         if (a < 0.002) discard;
-        vec3 col = mix(vec3(0.055, 0.06, 0.056), vec3(0.075, 0.09, 0.115), vOut);    // the pipe's murk, then the night's own fog: one even tone, a touch over the dark sand, under the lit water (2026-11-18)
+        /* MOONLIT, NOT SMOKE (2026-11-21, the owner: "touch up the outside fog. and the some seeping out of the front"): out on
+         * the sand it was darker than the moonlit sand under it (0.075-0.09 against the sand's 0.09-0.14), so it lay there as a
+         * smear of soot. Fog out in moonlight is lit air: a grey-blue just over the sand, and silver looking toward the moon
+         * (forward scattering, the same as the beach's own fog), with its top edges catching more of it than its foot. In the
+         * pipe it keeps the murk's own dark tone. */
+        float fs = max(dot(normalize(vDir), uMoon), 0.0);
+        vec3 lit = vec3(0.10, 0.118, 0.15) + vec3(0.07, 0.085, 0.12) * (0.65 * pow(fs, 6.0) + 0.35 * pow(fs, 2.0));
+        lit *= 0.92 + 0.22 * smoothstep(-0.2, 0.45, q.y) * wisp;
+        vec3 col = mix(vec3(0.055, 0.06, 0.056), lit, vOut);
         gl_FragColor = vec4(col, a);
       }`,
     transparent: true, depthWrite: false, fog: false,
@@ -31378,6 +31826,17 @@ onMossyRocks(() => {
   mat.emissiveMap = mat.map;
   if (mat.normalScale) mat.normalScale.set(1.3, 1.3);
   reexpose(mat, 0.62);
+  /* AND THE SEA BREAKS ON THEM (2026-11-21, the owner: "do it for the rocks on the boat"): the formation's wash climbs
+   * them (\`rockWash\`, each stone its own wave — they are merged below, so each carries its origin), and each gets its
+   * ring of foam and its spray (\`addSurfSpots\`). */
+  rockWash(mat, true);
+  const surf = [];
+  const stoneGeo = (rk, wx, wz) => {
+    const g = rk.geo.clone(), n = g.attributes.position.count, o = new Float32Array(n * 2);
+    for (let i = 0; i < n; i++) { o[i * 2] = wx; o[i * 2 + 1] = wz; }
+    g.setAttribute('aRkO', new THREE.BufferAttribute(o, 2));
+    return g;
+  };
 
   const _q = new THREE.Quaternion(), _e = new THREE.Euler();
   /* HOW WIDE SHE IS OVER THE WHOLE OF A STONE, not at the height of its
@@ -31410,7 +31869,8 @@ onMossyRocks(() => {
     const y = ey * (1 - 2 * bury);
     const hull = hullOver(lx, y - ey, y + ey);
     const lz = sg * (hull + ez - jam);
-    const m = new THREE.Mesh(rk.geo, mat);
+    const m = new THREE.Mesh(stoneGeo(rk, SHIP_X + lx, SHIP_Z + lz), mat);
+    surf.push({ x: SHIP_X + lx, z: SHIP_Z + lz, r: Math.max(ex, ez) * 0.85, top: y + ey });
     m.quaternion.copy(_q);
     m.scale.setScalar(sc);
     m.position.set(lx, y, lz);
@@ -31455,7 +31915,8 @@ onMossyRocks(() => {
     const sg = lz >= 0 ? 1 : -1;
     const clear = hullOver(lx, y - ey, y + ey) + ez - BOW_JAM;
     const lzp = sg * Math.max(Math.abs(lz), clear);
-    const m = new THREE.Mesh(rk.geo, mat);
+    const m = new THREE.Mesh(stoneGeo(rk, SHIP_X + lx, SHIP_Z + lzp), mat);
+    surf.push({ x: SHIP_X + lx, z: SHIP_Z + lzp, r: Math.max(e0.x, e0.z) * sc * 0.85, top: y + ey });
     m.quaternion.copy(_q); m.scale.setScalar(sc); m.position.set(lx, y, lzp);
     grp.add(m);
     if (y + ey > ROCK_STEP) rockColliders.push({ x: SHIP_X + lx, z: SHIP_Z + lzp,
@@ -31491,6 +31952,7 @@ onMossyRocks(() => {
    * could be here, so the stone merges itself */
   bakeStatic(grp);
   shipwreck.add(grp);
+  addSurfSpots(surf);
 });
 
 /* ---- and her furniture, which arrives over the network ---------------
@@ -31553,6 +32015,18 @@ bwGlb('assets/chest.glb', (gltf) => {
   }
   oceanUniforms.uShipC.value.set(SHIP_X, SHIP_Z);
   oceanUniforms.uShipHalf.value = SN.HALF;
+  /* AND THE SEA BREAKS ON HER (2026-11-21, "any other thing the waves should technically be spalshing on"): foam and spray
+   * along her planking at the waterline (\`addSurfSpots\`), her stem and both sides of her forward half — the part the
+   * swash reaches. A ring on her line is cut at her inside by the same punch (\`bwInShip\`). */
+  {
+    const spots = [{ x: SHIP_X - SN.HALF + 0.4, z: SHIP_Z, r: 0.7, top: 3 }];
+    for (let lx = -SN.HALF + 1.6; lx < 4; lx += 1.7) {
+      const h = SN.halfAtY(lx, 0.0);
+      if (h < 0.3) continue;
+      for (const sg of [1, -1]) spots.push({ x: SHIP_X + lx, z: SHIP_Z + sg * h, r: 0.75, top: 3 });
+    }
+    addSurfSpots(spots);
+  }
 
   /* ---- AND THE HOLE HAS TO HAVE A BOTTOM ---------------------------
    * Punching her out of the sea leaves NOTHING there, and the beach does
@@ -33818,7 +34292,7 @@ let screwdriverTaken = false, stowScrewdriver = () => false;
  * seconds and as you hold you get closer into the tunnel and you start to hear breathing louder as you stick your hand in
  * to get it"). On the invert of the outlet's bore, 72 cm in from the bars, a little to one side of the middle gap the arm
  * comes through. It is NOT a pickup any more: the only way to it is the peek's reach (`pipeReach`, `updatePeek`). */
-const PIPE_SCREW = { at: [0.02, -0.251, -0.72], yaw: 1.32 };      // (deep enough to be seen over the grate's lower flat from the peek)      // in the outlet's frame (its -z runs down the pipe)
+const PIPE_SCREW = { at: PIPE_SCREW_AT, yaw: 1.32 };      // (deep enough to be seen over the grate's lower flat from the peek)      // in the outlet's frame (its -z runs down the pipe)
 {
   const F = drainTunnel.userData.outlet;
   drainTunnel.updateMatrixWorld(true);
@@ -36065,6 +36539,11 @@ dock.position.set(DOCK_X, 0, DOCK_Z);
 dock.rotation.y = -Math.PI / 2;            // model -z (the shed end) → world +X, the land
 dock.scale.setScalar(DOCK_S);
 scene.add(dock);
+/* the piles the surf breaks on (measured off the model's own posts below the boards, 2026-11-21): the sea end's row and
+ * the line down its side, each a 45 cm post — foam round each and spray off it (`addSurfSpots`) */
+addSurfSpots([-3.56, -1.13, 1.41, 3.80].flatMap((x) => [[x, -213.26], [x, -216.65]])
+  .concat([[3.80, -218.8], [3.80, -220.86], [3.87, -223.05], [6.44, -213.26], [6.44, -223.08]])
+  .map(([x, z]) => ({ x, z, r: 0.3, top: 2.3 })));
 {
   const drift = new THREE.Mesh(makeApron(DOCK_DRIFT_R), sandMat);
   drift.scale.set(DOCK_DRIFT_R, DOCK_DRIFT_H, DOCK_DRIFT_R);
@@ -51768,19 +52247,7 @@ function update(dt, rawDt = dt) {
       addTrauma(force * 0.25);
       vmImpulse(-1.1 - force * 2.4);
       if (playerWading()) sfxSplash(0.9);
-      else stepSnd(() => {
-        if (onDock) sfxStepWood();
-        else if (inBunker) sfxStepBunker();
-        else if (inUndercroft) sfxStepUnder();
-        else if (insideDrain) sfxStepDrain();
-        else if (inCat) sfxStepCat();
-        else if (inTavern) sfxStepTav();
-        else if (inWhale) sfxStepWhale();
-        else if (inFort || inC13 || inThrone || inDun) sfxStepCat();
-        else if (inSewer) sewStepSnd();
-        else if (inTemple) { if (tmpOnPodium(camera.position.x - TMP_X, camera.position.z - TMP_Z)) sfxStepCat(); else sfxStepSand(); }
-        else sfxStep();
-      });
+      else stepSnd(() => { if (!placeStep()) sfxStep(); });
     }
     camBaseY = floorLimit; vy = 0; onGround = true;
   }
@@ -51889,26 +52356,8 @@ function update(dt, rawDt = dt) {
         // no footprint on water — kick up a splash instead
         spawnSplash(camera.position.x, camera.position.z, 9, moveDir.x, moveDir.z, 1);
         sfxSplash(0.85);
-      } else if (onDock) {
-        sfxStepWood();                     // boards: a knock, and no print
-      } else if (inBunker) {
-        sfxStepBunker();                   // the church's step, dry, in the bunker's own box (`sfxStepBunker`), and no print
-      } else if (inUndercroft) {
-        sfxStepUnder();                    // stone, or rubble: no print either way
-      } else if (insideDrain) {
-        sfxStepDrain();                    // concrete pipe: the caves' own recording
-      } else if (inCat) {
-        sfxStepCat();                      // flagstones: the church's own recording, and he hears it
-      } else if (inTavern) {
-        sfxStepTav();                      // flags, boards or a rug: whatever is under the boot
-      } else if (inWhale) {
-        sfxStepWhale();                    // flesh gives underfoot; the fluid is a wade
-      } else if (inFort || inC13 || inThrone || inDun) {
-        sfxStepCat();                      // the courtyard's cobbles: stone, and no print
-      } else if (inSewer) {
-        sewStepSnd();                      // the walks' concrete, the plank's board, or the flood
-      } else if (inTemple) {
-        if (tmpOnPodium(camera.position.x - TMP_X, camera.position.z - TMP_Z)) sfxStepCat(); else sfxStepSand();   // the temple's floor, or the desert's sand (no print: its sand is not the beach's)
+      } else if (placeStep()) {
+        // (somewhere with a floor of its own: its step, and no print — `placeStep`)
       } else {
         stampFoot(camera.position.x, camera.position.z, moveDir.x, moveDir.z, footSide);
         sfxStepSand();
@@ -51943,6 +52392,7 @@ function update(dt, rawDt = dt) {
   for (const p of physProps) p.step(dt);
   updatePuffs(dt);
   updateSplashes(dt);
+  updateSpray(dt);
 
   const px = (inUndercroft || inKeep || inTavern || inWhale) ? sand.position.x : camera.position.x, pz = (inUndercroft || inKeep || inTavern || inWhale) ? sand.position.z : camera.position.z;   // underground the beach stays where it is, and is culled
   sand.position.set(snap(px, SAND_TILE), 0, snap(pz, SAND_TILE));
@@ -53781,6 +54231,9 @@ function animateFrame() {
   FOG_GROUND.w = inDojo ? 0.50 : inSewer ? SEW_MIST.d : inRoom() ? 0 : GROUND_MIST * (1 + 2.4 * wsM) * (1 + 3.2 * wellMistK); FOG_GROUND.x = performance.now() * 0.00055;
   FOG_GROUND.y = inDojo ? DOJO_Y + (dojoArenaY || 0) - 0.05 : inSewer ? SEW_Y + SEW.WATER - 0.05 : -0.10;     // in the dojo the mist lies on the courtyard's own stones; in the sewer on its water
   FOG_GROUND.z = inSewer ? SEW_MIST.h : 0.55;
+  // the lamps lighting the air (`FOG_SCAT`): the sewer, and the drain from its mouth to its room
+  { const dk = inSewer ? 1 : inRoom() ? 0 : drainMix; FOG_SCAT.w = dk; FOG_SCAT.z = performance.now() * 0.001;
+    FOG_SCAT.x = inSewer ? FOG_SCAT_K.sew : THREE.MathUtils.lerp(FOG_SCAT_K.drain, FOG_SCAT_K.room, drainRoomK); }
   skyUniforms.uMoonDir.value = inDojo ? DOJO_MOON : MOON_DIR;
   updateDojoSky();   // the dojo has a night of its own now; the beach's sky is hidden while it is up
   if (inKeep) { FOG_KEEP2.x = performance.now() * 0.001; FOG_KEEP2.y = KEEP_Y + KEEP_SEA; FOG_KEEP2.z = 2.9; FOG_KEEP2.w = 0.13; FOG_KEEP.x = KEEP_MOON.x; FOG_KEEP.y = KEEP_MOON.y; FOG_KEEP.z = KEEP_MOON.z; }
@@ -53916,7 +54369,7 @@ function animateFrame() {
     sharpenFrame();
     return;
   }
-  const hRoll = hitRoll + hurtShock * hurtRollK + stepRoll * stepRollK;
+  const hRoll = hitRoll + maceLean + hurtShock * hurtRollK + stepRoll * stepRollK;
   const hPitch = hurtShock * hurtPitchK;
   if (hRoll) camera.rotateZ(hRoll);
   if (hPitch) camera.rotateX(hPitch);
@@ -95541,14 +95994,15 @@ const SEW = {
    * out even on the other side". They go last, after the ladder's. */
   EMERG: [[1.85, 1.2], [1.85, -6.0], [1.85, -12.6], [1.85, -20.5]],
 };
-const SEW_FOG = { color: new THREE.Color(0x050706), density: 0.022 };   // thin enough that the generator's lamp is seen from the ladder
+const SEW_FOG = { color: new THREE.Color(0x070909), density: 0.04 };   // (0.022 until 2026-11-21, the owner: "make it a lil foggier inside the sewer" — "but make sure you can still make out lights like the red ones above the lever and the generator light": the lamps' glows and halos are unfogged sprites, the lever bulbs unfogged too, and the fog scatters the lamps' own light now, `FOG_SCAT`)
+//   // thin enough that the generator's lamp is seen from the ladder
 /* the walls' own breath of light: a shape in the dark, not a room. MEASURED, not guessed: from the ladder looking
  * down the tunnel the frame's mean is 0.6 / 255 at 0x1a1e17 (black), 4.0 at 0x30362c, 6.9 at 0x3a4136, 11 at
  * 0x464e40. The first pass kept 0x3a4136; the owner's word on it was "make it darker". */
 const SEW_LIFT = 0x2c3229;
 // the murk lying on the water and the walks: the fog chunk's own ground-mist integral (`FOG_GROUND`), scale height and density
 // (it is not lit by the lamps — the fog chunk has no lights — so it is kept thin enough that a lamp's pool on the floor shows through it)
-const SEW_MIST = { h: 0.7, d: 0.85 };   // (0.6 with the sheets on top of it; the sheets are gone, 2026-11-14)
+const SEW_MIST = { h: 0.75, d: 1.0 };   // (0.7 / 0.85 until the sewer's fog went up, 2026-11-21)   // (0.6 with the sheets on top of it; the sheets are gone, 2026-11-14)
 const SEW_LEVER_ARC = 2.0;                        // radians the knife swings down through
 let sewWorld = null, sewReady = false, sewLoading = false, inSewer = false;
 let sewLevers = 0, sewGenOn = true, sewGateOpen = false, sewChestOpen = false, sewLootTaken = false, sewGlowTaken = false;
@@ -95864,8 +96318,9 @@ function buildSewer(got) {
     const WN = 24;
     sewP.wake = { pts: Array.from({ length: WN }, () => new THREE.Vector4(0, 0, 99, 0)), t: { value: 0 } };
     sewP.shockU = { value: new THREE.Vector4(0, 0, 0, 0) };
+    sewP.chanLive = { value: new THREE.Vector4(0, 0, 0, 0) };      // (all the water live when it is electrocuted: `sewElectrocute`)
     waterMat.onBeforeCompile = (sh) => {
-      sewWebPatch(sh, sewP.shockU, 0.16);
+      sewWebPatch(sh, sewP.shockU, 0.16, sewP.chanLive);
       sh.uniforms.uWake = { value: sewP.wake.pts }; sh.uniforms.uSwT = sewP.wake.t;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vSwXZ;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vSwXZ = position.xz;');
@@ -95899,7 +96354,8 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
   const floodMat = new THREE.MeshStandardMaterial({ color: 0x171b13, roughness: 0.12, metalness: 0, normalMap: ripple, normalScale: new THREE.Vector2(0.3, 0.3),
     emissive: new THREE.Color(0x2a5a9a), emissiveIntensity: 0 });
   sewP.floodU = { value: new THREE.Vector4(0, 0, 0, 0) };
-  floodMat.onBeforeCompile = (sh) => sewWebPatch(sh, sewP.floodU, 0.85);    // (the storeroom's flood: the web, close round the wires)
+  sewP.floodLive = { value: new THREE.Vector4(0, 0, 0, 0) };
+  floodMat.onBeforeCompile = (sh) => sewWebPatch(sh, sewP.floodU, 0.85, sewP.floodLive);    // (the storeroom's flood: the web round the wires, and the current over all of it to the door)
   floodMat.customProgramCacheKey = () => 'sewFloodWeb';
   const worldUV = (g, k) => { const p = g.attributes.position, uv = g.attributes.uv; for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) * k, p.getZ(i) * k); return g; };
   const sheet = (x0, z0, x1, z1, y) => { const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0); g.rotateX(-Math.PI / 2); g.translate((x0 + x1) / 2, y, (z0 + z1) / 2); return worldUV(g, 0.45); };
@@ -96113,7 +96569,7 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
     M.add(new THREE.Mesh(pgeo, pMat));
     const pv = new THREE.Group(); pv.position.copy(piv); M.add(pv);
     pv.add(new THREE.Mesh(ageo, aMat));
-    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.017, 8, 6), new THREE.MeshBasicMaterial({ color: 0x300606 }));
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.017, 8, 6), new THREE.MeshBasicMaterial({ color: 0x300606, fog: false }));
     bulb.position.set(0.13, top - 0.05, front - 0.012); G.add(bulb);
     const bl = new THREE.PointLight(0xff2412, 0, 2.4, 2); bl.position.set(0.13, top - 0.05, front - 0.14); G.add(bl);
     const bh = sewGlow(0xff2a14, 0.38); bh.position.copy(bulb.position); G.add(bh);
@@ -96919,15 +97375,62 @@ function sewStepSnd() {
   /* (the flood is the storeroom and its passage only: "east of the tunnel's wall" was also the whole branch's walks, and
    * walking past the bent grate splashed — 2026-11-16, the owner) */
   const inFlood = lx > SEW.WALL + 0.05 && lx < SEW.ROOM_X1 + 0.3 && lz > SEW.ROOM_Z0 - 0.3 && lz < SEW.ROOM_Z1 + 0.3;
-  if (inFlood) sfxSplash(0.4);
-  else if (sewOnBridge()) sfxStepWood();
+  if (inFlood) { sfxSplash(0.4); sfxStepEcho(0.14, 1500, 0.8); }       // (the room answers the splash)
+  else if (sewOnBridge()) { sfxStepWood(); sfxStepEcho(0.18, 1400, 1); }   // (a board's knock, and the tunnel ringing under it)
   else sfxStepSewer();
 }
 /* THE WALKS' STEP IS THE CHURCH TUNNEL'S (2026-11-17, the owner: "put the same footprints in the church tunnel in the sewer
  * tunnel"): the church's eleven, cut from a walk down a stone corridor, corridor tail and all — the sewer's walks are a
  * long stone tunnel too — at the church's level and the same alternate-foot weighting (`sfxStepUnder`). It was the
  * synthesised step, which is the fallback before the bank is in. */
+/* EVERY FOOTFALL, BY WHERE YOU ARE AND WHAT IS UNDER YOU (2026-11-21, the owner: "make sure the sound cues for it makes
+ * sense based on where you are walking. make sure you do that with all footstep sounds"). The walk's and the landing's were
+ * two copies of one list, and every place missing from it fell through to the BEACH'S SAND STEP: the wreck's deck, the
+ * tug, the lighthouse's brick shaft and iron stair, the sea keep, the island, the dojo, the pavilion, the house behind the
+ * dune; the drain was the synthesised sand step all the way in, and the undercroft's rock tunnel too. Indoors and
+ * underground stone rings (the echo steps, cut short for a small room), open-air stone is the church's dry step, boards
+ * knock, iron rings, grass hushes; where a site keeps its drawn floor's materials, it is asked (`siteFloorSurface`).
+ * False on the beach: the caller prints a foot and plays the sand. */
+function placeStep() {
+  const x = camera.position.x, z = camera.position.z, feet = camBaseY - playerEye();
+  if (onDock || onShip || onTug || atTugBow) { sfxStepWood(); return true; }                 // planking, out over the water
+  if (inBunker) { sfxStepBunker(); return true; }
+  if (inUndercroft) { sfxStepUnder(); return true; }
+  if (insideDrain) { sfxStepDrain(); return true; }
+  if (inSewer) { sewStepSnd(); return true; }
+  if (inTavern) { sfxStepTav(); return true; }
+  if (inWhale) { sfxStepWhale(); return true; }
+  if (inCat) { sfxStepSite(CAT_SITE, true, 1); return true; }                                 // the catacombs' passages ring
+  if (inThrone) { sfxStepSite(THR_SITE, true, 1); return true; }                              // a great hall rings
+  if (inDun) { sfxStepSite(DUN_SITE, true, 0.75); return true; }
+  if (inKeep) { sfxStepSite(KEEP_SITE, true, 0.6); return true; }
+  if (inFort) { sfxStepSite(FORT_SITE, false); return true; }                                 // a courtyard: open air
+  if (inC13) { sfxStepSite(C13_SITE, false); return true; }
+  if (onIsle) { sfxStepSite(ISLE_SITE, insideTower, 0.8); return true; }
+  if (insideTower) {                                                                          // the lighthouse: a brick shaft round an iron stair
+    if (stairY !== null) { sfxStepMetal(); sfxStepEcho(0.14, 1800, 1); } else sfxStepStone(true, 0.48, 5000, 1);
+    return true;
+  }
+  if (inDojo) {                                                                               // the hall's raised boards, or the courtyard's stone
+    const st = dojoStoreyAt(x, z, feet, 0.5);
+    if (st && st.f > 0.2) sfxStepWood(); else sfxStepCat();
+    return true;
+  }
+  if (inTemple) { if (tmpOnPodium(x - TMP_X, z - TMP_Z)) sfxStepCat(); else sfxStepSand(); return true; }   // its floor, or the desert's sand (not the beach's: no print)
+  if (mushWhere !== 'out') { sfxStepStone(true, 0.44, 5400, 0.55); return true; }            // the pavilion's stone floor and stair, under glass
+  if (mushInYard) { sfxStepSoft(); return true; }
+  if (elvReady && elvLand) {                                                                  // the house behind the dune, and the ground round it
+    const sf = siteFloorSurface(HOUSE_SITE, x, z, feet);
+    if (sf === null || sf === 'soft') sfxStepSoft();
+    else if (sf === 'wood') { sfxStepWood(); sfxStepEcho(0.1, 1300, 0.3); }
+    else sfxStepStone(true, 0.44, 5000, 0.35);
+    return true;
+  }
+  return false;
+}
 function sfxStepSewer() {
+  // (the owner's echo steps now, 2026-11-21: a long brick tunnel rings, and the church's steps were cut dry)
+  if (sfxStepEcho(0.5, 4800, 1)) return;
   stepAlt ^= 1;
   if (playSample('churchStep', 0.62 * (stepAlt ? 1 : 0.86), 0.05)) return;
   stepAlt ^= 1;
@@ -97130,7 +97633,8 @@ function sewRats() {
 }
 const _sewC = new THREE.Color(), _sewHeld = new THREE.Vector3();
 const SEW_POOL_K = 0.32;                           // how bright a lamp's painted pool is on the floor (`lampPool`)
-const SEW_BEAM_K = 0.16;    // the haze's scattering (`hazeFS`): what a lamp's light in the air is worth (measured: 0.045 was nothing; 0.2 a soft glow round each lamp and down under it)                         // how much lit air stands under a burning lamp (measured: the drain's 0.07 and 0.24 are lost under ACES in this dark; 0.8 reads as a soft wedge)
+const SEW_BEAM_K = 0.08;    // (0.16 until 2026-11-21: the fog now scatters the lamps' real light itself (`FOG_SCAT`) and the card on top of it blew the glow out)
+//    // the haze's scattering (`hazeFS`): what a lamp's light in the air is worth (measured: 0.045 was nothing; 0.2 a soft glow round each lamp and down under it)                         // how much lit air stands under a burning lamp (measured: the drain's 0.07 and 0.24 are lost under ACES in this dark; 0.8 reads as a soft wedge)
 function updateSewer(dt) {
   if (!sewWorld) {
     // fetched once the drain's grate is off and you are near it: the pipe behind it comes out here
@@ -97227,7 +97731,11 @@ function updateSewer(dt) {
       if (Math.random() < 0.45) { const sp = s.sp.position, fy = SEW.FLOOD + 0.01;
         if (s.hang) sewArc(_elA.copy(sp), _elB.set(sp.x + (Math.random() - 0.5) * 0.3, fy, sp.z + (Math.random() - 0.5) * 0.3), { w: 0.004, jag: 0.3, fork: 0.3, k: 0.6 });
         else sewArc(_elA.set(sp.x, fy, sp.z), _elB.set(sp.x - 0.2 - Math.random() * 0.6, fy, sp.z + (Math.random() - 0.5) * 0.8), { w: 0.0035, jag: 0.28, flat: true, fork: 0.4, k: 0.55 }); }
-      if (sewP.floodU) sewP.floodU.value.set(1.0, s.sp.position.x, s.sp.position.z, Math.random() * 100); }   // (a crack: a fresh pattern each time)
+      if (sewP.floodU) sewP.floodU.value.set(1.0, s.sp.position.x, s.sp.position.z, Math.random() * 100);   // (a crack: a fresh pattern each time)
+      // and now and then one runs out across the flood toward the door, skittering over the surface (2026-11-18)
+      if (Math.random() < 0.3) { const fy = SEW.FLOOD + 0.01, sp = s.sp.position;
+        sewArc(_elA.set(sp.x - 0.15, fy, sp.z), _elB.set(2.9 + Math.random() * (SEW.ROOM_X0 - 2.9), fy, SEW.DOOR_Z + (Math.random() - 0.5) * 0.5), { w: 0.0035, jag: 0.16, flat: true, fork: 0.6, k: 0.7, life: 0.1 + Math.random() * 0.08 }); }
+    }
     if (s.t > 0) { s.t -= dt; zap = Math.max(zap, 0.6 + Math.random() * 0.4); }
     s.sp.material.opacity = s.t > 0 && live ? 0.9 : 0;
   }
@@ -97236,6 +97744,17 @@ function updateSewer(dt) {
   sewP.boxLight.intensity = live ? 0.4 + 0.02 * Math.sin(now * 2.3) + zap * 0.35 : 0;
   sewP.floodMat.emissiveIntensity = live ? zap * 0.04 : 0;   // (the web carries the light now, `floodU`)
   if (sewP.floodU) sewP.floodU.value.x = live ? Math.max(0, sewP.floodU.value.x - dt * 7) : 0;
+  /* THE CURRENT OVER ALL OF THE FLOOD, to the doorway (2026-11-18, the owner: "make the electricity propagate all the way to this
+   * doorway and not just around the wires so the player can tell its electric"): the live layer (`uLive`) on the whole sheet,
+   * flickering with the cracks, its fronts running out from the wires */
+  if (sewP.floodLive) {
+    const L = sewP.floodLive.value;
+    if (live) {
+      sewP.flSdT = (sewP.flSdT || 0) - dt; if (sewP.flSdT <= 0) { sewP.flSdT = 0.04 + Math.random() * 0.06; sewP.flSd = Math.random() * 100; }
+      L.set((0.6 + 0.3 * Math.random()) * (0.8 + 0.6 * zap), now, sewP.flSd, 0.6);   // (bolts are thin: at the noise field's 0.3–0.5 they were not seen)
+      if (sewP.floodU && sewP.floodU.value.x < 0.001 && sewP.sparks.length) { const sp = sewP.sparks[0].sp.position; sewP.floodU.value.y = sp.x; sewP.floodU.value.z = sp.z; }
+    } else L.x = 0;
+  }
   // the gate swings in, the lid comes up
   if (sewDoor2Open) { sewLairTick(dt, now); sewLairScareTick(dt); }
   if (sewDoor2Open && sewDoor2Swing < 1 && sewP.door2) { sewDoor2Swing = Math.min(1, sewDoor2Swing + dt / 1.6); sewP.door2.rotation.y = SEW_DOOR2_OPEN * (1 - Math.pow(1 - sewDoor2Swing, 3)); }   // (heavy: it goes slowly and settles)
@@ -97281,6 +97800,8 @@ const SEW_FALL_LAMP_X = 15.2, SEW_FALL_NEAR = 6.5;
 const SEW_LAMP_DOWN = { dx: 0.45, dz: 0.12, y: 0.1, rx: 1.62, ry: Math.PI / 2 + 0.25 };
 const SEW_LAMP_WET = { dx: 0.7, z: SEW.T_Z - 0.45, y: -0.06, rx: 1.8, ry: Math.PI / 2 + 0.7 };
 const SEW_SHOCK_T = 2.4;                                                       // seconds the water is lit by it
+const SEW_LIVE_K = 0.5;                                                         // the current held over the water after the burst, until the power is cut
+const SEW_CHAN_LIVE_T = 4.5;                                                   // and the current over ALL of it (`uLive`), fading (2026-11-18)
 const _sewLT = new THREE.Vector3(), _sewLA = new THREE.Vector3();
 /* ---- ELECTRICITY THAT LOOKS LIKE IT (2026-11-15, the owner: "the lighting currently looks like it just blue; not electric. it
  * needs to look dangerous but still able to blend in with the scenery. When the big electrocution happens it needs to look
@@ -97302,6 +97823,33 @@ const SEW_ARC_N = 18, SEW_ARC_SEG = 32;
  * its tip, with two forks thrown off at a kink; a white core and a narrow halo; dark water between. The width is taken
  * across the segment (divided by its slope), so a steep jag is as thick as a flat one. */
 const SEW_WEB_GLSL = `
+  /* THE WHOLE OF THE WATER LIVE (2026-11-18, the owner: "make the electricity propagate all the way to this doorway and not just
+   * around the wires so the player can tell its electric" and "once the whole sewer water is electrocuted make sure all the water
+   * shows the electricity in it"; then, of ridged noise for it, "less of squiggly lines and more rigid like real electric arcs,
+   * like real lightning"). BOLTS over every part of the sheet: the water cut into 2.5 m cells, each throwing (or not) one
+   * bolt of the web's own straight-run-and-kink build (\`webBolt\`) from a point in it, with a fork off a kink; a bolt is
+   * shorter than a cell so it never crosses past the 3×3 cells looked at. They point OUT from where the current went in
+   * (uWeb.yz) give or take 70 degrees, and fronts of more of them run outward in pulses, so you see it travel; the seed
+   * (uLive.z) jumps every few hundredths of a second, so they crack and re-strike. uLive: (strength, clock, seed, density). */
+  if (uLive.x > 0.001) {
+    vec2 lq = vWebXZ / 0.5, lc0 = floor(lq / 5.0); float lf = 0.0, lsd = uLive.z;
+    float lpx = min(0.16, length(fwidth(lq)) * 1.1);   // (never thinner than a pixel: at 1.5 cm a bolt six metres off was not there at all)
+    for (int cy = -1; cy <= 1; cy++) for (int cx = -1; cx <= 1; cx++) {
+      vec2 cid = lc0 + vec2(float(cx), float(cy));
+      float h0 = webH(cid + lsd * 0.731), h1 = webH(cid * 1.37 + lsd), h2 = webH(cid * 0.71 - lsd * 1.9), h3 = webH(cid * 2.13 + lsd * 0.37);
+      vec2 cw = (cid + 0.5) * 2.5, away = cw - uWeb.yz;
+      float pulse = smoothstep(0.72, 1.0, fract(uLive.y * 0.9 - length(away) * 0.32));
+      if (h3 > uLive.w + (1.0 - uLive.w) * pulse) continue;   // (uLive.w: how many cells strike at once)
+      vec2 o = (cid + vec2(0.1 + 0.8 * h1, 0.1 + 0.8 * h2)) * 5.0;
+      float ang = atan(away.y, away.x + 1e-4) + (h0 - 0.5) * 2.4, len = 2.6 + 2.0 * h3, bs = h1 * 53.0 + h2 * 17.0 + lsd;
+      lf += webBoltH(lq, o, ang, len, bs, max(0.06, lpx), 0.2);
+      vec2 dir = vec2(cos(ang), sin(ang)); float s0 = len * (0.25 + 0.35 * h2);
+      vec2 o2 = o + dir * s0 + vec2(-dir.y, dir.x) * webOff(s0, bs).x;
+      lf += webBoltH(lq, o2, ang + (h1 > 0.5 ? 0.75 : -0.75), len * 0.42, bs + 5.0, max(0.04, lpx * 0.8), 0.14) * 0.85;
+    }
+    vec3 lcol = mix(vec3(0.55, 0.74, 1.0), vec3(1.0), smoothstep(0.9, 1.6, lf));
+    totalEmissiveRadiance += lcol * min(lf, 2.0) * 2.3 * uLive.x;
+  }
   if (uWeb.x > 0.001) {
     vec2 qs = vWebXZ / WEB_S, src = uWeb.yz / WEB_S; float sd = uWeb.w, d0 = length(qs - src);
     float f = 0.0;
@@ -97329,18 +97877,21 @@ vec2 webOff(float s, float sd) {
   vec2 v = webK(s * 1.5, sd) * vec2(0.46, 0.46 * 1.5) + webK(s * 4.1 + 0.37, sd + 3.1) * vec2(0.15, 0.15 * 4.1) + webK(s * 10.5 + 0.71, sd + 7.7) * vec2(0.045, 0.045 * 10.5);
   float pin = min(1.0, s * 2.5); return v * pin;
 }
-float webBolt(vec2 p, vec2 o, float ang, float len, float sd, float wid) {
+// (hw: the halo's own width — the live layer's core is widened to a pixel far off, and a halo 3.5× that was a bright wedge
+// with a square end at grazing angles; it fades in from the root too)
+float webBoltH(vec2 p, vec2 o, float ang, float len, float sd, float wid, float hw) {
   vec2 dir = vec2(cos(ang), sin(ang)), nrm = vec2(-dir.y, dir.x), r = p - o;
   float s = dot(r, dir); if (s < 0.0 || s > len) return 0.0;
   vec2 ov = webOff(s, sd);
   float d = abs(dot(r, nrm) - ov.x) / sqrt(1.0 + ov.y * ov.y), t = s / len, w = wid * (1.0 - 0.6 * t);
-  return ((1.0 - smoothstep(w * 0.35, w, d)) * 1.4 + exp(-d / (w * 3.5)) * 0.3) * (1.0 - t * t);
-}`;
-function sewWebPatch(sh, U, fall) {
-  sh.uniforms.uWeb = U;
+  return ((1.0 - smoothstep(w * 0.35, w, d)) * 1.4 + exp(-d / hw) * 0.3 * smoothstep(0.0, hw * 3.0, s)) * (1.0 - t * t);
+}
+float webBolt(vec2 p, vec2 o, float ang, float len, float sd, float wid) { return webBoltH(p, o, ang, len, sd, wid, wid * 3.5); }`;
+function sewWebPatch(sh, U, fall, L) {
+  sh.uniforms.uWeb = U; sh.uniforms.uLive = L || { value: new THREE.Vector4(0, 0, 0, 0) };
   sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWebXZ;').replace('#include <begin_vertex>', '#include <begin_vertex>\n  vWebXZ = position.xz;');
   // WEB_S: the bolts' scale — a long reach along the channel, short round the storeroom's wires
-  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWebXZ; uniform vec4 uWeb;\n#define WEB_S ' + THREE.MathUtils.clamp(0.24 / fall, 0.28, 1.5).toFixed(3) + '\n' + SEW_WEB_FN)
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWebXZ; uniform vec4 uWeb; uniform vec4 uLive;\n#define WEB_S ' + THREE.MathUtils.clamp(0.24 / fall, 0.28, 1.5).toFixed(3) + '\n' + SEW_WEB_FN)
     .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + SEW_WEB_GLSL);
 }
 // the web's seed: a pattern holds 40–90 ms (a bolt is a bolt for a few frames), then jumps
@@ -97497,7 +98048,7 @@ const SEW_KICK = { HIT: 0.08, FLY: 0.52, SETTLE: 1.1 };
  * it, and the thing in it — wherever it was, stalking you, under the water — dies screaming and comes up afterward, face
  * down, where it was. (Dead already: just the water and the sparks.) */
 function sewElectrocute() {
-  sewP.shockT = SEW_SHOCK_T;
+  sewP.shockT = SEW_SHOCK_T; sewP.chanLiveT = SEW_CHAN_LIVE_T;
   sfxSewZap(1.6); setTimeout(() => sfxSewZap(1.1), 260); setTimeout(() => sfxSewZap(0.8), 720); setTimeout(() => sfxSewZap(1.2), 1150);
   addTrauma(0.55); sewLampSparks(28, true); sewFlash(0.75);
   // the blast: bolts thrown out from where the line went in, every way along the water
@@ -97705,6 +98256,36 @@ function sewLampTick(dt) {
     }
     if (sewP.shockT <= 0) { sewP.waterMat.emissive.setRGB(0, 0, 0); if (sewP.shockU) sewP.shockU.value.x = 0; }
   }
+  /* AND IT STAYS LIVE (2026-11-21, the owner: "make sure when you kick th light into the sewer water the water stays lookign
+   * electrocuted until the generatir us turned off"). The burst is the kick's; after it, while the lamp lies in the water
+   * and the generator runs, the web keeps crawling over the water from where it went in, the whole channel keeps its
+   * current (`uLive`, below) and bolts keep running over it — weaker than the burst, never gone. The generator's button is
+   * what ends it (`sewGenOn`). Read off the state every frame, so a restore with the lamp in and the power on is live too. */
+  const sewLive = sewLL === 2 && sewGenOn && !sewP.kick && !sewP.fall;
+  if (sewLive && !(sewP.shockT > 0)) {
+    const lt = sewLampTop(_sewLT), f = (Math.random() < 0.6 ? 1 : 0.45) * (0.30 + 0.06 * Math.sin(performance.now() * 0.0037));
+    sewP.waterMat.emissive.setRGB(0.012 * f, 0.03 * f, 0.08 * f);
+    if (sewP.shockU) sewP.shockU.value.set(f, lt.x, lt.z, sewWebSeed(dt));
+    if (Math.random() < 0.35) { const a = sewWaterPt(_elA, _elC.set(lt.x, SEW.WATER, lt.z), 1.5 + Math.random() * 8), b = sewWaterPt(_elB, a, 0.5 + Math.random() * 1.4);
+      sewArc(a, b, { w: 0.006, jag: 0.25, flat: true, fork: 0.4, k: 0.55 }); }
+    sewP.liveWas = true;
+  } else if (sewP.liveWas && !(sewP.shockT > 0)) {
+    sewP.liveWas = false; sewP.waterMat.emissive.setRGB(0, 0, 0); if (sewP.shockU) sewP.shockU.value.x = 0;
+  }
+  // ALL OF THE WATER LIVE while it is electrocuted, the whole channel and the branch (`uLive`), fading out after the bolts
+  if (sewP.chanLive) {
+    const L = sewP.chanLive.value;
+    if ((sewP.chanLiveT || 0) > 0) {
+      sewP.chanLiveT -= dt;
+      sewP.chSdT = (sewP.chSdT || 0) - dt; if (sewP.chSdT <= 0) { sewP.chSdT = 0.04 + Math.random() * 0.05; sewP.chSd = Math.random() * 100; }
+      const k = Math.max(Math.min(1, sewP.chanLiveT / (SEW_CHAN_LIVE_T * 0.6)), sewLive ? SEW_LIVE_K : 0);   // (it fades to the held level, not to nothing)
+      L.set(k * (Math.random() < 0.6 ? 1 : 0.55) * 0.95, performance.now() * 0.001, sewP.chSd, 0.85);
+      if (sewP.shockU && sewP.shockU.value.x < 0.001) { const lt = sewLampTop(_sewLT); sewP.shockU.value.y = lt.x; sewP.shockU.value.z = lt.z; }   // (the fronts run out from where it went in)
+    } else if (sewLive) {
+      sewP.chSdT = (sewP.chSdT || 0) - dt; if (sewP.chSdT <= 0) { sewP.chSdT = 0.05 + Math.random() * 0.08; sewP.chSd = Math.random() * 100; }
+      L.set(SEW_LIVE_K * (Math.random() < 0.6 ? 1 : 0.55) * 0.95, performance.now() * 0.001, sewP.chSd, 0.85);
+    } else L.x = 0;
+  }
 }
 const _floorBeforeSew = bunkerFloorAt;
 bunkerFloorAt = (x, z, y) => {
@@ -97762,14 +98343,25 @@ const SEWMON = {
    * goes back under (`M.watched`), not at the first lever; the time under between risings comes from `sewMonGap` and
    * shrinks with every lever down and again by much more with the power off (`sewHeat`); on you sooner (FIRST, BACK_IN),
    * and two seconds longer coming up unseen before it leaps */
-  RISE: [12, 10],                 // unseen seconds from breaking the surface to the leap: before the power goes, after
+  /* (2026-11-21, the owner: "make the monster more aggressive so it actually starts stalking quicker" — played through by a
+   * script that keeps moving, it never once got a leap in: the watcher stood forty seconds, it waited 8-14 s under, swam
+   * 2.3 m/s to a spot fifteen metres off and you had walked out of its reach before it was up). Now: the watcher gives up
+   * watching after 14 s and hunts on its own, it is back 1.2-2 s after going under, the gaps are about half, it swims at
+   * you half as fast again, follows under the water three times as fast and keeps nearer, and comes up nearer. The rise
+   * itself (12 / 10 s unseen) is left as the owner set it on 2026-11-18. */
+  /* (2026-11-21, the owner: "make it so it is quicker to grab you when it is darker and the lights are out"): with the power
+   * off it is up and on you in eight seconds unseen (six for an hour, then the owner: "make it come at you after 8 seconds when
+   * the lights are out"), not ten, and boils at the surface a shorter beat first (`STIR`) */
+  RISE: [12, 8],                  // unseen seconds from breaking the surface to the leap: before the power goes, after
   SEEN_HOLD: [0.5, 0.72],         // how long it lets you see it before it goes under
-  GAP0: [8, 14],                  // seconds under between one rising and the next, with no lever down and the lights on (`sewMonGap`)
+  GAP0: [4, 7],                  // seconds under between one rising and the next, with no lever down and the lights on (`sewMonGap`)
   FIRST: 0.8,                     // after the first lever, if the hunt was not on yet
-  BACK_IN: 2.5,                   // and coming back down the ladder into a hunt already on
-  AFTER_WATCH: [3, 5],            // and after the watcher first goes under: it is coming
+  BACK_IN: 1.5,                   // and coming back down the ladder into a hunt already on
+  AFTER_WATCH: [1.2, 2.0],            // and after the watcher first goes under: it is coming
+  WATCH_T: 14,                    // the longest the watcher stands behind the bars before it goes under and hunts (40 until 2026-11-21)
   WATCH_H: 1.35,                  // before the first lever, behind the bars: head and shoulders out of the water (at 0.9 the grate's lower bar hid its eyes from the ladder)
-  NEAR: [5, 3.8], FAR: 15,
+  NEAR: [4.5, 3.5], FAR: 12,      // where it picks to come up (15 until 2026-11-21)
+  LEAP_R: 19, LOSE_R: 22,         // how far it leaps from, and how far off you must be for it to give up a rise (FAR + 4 / + 7 when FAR was 15)
   /* SEEN IS AT YOUR CROSSHAIR (the owner, 2026-10-23: "make sure the monster only counts as seen when its near the
    * middle crosshair or close to it so its not just the whole screen that gets rid of him"): its eyes within LOOK
    * (~16 degrees) of the middle of your view, with a clear line. At the edge of the frame it goes on rising — you have
@@ -97777,7 +98369,7 @@ const SEWMON = {
    * ~121 across at 4:3, more at 16:9): off it by CLEAR beyond the edge, or behind you, at every height it stands at. */
   LOOK: Math.cos(0.28),
   CLEAR: 1.2,
-  STIR: 1.4,
+  STIR: [1.4, 0.8],               // the water boiling over it before it rises: lit, dark
 };
 const SEWMON_LIFT = 0x3c4236, SEWMON_EYE = 0xffa44a;   // (its own eyes are amber in its map: the glow is theirs)
 const SEWMON_EYE_OUT = 0.15;    // the glow stands this far out in front of the sockets, or the face hides its middle and it reads as a halo
@@ -98308,7 +98900,7 @@ function sewMonTick(dt) {
         M.flare = 1; M.watched = true; M.afterWatch = true;
         sewMonPlay('sewSplash', M.x, SEW.WATER + 0.3, M.z, 0.8); sewMonPlay('sewLeap', M.x, SEW.WATER + 0.3, M.z, 0.25, 0.8);
         sewMonSpray(M.x, M.z, 0.9); sewMonRing(M.x, M.z, 1.2);
-      } else if (M.t > 40) { M.st = 'wsink'; M.t = 0; M.h0 = M.h; sewMonPlay('sewSlosh', M.x, SEW.WATER, M.z, 0.09, 0.7); sewMonRing(M.x, M.z, 0.7); }
+      } else if (M.t > SEWMON.WATCH_T) { M.st = 'wsink'; M.t = 0; M.h0 = M.h; sewMonPlay('sewSlosh', M.x, SEW.WATER, M.z, 0.09, 0.7); sewMonRing(M.x, M.z, 0.7); }
       break;
     }
     case 'wsink': {
@@ -98326,9 +98918,9 @@ function sewMonTick(dt) {
       if ((M.ambIn -= dt) <= 0) { M.ambIn = (3 + Math.random() * 5) / (0.75 + 0.5 * sewHeat()); sewMonFarSlosh(); }
       /* WHILE IT WAITS IT FOLLOWS: down the channel after you, under the water, keeping its distance — a ring now and
        * then where it is, and its breath if you are near it (the owner's pick of the ideas, 2026-10-24) */
-      if (M.placed && Math.abs(M.x) < 1.2 && dist > 8 && !sewMonWatched(M.x, M.z)) {
-        const tz = THREE.MathUtils.clamp(cz + Math.sign(M.z - cz) * 7, SEW.CH_END + 1, 16);
-        const step = Math.sign(tz - M.z) * Math.min(Math.abs(tz - M.z), dt * (0.5 + 0.08 * sewLeversN() + dark * 0.35));
+      if (M.placed && Math.abs(M.x) < 1.2 && dist > 6.5 && !sewMonWatched(M.x, M.z)) {
+        const tz = THREE.MathUtils.clamp(cz + Math.sign(M.z - cz) * 5.5, SEW.CH_END + 1, 16);
+        const step = Math.sign(tz - M.z) * Math.min(Math.abs(tz - M.z), dt * (1.6 + 0.15 * sewLeversN() + dark * 0.8));
         M.z += step;
         if (Math.abs(step) > 1e-4 && (M.wakeIn -= dt) <= 0) { M.wakeIn = 0.35 + Math.random() * 0.2; sewMonRing(M.x, M.z, 0.18); }
       }
@@ -98362,7 +98954,7 @@ function sewMonTick(dt) {
        * it is a stalker and is smart about its attacks"): while the water over it is on your screen it is still, and
        * what you see is the wake it left fading and drifting off — never it going */
       const still = sewMonWatched(M.x, M.z);
-      const P = M.path, v = still ? 0 : (2.3 + 0.12 * sewLeversN() + dark * 0.9) * dt;
+      const P = M.path, v = still ? 0 : (3.4 + 0.15 * sewLeversN() + dark * 1.2) * dt;
       let left = v;
       while (left > 0 && M.seg < P.length - 1) {
         const [bx, bz] = P[M.seg + 1], d = Math.hypot(bx - M.x, bz - M.z);
@@ -98385,7 +98977,7 @@ function sewMonTick(dt) {
       M.h = SEWMON.HID;
       if (M.t > 0.3 && sewMonSeen()) { M.st = 'under'; M.nextIn = 2 + Math.random() * 2; M.lastSeen = { x: M.x, z: M.z }; break; }   // caught at it: gone, without a sound
       if ((M.wakeIn -= dt) <= 0) { M.wakeIn = 0.35 + Math.random() * 0.25; sewMonRing(M.x + (Math.random() - 0.5) * 0.3, M.z + (Math.random() - 0.5) * 0.3, 0.3); }   // the water boiling over it
-      if (M.t >= SEWMON.STIR) { M.st = 'rise'; M.t = 0; M.sl = 0.2; }
+      if (M.t >= k(SEWMON.STIR)) { M.st = 'rise'; M.t = 0; M.sl = 0.2; }
       break;
     case 'rise': {
       if (M.h > SEWMON.HID + 0.25 && sewMonSeen()) { M.st = 'seen'; M.t = 0; M.flare = 1; M.flinch = 1; M.hold = k(SEWMON.SEEN_HOLD); break; }
@@ -98408,9 +99000,9 @@ function sewMonTick(dt) {
         if (M.barred) { M.st = 'linger'; M.t = 0; }
         // (not on the bridge, and never in the storeroom or its passage: there it stands and watches, and goes)
         else if (sewInStore()) { M.st = 'linger'; M.t = 0; }
-        else if (dist < SEWMON.FAR + 4 && sewLos(cx, cz, M.x, M.z) && !sewOnBridge()) sewMonLeap();
+        else if (dist < SEWMON.LEAP_R && sewLos(cx, cz, M.x, M.z) && !sewOnBridge()) sewMonLeap();
         else { M.st = 'sink'; M.t = 0; }
-      } else if (dist > SEWMON.FAR + 7) { M.st = 'sink'; M.t = 0; }          // you have gone: it lets you
+      } else if (dist > SEWMON.LOSE_R) { M.st = 'sink'; M.t = 0; }          // you have gone: it lets you
       break;
     }
     case 'seen':
@@ -98891,7 +99483,7 @@ function sewBuildLair(W, bake, brickBig, conc, X, Z, OW, OH) {
       if (!geos.length) return;
       let g = null; try { g = mergeGeometries(geos.map((q) => { for (const k of Object.keys(q.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') q.deleteAttribute(k); return q.index ? q.toNonIndexed() : q; }), false); } catch (e) { g = null; }
       const bm = boneTint(mat);
-      if (g) { const me = new THREE.Mesh(g, bm); me.raycast = () => {}; W.add(me); } else for (const q of geos) { const me = new THREE.Mesh(q, bm); me.raycast = () => {}; W.add(me); }
+      if (g) { const me = new THREE.Mesh(g, bm); me.raycast = () => {}; W.add(me); try { if (sewP.maceSettle) sewP.maceSettle(me); } catch (e) { console.warn('mace settle', e); } } else for (const q of geos) { const me = new THREE.Mesh(q, bm); me.raycast = () => {}; W.add(me); }
     }, undefined, () => {});
     // the whole ones: one sat against the west wall with its knees up where it died, one tipped over on its side by the nest
     bwGlb('assets/skeleton-remains.glb', (gltf) => {
@@ -99166,13 +99758,47 @@ function sewBuildLair(W, bake, brickBig, conc, X, Z, OW, OH) {
   // (laid level across the heap's top, its weight on the dirt: the mound is 0.30 there, the club's bone a little under 0.1 thick)
   /* (down the heap's slope out of the corner, laid along the ground under both its ends: level, its ends floated or sank on a slope) */
   const mw = maceWorld;
-  { const mc = new THREE.Vector3(px - 0.62, 0, pz + 0.55), d = new THREE.Vector3(-0.8, 0, -0.6).normalize();
+  /* ON TOP OF THE PILE, NOT IN IT (2026-11-18, the owner: "the bone mace is barely even seen … most of it is in the pile so you dont
+   * notice it. Make it sit on top but make sure it looks natural and not floating"). It was laid on the heap's dirt mound, and the
+   * bones heaped over the mound buried all but its knob. Now it is laid on the dirt first (so it is somewhere before the bones
+   * land) and then, when the bones are in, SETTLED on them (`sewP.maceSettle`): along its length, the highest bone under each of
+   * a dozen points across its width is found by a ray from above, and it is laid on the line through the two ends' highest —
+   * resting on what is under it, a centimetre into it, never over a gap. */
+  const maceAt = (h1, h2) => {
+    const mc = new THREE.Vector3(px - 0.62, 0, pz + 0.55), d = new THREE.Vector3(-0.8, 0, -0.6).normalize();
     const e1 = mc.clone().addScaledVector(d, -0.5), e2 = mc.clone().addScaledVector(d, 0.5);
-    e1.y = groundAt(e1.x, e1.z) + 0.012; e2.y = groundAt(e2.x, e2.z) + 0.008;      // (half bedded in the heap's dirt, not lying on top of it)
+    e1.y = h1 !== undefined ? h1 : groundAt(e1.x, e1.z) + 0.012; e2.y = h2 !== undefined ? h2 : groundAt(e2.x, e2.z) + 0.008;
     const dir3 = e2.clone().sub(e1).normalize(), mid3 = e1.clone().add(e2).multiplyScalar(0.5);
     mw.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir3);
     mw.rotateY(0.4);                                   // (rolled a little about its own length, the knob's lump to one side)
-    mw.position.copy(mid3).addScaledVector(dir3, -0.315); }
+    mw.position.copy(mid3).addScaledVector(dir3, -0.315);
+    return { e1, e2, d };
+  };
+  const mace0 = maceAt();
+  sewP.maceSettle = (bones) => {
+    if (sewMaceTaken || !bones) return;
+    bones.updateMatrixWorld(true); W.updateMatrixWorld(true);
+    const rc = new THREE.Raycaster(), hits = [], up = new THREE.Vector3(0, -1, 0), side = new THREE.Vector3(-mace0.d.z, 0, mace0.d.x);
+    // the top of the pile under a point (sewer frame), over a little patch round it: the highest bone or the dirt, whichever is higher
+    const topAt = (x, z, r) => {
+      let top = groundAt(x, z);
+      for (const [ox, oz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) {
+        const wx = x + side.x * ox + mace0.d.x * oz, wz = z + side.z * ox + mace0.d.z * oz;
+        const o = W.localToWorld(new THREE.Vector3(wx, F + 2, wz));
+        rc.set(o, up); rc.far = 3; hits.length = 0; THREE.Mesh.prototype.raycast.call(bones, rc, hits);
+        if (hits.length) { const y = W.worldToLocal(hits[0].point.clone()).y; if (y > top) top = y; }
+      }
+      return top;
+    };
+    // the knob end is the heavier, fatter end: it sits a little higher off what is under it
+    const h1 = topAt(mace0.e1.x, mace0.e1.z, 0.05) + 0.03, h2 = topAt(mace0.e2.x, mace0.e2.z, 0.07) + 0.045;
+    // and nowhere along it may a bone stand through it: lift the whole line to clear the highest middle point
+    let lift = 0;
+    for (let i = 1; i < 6; i++) { const t = i / 6, x = mace0.e1.x + (mace0.e2.x - mace0.e1.x) * t, z = mace0.e1.z + (mace0.e2.z - mace0.e1.z) * t;
+      const want = topAt(x, z, 0.04) + 0.03, have = h1 + (h2 - h1) * t; if (want - have > lift) lift = want - have; }
+    maceAt(h1 + lift * 0.8, h2 + lift * 0.8);
+    mw.updateMatrixWorld(true);
+  };
   W.add(mw);
   const hp = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   hp.name = 'hitProxy'; hp.visible = false; hp.position.set(0, -0.25, 0); mw.add(hp);
@@ -99192,25 +99818,85 @@ function sewBuildLair(W, bake, brickBig, conc, X, Z, OW, OH) {
  * a stab of sound, a bone knocked off the heap, a rat bursting out from behind it and across the floor right in front of
  * you, squealing, into a gap at the foot of the west wall — the flies going up off everything with it, and the light
  * stuttering. Once a game (`sewLairScared`, saved as `ls`). */
+/* THE RAT, REDONE (2026-11-21, the owner: "make the rat more detailed and real to fit the art style of the game"). It was an
+ * icosahedron, a cone and four sticks. Now, still low-poly and flat-shaded as everything here: a rat's own silhouette in two
+ * lathed halves (a long tapering snout, the skull, a deep chest, the heavy haunches it runs from) that bend at the middle so the
+ * back arches and stretches as it bounds; fur from a streaky noise map (no spots — the owner's standing word), dark along the
+ * spine and greyer under, by vertex colour; thin ears, pink inside; eyes that catch the lamp a dull red as rats' do;
+ * whiskers; legs in two joints with pink hands and long hind feet; and a long bare tail in eight segments that whips. The
+ * gait is a rat's BOUND: the fore pair and the hind pair each together, half a stride apart (`sewLairScareTick`). */
 function makeLairRat() {
   const g = new THREE.Group();
-  const cv = document.createElement('canvas'); cv.width = cv.height = 32; const c2 = cv.getContext('2d');
-  c2.fillStyle = '#2e2924'; c2.fillRect(0, 0, 32, 32);
-  for (let i = 0; i < 260; i++) { const v = 20 + Math.random() * 50; c2.fillStyle = `rgb(${v + 8},${v + 4},${v})`; c2.fillRect(Math.random() * 32, Math.random() * 32, 1, 2); }
-  const fur = new THREE.MeshStandardMaterial({ map: retroTex(new THREE.CanvasTexture(cv)), roughness: 1, metalness: 0, flatShading: true });
-  fur.map.colorSpace = THREE.SRGBColorSpace;
-  const skin = new THREE.MeshStandardMaterial({ color: 0x8a5e58, roughness: 0.8, metalness: 0, flatShading: true });
-  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), fur); body.scale.set(0.045, 0.04, 0.09); body.position.y = 0.04; g.add(body);
-  const haunch = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), fur); haunch.scale.set(0.05, 0.042, 0.05); haunch.position.set(0, 0.042, -0.05); g.add(haunch);
-  const head = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 6), fur); head.rotation.x = Math.PI / 2; head.position.set(0, 0.045, 0.11); g.add(head);
-  for (const sx of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 4), skin); e.scale.set(1, 1, 0.4); e.position.set(sx * 0.018, 0.07, 0.085); g.add(e);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.004, 4, 3), new THREE.MeshBasicMaterial({ color: 0x050403 })); eye.position.set(sx * 0.015, 0.055, 0.115); g.add(eye); }
-  const tail = new THREE.Group(); tail.position.set(0, 0.03, -0.09); g.add(tail);
-  const tg = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.01, -0.015, -0.06), new THREE.Vector3(-0.01, -0.025, -0.13), new THREE.Vector3(0.015, -0.028, -0.19)]), 10, 0.0045, 4, false), skin); tail.add(tg);
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64; const c2 = cv.getContext('2d');
+  const D = c2.createImageData(64, 64), hh = (x, y) => { const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return v - Math.floor(v); };
+  for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+    // streaks running along the body (v), broken every few pixels, with a slow mottle under them
+    const st = hh(x, Math.floor(y / 5)) * 0.55 + hh(x * 3 + 7, Math.floor(y / 2)) * 0.25, mo = hh(Math.floor(x / 9), Math.floor(y / 11)) * 0.2;
+    const k = 0.55 + st + mo - 0.25, i = (y * 64 + x) * 4;
+    D.data[i] = 92 * k; D.data[i + 1] = 82 * k; D.data[i + 2] = 72 * k; D.data[i + 3] = 255;
+  }
+  c2.putImageData(D, 0, 0);
+  const furTex = retroTex(new THREE.CanvasTexture(cv)); furTex.colorSpace = THREE.SRGBColorSpace; furTex.wrapS = furTex.wrapT = THREE.RepeatWrapping; furTex.repeat.set(2, 3);
+  const fur = new THREE.MeshStandardMaterial({ map: furTex, vertexColors: true, roughness: 1, metalness: 0, flatShading: true, emissive: 0x0d0a08 });
+  const pink = new THREE.MeshStandardMaterial({ color: 0x9a6a64, roughness: 0.75, metalness: 0, flatShading: true, emissive: 0x1a0e0c });
+  const tailM = new THREE.MeshStandardMaterial({ color: 0x5e4c48, roughness: 0.7, metalness: 0, flatShading: true, emissive: 0x140d0b });
+  // a lathed length along +z, radius by `prof` [[z, r], ...], 9 sides, flattened under; coloured dark on the back, grey beneath
+  const half = (prof) => {
+    const pts = prof.map(([z, r]) => new THREE.Vector2(r, z));
+    const geo = new THREE.LatheGeometry(pts, 9); geo.rotateX(Math.PI / 2);      // (the lathe's y becomes +z; profiles run tail to nose, so both halves face out)
+    const P = geo.attributes.position, col = new Float32Array(P.count * 3);
+    for (let i = 0; i < P.count; i++) {
+      let y = P.getY(i); if (y < 0) y *= 0.72; P.setY(i, y * 0.9);           // a flatter belly, a little narrower than tall
+      const up = THREE.MathUtils.clamp(y / 0.04 * 0.5 + 0.5, 0, 1), k = 0.62 + 0.55 * (1 - up);
+      col[i * 3] = k * 1.02; col[i * 3 + 1] = k; col[i * 3 + 2] = k * 0.95;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
+    return new THREE.Mesh(geo, fur);
+  };
+  // the fore half from the middle forward (+z the nose), the hind half from the middle back; both meet at r 0.038
+  const front = new THREE.Group(); g.add(front); front.position.set(0, 0.05, 0);
+  const fm = half([[-0.012, 0.0385], [0.035, 0.036], [0.065, 0.031], [0.085, 0.027], [0.1, 0.026], [0.12, 0.022], [0.14, 0.015], [0.158, 0.009], [0.17, 0.004], [0.174, 0]]);
+  front.add(fm);
+  const rear = new THREE.Group(); g.add(rear); rear.position.set(0, 0.05, 0);
+  const rm = half([[-0.132, 0], [-0.129, 0.014], [-0.119, 0.03], [-0.1, 0.041], [-0.07, 0.045], [-0.035, 0.043], [0.012, 0.0385]]);
+  rear.add(rm);
+  // the nose's pink tip, the eyes (a dull red shine: they catch the lamp), the ears, the whiskers
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.005, 5, 4), pink); nose.position.set(0, 0.002, 0.172); front.add(nose);
+  const eyeM = new THREE.MeshStandardMaterial({ color: 0x050303, roughness: 0.2, metalness: 0, emissive: 0x3a0806 });
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0045, 6, 4), eyeM); eye.position.set(sx * 0.0175, 0.012, 0.118); front.add(eye);
+    const ear = new THREE.Group(); ear.position.set(sx * 0.017, 0.022, 0.097); ear.rotation.set(-0.35, sx * 0.55, sx * -0.35); front.add(ear);
+    const eg = new THREE.CircleGeometry(0.014, 7); { const P = eg.attributes.position; for (let i = 0; i < P.count; i++) P.setZ(i, -0.004 * (1 - (P.getX(i) ** 2 + P.getY(i) ** 2) / 0.000196)); } eg.computeVertexNormals();
+    const eOut = new THREE.Mesh(eg, fur), eIn = new THREE.Mesh(eg, pink); eIn.scale.setScalar(0.72); eIn.position.z = 0.0012; eOut.material = fur;
+    eg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(eg.attributes.position.count * 3).fill(0.75), 3));
+    ear.add(eOut, eIn); eOut.position.y = 0.008; eIn.position.y = 0.008;
+  }
+  { const wv = []; for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) { const a = -0.35 + i * 0.25; wv.push(sx * 0.008, 0, 0.158, sx * (0.008 + Math.cos(a) * 0.045), Math.sin(a) * 0.018, 0.158 - 0.012 + i * 0.002); }
+    const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wv, 3));
+    front.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x3a3430 }))); }
+  // legs: a hip at the body, a lower leg on a knee, a pink foot (fore: short hands; hind: long feet)
   const legs = [];
-  for (const [x, z] of [[-0.03, 0.05], [0.03, 0.05], [-0.035, -0.05], [0.035, -0.05]]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.005, 0.035, 4), skin); l.position.set(x, 0.017, z); g.add(l); legs.push(l); }
-  g.userData = { tail, legs, body };
-  g.traverse((o) => { o.raycast = () => {}; });
+  const leg = (par, x, z, upper, lower, foot, hind) => {
+    const hip = new THREE.Group(); hip.position.set(x, -0.014, z); par.add(hip);
+    const th = new THREE.Mesh(new THREE.CylinderGeometry(hind ? 0.014 : 0.008, hind ? 0.009 : 0.006, upper, 5), fur); th.position.y = -upper / 2; hip.add(th);
+    th.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(th.geometry.attributes.position.count * 3).fill(0.9), 3));
+    const knee = new THREE.Group(); knee.position.y = -upper; hip.add(knee);
+    const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0035, lower, 4), pink); sh.position.y = -lower / 2; knee.add(sh);
+    const ft = new THREE.Mesh(new THREE.BoxGeometry(0.009, 0.004, foot), pink); ft.position.set(0, -lower, foot * 0.35); knee.add(ft);
+    legs.push({ hip, knee, hind, sx: Math.sign(x) });
+  };
+  for (const sx of [-1, 1]) { leg(front, sx * 0.022, 0.06, 0.022, 0.022, 0.014, false); leg(rear, sx * 0.03, -0.075, 0.03, 0.022, 0.03, true); }
+  // the tail: eight segments, each a group on the last, tapering, bare and ringed
+  const tail = new THREE.Group(); tail.position.set(0, 0.0, -0.122); rear.add(tail);
+  const tailBones = []; let par = tail;
+  for (let i = 0; i < 8; i++) {
+    const L = 0.03, r0 = 0.0062 * (1 - i / 8.5), r1 = 0.0062 * (1 - (i + 1) / 8.5);
+    const b = new THREE.Group(); if (i) b.position.z = -L; par.add(b);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, L, 5), tailM); m.rotation.x = Math.PI / 2; m.position.z = -L / 2; b.add(m);
+    tailBones.push(b); par = b;
+  }
+  g.userData = { tail, tailBones, legs, front, rear, body: fm };
+  g.traverse((o) => { o.raycast = () => {}; if (o.isMesh) o.frustumCulled = false; });
   return g;
 }
 function sfxLairSting() {
@@ -99251,11 +99937,12 @@ function sewLairScareTick(dt) {
     const lx = camera.position.x - SEW_X, lz = camera.position.z - SEW_Z;
     if (!(lz < SEW_LAIR.Z1 + 0.35 && lz > SEW_LAIR.Z1 - 1.6 && Math.abs(lx - SEW.DOOR2_X) < 1.3)) return;
     sewLairScared = true;
-    const rat = makeLairRat(); rat.scale.setScalar(1.45); sewWorld.add(rat);   // (a big sewer rat: at life size it was lost in the dark at this lens)
+    const rat = makeLairRat(); rat.scale.setScalar(1.35); sewWorld.add(rat);   // (a big sewer rat: at life size it was lost in the dark at this lens)
     sewP.scare = { t: 0, rat, curve: new THREE.CatmullRomCurve3(LAIR_RAT_PATH.map(([x, z]) => new THREE.Vector3(x, 0, z))) };
-    sfxLairSting();
+    // (the owner's own sound for it, 2026-11-21 — "use this sound for the rat jumpscare in the lair" — in place of the synthesized
+    // sting and shriek; the bone knocked off the heap stays, under it)
+    if (!playSample('lairRat', 0.8)) { sfxLairSting(); setTimeout(() => sfxRatShriek(SEW_X + 13.5, SEW_Z - 33.7), 180); }
     sfxAt(SEW_X + SEW_LAIR.PILE[0], SEW_Z + SEW_LAIR.PILE[1], () => sfxBoneClatter(3), { ref: 2, far: 18 });
-    setTimeout(() => sfxRatShriek(SEW_X + 13.5, SEW_Z - 33.7), 180);
     sewP.flyBurst = 1;
     return;
   }
@@ -99264,10 +99951,21 @@ function sewLairScareTick(dt) {
   const u = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;      // off the mark fast, braking into the gap
   const p = S.curve.getPointAt(Math.min(0.999, u)), q = S.curve.getTangentAt(Math.min(0.999, u));
   const gy = sewP.lairGround ? sewP.lairGround(p.x, p.z) : SEW.WALK;
-  S.rat.position.set(p.x, gy + Math.abs(Math.sin(S.t * 42)) * 0.012, p.z);
+  // THE BOUND: one stride is a push off the hind feet (the back stretched long, the body up), a reach of the forelegs, and the
+  // hind feet landing up by the hands (the back arched short) — the fore pair and the hind pair each together, half apart
+  const sp = (u < 0.97 ? 1 : 0.4), ph = S.t * Math.PI * 2 * 7.5 * sp, cs = Math.cos(ph), sn = Math.sin(ph);
+  S.rat.position.set(p.x, gy + Math.max(0, sn) * 0.022, p.z);
   S.rat.rotation.y = Math.atan2(q.x, q.z);
-  const D = S.rat.userData; D.tail.rotation.y = Math.sin(S.t * 30) * 0.5; D.body.scale.z = 0.09 * (1 + Math.sin(S.t * 42) * 0.12);
-  D.legs.forEach((l, i) => { l.rotation.x = Math.sin(S.t * 42 + (i % 2 ? Math.PI : 0) + (i > 1 ? 1.3 : 0)) * 0.9; });
+  const D = S.rat.userData;
+  D.front.rotation.x = -0.12 * sn; D.rear.rotation.x = 0.16 * sn;                      // arched (sn < 0) and stretched (sn > 0)
+  D.front.position.z = 0.005 * cs; D.rear.position.z = -0.005 * cs;
+  D.legs.forEach((l) => {
+    const a = l.hind ? cs : -cs, lag = l.sx > 0 ? 0.12 : 0;                            // (the pair a hair apart, as a rat's are)
+    l.hip.rotation.x = (l.hind ? 0.9 : 0.75) * Math.cos(ph + lag) * (l.hind ? 1 : -1);
+    l.knee.rotation.x = (l.hind ? -0.9 : 0.8) * Math.max(0, Math.sin(ph + lag + (l.hind ? 0.6 : -0.6)));
+    void a;
+  });
+  D.tailBones.forEach((b, i) => { b.rotation.y = Math.sin(S.t * 18 - i * 0.7) * 0.22; b.rotation.x = (i === 0 ? -0.25 : 0.05) + Math.sin(ph - i * 0.5) * 0.05; });
   S.rat.visible = S.t > 0.15 && k < 1;
   // the light stutters with it, and the flies settle back over two seconds
   // (it surges as it stutters, so the thing running at you is seen: a dip only made the room black for the one second that mattered)
@@ -124111,7 +124809,7 @@ window.__bw = {
   get crouching() { return crouching; }, set crouching(v) { crouching = v; },
   set airborne(v) { onGround = !v; vy = 0; },
   get ucVerb() { return ucVerbGain ? ucVerbGain.gain.value : null; },   // in the ORIGINAL literal: Object.assign copies a getter's value     // the harness dropping the player from a height: a fall off a ledge is never a landing here, only a jump is
-  startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateFace() { return gateFace; }, pipeReachS: () => pipeReach, pipeArmS: () => pipeArm, pipeHandS: () => pipeHand, phS: () => PRH, hookItem, hookVM, hookModel, HK, HD, skHook, hookThrow, hookRecallS: () => hookRecall(), hookRawS: () => hookRaw, crates, moundsS: () => mounds, skHookDrop, setHookLift: (v) => { HOOK_HEAVY_LIFT = v; }, gibsN: () => gibs.length + '/' + bloodDrops.length + ' rubble ' + (typeof rubbleN === 'function' ? rubbleN() : '-'), crabsS: () => crabs.map((u) => `${u.pack ? 'P' : 'C'}(${u.g.position.x.toFixed(1)},${u.g.position.z.toFixed(1)} ${u.st.alive ? 'alive' : 'dead'} hp${u.st.hp})`), runWarm: (pre) => { let n = 0; for (let i = warmSteps.length - 1; i >= 0; i--) if (warmSteps[i][0].startsWith(pre)) { const st = warmSteps.splice(i, 1)[0]; st[1](); n++; } return n; }, get screwdriverTaken() { return screwdriverTaken; },
+  startPeek, endPeek, respawn, get peeking() { return peeking; }, get gateFace() { return gateFace; }, pipeReachS: () => pipeReach, fogScat: FOG_SCAT, fogScatK: FOG_SCAT_K, spawnSpray, sprayN: () => sprays.filter((p) => p.life > 0).length, placeStep, sfxStepEcho, echoStepsN: () => (sampleBanks.echoStep || []).filter(Boolean).length, pipeArmS: () => pipeArm, pipeHandS: () => pipeHand, phS: () => PRH, hookItem, hookVM, hookModel, HK, HD, skHook, hookThrow, hookRecallS: () => hookRecall(), hookRawS: () => hookRaw, crates, moundsS: () => mounds, skHookDrop, setHookLift: (v) => { HOOK_HEAVY_LIFT = v; }, gibsN: () => gibs.length + '/' + bloodDrops.length + ' rubble ' + (typeof rubbleN === 'function' ? rubbleN() : '-'), crabsS: () => crabs.map((u) => `${u.pack ? 'P' : 'C'}(${u.g.position.x.toFixed(1)},${u.g.position.z.toFixed(1)} ${u.st.alive ? 'alive' : 'dead'} hp${u.st.hp})`), runWarm: (pre) => { let n = 0; for (let i = warmSteps.length - 1; i >= 0; i--) if (warmSteps[i][0].startsWith(pre)) { const st = warmSteps.splice(i, 1)[0]; st[1](); n++; } return n; }, get screwdriverTaken() { return screwdriverTaken; },
   get ringProp() { return ringProp; },
   armRig, shovelItem, startWind, releaseWind,
   crate, ringItem, ringWorld, rings, breakCrate, wearRing,

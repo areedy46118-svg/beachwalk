@@ -3087,3 +3087,24 @@ ENEMY AND BRING THEM CLOSER THAT ISNT WORKING. MAKE CLICKING AGAIN WHILE LAUNCHE
   body (let go), straight home at `HOOK_RECALL` 30 m/s with no lie; in the whip, simply kept. The release of that same click
   would have thrown a cut once it was home: `startDig` refuses for 450 ms after a recall (`HK.recallAt`). Measured: 9.9 m out
   in a body, home 0.38 s after the click.
+
+## 2026-11-21 — the mace swung, not flailed (light + plain heavy; the Shift slam untouched)
+The owner: "make the mace swing less of a flaily hit and more of a solid swing back and forth for both the light hit and heavy
+hit but keep the shift heavy slam … Mordhau and Chivalry 2 … they should feel like they have weight". What read as a flail
+(`maceMomentum`, traced): the chop came down to the bottom of the frame, the club turned over ~1 rad of ROLL on the way, and
+`maceSwingBack`'s pendulum dip looped it under the picture on the way home.
+- **THE AXES THAT MAKE IT RIGID**: `armRig` is Euler XYZ, so applied to a vector it is roll, then yaw, then pitch. With the arm
+  pitched forward to about level (pose pitch ≈ −1.0), the pose's ROLL is a turn about the world vertical through the hand — a
+  door on a hinge — and YAW tilts that sweep's plane. So the strike and follow-through are interpolated poses that differ
+  mostly in roll + side: one rigid rotation, nothing twists. (Pitch does NOT raise a club that is already pointing sideways:
+  it turns it about its own length.)
+- `MACE_CK/MK/TH` new values (read off `maceGrid` sheets): forehand cocked up over the right shoulder (head 0.82, 0.69),
+  the blow with the head ON the crosshair (0.00, −0.06), out level lower left (−0.25, −0.50); backhand lifted from there up
+  over the LEFT shoulder (−0.42, 0.11), across through (0.02, −0.09), out right (0.90, −0.05). Heavy: `MACE_CK_P` (kept in
+  the frame — plain heavy hold head 0.97, 0.85, glint 0.81, 0.45, `maceHolds`), a little more reach and carry round.
+- `maceSwingBack`: no dip. Pitch/lift/push come home first (the club rises out of the level sweep), yaw/roll/side ease in-out
+  after it, and a small settle at the end. `landBlade` only NUDGES the mace's sweep (×0.34, as the katana): the head is on the
+  crosshair already and the full shove bent the line. Chained rise 1.15 → 1.6 (it starts at the last swing's end).
+- **WEIGHT IN THE VIEW**: `maceLean` (render roll, added to `hRoll` beside `hitRoll`): −slashDir × (0.022 + 0.02 P) while the
+  head falls and carries through, easing back as it comes home. Probes: `maceMomentum`, `maceCombo`, `maceHolds`, `maceGrid`.
+- The old backhand corrections (`MACE_BACK_ROLL`, `MACE_BACK_COCK`) are gone: the backhand is authored, not mirrored.

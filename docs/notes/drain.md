@@ -1191,3 +1191,110 @@ just like we have been with the retro style and same time as the sewer grab is n
   is faded out over the first 40% of the pull. Moved 0.0004 m across the take (`pipeReach` probe).
 - The 3D `pipeArm` is the fallback until the sheet is in. Probe: `PB_PORT=4231 sh tools/probe.sh pipeReach <out>`
   (`&at=` frame list for the stills).
+
+## 2026-11-21 — the current over ALL the water, as lightning (`uLive`), and the mace on top of the heap
+- The owner: "make the electricity propagate all the way to this doorway", "once the whole sewer water is electrocuted make
+  sure all the water shows the electricity", then of the first try (ridged value-noise filaments) "less of squiggly lines and
+  more rigid like real electric arcs, like real lightning" — the SAME complaint as 2026-11-16: never build electricity from
+  ridged noise here. The live layer in `SEW_WEB_GLSL` is now bolts: the sheet cut into 2.5 m cells, each throwing one
+  `webBoltH` (the web's straight-run-and-kink build) shorter than a cell from a hashed point (so only the 3×3 cells round a
+  fragment are looked at), pointing OUT from uWeb.yz ±70°, a fork off a kink, pulse fronts striking more cells as they run
+  out. `uLive` = (strength, clock, seed, density): channel `chanLive` (density 0.85, 4.5 s after `sewElectrocute`), flood
+  `floodLive` (0.6, while live, strength 0.6–0.9 — bolts are thin: at the noise field's 0.3–0.5 they were not seen).
+- **Thin bolts vanish at RETRO_SCALE**: 1.5 cm across six metres off is under a pixel. The core is floored at a pixel
+  (`fwidth`, capped 0.16 units, or grazing angles smear); the HALO must keep its own fixed width (`webBoltH`'s `hw`) and fade
+  in from the root — 3.5× a widened core was a bright wedge with a square end.
+- The bone mace sits ON the bone pile: `sewP.maceSettle(bones)` (called by the bones loader after the merge) raycasts the
+  merged heap at five points along the club (`THREE.Mesh.prototype.raycast.call` — the heap's own raycast is disabled) and
+  lays it on the tops, lifted by the worst middle clearance so the shaft never sinks.
+
+## 2026-11-21 (later) — the reach moved to where it makes sense; the lamps in the fog; the rat; the whole run played
+- **The reach** (the owner: "looks like you arent grabbing for the screwdriver", "the hand is phasing through the bars", then,
+  when I put the 3D arm back for an hour: "no still use the photo captured arm we provided just move it to where it makes
+  sense"). His clip was laid as filmed — the arm in from the LEFT edge, sweeping across — so it crossed bars that stand
+  down the pipe beyond his wrist (a flat sprite drawn over everything can never go behind one). Now the eye leans in over
+  the grate's MIDDLE opening (`PIPE_EYE` [0, 0.2, 0.32] in the outlet's frame, `PIPE_LOOK` [0.04, -0.1, -0.62]): the two
+  middle bars frame the picture's sides and the upper flat its top, a window. The clip is turned `PH_ROT` 1.42 rad so the
+  arm rises from the bottom of the screen inside that window — over the lower flat, which is right (the arm comes from below
+  the eye and passes in front of it) — to the HANDLE (`PIPE_GRIP_C`, the tool's middle + 5 cm along `PIPE_SD_AX`), not the
+  tool's middle. One map clip→screen (`phScr`), used by the screwdriver at his fingers too. Sized for the handle's distance
+  against his hand's from his phone (`PH_NEAR` 0.42), grown only until the clip's left border (now under the screen) and the
+  knee cut (now right of the arm) are off it — with the handle low in the frame that is ~1.3× life, not 2×. The camera STAYS
+  in while the arm comes back out (backing out under it, the window shrank and swept a bar over his arm at the last).
+  `PIPE_FILMED` false brings the 3D arm back (fallback until the sheet loads, too): rebuilt to thread the middle opening by
+  follow-the-leader on `PIPE_WAY` (`armFit` probe: least clearance to the iron 7 mm), slimmer sleeve, a rounded-box palm, an
+  overhand grip with the index first, a fresnel rim on the skin only (on a sleeve seen down its length EVERYTHING is grazing —
+  it went white).
+- Reach 6.5 s (was 5), the close 0.45 s, a tug, out over 1.2 s; breath gain 0.025 + 0.27 k² (was 0.04 + 0.45 k²).
+- **The lamps in the fog** (`FOG_SCAT`, in the shared fog chunk; misc-wide but on only in the sewer and the drain): per pixel
+  for each pooled point light, the light scattered toward the eye along the ray to the surface in closed form ((atan((L−t0)/h)
+  + atan(t0/h))/h, h softened by √(h²+0.06)), a Henyey–Greenstein phase g 0.45, the light's range taper, the fog's extinction
+  to the nearest pass, broken by `fogNoise` read where the ray passes the lamp (drifting, two scales) — lit wisps. Screen-
+  blended after tonemapping. `BW_LIT` (prepended to `lights_pars_begin`) keeps it out of unlit materials, whose shaders have no
+  `pointLights`. Sewer 0.035, drain 0.06 → room 0.08 (`FOG_SCAT_K`; 0.12 filled the drain room with orange). `SEW_BEAM_K` halved (the cards on top blew it out).
+  Sewer fog 0.022 → 0.04 (0x070909), mist 1.0 / 0.75 (the owner: "a lil foggier ... but make sure you can still make out
+  lights like the red ones above the lever and the generator light": those are unfogged sprites, and the lever bulbs `fog:
+  false` now). Probe: `sewView&ab=1` (each view again without it), `&scatk=`, `&scaty=`. The probe's default `gain` 1.6
+  exaggerates the glow under a lamp; judge at `&gain=1`.
+- **The spill outside** was darker than the moonlit sand it lay on (soot). Now lit air: 0.10–0.15 grey-blue + forward
+  scattering toward the moon, three-octave drifting wisps, denser at its foot, 150 puffs, lower and wider.
+- **The rat** (the owner: "use this sound for the rat jumpscare in the lair and make the rat more detailed and real"): his
+  `assets/lair-rat.m4a` (his "no-copyright.mp3", 0.47 s of leading silence trimmed, 96 kbps, 3.45 s) at 0.8 in place of the
+  synthesized sting and shriek (kept as the fallback before it loads); the bone knocked off the heap stays. `makeLairRat`
+  rebuilt: two lathed halves (snout..chest, haunch..rump) bending at the middle, streak-noise fur dark on the back by vertex
+  colour, pink-lined ears, red eyeshine, whiskers, two-joint legs, an eight-segment tail; a BOUND gait. TRAP: a lathe
+  `rotateX(π/2)` maps the profile's y to +z directly — I mirrored it "back" with scale(1,1,-1), which turned both halves
+  inside out (you saw into the rat).
+- **The run, played** (`playDrain`: real W/E/F through the game's frames, the camera only aimed; `&upto=` a leg, `&dev=1`):
+  beach spawn → drain → reach → 4 screws → crawl → 4 levers → the branch lamp falls → kick → it dies → key off its back →
+  steel door → the rat → the mace → back up the ladder → out on the sand, ~2.5 min of game for a bot, no STUCK, every
+  prompt as expected. Harness traps found on the way: a lever pull is 2.47 s HELD (2.2 did nothing); the branch lamp falls
+  within 6.5 m of x 15.2, so stopping at the branch's mouth never drops it; `b.introDone` is a setter only (read
+  `state().introDone`); call `b.beginGame()` first or the title stays up.
+- **The hunt, quicker** (the owner, after reading that the played run was never attacked: "make the monster more aggressive so
+  it actually starts stalking quicker"). Why it never got a leap in: the watcher stood up to 40 s; under 8–14 s between
+  risings; it swam 2.3 m/s to a place up to 15 m off and followed under the water at 0.5 m/s — someone walking on was past
+  `LOSE_R` before a 12 s rise was done. Now `WATCH_T` 14, `AFTER_WATCH` 1.2–2, `GAP0` 4–7, `BACK_IN` 1.5, swim 3.4 m/s
+  (+0.15/lever, +1.2 dark), the follow 1.6 m/s keeping 5.5 m, `FAR` 12 / `NEAR` 4.5, 3.5 where it comes up. `RISE` (12 / 10)
+  is the owner's of 2026-11-18 and untouched; `LEAP_R` 19 / `LOSE_R` 22 keep the old FAR + 4 / + 7 now FAR is its own.
+  Measured (`sewHunt&lv=1`, stood on the far walk at z -20, dev): up 5 s after you are there, a leap every ~23 s unlooked
+  at. At the ladder's foot it only ever comes up behind the north grate (the only water out of your sight there) — the old
+  safe spot, left so. Played (`playDrain`): up behind you by the second lever, shoulders out by the third.
+- **Quicker in the dark** (the owner: "make it so it is quicker to grab you when it is darker and the lights are out"):
+  `RISE` [12, 8] (dark was 10; 6 for an hour, then the owner: "make it come at you after 8 seconds when the lights are out"), `STIR` now [lit, dark] = [1.4, 0.8] read through `k()`. Measured (`sewHunt&lv=15&gen=1`, dev):
+  at 6 s: stir 0.7 s, surface → leap 5.6 s; at 8: surface → leap 7.4–7.5 s. Lit untouched.
+
+## The live water holds, the glowstick's glow in the fog, the pipe's pale end (2026-11-21)
+
+- **THE WATER STAYS LIVE UNTIL THE POWER IS CUT** (the owner: "make sure when you kick th light into the sewer water the
+  water stays lookign electrocuted until the generatir us turned off"). After the kick's burst (`SEW_SHOCK_T`,
+  `SEW_CHAN_LIVE_T`), while `sewLL === 2 && sewGenOn` (and the lamp not mid-kick or falling) the web (`shockU`) keeps
+  crawling from where it went in at ~0.3, the whole channel's current (`chanLive`) holds at `SEW_LIVE_K` 0.5, and a bolt
+  runs over the water a third of frames. Read off the state every frame (`sewLive`), so a restore with the lamp in and the
+  power on is live too; the generator's button (`sewGenOn = false`) ends it, and `liveWas` zeroes the web once.
+  Probe: `sewView&st={"lv":15,"ll":2,"md":[0,9,0]}` (live) vs the same with `"gen":1` (dead).
+- **A LIGHT AT THE EYE MAKES A FOG WALL** (the owner: "turn down the glowstricks light refraction on the fog wall"). The
+  held glowstick sits 0.7 m from the eye, so `bwAirlight` integrates its brightest air along EVERY ray of the frame. The
+  fog chunk scales each point light's airlight by `mix(0.28, 1, smoothstep(0.9, 2.4, |light in view space|))`: a light
+  in your hand scatters about a quarter as much, a lamp on the wall all of it. `sewView&glow=1` holds the glowstick (with
+  `&ab=1` for each view without the lamp-lit fog).
+- **THE PIPE'S PALE END WAS THE FOG** (the owner: "make sure the sewer tunnel blend better when looking down it . right now
+  it kind of has a strange highlighted affects in it"). The bore's `murk` darkening ran at `opaque_fragment`, BEFORE the
+  fog, and the drain room's fog colour is lighter than an unlit pipe: the deeper you looked the paler it got, a disc at
+  the end and the joint rings as pale outlines. Found by elimination (`view&abfog=1`: gone with the fog off, there with
+  the lamp-lit fog and the mist off). The murk now runs after `fog_fragment` (cache key `pipeMurk2`), and the void box
+  behind the throat (`M.void`, seen only down the pipe) is an unfogged clone. Before the screwdriver is taken its glint
+  is a legitimate pale spot in there (`view&hidek=sprite` hides it; `&hidek=points,sprite,transparent,shader` is the
+  tool for "what is this glow"). `view&grate=1` lifts the grate.
+- **The reach, third lay (2026-11-21, later)** (the owner: "cut out the hand and arm so it is all there and there are no
+  floating parts … make the animation not as sideways to start and offcentered a little to looklike you are using your
+  left hand"). The sheet's matte was clean (composited on green: one piece a frame, no islands). What floated was the
+  LAYOUT: (1) the first frames are the hand alone reaching the knee cut (`ycut`), and the size only pushed sample points
+  off the bottom/right — fine for one turn of the clip. Now each cut LINE of the frame being drawn (the knee line if the
+  rect reaches it, the clip's left border if the rect touches it) must clear ONE side of the screen whole (a line whose
+  ends go off two different sides leaves its middle across the corner). (2) The pull-out played the reach backward into
+  those hand-alone frames: a hand and a screwdriver drifting off with no arm. Now the closed frame stays and the whole arm
+  slides back along its own line to the shoulder (`PRH.dx/dy`, from the frame's `root` to its grip; `drop` in phScr is
+  along it — the opening rise too). (3) The tool at his fingers came in to 0.45 m, behind the grate (~0.3 m from the eye):
+  it slid behind the lower bar half way out. It comes to 0.2 m now. `PH_ROT` 1.42 → 0.75: his LEFT arm up from the bottom
+  left, the hand reaching up and right — not a hand held sideways.

@@ -1079,6 +1079,10 @@ The rags the thing in the sewer sleeps on are "rags pack" by Frice
 (https://sketchfab.com/3d-models/rags-pack-b5dfec6e7fda4450822024bd06662ff4, CC-BY-NC-4.0;
 `assets/rags.glb`, repacked by `tools/rags_pack.py`). The lair's flies are the owner's
 "Flies Buzzing and Circling" (`assets/flies-bed.m4a`, looped by `tools/flies_pack.py`).
+The rat that bursts out in the lair screams with the owner's "no-copyright" (`assets/lair-rat.m4a`,
+its leading half-second of silence trimmed).
+Footsteps in the drain, the sewer and every stone hall or tunnel are the owner's "Echo Footsteps Sound Effect"
+(`assets/sewer-step1-9.m4a`, nine steps cut from it with their own echo).
 The metal — screws, the drain's grate, gates, doors, struck steel — is the owner's
 "31 Various Metal Sound Effects" (`assets/metal-*.m4a`, cut and sorted by `tools/metal_pack.py`),
 and the wreck's groans his "Low Pitched Metal creaks and stress Groans" (`assets/ship-groan*.m4a`).

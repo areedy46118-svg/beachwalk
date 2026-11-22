@@ -5846,7 +5846,8 @@ export async function rockWash({ w, b, log, sleep }) {
   log('stones with surf', L.length, 'small (r<0.6)', L.filter((r) => r.r < 0.6).length);
   w.__clockOn();
   const C = b.camera, at = +(new URLSearchParams(w.parent.location.search).get('wall') || 0);
-  const WZ = at ? b.ROCK_Z : 60, dz = at ? 1 : -1;     // the wall behind the drain (60) or the one past the mutants
+  const QW = new URLSearchParams(w.parent.location.search).get('wz');      // (&wz=Z: any stone, camera z = Z + cam dz — 2026-11-21)
+  const WZ = QW !== null ? +QW : at ? b.ROCK_Z : 60, dz = QW !== null || at ? 1 : -1;     // the wall behind the drain (60) or the one past the mutants
   const near = L.filter((r) => Math.abs(r.z - WZ) < 16).sort((a, c) => a.x - c.x);
   log('wall', WZ, near.map((r) => `(${r.x.toFixed(1)},${r.z.toFixed(1)}) r${r.r.toFixed(2)} top${r.top.toFixed(2)} ph${r.ph.toFixed(2)}`).join(' '));
   const T0 = +(new URLSearchParams(w.parent.location.search).get('t') || (11.6 + 139.6 * 2));
@@ -5856,7 +5857,9 @@ export async function rockWash({ w, b, log, sleep }) {
   const tiles = [];
   const grab = (lab) => { const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 480; c.height = Math.round(480 * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.2)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 4, 14); return c; };
   const EV = +(Q.get('every') || 15), NF = +(Q.get('frames') || 300);
-  for (let f = 0; f < NF; f++) { place(); w.__adv(1); if (f % EV === 0) tiles.push(grab('t ' + (U.value).toFixed(2) + ' shore ' + b.shoreLineJS(WZ + dz * 10, U.value).toFixed(1))); }
+  let sprMax = 0;
+  for (let f = 0; f < NF; f++) { place(); w.__adv(1); if (b.sprayN) sprMax = Math.max(sprMax, b.sprayN()); if (f % EV === 0) tiles.push(grab('t ' + (U.value).toFixed(2) + ' shore ' + b.shoreLineJS(WZ, U.value).toFixed(1) + (b.sprayN ? ' spray ' + b.sprayN() : ''))); }
+  log('spray most at once', sprMax);
   const cols = 4, tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = cols * tw; c.height = Math.ceil(tiles.length / cols) * th;
   const g = c.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
   const d = c.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000);
@@ -8073,7 +8076,12 @@ export async function view({ w, b, log, sleep }) {
     for (let i = 0; i <= n; i++) { const u = i / n; C.position.set(x0 + (x1 - x0) * u, b.camBaseY || 1.7, z0 + (z1 - z0) * u); b.lookAt(x1, 1.2, z1); w.__adv(1); if (i % 120 === 0) await sleep(10); }
     log('walked to', x1, z1, 'crabs', (b.crabsS ? b.crabsS() : []).map((c) => c).join(' '), 'gibs', b.gibsN ? b.gibsN() : '?');
   }
+  if (Q.get('grate') && b.liftGrate) b.liftGrate(true);      // (&grate=1: the drain's grate off, the pipe open)
+  const hideK = (Q.get('hidek') || '').split(',').filter(Boolean);   // (&hidek=points,sprite,transparent,shader: hide every one of those kinds, to find what a glow is)
+  const hideNow = () => b.scene.traverse((o) => { const m = o.material; if ((hideK.includes('points') && o.isPoints) || (hideK.includes('sprite') && o.isSprite)
+    || (hideK.includes('transparent') && m && !Array.isArray(m) && m.transparent && o.isMesh) || (hideK.includes('shader') && m && !Array.isArray(m) && m.isShaderMaterial && o.isMesh)) o.visible = false; });
   const cams = (Q.get('cams') || '4,1.7,-20,0,0.5,-40').split(';').map((s) => s.split(',').map(Number));
+  if (Q.get('scat') !== null && b.fogScatK) { b.fogScatK.drain = b.fogScatK.room = +Q.get('scat'); }   // (the drain's lamp-lit fog, for a before: &scat=0)
   if (Q.get('nomist')) { const m = b.scene.getObjectByName('drainMist'); if (m) m.traverse((o) => { if (o.material) o.material.visible = false; }); }   // the drain's murk off, for a before
   const T0 = Q.get('t') !== null ? +Q.get('t') : null, tiles = [];
   const tw = +(Q.get('tw') || 480);
@@ -8084,7 +8092,7 @@ export async function view({ w, b, log, sleep }) {
     if (sch) { const U2 = b.oceanUniforms; U2.uSh.value[0].set(sch[0], sch[1], 0.6, sch[3] || 0); U2.uSh2.value[0].set(1, sch[2], 3.3, 0); }
     const spl = Q.get('splash') ? Q.get('splash').split(',').map(Number) : null;   // (&splash=x,z: drops thrown there every frame, as the surf does)
     for (let i = 0; i < (k ? 20 : 90); i++) { place(); if (T0 !== null) U.value = T0 + i / 60; if (spl) for (let q = 0; q < 3; q++) b.spawnSplash(spl[0] + (Math.random() - 0.5) * 6, spl[1] + (Math.random() - 0.5) * 6, 5, 0.7, 0, 1.2, b.waterSurfaceAt ? b.waterSurfaceAt(spl[0], spl[1]) : 0.02, false); w.__adv(1); }
-    place(); C.updateMatrixWorld(true); b.renderer.render(b.scene, C);
+    place(); if (hideK.length) hideNow(); C.updateMatrixWorld(true); b.renderer.render(b.scene, C);
     if (k === 0 && Q.get('pick')) {
       const rc = new T.Raycaster();
       for (const p of Q.get('pick').split(';')) {
@@ -8105,6 +8113,12 @@ export async function view({ w, b, log, sleep }) {
     const src = b.renderer.domElement, cv = w.document.createElement('canvas'); cv.width = tw; cv.height = Math.round(tw * src.height / src.width);
     const g = cv.getContext('2d'); g.drawImage(src, 0, 0, cv.width, cv.height); g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(c.join(','), 6, 14);
     tiles.push(cv);
+    // (&abfog=1: this view again with the ground mist off, then with the fog off — which term a glow belongs to)
+    if (Q.get('abfog')) for (const [lab, off, on] of [['no ground mist', () => { const v = b.FOG_GROUND.w; b.FOG_GROUND.w = 0; return () => { b.FOG_GROUND.w = v; }; }],
+                                                      ['no fog', () => { const v = b.scene.fog.density; b.scene.fog.density = 0; return () => { b.scene.fog.density = v; }; }]]) {
+      const undo = off(); b.renderer.render(b.scene, C); undo();
+      const c2 = w.document.createElement('canvas'); c2.width = tw; c2.height = cv.height; const g2 = c2.getContext('2d'); g2.drawImage(src, 0, 0, c2.width, c2.height); g2.fillStyle = '#fff'; g2.font = '12px monospace'; g2.fillText(lab, 6, 14); tiles.push(c2);
+    }
   }
   const cols = Math.min(+(Q.get('cols') || 2), tiles.length), W0 = tiles[0].width, H0 = tiles[0].height, sh = w.document.createElement('canvas');
   sh.width = cols * W0; sh.height = Math.ceil(tiles.length / cols) * H0;
@@ -8222,12 +8236,22 @@ export async function sewView({ w, b, log, sleep }) {
     const m = o.material || {};
     log('OBJ', nm, 'verts', o.geometry ? o.geometry.attributes.position.count : '-', 'min', bb.min.toArray().map((v) => v.toFixed(2)).join(','), 'max', bb.max.toArray().map((v) => v.toFixed(2)).join(','), 'transparent', m.transparent, 'opacity', m.opacity, 'alphaTest', m.alphaTest, 'map', !!m.map, 'visible', o.visible);
   }
-  for (const c of cams) {
+  if (Q.get('glow')) { b.addToInventory(b.glowstickItem); b.toggleEquip(b.glowstickItem); for (let i = 0; i < 30; i++) w.__adv(1); }   // (&glow=1: the glowstick in your hand)
+  const zapAt = +(Q.get('zap') || -1);   // (&zap=N: electrocute the water just before the Nth view, 0-based, and give it a few frames)
+  if (Q.get('scatk') && b.fogScatK) b.fogScatK.sew = +Q.get('scatk');      // (&scatk=: the lamps' light in the fog; &ab=1 each view again without it)
+  if (Q.get('scaty') && b.fogScat) b.fogScat.y = +Q.get('scaty');
+  for (const [ci, c] of cams.entries()) {
+    if (ci === zapAt && b.sewElectrocute) { b.sewElectrocute(); for (let i = 0; i < 40; i++) w.__adv(1); }
     for (let i = 0; i < 40; i++) { b.sewSet(c[0], c[1], c[2], c[3]); b.camera.position.y += dy; w.__adv(1); }
     b.sewSet(c[0], c[1], c[2], c[3]); b.camera.position.y += dy; b.camera.updateMatrixWorld(true); b.renderer.render(b.scene, b.camera);
     const src = b.renderer.domElement, cv = w.document.createElement('canvas'); cv.width = tw; cv.height = Math.round(tw * src.height / src.width);
     const g = cv.getContext('2d'); g.filter = 'brightness(' + (Q.get('gain') || 1.6) + ')'; g.drawImage(src, 0, 0, cv.width, cv.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(c.join(','), 6, 14);
     tiles.push(cv);
+    if (Q.get('ab') && b.fogScat) {
+      const k0 = b.fogScat.x; b.fogScat.x = 0; b.renderer.render(b.scene, b.camera); b.fogScat.x = k0;
+      const c2 = w.document.createElement('canvas'); c2.width = tw; c2.height = cv.height; const g2 = c2.getContext('2d'); g2.filter = 'brightness(' + (Q.get('gain') || 1.6) + ')'; g2.drawImage(src, 0, 0, c2.width, c2.height); g2.filter = 'none'; g2.fillStyle = '#fff'; g2.font = '12px monospace'; g2.fillText('(no lamp-lit fog)', 6, 14);
+      tiles.push(c2);
+    }
   }
   const cols = Math.min(+(Q.get('cols') || 2), tiles.length), W0 = tiles[0].width, H0 = tiles[0].height, sh = w.document.createElement('canvas');
   sh.width = cols * W0; sh.height = Math.ceil(tiles.length / cols) * H0;
@@ -8428,4 +8452,389 @@ export async function callLive({ w, b, log, sleep }) {
   const d = sh.toDataURL('image/jpeg', 0.88).split(',')[1], n = Math.ceil(d.length / 8000);
   for (let i = 0; i < n; i++) console.log('[PBIMG]', 'live', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
   log('errors', errs.length, errs.slice(0, 4).join(' | '));
+}
+
+// THE ARM THROUGH THE GRATE, MEASURED (2026-11-21): the 3D reach held in, every frame its sleeve's clearance to the grate's
+// four bars and two flats (negative = through the iron), where the screwdriver's handle lies in the outlet's frame, stills.
+// `&at=` frames for the stills.
+export async function armFit({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 400 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true;
+  for (const e of ['overlay', 'blackout', 'intro']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; el.style.display = 'none'; } }
+  w.__clockOn();
+  const T = b.THREE, C = b.camera;
+  let D = null; b.scene.traverse((o) => { if (!D && o.userData && o.userData.outlet && o.userData.nav) D = o; });
+  const F = D.userData.outlet; D.updateMatrixWorld(true);
+  const inv = new T.Matrix4().copy(F.matrixWorld).invert();
+  // the screwdriver's parts in F's frame
+  const sd = b.screwdriverModel; sd.updateMatrixWorld(true);
+  sd.traverse((o) => { if (o.isMesh && o.visible && o.name !== 'hitProxy') { const bb = new T.Box3().setFromObject(o); const c = bb.getCenter(new T.Vector3()).applyMatrix4(inv); const s = bb.getSize(new T.Vector3());
+    log('SD part', o.name, 'col', o.material.color ? o.material.color.getHexString() : '-', 'centre F', c.toArray().map((v) => v.toFixed(3)).join(','), 'size w', s.toArray().map((v) => v.toFixed(3)).join(',')); } });
+  { const ax = new T.Vector3(1, 0, 0).applyQuaternion(sd.getWorldQuaternion(new T.Quaternion())).transformDirection(inv); log('SD local x in F', ax.toArray().map((v) => v.toFixed(3)).join(',')); }
+  const stand = F.localToWorld(new T.Vector3(0, 0, 1.3)); const tgt = F.localToWorld(new T.Vector3(0, 0, -2));
+  for (let i = 0; i < 60; i++) { C.position.set(stand.x, b.camBaseY = 1.62 + D.position.y + 0.05, stand.z); b.lookAt(tgt.x, tgt.y, tgt.z); w.__adv(1); }
+  if (b.phS()) b.phS().ready = false;
+  b.startPeek();
+  for (let i = 0; i < 70; i++) w.__adv(1);
+  const Q = new URLSearchParams(w.parent.location.search);
+  const down = (on) => w.dispatchEvent(new w.KeyboardEvent(on ? 'keydown' : 'keyup', { code: 'KeyF', key: 'f' }));
+  const tiles = [];
+  const grab = (lab) => { b.renderer.render(b.scene, C); const src = b.renderer.domElement, c = w.document.createElement('canvas'); const TW = +(Q.get('tw') || 400); c.width = TW; c.height = Math.round(TW * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.6)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '13px monospace'; g.fillText(lab, 6, 16); tiles.push(c); };
+  const U = b.pipeArmS().userData, segs = [['upper', U.upper], ['fore', U.fore], ['wrist', U.wrist]];
+  const a = new T.Vector3(), d = new T.Vector3(), p = new T.Vector3();
+  const clear = () => {      // the least clearance of any sleeve to the iron, and which
+    let best = 9, who = '';
+    for (const [nm, m] of segs) {
+      if (!m.parent || !b.pipeArmS().visible) continue;
+      m.updateWorldMatrix(true, false);
+      const L = m.scale.z, r0 = m.userData.r0 || 0.05, r1 = m.userData.r1 || 0.04;
+      for (let i = 0; i <= 40; i++) {
+        const t = i / 40; p.set(0, 0, t).applyMatrix4(m.matrixWorld).applyMatrix4(inv); const r = r0 + (r1 - r0) * t;
+        for (let k = 0; k < 4; k++) { const bx = -0.24 + k * 0.16; const dd = Math.hypot(p.x - bx, p.z - 0.02) - 0.017 - r; if (Math.abs(p.y) < 0.4 && dd < best) { best = dd; who = nm + '@' + t.toFixed(2) + ' bar' + k; } }
+        for (const cy of [-0.16, 0.16]) { const dy = Math.max(0, Math.abs(p.y - cy) - 0.02), dz = Math.max(0, Math.abs(p.z + 0.002) - 0.006); const dd = Math.hypot(dy, dz) - r; if (Math.abs(p.x) < 0.42 && dd < best) { best = dd; who = nm + '@' + t.toFixed(2) + ' flat' + cy; } }
+      }
+    }
+    return [best, who];
+  };
+  grab('peek, before');
+  down(true);
+  let worst = 9, worstWho = '', worstAt = 0;
+  const hand = U.hand, hp = new T.Vector3(), hp0 = new T.Vector3(); let maxStep = 0, have = false;
+  const ats = Q.get('at') ? Q.get('at').split(',').map(Number) : [60, 150, 240, 330, 390, 420, 432, 445, 460, 480, 500];
+  for (let f = 1; f <= 60 * 9.5; f++) {
+    w.__adv(1);
+    const R = b.pipeReachS();
+    const [cl, who] = clear(); if (cl < worst) { worst = cl; worstWho = who; worstAt = f / 60; }
+    if (b.pipeArmS().visible) { hand.getWorldPosition(hp); if (have) maxStep = Math.max(maxStep, hp.distanceTo(hp0)); hp0.copy(hp); have = true; } else have = false;
+    if (f % 60 === 0) { hand.getWorldPosition(hp); const hf = hp.clone().applyMatrix4(inv); log('t', (f / 60).toFixed(2), 'p', R.p.toFixed(2), 'done', R.done, 'grab', R.grab.toFixed(2), 'gain', R.br ? R.br.g.gain.value.toFixed(3) : '-', 'hand F', hf.toArray().map((v) => v.toFixed(3)).join(','), 'cam F', C.position.clone().applyMatrix4(inv).toArray().map((v) => v.toFixed(3)).join(','), 'hand ndc', hp.clone().project(C).toArray().slice(0, 2).map((v) => v.toFixed(2)).join(','), 'elbow ndc', U.elbow.getWorldPosition(new T.Vector3()).project(C).toArray().slice(0, 2).map((v) => v.toFixed(2)).join(','), 'clear', cl.toFixed(3), who, 'taken', b.screwdriverTaken); }
+    if (ats.includes(f)) grab('t ' + (f / 60).toFixed(2) + ' p ' + R.p.toFixed(2) + ' g ' + R.grab.toFixed(2));
+  }
+  down(false);
+  log('CLEAR worst', worst.toFixed(4), worstWho, 'at', worstAt.toFixed(2), 's; hand max step', maxStep.toFixed(4));
+  const cols = 4, tw = tiles[0].width, th = tiles[0].height, cv = w.document.createElement('canvas'); cv.width = cols * tw; cv.height = Math.ceil(tiles.length / cols) * th;
+  const g = cv.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+  const dd = cv.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(dd.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'arm', i + '/' + n, dd.slice(i * 8000, (i + 1) * 8000));
+}
+
+// THE DRAIN TO THE BONE MACE, PLAYED (2026-11-21, the owner: "start at spawn and head back toward the sewer like you just
+// started the game ... play until you get the bone mace and leave"). Real keys only — W to walk (the camera is AIMED, never
+// moved), E / F to use, held where the game wants a hold — through the game's own frames. Every leg logs where it got to,
+// how long it took and anything that stopped it (STUCK = a walk that made no headway); stills at each beat.
+// `&upto=` stop after that leg (beach|peek|grate|sewer|levers|lamp|key|lair|out), `&dev=1` dev mode (no deaths).
+export async function playDrain({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  const Q = new URLSearchParams(w.parent.location.search), upto = Q.get('upto') || 'out';
+  if (Q.get('dev')) b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 400 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  w.__clockOn();
+  const T = b.THREE, C = b.camera; let clock = 0, tiles = [], issues = [];
+  const adv = async (n = 1) => { for (let i = 0; i < n; i++) { w.__adv(1); clock += 1 / 60; if (i % 90 === 89) await sleep(1); } };
+  const key = (code, on) => w.dispatchEvent(new w.KeyboardEvent(on ? 'keydown' : 'keyup', { code, key: code.replace('Key', '').toLowerCase() }));
+  const grab = (lab) => { b.renderer.render(b.scene, C); const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 400; c.height = Math.round(400 * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.5)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText(lab, 6, 15); tiles.push(c); };
+  const hov = () => { const h = b.state().hovered; return typeof h === 'function' ? h() : (h || ''); };
+  const at = () => C.position.toArray().map((v) => v.toFixed(2)).join(',');
+  const SG = () => b.sewG ? b.sewG() : null;
+  // walk to (x, z) — world, or the sewer's own frame with `sew` — aiming at it, W held; side-steps once when blocked
+  const walk = async (x, z, { sew = false, r = 0.35, max = 90, pitch = -0.05, label = '' } = {}) => {
+    const S = SG(), ox = sew ? S.SEW_X : 0, oz = sew ? S.SEW_Z : 0; let last = C.position.clone(), still = 0, t0 = clock, side = 0;
+    key('KeyW', true);
+    for (let f = 0; f < max * 60; f++) {
+      const dx = x + ox - C.position.x, dz = z + oz - C.position.z, d = Math.hypot(dx, dz);
+      if (d < r) break;
+      b.look(Math.atan2(-dx, -dz), pitch);
+      await adv(1);
+      if (f % 45 === 44) { if (C.position.distanceTo(last) < 0.08) { still++; if (still === 2) { side = 1; key('KeyD', true); } if (still === 3) { key('KeyD', false); key('KeyA', true); } if (still >= 5) { key('KeyA', false); break; } } else { if (side) { key('KeyD', false); key('KeyA', false); side = 0; } still = 0; } last.copy(C.position); }
+    }
+    key('KeyW', false); key('KeyA', false); key('KeyD', false); await adv(6);
+    const dx = x + ox - C.position.x, dz = z + oz - C.position.z, d = Math.hypot(dx, dz);
+    log('WALK', label, 'to', x, z, sew ? '(sewer)' : '', 'got within', d.toFixed(2), 'in', (clock - t0).toFixed(1), 's at', at());
+    if (d > r + 0.3) { issues.push('STUCK walking to ' + label + ' (' + d.toFixed(2) + ' m short at ' + at() + ')'); log('STUCK', label); }
+    return d;
+  };
+  // aim at a world point, read what the crosshair offers
+  const aim = async (p) => { b.lookAt(p.x, p.y, p.z); await adv(3); b.lookAt(p.x, p.y, p.z); await adv(1); return hov(); };
+  const use = async (p, want, { hold = 0, code = 'KeyE' } = {}) => {
+    const h = await aim(p);
+    log('USE', want, '-> crosshair says "' + h + '"');
+    if (want && !String(h).toLowerCase().includes(want.toLowerCase())) issues.push('wanted "' + want + '" but the crosshair said "' + h + '" at ' + at());
+    key(code, true); await adv(Math.max(2, Math.round(hold * 60))); key(code, false); await adv(4);
+    return h;
+  };
+  const done = (leg) => { log('LEG', leg, 'done at t', clock.toFixed(1), 's'); return leg === upto; };
+  const finish = () => {
+    log('ISSUES', issues.length ? issues.join(' || ') : 'none');
+    log('INV', (b.state().inv || []).join('|'));
+    const cols = 4, tw = tiles[0].width, th = tiles[0].height, cv = w.document.createElement('canvas'); cv.width = cols * tw; cv.height = Math.ceil(tiles.length / cols) * th;
+    const g = cv.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+    const d = cv.toDataURL('image/jpeg', 0.8).split(',')[1], n = Math.ceil(d.length / 8000);
+    for (let i = 0; i < n; i++) console.log('[PBIMG]', 'play', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+    b.settings.devMode = false;
+  };
+
+  // ---- THE OPENING, as a new game gets it
+  b.beginGame();
+  for (let i = 0; i < 90 * 60 && !b.state().introDone; i++) { await adv(1); if (i % 4 === 0) await sleep(16); }   // (the opening's video runs on the wall clock)
+  log('opening over at t', clock.toFixed(1), 'introDone', b.state().introDone, 'at', at());
+  if (!b.state().introDone) { b.introDone = true; issues.push('the opening never handed over control in 90 s'); }
+  await adv(60);
+  for (const e of ['overlay', 'blackout', 'intro']) { const el = w.document.getElementById(e); if (el && getComputedStyle(el).opacity !== '0' && el.style.display !== 'none') log('still showing:', e); }
+  grab('spawn ' + at());
+  // ---- BACK UP THE BEACH TO THE DRAIN (behind you: +z)
+  let D = null; b.scene.traverse((o) => { if (!D && o.userData && o.userData.outlet && o.userData.nav) D = o; });
+  const F = D.userData.outlet; D.updateMatrixWorld(true);
+  const mouth = D.position.clone();
+  log('the drain mouth at', mouth.toArray().map((v) => v.toFixed(2)).join(','));
+  await walk(mouth.x - 4, mouth.z, { label: 'in front of the drain', max: 120 });
+  grab('the drain, from the sand');
+  await walk(mouth.x + 4, mouth.z, { label: 'into the bore' });
+  grab('in the bore');
+  const out = F.getWorldPosition(new T.Vector3()), stand = F.localToWorld(new T.Vector3(0, 0, 1.1));
+  await walk(stand.x, stand.z, { label: 'the room, at the grate', max: 120 });
+  grab('the grate');
+  if (done('beach')) return finish();
+  // ---- LOOK IN, REACH FOR IT
+  await use(out, 'Look inside');
+  await adv(80);
+  grab('peeking');
+  key('KeyF', true);
+  for (let f = 0; f < 60 * 9.5 && !b.screwdriverTaken; f++) { await adv(1); if (f === 200 || f === 395) grab('reaching ' + b.pipeReachS().p.toFixed(2)); }
+  key('KeyF', false); await adv(90);
+  log('screwdriver taken', b.screwdriverTaken, 'peeking', b.peeking);
+  if (!b.screwdriverTaken) issues.push('the reach did not get the screwdriver');
+  if (done('peek')) return finish();
+  // ---- FOUR SCREWS, THE GRATE OFF, THE PIPE
+  const spots = D.userData.grateScrews || [];
+  for (const sp of spots) { const p = F.localToWorld(new T.Vector3(sp[0], sp[1], sp[2] + 0.01)); await use(p, 'Unscrew'); await adv(50); }
+  await adv(120);
+  grab('the grate off?');
+  log('grate screws', b.state && JSON.stringify(b.state().inv));
+  await use(F.localToWorld(new T.Vector3(0, -0.05, 0.1)), 'Crawl');
+  for (let i = 0; i < 60 * 60 && !(b.sewS && b.sewS().inSewer); i++) { await adv(1); if (i % 3 === 0) await sleep(10); if (i % 600 === 0) log('crawling', (i / 60).toFixed(0), 's: sewer ready', b.sewS().ready); }
+  log('in the sewer', b.sewS().inSewer, 'at t', clock.toFixed(1), 'local', b.sewS().lx, b.sewS().lz);
+  if (!b.sewS().inSewer) issues.push('never came out in the sewer');
+  await adv(60);
+  grab('down the ladder');
+  if (done('grate')) return finish();
+  // ---- THE LEVERS (on the wall on your left as you go south)
+  const S = SG().SEW;
+  for (const [i, z] of S.LEVERS.entries()) {
+    await walk(-1.85, z + 0.9, { sew: true, label: 'lever ' + (i + 1), max: 60 });
+    const lv = SG().P.levers[i]; lv.bulb.updateWorldMatrix(true, false); const bp = lv.bulb.getWorldPosition(new T.Vector3());
+    await use(new T.Vector3(bp.x, bp.y - 0.25, bp.z), 'lever', { hold: 3.0 });
+    await adv(30);
+    // (&linger=SECS: stand and look slowly round after each lever, as someone taking the place in does)
+    { const L = +(Q.get('linger') || 0); for (let f = 0; f < L * 60 && !b.state().dying; f++) { b.look(f / (L * 60) * Math.PI * 2, 0); await adv(1); } }
+    log('levers', b.sewS().levers, 'monster', JSON.stringify(b.sewMonS()), 'hp', b.state().hp, 'dying', b.state().dying);
+    if (i === 1) grab('lever 2');
+    if (b.state().dying) { issues.push('died at lever ' + (i + 1)); grab('dead'); return finish(); }
+  }
+  grab('levers done');
+  if (done('levers')) return finish();
+  // ---- OVER THE BRIDGE AND INTO THE BRANCH, WHERE THE LAMP COMES DOWN
+  await walk(-1.85, S.BRIDGE_Z, { sew: true, label: 'back to the bridge', max: 90 });
+  await walk(1.85, S.BRIDGE_Z, { sew: true, label: 'over the bridge' });
+  await walk(1.85, S.T_Z + 0.3, { sew: true, label: 'down the far walk to the branch', max: 90 });
+  await walk(S.BR_END + 2.0, S.T_Z - 1.85, { sew: true, label: 'into the branch', max: 30 });
+  await walk(10.2, S.T_Z - 1.85, { sew: true, label: 'down the branch toward the door', max: 30 });
+  for (let i = 0; i < 180 && b.sewLampS().ll !== 1; i++) await adv(1);
+  log('lamp', JSON.stringify(b.sewLampS()));
+  grab('the lamp down');
+  if (done('lamp')) return finish();
+  // ---- KICK IT IN WHEN THE THING IS IN THE WATER
+  const lp = SG().P.fallLamp; lp.hold.updateWorldMatrix(true, true); const lpp = lp.hold.getWorldPosition(new T.Vector3());
+  await walk(lpp.x - SG().SEW_X - 1.0, lpp.z - SG().SEW_Z, { sew: true, label: 'up to the fallen lamp', r: 0.3 });
+  let kicked = false, tries = 0;
+  for (let f = 0; f < 60 * 60 && !b.sewLampS().dead; f++) {
+    const m = b.sewMonS();
+    if (!kicked && tries < 4 && f % 30 === 0) {
+      tries++; const h = await use(lpp.clone().add(new T.Vector3(0, 0.05, 0)), 'Kick'); kicked = String(h).toLowerCase().includes('kick'); if (kicked) { log('kicked when it was', m && m.st, 'at', m && m.x, m && m.z); grab('the kick'); }
+    }
+    await adv(1);
+    if (b.state().dying) { issues.push('died waiting to kick the lamp'); grab('dead'); return finish(); }
+  }
+  log('monster dead', b.sewLampS().dead, JSON.stringify(b.sewLampS()));
+  await adv(200);
+  grab('it floats');
+  // ---- THE KEY OFF ITS BACK, from the walk nearest where it floats
+  { const L = b.sewLampS().at; await walk(1.85, L.z + 1.5, { sew: true, label: 'back along the far walk to where it floats', max: 60 });
+    await adv(60);
+    const k = SG().P.backKey; k.updateWorldMatrix(true, true); const kp = k.getWorldPosition(new T.Vector3());
+    log('the key visible', k.visible, 'at', kp.toArray().map((v) => v.toFixed(2)).join(','));
+    await use(kp, 'key'); await adv(30);
+    log('key taken', b.sewLampS().kt); if (!b.sewLampS().kt) issues.push('could not take the key off its back'); }
+  if (done('key')) return finish();
+  // ---- THE STEEL DOOR, THE LAIR
+  await walk(1.85, S.T_Z + 0.3, { sew: true, label: 'back to the branch', max: 60 });
+  await walk(S.DOOR2_X, S.T_Z - 1.6, { sew: true, label: 'to the steel door', max: 40 });
+  await use(new T.Vector3(SG().SEW_X + S.DOOR2_X, SG().SEW_Y + S.WALK + 1.0, SG().SEW_Z + S.T_Z - S.BR_HW), 'Unlock');
+  for (let i = 0; i < 240 && b.sewLampS().swing < 0.95; i++) await adv(1);
+  log('door', JSON.stringify(b.sewLampS()));
+  grab('the steel door');
+  await walk(S.DOOR2_X, S.T_Z - S.BR_HW - 1.0, { sew: true, label: 'through the door', max: 20 });
+  await walk(S.DOOR2_X, S.T_Z - S.BR_HW - 1.6, { sew: true, label: 'into the lair', max: 20 });
+  await adv(18); grab('the rat'); await adv(30); grab('the lair');
+  log('scared', !!SG().P.scare);
+  const mw = SG().P.maceWorld; mw.updateWorldMatrix(true, true); const mp = mw.getWorldPosition(new T.Vector3());
+  log('the mace at', (mp.x - SG().SEW_X).toFixed(2), (mp.z - SG().SEW_Z).toFixed(2));
+  await walk(mp.x - SG().SEW_X, mp.z - SG().SEW_Z + 1.1, { sew: true, label: 'to the heap', max: 30, r: 0.3 });
+  await use(mp, 'mace'); await adv(60);
+  log('mace taken', b.sewLampS().mt, 'equipped', b.state().equipped); if (!b.sewLampS().mt) issues.push('could not take the bone mace');
+  grab('the mace');
+  if (done('lair')) return finish();
+  // ---- AND OUT: back to the ladder, up it, and out of the drain onto the sand
+  await walk(S.DOOR2_X, S.T_Z - S.BR_HW - 0.6, { sew: true, label: 'out of the lair', max: 30 });
+  await walk(S.DOOR2_X, S.T_Z - 1.6, { sew: true, label: 'into the branch', max: 20 });
+  await walk(1.85, S.T_Z + 0.3, { sew: true, label: 'out of the branch', max: 40 });
+  await walk(1.85, S.BRIDGE_Z, { sew: true, label: 'up the far walk', max: 60 });
+  await walk(-1.85, S.BRIDGE_Z, { sew: true, label: 'over the bridge' });
+  await walk(-1.85, 0.6, { sew: true, label: 'to the ladder', max: 30 });
+  let found = '';
+  for (let a = 0; a < 24 && !found; a++) for (const pt of [0.3, 0, 0.6, -0.2]) { b.look(a * Math.PI / 12, pt); await adv(2); const h = hov(); if (String(h).includes('Climb')) { found = h; break; } }
+  log('ladder found', found || 'NO');
+  if (!found) issues.push('could not find "Climb the ladder" from its foot');
+  key('KeyE', true); await adv(3); key('KeyE', false);
+  for (let i = 0; i < 60 * 20 && b.sewS().inSewer; i++) { await adv(1); if (i % 3 === 0) await sleep(5); }
+  await adv(120);
+  log('out of the sewer', !b.sewS().inSewer, 'at', at());
+  grab('back in the drain');
+  await walk(mouth.x + 4, mouth.z, { label: 'back down the bore', max: 90 });
+  await walk(mouth.x - 5, mouth.z - 2, { label: 'out on the sand', max: 30 });
+  grab('out');
+  finish();
+}
+
+// THE WHOLE GAME, SMOKE-TESTED (2026-11-21, the owner: "play the whole game a few times and make a list of any bugs or issues").
+// Every room in ROOM_BACK loaded and placed as a save puts you there (`&rooms=a,b,…` for a few), dev mode (no deaths): errors
+// thrown or logged, whether you sink standing still, a walk of ~3 s each way by the real W key (headway made, a fall, being
+// thrown out of the room), frame cost, the hover at the middle, four stills a room.
+export async function roomTour({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  const Q = new URLSearchParams(w.parent.location.search);
+  const errs = []; const oe = w.console.error.bind(w.console), ow = w.console.warn.bind(w.console);
+  w.console.error = (...a) => { errs.push('E ' + a.map(String).join(' ').slice(0, 160)); oe(...a); };
+  w.console.warn = (...a) => { const s = a.map(String).join(' '); if (!/audio|context/.test(s)) errs.push('W ' + s.slice(0, 160)); ow(...a); };
+  w.addEventListener('error', (e) => errs.push('X ' + (e.message || e) + ' @' + (e.lineno || '')));
+  w.addEventListener('unhandledrejection', (e) => errs.push('R ' + String(e.reason).slice(0, 160)));
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 400 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  b.beginGame(); b.introDone = true; b.settings.devMode = true;
+  for (const e of ['overlay', 'blackout', 'intro']) { const el = w.document.getElementById(e); if (el) { el.style.transition = 'none'; el.style.opacity = '0'; el.style.display = 'none'; } }
+  w.__clockOn();
+  const C = b.camera, tiles = [], RB = b.ROOM_BACK;
+  const key = (code, on) => w.dispatchEvent(new w.KeyboardEvent(on ? 'keydown' : 'keyup', { code, key: code.replace('Key', '').toLowerCase() }));
+  const adv = async (n) => { for (let i = 0; i < n; i++) { w.__adv(1); if (i % 60 === 59) await sleep(1); } };
+  const grab = (lab) => { b.renderer.render(b.scene, C); const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 320; c.height = Math.round(320 * src.height / src.width); const g = c.getContext('2d'); g.drawImage(src, 0, 0, c.width, c.height); g.fillStyle = '#fff'; g.font = '11px monospace'; g.fillText(lab, 4, 12); tiles.push(c); };
+  const rooms = (Q.get('rooms') || Object.keys(RB).join(',')).split(',');
+  for (const r of rooms) {
+    const R = RB[r]; if (!R) { log('ROOM', r, 'no such room'); continue; }
+    const e0 = errs.length, t0 = performance.now();
+    try { b.devLeaveRooms && b.devLeaveRooms(); } catch (e) { errs.push('X devLeaveRooms ' + e.message); }
+    await adv(10);
+    try { R.load(); } catch (e) { errs.push('X load ' + r + ' ' + e.message); }
+    let ok = false; for (let i = 0; i < 900; i++) { if (R.ready()) { ok = true; break; } w.__adv(1); await sleep(30); }
+    const loadS = ((performance.now() - t0) / 1000).toFixed(1);
+    if (!ok) { log('ROOM', r, 'NOT READY after', loadS, 's'); continue; }
+    try { R.place(); } catch (e) { errs.push('X place ' + r + ' ' + e.message); }
+    await adv(120);
+    for (let q = 0; q < 6 && b.state().dialogOpen; q++) { log('   dialog open on entering', r, '— closed'); b.endDialog(); await adv(30); }
+    const p0 = C.position.clone(); await adv(180); const sink = p0.y - C.position.y, drift = Math.hypot(C.position.x - p0.x, C.position.z - p0.z);
+    const room = b.devRoom ? b.devRoom() : '?';
+    // frame cost (headless GPU: relative only)
+    const gl = b.renderer.getContext(), px = new Uint8Array(4); const ms = [];
+    for (let i = 0; i < 30; i++) { const t = performance.now(); w.__adv(1); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); ms.push(performance.now() - t); }
+    ms.sort((a, c) => a - c);
+    const home = C.position.clone(), yaw0 = 0, walks = [];
+    for (let k = 0; k < 4; k++) {
+      C.position.copy(home); b.camBaseY = home.y; b.look(yaw0 + k * Math.PI / 2, -0.05); await adv(4);
+      if (k === 0 || true) grab(r + ' ' + (k * 90) + '°' + (k === 0 ? ' ' + room : ''));
+      const s0 = C.position.clone(); key('KeyW', true); for (let f = 0; f < 180; f++) { b.look(yaw0 + k * Math.PI / 2, -0.05); w.__adv(1); if (f % 60 === 59) await sleep(1); } key('KeyW', false); await adv(20);
+      const moved = Math.hypot(C.position.x - s0.x, C.position.z - s0.z), dy = C.position.y - s0.y;
+      walks.push(moved.toFixed(1) + (Math.abs(dy) > 0.6 ? '(dy ' + dy.toFixed(1) + ')' : ''));
+      if (moved < 0.05 && k === 0) { const st = b.state(); log('   NO HEADWAY in', r, JSON.stringify({ locked: st.locked, note: st.noteOpen, menu: st.menuOpen, dialog: st.dialogOpen, insp: st.inspecting, ext: st.extracting, dying: st.dying, ended: st.ended, held: st.held, frozen: b.frozenWhy ? b.frozenWhy() : '?' })); }
+      if (dy < -3) errs.push('FELL ' + dy.toFixed(1) + ' m walking ' + (k * 90) + '° in ' + r + ' from ' + s0.toArray().map((v) => v.toFixed(1)).join(','));
+    }
+    C.position.copy(home); b.camBaseY = home.y;
+    const roomAfter = b.devRoom ? b.devRoom() : '?';
+    log('ROOM', r, 'load', loadS, 's; saveRoom', room, '->', roomAfter, '; sink', sink.toFixed(2), 'drift', drift.toFixed(2), '; walks', walks.join(' '), '; frame med', ms[15].toFixed(1), 'max', ms[29].toFixed(1), 'ms; hp', b.state().hp, '; errors', errs.length - e0);
+    for (const e of errs.slice(e0)) log('  ', r, e);
+  }
+  log('TOTAL errors', errs.length);
+  const cols = 4, tw = tiles[0].width, th = tiles[0].height, cv = w.document.createElement('canvas'); cv.width = cols * tw; cv.height = Math.ceil(tiles.length / cols) * th;
+  const g = cv.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = cv.toDataURL('image/jpeg', 0.75).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'rooms', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  b.settings.devMode = false;
+}
+
+// THE BEACH, WALKED (2026-11-21): a new game started as a player starts it, then W held down the beach (-z) on the dry sand
+// for `&secs=` (360) of game time, deaths ON (`&dev=1` off). Every change of state logged as it happens (hp, a death, a note,
+// a dialog, an inspect, a cut that takes the camera, the room you are in), a still every 40 s and at each event. Errors too.
+export async function beachWalk({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  const Q = new URLSearchParams(w.parent.location.search), secs = +(Q.get('secs') || 360), X = +(Q.get('x') || 6);
+  if (Q.get('dev')) b.settings.devMode = true;
+  const errs = []; const oe = w.console.error.bind(w.console);
+  w.console.error = (...a) => { errs.push(a.map(String).join(' ').slice(0, 160)); oe(...a); };
+  w.addEventListener('error', (e) => errs.push('X ' + (e.message || e) + ' @' + (e.lineno || '')));
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 400 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  w.__clockOn(); b.beginGame();
+  let clock = 0; const C = b.camera, tiles = [];
+  const adv = async (n = 1) => { for (let i = 0; i < n; i++) { w.__adv(1); clock += 1 / 60; if (i % 60 === 59) await sleep(1); } };
+  for (let i = 0; i < 90 * 60 && !b.state().introDone; i++) { await adv(1); if (i % 4 === 0) await sleep(16); }
+  const key = (code, on) => w.dispatchEvent(new w.KeyboardEvent(on ? 'keydown' : 'keyup', { code, key: code.replace('Key', '').toLowerCase() }));
+  const grab = (lab) => { b.renderer.render(b.scene, C); const src = b.renderer.domElement, c = w.document.createElement('canvas'); c.width = 320; c.height = Math.round(320 * src.height / src.width); const g = c.getContext('2d'); g.filter = 'brightness(1.4)'; g.drawImage(src, 0, 0, c.width, c.height); g.filter = 'none'; g.fillStyle = '#fff'; g.font = '11px monospace'; g.fillText(lab, 4, 12); tiles.push(c); };
+  const sig = () => { const s = b.state(); return { hp: s.hp, dying: s.dying, note: s.noteOpen, dialog: s.dialogOpen, insp: s.inspecting, ext: s.extracting, menu: s.menuOpen, ended: s.ended, room: b.devRoom ? b.devRoom() : '', eq: s.equipped, inv: (s.inv || []).length }; };
+  let last = sig(), lastP = C.position.clone(), still = 0, deaths = 0;
+  log('start at', C.position.toArray().map((v) => v.toFixed(1)).join(','), 'introDone', b.state().introDone, JSON.stringify(last));
+  grab('start');
+  key('KeyW', true);
+  // the way a player goes: on down the dry sand, and THROUGH the wreck where she lies across it (breach, hold, crouched out of
+  // the low tear on her far side)
+  const route = [[1.2, -147.5], [1.2, -153.2], [5.2, -156.2], [5.2, -158.4, 1], [5.2, -161.5, 1], [6, -168]];
+  let ri = 0, crouch = false;
+  for (let f = 0; f < secs * 60; f++) {
+    let yaw;
+    const nxt = route[ri];
+    if (nxt && C.position.z < nxt[1] + 25) {
+      const dx = nxt[0] - C.position.x, dz = nxt[1] - C.position.z;
+      if (Math.hypot(dx, dz) < 0.45) { log('t', clock.toFixed(1), 'route point', ri, 'reached at', C.position.toArray().map((v) => v.toFixed(1)).join(',')); ri++; continue; }
+      yaw = Math.atan2(-dx, -dz);
+      const c = !!nxt[2]; if (c !== crouch) { key('KeyC', c); crouch = c; }
+    } else { const dx = X - C.position.x; yaw = Math.atan2(-dx * 0.15, 1); if (crouch) { key('KeyC', false); crouch = false; } }
+    b.look(yaw, -0.04);
+    await adv(1);
+    const s = sig();
+    const ch = Object.keys(s).filter((k) => s[k] !== last[k]);
+    if (ch.length) {
+      log('t', clock.toFixed(1), 'z', C.position.z.toFixed(1), 'x', C.position.x.toFixed(1), ch.map((k) => k + ' ' + last[k] + '->' + s[k]).join(', '));
+      if (s.dying && !last.dying) { deaths++; grab('death t' + clock.toFixed(0)); }
+      if (s.hp < last.hp) { log('   hurt — near:', b.crabsS ? b.crabsS().join(' ') : '-', JSON.stringify(b.packS ? b.packS() : '')); grab('hurt t' + clock.toFixed(0)); }
+      if ((s.note && !last.note) || (s.dialog && !last.dialog) || (s.insp && !last.insp)) { grab('popup t' + clock.toFixed(0)); key('KeyW', false); await adv(90); key('Escape', true); await adv(2); key('Escape', false); key('KeyE', true); await adv(2); key('KeyE', false); await adv(30); key('KeyW', true); }
+      last = s;
+    }
+    if (f % (40 * 60) === 0 && f) grab('t' + clock.toFixed(0) + ' z' + C.position.z.toFixed(0) + ' hp' + s.hp);
+    if (f % 120 === 119) {
+      const d = Math.hypot(C.position.x - lastP.x, C.position.z - lastP.z);
+      if (d < 0.5 && !s.dying && !s.dialog && !s.note) { still++; if (still === 2) { log('t', clock.toFixed(1), 'NOT MOVING at', C.position.toArray().map((v) => v.toFixed(1)).join(','), 'frozen?', JSON.stringify(s)); grab('stuck t' + clock.toFixed(0)); } }
+      else still = 0;
+      lastP.copy(C.position);
+    }
+  }
+  key('KeyW', false);
+  log('END t', clock.toFixed(1), 'at', C.position.toArray().map((v) => v.toFixed(1)).join(','), 'deaths', deaths, JSON.stringify(sig()));
+  log('ERRORS', errs.length, errs.slice(0, 12).join(' || '));
+  const cols = 4, tw = tiles[0].width, th = tiles[0].height, cv = w.document.createElement('canvas'); cv.width = cols * tw; cv.height = Math.ceil(tiles.length / cols) * th;
+  const g = cv.getContext('2d'); tiles.forEach((t, i) => g.drawImage(t, (i % cols) * tw, ((i / cols) | 0) * th));
+  const d = cv.toDataURL('image/jpeg', 0.75).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', 'beach', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000));
+  b.settings.devMode = false;
 }

@@ -2986,3 +2986,39 @@ TEXTBOOK EDITS AND TRIMS YOU DID … CLEAN UP THE CUTSCENE AS MUCH AS YOU CAN".
   corner — read off the paint 1.5 px inside, the colour with them) as ONE band along the arm's own run (middle on the edge
   against middle 25 px in), darkening toward his shoulder, blurred 1.2 px, clipped to the margin. A block off each edge plus
   the corner filled read as a grey wedge. Rest frames are unchanged (the margin is off screen).
+
+## The sea's foam, one stuff; the squares gone; surf on everything in the water (2026-11-21)
+
+The owner: "get rid of these pixels that show up just square in the particles in the water … revamp the water to be more
+detailed and real looking espcecially the particles of the white caps and suds", then "update these effects to over on the
+big rock near the sewer tunnell and do it for the rocks on the boat. and any other thing the waves should technically be
+spalshing on".
+- **THE SQUARES WERE HASHED GRIDS.** The plankton sparks in the ocean (`floor(xz * vec2(6, 4))`, 17 x 25 cm cells blinking
+  at 6 Hz), the wet sand's moon glints (`floor(xz * vec2(9, 3))`, 11 x 33 cm) and its grain flecks (5 cm). At the game's
+  low resolution a hashed cell IS a visible rectangle. All three are noise peaks now. Never `step(hash(floor(p)))` for a
+  sparkle on a surface you can walk up to.
+- **`foamGLSL(N)` → `bwFoamT(p, t, fw, cover, out thick)`**, beside the sky noise. One pattern for the bore, the backwash
+  lines, the whitecaps, the suds on the sand, the rings round stones and the white on a stone's face: a warped five-octave
+  fbm cut at a level set by `cover` (rafts with holes), plus short strands of lace fraying off a raft's edge (one ridged
+  octave, only just outside a raft — long low-frequency ridges read as the "squiggly lines" the owner hates). Octaves are
+  dropped by `fw` (metres a pixel). `N` is the shader's own noise (`skN` texture in the sea and sand, `sn2`/`rkN2` hash in
+  the small ones).
+- **THE WATER'S EDGE YOU SEE IS THE SAND.** The sand is drawn over the sea's last metre or two (the pale "thin sheet",
+  `under`/`lip` in the sand's tonemapping block), so foam in the OCEAN within ~1.5 m of `shoreLine` is never seen. The bore
+  is drawn on the sheet in the sand shader (`edgeB`/`sCov`).
+- **SUDS AS A SUM OVER OLD WATERLINES, NOT THE BAND A POINT FALLS IN.** Picking "the first k whose line is above me" and
+  drawing foam by k gave hard straight cuts across the suds wherever one band met the next. Now each of the last four
+  waterlines lays a ribbon (thick just under it, fraying down the beach) and the max is taken.
+- Suds on dark wet sand must be MIXED toward a foam colour (`bwFoamC`), not multiplied: x1.55 of near-black is black.
+- **Everything the sea breaks on** goes through `addSurfSpots([{x, z, r, top}])` (rebuilds the `rockSurf` ring mesh when a
+  batch lands): the wreck's stones (from their own loader), her bow's planking at the waterline (both sides of her forward
+  half + the stem, after the sea punch), the dock's piles (measured off `Object_43`'s posts below y −0.1: rows at
+  z −213.26 / −216.65, x −3.56 … 3.8, and down the side at x 3.8). Rings are cut inside her hull by `bwInShip` (the
+  same `uShipHW` punch). The wreck's stones are merged, so `rockWash(mat, true)` reads each stone's origin from an
+  `aRkO` vertex attribute (stone geos cloned before the bake) — the mesh origin would strike them all with one wave.
+- **SPRAY** (`spawnSpray`, `sprayPts`, 240 pooled points, one draw): torn noise puffs speckled with drops, rising, swelling,
+  drifting landward; lit by the moon BEHIND them (you walk toward it), which is why the old solid-shaded puffs read as dark
+  shards. The drops are 0.04 (was 0.055: a pale blue lump at a rock).
+- Probe: `rockWash&wz=Z&cam=x,y,dz,lx,ly,ldz` (any stone, camera z = Z + dz; logs the most spray at once). Water views:
+  the shoreline at z −22 is x 5.66 at t 33 and 2.54 at t 36 (high water about t 33, drawing back after) — aim the camera
+  2–3 m landward of it, or the shot shows only sand. Shore view measured 4.0 ms a frame headless 793 x 446.

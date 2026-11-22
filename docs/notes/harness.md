@@ -548,3 +548,17 @@ Every headless script (`probe.sh`, `musictest.sh`, `loadtime.sh`, `loadall.sh`, 
 every out dir kept a ~400 MB profile: 124 in one session were 49 GB, and the sessions' temp folders under
 /private/tmp/claude-501 came to 246 GB (the owner's Mac showed it as "System Data", 351 GB). Each now removes its profile
 after it kills Chrome (`pvsheet.sh` always did).
+
+## 2026-11-21 — whole-game play probes: `playDrain`, `roomTour`, `beachWalk`
+- `playDrain` (`&upto=`, `&dev=1`, `&linger=SECS`): spawn → drain → reach → screws → sewer → levers → lamp → kill → key → lair
+  → mace → ladder → sand, by real W/E/F/C; logs every leg, STUCK walks and every prompt that was not what it wanted.
+- `roomTour` (`&rooms=a,b`): every `ROOM_BACK` room loaded and placed, dev mode: errors, sinking, a 3 s W walk each way,
+  frame cost, four stills. TRAP: entering the BUNKER opens the Dealer's dialog — every room after it "could not move"
+  until the tour closed it (`b.endDialog()`; closing it is walking out on him, so he fights: the hp drop there is his).
+  `b.frozenWhy()` already exists and names what holds you.
+- `beachWalk` (`&secs=`, `&x=`, `&dev=1`): a new game as a player starts it, W down the dry sand and THROUGH the wreck by its
+  route (breach x≈1.2 z -147.5 → hold → crouched (C) out of the far tear at x 5.2 z -158..-161.5), every state change
+  logged, the crabs near you whenever you are hurt. A death never comes back here: `playerDied` → `reloadInto` →
+  `location.reload()` does nothing in the probe frame, so `dying` stays true — not a game bug.
+- `probe.sh`'s wait for "one headless at a time" (`pgrep -qf -- "--headless=new"`) let two run at once twice today; a probe
+  whose page never ran its scenario (0 `[PB]` lines, a 404 in serve.log) was the second of a pair — run it again.
