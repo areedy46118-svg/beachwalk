@@ -411,6 +411,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The city** — pushed far back and heavily fogged so you can only just make
   out rooflines and a scattering of lit windows, under a faint sodium
   light-pollution wash that lifts over the cliff ridge.
+- **The castle's men** fight with swords and axes out of a weapon pack, held
+  in the fist with the edge or the bit leading each stroke. Now and then a
+  knight carries a shield slung on his back: hit him from behind and it is
+  knocked off and clatters away, and that blow does not hurt him.
 - **The castles are one road, and the lighthouse is its end** — in at the
   first castle's gate (the farmers' fight), out of its back door and through
   a battlemented curtain wall across the bluff into Castle XIII's north court
@@ -736,9 +740,14 @@ runs up the stairs. Outside, he is waiting on the swing in front of the house.
 Ask him "You okay?" or "What are you?" and he hops off and follows you. He
 fights beside you until he breaks.
 
-The pack has an **Enemy Log** beside it: every kind of thing you or a companion have killed,
-named if it is someone you have spoken to (else ???), standing in its idle in a box you can
-drag to turn and scroll to look closer.
+The pack has an **Enemy Log** beside it: every kind of enemy in the game, numbered. One you
+have not killed yet is dim, and shows as a flat black silhouette. Once you or a companion kill
+one, its line turns warm with a count, and its model stands in its idle in a box you can drag
+to turn and scroll to look closer. It is named if it is someone you have spoken to, else ???.
+Men of the same body share one line, whatever weapon they carry.
+
+Take him all the way up the lighthouse and he says goodbye at the top: the beach is his home.
+He goes back down to his swing, and only then will the call of the crow work up there.
 
 ## The bunker
 
@@ -1860,16 +1869,24 @@ one bird cut to 1.8k triangles, 256 px, with wing-beat shape keys, by
 `tools/gull_pack.py`.
 
 
-**SCP-096 Reanimated** — the thing sitting on the lane in front of the
-lighthouse. It is the first asset here that arrived with a whole fight
-already animated: `attack1`, `attackjump`, `attackrun`, `attackrunstart`,
-`idle_rage`, `panicstart`, `teslagatehit` and `die` are the creature's own
-clips out of SCP: Containment Breach. `assets/scp096.glb` is the scan through
-`tools/gltfpack.py` with twelve of its thirty-seven clips kept
-(`--clips`), 6.3k triangles and its own two maps.
+**moon** — the face of the moon in the sky. Only the model's map is used:
+`assets/moon-map.jpg` is its 8192 × 4096 equirectangular map cut to 512 × 256
+grey, read on the moon the sky already draws (its size, terminator, limb,
+earthshine and halo as they were) and laid on the moon's own two colours.
 
-This work is based on ["SCP-096 Reanimated"](https://sketchfab.com/3d-models/scp-096-reanimated-9e0b35c9485d4b51864a232e9653cc3a)
-by [Sealife Fan 3](https://sketchfab.com/SealifeFan3) licensed under
+This work is based on ["moon"](https://sketchfab.com/3d-models/moon-26cc0b7878bb4d919b68e2be399db466)
+by [RenderX](https://sketchfab.com/RenderX) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Stylized Medieval Weapon Pack** — the castle men's swords and axes, and the
+shields on the rare knights' backs (the pack's sheath is not used).
+`assets/farm-weapons.glb` is three swords, three axes and three shields laid
+on the game's weapon convention by `tools/weapons_pack.py`, 1.3k triangles
+at most each, colour maps only at 512.
+
+This work is based on ["Stylized Medieval Weapon Pack"](https://sketchfab.com/3d-models/stylized-medieval-weapon-pack-e88fb2f729ec4e80886ad8e8448d7476)
+by [Atakhani](https://sketchfab.com/Atakhani) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 

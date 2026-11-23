@@ -1799,3 +1799,21 @@ quality settings". So nothing here is a setting and nothing changes the look.
 - **TRAP, 2026-11-22: a backtick in a comment INSIDE a GLSL template literal ends the template** — "// from `FOG_LAMPS`" in
   `fog_fragment` was a SyntaxError that took the whole module: a black screen on every load (the owner's "reload from my
   checkpoint … black screen"). After touching a shader string, load the page headless (`tools/bootok.js`) before anything else.
+
+## 2026-11-23 — the call lagged again: the image release ran under it
+"the cutscene lags bad when clicking start fix this". `tools/callhitch.js &list=1`: 114-130 frames over 25 ms through the call, worst
+59, every 0.25-0.27 s like a clock from ~11 s and solidly from 26 s, none compiling or uploading anything. It was `imgRelTick` (the
+2026-11-22 memory pass): twenty seconds after the title's uploads it began swapping each released map's ImageBitmap for a half-size
+copy, two every 250 ms — and `createImageBitmap(bitmap, {resizeWidth…})` of a 2048 map costs the main thread 25-48 ms. Held under the
+call: 2 frames over 25 ms. Now `imgRelQuiet()`: on the title (`!started`: at once, 1.5 s after the upload, every 120 ms), behind a full
+black (`blackoutEl` ≥ 0.98), with the pack or a menu open; never under the call or the intro (`introHoldNow`) or in play. After: 1 frame
+over 25 ms through the call and the waves. On the title 109 maps released (191 MB) before START lights; the rest (not drawn yet) wait
+for a black or a menu once they are — the memory saved comes a little later in play than it did, the frames do not pay for it.
+`tools/imgrelq.js` counts them. NOTE for the next memory pass: anything done to a bitmap on the main thread is a frame.
+
+## The call's "thousand sketches" (2026-11-23, "level the thousands sketches again it still seems loud that phrase")
+Word times rebuilt (`SpeechTranscriber`, the Swift in beach.md's call notes): "Dude, I have like a 1000 sketches right here." is
+57.6-60.1 s of `assets/intro/call.m4a` — the 2026-11-22 cut (−4.5 dB) was at 44-51 s, which is "a few more days … until Friday", not it.
+That line measured −22.8 dB active, peak −4.1 dBFS, the loudest of the call (his others −25.3/−27.3, the caller's −23.7…−28). Shaped by
+word (ffmpeg `volume` eval=frame, a piecewise-linear dB curve with ~0.1 s ramps): "Dude" −3, "I have like a 1000" −5, "sketches right
+here" −2 → −26.6 dB, peak −9.0; everything else within 0.1 dB; sample-aligned (0 offset); AAC 128k.

@@ -3203,3 +3203,16 @@ boss's `body, lungeStop, landSlop, limbR, foeLimbR, closeBody, stopPick` (his "h
   every throw. `hookDrawnHit` (in `hookThrow`, after the walls): down the line, the first SHOWN opaque face of the place you are in
   (`hookDrawnRoots`: tavern, keep, cellar house, dungeon, throne, catacombs, sewer, island; the castles keep their index, which
   knows every face). Tavern 22 → 377 caught, island 0 → 85, none short of anything drawn.
+
+## 2026-11-23 — the hook "hitting things in the air" in XIII was its chain running out
+"my hook hits things in the air i cant see fix this make it go through these laterns and strinhs across the castle" (a still
+looking up between XIII's towers, the iron in open sky by the bunting).
+- **NOTHING UP THERE CATCHES IT.** `tools/hookbunting.js`: 320 throws aimed straight at each of XIII's 20 lanterns, its rope
+  points and its pennants — none bitten (all three are `bwGhost`, raycast off, and the wall index is built before the dressing
+  is hung: `c13Thrive` waits on `c13Walls`); 428 throws up and round from under the lanterns — none short of a drawn face.
+  `tools/hookfoeair.js`: no hidden body answers the trace there either. (`hookghost.js` takes `&at=c13` now.)
+- **IT WAS THE END OF THE CHAIN.** `HOOK_RANGE` is 6–14 m and XIII's towers stand past it: a throw that met nothing stopped dead
+  in the air at its reach, hung there `HOOK_LIE` (0.3 s), and played `sfxChainSlap` — the sound of a strike. Now a run-out in the
+  air (`HK.runOut`, no `to`, not `surfEnd`) plays `sfxChainRunOut` (the links snapping taut at the hand, no slap, no heavy) and the
+  iron carries on a hand and falls under its weight (to 9 m/s) while it is reeled in, for 0.9 s. Onto sand it still slaps.
+  `tools/hookrunout.js` traces one. The reach itself is unchanged (a fight number): longer is the owner's call.

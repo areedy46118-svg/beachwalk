@@ -1,10 +1,11 @@
 /* WHAT THE HOOK CATCHES THAT ISN'T THERE (2026-11-22, the owner: "i keep hitting random invisible stuff in the air when throwing
- * the hook"): from a spot (&at=isle|fort|tav|beach), the hook's own target-finding (`hookThrowS`) down 16 bearings x 6 pitches,
+ * the hook"): from a spot (&at=isle|fort|tav|beach|c13, &p=x,z in XIII), the hook's own target-finding (`hookThrowS`) down 16 bearings x 6 pitches,
  * each answer compared with a ray against what is DRAWN (visible, opaque meshes) down the same line: a catch more than 0.6 m short of
  * the first drawn face is a catch on nothing — logged with what kind of thing answered.  PB_PORT=4223 PB_WAIT=500 sh tools/probe.sh 'evalFile&f=/tools/hookghost.js&at=isle' <out> */
 const Q = new URLSearchParams(location.search), AT = Q.get('at') || 'isle';
 const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
-if (AT === 'fort') { await ev('/tools/fortboot.js'); log('boot', JSON.stringify(await w.__fortBoot())); }
+if (AT === 'c13') { await ev('/tools/c13look.js'); log('c13', await w.__c13LookBoot()); const X = b.C13_X, Z = b.C13_Z, P = (Q.get('p') || '26.5,-16.2').split(',').map(Number); b.camera.position.set(X + P[0], b.camera.position.y, Z + P[1]); b.camBaseY = b.camera.position.y; }
+else if (AT === 'fort') { await ev('/tools/fortboot.js'); log('boot', JSON.stringify(await w.__fortBoot())); }
 else if (AT === 'tav') { await ev('/tools/tavdrink.js'); log('tav', JSON.stringify(await w.__tavSetup())); }
 else { for (let i = 0; i < 100 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(150); } for (let i = 0; i < 300 && !b.state().introDone; i++) await sleep(100); }
 await ev('/tools/burntest.js');

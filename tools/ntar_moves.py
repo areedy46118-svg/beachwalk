@@ -98,6 +98,15 @@ WONG_CLIPS = [
     # a dodge that LEAVES THE LINE rather than stepping back down it, and the
     # flying kick is the one blow of his that comes off the ground.
     ('Ginga Sideways To Au',  'ginga',   'the rocking step, sideways, up onto his hands', ''),
+    # ---- AND THE GARRISON'S BLOWS (2026-11-23, the owner: "use these for the farmers make sure the weapons are held correctly like the
+    # screenshot … make the zombie death animation for them but make it rare and they ragdoll after"): three Mixamo one-handed melee
+    # combos (a club in the fist in Mixamo's preview — the farmers' cuts were the GREAT SWORD pack's two-handed slashes on one-handed
+    # weapons), Ver. 2 twice (a second download), and a zombie's death, loose in ~/Downloads.
+    ('Standing Melee Combo Attack Ver. 1',   'mc1',  'a one-handed combo, the first',  ''),
+    ('Standing Melee Combo Attack Ver. 2',   'mc2',  'a one-handed combo, the second', ''),
+    ('Standing Melee Combo Attack Ver. 2-2', 'mc2b', 'the second again (a second download)', ''),
+    ('Standing Melee Combo Attack Ver. 3',   'mc3',  'a one-handed combo, the third',  ''),
+    ('Zombie Death',                         'zDie', 'a slow death on the feet, then down', ''),
     ('Flying Kick',           'wFlyC',   'off the ground, both feet', ''),
     # ---- (2026-11-22, the owner: "give the marionette this look around when he comes out of the washer": he wears this pack,
     # `celMarMocap`, so it rides here)
@@ -462,7 +471,7 @@ if SET in ('wong', 'drunk'):
     # fight wants — the last second, which travels 0.88 m SIDEWAYS and is the
     # au itself. That is a dodge: it leaves the line rather than stepping
     # back down it.
-    WINDOW = {'wFlyC': (0, 30), 'ginga': (84, 118)}
+    WINDOW = {'wFlyC': (0, 30), 'ginga': (84, 118), 'mc1': (24, 142)}   # (mc1: its first 0.8 s is a settle before the raise — a man standing about before the first blow, 2026-11-23)
     # AND A BODY THAT LEAVES THE VERTICAL KEEPS ITS OWN TURN — `knockOut`'s
     # lesson: the au takes him onto his hands, and a world-Y de-yaw applied
     # to a horizontal body is a roll about its own length.

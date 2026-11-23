@@ -1358,3 +1358,26 @@ the grip, tried first, put the near bar across his wrist. `pipeReach` probe stil
   (`bwLampMark`). The painted floor pools (`lampPool`) are off (`sewP.poolsOff`) — they stood in for the light you only got
   near a lamp. `tools/sewlamps.js`: one view drawn with the pool for here and with the pool left from 30 m on — walls and
   floor identical; what differs is the water's twinkle and the lamps' own flicker (time moved between the two).
+
+## 2026-11-23 — the grate pulled off by hand, and thrown
+"make it so after you unscrew the sewer you pull off the bars your self and can throw the metal part that was screwed on".
+- The screws' `done` no longer lifts it: `grateLoosen` (loose in the hole; the outlet says "Pull the grate off"); `pullGrate` → the
+  metal sound, `grateOff`, the outlet "Crawl into the pipe", and `grateMakeProp(true)`: the grate group attached to the scene as a
+  `PhysProp` and `grab`bed — the held spring draws it out of the hole into your hands (25.06 → 24.3 over half a second, 0.37 m from
+  your eye). Thrown or set down like anything else; "Pick up the grate" again. A load with it off (`f.grateOff` → `liftGrate(true)`)
+  lays it as a body by the hole; all screws out but not pulled → `grateLoosen`. Not crawled with in your hands (`startPipe` drops it).
+- **THREE THINGS KEPT A THROWN THING OUT OF THE DRAIN ROOM** (`tools/grate.js&aim=corner|side|door`): (1) the free body's cliff wall
+  (`CLIFF_BLOCK_X`) — skipped only for a body some room's `bunkerFloorAt` answers for, and the drain had none: the first frame put it
+  at the tunnel's mouth. The drain is on the hook now (`_floorBeforeDrain`, after the bunker's own definition, which REPLACES the hook
+  — anything earlier in the file is lost); (2) `pushOutOfSolids` / `rockGroundAt`, the cliff's solids the room is cut into — a body's
+  new `inside(p)` (`drainBodyIn`) skips them; (3) its walls are `drainBodyWall` (room sides and back, the front wall either side of
+  the doorway, the pipe's bore) else `worldPropWall`. After: at the corner it crosses, hits the front wall and lies on the floor; at
+  the side it comes off the wall; through the doorway it goes down the pipe.
+- **A GRATE IS MOSTLY HOLES**: the look went between its bars and it could not be picked up again — an unseen box `hitProxy`.
+- **PROBE TRAP**: `b.frame(1)` steps on real time (a few ms in a headless loop) — a throw looked like slow motion. `__clockOn` /
+  `__adv`, and never `b.frame = __adv` (it calls `b.frame`: a stack overflow).
+
+## 2026-11-23 — the horn's prompt waits for the marionette
+"MAKE IT SO YOU DONT SEE THE PROMPT TO BLOW THE HORN BEFORE COMPLETELING THE marionettes dialog only if hes with you": the top's
+"E Blow the call of the crow" (`updateHover`) and the light's own label are not shown while `marLhHold()`; the light says "Put your
+hand on the light" and is warm glass until his goodbye (`MAR_LH`, lighthouse.md).

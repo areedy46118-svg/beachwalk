@@ -3729,3 +3729,59 @@ you or your companion kill. do not give them a description either. characters i 
 - **His head out of the washer** ("make sure the marionettes head doesnt clip through when getting out of the washer"): in the
   leap, while the head is behind the door's line + 0.26 it is held under `CEL_WASH_TOP` (0.762, the opening's top) − 0.19.
   `tools/washer.js` logs the highest head over the drum: 0.65 → 0.60.
+
+## The Enemy Log, every kind (2026-11-23)
+"some enemies dont show up make it so they all do then. also make the ones you found a different shade." / "they should appear
+immediately in it after the kill no bugs". `tools/elogall.js` makes every kind, kills it, reads the log the frame of the blow,
+draws each likeness in the box (pixel count + a contact sheet), then drops them all and makes them again as after a load.
+- **HALF THE KINDS DREW NOTHING BUT THEIR SHADOW** (hulk, spindle, runt, bloat, the Dealer, the headland's thing, samurai, the
+  hunter, Wong, the orc, knMan, the paladin, Skrim, Elvédor, the puppets, the king, half the farmers): the likeness is a copy of
+  `u.model` as it is, and the game's culling had its ROOT (the GLB's `Scene`) hidden at that moment — `visible` is copied, so
+  the box's renderer drew the 2-triangle shadow and nothing else (`tools/elogwhy2.js`: calls 1, tris 2). `elogShowAll` shows
+  every container (not a mesh: a cut limb or a proxy keeps its own) at mount and whenever the root is found hidden again.
+- **ON THE BLOW, NOT AT THE END OF THE DEATH**: `elogKill` is called from `killMutant` (before the flash, the body whole), once a
+  body (`u.elogDone`); `finishMutant` keeps its call as the fallback for a death that skipped the blow. Also from `mutBleedOut`
+  (a bleed-out was never logged), and `catPutDown` is reached after it (the catacombs' hunter, `undying`, never reached
+  `finishMutant`). The crawler's young was excluded as `kind.baby` — it is killed (`babyHurt` → `killMutant`): counted.
+- **THE OTHER FOUR** (`ELOG_OTHER`): the wreck's gulls (`killGull`), the pliosaur (`plioDie`), the sewer's thing
+  (`sewElectrocute`), Skrim's crying heads (`cryKill`, `crySummonDie`) — none are `mutants`. `elogOther(k)`: counted, and the
+  likeness from the live model (`live()`: gull bones to rest, the sewer thing's to `sewMon.bind`, the pliosaur's and the heads'
+  idle clips) or, after a load before that place is built, from its own file (`bwGlb(url)`, parsed for the log alone).
+- **THE FARMERS' COPIES** (`gargRaidN`, `tavDrinkerN`, `tavDancerN`) log as the farmer they were made from (`elogKey`).
+- **THE WHOLE ROSTER, FOUND IN ITS OWN SHADE**: `elogRoster()` — crab, gull, every `MUT_KINDS` enemy in the order they are made
+  (not `friendly`/`ally`, not the farmers' copies, not `whaleBody`: the gut's demons and parasites were taken out with their files
+  2026-10-29), `epup`, then pliosaur, sewer thing, heads; numbered, "N of M found" over it. Found: warm (`.elog-row.found`, amber
+  bar, ×count, can be picked); not yet: dim "???", no count, disabled.
+- **AFTER A LOAD** every likeness is made again from a stand-in: the picked one first, then the rest one at a time while the log
+  is open (`elogFrame`), each stand-in's file moved to the front of the queue (`bwFetchSoon` AFTER `makeMutant` queues it — before,
+  it moves nothing): Myles's file, ranked by his place down the walk, had waited past the 30 s and his box said "…" for good. A
+  likeness that failed is tried again each time the log is opened.
+- **ONE LINE A BODY** ("same models with different weapons can go only one each"): the castle's twenty are five bodies
+  (`FARM_ROSTER` files ka, hd, ol, kn, kw) — logged as `farm_<file>` (`elogKindKey`), with the raid's and the tavern's copies.
+  A save's old `farmerN` lines are summed into their body by `elogNorm` at first use — NOT in `elogLoad`, which a restore can
+  run before the module has read `FARM_ROSTER`/`MUT_KINDS` (a const read there is a dead-zone crash that takes the page). A
+  body's stand-in after a load is its first farmer (`elogMakeKind`); `epup`'s kind is made on first use (`epupKind`). 41 on the
+  roster now. A kill selects its line (the log opens on what you killed last).
+- **NOT YET KILLED: A FLAT BLACK SILHOUETTE** ("a black silhouette that isnt 3d … once they are killed it shows their model you
+  can spin around"): `assets/elog-shadows.png` (75 KB, 41 cells) + `.json` (cells by key), drawn off the game by
+  `sh tools/elogshadows.sh` — each kind's stand-in in its idle 0.5 s in, black (`overrideMaterial`), alpha made hard, cropped,
+  at the narrowest of six turns (a spear across a man made him a third the height: `farm_hd`, `farm_kw`). RE-RUN IT when a kind
+  is added or a model changes. In the box (`elogSilShow`): a 2D canvas over it, the 3D canvas and its hint hidden; every row
+  can be picked, the unfound ones show their outline and "???". `tools/elogsil.js` checks both (stills).
+- **OFF THE LOG** (2026-11-23: "take this guy out hes not in game anyone not in game can go from the log and delete their model",
+  "take out companions from the enemy log too"): `elogOut(k)` — `ELOG_COMPANIONS` (Myles `minotaur`, the marionette `cmar`) and any
+  kind marked `gone` — never logged, never on the roster, a save's old lines dropped (`elogNorm`). The headland's thing (`scp`,
+  `SCP_ON` false since long ago) was still MADE at every boot (its 1.1 MB file fetched and parsed) to be retired the next line:
+  `assets/scp096.glb` deleted, `scp096` a stand-in with the fields his code reads, his ASSET_REACH line and README credit gone; to
+  bring him back, git and `SCP_ON`. Every other kind on the roster checked as made somewhere and not retired. 38 on the log now;
+  silhouettes redrawn (`tools/elogshadows.sh`) with the farmers' new weapons.
+
+## The moon's real face (2026-11-23)
+"use this for the moon model make it blend well with the game fit it in the style keep everything looking the same just improve the
+moon with this keep lighting the same" (RenderX's "moon", CC-BY-4.0: a sphere under one 8192 × 4096 map).
+- The sky shader already draws the moon (a screen-space disc, `uMoonNdc`/`uMoonR`, its normal `n`, a terminator `L`, limb, earthshine,
+  halo, clouds over it); only its SURFACE was invented (noise maria, seven craters). Now `uMoonMap` (`assets/moon-map.jpg`, 512 × 256
+  grey, autocontrast 0.5 %, 59 KB) is read at the disc's longitude and latitude (`atan(n.x, n.z)`, `asin(n.y)`: the near side to you,
+  north up, east to your right) and its brightness laid between the moon's own maria and highland colours — every light term after it
+  untouched. `uMoonMapK` is 0 until the map is in (the drawn face). The model's 20 MB of geometry and texture are not used.
+- `tools/moonmap.js`: the moon cropped with the map and without, and the whole view.

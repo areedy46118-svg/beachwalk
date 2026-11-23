@@ -307,7 +307,6 @@ const ASSET_REACH = {
   'assets/knight.glb': 647 + BEACH_EXT,           // and what is standing against its wall
   'assets/cave.glb': 648 + BEACH_EXT,             // and the way out, behind the altar
   'assets/sol.glb': 646 + BEACH_EXT,              // and what is standing on its altar
-  'assets/scp096.glb': 470,           // on the beach in front of the pavilion
   'assets/trader.glb': 738 + BEACH_EXT,           // the man at the sand wall, a little short of the stones (and his double at the castle)
   'assets/magnum.glb': 739 + BEACH_EXT,            // and the thing he has that the jars are for
   'assets/old-ring.glb': 739 + BEACH_EXT,          // and the old ring on his table, five jars
@@ -329,6 +328,7 @@ const ASSET_REACH = {
   'assets/umbra.glb': 905 + BEACH_EXT,
   'assets/farmer-knight.glb': 1005 + BEACH_EXT, 'assets/farmer-axeknight.glb': 1005 + BEACH_EXT, 'assets/farmer-hood.glb': 1005 + BEACH_EXT,   // the twenty in the castle's houses
   'assets/farmer-elder.glb': 1005 + BEACH_EXT, 'assets/farmer-woman.glb': 1005 + BEACH_EXT,
+  'assets/farm-weapons.glb': 1005 + BEACH_EXT,      // their weapons and the rare knights' shields (2026-11-23)
   'assets/castle13.glb': 1080 + BEACH_EXT,         // Castle XIII, through the first castle's back door
   'assets/throne.glb': 1150 + BEACH_EXT,           // and the throne room through its west court
   'assets/paladin-knight.glb': 1005 + BEACH_EXT,  // the dark knight in the first castle's street — DJMaesen's paladin since 2026-11-16 (`dark-knight.glb` no longer fetched)
@@ -612,12 +612,26 @@ function imgRelWatch(t) {
   };
   imgRel.q.push(t);
 }
+/* ONLY WHERE A FRAME CAN BE LOST UNSEEN (2026-11-23, the owner: "the cutscene lags bad when clicking start fix this"). A release is a
+ * `createImageBitmap` resize of a 2048 map, and it is NOT free on the main thread: measured (`tools/callhitch.js &list=1`), one
+ * 25-48 ms frame every 250 ms, like a clock, from twenty seconds after the title's uploads — the whole middle of the call (114 frames
+ * over 25 ms; held, 2) — and the same in play for a while after anything loads. So it runs on the title (nobody is playing: at once,
+ * no twenty-second wait), behind a full black (a load, a room's cut), or with the pack or a menu over the game; never under the call,
+ * the intro or play. */
+function imgRelQuiet() {
+  if (introHoldNow()) return 0;                                   // (the call and the intro)
+  if (!started) return 2;                                          // (the title)
+  if (+blackoutEl.style.opacity >= 0.98) return 1;                 // (behind a black)
+  if (invOpen || menuHold) return 1;                               // (the pack, a menu)
+  return 0;
+}
 function imgRelTick(now) {
   if (!imgRel.on || now < imgRel.at || imgRel.busy >= 2 || !imgRel.q.length) return;
-  imgRel.at = now + 250;
+  const quiet = imgRelQuiet(); if (!quiet) return;
+  imgRel.at = now + (quiet === 2 ? 120 : 250);
   for (let i = 0, n = 0; i < imgRel.q.length && n < 2 && imgRel.busy < 2; i++) {
     const t = imgRel.q[i], up = t.userData.bwUpAt;
-    if (!up || now - up < IMG_REL_WAIT) continue;
+    if (!up || now - up < (quiet === 2 ? 1500 : IMG_REL_WAIT)) continue;
     imgRel.q.splice(i--, 1);
     const im = t.image;
     if (!(typeof ImageBitmap !== 'undefined' && im instanceof ImageBitmap) || !im.width || imgRel.small.has(im)) continue;
@@ -2345,10 +2359,21 @@ const SKY_CLOUDS_BODY = /* glsl */`
   }
 `;
 const SKY_CLOUDS = SK_NOISE_ALU + SKY_CLOUDS_BODY;
+queueMicrotask(() => new THREE.TextureLoader().load('assets/moon-map.jpg', (t) => {
+  t.colorSpace = THREE.NoColorSpace; t.wrapS = THREE.RepeatWrapping; t.anisotropy = 1;
+  skyUniforms.uMoonMap.value = t; skyUniforms.uMoonMapK.value = 1;
+}, undefined, () => { /* (not in: the drawn face) */ }));
 const SKY_CLOUDS_T = SK_NOISE_TEX + SKY_CLOUDS_BODY;
 const skyUniforms = { bwSkyTex: BW_NOISE_U, uTop: { value: new THREE.Color(0x04060d) }, uHorizon: { value: new THREE.Color(0x1a2a45) },
   uMoonDir: { value: MOON_DIR }, uTime: { value: 0 },
   uRes: { value: new THREE.Vector2(1, 1) }, uMoonNdc: { value: new THREE.Vector2() }, uMoonR: { value: 0.1 },
+  /* THE MOON'S OWN FACE (2026-11-23, the owner: "use this for the moon model make it blend well with the game fit it in the style keep
+   * everything looking the same just improve the moon with this keep lighting the same"). RenderX's "moon" (CC-BY-4.0) is a sphere
+   * under one 8192 map of the real Moon; the map is all of it worth having — `assets/moon-map.jpg`, 512 × 256 grey, the near side in
+   * its middle — read on the disc the sky already draws (its size, its terminator, its limb, its earthshine and halo untouched), its
+   * brightness laid on the moon's own two colours, so the maria and the craters are the real ones and nothing else changes. Until
+   * it is in (`uMoonMapK` 0), the drawn face it always had. */
+  uMoonMap: { value: null }, uMoonMapK: { value: 0 },
   uBolt: { value: new THREE.Vector4(-1, 0.2, 0, 0) }, uBoltLine: { value: 0 }, uBoltSeed: { value: 0 },
   // a squall: (direction to it x, the sine of its cloud's elevation, direction z, strength) and (cos inner, cos outer, overhead, clear sky)
   uSq: { value: new THREE.Vector4(1, 0.1, 0, 0) }, uSqB: { value: new THREE.Vector4(0.98, 0.9, 0, 0) } };
@@ -2392,7 +2417,7 @@ const sky = new THREE.Mesh(
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: /* glsl */`
       varying vec3 vDir;
-      uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uMoonDir; uniform float uTime; uniform vec2 uRes; uniform vec2 uMoonNdc; uniform float uMoonR;
+      uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uMoonDir; uniform float uTime; uniform vec2 uRes; uniform vec2 uMoonNdc; uniform float uMoonR; uniform sampler2D uMoonMap; uniform float uMoonMapK;
       uniform vec4 uBolt; uniform float uBoltLine; uniform float uBoltSeed;
       uniform vec4 uSq; uniform vec4 uSqB;
       ${SKY_CLOUDS_T}
@@ -2445,6 +2470,13 @@ const sky = new THREE.Mesh(
           float limb = 0.55 + 0.45 * n.z;
           vec3 base = mix(vec3(0.95, 0.90, 0.78), vec3(0.52, 0.50, 0.50), mare * 0.85);
           base *= 0.86 + 0.28 * fine + crat * 0.35;
+          if (uMoonMapK > 0.5) {
+            // the real face: the near side to you, north up (east to your right), off the map's longitude and latitude
+            vec2 muv = vec2(0.5 + atan(n.x, n.z) * 0.15915494, 0.5 + asin(clamp(n.y, -1.0, 1.0)) * 0.31830989);
+            float ml = texture2D(uMoonMap, muv).r;
+            vec3 face = mix(vec3(0.52, 0.50, 0.50) * 0.92, vec3(0.95, 0.90, 0.78) * 1.06, smoothstep(0.08, 0.92, ml));
+            base = mix(base, face, uMoonMapK);
+          }
           vec3 moon = base * lit * limb + vec3(0.035, 0.045, 0.07);    // earthshine on the dark side
           float edge = smoothstep(1.0, 0.94, mr);
           col = mix(col, moon, edge);
@@ -13213,7 +13245,7 @@ function updateHover() {
   } else if (canWearHeld(equipped)) {
     crosshair.className = 'active';
     setPrompt(kbd('LMB') + 'Put it on');
-  } else if (atLighthouseTop() && inventory.includes(hornItem) && !ended && !(equipped && equipped.onPull)) {
+  } else if (atLighthouseTop() && inventory.includes(hornItem) && !ended && !(equipped && equipped.onPull) && !marLhHold()) {   // (not while the marionette with you has his piece to say: `MAR_LH`, 2026-11-23)
     crosshair.className = 'active';
     setPrompt(kbd('E') + 'Blow the call of the crow');
   } else if (equipped && equipped.onDrain && inventory.includes(syringeItem) && (equipped.count || 0) > 0) {
@@ -13608,6 +13640,7 @@ class PhysProp {
      * answers for its own perch, and stops answering once it has been
      * knocked off it, which is exactly when it should fall. */
     this.floorAt = opts.floorAt || null;
+    this.inside = opts.inside || null;               // (a place cut INTO the solids — the drain room in the cliff: its own walls only, `drainBodyWall`)
     /* AND A ROOM IT CANNOT LEAVE. Nothing in the physics knows about the
      * bunker's walls, so a bottle thrown hard went straight out through
      * the concrete, broke somewhere over the beach, and left its shards
@@ -13798,7 +13831,7 @@ class PhysProp {
         // behind the dune: through a window of the house it goes (and slows), against its walls it stops (Elvédor's house)
         if (elvReady && !this.held) { if (elvPropPane(_psw, p, this)) this.vel.multiplyScalar(0.6); elvPropWall(p, this.radius, this.restH); }
         _pp.copy(p);
-        const sd = pushOutOfSolids(_pp, p.y, this.radius);
+        const sd = this.inside && this.inside(p) ? null : pushOutOfSolids(_pp, p.y, this.radius);
         if (sd && !sd.castle) { p.x = _pp.x; p.z = _pp.z; }
         const nx = p.x - ox, nz = p.z - oz, L = Math.hypot(nx, nz);
         if (L > 1e-5) {
@@ -13891,7 +13924,7 @@ class PhysProp {
       if (pf !== null && pf !== undefined && pf + this.restH > rest) { rest = pf + this.restH; surface = 'metal'; }
     }
     _selfProp = null;
-    const sc = bf === null ? rockGroundAt(p.x, p.z, p.y) : null;
+    const sc = bf === null && !(this.inside && this.inside(p)) ? rockGroundAt(p.x, p.z, p.y) : null;
     if (sc && sc.top + this.restH > rest) {
       /* CONTACT, not proximity. `rockGroundAt` answers "what would this land
        * on", which is true of anything merely flying over the castle — so
@@ -13930,9 +13963,10 @@ class PhysProp {
       this.angVel.multiplyScalar(0.86 - wet * 0.26);
       struck = true;
     }
-    // and the sides of anything solid
+    // and the sides of anything solid (not for a body inside something hollowed out of them: `inside`, the drain room in the cliff)
     _pp.copy(p);
-    let side = pushOutOfSolids(_pp, p.y, this.radius);
+    const hollow = !!(this.inside && this.inside(p));
+    let side = hollow ? null : pushOutOfSolids(_pp, p.y, this.radius);
     if (side && side.castle) {
       // straight through the side of it, rather than bouncing off a wall
       breakCastle(p.x - this.vel.x, p.z - this.vel.z);
@@ -18822,7 +18856,7 @@ function hookThrow(charge) {
     const tt = THREE.MathUtils.clamp((SNORK_X - O.x) * ax + (SNORK_Z - O.z) * az, 0, L);
     if (Math.hypot(O.x + ax * tt - SNORK_X, O.z + az * tt - SNORK_Z) < 3.2) setTimeout(() => { if (!inRoom()) snorkHail(); }, 1000 * tt / HOOK_SPEED);
   }
-  HK.airThrow = !onGround; HK.surfEnd = !HK.to && !!(h && h.kind === 'sand' && h.t < D);
+  HK.airThrow = !onGround; HK.surfEnd = !HK.to && !!(h && h.kind === 'sand' && h.t < D); HK.runOut = false;
   HK.st = 'whip'; HK.t = 0; HK.armT = 0; HK.spin = 0; HK.slack = 0.2; HK.charge = charge;
   for (let i = 0; i < 6; i++) HK.rel[i] = _pose[i];
   if (inCombat()) stamina = Math.max(0, stamina - HOOK_STAM);
@@ -19107,7 +19141,18 @@ function hookTick(dt) {
         const bit = !world && HK.to ? hookBite(HK.u ? Object.assign({}, HK.to, { u: HK.u }) : HK.to) : false;
         if (bit) { HK.st = 'bite'; HK.t = 0; HK.dragT = 0; HK.slack = 0; sfxChainDrag(HK.p.x, HK.p.z, 0.5, 1); }
         else if (!body && (HK.to || HK.surfEnd) && (HK.airThrow || !onGround) && !HK.zipUsed && hookZipStart()) { /* (pulled to it: `hookZipMove`) */ }
-        else { HK.st = 'back'; HK.t = 0; HK.slack = 0.35; if (!HK.to) sfxChainSlap(HK.p.x, HK.p.z, 0.5); }
+        else {
+          HK.st = 'back'; HK.t = 0; HK.slack = 0.35;
+          /* AT THE END OF ITS CHAIN, IN THE AIR, IT HIT NOTHING — AND SAYS SO (2026-11-23, the owner: "my hook hits things in the
+           * air i cant see fix this make it go through these laterns and strinhs across the castle"). Nothing up there caught it
+           * (`tools/hookbunting.js`: 320 throws straight at XIII's lanterns, ropes and pennants, none bitten; 428 up from under
+           * them, none short of a drawn face) — XIII's towers stand past the chain's 14 m, and a throw that ran out stopped dead
+           * in the empty air, hung there `HOOK_LIE`, and slapped as if it had struck. Now the links snap taut at your hand, no
+           * strike, and the iron drops under its own weight for that moment before it is reeled in (`HK.runOut`). Onto sand
+           * (`surfEnd`) it still lands with its slap. */
+          if (!HK.to && HK.surfEnd) sfxChainSlap(HK.p.x, HK.p.z, 0.5);
+          else if (!HK.to) { HK.runOut = true; HK.fallV = 0; HK.slack = 0.6; sfxChainRunOut(); }
+        }
         if (HK.water) { seaImpact(HK.p, HK.st === 'bite' ? HK.u : null, HK.aim, true); HK.water = 0; }   // (the ball on the iron bursts where it arrives)
       } else HK.p.addScaledVector(_hkV, step / d);
       if (HK.st === 'out' && ucIdolNear(HK.p, 0.1) && ucIdolKnock(HK.p.x, HK.p.z)) { sfxChainClang(false, 0.55); hookImpact(HK.p.x, HK.p.z, 0.7, false); HK.st = 'back'; HK.t = 0; HK.slack = 0.35; }   // (into the church's figure: it goes over)
@@ -19137,6 +19182,7 @@ function hookTick(dt) {
   } else if (HK.st === 'back') {
     _hkV.copy(HK.hand).sub(HK.p); const d = _hkV.length(), sp = HK.recall ? Math.min(HOOK_RECALL, 10 + (HK.t - HOOK_LIE) * 60) : HK.t < HOOK_LIE ? 0 : Math.min(HOOK_BACK, 3 + (HK.t - HOOK_LIE) * 18);
     HK.slack = Math.max(0.02, HK.slack - dt * 0.5);
+    if (live && HK.runOut && HK.t < 0.9) { HK.fallV = Math.min(9, HK.fallV + 9.8 * dt); HK.p.y -= HK.fallV * dt; HK.p.addScaledVector(HK.aim, Math.max(0, HOOK_LIE - HK.t) * 5 * dt); }   // (out of chain: it carries on a hand and falls, and is reeled in falling)
     if (live) { if (d <= sp * dt + 0.25) { hookHome(false); return; } HK.p.addScaledVector(_hkV, sp * dt / d); }
   }
   hookLay(dt);
@@ -25560,10 +25606,13 @@ if (lhParts.lampProxy) {
   /* AND NOW IT IS THE HORN THAT ENDS IT (2026-10-13, the owner: "make this be blown on top of the
    * lighthouse instead of touching the light"). With the Great Crab Call on you the light is where you
    * blow it; without it, the light is only warm glass. */
-  addInteractable(lhParts.lampProxy, () => (inventory.includes(hornItem) ? 'Blow the call of the crow' : 'Put your hand on the light'), 'action', {
+  /* (and no "Blow the call of the crow" on the light while the marionette with you has not said his goodbye — 2026-11-23, the owner:
+   * "MAKE IT SO YOU DONT SEE THE PROMPT TO BLOW THE HORN BEFORE COMPLETELING THE marionettes dialog only if hes with you": the
+   * light is warm glass until then) */
+  addInteractable(lhParts.lampProxy, () => (inventory.includes(hornItem) && !marLhHold() ? 'Blow the call of the crow' : 'Put your hand on the light'), 'action', {
     onActivate: () => {
       if (ended) return;
-      if (inventory.includes(hornItem)) crowCallFromTop();
+      if (inventory.includes(hornItem) && !marLhHold()) crowCallFromTop();
       else sayInventoryFull('Warm glass. Something has to be called from up here');
     },
   });
@@ -35229,6 +35278,7 @@ function hurtGull(u, dmg, P = 0) {
 }
 function killGull(u, P = 0) {
   const S = u.st;
+  if (S.alive) elogOther('gull');                      // (the Enemy Log)
   S.alive = false; S.phase = 'dead'; S.dead = 0; S.lay = 0; S.bounced = false; S.landedDead = false;
   if (gullToken === u) gullToken = null;
   S.spin = (Math.random() < 0.5 ? -1 : 1) * (7 + Math.random() * 4);
@@ -35841,14 +35891,75 @@ const grateSet = (drainTunnel.userData.grateScrews && drainTunnel.userData.outle
   parent: drainTunnel.userData.outlet, spots: drainTunnel.userData.grateScrews, r: 0.016,
   floor: () => drainTunnel.position.y + DN.FLOOR_Y,
   out: () => grateScrewsOut, setOut: (m) => { grateScrewsOut = m; },
-  done: (quiet) => liftGrate(quiet),
+  done: (quiet) => grateLoosen(),                       // (loose in the hole: you pull it off — `pullGrate`; a load that had it off, `liftGrate(true)`)
 }) : null;
 let grateLift = -1;                                     // -1 on the wall, then seconds into the lift
 const GRATE_LEAN = { x: -0.85, y: -1.62 + 0.48, z: 0.2, rx: -0.18 };
+/* ---- THE GRATE, PULLED OFF BY HAND (2026-11-23, the owner: "make it so after you unscrew the sewer you pull off the bars your self
+ * and can throw the metal part that was screwed on"). The last screw out no longer lifts it off by itself: it sits loose in the
+ * hole and the outlet says "Pull the grate off". Pulled, it comes out of the hole into your hands — a body of its own
+ * (`grateProp`, `PhysProp`), held as anything you pick up is held — and you throw it or set it down like anything else; the pipe
+ * behind is open. In the drain room a thrown thing has the room's own floor and walls (`drainBodyFloor`, `drainBodyWall`): the
+ * beach's sand and cliff are no floor in there. A load that had it off lays it on the floor by the hole, where it can be picked
+ * up again. */
+let grateLoose = false, grateProp = null;
+function grateLoosen() {
+  const F = drainTunnel.userData.outlet;
+  if (!F || grateOff || grateLoose) return;
+  grateLoose = true;
+  removeInteractable(F);
+  addInteractable(F, 'Pull the grate off', 'default', { onActivate: () => pullGrate() });
+}
+function pullGrate() {
+  const G = drainTunnel.userData.grate, F = drainTunnel.userData.outlet;
+  if (!G || !F || grateOff || frozen()) return;
+  grateOff = true; grateLoose = false;
+  if (playSample('metalScrape', 0.65, 0.03)) playSample('metalHeavy', 0.4, 0.04, 0.95, 0.12); else sfxLockerOpen();
+  addTrauma(0.1);
+  removeInteractable(F);
+  addInteractable(F, 'Crawl into the pipe', 'default', { onActivate: () => startPipe(true) });
+  grateMakeProp(true);
+}
+// the grate as a body in the world (out of the outlet's frame where it hung), picked up at once if `take`
+function grateMakeProp(take) {
+  const G = drainTunnel.userData.grate; if (!G || grateProp) return;
+  G.updateWorldMatrix(true, true);
+  scene.attach(G);
+  G.traverse((o) => { o.frustumCulled = false; });
+  const b = new THREE.Box3().setFromObject(G), sz = b.getSize(new THREE.Vector3());
+  const R = Math.max(0.2, Math.max(sz.x, sz.y, sz.z) * 0.5);
+  grateProp = new PhysProp(G, { radius: R, restH: Math.min(sz.x, sz.y, sz.z) * 0.5 + 0.01, bounce: 0.22, friction: 0.62, holdDist: R + 0.75,
+    floorAt: drainBodyFloor, wall: drainBodyWall, inside: (p) => drainBodyIn(p.x, p.z, p.y), onImpact: (sp) => { if (sp > 1.2) sfxPropHit('metal', Math.min(7, sp)); } });
+  grateProp.setShape(G);
+  // (something to aim at: a grate is mostly holes, and the look went between its bars — its box, unseen, as `makeProp` gives a prop)
+  const inv = G.matrixWorld.clone().invert(), lb = b.clone().applyMatrix4(inv), ls = lb.getSize(new THREE.Vector3()), lc = lb.getCenter(new THREE.Vector3());
+  const proxy = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.12, ls.x), Math.max(0.12, ls.y), Math.max(0.12, ls.z)), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  proxy.name = 'hitProxy'; proxy.visible = false; proxy.position.copy(lc); G.add(proxy);
+  addInteractable(G, 'Pick up the grate', 'physics', { prop: grateProp });
+  if (take) grab(grateProp);
+}
+// the drain room and its pipe, for a thrown thing: its floor (null outside), and its walls
+function drainBodyIn(x, z, y) {
+  const lx = x - DRAIN_X, lz = z - DRAIN_Z, fy = drainTunnel.position.y + DN.FLOOR_Y;
+  if (y > fy + 3.2 || y < fy - 1.5) return false;
+  return lx > -0.2 && lx < DN.ROOM_X1 + 0.05 && Math.abs(lz) < Math.max(DN.ROOM_HZ, DN.BORE_R) + 0.05;
+}
+function drainBodyFloor(x, z, y) { return drainBodyIn(x, z, y) ? drainTunnel.position.y + DN.FLOOR_Y : null; }
+function drainBodyWall(p, r, restH, vel) {
+  if (!drainBodyIn(p.x, p.z, p.y)) return worldPropWall(p, r, restH, vel);
+  const lx = p.x - DRAIN_X, lz = p.z - DRAIN_Z;
+  const lim = lx >= DN.ROOM_X0 ? DN.ROOM_HZ - r * 0.6 : (lx > DN.DOOR_X - 0.1 ? DN.doorHalfZ : DN.BORE_R * 0.76) - r * 0.4;
+  if (Math.abs(lz) > lim) { p.z = DRAIN_Z + Math.sign(lz) * lim; if (vel.z * lz > 0) vel.z *= -0.3; }
+  const x1 = DN.ROOM_X1 - r * 0.6;
+  if (lx > x1) { p.x = DRAIN_X + x1; if (vel.x > 0) vel.x *= -0.3; }
+  // the room's front wall either side of its doorway (through the doorway it goes on down the pipe)
+  const lz2 = p.z - DRAIN_Z, x0 = DN.ROOM_X0 + r * 0.6;
+  if (lx < x0 && lx > DN.DOOR_X - 0.05 && Math.abs(lz2) > DN.doorHalfZ - r * 0.3) { p.x = DRAIN_X + x0; if (vel.x < 0) vel.x *= -0.3; }
+}
 function liftGrate(quiet) {
   const G = drainTunnel.userData.grate, F = drainTunnel.userData.outlet;
   if (!G || !F || grateOff) return;
-  grateOff = true;
+  grateOff = true; grateLoose = false;
   if (quiet) { G.position.set(GRATE_LEAN.x, GRATE_LEAN.y, GRATE_LEAN.z); G.rotation.set(GRATE_LEAN.rx, 0, 0); grateLift = 99; }
   else { grateLift = 0; if (playSample('metalScrape', 0.6, 0.03)) playSample('metalHeavy', 0.42, 0.04, 0.9, 1.05); else sfxLockerOpen(); }   // (lifted off and dragged, then set down against the wall: the owner's metal)
   // the hole is a way through now, not a thing to look through
@@ -35865,6 +35976,7 @@ function liftGrate(quiet) {
     tmp.removeFromParent();
   }
   addInteractable(F, 'Crawl into the pipe', 'default', { onActivate: () => startPipe(true) });
+  if (quiet) grateMakeProp(false);                     // (where it lies, and yours to pick up and throw: 2026-11-23)
 }
 function updateGrateLift(dt) {
   if (grateLift < 0 || grateLift >= 1.2) return;
@@ -35888,6 +36000,7 @@ function updateGrateLift(dt) {
 function startPipe(into) {
   if (pipeBusy || frozen()) return;
   if (into && !grateOff) return;
+  if (held && held === grateProp) dropHeld();             // (not into the pipe with it in your hands)
   pipeBusy = true; pipeT = 0; pipeDone = false; pipeInto = into; pipeWait = 0;
   blocking = false; hovered = null;
   if (into) loadSewer(false);                           // (fetched only: it is built in the black, below)
@@ -40652,7 +40765,7 @@ const MUT_KINDS = {
    * every mutant on the beach — he is nine hundred metres past it — and
    * `noSand` because a thing with those arms does not need to throw
    * anything at you. */
-  scp: { glb: 'assets/scp096.glb', solo: true, noSand: true, skin: null,
+  scp: { glb: 'assets/scp096.glb', gone: true, solo: true, noSand: true, skin: null,   // (`gone`: out of the game, his file deleted 2026-11-23 — see `SCP_ON`)
           aimed: true, reacts: true, bossDeath: true,
           /* REBUILT FOR READING, on the owner's word: his animations and hits
            * were awful, make him easier and readable like the other fights. His
@@ -42040,7 +42153,13 @@ function makeMutant(x, z, kindName, y = 0) {
     else { if (pre === 'pending') mutPre[src] = null; got = new Promise((res, rej) => loader.parse(buf.slice(0), '', res, rej)).then((gltf) => { bwCapTextures(gltf.scene, TEX_CAP); return gltf; }); }
     return got
       .then((gltf) => { if (!u.kind.pre) return gltf; bwSpan('pre ' + src.split('/').pop(), () => u.kind.pre(u, gltf)); u._preDone = true; return bwTurn().then(() => gltf); })
-      .then((gltf) => bwSpan('dress ' + src.split('/').pop(), () => dressMutant(u, gltf)));
+      .then((gltf) => {
+        const dress = () => bwSpan('dress ' + src.split('/').pop(), () => dressMutant(u, gltf));
+        /* (a file of its own it is dressed with — the farmers' weapons, `farmWeaponsLoad` — waited for OUTSIDE this chain: that file
+         * parses on the same one chain, behind this, and a dress that held the chain for it never came: 2026-11-23, 20 men, 0 bodies) */
+        if (u.kind.waitFor) { u.kind.waitFor(u).then(dress, dress); return null; }
+        return dress();
+      });
   }, undefined, urgent);
   /* AND WHAT YOU KILLED STAYS KILLED. A creature is named by what it is and
    * where it was put, which is the same every load; a checkpoint written
@@ -42175,6 +42294,7 @@ function updateMutFlee(u, dt, foe) {
 function mutBleedOut(u) {
   if (u && u.kind && (u.kind.stone || u.kind.wood)) return;           // (stone does not bleed — the gargoyles, 2026-10-29)
   statKill(u);
+  elogKill(u);                                                       // (the Enemy Log: a bleed-out is your kill too — it had been missed)
   const st = u.st;
   st.flee = null;
   st.alive = false; st.struck = false; st.deadT = 0;
@@ -42239,13 +42359,19 @@ const SCP_PANIC = 2.1;                     // the scream: stopped, and you keep 
  * on his mark and does not wander off it in the hours you might spend
  * walking up the ridge. */
 const SCP_SIT_ARENA = 3;
-const scp096 = makeMutant(SCP_X, SCP_Z, 'scp', headlandAt(SCP_X, SCP_Z));
+/* (OUT OF THE GAME AND HIS MODEL DELETED — 2026-11-23, the owner, of his silhouette in the Enemy Log: "take this guy out hes not in
+ * game anyone not in game can go from the log and delete their model". `assets/scp096.glb` (1.1 MB) is gone and nothing is made:
+ * he was made at every boot — his file fetched and parsed — only to be retired the next line. A stand-in with the fields his code
+ * reads keeps everything that names him (all of it returns at `!SCP_ON`). To bring him back: his file, from git, and `SCP_ON`.) */
+const SCP_ON = false;
+const scp096 = SCP_ON ? makeMutant(SCP_X, SCP_Z, 'scp', headlandAt(SCP_X, SCP_Z))
+  : { kindName: 'scp', kind: MUT_KINDS.scp, saveKey: 'scp@' + SCP_X.toFixed(1) + ',' + SCP_Z.toFixed(1), retired: true, atk: {}, model: null, mixer: null,
+      g: new THREE.Group(), st: { alive: false, awake: false, roar: 0, hp: 0 } };
 /* HE IS OUT, FOR NOW, by the owner's word — the thing on the sand under the
  * pavilion's windows. Retired rather than deleted (`retireUnit`: not alive,
  * not drawn, out of the scene), so the fight and everything that names him is
  * still here to switch back on. */
-const SCP_ON = false;
-if (!SCP_ON) retireUnit(scp096);
+
 scp096.g.rotation.y = Math.atan2(MUSH_X - SCP_X, MUSH_Z - SCP_Z);   // facing the house, looking up at its windows
 scp096.g.visible = false;                  // until you are inside — see scpPhase
 /* 0 hidden; 1 revealed (you went into the house; he is on the sand under the
@@ -42577,6 +42703,7 @@ function killMutant(u) {
    * that it is his and you are in it — so at zero he GOES DOWN, lies where
    * he fell, and gets up again. `undying` is the kind's own word for it;
    * the blow still lands, still throws him, still reads as a kill. */
+  elogKill(u);                                     // (the Enemy Log: on the blow that kills, whole, before its flash — not at the end of the death)
   if (u.kind.undying && u.catDown === undefined) { catPutDown(u); return; }
   u.st.struck = true;
   if (u.st.killP === undefined) { u.st.killP = 0; u.st.killOh = false; u.st.hpBefore = u.st.hp; }   // a throw, or the harness
@@ -43092,6 +43219,7 @@ function hurtMutantCore(u, dmg, P = 0, from = null) {
   if (gargImmune(u)) return false;                  // a gargoyle still stone
   if (u.kind.skrim && skrimHung(u)) return false;   // Skrim up his chain, out of reach (`SK_HANG`)
   if (u.kind.struckHung && u.kind.struckHung(u, P, from)) return false;   // a puppet on its strings: it swings (`cpStruckHung`)
+  if (u.farmShieldM && farmShieldTake(u, P, from)) return false;           // a rare knight's shield, struck from behind: it comes off instead (`farmShield`)
   u.hbT = performance.now();                          // its health bar comes up when it is hit
   if (u.kind.baby) return babyHurt(u, P);            // the young one counts blows, it does not spend health
   /* WHOEVER YOU HIT LOCKS ON TO YOU. `from` is the creature that threw the
@@ -43445,6 +43573,9 @@ function finishMutant(u) {
    * it was guarding starts to fail under it. */
   if (u.kind.deathClip) { startWardenDeath(u); return; }
 
+  /* (A FARMER NOW AND THEN DIES ON HIS FEET — the owner's "Zombie Death", rare: `farmZDie`. Then nothing is cut off him and he is not
+   * thrown: he plays it out where he stands and goes into the ragdoll as it ends.) */
+  const zd = farmZDieRoll(u);
   /* WHAT THE LAST BLOW TOOK WITH IT. A charged cut can go through the waist;
    * anything else takes a limb about half the time, and sometimes nothing at
    * all — because a kill that ALWAYS dismembers is a gore setting, and a kill
@@ -43474,12 +43605,13 @@ function finishMutant(u) {
   const BL = u.st.killBlast || 0;
   const MC = !!u.st.killMace;
   if (MC) { sfxMaceCrunch(u.g.position.x, u.g.position.z, 1); addTrauma(oh ? 0.9 : 0.6); }
-  if (BL > 0.05) blastApart(u, dx, dz, BL);
+  if (zd) { /* (on his feet: nothing taken) */ }
+  else if (BL > 0.05) blastApart(u, dx, dz, BL);
   else if (MC && (u.st.killHitK ?? 0) > 0.78 && !oh) burst = burstHead(u, dx, dz);   // (the mace on his head: crushed — `maceKillPower`)
   else if (u.st.gunHead) burst = burstHead(u, dx, dz);
   else if (overkill && Math.random() < 0.55 * G) burst = burstHead(u, dx, dz);
   else if (BB && Math.random() < (P >= MUT_HEAVY || oh ? 0.70 : 0.40) * G) burst = burstHead(u, dx, dz);
-  if (!burst && BL <= 0.05) {
+  if (!zd && !burst && BL <= 0.05) {
     if (P >= MUT_HEAVY && !oh && Math.random() < (BB ? 0.60 : 0.42) * G) mutSever(u, MUT_BISECT, dx, dz, 1.4);
     else if (Math.random() < 0.55 * G) {
       const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
@@ -43490,7 +43622,7 @@ function finishMutant(u) {
    * Whatever else the blow took, it takes a limb or two besides — thrown off
    * along the swing, each stump pumping — so a kill with it leaves pieces,
    * not a body. */
-  if (BB) {
+  if (BB && !zd) {
     const pool = MUT_LIMBS.slice().sort(() => Math.random() - 0.5);
     const extra = (P >= MUT_HEAVY || oh ? 2 : 1) + (Math.random() < 0.35 ? 1 : 0);
     let took = 0;
@@ -43503,7 +43635,7 @@ function finishMutant(u) {
    * the blow at its own angle, so a kill in the street is a man coming apart
    * rather than a body falling over. A forearm is not taken off an arm that
    * has already gone: that arm's piece already has it. */
-  if (u.kind.cutApart) {
+  if (u.kind.cutApart && !zd) {
     const heavy = P >= MUT_HEAVY || oh;
     // sliced, not felled (the owner: "sliced in pieces and you are able to see it well"): two to four pieces, often through the middle
     let want = (heavy ? 3 : 2) + (Math.random() < 0.5 ? 1 : 0);
@@ -43520,7 +43652,7 @@ function finishMutant(u) {
   // the overhead throws it further — a little, so the hit reads harder, not so far it flies
   // (and a charge of shot throws what is left of it off its feet)
   { const base = 0.7 + P * 0.7 + (oh ? 0.55 : 0) + (BL > 0.05 ? 1.4 + BL * 2.6 : 0);
-    mutRagdoll(u, dx, dz, MC ? maceKillPower(u, base, oh) : base); }
+    if (zd) farmZDieStart(u, dx, dz); else mutRagdoll(u, dx, dz, MC ? maceKillPower(u, base, oh) : base); }
   const BKk = u.kind.bloodK || 1;
   bleedMutant(u, Math.round((BB ? 120 : 26) * BKk), BB ? 1.4 : 1.0);
   sprayBlood(u.g.position.x, u.g.position.y + u.kind.h * 0.5, u.g.position.z, dx, dz, Math.round((26 + P * 14) * (BB ? 4.2 : 1) * BKk), (1.3 + P * 0.5) * (BB ? 1.3 : 1));
@@ -46368,6 +46500,7 @@ function updateMutantUnit(u, dt) {
   const p = u.g.position;
   if (!u.st.alive) {
     u.st.deadT += dt;
+    if (u.zDie) { farmZDieStep(u, dt); return; }       // (dying on his feet: `farmZDie`)
     if (u.rag) updateMutRagdoll(u, dt); else if (!u.kind.garg) mutAnim(u, dt, 0);   // (a gargoyle's stone fall is its own: `gargDeadStep`)
     return;
   }
@@ -47657,6 +47790,7 @@ function updateMutantUnit(u, dt) {
   if (!u.st.foe && dist < bodyR) shovePlayer(p.x + (dx / dist) * bodyR, p.z + (dz / dist) * bodyR);
   mutAnim(u, dt, moving);
   aimBar(u, dt, dist);
+  if (u.kind.farmer && u.farmTool) farmSwingIK(u, dt);   // (the garrison's cuts: the sword arm laid on a path across your face, `FARM_IK`)
 }
 /* THE BAR GOES WHERE HE IS SWINGING IT. An authored swing is a swing at the
  * air in front of him: it lands wherever his arm happens to put it, and
@@ -47859,7 +47993,7 @@ function aimBar(u, dt, dist) {
     _abB.normalize(); _abC.normalize();
     let ang = Math.acos(THREE.MathUtils.clamp(_abB.dot(_abC), -1, 1));
     if (!(ang > 1e-4)) continue;
-    let use = Math.min(ang, AIM_MAX * (u.kind.aimK || 1)) * u.aimW;
+    let use = Math.min(ang, AIM_MAX * (u.kind.aimK || 1)) * u.aimW * (A && A.aimArmK !== undefined ? A.aimArmK : 1);   // (`aimArmK`: a swing whose own sweep is the point — the farmers' combos)
     if (u.aimProbe) u.aimProbe.max = Math.max(u.aimProbe.max, use);   // (a probe's: how far the shoulder is bent off the clip)
     /* A BLADE POINTING AWAY FROM YOU IS NOT AIMED YET (`aimCone` on the swing
      * or the kind, [full, none] in radians). Through the samurai's overhead the tip points 100-135
@@ -50513,6 +50647,11 @@ bunkerFloorAt = (x, z, y) => {
   if (lx < R.x0 || lx > R.x1 || lz < R.z0 || lz > R.z1) return null;
   return BUNKER_Y;
 };
+/* AND THE DRAIN ROOM, cut into the cliff (2026-11-23, the grate thrown about in it: "you pull off the bars your self and can throw the
+ * metal part"). Not asked here, a thing held or thrown in there was walled by the beach's cliff (`CLIFF_BLOCK_X`) — the drain room is
+ * behind it — and snapped out to the tunnel's mouth on the first frame. Its floor answers for anything in its box (`drainBodyIn`). */
+const _floorBeforeDrain = bunkerFloorAt;
+bunkerFloorAt = (x, z, y) => { const d = drainBodyFloor(x, z, y); return d !== null ? d : _floorBeforeDrain(x, z, y); };
 const DEALER_X = HATCH_X + 1.40, DEALER_Z = HATCH_Z + 7.30;  // by the console shelf, facing the ladder
 const CROWBAR_SPOT = [HATCH_X + 2.30, HATCH_Z + 7.06];       // where the solved reach puts his hand: measured, on the shelf
 let dealerMet = false, dealerFight = false, dealerWon = false;
@@ -54228,7 +54367,7 @@ function saveCheckpoint(spot) {
       star: !!(helmStar && helmStar.solved),
       boatKey: boatKeyTaken,          // the key off the hook: taken (in the pack, or spent in the chest)
       // the island's gulls you have put down, and the achievement for all of them
-      gullsDown: isleBirds.length ? isleBirds.map((B, i) => (B.m.visible ? -1 : i)).filter((i) => i >= 0) : (isleBirdsDown || []), gullSlayer, crustyLight,
+      gullsDown: isleBirds.length ? isleBirds.map((B, i) => (B.m.visible ? -1 : i)).filter((i) => i >= 0) : (isleBirdsDown || []), gullSlayer, crustyLight, marLh: MAR.lhDone ? 1 : 0,
       // the snorkeler's key (0 not given, 1 on the sand, 2 taken) and the pavilion gate it opens
       lostKey: snorkKey.state, mushGate: mushGateUnlocked,
       // and the catacombs' own, which the skull key turns
@@ -54545,7 +54684,7 @@ function beginRestoreQuiet() {
   if (billyState === 1) { if (billy.mesh && billy.mesh.parent) scene.remove(billy.mesh); billyCarryFit(); }
   else if (billyState === 2) mountBillyHome();
   grateScrewsOut = f.grateScrews || 0; if (grateSet) screwSync(grateSet);
-  if (f.grateOff || grateScrewsOut === 15) liftGrate(true);
+  if (f.grateOff) liftGrate(true); else if (grateScrewsOut === 15) grateLoosen();   // (off, it lies by the hole; all screws out but not pulled, it is loose in it)
   sewRestore(f.sewer);                             // a generator you shut off stays off; a plank you laid is where you laid it
   // the screwdriver moved to the drain's crate (2026-10-22) and a pickup's id is its PLACE: a save that took it from the
   // old table has it in the pack by name, and must not find it lying on the crate as well
@@ -54720,6 +54859,7 @@ function updateRestore(dt) {
   if (f.mushGate || (f.lostKey === undefined && bz < MUSH_Z - 12)) mushGateUnlocked = true;
   if (f.gullSlayer) gullSlayer = true;
   if (f.crustyLight) crustyLight = true;
+  MAR.lhDone = !!f.marLh; MAR.lh = null;
   if (f.gullsDown && f.gullsDown.length) { if (isleBirds.length) { for (const i of f.gullsDown) if (isleBirds[i]) isleBirds[i].m.visible = false; } else isleBirdsDown = f.gullsDown.slice(); }
   /* THE CAPTAIN'S KEY: the chest eats it, so a chest you opened means a key
    * that is off the hook and gone. And a save from when it opened the shell
@@ -95753,6 +95893,7 @@ MUT_KINDS.gargoyle = {
 };
 /* ---- THEIR STATE. `G.phase`: 0 on the walls (stone), 1 down and fighting, 2 all four dead — the door is open to you.
  * On the save as `garg` (2 only; the dead ones by their keys like any other). */
+const GARG_NEAR_DOOR = 5.5;   // (alone: this near the locked arch door's middle and they come down)
 const GARG = { phase: 0, units: [], perches: null, corbels: null, t: 0, tried: 0, voiceT: 0, scene: null };
 // on the wall, waking, dropping: stone, and nothing of yours touches it (2026-10-29, the owner: "the gargoyles should not take damage before the fight starts")
 const gargImmune = (u) => !!(u && u.kind && u.kind.garg && (!u.gp || u.gp.mode === 'perch' || u.gp.mode === 'wake' || u.gp.mode === 'drop' || u.gp.mode === 'script'));
@@ -97269,6 +97410,14 @@ function updateGargoyles(dt) {
   // a key not taken, after a restore: lying in front of the door
   if (GARG.phase === 2 && !GARG.keyTaken && !gargKey && !c13ArchOpen && inC13 && c13Arch && !inventory.includes(gargKeyItem)) { const w = gargKeyHome(); if (w) gargDropKey(w.x, 0, w.z, true); }
   if (GARG.scene) gargSceneStep(dt);
+  /* WITHOUT MYLES, THEY COME DOWN AS YOU REACH THE DOOR (2026-11-23, the owner: "if not with myles just have the gargoyles attack when
+   * youre near the locked door"). With him at your side the door is tried and his scene plays (`gargTryDoor` → `minoAtDoor`); alone,
+   * you do not have to put your hand on it — within `GARG_NEAR_DOOR` of its middle, in the court, they crack and come down. */
+  if (GARG.phase === 0 && !GARG.scene && inC13 && c13Arch && !c13ArchOpen && !frozen() && GARG.units.some((u) => u.model && u.st.alive && u.gp && u.gp.mode === 'perch')
+      && !(MINO.stage === 'with' && !(MINO.u && !MINO.u.st.alive))) {   // (with him — or him still being made after a load — the door is his scene)
+    const A = c13Arch, d = c13W(A.ax + A.ux * A.L * 0.5, A.az + A.uz * A.L * 0.5);
+    if (Math.hypot(camera.position.x - d.x, camera.position.z - d.z) < GARG_NEAR_DOOR) { GARG.told = true; gargWake(); }
+  }
   if (GARG.phase === 1) {
     GARG.t += dt;
     if (!gargAlive().length) {
@@ -100117,6 +100266,7 @@ function sewElectrocute() {
     yaw = z - SEW.CH_END > 16.3 - z ? Math.PI : 0;
     z = yaw === 0 ? Math.min(z, 16.3 - 2.9) : Math.max(z, SEW.CH_END + 3.1);
   }
+  if (!sewMonDead) elogOther('sewmon');               // (the Enemy Log)
   sewMonDead = true; sewMonDeadAt = { x, z, yaw }; sewP.backKeySet = false;
   M.deadT = 0; M._deadPosed = false; M.press = 0;
   if (M.aud) { M.aud.g.gain.value = 0; M.aud.tin.gain.value = 0; }
@@ -109748,6 +109898,7 @@ function crabBuildGiant() {
  * and the morning on the beach after it (`startCrabCut` → `startWakeCut`) are no longer reached from anywhere. */
 function crowCallFromTop() {
   if (tmpCut || ended || frozen()) return;
+  if (marLhHold()) return;                               // (the marionette is with you and has not said his piece up here: `MAR_LH`)
   if (!inventory.includes(hornItem)) return;
   if (held) dropHeld();
   if (equipped !== hornItem) toggleEquip(hornItem);
@@ -113830,6 +113981,7 @@ function cryContact(h) {
 /* ---- ONE BLOW: thrown along the swing with its own momentum, dead */
 function cryKill(h, P) {
   if (h.mode === 'dead' || h.mode === 'still') return;
+  elogOther('cry');                                    // (the Enemy Log)
   _cryA.copy(_aimD); _cryA.y = 0; if (_cryA.lengthSq() < 1e-6) camera.getWorldDirection(_cryA).setY(0); _cryA.normalize();
   _cryB.set(-_cryA.z, 0, _cryA.x);                                  // your right
   const cut = !digOverhead && !katStabbing() && !thrusting(), sp = 7 + P * 5;
@@ -114100,6 +114252,7 @@ function cryChainDrop(h) {
   if (CRY.log) CRY.log.push({ ev: 'dropped', i: h.i, at: h.p.toArray().map((q) => +q.toFixed(2)) });
 }
 function crySummonDie(h) {
+  if (h.mode !== 'dead' && h.mode !== 'still') elogOther('cry');   // (the Enemy Log: they go with him, and he was yours)
   h.body.quaternion.setFromEuler(_cryE.set(h.pitch, h.yaw, h.roll));
   h.v.set((Math.random() - 0.5) * 1.6, 2.2, (Math.random() - 0.5) * 1.6); h.w.set((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 10);
   h.chain = null;
@@ -114467,6 +114620,17 @@ function sfxChainSlap(x, z, k = 1) {
     skaOne(out, SKA.slap, t0, 0.5 * k, skaR(0.85, 1.1)); skaOne(out, SKA.heavy, t0 + 0.004, 0.12 * k, skaR(1.4, 1.7));
     let t = t0 + 0.03, gap = 0.018;
     for (let i = 0; i < 9; i++) { skaOne(out, SKA.clink, t, 0.12 * k * Math.pow(0.78, i), skaR(0.8, 1.05)); t += gap * skaR(0.7, 1.3); gap *= 1.32; }
+  });
+}
+// the chain run out with nothing on the end: the links snapping taut at your hand, a shiver down them, no strike
+function sfxChainRunOut(k = 1) {
+  if (!skaReady()) return;
+  const c = camera.position;
+  sfxAt(c.x, c.z, () => {
+    const out = sfxOut(), t0 = audioCtx.currentTime + 0.004;
+    skaOne(out, SKA.tick, t0, 0.22 * k, skaR(1.1, 1.25));
+    let t = t0 + 0.012, gap = 0.014;
+    for (let i = 0; i < 8; i++) { skaOne(out, SKA.clink, t, 0.09 * k * Math.pow(0.8, i), skaR(1.0, 1.25)); t += gap * skaR(0.7, 1.3); gap *= 1.25; }
   });
 }
 // the hook biting you: its point going in, the wet of it, and the chain behind snapping taut as he takes the weight
@@ -116510,6 +116674,10 @@ MUT_ATTACKS.fJab    = { wind: 0.22, strike: 0.08, recover: 0.22, hit: 0.423,  re
 MUT_ATTACKS.fCross  = { wind: 0.30, strike: 0.08, recover: 0.28, hit: 0.4545, reach: 1.70, lunge: 1.1, chain: 'fHook', chainP: 0.5, w: 0.2, guardK: 0.9, limbs: [0] };
 MUT_ATTACKS.fHook   = { wind: 0.34, strike: 0.10, recover: 0.30, hit: 0.459,  reach: 1.55, lunge: 1.0, chain: 'fJab', chainP: 0.4, w: 0.2, guardK: 1.0, limbs: [1] };
 MUT_ATTACKS.fHead   = { wind: 0.42, strike: 0.08, recover: 0.34, hit: 0.50,   reach: 1.40, lunge: 1.1, chain: null, chainP: 0, w: 0.1, guardK: 1.3, limbs: [4] };
+// each combo's blows, as fractions of its clip (measured on a farmer holding his weapon: the head fastest, in front of him, at your height —
+// `tools/farmcombo.js`)
+const FARM_COMBO_RATE = 1.25;   // (at the capture's own speed a combo was 3-4 s and the street fight fell to 5-8 hurts a minute, from 8-14)
+const FARM_COMBO = { mCombo1: { hit: 0.325, more: [0.545] }, mCombo2: { hit: 0.25, more: [0.575] }, mCombo3: { hit: 0.356, more: [] } };   // (measured 2026-11-23: the overhead and the sweep; two cuts; one big one)
 MUT_ATTACKS.fTackle = { wind: 0.60, strike: 0.15, recover: 0.55, hit: 0.46,   reach: 3.80, lunge: 3.2, chain: 'fJab', chainP: 0.5, w: 0.1, guardK: 1.6, limbs: [1, 4], minDist: 2.6 };
 MUT_ATTACKS.fKick   = { wind: 0.34, strike: 0.10, recover: 0.34, hit: 0.436,  reach: 1.85, lunge: 1.0, chain: 'fHack', chainP: 0.35, w: 0.1, guardK: 1.1, limbs: [2] };
 
@@ -116569,15 +116737,28 @@ MUT_ATTACKS.fKick   = { wind: 0.34, strike: 0.10, recover: 0.34, hit: 0.436,  re
    * the shoulders and a hit. They play at the capture's own speed (`naturalSwings`), where a jab is in you three tenths
    * of a second after it starts: every one is now drawn back to just over half way and HELD there (`natHold`) — the
    * fists and the rake's thrust longest, because theirs are the smallest movements — then let go. */
+  /* THE OWNER'S COMBOS (2026-11-23: "use these for the farmers make sure the weapons are held correctly like the screenshot"): three
+   * Mixamo one-handed melee combos (a club in the fist in Mixamo's own preview), each one swing of several blows — the first contact
+   * is `hit`, the rest `more` (fractions of the clip, measured on a farmer with his weapon: `tools/farmcombo.js`). The farmers' cuts were
+   * the great-sword pack's two-handed slashes on one-handed weapons. Played at the capture's speed; their own sweeps across you kept
+   * (the arm's aim a third as strong: `aimArmK`). */
+  A.wcCombo1 = FM('mCombo1', FARM_COMBO.mCombo1.hit, 0.5, 1.05, { wind: 0.5, clipRate: FARM_COMBO_RATE, more: FARM_COMBO.mCombo1.more, aimArmK: 0.35, guardK: 1.0, recover: 0.42 });
+  A.wcCombo2 = FM('mCombo2', FARM_COMBO.mCombo2.hit, 0.5, 1.05, { wind: 0.5, clipRate: FARM_COMBO_RATE, more: FARM_COMBO.mCombo2.more, aimArmK: 0.35, guardK: 1.0, recover: 0.42 });
+  A.wcCombo3 = FM('mCombo3', FARM_COMBO.mCombo3.hit, 0.5, 1.05, { wind: 0.5, clipRate: FARM_COMBO_RATE, more: FARM_COMBO.mCombo3.more, aimArmK: 0.35, guardK: 1.0, recover: 0.42 });
+  // (and what a weapon man's kick, spin or leap runs on into is a combo too — not the great sword's cut it used to chain to)
+  { const to = { axCut: 'wcCombo1', axCutD: 'wcCombo2', axCutC: 'wcCombo3', axChop: 'wcCombo1', hmCut: 'wcCombo1', hmCutD: 'wcCombo2', hmCutC: 'wcCombo3', hmChop: 'wcCombo1', rkCut: 'wcCombo1', rkCutD: 'wcCombo2', rkChop: 'wcCombo1', rkSwipe: 'wcCombo3' };
+    for (const k in A) if (/^(ax|hm|rk)[A-Z]/.test(k) && A[k].chain && to[A[k].chain]) A[k].chain = to[A[k].chain]; }
   for (const k in A) if (/^(ax|hm|rk|fs)[A-Z]/.test(k)) { A[k].natHold = Math.max(A[k].natHold || 0, /^(fs|rk)/.test(k) ? 0.16 : 0.12); A[k].cockF = A[k].cockF ?? 0.55; }   // (natHold 0.30 / 0.22 at first: a man frozen at the top of every swing)
 }
 /* A temperament's moves are GENERIC (a cut, a thrust, a kick); what they are
  * on a given man depends on what is in his fist — the roster lends tools
  * across temperaments — so each is resolved per tool here. */
+/* (2026-11-23: every cut of a weapon man is one of the owner's three combos now — `wcCombo1-3`; his spin, leap and kick, and the
+ * spearman's thrust and lunge, are what they were) */
 const FARM_MOVES = {
-  axe:    { cut: 'axCut', cutC: 'axCutC', cutD: 'axCutD', chop: 'axChop', spin: 'axSpin', leap: 'axLeap', kick: 'axKick', thrust: 'axCutD', lunge: 'axLeap', swipe: 'axCutC', punch: 'axCut', jab: 'axCutD', hook: 'axCutC', kick2: 'axKick' },
-  hammer: { cut: 'hmCut', cutC: 'hmCutC', cutD: 'hmCutD', chop: 'hmChop', spin: 'hmSpin', leap: 'hmLeap', kick: 'axKick', thrust: 'hmCutD', lunge: 'hmLeap', swipe: 'hmCutC', punch: 'hmCut', jab: 'hmCutD', hook: 'hmCutC', kick2: 'axKick' },
-  rake:   { cut: 'rkCut', cutC: 'rkCut', cutD: 'rkCutD', chop: 'rkChop', spin: 'rkSwipe', leap: 'rkLunge', kick: 'axKick', thrust: 'rkThrust', lunge: 'rkLunge', swipe: 'rkSwipe', punch: 'rkThrust', jab: 'rkThrust', hook: 'rkSwipe', kick2: 'axKick' },
+  axe:    { cut: 'wcCombo1', cutC: 'wcCombo3', cutD: 'wcCombo2', chop: 'wcCombo1', spin: 'axSpin', leap: 'axLeap', kick: 'axKick', thrust: 'wcCombo2', lunge: 'axLeap', swipe: 'wcCombo3', punch: 'wcCombo1', jab: 'wcCombo2', hook: 'wcCombo3', kick2: 'axKick' },
+  hammer: { cut: 'wcCombo1', cutC: 'wcCombo3', cutD: 'wcCombo2', chop: 'wcCombo1', spin: 'hmSpin', leap: 'hmLeap', kick: 'axKick', thrust: 'wcCombo2', lunge: 'hmLeap', swipe: 'wcCombo3', punch: 'wcCombo1', jab: 'wcCombo2', hook: 'wcCombo3', kick2: 'axKick' },
+  rake:   { cut: 'wcCombo1', cutC: 'wcCombo3', cutD: 'wcCombo2', chop: 'wcCombo1', spin: 'wcCombo3', leap: 'rkLunge', kick: 'axKick', thrust: 'rkThrust', lunge: 'rkLunge', swipe: 'wcCombo3', punch: 'rkThrust', jab: 'rkThrust', hook: 'wcCombo3', kick2: 'axKick' },
   sword:  null,       // (set below: the axe's strokes — the great-sword captures are a sword's own)
   fist:   { cut: 'fsSwipe', cutC: 'fsHook', cutD: 'fsPunch', chop: 'fsHook', spin: 'fsSwipe', leap: 'fsKick2', kick: 'fsKick', thrust: 'fsPunch', lunge: 'fsKick2', swipe: 'fsSwipe', punch: 'fsPunch', jab: 'fsJab', hook: 'fsHook', kick2: 'fsKick2' },
 };
@@ -116618,7 +116799,7 @@ const FARM_BASE = {
    * 35 cm off you. A body's width now, from the shins (they kick and sweep)
    * to the head, and the lunge closes WITH the blow (`lungeLead`) so it
    * arrives rather than being thrown from where he stood. */
-  limbR: 0.32, landSlop: 0.30, bodyLow: 1.5, bodyLowArm: 0.85, hitFront: 0.30, lungeLead: 0.30, aimDrop: 0.05, flinch: 1.0,   // (round 2026-10-17: aimed at the face, counted from the chest up — see `blowLands`)
+  limbR: 0.32, landSlop: 0.30, bodyLow: 1.5, bodyLowArm: 0.40, hitFront: 0.42, aimFront: 0.42, lungeLead: 0.30, aimDrop: 0.05, flinch: 1.0,   // (2026-11-23: aimed and judged 0.42 m IN FRONT of your face, not at it — the point came at the lens end-on and you never saw the blade go by)   // (round 2026-10-17: aimed at the face, counted from the chest up — see `blowLands`)
   /* A KILLING BLOW THROWS THEM ACROSS THE STREET: a harder kick, the cap on a
    * first flight raised, and the leash on how far a body may travel let out
    * to match. The castle's walls hold them (`fortBody`'s ragdoll flag). */
@@ -116693,8 +116874,12 @@ FARM_ROSTER.forEach((R, i) => {
   for (const g in P.moves) { const k = MV[g]; use[k] = (use[k] || 0) + P.moves[g]; if (P.dmgMoves && P.dmgMoves[g]) swDmg[k] = P.dmgMoves[g]; }
   for (let pass = 0; pass < 3; pass++) for (const k in use) { const c = MUT_ATTACKS[k] && MUT_ATTACKS[k].chain; if (c && !(c in use)) use[c] = 0.0001; }
   for (const k in use) if (MUT_ATTACKS[k] && MUT_ATTACKS[k].clip) alias[k] = MUT_ATTACKS[k].clip;
+  /* (his weapon out of the pack: a swordsman one of the three swords, a spearman a sword to thrust with, an axeman one of the three
+   * axes, a mace man the heaviest axe — `FARM_WEAPONS_GLB`; turned by his place in the roster so no two neighbours match) */
+  const wkey = !tool ? null : tool === 'hammer' ? 'Axe_01' : (tool === 'axe' ? 'Axe_0' : 'Sword_0') + (1 + (i * 2) % 3);
   MUT_KINDS['farmer' + i] = Object.assign({}, FARM_BASE, P, {
-    glb: FARM_FILE[R.f], file: R.f, keep: R.keep, tool, at: P.at, spear: tool === 'rake' ? P.spear || 0.7 : 0, bones,
+    glb: FARM_FILE[R.f], file: R.f, keep: R.keep, tool, wkey, at: P.at, spear: tool === 'rake' ? P.spear || 0.7 : 0, bones,
+    waitFor: (u) => (u.kind.tool ? farmWeaponsLoad() : Promise.resolve()),
     h: R.h, tint: null, use, alias, swDmg,   // (no tint: the pack's own colours, 2026-11-16)
     /* a man's walk and a man's jog; only the maniac keeps the hunched run */
     gaits: { walk: ['mHWalk', 'mWalkC'], run: R.p === 'maniac' ? ['mRun', 'mHRun'] : ['mHRun', 'mRunB'],
@@ -116826,8 +117011,51 @@ function farmWeaponFlat(pts, depth, col) {   // a flat plate in the XY plane, `d
 }
 const FW_STEEL = 0x8d939b, FW_DARK = 0x4a4d52, FW_WOOD = 0x5a3f28, FW_LEATHER = 0x3a2a1e, FW_BRASS = 0x8a6e3a;
 let farmWeaponMat = null;
-function farmWeapon(key) {
+/* ---- THE PACK'S WEAPONS (2026-11-23, the owner: "make these the weapons for the farmers. dont use the sheath model … the farmers
+ * are not holding their weapons properly make sure the handle are actually in their hands and the weapon faces and swings the right
+ * way"). Atakhani's Stylized Medieval Weapon Pack (CC-BY-4.0), `tools/weapons_pack.py` → `assets/farm-weapons.glb`: three swords,
+ * three single-bitted axes, three shields (for the rare knights' backs: `farmShield`), each laid on this file's convention — the butt
+ * at the origin, the handle up +Y, the edge (a sword's flat's wide axis, an axe's bit) +X — with its length (`hi`) and where the
+ * fist goes (`grip`, metres from the butt: a sword against its guard, an axe a hand up the haft) in its extras. A man's ROLE is
+ * still `kind.tool` ('sword', 'axe', 'hammer', 'rake': his strokes, cant, carry), his WEAPON `kind.wkey` (the pack's name): the
+ * spearmen thrust with a sword now and the mace men chop with the heaviest axe — the pack has neither. A farmer is not dressed
+ * until the file is in (`kind.waitFor`); if it never comes, the built ones below. */
+const FARM_WEAPONS_GLB = 'assets/farm-weapons.glb';
+let farmWpn = null, farmWpnP = null, farmWpnMat = {};
+function farmWeaponsLoad() {
+  if (farmWpnP) return farmWpnP;
+  farmWpnP = new Promise((res) => {
+    bwGlb(FARM_WEAPONS_GLB, (gltf) => {
+      const W = {};
+      gltf.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        const nm = ((o.name || '').match(/^(Sword|Axe|Shield)_\d\d/) || [o.name])[0], ex = o.userData || {};   // (Blender's `.001` comes through three's loader as `001`)
+        const g = o.geometry.clone(); o.updateMatrix(); g.applyMatrix4(o.matrix);          // (its node's own place, if any)
+        const m0 = o.material, mk = m0.name || nm;
+        if (!farmWpnMat[mk]) {
+          if (m0.map) retroTex(m0.map);
+          farmWpnMat[mk] = new THREE.MeshStandardMaterial({ map: m0.map || null, roughness: 0.78, metalness: 0, flatShading: true,
+            emissive: 0xffffff, emissiveMap: m0.map || null, emissiveIntensity: 0.10, name: 'farmWpn_' + mk });   // (its own paint lifted a little: no environment to show steel by)
+        }
+        W[nm] = { g, mat: farmWpnMat[mk], ex };
+      });
+      farmWpn = W; res(W);
+    }, () => { farmWpn = {}; res(farmWpn); });
+    bwFetchSoon(FARM_WEAPONS_GLB);
+  });
+  return farmWpnP;
+}
+// the pack's model `name` as a weapon of this file (its `edge`: it cuts; `two`: either edge leads, a sword's)
+function farmWeaponModel(name) {
+  if (FARM_TOOLS[name]) return FARM_TOOLS[name];
+  const P = farmWpn && farmWpn[name]; if (!P || P.ex.kind === 'shield') return null;
+  const sword = P.ex.kind === 'sword';
+  return (FARM_TOOLS[name] = { g: P.g, mat: P.mat, ax: new THREE.Vector3(0, 1, 0), c: new THREE.Vector3(), lo: 0, hi: P.ex.hi, bT: new THREE.Vector3(1, 0, 0),
+    grip: P.ex.grip, guard: P.ex.guard, edge: true, two: sword, pack: name });
+}
+function farmWeapon(key, role = null) {
   if (FARM_TOOLS[key]) return FARM_TOOLS[key];
+  if (/^(Sword|Axe)_/.test(key)) return farmWeaponModel(key) || farmWeapon(role || (key[0] === 'S' ? 'sword' : 'axe'));
   const P = [], box = (w, h, d, x, y, z, col, ry) => P.push(farmWeaponPart(new THREE.BoxGeometry(w, h, d), col, x, y, z, ry));
   const cyl = (r0, r1, h, y, col, seg = 7) => P.push(farmWeaponPart(new THREE.CylinderGeometry(r1, r0, h, seg), col, 0, y + h / 2, 0));
   let hi;
@@ -116866,7 +117094,8 @@ function farmWeapon(key) {
   g.computeVertexNormals();
   if (!farmWeaponMat) farmWeaponMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, flatShading: true,   // (0.55 flared the spear's shaft white under the moon)
     emissive: 0x1a1c20, emissiveIntensity: 1 });   // (METALNESS IS A TRAP: steel is a light rough dielectric with a lift of its own)
-  return (FARM_TOOLS[key] = { g, mat: farmWeaponMat, ax: new THREE.Vector3(0, 1, 0), c: new THREE.Vector3(), lo: 0, hi, bT: new THREE.Vector3(1, 0, 0) });
+  return (FARM_TOOLS[key] = { g, mat: farmWeaponMat, ax: new THREE.Vector3(0, 1, 0), c: new THREE.Vector3(), lo: 0, hi, bT: new THREE.Vector3(1, 0, 0),
+    edge: key === 'sword' || key === 'axe', two: key === 'sword' || key === 'axe' });   // (the built axe is double-bitted)
 }
 function farmPre(u, gltf) {
   const m = gltf.scene, K = u.kind;
@@ -116938,7 +117167,8 @@ const FARM_MOCAP = [
    * wide — and on twenty villagers that gait was most of why they read as
    * creatures being steered. Wong's pack is the Male Locomotion Pack: a man's
    * walk, a man's jog, a man standing, a man side-stepping. */
-  [() => wongMoves, { mHWalk: 'walk', mHRun: 'run', mHIdle: 'idle', mHStrL: 'strafeL', mHStrR: 'strafeR', mHSideL: 'sideL', mHSideR: 'sideR', mHTurnL: 'turnL', mHTurnR: 'turnR' }],
+  [() => wongMoves, { mHWalk: 'walk', mHRun: 'run', mHIdle: 'idle', mHStrL: 'strafeL', mHStrR: 'strafeR', mHSideL: 'sideL', mHSideR: 'sideR', mHTurnL: 'turnL', mHTurnR: 'turnR',
+    mCombo1: 'mc1', mCombo2: 'mc2', mCombo3: 'mc3', mZDie: 'zDie' }],   // (the owner's one-handed combos and the rare death, 2026-11-23: `FARM_COMBO`)
   [() => drunkMoves, { mDIdle: 'idleB', mDWalk: 'walk' }],
 ];
 const FARM_MOCAP_SET = {};                  // file -> { clips, speed, travel, az }
@@ -117023,7 +117253,7 @@ function farmArm(u, m) {
   m.updateMatrixWorld(true);
   const inv = m.matrixWorld.clone().invert();
   for (const o of u.farmLoose || []) o.removeFromParent();
-  const want = K.tool ? farmWeapon(K.tool) : null;
+  const want = K.tool ? farmWeapon(K.wkey || K.tool, K.tool) : null;
   if (!want) return;
   const hand = m.getObjectByName(FJ(K.file, 'RightHand'));
   const bone = (re) => { let r = null; m.traverse((b) => { if (!r && b.isBone && re.test(b.name)) r = b; }); return r; };
@@ -117058,15 +117288,79 @@ function farmArm(u, m) {
   const Rm = mW.multiply(mT.clone().transpose());
   const sc = m.getWorldScale(new THREE.Vector3()).x;
   const L = want.hi - want.lo;
-  const gp = want.c.clone().addScaledVector(want.ax, want.lo + L * (K.at || 0.16));
+  const gp = want.c.clone().addScaledVector(want.ax, want.grip !== undefined ? want.lo + want.grip : want.lo + L * (K.at || 0.16));   // (a pack weapon: on its handle, wherever the role used to hold a spear)
   const Mw = new THREE.Matrix4().makeTranslation(palm.x, palm.y, palm.z).multiply(Rm).multiply(new THREE.Matrix4().makeScale(sc, sc, sc)).multiply(new THREE.Matrix4().makeTranslation(-gp.x, -gp.y, -gp.z));
   const mesh = new THREE.Mesh(want.g, want.mat);
   mesh.name = 'farmTool'; mesh.frustumCulled = false;
   hand.matrixWorld.clone().invert().multiply(Mw).decompose(mesh.position, mesh.quaternion, mesh.scale);
   hand.add(mesh);
   const tip = new THREE.Object3D(); tip.position.copy(want.c).addScaledVector(want.ax, want.hi); mesh.add(tip);
-  u.farmTool = mesh; u.farmPalm = palm.clone(); u.farmGrip = gp.clone();
+  u.farmTool = mesh; u.farmPalm = palm.clone(); u.farmGrip = gp.clone(); u.farmW = want;
   u.bones = u.bones || {}; u.bones.tip = tip; u.limbs = null;
+  farmShield(u, m);
+}
+/* ---- A SHIELD ON A RARE KNIGHT'S BACK (2026-11-23, the owner: "put a shield on rare knights backs you only see a few times which
+ * will break off if hit from behind them with good physics grab the puppets break sound too for that"). A man of the knights' bodies
+ * (`kn`, `ka`) carries one of the pack's three shields slung on his back, now and then — `FARM_SHIELD_P` a man, drawn once a game, so
+ * one or two in a fight and not the same ones each time. Seated at the stance like the weapon: on his chest bone, a hand behind his
+ * back, a little low, its face out, leaning in. A blow that comes from BEHIND him (yours, or a companion's: from the far half of him
+ * off his chest's facing) is taken by it: it comes off whole — the puppets' break (`sfxPupBreak`) — and goes, thrown along the blow
+ * and up, tumbling, into the debris (`gibs`: its gravity, its bounces, the castle's floor under it, lying flat on its back where it
+ * stops), and he is not hurt by that blow. */
+const FARM_SHIELD_P = 0.22, FARM_SHIELD_H = 0.74;
+const FARM_SHIELD_ROLL = Math.random();              // (this game's draw: who carries one)
+function farmShield(u, m) {
+  const K = u.kind;
+  if (u.farmShieldM || !(K.file === 'kn' || K.file === 'ka') || !farmWpn || !/^farmer\d+$/.test(u.kindName || '')) return;
+  const i = +u.kindName.slice(6), r = (FARM_SHIELD_ROLL * 997 + i * 0.618034) % 1;
+  if (r >= FARM_SHIELD_P && !(typeof window !== 'undefined' && window.__bwAllShields)) return;
+  const S = farmWpn['Shield_0' + (1 + (i % 3))]; if (!S) return;
+  let chest = null; m.traverse((b) => { if (!chest && b.isBone && /Spine2(_|$)/.test(b.name)) chest = b; });
+  if (!chest) return;
+  m.updateMatrixWorld(true);
+  const fwd = new THREE.Vector3(0, 0, 1).transformDirection(chest.matrixWorld).setY(0);
+  if (fwd.lengthSq() < 0.05) fwd.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y)); fwd.normalize();
+  const back = fwd.clone().negate(), up = new THREE.Vector3(0, 1, 0).addScaledVector(fwd, 0.18).normalize();   // (leaning in onto his back at the top)
+  const sc = FARM_SHIELD_H / (S.ex.h || 0.9), d = (S.ex.d || 0.15) * sc;
+  const ctr = chest.getWorldPosition(new THREE.Vector3()).addScaledVector(back, 0.13 + d * 0.5).addScaledVector(up, -0.12);
+  // its own frame: +Y up, its face along −Z·face (the packer's `face`) — turned onto `back`
+  const zf = back.clone().multiplyScalar(-(S.ex.face || -1)), xf = new THREE.Vector3().crossVectors(up, zf).normalize(), yf = new THREE.Vector3().crossVectors(zf, xf);
+  const Mw = new THREE.Matrix4().makeBasis(xf, yf, zf).setPosition(ctr).multiply(new THREE.Matrix4().makeScale(sc, sc, sc));
+  const mesh = new THREE.Mesh(S.g, S.mat); mesh.name = 'farmShield'; mesh.frustumCulled = false;
+  chest.matrixWorld.clone().invert().multiply(Mw).decompose(mesh.position, mesh.quaternion, mesh.scale);
+  chest.add(mesh);
+  u.farmShieldM = mesh; u.farmShieldFace = S.ex.face || -1;
+}
+const _fshA = new THREE.Vector3(), _fshB = new THREE.Vector3(), _fshQ = new THREE.Quaternion(), _fshS = new THREE.Vector3(), _fshP = new THREE.Vector3();
+// a blow at him: from behind, the shield takes it and comes off (true: the blow is spent)
+function farmShieldTake(u, P, from) {
+  const sh = u.farmShieldM; if (!sh || !sh.parent) return false;
+  const src = from && from.g ? from.g.position : camera.position;
+  if (!u.farmChest) u.model && u.model.traverse((o) => { if (!u.farmChest && o.isBone && /Spine2(_|$)/.test(o.name)) u.farmChest = o; });
+  if (u.farmChest) { u.farmChest.updateWorldMatrix(true, false); _fshA.set(0, 0, 1).transformDirection(u.farmChest.matrixWorld).setY(0).normalize(); }
+  else _fshA.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y));
+  _fshB.set(src.x - u.g.position.x, 0, src.z - u.g.position.z); const dl = _fshB.length() || 1; _fshB.multiplyScalar(1 / dl);
+  if (_fshA.dot(_fshB) > -0.3) return false;                           // (not from behind: the blow is his to take)
+  // off, whole, into the world as it hung: a level group (what `gibs` turns and lays flat) holding the shield turned so that,
+  // level, it lies on its back — its face up
+  sh.updateWorldMatrix(true, false); sh.matrixWorld.decompose(_fshP, _fshQ, _fshS);
+  sh.removeFromParent();
+  const g = new THREE.Group(); g.position.copy(_fshP);
+  const faceW = new THREE.Vector3(0, 0, -u.farmShieldFace).applyQuaternion(_fshQ);       // its face, in the world, as it hung
+  const lay = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -u.farmShieldFace), new THREE.Vector3(0, 1, 0));   // face up, in the group
+  sh.position.set(0, 0, 0); sh.quaternion.copy(lay); sh.scale.copy(_fshS); g.add(sh);
+  g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), faceW).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0));
+  // (the group turned so the shield shows as it hung, face out of his back; the spin and the landing take it from there)
+  scene.add(g);
+  u.farmShieldM = null;
+  const sp = 3.2 + (P || 0) * 2.2, away = _fshB.clone().negate();
+  const y0 = u.g.position.y, S = inC13 ? C13_SITE : FORT_SITE;
+  gibs.push({ m: g, vel: new THREE.Vector3(away.x * sp, 2.6 + (P || 0) * 1.4, away.z * sp), spin: new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 9),
+    rest: y0, restAt: (x, z) => { const f = keepFloorAt(x, z, y0 + 0.6, 0.8, S); return f === null ? y0 : f; }, half: 0.07 * _fshS.x / Math.max(0.01, _fshS.x), life: 90, bleed: false, keep: true,
+    onLand: (gb, v) => sfxPropHit('metal', Math.min(6, 1 + v * 0.8)) });
+  sfxPupBreak(u.g.position.x, u.g.position.z, 1.15);
+  if (!from) { addTrauma(0.18); hitstop = Math.max(hitstop, 0.05); }
+  return true;
 }
 /* AND THE HANDLE IS IN THE FIST (round 3: "make the farmers actually hold there weapons"). The handle went through
  * `palm` — 62 % of the way from the wrist to the middle knuckle, which is the flat of the palm itself — and the life
@@ -117082,7 +117376,7 @@ const FARM_FIST = 1.5;
  * side of it rather than round it. So for the weapon hand the axis is not guessed at all: each finger joint turns about
  * the axis that carries the bone toward the handle's line, which closes the fist on the handle by construction. */
 function farmCurlToHandle(u, m) {
-  const S = u.life, mesh = u.farmTool, W = FARM_TOOLS[u.kind.tool];
+  const S = u.life, mesh = u.farmTool, W = u.farmW || FARM_TOOLS[u.kind.tool];
   if (!S || !mesh || !W) return;
   m.updateMatrixWorld(true);
   const ax = W.ax.clone().transformDirection(mesh.matrixWorld), o = new THREE.Vector3(0, u.farmGrip ? u.farmGrip.y : 0, 0).applyMatrix4(mesh.matrixWorld);
@@ -117700,7 +117994,7 @@ const _frH = new THREE.Vector3(), _frV = new THREE.Vector3(), _frA = new THREE.V
  * hair before and at its contact (`A.hit`), the head's travel there taken across the handle, and the turn about the
  * handle that brings the face onto it kept per swing. Every action's state is put back after, as `measureGaits` does. */
 function farmRollMeasure(u) {
-  const mesh = u.farmTool, B = u.farmToolBase, W = FARM_TOOLS[u.kind.tool], tip = u.bones && u.bones.tip;
+  const mesh = u.farmTool, B = u.farmToolBase, W = u.farmW || FARM_TOOLS[u.kind.tool], tip = u.bones && u.bones.tip;
   const out = {};
   if (!mesh || !B || !W || !tip || !u.mixer || !u.clips || !u.atk) return out;
   const saved = [];
@@ -117739,10 +118033,10 @@ function farmRollMeasure(u) {
  * weapon's head in his own frame, and stands where that leaves `FARM_REACH_GAP` between the head and your eye — on
  * screen, past the near plane — judged there (`hitFront`). A kick (no aim on a leg) stands off its toe + `FARM_KICK_GAP`.
  * His reaches and ring are re-derived from the new stops, as `makeMutant` derives them. */
-const FARM_REACH_GAP = 0.25, FARM_KICK_GAP = 0.3, FARM_STOP_MIN = 0.95;
+const FARM_REACH_GAP = 0.40, FARM_KICK_GAP = 0.3, FARM_STOP_MIN = 0.95;
 /* (the wide back-hand slash, `mCutC`, swings in on a flatter arc than the shoulder rule allows for: measured, it came to
  * 0.05-0.14 of your eye on every weapon where the rest came to 0.15-0.45, so it stands a little further off) */
-const FARM_REACH_GAP_CLIP = { mCutC: 0.42 };
+const FARM_REACH_GAP_CLIP = { mCutC: 0.55 };
 /* (and an overhead chop is thrown from closer than anything else: it comes down in front of your face from over HIS, and
  * from the general floor the mace's fell short every time — 2026-11-16) */
 const FARM_STOP_MIN_CLIP = { mChop: 0.80 };
@@ -117795,25 +118089,182 @@ function farmReachSet(u) {
   for (const k in u.kind.use) { const a = u.atk[k]; if (!a || a.minDist) continue; acc += a.reach * u.kind.use[k]; w += u.kind.use[k]; }
   if (w > 0) u.ring = acc / w;
   u.farmReachZ = out;
+  for (const k in u.atk) if (FARM_IK[k] && u.atk[k] && !u.atk[k].minDist) { const A2 = u.atk[k]; A2.noAim = true; A2.stop = FARM_IK_STOP; A2.reach = FARM_IK_STOP + 0.73; out[k] = FARM_IK_STOP; }   // (the laid-out cuts: `farmSwingIK`)
+  { const rs = Object.values(u.atk).filter((a) => !a.minDist).map((a) => a.reach); if (rs.length) u.maxReach = Math.max(...rs); let w2 = 0, ac2 = 0; for (const k in u.kind.use) { const a = u.atk[k]; if (!a || a.minDist) continue; ac2 += a.reach * u.kind.use[k]; w2 += u.kind.use[k]; } if (w2 > 0) u.ring = ac2 / w2; }
   /* AND THE EDGE IS SET IN HIS GRIP ONCE (2026-11-16, "the weapons blades face the wrong way"). A weapon does not turn in
    * a fist (`farmToolRoll`), so it is seated with the roll his own strokes want: each stroke's head travel into its
    * contact, in the weapon's frame, weighted by how often he throws it — for the double-edged sword either edge leading
    * (the mean of twice the angle), for the axe's one bit the plain mean. The mace is flanged all round and the spear
    * thrusts: they keep the knuckle seat. A turn about the handle's own line leaves the grip where it is. */
-  const T = u.farmTool, B = u.farmToolBase, tool = u.kind.tool;
-  if (T && B && trav.length && (tool === 'sword' || tool === 'axe')) {
-    const m2 = 2;   // (sword and double axe alike: either edge)
+  const T = u.farmTool, B = u.farmToolBase, TW = u.farmW || FARM_TOOLS[u.kind.tool];
+  if (T && B && trav.length && TW && TW.edge) {
+    const m2 = TW.two ? 2 : 1;   // (a sword either edge; one bit: the plain mean)
     let cs = 0, sn = 0; for (const [th, wt] of trav) { cs += Math.cos(th * m2) * wt; sn += Math.sin(th * m2) * wt; }
     const roll = Math.atan2(sn, cs) / m2;
-    B.q.multiply(new THREE.Quaternion().setFromAxisAngle(FARM_TOOLS[tool].ax, roll));
+    B.q.multiply(new THREE.Quaternion().setFromAxisAngle(TW.ax, roll));
     T.quaternion.copy(B.q); T.updateMatrixWorld(true);
     u.farmSeatRoll = +roll.toFixed(2);
   }
 }
+/* ---- DYING ON HIS FEET (2026-11-23, the owner: "make the zombie death animation for them but make it rare and they ragdoll after
+ * completing the death animation"). `FARM_ZDIE_P` of the farmers' deaths (not one taken apart by shot, a round through the head or
+ * the mace): the blow takes nothing off him, and the owner's Mixamo "Zombie Death" plays — he staggers, sags and goes down — on the
+ * spot (the clip walks its hips two metres forward; held where they began, so he falls where he stood, not into you); as it ends,
+ * the ragdoll takes the body from that pose, barely pushed. */
+const FARM_ZDIE_P = 0.14;
+function farmZDieRoll(u) {
+  if (!u.kind.farmer || !u.clips || !u.clips.mZDie || !u.mixer || u.rag || u.st.gunHead || (u.st.killBlast || 0) > 0.05 || u.st.killMace) return false;
+  return Math.random() < (typeof window !== 'undefined' && window.__bwZDieAll ? 1 : FARM_ZDIE_P);
+}
+function farmZDieStart(u, dx, dz) {
+  const a = u.clips.mZDie;
+  for (const x of u.mixer._actions) if (x !== a) x.fadeOut(0.12);
+  a.reset(); a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.timeScale = 1; a.setEffectiveWeight(1); a.fadeIn(0.12); a.play();
+  u.cur = a; u.holdAnim = true;
+  if (!u.zHip) u.model.traverse((o) => { if (!u.zHip && o.isBone && /Hips(_|$)/.test(o.name)) u.zHip = o; });
+  u.zDie = { t: 0, dx, dz, dur: a.getClip().duration, hx: null, hz: null };
+}
+function farmZDieStep(u, dt) {
+  const Z = u.zDie, a = u.clips.mZDie;
+  Z.t += dt;
+  u.mixer.update(dt);
+  const h = u.zHip;
+  if (h) { if (Z.hx === null) { Z.hx = h.position.x; Z.hz = h.position.z; } h.position.x = Z.hx; h.position.z = Z.hz; }   // (his hips held over where he stood)
+  if (Z.t >= Z.dur * 0.94 || !a) { u.zDie = null; u.holdAnim = false; u.model.updateMatrixWorld(true); mutRagdoll(u, Z.dx, Z.dz, 0.12); }
+}
+/* ---- THE CUTS, MADE FOR YOUR EYE (2026-11-23, the owner: "make new swings" — "they dont even swing the blade at you and their moves dont
+ * connect to the player"). Filmed from your eye (`tools/farmpov.js`), every captured cut ended with the POINT at your eye: the aim
+ * turns the arm about the shoulder so the tip points at you, and a blade pointing at you is a dot — 17-28° across your view as it
+ * landed. These four strokes are not captured; they are laid out each frame against WHERE YOU ARE: a path in the air from a chamber
+ * high (or wide) on one side, through `C` — a point 0.38 m in front of your eye at its height — and out low on the other side; the
+ * blade at every point of it lying across your view (square to its travel and to the line to you, canted 40° toward him so a man's
+ * arm can hold it), the edge — the axe's bit — leading; his wrist put where that leaves the grip by a two-bone solve (shoulder,
+ * elbow out and down), his hand turned to hold the weapon so. Eased in from his own pose through the wind, the blade sweeping the
+ * path through the strike (`C` at its middle), eased back out through the recovery. His legs, body and other arm are the clip's,
+ * the timing and the footwork the stroke's own; the arm is not aimed (`noAim`), and he stands where the path can reach you
+ * (`FARM_IK_STOP`). Strokes by name: a forehand diagonal (from his high right), a backhand diagonal, a flat cut, an overhead chop. */
+const FARM_IK = { axCut: 'diag', axCutD: 'back', axCutC: 'flat', axChop: 'chop', hmCut: 'diag', hmCutD: 'back', hmCutC: 'flat', hmChop: 'chop', rkCut: 'diag', rkCutD: 'back' };
+const FARM_IK_PATH = {   // start and end of each stroke from C, in (his right, up, toward him) metres
+  diag: [[0.78, 0.66, 0.14], [-0.72, -0.74, 0.04]],
+  back: [[-0.72, 0.58, 0.14], [0.78, -0.70, 0.02]],
+  flat: [[0.98, 0.06, 0.24], [-0.88, -0.06, 0.12]],
+  chop: [[0.16, 0.98, 0.34], [0.04, -0.98, -0.04]],
+};
+const FARM_IK_STOP = 1.55, FARM_IK_FRONT = 0.40, FARM_IK_CANT = 0.70;   // (where he stands from you; C off your eye; the blade's cant toward him: tan, ≈35°)
+const _fikS = new THREE.Vector3(), _fikF = new THREE.Vector3(), _fikU = new THREE.Vector3(0, 1, 0), _fikR = new THREE.Vector3(), _fikC = new THREE.Vector3();
+const _fikA = new THREE.Vector3(), _fikB = new THREE.Vector3(), _fikK = new THREE.Vector3(), _fikP = new THREE.Vector3(), _fikM = new THREE.Vector3(), _fikD = new THREE.Vector3();
+const _fikE = new THREE.Vector3(), _fikG = new THREE.Vector3(), _fikH = new THREE.Vector3(), _fikL = new THREE.Vector3(), _fikT = new THREE.Vector3();
+const _fikQ = new THREE.Quaternion(), _fikQ2 = new THREE.Quaternion(), _fikQa = new THREE.Quaternion(), _fikQf = new THREE.Quaternion(), _fikQh = new THREE.Quaternion();
+const _fikM1 = new THREE.Matrix4(), _fikM2 = new THREE.Matrix4();
+function fikAim(bone, child, to, w) {               // turn `bone` (world) so its child lies toward `to`, a share `w` of the way
+  bone.getWorldPosition(_fikA); child.getWorldPosition(_fikB);
+  const cur = _fikB.sub(_fikA).normalize(), want = _fikT.subVectors(to, _fikA).normalize();
+  _fikQ2.setFromUnitVectors(cur, want);
+  if (w < 1) _fikQ2.slerp(_fikQ.identity(), 1 - w);
+  bone.getWorldQuaternion(_fikQ); _fikQ.premultiply(_fikQ2);
+  bone.parent.getWorldQuaternion(_fikQ2).invert();
+  bone.quaternion.copy(_fikQ2.multiply(_fikQ));
+  bone.updateMatrixWorld(true);
+}
+function farmSwingIK(u, dt) {
+  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null, kind = A ? FARM_IK[st.swing] : null;
+  if (!kind || st.foe || u.rag || !u.bones || !u.bones.arm || !u.bones.fore || !u.bones.hand || !u.bones.tip || !u.farmToolBase) { u.farmIKOn = false; return; }
+  const W = u.farmW || FARM_TOOLS[u.kind.tool], mesh = u.farmTool, B = u.farmToolBase, arm = u.bones.arm, fore = u.bones.fore, hand = u.bones.hand;
+  const t = st.atk, wind = A.wind, strike = A.strike, rec = A.recover || 0.4;
+  const w = THREE.MathUtils.smoothstep(t, wind * 0.15, wind * 0.7) * (1 - THREE.MathUtils.smoothstep(t, wind + strike + 0.02, wind + strike + Math.max(0.15, rec * 0.6)));
+  if (w < 0.01) { u.farmIKOn = false; u.fikWas = false; return; }
+  u.farmIKOn = true;
+  mesh.position.copy(B.p); mesh.quaternion.copy(B.q);               // (the seat in the fist: the hand holds the angle, not a roll in it)
+  u.model.updateMatrixWorld(true);
+  // the frame: his shoulder, the line to your eye, his right
+  arm.getWorldPosition(_fikS);
+  const eye = camera.position;
+  _fikF.set(eye.x - _fikS.x, 0, eye.z - _fikS.z); const fl = _fikF.length() || 1; _fikF.multiplyScalar(1 / fl);
+  _fikR.crossVectors(_fikF, _fikU);
+  _fikC.copy(eye).addScaledVector(_fikF, -FARM_IK_FRONT);
+  const P0 = FARM_IK_PATH[kind][0], P1 = FARM_IK_PATH[kind][1];
+  const at = (q, out) => out.copy(_fikC).addScaledVector(_fikR, q[0]).addScaledVector(_fikU, q[1]).addScaledVector(_fikF, -q[2]);
+  at(P0, _fikA); at(P1, _fikB);
+  _fikK.copy(_fikC).multiplyScalar(2).sub(_fikP.addVectors(_fikA, _fikB).multiplyScalar(0.5));   // the bezier's control: it passes C halfway
+  const s0 = wind - FARM_IK_LEAD, s1 = wind + strike + FARM_IK_LEAD;   // (the sweep a little longer than the strike either side, its middle — `C` — the strike's: a 0.10 s strike swept the whole path in six frames)
+  const s = THREE.MathUtils.clamp((t - s0) / Math.max(0.1, s1 - s0), 0, 1);
+  const se = s * s * (3 - 2 * s) * 0.35 + s * 0.65;                                                // (quick through the middle, as a cut is)
+  const b0 = (1 - se) * (1 - se), b1 = 2 * se * (1 - se), b2 = se * se;
+  _fikP.set(0, 0, 0).addScaledVector(_fikA, b0).addScaledVector(_fikK, b1).addScaledVector(_fikB, b2);   // the blade's striking point
+  // its travel there (the derivative), and the blade square to it and to you, canted toward him
+  _fikM.set(0, 0, 0).addScaledVector(_fikA, -2 * (1 - se)).addScaledVector(_fikK, 2 * (1 - 2 * se)).addScaledVector(_fikB, 2 * se).normalize();
+  _fikD.crossVectors(_fikM, _fikF).normalize();
+  const newSwing = !u.fikWas || u.fikSwing !== st.swing || t < (u.fikT0 ?? 9);
+  u.fikT0 = t;
+  if (newSwing) {                                                                                  // (which way along it, once a swing: the grip nearer his shoulder)
+    u.fikSwing = st.swing; u.fikEdge = 0;
+    const k = u.fikLen || 0.6;
+    const h1 = _fikG.copy(_fikC).addScaledVector(_fikD, -k).distanceTo(_fikS), h2 = _fikH.copy(_fikC).addScaledVector(_fikD, k).distanceTo(_fikS);
+    u.fikSign = h1 <= h2 ? 1 : -1;
+  }
+  _fikD.multiplyScalar(u.fikSign).addScaledVector(_fikF, FARM_IK_CANT).normalize();               // butt → point, the point away from him
+  // the wrist: back along the blade from the striking point (its share of the weapon, off the seat once measured)
+  if (!u.fikLen) { hand.getWorldPosition(_fikG); u.bones.tip.getWorldPosition(_fikH); u.fikLen = Math.max(0.3, _fikG.distanceTo(_fikH) * (W.two ? 0.62 : 0.86)); }
+  _fikG.copy(_fikP).addScaledVector(_fikD, -u.fikLen);
+  // two bones: shoulder → elbow → wrist, the elbow out and down
+  fore.getWorldPosition(_fikE); hand.getWorldPosition(_fikH);
+  const la = _fikS.distanceTo(_fikE), lb = _fikE.distanceTo(_fikH);
+  _fikL.subVectors(_fikG, _fikS); let dd = _fikL.length(); const dir = _fikL.normalize();
+  dd = Math.min(dd, (la + lb) * 0.995); dd = Math.max(dd, Math.abs(la - lb) + 0.02);
+  const cosA = THREE.MathUtils.clamp((la * la + dd * dd - lb * lb) / (2 * la * dd), -1, 1), sinA = Math.sqrt(1 - cosA * cosA);
+  _fikT.copy(_fikU).multiplyScalar(-0.75).addScaledVector(_fikR, 0.55).addScaledVector(_fikF, -0.25);   // the elbow's way
+  _fikT.addScaledVector(dir, -_fikT.dot(dir)).normalize();
+  const elbow = _fikE.copy(_fikS).addScaledVector(dir, la * cosA).addScaledVector(_fikT, la * sinA);
+  const wrist = _fikH.copy(_fikS).addScaledVector(dir, dd);
+  fikAim(arm, fore, elbow, w);
+  fikAim(fore, hand, wrist, w);
+  // the hand turned so the weapon lies along the blade's line with its edge (the bit) leading
+  _fikQa.copy(B.q);                                                    // the seat: the weapon's frame in the hand's
+  const axH = _fikA.copy(W.ax).applyQuaternion(_fikQa).normalize(), edH = _fikB.copy(W.bT).applyQuaternion(_fikQa).normalize();
+  const eW = _fikK.copy(_fikM).addScaledVector(_fikD, -_fikM.dot(_fikD)).normalize();
+  if (W.two) {                                                         // (two edges: whichever was nearer as the swing began — chosen ONCE, or it flipped mid-stroke)
+    if (!u.fikEdge) { hand.getWorldQuaternion(_fikQ); u.fikEdge = _fikP.copy(edH).applyQuaternion(_fikQ).dot(eW) < 0 ? -1 : 1; }
+    if (u.fikEdge < 0) eW.negate();
+  }
+  _fikM1.makeBasis(axH, edH, _fikL.crossVectors(axH, edH).normalize());
+  _fikM2.makeBasis(_fikD, eW, _fikT.crossVectors(_fikD, eW).normalize());
+  _fikQh.setFromRotationMatrix(_fikM2.multiply(_fikM1.transpose()));   // the hand's world turn that does it
+  hand.getWorldQuaternion(_fikQ); _fikQ.slerp(_fikQh, w);
+  hand.parent.getWorldQuaternion(_fikQ2).invert();
+  hand.quaternion.copy(_fikQ2.multiply(_fikQ));
+  u.fikWas = true;
+  arm.updateMatrixWorld(true);
+}
+/* AND NO BONE OF THE WEAPON ARM TURNS FURTHER IN A FRAME THAN AN ARM CAN (2026-11-23, the owner: "TEST IT AS YOU MAKE THEM MAKE SURE THEY
+ * ARE SMOOTH"). Measured frame to frame (`tools/farmpov.js` SMOOTH): the laid-out cut's first version popped the hand through 166-180°
+ * and the tip 1.2-1.6 m in single frames (a blend that took the other way round; the sword's edge re-chosen each frame — both fixed),
+ * and the captured strokes themselves jerked at their first frame, cut in hard from the walk and the carry (0.8 m of tip in a frame).
+ * So the last thing done to an armed man each frame, after his clip, his aim, his cut and his carry: each of the shoulder, elbow and
+ * wrist turns at most `FARM_IK_RATE` from where it was DRAWN last frame. (After the blow's test: the test reads the true pose.) */
+function farmArmSmooth(u, dt) {
+  const Bn = u.bones; if (!Bn || !Bn.arm || !Bn.fore || !Bn.hand || !u.farmTool) return;
+  const P = u.fikPrev || (u.fikPrev = { a: new THREE.Quaternion(), f: new THREE.Quaternion(), h: new THREE.Quaternion(), on: false });
+  if (P.on && u.st.alive && !u.rag) {
+    // (fast only through the blow itself; the wind, the recovery and the carry at an arm's ordinary pace — the captured strokes' chambers
+    // snapped up at 0.35-0.44 m of tip a frame)
+    const A = u.st.atk >= 0 && u.atk ? u.atk[u.st.swing] : null, t = u.st.atk;
+    const inBlow = A && t >= A.wind - FARM_IK_LEAD - 0.05 && t <= A.wind + A.strike + FARM_IK_LEAD + 0.05;
+    const mx = (inBlow ? FARM_IK_RATE : FARM_ARM_RATE) * Math.min(Math.max(dt, 1 / 240), 1 / 20);
+    Bn.arm.quaternion.copy(_fikQ.copy(P.a).rotateTowards(Bn.arm.quaternion, mx));
+    Bn.fore.quaternion.copy(_fikQ.copy(P.f).rotateTowards(Bn.fore.quaternion, mx));
+    Bn.hand.quaternion.copy(_fikQ.copy(P.h).rotateTowards(Bn.hand.quaternion, mx));
+    Bn.arm.updateMatrixWorld(true);
+  }
+  P.a.copy(Bn.arm.quaternion); P.f.copy(Bn.fore.quaternion); P.h.copy(Bn.hand.quaternion); P.on = u.st.alive && !u.rag;
+}
+const FARM_IK_LEAD = 0.09;
+const FARM_ARM_RATE = 11;   // rad/s outside the blow (≈ 630°/s)
+const FARM_IK_RATE = 24;   // rad/s a bone may turn in a laid-out cut (≈ 1400°/s: a fast cut's arm turns ~600°/s; 14.5 lagged the blade off the path and 5 of 8 sword cuts missed)
 const _fwrT = new THREE.Vector3(), _fwrQ = new THREE.Quaternion(), _fwrR = new THREE.Quaternion();
 function farmToolRoll(u, dt) {
-  const mesh = u.farmTool, B = u.farmToolBase, W = FARM_TOOLS[u.kind.tool];
+  const mesh = u.farmTool, B = u.farmToolBase, W = u.farmW || FARM_TOOLS[u.kind.tool];
   if (!mesh || !B || !W || !u.farmGrip) return;
+  if (u.farmIKOn) return;                                // (a laid-out cut holds the weapon itself: `farmSwingIK`)
   if (!u.farmRollK && u.natDone) { u.farmRollK = farmRollMeasure(u); farmReachSet(u); }
   /* THE WEAPON DOES NOT TURN IN HIS FIST WHILE IT MOVES (2026-11-16, the owner: "they arent even holding or swinging them
    * right … the weapons blades face the wrong way"). It used to be turned through every blow to follow the head, and the
@@ -117827,13 +118278,17 @@ function farmToolRoll(u, dt) {
    * the spear (it thrusts) do not turn. */
   const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null, tool = u.kind.tool;
   const R = u.farmRoll || (u.farmRoll = { ang: 0, tip: null, learn: {}, swing: null, want: 0 });
-  const turns = tool === 'sword' || tool === 'axe', two = turns, tipB = u.bones && u.bones.tip;   // (both two-edged now: the axe is double-bitted)
+  const turns = !!W.edge, two = !!W.two, tipB = u.bones && u.bones.tip;   // (a sword either edge; the pack's axes one bit, which must lead: up to half a turn, set once at the swing's start, eased in through the draw)
   if (A && turns && !(A.limbs && A.limbs.some((i) => i >= 2))) {
     const t = st.atk, end = A.wind + A.strike;
     if (R.swing !== st.swing || t < 0.05) {                       // a new swing: its angle is fixed now
       R.swing = st.swing;
       const L = R.learn[st.swing];
-      const th = L ? Math.atan2(L.s, L.c) / 2 : 0;                  // (axial: within a quarter turn either way)
+      /* (one bit, and this stroke not thrown yet: the turn measured on his own clip when he was dressed — `farmRollMeasure`, taken
+       * before his seat's roll — so the FIRST of each stroke leads with the bit too: measured, the first blows of a stroke came in
+       * 0.10 and −0.15 of the way to bit-first, learned ones 0.5) */
+      const seed = !two && u.farmRollK && typeof u.farmRollK[st.swing] === 'number' ? u.farmRollK[st.swing] - (u.farmSeatRoll || 0) : 0;
+      const th = L ? Math.atan2(L.s, L.c) / (two ? 2 : 1) : seed;  // (axial for two edges: within a quarter turn either way)
       R.want = th;
     }
     // learn from the stroke's fast part into the contact, in the seated frame
@@ -117869,10 +118324,14 @@ function farmToolRoll(u, dt) {
  * the moment a swing starts it eases back out, fast, to the seat the swings and their reach were measured on — the blows
  * are exactly what they were. Directions in his own frame: forward, up, his right. */
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { FARM_CARRY }));
+/* (NOT STOOD STRAIGHT UP — 2026-11-23, the owner: "their weapons should be angled like they are being held they dont stick up straight
+ * when held". The sword was carried 55° up off level and the axe 70°: a torch, not a weapon. A sword is held in a guard, point at the
+ * man in front of you a little high — the "plough" (`Pflug`) of the manuals, hilt by the hip and the point at the face — and a
+ * one-handed axe ready across the body, haft forward at about 45°, the bit up and to the front.) */
 const FARM_CARRY = {
-  sword:  { f: 0.55, u: 0.80, r: 0.12 },
-  axe:    { f: 0.28, u: 0.93, r: 0.10 },
-  hammer: { f: 0.28, u: 0.93, r: 0.10 },
+  sword:  { f: 0.84, u: 0.46, r: -0.12 },
+  axe:    { f: 0.66, u: 0.62, r: 0.04 },
+  hammer: { f: 0.66, u: 0.62, r: 0.04 },
   rake:   { f: 0.93, u: 0.30, r: 0.06 },
 };
 const _fcyQ = new THREE.Quaternion(), _fcyP = new THREE.Quaternion(), _fcyD = new THREE.Quaternion(), _fcyM = new THREE.Matrix4();
@@ -117880,14 +118339,16 @@ const _fcyX = new THREE.Vector3(), _fcyY = new THREE.Vector3(), _fcyZ = new THRE
 /* run AFTER the creatures' mixers (`update` → `updateMutant`): the carry is set against where the hand IS this frame — before
  * them, it was a frame behind the run's arm and shook */
 function farmCarryAll(dt) {
-  if (inFort) for (const u of farmUnits) if (u.farmTool && u.farm && u.farm.out && u.g.visible) farmCarry(u, dt);
-  if (inC13 && gargRaid) for (const u of gargRaid.units) if (u.farmTool && u.st.alive && u.g.visible) farmCarry(u, dt);   // the four through XIII's door carry theirs the same way
+  if (inFort) for (const u of farmUnits) if (u.farmTool && u.farm && u.farm.out && u.g.visible) { farmCarry(u, dt); farmArmSmooth(u, dt); }
+  if (inC13 && gargRaid) for (const u of gargRaid.units) if (u.farmTool && u.st.alive && u.g.visible) { farmCarry(u, dt); farmArmSmooth(u, dt); }   // the four through XIII's door carry theirs the same way
 }
 function farmCarry(u, dt) {
-  const mesh = u.farmTool, B = u.farmToolBase, C = FARM_CARRY[u.kind.tool];
+  const W = u.farmW, mesh = u.farmTool, B = u.farmToolBase, C = FARM_CARRY[W && W.pack ? (W.two ? 'sword' : 'axe') : u.kind.tool];   // (by what he holds: a spearman's sword is carried as a sword)
   if (!mesh || !B || !C || !mesh.parent || !u.farmGrip) return;
   if (u.farmCarried) { mesh.position.copy(B.p); mesh.quaternion.copy(B.q); }   // (the roll did not run since the last carry: never carry a carry)
   u.farmCarried = true;
+  // (if no clip wrote his hand since, the last carry's wrist turn is still on it: the hand put back first, or it would wind on)
+  if (u.fcyWrote && mesh.parent.quaternion.equals(u.fcyWrote)) { mesh.parent.quaternion.copy(u.fcyOrig); u.fcyWrote = null; }
   const st = u.st;
   const free = st.alive && !u.rag && !(st.atk >= 0) && !(st.stun > 0) && !((st.down || 0) > 0) && !(st.recoil > 0) && !st.vault;
   const k = u.farmCarryK = (u.farmCarryK || 0) + ((free ? 1 : 0) - (u.farmCarryK || 0)) * Math.min(1, dt * (free ? 5 : 16));
@@ -117912,13 +118373,35 @@ function farmCarry(u, dt) {
   mesh.parent.updateWorldMatrix(true, false);
   mesh.parent.getWorldQuaternion(_fcyP);
   _fcyQ.copy(_fcyP).multiply(mesh.quaternion);                                    // the seat, in the world
-  _fcyQ.slerp(_fcyD, k);
-  // the point in his fist stays where it is: the grip, in the hand's frame, before and after
-  mesh.getWorldScale(_fcyS);
-  _fcyG.set(0, u.farmGrip.y, 0).multiply(mesh.scale).applyQuaternion(mesh.quaternion).add(mesh.position);
-  mesh.quaternion.copy(_fcyP.invert().multiply(_fcyQ));
-  mesh.position.copy(_fcyG).sub(_fcyS.set(0, u.farmGrip.y, 0).multiply(mesh.scale).applyQuaternion(mesh.quaternion));
+  /* THE WRIST TURNS, NOT THE WEAPON IN THE FIST (2026-11-23, the owner: "the farmers are not holding their weapons properly make sure
+   * the handle are actually in their hands"). The carry used to turn the weapon about the grip inside a hand that stayed where the
+   * run put it: the handle came out of the curl of the fingers — measured (`garrison.js&m=inhand`), fingertips and palm only 11-47°
+   * round the handle between blows against 53-125° in them (180 = wrapped). Now the turn from the seat to the carry is put on the
+   * HAND (his wrist), so fist and weapon go together and the grip is the grip; past 75° the rest is the fist's, as before. */
+  const hand = mesh.parent;
+  _fcyA.copy(_fcyD).multiply(_fcyB.copy(_fcyQ).invert());                         // the turn from the seat to the carry, in the world
+  _fcyB.identity().slerp(_fcyA, k);                                               // k of it
+  const ang = 2 * Math.acos(Math.min(1, Math.abs(_fcyB.w)));
+  _fcyC.identity().slerp(_fcyB, ang > FARM_WRIST_MAX ? FARM_WRIST_MAX / ang : 1);   // the wrist's share
+  (u.fcyOrig || (u.fcyOrig = new THREE.Quaternion())).copy(hand.quaternion);
+  hand.parent.updateWorldMatrix(true, false); hand.parent.getWorldQuaternion(_fcyH);
+  // hand' = parent⁻¹ · wrist · handWorld
+  hand.quaternion.copy(_fcyH.invert().multiply(_fcyC).multiply(_fcyP));
+  u.fcyWrote = (u.fcyWrote0 || (u.fcyWrote0 = new THREE.Quaternion())).copy(hand.quaternion);
+  hand.updateMatrixWorld(true);
+  if (ang > FARM_WRIST_MAX) {                                                     // the rest in the fist, about the grip, as it was
+    hand.getWorldQuaternion(_fcyP);
+    _fcyQ.copy(_fcyP).multiply(mesh.quaternion);
+    _fcyA.copy(_fcyB).multiply(_fcyC.invert());                                   // what the wrist did not take
+    _fcyQ.premultiply(_fcyA);
+    mesh.getWorldScale(_fcyS);
+    _fcyG.set(0, u.farmGrip.y, 0).multiply(mesh.scale).applyQuaternion(mesh.quaternion).add(mesh.position);
+    mesh.quaternion.copy(_fcyP.invert().multiply(_fcyQ));
+    mesh.position.copy(_fcyG).sub(_fcyS.set(0, u.farmGrip.y, 0).multiply(mesh.scale).applyQuaternion(mesh.quaternion));
+  }
 }
+const FARM_WRIST_MAX = 1.75;   // (100°: what a wrist and the forearm's roll take of a carry; the rest turns in the fist)
+const _fcyA = new THREE.Quaternion(), _fcyB = new THREE.Quaternion(), _fcyC = new THREE.Quaternion(), _fcyH = new THREE.Quaternion();
 /* THE FARMERS' ANIMATION, THINNED WHERE NOBODY IS LOOKING (2026-10-18, the owner: "performance in the castle is bad").
  * Twenty skinned men each ran their mixer every frame wherever they were — "the farmers' animation at 120 m" was the
  * one cost perf.md left alone. A man who is not swinging and is either more than 18 m off or behind you and more than
@@ -122442,6 +122925,7 @@ function plioDustTick(dt) {
 }
 function plioDie() {
   plio.tailAng = 0;
+  if (plio.alive) elogOther('pliosaur');             // (the Enemy Log)
   plio.alive = false; plio.st = 'die'; plio.t = 0; plio.deadT = 0; plio.settled = false;
   hitstop = Math.max(hitstop, 0.34); addTrauma(0.95);
   plioMouthPos(_pH); sfxPlioVoice(_pH.x, _pH.z, 'die', 1.2);
@@ -128564,11 +129048,103 @@ function marReachTick(u, dt) {
 /* "BRING LIL CRUSTY TO THE LIGHTHOUSE." (2026-11-22, the owner: "when you bring the marionette over the bridge to the light house have an
  * achievement say 'Bring lil crusty to the lighthouse.'"): him with you, on the lighthouse's rock past the drawbridge's land end (the
  * terrace lip, x 6.7 — the deck runs from there to XIII's tower at 18.3), alive and shown. Once a game; on the save. */
+/* (2026-11-23: not over the bridge any more — at the top, after his goodbye: `MAR_LH`.) */
 function marCrustyCheck(u) {
-  if (crustyLight || replaying || applyingSave || MAR.st !== 'with' || !u.st.alive || !u.g.visible || marPlace() !== 'isle') return;
-  if (u.g.position.x > ISLE_BR.x0 || camera.position.x > ISLE_BR.x0 + 1) return;   // (`ISLE_BR.x0`: the deck's land end, the terrace lip)
-  crustyLight = true;
-  showAchievement('Rare achievement unlocked', '50 - Bring lil crusty to the lighthouse.');
+  if (replaying || applyingSave || MAR.st !== 'with' || MAR.lh || MAR.lhDone || !u.st.alive || frozen() || tmpCut) return;
+  if (atLighthouseTop()) marLhBegin(u);
+}
+/* ---- AT THE TOP OF THE LIGHTHOUSE (2026-11-23, the owner: "make it so when you reach the top of the lighthouse the marionette
+ * instantly says (so you cant blow the crow call before he says this if with him) hes in sight on top of the lighthouse looking over
+ * the water then turn his head and he says 'Wow, I never thought Id see the tall light. Thank you.' make the reply 'Sure' or
+ * 'Let's keep going' to which he replies 'Sorry, but I can't leave. The beach is and always will be home, plus I want to start
+ * surfing classes.' have the replies be 'K' or 'Thats amazing bud'. to which he replies 'Thank you' if you say its amazing if you
+ * say 'K' he goes 'K? I'll just get going.' then make him leave back down the lighthouse. this is when you get the achievement
+ * 'Bring lil crusty to the lighthouse' after that make it so you can use the crow call").
+ * The moment you are up (the ladder's cut, or a load up there) with him: he is on the gallery ahead of you to one side, at the
+ * rail, facing out over the water (the ladder is a cut — he could not have climbed it after you), and you are turned enough to
+ * have him in sight. A beat, his head comes round onto you, and he speaks (`MAR_LH_NPC`). When the talk closes, however it closes,
+ * the achievement; and he walks off round the gallery away from you, behind the lantern, and is gone — down the lighthouse and
+ * home to his swing (`marRestore('swing')`). Until the talk has closed the horn will not call the crow (`marLhHold`). Once a
+ * game (`MAR.lhDone`, on the save). */
+const MAR_LH_NPC = {
+  name: 'The Marionette',
+  script: {
+    lh: { text: 'Wow, I never thought I’d see the tall light. Thank you.', rate: 42, choices: [
+      { label: 'Sure', to: 'home' },
+      { label: 'Let’s keep going', to: 'home' },
+    ] },
+    home: { text: 'Sorry, but I can’t leave. The beach is and always will be home, plus I want to start surfing classes.', rate: 40, choices: [
+      { label: 'K', to: 'k' },
+      { label: 'That’s amazing bud', to: 'thanks' },
+    ] },
+    thanks: { text: 'Thank you', rate: 40, choices: [], end: 1700, hint: '' },
+    k: { text: 'K? I’ll just get going.', rate: 40, choices: [], end: 1900, hint: '' },
+  },
+  sprite: null, head: null, fov: 34,
+  onLeave: () => marLhBye(),
+};
+const MAR_LH_R = 2.3, MAR_LH_OFF = 0.62;                // on the gallery: how far out from the lantern's axis, how far round from you
+function marLhHold() { return MAR.st === 'with' && !MAR.lhDone && onIsle && !(MAR.u && !MAR.u.st.alive); }   // (made or still being made after a load: held)
+function marLhBegin(u) {
+  const c = camera.position, ac = isleAng(c.x, c.z);
+  // the side of you with more gallery in front of your look (either: the ring is whole)
+  const yaw = lookEuler.y, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  const tx = Math.cos(ac), tz = -Math.sin(ac);                     // (the ring's tangent at you, one way round)
+  const side = fx * tx + fz * tz >= 0 ? 1 : -1, am = ac + side * MAR_LH_OFF;
+  const p = u.g.position; p.set(ISLE_AXIS.x + Math.sin(am) * MAR_LH_R, ISLE_GALLERY + 0.02, ISLE_AXIS.z + Math.cos(am) * MAR_LH_R);
+  u.g.rotation.set(0, am, 0);                                       // (facing straight out: over the water)
+  u.st.foe = null; u.st.atk = -1; MAR.v = 0; MAR.leap = null; MAR.trail = []; MAR.legal = p.clone();
+  u.g.visible = true;
+  // and you turned enough to have him in sight, the sea still most of the picture
+  const dx = p.x - c.x, dz = p.z - c.z, toHim = Math.atan2(-dx, -dz);
+  let dyw = toHim - yaw; while (dyw > Math.PI) dyw -= Math.PI * 2; while (dyw < -Math.PI) dyw += Math.PI * 2;
+  if (Math.abs(dyw) > 0.32) lookEuler.y = yaw + dyw - Math.sign(dyw) * 0.32;
+  lookEuler.x = Math.min(lookEuler.x, -0.2);                        // (a little down: all of him at the rail, not his head in the corner)
+  camera.quaternion.setFromEuler(lookEuler);
+  MAR.lh = { ph: 'look', t: 0, am, side, look: 0 };
+}
+function marLhStep(u, dt) {
+  const L = MAR.lh; L.t += dt;
+  u.g.visible = true;
+  const p = u.g.position;
+  if (L.ph === 'look' || L.ph === 'talk') {
+    p.y = ISLE_GALLERY + 0.02; MAR.legal.copy(p);
+    mutPlay(u, marIdleClip(u), true); u.mixer.update(dt);
+    // a beat looking out over the water; then the head comes round onto you, and he speaks
+    if (L.t > 1.1) L.look = Math.min(1, L.look + dt * 1.6);
+    if (L.look > 0) marLook(u, L.look, 1.1);
+    if (L.ph === 'look' && L.t > 1.75 && !dialogOpen && u.marBones && u.marBones.head) {
+      MAR_LH_NPC.sprite = u.marBones.head; MAR_LH_NPC.head = u.marBones.head;
+      L.ph = 'talk'; startDialog('lh', MAR_LH_NPC);
+      if (!dialogOpen) L.ph = 'look';                               // (not now — a menu, the intro: tried again next frame)
+    }
+    return;
+  }
+  if (L.ph === 'leave') {
+    // round the gallery away from you, behind the lantern, and down
+    const c = camera.position, v = Math.min(1.5, 0.6 + L.t * 1.2);
+    L.am += L.side * v / MAR_LH_R * dt;                               // (on round the way he stood from you: away)
+    p.set(ISLE_AXIS.x + Math.sin(L.am) * MAR_LH_R, ISLE_GALLERY + 0.02, ISLE_AXIS.z + Math.cos(L.am) * MAR_LH_R);
+    u.g.rotation.y = L.am + L.side * Math.PI / 2;                    // (along the ring, the way he walks)
+    MAR.legal.copy(p);                                               // (the gallery is no floor of the island's walk: `marPost` would put him back where he stood)
+    const a = mutPlay(u, 'mHWalk', true), wk = (u.clipSpeed && u.clipSpeed.mHWalk) || 1.2;
+    if (a) a.timeScale = THREE.MathUtils.clamp(v / wk, 0.5, 1.4);
+    u.mixer.update(dt);
+    const behind = Math.abs(angDiff(L.am, isleAng(c.x, c.z))) > 2.5;
+    if ((behind && L.t > 1.5) || L.t > 9 || !onIsle) marLhGone();
+  }
+}
+// the talk closed (an answer's last line, or Escape): the achievement, the horn free, and he goes
+function marLhBye() {
+  const L = MAR.lh; if (!L) return;
+  MAR.lhDone = true;
+  L.ph = 'leave'; L.t = 0;
+  if (!crustyLight) { crustyLight = true; showAchievement('Rare achievement unlocked', '50 - Bring lil crusty to the lighthouse.'); }
+}
+function marLhGone() {
+  const u = MAR.u; if (u) u.g.visible = false;
+  MAR.lh = null; MAR.lhDone = true;
+  marRestore('swing');                                             // (home: on his swing at the beach, made there when its land is in)
 }
 function marFoes() {
   const L = [], c = camera.position;
@@ -128944,6 +129520,7 @@ function marDrive(u, dt) {
   u.g.visible = true;
   marElv(u);
   marCrustyCheck(u);
+  if (MAR.lh) { marLhStep(u, dt); return true; }       // (at the top of the lighthouse: `MAR_LH`)
   marPickFoe(u, dt); marDraws(u, dt);
   if (MAR.leap) { marLeapStep(u, dt); return true; }
   if (u.st.foe && u.st.foe.st.alive && marReachTick(u, dt)) {
@@ -130555,7 +131132,7 @@ function updateCelPuppets(dt) {
 }
 const _cpPv = new THREE.Vector2(), _cpPvA = new THREE.Vector2();
 celLive = true;
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { cpS: () => ({ fight: celPupFight, n: cpUnits.length, models: cpUnits.filter((u) => u.model).length, set: cpUnits.filter((u) => u.cpSet).length, ready: cpUnits.filter((u) => u.cpReady).length, alive: cpUnits.filter((u) => u.st.alive).length, awake: cpUnits.filter((u) => u.st.awake).length, hung: cpUnits.filter((u) => u.cpHung).length, inj: cpInj ? +cpInj.t.toFixed(2) : -1 }), cpUnitsS: () => cpUnits, cpGibs: () => gibs.length, MAR, EPUP, CPD, ELOG, cpAtmo: () => ({ dark: +celDark.toFixed(2), hush: !!celHush, eyes: cpEyeFade.length, twitchT: +cpTwitchT.toFixed(1), amb: celAmb ? +celAmb.g.gain.value.toFixed(3) : null, eerie: celEerie ? +celEerie.g.gain.value.toFixed(3) : null, tube: celTube ? +celTube.L.intensity.toFixed(2) : null }), elogSave, elogLoad, dropTargetsS: () => dropTargets(), elogFrameS: () => { if (elv) { elv.raf = 0; elogFrame(performance.now()); } }, makeCrabUnit, cpLaunchS: (u, dx, dz, sp, up) => cpLaunch(u, dx, dz, sp, up), cpPiecesS: () => cpPieces, celFloorAtS: (x, z, y) => keepFloorAt(x, z, y, 0.3, CEL_SITE), crabsS: () => crabs, pupLayTestS: (x, y, z, yaw) => { const I = pupMakeInstance(); I.root.scale.setScalar(PUP_K); const dp = new THREE.Vector3(x, y, z); pupLayClear(I, dp, yaw); I.root.updateMatrixWorld(true); const B = I.rig.B, m = B.spine.getWorldPosition(new THREE.Vector3()), h = B.head.getWorldPosition(new THREE.Vector3()), f = (B.footL || B.shinL).getWorldPosition(new THREE.Vector3()), bb = new THREE.Box3().setFromObject(I.root); return { mid: m.toArray().map((v) => +v.toFixed(2)), headWall: pupDropWall(m.x, m.z, h.x, h.z, dp.y + 0.12), feetWall: pupDropWall(m.x, m.z, f.x, f.z, dp.y + 0.12), low: +(bb.min.y - groundUnder(m.x, m.z, dp.y + 0.5)).toFixed(3), moved: +Math.hypot(m.x - x, m.z - z).toFixed(2) }; }, pupDropWallS: (a, b2, c, d, y) => pupDropWall(a, b2, c, d, y), marMoodBars: () => marBars ? marBars.h : null, groundUnderS: (x, z, y) => groundUnder(x, z, y), houseWallsS: () => !!houseWalls, marTalk, marHopOff, marRestore, marSwingStepS: (dt, t) => marSwingStep(dt, t), elvManS: () => elvMan, setElvCarrying: (v) => { elvCarrying = v; }, elvSeaS: () => ({ k: +elvSeaK().toFixed(3), lp: Math.round(elvSeaLP()), d: +elvSeaD().toFixed(1), inside: houseInside(), land: elvLand, bed: +beachBedK().toFixed(3) }), elvSwingS: () => elvSwing, MUT_KINDS, marS: () => ({ st: MAR.st, u: !!MAR.u, model: !!(MAR.u && MAR.u.model), bones: !!(MAR.u && MAR.u.marBones), vis: !!(MAR.u && MAR.u.g.visible), alive: !!(MAR.u && MAR.u.st.alive), hp: MAR.u ? MAR.u.st.hp : null, foe: !!(MAR.u && MAR.u.st.foe), atk: MAR.u ? MAR.u.st.atk : null, cine: +MAR.cine.toFixed(2), at: MAR.u ? [+MAR.u.g.position.x.toFixed(2), +MAR.u.g.position.y.toFixed(2), +MAR.u.g.position.z.toFixed(2)] : null, clip: MAR.u && MAR.u.cur ? MAR.u.cur.getClip().name : null }), cpInject, cpAllDown, setCpFight: (v) => { celPupFight = v; }, CEL_X, CEL_Y, CEL_Z, CEL_SITE, loadCellar, celLockBreak, celLockStrike, celLockStrikeS: (P) => { camera.getWorldDirection(_aimD); return celLockStrike(P); }, celWashS: () => ({ wash: celWash, broke: celLockBroke, esc: celEsc ? celEsc.phase : null, t: celEsc ? +celEsc.t.toFixed(2) : -1, mar: !!(celMar && celMar.ready), mixer: !!(celMar && celMar.mixer), at: celMar && celMar.w ? celMar.w.position.toArray().map((v) => +v.toFixed(2)) : null, vis: !!(celMar && celMar.w && celMar.w.visible), door: celWP ? +celWP.piv.rotation.x.toFixed(2) : null, hop: celWP ? +celWP.g.position.y.toFixed(3) : null }), celWPS: () => celWP, celOutS: () => celOut, catDistantCallS: () => crawlerUnit && catDistantCall(crawlerUnit), catGS: () => catG, marWaitBeginS: (hx, hz) => { deep.hookP.set(hx, 0, hz); marWaitBegin(); }, setDeepLockS: (v) => { deepLock = v; }, drsS: () => ({ k: +drs.k.toFixed(3), lights: lightPool.length, ext: !!drs.ext }), drsGpuS: () => { const g = drs.gpu.slice(); drs.gpu.length = 0; return g; }, drsRecS: (on) => { const r = drs.rec || []; drs.rec = on ? [] : null; return r; }, castLoadingS: (r) => castLoading(camera.position.x, camera.position.z, r), castWhoS: (r) => mutants.filter((u) => !u.retired && u.st && u.st.alive && Math.abs(u.g.position.x - camera.position.x) <= r && Math.abs(u.g.position.z - camera.position.z) <= r && (!u.model || u.parLate || u.clipsPending > 0)).map((u) => u.kindName || (u.kind && u.kind.file) || '?').join(','), castGateS: () => castGate && { t: +castGate.t.toFixed(2), fade: +castGate.fade.toFixed(2) }, menuHoldS: () => ({ menuHold, cutPaused, menuDucked, ctx: audioCtx && audioCtx.state, sfx: sfxBusGain && +sfxBusGain.gain.value.toFixed(3), cut: cutNow() }), setCelBusyS: (v) => { celBusy = v; }, marSitStepS: () => { MAR.sitN = 0; marSitStep(MAR.u, 1 / 60); }, marThighS: () => { const B = MAR.u.marBones, a = B.thighL.getWorldPosition(new THREE.Vector3()), c = B.calfL.getWorldPosition(new THREE.Vector3()), h = B.hip.getWorldPosition(new THREE.Vector3()); return { thighUp: +c.sub(a).normalize().y.toFixed(2), hipY: +h.y.toFixed(2), sits: MAR.sitN || 0 }; }, FISH_SPOT, catSndResetS: () => { catSnd = null; }, catDiagS: () => ({ unit: !!crawlerUnit, inCat, g: !!catG, walk: !!catWalk, field: !!catSoundField(), fin: (() => { const S = catSoundField(); if (!S) return null; let n = 0, mx = 0; for (const d of S.dist) if (d < Infinity) { n++; mx = Math.max(mx, d); } return [n, +mx.toFixed(1), S.dist.length, S.src]; })(), me: catNodeAt(camera.position.x, camera.position.z, camera.position.y - playerEye(), 1.6), at: [camera.position.x, camera.position.y, camera.position.z].map((v) => +v.toFixed(1)) }), celMarS: () => celMar, celClampTest, cpSyrS: () => cpSyr, cpInjS: () => cpInj, celPupS: () => celPup, setCelLast: (x, z, f) => { celLastFloor = f; celLastSpot.x = x; celLastSpot.z = z; _preMove.set(x, 0, z); groundY = f; }, startTaunt, tauntS: () => ({ ready: TAUNT.ready, on: TAUNT.on, t: +TAUNT.t.toFixed(2), vis: tauntHand.visible }), tauntHand, hookGullTightS: (i, ox, oy, oz, dx, dy, dz) => hookGullTight(isleBirds[i], new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize()), isleBirdsS: () => isleBirds, celMarRunYawS: () => celMar && celMar.runYaw, setCelWash: (v) => { celWash = v; }, startCellar, placeInCellar, placeOutOfCellar,
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { cpS: () => ({ fight: celPupFight, n: cpUnits.length, models: cpUnits.filter((u) => u.model).length, set: cpUnits.filter((u) => u.cpSet).length, ready: cpUnits.filter((u) => u.cpReady).length, alive: cpUnits.filter((u) => u.st.alive).length, awake: cpUnits.filter((u) => u.st.awake).length, hung: cpUnits.filter((u) => u.cpHung).length, inj: cpInj ? +cpInj.t.toFixed(2) : -1 }), cpUnitsS: () => cpUnits, cpGibs: () => gibs.length, MAR, EPUP, CPD, ELOG, cpAtmo: () => ({ dark: +celDark.toFixed(2), hush: !!celHush, eyes: cpEyeFade.length, twitchT: +cpTwitchT.toFixed(1), amb: celAmb ? +celAmb.g.gain.value.toFixed(3) : null, eerie: celEerie ? +celEerie.g.gain.value.toFixed(3) : null, tube: celTube ? +celTube.L.intensity.toFixed(2) : null }), elogSave, elogLoad, elogKeyS: (u) => elogKey(u), elogRenderListS: () => elogRenderList(), elogRosterS: () => elogRoster(), farmSeatTurnS: (u, rad) => { const B = u.farmToolBase, W = u.farmW, mesh = u.farmTool; if (!B || !W) return false; const gL = new THREE.Vector3(0, W.lo + (W.grip ?? 0), 0); const g0 = gL.clone().multiply(mesh.scale).applyQuaternion(B.q).add(B.p); B.q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -rad)); const g1 = gL.clone().multiply(mesh.scale).applyQuaternion(B.q).add(B.p); B.p.add(g0.sub(g1)); mesh.position.copy(B.p); mesh.quaternion.copy(B.q); return true; }, imgRelS: () => ({ done: imgRel.done, q: imgRel.q.length, freed: imgRel.freed, busy: imgRel.busy }), gargDoorS: () => { const A = c13Arch; if (!A) return null; const d = c13W(A.ax + A.ux * A.L * 0.5, A.az + A.uz * A.L * 0.5); return { x: d.x, z: d.z, phase: GARG.phase, perched: GARG.units.filter((u) => u.gp && u.gp.mode === 'perch').length, n: GARG.units.length, models: GARG.units.filter((u) => u.model).length, mino: MINO.stage }; }, grateLoosenS: () => grateLoosen(), pullGrateS: () => pullGrate(), grateS: () => ({ loose: grateLoose, off: grateOff, prop: !!grateProp, held: !!grateProp && held === grateProp, vel: grateProp ? grateProp.vel.toArray().map((v) => +v.toFixed(2)) : null, asleep: grateProp ? !!grateProp.asleep : null, at: grateProp ? grateProp.mesh.position.toArray().map((v) => +v.toFixed(2)) : null, floor: +(drainTunnel.position.y + DN.FLOOR_Y).toFixed(3), outlet: drainTunnel.userData.outlet ? drainTunnel.userData.outlet.getWorldPosition(new THREE.Vector3()).toArray().map((v) => +v.toFixed(2)) : null, room: [DN.ROOM_X0, DN.ROOM_X1, DN.ROOM_HZ, DN.DOOR_X], sand: grateProp ? +restYInWater(grateProp.mesh.position.x, grateProp.mesh.position.z, 0).toFixed(3) : null, label: (() => { const F = drainTunnel.userData.outlet; const it = interactables.find((x) => x.root === F || x.obj === F); return it ? (typeof it.label === 'function' ? it.label() : it.label) : null; })() }), throwHeldS: () => throwHeld(), hoverNowS: () => { updateHover(); return hovered ? { kind: hovered.kind, label: typeof hovered.label === 'function' ? hovered.label() : hovered.label } : null; }, primaryActionS: () => primaryAction(), setGrateScrewsS: (m) => { grateScrewsOut = m; }, gibsS: () => gibs, farmShieldTakeS: (u, P, from) => farmShieldTake(u, P, from), farmWpnS: () => ({ loaded: !!farmWpn, names: farmWpn ? Object.keys(farmWpn) : null, asked: !!farmWpnP, men: farmUnits.map((u) => (u.kind.wkey || '-') + ':' + (u.farmW ? (u.farmW.pack || 'BUILT') : 'none')) }), marLhS: () => ({ lh: MAR.lh ? { ph: MAR.lh.ph, t: +MAR.lh.t.toFixed(2), look: +MAR.lh.look.toFixed(2) } : null, done: !!MAR.lhDone, hold: marLhHold(), top: atLighthouseTop(), st: MAR.st, tmp: !!tmpCut, dialog: dialogOpen }), crowCallFromTopS: () => crowCallFromTop(), ISLE_GALLERY, elogEnsureS: (k) => elogEnsure(k), elogViewS: () => elv, elogOtherS: (k) => elogOther(k), elogOtherTestS: () => { const out = []; const g = gulls.find((u) => u.st.alive); if (g) { const n0 = (ELOG.kinds.gull || { n: 0 }).n; killGull(g, 0); out.push(`${ELOG.kinds.gull && ELOG.kinds.gull.n > n0 && ELOG.snap.gull ? 'ok ' : 'BAD'} gull: by killGull, logged ${!!(ELOG.kinds.gull && ELOG.kinds.gull.n > n0)} likeness ${!!ELOG.snap.gull}`); } for (const k of ['pliosaur', 'sewmon', 'cry']) { elogOther(k); out.push(`ok  ${k}: logged ${!!ELOG.kinds[k]} likeness at once ${!!ELOG.snap[k]} (live ${!!ELOG_OTHER[k].live()})`); } return out; }, retireUnit, dropTargetsS: () => dropTargets(), elogFrameS: () => { if (elv) { elv.raf = 0; elogFrame(performance.now()); } }, makeCrabUnit, cpLaunchS: (u, dx, dz, sp, up) => cpLaunch(u, dx, dz, sp, up), cpPiecesS: () => cpPieces, celFloorAtS: (x, z, y) => keepFloorAt(x, z, y, 0.3, CEL_SITE), crabsS: () => crabs, pupLayTestS: (x, y, z, yaw) => { const I = pupMakeInstance(); I.root.scale.setScalar(PUP_K); const dp = new THREE.Vector3(x, y, z); pupLayClear(I, dp, yaw); I.root.updateMatrixWorld(true); const B = I.rig.B, m = B.spine.getWorldPosition(new THREE.Vector3()), h = B.head.getWorldPosition(new THREE.Vector3()), f = (B.footL || B.shinL).getWorldPosition(new THREE.Vector3()), bb = new THREE.Box3().setFromObject(I.root); return { mid: m.toArray().map((v) => +v.toFixed(2)), headWall: pupDropWall(m.x, m.z, h.x, h.z, dp.y + 0.12), feetWall: pupDropWall(m.x, m.z, f.x, f.z, dp.y + 0.12), low: +(bb.min.y - groundUnder(m.x, m.z, dp.y + 0.5)).toFixed(3), moved: +Math.hypot(m.x - x, m.z - z).toFixed(2) }; }, pupDropWallS: (a, b2, c, d, y) => pupDropWall(a, b2, c, d, y), marMoodBars: () => marBars ? marBars.h : null, groundUnderS: (x, z, y) => groundUnder(x, z, y), houseWallsS: () => !!houseWalls, marTalk, marHopOff, marRestore, marSwingStepS: (dt, t) => marSwingStep(dt, t), elvManS: () => elvMan, setElvCarrying: (v) => { elvCarrying = v; }, elvSeaS: () => ({ k: +elvSeaK().toFixed(3), lp: Math.round(elvSeaLP()), d: +elvSeaD().toFixed(1), inside: houseInside(), land: elvLand, bed: +beachBedK().toFixed(3) }), elvSwingS: () => elvSwing, MUT_KINDS, marS: () => ({ st: MAR.st, u: !!MAR.u, model: !!(MAR.u && MAR.u.model), bones: !!(MAR.u && MAR.u.marBones), vis: !!(MAR.u && MAR.u.g.visible), alive: !!(MAR.u && MAR.u.st.alive), hp: MAR.u ? MAR.u.st.hp : null, foe: !!(MAR.u && MAR.u.st.foe), atk: MAR.u ? MAR.u.st.atk : null, cine: +MAR.cine.toFixed(2), at: MAR.u ? [+MAR.u.g.position.x.toFixed(2), +MAR.u.g.position.y.toFixed(2), +MAR.u.g.position.z.toFixed(2)] : null, clip: MAR.u && MAR.u.cur ? MAR.u.cur.getClip().name : null }), cpInject, cpAllDown, setCpFight: (v) => { celPupFight = v; }, CEL_X, CEL_Y, CEL_Z, CEL_SITE, loadCellar, celLockBreak, celLockStrike, celLockStrikeS: (P) => { camera.getWorldDirection(_aimD); return celLockStrike(P); }, celWashS: () => ({ wash: celWash, broke: celLockBroke, esc: celEsc ? celEsc.phase : null, t: celEsc ? +celEsc.t.toFixed(2) : -1, mar: !!(celMar && celMar.ready), mixer: !!(celMar && celMar.mixer), at: celMar && celMar.w ? celMar.w.position.toArray().map((v) => +v.toFixed(2)) : null, vis: !!(celMar && celMar.w && celMar.w.visible), door: celWP ? +celWP.piv.rotation.x.toFixed(2) : null, hop: celWP ? +celWP.g.position.y.toFixed(3) : null }), celWPS: () => celWP, celOutS: () => celOut, catDistantCallS: () => crawlerUnit && catDistantCall(crawlerUnit), catGS: () => catG, marWaitBeginS: (hx, hz) => { deep.hookP.set(hx, 0, hz); marWaitBegin(); }, setDeepLockS: (v) => { deepLock = v; }, drsS: () => ({ k: +drs.k.toFixed(3), lights: lightPool.length, ext: !!drs.ext }), drsGpuS: () => { const g = drs.gpu.slice(); drs.gpu.length = 0; return g; }, drsRecS: (on) => { const r = drs.rec || []; drs.rec = on ? [] : null; return r; }, castLoadingS: (r) => castLoading(camera.position.x, camera.position.z, r), castWhoS: (r) => mutants.filter((u) => !u.retired && u.st && u.st.alive && Math.abs(u.g.position.x - camera.position.x) <= r && Math.abs(u.g.position.z - camera.position.z) <= r && (!u.model || u.parLate || u.clipsPending > 0)).map((u) => u.kindName || (u.kind && u.kind.file) || '?').join(','), castGateS: () => castGate && { t: +castGate.t.toFixed(2), fade: +castGate.fade.toFixed(2) }, menuHoldS: () => ({ menuHold, cutPaused, menuDucked, ctx: audioCtx && audioCtx.state, sfx: sfxBusGain && +sfxBusGain.gain.value.toFixed(3), cut: cutNow() }), setCelBusyS: (v) => { celBusy = v; }, marSitStepS: () => { MAR.sitN = 0; marSitStep(MAR.u, 1 / 60); }, marThighS: () => { const B = MAR.u.marBones, a = B.thighL.getWorldPosition(new THREE.Vector3()), c = B.calfL.getWorldPosition(new THREE.Vector3()), h = B.hip.getWorldPosition(new THREE.Vector3()); return { thighUp: +c.sub(a).normalize().y.toFixed(2), hipY: +h.y.toFixed(2), sits: MAR.sitN || 0 }; }, FISH_SPOT, catSndResetS: () => { catSnd = null; }, catDiagS: () => ({ unit: !!crawlerUnit, inCat, g: !!catG, walk: !!catWalk, field: !!catSoundField(), fin: (() => { const S = catSoundField(); if (!S) return null; let n = 0, mx = 0; for (const d of S.dist) if (d < Infinity) { n++; mx = Math.max(mx, d); } return [n, +mx.toFixed(1), S.dist.length, S.src]; })(), me: catNodeAt(camera.position.x, camera.position.z, camera.position.y - playerEye(), 1.6), at: [camera.position.x, camera.position.y, camera.position.z].map((v) => +v.toFixed(1)) }), celMarS: () => celMar, celClampTest, cpSyrS: () => cpSyr, cpInjS: () => cpInj, celPupS: () => celPup, setCelLast: (x, z, f) => { celLastFloor = f; celLastSpot.x = x; celLastSpot.z = z; _preMove.set(x, 0, z); groundY = f; }, startTaunt, tauntS: () => ({ ready: TAUNT.ready, on: TAUNT.on, t: +TAUNT.t.toFixed(2), vis: tauntHand.visible }), tauntHand, hookGullTightS: (i, ox, oy, oz, dx, dy, dz) => hookGullTight(isleBirds[i], new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize()), isleBirdsS: () => isleBirds, celMarRunYawS: () => celMar && celMar.runYaw, setCelWash: (v) => { celWash = v; }, startCellar, placeInCellar, placeOutOfCellar,
   celS: () => ({ inCel, celBusy, ready: celReady, walls: !!celWalls, out: !!(celOut && celOut.m), pup: !!celPup, lamps: celLamps.length, world: celWorld, outM: celOut && celOut.m, fy: celOut && celOut.fy }),
   celOutBlocks, celFloorNear }));
 
@@ -130571,19 +131148,43 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, { cpS: () => ({ f
  * - Its model is a copy taken the moment it died (`elogSnap`: `cryClone`, its own materials, the hit's flash undone) with
  *   its own idle clip. On a load the copy is made again from a stand-in of the kind out of sight (`elogEnsure`: the kind's
  *   whole making, its capture and all), taken, and the stand-in let go. Saved: `enemyLog` (kinds, counts, order). */
-const ELOG_NAMES = { elvedor: 'Elvédor Basquiant', skrim: 'Skrim', minotaur: 'Myles', dealer: 'Blue Blood Dealer', cmar: 'The Marionette' };
+const ELOG_NAMES = { elvedor: 'Elvédor Basquiant', skrim: 'Skrim', dealer: 'Blue Blood Dealer' };
+/* NOT ON IT (2026-11-23, the owner: "take out companions from the enemy log too" — Myles and the marionette fight at your side; and
+ * "anyone not in game can go from the log": a kind marked `gone`, the headland's thing). Never logged, never listed, and a save's
+ * old lines for them dropped. */
+const ELOG_COMPANIONS = new Set(['minotaur', 'cmar']);
+const elogOut = (k) => !k || ELOG_COMPANIONS.has(k) || !!(MUT_KINDS[k] && MUT_KINDS[k].gone);
 const elogName = (k) => ELOG_NAMES[k] || '???';
-function elogKey(u) { return crabs.includes(u) ? 'crab' : (u.elogKey || u.kindName || null); }
+/* ONE LINE A BODY, WHATEVER IT CARRIES (2026-11-23, the owner: "same models with different weapons can go only one each"): the
+ * castle's twenty men are five bodies (`FARM_ROSTER`'s files ka, hd, ol, kn, kw) with an axe, a rake, a sword or a hammer each —
+ * logged as `farm_<file>`; and the raid's, the tavern's drinkers' and dancers' men are farmers of the roster copied, so the same. */
+function elogKindKey(k) {
+  if (!k || !/^(farmer|gargRaid|tavDrinker|tavDancer)\d+$/.test(k)) return k;
+  const K = MUT_KINDS[k]; return K && K.file ? 'farm_' + K.file : k;
+}
+function elogKey(u) {
+  if (crabs.includes(u)) return 'crab';
+  return elogKindKey(u.elogKey || u.kindName || null);
+}
+// the kind a stand-in is made of, for a log key: a body's first farmer
+function elogMakeKind(k) {
+  if (k === 'epup') epupKind();                         // (the carried puppet's kind is made on first use)
+  if (!/^farm_/.test(k)) return MUT_KINDS[k] ? k : null;
+  const i = FARM_ROSTER.findIndex((R) => 'farm_' + R.f === k); return i >= 0 ? 'farmer' + i : null;
+}
 // a kill: yours, or your companion's — counted, and (the first time) its likeness taken
 function elogKill(u, crab = false) {
   if (!u || applyingSave || replaying || u.elogDisp) return;
-  if (!crab && (u.cpAlly || minoAlly(u) || (u.kind && (u.kind.friendly || u.kind.ally || u.kind.baby)))) return;
+  if (!crab && (u.cpAlly || minoAlly(u) || (u.kind && (u.kind.friendly || u.kind.ally)))) return;   // (the crawler's young counts: it is killed — 2026-11-23)
   const by = u.st && u.st.hitBy, mine = crab ? !u.marKill : u.lastHitMine !== false, comp = crab ? !!u.marKill : !!(by && (by.cpAlly || minoAlly(by)));
   if (!mine && !comp) return;
-  const k = elogKey(u); if (!k) return;
+  if (u.elogDone) return; u.elogDone = true;            // (once a body: the blow logs it, and the death that follows does not again)
+  elogNorm();
+  const k = elogKey(u); if (!k || elogOut(k)) return;
   const e = ELOG.kinds[k] || (ELOG.kinds[k] = { n: 0 });
   if (!e.n) ELOG.order.push(k);
   e.n++;
+  ELOG.sel = k;                                         // (the log opens on what you killed last)
   if (!ELOG.snap[k]) { try { elogSnap(k, u); } catch (err) { console.warn('[enemy log] snap', k, err); } }
   if (elogOn()) elogRenderList();
 }
@@ -130594,28 +131195,68 @@ function elogIdleClip(u) {
   for (const n in c) if (/idle/i.test(n) && c[n] && c[n].getClip) return c[n].getClip();
   return null;
 }
-function elogSnap(k, u) {
-  const src = u.model; if (!src) return false;
-  const root = cryClone(src);
+function elogPrep(root) {
   root.traverse((o) => {
     o.frustumCulled = false;
+    if (o.isSprite || o.isPoints || o.name === 'hitProxy') { o.visible = false; return; }
     if (!o.isMesh || !o.material) return;
     const one = (m) => { const f = _flashing.find((x) => x.m === m), c = m.clone(); if (f && c.emissive) c.emissive.setHex(f.hex); return c; };
     o.material = Array.isArray(o.material) ? o.material.map(one) : one(o.material);
-    if (o.name === 'hitProxy' || o.isSprite) o.visible = false;
+    if (o.isMesh && !(o.material.visible === false) && o.material.opacity === 0 && o.material.transparent) o.visible = false;   // (an eye's glow at rest: nothing)
   });
+  return root;
+}
+function elogSnap(k, u) {
+  const src = u.model; if (!src) return false;
+  const root = elogPrep(cryClone(src));
   root.position.set(0, 0, 0); root.rotation.set(0, src.rotation.y === 0 ? 0 : src.rotation.y, 0);
   ELOG.snap[k] = { root, clip: elogIdleClip(u), h: (u.kind && u.kind.h) || null, mixer: null };
   return true;
 }
+/* THE OTHER FOUR (2026-11-23, the owner: "some enemies dont show up make it so they all do"): the things that are not in
+ * `mutants` and die by deaths of their own — the wreck's gulls (`killGull`), the thing on the fisherman's line (`plioDie`),
+ * the thing in the sewer's water (`sewElectrocute`), Skrim's crying heads (`cryKill`, `crySummonDie`). Each: its model as it
+ * is in the game (`live`, its pose put back to rest or its idle playing over it), or after a load before that place is
+ * built, its file on its own (`url`, the same file, parsed for the log alone). */
+const ELOG_OTHER = {
+  gull: { url: 'assets/gull.glb', live: () => { const u = gulls.find((g) => g.mesh); return u ? { src: u.mesh, rest: (c) => c.traverse((o) => { if (o.isBone) o.quaternion.identity(); }) } : null; } },
+  pliosaur: { url: 'assets/pliosaur.glb', clip: 'Idle', live: () => plio.m && plio.A.Idle ? { src: plio.m, clip: plio.A.Idle.getClip() } : null },
+  sewmon: { url: 'assets/sewer-monster.glb', live: () => sewMon && sewMon.root ? { src: sewMon.root, rest: (c, src) => { const sb = []; src.traverse((o) => sb.push(o)); let i = 0; c.traverse((o) => { const q = sewMon.bind.get(sb[i++]); if (q) o.quaternion.copy(q); }); } } : null },
+  cry: { url: CRY_GLB, clip: 'IDLE', live: () => { const h = CRY.list && CRY.list.find((x) => x.model); const c = CRY.gltf && CRY.gltf.animations.find((a) => a.name === 'IDLE'); return h && c ? { src: h.model, clip: c } : null; } },
+};
+function elogSnapFrom(k, src, clip, rest) {
+  const root = cryClone(src);
+  if (rest) rest(root, src);
+  elogPrep(root); root.position.set(0, 0, 0);
+  const g = new THREE.Group(); g.add(root);
+  ELOG.snap[k] = { root: g, clip: clip || null, h: null, mixer: null };
+}
+function elogOther(k) {
+  if (applyingSave || replaying || !ELOG_OTHER[k]) return;
+  const e = ELOG.kinds[k] || (ELOG.kinds[k] = { n: 0 });
+  if (!e.n) ELOG.order.push(k);
+  e.n++;
+  ELOG.sel = k;                                         // (the log opens on what you killed last)
+  if (!ELOG.snap[k]) { try { const L = ELOG_OTHER[k].live(); if (L) elogSnapFrom(k, L.src, L.clip, L.rest); } catch (err) { console.warn('[enemy log] snap', k, err); } }
+  if (elogOn()) elogRenderList();
+}
 // a load: the copy made again from a stand-in of its kind, out of sight, let go once its likeness is taken
 function elogEnsure(k) {
   if (ELOG.snap[k] || ELOG.pend[k] === 'fail') return;
+  if (ELOG_OTHER[k]) {
+    const O = ELOG_OTHER[k];
+    try { const L = O.live(); if (L) { elogSnapFrom(k, L.src, L.clip, L.rest); delete ELOG.pend[k]; return; } } catch (e) { /* not built yet */ }
+    if (ELOG.pend[k]) return;
+    ELOG.pend[k] = 'file';
+    bwGlb(O.url, (gltf) => { if (ELOG.snap[k]) return; delete ELOG.pend[k]; try { elogSnapFrom(k, gltf.scene, O.clip && gltf.animations.find((a) => a.name === O.clip)); } catch (e) { ELOG.pend[k] = 'fail'; console.warn('[enemy log] file', k, e); } }, () => { ELOG.pend[k] = 'fail'; });
+    bwFetchSoon(O.url);
+    return;
+  }
   let u = ELOG.pend[k];
   if (!u) {
     try {
       if (k === 'crab') { u = makeCrabUnit(0, -40000, {}); }
-      else if (MUT_KINDS[k]) { u = makeMutant(0, -40000, k, -600); u.holdAnim = true; }
+      else if (elogMakeKind(k)) { const mk = elogMakeKind(k); u = makeMutant(0, -40000, mk, -600); u.holdAnim = true; bwFetchSoon(MUT_KINDS[mk].glb || 'assets/mutant.glb'); }   // (its file to the front of the queue: ranked by its place on the walk, Myles's waited past the 30 s and the box said "…" for good)
       else { ELOG.pend[k] = 'fail'; return; }
       u.elogDisp = true; u.elogT = performance.now(); ELOG.pend[k] = u;
     } catch (e) { console.warn('[enemy log] stand-in', k, e); ELOG.pend[k] = 'fail'; return; }
@@ -130629,10 +131270,20 @@ function elogEnsure(k) {
   if (k === 'crab') { const i = crabs.indexOf(u); if (i >= 0) crabs.splice(i, 1); u.g.removeFromParent(); }
   else { retireUnit(u); const i = mutants.indexOf(u); if (i >= 0) mutants.splice(i, 1); }
 }
-function elogSave() { return ELOG.order.map((k) => [k, ELOG.kinds[k].n]); }
+function elogSave() { elogNorm(); return ELOG.order.map((k) => [k, ELOG.kinds[k].n]); }
+/* a save from before the bodies were one line: its `farmerN` lines summed into theirs — here, at first use, not in `elogLoad`, which
+ * a restore can run before this module has read the farmers (`FARM_ROSTER`, `MUT_KINDS`) */
+function elogNorm() {
+  if (ELOG.order.some((k) => elogOut(k))) { for (const k of ELOG.order) if (elogOut(k)) delete ELOG.kinds[k]; ELOG.order = ELOG.order.filter((k) => !elogOut(k)); if (elogOut(ELOG.sel)) ELOG.sel = null; }
+  if (!ELOG.order.some((k) => elogKindKey(k) !== k)) return;
+  const kinds = {}, order = [];
+  for (const k0 of ELOG.order) { const k = elogKindKey(k0); if (!kinds[k]) { kinds[k] = { n: 0 }; order.push(k); } kinds[k].n += ELOG.kinds[k0].n; if (!ELOG.snap[k] && ELOG.snap[k0]) ELOG.snap[k] = ELOG.snap[k0]; }
+  ELOG.kinds = kinds; ELOG.order = order;
+  if (ELOG.sel) ELOG.sel = elogKindKey(ELOG.sel);
+}
 function elogLoad(L) {
   ELOG.kinds = {}; ELOG.order = [];
-  if (Array.isArray(L)) for (const [k, n] of L) { if (!ELOG.kinds[k]) ELOG.order.push(k); ELOG.kinds[k] = { n: n | 0 }; }
+  if (Array.isArray(L)) for (const [k, n] of L) { if (!ELOG.kinds[k]) { ELOG.order.push(k); ELOG.kinds[k] = { n: 0 }; } ELOG.kinds[k].n += n | 0; }
   if (ELOG.sel && !ELOG.kinds[ELOG.sel]) ELOG.sel = null;
   if (elv) { while (elv.turn.children.length) elv.turn.remove(elv.turn.children[0]); elv.k = null; }   // (the box shows what the log now holds)
 }
@@ -130642,21 +131293,42 @@ const elogOn = () => invOpen && invPanelEl.classList.contains('log');
 function elogTab(tab) {
   invPanelEl.classList.toggle('log', tab === 'log');
   for (const b of document.querySelectorAll('#invpanel .pk-tab')) b.classList.toggle('on', b.dataset.tab === tab);
-  if (tab === 'log') { elogRenderList(); elogStart(); }
+  if (tab === 'log') { for (const k in ELOG.pend) if (ELOG.pend[k] === 'fail') delete ELOG.pend[k]; elogRenderList(); elogStart(); }   // (a likeness that could not be made is tried again each time the log is opened)
 }
 for (const b of document.querySelectorAll('#invpanel .pk-tab')) b.addEventListener('click', (e) => { e.stopPropagation(); elogTab(b.dataset.tab); sfxPropHit('wood', 1.5); });
+/* EVERY KIND ON THE LIST, THE ONES YOU HAVE KILLED IN THEIR OWN SHADE (2026-11-23, the owner: "some enemies dont show up make it
+ * so they all do then. also make the ones you found a different shade"): the whole roster in the order the game made them —
+ * the crabs and the wreck's gulls, then every enemy kind (`MUT_KINDS`, less friends and the farmers' copies, which are logged
+ * as the farmer they were made from: `elogKey`), then the four of their own — numbered; one killed is warm and can be looked
+ * at, one not yet is dim, "???", with no count. */
+const ELOG_FIRST = ['crab', 'gull'], ELOG_LAST = ['pliosaur', 'sewmon', 'cry'], ELOG_LATE = ['epup'];
+function elogRoster() {
+  const out = [], seen = new Set(), add = (k) => { if (k && !seen.has(k)) { seen.add(k); out.push(k); } };
+  ELOG_FIRST.forEach(add);
+  for (const k of Object.keys(MUT_KINDS)) { const K = MUT_KINDS[k]; if (!K || K.friendly || K.ally || K.whaleBody || elogOut(k) || /^(gargRaid|tavDrinker|tavDancer)\d+$/.test(k)) continue; add(elogKindKey(k)); }   // (`whaleBody`: the gut's seven, taken out of the game 2026-10-29 with their files)
+  ELOG_LATE.forEach(add); ELOG_LAST.forEach(add);
+  ELOG.order.forEach(add);                               // (anything killed that the roster did not know of)
+  return out;
+}
+const elogFound = (k) => !!(ELOG.kinds[k] && ELOG.kinds[k].n > 0);
 function elogRenderList() {
   if (!elogListEl) return;
-  if (!ELOG.order.length) { elogListEl.innerHTML = '<div class="elog-none">Nothing yet.</div>'; elogShow(null); return; }
-  if (!ELOG.sel || !ELOG.kinds[ELOG.sel]) ELOG.sel = ELOG.order[ELOG.order.length - 1];
+  elogNorm();
+  const R = elogRoster(), found = R.filter(elogFound);
+  if (!ELOG.sel || !R.includes(ELOG.sel)) ELOG.sel = ELOG.order.length ? ELOG.order[ELOG.order.length - 1] : R[0];
+  const top = elogListEl.scrollTop;
   elogListEl.innerHTML = '';
-  ELOG.order.forEach((k, i) => {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'elog-row' + (k === ELOG.sel ? ' sel' : '');
-    b.innerHTML = `<span class="elog-no">${String(i + 1).padStart(2, '0')}</span><span class="elog-nm"></span><span class="elog-n">×${ELOG.kinds[k].n}</span>`;
-    b.querySelector('.elog-nm').textContent = elogName(k);
+  const head = document.createElement('div'); head.className = 'elog-count'; head.textContent = `${found.length} of ${R.length} found`;
+  elogListEl.appendChild(head);
+  R.forEach((k, i) => {
+    const f = elogFound(k);
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'elog-row ' + (f ? 'found' : 'unfound') + (k === ELOG.sel ? ' sel' : '');
+    b.innerHTML = `<span class="elog-no">${String(i + 1).padStart(2, '0')}</span><span class="elog-nm"></span><span class="elog-n">${f ? '×' + ELOG.kinds[k].n : ''}</span>`;
+    b.querySelector('.elog-nm').textContent = f ? elogName(k) : '???';
     b.addEventListener('click', (e) => { e.stopPropagation(); ELOG.sel = k; elogRenderList(); });
     elogListEl.appendChild(b);
   });
+  elogListEl.scrollTop = top;
   elogShow(ELOG.sel);
 }
 /* ---- the box it stands in ---- */
@@ -130692,19 +131364,54 @@ function elogView() {
   return elv;
 }
 // put the chosen one in the box (or show it is still coming)
-function elogShow(k) {
+/* NOT YET KILLED: ITS SHAPE, FLAT AND BLACK (2026-11-23, the owner: "make the enemy log show a black silhouette that isnt 3d of each
+ * enemy once they are killed it shows their model you can spin around"). One picture of every kind's outline in its idle, drawn
+ * once off the game itself (`tools/elogshadows.js` → `assets/elog-shadows.png` + `.json`, its cells by log key), shown in the box
+ * as it is — no turning, no light — in place of the model, until the kill. */
+const elogSil = { img: null, map: null, asked: false, el: null };
+function elogSilLoad() {
+  if (elogSil.asked) return; elogSil.asked = true;
+  fetch('assets/elog-shadows.json').then((r) => r.json()).then((m) => {
+    const im = new Image(); im.onload = () => { elogSil.img = im; elogSil.map = m; if (elogOn()) elogShow(ELOG.sel, true); }; im.src = 'assets/elog-shadows.png';
+  }).catch((e) => console.warn('[enemy log] silhouettes', e));
+}
+function elogSilShow(k) {
+  if (!elogSil.el) { const c = document.createElement('canvas'); c.className = 'elog-sil'; elogViewEl.appendChild(c); elogSil.el = c; }
+  const c = elogSil.el, cell = k && elogSil.map && elogSil.map[k];
+  c.style.display = k ? 'block' : 'none';
+  if (!k) return;
+  const W = Math.max(2, elogViewEl.clientWidth | 0), H = Math.max(2, elogViewEl.clientHeight | 0);
+  c.width = W; c.height = H; const g = c.getContext('2d'); g.clearRect(0, 0, W, H); g.imageSmoothingEnabled = false;
+  if (!cell || !elogSil.img) { elogSilLoad(); return; }
+  const [x, y, w, h] = cell, K = Math.min(H * 0.86 / h, W * 0.8 / w), dw = w * K, dh = h * K;
+  g.drawImage(elogSil.img, x, y, w, h, (W - dw) / 2, H * 0.93 - dh, dw, dh);
+}
+function elogShow(k, force = false) {
   if (!elogViewEl) return;
   const V = elogView();
   if (V.canvas.parentElement !== elogViewEl) elogViewEl.prepend(V.canvas);
-  const nm = elogViewEl.querySelector('.elog-name'); if (nm) nm.textContent = k ? elogName(k) : '';
+  const nm = elogViewEl.querySelector('.elog-name'); if (nm) nm.textContent = k ? (elogFound(k) ? elogName(k) : '???') : '';
+  const hint = elogViewEl.querySelector('.elog-hint');
+  if (k && !elogFound(k)) {                                // (not killed yet: its outline, the box's own model put away)
+    while (V.turn.children.length) V.turn.remove(V.turn.children[0]);
+    V.k = null; V.canvas.style.visibility = 'hidden'; if (hint) hint.style.visibility = 'hidden';
+    elogViewEl.classList.remove('waiting'); elogSilShow(k);
+    return;
+  }
+  V.canvas.style.visibility = ''; if (hint) hint.style.visibility = ''; if (elogSil.el) elogSilShow(null);
+  if (force) V.k = undefined;
   if (V.k === k && (!k || V.turn.children.length)) return;
   while (V.turn.children.length) V.turn.remove(V.turn.children[0]);
   V.k = k; V.yaw = 0.5; V.yawV = 0; V.zoom = 1;
   elogViewEl.classList.toggle('waiting', !!k && !ELOG.snap[k]);
   if (k && ELOG.snap[k]) elogMount(k);
 }
+// (every container of the likeness shown: the copy is taken as the body is — its model's root hidden at that moment by the game's
+// own culling, and a hidden root drew NOTHING in the box, only the shadow: half the kinds, 2026-11-23. A mesh keeps its own.)
+function elogShowAll(root) { root.traverse((o) => { if (!o.isMesh && !o.isSprite && !o.isPoints && !o.isLight) o.visible = true; }); }
 function elogMount(k) {
   const V = elv, S = ELOG.snap[k];
+  elogShowAll(S.root);
   V.turn.add(S.root);
   if (S.clip && !S.mixer) { S.mixer = new THREE.AnimationMixer(S.root); const a = S.mixer.clipAction(S.clip); a.play(); }
   if (S.mixer) S.mixer.update(0.01);
@@ -130726,8 +131433,12 @@ function elogFrame(now) {
   const dt = Math.min(0.05, (now - V.last) / 1000); V.last = now;
   const k = V.k;
   if (k && !ELOG.snap[k]) { elogEnsure(k); if (ELOG.snap[k]) { elogShow(null); elogShow(k); } }
+  /* (and the rest of what you have killed made ready behind it, one at a time, while the log is open — after a load each was made
+   * only when it was picked, and showed "…" a moment: now the next is waiting before you get to it) */
+  else { const nx = ELOG.order.find((x) => !ELOG.snap[x] && ELOG.pend[x] !== 'fail'); if (nx) elogEnsure(nx); }
   const S = k && ELOG.snap[k];
   if (S && S.mixer) S.mixer.update(dt);
+  if (S && S.root.children[0] && !S.root.children[0].visible) elogShowAll(S.root);
   if (!V.drag) { V.yawV *= Math.exp(-dt * 2.2); V.yaw += (V.yawV + V.auto) * dt; }
   V.turn.rotation.y = V.yaw;
   // the size of the box it is in
@@ -130738,6 +131449,7 @@ function elogFrame(now) {
   // the whole of it in the middle of the box: as tall as it stands, as wide as it gets as it turns (its diagonal)
   const span = Math.max(V.h, (V.w || 1) * 1.2 / Math.max(0.5, V.cam.aspect)), dist = span * 0.6 / Math.tan(THREE.MathUtils.degToRad(V.cam.fov / 2)) * V.zoom;
   V.cam.position.set(0, V.mid, dist); V.cam.lookAt(0, V.mid, 0);
+  { const nr = Math.max(0.01, dist * 0.02), fr = dist + span * 3 + 10; if (Math.abs(V.cam.far - fr) > 1 || Math.abs(V.cam.near - nr) > 0.005) { V.cam.near = nr; V.cam.far = fr; V.cam.updateProjectionMatrix(); } }   // (its depth from its size: the crying head's file is in centimetres, 400 tall, and a 60 m far plane cut all of it away)
   V.r.render(V.sc, V.cam);
   V.raf = requestAnimationFrame(elogFrame);
 }
@@ -135075,7 +135787,7 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, {
   TMP_X, TMP_Y, TMP_Z, TMP_VIEW, TMP_T, TMP_FOG, TMP_WALK_R, TMP_SCALE, TMP_POD_R, TMP_FLOOR, TC, ocean, oceanFar, loadTemple, placeInTemple, placeOutOfTemple, devTemple, startTempleFlight, crowCallFromTop, trader3World, tmpFloorAt, tmpSandRaw, tmpCellTop, tmpViewYaw, tmpEyeY,
   tmpS: () => ({ ready: tmpReady, inTemple, flown: tmpFlown, cut: tmpCut ? +tmpCut.t.toFixed(2) : -1, room: !!(tmpCut && tmpCut.room), solid: tmpG ? tmpG.solidN : 0, fz: frozen(), why: { bootHold, pack: packCut, mut: mutCut, wb: !!wbSw, hatch: hatchBusy, portal: portalCut, crab: !!crabCut, hj: !!hjCut, well: wellLook.on, key: !!keyCut, thr: !!thrCut, fare: !!wbFareCut } }),
   tmpG: () => ({ world: tmpWorld, G: tmpG, clouds: tmpClouds, rays: tmpRays, sky: tmpSky }),
-  kingDied, KING, KFX, KA, TMP_ATM, tmpAirS: () => tmpAir, scarTexS: scarTex, makeSpaceIR, WHALE_VERB, CLIFF_BLOCK_X, CLIFF_X, kingRunStart, kingTornStart, kingDust, kingOnRay, KD, tmpStepOnStone, sfxStepTemple, packSlotsS: () => packSlots, UCS: () => UC, MUSH_XS: () => MUSH_X, dunDoorMeshS: () => dunDoorMesh, dunBusyS: () => dunBusy, hookZipAtS: (x, y, z) => { HK.p.set(x, y, z); HK.airThrow = true; return hookZipStart(); }, HKS: () => HK, setHgSink: (v) => { HG_SINK = v; }, DRAIN_XS: () => DRAIN_X, DRAIN_ZS: () => DRAIN_Z, insideDrainS: () => insideDrain, toolDmgBaseS: (heavy) => toolDmgBase(heavy), keepLiftS: () => keepLift ? { state: keepLift.state, proxies: keepLiftParts && keepLiftParts.proxies } : null, hookThrowS: (c) => hookThrow(c), tavInfoS: () => ({ walk: !!tavWalk, last: tavLastSpot ? [tavLastSpot.x, tavLastSpot.z] : null, floor: (x, z, f) => keepFloorAt(x, z, f, TAV_STEP, TAV_SITE) }), MGATES: () => MGATE, gateOpenS: () => gateOpen, wellGS: () => wellG, wellPartsS: () => wellParts, wellBucketDownS: () => wellBucketDown(), wellSetBucketS: (d) => wellSetBucket(d), sampleLogS: () => sampleLog.slice(), takeNowS: (it) => takeNow(it), handUsesS: (label, kind) => handUses({ label, kind: kind || "default", onActivate: () => {} }), MUSH_ZS: () => MUSH_Z, loadDungeonS: () => loadDungeon(), ucIdolS: () => ({ touched: ucTouched, tip: +ucTipT.toFixed(2), broke: ucBroke, at: ucIdolProxy ? ucIdolProxy.getWorldPosition(new THREE.Vector3()).toArray().map((v) => +v.toFixed(2)) : null }), ucIdolStrikeS: (P) => { camera.getWorldDirection(_aimD); return ucIdolStrike(P); }, ucIdolNearS: (x, y, z) => ucIdolNear(new THREE.Vector3(x, y, z), 0.1), inUndercroftS: () => inUndercroft, enterUndercroft, MOUNT_FRONT_X, MOUNT_MOUTH_Z, UC_X, UC_Y, UC_Z, bottleSloshS: () => bottleSloshN, smokeSpliffS: () => smokeSpliff(), lightAtS: (x, y, z) => lightAt(new THREE.Vector3(x, y, z), new THREE.Color()).toArray().map((v) => +v.toFixed(3)), HG, SNORK_X, SNORK_Z, snorkS: () => ({ met: snorkMet, want: snorkWant, up: +snorkUp.toFixed(2) }), waterPlaneOf, drinkWaterS: () => drinkWater(), farmVoxTrackedS: () => farmVoxTracked, kingS: () => ({ cut: kingCut ? +kingCut.t.toFixed(2) : -1, down: kingDown, mode: KING.mode, hp: KING.u ? KING.u.st.hp : -1, alive: KING.u ? KING.u.st.alive : null, atk: KING.u ? KING.u.st.atk : null, swing: KING.u ? KING.u.st.swing : null }), KING_TRIGGER, KING_PILLARS, setKingDown: (v) => { kingDown = !!v; KING.placed = false; }, devTeleportTemple, kingFlipStart, kingRunStart, kingExplode, kingBlowsS: () => KING.blows, kingLineBlockedS: (u) => kingLineBlocked(u), blowLandsS: (u) => blowLands(u), blowHeightOKS: (u) => blowHeightOK(u), camBaseS: () => camBaseY, kingFeetAtS: kingFeetAt, mutTokenS: () => mutToken,
+  kingDied, KING, KFX, KA, TMP_ATM, tmpAirS: () => tmpAir, scarTexS: scarTex, makeSpaceIR, WHALE_VERB, CLIFF_BLOCK_X, CLIFF_X, kingRunStart, kingTornStart, kingDust, kingOnRay, KD, tmpStepOnStone, sfxStepTemple, packSlotsS: () => packSlots, UCS: () => UC, MUSH_XS: () => MUSH_X, dunDoorMeshS: () => dunDoorMesh, dunBusyS: () => dunBusy, hookZipAtS: (x, y, z) => { HK.p.set(x, y, z); HK.airThrow = true; return hookZipStart(); }, HKS: () => HK, setHgSink: (v) => { HG_SINK = v; }, DRAIN_XS: () => DRAIN_X, DRAIN_ZS: () => DRAIN_Z, insideDrainS: () => insideDrain, toolDmgBaseS: (heavy) => toolDmgBase(heavy), keepLiftS: () => keepLift ? { state: keepLift.state, proxies: keepLiftParts && keepLiftParts.proxies } : null, hookThrowS: (c) => hookThrow(c), c13ThriveS: () => c13Thrive, magTraceS: (d) => magTrace(d), hookDrawnHitS: (O, d, l) => hookDrawnHit(O, d, l), castleSiteHereS: () => castleSiteHere(), c13WallMeshesS: () => C13_SITE._wb && C13_SITE._wb.ms, tavInfoS: () => ({ walk: !!tavWalk, last: tavLastSpot ? [tavLastSpot.x, tavLastSpot.z] : null, floor: (x, z, f) => keepFloorAt(x, z, f, TAV_STEP, TAV_SITE) }), MGATES: () => MGATE, gateOpenS: () => gateOpen, wellGS: () => wellG, wellPartsS: () => wellParts, wellBucketDownS: () => wellBucketDown(), wellSetBucketS: (d) => wellSetBucket(d), sampleLogS: () => sampleLog.slice(), takeNowS: (it) => takeNow(it), handUsesS: (label, kind) => handUses({ label, kind: kind || "default", onActivate: () => {} }), MUSH_ZS: () => MUSH_Z, loadDungeonS: () => loadDungeon(), ucIdolS: () => ({ touched: ucTouched, tip: +ucTipT.toFixed(2), broke: ucBroke, at: ucIdolProxy ? ucIdolProxy.getWorldPosition(new THREE.Vector3()).toArray().map((v) => +v.toFixed(2)) : null }), ucIdolStrikeS: (P) => { camera.getWorldDirection(_aimD); return ucIdolStrike(P); }, ucIdolNearS: (x, y, z) => ucIdolNear(new THREE.Vector3(x, y, z), 0.1), inUndercroftS: () => inUndercroft, enterUndercroft, MOUNT_FRONT_X, MOUNT_MOUTH_Z, UC_X, UC_Y, UC_Z, bottleSloshS: () => bottleSloshN, smokeSpliffS: () => smokeSpliff(), lightAtS: (x, y, z) => lightAt(new THREE.Vector3(x, y, z), new THREE.Color()).toArray().map((v) => +v.toFixed(3)), HG, SNORK_X, SNORK_Z, snorkS: () => ({ met: snorkMet, want: snorkWant, up: +snorkUp.toFixed(2) }), waterPlaneOf, drinkWaterS: () => drinkWater(), farmVoxTrackedS: () => farmVoxTracked, kingS: () => ({ cut: kingCut ? +kingCut.t.toFixed(2) : -1, down: kingDown, mode: KING.mode, hp: KING.u ? KING.u.st.hp : -1, alive: KING.u ? KING.u.st.alive : null, atk: KING.u ? KING.u.st.atk : null, swing: KING.u ? KING.u.st.swing : null }), KING_TRIGGER, KING_PILLARS, setKingDown: (v) => { kingDown = !!v; KING.placed = false; }, devTeleportTemple, kingFlipStart, kingRunStart, kingExplode, kingBlowsS: () => KING.blows, kingLineBlockedS: (u) => kingLineBlocked(u), blowLandsS: (u) => blowLands(u), blowHeightOKS: (u) => blowHeightOK(u), camBaseS: () => camBaseY, kingFeetAtS: kingFeetAt, mutTokenS: () => mutToken,
 }));
 
 moduleDone = true;   // (the last line: see `bootRoomsAsked`)

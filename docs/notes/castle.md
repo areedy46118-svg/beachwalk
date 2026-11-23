@@ -2329,3 +2329,106 @@ his back, feet 0.24 m, a roll to a knee from 0.8 s, standing at 1.5. His death (
   the back and both sides: held; out of the doorway: down to the street).
 - **The hook bites any castle face** ("i cant hook up … or the castle"): the trace knew XIII by its walking band; `hookThrow` now asks
   the site's face grid (`siteRay`) down the line too.
+
+## 2026-11-23 — the garrison's weapons out of a pack; their grip; the rare knights' shields
+"make these the weapons for the farmers. dont use the sheath model. put a shield on rare knights backs … break off if hit from
+behind them with good physics grab the puppets break sound too … the farmers are not holding their weapons properly make sure the
+handle are actually in their hands and the weapon faces and swings the right way … improve everything about the farmers".
+- **THE PACK** (Atakhani, CC-BY-4.0): `tools/weapons_pack.py` → `assets/farm-weapons.glb` (438 KB shipped): 3 swords, 3 axes
+  (single-bitted), 3 shields, no sheath; each on `farmWeapon`'s convention (butt at 0, handle +Y, edge +X) with `hi`, `grip`
+  (a sword against its guard, an axe 0.11 up the haft), `guard` in its extras; ≤1300 tris; colour maps only, 512 JPEG.
+- **ROLE ≠ WEAPON**: `kind.tool` is still the role (strokes, cant, `FARM_CARRY` by what he holds, roll), `kind.wkey` the model —
+  swordsmen one of three swords, axemen one of three axes, the mace role the heaviest axe (`Axe_01`), the spear role a sword to
+  thrust with (the pack has no spear, no mace). Reach re-derives itself from the new tips (`farmReachSet`). `u.farmW` is the man's
+  own weapon; every reader of `FARM_TOOLS[u.kind.tool]` reads it. `farmWeapon(key, role)` falls back to the built ones.
+- **`kind.waitFor`** (`makeMutant`): a farmer is dressed only once the weapons file is in. **TRAP PAID**: the first version put the
+  wait INSIDE the parse chain (`bwParseLater`) — the weapons file parses on that same one chain, queued behind the very farmers
+  waiting for it: 20 men, 0 bodies. The dress now waits outside the chain.
+- **TRAP**: three's GLTFLoader sanitizes node names — Blender's `Axe_01.001` arrives as `Axe_01001`: every lookup missed and every
+  man held the built weapon (`tools/farmwpn.js` lists each man's wanted model and what he holds).
+- **THE WRIST TURNS, NOT THE WEAPON IN THE FIST** (`farmCarry`): the carry turned the weapon about the grip inside a hand the run
+  put elsewhere — fingers 11-47° round the handle between blows (180 = wrapped, `garrison.js&m=inhand`). Now the seat→carry turn is
+  put on the hand bone (up to `FARM_WRIST_MAX` 100°, the rest in the fist), restored if no clip wrote the hand since (or it winds
+  on). After: the handle 1.0-2.5 cm from the hand's middle, fingertips 1.5-3 cm off it, wrapped 52-134° between blows, 113-174° in.
+- **ONE BIT LEADS**: the pack's axes have one bit (`two` false): the roll is not axial (`/1`, up to half a turn, fixed at the swing's
+  start, eased in through the draw) and each stroke's FIRST throw is seeded from `farmRollMeasure` on his own clip less the seat's
+  roll (the learned angle only came from the first throw: 0.10 / −0.15 bit-first on firsts). Duels (`m=duel&tools=…`, one role a
+  run — all roles in one run cuts down the others first): sword 12/12 land, head 0.12-0.35 from your eye, either edge 0.63-0.81;
+  axe 13/14, bit-first 0.15-0.61; mace role 14/14 0.03-0.65; spear role (sword) 10/12, 0.08-0.20. Natural fight 12 hurts a
+  minute (as before), blows 0.18-0.24 from your eye. `tools/garrison.js&m=film&tool=axe|sword` for the strokes.
+- **THE SHIELDS** (`farmShield`, `farmShieldTake`): a `kn`/`ka` farmer (9 of 20) carries one with `FARM_SHIELD_P` 0.22 a man, drawn
+  once a game (`FARM_SHIELD_ROLL`) — ~2 a fight; on his Spine2, behind his back, face out (the packer's `face`), leaning in, 0.74 m
+  tall. A blow from behind (attacker in the back half off his chest's facing, dot < −0.3), yours or a companion's, is spent on it:
+  off whole into `gibs` as a level group with the shield turned face-up inside it (so the gib's "lie flat" lays it on its back),
+  thrown away from the blow and up, spinning, landing on `keepFloorAt` with a metal knock; `sfxPupBreak`; your hitstop and shake.
+  `tools/farmshield.js` (`window.__bwAllShields` gives every knight one): health 4 → 4 from behind, 4 → 3 from the front; stills.
+
+## 2026-11-23 (later) — held at an angle; blows that come in front of your face; the gargoyles alone at the door
+"the farmers weapons need to be like they are actually holding them … they dont stick up straight when held … they dont even swing the
+blade at you and their moves dont connect to the player". FILMED FROM YOUR EYE first this time: `tools/farmpov.js&tools=<role>&n=<k>`
+(one role a run — the others are cut down), crops round him at full resolution, and per landed blow: the blade's share of the screen,
+its middle on screen, the tip's distance from your eye, and how far ACROSS your view the blade lies (90° = its whole length, 0 = end-on).
+- **WHAT IT SHOWED**: the carry stood swords 55° and axes 70° up off level (a torch); and every blow's POINT was driven at your eye —
+  `aimBar` turns the arm about the shoulder so the tip points at the target, `FARM_REACH_GAP` stood him so the tip stopped 0.25 from
+  your eye, and a blow counted from 0.85 under your eye up: the blade arrived end-on into the lens (17° across for swords, 28° axes).
+- **THE CARRY** (`FARM_CARRY`): a sword in a guard, point at the man in front a little high (f .84 u .46 r −.12, the manuals'
+  "plough"); an axe (and the mace role's) haft forward at about 45° (f .66 u .62). The wrist takes it (`farmCarry`, 2026-11-23 above).
+- **IN FRONT OF YOUR FACE**: `aimFront` 0.42 (aimed at a point that far toward him from your eye), `hitFront` 0.30 → 0.42 (judged
+  there), `FARM_REACH_GAP` 0.25 → 0.40 (`mCutC` 0.42 → 0.55), `bodyLowArm` 0.85 → 0.40 (a hand blow counts only from your neck up).
+  After: every role lands 4-8 of its blows in a duel; heads 0.33-0.39 m in front of your eye (were 0.18-0.24); natural fight 14
+  hurts a minute (12). The blade at the moment it counts is still mostly end-on (sword 17-23°, axe 28-34°): `aimK` 1.0 sweeps it a
+  little more across but the swordsman landed 5 of 8 — kept at 2.0. A blade that crosses your whole view as it lands needs strokes
+  made for it (the mocap cuts come in at the body); not done.
+- **THE GARGOYLES WITHOUT MYLES** ("if not with myles just have the gargoyles attack when youre near the locked door"): in
+  `updateGargoyles`, phase 0, Myles not `with` (or with and still being made): within `GARG_NEAR_DOOR` 5.5 m of the arch door's
+  middle they wake (`gargWake`). With him, the door is still tried and his scene plays. `tools/gargdoor.js`: perched at 6.5 m, down at 5.
+
+## 2026-11-23 (night) — the garrison's cuts, laid out for your eye (`farmSwingIK`)
+"make new swings" / "THEY HAVE TO FEEL BETTER WHEN FIGHTING" / "TEST IT AS YOU MAKE THEM MAKE SURE THEY ARE SMOOTH".
+- **WHY NEW**: every captured cut ended with the weapon's point at your eye (the aim turns the arm about the shoulder so the TIP points
+  at the target): 17-28° across your view as it landed — a dot, never a blade going by.
+- **THE CUTS** (`FARM_IK`: axCut/hmCut/rkCut a forehand diagonal, …CutD a backhand diagonal, …CutC flat, …Chop overhead): each frame
+  of the stroke, a path laid out against where you are — `C` 0.40 m in front of your eye at its height (`FARM_IK_FRONT`), a quadratic
+  through it from `FARM_IK_PATH`'s start (a chamber high or wide on one side) to its end (low on the other), in (his right, up, toward
+  him); the blade's striking point (62 % of the weapon from the wrist for a sword, 86 % for an axe) on it; the blade square to the
+  path's travel and to the line to you, canted toward him (`FARM_IK_CANT` 0.70) so an arm can hold it, the grip end the side nearer his
+  shoulder (chosen once a swing); the edge — the axe's bit — leading (a sword's edge chosen ONCE a swing: re-chosen every frame it
+  flipped). Two bones put his wrist there (elbow out and down); the hand is turned to hold the weapon so (`B.q`, the seat, is the
+  weapon's frame in the hand). Eased in from his clip through the wind (0.15-0.7 of it), the sweep over the strike ±`FARM_IK_LEAD`
+  0.09 s (a 0.10 s strike swept two metres in six frames) with `C` at its middle, eased out through the recovery. The stroke's
+  timing, footwork, legs, body and left arm are its own; the arm is not aimed (`noAim`); `farmToolRoll` stands aside (`farmIKOn`);
+  he stands `FARM_IK_STOP` 1.55 off (1.42 made the men close longer and throw fewer).
+- **SMOOTH** (`farmArmSmooth`, last thing in `farmCarryAll` for every armed man out): shoulder, elbow and wrist each turn at most
+  `FARM_IK_RATE` 24 rad/s from where they were DRAWN last frame through the blow, `FARM_ARM_RATE` 11 outside it (the captured strokes'
+  chambers snapped up at 0.4 m of tip a frame, and their first frames cut in hard from the walk). The blow's test reads the true pose.
+- **MEASURED** (`tools/farmpov.js&tools=<role>&n=8`, SWEEP / SMOOTH / SUMMARY): sword 6-8 of 8 land, the blade 62-65° across your
+  view as it lands and 79-82° in the quarter-second before; axe 8/8, 53-55° / 63-67°; mace role 7/8, 57° / 64°; the spear role's
+  thrusts stay thrusts (26°, as a thrust is). Worst frame: hand 26-31° a frame, tip ≤ 0.56 m (in the strike itself, or the body's own
+  lunge and turn). Natural fight (`garrison.js&m=fight`, 60 s): 8-13 hurts, 10-16 blows thrown — the spread run to run is that wide;
+  12-14 before. Filmed: the chamber over the shoulder (the tell), out wide, down and across in front of you, through low.
+
+## 2026-11-23 (late) — the owner's combos for the garrison; the rare death on his feet
+"use these for the farmers make sure the weapons are held correctly like the screenshot you still have them horrible make the zombie
+death animation for them but make it rare and they ragdoll after completing the death animation" (Mixamo "Standing Melee Combo Attack"
+Ver. 1/2/3 — a club in the fist in Mixamo's preview — and "Zombie Death", loose in ~/Downloads; Ver. 2-2 is the same take as Ver. 2).
+- **THE CUTS WERE A GREAT SWORD'S**: every farmer's cut (`axCut…hmChop`) was the orc's Great Sword Pack — two-handed slashes — on a
+  one-handed weapon. Now `wcCombo1-3` (clips `mCombo1-3`, packed into the farmers' own set: `tools/ntar_moves.py -- wong`,
+  `NTAR_ONLY=mc1,mc2,mc3,zDie`; `mc1` windowed from frame 24 — its first 0.8 s was a settle before the raise). Every weapon man's cut,
+  chop, swipe and the spear role's cuts are combos (`FARM_MOVES`); kicks, spins, leaps, the spear's thrust and lunge as they were, and
+  what those chain into is a combo too. The laid-out cuts (`farmSwingIK`) are no longer thrown by anyone with a weapon.
+- **EACH BLOW TIMED** (`FARM_COMBO`, measured `tools/farmcombo.js`: the passes of the head through the space in front of him at a man's
+  head, fast, most squarely in front): mc1 0.325 (the overhead) + 0.545 (the sweep), mc2 0.25 + 0.575, mc3 0.356 — the first is `hit`,
+  the rest `more` (one swing, several contacts). Played at `FARM_COMBO_RATE` 1.25 (at 1.0 a combo was 3-4 s and the street fight fell
+  to 5-8 hurts a minute); `aimArmK` 0.35 (the arm's aim a third as strong: the sweeps are the point). The retarget takes only the hips'
+  rise and fall, so a clip's "travel" (mc1 3.07 m) never moves him.
+- **THE HOLD** filmed against the owner's screenshot (`tools/farmcombo.js &turns=-0.7,0,0.7`, the seat turned in the fist about the
+  palm's normal, `farmSeatTurnS`): at the seat as it is the weapon rises straight up out of the raised fist (his left picture) and lies
+  level along the arm held out (his right); turned either way it is off the arm or a stick. Kept.
+- **MEASURED**: duel (`garrison.js&m=duel`): sword 12/12 land, head 0.36-0.45 m from your eye, edge first 0.68-0.85; axe 12/12, 0.33-0.43,
+  0.51-0.70 (bit first). From your eye (`farmpov.js`): the weapon sweeps 0.41-0.51 screen heights across you in the quarter-second
+  before it lands, 78° across your view; tip ≤ 0.45 m a frame (in the sweep). Natural fight 3-10 hurts a minute in four runs (the
+  spread run to run is that wide); two of the three combos land twice.
+- **DYING ON HIS FEET** (`farmZDieRoll`/`Start`/`Step`, `FARM_ZDIE_P` 0.14): in `finishMutant`, a farmer not taken apart by shot, a round
+  through the head or the mace — nothing severed, not thrown — plays `mZDie` (2.9 s; his hips held over where he stood, so he falls
+  where he was hit, not into you), stepped from the dead branch of `updateMutantUnit`, and at 0.94 of it `mutRagdoll` from that pose,
+  barely pushed (0.12). `window.__bwZDieAll` forces it; `tools/farmzdie.js`: the clip from 0.1 s, the ragdoll at 2.62, hips moved 0.00 m.
