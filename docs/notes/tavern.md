@@ -1224,3 +1224,11 @@ parked for a still — force it for a render).
   (the drinkers' flat hand) while dancing or standing about, `TAV_FIST_HANDS` {1.0, 1.0} once awake, set each frame in
   `updateTavDancers` and in `updateTavDrinkers` once a drinker is off his chair. Seen close up (FOV 28, 0.5 m off each
   hand): open relaxed hands on both dancers. The castle's farmers are unchanged.
+
+## 2026-11-22 — "i still see the guys spawn in at the tavern"
+The cut waited (`castHold`/`castGate`) only on people who EXISTED: the drinkers are made off the tables and the dancers off
+`danceMoves` (fetched at reach 216) — not in at the door, nobody was there to wait for, and they were made in front of you.
+`tavCastOwed` (in `castLoading`, near the tavern): a crowd that cannot be made yet counts as owed, its file is sent to the front,
+and the moment it can be made it is. And a CHECKPOINT now waits too (`castBootOwed` in `updateBootHold`: anyone within 45 m
+not whole). `CAST_WAIT_MAX` 5 → 10 s (a slow machine parses a body in seconds), a `var` (the boot asks it early).
+`tools/castin.js` (now reads the GAME's `#blackout`, `w.document`): all nine whole at frame 37, the black lifts at 80.

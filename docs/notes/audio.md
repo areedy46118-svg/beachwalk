@@ -996,3 +996,12 @@ short (`tail` 0.3 = a brick box, 1 = a tunnel). `afconvert` decodes mp3 to WAV h
   boards (x 7.4 … BORE_LEN − 0.9, |z| < 0.42: a board's knock and the bore answering), the room (echo cut to 0.32), the
   culvert past the grate (a tunnel again). **The sewer**: the walks ring (echo), the bridge knocks with the tunnel under it,
   the flood splashes and the room answers.
+
+## 2026-11-22 — "the sound keeps cutting out fix this forever"
+Measured again (`tools/farmaudio.js &secs=120&heavy=1`): the context running all 1,200 samples, never silent, nothing non-finite,
+≤ 433 nodes/s; the only suspends were the probe's own boot. What is left to cut a real machine's sound is the browser or the OS
+taking the context (a long hitch, an output change, 'interrupted'), which the watchdog asked back on its once-a-second look. Now
+the context's own `statechange` asks at once (and again 0.25 s later), never under a load or a menu over a cut (`loadSilent`),
+never hidden. `tools/audiodog.js`: "asked back at once" logged on every suspend. On a weak machine (the owner's UHD 620 laptop)
+the audio thread itself can starve — that is the lighter-build question, not this.
+- The cellar's ambience 0.45 → 0.6 (`CEL_AMB_LEVEL`).

@@ -3615,3 +3615,45 @@ you or your companion kill. do not give them a description either. characters i 
   water bottle were not in `PACK_FILES` — fetched as far rest, and in a room that holds the far rest (whale, deep, cellar) not at
   all while you stood there. Added (and the sea shell); and `bwHoldHere` never holds a file of `BW_FROM.first`. `tools/vmroom.js`
   (`&item=&room=`): the hook in the cellar and the military shovel in the whale drawn from 0.5 s.
+- 2026-11-22: "turn up basement ambience a lil in the cellar" — `CEL_AMB_LEVEL` 0.45 → 0.6 (+2.5 dB).
+
+## 2026-11-22 (late) — the trail up to his door; the house over the cellar
+- **The way up** ("lighten the sand like a path up to elvedors front door so his house is missed less"): `buildElvTrail` (with the
+  yard, `updateElvLand`, as a `warmStep`) lays a strip of paler scuffed sand from the dry beach at the gully's mouth (x 7.2),
+  up `ELV_PATH`, through the gate and over the stepping stones to the porch steps (`HOUSE_X - 6`, `HOUSE_Z + 3.8`). TRAPS: wound
+  the wrong way it was culled from above (and lit from below) — `idx` (a, b, c)/(b, d, c) faces up; and laid on the walk's sum
+  (`elvLandFloorAt`) it sank under the DRAWN gully nearly everywhere — a ray down per step of the line onto
+  `[elvFieldMesh, sand, cliff]`, the hit NEAREST the walk's floor (the cliff's surface over the gully is still there to a
+  ray, metres up, cut only in its shader), lifts each cross-section. `tools/elvtrail.js` (`&red=1` paints it, `&nodepth=1`),
+  `tools/elvtrailray.js` (every mesh under the line). Material: `color 0xb4c0d6, emissive 0x48546e` off its own canvas.
+- **The armchair is gone** (`Cube.277-280` and the three things on it, `Cube.356-358`, dropped in `tools/kelley_pack.py`).
+- **The fridge** (`buildCelFridge`): the hoses (`BezierCurve.001/.004/.006`) and the glass tank (`Cube.057`) dropped; its lower door
+  swung shut in the packer (`turn_leaf`, 11.6°); the body and both doors are parts (`fridgeBody/Top/Low`), the doors hung on
+  the +x edge of its front (it faces −z) and opened together to −1.48 rad; inside, a BackSide liner, two shelves, a water
+  (`gainWater`) and four jars at `JAR_S` 3.04 (`gainJar`), saved as `flags.celFridge` (bit 0 water, bits 1-4 jars). Tinted
+  ×(0.70, 0.60, 0.47) to sit in the brown room.
+- **Solid low furniture**: the walk read a 34 cm coffee table as a step up onto it. `SOLID_PARTS` (coffee table, TV stand, TV,
+  fridge) are sampled as walls, never floors, filling the body band (`(y, 0) and (y + 0.4, 0)`).
+- **The bathroom** is seen, never entered: `NO_FLOOR` drops its floor cells from the walk to x −3.95 (the threshold is yours).
+  In its tub, lying back to the chin, the Dancer's colours: `buildCelBath` (`CEL_BATH`, head at (−7.10, 3.66, −2.15), arms and
+  legs aimed down under the water, a faint cold emissive of his own), and a cold bulb over the tub with the cellar's lamps
+  (a light added later recompiles everything). Visibility by rays with EVERY face counted (`side = 2` for the test): with
+  front faces only, the sink and the tub's rim read as see-through and the far end of the tub "was visible" — it is not.
+- **The head through the ceiling**: `playerHeadClamp` ran only while rising (`vy > 0`); a step up the stairs lifts the eye with
+  no speed, under the headers. In the cellar it runs every frame.
+- **The TV** (`buildCelTv`, `celTape`, `TAPE_FS`): dark until E; a tape of five clips (the bench injection, the cellar from a
+  corner camera with him watching, one walking at the lens, three of them in the shallows by day, a face — then snow that
+  stays) drawn live into a 320 x 240 target at 15 fps through a VHS tube (curve, chroma bleed, tracking band, scanlines,
+  grain, the deck's PLAY and a date). The puppets play `cpMocap`'s clips on their own mixers (travel stripped), Elvédor
+  `ELV_MOCAP_SET`'s idle with his right arm aimed into the injection (`pupAim`). Its hiss and snow from the set. Built on the
+  first switch-on (a parse of `elvedor.glb` and a compile). `tools/celtv.js` reads the tape's own target out as stills.
+- `tools/celroom.js`: stills of every corner of it, the fridge open, the bath from the threshold, and a jump under the ceiling.
+- **Sand thrown up, rebuilt** ("the sand particles have to look way more realistic they are awful"): `spawnPuffs` keeps its
+  signature; what it makes is three layers — `sandGrains` (points, 1-2 px, a thrown SHEET: staggered over 0.06 s, every grain on
+  near the same arc, a crown out of a landing; gravity, drag on the fine; gone into the ground, `groundUnder` per burst), `sandDust`
+  (a few faint torn puffs that swell, drift +x on the wind and thin over 1.4-2.8 s, back-lit by the moon) and the old `puff` pool
+  as 1-3 cm rounded clods that break into grains where they land. A hex tint is read (it was NaN: grey chips came out black);
+  a red one (blood) throws no dust. Grains `SAND_NIGHT` (0.15, 0.18, 0.26) as drawn — at 0.07 and quarter alpha they were not
+  there. `tools/sandfx.js` (fixed clock: `__adv`, or the stills show nothing moved).
+- **The marionette out of the washer, sooner** ("he stands there for too long … still do the nervous look cut it short"):
+  `CEL_MAR_LOOK` 2.2 s of the look, `CEL_MAR_STARE` 0.7 s turned on you, then he runs (was the whole 5.7 s and 1.9).

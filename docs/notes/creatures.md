@@ -3651,3 +3651,12 @@ inherits it (castle, garrison, the raid after the gargoyles, the tavern's; those
 - `kind.boneGaps` (`ntarRetarget`): a joint whose parent is a non-bone node hanging under a bone is solved against that bone
   as it is each frame — see temple.md, the king. Without it every rotation compounds down the chain.
 - New kind hooks: `drive(u, dt)` (runs first; true holds the AI off), `onDeath(u)`, `kingBody` clamp; `st.puppet` untouchable.
+
+## 2026-11-22 — the marionette stood about ("he just stand there alot")
+`tools/marfight.js` (the first castle's fight in real time, him with you): always a foe — and in 40 s not one blow. Two causes.
+(1) `holdAnim`: he is MADE held (for the swing's pose) on every load and every checkpoint, and only the hop off the swing ever let
+go, so after any reload he followed you and never moved his own way — `marDrive` lets go whenever he is with you (not mid-leap).
+(2) a pick held till its man died: stood 4-5 m off the dark knight behind the farmers, gaining nothing. `marReachTick`: out of
+reach for 1.5 s without closing 0.4 m → that one is skipped 5 s (`MAR.skip`) and the nearest other taken; `marPickFoe` weighs his
+own distance ×1.6. After: blows in most seconds, 2 idle seconds in 40. TRAP: `settings.devMode` stops every creature swinging
+(`} else if (u.st.cool <= 0 && !settings.devMode)`) — a fight probe runs with it OFF and keeps you alive (`setHp` on a timer).

@@ -3169,3 +3169,14 @@ throw flies on. Measured (`tools/gullhook.js`, 12 gulls × 8 bearings): 10 cm of
 `// (its bleed …)` comment on the line before (since 2026-11-21, in HEAD) — taken, it was in the pack with nothing in the hand.
 Split onto their own line. Swept for the same thing (a trailing `//` with `key: value,` pairs after it): one more, the final
 boss's `body, lungeStop, landSlop, limbR, foeLimbR, closeBody, stopPick` (his "hits connect" tuning of 11-20) — put back.
+
+## 2026-11-22 — the hook: fire on the iron; never into the pavilion; never through a castle
+- **The Flame's fire rides the iron** (`hookFireTick`, `HK.fire`): a shift-heavy throw let go with the flames up lights the iron;
+  world flames (`flameWorld`) trail off it out and back, the room's lamp on it, the voice kept up; what it bites catches
+  (`hookFireBurn`); out at `hookHome`. The hand's flames stop while the iron is away. `tools/hookfire.js`.
+- **No pull into the pavilion** (`hookNoZipAt`, `HOOK_NO_PAV` 6.6 m round `MUSH_X/Z`): no pull ends inside it or crosses it.
+  `tools/hookpav.js`.
+- **Nothing of a castle is flown through** (`siteRay` — the blade's walk through a site's 1 m face grid, for any ray;
+  `castleSiteHere`): each frame of a pull, and of its carry, the move is tested at the feet, middle and head; and the head's
+  clamp in a castle asks the castle's faces (it asked the beach's floors). `tools/hookcastle.js`: 24 pulls (8 bearings x 30/55/75°),
+  each frame's step tested for a crossed face — 0. (Going UP and OVER a wall onto its top is still possible; through it is not.)

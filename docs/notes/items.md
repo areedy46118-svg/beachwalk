@@ -1422,3 +1422,7 @@ and the big gulp at 0.65–1.35 s of the cut — faded in/out, `assets/water-dri
 0.2 s after the press (`sfxGulp`, the synthesized swallow, only while it is loading); `DRINK_DUR` 1.45 → 2.0 so the bottle
 is still at the lips for the gulp and the level drains across it. `tools/drinksnd.js`. (`sfxGulp` is still the man's at
 113770 — not the bottle's.)
+
+## 2026-11-22 — a key never says "Inventory full"
+`packFullFor(hovered)` was asked of the PICKUP, which never said what it gives: a key on the floor with a full pack read as a
+new slot. `addInteractable`: an 'inventory' pickup whose label says "key" gives null and `isKey` — it hangs on the keychain.

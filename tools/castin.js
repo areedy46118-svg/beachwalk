@@ -3,7 +3,7 @@
  * people are not yet whole; the same at the castle's gate. Run: PB_PORT=4223 PB_WAIT=500 sh tools/probe.sh 'evalFile&f=/tools/castin.js' <out> */
 for (let i = 0; i < 100 && !b.state().started; i++) { try { b.beginGame(); } catch (e) {} await sleep(150); }
 await sleep(1500);
-const blk = () => +(document.getElementById('blackout') ? getComputedStyle(document.getElementById('blackout')).opacity : -1);
+const blk = () => { const d = w.document, e = d.getElementById('blackout'); return e ? +w.getComputedStyle(e).opacity : -1; };
 const whole = (x, z, r) => { let n = 0, bad = 0; for (const u of b.mutants || []) { if (u.retired || !u.st.alive) continue; if (Math.abs(u.g.position.x - x) > r || Math.abs(u.g.position.z - z) > r) continue; n++; if (!u.model || u.parLate) bad++; } return bad + '/' + n; };
 const watch = async (name, x, z, r, busy) => {
   let lifted = null, held = 0;
@@ -11,13 +11,15 @@ const watch = async (name, x, z, r, busy) => {
     b.frame(1); await sleep(16);
     const k = blk();
     if (k >= 0.99) held++;
-    if (lifted === null && held > 3 && k < 0.95) { lifted = i; log(name, '| the black starts to lift at frame', i, '| not whole then', whole(x, z, r), '| held black frames', held); }
+    if (lifted === null && held > 3 && k < 0.95) { lifted = i; log(name, '| the black starts to lift at frame', i, '| not whole then', whole(x, z, r), '| held black frames', held, '| dancers', b.tavDancers.length, 'drinkers', b.tavDrinkers.length); }
+    const cnt = b.tavDancers.length + '/' + b.tavDrinkers.length + ' whole-missing ' + whole(x, z, r);
+    if (cnt !== watch.last) { log(name, '| frame', i, 'black', k.toFixed(2), '| dancers/drinkers', cnt); watch.last = cnt; }
     if (!busy()) break;
   }
-  log(name, '| after: not whole', whole(x, z, r));
+  log(name, '| after: not whole', whole(x, z, r), '| dancers', b.tavDancers.length, 'drinkers', b.tavDrinkers.length);
 };
 const RB = b.ROOM_BACK.keep; RB.load(); for (let i = 0; i < 300 && !RB.ready(); i++) { b.frame(2); await sleep(50); } RB.place();
 for (let i = 0; i < 60; i++) { b.frame(1); await sleep(10); }
 log('in the keep; tavern people before the door', whole(b.TAV_X, b.TAV_Z, 40));
 b.startTavern(1);
-await watch('tavern', b.TAV_X, b.TAV_Z, 40, () => b.tavState().busy);
+await watch('tavern', b.TAV_X, b.TAV_Z, 40, () => b.tavState().busy || !!b.castGateS() || blk() > 0.02);

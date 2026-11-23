@@ -41,7 +41,19 @@ WELL = (-2300.0, 1200.5, -1140.0, 770.0, 815.0)          # x0 x1 z0 z1 ytop: the
 # (THE GROUND FLOOR BACK — 2026-11-22, the owner: "build the kitchen again my bad", after the kitchen door was opened again: the
 # box was the stairwell alone (x -380..1200, z -1125..-525) and the door opened on nothing. Now the house's whole ground floor up
 # to its ceiling: the living room behind the door, the kitchen and its table past it, the bathroom; the upper floor stays cut.)
-DROP = ('Object_273', 'Plane.007', 'clock.001', 'trashbag', 'Cube.276', 'Cube.281')
+DROP = ('Object_273', 'Plane.007', 'clock.001', 'trashbag', 'Cube.276', 'Cube.281',
+        # (2026-11-22, the owner on the living room: "remove this chair so you can walk in better" — the armchair's four pieces and
+        # the three things on it; and in the kitchen "take all the stuff out of fridge … those weird tubes and wires out of the
+        # fridge into the sink can go": the three hoses and the glass tank in the fridge's bottom)
+        'Cube.277', 'Cube.278', 'Cube.279', 'Cube.280', 'Cube.356', 'Cube.357', 'Cube.358',
+        'BezierCurve.001', 'BezierCurve.004', 'BezierCurve.006', 'Cube.057')
+# the parts the game moves or swaps, by node: the fridge's body and its two doors (hinged in the game, `buildCelFridge`), the TV
+# (its screen, `buildCelTv`)
+PARTS = (('Cube.206', 'fridgeBody'), ('Cube.003', 'fridgeTop'), ('Cube.055', 'fridgeLow'), ('Cube.044', 'tvSet'))
+# what the walk must treat as solid however low it is (a 34 cm coffee table read as a step up onto it), by part
+SOLID_PARTS = ('fridgeBody', 'fridgeTop', 'fridgeLow', 'tvSet', 'coffeeTable', 'tvStand')
+# the bathroom: seen through its door, never walked into (the owner: "you cant get in leave the bathroom door how it is") — metres
+NO_FLOOR = ((-7.6, -3.95, -3.8, -1.72),)        # (to x -3.95: the doorway's threshold is yours, to look in from — the one in the bath is in sight from there)
 CELL = 0.20
 HEADROOM = 1.25
 BAND = (0.35, 1.20)
@@ -91,6 +103,12 @@ def walk(ni, parent):
             # the kitchen door stands as the file has it, 55° into the kitchen, kept whole though it reaches past the stairwell's box)
             if name.startswith('Cube.217'):
                 P = turn_leaf(P, (-722.0, -954.5), (-871.0, -741.5), 'the blue door, open flat')
+            # (the fridge's lower door hung ajar on its hinge at +x: shut, in line with the top one; the game opens both)
+            if name.startswith('Cube.055'):
+                xs = [p[0] for p in P]; xa, xb = min(xs), max(xs)
+                hz = sum(p[2] for p in P if p[0] > xb - 20) / max(1, sum(1 for p in P if p[0] > xb - 20))
+                fz = sum(p[2] for p in P if p[0] < xa + 20) / max(1, sum(1 for p in P if p[0] < xa + 20))
+                P = turn_leaf(P, (xb, hz), (xa, fz), 'the fridge door, shut')
             mi = pr.get('material', 0)
             for (a, b, c) in T:
                 pt = part_of(name, P[a], P[b], P[c])
@@ -103,6 +121,10 @@ def part_of(name, a, b, c):
     loud and jump around ... hit the lock off the washer and he jumps out"): the chained machine (the right of the pair in
     `Cube.209`, x > -1740), its drop-down door (the panel standing proud of its front, x -1700..-1430, y -848..-676, z ≥ -810),
     the padlock (`Cylinder.009`) and the two chains (`chain.009`, `chain.010`). Everything else is the room."""
+    for (pre, part) in PARTS:
+        if name.startswith(pre): return part
+    if name.startswith('Cube.215'): return 'coffeeTable'
+    if name.startswith('Cube.045'): return 'tvStand'
     if name.startswith('Cylinder.009'): return 'washerLock'
     if name.startswith('Cube.211'): return 'kitchenDoor'
     if name.startswith('chain.009') or name.startswith('chain.010'): return 'washerChains'
@@ -248,9 +270,13 @@ gw = int(math.ceil((hi[0] - lo[0] + 2 * CELL) / CELL)); gh = int(math.ceil((hi[2
 cells = {}
 for mi, L in meshes_m.items():
     if g['materials'][mi[0]]['name'] in NO_WALK or mi[1] in ('washerLock', 'washerChains', 'washerDoor'): continue   # (the washer's loose pieces move: its body is the wall)
+    solid_part = mi[1] in SOLID_PARTS
     def put(x, y, z, ny):
         i = int((x - wx0) / CELL); j = int((z - wz0) / CELL)
-        if 0 <= i < gw and 0 <= j < gh: cells.setdefault(j * gw + i, []).append((y, ny))
+        if 0 <= i < gw and 0 <= j < gh:
+            # (a solid part is never a floor, and it fills the body's band over the floor it stands on, however low it is)
+            if solid_part: cells.setdefault(j * gw + i, []).extend([(y, 0.0), (y + 0.4, 0.0)])
+            else: cells.setdefault(j * gw + i, []).append((y, ny))
     for t in L: sample(t[0][0], t[1][0], t[2][0], put)
 out = []
 for key in sorted(cells):
@@ -264,6 +290,9 @@ for key in sorted(cells):
         else: surfaces.append(run[-1]); run = [y]
     surfaces.append(run[-1])
     fl = []
+    cx_, cz_ = wx0 + (key % gw + 0.5) * CELL, wz0 + (key // gw + 0.5) * CELL
+    if any(x0_ <= cx_ <= x1_ and z0_ <= cz_ <= z1_ for (x0_, x1_, z0_, z1_) in NO_FLOOR):
+        surfaces = [h for h in surfaces if not (2.8 < h < 3.4)]       # (the bathroom's floor, at the ground floor's 3.06)
     for h in surfaces:
         above = next((y for y in ys if y > h + 0.30), None)
         if above is not None and above - h < HEADROOM: continue

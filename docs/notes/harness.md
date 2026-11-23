@@ -572,3 +572,9 @@ after it kills Chrome (`pvsheet.sh` always did).
 - **Two declarations of one name** (`function cpDrop` already existed) kill the whole module in the browser, and the
   osascript syntax check (non-module JS) does NOT catch it: also run
   `grep -o "^function [A-Za-z0-9_]*\|^const [A-Za-z0-9_]*\|^let [A-Za-z0-9_]*" main.js | awk '{print $2}' | sort | uniq -d`.
+
+## 2026-11-22 — a headless probe stalls when the Mac's display sleeps
+Headless Chrome's frames stop (0 % CPU, no further log, `CVDisplayLinkCreateWithCGDisplay failed` in its stderr) when the display
+goes to sleep: a full `musictest` stopped after its 7th scenario, a `loadall` printed nothing for 20 minutes. It is not the game.
+Kill it (`pkill -f "<outdir>/prof"`) and run again when the screen is awake; do not wake the owner's screen to do it.
+Also: `[PB]` stills in `tools/probe.html` are the outer page; the GAME is the iframe — its DOM is `w.document` (`#blackout`).
