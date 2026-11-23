@@ -1348,3 +1348,13 @@ the grip, tried first, put the near bar across his wrist. `pipeReach` probe stil
   way's half-width, and at most 0.6 of this frame's step. `tools/sewpull.js` (both bridges and the side door at slants, by the
   keys): every frame's move ≤ 0.042 m, an ordinary step; all reached.
 - `tools/sewwood.js`: stills (bridges, the door shut, open from inside and out; `__sw.light(true)` to see the materials).
+- **The sewer's lamps light it from anywhere** (2026-11-22, the owner: "THE SEWER LIGHTS I SHOLD NOT SEE THEM COME ON WHILE WALKING …
+  ANY LIGHT THATS ON SHOULD NOT CHANGE WHEN GETTING CLOSER TO IT"): with ~22 lamps and 6 pool slots, a lamp's light on the walls
+  AND its glow in the fog (`FOG_SCAT` read only the pool) switched on as it made the six. Now `sewP.lampSrc` (every lamp + the
+  levers' bulbs, 22) goes into `FOG_LAMPS` each frame (`sewLampsToFog`; 0 outside the sewer); every lit sewer material runs
+  `sewLampLit` (`sewLampPass`, after `sewLightPass`): a loop calling the material's own `RE_Direct` per lamp (diffuse AND
+  specular — the water's reflections of the lamps), and the fog's scatter loops `FOG_LAMPS` too. The pooled copies keep lighting
+  what moves but carry a decay MARK (`lampMarkDecay`: third decimal 7, 1.607) that those materials and the scatter skip
+  (`bwLampMark`). The painted floor pools (`lampPool`) are off (`sewP.poolsOff`) — they stood in for the light you only got
+  near a lamp. `tools/sewlamps.js`: one view drawn with the pool for here and with the pool left from 30 m on — walls and
+  floor identical; what differs is the water's twinkle and the lamps' own flicker (time moved between the two).

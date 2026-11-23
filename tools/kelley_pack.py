@@ -46,7 +46,12 @@ DROP = ('Object_273', 'Plane.007', 'clock.001', 'trashbag', 'Cube.276', 'Cube.28
         # the three things on it; and in the kitchen "take all the stuff out of fridge … those weird tubes and wires out of the
         # fridge into the sink can go": the three hoses and the glass tank in the fridge's bottom)
         'Cube.277', 'Cube.278', 'Cube.279', 'Cube.280', 'Cube.356', 'Cube.357', 'Cube.358',
-        'BezierCurve.001', 'BezierCurve.004', 'BezierCurve.006', 'Cube.057')
+        'BezierCurve.001', 'BezierCurve.004', 'BezierCurve.006', 'Cube.057',
+        # (2026-11-22, the owner: "take out the window in the tv room too its supposed to be an underground place" — the curtains and
+        # their rod; the pane and its reveal are cut below, `WIN`, and the hole walled over in the wall's own paper)
+        'Cylinder.010', 'Cylinder.042', 'Cylinder.043')
+# the TV room's window, in the file's units: the wall's plane x 1200, the hole z -240..260, y 245..700 (metres: z -0.816..0.884, y 3.893..5.44)
+WIN = (1200.0, -0.816 / 0.0034, 0.884 / 0.0034, 3.893 / 0.0034 - 900.0, 5.44 / 0.0034 - 900.0)
 # the parts the game moves or swaps, by node: the fridge's body and its two doors (hinged in the game, `buildCelFridge`), the TV
 # (its screen, `buildCelTv`)
 PARTS = (('Cube.206', 'fridgeBody'), ('Cube.003', 'fridgeTop'), ('Cube.055', 'fridgeLow'), ('Cube.044', 'tvSet'))
@@ -99,6 +104,17 @@ def walk(ni, parent):
             T = [(I[t], I[t + 2], I[t + 1]) if det < 0 else (I[t], I[t + 1], I[t + 2]) for t in range(0, len(I) - 2, 3)]
             if name.startswith('Cube.229'):
                 T = drop_posts(P, T)
+            if name.startswith('Cube_wallpaper') or name.startswith('Cube_accessories'):
+                T = [t for t in T if not in_window([P[k] for k in t])]
+            # (THE KITCHEN DOOR OPENED WIDER — 2026-11-22, the owner: "make it so the doors open more i hit the couch when i walk in": it
+            # stood 55° into the TV room and its leaf turned you into the sofa's end; now square to its wall and a little past, 18°)
+            if name.startswith('Cube.211'):
+                zs = [p[2] for p in P]; za, zb = min(zs), max(zs)
+                hn = [p for p in P if p[2] < za + 15]; fr = [p for p in P if p[2] > zb - 15]
+                hx_, hz_ = sum(p[0] for p in hn) / len(hn), sum(p[2] for p in hn) / len(hn)
+                fx_, fz_ = sum(p[0] for p in fr) / len(fr), sum(p[2] for p in fr) / len(fr)
+                sg = -1.0 if fx_ > hx_ else 1.0
+                P = turn_to(P, (hx_, hz_), (fx_, fz_), (sg * math.sin(math.radians(18)), math.cos(math.radians(18))), 'the kitchen door, opened wide')
             # (OPEN AGAIN — 2026-11-22, the owner: "make the door i said to close in the cellar open i might do something up there":
             # the kitchen door stands as the file has it, 55° into the kitchen, kept whole though it reaches past the stairwell's box)
             if name.startswith('Cube.217'):
@@ -160,6 +176,21 @@ def drop_posts(P, T):
     return out
 
 
+def in_window(t):
+    """a triangle of the TV room's window: its pane and the reveal round it, behind the wall's plane"""
+    x, za, zb, ya, yb = WIN
+    return all(x - 1 <= p[0] <= x + 45 and za - 2 <= p[2] <= zb + 2 and ya - 2 <= p[1] <= yb + 2 for p in t) and any(p[0] > x + 1 for p in t)
+
+
+def turn_to(P, hinge, free, d, what):
+    """a leaf turned about its hinge until its free end points along d (x, z)"""
+    hx, hz = hinge; fx, fz = free
+    ph = math.atan2(d[1], d[0]) - math.atan2(fz - hz, fx - hx)
+    c, s = math.cos(ph), math.sin(ph)
+    log('%s: hinge %.0f,%.0f free %.0f,%.0f, turned %.1f deg' % (what, hx, hz, fx, fz, math.degrees(ph)))
+    return [(hx + (x - hx) * c - (z - hz) * s, y, hz + (x - hx) * s + (z - hz) * c) for (x, y, z) in P]
+
+
 def turn_leaf(P, hinge, free, what):
     """a door's leaf turned about its hinge (the middle of its end at the frame) until its free end points down -x: for the
     kitchen door that is shut in the wall's line, for the blue door at the stairs' foot it is open flat against the cellar's
@@ -178,6 +209,27 @@ def turn_leaf(P, hinge, free, what):
 walk_roots = g['scenes'][g.get('scene', 0)]['nodes']
 for ni in walk_roots: walk(ni, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
 log('tris in:', sum(len(v) for v in tris.values()))
+
+# ---- the window walled over: a sheet of the wall's own paper over the hole, its uv carried on from the wall round it (u along z,
+# v up y, both linear there), wound as the wall beside it is
+def wall_fill():
+    x, za, zb, ya, yb = WIN
+    wm = next(i for i, m in enumerate(g['materials']) if m.get('name') == 'wallpaper')
+    L = tris.get((wm, ''), [])
+    ref = next((t for t in L if all(abs(v[0][0] - x) < 1 for v in t)), None)
+    if ref is None: log('window: no wall to match'); return
+    A, B, C = ref[0][0], ref[1][0], ref[2][0]
+    nx = (B[1] - A[1]) * (C[2] - A[2]) - (B[2] - A[2]) * (C[1] - A[1])
+    uv = lambda y, z: (-0.0028 + (z * S + 1.7) * 0.2564, (y - Y0) * S * 0.5236 - 3.893 * 0.5236)
+    q = [(x, ya, za), (x, ya, zb), (x, yb, zb), (x, yb, za)]
+    tr = [(q[0], q[1], q[2]), (q[0], q[2], q[3])]
+    def nrm(t): a, b, c = t; return (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1])
+    for t in tr:
+        if (nrm(t) > 0) == (nx > 0): t = (t[0], t[2], t[1])   # (the reference is the file's raw order; the writer turns every triangle, measured: as the wall's it faced out)
+        L.append([(p, uv(p[1], p[2])) for p in t])
+    tris[(wm, '')] = L
+    log('window walled over (normal x %+.0f)' % nx)
+wall_fill()
 
 
 # ---- the cut: under the cellar's ceiling, or in the stairwell

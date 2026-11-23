@@ -3657,3 +3657,63 @@ you or your companion kill. do not give them a description either. characters i 
   there. `tools/sandfx.js` (fixed clock: `__adv`, or the stills show nothing moved).
 - **The marionette out of the washer, sooner** ("he stands there for too long … still do the nervous look cut it short"):
   `CEL_MAR_LOOK` 2.2 s of the look, `CEL_MAR_STARE` 0.7 s turned on you, then he runs (was the whole 5.7 s and 1.9).
+
+## 2026-11-22 (night) — the trail on the beach's sand, the dead trees' bark and trunks, the house over the cellar again, the tape
+- **The trail wears the beach's own photograph** ("make the trail to elvedors look better have it blend well with the sand texture
+  i added"): `buildElvTrail`'s map is a clone of `sandTex` (the JPG's Source, so the swap reaches it) at repeat 1 with uv
+  `(x+800)/SAND_TILE, (800-z)/SAND_TILE` — the beach's own texel grid, so at the beach end every grain lines up. Colour/emissive are
+  the beach's `0x6d7d99 / 0x27324a` ×1.42. A mask canvas of its own (128×1024 over 12 m, `aTrail` = across/along): R coverage,
+  G footprints (four walkers, toe ridge), B where a turned-over sample of the sand shows (churned). The edge breaks along the grain
+  (`trRel`, the texel over its mip-4 mean). Half-width 0.80 (0.62 read as a stripe). `tools/elvtrailclose.js`.
+- **The bark** ("retexture the trees … with more real detail"): `makeDeadBarkTextures` (256×512, periodic noise, a stretched warped
+  Voronoi whose edges are the fissures, stringy grain, cross-checks, peeled plates, lichen) + a height map as the bump.
+  `elvTaperTube` keeps uv: whole wraps round (`ELV_BARK_ROUND` 0.55 m), metres along (`ELV_BARK_ALONG` 1.6). The merge keeps uv for
+  'bark' only. AT NIGHT A DARK TRUNK IS A SILHOUETTE: emissive 0x646464 through the map is what makes the bark show (0x2a2826 showed
+  nothing) — `tools/elvbark.js &em=&co=` tries values.
+- **The trees are solid** ("im walking through all elvedors trees"): `elvTreeSolid` holds each trunk's curve (12 points) and radii;
+  `elvTreeBlocks(x, z, feet)` (body 0.28 m, segments within feet−0.2..feet+1.9) is in `updateElvLand`'s `legal` — a step INTO a
+  trunk is refused, a step out of one is not. `tools/elvtree.js`: four trees walked at for 2 s, each stopped ~0.58 m off the axis.
+- **The bathroom** ("i juts jumped in"): in the air the walk takes any floor within `FORT_AIR` — the tub's rim — so `NO_FLOOR` was
+  not enough. `celNoGo` (room-local x < −4.07, z −3.8..−1.72, feet over CEL_Y+2.4) in the cellar's `legal` and `celClampPlayer`.
+- **The kitchen's bulb** (`celKitchenL`, 0xffcf8a 5.2 over the table, its own brown-outs every 5–14 s). Before it the kitchen had
+  no lamp at all — only `CEL_GLOW`.
+- **The fridge's doors** ("the door is completely off"): not ajar in yaw or pitch (a turn search found 0) — the lower door's mesh is
+  0.37 m deep with its inner racks, so shut it stood off the cabinet as a slab. `flat()` bakes each door into the room's space and
+  presses it to `CEL_FRIDGE_DOOR` 0.075 m against the cabinet's front. Hinged on the cabinet's −x edge (the RIGHT as you face it,
+  "the hinges should be on the right and it opens from the left handle side"), opening +1.48.
+- **The kitchen door** ("make it so the doors open more i hit the couch"): `Cube.211` was 55° into the TV room, its leaf turning you
+  into the sofa's end; `turn_to` in the packer stands it square to its wall and 18° past (hinge found as the leaf's end on the
+  doorway line, file x 1048 = the east jamb).
+- **The TV room's window is gone** ("its supposed to be an underground place"): the curtains and rod dropped (`Cylinder.010/.042/.043`),
+  the pane and reveal behind x 1200 cut (`in_window`), the hole walled in the wallpaper's own uv (u along z 0.2564/m, v up y
+  0.5236/m, both linear there). TRAP: the raw file order of a reference triangle is NOT the written winding — first try faced out.
+  `tools/celwin.js`, `tools/celplan.js`.
+
+## The tape, second round (2026-11-22, "the tv should be from the actual screen on the tv model … make the beach one more realistic and have elevedor in the beach chair relaxing shirtless … use the model of the beach outside just make it day time … some are also too dark")
+- **On the set's own glass**: the tube is 16 triangles of `tvSet_` sampling the atlas's glass patch (`CEL_TV_GLASS`); cut out of the
+  set into `celTvGlass` (a child of the set), uv laid across it from the patch's corners (u 0.044→0.464 is the viewer's left→right,
+  v 0.325→0.641 bottom→top; OSD reads the right way round). Off: Lambert dark glass (a Standard one picked out one flat facet white).
+  `V.glow` (0xa8bce0, 4.2 m) throws the picture on the room, `TAPE_GLOW` per clip. `tools/celtvfaces.js` dumps the set's faces.
+- **Levels**: `TAPE_GAIN` per clip and a lift of the night clips' middles (`pow(col, 0.72)`); the cellar set's bulb 24→38, ambient
+  1.7→2.6 + a key light; the face's under-light 9→14. Scanlines 240→110: at 240 they beat with the frame's pixels into rings.
+- **The day beach** (`buildTapeDay`, `tapeDayTick`): sand = the beach's photograph re-toned to noon (`tapeDaySand`), wet near the
+  sea by vertex colour, rising into a 4.4 m cliff with dune grass; a sea shader (`TAPE_SEA_FS`: swash, breaking crests, foam, glints);
+  a sky dome with sun and cloud; HIS HOUSE on top — `houseWorld`'s own meshes drawn again (non-skinned, opaque, within the house's
+  footprint); a striped deck chair, umbrella, towel and cool box; the three in the shallows round a beach ball with spray.
+- **Him shirtless** (`tapeShirtless`, `tapeManLook` swaps the map for clip 4): HIS ATLAS IS NOT WHERE IT LOOKS — rectangles guessed
+  off the picture missed a trouser leg. The mask is drawn from the model: each body triangle filled in its own uv by its dominant
+  bone (hips/thighs → trunks, anything below the head → skin); then only cloth pixels (saturation < 0.2) take it. Posed by `pupAim`
+  in `tapeDayPose`: reclined spine, legs out, hands behind the head, head after the ball; hips set onto the chair's seat.
+  `tools/celtv2.js` (`&quick=1`, `&glass=1`), `tools/elvuv.js` (uv occupancy per bone).
+- **His head on the swing, smooth** (2026-11-22, "MAKE THE MARRIONETTE HEAD TURN WHILE ON THE SWING MORE SMOOTH WHEN YOU TALK TO
+  HIM"): `marSwingStep` used to SWITCH the look target from the water to you when `MAR.lookK` crossed 0.5 — the whole ~50° turn
+  in one frame. Now `lookK` runs at a steady rate (`MAR_LOOK_TURN` 1.1 s), the water's and your DIRECTIONS are blended by its
+  smootherstep, and the head follows that direction on a critically damped spring (`MAR.lookD`/`lookV`, `MAR_LOOK_W` 5).
+  `tools/marlook.js`: on talk 53° over ~2 s, at most 1.0°/frame, a bell (0.1 → 1.0 → 0.1); the same back when the talk ends.
+- **His dialog, the owner's** (2026-11-22, "make this the dialog to the marionette if you dont say ill take you there he doesnt
+  follow you"): `MAR_NPC.script` — start "..." → "You okay?" (okay: "I've never been okay…" → "What are you?") or "What are you?"
+  → miracle ("Dad used to say I was a miracle.") → "Why were you locked in the washer?" → light ("I wanted to see the tall
+  light…") → "I'll take you there." (go: "REALLY? LET'S GO") or "Leave". Only `go` sets `MAR.go`; `MAR_NPC.onLeave` hops him
+  off on ANY close if it is set (so a click or the timeout after "LET'S GO" both work), and resets it; `marTalk` clears it.
+  Leave or Escape leaves him on the swing, askable again. The old `off` node (either answer → hop) is gone.
+  `tools/martalk.js`: Leave → swing, Escape at the light → swing, take → hop.

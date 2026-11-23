@@ -1815,11 +1815,23 @@ THREE.UniformsLib.fog.fogNoise = { value: FOG_NOISE };
  * smooth ball. Laid on as a screen (1 − (1 − c)·e^−x), after tonemapping like all the fog, so it never clips.
  * x = strength, y = how broken (0 smooth .. 1 wisps), z = the clock, w = on (0 on the beach and in every room but the
  * drain and the sewer). Only where there are lights to read: `BW_LIT` is defined in the lit materials' light chunk. */
+/* EVERY LAMP OF A CROWDED PLACE, ALL THE TIME (2026-11-22, the owner: "THE SEWER LIGHTS I SHOLD NOT SEE THEM COME ON WHILE
+ * WALKING … ANY LIGHT THATS ON SHOULD NOT CHANGE WHEN GETTING CLOSER TO IT"). Only `LIGHT_SLOTS` (6) lamps reach a shader through
+ * the pool, the nearest, so in the sewer's tunnel of twenty a lamp's light on the walls — and its glow in the fog — switched on
+ * as it made the six. A place with more lamps than that hands them all here instead (`FOG_LAMPS`: world position and range,
+ * colour × intensity and decay), and its materials light themselves from every one (`sewLampLit`), as the catacombs' stone does
+ * from its torches; the fog's scatter reads them too. Their pooled copies carry a MARK in their decay (its third decimal a 7:
+ * 1.607 for 1.6, `bwLampMark`) so those materials and the fog skip them — the pool goes on lighting whatever moves. */
+const FOG_LAMP_MAX = 24;
+const FOG_LAMPS = { n: { x: 0, y: 0, z: 0, w: 0 }, p: Array.from({ length: FOG_LAMP_MAX }, () => new THREE.Vector4()), c: Array.from({ length: FOG_LAMP_MAX }, () => new THREE.Vector4()) };
+const lampMarkDecay = (d) => Math.floor(d * 100 + 1e-6) / 100 + 0.007;
 const FOG_SCAT = { x: 0, y: 0.8, z: 0, w: 0 };
 const FOG_SCAT_K = { sew: 0.035, drain: 0.06, room: 0.08 };   // its strength in each
 THREE.UniformsLib.fog.fogScat = { value: FOG_SCAT };
+THREE.UniformsLib.fog.fogLampN = { value: FOG_LAMPS.n }; THREE.UniformsLib.fog.fogLampP = { value: FOG_LAMPS.p }; THREE.UniformsLib.fog.fogLampC = { value: FOG_LAMPS.c };
 THREE.ShaderChunk.lights_pars_begin = '#define BW_LIT\n' + THREE.ShaderChunk.lights_pars_begin;
 const FOG_SCAT_GLSL = `
+	bool bwLampMark( float d ) { return abs( d * 1000.0 - floor( d * 100.0 + 0.0001 ) * 10.0 - 7.0 ) < 0.5; }
 	float bwScatN( vec3 p ) {
 		vec2 q = p.xz + p.y * vec2( 0.37, 0.71 );
 		float a = texture2D( fogNoise, ( q + 0.5 ) / 512.0 ).g;
@@ -1852,6 +1864,7 @@ for (const k in THREE.ShaderLib) {
   if (u && u.fogDensity && !u.fogNoise) u.fogNoise = { value: FOG_NOISE };
   if (u && u.fogDensity && !u.fogCap) u.fogCap = { value: FOG_CAP };
   if (u && u.fogDensity && !u.fogScat) u.fogScat = { value: FOG_SCAT };
+  if (u && u.fogDensity && !u.fogLampN) { u.fogLampN = { value: FOG_LAMPS.n }; u.fogLampP = { value: FOG_LAMPS.p }; u.fogLampC = { value: FOG_LAMPS.c }; }
 }
 /* the keep's mist, shared by the fog chunk and the keep's own sky: optical
  * depth of the layer along a ray from `o` in direction `d` for `L` metres */
@@ -1941,7 +1954,7 @@ const GROUND_MIST_GLSL = `
 THREE.ShaderChunk.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogView;\n#endif';
 THREE.ShaderChunk.fog_vertex = '#ifdef USE_FOG\n\tvFogDepth = - mvPosition.z;\n\tvFogView = mvPosition.xyz;\n#endif';
 THREE.ShaderChunk.fog_pars_fragment = THREE.ShaderChunk.fog_pars_fragment.replace(
-  'varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogView;\n\tuniform vec4 fogMoon;\n\tuniform vec4 fogBolt;\n\tuniform vec4 fogTint;\n\tuniform vec4 fogKeep;\n\tuniform vec4 fogKeep2;\n\tuniform vec4 fogGround;\n\tuniform vec4 fogCap;\n\tuniform vec4 fogScat;\n\tuniform sampler2D fogNoise;\n' + KEEP_MIST_GLSL + GROUND_MIST_GLSL + FOG_SCAT_GLSL);
+  'varying float vFogDepth;', 'varying float vFogDepth;\n\tvarying vec3 vFogView;\n\tuniform vec4 fogMoon;\n\tuniform vec4 fogBolt;\n\tuniform vec4 fogTint;\n\tuniform vec4 fogKeep;\n\tuniform vec4 fogKeep2;\n\tuniform vec4 fogGround;\n\tuniform vec4 fogCap;\n\tuniform vec4 fogScat;\n\tuniform vec4 fogLampN;\n\tuniform vec4 fogLampP[ ' + FOG_LAMP_MAX + ' ];\n\tuniform vec4 fogLampC[ ' + FOG_LAMP_MAX + ' ];\n\tuniform sampler2D fogNoise;\n' + KEEP_MIST_GLSL + GROUND_MIST_GLSL + FOG_SCAT_GLSL);
 THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 	vec3 fogCol = fogColor;
 	float fogK = 1.0;
@@ -1996,7 +2009,7 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 	/* (a light in your own hand — the glowstick, 0.7 m from the eye — starts every ray of the frame inside its brightest
 	 * air, and the fog in front of you went up as a lit wall: 2026-11-21, the owner, "turn down the glowstricks light
 	 * refraction on the fog wall". A light that close to the eye scatters a quarter as much; the lamps on the walls keep theirs.) */
-	#if defined( BW_LIT ) && NUM_POINT_LIGHTS > 0
+	#if defined( BW_LIT )
 	if ( fogScat.w > 0.0 ) {
 		vec3 bwRd = normalize( vFogView ), bwSc = vec3( 0.0 ); float bwRl = length( vFogView );
 		#ifdef FOG_EXP2
@@ -2004,11 +2017,19 @@ THREE.ShaderChunk.fog_fragment = /* glsl */`#ifdef USE_FOG
 		#else
 			float bwDn = 0.0;
 		#endif
+		#if NUM_POINT_LIGHTS > 0
 		#pragma unroll_loop_start
 		for ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {
-			bwSc += bwAirlight( bwRd, bwRl, pointLights[ i ].position, pointLights[ i ].color, pointLights[ i ].distance, bwDn, fogScat ) * mix( 0.28, 1.0, smoothstep( 0.9, 2.4, length( pointLights[ i ].position ) ) );
+			bwSc += bwAirlight( bwRd, bwRl, pointLights[ i ].position, pointLights[ i ].color, pointLights[ i ].distance, bwDn, fogScat ) * mix( 0.28, 1.0, smoothstep( 0.9, 2.4, length( pointLights[ i ].position ) ) ) * ( bwLampMark( pointLights[ i ].decay ) ? 0.0 : 1.0 );
 		}
 		#pragma unroll_loop_end
+		#endif
+		// (and every lamp of the place, from FOG_LAMPS, wherever you are: none of them waits on a pool slot)
+		for ( int i = 0; i < ` + FOG_LAMP_MAX + `; i ++ ) {
+			if ( float( i ) >= fogLampN.x ) break;
+			vec3 bwS = ( viewMatrix * vec4( fogLampP[ i ].xyz, 1.0 ) ).xyz;
+			bwSc += bwAirlight( bwRd, bwRl, bwS, fogLampC[ i ].rgb, fogLampP[ i ].w, bwDn, fogScat ) * mix( 0.28, 1.0, smoothstep( 0.9, 2.4, length( bwS ) ) );
+		}
 		gl_FragColor.rgb = 1.0 - ( 1.0 - gl_FragColor.rgb ) * exp( - bwSc * fogScat.x * fogScat.w );
 	}
 	#endif
@@ -2107,6 +2128,7 @@ function setSkyDuck(k) {
  * never hidden — none of it can change the count, because the count is no
  * longer anything to do with how many lamps are lit. */
 const LIGHT_SLOTS = 6;
+const LP_SEE = 3.0, LP_FADE = 0.6;   // how far past its range a lamp is already one of the lit; and the seconds one eases in or out of the pool
 const lightPool = [], virtualLights = [];
 const LAMP_LAYER = 1;                    // the camera watches layer 0 and only layer 0
 for (let i = 0; i < LIGHT_SLOTS; i++) {
@@ -2164,8 +2186,13 @@ function lampReach(l) {
    * stepped six metres off, he went dark and came back as you walked. */
   const LA = l.userData.lpAlways;
   if (LA && d < LA) return l.intensity * (8 + 1 / (1 + d * d));
-  if (R > 0 && d >= R) return 0;
-  const w = R > 0 ? (1 - (d / R) ** 4) ** 2 : 1;
+  /* (AND A LAMP IS LIT BEFORE YOU REACH IT — 2026-11-22, the owner: "ANY LIGHT THATS ON SHOULD NOT CHANGE WHEN GETTING CLOSER
+   * TO IT". It scored nothing until the CAMERA was inside its range, so walking up to any lamp without an `lpAlways` you saw
+   * its light come on as you crossed that line. It ranks now from `LP_SEE` times its range — still by its reach on you, so
+   * the nearest win where lamps crowd — and the light it gives is its own whatever the distance.) */
+  const RS = R > 0 ? R * LP_SEE : 0;
+  if (RS > 0 && d >= RS) return 0;
+  const w = RS > 0 ? (1 - (d / RS) ** 4) ** 2 : 1;
   return l.intensity * Math.max(0, w) / (1 + d * d);
 }
 /* AND A LAMP FADES INTO THE POOL AND OUT OF IT; IT DOES NOT POP. The twelve
@@ -2192,7 +2219,7 @@ function updateLightPool() {
   _lpPick.sort((a, b) => b.s - a.s);
   _lpSet.clear();
   for (let i = 0; i < _lpPick.length && i < LIGHT_SLOTS; i++) if (_lpPick[i].s > 0) _lpSet.add(_lpPick[i].l);
-  const k = Math.min(1, dt / 0.25);
+  const k = Math.min(1, dt / LP_FADE);
   for (const e of _lpPick) {
     const u = e.l.userData;
     u.lpW = THREE.MathUtils.clamp((u.lpW || 0) + (_lpSet.has(e.l) ? k : -k), 0, 1);
@@ -55803,6 +55830,7 @@ function animateFrame() {
   FOG_GROUND.y = inDojo ? DOJO_Y + (dojoArenaY || 0) - 0.05 : inSewer ? SEW_Y + SEW.WATER - 0.05 : -0.10;     // in the dojo the mist lies on the courtyard's own stones; in the sewer on its water
   FOG_GROUND.z = inSewer ? SEW_MIST.h : 0.55;
   // the lamps lighting the air (`FOG_SCAT`): the sewer, and the drain from its mouth to its room
+  if (!inSewer) FOG_LAMPS.n.x = 0;                // (the sewer's lamps are the sewer's: `sewLampsToFog`)
   { const dk = inSewer ? 1 : inRoom() ? 0 : drainMix; FOG_SCAT.w = dk; FOG_SCAT.z = performance.now() * 0.001;
     FOG_SCAT.x = inSewer ? FOG_SCAT_K.sew : THREE.MathUtils.lerp(FOG_SCAT_K.drain, FOG_SCAT_K.room, drainRoomK); }
   skyUniforms.uMoonDir.value = inDojo ? DOJO_MOON : MOON_DIR;
@@ -98959,6 +98987,13 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
     });
   }
   sewLightPass(W);
+  // every lamp of the sewer that stays where it is lights the place from anywhere (`FOG_LAMPS`): the lamps and the levers' bulbs;
+  // their pooled copies marked, so the sewer's own surfaces and the fog skip them (`bwLampMark`)
+  sewP.lampSrc = [...sewP.lamps.map((lp) => lp.L), ...sewP.levers.map((lv) => lv.bl)].map((L) => { const decay = L.decay; L.decay = lampMarkDecay(decay); return { L, decay }; });
+  sewLampPass(W);
+  // (their painted pools were standing in for the light that only reached you near a lamp; the light itself is everywhere now)
+  for (const lp of sewP.lamps) for (const q of lp.pools) q.m.uniforms.uOp.value = 0;
+  sewP.poolsOff = true;
   sewApplyState();
   sewReady = true;
   warmStep('sewer compile', () => warmCompileOwn([W], SEW_X + S.SPAWN.x, SEW_Y + 0.9, SEW_Z + S.SPAWN.z, SEW_X + 2, SEW_Y, SEW_Z - 6));
@@ -99600,12 +99635,13 @@ function updateSewer(dt) {
     lp.halo.material.opacity = 0.5 * lp.lvl;
     if (lp.beam) lp.beam.uniforms.uK.value = SEW_BEAM_K * lp.lvl * breathe;
     for (const m of lp.mats) m.emissiveIntensity = 1.3 * lp.lvl;
-    if (lp.pools.length) {                         // (its painted pool: full from afar, backing off as the real light takes over)
+    if (lp.pools.length && !sewP.poolsOff) {     // (its painted pool: full from afar, backing off as the real light takes over — off since every lamp lights from anywhere, `FOG_LAMPS`)
       const d = Math.hypot(lp.L.position.x + SEW_X - camera.position.x, lp.L.position.z + SEW_Z - camera.position.z);
       const op = lp.lvl * breathe * (0.45 + 0.55 * THREE.MathUtils.smoothstep(d, 3, 9)) * (0.5 + 0.5 * Math.min(1, lp.base / 2.4));
       for (const p of lp.pools) p.m.uniforms.uOp.value = SEW_POOL_K * op * p.k;
     }
   }
+  sewLampsToFog();                                 // (every lamp's light, from anywhere: `FOG_LAMPS`)
   // and the walls go darker with them: the lamps were most of what you saw them by
   { const k = sewGenOn ? 1 : 1 - (1 - SEW_DARK) * THREE.MathUtils.clamp(sewGenOffT / 3, 0, 1);
     if (sewP.liftK !== k) { sewP.liftK = k; for (const m of sewP.lift) m.emissiveIntensity = k; } }
@@ -101880,6 +101916,59 @@ function sewLairTick(dt, now) {
   F.U.uT.value = now; F.U.uBurst.value = Math.min(1, sewP.flyBurst || 0); F.U.uPx.value = renderer.domElement.height;
 }
 const SEW_HOLE = { min: { value: new THREE.Vector3(1e9, 1e9, 1e9) }, max: { value: new THREE.Vector3(1e9, 1e9, 1e9) } };
+/* the sewer's surfaces lit by every one of its lamps (`FOG_LAMPS`), through the material's own light model (`RE_Direct`: its
+ * diffuse and its shine, the water's reflections of the lamps included), and the lamps' pooled copies skipped (`bwLampMark`) */
+const SEW_LAMP_LIT_GLSL = `
+  #if defined( RE_Direct )
+  for ( int i = 0; i < ${FOG_LAMP_MAX}; i ++ ) {
+    if ( float( i ) >= fogLampN.x ) break;
+    vec4 sP = fogLampP[ i ], sC = fogLampC[ i ];
+    vec3 sV = ( viewMatrix * vec4( sP.xyz, 1.0 ) ).xyz - geometryPosition;
+    float sD = length( sV );
+    if ( sP.w > 0.0 && sD >= sP.w ) continue;
+    IncidentLight sL;
+    sL.direction = sV / max( sD, 1e-4 );
+    sL.color = sC.rgb * getDistanceAttenuation( sD, sP.w, sC.w );
+    sL.visible = true;
+    RE_Direct( sL, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
+  }
+  #endif`;
+function sewLampLit(sh) {
+  const begin = THREE.ShaderChunk.lights_fragment_begin.replace(
+    'getPointLightInfo( pointLight, geometryPosition, directLight );',
+    'getPointLightInfo( pointLight, geometryPosition, directLight );\n\t\tif ( bwLampMarkL( pointLight.decay ) ) directLight.color = vec3( 0.0 );');
+  sh.fragmentShader = sh.fragmentShader
+    .replace('#include <common>', '#include <common>\nbool bwLampMarkL( float d ) { return abs( d * 1000.0 - floor( d * 100.0 + 0.0001 ) * 10.0 - 7.0 ) < 0.5; }\n#ifndef USE_FOG\nuniform vec4 fogLampN;\nuniform vec4 fogLampP[ ' + FOG_LAMP_MAX + ' ];\nuniform vec4 fogLampC[ ' + FOG_LAMP_MAX + ' ];\n#endif')
+    .replace('#include <lights_fragment_begin>', begin + SEW_LAMP_LIT_GLSL);
+}
+function sewLampPass(W) {
+  const done = new Set();
+  W.traverse((o) => {
+    if (!o.isMesh || o.isSkinnedMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!m || done.has(m) || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) continue;
+      done.add(m);
+      const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+      m.onBeforeCompile = (sh, r) => { if (prev) prev.call(m, sh, r); sewLampLit(sh); };
+      m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|sewLamps';
+      m.needsUpdate = true;
+    }
+  });
+}
+// the sewer's lamps into `FOG_LAMPS`, every frame you are in it (and none anywhere else)
+const _sewLW = new THREE.Vector3();
+function sewLampsToFog() {
+  const F = FOG_LAMPS; let n = 0;
+  if (inSewer && sewP.lampSrc) for (const q of sewP.lampSrc) {
+    if (n >= FOG_LAMP_MAX) break;
+    const L = q.L; if (L.intensity <= 0 || !L.parent) continue;
+    L.getWorldPosition(_sewLW);
+    F.p[n].set(_sewLW.x, _sewLW.y, _sewLW.z, L.distance);
+    F.c[n].set(L.color.r * L.intensity, L.color.g * L.intensity, L.color.b * L.intensity, q.decay);
+    n++;
+  }
+  F.n.x = n;
+}
 function sewLightPass(W) {
   if (sewP.hole) { SEW_HOLE.min.value.copy(sewP.hole.min); SEW_HOLE.max.value.copy(sewP.hole.max); }
   const skip = new Set(); for (const lp of sewP.lamps) for (const m of lp.mats) skip.add(m);
@@ -123526,6 +123615,95 @@ function elvFieldShow() {
  * plateau never shows its end. Everything static is merged by material: a handful of draws for the whole place. */
 const ELV_FOG_U = { uTime: { value: 0 } };
 let elvSwing = null, elvCrosses = [];
+/* THE DEAD TREES' BARK (2026-11-22, the owner: "retexture the trees at elvedors with more real detail too"). They were one flat
+ * brown with nothing on them. Now a bark of their own, drawn once (256 × 512, tiling round and along): long plates split by
+ * deep fissures that wander and fork (a stretched, warped Voronoi: its cell edges are the cracks), each plate stringy with the
+ * grain along the trunk and checked across by short cracks, a few plates fallen off to the smooth, paler wood under them,
+ * and grey-green lichen in patches — weathered silver-grey, a dead tree's, not a living one's brown. A height map of the same
+ * drawing goes in as the bump, so the fissures take the light as a cut, not a stripe. Sampled `round` times about each limb
+ * (an integer, so the seam meets) and every 1.6 m along it (`elvTaperTube`). */
+let elvBarkTex = null;
+/* THE TREES ARE SOLID (2026-11-22, the owner: "make it so i dont clip through trees either im walking through all elvedors trees").
+ * Each one's trunk — the wandering curve it is drawn along, tapering from its foot — is kept (`elvTreeSolid`), and a step whose
+ * body (`ELV_TREE_BODY` round) would come within the trunk's radius of it, at any height from the feet to the head, is refused
+ * by the land's walk like a wall; the walk's own slide takes you round it. Limbs over the head are left alone. */
+const elvTreeSolid = [], ELV_TREE_BODY = 0.28;
+function elvTreeBlocks(x, z, feet) {
+  for (const T of elvTreeSolid) {
+    if (Math.abs(x - T.x) > 4 || Math.abs(z - T.z) > 4) continue;
+    const P = T.pts, n = P.length - 1;
+    for (let i = 0; i < n; i++) {
+      const a = P[i], b = P[i + 1];
+      if (Math.max(a.y, b.y) < feet - 0.2 || Math.min(a.y, b.y) > feet + 1.9) continue;
+      const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz;
+      const t = L2 > 1e-6 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L2)) : 0;
+      const r = T.r0 + (T.r1 - T.r0) * ((i + t) / n);
+      if (Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t)) < r + ELV_TREE_BODY) return true;
+    }
+  }
+  return false;
+}
+function makeDeadBarkTextures(seed = 4417) {
+  if (elvBarkTex) return elvBarkTex;
+  const W = 256, H = 512, rnd = mulberry32(seed);
+  const lat = new Float32Array(64 * 64); for (let i = 0; i < lat.length; i++) lat[i] = rnd();
+  // periodic value noise: period (px, py) cells over the tile
+  const vn = (x, y, px, py, o = 0) => {
+    const i = Math.floor(x), j = Math.floor(y), u = x - i, v = y - j, su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+    const L = (a, b) => lat[((((b % py) + py) % py) * 7 + o * 13) % 64 * 64 + (((a % px) + px) % px + o * 5) % 64];
+    return (L(i, j) * (1 - su) + L(i + 1, j) * su) * (1 - sv) + (L(i, j + 1) * (1 - su) + L(i + 1, j + 1) * su) * sv;
+  };
+  const fbm = (x, y, px, py, oct, o) => { let s = 0, a = 0.5, n = 0; for (let k = 0; k < oct; k++) { s += a * vn(x, y, px, py, o + k); n += a; x *= 2; y *= 2; px *= 2; py *= 2; a *= 0.5; } return s / n; };
+  // the plates: CX cells round, CY along, jittered points (wrapping)
+  const CX = 9, CY = 5, pts = [];
+  for (let j = 0; j < CY; j++) for (let i = 0; i < CX; i++) pts.push([(i + 0.15 + rnd() * 0.7) / CX, (j + 0.1 + rnd() * 0.8) / CY, rnd(), rnd()]);
+  const hgt = new Float32Array(W * H), col = new Float32Array(W * H * 3);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const u = x / W, v = y / H;
+    // warp: the cracks wander
+    const wu = u + (fbm(u * 4, v * 3, 4, 3, 3, 1) - 0.5) * 0.10, wv = v + (fbm(u * 3, v * 2, 3, 2, 2, 7) - 0.5) * 0.06;
+    let d1 = 9, d2 = 9, cell = null;
+    const ci = Math.floor(wu * CX), cj = Math.floor(wv * CY);
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const ii = ci + di, jj = cj + dj, P = pts[(((jj % CY) + CY) % CY) * CX + (((ii % CX) + CX) % CX)];
+      const px = P[0] + Math.floor(ii / CX), py = P[1] + Math.floor(jj / CY);
+      const dx = (wu - px) * CX, dy = (wv - py) * CY * 0.42;            // (cells long along the trunk)
+      const dd = Math.hypot(dx, dy);
+      if (dd < d1) { d2 = d1; d1 = dd; cell = P; } else if (dd < d2) d2 = dd;
+    }
+    const e = d2 - d1;                                                  // 0 on a crack
+    const crack = 1 - THREE.MathUtils.smoothstep(e, 0.02, 0.16);
+    const string = fbm(u * 64, v * 4, 64, 4, 3, 11);                    // stringy grain along it
+    const check = Math.pow(Math.max(0, vn(u * 40, v * 70, 40, 70, 19) - 0.72) / 0.28, 2) * (1 - crack);   // short cross-checks
+    const peeled = cell[2] < 0.16;                                      // a plate gone: the smooth wood under it
+    const lich = THREE.MathUtils.smoothstep(fbm(u * 6, v * 5, 6, 5, 4, 23) + (cell[3] - 0.5) * 0.2, 0.60, 0.70);
+    const dome = THREE.MathUtils.smoothstep(e, 0.0, 0.35);              // the plate rounds up from its crack
+    let h = peeled ? 0.35 + dome * 0.15 + string * 0.05 : 0.25 + dome * 0.55 + (string - 0.5) * 0.35 - check * 0.3;
+    h *= 1 - crack * 0.85;
+    hgt[y * W + x] = h;
+    // colour: silver-grey weathered bark, darker and browner down the cracks
+    const tone = 0.85 + (cell[3] - 0.5) * 0.25 + (string - 0.5) * 0.45;
+    let r = 96 * tone, g = 90 * tone, b = 82 * tone;
+    if (peeled) { const t2 = 0.9 + string * 0.2; r = 128 * t2; g = 114 * t2; b = 94 * t2; }
+    if (lich > 0 && !peeled) { const l = lich * (0.6 + 0.4 * vn(u * 90, v * 120, 90, 120, 29)); r += (112 - r) * l; g += (124 - g) * l; b += (100 - b) * l; }
+    const dk = 1 - crack * 0.82 - check * 0.35;
+    col[(y * W + x) * 3] = r * dk; col[(y * W + x) * 3 + 1] = g * dk; col[(y * W + x) * 3 + 2] = b * dk;
+  }
+  const mk = (fill) => {
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d'), im = g.createImageData(W, H), d = im.data;
+    for (let i = 0; i < W * H; i++) { const [r, gg, b] = fill(i); d[i * 4] = r; d[i * 4 + 1] = gg; d[i * 4 + 2] = b; d[i * 4 + 3] = 255; }
+    g.putImageData(im, 0, 0);
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 4;
+    return t;
+  };
+  const q = (v) => Math.max(0, Math.min(255, Math.round(v / 4) * 4));
+  const map = mk((i) => [q(col[i * 3]), q(col[i * 3 + 1]), q(col[i * 3 + 2])]); map.colorSpace = THREE.SRGBColorSpace;
+  const bump = mk((i) => { const v = Math.max(0, Math.min(255, hgt[i] * 255)); return [v, v, v]; }); bump.magFilter = THREE.LinearFilter;
+  return (elvBarkTex = { map, bump });
+}
+const ELV_BARK_ALONG = 1.6, ELV_BARK_ROUND = 0.55;   // metres the bark repeats along a limb; and about it (rounded to whole wraps)
 function elvTaperTube(curve, seg, rad, r0, r1) {
   const g = new THREE.TubeGeometry(curve, seg, r0, rad, false), P = g.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
   for (let i = 0; i <= seg; i++) {
@@ -123533,7 +123711,10 @@ function elvTaperTube(curve, seg, rad, r0, r1) {
     const k = THREE.MathUtils.lerp(1, r1 / r0, i / seg);
     for (let j = 0; j <= rad; j++) { const n = i * (rad + 1) + j; v.fromBufferAttribute(P, n).sub(c).multiplyScalar(k).add(c); P.setXYZ(n, v.x, v.y, v.z); }
   }
-  g.deleteAttribute('uv'); g.computeVertexNormals();
+  // the bark's uv: whole wraps round it (so the seam meets), metres along it
+  const UV = g.attributes.uv, wraps = Math.max(1, Math.round(Math.PI * 2 * r0 / ELV_BARK_ROUND)), along = curve.getLength() / ELV_BARK_ALONG, sh = (r0 * 37.1) % 1;
+  for (let i = 0; i <= seg; i++) for (let j = 0; j <= rad; j++) { const n = i * (rad + 1) + j; UV.setXY(n, j / rad * wraps, sh + i / seg * along); }
+  g.computeVertexNormals();
   return g;
 }
 // a dead tree as one geometry: a trunk that wanders as it climbs, limbs off it that wander too, thinner each time
@@ -123565,7 +123746,8 @@ function elvTreeGeo(rnd, x, y, z, h, lean, limbs = 3) {
 }
 function buildElvDressing() {
   const rnd = mulberry32(6061);
-  const bark = new THREE.MeshStandardMaterial({ color: 0x2b2722, roughness: 1, metalness: 0, flatShading: true, emissive: 0x0a0908 });
+  const BK = makeDeadBarkTextures();
+  const bark = new THREE.MeshStandardMaterial({ map: BK.map, bumpMap: BK.bump, bumpScale: 2.2, color: 0x8a8478, roughness: 1, metalness: 0, flatShading: true, emissive: 0x646464, emissiveMap: BK.map });   // (the glow through its own map, or at night it is a silhouette and none of it shows: measured, `tools/elvbark.js`)   // (its own bark: `makeDeadBarkTextures`)
   const wood = new THREE.MeshStandardMaterial({ color: 0x4a4036, roughness: 1, metalness: 0, flatShading: true, emissive: 0x0e0c0a });
   const wet = new THREE.MeshStandardMaterial({ color: 0x2c251f, roughness: 0.8, metalness: 0, flatShading: true, emissive: 0x080706 });
   const stone = new THREE.MeshStandardMaterial({ color: 0x55585c, roughness: 1, metalness: 0, flatShading: true, emissive: 0x0d0e10 });
@@ -123707,7 +123889,11 @@ function buildElvDressing() {
     [19.5, HOUSE_Z + 14.5, 6.5, 0.22], [33.0, HOUSE_Z - 16.5, 8.0, 0.12], [35.5, HOUSE_Z + 14.0, 7.6, 0.16], [51.0, HOUSE_Z + 4.0, 11.0, 0.06],
     [50.0, HOUSE_Z - 9.0, 9.8, 0.08], [16.8, HOUSE_Z - 8.0, 5.0, 0.3]];
   let swingTree = null;
-  for (const [x, z, h, l] of trees) { const gs = elvTreeGeo(rnd, x, elvSurf(x, z) + (x > 42 ? elvRidgeRise(x, z) : 0), z, h, l); swingTree = swingTree || gs; for (const g of gs) put('bark', g); }
+  elvTreeSolid.length = 0;
+  for (const [x, z, h, l] of trees) {
+    const gs = elvTreeGeo(rnd, x, elvSurf(x, z) + (x > 42 ? elvRidgeRise(x, z) : 0), z, h, l); swingTree = swingTree || gs; for (const g of gs) put('bark', g);
+    elvTreeSolid.push({ x, z, pts: gs.trunk.getPoints(12), r0: gs.trunkR[0], r1: gs.trunkR[1] });   // (its trunk is solid: `elvTreeBlocks`)
+  }
   /* the swing: a limb out of the big tree's own trunk, two ropes tied round it and a seat that moves on its own
    * (the limb used to start at a typed point the random-walked trunk never passed through, and the ropes hung off a
    * slanting limb at one x — "the swing out front the house isn't connected to the tree right", the owner, 2026-10-16) */
@@ -123786,7 +123972,7 @@ function buildElvDressing() {
   // and everything static, merged: one draw per material
   for (const [key, mat] of [['bark', bark], ['wood', wood], ['wet', wet], ['stone', stone], ['rope', rope]]) {
     const L = groups[key]; if (!L.length) continue;
-    for (const g of L) { if (g.attributes.uv) g.deleteAttribute('uv'); }
+    for (const g of L) { if (key !== 'bark' && g.attributes.uv) g.deleteAttribute('uv'); }   // (the bark keeps its own: `elvTaperTube`)
     let geo = null; try { geo = mergeGeometries(L, false); } catch (e) { geo = null; }
     if (!geo) { for (const g of L) elvField.add(new THREE.Mesh(g, mat)); continue; }
     geo.computeVertexNormals();
@@ -126103,6 +126289,10 @@ function loadCellar() {
     try { buildCelFridge(root); } catch (e) { console.warn('[cellar] fridge', e); }
     try { buildCelTv(root); } catch (e) { console.warn('[cellar] tv', e); }
     lamp(0xffc080, 1.25, 4.2, -5.0, 2.15, -2.0);
+    /* the kitchen's bulb (2026-11-22, the owner: "make it more illuminated in the kitchen but still scary"): a bare, yellowed bulb
+     * over the table, low on its flex — enough to see the room by, warm where it falls and gone to brown in the corners; it
+     * buzzes and dips now and then (`celLamps` breathe; `.kitchen` stutters) */
+    { const K = lamp(0xffcf8a, 5.2, 7.0, -5.4, 5.05, 0.9, 1.25); K.kitchen = true; celKitchenL = K; }
     lamp(0xa8b8c8, 2.4, 4.2, -6.8, 5.0, -3.3, 1.2);           // (the bathroom's bare bulb, cold, over the tub: the one in the bath is seen from the door — 2026-11-22)
     // (the blue of the injection and of each one breaking: here from the start at nothing, so it never enters the scene later)
     celInjL = new THREE.PointLight(0x3a7bff, 0, 2.2, 1.6); celInjL.userData.lpAlways = 4; celInjL.position.set(0, -5, 0); celWorld.add(celInjL); cpBurst = celInjL;                  // a bare bulb over the machines (the washer: you hear it before you see it)
@@ -126113,7 +126303,7 @@ function loadCellar() {
     warmStep('cellar compile', () => warmCompileOwn([celWorld], CEL_X + CEL_SPAWN.x, CEL_Y + CEL_LAND + 1.7, CEL_Z + CEL_SPAWN.z, CEL_X - 2, CEL_Y + 0.8, CEL_Z - 2.8));
   }, undefined, () => {});
 }
-let celMats = null, celInjL = null;
+let celMats = null, celInjL = null, celKitchenL = null;
 /* THE DARK AS THEY COME (2026-11-22, the owner's "do 1": "have the tube light die completely when the first puppet comes alive
  * and stay dead for a second or two, so they drop in the dark and are standing when it comes back"). `celBlackout(s)`: every
  * bulb and the tube out at once — only the moon down the bulkhead's crack, and their eyes — and the tube stutters back. Out for
@@ -126460,6 +126650,13 @@ function updateCellar(dt) {
       let k = 0.93 + 0.04 * Math.sin(t * 1.7 + l.ph) + 0.03 * Math.sin(t * 3.1);
       if (l.off > 0) { l.off -= dt; k = Math.sin(l.off * 61) > 0.35 ? 0.55 : 0.04; }
       l.L.intensity = l.base * k * celDarkK(l);
+    } else if (l.kitchen) {
+      // the kitchen's bulb: steady and yellow, a faint buzz in it, and every so often it browns out for a moment and comes back
+      l.next = (l.next === undefined ? 4 : l.next) - dt;
+      if (l.next <= 0 && !(l.off > 0)) { l.off = 0.15 + Math.random() * 0.45; l.next = 5 + Math.random() * 9; }
+      let k = 0.95 + 0.03 * Math.sin(t * 1.3 + l.ph) + 0.02 * Math.sin(t * 50.0);
+      if (l.off > 0) { l.off -= dt; k = 0.3 + 0.25 * Math.max(0, Math.sin(l.off * 40)); }
+      l.L.intensity = l.base * k * celDarkK(l);
     } else l.L.intensity = l.base * (0.96 + 0.03 * Math.sin(t * 1.1 + l.ph) + 0.01 * Math.sin(t * 2.3 + l.ph * 2)) * celDarkK(l);
   }
   if (celDark > 0) { celDark -= dt; if (celDark <= 0 && celTube) { celTube.off = 0.45; celTube.next = 4; } }   // (back on a stutter)
@@ -126477,7 +126674,7 @@ function updateCellar(dt) {
   const up = !onGround ? FORT_AIR : FORT_STEP;
   const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80, S)
     || keepHitsWall(x0, z0, x1, z1, feet + 1.25, S) || keepHitsWall(x0, z0, x1, z1, feet + 1.68, S);
-  const legal = (x, z) => keepFloorAt(x, z, feet, up, S) && !hits(_preMove.x, _preMove.z, x, z) && x - CEL_X <= CEL_XMAX;
+  const legal = (x, z) => keepFloorAt(x, z, feet, up, S) && !hits(_preMove.x, _preMove.z, x, z) && x - CEL_X <= CEL_XMAX && !celNoGo(x, z, feet);
   let st = legal(p.x, p.z);
   if (!st) {
     const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
@@ -126513,8 +126710,17 @@ function celClampPlayer() {
   pushOutOfKeep(p, FORT_BODY, feet, FORT_STEP, CEL_SITE);
   keepWallPush(p, FORT_BODY, feet, CEL_SITE, FORT_STEP);
   if (p.x - CEL_X > CEL_XMAX) p.x = CEL_X + CEL_XMAX;
-  if (!keepFloorAt(p.x, p.z, feet, FORT_STEP, CEL_SITE)) { p.x = celLastSpot.x; p.z = celLastSpot.z; }
+  if (!keepFloorAt(p.x, p.z, feet, FORT_STEP, CEL_SITE) || celNoGo(p.x, p.z, feet)) { p.x = celLastSpot.x; p.z = celLastSpot.z; }
   return true;
+}
+/* THE BATHROOM IS NEVER ENTERED (2026-11-22, the owner: "make it so i cant get in the bathroom where the puppet is bathing i juts
+ * jumped in"). Its floor is out of the walk (`NO_FLOOR`, the packer), but in the air the walk takes any floor within `FORT_AIR`
+ * of the feet — the tub's rim, the toilet — so a jump through the door landed on one. Now the room is refused outright, at
+ * every height of the ground floor, past the threshold (room-local x −3.95, the door's line) less the body's width. */
+const CEL_BATH_NOGO = { x1: -3.95 - 0.12, z0: -3.8, z1: -1.72 };
+function celNoGo(x, z, feet) {
+  const lx = x - CEL_X, lz = z - CEL_Z, B = CEL_BATH_NOGO;
+  return feet > CEL_Y + 2.4 && lx < B.x1 && lz > B.z0 && lz < B.z1 && lx > -9;
 }
 /* ---- THE ONE IN THE WASHER (2026-11-21) --------------------------------------------------------------------------------
  * The owner: "have it in the locked in the washer in the basement theres a washer in there with a lock on it. after getting
@@ -126542,12 +126748,13 @@ const _cwaV = new THREE.Vector3(), _cwaW = new THREE.Vector3(), _cwaQ = new THRE
 /* THE FRIDGE UP THE STAIRS (2026-11-22, the owner, in the kitchen over the cellar: "take all the stuff out of fridge and close it
  * those weird tubes and wires out of the fridge into the sink can go. make it so you can open the fridge and theres a water and
  * 4 jars normal size in there. make the fridge match the room too"). The packer leaves the hoses and the glass tank out and
- * swings the lower door shut (`tools/kelley_pack.py`); here both doors are hung on their hinge at the +x edge of the front
+ * swings the lower door shut (`tools/kelley_pack.py`); here both doors are hung on their hinge at the −x edge of the front (on the right as you face it)
  * (the fridge faces −z, into the kitchen), shut, and open together to ~85°; inside the lower compartment a lit liner and two
  * shelves, a bottle of water on the upper and four jars on the lower — the beach's own jar at the size it is in your hand and
  * on the sand (`JAR_S` 3.04), full. Each is taken as everywhere else (`gainWater`, `gainJar`) and saved (`celFridge`: bit 0 the
  * water, bits 1-4 the jars). The fridge's white, rust and all, is taken down to the room's own dim warm cream. */
-let celFridge = null, celFridgeWater = false, celFridgeJars = 0;
+let celFridge = null, celFridgeWater = false, celFridgeJars = 0, celFridgeSquare = null;
+const CEL_FRIDGE_DOOR = 0.075;   // metres front to back each fridge door is pressed to (its handle in that)
 function buildCelFridge(root) {
   if (celFridge) return;
   const find = (p) => { let r = null; root.traverse((o) => { if (!r && o.isMesh && o.name.startsWith(p)) r = o; }); return r; };
@@ -126560,8 +126767,28 @@ function buildCelFridge(root) {
   const mat = body.material.clone(); mat.color.multiply(new THREE.Color(0.70, 0.60, 0.47));
   if (mat.emissive) mat.emissive.multiplyScalar(0.55);
   for (const m of [body, top, low]) m.material = mat;
+  /* FLAT ON THE BODY (2026-11-22, the owner: "fix the fridge the door is completely off and looks awful"). The file's doors are
+   * not doors shut: the lower one is 0.37 m from front to back (the top 0.24) — its panel stands ajar a few degrees and the
+   * racks on its inside stick a hand's breadth out behind it — so shut it stood off the cabinet as a slab with the lit inside
+   * glowing round its edge, and swung open as a block. Each is baked into the room's space and pressed to a door's thickness
+   * (`CEL_FRIDGE_DOOR`) against the cabinet's front face, centred on it across; the hinge is then on their front corner at −x (the right, facing it). */
+  const flat = (d) => {
+    celWorld.attach(d); d.updateMatrix();
+    const g = d.geometry.clone(); g.applyMatrix4(d.matrix);
+    d.position.set(0, 0, 0); d.quaternion.identity(); d.scale.set(1, 1, 1);
+    g.computeBoundingBox(); const k = g.boundingBox, dep = k.max.z - k.min.z, sq = Math.min(1, CEL_FRIDGE_DOOR / Math.max(1e-3, dep));
+    const P = g.attributes.position, dx = (B.min.x + B.max.x) / 2 - (k.min.x + k.max.x) / 2;
+    for (let i = 0; i < P.count; i++) P.setXYZ(i, P.getX(i) + dx, P.getY(i), B.min.z - (k.max.z - P.getZ(i)) * sq);
+    P.needsUpdate = true; g.computeVertexNormals(); g.computeBoundingBox(); g.computeBoundingSphere();
+    d.geometry = g; d.updateMatrixWorld(true);
+    return +dep.toFixed(3);
+  };
+  celFridgeSquare = [flat(top), flat(low)];
+  TB.copy(bb(top)); LB.copy(bb(low));
   // the doors on their hinge
-  const hx = Math.max(TB.max.x, LB.max.x) - 0.02, hz = Math.min(TB.min.z, LB.min.z) + 0.03;
+  // (on its RIGHT as you face it — the cabinet's −x edge — the handle on the left; 2026-11-22, the owner: "fridge door has to open
+  // from the other side the hinges should be on the right and it opens from the left handle side")
+  const hx = B.min.x + 0.01, hz = Math.min(TB.min.z, LB.min.z) + 0.01;
   const pivTop = new THREE.Group(), pivLow = new THREE.Group();
   for (const p of [pivTop, pivLow]) { p.position.set(hx, 0, hz); celWorld.add(p); p.updateMatrixWorld(true); }
   pivTop.attach(top); pivLow.attach(low);
@@ -126620,7 +126847,7 @@ function celFridgeTick(dt) {
   F.ang += (want - F.ang) * Math.min(1, dt * (F.open ? 5 : 7));
   if (Math.abs(F.ang - want) < 0.004) F.ang = want;
   const e = F.ang * F.ang * (3 - 2 * F.ang);
-  F.pivTop.rotation.y = F.pivLow.rotation.y = -1.48 * e;          // (out toward the kitchen: the free end swings from −x round to −z)
+  F.pivTop.rotation.y = F.pivLow.rotation.y = 1.48 * e;           // (out toward the kitchen: the free end, the handle's, swings from +x round to −z)
   F.liner.emissive.setRGB(0.165 + 0.25 * e, 0.157 + 0.24 * e, 0.133 + 0.2 * e);   // (the bulb in it: a pale light when it is open)
 }
 /* THE ONE IN THE BATH (2026-11-22, the owner: "make looking into the bathroom in this area you see a puppets head like hes in
@@ -126647,8 +126874,9 @@ function celFridgeTick(dt) {
  * (`ELV_MOCAP_SET`). Off and on again, the tape starts over. Its sound: the deck's hiss and the snow's roar, from the set. */
 let celTv = null, celTape = null;
 const TAPE_CLIP = 5.0, TAPE_N = 5;
+const TAPE_GAIN = [1.45, 1.6, 1.5, 1.0, 1.35], TAPE_GLOW = [0.35, 0.3, 0.3, 0.95, 0.25];   // each clip's picture level, and the light it throws
 const TAPE_FS = `
-uniform sampler2D map; uniform sampler2D osd; uniform float uT; uniform float uSnow; uniform float uRoll; uniform float uDay;
+uniform sampler2D map; uniform sampler2D osd; uniform float uT; uniform float uSnow; uniform float uRoll; uniform float uDay; uniform float uGain;
 varying vec2 vUv;
 float rnd(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 void main() {
@@ -126663,10 +126891,11 @@ void main() {
   float y = dot(col, vec3(0.299, 0.587, 0.114));
   col = mix(vec3(y), col, mix(0.55, 0.9, uDay));                 // the tape's tired colour (the day: brighter, warmer)
   col *= mix(vec3(0.92, 1.0, 0.95), vec3(1.08, 1.0, 0.86), uDay);
-  col = mix(col, col * 1.25 + 0.06, uDay);
+  col = mix(col, col * 1.12 + 0.03, uDay);
+  col = pow(max(col, 0.0), vec3(mix(0.72, 1.0, uDay))) * uGain + 0.02 * (1.0 - uDay);   // (the night clips' middles lifted, so a figure in the dark reads)                         // (the picture's level: the dark clips were lost on the set — 2026-11-22)
   col += band * 0.08;
-  float scan = 0.84 + 0.16 * sin(uv.y * 240.0 * 3.14159);
-  float vig = 1.0 - smoothstep(0.22, 0.66, length(c * vec2(1.0, 1.2)));
+  float scan = 0.9 + 0.1 * sin(uv.y * 110.0 * 3.14159);              // (110 lines: at 240 they beat against the frame's own pixels into rings)
+  float vig = 1.0 - smoothstep(0.30, 0.78, length(c * vec2(1.0, 1.2)));
   col *= scan * vig;
   col += (rnd(uv * 320.0 + uT) - 0.5) * 0.07;
   float snow = rnd(floor(uv * vec2(160.0, 120.0)) + floor(uT * 30.0) * 7.1);
@@ -126675,22 +126904,49 @@ void main() {
   col = max(col, o * (1.0 - uSnow * 0.6));
   gl_FragColor = vec4(col * 1.1, 1.0);
 }`;
+/* THE PICTURE IS ON THE SET'S OWN GLASS (2026-11-22, the owner: "the tv should be from the actual screen on the tv model make it
+ * play like its actually on that tv"). It was a flat plane laid over a guess at the front. The model's tube is its own faces:
+ * a bulged pane of 17 triangles inside the painted bezel, told apart by where they sample the set's map (`CEL_TV_GLASS`, the
+ * glass's patch of the atlas). Those are cut out of the set and made a mesh of their own, on the set, with their uv laid
+ * across the glass from its corner — dark glass while it is off, the tape on that same curve while it plays; and the set
+ * throws its light on the room in front of it (`V.glow`, the picture's brightness). */
+const CEL_TV_GLASS = { u0: 0.035, u1: 0.47, v0: 0.315, v1: 0.648, su0: 0.044, su1: 0.464, sv0: 0.325, sv1: 0.641 };
 function buildCelTv(root) {
   if (celTv) return;
   let tv = null; root.traverse((o) => { if (!tv && o.isMesh && o.name.startsWith('tvSet_')) tv = o; });
   if (!tv) return;
   celWorld.updateMatrixWorld(true);
-  const B = new THREE.Box3().setFromObject(tv).applyMatrix4(celWorld.matrixWorld.clone().invert());
-  // the tube's face: the left of the set's front (its right is the knobs), faced into the room (−z)
-  const W = (B.max.x - B.min.x) * 0.6, H = (B.max.y - B.min.y) * 0.5;
-  const cx = B.min.x + (B.max.x - B.min.x) * 0.42, cy = B.min.y + (B.max.y - B.min.y) * 0.56, z = B.min.z - 0.006;
-  const off = new THREE.MeshStandardMaterial({ color: 0x0a0c0c, roughness: 0.25, metalness: 0, emissive: 0x020303 });
-  const scr = new THREE.Mesh(new THREE.PlaneGeometry(W, H), off);
-  scr.position.set(cx, cy, z); scr.rotation.y = Math.PI; scr.userData.bwGhost = true; scr.raycast = () => {};
-  celWorld.add(scr);
+  const toRoom = celWorld.matrixWorld.clone().invert();
+  const B = new THREE.Box3().setFromObject(tv).applyMatrix4(toRoom);
+  const G = tv.geometry, P = G.attributes.position, UV = G.attributes.uv, I = G.index, Q = CEL_TV_GLASS;
+  const nt = I ? I.count / 3 : P.count / 3, keep = [], glass = [];
+  const inGlass = (id) => { const u = UV.getX(id), v = UV.getY(id); return u > Q.u0 && u < Q.u1 && v > Q.v0 && v < Q.v1; };
+  for (let t = 0; t < nt; t++) { const ids = [0, 1, 2].map((k) => (I ? I.getX(t * 3 + k) : t * 3 + k)); (ids.every(inGlass) ? glass : keep).push(...ids); }
+  const off = new THREE.MeshLambertMaterial({ color: 0x161b1d, emissive: 0x040506 });   // (dark glass; no highlight — its faces are flat, and a shine picked one triangle out white)
+  let scr;
+  if (glass.length >= 9) {
+    const g2 = G.clone(); g2.setIndex(keep); tv.geometry = g2;
+    const pos = new Float32Array(glass.length * 3), uv = new Float32Array(glass.length * 2);
+    glass.forEach((id, k) => {
+      pos[k * 3] = P.getX(id); pos[k * 3 + 1] = P.getY(id); pos[k * 3 + 2] = P.getZ(id);
+      uv[k * 2] = (UV.getX(id) - Q.su0) / (Q.su1 - Q.su0); uv[k * 2 + 1] = (UV.getY(id) - Q.sv0) / (Q.sv1 - Q.sv0);
+    });
+    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); sg.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); sg.computeVertexNormals();
+    scr = new THREE.Mesh(sg, off); scr.name = 'celTvGlass'; tv.add(scr);
+  } else {
+    // (a set without its glass found: the old plane over the left of its front)
+    const W = (B.max.x - B.min.x) * 0.6, H = (B.max.y - B.min.y) * 0.5;
+    scr = new THREE.Mesh(new THREE.PlaneGeometry(W, H), off);
+    scr.position.set(B.min.x + (B.max.x - B.min.x) * 0.42, B.min.y + (B.max.y - B.min.y) * 0.56, B.min.z - 0.006); scr.rotation.y = Math.PI; celWorld.add(scr);
+  }
+  scr.userData.bwGhost = true; scr.raycast = () => {};
+  scr.updateMatrixWorld(true);
+  const SB = new THREE.Box3().setFromObject(scr).applyMatrix4(toRoom), sc = SB.getCenter(new THREE.Vector3());
+  // its light on the room: here from the start at nothing (a light entering the scene later recompiles every material)
+  const glow = new THREE.PointLight(0xa8bce0, 0, 4.2, 1.5); glow.position.set(sc.x, sc.y, SB.min.z - 0.55); glow.userData.lpAlways = 6; celWorld.add(glow);
   const proxy = hpProxy(B.max.x - B.min.x, B.max.y - B.min.y, B.max.z - B.min.z + 0.2);
   proxy.position.set((B.min.x + B.max.x) / 2, (B.min.y + B.max.y) / 2, (B.min.z + B.max.z) / 2); celWorld.add(proxy);
-  const V = celTv = { scr, off, proxy, on: false, x: cx, y: cy, z, crt: null };
+  const V = celTv = { scr, off, proxy, glow, on: false, x: sc.x, y: sc.y, z: SB.min.z, crt: null, glass: glass.length };
   addInteractable(proxy, 'Turn on the TV', 'default', {
     far: 3.0, mid: true, label: () => (V.on ? 'Turn off the TV' : 'Turn on the TV'),
     when: () => inCel && !celBusy && !frozen(),
@@ -126701,11 +126957,11 @@ function celTvToggle() {
   const V = celTv; if (!V) return;
   V.on = !V.on;
   sfxAt(CEL_X + V.x, CEL_Z + V.z, () => sfxThud(0.02));
-  if (!V.on) { V.scr.material = V.off; celTapeAudio(false); return; }
+  if (!V.on) { V.scr.material = V.off; if (V.glow) V.glow.intensity = 0; celTapeAudio(false); return; }
   const T = celTape || buildCelTape();
   T.t = 0; T.frame = 0;
   if (!V.crt) V.crt = new THREE.ShaderMaterial({ vertexShader: TV_CRT_VS, fragmentShader: TAPE_FS, toneMapped: false,
-    uniforms: { map: { value: T.rt.texture }, osd: { value: T.osdTex }, uT: { value: 0 }, uSnow: { value: 1 }, uRoll: { value: 1 }, uDay: { value: 0 } } });
+    uniforms: { map: { value: T.rt.texture }, osd: { value: T.osdTex }, uT: { value: 0 }, uSnow: { value: 1 }, uRoll: { value: 1 }, uDay: { value: 0 }, uGain: { value: 1.3 } } });
   V.scr.material = V.crt;
   celTapeAudio(true);
 }
@@ -126735,6 +126991,260 @@ function tapePlay(P, names, fade = 0.25, rate = 1) {
   if (P.cur === a) return;
   a.reset().setEffectiveWeight(1).play(); if (P.cur) a.crossFadeFrom(P.cur, fade, false); P.cur = a;
 }
+/* ---- THE BEACH ON THE TAPE, BY DAY (2026-11-22, the owner: "make the beach one more realistic and have elevedor in the beach chair
+ * relaxing shirtless as they play. use the model of the beach outside just make it day time"). The beach out front as it is —
+ * the game's own sand photograph, warmed to noon; its sea, shallow and turquoise, breaking in a line of foam on wet sand; the
+ * sand cliff behind, and his own house up on top of it (the house's meshes, drawn again here) — under a blue sky with a sun
+ * and drifting cloud. On the sand, a striped deck chair under an umbrella with him in it, his shirt off and his arms behind
+ * his head, watching three of them in the shallows: running through the surf, jumping the waves, knocking a beach ball
+ * about, the spray flying. A home video: from the water's edge, hand-held, warm and overexposed. */
+const TAPE_DAY = { shore: 0.4, chair: new THREE.Vector3(2.6, 0, -0.6), cam: new THREE.Vector3(-3.4, 1.3, 3.1) };
+function tapeCanvasTex(w, h, draw, srgb = true) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+// the beach's photograph, its detail kept and its tone taken from the night's blue to noon's warm sand
+function tapeDaySand() {
+  const im = sandTex.image, N = 256;
+  return tapeCanvasTex(N, N, (g) => {
+    try { g.drawImage(im, 0, 0, N, N); } catch (e) { g.fillStyle = '#777'; g.fillRect(0, 0, N, N); }
+    const D = g.getImageData(0, 0, N, N), d = D.data; let m = 0;
+    for (let i = 0; i < d.length; i += 4) m += d[i] * 0.3 + d[i + 1] * 0.5 + d[i + 2] * 0.2;
+    m /= d.length / 4;
+    for (let i = 0; i < d.length; i += 4) {
+      const k = Math.pow((d[i] * 0.3 + d[i + 1] * 0.5 + d[i + 2] * 0.2) / Math.max(1, m), 1.15);
+      d[i] = Math.min(255, 228 * k); d[i + 1] = Math.min(255, 204 * k); d[i + 2] = Math.min(255, 160 * k);
+    }
+    g.putImageData(D, 0, 0);
+  });
+}
+const TAPE_SKY_FS = `varying vec3 vD; uniform float uT;
+float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y); }
+void main() {
+  vec3 d = normalize(vD); float up = max(d.y, 0.0);
+  vec3 col = mix(vec3(0.80, 0.88, 0.93), vec3(0.30, 0.56, 0.86), pow(up, 0.55));
+  vec3 sun = normalize(vec3(-0.55, 0.62, 0.55)); float s = max(dot(d, sun), 0.0);
+  col += vec3(1.0, 0.92, 0.75) * (pow(s, 600.0) * 3.0 + pow(s, 12.0) * 0.25);
+  vec2 p = d.xz / max(0.08, d.y + 0.1) * 1.6 + vec2(uT * 0.04, 0.0);
+  float c = n2(p) * 0.55 + n2(p * 2.3) * 0.3 + n2(p * 5.1) * 0.15;
+  col = mix(col, vec3(0.97, 0.97, 0.98), smoothstep(0.55, 0.78, c) * smoothstep(0.02, 0.2, d.y) * 0.85);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+const TAPE_SEA_VS = `varying vec3 vW; uniform float uT;
+void main() { vec4 w = modelMatrix * vec4(position, 1.0);
+  w.y += sin(w.x * 1.3 + uT * 1.9) * 0.025 + sin(w.z * 0.9 - uT * 1.3 + w.x * 0.4) * 0.02;
+  vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
+const TAPE_SEA_FS = `varying vec3 vW; uniform float uT; uniform float uShore;
+float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n2(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y); }
+void main() {
+  float sw = uShore + 0.55 * sin(uT * 0.85 + vW.z * 0.12) + 0.18 * sin(uT * 1.7 + vW.z * 0.5);   // the swash, running up and back
+  float d = sw - vW.x;
+  if (d < -0.05) discard;
+  vec3 deep = vec3(0.07, 0.36, 0.55), shal = vec3(0.30, 0.74, 0.76), col = mix(shal, deep, smoothstep(0.5, 14.0, d));
+  float wave = sin(d * 1.9 + uT * 2.3 + n2(vW.xz * 0.4) * 2.0);
+  col += vec3(0.10, 0.12, 0.12) * smoothstep(0.6, 1.0, wave);
+  float br = smoothstep(0.92, 1.0, wave) * smoothstep(9.0, 2.0, d);                                   // a wave's crest breaking white
+  float edge = smoothstep(1.2, 0.0, d) * (0.55 + 0.45 * n2(vW.xz * vec2(3.0, 1.5) + uT * 0.6));        // the foam at the swash
+  float foam = clamp(max(br * (0.5 + 0.5 * n2(vW.xz * 4.0 + uT)), edge), 0.0, 1.0);
+  col = mix(col, vec3(0.97, 0.98, 0.96), foam);
+  float g = step(0.985, h2(floor(vW.xz * 14.0) + floor(uT * 6.0))) * smoothstep(3.0, 20.0, d);          // the sun's glints
+  col += vec3(1.0, 0.95, 0.85) * g * 0.9;
+  float a = mix(0.55, 0.96, smoothstep(0.0, 1.5, d));
+  a = max(a, foam);
+  gl_FragColor = vec4(col, a * smoothstep(-0.05, 0.1, d));
+}`;
+function buildTapeDay(T) {
+  const day = new THREE.Group(); T.S.add(day); T.sets.day = day; const D = TAPE_DAY;
+  // the sky, a dome round it all
+  const skyU = { uT: { value: 0 } };
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(70, 24, 12), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: skyU,
+    vertexShader: 'varying vec3 vD; void main() { vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }', fragmentShader: TAPE_SKY_FS }));
+  sky.renderOrder = -1; day.add(sky);
+  // the sand: the beach's photograph warmed to noon, darker and smoother where the sea has been over it; up into the cliff behind
+  const sandMap = tapeDaySand(); sandMap.repeat.set(1, 1);
+  const SG = new THREE.PlaneGeometry(90, 90, 90, 90).rotateX(-Math.PI / 2), sp = SG.attributes.position, suv = SG.attributes.uv, col = [];
+  for (let i = 0; i < sp.count; i++) {
+    const x = sp.getX(i), z = sp.getZ(i);
+    let y = Math.max(0, x - D.shore) * 0.045 + Math.sin(x * 0.6 + z * 0.35) * 0.03;
+    const c = THREE.MathUtils.smoothstep(x, 10.5, 14.5); y += c * (4.4 + Math.sin(z * 0.23) * 0.4 + Math.sin(z * 0.61) * 0.2) + Math.max(0, x - 14.5) * 0.02;   // the cliff
+    sp.setY(i, y); suv.setXY(i, x / 4, -z / 4);
+    const wet = 1 - THREE.MathUtils.smoothstep(x, D.shore - 0.2, D.shore + 2.6);
+    const k = 1 - wet * 0.42; col.push(k * (1 - wet * 0.05), k * (1 - wet * 0.02), k);
+  }
+  SG.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); SG.computeVertexNormals();
+  day.add(new THREE.Mesh(SG, new THREE.MeshStandardMaterial({ map: sandMap, vertexColors: true, roughness: 1, metalness: 0, flatShading: true })));
+  // dune grass along the cliff's top and foot
+  { const gm = new THREE.MeshStandardMaterial({ color: 0x8a9a4a, roughness: 1, flatShading: true }), gg = new THREE.ConeGeometry(0.06, 0.7, 4);
+    const N = 140, im = new THREE.InstancedMesh(gg, gm, N), M = new THREE.Matrix4(), r = mulberry32(5150);
+    for (let i = 0; i < N; i++) { const x = 9.5 + r() * 7, z = -30 + r() * 60, y = THREE.MathUtils.smoothstep(x, 10.5, 14.5) * 4.4 + Math.max(0, x - D.shore) * 0.045; M.makeRotationFromEuler(new THREE.Euler((r() - 0.5) * 0.5, r() * 6, (r() - 0.5) * 0.5)); M.setPosition(x, y + 0.25, z); im.setMatrixAt(i, M); }
+    day.add(im); }
+  // the sea
+  const seaU = { uT: { value: 0 }, uShore: { value: D.shore } };
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(90, 90, 60, 60).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({ vertexShader: TAPE_SEA_VS, fragmentShader: TAPE_SEA_FS, uniforms: seaU, transparent: true, depthWrite: false }));
+  sea.position.set(-43, 0.1, 0); day.add(sea);
+  T.daySky = skyU; T.daySea = seaU;
+  // the sun and the bright day round it
+  const sun = new THREE.DirectionalLight(0xfff0d8, 3.0); sun.position.set(-8, 12, 7); day.add(sun);
+  day.add(new THREE.HemisphereLight(0xc4e2ff, 0xd8c098, 1.6));
+  // his house up on the cliff: the house's own meshes, drawn again (when it is loaded; it always is, you are under it)
+  if (houseWorld) {
+    const H = new THREE.Group(); houseWorld.updateMatrixWorld(true);
+    const inv = houseWorld.matrixWorld.clone().invert(), M = new THREE.Matrix4();
+    houseWorld.traverse((o) => {
+      if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || o.name === 'hitProxy' || !o.visible || !o.material || Array.isArray(o.material) || o.material.transparent) return;
+      const b = new THREE.Box3().setFromObject(o); if (b.isEmpty() || Math.abs(b.getCenter(_tapeV).x - HOUSE_X) > 7 || Math.abs(_tapeV.z - HOUSE_Z) > 9) return;
+      const m = new THREE.Mesh(o.geometry, o.material); M.multiplyMatrices(inv, o.matrixWorld); m.matrixAutoUpdate = false; m.matrix.copy(M); H.add(m);
+    });
+    H.position.set(21.5, 4.55, -9.0); day.add(H); T.dayHouse = H;
+  }
+  // the chair under its umbrella, a towel and a cool box
+  const stripes = (cols, n, w = 64, h = 64, vert = true) => tapeCanvasTex(w, h, (g) => { for (let i = 0; i < n; i++) { g.fillStyle = cols[i % cols.length]; if (vert) g.fillRect(i * w / n, 0, w / n + 1, h); else g.fillRect(0, i * h / n, w, h / n + 1); } });
+  const chair = new THREE.Group(); day.add(chair); T.dayChair = chair;
+  const woodM = new THREE.MeshStandardMaterial({ color: 0xa47c52, roughness: 0.8, flatShading: true });
+  const canvasM = new THREE.MeshStandardMaterial({ map: stripes(['#d23b32', '#f4ece0', '#2f6db3', '#f4ece0'], 8), roughness: 0.9, side: THREE.DoubleSide });
+  const bar = (x0, y0, z0, x1, y1, z1, r = 0.022) => { const a = new THREE.Vector3(x0, y0, z0), b = new THREE.Vector3(x1, y1, z1), L = a.distanceTo(b); const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, L, 6), woodM); m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()); chair.add(m); };
+  // (the chair's own frame: it faces +z; the seat 0.32 up, the back leaning back 40°)
+  for (const sx of [-0.28, 0.28]) { bar(sx, 0, 0.55, sx, 0.34, 0.25); bar(sx, 0.34, 0.25, sx, 0.26, -0.2); bar(sx, 0.26, -0.2, sx, 0.95, -0.72); bar(sx, 0, -0.45, sx, 0.62, -0.42); bar(sx, 0.02, -0.2, sx, 0.0, 0.55); }
+  bar(-0.28, 0.34, 0.25, 0.28, 0.34, 0.25); bar(-0.28, 0.95, -0.72, 0.28, 0.95, -0.72);
+  { const g = new THREE.PlaneGeometry(0.56, 1.25, 1, 8), P = g.attributes.position;
+    for (let i = 0; i < P.count; i++) { const v = (P.getY(i) + 0.625) / 1.25; const y = v < 0.42 ? THREE.MathUtils.lerp(0.32, 0.2, v / 0.42) : THREE.MathUtils.lerp(0.2, 0.92, (v - 0.42) / 0.58), z = v < 0.42 ? THREE.MathUtils.lerp(0.24, -0.16, v / 0.42) : THREE.MathUtils.lerp(-0.16, -0.7, (v - 0.42) / 0.58); P.setXYZ(i, P.getX(i), y, z); }
+    g.computeVertexNormals(); chair.add(new THREE.Mesh(g, canvasM)); }
+  chair.position.set(D.chair.x, (D.chair.x - D.shore) * 0.045, D.chair.z); chair.rotation.y = -Math.PI / 2 + 0.3;   // (facing the sea, half toward the lens)
+  const umb = new THREE.Group(); day.add(umb);
+  { const c = new THREE.Mesh(new THREE.ConeGeometry(1.25, 0.45, 12, 1, true), new THREE.MeshStandardMaterial({ map: stripes(['#e8c23a', '#f6f0e2'], 12, 128, 16), roughness: 0.9, side: THREE.DoubleSide })); c.position.y = 2.05; umb.add(c);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 2.2, 6), new THREE.MeshStandardMaterial({ color: 0xe8e4dc, roughness: 0.6 })); pole.position.y = 1.05; umb.add(pole); }
+  umb.position.set(D.chair.x + 0.55, 0.05, D.chair.z - 0.5); umb.rotation.z = 0.12;
+  { const tw = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.7).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: stripes(['#3aa0b8', '#f2efe6', '#e86f5a', '#f2efe6'], 10, 64, 64, false), roughness: 1 }));
+    tw.position.set(D.chair.x - 0.2, D.chair.y + 0.16 + (D.chair.x - D.shore) * 0.045, D.chair.z + 1.6); tw.rotation.y = 0.5; day.add(tw);
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.34, 0.34), new THREE.MeshStandardMaterial({ color: 0x2c6fb0, roughness: 0.6 })); box.position.set(D.chair.x + 0.75, 0.32, D.chair.z + 0.45); box.rotation.y = 0.4; day.add(box);
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.06, 0.36), new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.6 })); lid.position.set(0, 0.2, 0); box.add(lid); }
+  // the ball, and the spray
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 10), new THREE.MeshStandardMaterial({ map: stripes(['#e23b3b', '#ffffff', '#f2c230', '#ffffff', '#2f7fd8', '#ffffff'], 6, 96, 16), roughness: 0.5 }));
+  day.add(ball); T.dayBall = ball;
+  const NS = 220, spPos = new Float32Array(NS * 3).fill(-99), spray = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(spPos, 3)), new THREE.PointsMaterial({ color: 0xf4fbff, size: 0.07, transparent: true, opacity: 0.9, depthWrite: false }));
+  spray.frustumCulled = false; day.add(spray); T.daySpray = { pts: spray, pos: spPos, vel: new Float32Array(NS * 3), life: new Float32Array(NS), n: NS, i: 0 };
+}
+function tapeSplash(T, x, y, z, n, up = 2.2, dx = 0, dz = 0) {
+  const S = T.daySpray; if (!S) return;
+  for (let k = 0; k < n; k++) {
+    const i = S.i = (S.i + 1) % S.n, a = Math.random() * 6.283, r = 0.6 + Math.random() * 1.2;
+    S.pos[i * 3] = x; S.pos[i * 3 + 1] = y; S.pos[i * 3 + 2] = z;
+    S.vel[i * 3] = Math.cos(a) * r + dx; S.vel[i * 3 + 1] = up * (0.5 + Math.random() * 0.8); S.vel[i * 3 + 2] = Math.sin(a) * r + dz; S.life[i] = 0.6 + Math.random() * 0.5;
+  }
+}
+// the ball's flight: from one to the next, an arc each 1.5 s
+function tapeBallAt(T, t, out) {
+  const P = T.dayBallPath; const k = Math.floor(t / 1.5) % P.length, u = (t % 1.5) / 1.5, a = P[k], b = P[(k + 1) % P.length];
+  return out.set(a.x + (b.x - a.x) * u, 1.3 + Math.sin(u * Math.PI) * 1.6 - Math.abs(u - 0.5) * 0.4, a.z + (b.z - a.z) * u);
+}
+function tapeDayTick(T, t, lt, dt) {
+  const [A, Bp, C] = T.pups, D = TAPE_DAY;
+  T.daySky.uT.value = t; T.daySea.uT.value = t;
+  const sw = (z) => D.shore + 0.55 * Math.sin(t * 0.85 + z * 0.12) + 0.18 * Math.sin(t * 1.7 + z * 0.5);
+  // where the three of them are, in the shallows (the ball goes round them)
+  const spots = [[-1.3, 1.2], [-2.2, -0.5], [-0.5, -1.4]];
+  T.dayBallPath = spots.map(([x, z]) => new THREE.Vector3(x, 0, z));
+  const ball = tapeBallAt(T, t, _tapeV);
+  T.dayBall.position.copy(ball); T.dayBall.rotation.x += dt * 5; T.dayBall.rotation.z += dt * 3;
+  const k = Math.floor(t / 1.5) % 3, u = (t % 1.5) / 1.5;
+  for (const [p, i] of [[A, 0], [Bp, 1], [C, 2]]) {
+    p.I.root.visible = true;
+    const [hx, hz] = spots[i];
+    const catcher = (k + 1) % 3 === i, thrower = k === i;
+    // each runs about its own spot through the water, and to the ball as it comes
+    const a = t * (1.1 + i * 0.3) + i * 2.1, wx = hx + Math.cos(a) * 0.55, wz = hz + Math.sin(a * (i === 1 ? 1.6 : 1)) * 0.7;
+    const x = catcher ? THREE.MathUtils.lerp(wx, ball.x, u * 0.6) : wx, z = catcher ? THREE.MathUtils.lerp(wz, ball.z, u * 0.6) : wz;
+    const prev = p.dayPrev || [x, z]; let fx = x - prev[0], fz = z - prev[1]; const sp = Math.hypot(fx, fz) / Math.max(dt, 1e-3); p.dayPrev = [x, z];
+    if (catcher && u > 0.55) { fx = ball.x - x; fz = ball.z - z; }
+    if (Math.hypot(fx, fz) < 1e-4) { fx = 1; fz = 0; }
+    const jump = (thrower && u < 0.25) || (i === 2 && Math.sin(t * 2.3) > 0.82);
+    const hop = jump ? Math.sin(Math.min(1, (thrower ? u / 0.25 : (Math.sin(t * 2.3) - 0.82) / 0.18)) * Math.PI) * 0.45 : 0;
+    tapePlay(p, jump ? ['mJumpUp', 'mHRun', 'mMRun'] : sp > 0.6 ? ['mMRun', 'mHRun', 'mHWalk'] : ['mHIdle', 'mOldIdle', 'mHWalk'], 0.15, 1.15);
+    tapeStand(p, x, 0.02 + hop, z, fx, fz);
+    // spray off their feet in the water, and a burst when the ball is hit
+    if (x < sw(z) + 0.2 && Math.random() < dt * (sp * 9 + 2)) tapeSplash(T, x, 0.12, z, 3, 1.4, fx * 0.4, fz * 0.4);
+    if (thrower && Math.abs(u - 0.02) < dt / 1.5 + 0.005) tapeSplash(T, x, 0.15, z, 14, 2.6);
+  }
+  // the ball hitting the water when it lands short now and then
+  if (Math.abs(u - 0.99) < dt / 1.5 + 0.005 && k === 1) tapeSplash(T, ball.x, 0.12, ball.z, 12, 2.2);
+  // the spray
+  const S = T.daySpray;
+  for (let i = 0; i < S.n; i++) {
+    if (S.life[i] <= 0) continue;
+    S.life[i] -= dt; S.vel[i * 3 + 1] -= 9.8 * dt;
+    S.pos[i * 3] += S.vel[i * 3] * dt; S.pos[i * 3 + 1] += S.vel[i * 3 + 1] * dt; S.pos[i * 3 + 2] += S.vel[i * 3 + 2] * dt;
+    if (S.life[i] <= 0 || S.pos[i * 3 + 1] < 0.05) { S.life[i] = 0; S.pos[i * 3 + 1] = -99; }
+  }
+  S.pts.geometry.attributes.position.needsUpdate = true;
+  // the camera: hand-held at the water's edge, following the ball, drifting to take him in by the end
+  const cam = T.cam, follow = THREE.MathUtils.smoothstep(lt, 2.8, 4.6);
+  cam.position.copy(D.cam); cam.position.x += Math.sin(t * 1.3) * 0.05; cam.position.y += Math.sin(t * 2.1 + 1) * 0.04 + Math.sin(t * 5.3) * 0.012;
+  _tapeW.set(THREE.MathUtils.lerp(ball.x * 0.5 - 0.2, D.chair.x - 0.6, follow), THREE.MathUtils.lerp(0.9, 0.95, follow), THREE.MathUtils.lerp(ball.z * 0.5 - 0.6, D.chair.z - 0.2, follow));
+  cam.lookAt(_tapeW); cam.fov = 50 - follow * 16;
+}
+// his look on the tape: the suit, or (on the beach) his shirt off and swim trunks on
+function tapeManLook(T, beach) {
+  if (!T.man || !T.manLook || T.manLook.beach === beach) return;
+  T.manLook.beach = beach;
+  for (const [m, a, b] of T.manLook.mats) m.map = beach ? b : a;
+}
+// the shirt painted out of his texture. Which patch of his map is which part of him is read off the model itself: every triangle of
+// his body is drawn into a mask in its own uv, by the bone that carries it — hips and thighs to trunks, everything else of him
+// below the head to skin — and then whatever on his map is cloth (white or black: no colour in it) takes the mask's colour;
+// skin and hair already on the map stay as they are. (By rectangles of the atlas, guessed, one trouser leg was missed.)
+function tapeShirtless(img, mesh) {
+  const N = Math.min(1024, img.width || 1024), c = document.createElement('canvas'); c.width = c.height = N;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0, N, N);
+  const mc = document.createElement('canvas'); mc.width = mc.height = N; const mg = mc.getContext('2d');
+  const G = mesh.geometry, uv = G.attributes.uv, si = G.attributes.skinIndex, sw = G.attributes.skinWeight, I = G.index;
+  const names = mesh.skeleton.bones.map((q) => q.name.replace(/^mixamorig:?/, ''));
+  const cls = (n) => (/^(Hips|LeftUpLeg|RightUpLeg)$/.test(n) ? 1 : /Head|Eye|Jaw|Lip|Brow|Cheek|Tongue|Lid|Nostril|Teeth/.test(n) ? 0 : 2);
+  const top = (i) => { let bi = 0, bw = -1; for (let k = 0; k < 4; k++) { const v = sw.getComponent(i, k); if (v > bw) { bw = v; bi = si.getComponent(i, k); } } return cls(names[bi]); };
+  const nt = I ? I.count / 3 : uv.count / 3;
+  for (const want of [2, 1]) {                      // (skin first, the trunks over it where they meet)
+    mg.fillStyle = mg.strokeStyle = want === 1 ? '#f00' : '#0f0'; mg.lineWidth = 3;
+    for (let t = 0; t < nt; t++) {
+      const ids = [0, 1, 2].map((k) => (I ? I.getX(t * 3 + k) : t * 3 + k)), cs = ids.map(top);
+      const cl = cs[0] === cs[1] || cs[0] === cs[2] ? cs[0] : cs[1];
+      if (cl !== want) continue;
+      mg.beginPath(); ids.forEach((id, k) => { const x = uv.getX(id) * N, y = uv.getY(id) * N; if (k) mg.lineTo(x, y); else mg.moveTo(x, y); }); mg.closePath(); mg.fill(); mg.stroke();
+    }
+  }
+  const D = g.getImageData(0, 0, N, N), d = D.data, M = mg.getImageData(0, 0, N, N).data;
+  for (let i = 0; i < N * N; i++) {
+    const o = i * 4, tr = M[o] > 128, sk = M[o + 1] > 128; if (!tr && !sk) continue;
+    const r = d[o], gg = d[o + 1], b = d[o + 2], mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), sat = mx > 0 ? (mx - mn) / mx : 0, lum = (r + gg + b) / 765;
+    if (sat > 0.2) continue;                       // (skin and hair stay as they are)
+    const sh = 0.86 + 0.2 * Math.min(1, lum + 0.2) + (Math.random() - 0.5) * 0.06;
+    if (tr) { const st = Math.floor((i % N) / (16 * N / 1024)) % 4 === 0; d[o] = st ? 245 : 214 * sh; d[o + 1] = st ? 240 : 64 * sh; d[o + 2] = st ? 230 : 48 * sh; }
+    else { d[o] = Math.min(255, 214 * sh); d[o + 1] = Math.min(255, 164 * sh); d[o + 2] = Math.min(255, 134 * sh); }
+  }
+  g.putImageData(D, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false; return t;
+}
+// sat back in the chair, arms behind his head, legs out; his head after the ball
+function tapeDayPose(T, t, dt) {
+  const m = T.man, B = T.B; if (!m || !B || !B.Hips) return;
+  const D = TAPE_DAY;
+  m.rotation.set(0, T.dayChair.rotation.y, 0);                     // (facing the chair's way: the sea, half to the lens)
+  m.position.set(D.chair.x, m.userData.y0, D.chair.z); m.updateMatrixWorld(true);
+  const A = (b, c, x, y, z) => B[b] && B[c] && pupAim(m, B[b], B[c], _tapeW.set(x, y, z));
+  const br = Math.sin(t * 1.6) * 0.02;
+  A('Hips', 'Spine', 0, 0.78, -0.62); A('Spine', 'Spine1', 0, 0.8 + br, -0.6); A('Spine1', 'Spine2', 0, 0.82, -0.57); A('Spine2', 'Neck', 0, 0.86, -0.5);
+  for (const [s, sx] of [['Left', 1], ['Right', -1]]) {
+    A(s + 'UpLeg', s + 'Leg', 0.16 * sx, 0.14, 1); A(s + 'Leg', s + 'Foot', 0.06 * sx, -0.42, 0.9); A(s + 'Foot', s + 'ToeBase', 0.1 * sx, 0.55, 0.82);
+    A(s + 'Arm', s + 'ForeArm', 0.62 * sx, 0.7, -0.36); A(s + 'ForeArm', s + 'Hand', -0.72 * sx, 0.3, -0.62);
+  }
+  // the head: forward off the chair's back toward the water, after the ball
+  const ball = T.dayBall.position; m.worldToLocal(_tapeV.copy(ball)); _tapeV.y = 0; _tapeV.normalize();
+  A('Neck', 'Head', _tapeV.x * 0.35, 0.9, -0.15 + _tapeV.z * 0.35);
+  // down into the seat: his hips where the canvas sags
+  m.updateMatrixWorld(true); B.Hips.getWorldPosition(_tapeV);
+  T.dayChair.localToWorld(_tapeW.set(0, 0.3, 0.02));
+  m.position.add(_tapeW.sub(_tapeV)); m.updateMatrixWorld(true);
+}
 function buildCelTape() {
   const S = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(48, 4 / 3, 0.05, 80);
@@ -126751,24 +127261,17 @@ function buildCelTape() {
   const bench = new THREE.Group(); cel.add(bench); T.bench = bench;
   const top = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.75), wood); top.position.y = 0.82; bench.add(top);
   for (const [x, z] of [[-0.85, -0.3], [0.85, -0.3], [-0.85, 0.3], [0.85, 0.3]]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.8, 0.07), wood); l.position.set(x, 0.4, z); bench.add(l); }
-  const bulb = new THREE.PointLight(0xffc888, 24, 12, 1.2); bulb.position.set(0.2, 2.6, 0.3); cel.add(bulb); T.lights.bulb = bulb;
+  const bulb = new THREE.PointLight(0xffc888, 38, 12, 1.2); bulb.position.set(0.2, 2.6, 0.3); cel.add(bulb); T.lights.bulb = bulb;
   const bulbM = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color: 0xfff0d0 })); bulbM.position.copy(bulb.position); cel.add(bulbM);
-  cel.add(new THREE.AmbientLight(0x56606e, 1.7));
+  cel.add(new THREE.AmbientLight(0x5c6676, 2.6));
+  { const k = new THREE.DirectionalLight(0xd8c8a8, 0.9); k.position.set(2, 3, 2.5); cel.add(k); }   // (the camera's own lamp: the tape is a dark room, not a black one)
   const inj = new THREE.PointLight(0x3a7bff, 0, 2.5, 1.6); cel.add(inj); T.lights.inj = inj;
-  // THE BEACH, BY DAY
-  const day = new THREE.Group(); S.add(day); T.sets.day = day;
-  const sandG = new THREE.PlaneGeometry(60, 60, 30, 30).rotateX(-Math.PI / 2);
-  { const p = sandG.attributes.position; for (let i = 0; i < p.count; i++) p.setY(i, Math.sin(p.getX(i) * 0.7) * 0.05 + Math.max(0, p.getX(i)) * 0.03); sandG.computeVertexNormals(); }
-  day.add(new THREE.Mesh(sandG, new THREE.MeshStandardMaterial({ color: 0xd8c49a, roughness: 1, flatShading: true })));
-  const seaG = new THREE.PlaneGeometry(60, 60, 40, 40).rotateX(-Math.PI / 2);
-  const sea = new THREE.Mesh(seaG, new THREE.MeshStandardMaterial({ color: 0x3f86a8, roughness: 0.35, metalness: 0, transparent: true, opacity: 0.86, flatShading: true }));
-  sea.position.set(-30.6, 0.06, 0); day.add(sea); T.sea = sea; T.seaY = Float32Array.from(seaG.attributes.position.array);
-  const sun = new THREE.DirectionalLight(0xfff2d8, 2.6); sun.position.set(6, 12, 4); day.add(sun);
-  day.add(new THREE.HemisphereLight(0xbfe0ff, 0xc8b080, 1.4));
+  // THE BEACH, BY DAY (`buildTapeDay`)
+  buildTapeDay(T);
   // THE FACE: black, a light from under
   const face = new THREE.Group(); S.add(face); T.sets.face = face;
-  const under = new THREE.PointLight(0xd8e0ff, 9, 3, 1.2); face.add(under); T.lights.under = under;
-  face.add(new THREE.AmbientLight(0x3a404a, 1.4));
+  const under = new THREE.PointLight(0xd8e0ff, 14, 3, 1.2); face.add(under); T.lights.under = under;
+  face.add(new THREE.AmbientLight(0x464d58, 2.2));
   { const k = new THREE.DirectionalLight(0xc8d4e8, 0.9); k.position.set(1, 1.5, 2); face.add(k); }
   // the puppets, in four of the workshop's colours
   for (const k of [3, 1, 4, 7]) { const P = tapePup(CP_PAINTS[k]); S.add(P.I.root); T.pups.push(P); }
@@ -126781,6 +127284,9 @@ function buildCelTape() {
     const box = new THREE.Box3().setFromObject(m, true), h = box.max.y - box.min.y || 1;
     m.scale.setScalar(1.9 / h); m.userData.y0 = -box.min.y * (1.9 / h);
     S.add(m); T.man = m;
+    // his beach look, painted once off his own map (`tapeShirtless`), swapped in for the beach clip (`tapeManLook`)
+    { const mats = []; let body = null; m.traverse((o) => { if (o.isMesh && o.material && o.material.map && /Body/.test(o.material.name)) { mats.push(o.material); if (o.isSkinnedMesh && !body) body = o; } });
+      if (mats.length && body) warmStep('tape: his beach look', () => { try { const sh = tapeShirtless(mats[0].map.image, body); T.manLook = { beach: false, mats: mats.map((q) => [q, q.map, sh]) }; } catch (e) { console.warn('[tape] shirtless', e); } }); }
     T.B = {}; m.traverse((o) => { if (o.isBone) T.B[o.name.replace(/^mixamorig:?/, '')] = o; });
     if (ELV_MOCAP_SET) {
       T.manMixer = new THREE.AnimationMixer(m);
@@ -126809,11 +127315,11 @@ function celTapeTick(dt) {
   T.sets.cel.visible = ci <= 2; T.sets.day.visible = ci === 3; T.sets.face.visible = ci === 4;
   T.S.background = ci === 3 ? new THREE.Color(0xa8cfe8) : new THREE.Color(0x000000);
   for (const p of P) p.I.root.visible = false;
-  if (T.man) T.man.visible = ci <= 1;
+  if (T.man) { T.man.visible = ci <= 1 || ci === 3; tapeManLook(T, ci === 3); }
   if (T.syr) T.syr.visible = ci === 0;
   const cam = T.cam, sway = (k) => { cam.position.x += Math.sin(t * 1.3) * 0.02 * k; cam.position.y += Math.sin(t * 2.1 + 1) * 0.015 * k; };
   T.lights.inj.intensity = 0;
-  T.lights.bulb.intensity = 24 * (0.85 + 0.15 * Math.sin(t * 37) * Math.sin(t * 11) + (Math.random() < 0.02 ? -0.5 : 0));
+  T.lights.bulb.intensity = 38 * (0.85 + 0.15 * Math.sin(t * 37) * Math.sin(t * 11) + (Math.random() < 0.02 ? -0.5 : 0));
   T.bench.visible = ci === 0;
   if (ci === 0) {
     // THE BENCH: him over it, the needle into the one lying there, the blue, and its head turning
@@ -126844,19 +127350,7 @@ function celTapeTick(dt) {
     tapeStand(C, 0, 0, zz, 0, 1);
     cam.position.set(0.15, 1.0, 3.3); cam.lookAt(0, 0.6, 0); cam.fov = 48; sway(0.6);
   } else if (ci === 3) {
-    // OUT FRONT, BY DAY: three of them running in the shallows, jumping in the surf
-    for (const [p, i] of [[A, 0], [Bp, 1], [C, 2]]) {
-      p.I.root.visible = true;
-      const ph = i * 2.1, a = ph + t * (0.9 + i * 0.25), x = -0.6 + Math.cos(a) * (1.1 + i * 0.5), z = Math.sin(a * (i === 1 ? 2 : 1)) * (1.4 + i * 0.4);
-      const hop = Math.max(0, Math.sin((t * (2.2 + i * 0.4)) + ph));
-      const jumping = hop > 0.75 && i !== 1;
-      tapePlay(p, jumping ? ['mJumpUp', 'mHRun', 'mMRun'] : ['mMRun', 'mHRun', 'mHWalk'], 0.15, 1.15);
-      tapeStand(p, x, 0.04 + (jumping ? (hop - 0.75) * 1.6 : 0), z, -Math.sin(a), Math.cos(a));
-    }
-    const sp = T.sea.geometry.attributes.position, y0 = T.seaY;
-    for (let i = 0; i < sp.count; i++) { const x = y0[i * 3], z = y0[i * 3 + 2]; sp.setY(i, Math.sin(x * 0.9 + t * 2.2) * 0.05 + Math.sin(z * 1.3 - t * 1.4) * 0.03); }
-    sp.needsUpdate = true; T.sea.geometry.computeVertexNormals();
-    cam.position.set(3.4, 1.55, 4.6); cam.lookAt(-0.6, 0.35, 0); cam.fov = 50; sway(2.2);
+    tapeDayTick(T, t, lt, dt);
   } else {
     // THE FACE: close, turning to the lens, its eyes catching
     D.I.root.visible = true; tapePlay(D, ['mOldIdle', 'mHIdle', 'mLook'], 0.3, 0.6);
@@ -126871,6 +127365,7 @@ function celTapeTick(dt) {
   // the moves
   for (const p of P) if (p.I.root.visible) p.mixer.update(dt);
   if (T.manMixer && T.man && T.man.visible) T.manMixer.update(dt);
+  if (ci === 3) tapeDayPose(T, t, dt);
   if (ci === 0 && T.man && T.B.RightArm && T.B.RightForeArm && T.B.RightHand) {
     T.man.updateMatrixWorld(true);
     const pk = T.push || 0;
@@ -126884,6 +127379,8 @@ function celTapeTick(dt) {
   U.uSnow.value = end ? 1 : start ? 1 - t / 0.5 : cut ? 1 - lt / 0.28 : 0;
   U.uRoll.value = end ? 1 : Math.max(start ? 1 - t / 0.8 : 0, ci > 0 && lt < 0.7 ? 1 - lt / 0.7 : 0);
   U.uDay.value = ci === 3 ? 1 : 0;
+  U.uGain.value = TAPE_GAIN[ci];
+  if (V.glow) V.glow.intensity = end ? 0.55 : (U.uSnow.value > 0.5 ? 0.6 : TAPE_GLOW[ci]) * (0.92 + 0.08 * Math.sin(t * 7.3));   // (the set's light on the room)
   // the deck's writing: PLAY, and a date that is not now
   const dates = ['OCT.31 1987', 'NOV. 2 1987', 'NOV. 2 1987', 'JUL. 4 1988', 'NOV.13 1987'], hrs = [2, 3, 3, 14, 4];
   const sec = Math.floor(lt), key = ci + ':' + sec + ':' + end;
@@ -127458,6 +127955,7 @@ function marReach(B, s, G, low = false) {
  * loose on the ropes low down, his legs hanging and lagging the swing as a weight does. The swing itself is a pendulum
  * (`updateElvDressing`): he does not pump it — a touch of his feet keeps it barely moving. And he is set ON the seat: every
  * second and a half his skin is measured in the seat's frame and he is lifted so nothing of him over the plank is in it. */
+const MAR_LOOK_TURN = 1.1, MAR_LOOK_W = 5.0;   // seconds his head takes to come round onto you on the swing (and back), and the neck's spring
 function marSwingStep(dt, t) {
   const u = MAR.u, S = elvSwing; if (!u || !u.model || !u.marBones || !u.marBind || !S || !S.seat) return;
   const B = u.marBones;
@@ -127504,9 +128002,20 @@ function marSwingStep(dt, t) {
   }
   // his head: out over the water, down — onto you only while you talk to him
   const talk = dialogOpen && dialogScript === MAR_NPC.script;
-  MAR.lookK = (MAR.lookK || 0) + ((talk ? 1 : 0) - (MAR.lookK || 0)) * Math.min(1, dt * 2);
-  const sea = _mrB.set(B.head.getWorldPosition(_mrV).x - 30, _mrV.y - 9, _mrV.z + Math.sin(t * 0.13) * 4);
-  marLook(u, 1, 1.1, MAR.lookK > 0.5 ? camera.position : sea);
+  /* (SMOOTH, 2026-11-22, the owner: "MAKE THE MARRIONETTE HEAD TURN WHILE ON THE SWING MORE SMOOTH WHEN YOU TALK TO HIM". The
+   * target used to SWITCH from the water to you when `lookK` crossed a half — one frame's snap of the whole turn. Now the two
+   * DIRECTIONS are blended by an eased `lookK` (it moves at a steady rate, not a jump-then-crawl), and the head follows that
+   * direction like a neck, critically damped (`MAR.lookD`), so the swing carrying him past you does not jitter it either.) */
+  MAR.lookK = THREE.MathUtils.clamp((MAR.lookK || 0) + (talk ? 1 : -1) * dt / MAR_LOOK_TURN, 0, 1);
+  const hp = B.head.getWorldPosition(_mrV);
+  const dS = _mrB.set(-30, -9, Math.sin(t * 0.13) * 4).normalize(), dC = _mrA.copy(camera.position).sub(hp).normalize();
+  const e = MAR.lookK * MAR.lookK * MAR.lookK * (MAR.lookK * (MAR.lookK * 6 - 15) + 10);   // (smootherstep: eases in and out)
+  const want = dS.lerp(dC, e).normalize();
+  if (!MAR.lookD) { MAR.lookD = want.clone(); MAR.lookV = new THREE.Vector3(); }
+  { const w0 = MAR_LOOK_W, k = Math.min(dt, 0.05);              // (a spring at its critical damping: no overshoot, no snap)
+    MAR.lookV.addScaledVector(_mrW.copy(want).sub(MAR.lookD), w0 * w0 * k).multiplyScalar(Math.max(0, 1 - 2 * w0 * k));
+    MAR.lookD.addScaledVector(MAR.lookV, k).normalize(); }
+  marLook(u, 1, 1.1, _mrB.copy(hp).addScaledVector(MAR.lookD, 10));
   // (no mixer here: the idle he was made with, sampled after the pose, stood him up on the plank every frame)
   // nothing of him in the plank: his skin measured in the seat's frame, every second and a half (the pose hardly changes)
   if ((MAR.liftT = (MAR.liftT ?? 0) - dt) <= 0) {
@@ -127547,21 +128056,34 @@ function marLook(u, k, lim, at = camera.position) {
 const MAR_NPC = {
   name: 'The Marionette',                            // (2026-11-22, the owner: "make the washer one called 'The Marionette'")
   script: {
+    /* (THE OWNER'S DIALOG, 2026-11-22: "make this the dialog to the marionette if you dont say ill take you there he doesnt follow
+     * you". Both openings meet at "a miracle", then the washer, then the light at the end of the beach; only "I'll take you
+     * there." takes him off the swing (`MAR.go`, acted on as the talk closes: `MAR_NPC.onLeave`). "Leave" — or Escape — leaves him
+     * on it, and he can be asked again.) */
     start: { text: '...', rate: 60, choices: [
-      { label: 'You okay?', to: 'off', act: () => { MAR.answer = 'okay'; } },
-      { label: 'What are you?', to: 'off', act: () => { MAR.answer = 'what'; } },
+      { label: 'You okay?', to: 'okay' },
+      { label: 'What are you?', to: 'miracle' },
     ] },
+    okay: { text: 'I’ve never been okay. They locked me in that box.', choices: [{ label: 'What are you?', to: 'miracle' }] },
+    miracle: { text: 'Dad used to say I was a miracle.', choices: [{ label: 'Why were you locked in the washer?', to: 'light' }] },
+    light: { text: 'I wanted to see the tall light at the end of the beach. One night I tried running there so he locked me away.', choices: [
+      { label: 'I’ll take you there.', to: 'go', act: () => { MAR.go = true; } },
+      { label: 'Leave', to: 'leave' },
+    ] },
+    go: { text: 'REALLY? LET’S GO', rate: 34, choices: [], end: 1600, hint: '' },
+    leave: { text: '', choices: [], hint: '', end: false, enter: () => { dialogEl.classList.remove('show'); setTimeout(() => { if (dialogOpen && dialogScript === MAR_NPC.script) endDialog(); }, 250); } },
     // (after he has killed Elvédor and the puppet is yours: the owner's line and his answer; a click on it closes the talk)
     pup: { text: '...', rate: 60, choices: [{ label: 'What should I do with the puppet?', to: 'fire', act: () => { MAR.pupAsked = true; } }] },
     fire: { text: 'Throw it in the fire', rate: 40, choices: [], end: false, hint: 'click to close' },
-    // (the owner: "after you say either of those i will add more later make him hop off the swing and follow you")
-    off: { text: '', choices: [], hint: '', end: false, enter: () => { dialogEl.classList.remove('show'); setTimeout(() => { if (dialogOpen && dialogScript === MAR_NPC.script) endDialog(); marHopOff(); }, 250); } },
   },
   sprite: null, head: null, fov: 34,
+  // off the swing and with you only if you said you would take him (`go`), however the talk closes
+  onLeave: () => { if (MAR.go && MAR.st === 'swing') marHopOff(); MAR.go = false; },
 };
 function marTalk() {
   const u = MAR.u; if (!u || !u.marBones || !u.marBones.head) return;
   MAR_NPC.sprite = u.marBones.head; MAR_NPC.head = u.marBones.head;
+  MAR.go = false;
   startDialog(MAR.st === 'with' ? 'pup' : 'start', MAR_NPC);
 }
 // off the swing: at the front of its arc he lets go and drops onto his feet in front of it, facing you; then he is with you
@@ -129801,18 +130323,18 @@ function buildElvTrail() {
   // (the hit nearest the walk's own floor: over the gully the cliff's surface is still there to a ray, metres up, cut away only in its shader)
   const drawnAt = (x, z, f) => { O.set(x, f + 4, z); rc.set(O, down); rc.far = 8; let best = f, bd = 1.2; for (const h of rc.intersectObjects(hitOn, false)) { const d = Math.abs(h.point.y - f); if (d < bd) { bd = d; best = h.point.y; } } return best; };
   const rnd = mulberry32(70221), ACROSS = 5;
-  const pos = [], uv = [], idx = [];
+  const pos = [], uv = [], tr = [], idx = [];
   for (let i = 0; i < S.length; i++) {
     const [x, z, s] = S[i], [x0, z0] = S[Math.max(0, i - 1)], [x1, z1] = S[Math.min(S.length - 1, i + 1)];
     let tx = x1 - x0, tz = z1 - z0; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
     const nx = -tz, nz = tx;
-    const hw = 0.62 + 0.16 * Math.sin(s * 0.9) + 0.08 * Math.sin(s * 2.7 + 1.3) + (s > total - 9 ? -0.12 : 0);   // (narrower over the yard: a path, not the gully's floor)
+    const hw = 0.80 + 0.16 * Math.sin(s * 0.9) + 0.08 * Math.sin(s * 2.7 + 1.3) + (s > total - 9 ? -0.12 : 0);   // (narrower over the yard: a path, not the gully's floor)
     const wob = 0.10 * Math.sin(s * 0.55 + 0.7);
     const fc = floorAt(x, z), lift = Math.max(0, drawnAt(x, z, fc) - fc);
     for (let k = 0; k <= ACROSS; k++) {
       const a = (k / ACROSS) * 2 - 1, px = x + nx * (a * hw + wob), pz = z + nz * (a * hw + wob);
       pos.push(px, floorAt(px, pz) + lift + 0.04, pz);
-      uv.push(k / ACROSS, s / 2.2);
+      uv.push((px + 800) / SAND_TILE, (800 - pz) / SAND_TILE); tr.push(k / ACROSS, s);   // (the beach's own texel grid; and along/across the path)
     }
   }
   for (let i = 0; i < S.length - 1; i++) for (let k = 0; k < ACROSS; k++) {
@@ -129820,30 +130342,85 @@ function buildElvTrail() {
     idx.push(a, b, c, b, d, c);              // (facing up: wound the other way it was culled from above and lit from below)
   }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('aTrail', new THREE.Float32BufferAttribute(tr, 2)); g.setIndex(idx);
   g.computeVertexNormals();
-  // its look: scuffed, paler sand, feathered both sides; and it comes in off the beach over its first three metres
-  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256;
-  const c2 = cv.getContext('2d'), img = c2.createImageData(64, 256), d = img.data;
-  for (let y = 0; y < 256; y++) for (let x = 0; x < 64; x++) {
-    const u = x / 63, edge = Math.min(u, 1 - u);
-    const n = Math.sin(y * 0.21 + x * 0.05) * 0.5 + Math.sin(y * 0.67 + x * 0.31) * 0.3 + (rnd() - 0.5) * 0.9;
-    const a = THREE.MathUtils.smoothstep(edge + n * 0.08, 0.0, 0.46) * (0.62 + 0.38 * rnd());   // ragged, soft edges, trodden in patches
-    const v = 168 + n * 30 + (rnd() - 0.5) * 40;
-    const o = (y * 64 + x) * 4; d[o] = v; d[o + 1] = v; d[o + 2] = v; d[o + 3] = Math.max(0, Math.min(255, a * 255));
+  /* ITS LOOK IS THE BEACH'S OWN SAND (2026-11-22, the owner: "make the trail to elvedors look better have it blend well with
+   * the sand texture i added"). It wore a grey canvas of its own — a pale smear laid over the photograph. Now it is drawn
+   * from the same photograph (`sandTex`'s Source, so the JPG swap reaches it), at the beach's own world texel grid, so
+   * where it starts on the beach every grain lines up with the grain beside it; lighter in the beach's own hue (trodden, dry,
+   * churned), and its edges break up along the grain itself rather than along a smooth feather. A mask of its own
+   * (128 × 1024 over 12 m, tiling along it): R how much of the path is there, G the footprints (dents, a pushed-up toe), B
+   * where the churned sand shows. */
+  const MW = 128, MH = 1024, ML = 12.0;
+  const vn = (() => {   // periodic value noise over the mask (wraps along and across)
+    const L = {}, cell = (i, j, f, sd) => { const k = ((i % f.x) + f.x) % f.x + ',' + (((j % f.y) + f.y) % f.y) + ',' + sd; if (L[k] === undefined) L[k] = rnd(); return L[k]; };
+    return (x, y, fx, fy, sd) => { const i = Math.floor(x), j = Math.floor(y), u = x - i, v = y - j, su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v), f = { x: fx, y: fy };
+      return THREE.MathUtils.lerp(THREE.MathUtils.lerp(cell(i, j, f, sd), cell(i + 1, j, f, sd), su), THREE.MathUtils.lerp(cell(i, j + 1, f, sd), cell(i + 1, j + 1, f, sd), su), sv); };
+  })();
+  const shade = new Float32Array(MW * MH).fill(1);
+  // footprints: four walkers' worth, up and down, each its own lane, stride and wobble; worn soft (the old ones half filled in)
+  for (let w = 0; w < 4; w++) {
+    const lane = 0.5 + (rnd() - 0.5) * 0.22, stride = 0.64 + rnd() * 0.12, dir = rnd() < 0.5 ? 1 : -1, depth = 0.22 + rnd() * 0.16;
+    for (let t = rnd() * stride, n = 0; t < ML - 0.01; t += stride * 0.5 * (0.9 + rnd() * 0.2), n++) {
+      const side = n % 2 ? 1 : -1, cu = lane + side * 0.075 + (rnd() - 0.5) * 0.03, yaw = side * 0.12 + (rnd() - 0.5) * 0.18, wear = 0.45 + rnd() * 0.55;
+      const cy = t / ML * MH, cx = cu * MW, hl = 0.135 / ML * MH, hwp = 0.05 * MW / 1.25;
+      for (let dy = -hl * 1.6; dy <= hl * 1.6; dy++) for (let dx = -hwp * 2; dx <= hwp * 2; dx++) {
+        const ry = dy * Math.cos(yaw) - dx * (hl / hwp) * Math.sin(yaw), rx = dx * Math.cos(yaw) + dy * (hwp / hl) * Math.sin(yaw);
+        const q = Math.hypot(rx / hwp, ry / hl), f = ry * dir / hl;              // f > 0 toward the toe
+        const waist = 1 + 0.25 * Math.max(0, 1 - Math.abs(f + 0.15) * 3);      // (a narrower arch)
+        const qq = Math.hypot(rx / hwp * waist, ry / hl);
+        let k = qq < 1 ? -(1 - qq * qq) * depth * wear : 0;
+        if (qq >= 0.9 && qq < 1.45 && f > 0.35) k += (1 - Math.abs(qq - 1.12) / 0.33) * 0.10 * wear;   // the sand the toe pushed up
+        if (!k) continue;
+        const X = Math.round(cx + dx), Y = ((Math.round(cy + dy) % MH) + MH) % MH; if (X < 0 || X >= MW) continue;
+        shade[Y * MW + X] *= 1 + k;
+      }
+    }
+  }
+  const cv = document.createElement('canvas'); cv.width = MW; cv.height = MH;
+  const c2 = cv.getContext('2d'), img = c2.createImageData(MW, MH), d = img.data;
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+    const u = x / (MW - 1), edge = Math.min(u, 1 - u), Y = y / MH * ML;
+    const n = vn(u * 6, Y * 1.4, 6, ML * 1.4, 1) - 0.5 + (vn(u * 16, Y * 4, 16, ML * 4, 2) - 0.5) * 0.5;
+    const cov = THREE.MathUtils.smoothstep(edge + n * 0.16, 0.02, 0.40) * (0.78 + 0.22 * vn(u * 3, Y * 0.7, 3, ML * 0.7, 3));
+    const churn = THREE.MathUtils.smoothstep(vn(u * 4, Y * 1.1, 4, ML * 1.1, 4) + (1 - edge * 2) * 0.25, 0.35, 0.75);
+    const o = (y * MW + x) * 4;
+    d[o] = Math.max(0, Math.min(255, cov * 255)); d[o + 1] = Math.max(0, Math.min(255, shade[y * MW + x] * 128)); d[o + 2] = churn * 255; d[o + 3] = 255;
   }
   c2.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(cv); tex.wrapT = THREE.RepeatWrapping;
+  const tex = new THREE.CanvasTexture(cv); tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.NoColorSpace;
+  tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter;
+  const sTex = sandTex.clone(); sTex.repeat.set(1, 1); sTex.needsUpdate = true;
+  const sBump = sandBump.clone(); sBump.repeat.set(1, 1); sBump.needsUpdate = true;
+  // the beach's colour and glow (0x6d7d99 / 0x27324a), lifted: dry, trodden sand on the same beach
+  const LIFT = 1.42;
   const mat = new THREE.MeshStandardMaterial({
-    map: tex, color: 0xb4c0d6, emissive: 0x48546e, emissiveMap: tex, roughness: 1, metalness: 0,
+    map: sTex, bumpMap: sBump, bumpScale: 1.0,
+    color: new THREE.Color(0x6d7d99).multiplyScalar(LIFT), emissive: new THREE.Color(0x27324a).multiplyScalar(LIFT * 1.08), roughness: 1, metalness: 0,
     transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
   });
-  const S0 = 3.0;   // metres of fade off the beach
+  const S0 = 4.0;   // metres of fade off the beach
   mat.onBeforeCompile = (sh) => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vTrailS;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvTrailS = uv.y * 2.2;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vTrailS;')
-      .replace('#include <map_fragment>', `#include <map_fragment>\ndiffuseColor.a *= smoothstep(0.0, ${S0.toFixed(1)}, vTrailS);`);
+    sh.uniforms.uTrailMask = { value: tex };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aTrail;\nvarying vec2 vTrail;')
+      .replace('#include <uv_vertex>', '#include <uv_vertex>\nvTrail = aTrail;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uTrailMask;\nvarying vec2 vTrail;')
+      .replace('#include <map_fragment>', `
+        vec4 trM = texture2D(uTrailMask, vec2(vTrail.x, vTrail.y / ${ML.toFixed(1)}));
+        vec3 trA = texture2D(map, vMapUv).rgb;
+        vec3 trB = texture2D(map, vec2(vMapUv.y, -vMapUv.x) * 1.37 + vec2(0.31, 0.17)).rgb;   // the same sand turned over: churned
+        vec3 trLo = texture2D(map, vMapUv, 4.0).rgb;                                          // the grain's local mean
+        vec3 trT = mix(trA, mix(trA, trB, 0.65), trM.b);
+        trT = mix(trLo, trT, 0.80);                                                            // trodden flatter than the beach
+        float trSh = trM.g * 2.0;
+        trT *= trSh;
+        diffuseColor.rgb *= trT;
+        float trRel = dot(trA, vec3(0.3, 0.5, 0.2)) / max(1e-4, dot(trLo, vec3(0.3, 0.5, 0.2)));
+        float trCov = clamp(trM.r * 1.15 + (trRel - 1.0) * 0.55 * (1.0 - trM.r) - 0.04, 0.0, 1.0);   // the edge breaks up along the grain
+        diffuseColor.a *= smoothstep(0.0, 1.0, trCov) * smoothstep(0.0, ${S0.toFixed(1)}, vTrail.y);`)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= trT;');
   };
+  mat.customProgramCacheKey = () => 'elvTrail2';
   const m = new THREE.Mesh(g, mat);
   m.name = 'elvTrail'; m.renderOrder = 1; m.raycast = () => {}; m.userData.bwGhost = true; m.userData.noBake = true;
   scene.add(m);
@@ -129935,7 +130512,7 @@ function updateElvLand(dt) {
    * before walking up to the house that blocks me", 2026-10-16) */
   const steepOk = (x, z, f) => { const run = Math.hypot(x - _preMove.x, z - _preMove.z), rise = f - feet0; return rise < 0.06 || rise < run * (elvYardD(x, z) < 0 ? 2.3 : 1.15) + 0.03 || (houseWalls && Math.abs(x - HOUSE_X) < 6.2 && Math.abs(z - HOUSE_Z) < 8.4); };
   // (off the land only onto the beach's side of its clamp)
-  const legal = (x, z) => { if (!elvInLand(x, z)) return x <= CLIFF_BLOCK_X + 0.02 && x < _preMove.x + 0.3; const f = floorOk(x, z); return f !== null && steepOk(x, z, f) && !hits(_preMove.x, _preMove.z, x, z) && !elvDoorShut(_preMove.x, _preMove.z, x, z, feet0) && !elvPaneShut(_preMove.x, _preMove.z, x, z, feet0) && !celOutBlocks(x, z); };
+  const legal = (x, z) => { if (!elvInLand(x, z)) return x <= CLIFF_BLOCK_X + 0.02 && x < _preMove.x + 0.3; const f = floorOk(x, z); return f !== null && steepOk(x, z, f) && !hits(_preMove.x, _preMove.z, x, z) && !elvDoorShut(_preMove.x, _preMove.z, x, z, feet0) && !elvPaneShut(_preMove.x, _preMove.z, x, z, feet0) && !celOutBlocks(x, z) && !(elvTreeBlocks(x, z, feet0) && !elvTreeBlocks(_preMove.x, _preMove.z, feet0)); };   // (a tree you are already in lets you out)
   if (!legal(p.x, p.z)) {
     const mx = p.x - _preMove.x, mz = p.z - _preMove.z, ml = Math.hypot(mx, mz);
     let took = false;
@@ -131118,7 +131695,7 @@ Object.assign(window.__bw, { farmCobble, farmUnits, farmFight, farmDoors, farmSe
    * ticks — so a harness has to be able to turn the handle itself. */
   warmTurn: (n = 40) => { let c = 0; while (n-- > 0) { if (!warmRunStep()) { if (!drainWarmed) warmDrain(); else if (!mushWarmed) warmMush(); else if (!bunkerWarmed) warmBunker(); else if (!ucWarmed && ucWarm) { ucWarmed = true; ucWarm(); } else break; } else c++; } return c; },
   loadLog: () => bwLoadLog,
-  bwGotS: () => bwGot, celTvS: () => celTv, celTapeS: () => celTape, celTvToggle, celBathS: () => celBathPup, siteRayS: siteRay, castleSiteS: () => castleSiteHere(), celFridgeS: () => celFridge, elvTrailS: () => elvTrail, sandFxS: () => ({ grains: sandGrains, dust: sandDust, SG, SD }), imgRelOn: (v) => { imgRel.on = !!v; }, imgRelQ: () => imgRel.q, imgRelS: () => ({ q: imgRel.q.length, done: imgRel.done, freedMB: Math.round(imgRel.freed / 1048576), reup: imgRel.reup }), loadQ: () => ({ open: bwOpen, waiting: bwWaiting.map((j) => [j.url.split('/').pop(), j.reach]), got: bwGot.size }),
+  bwGotS: () => bwGot, celTvS: () => celTv, celTapeS: () => celTape, celTvToggle, celBathS: () => celBathPup, siteRayS: siteRay, castleSiteS: () => castleSiteHere(), celFridgeS: () => celFridge, celFridgeSquareS: () => celFridgeSquare, elvTrailS: () => elvTrail, elvTreeSolidS: () => elvTreeSolid, fogLampsS: () => FOG_LAMPS.n.x, FOG_LAMPS, elvTreeBlocksS: (x, z, f) => elvTreeBlocks(x, z, f), sandFxS: () => ({ grains: sandGrains, dust: sandDust, SG, SD }), imgRelOn: (v) => { imgRel.on = !!v; }, imgRelQ: () => imgRel.q, imgRelS: () => ({ q: imgRel.q.length, done: imgRel.done, freedMB: Math.round(imgRel.freed / 1048576), reup: imgRel.reup }), loadQ: () => ({ open: bwOpen, waiting: bwWaiting.map((j) => [j.url.split('/').pop(), j.reach]), got: bwGot.size }),
   lag: (ms = 24) => bwLag.filter((e) => e[1] >= ms).sort((x, y) => y[1] - x[1]),
   lagTime: (ms = 24) => bwLag.filter((e) => e[1] >= ms),
   lagClear: () => { bwLag.length = 0; },

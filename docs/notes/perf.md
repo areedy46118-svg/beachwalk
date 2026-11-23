@@ -1792,3 +1792,10 @@ quality settings". So nothing here is a setting and nothing changes the look.
   4.98, tmp 4.25, cel 3.95. Every held room: 0 frames over 50 ms in the 8 s after; the beach still has its far parses
   (beach-900: 7 over 50 — dressing skrim.glb 61 ms, church.glb 47).
 
+- **The pool ranks a lamp from `LP_SEE` (3) times its range** (2026-11-22, "ANY LIGHT THATS ON SHOULD NOT CHANGE WHEN GETTING
+  CLOSER TO IT"): it scored 0 until the camera was INSIDE its range, so any lamp without `lpAlways` lit up as you crossed that
+  line. Still ranked by reach on you (nearest win where they crowd); the ease in/out is `LP_FADE` 0.6 s (was 0.25). A place with
+  more lamps than slots should hand them to its own shaders: `FOG_LAMPS` (the sewer) or `catTorchU` (the catacombs).
+- **TRAP, 2026-11-22: a backtick in a comment INSIDE a GLSL template literal ends the template** — "// from `FOG_LAMPS`" in
+  `fog_fragment` was a SyntaxError that took the whole module: a black screen on every load (the owner's "reload from my
+  checkpoint … black screen"). After touching a shader string, load the page headless (`tools/bootok.js`) before anything else.
