@@ -18747,8 +18747,13 @@ function hookThrow(charge) {
     const lim = HK.to ? HK.to.t : D;
     digRay.set(camera.position, HK.aim); digRay.far = lim;
     let best = null;
-    for (const c of crates) { if (c.broken) continue; const x = digRay.intersectObject(c.group, true)[0]; if (x && (!best || x.distance < best.t)) best = { kind: 'prop', t: x.distance, point: x.point.clone() }; }
-    for (const pp of physProps) { if (!pp.onImpact || pp.dead || pp.held || !pp.mesh.parent) continue; const x = digRay.intersectObject(pp.mesh, true)[0]; if (x && (!best || x.distance < best.t)) best = { kind: 'prop', t: x.distance, point: x.point.clone() }; }
+    /* (ONLY WHAT IS DRAWN — 2026-11-22, the owner: "i keep hitting random invisible stuff in the air when throwing the hook". The crates
+     * and the props were asked whether or not they were shown: a crate of a room far off, a hidden one, a prop culled with its place —
+     * the iron stopped on it in empty air. Shown all the way up to the scene, and the face it meets shown too.) */
+    const shown = (o) => { for (let a = o; a; a = a.parent) { if (!a.visible) return false; if (a === scene) return true; } return false; };
+    const hitOf = (o) => digRay.intersectObject(o, true).find((x) => x.object.visible && x.object.name !== 'hitProxy' && !(x.object.material && x.object.material.visible === false));
+    for (const c of crates) { if (c.broken || !shown(c.group)) continue; const x = hitOf(c.group); if (x && (!best || x.distance < best.t)) best = { kind: 'prop', t: x.distance, point: x.point.clone() }; }
+    for (const pp of physProps) { if (!pp.onImpact || pp.dead || pp.held || !pp.mesh.parent || !shown(pp.mesh)) continue; const x = hitOf(pp.mesh); if (x && (!best || x.distance < best.t)) best = { kind: 'prop', t: x.distance, point: x.point.clone() }; }
     if (best) HK.to = best;
   }
   /* AND IT STOPS ON THE WALL (2026-11-20, the owner: "SKRIMS HOOK SHOULD COLLIDE WITH WALLS TOO AND COME BACK FROM THE POINT IT
@@ -18794,6 +18799,15 @@ function hookThrow(charge) {
     const yw = u.g.rotation.y, c = Math.cos(-yw), sn = Math.sin(-yw);
     HK.uo = [_hkV.x * c + _hkV.z * sn, HK.uy, -_hkV.x * sn + _hkV.z * c];
   } else HK.u = null;
+  /* AND WHAT IS DRAWN, WHEREVER YOU ARE (2026-11-22, the owner: "give free use of the hook in the tavern i cant hook up or the castle
+   * make it actually read the walls that are visible"). The trace above knows a room by its WALL INDEX — the band a body walks
+   * into — so the tavern's beams and ceiling, the keep's vaults, the island's roofs and rocks were nothing to the iron: measured
+   * in the tavern, 458 throws of 480 found nothing to bite. Down the throw's line, the first face of the place you are in that is
+   * DRAWN (shown, opaque, not a proxy), nearer than whatever was found: the iron bites it, and a pull goes to it. */
+  { const lim = HK.to ? HK.to.t : D, dh = hookDrawnHit(camera.position, HK.aim, lim); if (dh) HK.to = dh; }
+  /* (and a castle's every face, at every height — its face grid (`siteRay`), not the walking band the trace knows: the owner's "or the
+   * castle", a throw up at a tower's upper wall, an arch, the cubby, found nothing to bite) */
+  { const S = castleSiteHere(); if (S) { const lim = HK.to ? HK.to.t : D, t = siteRay(S, camera.position, HK.aim, lim); if (t !== null && t > 0.3 && (!HK.to || t < HK.to.t)) HK.to = { kind: 'solid', t, point: camera.position.clone().addScaledVector(HK.aim, t), hit: null, surface: 'rock' }; } }
   // (a floor down the line in a room: the temple's, the gut's — the trace knows walls there, not the ground; `hookZipStart` wants it)
   if (inRoom() && !(HK.to && HK.to.t < 0.6)) {
     const lim = HK.to ? HK.to.t : D, O = camera.position, fa = hookFloorAt;
@@ -18818,6 +18832,32 @@ function hookThrow(charge) {
 /* THE ROOM'S OWN STONE down a line from `O` along `dir`, nearer than `lim`: the desert temple off its solid grid (a cell
  * standing over the floor by more than a step — a pillar, a wall; not the floor, where the iron simply lands), and every
  * other room without a wall index off its own drawn model (`dropTargets`, once, as the throw leaves). Null if clear. */
+function hookDrawnRoots() {
+  if (inTavern) return [tavWorld]; if (inKeep) return [keepWorld]; if (inCel) return [celWorld]; if (inDun) return [dunWorld]; if (inThrone) return [thrWorld];
+  if (inCat) return [catWorld]; if (inSewer) return [sewWorld];
+  if (onIsle || (isleWorld && isleWorld.visible && !inRoom())) return [isleWorld];
+  if (inFort || inC13) return [];                              // (the castles' stone is their wall index, which knows every face: `fortBladeHit`)
+  return [];
+}
+const _hdRay = new THREE.Raycaster();
+function hookDrawnHit(O, dir, lim) {
+  let best = null;
+  for (const R of hookDrawnRoots()) {
+    if (!R || !R.visible) continue;
+    _hdRay.set(O, dir); _hdRay.far = lim; _hdRay.camera = camera;
+    for (const h of _hdRay.intersectObject(R, true)) {
+      const o = h.object; if (!o.isMesh || o.isSprite || o.name === 'hitProxy' || o.userData.bwGhost) continue;
+      let vis = true; for (let a = o; a && a !== R.parent; a = a.parent) if (!a.visible) { vis = false; break; }
+      if (!vis) continue;
+      const m = Array.isArray(o.material) ? o.material[h.face ? h.face.materialIndex : 0] : o.material;
+      if (!m || m.visible === false || (m.transparent && m.opacity < 0.5) || m.blending === THREE.AdditiveBlending) continue;
+      if (h.distance < 0.3) continue;
+      if (!best || h.distance < best.distance) best = h;
+      break;
+    }
+  }
+  return best ? { kind: 'solid', t: best.distance, point: best.point.clone(), hit: best, surface: inTavern || inKeep || inCel ? 'wood' : 'rock' } : null;
+}
 function hookWallHit(O, dir, lim) {
   if (inTemple && tmpG && tmpG.cell) {
     for (let t = 0.3; t < lim; t += 0.2) {
@@ -18955,6 +18995,7 @@ function hookZipStart() {
   const c = camera.position, d = c.distanceTo(HK.p);
   if (d < HOOK_ZIP.min || frozen()) return false;
   if (hookNoZipAt(c, HK.p)) return false;
+  HK.toCubby = inC13 && c13CubbyHas(HK.p, 0.3);
   HK.st = 'zip'; HK.t = 0; HK.zipA = (HK.zipA || new THREE.Vector3()).copy(HK.p); HK.zipT = 0; HK.zipStuck = 0; HK.zipLast = d; HK.zipUsed = true; HK.slack = 0;
   HK.zipV = HK.zipV || new THREE.Vector3(); HK.zipV.set(0, 0, 0);
   sfxChainRattle(c.x, c.z, 0.6, 1.1); sfxChainPayout(c.x, c.z, 0.8);
@@ -18964,6 +19005,7 @@ function hookZipStart() {
 }
 function hookZipEnd(arrived) {
   if (HK.st !== 'zip') return;
+  if (HK.toCubby) { HK.toCubby = false; if (c13CubbyStep()) { HK.st = 'back'; HK.t = HOOK_LIE; HK.recall = true; HK.recallAt = performance.now(); HK.slack = 0.3; return; } }
   const v = HK.zipV;
   HK.carry = HK.carry || new THREE.Vector3();
   HK.carry.set(v.x * HOOK_ZIP.carry, 0, v.z * HOOK_ZIP.carry);              // (on past where you let go, a little)
@@ -18988,6 +19030,17 @@ function hookStepSolid(dx, dz) {
    * hook") */
   const room = inRoom();
   for (let i = 0; i < n; i++) { c.x += dx / n; c.z += dz / n; if (solid) pushOutOfSolids(c, feet, PLAYER_R * 0.85, feet + playerHeight()); if (room) clampPlayerToRoom(); }
+}
+// the end of a pull into the cubby: you are set on its floor, inside, a stride in from the doorway, at once
+function c13CubbyStep() {
+  const K = C13_CUBBY, c = camera.position, L = c13CubbyLocal(c.x, c.z, _cbL);
+  const lx = THREE.MathUtils.clamp(L.x, -K.w + PLAYER_R + 0.05, K.w - PLAYER_R - 0.05), lz = THREE.MathUtils.clamp(L.z, 0.15 + PLAYER_R, K.d - PLAYER_R - 0.2);
+  const wx = C13_X + K.lx + lx * K.nz + lz * K.nx, wz = C13_Z + K.lz - lx * K.nx + lz * K.nz;
+  if (Math.hypot(wx - c.x, wz - c.z) > 6 || Math.abs(c.y - (C13_Y + K.ly + playerEye())) > 6.5) return false;   // (nowhere near it: an ordinary end; a pull stopped under it on its corbels still goes in)
+  c.x = wx; c.z = wz; groundY = C13_Y + K.ly; camBaseY = groundY + playerEye(); c.y = camBaseY;
+  vy = 0; onGround = true; _preMove.set(c.x, 0, c.z);
+  sfxChainSlap(HK.zipA.x, HK.zipA.z, 0.6); vmImpulse(-0.6); addTrauma(0.1);
+  return true;
 }
 function hookZipMove(dt, canMove) {
   const c = camera.position;
@@ -19015,7 +19068,7 @@ function hookZipMove(dt, canMove) {
    * beach's floors, so a pull up through an arch, an overhang or a tower's upper wall went through it. Each frame of a pull in a
    * castle, the move is tested against its drawn faces (`siteRay`) at the feet, the middle and the head, out to the step and a
    * body's width more: anything there and the pull ends where you are.) */
-  { const S = castleSiteHere();
+  { const S = HK.toCubby ? null : castleSiteHere();             // (into the cubby: its doorway is the way, `c13CubbyHas`)
     if (S) {
       const L = sp * dt + 0.4, c = camera.position, feet = camBaseY - playerEye();
       for (const y of [feet + 0.25, (feet + c.y) / 2, c.y + 0.14]) {
@@ -19055,6 +19108,7 @@ function hookTick(dt) {
         if (bit) { HK.st = 'bite'; HK.t = 0; HK.dragT = 0; HK.slack = 0; sfxChainDrag(HK.p.x, HK.p.z, 0.5, 1); }
         else if (!body && (HK.to || HK.surfEnd) && (HK.airThrow || !onGround) && !HK.zipUsed && hookZipStart()) { /* (pulled to it: `hookZipMove`) */ }
         else { HK.st = 'back'; HK.t = 0; HK.slack = 0.35; if (!HK.to) sfxChainSlap(HK.p.x, HK.p.z, 0.5); }
+        if (HK.water) { seaImpact(HK.p, HK.st === 'bite' ? HK.u : null, HK.aim, true); HK.water = 0; }   // (the ball on the iron bursts where it arrives)
       } else HK.p.addScaledVector(_hkV, step / d);
       if (HK.st === 'out' && ucIdolNear(HK.p, 0.1) && ucIdolKnock(HK.p.x, HK.p.z)) { sfxChainClang(false, 0.55); hookImpact(HK.p.x, HK.p.z, 0.7, false); HK.st = 'back'; HK.t = 0; HK.slack = 0.35; }   // (into the church's figure: it goes over)
       if (HK.st === 'out' && celLockNear(HK.p, 0.1) && celLockBreak()) { sfxChainClang(false, 0.55); hookImpact(HK.p.x, HK.p.z, 0.7, false); HK.st = 'back'; HK.t = 0; HK.slack = 0.35; }   // (the cellar washer's padlock: off)
@@ -19143,7 +19197,7 @@ function hookRecall() {
 }
 // home: in the fist again, and the wait begins
 function hookHome(quiet) {
-  HK.recall = false; HK.fire = 0;
+  HK.recall = false; HK.fire = 0; if (HK.water) seaHookDry(); HK.water = 0;
   HK.st = 'idle'; HK.u = null; HK.to = null; HK.cd = HOOK_CD;
   if (HK.armT >= 0) HK.armT = Math.max(HK.armT, 10);       // (the arm comes home from wherever it was: `hookArmPose`)
   if (HK.links) HK.links.visible = false; if (HK.fly) HK.fly.visible = false;
@@ -20557,9 +20611,11 @@ function releaseWind() {
   if (hookHeld() && windOverhead && HK.wind) {          // Skrim's hook: thrown on its chain, not swung (`hookThrow`)
     HK.wind = false; const c = Math.min(1, windT / WIND_FULL); windT = 0;
     const lit = !!(flameWeapon() && c >= FLAME_FULL && flame.k > 0.5);   // (thrown burning: the fire goes with the iron, `hookFireTick`)
-    if (hookThrow(c)) { HK.fire = lit ? 1 : 0; return; }
+    const wet = !lit && seaBallReady(c);                                  // (thrown wet: a ball of the sea on the iron, `seaHookTick`)
+    if (hookThrow(c)) { HK.fire = lit ? 1 : 0; HK.water = wet ? 1 : 0; if (wet) seaBallSpent(); return; }
   }
   flameRelease(Math.min(1, windT / WIND_FULL));      // a full shift heavy with the flames up: the swing burns
+  if (windOverhead && seaBallReady(Math.min(1, windT / WIND_FULL))) seaBallFire();   // a full Shift heavy with the Sea set in it: the water ball
   // even a tap off the right button carries a bit more than a plain dig
   startDig(0.3 + 0.7 * Math.min(1, windT / WIND_FULL), _pose);
   windT = 0;
@@ -21038,6 +21094,7 @@ function isleGullsTick(dt) {
   }
 }
 const ISLE_NO_GULL = [[-9.0, 31.9, ez(-1180.3)], [-7.1, 0.1, ez(-1196.0)]];   // (measured centres, world)
+let crustyLight = false;   // "Bring lil crusty to the lighthouse.": the marionette brought over the drawbridge onto the lighthouse's rock (`marCrustyCheck`)
 let isleBirdsDown = null, gullSlayer = false;   // a restore's fallen gulls (by index), waiting for the birds; the achievement, once a game
 function isleBirdsExtract() {
   if (isleBirds.length) return;
@@ -30780,6 +30837,7 @@ const RARE_ACHIEVEMENTS = [
   () => elvBurned,                                        // Burn the puppet.: carried Elvédor's puppet to his fire and threw it in (2026-11-15)
   () => dealerPissed,                                     // Piss off the dealer: handed him the well man's portrait (2026-11-19)
   () => henryFree >= 1,                                   // Free Henry: his cell unlocked (2026-11-19)
+  () => crustyLight,                                      // Bring lil crusty to the lighthouse.: the marionette over the drawbridge with you (2026-11-22)
 ];
 /* EVERY JAR THERE IS (2026-11-17, the owner: "add total amount of jars and rare achievements at the end it doesn't show the
  * total possible"). The jars out in the world and the ones bled out of every crab there is — what is FOUND, not what the
@@ -46351,6 +46409,7 @@ function updateMutantUnit(u, dt) {
    * the one thing left in the room, which is you. */
   if (u.st.foe && !u.st.foe.st.alive) u.st.foe = null;
   if (u.st.foe && u.st.foe.cpAlly && u.st.foe === MAR.u) marAggroTick(u);   // (and back on you when it is time: `marAggroTick`)
+  else if (!u.st.foe && u.st.awake && u !== MAR.u && !u.cpAlly) marBalance(u);   // (or onto him, by who is nearer: `marBalance`)
   const foe = mutFoePos(u);
   const dx = foe.x - p.x, dz = foe.z - p.z;
   const dist = Math.hypot(dx, dz) || 0.001;
@@ -54169,7 +54228,7 @@ function saveCheckpoint(spot) {
       star: !!(helmStar && helmStar.solved),
       boatKey: boatKeyTaken,          // the key off the hook: taken (in the pack, or spent in the chest)
       // the island's gulls you have put down, and the achievement for all of them
-      gullsDown: isleBirds.length ? isleBirds.map((B, i) => (B.m.visible ? -1 : i)).filter((i) => i >= 0) : (isleBirdsDown || []), gullSlayer,
+      gullsDown: isleBirds.length ? isleBirds.map((B, i) => (B.m.visible ? -1 : i)).filter((i) => i >= 0) : (isleBirdsDown || []), gullSlayer, crustyLight,
       // the snorkeler's key (0 not given, 1 on the sand, 2 taken) and the pavilion gate it opens
       lostKey: snorkKey.state, mushGate: mushGateUnlocked,
       // and the catacombs' own, which the skull key turns
@@ -54660,6 +54719,7 @@ function updateRestore(dt) {
   else if (f.lostKey === 2) { snorkMet = true; snorkKey.state = 2; }
   if (f.mushGate || (f.lostKey === undefined && bz < MUSH_Z - 12)) mushGateUnlocked = true;
   if (f.gullSlayer) gullSlayer = true;
+  if (f.crustyLight) crustyLight = true;
   if (f.gullsDown && f.gullsDown.length) { if (isleBirds.length) { for (const i of f.gullsDown) if (isleBirds[i]) isleBirds[i].m.visible = false; } else isleBirdsDown = f.gullsDown.slice(); }
   /* THE CAPTAIN'S KEY: the chest eats it, so a chest you opened means a key
    * that is off the hook and gone. And a save from when it opened the shell
@@ -61633,8 +61693,9 @@ let magBest = null;
  * still stop it. A pellet goes through one (`SG_PASS`). */
 let magSkip = null;
 const MAG_PASS = 3, MAG_PASS_K = 0.75, SG_PASS = 1, SG_PASS_K = 0.6;
+let MAG_R = 80, MAG_PAD = 0;          // the trace's reach and how much wider than a bullet it is (the water ball: `seaBallStep`)
 function magBody(u, y0, y1, r, hd) {
-  const p = u.g.position;
+  const p = u.g.position; r += MAG_PAD;
   /* Closest approach between the shot and the body's axis — the ray
    * O + tD against the segment (p.y+y0 .. p.y+y1), both clamped to their
    * own ends. `v` is solved first and `t` follows from it, which is what
@@ -61647,7 +61708,7 @@ function magBody(u, y0, y1, r, hd) {
   const den = c - b * b;
   let v = Math.abs(den) < 1e-8 ? 0 : (ee - b * dd) / den;
   v = THREE.MathUtils.clamp(v, 0, 1);
-  const t = THREE.MathUtils.clamp(-dd + b * v, 0, MAG_RANGE);
+  const t = THREE.MathUtils.clamp(-dd + b * v, 0, MAG_R);
   _mgC.set(p.x, p.y + y0 + dyv * v, p.z);
   _mgQ.copy(_mgO).addScaledVector(_mgD, t);
   if (_mgC.distanceTo(_mgQ) > r) return;
@@ -61655,8 +61716,9 @@ function magBody(u, y0, y1, r, hd) {
   magBest = { t, u, kind: 'foe', head: hd > 0 && _mgC.y > p.y + hd, point: _mgQ.clone() };
 }
 const _mgCry = new THREE.Vector3();
-function magTrace(dir) {
-  camera.getWorldPosition(_mgO);
+function magTrace(dir, O = null, R = MAG_R, pad = 0) {
+  if (O) _mgO.copy(O); else camera.getWorldPosition(_mgO);
+  MAG_R = R; MAG_PAD = pad;
   _mgD.copy(dir).normalize();
   magBest = null;
   for (const u of crabs) if (u.st.alive && !(magSkip && magSkip.has(u))) magBody(u, 0.05, 0.50, 0.58, 0);
@@ -61672,16 +61734,16 @@ function magTrace(dir) {
   if (inWhale && CRY.built) for (const h of CRY.list) {
     if (h.mode === 'dead' || h.mode === 'still' || h.mode === 'buried') continue;
     const C = _mgCry.copy(cryWorld(h)), t = C.clone().sub(_mgO).dot(_mgD);
-    if (t < 0 || t > MAG_RANGE || (magBest && t >= magBest.t)) continue;
+    if (t < 0 || t > MAG_R || (magBest && t >= magBest.t)) continue;
     if (C.distanceTo(_mgO.clone().addScaledVector(_mgD, t)) < 0.34) magBest = { t, kind: 'cry', h, point: _mgO.clone().addScaledVector(_mgD, t) };
   }
-  if (inDeep) { const ph = plioRayHit(_mgO, _mgD, MAG_RANGE, 0.1); if (ph && (!magBest || ph.t < magBest.t)) magBest = { t: ph.t, kind: 'plio', point: ph.p }; }
-  if (isleBirds.length && !inRoom()) { const gh = isleBirdOnRay(_mgO, _mgD, MAG_RANGE, 0.14); if (gh && (!magBest || gh.t < magBest.t)) magBest = { t: gh.t, kind: 'gull', B: gh.B, point: gh.B.c.clone() }; }
+  if (inDeep) { const ph = plioRayHit(_mgO, _mgD, MAG_R, 0.1); if (ph && (!magBest || ph.t < magBest.t)) magBest = { t: ph.t, kind: 'plio', point: ph.p }; }
+  if (isleBirds.length && !inRoom()) { const gh = isleBirdOnRay(_mgO, _mgD, MAG_R, 0.14); if (gh && (!magBest || gh.t < magBest.t)) magBest = { t: gh.t, kind: 'gull', B: gh.B, point: gh.B.c.clone() }; }
   if (elvReady && !inRoom()) {
-    const ph = elvPaneOnRay(_mgO, _mgD, MAG_RANGE); if (ph && (!magBest || ph.t < magBest.t)) magBest = { t: ph.t, kind: 'hglass', P: ph.P, point: ph.point };
+    const ph = elvPaneOnRay(_mgO, _mgD, MAG_R); if (ph && (!magBest || ph.t < magBest.t)) magBest = { t: ph.t, kind: 'hglass', P: ph.P, point: ph.point };
   }
   // and what is behind them: the same ray the solids and the sand are asked with
-  digRay.set(_mgO, _mgD); digRay.far = MAG_RANGE;
+  digRay.set(_mgO, _mgD); digRay.far = MAG_R;
   const solid = nearestSolidHit();
   /* AND A GULL IS NOT ITS OWN WALL (2026-10-16, the owner: "make the seagulls for the achievement able to be shot and
    * killed too"). The island's wall index has the gulls' own faces in it (and the post or the ridge each one sits
@@ -61693,6 +61755,7 @@ function magTrace(dir) {
     const sh = digRay.intersectObject(sand, false)[0];
     if (sh && (!magBest || sh.distance < magBest.t)) magBest = { t: sh.distance, kind: 'sand', hit: sh, point: sh.point.clone() };
   }
+  MAG_R = MAG_RANGE; MAG_PAD = 0;
   return magBest;
 }
 
@@ -81931,7 +81994,7 @@ function keepFloorAt(x, z, feet, up = KEEP_STEP, S = KEEP_SITE) {
   // and the two floors that are not the island: what is tied up at the pier
   // and what the lever sends up and down
   for (const b of S.extra()) {
-    if (!b || x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1) continue;
+    if (!b || x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1 || (b.inside && !b.inside(x, z))) continue;   // (`inside`: a floor turned off the grid, the castle's cubby)
     // a platform may say how tall a step onto it is (the hoist's car stands on its landing's high end)
     if (b.top <= feet + Math.max(up, b.stepUp || 0) && (!best || b.top > best.f)) best = { f: b.top, s: false, c: S.Y + 99 };
   }
@@ -84215,7 +84278,7 @@ const KEEP_DOOR = { x: -2.6, y: 16.1, z: 8.6, yaw: 0 };   // the studded door on
 let tavWorld = null, tavReady = false, tavWalk = null, tavCells = null, tavWalls = null, tavBuilt = false, tavWarmed = false;
 let inTavern = false, tavBusy = false, tavT = 0, tavDir = 1, tavCutDone = false, tavWallsDirty = false;
 let tavStoreOpen = false;   // the storeroom's door, turned once with its key: on the save
-let _tavFogSaved = null, tavLastFloor = null;
+let _tavFogSaved = null, tavLastFloor = null, tavPrevFeet = null;
 const tavTables = [], tavChairs = [];
 const TAV_SITE = {
   trustDrawn: true,                  // a floor that is drawn is a floor (`keepFloorAt`)
@@ -86748,6 +86811,12 @@ function updateTavern(dt) {
    * is where your feet are; in the air they are where the head says. */
   let feet = camBaseY - playerEye();
   if (onGround && tavLastFloor !== null && feet < tavLastFloor) feet = tavLastFloor;
+  /* (A FLOOR FALLEN THROUGH IN ONE FRAME IS STILL THE FLOOR — 2026-11-22, the owner, a still from under the hall: "i fell through
+   * the wall and ground in the tavern this should never happen anywahere". Coming down, the floor was looked for under where
+   * the feet ARE; a long frame (a hitch, a slow machine) or a hard drop carried them more than `TAV_AIR` under the flags and
+   * the next floor down was the ground under the building. Falling, it is looked for from where the feet WERE.) */
+  if (!onGround && vy < 0 && tavPrevFeet !== null && tavPrevFeet > feet) feet = Math.min(tavPrevFeet, feet + 3);
+  tavPrevFeet = camBaseY - playerEye();
   const up = !onGround ? TAV_AIR : TAV_STEP;
   const hits = (x0, z0, x1, z1) => keepHitsWall(x0, z0, x1, z1, feet + 0.80, S)
     || keepHitsWall(x0, z0, x1, z1, feet + 1.25, S)
@@ -87018,6 +87087,7 @@ function updateTavernCut(dt) {
   if (t >= D) { tavBusy = false; blackoutEl.style.opacity = '0'; catchBreath(); }
 }
 function placeInTavern() {
+  tavPrevFeet = null;
   loadTavern();
   buildTavern();
   inKeep = false; inTavern = true;
@@ -90546,6 +90616,53 @@ const C13_SITE = {
   sea: null,
 };
 const c13W = (lx, lz) => ({ x: C13_X + lx, z: C13_Z + lz });
+/* THE SECRET CUBBY (2026-11-22, the owner, a still from XIII's street looking up the wall over the window with the flower box:
+ * "put a secret cubby you can hook to up here make the textures match the castle dont put anything in there yet but have it able to
+ * be walked in"). A bartizan: a little stone room standing out from that wall 5.5 m over the window, on corbels, open to the street
+ * by a doorway too high to see into — walls, floor and roof in the castle's own stone (`acmat_4`, laid at its own 0.065 of the map a
+ * metre). Built into `c13World` before its wall index is made, so its faces are stone to the walk, the head and the hook; its floor
+ * is the site's `extra` (an `inside` test, the room being turned with the wall). A pull aimed into it sets you down on its floor
+ * (`c13CubbyHas`, `hookZipMove`/`hookZipEnd`). Empty for now. */
+const C13_CUBBY = { lx: 24.55, lz: -15.40, ly: 9.75, nx: 0.87, nz: -0.49, w: 1.0, d: 1.9, h: 2.2, t: 0.3 };   // c13-local: the face under it (measured), the floor's height; half-width, depth, height, walls
+let c13Cubby = null;
+function c13CubbyLocal(x, z, out) {           // a world point in the cubby's own frame: x across (−w..w), z out from the wall (0..d)
+  const K = C13_CUBBY, dx = x - (C13_X + K.lx), dz = z - (C13_Z + K.lz);
+  out.x = dx * K.nz - dz * K.nx; out.z = dx * K.nx + dz * K.nz; return out;
+}
+const _cbL = { x: 0, z: 0 };
+function c13CubbyHas(P, pad = 0) {
+  if (!c13Cubby) return false;
+  const K = C13_CUBBY, L = c13CubbyLocal(P.x, P.z, _cbL), fy = C13_Y + K.ly;
+  return L.x > -K.w - pad && L.x < K.w + pad && L.z > -0.2 && L.z < K.d + 0.35 + pad && P.y > fy - 1.2 - pad && P.y < fy + K.h + 0.6;
+}
+function buildC13Cubby(root) {
+  let stone = null; root.traverse((o) => { if (!stone && o.isMesh && o.material && o.material.name === 'acmat_4') stone = o.material; });
+  if (!stone) return;
+  const K = C13_CUBBY, UVK = 0.065, geos = [];
+  const box = (x0, x1, y0, y1, z0, z1) => { const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); geos.push(g); };
+  const W = K.w, D = K.d, H = K.h, T = K.t;
+  box(-W - T, W + T, -0.35, 0, -0.15, D + T);                 // floor slab
+  box(-W - T - 0.08, W + T + 0.08, H, H + 0.32, -0.15, D + T + 0.08);   // roof slab, a lip all round
+  for (let i = -1; i <= 1; i += 0.5) box(i * W - 0.16, i * W + 0.16, H + 0.32, H + 0.62, D + T - 0.25, D + T + 0.05);   // a little crenellation on the front
+  box(-W - T, -W, 0, H, -0.15, D + T);                         // the sides
+  box(W, W + T, 0, H, -0.15, D + T);
+  box(-W, W, 0, H, -0.15, 0.05);                               // its back against the wall's face
+  const ow = 0.56, oh = 1.9;                                   // the doorway out to the street
+  box(-W, -ow, 0, H, D, D + T); box(ow, W, 0, H, D, D + T); box(-ow, ow, oh, H, D, D + T);
+  for (const [x, d] of [[-0.8, 0.9], [0, 1.2], [0.8, 0.9]]) { box(x - 0.17, x + 0.17, -0.85, -0.35, -0.15, d); box(x - 0.14, x + 0.14, -1.25, -0.85, -0.15, d * 0.55); }   // corbels
+  const g = mergeGeometries(geos.map((q) => q.toNonIndexed()), false);
+  const P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv;
+  for (let i = 0; i < P.count; i++) {                          // the stone laid in metres on every face, as the castle's
+    const nx = Math.abs(N.getX(i)), ny = Math.abs(N.getY(i)), x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+    if (ny > nx && ny > Math.abs(N.getZ(i))) U.setXY(i, x * UVK, z * UVK); else if (nx > Math.abs(N.getZ(i))) U.setXY(i, z * UVK, y * UVK); else U.setXY(i, x * UVK, y * UVK);
+  }
+  const m = new THREE.Mesh(g, stone); m.name = 'c13Cubby';
+  m.position.set(K.lx, K.ly, K.lz); m.rotation.y = Math.atan2(K.nx, K.nz);
+  c13World.add(m); m.updateMatrixWorld(true);
+  c13Cubby = m;
+  const fy = C13_Y + K.ly;
+  C13_SITE.extra = () => [{ x0: -1e9, x1: 1e9, z0: -1e9, z1: 1e9, top: fy, inside: (x, z) => { const L = c13CubbyLocal(x, z, _cbL); return L.x > -W + 0.05 && L.x < W - 0.05 && L.z > 0.1 && L.z < D - 0.05; } }];
+}
 function loadC13() {
   if (c13World) return;
   c13World = new THREE.Group(); c13World.name = 'castle13';
@@ -90577,6 +90694,7 @@ function loadC13() {
     buildCastleLink();
     buildC13Arch();
     buildC13ThroneDoor();
+    try { buildC13Cubby(root); } catch (e) { console.warn('[c13] cubby', e); }
     c13Ready = true;
     buildC13Life();
     warmStep('castle13 compile', () => warmCompileOwn([c13World], C13_X + C13_SPAWN.x, 1.7, C13_Z + C13_SPAWN.z, C13_X, 3, C13_Z + C13_SPAWN.z));
@@ -114702,9 +114820,21 @@ function updateSkrimChains(dt) {
   if (!SKC.ready) return;
   if (!inWhale && SKC.list.length) { for (const C of SKC.list) skcFree(C.hook); SKC.list.length = 0; if (SKC.hookSrc) SKC.hookSrc.visible = true; }
   SKC.n = 0;
+  /* (NO CHAIN OUTLIVES ITS MAN — 2026-11-22, the owner: "the chain in the whale is still there after he left". A chain belongs to
+   * the body that threw it; walked off out of the gut ('gone', hidden), dead and retired, or simply no longer drawn, his chains
+   * went on being laid where he had been — and one whose end had gone non-finite (killed mid-throw, whale.md's "A BUG THAT IS NOT
+   * THIS SECTION'S") threw inside the sound on every frame after. Each is let go the frame its man is not there, or its points
+   * are no longer numbers.) */
+  for (let i = SKC.list.length - 1; i >= 0; i--) {
+    const C = SKC.list[i], u = C.u;
+    const gone = !u || !u.g || !u.g.visible || u.retired || (u.st && !u.st.alive && C.kind !== 'hang') || SKRIM.stage === 'gone'
+      || (C.p && !(Number.isFinite(C.p.x) && Number.isFinite(C.p.y) && Number.isFinite(C.p.z)));
+    if (gone) { if (C.own && SKC.hookSrc) SKC.hookSrc.visible = true; skcFree(C.hook); SKC.list.splice(i, 1); continue; }
+  }
   for (let i = SKC.list.length - 1; i >= 0; i--) {
     const C = SKC.list[i];
-    if (!skcTick(C, dt)) { skcFree(C.hook); SKC.list.splice(i, 1); continue; }
+    let alive = false; try { alive = skcTick(C, dt); } catch (e) { alive = false; }   // (a chain that cannot be stepped is let go, never the frame)
+    if (!alive) { if (C.own && SKC.hookSrc) SKC.hookSrc.visible = true; skcFree(C.hook); SKC.list.splice(i, 1); continue; }
     if (!C.hidden) skcLay(C); else if (C.hook) C.hook.m.position.set(0, -1000, 0);
   }
   const L = SKC.links;
@@ -119838,6 +119968,7 @@ function seaMakeWave() {
 function seaWarm() {
   if (sea.warmed) return;
   sea.warmed = true;
+  try { const F = seaBallFx(); for (const m of F.pool) { m.visible = true; m.position.copy(camera.position); } renderer.compile(scene, camera); for (const m of F.pool) m.visible = false; } catch (e) { /* the water ball's shaders, compiled before the first throw */ }
   try {
     const w = sea.waves[0] || seaMakeWave();
     w.g.visible = true; w.g.position.copy(camera.position);
@@ -120037,12 +120168,289 @@ function seaRestoreTick() {
     w.artifact = seaArtItem; seaArtItem.on = w; renderHotbar(); renderPack();
   } else if (!restore) { sea.attachPending = null; if (!inventory.includes(seaArtItem) && !seaArtItem.on) addToInventory(seaArtItem); }
 }
+/* ---- THE WATER BALL (2026-11-22, the owner: "make the water artifact shoot a water ball with shift heavy that deals decent
+ * damage but cant be spammed like the hook. it should be good for where its found in the game. with the hook it makes the water
+ * ball be on the hook and splashes when hit. i want the water ball to look really good and have a impact splash sound thats
+ * satisfying. make the water graphics remarkable"). The Sea set in a weapon: a full Shift heavy (`SEA_BALL.charge`) throws a ball
+ * of the sea from the blade as it swings; with the hook, the ball rides the iron out on its chain and bursts where it bites.
+ * Then the artifact is spent for `SEA_BALL.cd` s (the slot runs hollow, as for the wave). A body it meets takes `dmg` (the
+ * katana's heavy is 3, a .44 is 14) and is knocked off its feet for a beat; everything within `splashR` of the burst takes
+ * `splashDmg` and flinches. Hits are the gun's own trace (`magTrace`), widened by the ball.
+ * THE LOOK — what real water does that a blue ball does not: it is a LIQUID, so its skin never holds still (the surface is
+ * displaced by two drifting noise fields, and the normals are the displaced surface's own); it is CLEAR, so you see INTO it:
+ * caustic bands — the light focused by its own curved skin — flow through its depth, and its edge is where it is brightest
+ * (Fresnel: at a grazing angle water is a mirror; face-on it is glass); it is WET, so a hard white highlight sits on it from
+ * the moon and a second from your side; it SHEDS — a trail of droplets peels off behind and falls; and it is the artifact's
+ * water, so it glows a little from inside and lights what it passes (a pooled lamp). The burst: a crown of water thrown up
+ * and out (a torn-edged sheet that rises and collapses), a column punched up the middle, a ring of droplets in every direction,
+ * a mist, the impact's flash of light, and the sound — a deep displaced-water thump under two recorded splashes and the hiss
+ * of the spray coming down. */
+const SEA_BALL = { cd: 5.0, charge: 0.75, speed: 26, grav: 3.0, life: 1.4, r: 0.21, dmg: 7, splashR: 2.4, splashDmg: 3 };
+const SEA_NOISE_GLSL = `
+  vec3 sbH3(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
+  float sbN(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    float a = sbH3(i).x, b = sbH3(i + vec3(1, 0, 0)).x, c = sbH3(i + vec3(0, 1, 0)).x, d = sbH3(i + vec3(1, 1, 0)).x;
+    float e = sbH3(i + vec3(0, 0, 1)).x, f1 = sbH3(i + vec3(1, 0, 1)).x, g = sbH3(i + vec3(0, 1, 1)).x, h = sbH3(i + vec3(1, 1, 1)).x;
+    return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y), mix(mix(e, f1, f.x), mix(g, h, f.x), f.y), f.z); }`;
+const SEA_BALL_VS = `uniform float uT; uniform float uWob; varying vec3 vW; varying vec3 vObj; varying vec3 vSN;
+  ${SEA_NOISE_GLSL}
+  void main() {
+    vec3 p = position;
+    float n = sbN(p * 3.2 + vec3(0.0, uT * 2.1, uT * 1.3)) * 0.65 + sbN(p * 7.0 - vec3(uT * 3.3, 0.0, uT * 2.2)) * 0.35;
+    p += normal * (n - 0.5) * 0.085 * uWob;
+    vObj = position; vSN = normalize(mat3(modelMatrix) * normal);
+    vec4 w = modelMatrix * vec4(p, 1.0); vW = w.xyz;
+    gl_Position = projectionMatrix * viewMatrix * w;
+  }`;
+const SEA_BALL_FS = `uniform float uT; uniform float uA; uniform vec3 uMoon; varying vec3 vW; varying vec3 vObj; varying vec3 vSN;
+  void main() {
+    vec3 V = normalize(cameraPosition - vW);
+    vec3 dN = normalize(cross(dFdx(vW), dFdy(vW)));
+    vec3 N = normalize(mix(vSN, dN, 0.55)); if (dot(N, V) < 0.0) N = -N;
+    float nv = max(dot(N, V), 0.0), fres = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
+    // into it: the caustics its own skin focuses, flowing through its depth (seen through the face, faded at the rim)
+    vec3 q = vObj * 9.0 + vec3(0.0, uT * 2.4, uT * 1.1) + V * 1.5;
+    float w1 = abs(sin(q.x * 1.3 + sin(q.y * 1.9 + uT * 2.2) * 1.6 + q.z * 0.4));
+    float w2 = abs(sin(q.y * 1.6 + sin(q.z * 1.7 - uT * 1.8) * 1.5 - q.x * 0.6));
+    float w3 = abs(sin(q.z * 1.1 + sin(q.x * 2.1 + uT * 1.4) * 1.3 + q.y * 0.5));
+    float caust = pow(1.0 - min(min(w1, w2), w3), 11.0);
+    float depth = nv;                                                    // (looking through the middle, through the most water)
+    vec3 deep = vec3(0.010, 0.105, 0.165), clear = vec3(0.105, 0.460, 0.560);
+    vec3 col = mix(clear, deep, depth * 0.85);
+    col += vec3(0.45, 0.88, 1.0) * caust * (0.25 + 0.75 * depth) * 0.5;
+    col += vec3(0.05, 0.22, 0.30) * (0.6 + 0.4 * sin(uT * 5.0 + vObj.y * 30.0));                 // (its own glow, breathing)
+    // the skin: a mirror at the edge (what it reflects is the night: the moon's cold and the sky's dark), hard highlights
+    vec3 R = reflect(-V, N);
+    vec3 sky = mix(vec3(0.03, 0.06, 0.10), vec3(0.20, 0.30, 0.42), smoothstep(-0.2, 0.8, R.y));
+    sky += vec3(1.0, 0.98, 0.92) * pow(max(dot(R, uMoon), 0.0), 400.0) * 6.0;
+    col = mix(col, sky, fres);
+    vec3 H = normalize(uMoon + V); col += vec3(1.0) * pow(max(dot(N, H), 0.0), 220.0) * 3.0;
+    vec3 L2 = normalize(V + vec3(0.3, 0.5, 0.0)); col += vec3(0.75, 0.95, 1.0) * pow(max(dot(N, normalize(L2 + V)), 0.0), 90.0) * 0.9;
+    col += vec3(0.55, 0.92, 1.0) * pow(1.0 - nv, 2.5) * 0.55;                                       // (the bright rim of a lens of water)
+    float a = clamp(0.72 + fres * 0.6 + caust * 0.15, 0.0, 1.0) * uA;
+    gl_FragColor = vec4(col, a);
+  }`;
+const SEA_GLOW_FS = `uniform float uA; varying vec3 vW; varying vec3 vSN; varying vec3 vObj; uniform float uT;
+  void main() { vec3 V = normalize(cameraPosition - vW); float k = pow(max(dot(normalize(vSN), V), 0.0), 2.2);
+    gl_FragColor = vec4(vec3(0.25, 0.75, 1.0) * k * 0.5 * uA, 1.0); }`;
+// the crown: a torn-edged sheet of water thrown up and out
+const SEA_CROWN_VS = `varying vec2 vUv; varying vec3 vW; varying vec3 vN; void main() { vUv = uv; vN = normalize(mat3(modelMatrix) * normal);
+  vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
+const SEA_CROWN_FS = `uniform float uK; uniform float uSeed; varying vec2 vUv; varying vec3 vW; varying vec3 vN;
+  ${SEA_NOISE_GLSL}
+  void main() {
+    float ang = vUv.x * 6.2832;
+    float tear = sbN(vec3(cos(ang) * 3.0, sin(ang) * 3.0, uSeed)) * 0.55 + sbN(vec3(cos(ang) * 9.0, sin(ang) * 9.0, uSeed + 4.0)) * 0.45;
+    float top = 0.35 + 0.65 * tear;                                         // (the rim torn into fingers)
+    if (vUv.y > top) discard;
+    vec3 V = normalize(cameraPosition - vW); float fres = pow(1.0 - abs(dot(normalize(vN), V)), 3.0);
+    float edge = smoothstep(top - 0.25, top, vUv.y);
+    vec3 col = mix(vec3(0.10, 0.42, 0.52), vec3(0.85, 0.97, 1.0), edge * 0.8 + fres * 0.6);
+    gl_FragColor = vec4(col, (0.25 + 0.55 * fres + 0.4 * edge) * uK);
+  }`;
+function seaDropTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(13, 12, 1, 16, 16, 15); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(200,245,255,0.95)');
+  gr.addColorStop(0.6, 'rgba(90,190,225,0.55)'); gr.addColorStop(1, 'rgba(40,120,160,0)'); g.fillStyle = gr; g.beginPath(); g.arc(16, 16, 15, 0, 6.2832); g.fill();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const seaBall = { balls: [], fx: null, cd: 0, lamp: null, lampK: 0, flash: 0 };
+// its light, in the scene from boot at nothing (`LIGHT_SLOTS`: a light entering later recompiles every material)
+seaBall.lamp = new THREE.PointLight(0x7fe0ff, 0, 7.5, 1.7); seaBall.lamp.userData.lpAlways = 30; scene.add(seaBall.lamp);
+function seaBallFx() {
+  if (seaBall.fx) return seaBall.fx;
+  const moon = { value: new THREE.Vector3(-0.35, 0.75, -0.55).normalize() };
+  const mk = () => {
+    const U = { uT: { value: 0 }, uA: { value: 1 }, uWob: { value: 1 }, uMoon: moon };
+    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(SEA_BALL.r, 5), new THREE.ShaderMaterial({ uniforms: U, vertexShader: SEA_BALL_VS, fragmentShader: SEA_BALL_FS, transparent: true, depthWrite: false, fog: false }));
+    const glow = new THREE.Mesh(new THREE.IcosahedronGeometry(SEA_BALL.r * 1.9, 3), new THREE.ShaderMaterial({ uniforms: U, vertexShader: SEA_BALL_VS, fragmentShader: SEA_GLOW_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    m.add(glow); m.renderOrder = 4; glow.renderOrder = 3; m.frustumCulled = false; glow.frustumCulled = false; m.visible = false; m.raycast = () => {}; glow.raycast = () => {};
+    m.userData.U = U; scene.add(m); return m;
+  };
+  const N = 420, pos = new Float32Array(N * 3).fill(-9999), size = new Float32Array(N).fill(0);
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+  const dropMat = new THREE.ShaderMaterial({ uniforms: { uMap: { value: seaDropTex() }, uScale: { value: 300 } }, transparent: true, depthWrite: false, fog: false,
+    vertexShader: 'attribute float aSize; uniform float uScale; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * uScale / max(0.1, -mv.z); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform sampler2D uMap; void main() { vec4 c = texture2D(uMap, gl_PointCoord); if (c.a < 0.02) discard; gl_FragColor = c; }' });
+  const drops = new THREE.Points(geo, dropMat); drops.frustumCulled = false; drops.renderOrder = 5; scene.add(drops);
+  const crowns = [];
+  for (let i = 0; i < 4; i++) {
+    const U = { uK: { value: 0 }, uSeed: { value: Math.random() * 50 } };
+    const g = new THREE.CylinderGeometry(1, 0.55, 1, 40, 1, true); g.translate(0, 0.5, 0);
+    const c = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: U, vertexShader: SEA_CROWN_VS, fragmentShader: SEA_CROWN_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    c.visible = false; c.frustumCulled = false; c.raycast = () => {}; c.renderOrder = 4; scene.add(c);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.22, 1, 14, 1, true).translate(0, 0.5, 0), new THREE.ShaderMaterial({ uniforms: { uK: U.uK, uSeed: { value: U.uSeed.value + 9 } }, vertexShader: SEA_CROWN_VS, fragmentShader: SEA_CROWN_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    col.visible = false; col.frustumCulled = false; col.raycast = () => {}; col.renderOrder = 4; scene.add(col);
+    crowns.push({ c, col, U, t: -1, y: 0 });
+  }
+  seaBall.fx = { mk, pool: [mk(), mk()], drops, pos, size, vel: new Float32Array(N * 3), life: new Float32Array(N), N, i: 0, crowns, moon };
+  return seaBall.fx;
+}
+function seaDrop(x, y, z, vx, vy, vz, sz, life) {
+  const F = seaBall.fx, i = F.i = (F.i + 1) % F.N;
+  F.pos[i * 3] = x; F.pos[i * 3 + 1] = y; F.pos[i * 3 + 2] = z; F.vel[i * 3] = vx; F.vel[i * 3 + 1] = vy; F.vel[i * 3 + 2] = vz; F.size[i] = sz; F.life[i] = life;
+}
+function seaBallReady(c) { return !!seaWeapon() && c >= SEA_BALL.charge && seaBall.cd <= 0 && !frozen(); }
+function seaBallSpent() { seaBallFx(); seaBall.cd = SEA_BALL.cd; }
+// thrown off the weapon as it swings: from in front of your right hand, down the crosshair
+function seaBallFire() {
+  const F = seaBallFx(); seaBallSpent();
+  const m = F.pool.find((q) => !q.visible) || F.pool[0];
+  camera.getWorldDirection(_sbD);
+  _sbR.crossVectors(_sbD, camera.up).normalize();
+  const P = camera.position.clone().addScaledVector(_sbD, 0.7).addScaledVector(_sbR, 0.22).add(_sbU.set(0, -0.18, 0));
+  m.position.copy(P); m.visible = true; m.userData.U.uA.value = 0;
+  seaBall.balls.push({ m, v: _sbD.clone().multiplyScalar(SEA_BALL.speed).addScaledVector(camera.up, 0.6), t: 0, prev: P.clone() });
+  const x = P.x, z = P.z;
+  playSample('slosh', 0.85, 0.05, 1.45); playSample('katSwing', 0.55, 0.05, 0.62);
+  sfxAt(x, z, () => sfxSeaThrow());
+  vmImpulse(-0.8); addTrauma(0.1); fovKick = Math.max(fovKick, 4);
+}
+// on the hook: the ball rides the iron while it flies (`HK.water`)
+function seaHookTick(dt, t) {
+  const F = seaBall.fx; if (!F) return;
+  const live = HK.water && (HK.st === 'out' || HK.st === 'whip');
+  let m = F.hookM;
+  if (live && !m) { m = F.hookM = F.pool.find((q) => !q.visible) || F.mk(); m.visible = true; m.userData.U.uA.value = 0; }
+  if (!m) return;
+  if (!live) { m.visible = false; F.hookM = null; return; }
+  m.position.copy(HK.st === 'whip' ? HK.hand : HK.p); m.scale.setScalar(1.15);
+  const U = m.userData.U; U.uT.value = t; U.uA.value = Math.min(1, U.uA.value + dt * 6);
+  if (Math.random() < dt * 40) seaDrop(m.position.x, m.position.y, m.position.z, (Math.random() - 0.5) * 1.2, Math.random() * 0.8, (Math.random() - 0.5) * 1.2, 0.035 + Math.random() * 0.03, 0.7);
+  seaBall.lampK = Math.max(seaBall.lampK, 1); seaBall.lamp.position.copy(m.position);
+}
+function seaHookDry() { const F = seaBall.fx; if (F && F.hookM) { F.hookM.visible = false; F.hookM = null; } }
+// the burst: `u` the body it met (or none), `dir` the way it was going
+function seaImpact(P, u, dir, hook = false) {
+  const F = seaBallFx();
+  const x = P.x, y = P.y, z = P.z;
+  // what it does
+  if (u && u.st && u.st.alive) {
+    if (u.gull) hurtGull(u, 4, 0.6);
+    else if (u.kind) { hurtMutant(u, SEA_BALL.dmg, 0.6); if (u.st.alive && !u.kind.bossDeath && !u.kind.mino) { u.st.stun = Math.max(u.st.stun || 0, 0.7); u.st.stunMax = Math.max(u.st.stunMax || 0, u.st.stun); u.st.atk = -1; } }
+    else hurtCrab(u, 4, 0.6);
+  }
+  for (const v of mutants) {
+    if (v === u || !v.st.alive || !v.g.visible || minoAlly(v) || gargImmune(v) || v === (typeof MAR !== 'undefined' && MAR.u)) continue;
+    const d = Math.hypot(v.g.position.x - x, v.g.position.z - z), dy = Math.abs(v.g.position.y + 0.9 - y);
+    if (d > SEA_BALL.splashR || dy > 2.2) continue;
+    hurtMutant(v, SEA_BALL.splashDmg, 0.3);
+    if (v.st.alive && !v.kind.bossDeath) { v.st.stun = Math.max(v.st.stun || 0, 0.35); v.st.stunMax = Math.max(v.st.stunMax || 0, v.st.stun); }
+  }
+  for (const c of crabs) if (c !== u && c.st.alive && Math.hypot(c.g.position.x - x, c.g.position.z - z) < SEA_BALL.splashR) hurtCrab(c, 2, 0.3);
+  // what it looks like: the crown and its column, a ring of droplets, the spray, the flash
+  const cr = F.crowns.find((q) => q.t < 0) || F.crowns[0];
+  const gU = groundUnder(x, z, y + 0.3), gy = Number.isFinite(gU) && y - gU < 1.4 ? gU : y - 0.15;
+  cr.t = 0; cr.y = gy; cr.x = x; cr.z = z; cr.U.uSeed.value = Math.random() * 50; cr.c.visible = cr.col.visible = true; cr.big = hook ? 0.85 : 1;
+  for (let k = 0; k < 90; k++) {
+    const a = Math.random() * 6.2832, up = 2.2 + Math.random() * 4.2, out = 1.2 + Math.random() * 3.2;
+    seaDrop(x, y, z, Math.cos(a) * out + (dir ? dir.x * 1.2 : 0), up, Math.sin(a) * out + (dir ? dir.z * 1.2 : 0), 0.03 + Math.random() * 0.06, 0.7 + Math.random() * 0.6);
+  }
+  for (let k = 0; k < 30; k++) seaDrop(x, gy + 0.05, z, (Math.random() - 0.5) * 1.6, 4.5 + Math.random() * 3.5, (Math.random() - 0.5) * 1.6, 0.05 + Math.random() * 0.05, 0.9 + Math.random() * 0.4);
+  try { spawnSpray(x, y, z, 22, dir ? dir.x : 0, dir ? dir.z : 0, 1.4); } catch (e) { /* (its pool) */ }
+  seaBall.flash = 1; seaBall.lamp.position.set(x, y + 0.3, z);
+  // and what it sounds like
+  playSampleAt('splash', x, z, { gain: 1.35, ref: 5, far: 45, rate: 0.82 });
+  playSampleAt('splash', x, z, { gain: 0.8, ref: 5, far: 40, rate: 1.3, delay: 0.035 });
+  sfxAt(x, z, () => sfxSeaBurst());
+  const near = camera.position.distanceTo(P);
+  if (near < 6) { addTrauma(0.35 * (1 - near / 6)); hitstop = Math.max(hitstop, u ? 0.08 : 0.04); }
+  if (inCat) catNoiseAt(x, z, 22);
+}
+// the throw: a wet whoosh, the ball's surface rolling
+function sfxSeaThrow() {
+  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime, out = ctx.createGain(); out.gain.value = 0.55; out.connect(sfxOut());
+  const n = noiseBurst(0.45, (k) => Math.sin(Math.PI * Math.min(1, k * 1.6)) * (1 - k));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4; bp.frequency.setValueAtTime(500, t); bp.frequency.exponentialRampToValueAtTime(1800, t + 0.3);
+  n.connect(bp).connect(out); n.start(t); n.stop(t + 0.46);
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(320, t); o.frequency.exponentialRampToValueAtTime(140, t + 0.12);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.35, t + 0.01); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.16);
+}
+/* the burst: the thump of a mass of water arriving (a sine falling from 120 Hz and a low noise swell), the slap of its face
+ * (a bright bandpassed crack), and the spray coming back down for half a second (high hiss broken into droplet ticks) */
+function sfxSeaBurst() {
+  const ctx = audioCtx; if (!ctx) return; const t = ctx.currentTime, out = ctx.createGain(); out.gain.value = 0.9; out.connect(sfxOut());
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(125, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.3);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.85, t + 0.008); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.4);
+  const body = noiseBurst(0.35, (k) => Math.pow(1 - k, 2.2));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.9; lp.frequency.setValueAtTime(2600, t); lp.frequency.exponentialRampToValueAtTime(260, t + 0.25);
+  const bg = ctx.createGain(); bg.gain.value = 0.75; body.connect(lp).connect(bg).connect(out); body.start(t); body.stop(t + 0.36);
+  const slap = noiseBurst(0.06, (k) => Math.pow(1 - k, 3));
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 1.1;
+  const sg = ctx.createGain(); sg.gain.value = 0.6; slap.connect(bp).connect(sg).connect(out); slap.start(t); slap.stop(t + 0.07);
+  const rain = noiseBurst(0.8, (k) => (k < 0.08 ? k / 0.08 : 1) * Math.pow(1 - k, 1.6) * (Math.random() < 0.06 ? 1.8 : 0.35));
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3200;
+  const rg = ctx.createGain(); rg.gain.value = 0.32; rain.connect(hp).connect(rg).connect(out); rain.start(t + 0.12); rain.stop(t + 0.95);
+}
+const _sbD = new THREE.Vector3(), _sbR = new THREE.Vector3(), _sbU = new THREE.Vector3(), _sbN = new THREE.Vector3();
+function seaBallTick(dt) {
+  if (seaBall.cd > 0) { seaBall.cd = Math.max(0, seaBall.cd - dt); if (seaBall.cd === 0 && seaWeapon()) playSample('slosh', 0.4, 0.05, 1.2); }
+  const F = seaBall.fx; if (!F) return;
+  const t = performance.now() / 1000;
+  seaHookTick(dt, t);
+  for (let i = seaBall.balls.length - 1; i >= 0; i--) {
+    const B = seaBall.balls[i], m = B.m, U = m.userData.U;
+    B.t += dt; U.uT.value = t; U.uA.value = Math.min(1, U.uA.value + dt * 8);
+    m.scale.setScalar(Math.min(1, 0.4 + B.t * 6));
+    B.v.y -= SEA_BALL.grav * dt;
+    B.prev.copy(m.position);
+    const step = B.v.length() * dt; _sbN.copy(B.v).normalize();
+    const h = magTrace(_sbN, B.prev, step + SEA_BALL.r, SEA_BALL.r);
+    let done = false;
+    if (h) {
+      const at = h.point || B.prev.clone().addScaledVector(_sbN, h.t);
+      if (h.kind === 'foe') seaImpact(at, h.u, _sbN);
+      else if (h.kind === 'plio') { plioHurt(SEA_BALL.dmg * 0.8, 0.5, at); seaImpact(at, null, _sbN); }
+      else if (h.kind === 'gull' && h.B) { isleBirdPoof(h.B, 46); seaImpact(at, null, _sbN); }
+      else if (h.kind === 'hglass') { elvBreakPane(h.P, camera.position); seaImpact(at, null, _sbN); }
+      else if (h.kind === 'cry') { _aimD.copy(_sbN); cryKill(h.h, 1); seaImpact(at, null, _sbN); }
+      else seaImpact(at, null, _sbN);
+      done = true;
+    } else {
+      m.position.addScaledVector(B.v, dt);
+      m.rotation.x += dt * 4; m.rotation.y += dt * 3;
+      // it sheds: droplets peel off behind it and fall
+      for (let k = 0; k < 3; k++) seaDrop(m.position.x + (Math.random() - 0.5) * 0.2, m.position.y + (Math.random() - 0.5) * 0.2, m.position.z + (Math.random() - 0.5) * 0.2, B.v.x * 0.15 + (Math.random() - 0.5) * 0.9, B.v.y * 0.15 + Math.random() * 0.4, B.v.z * 0.15 + (Math.random() - 0.5) * 0.9, 0.025 + Math.random() * 0.03, 0.45 + Math.random() * 0.3);
+      seaBall.lampK = Math.max(seaBall.lampK, 1); seaBall.lamp.position.copy(m.position);
+      if (B.t > SEA_BALL.life) { seaImpact(m.position, null, _sbN); done = true; }   // (spent in the air: it bursts there, a rain)
+    }
+    if (done) { m.visible = false; seaBall.balls.splice(i, 1); }
+  }
+  // the droplets
+  for (let i = 0; i < F.N; i++) {
+    if (F.life[i] <= 0) continue;
+    F.life[i] -= dt; F.vel[i * 3 + 1] -= 9.8 * dt;
+    F.pos[i * 3] += F.vel[i * 3] * dt; F.pos[i * 3 + 1] += F.vel[i * 3 + 1] * dt; F.pos[i * 3 + 2] += F.vel[i * 3 + 2] * dt;
+    if (F.life[i] < 0.15) F.size[i] *= 0.9;
+    if (F.life[i] <= 0) { F.pos[i * 3 + 1] = -9999; F.size[i] = 0; }
+  }
+  F.drops.geometry.attributes.position.needsUpdate = true; F.drops.geometry.attributes.aSize.needsUpdate = true;
+  // the crowns: up and out, then down into themselves
+  for (const c of F.crowns) {
+    if (c.t < 0) continue;
+    c.t += dt; const k = c.t / 0.75, big = c.big || 1;
+    if (k >= 1) { c.t = -1; c.c.visible = c.col.visible = false; continue; }
+    const r = (0.25 + 1.3 * Math.sqrt(k)) * big, hgt = (0.85 * Math.sin(Math.min(1, k * 1.8) * Math.PI * 0.5) * (1 - k * 0.8)) * big;
+    c.c.position.set(c.x, c.y, c.z); c.c.scale.set(r, Math.max(0.01, hgt), r);
+    const ch = (1.5 * Math.sin(Math.min(1, k * 2.2) * Math.PI) ) * big;
+    c.col.position.set(c.x, c.y, c.z); c.col.scale.set(big, Math.max(0.01, ch), big);
+    c.U.uK.value = (1 - k) * (1 - k) * 1.1;
+  }
+  // its light: on the ball while it flies, a flash where it bursts
+  seaBall.flash = Math.max(0, seaBall.flash - dt * 3.5);
+  seaBall.lamp.intensity = 2.2 * seaBall.lampK + 9 * seaBall.flash * seaBall.flash;
+  seaBall.lampK = 0;
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaBall, seaBallFire, seaImpact, SEA_BALL, seaBallFx }));
 function seaTick(dt) {
   if (sea.cd > 0) {
     sea.cd = Math.max(0, sea.cd - dt);
     if (sea.cd === 0 && seaWeapon()) playSample('slosh', 0.35, 0.05, 1.25);   // it is back: the water in it moves
   }
   seaWaveTick(dt);
+  seaBallTick(dt);
   seaRestoreTick();
   if (seaState === 1 && !sea.world && sea.spot) seaSpawnWorld();
   const pm = sea.world && sea.world.userData.pearl;
@@ -120050,7 +120458,7 @@ function seaTick(dt) {
   // the weapon's own slot goes hollow while the wave comes back
   for (let i = 0; i < hotbarCache.length; i++) {
     const c = hotbarCache[i]; if (!c) continue;
-    c.el.classList.toggle('seacd', !!c.item && c.item.artifact === seaArtItem && sea.cd > 0);
+    c.el.classList.toggle('seacd', !!c.item && c.item.artifact === seaArtItem && (sea.cd > 0 || seaBall.cd > 0));
   }
 }
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaArtItem, sea, seaParry, seaLay, seaUnlay, seaWeapon, seaWave, makeSeaArtifact, seaS: () => seaState }));
@@ -121884,7 +122292,11 @@ function plioContact() {
   const d = _pH.distanceTo(camera.position); plio.lastBiteD = d;
   if (d > 3.9) { sfxSurge(0.35, 0.5); return; }                         // it shut on water: past you (3.4 until the stand-off went to 5.0, 2026-11-14)
   camera.getWorldDirection(_dF);
-  const facing = _dF.dot(_dA.copy(_pH).sub(camera.position).normalize()) > 0.3;
+  /* (A GUARD TOWARD IT IS A GUARD — 2026-11-22, the owner: "fix the block on the seamonster blocks sometimes dont work". This was
+   * the only creature asking for the view within ~70° of its MOUTH in three dimensions; under water the jaws shut above you,
+   * below you or beside you as it passes, and a guard raised square at the animal failed. It asks what every other blow
+   * asks now (`guardSees`: the half in front of you, level), of its mouth or its head-on body.) */
+  const facing = plioGuardSees(_pH);
   if (blocking && facing && equipped && equipped.onDig) {
     const dtp = (performance.now() - blockStart) / 1000;
     if (dtp <= PARRY_WINDOW * 1.3 && parryCool <= 0) { plioParried(); return; }
@@ -121910,7 +122322,7 @@ function plioSwipe() {
 // the sweep reaches you: a block takes it, a parry stuns it, else it throws you across the water
 function plioTailContact(tip) {
   camera.getWorldDirection(_dF);
-  const facing = _dF.dot(_dA.copy(tip).sub(camera.position).normalize()) > 0.2;
+  const facing = plioGuardSees(tip);                                    // (the guard's own rule, of the tip or the animal: see `plioContact`)
   if (blocking && facing && equipped && equipped.onDig) {
     const dtp = (performance.now() - blockStart) / 1000;
     if (dtp <= PARRY_WINDOW * 1.3 && parryCool <= 0) { plio.tailAng = 0; plioParried(); return; }
@@ -121928,6 +122340,8 @@ function plioTailContact(tip) {
   sfxThud(0.18); sfxWhaleJaw(tip.x, tip.z); sfxSurge(0.9, 0.8);
   addTrauma(1.0); spatterLens(0.8); fovKick = Math.max(fovKick, 9); vmImpulse(-2); hitstop = Math.max(hitstop, 0.14);
 }
+// the guard covers it: the point that strikes, or the animal itself, in the half in front of you (level, as for every blow)
+function plioGuardSees(P) { return guardSees(P) || (plio && plio.g && guardSees(plio.g.position)); }
 function plioParried() {
   pegParryHaste(); goldRingParry();
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(true);
@@ -123997,7 +124411,8 @@ function updateElvDressing(dt, t) {
     const Lp = S.L + 0.25, w0 = Math.sqrt(9.8 / Lp), h = Math.min(dt, 0.05);
     S.w = S.w || 0; S.tw = S.tw || 0; S.tv = S.tv || 0;
     let drive = (0.02 + 0.05 * gust) * Math.sin(t * w0 * 0.97);
-    if (S.rider) { const amp = Math.hypot(S.ang || 0, S.w / w0); drive = Math.sign(S.w || 1) * THREE.MathUtils.clamp((MAR_SWING_AMP - amp) * 0.9, -0.12, 0.12); }
+    if (S.rider) { const amp = Math.hypot(S.ang || 0, S.w / w0); drive = Math.sign(S.w || 1) * THREE.MathUtils.clamp((MAR_SWING_AMP - amp) * 0.9, -0.12, 0.12);
+      if (amp > MAR_SWING_AMP * 1.6) S.w *= 1 - Math.min(0.5, h * 2.5); }   // (shoved high with him on it: it settles back to his barely-moving in a second or two, 2026-11-22)
     { // you, walking into the seat — and the marionette, off it, walking into it (2026-11-22, the owner: "make the swing physics
       // and colliders react to the marionette too so he doesnt clip through it")
       const sp = S.seat.getWorldPosition(_esV);
@@ -126741,6 +127156,7 @@ function celNoGo(x, z, feet) {
  *   the Wong's motion capture through `ntarRetarget` as Henry is — the crouch and leap out of the drum (`jump`), a stare at
  *   you (`idle`, the head turned onto you), then the run to the stairs, up them, and out under the cellar doors, which bang. */
 const CEL_WASH = { x: -5.32, z: -3.26, front: -2.754, sill: 0.181, land: -1.92 };   // room-local: the machine's middle, its front face, the drum's floor, where he lands
+const CEL_WASH_TOP = 0.762;    // room-local: the top of the door's opening in the machine's front (the packer's `washerDoor`, y −676 at 0.0034)
 const CEL_MAR_LOOK = 2.2, CEL_MAR_STARE = 0.7;   // out of the washer: how long he looks round, then turns on you, before he runs (2026-11-22: was the whole 5.7 s and 1.9)
 const CEL_MAR_PATH = [[-4.4, -2.05], [-3.25, -2.45], [-2.55, -2.82], [-1.9, -2.82], [-1.25, -2.8], [2.6, -2.8], [3.6, -2.8], [4.2, -2.8]];
 let celWP = null, celMar = null, celEsc = null, celLockBroke = false;
@@ -126873,7 +127289,7 @@ function celFridgeTick(dt) {
  * Each clip is the puppets' own captured moves (`cpMocap`, fitted to their rig once for the cellar's fight) and his
  * (`ELV_MOCAP_SET`). Off and on again, the tape starts over. Its sound: the deck's hiss and the snow's roar, from the set. */
 let celTv = null, celTape = null;
-const TAPE_CLIP = 5.0, TAPE_N = 5;
+const TAPE_CLIP = 5.0, TAPE_N = 5, TAPE_DAY_LOOP = 12.0;
 const TAPE_GAIN = [1.45, 1.6, 1.5, 1.0, 1.35], TAPE_GLOW = [0.35, 0.3, 0.3, 0.95, 0.25];   // each clip's picture level, and the light it throws
 const TAPE_FS = `
 uniform sampler2D map; uniform sampler2D osd; uniform float uT; uniform float uSnow; uniform float uRoll; uniform float uDay; uniform float uGain;
@@ -127179,7 +127595,7 @@ function tapeDayTick(T, t, lt, dt) {
   }
   S.pts.geometry.attributes.position.needsUpdate = true;
   // the camera: hand-held at the water's edge, following the ball, drifting to take him in by the end
-  const cam = T.cam, follow = THREE.MathUtils.smoothstep(lt, 2.8, 4.6);
+  const cam = T.cam, follow = THREE.MathUtils.smoothstep(lt, 3.5, 6.0) * (1 - THREE.MathUtils.smoothstep(lt, 9.0, 11.6));   // (to him in his chair and back to the water, every loop)
   cam.position.copy(D.cam); cam.position.x += Math.sin(t * 1.3) * 0.05; cam.position.y += Math.sin(t * 2.1 + 1) * 0.04 + Math.sin(t * 5.3) * 0.012;
   _tapeW.set(THREE.MathUtils.lerp(ball.x * 0.5 - 0.2, D.chair.x - 0.6, follow), THREE.MathUtils.lerp(0.9, 0.95, follow), THREE.MathUtils.lerp(ball.z * 0.5 - 0.6, D.chair.z - 0.2, follow));
   cam.lookAt(_tapeW); cam.fov = 50 - follow * 16;
@@ -127307,8 +127723,10 @@ const _tapeV = new THREE.Vector3(), _tapeW = new THREE.Vector3();
 function tapeStand(P, x, y, z, fx, fz) { P.I.root.position.set(x, y, z); P.I.root.rotation.set(0, Math.atan2(fx, fz) - Math.PI / 2, 0); }
 function celTapeTick(dt) {
   const T = celTape, V = celTv; if (!T || !V || !V.on) return;
-  T.t += dt; const t = T.t, ci = Math.min(TAPE_N - 1, Math.floor(t / TAPE_CLIP)), lt = t - ci * TAPE_CLIP;
-  const end = ci === TAPE_N - 1 && lt > 4.0;              // the face, then the snow
+  /* (THE BEACH, AND ONLY THE BEACH — 2026-11-22, the owner: "just put the beach one on the tv take out the other scenes". The tape
+   * is the day out front, round and round (`TAPE_DAY_LOOP`); the cellar's clips and the face are still built but never shown.) */
+  T.t += dt; const t = T.t, ci = 3, lt = t % TAPE_DAY_LOOP;
+  const end = false;
   const P = T.pups, [A, Bp, C, D] = P;
   if (ci !== T.clip) { T.clip = ci; for (const p of P) { p.cur = null; p.mixer.stopAllAction(); } }
   // which set, who is in it
@@ -127374,7 +127792,7 @@ function celTapeTick(dt) {
     if (T.B.Head && T.B.Neck) pupAim(T.man, T.B.Neck, T.B.Head, _tapeW.set(0, 0.55, 0.85));
   }
   // the screen: snow at each cut and at the end, a roll as the tape catches
-  const cut = ci > 0 && lt < 0.28, start = t < 0.5;
+  const cut = false, start = t < 0.5;
   const U = V.crt.uniforms; U.uT.value = t;
   U.uSnow.value = end ? 1 : start ? 1 - t / 0.5 : cut ? 1 - lt / 0.28 : 0;
   U.uRoll.value = end ? 1 : Math.max(start ? 1 - t / 0.8 : 0, ci > 0 && lt < 0.7 ? 1 - lt / 0.7 : 0);
@@ -127383,7 +127801,7 @@ function celTapeTick(dt) {
   if (V.glow) V.glow.intensity = end ? 0.55 : (U.uSnow.value > 0.5 ? 0.6 : TAPE_GLOW[ci]) * (0.92 + 0.08 * Math.sin(t * 7.3));   // (the set's light on the room)
   // the deck's writing: PLAY, and a date that is not now
   const dates = ['OCT.31 1987', 'NOV. 2 1987', 'NOV. 2 1987', 'JUL. 4 1988', 'NOV.13 1987'], hrs = [2, 3, 3, 14, 4];
-  const sec = Math.floor(lt), key = ci + ':' + sec + ':' + end;
+  const sec = Math.floor(t), key = ci + ':' + sec + ':' + end;
   if (key !== T.osdKey) {
     T.osdKey = key; const g = T.osdCtx; g.clearRect(0, 0, 320, 240);
     if (!end) {
@@ -127737,6 +128155,16 @@ function updateCelEscape(dt) {
     const ct = 0.42 + E.t * 1.15, k = THREE.MathUtils.clamp((ct - 0.72) / 0.6, 0, 1), e = k * k * (3 - 2 * k);
     R.position.z = THREE.MathUtils.lerp(CEL_WASH.front - 0.32, CEL_WASH.land, e);
     R.position.y = THREE.MathUtils.lerp(CEL_WASH.sill - 0.22 * (1 - Math.min(1, k * 3)), fy(CEL_WASH.x, CEL_WASH.land, 0), e);   // (low in the drum, out through the door's opening — not up through the machine's top)
+    /* (HIS HEAD THROUGH THE DOOR, NOT THE MACHINE — 2026-11-22, the owner: "make sure the marionettes head doesnt clip through when
+     * getting out of the washer". The jump clip lifts him as it leaves the crouch, and while he was still inside the drum's depth his
+     * head rose through the machine's front over the opening. While the head is behind the door's line he is held down so it
+     * passes under the opening's top (`CEL_WASH_TOP`, the door's own top edge), a head's half-height clear; the last frame's head.) */
+    if (M.B.Head) {
+      M.w.updateMatrixWorld(true);
+      const hl = celWorld.worldToLocal(M.B.Head.getWorldPosition(_cwaV));
+      const lim = CEL_WASH_TOP - 0.19;                    // (the head's half-height and a frame's rise: the head read is the last frame's)
+      if (hl.z < CEL_WASH.front + 0.26 && hl.y > lim) R.position.y -= hl.y - lim;
+    }
     if (ct > 1.35 && !E.landed) { E.landed = true; playSampleAt('metalHit', CEL_X + R.position.x, CEL_Z + R.position.z, { gain: 0.25, ref: 3, far: 20, rate: 0.5 }); sfxPropHit('wood', 7); }
     /* (OUT, HE LOOKS ROUND HIM — 2026-11-22, the owner: "give the marionette this look around when he comes out of the washer":
      * Mixamo's "Nervously Look Around", the whole 5.7 s of it where he landed, before he turns to you) */
@@ -127955,7 +128383,7 @@ function marReach(B, s, G, low = false) {
  * loose on the ropes low down, his legs hanging and lagging the swing as a weight does. The swing itself is a pendulum
  * (`updateElvDressing`): he does not pump it — a touch of his feet keeps it barely moving. And he is set ON the seat: every
  * second and a half his skin is measured in the seat's frame and he is lifted so nothing of him over the plank is in it. */
-const MAR_LOOK_TURN = 1.1, MAR_LOOK_W = 5.0;   // seconds his head takes to come round onto you on the swing (and back), and the neck's spring
+const MAR_LOOK_RATE = 2.4;   // how quickly his head on the swing follows where it is looking (a share of the way per second)
 function marSwingStep(dt, t) {
   const u = MAR.u, S = elvSwing; if (!u || !u.model || !u.marBones || !u.marBind || !S || !S.seat) return;
   const B = u.marBones;
@@ -128002,20 +128430,16 @@ function marSwingStep(dt, t) {
   }
   // his head: out over the water, down — onto you only while you talk to him
   const talk = dialogOpen && dialogScript === MAR_NPC.script;
-  /* (SMOOTH, 2026-11-22, the owner: "MAKE THE MARRIONETTE HEAD TURN WHILE ON THE SWING MORE SMOOTH WHEN YOU TALK TO HIM". The
-   * target used to SWITCH from the water to you when `lookK` crossed a half — one frame's snap of the whole turn. Now the two
-   * DIRECTIONS are blended by an eased `lookK` (it moves at a steady rate, not a jump-then-crawl), and the head follows that
-   * direction like a neck, critically damped (`MAR.lookD`), so the swing carrying him past you does not jitter it either.) */
-  MAR.lookK = THREE.MathUtils.clamp((MAR.lookK || 0) + (talk ? 1 : -1) * dt / MAR_LOOK_TURN, 0, 1);
-  const hp = B.head.getWorldPosition(_mrV);
-  const dS = _mrB.set(-30, -9, Math.sin(t * 0.13) * 4).normalize(), dC = _mrA.copy(camera.position).sub(hp).normalize();
-  const e = MAR.lookK * MAR.lookK * MAR.lookK * (MAR.lookK * (MAR.lookK * 6 - 15) + 10);   // (smootherstep: eases in and out)
-  const want = dS.lerp(dC, e).normalize();
-  if (!MAR.lookD) { MAR.lookD = want.clone(); MAR.lookV = new THREE.Vector3(); }
-  { const w0 = MAR_LOOK_W, k = Math.min(dt, 0.05);              // (a spring at its critical damping: no overshoot, no snap)
-    MAR.lookV.addScaledVector(_mrW.copy(want).sub(MAR.lookD), w0 * w0 * k).multiplyScalar(Math.max(0, 1 - 2 * w0 * k));
-    MAR.lookD.addScaledVector(MAR.lookV, k).normalize(); }
-  marLook(u, 1, 1.1, _mrB.copy(hp).addScaledVector(MAR.lookD, 10));
+  /* (his head as it was — the water, or you while you talk (`MAR.lookK` over a half: 2026-11-22, the owner: "the marionette is facing
+   * the wrong way … make it back what it was last"); a blend of the two DIRECTIONS turned his head the wrong way round when you
+   * stood behind him, the two nearly opposite. The smoothing is on the HEAD instead: each frame it turns only part of the way
+   * from where it was to where the look puts it (`MAR_LOOK_RATE`), so the turn onto you and back is eased, not a snap.) */
+  MAR.lookK = (MAR.lookK || 0) + ((talk ? 1 : 0) - (MAR.lookK || 0)) * Math.min(1, dt * 2);
+  const sea = _mrB.set(B.head.getWorldPosition(_mrV).x - 30, _mrV.y - 9, _mrV.z + Math.sin(t * 0.13) * 4);
+  marLook(u, 1, 1.1, MAR.lookK > 0.5 ? camera.position : sea);
+  { const h = B.head, q = h.quaternion;
+    if (MAR.headQ) { q.copy(MAR.headQ.slerp(q, Math.min(1, dt * MAR_LOOK_RATE))); h.updateMatrixWorld(true); }
+    MAR.headQ = (MAR.headQ || new THREE.Quaternion()).copy(q); }
   // (no mixer here: the idle he was made with, sampled after the pose, stood him up on the plank every frame)
   // nothing of him in the plank: his skin measured in the seat's frame, every second and a half (the pose hardly changes)
   if ((MAR.liftT = (MAR.liftT ?? 0) - dt) <= 0) {
@@ -128137,13 +128561,22 @@ function marReachTick(u, dt) {
   marPickFoe(u, 0);
   return !!(u.st.foe && u.st.foe.st.alive);
 }
+/* "BRING LIL CRUSTY TO THE LIGHTHOUSE." (2026-11-22, the owner: "when you bring the marionette over the bridge to the light house have an
+ * achievement say 'Bring lil crusty to the lighthouse.'"): him with you, on the lighthouse's rock past the drawbridge's land end (the
+ * terrace lip, x 6.7 — the deck runs from there to XIII's tower at 18.3), alive and shown. Once a game; on the save. */
+function marCrustyCheck(u) {
+  if (crustyLight || replaying || applyingSave || MAR.st !== 'with' || !u.st.alive || !u.g.visible || marPlace() !== 'isle') return;
+  if (u.g.position.x > ISLE_BR.x0 || camera.position.x > ISLE_BR.x0 + 1) return;   // (`ISLE_BR.x0`: the deck's land end, the terrace lip)
+  crustyLight = true;
+  showAchievement('Rare achievement unlocked', '50 - Bring lil crusty to the lighthouse.');
+}
 function marFoes() {
   const L = [], c = camera.position;
   for (const f of mutants) {
     if (f === MAR.u || !f.st || !f.st.alive || f.retired || !f.g.visible || minoAlly(f) || gargImmune(f)) continue;
     if (!f.st.awake && !(f.st.roar > 0)) continue;     // (asleep is not on you: a sleeper waking is)
     if (f.kind.celBody || f.kind.friendly || f.kind.ally || f.kind.baby || f.st.puppet) continue;
-    if (Math.hypot(f.g.position.x - c.x, f.g.position.z - c.z) > 18) continue;
+    if (Math.hypot(f.g.position.x - c.x, f.g.position.z - c.z) > 24) continue;   // (18 until 2026-11-22: a fight spread across a yard left him idle at its edge)
     L.push(f);
   }
   return L;
@@ -128196,13 +128629,17 @@ function marDraws(u, dt) {
  * - closer: he stops at 1.7 m, sets off again past 2.8. */
 const MAR_TRAIL_STEP = 0.4, MAR_TRAIL_MAX = 120;
 function marFeet() { return camBaseY - playerEye(); }
-function marPlace() { return inRoom() ? 'room' : inC13 ? 'c13' : inFort ? 'fort' : 'beach'; }
+/* (THE ISLAND IS A PLACE OF ITS OWN — 2026-11-22, the owner: "the marionette got stuck going to the lighthouse peir". It was 'beach':
+ * he walked straight at you instead of along your trail, stood on the BEACH's sand height, and the beach's clamp held him at the
+ * waterline — the jetty is out past it, "at sea". On the island he walks your trail, on the island's own floors (`isleFloorAt`).) */
+function marPlace() { return inRoom() ? 'room' : inC13 ? 'c13' : inFort ? 'fort' : (onIsle && ISLE_SITE.cells) ? 'isle' : 'beach'; }
 // the floor where he would stand (null: none there), for wherever you are
 function marFloorAt(x, z, y) {
   const pl = marPlace();
   if (pl === 'room') return bunkerFloorAt(x, z, y + 0.5);
   if (pl === 'fort') return fortCourtAt(x, z);
   if (pl === 'c13') return c13CourtAt(x, z);
+  if (pl === 'isle') return isleFloorAt(x, z, y + 0.6, 0.9);
   return marFloor(x, z, y);
 }
 function marTrailTick() {
@@ -128366,11 +128803,36 @@ function marAggro(u) {
   u.st.foe = m; u.st.mine = false; u.st.awake = true; u.st.marAggT = now + 4 + Math.random() * 3;
   u.st.cool = Math.min(u.st.cool || 0, 0.5);
 }
-// room for one more on him: a third of what is awake round you, one at the least
+/* THE FIGHT SPLIT BETWEEN YOU BY WHERE YOU STAND (2026-11-22, the owner: "the marionette should attack more he shouldnt be standing
+ * around and all enemies should fight him more they should balance us both depending on range we are standing"). Before, a creature
+ * only turned on him if one of his blows landed (`marAggro`) or he drew it (`marDraws`), a third of the fight at most. Now every
+ * awake one on you weighs, every 1.2–2.5 s, who is nearer: nearer him than you and it goes for him (65 %), about level (within half
+ * again) now and then (25 %) — up to HALF of what is awake round you (`marAggroRoom`). One you struck in the last 2 s stays yours,
+ * and a boss or a fight with sides of its own never splits (`marAggroOK`). On him, it comes back to you when you are the nearer by
+ * far or he has gone off from it (`marAggroTick`). */
+function marBalance(u) {
+  const D = MAR.bal || (MAR.bal = { calls: 0, ok: 0, hurt: 0, atk: 0, far: 0, roll: 0, room: 0, on: 0 }); D.calls++;
+  const m = MAR.u; if (!m || !m.st.alive || MAR.st !== 'with' || MAR.wait || !m.g.visible) return;
+  if (!marAggroOK(u) && !(u.kind && u.kind.farmer && !(u.farm && u.farm.victim) && u.st.alive && !u.cpAlly)) return;
+  D.ok++;   // (the castle's men too, when it is you they are fighting)
+  const now = performance.now() / 1000;
+  if (now < (u.st.marBalT || 0)) return;
+  u.st.marBalT = now + 1.2 + Math.random() * 1.3;
+  if (u.st.lastHurt && now - u.st.lastHurt < 2 && u.st.mine) { D.hurt++; return; }   // (you are cutting it: it is yours)
+  if (u.st.atk >= 0) { D.atk++; return; }                                            // (not out of a blow already coming at you)
+  const p = u.g.position, dMe = Math.hypot(camera.position.x - p.x, camera.position.z - p.z), dHim = Math.hypot(m.g.position.x - p.x, m.g.position.z - p.z);
+  if (dHim > 14) { D.far++; return; }
+  const pr = dHim < dMe * 0.9 ? 0.7 : dHim < dMe * 1.5 ? 0.4 : 0;
+  if (Math.random() >= pr) { D.roll++; return; }
+  if (!marAggroRoom()) { D.room++; return; }
+  D.on++;
+  u.st.foe = m; u.st.mine = false; u.st.marAggT = now + 5 + Math.random() * 4; u.st.cool = Math.min(u.st.cool || 0, 0.5);
+}
+// room for one more on him: half of what is awake round you, one at the least
 function marAggroRoom() {
   const m = MAR.u, c = camera.position; let on = 0, awake = 0;
   for (const v of mutants) { if (!v.st.alive || v === m || v.cpAlly || Math.hypot(v.g.position.x - c.x, v.g.position.z - c.z) > 30) continue; if (v.st.foe === m) on++; else if (v.st.awake) awake++; }   // (the fight here, not every waking thing on the map)
-  return on < Math.max(1, Math.floor((awake + on) / 3));
+  return on < Math.max(1, Math.ceil((awake + on) / 2));
 }
 function marAggroTick(u) {
   const m = MAR.u, now = performance.now() / 1000;
@@ -128379,7 +128841,7 @@ function marAggroTick(u) {
   if (!back && now > (u.st.marAggT || 0)) {
     const p = u.g.position, dMe = Math.hypot(camera.position.x - p.x, camera.position.z - p.z), dHim = Math.hypot(m.g.position.x - p.x, m.g.position.z - p.z);
     const hitByHim = u.st.hitBy === m && performance.now() - (u.st.hitByT || 0) < 3000;
-    if (dMe < dHim * 0.5 || !hitByHim) back = true; else u.st.marAggT = now + 2 + Math.random() * 2;
+    if (dMe < dHim * 0.5 || dHim > 10 || (!hitByHim && dHim > 3.5)) back = true; else u.st.marAggT = now + 2 + Math.random() * 2;   // (on him while he is in it with it, whether or not his last blow landed)
   }
   if (back) { u.st.foe = null; u.st.mine = true; }
 }
@@ -128426,6 +128888,10 @@ function marFollow(u, dt) {
   const pl = marPlace();
   if (pl === 'beach') { if (elvReady && p.x > CLIFF_BLOCK_X + 0.5 && !elvInLand(p.x, p.z)) elvUnitClamp(u, p); else mutClampX(u, p, dt); }
   let ty = marFloorAt(p.x, p.z, p.y);
+  if (pl === 'isle' && (ty === null || Math.abs(ty - p.y) > 1.0)) {          // (off the island's walk, or over a ledge: the trail's own step instead, or stay)
+    const tf = T.y !== undefined && T.y !== null && Math.hypot(T.x - p.x, T.z - p.z) < 1.2 ? T.y : null;
+    if (tf !== null) ty = tf; else { p.x = x0; p.z = z0; ty = marFloorAt(p.x, p.z, p.y); }
+  }
   if (ty === null || (pl !== 'beach' && Math.abs(ty - (T.y ?? ty)) > 1.2)) ty = T.y ?? p.y;
   const ddy = ty - p.y; p.y += Math.abs(ddy) < 0.02 ? ddy : Math.sign(ddy) * Math.min(Math.abs(ddy), Math.max(Math.abs(ddy) * dt * 14, 4 * dt));
   MAR.legal = (MAR.legal || new THREE.Vector3()).copy(p);
@@ -128477,6 +128943,7 @@ function marDrive(u, dt) {
   if (MAR.jump) { MAR.jump = false; marJoin(u); }
   u.g.visible = true;
   marElv(u);
+  marCrustyCheck(u);
   marPickFoe(u, dt); marDraws(u, dt);
   if (MAR.leap) { marLeapStep(u, dt); return true; }
   if (u.st.foe && u.st.foe.st.alive && marReachTick(u, dt)) {
@@ -130302,11 +130769,16 @@ function elvFieldY(x, z) {
  * carve's floor, his yard's field: `elvLandFloorAt`), a hair over it, and draws nothing a ray can hit. Built once, with
  * the yard (`updateElvLand`). */
 let elvTrail = null;
+const ELV_STEPS = { x: 29.6, z: -711.05 };   // the foot of the porch steps, the middle of their run (measured off the walk)
 function buildElvTrail() {
   // the line: the beach, the gully, the gate, the porch steps' foot
   const pts = [[7.2, ELV_PATH[0][1] + 0.3]];
   for (const q of ELV_PATH) pts.push([q[0], q[1]]);
-  pts.push([ELV_YARD.x0 + 0.8, ELV_PATH[ELV_PATH.length - 1][1]], [HOUSE_X - 6.0, HOUSE_Z + 3.8]);
+  /* (and it comes to the porch steps SQUARE, up their middle — 2026-11-22, the owner: "the trail should then line up with the
+   * stairs". It ended 1.6 m to their side, at the plinth's corner. The steps, measured off the walk (`tools/elvporch.js`): they
+   * come down from the porch between z −712.2 and −709.8 (the front door's middle, −711.05), their foot at x 29.6. The last
+   * stretch now turns onto that line two metres out and runs straight to the bottom step.) */
+  pts.push([ELV_YARD.x0 + 0.8, ELV_PATH[ELV_PATH.length - 1][1]], [ELV_STEPS.x - 2.6, ELV_STEPS.z], [ELV_STEPS.x - 0.1, ELV_STEPS.z]);
   // resampled every 30 cm
   const S = [[pts[0][0], pts[0][1], 0]];
   for (let i = 1; i < pts.length; i++) {
@@ -130328,7 +130800,7 @@ function buildElvTrail() {
     const [x, z, s] = S[i], [x0, z0] = S[Math.max(0, i - 1)], [x1, z1] = S[Math.min(S.length - 1, i + 1)];
     let tx = x1 - x0, tz = z1 - z0; const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
     const nx = -tz, nz = tx;
-    const hw = 0.80 + 0.16 * Math.sin(s * 0.9) + 0.08 * Math.sin(s * 2.7 + 1.3) + (s > total - 9 ? -0.12 : 0);   // (narrower over the yard: a path, not the gully's floor)
+    const hw = 0.80 + 0.16 * Math.sin(s * 0.9) + 0.08 * Math.sin(s * 2.7 + 1.3) + (s > total - 9 ? -0.12 : 0) - (s > total - 3 ? 0.08 : 0);   // (narrower over the yard: a path, not the gully's floor; and inside the steps' width at their foot)
     const wob = 0.10 * Math.sin(s * 0.55 + 0.7);
     const fc = floorAt(x, z), lift = Math.max(0, drawnAt(x, z, fc) - fc);
     for (let k = 0; k <= ACROSS; k++) {
@@ -131695,7 +132167,7 @@ Object.assign(window.__bw, { farmCobble, farmUnits, farmFight, farmDoors, farmSe
    * ticks — so a harness has to be able to turn the handle itself. */
   warmTurn: (n = 40) => { let c = 0; while (n-- > 0) { if (!warmRunStep()) { if (!drainWarmed) warmDrain(); else if (!mushWarmed) warmMush(); else if (!bunkerWarmed) warmBunker(); else if (!ucWarmed && ucWarm) { ucWarmed = true; ucWarm(); } else break; } else c++; } return c; },
   loadLog: () => bwLoadLog,
-  bwGotS: () => bwGot, celTvS: () => celTv, celTapeS: () => celTape, celTvToggle, celBathS: () => celBathPup, siteRayS: siteRay, castleSiteS: () => castleSiteHere(), celFridgeS: () => celFridge, celFridgeSquareS: () => celFridgeSquare, elvTrailS: () => elvTrail, elvTreeSolidS: () => elvTreeSolid, fogLampsS: () => FOG_LAMPS.n.x, FOG_LAMPS, elvTreeBlocksS: (x, z, f) => elvTreeBlocks(x, z, f), sandFxS: () => ({ grains: sandGrains, dust: sandDust, SG, SD }), imgRelOn: (v) => { imgRel.on = !!v; }, imgRelQ: () => imgRel.q, imgRelS: () => ({ q: imgRel.q.length, done: imgRel.done, freedMB: Math.round(imgRel.freed / 1048576), reup: imgRel.reup }), loadQ: () => ({ open: bwOpen, waiting: bwWaiting.map((j) => [j.url.split('/').pop(), j.reach]), got: bwGot.size }),
+  bwGotS: () => bwGot, celTvS: () => celTv, celTapeS: () => celTape, celTvToggle, celBathS: () => celBathPup, siteRayS: siteRay, castleSiteS: () => castleSiteHere(), celFridgeS: () => celFridge, celFridgeSquareS: () => celFridgeSquare, elvTrailS: () => elvTrail, elvTreeSolidS: () => elvTreeSolid, c13CubbyS: () => c13Cubby, C13_CUBBY, c13CubbyHas, isleBRS: () => ISLE_BR, crustyS: () => crustyLight, marPlaceS: () => marPlace(), fogLampsS: () => FOG_LAMPS.n.x, FOG_LAMPS, elvTreeBlocksS: (x, z, f) => elvTreeBlocks(x, z, f), sandFxS: () => ({ grains: sandGrains, dust: sandDust, SG, SD }), imgRelOn: (v) => { imgRel.on = !!v; }, imgRelQ: () => imgRel.q, imgRelS: () => ({ q: imgRel.q.length, done: imgRel.done, freedMB: Math.round(imgRel.freed / 1048576), reup: imgRel.reup }), loadQ: () => ({ open: bwOpen, waiting: bwWaiting.map((j) => [j.url.split('/').pop(), j.reach]), got: bwGot.size }),
   lag: (ms = 24) => bwLag.filter((e) => e[1] >= ms).sort((x, y) => y[1] - x[1]),
   lagTime: (ms = 24) => bwLag.filter((e) => e[1] >= ms),
   lagClear: () => { bwLag.length = 0; },

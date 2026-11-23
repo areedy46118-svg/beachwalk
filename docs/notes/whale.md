@@ -1471,3 +1471,7 @@ all audio in the wahale better".
 - **DISTANCE WET** `whaleWet`/`whaleWetK`: every `playSampleAt` and his voice also feed the gut's verb (`whaleVerb.hp`) by
   distance: 0 at 2 m → 0.8 at 22 (smoothstep), on top of the bus's even send. Guarded on `whaleVerb` first (`inWhale` is
   declared at ~70600; `playSampleAt` runs long before).
+- **No chain outlives its man** (2026-11-22, "the chain in the whale is still there after he left"): `updateSkrimChains` lets a
+  chain go the frame its thrower is hidden, retired, dead (not his hang chain, which falls on its own), or `SKRIM.stage` is
+  'gone', or its end is non-finite (the old NaN-after-a-kill bug, which threw every frame); and a chain whose step throws is let
+  go instead of the frame.

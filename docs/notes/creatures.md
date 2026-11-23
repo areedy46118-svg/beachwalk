@@ -3660,3 +3660,11 @@ go, so after any reload he followed you and never moved his own way — `marDriv
 reach for 1.5 s without closing 0.4 m → that one is skipped 5 s (`MAR.skip`) and the nearest other taken; `marPickFoe` weighs his
 own distance ×1.6. After: blows in most seconds, 2 idle seconds in 40. TRAP: `settings.devMode` stops every creature swinging
 (`} else if (u.st.cool <= 0 && !settings.devMode)`) — a fight probe runs with it OFF and keeps you alive (`setHp` on a timer).
+
+## 2026-11-22 (night) — the fight split by where you stand
+"the marionette should attack more … all enemies should fight him more they should balance us both depending on range we are standing".
+`marBalance` (from the mutant update when a creature has no foe of its own): every 1.2–2.5 s an awake one on you weighs who is nearer
+— nearer him than 0.9 of you: 70 % it goes for him; within 1.5×: 40 % — up to HALF of what is awake round you (`marAggroRoom`, a
+third before); not one you cut in the last 2 s, not mid-blow; the castle's men too when it is you they fight. On him 5–9 s, then
+back to you if you are nearer by half, he is 10 m off it, or he has not hit it and is 3.5 m off (`marAggroTick`). `marFoes` reach
+18 → 24 m. `tools/marfight.js` (logs `MAR.bal` and the mean on him): standing together in the castle street, 0.6 → 1.1–1.7 of 5.3.

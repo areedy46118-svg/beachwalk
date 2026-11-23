@@ -3717,3 +3717,15 @@ you or your companion kill. do not give them a description either. characters i 
   off on ANY close if it is set (so a click or the timeout after "LET'S GO" both work), and resets it; `marTalk` clears it.
   Leave or Escape leaves him on the swing, askable again. The old `off` node (either answer → hop) is gone.
   `tools/martalk.js`: Leave → swing, Escape at the light → swing, take → hop.
+- **The path to the porch steps, square** ("the trail should then line up with the stairs"): the steps measured off the walk
+  (`tools/elvporch.js`): z −712.2..−709.8, foot at x 29.6 (the front door's middle −711.05). `ELV_STEPS`; the last stretch turns
+  onto that line 2.6 m out and runs to the bottom step, narrower there.
+- **The TV plays only the beach** ("just put the beach one on the tv take out the other scenes"): `ci` 3 always, `TAPE_DAY_LOOP` 12 s;
+  the camera goes to him and back to the water each loop; the cellar clips and the face are built but not shown.
+- **The marionette on the swing** ("facing the wrong way swinging too high make it back what it was last"): the head's target is
+  the original again (the water, or you past `lookK` 0.5); the smoothing is on the head bone (`MAR.headQ` slerped at
+  `MAR_LOOK_RATE` 2.4/s) — blending the two DIRECTIONS turned his head the wrong way round when you stood behind him. With him on
+  it the swing is damped back if shoved past 1.6 × `MAR_SWING_AMP`.
+- **His head out of the washer** ("make sure the marionettes head doesnt clip through when getting out of the washer"): in the
+  leap, while the head is behind the door's line + 0.26 it is held under `CEL_WASH_TOP` (0.762, the opening's top) − 0.19.
+  `tools/washer.js` logs the highest head over the drum: 0.65 → 0.60.

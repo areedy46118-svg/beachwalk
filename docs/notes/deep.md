@@ -451,3 +451,6 @@ by `bakeLimb` with the body's own `u` (kept on `body.u` now; `body.cut` a Set of
 scaled to 0.0001 and the sway under it dropped — the same tear the bodies were built with. Probe `deadHit` (katana, 1.7
 m off, three swings each at two bodies): moved 6.1–6.4 m, 2 and 3 limbs off, `deadStep` ≤ 0.01 ms. A death reloads the
 page, so a body is whole again only as it was built.
+- **A guard toward it is a guard** (2026-11-22, "fix the block on the seamonster blocks sometimes dont work"): the bite and the
+  tail asked for the view within ~70° of the MOUTH/TIP in 3-D — under water it shuts above, below or beside you. `plioGuardSees`:
+  the game's own `guardSees` (the half in front, level) of the striking point or of the animal.

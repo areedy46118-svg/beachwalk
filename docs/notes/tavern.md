@@ -1232,3 +1232,7 @@ The cut waited (`castHold`/`castGate`) only on people who EXISTED: the drinkers 
 and the moment it can be made it is. And a CHECKPOINT now waits too (`castBootOwed` in `updateBootHold`: anyone within 45 m
 not whole). `CAST_WAIT_MAX` 5 → 10 s (a slow machine parses a body in seconds), a `var` (the boot asks it early).
 `tools/castin.js` (now reads the GAME's `#blackout`, `w.document`): all nine whole at frame 37, the black lifts at 80.
+- **A floor fallen through in a frame is still the floor** (2026-11-22, a still from under the hall: "i fell through the wall and
+  ground in the tavern"): falling, the walk looks for the floor from where the feet WERE (`tavPrevFeet`, ≤ 3 m up), so a long
+  frame or a hard drop past `TAV_AIR` lands on the flags, not the ground under the building. `tools/tavfall.js` (hook pulls at
+  16×5 from 26 spots, at 60 fps and at 12–20 fps; drops from 2–6 m on 120–250 ms frames): 0 under the flags.

@@ -2314,3 +2314,18 @@ its fall played backwards, flung them to 2 m and had him standing 0.3 s later. N
 knight's Mixamo `knockOut` and `getUp` (`knight-moves.json`) through `DK_RAG`, and his kind has the knight's own beats
 (`knockClip: 'knockOut'`, `riseClip: 'getUp'`, `knock: { fall 1.27, lie 0.34, rise 1.33, land 0.78 }`). Measured: flat on
 his back, feet 0.24 m, a roll to a knee from 0.8 s, standing at 1.5. His death (the ragdoll) was already fine.
+
+## 2026-11-22 — the secret cubby in XIII; the hook bites any castle face
+- **The cubby** (the owner, a still from XIII's street at feet 26.51, 0.64, −16.25 looking up past the window with the flower box:
+  "put a secret cubby you can hook to up here make the textures match the castle dont put anything in there yet but have it able
+  to be walked in"): `buildC13Cubby` (in `loadC13`, before `c13Ready`, so the wall index takes its faces): a bartizan on the
+  face over the window (`C13_CUBBY`: c13-local 24.55, −15.40, the face's normal (0.87, −0.49) — measured with level rays, the face
+  runs up to ~19 m world before the battlements), floor at local y 9.75 (13.0 world, 5.5 m over the window); inside 2.0 × 1.9 ×
+  2.2 m; a doorway 1.12 × 1.9 out to the street, a lip of crenels, three stepped corbels under it. `acmat_4`, uv laid in metres at
+  0.065 a metre (measured off the wall's own triangle: 0.043–0.085). Its floor is the site's `extra` with an `inside` test
+  (`keepFloorAt` honours `b.inside` now). A pull aimed into it (`HK.toCubby`, set at `hookZipStart` from `c13CubbyHas`) skips the
+  castle's own face test on the way and `c13CubbyStep` sets you on its floor when it ends within 6 m. `tools/c13cubby.js` (the view
+  and the face), `tools/c13cubby2.js` (thrown from the street 5.5 m out: bites at t 8 inside it, pulled, on its floor; walked into
+  the back and both sides: held; out of the doorway: down to the street).
+- **The hook bites any castle face** ("i cant hook up … or the castle"): the trace knew XIII by its walking band; `hookThrow` now asks
+  the site's face grid (`siteRay`) down the line too.

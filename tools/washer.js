@@ -25,13 +25,15 @@ log('banging: hop max', hopMax.toFixed(3), '| sounds', b.sampleLogS().slice(-6).
 // struck: the swing's own test, aimed at the padlock
 at(-4.6, -1.6, -5.2, 0.52, -2.68); w.__adv(1); at(-4.6, -1.6, -5.2, 0.52, -2.68);
 log('the blow lands on the lock:', b.celLockStrikeS(1));
-const shots = [[0.3, 'esc_snap'], [1.35, 'esc_leap'], [3.2, 'esc_look1'], [4.6, 'esc_look2'], [6.0, 'esc_look3'], [7.4, 'esc_look4'], [9.6, 'esc_stare']];
+const shots = [[0.3, 'esc_snap'], [0.95, 'esc_leap0'], [1.15, 'esc_leap1'], [1.35, 'esc_leap'], [3.2, 'esc_look1'], [4.6, 'esc_look2'], [6.0, 'esc_look3'], [7.4, 'esc_look4'], [9.6, 'esc_stare']];
 let t = 0, k = 0, ph = '';
 for (let i = 0; i < 60 * 14; i++) {
   if (b.celWashS().esc !== 'run' || t < 4.0) at(-4.6, -1.6, -5.0, 0.55, -2.4);
   w.__adv(1); t += 1 / 60;
   const s = b.celWashS();
   if (s.esc !== ph) { log(t.toFixed(2), 'phase', s.esc, '| him at', JSON.stringify(s.at), 'vis', s.vis, '| door', s.door); ph = s.esc; }
+  if (s.esc === 'leap' || s.esc === 'kick') { const H = b.celMarS().B.Head; if (H) { const h = H.getWorldPosition(new T.Vector3()); const lz = h.z - Z, ly = h.y - Y; if (lz < -2.754 + 0.26) shots.headMax = Math.max(shots.headMax || -9, ly); } }
+  if (s.esc === 'look' && !shots.headLogged) { shots.headLogged = 1; log('head over the drum, highest', (shots.headMax ?? -9).toFixed(2), '| the opening top 0.76 (head centre must stay under ~0.62; zone to front+0.26)'); }
   if (k < shots.length && t >= shots[k][0]) { snap(shots[k][1]); k++; }
   if (s.esc === 'run' && !shots.stairs && s.at && s.at[0] > 0.2) { shots.stairs = 1; Object.assign(view, { lx: -1.95, lz: -2.8, tx: 1.0, ty: 1.3, tz: -2.8 }); snap('esc_stairs'); Object.assign(view, { lx: -4.3, lz: -0.7, tx: -5.2, ty: 0.5, tz: -2.45 }); }
   if (s.esc === 'run' && !shots.hall && s.at && s.at[0] > -3.4) { shots.hall = 1; Object.assign(view, { lx: -3.2, lz: -0.6, tx: -3.0, ty: 0.5, tz: -2.6 }); snap('esc_run2'); Object.assign(view, { lx: -4.3, lz: -0.7, tx: -5.2, ty: 0.5, tz: -2.45 }); }

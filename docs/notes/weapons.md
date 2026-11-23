@@ -3180,3 +3180,26 @@ boss's `body, lungeStop, landSlop, limbR, foeLimbR, closeBody, stopPick` (his "h
   `castleSiteHere`): each frame of a pull, and of its carry, the move is tested at the feet, middle and head; and the head's
   clamp in a castle asks the castle's faces (it asked the beach's floors). `tools/hookcastle.js`: 24 pulls (8 bearings x 30/55/75°),
   each frame's step tested for a crossed face — 0. (Going UP and OVER a wall onto its top is still possible; through it is not.)
+
+## 2026-11-22 (night) — the water ball; the hook bites what is drawn
+- **THE WATER BALL** (`SEA_BALL`, `seaBallFire`, `seaImpact`, `seaBallTick` in `seaTick`): the Sea set in a weapon, a Shift heavy
+  charged past `SEA_BALL.charge` 0.75 (`releaseWind`, after `flameRelease`) throws a ball of the sea off the blade as it swings
+  (26 m/s, a little gravity, 1.4 s); then 5 s spent (`seaBall.cd`, the slot hollow with `seacd` as for the wave). With the hook
+  the ball rides the iron (`HK.water`, `seaHookTick`) and bursts where it arrives (in the hook's 'out' arrival). Hits: the gun's
+  own trace with an origin, a reach and a pad (`magTrace(dir, O, R, pad)`, `MAG_R`/`MAG_PAD`). A body takes 7 (the katana's
+  heavy 3, a .44 14) and a 0.7 s stagger; 2.4 m round the burst 3 and a flinch. Measured (`tools/seaball.js`): a pale 20 → 13,
+  stun 0.70. Look: a displaced icosphere (two drifting noise fields), Fresnel to a night-sky reflection with the moon's
+  highlight, caustic bands through its depth, its own glow; an additive glow shell; droplets shed behind (one Points pool, 420,
+  round soft sprites); the burst a torn-edged crown sheet + a column + 120 droplets + `spawnSpray` + a pooled lamp's flash
+  (`seaBall.lamp`, `lpAlways` 30, in the scene from boot). Sound: two recorded `splash` at 0.82/1.3 under `sfxSeaBurst` (a
+  125→42 Hz thump, a lowpassed body, a bright slap, the spray's hiss coming down); `sfxSeaThrow` on the throw. Shaders warmed in
+  `seaWarm`. The first look was too lumpy and neon: wobble 0.16 → 0.085, caustics pow 7 → 11 at half.
+- **THE HOOK'S INVISIBLE CATCHES** ("i keep hitting random invisible stuff in the air when throwing the hook"): `crates` and
+  `physProps` were tested without asking whether they were shown — a hidden or culled crate stopped the iron in empty air. Shown up
+  to the scene now, and the face too. `tools/hookghost.js &at=isle|fort|tav|beach`: every bearing/pitch's catch against a ray at
+  what is DRAWN; castle 1 → 0.
+- **THE HOOK BITES WHAT IS DRAWN** ("give free use of the hook in the tavern i cant hook up"): rooms were known to the iron only by
+  their wall index (the walking band) — in the tavern 458 of 480 throws found nothing (beams, ceiling, upper walls); on the island
+  every throw. `hookDrawnHit` (in `hookThrow`, after the walls): down the line, the first SHOWN opaque face of the place you are in
+  (`hookDrawnRoots`: tavern, keep, cellar house, dungeon, throne, catacombs, sewer, island; the castles keep their index, which
+  knows every face). Tavern 22 → 377 caught, island 0 → 85, none short of anything drawn.

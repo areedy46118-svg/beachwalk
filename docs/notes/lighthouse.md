@@ -1043,3 +1043,12 @@ colour and normal, repeating, the grain laid along each member (`member`: v down
 island's compile hook** (`onBeforeCompile`, `customProgramCacheKey`) — without it the rail came out black, the stringer
 wall's lesson again. One draw, `bwGhost`, no raycast. Probes `isleStairShots` (stills from the jetty, the landing, the
 foot, the sea side, close), `isleStairMat` (what the treads are made of, and the atlas dumped with a grid).
+
+## 2026-11-22 — the marionette to the jetty; "Bring lil crusty to the lighthouse."
+- "the marionette got stuck going to the lighthouse peir": on the island `marPlace` said 'beach' — he walked straight at you (not
+  your trail), on the BEACH's sand height, and the beach's clamp held him at the waterline (the jetty is past it, "at sea").
+  `marPlace` is 'isle' there now: he walks your trail on `isleFloorAt`; a step onto no floor or over a 1 m ledge takes the trail's
+  own height or is not taken. `tools/marisle.js`: bridge → terrace → stair head → down → jetty → along it, 1.4 m behind at every leg.
+- The achievement (`crustyLight`, `marCrustyCheck`): him with you, alive and shown, on the island past `ISLE_BR.x0` (the
+  drawbridge's land end) — "50 - Bring lil crusty to the lighthouse."; on the save, in `RARE_ACHIEVEMENTS`. (Harness trap: a
+  getter put on `__bw` through `Object.assign` is read ONCE — use a function.)
