@@ -1817,3 +1817,24 @@ Word times rebuilt (`SpeechTranscriber`, the Swift in beach.md's call notes): "D
 That line measured −22.8 dB active, peak −4.1 dBFS, the loudest of the call (his others −25.3/−27.3, the caller's −23.7…−28). Shaped by
 word (ffmpeg `volume` eval=frame, a piecewise-linear dB curve with ~0.1 s ramps): "Dude" −3, "I have like a 1000" −5, "sketches right
 here" −2 → −26.6 dB, peak −9.0; everything else within 0.1 dB; sample-aligned (0 offset); AAC 128k.
+
+## 2026-11-23 — Low graphics, the dynamic resolution on a slow Mac, `?fps`
+The owner's game "ran awful" on a 2018 Mac mini (Intel UHD Graphics 630, Chrome or Safari from a GitHub clone) — a GPU
+about a twentieth of this M4 Pro. Measured here with `sh tools/probe.sh gpuCost` (`PB_WIN=1940,1120`,
+`PB_Q='&fw=1920&fh=1080&ks=0.62,0.42,0.3&modes=high,low&zs=-60,-200,-600&who=1'`): whole frames each waited out with a
+one-pixel `readPixels`, against `b.frame(1)` alone for the CPU.
+- On the beach a frame is ~4-8 ms: 1.2-4.5 ms ours on the CPU, ~2-3 ms GPU; 160-320 draws and **400-800k triangles**
+  (the wreck 131k at z -60, the isle 78k from everywhere — a skyline, kept — a 183k group at z -600, the fort 304k and
+  the fish tree 100k near z -1000). Shadows are off; the camera's far plane is 5000.
+- **The render scale is only about a third of the GPU.** 0.62 → 0.42 saved 0.7-0.8 ms; 0.3 a little more. Low (0.42 and
+  no ground mist) took the GPU share from 2.8 to 1.7 ms at z -600. What is left is mostly vertices.
+- **THE DYNAMIC RESOLUTION NEVER MOVED ON A SLOW MAC.** Without `EXT_disjoint_timer_query_webgl2` (Chrome on macOS has none)
+  a window only counted as slow with no frame over 60 ms in it — and at fifteen a second every frame is over 60 ms. Now a
+  window whose MEDIAN interval is over budget counts as well (a stall moves the worst, not the median).
+- **Low graphics** (`gfxLow`, the menu's "Low graphics mode", `beachwalk.gfx` in localStorage, per
+  machine, never in `beachwalk.settings`): start at `GFX_LOW_K` 0.42, floor `GFX_LOW_MIN` 0.3, the ground mist's march
+  skipped (`FOG_GROUND.w` 0). NEVER on by itself (2026-11-23, the owner: "dont have it automatically on" — it used to pick
+  itself where the GPU's name said Intel / SwiftShader / llvmpipe / software; `gfxWeakGPU` is gone). `drsFloor()` / `drsCeil()` replace DRS_MIN / RETRO_SCALE in `drsTick`.
+- **`?fps` on the address** puts fps, the frame's median and worst, our CPU share, the scale and buffer size, the setting
+  and the GPU's name in the top-left corner. It is how a reading comes back from a machine that is not this one.
+- Next, if Low is still not enough there: the triangles (a LOD or a shorter draw for the big scans on Low), not the pixels.

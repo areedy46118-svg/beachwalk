@@ -12366,6 +12366,7 @@ S_WAVE.addEventListener('input', () => { settings.waveVolume = +S_WAVE.value; ap
 S_SFX.addEventListener('input', () => { settings.sfxVolume = +S_SFX.value; applySettings(); saveSettings(); });
 S_MUSIC.addEventListener('input', () => { settings.musicVolume = +S_MUSIC.value; applySettings(); saveSettings(); });
 S_SPEED.addEventListener('input', () => { settings.walkSpeed = +S_SPEED.value; applySettings(); saveSettings(); });
+{ const g = document.getElementById('s-gfx'); if (g) { g.checked = gfxLow; g.addEventListener('change', () => setGfx(g.checked ? 'low' : 'high')); } }
 S_DEV.addEventListener('change', () => {
   settings.devMode = S_DEV.checked;
   saveSettings();
@@ -55187,6 +55188,22 @@ function animate(ts) {
   try { bwSpan('frame', animateFrame); } finally { if (q) drsQueryEnd(); cameraWatchdog(); }
   imgRelTick(c0);
   drsTick(ts, performance.now() - c0);
+  if (perfHud) perfHudTick(ts, performance.now() - c0);
+}
+/* `?fps` ON THE ADDRESS: frames a second, the frame and our own share of it, the render scale and size, the graphics
+ * setting and the GPU's name, twice a second in the corner — what a slow machine is doing, read off its own screen. */
+var perfHud = null;
+try { if (new URLSearchParams(location.search).has('fps')) { perfHud = { el: null, iv: [], cpu: [], last: 0, t0: 0 }; } } catch (e) {}
+function perfHudTick(ts, cpu) {
+  const H = perfHud;
+  if (!H.el) { H.el = document.createElement('div'); H.el.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;font:12px/1.35 monospace;color:#cfe;background:rgba(0,0,0,.6);padding:4px 7px;pointer-events:none;white-space:pre'; document.body.appendChild(H.el); H.gpu = gpuName(); }
+  if (H.last) { H.iv.push(ts - H.last); H.cpu.push(cpu); }
+  H.last = ts;
+  if (ts - H.t0 < 500 || !H.iv.length) return;
+  const iv = [...H.iv].sort((a, b) => a - b), cp = [...H.cpu].sort((a, b) => a - b), med = iv[iv.length >> 1];
+  H.el.textContent = (1000 / med).toFixed(0) + ' fps   frame ' + med.toFixed(1) + ' ms (worst ' + iv[iv.length - 1].toFixed(0) + ')   game ' + cp[cp.length >> 1].toFixed(1) + ' ms\n'
+    + 'scale ' + drs.k.toFixed(2) + '  ' + renderer.domElement.width + 'x' + renderer.domElement.height + '   graphics ' + (gfxLow ? 'LOW' : 'high') + '\n' + H.gpu;
+  H.iv.length = 0; H.cpu.length = 0; H.t0 = ts;
 }
 /* THE VIEW IS NEVER LOST (2026-11-22, the owner, with a screenshot of nothing but fog behind the HUD: "i went to my inventory
  * fighting the well guy then after my screen did this this should never happen anywhere"). A camera whose place or turn is not
@@ -55260,7 +55277,36 @@ try {
   drs.gl = renderer.getContext();
   drs.ext = drs.gl.getExtension('EXT_disjoint_timer_query_webgl2');
 } catch (e) { drs.ext = null; }
-try { const v = parseFloat(localStorage.getItem('beachwalk.drs2')); if (v >= DRS_MIN && v < RETRO_SCALE) { drs.k = v; renderer.setPixelRatio(v); renderer.setSize(window.innerWidth, window.innerHeight); PIXEL_RATIO_U.value = v; } } catch (e) {}
+/* LOW GRAPHICS (2026-11-23, the owner: the game "ran awful" on a 2018 Mac mini — Intel UHD 630, about a twentieth of the
+ * M4 Pro it is built on). Measured here at 1080p on the beach: 2-3 ms of GPU a frame, 400-800k triangles, and the render
+ * scale only a third of it (0.62 -> 0.42 saved 0.7 ms) — so on a GPU twenty times slower no one knob is enough. Low:
+ *   - the render scale starts at GFX_LOW_K and the dynamic resolution may go down to GFX_LOW_MIN (High: RETRO_SCALE / DRS_MIN);
+ *   - the ground mist's march is skipped (the plain fog stays).
+ * It is a setting of the MACHINE, not of the player: kept in `beachwalk.gfx`, never in `beachwalk.settings` (which a fresh
+ * load resets to the owner's own). It is NEVER on by itself (2026-11-23, the owner: "dont have it automatically on" — it
+ * used to turn itself on where the GPU's name said Intel or a software renderer): with nothing stored it is High, and only
+ * the menu's "Low graphics mode" box sets it. `?fps` on the address shows what it is doing. */
+var gfxLow = false;
+const GFX_LOW_K = 0.42, GFX_LOW_MIN = 0.3;
+function drsFloor() { return gfxLow ? GFX_LOW_MIN : DRS_MIN; }
+function drsCeil() { return gfxLow ? GFX_LOW_K : RETRO_SCALE; }
+function gpuName() {
+  try { const gl = renderer.getContext(), d = gl.getExtension('WEBGL_debug_renderer_info'); return String(d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)); } catch (e) { return '?'; }
+}
+function drsApply(k) {
+  drs.k = k; renderer.setPixelRatio(k); renderer.setSize(window.innerWidth, window.innerHeight); PIXEL_RATIO_U.value = k;
+}
+function setGfx(mode, keep = true) {
+  gfxLow = mode === 'low';
+  if (keep) { try { localStorage.setItem('beachwalk.gfx', gfxLow ? 'low' : 'high'); } catch (e) {} }
+  drs.ceil = drsCeil(); drs.coolUntil = 0; drs.good = 0; drs.bad = 0;
+  drsApply(Math.min(drsCeil(), Math.max(drsFloor(), gfxLow ? GFX_LOW_K : RETRO_SCALE)));
+  const box = document.getElementById('s-gfx'); if (box) box.checked = gfxLow;
+}
+{ let m = null; try { m = localStorage.getItem('beachwalk.gfx'); } catch (e) {}
+  if (m === 'low' || m === 'high') setGfx(m, false); }
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { setGfx, gfxS: () => ({ low: gfxLow, k: +drs.k.toFixed(3), floor: drsFloor(), ceil: drsCeil(), gpu: gpuName() }) }));
+try { const v = parseFloat(localStorage.getItem('beachwalk.drs2')); if (v >= drsFloor() && v < drsCeil()) drsApply(v); } catch (e) {}
 // one timer in flight at a time, every fourth frame, read back when the GPU has it
 function drsQueryBegin() {
   const gl = drs.gl, ext = drs.ext;
@@ -55304,24 +55350,26 @@ function drsTick(ts, cpu) {
     slow = gpuMed > DRS_GPU_HI && p75 > DRS_BUDGET;
     room = gpuMed >= 0 && gpuMed < DRS_GPU_OK && p75 < DRS_OK;
   } else {
-    slow = p75 > DRS_BUDGET && cpuMed < p75 * 0.55 && worst < 60;
+    /* (a window with a stall in it says nothing — unless the frames are slow ALL the way through: on a GPU that can only
+     * manage fifteen a second EVERY frame is over 60 ms, and it never stepped down at all. The median says which.) */
+    const p50 = si[si.length >> 1];
+    slow = p75 > DRS_BUDGET && cpuMed < p75 * 0.55 && (worst < 60 || p50 > DRS_BUDGET);
     room = p75 < DRS_OK;
   }
   if (slow) {
     if (drs.ext || ++drs.bad >= 3) {
       drs.bad = 0;
-      if (k > DRS_MIN + 0.004) { drs.ceil = k; drs.coolUntil = ts + 30000; }
-      k = Math.max(DRS_MIN, k * DRS_STEP); drs.good = 0;
+      if (k > drsFloor() + 0.004) { drs.ceil = k; drs.coolUntil = ts + 30000; }
+      k = Math.max(drsFloor(), k * DRS_STEP); drs.good = 0;
     }
   } else {
     drs.bad = 0;
     if (room) {
-      if (++drs.good >= 3) { drs.good = 0; const up = Math.min(RETRO_SCALE, k * DRS_UP); if (ts > drs.coolUntil || up < drs.ceil * 0.985) k = up; }
+      if (++drs.good >= 3) { drs.good = 0; const up = Math.min(drsCeil(), k * DRS_UP); if (ts > drs.coolUntil || up < drs.ceil * 0.985) k = up; }
     } else drs.good = 0;
   }
   if (Math.abs(k - drs.k) > 0.004) {
-    drs.k = k;
-    renderer.setPixelRatio(k); renderer.setSize(window.innerWidth, window.innerHeight); PIXEL_RATIO_U.value = k;
+    drsApply(k);
     try { localStorage.setItem('beachwalk.drs2', k.toFixed(3)); } catch (e) {}
   }
 }
@@ -56026,7 +56074,7 @@ function animateFrame() {
   updateUmbraFire();
   FOG_MOON.w = inRoom() ? 0 : 1;
   FOG_KEEP.w = inKeep ? 1 : isleMagicK * ISLE_MIST.on;   // and the lighthouse's sea mist (`ISLE_MIST`)
-  FOG_GROUND.w = inDojo ? 0.50 : inSewer ? SEW_MIST.d : inRoom() ? 0 : GROUND_MIST * (1 + 2.4 * wsM) * (1 + 3.2 * wellMistK); FOG_GROUND.x = performance.now() * 0.00055;
+  FOG_GROUND.w = inDojo ? 0.50 : inSewer ? SEW_MIST.d : inRoom() || gfxLow ? 0 : GROUND_MIST * (1 + 2.4 * wsM) * (1 + 3.2 * wellMistK); FOG_GROUND.x = performance.now() * 0.00055;
   FOG_GROUND.y = inDojo ? DOJO_Y + (dojoArenaY || 0) - 0.05 : inSewer ? SEW_Y + SEW.WATER - 0.05 : -0.10;     // in the dojo the mist lies on the courtyard's own stones; in the sewer on its water
   FOG_GROUND.z = inSewer ? SEW_MIST.h : 0.55;
   // the lamps lighting the air (`FOG_SCAT`): the sewer, and the drain from its mouth to its room

@@ -14,6 +14,10 @@ python3 serve.py 4173
 Then open <http://localhost:4173> and click to begin. Any static server works
 (`npx serve`, VS Code Live Server, …) — `serve.py` is just dependency-free.
 
+On an older computer, tick **Low graphics mode** in the menu (it is never on by itself); the choice is remembered on
+that machine. Open
+<http://localhost:4173/?fps> to see the frame rate, the render scale and the GPU in the top-left corner.
+
 ## Controls
 
 | Input | Action |
