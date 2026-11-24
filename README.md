@@ -99,6 +99,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **Physics objects** — driftwood, a pail, a glass float, a stone, a can.
   Click to grab & carry (HL2 / Amnesia style), click again to throw, `G` to
   drop. A tiny custom rigid-body sim (gravity, ground bounce/friction, walls).
+  Every piece of driftwood on the beach also takes a swing — a wood knock, pale
+  chips, and it is knocked along the blow (a short log jumps, a big root
+  shifts) — and a thrown or batted piece hurts whatever it reaches, the crabs
+  included.
 - **Inventory + equipping** — a vertical hotbar on the **left** that appears
   once you pick something up. Items either **use** (the bottle → reads the
   note, `NOTE_TEXT`; the crab → examine view; the syringe → examine, or draw
@@ -129,9 +133,12 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   the shovel and it auto-equips: a first-person **bare hand and forearm**,
   fist closed around the shaft (aspect-aware so it stays framed at any window
   shape), and **click digs wherever the crosshair is pointing** — a layered
-  synth *shff → crunch → grain-spray* sound, a detailed crater (irregular
-  pit, dark undercut bowl, shovel gouges, scattered clods) with a real 3D
-  sunk cone + spoil mound, and a burst of tumbling low-poly sand chunks.
+  synth *shff → crunch → grain-spray* sound, a mark shaped by the swing (a
+  scooped hollow with its lip heaved up and a fan of thrown clods for a spade,
+  a long narrow slot sprayed both ways for a blade — lit by the moon on the
+  beach's own sand, with a faceted crescent of spoil at its front rim), and a
+  burst of thrown sand. A crab cut down comes apart as itself: its legs, its
+  claws and its cracked shell, in its own colours.
 - **The Military Shovel is in a case** — an olive equipment case on the desk
   in the bunker, stencilled E-TOOL, that reads LOCKED until the Blue Blood
   Dealer is dead and opens on `E` after. The shovel lies in its foam. It is
@@ -1107,7 +1114,8 @@ The health boxes, the stamina bar, the hotbar's frames and the blood-jar count's
 numerals are the owner's own marker drawings (`assets/hud/`, cut into masks by
 `tools/hand_hud_pack.py`); the pack's frames, rules, buttons, ring circles and the
 loop round the selection are drawn with the same marker (`assets/hud/pk-*`, built by
-`tools/hand_pack_pack.py` from the hotbar photo's strokes).
+`tools/hand_pack_pack.py` from the hotbar photo's strokes). The water ball's drop
+(`assets/hud/drop-crayon.png`) is a pastel scribble drawn by `tools/drop_crayon.py`.
 The rags the thing in the sewer sleeps on are "rags pack" by Frice
 (https://sketchfab.com/3d-models/rags-pack-b5dfec6e7fda4450822024bd06662ff4, CC-BY-NC-4.0;
 `assets/rags.glb`, repacked by `tools/rags_pack.py`). The lair's flies are the owner's

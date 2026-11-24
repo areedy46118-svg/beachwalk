@@ -578,3 +578,11 @@ Headless Chrome's frames stop (0 % CPU, no further log, `CVDisplayLinkCreateWith
 goes to sleep: a full `musictest` stopped after its 7th scenario, a `loadall` printed nothing for 20 minutes. It is not the game.
 Kill it (`pkill -f "<outdir>/prof"`) and run again when the screen is awake; do not wake the owner's screen to do it.
 Also: `[PB]` stills in `tools/probe.html` are the outer page; the GAME is the iframe — its DOM is `w.document` (`#blackout`).
+
+## 2026-11-23 — a "before" still while the tree is already changed
+
+Never stash or check out (other sessions share the tree). For a before/after, build a throwaway root in the scratchpad:
+symlink every top-level entry of the repo except `main.js`, write the old `main.js` there (the current file with only your
+own blocks swapped back from `git show HEAD:main.js`), and run `sh <root>/tools/probe.sh …` — it `cd`s to the root it was
+started from, so `serve.py` serves the old game with every asset and tool of the new one. A still is a render with nothing
+run after it: `b.lookAt` is applied by the loop a frame late, so aim with `camera.lookAt` right before `shot()`.

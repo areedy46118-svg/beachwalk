@@ -3216,3 +3216,34 @@ looking up between XIII's towers, the iron in open sky by the bunting).
   air (`HK.runOut`, no `to`, not `surfEnd`) plays `sfxChainRunOut` (the links snapping taut at the hand, no slap, no heavy) and the
   iron carries on a hand and falls under its weight (to 9 m/s) while it is reeled in, for 0.9 s. Onto sand it still slaps.
   `tools/hookrunout.js` traces one. The reach itself is unchanged (a fight number): longer is the owner's call.
+
+### The water ball's drop, its look and its burst, round two (2026-11-23, the owner: "have a lil drop of water in the bottom right that indicates when you have the water ball shot make the graphics of this water ball better and more of a impactful splash with it too")
+- **The drop** (`#seadrop` in index.html, `seaDropHud`): bottom right (nothing else lives there), shown only while
+  `seaWeapon()` and not in a menu, the pack, an inspect, a `*-cine` body class, the sketchbook or `cutNow()`. A clipped
+  `<rect>` fills it from the bottom as `seaBall.cd` runs down; `.ready` lights it and breathes a glow; the frame it comes back
+  it gets `.pop` (class removed, a reflow, added: the animation restarts). Driven from the frame loop beside `handGrabTick`
+  (guarded on `deepLive`: the frame can run before the module is read that far), so a cut hides it at once — `update`
+  returns early in cuts and would leave it up. `tools/seadrop.js` checks its states.
+- **The ball**: drawn out along its velocity (`setFromUnitVectors(Y, dir)`, long by up to 1.4, thin across) instead of
+  spinning; the fragment shader gains a lit heart (`pow(nv, 4)`) and foam — two noise octaves thresholded, thickest at the
+  rim; the glow shell 0.5 → 0.8; a trail of MIST behind it.
+- **The burst**: a mist pool (`seaMist`: soft round points that grow as they fade, drag-slowed), two ground rings (a fast
+  bright one to 3.6 m, a slow faint one), an additive flash sprite at the heart, a dark wet patch on the sand for 7 s (only
+  on open ground, `!inRoom()`), a second inner crown 0.16 s behind the first (`c.wait`), 150 + 45 droplets (the pool is 720),
+  a bigger spray; a sub-thump under `sfxSeaBurst` and a third, late splash (the water coming back down); shake out to 9 m
+  and a `fovKick`. All new meshes are compiled in `seaWarm`. Stills: `tools/seaball.js` (the original close-ups).
+- (Trap, mine: `Write` on a path that existed replaced the original `tools/seaball.js` — restored from HEAD; check a tool
+  name with `ls` before writing a new probe.)
+
+## The slice in the sand goes the way the swing went (2026-11-23)
+The owner: "make the slices in the sand actually go the direction it swipes". `stampDigHole` was given `_pf` (where you face),
+so every cut left a slot running away from you. Measured with `tools/slashdir.js` (the view model's mesh centre in `vmCamera`
+NDC through each swing): every light cut sweeps RIGHT TO LEFT on screen (katana, blood, hook, peg, military, shovel: x +0.8 →
+−0.5), the mace's return LEFT TO RIGHT (−0.25 → +0.85), exactly as `slashDir` says (−1 = right to left). A katana-like blade's
+back-cut is its own pose (`katBack()`: `alternate` and an odd `comboStep`), and without `alternate` it never takes one while
+`slashDir` still flips — so for `katLike()` the side is `katBack() ? 1 : -1`, for the rest `slashDir`. In `digImpactCore`,
+when `slashing()`: mark dir = right·d + 0.28·forward (right is (−fz, fx)), the mark 1.45x longer for a blade (`opts.sweep`),
+the sand thrown with the edge. Overhead, slam, thrust and the thrown hook keep the forward. Checked (`tools/slashmark.js`):
+a katana cut looking down −z left a mark pointing (−0.98, −0.21).
+Harness trap: chaining swings by calling `startDig` mid-cut in the probe did not alternate (`comboStep` stayed 0) — the
+queued click is spent on its own clock; the mace's return came from its `maceEndAt` window instead.

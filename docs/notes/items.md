@@ -1426,3 +1426,13 @@ is still at the lips for the gulp and the level drains across it. `tools/drinksn
 ## 2026-11-22 — a key never says "Inventory full"
 `packFullFor(hovered)` was asked of the PICKUP, which never said what it gives: a key on the floor with a full pack read as a
 new slot. `addInteractable`: an 'inventory' pickup whose label says "key" gives null and `isKey` — it hangs on the keychain.
+
+## Dev mode gives the artifacts (2026-11-23)
+The owner: "give all arifacts in dev mode too". `devGrantWeapons` hands the whale's, the flame's and the sea's into the pack.
+They had been left out (10-13) because a held one stopped the world's drop playing; nothing in the world asks whether you
+hold one any more (the whale rises by `artState`, the chest by `tavChestTaken`, the sea by `seaState`), so the drops still
+play — taking one you have is a no-op in `addToInventory`, which now also counts an artifact SET IN a weapon you carry as had
+(before, its `.on` copy was not in `inventory`, so a world pickup would have made a second). `stickArtifacts` writes an
+artifact into the checkpoint as given only if the world gave it when dev mode is on (`one(item, key, taken)`), or a dev
+session's checkpoint would mark the whale's/the chest's/the sea's as taken. Note the whale's in the pack wakes Skrim's
+'deal' (`skqHolding`) in dev mode. Probe: `tools/devarts.js`.

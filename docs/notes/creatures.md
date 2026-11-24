@@ -3668,3 +3668,16 @@ own distance ×1.6. After: blows in most seconds, 2 idle seconds in 40. TRAP: `s
 third before); not one you cut in the last 2 s, not mid-blow; the castle's men too when it is you they fight. On him 5–9 s, then
 back to you if you are nearer by half, he is 10 m off it, or he has not hit it and is 3.5 m off (`marAggroTick`). `marFoes` reach
 18 → 24 m. `tools/marfight.js` (logs `MAR.bal` and the mean on him): standing together in the castle street, 0.6 → 1.1–1.7 of 5.3.
+
+**A CRAB COMES APART AS ITSELF (2026-11-23, the owner of the old gibs: "i hate how its just random shapes").** `burstCrab`
+threw sixteen primitives in the procedural crab's red — not the scanned crab on screen. `crabPieces(u)` bakes the GLB's skin
+in its death pose (one pass over 6772 verts, the `bakeLimb` formula), gives every triangle to its bone's piece by majority of
+`skinDom`, and makes: a piece per leg chain (root `Bone` has 8 chains of 4; 45 % snap again at the 3rd bone) and three
+carapace plates cut on ragged lines in the crab's own frame. Legs are turned onto X so they land lying down. Measured: 3 body
+plates (1.6–2k tris), 11–12 leg pieces, burst 8 ms, next frame 3–4 ms. Facts about the model: **GLTFLoader strips the dots
+from bone names** (`L.Bone.001` → `LBone001`), so it is walked by structure, not by name; the root bone owns 2813 of the
+6772 verts, leg roots included, so a plate keeps stubs of legs; the material is `doubleSided` in the file, so a cracked
+plate is not see-through from the break and needs no clone. Pieces carry `bleed: false`, so they fold into the rubble when
+they settle on dry sand. The old solids stay as the fallback before the model has arrived. `tools/crabgibs.js` — and a probe
+that bursts a crab must leave it as `finishCrab` does (`crabState.alive = false`), or the update shows the sleeping crab
+again on top of its own remains.

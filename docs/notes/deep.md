@@ -454,3 +454,12 @@ page, so a body is whole again only as it was built.
 - **A guard toward it is a guard** (2026-11-22, "fix the block on the seamonster blocks sometimes dont work"): the bite and the
   tail asked for the view within ~70° of the MOUTH/TIP in 3-D — under water it shuts above, below or beside you. `plioGuardSees`:
   the game's own `guardSees` (the half in front, level) of the striking point or of the animal.
+
+## 2026-11-23 — a block never hurts
+The owner: "i still get hurt when blocking the seamonster fix this". `plioBlocked` took `BLOCK_COST * 2.4` (0.82 of a full
+bar) and, when that emptied it, `damagePlayer` — the blow you stopped bit you. With the bar's regen in the deep (0.10 → 0.81
+in 4 s), the second block of a run nearly always emptied it: `tools/plioblock.js` (devMode off, guard held up a second
+before each blow so every one is a block, not a parry) — 2 of 4 blocked bites hurt. Now `BLOCK_COST * 1.35` (a heavy
+mutant's pounce) and an empty bar is out of breath (`exhausted`, `gaspOut`) as on land, no damage: 0 of 8 (4 bites, 4
+tails) hurt. The NEXT blow after an emptying block still finds the guard down (`raiseGuard` refuses while exhausted).
+Harness: `__bw.stamina` / `__bw.exhausted` getters added beside `hp`.

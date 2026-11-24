@@ -1838,3 +1838,44 @@ one-pixel `readPixels`, against `b.frame(1)` alone for the CPU.
 - **`?fps` on the address** puts fps, the frame's median and worst, our CPU share, the scale and buffer size, the setting
   and the GPU's name in the top-left corner. It is how a reading comes back from a machine that is not this one.
 - Next, if Low is still not enough there: the triangles (a LOD or a shorter draw for the big scans on Low), not the pixels.
+
+## 2026-11-23 — the potato pass: far detail (LOD) and the hover's near pass
+The owner sent a devlog ("Optimizing my Game so it Runs on a Potato", Bloodthief, Godot) and asked for the same here. What
+each of its points is in THIS game, so the next pass does not redo the mapping:
+- occlusion culling → `cullBeyondFog`, `farProps`, `cullWorldInHall`, `cullCastleUnseen`, `cullUnitModels` (all there);
+- baked lighting → no shadows, 6 pooled point lights, emissive-lit scans, `bakeStatic` merges (there);
+- enemy path/animation throttles → measured cheap here (`mixcost.js`: mixers 0.01-0.25 ms; off-view mutants hidden);
+- shader compilation → the warm system (`warmCompile`, `warmBeachDrawCompile`, `updateHeldWarm`) — there, and the hard part;
+- graphics API → WebGL on ANGLE/Metal; `gfxLow` is the menu's "Low graphics mode", off unless ticked (the parent pass, above);
+- threaded loading, render-resolution setting, SSAO off → `bgRun` budgets / `texUp` / parse-later, DRS + Low (there).
+So the two things done were the two not covered:
+- **FAR DETAIL** (`lodTick`, "FAR DETAIL" banner before `bakeStatic`). Big static meshes (≥ `LOD_MIN_TRIS` 3000, not
+  skinned/instanced/ShaderMaterial, not the recentring tiles) get vertex-clustered levels at cells `LOD_CELLS`
+  (0.06 → 4.8 m), built in a Blob WORKER only when something visible wants one, kept only if a third smaller than the finer
+  level; a level is drawn where its cell is under 1 px (2 on Low) from the nearest point of the mesh's box, so DRS dropping
+  makes things coarse sooner. **The coarse geometry is on the mesh ONLY between `lodBegin()` and `lodEnd()` round the one
+  `renderer.render` in `animateFrame`** — the castles, keep, catacombs and island build their wall indexes from the meshes'
+  geometry from 250 m out (`fortWallsStep`), so a lasting swap would have given them walls of blocks. A still taken with
+  `renderer.render` outside the frame draws the whole shapes; wrap it in `__bw.lodBegin()/lodEnd()`. Measured
+  (`tools/lodcost.js`, 1920x1080, M4 Pro): triangles z -60 558 → 459k, -450 732 → 586k, -600 607 → 399k, -900 781 → 622k;
+  on Low at scale 0.3: 559 → 406k, 733 → 552k, 608 → 387k, 781 → 573k. ~190 meshes found, 38-94 levels kept, built in
+  0.5-1.1 s per stretch, no frame over 33 ms while building (worst 27-28 ms, once). Stills on/off differ only where the surf
+  moved between them. The M4's GPU time does not move (it was never vertex-bound) — the saving is for the Intel GPUs the
+  Low graphics pass found vertex-bound. `?lod=0` / `__bw.lodOn(false)` for an A/B; `__bw.lodS()` for the counts.
+- **The sea is NOT coarsened on Low**, deliberately: its 115k triangles are the biggest single mesh, but a coarser grid was
+  built and reverted once already (its horizon becomes a staircase), and the owner's look comes first.
+- **The hover's near pass** (`hoverNearScan`, before `updateHover`): the crosshair ray was cast at every interactable in the
+  game every frame (~8 % of our CPU at z -300). Now every 8 frames, or at once on a 2 m camera jump, each is marked `_far`
+  when no mesh of it comes within its reach + 3 m; instanced/skinned meshes are always asked. `tools/hovernear.js` (A/B with
+  `&off=1`): 95 placements, the same hover at 93, the other two a mirrored pair = run-to-run noise (a filter can only remove a
+  hover). After: `updateHover` is out of the profile's top 40.
+- Left: steady-state CPU is now mostly three's per-draw cost (`renderObject`/`setProgram` 30-45 % of samples) — draw calls,
+  which the earlier merges already cut; the next lever there is more merging, not throttles.
+
+**Nothing circular in `userData` (2026-11-23, "i cant pick up a shell").** The far-detail pass marked each mesh on its list
+with `userData.lodE` = its entry, which points back at the mesh. `Object3D.clone` copies userData through
+`JSON.parse(JSON.stringify())`, so cloning any such mesh threw "Converting circular structure to JSON" — and the pickup
+hand (`handGrabGhost`) clones what it takes, so the reach died mid-frame and nothing the walk had registered could be
+picked up (no prompt problem: the hover still said "Take the shell"). The list now lives in a WeakSet (`lodReg`). Rule:
+anything bookkeeping keeps about a mesh goes in a WeakMap/WeakSet, never in its userData. `tools/shellpick.js` takes
+the beach's shells headless; the frame error shows in `chrome.err` as `[bw] threw inside frame`.

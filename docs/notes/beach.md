@@ -217,9 +217,10 @@ on the cut were both tried and cut: naming the thing is less frightening
 than the tide keeping its counsel, and the splash read as a bug.
 
 **Digging.** `crosshairGroundPoint()` raycasts the crosshair onto `sand`.
-`digImpact()` stamps `digHoles` (flat crater decal) + `digPits` (sunk 3D
-cone) + `digMounds` (spoil), spawns `spawnPuffs()` sand chunks, and plays
-`sfxDigImpact()`. Pools recycle after `DIG_POOL` (20).
+`digImpact()` stamps `digHoles` (a lit height-field decal) + `digMounds`
+(a crescent of spoil) — see "THE MARK A STRIKE LEAVES" below; the sunk cone
+is gone — spawns `spawnPuffs()` sand, and plays `sfxDigImpact()`. Pools
+recycle after `DIG_POOL` (32).
 
 **Opening.** Title card is bare "BEACHWALK" + controls. `beginGame()` (on
 the overlay click) requests pointer lock *on the gesture*, then runs the
@@ -3785,3 +3786,154 @@ moon with this keep lighting the same" (RenderX's "moon", CC-BY-4.0: a sphere un
   north up, east to your right) and its brightness laid between the moon's own maria and highland colours — every light term after it
   untouched. `uMoonMapK` is 0 until the map is in (the drawn face). The model's 20 MB of geometry and texture are not used.
 - `tools/moonmap.js`: the moon cropped with the map and without, and the whole view.
+
+**THE MARK A STRIKE LEAVES (2026-11-23, the owner: "improve the marks in the ground when hitting the sand").** `stampDigHole`
+(every swing that lands on sand — `digImpactCore`, the hook) laid a painted crater decal, an open cone sunk under it and a grey
+cone of spoil. **The beach is an OPAQUE PLANE at y = 0, so nothing below it is ever drawn**: the sunk cone showed only as its
+rim — a heptagon ring standing out of the sand round a black hole — which is the "random shapes" the owner saw. Now:
+`digHoles` is a `ShaderMaterial` decal (1.8 m, per-instance `aDig` = born, length, half-width, seed) that shades a height field
+(the gouge, a lip heaved up round it and piled at the front, a fan of clods) from the moon's side in the mark's own frame, on
+a 2 cm grid, with a short shadow march for the lip and the floor darkened (damp, out of the light). Its blending is
+`One, SrcAlpha`: **out = rgb + beach x alpha** — alpha darkens what is there (so it keeps the beach's grain, wet tint, moon
+road), rgb ADDS moonlight in the lit sand's colour. A pure 2x multiply was tried first and could not lift dark navy sand far
+enough to read as a rim catching the moon. **Everything is linear here**: a 0.5x darkening only reads as ~0.7x on screen, so
+the contrasts (`AMB` 0.26, floor x0.15–0.3, rim add x4.6) look loud in the code and quiet in the frame. `digMounds` is a faceted
+crescent of spoil (`digSpoilGeo`) in the beach's own `sandShader`, patched for instancing (`vWorldPos` with `instanceMatrix`)
+and with its map/bump/emissive uv in world space at the beach's density. A blade (`opts.blade`, `isBlade()`) cuts a long
+narrow slot sprayed both ways and heaps nothing; `opts.P` makes a harder swing longer and deeper. **The blade's ray is cast at
+the plane, and a bank stands over it**: drifts, berms and the sand round rocks are above y = 0, and a mark laid at 0.03
+there was buried (the first probe spot, x 8 z -40, sits on one). The stamp asks `beachGroundAt` and tilts to its slope.
+Marks soften from 150 s to 420 s and fade beyond 20–42 m; pool 32. `tools/sandmarks.js` (via `evalFile`) finds a bank-free
+stretch itself and takes stills at the game's FOV and through a 32° lens (`-g` = brightened 2.4x, to see the forms).
+
+## Driftwood takes a swing and hits a crab (2026-11-23)
+The owner: "make it so you can hit or throw these pieces of driftwood too or throw at an enemy" — "all driftwood". Every
+piece was already a prop you can grab and throw; what was missing: a blade went THROUGH the wood and dug the sand under it,
+and a thrown thing never hurt a crab (`thrownHits` walked `mutants` only; crabs are their own list).
+- `makeProp(…, 'driftwood')` tags `prop.drift` — all three sources (the seeded wrack logs and roots, the spawn's log, the
+  snorkeler's).
+- `digImpactCore` asks `driftSwingHit()` (a raycast at the pieces within reach) before the solids: nearer than the sand
+  and any solid, `driftStruck(h, P)` plays wood (`sfxPropHit('wood')`, `hitWood`, the blade's own sample), throws pale chips
+  (`spawnPuffs` tint 0.5) and knocks the piece along the swing by `k = clamp(0.42 / radius, 0.3, 1.2)` (a 1.3 m log is
+  radius 0.36, a big root 0.6-0.8), waking it (`asleep = false`); over 3.2 m/s across the ground it counts as a throw.
+- `thrownHits`: a driftwood piece's reach is `min(0.5, radius / 2)` wider (a two-metre root hits past its middle); then the
+  crabs — the same blow through `hurtCrab` (1, or 2 over 9 m/s), and a sleeping one is woken the ordinary way (`called`).
+  NOTE: `CRAB_HP` is 2 and an ordinary throw leaves the hand at 16 m/s, so a thrown log kills a crab outright.
+- `tools/driftwood.js` (devMode, the real swing via `startDig(0.6)` with the toy shovel): a root of radius 0.62 hit at
+  1.4 m — peak 4.5 m/s, moved 1.10 m, 0 marks dug; the same swing at bare sand dug 1; a piece thrown at the loner 3 m off
+  at 12 m/s — hp 2 → 0 on frame 10; 1.5 m to the side — no hit. No console errors.
+
+## 2026-11-23 — the three come up out of the sea (the pack's swim-in)
+"improve the 3 crabs coming out of the water cutscene". Measured first (`tools/packcut.js`, dev mode off, the real trigger,
+a still every 0.4 s at the game's lens and at 30°): every crab's clip time stayed 0.00 through the whole cut — `packCut`
+is `frozen()` and `updateCrabUnit` returns at `if (frozen()) return;` before `crabAnim`, so they slid in as rigid poses;
+all three were hidden (`submersionAt` < 0.92 is only the last 1.5 m of surf) until ~3.4 s, so the camera spent three
+seconds on empty water; and the rear-up only ran after the camera let go. Now, in `updatePack`, looks only (same 3.4 s +
+0.75 s, same spots, same wake-up after):
+- **Drawn the whole way; the opaque sea hides what is under it.** Each sinks LESS as it comes (`sink` 1.6 → 1.15 → 0.6 by
+  progress, through `beachRestY`), so its back breaks the surface a little past halfway (~2.2 s) and it walks up out of the
+  surf. The moment its shell top passes `waterSurfaceAt`: `sfxPackSurface` (moved from the old pop-in) + a sheet
+  (`spawnSplash` x30), then drips every ~0.15 s while it still wades.
+- **Animated** with `u.mixer` driven here: the walk clip at 0.9-2.5x by its speed; from 95 % of the swim the attack clip
+  is held at `PACK_REAR_T` (0.42 of its length, claws up — the tell) rising through the hold, so the rear is ON camera.
+  At release the AI's own `crabAnim` cross-fades from there.
+- **Each its own line**: a sine weave of 0.55 m in z and a yaw wobble, both gone by arrival; in the last beat each turns
+  to face you (forward is local −z: yaw = atan2(−dx, −dz)).
+- **The lens leans in**: `packFov` (`PACK_FOV` 52, never wider than the setting) in `updateDialogCam`'s `wantFov` chain at
+  rate 1.6, cleared at release so the frame's own ease takes it home. A `var`: the lens code is read by the loop, which
+  can run before the module reaches the declaration. Aim lowered to y 0.25.
+
+## The sketchbook after the drowning, and what you drew on the island's pier (2026-11-23)
+The owner: after the snorkeler's rescue and before the wash, back in the intro room — the syringe empty, hazy, coming to,
+a slight zoom on his blank sketchbook (his photo, `assets/sketchbook.jpg`, from `~/Downloads/IMG_7239.HEIC`, EXIF-turned
+upright), a floating retro pen for a cursor, "DRAW A CHARACTER FOR YOUR BOOK", E to confirm, "NAME CHARACTER", Enter, then
+drowsy, head on the table with a thud, black, the wash. At the lighthouse pier the drawing as a sprite of its own lines;
+talk ("Hello!" / "What the hell are you?" → its name → "Kill me."), hit it → flinch → fade → "Existence is pain."
+- **Where it runs**: the deep's black (`deep.ph` 'black' → at `WASH_BLACK`, once a game unless `skDone`) becomes
+  `'sketch'` (`skStart`); `skTick(rawDt)` from that case drives it; on its end the deep goes back to 'black' at
+  `WASH_BLACK − 1.4` and on to the wash as before. **A probe of it must `b.setDeepLockS(true)`**: the hook sets `deepLock`
+  on the way in, and without it `updateDeep` returns as soon as `inDeep` goes false at the black — stuck there for ever.
+- **The room again**: `tbStart(true)` — the title's own builder, re-run mid-game: TB state reset (`gone`, `ready`,
+  `rainAudio`, `bolt`), drawn into `#sk-room` (z 10, under `#blackout` 11 and the lids 12, so the black and `eyeLids` work
+  over it), no `icLoad`, `TB.reprise` (no call, no title frame, `skRoomCam` drives the lens: a sinking, swaying push toward
+  the desk), the syringe `setFill(0)`. `tbStop` as ever (and it hides `#sk-room`).
+- **The page**: `#sk` (z 10, after the room), a `.stage` the photo's 600:800 shape at 100vh scaled ×1.5 about the book, an
+  ink canvas over it. Strokes are kept in the PHOTO'S PIXELS (`skToPhoto` through `getBoundingClientRect`, so the slow zoom
+  and the sway cost nothing), clipped to `SK_PAGE` (the paper's quad, measured off the photo's white). E needs
+  `SK_MIN_INK` (160 px of line). The pointer is let go (`exitPointerLock`; the pointerlockchange → menu branch knows
+  `SK.on`), the scene owns the keys (`skKey` on window CAPTURE; the name box's own handlers stop its keys short of the
+  game), and Enter on the name re-asks the lock (a keydown is a gesture). No page-flip or body-fall SAMPLES exist —
+  `sfxHeadDesk` is synthesized (a 92 → 38 Hz body blow, low-passed knock, and `sfxThud`).
+- **Load order (bit twice)**: the frame loop and a restore both run before the module is read that far — `skDone/skDead/
+  skName/skInk` and `SK`, `SK_FIG`, `SK_NPC` are declared up by `packTipDone`; the restore builds the figure in a microtask.
+- **The figure** (`skFigBuild`, `skFigTex`): the strokes redrawn on a canvas cut to their bounds, lines 4.5 % of the
+  drawing's size, **WHITE** on the pier (owner: "draw in black but it shows up white when u see it there") though black on the
+  page; a plane stood on its feet, 1.75 m, turned to you each frame (`skFigTick`), `MeshBasicMaterial`, toneMapped off.
+  `SK_SPOT` (-17.55, 15.65, -1249.52): from his screenshot's readout (feet -14.39, 15.65, -1249.33, look 1.19 — the readout
+  is world x, feet y, z and `lookEuler.y`); the boards end 4.2 m along that look, so 3 m out and a metre left — in front of
+  the lamp post, black on black, it vanished. `groundUnder` gives the boards when the island is up, else the measured y.
+- **Talk / hit**: `addInteractable(…, 'npc', { far: 4.5 })`, label "Talk to <name>"; `SK_NPC` script. `skStrike` in
+  `digImpactCore` (after the crow): flinch 0.5 s (shake, squash), fade 2.2 s rising, gone; `skDead` → the toast
+  ('Rare achievement unlocked', '50 - Existence is pain.') and `RARE_ACHIEVEMENTS`. Saved: `skDone, skDead, skName, skInk`.
+- `tools/sketchtest.js`: the whole path (drown → room → a stick figure by pointer events → E → "Gerald" → slam → wash →
+  island → talk label → strike → achievement), with stills of the room, the page and the pier.
+
+### The sketchbook, round two (2026-11-23, the owner: "the textbook scenes after the seamonster just froze the game" / "its stuck like this" / "i couldnt even esc and reload checkpoint which i always should. there should also be a checkpoint at the start of this cutscene" / "the textbook should be show on the table like the intro too. make sure no syringes and other props are colliding on the table here too")
+- **The freeze was a hidden page.** `#sk` (the book, the words, the pen) and `#sk-room` (the room) were both z-index 10, and
+  `#sk-room` is made by `tbStart` AFTER `#sk` exists, so it painted over it: the scene was waiting in 'draw' for ink on a page
+  nobody could see. The headless test drew blind and passed. `#sk-room` is 9 now. **A still composed in the probe is not
+  the screen**: the old `pageShot` drew the photo and the ink itself, so the layering was never looked at.
+- **Escape is the menu in the scene.** `skKey` toggles `openMenu`/`closeMenu` (the deep's update returns while the menu
+  is open, so the scene holds); `closeMenu` does not take the mouse back while `SK.on`. Trap: a window keydown listener
+  hears a key BEFORE a later-registered CAPTURE listener on the window (it is the target: registration order), so the
+  game's main key handler ran first — in the drag fallback it opened the menu and `skKey` shut it again. The main
+  handler now returns while `SK.on` (`SK` moved up beside `menuOpen` so it can be asked there).
+- **A checkpoint at its start** (`skCheckpoint`, as the room comes up): `saveCheckpoint` then the save patched — standing
+  where the sea left you, room null, `flags.skAt = [washX]`, `deepDone` still false. Loaded: `skOwed`, and the frame loop
+  (beside `handGrabTick`, once `deepLive`) runs `skResume` — deepLock on, the needle laid, `deep.ph = 'sketch'`, `skStart`.
+  The wash's own save (`endDeep`) writes over it. `tools/sketchload.js` tests the menu and the reload.
+- **The book is on the desk** (`skDeskBuild` from `tbBuild` when `TB.reprise`): the photo squared up (`skRectify`,
+  bilinear from `SK_BOOK_Q`, the whole book to the wire) onto a 0.40 x 0.30 m page on a dark board at the call's book spot
+  (x 1.955, z 2.19), layer 2, drawn sharp in its own pass over the retro room (`tbRender`) like the call's syringe; a
+  touch of emissive (`SK_BOOK_GLOW`) so it reads. Drawing is a ray through `TB.cam` onto the page (`skToBook`, layer 2);
+  strokes are in page units (`SK_BOOK_W` x `SK_BOOK_H`; the canvas is twice that); `skBookToScreen` is the harness's way
+  back. The camera (`skRoomCam`) goes from the title view to over the book, leans in slowly, and the slump goes down into it.
+- **Nothing on anything** (`skDeskTidy`, the second time only — the call's desk is as he approved it): the phone where the
+  call's clip lays it, the empty syringe beside the book, then every desk thing as a plan capsule (PCA of its vertices:
+  axis, half-length, half-width; `skCapsule`) pushed off the book's box, the phone and each other (`skSegDist`) and kept on
+  the desk. The default phone spot (1.6, 2.56) is under one of the dropped syringes — the call never shows that because
+  `icPlaceProps` moves the phone; the reprise skipped it, which was the owner's "colliding".
+- `tbStop`'s teardown threw on the cans (a material LIST: `o.material.map` is Array's `map`), so the room's renderer and
+  canvas were never let go — after the intro too. Fixed.
+- (later the same day, the owner: "enter to confirm instead" / "after you enter the drawing your cursor is seen all over again
+  its dissapearing on the textbook" / "i saw a glimpse of the textbook when coming back to the beach"): the name box sits
+  under NAME CHARACTER, above the book; the bottom hint is `Enter Confirm` there (lit once something is typed; E is a letter
+  of a name); the pen stays shown while naming; a click while naming puts the focus back in the box, and Enter with the box
+  let go of still names it. `skEnd` hides `#sk-room` and the room's canvas at once — `tbStop`'s own hide waits on its 4 s
+  teardown, and the wash lifts the black 1.4 s after the slam.
+
+## The pier figure at the pen's width (2026-11-23)
+The owner: "make the drawing same thickness when you see them at the lighthouse just have it white how it is". `skFigTex`
+drew the strokes at ~4.5% of the drawing's size (about four times the pen) to read from the pier's foot; now `lw = 3.1`
+page units, the same as `skInkStyle`, white still, on a 1024 canvas so the thin line keeps a few texels (measured: a 120-unit
+figure → 468 x 1024, the line ~11 texels). Reads fine from 3 m on the pier (`tools/devarts.js`'s still).
+- (2026-11-23, "it should say enter to confirm when drawing your character") Enter confirms the drawing too, and the hint
+  reads "Enter Confirm" from the start (`skBuild`, `skStart`): one key for both steps; E does nothing in the scene now. The
+  probes (`sketchreal`, `sketchload`, `sketchtest`) send Enter. `sketchload` after: drawn, Enter, "Pat", Enter → the wash.
+
+## 2026-11-23 (night) — the workshop puppets' voices
+The owner, five bounces from "well guy audio/Bounced Files" ("puppet attacking sound", "puppet taking damage sound", "puppet
+getting injected sound", "puppet rare phrase", and "puppet audio" — the October file the fire puppet's six pleas and scream
+were already cut from, left as it is): "use these for the puppet sounds they are labeled".
+- Cut by `tools/farmer_voice_pack.py "<Bounced Files>" "puppet attacking sound=pup-attack" "puppet taking damage sound=pup-hurt"
+  "puppet getting injected sound=pup-inject" "puppet rare phrase=pup-phrase"` → 17 / 18 / 1 (2.9 s) / 2 takes, 516 KB.
+- `MUT_KINDS.cpup.voice` is `farm: true, vox: PUP_VOX` now (still `mute`: that keeps the synth's tell/roar/laugh off; the
+  farm path is `sfxMutHit`'s and the swing's, neither asks `mute`). ONE voice object for the eight, so one mouth: a cry cuts a
+  grunt; seven at you are not seven voices. `swing` p 0.8 at the wind's end; `hurt` every landed blow; `shout` (the rare
+  phrase) off `cpPhraseTick` (fight 1–2, a puppet up and fighting, 6–12 s for the first, then 16–32 s, p 0.6, gap 16).
+  `pupInject` at the needle's stab in `cpInjectTick` (t 0.45), from the bench, into the room's hush.
+- The marionette (`cmar`) is untouched: his voice is the synth throat still.
+- Probe `tools/pupvox.js` (wraps `AudioBufferSourceNode.start` and names each buffer by its bank, `__bw.sampleBanksS`): the
+  injection at 0.5 s, grunts on his swings, a cry on struck blows, the phrase at 10 s. Trap: `__adv` runs game time faster
+  than the audio context's real clock, so `own`/`gap` (seconds of `currentTime`) eat blows a probe lands 2.5 game-seconds
+  apart — 2 of 3 cried there; in play each one can.

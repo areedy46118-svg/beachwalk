@@ -7167,6 +7167,214 @@ function cullReach(o) {
  * skipped by this entirely, whatever it cost. `opts.named` says the names
  * in this subtree mean nothing; everything else about the rule stands, and
  * `bwGhost`, `noBake` and whatever the caller keeps are still refused. */
+/* ---- FAR DETAIL: every big static mesh has a coarser self for when it is far (2026-11-23, the owner: "it should be
+ * running flawlessly on all computers", after a devlog on running a game on a potato). What is left of a frame on a slow
+ * GPU is VERTICES (perf.md, "Low graphics…": 400-800k triangles, the render scale only a third of it): scans made for
+ * close-up are drawn from far away nearly all the time — two 79k-triangle mountains at 140 m, a fort of 300k seen from
+ * 300 m, the island's 78k from everywhere, little props of 30k triangles in under a metre a hundred metres off, which is
+ * two pixels. So each one gets LEVELS, made by VERTEX CLUSTERING — every vertex snapped to a grid cell and the cell's
+ * vertices merged (averaged position, normal and uv; a uv seam kept apart), and the triangles that collapse dropped. It is
+ * the oldest LOD there is, it needs no library, and what it does to a shape is make it a little blockier, which is this
+ * game's look anyway. A level is used only where its cell is under `LOD_PX` pixels on screen (1, or 2 on Low graphics),
+ * measured from the camera to the NEAREST POINT of the mesh's box, so the part of a long wall you stand by is always
+ * whole, and the render scale counts: when the dynamic resolution drops, things go coarse sooner.
+ *  - Nothing is decided by hand: a slow walk of the scene (`LOD_WALK` objects a frame) finds every mesh that qualifies —
+ *    static, not skinned, not instanced, not a ShaderMaterial (the sea, the rock wall: their vertices are theirs), not a
+ *    recentring tile, at least `LOD_MIN_TRIS` triangles — so a model that loads later is found too.
+ *  - The clustering runs in a WORKER, one geometry at a time, only for a level something visible actually needs: the
+ *    main thread copies the arrays out and swaps the result in, nothing more. A level that saves under a third of the
+ *    triangles of the one before is not kept.
+ *  - Each mesh is looked at every `LOD_EVERY` frames, staggered, so a frame pays for a few dozen, never all of them.
+ *  - THE FAR SHAPE EXISTS ONLY WHILE THE FRAME IS DRAWN. `lodBegin` puts each mesh's level on it right before
+ *    `renderer.render` and `lodEnd` puts the whole geometry back right after, so nothing in the game ever reads a coarse
+ *    one: the castles, the keep, the catacombs and the island build their wall indexes FROM THE MESHES' GEOMETRY, from
+ *    250 m out — exactly where a mesh is far — and a swap that stayed would have given them walls made of blocks. Raycasts,
+ *    `bakeStatic`, the rubble: all see the whole shape. The levels share its bounds, so the culls see what they always saw.
+ * `?lod=0` (or `__bw.lodOn(false)`) turns it off for an A/B. `tools/lodcost.js` measures it. */
+const LOD_MIN_TRIS = 3000, LOD_CELLS = [0.06, 0.18, 0.54, 1.6, 4.8], LOD_WALK = 300, LOD_EVERY = 8;
+const LOD = { on: !/[?&]lod=0\b/.test(location.search), list: [], byGeo: new WeakMap(), stack: [], walkT: 0, worker: null,
+  busy: null, queue: [], tick: 0, built: 0, kept: 0, saved: 0, swaps: 0, fail: 0 };
+const LOD_SKIP = new Set();                 // the recentring tiles (filled where they are made: sand, sea, debris, cliff)
+const LOD_WORKER_SRC = `
+onmessage = (e) => {
+  const { id, cell, pos, idx, attrs, groups } = e.data;
+  const n = pos.length / 3;
+  let mx = Infinity, my = Infinity, mz = Infinity, Mx = -Infinity;
+  for (let i = 0; i < n; i++) { mx = Math.min(mx, pos[i * 3]); my = Math.min(my, pos[i * 3 + 1]); mz = Math.min(mz, pos[i * 3 + 2]); Mx = Math.max(Mx, pos[i * 3]); }
+  const K = 131072, inv = 1 / cell;
+  const uvA = attrs.find((a) => a.name === 'uv');
+  const map = new Map(), cl = new Int32Array(n); let nc = 0;
+  for (let v = 0; v < n; v++) {
+    const key = Math.floor((pos[v * 3] - mx) * inv) + Math.floor((pos[v * 3 + 1] - my) * inv) * K + Math.floor((pos[v * 3 + 2] - mz) * inv) * K * K;
+    const iu = uvA ? Math.floor(uvA.arr[v * 2] * 24) : 0, iv = uvA ? Math.floor(uvA.arr[v * 2 + 1] * 24) : 0;
+    let L = map.get(key); if (!L) { L = []; map.set(key, L); }
+    let c = -1; for (let j = 0; j < L.length; j += 3) if (L[j] === iu && L[j + 1] === iv) { c = L[j + 2]; break; }
+    if (c < 0) { c = nc++; L.push(iu, iv, c); }
+    cl[v] = c;
+  }
+  // the triangles that survive, group by group
+  const tri = idx ? idx.length : n, out = [], oGroups = [], used = new Int32Array(nc).fill(-1); let nu = 0;
+  const G = groups.length ? groups : [{ start: 0, count: tri, materialIndex: 0 }];
+  for (const g of G) {
+    const s0 = out.length, end = Math.min(tri, g.start + g.count);
+    for (let t = g.start; t + 2 < end; t += 3) {
+      const a = cl[idx ? idx[t] : t], b = cl[idx ? idx[t + 1] : t + 1], c = cl[idx ? idx[t + 2] : t + 2];
+      if (a === b || b === c || a === c) continue;
+      for (const q of [a, b, c]) { if (used[q] < 0) used[q] = nu++; out.push(used[q]); }
+    }
+    oGroups.push({ start: s0, count: out.length - s0, materialIndex: g.materialIndex });
+  }
+  // each kept cluster's vertex: the mean of its members (the normal renormalised); anything that is not a position, a
+  // normal or a uv is taken from its first member, since a mean of an id is not an id
+  const cnt = new Float32Array(nu), oPos = new Float32Array(nu * 3), first = new Int32Array(nu).fill(-1);
+  for (let v = 0; v < n; v++) { const u = used[cl[v]]; if (u < 0) continue; cnt[u]++; oPos[u * 3] += pos[v * 3]; oPos[u * 3 + 1] += pos[v * 3 + 1]; oPos[u * 3 + 2] += pos[v * 3 + 2]; if (first[u] < 0) first[u] = v; }
+  for (let u = 0; u < nu; u++) { oPos[u * 3] /= cnt[u]; oPos[u * 3 + 1] /= cnt[u]; oPos[u * 3 + 2] /= cnt[u]; }
+  const oAttrs = [];
+  for (const A of attrs) {
+    const s = A.size, o = new Float32Array(nu * s), mean = A.name === 'normal' || A.name === 'uv' || A.name === 'uv1';
+    if (mean) {
+      for (let v = 0; v < n; v++) { const u = used[cl[v]]; if (u < 0) continue; for (let k = 0; k < s; k++) o[u * s + k] += A.arr[v * s + k]; }
+      for (let u = 0; u < nu; u++) {
+        if (A.name === 'normal') { const l = Math.hypot(o[u * 3], o[u * 3 + 1], o[u * 3 + 2]) || 1; o[u * 3] /= l; o[u * 3 + 1] /= l; o[u * 3 + 2] /= l; }
+        else for (let k = 0; k < s; k++) o[u * s + k] /= cnt[u];
+      }
+    } else for (let u = 0; u < nu; u++) for (let k = 0; k < s; k++) o[u * s + k] = A.arr[first[u] * s + k];
+    oAttrs.push({ name: A.name, size: s, arr: o });
+  }
+  const oIdx = nu > 65535 ? new Uint32Array(out) : new Uint16Array(out);
+  postMessage({ id, tris: out.length / 3, pos: oPos, idx: oIdx, attrs: oAttrs, groups: oGroups }, [oPos.buffer, oIdx.buffer, ...oAttrs.map((a) => a.arr.buffer)]);
+};`;
+function lodWorker() {
+  if (LOD.worker === null) {
+    try { LOD.worker = new Worker(URL.createObjectURL(new Blob([LOD_WORKER_SRC], { type: 'text/javascript' }))); LOD.worker.onmessage = lodDone; LOD.worker.onerror = () => { LOD.fail++; LOD.busy = null; }; }
+    catch (e) { LOD.worker = false; }          // no workers: no levels, and nothing else changes
+  }
+  return LOD.worker;
+}
+const lodTris = (g) => (g.index ? g.index.count : g.attributes.position.count) / 3;
+function lodEligible(o) {
+  if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || o.userData.noLod || lodReg.has(o)) return false;
+  const g = o.geometry;
+  if (!g || !g.isBufferGeometry || !g.attributes.position || g.morphAttributes.position || g.attributes.position.usage === THREE.DynamicDrawUsage) return false;
+  if (g.drawRange.start !== 0 || g.drawRange.count !== Infinity) return false;
+  if (lodTris(g) < LOD_MIN_TRIS) return false;
+  for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (!m || m.isShaderMaterial) return false;
+  for (let a = o; a; a = a.parent) if (LOD_SKIP.has(a) || a === camera) return false;
+  return true;
+}
+function lodLevels(g) {
+  let L = LOD.byGeo.get(g);
+  if (!L) {
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    if (!g.boundingBox) g.computeBoundingBox();
+    L = { hi: g, tris: lodTris(g), ver: g.attributes.position.version, lv: LOD_CELLS.map(() => null) };   // null: not asked; 'wait'; false: not worth it; a geometry
+    LOD.byGeo.set(g, L);
+  }
+  return L;
+}
+/* (WHICH MESHES ARE ON THE LIST IS KEPT HERE, NOT ON THE MESH — 2026-11-23, the owner: "i cant pick up a shell". It was
+ * `userData.lodE`, the entry, which points back at the mesh: `Object3D.clone` copies userData through JSON, the circle threw,
+ * and the hand that takes a thing (`handGrabGhost` clones it) died mid-reach, so nothing that had been put on the list could
+ * be picked up. Nothing of this may go in userData.) */
+const lodReg = new WeakSet();
+function lodRegister(o) {
+  const e = { m: o, L: lodLevels(o.geometry), cur: -1, use: null, box: new THREE.Box3(), boxT: 0, slot: LOD.list.length % LOD_EVERY };
+  lodReg.add(o);
+  LOD.list.push(e);
+}
+// the levels on, for the one draw, and off again after it
+const lodSwapped = [];
+function lodBegin() {
+  if (!LOD.on) return;
+  for (const e of LOD.list) if (e.use && e.m.geometry === e.L.hi) { e.m.geometry = e.use; lodSwapped.push(e); }
+}
+function lodEnd() {
+  for (const e of lodSwapped) e.m.geometry = e.L.hi;
+  lodSwapped.length = 0;
+}
+function lodAsk(L, i) {
+  if (L.lv[i] !== null || !lodWorker()) return;
+  L.lv[i] = 'wait';
+  LOD.queue.push([L, i]);
+}
+function lodPump() {
+  if (LOD.busy || !LOD.queue.length || !lodWorker()) return;
+  const [L, i] = LOD.queue.shift(), g = L.hi;
+  // a coarser level is only made from what it would replace: if the one below was not worth keeping, nor is this yet
+  const P = g.attributes.position, n = P.count, pos = new Float32Array(n * 3);
+  for (let v = 0; v < n; v++) { pos[v * 3] = P.getX(v); pos[v * 3 + 1] = P.getY(v); pos[v * 3 + 2] = P.getZ(v); }
+  const attrs = [];
+  for (const name in g.attributes) {
+    if (name === 'position') continue;
+    const A = g.attributes[name], s = A.itemSize, arr = new Float32Array(n * s);
+    for (let v = 0; v < n; v++) for (let k = 0; k < s; k++) arr[v * s + k] = A.getComponent(v, k);
+    attrs.push({ name, size: s, arr });
+  }
+  const idx = g.index ? Uint32Array.from(g.index.array) : null;
+  LOD.busy = { L, i, at: performance.now() };
+  LOD.worker.postMessage({ id: i, cell: LOD_CELLS[i], pos, idx, attrs, groups: g.groups.map((q) => ({ start: q.start, count: q.count, materialIndex: q.materialIndex })) },
+    [pos.buffer, ...(idx ? [idx.buffer] : []), ...attrs.map((a) => a.arr.buffer)]);
+}
+function lodDone(ev) {
+  const B = LOD.busy; LOD.busy = null;
+  if (!B) return;
+  const { L, i } = B, r = ev.data;
+  // worth keeping only if it takes a third off whatever finer level would otherwise be drawn
+  let prev = L.tris; for (let k = i - 1; k >= 0; k--) if (L.lv[k] && L.lv[k].isBufferGeometry) { prev = lodTris(L.lv[k]); break; }
+  if (L.hi.attributes.position.version !== L.ver || r.tris < 1 || r.tris > prev * 0.66) { L.lv[i] = false; LOD.built++; return; }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(r.pos, 3));
+  for (const a of r.attrs) g.setAttribute(a.name, new THREE.BufferAttribute(a.arr, a.size));
+  g.setIndex(new THREE.BufferAttribute(r.idx, 1));
+  if (L.hi.groups.length) for (const q of r.groups) g.addGroup(q.start, q.count, q.materialIndex);
+  g.boundingSphere = L.hi.boundingSphere.clone(); g.boundingBox = L.hi.boundingBox.clone();   // the culls see what they always saw
+  g.userData.lodOf = L.hi;
+  L.lv[i] = g; LOD.built++; LOD.kept++; LOD.saved += L.tris - r.tris;
+}
+const _lodP = new THREE.Vector3();
+function lodShown(o) { for (let a = o; a; a = a.parent) { if (!a.visible) return false; if (a === scene) return true; } return false; }
+function lodTick() {
+  if (!LOD.on) return;
+  if (!LOD_SKIP.size) for (const t of [sand, ocean, cliff, debris]) LOD_SKIP.add(t);
+  // find: a slice of the scene a frame, from the top again two seconds after the last pass ended
+  const now = performance.now();
+  if (!LOD.stack.length && now - LOD.walkT > 2000) { LOD.stack.push(scene); LOD.walkT = now; }
+  for (let k = 0; k < LOD_WALK && LOD.stack.length; k++) {
+    const o = LOD.stack.pop();
+    if (o !== scene && LOD_SKIP.has(o)) continue;
+    if (lodEligible(o)) lodRegister(o);
+    for (let c = o.children.length - 1; c >= 0; c--) LOD.stack.push(o.children[c]);
+    if (!LOD.stack.length) LOD.walkT = performance.now();
+  }
+  // choose: a slice of the meshes a frame
+  const slot = LOD.tick++ % LOD_EVERY;
+  const H = renderer.domElement.height || 1;
+  const pxA = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5) / H;        // radians per pixel of the buffer
+  const tol = pxA * (gfxLow ? 2 : 1);
+  camera.getWorldPosition(_lodP);
+  for (let j = LOD.list.length - 1; j >= 0; j--) {
+    const e = LOD.list[j];
+    if (e.slot !== slot) continue;
+    const o = e.m;
+    // gone from the scene, or given another geometry by its owner: let it go (the walk finds it again if it qualifies)
+    if (e.dead || o.geometry !== e.L.hi || (e.boxT++ % 16 === 0 && !o.parent)) {
+      lodReg.delete(o);
+      LOD.list[j] = LOD.list[LOD.list.length - 1]; LOD.list.pop(); continue;
+    }
+    if (e.boxT % 16 === 1 || e.box.isEmpty()) { o.updateWorldMatrix(true, false); e.box.copy(e.L.hi.boundingBox).applyMatrix4(o.matrixWorld); }
+    const d = e.box.distanceToPoint(_lodP);
+    let want = -1;
+    for (let i = LOD_CELLS.length - 1; i >= 0; i--) if (d * tol >= LOD_CELLS[i]) { want = i; break; }
+    // ask for what is wanted (only for a thing that is drawn), draw the best that is there
+    if (want >= 0 && lodShown(o)) for (let i = 0; i <= want; i++) if (e.L.lv[i] === null) { lodAsk(e.L, i); break; }
+    let use = -1; for (let i = want; i >= 0; i--) if (e.L.lv[i] && e.L.lv[i].isBufferGeometry) { use = i; break; }   // ('wait' is a string, and truthy)
+    if (e.cur !== use) { e.cur = use; LOD.swaps++; }
+    e.use = use < 0 ? null : e.L.lv[use];
+  }
+  lodPump();
+}
+function lodSetOn(on) { LOD.on = !!on; }
+
 function bakeStatic(root, keep = () => false, opts = {}) {
   const it = bakeStaticSteps(root, keep, opts, Infinity);
   let r; do r = it.next(); while (!r.done);
@@ -7625,87 +7833,6 @@ function makeFootTexture() {
   t.anisotropy = 4;
   return t;
 }
-function makeCraterTexture() {
-  const S = 128;
-  const c = document.createElement('canvas'); c.width = c.height = S;
-  const g = c.getContext('2d', { willReadFrequently: true });
-  g.imageSmoothingEnabled = false;
-  const cx = 64, cy = 66;
-
-  // ragged outline of the pit — a wobbly polygon
-  const N = 22, base = 30, wob = [];
-  for (let i = 0; i < N; i++) wob.push(base + (Math.random() - 0.5) * 9);
-  const ring = (rScale, path) => {
-    path.beginPath();
-    for (let i = 0; i <= N; i++) {
-      const a = (i / N) * Math.PI * 2, r = wob[i % N] * rScale;
-      path[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.7);
-    }
-    path.closePath();
-  };
-
-  // outer disturbed sand, faint
-  ring(1.9, g); g.fillStyle = 'rgba(150,160,182,0.05)'; g.fill();
-  // thrown spoil — a bright crescent on the near (bottom) side
-  g.save();
-  ring(1.55, g); g.clip();
-  const sp = g.createLinearGradient(0, cy, 0, S);
-  sp.addColorStop(0, 'rgba(0,0,0,0)');
-  sp.addColorStop(1, 'rgba(176,186,206,0.32)');
-  g.fillStyle = sp; g.fillRect(0, 0, S, S);
-  g.restore();
-
-  // the pit itself: pushed-up lit rim, then a steep dark bowl
-  ring(1.12, g); g.fillStyle = 'rgba(198,208,228,0.22)'; g.fill();          // rim highlight
-  ring(1.0, g);
-  const bowl = g.createRadialGradient(cx, cy - 5, 2, cx, cy, base);
-  bowl.addColorStop(0, 'rgba(0,0,1,0.95)');
-  bowl.addColorStop(0.55, 'rgba(2,4,9,0.86)');
-  bowl.addColorStop(0.85, 'rgba(8,12,20,0.5)');
-  bowl.addColorStop(1, 'rgba(10,14,22,0.12)');
-  g.fillStyle = bowl; g.fill();
-  // undercut shadow on the far rim
-  g.save(); ring(1.0, g); g.clip();
-  g.fillStyle = 'rgba(0,0,0,0.55)';
-  g.beginPath(); g.ellipse(cx, cy - 10, base * 0.9, base * 0.5, 0, 0, Math.PI * 2); g.fill();
-  g.restore();
-
-  // radial gouge marks left by the shovel blade
-  g.strokeStyle = 'rgba(0,0,0,0.4)'; g.lineWidth = 2;
-  for (let i = 0; i < 9; i++) {
-    const a = Math.random() * Math.PI * 2, r0 = 4 + Math.random() * 6, r1 = base * (0.7 + Math.random() * 0.35);
-    g.beginPath();
-    g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * 0.7);
-    g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1 * 0.7);
-    g.stroke();
-  }
-  g.strokeStyle = 'rgba(190,202,224,0.07)'; g.lineWidth = 1;
-  for (let i = 0; i < 4; i++) {
-    const a = Math.random() * Math.PI * 2, r0 = 6 + Math.random() * 8, r1 = base * (0.75 + Math.random() * 0.25);
-    g.beginPath();
-    g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * 0.7);
-    g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1 * 0.7); g.stroke();
-  }
-
-  // scattered clods flung around the pit
-  for (let i = 0; i < 40; i++) {
-    const a = Math.random() * Math.PI * 2, r = base * (1.1 + Math.random() * 0.8);
-    const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r * 0.7;
-    const s = 1 + Math.random() * 2.5;
-    g.fillStyle = Math.random() < 0.5 ? 'rgba(150,160,182,0.35)' : 'rgba(6,8,14,0.4)';
-    g.fillRect(x - s / 2, y - s / 2, s, s);
-  }
-
-  // colour-quantise for the PS1 look
-  const img = g.getImageData(0, 0, S, S), px = img.data;
-  for (let i = 0; i < px.length; i += 4) { px[i] &= 0xF0; px[i + 1] &= 0xF0; px[i + 2] &= 0xF0; }
-  g.putImageData(img, 0, 0);
-
-  const t = new THREE.CanvasTexture(c);
-  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestMipmapNearestFilter;
-  return t;
-}
-
 /* ONE GAIT FOR EVERY TRAIL. Measured off a photograph of a walk along a
  * beach: each foot lands `FOOT_SIDE` off the line of travel on its own side
  * (so the two lines are a foot's width apart), a stride `FOOT_STRIDE`
@@ -7725,42 +7852,165 @@ foot.frustumCulled = false; foot.renderOrder = 2; foot.instanceMatrix.setUsage(T
 scene.add(foot);
 
 
-const DIG_POOL = 20;
-// spoil thrown out of a hole is dry sand from under the surface, not the
-// wet blue flat it came out of — the same family as a buried cache
-const _sandMat = new THREE.MeshStandardMaterial({ color: 0x9aa3b5, roughness: 1, flatShading: true, emissive: 0x2e3546 });   // dug-up sand: the mounds' own dry grey, not tan
-// flat scrape/gouge decal on the surface
-const digGeo = new THREE.PlaneGeometry(1.0, 1.0); digGeo.rotateX(-Math.PI / 2);
-const digHoles = new THREE.InstancedMesh(digGeo, new THREE.MeshBasicMaterial({ map: makeCraterTexture(), transparent: true, depthWrite: false, opacity: 1 }), DIG_POOL);
+/* WHAT A STRIKE LEAVES IN THE SAND (rebuilt 2026-11-23, the owner: "improve the marks in the ground when hitting the
+ * sand"). It was a painted crater on a plane, an open cone sunk under it and a grey cone beside it — and the beach is an
+ * OPAQUE PLANE at y = 0, so everything of the cone below the sand was never drawn: what showed was its rim, a ring and a
+ * half-ring standing out of the beach, beside a cone of the wrong colour. A strike is three things now:
+ *  - THE HOLLOW (`digHoles`), a decal that MULTIPLIES what is under it (2 x src x dst: 0.5 is no change) instead of
+ *    painting its own colours, so it is always exactly the beach — its grain, its wet tint, the moon's road, the fog.
+ *    What it draws is LIGHT: a height field (the gouge, the lip heaved up round it, piled at the front, and the clods
+ *    flung ahead in a fan) is lit from the moon's side in the mark's own frame, with the hollow's floor darkened (damp
+ *    sand, out of the light, darker still for the first half minute) and the wall nearest the moon in the lip's shadow.
+ *    Read on a 2 cm grid, so it is texels like everything else here, not a smooth airbrush.
+ *  - THE SPOIL (`digMounds`), a low faceted crescent heaped at the front rim — the one part that stands up out of the
+ *    beach, so it has a silhouette — in the beach's OWN shader (`sandShader`, uv in world space at the beach's density):
+ *    it is the beach heaped up, not a different material set down on it.
+ *  - THE SHAPE COMES FROM THE SWING. A blade cuts a long narrow slot and sprays to both sides; the spade and the blunt
+ *    things scoop a short wide bowl and throw forward. A harder swing (`P`) is a longer, deeper mark.
+ * Per mark: `aDig` = (born, length, half-width, seed). A mark softens over minutes (the wind fills it) and the pool of
+ * 32 is gone before the oldest has to vanish under you in an ordinary fight. */
+const DIG_POOL = 32, DIG_SIZE = 1.8;
+const digGeo = new THREE.PlaneGeometry(DIG_SIZE, DIG_SIZE); digGeo.rotateX(-Math.PI / 2);
+const digAttr = new THREE.InstancedBufferAttribute(new Float32Array(DIG_POOL * 4), 4);
+digAttr.setUsage(THREE.DynamicDrawUsage);
+digGeo.setAttribute('aDig', digAttr);
+const digMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.SrcAlphaFactor,   // out = rgb + beach x a
+  uniforms: { uTime: oceanUniforms.uTime, uMoon: { value: MOON_DIR.clone().normalize() } },
+  vertexShader: /* glsl */`
+    attribute vec4 aDig; uniform vec3 uMoon;
+    varying vec2 vP; varying vec4 vDig; varying vec3 vL; varying vec3 vW;
+    void main() {
+      vP = position.xz; vDig = aDig;
+      mat3 R = mat3(instanceMatrix); R = R * (1.0 / max(length(R[0]), 1e-4));
+      // the light in the mark's own frame, raised: the moon is twelve degrees up, and a hollow lit only from there is a black hole
+      vL = normalize(transpose(R) * normalize(uMoon + vec3(0.0, 0.55, 0.0)));
+      vec4 wp = modelMatrix * instanceMatrix * vec4(position, 1.0);
+      vW = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform float uTime; varying vec2 vP; varying vec4 vDig; varying vec3 vL; varying vec3 vW;
+    ${noiseGLSL}${shoreGLSL}
+    float dH(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
+    float dN(vec2 q) { vec2 i = floor(q), f = fract(q); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(dH(i), dH(i + vec2(1.0, 0.0)), f.x), mix(dH(i + vec2(0.0, 1.0)), dH(i + vec2(1.0, 1.0)), f.x), f.y); }
+    float digL, digW, digS, digB, digD;
+    float digClod;
+    // the ground, in metres, in the mark's frame: x across, f along the swing (local -z)
+    float hgt(vec2 p) {
+      float x = p.x, f = -p.y;
+      float rag = (dN(p * 16.0 + digS * 7.0) - 0.5) * 0.28 + (dN(p * 45.0 - digS) - 0.5) * 0.08;
+      float e = length(vec2(x / digW, f / digL)) + rag;
+      // deepest toward the front, where the edge stopped and heaved; a shallow entry behind
+      float bowl = -digD * smoothstep(1.0, 0.62, e) * (0.55 + 0.45 * smoothstep(-digL, digL * 0.5, f));
+      bowl += (dN(p * 30.0 + 3.0) - 0.5) * 0.008 * step(e, 1.0);                         // loose grains in the floor
+      float lip = 0.032 * exp(-pow((e - 1.1) / 0.24, 2.0)) * (0.30 + 0.70 * smoothstep(-digL * 0.6, digL, f)) * (0.7 + 0.6 * dN(p * 9.0 + digS));
+      float cl = 0.0;
+      for (int i = 0; i < 16; i++) {
+        float fi = float(i);
+        float r1 = dH(vec2(digS, fi)), r2 = dH(vec2(fi, digS + 3.1)), r3 = dH(vec2(digS + fi, 9.3));
+        // the spade throws forward in a fan; a blade sprays out to both sides of its cut
+        float a = digB > 0.5 ? sign(r1 - 0.5) * (0.35 + 1.1 * abs(r1 - 0.5) * 2.0) : (r1 - 0.5) * 2.0;
+        float d = min(0.86, (digB > 0.5 ? digW * 2.2 + 0.05 : digL * 1.25) + (0.08 + 0.42 * pow(r2, 1.4)) * (digB > 0.5 ? 0.6 : 1.0));
+        vec2 c = vec2(sin(a), cos(a)) * d;
+        float r = (0.012 + 0.03 * r3) * (1.15 - d);                                         // the far ones are crumbs
+        vec2 q = vec2(x, f) - c;
+        float k = 1.0 - dot(q, q) / (r * r);
+        if (k > 0.0) { cl = max(cl, sqrt(k) * r * 0.75); digClod = 1.0; }
+      }
+      return bowl + lip + cl;
+    }
+    void main() {
+      if (vW.x < shoreLine(vW.z, uTime) - 0.05) discard;                                  // the tide takes it, and gives it back
+      digL = vDig.y; digW = vDig.z; digS = vDig.w; digB = step(digW, 0.06); digD = digB > 0.5 ? 0.05 : 0.075;
+      float age = uTime - vDig.x;
+      float far = length(vW - cameraPosition);
+      float str = (1.0 - smoothstep(20.0, 42.0, far)) * (1.0 - 0.75 * smoothstep(150.0, 420.0, age));
+      if (str <= 0.0) discard;
+      const float T = 1.0 / 50.0;                                                         // a 2 cm texel
+      vec2 p = (floor(vP / T) + 0.5) * T;
+      digClod = 0.0;
+      float h = hgt(p);
+      float isClod = digClod;
+      float hx = hgt(p + vec2(T, 0.0)), hz = hgt(p + vec2(0.0, T));
+      vec3 n = normalize(vec3(-(hx - h) / T, 1.0, -(hz - h) / T));
+      vec3 L = vL;
+      // the lip shades the wall behind it: march toward the light over the height field
+      float sh = 1.0;
+      if (h < -0.004) {
+        vec2 st = normalize(L.xz + 1e-4) * T * 1.5; float rise = L.y / max(length(L.xz), 1e-3) * T * 1.5;
+        for (int i = 1; i <= 7; i++) { if (hgt(p + st * float(i)) > h + rise * float(i)) { sh = 0.25; break; } }
+      }
+      const float AMB = 0.26;
+      float shade = (AMB + max(dot(n, L), 0.0) * sh) / (AMB + L.y);
+      float deep = smoothstep(0.0, digD, -h);
+      float damp = 1.0 - deep * (0.68 + 0.17 * exp(-age / 30.0));                       // the floor: out of the light, and damp
+      float clodK = isClod > 0.5 ? 0.78 - 0.1 * exp(-age / 30.0) : 1.0;                 // thrown sand is the damp from under
+      float m = shade * damp * clodK;
+      m = mix(1.0, m, str);
+      if (abs(m - 1.0) < 0.004) discard;
+      /* darker is the beach times less (alpha); lighter is moonlight ADDED, the lit sand's own colour — a multiply
+       * cannot lift dark navy sand far enough to read as a rim catching the moon */
+      gl_FragColor = vec4(vec3(0.020, 0.027, 0.048) * max(m - 1.0, 0.0) * 4.6, min(m, 1.0));
+    }`,
+});
+const digHoles = new THREE.InstancedMesh(digGeo, digMat, DIG_POOL);
 digHoles.frustumCulled = false; digHoles.renderOrder = 3; digHoles.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+digHoles.name = 'digHoles'; digHoles.raycast = () => {};
 scene.add(digHoles);
-// the actual 3D pit — an inverted low-poly cone sunk into the sand
-const pitGeo = new THREE.ConeGeometry(0.34, 0.26, 7, 1, true);
-pitGeo.rotateX(Math.PI);                 // point downward
-pitGeo.translate(0, -0.06, 0);
-const digPits = new THREE.InstancedMesh(pitGeo, new THREE.MeshStandardMaterial({
-  color: 0x2b3446, roughness: 1, flatShading: true, emissive: 0x0a0e16, side: THREE.DoubleSide,
-}), DIG_POOL);
-digPits.frustumCulled = false; digPits.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-scene.add(digPits);
-// the spoil pile kicked out beside it
-const moundGeo = new THREE.ConeGeometry(0.3, 0.16, 6);
-const digMounds = new THREE.InstancedMesh(moundGeo, _sandMat, DIG_POOL);
+/* the spoil: a crescent in a unit frame (the gouge's rim at r = 1, the front toward -z), scaled by the mark's own
+ * width and length, faceted, with everything that would be a sliver at the edge sunk under the beach */
+function digSpoilGeo() {
+  const g = new THREE.PlaneGeometry(3.4, 3.4, 12, 12); g.rotateX(-Math.PI / 2);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i), r = Math.hypot(x, z) || 1e-3;
+    const front = THREE.MathUtils.smoothstep(-z / r, -0.15, 0.85);
+    let h = Math.exp(-Math.pow((r - 1.28) / 0.34, 2)) * front * (0.7 + Math.random() * 0.6);
+    if (h < 0.12) h = -0.35;                       // under the sand: no edge to draw
+    p.setXYZ(i, x + (Math.random() - 0.5) * 0.12, h, z + (Math.random() - 0.5) * 0.12);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+const digSpoilMat = sandMat.clone();
+digSpoilMat.flatShading = true;
+digSpoilMat.onBeforeCompile = (sh) => {
+  sandShader(sh);
+  sh.vertexShader = sh.vertexShader
+    .replace('vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+      `vWorldPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+       { vec2 bwUv = vec2((vWorldPos.x + 800.0) / 1600.0, (800.0 - vWorldPos.z) / 1600.0);   // the beach's own uv, so its grain runs on up the heap
+         #ifdef USE_MAP
+           vMapUv = (mapTransform * vec3(bwUv, 1.0)).xy;
+         #endif
+         #ifdef USE_BUMPMAP
+           vBumpMapUv = (bumpMapTransform * vec3(bwUv, 1.0)).xy;
+         #endif
+         #ifdef USE_EMISSIVEMAP
+           vEmissiveMapUv = (emissiveMapTransform * vec3(bwUv, 1.0)).xy;
+         #endif
+       }`);
+};
+digSpoilMat.customProgramCacheKey = () => 'digSpoil';
+const digMounds = new THREE.InstancedMesh(digSpoilGeo(), digSpoilMat, DIG_POOL);
 digMounds.frustumCulled = false; digMounds.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+digMounds.name = 'digSpoil'; digMounds.raycast = () => {};
 scene.add(digMounds);
+const _dgV = new THREE.Vector3(), _dgN = new THREE.Vector3(), _dgUp = new THREE.Vector3(0, 1, 0), _dgQ = new THREE.Quaternion();
 
 { const hide = new THREE.Matrix4().makeScale(0, 0, 0);
   for (let i = 0; i < FOOT_POOL; i++) foot.setMatrixAt(i, hide);
-  for (let i = 0; i < DIG_POOL; i++) { digHoles.setMatrixAt(i, hide); digPits.setMatrixAt(i, hide); digMounds.setMatrixAt(i, hide); } }
+  for (let i = 0; i < DIG_POOL; i++) { digHoles.setMatrixAt(i, hide); digMounds.setMatrixAt(i, hide); } }
 
 // A print stamped on dry sand can be reached by the tide a few seconds later.
 // inWater() only gates the stamp; this discards any decal fragment currently
 // seaward of the live shoreline, so the surf washes prints and holes away as
 // it comes up and they're back when it draws down. Same clip the ocean and
 // the beached debris use.
-for (const dm of [foot, digHoles, digPits]) clipAtShore(dm.material);
-digMounds.material = digMounds.material.clone();   // shared with nothing else, but be sure
-clipAtShore(digMounds.material);
+clipAtShore(foot.material);   // (the marks clip themselves: the hollow in its own shader, the spoil in the beach's)
 
 const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.Euler(), _fs = new THREE.Vector3();
 let footIdx = 0, footSide = 1, digIdx = 0;
@@ -7780,32 +8030,34 @@ function stampFoot(x, z, fwdX, fwdZ, side) {
   footIdx = (footIdx + 1) % FOOT_POOL;
   foot.instanceMatrix.needsUpdate = true;
 }
-function stampDigHole(x, z, fwdX = 0, fwdZ = -1) {
-  if (inWater(x, z)) return;                 // no crater on the water — digImpact() splashes instead
-  const yaw = Math.random() * Math.PI;
-  const sc = 0.9 + Math.random() * 0.4;
+function stampDigHole(x, z, fwdX = 0, fwdZ = -1, opts = {}) {
+  if (inWater(x, z)) return;                 // no mark on the water — digImpact() splashes instead
+  const P = opts.P ?? 0.5, blade = !!opts.blade;
+  // the mark's -z is the way the swing went, give or take a wrist
+  const yaw = Math.atan2(-fwdX, -fwdZ) + (Math.random() - 0.5) * 0.3;
   _fe.set(0, yaw, 0); _fq.setFromEuler(_fe);
-  // surface scrape decal
-  _fs.set(sc * (0.95 + Math.random() * 0.2), 1, sc * (0.95 + Math.random() * 0.2));
-  _fm.compose(new THREE.Vector3(x, 0.03, z), _fq, _fs);
+  /* ON THE GROUND THAT IS THERE. The blade's ray is cast at the beach plane, and a heaped bank (a drift, a berm, the
+   * sand round a rock) stands over it — a mark laid at y = 0 under one was buried, which is a swing that left nothing.
+   * It sits on what `beachGroundAt` says is there, turned to its slope. */
+  const gy = beachGroundAt(x, z), e = 0.25;
+  if (gy > 0.001) {
+    _dgN.set(beachGroundAt(x - e, z) - beachGroundAt(x + e, z), 2 * e, beachGroundAt(x, z - e) - beachGroundAt(x, z + e)).normalize();
+    _fq.premultiply(_dgQ.setFromUnitVectors(_dgUp, _dgN));
+  }
+  let len = blade ? 0.26 + P * 0.14 + Math.random() * 0.06 : 0.17 + P * 0.1 + Math.random() * 0.04;
+  if (opts.sweep) len *= blade ? 1.45 : 1.2;   // (a cut across is drawn out along its sweep)
+  const half = blade ? 0.032 + Math.random() * 0.012 : 0.12 + P * 0.04 + Math.random() * 0.02;
+  _fs.set(1, 1, 1);
+  _fm.compose(_dgV.set(x, gy + 0.03, z), _fq, _fs);
   digHoles.setMatrixAt(digIdx, _fm);
-  // 3D pit sunk in
-  _fe.set(0, yaw, 0); _fq.setFromEuler(_fe);
-  _fs.set(sc, 0.8 + Math.random() * 0.5, sc);
-  _fm.compose(new THREE.Vector3(x, 0.02, z), _fq, _fs);
-  digPits.setMatrixAt(digIdx, _fm);
-  // spoil mound flung a little past the pit, away from the digger
-  const mx = x + fwdX * (0.42 + Math.random() * 0.15) + (Math.random() - 0.5) * 0.15;
-  const mz = z + fwdZ * (0.42 + Math.random() * 0.15) + (Math.random() - 0.5) * 0.15;
-  _fe.set((Math.random() - 0.5) * 0.4, Math.random() * Math.PI, (Math.random() - 0.5) * 0.4);
-  _fq.setFromEuler(_fe);
-  _fs.set(0.7 + Math.random() * 0.6, 0.6 + Math.random() * 0.6, 0.7 + Math.random() * 0.6);
-  _fm.compose(new THREE.Vector3(mx, 0.02, mz), _fq, _fs);
+  digAttr.setXYZW(digIdx, oceanUniforms.uTime.value, len, half, Math.random() * 97);
+  if (blade) _fs.set(0, 0, 0);               // a cut does not heap
+  else _fs.set(half * (0.9 + Math.random() * 0.25), 0.045 + P * 0.03 + Math.random() * 0.015, len * (0.95 + Math.random() * 0.2));
+  _fm.compose(_dgV.set(x, gy, z), _fq, _fs);
   digMounds.setMatrixAt(digIdx, _fm);
-
   digIdx = (digIdx + 1) % DIG_POOL;
   digHoles.instanceMatrix.needsUpdate = true;
-  digPits.instanceMatrix.needsUpdate = true;
+  digAttr.needsUpdate = true;
   digMounds.instanceMatrix.needsUpdate = true;
 }
 {
@@ -8958,11 +9210,16 @@ const TB = { on: false, ready: false, gone: false, el: null, r: null, sc: null, 
   win: null, desk: null, out: null, spot: null, amb: null, sky: null, rain: null, phoneL: null, flash: 0, bolt: { next: 3.5, t: -1, pulses: [] },
   camBase: null, look: null, rainAudio: null, H: 400 };
 const tbNow = () => performance.now() / 1000;
-function tbStart() {
-  if (TB.on || TB.gone || instantStart || skipIntro || introStarted) return;
+/* (`again`: the room a second time, in the middle of the game — the sketchbook, `skStart` — drawn into its own layer over
+ * the game (`#sk-room`), not under the title; no call, no title frame, and the syringe on the desk empty) */
+function tbStart(again = false) {
+  if (again) { if (TB.on) return; Object.assign(TB, { gone: false, ready: false, rainAudio: null, flash: 0, bolt: { next: 3.5, t: -1, pulses: [] }, reprise: true }); }
+  else if (TB.on || TB.gone || instantStart || skipIntro || introStarted) return;
   TB.on = true;
   const cv = document.createElement('canvas');
-  cv.id = 'title-room'; overlay.insertBefore(cv, overlay.firstChild); TB.el = cv;
+  let host = overlay;
+  if (again) { host = document.getElementById('sk-room'); if (!host) { host = document.createElement('div'); host.id = 'sk-room'; document.body.appendChild(host); } host.className = 'on'; }
+  cv.id = 'title-room'; host.insertBefore(cv, host.firstChild); TB.el = cv;
   const r = new THREE.WebGLRenderer({ canvas: cv, antialias: false, alpha: false, powerPreference: 'high-performance' });
   r.setPixelRatio(1); r.shadowMap.enabled = true; r.shadowMap.type = THREE.BasicShadowMap;
   r.outputColorSpace = THREE.LinearSRGBColorSpace;          // (the dither pass encodes; the scene is drawn linear into `rt`)
@@ -9016,7 +9273,7 @@ function tbStart() {
     .then((buf) => new Promise((res, rej) => new GLTFLoader().parse(buf, '', res, rej)))
     .then((gl) => { if (TB.on) tbBuild(gl.scene); })
     .catch((e) => console.warn('[title] the bedroom did not load', e));
-  icLoad();
+  if (!again) icLoad();
   TB.t0 = TB.last = tbNow();
   TB.raf = requestAnimationFrame(tbLoop);
 }
@@ -9189,7 +9446,7 @@ function tbBuild(room) {
   spot.castShadow = true; spot.shadow.mapSize.set(1024, 1024); spot.shadow.camera.near = 0.5; spot.shadow.camera.far = 14; spot.shadow.bias = -0.004; spot.shadow.normalBias = 0.02;
   TB.sc.add(spot, spot.target); TB.spot = spot;
   // the desk: the syringe, full and blue, and his phone, face up and lit
-  const syr = makeSyringe(); syr.userData.setFill(1);
+  const syr = makeSyringe(); syr.userData.setFill(TB.reprise ? 0 : 1);   // (empty, the second time: `skStart`)
   // (read at a title's size and in the dark: the barrel's clear glass vanished and left a speck of blue, so the glass is
   // frosted whiter, the fluid glows a little, its own colour)
   syr.traverse((o) => {
@@ -9227,6 +9484,7 @@ function tbBuild(room) {
   try { tbClutter(); } catch (e) { console.warn('[room] clutter', e); }   // (after the syringe: two of its emptied copies are in the mess)
   TB.phoneL = new THREE.PointLight(0x9fb8ff, 0.06, 0.9, 2); TB.phoneL.position.copy(ph.position).add(new THREE.Vector3(0, 0.12, 0)); TB.sc.add(TB.phoneL);
   for (const l of [TB.amb, TB.hemi, TB.spot, TB.phoneL]) l.layers.enable(1);   // (the syringe in his hand is drawn in a pass of its own, layer 1)
+  if (TB.reprise) { try { skDeskBuild(); } catch (e) { console.warn('[sketch] the desk', e); } }   // (the sketchbook on the desk, the second time)
   // sat at the desk, the owner's screenshot: SOLVED, not guessed — the photo, the cup, the plate and the window's sill
   // marked in his shot and the camera fitted to them by least squares with the eye held at a seated 1.15 m (his shot was
   // taken standing, 1.84 m and a 34° lens, from two metres back; seated it is 0.45 m from the desk's edge and a 54.5° lens,
@@ -9553,7 +9811,8 @@ function tbLoop() {
   TB.wet.material.uniforms.flash.value = F; TB.wet.material.uniforms.time.value = t;
   TB.post.material.uniforms.flash.value = F;
   TB.rain.mesh.material.uniforms.opacity.value = 0.3 + F * 0.3;
-  if (IC.on) icFrame(dt, F);
+  if (TB.reprise) { /* (the sketchbook's: no call) */ }
+  else if (IC.on) icFrame(dt, F);
   else if (audioCtx && IC.bytes && !IC.buf && !IC.decoding) icDecode();
   // the rain: down, a little with the wind, and round again
   const R = TB.rain;
@@ -9570,8 +9829,9 @@ function tbLoop() {
     q[o + 9] = R.pos[k] + sx; q[o + 10] = R.pos[k + 1]; q[o + 11] = R.pos[k + 2] + sz;
   }
   R.mesh.geometry.attributes.position.needsUpdate = true;
-  if (!IC.props && IC.meta) icPlaceProps();
-  if (!IC.on) {                                         // sat still, breathing
+  if (TB.reprise) skRoomCam(TB.cam, TB.camBase, TB.look);
+  else if (!IC.props && IC.meta) icPlaceProps();
+  if (!IC.on && !TB.reprise) {                                         // sat still, breathing
     TB.cam.position.copy(TB.camBase); TB.cam.lookAt(TB.look);   // (held still: its breathing made every thin edge crawl)
       icTitleFrame();
   }
@@ -9595,6 +9855,11 @@ function tbRender() {
   if (TB.syrPose && TB.syrPose.visible && TB.syrPose.userData.layer1) {
     const bg = TB.sc.background; TB.sc.background = null;
     r.clearDepth(); TB.cam.layers.set(1); r.render(TB.sc, TB.cam); TB.cam.layers.set(0); TB.sc.background = bg;
+  }
+  if (TB.skBook) {                                      // (the sketchbook, the second time: sharp, like his things in the call, `skDeskBuild`)
+    if (SK.dirty && SK.tex) { SK.tex.needsUpdate = true; SK.dirty = false; }
+    const bg = TB.sc.background; TB.sc.background = null;
+    r.clearDepth(); TB.cam.layers.set(2); r.render(TB.sc, TB.cam); TB.cam.layers.set(0); TB.sc.background = bg;
   }
   if (paintOn) r.render(IC.paint, TB.cam);             // the hands, the turning book, the squirt
   if (IC.on && IC.ear) r.render(IC.ear, TB.postCam);    // his right hand (with the phone, at his ear)
@@ -9646,10 +9911,13 @@ function tbStop() {
   if (TB.bus) { const b = TB.bus; setTimeout(() => { try { b.disconnect(); } catch (e) { /* */ } }, 4000); TB.bus = TB.sfx = TB.rainBus = null; }
   // (after the cover's own fade: it carries the room out with it)
   setTimeout(() => {
-    if (TB.sc) TB.sc.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } });
+    // (a mesh's material may be a LIST — the desk's cans: `[].map` is Array's own, and `.dispose` of it threw, so nothing below ran
+    // and the room's renderer and its canvas were never let go; 2026-11-23)
+    if (TB.sc) TB.sc.traverse((o) => { if (o.geometry) o.geometry.dispose(); for (const m of o.material ? [].concat(o.material) : []) { if (m.map) m.map.dispose(); m.dispose(); } });
     if (TB.rt) TB.rt.dispose(); if (TB.rtHi) TB.rtHi.dispose();
     if (TB.r) { TB.r.dispose(); TB.r.forceContextLoss(); }
     if (TB.el) TB.el.remove();
+    if (TB.reprise) { const h = document.getElementById('sk-room'); if (h && !TB.on) h.className = ''; }
     TB.sc = TB.r = TB.rt = TB.el = null;
   }, 4000);
 }
@@ -10477,6 +10745,9 @@ let restSlot = -1, hotSayT = 0;
  * replay may then no longer put its own order or its own held item back over yours */
 let invTouched = false;
 let noteOpen = false, menuOpen = false, ended = false, introDone = false;
+// (the sketchbook scene's state, `skStart`: the frame loop asks `skFigTick` from the first frame, and the key handlers below ask `SK.on`)
+const SK = { on: false, ph: '', t: 0, el: null, stage: null, cv: null, g: null, pen: null, ask: null, conf: null, nameBox: null, input: null,
+  strokes: [], cur: null, len: 0, down: false, mx: -1, my: -1, zoom: 1.5, done: null };
 let dialogOpen = false, invOpen = false, inspecting = false;
 /* AND THE SHOP'S FLAG LIVES UP HERE WITH THE OTHER OVERLAYS. `frozen()` is
  * three lines below and `animate()` is kicked synchronously at module time,
@@ -11068,7 +11339,7 @@ document.addEventListener('pointerlockchange', () => {
     // those; a stray exit while still playing means the user hit Esc → menu
     /* (and in a cutscene too, which the menu now holds still — 2026-11-20, the owner: "make the cutscene freeze when entering
      * the settings in any cutscene even the starting one": `cutPaused`) */
-    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !dying) openMenu();
+    if (!menuOpen && !noteOpen && !dialogOpen && !invOpen && !shopOpen && !inspecting && !peeking && !dying && !SK.on) openMenu();   // (the sketchbook lets the mouse go on purpose)
   }
 });
 window.addEventListener('unhandledrejection', (e) => {
@@ -12107,6 +12378,7 @@ document.addEventListener('pointerlockchange', () => {
   try { if (document.pointerLockElement && navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['KeyW', 'KeyT', 'KeyN', 'KeyQ', 'Tab']).catch(() => {}); } catch (e) { /* not offered */ }
 });
 window.addEventListener('keydown', (e) => {
+  if (SK.on) return;           // (the sketchbook's keys are its own, Escape too: `skKey` — this listener is older, so it hears them first)
   keys[e.code] = true;
   if (e.code === 'Tab') e.preventDefault();   // never let focus walk the page
   /* (THE MENU OVER THE INTRO'S WAVES — 2026-11-21, the owner: "I JUST TRIED TO PAUSE DURING THE WAVE SCENE AND DIDNT SEE THE
@@ -12411,6 +12683,11 @@ function devGrantWeapons() {
       if (!it || inventory.includes(it)) continue;
       addToInventory(it);
     }
+    /* AND EVERY ARTIFACT (2026-11-23, the owner: "give all arifacts in dev mode too"): the whale's, the flame's and the sea's,
+     * into the pack, to be set in a weapon by hand. One already set in a weapon you carry is had (`addToInventory` asks). The
+     * world still gives each one: the whale's still rises, the chest still holds the flame, the sea's still washes up, and
+     * taking it plays the banner and the sound; `stickArtifacts` leaves a dev-given one out of the checkpoint until then. */
+    for (const it of [whaleArtItem, flameArtItem, seaArtItem]) if (it && !inventory.includes(it)) addToInventory(it);
   } finally { statHush = false; }
   /* THE WEAPONS IN THE STRIP (2026-11-21, the owner: "my weapons arent letting me pull them out when i turn to dev mode"): the
    * strip is five now (`hotbarN`) and ten things are handed over, so the mace, Skrim's hook and the rod went into the pack,
@@ -12435,12 +12712,12 @@ function devGrantWeapons() {
     hudJar.userData.setFill(0.86);
     updateBloodReadout();
   }
-  /* NO RINGS AND NO ARTIFACT. They used to be handed over too, and every one
-   * of them is something the world GIVES you — the knight's ring, the
-   * wedding ring, the gem ring, the whale's artifact — so a dev mode that
-   * already had them made the knight drop nothing (he drops the octopus ring
-   * only if you have not got it) and played none of what comes with a drop.
-   * The owner's word: everything still drops in dev mode. */
+  /* NO RINGS. They used to be handed over, and every one of them is something
+   * the world GIVES you — the knight's ring, the wedding ring, the gem ring —
+   * so a dev mode that already had them made the knight drop nothing (he drops
+   * the octopus ring only if you have not got it). The owner's word: everything
+   * still drops in dev mode. (The artifacts are handed over again since
+   * 2026-11-23, above: nothing in the world asks whether you have one.) */
   renderRings(); renderHotbar(); renderPack(); refreshUI();
 }
 document.getElementById('m-resume').addEventListener('click', closeMenu);
@@ -12644,7 +12921,7 @@ function closeMenu() {
   menuEl.classList.remove('show');
   if (document.activeElement && menuEl.contains(document.activeElement)) document.activeElement.blur();   // or Space clicks it again
   refreshUI();
-  if (menuReturnLock) regainLook();
+  if (menuReturnLock && !SK.on) regainLook();     // (not over the sketchbook: the mouse is its pen)
 }
 
 // ------------------------------------------------------------------
@@ -13039,6 +13316,14 @@ const pushHeld = { cat: 0, tav: 0, keep: 0 };
 /* the pack's tip (`startPackTip`): declared up here because the pack is filled while this file is still running — the
  * syringe you start with goes in at module time, through `addToInventory` — and a `let` below that line is a dead zone */
 let packTipDone = false, packTip = null;
+// (the sketchbook's, on the save — `skStart`, far below; up here because a restore can run before the module is read that far)
+let skDone = false, skDead = false, skName = '', skInk = null, skOwed = null;
+const SK_FIG = { mesh: null, it: null, hitT: -1, fade: -1 };
+const SK_NPC = { name: '', sprite: null, headY: 0.55, fov: 52, script: {
+  start: { text: '…', choices: [{ label: 'Hello!', to: 'me', plain: true }, { label: 'What the hell are you?', to: 'me', plain: true }] },
+  me: { text: () => `I'm ${skName}.`, choices: [], next: 'kill', hint: 'click to go on' },
+  kill: { text: 'Kill me.', choices: [], hint: '', end: 2600 },
+} };
 const packTipEl = document.getElementById('packtip');
 function settleRestore() { if (restore && !replaying && !applyingSave) finishRestore(); }
 const pickupSeen = new Map(), pickupIds = new Set();
@@ -13189,6 +13474,32 @@ function setPrompt(html, mid) {
  * that flares...") was never seen. Set by `shipWheel.grab` / `.release`, and
  * declared up here because this runs every frame. */
 let helmOwnsPrompt = false;
+/* WHAT IS IN REACH IS ASKED EVERY EIGHTH FRAME, NOT EVERY FRAME (2026-11-23, the potato pass: the devlog's knights
+ * recomputed their path every tick and nobody could tell the difference at every twentieth). The hover cast a ray at
+ * EVERY interactable in the game each frame — hundreds, most of them a kilometre off or in a room three kilometres away
+ * — about 8 % of our CPU on the open beach. Now a pass every 8 frames (or at once when the camera jumps two metres: a
+ * cut) marks each one `_far` when no mesh of it comes within its reach plus 3 m, and the per-frame cast skips those.
+ * Three metres is more than anything here moves in eight frames, so what you can point at is exactly what it was. */
+let hoverScanT = 0, hoverNearOn = true;   // (`__bw.hoverNear(false)`: every interactable asked every frame, for an A/B)
+const hoverScanAt = new THREE.Vector3(1e9, 0, 0), _hnS = new THREE.Sphere();
+function hoverNearScan() {
+  const P = camera.position;
+  if (!hoverNearOn) { for (const it of interactables) it._far = false; return; }
+  if (hoverScanT-- > 0 && P.distanceToSquared(hoverScanAt) < 4) return;
+  hoverScanT = 8; hoverScanAt.copy(P);
+  for (const it of interactables) {
+    const lim = (it.far || REACH) + 3;
+    let near = false;
+    for (const m of it.meshes) {
+      const g = m.geometry;
+      if (!g || !m.isMesh || m.isInstancedMesh || m.isSkinnedMesh) { near = true; break; }   // (their bounds are not where they are drawn: asked every frame, as before)
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      _hnS.copy(g.boundingSphere).applyMatrix4(m.matrixWorld);
+      if (_hnS.center.distanceTo(P) - _hnS.radius < lim) { near = true; break; }
+    }
+    it._far = !near;
+  }
+}
 function updateHover() {
   // a flash is held for its length: the hover's own prompt waits (see `flashPrompt`)
   const setPrompt = (html, mid) => { if (performance.now() >= promptHold) setPromptNow(html, mid); };
@@ -13207,8 +13518,9 @@ function updateHover() {
   }
   raycaster.setFromCamera({ x: 0, y: 0 }, camera);
   let best = null, bestD = Infinity, inner = null, innerD = Infinity;
+  hoverNearScan();
   for (const it of interactables) {
-    if (!it.root.parent) continue;
+    if (!it.root.parent || it._far) continue;
     if (it.prop && it.prop.held) continue;
     // `when` gates a thing on the world, not on where you are looking: the
     // hover raycast only tests an interactable's OWN meshes, so nothing is
@@ -14410,6 +14722,7 @@ function makeProp(mesh, name, opts) {
   mesh.frustumCulled = false;
   scene.add(mesh);
   const prop = new PhysProp(mesh, opts);
+  if (name === 'driftwood') prop.drift = true;       // (every piece of it, wherever it was laid: a blade meets it — `driftSwingHit`)
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.4, prop.radius * 1.25), 8, 6),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; proxy.visible = false;
@@ -14697,7 +15010,7 @@ function renderHotbar() {
     if (c.lab) c.lab.textContent = item.name;   // just the name (2026-11-17, the owner: "take out the '- holster' text when scrolling just have the item name"; it read " — holster" / " — equip" / " — use")
     const sel = wheelCursor >= 0 ? i === wheelCursor : (!!item && item === equipped) || (!equipped && !!item && i === restSlot);
     c.el.classList.toggle('empty', !item);
-    c.el.classList.toggle('art', !!(item && isArtWeapon(item) && item.artifact));
+    c.el.classList.toggle('art', !!(item && ((isArtWeapon(item) && item.artifact) || item === whaleArtItem)));   // (and the whale's own, loose: gold like the flame's orange and the sea's blue — 2026-11-23, the owner)
     c.el.classList.toggle('fire', !!item && (item.artifact === flameArtItem || item === flameArtItem));   // the flame's border burns orange
     c.el.classList.toggle('sea', !!item && !!seaArtItem && (item.artifact === seaArtItem || item === seaArtItem));   // and the sea's runs blue
     c.el.classList.toggle('equipped', sel);
@@ -14809,6 +15122,8 @@ function addToInventory(item, over = false) {
    * it (the checkpoint replays every pickup you ever made) put a second one
    * in the pack beside the one on your hand. */
   if (typeof rings !== 'undefined' && rings.includes(item)) return true;
+  // (and an artifact set in a weapon you carry is one you have: dev mode hands them out, and the world's still gives them)
+  if (item.on && inventory.includes(item.on)) return true;
   settleRestore();
   /* `over` is the dojo's sword: it must always be taken, and nothing else may
    * be lost for it, so a full pack grows a slot for it rather than refusing. */
@@ -16084,7 +16399,7 @@ function renderPack() {
   for (let i = 0; i < nSlots; i++) {
     const item = packSlots[i];
     const slot = document.createElement('div');
-    slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '') + (item && isArtWeapon(item) && item.artifact ? ' art' : '') + (item && (item.artifact === flameArtItem || item === flameArtItem) ? ' fire' : '') + (item && seaArtItem && (item.artifact === seaArtItem || item === seaArtItem) ? ' sea' : '');
+    slot.className = 'islot' + (item ? ' filled' : '') + (i === packSel ? ' sel' : '') + (item && item === equipped ? ' held' : '') + (item && ((isArtWeapon(item) && item.artifact) || item === whaleArtItem) ? ' art' : '') + (item && (item.artifact === flameArtItem || item === flameArtItem) ? ' fire' : '') + (item && seaArtItem && (item.artifact === seaArtItem || item === seaArtItem) ? ' sea' : '');
     slot.dataset.index = String(i);
     if (item && item._freshAt && nowMs - item._freshAt < 1100) { slot.classList.add('fresh'); slot.style.setProperty('--fd', -Math.round(nowMs - item._freshAt) + 'ms'); }
     if (item) { const P = pvProfile(item); if (P.glow) { slot.classList.add('glows'); slot.style.setProperty('--glow', '#' + new THREE.Color(P.glow).getHexString()); } }
@@ -20802,6 +21117,7 @@ function digImpactCore() {
   if (deadStrike(P)) return true;              // and the dead in the water round it: knocked, and a blade takes limbs off
   if (traderStrike(P)) return true;            // the merchant, who will not be hit twice
   if (crowStrike(P)) return true;              // the crow on the pier's post, which turns on you for it
+  if (skStrike(P)) return true;                // the thing you drew, on the island's pier (`skStrike`)
   if (castleStrike(P)) return true;            // the blade went through the castle
   if (crateStrike(P)) return true;             // the blade is on the crate, not the sand
   if (glassStrike()) return true;              // or on something that shatters
@@ -20907,6 +21223,17 @@ function digImpactCore() {
    * found the beach four metres out and played a hit — sand, a thud, a
    * crater — at nothing you could have touched. */
   if (katStabbing()) digRay.far = Math.min(digRay.far, stabReach() + P * 0.5 + 0.35);
+  /* AND DRIFTWOOD IS IN THE WAY TOO (2026-11-23, the owner: "make it so you can hit or throw these pieces of driftwood
+   * too", of a root lying on the sand — "all driftwood"). A blade went through every log on the beach and dug the sand
+   * under it. Nearer than the sand and nearer than any solid, a piece takes the blow: wood's knock, a spray of pale
+   * chips, and it is knocked along the swing — a short log jumps, a big root shifts (`driftStruck`). */
+  {
+    const wh = driftSwingHit();
+    if (wh) {
+      const sh = digRay.intersectObject(sand, false)[0], so = nearestSolidHit();
+      if ((!sh || wh.distance < sh.distance) && (!so || wh.distance < so.distance)) { driftStruck(wh, P); return true; }
+    }
+  }
   {
     const solidHit = nearestSolidHit();
     const sandHit = digRay.intersectObject(sand, false)[0];
@@ -20957,8 +21284,21 @@ function digImpactCore() {
     return true;
   }
   addTrauma(0.18 + P * 0.42);
-  stampDigHole(x, z, _pf.x, _pf.z);
-  spawnPuffs(x, z, 22 + Math.round(P * 20), _pf.x, _pf.z);
+  /* THE MARK GOES THE WAY THE SWING WENT (2026-11-23, the owner: "make the slices in the sand actually go the direction it
+   * swipes"). It was laid along where you face, so a sweep across the sand left a slot running away from you. A slash
+   * travels ACROSS: measured (`tools/slashdir.js`, the weapon's centre on screen through the cut), every light cut sweeps
+   * right to left and the mace's return left to right, as `slashDir` says; a katana-like blade's back-cut is its own pose
+   * (`katBack`), and without `alternate` it never takes one whatever `slashDir` does. Overhead, a slam or a thrust still
+   * goes straight away from you. A little of the forward is kept, as the edge comes down while it crosses. */
+  let mx = _pf.x, mz = _pf.z, sweep = false;
+  if (slashing()) {
+    const d = katLike() ? (katBack() ? 1 : -1) : slashDir;     // -1: right to left on the screen
+    const fl = Math.hypot(_pf.x, _pf.z) || 1, fx = _pf.x / fl, fz = _pf.z / fl;
+    mx = -fz * d + fx * 0.28; mz = fx * d + fz * 0.28;         // (-fz, fx) is your right
+    const ml = Math.hypot(mx, mz); mx /= ml; mz /= ml; sweep = true;
+  }
+  stampDigHole(x, z, mx, mz, { P, blade: isBlade(), sweep });   // (the mark is the swing's: a slot for an edge, a scoop for a spade)
+  spawnPuffs(x, z, 22 + Math.round(P * 20), sweep ? mx * 0.8 + _pf.x * 0.35 : _pf.x, sweep ? mz * 0.8 + _pf.z * 0.35 : _pf.z);   // (the sand goes with the edge)
   sfxDigImpact(P);
   revealMoundNear(x, z, _pf.x, _pf.z);
   return true;
@@ -21031,6 +21371,35 @@ function bunkerBladeHit() {
     return { point: _bhP.clone(), distance: t, surface, n: _bhN.set(n[0], n[1], n[2]).normalize().clone() };
   }
   return null;
+}
+// the nearest piece of driftwood on the blade's line, within its reach (only pieces near you are cast at)
+function driftSwingHit() {
+  let best = null;
+  const C = camera.position, far = digRay.far;
+  for (const p of physProps) {
+    if (!p.drift || p.held || p.dead || !p.mesh.parent || !p.mesh.visible) continue;
+    const m = p.mesh.position;
+    if (Math.hypot(m.x - C.x, m.z - C.z) > far + p.radius * 3 + 0.5) continue;
+    const h = digRay.intersectObject(p.mesh, false)[0];
+    if (h && (!best || h.distance < best.distance)) { best = h; best.prop = p; }
+  }
+  return best;
+}
+function driftStruck(h, P) {
+  const p = h.prop, pt = h.point;
+  hitConnect(P, 0.7);
+  sfxPropHit('wood', 7 + P * 6);
+  gfPlay('hitWood', 0, 0.7 + P * 0.5);
+  if (isBlade()) playSample('katHit', 0.55, 0.06, 1.1);
+  else if (equipped === militaryItem) playSample('milHeavy', 0.75, 0.05);
+  sfxDigImpact(P * 0.4);
+  spawnPuffs(pt.x, pt.z, 8 + Math.round(P * 8), -_pf.x, -_pf.z, pt.y, [0.50, 0.50, 0.52]);   // bleached wood: pale chips, not brown
+  // knocked the way the swing went, by how much of it there is (a 1.3 m log is radius 0.36, a big root 0.8)
+  const k = THREE.MathUtils.clamp(0.42 / p.radius, 0.3, 1.2), f = Math.hypot(_pf.x, _pf.z) || 1;
+  p.asleep = false; p.slAwake = 0; p.slT = 0; p.slStill = 0;
+  p.vel.x += (_pf.x / f) * (2.5 + P * 6) * k; p.vel.z += (_pf.z / f) * (2.5 + P * 6) * k; p.vel.y += (1.2 + P * 2.2) * k;
+  p.angVel.set((Math.random() - 0.5) * 7 * k, (Math.random() - 0.5) * 7 * k, (Math.random() - 0.5) * 7 * k);
+  if (Math.hypot(p.vel.x, p.vel.z) > 3.2) p.thrown = true;       // a log batted into a crab is a throw (`thrownHits`)
 }
 /* What the blade would meet before the sand: the pier, the beach rocks, the
  * wreck, the pavilion, the drain — and, underground, the room itself.
@@ -24399,9 +24768,132 @@ function stampBlood(x, z, size, atY) {
   bloodDecals.instanceMatrix.needsUpdate = true;
 }
 
+/* THE CRAB COMES APART AS A CRAB (2026-11-23, the owner, of the pieces lying on the sand: "make these look better too i
+ * hate how its just random shapes"). They were sixteen primitives — icosahedra, tetrahedra, flat boxes, dodecahedra —
+ * in the procedural crab's shell red, which is not the crab you were fighting: the one on screen is the scanned model,
+ * and what it left behind was a heap of red solids the size of its fists. Now the model itself is broken: its skin is
+ * baked in the pose it died in (one pass over the vertices, straight off the skeleton's matrices, the way `bakeLimb`
+ * does a mutant's arm), every triangle goes with the bone that owns it, and the bones are grouped into what a crab
+ * breaks into — each leg off at the body, some of them snapped again at a joint, and the carapace cracked into three
+ * plates along ragged lines. Each piece wears the crab's own material (its texture, its tint, its cold rim — and the
+ * model is double-sided, so a cracked plate is not see-through from the broken edge). A leg is laid along X before it
+ * is thrown, so it lands lying down (`updateGibs` rests everything with its tilt zeroed). Null when the model has not
+ * arrived; `burstCrab` keeps the old solids for that. */
+const _cpA = new THREE.Vector3(), _cpB = new THREE.Vector3(), _cpX = new THREE.Vector3(1, 0, 0), _cpInv = new THREE.Matrix4();
+function crabPieces(u) {
+  let sk = null;
+  if (u.model) u.model.traverse((o) => { if (!sk && o.isSkinnedMesh) sk = o; });
+  if (!sk || !sk.skeleton) return null;
+  u.g.updateMatrixWorld(true);
+  sk.skeleton.update();
+  const bones = sk.skeleton.bones, nb = bones.length;
+  const root = bones.find((b) => !(b.parent && b.parent.isBone));
+  if (!root) return null;
+  // which piece each bone goes with: 0..2 the body (split below), then a piece per leg, or two where it snaps
+  const piece = new Int16Array(nb), limbs = [];
+  let np = 3;
+  for (const top of root.children) {
+    if (!top.isBone) continue;
+    const chain = [];
+    for (let q = top; q; q = q.children.find((c) => c.isBone)) chain.push(q);
+    const brk = chain.length > 2 && Math.random() < 0.45 ? 2 : chain.length;
+    const a = np++, b = brk < chain.length ? np++ : a;
+    limbs[a] = chain[0];
+    if (b !== a) limbs[b] = chain[brk];
+    chain.forEach((q, k) => { piece[bones.indexOf(q)] = k < brk ? a : b; });
+  }
+  const dom = skinDom(sk); if (!dom) return null;
+  const g = sk.geometry, P = g.attributes.position, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight, UV = g.attributes.uv, idx = g.index;
+  const n = P.count, BM = sk.skeleton.boneMatrices;
+  const W = new THREE.Matrix4().multiplyMatrices(sk.matrixWorld, sk.bindMatrixInverse), we = W.elements, be = sk.bindMatrix.elements;
+  const wp = new Float32Array(n * 3);
+  for (let v = 0; v < n; v++) {
+    const px = P.getX(v), py = P.getY(v), pz = P.getZ(v);
+    const bx = be[0] * px + be[4] * py + be[8] * pz + be[12], by = be[1] * px + be[5] * py + be[9] * pz + be[13], bz = be[2] * px + be[6] * py + be[10] * pz + be[14];
+    let sx = 0, sy = 0, sz = 0;
+    for (let k = 0; k < 4; k++) {
+      const w = SW.getComponent(v, k); if (w === 0) continue;
+      const o = SI.getComponent(v, k) * 16;
+      sx += w * (BM[o] * bx + BM[o + 4] * by + BM[o + 8] * bz + BM[o + 12]);
+      sy += w * (BM[o + 1] * bx + BM[o + 5] * by + BM[o + 9] * bz + BM[o + 13]);
+      sz += w * (BM[o + 2] * bx + BM[o + 6] * by + BM[o + 10] * bz + BM[o + 14]);
+    }
+    wp[v * 3] = we[0] * sx + we[4] * sy + we[8] * sz + we[12];
+    wp[v * 3 + 1] = we[1] * sx + we[5] * sy + we[9] * sz + we[13];
+    wp[v * 3 + 2] = we[2] * sx + we[6] * sy + we[10] * sz + we[14];
+  }
+  // the carapace cracks along two ragged lines in the crab's own frame: across the middle, and one half again front to back
+  _cpInv.copy(u.g.matrixWorld).invert();
+  const R = 0.31 * u.g.scale.x;                                  // (the model is fitted to 0.62 across)
+  const cutX = (Math.random() - 0.5) * 0.3 * R, cutZ = (Math.random() - 0.5) * 0.5 * R, side = Math.random() < 0.5 ? 1 : -1;
+  const out = [];
+  for (let k = 0; k < np; k++) out.push({ pos: [], uv: [], ind: [], map: new Map() });
+  const tri = idx ? idx.count : n, ia = idx ? idx.array : null;
+  for (let t = 0; t < tri; t += 3) {
+    const a = ia ? ia[t] : t, b = ia ? ia[t + 1] : t + 1, c = ia ? ia[t + 2] : t + 2;
+    const pa = piece[dom[a]], pb = piece[dom[b]], pc = piece[dom[c]];
+    let k = pa === pb || pa === pc ? pa : pb === pc ? pb : pa;
+    if (k < 3) {
+      _cpA.set((wp[a * 3] + wp[b * 3] + wp[c * 3]) / 3, (wp[a * 3 + 1] + wp[b * 3 + 1] + wp[c * 3 + 1]) / 3, (wp[a * 3 + 2] + wp[b * 3 + 2] + wp[c * 3 + 2]) / 3).applyMatrix4(_cpInv);
+      const rag = (Math.sin(_cpA.z * 61.0 + cutX * 40) + Math.sin(_cpA.x * 47.0 + cutZ * 30)) * 0.04 * R;   // a crack, not a saw cut
+      k = (_cpA.x - cutX + rag) * side < 0 ? 0 : (_cpA.z - cutZ - rag) < 0 ? 1 : 2;
+    }
+    const O = out[k];
+    for (const v of [a, b, c]) {
+      let r = O.map.get(v);
+      if (r === undefined) { r = O.pos.length / 3; O.pos.push(wp[v * 3], wp[v * 3 + 1], wp[v * 3 + 2]); O.uv.push(UV ? UV.getX(v) : 0, UV ? UV.getY(v) : 0); O.map.set(v, r); }
+      O.ind.push(r);
+    }
+  }
+  const meshes = [];
+  for (let k = 0; k < np; k++) {
+    const O = out[k];
+    if (O.ind.length < 9) continue;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(O.pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(O.uv, 2));
+    geo.setIndex(O.ind);
+    geo.computeBoundingBox();
+    const ctr = geo.boundingBox.getCenter(new THREE.Vector3());
+    geo.translate(-ctr.x, -ctr.y, -ctr.z);
+    const mesh = new THREE.Mesh(geo, sk.material);
+    mesh.position.copy(ctr);
+    if (k >= 3) {
+      // a leg: its long axis from where it joined to the farthest point of it, turned onto X so it lands lying down
+      limbs[k].getWorldPosition(_cpA).sub(ctr);
+      let far = 0; const p = geo.attributes.position;
+      for (let i = 0; i < p.count; i++) { _cpB.fromBufferAttribute(p, i); const d = _cpB.distanceToSquared(_cpA); if (d > far) { far = d; mesh.userData.tip = _cpB.clone(); } }
+      const axis = mesh.userData.tip.clone().sub(_cpA);
+      if (axis.lengthSq() > 1e-8) {
+        const turn = new THREE.Quaternion().setFromUnitVectors(axis.normalize(), _cpX);
+        geo.applyQuaternion(turn);
+        mesh.quaternion.copy(turn).invert();      // and leaves from exactly where it was drawn
+      }
+    }
+    geo.computeVertexNormals();
+    mesh.userData.leg = k >= 3;
+    mesh.userData.noBake = true;
+    meshes.push(mesh);
+  }
+  return meshes.length ? meshes : null;
+}
 function burstCrab(u = crabs[0]) {
   const p = u.g.position, S = u.g.scale.x;
-  // pieces of shell, claw and leg
+  const parts = crabPieces(u);
+  if (parts) for (const m of parts) {
+    scene.add(m);
+    // out from the body and a little on along the blade's way; the plates are heavy and mostly drop, the legs fly
+    const leg = m.userData.leg, dx = m.position.x - p.x, dz = m.position.z - p.z, dl = Math.hypot(dx, dz) || 1;
+    const out = leg ? 0.7 + Math.random() * 1.3 : 0.25 + Math.random() * 0.5, sp = leg ? 14 : 5;
+    gibs.push({
+      m,
+      vel: new THREE.Vector3(dx / dl * out + u.hitDir.x * 0.7, (leg ? 1.9 : 1.2) + Math.random() * (leg ? 1.6 : 0.9), dz / dl * out + u.hitDir.z * 0.7),
+      spin: new THREE.Vector3((Math.random() - 0.5) * sp, (Math.random() - 0.5) * sp, (Math.random() - 0.5) * sp),
+      rest: 0.005, life: 26, bleed: false,
+    });
+  }
+  else {
+  // (the model not there yet: the old pieces of shell, claw and leg)
   const shapes = [
     () => new THREE.IcosahedronGeometry(0.11, 0),
     () => new THREE.TetrahedronGeometry(0.13, 0),
@@ -24424,6 +24916,7 @@ function burstCrab(u = crabs[0]) {
       rest: 0.03 + Math.random() * 0.05,
       life: 26,
     });
+  }
   }
   // blood, thrown out with the pieces
   for (let i = 0; i < 30; i++) {
@@ -28599,6 +29092,8 @@ function showDialogNode(id) {
   // Myles says something on every new line of his that has words (the owner's two "dialog sounds", either: `MYLES_VOX.talk`)
   if (dialogScript === MINO_NPC.script && !node.speaker && MINO.u && (typeof node.text === 'function' || (node.text && node.text.trim()))) farmVox('talk', MINO.u.kind.voice);
   // and Skrim on every line of his that is words (not '*Digging*': `SKRIM_VOX.talk`, the owner's three "DIALOG SOUNDS")
+  // and the very old fisherman on every line of his that is words (`FISHER_VOX.talk`, the owner's four takes)
+  if (dialogScript === FISHERMAN_SCRIPT && !node.speaker) { const tx = typeof node.text === 'function' ? node.text() : node.text; if (tx && tx.trim() && !/^\*[^*]*\*$/.test(tx.trim())) fisherVox(); }
   if (dialogScript === SKRIM_NPC.script && !node.speaker && SKRIM.u) { const tx = typeof node.text === 'function' ? node.text() : node.text; if (tx && tx.trim() && !/^\*[^*]*\*$/.test(tx.trim())) skrimVox('talk'); }
   clearTimeout(dialogEndTimer);
   dialogChoicesEl.innerHTML = '';
@@ -28762,6 +29257,7 @@ function updateDialogCam(dt) {
    * own sight picture buys. It comes off the setting rather than off a
    * constant, so it is the same zoom at any field of view the owner picks. */
   const wantFov = (mutCutFov > 0 ? mutCutFov
+    : packCut && packFov > 0 ? packFov
     : tmpCut ? tmpCut.fov
     : keyCut ? keyCut.fov
     : thrCut ? thrCut.fov
@@ -28776,7 +29272,7 @@ function updateDialogCam(dt) {
     : settings.fov) + fovKick
     - settings.fov * (equipped && equipped.shotgun ? SG_ZOOM : MAG_ZOOM) * magAim;
   // and it arrives at a gun's pace, not a conversation's
-  const rate = mutCutFov > 0 ? 14 : tmpCut ? tmpCut.fovRate : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : crowFovK > 0.001 ? 14 : 3.5;
+  const rate = mutCutFov > 0 ? 14 : packCut && packFov > 0 ? 1.6 : tmpCut ? tmpCut.fovRate : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : crowFovK > 0.001 ? 14 : 3.5;
   if (Math.abs(camera.fov - wantFov) > 0.01) {
     camera.fov += (wantFov - camera.fov) * Math.min(1, dt * rate);
     camera.updateProjectionMatrix();
@@ -29170,6 +29666,12 @@ const SAMPLES = {
   pupPlead: [1, 2, 3, 4, 5, 6].map((i) => `assets/puppet-plead${i}.m4a`),
   pupScream: ['assets/puppet-scream.m4a'],
   pupStep: Array.from({ length: 10 }, (_, i) => `assets/puppet-step${i + 1}.m4a`),   // (the owner's "Puppet Footsteps 2", cut step by step: the workshop's puppets moving, 2026-11-22)
+  // and the workshop puppets' voices (2026-11-23, the owner's "puppet attacking / taking damage / getting injected / rare phrase"
+  // bounces, cut by `tools/farmer_voice_pack.py`): `PUP_VOX`, and the bench one's injection (`cpInjectTick`)
+  pupAttack: Array.from({ length: 17 }, (_, i) => `assets/pup-attack${i + 1}.m4a`),
+  pupHurt: Array.from({ length: 18 }, (_, i) => `assets/pup-hurt${i + 1}.m4a`),
+  pupInject: ['assets/pup-inject1.m4a'],
+  pupPhrase: ['assets/pup-phrase1.m4a', 'assets/pup-phrase2.m4a'],
   // the owner's own drink (2026-11-21, "New Recording 5": "make this the water drinking sound") — its sips and the gulp, 1.2–2.75 s of it
   waterDrink: ['assets/water-drink.m4a'],
   lineSnap: ['assets/line-snap.m4a'],             // the owner's "Climbing Rope Snap", the burst at 2.84–3.40 s: the line parting in the deep   // the owner's clip of the console's rare-achievement chime (1.0–7.4 s of it)   // the owner's "Man Screaming" (6.4 s, the silence in front of it cut): Henry, carried off the jetty
@@ -29210,6 +29712,8 @@ const SAMPLES = {
   skrimTalk: Array.from({ length: 3 }, (_, i) => `assets/skrim-talk${i + 1}.m4a`),
   skrimHang: ['assets/skrim-hang1.m4a'],
   skrimDie: ['assets/skrim-die1.m4a'],             // (the owner's "skrim death sound", 2026-11-21)
+  // and the very old fisherman's (2026-11-23, the owner's "New Recording 6": "make them the fisher dialog sounds"): `FISHER_VOX`
+  fisherTalk: Array.from({ length: 4 }, (_, i) => `assets/fisher-talk${i + 1}.m4a`),
   gullCry: ['assets/gull-cry1.m4a', 'assets/gull-cry2.m4a'],
   /* THE THING IN THE SEWER'S WATER (2026-10-23, the owner's slosh, splash and jump recordings, `tools/sewer_monster_sound.py`):
    * the sloshes it makes coming up, the splash of it going back under, the burst of it coming out at you */
@@ -30888,6 +31392,7 @@ const RARE_ACHIEVEMENTS = [
   () => dealerPissed,                                     // Piss off the dealer: handed him the well man's portrait (2026-11-19)
   () => henryFree >= 1,                                   // Free Henry: his cell unlocked (2026-11-19)
   () => crustyLight,                                      // Bring lil crusty to the lighthouse.: the marionette over the drawbridge with you (2026-11-22)
+  () => skDead,                                           // Existence is pain.: struck the thing you drew, on the island's pier (2026-11-23)
 ];
 /* EVERY JAR THERE IS (2026-11-17, the owner: "add total amount of jars and rare achievements at the end it doesn't show the
  * total possible"). The jars out in the world and the ones bled out of every crab there is — what is FOUND, not what the
@@ -38154,6 +38659,10 @@ const PACK_LOOK = [
 const packCrabs = PACK_SPOTS.map(([, z], i) =>
   makeCrabUnit(PACK_START_X, z, Object.assign({ pack: true, wake: 0 }, PACK_LOOK[i % PACK_LOOK.length])));
 let packPhase = 0;                            // 0 waiting · 1 coming in · 2 loose
+/* the lens leans in while you watch them come (eased home by the frame's own `wantFov` when the cut lets go), and how far
+ * into the attack clip the claws are up — the tell, held through the last beat so the rear is ON camera, not after it */
+const PACK_FOV = 52, PACK_REAR_T = 0.42;
+var packFov = 0;                             // (a var: the frame's lens reads it, and the loop can run before this line)
 let packT = 0;
 const _packMid = new THREE.Vector3(), _packQ = new THREE.Quaternion(), _packM = new THREE.Matrix4();
 
@@ -44227,6 +44736,30 @@ const SKRIM_VOX = {
   die:   { bank: 'skrimDie',    p: 1,    gain: 3.4, ref: 12, far: 80, pri: 5, gap: 0,    own: 0 },   // (every time, over whatever he was saying: `finishMutant`)
 };
 const skrimVox = (role, o) => { const u = SKRIM.u; return !!u && farmVox(role, u.kind.voice, o); };
+/* AND THE WORKSHOP PUPPETS (2026-11-23, the owner, five bounces: "use these for the puppet sounds they are labeled"). They had
+ * no voice (`mute`: the throat they borrowed came out a little scream, 2026-11-22); now his. One mouth for the eight (their kind's
+ * one voice: a cry cuts a grunt off, and seven at you is a din of blows, not of voices). `swing` a grunt on most blows (at the
+ * wind's end, `farmVox` in the mutants' swing), `hurt` a cry on every blow that lands (`sfxMutHit`), `shout` the RARE phrase,
+ * off the fight's own clock (`cpPhraseTick`, one at most every 16 s). The injection is the bench one's own (`cpInjectTick`). */
+const PUP_VOX = {
+  swing: { bank: 'pupAttack', p: 0.8, gain: 2.2, ref: 6, far: 40, pri: 1, gap: 0.15, own: 0.45 },
+  hurt:  { bank: 'pupHurt',   p: 1,   gain: 2.6, ref: 6, far: 40, pri: 2, gap: 0.10, own: 0.25 },
+  shout: { bank: 'pupPhrase', p: 1,   gain: 2.8, ref: 8, far: 50, pri: 2, gap: 16,   own: 16 },
+};
+/* AND THE VERY OLD FISHERMAN (2026-11-23, the owner's four takes, "trim these and make them the fisher dialog sounds dont have
+ * them too loud"): one of them on every new line of his that has words (`showDialogNode`), from where he sits in the shed;
+ * one mouth (a new line cuts the last take off). Quieter than Skrim's and Myles's talk (2.4): 1.5, and the takes levelled
+ * 2 dB under theirs (`tools/fisher_voice_pack.py`). */
+const FISHER_VOX = { talk: { bank: 'fisherTalk', p: 1, gain: 1.5, ref: 6, far: 40, pri: 4, gap: 0, own: 0 } };
+const FISHER_VOICE = { vox: FISHER_VOX, pitch: 124 };
+const _fishV = new THREE.Vector3();
+function fisherVox() {
+  if (!fishSprite) return false;
+  fishSprite.getWorldPosition(_fishV);
+  if (FISHER_VOICE.mouth) FISHER_VOICE.mouth.pri = 0;   // (a new line always cuts the last take off: clicking on through him is never silent)
+  return farmVox('talk', FISHER_VOICE, { x: _fishV.x, z: _fishV.z });
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { FISHER_VOICE, fisherVox, talkToFishermanS: () => talkToFisherman(), sampleBanksS: () => sampleBanks, PUP_VOX }));
 /* ONLY THE RARE ONES ARE RARE (2026-11-17, the owner: "MAKE SURE ONLY RARE DIALOG IS RARE I NEED THE NORMAL ONES A LITTLE
  * LOUDER AND WAY MORE FREQUENT"): the swing grunts, the hit cries and the gargoyles' attacks went to 0.9-1 and +2.3-2.5 dB
  * (gain x1.3), their gaps cut to what keeps one take from stepping on itself; four voices at once, not three. The
@@ -48252,7 +48785,8 @@ function updatePack(dt) {
     hovered = null; setPrompt('');
     sfxCrabWake();
     sfxPackSurge();
-    for (const u of packCrabs) { u.pkVis = false; u.pkSlosh = Math.random() * 0.3; u.pkClat = 0; }
+    for (const u of packCrabs) { u.pkVis = false; u.pkUp = false; u.pkSlosh = Math.random() * 0.3; u.pkClat = 0; u.pkDrip = 0; u.pkYaw = Math.PI * 1.5; u.pkPh = Math.random() * 6.28; }
+    packFov = Math.min(settings.fov, PACK_FOV);
     return;
   }
   packT += dt;
@@ -48262,14 +48796,39 @@ function updatePack(dt) {
     // staggered, so they arrive as a group rather than a rank
     const e = THREE.MathUtils.clamp((packT - i * 0.22) / PACK_SWIM, 0, 1);
     const k = e * e * (3 - 2 * e);
+    /* THEY COME UP OUT OF THE SEA, NOT OUT OF NOWHERE (2026-11-23, the owner: "improve the 3 crabs coming out of the water
+     * cutscene"). They were hidden until the last metre and a half of surf (`submersionAt` < 0.92) and then simply THERE,
+     * three rigid poses sliding in on three ruled lines — the clip never ran, because `updateCrabUnit` stops at `frozen()`.
+     * The sea is opaque, so it hides whatever is under it: each is drawn the whole way and SINKS LESS as it comes — deep
+     * (1.6 m under) out where the water is black, its back breaking the surface a little past halfway in, walking up out
+     * of the surf at the end — weaving a little on its own line, on its own walk clip at the pace it is going. */
+    const wv = Math.sin(packT * 1.7 + u.pkPh) * 0.55 * (1 - k);
     u.g.position.x = PACK_START_X + (tx - PACK_START_X) * k;
-    u.g.position.z = tz;
-    u.g.position.y = beachRestY(u.g.position.x, u.g.position.z, 1.15);
-    u.g.rotation.y = Math.PI * 1.5;             // facing the shore, claws first
-    u.g.visible = submersionAt(u.g.position.x, u.g.position.z) < 0.92 && nearEnoughZ(u.g.position.z);
+    u.g.position.z = tz + wv;
+    const sink = THREE.MathUtils.lerp(1.6, 1.15, THREE.MathUtils.smoothstep(e, 0.35, 0.75)) - 0.55 * THREE.MathUtils.smoothstep(e, 0.45, 0.8);
+    u.g.position.y = beachRestY(u.g.position.x, u.g.position.z, sink);
+    // claws first toward the shore, a wobble as it weaves; and in the last of it, round to face you
+    const face = Math.atan2(-(camera.position.x - u.g.position.x), -(camera.position.z - u.g.position.z));
+    let yaw = Math.PI * 1.5 + Math.cos(packT * 1.7 + u.pkPh) * 0.28 * (1 - k);
+    const turn = THREE.MathUtils.smoothstep(packT - i * 0.22, PACK_SWIM * 0.92, PACK_SWIM + PACK_HOLD * 0.6);
+    yaw += Math.atan2(Math.sin(face - yaw), Math.cos(face - yaw)) * turn;
+    u.g.rotation.y = yaw;
+    u.g.visible = e > 0 && nearEnoughZ(u.g.position.z);
+    if (u.mixer) {
+      // walking while it comes (the clip's rate with its speed), and as it stops the claws go up: the attack's own tell, held
+      const rearK = THREE.MathUtils.smoothstep(packT - i * 0.22, PACK_SWIM * 0.95, PACK_SWIM + PACK_HOLD * 0.7);
+      if (rearK < 0.02) { const a = crabPlay(u, 'walk', true); if (a) { a.paused = false; a.timeScale = 0.9 + 1.6 * (6 * e * (1 - e)); } }
+      else { const a = crabPlay(u, 'attack', false); if (a) { a.paused = true; a.time = clampTime(a, a.getClip().duration * PACK_REAR_T * rearK); } }
+      u.mixer.update(dt);
+    }
     if (e > 0 && e < 1) packWake(u);
     const px = u.g.position.x, pz = u.g.position.z;
-    if (u.g.visible && !u.pkVis) sfxPackSurface(px, pz);
+    // the moment its back breaks the surface: a sheet of water off it, and the splash it always had (it played on the pop-in)
+    const top = u.g.position.y + 0.26 * u.g.scale.x, up = top > waterSurfaceAt(px, pz);
+    if (up && !u.pkUp && submersionAt(px, pz) > 0.05) { sfxPackSurface(px, pz); spawnSplash(px, pz, 30, 1, 0, 1.4); u.pkDrip = 0.12; }
+    u.pkUp = up;
+    // and the sea running off it while it is still wading
+    if (up && e < 1 && submersionAt(px, pz) > 0.08 && (u.pkDrip -= dt) <= 0) { u.pkDrip = 0.12 + Math.random() * 0.1; spawnSplash(px + (Math.random() - 0.5) * 0.5, pz + (Math.random() - 0.5) * 0.5, 4, 0, 0, 0.45); }
     u.pkVis = u.g.visible;
     if (e > 0 && e < 0.8 && (u.pkSlosh -= dt) <= 0) {           // churning in behind it
       u.pkSlosh = 0.28 + Math.random() * 0.25;
@@ -48286,12 +48845,12 @@ function updatePack(dt) {
   _packMid.set(0, 0, 0);
   for (const u of packCrabs) _packMid.add(u.g.position);
   _packMid.multiplyScalar(1 / packCrabs.length);
-  _packMid.y = 0.5;
+  _packMid.y = 0.25;
   _packM.lookAt(camera.position, _packMid, camera.up);
   _packQ.setFromRotationMatrix(_packM);
   camera.quaternion.slerp(_packQ, Math.min(1, dt * 2.6));
   if (packT >= PACK_SWIM + PACK_HOLD) {
-    packPhase = 2; packCut = false;
+    packPhase = 2; packCut = false; packFov = 0;
     catchBreath();
     for (const u of packCrabs) { u.st.awake = true; u.st.rear = 1; u.wake = 1e6; }
     /* the take wakes them, not the crab's own wake branch, so a player who
@@ -54176,6 +54735,7 @@ function update(dt, rawDt = dt) {
   updateCrab(dt);
   updateMutant(dt);
   thrownHits();             // a thing you threw that reaches a creature hits him (and a bottle breaks on him)
+  skFigTick(dt);            // what you drew, turned to you (and its going)
   farmCarryAll(dt);         // the farmers' weapons held in the carry, now their hands are where this frame puts them
   if (elvReady) updateElvManPose(dt);    // Elvédor's face and his puppet hand, on whatever his clips just did
   wellManClear(dt);          // after the chase has moved him: the well is solid to him
@@ -54368,7 +54928,7 @@ function saveCheckpoint(spot) {
       star: !!(helmStar && helmStar.solved),
       boatKey: boatKeyTaken,          // the key off the hook: taken (in the pack, or spent in the chest)
       // the island's gulls you have put down, and the achievement for all of them
-      gullsDown: isleBirds.length ? isleBirds.map((B, i) => (B.m.visible ? -1 : i)).filter((i) => i >= 0) : (isleBirdsDown || []), gullSlayer, crustyLight, marLh: MAR.lhDone ? 1 : 0,
+      gullsDown: isleBirds.length ? isleBirds.map((B, i) => (B.m.visible ? -1 : i)).filter((i) => i >= 0) : (isleBirdsDown || []), gullSlayer, crustyLight, skDone, skDead, skName, skInk, marLh: MAR.lhDone ? 1 : 0,
       // the snorkeler's key (0 not given, 1 on the sand, 2 taken) and the pavilion gate it opens
       lostKey: snorkKey.state, mushGate: mushGateUnlocked,
       // and the catacombs' own, which the skull key turns
@@ -54860,6 +55420,9 @@ function updateRestore(dt) {
   if (f.mushGate || (f.lostKey === undefined && bz < MUSH_Z - 12)) mushGateUnlocked = true;
   if (f.gullSlayer) gullSlayer = true;
   if (f.crustyLight) crustyLight = true;
+  if (f.skDone) skDone = true; if (f.skDead) skDead = true; if (f.skName) skName = String(f.skName); if (Array.isArray(f.skInk)) skInk = f.skInk;   // (the sketchbook's: what you drew and its name)
+  if (skInk && !skDead) queueMicrotask(skFigBuild);   // (after the module has run: its constants are below)
+  skOwed = !f.skDone && Array.isArray(f.skAt) ? f.skAt : null;   // (a save written as the room came up: the scene again, `skResume`)
   MAR.lhDone = !!f.marLh; MAR.lh = null;
   if (f.gullsDown && f.gullsDown.length) { if (isleBirds.length) { for (const i of f.gullsDown) if (isleBirds[i]) isleBirds[i].m.visible = false; } else isleBirdsDown = f.gullsDown.slice(); }
   /* THE CAPTAIN'S KEY: the chest eats it, so a chest you opened means a key
@@ -56189,6 +56752,8 @@ function animateFrame() {
   updateBeachBed();            // after every room has had its say, and only here
   updateHover();
   handGrabTick(rawDt);        // his hand out for a pickup (`handGrab`)
+  if (skOwed && deepLive && introDone && !SK.on && !dying) skResume();
+  if (deepLive) seaDropHud();   // (the water ball's drop: every frame, so a cut or the menu hides it at once)   // (a checkpoint written at the sketchbook: back into it)
   tauntTick(rawDt);           // T: his left arm up, the finger (`startTaunt`)
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
@@ -56224,9 +56789,11 @@ function animateFrame() {
   if (hPitch) camera.rotateX(hPitch);
   if (slamDip) camera.position.y -= slamDip;
   cullUnitModels();
+  lodTick();                 // (far meshes drawn coarse: see FAR DETAIL)
   const _fm = farMaskBegin();
   const _cutCam = keyCut && keyCut.ship && keyCut.live && shipKeyCam ? shipKeyCam : null;   // (the ship's key, seen from her deck: `updateShipKeyCut`)
-  renderer.render(scene, _cutCam || camera);
+  lodBegin();
+  try { renderer.render(scene, _cutCam || camera); } finally { lodEnd(); }   // (the coarse shapes live only for this draw)
   farMaskEnd(_fm);
   if (HAND_LUM.want) handLumSample();         // (a hand coming out — the taunt, the grab — is lit to the frame just drawn)
   if (slamDip) camera.position.y += slamDip;
@@ -86124,16 +86691,33 @@ function thrownHits() {
   for (const p of physProps) {
     if (!p.thrown || p.dead || p.held || p.pinned || !p.mesh.parent) continue;
     const v = p.vel.length(); if (v < 3.2) continue;
-    const q = p.mesh.position;
+    const q = p.mesh.position, pr = p.drift ? Math.min(0.5, p.radius * 0.5) : 0;   // (a two-metre root reaches past its middle)
+    let hit = false;
     for (const u of mutants) {
       if (!u || !u.st || !u.st.alive || u.retired || !u.g.visible || u.st.struck) continue;
-      const c = u.g.position, r = Math.max(0.55, (u.kind.body || 0.45) + 0.3), h = (u.kind.h || 1.8);
+      const c = u.g.position, r = Math.max(0.55, (u.kind.body || 0.45) + 0.3) + pr, h = (u.kind.h || 1.8);
       if (Math.abs(q.x - c.x) > r || Math.abs(q.z - c.z) > r) continue;
       if (q.y < c.y + 0.25 || q.y > c.y + h + 0.1) continue;
       hurtMutant(u, v > 9 ? 2 : 1, 0.4);              // it is YOUR blow: the confirm, and he turns on you for it
-      p.thrown = false;
+      p.thrown = false; hit = true;
       if (p.onImpact) p.onImpact(Math.max(6, v));
       else { p.vel.x *= -0.25; p.vel.z *= -0.25; p.vel.y = Math.min(p.vel.y, 0) - 0.5; }   // off him, and down
+      break;
+    }
+    /* AND THE CRABS (2026-11-23, the owner: "or throw at an enemy"): they are their own list, and a log thrown into the
+     * pack went through them. The same blow — `hurtCrab`, which is the shovel's own door — and a sleeping one is woken
+     * the ordinary way (`called`), so it rears and comes. */
+    if (hit || !p.thrown) continue;
+    for (const u of crabs) {
+      if (!u.st.alive || u.st.struck || !u.g.visible) continue;
+      const c = u.g.position, S = u.g.scale.x, r = 0.32 * S + 0.15 + pr;
+      if (Math.abs(q.x - c.x) > r || Math.abs(q.z - c.z) > r) continue;
+      if (q.y < c.y - 0.1 || q.y > c.y + 0.35 * S + 0.3 + pr) continue;
+      if (!u.st.awake) u.called = true;
+      hurtCrab(u, v > 9 ? 2 : 1, 0.4);
+      p.thrown = false;
+      if (p.onImpact) p.onImpact(Math.max(6, v));
+      else { p.vel.x *= -0.25; p.vel.z *= -0.25; p.vel.y = Math.min(p.vel.y, 0) - 0.5; }
       break;
     }
   }
@@ -119033,16 +119617,16 @@ function stickArtifacts() {
     let i; while ((i = pack.indexOf(name)) >= 0) pack.splice(i, 1);
     if (slots) for (let k = 0; k < slots.length; k++) if (slots[k] === name) slots[k] = null;
   };
-  const one = (item, key) => {
-    if (!item) return false;
+  const one = (item, key, taken) => {
+    if (!item || (settings.devMode && !taken)) return false;   // (dev mode's: the world has not given it yet, so the checkpoint has not)
     const on = inventory.find((it) => it.artifact === item);
     if (on && pack.includes(on.name)) { f[key] = on.name; drop(item.name); return true; }
     if (on || inventory.includes(item)) { f[key] = null; put(item.name); return true; }
     return false;
   };
-  if (one(flameArtItem, 'flameOn')) f.tavChest = true;
-  if (one(whaleArtItem, 'artOn')) { f.whaleArt = 2; f.artAt = null; }
-  if (one(seaArtItem, 'seaRelicOn')) { f.seaRelic = 2; f.seaRelicAt = null; }
+  if (one(flameArtItem, 'flameOn', tavChestTaken)) f.tavChest = true;
+  if (one(whaleArtItem, 'artOn', artState === 2)) { f.whaleArt = 2; f.artAt = null; }
+  if (one(seaArtItem, 'seaRelicOn', seaState === 2)) { f.seaRelic = 2; f.seaRelicAt = null; }
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch (e) {}
 }
 function attachArtifact(a, w) {
@@ -120499,7 +121083,7 @@ function seaMakeWave() {
 function seaWarm() {
   if (sea.warmed) return;
   sea.warmed = true;
-  try { const F = seaBallFx(); for (const m of F.pool) { m.visible = true; m.position.copy(camera.position); } renderer.compile(scene, camera); for (const m of F.pool) m.visible = false; } catch (e) { /* the water ball's shaders, compiled before the first throw */ }
+  try { const F = seaBallFx(); const all = [...F.pool, ...F.rings.map((q) => q.m), ...F.flashes.map((q) => q.m), ...F.wets.map((q) => q.m)]; for (const m of all) { m.visible = true; m.position.copy(camera.position); } renderer.compile(scene, camera); for (const m of all) m.visible = false; } catch (e) { /* the water ball's shaders, compiled before the first throw */ }
   try {
     const w = sea.waves[0] || seaMakeWave();
     w.g.visible = true; w.g.position.copy(camera.position);
@@ -120734,6 +121318,7 @@ const SEA_BALL_VS = `uniform float uT; uniform float uWob; varying vec3 vW; vary
     gl_Position = projectionMatrix * viewMatrix * w;
   }`;
 const SEA_BALL_FS = `uniform float uT; uniform float uA; uniform vec3 uMoon; varying vec3 vW; varying vec3 vObj; varying vec3 vSN;
+  ${SEA_NOISE_GLSL}
   void main() {
     vec3 V = normalize(cameraPosition - vW);
     vec3 dN = normalize(cross(dFdx(vW), dFdy(vW)));
@@ -120750,6 +121335,11 @@ const SEA_BALL_FS = `uniform float uT; uniform float uA; uniform vec3 uMoon; var
     vec3 col = mix(clear, deep, depth * 0.85);
     col += vec3(0.45, 0.88, 1.0) * caust * (0.25 + 0.75 * depth) * 0.5;
     col += vec3(0.05, 0.22, 0.30) * (0.6 + 0.4 * sin(uT * 5.0 + vObj.y * 30.0));                 // (its own glow, breathing)
+    // (2026-11-23, the owner: "make the graphics of this water ball better"): a lit heart — the artifact's light coming through the
+    // most water — and foam: white streaks churned into its skin, torn by its own turning, thickest toward the rim
+    col += vec3(0.22, 0.72, 1.0) * pow(depth, 4.0) * 0.45;
+    float foam = smoothstep(0.6, 0.8, sbN(vObj * 15.0 + vec3(uT * 3.1, -uT * 2.3, uT * 1.7)) * 0.7 + sbN(vObj * 34.0 - vec3(0.0, uT * 5.0, 0.0)) * 0.3);
+    col = mix(col, vec3(0.88, 0.97, 1.0), foam * (0.3 + 0.5 * (1.0 - nv)));
     // the skin: a mirror at the edge (what it reflects is the night: the moon's cold and the sky's dark), hard highlights
     vec3 R = reflect(-V, N);
     vec3 sky = mix(vec3(0.03, 0.06, 0.10), vec3(0.20, 0.30, 0.42), smoothstep(-0.2, 0.8, R.y));
@@ -120763,7 +121353,7 @@ const SEA_BALL_FS = `uniform float uT; uniform float uA; uniform vec3 uMoon; var
   }`;
 const SEA_GLOW_FS = `uniform float uA; varying vec3 vW; varying vec3 vSN; varying vec3 vObj; uniform float uT;
   void main() { vec3 V = normalize(cameraPosition - vW); float k = pow(max(dot(normalize(vSN), V), 0.0), 2.2);
-    gl_FragColor = vec4(vec3(0.25, 0.75, 1.0) * k * 0.5 * uA, 1.0); }`;
+    gl_FragColor = vec4(vec3(0.25, 0.75, 1.0) * k * 0.8 * uA, 1.0); }`;
 // the crown: a torn-edged sheet of water thrown up and out
 const SEA_CROWN_VS = `varying vec2 vUv; varying vec3 vW; varying vec3 vN; void main() { vUv = uv; vN = normalize(mat3(modelMatrix) * normal);
   vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
@@ -120798,7 +121388,7 @@ function seaBallFx() {
     m.add(glow); m.renderOrder = 4; glow.renderOrder = 3; m.frustumCulled = false; glow.frustumCulled = false; m.visible = false; m.raycast = () => {}; glow.raycast = () => {};
     m.userData.U = U; scene.add(m); return m;
   };
-  const N = 420, pos = new Float32Array(N * 3).fill(-9999), size = new Float32Array(N).fill(0);
+  const N = 720, pos = new Float32Array(N * 3).fill(-9999), size = new Float32Array(N).fill(0);
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
   const dropMat = new THREE.ShaderMaterial({ uniforms: { uMap: { value: seaDropTex() }, uScale: { value: 300 } }, transparent: true, depthWrite: false, fog: false,
     vertexShader: 'attribute float aSize; uniform float uScale; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * uScale / max(0.1, -mv.z); gl_Position = projectionMatrix * mv; }',
@@ -120814,12 +121404,46 @@ function seaBallFx() {
     col.visible = false; col.frustumCulled = false; col.raycast = () => {}; col.renderOrder = 4; scene.add(col);
     crowns.push({ c, col, U, t: -1, y: 0 });
   }
-  seaBall.fx = { mk, pool: [mk(), mk()], drops, pos, size, vel: new Float32Array(N * 3), life: new Float32Array(N), N, i: 0, crowns, moon };
+  /* (and the rest of a real splash, 2026-11-23, the owner: "more of a impactful splash"): MIST that hangs and spreads (soft points
+   * that grow as they fade; a trail of it behind the ball too), the SHOCK of it — a ring of light racing out along the ground and
+   * a slower ring of water after it — the FLASH at the heart of the burst, and the sand left DARK and wet where it came down */
+  const MN = 220, mpos = new Float32Array(MN * 3).fill(-9999), msize = new Float32Array(MN).fill(0), malpha = new Float32Array(MN).fill(0);
+  const mgeo = new THREE.BufferGeometry(); mgeo.setAttribute('position', new THREE.BufferAttribute(mpos, 3)); mgeo.setAttribute('aSize', new THREE.BufferAttribute(msize, 1)); mgeo.setAttribute('aA', new THREE.BufferAttribute(malpha, 1));
+  const mistMat = new THREE.ShaderMaterial({ uniforms: { uScale: { value: 300 } }, transparent: true, depthWrite: false, fog: false,
+    vertexShader: 'attribute float aSize; attribute float aA; varying float vA; uniform float uScale; void main() { vA = aA; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * uScale / max(0.1, -mv.z); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'varying float vA; void main() { vec2 q = gl_PointCoord - 0.5; float d = dot(q, q) * 4.0; if (d > 1.0) discard; float a = (1.0 - d) * (1.0 - d) * vA; gl_FragColor = vec4(vec3(0.72, 0.88, 0.94), a); }' });
+  const mist = new THREE.Points(mgeo, mistMat); mist.frustumCulled = false; mist.renderOrder = 6; scene.add(mist);
+  const ringTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+    const gr = g.createRadialGradient(64, 64, 30, 64, 64, 63); gr.addColorStop(0, 'rgba(160,230,255,0)'); gr.addColorStop(0.72, 'rgba(170,235,255,0.25)'); gr.addColorStop(0.9, 'rgba(235,252,255,1)'); gr.addColorStop(1, 'rgba(200,240,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const wetTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+    for (let k = 0; k < 9; k++) { const a = k / 9 * 6.2832, r = 18 + Math.random() * 14, x = 64 + Math.cos(a) * 16, y = 64 + Math.sin(a) * 16;
+      const gr = g.createRadialGradient(x, y, 0, x, y, r + 18); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.35)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+    const t = new THREE.CanvasTexture(c); return t; })();
+  const flat = (mat) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mat); m.visible = false; m.frustumCulled = false; m.raycast = () => {}; scene.add(m); return m; };
+  const rings = [], flashes = [], wets = [];
+  for (let i = 0; i < 6; i++) rings.push({ m: flat(new THREE.MeshBasicMaterial({ map: ringTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide })), t: -1 });
+  for (let i = 0; i < 3; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: seaDropTex(), color: 0xbff2ff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    sp.visible = false; sp.renderOrder = 7; sp.raycast = () => {}; scene.add(sp); flashes.push({ m: sp, t: -1 });
+  }
+  for (let i = 0; i < 4; i++) {
+    const m = flat(new THREE.MeshBasicMaterial({ map: wetTex, color: 0x0a1820, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    m.renderOrder = 1; wets.push({ m, t: -1 });
+  }
+  seaBall.fx = { mk, pool: [mk(), mk()], drops, pos, size, vel: new Float32Array(N * 3), life: new Float32Array(N), N, i: 0, crowns, moon,
+    mist: { pts: mist, pos: mpos, size: msize, a: malpha, vel: new Float32Array(MN * 3), life: new Float32Array(MN), life0: new Float32Array(MN), grow: new Float32Array(MN), N: MN, i: 0 },
+    rings, flashes, wets };
   return seaBall.fx;
 }
 function seaDrop(x, y, z, vx, vy, vz, sz, life) {
   const F = seaBall.fx, i = F.i = (F.i + 1) % F.N;
   F.pos[i * 3] = x; F.pos[i * 3 + 1] = y; F.pos[i * 3 + 2] = z; F.vel[i * 3] = vx; F.vel[i * 3 + 1] = vy; F.vel[i * 3 + 2] = vz; F.size[i] = sz; F.life[i] = life;
+}
+function seaMist(x, y, z, vx, vy, vz, sz, life, grow) {
+  const M = seaBall.fx.mist, i = M.i = (M.i + 1) % M.N;
+  M.pos[i * 3] = x; M.pos[i * 3 + 1] = y; M.pos[i * 3 + 2] = z; M.vel[i * 3] = vx; M.vel[i * 3 + 1] = vy; M.vel[i * 3 + 2] = vz;
+  M.size[i] = sz; M.life[i] = M.life0[i] = life; M.grow[i] = grow; M.a[i] = 0;
 }
 function seaBallReady(c) { return !!seaWeapon() && c >= SEA_BALL.charge && seaBall.cd <= 0 && !frozen(); }
 function seaBallSpent() { seaBallFx(); seaBall.cd = SEA_BALL.cd; }
@@ -120872,20 +121496,34 @@ function seaImpact(P, u, dir, hook = false) {
   // what it looks like: the crown and its column, a ring of droplets, the spray, the flash
   const cr = F.crowns.find((q) => q.t < 0) || F.crowns[0];
   const gU = groundUnder(x, z, y + 0.3), gy = Number.isFinite(gU) && y - gU < 1.4 ? gU : y - 0.15;
-  cr.t = 0; cr.y = gy; cr.x = x; cr.z = z; cr.U.uSeed.value = Math.random() * 50; cr.c.visible = cr.col.visible = true; cr.big = hook ? 0.85 : 1;
-  for (let k = 0; k < 90; k++) {
-    const a = Math.random() * 6.2832, up = 2.2 + Math.random() * 4.2, out = 1.2 + Math.random() * 3.2;
-    seaDrop(x, y, z, Math.cos(a) * out + (dir ? dir.x * 1.2 : 0), up, Math.sin(a) * out + (dir ? dir.z * 1.2 : 0), 0.03 + Math.random() * 0.06, 0.7 + Math.random() * 0.6);
+  const onGround = Number.isFinite(gU) && y - gU < 1.4, big = hook ? 1.1 : 1.35;
+  cr.t = 0; cr.y = gy; cr.x = x; cr.z = z; cr.U.uSeed.value = Math.random() * 50; cr.c.visible = cr.col.visible = true; cr.big = big;
+  // (and a second, inner crown a beat behind the first: water falling back into the hole the first one left)
+  const cr2 = F.crowns.find((q) => q.t < 0 && q !== cr);
+  if (cr2) { cr2.t = -0.0001; cr2.wait = 0.16; cr2.y = gy; cr2.x = x; cr2.z = z; cr2.U.uSeed.value = Math.random() * 50; cr2.big = big * 0.55; }
+  for (let k = 0; k < 150; k++) {
+    const a = Math.random() * 6.2832, up = 2.4 + Math.random() * 5.2, out = 1.4 + Math.random() * 4.4;
+    seaDrop(x, y, z, Math.cos(a) * out + (dir ? dir.x * 1.6 : 0), up, Math.sin(a) * out + (dir ? dir.z * 1.6 : 0), 0.035 + Math.random() * 0.075, 0.7 + Math.random() * 0.7);
   }
-  for (let k = 0; k < 30; k++) seaDrop(x, gy + 0.05, z, (Math.random() - 0.5) * 1.6, 4.5 + Math.random() * 3.5, (Math.random() - 0.5) * 1.6, 0.05 + Math.random() * 0.05, 0.9 + Math.random() * 0.4);
-  try { spawnSpray(x, y, z, 22, dir ? dir.x : 0, dir ? dir.z : 0, 1.4); } catch (e) { /* (its pool) */ }
-  seaBall.flash = 1; seaBall.lamp.position.set(x, y + 0.3, z);
+  for (let k = 0; k < 45; k++) seaDrop(x, gy + 0.05, z, (Math.random() - 0.5) * 1.8, 5.5 + Math.random() * 4.5, (Math.random() - 0.5) * 1.8, 0.05 + Math.random() * 0.06, 1.0 + Math.random() * 0.45);
+  // the mist: a burst out low, and a cloud that hangs where it was and spreads
+  for (let k = 0; k < 26; k++) { const a = Math.random() * 6.2832, o = 1.5 + Math.random() * 2.5; seaMist(x, gy + 0.2 + Math.random() * 0.4, z, Math.cos(a) * o, 0.3 + Math.random() * 0.9, Math.sin(a) * o, 0.5 + Math.random() * 0.4, 1.0 + Math.random() * 0.8, 1.6); }
+  for (let k = 0; k < 10; k++) seaMist(x + (Math.random() - 0.5) * 0.6, y + Math.random() * 0.6, z + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.5, 0.4 + Math.random() * 0.5, (Math.random() - 0.5) * 0.5, 0.8, 1.6 + Math.random() * 0.8, 1.2);
+  // the shock along the ground (two rings, the light and then the water), the flash at its heart, and the dark of the wet sand
+  const rg = F.rings.filter((q) => q.t < 0);
+  if (rg[0]) Object.assign(rg[0], { t: 0, x, y: gy + 0.04, z, dur: 0.42, r0: 0.4, r1: 3.6 * big, a: 0.95 });
+  if (rg[1]) Object.assign(rg[1], { t: 0, x, y: gy + 0.035, z, dur: 1.25, r0: 0.6, r1: 2.6 * big, a: 0.4 });
+  const fl = F.flashes.find((q) => q.t < 0) || F.flashes[0]; Object.assign(fl, { t: 0, x, y: y + 0.15, z, big });
+  if (onGround && !inRoom()) { const wt = F.wets.find((q) => q.t < 0) || F.wets.reduce((a2, q) => (q.t > a2.t ? q : a2)); Object.assign(wt, { t: 0, x, y: gU + 0.012, z, s: 2.2 * big + Math.random() * 0.4, rot: Math.random() * 6.28 }); }
+  try { spawnSpray(x, y, z, 40, dir ? dir.x : 0, dir ? dir.z : 0, 1.9); } catch (e) { /* (its pool) */ }
+  seaBall.flash = 1.25; seaBall.lamp.position.set(x, y + 0.3, z);
   // and what it sounds like
-  playSampleAt('splash', x, z, { gain: 1.35, ref: 5, far: 45, rate: 0.82 });
-  playSampleAt('splash', x, z, { gain: 0.8, ref: 5, far: 40, rate: 1.3, delay: 0.035 });
+  playSampleAt('splash', x, z, { gain: 1.5, ref: 6, far: 50, rate: 0.74 });
+  playSampleAt('splash', x, z, { gain: 0.9, ref: 5, far: 40, rate: 1.3, delay: 0.035 });
+  playSampleAt('splash', x, z, { gain: 0.55, ref: 4, far: 30, rate: 1.05, delay: 0.32 });   // (and what was thrown up coming back down)
   sfxAt(x, z, () => sfxSeaBurst());
   const near = camera.position.distanceTo(P);
-  if (near < 6) { addTrauma(0.35 * (1 - near / 6)); hitstop = Math.max(hitstop, u ? 0.08 : 0.04); }
+  if (near < 9) { const k = 1 - near / 9; addTrauma(0.55 * k); fovKick = Math.max(fovKick, 5 * k); hitstop = Math.max(hitstop, u ? 0.1 : 0.05); }
   if (inCat) catNoiseAt(x, z, 22);
 }
 // the throw: a wet whoosh, the ball's surface rolling
@@ -120905,6 +121543,9 @@ function sfxSeaBurst() {
   const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(125, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.3);
   const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(0.85, t + 0.008); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
   o.connect(og).connect(out); o.start(t); o.stop(t + 0.4);
+  { const sub = ctx.createOscillator(); sub.type = 'sine'; sub.frequency.setValueAtTime(68, t); sub.frequency.exponentialRampToValueAtTime(30, t + 0.55);   // (the weight of it: felt)
+    const sg2 = ctx.createGain(); sg2.gain.setValueAtTime(0.0001, t); sg2.gain.exponentialRampToValueAtTime(0.9, t + 0.012); sg2.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+    sub.connect(sg2).connect(out); sub.start(t); sub.stop(t + 0.62); }
   const body = noiseBurst(0.35, (k) => Math.pow(1 - k, 2.2));
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.9; lp.frequency.setValueAtTime(2600, t); lp.frequency.exponentialRampToValueAtTime(260, t + 0.25);
   const bg = ctx.createGain(); bg.gain.value = 0.75; body.connect(lp).connect(bg).connect(out); body.start(t); body.stop(t + 0.36);
@@ -120915,7 +121556,7 @@ function sfxSeaBurst() {
   const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3200;
   const rg = ctx.createGain(); rg.gain.value = 0.32; rain.connect(hp).connect(rg).connect(out); rain.start(t + 0.12); rain.stop(t + 0.95);
 }
-const _sbD = new THREE.Vector3(), _sbR = new THREE.Vector3(), _sbU = new THREE.Vector3(), _sbN = new THREE.Vector3();
+const _sbD = new THREE.Vector3(), _sbR = new THREE.Vector3(), _sbU = new THREE.Vector3(), _sbN = new THREE.Vector3(), _sbY = new THREE.Vector3(0, 1, 0);
 function seaBallTick(dt) {
   if (seaBall.cd > 0) { seaBall.cd = Math.max(0, seaBall.cd - dt); if (seaBall.cd === 0 && seaWeapon()) playSample('slosh', 0.4, 0.05, 1.2); }
   const F = seaBall.fx; if (!F) return;
@@ -120924,7 +121565,6 @@ function seaBallTick(dt) {
   for (let i = seaBall.balls.length - 1; i >= 0; i--) {
     const B = seaBall.balls[i], m = B.m, U = m.userData.U;
     B.t += dt; U.uT.value = t; U.uA.value = Math.min(1, U.uA.value + dt * 8);
-    m.scale.setScalar(Math.min(1, 0.4 + B.t * 6));
     B.v.y -= SEA_BALL.grav * dt;
     B.prev.copy(m.position);
     const step = B.v.length() * dt; _sbN.copy(B.v).normalize();
@@ -120941,7 +121581,10 @@ function seaBallTick(dt) {
       done = true;
     } else {
       m.position.addScaledVector(B.v, dt);
-      m.rotation.x += dt * 4; m.rotation.y += dt * 3;
+      // (a mass of water in flight is drawn out along its way, not a marble: long down its path, a little thin across it)
+      const st = 1 + Math.min(0.4, B.v.length() * 0.014), s0 = Math.min(1, 0.4 + B.t * 6);
+      m.quaternion.setFromUnitVectors(_sbY, _sbN); m.scale.set(s0 / Math.sqrt(st), s0 * st, s0 / Math.sqrt(st));
+      if (Math.random() < 0.8) seaMist(m.position.x - B.v.x * 0.012, m.position.y - B.v.y * 0.012, m.position.z - B.v.z * 0.012, B.v.x * 0.06 + (Math.random() - 0.5) * 0.4, (Math.random() - 0.2) * 0.4, B.v.z * 0.06 + (Math.random() - 0.5) * 0.4, 0.22 + Math.random() * 0.12, 0.45 + Math.random() * 0.25, 0.9);
       // it sheds: droplets peel off behind it and fall
       for (let k = 0; k < 3; k++) seaDrop(m.position.x + (Math.random() - 0.5) * 0.2, m.position.y + (Math.random() - 0.5) * 0.2, m.position.z + (Math.random() - 0.5) * 0.2, B.v.x * 0.15 + (Math.random() - 0.5) * 0.9, B.v.y * 0.15 + Math.random() * 0.4, B.v.z * 0.15 + (Math.random() - 0.5) * 0.9, 0.025 + Math.random() * 0.03, 0.45 + Math.random() * 0.3);
       seaBall.lampK = Math.max(seaBall.lampK, 1); seaBall.lamp.position.copy(m.position);
@@ -120960,8 +121603,9 @@ function seaBallTick(dt) {
   F.drops.geometry.attributes.position.needsUpdate = true; F.drops.geometry.attributes.aSize.needsUpdate = true;
   // the crowns: up and out, then down into themselves
   for (const c of F.crowns) {
-    if (c.t < 0) continue;
-    c.t += dt; const k = c.t / 0.75, big = c.big || 1;
+    if (c.t === -1) continue;
+    if (c.wait > 0) { c.wait -= dt; if (c.wait > 0) continue; c.t = 0; c.c.visible = c.col.visible = true; }
+    c.t = Math.max(0, c.t) + dt; const k = c.t / 0.85, big = c.big || 1;
     if (k >= 1) { c.t = -1; c.c.visible = c.col.visible = false; continue; }
     const r = (0.25 + 1.3 * Math.sqrt(k)) * big, hgt = (0.85 * Math.sin(Math.min(1, k * 1.8) * Math.PI * 0.5) * (1 - k * 0.8)) * big;
     c.c.position.set(c.x, c.y, c.z); c.c.scale.set(r, Math.max(0.01, hgt), r);
@@ -120969,12 +121613,59 @@ function seaBallTick(dt) {
     c.col.position.set(c.x, c.y, c.z); c.col.scale.set(big, Math.max(0.01, ch), big);
     c.U.uK.value = (1 - k) * (1 - k) * 1.1;
   }
+  // the mist: drifting, slowing, spreading as it thins
+  { const M = F.mist;
+    for (let i = 0; i < M.N; i++) {
+      if (M.life[i] <= 0) continue;
+      M.life[i] -= dt; const drag = Math.max(0, 1 - dt * 2.4);
+      M.vel[i * 3] *= drag; M.vel[i * 3 + 1] = M.vel[i * 3 + 1] * drag - 0.25 * dt; M.vel[i * 3 + 2] *= drag;
+      M.pos[i * 3] += M.vel[i * 3] * dt; M.pos[i * 3 + 1] += M.vel[i * 3 + 1] * dt; M.pos[i * 3 + 2] += M.vel[i * 3 + 2] * dt;
+      M.size[i] += M.grow[i] * dt;
+      const k = M.life[i] / M.life0[i]; M.a[i] = 0.32 * Math.min(1, (1 - k) * 8) * Math.pow(Math.max(0, k), 1.3);
+      if (M.life[i] <= 0) { M.pos[i * 3 + 1] = -9999; M.size[i] = 0; M.a[i] = 0; }
+    }
+    const G = M.pts.geometry.attributes; G.position.needsUpdate = true; G.aSize.needsUpdate = true; G.aA.needsUpdate = true; }
+  for (const R of F.rings) {
+    if (R.t < 0) continue;
+    R.t += dt; const k = R.t / R.dur;
+    if (k >= 1) { R.t = -1; R.m.visible = false; continue; }
+    const r = R.r0 + (R.r1 - R.r0) * (1 - Math.pow(1 - k, 2.4));
+    R.m.visible = true; R.m.position.set(R.x, R.y, R.z); R.m.scale.set(r * 2, 1, r * 2); R.m.material.opacity = R.a * Math.pow(1 - k, 1.6);
+  }
+  for (const Q of F.flashes) {
+    if (Q.t < 0) continue;
+    Q.t += dt; const k = Q.t / 0.24;
+    if (k >= 1) { Q.t = -1; Q.m.visible = false; continue; }
+    Q.m.visible = true; Q.m.position.set(Q.x, Q.y, Q.z); Q.m.scale.setScalar((0.5 + 2.6 * Math.sqrt(k)) * Q.big); Q.m.material.opacity = Math.pow(1 - k, 2) * 0.95;
+  }
+  for (const W of F.wets) {
+    if (W.t < 0) continue;
+    W.t += dt; const k = W.t / 7;
+    if (k >= 1) { W.t = -1; W.m.visible = false; continue; }
+    W.m.visible = true; W.m.position.set(W.x, W.y, W.z); W.m.rotation.y = W.rot; const sp = W.s * (0.55 + 0.45 * Math.min(1, W.t / 0.3)); W.m.scale.set(sp, 1, sp);
+    W.m.material.opacity = 0.75 * Math.min(1, W.t / 0.15) * (1 - k * k);
+  }
   // its light: on the ball while it flies, a flash where it bursts
   seaBall.flash = Math.max(0, seaBall.flash - dt * 3.5);
   seaBall.lamp.intensity = 2.2 * seaBall.lampK + 9 * seaBall.flash * seaBall.flash;
   seaBall.lampK = 0;
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaBall, seaBallFire, seaImpact, SEA_BALL, seaBallFx }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaBall, seaBallFire, seaImpact, SEA_BALL, seaBallFx, seaDropHud }));
+/* the drop in the bottom right (2026-11-23, the owner): there while the Sea is set in what you hold, filling as the ball comes back,
+ * full colour once it is ready, brightening once the moment it is (`#seadrop` in index.html, in crayon) */
+const seaDropEl = document.getElementById('seadrop'), seaDropFill = seaDropEl && seaDropEl.querySelector('.wet');
+let seaDropWas = null;
+function seaDropHud() {
+  if (!seaDropEl) return;
+  const cine = /(^|\s)[a-z]+-cine(\s|$)/.test(document.body.className);
+  const show = !!seaWeapon() && started && introDone && !dying && !ended && !menuOpen && !inspecting && !invOpen && !cine && !SK.on && !cutNow();
+  seaDropEl.classList.toggle('show', show);
+  if (!show) { seaDropWas = null; return; }
+  const ready = seaBall.cd <= 0, k = ready ? 1 : 1 - seaBall.cd / SEA_BALL.cd;
+  seaDropFill.style.setProperty('--k', (0.1 + 0.9 * k).toFixed(3));   // (the colour uncovered from the bottom up; the drop's round foot shows from the throw)
+  if (seaDropWas === false && ready) { seaDropEl.classList.remove('pop'); void seaDropEl.offsetWidth; seaDropEl.classList.add('pop'); }
+  seaDropEl.classList.toggle('ready', ready); seaDropWas = ready;
+}
 function seaTick(dt) {
   if (sea.cd > 0) {
     sea.cd = Math.max(0, sea.cd - dt);
@@ -122891,8 +123582,13 @@ function plioParried() {
 }
 function plioBlocked() {
   if (equipped === militaryItem) playSample('blockMil', 1.0, 0.04); else if (isBlade()) sfxKatBlock(); else sfxBlock();
-  stamina = Math.max(0, stamina - BLOCK_COST * 2.4); guardTick();
-  if (stamina <= 0.001) { exhausted = true; gaspOut(); damagePlayer(1, { g: plio.g }); }
+  /* A BLOCK NEVER HURTS (2026-11-23, the owner: "i still get hurt when blocking the seamonster fix this"). It cost 2.4 blocks'
+   * worth of the bar (0.82 of a full one), and the block that emptied it bit you anyway: so the SECOND bite you stopped
+   * nearly always hurt (`tools/plioblock.js`: 2 of 4 blocked bites through the guard). Now as every other heavy blow is
+   * stopped (a pounce's `BLOCK_COST * 1.35`) and, as on land, an empty bar leaves you out of breath — the guard drops and
+   * the NEXT one is yours to dodge — but the blow you stopped is stopped. */
+  stamina = Math.max(0, stamina - BLOCK_COST * 1.35); guardTick();
+  if (stamina <= 0.001) { exhausted = true; gaspOut(); }
   flashMats(toolVM); guardShockV += 8; guardSparks(false, plio.g.position); parryGlow = Math.max(parryGlow, 0.34);
   fovKick = Math.max(fovKick, 7); addTrauma(0.7); vmImpulse(-1.6); hitstop = Math.max(hitstop, 0.09);
   // (no caption — see the first parry's)
@@ -123315,7 +124011,7 @@ function updateDeep(rawDt) {
   if (!deepLock && !inDeep) return;
   if (deep.reMuffle && inDeep && audioCtx && masterGain && gameAudioGate) { deep.reMuffle = false; deepAudio(true, 0.3); }   // (a restore into it: the sound goes under once there is sound: `deepRestore`)
   if (menuOpen || dying || ended) return;
-  const cut = deepCutOn || deep.ph === 'hook' || deep.ph === 'pull' || deep.ph === 'plunge' || deep.ph === 'descent' || deep.ph === 'drown' || deep.ph === 'black' || deep.ph === 'wash';
+  const cut = deepCutOn || deep.ph === 'hook' || deep.ph === 'pull' || deep.ph === 'plunge' || deep.ph === 'descent' || deep.ph === 'drown' || deep.ph === 'black' || deep.ph === 'sketch' || deep.ph === 'wash';
   if (!cut && (invOpen || inspecting || noteOpen || dialogOpen)) return;   // the pack and the rest stop the world here as everywhere
   const dt = Math.min(0.05, rawDt) * (hitstop > 0 ? 0.08 : 1);
   deep.t += dt;
@@ -123497,7 +124193,16 @@ function updateDeep(rawDt) {
         setTimeout(() => { if (deep.ph === 'black') { playSample('splash', 0.55, 0.03, 0.8); sfxSurge(0.4, 1.4); } }, 1700);   // (and out of it)
         washPose(0);                                            // already lying there behind the black, so the beach loads round you
       } else washPose(0);
-      if (T >= WASH_BLACK) { deep.ph = 'wash'; deep.t = 0; }
+      if (T >= WASH_BLACK) {
+        // (and before the wash, once a game: the room, the book and what you draw in it — `skStart`)
+        if (!skDone && !deep.skPassed) { deep.ph = 'sketch'; deep.t = 0; skStart(); skCheckpoint(); }
+        else { deep.ph = 'wash'; deep.t = 0; }
+      }
+      break;
+    }
+    case 'sketch': {
+      washPose(0);                                 // (lying where the sea left you, behind it all)
+      if (skTick(rawDt)) { deep.skPassed = true; deep.ph = 'black'; deep.t = WASH_BLACK - 1.4; }
       break;
     }
     case 'wash': updateWash(dt); break;
@@ -123669,6 +124374,507 @@ function updateDrown(dt) {
 }
 // the needle in the sand: the bleeding syringe's own model, emptied, its cap off, half sunk on its side
 let deepNeedle = null;
+/* ---- THE SKETCHBOOK, AND WHAT YOU DREW (2026-11-23, the owner: "after you see the snorkeler save you from the water
+ * before you wash up on the beach put us back in the intro room have the syringe empty this time have it start out hazy and
+ * you slowly come to like your on drugs … slightly zoom on this blank sketchbook and have a floating retro pen png as your
+ * cursor … "DRAW A CHARACTER FOR YOUR BOOK" … you have to draw something to progress … e to confirm … "name character" …
+ * your character gets drowsy again and loses conciousness slamming his head into the table with a thud and it goes black.
+ * you should then wash up on the beach. when reaching the light house have the character they drew cut out right here …
+ * just a sprite of their lines … kinda thick … identical to the picture … walk up and talk to it. "Hello!" or "What the
+ * hell are you?" … whatever named they type … "kill me" … when you attack it have him flinch from the hit then fade away
+ * with a rare achievement that says "Existence is pain.""). Between the snorkeler's face and the wash, in the deep's own
+ * black (`deep.ph` 'sketch'): the bedroom again (`tbStart(true)`: the title's room drawn over the game, the syringe on the
+ * desk EMPTY), seen through lids that will not stay open and a blur that only slowly lets go; the view sinks to the desk
+ * and becomes the owner's photograph of his blank sketchbook (`assets/sketchbook.jpg`), a little closer than life. The
+ * pointer is let go and a pixel pen floats where it is; whatever you draw is kept as STROKES in the photograph's own pixels
+ * (`skInk`, on the save with `skName`), so the figure on the island's pier is the same lines drawn again, white. */
+const SK_PHOTO_W = 600, SK_PHOTO_H = 800;
+/* ON THE DESK, LIKE THE CALL (2026-11-23, the owner: "the textbook should be show on the table like the intro too. make sure
+ * no syringes and other props are colliding on the table here too"). The photograph was laid over the whole screen; now the
+ * book lies on the desk where the call has it (`tbClutter`'s desk map: x 1.66-2.25, z 2.0-2.38), the photo squared up onto its
+ * page (`SK_BOOK_Q`, the whole book in the photo, the wire along its top), and you draw ON it, through the room's camera
+ * (`skToBook`). Strokes are kept in the page's own units (`SK_BOOK_W` x `SK_BOOK_H`, the canvas twice that). */
+const SK_BOOK_W = 512, SK_BOOK_H = 384;
+const SK_BOOK_Q = [[99.7, 198], [532.2, 198], [586.8, 612], [36.9, 612]];   // TL TR BR BL, photo pixels: the page's edges run up to the wire
+const SK_BOOK_PAGE = [10, 48, 502, 378];                            // where ink takes (page units): under the wire, inside the edges
+const SK_BOOK_M = { w: 0.40, d: 0.30, x: 1.955, z: 2.19, yaw: 0.04 };   // room metres: a 12 x 9 inch book
+const SK_BOOK_GLOW = 0.3;                                           // (a lit page in a dark room: it is what you are looking at)
+const SK_PAGE = [[93, 242], [538, 242], [585, 598], [39, 598]];      // the paper, inside its edges (measured off the photo)
+const SK_ZOOM = 1.5, SK_FOCUS = [0.517, 0.52];                      // how close, and onto the middle of the book
+const SK_MIN_INK = 160;                                             // photo pixels of line before it counts as a drawing
+const SK_SPOT = { x: -17.55, z: -1249.52, y: 15.65, h: 1.75 };      // (off the owner's screenshot — feet -14.39, 15.65, -1249.33, look 1.19: the boards end 4.2 m out along that look; 3 m out and a metre left of it, at the pier's end beside the lamp post, not in front of it — black on the post it vanished)
+function skPenImage() {
+  // a pixel pen, nib down and to the left (its tip is the hot spot)
+  const P = [
+    '..............kk',
+    '.............kbk',
+    '............kbbk',
+    '...........kbbk.',
+    '..........kbbk..',
+    '.........kwbk...',
+    '........kwbk....',
+    '.......kwbk.....',
+    '......kgwk......',
+    '.....kggk.......',
+    '....kssk........',
+    '...kssk.........',
+    '..ksk...........',
+    '.kik............',
+    'kik.............',
+    'k...............'];
+  const C = { k: '#0b0c10', b: '#2a3f8f', w: '#5d78d4', g: '#c9cbd2', s: '#8d9099', i: '#13151c' };
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d');
+  P.forEach((row, y) => [...row].forEach((ch, x) => { if (C[ch]) { g.fillStyle = C[ch]; g.fillRect(x, y, 1, 1); } }));
+  return c.toDataURL();
+}
+function skBuildDom() {
+  if (SK.el) return;
+  const el = document.createElement('div'); el.id = 'sk';
+  el.innerHTML = `<div class="stage"><div class="photo"></div><canvas></canvas></div><div class="vig"></div>
+    <div class="ask">DRAW A CHARACTER FOR YOUR BOOK</div>
+    <div class="namebox"><div class="ask2">NAME CHARACTER</div><input maxlength="18" spellcheck="false" autocomplete="off"></div>
+    <div class="conf"></div><img class="pen" alt="">`;
+  document.body.appendChild(el);
+  SK.el = el; SK.stage = el.querySelector('.stage'); SK.cv = el.querySelector('canvas'); SK.g = SK.cv.getContext('2d');
+  SK.cv.width = SK_BOOK_W * 2; SK.cv.height = SK_BOOK_H * 2;
+  SK.pen = el.querySelector('.pen'); SK.pen.src = skPenImage();
+  SK.ask = el.querySelector('.ask'); SK.conf = el.querySelector('.conf'); SK.nameBox = el.querySelector('.namebox'); SK.input = el.querySelector('input');
+  SK.conf.innerHTML = kbd('Enter') + 'Confirm';
+  const stop = (e) => e.stopPropagation();
+  for (const ev of ['pointerdown', 'pointerup', 'pointermove', 'mousedown', 'mouseup', 'mousemove', 'click', 'wheel', 'contextmenu']) el.addEventListener(ev, stop);
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
+  el.addEventListener('pointerdown', (e) => {
+    if (SK.ph === 'name') { e.preventDefault(); setTimeout(() => SK.input.focus(), 0); return; }   // (a click while naming keeps the typing in the box)
+    if (SK.ph !== 'draw' || e.button !== 0) return;
+    SK.down = true; const p = skToBook(e.clientX, e.clientY);
+    if (!p || !skOnPage(p[0], p[1])) return;
+    SK.cur = [p[0], p[1]]; SK.strokes.push(SK.cur); skDot(p[0], p[1]);
+    try { el.setPointerCapture(e.pointerId); } catch (x) { /* */ }
+  });
+  el.addEventListener('pointermove', (e) => {
+    SK.mx = e.clientX; SK.my = e.clientY;
+    if (SK.ph !== 'draw' || !SK.down) return;
+    const p = skToBook(e.clientX, e.clientY);
+    if (!p || !skOnPage(p[0], p[1])) { SK.cur = null; return; }         // off the paper: the line lifts
+    if (!SK.cur) { SK.cur = [p[0], p[1]]; SK.strokes.push(SK.cur); skDot(p[0], p[1]); return; }
+    const n = SK.cur.length, lx = SK.cur[n - 2], ly = SK.cur[n - 1], d = Math.hypot(p[0] - lx, p[1] - ly);
+    if (d < 1.2) return;
+    SK.cur.push(+p[0].toFixed(1), +p[1].toFixed(1)); SK.len += d;
+    skSeg(lx, ly, p[0], p[1]);
+  });
+  const up = () => { SK.down = false; SK.cur = null; };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  SK.input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if ((e.code === 'Enter' || e.code === 'NumpadEnter') && SK.ph === 'name') { e.preventDefault(); skNamed(); }
+  });
+  for (const ev of ['keyup', 'keypress']) SK.input.addEventListener(ev, stop);
+}
+// the screen to the page's units: a ray through the room's camera onto the page lying on the desk (null off it)
+const _skRay = new THREE.Raycaster(), _skNdc = new THREE.Vector2(), _skbV = new THREE.Vector3();
+function skToBook(cx, cy) {
+  if (!SK.page || !TB.el || !TB.cam) return null;
+  const r = TB.el.getBoundingClientRect();
+  _skNdc.set((cx - r.left) / r.width * 2 - 1, -((cy - r.top) / r.height * 2 - 1));
+  TB.cam.updateMatrixWorld(); _skRay.setFromCamera(_skNdc, TB.cam); _skRay.layers.set(2);
+  const h = _skRay.intersectObject(SK.page, false)[0];
+  return h && h.uv ? [h.uv.x * SK_BOOK_W, (1 - h.uv.y) * SK_BOOK_H] : null;
+}
+// (and back: a point of the page to the screen, for the harness)
+function skBookToScreen(x, y) {
+  if (!SK.page || !TB.el) return null;
+  const M = SK_BOOK_M, u = x / SK_BOOK_W, v = 1 - y / SK_BOOK_H;
+  SK.page.updateWorldMatrix(true, false);
+  _skbV.set(-(u - 0.5) * M.w, 0, (v - 0.5) * M.d).applyMatrix4(SK.page.matrixWorld).project(TB.cam);
+  const r = TB.el.getBoundingClientRect();
+  return [r.left + (_skbV.x + 1) / 2 * r.width, r.top + (1 - _skbV.y) / 2 * r.height];
+}
+function skOnPage(x, y) { const P = SK_BOOK_PAGE; return x >= P[0] && x <= P[2] && y >= P[1] && y <= P[3]; }
+// the page as it is: the photograph squared up (once it is in), and every stroke on it again
+function skPaintBase() {
+  const g = SK.g; if (!g) return;
+  if (SK.base) g.drawImage(SK.base, 0, 0, SK.cv.width, SK.cv.height);
+  else { g.fillStyle = '#dcdad4'; g.fillRect(0, 0, SK.cv.width, SK.cv.height); }
+  for (const s of SK.strokes) {
+    if (s.length === 2) { skDot(s[0], s[1]); continue; }
+    for (let i = 2; i < s.length; i += 2) skSeg(s[i - 2], s[i - 1], s[i], s[i + 1]);
+  }
+  SK.dirty = true;
+}
+// the photo of the book, its four corners pulled square onto the page's canvas (bilinear, both ways)
+function skRectify(img) {
+  const s = document.createElement('canvas'); s.width = SK_PHOTO_W; s.height = SK_PHOTO_H;
+  const sg = s.getContext('2d'); sg.drawImage(img, 0, 0, SK_PHOTO_W, SK_PHOTO_H);
+  const src = sg.getImageData(0, 0, SK_PHOTO_W, SK_PHOTO_H).data, SW = SK_PHOTO_W;
+  const W = SK_BOOK_W * 2, H = SK_BOOK_H * 2, b = document.createElement('canvas'); b.width = W; b.height = H;
+  const bg = b.getContext('2d'), out = bg.createImageData(W, H), o = out.data;
+  const [A, B, C, D] = SK_BOOK_Q;
+  for (let j = 0; j < H; j++) {
+    const v = (j + 0.5) / H, lx = A[0] + (D[0] - A[0]) * v, ly = A[1] + (D[1] - A[1]) * v, rx = B[0] + (C[0] - B[0]) * v, ry = B[1] + (C[1] - B[1]) * v;
+    for (let i = 0; i < W; i++) {
+      const u = (i + 0.5) / W, x = lx + (rx - lx) * u - 0.5, y = ly + (ry - ly) * u - 0.5;
+      const x0 = Math.max(0, Math.min(SW - 2, Math.floor(x))), y0 = Math.max(0, Math.min(SK_PHOTO_H - 2, Math.floor(y))), fx = x - x0, fy = y - y0;
+      const k = (j * W + i) * 4, p = (y0 * SW + x0) * 4, q = p + SW * 4;
+      for (let c = 0; c < 3; c++) o[k + c] = (src[p + c] * (1 - fx) + src[p + 4 + c] * fx) * (1 - fy) + (src[q + c] * (1 - fx) + src[q + 4 + c] * fx) * fy;
+      o[k + 3] = 255;
+    }
+  }
+  bg.putImageData(out, 0, 0);
+  SK.base = b;
+}
+/* THE BOOK ON THE DESK, built into the room the second time (`tbBuild`): a dark board, the page on it (the photo and the
+ * ink, `SK.cv`), on layer 2 — drawn sharp over the room's fat pixels as the call draws his things (`tbRender`), lit by
+ * the room. Then the desk tidied round it (`skDeskTidy`). */
+function skDeskBuild() {
+  const top = TB.desk.top, M = SK_BOOK_M;
+  skBuildDom();
+  const tex = SK.tex = new THREE.CanvasTexture(SK.cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const G = new THREE.Group(); G.name = 'skBook';
+  const board = new THREE.Mesh(new THREE.BoxGeometry(M.w + 0.008, 0.012, M.d + 0.008), new THREE.MeshLambertMaterial({ color: 0x1c1d22 }));
+  board.position.y = 0.006; G.add(board);
+  const pg = new THREE.PlaneGeometry(M.w, M.d); pg.rotateX(-Math.PI / 2); pg.rotateY(Math.PI);   // (the wire away from you: the page's top is the far edge)
+  const page = new THREE.Mesh(pg, new THREE.MeshLambertMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: SK_BOOK_GLOW }));
+  page.position.y = 0.0125; G.add(page);
+  G.position.set(M.x, top, M.z); G.rotation.y = M.yaw;
+  G.traverse((o) => { if (o.isMesh) { o.layers.set(2); o.receiveShadow = true; } });
+  TB.sc.add(G); TB.skBook = G; SK.page = page;
+  SK.bookAt = new THREE.Vector3(M.x, top + 0.0125, M.z);
+  for (const l of [TB.amb, TB.hemi, TB.spot, TB.phoneL]) if (l) l.layers.enable(2);
+  skPaintBase();
+  if (!SK.base) { const img = new Image(); img.onload = () => { skRectify(img); skPaintBase(); }; img.src = 'assets/sketchbook.jpg'; }
+  skDeskTidy();
+}
+/* NOTHING ON TOP OF ANYTHING. The phone where the call has it (right of the book), the empty syringe beside the book, and
+ * then everything lying on the desk — the cans, the pens, the paper, the two dropped syringes — taken as a capsule in plan
+ * (its long axis, its half-length, its half-width, off its own vertices) and pushed until none overlaps the book, the phone
+ * or another. Only the second time: the call's desk is the owner's, as he approved it. */
+function skCapsule(o) {
+  o.updateWorldMatrix(true, true);
+  const P = [];
+  o.traverse((m) => {
+    if (!m.isMesh || !m.geometry || !m.geometry.attributes.position) return;
+    const A = m.geometry.attributes.position, step = Math.max(1, Math.floor(A.count / 400));
+    for (let i = 0; i < A.count; i += step) { _skbV.fromBufferAttribute(A, i).applyMatrix4(m.matrixWorld); P.push(_skbV.x, _skbV.z); }
+  });
+  const n = P.length / 2; if (!n) return null;
+  let mx = 0, mz = 0; for (let i = 0; i < n; i++) { mx += P[i * 2]; mz += P[i * 2 + 1]; } mx /= n; mz /= n;
+  let sxx = 0, szz = 0, sxz = 0; for (let i = 0; i < n; i++) { const dx = P[i * 2] - mx, dz = P[i * 2 + 1] - mz; sxx += dx * dx; szz += dz * dz; sxz += dx * dz; }
+  const ang = 0.5 * Math.atan2(2 * sxz, sxx - szz), ax = Math.cos(ang), az = Math.sin(ang);
+  let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+  for (let i = 0; i < n; i++) { const dx = P[i * 2] - mx, dz = P[i * 2 + 1] - mz, a = dx * ax + dz * az, b = -dx * az + dz * ax; a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); }
+  const r = (b1 - b0) / 2, ca = (a0 + a1) / 2, cb = (b0 + b1) / 2;
+  return { cx: mx + ax * ca - az * cb, cz: mz + az * ca + ax * cb, ax, az, h: Math.max(0, (a1 - a0) / 2 - r), r };
+}
+function skSegDist(a, b) {     // closest points of two segments in plan: [distance, nx, nz] (the normal from b to a)
+  const px = a.cx - a.ax * a.h, pz = a.cz - a.az * a.h, ux = a.ax * 2 * a.h, uz = a.az * 2 * a.h;
+  const qx = b.cx - b.ax * b.h, qz = b.cz - b.az * b.h, vx = b.ax * 2 * b.h, vz = b.az * 2 * b.h;
+  const wx = px - qx, wz = pz - qz, A = ux * ux + uz * uz, B = ux * vx + uz * vz, C = vx * vx + vz * vz, D = ux * wx + uz * wz, E = vx * wx + vz * wz;
+  let s = 0, t = 0; const den = A * C - B * B;
+  if (A < 1e-9 && C < 1e-9) { s = 0; t = 0; }
+  else if (A < 1e-9) t = THREE.MathUtils.clamp(E / C, 0, 1);
+  else if (C < 1e-9) s = THREE.MathUtils.clamp(-D / A, 0, 1);
+  else { s = den > 1e-12 ? THREE.MathUtils.clamp((B * E - C * D) / den, 0, 1) : 0; t = THREE.MathUtils.clamp((B * s + E) / C, 0, 1); s = THREE.MathUtils.clamp((B * t - D) / A, 0, 1); }
+  const dx = px + ux * s - (qx + vx * t), dz = pz + uz * s - (qz + vz * t), d = Math.hypot(dx, dz);
+  if (d > 1e-6) return [d, dx / d, dz / d];
+  const cx = a.cx - b.cx, cz = a.cz - b.cz, c = Math.hypot(cx, cz) || 1;
+  return [0, cx / c || 1, cz / c];
+}
+function skDeskTidy() {
+  const top = TB.desk.top, M = SK_BOOK_M;
+  if (TB.phone) { TB.phone.position.set(1.17, top + 0.004, 2.42); TB.phone.rotation.y = 0.12; }   // (where the call's clip lays it: the desk map, x 1.0-1.35, z 2.2-2.6)
+  if (TB.syr) { TB.syr.position.set(1.62, top + TB.syrR, 2.16); TB.syr.lookAt(1.62 + Math.sin(-0.62), top + TB.syrR, 2.16 + Math.cos(-0.62)); }   // (beside the book, empty)
+  const items = [], add = (o, fixed) => { const c = o && skCapsule(o); if (c) items.push(Object.assign(c, { o, fixed })); };
+  add(TB.phone, true); add(TB.syr, false);
+  if (TB.clutter) for (const o of TB.clutter.children) { o.getWorldPosition(_skbV); if (Math.abs(_skbV.y - top) < 0.15) add(o, false); }
+  const move = (a, dx, dz) => { a.o.position.x += dx; a.o.position.z += dz; a.cx += dx; a.cz += dz; };
+  const hx = M.w / 2 + 0.015, hz = M.d / 2 + 0.015;
+  for (let it = 0; it < 60; it++) {
+    let moved = false;
+    for (const a of items) {
+      if (a.fixed) continue;
+      for (const s of [-1, -0.5, 0, 0.5, 1]) {                       // off the book (its yaw is a few degrees: its box will do)
+        const px = a.cx + a.ax * a.h * s - M.x, pz = a.cz + a.az * a.h * s - M.z, ex = hx + a.r - Math.abs(px), ez = hz + a.r - Math.abs(pz);
+        if (ex > 0 && ez > 0) { if (ex < ez) move(a, (px < 0 ? -1 : 1) * (ex + 0.002), 0); else move(a, 0, (pz < 0 ? -1 : 1) * (ez + 0.002)); moved = true; }
+      }
+    }
+    for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+      const a = items[i], b = items[j]; if (a.fixed && b.fixed) continue;
+      const [d, nx, nz] = skSegDist(a, b), need = a.r + b.r + 0.006 - d;
+      if (need <= 0) continue;
+      const ka = a.fixed ? 0 : b.fixed ? 1 : 0.5, kb = 1 - ka;
+      move(a, nx * need * ka, nz * need * ka); move(b, -nx * need * kb, -nz * need * kb); moved = true;
+    }
+    for (const a of items) if (!a.fixed) {                           // and still on the desk (the desk map's edges)
+      const cx = THREE.MathUtils.clamp(a.cx, 0.93, 2.33), cz = THREE.MathUtils.clamp(a.cz, 1.9, 2.92);
+      if (cx !== a.cx || cz !== a.cz) move(a, cx - a.cx, cz - a.cz);
+    }
+    if (!moved) break;
+  }
+  if (TB.syrSh && TB.syr) TB.syrSh.position.set(TB.syr.position.x, top + 0.002, TB.syr.position.z);
+  if (TB.phoneL && TB.phone) TB.phoneL.position.copy(TB.phone.position).add(new THREE.Vector3(0, 0.12, 0));
+  SK.tidy = items.map((a) => [a.o.name || a.o.type, +a.cx.toFixed(3), +a.cz.toFixed(3), +a.h.toFixed(3), +a.r.toFixed(3)]);
+}
+// ink on the page: a pen's line, a little uneven
+function skInkStyle(g, s) { g.strokeStyle = 'rgba(22,24,32,0.93)'; g.fillStyle = g.strokeStyle; g.lineWidth = 3.1 * s; g.lineCap = 'round'; g.lineJoin = 'round'; }
+function skSeg(x0, y0, x1, y1) { const g = SK.g; skInkStyle(g, 2); g.beginPath(); g.moveTo(x0 * 2, y0 * 2); g.lineTo(x1 * 2, y1 * 2); g.stroke(); SK.dirty = true; }
+function skDot(x, y) { const g = SK.g; skInkStyle(g, 2); g.beginPath(); g.arc(x * 2, y * 2, 3.1, 0, Math.PI * 2); g.fill(); SK.dirty = true; }
+function skStart() {
+  skBuildDom();
+  SK.on = true; SK.ph = 'wake'; SK.t = 0; SK.strokes = []; SK.len = 0; SK.cur = null; SK.zoom = SK_ZOOM;
+  skPaintBase();
+  SK.el.className = ''; SK.ask.className = 'ask'; SK.conf.className = 'conf'; SK.conf.innerHTML = kbd('Enter') + 'Confirm'; SK.nameBox.className = 'namebox'; SK.input.value = '';
+  document.body.classList.add('sk-cine');
+  window.addEventListener('keydown', skKey, true); window.addEventListener('keyup', skKeyUp, true);
+  try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) { /* */ }
+  tbStart(true);                                   // the bedroom, again (behind the black)
+}
+/* A CHECKPOINT AT THE START OF IT (2026-11-23, the owner: "there should also be a checkpoint at the start of this cutscene").
+ * Written as the room comes up, behind the black: the save as it stands — the deep over in all but name, the rod gone, the
+ * needle laid — with you on your feet where the sea left you, and `skAt` (where that is). Loaded, nothing of the deep
+ * is put back: the room again at once (`skResume`), and the wash after it, as the live road has it; the wash's own save
+ * (`endDeep`) writes over this one. */
+function skCheckpoint() {
+  const x = deep.washX ?? WASH.x, z = TREE_SPOT.z + WASH.dz;
+  saveCheckpoint();
+  let d; try { d = JSON.parse(localStorage.getItem(SAVE_KEY)); } catch (e) { return; }
+  if (!d) return;
+  const gU = groundUnder(x, z);
+  d.pos = [+x.toFixed(3), +((Number.isFinite(gU) ? gU : 0) + EYE_HEIGHT).toFixed(3), +z.toFixed(3)];
+  d.look = [-Math.PI / 2, -0.3]; d.room = null; d.spot = null;
+  (d.flags || (d.flags = {})).skAt = [+x.toFixed(3)];
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(d)); } catch (e) { /* */ }
+}
+function skResume() {
+  const a = skOwed; skOwed = null;
+  if (skDone || deepDone || deepLock) return;
+  deep.washX = a[0]; deep.left = true; deep.skPassed = false; deep.ph = 'sketch'; deep.t = 0;
+  deepLock = true;                                 // (nothing saved, nothing dropped, till the wash is over: `endDeep`)
+  needlePlace(deep.washX + 0.6, TREE_SPOT.z + WASH.dz + 0.1);
+  blackoutEl.style.opacity = '1';
+  skStart();
+}
+// the keys are the scene's while it lasts: Enter, and (in the name) the box's own
+function skKey(e) {
+  if (!SK.on) return;
+  /* (ESCAPE IS THE MENU HERE TOO — 2026-11-23, the owner: "i couldnt even esc and reload checkpoint which i always should".
+   * The scene ate every key, Escape with them; and with the mouse already let go the game's own Escape only opens the menu
+   * in the drag fallback. The menu holds the scene still (`updateDeep` returns while it is open), and shutting it does not
+   * take the mouse back: `closeMenu` asks `SK.on`.) */
+  if (e.code === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) { if (menuOpen) closeMenu(); else openMenu(); } return; }
+  if (menuOpen) return;                            // (the menu's own keys)
+  if (e.target === SK.input) return;               // its own handler stops it short of the game
+  // (Enter for the drawing too — 2026-11-23, the owner: "it should say enter to confirm when drawing your character": one key, the
+  // same word, for both; it was E for the drawing and Enter for the name)
+  const enter = (e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat;
+  if (enter && SK.ph === 'draw' && SK.len >= SK_MIN_INK) skConfirm();
+  else if (enter && SK.ph === 'name') skNamed();   // (Enter with the box let go of)
+  if (['KeyE', 'Space', 'Tab', 'Escape', 'Enter'].includes(e.code)) e.preventDefault();
+  e.stopImmediatePropagation();
+}
+function skKeyUp(e) { if (SK.on && e.target !== SK.input) e.stopImmediatePropagation(); }
+function skConfirm() {
+  SK.ph = 'name'; SK.t = 0;
+  SK.ask.className = 'ask'; SK.conf.className = 'conf'; SK.nameBox.className = 'namebox on';
+  SK.conf.innerHTML = kbd('Enter') + 'Confirm';      // (2026-11-23, the owner: "enter to confirm instead" — E is a letter of a name)
+  setTimeout(() => { if (SK.ph === 'name') SK.input.focus(); }, 50);
+}
+function skNamed() {
+  const nm = SK.input.value.replace(/\s+/g, ' ').trim();
+  if (!nm) return;
+  skName = nm.slice(0, 18);
+  skInk = SK.strokes.filter((s) => s.length >= 2).map((s) => s.slice());
+  skDone = true;
+  SK.input.blur(); SK.nameBox.className = 'namebox'; SK.conf.className = 'conf';
+  SK.ph = 'drowse'; SK.t = 0;
+  requestLock();                                  // (the Enter is a gesture: the mouse is the game's again by the time you are up)
+  skFigBuild();
+}
+const skSm = (a, b, t) => { const k = THREE.MathUtils.clamp((t - a) / (b - a), 0, 1); return k * k * (3 - 2 * k); };
+// the room as you come to: the lids, the blur, the view sinking to the desk (`tbLoop` asks `skRoomCam`) — and down onto the
+// book lying on it, the call's desk view brought over the book (`SK_BOOK_M`); then, at the end, the head going down onto it
+const _skE = new THREE.Vector3(), _skL = new THREE.Vector3();
+function skRoomCam(cam, base, look) {
+  const B = SK.bookAt, ph = SK.ph, t = SK.t;
+  const deskFov = cam.aspect >= 16 / 9 ? 50 : 2 * THREE.MathUtils.radToDeg(Math.atan(Math.tan(THREE.MathUtils.degToRad(25)) * (16 / 9) / cam.aspect));
+  if (!B) { cam.position.copy(base); cam.lookAt(look); return; }
+  const E1 = _skE.set(B.x, B.y + 0.46, B.z - 0.40), L1 = _skL.set(B.x, B.y, B.z + 0.02);
+  let k = 1, push = 0, sway = 0.002, drop = 0, slump = 0, tt = t;
+  if (ph === 'wake') { k = skSm(3.5, 9.5, t); sway = 0.012 * (1 - 0.8 * k); }
+  else if (ph === 'draw' || ph === 'name') { tt = t + (ph === 'name' ? 40 : 0); push = 0.1 * skSm(0, 40, tt); tt += 12; }   // (the slow lean in: "slightly zoom")
+  else if (ph === 'drowse') { push = 0.1; slump = skSm(0.3, 3.3, t); drop = skSm(3.3, 3.62, t); sway = 0.004 + 0.01 * slump; }
+  else { k = 1; push = 0.1; }
+  const eye = cam.position.copy(base).lerp(E1, k).lerp(L1, push + 0.12 * slump + 0.62 * drop);
+  eye.y += Math.sin(tt * 0.7) * sway - 0.05 * slump;
+  const tgt = _skLook.copy(look).lerp(L1, k);
+  tgt.x += Math.sin(tt * 0.43) * sway * 4; tgt.y += Math.sin(tt * 0.61 + 1) * sway * 3;
+  cam.lookAt(tgt);
+  cam.rotateZ(Math.sin(tt * 0.37) * (ph === 'wake' ? 0.03 * (1 - 0.7 * k) : 0.004) + slump * 0.05 + drop * 0.32);   // (the room will not sit level; and the head goes over)
+  const fov = THREE.MathUtils.lerp(tbTitleFov(cam.aspect), deskFov, k);
+  if (Math.abs(cam.fov - fov) > 1e-3) { cam.fov = fov; cam.updateProjectionMatrix(); }
+}
+const _skLook = new THREE.Vector3();
+// the scene's clock, from the deep's own update while `deep.ph` is 'sketch'; returns true when it is over
+function skTick(dt) {
+  if (!SK.on) return true;
+  SK.t += dt;
+  const t = SK.t;
+  if (SK.ph === 'wake') {
+    if (!TB.ready) { SK.t = 0; blackoutEl.style.opacity = '1'; return false; }
+    // out of the black into the room, through lids that keep falling shut, the picture swimming
+    blackoutEl.style.opacity = String(1 - skSm(0.4, 3.0, t));
+    let lid = 1 - skSm(1.0, 6.5, t);
+    for (const [a, d, k] of [[3.3, 1.3, 0.85], [5.4, 1.0, 0.6], [7.6, 0.7, 0.35]]) { const u = (t - a) / d; if (u > 0 && u < 1) lid = Math.max(lid, k * Math.sin(u * Math.PI)); }
+    eyeLids(lid);
+    const blur = 9 * (1 - skSm(0.5, 9, t)) + 0.8, bright = 0.55 + 0.45 * skSm(0.5, 6, t);
+    if (TB.el) TB.el.style.filter = `blur(${blur.toFixed(2)}px) brightness(${bright.toFixed(2)}) saturate(${(0.6 + 0.4 * skSm(2, 9, t)).toFixed(2)})`;
+    if (t > 9.4 && !SK.el.classList.contains('on')) { SK.el.classList.add('on'); }    // the desk, close: the book
+    if (t > 10.8) { SK.ph = 'draw'; SK.t = 0; eyeLids(0); }
+  } else if (SK.ph === 'draw' || SK.ph === 'name') {
+    if (SK.ph === 'draw') {
+      if (t > 1.0) SK.ask.className = 'ask on';
+      SK.conf.className = SK.len >= SK_MIN_INK ? 'conf on' : 'conf';
+    } else SK.conf.className = SK.input.value.trim() ? 'conf on' : 'conf';   // (Enter, once there is a name to confirm)
+    const blur = 1.2 * (1 - skSm(0, 6, t)) + 0.25;
+    if (TB.el) TB.el.style.filter = `blur(${blur.toFixed(2)}px)`;
+  } else if (SK.ph === 'drowse') {
+    // heavy again: the lids, the blur, the slump, and the table
+    let lid = 0.15 + 0.7 * skSm(0.2, 3.2, t);
+    for (const [a, d, k] of [[0.6, 0.9, 0.7], [1.9, 0.8, 0.85]]) { const u = (t - a) / d; if (u > 0 && u < 1) lid = Math.max(lid, k * Math.sin(u * Math.PI)); }
+    const drop = skSm(3.3, 3.62, t);                 // the head going down
+    eyeLids(Math.min(1, lid + drop * 0.3));
+    if (TB.el) TB.el.style.filter = `blur(${(0.4 + 3.2 * skSm(0.3, 3.3, t) + 5 * drop).toFixed(2)}px) brightness(${(1 - 0.35 * skSm(0.5, 3.3, t)).toFixed(2)})`;   // (the slump and the head going down: `skRoomCam`)
+    if (t >= 3.62 && !SK.slam) {
+      SK.slam = true;
+      blackoutEl.style.opacity = '1';
+      sfxHeadDesk();
+      addTrauma(0.6);
+    }
+    if (t >= 4.4) { skEnd(); return true; }
+  }
+  // the pen, where the mouse is, floating over the paper unless it is down on it
+  if (SK.pen && SK.mx >= 0) {
+    const show = SK.ph === 'draw' || SK.ph === 'name';   // (and still there while you name it — 2026-11-23, the owner: the cursor went on the book after E)
+    const lift = SK.down ? 0 : 7 + Math.sin(performance.now() / 260) * 3;
+    SK.pen.style.opacity = show ? '1' : '0';
+    SK.pen.style.transform = `translate(${SK.mx.toFixed(0)}px, ${(SK.my - 56 - lift).toFixed(0)}px)`;
+  }
+  return false;
+}
+// a head on a table: a low body-blow and the wood under it, felt more than heard
+function sfxHeadDesk() {
+  const ctx = audioCtx; if (!ctx) return;
+  const t = ctx.currentTime, out = sfxOut();
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(92, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.22);
+  const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, t); og.gain.exponentialRampToValueAtTime(1.1, t + 0.008); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+  o.connect(og).connect(out); o.start(t); o.stop(t + 0.45);
+  const n = noiseBurst(0.12, (k) => Math.pow(1 - k, 3.5));
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700;
+  const ng = ctx.createGain(); ng.gain.value = 0.9;
+  n.connect(lp).connect(ng).connect(out); n.start(t); n.stop(t + 0.12);
+  sfxThud(1.0);
+}
+function skEnd() {
+  SK.on = false; SK.ph = ''; SK.slam = false; SK.tex = null; SK.page = null; SK.bookAt = null;   // (the room takes the book down with it: `tbStop`)
+  window.removeEventListener('keydown', skKey, true); window.removeEventListener('keyup', skKeyUp, true);
+  if (SK.el) SK.el.className = '';
+  document.body.classList.remove('sk-cine');
+  eyeLids(0);
+  /* (the room goes NOW, behind the black — 2026-11-23, the owner: "i saw a glimpse of the textbook when coming back to the beach
+   * after the drawing": `tbStop` lets its layer go only after its 4 s teardown, and the wash lifts the black 1.4 s after this) */
+  { const h = document.getElementById('sk-room'); if (h) h.className = ''; }
+  if (TB.el) TB.el.style.display = 'none';
+  tbStop();
+}
+
+/* ---- WHAT YOU DREW, ON THE ISLAND'S PIER. The same strokes, drawn again on a canvas cut to their own bounds, the lines
+ * at the width the pen drew them (and WHITE there, though they were black on the page), stood upright on the end of
+ * the pier and turned to face you. It talks (`SK_NPC`), it flinches when it is hit and it goes. */
+function skFigTex(strokes) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of strokes) for (let i = 0; i < s.length; i += 2) { x0 = Math.min(x0, s[i]); x1 = Math.max(x1, s[i]); y0 = Math.min(y0, s[i + 1]); y1 = Math.max(y1, s[i + 1]); }
+  const w = Math.max(8, x1 - x0), h = Math.max(8, y1 - y0);
+  /* THE PAGE'S OWN PEN (2026-11-23, the owner: "make the drawing same thickness when you see them at the lighthouse just have it
+   * white how it is"): the lines were drawn fat, about four times the pen, to read from the pier's foot; now they are the width
+   * they were drawn at (`skInkStyle`: 3.1 page units, a dot the same across), white still. The canvas is drawn at 1024 so a line
+   * that thin keeps a few pixels. */
+  const lw = 3.1;
+  const pad = lw * 2, S = 1024 / (Math.max(w, h) + pad * 2);
+  const c = document.createElement('canvas'); c.width = Math.ceil((w + pad * 2) * S); c.height = Math.ceil((h + pad * 2) * S);
+  const g = c.getContext('2d');
+  g.strokeStyle = g.fillStyle = '#f1eee6'; g.lineWidth = lw * S; g.lineCap = 'round'; g.lineJoin = 'round';   // WHITE out there (2026-11-23, the owner: "make it draw in black but it shows up white when u see it there so its seen better"): black ink on the page, chalk-white lines on the night pier
+  for (const s of strokes) {
+    const X = (i) => (s[i] - x0 + pad) * S, Y = (i) => (s[i + 1] - y0 + pad) * S;
+    if (s.length === 2) { g.beginPath(); g.arc(X(0), Y(0), lw * S * 0.5, 0, Math.PI * 2); g.fill(); continue; }
+    g.beginPath(); g.moveTo(X(0), Y(0)); for (let i = 2; i < s.length; i += 2) g.lineTo(X(i), Y(i)); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return { tex: t, aspect: c.width / c.height };
+}
+function skFigBuild() {
+  if (SK_FIG.mesh || skDead || !skInk || !skInk.length) return;
+  const { tex, aspect } = skFigTex(skInk);
+  const H = SK_SPOT.h, W = Math.min(H * aspect, 2.6), Hh = W / aspect;
+  const geo = new THREE.PlaneGeometry(W, Hh); geo.translate(0, Hh / 2, 0);   // stood on its feet
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.04, side: THREE.DoubleSide, depthWrite: true });
+  mat.toneMapped = false;
+  const m = new THREE.Mesh(geo, mat); m.name = 'skFigure';
+  const fy = groundUnder(SK_SPOT.x, SK_SPOT.z, SK_SPOT.y + 1.5);       // (the boards, once the island is there; measured, before)
+  m.position.set(SK_SPOT.x, (Math.abs(fy - SK_SPOT.y) < 0.6 ? fy : SK_SPOT.y) + 0.01, SK_SPOT.z);
+  scene.add(m);
+  farProps.push({ obj: m, z: SK_SPOT.z, d: 120 });
+  SK_FIG.mesh = m; SK_NPC.sprite = m; SK_NPC.headY = Hh * 0.75; SK_NPC.name = skName;
+  addInteractable(m, () => 'Talk to ' + skName, 'npc', { onActivate: () => { SK_NPC.name = skName; startDialog('start', SK_NPC); }, far: 4.5 });
+  SK_FIG.it = interactables[interactables.length - 1];
+}
+// every frame: turned to you; the flinch, then the going
+function skFigTick(dt) {
+  const m = SK_FIG.mesh; if (!m) return;
+  m.rotation.y = Math.atan2(camera.position.x - m.position.x, camera.position.z - m.position.z);
+  if (SK_FIG.hitT >= 0) {
+    SK_FIG.hitT += dt;
+    const u = SK_FIG.hitT, f = Math.max(0, 1 - u / 0.45);
+    m.rotation.z = Math.sin(u * 46) * 0.16 * f;                       // knocked about
+    m.scale.set(1 + 0.12 * f * Math.sin(u * 31), 1 - 0.14 * f, 1);
+    if (u > 0.5 && SK_FIG.fade < 0) SK_FIG.fade = 0;
+  }
+  if (SK_FIG.fade >= 0) {
+    SK_FIG.fade += dt;
+    const k = Math.min(1, SK_FIG.fade / 2.2);
+    m.material.opacity = 1 - k; m.material.alphaTest = 0;
+    m.position.y += dt * 0.08;                                         // and up, a little, as it goes
+    if (k >= 1) skFigGone(true);
+  }
+}
+function skFigGone(earned) {
+  const m = SK_FIG.mesh; if (!m) return;
+  scene.remove(m); m.geometry.dispose(); if (m.material.map) m.material.map.dispose(); m.material.dispose();
+  const i = interactables.indexOf(SK_FIG.it); if (i >= 0) interactables.splice(i, 1);
+  const fp = farProps.findIndex((f) => f.obj === m); if (fp >= 0) farProps.splice(fp, 1);
+  SK_FIG.mesh = null; SK_FIG.it = null; SK_NPC.sprite = null;
+  if (earned && !skDead) { skDead = true; showAchievement('Rare achievement unlocked', '50 - Existence is pain.'); }
+  skDead = true;
+}
+// a blow that reaches it (`digImpactCore`): it flinches, and then it goes
+function skStrike(P) {
+  const m = SK_FIG.mesh; if (!m || SK_FIG.hitT >= 0) return false;
+  if (Math.abs(camera.position.z - m.position.z) > 12) return false;
+  aimRay(P);
+  const h = digRay.intersectObject(m, false)[0];
+  if (!h) return false;
+  hitConnect(P, 0.55);
+  sfxThud(0.5 + P * 0.4);
+  addTrauma(0.15 + P * 0.2);
+  if (dialogOpen) endDialog();
+  const i = interactables.indexOf(SK_FIG.it); if (i >= 0) interactables.splice(i, 1);   // it says nothing more
+  SK_FIG.hitT = 0;
+  return true;
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { skStart, SK, SK_FIG, skFigBuild, TBS: () => TB, tbRenderS: () => tbRender(), tbLoopS: () => { if (TB.on) { cancelAnimationFrame(TB.raf); tbLoop(); } },
+  skS: () => ({ done: skDone, dead: skDead, name: skName, ink: skInk ? skInk.length : 0, ph: SK.ph, t: +SK.t.toFixed(2), on: SK.on, fig: !!SK_FIG.mesh, len: Math.round(SK.len) }),
+  skStrikeS: (P) => { camera.getWorldDirection(_aimD); return skStrike(P); }, skBookToScreenS: skBookToScreen, skToBookS: skToBook, skKeyS: (e) => skKey(e), skOwedS: () => skOwed, setSkInk: (ink, name) => { skInk = ink; skName = name; } }));
+
 function needlePlace(x = WASH.x + 0.6, z = TREE_SPOT.z + WASH.dz + 0.1) {
   if (deepNeedle) return;
   /* THE SAME SYRINGE AS THE END'S (2026-10-15, the owner: "make the syringe look exactly like the one in the last
@@ -129962,7 +131168,8 @@ const CP_POSES = {
            limbs: [[CP_J.thighR, CP_J.calfR, CP_J.footR, CP_J.footR], [CP_J.thighL, CP_J.calfL, CP_J.footL, CP_J.footL], [CP_J.chest, CP_J.neck, CP_J.head, CP_J.head]] },
     // (no voice of their own: the throat they borrowed came out as a little scream — 2026-11-22, the owner: "take out that little
     // scream"; they are wood: their knocks, their breaking, their steps)
-    voice: Object.assign({}, E.voice, { wood: true, farm: false, human: false, f: 1.4, mute: true, pupStep: true }),
+    // (and now the owner's own voice for them, 2026-11-23: `PUP_VOX` through `farmVox` — `mute` still keeps the synth's tell and roar off)
+    voice: Object.assign({}, E.voice, { wood: true, farm: true, vox: PUP_VOX, human: false, f: 1.4, mute: true, pupStep: true }),
     pre: (u, gltf) => cpPre(u, gltf), author: (u, m) => cpAuthor(u, m), provoke: (u) => cpProvoke(u),
     bloodK: 0, goreK: 0, onDeath: (u) => cpDie(u),
     struckHung: (u, P, from) => cpStruckHung(u, P, from), onStruck: (u, P, mine) => cpStruck(u, P, mine),
@@ -131086,6 +132293,16 @@ function cpSyrBuild() {
   const g = new THREE.Group(); g.add(syr); g.visible = false; celWorld.add(g);
   cpSyr = { g, syr, tipZ: syr.userData.parts.tipZ * syr.scale.x };
 }
+// the rare phrase: while the fight is on, now and then, from one of them that is up and fighting (`PUP_VOX.shout`)
+let cpPhraseT = 6 + Math.random() * 6;
+function cpPhraseTick(dt) {
+  if (celPupFight < 1 || celPupFight >= 3 || dying) return;
+  if ((cpPhraseT -= dt) > 0) return;
+  const up = cpUnits.filter((u) => u.st.alive && !u.cpHung && !u.retired && u.model && u.g.visible);
+  if (!up.length) { cpPhraseT = 3; return; }
+  const u = up[(Math.random() * up.length) | 0];
+  cpPhraseT = farmVox('shout', u.kind.voice, { x: u.g.position.x, z: u.g.position.z, p: 0.6 }) ? 16 + Math.random() * 16 : 4 + Math.random() * 4;
+}
 function cpInjectTick(dt) {
   const J = cpInj; if (!J) return;
   J.t += dt;
@@ -131096,7 +132313,11 @@ function cpInjectTick(dt) {
   const ins = THREE.MathUtils.lerp(-0.16, 0.04, inK) - (t > 3.0 ? (t - 3.0) * 0.8 : 0);
   S.g.position.copy(J.chest).addScaledVector(J.dir, ins - S.tipZ);
   S.syr.userData.setFill(1 - push);
-  if (t > 0.45 && !J.stab) { J.stab = true; sfxPropHit('wood', 3); playSample('fleshHit', 0.25, 0.05, 1.6); }
+  if (t > 0.45 && !J.stab) {
+    J.stab = true; sfxPropHit('wood', 3); playSample('fleshHit', 0.25, 0.05, 1.6);
+    // and he feels it (the owner's "puppet getting injected sound", 2026-11-23): from the bench, through the twitch, into the hush
+    playSampleAt('pupInject', CEL_X + J.chest.x, CEL_Z + J.chest.z, { gain: 2.4, ref: 4, far: 30, jitter: 0 });
+  }
   if (t > 1.4) cpEyes(celPup.root, THREE.MathUtils.smoothstep(t, 1.4, 2.2));
   if (t > 1.3 && !J.hush) { J.hush = true; celHush = performance.now(); }   // (the room goes silent: `celHush`)
   if (t > 1.4 && !J.light) {
@@ -131161,6 +132382,7 @@ function updateCelPuppets(dt) {
   if (!cpHit && celPup) buildCpInject();
   if (!inCel) { cpLastCam = null; return; }
   cpInjectTick(dt);
+  cpPhraseTick(dt);
   cpStringsTick(dt);
   cpKnockT -= dt;
   // how you are moving (for the shove): off the camera, a teleport ignored
@@ -132652,7 +133874,7 @@ window.__bw = {
   keepState: () => ({ inKeep, ready: keepReady, walk: !!keepWalk, cells: keepCells ? keepCells.size : 0, sail: sailBusy, t: +sailT.toFixed(2), onBoat, boatBox: beachBoatBox && [+beachBoatBox.min.x.toFixed(2), +beachBoatBox.min.y.toFixed(2), +beachBoatBox.min.z.toFixed(2), +beachBoatBox.max.x.toFixed(2), +beachBoatBox.max.y.toFixed(2), +beachBoatBox.max.z.toFixed(2)], keepBoatBox, liftBox: keepLiftBox }),
   updateHurt, hurtEl,
   militaryItem, militaryWorld, milModel, get toolVM() { return toolVM; }, vmScene, vmCamera, toolMount,
-  get settings() { return settings; }, get hp() { return hp; },
+  get settings() { return settings; }, get hp() { return hp; }, get stamina() { return stamina; }, get exhausted() { return exhausted; },
   snorkSprite, updateSnorkeler, snork: () => ({ up: snorkUp, want: snorkWant, talkT: snorkTalkT, hasTex: !!snorkOpenTex }),
   snorkFake: () => { const c = document.createElement('canvas'); c.width = 80; c.height = 128; const g = c.getContext('2d'); g.fillStyle = '#e0407a'; g.fillRect(10, 30, 60, 98); g.fillStyle = '#ff7030'; g.fillRect(58, 0, 10, 60); snorkSetFrames(c); },
   // aim the camera from the harness: writes the look state itself, so nothing
@@ -132884,7 +134106,7 @@ Object.assign(window.__bw, { farmCobble, farmUnits, farmFight, farmDoors, farmSe
   snorkState: () => ({ snorkMet, snorkUp: +snorkUp.toFixed(2), snorkWant, mushGateUnlocked, gateOpen }),
   setSnorkMet: (v) => { snorkMet = v; },
   oldRingItem, maxHpNow: () => maxHp(), WB_Z,
-  drs, drsTick,
+  drs, drsTick, lodS: () => LOD, lodOn: lodSetOn, lodBegin, lodEnd, hoverNear: (on) => { hoverNearOn = !!on; hoverScanT = 0; },
   sandMoundAt, beachGroundAt, sandMounds, startPassing: () => startPassing(), passState: () => ({ passPlayed, passBuf: !!passBuf, passSrc: !!passSrc, ucLeftBy }),
   startGate: () => ({ startReady, bootReady, t: performance.now() - BOOT_T0, at: window.__startReadyAt, left: startLeft(), total: startTotal, shown: startShown,
     parts: { open: bwOpen, waiting: bwWaiting.length, parsing: bwParsing, warm: warmSteps.length, texQ: texUp.q.length, texWait: texUp.wait.length,
