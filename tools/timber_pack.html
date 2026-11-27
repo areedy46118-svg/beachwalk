@@ -1,0 +1,138 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>timber pack</title>
+<!-- THE WRECK'S TIMBER FROM A PHOTOGRAPH (2026-11-24, the owner: the hold's wood and barrels redone to match the iron).
+     Her hold's lining, its sole, every loose timber and the skin of her stores were drawn (sines for grain, one orange brown,
+     a cream line for the tide); all of them are now cut from ONE weathered grey board texture: `oldwood.jpg`, the colour map
+     of the barrels in the owner's own furniture set (assets/furniture.glb, image 6), its wood half. Every board is its own
+     piece of it (offset, flip, tone); wear is from the owner's scans (mottle, smudge, streaks, pitting) and from noise
+     fields, NEVER from circles; rust is the rust tile's own (assets/wreck-rust.jpg).
+       inner  2048x1024  her lining: 5.9 x 2.95 m, boards lying, the tide line two thirds down
+       sole   2048x1024  her floor: 5.9 x 2.95 m, worn and wet, sand in the seams
+       wood   1024x512   loose timber: 2 x 1 m of grain, checks along it, no boards
+       stores 1024x1024  a drop-in for the pirate set's trim sheet, band for band (its UVs are untouched)
+       sack   512x512    burlap, for the set's tartan
+     Run: PB_PAGE=timber_pack.html PB_PORT=4263 sh tools/probe.sh x /tmp/timber ; then x.jpg, x_n.jpg -> assets/wreck-x.jpg, wreck-x-n.jpg -->
+<body style="margin:0;background:#000">
+<script>
+(async () => {
+  const log = (...a) => console.log('[PB]', ...a), src = '../incoming/wreck-rust/';
+  const load = (f) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error(f)); im.src = f; });
+  const cl = (x) => Math.max(0, Math.min(1, x)), ss = (a, b, x) => { const t = cl((x - a) / (b - a)); return t * t * (3 - 2 * t); }, mix = (a, b, t) => a + (b - a) * t;
+  const emit = async (name, data, w, h, q) => { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(new ImageData(data, w, h), 0, 0);
+    const d = c.toDataURL('image/jpeg', q).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) { console.log('[PBIMG]', name, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); if (i % 40 === 39) await new Promise((r) => setTimeout(r, 15)); } };
+  const grab = (im, sx, sy, sw, sh, w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; g.drawImage(im, sx, sy, sw, sh, 0, 0, w, h); return g.getImageData(0, 0, w, h).data; };
+  const rng = (s) => () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  // tiling value noise over the unit square, fx by fy cells, `oct` octaves
+  const noise = (seed) => { const R = rng(seed), T = new Float32Array(65536); for (let i = 0; i < 65536; i++) T[i] = R(); const at = (x, y, o) => T[(x * 157 + y * 1013 + o * 7919) & 65535];
+    return (u, v, fx, fy, oct = 4) => { let s = 0, a = 1, n = 0; for (let o = 0; o < oct; o++) { const X = u * fx, Y = v * fy, x0 = Math.floor(X), y0 = Math.floor(Y), tx = X - x0, ty = Y - y0, sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty), m = (k, f) => ((k % f) + f) % f;
+      s += a * mix(mix(at(m(x0, fx), m(y0, fy), o), at(m(x0 + 1, fx), m(y0, fy), o), sx), mix(at(m(x0, fx), m(y0 + 1, fy), o), at(m(x0 + 1, fx), m(y0 + 1, fy), o), sx), sy); n += a; a *= 0.5; fx *= 2; fy *= 2; } return s / n; }; };
+  try {
+    const [WI, RI, MoI, SmI, StI, PiI] = await Promise.all([src + 'oldwood.jpg', '../assets/wreck-rust.jpg', src + 'mottle.jpg', src + 'smudge.jpg', src + 'streaks.jpg', src + 'pitting.jpg'].map(load));
+    // the photograph's boards, turned so the grain runs along x, its own slow light and dark taken out (kept: the grain)
+    const PW = 1024, PH = 700, raw = grab(WI, 300, 0, 704, 1024, 704, 1024), G = new Float32Array(PW * PH), C = new Float32Array(PW * PH * 3), mean = [0, 0, 0];
+    for (let y = 0; y < PH; y++) for (let x = 0; x < PW; x++) { const o = (x * 704 + y) * 4; for (let k = 0; k < 3; k++) { C[(y * PW + x) * 3 + k] = raw[o + k]; mean[k] += raw[o + k] / (PW * PH); } }
+    log('wood mean', mean.map(Math.round));
+    for (let i = 0; i < PW * PH; i++) G[i] = (C[i * 3] * 0.3 + C[i * 3 + 1] * 0.59 + C[i * 3 + 2] * 0.11) / (mean[0] * 0.3 + mean[1] * 0.59 + mean[2] * 0.11);
+    const mir = (x, n) => { const p = 2 * n; x = ((x % p) + p) % p; return x < n ? x : p - 1 - x; };
+    // the photograph at (x along the grain, y across), mirrored past its edges, bilinear: rgb over its mean, and the grain
+    const P = [0, 0, 0], photo = (x, y) => { x = mir(x, PW - 1); y = mir(y, PH - 1); const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0, i = y0 * PW + x0;
+      for (let k = 0; k < 3; k++) P[k] = mix(mix(C[i * 3 + k], C[i * 3 + 3 + k], fx), mix(C[(i + PW) * 3 + k], C[(i + PW) * 3 + 3 + k], fx), fy) / mean[k]; return P; };
+    const scan = (im, n = 512) => { const d = grab(im, 0, 0, im.width, im.height, n, n); let lo = 255, hi = 0; for (let i = 0; i < d.length; i += 4) { lo = Math.min(lo, d[i]); hi = Math.max(hi, d[i]); } return (u, v) => { const x = Math.floor((((u % 1) + 1) % 1) * n) % n, y = Math.floor((((v % 1) + 1) % 1) * n) % n; return (d[(y * n + x) * 4] - lo) / (hi - lo); }; };
+    const mo = scan(MoI), sm = scan(SmI), st = scan(StI), pi = scan(PiI), rd = grab(RI, 0, 0, RI.width, RI.height, 512, 512);
+    const rust = (u, v) => { const x = Math.floor((((u % 1) + 1) % 1) * 512) % 512, y = Math.floor((((v % 1) + 1) % 1) * 512) % 512, o = (y * 512 + x) * 4; return [rd[o], rd[o + 1], rd[o + 2]]; };
+    const normal = (H, w, h, K) => { const o = new Uint8ClampedArray(w * h * 4); for (let y = 0; y < h; y++) { const a = ((y - 1 + h) % h) * w, b = y * w, c = ((y + 1) % h) * w; for (let x = 0; x < w; x++) { const l = (x - 1 + w) % w, r = (x + 1) % w;
+      const dx = H[a + r] + 2 * H[b + r] + H[c + r] - H[a + l] - 2 * H[b + l] - H[c + l], dy = H[c + l] + 2 * H[c + x] + H[c + r] - H[a + l] - 2 * H[a + x] - H[a + r], nx = -dx * K, ny = dy * K, q = Math.hypot(nx, ny, 1), i = (b + x) * 4;
+      o[i] = (nx / q * 0.5 + 0.5) * 255; o[i + 1] = (ny / q * 0.5 + 0.5) * 255; o[i + 2] = (1 / q * 0.5 + 0.5) * 255; o[i + 3] = 255; } } return o; };
+    // one planked map. `base`: the timber's own colour; `age(c, u, v, ctx)` weathers it
+    const planked = (w, h, rows, minL, maxL, seed, base, age, scale) => {
+      const R = rng(seed), N = noise(seed + 1), col = new Uint8ClampedArray(w * h * 4), H = new Float32Array(w * h), nails = [];
+      const B = []; for (let r = 0; r < rows; r++) { const L = [], ph = R() * w; let x = 0; while (x < w) { let l = minL + R() * (maxL - minL); if (w - x - l < minL * 0.6) l = w - x; L.push({ a: x, b: x + l, ox: R() * 3000, oy: R() * 2000, f: R() < 0.5 ? -1 : 1, tone: 0.80 + R() * 0.34, warm: (R() - 0.5) * 0.10, odd: R(), cup: (R() - 0.5) * 0.10 }); x += l; } B.push({ ph, L }); }
+      for (let y = 0; y < h; y++) { const r = Math.min(rows - 1, Math.floor(y / h * rows)), y0 = r / rows * h, bh = h / rows, t = (y - y0) / bh, row = B[r];
+        for (let x = 0; x < w; x++) {
+          const xx = ((x - row.ph) % w + w) % w, b = row.L.find((q) => xx < q.b) || row.L[row.L.length - 1], u = x / w, v = y / h, i = y * w + x;
+          const p = photo((xx + b.ox) * scale, (y - y0) * scale * b.f + b.oy), g = p[0] * 0.3 + p[1] * 0.59 + p[2] * 0.11;
+          // edges: a seam whose width wanders, arrises rounded; butts the same
+          const ws = 1.1 + N(u, v, 64, 16, 2) * 2.2, de = Math.min(y - y0, y0 + bh - y), dj = Math.min(xx - b.a, b.b - xx), seam = Math.max(1 - ss(ws * 0.35, ws, de), 0.95 * (1 - ss(ws * 0.3, ws * 0.8, dj))), arris = Math.max(1 - ss(0, 7, de), 0.6 * (1 - ss(0, 6, dj)));
+          let c = [base[0] * p[0] * b.tone * (1 + b.warm), base[1] * p[1] * b.tone, base[2] * p[2] * b.tone * (1 - b.warm)], ht = 0.5 + (g - 1) * 0.30 + b.cup * (t - 0.5) + (b.odd - 0.5) * 0.05 - arris * 0.07;
+          const gm = 0.80 + mo(u * 2 * (w / h), v * 2) * 0.26; c = c.map((k) => k * gm);                                   // the scans' own dirt
+          ({ c, ht } = age({ c, ht, u, v, g, b, N, arris, seam, t }));
+          const sk = seam * 0.92; c = [mix(c[0], 13, sk), mix(c[1], 11, sk), mix(c[2], 9, sk)]; ht -= seam * 0.34;
+          col[i * 4] = c[0]; col[i * 4 + 1] = c[1]; col[i * 4 + 2] = c[2]; col[i * 4 + 3] = 255; H[i] = ht;
+        } }
+      return { col, H, B, R, N, w, h };
+    };
+    // iron nails two to a frame: the head gone to scale (the rust tile's colour), its bleed down the wood following the streak scan
+    const nailIt = (M, step, rows, run, downY) => { const { col, H, R, w, h, N } = M, bh = h / rows;
+      for (let fx = step / 2; fx < w; fx += step) for (let r = 0; r < rows; r++) for (const fy of [0.27, 0.73]) {
+        if (R() < 0.12) continue; const cx = fx + (R() - 0.5) * 5, cy = (r + fy) * bh + (R() - 0.5) * 4, len = run * (0.25 + R() * R() * 1.6), k = 0.25 + R() * 0.55, wd = 1.6 + R() * 2.2;
+        for (let dy = -5; dy < (downY ? len : 5); dy++) for (let dx = -7; dx <= 7; dx++) { const x = ((Math.round(cx + dx) % w) + w) % w, y = Math.round(cy + dy); if (y < 0 || y >= h) continue; const i = y * w + x, ru = rust(x / 512, y / 512);
+          const wob = (N(x / w, y / h, 256, 32, 2) - 0.5) * 3, e = Math.hypot(dx + wob * 0.4, dy), head = 1 - ss(1.4, 2.6, e), halo = (1 - ss(2, 6, e + (N(x / w, y / h, 128, 128, 3) - 0.5) * 5)) * 0.55, run1 = dy > 0 && downY ? (1 - ss(0, wd * (1 - dy / len * 0.5), Math.abs(dx + wob * 0.5))) * Math.pow(1 - dy / len, 1.4) * k * (0.5 + st(x / w * 3, y / h) * 0.7) : 0, a = Math.max(halo, run1);
+          for (let q = 0; q < 3; q++) { col[i * 4 + q] = mix(col[i * 4 + q], ru[q] * 0.95, a); col[i * 4 + q] = mix(col[i * 4 + q], ru[q] * 0.45, head); } H[i] += head * 0.16; } } };
+    const rot = (A, uS, amt) => { // soft dark rot drawn out along the grain, off two fields, never a spot
+      const { N, u, v } = A, f = N(u, v, 10 * uS, 26, 5) * 0.62 + N(u + 0.37, v, 34 * uS, 90, 3) * 0.38, k = ss(0.60 - amt, 0.74 - amt, f) * 0.72; A.c = [mix(A.c[0], 25, k), mix(A.c[1], 21, k), mix(A.c[2], 16, k)]; A.ht -= k * 0.10; return k; };
+    // ---- her lining
+    const inner = planked(2048, 1024, 13, 620, 1300, 611, [100, 88, 74], (A) => {
+      const { u, v, N, g } = A; rot(A, 1, 0.0);
+      if (A.b.odd < 0.10) A.c = A.c.map((k) => k * 0.66);
+      const tide = 0.665 + (N(u, 0.3, 9, 1, 5) - 0.5) * 0.06, d = v - tide, wet = ss(-0.04, 0.20, d + (N(u, v, 60, 30, 4) - 0.5) * 0.16);
+      A.c = A.c.map((k) => k * (1 - 0.30 * wet));
+      const alg = wet * ss(0.46, 0.66, N(u, v, 16, 14, 5) + d * 0.25); A.c = [mix(A.c[0], 42, alg * 0.45), mix(A.c[1], 48, alg * 0.45), mix(A.c[2], 33, alg * 0.45)];
+      // salt: a broken band at the line and a bloom over it, where the grain is proud
+      const band = Math.exp(-Math.pow((d + 0.004) / 0.007, 2)) * ss(0.40, 0.62, N(u, v, 70, 60, 3)) + Math.exp(-Math.pow((d + 0.035) / 0.03, 2)) * ss(0.52, 0.74, N(u, v, 120, 90, 3)) * 0.6, s = cl(band) * cl(g * 1.1 - 0.3) * 0.6; A.c = [mix(A.c[0], 158, s), mix(A.c[1], 156, s), mix(A.c[2], 146, s)];
+      const drip = ss(0.55, 0.12, st(u * 4, v)) * 0.13 * ss(0.0, 0.25, v); A.c = A.c.map((k) => k * (1 - drip));
+      return A; }, 1.25);
+    nailIt(inner, 2048 / 12, 13, 46, true);
+    // ---- her sole
+    const sole = planked(2048, 1024, 14, 560, 1250, 829, [104, 93, 79], (A) => {
+      const { u, v, N, g } = A; rot(A, 1, 0.0);
+      if (A.b.odd < 0.14) A.c = A.c.map((k) => k * 0.62);
+      const we = ss(0.50, 0.72, N(u, v, 7, 5, 4)) * cl(g * 1.4 - 0.65); A.c = [mix(A.c[0], 142, we * 0.5), mix(A.c[1], 134, we * 0.5), mix(A.c[2], 118, we * 0.5)];
+      const damp = ss(0.52, 0.66, N(u + 0.2, v, 8, 6, 5)); A.c = A.c.map((k) => k * (1 - damp * 0.20));
+      const gr = ss(0.45, 0.85, sm(u * 4, v * 2)) * 0.20; A.c = A.c.map((k) => k * (1 - gr));
+      const sand = A.arris * ss(0.46, 0.62, N(u, v, 90, 40, 4)) * 0.75; A.c = [mix(A.c[0], 128, sand), mix(A.c[1], 120, sand), mix(A.c[2], 102, sand)]; A.ht += sand * 0.08; A.sand = sand;
+      return A; }, 1.25);
+    nailIt(sole, 2048 / 12, 14, 0, false);
+    // ---- loose timber: grain only
+    { var wood; const w = 1024, h = 512, N = noise(333), col = new Uint8ClampedArray(w * h * 4), H = new Float32Array(w * h), F = 90;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x, u = x / w, v = y / h;
+        // the photograph is mirrored, so a tile is crossfaded into the next: x over its last F px, y the same
+        const px = (xx, yy) => { const q = photo(xx * 1.0 + 40, yy * 1.2 + 30); return [q[0], q[1], q[2]]; }; const ax = ss(w - F, w, x), ay = ss(h - F, h, y), m = [0, 1, 2], a = px(x, y), b = ax ? px(x - w, y) : a, c0 = ay ? px(x, y - h) : a, d = ax && ay ? px(x - w, y - h) : (ax ? b : c0), p = m.map((k) => mix(mix(a[k], b[k], ax), mix(c0[k], d[k], ax), ay)), g = p[0] * 0.3 + p[1] * 0.59 + p[2] * 0.11;
+        const A = { c: [98 * p[0], 89 * p[1], 77 * p[2]], ht: 0.5 + (g - 1) * 0.34, u, v, N }; rot(A, 0.4, 0.0); const gm = 0.82 + mo(u * 2, v) * 0.24; A.c = A.c.map((k) => k * gm);
+        const bl = ss(0.56, 0.74, N(u, v, 5, 6, 4)) * 0.26; A.c = [mix(A.c[0], 142, bl), mix(A.c[1], 139, bl), mix(A.c[2], 130, bl)];
+        // checks: where a field stretched hard along the grain passes its ridge
+        const ck = N(u, v, 4, 40, 3), k = (1 - ss(0.006, 0.020, Math.abs(ck - 0.5))) * ss(0.52, 0.66, N(u + 0.5, v, 7, 9, 2)) * 0.9; A.c = A.c.map((q) => mix(q, 15, k)); A.ht -= k * 0.22;
+        const ri = ss(0.66, 0.80, N(u + 0.11, v + 0.4, 7, 5, 5)) * 0.42, ru = rust(u * 2, v); A.c = A.c.map((q, j) => mix(q, ru[j], ri));
+        for (let j = 0; j < 3; j++) col[i * 4 + j] = A.c[j]; col[i * 4 + 3] = 255; H[i] = A.ht; }
+      wood = { col, H, w, h }; }
+    // ---- the stores' trim sheet, band for band (fractions down the sheet)
+    { var stores; const n = 1024, N = noise(501), col = new Uint8ClampedArray(n * n * 4), H = new Float32Array(n * n);
+      const band = (f) => f < 0.118 ? 'red' : f < 0.150 ? 'rope' : f < 0.4235 ? 'iron' : f < 0.722 ? 'wood' : f < 0.756 ? 'brass' : 'wood2';
+      for (let y = 0; y < n; y++) { const f = (y + 0.5) / n, bd = band(f); for (let x = 0; x < n; x++) { const i = y * n + x, u = x / n, v = f; let c, ht = 0.5;
+        // tiles along u: the photograph is crossfaded into itself there
+        const px = (oy) => { const a = [...photo(x * 1.1, y * 1.1 + oy)]; const t = ss(n - 120, n, x); if (!t) return a; const b = [...photo((x - n) * 1.1, y * 1.1 + oy)]; return a.map((k, j) => mix(k, b[j], t)); };
+        if (bd === 'wood' || bd === 'wood2' || bd === 'red') {
+          const p = px(bd === 'wood' ? 0 : bd === 'red' ? 400 : 260), g = p[0] * 0.3 + p[1] * 0.59 + p[2] * 0.11; const A = { c: [100 * p[0], 88 * p[1], 73 * p[2]], ht: 0.5 + (g - 1) * 0.32, u, v, N }; rot(A, 1, -0.03);
+          if (bd === 'red') { const pt = ss(0.44, 0.52, N(u, v, 24, 40, 4) + (g - 1) * 0.5); A.c = [mix(A.c[0], 92 * p[0], pt), mix(A.c[1], 34 * p[1], pt), mix(A.c[2], 28 * p[2], pt)]; A.ht += pt * 0.04; }
+          const gm = 0.80 + mo(u * 2, v * 2) * 0.24; c = A.c.map((k) => k * gm); ht = A.ht;
+          const ri = ss(0.64, 0.80, N(u, v + 0.3, 9, 14, 5)) * 0.34, ru = rust(u * 2, v * 2); c = c.map((q, j) => mix(q, ru[j], ri));
+          let e = Math.min(...[0, 0.118, 0.4235, 0.525, 0.602, 0.722, 0.756, 1].map((s) => Math.abs(f - s))) * n;                       // the sheet's own board lines
+          if (bd === 'wood' && f > 0.4235 && f < 0.525) e = Math.min(e, Math.min(...[0.133, 0.805].map((s) => Math.abs(u - s))) * n);
+          const s = 1 - ss(0.8, 1.8 + N(u, v, 64, 64, 2) * 2, e); c = c.map((k) => mix(k, 14, s * 0.85)); ht -= s * 0.26;
+        } else if (bd === 'iron') { const ru = rust(u * 2, v * 2), g = (ru[0] + ru[1] + ru[2]) / 3; const gm = 0.86 + sm(u * 2, v * 2) * 0.22; c = ru.map((k) => k * gm); ht = 0.5 + (pi(u * 2, v * 2) - 0.5) * 0.16 + (g - 60) / 255 * 0.3; const e = Math.min(Math.abs(f - 0.150), Math.abs(f - 0.4235)) * n; ht -= (1 - ss(0, 3, e)) * 0.2; }
+        else if (bd === 'rope') { const t = (f - 0.118) / 0.032, lay = Math.sin((u * 96 + t * 1.6) * Math.PI * 2), fb = N(u, v, 256, 512, 2); const k = 0.74 + lay * 0.18 + (fb - 0.5) * 0.4; c = [112 * k, 98 * k, 74 * k]; ht = 0.5 + lay * 0.14 + (fb - 0.5) * 0.1; }
+        else { const ru = rust(u * 2 + 0.3, v * 2), k = 0.7 + sm(u * 3, v * 3) * 0.4, t = ss(0.48, 0.7, N(u, v, 30, 60, 4)); c = [mix(112 * k, ru[0], t), mix(92 * k, ru[1], t), mix(52 * k, ru[2], t)]; ht = 0.5 + (pi(u * 3, v * 3) - 0.5) * 0.1; }
+        for (let j = 0; j < 3; j++) col[i * 4 + j] = c[j]; col[i * 4 + 3] = 255; H[i] = ht; } }
+      stores = { col, H, w: n, h: n }; }
+    // ---- burlap
+    { var sack; const n = 512, T = 64, N = noise(707), col = new Uint8ClampedArray(n * n * 4), H = new Float32Array(n * n);
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const i = y * n + x, u = x / n, v = y / n, wu = u * T + (N(u, v, 8, 64, 3) - 0.5) * 0.7, wv = v * T + (N(u, v + 0.5, 64, 8, 3) - 0.5) * 0.7, over = (Math.floor(wu) + Math.floor(wv)) & 1, a = Math.abs(Math.sin(wu * Math.PI)), b = Math.abs(Math.sin(wv * Math.PI)), th = over ? a : b, oth = over ? b : a, tk = 0.75 + N(Math.floor(wu) / T, Math.floor(wv) / T, 64, 64, 1) * 0.4;
+        const k = (0.30 + th * 0.62 + (N(u, v, 256, 256, 2) - 0.5) * 0.22) * tk * (0.75 + oth * 0.25), st2 = ss(0.5, 0.72, N(u, v, 5, 5, 4)), gm = 0.8 + mo(u, v) * 0.26; const c = [128 * k * gm, 112 * k * gm, 84 * k * gm].map((q) => q * (1 - st2 * 0.22)); for (let j = 0; j < 3; j++) col[i * 4 + j] = c[j]; col[i * 4 + 3] = 255; H[i] = 0.5 + th * 0.16; }
+      sack = { col, H, w: n, h: n }; }
+    for (const [nm, M, K] of [['inner', inner, 3.4], ['sole', sole, 3.4], ['wood', wood, 3.4], ['stores', stores, 3.0], ['sack', sack, 2.2]]) {
+      const m = [0, 0, 0]; for (let i = 0; i < M.col.length; i += 4) for (let j = 0; j < 3; j++) m[j] += M.col[i + j] / (M.col.length / 4); log(nm, 'mean', m.map(Math.round));
+      await emit(nm, M.col, M.w, M.h, 0.84); await emit(nm + '_n', normal(M.H, M.w, M.h, K), M.w, M.h, 0.82); }
+  } catch (e) { log('FAILED', e && e.stack || e); }
+  log('DONE');
+})();
+</script>

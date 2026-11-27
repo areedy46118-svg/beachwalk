@@ -1426,3 +1426,37 @@ is still at the lips for the gulp and the level drains across it. `tools/drinksn
 ## 2026-11-22 — a key never says "Inventory full"
 `packFullFor(hovered)` was asked of the PICKUP, which never said what it gives: a key on the floor with a full pack read as a
 new slot. `addInteractable`: an 'inventory' pickup whose label says "key" gives null and `isKey` — it hangs on the keychain.
+
+## 2026-11-23 — the Artifact of the Whale is a scanned tooth (no-derivatives licence)
+The owner: "use this model exact to replace the artifact of the whale" (`~/Downloads/carved_sperm_whale_tooth_vtsu3d-45-2.zip`).
+"Carved Sperm Whale Tooth (VTSU3D-45-2)", Vermont State Univ. Digital Archaeology Project, **CC-BY-NC-ND-4.0** (README).
+- **ND = never repack it.** `assets/whale-tooth/` is the zip byte for byte (scene.gltf + 30 MB scene.bin + an 8192² jpeg +
+  license.txt; checked with shasum). No `*_pack.py`, no gz, no decimation, no smaller map on disk. Everything else is done
+  as it loads (`whaleToothBuilt`): `bwCapTextures(…, TEX_CAP)` takes the map to 2048 in the page, the emissive lift (0.16,
+  the old `artMat` lift), metalness 0, and the turn/centre/fit. 1 M triangles, ~550 k vertices.
+- **A .gltf with its own .bin and jpeg through the queue**: the three files are each `bwFetch`ed (ranked in `ASSET_REACH` at
+  the whale; `PACK_FILES` values may now be an ARRAY, so a save carrying the artifact fetches all three first), then a
+  `LoadingManager.setURLModifier` hands GLTFLoader blob URLs of those buffers for the uris it resolves against the
+  `parse(…, 'assets/whale-tooth/')` path. Then `bwGot.delete` the three (the queue keeps every buffer otherwise: 42 MB).
+- **Orientation, measured** (`tools/toothview.html`, `PB_PAGE=toothview.html sh tools/probe.sh x out`): principal axes of
+  the scan with its node matrix applied, `WHALE_TOOTH_AXES` = [along (root +), up across the carving, out of the carved
+  face]. Game frame: x = along (ROOT toward +X, point −X — the opposite of the old hand-built tooth; nothing read it), y =
+  the arch up, z = the carved face (a whale in relief, head toward the root). Fitted to 0.092 m along x, centred.
+- `whaleArtModel` is an EMPTY group until the scan lands (no stand-in: `itemIcon`'s rule), `iconV: 'scan1'`. Every world copy
+  goes through `whaleArtCopy(ownMats)` (the belly's `skqArtSpawn`, Skrim's hand, `artSpawnWorld`): one taken before the scan
+  is in is filled when it lands and `bwSoon`s the three files. The old builder (`ART_TOOTH`, `ART_WHALE_PX`, `artToothMap`,
+  `makeWhaleArtifact`, the cord and the blue eye stone) is gone; its `userData.pearl` was never read for the whale.
+- Probe `toothLook` (sand ×4.2 laid as the farewell lays it, the examine screen, the icon). `ART_WHALE_SVG` (the pane's
+  mark) is still the flat tooth silhouette.
+
+## 2026-11-23 — the Ring of Connection tops out at 16 %
+The owner: "make the ring of connection you get from the fishermen give 16% total". `CONN_MAX` 0.12 → 0.16 (`CONN_STEP` stays
+0.04, so the fifth blow in a row is the first at +16 %); its pack line and the README say "up to 16%".
+
+- **The Artifact of the Sea is the owner's fossil (2026-11-24)**: "Fossilized Scallop Shell" by NaRoCreations, CC-BY-4.0,
+  `assets/fossil-shell.glb` (`tools/fossil_pack.py`, 4.8 MB, 100,000 triangles, map 2048). `seaArtCopy()` is every copy
+  (the inspect model, the world one, the gift's flight): an empty group, the fossil put in it when it lands. NO PEARL: I
+  kept the drawn one's blue pearl in it for the world copy's pulse and the owner had not asked for it — "get rid of the
+  pearl ... i didnt say to add that". A replacement model is the model; keep nothing of the old one unasked. Axes measured
+  by `tools/fossilview.html`; turned face +Z, hinge -Y (the drawn shell's frame), 0.10 m across. The inspect
+  model is itself a copy taken at load, so it is on the waiting list — filling it directly as well put the scan in it twice.

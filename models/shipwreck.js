@@ -293,7 +293,10 @@ function hullGeo() {
       const iv1 = hullPt(p1.x + (rnd(seed * 3.1) - 0.5) * 0.16, p1.y + (rnd(seed * 4.9) - 0.5) * 0.10, sg, -d);
       const q = pos.length / 3;
       pos.push(...o0, ...o1, ...iv1, ...iv0);
-      for (const pt of [p0, p1, p1, p0]) uv.push((pt.x + HALF) / 5.2, pt.v);
+      /* (the inner edge a lip's depth on from the outer, at the skin's own scale: it took the outer's uv, and every lip
+       * round every rot hole drew one row of the map smeared through its 10-26 cm — `wreckTexel`, 2026-11-23) */
+      const du = i0 === i1 ? d / 5.2 : 0, dv = i0 === i1 ? 0 : d / (railY(p0.x) - KEEL_Y);
+      uv.push((p0.x + HALF) / 5.2, p0.v, (p1.x + HALF) / 5.2, p1.v, (p1.x + HALF) / 5.2 + du, p1.v + dv, (p0.x + HALF) / 5.2 + du, p0.v + dv);
       idx.push(q, q + 1, q + 2, q, q + 2, q + 3);
       idx.push(q, q + 2, q + 1, q, q + 3, q + 2);   // a lip reads from both sides
     };
@@ -308,11 +311,16 @@ function hullGeo() {
       }
   }
 
-  // stem and transom, stitched shut
+  /* stem and transom, stitched shut — ON THEIR OWN CORNERS (2026-11-23). They were stitched between the two sides' own
+   * vertices, whose u is her length `(x + HALF) / 5.2`: the same at every corner of her flat stern, so its 57 m² drew one
+   * column of the hull map smeared across it (`wreckTexel`: zero area in uv) and took its shading from the sides. Now u
+   * runs ACROSS her (z, at the sides' 5.2 m a tile) and v is the sides' own, so the stern's weed line and boot top meet
+   * the sides' at her quarters. */
   const P = (sgi, i, j) => ring[sgi] + i * (vs + 1) + j;
+  const own = (k) => { const o = pos.length / 3; pos.push(pos[k * 3], pos[k * 3 + 1], pos[k * 3 + 2]); uv.push(0.5 + pos[k * 3 + 2] / 5.2, uv[k * 2 + 1]); return o; };
   for (const [i, flip] of [[0, false], [xs, true]])
     for (let j = 0; j < vs; j++) {
-      const a = P(0, i, j), b = P(1, i, j), c = P(1, i, j + 1), d = P(0, i, j + 1);
+      const a = own(P(0, i, j)), b = own(P(1, i, j)), c = own(P(1, i, j + 1)), d = own(P(0, i, j + 1));
       if (flip) idx.push(a, b, c, a, c, d);
       else idx.push(a, c, b, a, d, c);
     }
@@ -398,6 +406,8 @@ function bulwarkWear(x, sg) {
  * the inner face, the top and the end grain at every break in her planking.
  * Returns the two faces apart, for their two materials. */
 const TOPSIDE_T = 0.13;
+// the plank map (`plankMaps`: 1024x256, 18 courses, repeat 2 x 1.4) in metres: a course is a COURSE, the texels square (84 px/m)
+const PLANK_VM = 18 * COURSE * 1.4, PLANK_UM = 1024 * 2 * (18 * COURSE) / 256;
 function quadOut(pos, idx, uv, p0, p1, p2, p3, uvs, n) {
   // four corners in order round the face, wound so the face looks along n
   const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2];
@@ -429,11 +439,16 @@ function bulwarkGeo(sg) {
    * 3 mm short of it they left a 6 mm slit up the middle of her bow (measured: rays straight ahead at 1.4 m escaped) */
   const In = (x, y) => hullPt(x, y, sg, -Math.min(T, halfAtY(x, y) + 0.004));
   const Vh = (x, y) => (y - KEEL_Y) / (railY(x) - KEEL_Y);               // the hull map's own v
-  const Vp = (y, x) => 0.88 + 0.12 * (y - DECK_Y - sheerAt(x)) / BULWARK; // the plank band
+  /* THE PLANK MAP IN METRES (2026-11-23, the owner's screenshot: "these areas that just look like a stretched texture").
+   * The inside face took the map's v 0.88..1 over its 0.85 m — 50 map px a metre up it against 394 along it, so every
+   * grain line and stain stood 7.8x tall. Now a course of the map is a `COURSE` (18 to a tile: 3.06 m a tile up, at the
+   * map's 1.4) counted up from her deck line on the sheer, so the courses follow her sheer and the ones `bulwarkWear`
+   * takes out are whole courses of the map; and along her the same 84 px a metre (`PLANK_UM`). */
+  const Vp = (y, x) => (y - DECK_Y - sheerAt(x)) / PLANK_VM;
   const out = [0, 0, sg], inn = [0, 0, -sg], up = [0, 1, 0];
   for (let i = 0; i < n; i++) {
     const s = st[i]; if (!s) continue;
-    const ua = (s.xa + HALF) / 5.2, uc = (s.xc + HALF) / 5.2;
+    const ua = (s.xa + HALF) / 5.2, uc = (s.xc + HALF) / 5.2, pa = (s.xa + HALF) / PLANK_UM, pc = (s.xc + HALF) / PLANK_UM;
     const ta = top(s.xa, s.h), tc = top(s.xc, s.h);
     for (let k = 0; k < ROWS; k++) {
       const ya0 = DECK_Y + (ta - DECK_Y) * k / ROWS, ya1 = DECK_Y + (ta - DECK_Y) * (k + 1) / ROWS;
@@ -441,17 +456,17 @@ function bulwarkGeo(sg) {
       quadOut(O.pos, O.idx, O.uv, hullPt(s.xa, ya0, sg), hullPt(s.xc, yc0, sg), hullPt(s.xc, yc1, sg), hullPt(s.xa, ya1, sg),
         [ua, Vh(s.xa, ya0), uc, Vh(s.xc, yc0), uc, Vh(s.xc, yc1), ua, Vh(s.xa, ya1)], out);
       quadOut(I.pos, I.idx, I.uv, In(s.xa, ya0), In(s.xc, yc0), In(s.xc, yc1), In(s.xa, ya1),
-        [ua, Vp(ya0, s.xa), uc, Vp(yc0, s.xc), uc, Vp(yc1, s.xc), ua, Vp(ya1, s.xa)], inn);
+        [pa, Vp(ya0, s.xa), pc, Vp(yc0, s.xc), pc, Vp(yc1, s.xc), pa, Vp(ya1, s.xa)], inn);
     }
-    // the top of her side
+    // the top of her side: along her as the face under it, across it her 13 cm
     quadOut(I.pos, I.idx, I.uv, hullPt(s.xa, ta, sg), hullPt(s.xc, tc, sg), In(s.xc, tc), In(s.xa, ta),
-      [ua, 0.995, uc, 0.995, uc, 1, ua, 1], up);
+      [pa, 0, pc, 0, pc, T / PLANK_VM, pa, T / PLANK_VM], up);
     // end grain wherever the next station stands lower, or is not there
     for (const [nb, x, t, dir] of [[st[i - 1], s.xa, ta, -1], [st[i + 1], s.xc, tc, 1]]) {
       if (nb && nb.h >= s.h - 1e-4) continue;
-      const lo = nb ? top(x, nb.h) : DECK_Y, u = (x + HALF) / 5.2;
+      const lo = nb ? top(x, nb.h) : DECK_Y, u = (x + HALF) / PLANK_UM, du = T / PLANK_UM;   // (the end grain: its 13 cm at the same scale)
       quadOut(I.pos, I.idx, I.uv, hullPt(x, lo, sg), In(x, lo), In(x, t), hullPt(x, t, sg),
-        [u, Vp(lo, x), u + 0.02, Vp(lo, x), u + 0.02, Vp(t, x), u, Vp(t, x)], [dir, 0, 0]);
+        [u, Vp(lo, x), u + du, Vp(lo, x), u + du, Vp(t, x), u, Vp(t, x)], [dir, 0, 0]);
     }
   }
   const geo = (B) => {
@@ -559,6 +574,57 @@ function hullDecalGeo(x0, x1, y0, y1, sg, out = 0.05) {
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx); g.computeVertexNormals();
   return g;
+}
+
+/* EVERY FACE IN METRES (2026-11-23, the owner: "these areas that just look like a stretched texture"). Measured
+ * (`tools/probes.js` `wreckTexel`: map px per metre along u and along v on every triangle), her boxes, beams, rails and
+ * fittings wore their map ONCE per face whatever the face's size (BoxGeometry's own uvs): the timber 9.5x, the iron
+ * 6.2x, the hold's dark gear 10.4x, the rope 6x, the wheelhouse 3x, the lining 1.9x — a 3 m beam and its 10 cm end both
+ * one whole tile. So after the merge, every triangle of these materials is laid again by where it is, in her own metres
+ * and one density a material (`D`, map px a metre, both ways):
+ *   'grain'   — the face's two own axes, u along the LONGER side of the face (a timber's grain, a rope's lay, along it);
+ *   'upright' — a standing face: v straight up from `base` (courses level, boards upright, the lining's tide line at the
+ *               one height all round the hold), u along it; a lying face: u along her, v across.
+ * A mesh marked `uvLaid` laid its own (the bulwark follows her sheer); a geometry two meshes share is copied first. */
+function layInMetres(root, rules) {
+  root.updateMatrixWorld(true);
+  const inv = root.matrixWorld.clone().invert(), rel = new THREE.Matrix4(), byMat = new Map(rules.map((r) => [r[0], r]));
+  const seen = new Set(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), n = new THREE.Vector3();
+  let tris = 0;
+  root.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || o.userData.uvLaid) return;
+    const R = byMat.get(o.material); if (!R) return;
+    const [mat, mode, D, base = 0] = R, mp = mat.map;
+    const px = mp && (mp.userData.px || (mp.image && [mp.image.width, mp.image.height]));   // (a loaded map says its size before it has loaded)
+    if (!px) return;
+    let g = o.geometry;
+    if (seen.has(g)) g = o.geometry = g.clone();
+    if (g.index) g = o.geometry = g.toNonIndexed();
+    seen.add(g);
+    const ku = D / (px[0] * mp.repeat.x), kv = D / (px[1] * mp.repeat.y);
+    rel.multiplyMatrices(inv, o.matrixWorld);
+    const P = g.attributes.position, uv = new Float32Array(P.count * 2), V = [a, b, c];
+    for (let i = 0; i + 2 < P.count; i += 3) {
+      a.fromBufferAttribute(P, i).applyMatrix4(rel); b.fromBufferAttribute(P, i + 1).applyMatrix4(rel); c.fromBufferAttribute(P, i + 2).applyMatrix4(rel);
+      n.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a));
+      const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
+      let A, B;                                              // the axes for u and v: 0 x (along her), 1 y (up), 2 z (across)
+      if (ay >= ax && ay >= az) { A = 0; B = 2; } else if (ax >= az) { A = 2; B = 1; } else { A = 0; B = 1; }
+      const ext = (k) => Math.max(a.getComponent(k), b.getComponent(k), c.getComponent(k)) - Math.min(a.getComponent(k), b.getComponent(k), c.getComponent(k));
+      /* (a lying 'upright' face that runs ACROSS her — a coaming's top, a stairwell's lip — has its boards across her too: laid
+       * along her they were piano keys. Only a face plainly longer across: the cap rail's lofted stations are short, not across) */
+      const lying = B === 2;
+      if (mode === 'grain' ? ext(B) > ext(A) * 1.0001 : lying && ext(2) > 0.3 && ext(2) > ext(0) * 2.2) { const t = A; A = B; B = t; }
+      for (let k = 0; k < 3; k++) {
+        uv[(i + k) * 2] = V[k].getComponent(A) * ku;
+        uv[(i + k) * 2 + 1] = (V[k].getComponent(B) - (B === 1 ? base : 0)) * kv;
+      }
+      tris++;
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  });
+  return tris;
 }
 
 function bakeGroup(group) {
@@ -825,16 +891,18 @@ const grain = (b, x, y) => 0.5 + 0.18 * fsin(y * 1.9 + b.grainSeed + fsin(x * 0.
 function rotPass(S, { k = 1, rust = 1, seed = 7 } = {}) {
   const { w, h, hgt } = S, R = srng(seed * 977 + w * 3 + h);
   const area = (w * h) / 65536;
-  const nRot = Math.round(9 * area * k);
-  for (let n = 0; n < nRot; n++) {
-    const cx = R() * w, cy = R() * h, rx = 9 + R() * 30, ry = rx * (0.3 + R() * 0.3);
-    for (let yy = -Math.ceil(ry); yy <= ry; yy++) for (let xx = -Math.ceil(rx); xx <= rx; xx++) {
-      const d = Math.hypot(xx / rx, yy / ry); if (d > 1) continue;
-      const px = (Math.round(cx + xx) % w + w) % w, py = Math.round(cy + yy); if (py < 0 || py >= h) continue;
-      const i = py * w + px, e = 1 - d;
-      S.mix(i, 30, 24, 18, Math.min(0.88, e * 1.35));
-      hgt[i] -= 0.22 * e + (R() < 0.3 * e ? 0.14 : 0);
-      if (d > 0.72 && R() < 0.06) S.mix(i, 152, 158, 132, 0.55);
+  /* THE ROT IS A FIELD DRAWN OUT ALONG THE GRAIN, NOT SPOTS (2026-11-24). It was some nine soft ellipses to a tile, and from
+   * any distance her deck, her paint and her sides were all spotted like a dog. Two wrapped noise fields, much longer along
+   * the grain than across it (down it, on the upright boards of the wheelhouse), and only their crests. */
+  {
+    const up = w === h, q = vnoise(seed * 31 + 5), aw = Math.min(256, w), ah = Math.min(256, h);
+    const F = up ? field(q, aw, ah, 22, 6, 4) : field(q, aw, ah, 8 * Math.max(1, Math.round(w / h / 2)), 22, 4), D = field(vnoise(seed * 17 + 3), 256, 256, up ? 60 : 24, up ? 24 : 60, 3);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const f = F(x / w, y / h) * 0.66 + D(x / w, y / h) * 0.34, e = clamp01((f - (0.655 - 0.02 * k)) / 0.10);
+      if (e <= 0) continue;
+      const i = y * w + x;
+      S.mix(i, 30, 25, 19, e * e * (3 - 2 * e) * 0.74);
+      hgt[i] -= 0.16 * e + (R() < 0.2 * e ? 0.10 : 0);
     }
   }
   const nRust = Math.round(13 * area * rust);
@@ -1120,8 +1188,8 @@ function paintMaps() {
         S.set(i, (66 + chalk * 26) * t, (106 + chalk * 22) * t, (92 + chalk * 18) * t); S.hgt[i] += 0.05;
         if (m < 0.418) { S.mul(i, 0.6); S.hgt[i] += 0.05; }
       }
-      // grime gathers at the foot of every board
-      if (v > 0.86) S.mul(i, 1 - (v - 0.86) * 2.4);
+      /* (the grime at the foot of every board is gone, 2026-11-23: laid in metres a tile is 0.96 m up the wall, and a
+       * band in the tile came round mid-wall) */
     }
     for (let c = 0; c <= COLS; c++) {                       // the grooves between the boards
       const x0 = Math.round((c / COLS) * w) % w;
@@ -1140,133 +1208,59 @@ function paintMaps() {
  * The ceiling planks of the hold, tarred dark; every board its own tone;
  * nails in rows at the frames; and the TIDE has been in here — a hard salt
  * line a third of the way up, wet and green under it, white crust on it. */
-function innerMaps() {
-  /* ONCE up the wall, not 1.4 times: the lining's v runs sole to deckhead
-   * once, and at the old 1.4 the tide line came round a second time just
-   * under the deck beams */
-  return defineMap('inner', 512, 512, [4, 1], 2.6, { rot: { k: 1.3, rust: 0.8, seed: 23 } }, '#3e342a', (S) => {
-    const w = S.w, h = S.h, R = srng(6061);
-    const damp = field(vnoise(61), 128, 128, 6, 6, 4), crust = field(vnoise(63), 128, 128, 30, 30, 3);
-    const ROWS = 13, boards = courses(S, ROWS, 200, 420, R);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const i = y * w + x, u = x / w, v = y / h;
-      const b = boardAt(boards, ROWS, h, w, x, y), inB = (y - b.y0) / (b.y1 - b.y0);
-      const gk = 0.84 + grain(b, x, y) * 0.30;
-      S.set(i, 82 * b.tone * gk * b.warm, 68 * b.tone * gk, 54 * b.tone * gk / b.warm);
-      S.hgt[i] = 0.5 + 0.08 * Math.sin(inB * Math.PI);
-      if (b.odd < 0.12) S.mul(i, 0.72);                   // a board blacker with tar than the rest
-      const tide = 0.66 + (crust(u, 0.2) - 0.5) * 0.04;     // canvas y: the bottom third is below the line
-      if (v > tide) {
-        const d = damp(u, v);
-        S.mul(i, 0.66 - 0.12 * d);
-        if (d > 0.55) S.mix(i, 36, 52, 38, 0.55);
-      }
-      if (Math.abs(v - tide) < 0.006) S.mix(i, 176, 178, 168, 0.75);
-      const c = crust(u, v);
-      if (c > 0.70 && v > tide - 0.12) S.mix(i, 170, 170, 160, 0.55 * clamp01((c - 0.70) * 6));   // salt flowering out of the wood
-    }
-    for (let r = 0; r <= ROWS; r++) {
-      const y0 = Math.round((r / ROWS) * h) % h;
-      for (let x = 0; x < w; x++) for (const [dy, a, dh] of [[0, 0.85, -0.4], [1, 0.4, -0.1]]) { const i = ((y0 + dy) % h) * w + x; S.mix(i, 14, 11, 9, a); S.hgt[i] += dh; }
-    }
-    for (const row of boards) for (const b of row) {
-      const x = ((b.x0 % w) + w) % w;
-      for (let y = b.y0 + 1; y < b.y1 - 1; y++) { const i = y * w + x; S.mix(i, 14, 11, 9, 0.8); S.hgt[i] -= 0.3; }
-    }
-    for (let fx = 18; fx < w; fx += 68) for (let r = 0; r < ROWS; r++) {
-      const y = ((r + 0.5) / ROWS) * h; S.nail(fx + (R() - 0.5) * 2, y, 1);
-      if (R() < 0.4) S.streak(fx, y + 2, 10 + R() * 40, 1, 110, 52, 22, 0.6);
-    }
-    for (let k = 0; k < 18; k++) {                         // a knot, and the grain run round it
-      const x = R() * w, y = R() * h, r = 2 + R() * 2.5;
-      S.disc(x, y, r * 2.2, 40, 30, 22, 0.35, -0.05); S.disc(x, y, r, 26, 18, 12, 0.85, -0.1);
-    }
-  });
-}
-
-/* ---- THE SOLE OF HER HOLD ----------------------------------------------
- * Floor boards worn pale down where feet went, sand in every seam, the
- * odd board black with water, and the scales and slime of the catch. */
-function soleMaps() {
-  return defineMap('sole', 512, 512, [3, 3], 2.4, { rot: { k: 1.4, rust: 0.6, seed: 29 } }, '#4a4034', (S) => {
-    const w = S.w, h = S.h, R = srng(8181);
-    const wear = field(vnoise(81), 128, 128, 5, 5, 4), slime = field(vnoise(83), 128, 128, 12, 12, 3);
-    const ROWS = 14, boards = courses(S, ROWS, 180, 400, R);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const i = y * w + x, u = x / w, v = y / h;
-      const b = boardAt(boards, ROWS, h, w, x, y), inB = (y - b.y0) / (b.y1 - b.y0);
-      const gk = 0.84 + grain(b, x, y) * 0.30;
-      S.set(i, 96 * b.tone * gk * b.warm, 82 * b.tone * gk, 66 * b.tone * gk / b.warm);
-      S.hgt[i] = 0.5 + 0.08 * Math.sin(inB * Math.PI);
-      if (b.odd < 0.16) S.mul(i, 0.6);                    // standing wet
-      const we = wear(u, v);
-      if (we > 0.58) S.mix(i, 140, 128, 108, (we - 0.58) * 1.6);   // worn to the grain
-      const sl = slime(u, v);
-      if (sl > 0.64) { S.mix(i, 30, 38, 30, 0.6); S.hgt[i] += 0.05; }
-    }
-    for (let r = 0; r <= ROWS; r++) {
-      const y0 = Math.round((r / ROWS) * h) % h;
-      for (let x = 0; x < w; x++) {
-        for (const [dy, a, dh] of [[0, 0.85, -0.45], [1, 0.45, -0.12]]) { const i = ((y0 + dy) % h) * w + x; S.mix(i, 16, 13, 10, a); S.hgt[i] += dh; }
-        if (Math.sin(x * 0.11 + r * 2.3) > 0.55) S.mix((y0 % h) * w + x, 150, 140, 118, 0.75);   // sand in the seam
-      }
-    }
-    for (const row of boards) for (const b of row) {
-      const x = ((b.x0 % w) + w) % w;
-      for (let y = b.y0 + 1; y < b.y1 - 1; y++) { const i = y * w + x; S.mix(i, 16, 13, 10, 0.85); S.hgt[i] -= 0.3; }
-      for (const fy of [0.3, 0.7]) S.nail(x + 6, b.y0 + (b.y1 - b.y0) * fy, 1);
-    }
-    for (let k = 0; k < 140; k++) S.disc(R() * w, R() * h, 0.8 + R() * 1.2, 168, 176, 178, 0.6, 0.02);   // scales, catching what light there is
-  });
-}
-
-/* ---- TIMBER: her frames, beams, ladders, her gear ----------------------
- * Grain is what says wood, so it is drawn as GRAIN: long streaks with the
- * growth rings showing where a cut crosses them, checks (the splits that
- * open along an old timber) and salt-bleached arrises. */
-function woodMaps() {
-  return defineMap('wood', 256, 256, [2, 2], 2.2, { rot: { k: 0.8, rust: 1.0, seed: 31 } }, '#5e5446', (S) => {
-    const w = S.w, h = S.h, R = srng(3131);
-    const stain = field(vnoise(31), 64, 64, 4, 4, 3);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const i = y * w + x, u = x / w, v = y / h;
-      const ring = Math.sin((y + Math.sin(x * 0.03) * 9 + Math.sin(x * 0.011 + 2) * 14) * 0.42);
-      const fine = Math.sin(y * 2.7 + Math.sin(x * 0.05) * 3);
-      const k = 0.82 + ring * 0.10 + fine * 0.05;
-      S.set(i, 106 * k, 94 * k, 78 * k);
-      S.hgt[i] = 0.5 + ring * 0.06;
-      const s = stain(u, v);
-      if (s > 0.6) S.mul(i, 1 - (s - 0.6) * 0.9);
-      if (s < 0.32) S.mix(i, 150, 146, 136, (0.32 - s) * 1.4);    // bleached by salt
-    }
-    for (let k = 0; k < 14; k++) {                          // checks: splits along the grain
-      const y = R() * h, x0 = R() * w, L = 20 + R() * 90;
-      for (let x = 0; x < L; x++) { const yy = Math.round(y + Math.sin(x * 0.07 + k) * 1.2) % h, i = yy * w + (Math.round(x0 + x) % w); S.mix(i, 22, 16, 12, 0.85); S.hgt[i] -= 0.35; }
-    }
-    for (let k = 0; k < 10; k++) { const x = R() * w, y = R() * h; S.nail(x, y, 1); if (R() < 0.6) S.streak(x, y + 2, 8 + R() * 30, 1, 120, 58, 24, 0.55); }
-  });
-}
+/* AND IT IS A PHOTOGRAPH NOW (2026-11-24, the owner: the hold's wood redone to match the iron). Her lining, her sole and her
+ * loose timber were drawn here — sines for grain, one orange brown, a cream line for the tide — and beside photographed rust
+ * they were a cartoon of wood. `tools/timber_pack.html` cuts all three, board by board, from the weathered planking in the
+ * owner's own furniture set. Her lining and sole: 2048 x 1024 over 5.9 x 2.95 m (347 px/m; they had 173). Her timber: 1024 x
+ * 512 over 2 x 1 m, grain along it (512; it had 340). */
+const innerMaps = () => loadedMap('inner', 'assets/wreck-inner.jpg', 'assets/wreck-inner-n.jpg', [2048, 1024]);
+const soleMaps = () => loadedMap('sole', 'assets/wreck-sole.jpg', 'assets/wreck-sole-n.jpg', [2048, 1024]);
+const woodMaps = () => loadedMap('wood', 'assets/wreck-wood.jpg', 'assets/wreck-wood-n.jpg', [1024, 512]);
 
 /* ---- IRON: her rails, stays, fittings ----------------------------------
  * Not a brown smudge: rust SCALE. Layers of it lifting off, each with an
  * orange edge where it broke from the metal under it, pitting, and here
  * and there a little of the old black paint still on. */
 function metalMaps() {
-  return defineMap('metal', 256, 256, [2, 2], 2.8, {}, '#5a3c2a', (S) => {
-    const w = S.w, h = S.h, R = srng(5151);
-    const scale = field(vnoise(51), 64, 64, 8, 8, 4), flake = field(vnoise(53), 64, 64, 22, 22, 3);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const i = y * w + x, u = x / w, v = y / h;
-      const s = scale(u, v), f = flake(u, v);
-      S.set(i, 58, 46, 38);                                  // the metal under it, dark
-      S.hgt[i] = 0.5;
-      if (s > 0.44) { const k = 0.8 + f * 0.4; S.set(i, 118 * k, 62 * k, 34 * k); S.hgt[i] += 0.12 + (s - 0.44) * 0.4; }   // rust scale
-      if (s > 0.44 && s < 0.46) { S.set(i, 168, 96, 48); S.hgt[i] += 0.08; }                                              // its lifting edge
-      if (s < 0.30 && f > 0.5) S.set(i, 30, 30, 32);         // the old black paint, what is left of it
-    }
-    for (let k = 0; k < 600; k++) { const x = R() * w | 0, y = R() * h | 0, i = y * w + x; S.mix(i, 22, 16, 12, 0.8); S.hgt[i] -= 0.25; }   // pitting
-  });
+  /* RUSTED IRON FROM THE OWNER'S SCANS (2026-11-23, the owner: "used these textures on parts of the ship that are
+   * applicable as metal areas with rust" — two Substance smart materials, MS_Collection_metal_84 / _98). A smart
+   * material's colour is procedural and needs Substance; what they carry is their grayscale grunge scans, and six of
+   * those (pitting, streaks, cracks, scratches, mottle, smudge) are composed by `tools/rust_pack.html` into one 512 px
+   * tile, a metre of iron (old black paint scratched through to the steel, a third of it gone to scale, rust running
+   * down from it), with its normal: `assets/wreck-rust.jpg`, `assets/wreck-rust-n.jpg`. Every `M.steel` part wears it —
+   * the stove, the rails and stanchions, the stays, the gaff and its hook and chain, the bow roller, the pots — laid in
+   * metres (`layInMetres`, 'upright': the runs run down). Loaded, not painted: nothing in the paint chain waits on it, and
+   * it is in long before the card lifts. `userData.px` is its size for the metres pass, read before it has loaded. */
+  return loadedMap('metal', 'assets/wreck-rust.jpg', 'assets/wreck-rust-n.jpg', 512);
 }
+/* Maps that are files: LINEAR, like her timber's (2026-11-24: at nearest the photographed iron was blocks beside the smooth
+ * planking it is bolted to). `mirror`: mirrored up the tile, for a map with a head and a foot. */
+function loadedMap(key, url, nurl, px, mirror) {
+  if (_texCache.has(key)) return _texCache.get(key);
+  const ld = new THREE.TextureLoader();
+  const mk = (u) => {
+    const t = ld.load(u);
+    t.wrapS = THREE.RepeatWrapping; t.wrapT = mirror ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;
+    t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = 8;
+    t.userData.px = Array.isArray(px) ? px : [px, px];
+    return t;
+  };
+  const pair = { map: mk(url), normal: nurl ? mk(nurl) : null };
+  _texCache.set(key, pair);
+  return pair;
+}
+/* HER IRON PLATE (2026-11-24, the owner: "use this material at some parts too") — "Rusting Metal Material" by
+ * RBG_illustrations (CC-BY-4.0, `tools/plate_pack.html`): bare grey iron rusting up from its foot. A tile is `PLATE_T`
+ * metres, so it is only laid where the iron is about that tall: the stove, the wheel's pedestal, and `plating`. */
+const PLATE_T = 0.9625;                 // four of them are the sole to the wheelhouse floor (3.85), so both start on a foot
+const plateMaps = () => loadedMap('plate', 'assets/wreck-plate.jpg', 'assets/wreck-plate-n.jpg', 1024, true);
+const wearMap = () => loadedMap('wear', 'assets/wreck-wear.jpg', null, 256).map;   // for what had no map at all: her brass, gilt, rubber, glass
+/* HER IRON'S TINT (linear), and the levels it is worn at, BALANCED ON SCREEN AGAINST EACH OTHER: the game's light and grade
+ * push a warm grey to pink and a red to crimson — at white the sheets' bare iron read lilac — and one tint for all three went
+ * mint on the plate, whose grey is neutral. So the rust maps are cooled and the plate hardly, and the plate, whose map is
+ * twice as bright, is worn at little over half the rest. */
+const IRON = [0.81, 0.95, 0.74], PLATE_C = [0.97, 0.94, 0.77];
+const ironCol = (k, c = IRON) => new THREE.Color(c[0] * k, c[1] * k, c[2] * k);
 
 /* The wet beach showing through where her sole is stove in. */
 function wetTex() {
@@ -1436,21 +1430,24 @@ export function makeShipwreck(opts = {}) {
     deck: new THREE.MeshStandardMaterial(Object.assign({ color: 0xa89e92, roughness: 0.97, metalness: 0.05, emissive: 0x7d7468, emissiveIntensity: 0.25, side: THREE.DoubleSide }, drawn(deckMaps()))),
     plank: new THREE.MeshStandardMaterial(Object.assign({ color: 0x9a9184, roughness: 0.95, metalness: 0.05, emissive: 0x6c6459, emissiveIntensity: 0.22, side: THREE.DoubleSide, flatShading: true }, drawn(plankMaps()))),
     paint: new THREE.MeshStandardMaterial(Object.assign({ color: 0xa8b0a6, roughness: 0.93, metalness: 0.06, emissive: 0x5c6b60, emissiveIntensity: 0.25, side: THREE.DoubleSide, flatShading: true }, drawn(paintMaps()))),
-    inner: new THREE.MeshStandardMaterial(Object.assign({ color: 0xa89684, roughness: 1, metalness: 0.04, emissive: 0x6e5c44, emissiveIntensity: 0.60, side: THREE.DoubleSide }, drawn(innerMaps()))),
-    steel: new THREE.MeshStandardMaterial(Object.assign({ color: 0x8c8078, roughness: 0.86, metalness: 0.30, emissive: 0x3a2e22, emissiveIntensity: 0.46, flatShading: true }, drawn(metalMaps()))),
-    dark: new THREE.MeshStandardMaterial({ map: innerMaps().map, color: 0x5c5248, roughness: 1, metalness: 0, emissive: 0x332c22, emissiveIntensity: 0.70, side: THREE.DoubleSide }),
-    wood: new THREE.MeshStandardMaterial(Object.assign({ color: 0x8a7a62, roughness: 1, metalness: 0, emissive: 0x4c412e, emissiveIntensity: 0.46, flatShading: true }, drawn(woodMaps()))),
-    rope: new THREE.MeshStandardMaterial({ map: woodMaps().map, color: 0x6e6449, roughness: 1, metalness: 0, emissive: 0x2e2a1e, emissiveIntensity: 0.30, flatShading: true }),
-    rubber: new THREE.MeshStandardMaterial({ color: 0x22201e, roughness: 1, metalness: 0, emissive: 0x0c0b0a, flatShading: true }),
-    brass: new THREE.MeshStandardMaterial({ color: 0x8c7238, roughness: 0.55, metalness: 0.62, emissive: 0x2a2010, flatShading: true }),
+    inner: new THREE.MeshStandardMaterial(Object.assign({ color: 0xb4aca0, roughness: 0.96, metalness: 0, emissive: 0x8a8274, emissiveIntensity: 0.52, side: THREE.DoubleSide }, drawn(innerMaps()))),
+    /* (the rusted iron, 2026-11-23: metalness 0.30 → 0 — no environment to reflect, so it only darkened her iron to black
+     * and the rust in the owner's scans never showed — and lifted off its own map like her timber, `emissive` x map) */
+    steel: new THREE.MeshStandardMaterial(Object.assign({ color: ironCol(0.46), roughness: 0.84, metalness: 0, emissive: ironCol(0.058), flatShading: true }, drawn(metalMaps()))),
+    plate: new THREE.MeshStandardMaterial(Object.assign({ color: ironCol(0.27, PLATE_C), roughness: 0.82, metalness: 0, emissive: ironCol(0.044, PLATE_C), side: THREE.DoubleSide }, drawn(plateMaps()))),
+    dark: new THREE.MeshStandardMaterial({ map: innerMaps().map, color: 0x6c665e, roughness: 1, metalness: 0, emissive: 0x2c2822, emissiveMap: innerMaps().map, emissiveIntensity: 0.9, side: THREE.DoubleSide }),
+    wood: new THREE.MeshStandardMaterial(Object.assign({ color: 0x948c80, roughness: 0.98, metalness: 0, emissive: 0x5c554a, emissiveIntensity: 0.58, flatShading: true }, drawn(woodMaps()))),
+    rope: new THREE.MeshStandardMaterial({ map: woodMaps().map, emissiveMap: woodMaps().map, color: 0x9a9078, roughness: 1, metalness: 0, emissive: 0x6a6250, emissiveIntensity: 0.30, flatShading: true }),
+    rubber: new THREE.MeshStandardMaterial({ map: wearMap(), color: 0x2a2825, roughness: 1, metalness: 0, emissive: 0x0c0b0a, flatShading: true }),
+    brass: new THREE.MeshStandardMaterial({ map: wearMap(), bumpMap: wearMap(), bumpScale: 0.6, color: 0x9a8558, roughness: 0.55, metalness: 0.62, emissive: 0x2a2010, flatShading: true }),
     // kept polished where a hand has been on it for forty years
-    gold: new THREE.MeshStandardMaterial({ color: 0xd9ab46, roughness: 0.34, metalness: 0.78, emissive: 0x6a4f16, emissiveIntensity: 0.65, flatShading: true }),
+    gold: new THREE.MeshStandardMaterial({ map: wearMap(), emissiveMap: wearMap(), bumpMap: wearMap(), bumpScale: 0.5, color: 0xcfaa66, roughness: 0.34, metalness: 0.78, emissive: 0x5a4c30, emissiveIntensity: 0.42, flatShading: true }),
     /* GLASS WRITES NO DEPTH. The panes are merged into one mesh whose sort
      * position is the ship's origin, not the window, so it can draw BEFORE the
      * stars 190 m out — and with depth written it then hid them: from the helm
      * the three stars the wheel puzzle is about read 81-103 in brightness
      * through the windscreen against 164-554 without it. */
-    glass: new THREE.MeshStandardMaterial({ color: 0x2c363e, roughness: 0.26, metalness: 0.22, emissive: 0x0a1014, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide }),
+    glass: new THREE.MeshStandardMaterial({ map: wearMap(), color: 0x7f8c92, roughness: 0.26, metalness: 0.22, emissive: 0x0a1014, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide }),
     flesh: new THREE.MeshStandardMaterial({ color: 0x6e6152, roughness: 1, metalness: 0, emissive: 0x1a150f, flatShading: true }),
     gore: new THREE.MeshStandardMaterial({ color: 0x4a1c18, roughness: 0.75, metalness: 0, emissive: 0x1a0808, flatShading: true }),
     hair: new THREE.MeshStandardMaterial({ color: 0x2a221a, roughness: 1, metalness: 0, emissive: 0x0a0806, flatShading: true }),
@@ -1459,7 +1456,7 @@ export function makeShipwreck(opts = {}) {
     tooth: new THREE.MeshStandardMaterial({ color: 0xa8a08a, roughness: 0.62, metalness: 0, emissive: 0x2a2820, flatShading: true }),
     eye: new THREE.MeshStandardMaterial({ color: 0x4c4a42, roughness: 0.42, metalness: 0, emissive: 0x14140f }),
     bruise: new THREE.MeshStandardMaterial({ color: 0x3e2c34, roughness: 1, metalness: 0, emissive: 0x120c10, flatShading: true }),
-    sole: new THREE.MeshStandardMaterial(Object.assign({ color: 0xa2968a, roughness: 1, metalness: 0, emissive: 0x6e6050, emissiveIntensity: 0.40, side: THREE.DoubleSide }, drawn(soleMaps()))),
+    sole: new THREE.MeshStandardMaterial(Object.assign({ color: 0xa8a094, roughness: 0.97, metalness: 0, emissive: 0x7a7264, emissiveIntensity: 0.44, side: THREE.DoubleSide }, drawn(soleMaps()))),
     reg: new THREE.MeshStandardMaterial({ map: regTex(), roughness: 1, emissive: 0x121416, transparent: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }),
     sand: opts.sandMat || new THREE.MeshStandardMaterial({ color: 0x6d7d99, roughness: 0.95, emissive: 0x27324a, flatShading: true }),
     /* What shows through the stove-in sole. NOT the beach material: that
@@ -1484,6 +1481,7 @@ export function makeShipwreck(opts = {}) {
      * actually is. */
     wetsand: new THREE.MeshStandardMaterial({ map: wetTex(), color: 0x94897b, roughness: 1, metalness: 0, emissive: 0x6a6255, emissiveIntensity: 0.55, emissiveMap: wetTex(), flatShading: true, side: THREE.DoubleSide }),
   };
+  for (const k of Object.keys(M)) if (!M[k].name) M[k].name = 'wreck.' + k;   // (named, so a probe can say which: `wreckTexel`)
 
   /* Solid gear: local [x0, z0, x1, z1, yLo, yHi] boxes.
    *
@@ -1520,7 +1518,7 @@ export function makeShipwreck(opts = {}) {
   for (const sg of [1, -1]) {
     const bg = bulwarkGeo(sg);
     for (const [g, mat] of [[bg.outer, M.hull], [bg.inner, M.plank]])
-      if (g) { const m = new THREE.Mesh(g, mat); m.userData.noBake = true; HULL.add(m); }
+      if (g) { const m = new THREE.Mesh(g, mat); m.userData.noBake = true; m.userData.uvLaid = mat === M.plank; HULL.add(m); }
   }
   {
     const tg = transomTopGeo();
@@ -1874,7 +1872,7 @@ export function makeShipwreck(opts = {}) {
           0, 0, (rnd(h.x) - 0.5) * 0.5));
       }
       // and what has washed into them
-      for (let k = 0; k < 14; k++) {
+      for (let k = 0; k < 6; k++) {          // (six, not fourteen: see the drifts below)
         const h = GOUGE[k % GOUGE.length];
         const x = h.x + (rnd(k * 5.3) - 0.5) * h.rx * 1.4;
         const z = h.z + (rnd(k * 7.1) - 0.5) * h.rz * 1.4;
@@ -1925,21 +1923,20 @@ export function makeShipwreck(opts = {}) {
         HULL.add(slab(0.12, 0.14, hz * 2, M.wood, x, DECK_Y - 0.22, 0));
       }
     }
-    for (let i = 0; i < 16; i++) {          // sand drifted in
-      const x = HOLD_X0 + 0.8 + rnd(i * 7.3) * (HOLD_X1 - HOLD_X0 - 1.6);
-      /* Clamped so the drift's OWN half-extent stays inside her. The
-       * placement used to be (rnd - 0.5) * room * 1.4, which put the
-       * centre beyond `room`, and then the body reached out from there —
-       * sand coming through her planking from the inside. */
-      const wall = Math.min(HOLD_HZ, halfAtY(x, HOLD_Y + 0.2)) - 0.15;
-      const sz = Math.min(1.1, Math.max(0.3, wall - 0.4));
-      const room = wall - sz * 0.5;
-      if (room < 0.15) continue;
-      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 0), M.wetsand);
-      m.scale.set(1.2 + rnd(i * 3.1) * 1.4, 0.18 + rnd(i * 5.2) * 0.16, sz);
-      m.position.set(x, HOLD_Y + 0.03, (rnd(i * 4.4) - 0.5) * 2 * room);
-      m.rotation.y = rnd(i) * 3.1;
-      HULL.add(m);
+    /* SAND DRIFTED IN — WHERE IT CAN COME IN, AND FEW (the owner, 2026-11-24: "what are those like rags on the floor? dont
+     * have so many laying around the place"). Sixteen flat-shaded icosahedra were strewn the length of her, the quarters
+     * too, and lit from inside at night each read as a dropped cloth. Five low smooth mounds now, by the two tears and
+     * nowhere else, their rims sunk under her sole so none has an edge. */
+    const moundMat = new THREE.MeshStandardMaterial({ map: M.wetsand.map, emissiveMap: M.wetsand.map, color: M.wetsand.color.clone(), roughness: 1, metalness: 0, emissive: M.wetsand.emissive.clone(), emissiveIntensity: M.wetsand.emissiveIntensity });
+    moundMat.name = 'wreck.wetsand';
+    S.userData.moundMat = moundMat;
+    const moundGeo = new THREE.SphereGeometry(0.5, 18, 6, 0, TAU, 0, Math.PI / 2);
+    { const P = moundGeo.attributes.position; for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i), a = Math.atan2(z, x), r = 1 + 0.12 * Math.sin(a * 3 + 1.1) + 0.07 * Math.sin(a * 5 + 2.3); P.setXYZ(i, x * r, P.getY(i), z * r); } moundGeo.computeVertexNormals(); }
+    for (const [x, z, sx, sz, ry, hgt] of [[-1.3, -2.55, 1.9, 1.1, 0.25, 0.30], [0.25, -2.85, 1.3, 0.8, -0.4, 0.24], [-5.3, 2.75, 1.7, 0.9, 0.5, 0.28], [-3.5, 3.05, 1.2, 0.7, -0.2, 0.22], [-6.6, 2.1, 1.0, 0.7, 0.9, 0.20]]) {
+      const m = new THREE.Mesh(moundGeo, moundMat);
+      m.scale.set(sx, hgt, sz); m.rotation.y = ry;
+      m.position.set(x, soleY(x, z) - 0.06, z);
+      m.userData.noBake = true; HULL.add(m);
     }
   }
 
@@ -2050,8 +2047,8 @@ export function makeShipwreck(opts = {}) {
      * wall and the athwartship bunk on the centreline, clear of both by a
      * real gap rather than touching one of them. */
     const STOVE_X = 6.75, STOVE_Z = -2.30;
-    HULL.add(slab(0.62, 0.72, 0.56, M.steel, STOVE_X, HOLD_Y + 0.36, STOVE_Z));
-    HULL.add(slab(0.70, 0.07, 0.64, M.steel, STOVE_X, HOLD_Y + 0.74, STOVE_Z));
+    HULL.add(slab(0.62, 0.72, 0.56, M.plate, STOVE_X, HOLD_Y + 0.36, STOVE_Z));
+    HULL.add(slab(0.70, 0.07, 0.64, M.plate, STOVE_X, HOLD_Y + 0.74, STOVE_Z));
     HULL.add(cyl(0.09, 0.09, 1.9, 7, M.steel, STOVE_X, HOLD_Y + 1.72, STOVE_Z));
     HULL.add(slab(0.26, 0.22, 0.03, M.dark, STOVE_X - 0.31, HOLD_Y + 0.36, STOVE_Z));   // its door
     HULL.add(cyl(0.13, 0.11, 0.16, 8, M.steel, STOVE_X, HOLD_Y + 0.86, STOVE_Z + 0.16));  // kettle
@@ -2239,7 +2236,8 @@ export function makeShipwreck(opts = {}) {
           const c = m.clone();
           c.emissive = new THREE.Color(0xffffff);
           c.emissiveMap = c.map;
-          c.emissiveIntensity = 0.42;
+          c.emissiveIntensity = 0.26;   // (0.42 read 49 on screen, sat 0.62, against her walls' 37: `wreckTones`, 2026-11-24)
+          c.color.multiply(new THREE.Color(0.86, 0.92, 1.0));
           c.metalness = 0;                       // METALNESS IS A TRAP: no environment map here
           c.roughness = Math.max(0.5, c.roughness || 0.8);
           seen.set(m, c);
@@ -2527,10 +2525,19 @@ export function makeShipwreck(opts = {}) {
         const x = -HALF + 0.06 + (i / n) * 3.4;
         const e = hullPt(x, DECK_Y, 1);
         const b2 = e[2] - 0.04;
+        /* (the deck's own scale and phase, 2026-11-24: v was 0..1 across whatever width she had there, so a tile of deck was
+         * squeezed into each station, the boards fanned to the stem and every triangle bent them — the zigzag) */
         pos.push(e[0], DECK_Y + 0.055, -b2, e[0], DECK_Y + 0.055, b2);
-        uv.push((x + HALF) / 3, 0, (x + HALF) / 3, 1);
+        uv.push((x + HALF) / 3, (4 - b2) / 3, (x + HALF) / 3, (4 + b2) / 3);
       }
       for (let i = 0; i < n; i++) { const o = i * 2; idx.push(o, o + 2, o + 3, o, o + 3, o + 1); }
+      {                                             // and its after edge, on vertices of its own: it was a sheet 5.5 cm off the deck
+        const o = n * 2, q = pos.length / 3, x = pos[o * 3], b2 = pos[o * 3 + 5], u = uv[o * 2];
+        pos.push(x, DECK_Y, -b2, x, DECK_Y, b2, x, DECK_Y + 0.055, b2, x, DECK_Y + 0.055, -b2);
+        uv.push(u + 0.018, (4 - b2) / 3, u + 0.018, (4 + b2) / 3, u, (4 + b2) / 3, u, (4 - b2) / 3);
+        idx.push(q, q + 2, q + 1, q, q + 3, q + 2);
+        HULL.add(slab(0.14, 0.085, b2 * 2, M.wood, x, DECK_Y + 0.03, 0));   // a timber along the step: bare, the boards jogged at it (its riser, seen slantwise)
+      }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
@@ -2676,14 +2683,168 @@ export function makeShipwreck(opts = {}) {
     }
 
     // console under the front glass, chart table, stove pipe on the roof
-    BR.add(slab(0.62, 0.86, zc * 1.5, M.wood, BR_X0 + 0.44, F + 0.43, 0));
-    BR.add(slab(0.66, 0.06, zc * 1.5, M.wood, BR_X0 + 0.44, F + 0.89, 0));
-    for (let i = 0; i < 3; i++)
-      BR.add(new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.017, 4, 10), M.brass)
-        .translateX(BR_X0 + 0.76).translateY(F + 0.63).translateZ(-0.5 + i * 0.5).rotateY(Math.PI / 2));
-    BR.add(slab(0.50, 0.05, 0.62, M.wood, BR_X1 - 0.55, F + 0.80, -zc + 0.46));
-    for (const dz of [-0.25, 0.25])
-      BR.add(slab(0.06, 0.80, 0.06, M.steel, BR_X1 - 0.55, F + 0.40, -zc + 0.46 + dz));
+    /* ---- THE CONSOLE, REBUILT (2026-11-24, the owner: "update the models in there to be better and more detailed ... use
+     * textures ive provided and look online at real pictures"). An old dragger's wheelhouse (the references: a radar set
+     * at one end, the radio, the engine's gauges in the panel facing the helm, the throttle by the wheel): a timber
+     * cabinet with a plinth and a moulded top, its face to the helm the owner's rusting PLATE with the gauges let into
+     * it — dial faces drawn (`gaugeTex`), glass over, brass bezels — the radar at its port end, the throttle quadrant to
+     * starboard of the wheel, the VHF at the starboard end. Its middle stays low: the stars are read over it (9). */
+    S.userData.whMats = [];   // (every material made for the wheelhouse, lit by `holdLit` below)
+    const cwZ = zc * 1.5, cX0 = BR_X0 + 0.44;
+    BR.add(slab(0.62, 0.80, cwZ, M.wood, cX0, F + 0.46, 0));                         // the cabinet
+    BR.add(slab(0.66, 0.06, cwZ + 0.04, M.wood, cX0 + 0.01, F + 0.89, 0));           // its top, a lip over each side
+    BR.add(slab(0.64, 0.07, cwZ + 0.02, M.wood, cX0, F + 0.035, 0));                 // its plinth
+    BR.add(slab(0.012, 0.66, cwZ - 0.10, M.plate, cX0 + 0.316, F + 0.47, 0));        // the plate let into its face
+    for (const z of [-cwZ / 2 + 0.02, cwZ / 2 - 0.02]) BR.add(slab(0.03, 0.76, 0.04, M.wood, cX0 + 0.32, F + 0.46, z));   // and its stiles
+    const gaugeTex = (() => {
+      const W = 512, H = 128, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+      const names = [['RPM', 0, 30], ['OIL', 0, 8], ['TEMP', 40, 120], ['AMP', -30, 30]];
+      names.forEach(([nm, lo, hi], k) => {
+        const cx = k * 128 + 64, cy = 64, r = 58;
+        g.fillStyle = '#d9d2bf'; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+        const st = g.createRadialGradient(cx, cy, r * 0.2, cx, cy, r); st.addColorStop(0, 'rgba(0,0,0,0)'); st.addColorStop(1, 'rgba(70,50,20,0.35)'); g.fillStyle = st; g.fill();
+        g.strokeStyle = '#1c1a17'; g.fillStyle = '#1c1a17'; g.font = 'bold 11px sans-serif'; g.textAlign = 'center';
+        for (let i = 0; i <= 10; i++) { const a = Math.PI * (0.75 + 1.5 * i / 10); g.lineWidth = i % 5 ? 1 : 2.4; g.beginPath(); g.moveTo(cx + Math.cos(a) * r * 0.80, cy + Math.sin(a) * r * 0.80); g.lineTo(cx + Math.cos(a) * r * (i % 5 ? 0.88 : 0.92), cy + Math.sin(a) * r * (i % 5 ? 0.88 : 0.92)); g.stroke();
+          if (i % 5 === 0) g.fillText(String(Math.round(lo + (hi - lo) * i / 10)), cx + Math.cos(a) * r * 0.62, cy + Math.sin(a) * r * 0.62 + 4); }
+        g.font = '10px sans-serif'; g.fillText(nm, cx, cy + r * 0.42);
+        const a = Math.PI * (0.78 + 0.25 * k);       // dead: each needle where it stopped
+        g.lineWidth = 2.2; g.strokeStyle = '#7a1c12'; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * r * 0.78, cy + Math.sin(a) * r * 0.78); g.stroke();
+        g.fillStyle = '#222'; g.beginPath(); g.arc(cx, cy, 4, 0, Math.PI * 2); g.fill();
+      });
+      const t = new THREE.CanvasTexture(c); t.anisotropy = 8; return t;
+    })();
+    const dialM = new THREE.MeshStandardMaterial({ map: gaugeTex, emissiveMap: gaugeTex, color: 0x9a968c, emissive: 0x5a564c, emissiveIntensity: 0.32, roughness: 0.6, metalness: 0 });
+    dialM.name = 'wreck.dial';
+    [-0.75, -0.25, 0.25, 0.75].forEach((z, k) => {
+      const geo = new THREE.CircleGeometry(0.058, 24), uv = geo.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setX(i, (k + uv.getX(i)) / 4);
+      const face = new THREE.Mesh(geo, dialM); face.rotation.y = Math.PI / 2; face.position.set(cX0 + 0.324, F + 0.64, z); BR.add(face);
+      const bez = new THREE.Mesh(new THREE.TorusGeometry(0.064, 0.012, 6, 20), M.brass); bez.rotation.y = Math.PI / 2; bez.position.set(cX0 + 0.328, F + 0.64, z); BR.add(bez);
+      const gl = new THREE.Mesh(new THREE.CircleGeometry(0.06, 20), M.glass); gl.rotation.y = Math.PI / 2; gl.position.set(cX0 + 0.33, F + 0.64, z); BR.add(gl);
+    });
+    for (const z of [-0.5, 0, 0.5]) BR.add(cyl(0.012, 0.012, 0.02, 8, M.steel, cX0 + 0.33, F + 0.40, z, 0, 0, Math.PI / 2));   // switches under the gauges
+    // the radar, at the port end: its cabinet in her plate, a hood over its tube, the tube dead
+    { const rz = -cwZ / 2 + 0.24, rx = cX0 + 0.02, ry = F + 0.92;
+      BR.add(slab(0.34, 0.26, 0.36, M.plate, rx, ry + 0.13, rz));
+      BR.add(slab(0.16, 0.025, 0.34, M.plate, rx + 0.24, ry + 0.25, rz));
+      for (const s of [-1, 1]) BR.add(slab(0.16, 0.20, 0.02, M.plate, rx + 0.24, ry + 0.15, rz + s * 0.16));
+      BR.add(cyl(0.11, 0.11, 0.02, 20, M.glass, rx + 0.175, ry + 0.14, rz, 0, 0, Math.PI / 2));
+      for (const dz of [-0.11, 0.11]) BR.add(cyl(0.015, 0.015, 0.025, 8, M.rubber, rx + 0.18, ry + 0.03, rz + dz, 0, 0, Math.PI / 2)); }
+    // the throttle and the gear, to starboard of the wheel
+    { const tz = 0.62, tx = cX0 + 0.18, ty = F + 0.92;
+      BR.add(slab(0.16, 0.08, 0.20, M.plate, tx, ty + 0.04, tz));
+      for (const [dz, a] of [[-0.05, 0.35], [0.05, -0.15]]) {
+        const top = [tx + 0.04 + Math.sin(a) * 0.22, ty + 0.08 + Math.cos(a) * 0.22, tz + dz];
+        BR.add(strut([tx + 0.04, ty + 0.08, tz + dz], top, 0.009, M.steel, 5));
+        BR.add(new THREE.Mesh(new THREE.SphereGeometry(0.024, 10, 8), M.rubber).translateX(top[0]).translateY(top[1]).translateZ(top[2]));
+      } }
+    // the chart table: a drawer, a fiddle rail to keep the chart on it, steel legs
+    { const tx = BR_X1 - 0.55, tz = -zc + 0.46, ty = F + 0.80;
+      BR.add(slab(0.50, 0.05, 0.62, M.wood, tx, ty, tz));
+      BR.add(slab(0.46, 0.12, 0.58, M.wood, tx, ty - 0.085, tz));                             // the drawer's box
+      BR.add(slab(0.012, 0.09, 0.40, M.wood, tx - 0.236, ty - 0.085, tz));                     // its front
+      BR.add(cyl(0.012, 0.012, 0.03, 8, M.brass, tx - 0.25, ty - 0.085, tz, 0, 0, Math.PI / 2));   // its pull
+      for (const [w, d, x, z] of [[0.52, 0.02, 0, -0.31], [0.52, 0.02, 0, 0.31], [0.02, 0.62, 0.25, 0], [0.02, 0.62, -0.25, 0]]) BR.add(slab(w, 0.025, d, M.wood, tx + x, ty + 0.035, tz + z));
+      for (const dx of [-0.21, 0.21]) for (const dz of [-0.27, 0.27]) BR.add(slab(0.04, 0.72, 0.04, M.steel, tx + dx, F + 0.39, tz + dz));
+      solid(tx, tz, 0.56, 0.68, F - 0.1, F + 1.0); }
+    // the wheel's pedestal and the console are solid too: nothing in here is a ghost (the owner)
+    solid(cX0, 0, 0.70, cwZ + 0.08, F - 0.1, F + 1.3);
+    solid(WHEEL_X, 0, 0.36, 0.36, F - 0.1, F + 1.2);
+    /* a clock and a barometer either side of the fish on her after bulkhead, flush on its boards, and the fire
+     * extinguisher on its bracket by the door */
+    { const clockTex = (() => { const S = 256, c = document.createElement('canvas'); c.width = S * 2; c.height = S; const g = c.getContext('2d');
+        for (const k of [0, 1]) { const cx = k * S + S / 2, cy = S / 2, r = S * 0.46; g.fillStyle = '#ddd5c0'; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+          g.fillStyle = '#1a1814'; g.strokeStyle = '#1a1814'; g.textAlign = 'center';
+          if (!k) { g.font = 'bold 24px serif'; for (let i = 1; i <= 12; i++) { const a = i / 12 * Math.PI * 2 - Math.PI / 2; g.fillText(['I','II','III','IIII','V','VI','VII','VIII','IX','X','XI','XII'][i - 1], cx + Math.cos(a) * r * 0.78, cy + Math.sin(a) * r * 0.78 + 8); }
+            g.lineWidth = 6; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + r * 0.42 * Math.cos(-2.1), cy + r * 0.42 * Math.sin(-2.1)); g.stroke(); g.lineWidth = 3; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + r * 0.66 * Math.cos(0.55), cy + r * 0.66 * Math.sin(0.55)); g.stroke(); }
+          else { g.font = 'bold 18px serif'; [['STORMY', Math.PI * 0.85], ['RAIN', Math.PI * 1.15], ['CHANGE', Math.PI * 1.5], ['FAIR', Math.PI * 1.85], ['DRY', Math.PI * 2.15]].forEach(([t, a]) => g.fillText(t, cx + Math.cos(a) * r * 0.70, cy + Math.sin(a) * r * 0.70 + 6));
+            for (let i = 0; i <= 40; i++) { const a = Math.PI * (0.75 + 1.5 * i / 40); g.lineWidth = i % 5 ? 1 : 2.5; g.beginPath(); g.moveTo(cx + Math.cos(a) * r * 0.86, cy + Math.sin(a) * r * 0.86); g.lineTo(cx + Math.cos(a) * r * 0.94, cy + Math.sin(a) * r * 0.94); g.stroke(); }
+            g.lineWidth = 3; g.strokeStyle = '#2a2a30'; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(Math.PI * 0.95) * r * 0.8, cy + Math.sin(Math.PI * 0.95) * r * 0.8); g.stroke(); }
+          g.fillStyle = '#222'; g.beginPath(); g.arc(cx, cy, 7, 0, Math.PI * 2); g.fill(); }
+        const t = new THREE.CanvasTexture(c); t.anisotropy = 8; return t; })();
+      const faceM = new THREE.MeshStandardMaterial({ map: clockTex, emissiveMap: clockTex, color: 0x9a968c, emissive: 0x5a564c, emissiveIntensity: 0.30, roughness: 0.6, metalness: 0 });
+      faceM.name = 'wreck.clock';
+      S.userData.whMats.push(dialM, faceM);
+      const wx = BR_X1 - 0.075;
+      [[-0.95, 0], [0.95, 1]].forEach(([z, k]) => {
+        BR.add(cyl(0.125, 0.13, 0.05, 24, M.brass, wx - 0.025, F + 1.60, z, 0, 0, Math.PI / 2));
+        const geo = new THREE.CircleGeometry(0.105, 28), uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, (k + uv.getX(i)) / 2);
+        const f = new THREE.Mesh(geo, faceM); f.rotation.y = -Math.PI / 2; f.position.set(wx - 0.051, F + 1.60, z); BR.add(f);
+        const gl = new THREE.Mesh(new THREE.CircleGeometry(0.11, 24), M.glass); gl.rotation.y = -Math.PI / 2; gl.position.set(wx - 0.056, F + 1.60, z); BR.add(gl);
+      });
+      const red = new THREE.MeshStandardMaterial({ map: wearMap(), emissiveMap: wearMap(), color: 0x8a2a1e, emissive: 0x3a120c, emissiveIntensity: 0.5, roughness: 0.7, metalness: 0 });
+      red.name = 'wreck.extinguisher'; S.userData.whMats.push(red);
+      const ex = BR_DOOR_C - BR_DOOR_W / 2 - 0.42, ez = zc - 0.17;
+      BR.add(cyl(0.075, 0.075, 0.46, 16, red, ex, F + 0.40, ez));
+      BR.add(new THREE.Mesh(new THREE.SphereGeometry(0.075, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), red).translateX(ex).translateY(F + 0.63).translateZ(ez));
+      BR.add(cyl(0.02, 0.025, 0.07, 8, M.steel, ex, F + 0.72, ez));
+      BR.add(slab(0.12, 0.012, 0.04, M.rubber, ex - 0.03, F + 0.75, ez));
+      BR.add(slab(0.18, 0.05, 0.02, M.steel, ex, F + 0.50, zc - 0.075));                // the bracket
+      solid(ex, ez, 0.2, 0.2, F - 0.1, F + 0.8); }
+    /* ---- AND FURNISHED (2026-11-24, the owner: "up in the wheel house it looks very bare"). What a skipper leaves on a
+     * working boat, kept off the centreline forward of the wheel and clear of the glass (invariants 9 and 10): the chart he
+     * was on, held down by a mug and the dividers; the logbook and the binoculars at the port end of the console, the VHF
+     * set at its starboard end; a stool at the chart table; the oil lamp hung aft, cold; a coil of line in the after
+     * corner. The chart is drawn here (`chartTex`): old paper, a coast in ink, depths, a pencilled course to nowhere. */
+    {
+      const chartTex = (() => {
+        const W = 512, H = 640, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+        const R = srng(9917), N = field(vnoise(97), 128, 160, 6, 7, 5), Nf = field(vnoise(98), 128, 160, 40, 50, 3);
+        const im = g.createImageData(W, H);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          const u = x / W, v = y / H, n = N(u, v), f = Nf(u, v), o = (y * W + x) * 4;
+          const sea = n < 0.52, k = 0.86 + f * 0.12 - Math.max(0, n - 0.72) * 0.6;            // yellowed, foxed where it lay wet
+          const col = sea ? [206, 200, 176] : [198, 184, 150];
+          im.data[o] = col[0] * k; im.data[o + 1] = col[1] * k; im.data[o + 2] = col[2] * k; im.data[o + 3] = 255;
+          if (Math.abs(n - 0.52) < 0.0045) { im.data[o] = 70; im.data[o + 1] = 62; im.data[o + 2] = 54; }                // the coast, inked
+          else if (sea && Math.abs(((n * 9) % 1) - 0.5) < 0.012) { im.data[o] *= 0.82; im.data[o + 1] *= 0.86; im.data[o + 2] *= 0.95; }   // contours
+        }
+        g.putImageData(im, 0, 0);
+        g.strokeStyle = 'rgba(60,70,90,0.35)'; g.lineWidth = 1;
+        for (let x = 32; x < W; x += 64) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+        for (let y = 40; y < H; y += 64) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+        g.fillStyle = 'rgba(40,40,46,0.75)'; g.font = '11px serif';
+        for (let k = 0; k < 70; k++) { const x = R() * W, y = R() * H; if (N(x / W, y / H) < 0.5) g.fillText(String(2 + Math.floor(R() * 38)), x, y); }
+        g.strokeStyle = 'rgba(50,50,56,0.8)'; g.lineWidth = 1.5; g.setLineDash([6, 4]); g.beginPath(); g.moveTo(W * 0.15, H * 0.82); g.lineTo(W * 0.48, H * 0.55); g.lineTo(W * 0.80, H * 0.18); g.stroke(); g.setLineDash([]);
+        g.font = 'italic 18px serif'; g.fillStyle = 'rgba(40,36,30,0.8)'; g.fillText('No. 2207', W * 0.62, H * 0.95);
+        const t = new THREE.CanvasTexture(c); t.anisotropy = 8; return t;
+      })();
+      const paper = new THREE.MeshStandardMaterial({ map: chartTex, emissiveMap: chartTex, color: 0xa8a294, emissive: 0x6a665c, emissiveIntensity: 0.30, roughness: 1, metalness: 0, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 });
+      const leather = new THREE.MeshStandardMaterial({ map: woodMaps().map, color: 0x3a2a22, emissive: 0x24180f, emissiveMap: woodMaps().map, emissiveIntensity: 0.5, roughness: 0.9, metalness: 0 });
+      paper.name = 'wreck.chart'; leather.name = 'wreck.leather';
+      S.userData.whMats.push(paper, leather);
+      const ctX = BR_X1 - 0.55, ctZ = -zc + 0.46, ctY = F + 0.825;
+      const chart = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.56), paper); chart.rotation.set(-Math.PI / 2, 0, 0.12); chart.position.set(ctX, ctY + 0.002, ctZ); BR.add(chart);
+      const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.038, 0.10, 12, 1, true), M.plate); mug.position.set(ctX + 0.15, ctY + 0.05, ctZ + 0.20); BR.add(mug);
+      BR.add(cyl(0.038, 0.038, 0.006, 12, M.steel, ctX + 0.15, ctY + 0.004, ctZ + 0.20));
+      BR.add(strut([ctX - 0.12, ctY + 0.006, ctZ - 0.10], [ctX + 0.02, ctY + 0.006, ctZ - 0.20], 0.003, M.brass, 4));   // the dividers
+      BR.add(strut([ctX - 0.12, ctY + 0.006, ctZ - 0.10], [ctX - 0.02, ctY + 0.006, ctZ - 0.24], 0.003, M.brass, 4));
+      // a stool at the chart table
+      const stX = ctX - 0.05, stZ = ctZ + 0.62;
+      BR.add(cyl(0.17, 0.16, 0.04, 12, M.wood, stX, F + 0.62, stZ));
+      for (let k = 0; k < 3; k++) { const a = k / 3 * TAU + 0.4; BR.add(strut([stX + Math.cos(a) * 0.12, F + 0.61, stZ + Math.sin(a) * 0.12], [stX + Math.cos(a) * 0.19, F + 0.005, stZ + Math.sin(a) * 0.19], 0.016, M.wood, 5)); }
+      solid(stX, stZ, 0.36, 0.36, F - 0.1, F + 0.7);
+      // the console's ends: logbook and binoculars to port, the VHF to starboard (its middle is the star puzzle's view)
+      const cX = BR_X0 + 0.44, cY = F + 0.92;
+      // (the logbook on the chart, the binoculars between the throttle and the set: the radar has the console's port end)
+      BR.add(slab(0.16, 0.035, 0.23, leather, ctX + 0.10, ctY + 0.02, ctZ - 0.14, 0, 0.5, 0));
+      BR.add(slab(0.15, 0.028, 0.22, paper, ctX + 0.10, ctY + 0.019, ctZ - 0.14, 0, 0.5, 0));
+      for (const dz of [-0.035, 0.035]) BR.add(cyl(0.024, 0.026, 0.13, 10, M.rubber, cX + 0.10, cY + 0.026, 0.98 + dz, 0, 0, Math.PI / 2 - 0.05));
+      BR.add(slab(0.03, 0.03, 0.05, M.rubber, cX + 0.10, cY + 0.03, 0.98));
+      BR.add(slab(0.26, 0.17, 0.30, M.plate, cX + 0.03, cY + 0.085, 1.35, 0, -0.08, 0));      // the VHF
+      BR.add(slab(0.005, 0.07, 0.17, M.glass, cX - 0.10, cY + 0.11, 1.34, 0, -0.08, 0));
+      for (const dz of [-0.09, 0.0, 0.09]) BR.add(cyl(0.014, 0.014, 0.02, 8, M.rubber, cX - 0.105, cY + 0.04, 1.35 + dz, 0, 0, Math.PI / 2));
+      BR.add(strut([cX + 0.10, cY + 0.17, 1.46], [cX + 0.12, cY + 0.62, 1.50], 0.004, M.steel, 4));   // its whip
+      BR.add(cyl(0.04, 0.04, 0.015, 8, M.rubber, cX - 0.02, cY + 0.18, 1.20, 0, 0, 0));               // the handset on its hook
+      // the oil lamp hung aft, cold
+      const lX = BR_X1 - 1.15, lZ = 0.75;
+      BR.add(strut([lX, T - 0.01, lZ], [lX, T - 0.30, lZ], 0.004, M.steel, 4));
+      BR.add(cyl(0.05, 0.065, 0.03, 10, M.brass, lX, T - 0.32, lZ));
+      BR.add(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.14, 12, 1, true), M.glass).translateX(lX).translateY(T - 0.41).translateZ(lZ));
+      BR.add(cyl(0.07, 0.06, 0.04, 10, M.brass, lX, T - 0.50, lZ));
+      // a coil of line in the after corner, flat on her boards
+      for (let k = 0; k < 4; k++) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.21 - k * 0.035, 0.018, 5, 18), M.rope); r.rotation.x = Math.PI / 2; r.position.set(BR_X1 - 0.42, F + 0.018 + (k % 2) * 0.012, zc - 0.62); BR.add(r); }
+    }
     BR.add(cyl(0.09, 0.10, 0.85, 7, M.steel, BR_X1 - 0.7, T + 0.50, 0.9));
     BR.add(cyl(0.13, 0.13, 0.10, 7, M.steel, BR_X1 - 0.7, T + 0.95, 0.9));
     BR.add(slab(0.14, 0.16, 0.14, M.steel, BR_DOOR_C, F + 2.20, zc + 0.10));   // dead lamp
@@ -2699,7 +2860,7 @@ export function makeShipwreck(opts = {}) {
    * you to read this wheel. */
   const wheel = new THREE.Group();
   {
-    BR.add(cyl(0.17, 0.26, 0.62, 8, M.steel, WHEEL_X, F + 0.31, 0));
+    BR.add(cyl(0.17, 0.26, 0.62, 12, M.plate, WHEEL_X, F + 0.31, 0));
     BR.add(slab(0.30, 0.16, 0.30, M.brass, WHEEL_X, F + 0.62, 0));
     BR.add(slab(0.05, 0.16, 0.05, M.brass, WHEEL_X, F + 0.72, 0));   // lubber's mark
     wheel.position.set(WHEEL_X, F + 0.95, 0);
@@ -3203,7 +3364,7 @@ export function makeShipwreck(opts = {}) {
       // ---- her deck: casks where her casks stood, the crate on the starboard waist
       ['barrel', -7.2, deckHalf(-7.2) - 0.70, 0.5, 0.78, 0.78, { s: 1.0, deck: true }],     // (against the rail: the starboard waist is the walk)
       ['barrel_open', -5.3, deckHalf(-5.3) - 0.64, 1.3, 0.70, 0.70, { s: 0.92, deck: true }],
-      ['barrel', 8.2, 0.90, 2.4, 0.74, 0.74, { s: 0.95, deck: true }],
+      ['barrel', 8.75, 2.95, 2.4, 0.74, 0.74, { s: 0.95, deck: true }],     // (with the afterdeck's others, against her rail: it stood alone mid-deck — the owner, 2026-11-24: "less sporadic")
       ['crate', -0.9, 3.45, Math.PI / 2 + 0.22, 0.95, 0.75, { s: 1.08, deck: true }],     // (a metre aft of where it stood: the gaff post can be walked round now)
       ['crate_small', -0.94, 3.42, 0.55, 0, 0, { s: 0.78, deck: true, on: 0.477 * 1.08 }],
       // the port side's stowed gear, where the basket stacks stood
@@ -3295,20 +3456,24 @@ export function makeShipwreck(opts = {}) {
        * boards, because oak catches what light there is and a sixty-year
        * sole does not. The response is not linear (ACES), so these came
        * out of two measured points each and not out of arithmetic. */
-      const K = { table: 0.402, bench: 0.380, chair: 0.550, barrel: 0.557, bunk: 1.00 };
+      const K = { table: 0.50, bench: 0.40, chair: 0.55, barrel: 0.557, bunk: 1.00 };   // (table 0.402 -> 0.50, 2026-11-24: 16 against her sole's 26)
       const mats = new Map();
       const dress = (m) => {
         let out = mats.get(m);
         if (!out) {
           const k = K[m.name] === undefined ? 0.5 : K[m.name];
           out = m.clone();
-          out.color.setScalar(k);
-          out.emissive = new THREE.Color(0xffffff);
+          /* (and cooled, 2026-11-24: the set is an orange oak, and beside her own timber — now a photograph of grey boards —
+           * it was the one warm thing in the room) */
+          const t = m.name === 'bunk' ? [1, 1, 1] : [0.70, 0.88, 1.04];
+          out.color.setRGB(k * t[0], k * t[1], k * t[2]);
+          out.emissive = new THREE.Color(...t);
           out.emissiveMap = out.map;
           out.emissiveIntensity = 0.30 * k;
           out.roughness = 1;
           out.metalness = 0;
           out.side = THREE.FrontSide;
+          S.userData.holdLight.lit(out);
           mats.set(m, out);
         }
         return out;
@@ -3350,8 +3515,37 @@ export function makeShipwreck(opts = {}) {
        * the grey, salt-bleached boat like painted toys. Its wood takes less
        * light and a cold cast (`TINT`) toward her own weathered timber; the
        * lantern's iron takes more, or it is a hole on a dark deck. */
-      const K = { TileSheet: 0.30, Tilesheet2: 0.30, Material: 0.40, Metal: 0.75 };
-      const TINT = { TileSheet: [0.80, 0.86, 0.98], Tilesheet2: [0.80, 0.86, 0.98] };
+      /* AND THEY WEAR HER OWN TIMBER AND IRON (2026-11-24, the owner). Tinting only made the toys grey: the set's trim sheet
+       * is a painted one. Its UVs are kept and the SHEET is ours, band for band (`tools/timber_pack.html`): the photographed
+       * boards, her rust, a laid rope; the sacks' tartan is burlap. */
+      const K = { TileSheet: 0.62, Tilesheet2: 0.24, Material: 0.72, Metal: 0.75 };
+      const TINT = { TileSheet: [0.84, 0.94, 1.0], Tilesheet2: [0.62, 0.72, 0.80], Material: [0.90, 0.94, 0.92] };   // (cooled: sRGB-decoded, they read sat 0.55 against her 0.35)
+      const SKIN = {
+        TileSheet: loadedMap('stores', 'assets/wreck-stores.jpg', 'assets/wreck-stores-n.jpg', 1024),
+        Material: loadedMap('sack', 'assets/wreck-sack.jpg', 'assets/wreck-sack-n.jpg', 512),
+      };
+      for (const k of Object.keys(SKIN)) for (const t of [SKIN[k].map, SKIN[k].normal]) { t.flipY = false; if (t.image) t.needsUpdate = true; }   // (a glTF's uv: v down)
+      // and decoded as the set's own colour maps are (sRGB): the wreck's own maps are not, and these were tuned beside the set
+      for (const k of Object.keys(SKIN)) SKIN[k].map.colorSpace = THREE.SRGBColorSpace;
+      /* 1.2 m2 of the set was mapped to a point (the undersides and the insides of its boards): those triangles are laid on
+       * the sheet's plain boards, by where they are, at the rest's 1.47 m a tile */
+      const unpoint = (g) => {
+        const q = g.index ? g.toNonIndexed() : g.clone(), P = q.attributes.position, U = q.attributes.uv, A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), n = new THREE.Vector3(), e = new THREE.Vector3(), f = new THREE.Vector3();
+        let hit = false;
+        for (let i = 0; i + 2 < P.count; i += 3) {
+          A.fromBufferAttribute(P, i); B.fromBufferAttribute(P, i + 1); C.fromBufferAttribute(P, i + 2);
+          n.crossVectors(e.subVectors(B, A), f.subVectors(C, A));
+          const area = n.length() / 2, ua = Math.abs((U.getX(i + 1) - U.getX(i)) * (U.getY(i + 2) - U.getY(i)) - (U.getX(i + 2) - U.getX(i)) * (U.getY(i + 1) - U.getY(i))) / 2;
+          if (area < 1e-7 || ua / area > 0.02) continue;
+          hit = true;
+          const ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z), uA = ax > ay && ax > az ? 2 : 0, vA = ay > ax && ay > az ? 2 : 1;
+          const V = [A, B, C], v0 = Math.min(...V.map((p) => p.getComponent(vA))), vs = Math.min(1 / 1.47, 0.22 / Math.max(1e-3, Math.max(...V.map((p) => p.getComponent(vA))) - v0));
+          V.forEach((p, k) => U.setXY(i + k, p.getComponent(uA) / 1.47, 0.768 + (p.getComponent(vA) - v0) * vs));
+        }
+        return hit ? q : g;
+      };
+      const unpointed = new Map();
+      const fixed = (g) => { let q = unpointed.get(g); if (!q) unpointed.set(g, q = unpoint(g)); return q; };
       /* and BELOW her deck nothing is moonlit: what is seen down there is its
        * own lift, so a piece in the hold or the quarters takes twice the
        * deck's (the furniture's own level, measured against her sole) */
@@ -3365,11 +3559,13 @@ export function makeShipwreck(opts = {}) {
           out = m.clone();
           out.color.setRGB(k * t[0], k * t[1], k * t[2]);
           out.emissive = new THREE.Color(t[0], t[1], t[2]);
+          if (SKIN[m.name]) { out.map = SKIN[m.name].map; out.normalMap = SKIN[m.name].normal; }
           out.emissiveMap = out.map;
-          out.emissiveIntensity = (below ? 0.55 : 0.26) * k;
+          out.emissiveIntensity = (below ? 0.50 : 0.46) * k;
           out.roughness = 1; out.metalness = 0;
           out.metalnessMap = null; out.roughnessMap = null;
           out.side = THREE.FrontSide;
+          if (below) S.userData.holdLight.lit(out);
           mats.set(key, out);
         }
         return out;
@@ -3384,7 +3580,7 @@ export function makeShipwreck(opts = {}) {
         const sc = o.s || 1;
         const inner = new THREE.Group();
         for (const sm of meshes) {
-          const m = new THREE.Mesh(sm.geometry, dress(sm.material, !o.deck));
+          const m = new THREE.Mesh(sm.material.name === 'TileSheet' ? fixed(sm.geometry) : sm.geometry, dress(sm.material, !o.deck));
           m.position.copy(sm.position); m.quaternion.copy(sm.quaternion); m.scale.copy(sm.scale);
           inner.add(m);
         }
@@ -3406,6 +3602,150 @@ export function makeShipwreck(opts = {}) {
         G.add(piece);
         const u = PIRATE.find((f) => f[0] === name && f[1] === x && f[2] === z).unit;
         if (u) { u.pieces.push(piece); if (u.floor === null) u.floor = y; }
+      }
+      S.add(G);
+      return G;
+    };
+    /* ---- HER PLATING: riveted iron plate, bent onto what it covers as the sheets are (below). Each plate is its own
+     * piece of the tile (u starts anywhere, v at its own foot, where the rust is), 12 mm thick with its edges turned, its
+     * rivets 7 cm in from them in `M.steel`. Merged here into two meshes: `uvLaid`, so the metres pass leaves them. */
+    {
+      const PP = [], PU = [], PI = [], riv = [], TH = 0.012;
+      const plate = (at, u0, u1, w0, w1, seed) => {
+        const nu = Math.max(2, Math.ceil((u1 - u0) / 0.16)), nw = Math.max(2, Math.ceil((w1 - w0) / 0.2)), off = rnd(seed) * 4, b0 = PP.length / 3;
+        const V = (i, j, t) => { const u = u0 + (u1 - u0) * i / nu, w = w0 + (w1 - w0) * j / nw; PP.push(...at(u, w, t)); PU.push((u - u0) / PLATE_T + off, (w - w0) / PLATE_T); };
+        for (let i = 0; i <= nu; i++) for (let j = 0; j <= nw; j++) V(i, j, TH);
+        for (let i = 0; i < nu; i++) for (let j = 0; j < nw; j++) { const o = b0 + i * (nw + 1) + j, q = o + nw + 1; PI.push(o, q, q + 1, o, q + 1, o + 1); }
+        // the edges: the rim again, and the rim let in to the wall
+        const ring = []; for (let i = 0; i <= nu; i++) ring.push([i, 0]); for (let j = 1; j <= nw; j++) ring.push([nu, j]); for (let i = nu - 1; i >= 0; i--) ring.push([i, nw]); for (let j = nw - 1; j >= 0; j--) ring.push([0, j]);
+        for (let k = 0; k + 1 < ring.length; k++) { const o = PP.length / 3; V(...ring[k], TH); V(...ring[k + 1], TH); V(...ring[k + 1], -0.02); V(...ring[k], -0.02); const up1 = ring[k][0] === ring[k + 1][0] ? 1 : 0, e = 0.032 / PLATE_T; PU[PU.length - 3 - up1] += e; PU[PU.length - 1 - up1] += e; PI.push(o, o + 1, o + 2, o, o + 2, o + 3); }
+        const spot = (u, w) => { const p = at(u, w, TH), q = at(u, w, TH + 0.1); riv.push([p, [q[0] - p[0], q[1] - p[1], q[2] - p[2]]]); };
+        const ku = Math.max(1, Math.round((u1 - u0 - 0.14) / 0.24)), kw = Math.max(1, Math.round((w1 - w0 - 0.14) / 0.24));
+        for (let i = 0; i <= ku; i++) for (const w of [w0 + 0.07, w1 - 0.07]) spot(u0 + 0.07 + (u1 - u0 - 0.14) * i / ku, w);
+        for (let j = 1; j < kw; j++) for (const u of [u0 + 0.07, u1 - 0.07]) spot(u, w0 + 0.07 + (w1 - w0 - 0.14) * j / kw);
+      };
+      // a run of them, butted with a finger between
+      const run = (at, u0, u1, w0, w1, n, seed) => { for (let k = 0, a = u0; k < n; k++) { const b = k === n - 1 ? u1 : u0 + (u1 - u0) * (k + 1 + (rnd(seed + k * 3.1) - 0.5) * 0.24) / n; plate(at, a + 0.004, b - 0.004, w0, w1, seed + k * 1.7); a = b; } };
+      // round the foot of the wheelhouse (its casing is 0.13 proud of the walls), open at the door's steps
+      const cx = (BR_X0 + BR_X1) / 2, cw = (BR_X1 - BR_X0 + 0.26) / 2 + 0.002, cz = BR_HZ + 0.132, lo = DECK_Y + 0.045, hi = DECK_Y + BR_STEP - 0.075;
+      run((u, w, t) => [u, w, -(cz + t)], cx - cw, cx + cw, lo, hi, 4, 3.3);
+      run((u, w, t) => [u, w, cz + t], cx - cw, BR_DOOR_C - BR_DOOR_W / 2 - 0.20, lo, hi, 2, 8.9);
+      run((u, w, t) => [cx - cw - t, w, u], -cz, cz, lo, hi, 5, 14.1);
+      run((u, w, t) => [cx + cw + t, w, u], -cz, cz, lo, hi, 5, 21.7);
+      // the foot of the quarters' bulkhead, from the hold, either side of its door
+      const bz = Math.min(HOLD_HZ, halfAtY(3.0, HOLD_Y + 0.5) - 0.10) - 0.12;
+      for (const sg of [-1, 1]) run((u, w, t) => [3.0 - 0.002 - t, w, sg * u], 0.80, bz, HOLD_Y + 0.0, HOLD_Y + 0.86, 3, 31 + sg * 3);
+      // and her bow, both sides, between the wales: where she took the rocks
+      for (const sg of [-1, 1]) run((u, w, t) => hullPt(u, w, sg, 0.012 + t), -12.3 + (sg > 0 ? 2.6 : 0), -8.0 - (sg > 0 ? 1.5 : 0), 1.93, 2.80, sg > 0 ? 1 : 4, 41 + sg * 5);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(PP, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(PU, 2)); g.setIndex(PI); g.computeVertexNormals();
+      const m = new THREE.Mesh(g, M.plate); m.name = 'shipPlating'; m.userData.noBake = m.userData.uvLaid = true; S.add(m);
+      // the rivets: low domes, baked with the rest of her iron
+      const up = new THREE.Vector3(0, 1, 0), d = new THREE.Vector3(), dome = new THREE.CylinderGeometry(0.009, 0.019, 0.012, 6);
+      for (const [p, n] of riv) { const r = new THREE.Mesh(dome, M.steel); r.position.set(...p); r.quaternion.setFromUnitVectors(up, d.set(...n).normalize()); r.position.addScaledVector(d, 0.004); HULL.add(r); }
+    }
+    /* ---- HER RUSTED SHEETS (2026-11-24, the owner: "use some of these rusted sheet models to add to the ship") -----------
+     * "Rusted Sheet Metal" by George Hager (CC-BY-4.0, `tools/sheet_pack.py`): twenty corrugated sheets, `sheet_0..19` in
+     * `assets/rusted-sheet.glb` (0-4 and 10-14 rusted through, 5-9 and 15-19 half gone; 10 up are bent). At 8x a sheet is
+     * 0.86 x 1.7 m and its corrugations 7 cm, the real thing. They are what somebody patched her with: over the ribs of her
+     * hold, under her deck, across the holes in her sole, over her broken rail, on the wheelhouse and down her sides.
+     * EACH IS BENT ONTO WHAT IT IS NAILED TO (invariant 6): its own vertices are the (u, w) of a surface and its thickness
+     * the way out of it, so nothing hangs off her curve or is buried in it. All of them lie within a hand of something solid
+     * already, except the one leaned on the bulkhead, which has a box of its own.
+     *   [sheet, where, u, w, opts] — h: lying on its long side · a: turned in its plane · s: scale · o: pushed further out
+     *   · c: one corner curled off */
+    const SK = 8, RIB = 0.118;
+    const wallIn = (sg, off) => (u, w, t) => [u, w, sg * (Math.min(HOLD_HZ, halfAtY(u, w) - 0.10) - off - t)];
+    const sideOut = (sg) => (u, w, t) => hullPt(u, w, sg, 0.10 + t);          // over the wales, which are 9 cm proud
+    const railIn = (sg) => (u, w, t) => hullPt(u, w, sg, -TOPSIDE_T - 0.10 - t);   // on the stanchions
+    const flat = (y) => (u, w, t) => [u, y + t * 0.45, w];
+    const onSand = (u, w, t) => [u, HOLD_Y - 0.07 - soleDip(u, w) + 0.012 + t * 0.45, w];   // (the sand under her sole: `build(0.07, M.wetsand)`)
+    const SHT = [0.72, 0.98, 0.80];   // (browner than her iron's: on screen their rust read hue 14, crimson, against her 30-35 — `wreckTones`)
+    const bxB = 3.4 - 0.35 - 0.05, aftX = BR_X1 + 0.085, WF = DECK_Y + BR_STEP;
+    const SHEETS = [
+      // ---- her hold: both walls, over the ribs
+      [10, wallIn(-1, RIB), -6.75, 1.92, { a: 0.03, c: 0.10 }],
+      [5, wallIn(-1, RIB + 0.02), -5.95, 1.80, { a: -0.05 }],
+      [1, wallIn(-1, RIB), -3.62, 2.28, { h: 1, a: 0.04, c: 0.08 }],
+      [3, wallIn(1, RIB), -1.65, 2.10, { h: 1, a: -0.03 }],
+      [16, wallIn(1, RIB + 0.02), -0.20, 1.98, { h: 1, a: 0.06, c: 0.12 }],
+      // under her deck, on the beams forward
+      [12, flat(DECK_Y - 0.275), -6.85, 1.75, { h: 1, a: 0.05, below: 1 }],
+      [8, flat(DECK_Y - 0.275), -6.80, -1.55, { h: 1, a: -0.09, below: 1 }],
+      // leaned on the quarters' bulkhead, in the corner
+      [14, (u, w, t) => [bxB - 0.03 - t - 0.36 * (1 - (w - HOLD_Y) / 1.72), w, u], 2.35, HOLD_Y + 0.72, { below: 1 }],
+      // laid over the holes in her sole
+      // fallen through the holes in her sole and lying on the sand she sits on (`GOUGE`; a hole is wider than a sheet is
+      // long, so one laid across it at the boards' height would have been floating)
+      [2, onSand, 1.42, 0.92, { a: 0.35, below: 1 }],
+      [6, onSand, -6.15, 0.72, { a: -0.25, below: 1 }],
+      // ---- the wheelhouse: its after wall, its blind side, and two sliding off the back of its roof
+      [0, (u, w, t) => [aftX + t, w, u], -1.35, WF + 0.98, { a: 0.02, deck: 1 }],
+      [17, (u, w, t) => [aftX + 0.02 + t, w, u], -0.58, WF + 0.93, { a: -0.04, c: 0.10, deck: 1 }],
+      [4, (u, w, t) => [aftX + t, w, u], 1.55, WF + 1.00, { a: 0.05, deck: 1 }],
+      [13, (u, w, t) => [u, w, -(BR_HZ + 0.085 + t)], 3.65, WF + 0.46, { h: 1, deck: 1 }],
+      [9, (u, w, t) => [u, w, -(BR_HZ + 0.105 + t)], 5.15, WF + 0.45, { h: 1, a: 0.02, deck: 1 }],
+      [11, flat(WF + BR_H + 0.135), BR_X1 - 0.25, -1.45, { h: 1, a: 0.06, deck: 1 }],
+      [15, flat(WF + BR_H + 0.155), BR_X1 - 0.10, -0.62, { h: 1, a: -0.10, deck: 1 }],
+      // (none lying loose on her open deck: two did, for no reason a man would leave one there)
+      // ---- her sides, over the rot
+      [10, sideOut(1), -8.75, 2.15, { a: 0.04, c: 0.12, deck: 1 }],
+      [6, sideOut(1), 1.9, 2.30, { h: 1, a: -0.03, deck: 1 }],
+      [14, sideOut(1), 3.5, 2.25, { h: 1, a: 0.05, c: 0.10, deck: 1 }],
+      [3, sideOut(1), 8.75, 1.45, { a: -0.06, deck: 1 }],
+      [12, sideOut(-1), 5.05, 1.60, { a: 0.05, c: 0.10, deck: 1 }],
+      [18, sideOut(-1), -4.6, 2.30, { h: 1, deck: 1 }],
+      [2, sideOut(-1), 10.35, 2.15, { a: 0.03, deck: 1 }],
+    ];
+    // and along her rail, wherever two courses or more are gone, on the stanchions inside
+    {
+      const pick = [0, 15, 4, 8, 11, 19];
+      let n = 0;
+      for (const sg of [1, -1])
+        for (let x = -8.2, last = -99, k = 0; x < 10.4 && k < 3; x += 0.1) {
+          if (x - last < 4.2 || bulwarkWear(x, sg) < COURSE * 1.9) continue;
+          SHEETS.push([pick[n++ % pick.length], railIn(sg), x + 0.45, DECK_Y + 0.40 + sheerAt(x + 0.45), { h: 1, s: 0.8, a: (k % 2 ? 0.05 : -0.04), c: 0.06, deck: 1 }]);
+          last = x; k++;
+        }
+    }
+    solidLow(bxB - 0.18, 2.35, 0.36, 0.86, HOLD_Y + 1.7);
+    S.userData.dressSheets = (root) => {
+      const G = new THREE.Group(); G.name = 'shipSheets';
+      const src = new Map();
+      root.traverse((o) => { if (o.isMesh) src.set(o.name, o); });
+      let mD = null, mB = null;
+      const v = new THREE.Vector3();
+      for (const [id, at, cu, cw, o = {}] of SHEETS) {
+        const m = src.get('sheet_' + id);
+        if (!m) { console.warn('shipwreck: no rusted sheet ' + id); continue; }
+        if (!mD) {
+          const base = m.material;
+          for (const t of [base.map, base.normalMap]) if (t) { t.magFilter = THREE.LinearFilter; t.anisotropy = 8; }
+          const mk = (lift) => {
+            const q = base.clone();
+            q.color.setRGB(...SHT.map((k) => k * 0.92)); q.roughness = 0.9; q.metalness = 0; q.roughnessMap = q.metalnessMap = null;
+            q.emissive = new THREE.Color(...SHT); q.emissiveMap = q.map; q.emissiveIntensity = lift; q.side = THREE.DoubleSide; q.transparent = false;
+            return q;
+          };
+          mD = mk(0.19); mD.name = 'wreck.sheetDeck';
+          mB = mk(0.22); mB.name = 'wreck.sheetHold'; S.userData.holdLight.lit(mB);
+        }
+        const g = new THREE.BufferGeometry(), P = m.geometry.attributes.position, bb = new THREE.Box3().setFromBufferAttribute(P);
+        const mx = (bb.min.x + bb.max.x) / 2, mz = (bb.min.z + bb.max.z) / 2, K = SK * (o.s || 1), ca = Math.cos(o.a || 0), sa = Math.sin(o.a || 0);
+        const hx = (bb.max.x - bb.min.x) / 2, hl = (bb.max.z - bb.min.z) / 2, pos = new Float32Array(P.count * 3);
+        for (let i = 0; i < P.count; i++) {
+          v.fromBufferAttribute(P, i);
+          const a = (v.x - mx) * K, l = (v.z - mz) * K;
+          let t = (v.y - bb.min.y) * K;
+          if (o.c) { const q = Math.max(0, (v.x - mx) / hx + (v.z - mz) / hl - 0.75) / 1.25; t += o.c * q * q; }   // a corner let go
+          const u0 = o.h ? l : a, w0 = o.h ? a : l;
+          const p = at(cu + u0 * ca - w0 * sa, cw + u0 * sa + w0 * ca, t);
+          pos[i * 3] = p[0]; pos[i * 3 + 1] = p[1]; pos[i * 3 + 2] = p[2];
+        }
+        g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        g.setAttribute('uv', m.geometry.attributes.uv.clone());
+        g.setIndex(m.geometry.index.clone()); g.computeVertexNormals();
+        G.add(new THREE.Mesh(g, o.deck ? mD : mB));
       }
       S.add(G);
       return G;
@@ -3482,6 +3822,234 @@ export function makeShipwreck(opts = {}) {
   bakeGroup(HULL);
   bakeGroup(BR);
   bakeGroup(S);
+  /* every face of these in her own metres (`layInMetres`): the density each map was drawn for — the lining's 13 courses
+   * sole to deckhead (`HOLD_Y` to `DECK_Y`, 174 px/m, so its tide line stands where it did), the wheelhouse's eight
+   * upright boards to 0.96 m (533), the planking's 0.17 m courses (84, as the bulwark's), the timber's grain at 0.75 m a
+   * tile (340), the rope's lay (400), the rusted iron's metre a tile, standing (512: its runs run down) */
+  const _lay0 = performance.now();
+  S.userData.uvLaidTris = layInMetres(S, [
+    [M.wood, 'grain', 512], [M.rope, 'grain', 620], [M.steel, 'upright', 512], [M.plate, 'upright', 1024 / PLATE_T, HOLD_Y],
+    [M.brass, 'upright', 900], [M.gold, 'upright', 900], [M.rubber, 'upright', 700], [M.glass, 'upright', 200],
+    [M.plank, 'upright', 256 / (18 * COURSE), DECK_Y], [M.paint, 'upright', 533, DECK_Y],
+    [M.inner, 'upright', 1024 / (DECK_Y - HOLD_Y), HOLD_Y], [M.dark, 'upright', 1024 / (DECK_Y - HOLD_Y), HOLD_Y],
+    [M.sole, 'upright', 1024 / 2.95, HOLD_Y],
+  ]);
+  S.userData.uvLaidMs = performance.now() - _lay0;
+
+  /* ---- LIGHT IN HER HOLD (2026-11-24, the owner: "make all the lighting cinematic, especially inside of the ship") -----
+   * Every surface down here lit itself evenly (its emissive lift), so the hold had no light in it, only visibility. Now the
+   * light comes from where it can: the MOON, low on the -Z side (main.js `MOON_DIR`, 7 degrees up), through the far tear
+   * (which faces it), traced per pixel through its real outline — its arch laid long across her sole and up the far side —
+   * and nothing else: the quarters' bulkhead shadows it except through its door, and the hatch and the ladder well, which
+   * the moon cannot reach over her bulwark (they lit the deckhead as a pane of light until that was worked out), let down
+   * cold SKY. The even lift is taken down toward her corners and her bow. Shafts and dust (`HOLD_SHAFTS`) hang in the same rays. One GLSL (`WL`), put on
+   * every material below decks by `holdLit` (the stores, the furniture and the sheets as they land). */
+  const zTear = halfAtY((FAR_X0 + FAR_X1) / 2, 0.9);
+  const f3 = (v) => (+v).toFixed(4);
+  const WL = `
+    uniform mat4 uShipInv; uniform vec3 uMoonL; uniform float uMoonK;
+    float wlEdge(float a, float k) { return smoothstep(0.0, k, a); }
+    // the far tear's outline (shipwreck.js \`breached\`, sg -1) at its station, as a soft mask
+    float wlTear(vec3 Q) {
+      float t = (Q.x - ${f3(FAR_X0)}) / ${f3(FAR_X1 - FAR_X0)};
+      if (t <= 0.0 || t >= 1.0) return 0.0;
+      float top = ${f3(FAR_TOP)} * (0.26 + 0.74 * pow(sin(3.14159 * t), 0.55)) + 0.07 * sin(Q.x * 3.3 + 0.9) + 0.05 * sin(Q.x * 6.2 + 2.6);
+      return wlEdge(top - Q.y, 0.14) * wlEdge(min(t, 1.0 - t) * ${f3(FAR_X1 - FAR_X0)}, 0.25) * wlEdge(Q.y - ${f3(HOLD_Y - 0.1)}, 0.1);
+    }
+    float wlRect(vec2 q, vec2 a, vec2 b, float k) { return wlEdge(min(min(q.x - a.x, b.x - q.x), min(q.y - a.y, b.y - q.y)), k); }
+    // the quarters' bulkhead: a ray from aft of it reaches the moon only through its door
+    float wlBulk(vec3 P, vec3 d, float tOpen) {
+      if (P.x <= 3.0 || d.x >= 0.0) return 1.0;
+      float tb = (3.0 - P.x) / d.x;
+      if (tb >= tOpen) return 1.0;
+      vec3 B = P + d * tb;
+      return wlEdge(0.725 - abs(B.z), 0.08) * wlEdge(${f3(HOLD_Y + 1.95)} - B.y, 0.08);
+    }
+    // how much moon reaches P (her frame)
+    float wlMoon(vec3 P) {
+      vec3 d = uMoonL; float m = 0.0;
+      if (d.z < -0.01 && P.z > -${f3(zTear)}) { float t = (-${f3(zTear)} - P.z) / d.z; vec3 Q = P + d * t; if (Q.y < ${f3(DECK_Y - 0.05)}) m = max(m, wlTear(Q) * wlBulk(P, d, t)); }
+      /* (not through the hatch or the ladder well: at seven degrees the moon clears her bulwark only from a metre or more
+       * outboard of it, so what comes down those is sky: wlSky) */
+      return m;
+    }
+    // the wheelhouse: the moon in through its port windows and its front, the frames between the panes standing in it
+    bool wlInHouse(vec3 P) { return P.x > ${f3(BR_X0 + 0.02)} && P.x < ${f3(BR_X1 - 0.02)} && P.y > ${f3(DECK_Y + BR_STEP - 0.15)} && P.y < ${f3(DECK_Y + BR_STEP + BR_H)} && abs(P.z) < ${f3(BR_HZ - 0.02)}; }
+    float wlPanes(float u, float a, float b, float m1, float m2) { return wlEdge(min(u - a, b - u), 0.03) * wlEdge(abs(u - m1) - 0.04, 0.025) * wlEdge(abs(u - m2) - 0.04, 0.025); }
+    float wlWin(vec3 P) {
+      vec3 d = uMoonL; float m = 0.0, y0 = ${f3(DECK_Y + BR_STEP + 0.95)}, y1 = ${f3(DECK_Y + BR_STEP + 2.28)};
+      if (d.z < -0.01) { float t = (-${f3(BR_HZ)} - P.z) / d.z; vec3 Q = P + d * t;
+        m = max(m, wlPanes(Q.x, ${f3(BR_X0 + 0.10)}, ${f3(BR_X1 - 0.10)}, ${f3(BR_X0 + (BR_X1 - BR_X0) * 0.34)}, ${f3(BR_X0 + (BR_X1 - BR_X0) * 0.68)}) * wlEdge(min(Q.y - y0, y1 - Q.y), 0.03)); }
+      if (d.x < -0.01) { float t = (${f3(BR_X0)} - P.x) / d.x; vec3 Q = P + d * t;
+        m = max(m, wlPanes(Q.z, ${f3(-BR_HZ + 0.03)}, ${f3(BR_HZ - 0.03)}, ${f3(-BR_HZ * 0.44)}, ${f3(BR_HZ * 0.44)}) * wlEdge(min(Q.y - y0, y1 - Q.y), 0.03)); }
+      return m;
+    }
+    float wlMoonAll(vec3 P) { return wlInHouse(P) ? wlWin(P) : wlMoon(P); }
+    bool wlInHold(vec3 P) { return P.y < ${f3(DECK_Y - 0.03)} && P.x > ${f3(HOLD_X0 - 0.6)} && P.x < ${f3(HOLD_X1 + 0.3)} && abs(P.z) < 4.8; }
+    // the even lift, taken down away from where light comes in: her bow, her corners
+    float wlAmb(vec3 P) {
+      vec2 tear = vec2(clamp(P.x, ${f3(FAR_X0)}, ${f3(FAR_X1)}), -${f3(zTear)}), hatch = vec2(clamp(P.x, ${f3(HATCH_X0)}, ${f3(HATCH_X1)}), clamp(P.z, ${f3(-HATCH_HZ)}, ${f3(HATCH_HZ)}));
+      float near = max(exp(-distance(P.xz, tear) / 4.5), exp(-distance(P.xz, hatch) / 3.5));
+      float quarters = smoothstep(2.9, 3.4, P.x);
+      float corner = smoothstep(0.0, 0.7, ${f3(DECK_Y)} - P.y) * (0.82 + 0.18 * smoothstep(0.0, 0.9, P.y - ${f3(HOLD_Y)}));
+      return mix(0.50 + 0.40 * near, 0.80, quarters) * mix(0.78, 1.0, corner);
+    }
+    /* THE SKY DOWN THE HATCH (2026-11-24, the owner: "add cinematic lighting to the hole with the hook"). The moon cannot
+     * reach it, but the whole night sky can: what an opening lets down from a sky is a pool under it whose edge softens as
+     * it falls (its penumbra grows with the depth), and a column of it standing in the damp air. wlSkyCol is that shape —
+     * the opening's rectangle, widened by how far below the deck — the hatch's and, smaller, the ladder well's. */
+    float wlSkySoft(vec2 q, vec2 a, vec2 b, float m) { vec2 d = max(max(a - q, q - b), vec2(0.0)); return 1.0 - smoothstep(0.0, m, length(d)); }
+    float wlSkyCol(vec3 P) {
+      if (P.y > ${f3(DECK_Y)}) return 0.0;
+      float dep = ${f3(DECK_Y)} - P.y;
+      float h = wlSkySoft(P.xz, vec2(${f3(HATCH_X0)}, ${f3(-HATCH_HZ)}), vec2(${f3(HATCH_X1)}, ${f3(HATCH_HZ)}), 0.18 + dep * 0.30);
+      float w = wlSkySoft(P.xz, vec2(${f3(STAIR_X0)}, ${f3(STAIR_Z0)}), vec2(${f3(STAIR_X1)}, ${f3(STAIR_Z1)}), 0.15 + dep * 0.28) * 0.45;
+      return max(h, w) / (1.0 + dep * 0.12);
+    }
+    vec3 wlSky(vec3 P) {
+      vec2 hatch = vec2(clamp(P.x, ${f3(HATCH_X0)}, ${f3(HATCH_X1)}), clamp(P.z, ${f3(-HATCH_HZ)}, ${f3(HATCH_HZ)}));
+      vec2 well = vec2(clamp(P.x, ${f3(STAIR_X0)}, ${f3(STAIR_X1)}), clamp(P.z, ${f3(STAIR_Z0)}, ${f3(STAIR_Z1)}));
+      float k = exp(-distance(P.xz, hatch) / 1.8) + 0.7 * exp(-distance(P.xz, well) / 1.4);
+      return vec3(0.34, 0.42, 0.60) * k * (0.55 + 0.45 * smoothstep(${f3(HOLD_Y)}, ${f3(DECK_Y - 0.4)}, P.y));
+    }`;
+  const LU = { uShipInv: { value: new THREE.Matrix4() }, uMoonL: { value: new THREE.Vector3(-0.27, 0.117, -0.96) }, uMoonK: { value: 1.15 }, uTime: { value: 0 } };
+  const holdLit = (mat) => {
+    if (!mat || mat.userData.holdLit) return mat;
+    mat.userData.holdLit = true;
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (sh, r) => {
+      if (prev) prev(sh, r);
+      Object.assign(sh.uniforms, { uShipInv: LU.uShipInv, uMoonL: LU.uMoonL, uMoonK: LU.uMoonK });
+      sh.vertexShader = 'varying vec3 vWlW;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  { vec4 wlT = vec4(transformed, 1.0);\n  #ifdef USE_INSTANCING\n  wlT = instanceMatrix * wlT;\n  #endif\n  vWlW = (modelMatrix * wlT).xyz; }');
+      sh.fragmentShader = 'varying vec3 vWlW;\n' + WL + '\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+  {
+    vec3 wlP = (uShipInv * vec4(vWlW, 1.0)).xyz;
+    if (wlInHold(wlP)) {
+      vec3 wlN = normalize(mat3(uShipInv) * (vec4(normal, 0.0) * viewMatrix).xyz);
+      float wlM = wlMoon(wlP), wlL = max(dot(wlN, uMoonL), 0.0);   // (^0.35 below: a 7-degree moon only grazes her sole, and a film would cheat it a pool)
+      totalEmissiveRadiance *= wlAmb(wlP);
+      totalEmissiveRadiance += diffuseColor.rgb * (vec3(0.62, 0.74, 1.0) * uMoonK * wlM * pow(wlL, 0.35) + wlSky(wlP) * (0.25 + 0.75 * max(wlN.y, 0.0)) * 0.55
+        + vec3(0.42, 0.52, 0.78) * wlSkyCol(wlP) * (0.12 + 0.88 * max(wlN.y, 0.0)) * 0.62);   /* the hatch's pool, on what faces up to it (at 1.15 it lit the whole hold) */
+    } else if (wlInHouse(wlP)) {
+      vec3 wlN = normalize(mat3(uShipInv) * (vec4(normal, 0.0) * viewMatrix).xyz);
+      float wlM = wlWin(wlP), wlL = max(dot(wlN, uMoonL), 0.0);
+      totalEmissiveRadiance *= 0.58;
+      totalEmissiveRadiance += diffuseColor.rgb * vec3(0.62, 0.74, 1.0) * uMoonK * 0.62 * wlM * pow(wlL, 0.5);   // (at 1.15 the panes' light blew her sea-green paint out to white)
+    }
+  }`).replace('#include <fog_fragment>', `#include <fog_fragment>
+  {
+    /* THE AIR DOWN HERE IS DAMP (the owner, 2026-11-24: "like a slight fog or mist in the air"): what is far off in her
+     * hold is seen through a cold haze, so the dark has depth and the shafts stand in something */
+    vec3 wlP2 = (uShipInv * vec4(vWlW, 1.0)).xyz;
+    bool wlH = wlInHold(wlP2), wlW = wlInHouse(wlP2);
+    if (wlH || wlW) {
+      float wlD = distance(vWlW, cameraPosition), wlF = (1.0 - exp(-wlD * (wlH ? 0.11 : 0.05))) * 0.85;
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.040, 0.046, 0.058) + (wlH ? wlSky(wlP2) * 0.05 : vec3(0.0)), wlF);
+      /* AND THE MIST CATCHES THE MOON: eight steps along the eye's ray, each asking whether the moon reaches it, dithered per
+       * pixel so the steps do not band — the beam stands in the air wherever it really passes, not only on what it lands on */
+      vec3 wlC = (uShipInv * vec4(cameraPosition, 1.0)).xyz; float wlS = 0.0, wlJ = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+      float wlK = 0.0;
+      for (int i = 0; i < 8; i++) { vec3 Q = mix(wlC, wlP2, (float(i) + wlJ) / 8.0); if (wlInHold(Q) || wlInHouse(Q)) { wlS += wlMoonAll(Q); wlK += wlSkyCol(Q); } }
+      gl_FragColor.rgb += vec3(0.50, 0.60, 0.82) * (wlS / 8.0) * (1.0 - exp(-wlD * 0.35)) * (wlH ? 0.75 : 0.16);
+      gl_FragColor.rgb += vec3(0.34, 0.42, 0.62) * (wlK / 8.0) * (1.0 - exp(-wlD * 0.35)) * 0.20;   /* and the hatch's column of sky, in the mist */
+    }
+  }`);
+    };
+    mat.customProgramCacheKey = ((k) => () => (k ? k() : '') + '|holdLit')(mat.customProgramCacheKey && mat.customProgramCacheKey.bind(mat));
+    mat.needsUpdate = true;
+    return mat;
+  };
+  for (const k of ['inner', 'sole', 'wood', 'deck', 'plank', 'steel', 'plate', 'dark', 'wetsand', 'rope', 'paint', 'brass', 'rubber', 'gold']) holdLit(M[k]);
+  holdLit(S.userData.moundMat);
+  /* GLASS THAT IS GLASS (2026-11-24, the owner: "less tinted and more realistic and reflective like real glass"). It was
+   * a grey-blue film at 38 %: now nearly clear (14 %) and it REFLECTS — Fresnel (Schlick, 4 % face on, all of it at a
+   * graze), of the night it stands in: the sky dark to its zenith and paler to the horizon, the sea below it, the moon
+   * where the moon is (her frame, `uMoonL`), and the salt and fingermarks on it (`wearMap`) taking the reflection down
+   * where they lie. More opaque where it reflects, as glass is. */
+  {
+    const prev = M.glass.onBeforeCompile;
+    M.glass.onBeforeCompile = (sh, r) => {
+      if (prev) prev(sh, r);
+      Object.assign(sh.uniforms, { uShipInv: LU.uShipInv, uMoonL: LU.uMoonL });
+      sh.vertexShader = 'varying vec3 vGlW;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n  vGlW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = 'varying vec3 vGlW;\nuniform mat4 uShipInv; uniform vec3 uMoonL;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+  {
+    vec3 V = normalize(cameraPosition - vGlW), Nw = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+    if (dot(Nw, V) < 0.0) Nw = -Nw;
+    float F = 0.04 + 0.96 * pow(1.0 - clamp(dot(Nw, V), 0.0, 1.0), 5.0);
+    vec3 R = mat3(uShipInv) * reflect(-V, Nw);
+    vec3 env = R.y > 0.0 ? mix(vec3(0.075, 0.095, 0.15), vec3(0.012, 0.018, 0.04), smoothstep(0.0, 0.55, R.y)) : vec3(0.02, 0.035, 0.06) * (1.0 + 0.6 * smoothstep(-0.25, 0.0, R.y));
+    float mu = max(dot(R, uMoonL), 0.0);
+    env += vec3(1.0, 0.97, 0.9) * (pow(mu, 900.0) * 2.4 + pow(mu, 30.0) * 0.10);
+    float smudge = texture2D(map, vMapUv).r;
+    gl_FragColor.rgb += env * F * (0.55 + 0.45 * smudge) * 1.6;
+    gl_FragColor.a = clamp(gl_FragColor.a + F * 0.65, 0.0, 0.95);
+  }`);
+    };
+    M.glass.customProgramCacheKey = () => 'wreckGlass';
+    M.glass.needsUpdate = true;
+  }
+  if (S.userData.whMats) for (const m of S.userData.whMats) holdLit(m);
+  /* the shafts: the tear's outline and the hatch's, run along the light into her and cut where it stops (her sole, her far
+   * side, the bulkhead, the deck), additive, brightest seen square on and fading along their length; and dust that only
+   * shows in them */
+  const HOLD_SHAFTS = new THREE.Group(); HOLD_SHAFTS.name = 'holdShafts'; HOLD_SHAFTS.userData.noBake = true;
+  {
+    const prism = (ring, len) => {      // ring: points round an opening; extruded along the light (-uMoonL, set in the shader)
+      const pos = [], at = [], idx = [], n = ring.length;
+      for (let i = 0; i < n; i++) { pos.push(...ring[i], ...ring[i]); at.push(0, len); }
+      for (let i = 0; i < n; i++) { const a = i * 2, b = ((i + 1) % n) * 2; idx.push(a, b, b + 1, a, b + 1, a + 1); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('aT', new THREE.Float32BufferAttribute(at, 1)); g.setIndex(idx); return g;
+    };
+    const shaftMat = new THREE.ShaderMaterial({
+      uniforms: Object.assign({ uK: { value: 1.25 } }, LU), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      vertexShader: `attribute float aT; uniform vec3 uMoonL; varying vec3 vP; varying float vT; varying vec3 vN; varying vec3 vV;
+        void main() { vec3 p = position - uMoonL * aT; vP = p; vT = aT; vec4 w = modelMatrix * vec4(p, 1.0); vV = w.xyz; vN = vec3(0.0); gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: WL + `
+        uniform float uK, uTime; varying vec3 vP; varying float vT; varying vec3 vN; varying vec3 vV;
+        float h(vec3 p) { return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }
+        float n3(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(mix(h(i), h(i + vec3(1,0,0)), f.x), mix(h(i + vec3(0,1,0)), h(i + vec3(1,1,0)), f.x), f.y), mix(mix(h(i + vec3(0,0,1)), h(i + vec3(1,0,1)), f.x), mix(h(i + vec3(0,1,1)), h(i + vec3(1,1,1)), f.x), f.y), f.z); }
+        void main() {
+          vec3 P = vP;
+          if (P.y < ${f3(HOLD_Y - 0.06)} || P.y > ${f3(DECK_Y - 0.02)} || abs(P.z) > 4.3 || P.x > 3.0 || P.x < ${f3(HOLD_X0)}) discard;
+          float m = wlMoon(P); if (m < 0.01) discard;
+          /* as thick as the light you look through: a face of the prism seen square on is a thin sheet of it, one seen edge on
+           * is the whole depth of the beam (seen square on, the hatch's top face lay under the ceiling as a pane of light) */
+          vec3 fn = normalize(cross(dFdx(vV), dFdy(vV))), vd = normalize(cameraPosition - vV);
+          float thick = 0.30 + 0.70 * pow(1.0 - abs(dot(fn, vd)), 1.4);
+          float k = uK * m * thick * exp(-vT / 10.0) * (0.45 + 1.0 * n3(P * 1.3 + vec3(uTime * 0.05, uTime * 0.02, 0.0)) * (0.6 + 0.4 * n3(P * 0.45 - vec3(0.0, uTime * 0.015, uTime * 0.03))));
+          gl_FragColor = vec4(vec3(0.60, 0.72, 1.0) * k, 1.0);
+        }` });
+    shaftMat.name = 'wreck.shaft';
+    // the tear's outline at its station, sampled
+    const ring = [];
+    for (let i = 0; i <= 18; i++) { const x = FAR_X0 + 0.05 + (FAR_X1 - FAR_X0 - 0.1) * i / 18; let lo = 0, hi = FAR_TOP * 1.3; for (let k = 0; k < 18; k++) { const m = (lo + hi) / 2; if (breached(x, m, -1)) lo = m; else hi = m; } ring.push([x, Math.max(HOLD_Y - 0.05, lo), -zTear + 0.02]); }
+    ring.push([FAR_X1 - 0.05, HOLD_Y - 0.05, -zTear + 0.02], [FAR_X0 + 0.05, HOLD_Y - 0.05, -zTear + 0.02]);
+    HOLD_SHAFTS.add(new THREE.Mesh(prism(ring, 13), shaftMat));
+    const rect = (x0, z0, x1, z1) => [[x0, DECK_Y - 0.01, z0], [x1, DECK_Y - 0.01, z0], [x1, DECK_Y - 0.01, z1], [x0, DECK_Y - 0.01, z1]];
+    // dust: four hundred motes drifting in the hold, lit only where the moon is
+    const DN = 900, dp = new Float32Array(DN * 3), ds = new Float32Array(DN);
+    for (let i = 0; i < DN; i++) { dp[i * 3] = HOLD_X0 + 0.3 + rnd(i * 1.3) * (3.0 - HOLD_X0 - 0.3); dp[i * 3 + 1] = HOLD_Y + 0.1 + rnd(i * 2.9) * (DECK_Y - HOLD_Y - 0.2); dp[i * 3 + 2] = (rnd(i * 4.7) - 0.5) * 7.0; ds[i] = rnd(i * 7.1); }
+    const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(dp, 3)); dg.setAttribute('aS', new THREE.BufferAttribute(ds, 1));
+    const dustMat = new THREE.ShaderMaterial({
+      uniforms: Object.assign({}, LU), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+      vertexShader: WL + `
+        attribute float aS; uniform float uTime; varying float vA;
+        void main() { vec3 p = position + vec3(sin(uTime * 0.11 + aS * 40.0) * 0.35, sin(uTime * 0.07 + aS * 23.0) * 0.22 - mod(uTime * 0.012 + aS * 3.0, 0.6), cos(uTime * 0.09 + aS * 31.0) * 0.35);
+          vA = max(wlMoon(p), wlSkyCol(p) * 0.35) * (0.4 + 0.6 * fract(aS * 7.3)); /* in the moon's beam and the hatch's column */ vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_PointSize = min(2.2, (1.0 + 1.2 * fract(aS * 13.1)) * (2.0 / -mv.z)); vA *= smoothstep(0.4, 1.6, -mv.z); /* specks, never flakes: a mote a hand from the eye is not drawn the size of a coin */ gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying float vA; void main() { if (vA < 0.02) discard; vec2 c = gl_PointCoord - 0.5; gl_FragColor = vec4(vec3(0.62, 0.72, 0.92) * vA * 0.95 * (1.0 - smoothstep(0.2, 0.5, length(c))), 1.0); }` });
+    dustMat.name = 'wreck.dust';
+    const dust = new THREE.Points(dg, dustMat); dust.frustumCulled = false; HOLD_SHAFTS.add(dust);
+    HOLD_SHAFTS.children[0].onBeforeRender = () => { LU.uTime.value = performance.now() / 1000; };
+    for (const c of HOLD_SHAFTS.children) c.renderOrder = 3;
+  }
+  S.add(HOLD_SHAFTS);
+  /* main.js puts her in the world and says where the moon is (in her frame): `holdLight.place` */
+  S.userData.holdLight = { U: LU, lit: holdLit, place: (ship, moonDirWorld) => {
+    ship.updateMatrixWorld(true); LU.uShipInv.value.copy(ship.matrixWorld).invert();
+    LU.uMoonL.value.copy(moonDirWorld).transformDirection(LU.uShipInv.value).normalize();
+  } };
 
   S.userData.wheel = wheel;
   S.userData.nav = {
@@ -3502,6 +4070,7 @@ export function makeShipwreck(opts = {}) {
     crabSpot: [-4.8, 0.25, 1.8],
     lanternSpot: [0.4, DECK_Y + 0.22, 2.85],
     beamAt, sectionK, flareAt, sheerAt, rakeAt, halfAtY, deckHalf, hullPt,   // rakeAt: the walk inverts it for the deck edge
+    soleY,   // (her sole's own boards, dished: what a piece of a broken store lies on, main.js `debris`)
   };
   return S;
 }

@@ -240,12 +240,13 @@ const BW_FROM = (() => {
        * hook and the water bottle were not on this list — loaded as the far rest, and in a room that holds the far rest while you
        * are in it (the whale, the deep, the cellar: `bwHoldHere`), not until you left: a hook in your hand with nothing drawn) */
       "Skrim's Hook": 'skrim-hook.glb', 'Bottle of water': 'fiji-bottle.glb', 'Sea shell': 'shell.glb',
+      'Artifact of the Whale': ['whale-tooth/scene.gltf', 'whale-tooth/scene.bin', 'whale-tooth/textures/material_0_baseColor.jpeg'],   // (the scan's three files, 2026-11-23)
       'Spare fancy house gate key': 'key.glb', 'Fancy house gate key': 'key.glb', 'Castle door key': 'key.glb', "Henry's cell key": 'key.glb', 'Tavern storage key': 'key.glb',   // (the names since 2026-11-17)
     };
     const f = d.flags || {};
     const walked = f.beachZ != null ? -f.beachZ : d.room ? (ROOM_Z[d.room] || 0) : -d.pos[2];
     const first = new Set((ROOM_FILES[d.room] || []).map((n) => 'assets/' + n));
-    for (const n of [...(Array.isArray(d.pack) ? d.pack : []), ...(Array.isArray(d.worn) ? d.worn : [])]) if (PACK_FILES[n]) first.add('assets/' + PACK_FILES[n]);
+    for (const n of [...(Array.isArray(d.pack) ? d.pack : []), ...(Array.isArray(d.worn) ? d.worn : [])]) if (PACK_FILES[n]) for (const f of [].concat(PACK_FILES[n])) first.add('assets/' + f);
     /* (and the minotaur, when the save has him at your side, down or dead: ranked by his gate, he parsed in the far
      * queue — measured, `minoRestore`, 40 s after a load into XIII's court before he lay there again) */
     if (f.mino && f.mino.s && f.mino.s !== 'wait') first.add('assets/minotaur.glb');
@@ -281,6 +282,7 @@ const ASSET_REACH = {
   'assets/key.glb': 150,
   'assets/furniture.glb': 152,        // what is standing in her hold and her quarters
   'assets/pirate-props.glb': 152,     // and her stores: casks, crates, sacks
+  'assets/rusted-sheet.glb': 152,     // and the corrugated iron she is patched with
   'assets/chest.glb': 152,            // and the sea chest in her quarters, with the peg in it
   'assets/peg-leg.glb': 152,          // and what is inside it
   'assets/gull.glb': 152,             // the three that wheel over her
@@ -339,6 +341,9 @@ const ASSET_REACH = {
   'assets/sawnoff.glb': 1085 + BEACH_EXT,          // the sawn-off, sold by the castle's trader
   'assets/castle.glb': 1000 + BEACH_EXT,           // the castle across the beach at the foot of the headland, where he waits             // the four-armed thing past the five, on the open sand
   'assets/grass-clumps.glb': 300,      // the tufts in the pavilion's cracks
+  // the Artifact of the Whale's scan (2026-11-23): given on the sand at the whale; a save that carries it has it first (`PACK_FILES`)
+  'assets/fossil-shell.glb': 160,       // the Artifact of the Sea (the owner's fossil, 4.8 MB)
+  'assets/whale-tooth/scene.gltf': 980 + BEACH_EXT, 'assets/whale-tooth/scene.bin': 980 + BEACH_EXT, 'assets/whale-tooth/textures/material_0_baseColor.jpeg': 980 + BEACH_EXT,
 };
 const ASSET_REACH_DEFAULT = 120;      // unlisted: somewhere down the middle of the walk
 const BW_INFLIGHT = 3;                // measured: three is the floor of the curve
@@ -1399,7 +1404,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'h
  * info log the first time it is used, which is a synchronous wait on the compile — and on Windows, where ANGLE translates
  * every program to HLSL, a costly one (0.53 s of `getProgramInfoLog` in a CPU profile of a load here, on a fast Mac).
  * Every shader in the game compiles; the checks only ever logged. */
-renderer.debug.checkShaderErrors = false;
+renderer.debug.checkShaderErrors = /[?&]glcheck=1/.test(location.search) || /[?&]glcheck=1/.test((window.parent && window.parent.location && window.parent.location.search) || '');   // (&glcheck=1: three reports a shader that does not compile — it is off for speed)
 renderer.setPixelRatio(RETRO_SCALE);
 renderer.setSize(window.innerWidth, window.innerHeight);
 const PIXEL_RATIO_U = { value: RETRO_SCALE };   // the stars size themselves by it; the dynamic resolution (`drs`) keeps it current
@@ -26581,14 +26586,15 @@ function goldRingParry() { if (rings.includes(goldRingItem)) stamina = Math.min(
 /* THE RING OF CONNECTION, the Very Old Fisherman's thanks for bringing Billy home (the owner, 2026-10-17, in place of
  * the Artifact of The Sea): "+4% per consecutive hit, capped at 12%; it resets when you are hit". Worn, every blow
  * that lands on something is worth `CONN_STEP` more than the one before it — the first as it always was, the second
- * +4 %, the third +8 %, and every one after +12 % (`CONN_MAX`) — for as long as nothing lands on you: `damagePlayer`
+ * +4 %, the third +8 %, the fourth +12 %, and every one after +16 % (`CONN_MAX`; 12 % until 2026-11-23, the owner: "make the
+ * ring of connection you get from the fishermen give 16% total") — for as long as nothing lands on you: `damagePlayer`
  * puts the count back to nought. It is counted where a blow's worth is (`toolDmg`), which is asked once per thing a
  * blow lands on and never for a rock, a crate or the sand.
  * The model is Bladeblend's "Gold ring" (CC-BY-4.0), EXACT: every vertex and triangle of its six meshes, its own two
  * materials, packed by `tools/connection_ring_pack.py` (positions and normals as int16 across their own range, which
  * `bwDequant` restores; uint16 indices; its unused uvs dropped; gzipped) — 974 KB of source to 342 KB. Its gold is
  * a metal with no map, and there is no environment in this game, so it wears `ringEnv()` like the other rings. */
-const CONN_STEP = 0.04, CONN_MAX = 0.12, CONN_ENV = 3.2;
+const CONN_STEP = 0.04, CONN_MAX = 0.16, CONN_ENV = 3.2;
 let connStreak = 0;
 const connBonus = () => (rings.includes(connRingItem) ? Math.min(CONN_MAX, connStreak * CONN_STEP) : 0);
 const connRing = new THREE.Group();
@@ -26620,7 +26626,7 @@ function makeConnRingIcon() {
 }
 const connRingItem = {
   id: 'connring', name: 'Ring of Connection', icon: makeConnRingIcon(), ring: true,
-  desc: '+4% damage for every hit in a row, up to 12%. Resets when you are hit.',
+  desc: '+4% damage for every hit in a row, up to 16%. Resets when you are hit.',
   use: () => toggleEquip(connRingItem),
   inspectOpts: () => ({
     rotX: 0.85, rotY: 0.30,
@@ -28281,6 +28287,11 @@ function extractKeepCrate() {
   src.geometry.setIndex(keep);
   box.getCenter(c);
   keepCrate = { piece, box, cx: c.x, cz: c.z, top: box.max.y, prop: null };
+  /* its pieces' material, made now (both sides; the island's shader hook kept — a clone drops it), and its boards' program
+   * compiled now rather than on the blow (`debWarm`) */
+  { const gm = piece.material.clone(); gm.side = THREE.DoubleSide; gm.onBeforeCompile = piece.material.onBeforeCompile;
+    if (piece.material.customProgramCacheKey) gm.customProgramCacheKey = piece.material.customProgramCacheKey;
+    keepCrate.gm = gm; debWarm([gm]); }
   keepCrate.prop = {
     mesh: piece, box, radius: 0.9, dead: false, held: false, thrown: false,
     vel: new THREE.Vector3(), step: () => {},
@@ -28350,10 +28361,7 @@ function smashKeepCrate(speed, quiet = false) {
      * apart, half the boards face away from you and were simply not there.
      * Its own copy of the material, with the island's shader hook kept (a
      * clone drops `onBeforeCompile`). */
-    const gm = P.material.clone();
-    gm.side = THREE.DoubleSide;
-    gm.onBeforeCompile = P.material.onBeforeCompile;
-    if (P.material.customProgramCacheKey) gm.customProgramCacheKey = P.material.customProgramCacheKey;
+    const gm = K.gm;                  // (made when it was found: `extractKeepCrate`)
     const pos = P.geometry.attributes.position, tri = P.geometry.index.array;
     const a = new THREE.Vector3(), b = new THREE.Vector3(), d = new THREE.Vector3(), n = new THREE.Vector3();
     /* A TRIANGLE BELONGS TO THE SIDE OF THE BOX IT IS NEAREST, not to the
@@ -28393,6 +28401,19 @@ function smashKeepCrate(speed, quiet = false) {
       }
       for (const h of [A, B]) if (h.length) halves.push([key, h]);
     }
+    /* AND IT GOES TO BOARDS (2026-11-24, the owner: "make the keep crate ... break into pieces too"): its slats and posts
+     * as solid boards (`shatterStore`), each faced with a patch of one of its own slats (`geoSkin`, so the cut-out map's
+     * air between them is never a board's face), lying where they fall on the pier and kicked about by a body walking
+     * through; off the pier's edge they go down to the water. Its sides as shells, below, are not thrown any more. */
+    {
+      const cs = K.box.getSize(new THREE.Vector3());
+      const skin = geoSkin(gm, [P.geometry], P.matrixWorld);
+      // (off the pier's edge a board goes down to the keep's sea, and wood floats: it lies on the water at the tide)
+      // (and never under the sea: off the pier the floor lookup can answer with somewhere else's floor, 800 m down — measured)
+      const kfloor = (x, z, y) => { const sea = KEEP_Y + KEEP_SEA + keepTideAt(x - KEEP_X, z - KEEP_Z) - 0.01, f = bunkerFloorAt(x, z, y + 0.3); return f !== null && f > sea ? f : sea; };
+      shatterStore('crate', false, { wood: skin, wood2: skin, iron: skin }, new THREE.Vector3(K.cx, floorY, K.cz), 0, { lx: cs.x * 0.96, ly: Math.max(0.3, K.box.max.y - floorY) * 0.98, lz: cs.z * 0.96 }, { x: dx, z: dz }, speed, kfloor, null, false);
+      halves.length = 0;
+    }
     for (const [key, list] of halves) {
       // the middle of this piece, which is what it is thrown and spun about
       let mx = 0, my = 0, mz = 0;
@@ -28416,8 +28437,8 @@ function smashKeepCrate(speed, quiet = false) {
         rest: floorY + 0.03, life: 300, bleed: false, wait: lid ? 0.05 : facing ? 0 : 0.08 + Math.random() * 0.08,
         onLand: (_g, sp) => sfxPlankKnock(m.position.x, m.position.z, sp, false) });
     }
-    // and splinters off the break
-    for (let i = 0; i < 18; i++) {
+    // and splinters off the break (its boards make their own now: `shatterStore`)
+    for (let i = 0; i < 0; i++) {
       const L = 0.05 + Math.random() * 0.16;
       const s = new THREE.Mesh(new THREE.BoxGeometry(L, 0.015, 0.02), gm);
       s.position.set(K.cx + (Math.random() - 0.5) * 0.8, K.box.min.y + 0.2 + Math.random() * 0.6, K.cz + (Math.random() - 0.5) * 0.8);
@@ -33109,6 +33130,7 @@ const shipwreck = makeShipwreck({ sandMat, deferPaint: true });
  * nothing is recompiled when they fill. */
 for (const [k, job] of wreckPaintJobs()) warmStep('wreck paint ' + k, job);
 shipwreck.position.set(SHIP_X, 0, SHIP_Z);
+shipwreck.userData.holdLight && shipwreck.userData.holdLight.place(shipwreck, MOON_DIR);   // her hold's moonlight (`holdLit`): where she is and where the moon is
 scene.add(shipwreck);
 /* AND THE BIGGEST THING ON THE BEACH WAS DRAWN FROM A KILOMETRE AWAY, EVERY
  * FRAME, FOR THE WHOLE WALK. She is 158 meshes and she was in no far list at
@@ -33358,6 +33380,20 @@ bwGlb('assets/pirate-props.glb', (gltf) => {
   shipStoresLanded(g, boxes);
   // compiled now, off the driver's thread, not on the frame she comes out of the fog
   warmStep('wreck stores', () => warmCompileOwn([g], SHIP_X + 14, 5, SHIP_Z + 12, SHIP_X, 3, SHIP_Z));
+  /* and the boards they break into, compiled now and not on the frame of the first blow (a 12-16 ms hitch, measured):
+   * a pool for each of the set's trim-sheet materials, one board shown to the compiler and taken away again */
+  const tm = new Set(); g.traverse((o) => { if (o.isMesh && /TileSheet/i.test(o.material.name)) tm.add(o.material); });
+  const pools = [...tm].map((m) => debPool(m));
+  warmStep('wreck boards', () => { for (const P of pools) { P.mesh.count = Math.max(1, P.slots.length); if (!P.slots.length) { _sxM.makeScale(1e-4, 1e-4, 1e-4).setPosition(SHIP_X, 3, SHIP_Z); P.mesh.setMatrixAt(0, _sxM); } }
+    warmCompileOwn(pools.map((P) => P.mesh), SHIP_X + 14, 5, SHIP_Z + 12, SHIP_X, 3, SHIP_Z);
+    for (const P of pools) { P.mesh.count = P.slots.length; P.mesh.visible = P.slots.length > 0; } });
+});
+/* AND THE CORRUGATED IRON SHE IS PATCHED WITH (`dressSheets`, 2026-11-24): thirty-odd sheets, bent onto her, two draws. */
+bwGlb('assets/rusted-sheet.glb', (gltf) => {
+  if (!shipwreck.userData.dressSheets) return;
+  const g = shipwreck.userData.dressSheets(gltf.scene);
+  bakeStatic(g);
+  warmStep('wreck sheets', () => warmCompileOwn([g], SHIP_X + 14, 5, SHIP_Z + 12, SHIP_X, 3, SHIP_Z));
 });
 /* AND THE SEA CHEST IS THE OWNER'S OWN MODEL, in three pieces so its lid can
  * be hung on a real hinge. It is NOT baked: the lid has to survive as
@@ -33590,9 +33626,15 @@ bwGlb('assets/chest.glb', (gltf) => {
    * shipwreck.js), leaving a sliver of sand along them. Now it runs to 6 cm
    * inside her skin, which is inside the topside's own timber, and up to
    * 0.45 m over the rail at its highest. */
-  const cutHW = new Array(17);
-  for (let i = 0; i < 17; i++)
-    cutHW[i] = SN.halfAtY(-SN.HALF + (i / 16) * SN.LEN, SN.DECK_Y) - 0.06;
+  /* AND ON HER CURVE, NOT ITS CHORDS (2026-11-24, the blue line at the foot of her quarters). Seventeen stations are 1.6 m
+   * apart, and her quarter bends enough for the straight line between two of them to run 11 cm inside it: with the 6 cm
+   * that is past the 13 of her side, so the dune's crest stood in front of her planking. A station every 0.5 m (1 cm of
+   * sag), and her half-width at the deck AND at the rail — she flares between, so the deck's is short of her higher up. */
+  const CUT_N = 53, cutHW = [];
+  for (let i = 0; i < CUT_N; i++) {
+    const x = -SN.HALF + (i / (CUT_N - 1)) * SN.LEN;
+    cutHW.push(new THREE.Vector2(SN.halfAtY(x, SN.DECK_Y) - 0.06, SN.halfAtY(x, SN.DECK_Y + SN.BULWARK) - 0.06));
+  }
   const prevShipCliff = cliff.material.onBeforeCompile;
   cliff.material.onBeforeCompile = function (sh, rndr) {
     if (prevShipCliff) prevShipCliff.call(this, sh, rndr);
@@ -33600,25 +33642,22 @@ bwGlb('assets/chest.glb', (gltf) => {
     sh.uniforms.uShipCutHalf = { value: SN.HALF };
     sh.uniforms.uShipCutTop = { value: SN.DECK_Y + SN.BULWARK + 0.45 };
     sh.uniforms.uShipCutHW = { value: cutHW };
+    sh.uniforms.uShipCutY = { value: new THREE.Vector2(SN.DECK_Y, SN.BULWARK) };
     sh.vertexShader = 'varying vec3 vShipW;\n' + sh.vertexShader.replace(
       '#include <fog_vertex>',
       '#include <fog_vertex>\n  vShipW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader =
       'varying vec3 vShipW;\nuniform vec2 uShipCutC;\nuniform float uShipCutHalf;\n'
-      + 'uniform float uShipCutTop;\nuniform float uShipCutHW[17];\n'
+      + `uniform float uShipCutTop;\nuniform vec2 uShipCutY;\nuniform vec2 uShipCutHW[${CUT_N}];\n`
       + sh.fragmentShader.replace('#include <clipping_planes_fragment>', `
       #include <clipping_planes_fragment>
       {
         float slx = vShipW.x - uShipCutC.x;
         if (vShipW.y < uShipCutTop && slx > 5.0 && slx < uShipCutHalf) {
-          float st = (slx + uShipCutHalf) / (2.0 * uShipCutHalf) * float(17 - 1);
-          int si = int(floor(st));
-          float sf = st - float(si), sa = 0.0, sb = 0.0;
-          for (int k = 0; k < 17; k++) {
-            if (k == si) sa = uShipCutHW[k];
-            if (k == si + 1) sb = uShipCutHW[k];
-          }
-          if (abs(vShipW.z - uShipCutC.y) < mix(sa, sb, sf)) discard;
+          float st = (slx + uShipCutHalf) / (2.0 * uShipCutHalf) * ${CUT_N - 1}.0;
+          int si = min(int(floor(st)), ${CUT_N - 2});
+          vec2 hw = mix(uShipCutHW[si], uShipCutHW[si + 1], st - float(si));
+          if (abs(vShipW.z - uShipCutC.y) < mix(hw.x, hw.y, clamp((vShipW.y - uShipCutY.x) / uShipCutY.y, 0.0, 1.0))) discard;
         }
       }`);
   };
@@ -36240,8 +36279,26 @@ const billy = { mesh: null, frames: null, photo: [null, null, null], t: 0, mouth
   const m = new THREE.Mesh(new THREE.PlaneGeometry(BILLY_W, BILLY_H), mat);
   // on the boards of her after bulkhead (the small pane that stood behind
   // him read as a grey card round the plaque and is gone)
-  m.position.set(SHIP_X + SN.BR_X1 - 0.16, SHIP_Y_DECK + SN.BR_STEP + 1.45, SHIP_Z + 0.04);
+  /* AND HE IS ON A PLAQUE, ON THE WALL (2026-11-24, the owner: "make the fish not be floating off the wall ... but be on
+   * an actual plaque"). The picture hung 8.5 cm off the bulkhead's boards with nothing behind it: now a carved board —
+   * the toy's own shield, concave corners, a moulded edge — 2.5 cm thick, screwed flat to the boards (its back on their
+   * face, BR_X1 - 0.075), and the picture laid on its front. It is his child, so it goes where he goes. */
+  m.position.set(SHIP_X + SN.BR_X1 - 0.075 - 0.031, SHIP_Y_DECK + SN.BR_STEP + 1.45, SHIP_Z + 0.04);
   m.rotation.y = -Math.PI / 2;
+  {
+    const W = 0.60, H = 0.47, k = 0.075, b = k * 0.42, sh = new THREE.Shape(), x0 = -W / 2, x1 = W / 2, y0 = -H / 2, y1 = H / 2;
+    sh.moveTo(x0 + k, y0); sh.lineTo(x1 - k, y0); sh.quadraticCurveTo(x1 - b, y0 + b, x1, y0 + k);
+    sh.lineTo(x1, y1 - k); sh.quadraticCurveTo(x1 - b, y1 - b, x1 - k, y1); sh.lineTo(x0 + k, y1); sh.quadraticCurveTo(x0 + b, y1 - b, x0, y1 - k);
+    sh.lineTo(x0, y0 + k); sh.quadraticCurveTo(x0 + b, y0 + b, x0 + k, y0);
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.016, bevelEnabled: true, bevelThickness: 0.0045, bevelSize: 0.008, bevelSegments: 2, curveSegments: 6 });
+    geo.translate(0, -0.012, -0.0255);                                // its back flat on the boards, its face just behind the picture
+    { const P = geo.attributes.position, U = geo.attributes.uv; for (let i = 0; i < P.count; i++) U.setXY(i, P.getX(i) * 1.6 + 0.3, P.getY(i) * 1.6 + 0.2); }
+    const wood = texLoader.load('assets/wreck-wood.jpg'); wood.wrapS = wood.wrapT = THREE.RepeatWrapping; wood.anisotropy = 8;
+    const pm = new THREE.MeshStandardMaterial({ map: wood, emissiveMap: wood, color: 0x6e4c32, emissive: 0x3c2818, emissiveIntensity: 0.5, roughness: 0.55, metalness: 0 });
+    if (shipwreck.userData.holdLight) shipwreck.userData.holdLight.lit(pm);
+    const board = new THREE.Mesh(geo, pm); board.name = 'billyBoard'; board.raycast = () => {};
+    m.add(board);
+  }
   scene.add(m);
   billy.mesh = m;
   /* THE KICK AND THE ASPECT BOTH WANT `scale.x`, so the aspect is kept as
@@ -37330,8 +37387,18 @@ function smashShipStore(B, speed, quiet = false) {
     }
     T.removeFromParent();
   }
-  if (quiet) return;
   const cx = (B.wbox.min.x + B.wbox.max.x) / 2, cz = (B.wbox.min.z + B.wbox.max.z) / 2;
+  if (quiet) {
+    // a store broken in a saved game: its boards are lying where they fell (they were lost on every reload before)
+    if (B.u.kind === 'barrel' || B.u.kind === 'crate') {
+      let wood = null, most = 0; for (const [mat, L] of tris) if (/TileSheet/i.test(mat.name) && L.P.length > most) { most = L.P.length; wood = mat; }
+      const s = B.wbox.getSize(new THREE.Vector3());
+      const e = { lx: B.u.lie ? Math.min(s.x, s.z) : Math.min(s.x, s.z), lz: Math.max(s.x, s.z), ly: s.y };
+      if (!B.u.lie) e.lz = e.lx;
+      if (wood) shatterStore(B.u.kind, !!B.u.lie, wood, new THREE.Vector3(cx, B.floor, cz), B.u.ry, e, { x: 0, z: 0 }, 0, shipDebFloor, shipDebConfine, true);
+    }
+    return;
+  }
   const cs = Math.cos(-B.u.ry), sn = Math.sin(-B.u.ry);
   const toU = (x, y, z, o) => { const dx = x - cx, dz = z - cz; o.x = dx * cs - dz * sn; o.y = y - B.floor; o.z = dx * sn + dz * cs; return o; };
   // its extent in its own frame, off every vertex
@@ -37356,7 +37423,15 @@ function smashShipStore(B, speed, quiet = false) {
   const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
   const kick = Math.min(2.4, 0.9 + (speed || 5) * 0.11);
   const steel = B.u.kind === 'pot' || B.u.kind === 'basket';
+  /* A BARREL OR A CRATE IS ITS BOARDS (`shatterStore`): the wood of it goes as solid boards that can be kicked about;
+   * what else it carried (a lantern's iron and glass) still comes off as the pieces of its own model */
+  let wood = null;
+  if (B.u.kind === 'barrel' || B.u.kind === 'crate') {
+    let most = 0; for (const [mat, L] of tris) if (/TileSheet/i.test(mat.name) && L.P.length > most) { most = L.P.length; wood = mat; }
+    if (wood) shatterStore(B.u.kind, !!B.u.lie, wood, new THREE.Vector3(cx, B.floor, cz), B.u.ry, ext, { x: dx, z: dz }, speed, shipDebFloor, shipDebConfine, false);
+  }
   for (const [key, pc] of pieces) {
+    if (wood && pc.mat === wood) continue;
     const nT = pc.P.length / 9;
     let mx = 0, my = 0, mz = 0;
     for (let j = 0; j < pc.P.length; j += 3) { mx += pc.P[j]; my += pc.P[j + 1]; mz += pc.P[j + 2]; }
@@ -37403,8 +37478,8 @@ function smashShipStore(B, speed, quiet = false) {
     sfxWoodSnap();
     if (!playSample('camBreak', 1.0 + Math.random() * 0.12, 0.05)) { sfxPropHit('metal', 6); sfxPropHit('metal', 3); }
   } else {
-    // and splinters off the break
-    const sm = [...pieces.values()][0];
+    // and splinters off the break (a barrel or a crate makes its own: `shatterStore`)
+    const sm = wood ? null : [...pieces.values()][0];
     for (let j = 0; j < 12 && sm; j++) {
       const L = 0.05 + Math.random() * 0.14;
       const s = new THREE.Mesh(new THREE.BoxGeometry(L, 0.015, 0.02), sm.mat);
@@ -37418,6 +37493,316 @@ function smashShipStore(B, speed, quiet = false) {
     sfxWoodSnap();
   }
 }
+/* ---- DEBRIS: WHAT A BROKEN BARREL OR CRATE IS MADE OF (2026-11-24, the owner: "break apart into little real pieces much
+ * like the fromsoft games like dark souls ... that can be kicked around ... everything has gravity and follows the laws of
+ * physics"). A barrel is its staves, its hoops and the boards of its heads; a crate its slats and its corner posts — each
+ * broken in one to three, each a SOLID board with its thickness, in the thing's own texture (a rectangle of its trim sheet
+ * the size of the board, `aUvR`), never the shell of the model it came from. Each is a rigid body: gravity, a box's
+ * inertia, an impulse at every corner that goes under what it lies on (restitution while it is still moving fast,
+ * Coulomb friction), so it tumbles and comes to rest lying on a face. A body walking through kicks it on. A piece at
+ * rest sleeps — no arithmetic — and stays, to be kicked again: they are never folded into the rubble. ALL OF THEM ARE
+ * TWO DRAWS: one InstancedMesh of a unit box per material. Over `DEB_MAX` the oldest asleep goes. */
+const DEB_MAX = 1600, DEB_G = 15;           // (the gibs' own gravity: one game, one gravity)
+const debPools = new Map(), shBoards = [];
+const _sxUnit = new THREE.BoxGeometry(1, 1, 1);
+const _sxM = new THREE.Matrix4(), _sxS = new THREE.Vector3(), _sxQ = new THREE.Quaternion(), _sxV = new THREE.Vector3(), _sxR = new THREE.Vector3(), _sxT = new THREE.Vector3(), _sxN = new THREE.Vector3(0, 1, 0), _sxW = new THREE.Vector3(), _sxC = new THREE.Vector3();
+function debPool(mat) {
+  let P = debPools.get(mat); if (P) return P;
+  const m = mat.clone(); m.userData = {};
+  const prevOBC = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
+  m.onBeforeCompile = (sh, r) => {
+    if (prevOBC) prevOBC.call(m, sh, r);      // (a clone drops it: the keep's own island light rides on it)
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aUvR;').replace('#include <uv_vertex>', `#include <uv_vertex>
+  { vec3 dbU = vec3(aUvR.xy + uv * aUvR.zw, 1.0);
+  #ifdef USE_MAP
+    vMapUv = (mapTransform * dbU).xy;
+  #endif
+  #ifdef USE_NORMALMAP
+    vNormalMapUv = (normalMapTransform * dbU).xy;
+  #endif
+  #ifdef USE_EMISSIVEMAP
+    vEmissiveMapUv = (emissiveMapTransform * dbU).xy;
+  #endif
+  }`);
+  };
+  m.customProgramCacheKey = () => 'shBoards|' + (prevKey ? prevKey.call(mat) : '');
+  // (the hold's light comes with the source's own hook, chained above: lit a second time it was declared twice and the
+  //  program failed to link — 255 'program not valid' a load, found with &glcheck=1)
+  const mesh = new THREE.InstancedMesh(_sxUnit, m, DEB_MAX);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const uvr = new THREE.InstancedBufferAttribute(new Float32Array(DEB_MAX * 4), 4); uvr.setUsage(THREE.DynamicDrawUsage);
+  mesh.geometry = _sxUnit.clone(); mesh.geometry.setAttribute('aUvR', uvr);
+  mesh.count = 0; mesh.visible = false; mesh.frustumCulled = false; mesh.name = 'debris'; mesh.userData.noBake = true;   // (not drawn while empty: a pool per material, and most are empty)
+  scene.add(mesh);
+  P = { mesh, uvr, slots: [], dirty: false };
+  debPools.set(mat, P);
+  return P;
+}
+/* compile a pool's program now, off the frame (the first break in a new place was a 230-260 ms hitch: its material compiling
+ * on the frame of the blow). One board, too small to see, shown to the compiler and taken away. */
+function debWarm(mats) {
+  const pools = mats.map((m) => debPool(m)).filter((P) => !P.slots.length);
+  if (!pools.length || !renderer.compileAsync) return;
+  const G = new THREE.Group();
+  for (const P of pools) { P.mesh.count = 1; P.mesh.visible = true; _sxM.makeScale(1e-5, 1e-5, 1e-5).setPosition(camera.position.x, -500, camera.position.z); P.mesh.setMatrixAt(0, _sxM); P.mesh.instanceMatrix.needsUpdate = true; }
+  const back = () => { for (const P of pools) { P.mesh.count = P.slots.length; P.mesh.visible = P.slots.length > 0; } };
+  try { Promise.all(pools.map((P) => renderer.compileAsync(P.mesh, camera, scene))).then(back, back); } catch (e) { back(); }
+}
+function debWrite(d) {
+  _sxS.copy(d.h).multiplyScalar(2);
+  _sxM.compose(d.pos, d.q, _sxS);
+  d.P.mesh.setMatrixAt(d.i, _sxM); d.P.dirty = true;
+}
+function debRemove(d) {
+  const P = d.P, last = P.slots.length - 1, e = P.slots[last];
+  if (e !== d) { P.slots[d.i] = e; e.i = d.i; debWrite(e); P.uvr.array.set(e.uv, e.i * 4); P.uvr.needsUpdate = true; }
+  P.slots.pop(); P.mesh.count = P.slots.length; P.mesh.visible = P.slots.length > 0; P.dirty = true;
+  const k = shBoards.indexOf(d); if (k >= 0) shBoards.splice(k, 1);
+}
+/* one board: `size` (x: its length, y: its thickness, z: its width) at `pos` turned `q`; `uv` the rectangle of its map */
+function debAdd(mat, size, pos, q, vel, spin, uv, floor, confine) {
+  if (shBoards.length >= DEB_MAX) { const old = shBoards.find((x) => !x.awake) || shBoards[0]; debRemove(old); }
+  const P = debPool(mat), h = new THREE.Vector3(size.x / 2, size.y / 2, size.z / 2);
+  const mass = Math.max(0.05, size.x * size.y * size.z * 520);          // (old pine, 520 kg a cubic metre)
+  // (its inertia as if no thinner than 2.5 cm: a 3 mm hoop's own is so small it rocked on its edge for ever)
+  const sy = Math.max(size.y, 0.025), sz = Math.max(size.z, 0.025);
+  const Ib = new THREE.Vector3(12 / (mass * (sy * sy + sz * sz)), 12 / (mass * (size.x * size.x + sz * sz)), 12 / (mass * (size.x * size.x + sy * sy)));
+  const d = { P, i: P.slots.length, h, pos: pos.clone(), q: q.clone(), v: vel.clone(), w: spin.clone(), invM: 1 / mass, Ib, uv: Float32Array.from(uv), floor, confine, awake: true, still: 0, kickT: 0 };
+  P.slots.push(d); P.mesh.count = P.slots.length; P.mesh.visible = true;
+  P.uvr.array.set(d.uv, d.i * 4); P.uvr.needsUpdate = true;
+  debWrite(d); shBoards.push(d);
+  return d;
+}
+// the inverse inertia of a piece, in the world, applied to a vector (in place)
+function debIinv(d, v) { _sxQ.copy(d.q).invert(); v.applyQuaternion(_sxQ); v.x *= d.Ib.x; v.y *= d.Ib.y; v.z *= d.Ib.z; return v.applyQuaternion(d.q); }
+const _sxHits = [], _sxPool = Array.from({ length: 8 }, () => new THREE.Vector3());   // (no garbage per contact)
+const _sxCorners = [[1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1], [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1]];
+function debStep(d, h) {
+  d.v.y -= DEB_G * h;
+  d.v.multiplyScalar(1 - 0.12 * h); d.w.multiplyScalar(1 - 0.5 * h);
+  d.pos.addScaledVector(d.v, h);
+  _sxQ.set(d.w.x * h * 0.5, d.w.y * h * 0.5, d.w.z * h * 0.5, 0).multiply(d.q);
+  d.q.set(d.q.x + _sxQ.x, d.q.y + _sxQ.y, d.q.z + _sxQ.z, d.q.w + _sxQ.w).normalize();
+  // the corners under what it lies on
+  let deep = 0, n = 0; const hits = _sxHits; hits.length = 0;
+  const fy = d.floor(d.pos.x, d.pos.z, d.pos.y);
+  for (const c of _sxCorners) {
+    _sxC.set(c[0] * d.h.x, c[1] * d.h.y, c[2] * d.h.z).applyQuaternion(d.q).add(d.pos);
+    const pen = fy - _sxC.y;
+    if (pen > 0) { hits.push(_sxPool[n].copy(_sxC)); deep = Math.max(deep, pen); n++; }
+  }
+  let grounded = false;
+  if (n) {
+    grounded = true;
+    d.pos.y += deep;
+    for (const c of hits) c.y += deep;
+    /* two passes, each corner's impulse the whole of what it needs from where the others left it (sequential impulses):
+     * divided between the corners, they never added up, and a board at rest kept sinking at half a metre a second */
+    for (let it = 0; it < 2; it++) for (const c of hits) {
+      _sxR.subVectors(c, d.pos);
+      _sxV.copy(d.w).cross(_sxR).add(d.v);                 // the corner's own velocity
+      const vn = _sxV.y;
+      if (vn >= 0) continue;
+      _sxT.copy(_sxR).cross(_sxN); debIinv(d, _sxT); _sxW.copy(_sxT).cross(_sxR);
+      const kn = d.invM + _sxW.y, e = it === 0 && vn < -1.6 ? 0.28 : 0;
+      const j = -(1 + e) * vn / kn;
+      d.v.y += j * d.invM; _sxT.copy(_sxR).cross(_sxN).multiplyScalar(j); d.w.add(debIinv(d, _sxT));
+      // friction, against the corner's slide
+      _sxV.copy(d.w).cross(_sxR).add(d.v); _sxV.y = 0;
+      const vt = _sxV.length();
+      if (vt > 1e-4) {
+        const tx = -_sxV.x / vt, tz = -_sxV.z / vt; _sxV.set(tx, 0, tz);
+        _sxT.copy(_sxR).cross(_sxV); debIinv(d, _sxT); _sxW.copy(_sxT).cross(_sxR);
+        const kt = d.invM + _sxW.dot(_sxV), jt = Math.min(0.55 * Math.abs(j), vt / kt);
+        d.v.addScaledVector(_sxV, jt * d.invM); _sxT.copy(_sxR).cross(_sxV).multiplyScalar(jt); d.w.add(debIinv(d, _sxT));
+      }
+    }
+  }
+  // rolling friction: a board on the boards stops rocking, and the thinner the sooner (a splinter's rock is all edge)
+  if (grounded) d.w.multiplyScalar(1 - Math.min(0.85, 5 * Math.max(1, 0.025 / (2 * Math.min(d.h.y, d.h.z))) * h));
+  if (d.confine) d.confine(d.pos, d.v);
+  return grounded;
+}
+const _sxP = { x: 0, z: 0, ok: false };
+// lying on a face (one of its axes plumb), not balanced on an edge or caught mid-topple: only then may it sleep
+const _sxAx = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)], _sxA = new THREE.Vector3();
+function debFlat(d) { for (const a of _sxAx) if (Math.abs(_sxA.copy(a).applyQuaternion(d.q).y) > 0.985) return true; return false; }
+function updateDebris(dt) {
+  if (!shBoards.length) return;
+  dt = Math.min(dt, 1 / 30);
+  // a body walking through kicks them on
+  const p = camera.position, feet = p.y - playerEye();
+  const vx = _sxP.ok ? (p.x - _sxP.x) / Math.max(dt, 1e-3) : 0, vz = _sxP.ok ? (p.z - _sxP.z) / Math.max(dt, 1e-3) : 0;
+  _sxP.x = p.x; _sxP.z = p.z; _sxP.ok = true;
+  const sp = Math.hypot(vx, vz), walking = sp > 0.4 && sp < 12 && !frozen();
+  for (const d of shBoards) {
+    if (d.kickT > 0) d.kickT -= dt;
+    if (walking && d.kickT <= 0 && d.pos.y < feet + 0.45 && d.pos.y > feet - 0.6) {
+      const dx = d.pos.x - p.x, dz = d.pos.z - p.z, r = 0.34 + Math.max(d.h.x, d.h.z) * 0.6;
+      if (dx * dx + dz * dz < r * r && dx * vx + dz * vz > 0) {
+        const k = Math.min(3.2, 0.5 + sp * 0.55) * (0.7 + Math.random() * 0.5);
+        d.v.x += (vx / sp) * k + dx * 0.8; d.v.z += (vz / sp) * k + dz * 0.8; d.v.y += 0.6 + Math.random() * 0.9 * (k / 3);
+        d.w.x += (Math.random() - 0.5) * 9; d.w.y += (Math.random() - 0.5) * 6; d.w.z += (Math.random() - 0.5) * 9;
+        d.awake = true; d.still = 0; d.kickT = 0.25;
+        if (Math.random() < 0.5) sfxPlankKnock(d.pos.x, d.pos.z, Math.min(3, k), false);
+      }
+    }
+    if (!d.awake) continue;
+    const N = 3, h = dt / N; let g = false;
+    for (let s = 0; s < N; s++) g = debStep(d, h) || g;
+    /* (asleep under 0.2 m/s: lying still, a substep's own gravity is 0.08 m/s before the floor takes it back, and a rest
+     * test under that never passed — every board computed for ever) */
+    const flat = g && debFlat(d);
+    if (flat && d.v.lengthSq() < 0.04 && d.w.lengthSq() < 1.0) { d.still += dt; if (d.still > 0.4) { d.awake = false; d.v.set(0, 0, 0); d.w.set(0, 0, 0); } }
+    else if (!g || d.v.lengthSq() > 0.09 || d.w.lengthSq() > 4) d.still = 0;
+    // (and anything grounded and all but still for eight seconds sleeps: a board on the keep's sea is lifted by the tide every step and never counted as still)
+    d.age = (d.age || 0) + dt; if (g && d.age > 8 && d.v.lengthSq() < 0.09 && d.w.lengthSq() < 1.0) { d.awake = false; d.v.set(0, 0, 0); d.w.set(0, 0, 0); debWrite(d); continue; }
+    if (g && !flat && d.v.lengthSq() < 0.01 && d.w.lengthSq() < 0.04) { d.w.x += (Math.random() - 0.5) * 1.5; d.w.z += (Math.random() - 0.5) * 1.5; }   // (balanced on an edge: a nudge, and it falls to a face)
+    // and one that has stopped going anywhere sleeps after a second whatever it is still rocking (a splinter's 3 mm rock)
+    if (flat && d.v.lengthSq() < 0.04) { d.stay = (d.stay || 0) + dt; if (d.stay > 1.0) { d.awake = false; d.v.set(0, 0, 0); d.w.set(0, 0, 0); d.stay = 0; } } else d.stay = 0;
+    if (d.pos.y < -60) { debRemove(d); continue; }
+    debWrite(d);
+  }
+  for (const P of debPools.values()) if (P.dirty) { P.mesh.instanceMatrix.needsUpdate = true; P.dirty = false; }
+}
+/* the rectangle of a trim sheet for a board `len` x `wid` (metres, at its `k` metres a tile), inside band v0..v1 */
+function debUv(len, wid, v0, v1, k = 1.47) {
+  const dv = Math.min(v1 - v0 - 0.002, wid / k), du = len / k;
+  return [Math.random() * 3, v0 + Math.random() * (v1 - v0 - dv), du, dv];
+}
+/* WHERE A BOARD'S FACE COMES FROM. A `skin` is { mat, uv(len, wid) -> [u0, v0, du, dv] }:
+ *   bandSkin — a band of a trim sheet that tiles along u (the ship's stores: `DEB_BANDS`), at its metres a tile;
+ *   geoSkin  — a real patch of the thing's own surface: a triangle of its model (the bigger ones), and round that
+ *              triangle's own uv a rectangle the board's size at that triangle's own scale (uv per metre), no larger than
+ *              the triangle's patch — so an atlas never gives a board its neighbour's picture, and a cut-out map (the
+ *              keep's crate: slats with air between) gives one of its slats, not the air. */
+const DEB_BANDS = { wood: [0.525, 0.722], wood2: [0.756, 0.995], iron: [0.152, 0.42] };
+function bandSkin(mat, v0, v1, k = 1.47) {
+  return { mat, uv: (len, wid) => { const dv = Math.min(v1 - v0 - 0.002, wid / k), du = len / k; return [Math.random() * 3, v0 + Math.random() * (v1 - v0 - dv), du, dv]; } };
+}
+const storeSkin = (mat) => ({ wood: bandSkin(mat, ...DEB_BANDS.wood), wood2: bandSkin(mat, ...DEB_BANDS.wood2), iron: bandSkin(mat, ...DEB_BANDS.iron) });
+function geoSkin(mat, geos, M = null) {
+  const T = []; const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  for (const g of geos) {
+    const P = g.attributes.position, U = g.attributes.uv, I = g.index; if (!U) continue;
+    const n = I ? I.count : P.count;
+    for (let t = 0; t + 2 < n; t += 3) {
+      const i0 = I ? I.getX(t) : t, i1 = I ? I.getX(t + 1) : t + 1, i2 = I ? I.getX(t + 2) : t + 2;
+      a.fromBufferAttribute(P, i0); b.fromBufferAttribute(P, i1); c.fromBufferAttribute(P, i2);
+      if (M) { a.applyMatrix4(M); b.applyMatrix4(M); c.applyMatrix4(M); }
+      const A = b.clone().sub(a).cross(c.clone().sub(a)).length() / 2;
+      const u0 = U.getX(i0), v0 = U.getY(i0), u1 = U.getX(i1), v1 = U.getY(i1), u2 = U.getX(i2), v2 = U.getY(i2);
+      const ua = Math.abs((u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0)) / 2;
+      if (A < 1e-5 || ua < 1e-9) continue;
+      T.push({ A, k: Math.sqrt(ua / A), cu: (u0 + u1 + u2) / 3, cv: (v0 + v1 + v2) / 3, eu: Math.max(u0, u1, u2) - Math.min(u0, u1, u2), ev: Math.max(v0, v1, v2) - Math.min(v0, v1, v2) });
+    }
+  }
+  T.sort((p, q) => q.A - p.A); T.length = Math.max(1, Math.ceil(T.length * 0.5));
+  let tot = 0; for (const t of T) tot += t.A;
+  return { mat, uv: (len, wid) => {
+    if (!T.length) return [0, 0, 1, 1];
+    let r = Math.random() * tot, t = T[0]; for (const q of T) { r -= q.A; if (r <= 0) { t = q; break; } }
+    const du = Math.min(len * t.k, t.eu * 0.9), dv = Math.min(wid * t.k, t.ev * 0.9);
+    return [t.cu - du / 2, t.cv - dv / 2, du, dv];
+  } };
+}
+/* a barrel or a crate, as its boards: its frame is its centre on the floor `c`, turned `ry`; `ext` its size in that frame */
+function shatterStore(kind, lie, skins, c, ry, ext, dir, speed, floor, confine, quiet) {
+  if (skins.isMaterial) skins = storeSkin(skins);
+  const qy = new THREE.Quaternion().setFromAxisAngle(_sxN, ry), out = [];
+  const kick = Math.min(2.6, 0.9 + (speed || 5) * 0.12);
+  const add = (L, T, W, lp, lq, band) => {      // a board in the store's frame (lp, lq), broken in one to three along its length
+    const nb = L > 0.32 ? 1 + Math.floor(Math.random() * 3) : 1;
+    let a = -L / 2;
+    for (let b = 0; b < nb; b++) {
+      const len = b === nb - 1 ? L / 2 - a : (L / nb) * (0.7 + Math.random() * 0.6);
+      const mid = a + len / 2; a += len;
+      if (len < 0.03) continue;
+      const pl = new THREE.Vector3(mid, 0, 0).applyQuaternion(lq).add(lp);
+      const pos = pl.clone().applyQuaternion(qy).add(c), q = qy.clone().multiply(lq);
+      const outw = pl.clone().setY(0).applyQuaternion(qy); const ol = outw.length() || 1; outw.multiplyScalar(1 / ol);
+      const facing = outw.x * dir.x + outw.z * dir.z < -0.2;
+      const kk = kick * (facing ? 1 : 0.55) * (0.6 + Math.random() * 0.6);
+      const vel = quiet ? new THREE.Vector3((Math.random() - 0.5) * 1.2, 0.5, (Math.random() - 0.5) * 1.2)
+        : new THREE.Vector3(dir.x * kk + outw.x * (0.6 + Math.random()), 0.6 + Math.random() * 1.6, dir.z * kk + outw.z * (0.6 + Math.random()));
+      const spin = new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 9);
+      const sk = skins[band] || skins.wood;
+      out.push(debAdd(sk.mat, new THREE.Vector3(len, T, W), pos, q, vel, spin, sk.uv(len, W), floor, confine));
+    }
+  };
+  const qa = (ax, ay, az) => new THREE.Quaternion().setFromEuler(new THREE.Euler(ax, ay, az, 'YXZ'));
+  if (kind === 'barrel') {
+    // its axis up, or along its z lying down
+    const R = (lie ? Math.min(ext.lx, ext.ly) : Math.min(ext.lx, ext.lz)) / 2 * 0.96, H = (lie ? ext.lz : ext.ly) * 0.98;
+    const base = lie ? new THREE.Vector3(0, R, 0) : new THREE.Vector3(0, H / 2, 0), tilt = lie ? qa(Math.PI / 2, 0, 0) : new THREE.Quaternion();
+    const N = Math.min(16, Math.max(10, Math.round((Math.PI * 2) * R / 0.09))), W = (Math.PI * 2) * R / N * 0.98;   // (sixteen at most: a big keg is broader staves, not more)
+    for (let k = 0; k < N; k++) {
+      const a = k / N * (Math.PI * 2), lp = new THREE.Vector3(Math.cos(a) * (R - 0.012), 0, Math.sin(a) * (R - 0.012));
+      // a stave: its length up the axis, its thickness out, its width round
+      const lq = tilt.clone().multiply(qa(0, -a, 0)).multiply(qa(0, 0, Math.PI / 2));
+      add(H, 0.022, W, lp.applyQuaternion(tilt).add(base), lq, k % 3 ? 'wood' : 'wood2');
+    }
+    for (const fy of [-0.32, 0.32]) for (let k = 0; k < 6; k++) {                 // the hoops, in six bits of iron each
+      const a = (k + 0.5) / 6 * (Math.PI * 2), lp = new THREE.Vector3(Math.cos(a) * (R + 0.004), fy * H, Math.sin(a) * (R + 0.004));
+      const lq = tilt.clone().multiply(qa(0, -a + Math.PI / 2, 0));
+      add((Math.PI * 2) * R / 6 * 0.96, 0.006, 0.035, lp.applyQuaternion(tilt).add(base), lq, 'iron');
+    }
+    for (const fy of [-0.48, 0.48]) for (let k = -1; k <= 1; k++) {             // the heads, three boards each
+      const w = R * 0.62, lp = new THREE.Vector3(0, fy * H, k * w), L = 2 * Math.sqrt(Math.max(0.01, R * R - (k * w) * (k * w))) * 0.9;
+      add(L, 0.025, w * 0.96, lp.applyQuaternion(tilt).add(base), tilt.clone(), 'wood2');
+    }
+  } else if (kind === 'planks') {
+    // a table, a stool, a cart: its top in boards, its legs, and the planks of whatever else it was
+    const X = ext.lx, Y = ext.ly, Z = ext.lz, long = X >= Z, L = long ? X : Z, Wd = long ? Z : X, cols = Math.max(2, Math.round(Wd / 0.13));
+    const along = long ? new THREE.Quaternion() : qa(0, Math.PI / 2, 0);
+    for (let k = 0; k < cols; k++) { const o = -Wd / 2 + (k + 0.5) * Wd / cols; add(L, 0.035, Wd / cols * 0.92, long ? new THREE.Vector3(0, Y - 0.02, o) : new THREE.Vector3(o, Y - 0.02, 0), along, 'wood'); }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(Y * 0.96, 0.05, 0.05, new THREE.Vector3(sx * (X / 2 - 0.06), Y * 0.48, sz * (Z / 2 - 0.06)), qa(0, 0, Math.PI / 2), 'wood2');
+    for (const sz of [-1, 1]) add(L * 0.9, 0.03, 0.08, long ? new THREE.Vector3(0, Y * 0.82, sz * (Wd / 2 - 0.05)) : new THREE.Vector3(sz * (Wd / 2 - 0.05), Y * 0.82, 0), long ? qa(Math.PI / 2, 0, 0) : qa(Math.PI / 2, Math.PI / 2, 0), 'wood');   // the aprons
+    if (Y < 0.7 || L > 1.6) for (let k = 0; k < Math.round(L * 3); k++) add(L * (0.4 + Math.random() * 0.5), 0.03, 0.1, new THREE.Vector3((Math.random() - 0.5) * X * 0.7, 0.1 + Math.random() * Y * 0.7, (Math.random() - 0.5) * Z * 0.7), along, 'wood');
+  } else {
+    const X = ext.lx, Y = ext.ly, Z = ext.lz, T = 0.02, rows = Math.min(6, Math.max(2, Math.round(Y / 0.12))), rh = Y / rows;   // (six rows at most: a big crate has broader slats, not 300 boards)
+    for (let r = 0; r < rows; r++) {                                              // the sides, slat by slat
+      const y = (r + 0.5) * rh;
+      for (const s of [-1, 1]) {
+        add(X, T, rh * 0.9, new THREE.Vector3(0, y, s * (Z / 2 - T / 2)), qa(Math.PI / 2, 0, 0), r % 2 ? 'wood' : 'wood2');
+        add(Z, T, rh * 0.9, new THREE.Vector3(s * (X / 2 - T / 2), y, 0), qa(Math.PI / 2, Math.PI / 2, 0), r % 2 ? 'wood2' : 'wood');
+      }
+    }
+    const cols = Math.min(6, Math.max(2, Math.round(Z / 0.12))), cw = Z / cols;               // the top and the bottom
+    for (const yy of [T / 2, Y - T / 2]) for (let k = 0; k < cols; k++) add(X, T, cw * 0.9, new THREE.Vector3(0, yy, -Z / 2 + (k + 0.5) * cw), new THREE.Quaternion(), 'wood');
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(Y, 0.04, 0.04, new THREE.Vector3(sx * (X / 2 - 0.03), Y / 2, sz * (Z / 2 - 0.03)), qa(0, 0, Math.PI / 2), 'wood2');   // the corner posts
+  }
+  // and splinters off the break
+  for (let k = 0; k < 10; k++) {
+    const L = 0.05 + Math.random() * 0.14, lp = new THREE.Vector3((Math.random() - 0.5) * 0.4, 0.15 + Math.random() * 0.4, (Math.random() - 0.5) * 0.4);
+    const pos = lp.applyQuaternion(qy).add(c), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.random() * 3, Math.random() * 3, Math.random() * 3));
+    const vel = quiet ? new THREE.Vector3() : new THREE.Vector3(dir.x * (1 + Math.random() * 2) + (Math.random() - 0.5) * 1.6, 1 + Math.random() * 2, dir.z * (1 + Math.random() * 2) + (Math.random() - 0.5) * 1.6);
+    out.push(debAdd(skins.wood.mat, new THREE.Vector3(L, 0.012, 0.018), pos, q, vel, new THREE.Vector3(Math.random() * 14, Math.random() * 10, Math.random() * 14), skins.wood.uv(L, 0.018), floor, confine));
+  }
+  // already broken when the game was loaded: they come down and lie where they fell, before anyone sees them
+  if (quiet) for (const d of out) { for (let s = 0; s < 180 && d.awake; s++) { const g = debStep(d, 1 / 90); if (g && debFlat(d) && d.v.lengthSq() < 0.04 && d.w.lengthSq() < 0.36) { d.still += 1 / 90; if (d.still > 0.3) d.awake = false; } } d.v.set(0, 0, 0); d.w.set(0, 0, 0); d.awake = false; debWrite(d); }
+  return out;
+}
+// where a piece of her stores lies, and the room it stays in (her frame: her sole, her deck, her sides)
+function shipDebFloor(x, z, y) {
+  const lx = x - SHIP_X, lz = z - SHIP_Z;
+  // (over the hatch or the ladder well there is no deck: a board goes down into the hold, it does not lie on the air)
+  if (y > SN.DECK_Y - 0.4) { const f = shipFloorAt(lx, lz, y); return f === null ? SN.soleY(lx, lz) + 0.005 : f; }
+  return SN.soleY(lx, lz) + 0.005;
+}
+function shipDebConfine(p, v) {
+  /* (off her sides a piece BOUNCES only when it arrives fast: one lying against them was sent back a millimetre every
+   * step and never slept — `wall` takes the speed into the wall away, and only reflects a real hit) */
+  const wall = (c) => (Math.abs(c) > 0.5 ? -0.3 * c : 0);
+  const lx = p.x - SHIP_X, lz = p.z - SHIP_Z, deck = p.y > SN.DECK_Y - 0.3;
+  const x0 = deck ? -SN.HALF + 1.2 : SN.HOLD_X0 + 0.12, x1 = deck ? SN.HALF - 0.9 : SN.HOLD_X1 - 0.12;
+  if (lx < x0 || lx > x1) { p.x = SHIP_X + THREE.MathUtils.clamp(lx, x0, x1); v.x = wall(v.x); }
+  const hz = deck ? SN.halfAtY(THREE.MathUtils.clamp(lx, -SN.HALF, SN.HALF), SN.DECK_Y) - TOPSIDE_GAP : Math.min(SN.HOLD_HZ, SN.halfAtY(lx, SN.HOLD_Y) - 0.02) - 0.12;
+  if (Math.abs(lz) > hz) { p.z = SHIP_Z + Math.sign(lz) * hz; v.z = wall(v.z); }
+  // her quarters' bulkhead, but for its door
+  if (!deck && Math.abs(lz) > 0.7 && Math.abs(lx - 2.95) < 0.12) { p.x = SHIP_X + (v.x > 0 ? 2.83 : 3.07); v.x = wall(v.x); }
+}
+const TOPSIDE_GAP = 0.25;
 /* AND THE BASKET BREAKS IF YOU WALK INTO IT (the owner's word). Its box is a wall to the walk while it stands, so you
  * never get inside it: walking AT it — within a hand of its side and moving toward it, at a walk — is the blow. */
 const _sbwP = { x: 0, y: 0, z: 0, vy: 0, ok: false };
@@ -54064,6 +54449,7 @@ function update(dt, rawDt = dt) {
    * own lunge carries him off the ridge for a frame every time. */
   updateScp(dt);
   updateGibs(dt);
+  updateDebris(dt);
   cpTick(dt);                           // the castles' props: built as a job, and their pieces' physics
   updateSpurts(dt); updateBloodCloud(dt);
   updateBackSword(dt);
@@ -104399,6 +104785,8 @@ function cpMakeKinds() {
   }
   CP.ready = true;
   for (const S of Object.values(CP.sites)) S.built = false;     // (a site may already have waited for them)
+  // and the boards their wooden ones break into, compiled now (`debWarm`)
+  { const ms = new Set(); for (const kd of Object.values(CP.kinds)) if (kd.K.mat === 'wood') for (const pt of kd.parts) ms.add(pt.mat); debWarm([...ms]); }
 }
 // the pack's material, made for these courts: no metal (there is no environment to reflect: a hoop went black), the
 // maps nearest-filtered like the rest of the game, both sides drawn (a piece of a shell is seen from inside), a little
@@ -104886,9 +105274,25 @@ function cpBreak(P, speed = 6, from = null, worldM = null) {
   const src = from || camera.position;
   let dx = ctr.x - src.x, dz = ctr.z - src.z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
   const kick = Math.min(4.2, 0.7 + speed * 0.22);
-  const pieces = cpFracture(kind, (Math.random() * 2) | 0);
   const mats = cpMats(kind), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3();
   M.decompose(pos, q, sc);
+  /* THE WOODEN ONES GO TO BOARDS (2026-11-24, the owner: "make the ... props break into pieces too"), the ship's way: a barrel,
+   * a keg or a bucket to staves, hoops and heads; a crate or a box to slats and posts; a table, a stool or a cart to its
+   * top's planks, its legs and its aprons — solid, faced with patches of its own model (`geoSkin`), kicked about by a
+   * body walking through. Its sacks, its pottery and its glass still break as the pieces of their own model. */
+  const woodK = K.mat === 'wood' ? (K.frac === 'staves' ? 'barrel' : /stool|table|cart/i.test(kind.name) ? 'planks' : 'crate') : null;
+  if (woodK) {
+    const byA = kind.parts.map((pt) => { const P = pt.geo.attributes.position; return { pt, n: P.count }; }).sort((a, c) => c.n - a.n);
+    const wood = geoSkin(byA[0].pt.mat, [byA[0].pt.geo], null), iron = byA.length > 1 ? geoSkin(byA[byA.length - 1].pt.mat, [byA[byA.length - 1].pt.geo], null) : wood;
+    const eu = new THREE.Euler().setFromQuaternion(q, 'YXZ'), base = new THREE.Vector3(0, 0, 0).applyMatrix4(M), s0 = sc.x || 1;
+    const D = CP_SITE_DEFS[site.id], cfloor = (x, z) => { const f = D.floor(x, z); return f !== null && f !== undefined ? f : D.nominal(); };
+    shatterStore(woodK, false, { wood, wood2: wood, iron }, base, eu.y, { lx: kind.hx * 2 * s0 * 0.97, ly: kind.h * s0 * 0.98, lz: kind.hz * 2 * s0 * 0.97 }, { x: dx, z: dz }, speed, cfloor, null, false);
+    if (P.fill) for (const f of P.fill) cpLoose(f, site, M, dx, dz, kick);
+    if (P.carries) for (const C of P.carries) if (!C.dead) cpDrop(C);
+    cpBreakSound(K.mat, kind, speed);
+    return;
+  }
+  const pieces = cpFracture(kind, (Math.random() * 2) | 0);
   const sorted = pieces.slice().sort((a, b) => b.c.y - a.c.y);
   sorted.forEach((pc, i) => {
     const m = new THREE.Mesh(pc.geo, mats);
@@ -113228,8 +113632,7 @@ function skqArtOut(p) {
 }
 function skqArtSpawn(x, z, from = null) {
   if (art.world) return;
-  const w = new THREE.Group(), m = whaleArtModel.clone(true);
-  m.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  const w = new THREE.Group(), m = whaleArtCopy(true);
   m.scale.setScalar(4.2); m.rotation.set(-Math.PI / 2 + 0.32, 0, 0); m.position.y = 0.045;   // face up, one edge of the bezel in the meat (the beach's)
   w.add(m);
   const fy = skrimFloorW(x, z);
@@ -113376,7 +113779,7 @@ function skqHand(on) {
   if (!on) { if (SKQ.held) { SKQ.held.removeFromParent(); SKQ.held = null; } return; }
   if (SKQ.held || !u || !u.model) return;
   const H = u.model.getObjectByName('Character1_RightHand'); if (!H) return;
-  const m = whaleArtModel.clone(true); m.scale.setScalar(4.2);
+  const m = whaleArtCopy(); m.scale.setScalar(4.2);
   u.g.updateMatrixWorld(true); H.getWorldPosition(m.position); scene.add(m); m.updateMatrixWorld(true); H.attach(m);
   m.traverse((o) => { o.raycast = () => {}; });
   SKQ.held = m;
@@ -118199,7 +118602,7 @@ function artWeapon() { return isArtWeapon(equipped) && equipped.artifact && equi
  *   the Sea — a scallop, ribbed and pale, cupping a blue pearl.
  * The old contract holds, so every place they lie keeps working (the belly, the sand, the chest, Skrim's hand): the
  * front faces +Z (they are laid face up by turning them −90° about x), about the medallion's size (8–9 cm), and
- * `userData.pearl` is the mesh that glows (the Sea's is named `seaPearl`: a clone's userData is copied as JSON). */
+ * `userData.pearl` is the mesh that glows (the Sea has none now: the owner's fossil). */
 const artPxSet = (g, x, y, c) => { g.fillStyle = c; g.fillRect(x, y, 1, 1); };
 function artPx(w, h, paint) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -118219,88 +118622,64 @@ const artGem = (color, glow, ei = 1.6) => new THREE.MeshStandardMaterial({ color
 // a hash for a vertex, by where it is: the same corner moved the same way in every face it belongs to (a polyhedron's faces are not shared)
 const artJit = (x, y, z, seed) => { let h = Math.imul((Math.round(x * 1e4) * 73856093) ^ (Math.round(y * 1e4) * 19349663) ^ (Math.round(z * 1e4) * 83492791) ^ seed, 2654435761); h ^= h >>> 15; return ((h >>> 0) % 10000) / 10000; };
 
-/* THE WHALE: a tooth. Seven sides round, ten rings along an arch, flattened front to back, a point at one end and the
- * hollow root at the other. Its map: 32 round (u, the +Z face at u 0.25) by 64 along (v, the root at the bottom). */
-const ART_TOOTH = { L: 0.092, R0: 0.0165, BEND: 0.016, FLAT: 0.72, N: 7, K: 10 };
-function artToothAt(t, a, out) {
-  const T = ART_TOOTH, r = T.R0 * Math.pow(1 - t, 0.72) * (t < 0.12 ? 0.86 + 1.17 * t : 1);
-  return out.set((t - 0.5) * T.L, Math.sin(Math.PI * t) * T.BEND - T.BEND * 0.5 + Math.cos(a) * r, Math.sin(a) * r * T.FLAT);
+/* THE WHALE: A SCAN OF A CARVED SPERM WHALE'S TOOTH (2026-11-23, the owner: "use this model exact to replace the artifact of
+ * the whale"). "Carved Sperm Whale Tooth (VTSU3D-45-2)" by the Vermont State Univ. Digital Archaeology Project (Sketchfab,
+ * CC-BY-NC-ND-4.0, credited in README). NO DERIVATIVES: `assets/whale-tooth/` is the download byte for byte (scene.gltf,
+ * scene.bin, its 8192 px map, license.txt) — never repack, decimate, resize or gzip those files. All the fitting is done
+ * here, as it loads: its map capped to `TEX_CAP` like every model's (`bwCapTextures`), and the scan turned by its own measured
+ * axes (`tools/toothview.html` — PB_PAGE=toothview.html sh tools/probe.sh x out) so the carved face (a whale in relief, its
+ * head toward the root) looks down +Z, the root toward +X, the point toward −X, the arch up; then centred and fitted to the
+ * old tooth's 9.2 cm along x — the medallions' contract, so the belly, the sand and Skrim's hand needed no change. 1 M
+ * triangles, smooth as scanned, lifted by its own colour to read at night like the other two (`artMat`'s `lift`).
+ * `whaleArtModel` is an empty group until it lands (an empty slot, never a stand-in that morphs: `itemIcon`); a copy taken
+ * before then (`whaleArtCopy`) is filled when it does, and asks for the files at once. */
+const WHALE_TOOTH_URLS = ['scene.gltf', 'scene.bin', 'textures/material_0_baseColor.jpeg'].map((f) => 'assets/whale-tooth/' + f);
+// the scan's principal axes in its own frame (the file's node matrix applied): along it (the root +), across the carving (up), out of it
+const WHALE_TOOTH_AXES = [[-0.162, 0.090, 0.983], [0.609, -0.774, 0.171], [0.776, 0.626, 0.070]];
+const WHALE_TOOTH_L = 0.092;
+let whaleToothSrc = null;
+const whaleArtWaiting = [];      // [group, ownMats]: copies taken before the scan was in
+function whaleArtFill(g, ownMats) {
+  const m = whaleToothSrc.clone(true);
+  if (ownMats) m.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  g.add(m);
 }
-// the whale, head left, as the knife cut it: '#' the outline, '=' the jaw, 'o' the eye (where the stone goes), '-' hatching
-const ART_WHALE_PX = [
-  '..############..............',
-  '.#............####..........',
-  '#..o..............###.....##',
-  '#.....................##.##.',
-  '#.......................###.',
-  '#=====..................##..',
-  '.#.....................#.##.',
-  '..##...............####.....',
-  '....###############.........',
-];
-function artToothMap() {
-  return artPx(32, 64, (g, W, H) => {
-    const tones = ['#efe6cf', '#e3d7b8', '#d4c49e', '#c2ad80', '#a98f60'];
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const v = 1 - (y + 0.5) / H, n = artJit(x, y, 0, 7);
-      // old ivory: browner toward the root, whiter at the point, a mottle of a few tones
-      let k = (1 - v) * 2.2 + n * 1.6 - 0.6; if (v > 0.85) k -= 0.8;
-      artPxSet(g, x, y, tones[Math.max(0, Math.min(4, Math.round(k)))]);
-    }
-    const ink = '#2b2118', ox = 4, oy = 14, Hs = ART_WHALE_PX.length;
-    ART_WHALE_PX.forEach((row, sy) => [...row].forEach((ch, sx) => {
-      if (ch === '.') return;
-      const cx = ox + (Hs - 1 - sy), cy = oy + sx;          // turned a quarter clockwise: the head toward the point
-      artPxSet(g, cx, cy, ch === '-' ? '#7d6a4c' : ch === 'o' ? '#1a140e' : ink);
-    }));
-    // one line of sea under it, toward the root (more than the outline and a line read as stripes at this size)
-    for (let x = 3; x < 14; x++) artPxSet(g, x, 47 + (x % 3 === 0 ? -1 : 0), ink);
-  });
-}
-const ART_TOOTH_EYE = { t: 1 - (14 + 3 + 0.5) / 64, a: (2 * Math.PI) * (4 + (ART_WHALE_PX.length - 1 - 2) + 0.5) / 32 };
-function makeWhaleArtifact() {
+function whaleArtCopy(ownMats = false) {
   const g = new THREE.Group(); g.name = 'whaleArtifact';
-  const T = ART_TOOTH, N = T.N, K = T.K, p = new THREE.Vector3();
-  const pos = [], uv = [], idx = [];
-  for (let k = 0; k <= K; k++) for (let j = 0; j <= N; j++) {
-    const t = k / K, a = (j / N) * Math.PI * 2;
-    artToothAt(t, a, p); pos.push(p.x, p.y, p.z); uv.push(j / N, t);
-  }
-  for (let k = 0; k < K; k++) for (let j = 0; j < N; j++) {
-    const a = k * (N + 1) + j, b = a + N + 1;
-    idx.push(a, a + 1, b, a + 1, b + 1, b);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
-  geo.computeVertexNormals();
-  g.add(new THREE.Mesh(geo, artMat(artToothMap(), { lift: 0.16 })));
-  // the root: hollow, dark where the pulp was
-  const rp = [], c0 = artToothAt(0, 0, new THREE.Vector3()).clone(); c0.y -= Math.cos(0) * T.R0 * 0.86; c0.x += 0.0025;
-  for (let j = 0; j < N; j++) {
-    const a0 = (j / N) * Math.PI * 2, a1 = ((j + 1) / N) * Math.PI * 2;
-    const A = artToothAt(0, a0, new THREE.Vector3()), B = artToothAt(0, a1, new THREE.Vector3());
-    rp.push(c0.x, c0.y, c0.z, B.x, B.y, B.z, A.x, A.y, A.z);
-  }
-  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(rp, 3)); rg.computeVertexNormals();
-  g.add(new THREE.Mesh(rg, artFlat(0x3e2c1c, { lift: 0.3 })));
-  // tarred cord: three turns round the root, and a loop to hang it by
-  const cord = artFlat(0x2a1f16, { lift: 0.35 });
-  for (const t of [0.07, 0.12, 0.17]) {
-    artToothAt(t, 0, p); const r = T.R0 * Math.pow(1 - t, 0.72) * (t < 0.12 ? 0.86 + 1.17 * t : 1);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(r + 0.0006, 0.0013, 3, 8), cord);
-    ring.position.set(p.x, p.y - Math.cos(0) * r, 0); ring.rotation.y = Math.PI / 2 + (t - 0.12) * 1.2; ring.scale.set(1, 1, T.FLAT * 1.08);
-    g.add(ring);
-  }
-  const loop = new THREE.Mesh(new THREE.TorusGeometry(0.0078, 0.0013, 3, 8), cord);
-  artToothAt(0, 0, p); loop.position.set(-T.L / 2 - 0.0085, p.y - T.R0 * 0.86 + 0.002, 0); loop.rotation.set(0.25, 0.4, 0); g.add(loop);
-  // the whale's eye: a chip of blue stone set where the knife left a hole for it
-  const eye = new THREE.Mesh(new THREE.OctahedronGeometry(0.0024, 0), artGem(0x9fdcff, 0x2f8fe0, 1.6));
-  const E = ART_TOOTH_EYE; artToothAt(E.t, E.a, eye.position);
-  eye.position.y += Math.cos(E.a) * 0.0007; eye.position.z += Math.sin(E.a) * 0.0007; eye.scale.set(1, 1, 0.6); eye.rotation.z = 0.4;
-  g.add(eye);
-  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
-  g.userData.pearl = eye;
+  if (whaleToothSrc) whaleArtFill(g, ownMats);
+  else { whaleArtWaiting.push([g, ownMats]); for (const u of WHALE_TOOTH_URLS) bwSoon(u); }
   return g;
+}
+function whaleToothBuilt(root) {
+  bwCapTextures(root, TEX_CAP);
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material; m.metalness = 0;
+    if (m.map) { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = 0.16; }
+    m.needsUpdate = true; o.frustumCulled = false;
+  });
+  const [a, b, c] = WHALE_TOOTH_AXES.map((v) => new THREE.Vector3(...v).normalize());
+  b.addScaledVector(a, -b.dot(a)).normalize(); c.crossVectors(a, b);   // (measured c is a × b: kept right-handed)
+  const turn = new THREE.Group(); turn.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(a, b, c).transpose());
+  turn.add(root); turn.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(turn, true), s = WHALE_TOOTH_L / (box.max.x - box.min.x);
+  const fit = new THREE.Group(); fit.name = 'whaleTooth'; fit.scale.setScalar(s);
+  fit.position.copy(box.getCenter(new THREE.Vector3())).multiplyScalar(-s); fit.add(turn);
+  whaleToothSrc = fit;
+  whaleArtFill(whaleArtModel, false);
+  for (const [g, own] of whaleArtWaiting.splice(0)) whaleArtFill(g, own);
+  whaleArtItem._icon = null; whaleArtItem._iconClear = null; iconsPending = true;
+  renderHotbar(); renderPack();
+}
+function loadWhaleTooth() {
+  Promise.all(WHALE_TOOTH_URLS.map((u) => bwFetch(u))).then((bufs) => {
+    const blobs = bufs.slice(1).map((buf, i) => URL.createObjectURL(new Blob([buf], { type: i ? 'image/jpeg' : 'application/octet-stream' })));
+    const mgr = new THREE.LoadingManager();
+    mgr.setURLModifier((u) => { const i = WHALE_TOOTH_URLS.indexOf(u); return i > 0 ? blobs[i - 1] : u; });
+    const done = () => { for (const u of blobs) URL.revokeObjectURL(u); for (const u of WHALE_TOOTH_URLS) bwGot.delete(u); };   // (42 MB: nothing else asks for these)
+    new GLTFLoader(mgr).parse(bufs[0], 'assets/whale-tooth/', (gltf) => { done(); bwSpan('whale-tooth', () => whaleToothBuilt(gltf.scene)); },
+      (e) => { done(); console.warn('[bw] whale tooth', e); });
+  }, (e) => console.warn('[bw] whale tooth', e));
 }
 
 /* THE FLAME: black glass, the size of a fist's middle, cracked, and the fire still in the cracks. An icosahedron pulled
@@ -118359,59 +118738,46 @@ function makeFlameArtifact() {
   return g;
 }
 
-/* THE SEA: a scallop, its inside to you, cupping a blue pearl. A fan of nine ribs from the hinge — every other line of
- * the fan raised, so the ribs are in the shape and not only in the paint — dished so the rim stands up round the pearl,
- * two ears at the hinge. Its map: the ribs in two tones, growth rings across them, the sea's grey-green toward the lip. */
-const ART_SHELL = { R: 0.046, SPAN: 0.98, RIBS: 9, K: 6, HY: -0.03 };
-function artShellZ(r, a) { const S = ART_SHELL, q = Math.min(1, r / S.R); return 0.02 * Math.pow(q, 1.4) + 0.007 * (a / S.SPAN) * (a / S.SPAN) * q; }
-function makeSeaArtifact() {
+/* THE SEA IS THE OWNER'S FOSSIL (2026-11-24, the owner: "replace the artifact of the sea with this fossilized shell i
+ * found"): "Fossilized Scallop Shell" by NaRoCreations (CC-BY-4.0), `assets/fossil-shell.glb` (`tools/fossil_pack.py`: the
+ * scan vertex for vertex, its map at 2048) — a scallop in a disc of stone, 100,000 triangles. It replaces the drawn shell
+ * AND ITS PEARL: the fossil alone (the owner: "get rid of the pearl inside the shell, i didnt say to add that"; it was kept
+ * for the pulse `seaTick` gives the one lying in the world, which asks for `userData.pearl` and does nothing without one).
+ * Turned face out (+Z) and hinge down (-Y), the drawn shell's frame, so every place that stood the old one stands this one
+ * the same; 0.10 m across. Its axes measured by `tools/fossilview.html`: a2 out of its face, a0 x a1 ... */
+const FOSSIL_AXES = [[0.205, 0.823, -0.530], [0.978, -0.147, 0.149], [-0.045, 0.549, 0.835]];   // (0: its long way, 1: across, 2: out of the face)
+const FOSSIL_W = 0.10;
+let fossilSrc = null;
+const seaArtWaiting = [];
+function seaArtFill(g, ownMats) {
+  const m = fossilSrc.clone(true);
+  if (ownMats) m.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  g.add(m);
+}
+// a Sea, now or as soon as the scan is in (an empty group until it lands, filled then)
+function seaArtCopy(ownMats = false) {
   const g = new THREE.Group(); g.name = 'seaArtifact';
-  const S = ART_SHELL, C = S.RIBS * 2, pos = [], uv = [], idx = [];
-  for (let k = 0; k <= S.K; k++) for (let j = 0; j <= C; j++) {
-    // (the lip SCALLOPED: each rib runs out past the hollow beside it — a straight edge over straight pleats was a paper fan)
-    const r = 0.004 + (S.R - 0.004) * (k / S.K) + (k === S.K ? (j % 2 ? 0.0026 : -0.0008) : 0), a = -S.SPAN + 2 * S.SPAN * (j / C);
-    const ridge = j % 2 ? 0.0026 * (r / S.R) : 0;
-    pos.push(Math.sin(a) * r, S.HY + Math.cos(a) * r, artShellZ(r, a) + ridge); uv.push(j / C, k / S.K);
-  }
-  for (let k = 0; k < S.K; k++) for (let j = 0; j < C; j++) {
-    const a = k * (C + 1) + j, b = a + C + 1;
-    idx.push(a, b, a + 1, a + 1, b, b + 1);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
-  geo.computeVertexNormals();
-  const map = artPx(18, 8, (gg) => {
-    for (let y = 0; y < 8; y++) for (let x = 0; x < 18; x++) {
-      const k = 1 - (y + 0.5) / 8;                                 // (canvas top is the lip)
-      /* a scallop's colour runs in GROWTH RINGS across it, warm, the ribs only a shade apart (in grey radial bars it was a
-       * paper fan); the sea's grey-green worn into the lip */
-      const ring = ['#b98a72', '#e8cdb6', '#d4a68a', '#efd9c4', '#c99a80', '#e6c6ad', '#d8b49c', '#c7a089'][y];
-      let c = ring;
-      if (x % 2 === 0) c = new THREE.Color(ring).multiplyScalar(0.9).getStyle();
-      if (y === 0 && x % 2) c = '#a9b2aa';
-      if (artJit(x, y, 2, 11) > 0.9) c = '#f4e6d6';
-      artPxSet(gg, x, y, c);
-    }
-  });
-  const shellM = artMat(map, { lift: 0.18, side: THREE.DoubleSide });
-  g.add(new THREE.Mesh(geo, shellM));
-  // the ears at the hinge
-  const ear = new THREE.BufferGeometry();
-  ear.setAttribute('position', new THREE.Float32BufferAttribute([
-    -0.0015, S.HY + 0.001, 0.0005, -0.0145, S.HY - 0.002, 0.0012, -0.012, S.HY + 0.008, 0.0016,
-    -0.0015, S.HY + 0.001, 0.0005, -0.012, S.HY + 0.008, 0.0016, -0.003, S.HY + 0.009, 0.0014,
-    0.0015, S.HY + 0.001, 0.0005, 0.012, S.HY + 0.008, 0.0016, 0.0145, S.HY - 0.002, 0.0012,
-    0.0015, S.HY + 0.001, 0.0005, 0.003, S.HY + 0.009, 0.0014, 0.012, S.HY + 0.008, 0.0016], 3));
-  ear.computeVertexNormals();
-  g.add(new THREE.Mesh(ear, artFlat(0xb39a86, { lift: 0.22 })));
-  ear.setAttribute('uv', new THREE.Float32BufferAttribute(new Array(24).fill(0.5), 2));
-  // the pearl, sat in the dish
-  const pearl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.0082, 1), artGem(0x9fe6ff, 0x2aa8ff, 1.5));
-  pearl.name = 'seaPearl';
-  const pr = 0.024; pearl.position.set(0, S.HY + pr, artShellZ(pr, 0) + 0.0085); g.add(pearl);
-  g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
-  g.userData.pearl = pearl;
+  if (fossilSrc) seaArtFill(g, ownMats); else seaArtWaiting.push([g, ownMats]);
   return g;
+}
+function fossilBuilt(root) {
+  bwCapTextures(root, TEX_CAP);
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const m = o.material; m.metalness = 0; m.roughness = 0.95;
+    if (m.map) { m.emissive = new THREE.Color(0xffffff); m.emissiveMap = m.map; m.emissiveIntensity = 0.16; }
+    m.needsUpdate = true; o.frustumCulled = false;
+  });
+  // out of its face to +Z, its hinge down: the hinge is +a1 x a2 (measured: the ears are to the right of the face seen with a1 up)
+  const [a0, a1, a2] = FOSSIL_AXES.map((v) => new THREE.Vector3(...v).normalize());
+  const z = a2, y = new THREE.Vector3().crossVectors(a1, a2).normalize().negate(), x = new THREE.Vector3().crossVectors(y, z);
+  const turn = new THREE.Group(); turn.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z).transpose());
+  turn.add(root); turn.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(turn, true), s = FOSSIL_W / Math.max(box.max.x - box.min.x, box.max.y - box.min.y);
+  const fit = new THREE.Group(); fit.name = 'fossilShell'; fit.scale.setScalar(s);
+  fit.position.copy(box.getCenter(new THREE.Vector3())).multiplyScalar(-s); fit.add(turn); fit.updateMatrixWorld(true);
+  fossilSrc = fit;
+  for (const [g, own] of seaArtWaiting.splice(0)) seaArtFill(g, own);   // (the inspect model among them: it is a copy taken at load)
 }
 
 function artNoise2(seed) {
@@ -118453,17 +118819,18 @@ function makeArtIcon() {
   x.fillStyle = '#9fdcff'; x.beginPath(); x.arc(41, 34, 2, 0, Math.PI * 2); x.fill();
   return c.toDataURL();
 }
-const whaleArtModel = makeWhaleArtifact();
+const whaleArtModel = new THREE.Group(); whaleArtModel.name = 'whaleArtifact';   // (filled by `whaleToothBuilt`)
 whaleArtItem = {
   id: 'whaleArtifact', name: 'Artifact of the Whale', icon: makeArtIcon(), artifact: true,
   desc: `Set into a weapon · ${ART_HITS} hits in a row Immobilize · ${ART_CD}s to return`,
-  inspectModel: whaleArtModel, iconRot: { x: 0.12, y: -0.35 },
+  inspectModel: whaleArtModel, iconRot: { x: 0.12, y: -0.35 }, iconV: 'scan1',
   /* USE sets it into whatever weapon is in your hand. */
   use: () => {
     if (isArtWeapon(equipped)) attachArtifact(whaleArtItem, equipped);
     else artSay('Hold a weapon to set it in');
   },
 };
+loadWhaleTooth();
 
 
 function artSay(t) {
@@ -119080,8 +119447,7 @@ function artBellySpot(out) {
 function artSpawnWorld(rise, at = null) {
   if (art.world) return;
   const w = new THREE.Group();
-  const m = whaleArtModel.clone(true);
-  m.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  const m = whaleArtCopy(true);
   m.scale.setScalar(4.2);
   w.add(m);
   /* ON THE SAND (`at`): the farewell gathers the heal's light into it and it
@@ -119342,8 +119708,8 @@ function sfxArtRise() {
 }
 
 // the harness's handles on the artifact
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { whaleArtItem, art, artFrozen, attachArtifact, detachArtifact, artImmobilize, artRelease, artSpawnWorld, artCount, artState: () => artState, setArtState: (v) => { artState = v; } }));
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { connRingItem, giveConnectionRing, connBonus, connState: () => connStreak,
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { whaleArtCopy, whaleToothIn: () => !!whaleToothSrc, WHALE_TOOTH_URLS, bwSoon, whaleArtItem, art, artFrozen, attachArtifact, detachArtifact, artImmobilize, artRelease, artSpawnWorld, artCount, artState: () => artState, setArtState: (v) => { artState = v; } }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { connRingItem, giveConnectionRing, connBonus, connState: () => connStreak, toolDmg, toolDmgBase, setConnStreak: (v) => { connStreak = v; },
   screwdriverItem, screwdriverModel, billyItem, billySet, grateSet, unscrew, takeBilly, returnBilly, mountBillyHome,
   liftGrate, startPipe, billyAsked, billyState: () => billyState, grateOff: () => grateOff, pipeBusy: () => pipeBusy,
   takeShipKey, dropShipKey, BILLY_SCRIPT, FISHERMAN_SCRIPT_REF: () => FISHERMAN_SCRIPT }));
@@ -119848,11 +120214,12 @@ function makeSeaArtIcon() {
   return c.toDataURL();
 }
 var ART_SEA_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 20.5 3.6 11.4C4.4 6.8 7.8 4 12 4s7.6 2.8 8.4 7.4z" fill="#d9c7b4" stroke="#2b2118" stroke-width="1.1" stroke-linejoin="round"/><path d="M12 20.5 6.2 7.4M12 20.5 9 5.2M12 20.5V4.2M12 20.5 15 5.2M12 20.5 17.8 7.4" stroke="#a88f7c" stroke-width=".8"/><path d="M9.6 20.6h4.8" stroke="#2b2118" stroke-width="1.1"/><circle cx="12" cy="13.2" r="2.4" fill="#9fe6ff" stroke="#1d6f99" stroke-width=".7"/></svg>';   // (2026-11-18: a flat mark of the thing itself, the way the pack draws, not a gold gradient)
-const seaArtModel = makeSeaArtifact();
+const seaArtModel = seaArtCopy();   // (the inspect model: filled when the fossil lands, `fossilBuilt`)
+bwGlb('assets/fossil-shell.glb', (gltf) => bwSpan('fossil-shell', () => fossilBuilt(gltf.scene)), (e) => console.warn('[bw] fossil shell', e));
 seaArtItem = {
   id: 'seaArtifact', name: 'Artifact of the Sea', icon: makeSeaArtIcon(), artifact: true, svg: ART_SEA_SVG,
   desc: `Set into a weapon · A parry sends out a wave that lifts every enemy near you · ${SEA_CD}s to return`,
-  inspectModel: seaArtModel, iconRot: { rotX: 0.45, rotY: 0.18 },   // (looking into the cup, the pearl in it: from the side a scallop is a fan)
+  inspectModel: seaArtModel, iconRot: { rotX: 0.28, rotY: 0.12 }, iconV: 'fossil2',   // (its face to you; a new model, a new icon — and again without the pearl)
   use: () => {
     if (isArtWeapon(equipped)) { if (attachArtifact(seaArtItem, equipped)) seaWarm(); }
     else artSay('Hold a weapon to set it in');
@@ -120109,8 +120476,7 @@ function seaLay(x, z) {
 function seaSpawnWorld() {
   if (sea.world || !sea.spot) return;
   const [x, z] = sea.spot, w = new THREE.Group();
-  const m = seaArtModel.clone(true);
-  m.traverse((o) => { if (o.isMesh) o.material = o.material.clone(); });
+  const m = seaArtCopy(true);
   m.scale.setScalar(4.2);
   /* face up and the wave the right way up to whoever lies looking up the beach — and stood up in the sand at
    * 0.7 rad, its bottom edge sunk, so it looks back at the eye 0.38 m off the sand (measured: 0.79 toward it;
@@ -120122,7 +120488,6 @@ function seaSpawnWorld() {
   w.rotation.set(0.05, -Math.PI / 2 + 0.22, 0.04);
   const proxy = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
   proxy.name = 'hitProxy'; proxy.visible = false; w.add(proxy);
-  w.userData.pearl = m.getObjectByName('seaPearl');   // (a clone's userData is copied as JSON: its `pearl` is not a mesh)
   scene.add(w); sea.world = w;
   addItemShine(w, { ...DROP_SHINE, height: 0.3 });
   addInteractable(w, 'Take the Artifact of the Sea', 'inventory', {
@@ -120461,7 +120826,7 @@ function seaTick(dt) {
     c.el.classList.toggle('seacd', !!c.item && c.item.artifact === seaArtItem && (sea.cd > 0 || seaBall.cd > 0));
   }
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaArtItem, sea, seaParry, seaLay, seaUnlay, seaWeapon, seaWave, makeSeaArtifact, seaS: () => seaState }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { updateDebris, debrisS: () => shBoards, debPoolsS: () => debPools, shipBrkS: () => shipBrk, smashShipStore, seaArtItem, sea, seaParry, seaLay, seaUnlay, seaWeapon, seaWave, seaArtCopy, seaArtModel, fossilIn: () => !!fossilSrc, seaSpawnWorld, seaS: () => seaState }));
 
 animate();
 
@@ -123256,7 +123621,7 @@ function updateSeaGift(dt) {
     let tx = c.x - dx / L * 1.5, tz = c.z - dz / L * 1.5;
     tx = Math.max(tx, shoreLineJS(tz, oceanUniforms.uTime.value) + 1.2);
     seaGiftFly = { from: new THREE.Vector3(x, water + 1.0, z), to: new THREE.Vector3(tx, beachGroundAt(tx, tz) + 0.1, tz), u: 0, T: 1.25, H: 3.2, m: null };
-    if (seaArtModel) { const m = seaArtModel.clone(true); m.scale.setScalar(4.2); m.traverse((o) => { if (o.isMesh) o.raycast = () => {}; }); scene.add(m); seaGiftFly.m = m; }
+    if (seaArtModel) { const m = seaArtCopy(); m.scale.setScalar(4.2); m.traverse((o) => { if (o.isMesh) o.raycast = () => {}; }); scene.add(m); seaGiftFly.m = m; }
     sfxSurge(0.3, 0.6);
   } else if (G.ph === 'throw') {
     const F = seaGiftFly, u = Math.min(1, G.t / F.T);
@@ -132145,7 +132510,7 @@ Object.assign(window.__bw, { farmCobble, farmUnits, farmFight, farmDoors, farmSe
   umbraIgnite, umbraFireState: () => umbraFire, settleMounds, moundRole, moundSpotClear, closeShop, openShop, softLookState: () => softLook,
   poseRig, MUT_JOINTS, oceanUniforms, submersionAt, restYInWater, updateComfy,
   audioGate: () => (gameAudioGate ? gameAudioGate.gain.value : null), audioDog: () => audioDogLog.map((e) => e.join(' ')),
-  spliffItem, gainSpliff, smokeSpliff, grammyItem, dropGrammy, extractKeepCrate, smashKeepCrate, throwSpliffButt, exhaleSmoke, spliffModel, grammyModel,
+  spliffItem, gainSpliff, smokeSpliff, grammyItem, dropGrammy, extractKeepCrate, smashKeepCrate, keepCrateS: () => keepCrate, keepSeaAtS: (x, z) => KEEP_Y + KEEP_SEA + keepTideAt(x - KEEP_X, z - KEEP_Z), throwSpliffButt, exhaleSmoke, spliffModel, grammyModel,
   spliffState: () => ({ smoking, smokeT, buff: spliffBuffT, count: spliffItem.count, crate: !!keepCrate, crateBroken: keepCrateBroken, keepSpliffTaken, grammyState, grammyAt, butts: spliffButts.length }),
   setSpliffBuff: (v) => { spliffBuffT = v; spliffEndAt = v > 0 ? Date.now() + v * 1000 : 0; },
   setStamina: (v) => { stamina = v; exhausted = false; },

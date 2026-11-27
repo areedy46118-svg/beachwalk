@@ -8876,3 +8876,659 @@ export async function sewUV({ w, b, log, sleep }) {
     log('PICK', r, 'd', h.distance.toFixed(2), 'mat', m.name, 'map', m.map && m.map.image && (m.map.image.width + 'x' + m.map.image.height), 'rep', m.map && m.map.repeat.toArray().join(','), 'uv', h.uv && h.uv.toArray().map((v) => v.toFixed(2)).join(','));
   }
 }
+
+/* THE ARTIFACT OF THE WHALE IS THE SCANNED TOOTH (2026-11-23): waits for the scan, then — on the night sand at ×4.2, laid as
+ * the farewell lays it (face up, tilted 0.32 toward you); held up close, its carved face to the camera (+Z); its pack icon;
+ * and the time of a frame with it in view. */
+export async function toothLook({ w, b, log, sleep, shot }) {
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 120)); oe(...a); };
+  b.introDone = true; b.settings.devMode = true;
+  for (const u of b.WHALE_TOOTH_URLS) b.bwSoon(u);
+  const t0 = performance.now();
+  for (let i = 0; i < 1200 && !b.whaleToothIn(); i++) { b.frame(1); await sleep(50); }
+  log('scan in', b.whaleToothIn(), 'after s', ((performance.now() - t0) / 1000).toFixed(1), 'model children', b.whaleArtItem.inspectModel.children.length);
+  const T = b.whaleArtItem.inspectModel;
+  let tris = 0; T.traverse((o) => { if (o.isMesh) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
+  log('tris', tris);
+  const C = b.camera, fx = C.position.x, fz = C.position.z;
+  const m = b.whaleArtCopy(true); m.scale.setScalar(4.2); m.rotation.set(-Math.PI / 2 + 0.32, 0, 0);
+  const g = new T.constructor(); g.add(m);
+  const gy = b.beachGroundAt ? b.beachGroundAt(fx, fz - 1.2) : 0;
+  g.position.set(fx, gy + 0.045, fz - 1.2); b.scene.add(g); g.updateMatrixWorld(true);
+  { const bb = new (Object.getPrototypeOf(T.position).constructor)(); let lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    m.updateMatrixWorld(true); m.traverse((o) => { if (!o.isMesh) return; o.geometry.computeBoundingBox(); const q = o.geometry.boundingBox;
+      for (const x of [q.min.x, q.max.x]) for (const y of [q.min.y, q.max.y]) for (const z of [q.min.z, q.max.z]) { bb.set(x, y, z).applyMatrix4(o.matrixWorld); [bb.x, bb.y, bb.z].forEach((v, k) => { lo[k] = Math.min(lo[k], v); hi[k] = Math.max(hi[k], v); }); } });
+    log('world size at x4.2 (m)', hi.map((v, k) => (v - lo[k]).toFixed(3)).join(' x ')); }
+  b.lookAt(fx, gy + 0.05, fz - 1.2);
+  for (let i = 0; i < 20; i++) { b.frame(1); await sleep(30); }
+  shot('toothSand', 960);
+  // frame cost with it in view vs without
+  const time = (n) => { const a = performance.now(); for (let i = 0; i < n; i++) b.renderer.render(b.scene, b.camera); b.renderer.getContext().finish(); return (performance.now() - a) / n; };
+  time(3); const on = time(20); g.visible = false; time(3); const off = time(20); g.visible = true;
+  log('render ms with', on.toFixed(2), 'without', off.toFixed(2));
+  // in the examine screen, as the pack opens it: a few turns of it
+  b.scene.remove(g);
+  b.addToInventory(b.whaleArtItem);
+  b.openInspect(b.whaleArtItem.inspectModel, { name: b.whaleArtItem.name, desc: b.whaleArtItem.desc });
+  const cv = b.renderer.domElement, tiles = [];
+  for (let f = 0; f < 48; f++) { await sleep(55); b.frame(1); if (f % 12 === 11) { const c = w.document.createElement('canvas'); c.width = 480; c.height = Math.round(480 * cv.height / cv.width); c.getContext('2d').drawImage(cv, 0, 0, c.width, c.height); tiles.push(c); } }
+  b.closeInspect();
+  { const tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = 2 * tw; c.height = 2 * th;
+    const x = c.getContext('2d'); tiles.forEach((tl, i) => x.drawImage(tl, (i % 2) * tw, ((i / 2) | 0) * th));
+    const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+    for (let i = 0; i < n; i++) console.log('[PBIMG]', 'toothInspect', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
+  const url = b.itemIcon(b.whaleArtItem) || '';
+  log('icon len', url.length, 'errors', errs.length, errs.slice(0, 3).join(' | '));
+  if (url) { const im = new w.Image(); im.src = url; await new Promise((r) => { im.onload = r; im.onerror = r; });
+    const c = w.document.createElement('canvas'); c.width = c.height = 256; c.getContext('2d').drawImage(im, 0, 0, 256, 256);
+    const d = c.toDataURL('image/jpeg', 0.9).split(',')[1], n = Math.ceil(d.length / 8000);
+    for (let i = 0; i < n; i++) console.log('[PBIMG]', 'toothIcon', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
+}
+
+/* the farewell's own drop of it on the sand (`artSpawnWorld(true, at)`), a second and a half of the real loop, then taken */
+// THE SEA, THE OWNER'S FOSSIL: in, how big, on the sand as `seaSpawnWorld` stands it, its cost, the examine screen, its icon
+export async function fossilLook({ w, b, log, sleep, shot }) {
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 120)); oe(...a); };
+  b.introDone = true; b.settings.devMode = true;
+  b.bwSoon('assets/fossil-shell.glb');
+  const t0 = performance.now();
+  for (let i = 0; i < 1200 && !b.fossilIn(); i++) { b.frame(1); await sleep(50); }
+  log('scan in', b.fossilIn(), 'after s', ((performance.now() - t0) / 1000).toFixed(1), 'model children', b.seaArtItem.inspectModel.children.length);
+  const T = b.seaArtItem.inspectModel;
+  let tris = 0; T.traverse((o) => { if (o.isMesh) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
+  log('tris', tris, 'pearl', !!T.getObjectByName('seaPearl'));
+  const C = b.camera, fx = C.position.x, fz = C.position.z;
+  const m = b.seaArtCopy(true); m.scale.setScalar(4.2); m.rotation.set(-Math.PI / 2 + 0.7, 0, 0);
+  const g = new T.constructor(); g.add(m);
+  const gy = b.beachGroundAt ? b.beachGroundAt(fx, fz - 1.2) : 0;
+  g.position.set(fx, gy + 0.045, fz - 1.2); b.scene.add(g); g.updateMatrixWorld(true);
+  { const bb = new (Object.getPrototypeOf(T.position).constructor)(); let lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    m.updateMatrixWorld(true); m.traverse((o) => { if (!o.isMesh) return; o.geometry.computeBoundingBox(); const q = o.geometry.boundingBox;
+      for (const x of [q.min.x, q.max.x]) for (const y of [q.min.y, q.max.y]) for (const z of [q.min.z, q.max.z]) { bb.set(x, y, z).applyMatrix4(o.matrixWorld); [bb.x, bb.y, bb.z].forEach((v, k) => { lo[k] = Math.min(lo[k], v); hi[k] = Math.max(hi[k], v); }); } });
+    log('world size at x4.2 (m)', hi.map((v, k) => (v - lo[k]).toFixed(3)).join(' x ')); }
+  b.lookAt(fx, gy + 0.05, fz - 1.2);
+  for (let i = 0; i < 20; i++) { b.frame(1); await sleep(30); }
+  shot('fossilSand', 960);
+  // frame cost with it in view vs without
+  const time = (n) => { const a = performance.now(); for (let i = 0; i < n; i++) b.renderer.render(b.scene, b.camera); b.renderer.getContext().finish(); return (performance.now() - a) / n; };
+  time(3); const on = time(20); g.visible = false; time(3); const off = time(20); g.visible = true;
+  log('render ms with', on.toFixed(2), 'without', off.toFixed(2));
+  // in the examine screen, as the pack opens it: a few turns of it
+  b.scene.remove(g);
+  b.addToInventory(b.seaArtItem);
+  b.openInspect(b.seaArtItem.inspectModel, { name: b.seaArtItem.name, desc: b.seaArtItem.desc });
+  const cv = b.renderer.domElement, tiles = [];
+  for (let f = 0; f < 48; f++) { await sleep(55); b.frame(1); if (f % 12 === 11) { const c = w.document.createElement('canvas'); c.width = 480; c.height = Math.round(480 * cv.height / cv.width); c.getContext('2d').drawImage(cv, 0, 0, c.width, c.height); tiles.push(c); } }
+  b.closeInspect();
+  { const tw = tiles[0].width, th = tiles[0].height, c = w.document.createElement('canvas'); c.width = 2 * tw; c.height = 2 * th;
+    const x = c.getContext('2d'); tiles.forEach((tl, i) => x.drawImage(tl, (i % 2) * tw, ((i / 2) | 0) * th));
+    const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+    for (let i = 0; i < n; i++) console.log('[PBIMG]', 'fossilInspect', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
+  const url = b.itemIcon(b.seaArtItem) || '';
+  log('icon len', url.length, 'errors', errs.length, errs.slice(0, 3).join(' | '));
+  if (url) { const im = new w.Image(); im.src = url; await new Promise((r) => { im.onload = r; im.onerror = r; });
+    const c = w.document.createElement('canvas'); c.width = c.height = 256; c.getContext('2d').drawImage(im, 0, 0, 256, 256);
+    const d = c.toDataURL('image/jpeg', 0.9).split(',')[1], n = Math.ceil(d.length / 8000);
+    for (let i = 0; i < n; i++) console.log('[PBIMG]', 'fossilIcon', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
+}
+
+/* the farewell's own drop of it on the sand (`artSpawnWorld(true, at)`), a second and a half of the real loop, then taken */
+export async function toothDrop({ w, b, log, sleep, shot }) {
+  const errs = []; const oe = w.console.error.bind(w.console); w.console.error = (...a) => { errs.push(String(a[0]).slice(0, 120)); oe(...a); };
+  b.introDone = true; b.settings.devMode = true;
+  for (let i = 0; i < 1200 && !b.whaleToothIn(); i++) { b.frame(1); await sleep(50); }
+  const C = b.camera, at = { x: C.position.x, z: C.position.z - 1.4 };
+  b.artSpawnWorld(true, at);
+  for (let i = 0; i < 90; i++) { b.frame(1); await sleep(16); }
+  const wd = b.art.world; let meshes = 0; wd && wd.traverse((o) => { if (o.isMesh && o.name !== 'hitProxy' && o.visible) meshes++; });
+  b.lookAt(at.x, 0.05, at.z); for (let i = 0; i < 6; i++) { b.frame(1); await sleep(30); }
+  log('world', !!wd, 'tooth meshes', meshes, 'laid', wd && wd.userData.m.userData.laid, 'errors', errs.length, errs.slice(0, 3).join(' | '));
+  shot('toothDrop', 960, 1.6);
+}
+
+/* THE WRECK'S TEXEL DENSITY (2026-11-23, the owner: "these areas that just look like a stretched texture"): every mesh of
+ * `shipwreck`, every triangle — map pixels per metre along u and along v (the map's own size × its repeat over the
+ * triangle's own metres), area-weighted. A face whose two disagree is a stretched face; one far under the rest is a
+ * blurred one. Prints the worst by area. */
+export async function wreckTexel({ w, b, log }) {
+  const T = b.THREE || w.THREE, S = b.shipwreck; if (!S) { log('no shipwreck'); return; }
+  S.updateMatrixWorld(true);
+  const rows = new Map(), p = [new T.Vector3(), new T.Vector3(), new T.Vector3()], q = new T.Vector3(), r = new T.Vector3();
+  S.traverse((o) => {
+    if (!o.isMesh || !o.geometry.attributes.uv || !o.visible) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    const g = o.geometry, P = g.attributes.position, U = g.attributes.uv, I = g.index, n = I ? I.count : P.count;
+    const sc = new T.Vector3(); o.matrixWorld.decompose(new T.Vector3(), new T.Quaternion(), sc);
+    for (let t = 0; t < n; t += 3) {
+      const ids = [0, 1, 2].map((k) => (I ? I.getX(t + k) : t + k));
+      let mi = 0; if (g.groups.length) { const gr = g.groups.find((G) => t >= G.start && t < G.start + G.count); mi = gr ? gr.materialIndex : 0; }
+      const m = mats[mi]; const mp = m && m.map; if (!mp || !mp.image) continue;
+      const W = mp.image.width || 1, H = mp.image.height || 1, rx = mp.repeat.x, ry = mp.repeat.y;
+      ids.forEach((id, k) => p[k].fromBufferAttribute(P, id).multiply(sc));
+      const u0 = U.getX(ids[0]) * rx, v0 = U.getY(ids[0]) * ry, u1 = U.getX(ids[1]) * rx, v1 = U.getY(ids[1]) * ry, u2 = U.getX(ids[2]) * rx, v2 = U.getY(ids[2]) * ry;
+      const e1 = q.subVectors(p[1], p[0]).clone(), e2 = r.subVectors(p[2], p[0]).clone();
+      const area = e1.clone().cross(e2).length() / 2; if (area < 1e-6) continue;
+      const du1 = u1 - u0, dv1 = v1 - v0, du2 = u2 - u0, dv2 = v2 - v0, det = du1 * dv2 - du2 * dv1;
+      if (Math.abs(det) < 1e-12) { const k = (m.name || '?') + '|' + (o.name || o.parent && o.parent.name || '?'); const R = rows.get(k) || { a: 0, su: 0, sv: 0, deg: 0, W, H, bad: new Map() }; R.deg += area; rows.set(k, R);
+        const cc = p[0].clone().add(p[1]).add(p[2]).divideScalar(3), nn = e1.clone().cross(e2).normalize(); const key = 'deg n ' + [nn.x, nn.y, nn.z].map((v) => v.toFixed(1)).join(',') + ' @' + [cc.x, cc.y, cc.z].map((v) => Math.round(v)).join(','); const B = R.bad.get(key) || { a: 0, r: 0, du: 0, dv: 0 }; B.a += area; R.bad.set(key, B); continue; }
+      const Tu = e1.clone().multiplyScalar(dv2).addScaledVector(e2, -dv1).divideScalar(det);   // metres per one u
+      const Tv = e2.clone().multiplyScalar(du1).addScaledVector(e1, -du2).divideScalar(det);   // metres per one v
+      const du = W / Math.max(1e-6, Tu.length()), dv = H / Math.max(1e-6, Tv.length());          // px per metre
+      const k = (m.name || '?') + '|' + (m.name && m.name.startsWith('wreck.') ? '' : (o.name || (o.parent && o.parent.name) || '?'));
+      const R = rows.get(k) || { a: 0, su: 0, sv: 0, sl: 0, deg: 0, W, H, tris: 0, bad: new Map() };
+      const an = Math.abs(Math.log(du / dv));
+      R.a += area; R.su += du * area; R.sv += dv * area; R.sl += an * area; R.tris++; rows.set(k, R);
+      if (an > Math.log(1.8)) { const c = p[0].clone().add(p[1]).add(p[2]).divideScalar(3).applyMatrix4(new T.Matrix4().makeScale(1 / sc.x, 1 / sc.y, 1 / sc.z)).applyMatrix4(o.matrixWorld).sub(S.position);
+        const key = [Math.round(c.x / 2) * 2, Math.round(c.y), Math.round(c.z / 2) * 2].join(','); const B = R.bad.get(key) || { a: 0, r: 0, du: 0, dv: 0 }; B.a += area; B.r += an * area; B.du += du * area; B.dv += dv * area; R.bad.set(key, B); }
+    }
+  });
+  const out = [...rows.entries()].map(([k, R]) => ({ k, a: R.a, du: R.su / (R.a || 1), dv: R.sv / (R.a || 1), an: Math.exp(R.sl / (R.a || 1)), deg: R.deg, map: R.W + 'x' + R.H,
+    bad: R.bad ? [...R.bad.entries()].sort((A, B) => B[1].a - A[1].a).slice(0, 4).map(([c, B]) => c + ' ' + B.a.toFixed(1) + 'm2 x' + Math.exp(B.r / B.a).toFixed(1) + ' u' + (B.du / B.a).toFixed(0) + ' v' + (B.dv / B.a).toFixed(0)).join(' | ') : '' }));
+  out.sort((A, B) => B.a * Math.log(B.an + 1e-9) - A.a * Math.log(A.an + 1e-9));
+  for (const o of out.slice(0, 45)) log(o.k.slice(0, 48).padEnd(48), 'm2', o.a.toFixed(1).padStart(6), 'px/m u', o.du.toFixed(0).padStart(5), 'v', o.dv.toFixed(0).padStart(5), 'stretch', o.an.toFixed(2).padStart(6), o.map, o.deg > 0.01 ? 'degenerate m2 ' + o.deg.toFixed(2) : '', o.bad ? '\n      worst at (local x,y,z): ' + o.bad : '');
+}
+
+/* THE WRECK LAID IN METRES, HER IRON RUSTED (2026-11-23): the owner's screenshot (from her deck, along the bulwark's inside
+ * face), the pots stacked down her port side, the gaff post and its hook, the stair's rails. Same views before and after. */
+export async function wreckRust({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, V = b.THREE.Vector3, N = S.userData.nav;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 300; i++) { b.frame(1); await sleep(20); }   // (her paint in the warm chain, the rust loaded)
+  let steel = null; S.traverse((o) => { if (o.isMesh && o.material && o.material.name === 'wreck.steel') steel = o.material; });
+  log('steel map', steel && steel.map && steel.map.image ? steel.map.image.width + 'x' + steel.map.image.height : 'none', 'laid tris', S.userData.uvLaidTris);
+  S.updateMatrixWorld(true);
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z)), D = N.DECK_Y;
+  const at = (n, p, t, g = 1.5) => { C.position.copy(p); C.lookAt(t); C.updateMatrixWorld(true); shot('wr_' + n, 800, g); };
+  at('bulwarkP', L(1.5, D + 1.6, 0.6), L(-5, D + 0.4, 3.4));
+  at('bulwarkS', L(1.5, D + 1.6, -0.6), L(-5, D + 0.4, -3.4));
+  at('pots', L(1.6, D + 1.5, -1.6), L(-0.6, D + 0.5, -3.5));
+  at('gaff', L(N.GAFF_X + 2.2, D + 1.7, 1.6), L(N.GAFF_X, D + 1.6, 0));
+  at('stair', L((N.STAIR_X0 + N.STAIR_X1) / 2 + 2.4, D + 1.3, (N.STAIR_Z0 + N.STAIR_Z1) / 2 + 1.2), L((N.STAIR_X0 + N.STAIR_X1) / 2, D + 0.4, (N.STAIR_Z0 + N.STAIR_Z1) / 2));
+  at('stern', L(N.HALF + 7, 2.2, 3), L(N.HALF, 1.6, 0));
+  // close on her iron
+  const gp = new V(); const gf = S.getObjectByName && S.getObjectByName('gaff'); if (gf) gf.getWorldPosition(gp); else gp.copy(L(N.GAFF_X, D, 0));
+  at('ironGaff', gp.clone().add(new V(1.1, 1.3, 0.9)), gp.clone().add(new V(0, 0.9, 0)), 1.7);
+  at('ironPots', L(-1.4 + 0.9, D + 1.0, -3.5 + 1.2), L(-1.4, D + 0.45, -3.5), 1.7);
+  at('ironStove', L(6.75 - 1.3, N.HOLD_Y + 1.3, -2.3 + 0.9), L(6.75, N.HOLD_Y + 0.6, -2.3), 1.9);
+}
+
+/* THE CORNERS OF HER DECK AND THE COAMING (2026-11-23): where the owner's screenshot stood — her bulwark meeting the transom,
+ * and the bow, both hands — and the hatch coaming close; and what `layInMetres` costs the boot. */
+export async function wreckCorners({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, V = b.THREE.Vector3, N = S.userData.nav, D = N.DECK_Y, H = N.HALF;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 300; i++) { b.frame(1); await sleep(20); }
+  S.updateMatrixWorld(true);
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z));
+  const at = (n, p, t, g = 1.9) => { C.position.copy(p); C.lookAt(t); C.updateMatrixWorld(true); shot('wc_' + n, 900, g); };
+  at('sternP', L(H - 3.2, D + 1.65, 0), L(H, D + 0.5, 2.2));
+  at('sternS', L(H - 3.2, D + 1.65, 0), L(H, D + 0.5, -2.2));
+  at('bowP', L(-H + 4.6, D + 1.65, 0), L(-H + 1.6, D + 0.6, 1.4));
+  at('bowS', L(-H + 4.6, D + 1.65, 0), L(-H + 1.6, D + 0.6, -1.4));
+  const hx = (N.HATCH_X0 + N.HATCH_X1) / 2;
+  at('coamP', L(hx + 2.4, D + 1.65, 3.0), L(hx, D + 0.4, N.HATCH_HZ));
+  at('coamIn', L(N.HATCH_X1 + 1.2, D + 1.65, 0.3), L(N.HATCH_X0, D + 0.2, 0));
+  log('layInMetres ms', S.userData.uvLaidMs, 'tris', S.userData.uvLaidTris);
+}
+
+// her deck close up at the bow (the breasthook's boards) and the foot of her quarters (the dune cut out of her: no blue line)
+export async function wreckSeams({ w, b, log, sleep, shot }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, T = b.THREE, V = T.Vector3, N = S.userData.nav, D = N.DECK_Y, H = N.HALF;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 300; i++) { b.frame(1); await sleep(20); }
+  S.updateMatrixWorld(true);
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z));
+  const at = (n, p, t, g = 2.2) => { C.position.copy(p); C.lookAt(t); C.updateMatrixWorld(true); shot('ws_' + n, 1200, g); };
+  at('bowDown', L(-H + 4.6, D + 4.6, 0.01), L(-H + 4.0, D, 0));
+  at('bowS', L(-H + 4.6, D + 1.65, 0), L(-H + 1.6, D, -1.4));
+  at('sternUp', L(H - 2.2, D + 1.65, 0), L(H - 0.1, D, 1.6));
+  at('sternUpS', L(H - 2.2, D + 1.65, 0), L(H - 0.1, D, -1.6));
+}
+
+// the rusted sheets, deck and hold, and how far each vertex stands off what it is nailed to (the hold's and her sides')
+export async function wreckSheets({ w, b, log, sleep, shot }) {
+  const NOAN = /noanim=1/.test(location.search);
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, V = b.THREE.Vector3, N = S.userData.nav, D = N.DECK_Y, H = N.HALF, h = N.HOLD_Y;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 400; i++) { b.frame(1); await sleep(20); }
+  S.updateMatrixWorld(true);
+  const G = S.getObjectByName('shipSheets');
+  if (!G) { log('NO SHEETS'); return; }
+  G.traverse((o) => { if (o.isMesh) log('mesh', o.material.name, 'tris', (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3); });
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z));
+  const G1 = +(new URLSearchParams(location.search).get('g') || 1);
+  const at = (n, p, t, g = G1) => { C.position.copy(p); C.lookAt(t); C.updateMatrixWorld(true); shot('sh_' + n, 1280, g); };
+  at('holdIn', L(-4.9, h + 1.72, 2.3), L(-5.5, h + 1.2, -2.5));
+  at('holdFwd', L(-2.6, h + 1.72, 0.6), L(-7.4, h + 1.4, 0));
+  at('holdPort', L(-2.0, h + 1.72, 1.2), L(-4.2, h + 1.5, -3));
+  at('holdStbd', L(-1.4, h + 1.72, -1.8), L(-0.9, h + 1.4, 3));
+  at('holdAft', L(-2.2, h + 1.72, 1.9), L(3.0, h + 1.1, 1.9));
+  at('quarters', L(3.6, h + 1.72, 0), L(6.8, h + 1.2, 0.2));
+  at('wheelIn', L(N.BR_X0 + 3.4, D + N.BR_STEP + 1.72, 0), L(N.BR_X0, D + N.BR_STEP + 1.45, 0));
+  at('deckAft', L(10.6, D + 1.72, 0.4), L(6.6, D + 1.8, -0.4));
+  at('deckFwd', L(-5.6, D + 1.72, 0.2), L(-10.5, D + 0.5, -1.2));
+  at('deckP', L(0.9, D + 1.72, -2.6), L(8, D + 1.0, -3.6));
+  at('deckS', L(1.8, D + 1.72, 2.9), L(9, D + 0.6, 3.4));
+  at('stove', L(4.6, h + 1.6, -0.6), L(6.4, h + 1.0, -2.2));
+  at('holdWide', L(2.3, h + 1.72, -1.9), L(-5, h + 1.3, 0.8));
+  at('sheetNear', L(-5.2, h + 1.72, -1.0), L(-6.6, h + 1.75, -3.6));
+  at('lean', L(0.9, h + 1.72, 2.1), L(3.0, h + 0.7, 2.3));
+  at('casing', L(N.BR_X1 + 2.0, D + 1.5, -1.6), L(N.BR_X1, D + 0.5, -0.4));
+  at('casingP', L(1.2, D + 1.5, -3.5), L(3.6, D + 0.4, -2.4));
+  at('bulkhead', L(1.4, h + 1.5, -1.9), L(3.0, h + 0.6, -2.3));
+  at('stoveNear', L(5.7, h + 1.45, -1.5), L(6.75, h + 0.45, -2.3));
+  at('wheelNear', L(N.WHEEL_X + 1.1, D + N.BR_STEP + 1.5, 0.5), L(N.WHEEL_X, D + N.BR_STEP + 0.7, 0));
+  at('outBow', L(-9.5, 1.75, -9), L(-10.0, 2.3, 0));
+  at('hatchUnder', L(-1.0, h + 1.65, 1.9), L(-3.3, h + 1.0, -0.3));
+  at('hatchUp', L(-1.6, h + 1.5, 1.6), L(-3.3, D + 0.5, 0));
+  at('gougeSheet', L(0.2, h + 1.6, 2.4), L(1.42, h, 0.92));
+  at('gougeSheet2', L(-4.6, h + 1.6, 1.8), L(-6.15, h, 0.72));
+  at('tearPool', L(-0.8, h + 1.72, 2.6), L(-0.8, h + 0.4, -1.5));
+  at('lightWall', L(-0.8, h + 1.72, -2.0), L(-1.6, h + 1.2, 4.0));
+  { const F = D + N.BR_STEP;
+    at('whStbd', L(N.BR_X0 + 1.4, F + 1.65, -1.6), L(N.BR_X0 + 2.4, F + 0.9, 2.3));
+    at('whAft', L(N.BR_X0 + 0.9, F + 1.65, 0.6), L(N.BR_X1, F + 0.9, -0.9));
+    at('whChart', L(N.BR_X1 - 1.4, F + 1.55, -0.6), L(N.BR_X1 - 0.55, F + 0.8, -1.89));
+    at('whFwd', L(N.BR_X1 - 0.5, F + 1.65, 0.3), L(N.BR_X0, F + 1.2, 0));
+    at('whConsole', L(N.BR_X0 + 1.5, F + 1.5, 0.9), L(N.BR_X0 + 0.45, F + 0.9, 1.1));
+    at('whTable', L(N.BR_X1 - 1.3, F + 1.45, -0.9), L(N.BR_X1 - 0.55, F + 0.75, -1.85));
+    at('whGauges', L(N.BR_X0 + 1.45, F + 1.35, 0.15), L(N.BR_X0 + 0.7, F + 0.7, 0));
+    at('whFish', L(N.BR_X1 - 1.2, F + 1.5, 0.9), L(N.BR_X1 - 0.08, F + 1.45, 0.04));
+    at('whFishSide', L(N.BR_X1 - 0.5, F + 1.45, 1.1), L(N.BR_X1 - 0.08, F + 1.45, 0.0));
+    at('whGlass', L(N.BR_X1 - 0.6, F + 1.6, 1.4), L(N.BR_X0, F + 1.6, -2.0)); }
+  at('storesFwd', L(-5.2, h + 1.5, 0.4), L(-7.0, h + 0.5, -2.2));
+  at('storesDeck', L(8.0, D + 1.6, 0.6), L(10.0, D + 0.5, 2.3));
+  at('bunk', L(4.6, h + 1.5, 1.0), L(6.4, h + 0.8, 3.0));
+  at('outP', L(2.6, 1.75, 9.5), L(1.0, 2.0, 0));
+  at('outQ', L(9.5, 1.75, 11), L(7.0, 2.0, 0));
+  at('outS', L(3.5, 1.75, -12.5), L(3.5, 2.0, 0));
+}
+
+// every surface aboard with no map: whose, how big, where (and the coarsest of those that have one)
+export async function wreckBare({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, T = b.THREE;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 300; i++) { b.frame(1); await sleep(20); }
+  S.updateMatrixWorld(true);
+  const acc = new Map(), a = new T.Vector3(), c = new T.Vector3(), d = new T.Vector3();
+  S.traverse((o) => {
+    if (!o.isMesh || !o.visible) return;
+    for (let p = o.parent; p && p !== S; p = p.parent) if (!p.visible) return;
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    if (m.map) return;
+    const P = o.geometry.attributes.position, I = o.geometry.index, n = (I ? I.count : P.count); let ar = 0;
+    for (let i = 0; i + 2 < n; i += 3) { const q = [0, 1, 2].map((k) => I ? I.getX(i + k) : i + k); a.fromBufferAttribute(P, q[0]).applyMatrix4(o.matrixWorld); c.fromBufferAttribute(P, q[1]).applyMatrix4(o.matrixWorld).sub(a); d.fromBufferAttribute(P, q[2]).applyMatrix4(o.matrixWorld).sub(a); ar += c.cross(d).length() / 2; }
+    const bx = new T.Box3().setFromObject(o), e = S.worldToLocal(bx.getCenter(new T.Vector3()));
+    const nm = []; for (let p = o; p && p !== S; p = p.parent) if (p.name) nm.push(p.name);
+    const k = (m.name || m.type + ' ' + (m.color ? m.color.getHexString() : '')) + ' | ' + nm.join('<'); const r = acc.get(k) || [0, [], m.transparent]; r[0] += ar; r[1].push(e.toArray().map((v) => v.toFixed(1)).join(',')); acc.set(k, r);
+  });
+  [...acc].sort((x, y) => y[1][0] - x[1][0]).slice(0, 40).forEach(([k, r]) => log(r[0].toFixed(2), 'm2', k, r[2] ? 'TRANSP' : '', 'x' + r[1].length, r[1].slice(0, 3).join(' ; ')));
+}
+
+// walking her on your feet, W held, over and past everything added on 2026-11-24 (the sheets, the plating, the leaned sheet's box)
+export async function wreckWalk({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera.position, N = b.shipwreck.userData.nav, X = b.SHIP_X, Z = b.SHIP_Z;
+  C.set(X + 12, 1.7, Z); b.camBaseY = 1.7; w.__clockOn(); w.__adv(200);
+  for (const [nm, x0, z0, x1, z1, deck] of [
+    ['hold: over the floor sheet', -3.0, 0.9, -6.4, 1.6, 0], ['hold: to the bench', -4.6, 0.3, -1.0, 2.2, 0], ['hold: over the gouge sheet', 0.4, 2.6, 2.4, 0.9, 0],
+    ['hold: into the leaned sheet', 1.0, 2.35, 3.2, 2.35, 0], ['hold: through the quarters door', 1.6, 0.0, 4.8, 0.0, 0], ['quarters: back out', 4.8, 0.2, 1.4, 0.2, 0],
+    ['wh: into the console', 4.6, 0.4, 2.7, 0.4, 2], ['wh: into the pedestal', 5.0, 0.0, 3.6, 0.0, 2], ['wh: into the chart table', 6.0, -0.6, 6.0, -2.3, 2],
+    ['wh: into the extinguisher', 4.4, 1.2, 4.4, 2.3, 2], ['wh: round the wheel to port', 5.2, -0.3, 3.4, -1.7, 2], ['wh: out of the door', 5.4, 0.8, 5.4, 3.6, 2],
+    ['deck: port of the wheelhouse', 1.8, -3.1, 7.6, -3.1, 1], ['deck: aft round it', 7.6, -3.1, 7.6, 1.8, 1], ['deck: over the loose sheet', 10.6, -0.6, 7.4, -1.3, 1], ['deck: fwd over the other', -5.4, -1.4, -8.6, -2.2, 1]]) {
+    const fy = deck === 2 ? N.DECK_Y + N.BR_STEP : deck ? N.DECK_Y : N.HOLD_Y;
+    C.set(X + x0, fy + 1.7, Z + z0); b.camBaseY = fy + 1.7; b.groundY = fy; w.__adv(8);
+    let minY = 99, maxY = -99, stuck = 0, last = C.clone();
+    b.keys.KeyW = true;
+    for (let i = 0; i < 200; i++) { b.lookAt(X + x1, C.y, Z + z1); w.__adv(1); minY = Math.min(minY, C.y - fy); maxY = Math.max(maxY, C.y - fy); if (i > 10 && C.distanceTo(last) < 0.002) stuck++; last.copy(C); if (Math.hypot(C.x - X - x1, C.z - Z - z1) < 0.25) break; }
+    b.keys.KeyW = false; w.__adv(6);
+    log(nm, 'ended', (C.x - X).toFixed(2), (C.z - Z).toFixed(2), 'short by', Math.hypot(C.x - X - x1, C.z - Z - z1).toFixed(2), 'eye', minY.toFixed(2), '..', maxY.toFixed(2), 'stuck frames', stuck);
+  }
+}
+
+// every material aboard as it lands on screen: from views in the hold, the quarters, the wheelhouse and on deck, a grid of
+// pixels is raycast to the material under it and the rendered pixel read back. Per material, per place: mean luminance (0-255,
+// as displayed), mean saturation, mean hue, and how many pixels — so a thing that glows or sinks against its room shows.
+export async function wreckTones({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, T = b.THREE, V = T.Vector3, N = S.userData.nav, D = N.DECK_Y, h = N.HOLD_Y;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 400; i++) { b.frame(1); await sleep(20); }
+  S.updateMatrixWorld(true);
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z));
+  const meshes = []; S.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
+  const R = new T.Raycaster(), gl = b.renderer.domElement, cv = document.createElement('canvas'), cg = cv.getContext('2d', { willReadFrequently: true });
+  const places = {
+    hold: [[L(-4.9, h + 1.72, 2.3), L(-5.5, h + 1.2, -2.5)], [L(-2.6, h + 1.72, 0.6), L(-7.4, h + 1.4, 0)], [L(-2.2, h + 1.72, 1.9), L(3.0, h + 1.1, 1.9)], [L(-1.4, h + 1.72, -1.8), L(-0.9, h + 1.4, 3)], [L(-5.2, h + 1.6, -1.0), L(-6.6, h + 1.0, -3.6)]],
+    quarters: [[L(3.6, h + 1.72, 0), L(6.8, h + 1.2, 0.2)], [L(4.6, h + 1.5, 1.0), L(6.4, h + 0.8, 3.0)], [L(4.6, h + 1.6, -0.6), L(6.4, h + 1.0, -2.2)]],
+    wheelhouse: [[L(N.BR_X0 + 3.4, D + N.BR_STEP + 1.72, 0), L(N.BR_X0, D + N.BR_STEP + 1.45, 0)], [L(N.BR_X0 + 0.6, D + N.BR_STEP + 1.72, 1.2), L(N.BR_X1, D + N.BR_STEP + 1.2, -0.8)]],
+    deck: [[L(10.6, D + 1.72, 0.4), L(6.6, D + 1.4, -0.4)], [L(-5.6, D + 1.72, 0.2), L(-10.5, D + 0.5, -1.2)], [L(0.9, D + 1.72, -2.6), L(8, D + 1.0, -3.6)], [L(1.8, D + 1.72, 2.9), L(9, D + 0.6, 3.4)], [L(8.0, D + 1.6, 0.6), L(10.0, D + 0.5, 2.3)]],
+  };
+  const sRGB = (c) => c; // the canvas is what is displayed
+  for (const [pl, views] of Object.entries(places)) {
+    const acc = new Map();
+    for (const [p, t] of views) {
+      C.position.copy(p); C.lookAt(t); C.updateMatrixWorld(true); b.renderer.render(b.scene, C);
+      cv.width = gl.width; cv.height = gl.height; cg.drawImage(gl, 0, 0); const d = cg.getImageData(0, 0, cv.width, cv.height).data;
+      for (let gy = 0; gy < 36; gy++) for (let gx = 0; gx < 64; gx++) {
+        const nx = (gx + 0.5) / 64, ny = (gy + 0.5) / 36; R.setFromCamera(new T.Vector2(nx * 2 - 1, 1 - ny * 2), C);
+        const hit = R.intersectObjects(meshes, false)[0]; if (!hit || hit.distance > 12) continue;
+        const m = Array.isArray(hit.object.material) ? hit.object.material[hit.face.materialIndex] : hit.object.material;
+        let nm = m.name || m.type; if (/^(TileSheet|Tilesheet2|Material|bunk|chair|bench|table|barrel|Metal)$/.test(nm) || !/^wreck\./.test(nm)) { let q = hit.object; while (q && q !== S && !q.name) q = q.parent; nm = (q && q.name ? q.name + ':' : '') + nm; }
+        const x = Math.floor(nx * cv.width), y = Math.floor(ny * cv.height); let r = 0, g = 0, bb = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const o = ((y + dy) * cv.width + x + dx) * 4; r += d[o]; g += d[o + 1]; bb += d[o + 2]; n++; }
+        r /= n; g /= n; bb /= n; const l = 0.2126 * r + 0.7152 * g + 0.0722 * bb, mx = Math.max(r, g, bb), mn = Math.min(r, g, bb), sat = mx ? (mx - mn) / mx : 0;
+        let hue = 0; if (mx > mn) { hue = mx === r ? ((g - bb) / (mx - mn)) % 6 : mx === g ? (bb - r) / (mx - mn) + 2 : (r - g) / (mx - mn) + 4; hue *= 60; if (hue < 0) hue += 360; }
+        const a = acc.get(nm) || { l: 0, s: 0, hx: 0, hy: 0, n: 0 }; a.l += l; a.s += sat; a.hx += Math.cos(hue * Math.PI / 180) * sat; a.hy += Math.sin(hue * Math.PI / 180) * sat; a.n++; acc.set(nm, a);
+      }
+      await sleep(1);
+    }
+    log('==', pl);
+    [...acc].sort((p, q) => q[1].n - p[1].n).filter(([, a]) => a.n >= 12).forEach(([k, a]) => log('  ', k.padEnd(34), 'lum', (a.l / a.n).toFixed(1).padStart(6), 'sat', (a.s / a.n).toFixed(2), 'hue', ((Math.atan2(a.hy, a.hx) * 180 / Math.PI + 360) % 360).toFixed(0).padStart(4), 'px', a.n));
+  }
+}
+
+// what a pixel of the hold is: its material, where, its normal (her frame), and the moon's mask there (`wlMoon` in JS)
+export async function wreckPix({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, T = b.THREE, V = T.Vector3, N = S.userData.nav, h = N.HOLD_Y;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 300; i++) { b.frame(1); await sleep(20); }
+  S.updateMatrixWorld(true);
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z));
+  const meshes = []; S.traverse((o) => { if (o.isMesh && o.visible) meshes.push(o); });
+  const R = new T.Raycaster();
+  const V2 = new URLSearchParams(location.search).get('view') || 'aft';
+  const VIEWS = { aft: [L(-2.2, h + 1.72, 1.9), L(3.0, h + 1.1, 1.9)], quarters: [L(3.6, h + 1.72, 0), L(6.8, h + 1.2, 0.2)], tear: [L(-0.8, h + 1.72, 2.6), L(-0.8, h + 0.4, -1.5)] };
+  C.position.copy(VIEWS[V2][0]); C.lookAt(VIEWS[V2][1]); C.updateMatrixWorld(true);
+  const PTS = JSON.parse(new URLSearchParams(location.search).get('pts') || '[[0.5,0.5]]');
+  for (const [px, py] of PTS) {
+    R.setFromCamera(new T.Vector2(px * 2 - 1, 1 - py * 2), C);
+    const k = R.intersectObjects(meshes, false)[0]; if (!k) { log(px, py, 'none'); continue; }
+    const P = S.worldToLocal(k.point.clone()), n = k.face.normal.clone().transformDirection(k.object.matrixWorld);
+    let nm = []; for (let q = k.object; q && q !== S; q = q.parent) if (q.name) nm.push(q.name); log(px, py, nm.join('<'), k.object.material.name, 'P', P.toArray().map((v) => v.toFixed(2)), 'n', n.toArray().map((v) => v.toFixed(2)), 'side', k.object.material.side, 'hasHoldLit', !!k.object.material.userData.holdLit);
+  }
+}
+
+// what a frame in her hold costs: three views, the GPU finished each time (compare against another build with PB_PAGE's own copy)
+export async function wreckCost({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, V = b.THREE.Vector3, N = S.userData.nav, h = N.HOLD_Y, D = N.DECK_Y;
+  C.position.set(b.SHIP_X + 12, 1.7, b.SHIP_Z); b.camBaseY = 1.7;
+  for (let i = 0; i < 400; i++) { b.frame(1); await sleep(20); }
+  S.updateMatrixWorld(true);
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z)), gl = b.renderer.getContext();
+  const time = (n) => { const a = performance.now(); for (let i = 0; i < n; i++) b.renderer.render(b.scene, C); gl.finish(); return (performance.now() - a) / n; };
+  for (const [nm, p, t] of [['holdIn', L(-4.9, h + 1.72, 2.3), L(-5.5, h + 1.2, -2.5)], ['holdAft', L(-2.2, h + 1.72, 1.9), L(3.0, h + 1.1, 1.9)], ['tear', L(-0.8, h + 1.72, 2.6), L(-0.8, h + 0.4, -1.5)], ['deck', L(10.6, D + 1.72, 0.4), L(6.6, D + 1.4, -0.4)]]) {
+    C.position.copy(p); C.lookAt(t); C.updateMatrixWorld(true); time(5); const ms = [time(30), time(30), time(30)].sort((a, b2) => a - b2)[1];
+    log(nm, 'render ms', ms.toFixed(2), 'calls', b.renderer.info.render.calls, 'tris', b.renderer.info.render.triangles);
+  }
+}
+
+// THE STORES BREAK INTO BOARDS: smash a barrel and a crate in her hold and one on deck; count the boards, watch them fall
+// and sleep, kick them by walking through, and time the frames while they move
+export async function wreckSmash({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera, S = b.shipwreck, V = b.THREE.Vector3, N = S.userData.nav, h = N.HOLD_Y, D = N.DECK_Y, X = b.SHIP_X, Z = b.SHIP_Z;
+  C.position.set(X + 12, 1.7, Z); b.camBaseY = 1.7; w.__clockOn(); w.__adv(200);
+  for (let i = 0; i < 300 && !b.shipBrkS().some((B) => B.u.kind === 'crate'); i++) w.__adv(5);
+  const brk = b.shipBrkS(); log('breakables', brk.length, brk.map((B) => B.u.kind[0] + (B.u.deck ? 'D' : 'h')).join(''));
+  const L = (x, y, z) => S.localToWorld(new V(x, y, z));
+  // stand in the hold by the bow stores and break two
+  C.position.copy(L(-4.6, h + 1.72, -1.6)); b.camBaseY = C.position.y; b.groundY = h; w.__adv(5);
+  const pick = (kind, deck) => brk.filter((B) => !B.dead && B.u.kind === kind && !!B.u.deck === deck).sort((a, c) => a.wbox.getCenter(new V()).distanceTo(C.position) - c.wbox.getCenter(new V()).distanceTo(C.position))[0];
+  const bar = pick('barrel', false), cra = pick('crate', false);
+  b.lookAt(...bar.wbox.getCenter(new V()).toArray()); b.smashShipStore(bar, 6);
+  log('barrel ->', b.debrisS().length, 'boards');
+  b.lookAt(...cra.wbox.getCenter(new V()).toArray()); b.smashShipStore(cra, 6);
+  log('+ crate ->', b.debrisS().length, 'boards');
+  { const T = []; for (let i = 0; i < 40; i++) { const a = performance.now(); b.updateDebris(1 / 60); T.push(performance.now() - a); }
+    T.sort((x, y) => x - y); log('updateDebris ms, 181 awake: median', T[20].toFixed(3), 'max', T[39].toFixed(3)); }
+  { const gl = b.renderer.getContext(); const T = []; for (let i = 0; i < 12; i++) { const a = performance.now(); b.renderer.render(b.scene, C); gl.finish(); T.push(performance.now() - a); } log('render ms', T.map((x) => x.toFixed(1)).join(' ')); }
+  shot('sm_burst', 960, 1.35);
+  const t0 = performance.now(); let n = 0, worst = 0, last = performance.now();
+  const FT = []; for (let i = 0; i < 150; i++) { w.__adv(1); n++; const t = performance.now(); FT.push(t - last); worst = Math.max(worst, t - last); last = t; }
+  log('frame ms first 8', FT.slice(0, 8).map((x) => x.toFixed(1)).join(' '), 'spikes >10', FT.map((x, i) => x > 10 ? i : -1).filter((x) => x >= 0).join(','));
+  const aw = b.debrisS().filter((d) => d.awake).length;
+  for (const d of b.debrisS().slice(0, 5)) log('  board', 'v', d.v.toArray().map((x) => x.toFixed(3)).join(','), 'w', d.w.toArray().map((x) => x.toFixed(2)).join(','), 'y', (d.pos.y - N.soleY(d.pos.x - X, d.pos.z - Z)).toFixed(3), 'h', d.h.toArray().map((x) => x.toFixed(3)).join(','), 'still', d.still.toFixed(2));
+  log('after 2.5 s: awake', aw, 'of', b.debrisS().length, 'avg ms/frame', ((performance.now() - t0) / n).toFixed(2), 'worst', worst.toFixed(1));
+  // heights: none under her sole, none floating
+  let under = 0, high = 0; for (const d of b.debrisS()) { const f = N.soleY(d.pos.x - X, d.pos.z - Z); const lo = d.pos.y - Math.min(d.h.x, d.h.y, d.h.z); if (lo < f - 0.03) under++; if (!d.awake && lo > f + 0.25) high++; }
+  log('below the sole', under, 'resting in the air', high);
+  for (let i = 0; i < 240; i++) w.__adv(1);
+  log('after 6.5 s: awake', b.debrisS().filter((d) => d.awake).length, 'of', b.debrisS().length);
+  for (const d of b.debrisS().filter((d) => d.awake).slice(0, 6)) { const lx = d.pos.x - X, lz = d.pos.z - Z; log('  awake', 'l', lx.toFixed(2), lz.toFixed(2), 'y-sole', (d.pos.y - N.soleY(lx, lz)).toFixed(3), 'v', d.v.toArray().map((x) => x.toFixed(2)).join(','), 'w', d.w.toArray().map((x) => x.toFixed(2)).join(','), 'h', d.h.toArray().map((x) => x.toFixed(3)).join(','), 'hz', Math.min(N.HOLD_HZ, N.halfAtY(lx, N.HOLD_Y) - 0.02).toFixed(2)); }
+  { const m = new V(); b.debrisS().forEach((d) => m.add(d.pos)); m.multiplyScalar(1 / b.debrisS().length);
+    C.position.set(m.x + 1.3, m.y + 1.25, m.z + 1.1); C.lookAt(m); C.updateMatrixWorld(true); shot('sm_rest', 960, 1.35); }
+  // walk through them: how many move
+  const before = b.debrisS().map((d) => d.pos.clone());
+  b.keys.KeyW = true; const tgt = cra.wbox.getCenter(new V());
+  C.position.copy(L(-2.6, h + 1.72, -1.0)); b.camBaseY = C.position.y; w.__adv(3);
+  for (let i = 0; i < 120; i++) { b.lookAt(tgt.x - 2.0, C.position.y, tgt.z - 0.4); w.__adv(1); }
+  b.keys.KeyW = false; w.__adv(90);
+  let moved = 0; b.debrisS().forEach((d, i) => { if (before[i] && d.pos.distanceTo(before[i]) > 0.1) moved++; });
+  log('walked through: moved', moved, 'awake now', b.debrisS().filter((d) => d.awake).length);
+  shot('sm_kicked', 960, 1.35);
+  // and one on deck
+  const dc = pick('crate', true); C.position.copy(dc.wbox.getCenter(new V()).add(new V(1.6, 1.5, 0.4))); b.camBaseY = C.position.y; w.__adv(3);
+  b.lookAt(...dc.wbox.getCenter(new V()).toArray()); b.smashShipStore(dc, 7); w.__adv(150);
+  let off = 0; for (const d of b.debrisS()) { const lz = d.pos.z - Z; if (d.pos.y > D - 0.5 && Math.abs(lz) > N.halfAtY(Math.max(-N.HALF, Math.min(N.HALF, d.pos.x - X)), D)) off++; }
+  log('deck crate -> total', b.debrisS().length, 'outside her sides', off, 'draws', b.debPoolsS().size);
+  shot('sm_deck', 960, 1.35);
+}
+
+// A PLAYTHROUGH OF HER, on foot with W held: from the beach in through the breach, into her stores (walking into one is the
+// blow), through the boards, up the ladder, along the deck, in at the wheelhouse door to the wheel. Where you end up, what
+// broke, what was kicked, frame times, a still at each stage.
+export async function wreckPlay({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = false;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera.position, S = b.shipwreck, N = S.userData.nav, X = b.SHIP_X, Z = b.SHIP_Z, V = b.THREE.Vector3;
+  C.set(X - 5, 1.7, Z + 9); b.camBaseY = 1.7; w.__clockOn(); w.__adv(240);
+  for (let i = 0; i < 300 && !b.shipBrkS().some((B) => B.u.kind === 'crate'); i++) w.__adv(5);
+  const FT = [];
+  const walk = async (nm, x, z, n = 260, look) => {
+    let last = performance.now(), stuck = 0, prev = C.clone();
+    b.keys.KeyW = true;
+    for (let i = 0; i < n; i++) {
+      b.lookAt(X + x, C.y - 0.25, Z + z); w.__adv(1);
+      const t = performance.now(); FT.push(t - last); last = t;
+      if (C.distanceTo(prev) < 0.003) stuck++; else stuck = 0; prev.copy(C);
+      if (Math.hypot(C.x - X - x, C.z - Z - z) < 0.3 || stuck > 25) break;
+    }
+    b.keys.KeyW = false; w.__adv(10);
+    const lx = C.x - X, lz = C.z - Z;
+    log(nm.padEnd(30), 'at', lx.toFixed(2), lz.toFixed(2), 'feet', (C.y - 1.72).toFixed(2), 'short', Math.hypot(lx - x, lz - z).toFixed(2), stuck > 25 ? 'STOPPED' : '', 'broken', b.shipBrkS().filter((B) => B.dead).length, 'boards', b.debrisS().length);
+    if (look) { b.lookAt(X + look[0], look[1], Z + look[2]); w.__adv(2); shot('play_' + nm.replace(/\W+/g, '_'), 960, 1.35); }
+  };
+  await walk('to the breach', -4.9, 5.2);
+  await walk('in through it', -4.9, 2.6, 260, [-6.8, 0.6, -2.4]);
+  await walk('into the bow stores', -6.6, -2.2, 300);
+  await walk('on through them', -5.4, -0.4, 200, [-6.8, 0.3, -2.0]);
+  await walk('back over the boards', -7.0, -1.8, 200);
+  await walk('kick them again', -4.6, 0.2, 200, [-6.4, 0.3, -1.6]);
+  await walk('to the ladder foot', 1.6, -0.2, 300);
+  await walk('up the ladder', -0.8, -0.15, 300);
+  await walk('onto the deck', -1.9, 0.0, 120);
+  await walk('to the wheelhouse door', 5.4, 3.7, 400);
+  await walk('in at the door', 5.4, 1.4, 200, [3.5, N.DECK_Y + N.BR_STEP + 1.2, 0]);
+  await walk('to the wheel', 4.6, 0.05, 200, [2.6, N.DECK_Y + N.BR_STEP + 1.4, 0]);
+  FT.sort((a, c) => a - c);
+  log('frames', FT.length, 'median ms', FT[FT.length >> 1].toFixed(1), 'p95', FT[Math.floor(FT.length * 0.95)].toFixed(1), 'max', FT[FT.length - 1].toFixed(1), 'over 33 ms', FT.filter((x) => x > 33).length);
+}
+
+// a store broken in a saved game, restored: its boards lie at rest where it stood, none under her floor, none awake
+export async function wreckQuiet({ w, b, log, sleep }) {
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  for (let i = 0; i < 400 && !b.shipBrkS().some((B) => B.u.kind === 'crate'); i++) { b.frame(1); await sleep(20); }
+  const N = b.shipwreck.userData.nav, X = b.SHIP_X, Z = b.SHIP_Z, D = N.DECK_Y;
+  let n = 0;
+  for (const B of b.shipBrkS()) if (!B.dead && (B.u.kind === 'barrel' || B.u.kind === 'crate')) { b.smashShipStore(B, 0, true); n++; }
+  const all = b.debrisS(); let under = 0, air = 0, awake = 0;
+  for (const d of all) { const lx = d.pos.x - X, lz = d.pos.z - Z, lo = d.pos.y - Math.min(d.h.x, d.h.y, d.h.z); const f = d.pos.y > D - 0.4 ? D : N.soleY(lx, lz); if (lo < f - 0.03) under++; if (lo > f + 0.3) air++; if (d.awake) awake++; }
+  log('restored broken', n, 'boards', all.length, 'awake', awake, 'under the floor', under, 'in the air', air);
+}
+
+// THE KEEP'S CRATE AND THE CASTLES' WOODEN PROPS BREAK INTO BOARDS: break them, count, let them fall and sleep, check they lie
+// on what is under them, kick them by walking through, time the frames, a still of each
+export async function propSmash({ w, b, log, sleep, shot }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true; b.renderer.debug.checkShaderErrors = true;
+  const oe = w.console.error.bind(w.console); w.console.error = (...a) => { const t = a.map(String).join(' '); if (/Shader|Program/.test(t)) log('GLERR', t.slice(0, 900).replace(/\n/g, ' | ')); oe(...a); };
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const T = b.THREE, V = T.Vector3, C = b.camera;
+  const settle = (n = 360) => { const FT = []; let last = performance.now(); for (let i = 0; i < n; i++) { w.__adv(1); const t = performance.now(); FT.push(t - last); last = t; } FT.sort((a, c) => a - c); return FT; };
+  const check = (from, floorFn, nm) => {
+    const all = b.debrisS().slice(from); let under = 0, air = 0, awake = 0;
+    for (const d of all) { const f = floorFn(d.pos.x, d.pos.z, d.pos.y); const lo = d.pos.y - Math.min(d.h.x, d.h.y, d.h.z); if (lo < f - 0.04) under++; if (!d.awake && lo > f + 0.3) air++; if (d.awake) awake++; }
+    log(nm, 'boards', all.length, 'awake', awake, 'under', under, 'in the air', air);
+  };
+  // ---- the castle court: its wooden props
+  b.introDone = true; b.started = true; b.loadCastleProps(); b.loadFort();
+  for (let i = 0; i < 900 && !b.fortState().ready; i++) { b.frame(1); await sleep(30); }
+  b.placeInFort(); w.__clockOn();
+  let site = null; for (let i = 0; i < 2500; i++) { w.__adv(1); await sleep(4); site = b.CP.sites.fort; if (site && site.built) break; }
+  const woods = site.props.filter((P) => !P.dead && P.kind.K.mat === 'wood');
+  const pick = []; for (const re of [/barrel|keg/, /crate|box/, /table|stool/, /cart/, /bucket/]) { const P = woods.find((q) => re.test(q.kind.name) && !pick.includes(q)); if (P) pick.push(P); }
+  log('court wooden props', woods.length, 'breaking', pick.map((P) => P.kind.name).join(','));
+  const D = b.CP_SITE_DEFS ? b.CP_SITE_DEFS.fort : null;
+  for (const P of pick) {
+    const from = b.debrisS().length;
+    C.position.set(P.x + 2.2, P.fy + 1.7, P.z + 1.4); C.lookAt(P.x, P.fy + 0.4, P.z); b.camBaseY = C.position.y;
+    b.cpBreak(P, 8);
+    const FT = settle(300);
+    check(from, (x, z, y) => { const f = b.fortCourtAtS ? b.fortCourtAtS(x, z) : null; return f !== null && f !== undefined ? f : P.fy; }, P.kind.name);
+    log('  frames median', FT[FT.length >> 1].toFixed(1), 'max', FT[FT.length - 1].toFixed(1));
+    const m = new V(); const bs = b.debrisS().slice(from); bs.forEach((d) => m.add(d.pos)); m.multiplyScalar(1 / Math.max(1, bs.length));
+    C.position.set(m.x + 1.6, m.y + 1.4, m.z + 1.2); C.lookAt(m); C.updateMatrixWorld(true); shot('ps_' + P.kind.name, 900, 1.2);
+  }
+  // ---- the keep's crate
+  b.loadKeep(); for (let i = 0; i < 900 && !b.keepState().ready; i++) { b.frame(1); await sleep(30); }
+  b.placeInKeep(); for (let i = 0; i < 200; i++) { w.__adv(1); await sleep(4); }
+  b.extractKeepCrate(); const K = b.keepCrateS();
+  if (!K) { log('NO KEEP CRATE'); return; }
+  const from = b.debrisS().length;
+  C.position.set(K.cx + 1.8, K.box.max.y + 1.0, K.cz + 1.6); C.lookAt(K.cx, K.box.min.y + 0.4, K.cz); b.camBaseY = C.position.y;
+  b.smashKeepCrate(8);
+  const FT = settle(300);
+  const deck = K.box.min.y + 0.32;
+  let low = 0, onDeck = 0, sea = []; for (const d of b.debrisS().slice(from)) { if (d.pos.y < deck - 0.5) { low++; sea.push((d.pos.y - b.keepSeaAtS(d.pos.x, d.pos.z)).toFixed(3)); } else onDeck++; }
+  log('  off-pier boards, height over the sea', sea.slice(0, 8).join(' '));
+  log('keep crate boards', b.debrisS().length - from, 'on the pier', onDeck, 'off it, down', low, 'awake', b.debrisS().slice(from).filter((d) => d.awake).length, 'frames median', FT[FT.length >> 1].toFixed(1), 'max', FT[FT.length - 1].toFixed(1));
+  for (let i = 0; i < 600; i++) w.__adv(1);
+  log('  after 10 s more: awake', b.debrisS().slice(from).filter((d) => d.awake).length);
+  { const m = new V(); const bs = b.debrisS().slice(from).filter((d) => d.pos.y > deck - 0.5); bs.forEach((d) => m.add(d.pos)); m.multiplyScalar(1 / Math.max(1, bs.length));
+    C.position.set(m.x + 0.9, m.y + 2.3, m.z + 0.7); C.lookAt(m); C.updateMatrixWorld(true); shot('ps_keepCrate', 900, 1.2); }
+  // walk through the keep's boards
+  const before = b.debrisS().slice(from).map((d) => d.pos.clone());
+  b.keys.KeyW = true; C.position.set(K.cx - 1.6, C.position.y, K.cz); b.camBaseY = C.position.y;
+  for (let i = 0; i < 100; i++) { b.lookAt(K.cx + 2, C.position.y, K.cz); w.__adv(1); }
+  b.keys.KeyW = false; settle(120);
+  let moved = 0; b.debrisS().slice(from).forEach((d, i) => { if (d.pos.distanceTo(before[i]) > 0.1) moved++; });
+  log('walked through the keep boards: moved', moved, 'awake after', b.debrisS().slice(from).filter((d) => d.awake).length);
+}
+
+// the castle court and the keep, loaded and looked at, NOTHING broken: does WebGL complain anyway?
+export async function propQuiet({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  b.introDone = true; b.started = true; b.loadCastleProps(); b.loadFort();
+  for (let i = 0; i < 900 && !b.fortState().ready; i++) { b.frame(1); await sleep(30); }
+  b.placeInFort(); w.__clockOn();
+  for (let i = 0; i < 2500; i++) { w.__adv(1); await sleep(4); const site = b.CP.sites.fort; if (site && site.built) break; }
+  for (let i = 0; i < 200; i++) w.__adv(1);
+  log('fort looked at, nothing broken; pools', b.debPoolsS().size);
+  b.loadKeep(); for (let i = 0; i < 900 && !b.keepState().ready; i++) { b.frame(1); await sleep(30); }
+  b.placeInKeep(); for (let i = 0; i < 200; i++) { w.__adv(1); await sleep(4); }
+  log('keep looked at, nothing broken');
+}
+
+// HER COLLISION, AUDITED: (1) every solid box of hers has something to see inside it (rays across it at three heights, both
+// ways) — a box with nothing in it is an invisible wall; (2) a grid of places to stand in her hold, on her deck and in her
+// wheelhouse, from each a walk in eight directions — a place you cannot walk out of is a trap
+export async function wreckStuck({ w, b, log, sleep }) {
+  const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
+  await ev('/tools/burntest.js');
+  b.settings.devMode = true;
+  for (let i = 0; i < 300 && !b.state().started; i++) { b.frame(1); await sleep(30); }
+  const C = b.camera.position, S = b.shipwreck, N = S.userData.nav, X = b.SHIP_X, Z = b.SHIP_Z, T = b.THREE, V = T.Vector3;
+  C.set(X + 12, 1.7, Z); b.camBaseY = 1.7; w.__clockOn(); w.__adv(200);
+  for (let i = 0; i < 300 && !b.shipBrkS().some((B) => B.u.kind === 'crate'); i++) w.__adv(5);
+  S.updateMatrixWorld(true);
+  // (1) the boxes
+  const meshes = []; S.traverse((o) => { if (o.isMesh && o.visible && !/debris|hitProxy/.test(o.name)) meshes.push(o); });
+  const R = new T.Raycaster(); let empty = 0;
+  for (const q of N.props) {
+    const cx = (q[0] + q[2]) / 2, cz = (q[1] + q[3]) / 2, lo = q[4], hi = q[6] !== undefined ? q[6] : q[5];
+    let hit = false;
+    /* dense: every 6 cm up its height, five lines across it, both ways (a chair or a wire basket is mostly air: three rays
+     * through its middle passed between its legs) — and down onto it from over its top */
+    const top = Math.min(hi, lo + 2.6);
+    for (let y = Math.max(lo + 0.05, N.HOLD_Y - 0.1); y <= top && !hit; y += 0.06) for (const [dx, dz, L, W] of [[1, 0, q[2] - q[0], q[3] - q[1]], [0, 1, q[3] - q[1], q[2] - q[0]]]) {
+      for (let k = -2; k <= 2 && !hit; k++) {
+        const off = k / 2 * W * 0.42;
+        const o = S.localToWorld(new V(cx - dx * (L / 2 + 0.3) + dz * off, y, cz - dz * (L / 2 + 0.3) + dx * off));
+        R.set(o, new V(dx, 0, dz).transformDirection(S.matrixWorld)); R.far = L + 0.6;
+        if (R.intersectObjects(meshes, false).length) hit = true;
+      }
+      if (hit) break;
+    }
+    if (!hit) { empty++; log('  EMPTY BOX', [cx, cz].map((v) => v.toFixed(2)).join(','), 'size', (q[2] - q[0]).toFixed(2), (q[3] - q[1]).toFixed(2), 'y', lo.toFixed(2), '..', (q[6] ?? q[5]).toFixed(2)); }
+  }
+  log('solid boxes', N.props.length, 'with nothing to see in them', empty);
+  if (/boxes=1/.test(location.search)) return;
+  // (2) the grid
+  const zones = [
+    ['hold', N.HOLD_Y, N.HOLD_X0 + 0.5, N.HOLD_X1 - 0.4, 0.7, (x) => Math.min(N.HOLD_HZ, N.halfAtY(x, N.HOLD_Y) - 0.02) - 0.45],
+    ['deck', N.DECK_Y, -N.HALF + 2.0, N.HALF - 1.2, 0.9, (x) => N.halfAtY(Math.max(-N.HALF, Math.min(N.HALF, x)), N.DECK_Y) - 0.6],
+    ['wheelhouse', N.DECK_Y + N.BR_STEP, N.BR_X0 + 0.45, N.BR_X1 - 0.45, 0.55, () => N.BR_HZ - 0.45],
+  ];
+  for (const [nm, fy, x0, x1, st, hz] of zones) {
+    let pts = 0, inside = 0, traps = [], tight = [];
+    for (let x = x0; x <= x1; x += st) for (let z = -hz(x); z <= hz(x) + 1e-3; z += st) {
+      if (nm === 'deck' && x > N.BR_X0 - 0.6 && x < N.BR_X1 + 0.6 && Math.abs(z) < N.BR_HZ + 0.6) continue;   // (the house itself)
+      if (nm === 'deck' && x > N.HATCH_X0 - 0.5 && x < N.HATCH_X1 + 0.5 && Math.abs(z) < N.HATCH_HZ + 0.5) continue;
+      C.set(X + x, fy + 1.72, Z + z); b.camBaseY = C.y; b.groundY = fy; w.__adv(3);
+      if (Math.hypot(C.x - X - x, C.z - Z - z) > 0.25 || Math.abs(C.y - fy - 1.72) > 0.4) { inside++; continue; }
+      pts++;
+      let free = 0; const sx = C.x, sz = C.z, sy = C.y;
+      for (let k = 0; k < 8; k++) {
+        const a = k / 8 * Math.PI * 2;
+        C.set(sx, sy, sz); b.camBaseY = sy; w.__adv(1);
+        b.keys.KeyW = true;
+        for (let i = 0; i < 14; i++) { b.lookAt(sx + Math.cos(a) * 5, sy, sz + Math.sin(a) * 5); w.__adv(1); }
+        b.keys.KeyW = false;
+        if (Math.hypot(C.x - sx, C.z - sz) > 0.18) free++;
+      }
+      if (free <= 1) traps.push([x.toFixed(1), z.toFixed(1), free].join(':'));
+      else if (free <= 3) tight.push([x.toFixed(1), z.toFixed(1), free].join(':'));
+      C.set(sx, sy, sz); b.camBaseY = sy; w.__adv(1);
+    }
+    log(nm, 'places', pts, 'inside something (skipped)', inside, 'TRAPS', traps.length, traps.slice(0, 12).join(' '), '| tight (2-3 ways out)', tight.length, tight.slice(0, 12).join(' '));
+  }
+}

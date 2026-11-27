@@ -1588,3 +1588,164 @@ blue beach with a hard line where it went under. Raycast the seam before guessin
 thing there; the pale sheet beyond it is the beach's own swash (`SAND_EDGE_K`). Now it is `M.sand` (the beach's
 material, every apron's way), banked to 0.24 m (was 0.15) at 0.04 m off her line (was 0.10) and reaching 1.3–1.6 m
 out, so the broken plank ends stand IN it. Probe `breachSeam` (views `m4` is his shot; `farOut`/`farIn` the crawl hole).
+
+## 2026-11-23 — every face laid in metres; her iron rusted from the owner's scans
+The owner's screenshot from her deck along the bulwark: "these areas that just look like a stretched texture you made",
+then "do 1 [the texture scale] and then use these textures on parts of the ship that are applicable as metal areas with
+rust" (two Substance smart materials, `~/Downloads/MS_Collection_metal_84.spsm` / `_98.spsm`).
+- **MEASURE IT: probe `wreckTexel`** prints, per material, map px per metre along u and v over every triangle (area-
+  weighted), the stretch (mean |log(u/v)|), the worst places, and faces with NO uv extent. The materials are named now
+  (`wreck.<key>`, after `M`) so it can say which. Before: dark 10.4x, wood 9.5x, steel 6.2x, rope 6x, plank (the bulwark's
+  inside) 5.8x, paint 3x, inner 1.9x; 57.6 m² of hull with zero uv area. After: every one of
+  those 1.00-1.21x. Left: the hull 1.68x (v keel to rail once, on purpose), `bunk` 1.64x and 1.2 m² without uv extent in the
+  stores' TileSheet (both downloaded models).
+- **The bulwark's inside face** took the plank map's v 0.88..1 over its 0.85 m (50 px/m up, 394 along): now
+  `Vp = (y − DECK_Y − sheerAt(x)) / PLANK_VM` — a map course is a `COURSE` (0.17 m) counted up from her deck line ON THE
+  SHEER (the courses follow it, and `bulwarkWear`'s missing courses are whole map courses), u at the same 84 px/m
+  (`PLANK_UM`); its top and end grain at that scale. It is `uvLaid` so the general pass leaves it.
+- **`layInMetres(S, rules)`** after the three `bakeGroup`s: every triangle of wood/rope ('grain': u along the face's
+  longer side), steel/plank/paint/inner/dark ('upright': standing faces v straight up from `base`, lying faces u along
+  her) gets uv = her own metres × D / (map px × repeat). The lining's D is 512 / (DECK_Y − HOLD_Y) from HOLD_Y, so its
+  tide line stays at one height round the hold. Was BoxGeometry's one-tile-a-face uvs on everything built from `slab`/`cyl`.
+  `mp.userData.px` gives a map's size before it has loaded (the rust map is loaded, not painted).
+- **The paint map's per-tile grime band is gone**: laid at 533 px/m a tile is 0.96 m up a wall and the band came round mid-wall.
+- **The stern and stem stitch** shared the two sides' vertices, whose u is her length — constant across the flat stern, so
+  one column of the map was smeared over it. They have their own corners now: u ACROSS her (z / 5.2), the sides' own v.
+  **The rot holes' lips** gave the inner edge the outer edge's uv (one row smeared through the lip's depth): offset by d.
+- **HER IRON IS THE OWNER'S RUST.** A `.spsm` is HDF5 holding `.sbsar` graphs (procedural: need Substance to run) and
+  their bitmaps, carved out by scanning for JPEG/PNG signatures: ~12 grayscale 2048 grunge scans (+ preview spheres);
+  the two collections share most of them. Tiled 2x2 to check: the blotch and vein masks have a seam (left out); six tile.
+  Those six are in `incoming/wreck-rust/` (gitignored, never committed) and `tools/rust_pack.html` composes one 512 px
+  tile, a metre of iron (old black paint scratched to the steel, ~a third rust scale, runs down from it, quantised to
+  16 levels, a Sobel normal): `assets/wreck-rust.jpg` (92 KB), `assets/wreck-rust-n.jpg` (220 KB). `metalMaps()` LOADS
+  them (TextureLoader, NoColorSpace like the canvas maps). Every `M.steel` part wears it (stove, rails, stanchions, stays,
+  gaff, hook, chain, bow roller, pots, dead lamp).
+- **`M.steel` metalness 0.30 → 0** (METALNESS IS A TRAP: it only blacked her iron and the rust never showed) and its lift
+  off its own map 0x3a2e22 x0.46 → 0x7c6a5a x0.24 (0xa08a76 x0.55 GLOWED orange at night — the stays like neon). Probe
+  `wreckRust`: her deck both ways, the pots, the gaff, the stair, the stern, and close on the gaff, a pot stack, the stove.
+- **Lying 'upright' faces that run ACROSS her** (the coaming's tops, the stairwell's lips) take u across: laid along her their
+  boards were piano keys. The test is per triangle (> 0.3 m and 2.2x longer across), so the cap rail's short lofted stations
+  do not flip. `layInMetres` is 7 ms (36,324 triangles). Probe `wreckCorners`: the owner's spot (`sternP`), run on the
+  committed ship and on this one. FIXED 2026-11-24 (below; the deck's own mapping was never the cause): the seams zigzagging at the bow, starboard of the mast; a thin
+  line of sea at the foot of the bulwark by the transom.
+- Harness: `probe.sh` waits for any process whose command line holds its headless flag — a shell call that has that text
+  anywhere in it (a Chrome launched by hand, even a note about it) waits for ITSELF. Give each its own call.
+
+### 2026-11-24: the zigzag, the blue line, and three irons
+
+- **The bow's zigzag was the BREASTHOOK, not the deck**: its v ran 0..1 across whatever width she had at each station, so a
+  tile was squeezed into each and every triangle bent it. In the deck's own metres and phase now, with a riser and a timber
+  along its after edge (a 5.5 cm step seen slantwise jogs the boards; bare, that still read as the same fault).
+- **The "sea gap" at the stern was neither sea nor a gap: it was the DUNE.** The cliff's crest runs through her stern and its
+  shader discards it inside her (`uShipCutHW`): 17 stations, 1.6 m apart, so at her quarter the chord ran 11 cm inside the
+  curve and with the 6 cm margin stood in front of 13 cm of planking. 53 stations now, at the deck AND the rail. How it was
+  found: rays against the ship alone hit solid plank, so cast against the whole scene (hits came back nearer, on `cliff`),
+  and hide one mesh at a time until the blue goes. A ray test on half the scene is not a test.
+- **Corrugated sheets** (`dressSheets`, `assets/rusted-sheet.glb`, `tools/sheet_pack.py`): each one's own vertices are the
+  (u, w) of the surface it is nailed to and its thickness the way out, so a sheet is bent onto her. 31 of them, two draws.
+  Anything new on a curve goes on the same way: `[sheet, at(u, w, t), u, w, opts]`. Offsets: 0.118 over the hold's ribs,
+  0.10 over the wales, `TOPSIDE_T + 0.10` over the rail's stanchions.
+- **Plating** (`plating`, in the block above the sheets) is the same idea for flat riveted plate; `M.plate` is
+  `PLATE_T` 0.9625 m a tile because it has a HEAD AND A FOOT (mirrored up): lay it only where the iron is about that tall.
+  Four tiles are the hold's sole to the wheelhouse floor, so the stove and the wheel's pedestal both start on a foot. The
+  source's normal map is blank; ours is the Sobel of its colour and roughness (`tools/plate_pack.html`).
+- **Rust colour is the sheets' own**, by rank (`tools/rust_pack.html`): their rusted and bare pixels sorted into two ramps.
+- **Balance iron on screen, never by its map.** At a white tint the sheets went lilac and crimson; a tint that fixed them
+  turned the neutral grey plate mint; the plate's map is twice as bright as the rust's. Three swings before it settled:
+  `IRON`, `PLATE_C` and the k's beside them are one set. Stills at `&g=1.9` flatter it: look at `g=1` too.
+- **An edge strip needs its second row of uv moved ACROSS the strip** — moved along it (the plating's upright edges, 1.4 m2)
+  it is the old smear again. `wreckTexel` calls it `degenerate`; `wreckBare` lists what has no map (only her glow pool now).
+- Probes: `wreckSeams`, `wreckSheets` (`PB_Q='&g=1.9'`: every view of the iron), `wreckBare`.
+
+### 2026-11-24 (later): her timber a photograph, her stores reskinned, one family of tones, light in her hold
+
+- **Her lining, sole and loose timber are files now** (`tools/timber_pack.html` -> `assets/wreck-{inner,sole,wood}[-n].jpg`),
+  every board cut from ONE photographed plank texture: the wood half of the barrel map in the owner's furniture set
+  (`furniture.glb` image 6). Wear from the scans and noise fields, never spots. `innerMaps`/`soleMaps`/`woodMaps` are
+  `loadedMap` calls; nothing of theirs is in the paint chain any more. Lining and sole 347 px/m (they had 173).
+- **`rotPass` draws rot as noise crests along the grain.** It stamped soft ellipses: from any distance the deck, hull and
+  paint were spotted like a dog. (The memory rule: grime from noise, never circles.)
+- **The pirate set wears our trim sheet, band for band** (`assets/wreck-stores.jpg`: its v bands are red 0-.118, rope
+  -.150, iron -.4235, boards -.722, brass -.756, boards to 1). Its UVs untouched; the tartan is burlap (`wreck-sack`).
+  A glTF's own texture is sRGB: a replacement map loaded by `TextureLoader` must be set `SRGBColorSpace` (and `flipY`
+  false) or it comes out washed cream, while the wreck's own maps are NOT sRGB and were tuned that way — do not mix.
+  1.2 m2 of the set mapped to a point is re-laid by `unpoint` onto the sheet's plain boards.
+- **`wreckTones` is how her colour is balanced**: raycast a grid of pixels in each room to the material, read the
+  displayed pixel back, report lum/sat/hue per material. Her family: hue 30-35, sat ~0.35, lum 17-23 on deck, 19-37 below.
+  Outliers it found and fixed: the sheets (lum 9-12, hue 14 crimson), the stores (9-12), the gilt (sat 0.89), the rope (8).
+  Left on purpose: the sea chest (47: the lamp by it is the game's cue), the wheelhouse paint (its designed sea green).
+- **Light in her hold (`holdLit`, `WL`).** Per pixel, the moon traced through the FAR TEAR's real outline (it faces the
+  7-degree moon) with the quarters' bulkhead shadowing it except through its door; `pow(N.L, 0.35)` so the grazing light
+  still pools on her sole; the even emissive lift taken down away from the openings (`wlAmb`); cold sky under the hatch
+  and the well (`wlSky`). NOT moon through the hatch or the well: at 7 degrees the moon clears her bulwark only from a
+  metre outboard — the first version lit the deckhead as a pane of light. Shafts: the tear's outline extruded along the
+  light, additive, `thick` from the face's angle to the eye (square-on faces are thin sheets; a near-horizontal face of
+  the prism under the ceiling read as a pane too). 420 dust motes lit only inside the moon. Every material below decks
+  gets it, including the stores, furniture and sheets as they land. main.js calls `holdLight.place(shipwreck, MOON_DIR)`.
+  A JS template literal holds the GLSL: a backtick in a comment inside it ends the string (`Unexpected identifier`).
+- Frame cost in her hold (`wreckCost`, against the committed build): no change beyond noise.
+- Probes: `wreckTones`, `wreckWalk` (W held over every new thing; the quarters door stops you only at its barricade),
+  `wreckPix` (one pixel's material, place and normal), `wreckCost`, `fossilLook`.
+- **Mist and beams (2026-11-24, later).** Every material below decks fades to a cold haze with distance (`fog_fragment`
+  in `holdLit`, 0.11/m in the hold, 0.05 in the wheelhouse), and THE MIST CATCHES THE MOON: eight dithered steps along
+  the eye's ray each ask `wlMoonAll`, so the beam stands in the air where it really passes. The extruded prisms alone
+  could not show it: at 7 degrees the tear's beam is a thin wedge along her sole, below a standing eye. In-scatter is
+  0.75 in the hold and 0.16 in the wheelhouse (its windows light most of its air: at 0.45 the room went flat grey-blue).
+- **The wheelhouse is lit by its windows**: `wlWin` traces the moon through the port band and the front glass, panes
+  and mullions, onto the far walls (the even lift there x0.58). At 1.15 the panes blew her sea-green paint to white: 0.62.
+- **Furnished** (the owner: "very bare"): chart (`chartTex`, drawn), mug, dividers, stool (solid), logbook, binoculars,
+  VHF with its whip, a cold oil lamp hung aft, a coil of line — none on the centreline ahead of the wheel, none on glass.
+- **The "rags" were the sand drifts**: sixteen flat-shaded icosahedra across the whole hold and quarters, lit from inside.
+  Five smooth mounds by the two tears now (rims under her sole), and six lumps in the floor holes, not fourteen.
+
+### 2026-11-24 (night): boards you can kick, a bridge that is furnished and solid, glass
+
+- **Breaking is `shatterStore` + the rigid boards (`debAdd`, `debStep`, `updateDebris`, main.js beside `smashShipStore`).**
+  A barrel: its staves (one to three pieces each), six bits of each hoop, three boards per head; a crate: its slats, top,
+  bottom, corner posts; ten splinters. ~95 boards a store. Solid boxes with a rectangle of the trim sheet (`aUvR`, its
+  bands `DEB_BANDS`), ONE InstancedMesh per material (two draws for all of them). Physics: gravity 15 (the gibs'), box
+  inertia, sequential impulses at every corner under the floor (two passes), restitution only above 1.6 m/s, Coulomb
+  friction, rolling friction that grows as a piece thins. LESSONS, each a board that would not lie still: divide a
+  contact's impulse among the corners and it never adds up (a board sank at 0.49 m/s for ever); a rest test under one
+  substep's gravity (0.08 m/s) never passes; a 3 mm hoop's own inertia rocks on its edge for ever (inertia floored at
+  2.5 cm); a wall that reflects every touch never lets a board lying against it sleep (reflect only above 0.5 m/s); and a
+  piece that has stopped going anywhere sleeps after a second whatever it still rocks. Asleep is free; walking through
+  wakes and kicks (`kickT` 0.25 s each). Over `DEB_MAX` (1600) the oldest asleep goes. Restored broken: its boards fall
+  and settle offline before the first frame (`quiet`). Pools compiled when the stores land ('wreck boards'). Measured:
+  181 awake boards 1.1 ms a frame; a playthrough (`wreckPlay`) median 4.4 ms, p95 8.3, worst 20.9 (four stores at once).
+  NOT YET: the sea keep's crate (a cut-out map: its slats have holes) and the cellar props keep the old gibs.
+- **Two module names were taken**: `debris` (the beach's group) and `_dbC`. A new block in main.js: grep every name first.
+- **The wheelhouse** (`BR`): the console a timber cabinet (plinth, lipped top, stiles) with the owner's PLATE let into its
+  face and four gauges in it (`gaugeTex`: RPM, OIL, TEMP, AMP, needles dead), a radar set at its port end, the throttle
+  quadrant to starboard of the wheel, the VHF; the chart table with a drawer and fiddle rails; clock and barometer on the
+  after bulkhead (`clockTex`); an extinguisher on its bracket by the door. ALL SOLID (`solid(..., F - 0.1, F + ...)`: the
+  wheelhouse floor band), checked by `wreckWalk`'s `wh:` lines. The console's middle stays low (invariant 9).
+- **Glass** (`M.glass`): 14 % and nearly colourless, Schlick Fresnel reflection of a drawn night (sky, sea, the moon at
+  `uMoonL`), smudges from `wearMap` taking it down, alpha up with F.
+- **Billy is on a board** (main.js, `billyBoard`): an extruded shield, its back flush on the after bulkhead's face
+  (BR_X1 - 0.075), the picture 6 mm in front of it; his child, so taking him takes it.
+- **Placement**: the afterdeck's lone barrel moved to its others at the rail; the two sheets lying loose on the open deck
+  are gone; the hold's two floor sheets lie IN their gouges on the sand (`onSand`: a gouge is wider than a sheet is long).
+- **Skins (`bandSkin`, `geoSkin`) and the keep's crate and the castles' props (later the same night).** `shatterStore` takes
+  `{ wood, wood2, iron }` skins: the ship's stores a band of their trim sheet; anything else `geoSkin` — a triangle of its
+  own model (the bigger half by area), and round that triangle's uv a board-sized rectangle at that triangle's own scale,
+  no wider than its patch — so an atlas never lends a board its neighbour's picture and the keep crate's cut-out map
+  never gives a board its air. A fourth shape, 'planks' (a table, a stool, a cart: top boards, legs, aprons). Caps: six
+  slat rows, sixteen staves (a 1.1 m roped crate made 292 boards). The castles' wooden props (`cpBreak`: K.mat 'wood')
+  and the keep's crate (`smashKeepCrate`) go to boards; sacks, pottery and glass keep `cpFracture`.
+- **Floors**: the castles' own `D.floor`/`D.nominal`; the keep's pier from `bunkerFloorAt`, and NEVER under its sea
+  (`KEEP_Y + KEEP_SEA + keepTideAt`): off the pier the lookup answered with somewhere else's floor 800 m down. Over her
+  hatch there is no deck: a board falls into the hold (`shipDebFloor`). Wood floats: off the pier it lies on the water.
+- **Sleep, final rules**: lying on a FACE (`debFlat`, an axis within 10 degrees of plumb) — a board slowly toppling was
+  frozen on its end by the "stopped travelling" rule; balanced on an edge it is nudged; and anything grounded and all
+  but still for eight seconds sleeps (the keep's sea lifts a floating board every step).
+- **`debPool` chains the source material's own `onBeforeCompile`** (the keep's island light) and must NOT `holdLit` it
+  again — the hold light was declared twice and the program failed to link: 255 "program not valid" a load.
+  `&glcheck=1` turns three's shader checks on (`renderer.debug.checkShaderErrors`, off for speed) — use it after any
+  shader change. Empty pools are `visible = false`. `debWarm` compiles a place's board programs when its things load
+  (the first break in the castle was a 230 ms hitch). A `//` comment on a ONE-LINE shader swallows the rest of it.
+- **The hatch's sky** (`wlSkyCol`): the opening's rectangle widened by depth below the deck (a penumbra), a pool on what
+  faces up, a column in the mist's in-scatter, the dust lit in it too. Dust: `gl_PointSize` capped, near motes faded.
+- **Collision audit (`wreckStuck`)**: every solid box has geometry in it (dense rays: a chair or a wire basket is mostly
+  air); a grid of standing places in the hold, on deck and in the wheelhouse, eight walks from each: no traps; one pocket
+  with a single way out (hold 3.7, -3.3, by the quarters' chairs).

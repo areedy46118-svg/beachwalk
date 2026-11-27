@@ -549,8 +549,8 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   and the old man says "I thought I lost you to the sea." and gives you the
   **Ring of Connection**.
 - **The Ring of Connection** — worn like the other rings: every blow that
-  lands is worth 4 % more than the one before it, up to +12 % (the first as
-  it always was, then +4, +8, +12), and the run resets the moment anything
+  lands is worth 4 % more than the one before it, up to +16 % (the first as
+  it always was, then +4, +8, +12, +16), and the run resets the moment anything
   hits you.
 - **The stuck gate** — the barred outlet in the back wall of the drainage
   tunnel home says **Look inside**. Press `E` and you lean the last half
@@ -1079,6 +1079,35 @@ taken off the desk and its draped table replaced with a bigger plain one, for th
 This work is based on ["Fiji Water Bottle"](https://sketchfab.com/3d-models/fiji-water-bottle-219204daeb2f446ebbc3837df97e0a8a)
 by [Diego T. Yamaguchi](https://sketchfab.com/freshlybaked) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the bottle of water (`assets/fiji-bottle.glb`).
+
+This work is based on ["Carved Sperm Whale Tooth (VTSU3D-45-2)"](https://sketchfab.com/3d-models/carved-sperm-whale-tooth-vtsu3d-45-2-b6f78548b3544e4f815ec381eefd799f)
+by [Vermont State Univ. Digital Archaeology Project](https://sketchfab.com/VTSU3D) licensed under
+[CC-BY-NC-ND-4.0](http://creativecommons.org/licenses/by-nc-nd/4.0/) — the Artifact of the Whale
+(`assets/whale-tooth/`, the download exactly as it came, its `license.txt` beside it: no
+derivatives, so it is never repacked; the game only turns, places and sizes it as it loads).
+
+The wreck's rusted iron (`assets/wreck-rust.jpg`, `assets/wreck-rust-n.jpg`) is composed by `tools/rust_pack.html`
+from six grayscale grunge scans carried in the owner's Substance smart materials "MS_Collection_metal_84" and
+"MS_Collection_metal_98"; the composition is the game's own and the colours are measured from "Rusted Sheet Metal", below. The source scans are not
+in the repository.
+
+"Rusted Sheet Metal" (https://sketchfab.com/3d-models/rusted-sheet-metal-4fa58a383f494d7db337510d1c1bd5c8) by George Hager
+(https://sketchfab.com/adjective.george), licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/): the
+shipwreck's corrugated sheets (`assets/rusted-sheet.glb`; maps reduced to 2048 px, bent onto her in code) and the reference
+for the colour of all her rust.
+
+"Rusting Metal Material" (https://sketchfab.com/3d-models/rusting-metal-material-3c245d78169b43ba8d8c6eda3b5211b5) by
+RBG_illustrations (https://sketchfab.com/RBG_illustrations), licensed under CC-BY-4.0
+(http://creativecommons.org/licenses/by/4.0/): the shipwreck's iron plate (`assets/wreck-plate.jpg`, its rust recoloured and
+its edge made to tile; `assets/wreck-plate-n.jpg` is a relief made from it).
+
+"Fossilized Scallop Shell" (https://sketchfab.com/3d-models/fossilized-scallop-shell-1d083ec9e040405c8357a4f6dfe6fb09) by
+NaRoCreations (https://sketchfab.com/NaRoCreations), licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/):
+the Artifact of the Sea (`assets/fossil-shell.glb`; its map reduced to 2048 px).
+
+The shipwreck's hold timber, floor and stores (`assets/wreck-inner.jpg`, `wreck-sole.jpg`, `wreck-wood.jpg`,
+`wreck-stores.jpg`, `wreck-sack.jpg`) are composed by `tools/timber_pack.html` from the barrel texture of the owner's own
+furniture set and the scans above.
 
 This work is based on ["Throne Room"](https://sketchfab.com/3d-models/throne-room-247c37e6a9694ae891398911876f0c14)
 by [Uğur Yakışık](https://sketchfab.com/UgurYksk) licensed under

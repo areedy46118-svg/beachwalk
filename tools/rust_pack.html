@@ -1,0 +1,101 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>rust pack</title>
+<!-- THE WRECK'S RUSTED IRON (2026-11-23): one 512 px tile — a metre of her iron at 512 px/m — composed from six grayscale
+     scans out of the owner's two Substance smart materials (MS_Collection_metal_84 / _98: their embedded grunge bitmaps,
+     carved out of the .spsm; the colour of a smart material is procedural and needs Substance to run, so the colour here
+     is ours). The scans stay out of the repo, in `incoming/wreck-rust/` (gitignored):
+       pitting.jpg   (98 #10)  corrosion pits; only its fine detail is kept (a high pass), its one big blotch repeated
+       streaks.jpg   (98 #5)   vertical runs — rust running down from the scale
+       cracks.jpg    (84 #14)  cracked, lifting scale; its dark islands are where the paint has gone
+       scratches.jpg (98 #11)  bright scratches through the paint to the steel
+       mottle.jpg    (98 #7)   the dark tone under everything
+       smudge.jpg    (98 #4)   mid-frequency wear
+       sheet.jpg     the colour map of the owner's "Rusted Sheet Metal" (George Hager, CC-BY-4.0; 2026-11-24, "use as
+                     reference for the rust"), at 1024: THE COLOURS ARE ITS OWN. Its rusted pixels and its bare ones are
+                     sorted by brightness into two ramps, and this tile's scale and bare iron are laid through them by
+                     rank, so the iron has the sheets' reds in the sheets' proportions (ours had gone too orange).
+     Run: PB_PAGE=rust_pack.html PB_PORT=4236 sh tools/probe.sh x /tmp/rust   then copy rust_col.jpg / rust_nrm.jpg
+     to assets/wreck-rust.jpg / assets/wreck-rust-n.jpg. Every source tiles (checked 2x2), so the tile does. -->
+<body style="margin:0;background:#000">
+<script>
+(async () => {
+  const log = (...a) => console.log('[PB]', ...a);
+  const N = 512, src = '../incoming/wreck-rust/';
+  const load = (f) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error(f)); im.src = src + f; });
+  // a source at N, grayscale 0..1; `blur` px of blur at N (for the high pass)
+  const gray = (im, blur = 0) => {
+    const c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d', { willReadFrequently: true });
+    g.imageSmoothingQuality = 'high';
+    if (blur) {   // blur a 3x3 tiling and keep the middle, so the blur wraps
+      const big = document.createElement('canvas'); big.width = big.height = N * 3; const bg = big.getContext('2d'); bg.imageSmoothingQuality = 'high';
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) bg.drawImage(im, i * N, j * N, N, N);
+      g.filter = `blur(${blur}px)`; g.drawImage(big, -N, -N); g.filter = 'none';
+    } else g.drawImage(im, 0, 0, N, N);
+    const d = g.getImageData(0, 0, N, N).data, out = new Float32Array(N * N);
+    for (let i = 0; i < N * N; i++) out[i] = (d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11) / 255;
+    return out;
+  };
+  const norm = (a) => { let lo = 1, hi = 0; for (const v of a) { lo = Math.min(lo, v); hi = Math.max(hi, v); } const k = 1 / Math.max(1e-6, hi - lo); for (let i = 0; i < a.length; i++) a[i] = (a[i] - lo) * k; return a; };
+  const ss = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+  const mix = (a, b, t) => a + (b - a) * t;
+  try {
+    const [P, St, Cr, Sc, Mo, Sm, Sheet] = await Promise.all(['pitting.jpg', 'streaks.jpg', 'cracks.jpg', 'scratches.jpg', 'mottle.jpg', 'smudge.jpg', 'sheet.jpg'].map(load));
+    const pit0 = gray(P), pitLo = gray(P, 18), str = norm(gray(St)), cr = norm(gray(Cr)), sc = norm(gray(Sc)), mo = norm(gray(Mo)), sm = norm(gray(Sm));
+    const pit = new Float32Array(N * N); for (let i = 0; i < N * N; i++) pit[i] = pit0[i] - pitLo[i]; norm(pit);    // the pits alone
+    // the sheets' own colours: two ramps of 64, the rusted pixels and the bare, dark to light
+    const ramps = (() => {
+      const c = document.createElement('canvas'); c.width = Sheet.width; c.height = Sheet.height; const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(Sheet, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data, R = [], B = [];
+      for (let i = 0; i < d.length; i += 4) { const k = d[i] - d[i + 2], l = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; if (k > 50) R.push([l, d[i], d[i + 1], d[i + 2]]); else if (k < 18) B.push([l, d[i], d[i + 1], d[i + 2]]); }
+      return [R, B].map((L) => { L.sort((p, q) => p[0] - q[0]); const o = []; for (let k = 0; k < 64; k++) { const m = [0, 0, 0], s0 = Math.floor(L.length * k / 64), s1 = Math.max(s0 + 1, Math.floor(L.length * (k + 1) / 64)); for (let j = s0; j < s1; j++) for (let q = 0; q < 3; q++) m[q] += L[j][q + 1] / (s1 - s0); o.push(m); } log('ramp', L.length, o[0].map(Math.round), o[32].map(Math.round), o[63].map(Math.round)); return o; });
+    })();
+    const ramp = (R, t) => { const x = Math.max(0, Math.min(62.999, t * 63)), k = Math.floor(x), f = x - k; return [0, 1, 2].map((q) => mix(R[k][q], R[k + 1][q], f)); };
+    // a field's rank 0..1 over the tile (so a ramp is used in the proportions it was measured in)
+    const ranked = (f) => { const H = new Float64Array(1025); for (const v of f) H[Math.min(1023, Math.floor(v * 1024)) + 1]++; for (let k = 1; k <= 1024; k++) H[k] += H[k - 1]; return f.map((v) => H[Math.min(1023, Math.floor(v * 1024)) + 1] / (N * N)); };
+    const fresh0 = new Float32Array(N * N); for (let i = 0; i < N * N; i++) fresh0[i] = sm[i] * 0.4 + mo[i] * 0.25 + str[i] * 0.25 + pit[i] * 0.5; const freshR = ranked(norm(fresh0)), bareR = ranked(norm(Float32Array.from(mo, (v, i) => v * 0.6 + sc[i] * 0.4)));
+    const col = new Uint8ClampedArray(N * N * 4), hgt = new Float32Array(N * N);
+    let sr = 0, sg = 0, sb = 0, rustA = 0;
+    for (let i = 0; i < N * N; i++) {
+      // where the iron has gone to scale: the cracks' dark islands, the darker smudges, a little of every pit — and soft edged,
+      // as the sheets' is: a bloom through the metal, not islands stuck on it
+      const loss = (1 - cr[i]) * 0.62 + (1 - sm[i]) * 0.38 + (0.5 - pit[i]) * 0.35;
+      const rust = ss(0.12, 0.42, loss);
+      // the iron still bare: the sheets' dulled grey, taken down — hers is wrought and wet, not galvanised — and bright only at a scratch
+      let [r, g, b] = ramp(ramps[1], bareR[i]);
+      const scr = ss(0.55, 0.85, sc[i]) * (1 - rust), dk = mix(0.46, 0.86, scr); r *= dk; g *= dk; b *= dk;
+      const ru = ramp(ramps[0], freshR[i]);
+      // rust running down the bare iron below the scale
+      const run = ss(0.55, 0.15, str[i]) * (1 - rust);
+      r = mix(r, ru[0] * 0.8, run * 0.7); g = mix(g, ru[1] * 0.8, run * 0.7); b = mix(b, ru[2] * 0.8, run * 0.7);
+      let [rr, rg, rb] = ru;
+      const deep = ss(0.42, 0.2, pit[i]); rr *= 1 - deep * 0.45; rg *= 1 - deep * 0.5; rb *= 1 - deep * 0.5;
+      const edge = rust > 0.25 && rust < 0.7 ? 1 - Math.abs(rust - 0.47) / 0.23 : 0;
+      r = mix(r, rr, rust); g = mix(g, rg, rust); b = mix(b, rb, rust);
+      // a little quantised, as every map in the game is (32 levels a channel, the wreck's own: at 16 the sheets' reds fell into three)
+      const q = (v) => Math.round(v / 8) * 8;
+      col[i * 4] = q(r); col[i * 4 + 1] = q(g); col[i * 4 + 2] = q(b); col[i * 4 + 3] = 255;
+      sr += r; sg += g; sb += b; rustA += rust;
+      hgt[i] = 0.5 + rust * 0.16 + edge * 0.05 + (cr[i] - 0.5) * 0.06 - deep * 0.18 - scr * 0.03;
+    }
+    log('mean rgb', (sr / N / N).toFixed(0), (sg / N / N).toFixed(0), (sb / N / N).toFixed(0), 'rust cover', (rustA / N / N).toFixed(2));
+    // normal: a wrapped Sobel of the height (the wreck's maps' own way, `surface().paint`), strength 2.8 like the old iron
+    const K = 2.8 * 255 / 64, nrm = new Uint8ClampedArray(N * N * 4), at = (x, y) => hgt[((y + N) % N) * N + ((x + N) % N)];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const dx = (at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x - 1, y) + at(x - 1, y + 1));
+      const dy = (at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x, y - 1) + at(x + 1, y - 1));
+      let nx = -dx * K, ny = dy * K, nz = 1; const l = Math.hypot(nx, ny, nz), o = (y * N + x) * 4;
+      nrm[o] = (nx / l * 0.5 + 0.5) * 255; nrm[o + 1] = (ny / l * 0.5 + 0.5) * 255; nrm[o + 2] = (nz / l * 0.5 + 0.5) * 255; nrm[o + 3] = 255;
+    }
+    const out = (name, data, type, q) => { const c = document.createElement('canvas'); c.width = c.height = N; c.getContext('2d').putImageData(new ImageData(data, N, N), 0, 0);
+      const d = c.toDataURL(type, q).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', name, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); };
+    out('rust_col', col, 'image/jpeg', 0.9);
+    out('rust_nrm', nrm, 'image/jpeg', 0.92);
+    // a 2x2 of the colour, to see the repeat
+    { const c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d'); const t = document.createElement('canvas'); t.width = t.height = N; t.getContext('2d').putImageData(new ImageData(col, N, N), 0, 0);
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) g.drawImage(t, i * N / 2, j * N / 2, N / 2, N / 2);
+      const d = c.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000); for (let i = 0; i < n; i++) console.log('[PBIMG]', 'rust_tile', i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); }
+  } catch (e) { log('FAILED', e && e.stack || e); }
+  log('DONE');
+})();
+</script>

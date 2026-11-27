@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>fossilview</title>
+<!-- TEMPORARY: the fossil shell on its own, six views and its measured axes, for tools/probe.sh (PB_PAGE=fossilview.html). -->
+<body style="margin:0;background:#000">
+<script type="importmap">{ "imports": { "three": "../vendor/three/three.module.js", "three/addons/loaders/GLTFLoader.js": "../vendor/three/GLTFLoader.js" } }</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const log = (...a) => console.log('[PB]', ...a);
+const R = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); R.setSize(480, 480); document.body.appendChild(R.domElement);
+const S = new THREE.Scene(); S.background = new THREE.Color(0x303030);
+S.add(new THREE.HemisphereLight(0xffffff, 0x404040, 2.2));
+const C = new THREE.PerspectiveCamera(30, 1, 0.01, 1000);
+const shot = (name) => { R.render(S, C); const d = R.domElement.toDataURL('image/jpeg', 0.85).split(',')[1], n = Math.ceil(d.length / 8000);
+  for (let i = 0; i < n; i++) console.log('[PBIMG]', name, i + '/' + n, d.slice(i * 8000, (i + 1) * 8000)); };
+try {
+  const t0 = performance.now();
+  const g = await new GLTFLoader().loadAsync('../assets/fossil-shell.glb');
+  log('loaded ms', Math.round(performance.now() - t0));
+  const root = g.scene; S.add(root); root.updateMatrixWorld(true);
+  // every vertex in world space: the box, the centroid, and the principal axes
+  const P = []; let tris = 0;
+  root.traverse((o) => { if (!o.isMesh) return; tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+    const a = o.geometry.attributes.position, v = new THREE.Vector3(); for (let i = 0; i < a.count; i += 7) { v.fromBufferAttribute(a, i).applyMatrix4(o.matrixWorld); P.push(v.x, v.y, v.z); } });
+  const n = P.length / 3, c = [0, 0, 0]; for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) c[k] += P[i * 3 + k] / n;
+  const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]; for (let i = 0; i < n; i++) for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) M[a][b] += (P[i * 3 + a] - c[a]) * (P[i * 3 + b] - c[b]) / n;
+  const m3 = new THREE.Matrix3().set(...M[0], ...M[1], ...M[2]);
+  // power iteration for the two biggest axes
+  const axes = []; let MM = M.map((r) => r.slice());
+  for (let k = 0; k < 3; k++) { let x = new THREE.Vector3(1, 0.3, 0.2).normalize(); for (const p of axes) x.addScaledVector(p.v, -x.dot(p.v)); x.normalize();
+    for (let it = 0; it < 200; it++) { const y = new THREE.Vector3(MM[0][0] * x.x + MM[0][1] * x.y + MM[0][2] * x.z, MM[1][0] * x.x + MM[1][1] * x.y + MM[1][2] * x.z, MM[2][0] * x.x + MM[2][1] * x.y + MM[2][2] * x.z);
+      for (const p of axes) y.addScaledVector(p.v, -y.dot(p.v)); x = y.normalize(); }
+    const lam = x.dot(new THREE.Vector3(...[0, 1, 2].map((a) => M[a][0] * x.x + M[a][1] * x.y + M[a][2] * x.z)));
+    let lo = 1e9, hi = -1e9; for (let i = 0; i < n; i++) { const d = (P[i * 3] - c[0]) * x.x + (P[i * 3 + 1] - c[1]) * x.y + (P[i * 3 + 2] - c[2]) * x.z; lo = Math.min(lo, d); hi = Math.max(hi, d); }
+    axes.push({ v: x.clone(), lam, lo, hi }); }
+  const box = new THREE.Box3().setFromObject(root);
+  log('tris', tris, 'box', box.min.toArray().map((v) => v.toFixed(2)).join(','), box.max.toArray().map((v) => v.toFixed(2)).join(','), 'centroid', c.map((v) => v.toFixed(2)).join(','));
+  axes.forEach((a, i) => log('axis', i, a.v.toArray().map((v) => v.toFixed(3)).join(','), 'span', a.lo.toFixed(2), a.hi.toFixed(2)));
+  root.traverse((o) => { if (o.isMesh) { const m = o.material; log('mat', m.type, !!m.map, m.map && m.map.image && m.map.image.width, m.side, 'vcol', m.vertexColors, !!o.geometry.attributes.color); } });
+  { const a = axes[2].v, P2 = []; let s = 0, k = 0; for (let i = 0; i < n; i++) { const d = (P[i * 3] - c[0]) * a.x + (P[i * 3 + 1] - c[1]) * a.y + (P[i * 3 + 2] - c[2]) * a.z; s += d * d * d; k++; } log('skew along axis2 (+ = bulge toward +axis2)', (s / k).toExponential(2)); }
+  // six views along the principal axes
+  const ctr = new THREE.Vector3(...c), D = Math.max(...axes.map((a) => a.hi - a.lo)) * 2.3;
+  const views = [['a2p', axes[2].v, axes[1].v], ['a2n', axes[2].v.clone().negate(), axes[1].v], ['a1p', axes[1].v, axes[2].v], ['a1n', axes[1].v.clone().negate(), axes[2].v], ['a0p', axes[0].v, axes[1].v]];
+  for (const [nm, d, up] of views) { C.position.copy(ctr).addScaledVector(d, D); C.up.copy(up); C.lookAt(ctr); shot(nm); }
+} catch (e) { log('FAILED', e && e.stack || e); }
+log('DONE');
+</script>

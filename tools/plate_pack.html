@@ -1,0 +1,50 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>plate pack</title>
+<!-- THE WRECK'S IRON PLATE (2026-11-24): the owner's "Rusting Metal Material" by RBG_illustrations (CC-BY-4.0, Sketchfab),
+     one 1024 px tile. Its colour is kept; only its rust is eased toward the reds of the corrugated sheets
+     (`incoming/wreck-rust/sheet.jpg`), so the two irons are one ship's rust, and its left edge is crossfaded into its right so
+     a run of it has no seam (it is never tiled upward: its foot is rust and its head is bare). ITS OWN NORMAL MAP IS BLANK
+     (every pixel 128,128,255): the one here is the wrapped Sobel of its colour and roughness — rust stands proud, the dark
+     runs and pits are cut. And `wreck-wear.jpg`: 256 px of neutral wear (scratches, smudges, mottle out of the two smart
+     materials) for her brass, gilt, rubber and glass, which had no map.
+     Run: PB_PAGE=plate_pack.html PB_PORT=4254 sh tools/probe.sh x /tmp/plate ; then plate_col -> assets/wreck-plate.jpg,
+     plate_nrm -> assets/wreck-plate-n.jpg, wear -> assets/wreck-wear.jpg -->
+<body style="margin:0;background:#000">
+<script>
+(async () => {
+  const log = (...a) => console.log('[PB]', ...a), N = 1024, src = '../incoming/wreck-rust/';
+  const load = (f) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error(f)); im.src = src + f; });
+  const ss = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }, mix = (a, b, t) => a + (b - a) * t;
+  const emit = (name, data, n, q) => { const c = document.createElement('canvas'); c.width = c.height = n; c.getContext('2d').putImageData(new ImageData(data, n, n), 0, 0);
+    const d = c.toDataURL('image/jpeg', q).split(',')[1], k = Math.ceil(d.length / 8000); for (let i = 0; i < k; i++) console.log('[PBIMG]', name, i + '/' + k, d.slice(i * 8000, (i + 1) * 8000)); };
+  const px = (im, n) => { const c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; g.drawImage(im, 0, 0, n, n); return g.getImageData(0, 0, n, n).data; };
+  try {
+    const [P, MR, Sheet, Sc, Sm, Mo] = await Promise.all(['plate.png', 'plate-mr.png', 'sheet.jpg', 'scratches.jpg', 'smudge.jpg', 'mottle.jpg'].map(load));
+    const A = px(P, N), B = px(MR, N), T = px(Sheet, 512);
+    const L = []; for (let i = 0; i < T.length; i += 4) if (T[i] - T[i + 2] > 50) L.push([T[i] * 0.3 + T[i + 1] * 0.59 + T[i + 2] * 0.11, T[i], T[i + 1], T[i + 2]]); L.sort((p, q) => p[0] - q[0]);
+    const ramp = []; for (let k = 0; k < 64; k++) { const m = [0, 0, 0], s0 = Math.floor(L.length * k / 64), s1 = Math.floor(L.length * (k + 1) / 64); for (let j = s0; j < s1; j++) for (let q = 0; q < 3; q++) m[q] += L[j][q + 1] / (s1 - s0); ramp.push(m); }
+    // crossfaded in x (a tile W wide, sampled back out to N), its top ruled border left off
+    const F = 120, W = N - F, TOP = 12, rd = (D, x, y, k) => D[(y * N + x) * 4 + k];
+    const at = (D, x, y, k) => { const xx = x * W / N, x0 = Math.floor(xx), f = xx - x0, yy = Math.min(N - 1, Math.floor(TOP + y * (N - TOP) / N));
+      const one = (q) => { q %= W; return q < F ? mix(rd(D, W + q, yy, k), rd(D, q, yy, k), ss(0, F, q)) : rd(D, q, yy, k); }; return mix(one(x0), one(x0 + 1), f); };
+    const col = new Uint8ClampedArray(N * N * 4), H = new Float32Array(N * N); let rustN = 0, mean = [0, 0, 0];
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const i = y * N + x; let r = at(A, x, y, 0), g = at(A, x, y, 1), b = at(A, x, y, 2); const ro = at(B, x, y, 1) / 255, l = r * 0.3 + g * 0.59 + b * 0.11;
+      const ru = ss(10, 46, r - b), t = ramp[Math.max(0, Math.min(63, Math.round((l - 60) / 70 * 63)))];
+      r = mix(r, t[0], ru * 0.62); g = mix(g, t[1], ru * 0.62); b = mix(b, t[2], ru * 0.62);
+      col.set([r, g, b, 255], i * 4); rustN += ru; mean[0] += r; mean[1] += g; mean[2] += b;
+      H[i] = ru * 0.10 + (ro - 0.5) * 0.05 + (l - 110) / 255 * 0.45;
+    }
+    log('plate mean', mean.map((v) => Math.round(v / N / N)), 'rust', (rustN / N / N).toFixed(2));
+    const nrm = (H, n, K, wrapY) => { const o = new Uint8ClampedArray(n * n * 4), a = (x, y) => H[(wrapY ? (y + n) % n : Math.max(0, Math.min(n - 1, y))) * n + ((x + n) % n)];
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) { const dx = a(x + 1, y - 1) + 2 * a(x + 1, y) + a(x + 1, y + 1) - a(x - 1, y - 1) - 2 * a(x - 1, y) - a(x - 1, y + 1), dy = a(x - 1, y + 1) + 2 * a(x, y + 1) + a(x + 1, y + 1) - a(x - 1, y - 1) - 2 * a(x, y - 1) - a(x + 1, y - 1);
+        const nx = -dx * K, ny = dy * K, q = Math.hypot(nx, ny, 1); o.set([(nx / q * 0.5 + 0.5) * 255, (ny / q * 0.5 + 0.5) * 255, (1 / q * 0.5 + 0.5) * 255, 255], (y * n + x) * 4); } return o; };
+    emit('plate_col', col, N, 0.86); emit('plate_nrm', nrm(H, N, 3.2, false), N, 0.86);
+    const n = 256, s = px(Sc, n), u = px(Sm, n), m = px(Mo, n), w = new Uint8ClampedArray(n * n * 4); const nn = (D) => { let lo = 255, hi = 0; for (let i = 0; i < D.length; i += 4) { lo = Math.min(lo, D[i]); hi = Math.max(hi, D[i]); } return (i) => (D[i * 4] - lo) / (hi - lo || 1); };
+    const fs = nn(s), fu = nn(u), fm = nn(m); for (let i = 0; i < n * n; i++) { const v = 255 * Math.min(1, 0.60 + fm(i) * 0.20 + fu(i) * 0.22 + fs(i) * 0.24 - 0.10); w.set([v, v, v, 255], i * 4); }
+    emit('wear', w, n, 0.86);
+  } catch (e) { log('FAILED', e && e.stack || e); }
+  log('DONE');
+})();
+</script>
