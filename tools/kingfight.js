@@ -12,7 +12,7 @@ b.devTeleportTemple();
 for (let i = 0; i < 900 && !(b.tmpS().ready && b.tmpS().room !== undefined && b.KING.u && b.KING.u.ready); i++) { b.frame(1); await sleep(50); }
 log('in the temple', b.tmpS().ready, 'king made', !!b.KING.u, 'ready', !!(b.KING.u && b.KING.u.ready), JSON.stringify(b.kingS()));
 const u = b.KING.u; if (!u) { log('NO KING'); throw 0; }
-log('clips', Object.keys(u.clips).filter((k) => /^k[A-Z]|^kg|hover|flip|wallRun|parry|knockOut|getUp|^hit/.test(k)).join(' '));
+log('clips', Object.keys(u.clips).join(' '));
 log('swings', Object.keys(u.atk).map((k) => k + ' w' + u.atk[k].wind.toFixed(2) + ' more ' + (u.atk[k].moreT ? u.atk[k].moreT.map((x) => x.toFixed(2)).join('/') : '-')).join(' | '));
 w.__clockOn();
 const C0 = 0; const C = b.camera, T = b.THREE, X = b.TMP_X, Y = b.TMP_Y, Z = b.TMP_Z, F = b.tmpFloorAt(0, 0);
@@ -45,10 +45,13 @@ for (let f = 0; f < 60 * FIGHT; f++) {
   if (f === 60 * 6 || f === 60 * 14) grab(`fight ${(f / 60).toFixed(0)}s ${st.atk >= 0 ? st.swing : u.cur && u.cur.getClip().name}`);
 }
 log('swings started', sw, JSON.stringify(seen), 'hits taken', hits);
-// the flip
-b.KING.cd = 0; const p0 = u.g.position.clone();
-const fl = b.kingFlipStart(u); log('flip started', fl, 'from dist', Math.hypot(p0.x - C.position.x, p0.z - C.position.z).toFixed(2));
-for (let f = 0; f < 60 * 4; f++) { w.__adv(1); if (f === 40 || f === 70) { b.lookAt(u.g.position.x, u.g.position.y + 2, u.g.position.z); grab('flip ' + f + ' ' + b.KING.mode); } if (b.KING.mode === 'fight') { log('flip done at', (f / 60).toFixed(2), 'behind you', ((u.g.position.x - C.position.x) * (p0.x - C.position.x) + (u.g.position.z - C.position.z) * (p0.z - C.position.z) < 0)); break; } }
+// (the flip is gone with the king, 2026-11-25) — the Scourger's RARE knockdown, forced: Hit_Knockback off his feet, LayToIdle up
+{ const p0 = u.g.position.clone(); b.mutKnockdown(u); let lay = -1, up = -1;
+  for (let f = 0; f < 60 * 5; f++) { w.__adv(1); const dn = u.st.down || 0;
+    if (f === 20 || f === 50 || f === 110) { b.lookAt(u.g.position.x, u.g.position.y + 1, u.g.position.z); grab('knock ' + (f / 60).toFixed(2) + ' ' + (u.cur && u.cur.getClip().name)); }
+    if (lay < 0 && u.cur && u.cur.getClip().name === 'sRise') lay = f;
+    if (lay >= 0 && up < 0 && !(dn > 0)) { up = f; break; } }
+  log('knockdown: rise began', lay >= 0 ? (lay / 60).toFixed(2) + ' s' : 'never', '| up at', up >= 0 ? (up / 60).toFixed(2) + ' s' : 'not yet', '| slid', u.g.position.distanceTo(p0).toFixed(2), 'm'); }
 // the climb
 b.kingRunStart(u);
 for (let f = 0; f < 60 * 20; f++) {

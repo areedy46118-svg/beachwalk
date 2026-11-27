@@ -586,3 +586,10 @@ symlink every top-level entry of the repo except `main.js`, write the old `main.
 own blocks swapped back from `git show HEAD:main.js`), and run `sh <root>/tools/probe.sh …` — it `cd`s to the root it was
 started from, so `serve.py` serves the old game with every asset and tool of the new one. A still is a render with nothing
 run after it: `b.lookAt` is applied by the loop a frame late, so aim with `camera.lookAt` right before `shot()`.
+
+## 2026-11-25 — `tools/scan.js`, the castle scan
+One probe for "is the castle whole": missing clips per kind, InstancedMeshes over their buffers, the props laid, a fight
+(`&secs=`, you cutting and kicking, real ms a frame, draw calls summed over a frame's passes — `renderer.info.autoReset` off and
+`info.reset()` before each frame, or the count is the last pass's only), walkers stood still against a solid prop, a kick on a
+resting body, the console. Its first version counted a kick's hit every frame the kick was down ("struck 1347"): clear
+`KICK.lastHit` when you read it. zsh does not split `$files` into words — build a contact sheet's file list in Python (`glob`).

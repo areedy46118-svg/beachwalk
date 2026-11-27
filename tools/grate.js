@@ -2,6 +2,7 @@
  * call: loose), the outlet's label; pulled (in your hands? where?); thrown across the room — where it flies and where it comes to
  * rest against the room's floor; picked up again; and as after a load with it off. &shots=1 stills.
  * PB_PORT=4223 PB_WAIT=400 sh tools/probe.sh 'evalFile&f=/tools/grate.js' <out> */
+const Q0 = new URLSearchParams(location.search);
 w.eval(await (await fetch('/tools/burntest.js?' + Date.now())).text());
 b.settings.devMode = true;
 for (let i = 0; i < 300 && !(b.state && b.state().started); i++) { b.frame(1); await sleep(50); }
@@ -13,12 +14,12 @@ C.position.set(DX - 2.5, 1.7, DZ); b.camBaseY = 1.7;
 for (let i = 0; i < 20; i++) b.frame(1);
 const O = G0.outlet, mid = DX + (G0.room[0] + G0.room[1]) / 2;
 const stand = (x, z) => { for (let i = 0; i < 8; i++) { C.position.set(x, G0.floor + 1.7, z); b.camBaseY = G0.floor + 1.7; b.lookAt(O[0], O[1], O[2]); b.frame(1); } };
-stand(DX + 0.5, DZ); stand(mid, DZ); stand(O[0] - 1.4 * Math.sign(O[0] - mid || 1), O[2]);
+stand(DX + 0.5, DZ); stand(mid, DZ); stand(O[0] - (+(Q0.get('near') || 1.4)) * Math.sign(O[0] - mid || 1), O[2] + (+(Q0.get('side') || 0)));   // (&near= how far from the outlet you pull, &side= off its line)
 log('stood at', (C.position.x - DX).toFixed(2), (C.position.z - DZ).toFixed(2), 'inside', b.insideDrainS());
 w.__clockOn();
 b.setGrateScrewsS(15); b.grateLoosenS();
 log('loose:', JSON.stringify(b.grateS()));
-b.pullGrateS(); { const tr0 = []; for (let i = 0; i < 30; i++) { b.lookAt(O[0], O[1], O[2]); w.__adv(1); if (i % 5 === 0) { const S = b.grateS(); tr0.push(`you ${(C.position.x - DX).toFixed(2)} grate ${S.at ? (S.at[0] - DX).toFixed(2) : '-'} in ${b.insideDrainS()}`); } } log('held:', tr0.join(' | ')); }
+b.pullGrateS(); { const tr0 = []; for (let i = 0; i < 90; i++) { if (Q0.get('shots') && i % 6 === 0) { b.renderer.render(b.scene, C); shot('pull_' + String(i).padStart(3, '0'), 360, 1.0); } b.lookAt(O[0], O[1], O[2]); w.__adv(1); if (i % 6 === 0) { const S = b.grateS(), gp = b.grateObjS ? b.grateObjS() : null; tr0.push(`${i}: you ${(C.position.x - DX).toFixed(2)} grate ${S.at ? (S.at[0] - DX).toFixed(2) : gp ? 'tween ' + (gp.x - DX).toFixed(2) : '-'} in ${b.insideDrainS()}`); } } log('held:', tr0.join(' | ')); }
 const S1 = b.grateS(); log('pulled:', JSON.stringify(S1), '| from your eye', Math.hypot(S1.at[0] - C.position.x, S1.at[1] - C.position.y, S1.at[2] - C.position.z).toFixed(2));
 // thrown along the room, back toward the door
 const aimT = (new URLSearchParams(location.search).get('aim') || 'corner');

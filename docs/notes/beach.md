@@ -3937,3 +3937,93 @@ were already cut from, left as it is): "use these for the puppet sounds they are
   injection at 0.5 s, grunts on his swings, a cry on struck blows, the phrase at 10 s. Trap: `__adv` runs game time faster
   than the audio context's real clock, so `own`/`gap` (seconds of `currentTime`) eat blows a probe lands 2.5 game-seconds
   apart — 2 of 3 cried there; in play each one can.
+
+## 2026-11-25 — the house on the cliff no longer pops in
+"i can see this spawn in" (a still from the beach below Elvédor's house). The house is built at boot (2026-11-15) but was SHOWN only once
+you crossed z −628.5 (`houseSeen`), 88 m short of it — at the fog's ~0.014-0.019 a fifth of it still shows there, so it appeared whole on
+the skyline; the gully's dressing and the dead trees (`elvFieldShow`) likewise from `ELV.z` + 40 (−600). Both now from `HOUSE_Z` + 230;
+the house's own `|dz| < 200` holds it back to 200 m, where the fog passes 0.0 % (`tools/housepop.js`: shown at z −520, 198 m). No load
+moved: only when they are drawn.
+
+## 2026-11-25 — the marionette is hit when he stands in a blow (`marCaught`)
+- "THE MARIONETTE RARELY TAKES DAMAGE I FEEL LIKE". Measured before touching anything:
+  - `tools/marhurt.js &free=1` (three runts loose at you both, 60 s): he took about 60 blows a minute and you about 33.
+  - `tools/marfort.js` (the garrison's natural fight, him with you): him 6 blows (7 hp) a minute, you 8 (9), the men on him 25 %.
+  So where a creature CAN be put on him it is, and its blows land (`marLandsOn` is fine). The hole is everything that never can:
+  - the crabs have no foe but you (`updateCrabUnit` only ever calls `damagePlayer`);
+  - every boss and sided fight is shut out of `marAggroOK` on purpose (so the share-out keeps your difficulty).
+  In those he fought beside you and nothing touched him.
+- Now a blow thrown at YOU also lands on him on its contact frame, when he is within its reach (`A.reach` + 0.25, at most 2.4)
+  and in front of the thing (cos > 0.35 of its facing; a crab's claws, no cone; within 1.2 m of its height). It is called:
+  - beside `sfxMutSwing` in the swing's contact for every kind on the common path (`!u.st.foe`);
+  - from the crab's `CRAB_WIND`.
+  What is aimed at you is untouched, so your fight is as hard as it was. After: three crabs, him 20 blows a minute, you 45 (he had
+  none). The castle: him 8 (10 hp), you 14. The king's own moves (slam etc.) are their own code and still pass him by.
+- TRAPS in measuring it:
+  - `__adv(n)` runs n FRAMES, not ms: `__adv(1000/60)` ran a minute as seventeen.
+  - Dev mode stops every creature swinging at you (0 swings): keep it off and put your health back with `setHp`.
+  - Topping his `st.hp` over `kind.hp` counted the clamp as a blow every frame: put him back to `kind.hp` under 8 instead.
+
+## 2026-11-25 — the marionette back after a checkpoint load
+- "the marionette didnt respawn too when reloading checkpoint each checkpoint should save exactly where you left off". The save
+  had him right (`marSt` 'with', `marHp`). Two things lost him on the load into the castle (`tools/marckpt.js`, `&where=fort|beach`):
+  - He was made on the FIRST frame, at the camera as it stood: the start spawn, 1179 m from the castle. A save written in a room
+    holds you there behind the black until the room is up (`roomRestore`). Now `updateMarionette` waits while `roomRestore` is
+    set, and he is made at your side.
+  - His body never came, still none 12 s on. `marionette.glb` is ranked by the beach's distance and parses on the FAR chain,
+    behind the whole world's far rest. `cmar.urgentBody` puts his copy on the near chain, as the tavern's people are (`kind.tav`).
+    It is 250 KB.
+- After: in the castle he is made 0.75 s in, has his body at 2 s, beside you, with the saved hp (17 of 26), then goes for the men.
+  On the beach he has his body at 0.25 s, 1.6 m off, hp 17.
+
+## 2026-11-25 — "make sure he doesnt clip through anything i shouldnt clip through this either"
+The owner's still: his eye inside the face of a big dark rock by the shore, the sea to his right (looking back up the beach).
+- **`tools/clipscan.js`** walks the player down the whole beach (z 70 → -1330, 30 m stops) and, for every drawn still mesh in the
+  walk band, every half-metre column: the stretches of it INSIDE the stone (crossings of both windings, by parity — a sunk scan is
+  open below, so an odd count starts inside), and whether stone stands between the knee and the top of the head (ground +0.6 …
+  +1.95) with no collider there that stops a body (the walk's own rule: a top more than a step over the feet, a `floorY` under the
+  head). `&rocks=1` only rock meshes — **a room built of open planes (the wreck, the house at z -218) reads floor and ceiling as
+  one solid**, its own walk grid holds you there. `&v=1` per mesh, `&why=1` the first uncovered cells with their crossings.
+- TRAPS building it: `WADE_X`/`CLIFF_BLOCK_X` are not on `__bw` (undefined made the band NaN and the scan saw nothing for two
+  runs — "0 uncovered" was a blind scan); three's `Raycaster` returns NOTHING on most of these meshes (use the triangles, as
+  `vRayTop` does); the ground is `beachGroundAt`, not 0 (the cave rocks stand on an apron).
+- What it found: **the beach's rock is held.** Every formation's stone from knee to head height has a collider over it
+  (`fillRockGaps` from above, plus the formations' discs). The two cave rocks are held too, except their MOUTHS' lips: stone about
+  a metre over the sand in the corridor up to "To crawl in", which is open on purpose (`rockShellColliders`' `inMouth`). A fill
+  for stone leaning out at chest and eye height (`fillStoneGaps`: a disc wherever a column's inside stretch reaches knee-to-head)
+  was written and measured — it found nothing to add on the formations or the cave rocks once the walk's own rule was used, so it
+  was taken out again (it would have indexed 340k triangles at load for nothing). The scan stays, to re-check after new rocks.
+- Left: one cell in the surf at the wreck's mossy rock (x -3, beyond the wading clamp).
+- NOT pinned: where the owner's still was taken. If it is somewhere the scan reports clean, it is off the band (the headland, the
+  island, behind the dune) or he was higher than the sand (a jump, a ledge): read `__bw.camera.position` in his pane next time.
+
+## 2026-11-25 (later) — the marionette can die: more on him, blows count 2.2×
+- "the marionette needs to be able to actually die he barely takes damage and no one fights him barely". `tools/marfort.js
+  &fight=1&die=1&secs=120`: the castle garrison's natural fight, you killing the nearest man in reach every 2.5 s, his health
+  his own. BEFORE: the men were on him 20 % of the time (mostly chasing him, mean 6 m off) and he ended the fight at 22 of 26 —
+  4 blows in all. He was never healed (no regen), but nothing was ever going to finish him.
+- `marBalance`:
+  - reaches from 20 m (14);
+  - takes him on at 0.85 when he is the nearer (0.7), 0.6 about level (0.4), and 0.2 even when you are the nearer (0);
+  - the cap is still half of what is awake (`marAggroRoom`).
+- `MAR_HURT_K` 2.2: `hurtMutantCore` multiplies any creature's blow on him (`from` set), and `marCaught` goes through it too.
+- AFTER, two runs: men on him 45 % / 40 %, 6 / 5 blows, and he ended at 10.6 / 12.8 of 26 — half of him gone in one castle fight,
+  so the next one can finish him. Your blows taken in that fight: 0 before and after (standing at the gate). Three beach runts
+  (`marhurt.js &free=1`, immortal): him 58 blows = 130 hp a minute, you 38 (34 before).
+
+## 2026-11-25 (night) — out of the cellar before him, he is still on his swing; the puppets louder and more often
+- "the swing didnt spawn fix this it should always be there", "when running out before the marionette he should still just be on the
+  swing". The swing is built with the yard every time; what was missing was HIM: he is put on it at the end of his escape from the
+  washer (`updateCelEscape`, `MAR.st` 'none' → 'swing'), which runs only in the cellar — up the steps while he was kicking in it, or
+  mid-escape, and the swing stood empty. `cellarLeave` now finishes it once the washer has begun to kick (celWash 1 → 2, the door
+  down, `MAR.st` 'swing'). `tools/marswing.js`: out with the washer kicking → MAR swing, door 1.42, the swing drawn, him on its seat.
+- Puppets: `sfxPupBreak` 1.35 → 2.3 (falloff d/12 → d/16), the crack 0.45 → 0.75; `PUP_VOX` swing p 0.8 → 1, own 0.45 → 0.3, gap 0.15
+  → 0.1, hurt own 0.25 → 0.18, the phrase every 10–19 s (16–32) at p 0.75.
+
+## 2026-11-26 — the moon's shafts not drawn on walls
+"light rays should not go through walls i see this mainly at the castle entrance". The post pass's `shafts()` gathers the bright
+sky near the moon's (or the lighthouse lamp's) place on the screen and adds it along the line to every pixel — the dark wall in
+front of the moon as much as the air beside it. Now each pixel's own luminance scales what it takes: under a quarter of the
+pass's threshold it keeps 0.16, near the threshold all of it. NOT confirmed at the owner's exact view (`tools/castlerays.js`'s
+spots did not put the moon in frame); if it is still seen, ask for a screenshot — the other candidate is a pooled lamp lighting a
+wall face through stone (point lights cast no shadows here).

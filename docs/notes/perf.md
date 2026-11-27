@@ -1879,3 +1879,44 @@ hand (`handGrabGhost`) clones what it takes, so the reach died mid-frame and not
 picked up (no prompt problem: the hover still said "Take the shell"). The list now lives in a WeakSet (`lodReg`). Rule:
 anything bookkeeping keeps about a mesh goes in a WeakMap/WeakSet, never in its userData. `tools/shellpick.js` takes
 the beach's shells headless; the frame error shows in `chrome.err` as `[bw] threw inside frame`.
+
+## 2026-11-24 — lag in the castle fight (`tools/fightlag.js`)
+The owner: "look for any lag too and eliminate it in this fight". The garrison's natural fight with you killing a man every 0.7-2 s
+(real katana swings, mostly heavies), every frame timed on the OUTER clock (the probe's `__clockOn` fakes the game's `performance.now`)
+and the JS sampler (`new w.Profiler`, the dev server's `Document-Policy: js-profiling`) over the run.
+- **No frame over 25 ms in 75 s** on this machine; the game's JS is ~1 ms of a 4-5 ms frame (render the rest). `updateSpray` is the top
+  self entry (~0.16-0.2 ms a frame) — small. The other session's `blowSurface`/`cutTris` (~0.4 ms a kill), `ragThroeStep` (inside
+  `updateMutRagdoll`, ~0.05 ms a frame) and `worldDrawnHit` (not seen) do not show as spikes.
+- **WHAT GREW: THE DRAWS.** `renderer.info` with `autoReset` off (a frame is several renders; the last is a 1-call pass): ~410 draws at
+  the start, ~490 after 16 kills, and the 95th-percentile frame went 4.6 → 9.4 ms over the minute. Every chunk of meat and bone stayed a
+  mesh of its own for its whole life: the rubble (`sleepGib`) only took pieces with `bleed === false`. Now settled gore folds in too after
+  a second at rest (not a crypt's crumbling bone), and the rubble is keyed by how a material LOOKS (`rubbleMatKey`: type, colours, maps,
+  finish), not its uuid — each gore piece carries its own copy of the same meat, so keyed by uuid every chunk was still a rubble mesh of
+  its own (83 after 12 kills). After: loose gore pieces 79 → 2-5, the 95th percentile 6.0-6.6 ms over the same minute.
+- Left: the castle props' broken pieces (`cpAddBody`, capped at `CP_MAX_BODIES`, kickable on purpose) are each a draw.
+
+## 2026-11-25 — `worldDrawnHit` cheap: the water ball's lag
+"the water ball lags the game when shot". `tools/sealag.js` (real time per frame from the probe page, the game's clock fake): one
+`worldDrawnHit` was 12 ms on the beach and 39 ms in the first castle — it raycast the whole scene and dropped the sea and the sand
+AFTER testing every triangle of them; the free ball asks it every frame (frames 2-5 → 18-45 ms, a first throw's worst 106), and the
+hook's throw three or four times. The castle's three big meshes (118k/54k/28k triangles) and a 115k shader sheet were 35 ms. Now
+`wdCandidates` (the shown, drawn, still meshes, swept every 0.5 s or on a change of place; never the sea, sand, creatures, what
+you hold), a bounds test first, and any mesh of `WD_BIG` (6000) triangles or more asked through its own world-space triangle grid
+(`wdGrid`, built once, rebuilt if it moved; `wdGridHit` marches the line half a cell at a time, Möller–Trumbore with three's side
+rule, the face's local normal and material handed back as three's would be, for `stampScar`). Grids built under a black
+(`wdWarmGrids` from `cpTick`: the boot, a castle's cut). After: the call 0.01 ms on the beach, 2 ms in the castle; a flying ball's
+frame 3 ms (beach) and 8 ms (castle) against 2.5 and 4.6 with none. `hookghost.js &at=fort&walls=1`: the same answers (1 of 1264;
+0 short, 0 through).
+
+## 2026-11-25 — "glDrawElementsInstanced: Vertex buffer is not big enough" was the warm-up's
+Twice a session in the console. The shader warm-up (`walk` in the warm pass) shows every mesh once and gives an InstancedMesh
+with `count` 0 a count of 1 so it compiles; a batch BUILT for no instances (`instanceMatrix.count` 0) has no first instance and
+the driver refused the draw. It asks only one whose buffer has room now. `tools/glerr.js`: 0 refused draws after. To find WHICH
+draw a GL error belongs to, set `localStorage.bwGlDbg` before the load: every `renderBufferDirect` is followed by
+`gl.getError()` and the offenders land in `window.__glErrs` (slow — a probe's switch only).
+
+## 2026-11-26 (night) — far detail goes coarse half as soon on a textured mesh
+"i see the textures of this cave spawning in": a coarse LOD level averages its merged vertices' UVs, so a painted surface smears,
+and walking up the finer levels came in one by one — the texture visibly arriving. A mesh with a `map`/`emissiveMap` is measured at
+half its distance (`e.tex`), so its levels change where a cell is under half a pixel. NOT confirmed on the owner's cave (which mesh
+it is was not identified); `?lod=0` in his pane is the A/B if it is still seen.

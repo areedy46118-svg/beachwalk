@@ -1085,7 +1085,17 @@ by [Kaan Tezcan](https://sketchfab.com/kaanTezcan) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Ancient King who comes down
 into the desert temple (`assets/ancient-king.glb`, packed by `tools/gltfpack.py` and
 `tools/glbquant.py`: textures to 512, normal maps to 128, metal-rough dropped, gzipped; his
-own hover motion kept). The light he comes down in is built in the game.
+own hover motion kept). The light he comes down in is built in the game. (Since 2026-11-25 he is out
+of the game: the final boss is the Scourger, below. The file is still in `assets/`.)
+
+This work is based on ["Scourger Rig"](https://sketchfab.com/3d-models/scourger-rig-deb9b27965064f85a7f482599f5a69a8)
+by [DM-913](https://sketchfab.com/SuperKapoo913) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Scourger, the final boss, who comes down
+into the desert temple (`assets/scourger.glb`, packed by `tools/scourger_pack.py`: his control rig rebuilt
+from the bones that move his skin, his own four clips re-baked onto it, decimated to 25k triangles,
+textures to 1024 / 512, metal dropped, quantised by `tools/glbquant.py`, gzipped). His fighting moves
+are the owner's Mesh2Motion clips (`assets/scourge-moves.json`) and three of the Ancient King's; he flies
+down on his own plunge's wing-beats and slams down off the pillar in it.
 
 This work is based on ["Bedroom"](https://sketchfab.com/3d-models/bedroom-13df3d6c33014cccaad3ae8c1f251f6a)
 by [jimbogies](https://sketchfab.com/jimbogies) licensed under
@@ -1095,6 +1105,13 @@ roughness maps dropped, textures to 256, the photo in the frame on the desk
 replaced with the owner's own). The storm, the rain, the light through the window,
 the syringe and the phone on the desk are built in the game; the plate and cup are
 taken off the desk and its draped table replaced with a bigger plain one, for the call.
+
+This work is based on ["Brazier"](https://sketchfab.com/3d-models/brazier-e6a152f5bc944ec1a3dfe06dad495dbe)
+by [Helley](https://sketchfab.com/Helley) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the braziers in the first castle's street
+(`assets/brazier.glb`, packed by `tools/brazier_pack.py`: textures to 512 / 256, normal and metal maps
+dropped, gzipped). Their fire, smoke, embers and light, and the coals they spill when knocked over, are
+built in the game.
 
 This work is based on ["Fiji Water Bottle"](https://sketchfab.com/3d-models/fiji-water-bottle-219204daeb2f446ebbc3837df97e0a8a)
 by [Diego T. Yamaguchi](https://sketchfab.com/freshlybaked) licensed under
@@ -2036,4 +2053,4 @@ by [Alexei Ostapenko](https://sketchfab.com/alexanders823) licensed under
 seaward post (`assets/crow.glb`), and the giant one that takes Henry off the lighthouse's jetty.
 
 The crows at the dock (`assets/dock-crow-*.m4a`) are cut from the owner's own "Crow Sound Effect" recording.
-- **Castle props**: "Southern Gothic Scene Props" (https://sketchfab.com/3d-models/southern-gothic-scene-props-b2191c2fd25541f1be5e2b756123d922) by PickledCactusAlan, and "Medieval Market Asset Pack" (https://sketchfab.com/3d-models/medieval-market-asset-pack-006ffc4ac5f34a1782f567b07e6605f2) by vmatthew, both CC-BY-4.0 — barrels, crates, sacks, carts, pots and produce through both castles and the throne room, all breakable (`assets/castle-props-a.glb`, `-b.glb`).
+- **Castle props**: "Southern Gothic Scene Props" (https://sketchfab.com/3d-models/southern-gothic-scene-props-b2191c2fd25541f1be5e2b756123d922) by PickledCactusAlan, and "Medieval Market Asset Pack" (https://sketchfab.com/3d-models/medieval-market-asset-pack-006ffc4ac5f34a1782f567b07e6605f2) by vmatthew, both CC-BY-4.0 — barrels, crates, sacks, carts, pots and produce through both castles and the throne room, all breakable (`assets/castle-props-a.glb`, `-b.glb`); and "Medieval Props" (https://sketchfab.com/3d-models/medieval-props-e69777fa47244434b337488b97cecd0e) by Daniel Vicente, CC-BY-4.0 — the first castle's two trees in their planters, its fountain, well, market stall, tub, pail, pots and bowls (`assets/castle-props-c.glb`).

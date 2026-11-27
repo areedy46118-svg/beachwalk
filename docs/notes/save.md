@@ -380,3 +380,10 @@ stretches and every `ROOM_BACK` room at its door's spot); see perf.md.
   max(34, 1.35 × the median of the last 24), and the settling waits at most `BOOT_SETTLE_MAX` 1.5 s once all else is in:
   the same slow run 9.9-10.2 s — the rest is the busy-wait starving the downloads too, which a slow GPU would not.
   Normal-speed loads unchanged (it can only release sooner): tmp 4.7, whale 4.8, beach-60 5.1.
+
+## 2026-11-25 — the water artifact through a checkpoint, however you came by it
+The owner: "my water artifact disappeared reloading a checkpoint how many time do i have to say leave everything as is was when you
+get the checkpoint". `tools/artckpt.js &how=world|dev`: set in the katana, `saveCheckpoint`, reload as a death does. Taken off the sand
+(`seaState` 2) it came back; handed over by DEV MODE (`devGrantWeapons`, `seaState` still 0) it was gone — the save said
+`seaRelicOn: "Katana"` and `seaRestore` only honoured that when the world had given it. Now set-in-a-weapon at save is set-in-it after
+the load whatever the state (the whale's `artOn` and the flame's `flameOn` never asked). Dev mode itself is still off after a reload.

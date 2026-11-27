@@ -1005,3 +1005,24 @@ the context's own `statechange` asks at once (and again 0.25 s later), never und
 never hidden. `tools/audiodog.js`: "asked back at once" logged on every suspend. On a weak machine (the owner's UHD 620 laptop)
 the audio thread itself can starve — that is the lighter-build question, not this.
 - The cellar's ambience 0.45 → 0.6 (`CEL_AMB_LEVEL`).
+
+## 2026-11-25 — the artifact's own sound
+The owner's "artifact soound.mp3" (BEACHWALK ASSETS): "MAKE THIS PICKING UP OR PUTTING ON AND TAKING OFF ARTIFACT SOUND". 0.96 s, very quiet
+(−21 dB peak, −43 mean), silent after 0.72: trimmed to 0.80 s, +18.6 dB (−2.7 peak), 0.14 s fade, AAC 128k → `assets/artifact-attach.m4a`
+(15 KB), bank `artAttach`. `sfxArtAttach` plays it (gain 0.9, rate 1, a take-off 0.9) and keeps the old chime only until it has loaded —
+so every caller has it: the whale's, the sea's and Skrim's pile's pickups, setting one in, taking one off, the swap. The Flame's pickup from
+the tavern chest played only a thud: `sfxArtAttach()` there too. `tools/artsound.js` logs each play.
+
+## 2026-11-25 — the chain's sounds built a few a frame (`skaJob`)
+`skaBuild` made the whole chain bank (clinks, heavy links, clangs, parries, ticks, slaps, drags…) in one go on the first chain sound:
+~40 ms on the hook's first throw. The loops yield after each buffer (`for (…; i++, yield)`), `skaWarmTick` runs ~3 ms a frame of it
+while the hook is held, `skaBuild` drains it if a sound is asked first. Nothing about the sounds changed.
+
+## 2026-11-26 — a locked door's latch
+The owner's `latchlocked2.wav` → `assets/door-locked.m4a` (leading silence off, AAC 96k, 0.54 s, 8 KB), bank `doorLocked`,
+`sfxDoorLocked(x, z)` (at the door when it has a place; a thud until it loads). On every locked door tried: the catacombs' door
+(both sides), the store room, the throne room while the knight lives, the gargoyles' arch (`gargTryDoor`, was a rattle and a
+knock), the sewer's steel door (was a metal tap), the cell. The mushroom house's GATE keeps its rattle.
+
+- (2026-11-26) The castle's breakables have their own fader, `CP_VOL` (0.62), through `cpSnd`/`cpBus`, the same pattern as
+  `stepSnd`/`stepBus`. Any sfx played inside `cpSnd(...)` goes through it, `playSampleAt` included (it asks `sfxOutBase`).

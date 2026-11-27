@@ -3247,3 +3247,212 @@ the sand thrown with the edge. Overhead, slam, thrust and the thrown hook keep t
 a katana cut looking down −z left a mark pointing (−0.98, −0.21).
 Harness trap: chaining swings by calling `startDig` mid-cut in the probe did not alternate (`comboStep` stayed 0) — the
 queued click is spent on its own clock; the mace's return came from its `maceEndAt` window instead.
+
+## 2026-11-24 — the hook connects with what is drawn; the wet throw's ball flies on
+"the shift heavy with the hook with the water artifact is bad the splash stops the hook early from where you are throwing it make
+sure the hook is better. it always getting stuck on invisible stuff make it connect with our colliders. it sometimes goes through
+the beach walls ceiling everything make the connection better."
+- **THE WET RUN-OUT** (`tools/hookwet.js`): on the open beach a wet throw that met nothing burst its ball at the chain's end, 14 m
+  out in empty air (the katana's ball flies on ~36 m). Now at a run-out (`HK.runOut`) the ball leaves the iron (`seaHookLoose`:
+  the hook's ball mesh handed to `seaBall.balls`, the throw's way at `SEA_BALL.speed`, its life less 0.2) and bursts where it
+  lands: 25.6 m aimed −3°, ~44 m aimed up (its life's end). A throw that lands on something still bursts there.
+- **`worldDrawnHit(O, dir, lim, minT)`** — the one test of what you can SEE: `scene` raycast down a line, the first face shown up to
+  the scene, opaque (not transparent < 0.5, not additive, writes depth), not skinned (creatures are the trace's), not the sand,
+  the sea, the blood instances, the dig holes/spoil or the footprints, not a sprite/points/line/proxy/`bwGhost`, not under a
+  mutant's or crab's group or the hook's own links. In `hookThrow` after every other test: nearer than what was found, it is the
+  catch; and a `solid` catch that is NOT drawn (`!to.drawn`, not sand) with nothing drawn within 0.6 m of it is dropped — the
+  iron flies on to whatever is drawn further, or runs out. Then the IRON'S OWN LINE: from the hand to the catch, a drawn face
+  nearer stops it there (the hand is a hand below-right of the eye; a corner the eye clears can stand in its way). TRAP: a
+  probe that teleports the camera leaves the view model's hand where it was drawn last — 100 m off — so the hand test only runs
+  with the hand within 1.5 m of the eye. Also in `seaBallTick`: the free ball asks it each step beside the gun's trace.
+- On the open beach nothing drawn was known to the iron before (`hookDrawnRoots` returns [] off the rooms): the wreck, the dock
+  house, the pavilion, the lighthouse, the house, the rocks.
+- `tools/hookghost.js` counts both ways now: "caught short of anything drawn" (invisible catches) and "flew THROUGH something
+  drawn" (a drawn face nearer than where it landed); `&at=beach&p=x,z` stands anywhere on the beach.
+
+## 2026-11-25 — the hook against a wall at your face, and through a body; rounds seldom blocked, and blocked where you see it
+- **"the hook is going through walls in the castle … it should connect with every surface it hits"**. From the street's middle
+  nothing went through (`hookghost.js &at=fort`: 0 of 430; `hookcastle.js` pulls: 0 of 24). Stood UP AGAINST a wall it did:
+  `hookghost.js &walls=1` (a body's width, 0.32 m, off the first drawn face down 32 bearings from 7 spots; thrown at it and along
+  it) — 97 of 1259 ended inside the stone or past it, one 6.6 m beyond. `worldDrawnHit` and the castle's `siteRay` both skipped
+  the first 0.3 m, and a body at a wall has its eye 0.2-0.3 m off it. Now the drawn test asks from 5 cm (`minT` 0.05 in
+  `hookThrow`'s one test), what you hold skipped by name (`camera` in `skipRoots`), `siteRay` from 5 cm: 1 of 1264 (a face 5 cm off).
+- **"sometimes it misses an enemy when it clearly went through them"**: the body was chosen once, at the throw, down the
+  crosshair; one who stepped into the iron's flight was flown through. Each frame of 'out' asks `magTrace` from the iron over
+  that frame's stretch (`HOOK_BODY_PAD` 0.1 wider than a round's body, `_hkF`); the first body met is bitten there (`hookAimOn`,
+  the old foe block of `hookThrow` as a helper). The throw's own trace is that much wider too. `tools/hookpath.js`: stepped into
+  its flight → bit; one in front of the one aimed at → bit the front one; a line 0.5 m from his middle → bit.
+- **ROUNDS AND THE GUARD** ("i just shot the gun at the paladin and he took no damage in 5 bullets … if any enemy blocks a
+  bullet make it visually be that have sparks fly and they sword goes up", "no one should be blocking the gun like that unless
+  its shown but make blocking the gun less likely … all enemies"). A round (P 0.5) was a LIGHT blow to `hurtMutantCore`'s guard
+  roll, so the paladin (dark knight, block 0.45) stopped 11 of 30 rounds into his chest (`tools/gunblock.js`), and the block it
+  played was YOUR sword's (`dealerBlock`: sparks at your guard, your hand jarred) — nothing at him. Now `gunRound` is set while a
+  .44 round or a sawn-off charge lands (`magRoundHits`, `sgHitFoe`); the roll is `GUN_BLOCK_K` (0.35) of a blow's, and only a
+  body with a guard clip (`u.clips.block`) can make it; `gunBlockFx` shows it at HIM: the block clip from 30 % (`st.block`
+  DEALER_BLOCK × 0.7), his weapon flashed, 30 sparks off the blade's face back toward you and 12 to each side, a metal ping,
+  a 50 ms hitstop. Umbra's `gunBlocks` × 0.35 too. After: 8 of 60 blocked (13 %), each landed round 14. Shotgun damage unchanged.
+
+## 2026-11-25 — the water ball that "sometimes doesnt shoot"
+`tools/seafail.js` (the katana with the Sea, Shift held through the real `startWind`/`releaseWind`, 8 aims × 2 holds × 2): 32 of 32
+thrown, none burst within 2 m — the throw itself never failed. What failed was silent: a heavy let go in the ball's 5 s coming back,
+or short of its charge (0.75 of full; a fight's quick heavy). Now `SEA_BALL.charge` 0.55; once the charge is enough and the ball is
+there, a slosh (`seaWindCue`, once a wind); a heavy past the charge while it is coming back gets `seaBallDry` — 14 drops off the blade
+and a thin drip, plainly not a throw. Measured after: a 0.79 s heavy threw; one 0.4 s into the cooldown dribbled.
+- (later, 2026-11-25) "every shift heavy should shoot the water ball not just fully charged. make sure the tear drop has to be full":
+  `SEA_BALL.charge` 0 — any Shift heavy throws it, the drop (`seaBall.cd`) the only gate. And "the water ball hits the ground when
+  shooting at a far enemy … accurate to explode where its actually aimed": it left the hand (below-right of the eye) down the
+  crosshair's direction under gravity and dropped short. Now the crosshair's target (`magTrace` + `worldDrawnHit`, 60 m; 45 m in the
+  open) is taken at the throw and the ball launched from the hand on the arc that arrives there (`v.y += ½ g t`), its life the flight's
+  (`B.life`). `tools/seaaim.js`: a man at 10, 25 and 40 m hit every time (it fell onto the sand short of him before).
+
+## 2026-11-25 (late) — thrown and shot things meet the body where it is drawn; no lag on a throw; the blades' carried heavy
+- **"the water keeps hitting invisible barriers in the air so does the hook"** (the castle street). `tools/seaghost.js` (240 balls from
+  five spots; `seaBall.lastHit` records what stopped each): every burst on nothing drawn was a MAN — the gun's body capsule
+  (max(0.42, 0.72·hitR) + the thing's size ≈ 0.8 m round a farmer) took a ball or the iron going past his head at arm's length. A body
+  the capsule reports is now asked again on his SKIN: `projBodyHit` (the centre line and four round the thing's edge, `cutTris`' triangles
+  via `pbSkin`, once a frame per body and never older than 10 ms). The ball's flight, the hook's throw (on a miss the line goes on past
+  him, `magSkip`) and its flight. After: 0 of 240 burst on nothing.
+- **"map all enemies hit boxes better like that too"**: the .44 and the sawn-off's pellets through `magTraceSkin` (a capsule hit
+  confirmed on the skin, else the round goes on past him; the head from the skin point's height). Melee is still the capsule (a blade's
+  sweep, not a line).
+- TRAP: `cutTris` read a skin from bones as they LAST WERE: the paladin's bones are not under his model, so `u.model.updateMatrixWorld`
+  never moved them and his skin read empty (0 of 16188 triangles) — 0 of 30 rounds landed. Each skinned mesh's own bone tree is
+  updated first now (`rb.updateWorldMatrix(true, true)`): 23 landed, 7 blocked, 0 missed. (It also fixes the blade's skin point on him.)
+- **"improve projectiles they are laggy"**: the first throw near a castle built every big mesh's ray grid on the spot (74 ms). Grids are
+  now built a slice at a time (`wdGridJob`, `wdGridTick` 1.5 ms a frame from `cpTick`; everything under a black), and a mesh without its
+  grid yet is asked by three's own raycast that once. First throw 74 → 8 ms; a flying ball 7 ms a frame in the castle (4.5 without).
+- **The katana's and the Bloody Blade's carried heavy** ("after the first light swing you can charge the second hit coming from the left
+  to right with the mace try that with the bloody blade and katana"): `startWind`'s `maceCarry` now takes them too (`carryKind`), and
+  their swing's end is stamped (`maceEndAt`) — a hold during a cut, or within 0.45 s of it, winds up on the far side and lets go back
+  across (the backhand). Not yet looked at in a still.
+
+## Melee on the skin (2026-11-25, the owner: "Yes, melee too")
+- `meleeSkin(u, t, far, pad)` re-asks a body the capsule (`meleeT`) reported on its drawn skin (`projBodyHit`); a thing with no
+  skin keeps the capsule. `window.__meleeCap = 1` puts the capsule back for measuring; `window.__msDbg = {}` counts asks / air / gap.
+- Three doors: the blade sweep (`MELEE_PAD_EDGE` 0.08), the crosshair fan for thrusts (`MELEE_PAD_FAN` 0.18 + P·0.05) and
+  `zDieStrike`. `aimLand` (where the arm slides the blade to) still uses the capsule — cosmetic.
+- THE SWEEP HAS GAPS. A quick cut moves ~0.45 m between its sub-step lines at arm's length, wider than a man side-on: the skin
+  alone let a body slip between two lines (the capsule's width had hidden it). `bladeSkinGap` fills the gap since the last line
+  with lines ≤ 8 cm apart at his distance, only for a body the capsule already reported.
+- COST: a beach mutant's skin is 9950 faces; a dozen lines a frame against it was 14–70 ms frames. `pbBoxes` sorts the frame's
+  faces into boxes of ≤ 96 by bone, `pbBoxRay` reads only boxes a line passes, and a line passing no box grown by `rad` is
+  turned away before its four edge lines: 0.075 ms a line (was ~2.5), reading the skin 1.6 ms once a frame. Farmer: 950 faces.
+- Measured (`tools/meleeskin.js`, aims relative to the DRAWN crown — the pale is h 2.3 but drawn to 2.05, so the capsule landed
+  25 cm over his real head): katana 118/120 light+heavy cuts land (only aims a full metre over the head now miss; the cut still
+  passes through him from almost anywhere, as it is drawn); the thrust (peg) lands on the body where aimed and misses 0.3–0.5 m
+  beside or over it — the capsule landed 38/60 and 41/60 of those aims, the skin 21 and 18. Worst frame +2–4 ms on the pale.
+- Farmers BLOCK: a probe counting health must zero `u.kind.block` or blocked blows read as misses.
+
+## 2026-11-25 — the hook's first throw hitched
+"the hook also lags the game when throw". `tools/hooklag.js &at=beach|fort` (real time per frame, the draw split out by wrapping
+`renderer.render`, new programs / textures / geometries a frame): the FIRST throw's sixth frame cost 71-74 ms, later throws 4-7 ms.
+Two first-time costs: the chain (instanced, env-mapped) and the flying hook compiled when first drawn (`hookWarm`, compiled while the
+hook is in hand: 72 → 44 ms), and then the game's update — `skaBuild` synthesising every chain sound at once on the first that
+played (~40 ms). It is a generator now (`skaJob`), a few buffers a frame while the hook is held (`skaWarmTick`); `skaBuild` still
+finishes it at once if asked first. After: no stall in flight; one ~19 ms frame left on the first return (not chased).
+
+## 2026-11-25 — the kick on a body that is down; a kick's throw not left on a man who lived
+- `kickStrike` order: a living man in reach → the nearer of a body's joint and a castle prop → the stray strikes. A body
+  (`ragKick`): the joint and what is within a metre of it seeded 4.4 m/s along the kick and 1.4 up, falling off with distance;
+  no blood, nothing cut (`ragHit` is the blade's). `ragBlowStart` wakes it and it settles again; `RAG_LEASH` still holds it
+  within 1.5 m of where it first landed, so a body can be rolled, not walked down the street. `KICK.lastBody` for a probe.
+  What it took to make a body MOVE (`tools/kickbody.js`): seeded on the near joints alone the hips went 0.04 m (the rest of
+  him gripped the floor) — every joint gets at least 0.7 of the 5 m/s; ground friction is applied 36 times a frame, so 0.06 a
+  pass ate 90 % of the speed in one frame — `r.kickT` gives 0.4 s at 0.003; and `ragBlowStart` only gave a body its second back
+  if it was `done`: one asleep by stillness past the deadline slept again the same frame (0.07 m) — it resets `r.t` for any
+  struck body now, the blade's too. After: hips 0.77 / 0.03 / 0.86 m on the beach, 0.93 and 0.99 m in the castle; one in three
+  barely moves (not chased). A body lying against a stone prop: the prop takes the kick.
+- `kickMan` set `killFling` before `hurtMutant` on a man with 1 hp; if he lived (armour, a ward) the throw stayed on him and the
+  next blow of any kind flung him. Cleared when he is still alive.
+
+## 2026-11-26 — the kick: everything a hit hits, crabs and gulls, a stamina cost, the kill thrown along it, the leg re-cut and lit
+- **Every object** ("make the kick hit every object like a hit would … kick the sand and object and walls", "and kick mounds open"):
+  after the living, the dead and a castle's props, `kickStrike` runs the swing's own `digImpactCore` with `KSTRIKE.on` — crates,
+  glass, bone piles, heaps, the idol, every wall (`nearestSolidHit`: sound, chips, a scar), driftwood, the sand (a scuff,
+  `stampDigHole`) and a mound under it (`revealMoundNear`). Its line: eye → 1.4 m ahead and 0.3 m off the floor, on 30 % past
+  (or the look's own line if it meets the floor sooner). With `KSTRIKE.on` every creature branch is skipped (a weapon's damage is
+  not a boot's), and `isBlade`/`slashing`/`bladeSwept` answer false. `KSTRIKE` is declared beside `slashing` — before every
+  reader — not on `KICK` (TDZ).
+- **Crabs** ("i couldnt even kick crabs"): nearest live crab in front within reach + 0.55: `hurtCrab(KICK_DMG)`, then if it lives a
+  1.7 m boot (`recoilD`, over `recoilT` = 1.6 × the recoil — the recoil's `k` is over its own total now) and `stun` 0.7 (the
+  riposte window). **Gulls** ("even when they are downed"): live ones `hurtGull` (doubled on a stunned one: it finishes it), dead
+  ones `rdKick` along the deck. `KICK.lastCrab`, `KICK.lastGull` for probes.
+- **Stamina** ("so you cant spam it"): `KICK_STAM` 0.2 of the bar, in or out of a fight; under half that or winded: no kick, a
+  gasp and "OUT OF BREATH" (not `gaspOut`, which drops your guard).
+- **The kill thrown along the kick** ("go flying in the direction kicked", `tools/kickkill.js &dirs=`): (1) `kickMan` cleared the
+  throw when `u.st.alive` after `hurtMutant` — a dying man is `struck` and `alive` for a beat yet; (2) the kill's line came from
+  `blowHitDir`, i.e. the last BLADE blow on record (`BLOW`) — let go; (3) a farmer could roll `farmZDieRoll` (dies standing) — not
+  on a fling; (4) the skid (`r.slide`) kept his boots gripping (`q.foot`) — not for `r.kfly`. Now `killFling` 1.1, `kickKill`
+  (horizontal ×1.3): along the kick in every direction, 3.7-4.3 m where nothing stands in the way. **PROBE TRAP**: hold the
+  PLAYER at 1.4 m from the man, not the man in front of you — his own clamps (a solid prop, a house) move him away first.
+- **The leg re-cut** ("make the trim on the leg way better"): `kick_pack.py` with `<W>/vf` (full-res frames): the colour mask is
+  only the seed of an OpenCV GrabCut (`/usr/bin/python3` has cv2; the arch python does not) at half size — eroded middle sure,
+  itself probable, a band round it probable background, the cabinet's side sure — then the piece on the bottom edge plus any the
+  seed mostly was (the sock, parted by blur in the first frame), closed 10 px, a 1.5 px blur for the edge. Vision's person
+  matte found little of a leg this blurred.
+- **Lit where it is** ("react to the lighting like the hands"): `handTint(at, u, rects)` — the leg reads two strips either side of
+  where it is drawn, low on the screen (`KICK_LUM_RECTS`), at its start and every third frame as it plays, eased 0.5.
+
+## 2026-11-26 (later) — the jump kick; get-ups from the owner's four stand-ups; no floor under a downed man
+- **Jump kick** ("make jump kicks more likely to knock someone down and they go further", "I SHOULD BE ABLE TO JUMP OFF LEDGES AND KICK
+  PEOPLE MID AIR TOO"): `KICK.air` = off the ground when the sole goes out. It reaches a man up to 2.4 m below your feet and 0.6 m
+  further; knockdown 85 % (boss 8 %); the ragdoll throw `far` 1.7 (`kickRagStart`'s seeds); a killing one `killFling` 1.5.
+- **Get-ups** ("HERES SOME STAND ANIMATIONS … MAKE THEM FLUID AND SEAMLESS"): `Stand Up`, `Stand Up-2`, `Standing Up`, `Standing
+  Up-2` → `mStandA-D` in the farmers' set (`NTAR_ONLY=mStandA,mStandB,mStandC,mStandD /Applications/Blender.app/Contents/MacOS/Blender
+  -b -P tools/ntar_moves.py -- wong`; `blender` is NOT on the PATH; KEEP_YAW). 1.9 / 3.9 / 1.8 / 4.5 s. `kickRagRise` poses each
+  candidate (and the kind's own `riseClip`) at frame 0 and picks the one whose chest faces and head height are nearest the ragdoll's,
+  so its first frame is the pose he lies in; `st.riseClipNow`/`riseDur`, its own root travel from where he lay, and he turns back to
+  you over the last third. Measured: all four used across runs, a joint jumps 0.01-0.03 m the frame the ragdoll lets go.
+- **Not through the floor** ("they clip through the ground"): `downFloorKeep(u, floorY)` every frame of a man down (the fall's back
+  half, the lie, every rise): the lowest of his big bones put 5 cm over his floor, the lift kept in `u.dfLift` and given back when he
+  is up. The kick-rise passes its own floor (`st.riseFloor`): rebuilt from `riseFrom` each frame, a floor read off `p.y - dfLift`
+  drifted under (0.31 m measured). After: worst 0.02 m.
+- **The leg's trim, again** ("clean up here on the trim make the cuts more clean too", a still mid-kick: an orange bar beside the sock):
+  the bar was the doorframe's white edge behind the sock, welded to it by the blur, lit warm. `kick_pack.py` now: the trousers are
+  the DARK piece on the bottom edge (opened 3 px); of the pale, only the SOCK — the biggest pale piece at the trousers' top end —
+  clipped to its own ellipse (1.8 σ) and to nothing past the trousers' right edge (the slab always stands there); a sock parted
+  by the blur (frame 37) joined by the hull of its lower half and the trousers' top; closed, a 4 px Gaussian cut at a half. All four
+  frames one piece, no holes.
+- **The kick's sound** (the owner's "BODY KICK" file, "the second sound at 4 seconds … for anything it connects with"): 4.04-4.60 s →
+  `assets/kick-hit.m4a`, bank `kickHit`, `sfxKickHit(k)` on every connection (men, crabs, gulls, bodies, props, stone, the world).
+- **The merchant** ("make kicking the merchant count as a real hit"): within reach in front, `traderStruck` as a swing's.
+- **The hook's chain** ("should never go through the ground or anything"): `hookLay` samples the floor under the line 9 times
+  (`hookChainFloor`: the temple's/gut's, a castle's storeys, a room's, the sand with banks/rocks/boards) and holds every link 3.5 cm
+  over it; `hookLineCheck` (8 Hz, not while whipping/flying/returning/zipping) recalls the iron when the line from your fist to it
+  is shut by drawn geometry twice running. `tools/hookchain.js`: 0 of ~38,000 link-frames under the sand.
+
+## A heavy body is asked on a light copy (2026-11-26, the owner: "everytime i swing at the orc i lag in the tavern fix this now")
+- **`cutTris` SKINS EVERY VERTEX ON THE CPU, and the tavern's orc is 305,522 faces / 175,849 vertices in 29 skinned meshes**: 48.6 ms a
+  read; with melee on the skin (`meleeSkin`, 2026-11-25) a swing at him read it every frame the blade was out and again as it landed
+  (`blowSurface`): frames of 108-203 ms (`tools/orcswing.js`, in the tavern itself — a beach spawn does not dress him).
+- `hitLod(G)`: a copy per geometry, made once — vertices snapped to a grid, each cell answered by ONE OF ITS OWN vertices (so it is
+  skinned exactly as the drawn skin is there), collapsed faces dropped, the cell grown until the mesh is under its share of the
+  BODY's budget (`hitLodPlan`, `HIT_FACES` 10000 — a cap per mesh left 240k of his faces: most of his 29 meshes are small). A body
+  under the budget is read as before. Warmed a mesh a frame from `updateMutantUnit` (`hitLodWarm`), so the first swing does not pay.
+- **`pbSkin` IS ONCE AN UPDATE NOW (`updateTick`), not "the drawn frame and never older than 10 ms"**: a slow frame is longer than
+  10 ms, so in the frames that hurt it was read two and three times. `blowSurface` takes its faces off that read (`cutTrisNear`) for
+  a body on a light copy.
+- After: his skin read 2.1 ms (10,464 faces), swing frames 9.6-32.7 ms, every aim that landed still lands. Every body over 10k faces
+  takes a light copy by the same rule (the Scourger 24.9k, the paladin 16k) — NOT re-measured on them: `tools/meleeskin.js` if a blow
+  on one of them reads wrong.
+
+## The water ball never bursts on a clock (2026-11-26, the owner: "i keep trying to throw a far water ball in the castle and it explodes mid air stop this now the hook as well")
+- NOT an invisible barrier this time (`tools/seaghost.js`: 0 of 240 on nothing drawn) — its LIFE. The throw aims the arc at what the
+  crosshair is on, capped at 45 m, and the ball burst 0.25 s after that flight ("spent in the air: it bursts there, a rain"): aimed at
+  men further off, or just over their heads, it burst in the open air 45 m out (25 of the probe's 240 "ran out in the air"). The
+  hook's part is `seaHookLoose`: a watered iron that meets nothing lets its ball go on alone, and that burst 1.2 s later.
+- Now (`SEA_BALL.far/flMax/fall/out`): the aim is found out to 150 m; a far throw flies faster (never more than 2.2 s in the air, so
+  its arc stays flat); past where it was thrown at it falls at 14 m/s² until it meets something; one that meets nothing in 9 s (or
+  falls out of the world) thins to mist — no burst, no sound, no hurt (`lastHit.kind` 'faded').
+- `tools/seafar.js` (open beach, elevations −2…50°, and the hook's loose ball): all end on sand or rock 48-108 m off, ≤ 0.6 m over the
+  ground. The hook's own reach (`HOOK_RANGE` 6-14 m) is unchanged.
+
+## The hook goes to what it was thrown at (2026-11-26, `HOOK_FAR`)
+The owner, a still of the iron hanging in the air in the first castle's square, the men it was thrown at past it: "LOOK HOW THE
+HOOK GETS STUCK MID AIR ON NOTHING … THERE IS INVISIBLE COLLIDERS IN THE AIR TAKE ALL OF THEMOUT NOW ONLY VISIBLE WALLS AND FLOOR
+AND OBJECTS SHOULD BE HIT". `tools/hookghost.js &at=fort`: 428 throws, none caught short of a drawn face. It was the END OF ITS
+CHAIN again (6-14 m by charge; see "IT WAS THE END OF THE CHAIN" above — the third time it has read as a wall in the air).
+`hookThrow`: every test now reaches `HOOK_FAR` (30 m) whatever the charge; the charge only sets how far it flies when the
+crosshair is on nothing (`DC`), where it runs out and falls as before. `HOOK_LINKS` 220 → 420 (32 m of chain).
+`tools/hookfar.js`: a tap at a wall 15.6 m off bites it on the drawn point. NOT re-tuned: the haul of a body from 30 m takes
+2.5 s at `HOOK_BACK`; a zip to a wall 30 m off is allowed.

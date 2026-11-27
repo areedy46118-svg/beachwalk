@@ -60,7 +60,7 @@ from mathutils import Vector, Quaternion, Matrix
 # skeletons, and neither of them cares which — the quantity this writes is
 # the rotation a bone has UNDERGONE, which knows nothing about either rig.
 #   blender -b -P tools/ntar_moves.py -- knight
-SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'sword', 'skrim', 'dance', 'king') if a in sys.argv), 'ntar')
+SET = next((a for a in ('knight', 'wong', 'drunk', 'orc', 'crawler', 'umbra', 'mutant', 'demon', 'sword', 'skrim', 'dance', 'king', 'scourge') if a in sys.argv), 'ntar')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', SET + '-moves.json')
 SRC = os.path.expanduser(os.environ.get('NTAR_SRC', '~/Downloads'))   # (NTAR_SRC: another folder of the owner's, e.g. '~/Desktop/BEACHWALK ASSETS')
 ONLY = set(filter(None, os.environ.get('NTAR_ONLY', '').split(',')))   # (NTAR_ONLY=a,b: build just these clips; the rest kept as they are)
@@ -107,7 +107,25 @@ WONG_CLIPS = [
     ('Standing Melee Combo Attack Ver. 2-2', 'mc2b', 'the second again (a second download)', ''),
     ('Standing Melee Combo Attack Ver. 3',   'mc3',  'a one-handed combo, the third',  ''),
     ('Zombie Death',                         'zDie', 'a slow death on the feet, then down', ''),
+    # (2026-11-25, the owner: "add this move for the farmers make sure they hold their weapons and swing like the video" — Mesh2Motion's
+    # "Sword_Attack" on its human with a Large Battle Axe in the right hand, exported Mixamo-named, skeleton + animation, as a GLB)
+    ('exported-model-2',                     'swAtk', 'a big one-handed cut, Mesh2Motion\'s Sword_Attack', ''),
+    # (and the same night: "use the idle too on farmers" — Mesh2Motion's "Idle_Sword", the same human, the same export)
+    ('exported-model',                       'swIdle', 'standing ready, the weapon held low in front, Mesh2Motion\'s Idle_Sword', ''),
+    # (and the same night: "the new swing i added for the farmers is the best yet adjust the other moves accordingly they are horrible" —
+    # the rest of the owner's Mesh2Motion sword set, out of exported-model-3.glb by `tools/glb_split.py` into /tmp/scourge_src; built
+    # with NTAR_SRC=/tmp/scourge_src NTAR_ONLY=mSwB,mSwC,mSwCombo,mSwDash)
+    ('Sword_Regular_B',      'mSwB',     'a quick cut', ''),
+    ('Sword_Regular_C_RM',   'mSwC',     'a stepping cut', ''),
+    ('Sword_Regular_Combo',  'mSwCombo', 'a string of cuts', ''),
+    ('Sword_Dash_RM',        'mSwDash',  'a dash in with a cut', ''),
     ('Flying Kick',           'wFlyC',   'off the ground, both feet', ''),
+    # (2026-11-26, the owner: "HERES SOME STAND ANIMATIONS FOR PEOPLE BUT MAKE THEM FLUID AND SEAMLESS IF USED" — four Mixamo get-ups,
+    # loose in ~/Downloads: the man kicked over and thrown as a ragdoll gets up by whichever starts nearest how he lies, `kickRagRise`)
+    ('Stand Up',              'mStandA',   'up off the floor, one way', ''),
+    ('Stand Up-2',            'mStandB',   'up off the floor, another way', ''),
+    ('Standing Up',           'mStandC',   'up off the floor, a third way', ''),
+    ('Standing Up-2',         'mStandD',   'up off the floor, a fourth way', ''),
     # ---- (2026-11-22, the owner: "give the marionette this look around when he comes out of the washer": he wears this pack,
     # `celMarMocap`, so it rides here)
     ('Nervously Look Around', 'lookAround', 'the marionette out of the washer, looking round him', ''),
@@ -378,7 +396,7 @@ FORCE_FLAT_YAW = {'knock'} if SET == 'ntar' else {'kPunch', 'kSwipe', 'kJump', '
 # root turn exactly as the animator drew it, and the game puts him on the
 # heading it wants ONCE, at the blow — which costs nothing, because a
 # creature on the ground is not being turned toward the player anyway.
-KEEP_YAW = {'knockOut', 'getUp'}
+KEEP_YAW = {'knockOut', 'getUp', 'mStandA', 'mStandB', 'mStandC', 'mStandD'}   # (a get-up turns the body over: its own yaw kept)
 # the two tavern sets are all gaits and stands: the game turns them, so every
 # clip is de-yawed, and nothing in either leaves the vertical
 # ---- AND EVERY SWING HE HAS IS MEASURED. The other sets take their contact
@@ -475,7 +493,7 @@ if SET in ('wong', 'drunk'):
     # AND A BODY THAT LEAVES THE VERTICAL KEEPS ITS OWN TURN — `knockOut`'s
     # lesson: the au takes him onto his hands, and a world-Y de-yaw applied
     # to a horizontal body is a roll about its own length.
-    KEEP_YAW = {'ginga'}
+    KEEP_YAW = {'ginga', 'swAtk', 'mSwB', 'mSwC', 'mSwCombo', 'mSwDash'}   # (swAtk: the hips wind 71 deg into the cut and come back to where they started — the swing's own turn)
     FORCE_FLAT_YAW = {c[1] for c in CLIPS} - KEEP_YAW
 
 
@@ -696,6 +714,41 @@ if SET == 'king':
     for _c in ('kUpper', 'kBike', 'kKnee', 'kAssn', 'kKick', 'kSlam', 'kFlyKick', 'kCrescent', 'k360'):
         CONTACT[_c] = PEAKS
 
+# ---- THE SCOURGER'S MOVES (2026-11-25, the owner, with `~/Downloads/exported-model-3.glb`: "take out all the animations except the
+# run up the pillars and smash down plus the death animation … i am going to give new animations now make sure the rig is correct …
+# there is also a rare knockback and stand back up animation in there"). Twelve Mesh2Motion clips on its human, Mixamo-named, one
+# GLB; `tools/glb_split.py` writes one file a clip, and this set reads them from there:
+#   python3 tools/glb_split.py ~/Downloads/exported-model-3.glb /tmp/scourge_src
+#   NTAR_SRC=/tmp/scourge_src blender -b -P tools/ntar_moves.py -- scourge      -> assets/scourge-moves.json
+# (the GLB path measures D from MIXAMO'S BIND, read off `wong-moves.json`'s mc1 when this file has none of its own)
+SCOURGE_CLIPS = [
+    ('Dodge_back_RM',       'sDodgeB',   'a hop back out of reach', ''),
+    ('Dodge_left_RM',       'sDodgeL',   'a hop to his left', ''),
+    ('Dodge_right_RM',      'sDodgeR',   'a hop to his right', ''),
+    ('Hit_Knockback_RM',    'sKnock',    'struck hard and thrown back off his feet (rare)', ''),
+    ('LayToIdle',           'sRise',     'up off the ground into his stance', ''),
+    ('Idle_Sword',          'sIdleW',    'standing ready, the weapon low in front', ''),
+    ('Sword_Attack_RM',     'sAtk',      'the big overhead into a lunge', ''),
+    ('Sword_Block',         'sBlock',    'the weapon up across him', ''),
+    ('Sword_Dash_RM',       'sDash',     'a dash in with a cut', ''),
+    ('Sword_Regular_B',     'sCutB',     'a quick cut', ''),
+    ('Sword_Regular_C_RM',  'sCutC',     'a stepping cut', ''),
+    ('Sword_Regular_Combo', 'sCombo',    'a string of cuts', ''),
+    # (2026-11-26, `~/Downloads/exported-model-4.glb`, the owner: "use the walk animation from here too … try this run with his old one
+    # too sometimes" — on Mesh2Motion's UNREAL skeleton: `glb_split.py --ue` names it Mixamo's first; NTAR_ONLY=sStalk)
+    ('Run_Stealth',         'sStalk',    'a low, stalking run', ''),
+]
+if SET == 'scourge':
+    CLIPS = SCOURGE_CLIPS
+    KEEP_YAW = {c[1] for c in SCOURGE_CLIPS}          # (a swing's wind and return, a dodge's own turn: every one his own; the game turns him)
+    FORCE_FLAT_YAW = set()
+    WINDOW = {}
+    CONTACT = {}
+    PEAKS = ('LeftHand', 'RightHand', 'LeftToeBase', 'RightToeBase')
+    for _c in ('sAtk', 'sDash', 'sCutB', 'sCutC', 'sCombo'):
+        CONTACT[_c] = PEAKS
+    HIP_ZERO_END = {'getUp', 'sRise'}               # (up off the floor: his stance is at the END of it)
+
 if 'HIP_FROM_TAKE' not in globals(): HIP_FROM_TAKE = set()
 if 'TAKE_FROM_ACTION' not in globals(): TAKE_FROM_ACTION = False
 if 'RAMP_YAW' not in globals(): RAMP_YAW = set()
@@ -706,6 +759,52 @@ if 'HIP_ZERO_END' not in globals(): HIP_ZERO_END = {'getUp'}
 
 def log(*a):
     print('[ntar-moves]', *a); sys.stdout.flush()
+
+
+# ---- AND A GLB OF BARE JOINTS (2026-11-25, the owner's "Sword_Attack" from Mesh2Motion, exported Mixamo-named, "Skeleton +
+# Animations"): no skin, so Blender's glTF importer makes every joint an EMPTY, not a bone, and the rest of this file wants an
+# armature. One is built here: a bone per joint with its REST matrix the joint's own rest (the node's TRS as the file stores it, put
+# through the importer's Y-up -> Z-up), named `mixamorig:<Joint>`, each pose bone held on its empty by a Copy Transforms. D is the
+# rotation a joint has undergone since rest in whatever frame it carries, so a bone that IS the joint's frame gives the same D.
+GLB_ROLL = {'Right': -72.0, 'Left': 77.0}   # (degrees about the bind hand's line: see the hands in `main`)
+
+
+def import_glb_as_armature(path):
+    import struct
+    d = open(path, 'rb').read()
+    J = json.loads(d[20:20 + struct.unpack('<I', d[12:16])[0]])
+    bpy.context.scene.render.fps = FPS          # (keys land on this file's frames)
+    bpy.ops.import_scene.gltf(filepath=path)
+    emp = {o.name: o for o in bpy.data.objects if o.type == 'EMPTY'}
+    acts = {n: (o.animation_data.action if o.animation_data else None) for n, o in emp.items()}
+    for o in emp.values():
+        if o.animation_data: o.animation_data.action = None
+        o.rotation_mode = 'QUATERNION'
+    for nd in J['nodes']:                        # the rest: the node's own TRS, Y-up -> Z-up as the importer does it
+        o = emp.get(nd.get('name'))
+        if not o: continue
+        t = nd.get('translation', [0, 0, 0]); r = nd.get('rotation', [0, 0, 0, 1]); sc = nd.get('scale', [1, 1, 1])
+        o.location = (t[0], -t[2], t[1]); o.rotation_quaternion = (r[3], r[0], -r[2], r[1]); o.scale = (sc[0], sc[2], sc[1])
+    bpy.context.view_layer.update()
+    joints = [n for n in emp if n.startswith('mixamorig')]
+    restM = {n: emp[n].matrix_world.copy() for n in joints}
+    ad = bpy.data.armatures.new('glbRig'); arm = bpy.data.objects.new('glbRig', ad)
+    bpy.context.scene.collection.objects.link(arm); bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode='EDIT')
+    for n in joints:
+        eb = ad.edit_bones.new('mixamorig:' + n[len('mixamorig'):])
+        M = restM[n].normalized(); eb.head = M.to_translation(); eb.tail = eb.head + Vector((0, 0.05, 0)); eb.matrix = M
+    for n in joints:
+        p = emp[n].parent
+        if p is not None and p.name in restM: ad.edit_bones['mixamorig:' + n[len('mixamorig'):]].parent = ad.edit_bones['mixamorig:' + p.name[len('mixamorig'):]]
+    bpy.ops.object.mode_set(mode='OBJECT')
+    for n, a in acts.items():
+        if a is not None: emp[n].animation_data.action = a
+    for n in joints:
+        c = arm.pose.bones['mixamorig:' + n[len('mixamorig'):]].constraints.new('COPY_TRANSFORMS'); c.target = emp[n]
+    fr = [a.frame_range for a in acts.values() if a is not None]
+    sc = bpy.context.scene; sc.frame_start = int(round(min(f[0] for f in fr))); sc.frame_end = int(round(max(f[1] for f in fr)))
+    return arm
 
 
 def r4(v):
@@ -739,6 +838,7 @@ def main():
         # a clip may name a subfolder of ~/Downloads it was delivered in
         sub = entry[3] if len(entry) > 3 else ''
         path = os.path.join(SRC, sub, fname + '.fbx')
+        if not os.path.exists(path) and os.path.exists(path[:-4] + '.glb'): path = path[:-4] + '.glb'   # (a Mesh2Motion export: `import_glb_as_armature`)
         if ONLY and name not in ONLY:
             continue
         if not os.path.exists(path):
@@ -750,7 +850,8 @@ def main():
             continue
         built.append(name)
         bpy.ops.wm.read_factory_settings(use_empty=True)
-        bpy.ops.import_scene.fbx(filepath=path)
+        if path.endswith('.glb'): import_glb_as_armature(path)
+        else: bpy.ops.import_scene.fbx(filepath=path)
         arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
         sc = bpy.context.scene
         f0, f1 = int(sc.frame_start), int(sc.frame_end)
@@ -891,6 +992,74 @@ def main():
         h0 = CONV @ hips[0]
         hy0 = restPos['Hips'].y if name in HIP_FROM_REST else h0.y   # see HIP_FROM_REST
         if name in HIP_FROM_TAKE: hy0 = (CONV @ takeHip).y
+        # ---- A GLB'S "REST" IS NOT MIXAMO'S BIND (2026-11-25, the Mesh2Motion "Sword_Attack"). The game lines a rig up ONCE, on one clip's
+        # rest (`any` in `retargetMoves`: Mixamo's bind — the same in every FBX of a pack), and every clip's D is applied on top of THAT.
+        # A Mesh2Motion export carries no bind; its nodes rest in a fighting stance, so a D measured from it put every bone off by the
+        # stance (the left arm stood straight up through the whole cut). D is re-measured from the bind: each bone turned from where it
+        # points in the stance to where it points in the bind (`mc1`'s rest, already in this file), the pelvis by its whole frame (up the
+        # spine and across the hips); the rest written is the bind's own. And the hips rise and fall about his STANDING height (the legs'
+        # length), not the stance's crouch, or the crouch is his stance and his feet go through the floor in the lunge.
+        glbS = None
+        REF = out['clips'].get('mc1')
+        if REF is None and path.endswith('.glb'):
+            try:
+                import gzip as _gz
+                _wr = open(os.path.join(os.path.dirname(OUT), 'wong-moves.json'), 'rb').read()
+                REF = json.loads((_gz.decompress(_wr) if _wr[:2] == b'\x1f\x8b' else _wr).decode('utf-8'))['clips']['mc1']
+            except Exception as e:
+                log('   GLB: no Mixamo bind to measure from (wong-moves.json mc1):', e)
+        if path.endswith('.glb') and REF is not None:
+            KID = {'Hips': 'Spine', 'Spine': 'Spine1', 'Spine1': 'Spine2', 'Spine2': 'Neck', 'Neck': 'Head',
+                   'LeftShoulder': 'LeftArm', 'LeftArm': 'LeftForeArm', 'LeftForeArm': 'LeftHand',
+                   'RightShoulder': 'RightArm', 'RightArm': 'RightForeArm', 'RightForeArm': 'RightHand',
+                   'LeftUpLeg': 'LeftLeg', 'LeftLeg': 'LeftFoot', 'LeftFoot': 'LeftToeBase',
+                   'RightUpLeg': 'RightLeg', 'RightLeg': 'RightFoot', 'RightFoot': 'RightToeBase'}
+            PAR = {'Head': 'Neck', 'LeftHand': 'LeftForeArm', 'RightHand': 'RightForeArm', 'LeftToeBase': 'LeftFoot', 'RightToeBase': 'RightFoot'}
+            RP = {k: Vector(v) for k, v in REF['restPos'].items()}
+            # (the fingers and the crown, for the hands' roll and the head's own line: the armature has them though KEEP does not)
+            SP = dict(restPos)
+            for xb in arm.data.bones:
+                nm = xb.name.replace('mixamorig:', '')
+                if nm not in SP: SP[nm] = CONV @ (MW @ xb.matrix_local).to_translation()
+            def fr2(al, ac):
+                # a frame from a line and a second line across it: X across, Y along, Z = X x Y
+                al = al.normalized(); ac = (ac - al * ac.dot(al)).normalized()
+                return Matrix((ac, al, ac.cross(al))).transposed().to_quaternion()
+            upR = Vector((0, 1, 0))
+            FR = (RP['LeftUpLeg'] - RP['RightUpLeg']).cross(upR).normalized()          # the bind's front (it rests yawed in this file)
+            shR, shS = RP['LeftArm'] - RP['RightArm'], SP['LeftArm'] - SP['RightArm']    # across the chest
+            hipR, hipS = RP['LeftUpLeg'] - RP['RightUpLeg'], SP['LeftUpLeg'] - SP['RightUpLeg']
+            def palmAcross(side):   # index knuckle -> little knuckle, in the stance
+                return SP[side + 'HandPinky1'] - SP[side + 'HandIndex1']
+            FULL = {   # bone: (along in the stance, across in the stance, along in the bind, across in the bind)
+                'Hips':   (SP['Spine'] - SP['Hips'], hipS, RP['Spine'] - RP['Hips'], hipR),
+                'Spine':  (SP['Spine1'] - SP['Spine'], shS, RP['Spine1'] - RP['Spine'], shR),
+                'Spine1': (SP['Spine2'] - SP['Spine1'], shS, RP['Spine2'] - RP['Spine1'], shR),
+                'Spine2': (SP['Neck'] - SP['Spine2'], shS, RP['Neck'] - RP['Spine2'], shR),
+                'Neck':   (SP['Head'] - SP['Neck'], shS, RP['Head'] - RP['Neck'], shR),
+                'Head':   (SP['Head'] - SP['Neck'], shS, RP['Head'] - RP['Neck'], shR),
+                # the bind: a T, palms down, thumbs forward — so index -> little knuckle points BACK, the hand along the forearm
+                # (and measured against the farmers' own fingers, `tools/swhand.js` beside the GLB's: with thumbs-forward assumed the fist
+                # came out rolled +72° (right) and -77° (left) off the video's on every frame of both clips — the bind's palms are not flat:
+                # the reference is turned about the hand's line by that, GLB_ROLL)
+                'LeftHand':  (SP['LeftHandMiddle1'] - SP['LeftHand'], palmAcross('Left'), RP['LeftHand'] - RP['LeftForeArm'],
+                              Quaternion((RP['LeftHand'] - RP['LeftForeArm']).normalized(), math.radians(GLB_ROLL['Left'])) @ -FR),
+                'RightHand': (SP['RightHandMiddle1'] - SP['RightHand'], palmAcross('Right'), RP['RightHand'] - RP['RightForeArm'],
+                              Quaternion((RP['RightHand'] - RP['RightForeArm']).normalized(), math.radians(GLB_ROLL['Right'])) @ -FR),
+            }
+            glbS = {}
+            for b in bones:
+                if b in FULL:
+                    a1, c1, a2, c2 = FULL[b]; glbS[b] = fr2(a2, c2) @ fr2(a1, c1).inverted(); continue
+                k = KID.get(b)
+                if k and k in restPos and k in RP and b in RP:
+                    glbS[b] = (restPos[k] - restPos[b]).normalized().rotation_difference((RP[k] - RP[b]).normalized())
+            for b in bones:
+                if b not in glbS: glbS[b] = glbS.get(PAR.get(b), Quaternion())
+            legs = sum((restPos[c] - restPos[p]).length for p, c in (('LeftUpLeg', 'LeftLeg'), ('LeftLeg', 'LeftFoot')))
+            stand = legs + min(restPos['LeftFoot'].y, restPos['RightFoot'].y) + (restPos['Hips'].y - restPos['LeftUpLeg'].y)
+            log('   GLB: D re-measured from the bind (mc1); standing hips %.2f, the stance\'s %.2f' % (stand, restPos['Hips'].y))
+            hy0 = stand
         endTurn = (hipyaw(end) - y0 + math.pi) % (2 * math.pi) - math.pi
 
         def ramp(i):
@@ -905,6 +1074,7 @@ def main():
                 q = undo @ (CONV @ raw[i][b])
                 # the DELTA: what this bone has done since its rest pose
                 d = q @ rest[b].inverted()
+                if glbS is not None: d = d @ glbS[b].inverted()     # (from the bind, not the stance: above)
                 d.normalize()
                 if d.w < 0:                          # the short way round, for the lerp at the far end
                     d = Quaternion((-d.w, -d.x, -d.y, -d.z))
@@ -973,6 +1143,11 @@ def main():
         def lieAz(i):
             undo = Quaternion((0, 1, 0), -(hipyaw(i) - y0)) if flat else Quaternion()
             v = (undo @ (CONV @ raw[i]['Hips'])) @ Vector((0, 1, 0))
+            if glbS is not None:
+                # (a GLB's joint axes are the file's, not Blender's bone axes: its hips' +Y is not up the spine — every Mesh2Motion clip
+                # read "flat 1.00". The hips as they would stand on the bind (D · the bind's hips) — whose +Y IS up the spine.)
+                hq = (undo @ (CONV @ raw[i]['Hips'])) @ rest['Hips'].inverted() @ glbS['Hips'].inverted() @ Quaternion(REF['rest']['Hips'][3:] + REF['rest']['Hips'][:3])
+                v = hq @ Vector((0, 1, 0))
             return r4(math.degrees(math.atan2(v.x, v.z))), r4(math.hypot(v.x, v.z))
         az0, azh0 = lieAz(0)
         az1, azh1 = lieAz(end)
@@ -983,7 +1158,8 @@ def main():
                min(hipY), max(hipY), land))
         out['clips'][name] = {
             'src': fname, 'what': what, 'dur': r4(dur), 'n': end + 1,
-            'rest': {b: [r4(rest[b].x), r4(rest[b].y), r4(rest[b].z), r4(rest[b].w)] for b in bones},
+            'rest': ({b: REF['rest'][b] for b in bones if b in REF['rest']} if glbS is not None else
+                     {b: [r4(rest[b].x), r4(rest[b].y), r4(rest[b].z), r4(rest[b].w)] for b in bones}),
             'restPos': {b: [r4(restPos[b].x), r4(restPos[b].y), r4(restPos[b].z)] for b in bones},
             'd': tracks, 'hipY': hipY, 'travel': travel,
             'yaw': {'flat': flat, 'drift': r4(drift), 'swing': r4(swing)},

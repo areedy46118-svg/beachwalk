@@ -1381,3 +1381,50 @@ the grip, tried first, put the near bar across his wrist. `pipeReach` probe stil
 "MAKE IT SO YOU DONT SEE THE PROMPT TO BLOW THE HORN BEFORE COMPLETELING THE marionettes dialog only if hes with you": the top's
 "E Blow the call of the crow" (`updateHover`) and the light's own label are not shown while `marLhHold()`; the light says "Put your
 hand on the light" and is warm glass until his goodbye (`MAR_LH`, lighthouse.md).
+
+## 2026-11-26 — the reach's hand re-cut from a full-res matte; the grate seen to come off, and no fling
+- **The hand** ("trim the hand better when grabbing from the sewer screw driver"): the instance labels (`scene_cutout.swift
+  labels`) are 512 x 512 for a 640 x 1138 frame — squashed and nearest-upscaled — and the cut then eroded two pixels and blurred:
+  fingers fused into a mitten, tips chewed where they met the lighter, a scrap of the table kept in the thumb's crook. Now
+  `tools/person_matte.swift` (Vision person segmentation `.accurate`, a soft matte at the full 1080 x 1920 frame) and
+  `pipe_hand_pack.py`'s `arm_matte`/`retro_pm` when `<W>/pm` exists: P > 0.5, one pixel round white off (three made the
+  fingertips on the paper short), the blue thing's three, a 4 px opening for the matte's wisps (paper flags, the pen's tip),
+  only SMALL holes filled (the crook of a thumb touching a finger is a hole, and it is the table), the matte's own soft edge
+  box-downscaled as the alpha. 55 frames, 202 KB. Work dir: frames at fps=12 into `v` (640 wide) AND `vf` (unscaled).
+- **The grate flung behind you** (`tools/grate.js &near=0.6`): stood close to the outlet, the hold's 1.1 m along the look ends in
+  the pipe, past the room; `PhysProp`'s held step asked `bunkerFloorAt` there, got null, and clamped the target to the beach's
+  cliff line — `DRAIN_X` IS `CLIFF_BLOCK_X`, so that is the tunnel's mouth behind you — and hauled it at 24 m/s, 17 m. A body
+  with `inside` is now held by its own place while it or its target is in it (`ownRoom`), never the cliff's.
+- **Seen to come off**: `pullGrate` no longer grabs at once — `grPull` (0.85 s, `updateGratePull` from `updateGrateLift`): worked
+  loose in its hole (a rattle, 7 cm out), then drawn out to where you will hold it (kept 0.3 m on your side of the wall when you
+  stand close), and only then `grateMakeProp(true)`. `grateObjS` for a probe.
+
+## 2026-11-26 (later) — the reach's hand whole; the syringe out
+"the hand in the sewer needs to be better u sometimes see through it and a huge thing appears above it that should be cut clean".
+`pipe_hand_pack.py` (`arm_matte`, `retro_pm`); checked with a whole-sheet count at the shader's own cut (alpha ≥ 0.5): pieces and
+enclosed holes per frame. Four faults, each found on its frame:
+- **Diamond holes through the wrist** (frames 10-31): the "blue thing" test (`b > r+0.08`, mx > 0.35) took the navy cuff's lit edge,
+  and its 5 px dilation cut diamonds. The lighter is LIGHT blue: mx > 0.55.
+- **The candle jar on his fingertips** (frame 45, "a huge thing above it"): the person matte joined it by a wisp. His CORE is the mask
+  opened 10 px (an arm and fingers survive, a wisp does not); the core's piece from the left edge / knee line; the mask kept within
+  14 px of it — and as is within 48 px of the frame's left border and the knee line (the opening eats in from a border).
+- **Bites out of the sleeve's top** (after the lighter test was added): one light-blue speck on the sleeve counted as "the lighter"
+  and the grey round it went. Only the biggest blue piece (> 400 px), and only BRIGHT grey (mx > 0.45) round it.
+- **Pinholes** (11 frames, 1-68 sprite px): the matte's soft dips inside the arm. Enclosed holes are filled unless big AND the room's
+  colour (the thumb's crook is the table); inside the arm (3 px in) the cover is 1.0; after the box-down, holes ≤ 40 sprite px sealed.
+  TRAP: a loop variable named `c` there shadowed the colour array — "'int' object is not subscriptable".
+After: 55 frames, 0 holes, 0 stray pieces, 191 KB.
+- **The syringe** on the corner by the jars ("this syringe in the ground can go"): removed. Laid with `rotation.x` π/2 its length (+z)
+  pointed straight DOWN — it stood on its needle.
+
+## 2026-11-26 (later) — "i lagged while running in the sewer": every fogged material re-sent the fog lamps on every draw
+`tools/sewlag.js` (two sprint laps by the keys, every frame's real ms; the JS Self-Profiling API over the slow frames — the server
+already sends `Document-Policy: js-profiling` for index.html, so `new w.Profiler()` works in a probe; `uniform4fv` wrapped and
+named by `getUniformLocation`). The slow frames (20-39 ms, every few frames down the branch on the first lap) were 60-68 % in
+three's `setValueV4fArray`; counted, `fogLampP` and `fogLampC` (24 vec4 each, on EVERY fogged material in the game,
+`UniformsLib.fog`) went up 174 times a frame each. Flat `Float32Array`s did not help (the copy was not the cost — the GL call was).
+`fogLampUploadOnce` wraps the renderer context's `uniform4fv`: a location remembers `FOG_LAMPS.ver`, and the same arrays at the
+same version are dropped (a GL program keeps its uniform values). `sewLampsToFog` bumps `ver` only when a value changed.
+After: `setValueV4fArray` gone from the slow frames' profile. Some 20-30 ms frames remain on the first lap; they look like GPU
+(the profile is matrices and state, a few samples). This fix is the whole game's — the tavern and the castle carry the same two
+arrays on every material.

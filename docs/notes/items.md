@@ -1436,3 +1436,11 @@ play — taking one you have is a no-op in `addToInventory`, which now also coun
 artifact into the checkpoint as given only if the world gave it when dev mode is on (`one(item, key, taken)`), or a dev
 session's checkpoint would mark the whale's/the chest's/the sea's as taken. Note the whale's in the pack wakes Skrim's
 'deal' (`skqHolding`) in dev mode. Probe: `tools/devarts.js`.
+
+## 2026-11-25 — an artifact onto a weapon that holds one swaps them
+"MAKE DRAGGING AN ARTIFACT TO THE WEAPON WITH ONE ALREADY ON IT JUST SWITCH IT OUT". `attachArtifact` refused ("take it off first") since
+2026-10-14 (the old one used to be dropped into a full pack and lost). Now a swap: the new one leaves its pocket FIRST, the old one is
+added and put into that same pocket (`packSlots[from]`), then the new one goes on — so a full pack has room; refused only if the new one
+was not in the pack and the pack is full; if the old one cannot be added the whole thing is put back. The pack's drag (`findRecipe`) and
+the weapon-slot drop both go through it. `tools/artswap.js`: Sea → Flame on the katana, the Sea in the Flame's pocket 3; back again with
+the pack filled.

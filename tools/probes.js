@@ -8907,3 +8907,29 @@ export async function gpuCost({ w, b, log, sleep }) {
     if (Q.get('who')) { if (!w.__whoDraws) w.eval(await (await fetch('/tools/perf.js?' + Date.now())).text()); const r = w.__whoDraws(14); log('   who', r.calls, r.tris, JSON.stringify(r.top)); log('   shadows', R.shadowMap.enabled, 'fogDist', b.scene.fog && b.scene.fog.density, 'far', C.far); }
   }
 }
+
+// THE CASTLE'S BREAKABLES AFTER A CHECKPOINT LOAD (2026-11-25, the owner: "i reloaded a castle checkpoint and all the breakables
+// were gone"). In through the gate (its autosave), how many props stand and are drawn; the death's reload; the same, every second.
+export async function cpAfterLoad({ w, b, log, sleep, shot }) {
+  for (let k = 0; k < 300 && !b.state().introDone; k++) { try { if (!b.state().started) b.beginGame(); } catch (e) {} b.frame(3); await sleep(30); }
+  b.settings.devMode = false; b.loadFort();
+  for (let i = 0; i < 120 && !(b.fortRdy() && b.fortWallsReady()); i++) { b.frame(1); await sleep(250); }
+  b.skipTakes(); b.placeOutOfFort('gate'); for (let i = 0; i < 30; i++) { b.frame(1); await sleep(100); }
+  b.skipTakes(); b.startFort(1); for (let i = 0; i < 40; i++) { b.frame(1); await sleep(60); }
+  const tell = (B, lab) => {
+    const S = B.CP.sites.fort; if (!S) return log(lab, 'no fort site; asked', B.CP.asked, 'kit', B.CP.ready);
+    const alive = S.props.filter((P) => !P.dead).length;
+    let drawn = 0; if (S.group) S.group.traverse((o) => { if (o.isInstancedMesh && o.visible) drawn += o.count; });
+    let gv = true; for (let o = S.group; o; o = o.parent) if (!o.visible) gv = false;
+    log(lab, 'asked', B.CP.asked, 'kit', B.CP.ready, 'built', S.built, 'props', S.props.length, 'standing', alive, 'instances', drawn, 'group shown', gv, 'in scene', !!(S.group && S.group.parent), 'inFort', B.roomFlags().inFort, 'black', (+(B === b ? w : w2).document.getElementById('blackout').style.opacity || 0).toFixed(2));
+  };
+  let w2 = null;
+  for (let i = 0; i < 200 && !(b.CP.sites.fort && b.CP.sites.fort.built); i++) { b.frame(1); await sleep(50); }
+  tell(b, 'before');
+  const f = document.querySelector('iframe');
+  sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1');
+  f.contentWindow.location.reload(); await sleep(1500);
+  for (let i = 0; i < 300; i++) { await sleep(100); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.CP) break; } catch (e) {} }
+  const B = w2.__bw;
+  for (let s = 1; s <= 40; s++) { await sleep(250); tell(B, 'after ' + (s / 4) + ' s'); }
+}

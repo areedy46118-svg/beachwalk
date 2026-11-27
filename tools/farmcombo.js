@@ -2,21 +2,22 @@
  * where it is in his frame; the contacts = the head's fastest moments in front of him at head height. And stills of each combo from his
  * front-right (solo), at the weapon's seat turned by &turns=… radians (0 = as seated) to set the hold against the owner's screenshot.
  * PB_PORT=4241 PB_WAIT=700 sh tools/probe.sh 'evalFile&f=/tools/farmcombo.js&turns=-0.6,0,0.6&file=kn' <out> */
-const Q = new URLSearchParams(location.search);
+const Q = new URLSearchParams(location.search), CL = (Q.get('clips') || 'mCombo1,mCombo2,mCombo3').split(',');   // (&clips=mSwAtk: the big cut, 2026-11-25)
 const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
 await ev('/tools/burntest.js'); await ev('/tools/fortboot.js');
 log('boot', JSON.stringify(await w.__fortBoot()));
 const units = () => b.farmUnitsS();
 for (let i = 0; i < 400 && !(units().length >= 20 && units().every((u) => u.model && !u.parLate)); i++) { b.frame(1); await sleep(30); }
 for (let i = 0; i < 300 && !units().some((x) => x.farm && x.farm.out && x.model && x.farmTool); i++) { b.frame(1); await sleep(30); }
-const u = units().find((x) => x.farm && x.farm.out && x.model && x.farmTool && x.clips.mCombo1 && (!Q.get('file') || x.kind.file === Q.get('file'))) || units().find((x) => x.model && x.farmTool && x.clips.mCombo1);
+const u = units().find((x) => x.farm && x.farm.out && x.model && x.farmTool && x.clips[CL[0]] && (!Q.get('file') || x.kind.file === Q.get('file'))) || units().find((x) => x.model && x.farmTool && x.clips[CL[0]]);
 if (!u) { log('no man with the combos', JSON.stringify(units().slice(0, 3).map((x) => Object.keys(x.clips || {}).filter((k) => /Combo|ZDie/.test(k))))); }
 else {
   const T = b.THREE, tip = u.bones.tip, inv = new T.Matrix4();
   log('man', u.kindName, u.kind.file, u.kind.tool, u.farmW && u.farmW.pack);
   const stopAll = () => { for (const x of Object.values(u.clips)) { x.stop(); x.enabled = false; x.setEffectiveWeight(0); } };
   const res = {};
-  for (const nm of ['mCombo1', 'mCombo2', 'mCombo3']) {
+  if (+Q.get('seat')) b.farmSeatTurnS(u, +Q.get('seat'));   // (the video's grip, `FARM_SW_SEAT`, for the passes)
+  for (const nm of CL) {
     const a = u.clips[nm]; stopAll(); const dur = a.getClip().duration; a.reset(); a.play(); a.enabled = true; a.setEffectiveWeight(1); a.paused = true;
     const N = 160, S = [];
     const r0 = u.model.rotation.y; u.model.rotation.y = 0;
@@ -44,20 +45,20 @@ else {
   const bg = b.scene.background; b.scene.background = new T.Color(0x8a8a8a);
   const P = u.g.position, ry = u.g.rotation.y;
   const turns = (Q.get('turns') || '0').split(',').map(Number);
-  const W = 220, sheet = w.document.createElement('canvas'), frs = [0.12, 0.25, 0.38, 0.5, 0.62, 0.75];
-  sheet.width = W * frs.length; sheet.height = W * 3 * turns.length; const g = sheet.getContext('2d');
+  const W = +(Q.get('W') || 220), VIEWS = (Q.get('views') || '0.55').split(',').map(Number), sheet = w.document.createElement('canvas'), frs = (Q.get('frs') || '0.12,0.25,0.38,0.5,0.62,0.75').split(',').map(Number);
+  sheet.width = W * frs.length; sheet.height = W * CL.length * turns.length * VIEWS.length; const g = sheet.getContext('2d');
   let row = 0;
   for (const tr of turns) {
     if (tr) b.farmSeatTurnS(u, tr);
-    for (const nm of ['mCombo1', 'mCombo2', 'mCombo3']) {
+    for (const nm of CL) for (const VW of VIEWS) {
       const a = u.clips[nm]; stopAll(); const dur = a.getClip().duration; a.reset(); a.play(); a.enabled = true; a.setEffectiveWeight(1); a.paused = true;
       frs.forEach((fr, i) => {
         a.time = dur * fr; u.mixer.update(0); u.model.rotation.y = 0;
         cam.fov = 35; cam.updateProjectionMatrix();
-        C.set(P.x + Math.sin(ry + 0.55) * 4.2, P.y + 1.2, P.z + Math.cos(ry + 0.55) * 4.2); b.lookAt(P.x, P.y + 1.1, P.z); cam.updateMatrixWorld(true);
+        C.set(P.x + Math.sin(ry + VW) * 4.2, P.y + 1.2, P.z + Math.cos(ry + VW) * 4.2); b.lookAt(P.x, P.y + 1.1, P.z); cam.updateMatrixWorld(true);
         b.scene.updateMatrixWorld(true); b.renderer.render(b.scene, cam);
         const src = b.renderer.domElement, s = Math.min(src.width, src.height); g.drawImage(src, (src.width - s) / 2, (src.height - s) / 2, s, s, i * W, row * W, W, W);
-        g.fillStyle = '#000'; g.font = '11px monospace'; g.fillText(`${nm} ${fr} turn ${tr}`, i * W + 3, row * W + 12);
+        g.fillStyle = '#000'; g.font = '11px monospace'; g.fillText(`${nm} ${fr} view ${VW}`, i * W + 3, row * W + 12);
       });
       row++;
     }

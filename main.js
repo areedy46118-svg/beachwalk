@@ -218,7 +218,7 @@ const BW_FROM = (() => {
       bunker: ['bunker.glb', 'dealer.glb'],
       deep: ['pliosaur.glb', 'fishing-rod.glb'],
       cel: ['kelley.glb', 'cellar-door.glb', 'puppet.glb', 'marionette.glb'],   // (the marionette's own, and not the house over it: 2026-11-22, below)
-      tmp: ['temple.glb', 'crow.glb', 'ancient-king.glb', 'king-moves.json'],   // (and the rods floating in it, 2026-11-14: only the rod uses that file)              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
+      tmp: ['temple.glb', 'crow.glb', 'scourger.glb', 'king-moves.json', 'scourge-moves.json'],   // (and the rods floating in it, 2026-11-14: only the rod uses that file)              // (the snap's checkpoint, 2026-11-13: the black waited ~4 s on it in the far queue)
       whale: ['whale.glb', 'skrim.glb', 'crying-head.glb', 'limule.glb', 'skrim-moves.json', 'demon-moves.json', 'knight-moves.json', 'ntar-moves.json', 'wong-moves.json', 'orc-moves.json', 'drunk-moves.json', 'umbra-moves.json', 'crawler-moves.json'],
     };
     /* AND WHAT YOU ARE CARRYING COMES WITH YOU (2026-10-19, the owner, twice: "i loaded a checkpoint and my weapons were
@@ -249,6 +249,11 @@ const BW_FROM = (() => {
     /* (and the minotaur, when the save has him at your side, down or dead: ranked by his gate, he parsed in the far
      * queue — measured, `minoRestore`, 40 s after a load into XIII's court before he lay there again) */
     if (f.mino && f.mino.s && f.mino.s !== 'wait') first.add('assets/minotaur.glb');
+    /* (and a castle's breakables — 2026-11-25, the owner: "i reloaded a castle checkpoint and all the breakables were gone". Their
+     * two files are asked only when a castle is placed (`loadCastleProps`), so they ranked as the far rest, and the far rest waits
+     * out a fight: measured, `probes.js cpAfterLoad`, the fort's 43 props stood before the reload and none 30 s after it.) */
+    if (d.room === 'fort' || d.room === 'c13' || d.room === 'thr') { first.add('assets/castle-props-a.glb'); first.add('assets/castle-props-b.glb'); first.add('assets/castle-props-c.glb'); }
+    if (d.room === 'fort') first.add('assets/brazier.glb');
     return { walked, first, room: d.room || null };
   } catch (e) { return null; }
 })();
@@ -997,8 +1002,16 @@ function updateWhereAmI() {
     const h = _wRay.intersectObject(group, true).filter((q) => q.object.visible && q.object.name !== 'hitProxy')[0];
     if (h) aim = `\naim  ${(h.point.x - ox).toFixed(2)}, ${(h.point.y - oy).toFixed(2)}, ${(h.point.z - oz).toFixed(2)}  (${h.distance.toFixed(1)} m)`;
   }
+  /* (and in a castle, whether it is DRAWN and what else the game thinks you are in — 2026-11-25: a screenshot read "castle" at a
+   * spot that is a walled alley in the model while it showed open beach through where the walls stand, and nothing on the
+   * screen could say which was true) */
+  let state = '';
+  if (room === 'castle') {
+    const on = Object.entries({ bunker: !!inBunker, deep: inDeep, c13: inC13, dun: inDun, sewer: inSewer, notReady: !fortReady, noWalls: !fortWalls }).filter(([, v]) => v).map(([k]) => k);
+    state = `\ndrawn ${fortWorld && fortWorld.visible ? 'yes' : 'NO'}${on.length ? '  ' + on.join(' ') : ''}`;
+  }
   whereEl.textContent = `${room}\nfeet  ${(p.x - ox).toFixed(2)}, ${(feet - oy).toFixed(2)}, ${(p.z - oz).toFixed(2)}`
-    + `\nlook  ${(lookEuler.y).toFixed(2)} rad${aim}`;
+    + `\nlook  ${(lookEuler.y).toFixed(2)} rad${aim}${state}`;
 }
 function toggleFastWalk() {
   if (!introDone || ended || dying) return;
@@ -1326,6 +1339,10 @@ const sfxOutBase = () => {
     if (!stepBus) { stepBus = audioCtx.createGain(); stepBus.gain.value = STEP_VOL; stepBus.connect(sfxBusGain); }
     return stepBus;
   }
+  if (cpScope && sfxBusGain) {
+    if (!cpBus) { cpBus = audioCtx.createGain(); cpBus.gain.value = CP_VOL; cpBus.connect(sfxBusGain); }
+    return cpBus;
+  }
   return sfxBusGain || (audioCtx && audioCtx.destination);
 };
 /* FOOTSTEPS HAVE A FADER OF THEIR OWN. Every surface's step is its own
@@ -1335,6 +1352,10 @@ const sfxOutBase = () => {
 const STEP_VOL = 0.72;
 let stepScope = false, stepBus = null, tbScope = false;
 function stepSnd(fn) { const was = stepScope; stepScope = true; try { fn(); } finally { stepScope = was; } }
+// the castle's breakables (their breaks and their pieces' knocks) go through a fader of their own: the owner wanted them a little quieter
+const CP_VOL = 0.62;
+let cpScope = false, cpBus = null;
+function cpSnd(fn) { const was = cpScope; cpScope = true; try { fn(); } finally { cpScope = was; } }
 let lhEl = null, lhGain = null, lhStarted = false;
 const LH_TRACK_LEVEL = 0.55;   // the lighthouse track sits under everything else
 // the sea keep's intro (see playKeepIntro): up here because applySettings reads it at load
@@ -1409,6 +1430,13 @@ let wreckThemeVol = null;
 // pixels and crawling edges instead of a clean modern image.
 const RETRO_SCALE = 0.62;   // clearer (was 0.42): the palette carries the retro now, not the blur
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+try { fogLampUploadOnce(renderer.getContext()); } catch (e) {}   // (`FOG_LAMPS`: sent when they change, not on every draw)
+/* (a probe's: WHICH draw the driver refused. With `localStorage.bwGlDbg` set, every draw is followed by `gl.getError()` — slow, a
+ * probe's only — and the object's name, its counts and its buffers kept in `window.__glErrs`. Found with it, 2026-11-25:
+ * `tools/glerr.js`.) */
+try { if (localStorage.getItem('bwGlDbg')) { const gl = renderer.getContext(), rb = renderer.renderBufferDirect.bind(renderer); window.__glErrs = [];
+  renderer.renderBufferDirect = (cam, scn, geo, mat, obj, grp) => { rb(cam, scn, geo, mat, obj, grp); const e = gl.getError(); if (e && window.__glErrs.length < 40) { let nm = obj.name || obj.type, q = obj.parent; for (let k = 0; k < 3 && q; k++, q = q.parent) nm = (q.name || q.type) + '/' + nm;
+    window.__glErrs.push(`${e} ${nm} | instanced ${!!obj.isInstancedMesh} count ${obj.count} matrix ${obj.instanceMatrix ? obj.instanceMatrix.count : '-'} colour ${obj.instanceColor ? obj.instanceColor.count : '-'} | geo ${Object.entries(geo.attributes).map(([k, a]) => k + ':' + a.count + (a.isInstancedBufferAttribute ? 'i' : '')).join(' ')} index ${geo.index ? geo.index.count : '-'} range ${geo.drawRange.start}+${geo.drawRange.count} | mat ${mat.type} ${mat.name || ''}`); } }; } } catch (e) { /* no storage: no probe */ }
 /* (2026-10-18, "OPTIMIZE … THINK OF WORSE SYSTEMS … AND WINDOWS"): three asks the driver for every program's status and
  * info log the first time it is used, which is a synchronous wait on the compile — and on Windows, where ANGLE translates
  * every program to HLSL, a costly one (0.53 s of `getProgramInfoLog` in a CPU profile of a load here, on a fast Mac).
@@ -1508,9 +1536,14 @@ const sharpMat = new THREE.ShaderMaterial({
       // gather the bright air near it; whatever dark stands between — the tower, the tree, a cloud's
       // edge — leaves a shadow in the beams. Only what is close to the moon is a source, so a torch or
       // the thing in your hand throws nothing.
-      if (uRay.z > 0.0) o += uRayCol * shafts(p, uRay, uRayT, 36) * (1.0 - o);
+      /* (NOT THROUGH THE WALLS — 2026-11-26, the owner: "light rays should not go through walls i see this mainly at the castle
+       * entrance". The pass gathers the bright sky near the moon and lays it on every pixel along the line, the castle's dark
+       * wall in front of the moon as much as the air beside it: a beam drawn on the stone. A pixel that is itself dark — what
+       * stands between you and the light — takes only a sixth of it; the air and the sky round the source, all of it.) */
+      float lumC = dot(c, vec3(0.30, 0.52, 0.18));
+      if (uRay.z > 0.0) o += uRayCol * shafts(p, uRay, uRayT, 36) * (1.0 - o) * mix(0.16, 1.0, smoothstep(uRayT * 0.25, uRayT * 0.8, lumC));
       // and on the beach a second source: the lighthouse's lamp, the beam's own haze streaming off it
-      if (uRay2.z > 0.0) o += uRay2Col * shafts(p, uRay2, uRay2T, 24) * (1.0 - o);
+      if (uRay2.z > 0.0) o += uRay2Col * shafts(p, uRay2, uRay2T, 24) * (1.0 - o) * mix(0.16, 1.0, smoothstep(uRay2T * 0.25, uRay2T * 0.8, lumC));
       /* EACH STRETCH GRADES ITS OWN SHADOWS, barely: the mood's hue (teal by
        * the wreck, violet at the pavilion, cold blue at the tower) laid into
        * the darks only, at the same luminance, so the level of the frame and
@@ -1837,7 +1870,29 @@ THREE.UniformsLib.fog.fogNoise = { value: FOG_NOISE };
  * from its torches; the fog's scatter reads them too. Their pooled copies carry a MARK in their decay (its third decimal a 7:
  * 1.607 for 1.6, `bwLampMark`) so those materials and the fog skip them — the pool goes on lighting whatever moves. */
 const FOG_LAMP_MAX = 24;
-const FOG_LAMPS = { n: { x: 0, y: 0, z: 0, w: 0 }, p: Array.from({ length: FOG_LAMP_MAX }, () => new THREE.Vector4()), c: Array.from({ length: FOG_LAMP_MAX }, () => new THREE.Vector4()) };
+/* (FLAT, NOT TWENTY-FOUR VECTORS — 2026-11-26, the owner: "i lagged while running in the sewer", and "the tavern lags so bad". These
+ * two arrays ride on EVERY fogged material in the game (`UniformsLib.fog`), and three uploads a material's uniforms every time the
+ * material changes between draws: as arrays of `Vector4` each upload `flatten`ed 48 vectors in JS first. Profiled running the
+ * sewer's branch (`tools/sewlag.js`, the JS Self-Profiling API): 36 of 60 samples in its slow frames were that copy. As
+ * `Float32Array`s three hands them to `uniform4fv` as they are. Written in fours: position + range, colour × intensity + decay.) */
+const FOG_LAMPS = { n: { x: 0, y: 0, z: 0, w: 0 }, p: new Float32Array(FOG_LAMP_MAX * 4), c: new Float32Array(FOG_LAMP_MAX * 4), ver: 1 };
+/* (AND UPLOADED ONCE PER PROGRAM PER CHANGE, NOT PER DRAW. The copy was not the cost: counted (`tools/sewlag.js`, `uniform4fv` wrapped
+ * and named by location), `fogLampP` and `fogLampC` went up 174 times a frame EACH, 96 floats a call, though they change only in the
+ * sewer and not at all anywhere else — three re-sends every array uniform whenever the material changes, with no cache, and
+ * every fogged material in the game carries these two. A GL program keeps a uniform's value, so each location remembers the
+ * version it was last given (`FOG_LAMPS.ver`, bumped by whoever writes them) and a call with the same arrays and version is
+ * dropped. Installed on the renderer's context just below.) */
+function fogLampUploadOnce(gl) {
+  const up = gl.uniform4fv.bind(gl);
+  gl.uniform4fv = function (loc, data, a, b2) {
+    if ((data === FOG_LAMPS.p || data === FOG_LAMPS.c) && loc) {
+      const k = data === FOG_LAMPS.p ? '__flP' : '__flC';
+      if (loc[k] === FOG_LAMPS.ver) return;
+      loc[k] = FOG_LAMPS.ver;
+    }
+    return a === undefined ? up(loc, data) : up(loc, data, a, b2);
+  };
+}
 const lampMarkDecay = (d) => Math.floor(d * 100 + 1e-6) / 100 + 0.007;
 const FOG_SCAT = { x: 0, y: 0.8, z: 0, w: 0 };
 const FOG_SCAT_K = { sew: 0.035, drain: 0.06, room: 0.08 };   // its strength in each
@@ -7362,7 +7417,12 @@ function lodTick() {
       LOD.list[j] = LOD.list[LOD.list.length - 1]; LOD.list.pop(); continue;
     }
     if (e.boxT % 16 === 1 || e.box.isEmpty()) { o.updateWorldMatrix(true, false); e.box.copy(e.L.hi.boundingBox).applyMatrix4(o.matrixWorld); }
-    const d = e.box.distanceToPoint(_lodP);
+    /* (A TEXTURED SHAPE GOES COARSE HALF AS SOON — 2026-11-26, the owner, a still from the walk: "i see the textures of this cave
+     * spawning in". A coarse level averages its merged vertices' UVs, so a painted surface's picture smears with it, and walking up
+     * to one the finer levels came in one by one and the texture visibly ARRIVED. A mesh that carries a map is given its coarser
+     * levels only where their cell is under half a pixel — a level change there is not a thing the eye can see.) */
+    if (e.tex === undefined) e.tex = [].concat(o.material).some((m) => m && (m.map || m.emissiveMap));
+    const d = e.box.distanceToPoint(_lodP) * (e.tex ? 0.5 : 1);
     let want = -1;
     for (let i = LOD_CELLS.length - 1; i >= 0; i--) if (d * tol >= LOD_CELLS[i]) { want = i; break; }
     // ask for what is wanted (only for a thing that is drawn), draw the best that is there
@@ -7710,6 +7770,26 @@ function pushOutOfSolids(pos, feetY, grow, headY = Infinity) {
 function pushOutOfRocks(feetY) {
   // your head, so a crouch takes you under the pier's deck
   pushOutOfSolids(camera.position, feetY, PLAYER_R * 0.85, feetY + playerHeight());
+}
+// is (x, z) inside a solid that stops a body standing at feetY (the same skips as the push-out)?
+function solidBlocks(x, z, feetY, grow, headY = Infinity) {
+  for (const c of colNear(x, z, grow)) {
+    if (feetY >= c.top - (c.step ?? ROCK_STEP)) continue;
+    if (c.floorY !== undefined && headY < c.floorY) continue;
+    if (solidDepth(c, x, z, grow) > 1e-3) return true;
+  }
+  return false;
+}
+/* A CREATURE ON THE BEACH IS STOPPED BY THE ROCKS TOO (2026-11-25, the owner: "make sure he doesnt clip through anything"). The
+ * beach's own branch of `mutClampX` held a body between the surf and the cliff and nothing else, so a farmer shouldered by you
+ * (`bumpBody`), reeling off a blade (`flinchPush`) or chasing you round a formation walked straight into the stone. Now it is
+ * pushed out of the same `rockColliders` you are. Only a body that was standing CLEAR last frame: one put in the stone on purpose
+ * (a lurker on a ledge, a sleeper in a hollow) was placed there by a hand that knew, and is left where it was put. */
+function unitRockClamp(u, p) {
+  const R = Math.min(0.5, (u.kind.body || 0.9) * 0.45), head = p.y + 1.6;
+  if (!solidBlocks(p.x, p.z, p.y, R, head)) { u._rkOk = true; return; }
+  if (!u._rkOk) return;
+  pushOutOfSolids(p, p.y, R, head);
 }
 
 // ------------------------------------------------------------------
@@ -12062,6 +12142,8 @@ function bootLeft() {
   for (const j of bwWaiting) if (j.reach <= BOOT_NEAR) n++;
   for (const w of warmSteps) if (w[2] <= BOOT_NEAR) n++;
   try { if (UC.composing && (bwReach.get('assets/cave.glb') ?? 0) <= BOOT_NEAR) n++; } catch (e) { /* not read yet */ }   // (its build is spread over frames now: models/undercroft.js `uSlice`)
+  // (and the castle you are in, its breakables laid: built 0.25 s into the fade they popped in — `probes.js cpAfterLoad`, 2026-11-25)
+  try { const id = inThrone ? 'thr' : inC13 ? 'c13' : inFort ? 'fort' : null; if (id && CP.asked && !(CP.sites[id] && CP.sites[id].built)) n++; } catch (e) { /* not read yet */ }
   return n;
 }
 /* ---- AND THE INTRO IS NEVER LAGGED BY THE BOOT. It was thirty seconds of
@@ -12201,7 +12283,9 @@ function beachShown(tops, k, n, fn) {
       o.visible = !n || (!beachDrawn.has(o) && (i++ % n) === k);
       if (o.visible) {
         shown.push(o);
-        if (n && o.isInstancedMesh && o.count === 0) { counts.push([o, 'count', 0]); o.count = 1; }
+        // (only one that HAS a first instance to draw: a batch built for none — `instanceMatrix.count` 0 — was asked for one anyway, and the
+        // driver refused the draw: "glDrawElementsInstanced: Vertex buffer is not big enough", twice a session — `tools/glerr.js`, 2026-11-25)
+        if (n && o.isInstancedMesh && o.count === 0 && o.instanceMatrix && o.instanceMatrix.count > 0) { counts.push([o, 'count', 0]); o.count = 1; }
         const dr = o.geometry && o.geometry.drawRange;
         if (n && dr && dr.count === 0) { counts.push([o.geometry, 'drawRange', 0]); dr.count = 3; }
       }
@@ -12456,7 +12540,7 @@ window.addEventListener('keydown', (e) => {
   }
   else if (e.code === 'KeyT') startTaunt();      // (the taunt: his left arm, 2026-11-21)
   else if (e.code === 'KeyG') { if (deepLock) { /* nothing leaves your hands down there */ } else if (elvCarrying) elvDropPuppet(); else if (held) dropHeld(); else if (equipped) dropEquipped(); }
-  else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else if (equipped && !deepNoHands) toggleEquip(equipped); }
+  else if (e.code === 'KeyQ') { if (inspecting) closeInspect(); else startKick(); }   // (the kick, 2026-11-25: Q put the weapon away until then — its slot key does)
   else if (e.code === 'KeyR') magReload();          // and six of them go back in
   else if (/^Digit[1-8]$/.test(e.code)) { if (+e.code.slice(5) <= hotbarN()) useSlot(+e.code.slice(5) - 1); }
   else if (e.code === 'Digit9') toggleFastWalk();      // the owner's fast walk (it was 8 until the hotbar grew to eight)
@@ -12547,11 +12631,13 @@ function raiseGuard() {
      * guard, and letting go of the left button landed a heavy out of a
      * block. Right click is the guard and nothing else. */
     clearTimeout(windLatch); windLatch = null;
+    const feinted = winding || (digT > 0 && !swingLanded());   // (a cut or a charge left for the guard: a feint — `packReadGuard`)
     if (winding) { winding = false; windT = 0; windFull = false; }
     // nothing to hold it up with. The breath you let out IS the refusal.
     if (exhausted || stamina <= 0.001) { if (!blockGasped) gaspOut(); return; }
     if (digT > 0) cancelSwing();           // the guard takes over from a swing at once
     blocking = true;
+    try { packReadGuard(feinted); } catch (e) {}
     // a window only if the last one has had time to close
     blockStart = parryCool > 0 ? -1e9 : performance.now();
     sfxGuardUp();
@@ -14109,8 +14195,17 @@ class PhysProp {
        * ceiling at 24 m/s. That is "every item I picked up was tossed in the
        * air". The cliff wall is the beach's too, and has no business in a
        * room three hundred metres past it. */
-      const hf = bunkerFloorAt(_pt.x, _pt.z, _pv.y);
-      if (hf === null) _pt.x = Math.min(_pt.x, CLIFF_BLOCK_X - this.radius);
+      /* (AND A PLACE CUT INTO THE CLIFF IS NOT THE BEACH — 2026-11-26, the owner: "when pulling of the grate it flings behind you".
+       * The drain room is past the cliff's clamp (`DRAIN_X` IS `CLIFF_BLOCK_X`) and the hold target was clamped to the beach side
+       * of it: the grate came out of its hole and was hauled at 24 m/s back past you toward the tunnel's mouth. A body with its
+       * own floor and `inside` (`drainBodyFloor`, `drainBodyIn`) is held to those.) */
+      /* (and the TARGET may be past the room's far wall — stood close to the outlet, the look's 1.1 m ends in the pipe — while the
+       * body is still in the room: measured, `tools/grate.js &near=0.6`, held and hauled at -24 m/s to 17 m behind you. While
+       * the body is in its own place it is held by that place's floor and walls (`wall` puts it back inside), never the cliff's.) */
+      const ownRoom = !!(this.inside && (this.inside(_pt) || this.inside(p)));
+      const own = ownRoom && this.floorAt ? (this.floorAt(_pt.x, _pt.z, _pv.y) ?? this.floorAt(p.x, p.z, p.y)) : null;
+      const hf = own !== null && own !== undefined ? own : bunkerFloorAt(_pt.x, _pt.z, _pv.y);
+      if (hf === null && !ownRoom) _pt.x = Math.min(_pt.x, CLIFF_BLOCK_X - this.radius);
       _pt.y = Math.max(_pt.y, (hf === null ? 0 : hf) + this.restH);
       this.vel.subVectors(_pt, p).multiplyScalar(13);
       if (this.vel.length() > 24) this.vel.setLength(24);
@@ -14745,11 +14840,15 @@ const SHARD_MAT = new THREE.MeshStandardMaterial({
  * a float or the bottle breaks the same way whichever way you broke it. */
 function glassStrike() {
   aimRay(digPower);
+  if (inTavern && tavRailStrike(digRay, digPower)) { hitConnect(digPower, 0.7); vmImpulse(-0.9); return true; }
   for (const p of physProps) {
     if (!p.onImpact || p.dead || p.held || !p.mesh.parent) continue;
     if (!digRay.intersectObject(p.mesh, true).length) continue;
     hitConnect(digPower, 0.7);
-    p.onImpact(12);
+    // (a castle's prop by the blow's own weight — a click 5, a full charge 14: wood, clay and sacks go at any, the stone well and
+    // fountain only at a charge of a third or more (`CP_MAT.stone.brk` 7.5). Fed the glass's flat 12, a light cut shattered the
+    // fountain: the scan's fight, 2026-11-25)
+    p.onImpact(p.cp ? 5 + digPower * 9 : 12);
     vmImpulse(-0.9);
     return true;
   }
@@ -18953,7 +19052,7 @@ const HOOK_SCALE = 1.3, HOOK_GRIP_Z = 0.065;      // his size ×1.3 in your fist
  * back to you with the hook": no wait after it is home (`HOOK_CD` 0, was 6 s); what it costs is the trip back — it lies where
  * it landed `HOOK_LIE` s, then is hauled in gathering to `HOOK_BACK` 12 m/s (was 30, at once): ~1.5 s home from 14 m) */
 const HOOK_RECALL = 30;                       // (m/s: hauled back by a click, `hookRecall`)
-const HOOK_RANGE = [6, 14], HOOK_SPEED = 36, HOOK_BACK = 12, HOOK_LIE = 0.3, HOOK_CD = 0, HOOK_DMG = 1.5, HOOK_BLEED = 1.35, HOOK_STAM = 0.18, HOOK_STRING = 4;
+const HOOK_RANGE = [6, 14], HOOK_FAR = 30, HOOK_SPEED = 36, HOOK_BACK = 12, HOOK_LIE = 0.3, HOOK_CD = 0, HOOK_DMG = 1.5, HOOK_BLEED = 1.35, HOOK_STAM = 0.18, HOOK_STRING = 4;
 /* HELD AS THE OWNER CHOSE (2026-11-19, "the point of the hook should face the enemy while holding the hook", then, of the
  * contact sheet: "the top left shot of this should be how the hook should be held"): upright in the fist, a question mark —
  * turned about its own length (`HOOK_TURN` 1.18) so its curl opens down the lens and in toward the middle of the frame, the
@@ -19041,7 +19140,8 @@ const HK = { st: 'idle', t: 0, cd: 0, wind: false, p: new THREE.Vector3(), hand:
 const hookReady = () => HK.st === 'idle' && HK.cd <= 0;
 const hookThrowWind = () => winding && windOverhead && HK.wind;      // this hold is a throw (latched as it began: `startWind`)
 const _hkV = new THREE.Vector3(), _hkW = new THREE.Vector3(), _hkD = new THREE.Vector3(), _hkM = new THREE.Matrix4(), _hkA = new THREE.Vector3(), _hkB = new THREE.Vector3(), _hkC = new THREE.Vector3(), _hkQ = new THREE.Quaternion(), _hkS = new THREE.Vector3();
-const HOOK_LINKS = 220, HOOK_PITCH = 0.076;          // his links
+const _hkF = new THREE.Vector3(), HOOK_BODY_PAD = 0.1;   // (the iron's way in flight; and a body to it is a hand wider than to a round: 2026-11-25)
+const HOOK_LINKS = 420, HOOK_PITCH = 0.076;          // his links (32 m of them: `HOOK_FAR`; 220 were 16.7 m)
 function hookInit() {
   if (HK.links || !hookRaw) return !!HK.links;
   // (lit from within a little more than his: out on the night beach his own level was a black line)
@@ -19065,11 +19165,31 @@ function hookHandWorld(out) {
   _hkW.set(THREE.MathUtils.clamp(_hkV.x, -1.2, 1.2), THREE.MathUtils.clamp(_hkV.y, -1.2, 1.2), 0.5).unproject(camera).sub(camera.position).normalize();
   return out.copy(camera.position).addScaledVector(_hkW, 0.8);
 }
+// where on him the iron sits: his skin on the side it came from, a hand sunk in, in HIS frame (`hookOnHim`)
+function hookAimOn(u, point) {
+  HK.u = u; HK.uy = THREE.MathUtils.clamp(point.y - u.g.position.y, 0.3, (u.kind ? u.kind.h || 1.8 : 0.5) * 0.85);
+  const R = Math.max(0.18, (u.kind && (u.kind.body || u.kind.hitR * 0.5)) || 0.36) * 0.8;
+  _hkV.set(camera.position.x - u.g.position.x, 0, camera.position.z - u.g.position.z).normalize().multiplyScalar(R);
+  const yw = u.g.rotation.y, c = Math.cos(-yw), sn = Math.sin(-yw);
+  HK.uo = [_hkV.x * c + _hkV.z * sn, HK.uy, -_hkV.x * sn + _hkV.z * c];
+}
 function hookThrow(charge) {
   if (!hookInit()) return false;
-  const D = THREE.MathUtils.lerp(HOOK_RANGE[0], HOOK_RANGE[1], charge);
+  /* (IT GOES TO WHAT YOU THREW IT AT — 2026-11-26, the owner, a still of the iron hanging in the air in the first castle's square, the
+   * men he threw it at five metres past it: "LOOK HOW THE HOOK GETS STUCK MID AIR ON NOTHING … ONLY VISIBLE WALLS AND FLOOR AND
+   * OBJECTS SHOULD BE HIT". Nothing invisible caught it (`tools/hookghost.js &at=fort`: 428 throws, none short of a drawn face): it was
+   * the END OF ITS CHAIN, 6-14 m by how long the throw was held, and anything further off than that it stopped short of — the third
+   * time he has read that as a wall in the air. Now whatever the crosshair is on out to `HOOK_FAR` is reached, held long or not; how
+   * long it was held only says how far it flies when there is nothing there at all (`DC`), where it runs out and falls as before.) */
+  const DC = THREE.MathUtils.lerp(HOOK_RANGE[0], HOOK_RANGE[1], charge), D = HOOK_FAR;
   camera.getWorldDirection(HK.aim);
-  const h = magTrace(HK.aim);                               // the nearest body, wall or sand down the crosshair
+  let h = magTrace(HK.aim, null, MAG_R, HOOK_BODY_PAD);   // the nearest body, wall or sand down the crosshair (a body a little wider than the gun's)
+  // (a body the capsule found is asked again on his skin: past his shoulder in the air is not him — `projBodyHit`; then the line on past him)
+  if (h && h.kind === 'foe' && h.u && h.u.model && !crabs.includes(h.u) && h.t <= D) {
+    const t = projBodyHit(h.u, camera.position, HK.aim, Math.min(D, h.t + 1.2), 0.12);
+    if (t !== null) { h.t = t; h.point = camera.position.clone().addScaledVector(HK.aim, t); }
+    else { magSkip = new Set([h.u]); try { h = magTrace(HK.aim, null, MAG_R, HOOK_BODY_PAD); } finally { magSkip = null; } }
+  }
   HK.to = h && h.t <= D && h.kind !== 'sand' ? h : null;
   /* A GULL IS HIT WHERE A GULL IS (2026-11-21, the owner: "make the seagulls hit boxes with the chain more tight if i fling the
    * hook at them it hits them when it looks like a miss"). The trace finds a gull by a ball round it as big as its spread
@@ -19142,13 +19262,8 @@ function hookThrow(charge) {
    * better"): the round's point is on his body's AXIS — the hook sat hidden inside him. It goes on his skin on the side it
    * came from (his body's radius out toward you, a hand of it sunk in), kept in HIS frame so it stays there as he turns and
    * is dragged (`hookOnHim`) */
-  if (HK.to && HK.to.kind === 'foe') {
-    const u = HK.to.u; HK.u = u; HK.uy = THREE.MathUtils.clamp(HK.to.point.y - u.g.position.y, 0.3, (u.kind ? u.kind.h || 1.8 : 0.5) * 0.85);
-    const R = Math.max(0.18, (u.kind && (u.kind.body || u.kind.hitR * 0.5)) || 0.36) * 0.8;
-    _hkV.set(camera.position.x - u.g.position.x, 0, camera.position.z - u.g.position.z).normalize().multiplyScalar(R);
-    const yw = u.g.rotation.y, c = Math.cos(-yw), sn = Math.sin(-yw);
-    HK.uo = [_hkV.x * c + _hkV.z * sn, HK.uy, -_hkV.x * sn + _hkV.z * c];
-  } else HK.u = null;
+  if (HK.to && HK.to.kind === 'foe') hookAimOn(HK.to.u, HK.to.point);
+  else HK.u = null;
   /* AND WHAT IS DRAWN, WHEREVER YOU ARE (2026-11-22, the owner: "give free use of the hook in the tavern i cant hook up or the castle
    * make it actually read the walls that are visible"). The trace above knows a room by its WALL INDEX — the band a body walks
    * into — so the tavern's beams and ceiling, the keep's vaults, the island's roofs and rocks were nothing to the iron: measured
@@ -19157,13 +19272,39 @@ function hookThrow(charge) {
   { const lim = HK.to ? HK.to.t : D, dh = hookDrawnHit(camera.position, HK.aim, lim); if (dh) HK.to = dh; }
   /* (and a castle's every face, at every height — its face grid (`siteRay`), not the walking band the trace knows: the owner's "or the
    * castle", a throw up at a tower's upper wall, an arch, the cubby, found nothing to bite) */
-  { const S = castleSiteHere(); if (S) { const lim = HK.to ? HK.to.t : D, t = siteRay(S, camera.position, HK.aim, lim); if (t !== null && t > 0.3 && (!HK.to || t < HK.to.t)) HK.to = { kind: 'solid', t, point: camera.position.clone().addScaledVector(HK.aim, t), hit: null, surface: 'rock' }; } }
+  { const S = castleSiteHere(); if (S) { const lim = HK.to ? HK.to.t : D, t = siteRay(S, camera.position, HK.aim, lim); if (t !== null && t > 0.05 && (!HK.to || t < HK.to.t)) HK.to = { kind: 'solid', t, point: camera.position.clone().addScaledVector(HK.aim, t), hit: null, surface: 'rock' }; } }
+  /* (THE ONE TEST OF WHAT IS DRAWN, 2026-11-24 — `worldDrawnHit`: nearer than anything above, it is what the iron meets; and a catch on
+   * a collision index or a grid with NOTHING drawn within 0.6 m of it (an invisible wall, a band, a cell) is not a catch — the iron
+   * flies on to whatever is drawn, or to the end of its chain. Bodies, gulls, piles and the sand keep their own answers.) */
+  {
+    /* (FROM YOUR EYE, HOWEVER NEAR — 2026-11-25, the owner: "the hook is going through walls in the castle … it should connect with
+     * every surface it hits". Both tests skipped the first 0.3 m, and a body against a wall has its eye 0.2-0.3 m off it: measured
+     * (`hookghost.js &at=fort&walls=1`, throws from a body's width off the fort's walls) 97 of 1259 ended inside the stone or past
+     * it, one 6.6 m beyond. Now from 5 cm, what you hold skipped by name, not by distance.) */
+    const lim = HK.to ? HK.to.t + 0.6 : D, wd = worldDrawnHit(camera.position, HK.aim, Math.max(0.4, lim), 0.05);
+    if (wd && (!HK.to || wd.t < HK.to.t - 0.05)) HK.to = wd;
+    else if (HK.to && HK.to.kind === 'solid' && !HK.to.drawn && HK.to.surface !== 'sand' && !wd) {
+      const far = worldDrawnHit(camera.position, HK.aim, D);
+      HK.to = far && far.t > HK.to.t ? far : null;
+    }
+  }
+  /* (AND THE IRON'S OWN LINE — it leaves your HAND, a hand below and right of your eye: a corner the eye's line clears can stand in
+   * the hand's. Down that line to where it is going, the first drawn face nearer than the end is where it stops.) */
+  if (HK.to && HK.to.point && HK.to.kind === 'solid') {
+    hookHandWorld(_hkW); _hkV.subVectors(HK.to.point, _hkW); const L = _hkV.length();
+    // (a hand where your hand is: a view model not drawn this frame can report a stale one)
+    if (L > 0.8 && _hkW.distanceTo(camera.position) < 1.5) { _hkV.multiplyScalar(1 / L); const hh = worldDrawnHit(_hkW, _hkV, L - 0.35, 0.25); if (hh) { HK.to = hh; HK.to.t = camera.position.distanceTo(hh.point); } }
+  }
   // (a floor down the line in a room: the temple's, the gut's — the trace knows walls there, not the ground; `hookZipStart` wants it)
   if (inRoom() && !(HK.to && HK.to.t < 0.6)) {
     const lim = HK.to ? HK.to.t : D, O = camera.position, fa = hookFloorAt;
     for (let t = 0.5; t < lim; t += 0.2) { const x = O.x + HK.aim.x * t, y = O.y + HK.aim.y * t, z = O.z + HK.aim.z * t, f = fa(x, z); if (f !== null && y <= f) { HK.to = { kind: 'solid', t, point: new THREE.Vector3(x, f, z), hit: null, surface: inWhale ? 'sand' : 'rock' }; break; } }
   }
-  HK.end.copy(camera.position).addScaledVector(HK.aim, HK.to ? HK.to.t : h && h.kind === 'sand' && h.t < D ? h.t : D);
+  /* (THE SAND IS A FLOOR TOO — 2026-11-24: aimed down at the beach, the mounds' march and the drawn test could put the catch past
+   * where the line meets the drawn sand, and the iron landed half a metre to a metre and a half INSIDE it (`tools/hookghost.js`).
+   * A catch that is not a body and lies beyond the sand down the line is the sand.) */
+  if (h && h.kind === 'sand' && HK.to && h.t < HK.to.t - 0.05 && !(HK.to.kind === 'foe' || HK.to.kind === 'gull' || HK.to.kind === 'pile' || HK.to.kind === 'plio')) HK.to = null;
+  HK.end.copy(camera.position).addScaledVector(HK.aim, HK.to ? HK.to.t : h && h.kind === 'sand' && h.t < D ? h.t : DC);
   /* (AND THE SNORKELER HEARS IT — 2026-11-21, the owner: "make shooting the hook get the snorkelers attention": a throw whose
    * line passes within his 3.2 m — the iron going into the water by him, or past his head — brings him up as a stone or a
    * cast float does, when the iron gets there: `snorkHail`) */
@@ -19207,6 +19348,157 @@ function hookDrawnHit(O, dir, lim) {
     }
   }
   return best ? { kind: 'solid', t: best.distance, point: best.point.clone(), hit: best, surface: inTavern || inKeep || inCel ? 'wood' : 'rock' } : null;
+}
+/* ---- WHAT IS DRAWN, ANYWHERE (2026-11-24, the owner: "it always getting stuck on invisible stuff make it connect with our
+ * colliders. it sometimes goes through the beach walls ceiling everything make the connection better"). The iron learned the world
+ * piece by piece — the gun's trace (bodies, and walls where a place has a wall index), crates, props, the sand wall, the mounds, a
+ * room's drawn faces in some rooms, a castle's face grid — and on the open beach nothing at all that is DRAWN: the wreck, the dock,
+ * the pavilion, the lighthouse, the house, the rocks and the rock wall were flown through, and a ceiling over you in a room without
+ * a drawn root likewise. `worldDrawnHit` is the one test of what you can see: down a line, the first face that is shown all the way
+ * up to the scene, opaque, written to depth, and not a creature (they are the trace's), the sand or the sea (the throw's own
+ * landing), a particle, a decal or a proxy. Once a throw (a few ms at most: three only opens the objects whose bounds the line
+ * crosses). */
+const _wdRay = new THREE.Raycaster();
+function worldDrawnSkip(o) {
+  if (!o.isMesh || o.isSprite || o.isPoints || o.isLine || o.isSkinnedMesh || o.name === 'hitProxy' || o.userData.bwGhost) return true;
+  if (o === sand || o === ocean || o === bloodInst || o === digHoles || o === digMounds || o === foot) return true;
+  const m = Array.isArray(o.material) ? o.material[0] : o.material;
+  if (!m || m.visible === false || m.depthWrite === false || m.colorWrite === false || (m.transparent && m.opacity < 0.5) || m.blending === THREE.AdditiveBlending) return true;
+  return false;
+}
+/* ---- AND IT IS CHEAP (2026-11-25, the owner: "the water ball lags the game when shot fix this"). It raycast the whole scene, every
+ * triangle of anything whose bounds the line crossed, and threw the sea and the sand away AFTER paying for them: measured
+ * (`tools/sealag.js`), one call 12 ms on the beach and 39 ms in the first castle — the ball asks it every frame it flies, so its
+ * frames went 2-5 ms → 18-45 ms (the first throw's worst 106). The castle's three big meshes (118k, 54k, 28k triangles) and a
+ * 115k-triangle shader sheet were 35 ms of it. Now:
+ *  - only what it would keep is asked: a list of the shown, drawn, still meshes (`wdCandidates`, swept again every half second or
+ *    on a change of place), never the sea, the sand, a creature, what you hold;
+ *  - a big still mesh (`WD_BIG` triangles and up) is asked through a grid of its own triangles in the world (`wdGrid`, built once,
+ *    rebuilt if it moves): only the triangles in the cells the line passes through.
+ * Same answers (`hookghost.js`), a small fraction of the time. */
+const WD_BIG = 6000;
+const WD_LIST = { t: -1e9, key: '', list: [] };
+function wdCandidates() {
+  const now = performance.now(), key = (inRoom() ? 'r' : 'b') + (inFort ? 1 : 0) + (inC13 ? 1 : 0) + (inThrone ? 1 : 0) + (onIsle ? 1 : 0);
+  if (WD_LIST.key === key && now - WD_LIST.t < 500) return WD_LIST.list;
+  const skip = new Set([camera]);
+  for (const u of mutants) if (u.g) skip.add(u.g);
+  for (const c of crabs) if (c.g) skip.add(c.g);
+  if (HK.links) skip.add(HK.links); if (HK.fly) skip.add(HK.fly);
+  const L = [];
+  const walk = (o) => { if (!o.visible || skip.has(o)) return; if (o.isMesh && !worldDrawnSkip(o)) L.push(o); const ch = o.children; for (let i = 0; i < ch.length; i++) walk(ch[i]); };
+  walk(scene);
+  WD_LIST.t = now; WD_LIST.key = key; WD_LIST.list = L;
+  return L;
+}
+const _wdA = new THREE.Vector3(), _wdB = new THREE.Vector3(), _wdC = new THREE.Vector3(), _wdE1 = new THREE.Vector3(), _wdE2 = new THREE.Vector3(),
+  _wdP = new THREE.Vector3(), _wdQ = new THREE.Vector3(), _wdT = new THREE.Vector3(), _wdS = new THREE.Sphere();
+function wdTriCount(g) { return g.index ? g.index.count / 3 : g.attributes.position.count / 3; }
+// the triangles of a still mesh, in the world, in cells: built a slice at a time in the background (`wdGridTick`), never on a throw —
+// (2026-11-25, "improve projectiles they are laggy": built whole on the first throw near a castle it was a 74 ms frame)
+function wdGridOk(o) {
+  const G = o.userData._wdg, me = o.matrixWorld.elements;
+  return !!(G && G.done && G.m0 === me[12] && G.m1 === me[13] && G.m2 === me[14] && G.m3 === me[0] && G.m4 === me[5]);
+}
+function* wdGridJob(o) {
+  const me = o.matrixWorld.elements, g = o.geometry, P = g.attributes.position, idx = g.index, nT = wdTriCount(g) | 0;
+  const G = { done: false, m0: me[12], m1: me[13], m2: me[14], m3: me[0], m4: me[5] };
+  const W = new Float32Array(P.count * 3), M = o.matrixWorld.clone();
+  for (let i = 0; i < P.count; i++) { _wdA.fromBufferAttribute(P, i).applyMatrix4(M); W[i * 3] = _wdA.x; W[i * 3 + 1] = _wdA.y; W[i * 3 + 2] = _wdA.z; if ((i & 4095) === 4095) yield; }
+  if (!g.boundingBox) g.computeBoundingBox();
+  const bb = g.boundingBox.clone().applyMatrix4(M), ext = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z);
+  const C = Math.max(0.75, ext / 64), cells = new Map(), V = new Uint32Array(nT * 3);
+  for (let t = 0; t < nT; t++) {
+    const a = idx ? idx.getX(t * 3) : t * 3, b2 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1, c = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+    V[t * 3] = a; V[t * 3 + 1] = b2; V[t * 3 + 2] = c;
+    const x0 = Math.floor(Math.min(W[a * 3], W[b2 * 3], W[c * 3]) / C), x1 = Math.floor(Math.max(W[a * 3], W[b2 * 3], W[c * 3]) / C);
+    const y0 = Math.floor(Math.min(W[a * 3 + 1], W[b2 * 3 + 1], W[c * 3 + 1]) / C), y1 = Math.floor(Math.max(W[a * 3 + 1], W[b2 * 3 + 1], W[c * 3 + 1]) / C);
+    const z0 = Math.floor(Math.min(W[a * 3 + 2], W[b2 * 3 + 2], W[c * 3 + 2]) / C), z1 = Math.floor(Math.max(W[a * 3 + 2], W[b2 * 3 + 2], W[c * 3 + 2]) / C);
+    for (let X = x0; X <= x1; X++) for (let Y = y0; Y <= y1; Y++) for (let Z = z0; Z <= z1; Z++) { const k = (X * 73856093) ^ (Y * 19349663) ^ (Z * 83492791); let l = cells.get(k); if (!l) cells.set(k, l = []); l.push(t); }
+    if ((t & 2047) === 2047) yield;
+  }
+  let matOf = null;
+  if (Array.isArray(o.material) && g.groups && g.groups.length) { matOf = new Uint8Array(nT); for (const gr of g.groups) for (let t = gr.start / 3; t < (gr.start + gr.count) / 3 && t < nT; t++) matOf[t] = gr.materialIndex; }
+  Object.assign(G, { W, V, C, cells, matOf, stamp: new Uint32Array(nT), tick: 0, done: true });
+  o.userData._wdg = G;
+}
+const WD_JOBS = { o: null, job: null };
+// each frame, a little of the next big still mesh near you that has no grid yet (1.5 ms; everything at once under a black)
+function wdGridTick(all) {
+  const t0 = performance.now(), budget = all ? 400 : 1.5;
+  while (performance.now() - t0 < budget) {
+    if (!WD_JOBS.job) {
+      let next = null;
+      for (const o of wdCandidates()) if (!o.isInstancedMesh && !o.morphTargetInfluences && o.geometry && o.geometry.attributes.position && wdTriCount(o.geometry) >= WD_BIG && !wdGridOk(o) && (o.userData._wdN || 0) < 3) { next = o; break; }   // (a mesh that keeps moving is not chased: three's own for it)
+      if (!next) return;
+      WD_JOBS.o = next; WD_JOBS.job = wdGridJob(next); next.userData._wdN = (next.userData._wdN || 0) + 1;
+    }
+    if (WD_JOBS.job.next().done) { WD_JOBS.job = null; WD_JOBS.o = null; }
+  }
+}
+function wdGrid(o) { return wdGridOk(o) ? o.userData._wdg : null; }
+// the nearest triangle of a big still mesh on the line, from `minT` to `lim`: as three's raycast answers it (the face's side kept)
+function wdGridHit(o, O, D, lim, minT) {
+  const G0 = wdGrid(o);
+  if (!G0) { _wdRay.set(O, D); _wdRay.far = lim; for (const x of _wdRay.intersectObject(o, false)) if (x.distance >= minT) return x; return null; }   // (its grid not built yet: three's own, this once)
+  const G = G0, W = G.W, V = G.V, C = G.C, side = (Array.isArray(o.material) ? o.material[0] : o.material).side;
+  const tick = ++G.tick; if (tick > 4e9) { G.stamp.fill(0); G.tick = 1; }
+  let best = Infinity, bt = -1;
+  const step = C * 0.5;
+  for (let s = 0; s <= lim + step; s += step) {
+    const px = O.x + D.x * Math.min(s, lim), py = O.y + D.y * Math.min(s, lim), pz = O.z + D.z * Math.min(s, lim);
+    const l = G.cells.get((Math.floor(px / C) * 73856093) ^ (Math.floor(py / C) * 19349663) ^ (Math.floor(pz / C) * 83492791));
+    if (!l) continue;
+    for (let i = 0; i < l.length; i++) {
+      const t = l[i]; if (G.stamp[t] === G.tick) continue; G.stamp[t] = G.tick;
+      const a = V[t * 3] * 3, b2 = V[t * 3 + 1] * 3, c = V[t * 3 + 2] * 3;
+      _wdE1.set(W[b2] - W[a], W[b2 + 1] - W[a + 1], W[b2 + 2] - W[a + 2]); _wdE2.set(W[c] - W[a], W[c + 1] - W[a + 1], W[c + 2] - W[a + 2]);
+      _wdP.crossVectors(D, _wdE2); const det = _wdE1.dot(_wdP);
+      if (Math.abs(det) < 1e-10) continue;
+      if (side === THREE.FrontSide && det < 0) continue;      // (three's rule: a FrontSide face answers a ray that meets its front)
+      if (side === THREE.BackSide && det > 0) continue;
+      const inv = 1 / det; _wdT.set(O.x - W[a], O.y - W[a + 1], O.z - W[a + 2]);
+      const u = _wdT.dot(_wdP) * inv; if (u < 0 || u > 1) continue;
+      _wdQ.crossVectors(_wdT, _wdE1); const v = D.dot(_wdQ) * inv; if (v < 0 || u + v > 1) continue;
+      const d = _wdE2.dot(_wdQ) * inv;
+      if (d >= minT && d <= lim && d < best) { best = d; bt = t; }
+    }
+    if (best <= s) break;                                    // (nothing in a later cell can be nearer)
+  }
+  if (bt < 0) return null;
+  // the face as three gives it: its normal in the mesh's own frame, its material
+  const g = o.geometry, P = g.attributes.position, a = V[bt * 3], b2 = V[bt * 3 + 1], c = V[bt * 3 + 2];
+  _wdA.fromBufferAttribute(P, a); _wdB.fromBufferAttribute(P, b2); _wdC.fromBufferAttribute(P, c);
+  const n = new THREE.Vector3().subVectors(_wdC, _wdB).cross(_wdE1.subVectors(_wdA, _wdB)).normalize();
+  return { distance: best, point: O.clone().addScaledVector(D, best), object: o, face: { a, b: b2, c, normal: n, materialIndex: G.matOf ? G.matOf[bt] : 0 } };
+}
+// every big still mesh's grid built now, while nobody is looking (on the way into a castle): the first throw there cost a 55 ms frame
+function wdWarmGrids() { wdGridTick(true); }
+function worldDrawnHit(O, dir, lim, minT = 0.3) {
+  _wdRay.set(O, dir); _wdRay.far = lim; _wdRay.camera = camera;
+  let best = null;
+  for (const o of wdCandidates()) {
+    if (!o.parent || !o.geometry || !o.geometry.attributes.position) continue;
+    // (its bounds against the line first, as three does: almost every mesh ends here)
+    if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+    _wdS.copy(o.geometry.boundingSphere).applyMatrix4(o.matrixWorld);
+    if (!_wdRay.ray.intersectsSphere(_wdS)) continue;
+    _wdA.subVectors(_wdS.center, O); const along = _wdA.dot(dir);
+    if (along - _wdS.radius > lim || along + _wdS.radius < minT) continue;
+    let h = null;
+    if (!o.isInstancedMesh && !o.morphTargetInfluences && wdTriCount(o.geometry) >= WD_BIG) h = wdGridHit(o, O, dir, best ? Math.min(lim, best.distance) : lim, minT);
+    else { for (const x of _wdRay.intersectObject(o, false)) { if (x.distance < minT) continue; h = x; break; } }
+    if (!h || (best && h.distance >= best.distance)) continue;
+    const mm = Array.isArray(o.material) ? o.material[h.face ? h.face.materialIndex : 0] : o.material;
+    if (mm && (mm.visible === false || (mm.transparent && mm.opacity < 0.5))) continue;
+    let ok = true;
+    for (let a = o; a; a = a.parent) { if (!a.visible) { ok = false; break; } if (a === scene) break; }
+    if (!ok) continue;
+    best = h;
+  }
+  if (!best) return null;
+  const o = best.object, mm = Array.isArray(o.material) ? o.material[best.face ? best.face.materialIndex : 0] : o.material;
+  return { kind: 'solid', t: best.distance, point: best.point.clone(), hit: best, surface: /wood|plank|board|dock|ship|crate|barrel/i.test((o.name || '') + (mm && mm.name || '')) ? 'wood' : 'rock', drawn: true };
 }
 function hookWallHit(O, dir, lim) {
   if (inTemple && tmpG && tmpG.cell) {
@@ -19434,7 +19726,24 @@ function hookZipMove(dt, canMove) {
   if ((HK.zipRt = (HK.zipRt || 0) - dt) <= 0) { HK.zipRt = 0.16; sfxChainRattle(c.x, c.z, 0.18, 0.55); }
   clampPlayerToRoom();
 }
+/* THE FIRST THROW HITCHED (2026-11-25, the owner: "the hook also lags the game when throw"): measured (`tools/hooklag.js`), the first
+ * throw's sixth frame in flight cost 71-74 ms on the beach and in the castle — the chain (instanced iron, its env map) and the flying
+ * hook drawn for the first time, their programs compiled there and then; every throw after, 4-7 ms. They are compiled while the hook
+ * is in your hand, before you throw (`renderer.compileAsync` where three has it), the chain and the hook shown for that one call. */
+function hookWarm() {
+  if (HK.warmed || !hookInit()) return;
+  HK.warmed = true;
+  const L = HK.links, F = HK.fly, lv = L.visible, lc = L.count, fv = F.visible, fp = F.position.clone();
+  try {
+    L.visible = true; L.count = Math.max(1, lc); F.visible = true; camera.getWorldDirection(_hkW); F.position.copy(camera.position).addScaledVector(_hkW, 2);
+    F.updateMatrixWorld(true);
+    if (renderer.compileAsync) renderer.compileAsync(scene, camera).catch(() => {}); else renderer.compile(scene, camera);
+  } catch (e) {}
+  L.visible = lv; L.count = lc; F.visible = fv; F.position.copy(fp);
+}
 function hookTick(dt) {
+  if (!HK.warmed && hookHeld()) hookWarm();
+  if (!SKA.ready && hookHeld()) skaWarmTick();   // (his chain's sounds, made a few a frame before the first throw needs them)
   if (HK.cd > 0 && HK.st === 'idle') HK.cd = Math.max(0, HK.cd - dt);
   if (HK.armT >= 0) HK.armT += dt;
   if (HK.st === 'idle') { if (HK.links) HK.links.visible = false; if (HK.fly) HK.fly.visible = false; return; }
@@ -19447,8 +19756,22 @@ function hookTick(dt) {
     // at what it was thrown at: the body where it is now, or the point
     if (HK.u) { if (!HK.u.st.alive || !HK.u.g.visible) { HK.u = null; HK.to = null; } else hookOnHim(HK.u, HK.end); }
     // (after the king going up a pillar, faster: he climbs at 14 m/s, and caught past the ring's underside he fell inside its stone)
-    _hkV.copy(HK.end).sub(HK.p); const d = _hkV.length(), step = HOOK_SPEED * (HK.u && HK.u === KING.u && KING.mode === 'climb' ? 2.2 : 1) * dt;
+    _hkV.copy(HK.end).sub(HK.p); let d = _hkV.length(); const step = HOOK_SPEED * (HK.u && HK.u === KING.u && KING.mode === 'climb' ? 2.2 : 1) * dt;
     HK.slack = Math.max(0.02, HK.slack - dt * 0.6);
+    /* AND WHOEVER IS IN ITS WAY AS IT FLIES (2026-11-25, the owner: "sometimes it misses an enemy when it clearly went through
+     * them"). The body was chosen once, down your crosshair as you threw; a man who stepped into the iron's path while it flew, or
+     * stood in front of the one it was thrown at, was flown through. Each frame's stretch of its flight asks the bodies (the gun's
+     * trace from the iron, `HOOK_BODY_PAD` wider): the first one met is the one it bites, there. */
+    if (live && d > 0.05) {
+      _hkF.copy(_hkV).multiplyScalar(1 / d);
+      const hb = magTrace(_hkF, HK.p, Math.min(step, d) + 0.05, HOOK_BODY_PAD);
+      if (hb && hb.kind === 'foe' && hb.u && hb.u.model && !crabs.includes(hb.u)) { const t = projBodyHit(hb.u, HK.p, _hkF, Math.min(step, d) + 0.05, 0.12); if (t === null) hb.kind = 'miss'; else hb.point = HK.p.clone().addScaledVector(_hkF, t); }   // (on his skin: `projBodyHit`)
+      if (hb && hb.kind === 'foe' && hb.u && hb.u !== HK.u && hb.u.g && !hb.u.cpAlly && (!HK.to || HK.to.kind !== 'foe' || hb.u !== HK.to.u)) {
+        HK.to = { t: camera.position.distanceTo(hb.point), u: hb.u, kind: 'foe', point: hb.point.clone() };
+        hookAimOn(hb.u, hb.point); HK.end.copy(hb.point);
+        _hkV.copy(HK.end).sub(HK.p); d = _hkV.length();
+      }
+    }
     if (live) {
       if (d <= step) {
         HK.p.copy(HK.end);
@@ -19469,7 +19792,11 @@ function hookTick(dt) {
           if (!HK.to && HK.surfEnd) sfxChainSlap(HK.p.x, HK.p.z, 0.5);
           else if (!HK.to) { HK.runOut = true; HK.fallV = 0; HK.slack = 0.6; sfxChainRunOut(); }
         }
-        if (HK.water) { seaImpact(HK.p, HK.st === 'bite' ? HK.u : null, HK.aim, true); HK.water = 0; }   // (the ball on the iron bursts where it arrives)
+        /* (the ball on the iron bursts where it arrives — but NOT in the air at the chain's end, 2026-11-24, the owner: "the splash stops
+         * the hook early from where you are throwing it": a throw that met nothing burst its ball 14 m out in empty air, where the
+         * katana's flies on half again as far. At a run-out the ball leaves the iron and flies on as a ball, the throw's way at the
+         * ball's speed, and bursts where it lands — `seaHookLoose`.) */
+        if (HK.water) { if (HK.runOut) seaHookLoose(HK.p, HK.aim); else seaImpact(HK.p, HK.st === 'bite' ? HK.u : null, HK.aim, true); HK.water = 0; }
       } else HK.p.addScaledVector(_hkV, step / d);
       if (HK.st === 'out' && ucIdolNear(HK.p, 0.1) && ucIdolKnock(HK.p.x, HK.p.z)) { sfxChainClang(false, 0.55); hookImpact(HK.p.x, HK.p.z, 0.7, false); HK.st = 'back'; HK.t = 0; HK.slack = 0.35; }   // (into the church's figure: it goes over)
       if (HK.st === 'out' && celLockNear(HK.p, 0.1) && celLockBreak()) { sfxChainClang(false, 0.55); hookImpact(HK.p.x, HK.p.z, 0.7, false); HK.st = 'back'; HK.t = 0; HK.slack = 0.35; }   // (the cellar washer's padlock: off)
@@ -19565,8 +19892,30 @@ function hookHome(quiet) {
   if (HK.links) HK.links.visible = false; if (HK.fly) HK.fly.visible = false;
   if (!quiet) { sfxChainRattle(camera.position.x, camera.position.z, 0.35, 0.7); vmImpulse(-0.35); }
 }
+const _hkFS = new Array(9).fill(0);
+// the floor under a point of the chain: whatever place you are in answers first
+function hookChainFloor(x, z, y) {
+  const hf = hookFloorAt(x, z); if (hf !== null && hf !== undefined) return hf;
+  const site = inFort ? FORT_SITE : inC13 ? C13_SITE : inThrone ? THR_SITE : null;
+  if (site) { const st = keepFloorAt(x, z, y + 0.45, 0.6, site); if (st && Number.isFinite(st.f)) return st.f; }
+  return groundUnder(x, z, y + 0.3);
+}
+/* (AND NOT THROUGH ANYTHING: the iron is thrown along a clear line, but you move after it — round a corner, behind a pier — and the
+ * chain then ran straight through the stone between you. Every eighth of a second while it is out and still, the line from your
+ * fist to the iron is asked what is drawn across it (`worldDrawnHit`, short of the iron's own wall); shut twice running, the
+ * iron comes home. `HK.losN` counts.) */
+let _hkLosT = 0;
+function hookLineCheck(dt) {
+  if (!HK.links || !HK.links.visible || HK.st === 'idle' || HK.st === 'whip' || HK.st === 'out' || HK.st === 'back' || HK.st === 'zip') { HK.losN = 0; return; }
+  if ((_hkLosT -= dt) > 0) return; _hkLosT = 0.12;
+  _hkA.copy(HK.p).sub(HK.hand); const L = _hkA.length(); if (L < 0.8) return; _hkA.multiplyScalar(1 / L);
+  const h = worldDrawnHit(HK.hand, _hkA, L - 0.45, 0.25);
+  HK.losN = h ? (HK.losN || 0) + 1 : 0;
+  if (HK.losN >= 2) { HK.losN = 0; hookRecall(); }
+}
 // the iron in flight, and the chain from your fist to it: a curve that sags with its slack and ripples as it runs
 function hookLay(dt) {
+  try { hookLineCheck(dt); } catch (e) { /* never the frame */ }
   const F = HK.fly, L = HK.links; if (!F || !L) return;
   F.visible = true; L.visible = true;
   _hkA.copy(HK.p).sub(HK.hand); const len = _hkA.length() || 0.001; _hkA.multiplyScalar(1 / len);
@@ -19580,6 +19929,13 @@ function hookLay(dt) {
   const sag = HK.slack * Math.min(len, 12) * 0.35, now = performance.now() * 0.001;
   _hkS.set(0, 1, 0); if (Math.abs(_hkA.y) > 0.95) _hkS.set(1, 0, 0);
   _hkC.crossVectors(_hkA, _hkS).normalize();                // across the chain, level
+  /* (NEVER UNDER THE GROUND — 2026-11-26, the owner: "the chain of the hook should never go through the ground or anything". The chain
+   * was a straight line from your fist sagging under gravity, and nothing under it was asked: lying out along the sand, down a
+   * slope, round a step, its middle sank into the floor. The floor under the line is sampled nine times along it (`hookChainFloor`:
+   * the temple's, the gut's, a castle's storeys, a room's, the sand's with its banks, rocks and boards), and every link is held a
+   * link's thickness over it — so it lies ON the ground where it sags onto it.) */
+  for (let k = 0; k <= 8; k++) { const tk = k / 8; _hkFS[k] = hookChainFloor(HK.hand.x + _hkA.x * len * tk, HK.hand.z + _hkA.z * len * tk, HK.hand.y + _hkA.y * len * tk); }
+  const floorAt = (t) => { const x = t * 8, k = Math.min(7, Math.floor(x)), f = x - k, a = _hkFS[k], b = _hkFS[k + 1]; return a === null || b === null ? (a ?? b ?? -1e9) : a + (b - a) * f; };
   let px = HK.hand.x, py = HK.hand.y, pz = HK.hand.z;
   for (let i = 0; i < n; i++) {
     const t = (i + 0.5) / n;
@@ -19587,9 +19943,11 @@ function hookLay(dt) {
     _hkV.copy(HK.hand).addScaledVector(_hkA, len * t);
     _hkV.y -= sag * 4 * t * (1 - t);
     _hkV.addScaledVector(_hkC, rip);
+    { const fl = floorAt(t) + 0.035; if (_hkV.y < fl) _hkV.y = fl; }
     // the link's long axis (its +Y) along the chain here
     const t2 = (i + 1.5) / n;
     _hkW.copy(HK.hand).addScaledVector(_hkA, len * t2); _hkW.y -= sag * 4 * t2 * (1 - t2);
+    { const fl = floorAt(Math.min(1, t2)) + 0.035; if (_hkW.y < fl) _hkW.y = fl; }
     _hkW.sub(_hkV).normalize();
     _hkB.crossVectors(_hkW, _hkS); if (_hkB.lengthSq() < 1e-6) _hkB.set(1, 0, 0); _hkB.normalize();
     _hkD.crossVectors(_hkB, _hkW);
@@ -20055,7 +20413,8 @@ const pegHeavyBlow = () => !!(equipped && equipped.thrust) && pegStage >= 3;
 const PEG_TIP_FROM = 0.6;                // metres past the thrust's own reach: the last metre of a jab
 let pegTipHit = false;
 const pegTipAt = (t) => !!(equipped && equipped.rapier) && !pegSlashing() && t >= stabReach() + PEG_TIP_FROM;
-const slashing = () => !!(equipped && equipped.onDig) && !digOverhead && !thrusting();
+const KSTRIKE = { on: false };   // (the boot is striking: `kickStrike` → `digImpactCore`; here, before everything that asks it)
+const slashing = () => !!(equipped && equipped.onDig) && !digOverhead && !thrusting() && !KSTRIKE.on;   // (`KSTRIKE.on`: the boot, not the weapon — `kickStrike`)
 /* What the tool in hand does that the others do not. Every one of these
  * defaults to the shovels' own behaviour, so a tool without the field is
  * exactly the tool it was. */
@@ -20073,7 +20432,7 @@ const toolDmgBase = (heavy) => ((equipped && equipped.dmgSlam && digOverhead)
 // the Ring of Connection rides on every blow that lands, and each one counts toward the next (`connBonus`)
 const toolDmg = (heavy) => { const d = toolDmgBase(heavy) * (1 + connBonus()); connStreak++; return d; };
 const toolGore = () => (equipped && equipped.gore) || 1;
-const isBlade = () => !!(equipped && equipped.blade);
+const isBlade = () => !!(equipped && equipped.blade) && !KSTRIKE.on;
 /* ALWAYS RIGHT TO LEFT. A backhand on the second click was built — the
  * forehand mirrored about the middle of the frame, leaving from the far hip
  * where the first cut finished — and cut on the owner's word: two cuts in
@@ -20707,6 +21066,20 @@ function meleeT(u, P, far, rOver) {
   if (_mbQ.distanceTo(_mbC) > r) return -1;
   return t;
 }
+/* (A BLOW MEETS HIM WHERE HE IS DRAWN TOO — 2026-11-25, the owner, after the water ball and the hook were put on the skin: "Yes, melee
+ * too". The capsule above is a body's width round his axis from his shins to his crown, so a cut over his shoulder, past his head or
+ * through the gap beside his hip landed on air. A body the capsule reports is asked again on his skin (`projBodyHit`, the thrown
+ * things' own test) down the same line, with `pad` of forgiveness round it — the blade's breadth and the gap between the sweep's
+ * lines; only a line that meets him counts, at the distance it met him. A thing with no skin to ask keeps the capsule.
+ * `window.__meleeCap = 1` puts the old test back, for measuring.) */
+const MELEE_PAD_EDGE = 0.08, MELEE_PAD_FAN = 0.18;   // (the edge is swept densely; the crosshair's fan is nine lines with gaps between)
+function meleeSkin(u, t, far, pad) {
+  if (t < 0 || (typeof window !== 'undefined' && window.__meleeCap)) return t;
+  if (!u.model || !pbSkin(u).length) return t;
+  const s = projBodyHit(u, _aimO, _aimD, far + 0.25, pad);
+  const D = typeof window !== 'undefined' && window.__msDbg; if (D) { D.asked = (D.asked || 0) + 1; if (s == null) D.air = (D.air || 0) + 1; }
+  return s == null ? -1 : s;
+}
 /* THE BLADE SWEEPS, SO THE TEST SWEEPS. A cut crosses the screen through the
  * crosshair, and a thing a hand's breadth to one side of the middle is one the
  * blade visibly passed through — tested on the one line it was aimed down, it
@@ -20944,11 +21317,15 @@ function startWind() {
   if (winding || !equipped || !equipped.onDig || frozen()) return false;
   if (hookHeld() && HK.st !== 'idle') return false;    // (the hook is out on its chain: nothing in your fist to swing)
   // (the mace: a hold during a swing is a heavy carried on from it — wound up the far side, the way the head is already going)
-  const maceCarry = !!(equipped.slam && slashing() && ((digT > 0 && digT >= windupEnd()) || performance.now() - maceEndAt < 450));
+  /* (AND THE BLADES TOO — 2026-11-25, the owner: "after the first light swing you can charge the second hit coming from the left to right
+   * with the mace try that with the bloody blade and katana". The katana and the Bloody Blade carry a hold out of a cut the same way:
+   * wound up on the far side the cut left them on, and let go it comes back across — the backhand, left to right.) */
+  const carryKind = equipped.slam || equipped === katanaItem || bloodHeld();
+  const maceCarry = !!(carryKind && slashing() && ((digT > 0 && digT >= windupEnd()) || performance.now() - maceEndAt < 450));
   const carryDir = -slashDir;
   if (digT > 0) { if (!swingLanded() && !maceCarry) return false; cancelSwing(); }
   for (let i = 0; i < 6; i++) _windFrom[i] = _pose[i];   // the haul leaves from here, not from a snap
-  winding = true; windT = 0; windFull = false; windOverhead = false; maceWindCarry = maceCarry;
+  winding = true; windT = 0; windFull = false; windOverhead = false; maceWindCarry = maceCarry; seaWindCue = false;
   HK.wind = hookHeld() && hookReady(); HK.whirlN = -1;   // (Skrim's hook: a Shift hold now is a throw — or, still cooling, the katana's stab)
   if (equipped.rapier) { pegStage = 0; pegQueued = false; pegLastStage = 0; pegHighK = 0; pegQW.copy(pegQ); }
   /* A HEAVY IS ALWAYS THE FOREHAND. The combo alternates the light cuts —
@@ -20978,6 +21355,7 @@ function releaseWind() {
   }
   flameRelease(Math.min(1, windT / WIND_FULL));      // a full shift heavy with the flames up: the swing burns
   if (windOverhead && seaBallReady(Math.min(1, windT / WIND_FULL))) seaBallFire();   // a full Shift heavy with the Sea set in it: the water ball
+  else if (windOverhead && seaWeapon() && windT / WIND_FULL >= SEA_BALL.charge && seaBall.cd > 0 && !frozen()) seaBallDry();   // (still coming back: it says so)
   // even a tap off the right button carries a bit more than a plain dig
   startDig(0.3 + 0.7 * Math.min(1, windT / WIND_FULL), _pose);
   windT = 0;
@@ -21025,7 +21403,7 @@ const _bldV = new THREE.Vector3(), _bldG = new THREE.Vector3(), _bldT = new THRE
 const _bldSaveO = new THREE.Vector3(), _bldSaveD = new THREE.Vector3();
 const BLADE_F = [0.6, 0.8, 1.0];                // along the weapon from the grip: the head and the last of the haft, not the fist
 // (the peg's slash is a sweep too: its shaft is tested along the whole arc it is swung through)
-function bladeSwept() { return !!(equipped && equipped.onDig && (!equipped.rapier || pegSlashing()) && toolVM && trailTip.parent === toolVM); }
+function bladeSwept() { return !KSTRIKE.on && !!(equipped && equipped.onDig && (!equipped.rapier || pegSlashing()) && toolVM && trailTip.parent === toolVM); }
 function bladeSweep(live) {
   if (!bladeSwept()) { blade.prev.length = 0; return; }
   if (!live || digT <= 0) { blade.prev.length = 0; if (digT <= 0) { blade.hits.clear(); blade.first = null; } return; }
@@ -21056,9 +21434,14 @@ function bladeSweep(live) {
         /* the BODY, not the old ray's charity: `hitR` was sized for one line down the
          * crosshair (a metre round the samurai); the blade's whole path is swept now,
          * so what it must pass through is the creature's own width */
-        const t = meleeT(u, P, far, (u.kind.body != null ? u.kind.body : (u.kind.hitR || 0.75) * 0.6) * 0.95 + 0.08);
+        const tc = meleeT(u, P, far, (u.kind.body != null ? u.kind.body : (u.kind.hitR || 0.75) * 0.6) * 0.95 + 0.08);
+        let t = meleeSkin(u, tc, far, MELEE_PAD_EDGE);
+        // (the edge moved since the last line: a quick cut steps half a metre a line at arm's length, wider than a man side-on, so
+        // the gap it swept is filled in on his skin before he is let off)
+        if (t < 0 && tc >= 0 && prev) { const a0 = (s - 1) / steps; t = bladeSkinGap(u, prev[k] + (cur[k] - prev[k]) * a0, prev[k + 1] + (cur[k + 1] - prev[k + 1]) * a0, x, y, tc, far); }
         if (t < 0) continue;
         if (inRoom() && !inBunker && meleeBlocked(t)) continue;
+        blowFromBlade(u, cur, prev, k, t);                            // where the edge crosses him, and which way it was going
         if (!digImpacted && !blade.first) blade.first = u;            // the blow lands next frame, on this one
         else bladeHitMutant(u, P, false);                              // and the cut goes on through the next
         blade.hits.add(u);
@@ -21068,6 +21451,407 @@ function bladeSweep(live) {
   }
   _aimO.copy(_bldSaveO); _aimD.copy(_bldSaveD);
   blade.prev = cur.slice();
+}
+/* ---- WHERE THE BLOW LANDED, AND WHICH WAY IT WAS GOING (2026-11-23, the owner, with a clip of another game's knights reeling off
+ * each cut: "make the ragdoll physics during a fight more reactionary to the direction you hit the enemy … a cool death … the
+ * impact and slices be exactly where they are hit at"). The blade sweep always knew both — the ray that met the body, how far
+ * along it, and how the edge was moving across the screen on that frame — and threw them away: every reel, spray, chip and
+ * death went straight down your line of sight from the middle of the body. Now the contact is kept on the creature
+ * (`u.blow`: where on its surface, as an offset from its feet, and the edge's travel in the world), and for the length of the
+ * blow and of the death that follows it (`blowBegin` … `blowEnd`) the effects ask `BLOW` instead of the body's middle:
+ *  - the blood, the chips and the sprays start at the cut and go with the edge (`sprayBlood`, `bleedMutant`, `woundMutant`);
+ *  - `u.hitDir`, the line every reel, shove and death throw follows, leans along the swipe (`blowHitDir`);
+ *  - the flinch bends the body away from the blow at the height it landed and turns it the way the edge dragged it;
+ *  - the ragdoll is struck AT the cut, so it spins about it (`mutRagdoll`); and a limb that comes off is the one nearest it.
+ * A blow that came from no sweep (a thrown thing, a shot, the crosshair's own fan) records the aim line's point and the
+ * swing's own shape (a slash across, an overhead down, a thrust straight in). */
+const BLOW = { on: false, u: null, p: new THREE.Vector3(), d: new THREE.Vector3(), hd: new THREE.Vector3(), up: 0, h: 0.5, P: 0 };
+const BLOW_FRESH = 1600;
+/* (THE HEAD GOES ONLY WHERE THE HEAD WAS HIT — 2026-11-25, the owner: "WHEN HITTING ONLY A MUTANTS LEGS HIS HEAD FLIES OFF IT SHOULD BE
+ * WHERE YOU HIT". An overkill heavy and the Bloody Blade burst the head on a roll, wherever the blow landed. Now only if the blow on
+ * record crossed the head or the neck (`cutBones`), or landed at 0.72 of his height or more; a blow with no contact on record (a
+ * round, a throw, an old one) keeps the old roll.) */
+function blowNearHead(u) {
+  const B = u.blow; if (!B || !B.at || performance.now() - B.at > BLOW_FRESH) return true;
+  if (B.cutBones && B.cutBones.length) return B.cutBones.some((n) => /Head|Neck/i.test(n));
+  return B.off.y / (u.kind.h || 1.8) > 0.72;
+}              // ms a recorded contact still speaks for the blow (the death waits out the hitstop and the clip)
+const _bwA = new THREE.Vector3(), _bwB = new THREE.Vector3(), _bwR = new THREE.Vector3(), _bwU = new THREE.Vector3(), _bwF = new THREE.Vector3();
+// the swing's own travel when the screen gave none: across for a cut (as `slashDir` says it goes), down for an overhead, in for a thrust
+function swingTravel(out) {
+  camera.getWorldDirection(_bwF);
+  _bwR.setFromMatrixColumn(camera.matrixWorld, 0); _bwU.setFromMatrixColumn(camera.matrixWorld, 1);
+  if (digOverhead) return out.copy(_bwU).multiplyScalar(-1).addScaledVector(_bwF, 0.35).normalize();
+  if (thrusting() || (equipped && equipped.rapier && !pegSlashing())) return out.copy(_bwF);
+  const d = typeof katLike === 'function' && katLike() ? (katBack() ? 1 : -1) : slashDir;
+  return out.copy(_bwR).multiplyScalar(d).addScaledVector(_bwU, -0.35).addScaledVector(_bwF, 0.2).normalize();
+}
+/* where the line from your eye enters the body: the capsule the test used is generous (it stands for the swing's reach), so
+ * the surface is a slimmer one round the same axis — the visible body — and the point is where the ray first meets it, or,
+ * a ray that passed the body's edge, the nearest point of its side */
+function blowRecord(u, O, D, t, ndx = null, ndy = null) {
+  if (!u || !u.g) return;
+  const p = u.g.position, h = u.kind.h || 1.8;
+  const y0 = p.y + h * 0.08, y1 = p.y + h * 0.97;
+  const rb = THREE.MathUtils.clamp((u.kind.body != null ? u.kind.body : 0.3) * 0.85, 0.12, 0.5) * (h / 1.8 > 1.4 ? 1.3 : 1);
+  _bwA.copy(O).addScaledVector(D, t);                                  // the point nearest the axis
+  // the ray against the slim cylinder, in the ground plane
+  const ox = O.x - p.x, oz = O.z - p.z, a = D.x * D.x + D.z * D.z, bq = ox * D.x + oz * D.z, c = ox * ox + oz * oz - rb * rb;
+  const disc = bq * bq - a * c;
+  let te = -1;
+  if (a > 1e-6 && disc >= 0) te = (-bq - Math.sqrt(disc)) / a;
+  if (te > 0 && te < t + 1) _bwA.copy(O).addScaledVector(D, te);
+  else { _bwB.set(_bwA.x - p.x, 0, _bwA.z - p.z); if (_bwB.lengthSq() < 1e-6) _bwB.set(-D.x, 0, -D.z); _bwB.normalize().multiplyScalar(rb); _bwA.x = p.x + _bwB.x; _bwA.z = p.z + _bwB.z; }
+  _bwA.y = THREE.MathUtils.clamp(_bwA.y, y0, y1);
+  const B = u.blow || (u.blow = { off: new THREE.Vector3(), d: new THREE.Vector3(), at: 0 });
+  B.off.subVectors(_bwA, p);
+  // the edge's travel: the screen's own if the sweep saw it move, else the swing's shape
+  if (ndx !== null && ndx * ndx + ndy * ndy > 1e-7) {
+    _bwR.setFromMatrixColumn(camera.matrixWorld, 0); _bwU.setFromMatrixColumn(camera.matrixWorld, 1);
+    B.d.copy(_bwR).multiplyScalar(ndx * camera.aspect).addScaledVector(_bwU, ndy);
+    camera.getWorldDirection(_bwF); B.d.addScaledVector(_bwF, 0.25 * B.d.length()).normalize();   // (a cut goes INTO him as it crosses)
+  } else swingTravel(B.d);
+  B.at = performance.now(); B.P = digPower;
+}
+/* WHERE ON HIM THE EDGE CROSSES. The first ray of the blade to touch the body's (generous) capsule is its edge, often the
+ * low end of a diagonal cut — measured, cuts aimed at the chest recorded the shins. What the eye reads as "where it hit" is
+ * where the blade's own line crosses the middle of him: the grip-to-tip line on the screen against his spine's line (feet to
+ * crown, projected), at the height they meet; a blade that runs along him (an overhead) by where its tip is. The point on
+ * his spine there is then looked at from your eye, and the surface found as for any blow. */
+const _bfF = new THREE.Vector3(), _bfH = new THREE.Vector3(), _bfP = new THREE.Vector3(), _bfO = new THREE.Vector3(), _bfD = new THREE.Vector3();
+// lines between two of the sweep's, close enough that the gap at his distance is under 8 cm; `_aimD` left as it was found
+const _bsgD = new THREE.Vector3();
+function bladeSkinGap(u, x0, y0, x1, y1, tc, far) {
+  _bsgD.copy(_aimD);
+  raycaster.setFromCamera(_bldN.set(x0, y0), camera); const ang = raycaster.ray.direction.angleTo(_bsgD);
+  const n = Math.min(12, Math.ceil(ang * (tc + 0.5) / 0.08));
+  let best = -1;
+  for (let i = 1; i < n && best < 0; i++) {
+    const a = i / n; raycaster.setFromCamera(_bldN.set(x0 + (x1 - x0) * a, y0 + (y1 - y0) * a), camera);
+    _aimD.copy(raycaster.ray.direction);
+    best = meleeSkin(u, tc, far, MELEE_PAD_EDGE);
+  }
+  _aimD.copy(_bsgD);
+  if (best >= 0 && typeof window !== 'undefined' && window.__msDbg) window.__msDbg.gap = (window.__msDbg.gap || 0) + 1;
+  return best;
+}
+function blowFromBlade(u, cur, prev, k, t) {
+  const p = u.g.position, h = u.kind.h || 1.8;
+  _bfF.set(p.x, p.y + h * 0.1, p.z).project(camera); _bfH.set(p.x, p.y + h * 0.95, p.z).project(camera);
+  const gx = cur[0], gy = cur[1], tx = cur[6], ty = cur[7];         // the grip end (`BLADE_F[0]`) and the tip, as the sweep has them
+  const ax = _bfH.x - _bfF.x, ay = _bfH.y - _bfF.y, bx = tx - gx, by = ty - gy;
+  const den = ax * by - ay * bx;
+  let sAx;
+  if (Math.abs(den) > 1e-5 && Math.abs(bx) > Math.abs(by) * 0.35) sAx = ((gx - _bfF.x) * by - (gy - _bfF.y) * bx) / den;
+  else sAx = Math.abs(ay) > 1e-5 ? (ty - _bfF.y) / ay : 0.6;           // along him: where its tip is
+  sAx = THREE.MathUtils.clamp(sAx, 0, 1);
+  _bfP.set(p.x, p.y + h * (0.1 + 0.85 * sAx), p.z);
+  camera.getWorldPosition(_bfO); _bfD.subVectors(_bfP, _bfO); const L = _bfD.length(); _bfD.multiplyScalar(1 / (L || 1));
+  // the edge's travel on the screen this frame: the middle of the blade's, else the sample's own
+  const mi = 2;
+  const ndx = prev ? cur[mi] - prev[mi] : null, ndy = prev ? cur[mi + 1] - prev[mi + 1] : null;
+  blowRecord(u, _bfO, _bfD, L, ndx, ndy);
+}
+// the crosshair's own fan, or anything else that hits without a sweep: the aim line at that body, the swing's shape
+function blowRecordAim(u) {
+  if (!u || !u.g) return;
+  const O = camera.getWorldPosition(_bwB).clone(), D = camera.getWorldDirection(_bwF).clone();
+  const p = u.g.position, wx = O.x - p.x, wz = O.z - p.z, hl = D.x * D.x + D.z * D.z;
+  const t = Math.max(0, hl > 1e-6 ? -(wx * D.x + wz * D.z) / hl : 0);
+  blowRecord(u, O, D, t);
+}
+function blowFresh(u) { return !!(u && u.blow && performance.now() - u.blow.at < BLOW_FRESH); }
+// for the length of a blow (or a death) on `u`: where and which way, for the effects to ask
+function blowBegin(u) {
+  if (!blowFresh(u)) return false;                     // (a scope left open by a throw is simply taken over)
+  const B = u.blow, p = u.g.position, h = u.kind.h || 1.8;
+  BLOW.on = true; BLOW.u = u; BLOW.P = B.P || 0;
+  BLOW.p.copy(p).add(B.off); BLOW.d.copy(B.d);
+  BLOW.h = THREE.MathUtils.clamp(B.off.y / h, 0, 1);
+  // the line along the ground it pushes him: mostly away from you, leaning hard along the cut
+  camera.getWorldDirection(_bwF); _bwF.y = 0; _bwF.normalize();
+  _bwA.set(B.d.x, 0, B.d.z);
+  const lat = _bwA.length();
+  BLOW.hd.copy(_bwF).multiplyScalar(0.6).addScaledVector(_bwA, lat > 0.25 ? 0.95 / lat * Math.min(1, lat * 1.4) : 0).normalize();
+  BLOW.up = B.d.y;
+  return true;
+}
+function blowEnd() { BLOW.on = false; BLOW.u = null; }
+// the line a mine blow pushes `u` along (its `hitDir`): the blow's when there is one, else your view's
+function blowHitDir(u, out) {
+  if (BLOW.on && BLOW.u === u) return out.copy(BLOW.hd);
+  camera.getWorldDirection(out); out.y = 0; return out.normalize();
+}
+/* ---- THE CUT, ON HIM (2026-11-23; rebuilt the same night, the owner: "MAKE SURE THESE CHANGES ARE GOOD AND NOT CHEAP"). The
+ * first try was a white card laid across the body and a dark card set on the nearest bone: from your eye the card read as a bar
+ * drawn over the screen, and the mark — placed on a cylinder standing for the body — was inside the mesh or off it in every
+ * close look, i.e. invisible. Now the cut is found ON HIS SKIN: the body's skinned triangles as they are this frame (a few
+ * thousand vertices, once per landed blow), and a fan of rays from your eye through points along the edge's line across the
+ * screen; each that meets him gives a point and the face's normal there. Through those points runs a RIBBON — pointed at both
+ * ends, lying on his surface, breaking where the line leaves his outline or jumps from one part of him to another — so the cut
+ * wraps his chest, stops at his arm, crosses a forearm and is gone past it. It is drawn twice: a glint, bright and wide for
+ * the first seventh of a second (the steel opening him), and under it the wound, which stays — dark and wet on flesh, pale
+ * grain on wood, chalk on stone — carried by the bone nearest the middle of the cut, fading after nine seconds. The blood, the
+ * chips and the sprays start where the middle ray met him (`BLOW.p`, the surface's own point now). */
+const CUT_MARKS = 28, CUT_RAYS = 11;   // (`CUT_MARKS`: the bleeding points at once — there is no visible mark since 2026-11-24)
+const cutMarks = [];
+const _cutO = new THREE.Vector3(), _cutS = new THREE.Vector3(), _cutE = new THREE.Vector3(), _cutV = new THREE.Vector3(), _cutHit = new THREE.Vector3();
+const _cutA = new THREE.Vector3(), _cutB = new THREE.Vector3(), _cutC = new THREE.Vector3(), _cutN = new THREE.Vector3(), _cutRay = new THREE.Ray();
+// the body's triangles, in the world, near the cut — skinned as it stands this frame
+const _cutSI = new THREE.Vector4(), _cutSW = new THREE.Vector4();
+/* A HEAVY SKIN IS ASKED ON A LIGHTER ONE (2026-11-26, the owner: "everytime i swing at the orc i lag in the tavern fix this now").
+ * `cutTris` skins every vertex of a body on the CPU, and the tavern's orc ships exact: 305k faces, 176k vertices — 48.6 ms a read,
+ * and a swing at him reads it every frame the blade is out (the skin test, `meleeSkin`) and again as it lands (the cut, `blowSurface`):
+ * frames of 108-203 ms (`tools/orcswing.js`). A BODY over `HIT_FACES` is asked on a copy made once per geometry: its vertices snapped
+ * to a grid (each cell answers with one of its own vertices, skin weights and all, so it moves exactly as the drawn skin does there),
+ * the faces that collapse dropped, the cell grown until the mesh is under its share of the body's budget (he is 29 skinned meshes,
+ * most of them small: a cap per mesh left 240k of his faces read). Made a mesh a frame ahead of the first swing (`hitLodWarm`, from
+ * his room's tick) — all at once it is a hitch of its own. What is drawn is untouched. */
+const HIT_FACES = 10000;   // (a beach mutant's own skin is 9950 and reads in 1.6 ms; the blade's pad is 8 cm and a 10k copy of a 2 m body has 3-4 cm edges)
+const _hlFaces = (G) => (G.index ? G.index.count : G.attributes.position.count) / 3;
+// the body's skinned meshes and each one's share of the budget (null: a body light enough to be asked as it is)
+function hitLodPlan(u) {
+  if (u.hitPlan !== undefined) return u.hitPlan;
+  if (!u.model) return null;
+  const ms = []; let tot = 0;
+  u.model.traverse((m) => { if (m.isSkinnedMesh && m.geometry && m.geometry.attributes.position) { ms.push(m); tot += _hlFaces(m.geometry); } });
+  if (tot <= HIT_FACES) return (u.hitPlan = null);
+  for (const m of ms) if (m.geometry.userData.hitCap === undefined) m.geometry.userData.hitCap = Math.max(240, Math.round(_hlFaces(m.geometry) * HIT_FACES / tot));
+  return (u.hitPlan = { ms, i: 0 });
+}
+// one mesh's copy a call; true once the whole body's are made
+function hitLodWarm(u) {
+  const Pn = hitLodPlan(u); if (!Pn) return u.hitPlan === null;
+  while (Pn.i < Pn.ms.length) { const G = Pn.ms[Pn.i++].geometry; if (G.userData.hitLod === undefined) { hitLod(G); return Pn.i >= Pn.ms.length; } }
+  return true;
+}
+function hitLod(G) {
+  if (G.userData.hitLod !== undefined) return G.userData.hitLod;
+  const cap = G.userData.hitCap;
+  const P = G.attributes.position, idx = G.index, n = P.count, tc = idx ? idx.count : n;
+  if (cap === undefined || tc / 3 <= cap) return (G.userData.hitLod = null);
+  if (!G.boundingBox) G.computeBoundingBox();
+  const bb = G.boundingBox, diag = Math.max(1e-6, bb.max.distanceTo(bb.min)), rep = new Int32Array(n);
+  let cell = diag / Math.sqrt(cap) * 0.45, tri = null;      // (about where a mesh of `cap` faces has its edges; grown from there)
+  for (let tries = 0; tries < 24 && !tri; tries++, cell *= 1.22) {
+    const map = new Map();
+    for (let i = 0; i < n; i++) {
+      const key = Math.floor((P.getX(i) - bb.min.x) / cell) + Math.floor((P.getY(i) - bb.min.y) / cell) * 4096 + Math.floor((P.getZ(i) - bb.min.z) / cell) * 16777216;
+      let r = map.get(key); if (r === undefined) { r = i; map.set(key, i); } rep[i] = r;
+    }
+    const t = [];
+    for (let k = 0; k < tc; k += 3) {
+      const a = rep[idx ? idx.getX(k) : k], b = rep[idx ? idx.getX(k + 1) : k + 1], c = rep[idx ? idx.getX(k + 2) : k + 2];
+      if (a !== b && b !== c && a !== c) t.push(a, b, c);
+      if (t.length > cap * 3) break;
+    }
+    if (t.length <= cap * 3) tri = t;
+  }
+  if (!tri) return (G.userData.hitLod = null);
+  const used = new Set(tri);
+  return (G.userData.hitLod = { tri: Uint32Array.from(tri), verts: Uint32Array.from(used), W: new Float32Array(n * 3), cell });
+}
+function cutTris(u, near, R) {
+  const out = []; out.bones = [];
+  if (!u.model) return out;
+  u.model.updateMatrixWorld(true);
+  // his skin, not what he holds: the skinned meshes, when he has any (a sword in his fist is a rigid mesh on his hand)
+  let skinned = false; u.model.traverse((m) => { if (m.isSkinnedMesh && m.visible) skinned = true; });
+  u.model.traverse((m) => {
+    if (!m.isMesh || !m.visible || m.name === 'hitProxy' || !m.geometry || !m.geometry.attributes.position || m.isInstancedMesh || (skinned && !m.isSkinnedMesh)) return;
+    for (let o = m; o; o = o.parent) if (o.visible === false) return;
+    // (his bones as they stand now, wherever the rig hangs them — the paladin's skin read EMPTY otherwise: his bones are not under his
+    // model, and a skin read from where they last were drawn is somewhere else — 2026-11-25, `tools/gunblock.js`)
+    if (m.isSkinnedMesh && m.skeleton && m.skeleton.bones.length) { let rb = m.skeleton.bones[0]; while (rb.parent && rb.parent.isBone) rb = rb.parent; rb.updateWorldMatrix(true, true); }
+    const G = m.geometry, P = G.attributes.position, n = P.count, LOD = m.isSkinnedMesh && hitLodPlan(u) ? hitLod(G) : null, idx = LOD ? null : G.index;
+    const W = LOD ? LOD.W : new Float32Array(n * 3);
+    if (LOD) for (const i of LOD.verts) { m.getVertexPosition(i, _cutV); _cutV.applyMatrix4(m.matrixWorld); W[i * 3] = _cutV.x; W[i * 3 + 1] = _cutV.y; W[i * 3 + 2] = _cutV.z; }
+    else for (let i = 0; i < n; i++) { m.getVertexPosition(i, _cutV); _cutV.applyMatrix4(m.matrixWorld); W[i * 3] = _cutV.x; W[i * 3 + 1] = _cutV.y; W[i * 3 + 2] = _cutV.z; }
+    const tc = LOD ? LOD.tri.length : idx ? idx.count : n, R2 = R * R;
+    for (let k = 0; k < tc; k += 3) {
+      const a = LOD ? LOD.tri[k] : idx ? idx.getX(k) : k, b = LOD ? LOD.tri[k + 1] : idx ? idx.getX(k + 1) : k + 1, c = LOD ? LOD.tri[k + 2] : idx ? idx.getX(k + 2) : k + 2;
+      const cx = (W[a * 3] + W[b * 3] + W[c * 3]) / 3 - near.x, cy = (W[a * 3 + 1] + W[b * 3 + 1] + W[c * 3 + 1]) / 3 - near.y, cz = (W[a * 3 + 2] + W[b * 3 + 2] + W[c * 3 + 2]) / 3 - near.z;
+      if (cx * cx + cy * cy + cz * cz > R2) continue;
+      out.push(W[a * 3], W[a * 3 + 1], W[a * 3 + 2], W[b * 3], W[b * 3 + 1], W[b * 3 + 2], W[c * 3], W[c * 3 + 1], W[c * 3 + 2]);
+      // (the bone that moves this skin most: its first corner's heaviest weight — a cut is carried by what it is cut into)
+      let bone = null;
+      if (m.isSkinnedMesh && G.attributes.skinIndex) { _cutSI.fromBufferAttribute(G.attributes.skinIndex, a); _cutSW.fromBufferAttribute(G.attributes.skinWeight, a); let bi = 0; for (let q = 1; q < 4; q++) if (_cutSW.getComponent(q) > _cutSW.getComponent(bi)) bi = q; bone = m.skeleton.bones[_cutSI.getComponent(bi)] || null; }
+      out.bones.push(bone);
+    }
+  });
+  return out;
+}
+/* (A THROWN THING MEETS HIM WHERE HE IS DRAWN — 2026-11-25, the owner, in the castle's street: "the water keeps hitting invisible barriers
+ * in the air so does the hook fix this now it should hit where aimed". Measured (`tools/seaghost.js`): the barriers were the men — the
+ * gun's own body test, a capsule of max(0.42, 0.72·hitR) plus the thing's size: about 0.8 m round a farmer, so a ball or the iron going
+ * past his head or his shoulder at arm's length burst or bit in the air beside him. A body the capsule reports is now asked again on
+ * his SKIN (`cutTris`, his triangles as they stand this frame): the centre of the thing's way and four lines round its edge; only a line
+ * that meets him counts, at the distance it met him.) */
+const _pbO = new THREE.Vector3(), _pbD = new THREE.Vector3(), _pbS = new THREE.Vector3(), _pbU = new THREE.Vector3(), _pbP = new THREE.Vector3(), _pbN = new THREE.Vector3(), _pbM = new THREE.Vector3();
+const _pbCache = new Map(); let _pbFrame = -1, _pbAt = -1e9, updateTick = 0;
+// his whole skin as it stands this frame, once a frame however many things ask (a charge of shot is a dozen pellets)
+/* (ONCE AN UPDATE, by the update's own count — 2026-11-26. It was "the drawn frame, and never older than 10 ms" (a fast-forwarded
+ * clock draws nothing): but a frame that is already slow is longer than 10 ms, so in exactly the frames that hurt the skin was read
+ * two and three times over — 64-69k vertices skinned in a frame of a swing at the orc where one read is 20.6k. `update` counts
+ * itself (`updateTick`); a quarter second is the backstop for anything that asks with no update running.) */
+function pbSkin(u) {
+  const f = updateTick, now = performance.now(); if (f !== _pbFrame || now - _pbAt > 250) { _pbFrame = f; _pbAt = now; _pbCache.clear(); }
+  let T = _pbCache.get(u); if (T) return T;
+  const h = (u.kind && u.kind.h) || 1.8; _pbM.copy(u.g.position); _pbM.y += h * 0.5;
+  T = cutTris(u, _pbM, h * 0.75 + 1.2); _pbCache.set(u, T); return T;
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { projBodyHitS: (...a) => projBodyHit(...a), pbSkinS: (u) => pbSkin(u), cutTrisS: (...a) => cutTris(...a) }));
+/* (BOXES. A beach mutant's skin is ten thousand faces, and a blade asks it down a dozen lines a frame — 14 to 70 ms a frame, measured
+ * (`tools/meleeskin.js`). The faces are sorted once a frame into boxes of at most 96 by the bone that carries them; a line reads only
+ * the faces of a box it passes, and a line that passes no box grown by the thing's size is turned away before its four edge lines.) */
+const _pbBox = new THREE.Box3(), _pbRay = new THREE.Ray(), _pbX = new THREE.Vector3();
+function pbBoxes(T) {
+  if (T.boxes) return T.boxes;
+  const by = new Map(), n = T.length / 9;
+  for (let i = 0; i < n; i++) { const bn = T.bones ? T.bones[i] : null; let L = by.get(bn); if (!L) by.set(bn, L = []); L.push(i); }
+  const F = new Float32Array(T.length), B = []; let o = 0;
+  for (const L of by.values()) for (let c = 0; c < L.length; c += 96) {
+    const k0 = o; let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+    for (let j = c; j < Math.min(L.length, c + 96); j++) {
+      const s9 = L[j] * 9;
+      for (let q = 0; q < 9; q += 3) {
+        const x = T[s9 + q], y = T[s9 + q + 1], z = T[s9 + q + 2]; F[o + q] = x; F[o + q + 1] = y; F[o + q + 2] = z;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z;
+      }
+      o += 9;
+    }
+    B.push({ k0, k1: o, x0, y0, z0, x1, y1, z1 });
+  }
+  return (T.boxes = { F, B });
+}
+// the nearest face of the boxes' a line from O meets within len, or -1; `grow` widens the boxes (the early turn-away)
+function pbBoxRay(X, O, D, len, grow, faces) {
+  _pbRay.set(O, D); let best = -1;
+  for (const b of X.B) {
+    _pbBox.min.set(b.x0 - grow, b.y0 - grow, b.z0 - grow); _pbBox.max.set(b.x1 + grow, b.y1 + grow, b.z1 + grow);
+    if (!_pbRay.intersectBox(_pbBox, _pbX)) continue;
+    const tb = _pbX.distanceTo(O); if (tb > len || (best >= 0 && tb > best)) continue;
+    if (!faces) return tb;
+    const F = X.F;
+    for (let k = b.k0; k < b.k1; k += 9) {
+      _cutA.set(F[k], F[k + 1], F[k + 2]); _cutB.set(F[k + 3], F[k + 4], F[k + 5]); _cutC.set(F[k + 6], F[k + 7], F[k + 8]);
+      if (!_pbRay.intersectTriangle(_cutA, _cutB, _cutC, false, _pbX)) continue;
+      const t = _pbX.distanceTo(O); if (t <= len && (best < 0 || t < best)) best = t;
+    }
+  }
+  return best;
+}
+function projBodyHit(u, O, D, len, rad) {
+  if (!u || !u.model) return null;
+  const T = pbSkin(u); if (!T.length) return null;
+  const X = pbBoxes(T);
+  if (pbBoxRay(X, O, D, len + rad, rad + 0.01, false) < 0) return null;
+  _pbS.set(-D.z, 0, D.x); if (_pbS.lengthSq() < 1e-6) _pbS.set(1, 0, 0); _pbS.normalize(); _pbU.crossVectors(_pbS, D).normalize();
+  let best = null;
+  for (const [a, b2] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    if (rad <= 0 && (a || b2)) break;
+    _pbO.copy(O).addScaledVector(_pbS, a * rad * 0.75).addScaledVector(_pbU, b2 * rad * 0.75);
+    const t = pbBoxRay(X, _pbO, D, len, 0, true);
+    if (t >= 0 && (best === null || t < best)) best = t;
+  }
+  return best;
+}
+// the nearest face a ray from the eye meets: its point and its normal (turned to face you), or null
+let cutHitBone = null;
+function cutRayHit(T, O, D, tMin, tMax, outP, outN) {
+  _cutRay.set(O, D);
+  let best = tMax, hit = false; cutHitBone = null;
+  for (let k = 0; k < T.length; k += 9) {
+    _cutA.set(T[k], T[k + 1], T[k + 2]); _cutB.set(T[k + 3], T[k + 4], T[k + 5]); _cutC.set(T[k + 6], T[k + 7], T[k + 8]);
+    if (!_cutRay.intersectTriangle(_cutA, _cutB, _cutC, false, _cutHit)) continue;
+    const t = _cutHit.distanceTo(O);
+    if (t < tMin || t >= best) continue;
+    best = t; hit = true; outP.copy(_cutHit); cutHitBone = T.bones ? T.bones[k / 9] : null;
+    outN.subVectors(_cutB, _cutA).cross(_cutV.subVectors(_cutC, _cutA)).normalize();
+  }
+  if (hit && outN.dot(D) > 0) outN.negate();
+  return hit;
+}
+/* where along the edge's line the blade met him, on his skin: called as a blow of yours lands (`hurtMutantAt`), before the
+ * blood — so `BLOW.p` is the skin's own point; the samples are kept for the ribbon (`BLOW.cut`) */
+// his faces near a point: off this update's read where his body is asked on its light copy (`hitLod` — the orc), else read afresh
+function cutTrisNear(u, near, R) {
+  if (!hitLodPlan(u)) return cutTris(u, near, R);
+  const T = pbSkin(u), out = [], R2 = R * R; out.bones = [];
+  for (let k = 0; k < T.length; k += 9) {
+    const cx = (T[k] + T[k + 3] + T[k + 6]) / 3 - near.x, cy = (T[k + 1] + T[k + 4] + T[k + 7]) / 3 - near.y, cz = (T[k + 2] + T[k + 5] + T[k + 8]) / 3 - near.z;
+    if (cx * cx + cy * cy + cz * cz > R2) continue;
+    for (let q = 0; q < 9; q++) out.push(T[k + q]);
+    out.bones.push(T.bones ? T.bones[k / 9] : null);
+  }
+  return out;
+}
+function blowSurface(u, P) {
+  const t0 = performance.now();
+  try { blowSurfaceCore(u, P); } finally { BLOW.cost = performance.now() - t0; }
+}
+function blowSurfaceCore(u, P) {
+  BLOW.cut = null;
+  if (!BLOW.on || BLOW.u !== u || !u.model) return;
+  const h = u.kind.h || 1.8, L = ((isBlade() ? 0.62 : 0.42) + P * 0.3) * THREE.MathUtils.clamp(h / 1.8, 0.75, 1.5);
+  camera.getWorldPosition(_cutO);
+  const T = cutTrisNear(u, BLOW.p, L * 0.5 + 0.45);
+  if (!T.length) return;
+  // the edge's line as the eye sees it: across the screen through the contact
+  _cutV.subVectors(BLOW.p, _cutO); const dist = _cutV.length(); _cutV.multiplyScalar(1 / dist);
+  _cutE.copy(BLOW.d).addScaledVector(_cutV, -BLOW.d.dot(_cutV)); if (_cutE.lengthSq() < 1e-6) _cutE.setFromMatrixColumn(camera.matrixWorld, 0); _cutE.normalize();
+  const pts = [], ns = [], ss = [], bs = [];
+  for (let i = 0; i < CUT_RAYS; i++) {
+    const s = (i / (CUT_RAYS - 1) - 0.5) * L;
+    _cutS.copy(BLOW.p).addScaledVector(_cutE, s).sub(_cutO).normalize();
+    const P0 = new THREE.Vector3(), N0 = new THREE.Vector3();
+    if (cutRayHit(T, _cutO, _cutS, Math.max(0.05, dist - 0.7), dist + 0.6, P0, N0)) { pts.push(P0); ns.push(N0); ss.push(s); bs.push(cutHitBone); } else { pts.push(null); ns.push(null); ss.push(s); bs.push(null); }
+  }
+  // the middle of it that met him is where the blow is
+  let mid = -1, md = Infinity;
+  for (let i = 0; i < pts.length; i++) if (pts[i] && Math.abs(ss[i]) < md) { md = Math.abs(ss[i]); mid = i; }
+  if (mid < 0) return;
+  BLOW.p.copy(pts[mid]);
+  BLOW.cut = { pts, ns, ss, bs, L };
+  // (and which of him it went through, nearest the middle first — the killing cut takes exactly those: `blowCutParts`)
+  if (u.blow) { const ord = pts.map((q, i) => i).filter((i) => pts[i] && bs[i]).sort((a, b) => Math.abs(ss[a]) - Math.abs(ss[b])); u.blow.cutBones = ord.map((i) => bs[i].name); u.blow.cutAt = u.blow.at; }
+}
+function slashHit(u, P) {
+  const C = BLOW.on && BLOW.u === u && BLOW.cut; if (!C || noBloodKind(u)) return;
+  const heavy = P >= MUT_HEAVY;
+  // the bone that moves the skin the middle of the cut is in (else the nearest joint)
+  let bone = null;
+  { let mi = -1, md = Infinity; for (let i = 0; i < C.pts.length; i++) if (C.pts[i] && C.bs && C.bs[i] && Math.abs(C.ss[i]) < md) { md = Math.abs(C.ss[i]); mi = i; } if (mi >= 0) bone = C.bs[mi]; }
+  if (!bone) {
+    if (!u._blowBones) { u._blowBones = []; u.model.traverse((o) => { if (o.isBone) u._blowBones.push(o); }); }
+    let bd = Infinity; for (const b of u._blowBones) { b.getWorldPosition(_cutV); const dd = _cutV.distanceToSquared(BLOW.p); if (dd < bd) { bd = dd; bone = b; } }
+  }
+  if (!bone) return;
+  if (cutMarks.length >= CUT_MARKS) cutMarkGone(cutMarks.shift());
+  const o = new THREE.Object3D(); o.name = 'bleedPt'; o.position.copy(BLOW.p); scene.add(o); bone.attach(o);
+  // the cut's own points, kept beside it in its frame, so the drops come from along it
+  const along = [];
+  for (const pt of C.pts) if (pt) along.push(o.worldToLocal(pt.clone()));
+  cutMarks.push({ m: o, t: 0, u, heavy, drip: 0, along, bleed: heavy ? 2.8 : 2.2 });
+}
+const noBloodKind = (u) => !!(u.kind.stone || u.kind.wood || u.kind.noBlood);
+function cutMarkGone(o) { if (o.m.parent) o.m.parent.remove(o.m); }
+const _cutDrip = new THREE.Vector3();
+function slashTick(dt) {
+  for (let i = cutMarks.length - 1; i >= 0; i--) {
+    const o = cutMarks[i]; o.t += dt;
+    if (o.t > o.bleed || !o.m.parent || (o.u && o.u.model && !o.u.model.parent)) { cutMarkGone(o); cutMarks.splice(i, 1); continue; }
+    // it bleeds: drops from along the cut, many at first, fewer after, falling away
+    o.drip += dt * (o.heavy ? 22 : 14) * (1 - o.t / o.bleed) * (1 - o.t / o.bleed);
+    while (o.drip >= 1) {
+      o.drip -= 1;
+      if (o.along.length) _cutDrip.copy(o.along[(Math.random() * o.along.length) | 0]); else _cutDrip.set(0, 0, 0);
+      o.m.localToWorld(_cutDrip);
+      const m = bloodDropObj(0.012 + Math.random() * 0.016);
+      m.position.copy(_cutDrip);
+      bloodDrops.push({ m, vel: new THREE.Vector3((Math.random() - 0.5) * 0.35, -0.2 - Math.random() * 0.6, (Math.random() - 0.5) * 0.35), life: 3 });
+    }
+  }
 }
 /* A BLOW ON A CREATURE, from wherever it was decided. `main` is the swing's
  * own blow (the full confirm); a cleave through a second body is lighter. */
@@ -21110,14 +21894,23 @@ function digImpact() {
 function digImpactCore() {
   _pf.copy(_aimD); _pf.y = 0; _pf.normalize();
   const P = digPower;
+  /* (THE KICK GOES THROUGH HERE TOO — 2026-11-26, the owner: "make the kick hit every object like a hit would it needs those colliders
+   * so you can kick the sand and object and walls as well", "and kick mounds open". `kickStrike` has already taken the living and
+   * the dead and a castle's props; with `KSTRIKE.on` it runs the swing's own world — the crates, glass, bone piles, heaps,
+   * the idol, the castle's stone and every wall (`nearestSolidHit`: sound, chips, a scar), driftwood, the sand (a scuff and a
+   * spray) and a mound under it (`revealMoundNear`) — and none of the creatures: a weapon's damage is not a boot's. The blade's
+   * sounds and the slash's slot in the sand are off while it does (`isBlade`, `slashing`, `bladeSwept`).) */
+  const KS = KSTRIKE.on;
   // THE BLADE TOUCHED SOMETHING: that is the blow, wherever on the screen it was (`bladeSweep`)
-  if (blade.first) { const u = blade.first; blade.first = null; if (u.st.alive) { bladeHitMutant(u, P, true); return true; } }
-  if (isleBirdStrike(P)) return true;          // a gull on the island: feathers
-  if (plioStrike(P)) return true;              // the thing in the deep
-  if (deadStrike(P)) return true;              // and the dead in the water round it: knocked, and a blade takes limbs off
-  if (traderStrike(P)) return true;            // the merchant, who will not be hit twice
-  if (crowStrike(P)) return true;              // the crow on the pier's post, which turns on you for it
-  if (skStrike(P)) return true;                // the thing you drew, on the island's pier (`skStrike`)
+  if (blade.first && !KS) { const u = blade.first; blade.first = null; if (u.st.alive) { bladeHitMutant(u, P, true); return true; } }
+  if (!KS && zDieStrike(P)) return true;               // a farmer in his fall, dying on his feet: a heavy blows him apart (`zDieStrike`)
+  if (!KS && isleBirdStrike(P)) return true;          // a gull on the island: feathers
+  if (!KS && plioStrike(P)) return true;              // the thing in the deep
+  if (!KS && deadStrike(P)) return true;              // and the dead in the water round it: knocked, and a blade takes limbs off
+  if (!KS && traderStrike(P)) return true;            // the merchant, who will not be hit twice
+  if (!KS && crowStrike(P)) return true;              // the crow on the pier's post, which turns on you for it
+  if (!KS && skStrike(P)) return true;                // the thing you drew, on the island's pier (`skStrike`)
+  if (brazierStrike(P)) return true;           // (a brazier, knocked over: `brazierTopple`)
   if (castleStrike(P)) return true;            // the blade went through the castle
   if (crateStrike(P)) return true;             // the blade is on the crate, not the sand
   if (glassStrike()) return true;              // or on something that shatters
@@ -21132,7 +21925,7 @@ function digImpactCore() {
   // the crab: the AIM LINE has to pass close to the body. It used to be any
   // impact point within 1.5 m of it (3.2 on a heavy) — you could kill it
   // looking at the sand beside it, which is not a hit anyone feels they made.
-  {
+  if (!KS) {
     aimRay(P);
     let best = null, bestT = Infinity;
     _mswSave.copy(_aimD);
@@ -21166,12 +21959,12 @@ function digImpactCore() {
     }
   }
   // the gulls over the wreck, only ever in reach on their way down (`gullStrike`)
-  if (gullStrike(P)) return true;
+  if (!KS && gullStrike(P)) return true;
   /* And the same test for the thing past the pavilion, on a body-sized radius
    * up at its chest. A light swing takes one of its five and a charge takes
    * two — the difference between four exchanges and three, which is the whole
    * reason to wind one up in front of something that big. */
-  {
+  if (!KS) {
     let best = null, bestT = Infinity;
     const far = meleeReach(P);
     const solid = inRoom() && !inBunker ? null : nearestSolidHit();
@@ -21184,7 +21977,7 @@ function digImpactCore() {
         if (!u.st.alive || u.st.struck || !u.g.visible || minoAlly(u) || gargImmune(u)) continue;
         if (bladeSwept()) continue;      // a swept weapon hits what its blade passes through, and nothing else
         // A BODY IS AS WIDE AS THE BODY, AND AS TALL: the capsule, not a ball
-        const t = meleeT(u, P, far);
+        const t = meleeSkin(u, meleeT(u, P, far), far, MELEE_PAD_FAN + P * 0.05);
         if (t < 0 || t >= bestT) continue;
         if (meleeBlocked(t, solid)) continue;
         bestT = t; best = u;
@@ -21193,20 +21986,21 @@ function digImpactCore() {
     _aimD.copy(_mswSave);
     if (best) {
       pegTipHit = pegTipAt(bestT); if (pegTipHit) pegTipConfirm();
+      if (!(best.blow && performance.now() - best.blow.at < 350)) blowRecordAim(best);   // (no sweep saw it: the aim line's point, the swing's shape)
       bladeHitMutant(best, P, true);
       pegTipHit = false;
       return true;
     }
   }
   // and the dead: the nearest joint of a body on the aim line takes it
-  {
+  if (!KS) {
     let best = null, bq = null, bestT = Infinity;
     for (const u of mutants) {
       if (u.st.alive || !u.rag) continue;
       for (const q of u.rag.parts) {
         const t = THREE.MathUtils.clamp(_hitC.copy(q.p).sub(_aimO).dot(_aimD), 0, digRay.far);
         const miss = q.p.distanceTo(_hitC.copy(_aimO).addScaledVector(_aimD, t));
-        if (miss < 0.42 + P * 0.15 && t < bestT) { bestT = t; best = u; bq = q; }
+        if (miss < 0.55 + P * 0.2 && t < bestT) { bestT = t; best = u; bq = q; }   // (0.42 + 0.15P until 2026-11-26: "i cant hit the farmers in their death animation" — a body falls fast, the line grazed it)
       }
     }
     if (best) { hitFlesh = true; ragHit(best, bq, P, _pf.x, _pf.z); return true; }
@@ -22460,7 +23254,8 @@ function updateViewmodel(dt) {
      * while you wind it — that is when you can see it — and reading the key
      * again on the way out meant letting go of sprint a frame early turned
      * an overhead back into a side swing. */
-    if (overheadHeld() && !thrusting()) windOverhead = true;   // (the mace: a plain hold is its heavy sweep, Shift + hold the slam — `slamRate`)   // (the peg's Shift hold is its lunge, coiled, not raised)
+    if (overheadHeld() && !thrusting()) windOverhead = true;
+    if (windOverhead && !seaWindCue && windT / WIND_FULL >= SEA_BALL.charge && seaBall.cd <= 0 && seaWeapon()) { seaWindCue = true; playSample('slosh', 0.45, 0.05, 1.55); }   // (enough: let go and it throws — `seaWindCue`)   // (the mace: a plain hold is its heavy sweep, Shift + hold the slam — `slamRate`)   // (the peg's Shift hold is its lunge, coiled, not raised)
     if (equipped.rapier) {
       pegWindPose(_pose, e, strain, dt);       // coiled for the lunge, or raised for the imbroccata
     } else if (thrusting()) {
@@ -22683,7 +23478,7 @@ function updateViewmodel(dt) {
     const bufOn = swingBuf > 0 && performance.now() - swingBuf < SWING_BUF * 1000;
     if (p >= 1) {
       if (equipped.rapier) { pegLastStage = pegStage; pegLastEnd = performance.now(); }
-      if (equipped.slam && slashing()) maceEndAt = performance.now();
+      if ((equipped.slam || equipped === katanaItem || bloodHeld()) && slashing()) maceEndAt = performance.now();   // (the blades' carried heavy too)
       digT = 0; digPower = 0; digCharged = false; digOverhead = false; pegStage = 0; pegQueued = false;
       if (bufOn && !frozen()) { swingBuf = 0; startDig(); }               // the held press: on the frame the swing is over
       swingBuf = 0;
@@ -24941,6 +25736,15 @@ const gy_lerp = (a, b, t) => a + (b - a) * t;
  * caches how far a unit reaches by the object. */
 const rubble = new Map();
 const _rbM = new THREE.Matrix4();
+const _rbKeys = new WeakMap();
+function rubbleMatKey(M) {
+  let k = _rbKeys.get(M); if (k) return k;
+  const c = (x) => (x && x.isColor ? x.getHexString() : '-');
+  k = [M.type, c(M.color), c(M.emissive), M.emissiveIntensity ?? '-', M.map ? M.map.uuid : '-', M.emissiveMap ? M.emissiveMap.uuid : '-', M.normalMap ? M.normalMap.uuid : '-',
+    M.roughness ?? '-', M.metalness ?? '-', M.transparent ? 1 : 0, M.opacity, M.side, M.flatShading ? 1 : 0, M.vertexColors ? 1 : 0, M.alphaTest, M.depthWrite ? 1 : 0, M.fog ? 1 : 0,
+    M.onBeforeCompile && M.onBeforeCompile.toString().length > 20 ? M.uuid : '-'].join('|');   // (a material with its own shader hook stays its own)
+  _rbKeys.set(M, k); return k;
+}
 function sleepGib(g) {
   const m = g.m;
   if (m.isSkinnedMesh || !m.material || Array.isArray(m.material) || m.children.length || !m.geometry) return false;
@@ -24949,10 +25753,12 @@ function sleepGib(g) {
   geo.applyMatrix4(_rbM.copy(m.matrixWorld));
 
   if (geo.index) geo = geo.toNonIndexed();
-  for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') geo.deleteAttribute(k);
+  for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv' && !(k === 'color' && m.material.vertexColors)) geo.deleteAttribute(k);   // (a vertex-coloured material keeps its colours — the tavern railing's shading: stripped, its settled pieces lay black)
   if (!geo.getAttribute('uv')) geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
   if (!geo.getAttribute('normal')) geo.computeVertexNormals();
-  const key = m.material.uuid + ':' + Math.floor(m.position.x / 48) + ':' + Math.floor(m.position.z / 48) + ':' + Math.floor(m.position.y / 48);
+  /* (keyed by how the material LOOKS, not which object it is — 2026-11-24: the gore's pieces each carry a copy of the same meat,
+   * so keyed by uuid every chunk was a rubble mesh of its own: 83 of them after 12 kills, folding saved nothing) */
+  const key = rubbleMatKey(m.material) + ':' + Math.floor(m.position.x / 48) + ':' + Math.floor(m.position.z / 48) + ':' + Math.floor(m.position.y / 48);
   let r = rubble.get(key);
   if (!r) { r = { mat: m.material, mesh: null, items: [], dirty: false, at: 0 }; rubble.set(key, r); }
   r.items.push({ geo, life: g.life });
@@ -25030,7 +25836,7 @@ function updateGibs(dt) {
      * of its thickness under, lying flat, and moves with the swell — it used
      * to be hidden the moment the sea covered it, which for a limb thrown
      * into the surf was a limb that vanished. */
-    const gbf = bunkerFloorAt(g.m.position.x, g.m.position.z, g.m.position.y);
+    const _gtf = inTavern ? tavFloorOut(g.m.position.x, g.m.position.z, g.m.position.y) : null, gbf = _gtf !== null ? _gtf : bunkerFloorAt(g.m.position.x, g.m.position.z, g.m.position.y);   // (out of the tavern's window: the ground below it)
     // a `dry` piece is inside something the sea does not reach (the wreck's stores, `smashShipStore`)
     const sub = gbf === null && !g.dry ? submersionAt(g.m.position.x, g.m.position.z) : 0;
     let rest = (gbf !== null ? gbf : deck !== null ? deck + 0.02 : g.restAt ? g.restAt(g.m.position.x, g.m.position.z) : g.rest) + g.half;
@@ -25051,7 +25857,12 @@ function updateGibs(dt) {
        * that pays for every draw that is the lag round the crate. Only what
        * cannot move again and cannot be reached by the water. */
       g.restT = (g.restT || 0) + dt;
-      if (g.restT > 0.35 && g.bleed === false && !g.bone && !g.keep && g.m.isMesh && g.m.visible
+      /* (AND GORE TOO, once it has lain still a second — 2026-11-24, the owner: "look for any lag … in this fight". Only a piece
+       * that will never bleed again was folded, so every chunk of meat, bone and baked limb a fight threw stayed a draw of its own
+       * for its whole life: measured (`tools/fightlag.js`), 16 kills left 120 loose pieces and the draws went from ~410 to ~490,
+       * the 95th-percentile frame 4.6 → 9.4 ms over a minute. Nothing touches a settled piece again but a crypt's crumbling bone.) */
+      const gore = g.bleed !== false && g.restT > 1.0 && g.crumbleAt === undefined;
+      if (g.restT > 0.35 && (g.bleed === false || gore) && (!g.bone || gore) && !g.keep && g.m.isMesh && g.m.visible
           && (gbf !== null || g.dry || (g.m.position.x > 9.4 && submersionAt(g.m.position.x, g.m.position.z) === 0))
           && sleepGib(g)) gibs.splice(i, 1);
       continue;
@@ -25546,13 +26357,13 @@ function updateCrabUnit(u, dt) {
    * the moment the model lands and nothing posed on it can be seen. */
   if (u.st.recoil > 0) {
     u.st.recoil = Math.max(0, u.st.recoil - dt);
-    const k = u.st.recoil / CRAB_RECOIL;
-    u.g.position.copy(u.hitFrom).addScaledVector(u.hitDir, 0.5 * (1 - k));
+    const k = Math.min(1, u.st.recoil / (u.st.recoilT || CRAB_RECOIL));
+    u.g.position.copy(u.hitFrom).addScaledVector(u.hitDir, (u.st.recoilD || 0.5) * (1 - k * k));   // (`recoilD`: the kick's longer shove, eased out)
     u.g.position.y = beachRestY(u.g.position.x, u.g.position.z, 1.15);
     u.g.scale.set(u.base * (1 + 0.18 * k), u.base * (1 - 0.22 * k), u.base * (1 + 0.18 * k));
     u.st.scuttle += dt * 1.4;
     crabAnim(u, dt, false, 0);
-    if (u.st.recoil <= 0) u.g.scale.setScalar(u.base);
+    if (u.st.recoil <= 0) { u.g.scale.setScalar(u.base); u.st.recoilD = 0; u.st.recoilT = 0; }
     return;
   }
   // ---- the leash: too far from home and it goes back (`CRAB_LEASH`), never mid-swing
@@ -25597,7 +26408,7 @@ function updateCrabUnit(u, dt) {
       crabAnim(u, dt, false, 0);
       return;
     }
-    if (was < CRAB_WIND && t >= CRAB_WIND) { sfxCrabSnip(); u.st.landed = false; }
+    if (was < CRAB_WIND && t >= CRAB_WIND) { sfxCrabSnip(); u.st.landed = false; if (MAR.u) marCaught(u, CRAB_REACH + 0.3, 1); }   // (and the marionette, if he is at its claws: `marCaught`)
     if (t >= CRAB_WIND && t < CRAB_WIND + CRAB_STRIKE && !u.st.landed) {
       /* Re-tested here, not when the wind-up began: the tell is only fair if
        * getting out of the way is a thing that works. Three outcomes now —
@@ -29040,11 +29851,9 @@ const BRADLY_SCRIPT = {
    * his burpees (`bradlyScurry`), for good. */
   needle: {
     text: "I can make a fair assumption why you're down here with a needle on you. Embarrassing, you know that blue stuff doesn't really help you right?",
-    choices: [{ label: 'What are you talking about?', to: 'blood' }],
-  },
-  blood: {
-    text: 'Injecting the horseshoe blood. People say it has healing properties, not only that but can change you for the better. I tried it in high school and all I did was shit blue for weeks.',
-    // (his last word now: "What else do they say about this beach?" and the rumours reply are out, 2026-10-17, the owner)
+    /* (HIS LAST WORD NOW — 2026-11-26, the owner: "TAKE OUT BRADELYS WHOLE INJECTING HORESHOE CRAB BLOOD LINE": the line after this
+     * one ("Injecting the horseshoe blood. People say it has healing properties …") and the question that led to it are gone; what
+     * that line did — arm his scurry, wait for your click — is here.) */
     say: () => { bradlyScurry.armed = true; },     // however the box is closed now, he goes
     // he waits for you to click away (the owner's word): no timer ends it
     hint: 'click to leave', end: false,
@@ -29712,6 +30521,7 @@ const SAMPLES = {
   skrimTalk: Array.from({ length: 3 }, (_, i) => `assets/skrim-talk${i + 1}.m4a`),
   skrimHang: ['assets/skrim-hang1.m4a'],
   skrimDie: ['assets/skrim-die1.m4a'],             // (the owner's "skrim death sound", 2026-11-21)
+  artAttach: ['assets/artifact-attach.m4a'],      // (the owner's "artifact soound": taken, set in, taken off — `sfxArtAttach`, 2026-11-25)
   // and the very old fisherman's (2026-11-23, the owner's "New Recording 6": "make them the fisher dialog sounds"): `FISHER_VOX`
   fisherTalk: Array.from({ length: 4 }, (_, i) => `assets/fisher-talk${i + 1}.m4a`),
   gullCry: ['assets/gull-cry1.m4a', 'assets/gull-cry2.m4a'],
@@ -29747,6 +30557,17 @@ const SAMPLES = {
   metalHeavy: Array.from({ length: 4 }, (_, i) => `assets/metal-heavy${i + 1}.m4a`),
   metalScrape: Array.from({ length: 3 }, (_, i) => `assets/metal-scrape${i + 1}.m4a`),
   metalRattle: ['assets/metal-rattle1.m4a'],
+  // (a locked door tried: the owner's own latch, "latchlocked2.wav" — 2026-11-26, "use this sound when a door is locked". `sfxDoorLocked`)
+  doorLocked: ['assets/door-locked.m4a'],
+  // (the kick connecting — with anything: the owner's "BODY KICK" file, its second blow, 4.04-4.6 s — 2026-11-26. `sfxKickHit`)
+  kickHit: ['assets/kick-hit.m4a'],
+  // (wood breaking, from the owner's sound library — 2026-11-26, "need better wood breaking sound effects": a crate's, a plank's, furniture's)
+  woodCrateBreak: Array.from({ length: 5 }, (_, i) => `assets/wood-crate-break${i + 1}.m4a`),
+  woodPlankBreak: Array.from({ length: 4 }, (_, i) => `assets/wood-plank-break${i + 1}.m4a`),
+  woodFurnBreak: ['assets/wood-furniture-break1.m4a', 'assets/wood-furniture-break2.m4a'],
+  // (a board landing, hard and soft — 2026-11-26, "improve the breakables again": the pieces knocked a synth tick)
+  woodImpactHard: ['assets/wood-plank-impact-hard1.m4a', 'assets/wood-plank-impact-hard2.m4a', 'assets/wood-plank-impact-hard3.m4a', 'assets/wood-box-impact-hard1.m4a', 'assets/wood-box-impact-hard2.m4a'],
+  woodImpactSoft: ['assets/wood-plank-impact-soft1.m4a', 'assets/wood-plank-impact-soft2.m4a'],
   // and his "Low Pitched Metal creaks and stress Groans" for the wreck (2026-11-18): `updateWreckGroans`
   shipGroan: Array.from({ length: 5 }, (_, i) => `assets/ship-groan${i + 1}.m4a`),
 };
@@ -29765,6 +30586,18 @@ function loadSamples() {
   }
 }
 // plays a random one from the bank; returns false if nothing has loaded yet
+// a locked door tried, where it is (`doorLocked`, the owner's latch); the old knock if the file has not come in
+// the kick landing, on whatever it met (`kickHit`, the owner's); a thud until it has loaded. `k` scales it: a body full, a prop less
+function sfxKickHit(k = 1) {
+  if (playSample('kickHit', 0.95 * k, 0.06, 0.96 + Math.random() * 0.08)) return;
+  sfxKillThud(0.7 * k);
+}
+const _sfxDL = new THREE.Vector3();
+function sfxDoorLocked(x, z) {
+  if (x !== undefined && playSampleAt('doorLocked', x, z, { gain: 1.0, ref: 6, far: 30, jitter: 0.03 })) return;
+  if (playSample('doorLocked', 0.9, 0.03)) return;
+  sfxThud(0.03);
+}
 function playSample(name, gain = 1, rateJitter = 0, rate = 1, delay = 0, dest = null) {
   const ctx = audioCtx; if (!ctx) return false;
   const bank = (sampleBanks[name] || []).filter(Boolean);
@@ -31653,6 +32486,7 @@ let splashTimer = 0, rippleTimer = 0;
 let trauma = 0;                     // 0..1, decays; shake is trauma squared
 let hitstop = 0;                    // seconds of near-frozen time after a hit
 let hitstopFrame = false;           // this frame's dt was scaled by it (true on the frame it drains to zero, too)
+let killSlow = 0; const KILL_SLOW = 0.24;   // after a heavy that kills, the world's slow beat (`killMutant`; 0.36 at a third of speed until 2026-11-24, "laggy")
 let landDip = 0;                    // camera sink on landing, eased back out
 let coyote = 0, jumpBuf = 0;        // late-jump grace / early-press memory
 const COYOTE_TIME = 0.12, JUMP_BUFFER = 0.14;
@@ -32312,23 +33146,34 @@ const TAUNT_AT = [-0.42, 0.02], TAUNT_ROLL = -0.44;
  * own brightness and its colour, the moon's blue on the beach, a bulb's amber by a bulb — `HAND_LUM_K` over the photo's own
  * exposure. One read, on the frame the hand comes out, never every frame.) */
 const HAND_LUM = { want: null, last: new THREE.Color(0.3, 0.3, 0.32) }, HAND_LUM_K = 1.9 / 0.42;
-function handTint(at, u) {
+function handTint(at, u, rects = null) {
   u.tint.value.copy(HAND_LUM.last);              // (the last place's, for the one frame before this one is read)
-  HAND_LUM.want = u;
+  HAND_LUM.want = u; HAND_LUM.rects = rects; HAND_LUM.ease = 1;
   return HAND_LUM.last;
 }
+/* (THE LEG LIT WHERE IT IS, 2026-11-26, the owner: "make the trim on the leg way better too and have it react to the lighting like
+ * the hands". The leg was lit once, from the screen's middle-right — the hands' place, where an arm reaches — but the leg is
+ * the bottom of the picture: the floor at your feet, a lamp's pool or the dark under a wall. It reads the strips either side
+ * of where it is drawn, low on the screen (screen fractions, GL's y up), at its start and again every few frames as it
+ * plays, eased — so a kick into a lamp's light, or out of it, takes it as it goes.) */
+const KICK_LUM_RECTS = [[0.04, 0.04, 0.24, 0.42], [0.72, 0.04, 0.24, 0.42]];
+const _hlC = new THREE.Color();
 const _hlLin = new Float32Array(256); for (let i = 0; i < 256; i++) _hlLin[i] = Math.pow(i / 255, 2.2);
 function handLumSample() {
   const u = HAND_LUM.want; HAND_LUM.want = null; if (!u) return;
   const gl = renderer.getContext(), cv = renderer.domElement, W = cv.width, H = cv.height;
-  const x0 = Math.floor(W * 0.5), y0 = Math.floor(H * 0.25), w = Math.max(1, Math.floor(W * 0.45)), h = Math.max(1, Math.floor(H * 0.5));
-  const px = new Uint8Array(w * h * 4);
-  try { gl.readPixels(x0, y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); } catch (e) { return; }
+  const R = HAND_LUM.rects || [[0.5, 0.25, 0.45, 0.5]], ease = HAND_LUM.ease ?? 1; HAND_LUM.rects = null; HAND_LUM.ease = 1;
   let r = 0, g = 0, b = 0, n = 0;
-  for (let i = 0; i < px.length; i += 16) { r += _hlLin[px[i]]; g += _hlLin[px[i + 1]]; b += _hlLin[px[i + 2]]; n++; }
+  for (const [fx, fy, fw, fh] of R) {
+    const x0 = Math.floor(W * fx), y0 = Math.floor(H * fy), w = Math.max(1, Math.floor(W * fw)), h = Math.max(1, Math.floor(H * fh));
+    const px = new Uint8Array(w * h * 4);
+    try { gl.readPixels(x0, y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); } catch (e) { return; }
+    for (let i = 0; i < px.length; i += 16) { r += _hlLin[px[i]]; g += _hlLin[px[i + 1]]; b += _hlLin[px[i + 2]]; n++; }
+  }
   if (!n) return;
   const c = (v) => THREE.MathUtils.clamp(v / n * HAND_LUM_K, 0.045, 1.0);
-  HAND_LUM.last.setRGB(c(r), c(g), c(b));
+  _hlC.setRGB(c(r), c(g), c(b));
+  HAND_LUM.last.lerp(_hlC, ease);
   u.tint.value.copy(HAND_LUM.last);
 }
 function startTaunt() {
@@ -32369,6 +33214,238 @@ function tauntTick(dt) {
   u.rect.value.set(f[0] / M.SW, 1 - (f[1] + f[3]) / M.SH, f[2] / M.SW, f[3] / M.SH);
   u.box.value.set(f[4], f[5], f[2], f[3]);
   tauntHand.visible = true;
+}
+/* ---- THE KICK (2026-11-25, the owner: IMG_7253 — "add this kick like the hands retro for when you hit q. make it knock enemies off
+ * balance but they have active self balance physics make it satisfying if it a death kill make them fly further. make it a kick like in
+ * other games like dark messiah that knocks people over and they get back up sometimes too. bosses should not be knocked over easy").
+ * His own right leg cut out of the clip (`tools/kick_pack.py`, the taunt's retro: four frames, the leg up and the sole out, frames 41-43
+ * coming down cut ragged) played UP, HELD, and back DOWN the same frames, sliding off the bottom of the screen, laid as his phone had it
+ * — the picture a little taller than the screen (`KICK_TALL`), the sole out at the lower middle. The taunt's shader and light.
+ * On the frame the sole is out (`KICK_STRIKE`) the one nearest in front of you within reach is struck (`kickStrike`): his guard does not
+ * stop it; a small hurt (`KICK_DMG`); his body thrown off balance — the active body struck at the chest (`larHit`), a shove of a
+ * stride and more (`flinchPush`), his blow broken off and a stagger; now and then (more if he was winding up) he goes over and gets up
+ * again (`mutKnockdown`, the reels his kind carries). A kick that kills throws him far (`killFling`, the dark knight's own throw). A
+ * boss (`kickBoss`) takes it as a shove: no broken blow, a short stagger, almost never down. Nothing in front: the castle's props,
+ * crates and glass along the kick (`castleStrike` …, as the hook's iron takes them). Q (put-away moved: the weapon's own slot key). */
+const KICK = { m: null, ready: false, on: false, t: 0, cd: 0, struck: false, sc: null };
+const kickLeg = new THREE.Mesh(pipeHand.geometry, pipeHand.material.clone());
+kickLeg.name = 'kickLeg'; kickLeg.visible = false; kickLeg.frustumCulled = false; kickLeg.renderOrder = 1e6; kickLeg.raycast = () => {};
+scene.add(kickLeg);
+fetch('assets/hud/kick-leg.json').then((r) => r.json()).then((m) => {
+  KICK.m = m;
+  new THREE.TextureLoader().load('assets/hud/kick-leg.webp', (t) => {
+    t.colorSpace = THREE.SRGBColorSpace; t.minFilter = t.magFilter = THREE.LinearFilter; t.generateMipmaps = false;
+    const u = kickLeg.material.uniforms; u.map.value = t; u.shade.value.set(1, 1); u.useDepth.value = 0; u.fh.value = m.H;
+    try { renderer.initTexture(t); } catch (e) { /* on first sight instead */ }
+    KICK.ready = true;
+  });
+}).catch((e) => console.warn('[kick] his leg did not load', e));
+const KICK_SEQ = [0, 1, 2, 3, 3, 3, 3, 2, 1, 0], KICK_FPS = 15, KICK_STRIKE = 3, KICK_DROP = 3;   // (frames of the sheet; the sole out on the 4th)
+const KICK_STAM = 0.2;   // (a fifth of the bar a kick: `startKick`)
+const KICK_PROP = 7.0;   // (the weight a kick breaks a prop with: wood, clay, a sack, produce — not stone, `CP_MAT`)
+const KICK_TALL = 2.9, KICK_X = 0.04, KICK_Y = 0.3, KICK_CD = 0.75, KICK_REACH = 2.0, KICK_DMG = 1;   // (2.15 tall and centred: filmed, the leg read thin and low on a wide screen)
+function startKick() {
+  if (!KICK.ready || KICK.on || KICK.cd > 0 || TAUNT.on || HG.on || peeking || inspecting || frozen() || dying || deepNoHands) return false;
+  /* (A KICK COSTS YOU — 2026-11-26, the owner: "the kick should take a decent amount of stamina so you cant spam it". A fifth of the bar
+   * (a light swing is 0.04, a full charge 0.08), in or out of a fight; with less than half that left, or winded, there is no kick —
+   * a breath out instead.) */
+  if (exhausted || stamina < KICK_STAM * 0.5) { const n = performance.now(); if (n - (KICK.gasp || 0) > 900) { KICK.gasp = n; try { sfxGasp(); flashPrompt('<b>OUT OF BREATH</b>', 700); } catch (e) {} } return false; }
+  stamina = Math.max(0, stamina - KICK_STAM); if (stamina <= 0.001) exhausted = true;
+  KICK.on = true; KICK.t = 0; KICK.struck = false; KICK.cd = KICK_CD;
+  camera.getWorldDirection(_hgD); _hgP.copy(camera.position).addScaledVector(_hgD, 0.6);
+  handTint(_hgP, kickLeg.material.uniforms, KICK_LUM_RECTS);
+  try { playSample('katSwing', 0.42, 0.08, 0.62); } catch (e) {}   // (the blade's whoosh, low and slow: a leg through the air)
+  return true;
+}
+const kickBoss = (u) => !!(u.kind.kingBody || u.kind.boss || u.kind.bossDeath || (u.kind.hp || 0) >= 40 || (u.kind.h || 1.8) >= 2.6);
+const _kkD = new THREE.Vector3(), _kkC = new THREE.Vector3(), _kkT = new THREE.Vector3();
+function kickStrike() {
+  camera.getWorldDirection(_kkD); _kkD.y = 0; if (_kkD.lengthSq() < 1e-6) return; _kkD.normalize();
+  const c = camera.position, feet = c.y - playerEye();
+  /* (A JUMP KICK — 2026-11-26, the owner: "make jump kicks more likely to knock someone down and they go further", "I SHOULD BE ABLE TO
+   * JUMP OFF LEDGES AND KICK PEOPLE MID AIR TOO IN THE DIRECTION I KICK THEM". In the air when the sole goes out: it reaches a man
+   * up to 2.4 m below your feet (off a ledge onto him), a little further out, and lands with your weight behind it — `KICK.air`.) */
+  KICK.air = !onGround || !!KICK.forceAir;   // (`forceAir`: a probe's jump kick, `tools/kicktunnel.js &air=1`)
+  const below = KICK.air ? 2.4 : 1.2, reachX = KICK.air ? 0.6 : 0;
+  let best = null, bd = Infinity;
+  const DB = typeof window !== 'undefined' && Array.isArray(window.__kickDbg) ? window.__kickDbg : null;
+  for (const u of mutants) {
+    const p = u.g.position, dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
+    if (DB && d < 3) DB.push([u.kindName, d.toFixed(2), u.st.alive, u.g.visible, !!u.st.puppet, !!u.st.struck, !!u.cpAlly, u.st.down || 0, (p.y - feet).toFixed(2), ((dx * _kkD.x + dz * _kkD.z) / (d || 1)).toFixed(2)].join(' '));
+    if (!u.st.alive || !u.g.visible || u.st.puppet || u.st.struck || minoAlly(u) || gargImmune(u) || u.cpAlly || u.kickRag) continue;   // (a man down or getting up CAN be kicked again — 2026-11-26, "when getting up they can be kicked again too")
+    if (d > KICK_REACH + reachX + (u.kind.body || 0.45) || p.y - feet > 1.2 || feet - p.y > below) continue;
+    if ((dx * _kkD.x + dz * _kkD.z) / (d || 1) < 0.64 && d > 0.6) continue;     // (in front: about 50° either side)
+    // (and not through a wall: the line to his chest against what is drawn)
+    { _kkT.set(p.x - c.x, p.y + (u.kind.h || 1.8) * 0.55 - c.y, p.z - c.z); const L = _kkT.length(); _kkT.multiplyScalar(1 / (L || 1));
+      const h = worldDrawnHit(c, _kkT, L, 0.05); if (h && h.t < L - 0.45) continue; }
+    if (d < bd) { bd = d; best = u; }
+  }
+  if (DB) DB.push('men: best ' + (best ? best.kindName : 'none') + ' inFort ' + inFort);
+  if (best) { kickMan(best); return; }
+  /* THE CRABS (2026-11-26, the owner: "i couldnt even kick crabs fix the kick it should hit hard and be cool"): the nearest live crab
+   * in front within reach — the loner, the pack, the cove's — takes the kick's damage, is booted 1.7 m along it (`recoilD`, the
+   * recoil's own slide) and knocked off its guard (`stun` 0.7 s: the riposte window, so the next blow counts double). */
+  { let cb = null, cd = Infinity;
+    for (const u of crabs) {
+      if (!u.st.alive || u.st.struck || !u.g.visible) continue;
+      const p = u.g.position, dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
+      if (d > KICK_REACH + 0.55 || Math.abs(p.y - feet) > 1.0 || d >= cd) continue;
+      if ((dx * _kkD.x + dz * _kkD.z) / (d || 1) < 0.55 && d > 0.6) continue;
+      cb = u; cd = d;
+    }
+    if (cb) {
+      const killed = hurtCrab(cb, KICK_DMG, 0.7);
+      if (!killed && cb.st.alive) {
+        cb.hitDir.copy(_kkD); cb.hitFrom.copy(cb.g.position); cb.st.recoil = cb.st.recoilT = CRAB_RECOIL * 1.6; cb.st.recoilD = 1.7;
+        cb.st.stun = Math.max(cb.st.stun || 0, 0.7); cb.st.atk = -1;
+      }
+      sfxKickHit(1); addTrauma(0.42); hitstop = Math.max(hitstop, 0.08); fovKick = Math.max(fovKick, 4);
+      KICK.lastCrab = cb; return;
+    }
+  }
+  /* THE MERCHANT (2026-11-26, the owner: "make kicking the merchant count as a real hit"): within reach in front, either of him,
+   * the blow is his as a swing's is (`traderStruck`: the line, then the gun). */
+  if (!(TRADER_RAGE.busy || dying || inRoom())) for (const which of [1, 2]) {
+    const W0 = which === 2 ? trader2World : traderWorld; W0.getWorldPosition(_trA);
+    const dx = _trA.x - c.x, dz = _trA.z - c.z, d = Math.hypot(dx, dz);
+    if (d > KICK_REACH + 0.5 || Math.abs(_trA.y - feet) > 1.2 || ((dx * _kkD.x + dz * _kkD.z) / (d || 1) < 0.55 && d > 0.6)) continue;
+    traderStruck(which, _kkC.set(_trA.x, _trA.y + 0.9, _trA.z)); sfxKickHit(1); addTrauma(0.3); KICK.lastTrader = which; return;
+  }
+  if (inTavern && tavRailKick(c, _kkD)) { sfxKickHit(0.9); addTrauma(0.2); return; }   // (the tavern window's railing: `tavRailKick`)
+  // (a brazier in front within reach: over, the way you kicked it — "they can be kicked in")
+  if (inFort) for (const B of fortBraziers) { if (!B.up) continue; const dx = FORT_X + B.x - c.x, dz = FORT_Z + B.z - c.z, d = Math.hypot(dx, dz);
+    if (d > KICK_REACH + 0.3 || ((dx * _kkD.x + dz * _kkD.z) / (d || 1) < 0.55 && d > 0.5)) continue;
+    brazierTopple(B, _kkD.x, _kkD.z, 1); sfxKickHit(0.9); addTrauma(0.25); KICK.lastBrazier = B; return; }
+  /* THE GULLS, flying low, down on the deck stunned, or dead on it (2026-11-26, the owner: "i couldnt kick seagull fix this even when
+   * they are downed"): the swing's `gullStrike` is a line from your eye, and a bird at your feet is under it. The nearest bird in
+   * front within reach and no higher than your chest: a live one takes the kick's damage (`hurtGull` — doubled on a stunned one,
+   * which finishes it), a dead one is booted along the deck (`rdKick`, its ragdoll woken). */
+  { let gb = null, gd = Infinity, gp = null;
+    for (const u of gulls) {
+      if (!u.g.visible || u.st.phase === 'gone') continue;
+      let p = u.g.position;
+      if (!u.st.alive) { const rd = u.rd; if (!rd || !rd.on) continue; _kkC.set(0, 0, 0); for (let i = 0; i < GULL_RD.N; i++) _kkC.x += rd.x[i * 3], _kkC.y += rd.x[i * 3 + 1], _kkC.z += rd.x[i * 3 + 2]; p = _kkC.multiplyScalar(1 / GULL_RD.N); }
+      const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
+      if (d > KICK_REACH + 0.3 || p.y < feet - 0.5 || p.y > feet + 1.4 || d >= gd) continue;
+      if ((dx * _kkD.x + dz * _kkD.z) / (d || 1) < 0.55 && d > 0.5) continue;
+      gb = u; gd = d; gp = p.clone();
+    }
+    if (gb) {
+      gb.hitDir.copy(_kkD);
+      if (gb.st.alive) hurtGull(gb, KICK_DMG, 0.7);
+      else { rdKick(gb, _kkD.x * 5.5, 2.6, _kkD.z * 5.5, 6 * (Math.random() < 0.5 ? -1 : 1)); gullFeathers(gb, 6); playSample('fleshHit', 0.55, 0.05, 1.3); }
+      sfxKickHit(0.8); addTrauma(0.22); KICK.lastGull = gb; return;
+    }
+  }
+  /* A BODY ON THE GROUND TAKES THE BOOT (2026-11-25, "improve the physics"): the blade moved a corpse (`ragHit`) and the kick went
+   * through it. The nearest joint of a body in front of you within reach, if nothing nearer stands there to be broken, is kicked —
+   * `ragKick`: it and what is within a metre of it thrown along the kick and a little up, no blood, nothing cut; the body's own
+   * leash still holds it to where it fell. */
+  let cq = null, cqu = null, cqd = Infinity;
+  for (const u of mutants) {
+    const r = u.rag; if (!r || !u.g.visible || !r.parts.length) continue;
+    const h0 = r.parts[0].p; if (Math.abs(h0.x - c.x) > KICK_REACH + 2 || Math.abs(h0.z - c.z) > KICK_REACH + 2) continue;
+    for (const q of r.parts) {
+      const dx = q.p.x - c.x, dz = q.p.z - c.z, d = Math.hypot(dx, dz);
+      if (d > KICK_REACH * 0.85 || d >= cqd || q.p.y < feet - 0.6 || q.p.y > feet + 1.2) continue;
+      if ((dx * _kkD.x + dz * _kkD.z) / (d || 1) < 0.6 && d > 0.45) continue;
+      cq = q; cqu = u; cqd = d;
+    }
+  }
+  // a castle's prop in front of you within reach: kicked over and in (`cpBreak` at a kick's weight — the stone well and fountain hold)
+  { const sid = inFort ? 'fort' : inC13 ? 'c13' : inThrone ? 'thr' : null, site = sid && CP.sites[sid];
+    if (site && site.built) {
+      let bp = null, bpd = Infinity;
+      for (const P of site.props) {
+        if (P.dead || P.on || P.kind.K.fixed || P.y > feet + 1.2) continue;   // (what stands on the floor: a box on a crate falls when the crate goes)
+        const dx = P.x - c.x, dz = P.z - c.z, d = Math.hypot(dx, dz) - P.kind.r * 0.7;
+        if (d > KICK_REACH || ((dx * _kkD.x + dz * _kkD.z) / (Math.hypot(dx, dz) || 1) < 0.6 && d > 0.4)) continue;
+        if (d < bpd) { bpd = d; bp = P; }
+      }
+      if (DB) DB.push('props: site ' + sid + ' nearest ' + (bp ? bp.kind.name + ' ' + bpd.toFixed(2) : 'none'));
+      if (bp && cq && cqd < bpd + 0.2) bp = null;                       // (a body nearer than the prop: the body, below)
+      if (bp && KICK_PROP >= CP_MAT[bp.kind.K.mat].brk) { cpBreak(bp, KICK_PROP, _kkT.set(c.x, feet + 0.6, c.z)); sfxKickHit(0.8); addTrauma(0.2); return; }
+      if (bp) { sfxKickHit(0.85); addTrauma(0.25); try { sfxGargSmack(bp.x, bp.z, 0.6); } catch (e) {} return; }   // (stone: the kick stops on it)
+    } }
+  if (cq) { ragKick(cqu, cq, _kkD.x, _kkD.z); sfxKickHit(0.9); addTrauma(0.16); KICK.lastBody = cqu; return; }
+  // nothing to kick but what stands in the way: the castle's props, a crate, glass — down the kick's line, a little under the eye
+  /* …the swing's own world (`digImpactCore` with `KSTRIKE.on`): down the line from your eye to a point a stride and a half
+   * ahead, a foot off the floor — where a boot lands, whatever you look at — and on a little past it, so the sand is met.
+   * Looking down at something nearer, the look's own line if it meets the floor sooner. */
+  const keep = _aimD.clone(), kp = digPower;
+  _kkT.set(c.x + _kkD.x * 1.4, feet + 0.3, c.z + _kkD.z * 1.4).sub(c); const L = _kkT.length();
+  camera.getWorldDirection(_aimD);
+  const lookT = _aimD.y < -0.2 ? (c.y - feet) / -_aimD.y : Infinity;
+  if (!(lookT < L * 1.3)) _aimD.copy(_kkT).multiplyScalar(1 / L);
+  aimFarOver = Math.min(KICK_REACH + 0.6, lookT < L * 1.3 ? lookT + 0.2 : L * 1.3); digPower = 0.7;
+  KSTRIKE.on = true; let hit = false;
+  try { hit = digImpactCore(); } catch (e) { console.warn('[kick] strike', e); }
+  finally { KSTRIKE.on = false; aimFarOver = 0; _aimD.copy(keep); digPower = kp; }
+  KICK.lastWorld = hit;
+  if (hit) { sfxKickHit(0.75); addTrauma(0.18); }
+}
+function kickMan(u) {
+  const boss = kickBoss(u), was = u.st.atk >= 0, B = u.life && u.life.B;
+  (B && (B.chest || B.waist) ? (B.chest || B.waist).getWorldPosition(_kkC) : _kkC.copy(u.g.position).setY(u.g.position.y + (u.kind.h || 1.8) * 0.55));
+  u.st.block = 0; u.st.parryT = 0;                                   // (a kick goes through a guard: that is what it is for)
+  if (!boss && u.st.hp <= KICK_DMG) {                                // A KICK THAT KILLS: thrown down the street
+    /* (ALONG THE KICK — 2026-11-26, the owner: "when kicked as a death blow make the enemy go flying in the direction kicked". Two
+     * things turned it: the kill takes its line from the last blade blow on record (`blowHitDir` reads `BLOW` while it is his),
+     * and a farmer could roll his on-his-feet death (`farmZDieRoll`) instead of the throw. The record is let go, and a fling
+     * never dies standing.) */
+    if (BLOW.u === u) BLOW.on = false;
+    u.st.killFling = KICK.air ? 1.1 : 0.8; u.st.kickKill = true;   // (toned down, 2026-11-26: "TONE THE KILL KICKS DOWN A BIT" — 1.5 / 1.1 before) u.hitDir.copy(_kkD); u.lastHitMine = true;   // (`kickKill`: his boots go with him, `updateMutRagdoll`'s ground pass)
+    hurtMutant(u, KICK_DMG, 1);
+    if (u.st.alive && !u.st.struck && u.st.hp > 0) u.st.killFling = 0;   // (`struck`: dying — `alive` goes false a beat later — 2026-11-26) (he took it and lived — armour, a ward: the throw is not left on him for the next blow to spend)
+  } else {
+    hurtMutant(u, KICK_DMG, boss ? 0.25 : 0.9);
+    if (!u.st.alive) return;
+    // off balance: the active body struck at the chest along the kick, and shoved — a stride and more; a boss is moved, not taken
+    const _toWin = !boss && tavWindowAhead(u, _kkD);
+    if (!boss && (((u.st.down || 0) > 0 || u.st.knocked) || _toWin) && kickRagStart(u, _kkD.x, _kkD.z, _toWin ? 1.8 : KICK.air ? 1.5 : 1)) {   // (and at the tavern's window from close by: out of it, `tavWindowAhead`)
+      if (_toWin) tavWindowThrow(u, _kkD);
+      sfxKickHit(1); try { sfxMutHit(u.kind.voice); } catch (e) {} addTrauma(0.35); hitstop = Math.max(hitstop, 0.06);
+      KICK.lastHit = { u, boss, killed: false, down: true, rag: true }; return;
+    }
+    const _wasAtk = u.st.atk; if (!boss) u.st.atk = -1;
+    try { larHit(u, _kkC, _kkT.copy(_kkD).setY(0.15), boss ? 0.5 : 1.6); } catch (e) {}
+    if (boss && _wasAtk >= 0) u.st.atk = _wasAtk;
+    u.st.flinchPush = { x: _kkD.x, z: _kkD.z, v: boss ? 1.1 : 4.6, d: 5.5 };
+    if (!boss) { u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.stun = Math.max(u.st.stun || 0, 0.65); u.st.cool = Math.max(u.st.cool || 0, 0.8); }
+    else u.st.stun = Math.max(u.st.stun || 0, 0.12);
+    // over, now and then — more often caught mid-swing; a boss almost never
+    const pDown = boss ? (KICK.air ? 0.08 : 0.03) : KICK.air ? 0.85 : was ? 0.55 : 0.32;   // (a jump kick nearly always: `KICK.air`)
+    /* (AND THE MUTANTS, NOW AND THEN — 2026-11-26, the owner: "make mutants get knocked over by some kicks too not as much as farmers".
+     * A kind with no knockdown clips is thrown as the one-piece ragdoll (`kickRagStart`) and rises into its roar, `kickRagRise`.) */
+    const mutOver = !u.kind.knockClip && !boss && u.clips && (u.clips.roar || u.clips.idle) && (u.kind.h || 1.8) <= 2.7 && !u.kind.stone && !u.kind.wood;
+    if (mutOver && Math.random() < (KICK.air ? 0.45 : was ? 0.22 : 0.12)) { kickRagStart(u, _kkD.x, _kkD.z, KICK.air ? 1.5 : 0.9); }
+    else if (u.kind.knockClip && u.clips && u.clips[u.kind.knockClip] && u.clipAz && !(boss && (u.st.down || 0) > 0) && Math.random() < pDown) {   /* (a boss already down is kicked where he lies — hurt and shoved, never knocked down a second time over the first: "MAKE IT YOU CAN KICK THE FINAL BOSS WHEN HES DOWN TOO", 2026-11-26) */ if (boss || !kickRagStart(u, _kkD.x, _kkD.z, KICK.air ? 1.7 : 1)) mutKnockdown(u); }   // (thrown as one piece, and up again: `kickRagStart`)
+  }
+  sfxKickHit(boss ? 0.85 : 1); try { sfxMutHit(u.kind.voice); } catch (e) {}
+  addTrauma(boss ? 0.22 : 0.4); hitstop = Math.max(hitstop, 0.07); fovKick = Math.max(fovKick, 4);
+  KICK.lastHit = { u, boss, killed: !u.st.alive, down: (u.st.down || 0) > 0 || !!u.kickRag, rag: !!u.kickRag };
+}
+function kickTick(dt) {
+  if (KICK.cd > 0) KICK.cd = Math.max(0, KICK.cd - dt);
+  if (!KICK.on) return;
+  if (peeking || dying || HG.on || inspecting) { KICK.on = false; kickLeg.visible = false; return; }
+  KICK.t += dt;
+  const M = KICK.m, fi = Math.floor(KICK.t * KICK_FPS);
+  if (fi >= KICK_SEQ.length + KICK_DROP) { KICK.on = false; kickLeg.visible = false; return; }
+  if (!KICK.struck && fi >= KICK_STRIKE) { KICK.struck = true; kickStrike(); }
+  if (fi !== KICK.lumF && fi % 3 === 1) { KICK.lumF = fi; HAND_LUM.want = kickLeg.material.uniforms; HAND_LUM.rects = KICK_LUM_RECTS; HAND_LUM.ease = 0.5; }   // (and again as it plays: `KICK_LUM_RECTS`)
+  const f = M.frames[KICK_SEQ[Math.min(fi, KICK_SEQ.length - 1)]], u = kickLeg.material.uniforms;
+  // in from below and out again below: the first frame rises the last third of the way, the end slides away
+  const drop = fi < 1 ? 0.35 * (1 - KICK.t * KICK_FPS) : fi >= KICK_SEQ.length - 2 ? 0.55 * (KICK.t * KICK_FPS - (KICK_SEQ.length - 2)) : 0;
+  camera.updateMatrixWorld(true);
+  const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), k = PH_D * t, s = KICK_TALL / M.H;
+  const X = KICK_X + s * (f[4] - M.W / 2), Y = KICK_Y - s * (f[5] - M.H / 2) - drop;
+  kickLeg.position.copy(camera.localToWorld(_phV.set(X * k, Y * k, -PH_D)));
+  kickLeg.quaternion.copy(camera.quaternion);
+  kickLeg.scale.set(s * f[2] * k, s * f[3] * k, 1);
+  u.rect.value.set(f[0] / M.SW, 1 - (f[1] + f[3]) / M.SH, f[2] / M.SW, f[3] / M.SH);
+  u.box.value.set(f[4], f[5], f[2], f[3]);
+  kickLeg.visible = true;
 }
 // frame `fi` (0 = the clip's FIRST) laid for this frame's camera, `drop` half-heights down (in from / out to below the screen)
 /* MOVED TO WHERE IT MAKES SENSE (2026-11-21, the owner: the reach "looks like you arent grabbing for the screwdriver" and
@@ -36424,7 +37501,39 @@ function pullGrate() {
   addTrauma(0.1);
   removeInteractable(F);
   addInteractable(F, 'Crawl into the pipe', 'default', { onActivate: () => startPipe(true) });
-  grateMakeProp(true);
+  /* (SEEN TO COME OFF — 2026-11-26, the owner: "make you see it come off when you pull". It went straight into the hold's spring,
+   * 1.2 m of travel in a frame or two. Now it is worked loose in its hole for a moment — a few centimetres out, a rattle — then
+   * drawn out and up to where you will hold it over half a second, and only then is it yours (`grateMakeProp(true)`), the spring
+   * with nothing left to do.) */
+  G.updateWorldMatrix(true, true); scene.attach(G);
+  grPull = { t: 0, p0: G.position.clone(), q0: G.quaternion.clone(), yank: false };
+}
+let grPull = null;
+const GR_PULL_T = 0.85, _grA = new THREE.Vector3(), _grB = new THREE.Vector3(), _grC = new THREE.Vector3(), _grS = new THREE.Vector3(), _grQ = new THREE.Quaternion(), _grE = new THREE.Euler(), _grBox = new THREE.Box3();
+function updateGratePull(dt) {
+  if (!grPull) return;
+  const P = grPull, G = drainTunnel.userData.grate; if (!G) { grPull = null; return; }
+  P.t += dt;
+  // out of the hole: toward you, flat
+  _grA.subVectors(camera.position, P.p0); _grA.y = 0; if (_grA.lengthSq() < 1e-6) _grA.set(-1, 0, 0); _grA.normalize();
+  const t1 = 0.3;
+  if (P.t < t1) {
+    const u = P.t / t1, sh = Math.sin(P.t * 55) * 0.012 * (1 - u);
+    G.position.copy(P.p0).addScaledVector(_grA, 0.07 * u * u + sh); G.position.y += Math.sin(P.t * 41) * 0.008 * (1 - u);
+    _grE.set(Math.sin(P.t * 47) * 0.03 * (1 - u), 0, Math.sin(P.t * 39) * 0.03 * (1 - u)); G.quaternion.copy(P.q0).multiply(_grQ.setFromEuler(_grE));
+    return;
+  }
+  if (!P.yank) { P.yank = true; try { playSample('metalHeavy', 0.5, 0.04, 1.05); } catch (e) {} addTrauma(0.14); }
+  const u = Math.min(1, (P.t - t1) / (GR_PULL_T - t1)), e = u * u * (3 - 2 * u);
+  _grB.copy(P.p0).addScaledVector(_grA, 0.07);
+  // where the hold will carry it: your eye, out along the look by the hold's own distance (`grateMakeProp`: R + 0.75)
+  const sz = _grBox.setFromObject(G).getSize(_grS);
+  const hd = Math.max(0.2, Math.max(sz.x, sz.y, sz.z) * 0.5) + 0.75;
+  const tgt = camera.getWorldDirection(_grC).multiplyScalar(hd).add(camera.position);
+  { const out = _grS.subVectors(tgt, P.p0).dot(_grA); if (out < 0.3) tgt.addScaledVector(_grA, 0.3 - out); }   // (stood close, the look ends in the pipe: kept out of the hole, on your side of the wall)
+  G.position.lerpVectors(_grB, tgt, e); G.position.y += Math.sin(u * Math.PI) * 0.12;
+  _grE.set(-0.35 * e, 0, Math.sin(u * Math.PI) * 0.12); G.quaternion.copy(P.q0).multiply(_grQ.setFromEuler(_grE));
+  if (u >= 1) { grPull = null; grateMakeProp(true); }
 }
 // the grate as a body in the world (out of the outlet's frame where it hung), picked up at once if `take`
 function grateMakeProp(take) {
@@ -36485,6 +37594,7 @@ function liftGrate(quiet) {
   if (quiet) grateMakeProp(false);                     // (where it lies, and yours to pick up and throw: 2026-11-23)
 }
 function updateGrateLift(dt) {
+  updateGratePull(dt);
   if (grateLift < 0 || grateLift >= 1.2) return;
   grateLift += dt;
   const G = drainTunnel.userData.grate, F = drainTunnel.userData.outlet;
@@ -40791,12 +41901,12 @@ function mutKnockdown(u) {
   sfxMutHit(u.kind.voice);
   if (u.lastHitMine !== false) {
     addTrauma(0.55);
-    hitstop = Math.max(hitstop, 0.14);
+    hitstop = Math.max(hitstop, 0.10);   // (0.14 until 2026-11-24: "every hit is laggy")
     fovKick = Math.max(fovKick, 7);
     // (no caption — see the first parry's)
   }
 }
-const MUT_HIT_STOP = 0.09;
+const MUT_HIT_STOP = 0.06;   // (0.09 until 2026-11-24, the owner: "every hit is laggy … make it feel smoother": a kill's held frame is weight, not a stall)
 const MUT_HEAVY = 0.85;                    // a swing wound past this takes two
 const MUT_STRAFE = 1.7;                    // how fast they circle you at reach
 const MUT_SEP = 3.2;                       // and how far off each other they stay (2.6 until 2026-10-14: "spread out a little more while fighting")
@@ -41884,7 +42994,7 @@ function velGaitAnim(u, dt, N) {
    * a man running in fast-forward, which is the other half of "it does not
    * look like Mixamo" (measured: runs at 1.45x, side-steps at 0.3x). The body
    * is held to the stride instead of the stride being stretched to the body. */
-  const NAT = !!u.kind.natural, rLo = u.kind.gaitLo != null ? u.kind.gaitLo : NAT ? 0.7 : 0.3, rHi = NAT ? 1.25 : 1.8;   // `gaitLo`: a kind whose run must never play in slow motion
+  const NAT = !!u.kind.natural, rLo = u.kind.gaitLo != null ? u.kind.gaitLo : NAT ? 0.7 : 0.3, rHi = u.kind.gaitHi || (NAT ? 1.25 : 1.8);   // `gaitLo`: a kind whose run must never play in slow motion
   const rate = (nm, v, fb) => { const c = spd(nm); return c > 0.2 ? THREE.MathUtils.clamp(v / c, rLo, rHi) : fb; };
   /* AND THE BODY MAY NOT OUTRUN ITS FEET. The rate can only stretch a clip so
    * far; past that the ground goes by faster than any foot is planted on it,
@@ -42006,7 +43116,10 @@ function mutAnim(u, dt, moving) {
      * keeps the alien's arrangement, which reverses its fall because its
      * file has no rise in it. */
     const KN = knockOf(u), s = knockTotal(u) - u.st.down;
-    if (u.kind.riseClip && s >= KN.fall + KN.lie) {
+    if (u.st.riseClipNow) {   // (up off a kick's ragdoll by the get-up chosen for how he lay: `kickRagRise`)
+      const a = mutPlay(u, u.st.riseClipNow, false);
+      if (a) { a.paused = true; a.time = clampTime(a, Math.min(1, 1 - u.st.down / (u.st.riseDur || 1)) * a.getClip().duration); }
+    } else if (u.kind.riseClip && s >= KN.fall + KN.lie) {
       const a = mutPlay(u, u.kind.riseClip, false);
       if (a) { a.paused = true; a.time = clampTime(a, Math.min(1, (s - KN.fall - KN.lie) / KN.rise) * a.getClip().duration); }
     } else if (u.kind.riseClip) {
@@ -42508,6 +43621,14 @@ function dressMutant(u, gltf) {
     for (const k in u.kind.alias) if (u.clips[u.kind.alias[k]]) u.clips[k] = u.clips[u.kind.alias[k]];
   }
   mutStartPose(u);
+  /* (AND EVERY MAN-SHAPED RIG GETS A LIFE — 2026-11-24, for the hit reactions and the wounds that live in it (`lifeApply`): the
+   * beach's mutants and the rest on the shared rig had none, and reacted to a blow by their hit clip alone.) */
+  if (!u.life && u.mixer && !u.kind.noLife && !u.kind.stone && !u.kind.wood) {
+    const J = {}, map = { hip: 'Hips', waist: 'Spine', chest: 'Spine2', neck: 'Neck', head: 'Head', clavL: 'LeftShoulder', clavR: 'RightShoulder', armL: 'LeftArm', armR: 'RightArm',
+      foreL: 'LeftForeArm', foreR: 'RightForeArm', handL: 'LeftHand', handR: 'RightHand', thighL: 'LeftUpLeg', thighR: 'RightUpLeg', calfL: 'LeftLeg', calfR: 'RightLeg' };
+    for (const k in map) J[k] = ragBone(u, 'Character1_' + map[k]);
+    if (m.getObjectByName(J.head) && m.getObjectByName(J.chest) && m.getObjectByName(J.armR)) { try { installLife(u, m, J); } catch (e) { console.warn('[bw] life', e); } }
+  }
   // and which bone owns each vertex, now, while nothing is watching — the kill that takes a limb reads it
   u.model.traverse((o) => { if (o.isSkinnedMesh) skinDom(o); });
   /* AND THE PIECE A KILL CUTS OFF IS DRAWN WITH THE BODY'S OWN MATERIAL ON A
@@ -42640,7 +43761,7 @@ function makeMutant(x, z, kindName, y = 0) {
   const src = kind.glb || 'assets/mutant.glb';
   if (!mutGlbWait[src]) mutGlbWait[src] = bwFetch(src);
   /* the tavern's people are built when the hall is, and are wanted when it is: their copies first, under the black */
-  const urgent = !!kind.tav;
+  const urgent = !!kind.tav || !!kind.urgentBody;   // (and a companion at your side: `cmar`'s `urgentBody`)
   if (urgent) bwFetchSoon(src);
   const loader = new GLTFLoader();
   /* AND THE PARSES ARE SPREAD OVER FRAMES, NOT FIRED TOGETHER. Twenty-three
@@ -42698,6 +43819,10 @@ function makeMutant(x, z, kindName, y = 0) {
  * rate, so the feet and the path agree. The stride is measured on this rig
  * (`measureGaits`), so it travels exactly as fast as its legs say. */
 const MUT_FLEE = { dur: [3.4, 5.6], turnIn: 0.20, turnOut: 0.08, hold: 0.35 };
+/* (THE LITTLE BITE OUT — 2026-11-26, the owner: "TAKE THE MUTANTS LITTLE BITE ANIMATION OUT ITS BAD". `attack2` / `attack2M`, the
+ * model's short 1.5 s snap, is no longer in any beach mutant's pool; a chain into it is dropped with it (`makeMutant`). The clip
+ * stays in the file: the one at the back still uses its first half as a throw's wind (`st.threw`).) */
+for (const k of ['pale', 'red', 'dark', 'hulk', 'spindle', 'runt', 'crooked', 'bloat']) { const U = MUT_KINDS[k] && MUT_KINDS[k].use; if (U) { delete U.attack2; delete U.attack2M; } }
 for (const k of ['pale', 'red', 'dark', 'hulk', 'spindle', 'runt', 'crooked', 'bloat']) MUT_KINDS[k].flee = 0.10;   // rarer, on the owner's word: one in ten that are nearly dead, not one in four
 /* A LITTLE HARDER NOW THAT ONE SWING CUTS THROUGH THREE OF THEM (2026-10-13,
  * the owner). The blade's arc hurts everything in it, so a pack went down in
@@ -43219,7 +44344,7 @@ function killMutant(u) {
   if (u.st.killP === undefined) { u.st.killP = 0; u.st.killOh = false; u.st.hpBefore = u.st.hp; }   // a throw, or the harness
   u.st.atk = -1; u.st.stun = 0; u.st.recoil = 0; u.st.chainAt = -1;
   mutDrop(u);
-  camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
+  if (u.lastHitMine !== false) blowHitDir(u, u.hitDir); else { camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize(); }   // (along the cut: `BLOW`)
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
   sfxMutHit(u.kind.voice);
@@ -43231,7 +44356,12 @@ function killMutant(u) {
   if (u.lastHitMine !== false) {
     addTrauma(0.6);
     hitstop = MUT_HIT_STOP + (equipped && equipped.hitStopK ? equipped.hitStopK : equipped === militaryItem ? 0.05 : isBlade() ? 0.04 : 0);
+    /* A HEAVY THAT KILLS IS GIVEN A BEAT (2026-11-23, "a cool death"): after the freeze the world comes back slow, at a third of
+     * its speed, and eases up to itself over a third of a second — long enough to see the body leave, not long enough to
+     * cost you anything (not while another one is mid-swing at you) */
+    if ((u.st.killP >= MUT_HEAVY || u.st.killOh) && !mutants.some((o) => o !== u && o.st.alive && o.st.atk >= 0 && o.st.awake)) killSlow = KILL_SLOW;
   }
+  try { packAllyFell(u); } catch (e) {}
 }
 /* The slam's report: a sub that hits and a crack over it — concrete falling
  * on concrete — sized by the charge. Under whatever the blade found. */
@@ -43678,6 +44808,28 @@ function mutHeavyKnock(u, heavyBlow, woke, mine) {
  * below counts the same, and it only ever reads what the blow already did.
  * See `bleedBuild` for the numbers. */
 let noBlood = false;
+/* A ROUND IS BLOCKED ONLY WHERE YOU CAN SEE IT BLOCKED, AND SELDOM (2026-11-25, the owner: "i just shot the gun at the paladin and
+ * he took no damage in 5 bullets … if any enemy blocks a bullet make it visually be that have sparks fly and they sword goes up to
+ * block", then "no one should be blocking the gun like that unless its shown but make blocking the gun less likely for enemy … all
+ * enemies"). A round was a light blow to the guard roll — the paladin's 0.45, measured (`tools/gunblock.js`) 11 of 30 rounds into
+ * his chest stopped — and the block it played was YOUR sword's: sparks at your own guard, your hand jarred, nothing at his. Now
+ * `gunRound` is set while a round (the .44's, the sawn-off's charge) is landing: the roll is `GUN_BLOCK_K` of a blow's, only a
+ * body with a guard to show (`u.clips.block`) can make it, and it is shown at HIM (`gunBlockFx`). */
+let gunRound = false;
+const GUN_BLOCK_K = 0.35;
+const _gbP = new THREE.Vector3();
+function gunBlockFx(u) {
+  u.st.block = DEALER_BLOCK * 0.7;             // (the guard already on its way up as the round meets it: the block clip from 30 %)
+  u.st.cool = 0.12; mutToken = u;
+  if (u.weapon) { flashMats(u.weapon); u.weapon.getWorldPosition(_gbP); }
+  else _gbP.set(u.g.position.x, u.g.position.y + (u.kind.h || 1.8) * 0.62, u.g.position.z);
+  const dx = camera.position.x - _gbP.x, dz = camera.position.z - _gbP.z, dl = Math.hypot(dx, dz) || 1;
+  _gbP.x += dx / dl * 0.3; _gbP.z += dz / dl * 0.3;   // (on the face of the blade toward you)
+  worldSparks(_gbP, 30, dx / dl, dz / dl);
+  worldSparks(_gbP, 12, -dz / dl, dx / dl); worldSparks(_gbP, 12, dz / dl, -dx / dl);
+  sfxPropHit('metal', 10);
+  hitstop = Math.max(hitstop, 0.05);
+}
 function hurtMutant(u, dmg, P = 0, from = null) { return sfxAt(u.g.position.x, u.g.position.z, () => hurtMutantAt(u, dmg, P, from)); }
 function hurtMutantAt(u, dmg, P = 0, from = null) {
   // held by the Artifact of the Whale: none of the reactions below, and it goes in harder
@@ -43686,10 +44838,13 @@ function hurtMutantAt(u, dmg, P = 0, from = null) {
   // (stone does not bleed: no spray, no stain, no wound, no bleed — 2026-10-29, the owner, of the gargoyles: "dont make them bleed")
   noBlood = !!(u.kind.stone || u.kind.wood);
   if (u.kind.garg && u.gp && u.st && u.st.alive) { if (!from) u.gp.aggro = 'you'; else if (from.kind && from.kind.mino) u.gp.aggro = 'mino'; }
-  let r; try { r = hurtMutantCore(u, dmg, P, from); } finally { noBlood = false; }
+  const bl = !from && u.blow && performance.now() - u.blow.at < 400 && blowBegin(u);   // (this blow's own contact: `BLOW`)
+  if (bl) { try { blowSurface(u, P); } catch (e) { BLOW.cut = null; } }   // (on his skin, before any blood: `blowSurface`)
+  let r; try { r = hurtMutantCore(u, dmg, P, from); if (bl && u.st && (r || u.st.hp < hp0)) slashHit(u, P); } finally { noBlood = false; }
   if (!from && u.st && (r || u.st.hp < hp0)) artCount(u, r);
   if (!from && weaponBleedK() > 0 && !r && u.st.alive && !u.st.struck && u.st.hp < hp0 && !u.kind.baby && !(u.kind.stone || u.kind.wood)) bleedBuild(u, P, weaponBleedK());
-  if (!r && u.st && u.st.alive && u.st.hp < hp0 && u.kind.flinch) mutFlinch(u, P, from);
+  // (every body with a life layer reels from YOUR blows now, the kinds without `flinch` without its shove: 2026-11-23)
+  try { if (!r && u.st && u.st.alive && u.st.hp < hp0 && (u.kind.flinch || (!from && u.life && !(u.st.atk >= 0)))) mutFlinch(u, P, from); } finally { if (bl) blowEnd(); }   // (not mid-swing on a kind that never reeled: its blow's arm is what its hit test reads)
   if (u.kind.skrim && u.st && u.st.hp < hp0 && (SKRIM.stage === 'dig' || SKRIM.stage === 'deal' || SKRIM.stage === 'meet' || SKRIM.stage === 'talk' || SKRIM.stage === 'leave')) { if (dialogOpen) endDialog(); skrimFight(); }   // (and on his way out with it: "he walks out and leaves unless hit", 2026-10-30)
   if (u.kind.garg && u.gp && u.st && u.st.hp < hp0) {
     gargCrackStep(u, from);
@@ -43709,21 +44864,58 @@ function hurtMutantAt(u, dmg, P = 0, from = null) {
  * blade — all on a spring released from its peak, gone in a third of a
  * second, and none of it touching his swing, his tell or his timing, so the
  * fight is exactly as hard as it was. */
-const _flD = new THREE.Vector3();
+const _flD = new THREE.Vector3(), _flAx = new THREE.Vector3();
+/* (A THING THROWN AT HIM MOVES HIM ALONG ITS FLIGHT — 2026-11-25, the owner: "Throwing things at enemies should also affect them like
+ * this". `thrownHits` sets `throwHit` round its blow: the reel and the stumble go the way the thing was flying, not down your line,
+ * harder the faster it came (its P from its speed), and the springs are told where on him it struck (`lifeHit`'s contact).) */
+let throwHit = null;
 function mutFlinch(u, P = 0, from = null) {
   if (!u.life) return;
   const g = u.g.position;
-  if (from && from.g) _flD.set(g.x - from.g.position.x, 0, g.z - from.g.position.z);
+  if (throwHit) { _flD.set(throwHit.d.x, 0, throwHit.d.z); P = Math.max(P, throwHit.P); }
+  else if (from && from.g) _flD.set(g.x - from.g.position.x, 0, g.z - from.g.position.z);
   else _flD.set(g.x - camera.position.x, 0, g.z - camera.position.z);
   if (_flD.lengthSq() < 1e-6) _flD.set(Math.sin(u.g.rotation.y), 0, Math.cos(u.g.rotation.y)).negate();
   _flD.normalize();
-  const k = Math.min(1.35, (0.62 + P * 0.55) * (u.kind.flinch || 1));
-  u.life.flinch = { t: 0, k, x: _flD.x, z: _flD.z, tw: (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5) };
+  const k = Math.min(1.35, (0.62 + P * 0.55) * (u.kind.flinch || 0.85));
+  let tw = (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.5), hy = 0.62, dn = 0;
+  /* WHERE IT LANDED AND WHICH WAY THE EDGE WAS GOING (`BLOW`, 2026-11-23): thrown along the cut, not straight back down your
+   * line; bent at the height it struck — a cut at the head snaps the head, one at the hips buckles him there — and TURNED the
+   * way the edge dragged him: the twist is the blow's own turning force about his spine (where it landed from his middle,
+   * crossed with the edge's travel), so a cut across his right shoulder wrenches that shoulder along with it. */
+  if (BLOW.on && BLOW.u === u) {
+    _flD.copy(BLOW.hd);
+    const h = u.kind.h || 1.8;
+    const rx = BLOW.p.x - g.x, rz = BLOW.p.z - g.z, ty = rz * BLOW.d.x - rx * BLOW.d.z;   // (r x F) . up
+    tw = THREE.MathUtils.clamp(ty * 3.4 / Math.max(0.6, h / 1.8), -1.3, 1.3);
+    hy = BLOW.h; dn = Math.max(0, -BLOW.d.y);
+  }
+  u.life.flinch = { t: 0, k: k * (BLOW.on && BLOW.u === u ? 0.75 : 1), x: _flD.x, z: _flD.z, tw, hy, dn: Math.max(dn, P >= MUT_HEAVY || hy < 0.4 ? 1.1 : 0) };   // (softer where the springs take the blow; the knees go on a heavy or a low blow)
+  try { if (throwHit) lifeHit(u, P, (u.kind.flinch || 0.85) * 1.2, throwHit.c, throwHit.d); else lifeHit(u, P, u.kind.flinch || 0.85); } catch (e) {}
+  // (and the body under it: the blow's momentum through his upper body, and he rights himself — `larHit`)
+  try {
+    if (throwHit) larHit(u, throwHit.c, throwHit.d, P);
+    else if (BLOW.on && BLOW.u === u) larHit(u, BLOW.p, _flAx.copy(BLOW.d).multiplyScalar(0.6).addScaledVector(_flD, 0.8), P);
+    else { const B = u.life.B, c = B && (B.chest || B.waist); if (c) larHit(u, c.getWorldPosition(_flAx), _flD, P); }
+  } catch (e) {}
   // the shove: a hand's breadth off the blade on a click, most of a stride on a heavy — never through a swing's own lunge
-  u.st.flinchPush = { x: _flD.x, z: _flD.z, v: 1.1 + P * 1.8 };
+  // (only the kinds that always had it: on the rest the reel is the bend alone, so no fight's spacing changes)
+  /* (AND HE STUMBLES — 2026-11-25, the owner: "GTA like physics where characters can kind of ragdoll and stumble upon being hurt". The
+   * blow's momentum carries his body along it: catch-steps — his gait is played off his body's own velocity where the kind does that
+   * (`velGait`) — leaning into it (the springs), the knees giving on a heavy, for a stride or two, then he has his feet. Every kind
+   * now, not only the farmers; never while he is mid-swing, so his blows land as before. A heavy goes most of a metre.) */
+  if (!(u.st.atk >= 0) && !u.kind.bossDeath && !u.kind.stone && (u.kind.h || 1.8) < 2.8) {
+    /* (a man fighting you stumbles two thirds as far and comes straight back at you — `cool` cut short: measured (`tools/fightread.js`)
+     * the full stumble took the garrison's blows from ~35 a minute to ~29: the fight is not to get easier for it) */
+    const fighting = u.st.awake && !u.st.foe;
+    const sp = ((u.kind.flinch ? 1.6 : 1.3) + P * 3.2) * (fighting ? 0.66 : 1);
+    u.st.flinchPush = { x: _flD.x, z: _flD.z, v: sp, d: 5.5 };
+    if (fighting && (u.st.cool || 0) > 0.3) u.st.cool = 0.3;
+  } else if (u.kind.flinch) u.st.flinchPush = { x: _flD.x, z: _flD.z, v: 0.6 + P * 0.8 };
 }
 function hurtMutantCore(u, dmg, P = 0, from = null) {
   if (!u.st.alive || u.st.struck || elvRunImmune(u)) return false;
+  if (from && u.cpAlly && u === MAR.u) dmg *= MAR_HURT_K;   // (a blow on the marionette counts for more: `MAR_HURT_K`)
   if (u.st.puppet) return false;                    // in a move of its own (the king's flip, his climb, his coming down): untouchable
   if (!from && minoAlly(u)) return false;           // the minotaur, on your side: your blade and your shot go through him
   if (gargImmune(u)) return false;                  // a gargoyle still stone
@@ -43785,7 +44977,8 @@ function hurtMutantCore(u, dmg, P = 0, from = null) {
     const facing = _dbC.dot(_dbF) > 0.45;
     const ready = u.st.atk < 0 && u.st.recoil <= 0 && u.st.block <= 0 && !(u.st.openT > 0);   // an opening is an opening
     // the blow that woke it is never met: he was not guarding, he was standing there
-    if (light && facing && ready && !woke && Math.random() < (u.kind.block || 0)) { dealerBlock(u, mine); return false; }
+    const bk = gunRound ? (u.clips && u.clips.block ? (u.kind.block || 0) * GUN_BLOCK_K : 0) : (u.kind.block || 0);   // (a round: `gunRound`)
+    if (light && facing && ready && !woke && Math.random() < bk) { if (gunRound) gunBlockFx(u); else dealerBlock(u, mine); return false; }
     /* POISE IS A POOL, AND IT REFILLS. It used to be a COUNT of light
      * swings — three and he rocked — and a charge skipped it outright and
      * rocked him every single time. So the answer to a boss was to hold the
@@ -43989,7 +45182,7 @@ function hurtMutantCore(u, dmg, P = 0, from = null) {
   }
   u.st.recoilT = MUT_RECOIL * rk;
   u.st.recoil = u.st.recoilT;
-  if (mine) { camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize(); }
+  if (mine) blowHitDir(u, u.hitDir);                 // (along the cut when the blade's contact is known: `BLOW`)
   else u.hitDir.copy(_hitFrom);
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
@@ -44009,6 +45202,10 @@ function hurtMutantCore(u, dmg, P = 0, from = null) {
  * this is a body, and a body goes down and stays down — the `die` clip runs
  * out and it lies on the sand for the rest of the walk. */
 function finishMutant(u) {
+  const bl = u.lastHitMine !== false && blowBegin(u);   // (the death the blow made, from where it landed: `BLOW`)
+  try { return finishMutantCore(u); } finally { if (bl) blowEnd(); }
+}
+function finishMutantCore(u) {
   statKill(u);
   u.st.alive = false;
   u.st.struck = false;
@@ -44063,10 +45260,10 @@ function finishMutant(u) {
       stampBlood(u.g.position.x, u.g.position.z, 1.5 + Math.random() * 0.5, u.g.position.y + 0.2);
       return;
     }
-    if (over && Math.random() < 0.28 * G) burst = burstHead(u, hx, hz);
-    else if (u.st.killBloody && Math.random() < (hP >= MUT_HEAVY || hOh ? 0.34 : 0.14) * G) burst = burstHead(u, hx, hz);
+    if (over && blowNearHead(u) && Math.random() < 0.28 * G) burst = burstHead(u, hx, hz);
+    else if (u.st.killBloody && blowNearHead(u) && Math.random() < (hP >= MUT_HEAVY || hOh ? 0.34 : 0.14) * G) burst = burstHead(u, hx, hz);
     if (!burst && Math.random() < (hP >= MUT_HEAVY || hOh ? 0.30 : 0.12) * G) {
-      const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
+      const pick = blowNearestLimb(u) || MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];   // (the one the edge met: `BLOW`)
       mutSever(u, pick, hx, hz, 1.0);
     }
     mutRagdoll(u, hx, hz, 0.6 + hP * 0.6);
@@ -44119,22 +45316,42 @@ function finishMutant(u) {
   else if (BL > 0.05) blastApart(u, dx, dz, BL);
   else if (MC && (u.st.killHitK ?? 0) > 0.78 && !oh) burst = burstHead(u, dx, dz);   // (the mace on his head: crushed — `maceKillPower`)
   else if (u.st.gunHead) burst = burstHead(u, dx, dz);
-  else if (overkill && Math.random() < 0.55 * G) burst = burstHead(u, dx, dz);
-  else if (BB && Math.random() < (P >= MUT_HEAVY || oh ? 0.70 : 0.40) * G) burst = burstHead(u, dx, dz);
-  if (!zd && !burst && BL <= 0.05) {
-    if (P >= MUT_HEAVY && !oh && Math.random() < (BB ? 0.60 : 0.42) * G) mutSever(u, MUT_BISECT, dx, dz, 1.4);
-    else if (Math.random() < 0.55 * G) {
-      const pick = MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];
+  else if (overkill && blowNearHead(u) && Math.random() < 0.25 * G) burst = burstHead(u, dx, dz);
+  else if (BB && blowNearHead(u) && Math.random() < (P >= MUT_HEAVY || oh ? 0.70 : 0.40) * G) burst = burstHead(u, dx, dz);
+  /* (THE CUT TAKES WHAT IT WENT THROUGH — 2026-11-24, `blowCutParts`: a blade's killing cut that met his skin takes the piece in the
+   * middle of the cut — always on a heavy, three times in four on a cut — and a heavy every piece the line crossed, through the
+   * middle if it crossed the trunk. A blow with no cut on record (a spade, a shot, a throw) keeps the old luck.) */
+  const cutParts = !MC && BL <= 0.05 && isBlade() ? blowCutParts(u) : [];
+  if (!zd && !burst && BL <= 0.05 && cutParts.length) {
+    const heavyK = P >= MUT_HEAVY || oh;
+    // (FEWER PIECES — 2026-11-24, the owner: "have enemies stop just blowing into all limbs off": a cut takes what it met about half the
+    // time, a heavy at most two of what it crossed)
+    /* (AND WHAT IT WENT THROUGH COMES OFF — 2026-11-25, the owner: "IF SWIPING OUT LEGS THE LEGS SHOULD CUT OFF AND SO ON". A cut took
+     * what it met half the time: a low sweep through both shins left one leg on, or both. Now a killing cut takes what the edge
+     * crossed, every time — both legs to a sweep at them, the arm it went through, the head it went through — up to two pieces;
+     * nothing it did not cross, so a body still does not come apart everywhere. Only a heavy goes through the trunk.) */
+    const n = Math.min(2, cutParts.length);
+    for (let i = 0, took = 0; i < cutParts.length && took < n; i++) {
+      const pt = cutParts[i];
+      if (pt === MUT_BISECT && !heavyK) continue;                       // (a cut opens the trunk; only a heavy goes through it)
+      if (pt.name === 'forearm' && u.gone['Character1_' + (pt.bone.includes('Left') ? 'Left' : 'Right') + 'Arm']) continue;
+      if (mutSever(u, pt, dx, dz, pt === MUT_BISECT ? 1.4 : 1.15)) took++;
+    }
+  } else if (!zd && !burst && BL <= 0.05 && !MC) {
+    if (P >= MUT_HEAVY && !oh && Math.random() < (BB ? 0.45 : 0.25) * G) mutSever(u, MUT_BISECT, dx, dz, 1.4);
+    else if (Math.random() < 0.3 * G) {
+      const pick = blowNearestLimb(u) || MUT_LIMBS[Math.floor(Math.random() * MUT_LIMBS.length)];   // (the one the edge met: `BLOW`)
       mutSever(u, pick, dx, dz, 1.0);
     }
   }
+  if (MC && !zd && !burst && BL <= 0.05) maceCrushBody(u, dx, dz, oh);   // (the mace crushes where it lands: `maceCrushBody`)
   /* AND THE BLOODY BLADE TAKES MORE THAN ONE THING. The owner's word: brutal.
    * Whatever else the blow took, it takes a limb or two besides — thrown off
    * along the swing, each stump pumping — so a kill with it leaves pieces,
    * not a body. */
   if (BB && !zd) {
-    const pool = MUT_LIMBS.slice().sort(() => Math.random() - 0.5);
-    const extra = (P >= MUT_HEAVY || oh ? 2 : 1) + (Math.random() < 0.35 ? 1 : 0);
+    const pool = blowLimbsFirst(u, MUT_LIMBS.slice().sort(() => Math.random() - 0.5));   // (the one the edge met first: `BLOW`)
+    const extra = (P >= MUT_HEAVY || oh ? 1 : 0) + (Math.random() < 0.25 ? 1 : 0);
     let took = 0;
     for (const L of pool) { if (took >= extra) break; if (mutSever(u, L, dx + (Math.random() - 0.5) * 0.6, dz + (Math.random() - 0.5) * 0.6, 0.9 + Math.random() * 0.5)) took++; }
     bladeLensSpatter(u, 1.0);
@@ -44145,13 +45362,23 @@ function finishMutant(u) {
    * the blow at its own angle, so a kill in the street is a man coming apart
    * rather than a body falling over. A forearm is not taken off an arm that
    * has already gone: that arm's piece already has it. */
-  if (u.kind.cutApart && !zd) {
+  // (with a cut on record the pieces are what it went through — taken above — and no random limbs besides: "an exact hit")
+  if (u.kind.cutApart && !zd && cutParts.length) {
+    const heavy = P >= MUT_HEAVY || oh;
+    for (const L of cutParts.slice(0, heavy ? 2 : 0)) {
+      if (u.gone[L.bone] || (L === MUT_BISECT && !heavy)) continue;
+      if (L.name === 'forearm' && u.gone['Character1_' + (L.bone.includes('Left') ? 'Left' : 'Right') + 'Arm']) continue;
+      if (u.gone[MUT_BISECT.bone] && L.name !== 'leg' && L !== MUT_BISECT) continue;
+      mutSever(u, L, dx, dz, L === MUT_BISECT ? 1.5 : 1.2);
+    }
+  } else if (u.kind.cutApart && !zd && !MC) {   // (a mace does not cut: it crushes, `maceCrushBody` — measured, a chest blow took both arms and a leg off by this luck)
     const heavy = P >= MUT_HEAVY || oh;
     // sliced, not felled (the owner: "sliced in pieces and you are able to see it well"): two to four pieces, often through the middle
-    let want = (heavy ? 3 : 2) + (Math.random() < 0.5 ? 1 : 0);
-    if (!burst && !u.gone[MUT_BISECT.bone] && Math.random() < (heavy ? 0.65 : 0.32) * G) { if (mutSever(u, MUT_BISECT, dx, dz, 1.5)) want--; }
+    // (fewer, 2026-11-24 — "stop just blowing into all limbs off": none to two, not two to four)
+    let want = (heavy ? 1 : 0) + (Math.random() < 0.4 ? 1 : 0);
+    if (!burst && !u.gone[MUT_BISECT.bone] && Math.random() < (heavy ? 0.3 : 0.08) * G) { if (mutSever(u, MUT_BISECT, dx, dz, 1.5)) want--; }
     const armGone = (L) => { const side = L.bone.includes('Left') ? 'Left' : 'Right'; return !!u.gone['Character1_' + side + 'Arm']; };
-    const pool = MUT_LIMBS.slice().sort(() => Math.random() - 0.5);
+    const pool = blowLimbsFirst(u, MUT_LIMBS.slice().sort(() => Math.random() - 0.5));   // (the one the edge met first: `BLOW`)
     for (const L of pool) {
       if (want <= 0) break;
       if (u.gone[L.bone] || (L.name === 'forearm' && armGone(L))) continue;
@@ -44521,6 +45748,21 @@ function updateSpurts(dt) {
 }
 function sprayBlood(x, y, z, dirX, dirZ, n, force) {
   if (noBlood) return;
+  if (BLOW.on && BLOW.u && Math.hypot(x - BLOW.u.g.position.x, z - BLOW.u.g.position.z) < 0.6) {
+    // (from the cut, with the edge: `BLOW`) — a spray thrown back toward you comes out of the far side of him instead
+    const back = dirX * BLOW.hd.x + dirZ * BLOW.hd.z < -0.3, P0 = BLOW.u.g.position;
+    if (back) { x = 2 * P0.x - BLOW.p.x; z = 2 * P0.z - BLOW.p.z; dirX = -BLOW.hd.x; dirZ = -BLOW.hd.z; }
+    else { x = BLOW.p.x; z = BLOW.p.z; dirX = BLOW.hd.x * 0.6 + BLOW.d.x * 0.6; dirZ = BLOW.hd.z * 0.6 + BLOW.d.z * 0.6; const L = Math.hypot(dirX, dirZ) || 1; dirX /= L; dirZ /= L; }
+    y = BLOW.p.y;
+    // (off a cut it is a FINE spray — many small drops, not the body's middle's few big ones)
+    for (let i = 0; i < Math.round(n * 1.6); i++) {
+      const m = bloodDropObj(0.016 * (0.5 + Math.random()));
+      m.position.set(x + (Math.random() - 0.5) * 0.06, y + (Math.random() - 0.5) * 0.06, z + (Math.random() - 0.5) * 0.06);
+      const a = Math.random() * Math.PI * 2, side = (0.3 + Math.random() * 1.1) * force, along = (1.4 + Math.random() * 3.0) * force;
+      bloodDrops.push({ m, vel: new THREE.Vector3(dirX * along + Math.cos(a) * side, 0.5 + Math.random() * 2.0 * force, dirZ * along + Math.sin(a) * side), life: 4 });
+    }
+    return;
+  }
   for (let i = 0; i < n; i++) {
     const m = bloodDropObj(0.028 * (0.5 + Math.random()));
     m.position.set(x + (Math.random() - 0.5) * 0.2, y + (Math.random() - 0.5) * 0.25, z + (Math.random() - 0.5) * 0.2);
@@ -44568,7 +45810,8 @@ function woundMutant(u, dirX, dirZ, atY, P = 0) {
     const n = 1 + (P > 0.5 ? 2 : 0) + (bloodHeld() ? 2 : 0);          // the Bloody Blade takes flesh with every cut
     for (let i = 0; i < n; i++) {
       const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.035 + Math.random() * 0.035, 0), i % 2 ? GIB_MAT_WET : GIB_MAT_DK);
-      m.position.set(u.g.position.x + (Math.random() - 0.5) * 0.3, atY + (Math.random() - 0.5) * 0.2, u.g.position.z + (Math.random() - 0.5) * 0.3);
+      if (BLOW.on && BLOW.u === u) { m.position.copy(BLOW.p).add(_bwB.set((Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.08)); dirX = BLOW.hd.x * 0.5 + BLOW.d.x * 0.8; dirZ = BLOW.hd.z * 0.5 + BLOW.d.z * 0.8; }   // (off the cut, with the edge)
+      else m.position.set(u.g.position.x + (Math.random() - 0.5) * 0.3, atY + (Math.random() - 0.5) * 0.2, u.g.position.z + (Math.random() - 0.5) * 0.3);
       scene.add(m);
       gibs.push({ m, vel: new THREE.Vector3(dirX * (1.4 + Math.random() * 1.6) + (Math.random() - 0.5), 1.2 + Math.random() * 1.6, dirZ * (1.4 + Math.random() * 1.6) + (Math.random() - 0.5)),
         spin: new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12), rest: 0, life: 200 });
@@ -44578,16 +45821,15 @@ function woundMutant(u, dirX, dirZ, atY, P = 0) {
 const _woundC = new THREE.Color(0x4a120f), _woundE = new THREE.Color(0x2e0906), _woundTmp = new THREE.Color();
 function bleedMutant(u, n, force) {
   if (noBlood || (u && u.kind && (u.kind.stone || u.kind.wood))) return;      // (stone: the blow's own bleed — the 8 drops a blow the gargoyles still threw)
-  const p = u.g.position;
+  const p = u.g.position, at = BLOW.on && BLOW.u === u;   // (from the cut and on with the edge when the blow is known: `BLOW`)
   for (let i = 0; i < n; i++) {
-    const m = bloodDropObj(0.030 * (0.5 + Math.random()));
-    m.position.set(p.x + (Math.random() - 0.5) * 0.35, p.y + 0.85 + Math.random() * 0.7, p.z + (Math.random() - 0.5) * 0.35);
+    const m = bloodDropObj((at ? 0.018 : 0.030) * (0.5 + Math.random()));
+    if (at) m.position.set(BLOW.p.x + (Math.random() - 0.5) * 0.1, BLOW.p.y + (Math.random() - 0.5) * 0.1, BLOW.p.z + (Math.random() - 0.5) * 0.1);
+    else m.position.set(p.x + (Math.random() - 0.5) * 0.35, p.y + 0.85 + Math.random() * 0.7, p.z + (Math.random() - 0.5) * 0.35);
     const a = Math.random() * Math.PI * 2, out = (0.9 + Math.random() * 2.2) * force;
-    bloodDrops.push({
-      m,
-      vel: new THREE.Vector3(Math.cos(a) * out, 1.4 + Math.random() * 2.6 * force, Math.sin(a) * out),
-      life: 4,
-    });
+    const vel = new THREE.Vector3(Math.cos(a) * out, 1.4 + Math.random() * 2.6 * force, Math.sin(a) * out);
+    if (at) { const al = (1.2 + Math.random() * 2.4) * force; vel.multiplyScalar(0.45).addScaledVector(BLOW.d, al).addScaledVector(BLOW.hd, al * 0.4); vel.y = Math.max(vel.y, 0.6 + Math.random() * 1.4 * force); }
+    bloodDrops.push({ m, vel, life: 4 });
   }
 }
 
@@ -44742,9 +45984,11 @@ const skrimVox = (role, o) => { const u = SKRIM.u; return !!u && farmVox(role, u
  * wind's end, `farmVox` in the mutants' swing), `hurt` a cry on every blow that lands (`sfxMutHit`), `shout` the RARE phrase,
  * off the fight's own clock (`cpPhraseTick`, one at most every 16 s). The injection is the bench one's own (`cpInjectTick`). */
 const PUP_VOX = {
-  swing: { bank: 'pupAttack', p: 0.8, gain: 2.2, ref: 6, far: 40, pri: 1, gap: 0.15, own: 0.45 },
-  hurt:  { bank: 'pupHurt',   p: 1,   gain: 2.6, ref: 6, far: 40, pri: 2, gap: 0.10, own: 0.25 },
-  shout: { bank: 'pupPhrase', p: 1,   gain: 2.8, ref: 8, far: 50, pri: 2, gap: 16,   own: 16 },
+  // (more of them, 2026-11-25, "make their fighting sounds a little more frequent": a grunt on every blow (p 0.8), sooner after the
+  // last (own 0.45 → 0.3, gap 0.15 → 0.1), a cry sooner (own 0.25 → 0.18), the rare phrase every 10 s at most (16))
+  swing: { bank: 'pupAttack', p: 1,   gain: 2.2, ref: 6, far: 40, pri: 1, gap: 0.10, own: 0.30 },
+  hurt:  { bank: 'pupHurt',   p: 1,   gain: 2.6, ref: 6, far: 40, pri: 2, gap: 0.08, own: 0.18 },
+  shout: { bank: 'pupPhrase', p: 1,   gain: 2.8, ref: 8, far: 50, pri: 2, gap: 10,   own: 10 },
 };
 /* AND THE VERY OLD FISHERMAN (2026-11-23, the owner's four takes, "trim these and make them the fisher dialog sounds dont have
  * them too loud"): one of them on every new line of his that has words (`showDialogNode`), from where he sits in the shed;
@@ -44759,7 +46003,7 @@ function fisherVox() {
   if (FISHER_VOICE.mouth) FISHER_VOICE.mouth.pri = 0;   // (a new line always cuts the last take off: clicking on through him is never silent)
   return farmVox('talk', FISHER_VOICE, { x: _fishV.x, z: _fishV.z });
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { FISHER_VOICE, fisherVox, talkToFishermanS: () => talkToFisherman(), sampleBanksS: () => sampleBanks, PUP_VOX }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { BLOW, packSlotsS: () => packSlots, velocityS: () => velocity, bumpBodyS: (u, d, s) => bumpBody(u, d, s), bunkerFloorAtS: (x, z, y) => bunkerFloorAt(x, z, y), cutCostS: (u, n = 10) => { const c = u.g.position.clone(); c.y += (u.kind.h || 1.8) * 0.6; const t0 = performance.now(); let k = 0; for (let i = 0; i < n; i++) k = cutTris(u, c, 0.8).length / 9; return { ms: (performance.now() - t0) / n, tris: k }; }, blowRecord, blowRecordAim, slashFxS: () => [], slashMarksS: () => cutMarks, killSlowS: () => killSlow, FISHER_VOICE, fisherVox, talkToFishermanS: () => talkToFisherman(), sampleBanksS: () => sampleBanks, PUP_VOX }));
 /* ONLY THE RARE ONES ARE RARE (2026-11-17, the owner: "MAKE SURE ONLY RARE DIALOG IS RARE I NEED THE NORMAL ONES A LITTLE
  * LOUDER AND WAY MORE FREQUENT"): the swing grunts, the hit cries and the gargoyles' attacks went to 0.9-1 and +2.3-2.5 dB
  * (gain x1.3), their gaps cut to what keeps one take from stepping on itself; four voices at once, not three. The
@@ -45606,6 +46850,48 @@ function sfxMutSandHit() {
  * simply found nothing and returned false, which is why he was the one
  * creature in the game that never lost so much as a hand. */
 function ragBone(u, name) { return (u.boneAlias && u.boneAlias[name]) || name; }
+/* the limb a killing cut takes is the one it MET (`BLOW`, 2026-11-23: "the slices be exactly where they are hit at"): of the
+ * ones still on, the nearest to the cut by the middle of its bone, within a forearm's length; else the old luck */
+const _blLa = new THREE.Vector3(), _blLb = new THREE.Vector3();
+function blowNearestLimb(u) {
+  if (!(BLOW.on && BLOW.u === u) || !u.model) return null;
+  let best = null, bd = 0.55;
+  for (const L of MUT_LIMBS) {
+    if (u.gone && u.gone[L.bone]) continue;
+    const bn = u.model.getObjectByName((u.boneAlias && u.boneAlias[L.bone]) || L.bone); if (!bn) continue;
+    bn.getWorldPosition(_blLa);
+    const ch = bn.children.find((c) => c.isBone);
+    if (ch) _blLa.lerp(ch.getWorldPosition(_blLb), 0.5);
+    const d = _blLa.distanceTo(BLOW.p);
+    if (d < bd) { bd = d; best = L; }
+  }
+  return best;
+}
+/* WHAT THE BLADE WENT THROUGH (2026-11-24, the owner: "i want the cuts through bodies to be an exact hit"). The cut's rays met his
+ * skin bone by bone (`blowSurface`: the bone with the heaviest weight at each face met, nearest the middle first); each is read as
+ * the piece it belongs to — a hand or a forearm the forearm, an upper arm or a shoulder the arm, a thigh, a shin or a foot the leg,
+ * the neck or the head the head, the trunk the torso (`MUT_BISECT`). The killing cut takes those, in that order. */
+function blowCutParts(u) {
+  const B = u.blow; if (!B || !B.cutBones || B.cutAt !== B.at || !blowFresh(u)) return [];
+  const out = [], seen = new Set();
+  for (const nm of B.cutBones) {
+    const side = /Left/.test(nm) ? 'Left' : /Right/.test(nm) ? 'Right' : '';
+    let part = null;
+    if (/Head|Neck/.test(nm)) part = MUT_LIMBS.find((L) => L.name === 'head');
+    else if (side && /(Hand|ForeArm|Finger|Thumb|Index|Middle|Ring|Pinky)/.test(nm)) part = MUT_LIMBS.find((L) => L.name === 'forearm' && L.bone.includes(side));
+    else if (side && /(Arm|Shoulder)/.test(nm)) part = MUT_LIMBS.find((L) => L.name === 'arm' && L.bone.includes(side));
+    else if (side && /(UpLeg|Leg|Foot|Toe|Thigh|Calf)/.test(nm)) part = MUT_LIMBS.find((L) => L.name === 'leg' && L.bone.includes(side));
+    else if (/Spine|Chest|Hips/.test(nm)) part = MUT_BISECT;
+    if (part && !seen.has(part)) { seen.add(part); out.push(part); }
+  }
+  // (a cut that landed at the head is the head's, whatever the hood's skin is weighted to: measured, a head cut read "Spine")
+  if (BLOW.on && BLOW.u === u && BLOW.h > 0.8) { const hd = MUT_LIMBS.find((L) => L.name === 'head'); if (hd && out[0] !== hd) { const i = out.indexOf(hd); if (i >= 0) out.splice(i, 1); out.unshift(hd); } }
+  return out;
+}
+function blowLimbsFirst(u, pool) {
+  const n = blowNearestLimb(u); if (!n) return pool;
+  return [n, ...pool.filter((L) => L !== n)];
+}
 const MUT_LIMBS = [
   { bone: 'Character1_Head', name: 'head', y: 0.86, r: 0.16, len: 1.1, w: 1.6 },
   { bone: 'Character1_LeftArm', name: 'arm', y: 0.72, r: 0.11, len: 2.6, w: 1.0 },
@@ -45655,7 +46941,7 @@ function blastApart(u, dx, dz, k) {
   const p = u.g.position, H = u.kind.h || 2.2;
   const ox = p.x, oy = p.y + H * 0.55, oz = p.z;
   if (u.st.gunHead || k > 0.42 || Math.random() < k * 1.3) burstHead(u, dx, dz);
-  let want = 1 + Math.round(k * 4 + Math.random() * k * 1.5);
+  let want = 1 + Math.round(k * 2.6 + Math.random() * k);
   const pool = MUT_LIMBS.filter((L) => L.name !== 'head').sort(() => Math.random() - 0.5);
   const armGone = (L) => { const side = L.bone.includes('Left') ? 'Left' : 'Right'; return !!u.gone['Character1_' + side + 'Arm']; };
   for (const L of pool) {
@@ -46086,7 +47372,7 @@ const RAG_SELF = 0.92;                   // how much of the summed radii it enfo
  * world's, so it comes down fast and HITS. Less drag with it, so what leaves
  * keeps going instead of being eaten by the air. */
 const RAG_G = 17.5;
-const _rg1 = new THREE.Vector3(), _rg2 = new THREE.Vector3(), _rg3 = new THREE.Vector3(), _rgQ = new THREE.Quaternion(), _rgQ2 = new THREE.Quaternion();
+const _rg1 = new THREE.Vector3(), _rg2 = new THREE.Vector3(), _rg3 = new THREE.Vector3(), _rgK = new THREE.Vector3(), _rgQ = new THREE.Quaternion(), _rgQ2 = new THREE.Quaternion();
 const _rgM1 = new THREE.Matrix4(), _rgM2 = new THREE.Matrix4();
 const _rgM = new THREE.Matrix4();
 
@@ -46127,6 +47413,47 @@ function maceMark(u, mine) {
   u.st.killHitK = THREE.MathUtils.clamp((y - u.g.position.y) / (u.kind.h || 1.8), 0, 1.2);
 }
 const _mcD = new THREE.Vector3();
+/* THE MACE CRUSHES WHERE IT LANDS (2026-11-24, the owner: "the mace should just crush the bodies more but have it so hitting body
+ * parts effect the death"). It already threw a body by where it struck (`maceKillPower`) and burst a head it met; now a blow to the
+ * TRUNK caves it — a burst of meat and bone chips out the far side along the blow, the chest pouring — and a blow LOW breaks the leg
+ * it met off at the knee, the knee in pieces. An overhead that came down on the body crushes the trunk the same way. Nothing is cut:
+ * a mace does not cut. */
+function maceCrushBody(u, dx, dz, oh) {
+  if (!u.model || (u.kind && (u.kind.stone || u.kind.wood))) return;
+  const k = u.st.killHitK ?? 0.55, p = u.g.position, H = u.kind.h || 1.8;
+  const at = BLOW.on && BLOW.u === u ? BLOW.p : _mcC.set(p.x, p.y + H * THREE.MathUtils.clamp(k, 0.1, 0.95), p.z);
+  const meat = mutGibMat(u);
+  const chunks = (n, spread, sp, boneShare) => {
+    for (let i = 0; i < n; i++) {
+      const bone = Math.random() < boneShare, r = (bone ? 0.04 : 0.03 + Math.random() * 0.035) * (H / 1.8) * (0.6 + Math.random() * 0.8);
+      const g = new THREE.Mesh(GIB_ICO, bone ? SKULL_MAT : (i % 2 ? meat : GIB_MAT_WET));
+      g.scale.set(r * (1 + Math.random() * 0.9), r * (0.45 + Math.random() * 0.6), r * (1 + Math.random() * 0.5));
+      g.position.set(at.x + (Math.random() - 0.5) * spread, at.y + (Math.random() - 0.5) * spread, at.z + (Math.random() - 0.5) * spread);
+      g.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6); scene.add(g);
+      const v = sp * (0.5 + Math.random()), a = (Math.random() - 0.5) * 1.3, cx = dx * Math.cos(a) - dz * Math.sin(a), cz = dx * Math.sin(a) + dz * Math.cos(a);
+      gibs.push({ m: g, vel: new THREE.Vector3(cx * v, 0.6 + Math.random() * 2.6, cz * v), spin: new THREE.Vector3((Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 20), rest: r * 0.5, life: 45 });
+    }
+  };
+  if (k > 0.78 && !oh) return;                                         // (the head: `burstHead` had it)
+  if (k > 0.38 || oh) {
+    chunks(22, 0.28, 4.6, 0.3);
+    bleedMutant(u, 70, 1.25); sprayBlood(at.x, at.y, at.z, dx, dz, 55, 1.9);
+    sprayBlood(at.x, at.y, at.z, -dz, dx, 14, 1.1); sprayBlood(at.x, at.y, at.z, dz, -dx, 14, 1.1);
+    addSpurt({ u, y: at.y - p.y, dx, dz }, 2.2, 1.2);
+    stampBlood(p.x + dx * 0.9, p.z + dz * 0.9, 1.1 + Math.random() * 0.4, p.y + 0.2);
+    playSample('fleshHit', 1.0, 0.05, 0.7);
+  } else {
+    const cut = blowCutParts(u).find((L) => L.name === 'leg');
+    const leg = cut || MUT_LIMBS.filter((L) => L.name === 'leg' && !u.gone[L.bone])[Math.random() < 0.5 ? 0 : 1] || null;
+    if (leg && !u.gone[leg.bone]) mutSever(u, leg, dx, dz, 1.3);
+    chunks(10, 0.18, 3.0, 0.4);
+    bleedMutant(u, 30, 0.9); sprayBlood(at.x, at.y, at.z, dx, dz, 24, 1.3);
+    playSample('fleshHit', 0.9, 0.05, 0.62);
+  }
+  const dc = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+  if (dc < 3.5) spatterLens(Math.min(1, (3.6 - dc) / 3));
+}
+const _mcC = new THREE.Vector3();
 function maceKillPower(u, base, oh) {
   const k = u.st.killHitK ?? 0.55;
   if (oh) return base * 1.35;                        // driven down into the ground: not far, heavy
@@ -46186,6 +47513,11 @@ function mutRagdoll(u, dirX, dirZ, power) {
     const bn = bones[name]; if (!bn || belowCut(bn)) continue;
     ragTall = Math.max(ragTall, bn.getWorldPosition(_rgP).y - u.g.position.y);
   }
+  /* (A STAGGER DEATH — 2026-11-25, powered ragdolls: about half the kills by a light blow from your hand do not throw him; he takes it
+   * high, keeps his feet, reels back off it on them and goes down as his muscles give (`ragMuscleInit`). A heavy, the mace, a
+   * charge of shot, a fling, a body already off its feet, a big one: thrown as before.) */
+  const stag = !window.__musOff && !!(BLOW.on && BLOW.u === u && BLOW.P < MUT_HEAVY && !(u.st && (u.st.killMace || u.st.killOh)) && rBL <= 0.05 && rFL <= 0.05 && power < 1.6
+    && (u.kind.h || 1.8) <= 2.7 && !u.kind.stone && !u.kind.wood && !(u.gone && u.gone[MUT_BISECT.bone]) && Math.random() < (window.__bwStag ?? 0));   // (none since 2026-11-26: they drop)   // (a probe may ask for every one, or none)
   const parts = [], byName = {};
   for (const [name, parentName, childName, r] of RAG_CHAIN) {
     const bn = bones[name]; if (!bn || belowCut(bn)) continue;
@@ -46198,25 +47530,35 @@ function mutRagdoll(u, dirX, dirZ, power) {
     /* `ragEven`: a kind thrown whole — the feet go with the chest instead of
      * staying planted, so the body LEAVES rather than folding over its boots.
      * `ragLift` puts it in the air long enough to travel. The farmers. */
-    const ev = u.kind.ragEven || 0;
-    let kw = (0.15 + h * 0.85) * (1 - ev) + ev;
+    const ev = stag ? 0.3 : u.kind.ragEven || 0;   // (a stagger: driven back, on his feet — the catch step moves them; 0.8 until 2026-11-25 slid him whole: "float around")
+    // (a man TIPS: the farmers' throw by height squared — his head and chest take it, his hips little — or the middle of him slid with
+    // the top: measured, hips leaving at 3-5.8 m/s with the feet still, 1.6 m glided upright. 2026-11-25, "float around after death")
+    let kw = (u.kind.farmer ? 0.05 + h * h * 0.95 : 0.15 + h * 0.85) * (1 - ev) + ev;
     // (the mace: each part kicked by how near it was to where the mace met him — the legs swept out from under a low blow, the
     // top snapped back off a high one — `maceKillPower` / `killHitK`)
     const MCk = u.st && u.st.killMace ? (u.st.killHitK ?? 0.55) : null;
     if (MCk !== null && !(u.st.killOh)) kw = THREE.MathUtils.lerp(kw, 0.3 + 0.9 * Math.max(0, 1 - Math.abs(h - MCk) * 1.6), 0.6);
+    // (and every weapon's now, from where the blow really landed — `BLOW`, 2026-11-23: what was nearest the cut takes most of it)
+    const BWk = BLOW.on && BLOW.u === u && MCk === null && rBL <= 0.05 && rFL <= 0.05;
+    const prox = BWk ? Math.max(0, 1 - p.distanceTo(BLOW.p) / (0.7 * Math.max(0.5, ragTall))) : 0;
+    // (a low blow most of all: the feet are what it hit, and the top stays behind as they go — measured, at 0.55 a mutant swept at
+    // the shins still went over head first along the cut)
+    if (BWk) kw = THREE.MathUtils.lerp(kw, 0.2 + 1.1 * prox, BLOW.h < 0.42 ? 0.85 : 0.6);
     let kick = (3.1 + power * 6.2) * kw * (u.kind.ragK || 1);
     /* (A shotgun's throw is twenty-odd metres a second, and the flight cap
      * scales the WHOLE velocity down to its limit — the lift with it, so the
      * body slid off along the paving with its hips never a hand's breadth off
      * it. The throw is held to what the cap allows and the lift kept whole.) */
     if (rBL > 0.05) kick = Math.min(kick, (6.0 + rBL * 5.5) * kw);
+    if (stag) kick *= u.kind.farmer ? 0.22 : 0.36;                      // (a stagger: pushed, not thrown — a farmer's softer, 2026-11-25: he steps, he does not glide)
     // less lift than throw: it goes over and DOWN, it does not float up first
     const v = new THREE.Vector3(dirX * kick + (Math.random() - 0.5) * 0.7, (1.0 + h * 1.2 + Math.random() * 0.4) * (u.kind.ragK ? 0.8 + 0.4 * u.kind.ragK : 1) * Math.max(u.kind.ragLift || 1, rBL > 0.05 ? 0.85 + rBL * 0.5 : 0), dirZ * kick + (Math.random() - 0.5) * 0.7);
     // and a charge of shot lifts it off its feet: the chest most, so it goes over backwards in the air
     if (rBL > 0.05) v.y += rBL * (1.2 + h * 2.2);
     // (measured: 14 m/s off the blade and up to 4 lifted, the body was down in 0.6 s and stopped where it fell, 5.4 m off.
     // Higher, so it is in the air for over a second and goes down the street, and a little harder)
-    if (rFL > 0.05) { const kf = (11 + rFL * 6) * (0.55 + kw * 0.45); v.x = dirX * kf + (Math.random() - 0.5) * 1.2; v.z = dirZ * kf + (Math.random() - 0.5) * 1.2; v.y = 3.2 + rFL * (2.6 + h * 1.6); }
+    // (a boot's kill goes further and flatter: "go flying in the direction kicked" — `kickKill`)
+    if (rFL > 0.05) { const kf = (11 + rFL * 6) * (0.55 + kw * 0.45) * (u.st.kickKill ? 1.1 : 1); v.x = dirX * kf + (Math.random() - 0.5) * 1.2; v.z = dirZ * kf + (Math.random() - 0.5) * 1.2; v.y = 3.2 + rFL * (2.6 + h * 1.6); }
     // (the mace: a body blow lifts him off the ground and over; a slam drives him down into it)
     if (MCk !== null) { if (u.st.killOh) { v.y = -1.5 - (1 - h) * 0.5; } else { if (MCk > 0.38) v.y += 2.0 + h * 1.2; else v.y += 1.0 + (1 - h) * 2.0; v.x *= 1.25; v.z *= 1.25; } }
     /* AND NO BODY GOES UP LIKE A ROCKET (2026-10-18, the owner, not for the first time: "THE MUTANTS BODIES NEED TO STOP
@@ -46226,7 +47568,39 @@ function mutRagdoll(u, dirX, dirZ, power) {
      * now applied over the solver's own first step (`q.seed`, in `updateMutRagdoll`), and the rise is capped: a body
      * goes over and down, a hand or two off the ground, a shotgun's a little more. */
     v.y = Math.min(v.y, rFL > 0.05 ? 7.5 : rBL > 0.05 ? 4.0 : MCk !== null ? 5.6 : 3.0);
-    const part = { name, bone: bn, parent: parentName, child: childName, r, p, pp: p.clone(), seed: v, w: name.includes('Hips') ? 0.5 : name.includes('Head') ? 0.8 : 1 };
+    if (stag) v.y = Math.min(v.y * 0.1, 0.15);                            // (on his feet: lifted, they left the ground and the muscles let go)
+    /* (THEY DROP — 2026-11-26, the owner: "bodies need to just die when they die they keep sliding around on the ground … the mutants on
+     * the beach fly into the sky sometimes when dying everyone should just drop lifeless". An ordinary kill — not the shot, not a fling,
+     * not the mace, not a kick's kill — gives the body under half the old throw across the ground and almost no lift: it falls where
+     * he stood, the blow's way, and does not sail.) */
+    // (and his BOOTS stay where they stood, an ordinary blow: thrown and lifted with the rest, they left the floor's grip and a dying man
+    // skated upright — 2026-11-25, "farmers bodies still float around after death". A blast, the shot and the mace still take him whole.)
+    if (/Foot|ToeBase/i.test(name) && u.kind.farmer && !(rFL > 0.05 || rBL > 0.05 || MCk !== null)) { v.x *= 0.15; v.z *= 0.15; v.y = Math.min(v.y, 0); }
+    /* AND IT TURNS ABOUT THE CUT (`BLOW`, 2026-11-23: "more reactionary to the direction you hit the enemy … a cool death"). A
+     * body struck off its middle spins: the blow's turning force (where it landed from his middle, crossed with the edge's
+     * travel) given to every part as the speed that spin would give it — a cut across the neck turns him round as he goes, a
+     * low sweep takes the feet out ahead of the head so he goes over it, a cut across the shoulder wrenches that side along.
+     * An overhead drives what it landed on down. */
+    if (BWk) {
+      _bwB.copy(u.g.position); _bwB.y += ragTall * 0.5;                 // his middle
+      _bwA.subVectors(BLOW.p, _bwB).cross(BLOW.d);                       // the turning
+      _bwR.subVectors(p, _bwB);
+      const spin = (2.4 + power * 2.8) * (u.kind.ragK ? Math.min(1.6, 0.6 + 0.4 * u.kind.ragK) : 1);
+      v.addScaledVector(_bwU.crossVectors(_bwA, _bwR), spin);
+      if (BLOW.d.y < -0.4) v.y += BLOW.d.y * 2.4 * prox;               // an overhead's weight on what it hit
+      v.y = Math.min(v.y, 3.4);
+    }
+    /* (THEY DROP — 2026-11-26, the owner: "bodies need to just die when they die they keep sliding around on the ground … the mutants on
+     * the beach fly into the sky sometimes when dying everyone should just drop lifeless". An ordinary kill — not the shot, not a fling,
+     * not the mace, not a kick's kill — gives the body under half the old throw and spin across the ground and almost no lift, the
+     * turning included (it was what sent a mutant up: the spin's speed at the head of a 2.3 m body): it falls where he stood.) */
+    if (!(rFL > 0.05 || rBL > 0.05 || MCk !== null || (u.st && u.st.kickKill))) { v.x *= 0.42; v.z *= 0.42; v.y = Math.min(v.y * 0.35, 0.6); }
+    else if (MCk !== null && !(u.st && u.st.killOh)) { v.x *= 0.55; v.z *= 0.55; v.y = Math.min(v.y * 0.5, 1.6); }   // (and the mace's sideways crush, half: it threw a body 4-5 m)
+    /* (A BODY HAS WEIGHT WHERE A BODY HAS IT — 2026-11-25, "powered ragdolls": `w` is how far a joint gives to its neighbours
+     * (an inverse mass), and every joint but the hips and the head gave alike, so a hand pulled the chest as hard as the chest
+     * pulled the hand. The trunk heavy, the thighs and upper arms between, the hands and feet light: a body that folds round its
+     * middle and flings its ends.) */
+    const part = { name, bone: bn, parent: parentName, child: childName, r, p, pp: p.clone(), seed: v, foot: /Foot|ToeBase|Toe_?Base/i.test(name), w: window.__ragOldW ? (name.includes('Hips') ? 0.5 : name.includes('Head') ? 0.8 : 1) : ragPartW(name) };
     parts.push(part); byName[name] = part;
   }
   const cons = [], bends = [];
@@ -46237,8 +47611,14 @@ function mutRagdoll(u, dirX, dirZ, power) {
     if (pn) cons.push({ a: byName[pn], b: part, d: byName[pn].p.distanceTo(part.p), k: 1 });
   }
   for (const [a, b2, k] of RAG_STIFF) if (byName[a] && byName[b2]) cons.push({ a: byName[a], b: byName[b2], d: byName[a].p.distanceTo(byName[b2].p), k, stiff: true });
-  for (const [a, b2, c, f] of RAG_BEND) if (byName[a] && byName[b2] && byName[c])
-    bends.push({ a: byName[a], c: byName[c], min: (byName[a].p.distanceTo(byName[b2].p) + byName[b2].p.distanceTo(byName[c].p)) * f });
+  /* (A BEND IS NEVER BROKEN AT THE START — 2026-11-25, "they still fly around after death": a man who dies on his feet ends kneeling, his
+   * knee folded far past the 90° the limit allows; every substep the limit drove the leg straight against the floor and his own body,
+   * and the solver whirled that foot at its speed cap for seconds (`castlecut.js &zd=1`, the left foot 7 m/s 1.5 s after). A joint
+   * that starts tighter than its limit keeps the angle it died with as its limit.) */
+  for (const [a, b2, c, f] of RAG_BEND) if (byName[a] && byName[b2] && byName[c]) {
+    const min = (byName[a].p.distanceTo(byName[b2].p) + byName[b2].p.distanceTo(byName[c].p)) * f;
+    bends.push({ a: byName[a], c: byName[c], min: Math.min(min, byName[a].p.distanceTo(byName[c].p) * 0.98) });
+  }
   /* The pairs that must never occupy the same space. Anything already joined
    * by a bone or a brace is excluded — those have a length of their own and
    * a collision would fight it — and so is any pair standing closer at rest
@@ -46408,10 +47788,14 @@ function mutRagdoll(u, dirX, dirZ, power) {
   });
   const rb = rec && rec.group.userData.bunker;
   const _hp0 = byName['Character1_Hips'] || parts[0];
-  u.rag = { parts, byName, cons, bends, hits, orphans, t: 0, asleep: false, kickX: dirX, kickZ: dirZ, origin: _hp0 ? _hp0.p.clone() : null,
+  // (a heavy cut's kill is thrown on its own first-flight cap, as the mace's is: the common one clipped its bigger throw to a
+  // light's — measured, the heavy's body went less far than the light's, 2026-11-23)
+  const heavyCut = BLOW.on && BLOW.u === u && BLOW.P >= MUT_HEAVY && rBL <= 0.05 && rFL <= 0.05 && !(u.st && u.st.killMace);
+  u.rag = { parts, byName, cons, bends, hits, orphans, t: 0, asleep: false, kickX: dirX, kickZ: dirZ, origin: _hp0 ? _hp0.p.clone() : null, stag,
             room: rb && rb.nav ? rb.nav.room : null, bunker: rb || null,
             gut: !!(u.kind.whaleBody && inWhale && whale),   // or inside the whale: its walls hold a body thrown at them
-            fort: (u.kind.fortBody && fortWalls) ? FORT_SITE : (u.kind.c13Body && c13Walls) ? C13_SITE : (u.kind.thrBody && thrWalls) ? THR_SITE : (u.kind.celBody && celWalls) ? CEL_SITE : null,   // or in a castle's courtyard: its stone holds a body the same way
+            fort: (u.kind.fortBody && fortWalls) ? FORT_SITE : (u.kind.c13Body && c13Walls) ? C13_SITE : (u.kind.thrBody && thrWalls) ? THR_SITE : (u.kind.celBody && celWalls) ? CEL_SITE : (u.kind.tav && inTavern && tavWalls) ? TAV_SITE : null,   // (the TAVERN's walls too, 2026-11-26: a body there met its floor and nothing else — "the bodies fall through the walls")
+            tav: !!(u.kind.tav && inTavern),   // or in a castle's courtyard: its stone holds a body the same way
             roomG: rec ? rec.group : null, wallHit: 0, wallAt: new THREE.Vector3(),
             /* A BODY TAKEN BY A SHOTGUN FLIES. The farmers' first flight was
              * capped at the glitch cap and leashed to five metres, by the
@@ -46419,15 +47803,569 @@ function mutRagdoll(u, dirX, dirZ, power) {
              * stride is the one blow that should throw a man a long way, so it
              * gets its own first-flight cap and leash — still inside the walls
              * that hold a body in a courtyard. */
-            slide: rFL > 0.05 ? 1.8 : 0,   // a body the dark knight throws SKIDS on down the street for a second after it lands
+            slide: rFL > 0.05 ? 1.8 : 0, kfly: !!(u.st && u.st.kickKill),   // a body the dark knight throws SKIDS on down the street for a second after it lands
             // (and the mace's crush — `maceKillPower` — its own first flight: the throw it gives would be clipped at the common cap)
-            vmax: rFL > 0.05 ? 16 + rFL * 4 : rBL > 0.05 ? Math.max(u.kind.ragVmax || RAG_VMAX, 10 + rBL * 6.5) : u.st.killMace ? Math.max(u.kind.ragVmax || RAG_VMAX, u.st.killOh ? 9 : 18) : 0,
-            travel: rFL > 0.05 ? 11 + rFL * 5 : rBL > 0.05 ? Math.max(u.kind.ragTravel || RAG_TRAVEL, 6 + rBL * 5) : u.st.killMace ? Math.max(u.kind.ragTravel || RAG_TRAVEL, u.st.killOh ? 6 : 16) : 0 };
+            vmax: rFL > 0.05 ? 16 + rFL * 4 : rBL > 0.05 ? Math.max(u.kind.ragVmax || RAG_VMAX, 10 + rBL * 6.5) : u.st.killMace ? Math.max(u.kind.ragVmax || RAG_VMAX, u.st.killOh ? 9 : 18) : heavyCut ? Math.max(u.kind.ragVmax || RAG_VMAX, 10.5) : 0,
+            travel: rFL > 0.05 ? 11 + rFL * 5 : rBL > 0.05 ? Math.max(u.kind.ragTravel || RAG_TRAVEL, 6 + rBL * 5) : u.st.killMace ? Math.max(u.kind.ragTravel || RAG_TRAVEL, u.st.killOh ? 6 : 16) : heavyCut ? Math.max(u.kind.ragTravel || RAG_TRAVEL, 13) : 0 };
   u.g.rotation.set(0, u.g.rotation.y, 0);           // the body's tilt is the particles' now, not the group's
   /* And the aim's yaw dies with him. It lives on the MODEL, and a man killed
    * halfway through a swing would otherwise lie there wearing the last
    * correction — the particles own the body from here. */
   if (u.model) { u.model.rotation.y = 0; u.aimW = 0; }
+  try { ragThroeInit(u); } catch (e) {}
+  if (!window.__musOff) try { ragMuscleInit(u, power); } catch (e) { if (window.__musDbg) console.log('[PB] mus init failed', e && e.message); }
+  if (!heavyCut) try { ragPlantInit(u, ragTall); } catch (e) {}
+}
+/* ---- HIS FEET HOLD THE GROUND WHILE HE GOES OVER (2026-11-25, the owner: "farmers bodies still float around after death this should
+ * never happen", then "improve the physics as well"). Measured in a real castle fight (`tools/fightread.js &dead=1`) after the boots
+ * had been given their grip back and the throw moved up the body: a dying man still GLIDED upright a median 1.3-1.6 m, his feet
+ * sliding as far. The cause is the solver's, not the throw's: a foot on the floor is one light particle on the end of a leg, and
+ * twelve passes of the leg's constraints drag it after hips leaving at 3-6 m/s — friction takes its speed off every pass and the next
+ * pass moves it again. So for the first moments of an ordinary death a foot that is on the floor is PLANTED: held where it stands
+ * (x and z; it may always lift) and all but immovable to the joints above it, so the blow turns into a fall over his feet — the hips
+ * go round the ankles and down — instead of travel across the ground. A foot lets go when the catch step takes it (`ragMuscleStep`;
+ * it plants again where it is set down, so a staggering man walks his fall), when it is lifted clear, when its leg is pulled past
+ * its own length (he was hit too hard to stand on), and all of them once his hips are half way down or the time is out. Not for a
+ * body that is THROWN — the shot, a fling, the mace, a heavy cut — nor one whose legs were what the blow took (`BLOW.h` low), nor in
+ * water. `window.__plantOff` for a probe's before-and-after. */
+const cpSiteOf = (S) => S === FORT_SITE ? CP.sites.fort : S === C13_SITE ? CP.sites.c13 : S === THR_SITE ? CP.sites.thr : null;   // (a castle's props, from the site a body died in)
+function ragTavFurniture(u, r) {
+  for (const q of r.parts) {
+    const sp = Math.hypot(q.p.x - q.pp.x, q.p.y - q.pp.y, q.p.z - q.pp.z) * 180;
+    for (const t of tavTables) {
+      if (t.dead || !t.plan) continue;
+      const B = t.plan;
+      if (q.p.x < B.min.x - q.r || q.p.x > B.max.x + q.r || q.p.z < B.min.z - q.r || q.p.z > B.max.z + q.r) continue;
+      if (q.p.y > t.top + q.r + 0.05 || q.p.y < t.top - 0.6) continue;
+      if (sp > (r.kfly ? 2.0 : 3.2)) { smashTavTable(t, 4 + sp * 1.2, u); continue; }
+      if (q.p.y < t.top + q.r) { q.p.y = t.top + q.r; if (q.pp.y < q.p.y) q.pp.y = q.p.y; q.floor = Math.max(q.floor ?? -1e9, t.top); }
+    }
+    tavRailBody(q, sp, r);
+    if (sp > (r.kfly ? 1.6 : 2.6)) for (const c of tavChairs) {
+      if (c.dead) continue;
+      const cx = c.grp ? c.grp.position.x + (c.grp.parent ? c.grp.parent.position.x : 0) : c.x, cz = c.grp ? c.grp.position.z + (c.grp.parent ? c.grp.parent.position.z : 0) : c.z;
+      if (Math.hypot(q.p.x - (c.x ?? cx), q.p.z - (c.z ?? cz)) < 0.4 + q.r && q.p.y < TAV_Y + TAV_FLOOR + 1.0) smashTavChair(c, 4 + sp, u);
+    }
+  }
+}
+function ragPlantInit(u, tall) {
+  const r = u.rag, st = u.st || {}, K = u.kind || {};
+  if (!r || window.__plantOff || K.stone || K.wood || (K.h || 1.8) > 2.7 || (st.killBlast || 0) > 0.05 || (st.killFling || 0) > 0.05 || st.killMace) return;
+  if (u.gone && u.gone[MUT_BISECT.bone]) return;
+  if (BLOW.on && BLOW.u === u && BLOW.h < 0.42) return;
+  const H = r.byName['Character1_Hips']; if (!H) return;
+  const hipY = H.p.y - u.g.position.y; if (hipY < tall * 0.45) return;      // (already down, or on his knees: nothing to stand on)
+  const feet = r.parts.filter((q) => q.foot); if (!feet.length) return;
+  for (const q of feet) {
+    let len = 0, o = q;
+    for (let i = 0; i < 6 && o && o !== H; i++) { let pn = o.parent; while (pn && !r.byName[pn]) pn = RAG_PARENT_OF[pn] || null; const up = pn ? r.byName[pn] : null; if (!up) break; len += up.p.distanceTo(o.p); o = up; }
+    q.w0 = q.w; q.anch = null; q.leg = Math.max(len, H.p.distanceTo(q.p)) * 1.07;
+  }
+  r.plant = { feet, hipY, H, T: 0.55 + Math.random() * 0.35 };
+}
+function ragPlantStep(u, r) {
+  const P = r.plant, H = P.H, M = r.mus, sq = M && M.step ? M.step.q : null;
+  const over = r.t > P.T || (H.p.y - (H.floor !== undefined ? H.floor : u.g.position.y)) < P.hipY * 0.5;
+  let held = 0;
+  for (const q of P.feet) {
+    if (q.w0 === undefined) continue;
+    if (over || q.wet > 0 || H.p.distanceTo(q.p) > q.leg) { q.w = q.w0; q.w0 = undefined; q.anch = null; continue; }
+    held++;
+    const up = q.p.y - q.r - (q.floor !== undefined ? q.floor : 0);
+    if ((sq && (sq === q || sq.name.replace('Foot', 'ToeBase') === q.name)) || up > 0.12) { q.anch = null; q.w = q.w0; continue; }
+    if (!q.anch) { q.anch = { x: q.p.x, z: q.p.z }; q.w = q.w0 * 0.05; r.nPlant = (r.nPlant || 0) + 1; }
+  }
+  if (!held) r.plant = null;
+}
+/* ---- A MIND OF ITS OWN TO THE LAST (2026-11-24, the owner: "i want it more realistic physic with the player like halfsword where they
+ * have a mind of their own and can all die uniquely do this for every fight in the game"). A body was a sack from the frame it died.
+ * Now, for a few seconds once it is down, the dying still move — forces on the ragdoll's own joints, so the solver, the floor and the
+ * body's own stiffness shape every one — and what they do comes from the wound and from chance, so no two go the same way:
+ *  - CLUTCH: the hands go to the wound (the one nearer, or both), the knees draw up, a shiver in the head; it eases off;
+ *  - WRITHE: kicks and flails, a limb at a time, each weaker than the last;
+ *  - REACH: one hand comes up toward you, holds, and falls;
+ *  - CRAWL (mostly from a low wound): a hand reaches out along the ground away from you, the body drags itself to it, again, slower;
+ *  - TWITCH: a few jolts (a head wound, mostly: most of those just go limp).
+ * Never a body whose head or middle is gone, one blown apart, stone, wood, a boss with its own death, or anything taller than a man and
+ * a half. A man's voice groans once as it starts. Any blow wakes it as before. */
+/* (A BODY AT REST DOES NOT WHIRL A LIMB — 2026-11-25, the owner: "they still fly around after death", "THE FARMERS FLOAT AROUND AFTER
+ * DEATH PROLLY OTHER NPCS TOO". Measured (`castlecut.js &zd=1`): a man who dies on his feet ends his clip kneeling with a leg folded
+ * under him, and the solver whirled that foot round at its speed cap (7 m/s, from 1.5 s after the death on), so the body never
+ * counted as down and nothing let it sleep for nine seconds. Every substep after 0.7 s: a joint going more than 2.5 m/s faster than
+ * the hips (5 while the throes kick on purpose) is not falling, it is being pumped — most of that speed is taken off it; and once
+ * the hips have been nearly still for half a second the whole body is damped hard, so it settles and sleeps.) */
+function ragAntiPump(r, h) {
+  const hip0 = r.byName['Character1_Hips'] || r.parts[0]; if (!hip0 || h <= 0) return;
+  const hvx = (hip0.p.x - hip0.pp.x) / h, hvy = (hip0.p.y - hip0.pp.y) / h, hvz = (hip0.p.z - hip0.pp.z) / h;
+  r.hipStill = Math.hypot(hvx, hvy, hvz) < 0.35 ? (r.hipStill || 0) + h : 0;
+  const thr = ragThroeLive(r), cap = thr ? 3.5 : 2.5, settle = r.hipStill > 0.5 && !thr ? 0.25 : 0;
+  for (const q of r.parts) {
+    const vx = (q.p.x - q.pp.x) / h - hvx, vy = (q.p.y - q.pp.y) / h - hvy, vz = (q.p.z - q.pp.z) / h - hvz, rel = Math.hypot(vx, vy, vz);
+    let k = settle;
+    if (rel > cap) k = Math.max(k, 1 - cap / rel);
+    if (k > 0) { q.pp.x += (q.p.x - q.pp.x) * k; q.pp.y += (q.p.y - q.pp.y) * k; q.pp.z += (q.p.z - q.pp.z) * k; }
+  }
+}
+function ragPartW(n) {
+  return /Hips/.test(n) ? 0.42 : /Spine/.test(n) ? 0.5 : /Neck/.test(n) ? 0.8 : /Head/.test(n) ? 0.75 : /Shoulder/.test(n) ? 0.7
+    : /UpLeg/.test(n) ? 0.6 : /ForeArm/.test(n) ? 1.0 : /Arm/.test(n) ? 0.85 : /Leg/.test(n) ? 0.85 : /Hand|ToeBase/.test(n) ? 1.25 : /Foot/.test(n) ? 1.0 : 1;
+}
+/* ---- A BODY THAT TRIES TO STAY UP (2026-11-25, the owner: "what can we do to further improve the physics i want it to feel and look
+ * amazing" — and of the first idea, a powered ragdoll, "Yes, build them"). A man killed on his feet was a sack from that frame: every
+ * joint free, the blow's throw and gravity all there was. Now, for the first second or so, he has MUSCLES: every joint is pulled toward
+ * where it stood in the pose he died in — that pose carried in his own frame (hips, up the spine, across the hips), so the pull
+ * keeps his SHAPE and never his place or his heading: the blow still throws and turns him whole — and the chest is held up over the
+ * hips while his legs hold. It all fades out over `T` (0.7–1.5 s, less for a harder blow): the knees go first (`legT`), so he
+ * staggers off the blow, sags, and goes down; where the blow landed is weakest (that arm flies, that shoulder drops). The pull is a
+ * damped one — the corrections move his last place most of the way with them (`MUS_DAMP`), so it is a body holding itself, not a
+ * spring ringing. Not for a body blown apart, flung by the dark knight, slammed by the mace from above, cut in half, stone or wood,
+ * or anything taller than a man and a half; a body not standing when it died (the fall's ragdoll, one on the ground) keeps its
+ * shape a moment and is not held up. The throes wait for it. */
+const _muU = new THREE.Vector3(), _muS = new THREE.Vector3(), _muF = new THREE.Vector3(), _muT = new THREE.Vector3(), _muD = new THREE.Vector3();
+const MUS_K = 0.09, MUS_DAMP = 0.75, MUS_HOLD = 0.22, MUS_HOLD_DAMP = 0.97;   // (the hold must not add speed: at 0.55 it hopped him 0.4 m up)
+function ragFrame(r, U, S, F) {
+  const B = r.byName, H = B['Character1_Hips'], Ch = B['Character1_Spine2'] || B['Character1_Spine1'] || B['Character1_Spine'];
+  const L = B['Character1_LeftUpLeg'] || B['Character1_LeftShoulder'], R = B['Character1_RightUpLeg'] || B['Character1_RightShoulder'];
+  if (!H || !Ch || !L || !R) return null;
+  U.subVectors(Ch.p, H.p); const ul = U.length(); if (ul < 1e-4) return null; U.multiplyScalar(1 / ul);
+  S.subVectors(R.p, L.p); S.addScaledVector(U, -S.dot(U)); const sl = S.length(); if (sl < 1e-4) return null; S.multiplyScalar(1 / sl);
+  F.crossVectors(S, U);
+  return H;
+}
+/* ---- KICKED OVER AS ONE PIECE, AND UP AGAIN (2026-11-26, the owner, with a reel of Dark Messiah: "have it so kicking sometimes knocks
+ * the enemy into a ragdoll that flings but holds integrity then stands up after it to fight again. the ragdolls should feel
+ * better"). The kick's knockdown was a clip played where he stood. Now he is THROWN — the dead's own ragdoll on a living man
+ * (`kickRagStart`): the fling's throw cut to a few metres, and through the air and the landing every joint held to the pose he
+ * was kicked in, carried in his own hips' frame (`r.holdI`, `ragHoldStep`: a man braced, not a sack — and at 40 % once he has
+ * been down a moment, so he sags onto the floor). What he flies into breaks as it would under a body (`cpRagHits`), the court's
+ * stone and solid things stop him. When he has lain a beat (`kickRagStep`) the particles are let go and he gets up FROM WHERE
+ * AND HOW HE LANDED: his heading and place are solved from the rise clip's own first frame against the way his body lies
+ * (no clip convention trusted — measured on the bones, that frame), the knockdown's own rise runs from there (`st.down`, so
+ * everything that knows a man is down still knows), and for a third of a second his joints are eased from where the ragdoll
+ * left them to where the clip has them (`u.ragOut`, `ragOutAll` before the draw). Killed in the air, he is a body from that
+ * frame. Kinds without a rise clip keep the old knockdown. */
+let _roLast = 0; const _roDt = () => { const n = performance.now(), d = _roLast ? (n - _roLast) / 1000 : 0.016; _roLast = n; return d; };
+const _krA = new THREE.Vector3(), _krB = new THREE.Vector3(), _krQ = new THREE.Quaternion(), _krM = new THREE.Matrix4();
+/* (NOT THROUGH THE FLOOR — 2026-11-26, the owner: "improve them getting up too they clip through the ground". A clip's lying pose is
+ * the animator's floor, not this one: the head, the hands or the hips went under it. Each frame of a man down, the lowest of his
+ * big bones is found and the whole of him lifted so it lies on the floor — and let back down as the clip rises off it, never
+ * pushed under. The heights are his own floor under him (`groundUnderS`'s own question, the room's or the castle's or the sand).) */
+const _dfB = new THREE.Vector3();
+// (the big bones a body lies and rises on — built once; `downFloorKeep` and the blend's floor check in `ragOutAll` both read it)
+function dfBonesOf(u) { return u.dfBones || (u.dfBones = (() => { const out = []; u.model.traverse((o) => { if (o.isBone && /Head$|Head_|Hand$|Hand_|Hips|Spine2|Foot$|Foot_|ForeArm|Leg$|Leg_|Calf|Thigh/.test(o.name) && !/Finger|Thumb|Index|Middle|Ring|Pinky|HeadTop|Toe/.test(o.name)) out.push(o); }); return out; })()); }
+function downFloorKeep(u, floorY, settle = 0) {
+  if (!u.model) return;
+  const L = dfBonesOf(u);
+  if (!L.length) return;
+  u.model.updateMatrixWorld(true);
+  const p = u.g.position, floor = floorY !== undefined ? floorY : p.y - (u.dfLift || 0);   // (the group's own height under the lift is his floor: the down code keeps it there)
+  let lo = Infinity; for (const b of L) lo = Math.min(lo, b.getWorldPosition(_dfB).y);
+  /* (`settle` 0..1: as he comes up, the lift may also go NEGATIVE, his lowest bone — his ankles by then — set onto the floor and not
+   * left where the clip had them: two of the owner's stand-ups end with the feet 0.09 and 0.2 m over their own origin, and he
+   * finished his get-up standing on air — "after getting kicked the farmers get up floating feet above the ground".) */
+  let want = floor + 0.05 - (lo - (u.dfLift || 0));
+  if (want < 0) want *= settle;
+  const d = want - (u.dfLift || 0); p.y += d; u.dfLift = want;
+  if (Math.abs(d) > 1e-5) u.g.updateMatrixWorld(true);
+}
+/* THE FLOOR A MAN STANDS ON at (x, z), from the level he was on (`y0`): a castle's or the tavern's own storeys where he is in one
+ * (`site` — the walking floors, `keepFloorAt`: a step up to 0.45 m is his floor, a table or the storey over his head is not), else
+ * the room's or the beach's (`groundUnder`, which does not know a castle's paving: the castles stand on the sand, off the room grid). */
+function standFloorAt(site, x, z, y0) {
+  if (site) { const st = keepFloorAt(x, z, y0, 0.45, site); if (st && Number.isFinite(st.f)) return st.f; }
+  return groundUnder(x, z, y0 + 0.45);
+}
+const unitSite = (u) => (u.kind.fortBody && fortWalls) ? FORT_SITE : (u.kind.c13Body && c13Walls) ? C13_SITE : (u.kind.thrBody && thrWalls) ? THR_SITE : (u.kind.celBody && celWalls) ? CEL_SITE : (u.kind.tav && inTavern && tavWalls) ? TAV_SITE : null;   // (as `mutRagdoll` picks a body's site)
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { kickRagStartS: (u, dx, dz, far) => kickRagStart(u, dx, dz, far), standFloorS: (u, x, z, y0) => standFloorAt(unitSite(u), x, z, y0) }));
+function kickRagStart(u, dx, dz, far = 1) {
+  const noRise = !u.kind.riseClip || !u.kind.knockClip || !u.clips || !u.clips[u.kind.riseClip];
+  if (u.rag || u.kickRag || !u.model || !u.mixer || !u.clips || (u.kind.h || 1.8) > 2.7 || (noRise && !(u.clips.roar || u.clips.idle))) return false;
+  u.kickRiseRoar = noRise;   // (no get-up of its own: it rises into its roar — `kickRagRise`)
+  const S = u.st;
+  S.atk = -1; S.chainAt = -1; S.chained = false; S.chainN = 0; S.stun = 0; S.recoil = 0; S.block = 0; S.evade = 0; S.side = 0; S.back = 0; S.roar = 0;
+  S.flinchPush = null; mutDrop(u);
+  const kf0 = S.killFling, kk0 = S.kickKill;
+  S.killFling = 0.3; S.kickKill = true;
+  try { mutRagdoll(u, dx, dz, 1); } finally { S.killFling = kf0 || 0; S.kickKill = kk0 || false; }
+  const r = u.rag; if (!r) return false;
+  // the fling's own throw is a kill's: a living man goes a few metres, low
+  for (const q of r.parts) if (q.seed) { q.seed.x *= 0.5 * far; q.seed.z *= 0.5 * far; q.seed.y = Math.min(q.seed.y * 0.6 * Math.sqrt(far), 3.0 + far * 0.4); }   // (`far`: a jump kick's, 1.7)
+  r.throe = null; r.mus = null; r.plant = null; r.kfly = true; r.slide = 0.5;
+  const H = ragFrame(r, _muU, _muS, _muF);
+  if (H) { const off = new Map(); for (const q of r.parts) { _muT.subVectors(q.p, H.p); off.set(q, [_muT.dot(_muS), _muT.dot(_muU), _muT.dot(_muF)]); } r.holdI = { off, k: 0.16 }; }
+  // (kicked again on the way up: what was left of that rise goes, and its lift with it)
+  if (u.dfLift) { u.g.position.y -= u.dfLift; u.dfLift = 0; }
+  S.riseFrom = null; S.riseClipNow = null; u.ragOut = null;
+  u.kickRag = { ph: 0, t: 0, y0: u.g.position.y };   // (the floor he stood on: `kickRagRise` stands him back up on that level)
+  S.cool = Math.max(S.cool || 0, 3.5); S.poise = u.kind.poise;
+  return true;
+}
+function ragHoldStep(r) {
+  const Hd = r.holdI, H = ragFrame(r, _muU, _muS, _muF); if (!H) return;
+  const k = Hd.k * ((r.downT || 0) > 0.25 ? 0.4 : 1);
+  for (const q of r.parts) {
+    if (q === H) continue;
+    const o = Hd.off.get(q); if (!o) continue;
+    _muT.copy(H.p).addScaledVector(_muS, o[0]).addScaledVector(_muU, o[1]).addScaledVector(_muF, o[2]);
+    _muD.subVectors(_muT, q.p).multiplyScalar(k * (q.foot ? 0.6 : 1));
+    q.p.add(_muD); q.pp.addScaledVector(_muD, MUS_DAMP);
+  }
+}
+function kickRagStep(u, dt) {
+  const K = u.kickRag, r = u.rag;
+  if (!r) { u.kickRag = null; return false; }
+  updateMutRagdoll(u, dt);
+  K.t += dt;
+  if (((r.downT || 0) > 0.7 && K.t > 1.1) || K.t > 3.4) kickRagRise(u);
+  return true;
+}
+function kickRagRise(u) {
+  const r = u.rag, S = u.st, KN = knockOf(u);
+  const Hq = r.byName['Character1_Hips'] || r.parts[0], Tq = r.byName['Character1_Head'] || r.byName['Character1_Neck'] || r.byName['Character1_Spine2'];
+  const hb = Hq.bone, tb = Tq ? Tq.bone : null;
+  // what the ragdoll left: every bone's own turn, and the hips' place and turn in the world
+  const snap = []; u.model.updateMatrixWorld(true);
+  u.model.traverse((o) => { if (o.isBone && o !== hb) snap.push([o, o.quaternion.clone()]); });
+  const root = { p: hb.getWorldPosition(new THREE.Vector3()), q: hb.getWorldQuaternion(new THREE.Quaternion()) };
+  const azR = tb ? Math.atan2(Tq.p.x - Hq.p.x, Tq.p.z - Hq.p.z) : u.g.rotation.y;
+  /* (THE FLOOR HE STANDS ON, NOT THE ONE HIS HIPS TOUCHED — 2026-11-26, the owner, a still in the tavern: "when they get up they are
+   * floating fix this now". The rise stood him on his ragdoll hips' floor, and in a room a joint asks for the floor under it at its
+   * OWN height: a table top for a body that went over one, an upper storey for one thrown high near it. Measured (`tools/riseup.js`):
+   * the drunk began his get-up 4.2 m up, Wong 0.77 m up on a table's height and stayed there blocking in the air — a man in the tavern
+   * does not fall. Now the floor under where he lies, asked at the level he stood on when he was kicked (`kickRag.y0`): the floor
+   * he was on, or a lower one if he went off an edge; never a table or a storey over his head.) */
+  const y0 = u.kickRag && u.kickRag.y0 !== undefined ? u.kickRag.y0 : u.g.position.y;
+  let fy = standFloorAt(r.fort, Hq.p.x, Hq.p.z, y0);
+  if (!Number.isFinite(fy) || fy > y0 + 0.45) fy = Hq.floor !== undefined ? Math.min(Hq.floor - 0.07, y0 + 0.45) : y0;
+  u.rag = null; u.kickRag = null;
+  // the rise's first frame, where it would lie as he stands now; then turned and moved onto the body
+  u.g.position.set(Hq.p.x, fy, Hq.p.z); u.g.rotation.set(0, 0, 0); if (u.model) u.model.rotation.y = 0;
+  /* (WHICH GET-UP — 2026-11-26, the owner's four Mixamo stand-ups, "make them fluid and seamless": each is posed at its first frame
+   * and scored against how the ragdoll lies — the chest's way up (on his back or his front) and the head's height off the hips —
+   * and the nearest is the one he gets up by, so the first frame of it is the pose he is already in. Kinds without them keep
+   * their own `riseClip`.) */
+  const cands = u.kickRiseRoar ? [] : ['mStandA', 'mStandB', 'mStandC', 'mStandD', u.kind.riseClip].filter((n) => n && u.clips[n]);
+  const chestUp = (() => { const B = r.byName, Ch = B['Character1_Spine2'] || B['Character1_Spine1'], L = B['Character1_LeftUpLeg'], R = B['Character1_RightUpLeg']; if (!Ch || !L || !R) return 0;
+    _krA.subVectors(Ch.p, Hq.p); _krB.subVectors(R.p, L.p); return _krB.cross(_krA).normalize().y; })();
+  const headUp = Tq ? Tq.p.y - Hq.p.y : 0;
+  let pick = u.kickRiseRoar ? (u.clips.roar ? 'roar' : 'idle') : u.kind.riseClip, best = Infinity;
+  for (const nm of cands) {
+    const a0 = mutPlay(u, nm, false); if (!a0) continue; a0.paused = true; a0.time = 0; u.mixer.update(0); u.g.updateMatrixWorld(true);
+    const L = u.model.getObjectByName(FJ(u.kind.file, 'LeftUpLeg')), R2 = u.model.getObjectByName(FJ(u.kind.file, 'RightUpLeg')), C2 = u.model.getObjectByName(FJ(u.kind.file, 'Spine2'));
+    let cu = 0; if (L && R2 && C2) { const h = hb.getWorldPosition(new THREE.Vector3()), c = C2.getWorldPosition(new THREE.Vector3()), l = L.getWorldPosition(new THREE.Vector3()), rr = R2.getWorldPosition(new THREE.Vector3()); cu = rr.sub(l).cross(c.sub(h)).normalize().y; }
+    const hu = tb ? tb.getWorldPosition(_krA).y - hb.getWorldPosition(_krB).y : 0;
+    const sc = Math.abs(cu - chestUp) * 1.5 + Math.abs(hu - headUp) + (nm === u.kind.riseClip ? 0.25 : 0) + Math.random() * 0.15;
+    if (sc < best) { best = sc; pick = nm; }
+  }
+  S.riseClipNow = pick;
+  const a = mutPlay(u, pick, false);
+  if (a) { a.paused = true; a.time = 0; }
+  u.mixer.update(0); u.g.updateMatrixWorld(true);
+  let yaw = 0;
+  if (tb) { hb.getWorldPosition(_krA); tb.getWorldPosition(_krB); const azC = Math.atan2(_krB.x - _krA.x, _krB.z - _krA.z); yaw = azR - azC; }
+  if (u.kickRiseRoar) yaw = Math.atan2(camera.position.x - Hq.p.x, camera.position.z - Hq.p.z);   // (a roar stands: it comes up facing you)
+  u.g.rotation.y = yaw; u.g.updateMatrixWorld(true);
+  hb.getWorldPosition(_krA); u.g.position.x += Hq.p.x - _krA.x; u.g.position.z += Hq.p.z - _krA.z;
+  // (and never in the floor: the clip's lowest point at its first frame put on the floor, not under it — "they clip through the ground")
+  u.g.updateMatrixWorld(true); { let lo = Infinity; u.model.traverse((o) => { if (o.isBone && !/Finger|Thumb|Index|Middle|Ring|Pinky|Toe_End|HeadTop/i.test(o.name)) lo = Math.min(lo, o.getWorldPosition(_krB).y); });
+    u.g.position.y = fy; u.dfLift = 0; { const l = fy + 0.06 - lo; u.g.position.y += l; u.dfLift = l; } }   // (lifted OR lowered onto it — a stand-up's first frame can lie over its own origin; the lift is `downFloorKeep`'s from here: `dfLift`)
+  // the knockdown's own rise, from here
+  S.riseDur = u.kickRiseRoar ? 1.3 : (u.clips[pick] && u.clips[pick].getClip().duration) || KN.rise;
+  S.knocked = true; S.down = S.riseDur; S.knockTurn = 0; S.knockAcc = null; S.downThud = true; S.riseYaw = 0; S.knockYaw = yaw;
+  const tf = clipTravelAt(u, u.kind.knockClip, 1), cf = Math.cos(yaw), sf = Math.sin(yaw);
+  u.hitFrom.copy(u.g.position);
+  if (tf) { u.hitFrom.x -= tf.x * cf + tf.y * sf; u.hitFrom.z -= -tf.x * sf + tf.y * cf; }
+  S.cool = Math.max(S.cool || 0, S.riseDur + 0.4);
+  u.ragOut = { t: 0, T: u.kickRiseRoar ? 0.95 : 0.55, snap, root, hb };   // (0.55, was 0.34: at that his hands and toes crossed the gap at 12 m/s — a snap, not a roll, 2026-11-26)   // (a roar has no lying start: the body is drawn up out of how it lay, slowly)
+}
+/* THE LIFT LET GO WITH THE CLIP, NOT ON A FRAME (2026-11-26, the owner: "FIX THIS BUG THEY ARE ALWAYS FLAOTING WHEN THEY GET UP LIKE
+ * FEET ABOVE THE GROUND"). Through a get-up his group is held down (or up) so the clip's lowest bone lies on the floor (`dfLift`,
+ * `downFloorKeep`) — the stand-ups ride up off their own origin, one of them by 1.5 m. The frame he counted as up, the group was put
+ * back on the floor and the lift zeroed — with the stand-up's pose still in the mix, fading into his walk: he popped up by the whole
+ * lift and sank back over the fade. Measured (`tools/riseall.js &trace=1`): feet 1.12 m in the air on that frame after `mStandD`,
+ * 0.65 the next, down in a quarter second; 0.14 m after the ordinary knockdown's `mGetUp`. Every get-up, both ways down.
+ * Now the group goes to the floor as before and the same offset is carried on his MODEL, times how much of the mix the get-up's
+ * clip still has (its weight is what blends its raised hips into the walk's), gone when the clip is. */
+function dfOutStart(u, L0) {
+  if (!u.model || Math.abs(L0) < 0.004) return;
+  const nm = u.st.riseClipNow || (u.kind && u.kind.riseClip), a = (nm && u.clips && u.clips[nm]) || u.cur;
+  u.dfOut = { L0, a, t: 0, y0: u.modelY !== undefined ? u.modelY : u.model.position.y - 0 };
+  u.model.position.y = u.dfOut.y0 + L0;
+}
+function dfOutStep(u, dt) {
+  const O = u.dfOut; O.t += dt;
+  let w = 0;
+  if (u.model && u.st.alive && !u.rag && O.a && O.a.isScheduled() && O.t < 1.2) {
+    let tot = 0; for (const x of u.mixer._actions) if (x.enabled && x.isScheduled()) tot += x.getEffectiveWeight();
+    w = tot > 1e-4 ? THREE.MathUtils.clamp(O.a.getEffectiveWeight() / tot, 0, 1) : 0;
+  }
+  w = Math.max(w, 1 - O.t / 0.3);                                    // (and never gone in under 0.3 s: a get-up whose clip had already left the mix dropped him its whole lift in one frame)
+  if ((u.st.down || 0) > 0 || u.kickRag) w = 0;                       // (down again: the new fall's own floor-keeping has him)
+  if (u.model) u.model.position.y = O.y0 + O.L0 * w;
+  if (w <= 0.002) { if (u.model) u.model.position.y = O.y0; u.dfOut = null; }
+}
+// q0 → q1 by t along the way it is given (no short-way flip), into `out`
+function rqSlerpFixed(q0, q1, t, out) {
+  let c = q0.x * q1.x + q0.y * q1.y + q0.z * q1.z + q0.w * q1.w; c = Math.max(-1, Math.min(1, c));
+  if (c > 0.9995) return out.set(q0.x + (q1.x - q0.x) * t, q0.y + (q1.y - q0.y) * t, q0.z + (q1.z - q0.z) * t, q0.w + (q1.w - q0.w) * t).normalize();
+  const th = Math.acos(c), sn = Math.sin(th), a = Math.sin((1 - t) * th) / sn, b = Math.sin(t * th) / sn;
+  return out.set(q0.x * a + q1.x * b, q0.y * a + q1.y * b, q0.z * a + q1.z * b, q0.w * a + q1.w * b).normalize();
+}
+// (the joints eased from where the ragdoll left them to where the clip has them: before the draw, after every mixer has written)
+function ragOutAll(dt) {
+  for (const u of mutants) {
+    if (u.dfOut) dfOutStep(u, dt);
+    /* (a lift still on record half a second after he is up: measured (`tools/riseall.js`), some men's walk has them back on its own
+     * floor while `dfLift` still reads −0.09…−0.18 from the get-up — nothing to see, but his NEXT knockdown took its floor from
+     * `p.y − dfLift`. The record is dropped; where he stands is already his walk's.) */
+    if (u.dfLift && u.st && !((u.st.down || 0) > 0) && !u.kickRag && !u.rag && !u.ragOut) { u.dfStale = (u.dfStale || 0) + dt; if (u.dfStale > 0.5) { u.dfLift = 0; u.dfStale = 0; } } else if (u.dfStale) u.dfStale = 0;
+  }
+  for (const u of mutants) {
+    const O = u.ragOut; if (!O) continue;
+    if (!u.model || !u.st.alive) { u.ragOut = null; continue; }
+    O.t += dt; const k = Math.min(1, O.t / O.T), e = k * k * (3 - 2 * k);
+    if (k >= 1) { u.ragOut = null; continue; }
+    /* (THE BODY'S HEIGHT OFF THE CLIP, THE DRAWN POSE OFF THE FLOOR — 2026-11-26. Through this blend his hips are anchored where the
+     * ragdoll left them IN THE WORLD, so moving his group moves what is drawn only by the blend's share; set off the drawn pose, the
+     * height chased itself (floats of 0.3-0.9 m, bobbing 10 cm a frame). So: the group is put where the get-up's own pose — fresh from
+     * the mixer, before the blend — lies on the floor (it moves smoothly: so does this), and after the blend, anything of him drawn
+     * under the floor lifts only his drawn hips.) */
+    if (u.st.riseFloor !== undefined && O.lw && O.lw.size) {
+      let fresh = false; for (const [b] of O.snap) { const lw = O.lw.get(b); if (!lw || lw.angleTo(b.quaternion) > 1e-5) { fresh = true; break; } }
+      O.fresh = fresh;
+    } else O.fresh = true;
+    if (u.st.riseFloor !== undefined && O.fresh) {
+      u.model.updateMatrixWorld(true); let lo = Infinity; for (const bn of dfBonesOf(u)) lo = Math.min(lo, bn.getWorldPosition(_krA).y);
+      const d = u.st.riseFloor + 0.05 - lo;
+      if (Math.abs(d) > 1e-4) { u.g.position.y += d; u.dfLift = (u.dfLift || 0) + d; u.g.updateMatrixWorld(true); }
+    }
+    /* (FROM THE CLIP'S OWN POSE, NEVER FROM LAST FRAME'S BLEND — 2026-11-26, "the bodies are all glitchy when standing up". This blend
+     * writes into the bones and counted on the mixer writing the clip back before the next frame; on a frame it did not (a hitstop's
+     * `update(0)` path, a held frame), it blended from its own last answer and the pose jumped — measured, a toe 1.2 m for one frame
+     * and back. Each bone's clip value is kept (`O.cq`), taken fresh only when the bone no longer holds what this wrote.) */
+    if (!O.cq) { O.cq = new Map(); O.lw = new Map(); }
+    /* (and NEVER FLIPPING ROUND THE OTHER WAY: three's slerp takes the short way each frame, and a joint nearly a half turn from its
+     * clip pose crossed the halfway point between frames and swung round the other side — a toe 1.36 m in one frame. Each bone's
+     * clip value keeps the sign it started with, frame to frame, and the blend goes the way it set out.) */
+    const clipQ = (b, q0) => { const lw = O.lw.get(b); let c = O.cq.get(b);
+      if (!c) { O.cq.set(b, c = b.quaternion.clone()); if (q0 && c.dot(q0) < 0) { c.x = -c.x; c.y = -c.y; c.z = -c.z; c.w = -c.w; } }
+      else if (!lw || lw.angleTo(b.quaternion) > 1e-5) { const x = b.quaternion; if (x.x * c.x + x.y * c.y + x.z * c.z + x.w * c.w < 0) c.set(-x.x, -x.y, -x.z, -x.w); else c.copy(x); }
+      return c; };
+    for (const [b, q] of O.snap) { rqSlerpFixed(q, clipQ(b, q), e, _krQ); b.quaternion.copy(_krQ); let lw = O.lw.get(b); if (!lw) O.lw.set(b, lw = new THREE.Quaternion()); lw.copy(_krQ); }
+    const hb = O.hb, par = hb.parent;
+    if (par) {
+      par.updateWorldMatrix(true, false);
+      _krM.copy(par.matrixWorld).invert();
+      if (!O.hp || !O.hpw || O.hpw.distanceToSquared(hb.position) > 1e-10) O.hp = (O.hp || new THREE.Vector3()).copy(hb.position);
+      _krA.copy(O.root.p).applyMatrix4(_krM); hb.position.lerpVectors(_krA, O.hp, e); O.hpw = (O.hpw || new THREE.Vector3()).copy(hb.position);
+      const r0 = (O.r0 || (O.r0 = new THREE.Quaternion())); par.getWorldQuaternion(r0).invert().multiply(O.root.q);
+      const hq = clipQ(hb, r0); rqSlerpFixed(r0, hq, e, _krQ); hb.quaternion.copy(_krQ);
+      let lw = O.lw.get(hb); if (!lw) O.lw.set(hb, lw = new THREE.Quaternion()); lw.copy(_krQ);
+    }
+    /* (and the floor asked AGAIN, of the pose as it is drawn — the orc's foot went 0.5 m under half-way through this blend, measured
+     * by `tools/riseup.js`: whatever of him is drawn under it lifts his DRAWN HIPS, not his group, so the height above stays the clip's) */
+    if (u.st.riseFloor !== undefined && par) {
+      u.model.updateMatrixWorld(true); let lo = Infinity; for (const bn of dfBonesOf(u)) lo = Math.min(lo, bn.getWorldPosition(_krA).y);
+      const under = u.st.riseFloor + 0.03 - lo;
+      if (under > 0) { _krA.set(0, under, 0).add(hb.getWorldPosition(_krB)); par.updateWorldMatrix(true, false); _krM.copy(par.matrixWorld).invert(); hb.position.copy(_krA.applyMatrix4(_krM)); O.hpw.copy(hb.position); u.model.updateMatrixWorld(true); }
+    }
+  }
+}
+function ragMuscleInit(u, power) {
+  const r = u.rag, st = u.st, K = u.kind || {}; if (!r || !st) return;
+  if (K.stone || K.wood || (K.h || 1.8) > 2.7 || (st.killBlast || 0) > 0.05 || (st.killFling || 0) > 0.05 || (st.killMace && st.killOh)) return;
+  if (u.gone && u.gone[MUT_BISECT.bone]) return;
+  /* (HOLD TOGETHER, STUMBLE, THEN FALL — AND NOW AND THEN, JUST DROP: 2026-11-26, the owner: "all ragdolls fold so quick make them hold
+   * their integrity and stumble to fall but sometimes they dont make the deaths unique". One death in seven has no muscles at all
+   * (a man switched off); the rest hold longer — the whole hold 1.0-1.9 s where it was 0.75-1.5, the knees 0.55-0.9 of it where
+   * they were 0.4-0.7, a fifth stronger — so the blow walks him back a step or two before his legs go.) */
+  if (Math.random() < (window.__musNone ?? 1)) return;   // (1 since 2026-11-26: "everyone should just drop lifeless"; 0.14 was the hold-and-stumble)
+  const H = ragFrame(r, _muU, _muS, _muF); if (!H) return;
+  const B = r.byName, Ch = B['Character1_Spine2'] || B['Character1_Spine1'] || B['Character1_Spine'];
+  const off = new Map(), weak = new Map(), by = BLOW.on && BLOW.u === u;
+  for (const q of r.parts) {
+    _muT.subVectors(q.p, H.p); off.set(q, [_muT.dot(_muS), _muT.dot(_muU), _muT.dot(_muF)]);
+    let s = 1;
+    if (by) s = THREE.MathUtils.clamp(0.2 + q.p.distanceTo(BLOW.p) / 0.55, 0.2, 1);   // (where it landed: weakest)
+    if (/Hand|ToeBase/.test(q.name)) s *= 0.55;
+    weak.set(q, s);
+  }
+  const tall = Ch.p.y - u.g.position.y, stand = tall > (K.h || 1.8) * 0.45 && _muU.y > 0.55;
+  const T = r.stag && stand ? 1.3 + Math.random() * 0.9 : THREE.MathUtils.clamp(1.0 + Math.random() * 0.9 - power * 0.12, 0.6, 1.9) * (stand ? 1 : 0.5);
+  /* (EACH ONE HIS OWN — 2026-11-25, the owner: "I NEED THEM TO BE MORE ACTIVE SELF BALANCING RAGDOLLS EVERY DEATH SHOULD LOOK AND FEEL
+   * UNIQUE". A death draws its own: how strong he is (`k`), which knee goes first and by how much (`legL`/`legR`), whether he STEPS to
+   * catch himself while he can still stand (`stepK`), and what his hands do as he goes (`reflex`: braced out to the ground, or clutched
+   * to the wound). See `ragMuscleStep`.) */
+  const legT0 = T * (r.stag ? 0.7 + Math.random() * 0.2 : 0.55 + Math.random() * 0.35), legBias = 0.65 + Math.random() * 0.7;
+  r.mus = { off, weak, T, stand, chUp: tall, fell: false, fellT: 0, k: (r.stag ? 1.5 : 1.2) * (0.8 + Math.random() * 0.55), legT: legT0,
+            legL: legT0 * Math.min(1.35, legBias), legR: legT0 * Math.min(1.35, 2 - legBias), stepK: 0.6 + Math.random() * 0.7, step: null, stepCd: 0.1 + Math.random() * 0.15,
+            reflex: Math.random() < 0.62 ? 'brace' : 'clutch', reflexT: 0, wound: by ? BLOW.p.clone() : null, trunk: Ch.p.distanceTo(H.p), hipY: H.p.y - u.g.position.y, ch: Ch };
+  if (r.throe) r.throe.start = Math.max(r.throe.start, T * 0.85);         // (the throes once he is down)
+  if (window.__musDbg) console.log('[PB] mus init stand', stand, 'tall', tall.toFixed(2), 'upY', _muU.y.toFixed(2), 'T', T.toFixed(2), 'legT', r.mus.legT.toFixed(2), 'stag', !!r.stag);
+}
+function ragMuscleStep(u, r, h) {
+  const M = r.mus, t = r.t;
+  if (t >= M.T) { r.mus = null; return; }
+  const e = 1 - t / M.T, env = e * e * (3 - 2 * e), legE = Math.max(0, 1 - t / M.legT);
+  const H = ragFrame(r, _muU, _muS, _muF); if (!H) { r.mus = null; return; }
+  /* (ONLY WITH HIS FEET UNDER HIM — measured, `deathlab.js &only=stand`: a farmer's kill throws him whole (`ragEven`), and held to
+   * his shape in the air he flew as a plank. A man off his feet is limp but for a little tone; on them, he holds.) */
+  const B = r.byName, fl = (q) => q && q.floor !== undefined && q.p.y - q.r - q.floor < 0.25;
+  const feet = fl(B['Character1_LeftFoot']) || fl(B['Character1_RightFoot']) || fl(B['Character1_LeftToeBase']) || fl(B['Character1_RightToeBase']);
+  M.air = feet ? Math.max(0, (M.air || 0) - h * 6) : Math.min(1, (M.air || 0) + h * 2.2);
+  /* (AND ONCE HE HAS GONE, HE FALLS — 2026-11-25, the owner: "the death animations now they float away its bad fix this it should be
+   * natural". The hold bled the fall's speed off while his feet touched anything, and a body lying on the ground has its feet on it:
+   * it was held up and let down slowly, floating. Balance is lost for good the moment the chest is under 0.6 of the height it
+   * stood at or the spine is past 55° off upright: from then the hold is off and the muscles let go in a quarter of a second, and
+   * he drops as a body drops.) */
+  if (!M.fell && ((M.ch.p.y - (H.floor !== undefined ? H.floor : u.g.position.y)) < M.chUp * 0.6 || _muU.y < 0.57)) { M.fell = true; M.fellT = t; }
+  const gone = M.fell ? Math.max(0, 1 - (t - M.fellT) / 0.25) : 1;
+  if (M.fell && gone <= 0 && M.reflexT >= 0.5) { r.mus = null; return; }   // (his hands' half second played out first)
+  const tone = (1 - 0.8 * M.air) * gone;
+  for (const q of r.parts) {
+    if (q === H) continue;
+    const o = M.off.get(q); if (!o) continue;
+    _muT.copy(H.p).addScaledVector(_muS, o[0]).addScaledVector(_muU, o[1]).addScaledVector(_muF, o[2]);
+    const leg = /Leg|Foot|Toe/.test(q.name), lE = leg ? Math.max(0, 1 - t / (/Left/.test(q.name) ? M.legL : M.legR)) : 1;
+    const a = MUS_K * M.k * M.weak.get(q) * env * tone * lE;
+    if (a <= 0) continue;
+    _muD.subVectors(_muT, q.p).multiplyScalar(a);
+    q.p.add(_muD); q.pp.addScaledVector(_muD, MUS_DAMP);
+  }
+  // and he keeps his feet while his legs hold: the chest over the hips, the hips at the height he stood at
+  if (M.stand && !M.fell) {
+    const hold = env * legE * (1 - M.air);
+    if (hold > 0) {
+      _muT.copy(H.p); _muT.y += M.trunk;
+      _muD.subVectors(_muT, M.ch.p).multiplyScalar(MUS_HOLD * hold); M.ch.p.add(_muD); M.ch.pp.addScaledVector(_muD, MUS_HOLD_DAMP);
+      /* (AND IT TAKES THE FALL OUT OF HIM — measured: correcting where he is and not how fast he is going left gravity's speed in
+       * him, and he sank through the hold as if it were not there, the chest 1.17 → 0.75 m in 0.4 s. A brace stops the fall: the
+       * downward speed of the chest and the hips is bled off by the same measure, and the chest's sideways speed off the hips.) */
+      const bleed = 0.35 * hold;
+      if (M.ch.p.y < M.ch.pp.y) M.ch.pp.y += (M.ch.p.y - M.ch.pp.y) * bleed;
+      const fy = (H.floor !== undefined ? H.floor : u.g.position.y) + M.hipY * 0.88;
+      if (H.p.y < fy) { const dy = (fy - H.p.y) * MUS_HOLD * hold; H.p.y += dy; H.pp.y += dy * MUS_HOLD_DAMP; if (H.p.y < H.pp.y) H.pp.y += (H.p.y - H.pp.y) * bleed; }
+      // (the chest's lean off the hips, not the body's travel: what it moves relative to the hips, bled off)
+      const rvx = (M.ch.p.x - M.ch.pp.x) - (H.p.x - H.pp.x), rvz = (M.ch.p.z - M.ch.pp.z) - (H.p.z - H.pp.z);
+      M.ch.pp.x += rvx * bleed; M.ch.pp.z += rvz * bleed;
+    }
+    /* A STEP TO CATCH HIMSELF: driven off his feet's line while his legs still hold, the foot furthest behind the way he is going is
+     * brought through under him and set down ahead (a lifted arc, a quarter of a second), and again while it lasts — he fights for
+     * his balance across the ground, then his legs go. */
+    const hvx = (H.p.x - H.pp.x) / h, hvz = (H.p.z - H.pp.z) / h, hs = Math.hypot(hvx, hvz);
+    const hold2 = env * Math.min(1, t < Math.min(M.legL, M.legR) ? 1 : 0) * (1 - M.air);
+    if (!M.step && hold2 > 0.25 && hs > 0.55 && (M.stepCd -= h) <= 0) {
+      const dx = hvx / hs, dz = hvz / hs;
+      let foot = null, back = Infinity;
+      for (const n of ['Character1_LeftFoot', 'Character1_RightFoot']) { const f = r.byName[n]; if (!f) continue; const d = (f.p.x - H.p.x) * dx + (f.p.z - H.p.z) * dz; if (d < back) { back = d; foot = f; } }
+      if (foot) {
+        const side = (foot.p.x - H.p.x) * -dz + (foot.p.z - H.p.z) * dx;   // (its own side of him kept)
+        const reach = Math.min(0.55, 0.22 + hs * 0.16) * M.stepK;
+        M.step = { q: foot, t: 0, T: 0.2 + Math.random() * 0.08, from: foot.p.clone(),
+          to: new THREE.Vector3(H.p.x + dx * reach - dz * side * 0.9, foot.floor !== undefined ? foot.floor + foot.r : foot.p.y, H.p.z + dz * reach + dx * side * 0.9) };
+        M.stepCd = 0.22 + Math.random() * 0.12; r.nSteps = (r.nSteps || 0) + 1;
+      }
+    }
+  }
+  if (M.step) {
+    const S = M.step; S.t += h;
+    const k = Math.min(1, S.t / S.T), q = S.q;
+    _muT.lerpVectors(S.from, S.to, k); _muT.y += Math.sin(Math.PI * k) * 0.13;
+    _muD.subVectors(_muT, q.p).multiplyScalar(0.35); q.p.add(_muD); q.pp.addScaledVector(_muD, 0.8);
+    if (k >= 1 || M.fell) M.step = null;
+  }
+  /* AND AS HE GOES, HIS HANDS: the moment his balance is gone, for half a second — out and down to meet the ground the way he is
+   * falling (`brace`), or to the wound (`clutch`). */
+  if (M.fell && M.reflexT < 0.5) {
+    M.reflexT += h; r.reflexDone = M.reflex;
+    const e2 = Math.sin(Math.min(1, M.reflexT / 0.5) * Math.PI);
+    const cvx = (M.ch.p.x - M.ch.pp.x), cvz = (M.ch.p.z - M.ch.pp.z), cl = Math.hypot(cvx, cvz) || 1;
+    for (const n of ['Character1_LeftHand', 'Character1_RightHand']) {
+      const q = r.byName[n]; if (!q) continue;
+      if (M.reflex === 'clutch' && M.wound) _muT.copy(M.wound);
+      else { _muT.set(M.ch.p.x + cvx / cl * 0.55 + (/Left/.test(n) ? -0.18 : 0.18) * (-cvz / cl), (q.floor !== undefined ? q.floor : 0) + 0.06, M.ch.p.z + cvz / cl * 0.55 + (/Left/.test(n) ? -0.18 : 0.18) * (cvx / cl)); }
+      _muD.subVectors(_muT, q.p).multiplyScalar(0.12 * e2); q.p.add(_muD); q.pp.addScaledVector(_muD, 0.7);
+    }
+  }
+}
+const _thA = new THREE.Vector3(), _thB = new THREE.Vector3(), _thC = new THREE.Vector3();
+function ragThroeInit(u) {
+  /* (NOTHING AFTER HE IS DOWN — 2026-11-26, the owner: "the bodies should not be flailing around after death". The throes are off:
+   * the life in a death is in the fall now — the hold, the stumble, the hands going out or to the wound as he goes
+   * (`ragMuscleStep`) — and a body on the floor lies still. `window.__throeOn` for a probe that wants them.) */
+  if (!window.__throeOn) return;
+  const r = u.rag; if (!r || window.__noThroe) return;
+  const K = u.kind || {};
+  if (K.stone || K.wood || K.deathClip || (K.h || 1.8) > 2.7 || K.kingBody) return;
+  if (u.gone && (u.gone['Character1_Head'] || u.gone[MUT_BISECT.bone])) return;
+  if ((u.st.killBlast || 0) > 0.3 || (u.st.killFling || 0) > 0.05) return;
+  const by = BLOW.on && BLOW.u === u;
+  const hy = by ? BLOW.h : (u.st.killHitK ?? 0.6), R = Math.random();
+  let kind = null;
+  if (hy > 0.85) kind = R < 0.62 ? null : 'twitch';
+  else if (hy > 0.42) kind = R < 0.38 ? 'clutch' : R < 0.6 ? 'writhe' : R < 0.78 ? 'reach' : R < 0.9 ? 'crawl' : null;
+  else kind = R < 0.45 ? 'crawl' : R < 0.68 ? 'writhe' : R < 0.86 ? 'clutch' : null;
+  if (u.st.killMace && kind === 'crawl' && Math.random() < 0.5) kind = 'writhe';
+  /* (NOT THE CRAWL, NOT THE FLAIL — 2026-11-26, "bodies keep flying and sliding around on the ground": the crawl moves the whole
+   * body along the floor by design, and a writhe or a twitch throws a limb at 2-3 m/s every fraction of a second. What is
+   * left is what reads as a man dying, not a body being moved: the hands to the wound (`clutch`) or one up toward you (`reach`).) */
+  if (kind === 'crawl' || kind === 'writhe') kind = Math.random() < 0.6 ? 'clutch' : null;
+  if (kind === 'twitch') kind = null;
+  if (!kind) return;
+  const chest = r.byName['Character1_Spine2'] || r.byName['Character1_Spine1'] || r.parts[0];
+  const w = by ? BLOW.p.clone().sub(chest.p) : new THREE.Vector3(0, -0.15, 0);
+  if (w.length() > 0.9) w.setLength(0.9);
+  const away = new THREE.Vector3(chest.p.x - camera.position.x, 0, chest.p.z - camera.position.z); if (away.lengthSq() < 1e-4) away.set(r.kickX || 0, 0, r.kickZ || 1); away.normalize();
+  const dur = { clutch: 3.4, writhe: 2.3, reach: 2.0, crawl: 4.6, twitch: 1.5 }[kind] * (0.8 + Math.random() * 0.5);
+  r.throe = { kind, t: 0, start: 0.55 + Math.random() * 0.55, dur, str: 0.75 + Math.random() * 0.6, w, away, side: Math.random() < 0.5 ? 'Left' : 'Right',
+    both: Math.random() < 0.6, next: 0, voiced: false, ph: Math.random() };
+}
+const ragThroeLive = (r) => !!(r.throe && r.throe.t < r.throe.start + r.throe.dur + 0.3);
+function ragThroeStep(u, r, h) {
+  const T = r.throe; T.t += h;
+  const tt = T.t - T.start; if (tt < 0 || tt > T.dur) return;
+  const f = T.str * Math.pow(1 - tt / T.dur, 1.25);
+  const J = (n) => r.byName['Character1_' + n] || null;
+  const chest = J('Spine2') || J('Spine1'), hips = J('Hips'); if (!chest || !hips) return;
+  // a pull toward a point (spring acceleration k), the joint's own speed eased a little so it settles rather than rings
+  const pull = (q, tgt, k, c = 0.015) => { if (!q) return; _thA.subVectors(tgt, q.p).multiplyScalar(k * f * h * h); q.p.add(_thA); q.pp.lerp(q.p, c); };
+  const kick = (q, x, y, z) => { if (!q) return; q.pp.set(q.p.x - x * h, q.p.y - y * h, q.p.z - z * h); };
+  if (!T.voiced) { T.voiced = true; const V = u.kind.voice; if (V && V.farm && !V.mute) farmVox('hurt', V, { x: hips.p.x, z: hips.p.z, p: 0.75, boost: 0.55 }); }
+  const other = T.side === 'Left' ? 'Right' : 'Left';
+  if (T.kind === 'clutch') {
+    _thC.copy(chest.p).add(T.w).addScaledVector(T.w, -0.2); _thC.y += 0.05;
+    pull(J(T.side + 'Hand'), _thC, 95);
+    if (T.both) pull(J(other + 'Hand'), _thC.clone().add(_thB.set(0.06, 0.04, 0.06)), 70);
+    if (tt < T.dur * 0.6) { _thB.copy(hips.p); _thB.y += 0.3; pull(J('LeftFoot'), _thB, 22); pull(J('RightFoot'), _thB, 22); }   // the knees come up
+    if (Math.random() < h * 30) { const hd = J('Head'); if (hd) kick(hd, (Math.random() - 0.5) * 0.8 * f, Math.random() * 0.4 * f, (Math.random() - 0.5) * 0.8 * f); }
+  } else if (T.kind === 'writhe' || T.kind === 'twitch') {
+    if ((T.next -= h) <= 0) {
+      T.next = T.kind === 'twitch' ? 0.25 + Math.random() * 0.35 : 0.12 + Math.random() * 0.16;
+      const ends = ['LeftFoot', 'RightFoot', 'LeftHand', 'RightHand', 'Head', 'LeftLeg', 'RightLeg'];
+      const q = J(ends[(Math.random() * ends.length) | 0]);
+      const m = (T.kind === 'twitch' ? 1.6 : 3.2) * f;
+      if (q) kick(q, (Math.random() - 0.5) * 2 * m, (0.3 + Math.random() * 0.9) * m, (Math.random() - 0.5) * 2 * m);
+    }
+  } else if (T.kind === 'reach') {
+    if (tt < T.dur * 0.62) {
+      _thC.subVectors(camera.position, chest.p).setY(0).normalize();
+      _thB.copy(chest.p).addScaledVector(_thC, 0.28); _thB.y += 0.5;
+      pull(J(T.side + 'Hand'), _thB, 120); pull(J(T.side + 'ForeArm'), _thB, 40);
+    }
+  } else if (T.kind === 'crawl') {
+    const cyc = 1.05, ph = ((tt / cyc) + T.ph) % 1, arm = (Math.floor(tt / cyc) % 2) ? T.side : other;
+    const hand = J(arm + 'Hand');
+    const low = chest.p.y < (chest.floor ?? 0) + chest.r + 0.4;
+    _thC.set(-T.away.z, 0, T.away.x);                                   // across
+    if (ph < 0.42) { _thB.copy(chest.p).addScaledVector(T.away, 0.62).addScaledVector(_thC, arm === 'Left' ? 0.18 : -0.18); _thB.y = Math.max(_thB.y - 0.2, (hand && hand.floor) ?? _thB.y); pull(hand, _thB, 110); }
+    else if (low) {
+      if (hand) hand.pp.copy(hand.p);                                    // the hand holds the ground…
+      /* …and the body drags itself to it: moved, not pushed — the ground's friction takes any push back out every step (measured: a
+       * crawl of forces went 0.00 m). The chest, the head and the hips slide toward the hand; the joints bring the rest. */
+      const v = 0.5 * f * h;
+      for (const q of [chest, hips, J('Head'), J('Spine1')]) if (q) { const k = q === hips ? 0.75 : 1; q.p.addScaledVector(T.away, v * k); q.pp.addScaledVector(T.away, v * k); }
+    }
+  }
 }
 
 /* A BODY ON THE SAND TAKES THE BLOW TOO. The blade used to pass straight
@@ -46464,11 +48402,25 @@ function ragCut(u, boneName) {
  * velocity it still had, and a body already "done" went straight back to sleep a frame later with that velocity kept —
  * so hacking at one ratcheted it up into the air and left it hanging there. Now a blow first stills the body, then
  * gives it one capped velocity (`seed`), and a settled body is let settle again. */
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { ragHit: (u, q, P, x, z) => ragHit(u, q, P, x, z) }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { ragHit: (u, q, P, x, z) => ragHit(u, q, P, x, z), mutRagdollS: (u, dx, dz, P) => mutRagdoll(u, dx, dz, P), worldDrawnHitS: (O, d, L, m) => worldDrawnHit(O, d, L, m), cpPlanterTopS: (P) => cpPlanterTop(P), fortBraziersS: () => fortBraziers, bzLogS: () => ({ log: fortLife && fortLife.bzLog, model: !!BZ_MODEL, settled: bzSettled }), bzSpotOkS: (x, z, i) => bzSpotOk(x, z, i), brazierToppleS: (B, dx, dz, k) => brazierTopple(B, dx, dz, k), keepWallNearS: (x, z, r, lo, hi) => keepWallNear(x, z, r, lo, hi, FORT_SITE), hurtMutantS: (u, d, P) => hurtMutant(u, d, P), cpBreakS: (P, sp, from) => cpBreak(P, sp, from), cpSiteDefsS: () => CP_SITE_DEFS, fortAnchorAvoidS: (x, z) => fortAnchorAvoid(x, z), cpFitsS: (D, kind, x, z, fy, yaw) => cpFits(D, kind, x, z, fy, yaw), fortGeoS: () => ({ K: FORT_K, gate: FORT_GATE, door: FORT_DOOR, X: FORT_X, Y: FORT_Y, Z: FORT_Z }), get RAG_FIXED() { return window.__ragVar ? 0 : 1; } }));
 function ragBlowStart(r) {
-  r.asleep = false;
+  r.asleep = false; r.hitN = (r.hitN || 0) + 1;   // (`hitN`: a probe's count of blows on this body)
   for (const o of r.parts) o.pp.copy(o.p);
-  if (r.done) { r.done = false; r.t = Math.min(r.t, 3.5); }
+  // (asleep but not yet `done` — put to sleep by its stillness, past the deadline's hour — it was woken and slept again the same
+  // frame, the blow lost: measured with the boot, 0.07 m. Any body struck gets its second back.)
+  r.done = false; r.t = Math.min(r.t, 3.5);
+  r.downT = 0;   // (and the settle starts over: a body just struck may move again for a moment — with it left on, the boot moved a body 0.02 m)
+}
+// (the boot's: a body moved, not opened — see `kickStrike`)
+function ragKick(u, q, dirX, dirZ) {
+  const r = u.rag; ragBlowStart(r);
+  for (const o of r.parts) {
+    // (all of him goes a little and what the boot met goes most: seeded on the joints near it alone, the rest of the body's grip on
+    // the floor held it — measured, `tools/scan.js` 4c, the hips moved 0.04 m)
+    const d = o.p.distanceTo(q.p), w = Math.max(0.7, 1 / (1 + d * 2.2));
+    o.seed = new THREE.Vector3((dirX * 5.0 + (Math.random() - 0.5) * 0.5) * w, d < 1 ? 1.4 * w : 0.3, (dirZ * 5.0 + (Math.random() - 0.5) * 0.5) * w);
+  }
+  r.kickT = r.t + 0.4;   // (and it skids that long — friction is taken 36 times a frame: at 0.06 a pass 90 % of the speed was gone in one frame, 0.2 m)
 }
 function ragHit(u, q, P, dirX, dirZ) {
   const r = u.rag; ragBlowStart(r);
@@ -46510,6 +48462,7 @@ function ragHit(u, q, P, dirX, dirZ) {
  * `RAG_REST` is the deadline. Whatever the motion reads, a body that has
  * been on the ground this long is finished: it sleeps, and `done` means it
  * is never woken again — not by the tide, not by a floor that moved. */
+const RAG_H = 1 / 180;                     // the solver's step, fixed (three a frame at 60 fps — what it always took there)
 const RAG_VMAX = 6.5;                      // m/s, the most any particle may move in a substep
 const RAG_LEASH = 1.5;                     // and how far it may drift from where it landed
 const RAG_REST = 4.5;                      // and how long before it is finished, whatever it thinks
@@ -46548,7 +48501,22 @@ function updateMutRagdoll(u, dt) {
     }
   }
   if (!r.asleep) {
-    const h = Math.min(dt, 1 / 30) / RAG_SUB;
+    /* (A FIXED STEP — 2026-11-26. The solver took three substeps a frame whatever the frame was: at 30 fps each was 1/90 s, at 120
+     * 1/360, and the floor's friction, the air's damping, the settle and the muscles are all applied PER substep — so a body
+     * slid further and flew looser on a slow frame than a fast one, and every probe here measures at 60. Now the time is banked
+     * and spent in steps of exactly 1/180 s (what 60 fps always had), at most nine a frame — under 20 fps a body falls a little
+     * slow instead of taking one huge step. `tools/ragrate.js` kills the same man at 30, 60 and 120 fps.) */
+    r.acc = (r.acc || 0) + Math.min(dt, 0.1);
+    let h = RAG_H, nSub = Math.floor(r.acc / h + 1e-6);
+    if (nSub > 9) { nSub = 9; r.acc = 0; } else r.acc -= nSub * h;
+    if (window.__ragVar) { h = Math.min(dt, 1 / 30) / RAG_SUB; nSub = RAG_SUB; r.acc = 0; }   // (a probe's: the old three-a-frame step, for the before)
+    /* (AND WHAT STANDS IN A CASTLE'S COURT THAT A MAN CANNOT WALK THROUGH, A BODY CANNOT FALL THROUGH — 2026-11-25, "improve the
+     * physics": the trees in their planters, the well, the fountain and the stall held the living (`cpUnitCrush`) and a body thrown
+     * at one went through it. The few of them within five metres of his hips, found once a frame; each joint is put out of them
+     * below, as it is out of the stone.) */
+    let cpS = null;
+    if (r.fort && hip0) { const site = cpSiteOf(r.fort); if (site && site.built) for (const P of site.props) { const K = P.kind.K;
+      if (P.dead || P.on || !(K.fixed || K.solid) || Math.abs(P.x - hip0.p.x) > 5 || Math.abs(P.z - hip0.p.z) > 5) continue; (cpS || (cpS = [])).push(P); } }
     // a throw or a blow is a VELOCITY, put on over the step the solver really takes (see `mutRagdoll`)
     for (const q of r.parts) if (q.seed) { q.pp.copy(q.p).addScaledVector(q.seed, -h); q.seed = null; }
     let motion = 0;
@@ -46568,7 +48536,7 @@ function updateMutRagdoll(u, dt) {
        * under ITSELF; off the grid it keeps the body's own floor, so a part
        * thrown past the edge of a room still has something to land on. */
       if (bf !== null) {
-        const f = bunkerFloorAt(q.p.x, q.p.z, q.p.y);
+        const _tf = r.tav ? tavFloorOut(q.p.x, q.p.z, q.p.y) : null, f = _tf !== null ? _tf : bunkerFloorAt(q.p.x, q.p.z, q.p.y);   // (out of the tavern's window: the ground at the keep's foot — the tavern answers here, as a room: `tavFloorOut`)
         /* (2026-10-18) off the edge of a raised floor ON THE BEACH (the headland's ridge, a castle's veranda, the yard)
          * the body falls to the ground under it — it kept the floor it died on, and lay on nothing metres up; in a room
          * thousands of metres out it still does. And a floor may not jump up under a joint that is below it: the
@@ -46583,12 +48551,40 @@ function updateMutRagdoll(u, dt) {
          * ragdoll sometimes floats". A body in the surf SINKS instead, into a
          * seabed that is a fixed function of where it is: the sand at the top
          * of the swash, and a hand under the drawn sea by the mean waterline. */
+        /* (A CASTLE'S STONE IS A FLOOR TOO — 2026-11-24, the owner: "the fall animation for farmers he fell through the floor".
+         * The castles stand on the beach, off the room grid, so a body killed in a court had the SAND'S floor: measured, a man
+         * killed on paving at 0.22 lay with his lowest joint at 0.17, in the stone — and a cut that throws a body further, onto
+         * a step or a raised court, sank it deeper. A body that died in a castle asks the castle's own storeys under each joint
+         * (`keepFloorAt` on its site, `r.fort`), with the same rule against a floor jumping up under a joint already below it.) */
+        const _tf2 = r.tav ? tavFloorOut(q.p.x, q.p.z, q.p.y) : null, st = _tf2 !== null ? { f: _tf2 } : r.fort ? keepFloorAt(q.p.x, q.p.z, q.p.y + 0.45, 0.6, r.fort) : null;   // (out of the tavern's window: nothing under him for 400 m)
+        if (st && Number.isFinite(st.f)) {
+          let fl = st.f + 0.07;
+          if (q.floor !== undefined && fl > q.floor + 0.6 && q.pp.y < fl - 0.15) fl = q.floor;
+          q.floor = fl;
+        } else {
         const s = THREE.MathUtils.clamp((6 - q.p.x) / 6, 0, 1);
         q.floor = gy - 0.42 * s;
+        /* (and a ROCK's top is a floor: a body thrown onto a formation lies on it, not in it — `rockGroundAt`, the walk's
+         * own, from the joint's underside, so a joint already below a top is pushed off its side instead, in the substep) */
+        if (!r.fort && Math.abs(q.p.x) < 400 && !window.__rkOff) {
+          const c = rockGroundAt(q.p.x, q.p.z, q.p.y - q.r + 0.05);
+          if (c && c.top + 0.07 > q.floor) q.floor = c.top + 0.07;
+        }
+        }
       }
       if (k > 0) wet = true;
     }
-    for (let s = 0; s < RAG_SUB; s++) {
+    /* ONCE HE IS DOWN, HE STAYS WHERE HE FELL (2026-11-26, the owner: "bodies keep flying and sliding around on the ground after they
+     * are killed this is a huge problem it looks cheap"). Measured (`deathlab.js &k=pale`, once the hips are first under 0.45 m):
+     * the hips slid on 0.1-0.8 m (2 m after a mace kill) and a limb 1-2.8 m, the body still moving at four seconds — the
+     * throw's speed carried along the floor, the limbs pumped by the constraints. From 0.15 s after the hips first come down
+     * every particle's speed ACROSS the ground is bled off, harder each moment (to 55 % a substep by 0.4 s), and up and down is
+     * left to gravity and the floor: he lands, rolls a little, and lies still. */
+    if (hip0 && hip0.floor !== undefined && hip0.p.y - hip0.floor < 0.45) r.downT = (r.downT || 0) + dt;
+    const dK = (r.downT || 0) > 0.08 ? Math.max(0.05, 0.8 - ((r.downT || 0) - 0.08) * 3.0) : 1;   // (2026-11-26, "they keep sliding around on the ground fix this now": stopped in a quarter second)   // (0.7 floor: the hips still slid 0.5 m; 0.55: "the bodies still roll around after death", 2026-11-26)
+    const dKy = (r.downT || 0) > 0.45 ? Math.max(0.5, 1 - ((r.downT || 0) - 0.45) * 1.2) : 1;   // (and, once he has been down a moment, up and down too: a roll is a body going up over its own shoulder)
+    for (let s = 0; s < nSub; s++) {
+      if (r.t > 0.7) ragAntiPump(r, h);                                 // (what the last substep's passes pumped into a limb, off before it is carried on: `ragAntiPump`)
       // integrate
       for (const q of r.parts) {
         /* WATER IS THICK, AND IT WAS NOT THICK ENOUGH. At 0.89 a wet particle
@@ -46602,10 +48598,15 @@ function updateMutRagdoll(u, dt) {
         // (0.990 a substep is 84 % of a body's speed gone in a second of AIR — a man the dark knight throws carries his)
         const dmp = r.slide && r.t < r.slide ? 0.998 : RAG_DAMP;
         _rg1.subVectors(q.p, q.pp).multiplyScalar(q.wet > 0 ? dmp - (r.t < 2.2 ? 0.06 : 0.34) * q.wet : dmp);   // water is thick
+        if (dK < 1) { _rg1.x *= dK; _rg1.z *= dK; if (dKy < 1 && _rg1.y > 0) _rg1.y *= dKy; }   // (down: he stays where he fell — `dK`, above; nothing lifts back over a shoulder)
         q.pp.copy(q.p);
         q.p.add(_rg1); q.p.y -= RAG_G * h * h;
         motion += _rg1.lengthSq();
       }
+      if (r.throe) ragThroeStep(u, r, h);                               // (the dying still move: `ragThroeInit`)
+      if (r.mus) ragMuscleStep(u, r, h);                                // (and before that, try to stay up: `ragMuscleInit`)
+      if (r.holdI) { if (u.st.alive) ragHoldStep(r); else r.holdI = null; }   // (a living man kicked over, held in one piece: `kickRagStart`)
+      if (r.plant) ragPlantStep(u, r);                                  // (and his feet hold the ground while he goes: `ragPlantInit`)
       // constraints
       for (let it = 0; it < RAG_ITER; it++) {
         const limp = r.limp || 0;
@@ -46629,6 +48630,10 @@ function updateMutRagdoll(u, dt) {
           c.a.p.addScaledVector(_rg1, push * (wa / ws) * 2);
           c.b.p.addScaledVector(_rg1, -push * (wb / ws) * 2);
         }
+        /* (CHEAPER: the walls, the rocks and the props are asked on four of the twelve passes — the first, every fourth and the last —
+         * not on all of them; the floor's clamp keeps every pass. They were 800 wall lookups a body a frame, the most of what a body
+         * cost — 2026-11-26, the owner: "make them less laggy ragdolls please". `window.__ragWallAll` for the old.) */
+        const wallIt = window.__ragWallAll || it === 0 || it === RAG_ITER - 1 || (it & 3) === 0;
         // the ground, with friction: what touches the sand stops sliding
         for (const q of r.parts) {
           /* AND NOTHING IN IT MAY EXCEED A THROWN BODY'S SPEED. Twelve
@@ -46648,11 +48653,16 @@ function updateMutRagdoll(u, dt) {
             q.p.y = q.floor + q.r;
             /* friction runs every iteration of every substep (36 a frame), so at 0.74 a thrown body stopped DEAD where it
              * first touched (measured, 2026-10-19: 7 m and not a centimetre more). A flung one skids for its first second. */
-            const fr = r.slide && r.t < r.slide ? 0.012 + 0.05 * (r.t / r.slide) : RAG_FRICTION;
+            /* (BUT NOT HIS FEET — 2026-11-25, the owner: "farmers bodies still float around after death this should never happen". A
+             * dying man skated: measured in a real fight (`tools/fightread.js &dead=1`), still upright he slid a median 1.7 m (to 3.1)
+             * in 0.4 s with his feet sliding as far — the skid let the boots go with the body. A foot on the floor keeps its grip; the
+             * rest of him skids, so he goes over his feet and the throw still carries the chest.) */
+            const fr = r.t < (r.kickT || 0) ? 0.003 : r.slide && r.t < r.slide && (!q.foot || r.kfly) ? 0.012 + 0.05 * (r.t / r.slide) : RAG_FRICTION;   // (`kickT`: a body the boot has just moved, `ragKick`)
             q.pp.x = q.p.x - (q.p.x - q.pp.x) * (1 - fr);
             q.pp.z = q.p.z - (q.p.z - q.pp.z) * (1 - fr);
             if (q.pp.y < q.p.y) q.pp.y = q.p.y + (q.p.y - q.pp.y) * (q.wet > 0 ? 0 : RAG_BOUNCE);   // and bounces, a little — not in water
           }
+          if (q.anch) { q.p.x = q.anch.x; q.p.z = q.anch.z; q.pp.x = q.p.x; q.pp.z = q.p.z; }   // (a planted foot: `ragPlantInit`)
           /* THE BEACH'S CLIFF IS A WALL TO A BODY ON THE BEACH — the fourth
            * copy, and the one that made the aliens' corpses VANISH. This was
            * an unconditional clamp to the surf line and the cliff foot, and
@@ -46663,6 +48673,18 @@ function updateMutRagdoll(u, dt) {
            * wrecked drones: if a body answers to another room's floor, it is
            * in another room, and the beach's walls are not its walls. */
           if (bf === null) q.p.x = THREE.MathUtils.clamp(q.p.x, WADE_X - 6, CLIFF_BLOCK_X + 0.6);
+          /* AND THE ROCKS ARE WALLS TO IT (2026-11-25, "make sure he doesnt clip through anything"): a body flung at a formation
+           * on the beach went into the stone — the cliff was the only wall it knew. Each joint is pushed out of `rockColliders`
+           * as you are (its own radius, its underside its feet, so a top within a step is a floor it lies on, above), and
+           * loses most of its speed against the face. */
+          if (wallIt && !r.fort && !r.gut && !r.room && Math.abs(q.p.x) < 400 && !window.__rkOff) {   // (the headland's ridge has a floor grid: not only `bf === null`)
+            _rgK.set(q.p.x, 0, q.p.z);
+            if (pushOutOfSolids(_rgK, q.p.y - q.r, q.r, q.p.y + q.r)) {
+              const vx = q.p.x - q.pp.x, vz = q.p.z - q.pp.z;
+              q.p.x = _rgK.x; q.p.z = _rgK.z;
+              q.pp.x = q.p.x + vx * 0.3; q.pp.z = q.p.z + vz * 0.3;
+            }
+          }
           /* AND IT MAY NOT WANDER OFF WHERE IT LANDED. Every fix for this
            * before now has named a CAUSE — the swash, the cell grid, the
            * self-collision pumping a pinned joint — and each one was real and
@@ -46686,7 +48708,7 @@ function updateMutRagdoll(u, dt) {
           /* AND THE BELLY HAS WALLS: thrown further now, a demon's body met
            * the gut's flesh at a run and went through it — it is held to the
            * same smoothed curve the walk slides you along. */
-          if (r.gut) {
+          if (wallIt && r.gut) {
             const lx = q.p.x - WHALE_X, sg = THREE.MathUtils.clamp(-(q.p.z - WHALE_Z), WH_S0 + 3, WH_S1 - 1.5);
             const w = whWallAt(whale, sg), m = q.r + 0.15;
             let nx = lx;
@@ -46702,14 +48724,43 @@ function updateMutRagdoll(u, dt) {
           /* AND THE CASTLE'S STONE: a body thrown down the courtyard meets
            * the buildings and the curtain wall, the drawn faces the walk is
            * held by, at the particle's own height. */
-          if (r.fort) {
-            const h = keepWallNear(q.p.x, q.p.z, q.r + 0.04, q.p.y - 0.35, q.p.y + 0.35, r.fort);
+          if (wallIt && r.fort && !window.__noFortWall) {
+            /* (AND NEVER OUT THE FAR SIDE — 2026-11-26, the owner: "THE BODIES ARE FLYING THROUGH TOO MANY WALLS … MAKE SURE THIS DOESNT
+             * HAPPEN"; the physics-tuning skill's tunnel test, `tools/kicktunnel.js`: kick-kills into the nearest wall, 3-6 of 8 ended
+             * 5-13 m beyond it. The castle's walls are FACES, no thickness: a joint that stepped past one was found just beyond it and
+             * pushed out along (joint − nearest point) — away from the wall on the far side, through. Now the side is the one the
+             * joint came FROM (`pp`, where it was a substep ago); and a step longer than its radius is also asked at its middle, so
+             * a face crossed between two looks is still met. Put back on its own side, its speed into the wall turned at a third.) */
+            let h = keepWallNear(q.p.x, q.p.z, q.r + 0.04, q.p.y - 0.35, q.p.y + 0.35, r.fort), mid = false;
+            const sx = q.p.x - q.pp.x, sz = q.p.z - q.pp.z;
+            if (!h && sx * sx + sz * sz > q.r * q.r * 0.64) { h = keepWallNear(q.p.x - sx * 0.5, q.p.z - sz * 0.5, q.r + 0.04, q.p.y - 0.35, q.p.y + 0.35, r.fort); mid = !!h; }
             if (h) {
-              const ox = q.p.x - h.x, oz = q.p.z - h.z, L = Math.hypot(ox, oz) || 1;
+              let ox = q.p.x - h.x, oz = q.p.z - h.z;
+              const bx = q.pp.x - h.x, bz = q.pp.z - h.z;
+              const crossed = mid || (ox * bx + oz * bz < 0);
+              if (crossed && bx * bx + bz * bz > 1e-8) { ox = bx; oz = bz; }
+              const L = Math.hypot(ox, oz) || 1, want = q.r + 0.04;
               const vx = q.p.x - q.pp.x, vz = q.p.z - q.pp.z;
-              q.p.x += ox / L * h.depth; q.p.z += oz / L * h.depth;
+              if (crossed) { q.p.x = h.x + ox / L * want; q.p.z = h.z + oz / L * want; }
+              else { q.p.x += ox / L * h.depth; q.p.z += oz / L * h.depth; }
               q.pp.x = q.p.x + vx * 0.3; q.pp.z = q.p.z + vz * 0.3;
+              r.wallN = (r.wallN || 0) + (crossed ? 1 : 0);
             }
+          }
+          // (and the court's solid things: a tree's planter and, above it, its trunk; the well, the fountain, the stall — `cpS`, above)
+          if (wallIt && cpS) for (const P of cpS) {
+            const K = P.kind.K, k = P.kind, lowTop = P.y + k.h * (K.fixed ? 0.12 : 1);
+            if (q.p.y - q.r > P.y + k.h) continue;
+            const rr = (K.fixed ? (q.p.y - q.r > lowTop ? K.trunk * 0.28 : K.trunk) : Math.max(k.hx, k.hz) * 0.85) + q.r;
+            const ox = q.p.x - P.x, oz = q.p.z - P.z, d = Math.hypot(ox, oz);
+            if (d >= rr || d < 1e-4) continue;
+            // (the speed INTO it comes back at a third, the speed ALONG it is kept, less a little: a body slides round a well, it does
+            // not bounce back the way it came — the stone's own answer, above, turns the whole of it)
+            const nx = ox / d, nz = oz / d, vx = q.p.x - q.pp.x, vz = q.p.z - q.pp.z, vn = vx * nx + vz * nz;
+            const tx = vx - vn * nx, tz = vz - vn * nz, bn = vn < 0 ? -vn * 0.3 : vn;
+            q.p.x = P.x + nx * rr; q.p.z = P.z + nz * rr;
+            q.pp.x = q.p.x - (tx * 0.8 + nx * bn); q.pp.z = q.p.z - (tz * 0.8 + nz * bn);
+            if (q.anch) q.anch = null;                                       // (a planted foot put out of it stands where it was put)
           }
           /* AND THE ROOM IS SOLID. A body thrown across the bunker went out
            * through the concrete and came to rest in the sand over its roof:
@@ -46720,7 +48771,7 @@ function updateMutRagdoll(u, dt) {
            * flung at the console bank piles up against it instead of
            * sliding through the desks. Each hit is recorded, loudest wins,
            * and the frame the body has finished settling it is played. */
-          if (r.room) {
+          if (wallIt && r.room) {
             const R = r.room, B = r.bunker, g = r.roomG;
             const lx = q.p.x - g.position.x, lz = q.p.z - g.position.z;
             let hx = 0, hz = 0, hy = 0;
@@ -46746,6 +48797,7 @@ function updateMutRagdoll(u, dt) {
           }
         }
       }
+      if (r.t > 0.7) ragAntiPump(r, h);                                 // (and what this substep's passes pumped in)
     }
     /* AND IT ARRIVES. A body thrown across a room used to land in silence:
      * the particles stopped and that was the whole event. The FIRST heavy
@@ -46792,6 +48844,11 @@ function updateMutRagdoll(u, dt) {
     r.wallHit = 0;
     // still travelling fast? then it is still a hammer, and a body that
     // skids into a shelf of bottles takes the shelf with it
+    /* (THE TAVERN'S TABLES AND CHAIRS — 2026-11-26, the owner: "when bodies kicked through tables or anything breakable they should
+     * break". A joint over a standing table's top and inside its plan: moving fast (a throw, a kick), the table goes
+     * (`smashTavTable`); slow, it lies ON the top. A chair met at speed goes the same way (`smashTavChair`).) */
+    if (r.tav) try { ragTavFurniture(u, r); } catch (e) { /* never the frame */ }
+    motion = nSub > 0 ? motion * (3 / nSub) : 2e-4;   // (as three steps' worth, whatever this frame took; a frame that took none is neither still nor a blow)
     if (motion > 4e-4) ragSmash(r, 6.5);
     /* AND WHATEVER IS WRONG, A BODY STAYS WHERE IT DIED. Every fix before
      * this one named a cause; this is the floor under all of them. The hips
@@ -46838,7 +48895,7 @@ function updateMutRagdoll(u, dt) {
      * until it is. */
     if (r.h0 === undefined) { let lo = Infinity, hi = -Infinity; for (const q of r.parts) { lo = Math.min(lo, q.p.y); hi = Math.max(hi, q.p.y); } r.h0 = Math.max(0.6, hi - lo); }
     let top = 0;
-    for (const q of r.parts) top = Math.max(top, q.p.y - q.floor);
+    { const th = ragThroeLive(r); for (const q of r.parts) if (!(th && /Hand|ForeArm/.test(q.name))) top = Math.max(top, q.p.y - q.floor); }   // (a hand the dying lifts is not a body standing)
     /* AND "LYING" MEANS LYING. At 0.42 of the height it died at, a three-metre
      * body with its chest a metre up counted as down — the spindle knelt in
      * the air under that test. A body on its side is a shoulder's width high,
@@ -46871,6 +48928,12 @@ function updateMutRagdoll(u, dt) {
      * stand — and one still up at 3.4 s SLUMPS, every joint drawn down onto
      * the floor under it. No deadline may put a body to sleep until it is
      * lying, and the slump makes sure it gets there. */
+    /* (A BODY AT REST DOES NOT WHIRL A LIMB — 2026-11-25, the owner: "they still fly around after death", "THE FARMERS FLOAT AROUND AFTER
+     * DEATH PROLLY OTHER NPCS TOO". Measured (`castlecut.js &zd=1`): a man who dies on his feet ends the clip kneeling, a leg folded
+     * under him; pinned between the trunk's own thickness and the floor, the solver pumped that foot round at its speed cap (7 m/s,
+     * 1.5 s after the death and on) and the body never counted as down, so nothing let it sleep for nine seconds. After 0.7 s a
+     * joint going more than 2.5 m/s faster than the hips is not falling, it is being pumped: most of that speed is taken off it;
+     * and once the hips have been nearly still for half a second the whole body is damped hard so it settles.) */
     if (!lying && r.t > 1.2) r.limp = Math.min(1, (r.limp || 0) + dt / 0.8);
     if (!lying && r.t > 3.4) {
       const k = Math.min(1, dt * (r.t > 5 ? 6 : 2.6));
@@ -46881,12 +48944,16 @@ function updateMutRagdoll(u, dt) {
       r.asleep = false;
     }
     if (!r.leashed && r.t > 1.5 && down && lying) { r.leashed = true; for (const q of r.parts) if (!q.home) q.home = q.p.clone(); }
-    if (r.t > RAG_REST && down && lying) { r.asleep = true; r.done = true; }
-    if (r.t > 5.5 && down && lying) { r.asleep = true; r.done = true; }      // and nothing is solved for ever (it was fourteen seconds of solving a body that would not lie down)
+    if (r.t > RAG_REST && down && lying && !ragThroeLive(r)) { r.asleep = true; r.done = true; }
+    if ((r.downT || 0) > 0.9 && !r.holdI && !ragThroeLive(r) && !(u.st && u.st.alive)) { r.asleep = true; r.done = true; }   // (down a second and a half and dead: he lies still — 2026-11-26)
+    if (r.t > 5.5 && down && lying && !ragThroeLive(r)) { r.asleep = true; r.done = true; }      // and nothing is solved for ever (it was fourteen seconds of solving a body that would not lie down)
     if (r.t > 9) { r.asleep = true; r.done = true; }                          // by now the slump has put it on the floor
     if (!r.landed && r.t > 0.6 && down) r.landed = true;                       // (a body set down gently is down too: it kept the throw's flight cap for good)
     // a body the solver has broken (a NaN, or a joint flung twenty metres) is put back where it fell, still
-    for (const q of r.parts) if (!Number.isFinite(q.p.x + q.p.y + q.p.z) || q.p.distanceTo(u.g.position) > 20) {
+    /* (BUT NOT A MAN WHO WENT OUT OF THE TAVERN'S WINDOW — 2026-11-26, the owner: "they keep spawnig back up once kicked". Falling,
+     * he was twenty metres from where he stood inside two seconds, read as a broken body, and every part of him was set back on
+     * the spot he was kicked from: `tools/tavlook.js &kill=1`, hips at z -29.2 then -12.8.) */
+    for (const q of r.parts) if (!Number.isFinite(q.p.x + q.p.y + q.p.z) || (q.p.distanceTo(u.g.position) > 20 && !(r.tav && tavOutside(q.p.x, q.p.z)))) {
       for (const o of r.parts) { o.p.set(u.g.position.x, (o.floor ?? gy) + o.r, u.g.position.z); o.pp.copy(o.p); o.seed = null; }
       break;
     }
@@ -47009,7 +49076,8 @@ function ragHang(bone, hostBone, off) {
 
 const _muP = new THREE.Vector3();
 function updateMutantUnit(u, dt) {
-  if (!u.mixer || u.clipsPending > 0) return;          // (a kind whose clips are still being laid, a turn each, is not run until they are: the flail knight)
+  if (!u.mixer || u.clipsPending > 0) return;
+  if (!u.hitWarm && u.model) u.hitWarm = hitLodWarm(u);   // (a heavy body's light copy for the blade's skin test, a mesh a frame, before anything swings at it: `hitLod`)          // (a kind whose clips are still being laid, a turn each, is not run until they are: the flail knight)
   /* A SLEEPING THING A LONG WAY OFF IS NOT ANIMATED. Every creature in the
    * game ticked its mixer every frame wherever it was — the knight under the
    * sand, the samurai six kilometres out, the thing in the catacombs — which
@@ -47038,6 +49106,7 @@ function updateMutantUnit(u, dt) {
     if (u.rag) updateMutRagdoll(u, dt); else if (!u.kind.garg) mutAnim(u, dt, 0);   // (a gargoyle's stone fall is its own: `gargDeadStep`)
     return;
   }
+  if (u.kickRag && kickRagStep(u, dt)) return;       // (kicked over, in the air or on the floor: `kickRagStart`)
   if (u.st.immob > 0) { artHold(u, dt); return; }   // held in the gold: nothing of the fight runs
   /* Impact frames, held for exactly the length of the hitstop, so what you are
    * looking at is the reason the world has stopped. Driven off `hitstop` and
@@ -47321,6 +49390,29 @@ function updateMutantUnit(u, dt) {
    * reading you and not taking its turn. He slides the way the blow went
    * over the fall only — the reel's own travel, which the pack step does
    * not take from it — and then he is still. */
+  if (!(u.st.down > 0) && u.dfLift) { const L0 = u.dfLift; p.y -= L0; u.dfLift = 0; dfOutStart(u, L0); }   // (up: the floor's lift given back — eased out with the get-up's clip, `dfOutStart`)
+  if (u.st.down > 0 && u.st.riseClipNow) {
+    /* (up off a kick's ragdoll: the chosen get-up's own travel, on the heading he was laid on, from where he lay — then the floor
+     * kept under every bone, as below) */
+    u.st.down = Math.max(0, u.st.down - dt);
+    const k = Math.min(1, 1 - u.st.down / (u.st.riseDur || 1)), yaw = u.st.knockYaw || 0;
+    if (!u.st.riseFrom) { u.st.riseFrom = p.clone(); u.st.riseFrom.y -= (u.dfLift || 0); u.st.riseFloor = u.st.riseFrom.y; }
+    const tr = clipTravelAt(u, u.st.riseClipNow, k), c = Math.cos(yaw), sn = Math.sin(yaw);
+    p.copy(u.st.riseFrom); p.y += (u.dfLift || 0); if (tr) { p.x += tr.x * c + tr.y * sn; p.z += -tr.x * sn + tr.y * c; }
+    const cx = p.x, cz = p.z; mutClampX(u, p, dt); u.st.riseFrom.x += p.x - cx; u.st.riseFrom.z += p.z - cz;
+    // and he comes round to you over the last third, once mostly up
+    if (k > 0.66) { const want = Math.atan2(camera.position.x - p.x, camera.position.z - p.z), e = (k - 0.66) / 0.34; u.g.rotation.y = yaw + _angDiff(want, yaw) * e * e * (3 - 2 * e); }
+    mutAnim(u, dt, 0);
+    /* (LOWERED ONTO THE FLOOR THROUGH THE WHOLE RISE, not only its end — 2026-11-26, "when they get up they are floating": the owner's
+     * stand-ups ride up off their own origin as they go — `mStandD` by 1.5 m by its end, the others 0.1-0.7 — and nothing lowered him
+     * until late: the whole of him, hands and feet, 0.55-0.75 m off the floor a third of the way up (`tools/riseall.js &trace=1`).
+     * A body getting up always has something on the floor: his lowest bone is put on it every frame of the rise, from the first.) */
+    if (!u.ragOut) downFloorKeep(u, u.st.riseFloor, 1);   // (while the ragdoll's pose blends in, `ragOutAll` sets his height off the get-up's own pose, fresh from the mixer: `downFloorKeep` here would read last frame's blend)
+    // (on his feet ON the floor: the idle's own feet are at its origin — and the lift that held this clip's feet down is let go AS the
+    // clip leaves the mix, `dfOutStart`, not on this frame)
+    if (u.st.down <= 0) { const L0 = u.dfLift || 0; p.y = u.st.riseFloor; u.dfLift = 0; dfOutStart(u, L0); u.st.riseClipNow = null; u.st.riseFrom = null; u.st.knocked = false; u.st.poise = u.kind.poise; }
+    return;
+  }
   if (u.st.down > 0) {
     const KN = knockOf(u);
     u.st.down = Math.max(0, u.st.down - dt);
@@ -47396,6 +49488,7 @@ function updateMutantUnit(u, dt) {
       spawnPuffs(p.x, p.z, 7, u.hitDir.x, u.hitDir.z, p.y + 0.1);
     }
     mutAnim(u, dt, 0);
+    if (s > KN.fall * 0.5) { p.y = u.hitFrom.y + (u.dfLift || 0); downFloorKeep(u, u.hitFrom.y, u.kind.riseClip ? THREE.MathUtils.smoothstep((s - KN.fall - KN.lie) / KN.rise, 0.35, 0.8) : 0); }   // (the fall's back half, the lie and the rise: no bone in the floor, and up onto it)
     /* HE ROLLS UP; HE DOES NOT FLY UP. The reel reversed takes his hips back
      * through the apex of the punch that put him there, so without this he
      * gets to his feet by rising two metres and coming down on them. The
@@ -47751,6 +49844,7 @@ function updateMutantUnit(u, dt) {
       sfxMutSwing(u.kind.voice);
       if (u.kind.voice && u.kind.voice.farm) farmVox('swing', u.kind.voice, { x: p.x, z: p.z });   // the grunt with it, on some
       u.st.landed = false;
+      if (!u.st.foe && MAR.u) marCaught(u, Math.min(2.4, (A.reach || 1.5) + 0.25), (u.kind.swDmg && u.kind.swDmg[u.st.swing]) || A.dmg || u.kind.dmg);   // (a blow at you takes him too, if he stands in it: `marCaught`)
     }
     /* THE BLOW IS WHERE THE WEAPON IS. The pack lands a hit on a distance
      * from its feet to yours at the first active frame, with no direction in
@@ -50704,6 +52798,7 @@ function clampPlayerToRoom() {
    * cannot follow, and the two of them stood six metres apart doing nothing
    * for the rest of the sample. */
   if (inTavern && tavWalk) {
+    if (tavOut) return;   // (out of the window and falling: nothing in here holds you, `tavPlayerOut`)
     const p = camera.position;
     let feet = camBaseY - playerEye();
     if (tavLastFloor !== null && feet < tavLastFloor) feet = tavLastFloor;
@@ -50712,7 +52807,7 @@ function clampPlayerToRoom() {
     if (!keepFloorAt(p.x, p.z, feet, TAV_STEP, TAV_SITE) && tavLastSpot) {
       p.x = tavLastSpot.x; p.z = tavLastSpot.z;
     }
-    tavWestStop(p);
+    tavWestStop(p); if (!tavOut) tavWindowStop(p);
     return;
   }
   if (inCat && catWalk) {
@@ -54291,6 +56386,7 @@ function dodgedBlow() {
 }
 
 function update(dt, rawDt = dt) {
+  updateTick++;
   updateCheckpoint();
   updatePackSave();
   updateWreckSave();
@@ -54764,6 +56860,8 @@ function update(dt, rawDt = dt) {
    * own lunge carries him off the ridge for a frame every time. */
   updateScp(dt);
   updateGibs(dt);
+  slashTick(dt);                        // the cut's streak and the marks it left on them (`slashHit`)
+  playerBumpTick(dt);                   // and running into one of them shoves him (`playerBumpTick`)
   cpTick(dt);                           // the castles' props: built as a job, and their pieces' physics
   updateSpurts(dt); updateBloodCloud(dt);
   updateBackSword(dt);
@@ -56724,6 +58822,7 @@ function animateFrame() {
   const rawDt = dt;
   hitstopFrame = hitstop > 0;
   if (hitstop > 0) { hitstop = Math.max(0, hitstop - dt); dt *= 0.08; }
+  else if (killSlow > 0) { const k = 1 - killSlow / KILL_SLOW; killSlow = Math.max(0, killSlow - dt); dt *= 0.45 + 0.55 * k * k; }   // (a heavy's kill: `killMutant`)
   oceanUniforms.uTime.value += dt;
   if (!introStarted) titleCam(rawDt);
   /* THE CULL RUNS BEHIND THE TITLE CARD. `updateFarProps` sits deep inside
@@ -56755,6 +58854,7 @@ function animateFrame() {
   if (skOwed && deepLive && introDone && !SK.on && !dying) skResume();
   if (deepLive) seaDropHud();   // (the water ball's drop: every frame, so a cut or the menu hides it at once)   // (a checkpoint written at the sketchbook: back into it)
   tauntTick(rawDt);           // T: his left arm up, the finger (`startTaunt`)
+  kickTick(rawDt);            // Q: his right leg out (`startKick`)
   /* After everything that may have moved a lamp or the player, and before
    * anything is drawn: point the twelve real lights at the twelve that
    * actually reach the camera. */
@@ -56788,6 +58888,7 @@ function animateFrame() {
   if (hRoll) camera.rotateZ(hRoll);
   if (hPitch) camera.rotateX(hPitch);
   if (slamDip) camera.position.y -= slamDip;
+  ragOutAll(Math.min(0.05, dt));   // (the game's own frame time — hitstop, the kill's slow-motion and a probe's fixed clock included; it was the wall clock, `_roDt`)
   cullUnitModels();
   lodTick();                 // (far meshes drawn coarse: see FAR DETAIL)
   const _fm = farMaskBegin();
@@ -57218,6 +59319,7 @@ function mutClampX(u, p, dt) {
   // the one splashing in the shallows is let out past the wading line: its feet belong in the water
   const lo = u.comfy && u.comfy.role === 'splash' ? WADE_X - 8 : WADE_X - 1.5;
   p.x = THREE.MathUtils.clamp(p.x, lo, CLIFF_BLOCK_X + 0.5);
+  if (Math.abs(p.x) < 400 && !window.__rkOff) unitRockClamp(u, p);        // and the rocks (`unitRockClamp`; `__rkOff`: the probe's before)
 }
 
 /* The blue flash is its own layer. `#hurt` is red and fades on its own clock,
@@ -57526,6 +59628,17 @@ function ntarRetarget(u, m, bones, bind, J, hipUp, hipPos, src, opt) {
     const mx = tw ? mxOf[tw.name] : mxOf[b.name];
     const pb = b.parent && b.parent.isBone ? b.parent : null;
     if (!pb) rootW.set(b, bW.get(b).clone().multiply(bind.get(b).q.clone().invert()));
+    /* (`kind.noAlign`, 2026-11-25, the Scourger: NO alignment — each bone takes the clip's motion on top of ITS OWN rest. He binds
+     * in a T as Mixamo does, so the arms and the spine need none, and his legs are a bird's (thigh forward, shin back, a long
+     * upright foot): aligned onto a man's they were folded straight and stood him on his heels.) */
+    if (u.kind.noAlign) {
+      /* (but a HAND is aligned by its roll: his bind's fists are not a Mixamo hand's — measured against the owner's video skeleton,
+       * `tools/scourgehand.js` + `rollcmp.py`, his knuckle line came out −79° (right) / +77° (left) about the wrist → middle knuckle
+       * line on every frame of every clip, arms within 8°. `kind.alignRoll`: [degrees, the knuckle bone the axis runs to].) */
+      const RL = u.kind.alignRoll && u.kind.alignRoll[b.name], kq = new THREE.Quaternion(), kb = RL && byName[RL[1]];
+      if (kb) kq.setFromAxisAngle(bP.get(kb).clone().sub(bP.get(b)).normalize(), THREE.MathUtils.degToRad(RL[0]));
+      A.set(b, kq); continue;
+    }
     let q = pb ? (A.get(pb) || new THREE.Quaternion()) : new THREE.Quaternion();
     const kid = mx && NTAR_MX_CHILD[mx];
     let kb = kid && rag['Character1_' + kid] && byName[rag['Character1_' + kid]];
@@ -62514,6 +64627,23 @@ function magTrace(dir, O = null, R = MAG_R, pad = 0) {
   return magBest;
 }
 
+/* (AND A ROUND MEETS HIM WHERE HE IS DRAWN — 2026-11-25, the owner, after the water ball and the hook: "map all enemies hit boxes
+ * better like that too". The gun's and the sawn-off's body test is the capsule above; a body it reports is asked again on his skin
+ * (`projBodyHit`, a thin line for a round), and a round that only grazed the capsule goes on past him to whatever is behind.) */
+function magTraceSkin(dir, O = null, R = MAG_R, pad = 0, rad = 0.05) {
+  const had = magSkip, tmp = new Set(had || []);
+  const o = O ? O.clone() : camera.getWorldPosition(new THREE.Vector3()), dn = dir.clone().normalize();
+  let h = null;
+  for (let k = 0; k < 4; k++) {
+    magSkip = tmp; h = magTrace(dir, O, R, pad);
+    if (!h || h.kind !== 'foe' || !h.u || !h.u.model || h.u.gull || crabs.includes(h.u)) break;
+    const t = projBodyHit(h.u, o, dn, Math.min(R, h.t + 1.2), rad);
+    if (t !== null) { h.t = t; h.point = o.clone().addScaledVector(dn, t); if (h.u.kind) h.head = h.point.y > h.u.g.position.y + (h.u.kind.h || 1.8) * 0.74; break; }
+    tmp.add(h.u); h = null;
+  }
+  magSkip = had;
+  return h;
+}
 /* AND THE WHOLE PICTURE LIGHTS UP FOR A FRAME AND A HALF. The saucer's own
  * lesson: the eye reads the FRAME, not the object, so a muzzle flash drawn
  * as a blob in the corner of the screen is a blob in the corner of the
@@ -62612,7 +64742,7 @@ function magFire() {
 
   magSkip = new Set(); let passK = 1, kills = 0;
   for (let pass = 0; pass <= MAG_PASS; pass++) {
-    const h = magTrace(_mgSp);
+    const h = magTraceSkin(_mgSp);
     const r = magRoundHits(h, passK, pass);
     if (r === 'kill') kills++;
     if (!r || !h || h.kind !== 'foe') break;
@@ -62653,7 +64783,7 @@ function magRoundHits(h, k, pass) {
     const dmg = Math.max(1, Math.round(MAG_DMG * (h.head ? MAG_HEAD : 1) * k));
     const was = h.u.st.alive;
     if (h.u.kind && h.u.kind.skrim) skrimShot(h.u, _mgSp);         // (shot off his chain: `SK_HANG`)
-    if (h.u.kind) { hurtMutant(h.u, dmg, 0.5); flameGunBurn(h.u); } else hurtCrab(h.u, 4, 0.5);   // (a gun holding the Flame: what it hits catches)
+    if (h.u.kind) { gunRound = true; try { hurtMutant(h.u, dmg, 0.5); } finally { gunRound = false; } flameGunBurn(h.u); } else hurtCrab(h.u, 4, 0.5);   // (a gun holding the Flame: what it hits catches)
     if (h.u.kind && h.u.kind.gunStun && !h.u.kind.baby && h.u.st.alive) gunStun(h.u);
     if (h.head) { hitstop = Math.max(hitstop, 0.09); addTrauma(0.22); }
     // and out of the far side of him: a spray off his back along the line of the round
@@ -63590,7 +65720,7 @@ function sgFire() {
   for (let k = 0; k < SG_PELLETS; k++) {
     const a = Math.random() * Math.PI * 2, r = k === 0 ? 0 : spread * Math.sqrt(0.15 + Math.random() * 0.85);
     _sgP.copy(fwd).addScaledVector(_sgRt, Math.cos(a) * r).addScaledVector(_sgUp, Math.sin(a) * r).normalize();
-    const h = magTrace(_sgP);                   // and `digRay` is left along this pellet
+    const h = magTraceSkin(_sgP);               // and `digRay` is left along this pellet (on his skin: `magTraceSkin`)
     let best = h ? { t: h.t, h } : null;
     // the dead: the nearest joint of a body on the pellet's line
     for (const u of mutants) {
@@ -63632,7 +65762,7 @@ function sgFire() {
         magSkip = new Set([H.u]); let k = 1;
         for (let pass = 1; pass <= SG_PASS; pass++) {
           k *= SG_PASS_K;
-          const h2 = magTrace(_sgP); if (!h2 || h2.kind !== 'foe') break;
+          const h2 = magTraceSkin(_sgP); if (!h2 || h2.kind !== 'foe') break;
           take(h2, k); magSkip.add(h2.u);
         }
         magSkip = null;
@@ -63720,7 +65850,7 @@ function sgHitFoe(u, A, fwd) {
     return;
   }
   u.st.killBlast = k; u.st.blastD = d;
-  const died = hurtMutant(u, Math.max(1, Math.round(A.dmg * (boss ? 0.6 : 1))), A.n >= 4 ? 1.0 : 0.55);
+  let died; gunRound = true; try { died = hurtMutant(u, Math.max(1, Math.round(A.dmg * (boss ? 0.6 : 1))), A.n >= 4 ? 1.0 : 0.55); } finally { gunRound = false; }   // (a charge: blocked as a round is, `gunRound`)
   if (died) { sgFinish(u, fwd); sgKillBeat(k); return; }
   u.st.killBlast = 0;
   if (!u.st.alive) return;
@@ -70185,7 +72315,7 @@ function loadCatacombs() {
       bare: () => !catKeyIn(),
       when: () => inCat && !catBusy && !caveBusy,
       onActivate: () => {
-        if (!catKeyIn()) { sfxThud(0.02); return; }
+        if (!catKeyIn()) { sfxDoorLocked(proxy.getWorldPosition(_sfxDL).x, _sfxDL.z); return; }
         if (catDoorTurning) return;
         if (!catDoorOpen) {                        // the key stays in the lock
           catDoorOpen = true; if (inventory.includes(skullKeyItem)) keyUsed(skullKeyItem); else sfxLockOpen();
@@ -71739,7 +73869,7 @@ function buildCatSandDoor() {
     label: () => (catDoorOpen || devKeys() ? 'Enter the catacombs' : 'The door is locked.'),
     bare: () => !catDoorOpen && !devKeys(),
     when: () => !inCat && !catBusy && !caveBusy && catSandDoorFitted,
-    onActivate: () => { if (catDoorOpen || devKeys()) doorUse(startCatReturn)(); else sfxThud(0.02); },
+    onActivate: () => { if (catDoorOpen || devKeys()) doorUse(startCatReturn)(); else sfxDoorLocked(); },
   });
   fitCatSandDoor();
 }
@@ -78360,7 +80490,7 @@ function catPutDown(u) {
   u.st.atk = -1; u.st.stun = 0; u.st.recoil = 0; u.st.chainAt = -1; u.st.awake = false;
   u.st.hp = 0; u.path = null;
   mutDrop(u);
-  camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize();
+  if (u.lastHitMine !== false) blowHitDir(u, u.hitDir); else { camera.getWorldDirection(u.hitDir); u.hitDir.y = 0; u.hitDir.normalize(); }   // (along the cut: `BLOW`)
   u.hitFrom.copy(u.g.position);
   flashMats(u.g);
   sfxMutHit(u.kind.voice);
@@ -85097,6 +87227,7 @@ function buildTavern() {
   const t0 = performance.now();
   extractTavTables();
   stripTavProps();
+  buildTavWindow();                                 // the end wall's painted door made a window out over the island (before the walls and the bake read the meshes)
   buildTavCrates();
   buildKeepWalls(TAV_SITE);
   buildTavPlank();
@@ -85580,7 +87711,7 @@ const tavLightU = {
 let tavTorches = null;
 const _tavRelit = new WeakSet();
 function tavRelight(m) {
-  if (!m || _tavRelit.has(m) || m.isShaderMaterial || !m.isMeshBasicMaterial) return;
+  if (!m || _tavRelit.has(m) || m.isShaderMaterial || !m.isMeshBasicMaterial || (m.userData && m.userData.tavOwnLight)) return;   // (`tavOwnLight`: what stands OUTSIDE the window — the torches do not light the keep's rock, and relit by them it was black)
   _tavRelit.add(m);
   const prev = m.onBeforeCompile;
   m.onBeforeCompile = (sh, r) => {
@@ -86698,7 +88829,8 @@ function thrownHits() {
       const c = u.g.position, r = Math.max(0.55, (u.kind.body || 0.45) + 0.3) + pr, h = (u.kind.h || 1.8);
       if (Math.abs(q.x - c.x) > r || Math.abs(q.z - c.z) > r) continue;
       if (q.y < c.y + 0.25 || q.y > c.y + h + 0.1) continue;
-      hurtMutant(u, v > 9 ? 2 : 1, 0.4);              // it is YOUR blow: the confirm, and he turns on you for it
+      throwHit = { c: q.clone(), d: p.vel.clone().normalize(), P: Math.min(1.3, v / 9) };   // (along its flight: `throwHit`)
+      try { hurtMutant(u, v > 9 ? 2 : 1, 0.4); } finally { throwHit = null; }   // it is YOUR blow: the confirm, and he turns on you for it
       p.thrown = false; hit = true;
       if (p.onImpact) p.onImpact(Math.max(6, v));
       else { p.vel.x *= -0.25; p.vel.z *= -0.25; p.vel.y = Math.min(p.vel.y, 0) - 0.5; }   // off him, and down
@@ -87350,6 +89482,482 @@ function pruneTavStoreys() {
  * They are found by SHAPE, not by name — this file has no names — and the
  * triangles are dropped out of the source index the way a table's are. */
 let tavStripped = [];
+/* ---- THE WINDOW OUT OF THE KEEP (2026-11-26, the owner, of the arch in the hall's south end with the scan's painted iron door in it:
+ * "instead of this being a doorway can you make it a window that shows outside the tavern high up like its looking from the first
+ * screenshot. i want to be able to kick enemies out of this window and they fall to their death. make it blend in and look good could
+ * even be a balcony … we need more interactive fight things"). The hall is the inside of the keep on its rock (the owner's "outside of
+ * the tavern", `KEEP_*`), so the window looks out from the keep's upper floor over the island and the sea.
+ *  - THE OPENING: the scan's door — leaves, grate and frame, a flat cluster 13.19-13.35 m down the hall (`tools/tavwin.js`) — and the
+ *    little alcove of 25 faces behind it are taken out of the scan's meshes (not drawn, not walls); the arch stones stay and frame it.
+ *    It is a HOIST DOOR — the keep has its hoist; this is the hall's own, an opening to the floor over a sheer drop — with a low stone
+ *    threshold (a sill at 1.1 m stopped a kicked man by the shins every time: his hips went over and his legs pulled him back), and you
+ *    are held a stride inside it (`tavWindowStop`, the player only: what is thrown or kicked goes out, nothing in the air stops it).
+ *  - THE VIEW (`tavVista`): a sphere round the window drawn with the world as it is seen from the keep's door, caught once each time
+ *    you come in through it (`tavVistaCapture`, under the cut's black) — the island, the sea, the sky and the moon, far below and
+ *    away; a night sky of its own (stars, a moon) until it has been caught (a checkpoint into the hall).
+ *  - THE FALL: past the end wall a body's floor is 400 m down (`tavOutside`, the ragdoll's floor), and a man who goes out is dead by
+ *    the time he is out of sight (`tavFallTick`); a kick that drives a man at the window from close by always throws him (`kickMan`). */
+const TAV_WIN = { x0: -3.62, x1: 0.80, z0: -13.40, z1: -13.15, y1: 4.25, alcove: -13.45, cx: -1.42, cz: -13.27, sill: 0.2, sx0: -3.40, sx1: 0.60, stop: -12.75, edge: -13.55, drop: 12 };
+let tavVista = null, tavVistaRT = null, tavVistaCam = null;
+const tavVistaU = { uCube: { value: null }, uHave: { value: 0 }, uC: { value: new THREE.Vector3() }, uMoon: { value: new THREE.Vector3(0.25, 0.32, -1).normalize() } };
+/* (OUTSIDE IS A PLACE — 2026-11-26, the owner: "you should see outside and watch there bodies fall and hit the ground with impact and
+ * ragdoll physics simply make it a window outside". Past the threshold's outer edge (`edge`) there is the foot of the keep, `drop`
+ * metres down (`buildTavOutside`): that is the floor of anything out there — a body, a broken rail, you. You get out only through
+ * the opening (its width, for the first 0.65 m); the threshold's own top is floor to what lies on it.) */
+function tavOutside(x, z) { const lx = x - TAV_X, lz = z - TAV_Z; return lz < TAV_WIN.edge && lx > -40 && lx < 40 && lz > -80 && (lz < TAV_WIN.edge - 0.65 || (lx > TAV_WIN.sx0 - 0.3 && lx < TAV_WIN.sx1 + 0.3)); }
+const tavGroundY = () => TAV_Y + TAV_FLOOR - TAV_WIN.drop;
+/* (AND IT IS THE KEEP'S OWN OUTSIDE — the owner, the same evening: "where that window is in relation to the tavern should actually be able
+ * to see outside like it would be if you went in the tavern and looked out that window exactly. think of the tavern outside and inside
+ * together as one … and thats what they fall onto". The hall is the keep's inside: you come in at its terrace door walking the keep's
+ * -Z, which is the hall's +X, so the hall's end wall is the keep's -X face — its own right-hand side, the face he pointed at from the
+ * shore under it (the debug box in his still: aiming at keep-local (-7.5, 15.6, -0.8)). That face stands at x -8.0 to -8.2 at the
+ * hall's floor height (`tools/keepland.js`), the rock 6 m under it and the sea 17 m down a few metres out. So the keep's REAL outside
+ * is stood behind the window (`buildTavKeepOutside`: the same geometry and materials, a second set of meshes turned a quarter and
+ * cut off at the wall's plane), and the ground a body lands on is the keep's own (`tavOutFloor`: its drawn faces, else its sea).
+ * `TAV_YARD`: `A` the keep-local x of the wall's outer plane, `B` the keep-local z of the window's middle, `floorK` the keep-local
+ * height of the hall's floor (the terrace door's). hall-local → keep-local: kx = A + (hz - edge), kz = B - (hx - cx).) */
+const TAV_YARD = { on: false, G: null, A: -8.35, B: 0, floorK: 16.1, asked: false, sea: false };
+function tavOutFloor(x, z, y) {
+  if (!TAV_YARD.on || !KEEP_SITE.walls) { TAV_YARD.sea = false; return tavGroundY(); }
+  const kx = KEEP_X + TAV_YARD.A + Math.min(-0.06, z - TAV_Z - TAV_WIN.edge), kz = KEEP_Z + TAV_YARD.B - (x - TAV_X - TAV_WIN.cx), dy = TAV_Y + TAV_FLOOR - TAV_YARD.floorK - KEEP_Y;
+  const sea = KEEP_Y + KEEP_SEA - 0.3, f = keepDrawnFloor(kx, kz, sea, y === undefined ? 1e9 : y - dy + 0.5, KEEP_SITE);
+  TAV_YARD.sea = f === null;                    // (what the last answer was: the sea, or the rock)
+  return (f !== null ? f : sea) + dy;
+}
+function tavFloorOut(x, z, y) {
+  if (tavOutside(x, z)) return tavOutFloor(x, z, y);
+  const lx = x - TAV_X, lz = z - TAV_Z;
+  if (lz < -12.98 && lz >= TAV_WIN.edge && lx > TAV_WIN.sx0 && lx < TAV_WIN.sx1) return TAV_Y + TAV_FLOOR + TAV_WIN.sill;
+  return null;
+}
+function buildTavWindow() {
+  if (!tavWorld || tavWorld.userData.window) return;
+  tavWorld.userData.window = true;
+  const W = TAV_WIN, fl = TAV_Y + TAV_FLOOR, A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3();
+  let cut = 0, wallMat = null;
+  tavWorld.updateMatrixWorld(true);
+  tavWorld.traverse((o) => {
+    if (!o.isMesh || o.userData.bwGhost || o.name === 'hitProxy' || !o.geometry || !o.geometry.attributes.position) return;
+    const G = o.geometry, P = G.attributes.position, I = G.index, n = (I ? I.count : P.count) / 3, keep = [];
+    let any = false;
+    for (let t = 0; t < n; t++) {
+      const ia = I ? I.getX(t * 3) : t * 3, ib = I ? I.getX(t * 3 + 1) : t * 3 + 1, ic = I ? I.getX(t * 3 + 2) : t * 3 + 2;
+      A.fromBufferAttribute(P, ia).applyMatrix4(o.matrixWorld); B.fromBufferAttribute(P, ib).applyMatrix4(o.matrixWorld); C.fromBufferAttribute(P, ic).applyMatrix4(o.matrixWorld);
+      const lx = (A.x + B.x + C.x) / 3 - TAV_X, ly = (A.y + B.y + C.y) / 3 - fl, lz = (A.z + B.z + C.z) / 3 - TAV_Z;
+      const door = lz >= W.z0 && lz <= W.z1 && lx >= W.x0 && lx <= W.x1 && ly >= -0.05 && ly <= W.y1;
+      const alc = lz < W.alcove && lz > -21.5 && lx > W.x0 - 0.2 && lx < W.x1 + 0.2 && ly > -0.2 && ly < W.y1;
+      if (door || alc) { any = true; cut++; continue; }
+      keep.push(ia, ib, ic);
+      if (!wallMat && lz > W.z1 && lz < -12.6 && (lx < W.x0 - 0.4 || lx > W.x1 + 0.4) && ly > 1.7 && ly < 3.2) wallMat = o.material;   // (the end wall's own stone, beside the arch — over the wainscot: under 1.4 m it is panelled oak)
+    }
+    if (any) { if (G.userData.shared) { o.geometry = G.clone(); } o.geometry.setIndex(keep); }
+  });
+  // the sill and its ledge, in the wall's stone at the wall's own texel density
+  const stoneBox = (x0, x1, y0, y1, z0, z1) => {
+    const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv;
+    for (let i = 0; i < P.count; i++) { const x = P.getX(i) + (x0 + x1) / 2, y = P.getY(i) + (y0 + y1) / 2, z = P.getZ(i) + (z0 + z1) / 2, nx = Math.abs(N.getX(i)), ny = Math.abs(N.getY(i));
+      U.setXY(i, (nx > 0.5 ? z : x) * 0.326, (ny > 0.5 ? z : y) * 0.326); }
+    const m = new THREE.Mesh(g, wallMat || new THREE.MeshBasicMaterial({ color: 0x6b6259 })); m.position.set((x0 + x1) / 2, TAV_FLOOR + (y0 + y1) / 2, (z0 + z1) / 2); m.name = 'tavWindowSill';
+    tavWorld.add(m); return m;
+  };
+  for (const m of [stoneBox(W.sx0, W.sx1, 0, W.sill - 0.05, -13.55, -12.98), stoneBox(W.sx0 - 0.05, W.sx1 + 0.05, W.sill - 0.05, W.sill, -13.60, -12.93)]) m.userData.bwGhost = true;   // (a lip, not a wall: a body goes over it)
+  // the view
+  const g = new THREE.SphereGeometry(320, 48, 24);
+  tavVistaU.uC.value.set(TAV_X + W.cx, fl + 1.6, TAV_Z + W.cz);
+  tavVista = new THREE.Mesh(g, new THREE.ShaderMaterial({
+    uniforms: tavVistaU, side: THREE.BackSide, depthWrite: false, fog: false,
+    vertexShader: 'varying vec3 vD; uniform vec3 uC; void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vD = wp.xyz - uC; gl_Position = projectionMatrix * viewMatrix * wp; }',
+    fragmentShader: `uniform samplerCube uCube; uniform float uHave; uniform vec3 uMoon; varying vec3 vD;
+      float h3(vec3 p){ p = fract(p * vec3(.1031, .1030, .0973)); p += dot(p, p.yxz + 33.33); return fract((p.x + p.y) * p.z); }
+      void main(){
+        vec3 d = normalize(vD);
+        vec3 w = vec3(-d.z, d.y, d.x);                        // the hall's -Z is the keep's +X: out of its right side as you come up from the dock (the owner's word: "the right side of the tavern not looking over the hoist")
+        vec3 col;
+        if (uHave > 0.5) col = textureCube(uCube, w).rgb;
+        else {
+          float up = clamp(d.y * 0.5 + 0.5, 0.0, 1.0);
+          col = mix(vec3(0.010, 0.012, 0.030), vec3(0.030, 0.034, 0.075), smoothstep(0.35, 0.75, up));
+          vec3 c = floor(d * 260.0); float st = step(0.9965, h3(c)) * smoothstep(0.45, 0.6, up); col += vec3(0.8, 0.85, 1.0) * st;
+          float m = dot(d, uMoon); col += vec3(0.9, 0.88, 0.8) * smoothstep(0.9993, 0.9996, m) + vec3(0.12, 0.12, 0.18) * pow(max(m, 0.0), 60.0);
+          col = mix(col, vec3(0.006, 0.010, 0.022), smoothstep(0.48, 0.38, up));  // the sea, far down, black
+        }
+        gl_FragColor = vec4(col, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }` }));
+  tavVista.position.copy(tavVistaU.uC.value).sub(tavWorld.getWorldPosition(new THREE.Vector3()));
+  tavVista.frustumCulled = false; tavVista.renderOrder = -10; tavVista.name = 'tavVista'; tavVista.raycast = () => {}; tavVista.userData.bwGhost = true;
+  tavWorld.add(tavVista);
+  buildTavOutside(wallMat);
+  buildTavRail();
+  console.info('[bw] tavern window: cut', cut, 'faces; wall stone', !!wallMat);
+}
+
+/* ---- WHAT IS UNDER THE WINDOW (2026-11-26, `tavOutside`): the foot of the keep, `TAV_WIN.drop` metres down — a shelf of dark rock
+ * under the moon with boulders on it, running out sixty metres and fading into the night at its edge so it meets the view behind
+ * it (`tavVista`) without a line; and the keep's own wall, in the hall's stone, round the opening and down to the rock, so from
+ * outside (you, falling) there is a building behind you and not the hall's scan seen from its back. All drawn, none of it in the
+ * hall's wall or floor index (ghosts: the floor out here is `tavFloorOut`'s). The stains where men landed (`tavOutStain`). */
+let tavOutG = null;
+function tavRockTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#6c6f88'; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 260; i++) { const v = 70 + Math.random() * 80 | 0; g.fillStyle = `rgba(${v},${v + 2},${v + 14},${0.25 + Math.random() * 0.35})`; const w = 3 + Math.random() * 14; g.fillRect(Math.random() * 128, Math.random() * 128, w, w * (0.4 + Math.random())); }
+  for (let i = 0; i < 26; i++) { g.strokeStyle = 'rgba(20,20,34,0.7)'; g.lineWidth = 1; g.beginPath(); let x = Math.random() * 128, y = Math.random() * 128; g.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (Math.random() - 0.5) * 26; y += (Math.random() - 0.5) * 26; g.lineTo(x, y); } g.stroke(); }   // cracks
+  for (let i = 0; i < 40; i++) { g.fillStyle = 'rgba(70,104,84,0.4)'; g.beginPath(); g.arc(Math.random() * 128, Math.random() * 128, 2 + Math.random() * 5, 0, 7); g.fill(); }   // moss
+  const im = g.getImageData(0, 0, 128, 128), D = im.data; for (let i = 0; i < D.length; i += 4) for (let k = 0; k < 3; k++) D[i + k] = Math.round(D[i + k] / 6) * 6; g.putImageData(im, 0, 0);
+  return retroTex(new THREE.CanvasTexture(c));
+}
+function buildTavOutside(wallMat) {
+  if (tavOutG || !tavWorld) return;
+  const W = TAV_WIN, G = new THREE.Group(); G.name = 'tavOutside'; G.userData.bwGhost = true; G.userData.noBake = true; tavOutG = G;
+  const gy = TAV_FLOOR - W.drop, rock = new THREE.MeshBasicMaterial({ map: tavRockTex(), vertexColors: true, fog: false }); rock.toneMapped = false; rock.userData.tavOwnLight = true;   // (no fog, its own light: the hall's dusk and torches do not reach out here — first it was a black shelf under a black sky)
+  const shelf = new THREE.Group(); G.add(shelf); G.userData.shelf = shelf;
+  let into = shelf; const ghost = (m) => { m.userData.bwGhost = true; m.raycast = () => {}; into.add(m); return m; };
+  // the shelf: a fan of rings out from under the window, lit by the moon near and gone to the night's colour at its rim
+  { const R = 60, RINGS = 7, SEG = 28, pos = [], uv = [], col = [], idx = [], cz = W.edge - 6;
+    const far = new THREE.Color().setRGB(0.03, 0.035, 0.07), near = new THREE.Color().setRGB(1.0, 1.0, 1.12);   // (linear, written straight: a hex here is read as sRGB and came out a third as bright)
+    for (let r = 0; r <= RINGS; r++) for (let k = 0; k <= SEG; k++) {
+      const rr = R * Math.pow(r / RINGS, 1.5), a = k / SEG * Math.PI * 2, x = W.cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr;
+      const h = r === 0 ? 0 : (Math.sin(x * 0.31) + Math.cos(z * 0.27) + Math.sin((x + z) * 0.17)) * 0.10 * Math.min(1, Math.max(0, (rr - 22) / 12));   // (flat where men land; heaving a little further out)
+      pos.push(x, gy + h, Math.min(z, W.edge - 0.02)); uv.push(x * 0.22, z * 0.22);
+      const c = near.clone().lerp(far, Math.pow(Math.min(1, rr / R), 1.5)); col.push(c.r, c.g, c.b);   // (bright where men land, 8-16 m out; gone by the rim)
+    }
+    for (let r = 0; r < RINGS; r++) for (let k = 0; k < SEG; k++) { const a = r * (SEG + 1) + k, b = a + SEG + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx);
+    const rm = rock.clone(); rm.side = THREE.DoubleSide; rm.userData.tavOwnLight = true; const m = ghost(new THREE.Mesh(g, rm)); m.name = 'tavOutGround'; m.frustumCulled = false; }
+  // boulders, off the line men fall along
+  { let sd = 913; const rnd = () => ((sd = (sd * 1664525 + 1013904223) >>> 0) / 4294967296);
+    for (let i = 0; i < 16; i++) {
+      const a = rnd() * Math.PI * 2, rr = 7 + rnd() * 30, x = W.cx + Math.cos(a) * rr * 1.2, z = W.edge - 3 - Math.abs(Math.sin(a)) * rr;
+      if (Math.abs(x - W.cx) < 3.2 && z > W.edge - 24) continue;
+      const s = 0.5 + rnd() * 1.5, g = new THREE.IcosahedronGeometry(s, 0), N = g.attributes.position.count, col = [];
+      const fade = Math.pow(Math.min(1, Math.hypot(x - W.cx, z - W.edge) / 60), 1.5);
+      for (let v = 0; v < N; v += 3) { const k = (0.5 + rnd() * 0.5) * (1 - fade * 0.85); for (let j = 0; j < 3; j++) col.push(k * 0.80, k * 0.82, k * 0.96); }
+      g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.scale(1, 0.55 + rnd() * 0.4, 1);
+      const m = ghost(new THREE.Mesh(g, rock)); m.position.set(x, gy + s * 0.18, z); m.rotation.y = rnd() * 6.28;
+    } }
+  // the keep's wall round the opening, down to the rock and up past the arch, in the hall's stone
+  into = G;
+  if (wallMat) {
+    const zf = W.edge - 0.03, slab = (x0, x1, y0, y1) => { const g = new THREE.PlaneGeometry(x1 - x0, y1 - y0), U = g.attributes.uv, P = g.attributes.position;
+      for (let i = 0; i < U.count; i++) U.setXY(i, (P.getX(i) + (x0 + x1) / 2) * 0.326, (P.getY(i) + (y0 + y1) / 2) * 0.326);
+      const m = ghost(new THREE.Mesh(g, wallMat)); m.position.set((x0 + x1) / 2, TAV_FLOOR + (y0 + y1) / 2, zf); m.rotation.y = Math.PI; };
+    slab(W.sx0 - 26, W.sx0 - 0.05, -W.drop, 14); slab(W.sx1 + 0.05, W.sx1 + 26, -W.drop, 14); slab(W.sx0 - 0.05, W.sx1 + 0.05, -W.drop, 0); slab(W.sx0 - 0.05, W.sx1 + 0.05, W.y1 + 0.1, 14);
+  }
+  tavWorld.add(G);
+  buildTavKeepOutside();
+}
+function buildTavKeepOutside() {
+  const O = TAV_YARD; if (O.on || !tavWorld) return;
+  if (!keepWorld || !keepReady) { if (!O.asked) { O.asked = true; try { loadKeep(); } catch (e) {} } return; }   // (a checkpoint into the hall: the keep is fetched — it is the way out too)
+  if (!KEEP_SITE.walls) try { buildKeepWalls(KEEP_SITE); } catch (e) {}
+  const W = TAV_WIN, G = new THREE.Group(); G.name = 'tavKeepOutside'; G.userData.bwGhost = true; G.userData.noBake = true;
+  G.rotation.y = -Math.PI / 2; G.position.set(W.cx + O.B, TAV_FLOOR - O.floorK, W.edge - O.A);          // keep (A, floorK, B) ↔ the window's middle at its outer edge, on the floor
+  keepWorld.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(keepWorld.matrixWorld).invert(), v = new THREE.Vector3();
+  /* (ITS OWN LIGHT: the keep's rock and timber are lit materials, and in the hall the night's lights are ducked and the keep's own
+   * are not here — the copy stood black against its sky. Each takes an unlit twin with the same map, under a night's tint; the
+   * sky's and the sea's shaders are their own light and are shared as they are.) */
+  const twins = new Map(), tint = new THREE.Color().setRGB(0.50, 0.50, 0.74);
+  const twin = (M) => { if (M.isShaderMaterial) return M; let b = twins.get(M);
+    if (!b) { b = new THREE.MeshBasicMaterial({ map: M.map || null, side: M.side, transparent: M.transparent, opacity: M.opacity, alphaTest: M.alphaTest, depthWrite: M.depthWrite, vertexColors: M.vertexColors });
+      if (!M.map && M.color) b.color.copy(M.color); b.color.multiply(tint); b.name = 'tavOut:' + (M.name || ''); b.userData.tavOwnLight = true; twins.set(M, b); }
+    return b; };
+  let nm = 0, nt = 0;
+  keepWorld.traverse((o) => {
+    if (!o.isMesh || o.isSkinnedMesh || o.isInstancedMesh || o.name === 'hitProxy' || Array.isArray(o.material) || !o.geometry || !o.geometry.attributes.position) return;
+    for (let p = o; p && p !== keepWorld; p = p.parent) if (!p.visible) return;
+    const M = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld), P = o.geometry.attributes.position, I = o.geometry.index, n = (I ? I.count : P.count) / 3;
+    const kx = new Float32Array(P.count), ky = new Float32Array(P.count);
+    for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(M); kx[i] = v.x; ky[i] = v.y; }
+    // what is past the wall's plane stays; a face that crosses it stays only where it cannot be seen from the hall — under its floor, or the sky and the sea's own
+    const loose = !!o.material.isShaderMaterial, keep = []; let all = true;
+    for (let t = 0; t < n; t++) {
+      const a = I ? I.getX(t * 3) : t * 3, b = I ? I.getX(t * 3 + 1) : t * 3 + 1, c = I ? I.getX(t * 3 + 2) : t * 3 + 2, oa = kx[a] < O.A, ob = kx[b] < O.A, oc = kx[c] < O.A;
+      if ((oa && ob && oc) || ((oa || ob || oc) && (loose || Math.max(ky[a], ky[b], ky[c]) < O.floorK - 0.6))) keep.push(a, b, c); else all = false;
+    }
+    if (!keep.length) return;
+    let g = o.geometry;
+    if (!all) { g = new THREE.BufferGeometry(); for (const k in o.geometry.attributes) g.setAttribute(k, o.geometry.attributes[k]); g.setIndex(keep); }
+    const m = new THREE.Mesh(g, twin(o.material)); m.matrixAutoUpdate = false; m.matrix.copy(M); m.frustumCulled = false; m.renderOrder = o.renderOrder;
+    m.userData.bwGhost = true; m.userData.noBake = true; m.raycast = () => {}; m.name = 'tavOut:' + o.name; G.add(m); nm++; nt += keep.length / 3;
+  });
+  tavWorld.add(G); O.G = G; O.on = true;
+  if (tavVista) tavVista.visible = false;                         // (the caught view and the stand-in shelf were for when there was no outside)
+  if (tavOutG && tavOutG.userData.shelf) tavOutG.userData.shelf.visible = false;
+  console.info('[bw] tavern window: the keep\'s outside behind it,', nm, 'meshes,', nt | 0, 'faces');
+}
+// where a man landed: a dark stain on the rock (a flat patch; the blood decals ask the walked floors, and there are none out here)
+const tavStains = [];
+function tavOutStain(x, z, gy = tavGroundY()) {
+  if (!tavWorld || noBlood) return;
+  const g = new THREE.CircleGeometry(0.55 + Math.random() * 0.35, 9), P = g.attributes.position;
+  for (let i = 1; i < P.count; i++) { const k = 0.7 + Math.random() * 0.6; P.setXY(i, P.getX(i) * k, P.getY(i) * k); }
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x2a0306, transparent: true, opacity: 0.85, depthWrite: false })); m.material.toneMapped = false;
+  m.rotation.x = -Math.PI / 2; m.position.set(x, gy + 0.03 + tavStains.length * 0.002, z); m.userData.bwGhost = true; m.raycast = () => {}; m.renderOrder = 2;
+  scene.add(m); tavStains.push(m);
+  if (tavStains.length > 12) { const o = tavStains.shift(); scene.remove(o); o.geometry.dispose(); o.material.dispose(); }
+}
+/* ---- THE RAILING ACROSS IT (2026-11-26, the owner: "make it a wooden railing that breaks make the textures and break sound good").
+ * Oak, in the room's own way of drawing wood (`tavPlankTex`'s grain, unlit, `toneMapped` off — the hall is baked), on the stone
+ * threshold: three square posts with caps, and between each pair a BAY — a handrail, a bottom rail and turned-square balusters —
+ * merged into one mesh a bay. Shading is in the vertex colours (tops light, sides by which way they face, undersides dark), so
+ * it reads as timber in an unlit room. A bay HOLDS a body that leans or slides into it (`tavRailBody`, from the ragdoll's own
+ * furniture pass), and BREAKS under one that comes at it hard — a man kicked at the window — or a kick or a swing of yours
+ * (`kickStrike`, `glassStrike`): its pieces, each rail snapped in two or three and each baluster whole or in two, thrown the
+ * way the blow went, most of them out over the drop (and gone below, `updateGibs` asks `tavOutside`), a few dropped on the
+ * threshold; the sound is the recorded plank break with the furniture crack under it. The posts stand. Whole again each time
+ * you come in (`tavRailMend`, from `startTavern`). */
+const TAV_RAIL = { z: -13.10, y0: 0.2, top: 1.06, post: 0.13 };
+let tavRail = null, tavRailTexC = null;
+function tavRailTex() {
+  if (tavRailTexC) return tavRailTexC;
+  /* (OLD OAK — the owner: "improve the texture of the railing there". The first was a pale board with a few lines on it. This is
+   * dark, hand-worn oak on 256 x 64: the board's growth in broad soft bands, long grain running its length, dark and light, that
+   * bends round three knots, the pores' fine flecks, pale scuffs where hands and boots have been, and the arrises worn dark.) */
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#4b3120'; g.fillRect(0, 0, 256, 64);
+  for (let y = 0; y < 64; y++) { const k = Math.sin(y * 0.33) * 0.5 + Math.sin(y * 0.11 + 1.7) * 0.5; g.fillStyle = k > 0 ? `rgba(120,82,48,${0.16 * k})` : `rgba(20,11,5,${-0.26 * k})`; g.fillRect(0, y, 256, 1); }
+  const knots = [[46, 20, 7], [150, 44, 5], [214, 14, 4]];
+  const bend = (x, y) => { let dy = 0; for (const [kx, ky, r] of knots) { const dx = x - kx, d2 = dx * dx + (y - ky) * (y - ky) * 6; dy += Math.sign(y - ky || 1) * r * 1.6 * Math.exp(-d2 / (r * r * 14)); } return dy; };
+  for (let i = 0; i < 150; i++) {
+    const y0 = Math.random() * 64, x0 = Math.random() * 256 - 40, len = 50 + Math.random() * 200, dark = Math.random() < 0.6;
+    g.strokeStyle = dark ? `rgba(22,12,6,${0.25 + Math.random() * 0.4})` : `rgba(168,124,78,${0.12 + Math.random() * 0.22})`; g.lineWidth = Math.random() < 0.15 ? 2 : 1;
+    g.beginPath(); for (let x = x0; x < x0 + len; x += 6) { const y = y0 + bend(x, y0) + Math.sin(x * 0.03 + i) * 0.8; if (x === x0) g.moveTo(x, y); else g.lineTo(x, y); } g.stroke();
+  }
+  for (const [kx, ky, r] of knots) for (let q = r; q > 0; q--) { g.fillStyle = q % 2 ? 'rgba(20,11,5,0.75)' : 'rgba(96,62,34,0.6)'; g.beginPath(); g.ellipse(kx, ky, q * 1.9, q * 0.85, 0, 0, Math.PI * 2); g.fill(); }
+  for (let i = 0; i < 900; i++) { g.fillStyle = Math.random() < 0.6 ? 'rgba(16,9,4,0.35)' : 'rgba(170,128,84,0.2)'; g.fillRect(Math.random() * 256, Math.random() * 64, 2 + Math.random() * 3, 1); }   // pores
+  for (let i = 0; i < 14; i++) { const x = Math.random() * 256, y = 6 + Math.random() * 52; g.strokeStyle = 'rgba(196,158,112,0.22)'; g.lineWidth = 1; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 6 + Math.random() * 16, y + (Math.random() - 0.5) * 5); g.stroke(); }   // scuffs
+  g.fillStyle = 'rgba(12,7,3,0.7)'; g.fillRect(0, 0, 256, 2); g.fillRect(0, 62, 256, 2);
+  g.fillStyle = 'rgba(12,7,3,0.3)'; g.fillRect(0, 2, 256, 2); g.fillRect(0, 60, 256, 2);
+  g.fillStyle = 'rgba(206,166,118,0.16)'; g.fillRect(0, 4, 256, 1);
+  const im = g.getImageData(0, 0, 256, 64), D = im.data;
+  for (let i = 0; i < D.length; i += 4) for (let k = 0; k < 3; k++) D[i + k] = Math.round(D[i + k] / 6) * 6;   // (quantised, like every canvas here)
+  g.putImageData(im, 0, 0);
+  tavRailTexC = retroTex(new THREE.CanvasTexture(c));
+  return tavRailTexC;
+}
+// one length of timber: `len` along its own axis (x, or y if `up`), `w` x `d` across; UVs one board a metre along the grain, shaded
+function tavRailPiece(len, w, d, x, y, z, up, tint = 1) {
+  const g = new THREE.BoxGeometry(len, w, d), U = g.attributes.uv, N = g.attributes.normal, col = [];
+  for (let i = 0; i < U.count; i++) U.setXY(i, U.getX(i) * len * 0.55 + x * 0.37 + y * 0.21, U.getY(i) * Math.min(1, Math.max(0.3, w * 9)) + ((x * 7.3 + y * 3.1) % 1));   // (a wide rail shows the board's whole width, a baluster a third of it)
+  if (up) g.rotateZ(Math.PI / 2);
+  g.computeVertexNormals();
+  for (let i = 0; i < N.count; i++) { const ny = N.getY(i), nz = N.getZ(i), nx = N.getX(i);
+    const k = (ny > 0.5 ? 1.0 : ny < -0.5 ? 0.42 : nz > 0.5 ? 0.80 : nz < -0.5 ? 0.55 : nx > 0.5 ? 0.70 : 0.64) * tint; col.push(k, k * 0.97, k * 0.93); }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.translate(x, y, z);
+  return { g, len, w, d, x, y, z, up };
+}
+function buildTavRail() {
+  if (tavRail || !tavWorld) return;
+  const W = TAV_WIN, R = TAV_RAIL, fl = TAV_FLOOR, z = R.z;
+  const mat = new THREE.MeshBasicMaterial({ map: tavRailTex(), vertexColors: true }); mat.toneMapped = false;
+  const xs = [W.sx0 + 0.08, W.cx + 0.02, W.sx1 - 0.08], stumps = [], posts = [], STUMP = 0.2;
+  /* (THE POSTS BREAK TOO — the owner: "make the posts break too". Each is a stump a hand high, which stays, jagged, and the post
+   * over it, which snaps off with the first bay beside it that goes: `tavRailBreak`.) */
+  for (const x of xs) {
+    const hh = R.top + 0.06 - R.y0 - STUMP, y0 = fl + R.y0 + STUMP;
+    stumps.push(tavRailPiece(STUMP, R.post, R.post, x, fl + R.y0 + STUMP / 2, z, true, 0.8).g);
+    stumps.push(tavRailPiece(0.07, R.post * 0.5, R.post * 0.45, x - 0.02, y0 + 0.03, z + 0.02, true, 0.7).g);      // (the splinter left standing on it)
+    const pieces = [tavRailPiece(hh, R.post, R.post, x, y0 + hh / 2, z, true, 0.92), tavRailPiece(R.post + 0.06, 0.05, R.post + 0.06, x, fl + R.top + 0.085, z, false, 1.0),
+                    tavRailPiece(R.post + 0.02, 0.03, R.post + 0.02, x, fl + R.top + 0.045, z, false, 0.8)];                  // the post, its cap, the cap's neck
+    const m = new THREE.Mesh(mergeGeometries(pieces.map((p) => p.g), false), mat); m.name = 'tavRailPost'; m.userData.bwGhost = true; tavWorld.add(m);
+    posts.push({ x, m, pieces, dead: false });
+  }
+  const pm = new THREE.Mesh(mergeGeometries(stumps, false), mat); pm.name = 'tavRailStumps'; pm.userData.bwGhost = true; tavWorld.add(pm);   /* (ghosts to the hall's wall and floor index: drawn and NOT ghosts, the bays were walls a kicked man could not pass — whole or broken, the index keeps what it was built with — and tops he could lie on. It collides through `tavRailBody`) */
+  const bays = [];
+  for (let b = 0; b < 2; b++) {
+    const a = xs[b] + R.post / 2, e = xs[b + 1] - R.post / 2, mid = (a + e) / 2, L = e - a, pieces = [];
+    pieces.push(tavRailPiece(L, 0.075, 0.12, mid, fl + R.top - 0.0375, z, false, 1.0));                  // the handrail
+    pieces.push(tavRailPiece(L, 0.06, 0.075, mid, fl + R.y0 + 0.13, z, false, 0.9));                     // the bottom rail
+    const n = Math.round(L / 0.15), hb = (R.top - 0.075) - (R.y0 + 0.16);
+    for (let i = 1; i < n; i++) pieces.push(tavRailPiece(hb, 0.05, 0.05, a + (L * i) / n, fl + R.y0 + 0.16 + hb / 2, z, true, 0.86 + Math.random() * 0.1));
+    const m = new THREE.Mesh(mergeGeometries(pieces.map((p) => p.g), false), mat); m.name = 'tavRailBay'; m.userData.bwGhost = true;
+    tavWorld.add(m);
+    bays.push({ x0: a, x1: e, m, pieces, dead: false, posts: [posts[b], posts[b + 1]] });
+  }
+  tavRail = { bays, mat, posts, stumps: pm };
+}
+function tavRailMend() { if (!tavRail) return; for (const B of tavRail.bays.concat(tavRail.posts)) { B.dead = false; B.m.visible = true; } }
+// the bay a world point is at (on the rail's line, its x within the bay), or null
+function tavRailBayAt(x, z, pad = 0) {
+  if (!tavRail || !inTavern) return null;
+  const lx = x - TAV_X, lz = z - TAV_Z;
+  if (Math.abs(lz - TAV_RAIL.z) > 0.12 + pad) return null;
+  for (const B of tavRail.bays) if (!B.dead && lx > B.x0 - pad && lx < B.x1 + pad) return B;
+  return null;
+}
+const _trW = new THREE.Vector3();
+function tavRailBreak(B, dx, dz, speed = 6) {
+  if (!B || B.dead) return;
+  B.dead = true; B.m.visible = false;
+  tavWorld.getWorldPosition(_trW);
+  const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+  if (dz > -0.25) { dz = -0.6; dx *= 0.6; }                 // (whatever broke it, it goes OUT: the blow was at the drop)
+  const kick = Math.min(4.5, 1.2 + speed * 0.3), fl = TAV_Y + TAV_FLOOR;
+  let n = 0;
+  const all = B.pieces.slice(); for (const Po of B.posts || []) if (!Po.dead) { Po.dead = true; Po.m.visible = false; all.push(...Po.pieces); }   // (and the posts at its ends, snapped off their stumps)
+  for (const P of all) {
+    const cuts = P.len > 1 ? 2 + (Math.random() < 0.5 ? 1 : 0) : Math.random() < 0.45 ? 2 : 1;
+    let s0 = 0;
+    for (let c = 0; c < cuts; c++) {
+      const s1 = c === cuts - 1 ? 1 : s0 + (1 / cuts) * (0.7 + Math.random() * 0.6), seg = P.len * (s1 - s0), at = (s0 + s1) / 2 - 0.5;
+      s0 = s1;
+      const lx = P.up ? P.x : P.x + at * P.len, ly = P.up ? P.y + at * P.len : P.y;
+      const piece = tavRailPiece(Math.max(0.06, seg - 0.02), P.w, P.d, 0, 0, 0, false, 0.95);   // (built lying down and TURNED upright: a gib settles with its tilt zeroed, and a baluster stood up in its geometry landed standing on end)
+      const m = new THREE.Mesh(piece.g, tavRail.mat);
+      m.position.set(_trW.x + lx, _trW.y + ly, _trW.z + P.z);
+      m.rotation.set((Math.random() - 0.5) * 0.3, (Math.random() - 0.5) * 0.3, (P.up ? Math.PI / 2 : 0) + (Math.random() - 0.5) * 0.3);
+      scene.add(m);
+      const inside = Math.random() < 0.22, out = inside ? 0.3 + Math.random() * 0.6 : kick * (0.55 + Math.random() * 0.6), sway = (Math.random() - 0.5) * 1.4;
+      gibs.push({ m, rest: fl + 0.03, life: inside ? 240 : 7, bleed: false, wait: Math.min(0.08, (n++) * 0.004),
+        vel: new THREE.Vector3((inside ? -dx : dx) * out + sway * dz, 0.8 + Math.random() * 1.8, (inside ? 0.5 : dz * out) - sway * dx),
+        spin: new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 9, (Math.random() - 0.5) * 12) });
+    }
+  }
+  const sx = _trW.x + (B.x0 + B.x1) / 2, sz = _trW.z + TAV_RAIL.z;
+  try {
+    const g = Math.min(1, 0.6 + speed * 0.04);
+    if (!playSampleAt('woodPlankBreak', sx, sz, { gain: 0.85 * g, ref: 6, far: 40, rate: 0.95 + Math.random() * 0.1 })) { if (!sfxTableBreak()) sfxWoodSnap(); }
+    playSampleAt('woodFurnBreak', sx, sz, { gain: 0.5 * g, ref: 6, far: 40, rate: 0.85 + Math.random() * 0.1, delay: 0.035 });
+    sfxCrateCrunch(Math.min(1, 0.5 + speed * 0.05));
+  } catch (e) { /* a sound is never fatal */ }
+  addTrauma(0.12);
+}
+// a ragdoll's part at the rail: held by a bay it leans on, through one it hits hard (`ragTavFurniture`, each step; `sp` its speed)
+function tavRailBody(q, sp, r) {
+  if (!tavRail) return;
+  const B = tavRailBayAt(q.p.x, q.p.z, q.r); if (!B) return;
+  const lz = q.p.z - TAV_Z, fl = TAV_Y + TAV_FLOOR;
+  if (q.p.y > fl + TAV_RAIL.top + q.r || q.p.y < fl + TAV_RAIL.y0 - q.r) return;
+  const vz = (q.p.z - q.pp.z) * 180;
+  if (sp > 2.4 || r.kfly) { const vx = (q.p.x - q.pp.x) * 180; tavRailBreak(B, vx, Math.min(vz, -0.5), sp);
+    for (const o of r.parts) { const need = o.p.z + 4.2 / 180; if (o.pp.z < need) o.pp.z = need; }   // (it gave, and he goes on out: every part of him at 4 m/s outward at the least — a body that broke it and then lay down on the threshold got up again inside)
+    return; }
+  const face = TAV_Z + TAV_RAIL.z + 0.07 + q.r;
+  if (lz < TAV_RAIL.z + 0.07 + q.r && q.p.z < face && vz <= 0.5) { q.p.z = face; if (q.pp.z < q.p.z) q.pp.z = q.p.z; }
+}
+// your kick: a bay in front of you, in reach
+function tavRailKick(c, D) {
+  if (!tavRail || !inTavern) return false;
+  for (let s = 0.4; s <= 1.5; s += 0.15) { const B = tavRailBayAt(c.x + D.x * s, c.z + D.z * s, 0.1); if (B) { tavRailBreak(B, D.x, D.z, 7); return true; } }
+  return false;
+}
+// your swing: the aim ray at a bay
+function tavRailStrike(ray, P) {
+  if (!tavRail || !inTavern) return false;
+  for (const B of tavRail.bays) { if (B.dead) continue; const h = ray.intersectObject(B.m, false); if (h.length && h[0].distance < 3.2) { tavRailBreak(B, ray.ray.direction.x, ray.ray.direction.z, 5 + P * 9); return true; } }
+  return false;
+}
+// the keep's surroundings as seen from its door, into the view behind the window: once per entry, under the cut's black
+function tavVistaCapture() {
+  try {
+    if (!tavVistaRT) { tavVistaRT = new THREE.WebGLCubeRenderTarget(384, { generateMipmaps: false }); tavVistaCam = new THREE.CubeCamera(0.5, 6000, tavVistaRT); scene.add(tavVistaCam); }
+    const o = window.__tavCapOff || [7.6, 8.9, -8.6];   /* (keep-local (5, 25, 0): a few metres off the building's +X face — it stands at x 0.7-1.7 there, `tools/keepface.js` — a storey over the terrace door, looking out over the island's right side. First it looked out over the hoist, the wrong side) */
+    tavVistaCam.position.set(KEEP_X + KEEP_DOOR.x + o[0], KEEP_Y + KEEP_DOOR.y + o[1], KEEP_Z + KEEP_DOOR.z + o[2]);
+    const tv = tavVista ? tavVista.visible : false; if (tavVista) tavVista.visible = false;
+    tavVistaCam.update(renderer, scene);
+    if (tavVista) tavVista.visible = tv;
+    tavVistaU.uCube.value = tavVistaRT.texture; tavVistaU.uHave.value = 1;
+  } catch (e) { console.warn('[bw] tavern window: no view', e); }
+}
+// a body out of the window: he cries out as he goes, falls the keep's height, and the ground kills him — the thud, the blood, the dust
+const _tfV = new THREE.Vector3();
+function tavFallTick(dt = 1 / 60) {
+  if (!inTavern) return;
+  if (!TAV_YARD.on) buildTavKeepOutside();
+  for (const u of tavPeople()) {
+    if (!u || !u.rag || !u.g.visible) continue;
+    const st = u.st, H = u.rag.byName && (u.rag.byName['Character1_Hips'] || u.rag.parts[0]); if (!H) continue;
+    if (!st.fellOut) {
+      if (!tavOutside(H.p.x, H.p.z)) continue;
+      st.fellOut = true; st.fellT = 0;
+      if (u.model) u.model.traverse((o) => { const M = o.material; if (M && M.emissiveIntensity !== undefined && !M.userData.tavMoon) { M.userData.tavMoon = true; M.emissiveIntensity = Math.max(M.emissiveIntensity, 0.2) * 6; } });   // (out under the moon: the hall's torches lit him, and out here he was a black speck — his own maps lifted, a uniform, no recompile)
+      if (st.alive) try { sfxMutRoar(Math.hypot(camera.position.x - H.p.x, camera.position.z - H.p.z) * 0.5, u.kind.voice); } catch (e) {}
+    }
+    if (st.fellHit) continue;
+    st.fellT += dt;
+    const G = tavOutFloor(H.p.x, H.p.z, H.p.y), wet = TAV_YARD.sea;
+    /* (THE LANDING IS WHERE ANY OF HIM TOUCHES, not only where the floor under his hips is: on the rock under the wall a man came
+     * down across a ledge with his hips over a steep face — no floor under them short of the sea — and hung there alive. Speed lost
+     * was tried and was wrong: his hips jerk on his own limbs in the air, and it killed the orc half way down.) */
+    const fl0 = TAV_Y + TAV_FLOOR, touch = H.p.y < fl0 - 2 && u.rag.parts.some((q) => q.floor !== undefined && q.floor < fl0 - 2 && q.p.y - (q.r || 0.1) <= q.floor + 0.08);
+    if (H.p.y > G + 0.8 && !touch && st.fellT < 8) continue;
+    st.fellHit = true;
+    const d = Math.hypot(camera.position.x - H.p.x, camera.position.y - H.p.y, camera.position.z - H.p.z);
+    if (wet) { try { sfxSplash(Math.max(0.25, 1.3 / (1 + d / 14))); sfxDeepThud(d * 0.8); } catch (e) {} }          // (into the sea: the splash, from as far off as it is)
+    else {
+      try { sfxDeepThud(d * 0.45); sfxCpThud(H.p.x, H.p.z, 1.5, true); } catch (e) {}
+      try { sprayBlood(H.p.x, G + 0.3, H.p.z, 0, -1, 26, 3.2); sprayBlood(H.p.x, G + 0.3, H.p.z, 0.7, 0.7, 14, 2.4); } catch (e) {}
+      tavOutStain(H.p.x, H.p.z, G);
+      try { spawnPuffs(H.p.x, H.p.z, 7, 0, -1, G + 0.08); } catch (e) {}
+    }
+    if (st.alive) {
+      u.kickRag = null; st.riseFrom = null; st.riseClipNow = null; u.ragOut = null;
+      st.killFling = 0.01; u.lastHitMine = true; st.hp = 0;
+      try { killMutant(u); } catch (e) { st.alive = false; }
+    }
+  }
+}
+/* YOU: HELD BY THE RAILING WHERE IT STANDS, AND OUT WHERE IT DOES NOT (2026-11-26, the owner: "make the player die if falling out
+ * the window too on impact"). A stride inside the threshold in front of a whole bay or a post, as before; through a broken bay you
+ * walk out onto nothing (`tavPlayerOut`): the floor is 400 m down, you fall the keep's height, and the landing kills you — the hit,
+ * a body's thud, the death. In dev mode, where nothing may kill you (`playerDied` refuses), you are put back inside at the window. */
+function tavWindowStop(p) {
+  const lx = p.x - TAV_X, lz = p.z - TAV_Z;
+  if (lx < TAV_WIN.sx0 - 0.4 || lx > TAV_WIN.sx1 + 0.4 || lz >= TAV_WIN.stop) return;
+  if (!tavRailGap(lx)) p.z = TAV_Z + TAV_WIN.stop;
+}
+// a broken bay at this x, wide enough for you (not at a post)
+function tavRailGap(lx) { if (!tavRail) return false; for (const B of tavRail.bays) if (B.dead && lx > B.x0 + TAV_BODY * 0.6 && lx < B.x1 - TAV_BODY * 0.6) return true; return false; }
+let tavOut = null;
+function tavPlayerOut(p, dt) {
+  const lx = p.x - TAV_X, lz = p.z - TAV_Z, fl = TAV_Y + TAV_FLOOR;
+  if (!tavOut) {
+    if (lz > -12.93 || !tavRailGap(lx)) return false;   // (a step past the hall's last cell, -12.95: the walk stops you there and out is the only way on)
+    tavOut = { t: 0, hit: false, at: tavLastSpot.clone ? tavLastSpot.clone() : { x: tavLastSpot.x, z: tavLastSpot.z } };
+    onGround = false;
+  }
+  const O = tavOut; O.t += dt;
+  const feet = camBaseY - playerEye();
+  if (feet > fl - 0.6 && lz > TAV_WIN.alcove - 0.2) p.z -= 1.4 * dt;                 // (over the edge: the step you took goes on)
+  if (feet < fl - 0.3 && p.z > TAV_Z + TAV_WIN.alcove - 0.15) p.z = TAV_Z + TAV_WIN.alcove - 0.15;   // (and no climbing back in under the floor)
+  if (O.hit) { groundY = O.landY; return true; }   // (landed: there you lie)
+  const _past = lz < TAV_WIN.edge - 0.1, _og = _past ? tavOutFloor(p.x, p.z, feet + 0.4) : fl + TAV_WIN.sill; groundY = _og;   // (on the threshold still: its own top; past its edge, the keep's ground)
+  if (O.top === undefined) O.top = feet;
+  if (!O.hit && _past && feet <= _og + 0.06 && O.top - feet > 2.5) {
+    if (TAV_YARD.sea) try { sfxSplash(1.2); } catch (e) {}
+    O.hit = true;
+    try { sfxKillThud(1.6); sfxThud(1.0); sfxBoneClatter(8); } catch (e) {}
+    addTrauma(1);
+    if (settings.devMode) {
+      camera.position.set(O.at.x, fl + playerEye(), O.at.z); camBaseY = camera.position.y; groundY = fl; vy = 0; onGround = true; tavOut = null;
+      clampPlayerToRoom(); return true;
+    }
+    vy = 0; O.landY = groundY = _og;                                                     // (you have landed)
+    damagePlayer(999); if (!dying) playerDied();
+  }
+  return true;
+}
+// a kick that drives a man at the window from close by: out he goes
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { tavVistaCaptureS: () => tavVistaCapture(), tavVistaS: () => tavVista, TAV_WINS: TAV_WIN, tavOutsideS: (x, z) => tavOutside(x, z), tavGroundYS: () => tavGroundY(), tavOutFloorS: (x, z, y) => tavOutFloor(x, z, y), TAV_YARDS: TAV_YARD, tavWindowThrowS: (u, D) => tavWindowThrow(u, D), tavRailS: () => tavRail, tavRailKickS: (c, D) => tavRailKick(c, D), tavRailMendS: () => tavRailMend(), tavLookoutS: () => tavLookout, kickManS: (u) => kickMan(u), kickDirS: (x, z) => { _kkD.set(x, 0, z).normalize(); }, tavOutS: () => tavOut, tavOutResetS: () => { tavOut = null; }, tavRailBreakS: (i) => tavRail && tavRailBreak(tavRail.bays[i], 0, -1, 6) }));
+// and over the sill: the kick's own throw is low (a man goes a few metres along the floor), so out of this one he is lifted too —
+// every part of him given 6 m/s toward the window and 2.4 up
+function tavWindowThrow(u, D) {
+  const r = u.rag; if (!r) return;
+  const p = u.g.position, wx = TAV_X + THREE.MathUtils.clamp(p.x - TAV_X, TAV_WIN.sx0 + 0.45, TAV_WIN.sx1 - 0.45), wz = TAV_Z + TAV_WIN.cz, dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz) || 1;
+  const ox = (dx / d) * 0.7 + D.x * 0.3, oz = (dz / d) * 0.7 + D.z * 0.3, ol = Math.hypot(ox, oz) || 1;
+  const sp = 4.2 + 1.7 * d;   /* (farther off, harder: 6.0 m/s from 1.3 m slid a man 3 m, so from the reach's edge, 3.6 m, he lay down short of the lip) */
+  for (const q of r.parts) q.seed = new THREE.Vector3((ox / ol) * sp, 2.4, (oz / ol) * sp);   // (the ragdoll's own first-step velocity: `updateMutRagdoll`)
+}
+function tavWindowAhead(u, D) {
+  if (!inTavern || !u || !u.g) return false;
+  const p = u.g.position, wx = TAV_X + THREE.MathUtils.clamp(p.x - TAV_X, TAV_WIN.sx0 + 0.45, TAV_WIN.sx1 - 0.45), wz = TAV_Z + TAV_WIN.cz, dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz);   // (the opening's nearest point, not its middle: a man at one side of it is thrown straight out, not across it)
+  return d < 3.6 && (dx * D.x + dz * D.z) / (d || 1) > 0.55;
+}
 function stripTavProps() {
   if (!tavWorld || tavWorld.userData.stripped) return;
   tavWorld.userData.stripped = true;
@@ -87556,6 +90164,8 @@ function openTavCurtains() {
 // -------------------------------------------------------------- the walk
 const tavLastSpot = { x: 0, z: 0 };       // the last place in the hall he could stand
 function updateTavern(dt) {
+  tavFallTick(dt);
+  if (orcUnit && orcUnit.model && !orcUnit.hitWarm) orcUnit.hitWarm = hitLodWarm(orcUnit);   // (his 305k faces' light copy for the blade's skin test, a mesh a frame: `hitLod`)
   updateTavStore(dt);
   updateTavMoon(dt);
   updateTavTorches(dt);
@@ -87570,9 +90180,11 @@ function updateTavern(dt) {
   tavRoam(dt);
   updateTavDrinkers(dt);
   updateTavDancers(dt);
+  updateTavLookout(dt);
   tavThrownHits();
   tavCrush(dt);
   const p = camera.position, S = TAV_SITE;
+  if (tavPlayerOut(p, dt)) return;   // (out of the window: `tavPlayerOut`)
   _tavWant.set(p.x - _preMove.x, 0, p.z - _preMove.z);     // what the frame asked for, before anything corrects it
   /* THE FEET ARE ON THE FLOOR, NOT UNDER THE HEAD — the undercroft's own
    * rule, which this room never got. Duck the head to a low roof and
@@ -87669,7 +90281,7 @@ function updateTavern(dt) {
   }
   st = keepFloorAt(p.x, p.z, feet, up, S) || st;
   st = tavEscape(p, feet, up, S) || st;
-  tavWestStop(p);
+  tavWestStop(p); tavWindowStop(p);
   if (st) { tavLastFloor = st.f; tavLastSpot.x = p.x; tavLastSpot.z = p.z; }
   groundY = st ? st.f : (tavLastFloor === null ? TAV_Y + TAV_FLOOR : tavLastFloor);
 }
@@ -87770,7 +90382,7 @@ function warmTavern() {
 function startTavern(dir) {
   if (tavBusy || frozen()) return;
   if (dir > 0) loadTavern();
-  tavBusy = true; tavDir = dir; tavT = 0; tavCutDone = false;
+  tavBusy = true; tavDir = dir; tavT = 0; tavCutDone = false; tavCutView = false; tavRailMend(); tavOut = null;
   blocking = false;
   sfxTavernDoor();
 }
@@ -87798,6 +90410,7 @@ function tavCastOwed() {
     else if (!tavBuilt) n++;
     else buildTavDancers();
   }
+  if (!tavLookout) { if (tavBuilt) buildTavLookout(); else n++; }   // (the man at the window's railing: `buildTavLookout`)
   return n;
 }
 function castLoading(x, z, r) {
@@ -87851,7 +90464,7 @@ function updateTavernCut(dt) {
   blackoutEl.style.opacity = black.toFixed(3);
   if (!tavCutDone && t >= TAV_OUT + 0.05) {
     if (tavDir > 0 && !tavReady) { tavT = TAV_OUT + 0.05; return; }
-    if (tavDir > 0) { buildTavern(); if (castHold(TAV_X, TAV_Z, 40, dt)) { tavT = TAV_OUT + 0.05; return; } }   // (its people made and whole before you are: `castHold`)
+    if (tavDir > 0) { if (!tavCutView) { tavCutView = true; tavVistaCapture(); } buildTavern(); if (castHold(TAV_X, TAV_Z, 40, dt)) { tavT = TAV_OUT + 0.05; return; } }   // (the view out of the window caught first, while you still stand at the keep's door)   // (its people made and whole before you are: `castHold`)
     tavCutDone = true;
     if (tavDir > 0) { placeInTavern(); castGateHere(40); } else placeBackAtKeepDoor();
     autosaveNow(tavDir > 0 ? 'tavIn' : 'keepDoor');
@@ -88414,7 +91027,7 @@ function buildTavStore() {
     when: () => inTavern && !tavBusy && !tavStoreOpen,
     onActivate: () => {
       if (tavStoreOpen) return;
-      if (!inventory.includes(storeKeyItem) && !devKeys()) { sfxGateRattle && sfxGateRattle(); return; }
+      if (!inventory.includes(storeKeyItem) && !devKeys()) { sfxDoorLocked(); return; }
       if (inventory.includes(storeKeyItem)) { keyUsed(storeKeyItem); removeInventoryKey(storeKeyItem); } else sfxLockOpen();
       tavStoreOpen = true; hovered = null;
       setTimeout(() => openTavStore(false), 900);
@@ -88474,7 +91087,7 @@ function buildTavStore() {
       tavChestTaken = true; relic.visible = false;
       if (relic.userData.halo) { relic.parent.remove(relic.userData.halo); relic.userData.halo = null; }
       removeInteractable(relic); hovered = null;
-      sfxThud(0.04);
+      sfxThud(0.04); sfxArtAttach();   // (and the artifact's own sound as it is taken, as the others have)
       addToInventory(flameArtItem);
       stickArtifacts();
       artBanner('Artifact of the Flame · Shift Heavies Produce Fire Damage.');
@@ -89090,6 +91703,7 @@ function installLife(u, m, J) {
     if (!fkReady) fkReady = fkIdle();
     upd(dt);
     lifeApply(u, B, dt, saved);
+    if (u.lar) larApply(u, B, dt);                // (a big blow's physical body over the clip: `larHit`)
     if (u.kind.postClip) u.kind.postClip(u, saved);   // a kind's own correction of the clip, before the roots are carried
     if (fk.length) {                            // never gated on visibility: a culled body is still the body the fight hits with
       for (const f of fk) saved.push({ b: f.c, q: f.c.quaternion.clone(), p: f.c.position.clone() });
@@ -89216,19 +91830,231 @@ function lifeApply(u, B, dt, saved) {
     const a = Fl.k * Math.exp(-Fl.t * 7.0) * Math.cos(Fl.t * 10.5);
     if (Fl.t > 0.8) S.flinch = null;
     else {
-      _lfA.set(Fl.z, 0, -Fl.x);                    // up x (x, 0, z)
-      lifeTurn(B.waist, _lfA, 0.16 * a); lifeTurn(B.chest, _lfA, 0.26 * a);
-      lifeTurn(B.neck, _lfA, 0.16 * a); lifeTurn(B.head, _lfA, 0.34 * a);
-      lifeTurn(B.chest, _lfU, 0.14 * a * Fl.tw); lifeTurn(B.head, _lfU, 0.20 * a * Fl.tw);
-      lifeTurn(B.clavL, _lfA, 0.12 * a); lifeTurn(B.clavR, _lfA, 0.12 * a);
-      if (B.hip && B.hip.parent) {                 // the knees give
+      /* (its own axis: `lifeTurn` works IN `_lfA`, so the axis handed it as `_lfA` was turned into the waist's parent's frame on
+       * the first call and every bend after it went about that — measured wrong since the flinch was written, 2026-11-23) */
+      const ax = _flAx.set(Fl.z, 0, -Fl.x);        // up x (x, 0, z)
+      // (by the height it landed: `hy` 0 the feet, 1 the crown — the head's share at the head, the waist's low; `dn` an overhead)
+      const hy = Fl.hy ?? 0.62, hi = THREE.MathUtils.smoothstep(hy, 0.62, 0.92), lo = 1 - THREE.MathUtils.smoothstep(hy, 0.3, 0.6), dn = Fl.dn || 0;
+      lifeTurn(B.waist, ax, 0.16 * a * (1 + lo * 1.1)); lifeTurn(B.chest, ax, 0.26 * a * (1 - hi * 0.3 + lo * 0.2));
+      lifeTurn(B.neck, ax, 0.16 * a * (1 + hi * 0.7)); lifeTurn(B.head, ax, 0.34 * a * (1 + hi * 0.9 - lo * 0.4));
+      lifeTurn(B.waist, _lfU, 0.10 * a * Fl.tw * (0.4 + lo)); lifeTurn(B.chest, _lfU, 0.20 * a * Fl.tw); lifeTurn(B.head, _lfU, 0.22 * a * Fl.tw * (0.6 + hi));
+      lifeTurn(B.clavL, ax, 0.12 * a); lifeTurn(B.clavR, ax, 0.12 * a);
+      if (B.hip && B.hip.parent) {                 // the knees give (more under an overhead, and a low blow)
         B.hip.parent.getWorldQuaternion(_lfP).invert();
         const ps = B.hip.parent.getWorldScale(_lfV).x || 1;
         _lfA.copy(_lfU).applyQuaternion(_lfP).normalize();
-        B.hip.position.addScaledVector(_lfA, -0.07 * Math.max(0, a) / ps);
+        B.hip.position.addScaledVector(_lfA, -0.07 * Math.max(0, a) * (1 + dn * 1.6 + lo * 0.6) / ps);
       }
     }
   }
+  S.B = B;
+  if (S.spr) lifeSprings(u, S, B, dt);
+  if (S.wound && st.alive) lifeWounds(u, S, B, dt, right, fwd);
+}
+/* ---- THE BLOW MOVES WHAT IT HIT (2026-11-24, the owner: "physics-blended hit reactions while alive … make it good"). A spring on
+ * every bone of the trunk, the head and the limbs, holding an angle and a spin about the world's axes; a blow gives each the spin
+ * its own lever would — where the blade met him (`BLOW.p`) from that bone's pivot, crossed with the edge's travel — strongest in the
+ * bones the contact is ON (by distance to each bone's segment) and a share up the trunk from wherever it landed, so a cut across a
+ * shoulder throws that arm back and twists the chest, a cut low folds the hip and buckles the knee, and the head whips on a cut at
+ * the neck. The springs ring and settle on their own (limbs loose, the trunk stiffer, the head quick). Put on after the clip and
+ * taken back off before the next one, like the rest of the life layer. While he swings, the weapon arm takes none of it: what his
+ * blow does is read off that arm. */
+/* ---- YOU RUN INTO HIM AND HE TAKES IT WITH HIS BODY (2026-11-25, the owner: "or they react to me running into them with their body like
+ * GTA"). Coming at a man-sized body faster than a jog, within his body's reach: he is shoved back along the way you were going —
+ * stumbling, a stride or more at a sprint — his trunk thrown back and his arms out from where your shoulder met him (the hit springs,
+ * `lifeHit`, at his chest on your side), a grunt of breath knocked out of him; you lose most of your speed into him and the lens
+ * jolts. Awake or not. Once a second a body at most; never one mid-swing (he holds his ground and his blow is his), down, held, or
+ * a boss, stone or something twice your size. */
+const BUMP_SPEED = 2.6, _bmD = new THREE.Vector3(), _bmC = new THREE.Vector3();
+function playerBumpTick(dt) {
+  if (!introDone || frozen() || dying) return;
+  const sp = Math.hypot(velocity.x, velocity.z); if (sp < BUMP_SPEED) return;
+  const c = camera.position, now = performance.now();
+  for (const u of mutants) {
+    if (!u.st.alive || !u.g.visible || !u.model || u.st.atk >= 0 || (u.st.down || 0) > 0 || u.st.puppet || u.cpHung || u.cpHold) continue;
+    const K = u.kind; if (K.bossDeath || K.stone || K.wood || K.garg || K.mino || (K.h || 1.8) > 2.8 || minoAllyS(u)) continue;
+    const p = u.g.position, dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
+    const R = (K.body || 0.9) * 0.85 + 0.35; if (d > R || Math.abs(p.y + (K.h || 1.8) * 0.5 - (c.y - 0.6)) > 1.4) continue;
+    const into = (velocity.x * dx + velocity.z * dz) / (d || 1); if (into < BUMP_SPEED * 0.8) continue;
+    if (u.bumpAt && now - u.bumpAt < 1000) continue;
+    _bmD.set(dx / (d || 1), 0, dz / (d || 1));
+    bumpBody(u, _bmD, into);
+    break;
+  }
+}
+// the shove itself (`dir` flat, from you to him; `into` your speed at him): a walk into him a shoulder-check, a sprint sends him stumbling
+function bumpBody(u, dir, into) {
+    const K = u.kind, p = u.g.position;
+    u.bumpAt = performance.now();
+    _bmD.copy(dir).setY(0).normalize();
+    const k = THREE.MathUtils.clamp((into - 2.6) / 3.2, 0.15, 1);
+    // his body: shoved and stumbling along your line
+    u.st.flinchPush = { x: _bmD.x, z: _bmD.z, v: 0.8 + 3.0 * k, d: 5.0 };
+    // where your shoulder met him: his chest on your side
+    _bmC.copy(p).addScaledVector(_bmD, -0.18); _bmC.y = p.y + (K.h || 1.8) * 0.7;
+    _bmD.y = 0.12;
+    try { lifeHit(u, 0.5 * k, 1.0, _bmC, _bmD.clone().normalize()); } catch (e) {}
+    try { larHit(u, _bmC, _bmD.clone().normalize(), 0.5 * k); } catch (e) {}   // (shouldered: his body takes it, `larHit`)
+    if (u.life) u.life.flinch = { t: 0, k: 0.7 * k, x: _bmD.x, z: _bmD.z, tw: (Math.random() - 0.5) * 1.2, hy: 0.7, dn: 0.4 };
+    // you: most of your run goes into him
+    velocity.x -= _bmD.x * into * 0.6; velocity.z -= _bmD.z * into * 0.6;
+    addTrauma(0.12 + 0.1 * k); vmImpulse(-0.5 * k);
+    sfxAt(p.x, p.z, () => { sfxThud(0.05 + 0.04 * k); playSample('fleshHit', 0.35 * k, 0.05, 0.62); });
+    if (K.voice && K.voice.farm && !K.voice.mute && k > 0.5) farmVox('hurt', K.voice, { x: p.x, z: p.z, p: 0.6, boost: 0.6 });
+}
+/* ---- AN ACTIVE BODY ON A LIVING MAN (2026-11-25, the owner: "Mix bone physics with procedurally animation to further improve the
+ * active ragdoll physics with all enemies … Make the enemies self balanced active ragdolls. Throwing things at enemies should also
+ * affect them like this"). The springs (`lifeHit`) turn each bone on its own; a blow on a body moves the BODY — a cut at the hand
+ * drags the shoulder after it, a blow to the chest takes the head back and the arms fly out behind. So a blow that lands (every
+ * flinching one, harder for a heavy, a fast throw, a shoulder at a run) makes his upper body a little physical body for under a
+ * second: a particle at each joint from the hips up, seeded where the clip has them, the blow's momentum put in round where it
+ * landed (falling off with distance), the joints held at their lengths so it carries through the chain, and MUSCLES pulling each
+ * one back to where the clip has it — weak at the blow, stronger every moment after, so he is knocked off his pose and RIGHTS
+ * HIMSELF onto it: self-balanced, his hips and legs the clip's (planted; the stumble carries the hips). Written over the clip as
+ * turns of each bone toward its particles, faded out by the end. Never while he swings (his blow is his own): a swing that
+ * starts ends it in a tenth of a second. Looks only: no timing, no reach, no damage changes. */
+const LAR_KEYS = ['waist', 'chest', 'neck', 'head', 'clavL', 'armL', 'foreL', 'handL', 'clavR', 'armR', 'foreR', 'handR'];
+const LAR_PAR = { waist: 'hip', chest: 'waist', neck: 'chest', head: 'neck', clavL: 'chest', armL: 'clavL', foreL: 'armL', handL: 'foreL', clavR: 'chest', armR: 'clavR', foreR: 'armR', handR: 'foreR' };
+const LAR_TURN = ['waist', 'chest', 'neck', 'clavL', 'armL', 'foreL', 'clavR', 'armR', 'foreR'];
+const LAR_CAP = { waist: 0.49, chest: 0.49, neck: 0.61, clavL: 0.4, clavR: 0.4 };   // (radians; the arms 0.87, about 50°)   // (parent first; each turned toward its child)
+const _laA = new THREE.Vector3(), _laB = new THREE.Vector3(), _laC = new THREE.Vector3(), _laQ = new THREE.Quaternion(), _laQ2 = new THREE.Quaternion(), _laI = new THREE.Quaternion();
+function larHit(u, C, F, P) {
+  const S = u.life, B = S && S.B; if (!B || !B.hip || !u.st.alive || u.rag || u.st.atk >= 0 || u.kind.stone || !u.model || !u.g.visible) return;
+  const T = 0.5 + Math.min(1.4, P) * 0.32;
+  const L = u.lar || (u.lar = { t: 0, T, p: {}, pp: {}, imp: null });
+  if (L.t > 0.05) { L.t = Math.min(L.t, 0.15); L.T = Math.max(L.T - L.t, T); }   // (another blow: the body is knocked again where it is)
+  L.T = Math.max(L.T, T);
+  if (window.__larDbg) window.__larDbg.hits++;
+  L.imp = { c: C.clone(), d: F.clone().normalize(), v: (1.8 + 3.6 * Math.min(1.4, P)) * Math.min(1.3, 1.8 / Math.max(1.2, u.kind.h || 1.8)) };
+}
+function larApply(u, B, dt) {
+  const L = u.lar, st = u.st;
+  if (!st.alive || u.rag || !u.g.visible || dt <= 0) { u.lar = null; return; }
+  if (st.atk >= 0 && L.T - L.t > 0.1) L.T = L.t + 0.1;                 // (his swing is his: out of it fast)
+  L.t += dt;
+  if (L.t >= L.T) { u.lar = null; return; }
+  u.model.updateMatrixWorld(true);
+  const tgt = {};
+  for (const k of ['hip', ...LAR_KEYS]) if (B[k]) tgt[k] = B[k].getWorldPosition(new THREE.Vector3());
+  const first = !L.p.hip;
+  for (const k in tgt) { if (!L.p[k]) { L.p[k] = tgt[k].clone(); L.pp[k] = tgt[k].clone(); } }
+  if (L.imp) {                                                          // the blow's momentum, round where it landed
+    const I = L.imp; L.imp = null;
+    for (const k of LAR_KEYS) { if (!L.p[k]) continue; const d2 = L.p[k].distanceToSquared(I.c); const f = Math.exp(-d2 / 0.16) * 0.85 + 0.15; L.pp[k].addScaledVector(I.d, -I.v * f * Math.max(dt, 1 / 120)); }
+  }
+  const h = Math.min(dt, 1 / 30), e = L.t / L.T, mus = 0.06 + 0.5 * e * e;   // (weak at the blow, strong as he rights himself)
+  L.p.hip.copy(tgt.hip); L.pp.hip.copy(tgt.hip);                        // (the hips are the clip's: he stands on his own feet)
+  for (const k of LAR_KEYS) {
+    const p = L.p[k], pp = L.pp[k]; if (!p || !tgt[k]) continue;
+    _laA.subVectors(p, pp).multiplyScalar(0.9); pp.copy(p); p.add(_laA);
+    p.lerp(tgt[k], mus * Math.min(1, h * 60));
+  }
+  for (let it = 0; it < 3; it++) for (const k of LAR_KEYS) {            // the joints keep their lengths: the force goes up the chain
+    const pk = LAR_PAR[k], a = L.p[pk], b2 = L.p[k]; if (!a || !b2 || !tgt[pk] || !tgt[k]) continue;
+    const rest = tgt[pk].distanceTo(tgt[k]); _laA.subVectors(b2, a); const d = _laA.length() || 1e-6;
+    const diff = (d - rest) / d, wa = pk === 'hip' ? 0 : 0.4;
+    a.addScaledVector(_laA, diff * wa); b2.addScaledVector(_laA, -diff * (1 - wa));
+  }
+  // written over the clip: each bone turned toward where its particles say, by the fading weight
+  const w = Math.pow(1 - e, 1.4);
+  for (const k of LAR_TURN) {
+    const bn = B[k], kid = B[SPR_KID[k]]; if (!bn || !kid || !L.p[k] || !L.p[SPR_KID[k]]) continue;
+    bn.getWorldPosition(_laA); kid.getWorldPosition(_laB);
+    const cur = _laB.sub(_laA); if (cur.lengthSq() < 1e-8) continue; cur.normalize();
+    const want = _laC.subVectors(L.p[SPR_KID[k]], L.p[k]); if (want.lengthSq() < 1e-8) continue; want.normalize();
+    _laQ.setFromUnitVectors(cur, want); _laQ.slerp(_laI, 1 - w);
+    { const ang = 2 * Math.acos(Math.min(1, Math.abs(_laQ.w))), cap = LAR_CAP[k] || 0.87; if (ang > cap) _laQ.slerp(_laI, 1 - cap / ang); }   // (a joint turns so far: measured 77° on a forearm, broken-looking)
+    if (window.__larDbg) { const D = window.__larDbg; D.frames++; D.max = Math.max(D.max, 2 * Math.acos(Math.min(1, Math.abs(_laQ.w))) * 57.3); }
+    bn.getWorldQuaternion(_laQ2); _laQ2.premultiply(_laQ);
+    if (bn.parent) { bn.parent.getWorldQuaternion(_laQ); _laQ2.premultiply(_laQ.invert()); }
+    bn.quaternion.copy(_laQ2); bn.updateMatrixWorld(true);
+  }
+}
+const minoAllyS = (u) => { try { return minoAlly(u); } catch (e) { return false; } };
+const SPR_KEYS = ['hip', 'waist', 'chest', 'neck', 'head', 'clavL', 'clavR', 'armL', 'armR', 'foreL', 'foreR', 'handL', 'handR', 'thighL', 'thighR', 'calfL', 'calfR'];
+const SPR_KID = { hip: 'waist', waist: 'chest', chest: 'neck', neck: 'head', clavL: 'armL', clavR: 'armR', armL: 'foreL', armR: 'foreR', foreL: 'handL', foreR: 'handR', thighL: 'calfL', thighR: 'calfR' };
+const SPR_TUNE = { trunk: [140, 11, 0.62], head: [130, 8, 0.85], limb: [85, 6.5, 1.05] };   // (looser and further, 2026-11-25: "they should react quite a bit")   // stiffness, damping, most it turns (rad)
+const sprGroup = (k) => (k === 'head' || k === 'neck') ? 'head' : (k === 'hip' || k === 'waist' || k === 'chest') ? 'trunk' : 'limb';
+const _hspA = new THREE.Vector3(), _hspB = new THREE.Vector3(), _hspC = new THREE.Vector3(), _hspD = new THREE.Vector3();
+function lifeHit(u, P, k, Cx = null, Fx = null) {
+  const S = u.life, B = S && S.B; if (!B || (!Cx && !(BLOW.on && BLOW.u === u))) return;
+  const C = Cx || BLOW.p, F = Fx || BLOW.d, swinging = u.st.atk >= 0;
+  const big = u.kind.bossDeath ? 0.6 : 1;
+  const mag = (13 + P * 14) * big * k;   // (2.6 + 3.4·P swung a bone 3-5°: a twitch; 8.5 + 9·P 9-18°: "I WANT MORE", 2026-11-25)
+  S.spr = S.spr || {};
+  // the bone the blow is ON: the nearest segment
+  let onKey = null, onD = Infinity;
+  for (const key of SPR_KEYS) {
+    const b = B[key]; if (!b) continue;
+    b.getWorldPosition(_hspA); const kid = B[SPR_KID[key]] || b.children.find((c) => c.isBone);
+    if (kid) kid.getWorldPosition(_hspB); else _hspB.copy(_hspA);
+    _hspC.subVectors(_hspB, _hspA); const L2 = _hspC.lengthSq();
+    const t = L2 > 1e-6 ? THREE.MathUtils.clamp(_hspD.subVectors(C, _hspA).dot(_hspC) / L2, 0, 1) : 0;
+    const d = _hspD.copy(_hspA).addScaledVector(_hspC, t).distanceTo(C);
+    const w = Math.exp(-(d * d) / (0.26 * 0.26));
+    if (d < onD) { onD = d; onKey = key; }
+    const trunk = sprGroup(key) !== 'limb';
+    const share = Math.max(w, trunk ? 0.32 : 0);
+    if (share < 0.04) continue;
+    if (swinging && /R$/.test(key) && key !== 'thighR' && key !== 'calfR') continue;      // (his weapon arm, mid-blow: untouched)
+    _hspD.subVectors(C, _hspA); const r = _hspD.length(); if (r < 0.04) continue;
+    _hspD.multiplyScalar(1 / r).cross(F);                                                 // the turn that carries the contact along the edge
+    const sp = S.spr[key] || (S.spr[key] = { th: new THREE.Vector3(), om: new THREE.Vector3() });
+    sp.om.addScaledVector(_hspD, mag * share * Math.min(1, 0.35 + r));
+    if (sp.om.length() > 20) sp.om.setLength(20);
+  }
+  // and the wound stays where it landed (`lifeWounds`)
+  const W = S.wound || (S.wound = { armL: 0, armR: 0, legL: 0, legR: 0, torso: 0, head: 0 });
+  const add = 0.22 + P * 0.2;
+  if (/^(clav|arm|fore|hand)L/.test(onKey)) W.armL = Math.min(1, W.armL + add);
+  else if (/^(clav|arm|fore|hand)R/.test(onKey)) W.armR = Math.min(1, W.armR + add);
+  else if (/^(thigh|calf)L/.test(onKey)) W.legL = Math.min(1, W.legL + add);
+  else if (/^(thigh|calf)R/.test(onKey)) W.legR = Math.min(1, W.legR + add);
+  else if (onKey === 'head' || onKey === 'neck') W.head = Math.min(1, W.head + add);
+  else if (onKey) W.torso = Math.min(1, W.torso + add);
+}
+function lifeSprings(u, S, B, dt) {
+  const h = Math.min(dt, 1 / 30), n = h > 1 / 70 ? 2 : 1, hs = h / n;
+  let any = false;
+  for (const key in S.spr) {
+    const sp = S.spr[key], b = B[key]; if (!b) continue;
+    const [K, Cd, mx] = SPR_TUNE[sprGroup(key)];
+    for (let i = 0; i < n; i++) {
+      sp.om.addScaledVector(sp.th, -K * hs).multiplyScalar(Math.max(0, 1 - Cd * hs));
+      sp.th.addScaledVector(sp.om, hs);
+    }
+    const a = sp.th.length();
+    if (a > mx) sp.th.multiplyScalar(mx / a);
+    if (a < 0.003 && sp.om.lengthSq() < 1e-4) { sp.th.set(0, 0, 0); sp.om.set(0, 0, 0); continue; }
+    any = true;
+    lifeTurn(b, _hspA.copy(sp.th).normalize(), Math.min(a, mx));
+  }
+  if (!any) S.spr = null;
+}
+/* ---- AND THE WOUND STAYS WHERE IT WAS GIVEN (2026-11-24, the owner: "have the wounds react to where hit"). Hits add up by where they
+ * landed: a cut ARM hangs lower and trembles (not while that arm is swinging: his blow is his), a cut LEG limps — the hips dropping to
+ * that side in time with his stride — a cut to the BELLY or chest folds him over it, a blow to the HEAD tilts it. Looks only: his
+ * reach, his timing and his blows are what they were. */
+function lifeWounds(u, S, B, dt, right, fwd) {
+  const W = S.wound, st = u.st, t = S.t;
+  const swinging = st.atk >= 0;
+  for (const side of ['L', 'R']) {
+    const w = W['arm' + side]; if (w < 0.05 || !B['arm' + side] || (swinging && side === 'R')) continue;
+    B['arm' + side].getWorldPosition(_hspA); (B['fore' + side] || B['arm' + side]).getWorldPosition(_hspB);
+    _hspC.subVectors(_hspB, _hspA).normalize(); _hspD.set(0, -1, 0).cross(_hspC).negate();      // the turn that lets the arm hang
+    if (_hspD.lengthSq() > 1e-4) lifeTurn(B['arm' + side], _hspD.normalize(), 0.3 * w);
+    if (B['fore' + side]) lifeTurn(B['fore' + side], _hspC, Math.sin(t * 23 + (side === 'L' ? 0 : 2)) * 0.05 * w);
+  }
+  const moving = Math.hypot(u.st.vx || 0, u.st.vz || 0) > 0.3 || (u.cur && /walk|run|Walk|Run/.test(u.cur.getClip().name));
+  for (const side of ['L', 'R']) {
+    const w = W['leg' + side]; if (w < 0.05 || !B.hip) continue;
+    const step = moving ? Math.max(0, Math.sin(t * 8.5)) : 0.35;
+    lifeTurn(B.hip, fwd, (side === 'L' ? 1 : -1) * 0.08 * w * step);
+    if (B.hip.parent) { B.hip.parent.getWorldQuaternion(_lfP).invert(); const ps = B.hip.parent.getWorldScale(_lfV).x || 1; _lfA.copy(_lfU).applyQuaternion(_lfP).normalize(); B.hip.position.addScaledVector(_lfA, -0.04 * w * step / ps); }
+    if (B['calf' + side]) lifeTurn(B['calf' + side], right, 0.12 * w * step);
+  }
+  if (W.torso > 0.05) { lifeTurn(B.chest, right, 0.17 * W.torso); lifeTurn(B.waist, right, 0.09 * W.torso); }
+  if (W.head > 0.05 && B.head) lifeTurn(B.head, fwd, (0.12 + 0.03 * Math.sin(t * 1.3)) * W.head);
 }
 function authorOrcClips(u, m, gltf) {
   orcFixSword(u, m);
@@ -89265,6 +92091,14 @@ MUT_ATTACKS.dSwipe = { wind: 0.60, strike: 0.16, recover: 0.38, hit: 0.600, reac
 MUT_ATTACKS.dButt  = { wind: 0.50, strike: 0.12, recover: 0.42, hit: 0.547, reach: 1.90, lunge: 1.7, chain: 'dSwipe', chainP: 0.50, w: 0.24, guardK: 1.20, plain: true, stop: 1.05, real: true, cock: 0.44, clipRate: 1.15 };
 MUT_ATTACKS.dSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reach: 2.90, lunge: 0.5, chain: 'dSwipe', chainP: 0.45, w: 0.22, hold: true, guardK: 1.40, limbs: [0, 1], real: true, cock: 0.44, clipRate: 1.25 };
 MUT_ATTACKS.dJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.00, lunge: 4.8, chain: 'dSwipe', chainP: 0.60, w: 0.20, dmg: 2, hold: true, guardK: 1.70, minDist: 3.0, twoHanded: true, stop: 1.50 };
+/* (A DRUNK YOU CAN READ — 2026-11-26, the owner: "the drunk in the tavern needs better animations i cant read him and they dont
+ * connect". Measured, `tools/tavfight.js &who=drunk`: his hands DID reach you when a blow landed (0.13 m median) — but from 0.66 m
+ * off, inside your own view: a swipe's 1.4 m lunge from its 2.4 m reach ended with him in your face and the arm passing under
+ * the lens, a blow you never saw thrown, at 1.25-1.15 of the clips' own speed. Now his blows are thrown from where you can see
+ * them — the lunges cut to a stride (he stops 1.3-1.5 m off), the clips at their own speed, the wind-ups a third longer.) */
+Object.assign(MUT_ATTACKS.dSwipe, { lunge: 0.55, stop: 1.45, clipRate: 1.0, wind: 0.80 });
+Object.assign(MUT_ATTACKS.dButt, { lunge: 0.8, stop: 1.30, clipRate: 1.0, wind: 0.66 });
+Object.assign(MUT_ATTACKS.dSpin, { lunge: 0.3, stop: 1.6, clipRate: 1.0, wind: 1.10 });
 /* AND THE ORC SWINGS A GREAT SWORD, WHICH IS A DIFFERENT SHAPE OF FIGHT.
  * Every one of these is a Mixamo clip played at its own speed with the
  * contact frame MEASURED off it (the frame the striking end is moving
@@ -90397,7 +93231,7 @@ function gunBlocks(u) {
   if ((fx * dx + fz * dz) / dl < 0.3) return false;                     // behind him, or wide: it gets through
   if (u.st.stun > 0 || (u.st.down || 0) > 0) return false;
   const base = typeof u.kind.gunBlock === 'number' ? u.kind.gunBlock : 0.45;
-  return Math.random() < (u.st.atk >= 0 ? base * 0.3 : base);
+  return Math.random() < (u.st.atk >= 0 ? base * 0.3 : base) * GUN_BLOCK_K;   // (seldom, as every guard against a round: `GUN_BLOCK_K`, 2026-11-25)
 }
 function umbraDeflect(u, at) {
   if (!u.st.awake && u.kind.provoke) u.kind.provoke(u);
@@ -91117,6 +93951,9 @@ function updateFort(dt) {
   st = tavEscape(p, feet, up, S) || st;
   if (!fortMaskAt(p.x, p.z)) { p.x = fortLastSpot.x; p.z = fortLastSpot.z; st = keepFloorAt(p.x, p.z, feet, up, S) || st; }
   if (siteCrossed(S, fortLastSpot, p, feet) || !siteOnMain(S, p.x, p.z)) { p.x = fortLastSpot.x; p.z = fortLastSpot.z; st = keepFloorAt(p.x, p.z, feet, up, S) || st; }
+  // (a tree's planter is a floor: within its rim, its top a step up or less — or you are in the air over it — `cpPlanterTop`)
+  if (st && CP.sites.fort) for (const P of CP.sites.fort.props) { if (P.dead || !P.kind.K.fixed) continue;
+    if (Math.hypot(p.x - P.x, p.z - P.z) < (P.kind.K.trunk || 0.8) * 0.98) { const pt = cpPlanterTop(P); if (pt > st.f && pt - feet <= Math.max(up, 0.52)) st = Object.assign({}, st, { f: pt }); } }   // (a planter's rim, 0.48 m, is a step up you take)
   if (st) { fortLastFloor = st.f; fortLastSpot.x = p.x; fortLastSpot.z = p.z; }
   groundY = st ? st.f : (fortLastFloor === null ? FORT_Y + FORT_FLOOR : fortLastFloor);
 }
@@ -91207,6 +94044,7 @@ function fortClampPlayer() {
   if ((!keepFloorAt(p.x, p.z, feet, FORT_STEP, FORT_SITE) || !fortMaskAt(p.x, p.z) || siteCrossed(FORT_SITE, fortLastSpot, p, feet) || !siteOnMain(FORT_SITE, p.x, p.z)) && fortLastSpot) { p.x = fortLastSpot.x; p.z = fortLastSpot.z; }
   return true;
 }
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { fortLastSpotS: () => fortLastSpot, siteCrossed, siteOnMain, FORT_BODY, FORT_STEP, cpPushPlayer, fortPropPush, tavEscape, toggleWhereAmI }));   // (the walk-out probe, `tools/fortwalkout.js`)
 
 /* ---- THE MARAUDER IS HELD BY THE SAME STONE. The keep's push against the
  * drawn faces, damped so a correction is a lean, and a step off the paving is
@@ -92116,7 +94954,7 @@ function buildC13ThroneDoor() {
     mid: true, far: 4.2,
     bare: () => knAlive() && !devKeys(),            // while the knight who holds this court lives, it does not open (dev mode: it does)
     when: () => inC13 && !fortBusy && !thrBusy,
-    onActivate: () => { if (!knAlive() || devKeys()) startThrone(1); },
+    onActivate: () => { if (!knAlive() || devKeys()) startThrone(1); else sfxDoorLocked(); },
   });
 }
 
@@ -94492,8 +97330,10 @@ MUT_KINDS.darkKnight = Object.assign({}, KN_BASE, {
    * over the sand, then flung up to 2 m and onto his feet in 0.3 s — measured, `tools/dkfall.js`. The knight's Mixamo
    * Knocked Out and Getting Up, `knight-moves.json`, with the knight's own beats.) */
   knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 5, knockLapse: 7, knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
-  h: 2.95, hp: 90, hitR: 0.95, body: 0.78, lungeStop: 2.0, landSlop: 0.5, limbR: 0.33, foeLimbR: 0.6, lungeLead: 0.18, closeBody: true,
-  speedK: 1.0, aggr: 4.2, press: 1.0, chainMax: 5,   // (2.4 / 0.9 / 3 until 2026-11-14, the owner: "make him better and more aggressive too"; 3.2 / 0.96 / 4 until 2026-11-17)
+  h: 2.95, hp: 117, hitR: 0.95,   // (90 until 2026-11-25, the owner: "make the farmers and paladin more health and a little harder of a fight")
+  body: 0.78, lungeStop: 2.0, landSlop: 0.5, limbR: 0.33, foeLimbR: 0.6, lungeLead: 0.18, closeBody: true,
+  speedK: 1.0, aggr: 4.6, press: 1.0, chainMax: 5,   // (aggr 4.2 until 2026-11-25)
+    // (2.4 / 0.9 / 3 until 2026-11-14, the owner: "make him better and more aggressive too"; 3.2 / 0.96 / 4 until 2026-11-17)
   /* A KNIGHT, NOT A DANCER (2026-10-19, round 3; the owner: "make the dark knights connectivity way more tight hes all
    * over the place and his arm is moving weird on some swings just fix his animations and ai"). He circles, side-steps,
    * feints and sizes you up a third as often; he closes to his blow, throws it, recovers, and comes again. */
@@ -96693,7 +99533,7 @@ function gargFootH(u) {
 function gargTryDoor() {
   const A = c13Arch; if (!A) return;
   const d = c13W(A.ax + A.ux * A.L * 0.5, A.az + A.uz * A.L * 0.5);
-  sfxAt(d.x, d.z, () => { sfxGateRattle(); sfxPlankKnock(d.x, d.z, 6); });
+  sfxDoorLocked(d.x, d.z);
   if (GARG.phase === 0 && GARG.units.length) {
     // with him at your side you turn round on him first, and they come down as he finishes swearing
     if (!GARG.told) { GARG.told = true; GARG.scene = { unit: null, phase: null, t: 0, turn: false, turnT: 0, faced: false }; if (minoAtDoor(() => gargWake())) return; GARG.scene = null; }
@@ -99511,7 +102351,7 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
       far: 2.4, when: () => inSewer && !sewDoor2Open, bare: () => !haveKey(),
       onActivate: () => {
         hovered = null;
-        if (!haveKey()) { sfxAt(SEW_X + X, SEW_Z + LZ, () => sfxPropHit('metal', 2.4)); flashPrompt("It won't open. Locked, from this side — a big old keyhole.", 2400); return; }
+        if (!haveKey()) { sfxDoorLocked(SEW_X + X, SEW_Z + LZ); flashPrompt("It won't open. Locked, from this side — a big old keyhole.", 2400); return; }
         if (inventory.includes(sewKeyItem)) { keyUsed(sewKeyItem); removeInventoryKey(sewKeyItem); }
         sewDoor2Open = true;
         sfxAt(SEW_X + X, SEW_Z + LZ, () => { sfxPropHit('metal', 3); sfxGateRattle && sfxGateRattle(); });
@@ -99785,8 +102625,8 @@ varying vec2 vSwXZ; uniform vec4 uWake[${WN}]; uniform float uSwT;`)
       });
       return j;
     });
-    const sy = makeSyringe(); sy.scale.setScalar(1.3);
-    sy.position.set(cx - 0.62, S.WALK + 0.012, cz + 0.05); sy.rotation.set(Math.PI / 2, 0, 1.1); W.add(sy);   // (lying on its side, its needle along the walk)
+    /* (THE SYRINGE IS GONE — 2026-11-26, the owner, a still of it: "this syringe in the ground can go". Meant to lie on its side,
+     * `rotation.x` π/2 turned its length (+z) straight DOWN: it stood upright with its needle in the walk.) */
   }
 
   /* ---- THE BRIDGE over the channel (2026-11-14, in place of the plank you carried and laid): two rusted steel channels
@@ -102858,16 +105698,19 @@ function sewLampPass(W) {
 // the sewer's lamps into `FOG_LAMPS`, every frame you are in it (and none anywhere else)
 const _sewLW = new THREE.Vector3();
 function sewLampsToFog() {
-  const F = FOG_LAMPS; let n = 0;
+  const F = FOG_LAMPS; let n = 0, ch = false;
+  const put = (A, i, v) => { if (A[i] !== v) { A[i] = v; ch = true; } };
   if (inSewer && sewP.lampSrc) for (const q of sewP.lampSrc) {
     if (n >= FOG_LAMP_MAX) break;
     const L = q.L; if (L.intensity <= 0 || !L.parent) continue;
     L.getWorldPosition(_sewLW);
-    F.p[n].set(_sewLW.x, _sewLW.y, _sewLW.z, L.distance);
-    F.c[n].set(L.color.r * L.intensity, L.color.g * L.intensity, L.color.b * L.intensity, q.decay);
+    const o = n * 4;
+    put(F.p, o, _sewLW.x); put(F.p, o + 1, _sewLW.y); put(F.p, o + 2, _sewLW.z); put(F.p, o + 3, L.distance);
+    put(F.c, o, L.color.r * L.intensity); put(F.c, o + 1, L.color.g * L.intensity); put(F.c, o + 2, L.color.b * L.intensity); put(F.c, o + 3, q.decay);
     n++;
   }
   F.n.x = n;
+  if (ch) F.ver++;
 }
 function sewLightPass(W) {
   if (sewP.hole) { SEW_HOLE.min.value.copy(sewP.hole.min); SEW_HOLE.max.value.copy(sewP.hole.max); }
@@ -102924,6 +105767,9 @@ let inDun = false, dunBusy = false, dunT = 0, dunDir = 1, dunCutDone = false, _d
 let inCel = false, celBusy = false, celLive = false, celWash = 0, celPupFight = 0, celBenchDead = false;   // (celBenchDead: the one off the workbench is dead — on the save, `celBench`)
 // the marionette from the washer (`MAR`, its section by the cellar's): up here, as a save's restore can run before the module is read
 const MAR = { st: 'none', u: null, prox: null, pickT: 0, drawT: 0, hold: true, v: 0, stuckT: 0, lastD: null, hop: null, cine: 0, face: 1, bind: null, path: null, pathT: 0 };
+/* (2026-11-25, the owner: "the marionette needs to be able to actually die he barely takes damage … make him take more damage": a
+ * creature's blow on him is worth this many of its blows on a man — `hurtMutantCore`. His 26 health is ten or so of the castle men's.) */
+const MAR_HURT_K = 2.2;
    // (`celWash`: the one in the washer — 0 quiet, 1 awake, 2 out and gone; saved)      // the cellar under Elvédor's house (its section is by his house's; `celLive` once the module has got that far — the loop runs before it does)
 let dunLastFloor = null; const dunLastSpot = { x: 0, z: 0 };
 let henry = null;
@@ -103703,7 +106549,7 @@ function buildDunGate(root, mats) {
     bare: () => !inventory.includes(cellKeyItem) && !devKeys(),
     when: () => inDun && !dunBusy && henryFree === 0 && !(dunGate && dunGate.open),
     onActivate: () => {
-      if (!inventory.includes(cellKeyItem) && !devKeys()) { try { sfxGateRattle && sfxGateRattle(); } catch (e) {} return; }
+      if (!inventory.includes(cellKeyItem) && !devKeys()) { try { sfxDoorLocked(); } catch (e) {} return; }
       if (inventory.includes(cellKeyItem)) { keyUsed(cellKeyItem); removeInventoryKey(cellKeyItem); }
       try { sfxLockOpen(); } catch (e) {}
       dunGate.open = true; henryFree = 1; henry.free = { phase: 'wait', t: 0 };
@@ -105071,7 +107917,7 @@ function thrBottleLand(g, sp) {
  *
  * Draws: the intact props are INSTANCED, one batch per kind and part per castle (a broken one is a zero matrix).
  * ===================================================================== */
-const CP_URLS = { a: 'assets/castle-props-a.glb', b: 'assets/castle-props-b.glb' };
+const CP_URLS = { a: 'assets/castle-props-a.glb', b: 'assets/castle-props-b.glb', c: 'assets/castle-props-c.glb' };   // (c: Daniel Vicente's "Medieval Props", 2026-11-25)
 // node: in the pack; size: what it measures here, by its height ('h') or its longest side in plan ('L');
 // mat: what it is made of (its break, its sound, how it bounces); frac: how it comes apart; n: how many pieces
 const CP_KINDS = {
@@ -105085,8 +107931,7 @@ const CP_KINDS = {
   box2: { src: 'b', node: 'Box2', size: 0.58, by: 'h', mat: 'wood', frac: 'boards', n: 7 },
   box3: { src: 'b', node: 'Box3', size: 0.78, by: 'h', mat: 'wood', frac: 'boards', n: 8 },
   produceCrate: { src: 'b', node: 'Wooden_Crate', size: 0.66, by: 'L', mat: 'wood', frac: 'boards', n: 6 },
-  sandbag: { src: 'a', node: 'SM_Sandbag', size: 0.92, by: 'L', mat: 'sack', frac: 'burst', n: 4 },
-  sandbag1: { src: 'a', node: 'SM_Sandbag1', size: 0.92, by: 'L', mat: 'sack', frac: 'burst', n: 4 },
+  // (the sandbags, SM_Sandbag and SM_Sandbag1, taken out 2026-11-25: "take out the sandbags" — still in the file, never built)
   sack1: { src: 'b', node: 'Sack1', size: 0.6, by: 'h', mat: 'sack', frac: 'burst', n: 4, round: true },
   sack2: { src: 'b', node: 'Sack2', size: 0.7, by: 'h', mat: 'sack', frac: 'burst', n: 4, round: true },
   bucket: { src: 'b', node: 'Bucket', size: 0.42, by: 'h', mat: 'wood', frac: 'staves', n: 8, round: true },
@@ -105111,19 +107956,43 @@ const CP_KINDS = {
   carrot2: { src: 'b', node: 'Carrot2', size: 0.17, by: 'L', mat: 'veg', loose: true },
   shroom1: { src: 'b', node: 'Shroom1', size: 0.09, by: 'L', mat: 'veg', loose: true },
   shroom2: { src: 'b', node: 'Shroom2', size: 0.08, by: 'L', mat: 'veg', loose: true },
+  /* (2026-11-25, the owner, with Daniel Vicente's "Medieval Props" (CC-BY-4.0): "add the big tree from this prop and maybe one little
+   * tree in the first section of the castle. spread the rest of the props around the castle but make it make sense and be breakable
+   * make the old breakable have chemistry with them" — `assets/castle-props-c.glb`, split into its pieces in Blender (the store set,
+   * the tub and its pail, the bowls and plates were one mesh each) and packed as the kit was. The trees are FIXED: they never break,
+   * and you and they are held off the TRUNK only (`trunk`). The well and the fountain are stone: a heavy blow, a thrown body.) */
+  mpBarrel: { src: 'c', node: 'MP_Store_0', size: 0.88, by: 'h', mat: 'wood', frac: 'staves', n: 12, round: true },
+  mpCrate: { src: 'c', node: 'MP_Store_1', size: 0.8, by: 'L', mat: 'wood', frac: 'boards', n: 9 },
+  mpPot: { src: 'c', node: 'MP_Store_2', size: 0.62, by: 'h', mat: 'clay', frac: 'shards', n: 10, round: true },
+  mpTub: { src: 'c', node: 'MP_Tub_1', size: 1.05, by: 'L', mat: 'wood', frac: 'staves', n: 12, round: true },
+  mpPail: { src: 'c', node: 'MP_Tub_0', size: 0.38, by: 'h', mat: 'wood', frac: 'staves', n: 8, round: true },
+  mpBowls: { src: 'c', node: 'MP_Plate_0', size: 0.3, by: 'L', mat: 'clay', frac: 'shards', n: 7, round: true },
+  mpPlate: { src: 'c', node: 'MP_Plate_1', size: 0.3, by: 'L', mat: 'clay', frac: 'shards', n: 6, round: true },
+  mpDish: { src: 'c', node: 'MP_Plate_2', size: 0.5, by: 'L', mat: 'clay', frac: 'shards', n: 8, round: true },
+  mpStall: { src: 'c', node: 'MP_Stall', size: 2.5, by: 'h', mat: 'wood', frac: 'boards', n: 30, solid: true },
+  mpWell: { src: 'c', node: 'MP_Well', size: 2.6, by: 'h', mat: 'stone', frac: 'shards', n: 40, round: true, solid: true },
+  mpFountain: { src: 'c', node: 'MP_Fountain', size: 3.4, by: 'L', mat: 'stone', frac: 'shards', n: 44, round: true, solid: true },
+  /* (the trees WITH THEIR PLANTERS — the owner, 2026-11-25: "make sure trees have their planters in the castle". In the pack each tree
+   * is three pieces stood in one spot: the trunk, its crown (the "willow" is the big tree's hanging green, the "bush" the little
+   * tree's leaves) and a round stone planter — joined back as one in the pack's own proportions. `trunk` is the planter's radius
+   * now: you and they are held off its rim.) */
+  mpTreeBig: { src: 'c', node: 'MP_TreeBigFull', size: 7.5, by: 'h', mat: 'wood', fixed: true, trunk: 1.57, round: true, leaf: true },
+  mpTreeSmall: { src: 'c', node: 'MP_TreeSmallFull', size: 4.2, by: 'h', mat: 'wood', fixed: true, trunk: 0.82, round: true, leaf: true },
 };
 // how hard a blow it takes to break one, and how a piece of it bounces
 const CP_MAT = {
   wood: { brk: 3.0, e: 0.28, mu: 0.6 }, clay: { brk: 1.6, e: 0.12, mu: 0.7 }, glass: { brk: 1.4, e: 0.15, mu: 0.4 },
   sack: { brk: 2.4, e: 0.05, mu: 0.9 }, veg: { brk: 2.0, e: 0.3, mu: 0.5 },
+  stone: { brk: 7.5, e: 0.1, mu: 0.8 },   // (the well, the fountain: a heavy blow, a body thrown hard, the kick's full weight — 2026-11-25)
 };
-const CP = { gl: { a: null, b: null }, asked: false, kinds: {}, sites: {}, bodies: [], ready: false, heaps: [] };
+const CP = { gl: { a: null, b: null, c: null }, asked: false, kinds: {}, sites: {}, bodies: [], ready: false, heaps: [] };
 const CP_MAX_BODIES = 150, CP_G = 15;
 
 function loadCastleProps() {
   if (CP.asked) return;
   CP.asked = true;
-  for (const k of ['a', 'b']) bwGlb(CP_URLS[k], (g) => { CP.gl[k] = g.scene; if (CP.gl.a && CP.gl.b) cpMakeKinds(); }, () => {});
+  const all = () => CP.gl.a && CP.gl.b && (CP.gl.c || CP.noC);
+  for (const k of ['a', 'b', 'c']) bwGlb(CP_URLS[k], (g) => { CP.gl[k] = g.scene; if (all()) cpMakeKinds(); }, (e) => { if (k === 'c') { CP.noC = true; console.warn('[cprops] the medieval props did not load', e); if (all()) cpMakeKinds(); } });
 }
 /* A TRIANGLE TURNED AGAINST ITS OWN NORMALS. The packer's vertex clustering (`--decimate-each`) keeps the normals and can
  * turn a triangle's winding over; drawn both sides, three then flips the normal of every face it sees from behind, and a
@@ -105148,7 +108017,8 @@ function cpWindByNormals(g) {
 function cpMakeKinds() {
   const v = new THREE.Vector3();
   for (const [name, K] of Object.entries(CP_KINDS)) {
-    const root = CP.gl[K.src]; root.updateMatrixWorld(true);
+    const root = CP.gl[K.src]; if (!root) continue;   // (a file that did not come: its kinds are not made, the rest are)
+    root.updateMatrixWorld(true);
     const node = root.getObjectByName(K.node); if (!node) { console.warn('[cprops] no node', K.node); continue; }
     const byMat = new Map();
     node.traverse((o) => {
@@ -105177,7 +108047,7 @@ function cpMakeKinds() {
       parts.push({ geo: g, mat: cpMaterial(m, K) });
     }
     const hx = sz.x * s / 2, hz = sz.z * s / 2, h = sz.y * s;
-    CP.kinds[name] = { name, K, parts, hx, hz, h, r: Math.hypot(hx, hz), frac: null };
+    CP.kinds[name] = { name, K, parts, hx, hz, h, r: K.fixed ? K.trunk * 3 : Math.hypot(hx, hz), frac: null };   // (a tree is spaced by its trunk)
   }
   CP.ready = true;
   for (const S of Object.values(CP.sites)) S.built = false;     // (a site may already have waited for them)
@@ -105197,7 +108067,13 @@ function cpMaterial(m, K) {
   /* (the castles' stone is lit by its OWN emissive map, warmed inside XIII to about 0.23/0.20/0.18 of its map — the lamps
    * barely move it — so a prop lit by the lamps alone stood black against bright stone: its map lifts it the same way,
    * warm, the dark gothic atlas half again as much as the market's) */
-  c.emissive = new THREE.Color(K.mat === 'veg' ? 0x3a2a20 : K.src === 'a' ? 0x5c4a35 : 0x433628);
+  // (lifted to the court's own light — 2026-11-24, the owner: "make the breakables look better in the castle": filmed, they stood black
+  // against the stone, which is lit by its own map; a third brighter, a touch warmer, like wood by a brazier)
+  c.emissive = new THREE.Color(K.leaf ? 0x2c3324 : K.mat === 'stone' ? 0x55524c : K.mat === 'veg' ? 0x52392a : K.src === 'a' ? 0x7d6247 : 0x5f4b36);
+  // (leaves cut by their map's alpha; everything else solid — the well's and the fountain's stone came in BLEND off the source's
+  // glass-water setup, their map's alpha low, and cut away to nothing but the water)
+  if (K.leaf) { c.transparent = false; c.alphaTest = Math.max(0.5, c.alphaTest || 0); c.depthWrite = true; }
+  else if (K.src === 'c') { c.transparent = false; c.alphaTest = 0; c.opacity = 1; c.depthWrite = true; }   // (a BLEND material comes in not writing depth: the stone drew behind the paving)
   if (c.map) c.emissiveMap = c.map;
   if (K.mat === 'glass') { c.roughness = 0.35; c.emissive = new THREE.Color(0x2a3a2a); }
   _cpMatCache.set(m, c);
@@ -105214,13 +108090,14 @@ const CP_SITE_DEFS = {
     avoid: (lx, lz) => {
       if (Math.hypot(lx - FORT_GATE.xi, lz - FORT_GATE.zi) < 8) return true;           // inside the gate, and its leaves' swing
       if (Math.hypot(lx - FORT_DOOR.x, lz - FORT_DOOR.z) < 5) return true;            // the back door, and the way to it
-      for (const D of farmDoors) if (Math.hypot(lx - D.cx, lz - D.cz) < 4.5) return true;   // a house's door (its middle, the castle's frame): a farmer comes out of it (2.8 until 2026-11-18, the owner: "the breakables in the castle dont have to be inside where the farmers come from only where you fight")
+      for (const D of farmDoors) if (Math.hypot(lx - D.cx, lz - D.cz) < 3.4) return true;   // (4.5 → 3.4, 2026-11-24, "have more of them": a doorway and the step out of it stay clear)   // a house's door (its middle, the castle's frame): a farmer comes out of it (2.8 until 2026-11-18, the owner: "the breakables in the castle dont have to be inside where the farmers come from only where you fight")
       if (cpFeatNear(fortWorld, lx, 1.3, lz, 1.5, 1.0, cpFortDoorMats())) return true;   // and every other door in it, in the farmers' doors' own materials
       if (fortLife) for (const q of fortLife.props) if (Math.hypot(lx + FORT_X - q.x, lz + FORT_Z - q.z) < 2.0) return true;   // the braziers
       return false;
     },
-    scenes: ['barrels', 'crates', 'sacks', 'produce', 'cart', 'pottery', 'barrels', 'crates', 'sacks', 'table', 'cartHand'], max: 10,
-    singles: 7, single: ['barrel', 'barrel2', 'crate', 'crateOpen', 'sack1', 'sack2', 'box3', 'bucket'],
+    scenes: ['market', 'barrels', 'crates', 'produce', 'cart', 'pottery', 'market', 'barrels', 'crates', 'table', 'cartHand'], max: 18,   // (no well, no fountain, no sacks of seed — the owner, 2026-11-26)
+    singles: 12, single: ['barrel', 'barrel2', 'crate', 'crateOpen', 'sack1', 'sack2', 'box3', 'bucket', 'mpBarrel', 'mpCrate', 'mpPot'],
+    anchors: () => fortPropAnchors(),   // (and the scenes put there ON PURPOSE: barricades across the street, stores by the fires)
     /* (its walk calls the arcades and the houses' rooms open too — seen from above, half the first scenes stood under a
      * roof — so here everything stands under the sky, against a wall where one is in reach and at the street's own edge
      * where the eaves start where it is not) */
@@ -105232,7 +108109,7 @@ const CP_SITE_DEFS = {
     ready: () => !!(c13World && c13Walk && c13Walls && c13Cells && c13Thrive && c13Thrive.done && C13_SITE._main && C13_SITE._main.done), here: () => inC13,
     floor: (x, z) => c13CourtAt(x, z), nominal: () => C13_Y + C13_FLOOR, open: (x, z, strict) => cpOpenSky(x, z, C13_SITE, C13_FLOOR, strict),
     avoid: (lx, lz) => c13PathD(lx, lz) < 2.8 || c13FeatNear(lx, 1.4, lz, 1.6, 1.5) || c13Overlaps(lx, lz, 1.0),
-    scenes: ['produce', 'pottery', 'barrels', 'table', 'crates', 'sacks', 'cart', 'pottery', 'barrels', 'produce', 'crates', 'cartHand'], max: 11,
+    scenes: ['treeBig', 'produce', 'pottery', 'barrels', 'table', 'crates', 'sacks', 'cart', 'pottery', 'barrels', 'produce', 'crates', 'cartHand'], max: 12,   // (the big tree, moved here from the first section's door: 2026-11-26)
     singles: 9, single: ['barrel', 'keg', 'pot3', 'pot4', 'sack1', 'box2', 'box3', 'crate', 'bucket'],
   },
   thr: {
@@ -105294,29 +108171,29 @@ function cpOpenSky(x, z, S, floor, strict) {
  * on. `lean`: stood up against the wall (a wheel). `fill`: what is heaped in it. */
 const CP_SCENES = {
   barrels: () => [
-    { k: cpPick(['barrel', 'barrel2', 'keg']), p: [0, 0.48], yaw: cpRand() * 6.3 },
-    { k: cpPick(['barrel', 'barrel2']), p: [0.82 + cpRand() * 0.1, 0.5], yaw: cpRand() * 6.3 },
+    { k: cpPick(['barrel', 'barrel2', 'keg', 'mpBarrel']), p: [0, 0.48], yaw: cpRand() * 6.3 },
+    { k: cpPick(['barrel', 'barrel2', 'mpBarrel']), p: [0.82 + cpRand() * 0.1, 0.5], yaw: cpRand() * 6.3 },
     { k: 'keg', p: [-0.85, 0.52], yaw: cpRand() * 6.3, opt: 0.6 },
-    { k: 'bucket', p: [1.45, 0.62], yaw: cpRand() * 6.3, opt: 0.7 },
+    { k: cpPick(['bucket', 'mpPail']), p: [1.45, 0.62], yaw: cpRand() * 6.3, opt: 0.7 },
   ],
   crates: () => [
-    { k: cpPick(['crate', 'crateRoped']), p: [0, 0.6], yaw: (cpRand() - 0.5) * 0.25 },
+    { k: cpPick(['crate', 'crateRoped', 'mpCrate']), p: [0, 0.6], yaw: (cpRand() - 0.5) * 0.25 },
     { k: cpPick(['box2', 'box1']), p: [0.05, 0.62], yaw: (cpRand() - 0.5) * 0.6, on: 0 },
     { k: 'box3', p: [1.15, 0.5], yaw: (cpRand() - 0.5) * 0.4, opt: 0.8 },
     { k: 'box1', p: [0.75, 1.15], yaw: cpRand() * 6.3, opt: 0.6 },
   ],
   sacks: () => [
-    { k: 'sandbag', p: [0, 0.55], yaw: Math.PI / 2 + (cpRand() - 0.5) * 0.3 },
-    { k: 'sandbag1', p: [0.05, 0.57], yaw: Math.PI / 2 + (cpRand() - 0.5) * 0.5, on: 0 },
-    { k: 'sack1', p: [0.95, 0.42], yaw: cpRand() * 6.3 },
-    { k: 'sack2', p: [1.5, 0.48], yaw: cpRand() * 6.3, opt: 0.7 },
+    { k: 'sack1', p: [0, 0.42], yaw: cpRand() * 6.3 },
+    { k: 'sack2', p: [0.6, 0.48], yaw: cpRand() * 6.3 },
+    { k: 'sack1', p: [1.2, 0.44], yaw: cpRand() * 6.3, opt: 0.7 },
   ],
   pottery: () => [
     { k: 'pot3', p: [0, 0.42], yaw: cpRand() * 6.3 },
     { k: 'pot4', p: [0.55, 0.36], yaw: cpRand() * 6.3 },
     { k: 'pot2', p: [-0.5, 0.4], yaw: cpRand() * 6.3 },
-    { k: 'pot1', p: [0.25, 0.85], yaw: cpRand() * 6.3, opt: 0.8 },
+    { k: cpPick(['pot1', 'mpBowls']), p: [0.25, 0.85], yaw: cpRand() * 6.3, opt: 0.8 },
     { k: cpPick(['bottle1', 'bottle2', 'bottle3']), p: [-0.25, 0.85], yaw: cpRand() * 6.3, opt: 0.8 },
+    { k: 'mpPot', p: [1.1, 0.42], yaw: cpRand() * 6.3, opt: 0.7 },
   ],
   produce: () => [
     { k: 'produceCrate', p: [0, 0.48], yaw: (cpRand() - 0.5) * 0.3, fill: 'produce' },
@@ -105333,12 +108210,63 @@ const CP_SCENES = {
     { k: 'handcart', p: [0, 0.75], yaw: Math.PI / 2, along: true },
     { k: cpPick(['sack1', 'sack2']), p: [1.35, 0.45], yaw: cpRand() * 6.3, opt: 0.7 },
   ],
+  /* (2026-11-24, the owner: "have more of them just put them smart like on purpose") a BARRICADE thrown across part of the street —
+   * a crate wall with a box on it (its sandbags taken out 2026-11-25), a cart on its side at the end — and a STORE by a fire, what the men burn and
+   * drink: barrels, a keg, a crate and a sack. Laid in the frame of a line across the street (`fortPropAnchors`), not a wall. */
+  barricade: () => [
+    { k: cpPick(['crate', 'crateRoped']), p: [0, 0.15], yaw: (cpRand() - 0.5) * 0.3 },
+    { k: cpPick(['box2', 'box1']), p: [0.02, 0.15], yaw: (cpRand() - 0.5) * 0.6, on: 0, opt: 0.8 },
+    { k: cpPick(['crate', 'crateRoped']), p: [1.0, 0.15], yaw: (cpRand() - 0.5) * 0.3 },
+    { k: 'cartBroken', p: [-1.9, 0.25], yaw: 0, along: true, opt: 0.7 },
+    { k: 'sack1', p: [-0.85, 0.35], yaw: cpRand() * 6.3, opt: 0.6 },
+  ],
+  store: () => [
+    { k: cpPick(['barrel', 'barrel2']), p: [0, 0.2], yaw: cpRand() * 6.3 },
+    { k: 'keg', p: [0.8, 0.25], yaw: cpRand() * 6.3 },
+    { k: cpPick(['crate', 'crateOpen']), p: [-0.95, 0.25], yaw: (cpRand() - 0.5) * 0.4 },
+    { k: 'box1', p: [-0.95, 0.25], yaw: cpRand() * 6.3, on: 2, opt: 0.7 },
+    { k: 'sack2', p: [1.6, 0.3], yaw: cpRand() * 6.3, opt: 0.7 },
+    { k: 'bucket', p: [0.4, 0.85], yaw: cpRand() * 6.3, opt: 0.6 },
+  ],
   table: () => [
     { k: 'table', p: [0, 0.95], yaw: cpRand() * 6.3 },
     { k: 'stool', p: [-0.78, 1.0], yaw: cpRand() * 6.3 },
     { k: 'stool', p: [0.8, 0.95], yaw: cpRand() * 6.3, opt: 0.8 },
     { k: cpPick(['bottle2', 'bottle3']), p: [0.12, 0.92], yaw: cpRand() * 6.3, on: 0 },
     { k: 'pot1', p: [-0.15, 1.08], yaw: cpRand() * 6.3, on: 0, opt: 0.7 },
+    { k: cpPick(['mpPlate', 'mpBowls']), p: [-0.3, 0.9], yaw: cpRand() * 6.3, on: 0, opt: 0.8 },
+  ],
+  /* (2026-11-25, the new props and the old together, as they would be:) A MARKET STALL against the street's edge, its trade round it —
+   * a produce crate full, melons, the new pot and an old one, a box with the bowls on it; A WELL with its pail and the wash tub, an old
+   * bucket and a barrel by it; THE FOUNTAIN with a pail at its rim and a barrel; and the two TREES of the first section with a bush or
+   * two at their feet. */
+  market: () => [
+    { k: 'mpStall', p: [0, 1.15], yaw: Math.PI, along: false },
+    { k: 'produceCrate', p: [-1.75, 0.5], yaw: (cpRand() - 0.5) * 0.3, fill: 'produce' },
+    { k: 'melon', p: [-1.2, 0.95], yaw: cpRand() * 6.3, opt: 0.7 },
+    { k: 'mpPot', p: [1.7, 0.42], yaw: cpRand() * 6.3 },
+    { k: 'pot2', p: [2.2, 0.38], yaw: cpRand() * 6.3, opt: 0.7 },
+    { k: 'box2', p: [-2.45, 0.45], yaw: (cpRand() - 0.5) * 0.4, opt: 0.8 },
+    { k: 'mpBowls', p: [-2.45, 0.45], yaw: cpRand() * 6.3, on: 5, opt: 0.9 },
+  ],
+  well: () => [
+    { k: 'mpWell', p: [0, 1.2], yaw: cpRand() * 6.3 },
+    { k: 'mpPail', p: [1.35, 0.55], yaw: cpRand() * 6.3 },
+    { k: 'mpTub', p: [-1.65, 0.7], yaw: cpRand() * 6.3 },
+    { k: 'bucket', p: [1.9, 0.45], yaw: cpRand() * 6.3, opt: 0.6 },
+    { k: cpPick(['barrel2', 'mpBarrel']), p: [-2.6, 0.5], yaw: cpRand() * 6.3, opt: 0.7 },
+  ],
+  fountain: () => [
+    { k: 'mpFountain', p: [0, 1.9] },
+    { k: 'mpPail', p: [2.1, 0.5], yaw: cpRand() * 6.3 },
+    { k: cpPick(['mpBarrel', 'keg']), p: [-2.3, 0.5], yaw: cpRand() * 6.3, opt: 0.7 },
+  ],
+  treeBig: () => [
+    { k: 'mpTreeBig', p: [0, 0], yaw: cpRand() * 6.3 },
+    { k: 'mpPail', p: [2.0, 0.3], yaw: cpRand() * 6.3, opt: 0.6 },
+  ],
+  treeSmall: () => [
+    { k: 'mpTreeSmall', p: [0, 0], yaw: cpRand() * 6.3 },
   ],
 };
 function cpPick(a) { return a[(cpRand() * a.length) | 0]; }
@@ -105401,17 +108329,18 @@ function cpWallFlat(D, s, half) {
 // a prop of this kind fits here: on the open paving at the spot's height all round it, and in no stone
 function cpFits(D, kind, x, z, fy, yaw, top) {
   const S = D.S(), c = Math.cos(yaw), s = Math.sin(yaw);
+  const fx = kind.K.fixed ? kind.K.trunk * 1.05 : kind.hx * 0.8, fz = kind.K.fixed ? kind.K.trunk * 1.05 : kind.hz * 0.8;   // (a tree stands on its trunk: its crown may reach over a wall)
   for (const [a, b] of [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    const ox = a * kind.hx * 0.8, oz = b * kind.hz * 0.8;
+    const ox = a * fx, oz = b * fz;
     const px = x + ox * c + oz * s, pz = z - ox * s + oz * c;
     const W = CP.why || (CP.why = {});
-    if (!top) { if (!D.open(px, pz, !!D.sky)) { W.fOpen = (W.fOpen || 0) + 1; return false; } const f = D.floor(px, pz); if (f === null || Math.abs(f - fy) > 0.12) { W.fFloor = (W.fFloor || 0) + 1; return false; } }
+    if (!top) { if (!D.open(px, pz, !!D.sky)) { W.fOpen = (W.fOpen || 0) + 1; if (kind.K.src === 'c') W['c_open_' + kind.name] = (W['c_open_' + kind.name] || 0) + 1; return false; } const f = D.floor(px, pz); if (f === null || Math.abs(f - fy) > 0.12) { W.fFloor = (W.fFloor || 0) + 1; if (kind.K.src === 'c') W['c_floor_' + kind.name] = (W['c_floor_' + kind.name] || 0) + 1; return false; } }
   }
-  if (keepWallNear(x, z, Math.max(0.12, Math.min(kind.hx, kind.hz) * 0.95), fy + 0.15, fy + Math.max(0.3, kind.h * 0.9), S)) { CP.why.fWall = (CP.why.fWall || 0) + 1; return false; }
+  if (keepWallNear(x, z, kind.K.fixed ? kind.K.trunk * 1.1 : Math.max(0.12, Math.min(kind.hx, kind.hz) * 0.95), fy + 0.15, fy + (kind.K.fixed ? 2.2 : Math.max(0.3, kind.h * 0.9)), S)) { CP.why.fWall = (CP.why.fWall || 0) + 1; if (kind.K.src === 'c') CP.why['c_wall_' + kind.name] = (CP.why['c_wall_' + kind.name] || 0) + 1; return false; }
   /* ONLY WHERE YOU FIGHT (2026-11-18, the owner: "dont have to be inside where the farmers come from"): mapped from above
    * (`cpMap`), eight of the first castle's stood under the arcades and in the houses' doorways. A wall behind a prop is
    * fine (not walkable at all); walkable floor round it that is mostly under a roof is a house or an arcade: refused. */
-  if (!top && D.fightOnly) {
+  if (!top && D.fightOnly && !kind.K.fixed) {   // (a tree's crown is over the eaves whatever: only its trunk must stand clear — `cpFits` above)
     // (every point under a roof within 1.4 m refused them ALL: the eaves run a strip along every wall of the street. So: of
     // the walkable floor round it, at 1 and 2 m, most must be under the sky — a street, not an arcade or a doorway)
     let walk = 0, sky = 0;
@@ -105420,7 +108349,7 @@ function cpFits(D, kind, x, z, fy, yaw, top) {
       if (!D.open(px, pz, false)) continue;
       walk++; if (D.open(px, pz, true)) sky++;
     }
-    if (!walk || sky < walk * 0.8 || !D.open(x, z, true) || D.avoid(x - D.X(), z - D.Z())) { CP.why.fRoof = (CP.why.fRoof || 0) + 1; return false; }   // (and each prop clear of the doors, not only its scene's spot)
+    if (!walk || sky < walk * 0.8 || !D.open(x, z, true) || D.avoid(x - D.X(), z - D.Z())) { CP.why.fRoof = (CP.why.fRoof || 0) + 1; if (kind.K.src === 'c') CP.why['c_roof_' + kind.name] = (CP.why['c_roof_' + kind.name] || 0) + 1; return false; }   // (and each prop clear of the doors, not only its scene's spot)
   }
   return true;
 }
@@ -105430,6 +108359,7 @@ function cpBuildSite(id) {
   const D = CP_SITE_DEFS[id];
   let site = CP.sites[id];
   if (!site) site = CP.sites[id] = { id, D, props: [], built: false, job: null, group: null };
+  if (id === 'fort' && !bzSettled && D.ready()) bzSettle();   // (the braziers out of anything they stand in, before a prop is laid)
   if (site.built || !CP.ready || !D.ready()) return;
   if (!site.job) site.job = cpBuildSteps(site);
   const t0 = performance.now();
@@ -105445,6 +108375,21 @@ function* cpBuildSteps(site) {
   for (let i = cand.length - 1; i > 0; i--) { const j = (cpRand() * (i + 1)) | 0; [cand[i], cand[j]] = [cand[j], cand[i]]; }
   const placed = [];
   let si = 0, t0 = performance.now();
+  /* (FIRST, what the street is built round — 2026-11-25: the first castle's trees and fountain (`fortPropAnchors`, `first`). Laid after
+   * the wall strip they found a crate already where they would stand; a street is laid out round its trees, not the other way.) */
+  const layAnchor = (A) => {
+    const fy = D.floor(A.x, A.z); if (fy === null) return;
+    if (site.props.some((q) => Math.hypot(q.x - A.x, q.z - A.z) < 2.2)) return;
+    const sp = { lx: A.x - D.X(), lz: A.z - D.Z(), x: A.x, z: A.z, fy, nx: A.nx, nz: A.nz, d: 0 };
+    if ((A.avoid || D.avoid)(sp.lx, sp.lz)) { (CP.why.anchorAvoid = (CP.why.anchorAvoid || 0) + 1); return; }
+    const before = site.props.length;
+    const n = cpLayScene(site, sp, CP_SCENES[A.scene]());
+    CP.why['anchor_' + A.scene + '_' + n] = (CP.why['anchor_' + A.scene + '_' + n] || 0) + 1;
+    if (n >= 2 || (n >= 1 && /^tree/.test(A.scene))) placed.push({ lx: sp.lx, lz: sp.lz, x: sp.x, z: sp.z, fy, nx: A.nx, nz: A.nz, scene: A.scene });   // (a tree may stand alone)
+    else site.props.length = before;
+  };
+  CP.why = CP.why || {};
+  if (D.anchors) for (const A of D.anchors()) if (A.first) layAnchor(A);
   for (const s of cand) {
     if (placed.length >= D.max) break;
     if (performance.now() - t0 > 2.5) { yield; t0 = performance.now(); }
@@ -105452,11 +108397,29 @@ function* cpBuildSteps(site) {
     if (placed.some((p) => Math.hypot(p.lx - s.lx, p.lz - s.lz) < 3.9)) { R.near = (R.near || 0) + 1; continue; }
     if (D.avoid(s.lx, s.lz)) { R.avoid = (R.avoid || 0) + 1; continue; }
     if (!cpWallFlat(D, s, 1.15)) { R.flat = (R.flat || 0) + 1; continue; }
-    const sceneName = D.scenes[si % D.scenes.length];
+    let sceneName = D.scenes[si % D.scenes.length];
+    // (one fountain and one well a castle: a second is passed over for the next scene in the list)
+    for (let g = 0; g < 4 && (sceneName === 'fountain' || sceneName === 'well') && placed.some((p) => p.scene === sceneName); g++) { si++; sceneName = D.scenes[si % D.scenes.length]; }
     const before = site.props.length;
     const n = cpLayScene(site, s, CP_SCENES[sceneName]());
     if (n >= 2) { placed.push({ lx: s.lx, lz: s.lz, x: s.x, z: s.z, fy: s.fy, nx: s.nx, nz: s.nz, scene: sceneName }); si++; }
     else { site.props.length = before; R.thin = (R.thin || 0) + 1; }   // (one prop alone is not a scene: none)
+  }
+  // the scenes put on purpose (a castle's `anchors`: spots with a line to lay along and a scene to lay there)
+  if (D.anchors) {
+    for (const A of D.anchors()) {
+      if (A.first) continue;                       // (laid before the strip, above)
+      if (performance.now() - t0 > 2.5) { yield; t0 = performance.now(); }
+      const fy = D.floor(A.x, A.z); if (fy === null) continue;
+      if (site.props.some((q) => Math.hypot(q.x - A.x, q.z - A.z) < 2.2)) continue;
+      const sp = { lx: A.x - D.X(), lz: A.z - D.Z(), x: A.x, z: A.z, fy, nx: A.nx, nz: A.nz, d: 0 };
+      if ((A.avoid || D.avoid)(sp.lx, sp.lz)) { (CP.why.anchorAvoid = (CP.why.anchorAvoid || 0) + 1); continue; }
+      const before = site.props.length;
+      const n = cpLayScene(site, sp, CP_SCENES[A.scene]());
+      CP.why['anchor_' + A.scene + '_' + n] = (CP.why['anchor_' + A.scene + '_' + n] || 0) + 1;
+      if (n >= 2) placed.push({ lx: sp.lx, lz: sp.lz, x: sp.x, z: sp.z, fy, nx: A.nx, nz: A.nz, scene: A.scene });
+      else site.props.length = before;
+    }
   }
   /* AND SINGLES, scattered along what is left of the strip: a barrel, a crate, a sack, a pot on its own, three metres
    * clear of everything else — the court used, not decorated in clumps */
@@ -105485,11 +108448,15 @@ function cpLayScene(site, s, items) {
     const it = items[i];
     if (it.opt !== undefined && cpRand() > it.opt) { made.push(null); continue; }
     const kind = CP.kinds[it.k]; if (!kind) { made.push(null); continue; }
+    if (site.id === 'fort' && /sack|Sack/.test(it.k)) { made.push(null); continue; }   // (no sacks of seed in the first castle, 2026-11-26)
+    // (and no box or crate out in the fight: within 3.2 m of the street's middle line — the owner, 2026-11-26, "take out the boxes in the middle of the fight")
+    if (site.id === 'fort' && /^(crate|crateRoped|crateOpen|mpCrate|box\d)$/.test(it.k) && fortMidD(s.x + ux * it.p[0] + s.nx * (it.p[1] - s.d) - X, s.z + uz * it.p[0] + s.nz * (it.p[1] - s.d) - Z) < 3.2) { made.push(null); continue; }
     // its distance out from the wall is measured to the spot's own wall distance: `p[1]` is metres off the stone
     const out = it.p[1] - s.d, along = it.p[0];
     let x = s.x + ux * along + s.nx * out, z = s.z + uz * along + s.nz * out, fy, base;
     let yaw = face + (it.yaw || 0);
     if (it.along) yaw = Math.atan2(ux, uz);         // its long side along the wall
+    if (site.id === 'fort' && it.k === 'mpStall') yaw += Math.PI;   // (the market stall, its desk the other way: the owner, 2026-11-26, "rotate this around so the desk faces the other way")
     const sup = it.on !== undefined ? made[it.on] : null;
     if (it.on !== undefined && !sup) { made.push(null); continue; }
     if (sup) {     // on what it stands on: its top, a little off its middle
@@ -105573,6 +108540,7 @@ function cpBatch(site) {
 }
 const _cpProxyMat = new THREE.MeshBasicMaterial({ visible: false });
 function cpMakeProxy(P) {
+  if (P.kind.K.fixed) return;          // (a tree: nothing to break, and its crown must not catch a swing or a throw)
   const k = P.kind, w = k.hx * 2, d = k.hz * 2, h = Math.max(0.08, k.h);
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), _cpProxyMat);
   m.userData.bwGhost = true; m.name = 'cpropProxy';
@@ -105582,7 +108550,7 @@ function cpMakeProxy(P) {
   P.proxy = m;
   P.box = new THREE.Box3().setFromObject(m);
   P.prop = { mesh: m, box: P.box, radius: Math.max(0.15, k.r * 0.85), dead: false, held: false, thrown: false, pinned: true,
-    vel: new THREE.Vector3(), step: () => {}, onImpact: (speed) => { if (speed >= CP_MAT[k.K.mat].brk) cpBreak(P, speed); } };
+    vel: new THREE.Vector3(), step: () => {}, cp: true, onImpact: (speed) => { if (speed >= CP_MAT[k.K.mat].brk) cpBreak(P, speed); else if (k.K.mat === 'stone') { try { sfxGargSmack(P.x, P.z, 0.5); } catch (e) {} } } };
   physProps.push(P.prop);
 }
 
@@ -105590,9 +108558,45 @@ function cpMakeProxy(P) {
 /* A KIND'S FRACTURE, cut once (two ways, so two of the same never break alike): its triangles shared out among `n` seeds —
  * round its axis and in two tiers for staves, the farthest-apart points of its own surface for boards, shards and a
  * sack's tear — every piece its own geometry centred on itself, one group per material */
+/* (WOOD BREAKS INTO BOARDS — 2026-11-26, the owner, a still of a broken stall: "the breakables are horrendous … its just ai spikeyness
+ * right now make it realistic break". The pieces were patches of the prop's own SURFACE — its triangles binned by nearest seed — and
+ * a long thin triangle crossing a bin went with it whole: every piece a fan of spikes, hollow behind. Wood is boards: a crate, a
+ * barrel, a stall, a cart come apart into solid planks and staves of the prop's own size (`cpPlanks`), each wearing a strip of the
+ * prop's own texture (its wood), and a few splinters; what is not wood keeps its surface pieces with the spikes cut off (no
+ * triangle longer than a fifth of the piece kept).) */
+function cpPlanks(kind, variant) {
+  const K = kind.K, rnd = mulberry32(kind.name.length * 613 + variant * 97 + 11);
+  // the part that is most of it is its wood; its UVs' span is where each board takes its strip from
+  let bp = 0, bc = -1; kind.parts.forEach((p, i) => { const c = p.geo.attributes.position.count; if (c > bc) { bc = c; bp = i; } });
+  const U = kind.parts[bp].geo.attributes.uv; let u0 = 1, u1 = 0, v0 = 1, v1 = 0;
+  if (U) for (let i = 0; i < U.count; i++) { const u = U.getX(i), v = U.getY(i); if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v; }
+  if (!(u1 > u0)) { u0 = 0; u1 = 1; } if (!(v1 > v0)) { v0 = 0; v1 = 1; }
+  const W = kind.hx * 2, D = kind.hz * 2, H = kind.h, staves = K.frac === 'staves';
+  const nB = Math.max(6, Math.min(14, K.n || 8)), nS = 4 + ((rnd() * 4) | 0), pieces = [];
+  for (let i = 0; i < nB + nS; i++) {
+    const spl = i >= nB;
+    // a board: as long as the prop is wide, deep or tall (a stave runs up a barrel), a hand wide, a thumb thick; a splinter short and thin
+    const axis = staves ? 1 : (rnd() < 0.5 ? 0 : 2), span = axis === 0 ? W : axis === 2 ? D : H;
+    const L = spl ? 0.08 + rnd() * 0.16 : Math.max(0.12, span * (0.45 + rnd() * 0.5)), bw = spl ? 0.012 + rnd() * 0.02 : 0.06 + rnd() * 0.08, bt = spl ? 0.008 + rnd() * 0.01 : 0.016 + rnd() * 0.014;
+    const g = new THREE.BoxGeometry(axis === 0 ? L : bw, axis === 1 ? L : bt, axis === 2 ? L : (axis === 0 ? bt : bw));
+    // the strip of its wood: a long thin window of the prop's own picture, along the board
+    const su0 = u0 + rnd() * (u1 - u0) * 0.7, sv0 = v0 + rnd() * (v1 - v0) * 0.9, su1 = su0 + (u1 - u0) * 0.3, sv1 = sv0 + (v1 - v0) * 0.06;
+    const uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, su0 + uv.getX(k) * (su1 - su0), sv0 + uv.getY(k) * (sv1 - sv0));
+    // a little twist, so no two lie the same way
+    g.rotateY((rnd() - 0.5) * 0.4); if (!staves) g.rotateX((rnd() - 0.5) * 0.3);
+    g.clearGroups(); g.addGroup(0, g.index ? g.index.count : g.attributes.position.count, bp);
+    const ng = g.index ? g.toNonIndexed() : g; ng.clearGroups(); ng.addGroup(0, ng.attributes.position.count, bp);
+    ng.computeBoundingBox(); ng.userData.shared = true;
+    const c = new THREE.Vector3((rnd() - 0.5) * W * 0.8, (staves ? 0.5 : rnd()) * H * (staves ? 1 : 0.9) + 0.05, (rnd() - 0.5) * D * 0.8);
+    const bb = ng.boundingBox;
+    pieces.push({ geo: ng, c, hx: Math.max(0.01, (bb.max.x - bb.min.x) / 2), hy: Math.max(0.01, (bb.max.y - bb.min.y) / 2), hz: Math.max(0.01, (bb.max.z - bb.min.z) / 2), off: bb.getCenter(new THREE.Vector3()) });
+  }
+  return pieces;
+}
 function cpFracture(kind, variant) {
   kind.frac = kind.frac || [];
   if (kind.frac[variant]) return kind.frac[variant];
+  if (kind.K.mat === 'wood' && !window.__cpShells) { kind.frac[variant] = cpPlanks(kind, variant); return kind.frac[variant]; }
   const K = kind.K, n = K.n || 6;
   const tris = [];          // [part, a,b,c (9 floats), uv (6), nrm (9), centroid]
   kind.parts.forEach((part, pi) => {
@@ -105626,6 +108630,10 @@ function cpFracture(kind, variant) {
   const bins = new Map();
   for (const T of tris) { const key = assign(T.c); if (!bins.has(key)) bins.set(key, []); bins.get(key).push(T); }
   const pieces = [];
+  // (no spike: a triangle whose longest edge is long against the prop is dropped from the shells)
+  const tooLong = Math.max(kind.hx, kind.hz, kind.h * 0.5) * 0.55;
+  const edge = (T) => { const P = kind.parts[T.pi].geo.attributes.position, i = T.t; let m = 0; for (const [a, b2] of [[0, 1], [1, 2], [2, 0]]) { const d = Math.hypot(P.getX(i + a) - P.getX(i + b2), P.getY(i + a) - P.getY(i + b2), P.getZ(i + a) - P.getZ(i + b2)); if (d > m) m = d; } return m; };
+  for (const [k0, list] of bins) bins.set(k0, list.filter((T) => edge(T) < tooLong));
   for (const list of bins.values()) {
     if (list.length < 2) continue;
     let cx = 0, cy = 0, cz = 0; for (const T of list) { cx += T.c[0]; cy += T.c[1]; cz += T.c[2]; }
@@ -105658,7 +108666,8 @@ function cpHide(o) { if (!o.inst) return; for (const { im, i } of o.inst) { im.s
 const _cpZero = new THREE.Matrix4().makeScale(0, 0, 0);
 /* BREAK ONE. `speed` is the blow; `from` where it came from (you, if nobody else); the pieces go away from it. */
 function cpBreak(P, speed = 6, from = null, worldM = null) {
-  if (P.dead) return;
+  if (window.__cpWhy) try { window.__cpWhy.push(P.kind.name + ' ' + (+speed).toFixed(1) + ' ' + new Error().stack.split('\n').slice(2, 5).map((l) => (l.trim().split(/\s+/)[1] || '?')).join('<')); } catch (e) {}   // (a probe's: what broke it)
+  if (P.dead || P.kind.K.fixed) return;
   P.dead = true; if (P.prop) P.prop.dead = true;
   cpHide(P);
   if (P.proxy) { scene.remove(P.proxy); P.proxy.geometry.dispose(); }
@@ -105808,6 +108817,8 @@ function cpStep(b, dt) {
   return hit;
 }
 function cpTick(dt) {
+  if (bootHold > 0 || ((inFort || inC13 || inThrone) && frozen())) wdWarmGrids();   // (the ray grids of where you are, under a black: `wdGrid`)
+  else wdGridTick(false);                                         // (and otherwise a slice a frame: never built on a throw)
   if (!CP.asked) return;
   // build a castle's props once it and the kit are both in
   if (CP.ready) for (const id of ['fort', 'c13', 'thr']) if (!CP.sites[id] || !CP.sites[id].built) cpBuildSite(id);
@@ -105859,12 +108870,13 @@ function cpTick(dt) {
   }
 }
 // the pieces knock as they land: wood dry, clay and glass a click, a sack's rag a pat, fruit a soft bump
-function cpKnock(b, sp) {
+function cpKnock(b, sp) { cpSnd(() => cpKnockAt(b, sp)); }
+function cpKnockAt(b, sp) {
   const now = performance.now();
   if (now - b.heard < 140) return;
   b.heard = now;
   if (!audioCtx || Math.hypot(b.m.position.x - camera.position.x, b.m.position.z - camera.position.z) > 28) return;
-  if (b.mat === 'wood') sfxPlankKnock(b.m.position.x, b.m.position.z, sp, Math.max(b.hx, b.hy, b.hz) < 0.12);
+  if (b.mat === 'wood') { const small = Math.max(b.hx, b.hy, b.hz) < 0.12; if (!playSampleAt(sp > 2.4 && !small ? 'woodImpactHard' : 'woodImpactSoft', b.m.position.x, b.m.position.z, { gain: Math.min(1, 0.35 + sp * 0.12) * (small ? 0.6 : 1), ref: 5, far: 28, rate: small ? 1.25 : 1, jitter: 0.1 })) sfxPlankKnock(b.m.position.x, b.m.position.z, sp, small); }
   else if (b.mat === 'clay' || b.mat === 'glass') sfxPlankKnock(b.m.position.x, b.m.position.z, sp * 0.6, true);
   else if (b.mat === 'veg' && sp > 2) sfxCpThud(b.m.position.x, b.m.position.z, sp * 0.4);
 }
@@ -105881,6 +108893,10 @@ function cpUnitCrush(u, p, id) {
   for (const P of site.props) {
     if (P.dead || P.on) continue;
     const d = Math.hypot(p.x - P.x, p.z - P.z);
+    /* (and round what is too big to walk through — 2026-11-25, filmed in the fight: the garrison ran through the stone well, the fountain
+     * and the market stall as through a keg, and the street filled with metre-long slabs. `solid`: they are pushed off it, as off a
+     * tree's planter; it breaks only to a blow that is heavy enough, `CP_MAT`.) */
+    if (P.kind.K.fixed || P.kind.K.solid) { const rr = (P.kind.K.fixed ? P.kind.K.trunk : Math.max(P.kind.hx, P.kind.hz) * 0.85) + body; if (d < rr && d > 1e-4) { p.x = P.x + (p.x - P.x) / d * rr; p.z = P.z + (p.z - P.z) / d * rr; } continue; }
     if (d > P.kind.r * 0.8 + body) continue;
     _cpV.set(p.x - mvx * 8, p.y + 1, p.z - mvz * 8);     // (the pieces go the way he was going)
     cpBreak(P, 6 + Math.hypot(mvx, mvz) * 60, _cpV);
@@ -105894,21 +108910,41 @@ function cpRagHits(dt) {
   const site = CP.sites[id]; if (!site || !site.built) return;
   for (const u of mutants) {
     const R = u.rag; if (!R || R.asleep) continue;
+    // (how fast the BODY is going, by its hips: what a solid prop asks — a joint's own speed is also the solver's, and a limb put out
+    // of the fountain's rim in a frame read as 9-13 m/s and broke the fountain it was put out of)
+    const Hq = R.byName.Character1_Hips || R.parts[0]; let spH = 0;
+    if (Hq) { const lh = R._cpH || (R._cpH = Hq.p.clone()); spH = lh.distanceTo(Hq.p) / dt; lh.copy(Hq.p); }
     for (const q of R.parts) {
       const last = q._cpL || (q._cpL = q.p.clone());
       const sp = last.distanceTo(q.p) / dt; last.copy(q.p);
-      if (sp < 2.0 || sp > 60) continue;
+      if (sp < (R.kfly ? 1.4 : 2.0) || sp > 60) continue;   // (a body you KICKED breaks what it is thrown into at less: `kfly`, 2026-11-26 — "make kicking enemies bodies into breakables break them")
       for (const P of site.props) {
         if (P.dead) continue;
         const k = P.kind;
         if (q.p.y > P.y + k.h + 0.25 || q.p.y < P.y - 0.3) continue;
         if (Math.hypot(q.p.x - P.x, q.p.z - P.z) > Math.max(k.hx, k.hz) * 0.9 + (q.r || 0.12)) continue;
-        cpBreak(P, 3 + sp * 1.2, _cpV.set(q.p.x - (q.p.x - last.x) * 4, q.p.y, q.p.z - (q.p.z - last.z) * 4));
+        // (a SOLID one — the stall, the well, the fountain — only by a body THROWN: the kick's kill, the knight's, the shot. A man
+        // falling dead beside the fountain broke it: the scan's fight, 2026-11-25, "mpFountain 9.0 cpRagHits" — a limb at 5 m/s)
+        if (k.K.fixed || (k.K.solid && (spH < (R.kfly ? 3.0 : 7.5) || R.t < 0.15)) || (R.kfly ? 4 + sp * 1.6 : 3 + sp * 1.2) < CP_MAT[k.K.mat].brk) continue;   // (`R.t`: a man who died at its rim is put out of it in his first frame, and that read as a throw)
+        if (window.__cpWhy && k.K.solid) window.__cpWhy.push('BODY ' + u.kindName + ' fling ' + (u.st.killFling || 0) + ' blast ' + (u.st.killBlast || 0) + ' hips ' + spH.toFixed(1) + ' joint ' + sp.toFixed(1) + ' t ' + R.t.toFixed(2));
+        cpBreak(P, R.kfly ? 4 + sp * 1.6 : 3 + sp * 1.2, _cpV.set(q.p.x - (q.p.x - last.x) * 4, q.p.y, q.p.z - (q.p.z - last.z) * 4));
       }
     }
   }
 }
 // you: held off an intact prop (round ones as a disc, the rest as their own box), and never over one you are above
+/* (YOU WALK THROUGH THEM — 2026-11-26, the owner: "make it so i walk through any breakable in the castle". A breakable no longer
+ * stops you: walked into, it goes over in pieces the way you were going (`cpBreak` at a walking blow). Only the trees are solid,
+ * and only their trunks once you are up on the planter: the planter is a step you stand on, `cpPlanterTop`.) */
+const _cpWalkFrom = new THREE.Vector3();
+function cpPlanterTop(P) {
+  const k = P.kind; if (k.planterTop !== undefined) return P.y + k.planterTop;
+  // the planter's rim: the highest of the model's points between half and the whole of the trunk's radius, under two metres
+  let top = 0; const R = k.K.trunk || 0.8;
+  for (const part of k.parts) { const A = part.geo.attributes.position; for (let i = 0; i < A.count; i++) { const x = A.getX(i), y = A.getY(i), z = A.getZ(i), d = Math.hypot(x, z); if (d > R * 0.8 && d < R * 1.08 && y < 1.4 && y > top) top = y; } }   // (the rim's outer ring only: inside it the soil, the trunk and low leaves)
+  k.planterTop = Math.min(top, 1.0);
+  return P.y + k.planterTop;
+}
 function cpPushPlayer(p, r, feet) {
   const id = inFort ? 'fort' : inC13 ? 'c13' : inThrone ? 'thr' : null; if (!id) return;
   const site = CP.sites[id]; if (!site) return;
@@ -105916,8 +108952,20 @@ function cpPushPlayer(p, r, feet) {
     if (P.dead || P.on) continue;
     const k = P.kind;
     if (feet > P.y + k.h - 0.08) continue;
+    if (!k.K.fixed) {
+      // a breakable in your way: through it, and it breaks, its pieces going on the way you walked
+      const dx = p.x - P.x, dz = p.z - P.z;
+      if (Math.hypot(dx, dz) < Math.max(k.hx, k.hz) * 0.85 + r) cpBreak(P, 7.5, _cpWalkFrom.set(2 * camera.position.x - P.x, feet + 0.6, 2 * camera.position.z - P.z));
+      continue;
+    }
+    if (feet >= cpPlanterTop(P) - 0.52) {   // (on it, or low enough under its rim to step up: the floor takes you up, `updateFort`; only the trunk stops you)
+      // up on the planter: the trunk is what is solid
+      const rr = (k.K.trunk || 0.8) * 0.28 + r, dx = p.x - P.x, dz = p.z - P.z, d = Math.hypot(dx, dz);
+      if (d < rr && d > 1e-4) { p.x = P.x + dx / d * rr; p.z = P.z + dz / d * rr; }
+      continue;
+    }
     if (k.K.round || P.lean) {
-      const rr = (P.lean ? 0.3 : Math.max(k.hx, k.hz) * 0.92) + r, dx = p.x - P.x, dz = p.z - P.z, d = Math.hypot(dx, dz);
+      const rr = (P.lean ? 0.3 : k.K.fixed ? k.K.trunk : Math.max(k.hx, k.hz) * 0.92) + r, dx = p.x - P.x, dz = p.z - P.z, d = Math.hypot(dx, dz);
       if (d >= rr) continue;
       if (d < 1e-4) { p.x += rr; continue; }
       p.x = P.x + dx / d * rr; p.z = P.z + dz / d * rr;
@@ -105935,13 +108983,20 @@ function cpPushPlayer(p, r, feet) {
 }
 
 /* ---- ITS SOUNDS ------------------------------------------------------- */
-function cpBreakSound(mat, kind, speed) {
+function cpBreakSound(mat, kind, speed) { cpSnd(() => cpBreakSoundAt(mat, kind, speed)); }
+function cpBreakSoundAt(mat, kind, speed) {
   try {
-    if (mat === 'wood') { if (kind.h > 0.7 || kind.r > 0.8) { if (!sfxTableBreak()) sfxCrateBreak(); } else sfxCrateBreak(); sfxCrateCrunch(Math.min(1.3, 0.6 + speed * 0.06)); }
+    if (mat === 'wood') {
+      // (recorded wood, chosen by what broke: a box, a plank-built thing — a stall, a cart, a barrel's staves — or furniture; the synth if not loaded)
+      const nm = kind.name || '', bank = /crate|box|Crate|Box/.test(nm) ? 'woodCrateBreak' : /table|chair|bench|Table|Chair|Bench|stool/.test(nm) ? 'woodFurnBreak' : 'woodPlankBreak';
+      if (!playSample(bank, Math.min(1.1, 0.75 + speed * 0.03), 0.08, 0.92 + Math.random() * 0.14)) { if (kind.h > 0.7 || kind.r > 0.8) { if (!sfxTableBreak()) sfxCrateBreak(); } else sfxCrateBreak(); }
+      sfxCrateCrunch(Math.min(1.0, 0.4 + speed * 0.04));
+    }
     else if (mat === 'glass') sfxGlassBreak();
     else if (mat === 'clay') sfxClayBreak(kind.h);
     else if (mat === 'sack') sfxSackBurst();
     else if (mat === 'veg') sfxCpThud(camera.position.x, camera.position.z, 1.6, true);
+    else if (mat === 'stone') { sfxGargCrack(camera.position.x, camera.position.z); sfxGargSmack(camera.position.x, camera.position.z, 1.1); }   // (the well, the fountain: the gargoyles' stone)
   } catch (e) { /* a sound is never fatal */ }
 }
 // fired clay giving: a sharp crack, brighter than wood and duller than glass, and the shards' rattle after it
@@ -106068,6 +109123,218 @@ function sfxFortGate(dir) {
  * windows. The keep's own flame points, lit by pooled lamps, which cost
  * nothing away from them. */
 let fortLife = null;
+/* ---- THE BRAZIERS (2026-11-26, the owner, a still of one — a flat orange disc on a black tripod: "make these lanterns look way
+ * better and be breakable make hitting guys into these sets them on fire for a sec and does the fire damage have them make a
+ * taking damage sound when this happen too. they can be kicked in"). Each is its own now: a hammered iron bowl on a stem and three
+ * splayed feet, heaped with coals that glow from inside (each lump its own heat), its own flame and its light. Knocked — your
+ * swing (`brazierStrike`), a kick (`kickStrike`), a body driven or thrown into it (`brazierTick`) — it goes over the way it was
+ * pushed, its coals thrown across the paving glowing and dying, its light going with them. A living man driven into one that is
+ * standing CATCHES: the burn every flaming weapon gives (`st.burn`, 1.5 s, a trickle of damage) and his hurt cry. */
+const fortBraziers = [];
+const _bzA = new THREE.Vector3(), _bzQ = new THREE.Quaternion();
+/* (THE DRAWN ONE IS GONE — 2026-11-26, the owner, once his model was in: "take out the old claude brazier tho". The bowl, band, rivets,
+ * twisted stem, legs and coal dome built here were replaced by his model (`bzDress`); what is left of them is the coal lumps, unseen
+ * in the cage, that are thrown across the paving when one goes over.) */
+let _bzCoal = null;
+function bzCoalTex() {
+  if (_bzCoal) return _bzCoal;
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, 128, 128);
+  // the glow between the lumps: a net of seams, brighter where they meet
+  for (let i = 0; i < 70; i++) { const x = Math.random() * 128, y = Math.random() * 128, r = 6 + Math.random() * 14;
+    const gr = g.createRadialGradient(x, y, r * 0.55, x, y, r); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.7, `rgba(255,${80 + Math.random() * 60},10,0.55)`); gr.addColorStop(1, 'rgba(255,200,60,0.9)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); }
+  for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(255,${190 + Math.random() * 60},${60 + Math.random() * 80},${0.5 + Math.random() * 0.5})`; g.beginPath(); g.arc(Math.random() * 128, Math.random() * 128, 1 + Math.random() * 2.5, 0, 7); g.fill(); }
+  _bzCoal = new THREE.CanvasTexture(c); _bzCoal.wrapS = _bzCoal.wrapT = THREE.RepeatWrapping; _bzCoal.colorSpace = THREE.SRGBColorSpace; retroTex(_bzCoal);
+  return _bzCoal;
+}
+function makeBrazier(G, lx, y, lz, iron0, F, lamp) {
+  const g = new THREE.Group(); g.position.set(lx, y, lz); g.userData.noBake = true; G.add(g);
+  // the coals: lumps in the cage, unseen (the model's logs are what glows) until it goes over and throws them out (`brazierTopple`)
+  const coals = [];
+  for (let i = 0; i < 10; i++) {
+    const r0 = Math.sqrt(Math.random()) * 0.14, a = Math.random() * Math.PI * 2;
+    const m = new THREE.MeshStandardMaterial({ color: 0x100a08, roughness: 1, metalness: 0, emissive: 0xffffff, emissiveMap: bzCoalTex(), emissiveIntensity: 1.0 + Math.random() * 0.9 });
+    const c = new THREE.Mesh(new THREE.DodecahedronGeometry(0.05 + Math.random() * 0.035, 0), m);
+    c.position.set(Math.cos(a) * r0, 1.2 + Math.random() * 0.15, Math.sin(a) * r0); c.rotation.set(Math.random() * 6, Math.random() * 6, 0); c.scale.y = 0.7;
+    c.visible = false; c.userData.noBake = true; c.castShadow = false;
+    g.add(c); coals.push(c);
+  }
+  return { g, F, lamp, coals, fireY: 1.34, fireR: 0.16, flames: [], up: true, tip: 0, tipT: 0, ax: 0, az: 0, prop: null, x: lx, z: lz, fireAcc: 0, ph: Math.random() * 10 };
+}
+/* THE OWNER'S BRAZIER (2026-11-26: "use this for the braziers … make them on fire. give them a break sound too"): "Brazier" by
+ * Helley (Sketchfab, CC-BY-4.0), packed by `tools/brazier_pack.py` (its 2048² maps to 512/256, no normal or metal map), 1.73 m, an
+ * iron cage on a stem and four splayed legs with logs in the cage that glow from its own emissive map. It stands in for the drawn
+ * iron (`makeBrazier`'s parts are hidden, not dropped: the coals are still what spills out when it goes over); the fire comes off
+ * its logs (`fireY` 1.34, inside the cage's 0.16 m) and the logs' glow breathes, and dies with the rest when it is knocked over. */
+let BZ_MODEL = null, bzAsked = false;
+function bzLoadModel() {
+  if (bzAsked) return; bzAsked = true;
+  bwGlb('assets/brazier.glb', (g) => { BZ_MODEL = g.scene; for (const B of fortBraziers) bzDress(B); }, (e) => console.warn('[brazier] the model did not load', e));
+}
+function bzDress(B) {
+  if (!BZ_MODEL || B.model) return;
+  const m = BZ_MODEL.clone(true);
+  let mat = null;
+  m.traverse((o) => {
+    if (!o.isMesh) return;
+    if (!mat) {
+      // (its own copy: each brazier's logs cool on their own when it goes over)
+      mat = o.material.clone(); mat.metalness = 0; mat.roughness = 0.85; mat.metalnessMap = null; mat.roughnessMap = null; mat.normalMap = null; mat.aoMap = null;
+      mat.emissive.set(0xffffff); mat.emissiveIntensity = 1.7; mat.side = THREE.DoubleSide;
+      for (const t of [mat.map, mat.emissiveMap]) if (t) retroTex(t);
+      mat.needsUpdate = true;
+    }
+    o.material = mat; o.userData.noBake = true; o.userData.bwGhost = true; o.castShadow = false; o.raycast = () => {};
+  });
+  B.g.add(m); B.model = m; B.logMat = mat;
+  // (its fire, which waited for it: no flame stands in the air over nothing)
+  if (B.up) for (const o of B.flames) o.visible = true;
+  if (!B.up && B.dying) B.dying.push(mat);
+}
+/* (AND NONE STANDS IN ANYTHING — the owner, same day: "make sure they dont spawn clipped in anything". They are stood up as the castle
+ * loads, a stride in from the street's edge wherever that was, before its walls are indexed: nothing could ask a wall. So once the walls
+ * are in — and before a single prop is laid, `cpBuildSite` — each is asked again, and moved if it must be to the nearest spot (out to
+ * 3.5 m, the one nearest the street's middle at each distance) where the paving is level and open to the sky all round its feet, no wall
+ * within 0.6 m up to over its cage, no door within 2.2 m (nor a door's own faces within 1 m), the gate's 8 m and the back door's 5 m
+ * clear, and 4.5 m from every other brazier. The props keep their own 2 m off them as they are laid after (`fortAnchorAvoid`).) */
+let bzSettled = false;
+function bzSpotOk(lx, lz, i) {
+  const x = FORT_X + lx, z = FORT_Z + lz, fy = fortCourtAt(x, z); if (fy === null) return false;
+  if (!cpOpenSky(x, z, FORT_SITE, FORT_FLOOR, true)) return false;
+  for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4, px = x + Math.cos(a) * 0.5, pz = z + Math.sin(a) * 0.5, f = fortCourtAt(px, pz);
+    if (f === null || Math.abs(f - fy) > 0.1 || !cpOpenSky(px, pz, FORT_SITE, FORT_FLOOR, false)) return false; }
+  if (keepWallNear(x, z, 0.6, fy + 0.1, fy + 2.2, FORT_SITE)) return false;
+  if (Math.hypot(lx - FORT_GATE.xi, lz - FORT_GATE.zi) < 8 || Math.hypot(lx - FORT_DOOR.x, lz - FORT_DOOR.z) < 5) return false;
+  for (const D of farmDoors) if (Math.hypot(lx - D.cx, lz - D.cz) < 2.2) return false;
+  if (cpFeatNear(fortWorld, lx, 1.3, lz, 1.0, 1.0, cpFortDoorMats())) return false;
+  for (let j = 0; j < fortBraziers.length; j++) if (j !== i && Math.hypot(fortBraziers[j].x - lx, fortBraziers[j].z - lz) < 4.5) return false;
+  return true;
+}
+function bzSettle() {
+  if (bzSettled || !fortLife || !fortBraziers.length || !FORT_SITE.walls) return;
+  bzSettled = true;
+  const log = [];
+  fortBraziers.forEach((B, i) => {
+    if (bzSpotOk(B.x, B.z, i)) { log.push('kept'); return; }
+    let mx = B.x, mz = B.z, md = Infinity;
+    for (let t = 0; t <= 1; t += 0.02) { const P = fortStreetAt(t); if (!P) continue; const d = Math.hypot(P.x - B.x, P.z - B.z); if (d < md) { md = d; mx = P.x; mz = P.z; } }
+    let best = null, bd = Infinity;
+    for (let r = 0.25; r <= 3.5 && !best; r += 0.25) for (let k = 0; k < 16; k++) {
+      const lx = B.x + Math.cos(k * Math.PI / 8) * r, lz = B.z + Math.sin(k * Math.PI / 8) * r;
+      if (!bzSpotOk(lx, lz, i)) continue;
+      const d = Math.hypot(lx - mx, lz - mz); if (d < bd) { bd = d; best = [lx, lz]; }
+    }
+    if (!best) { log.push('STUCK'); return; }
+    log.push('moved ' + Math.hypot(best[0] - B.x, best[1] - B.z).toFixed(2));
+    bzMoveTo(B, i, best[0], best[1]);
+  });
+  fortLife.bzLog = log;
+}
+function bzMoveTo(B, i, lx, lz) {
+  const fy = fortCourtAt(FORT_X + lx, FORT_Z + lz); if (fy === null) return;
+  const y = fy - FORT_Y, dx = lx - B.x, dz = lz - B.z, dy = y - B.g.position.y;
+  B.g.position.set(lx, y, lz); B.x = lx; B.z = lz;
+  B.F.c.x += dx; B.F.c.y += dy; B.F.c.z += dz;
+  B.lamp.L.position.x += dx; B.lamp.L.position.y += dy; B.lamp.L.position.z += dz;
+  const P = fortLife.props[i]; if (P) { P.x = FORT_X + lx; P.z = FORT_Z + lz; }
+  const A = fortAir && fortAir.fires[i]; if (A) { A.x = FORT_X + B.F.c.x; A.y = FORT_Y + B.F.c.y; A.z = FORT_Z + B.F.c.z; }
+}
+// its fall: the iron's clang and the cage's rattle, the logs cracking out of it, the fire's hiss — and the clang again as it lands
+function sfxBrazierBreak(x, z) {
+  try {
+    playSampleAt('metalHeavy', x, z, { gain: 0.9, ref: 7, far: 40, rate: 0.82 + Math.random() * 0.08 });
+    playSampleAt('metalHit', x, z, { gain: 0.5, ref: 6, far: 34, rate: 0.72, delay: 0.03 });
+    playSampleAt('metalRattle', x, z, { gain: 0.65, ref: 6, far: 34, rate: 0.95 + Math.random() * 0.1, delay: 0.1 });
+    playSampleAt('woodCrateBreak', x, z, { gain: 0.4, ref: 5, far: 30, rate: 1.1, delay: 0.06 });
+    sfxFlameSear(x, z);
+  } catch (e) { /* a sound is never fatal */ }
+}
+function sfxBrazierLand(x, z) {
+  try {
+    playSampleAt('metalHeavy', x, z, { gain: 0.75, ref: 7, far: 38, rate: 0.68 + Math.random() * 0.06 });
+    playSampleAt('metalScrape', x, z, { gain: 0.35, ref: 5, far: 30, rate: 0.9, delay: 0.05 });
+  } catch (e) {}
+}
+// knock it over, along (dx, dz), from a blow of `k` (0..1)
+function brazierTopple(B, dx, dz, k = 1) {
+  if (!B || !B.up) return;
+  B.up = false; B.tipT = 0; const l = Math.hypot(dx, dz) || 1; B.dx = dx / l; B.dz = dz / l;
+  if (B.prop) B.prop.r = 0;                              // (no longer in your way)
+  for (const o of B.flames) o.visible = false;
+  if (B.logMat) B.dying = (B.dying || []).concat([B.logMat]);
+  // the coals go: thrown along and up, glowing, onto the paving, and each fades as it lands and cools
+  const site = CP.sites.fort;
+  for (const c of B.coals) {
+    c.updateWorldMatrix(true, false); const wp = c.getWorldPosition(new THREE.Vector3());
+    const m = new THREE.Mesh(c.geometry, c.material); m.position.copy(wp); c.visible = false;
+    const v = new THREE.Vector3(B.dx * (1.2 + Math.random() * 2.4 * k) + (Math.random() - 0.5) * 1.4, 0.8 + Math.random() * 1.6, B.dz * (1.2 + Math.random() * 2.4 * k) + (Math.random() - 0.5) * 1.4);
+    if (site) cpAddBody(m, site, 'clay', 0.04, 0.04, 0.04, new THREE.Vector3(), v, new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8), Math.random() * 0.05, true);
+    B.dying = (B.dying || []).concat([c.material]);   // (each lump's own glow cools)
+  }
+  sfxBrazierBreak(FORT_X + B.x, FORT_Z + B.z);
+}
+function brazierTick(dt) {
+  if (!fortLife || !fortBraziers.length) return;
+  for (const B of fortBraziers) {
+    if (!B.up) {
+      // over: about its foot, the way it was pushed, in half a second, a little bounce
+      if (B.tipT < 0.5 && B.tipT + dt >= 0.5) sfxBrazierLand(FORT_X + B.x, FORT_Z + B.z);
+      if (B.tipT < 1.2) { B.tipT += dt; const e = Math.min(1, B.tipT / 0.5), ang = (Math.PI / 2 - 0.12) * e * e + (e >= 1 ? Math.sin(Math.min(1, (B.tipT - 0.5) / 0.3) * Math.PI) * 0.05 : 0);
+        _bzA.set(B.dz, 0, -B.dx); B.g.quaternion.setFromAxisAngle(_bzA, ang); }
+      // the light goes with the coals, over a second and a half; the scattered coals cool
+      B.lamp.base = Math.max(0, B.lamp.base - dt * 5);
+      if (B.dying) for (const m of B.dying) m.emissiveIntensity = Math.max(0.15, m.emissiveIntensity - dt * 0.35);
+      continue;
+    }
+    const wx = FORT_X + B.x, wz = FORT_Z + B.z;
+    // the fire over it: tongues off the coals and embers, near you only; the coals breathe
+    { const by = FORT_Y + B.g.position.y, dc = Math.hypot(wx - camera.position.x, wz - camera.position.z);
+      B.ph += dt;
+      if (B.logMat) B.logMat.emissiveIntensity = 1.55 + 0.3 * Math.sin(B.ph * 2.3) + 0.18 * Math.sin(B.ph * 5.7);
+      if (dc < 32 && B.model && !frozen()) { B.fireAcc += dt * (dc < 14 ? 90 : 36);
+        while (B.fireAcc >= 1) { B.fireAcc -= 1; const a = Math.random() * Math.PI * 2, rr = Math.sqrt(Math.random()) * B.fireR, big = Math.random() < 0.4, ember = Math.random() < 0.08;
+          flameEmit(flameWorld, wx + Math.cos(a) * rr, by + B.fireY + Math.random() * 0.05, wz + Math.sin(a) * rr, ember
+            ? { vy: 1.4 + Math.random(), life: 0.9 + Math.random() * 0.6, size: 0.025 + Math.random() * 0.02, str: 2.2, heat: 1.1, buoy: 0.6, drag: 0.6 }
+            : { vy: 0.7, life: big ? 0.55 + Math.random() * 0.3 : 0.28 + Math.random() * 0.2, size: (big ? 0.24 + Math.random() * 0.14 : 0.11 + Math.random() * 0.08) * (1 - rr * 1.6 * 0.24 / B.fireR), str: 1.0 + Math.random() * 1.2, heat: 0.75 + Math.random() * 0.3, buoy: 1.6, drag: 2.0 }); } } }
+    for (const u of mutants) {
+      if (!u.g.visible || u.st.puppet) continue;
+      // a body: a joint through its bowl's height, moving
+      if (u.rag) { for (const q of u.rag.parts) { const sp = Math.hypot(q.p.x - q.pp.x, q.p.z - q.pp.z) * 180; if (sp < 1.2) continue;
+          const by = FORT_Y + B.g.position.y; if (Math.hypot(q.p.x - wx, q.p.z - wz) < 0.48 && q.p.y > by - 0.1 && q.p.y < by + 1.8) {
+            brazierTopple(B, q.p.x - q.pp.x, q.p.z - q.pp.z, Math.min(1, sp / 6)); if (u.st.alive) brazierBurn(u); break; } }
+        if (!B.up) break; continue; }
+      if (!u.st.alive) continue;
+      // a living man driven into it — knocked back, kicked, shoved: the speed the blow put on him, not his own walk
+      const p = u.g.position, d = Math.hypot(p.x - wx, p.z - wz); if (d > 0.4 + (u.kind.body || 0.45)) continue;
+      const last = u.bzLast || (u.bzLast = p.clone()); const sp = Math.hypot(p.x - last.x, p.z - last.z) / Math.max(1e-3, dt); last.copy(p);
+      const driven = (u.st.flinchPush && u.st.flinchPush.v > 1) || u.st.recoil > 0 || u.st.down > 0 || sp > 2.6;
+      if (!driven) continue;
+      brazierBurn(u);
+      if (sp > 1.6 || (u.st.flinchPush && u.st.flinchPush.v > 2.5)) brazierTopple(B, p.x - wx, p.z - wz, 0.7);
+      break;
+    }
+  }
+}
+function brazierBurn(u) {
+  const st = u.st; if (!st || !st.alive) return;
+  if ((st.bzHurtAt || 0) > performance.now() - 900) return;
+  st.bzHurtAt = performance.now();
+  const was = st.burn && st.burn.t > 0;
+  st.burn = { t: Math.max(1.5, was ? st.burn.t : 0), acc: was ? st.burn.acc : 0 };
+  try { sfxFlameSear(u.g.position.x, u.g.position.z); sfxMutHit(u.kind.voice); const V = u.kind.voice; if (V && V.farm && !V.mute) farmVox('hurt', V, { x: u.g.position.x, z: u.g.position.z, p: 1, boost: 0.7 }); } catch (e) {}
+  if (st.hp > 0.6) { st.hp -= 0.5; u.lastHitMine = true; }       // (the fire's first bite; the burn's own trickle does the rest)
+}
+// your swing on one: down the aim line, in reach
+function brazierStrike(P) {
+  if (!inFort || !fortBraziers.length) return false;
+  aimRay(P);
+  for (const B of fortBraziers) { if (!B.up) continue; _bzA.set(FORT_X + B.x, FORT_Y + B.g.position.y + 0.9, FORT_Z + B.z);
+    const t = _bzA.clone().sub(_aimO).dot(_aimD); if (t < 0.2 || t > digRay.far + 0.4) continue;
+    if (_aimO.clone().addScaledVector(_aimD, t).distanceTo(_bzA) > 0.55) continue;
+    hitConnect(P, 0.8); brazierTopple(B, _aimD.x, _aimD.z, 0.5 + P * 0.5); return true; }
+  return false;
+}
 function buildFortLife() {
   if (fortLife || !fortWalk) return;
   const G = new THREE.Group(); G.name = 'fortLife'; G.userData.noBake = true;
@@ -106090,32 +109357,25 @@ function buildFortLife() {
       const lx = cx + px * side * e, lz = cz + pz * side * e;
       const fy = fortCourtAt(FORT_X + lx, FORT_Z + lz); if (fy === null) continue;
       const y = fy - FORT_Y;
-      const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 1.05, 7), iron);
-      stand.position.set(lx, y + 0.52, lz); G.add(stand);
-      for (let q = 0; q < 3; q++) {
-        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.62), iron);
-        const a = q / 3 * Math.PI * 2;
-        leg.position.set(lx + Math.sin(a) * 0.2, y + 0.12, lz + Math.cos(a) * 0.2);
-        leg.rotation.set(0.9, a, 0, 'YXZ'); G.add(leg);
-      }
-      const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.2, 0.26, 12, 1, true), iron);
-      bowl.material = iron; bowl.position.set(lx, y + 1.15, lz); G.add(bowl);
-      const bed = new THREE.Mesh(new THREE.CircleGeometry(0.33, 12), coal);
-      bed.rotation.x = -Math.PI / 2; bed.position.set(lx, y + 1.22, lz); G.add(bed);
-      fires.push({ c: new THREE.Vector3(lx, y + 1.26, lz), k: 1.15 });
+      // (each its own: a brazier you can knock over — `fortBraziers`, `brazierTopple`; built by `makeBrazier`)
+      const F0 = { c: new THREE.Vector3(lx, y + 1.34, lz), k: 1.15 };   // (1.34: on the model's logs, in its cage)
+      fires.push(F0);
       const L2 = new THREE.PointLight(0xff8a3a, 7.5, 13, 2);
-      L2.position.set(lx, y + 1.9, lz); L2.userData.lpAlways = 16; G.add(L2);
-      lamps.push({ L: L2, base: 7.5, ph: Math.random() * 10 });
+      L2.position.set(lx, y + 2.05, lz); L2.userData.lpAlways = 16; G.add(L2);
+      const lamp = { L: L2, base: 7.5, ph: Math.random() * 10 };
+      lamps.push(lamp);
+      fortBraziers.push(makeBrazier(G, lx, y, lz, iron, F0, lamp));
     }
   }
   /* thirty little meshes are thirty draws: merged by material. And a brazier
    * is SOLID, but as a DISC (`fortProps`), not as its drawn faces: an open
    * iron bowl read as walls is a ring a jump can carry you into and its faces
    * then hold you inside it. */
-  bakeStatic(G, undefined, { named: true });
   G.traverse((o) => { if (o.isMesh) { o.userData.bwGhost = true; o.raycast = () => {}; } });
-  for (const o of keepFirePoints(fires)) G.add(o);
-  fortLife = { G, lamps, fires, props: fires.map((F) => ({ x: FORT_X + F.c.x, z: FORT_Z + F.c.z, r: 0.40 })) };
+  for (const B of fortBraziers) { B.F.k = 0.7; for (const o of keepFirePoints([B.F])) { B.g.add(o); B.flames.push(o); o.position.sub(B.g.position); o.visible = !!B.model; } }   // (small now: the real flames are `flameEmit`'s)
+  fortLife = { G, lamps, fires, props: fires.map((F, i) => ({ x: FORT_X + F.c.x, z: FORT_Z + F.c.z, r: 0.40, bz: fortBraziers[i] })) };
+  fortBraziers.forEach((B, i) => { B.prop = fortLife.props[i]; });
+  bzLoadModel();
 }
 /* out of the braziers, along the line from each one's middle */
 function fortPropPush(p, r) {
@@ -106183,6 +109443,79 @@ function buildFortTorches() {
  * cobbles the walk knows — so none of it can stand in stone. */
 const FORT_AIR_SMOKE = 110, FORT_AIR_EMBER = 140, FORT_AIR_MIST = 36;
 let fortAir = null;
+/* where the first castle's scenes go ON PURPOSE: a barricade across the street every so often down its length, on alternate sides of its
+ * middle (a man can still get round it — you and they), and a store by each fire, on the side of it away from the street's middle */
+// the rule for a scene put on purpose: the gate's swing, the back door, a house's doorway itself (2.6 m — the wall strip keeps 3.4), every
+// other door in the castle, and the fires' own 2 m
+function fortAnchorAvoid(lx, lz) {
+  if (Math.hypot(lx - FORT_GATE.xi, lz - FORT_GATE.zi) < 8 || Math.hypot(lx - FORT_DOOR.x, lz - FORT_DOOR.z) < 5) return true;
+  for (const D of farmDoors) if (Math.hypot(lx - D.cx, lz - D.cz) < 2.6) return true;
+  if (cpFeatNear(fortWorld, lx, 1.3, lz, 1.2, 1.0, cpFortDoorMats())) return true;
+  if (fortLife) for (const q of fortLife.props) if (Math.hypot(lx + FORT_X - q.x, lz + FORT_Z - q.z) < 2.0) return true;
+  return false;
+}
+function fortPropAnchors() {
+  const out = [];
+  /* (NO BOXES IN THE FIGHT — 2026-11-26, the owner, a still of a crate with a box on it out on the open paving among the farmers: "take
+   * out the boxes in the middle of the fight". Those were these: a barricade (crates across the street) every few metres down its middle
+   * and crate stacks 3 m off it. Gone; the street keeps its barrels and tables here, and the crates against the walls, by the fires'
+   * stores and by the chained doors are laid elsewhere and stay.) */
+  const cyc = [null, null, 'barrels', null, null, 'barrels', null, 'table', null, 'barrels'];
+  for (let i = 0; i < 10; i++) {
+    const t = 0.08 + i * 0.092, side = i % 2 ? -1 : 1, P = fortStreetAt(t); if (!P) continue;
+    const sc = cyc[i]; if (!sc) continue;
+    const off = (sc === 'barricade' ? 2.2 : 3.0) * side;
+    // a barricade's line runs across the street (its "out" along it); the rest face the street's middle from its side
+    if (sc === 'barricade') out.push({ scene: sc, x: FORT_X + P.x + P.px * off, z: FORT_Z + P.z + P.pz * off, nx: P.pz, nz: -P.px, avoid: fortAnchorAvoid });
+    else out.push({ scene: sc, x: FORT_X + P.x + P.px * off, z: FORT_Z + P.z + P.pz * off, nx: -P.px * side, nz: -P.pz * side, avoid: fortAnchorAvoid });
+  }
+  /* THE FIRST SECTION (2026-11-25, the owner: "add the big tree … and maybe one little tree in the first section of the castle"): the big
+   * tree off the street's edge past the gate, the little one across from it a little further in, and the fountain where the street first
+   * opens — each a few metres off the middle, so the fight goes round them */
+  // (each the first spot along the first stretch that is clear of the gate, every door and the fires — at fixed spots all were refused)
+  const taken = [], firsts = [];
+  for (const [sc, t0, t1, offs] of (window.__fortTrees ? [['treeBig', 0.42, 0.85, [1.8, 2.2, 1.4, 2.6]], ['treeSmall', 0.3, 0.95, [1.4, 1.8, 1.1, 2.2, 2.6, 3.0]]] : [])) {   // (none in the first section since 2026-11-26: "move the tree near the door to the second part" — it stands in Castle XIII's court now, `CP_SITE_DEFS.c13`)   // (2026-11-26: "move the trees closer to the middle … the trees shouldnt block the lighthouse view when you step in": down the street, nearer its middle; the fountain is gone)
+    let got = null;
+    for (let t = t0; t <= t1 && !got; t += 0.015) for (const side of [1, -1]) for (const off of offs) {
+      if (got) break;
+      const P = fortStreetAt(t); if (!P) continue;
+      const x = FORT_X + P.x + P.px * off * side, z = FORT_Z + P.z + P.pz * off * side;
+      if (fortAnchorAvoid(x - FORT_X, z - FORT_Z) || taken.some((q) => Math.hypot(q[0] - x, q[1] - z) < 4)) continue;
+      // (and open paving all round where it will stand — the planter's rim, the fountain's — as `cpFits` will ask)
+      { const Dd = CP_SITE_DEFS.fort, R = sc === 'fountain' ? 1.5 : (CP_KINDS[sc === 'treeBig' ? 'mpTreeBig' : 'mpTreeSmall'].trunk * 1.15), f0 = Dd.floor(x, z); let ok = f0 !== null;
+        for (let k = 0; ok && k < 12; k++) { const px = x + Math.cos(k * Math.PI / 6) * R, pz = z + Math.sin(k * Math.PI / 6) * R, f = Dd.floor(px, pz); if (!Dd.open(px, pz, false) || f === null || Math.abs(f - f0) > 0.12) ok = false; }
+        if (!ok) continue; }
+      got = { scene: sc, x, z, nx: -P.px * side, nz: -P.pz * side, avoid: fortAnchorAvoid, first: true };
+    }
+    if (got) { taken.push([got.x, got.z]); firsts.push(got); }
+  }
+  /* THE OWNER'S OWN SPOTS (2026-11-26, from his stills; castle frame). A big tree in the bare corner by the fire on the square's left
+   * ("A BIG TREE FROM THE PROPS PACK WHERE THE 3RD SCREENSHOT IS": he stood at -11.23, 10.50 looking 1.95 rad). The corner he faced is
+   * the fire's own and a metre off the wall, too tight for the planter (`tools/fortspot.js`), so the first of these that fits, all
+   * within a metre of each other in the pocket just right of the fire: one is laid and `layAnchor`'s 2.2 m refuses the rest. */
+  for (const [lx, lz] of [[-13.5, 9.5], [-13, 10], [-13.5, 9], [-13, 9.5]]) firsts.push({ scene: 'treeBig', x: FORT_X + lx, z: FORT_Z + lz, nx: 0.92, nz: 0.4, first: true,
+    avoid: (a, c) => fortAnchorAvoid(a, c) || !!(fortLife && fortLife.props.some((q) => Math.hypot(a + FORT_X - q.x, c + FORT_Z - q.z) < 3.0)) });   // (3 m: its crown hangs low, and not into a fire)
+  out.unshift(...firsts);   // (in their order: the big tree first, then the little one, then the fountain)
+  /* and boxes along the same side's row of chained doors ("PUT SOME BOXES OVER HERE TOO"): its paving was bare, the wall strip
+   * keeps 3.4 m off every door. Laid out from x -14.8, between the doors, facing the street. */
+  for (const lz of [20.4, 17.6, 14.6]) out.push({ scene: 'crates', x: FORT_X - 14.8, z: FORT_Z + lz, nx: 1, nz: 0, avoid: fortAnchorAvoid });
+
+  if (fortLife) for (const F of fortLife.props) {
+    // away from the street's middle, nearest point of it
+    let best = null, bd = Infinity;
+    for (let t = 0; t <= 1; t += 0.05) { const P = fortStreetAt(t); if (!P) continue; const d = Math.hypot(FORT_X + P.x - F.x, FORT_Z + P.z - F.z); if (d < bd) { bd = d; best = P; } }
+    if (!best) continue;
+    let ax = F.x - (FORT_X + best.x), az = F.z - (FORT_Z + best.z); const al = Math.hypot(ax, az) || 1; ax /= al; az /= al;
+    out.push({ scene: 'store', x: F.x + ax * 2.6, z: F.z + az * 2.6, nx: -ax, nz: -az, avoid: fortAnchorAvoid });   // (2.6: outside the fire's own 2 m)
+  }
+  return out;
+}
+// how far a spot (castle frame) is from the street's middle line
+function fortMidD(lx, lz) {
+  const S = FARM_SPINE; let m = Infinity;
+  for (let i = 1; i < S.length; i++) { const ax = S[i - 1][0], az = S[i - 1][1], dx = S[i][0] - ax, dz = S[i][1] - az, t = Math.max(0, Math.min(1, ((lx - ax) * dx + (lz - az) * dz) / (dx * dx + dz * dz))); m = Math.min(m, Math.hypot(lx - ax - dx * t, lz - az - dz * t)); }
+  return m;
+}
 function fortStreetAt(t) {
   // a point along the street's middle line, t 0 (the gate end) .. 1 (the back door)
   const S = FARM_SPINE, L = [];
@@ -106415,6 +109748,7 @@ function updateFortLife(dt) {
     KEEP_GLOW_U.uPx.value = renderer.getDrawingBufferSize(_airBuf).y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov || 75) / 2));
   }
   const t = performance.now() * 0.001;
+  try { brazierTick(Math.min(0.05, dt)); } catch (e) { /* never the frame */ }
   for (const l of fortLife.lamps) l.L.intensity = l.base * (0.86 + 0.09 * Math.sin(t * 7.1 + l.ph) + 0.05 * Math.sin(t * 12.7 + l.ph * 2));
 }
 
@@ -112067,6 +115401,7 @@ function updateDemonPack(dt, units = demonUnits) {
     best.pk.role = 'press'; best.pk.t = 0; best.pk.sw0 = best.st.swings; best.pk.flankT = best.kind.flank ? 3.2 : 0;
     best.st.side = 0; press++;
   }
+  if (!belly) farmPressFlank(A, dt);
   if (belly) {
     // every one round you gets an angle of its own, kept in the order they already stand in
     const ang = (u) => Math.atan2(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z);
@@ -112423,7 +115758,7 @@ function authorSkrimClips(u, m) {
 }
 MUT_KINDS.skrim = {
   glb: 'assets/skrim.glb', skrim: true, solo: true, noSand: true, skin: null, bones: null, faceFix: 0, preParse: false,
-  h: 1.86, hp: 200, dmg: 1, hitR: 0.62, body: 0.46, reachK: 1.0, windK: 1, lungeK: 1, poise: 16, block: 0, blockCost: 0.62, parryK: 0.9, stunK: 0.5,   // (120 → 170 → 200, poise 12 → 16, stunK 0.7 → 0.5: 2026-10-31, the owner: "MAKE SKRIM HARDER" — `SK_HARD`)
+  h: 1.86, hp: 230, dmg: 1, hitR: 0.62, body: 0.46, reachK: 1.0, windK: 1, lungeK: 1, poise: 16, block: 0, blockCost: 0.62, parryK: 0.9, stunK: 0.5,   // (120 → 170 → 200 → 230 on 2026-11-25 "give skrim slightly more health", poise 12 → 16, stunK 0.7 → 0.5: 2026-10-31, the owner: "MAKE SKRIM HARDER" — `SK_HARD`)
   author: authorSkrimClips, use: {},
   anim: { idle: 'idle', walk: 'walk', run: 'run', die: 'dieB', back: 'walkB', roar: 'cast2', rate: 1.0 },
   first: 'crouchIdle', sleepIdle: 'crouchIdle', wakeAt: 0, stunClip: 'hitLF', bossDeath: true, fade: 0.22,   // (his clips eased into each other: 2026-10-30)
@@ -113168,9 +116503,33 @@ function skrimFeetAt(u, a, t) {
   }
   return lo < 1e8 ? lo : 0;
 }
+/* SMOOTHER, AND THE LANDING ABOVE ALL (2026-11-26, the owner: "make skrims animation jumping off the chain smoother and look better …
+ * especially whne he lands"). Measured frame by frame (`tools/skrimflip.js`):
+ *   - THE LANDING WENT THROUGH THE FLOOR. The flip's clip carries his feet 1.36 m under its own origin by the time they land, so his
+ *     group rides 1.36 m over the floor; when the clip ended the group was put ON the floor at once with the flip's pose still in
+ *     the mix: every joint jumped 1.37 m in one frame, his hips 0.93 m under the floor, and he came up out of it at 7 m/s over the
+ *     0.3 s fade into `land`.
+ *   - HE SAT DEAD IN HIS CROUCH for half a second first (touch-down at 1.47 s, the clip's end at 2.0: hips 0.38-0.46, still).
+ *   - AND SQUATTED TWICE: `land` starts tall (hips 0.87), squats to 0.61 and stands — on top of the flip's own crouch.
+ *   - The flip itself was cut in hard over the hang's pose (one frame from hanging by his arm to the clip's first pose).
+ * Now: his joints are eased from how he hung into the flip over a quarter second (`u.ragOut`, the kicked men's own easing); his feet
+ * meet the floor a tenth of a second EARLIER in the clip, his legs still a little long, and from that frame his toes are HELD on the
+ * floor (his group follows them: the clip's last sink is his knees giving); a sixth of a second in the crouch and he rises out of
+ * it — the flip's crouch frozen and faded into `land` taken up at ITS lowest (`SK_LAND_FROM`), one rise, the toes held through the
+ * blend, and only when the flip is out of the mix does the fight's own floor take him (`k.rise`). */
+const SK_LAND_FROM = 0.55, SK_FLIP_EARLY = 0.10, SK_FLIP_SIT = 0.16, SK_FLIP_UP = 0.42;
+function skrimToesLo(u) {
+  let lo = 1e9;
+  for (const n of ['Character1_LeftToeBase', 'Character1_RightToeBase', 'Character1_LeftFoot', 'Character1_RightFoot']) { const b = u.model.getObjectByName(n); if (b) lo = Math.min(lo, b.getWorldPosition(_skhV).y); }
+  return lo;
+}
 function skrimFlipStart(u, H) {
   const p = u.g.position, c = camera.position;
-  H.ph = 'flip'; H.t = 0; H.landed = false;
+  H.ph = 'flip'; H.t = 0; H.landed = false; H.up = null;
+  // (how he hangs, kept: his joints are eased from it into the flip — `ragOutAll`)
+  const hb0 = u.model.getObjectByName('Character1_Hips'), snap = []; u.model.updateMatrixWorld(true);
+  if (hb0) u.model.traverse((o) => { if (o.isBone && o !== hb0) snap.push([o, o.quaternion.clone()]); });
+  const root0 = hb0 ? { p: hb0.getWorldPosition(new THREE.Vector3()), q: hb0.getWorldQuaternion(new THREE.Quaternion()) } : null;
   /* HE LETS GO OF IT (2026-11-20, the owner: "skrims flip needs to be fixed he should flip off the chain not swing it as he
    * comes down"). It was torn out with him ('fall'), and 1.3 s into that the chain is hauled into his fist — which was in the
    * middle of the flip, so the chain whipped round with his turning hand all the way down. Now it is left hanging from its
@@ -113179,7 +116538,7 @@ function skrimFlipStart(u, H) {
   H.fq0 = u.g.quaternion.clone(); H.fp0 = p.clone();
   H.yaw = Math.atan2(c.x - p.x, c.z - p.z);
   const a = skrimHardPlay(u, 'flipOff', false);
-  const dur = a.getClip().duration; H.fDur = dur; H.tL = dur * SK_FLIP_LAND;
+  const dur = a.getClip().duration; H.fDur = dur; H.tL = dur * SK_FLIP_LAND - SK_FLIP_EARLY;   // (his feet down a tenth early in the clip: its last sink is then his landing's give)
   // measured upright: where his feet are at the landing frame, and at the start
   u.g.quaternion.setFromAxisAngle(_skhY, H.yaw); if (u.model) u.model.rotation.y = 0;
   H.fEnd = skrimFeetAt(u, a, H.tL);
@@ -113192,6 +116551,7 @@ function skrimFlipStart(u, H) {
   H.fyEnd = skrimFloorW(tx, tz) - H.fEnd;                     // his origin when his feet are on the floor at the landing frame
   sfxChainRattle(p.x, p.z, 0.7, 1.0); playSampleAt('fleshHit', H.A.x, H.A.z, { gain: 0.8, ref: 8, far: 60, rate: 0.55 });
   skrimVox('swing', { p: 1 });
+  if (hb0 && root0) u.ragOut = { t: 0, T: 0.26, snap, root: root0, hb: hb0 };
 }
 function skrimFlipStep(u, H, dt) {
   const k = u.sk, p = u.g.position, a = u.clips.flipOff;
@@ -113202,25 +116562,33 @@ function skrimFlipStep(u, H, dt) {
   // down: no speed at the top (he lets go), gathering to the landing frame; across to where he lands
   const q = Math.min(1, H.t / H.tL), e = q * q * (3 - 2 * q);
   p.set(H.fp0.x + (H.fx - H.fp0.x) * e, H.fp0.y + (H.fyEnd - H.fp0.y) * q * q, H.fp0.z + (H.fz - H.fp0.z) * e);
+  const fl = skrimFloorW(H.fx, H.fz);
   if (!H.landed && H.t >= H.tL) {
     H.landed = true;
-    const fl = skrimFloorW(p.x, p.z);
     playSampleAt('fleshHit', p.x, p.z, { gain: 1, ref: 6, far: 50, rate: 0.45 }); playSampleAt('slosh', p.x, p.z, { gain: 0.7, ref: 6, far: 50, rate: 0.5 });
     skcPuff(p.x, fl, p.z, 6, 1.3); addTrauma(0.3);
   }
-  if (H.t >= H.fDur || !a || !a.isRunning()) {
-    // out of the clip's end (crouched off the landing) into its own landing to standing, on his feet on the floor
-    u.g.rotation.set(0, H.yaw, 0); p.set(H.fx, skrimFloorW(H.fx, H.fz), H.fz);
-    /* (and UP out of it, smoothly — 2026-11-21, the owner: "after skrim backflips off the chain make him stand up smoother he
-     * just legs to standing from a landing pose": the landing was hard-cut in over the flip's crouch and his fight took him
-     * the next frame, its idle and walk cut in before he had risen. Now the flip's crouch fades into the landing's over
-     * 0.3 s, it plays a little slower, and the fight waits for him to be up (`k.rise`) before it takes him back, out of
-     * the landing by its own fade.) */
-    const b = u.clips.land;
-    if (b) { b.reset(); b.setLoop(THREE.LoopOnce, 1); b.clampWhenFinished = true; b.timeScale = 0.9; b.setEffectiveWeight(1); b.play(); if (a && a !== b) b.crossFadeFrom(a, 0.3, false); u.cur = b; }
+  // down: his toes are held on the floor from here — through the clip's last sink, the crouch, and the blend up out of it
+  if (H.landed) { u.g.updateMatrixWorld(true); const lo = skrimToesLo(u); if (lo < 1e8) p.y += fl + 0.065 * (H.up ? Math.min(1, H.up.t / SK_FLIP_UP) : 0) - lo; }   // (to his standing feet's own height over the floor by the time he is up: no step at the hand-over)
+  const b = u.clips.land;
+  if (H.landed && !H.up && b && a && H.t >= H.tL + SK_FLIP_SIT) {
+    // up out of the crouch: the flip's crouch held as it is and faded into the landing's, taken up at its own lowest — one rise
+    H.up = { t: 0 };
+    a.paused = true;
+    b.reset(); b.setLoop(THREE.LoopOnce, 1); b.clampWhenFinished = true; b.timeScale = 0.9; b.setEffectiveWeight(1); b.play(); b.time = Math.min(SK_LAND_FROM, b.getClip().duration * 0.6);
+    if (a !== b) b.crossFadeFrom(a, SK_FLIP_UP, false);
+    u.cur = b;
+  }
+  if (H.up) H.up.t += dt;
+  const done = H.up ? H.up.t >= SK_FLIP_UP + 0.02 : (H.t >= H.fDur || !a || !a.isRunning());
+  if (done) {
+    // the flip is out of the mix: on his feet on the floor, the landing's rise still playing, and the fight waits for it (`k.rise`)
+    u.g.rotation.set(0, H.yaw, 0); p.set(H.fx, fl, H.fz);
+    if (!H.up && b) { b.reset(); b.setLoop(THREE.LoopOnce, 1); b.clampWhenFinished = true; b.timeScale = 0.9; b.setEffectiveWeight(1); b.play(); if (a && a !== b) b.crossFadeFrom(a, 0.3, false); u.cur = b; }
+    else if (a && a !== b) a.stop();
     if (H.C && H.C.st === 'loose') { H.C.st = 'fall'; H.C.st0 = H.C.t; sfxChainRattle(H.A.x, H.A.z, 0.8, 0.9); }   // (on his feet: now he pulls it down)
     k.hang = null; k.armT = 0;
-    const rd = b ? b.getClip().duration / 0.9 * 0.86 : 0.4;
+    const rd = b ? Math.max(0.15, (b.getClip().duration - b.time) / 0.9 * 0.86) : 0.4;
     k.rise = { t: 0, dur: rd }; k.cd = rd + 0.35; k.reactT = rd + 0.2;
   }
   skrimFace(u, dt, true);
@@ -115118,17 +118486,30 @@ function skaBuf(len, fill) {
   const f = Math.min(d.length, sr * 0.02 | 0); for (let i = 0; i < f; i++) d[d.length - 1 - i] *= i / f;
   return b;
 }
+/* (A BANK BUILT A FEW AT A TIME — 2026-11-25, the owner: "the hook also lags the game when throw". Measured (`tools/hooklag.js`): the
+ * first throw's sixth frame cost 41 ms in the game's update, every chain sound synthesised at once on the first that played. The
+ * build is a job now: a few buffers a frame while the hook is in your hand (`skaWarmTick`, from `hookTick`), so all of it is made
+ * before you throw; a sound asked for before then still finishes it at once, as before.) */
 function skaBuild() {
   if (SKA.ready || !audioCtx) return;
+  const g = SKA.job || (SKA.job = skaJob());
+  while (!g.next().done);
+}
+function skaWarmTick(ms = 3) {
+  if (SKA.ready || !audioCtx) return;
+  const g = SKA.job || (SKA.job = skaJob()), t = performance.now();
+  while (performance.now() - t < ms) if (g.next().done) return;
+}
+function* skaJob() {
   const R = skaR, t0 = performance.now();
   // a light link on the next: 1.5–3.2 kHz and its partials, to 7.5 kHz, gone in a tenth
-  for (let i = 0; i < 10; i++) SKA.clink.push(skaBuf(0.3, (d, sr) => {
+  for (let i = 0; i < 10; i++, yield) SKA.clink.push(skaBuf(0.3, (d, sr) => {
     const f = R(1500, 3200), M = [[1, 1, 0.085], [1.47, 0.72, 0.065], [2.09, 0.55, 0.05], [2.75, 0.42, 0.038], [3.6, 0.3, 0.028], [4.4, 0.2, 0.02]];
     skaModes(d, sr, M.filter((m) => f * m[0] < 7500).map(([r, a, t]) => [f * r * R(0.97, 1.03), a * R(0.5, 1), t * R(0.6, 1.5)]));
     skaCrack(d, sr, 0, 0.0025, R(0.6, 1.1));
   }));
   // a great chain's link, bar twice as thick in a link three times the size: 380–800 Hz, longer, its weight under it
-  for (let i = 0; i < 8; i++) SKA.heavy.push(skaBuf(0.6, (d, sr) => {
+  for (let i = 0; i < 8; i++, yield) SKA.heavy.push(skaBuf(0.6, (d, sr) => {
     const f = R(380, 800), M = [[1, 1, 0.2], [1.53, 0.8, 0.15], [2.31, 0.62, 0.11], [3.08, 0.48, 0.085], [4.2, 0.36, 0.06], [5.6, 0.26, 0.045], [7.4, 0.18, 0.03]];
     skaModes(d, sr, M.map(([r, a, t]) => [f * r * R(0.97, 1.03), a * R(0.5, 1), t * R(0.6, 1.4)]));
     skaThump(d, sr, 0, R(150, 190), R(60, 80), 0.05, 1.6);
@@ -115136,14 +118517,14 @@ function skaBuild() {
   }));
   // his iron stopped on your blade: the hook's (a bent bar: 1, 2.76, 5.40, 8.93) and the blade's steel, its two strongest
   // partials a couple of hertz apart, so the long tail beats as struck steel does
-  for (let i = 0; i < 3; i++) SKA.clang.push(skaBuf(1.7, (d, sr) => {
+  for (let i = 0; i < 3; i++, yield) SKA.clang.push(skaBuf(1.7, (d, sr) => {
     const h = R(780, 980), s = R(2600, 3200);
     skaModes(d, sr, [[h, 0.7, 0.45], [h * 2.756, 0.55, 0.36], [h * 5.404, 0.36, 0.22], [h * 8.933, 0.2, 0.12],
       [s, 0.6, 1.05], [s * 1.0021, 0.45, 1.15], [s * 1.52, 0.38, 0.62], [s * 2.17, 0.26, 0.34], [s * 0.53, 0.32, 0.7]]);
     skaCrack(d, sr, 0, 0.004, 2.4); skaCrack(d, sr, 0, 0.012, 1.0, 3500);
   }));
   // a parry: brighter, louder, longer — and the iron thrown back off the edge, a second smaller strike 30 ms on
-  for (let i = 0; i < 2; i++) SKA.parry.push(skaBuf(2.1, (d, sr) => {
+  for (let i = 0; i < 2; i++, yield) SKA.parry.push(skaBuf(2.1, (d, sr) => {
     const h = R(900, 1100), s = R(3100, 3500), o2 = sr * R(0.024, 0.036) | 0;
     skaModes(d, sr, [[h, 0.6, 0.5], [h * 2.756, 0.55, 0.42], [h * 5.404, 0.42, 0.26], [s, 0.75, 1.45], [s * 1.0018, 0.55, 1.55],
       [s * 1.51, 0.5, 0.9], [s * 2.14, 0.36, 0.48], [s * 0.67, 0.45, 1.1], [s * 0.67 * 1.003, 0.3, 1.2]]);
@@ -115151,9 +118532,9 @@ function skaBuild() {
     skaModes(d, sr, [[s * 1.27, 0.3, 0.3], [s * 1.93, 0.22, 0.2], [h * 1.6, 0.2, 0.18]], o2); skaCrack(d, sr, o2, 0.003, 1.2);
   }));
   // the hook's point going in: short and high
-  for (let i = 0; i < 3; i++) SKA.tick.push(skaBuf(0.14, (d, sr) => { const f = R(3600, 5000); skaModes(d, sr, [[f, 1, 0.03], [f * 1.61, 0.6, 0.022], [f * 0.58, 0.5, 0.04]]); skaCrack(d, sr, 0, 0.0015, 1.2); }));
+  for (let i = 0; i < 3; i++, yield) SKA.tick.push(skaBuf(0.14, (d, sr) => { const f = R(3600, 5000); skaModes(d, sr, [[f, 1, 0.03], [f * 1.61, 0.6, 0.022], [f * 0.58, 0.5, 0.04]]); skaCrack(d, sr, 0, 0.0015, 1.2); }));
   // slack chain dropped on the flesh floor: a wet slap (dulled noise, 25 ms), a squelch over it, a low thud under it
-  for (let i = 0; i < 3; i++) SKA.slap.push(skaBuf(0.4, (d, sr) => {
+  for (let i = 0; i < 3; i++, yield) SKA.slap.push(skaBuf(0.4, (d, sr) => {
     const k = R(0.016, 0.03), q = R(180, 260);
     skaWet(d, sr, 0, sr * 0.3 | 0, R(500, 800), 0, (t) => Math.exp(-t / k) * Math.min(1, t / 0.0015));
     skaWet(d, sr, sr * 0.006 | 0, sr * 0.2 | 0, R(1800, 2600), 700, (t) => 0.85 * Math.exp(-t / 0.035) * (0.6 + 0.4 * Math.sin(t * q)));
@@ -115161,14 +118542,14 @@ function skaBuild() {
   }));
   // hauled back over flesh: a wet rub, its level rough and sticky (the links catching and tearing free), a second of it
   // played as overlapping grains
-  for (let i = 0; i < 2; i++) SKA.drag.push(skaBuf(1.0, (d, sr) => {
+  for (let i = 0; i < 2; i++, yield) SKA.drag.push(skaBuf(1.0, (d, sr) => {
     const E = new Float32Array(1001); for (let j = 0; j <= 1000; j++) E[j] = 0.25 + 0.1 * Math.sin(j * 0.037);
     for (let k = 0; k < 40; k++) { const c = Math.random() * 1000, a = R(0.3, 1); for (let j = Math.max(0, c - 30 | 0); j <= Math.min(1000, c + 30); j++) E[j] += a * Math.exp(-(((j - c) / 12) ** 2)); }
     skaWet(d, sr, 0, d.length, R(700, 1100), 120, (t) => E[Math.min(1000, t * 1000 | 0)]);
     for (let j = 0; j < 9; j++) skaWet(d, sr, Math.random() * (d.length - sr * 0.1) | 0, sr * 0.04 | 0, 2400, 900, (t) => 1.4 * Math.exp(-t / 0.006));
   }));
   // the hook whirled past: noise through a resonant band swept up and back down as it comes round
-  for (let i = 0; i < 2; i++) SKA.swish.push(skaBuf(0.34, (d, sr) => {
+  for (let i = 0; i < 2; i++, yield) SKA.swish.push(skaBuf(0.34, (d, sr) => {
     const T = 0.3, f0 = R(260, 340), f1 = R(1100, 1500); let lo = 0, bd = 0;
     for (let j = 0; j < d.length; j++) {
       const u = Math.min(1, j / sr / T), e = Math.sin(Math.PI * u) ** 2, F = 2 * Math.sin(Math.PI * (f0 + (f1 - f0) * Math.sin(Math.PI * Math.pow(u, 0.8))) / sr);
@@ -115176,7 +118557,7 @@ function skaBuild() {
     }
   }));
   // the floor torn by the great chains: a low grinding rumble, the links' teeth chattering in it 18–30 times a second
-  for (let i = 0; i < 2; i++) SKA.rumble.push(skaBuf(1.5, (d, sr) => {
+  for (let i = 0; i < 2; i++, yield) SKA.rumble.push(skaBuf(1.5, (d, sr) => {
     const g = R(18, 30);
     skaWet(d, sr, 0, d.length, 170, 25, (t) => Math.min(1, t / 0.03) * Math.exp(-t / 0.55) * (0.65 + 0.35 * Math.abs(Math.sin(Math.PI * g * t))));
     skaWet(d, sr, 0, d.length, 650, 200, (t) => 0.4 * Math.min(1, t / 0.02) * Math.exp(-t / 0.3) * Math.abs(Math.sin(Math.PI * g * 1.37 * t)) ** 3);
@@ -116024,12 +119405,13 @@ const TAV_VAULT_TO = { x: -3.40, z: -2.60 };
  * under way before the player had taken ten steps. Nothing starts until you
  * have come to the bar. */
 const TAV_SCENE_NEAR = 13.0;
-let wongUnit = null, drunkUnit = null, orcUnit = null, tavMug = null;
+let wongUnit = null, drunkUnit = null, orcUnit = null, tavMug = null, tavCutView = false;
 // everyone at the bar, in one place, so nothing can be updated for two of three
 const tavCast = () => (wongUnit ? [wongUnit, drunkUnit, orcUnit].filter(Boolean) : []);
 // and everybody in the hall who can walk into the furniture: the bar's three and the two at the table
 let tavDrinkers = [], tavDancers = [];
-const tavPeople = () => tavCast().concat(tavDrinkers, tavDancers);
+let tavLookout = null;
+const tavPeople = () => tavCast().concat(tavDrinkers, tavDancers, tavLookout ? [tavLookout] : []);
 const tavScene = { t: 0, phase: 0, started: false };
 /* HIS NAME ON HIS SHIRT (the owner, 2026-10-10: "a real name tag like he's at
  * work, not floating, that you can inspect"). A plastic badge, 75 by 28 mm,
@@ -116178,6 +119560,30 @@ function buildTavCast() {
  * from the bar fight who came through their table. When that man is down
  * they are done with it and stand about; you they fight to the end. They are
  * `tav` kinds, so the hall's floor, arena, steering and crush are theirs. */
+/* (THEIR FISTS, NOT THEIR WEAPONS' SWINGS — 2026-11-26, the owner: "the farmers in there should punch cuz they have no weapons they
+ * barely hit me". A tavern man is a copy of a castle farmer, and the copy kept that farmer's moves resolved against HIS tool —
+ * the axe's great cuts, swung with an empty hand, the grip turned for a haft that is not there. His temperament's own moves are
+ * resolved again against the fist (`FARM_MOVES.fist`: the punch, the jab, the hook, the kicks), and the idle is a man's, not
+ * the sword-ready stance.) */
+/* (AND TWO OF THEM AT YOU, NOT ONE — measured, `tools/tavfight.js &who=drinkers`: four men threw five blows in forty seconds, two
+ * never once, standing 1.2 m off you. They took the beach's one turn (`mutToken`), each waiting for the last to finish and his
+ * cool. A tavern man may swing out of turn while fewer than two others are mid-blow, and never in the same third of a second as
+ * another's start, so each blow can still be read.) */
+function tavSwarmOK(u) {
+  if ((u.st.cool || 0) > 0) return false;
+  let n = 0;
+  for (const o of mutants) { if (o === u || !o.kind.tav || !o.st.alive || !o.st.awake || !(o.st.atk >= 0)) continue; n++; if (o.st.atk < 0.33) return false; }
+  return n < 2;
+}
+function tavFistKit(b) {
+  const MV = FARM_MOVES.fist, use = {}, alias = Object.assign({}, FARM_BASE.alias);
+  for (const g in (b.moves || {})) { const k = MV[g]; if (k) use[k] = (use[k] || 0) + b.moves[g]; }
+  if (!Object.keys(use).length) Object.assign(use, { fsPunch: 0.4, fsJab: 0.3, fsHook: 0.2, fsKick: 0.1 });
+  for (let pass = 0; pass < 3; pass++) for (const k in use) { const c = MUT_ATTACKS[k] && MUT_ATTACKS[k].chain; if (c && !(c in use)) use[c] = 0.0001; }
+  for (const k in use) if (MUT_ATTACKS[k] && MUT_ATTACKS[k].clip) alias[k] = MUT_ATTACKS[k].clip;
+  return { use, alias, swDmg: {}, wkey: null, waitFor: () => Promise.resolve(), swarm: tavSwarmOK,
+    gaits: Object.assign({}, b.gaits, { idle: ['mIdle', 'mIdleB', 'mHIdle'] }), anim: Object.assign({}, b.anim, { idle: FARM_BASE.anim.idle }) };
+}
 const TAV_DRINK_FROM = [3, 10, 4, 18];               // four bare-handed men: two tables of two, from the back of the hall
 function tavDrinkerKind(i) {
   const name = 'tavDrinker' + i;
@@ -116187,6 +119593,7 @@ function tavDrinkerKind(i) {
     tav: true, fortBody: false, frenzy: false, wakeAt: 0, solo: true,   // still a farmer: the castle's shared hurt gate, and his late motion capture
     provoke: (u) => tavDrinkerProvoke(u, null), first: 'fSit', sleepIdle: null,
     tool: null,          // two of the four came from kinds that carry an axe, and sat drinking with it in the bottle hand (the owner's word: no weapons)
+    ...tavFistKit(b),
     // lit for a baked room with no lamps in it, like the bar's three: no night grade, a warm lift, a warm edge
     tint: 0, emis: 0.22, rim: [0.055, 0.046, 0.034],
     // they come down where they stood, like the castle's (the street's own numbers, inherited)
@@ -116522,6 +119929,7 @@ function tavDancerKind(i) {
     tav: true, fortBody: false, frenzy: false, wakeAt: 0, solo: true,
     provoke: (u) => tavDancerProvoke(u), first: dance, sleepIdle: null, dance,
     tool: null,          // dancing bare-handed
+    ...tavFistKit(b),
     tint: 0, emis: 0.22, rim: [0.055, 0.046, 0.034],              // lit for the baked hall, as the drinkers are
     hp: b.hp + 1,
   });
@@ -116575,6 +119983,53 @@ function buildTavDancers() {
     u.holdAnim = true;
     tavDancers.push(u);
   });
+}
+/* ---- THE MAN AT THE RAILING (2026-11-26, the owner: "add a knight standing looking over the balcony you can run and kick off" — "i
+ * meant farmer"). One more of the hall's farmers, bare-handed, stood at the middle of the window's right bay with his back to the
+ * room, looking out over the drop: asleep to you (`wakeAt` 0) until he is touched. A kick from behind drives him at the window from
+ * close by, so `kickMan` throws him (`tavWindowAhead`): through the railing and down. Hit any other way he turns and fights, as the
+ * dancers do. Held where he stands and on his idle while he is unprovoked, the dancers' way (`updateTavDancers`). */
+const TAV_LOOK_FROM = [14, 5, 9, 2], TAV_LOOK_AT = { x: -0.43, z: -12.5 };   // (a farmer the drinkers and dancers are not; room-local, half a metre in from the rail)
+function tavLookoutKind() {
+  const name = 'tavLookout';
+  if (MUT_KINDS[name]) return name;
+  const b = TAV_LOOK_FROM.map((i) => MUT_KINDS['farmer' + i]).find(Boolean); if (!b) return null;
+  MUT_KINDS[name] = Object.assign({}, b, {
+    tav: true, fortBody: false, frenzy: false, wakeAt: 0, solo: true,
+    provoke: (u) => tavLookoutProvoke(u), first: b.anim.idle, sleepIdle: null,
+    tool: null, ...tavFistKit(b),
+    tint: 0, emis: 0.22, rim: [0.055, 0.046, 0.034],              // lit for the baked hall, as the drinkers are
+    hp: b.hp + 1,
+  });
+  return name;
+}
+function buildTavLookout() {
+  if (tavLookout || !tavBuilt) return;
+  const kn = tavLookoutKind(); if (!kn) return;
+  const u = makeMutant(TAV_X + TAV_LOOK_AT.x, TAV_Z + TAV_LOOK_AT.z, kn, TAV_Y + TAV_FLOOR);
+  tavLookout = u;
+  u.g.rotation.y = Math.PI; u.g.visible = inTavern; u.pathO = { x: TAV_X, z: TAV_Z };   // (facing the hall's -Z: out of the window)
+  if (u.retired || !u.st.alive) return;
+  u.look = { x: u.g.position.x, z: u.g.position.z, yaw: Math.PI };
+  u.holdAnim = true;
+}
+function tavLookoutProvoke(u) {
+  if (!u.st.alive || u.st.awake) return;
+  u.st.awake = true; u.st.mine = true; u.st.foe = null; u.st.cool = 0.9; u.st.step = 0;
+  u.holdAnim = false;
+  u.st.roar = 0.6; u.st.roarClip = u.kind.anim.roar;
+  sfxMutRoar(Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z), u.kind.voice);
+}
+function updateTavLookout(dt) {
+  if (!tavLookout) { buildTavLookout(); return; }
+  const u = tavLookout, D = u.look;
+  if (u.life && u.st.alive) u.life.grip = u.st.awake ? TAV_FIST_HANDS : TAV_REST_HANDS;
+  if (!D || !u.st.alive || u.st.awake || u.kickRag || !u.mixer || !u.clips) return;
+  const a = u.clips[u.kind.anim.idle]; if (!a) return;
+  u.g.position.x = D.x; u.g.position.z = D.z; u.g.rotation.y = D.yaw;
+  u.holdAnim = true;
+  if (u.cur !== a) { const p = mutPlay(u, u.kind.anim.idle, true); if (p) { p.paused = false; p.timeScale = 1; } }
+  u.mixer.update(dt);
 }
 function tavDancerProvoke(src) {
   for (const d of tavDancers) {
@@ -117309,6 +120764,7 @@ MUT_ATTACKS.fHead   = { wind: 0.42, strike: 0.08, recover: 0.34, hit: 0.50,   re
 // each combo's blows, as fractions of its clip (measured on a farmer holding his weapon: the head fastest, in front of him, at your height —
 // `tools/farmcombo.js`)
 const FARM_COMBO_RATE = 1.25;   // (at the capture's own speed a combo was 3-4 s and the street fight fell to 5-8 hurts a minute, from 8-14)
+const FARM_SWATK = { hit: 0.28, rate: 1.25, aimArmK: 0.5 };   // (hit: the overhead coming down in front at a man's head, 29 m/s — `tools/farmcombo.js&clips=mSwAtk`)   // (the big cut's contact, fraction of its clip; its speed; how hard the arm is aimed at you)
 const FARM_COMBO = { mCombo1: { hit: 0.325, more: [0.545] }, mCombo2: { hit: 0.25, more: [0.575] }, mCombo3: { hit: 0.356, more: [] } };   // (measured 2026-11-23: the overhead and the sweep; two cuts; one big one)
 MUT_ATTACKS.fTackle = { wind: 0.60, strike: 0.15, recover: 0.55, hit: 0.46,   reach: 3.80, lunge: 3.2, chain: 'fJab', chainP: 0.5, w: 0.1, guardK: 1.6, limbs: [1, 4], minDist: 2.6 };
 MUT_ATTACKS.fKick   = { wind: 0.34, strike: 0.10, recover: 0.34, hit: 0.436,  reach: 1.85, lunge: 1.0, chain: 'fHack', chainP: 0.35, w: 0.1, guardK: 1.1, limbs: [2] };
@@ -117377,8 +120833,26 @@ MUT_ATTACKS.fKick   = { wind: 0.34, strike: 0.10, recover: 0.34, hit: 0.436,  re
   A.wcCombo1 = FM('mCombo1', FARM_COMBO.mCombo1.hit, 0.5, 1.05, { wind: 0.5, clipRate: FARM_COMBO_RATE, more: FARM_COMBO.mCombo1.more, aimArmK: 0.35, guardK: 1.0, recover: 0.42 });
   A.wcCombo2 = FM('mCombo2', FARM_COMBO.mCombo2.hit, 0.5, 1.05, { wind: 0.5, clipRate: FARM_COMBO_RATE, more: FARM_COMBO.mCombo2.more, aimArmK: 0.35, guardK: 1.0, recover: 0.42 });
   A.wcCombo3 = FM('mCombo3', FARM_COMBO.mCombo3.hit, 0.5, 1.05, { wind: 0.5, clipRate: FARM_COMBO_RATE, more: FARM_COMBO.mCombo3.more, aimArmK: 0.35, guardK: 1.0, recover: 0.42 });
+  /* THE BIG CUT (2026-11-25, the owner, with Mesh2Motion's "Sword_Attack" on its human with a Large Battle Axe, and a video of it: "add this
+   * move for the farmers make sure they hold their weapons and swing like the video"). Played as the capture swings it — its own arm, its
+   * hips winding 71° into the cut and back (`tools/ntar_moves.py`, KEEP_YAW) — not laid out by `farmSwingIK`: the owner asked for the
+   * video's swing. Contact measured on a farmer holding his weapon (`tools/farmcombo.js&clips=mSwAtk`). It is every axe's, hammer's and
+   * sword's `chop`, and the sword's `hook`. */
+  A.wcSwAtk = FM('mSwAtk', FARM_SWATK.hit, 0.5, 1.05, { wind: 0.55, clipRate: FARM_SWATK.rate, aimArmK: FARM_SWATK.aimArmK, guardK: 1.3, recover: 0.45 });
+  /* AND THE REST OF THE OWNER'S SET THE SAME WAY (2026-11-25, the owner: "the new swing i added for the farmers is the best yet adjust
+   * the other moves accordingly they are horrible"): Mesh2Motion's Sword_Regular_C (a stepping cut), Sword_Regular_Combo (a string)
+   * and Sword_Dash (in from range), out of the owner's exported-model-3.glb into the farmers' set (`ntar_moves.py -- wong`), played as
+   * captured with the video's grip (`farmSwSeat`) and the edge on the head's travel (`farmEdgeSet`) — what made the big cut. Their
+   * contacts measured on a farmer with the grip turned (`tools/farmcombo.js&clips=…&seat=0.73`): the weapon's head fastest in front
+   * of him at a man's head. They are every axe's, hammer's and sword's cut, string, swipe, spin and leap now; the laid-out combos
+   * (`wcCombo1-3`, `farmSwingIK`) are no longer thrown. Sword_Regular_B is packed (`mSwB`) and not used: on its own it is the first
+   * half of a cut — its blade is fastest on its last frame. */
+  A.wcSwC = FM('mSwC', 0.175, 0.5, 1.05, { wind: 0.5, clipRate: FARM_SWATK.rate, aimArmK: FARM_SWATK.aimArmK, guardK: 1.1, recover: 0.42, chain: 'wcSwAtk', chainP: 0.35 });
+  A.wcSwCombo = FM('mSwCombo', 0.087, 0.5, 1.05, { wind: 0.4, clipRate: FARM_SWATK.rate, more: [0.419], aimArmK: FARM_SWATK.aimArmK, guardK: 1.0, recover: 0.42 });
+  A.wcSwDash = FM('mSwDash', 0.206, 0.65, 1.1, { wind: 0.6, clipRate: 1.0, aimArmK: FARM_SWATK.aimArmK, recover: 0.5, reach: 5.2, lunge: 3.8, hold: true, minDist: 2.5, guardK: 1.4, chain: 'wcSwC', chainP: 0.4 });
+  A.wcSwAtk.chain = 'wcSwCombo'; A.wcSwAtk.chainP = 0.3;
   // (and what a weapon man's kick, spin or leap runs on into is a combo too — not the great sword's cut it used to chain to)
-  { const to = { axCut: 'wcCombo1', axCutD: 'wcCombo2', axCutC: 'wcCombo3', axChop: 'wcCombo1', hmCut: 'wcCombo1', hmCutD: 'wcCombo2', hmCutC: 'wcCombo3', hmChop: 'wcCombo1', rkCut: 'wcCombo1', rkCutD: 'wcCombo2', rkChop: 'wcCombo1', rkSwipe: 'wcCombo3' };
+  { const to = { axCut: 'wcSwC', axCutD: 'wcSwC', axCutC: 'wcSwCombo', axChop: 'wcSwAtk', hmCut: 'wcSwC', hmCutD: 'wcSwC', hmCutC: 'wcSwCombo', hmChop: 'wcSwAtk', rkCut: 'wcSwC', rkCutD: 'wcSwC', rkChop: 'wcSwAtk', rkSwipe: 'wcSwCombo' };
     for (const k in A) if (/^(ax|hm|rk)[A-Z]/.test(k) && A[k].chain && to[A[k].chain]) A[k].chain = to[A[k].chain]; }
   for (const k in A) if (/^(ax|hm|rk|fs)[A-Z]/.test(k)) { A[k].natHold = Math.max(A[k].natHold || 0, /^(fs|rk)/.test(k) ? 0.16 : 0.12); A[k].cockF = A[k].cockF ?? 0.55; }   // (natHold 0.30 / 0.22 at first: a man frozen at the top of every swing)
 }
@@ -117388,14 +120862,14 @@ MUT_ATTACKS.fKick   = { wind: 0.34, strike: 0.10, recover: 0.34, hit: 0.436,  re
 /* (2026-11-23: every cut of a weapon man is one of the owner's three combos now — `wcCombo1-3`; his spin, leap and kick, and the
  * spearman's thrust and lunge, are what they were) */
 const FARM_MOVES = {
-  axe:    { cut: 'wcCombo1', cutC: 'wcCombo3', cutD: 'wcCombo2', chop: 'wcCombo1', spin: 'axSpin', leap: 'axLeap', kick: 'axKick', thrust: 'wcCombo2', lunge: 'axLeap', swipe: 'wcCombo3', punch: 'wcCombo1', jab: 'wcCombo2', hook: 'wcCombo3', kick2: 'axKick' },
-  hammer: { cut: 'wcCombo1', cutC: 'wcCombo3', cutD: 'wcCombo2', chop: 'wcCombo1', spin: 'hmSpin', leap: 'hmLeap', kick: 'axKick', thrust: 'wcCombo2', lunge: 'hmLeap', swipe: 'wcCombo3', punch: 'wcCombo1', jab: 'wcCombo2', hook: 'wcCombo3', kick2: 'axKick' },
-  rake:   { cut: 'wcCombo1', cutC: 'wcCombo3', cutD: 'wcCombo2', chop: 'wcCombo1', spin: 'wcCombo3', leap: 'rkLunge', kick: 'axKick', thrust: 'rkThrust', lunge: 'rkLunge', swipe: 'wcCombo3', punch: 'rkThrust', jab: 'rkThrust', hook: 'wcCombo3', kick2: 'axKick' },
+  axe:    { cut: 'wcSwC', cutC: 'wcSwCombo', cutD: 'wcSwC', chop: 'wcSwAtk', spin: 'wcSwCombo', leap: 'wcSwDash', kick: 'axKick', thrust: 'wcSwC', lunge: 'wcSwDash', swipe: 'wcSwCombo', punch: 'wcSwC', jab: 'wcSwC', hook: 'wcSwAtk', kick2: 'axKick' },
+  hammer: { cut: 'wcSwC', cutC: 'wcSwCombo', cutD: 'wcSwC', chop: 'wcSwAtk', spin: 'wcSwCombo', leap: 'wcSwDash', kick: 'axKick', thrust: 'wcSwC', lunge: 'wcSwDash', swipe: 'wcSwCombo', punch: 'wcSwC', jab: 'wcSwC', hook: 'wcSwAtk', kick2: 'axKick' },
+  rake:   { cut: 'wcSwC', cutC: 'wcSwCombo', cutD: 'wcSwC', chop: 'wcSwAtk', spin: 'wcSwCombo', leap: 'rkLunge', kick: 'axKick', thrust: 'rkThrust', lunge: 'rkLunge', swipe: 'wcSwCombo', punch: 'rkThrust', jab: 'rkThrust', hook: 'wcSwCombo', kick2: 'axKick' },
   sword:  null,       // (set below: the axe's strokes — the great-sword captures are a sword's own)
   fist:   { cut: 'fsSwipe', cutC: 'fsHook', cutD: 'fsPunch', chop: 'fsHook', spin: 'fsSwipe', leap: 'fsKick2', kick: 'fsKick', thrust: 'fsPunch', lunge: 'fsKick2', swipe: 'fsSwipe', punch: 'fsPunch', jab: 'fsJab', hook: 'fsHook', kick2: 'fsKick2' },
 };
 
-FARM_MOVES.sword = FARM_MOVES.axe;
+FARM_MOVES.sword = Object.assign({}, FARM_MOVES.axe, { hook: 'wcSwAtk' });   // (the brawler's sword throws the big cut too: he has no chop)
 
 /* ---- WHAT THEY HAVE IN COMMON, and the eight ways of being one. */
 const FARM_BASE = {
@@ -117418,10 +120892,11 @@ const FARM_BASE = {
    * and with the true one the garrison ran at 3.5-3.9 — a different fight. The pace the owner balanced is kept.) */
   runMax: 2.75,
   h: 1.84, hp: 4, dmg: 1, hitR: 0.62, body: 0.42, lungeStop: 1.05, landSlop: 0.45,
-  speedK: 1.25, windK: 0.96, reachK: 1.0, aggr: 2.2, press: 0.85, chainMax: 2, pressMax: 3,
-  frenzy: true, bursts: 2, holdR: 4.2, pressW: 1, pressT: 5,
+  speedK: 1.25, windK: 0.84, reachK: 1.0, aggr: 2.6, press: 0.85, chainMax: 3, pressMax: 3,   // (windK 0.87, aggr 2.4 until 2026-11-25, the owner: "more health and a little harder of a fight")
+    // (a little harder, 2026-11-24, "make the farmers a little harder too": windK 0.96, aggr 2.2, chainMax 2 before — see the line below)
+  frenzy: true, bursts: 3, holdR: 4.2, pressW: 1, pressT: 6,   // (bursts 2, pressT 5 before 2026-11-24: a presser stays on you for three blows, so the guard and the quicker recovery do not cost the fight its pressure)
   circle: 0.3, step: 0.25, smart: 1, feint: 0.10, sizeUp: 0.01, restless: 0, turnMax: 7.0, yawK: 0.8, fade: 0.14,
-  poise: 2, poiseBack: 1.4, poiseWait: 1.0, parryK: 1.2, recoilK: 0.95, stunK: 1.0, blockCost: 0.45, block: 0,
+  poise: 2, poiseBack: 1.8, poiseWait: 1.0, parryK: 1.2, recoilK: 0.8, stunK: 1.0, blockCost: 0.45, block: 0.2,   // (poiseBack 1.4, recoilK 0.95, block 0 before: back on their feet sooner after a reel, a light blow from the front guarded now and then — not more damage)
   fidgetK: 0.3, fidgetGap: 2.2,
   aimed: true, barLen: 0.18, aimK: 2.0,
   stunClip: 'mParry', first: 'idle', wakeAt: 0,
@@ -117431,7 +120906,7 @@ const FARM_BASE = {
    * 35 cm off you. A body's width now, from the shins (they kick and sweep)
    * to the head, and the lunge closes WITH the blow (`lungeLead`) so it
    * arrives rather than being thrown from where he stood. */
-  limbR: 0.32, landSlop: 0.30, bodyLow: 1.5, bodyLowArm: 0.40, hitFront: 0.42, aimFront: 0.42, lungeLead: 0.30, aimDrop: 0.05, flinch: 1.0,   // (2026-11-23: aimed and judged 0.42 m IN FRONT of your face, not at it — the point came at the lens end-on and you never saw the blade go by)   // (round 2026-10-17: aimed at the face, counted from the chest up — see `blowLands`)
+  limbR: 0.32, landSlop: 0.30, bodyLow: 1.5, bodyLowArm: 0.40, hitFront: 0.42, aimFront: 0.22,   /* (aimed 0.42 until 2026-11-24, the owner: "the blade rarely touches the player": the head stopped ~0.5 m off your eye; judged where it always was — a head driven in to 0.2 passes it on the way) */ lungeLead: 0.30, aimDrop: 0.05, flinch: 1.0,   // (2026-11-23: aimed and judged 0.42 m IN FRONT of your face, not at it — the point came at the lens end-on and you never saw the blade go by)   // (round 2026-10-17: aimed at the face, counted from the chest up — see `blowLands`)
   /* A KILLING BLOW THROWS THEM ACROSS THE STREET: a harder kick, the cap on a
    * first flight raised, and the leash on how far a body may travel let out
    * to match. The castle's walls hold them (`fortBody`'s ragdoll flag). */
@@ -117439,7 +120914,12 @@ const FARM_BASE = {
    * fly too far it looks like they disappear"): a killing blow knocks a man
    * down where he stood, a stride or two, and the pieces land round him where
    * you can see them (`pieceK`). */
-  ragK: 1.15, ragVmax: 6.5, ragTravel: 5, ragEven: 0.55, ragLift: 0.45, pieceK: 0.45,
+  /* (ragEven 0.55 until 2026-11-25: the feet thrown with the chest, and a dying man skated upright across the street — "farmers bodies
+   * still float around after death". The chest takes the blow and the man goes over his planted feet.) */
+  ragK: 1.15, ragVmax: 6.5, ragTravel: 5, ragEven: 0.1, ragLift: 0.45, pieceK: 0.45,
+  /* (and they can go DOWN and get up — 2026-11-25, the kick: the knight pack's fall and rise they already carry, at that pack's own
+   * timings. Nothing else puts them down: no `knockAfter`, `knockHeavy` or `knockP`, so only the kick's chance does, `kickMan`) */
+  knockClip: 'mKnock', riseClip: 'mGetUp', knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
   cutApart: true,          // and they come APART: every kill takes pieces with it (`finishMutant`)
   // and they come apart, and they bleed: more heads and limbs, and every spray twice over
   goreK: 1.7, bloodK: 2.0,
@@ -117448,10 +120928,12 @@ const FARM_BASE = {
   claws: 1.25, clawRe: /Hand(Thumb|Index|Middle|Ring|Pinky)\d_/,
   author: (u, m) => authorFarmerClips(u, m), pre: (u, g) => farmPre(u, g),
   anim: { idle: 'mIdle', walk: 'mWalk', run: 'mRun', roar: 'rCry', die: 'mHitBig', back: 'mWalk', rate: 1.0, lean: 0.0, strafeK: 1.0 },
-  alias: { idle2: 'mIdleB', walk2: 'mWalkC', run2: 'mRunB', roar2: 'rShake', die2: 'mHitBig', calm: 'mIdle', hit: 'mHit', hitSide: 'mHitBig', hitBack: 'mHitBack',
+  alias: { roar: 'rBeat', /* (their flourish between blows asked for `roar` — `mutIdle`'s "the other roar" — and they had none: a silent
+            no-op for every man, found by `tools/scan.js`, 2026-11-25) */ idle2: 'mIdleB', walk2: 'mWalkC', run2: 'mRunB', roar2: 'rShake', die2: 'mHitBig', calm: 'mIdle', hit: 'mHit', hitSide: 'mHitBig', hitBack: 'mHitBack',
            hitHead: 'mHit', hitBig: 'mHitBig', parry: 'mParry', block: 'mHit', blockC: 'mHit' },   // the knight's side-of-body and side-of-head reels spun them round: out
   voice: { f: 1.0, growl: 0.9, rasp: 1.0, throat: 'man', pitch: 130, form: 1, farm: true },   // (`farm`: the owner's recordings, `farmVox`)
 };
+const FARM_HP_K = 1.3;   // the garrison's health over each role's own (1 until 2026-11-25)
 const FARM_KINDS = {
   brawler: { tool: 'sword', moves: { punch: 0.28, jab: 0.24, hook: 0.14, kick: 0.16, kick2: 0.10, swipe: 0.08 }, idles: ['idle', 'idleC'], roar: 'rBeat', out: ['bCharge', 'bKick'],
              hp: 5, speedK: 1.30, aggr: 2.1, windK: 0.94, poise: 3, bursts: 3, barLen: 0.12 },
@@ -117510,15 +120992,18 @@ FARM_ROSTER.forEach((R, i) => {
    * axes, a mace man the heaviest axe — `FARM_WEAPONS_GLB`; turned by his place in the roster so no two neighbours match) */
   const wkey = !tool ? null : tool === 'hammer' ? 'Axe_01' : (tool === 'axe' ? 'Axe_0' : 'Sword_0') + (1 + (i * 2) % 3);
   MUT_KINDS['farmer' + i] = Object.assign({}, FARM_BASE, P, {
+    hp: Math.round((P.hp || FARM_BASE.hp) * FARM_HP_K),   // (2026-11-25, the owner: "make the farmers and paladin more health")
     glb: FARM_FILE[R.f], file: R.f, keep: R.keep, tool, wkey, at: P.at, spear: tool === 'rake' ? P.spear || 0.7 : 0, bones,
     waitFor: (u) => (u.kind.tool ? farmWeaponsLoad() : Promise.resolve()),
     h: R.h, tint: null, use, alias, swDmg,   // (no tint: the pack's own colours, 2026-11-16)
     /* a man's walk and a man's jog; only the maniac keeps the hunched run */
     gaits: { walk: ['mHWalk', 'mWalkC'], run: R.p === 'maniac' ? ['mRun', 'mHRun'] : ['mHRun', 'mRunB'],
-             idle: R.p === 'coward' ? ['mIdle', 'mDIdle', 'mHIdle'] : R.p === 'brute' || R.p === 'smith' ? ['mIdle', 'mHIdle'] : ['mIdle', 'mIdleB', 'mHIdle'],
+             /* (2026-11-25, the owner: "use the idle too on farmers" — Mesh2Motion's Idle_Sword, the weapon held ready, for every man with one) */
+             idle: tool ? ['mSwIdle'] : R.p === 'coward' ? ['mIdle', 'mDIdle', 'mHIdle'] : R.p === 'brute' || R.p === 'smith' ? ['mIdle', 'mHIdle'] : ['mIdle', 'mIdleB', 'mHIdle'],
              strafeL: ['mHStrL', 'mStrL', 'mStrL2'], strafeR: ['mHStrR', 'mStrR', 'mStrR2'] },
     stepClip: ['mSideL', 'mSideR'],
-    anim: Object.assign({}, FARM_BASE.anim, { roar: P.roar, walk: 'mHWalk', run: R.p === 'maniac' ? 'mRun' : 'mHRun', back: 'mHWalk' }),
+    ...(tool ? { first: 'mSwIdle' } : {}),   // (and standing guard before he wakes: the start pose is the video's idle too — `mutStartPose`)
+    anim: Object.assign({}, FARM_BASE.anim, tool ? { idle: 'mSwIdle' } : {}, { roar: P.roar, walk: 'mHWalk', run: R.p === 'maniac' ? 'mRun' : 'mHRun', back: 'mHWalk' }),
     /* A MAN TURNS AT A MAN'S RATE, and no two at the same one: at seven
      * radians a second twenty heads snapped onto you together, which is the
      * plainest way there is to look like a script */
@@ -117678,12 +121163,31 @@ function farmWeaponsLoad() {
   return farmWpnP;
 }
 // the pack's model `name` as a weapon of this file (its `edge`: it cuts; `two`: either edge leads, a sword's)
+/* (a pack axe with a bit on EITHER side of its haft — Axe_01, measured: its head's centroid on the haft line, 0.21 m of steel either way —
+ * leads with whichever bit is nearer, as the sword with either edge; marked one-bit, it came in with the back bit at you) */
+function farmIsSword(u, W) { return W.pack ? /^Sword/.test(W.pack) : u.kind.tool === 'sword'; }
+function farmBitW(g) {   // (how far the head's steel stands off the haft line, either side: the bit's reach toward what it cuts)
+  const p = g.attributes.position; let lo = 9, hi = -9, r = 0;
+  for (let i = 0; i < p.count; i++) { const y = p.getY(i); lo = Math.min(lo, y); hi = Math.max(hi, y); }
+  for (let i = 0; i < p.count; i++) if (p.getY(i) > lo + (hi - lo) * 0.6) r = Math.max(r, Math.abs(p.getX(i)));
+  return r;
+}
+function farmTwoBits(g) {
+  const p = g.attributes.position; let lo = 9, hi = -9, px = 0, nx = 0;
+  for (let i = 0; i < p.count; i++) { const y = p.getY(i); lo = Math.min(lo, y); hi = Math.max(hi, y); }
+  for (let i = 0; i < p.count; i++) if (p.getY(i) > lo + (hi - lo) * 0.6) { const x = p.getX(i); px = Math.max(px, x); nx = Math.min(nx, x); }
+  return px > 0.1 && -nx > 0.1;
+}
 function farmWeaponModel(name) {
   if (FARM_TOOLS[name]) return FARM_TOOLS[name];
   const P = farmWpn && farmWpn[name]; if (!P || P.ex.kind === 'shield') return null;
   const sword = P.ex.kind === 'sword';
   return (FARM_TOOLS[name] = { g: P.g, mat: P.mat, ax: new THREE.Vector3(0, 1, 0), c: new THREE.Vector3(), lo: 0, hi: P.ex.hi, bT: new THREE.Vector3(1, 0, 0),
-    grip: P.ex.grip, guard: P.ex.guard, edge: true, two: sword, pack: name });
+    // (an axe is held a quarter of the way up its haft — 2026-11-24, the owner: "they hold it right at the end right now": the packer's grip
+    // was a hand up from the heel, 0.11 m; a third took so much reach that two of the axe's combos fell short of you)
+    // (and a sword's a fist's width under its guard, so the guard sits ON TOP of the fist: at the packer's 6 cm the mitten's fist
+    // closed over the cross itself)
+    grip: sword ? (P.ex.guard ? Math.max(P.ex.guard * 0.4, P.ex.guard - 0.085) : P.ex.grip) : Math.max(P.ex.grip || 0, (P.ex.hi || 0.75) * 0.25), guard: P.ex.guard, edge: true, two: sword || farmTwoBits(P.g), bitW: sword ? 0 : farmBitW(P.g), pack: name });
 }
 function farmWeapon(key, role = null) {
   if (FARM_TOOLS[key]) return FARM_TOOLS[key];
@@ -117727,7 +121231,7 @@ function farmWeapon(key, role = null) {
   if (!farmWeaponMat) farmWeaponMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, flatShading: true,   // (0.55 flared the spear's shaft white under the moon)
     emissive: 0x1a1c20, emissiveIntensity: 1 });   // (METALNESS IS A TRAP: steel is a light rough dielectric with a lift of its own)
   return (FARM_TOOLS[key] = { g, mat: farmWeaponMat, ax: new THREE.Vector3(0, 1, 0), c: new THREE.Vector3(), lo: 0, hi, bT: new THREE.Vector3(1, 0, 0),
-    edge: key === 'sword' || key === 'axe', two: key === 'sword' || key === 'axe' });   // (the built axe is double-bitted)
+    edge: key === 'sword' || key === 'axe', two: key === 'sword' || key === 'axe', bitW: key === 'axe' ? 0.215 : 0 });   // (the built axe is double-bitted)
 }
 function farmPre(u, gltf) {
   const m = gltf.scene, K = u.kind;
@@ -117800,7 +121304,7 @@ const FARM_MOCAP = [
    * creatures being steered. Wong's pack is the Male Locomotion Pack: a man's
    * walk, a man's jog, a man standing, a man side-stepping. */
   [() => wongMoves, { mHWalk: 'walk', mHRun: 'run', mHIdle: 'idle', mHStrL: 'strafeL', mHStrR: 'strafeR', mHSideL: 'sideL', mHSideR: 'sideR', mHTurnL: 'turnL', mHTurnR: 'turnR',
-    mCombo1: 'mc1', mCombo2: 'mc2', mCombo3: 'mc3', mZDie: 'zDie' }],   // (the owner's one-handed combos and the rare death, 2026-11-23: `FARM_COMBO`)
+    mCombo1: 'mc1', mCombo2: 'mc2', mCombo3: 'mc3', mZDie: 'zDie', mSwAtk: 'swAtk', mSwIdle: 'swIdle', mSwB: 'mSwB', mSwC: 'mSwC', mSwCombo: 'mSwCombo', mSwDash: 'mSwDash', mStandA: 'mStandA', mStandB: 'mStandB', mStandC: 'mStandC', mStandD: 'mStandD' }],   // (the owner's one-handed combos and the rare death, 2026-11-23: `FARM_COMBO`)
   [() => drunkMoves, { mDIdle: 'idleB', mDWalk: 'walk' }],
 ];
 const FARM_MOCAP_SET = {};                  // file -> { clips, speed, travel, az }
@@ -117879,7 +121383,11 @@ function farmMeasureTool(o, inv) {
  * thumb and forward, gripped near the end — nearer the middle for a rake,
  * which is used like a spear. Rigid in the hand from then on, so every pose
  * carries it. Its head is the tip the fight aims and sweeps with. */
-const FARM_CANT = { sword: 0.5, axe: 0.39, hammer: 0.39 };   // (of a right angle: 45°, 35°, 35° from the knuckles' line toward the forearm's)
+/* (THE OWNER'S PICTURE, 2026-11-24: a low-poly knight, the sword's handle through his closed fist, the guard on top of the fist and the
+ * pommel under it, the blade rising forward and up — "weapons should be in the hands exactly like this". Measured on it: the handle
+ * about 132° off the forearm, i.e. 42° off square, the blade leaning back over the thumb toward the elbow. One seat for every
+ * cutting weapon now — it had been 45° for a sword and 35° for an axe — and the carry never turns it in the fist, below.) */
+const FARM_CANT = { sword: -0.12, axe: -0.12, hammer: -0.12 };   // (axes back to the sword's seat, 2026-11-24 later: leaned to the hand at 0.2 the wrist could not lift them off a hanging arm — two axemen held theirs straight down in guard, −73°)   // (an axe's head leads its chop: 18° toward the hand — at −0.12 its head passed 0.59 m off your eye and 9 of 14 blows landed, 12 of 12 before)   // (of a right angle: 11° from the knuckles' line toward the ELBOW — the seat near square, as the combo clips' club is held; the picture's ~132° at rest is the wrist cocking up to 43° in the carry, `FARM_BEND_MAX`. Measured: positive leaned the blade toward the hand and pointed it at the ground at rest; −0.47 laid it back along the forearm, 144-178°, through the swings)
 function farmArm(u, m) {
   const K = u.kind;
   m.updateMatrixWorld(true);
@@ -117900,10 +121408,15 @@ function farmArm(u, m) {
    * the first rake men lunged with the tines at the sky. `spear` swings the
    * shaft most of the way onto the forearm's own line, so it is carried low
    * and forward at the stance and levelled at you when the arm goes out. */
-  if (K.spear) {
+  /* (A SWORD IS HELD AS A SWORD, WHOEVER HOLDS IT — 2026-11-24, the owner's picture of the grip. The spear role carries a pack
+   * sword now, and the spear's grip laid its handle along his forearm: measured, 33-38° off it, the blade pointing at the ground.
+   * Only a real shaft — the built rake — is held as a spear; a pack weapon is seated by what it is, and his thrust points it with
+   * the wrist (`farmCarry`).) */
+  const spearGrip = K.spear && !want.pack, cantK = want.pack ? (want.two ? 'sword' : 'axe') : K.tool;
+  if (spearGrip) {
     const fore = m.getObjectByName(FJ(K.file, 'RightForeArm'));
     if (fore) { const fa = W(hand).sub(W(fore)).normalize(); grip = fa.multiplyScalar(K.spear).addScaledVector(grip, 1 - K.spear).normalize(); }
-  } else if (FARM_CANT[K.tool]) {
+  } else if (FARM_CANT[cantK]) {
     /* AND A CUTTING WEAPON IS CANTED FORWARD IN THE FIST (2026-11-17, the owner: "THEY STILL ARE NOT CORRECTLY SWINGING OR
      * FACING THE RIGHT WAY LOOK AT HOW PEOPLE USE THESE WEAPONS"). Square across the knuckles, the blade stood straight up
      * out of his fist all through the cut while the arm went out under it (filmed, `garrison.js&m=film`: frames 48-54 of
@@ -117912,9 +121425,9 @@ function farmArm(u, m) {
      * grip stands it up more) — and at rest it rides point-forward and down, not straight up. The handle is turned
      * `FARM_CANT` of a right angle from the knuckles' line onto the forearm's. */
     const fore = m.getObjectByName(FJ(K.file, 'RightForeArm'));
-    if (fore) { const fa = W(hand).sub(W(fore)).normalize(), a = FARM_CANT[K.tool] * Math.PI / 2; grip = grip.multiplyScalar(Math.cos(a)).addScaledVector(fa.addScaledVector(grip, -fa.dot(grip)).normalize(), Math.sin(a)).normalize(); }
+    if (fore) { const fa = W(hand).sub(W(fore)).normalize(), a = FARM_CANT[cantK] * Math.PI / 2; grip = grip.multiplyScalar(Math.cos(a)).addScaledVector(fa.addScaledVector(grip, -fa.dot(grip)).normalize(), Math.sin(a)).normalize(); }
   }
-  const bitW = (K.spear ? new THREE.Vector3(0, -1, 0) : fing.clone()).addScaledVector(grip, -(K.spear ? -grip.y : fing.dot(grip))).normalize();
+  const bitW = (spearGrip ? new THREE.Vector3(0, -1, 0) : fing.clone()).addScaledVector(grip, -(spearGrip ? -grip.y : fing.dot(grip))).normalize();
   const mT = new THREE.Matrix4().makeBasis(want.ax, want.bT, new THREE.Vector3().crossVectors(want.ax, want.bT));
   const mW = new THREE.Matrix4().makeBasis(grip, bitW, new THREE.Vector3().crossVectors(grip, bitW));
   const Rm = mW.multiply(mT.clone().transpose());
@@ -118037,13 +121550,36 @@ function farmSeatTool(u, m, G) {
   // (a mitten rig — the garrison's — closes ONE chain; its placeholder index and little finger bones are knuckles that never move)
   const fre = u.kind.mitten ? /RightHandMiddle[2-4]_/ : /RightHand(Index|Middle|Ring|Pinky)[1-4]_/;
   m.traverse((b) => { if (b.isBone && fre.test(b.name)) { c.add(b.getWorldPosition(v)); n++; } });
+  /* (THE FIST AS IT IS DRAWN — 2026-11-24, the owner: "the sword is floating by his [hand] … make him actually hold the handle". The
+   * curled finger BONES are no guide on the garrison's thick mitten: seen square to the handle the whole grip showed, pommel to guard,
+   * with the glove behind it. The middle of the fist is the middle of its own SKIN, closed: every vertex of the body whose heaviest
+   * weight is the hand or a finger, posed as it is now — the handle goes through that.) */
+  {
+    const handB = hand, ids = new Set();
+    m.traverse((b) => { if (b.isBone) for (let o = b; o; o = o.parent) { if (o === handB) { ids.add(b); break; } if (!o.isBone) break; } });
+    const sc = new THREE.Vector3(); let sn = 0;
+    m.traverse((sm) => {
+      if (!sm.isSkinnedMesh || !sm.geometry.attributes.skinIndex) return;
+      const G2 = sm.geometry, SI = G2.attributes.skinIndex, SW = G2.attributes.skinWeight, bones = sm.skeleton.bones;
+      for (let i = 0; i < SI.count; i++) {
+        let bi = 0, bw = SW.getX(i); for (let q = 1; q < 4; q++) { const wq = SW.getComponent(i, q); if (wq > bw) { bw = wq; bi = q; } }
+        if (!ids.has(bones[SI.getComponent(i, bi)])) continue;
+        sm.getVertexPosition(i, v); v.applyMatrix4(sm.matrixWorld); sc.add(v); sn++;
+      }
+    });
+    if (sn > 8) { c.copy(sc).multiplyScalar(1 / sn); n = 1; u.farmFistSkin = sn; }
+    else c.multiplyScalar(1 / Math.max(1, n)), n = 1;
+  }
   fs.forEach((f, i) => f.b.quaternion.copy(keep[i]));
   m.updateMatrixWorld(true);
   if (!n) return;
-  c.multiplyScalar(1 / n);
   const inv = hand.matrixWorld.clone().invert();
-  mesh.position.add(c.applyMatrix4(inv).sub(u.farmPalm.clone().applyMatrix4(inv)));
+  /* (INTO THE HOLLOW OF THE FIST, not onto the fingers — 2026-11-24, the owner: "make him actually hold the handle", of a sword running
+   * past the outside of his fingers. On the garrison's thick mitten the curled finger bones' middle is IN the fingers, so a handle put
+   * there ran along their outside; the hollow is between them and the palm: `FARM_SEAT_IN` of the way from the palm to them.) */
+  mesh.position.add(c.applyMatrix4(inv).sub(u.farmPalm.clone().applyMatrix4(inv)).multiplyScalar(FARM_SEAT_IN));
 }
+const FARM_SEAT_IN = 1.0;   // (all the way to the skin's middle; 0.6 was for the bones' middle)
 /* ---- THE DOORS. The castle's doors are one merged mesh (`acmat_16`), 22
  * islands: every door a 186-triangle plank slab with its two handles. The
  * ones that face the street are listed here in the castle's own frame; each
@@ -118468,6 +122004,90 @@ function farmMobPick(u, M, d) {
     else { M.mate = best; M.t = 1.0 + r() * 0.5; sfxMutRoar(d + 5, u.kind.voice); }
   }
 }
+/* ---- THEY READ THE FIGHT (2026-11-24, the owner: "do 7 but dont make the fight easier" — enemies that back off a step when badly
+ * hurt and come back, flank in groups instead of queuing in front of you, flinch or hesitate at a feint, and break off or rush when an
+ * ally falls). Each is paid for: the back-off and the break-off end in a swing that takes the turn whoever holds it (`revengeUntil`),
+ * and the flank brings the pressers in from round you rather than down one line a cleave takes. */
+// badly hurt, right after the blow that did it: a step or three back out of your reach, then straight back in with a blow
+const packReads = () => !(typeof window !== 'undefined' && window.__bwNoRead);   // (a probe's before/after: `tools/fightread.js`)
+function farmBackOff(u, dt, d, dx, dz) {
+  const st = u.st, p = u.g.position;
+  if (!packReads()) return false;
+  if (!(st.bkT > 0)) {
+    const maxHp = Math.max(u.hpMax || 0, u.kind.hp || 0) || 1;
+    if (st.bkDone || !(st.hp > 0) || st.hp > maxHp * 0.4 || st.atk >= 0 || st.recoil > 0 || st.stun > 0 || (st.down || 0) > 0 || d > 4.5 || u.rag) return false;
+    if (performance.now() / 1000 - (st.lastHurt || -9) > 1.6) return false;          // (right after the blow that did it, its reel included)
+    st.bkDone = true; st.bkT = 0.6 + Math.random() * 0.3; st.bkLen = st.bkT;
+  }
+  st.bkT -= dt;
+  if (st.bkT <= 0) { st.bkT = 0; packRush(u); return false; }
+  const k = st.bkT / (st.bkLen || 0.75), v = 2.0 * Math.min(1, 0.35 + k);          // quick off the mark, slowing as he gathers himself
+  p.x -= dx / d * v * dt; p.z -= dz / d * v * dt;
+  mutClampX(u, p, dt);
+  farmFace(u, Math.atan2(dx, dz), dt, 1.2);
+  mutSeparate(u, dt);
+  st.side = 0; st.back = 0;
+  mutAnim(u, dt, v / (MUT_SPEED * u.kind.speedK));
+  st.cool = Math.max(st.cool, 0.15);
+  return true;
+}
+// back in: his turn now, whoever holds it, and he swings as soon as he is in reach
+function packRush(u) {
+  const st = u.st; if (!st.alive) return;
+  if (u.pk && u.pk.role !== 'press') { u.pk.role = 'press'; u.pk.t = 0; u.pk.sw0 = st.swings; u.pk.flankT = 0; }
+  st.revengeUntil = performance.now() / 1000 + 1.8; st.cool = 0; st.wait = 99; st.side = 0; st.sizing = false;
+}
+// an ally falls near them: most come for you at once, the rest flinch back from it a moment and then come
+function packAllyFell(dead) {
+  if (!dead || !dead.farm || !packReads()) return;
+  const P = dead.g.position;
+  for (const o of farmUnits) {
+    const st = o.st;
+    if (o === dead || !st.alive || !st.awake || st.struck || st.foe || !o.farm || !o.farm.out || o.rag) continue;
+    const e = Math.hypot(o.g.position.x - P.x, o.g.position.z - P.z); if (e > 5.5) continue;
+    if (Math.random() < 0.55) { packRush(o); if (Math.random() < 0.5) sfxMutRoar(Math.hypot(o.g.position.x - camera.position.x, o.g.position.z - camera.position.z) + 2, o.kind.voice); continue; }
+    const fx = (o.g.position.x - P.x) / (e || 1), fz = (o.g.position.z - P.z) / (e || 1);
+    if (o.pk && o.pk.role !== 'press' && o.pk.mob) { const M = o.pk.mob; M.act = 'flinch'; M.k = 0; M.t = 0.7; M.fx = fx; M.fz = fz; }
+    else if (st.atk < 0 && !(st.bkT > 0)) { st.bkT = 0.45; st.bkLen = 0.45; }          // (pressing: a half-step back, then the rush)
+    st.rushAt = performance.now() / 1000 + 0.75;
+  }
+}
+/* a feint: a cut or a held charge you left for your guard while one of them was winding up at you — some flinch from it and their
+ * blow comes a beat later; a guard raised into a wind-up: a few check it. Only a man in the first part of his wind, near you. */
+function packReadGuard(feinted) {
+  if (!packReads()) return;
+  for (const u of mutants) {
+    const st = u.st;
+    if (!st.alive || !st.awake || st.foe || !(st.atk >= 0) || !u.life || u.kind.garg || minoAlly(u)) continue;
+    const A = u.atk && u.atk[st.swing]; if (!A || st.atk > A.wind * 0.8) continue;
+    const d = Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z); if (d > 3.6) continue;
+    if (Math.random() < (feinted ? 0.6 : 0.3)) {
+      st.atk = Math.max(0.02, st.atk - (feinted ? 0.16 : 0.1));                      // he checks: the wind starts over a little
+      if (feinted) { try { mutFlinch(u, 0, null); } catch (e) {} }
+    }
+  }
+}
+// the farmers' pressers come at you from round you: each walked along the circle toward its own share of it as it closes
+function farmPressFlank(A, dt) {
+  if (!packReads()) return;
+  const P = A.filter((u) => u.pk && u.pk.role === 'press' && u.st.alive && !u.rag);
+  if (P.length < 2) return;
+  const ang = (u) => Math.atan2(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z);
+  const ring = P.slice().sort((a, c) => ang(a) - ang(c)), step = Math.PI * 2 / ring.length;
+  // the slots turn with the nearest of them (he keeps his line; the others spread from it)
+  let near = ring[0], nd = 99; for (const u of ring) { const d = Math.hypot(u.g.position.x - camera.position.x, u.g.position.z - camera.position.z); if (d < nd) { nd = d; near = u; } }
+  const a0 = ang(near), i0 = ring.indexOf(near);
+  ring.forEach((u, i) => { u.pk.slotA = a0 + (i - i0) * step; });
+  for (const u of ring) {
+    const st = u.st;
+    if (u === near || st.atk >= 0 || st.stun > 0 || st.recoil > 0 || (st.down || 0) > 0 || st.bkT > 0) continue;
+    const p = u.g.position, dx = p.x - camera.position.x, dz = p.z - camera.position.z, d = Math.hypot(dx, dz);
+    if (d < 1.2 || d > 9) continue;
+    const a = Math.atan2(dx, dz), v = THREE.MathUtils.clamp(angDiff(u.pk.slotA, a), -0.6, 0.6) * 1.8 * dt * Math.min(1, d / 2.5);
+    p.x += Math.cos(a) * v; p.z -= Math.sin(a) * v;
+    if (u.kind.fortBody && fortWalls) fortClampUnit(u, p);
+  }
+}
 function farmMobHold(u, dt, d, dx, dz) {
   const pk = u.pk, st = u.st, p = u.g.position;
   const M = pk.mob || (pk.mob = { act: 'watch', t: Math.random() * 1.2, R: 0, side: 1, spd: 1, k: 0 });
@@ -118478,7 +122098,9 @@ function farmMobHold(u, dt, d, dx, dz) {
     st.cool = Math.max(st.cool, 0.25);
     return true;
   }
+  if (st.rushAt && performance.now() / 1000 >= st.rushAt) { st.rushAt = 0; packRush(u); }
   if (pk.role === 'press') {
+    if (farmBackOff(u, dt, d, dx, dz)) return true;
     /* and when it is his turn he does not simply start walking: now and then
      * he shouts it first, from where he stands, and then comes */
     if (!pk.shout) { pk.shout = true; if (d > 3.0 && farmMob.tauntT <= 0 && Math.random() < 0.35 && farmTaunt(u, 1.2)) { mutAnim(u, dt, 0); return true; } }
@@ -118665,13 +122287,13 @@ function farmRollMeasure(u) {
  * weapon's head in his own frame, and stands where that leaves `FARM_REACH_GAP` between the head and your eye — on
  * screen, past the near plane — judged there (`hitFront`). A kick (no aim on a leg) stands off its toe + `FARM_KICK_GAP`.
  * His reaches and ring are re-derived from the new stops, as `makeMutant` derives them. */
-const FARM_REACH_GAP = 0.40, FARM_KICK_GAP = 0.3, FARM_STOP_MIN = 0.95;
+const FARM_REACH_GAP = 0.22, FARM_KICK_GAP = 0.3, FARM_STOP_MIN = 0.95;   // (0.40 until 2026-11-24: the blade comes to you now, not to half a metre short)
 /* (the wide back-hand slash, `mCutC`, swings in on a flatter arc than the shoulder rule allows for: measured, it came to
  * 0.05-0.14 of your eye on every weapon where the rest came to 0.15-0.45, so it stands a little further off) */
 const FARM_REACH_GAP_CLIP = { mCutC: 0.55 };
 /* (and an overhead chop is thrown from closer than anything else: it comes down in front of your face from over HIS, and
  * from the general floor the mace's fell short every time — 2026-11-16) */
-const FARM_STOP_MIN_CLIP = { mChop: 0.80 };
+const FARM_STOP_MIN_CLIP = { mChop: 0.80, mCombo2: 0.72 };   // (the second combo's cuts sweep in short: at the common 0.95 its head passed 0.7-0.95 m off your eye and missed — 2026-11-24, with the axe held further up)
 function farmReachSet(u) {
   const tip = u.bones && u.bones.tip;
   if (!tip || !u.mixer || !u.clips || !u.atk || u.farmReachDone) return;
@@ -118722,6 +122344,8 @@ function farmReachSet(u) {
   if (w > 0) u.ring = acc / w;
   u.farmReachZ = out;
   for (const k in u.atk) if (FARM_IK[k] && u.atk[k] && !u.atk[k].minDist) { const A2 = u.atk[k]; A2.noAim = true; A2.stop = FARM_IK_STOP; A2.reach = FARM_IK_STOP + 0.73; out[k] = FARM_IK_STOP; }   // (the laid-out cuts: `farmSwingIK`)
+  // (and the owner's combos, each of their cuts laid out the same way — 2026-11-24, `FARM_IK_COMBO`; a weapon in his hand, not a kick)
+  if (u.farmTool) for (const k in u.atk) if (FARM_IK_COMBO[k] && u.atk[k] && !u.atk[k].minDist) { const A2 = u.atk[k]; A2.noAim = true; A2.stop = FARM_IK_COMBO_STOP; A2.reach = FARM_IK_COMBO_STOP + 0.73; out[k] = FARM_IK_COMBO_STOP; }
   { const rs = Object.values(u.atk).filter((a) => !a.minDist).map((a) => a.reach); if (rs.length) u.maxReach = Math.max(...rs); let w2 = 0, ac2 = 0; for (const k in u.kind.use) { const a = u.atk[k]; if (!a || a.minDist) continue; ac2 += a.reach * u.kind.use[k]; w2 += u.kind.use[k]; } if (w2 > 0) u.ring = ac2 / w2; }
   /* AND THE EDGE IS SET IN HIS GRIP ONCE (2026-11-16, "the weapons blades face the wrong way"). A weapon does not turn in
    * a fist (`farmToolRoll`), so it is seated with the roll his own strokes want: each stroke's head travel into its
@@ -118745,8 +122369,65 @@ function farmReachSet(u) {
  * the ragdoll takes the body from that pose, barely pushed. */
 const FARM_ZDIE_P = 0.14;
 function farmZDieRoll(u) {
-  if (!u.kind.farmer || !u.clips || !u.clips.mZDie || !u.mixer || u.rag || u.st.gunHead || (u.st.killBlast || 0) > 0.05 || u.st.killMace) return false;
-  return Math.random() < (typeof window !== 'undefined' && window.__bwZDieAll ? 1 : FARM_ZDIE_P);
+  if (!u.kind.farmer || !u.clips || !u.clips.mZDie || !u.mixer || u.rag || u.st.gunHead || (u.st.killBlast || 0) > 0.05 || (u.st.killFling || 0) > 0.05 || u.st.killMace) return false;
+  return Math.random() < (typeof window !== 'undefined' && window.__bwZDieAll ? 1 : typeof window !== 'undefined' && window.__bwZDieAll === 0 ? 0 : FARM_ZDIE_P);
+}
+/* HIT HIM AS HE FALLS (2026-11-24, the owner: "make heavy hitting a farmer in the fall animation his body explodes into pieces mid
+ * animation make it cool and satisfying to hit"). A man dying on his feet (`farmZDie`) is dead, so no swing looked at him; now one
+ * that meets him (the aim line against his body, as any blow) ends the clip where he is. A HEAVY takes him apart along your swing —
+ * the head, limbs, often through the middle, a cone of meat and blood down the blow's line, the pieces and what is left thrown
+ * hard (`blastApart`'s anatomy, laid along the cut), with the kill's freeze and its slow beat. A cut knocks him over early, along
+ * it, and opens what it crossed. */
+const _zsA = new THREE.Vector3(), _zsB = new THREE.Vector3();
+function zDieStrike(P) {
+  const far = meleeReach(P);
+  aimRay(P);
+  let best = null, bt = Infinity;
+  /* (HIS BONES, NOT A STANDING MAN'S CAPSULE — 2026-11-26, the owner: "i cant hit the knights alot when in there death animation". The
+   * test was the living's: an upright capsule from his shins to his crown on `u.g.position`, and a man dying on his feet folds,
+   * goes to his knees and over — the swing at where he really was passed through empty capsule. Now the aim line against his big
+   * bones as the clip has them this frame (head, chest, hips, hands, knees, feet), each with a body's thickness round it.) */
+  const R0 = 0.36 + P * 0.12;
+  for (const u of mutants) {
+    if (!u.zDie || !u.model || !u.g.visible || u.rag) continue;
+    const L = u.zdBones || (u.zdBones = (() => { const out = []; u.model.traverse((o) => { if (o.isBone && /Head$|Head_|Spine2|Spine1|Hips|Hand$|Hand_|Leg$|Leg_|Foot$|Foot_|ForeArm|Arm$|Arm_/.test(o.name) && !/Finger|Thumb|Index|Middle|Ring|Pinky|HeadTop|Toe/.test(o.name)) out.push(o); }); return out; })());
+    u.model.updateMatrixWorld(true);
+    for (const b0 of L) {
+      b0.getWorldPosition(_zsB);
+      const t = _zsA.copy(_zsB).sub(_aimO).dot(_aimD); if (t < 0.05 || t > far + 0.3 || t >= bt) continue;
+      if (_zsA.copy(_aimO).addScaledVector(_aimD, t).distanceTo(_zsB) > R0) continue;
+      bt = t; best = u;
+    }
+  }
+  if (!best) return false;
+  const u = best, heavy = P >= MUT_HEAVY || digOverhead;
+  if (!(u.blow && performance.now() - u.blow.at < 350)) blowRecordAim(u);
+  const bl = blowBegin(u);
+  try {
+    try { blowSurface(u, P); } catch (e) {}
+    u.zDie = null; u.holdAnim = false; u.model.updateMatrixWorld(true);
+    blowHitDir(u, u.hitDir);
+    const dx = u.hitDir.x, dz = u.hitDir.z;
+    hitConnect(P, heavy ? 1.5 : 1.0);
+    if (isBlade()) playSample('katHit', 1.0, 0.05, 0.92); else playSample('smash', 0.9, 0.05, 0.8);
+    sfxKillThud(); sfxMutHit(u.kind.voice);
+    /* (ANY BLOW, AND OVER THE TOP — 2026-11-25, the owner: "have it more of a comically exaggerated explosion into pieces when
+     * hitting a farmer in the death animation make any hit do it not just heavies". Every blow that meets a man dying on his
+     * feet blows him apart now, harder than the heavy did: `blastApart` past its own top (1.6: every limb it can find, the
+     * head, through the middle most times, half again the meat), what the swing crossed cut off and thrown, the meat and the
+     * pieces popped UP as well as along (a fountain, not a spray), and what is left of him flung. A heavy is the bigger still.) */
+    const K = heavy ? 1.9 : 1.6, g0 = gibs.length;
+    u.st.killBlast = 1.0;                                               // (flies as a body blown apart: the ragdoll's own caps for it)
+    blastApart(u, dx, dz, K);
+    for (const pt of blowCutParts(u)) if (!u.gone[pt.bone]) mutSever(u, pt, dx, dz, 2.6 + K);
+    if (!u.gone[MUT_BISECT.bone] && Math.random() < 0.6) mutSever(u, MUT_BISECT, dx, dz, 2.2 + K);
+    for (let i = g0; i < gibs.length; i++) { const v = gibs[i].vel; if (!v) continue; v.x *= 1.25; v.z *= 1.25; v.y += 2.5 + Math.random() * 4.5; }
+    const top = u.g.position.y + (u.kind.h || 1.8) * 0.6;
+    sprayBlood(u.g.position.x, top, u.g.position.z, dx * 0.3, dz * 0.3, 60, 2.6);                       // (and a fountain out of the middle)
+    mutRagdoll(u, dx, dz, heavy ? 3.4 : 2.9);
+    addTrauma(heavy ? 0.8 : 0.6); hitstop = Math.max(hitstop, heavy ? 0.13 : 0.1); killSlow = KILL_SLOW; fovKick = Math.max(fovKick, heavy ? 10 : 7);
+  } finally { if (bl) blowEnd(); }
+  return true;
 }
 function farmZDieStart(u, dx, dz) {
   const a = u.clips.mZDie;
@@ -118756,12 +122437,30 @@ function farmZDieStart(u, dx, dz) {
   if (!u.zHip) u.model.traverse((o) => { if (!u.zHip && o.isBone && /Hips(_|$)/.test(o.name)) u.zHip = o; });
   u.zDie = { t: 0, dx, dz, dur: a.getClip().duration, hx: null, hz: null };
 }
+const _zdV = new THREE.Vector3(), _zdW = new THREE.Vector3();
 function farmZDieStep(u, dt) {
   const Z = u.zDie, a = u.clips.mZDie;
   Z.t += dt;
   u.mixer.update(dt);
   const h = u.zHip;
   if (h) { if (Z.hx === null) { Z.hx = h.position.x; Z.hz = h.position.z; } h.position.x = Z.hx; h.position.z = Z.hz; }   // (his hips held over where he stood)
+  /* AND HE FALLS ONTO THE FLOOR, NOT INTO IT (2026-11-24, the owner: "the fall animation for farmers he fell through the floor").
+   * Measured in the castle (`tools/castlecut.js`): through the clip his lowest joint went 0.68-0.94 m under the paving he stood
+   * on — the capture's hips come down further than his body is long. Each frame, after the clip has posed him, his hips are
+   * lifted by however far his lowest joint is under the floor he stood on (and a hand of flesh), so the fall is the clip's and
+   * the floor stays a floor; the ragdoll it ends in starts from that pose. */
+  if (h && u.model) {
+    u.model.updateMatrixWorld(true);
+    let lo = Infinity;
+    if (!u.zBones) { u.zBones = []; u.model.traverse((o) => { if (o.isBone && !/(Index|Middle|Ring|Pinky|Thumb|Toe_End|HeadTop_End)/.test(o.name)) u.zBones.push(o); }); }
+    for (const b of u.zBones) { b.getWorldPosition(_zdV); if (_zdV.y < lo) lo = _zdV.y; }
+    const lift = (u.g.position.y + 0.08) - lo;
+    if (lift > 0 && h.parent) {
+      h.getWorldPosition(_zdV); _zdW.copy(_zdV); _zdW.y += lift;
+      h.parent.worldToLocal(_zdV); h.parent.worldToLocal(_zdW);
+      h.position.add(_zdW.sub(_zdV));
+    }
+  }
   if (Z.t >= Z.dur * 0.94 || !a) { u.zDie = null; u.holdAnim = false; u.model.updateMatrixWorld(true); mutRagdoll(u, Z.dx, Z.dz, 0.12); }
 }
 /* ---- THE CUTS, MADE FOR YOUR EYE (2026-11-23, the owner: "make new swings" — "they dont even swing the blade at you and their moves dont
@@ -118783,6 +122482,9 @@ const FARM_IK_PATH = {   // start and end of each stroke from C, in (his right, 
   chop: [[0.16, 0.98, 0.34], [0.04, -0.98, -0.04]],
 };
 const FARM_IK_STOP = 1.55, FARM_IK_FRONT = 0.40, FARM_IK_CANT = 0.70;   // (where he stands from you; C off your eye; the blade's cant toward him: tan, ≈35°)
+const _fikI = new THREE.Vector3();
+const FARM_EDGE_IN = { chop: [0, -0.75], diag: [-0.55, -0.55], back: [0.55, -0.5], flat: [-0.75, -0.05] };   // (the line a cut comes in on: (his right, up) off the line to you)
+const FARM_EDGE_INL = 0.45, FARM_IK_WRIST_R = 0.5, FARM_EDGE_TILT_COS = Math.cos(50 * Math.PI / 180);   // m behind `C` on that line, the approach's control
 const _fikS = new THREE.Vector3(), _fikF = new THREE.Vector3(), _fikU = new THREE.Vector3(0, 1, 0), _fikR = new THREE.Vector3(), _fikC = new THREE.Vector3();
 const _fikA = new THREE.Vector3(), _fikB = new THREE.Vector3(), _fikK = new THREE.Vector3(), _fikP = new THREE.Vector3(), _fikM = new THREE.Vector3(), _fikD = new THREE.Vector3();
 const _fikE = new THREE.Vector3(), _fikG = new THREE.Vector3(), _fikH = new THREE.Vector3(), _fikL = new THREE.Vector3(), _fikT = new THREE.Vector3();
@@ -118798,35 +122500,167 @@ function fikAim(bone, child, to, w) {               // turn `bone` (world) so it
   bone.quaternion.copy(_fikQ2.multiply(_fikQ));
   bone.updateMatrixWorld(true);
 }
+/* ---- THE COMBOS' CUTS, LAID OUT AT YOU (2026-11-24, the owner: "THE FARMERS ARE NOT SWING THERE FUCKIN WEAPONS RIGHT … THE BLADE NEVER
+ * VISUALLY CONNECT … ANIMATIONS WHERE IT BARELY EVEN SWINGS"). Measured from your eye (`tools/farmarc.js`): the first combo's overhead swung
+ * 34-39° round his shoulder into its contact and stopped 0.4 m off your eye; its sweep swung 141° a metre away; the second combo's cuts came
+ * anywhere from 0.12 to 1.8 m off you. The captured club combos keep his body, his feet and their timing; the weapon arm is laid out for
+ * EACH of a combo's contacts as the single laid-out cuts are (a chamber behind his shoulder or high, through `C` — `FARM_IK_FRONT_C` in front
+ * of your eye — and out the far side, the edge leading), and between two cuts the hand is carried round to the next chamber over the top. */
+const FARM_IK_COMBO = { wcCombo1: ['chop', 'flat'], wcCombo2: ['diag', 'back'], wcCombo3: ['diag'] };
+const FARM_IK_COMBO_STOP = 1.05, FARM_IK_FRONT_C = 0.22, FARM_IK_LEAD_C = 0.16, FARM_IK_SHO_STOP = 0.78, FARM_IK_COMBO_MIN = 0.8;   // (1.25: `C` 1.2 m off his shoulder, out of what arm and blade reach)
+/* a combo's cuts laid out ROUND HIS SHOULDER (his right, up, toward you — metres from the shoulder), chambered as a real cut is: the hands by
+ * the shoulder, the blade high or back, a striking point ~0.65 m off it — then through `C` in front of your eye and on to a follow-through
+ * low on the far side, all inside what his arm and the blade reach (~1.15 m). Measured: a chamber laid out from `C` (1.3 m off his
+ * shoulder) was 0.6-0.8 m out of his reach, and the arm only found the path in the last tenth of a second — a 40° swing. */
+const FARM_IK_PATH_C = {
+  chop: [[0.1, 0.48, -0.48], [0.04, -0.72, 0.62]],
+  diag: [[0.42, 0.48, -0.38], [-0.55, -0.6, 0.6]],
+  back: [[-0.38, 0.5, -0.3], [0.62, -0.55, 0.55]],
+  flat: [[0.5, 0.14, -0.45], [-0.62, -0.06, 0.62]],
+};
+const _fikR0 = new THREE.Vector3(), _fikR1 = new THREE.Vector3(), _fikRc = new THREE.Vector3();
+const FARM_EDGE_RATE = 45;   // rad/s the weapon may turn about its haft to set its edge
+/* THE EDGE, LAST (2026-11-25): the arm's smoothing (`farmArmSmooth`) rate-limits the hand, and the IK's own turn is blended by its
+ * weight, so the bit came in 30-90° off its travel and, at the contact, mostly turned away from you (measured, `tools/farmarc.js`).
+ * After everything else has moved the arm this frame, the weapon is turned about its own haft (the grip does not move) until its
+ * edge lies on `u.fikEdgeW`; a two-edged blade (the sword, Axe_01's double bit) with whichever edge is nearer. */
+const _fesQ = new THREE.Quaternion(), _fesA = new THREE.Vector3(), _fesE = new THREE.Vector3(), _fesD = new THREE.Vector3(), _fesX = new THREE.Vector3(), _fesR = new THREE.Quaternion();
+const _fesH = new THREE.Vector3(), _fesV = new THREE.Vector3();
+const FARM_SW_SET = new Set(['wcSwAtk', 'wcSwC', 'wcSwCombo', 'wcSwDash']);   // (the owner's Mesh2Motion set: swung as captured)
+function farmEdgeSet(u, dt) {
+  const mesh = u.farmTool, B = u.farmToolBase, W = u.farmW || FARM_TOOLS[u.kind.tool];
+  /* (THE VIDEO'S BIG CUT is swung by its clip, not laid out, so no cut's line steers its bit — measured, `tools/farmarc.js&only=wcSwAtk`:
+   * 8/8 landed but the bit side-on to you at the contact, median 75°. A clip's arm moves smoothly (it is the IK's catching-up that made
+   * a measured travel jitter), so here the head's own travel, eased, is the line the edge is turned onto.) */
+  let clipEdge = false;
+  if (!u.farmIKOn && FARM_SW_SET.has(u.st.swing) && u.st.atk >= 0 && u.st.alive && !u.rag && u.bones && u.bones.tip && u.atk && u.atk[u.st.swing] && dt > 0) {
+    const A = u.atk[u.st.swing], t = u.st.atk, last = Math.max(A.wind, ...(A.moreT || []));
+    u.bones.tip.getWorldPosition(_fesH);
+    if (u.fswPrev) { _fesV.subVectors(_fesH, u.fswPrev).multiplyScalar(1 / dt); (u.fswVel || (u.fswVel = _fesV.clone())).lerp(_fesV, Math.min(1, dt * 18)); }
+    (u.fswPrev || (u.fswPrev = new THREE.Vector3())).copy(_fesH);
+    if (u.fswVel && u.fswVel.lengthSq() > 1) {
+      (u.fikEdgeW || (u.fikEdgeW = new THREE.Vector3())).copy(u.fswVel).normalize();
+      u.fikEdgeK = THREE.MathUtils.smoothstep(t, A.wind * 0.35, A.wind * 0.85) * (1 - THREE.MathUtils.smoothstep(t, last + A.strike + 0.05, last + A.strike + 0.35));
+      clipEdge = true;
+    }
+  } else if (u.fswPrev) { u.fswPrev = null; u.fswVel = null; }
+  if (!(u.farmIKOn || clipEdge) || !u.fikEdgeW || !mesh || !B || !W || !W.edge || !mesh.parent) { u.fikRollA = 0; return; }
+  mesh.parent.getWorldQuaternion(_fesQ).multiply(B.q);
+  _fesA.copy(W.ax).applyQuaternion(_fesQ).normalize(); _fesE.copy(W.bT).applyQuaternion(_fesQ);
+  /* (steered by the CUT's line, not the head's measured motion: the arm's catching up jitters the head frame to frame — its travel
+   * flipped 0-68° between frames at up to 25 m/s, measured — and a bit chasing that twitched ±60° a frame. The cut's line is smooth,
+   * and since 2026-11-25 it comes in AT you, so along it and at you are one direction through the contact.) */
+  _fesD.copy(u.fikEdgeW);
+  _fesD.addScaledVector(_fesA, -_fesD.dot(_fesA));
+  if (_fesD.lengthSq() < 1e-6) return;
+  _fesD.normalize();
+  let ang = Math.atan2(_fesA.dot(_fesX.crossVectors(_fesE, _fesD)), _fesE.dot(_fesD));
+  if (W.two && Math.abs(ang) > Math.PI / 2) ang -= Math.sign(ang) * Math.PI;
+  ang *= Math.min(1, (u.fikEdgeK || 0) * 1.5);
+  const mx = FARM_EDGE_RATE * Math.min(Math.max(dt, 1 / 240), 1 / 20), a0 = u.fikRollA || 0;
+  let dA = ang - a0; dA = Math.atan2(Math.sin(dA), Math.cos(dA));
+  u.fikRollA = a0 + THREE.MathUtils.clamp(dA, -mx, mx);
+  mesh.position.copy(B.p); mesh.quaternion.copy(B.q).multiply(_fesR.setFromAxisAngle(W.ax, u.fikRollA));
+  mesh.updateMatrixWorld(true);
+}
 function farmSwingIK(u, dt) {
-  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null, kind = A ? FARM_IK[st.swing] : null;
-  if (!kind || st.foe || u.rag || !u.bones || !u.bones.arm || !u.bones.fore || !u.bones.hand || !u.bones.tip || !u.farmToolBase) { u.farmIKOn = false; return; }
+  const st = u.st, A = st.alive && st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
+  const combo = A && u.farmTool ? FARM_IK_COMBO[st.swing] : null, kind0 = A ? (combo ? combo[0] : FARM_IK[st.swing]) : null;
+  if (!kind0 || st.foe || u.rag || !u.bones || !u.bones.arm || !u.bones.fore || !u.bones.hand || !u.bones.tip || !u.farmToolBase) { u.farmIKOn = false; return; }
   const W = u.farmW || FARM_TOOLS[u.kind.tool], mesh = u.farmTool, B = u.farmToolBase, arm = u.bones.arm, fore = u.bones.fore, hand = u.bones.hand;
-  const t = st.atk, wind = A.wind, strike = A.strike, rec = A.recover || 0.4;
-  const w = THREE.MathUtils.smoothstep(t, wind * 0.15, wind * 0.7) * (1 - THREE.MathUtils.smoothstep(t, wind + strike + 0.02, wind + strike + Math.max(0.15, rec * 0.6)));
+  const t = st.atk, strike = A.strike, rec = A.recover || 0.4;
+  // which cut of the swing this is: the contacts in its time, the one whose midpoint to the next has not passed
+  const CT = combo ? [A.wind, ...(A.moreT || [])].slice(0, combo.length) : [A.wind];
+  let seg = 0; while (seg < CT.length - 1 && t > (CT[seg] + strike + CT[seg + 1]) * 0.5) seg++;
+  const kind = combo ? combo[seg] : kind0, wind = CT[seg], last = CT[CT.length - 1];
+  const LEAD = combo ? FARM_IK_LEAD_C : FARM_IK_LEAD, FRONT = combo ? FARM_IK_FRONT_C : FARM_IK_FRONT;
+  const w = THREE.MathUtils.smoothstep(t, A.wind * 0.15, A.wind * 0.7) * (1 - THREE.MathUtils.smoothstep(t, last + strike + 0.02, last + strike + Math.max(0.15, rec * 0.6)));
+  /* (THE STEP IN — a cut is thrown with a step on the lead foot: a combo starts at the edge of his reach, ~1.9 m, and the capture's own travel
+   * is not his, so its cuts reached for you from where he stood and swung 25-70° at the air. Through the wind of each cut he closes to
+   * `FARM_IK_COMBO_STOP`, arriving as the blade does; never through you, never faster than a lunge.) */
+  if (combo && !u.cpAir) {
+    const tc = CT[seg] - t;
+    if (tc > 0.02 && tc < 1.2) {
+      /* (and by his SHOULDER, not only his feet: a capture that leans back into its wind — combo 2's first cut — carried the shoulder
+       * 0.4 m further off, `C` 1.2-1.3 m from it and the cut 0.5 m short of you. Never nearer than `FARM_IK_COMBO_MIN`.) */
+      arm.getWorldPosition(_fikS);
+      const p = u.g.position, dx = camera.position.x - p.x, dz = camera.position.z - p.z, dd = Math.hypot(dx, dz) || 1;
+      const sd = Math.hypot(camera.position.x - _fikS.x, camera.position.z - _fikS.z), gap = Math.min(dd - FARM_IK_COMBO_MIN, Math.max(dd - FARM_IK_COMBO_STOP, sd - FARM_IK_SHO_STOP - (W.bitW || 0)));
+      /* (and BACK, a little, when his shoulder is too near you for the cut to be folded in — an axe's cut stops a bit's width short
+       * of you, and at 0.56 m off his shoulder the arm could not fold round it: the hand missed its path by 0.44 m and the bit came in
+       * sideways, measured) */
+      const back = FARM_IK_SHO_STOP + (W.bitW || 0) * 0.8 - sd;
+      if (gap <= 0.02 && back > 0.03) { const v = Math.min(2.0, back / tc) * Math.min(1, dt * 60) * dt; p.x -= dx / dd * v; p.z -= dz / dd * v; if (u.kind.fortBody && fortWalls) fortClampUnit(u, p); }
+      if (gap > 0.02) { const v = Math.min(3.6, gap / tc) * Math.min(1, dt * 60) * dt; p.x += dx / dd * v; p.z += dz / dd * v; if (u.kind.fortBody && fortWalls) fortClampUnit(u, p); }
+    }
+  }
   if (w < 0.01) { u.farmIKOn = false; u.fikWas = false; return; }
   u.farmIKOn = true;
   mesh.position.copy(B.p); mesh.quaternion.copy(B.q);               // (the seat in the fist: the hand holds the angle, not a roll in it)
   u.model.updateMatrixWorld(true);
   // the frame: his shoulder, the line to your eye, his right
   arm.getWorldPosition(_fikS);
-  const eye = camera.position;
+  /* (the eye it cuts at is held from the contact through the follow-through — 2026-11-25. A landed blow knocks your view back, and a cut
+   * aimed at the camera every frame chased it: measured frame by frame (`farmarc.js&frames=1`), edge-on to you (flat 0-10° to your line
+   * of sight) up to the contact, then through the hit's hold the bit swung up to a metre off and turned 50-85° flat to you, the hand
+   * 0.2-0.4 m off its path. The hold is the frame you see the hit on.) */
+  const tHold = combo ? wind : wind + strike * 0.5, E0 = u.fikEye || (u.fikEye = new THREE.Vector3());
+  if (t < tHold || u.fikEyeSeg !== seg || u.fikEyeSw !== st.swing) { E0.copy(camera.position); u.fikEyeSeg = seg; u.fikEyeSw = st.swing; }
+  const eye = E0;
   _fikF.set(eye.x - _fikS.x, 0, eye.z - _fikS.z); const fl = _fikF.length() || 1; _fikF.multiplyScalar(1 / fl);
   _fikR.crossVectors(_fikF, _fikU);
-  _fikC.copy(eye).addScaledVector(_fikF, -FARM_IK_FRONT);
-  const P0 = FARM_IK_PATH[kind][0], P1 = FARM_IK_PATH[kind][1];
+  /* (the line the cut comes IN on — 2026-11-25, the owner: "the blade of the axe … should be facing right at the player when swung at
+   * him". It used to pass `C` sweeping ACROSS your face, 30-90° off the line to your eye, so a bit leading its travel was turned to the
+   * side of you and one turned to you was off its travel. Now each cut arrives along `_fikI` — at you, tilted the way the cut falls —
+   * and `C` is on that line, so the bit leads AND faces you.) */
+  /* (and WHERE on that line: a swing turns about his shoulder, so where it travels at you its reach is square to its travel — `C` is on the
+   * circle over his shoulder and your eye (Thales), tilted off the line between them the way the cut falls (`FARM_EDGE_IN`). A fixed tilt
+   * had the flat cut and the backhand travelling along his reach, which no arm does: the hand missed its path by 0.45-0.65 m.) */
+  const IN = FARM_EDGE_IN[kind] || FARM_EDGE_IN.diag, rC = FRONT + (W.bitW || 0);   // (an axe's bit stands ~0.2 m off its haft, edge toward you: the EDGE stops at `FRONT`)
+  _fikH.subVectors(eye, _fikS); const dES = _fikH.length() || 1; _fikH.multiplyScalar(1 / dES);
+  _fikI.set(0, 0, 0).addScaledVector(_fikR, IN[0]).addScaledVector(_fikU, IN[1]); _fikI.addScaledVector(_fikH, -_fikI.dot(_fikH)).normalize();
+  { const ca = THREE.MathUtils.clamp(rC / dES, FARM_EDGE_TILT_COS, 0.97); _fikI.multiplyScalar(Math.sqrt(1 - ca * ca)).addScaledVector(_fikH, ca); }   // (but never so far off the line to you that the contact is out of your view: square to his reach, an axe's was 64° off it — above the picture on a chop, beside it on a flat cut)
+  _fikC.copy(eye).addScaledVector(_fikI, -rC);
   const at = (q, out) => out.copy(_fikC).addScaledVector(_fikR, q[0]).addScaledVector(_fikU, q[1]).addScaledVector(_fikF, -q[2]);
-  at(P0, _fikA); at(P1, _fikB);
-  _fikK.copy(_fikC).multiplyScalar(2).sub(_fikP.addVectors(_fikA, _fikB).multiplyScalar(0.5));   // the bezier's control: it passes C halfway
-  const s0 = wind - FARM_IK_LEAD, s1 = wind + strike + FARM_IK_LEAD;   // (the sweep a little longer than the strike either side, its middle — `C` — the strike's: a 0.10 s strike swept the whole path in six frames)
-  const s = THREE.MathUtils.clamp((t - s0) / Math.max(0.1, s1 - s0), 0, 1);
-  const se = s * s * (3 - 2 * s) * 0.35 + s * 0.65;                                                // (quick through the middle, as a cut is)
-  const b0 = (1 - se) * (1 - se), b1 = 2 * se * (1 - se), b2 = se * se;
-  _fikP.set(0, 0, 0).addScaledVector(_fikA, b0).addScaledVector(_fikK, b1).addScaledVector(_fikB, b2);   // the blade's striking point
-  // its travel there (the derivative), and the blade square to it and to you, canted toward him
-  _fikM.set(0, 0, 0).addScaledVector(_fikA, -2 * (1 - se)).addScaledVector(_fikK, 2 * (1 - 2 * se)).addScaledVector(_fikB, 2 * se).normalize();
+  const PATHS = combo ? FARM_IK_PATH_C : FARM_IK_PATH, P0 = PATHS[kind][0], P1 = PATHS[kind][1];
+  const atS = (q, out) => out.copy(_fikS).addScaledVector(_fikR, q[0]).addScaledVector(_fikU, q[1]).addScaledVector(_fikF, q[2]);   // (round his shoulder)
+  if (combo) { atS(P0, _fikA); atS(P1, _fikB); } else { at(P0, _fikA); at(P1, _fikB); }
+  _fikK.copy(_fikC).addScaledVector(_fikI, -FARM_EDGE_INL);   // the approach's control: behind `C` on the line in, so it arrives along it
+  // (a combo's cut passes `C` ON its contact frame; the single cuts' at the strike's middle)
+  const s0 = combo ? wind - LEAD : wind - LEAD, s1 = combo ? wind + LEAD : wind + strike + LEAD;   // (the sweep a little longer than the strike either side, its middle — `C` — the strike's: a 0.10 s strike swept the whole path in six frames)
+  const prevEnd = seg > 0 ? CT[seg - 1] + LEAD : -1;   // (the last cut's sweep ended LEAD after its contact)
+  if (seg > 0 && t < s0) {
+    /* between two cuts: from where the last one ended round to this one's chamber, over the top (a man resets his weapon high, he does
+     * not drag it back through you) */
+    atS(FARM_IK_PATH_C[combo[seg - 1]][1], _fikR0); atS(P0, _fikR1);
+    _fikRc.addVectors(_fikR0, _fikR1).multiplyScalar(0.5).addScaledVector(_fikU, 0.3).addScaledVector(_fikF, -0.1);
+    const r = THREE.MathUtils.smoothstep(t, prevEnd, Math.max(prevEnd + 0.05, s0)), q0 = (1 - r) * (1 - r), q1 = 2 * r * (1 - r), q2 = r * r;
+    _fikP.set(0, 0, 0).addScaledVector(_fikR0, q0).addScaledVector(_fikRc, q1).addScaledVector(_fikR1, q2);
+    _fikM.set(0, 0, 0).addScaledVector(_fikR0, -2 * (1 - r)).addScaledVector(_fikRc, 2 * (1 - 2 * r)).addScaledVector(_fikR1, 2 * r);
+    // (the blade's line through the reset: the next cut's own line at its start, so it arrives already set)
+    _fikM.set(0, 0, 0).addScaledVector(_fikA, -2).addScaledVector(_fikK, 2).normalize();
+  } else {
+    /* the cut in two: the APPROACH, round from the chamber and in on you, gathering speed, to `C` on the contact frame; then the
+     * FOLLOW-THROUGH, from `C` peeled off low past you to the cut's end (never on through the lens) */
+    const tcn = combo ? wind : wind + strike * 0.5;
+    let p0 = _fikA, p1 = _fikK, p2 = _fikC, e;
+    if (t <= tcn) { const a = THREE.MathUtils.clamp((t - s0) / Math.max(0.05, tcn - s0), 0, 1); e = a * (0.5 + 0.5 * a); }
+    else {
+      const a = THREE.MathUtils.clamp((t - tcn) / Math.max(0.05, s1 - tcn), 0, 1); e = a * (1.5 - 0.5 * a);
+      _fikH.copy(_fikC).lerp(_fikB, 0.5).addScaledVector(_fikI, -0.12); p0 = _fikC; p1 = _fikH; p2 = _fikB;
+    }
+    const b0 = (1 - e) * (1 - e), b1 = 2 * e * (1 - e), b2 = e * e;
+    _fikP.set(0, 0, 0).addScaledVector(p0, b0).addScaledVector(p1, b1).addScaledVector(p2, b2);   // the blade's striking point
+    _fikM.set(0, 0, 0).addScaledVector(p0, -2 * (1 - e)).addScaledVector(p1, 2 * (1 - 2 * e)).addScaledVector(p2, 2 * e).normalize();   // its travel
+    /* (the blade keeps the line it came in on through the hit and into the follow-through, then turns with it: the follow-through starts
+     * low and past you, up to 90° off that line, and taken at once it turned the bit flat to you ON the contact frame — held there for
+     * the hit's 0.2 s hold, which is the frame you see the hit on; measured, flat 0-10° to your line of sight before, 50-85° after) */
+    if (t > tcn) { const a2 = THREE.MathUtils.clamp((t - tcn) / Math.max(0.05, s1 - tcn), 0, 1); _fikM.lerp(_fikI, 1 - THREE.MathUtils.smoothstep(a2, 0.2, 0.7)).normalize(); }
+  }
+  (u.fikP || (u.fikP = new THREE.Vector3())).copy(_fikP);   // (where the cut wants its striking point: a probe reads it)
   _fikD.crossVectors(_fikM, _fikF).normalize();
-  const newSwing = !u.fikWas || u.fikSwing !== st.swing || t < (u.fikT0 ?? 9);
+  const newSwing = !u.fikWas || u.fikSwing !== st.swing || t < (u.fikT0 ?? 9) || u.fikSeg !== seg;
+  u.fikSeg = seg;
   u.fikT0 = t;
   if (newSwing) {                                                                                  // (which way along it, once a swing: the grip nearer his shoulder)
     u.fikSwing = st.swing; u.fikEdge = 0;
@@ -118835,8 +122669,18 @@ function farmSwingIK(u, dt) {
     u.fikSign = h1 <= h2 ? 1 : -1;
   }
   _fikD.multiplyScalar(u.fikSign).addScaledVector(_fikF, FARM_IK_CANT).normalize();               // butt → point, the point away from him
+  /* (and the haft, 2026-11-25: out from his shoulder through the striking point, square to the travel — the blade's plane holds the haft
+   * and the way it moves, as a real cut's does. Square to the travel AND to you, as it was, is undefined once the cut comes at you.) */
+  _fikH.subVectors(_fikP, _fikS); _fikH.addScaledVector(_fikM, -_fikH.dot(_fikM));
+  const Rr = _fikH.length();
+  if (Rr > 0.12) {   // (folded off his reach, still square to the travel, so the wrist stands `FARM_IK_WRIST_R` off his shoulder; the head up)
+    _fikH.multiplyScalar(1 / Rr);
+    const L = u.fikLen || 0.6, cp = THREE.MathUtils.clamp((Rr * Rr + L * L - FARM_IK_WRIST_R * FARM_IK_WRIST_R) / (2 * Rr * L), -1, 1);
+    _fikG.crossVectors(_fikM, _fikH).normalize(); if (_fikG.y < 0) _fikG.negate();
+    _fikD.copy(_fikH).multiplyScalar(cp).addScaledVector(_fikG, Math.sqrt(1 - cp * cp)).normalize();
+  }
   // the wrist: back along the blade from the striking point (its share of the weapon, off the seat once measured)
-  if (!u.fikLen) { hand.getWorldPosition(_fikG); u.bones.tip.getWorldPosition(_fikH); u.fikLen = Math.max(0.3, _fikG.distanceTo(_fikH) * (W.two ? 0.62 : 0.86)); }
+  if (!u.fikLen) { hand.getWorldPosition(_fikG); u.bones.tip.getWorldPosition(_fikH); u.fikLen = Math.max(0.3, _fikG.distanceTo(_fikH) * (farmIsSword(u, W) ? 0.62 : 0.86)); }
   _fikG.copy(_fikP).addScaledVector(_fikD, -u.fikLen);
   // two bones: shoulder → elbow → wrist, the elbow out and down
   fore.getWorldPosition(_fikE); hand.getWorldPosition(_fikH);
@@ -118853,7 +122697,20 @@ function farmSwingIK(u, dt) {
   // the hand turned so the weapon lies along the blade's line with its edge (the bit) leading
   _fikQa.copy(B.q);                                                    // the seat: the weapon's frame in the hand's
   const axH = _fikA.copy(W.ax).applyQuaternion(_fikQa).normalize(), edH = _fikB.copy(W.bT).applyQuaternion(_fikQa).normalize();
+  /* (THE BIT LEADS, AND FACES YOU AS IT ARRIVES — 2026-11-25, the owner: "the blade of the axe it turned to the left it should be facing
+   * right at the player when swung at him". The edge lies along the cut's travel, square to the haft; the cut comes in on you along
+   * `_fikI`, so on the contact frame along its travel IS at you. `farmEdgeSet` finishes the turn on the weapon itself, after the arm's
+   * last smoothing. (A blend onto the line to your eye through the last 0.2 s turned the bit off its travel while the cut still curved in.)) */
   const eW = _fikK.copy(_fikM).addScaledVector(_fikD, -_fikM.dot(_fikD)).normalize();
+  /* (from the contact into the follow-through the edge points from where the bit IS to your eye, easing back onto its travel: the bit
+   * slides a few cm on through the hit's hold, and 0.22 m from your eye that turned the line it came in on 30-60° off your line of
+   * sight — the setter was exact, its target was not) */
+  if (t > tHold) {
+    const kH = 1 - THREE.MathUtils.smoothstep(t, tHold + 0.03, tHold + 0.03 + Math.max(0.05, (combo ? LEAD : strike * 0.5 + LEAD)) * 0.7);
+    if (kH > 0.001) { _fikG.copy(_fikP).addScaledVector(eW, W.bitW || 0); _fikH.subVectors(eye, _fikG); _fikH.addScaledVector(_fikD, -_fikH.dot(_fikD));
+      if (_fikH.lengthSq() > 1e-6 && _fikH.dot(eW) > 0) { _fikH.normalize(); eW.lerp(_fikH, kH).addScaledVector(_fikD, -eW.dot(_fikD)).normalize(); } }
+  }
+  (u.fikEdgeW || (u.fikEdgeW = new THREE.Vector3())).copy(eW); u.fikEdgeK = w;
   if (W.two) {                                                         // (two edges: whichever was nearer as the swing began — chosen ONCE, or it flipped mid-stroke)
     if (!u.fikEdge) { hand.getWorldQuaternion(_fikQ); u.fikEdge = _fikP.copy(edH).applyQuaternion(_fikQ).dot(eW) < 0 ? -1 : 1; }
     if (u.fikEdge < 0) eW.negate();
@@ -118876,11 +122733,12 @@ function farmSwingIK(u, dt) {
 function farmArmSmooth(u, dt) {
   const Bn = u.bones; if (!Bn || !Bn.arm || !Bn.fore || !Bn.hand || !u.farmTool) return;
   const P = u.fikPrev || (u.fikPrev = { a: new THREE.Quaternion(), f: new THREE.Quaternion(), h: new THREE.Quaternion(), on: false });
-  if (P.on && u.st.alive && !u.rag) {
+  if (P.on && u.st.alive && !u.rag && !window.__bwNoArmSmooth) {
     // (fast only through the blow itself; the wind, the recovery and the carry at an arm's ordinary pace — the captured strokes' chambers
     // snapped up at 0.35-0.44 m of tip a frame)
     const A = u.st.atk >= 0 && u.atk ? u.atk[u.st.swing] : null, t = u.st.atk;
-    const inBlow = A && t >= A.wind - FARM_IK_LEAD - 0.05 && t <= A.wind + A.strike + FARM_IK_LEAD + 0.05;
+    const lastC = A && A.moreT && FARM_IK_COMBO[u.st.swing] ? Math.max(A.wind, ...A.moreT.slice(0, FARM_IK_COMBO[u.st.swing].length - 1)) : A ? A.wind : 0;
+    const inBlow = A && t >= A.wind - FARM_IK_LEAD_C - 0.05 && t <= lastC + A.strike + FARM_IK_LEAD_C + 0.05;   // (a combo's every cut and the resets between them: 2026-11-24)
     const mx = (inBlow ? FARM_IK_RATE : FARM_ARM_RATE) * Math.min(Math.max(dt, 1 / 240), 1 / 20);
     Bn.arm.quaternion.copy(_fikQ.copy(P.a).rotateTowards(Bn.arm.quaternion, mx));
     Bn.fore.quaternion.copy(_fikQ.copy(P.f).rotateTowards(Bn.fore.quaternion, mx));
@@ -118891,7 +122749,7 @@ function farmArmSmooth(u, dt) {
 }
 const FARM_IK_LEAD = 0.09;
 const FARM_ARM_RATE = 11;   // rad/s outside the blow (≈ 630°/s)
-const FARM_IK_RATE = 24;   // rad/s a bone may turn in a laid-out cut (≈ 1400°/s: a fast cut's arm turns ~600°/s; 14.5 lagged the blade off the path and 5 of 8 sword cuts missed)
+const FARM_IK_RATE = 60;   // (24 until 2026-11-25: the cuts that come IN on you turn the arm harder, and at 24 the hand trailed them 0.4-0.7 m and the bit came in 30-75° off its travel) rad/s a bone may turn in a laid-out cut (≈ 1400°/s: a fast cut's arm turns ~600°/s; 14.5 lagged the blade off the path and 5 of 8 sword cuts missed)
 const _fwrT = new THREE.Vector3(), _fwrQ = new THREE.Quaternion(), _fwrR = new THREE.Quaternion();
 function farmToolRoll(u, dt) {
   const mesh = u.farmTool, B = u.farmToolBase, W = u.farmW || FARM_TOOLS[u.kind.tool];
@@ -118912,32 +122770,42 @@ function farmToolRoll(u, dt) {
   const R = u.farmRoll || (u.farmRoll = { ang: 0, tip: null, learn: {}, swing: null, want: 0 });
   const turns = !!W.edge, two = !!W.two, tipB = u.bones && u.bones.tip;   // (a sword either edge; the pack's axes one bit, which must lead: up to half a turn, set once at the swing's start, eased in through the draw)
   if (A && turns && !(A.limbs && A.limbs.some((i) => i >= 2))) {
-    const t = st.atk, end = A.wind + A.strike;
-    if (R.swing !== st.swing || t < 0.05) {                       // a new swing: its angle is fixed now
-      R.swing = st.swing;
-      const L = R.learn[st.swing];
-      /* (one bit, and this stroke not thrown yet: the turn measured on his own clip when he was dressed — `farmRollMeasure`, taken
-       * before his seat's roll — so the FIRST of each stroke leads with the bit too: measured, the first blows of a stroke came in
-       * 0.10 and −0.15 of the way to bit-first, learned ones 0.5) */
-      const seed = !two && u.farmRollK && typeof u.farmRollK[st.swing] === 'number' ? u.farmRollK[st.swing] - (u.farmSeatRoll || 0) : 0;
-      const th = L ? Math.atan2(L.s, L.c) / (two ? 2 : 1) : seed;  // (axial for two edges: within a quarter turn either way)
-      R.want = th;
+    /* (EACH CUT OF A COMBO SETS ITS OWN EDGE — 2026-11-24, the owner: "readjust their hit animations so the blade hits the player and
+     * is swung at the player". One angle a swing could lead with the edge for one of a combo's cuts only: the first combo is an
+     * overhead and then a sweep, and its edge led 0.55 of the way, the sword's other edge as often. Every contact now has its own
+     * turn — learned, as before, from how the head travels into THAT contact in play — and the wrist turns from one to the next
+     * between them, as a man resets his edge for the next cut.) */
+    const t = st.atk, C = [A.wind, ...(A.moreT || [])], last = C[C.length - 1], end = last + A.strike;
+    let j = 0; while (j < C.length - 1 && t > (C[j] + A.strike + C[j + 1]) * 0.5 - 0.06) j++;
+    if (R.swing !== st.swing || t < 0.05) { R.swing = st.swing; R.seg = -1; R.prev = 0; }
+    if (R.seg !== j) {                                            // a new cut: its angle is fixed now
+      R.prev = R.seg < 0 ? 0 : R.want; R.seg = j; R.segAt = t;
+      const L = R.learn[st.swing + '#' + j];
+      /* (one bit, this cut not thrown yet: the first cut's turn measured on his own clip when he was dressed — `farmRollMeasure`,
+       * before his seat's roll — so the FIRST of each stroke leads with the bit too) */
+      const seed = j === 0 && !two && u.farmRollK && typeof u.farmRollK[st.swing] === 'number' ? u.farmRollK[st.swing] - (u.farmSeatRoll || 0) : 0;
+      R.want = L ? Math.atan2(L.s, L.c) / (two ? 2 : 1) : seed;    // (axial for two edges: within a quarter turn either way)
     }
-    // learn from the stroke's fast part into the contact, in the seated frame
-    if (tipB && R.tip && t > A.wind - 0.08 && t < end && dt > 0) {
+    /* learn from each cut's fast part INTO its contact, in the seated frame — (2026-11-24) only the approach: the follow-through
+     * after it travels another way, and the held frames of a hit (`hitstopFrame`) move the head by noise; measured, learning
+     * from them turned a blade that came in 0.85-1.0 edge-first on its first blow to 0.29-0.95 on its second */
+    if (tipB && R.tip && t > C[j] - 0.12 && t <= C[j] + 0.02 && dt > 0 && !hitstopFrame) {
       tipB.getWorldPosition(_fwrT); _fwrT.sub(R.tip);
       if (_fwrT.length() / dt > 1.2) {
         mesh.parent.getWorldQuaternion(_fwrQ).multiply(B.q).invert();
         _fwrT.applyQuaternion(_fwrQ);
         const pl = Math.hypot(_fwrT.x, _fwrT.z);
         if (pl > 1e-4) {
-          const th = Math.atan2(-_fwrT.z, _fwrT.x) * (two ? 2 : 1), L = R.learn[st.swing] || (R.learn[st.swing] = { c: 0, s: 0 });
+          const k = st.swing + '#' + j, th = Math.atan2(-_fwrT.z, _fwrT.x) * (two ? 2 : 1), L = R.learn[k] || (R.learn[k] = { c: 0, s: 0 });
           L.c = L.c * 0.85 + Math.cos(th) * pl; L.s = L.s * 0.85 + Math.sin(th) * pl;
         }
       }
     }
+    // the turn: eased in through the draw for the first cut; from one cut's angle to the next between them; out after the last
     const w = THREE.MathUtils.smoothstep(t, 0.06, Math.max(0.1, A.wind - 0.12)) * (1 - THREE.MathUtils.smoothstep(t, end + 0.05, end + Math.max(0.2, (A.recover || 0.4) * 0.6)));
-    R.ang = R.want * w;
+    let want = R.want;
+    if (j > 0) { const from = C[j - 1] + A.strike, to = Math.max(from + 0.05, C[j] - 0.1); want = R.prev + (R.want - R.prev) * THREE.MathUtils.smoothstep(t, from, to); }
+    R.ang = want * w;
   } else {
     R.ang += (0 - R.ang) * Math.min(1, dt * 6); R.swing = null;
   }
@@ -118960,19 +122828,50 @@ queueMicrotask(() => window.__bw && Object.assign(window.__bw, { FARM_CARRY }));
  * when held". The sword was carried 55° up off level and the axe 70°: a torch, not a weapon. A sword is held in a guard, point at the
  * man in front of you a little high — the "plough" (`Pflug`) of the manuals, hilt by the hip and the point at the face — and a
  * one-handed axe ready across the body, haft forward at about 45°, the bit up and to the front.) */
-const FARM_CARRY = {
-  sword:  { f: 0.84, u: 0.46, r: -0.12 },
-  axe:    { f: 0.66, u: 0.62, r: 0.04 },
-  hammer: { f: 0.66, u: 0.62, r: 0.04 },
+const FARM_CARRY = {   // (the picture's: forward and about 50° up, blade or head high, the pommel under the fist — 2026-11-24; it was 28° for a sword)
+  sword:  { f: 0.62, u: 0.77, r: -0.10 },
+  axe:    { f: 0.62, u: 0.77, r: 0.04 },
+  hammer: { f: 0.62, u: 0.77, r: 0.04 },
   rake:   { f: 0.93, u: 0.30, r: 0.06 },
 };
 const _fcyQ = new THREE.Quaternion(), _fcyP = new THREE.Quaternion(), _fcyD = new THREE.Quaternion(), _fcyM = new THREE.Matrix4();
 const _fcyX = new THREE.Vector3(), _fcyY = new THREE.Vector3(), _fcyZ = new THREE.Vector3(), _fcyF = new THREE.Vector3(), _fcyG = new THREE.Vector3(), _fcyS = new THREE.Vector3();
 /* run AFTER the creatures' mixers (`update` → `updateMutant`): the carry is set against where the hand IS this frame — before
  * them, it was a frame behind the run's arm and shook */
+/* THE VIDEO'S GRIP (2026-11-25, the owner, of Mesh2Motion's Sword_Attack and Idle_Sword: "make sure they hold their weapons and swing
+ * like the video … fix his weapon holding"). With the hands retargeted true (`tools/swhand.js`: the fist's roll within 2° of the
+ * video's), the handle still sat at the owner's 11-24 seat, ~132° off the forearm — the axe stood up out of the fist at the guard and
+ * lay out sideways through the lunge, where the video holds it square through the fist. While either of those clips plays the seat
+ * is turned FARM_SW_SEAT about the palm's normal (the grip point held, as `farmSeatTurnS`), eased in and out over a fifth of a second;
+ * every other move keeps the owner's seat. (+0.73 against 0 and -0.73, filmed beside the video: `tools/farmcombo.js&turns=`.) */
+const FARM_SW_SEAT = 0.73;
+const _fswG = new THREE.Vector3(), _fswG1 = new THREE.Vector3(), _fswQ = new THREE.Quaternion(), _fswZ = new THREE.Vector3(0, 0, 1);
+function farmSwClipK(u) {
+  const c = u.clips; if (!c) return 0;
+  // (every action playing either clip: his idle is played under its alias, `idle`, not as `mSwIdle`)
+  const nc = Object.keys(c).length;   // (the mocap clips arrive late, `parLate`: the list is drawn again when the set grows)
+  if (!u.fswActs || u.fswN !== nc) { u.fswN = nc; const want = [c.mSwIdle, c.mSwAtk, c.mSwB, c.mSwC, c.mSwCombo, c.mSwDash].filter(Boolean).map((a) => a.getClip()); u.fswActs = Object.values(c).filter((a) => a && a.getClip && want.includes(a.getClip())); }
+  let k = 0; for (const a of u.fswActs) if (a.enabled && a.isRunning()) k += a.getEffectiveWeight();
+  return Math.min(1, k);
+}
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { farmSwClipKS: (u) => farmSwClipK(u), KICK, startKick, kickBoss }));
+function farmSwSeat(u, dt) {
+  const B = u.farmToolBase, W = u.farmW, mesh = u.farmTool; if (!B || !W || !mesh) return;
+  const want = farmSwClipK(u) > 0.4 && u.st.alive && !u.rag ? 1 : 0;
+  const k0 = u.fswK || 0, k = k0 + THREE.MathUtils.clamp(want - k0, -dt * 5, dt * 5);
+  if (Math.abs(k - k0) < 1e-5) return;
+  u.fswK = k;
+  _fswG.set(0, W.lo + (W.grip ?? 0), 0).multiply(mesh.scale);
+  const turn = (q, p) => { _fswG1.copy(_fswG).applyQuaternion(q).add(p); q.multiply(_fswQ); p.add(_fswG1.sub(_fswG.clone().applyQuaternion(q).add(p))); };
+  _fswQ.setFromAxisAngle(_fswZ, -(k - k0) * FARM_SW_SEAT);
+  turn(B.q, B.p); turn(mesh.quaternion, mesh.position);
+}
 function farmCarryAll(dt) {
-  if (inFort) for (const u of farmUnits) if (u.farmTool && u.farm && u.farm.out && u.g.visible) { farmCarry(u, dt); farmArmSmooth(u, dt); }
-  if (inC13 && gargRaid) for (const u of gargRaid.units) if (u.farmTool && u.st.alive && u.g.visible) { farmCarry(u, dt); farmArmSmooth(u, dt); }   // the four through XIII's door carry theirs the same way
+  if (inFort) for (const u of farmUnits) if (u.farmTool && u.g.visible) {
+    if (u.farm && u.farm.out) { farmCarry(u, dt); farmArmSmooth(u, dt); farmEdgeSet(u, dt); }
+    farmSwSeat(u, dt);   // (every armed man, out or still standing guard in the video's idle)
+  }
+  if (inC13 && gargRaid) for (const u of gargRaid.units) if (u.farmTool && u.st.alive && u.g.visible) { farmCarry(u, dt); farmArmSmooth(u, dt); farmSwSeat(u, dt); }   // the four through XIII's door carry theirs the same way
 }
 function farmCarry(u, dt) {
   const W = u.farmW, mesh = u.farmTool, B = u.farmToolBase, C = FARM_CARRY[W && W.pack ? (W.two ? 'sword' : 'axe') : u.kind.tool];   // (by what he holds: a spearman's sword is carried as a sword)
@@ -118983,22 +122882,36 @@ function farmCarry(u, dt) {
   if (u.fcyWrote && mesh.parent.quaternion.equals(u.fcyWrote)) { mesh.parent.quaternion.copy(u.fcyOrig); u.fcyWrote = null; }
   const st = u.st;
   const free = st.alive && !u.rag && !(st.atk >= 0) && !(st.stun > 0) && !((st.down || 0) > 0) && !(st.recoil > 0) && !st.vault;
-  const k = u.farmCarryK = (u.farmCarryK || 0) + ((free ? 1 : 0) - (u.farmCarryK || 0)) * Math.min(1, dt * (free ? 5 : 16));
+  /* (and the spear role's thrust and lunge with a SWORD in his fist: the wrist cocks its point at whom he drives it at, the hand
+   * still round the handle — 2026-11-24; the spear's grip that used to do it laid the handle along his arm) */
+  const thrust = st.alive && !u.rag && st.atk >= 0 && W && W.pack && /^rk(Thrust|Lunge)$/.test(st.swing || '');
+  const on = (free && !(farmSwClipK(u) > 0.4)) || thrust;   // (the video's idle holds its weapon itself: `farmSwSeat`)
+  const k = u.farmCarryK = (u.farmCarryK || 0) + ((on ? 1 : 0) - (u.farmCarryK || 0)) * Math.min(1, dt * (thrust ? 9 : free ? 5 : 16));
   if (k < 0.01) return;
   /* "forward" is NOT his root's yaw: in the strafe clips the body stands side-on to it, up to 90° off (measured,
    * `tools/probes.js farmFacing`: the hips' +Z square to the root mid-strafe), and a spear carried along the root went
    * across his chest. A man closing on someone holds his weapon AT them: toward his foe while he fights, else the way his
    * chest faces. (His right is -X when he faces +Z.) */
   let fx = 0, fz = 0;
-  if (st.awake && st.alive) { const fp = mutFoePos(u); fx = fp.x - u.g.position.x; fz = fp.z - u.g.position.z; }
+  /* (HELD HOW IT'S HELD — 2026-11-25, the owner: "their weapons should [not] be twisting all over when they look different directions".
+   * Carried AT you, the weapon followed you round as you moved and he looked about: measured (`tools/farmlook.js`, you circling), it
+   * turned against his chest at a median 81°/s, p90 535, and the wrist stood 106° off his clip's own. Now only a thrust is held at you;
+   * the carry is the way his chest faces, eased, and his body brings it round as he turns.) */
+  const atFoe = thrust || (typeof window !== 'undefined' && window.__bwCarryAtFoe);   // (the old carry, for a probe's comparison)
+  if (atFoe && st.awake && st.alive) { const fp = mutFoePos(u); fx = fp.x - u.g.position.x; fz = fp.z - u.g.position.z; }
   if (Math.hypot(fx, fz) < 0.3) {
     if (u.farmChest === undefined) { u.farmChest = null; u.model && u.model.traverse((o) => { if (!u.farmChest && o.isBone && /Spine2(_|$)/.test(o.name)) u.farmChest = o; }); }
     if (u.farmChest) { u.farmChest.updateWorldMatrix(true, false); _fcyF.set(0, 0, 1).transformDirection(u.farmChest.matrixWorld); fx = _fcyF.x; fz = _fcyF.z; }
     if (Math.hypot(fx, fz) < 1e-3) { fx = Math.sin(u.g.rotation.y); fz = Math.cos(u.g.rotation.y); }
   }
+  if (!atFoe) {   // (the chest's facing eased: a run's torso swings it ±20° a stride)
+    const yw = Math.atan2(fx, fz); if (u.fcyYaw === undefined) u.fcyYaw = yw;
+    let dy = yw - u.fcyYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); u.fcyYaw += dy * Math.min(1, dt * 6); fx = Math.sin(u.fcyYaw); fz = Math.cos(u.fcyYaw);
+  }
   const fl = Math.hypot(fx, fz), sy = fx / fl, cy = fz / fl;
   _fcyF.set(sy, 0, cy);
-  _fcyY.set(sy * C.f - cy * C.r, C.u, cy * C.f + sy * C.r).normalize();          // the handle, butt to head
+  if (thrust) _fcyY.set(sy, 0.12, cy).normalize();                                // (the thrust: the point at him, a little high)
+  else _fcyY.set(sy * C.f - cy * C.r, C.u, cy * C.f + sy * C.r).normalize();     // the handle, butt to head
   _fcyX.copy(_fcyF).addScaledVector(_fcyY, -_fcyF.dot(_fcyY)).normalize();       // the edge / face: to the front, square to the handle
   _fcyZ.crossVectors(_fcyX, _fcyY);
   _fcyM.makeBasis(_fcyX, _fcyY, _fcyZ); _fcyD.setFromRotationMatrix(_fcyM);     // the carry, in the world
@@ -119013,15 +122926,32 @@ function farmCarry(u, dt) {
   const hand = mesh.parent;
   _fcyA.copy(_fcyD).multiply(_fcyB.copy(_fcyQ).invert());                         // the turn from the seat to the carry, in the world
   _fcyB.identity().slerp(_fcyA, k);                                               // k of it
-  const ang = 2 * Math.acos(Math.min(1, Math.abs(_fcyB.w)));
-  _fcyC.identity().slerp(_fcyB, ang > FARM_WRIST_MAX ? FARM_WRIST_MAX / ang : 1);   // the wrist's share
+  /* (A WRIST ROLLS MORE THAN IT BENDS — 2026-11-24. Taken whole up to 100°, the turn bent the hand off the forearm until a haft lay
+   * along a raised arm (19° off it) or a sword stood square across the fist (94°): the grip the owner keeps sending pictures of is
+   * the handle ~132° off the forearm, which is a wrist near straight. So the turn is split about the forearm's own line: the roll
+   * (forearm and wrist turning together) up to `FARM_ROLL_MAX`, the bend off the forearm only `FARM_BEND_MAX`.) */
+  const hand0 = mesh.parent;
+  hand0.getWorldPosition(_fcyG); hand0.parent.getWorldPosition(_fcyS); _fcyS.subVectors(_fcyG, _fcyS).normalize();   // the forearm, elbow to wrist
+  const pr = _fcyB.x * _fcyS.x + _fcyB.y * _fcyS.y + _fcyB.z * _fcyS.z;
+  _fcyT.set(_fcyS.x * pr, _fcyS.y * pr, _fcyS.z * pr, _fcyB.w); if (_fcyT.lengthSq() < 1e-12) _fcyT.identity(); else _fcyT.normalize();   // the twist (roll)
+  _fcyW.copy(_fcyB).multiply(_fcyH.copy(_fcyT).invert());                         // the swing (bend): B = swing · twist
+  const angT = 2 * Math.acos(Math.min(1, Math.abs(_fcyT.w))), angW = 2 * Math.acos(Math.min(1, Math.abs(_fcyW.w)));
+  _fcyT.slerp(_fcyH.identity(), angT > FARM_ROLL_MAX ? 1 - FARM_ROLL_MAX / angT : 0);
+  const bendMax = thrust ? FARM_BEND_THRUST : FARM_BEND_MAX;
+  _fcyW.slerp(_fcyH.identity(), angW > bendMax ? 1 - bendMax / angW : 0);
+  _fcyC.copy(_fcyW).multiply(_fcyT);                                              // the wrist's share
+  const ang = 0;
   (u.fcyOrig || (u.fcyOrig = new THREE.Quaternion())).copy(hand.quaternion);
   hand.parent.updateWorldMatrix(true, false); hand.parent.getWorldQuaternion(_fcyH);
   // hand' = parent⁻¹ · wrist · handWorld
   hand.quaternion.copy(_fcyH.invert().multiply(_fcyC).multiply(_fcyP));
   u.fcyWrote = (u.fcyWrote0 || (u.fcyWrote0 = new THREE.Quaternion())).copy(hand.quaternion);
   hand.updateMatrixWorld(true);
-  if (ang > FARM_WRIST_MAX) {                                                     // the rest in the fist, about the grip, as it was
+  /* (NEVER IN THE FIST — 2026-11-24, the owner: "the farmers still hold their weapons so wrong … exactly like this". What the wrist
+   * could not take was turned inside the fist, and that is the grip going wrong: measured (`tools/farmgrip.js`), the handle stood
+   * anywhere from 81° to 143° off the forearm man to man. The seat is the grip; the wrist carries what it can and the rest is not
+   * carried.) */
+  if (false) {
     hand.getWorldQuaternion(_fcyP);
     _fcyQ.copy(_fcyP).multiply(mesh.quaternion);
     _fcyA.copy(_fcyB).multiply(_fcyC.invert());                                   // what the wrist did not take
@@ -119032,7 +122962,9 @@ function farmCarry(u, dt) {
     mesh.position.copy(_fcyG).sub(_fcyS.set(0, u.farmGrip.y, 0).multiply(mesh.scale).applyQuaternion(mesh.quaternion));
   }
 }
-const FARM_WRIST_MAX = 1.75;   // (100°: what a wrist and the forearm's roll take of a carry; the rest turns in the fist)
+const FARM_WRIST_MAX = 1.75;   // (100°: what a wrist and the forearm's roll take of a carry; the rest turns in the fist — no longer read)
+const FARM_ROLL_MAX = Math.PI, FARM_BEND_MAX = 0.75, FARM_BEND_THRUST = 0.95;   // (any roll about the forearm — it never changes the handle's angle in the fist; measured, at 92° a man walking in carried his sword point-down; 43° of bend off it; 54° cocked into a thrust)
+const _fcyT = new THREE.Quaternion(), _fcyW = new THREE.Quaternion();
 const _fcyA = new THREE.Quaternion(), _fcyB = new THREE.Quaternion(), _fcyC = new THREE.Quaternion(), _fcyH = new THREE.Quaternion();
 /* THE FARMERS' ANIMATION, THINNED WHERE NOBODY IS LOOKING (2026-10-18, the owner: "performance in the castle is bad").
  * Twenty skinned men each ran their mixer every frame wherever they were — "the farmers' animation at 120 m" was the
@@ -119636,11 +123568,23 @@ function attachArtifact(a, w) {
    * you cant have two artifacts on a weapon it shouldnt make an artifact disappear when you stack them"). The old
    * one used to be put back into the pack BEFORE the new one left it, its refusal unread — with the pack full it
    * went nowhere and the save forgot it. Now it is refused, and you are told how. */
+  /* (A SWAP — 2026-11-25, the owner: "MAKE DRAGGING AN ARTIFACT TO THE WEAPON WITH ONE ALREADY ON IT JUST SWITCH IT OUT". The new one
+   * leaves its pocket first and the old one takes that pocket, so a full pack has room for the trade; only when the new one was not in
+   * the pack and there is no room is it still refused. Nothing can be lost between the two: the old one is back in before the new one
+   * goes on.) */
   if (w.artifact) {
-    sayInventoryFull('One artifact to a weapon');
-    artBanner(`${w.name} already holds ${w.artifact.name} — take it off first`);
-    try { sfxGateRattle && sfxGateRattle(); } catch (e) {}
-    return false;
+    const old = w.artifact;
+    const from = inventory.includes(a) ? slotOf(a) : -1;
+    if (from < 0 && packCount() >= INV_MAX) {
+      sayInventoryFull('No room for ' + old.name);
+      try { sfxGateRattle && sfxGateRattle(); } catch (e) {}
+      return false;
+    }
+    settleRestore();
+    if (from >= 0) { inventory.splice(inventory.indexOf(a), 1); clearSlot(a); }
+    w.artifact = null; old.on = null;
+    if (!addToInventory(old)) { w.artifact = old; old.on = w; if (from >= 0) { inventory.push(a); packSlots[from] = a; } renderHotbar(); renderPack(); return false; }
+    if (from >= 0 && !packSlots[from]) { const cur = slotOf(old); if (cur >= 0) packSlots[cur] = null; packSlots[from] = old; }
   }
   settleRestore();
   for (const it of inventory) if (it !== w && it.artifact === a) it.artifact = null;
@@ -120437,8 +124381,12 @@ function sfxArtReady() {
   const t = ctx.currentTime, out = artOut(null, null, 0.2);
   artBell(out, t, 1320, 0.9, 0.18); artBell(out, t + 0.09, 1760, 0.8, 0.12);
 }
+/* (THE OWNER'S OWN SOUND — 2026-11-25: "MAKE THIS PICKING UP OR PUTTING ON AND TAKING OFF ARTIFACT SOUND". His recording, trimmed of its
+ * silent tail and brought up to −2.7 dB peak (`assets/artifact-attach.m4a`), plays for every one: an artifact taken from where it lies,
+ * set into a weapon, taken off; off a shade lower, so it reads as the same thing undone. The chime below only until it has loaded.) */
 function sfxArtAttach(off) {
   const ctx = audioCtx; if (!ctx) return;
+  if (playSample('artAttach', 0.9, 0.02, off ? 0.9 : 1.0)) return;
   const t = ctx.currentTime, out = artOut(null, null, 0.4);
   const n = noiseBurst(0.03, (k) => Math.pow(1 - k, 5));
   const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2400; bp.Q.value = 3;
@@ -121269,7 +125217,11 @@ function seaRestore(f) {
     seaState = 1; sea.spot = [+(nx + SEA_WASH.dx).toFixed(2), +(nz + SEA_WASH.dz).toFixed(2)];
   }
   if (seaState !== 1 || !sea.spot) { seaUnlay(); if (seaState === 1) seaState = 0; }
-  sea.attachPending = seaState === 2 ? (f.seaRelicOn || null) : null;
+  /* (set in a weapon when the save was written is set in it after the load, however you came by it — 2026-11-25, the owner: "my water
+   * artifact disappeared reloading a checkpoint … leave everything as is was when you get the checkpoint". Dev mode hands it over
+   * without the world's gift (`seaState` 0), and this asked for the gift: the save said "Katana" and the load dropped it. The whale's
+   * and the flame's never asked. `tools/artckpt.js &how=dev`.) */
+  sea.attachPending = seaState === 2 || f.seaRelicOn ? (f.seaRelicOn || null) : null;
   sea.cd = 0;
   for (const [u, L] of sea.lifted) u.g.position.y -= L.y;
   sea.lifted.clear();
@@ -121300,7 +125252,16 @@ function seaRestoreTick() {
  * and out (a torn-edged sheet that rises and collapses), a column punched up the middle, a ring of droplets in every direction,
  * a mist, the impact's flash of light, and the sound — a deep displaced-water thump under two recorded splashes and the hiss
  * of the spray coming down. */
-const SEA_BALL = { cd: 5.0, charge: 0.75, speed: 26, grav: 3.0, life: 1.4, r: 0.21, dmg: 7, splashR: 2.4, splashDmg: 3 };
+const SEA_BALL = { cd: 5.0, charge: 0,   // (any Shift heavy at all — 2026-11-25, "every shift heavy should shoot the water ball not just fully charged. make sure the tear drop has to be full tho": only the drop, `cd`, gates it)
+    // (0.75 until 2026-11-25, "the water ball somtimes doesnt shoot": a fight's quicker heavy fell short of it, and nothing said so)
+  speed: 26, grav: 3.0, life: 1.4, r: 0.21, dmg: 7, splashR: 2.4, splashDmg: 3,
+  /* (IT NEVER BURSTS ON A CLOCK — 2026-11-26, the owner, across a castle's square: "i keep trying to throw a far water ball in the castle
+   * and it explodes mid air stop this now the hook as well". It was launched to arrive at what the crosshair was on, 45 m at most, and
+   * burst a quarter second after that flight — so aimed at men further off, or a hand over their heads, it burst in the open air 45 m
+   * out; and the ball a hook's throw lets go at the chain's end burst 1.2 s on. Now: what the crosshair is on is found out to `far`,
+   * and a far throw flies faster (never longer than `flMax` in the air, so its arc stays flat); past where it was thrown at it FALLS
+   * (`fall`) until it meets something; and one that meets nothing in `out` seconds thins away — no burst, no sound, no hurt.) */
+  far: 150, flMax: 2.2, fall: 14, out: 9 };
 const SEA_NOISE_GLSL = `
   vec3 sbH3(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
   float sbN(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -121447,6 +125408,19 @@ function seaMist(x, y, z, vx, vy, vz, sz, life, grow) {
 }
 function seaBallReady(c) { return !!seaWeapon() && c >= SEA_BALL.charge && seaBall.cd <= 0 && !frozen(); }
 function seaBallSpent() { seaBallFx(); seaBall.cd = SEA_BALL.cd; }
+/* THE BALL SAYS WHEN IT IS NOT THERE (2026-11-25, the owner: "the water ball somtimes doesnt shoot fix this"). Measured (`tools/seafail.js`):
+ * a full Shift heavy threw it 32 times in 32, every aim. What did not throw was what said nothing: a heavy let go in its 5 s
+ * coming back, or short of its charge. Now the charge says when it is enough (a slosh, once, `seaWindCue`), the charge it needs is
+ * 0.55 of full (was 0.75), and a heavy let go while it is coming back dribbles a little water off the blade with a thin drip —
+ * not a throw, and plainly not one. */
+let seaWindCue = false;
+function seaBallDry() {
+  const F = seaBallFx();
+  camera.getWorldDirection(_sbD); _sbR.crossVectors(_sbD, camera.up).normalize();
+  const P = camera.position.clone().addScaledVector(_sbD, 0.6).addScaledVector(_sbR, 0.2).add(_sbU.set(0, -0.2, 0));
+  for (let k = 0; k < 14; k++) seaDrop(P.x + (Math.random() - 0.5) * 0.12, P.y, P.z + (Math.random() - 0.5) * 0.12, _sbD.x * 1.2 + (Math.random() - 0.5) * 0.6, Math.random() * 0.5, _sbD.z * 1.2 + (Math.random() - 0.5) * 0.6, 0.03 + Math.random() * 0.025, 0.6);
+  playSample('slosh', 0.22, 0.05, 2.1);
+}
 // thrown off the weapon as it swings: from in front of your right hand, down the crosshair
 function seaBallFire() {
   const F = seaBallFx(); seaBallSpent();
@@ -121455,7 +125429,17 @@ function seaBallFire() {
   _sbR.crossVectors(_sbD, camera.up).normalize();
   const P = camera.position.clone().addScaledVector(_sbD, 0.7).addScaledVector(_sbR, 0.22).add(_sbU.set(0, -0.18, 0));
   m.position.copy(P); m.visible = true; m.userData.U.uA.value = 0;
-  seaBall.balls.push({ m, v: _sbD.clone().multiplyScalar(SEA_BALL.speed).addScaledVector(camera.up, 0.6), t: 0, prev: P.clone() });
+  /* (IT GOES WHERE YOU AIMED — 2026-11-25, the owner: "the water ball hits the ground when shooting at a far enemy fix this it should be
+   * accurate to explode where its actually aimed". It left your hand — below and right of your eye — straight down the crosshair's
+   * direction with gravity on it, so it crossed under your line and dropped: at 30 m it met the sand short of him. Now what the
+   * crosshair is on (a body, anything drawn, the sand; or 45 m out in the open) is found at the throw, and the ball is launched from
+   * the hand on the arc that arrives exactly there, its life as long as that flight takes.) */
+  const FAR = SEA_BALL.far, O = camera.position, h0 = magTrace(_sbD, O, FAR, 0.05), wd = worldDrawnHit(O, _sbD, FAR, 0.3);
+  let tT = h0 && h0.kind !== 'solid' ? h0.t : FAR + 1; if (wd && wd.t < tT) tT = wd.t; if (h0 && h0.kind === 'solid' && h0.t < tT) tT = h0.t;
+  const found = tT <= FAR; if (!found) tT = 45;                                              // (the open air: thrown as at 45 m, and on from there)
+  const T = O.clone().addScaledVector(_sbD, tT), dT = T.distanceTo(P), fl = dT / Math.max(SEA_BALL.speed, dT / SEA_BALL.flMax);
+  const v = T.sub(P).divideScalar(Math.max(0.05, fl)); v.y += 0.5 * SEA_BALL.grav * fl;   // (the drop it will fall, given back up front)
+  seaBall.balls.push({ m, v, t: 0, prev: P.clone(), fl: fl + 0.3, life: SEA_BALL.out });
   const x = P.x, z = P.z;
   playSample('slosh', 0.85, 0.05, 1.45); playSample('katSwing', 0.55, 0.05, 0.62);
   sfxAt(x, z, () => sfxSeaThrow());
@@ -121473,6 +125457,14 @@ function seaHookTick(dt, t) {
   const U = m.userData.U; U.uT.value = t; U.uA.value = Math.min(1, U.uA.value + dt * 6);
   if (Math.random() < dt * 40) seaDrop(m.position.x, m.position.y, m.position.z, (Math.random() - 0.5) * 1.2, Math.random() * 0.8, (Math.random() - 0.5) * 1.2, 0.035 + Math.random() * 0.03, 0.7);
   seaBall.lampK = Math.max(seaBall.lampK, 1); seaBall.lamp.position.copy(m.position);
+}
+// at the chain's end with nothing met: the ball goes on alone, from the iron, the throw's way (`seaBallTick` flies it and bursts it)
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaHookLooseS: (P, d) => seaHookLoose(P, d) }));
+function seaHookLoose(P, dir) {
+  const F = seaBallFx();
+  const m = F.hookM || F.pool.find((q) => !q.visible) || F.pool[0];
+  F.hookM = null; m.visible = true; m.position.copy(P);
+  seaBall.balls.push({ m, v: dir.clone().normalize().multiplyScalar(SEA_BALL.speed), t: 0.2, prev: P.clone(), fl: 0.9, life: SEA_BALL.out });   // (on from the chain's end, falling after a beat, until it meets something)
 }
 function seaHookDry() { const F = seaBall.fx; if (F && F.hookM) { F.hookM.visible = false; F.hookM = null; } }
 // the burst: `u` the body it met (or none), `dir` the way it was going
@@ -121565,11 +125557,15 @@ function seaBallTick(dt) {
   for (let i = seaBall.balls.length - 1; i >= 0; i--) {
     const B = seaBall.balls[i], m = B.m, U = m.userData.U;
     B.t += dt; U.uT.value = t; U.uA.value = Math.min(1, U.uA.value + dt * 8);
-    B.v.y -= SEA_BALL.grav * dt;
+    B.v.y -= (B.fl !== undefined && B.t > B.fl ? SEA_BALL.fall : SEA_BALL.grav) * dt;   // (past what it was thrown at, it falls)
     B.prev.copy(m.position);
     const step = B.v.length() * dt; _sbN.copy(B.v).normalize();
-    const h = magTrace(_sbN, B.prev, step + SEA_BALL.r, SEA_BALL.r);
+    let h = magTrace(_sbN, B.prev, step + SEA_BALL.r, SEA_BALL.r);
+    if (h && h.kind === 'foe' && h.u && h.u.model && !crabs.includes(h.u)) { const t = projBodyHit(h.u, B.prev, _sbN, step + SEA_BALL.r, SEA_BALL.r); if (t === null) h = null; else { h.t = t; h.point = B.prev.clone().addScaledVector(_sbN, t); } }   // (on his skin: `projBodyHit`)
+    // (and whatever is drawn in its way — the wreck, the dock, a wall with no index, a ceiling: `worldDrawnHit`, 2026-11-24)
+    { const wd = worldDrawnHit(B.prev, _sbN, step + SEA_BALL.r, 0); if (wd && (!h || wd.t < h.t)) h = wd; }
     let done = false;
+    if (h) seaBall.lastHit = { kind: h.kind, surface: h.surface || null, drawn: !!h.drawn, obj: h.hit && h.hit.object ? (h.hit.object.name || h.hit.object.type) + '<' + ((h.hit.object.parent && h.hit.object.parent.name) || '') : h.u ? 'unit ' + ((h.u.kind && (h.u.kind.file || h.u.kindName)) || h.u.kindName || '?') + ' model ' + (h.u.model ? (h.u.model.visible ? 'shown' : 'hidden') : 'none') + ' at ' + h.u.g.position.toArray().map((v) => v.toFixed(1)).join(',') + (h.u.rag ? ' rag' : '') + (h.u.st && h.u.st.alive ? '' : ' dead') : null, at: (h.point || B.prev).clone() };   // (what stopped it, for `tools/seaghost.js`)
     if (h) {
       const at = h.point || B.prev.clone().addScaledVector(_sbN, h.t);
       if (h.kind === 'foe') seaImpact(at, h.u, _sbN);
@@ -121588,7 +125584,10 @@ function seaBallTick(dt) {
       // it sheds: droplets peel off behind it and fall
       for (let k = 0; k < 3; k++) seaDrop(m.position.x + (Math.random() - 0.5) * 0.2, m.position.y + (Math.random() - 0.5) * 0.2, m.position.z + (Math.random() - 0.5) * 0.2, B.v.x * 0.15 + (Math.random() - 0.5) * 0.9, B.v.y * 0.15 + Math.random() * 0.4, B.v.z * 0.15 + (Math.random() - 0.5) * 0.9, 0.025 + Math.random() * 0.03, 0.45 + Math.random() * 0.3);
       seaBall.lampK = Math.max(seaBall.lampK, 1); seaBall.lamp.position.copy(m.position);
-      if (B.t > SEA_BALL.life) { seaImpact(m.position, null, _sbN); done = true; }   // (spent in the air: it bursts there, a rain)
+      if (B.t > (B.life || SEA_BALL.life) || m.position.y < camera.position.y - 400) {   // (met nothing at all: it thins away where it is — never a burst in the air)
+        for (let k = 0; k < 6; k++) seaMist(m.position.x + (Math.random() - 0.5) * 0.3, m.position.y + (Math.random() - 0.5) * 0.3, m.position.z + (Math.random() - 0.5) * 0.3, B.v.x * 0.03, 0.1, B.v.z * 0.03, 0.3 + Math.random() * 0.2, 0.7, 0.6);
+        seaBall.lastHit = { kind: 'faded' }; done = true;
+      }
     }
     if (done) { m.visible = false; seaBall.balls.splice(i, 1); }
   }
@@ -121650,7 +125649,7 @@ function seaBallTick(dt) {
   seaBall.lamp.intensity = 2.2 * seaBall.lampK + 9 * seaBall.flash * seaBall.flash;
   seaBall.lampK = 0;
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaBall, seaBallFire, seaImpact, SEA_BALL, seaBallFx, seaDropHud }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { seaBall, seaBallFire, worldDrawnHitS: worldDrawnHit, seaImpact, SEA_BALL, seaBallFx, seaDropHud }));
 /* the drop in the bottom right (2026-11-23, the owner): there while the Sea is set in what you hold, filling as the ball comes back,
  * full colour once it is ready, brightening once the moment it is (`#seadrop` in index.html, in crayon) */
 const seaDropEl = document.getElementById('seadrop'), seaDropFill = seaDropEl && seaDropEl.querySelector('.wet');
@@ -128737,6 +132736,16 @@ function cellarEnter() {
   setSkyDuck(0.9);
 }
 function cellarLeave() {
+  /* (OUT BEFORE HIM, AND HE IS STILL ON HIS SWING — 2026-11-25, the owner: "the swing didnt spawn fix this it should always be there",
+   * "when running out before the marionette he should still just be on the swing". He gets onto the swing at the END of his escape
+   * from the washer (`updateCelEscape`), which runs only down here: up the steps while he was still kicking in it, or before his
+   * escape had played out, and he was nowhere — the swing out front empty. Leaving once the washer has started kicking finishes it:
+   * the door down, the washer empty, and him on his swing in front of the house when you come round.) */
+  if (celWash >= 1 && celWash < 2) {
+    celWash = 2; celEsc = null; celLockBroke = true;
+    try { celWashApply(); } catch (e) {}
+    if (MAR.st === 'none') MAR.st = 'swing';
+  }
   if (_celFogSaved) {
     scene.fog.color.copy(_celFogSaved.color); scene.fog.density = _celFogSaved.density; sky.visible = _celFogSaved.sky;
     _celFogSaved = null;
@@ -129663,7 +133672,7 @@ function buildCelWasher(root) {
 }
 // the fight over: he starts on his own, and you are told
 function celWashKnown() {
-  flashPrompt('Something is <b>kicking inside the washer</b>.', 3400);
+  flashPrompt('Something is <b>kicking inside the dryer</b>.', 3400);
   sfxCelChain(CEL_X + CEL_WASH.x, CEL_Z + CEL_WASH.front, 1.8);
 }
 // where a save leaves it: out and gone (2) — the door down, the lock and the chains on the floor
@@ -129979,7 +133988,9 @@ let MAR_MOCAP = null;
 {
   const E = MUT_KINDS.elvedor;
   MUT_KINDS.cmar = Object.assign({}, E, {
-    glb: 'assets/marionette.glb', file: 'cmar', talks: false, human: false, wakeAt: 0, wood: true, fixScale: 1, h: 0.98,
+    // (`urgentBody`, 2026-11-25, "the marionette didnt respawn too when reloading checkpoint": loaded into the castle, his file was
+    // ranked by the beach's distance and queued behind the world's far rest — 12 s on and still no body. It is 250 KB: on the near chain.)
+    glb: 'assets/marionette.glb', file: 'cmar', talks: false, urgentBody: true, human: false, wakeAt: 0, wood: true, fixScale: 1, h: 0.98,
     // (hp 18 → 26, 2026-11-22: "give the washer one more health too"; and "more aggressive … he just stands there alot": aggr
     // 2 → 3.2, press 0.8 → 1, quicker on his feet and further in on the lunge)
     gaits: Object.assign({}, E.gaits, { idle: ['mOldIdle'] }), anim: Object.assign({}, E.anim, { idle: 'mOldIdle' }),   // (Mixamo's "Old Man Idle": `marIdleClip`)
@@ -130042,6 +134053,11 @@ function updateMarionette(dt) {
   if (!MAR.u) {
     // (on the swing he is made at it, once the land is in; at your side, wherever you are — a load far down the beach)
     if (MAR.st !== 'with' && (!elvReady || !elvSwing)) return;
+    /* (NOT UNTIL YOU ARE THERE — 2026-11-25, the owner: "the marionette didnt respawn too when reloading checkpoint". A checkpoint
+     * written in a room (the castle's, a cut's) holds you at the start spawn behind the black until the room is up
+     * (`roomRestore`); he was made on the first frame at the camera as it stood there, 1179 m from the castle, where his model
+     * is far and never came in — he never appeared. He waits for the restore to put you down, and is made at your side.) */
+    if (MAR.st === 'with' && !MAR.wait && roomRestore) return;
     const S = MAR.st === 'with' ? (MAR.wait ? _mrV.set(MAR.wait.x, groundUnder(MAR.wait.x, MAR.wait.z) || 0, MAR.wait.z) : _mrV.copy(camera.position)) : elvSwing.g.getWorldPosition(_mrV);
     const u = MAR.u = makeMutant(S.x, S.z, 'cmar', S.y - 3);
     u.holdAnim = true; u.st.awake = false; u.cpAlly = true; u.marPend = true;
@@ -130227,7 +134243,7 @@ const MAR_NPC = {
       { label: 'What are you?', to: 'miracle' },
     ] },
     okay: { text: 'I’ve never been okay. They locked me in that box.', choices: [{ label: 'What are you?', to: 'miracle' }] },
-    miracle: { text: 'Dad used to say I was a miracle.', choices: [{ label: 'Why were you locked in the washer?', to: 'light' }] },
+    miracle: { text: 'Dad used to say I was a miracle.', choices: [{ label: 'Why were you locked in the dryer?', to: 'light' }] },
     light: { text: 'I wanted to see the tall light at the end of the beach. One night I tried running there so he locked me away.', choices: [
       { label: 'I’ll take you there.', to: 'go', act: () => { MAR.go = true; } },
       { label: 'Leave', to: 'leave' },
@@ -130651,8 +134667,12 @@ function marBalance(u) {
   if (u.st.lastHurt && now - u.st.lastHurt < 2 && u.st.mine) { D.hurt++; return; }   // (you are cutting it: it is yours)
   if (u.st.atk >= 0) { D.atk++; return; }                                            // (not out of a blow already coming at you)
   const p = u.g.position, dMe = Math.hypot(camera.position.x - p.x, camera.position.z - p.z), dHim = Math.hypot(m.g.position.x - p.x, m.g.position.z - p.z);
-  if (dHim > 14) { D.far++; return; }
-  const pr = dHim < dMe * 0.9 ? 0.7 : dHim < dMe * 1.5 ? 0.4 : 0;
+  /* (MORE OF THEM ON HIM — 2026-11-25, the owner: "the marionette needs to be able to actually die he barely takes damage and no
+   * one fights him barely". `tools/marfort.js &fight=1&die=1`: the men were on him a fifth of the time, mostly chasing him across
+   * the yard, and he ended the fight down 4 of 26. Reached for from further off (14 → 20 m), nearer him 0.85 (0.7), about level
+   * 0.6 (0.4), and now and then (0.2) even when you are the nearer — still never more than half of them, `marAggroRoom`.) */
+  if (dHim > 20) { D.far++; return; }
+  const pr = dHim < dMe * 0.9 ? 0.85 : dHim < dMe * 1.5 ? 0.6 : 0.2;
   if (Math.random() >= pr) { D.roll++; return; }
   if (!marAggroRoom()) { D.room++; return; }
   D.on++;
@@ -130889,6 +134909,22 @@ function marLeapStep(u, dt) {
  * is a metre tall — measured, one of Elvédor's kind went at him for 340 frames and never touched him. In front, near, as the
  * blow arrives. */
 const marOn = (u) => !!(u.st.foe && u.st.foe.cpAlly && u.st.foe.st.alive && u.st.foe !== u);
+/* AND A BLOW AT YOU TAKES HIM TOO, IF HE STANDS IN IT (2026-11-25, the owner: "THE MARIONETTE RARELY TAKES DAMAGE I FEEL LIKE").
+ * Only `marAggro`/`marDraws`/`marBalance` ever put a creature on him, and most of the game is shut out of those on purpose — every
+ * boss and sided fight (`marAggroOK`), and the crabs, which have no foe but you: in those he fought at your side and nothing
+ * touched him. Measured (`tools/marhurt.js`, `tools/marfort.js`): the pack's runts and the castle's men did hit him, about as often
+ * as you; a crab or a boss never. Now any blow thrown at YOU, on its contact frame, also lands on him when he is within its reach
+ * and in front of the thing that threw it (a crab's claws reach round: no cone) — what is aimed at you is unchanged, so your fight
+ * is as hard as it was; he simply is not out of the way of it. */
+function marCaught(u, reach, dmg) {
+  const m = MAR.u;
+  if (!m || m === u || u.cpAlly || !m.st || !m.st.alive || m.st.struck || MAR.st !== 'with' || MAR.wait || !m.g.visible || !(dmg > 0)) return false;
+  const p = u.g.position, q = m.g.position, dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz);
+  if (d > reach || d < 1e-3 || Math.abs(q.y - p.y) > 1.2) return false;
+  if (u.kind && (dx * Math.sin(u.g.rotation.y) + dz * Math.cos(u.g.rotation.y)) / d < 0.35) return false;   // (behind it, or off to its side)
+  hurtMutant(m, dmg, 0, u);
+  return true;
+}
 function marLandsOn(u, A, dist, was) { return dist < ((u.kind.h || 1.8) > 1.4 ? 1.9 : 1.4) && was < A.wind && blowFacing(u); }
 /* ELVÉDOR (2026-11-21, the owner: "make the washer one fight elvedor when he sees him while running back to the beach"). Out
  * with you and the man in sight — alive, near, nothing between them — he goes for him, and the man, woken, turns on him. If it
@@ -132100,7 +136136,7 @@ function sfxPupBreak(x, z, k = 1) {
   const d = Math.hypot(x - camera.position.x, z - camera.position.z); if (d > 70) return;
   const src = ctx.createBufferSource(); src.buffer = buf; src.playbackRate.value = 1.08 + Math.random() * 0.14;
   const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 12000 * Math.pow(900 / 12000, Math.min(1, d / 70));
-  const gn = ctx.createGain(); gn.gain.value = 1.35 * k / (1 + d / 12);
+  const gn = ctx.createGain(); gn.gain.value = 2.3 * k / (1 + d / 16);   // (1.35 and d/12 until 2026-11-25: "turn up puppet breaking sounds")
   let dst = sfxOut();
   if (ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = THREE.MathUtils.clamp(panTo(x, z) * 0.85, -1, 1); sp.connect(dst); dst = sp; }
   src.connect(lp).connect(gn).connect(dst); src.start(ctx.currentTime);
@@ -132114,7 +136150,7 @@ function cpDie(u) {
   if (u.model && u.cpB) {
     cpEyes(u.model, 1); cpEyesLinger(u.model);         // (the blue goes on in his eyes in the pieces a little while: `cpEyeFade`)
     const r = cpShatter(u.model, u.cpB, CP_PAINTS[u.cpPal || 0], dir, sp);
-    sfxPupBreak(r.mid.x, r.mid.z, 1); sfxCpCrack(r.mid.x, r.mid.z, 0.45);
+    sfxPupBreak(r.mid.x, r.mid.z, 1); sfxCpCrack(r.mid.x, r.mid.z, 0.75);
     spawnPuffs(r.mid.x, r.mid.z, 7, dir.x * 0.8, dir.z * 0.8, r.mid.y, 0x6a5e50);
     cpBurstLight(r.mid);
   }
@@ -132294,14 +136330,14 @@ function cpSyrBuild() {
   cpSyr = { g, syr, tipZ: syr.userData.parts.tipZ * syr.scale.x };
 }
 // the rare phrase: while the fight is on, now and then, from one of them that is up and fighting (`PUP_VOX.shout`)
-let cpPhraseT = 6 + Math.random() * 6;
+let cpPhraseT = 4 + Math.random() * 5;
 function cpPhraseTick(dt) {
   if (celPupFight < 1 || celPupFight >= 3 || dying) return;
   if ((cpPhraseT -= dt) > 0) return;
   const up = cpUnits.filter((u) => u.st.alive && !u.cpHung && !u.retired && u.model && u.g.visible);
   if (!up.length) { cpPhraseT = 3; return; }
   const u = up[(Math.random() * up.length) | 0];
-  cpPhraseT = farmVox('shout', u.kind.voice, { x: u.g.position.x, z: u.g.position.z, p: 0.6 }) ? 16 + Math.random() * 16 : 4 + Math.random() * 4;
+  cpPhraseT = farmVox('shout', u.kind.voice, { x: u.g.position.x, z: u.g.position.z, p: 0.75 }) ? 10 + Math.random() * 9 : 3 + Math.random() * 3;   // (16–32 s and p 0.6 until 2026-11-25: "a little more frequent")
 }
 function cpInjectTick(dt) {
   const J = cpInj; if (!J) return;
@@ -132402,7 +136438,7 @@ function updateCelPuppets(dt) {
 }
 const _cpPv = new THREE.Vector2(), _cpPvA = new THREE.Vector2();
 celLive = true;
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { cpS: () => ({ fight: celPupFight, n: cpUnits.length, models: cpUnits.filter((u) => u.model).length, set: cpUnits.filter((u) => u.cpSet).length, ready: cpUnits.filter((u) => u.cpReady).length, alive: cpUnits.filter((u) => u.st.alive).length, awake: cpUnits.filter((u) => u.st.awake).length, hung: cpUnits.filter((u) => u.cpHung).length, inj: cpInj ? +cpInj.t.toFixed(2) : -1 }), cpUnitsS: () => cpUnits, cpGibs: () => gibs.length, MAR, EPUP, CPD, ELOG, cpAtmo: () => ({ dark: +celDark.toFixed(2), hush: !!celHush, eyes: cpEyeFade.length, twitchT: +cpTwitchT.toFixed(1), amb: celAmb ? +celAmb.g.gain.value.toFixed(3) : null, eerie: celEerie ? +celEerie.g.gain.value.toFixed(3) : null, tube: celTube ? +celTube.L.intensity.toFixed(2) : null }), elogSave, elogLoad, elogKeyS: (u) => elogKey(u), elogRenderListS: () => elogRenderList(), elogRosterS: () => elogRoster(), farmSeatTurnS: (u, rad) => { const B = u.farmToolBase, W = u.farmW, mesh = u.farmTool; if (!B || !W) return false; const gL = new THREE.Vector3(0, W.lo + (W.grip ?? 0), 0); const g0 = gL.clone().multiply(mesh.scale).applyQuaternion(B.q).add(B.p); B.q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -rad)); const g1 = gL.clone().multiply(mesh.scale).applyQuaternion(B.q).add(B.p); B.p.add(g0.sub(g1)); mesh.position.copy(B.p); mesh.quaternion.copy(B.q); return true; }, imgRelS: () => ({ done: imgRel.done, q: imgRel.q.length, freed: imgRel.freed, busy: imgRel.busy }), gargDoorS: () => { const A = c13Arch; if (!A) return null; const d = c13W(A.ax + A.ux * A.L * 0.5, A.az + A.uz * A.L * 0.5); return { x: d.x, z: d.z, phase: GARG.phase, perched: GARG.units.filter((u) => u.gp && u.gp.mode === 'perch').length, n: GARG.units.length, models: GARG.units.filter((u) => u.model).length, mino: MINO.stage }; }, grateLoosenS: () => grateLoosen(), pullGrateS: () => pullGrate(), grateS: () => ({ loose: grateLoose, off: grateOff, prop: !!grateProp, held: !!grateProp && held === grateProp, vel: grateProp ? grateProp.vel.toArray().map((v) => +v.toFixed(2)) : null, asleep: grateProp ? !!grateProp.asleep : null, at: grateProp ? grateProp.mesh.position.toArray().map((v) => +v.toFixed(2)) : null, floor: +(drainTunnel.position.y + DN.FLOOR_Y).toFixed(3), outlet: drainTunnel.userData.outlet ? drainTunnel.userData.outlet.getWorldPosition(new THREE.Vector3()).toArray().map((v) => +v.toFixed(2)) : null, room: [DN.ROOM_X0, DN.ROOM_X1, DN.ROOM_HZ, DN.DOOR_X], sand: grateProp ? +restYInWater(grateProp.mesh.position.x, grateProp.mesh.position.z, 0).toFixed(3) : null, label: (() => { const F = drainTunnel.userData.outlet; const it = interactables.find((x) => x.root === F || x.obj === F); return it ? (typeof it.label === 'function' ? it.label() : it.label) : null; })() }), throwHeldS: () => throwHeld(), hoverNowS: () => { updateHover(); return hovered ? { kind: hovered.kind, label: typeof hovered.label === 'function' ? hovered.label() : hovered.label } : null; }, primaryActionS: () => primaryAction(), setGrateScrewsS: (m) => { grateScrewsOut = m; }, gibsS: () => gibs, farmShieldTakeS: (u, P, from) => farmShieldTake(u, P, from), farmWpnS: () => ({ loaded: !!farmWpn, names: farmWpn ? Object.keys(farmWpn) : null, asked: !!farmWpnP, men: farmUnits.map((u) => (u.kind.wkey || '-') + ':' + (u.farmW ? (u.farmW.pack || 'BUILT') : 'none')) }), marLhS: () => ({ lh: MAR.lh ? { ph: MAR.lh.ph, t: +MAR.lh.t.toFixed(2), look: +MAR.lh.look.toFixed(2) } : null, done: !!MAR.lhDone, hold: marLhHold(), top: atLighthouseTop(), st: MAR.st, tmp: !!tmpCut, dialog: dialogOpen }), crowCallFromTopS: () => crowCallFromTop(), ISLE_GALLERY, elogEnsureS: (k) => elogEnsure(k), elogViewS: () => elv, elogOtherS: (k) => elogOther(k), elogOtherTestS: () => { const out = []; const g = gulls.find((u) => u.st.alive); if (g) { const n0 = (ELOG.kinds.gull || { n: 0 }).n; killGull(g, 0); out.push(`${ELOG.kinds.gull && ELOG.kinds.gull.n > n0 && ELOG.snap.gull ? 'ok ' : 'BAD'} gull: by killGull, logged ${!!(ELOG.kinds.gull && ELOG.kinds.gull.n > n0)} likeness ${!!ELOG.snap.gull}`); } for (const k of ['pliosaur', 'sewmon', 'cry']) { elogOther(k); out.push(`ok  ${k}: logged ${!!ELOG.kinds[k]} likeness at once ${!!ELOG.snap[k]} (live ${!!ELOG_OTHER[k].live()})`); } return out; }, retireUnit, dropTargetsS: () => dropTargets(), elogFrameS: () => { if (elv) { elv.raf = 0; elogFrame(performance.now()); } }, makeCrabUnit, cpLaunchS: (u, dx, dz, sp, up) => cpLaunch(u, dx, dz, sp, up), cpPiecesS: () => cpPieces, celFloorAtS: (x, z, y) => keepFloorAt(x, z, y, 0.3, CEL_SITE), crabsS: () => crabs, pupLayTestS: (x, y, z, yaw) => { const I = pupMakeInstance(); I.root.scale.setScalar(PUP_K); const dp = new THREE.Vector3(x, y, z); pupLayClear(I, dp, yaw); I.root.updateMatrixWorld(true); const B = I.rig.B, m = B.spine.getWorldPosition(new THREE.Vector3()), h = B.head.getWorldPosition(new THREE.Vector3()), f = (B.footL || B.shinL).getWorldPosition(new THREE.Vector3()), bb = new THREE.Box3().setFromObject(I.root); return { mid: m.toArray().map((v) => +v.toFixed(2)), headWall: pupDropWall(m.x, m.z, h.x, h.z, dp.y + 0.12), feetWall: pupDropWall(m.x, m.z, f.x, f.z, dp.y + 0.12), low: +(bb.min.y - groundUnder(m.x, m.z, dp.y + 0.5)).toFixed(3), moved: +Math.hypot(m.x - x, m.z - z).toFixed(2) }; }, pupDropWallS: (a, b2, c, d, y) => pupDropWall(a, b2, c, d, y), marMoodBars: () => marBars ? marBars.h : null, groundUnderS: (x, z, y) => groundUnder(x, z, y), houseWallsS: () => !!houseWalls, marTalk, marHopOff, marRestore, marSwingStepS: (dt, t) => marSwingStep(dt, t), elvManS: () => elvMan, setElvCarrying: (v) => { elvCarrying = v; }, elvSeaS: () => ({ k: +elvSeaK().toFixed(3), lp: Math.round(elvSeaLP()), d: +elvSeaD().toFixed(1), inside: houseInside(), land: elvLand, bed: +beachBedK().toFixed(3) }), elvSwingS: () => elvSwing, MUT_KINDS, marS: () => ({ st: MAR.st, u: !!MAR.u, model: !!(MAR.u && MAR.u.model), bones: !!(MAR.u && MAR.u.marBones), vis: !!(MAR.u && MAR.u.g.visible), alive: !!(MAR.u && MAR.u.st.alive), hp: MAR.u ? MAR.u.st.hp : null, foe: !!(MAR.u && MAR.u.st.foe), atk: MAR.u ? MAR.u.st.atk : null, cine: +MAR.cine.toFixed(2), at: MAR.u ? [+MAR.u.g.position.x.toFixed(2), +MAR.u.g.position.y.toFixed(2), +MAR.u.g.position.z.toFixed(2)] : null, clip: MAR.u && MAR.u.cur ? MAR.u.cur.getClip().name : null }), cpInject, cpAllDown, setCpFight: (v) => { celPupFight = v; }, CEL_X, CEL_Y, CEL_Z, CEL_SITE, loadCellar, celLockBreak, celLockStrike, celLockStrikeS: (P) => { camera.getWorldDirection(_aimD); return celLockStrike(P); }, celWashS: () => ({ wash: celWash, broke: celLockBroke, esc: celEsc ? celEsc.phase : null, t: celEsc ? +celEsc.t.toFixed(2) : -1, mar: !!(celMar && celMar.ready), mixer: !!(celMar && celMar.mixer), at: celMar && celMar.w ? celMar.w.position.toArray().map((v) => +v.toFixed(2)) : null, vis: !!(celMar && celMar.w && celMar.w.visible), door: celWP ? +celWP.piv.rotation.x.toFixed(2) : null, hop: celWP ? +celWP.g.position.y.toFixed(3) : null }), celWPS: () => celWP, celOutS: () => celOut, catDistantCallS: () => crawlerUnit && catDistantCall(crawlerUnit), catGS: () => catG, marWaitBeginS: (hx, hz) => { deep.hookP.set(hx, 0, hz); marWaitBegin(); }, setDeepLockS: (v) => { deepLock = v; }, drsS: () => ({ k: +drs.k.toFixed(3), lights: lightPool.length, ext: !!drs.ext }), drsGpuS: () => { const g = drs.gpu.slice(); drs.gpu.length = 0; return g; }, drsRecS: (on) => { const r = drs.rec || []; drs.rec = on ? [] : null; return r; }, castLoadingS: (r) => castLoading(camera.position.x, camera.position.z, r), castWhoS: (r) => mutants.filter((u) => !u.retired && u.st && u.st.alive && Math.abs(u.g.position.x - camera.position.x) <= r && Math.abs(u.g.position.z - camera.position.z) <= r && (!u.model || u.parLate || u.clipsPending > 0)).map((u) => u.kindName || (u.kind && u.kind.file) || '?').join(','), castGateS: () => castGate && { t: +castGate.t.toFixed(2), fade: +castGate.fade.toFixed(2) }, menuHoldS: () => ({ menuHold, cutPaused, menuDucked, ctx: audioCtx && audioCtx.state, sfx: sfxBusGain && +sfxBusGain.gain.value.toFixed(3), cut: cutNow() }), setCelBusyS: (v) => { celBusy = v; }, marSitStepS: () => { MAR.sitN = 0; marSitStep(MAR.u, 1 / 60); }, marThighS: () => { const B = MAR.u.marBones, a = B.thighL.getWorldPosition(new THREE.Vector3()), c = B.calfL.getWorldPosition(new THREE.Vector3()), h = B.hip.getWorldPosition(new THREE.Vector3()); return { thighUp: +c.sub(a).normalize().y.toFixed(2), hipY: +h.y.toFixed(2), sits: MAR.sitN || 0 }; }, FISH_SPOT, catSndResetS: () => { catSnd = null; }, catDiagS: () => ({ unit: !!crawlerUnit, inCat, g: !!catG, walk: !!catWalk, field: !!catSoundField(), fin: (() => { const S = catSoundField(); if (!S) return null; let n = 0, mx = 0; for (const d of S.dist) if (d < Infinity) { n++; mx = Math.max(mx, d); } return [n, +mx.toFixed(1), S.dist.length, S.src]; })(), me: catNodeAt(camera.position.x, camera.position.z, camera.position.y - playerEye(), 1.6), at: [camera.position.x, camera.position.y, camera.position.z].map((v) => +v.toFixed(1)) }), celMarS: () => celMar, celClampTest, cpSyrS: () => cpSyr, cpInjS: () => cpInj, celPupS: () => celPup, setCelLast: (x, z, f) => { celLastFloor = f; celLastSpot.x = x; celLastSpot.z = z; _preMove.set(x, 0, z); groundY = f; }, startTaunt, tauntS: () => ({ ready: TAUNT.ready, on: TAUNT.on, t: +TAUNT.t.toFixed(2), vis: tauntHand.visible }), tauntHand, hookGullTightS: (i, ox, oy, oz, dx, dy, dz) => hookGullTight(isleBirds[i], new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize()), isleBirdsS: () => isleBirds, celMarRunYawS: () => celMar && celMar.runYaw, setCelWash: (v) => { celWash = v; }, startCellar, placeInCellar, placeOutOfCellar,
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { cpS: () => ({ fight: celPupFight, n: cpUnits.length, models: cpUnits.filter((u) => u.model).length, set: cpUnits.filter((u) => u.cpSet).length, ready: cpUnits.filter((u) => u.cpReady).length, alive: cpUnits.filter((u) => u.st.alive).length, awake: cpUnits.filter((u) => u.st.awake).length, hung: cpUnits.filter((u) => u.cpHung).length, inj: cpInj ? +cpInj.t.toFixed(2) : -1 }), cpUnitsS: () => cpUnits, cpGibs: () => gibs.length, MAR, EPUP, CPD, ELOG, cpAtmo: () => ({ dark: +celDark.toFixed(2), hush: !!celHush, eyes: cpEyeFade.length, twitchT: +cpTwitchT.toFixed(1), amb: celAmb ? +celAmb.g.gain.value.toFixed(3) : null, eerie: celEerie ? +celEerie.g.gain.value.toFixed(3) : null, tube: celTube ? +celTube.L.intensity.toFixed(2) : null }), elogSave, elogLoad, elogKeyS: (u) => elogKey(u), elogRenderListS: () => elogRenderList(), elogRosterS: () => elogRoster(), farmSeatTurnS: (u, rad) => { const B = u.farmToolBase, W = u.farmW, mesh = u.farmTool; if (!B || !W) return false; const gL = new THREE.Vector3(0, W.lo + (W.grip ?? 0), 0); const g0 = gL.clone().multiply(mesh.scale).applyQuaternion(B.q).add(B.p); B.q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -rad)); const g1 = gL.clone().multiply(mesh.scale).applyQuaternion(B.q).add(B.p); B.p.add(g0.sub(g1)); mesh.position.copy(B.p); mesh.quaternion.copy(B.q); return true; }, imgRelS: () => ({ done: imgRel.done, q: imgRel.q.length, freed: imgRel.freed, busy: imgRel.busy }), gargDoorS: () => { const A = c13Arch; if (!A) return null; const d = c13W(A.ax + A.ux * A.L * 0.5, A.az + A.uz * A.L * 0.5); return { x: d.x, z: d.z, phase: GARG.phase, perched: GARG.units.filter((u) => u.gp && u.gp.mode === 'perch').length, n: GARG.units.length, models: GARG.units.filter((u) => u.model).length, mino: MINO.stage }; }, grateLoosenS: () => grateLoosen(), pullGrateS: () => pullGrate(), grateObjS: () => drainTunnel.userData.grate ? drainTunnel.userData.grate.getWorldPosition(new THREE.Vector3()) : null, grateS: () => ({ loose: grateLoose, off: grateOff, prop: !!grateProp, held: !!grateProp && held === grateProp, vel: grateProp ? grateProp.vel.toArray().map((v) => +v.toFixed(2)) : null, asleep: grateProp ? !!grateProp.asleep : null, at: grateProp ? grateProp.mesh.position.toArray().map((v) => +v.toFixed(2)) : null, floor: +(drainTunnel.position.y + DN.FLOOR_Y).toFixed(3), outlet: drainTunnel.userData.outlet ? drainTunnel.userData.outlet.getWorldPosition(new THREE.Vector3()).toArray().map((v) => +v.toFixed(2)) : null, room: [DN.ROOM_X0, DN.ROOM_X1, DN.ROOM_HZ, DN.DOOR_X], sand: grateProp ? +restYInWater(grateProp.mesh.position.x, grateProp.mesh.position.z, 0).toFixed(3) : null, label: (() => { const F = drainTunnel.userData.outlet; const it = interactables.find((x) => x.root === F || x.obj === F); return it ? (typeof it.label === 'function' ? it.label() : it.label) : null; })() }), throwHeldS: () => throwHeld(), hoverNowS: () => { updateHover(); return hovered ? { kind: hovered.kind, label: typeof hovered.label === 'function' ? hovered.label() : hovered.label } : null; }, primaryActionS: () => primaryAction(), setGrateScrewsS: (m) => { grateScrewsOut = m; }, gibsS: () => gibs, farmShieldTakeS: (u, P, from) => farmShieldTake(u, P, from), farmWpnS: () => ({ loaded: !!farmWpn, names: farmWpn ? Object.keys(farmWpn) : null, asked: !!farmWpnP, men: farmUnits.map((u) => (u.kind.wkey || '-') + ':' + (u.farmW ? (u.farmW.pack || 'BUILT') : 'none')) }), marLhS: () => ({ lh: MAR.lh ? { ph: MAR.lh.ph, t: +MAR.lh.t.toFixed(2), look: +MAR.lh.look.toFixed(2) } : null, done: !!MAR.lhDone, hold: marLhHold(), top: atLighthouseTop(), st: MAR.st, tmp: !!tmpCut, dialog: dialogOpen }), crowCallFromTopS: () => crowCallFromTop(), ISLE_GALLERY, elogEnsureS: (k) => elogEnsure(k), elogViewS: () => elv, elogOtherS: (k) => elogOther(k), elogOtherTestS: () => { const out = []; const g = gulls.find((u) => u.st.alive); if (g) { const n0 = (ELOG.kinds.gull || { n: 0 }).n; killGull(g, 0); out.push(`${ELOG.kinds.gull && ELOG.kinds.gull.n > n0 && ELOG.snap.gull ? 'ok ' : 'BAD'} gull: by killGull, logged ${!!(ELOG.kinds.gull && ELOG.kinds.gull.n > n0)} likeness ${!!ELOG.snap.gull}`); } for (const k of ['pliosaur', 'sewmon', 'cry']) { elogOther(k); out.push(`ok  ${k}: logged ${!!ELOG.kinds[k]} likeness at once ${!!ELOG.snap[k]} (live ${!!ELOG_OTHER[k].live()})`); } return out; }, retireUnit, dropTargetsS: () => dropTargets(), elogFrameS: () => { if (elv) { elv.raf = 0; elogFrame(performance.now()); } }, makeCrabUnit, cpLaunchS: (u, dx, dz, sp, up) => cpLaunch(u, dx, dz, sp, up), cpPiecesS: () => cpPieces, celFloorAtS: (x, z, y) => keepFloorAt(x, z, y, 0.3, CEL_SITE), crabsS: () => crabs, pupLayTestS: (x, y, z, yaw) => { const I = pupMakeInstance(); I.root.scale.setScalar(PUP_K); const dp = new THREE.Vector3(x, y, z); pupLayClear(I, dp, yaw); I.root.updateMatrixWorld(true); const B = I.rig.B, m = B.spine.getWorldPosition(new THREE.Vector3()), h = B.head.getWorldPosition(new THREE.Vector3()), f = (B.footL || B.shinL).getWorldPosition(new THREE.Vector3()), bb = new THREE.Box3().setFromObject(I.root); return { mid: m.toArray().map((v) => +v.toFixed(2)), headWall: pupDropWall(m.x, m.z, h.x, h.z, dp.y + 0.12), feetWall: pupDropWall(m.x, m.z, f.x, f.z, dp.y + 0.12), low: +(bb.min.y - groundUnder(m.x, m.z, dp.y + 0.5)).toFixed(3), moved: +Math.hypot(m.x - x, m.z - z).toFixed(2) }; }, pupDropWallS: (a, b2, c, d, y) => pupDropWall(a, b2, c, d, y), marMoodBars: () => marBars ? marBars.h : null, groundUnderS: (x, z, y) => groundUnder(x, z, y), houseWallsS: () => !!houseWalls, marTalk, marHopOff, marRestore, marSwingStepS: (dt, t) => marSwingStep(dt, t), elvManS: () => elvMan, setElvCarrying: (v) => { elvCarrying = v; }, elvSeaS: () => ({ k: +elvSeaK().toFixed(3), lp: Math.round(elvSeaLP()), d: +elvSeaD().toFixed(1), inside: houseInside(), land: elvLand, bed: +beachBedK().toFixed(3) }), elvSwingS: () => elvSwing, MUT_KINDS, marS: () => ({ st: MAR.st, u: !!MAR.u, model: !!(MAR.u && MAR.u.model), bones: !!(MAR.u && MAR.u.marBones), vis: !!(MAR.u && MAR.u.g.visible), alive: !!(MAR.u && MAR.u.st.alive), hp: MAR.u ? MAR.u.st.hp : null, foe: !!(MAR.u && MAR.u.st.foe), atk: MAR.u ? MAR.u.st.atk : null, cine: +MAR.cine.toFixed(2), at: MAR.u ? [+MAR.u.g.position.x.toFixed(2), +MAR.u.g.position.y.toFixed(2), +MAR.u.g.position.z.toFixed(2)] : null, clip: MAR.u && MAR.u.cur ? MAR.u.cur.getClip().name : null }), cpInject, cpAllDown, setCpFight: (v) => { celPupFight = v; }, CEL_X, CEL_Y, CEL_Z, CEL_SITE, loadCellar, celLockBreak, celLockStrike, celLockStrikeS: (P) => { camera.getWorldDirection(_aimD); return celLockStrike(P); }, celWashS: () => ({ wash: celWash, broke: celLockBroke, esc: celEsc ? celEsc.phase : null, t: celEsc ? +celEsc.t.toFixed(2) : -1, mar: !!(celMar && celMar.ready), mixer: !!(celMar && celMar.mixer), at: celMar && celMar.w ? celMar.w.position.toArray().map((v) => +v.toFixed(2)) : null, vis: !!(celMar && celMar.w && celMar.w.visible), door: celWP ? +celWP.piv.rotation.x.toFixed(2) : null, hop: celWP ? +celWP.g.position.y.toFixed(3) : null }), celWPS: () => celWP, celOutS: () => celOut, catDistantCallS: () => crawlerUnit && catDistantCall(crawlerUnit), catGS: () => catG, marWaitBeginS: (hx, hz) => { deep.hookP.set(hx, 0, hz); marWaitBegin(); }, setDeepLockS: (v) => { deepLock = v; }, drsS: () => ({ k: +drs.k.toFixed(3), lights: lightPool.length, ext: !!drs.ext }), drsGpuS: () => { const g = drs.gpu.slice(); drs.gpu.length = 0; return g; }, drsRecS: (on) => { const r = drs.rec || []; drs.rec = on ? [] : null; return r; }, castLoadingS: (r) => castLoading(camera.position.x, camera.position.z, r), castWhoS: (r) => mutants.filter((u) => !u.retired && u.st && u.st.alive && Math.abs(u.g.position.x - camera.position.x) <= r && Math.abs(u.g.position.z - camera.position.z) <= r && (!u.model || u.parLate || u.clipsPending > 0)).map((u) => u.kindName || (u.kind && u.kind.file) || '?').join(','), castGateS: () => castGate && { t: +castGate.t.toFixed(2), fade: +castGate.fade.toFixed(2) }, menuHoldS: () => ({ menuHold, cutPaused, menuDucked, ctx: audioCtx && audioCtx.state, sfx: sfxBusGain && +sfxBusGain.gain.value.toFixed(3), cut: cutNow() }), setCelBusyS: (v) => { celBusy = v; }, marSitStepS: () => { MAR.sitN = 0; marSitStep(MAR.u, 1 / 60); }, marThighS: () => { const B = MAR.u.marBones, a = B.thighL.getWorldPosition(new THREE.Vector3()), c = B.calfL.getWorldPosition(new THREE.Vector3()), h = B.hip.getWorldPosition(new THREE.Vector3()); return { thighUp: +c.sub(a).normalize().y.toFixed(2), hipY: +h.y.toFixed(2), sits: MAR.sitN || 0 }; }, FISH_SPOT, catSndResetS: () => { catSnd = null; }, catDiagS: () => ({ unit: !!crawlerUnit, inCat, g: !!catG, walk: !!catWalk, field: !!catSoundField(), fin: (() => { const S = catSoundField(); if (!S) return null; let n = 0, mx = 0; for (const d of S.dist) if (d < Infinity) { n++; mx = Math.max(mx, d); } return [n, +mx.toFixed(1), S.dist.length, S.src]; })(), me: catNodeAt(camera.position.x, camera.position.z, camera.position.y - playerEye(), 1.6), at: [camera.position.x, camera.position.y, camera.position.z].map((v) => +v.toFixed(1)) }), celMarS: () => celMar, celClampTest, cpSyrS: () => cpSyr, cpInjS: () => cpInj, celPupS: () => celPup, setCelLast: (x, z, f) => { celLastFloor = f; celLastSpot.x = x; celLastSpot.z = z; _preMove.set(x, 0, z); groundY = f; }, startTaunt, tauntS: () => ({ ready: TAUNT.ready, on: TAUNT.on, t: +TAUNT.t.toFixed(2), vis: tauntHand.visible }), tauntHand, hookGullTightS: (i, ox, oy, oz, dx, dy, dz) => hookGullTight(isleBirds[i], new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize()), isleBirdsS: () => isleBirds, celMarRunYawS: () => celMar && celMar.runYaw, setCelWash: (v) => { celWash = v; }, startCellar, placeInCellar, placeOutOfCellar,
   celS: () => ({ inCel, celBusy, ready: celReady, walls: !!celWalls, out: !!(celOut && celOut.m), pup: !!celPup, lamps: celLamps.length, world: celWorld, outM: celOut && celOut.m, fy: celOut && celOut.fy }),
   celOutBlocks, celFloorNear }));
 
@@ -132541,6 +136577,7 @@ function elogEnsure(k) {
   else { retireUnit(u); const i = mutants.indexOf(u); if (i >= 0) mutants.splice(i, 1); }
 }
 function elogSave() { elogNorm(); return ELOG.order.map((k) => [k, ELOG.kinds[k].n]); }
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { elogS: { ensure: elogEnsure, kindKey: elogKindKey, out: elogOut, name: elogName, OTHER: ELOG_OTHER, makeKind: elogMakeKind } }));   // (`tools/elogall.js`)
 /* a save from before the bodies were one line: its `farmerN` lines summed into theirs — here, at first use, not in `elogLoad`, which
  * a restore can run before this module has read the farmers (`FARM_ROSTER`, `MUT_KINDS`) */
 function elogNorm() {
@@ -132910,8 +136947,12 @@ function updateElvLand(dt) {
   // are past him (never on a frame a checkpoint lands miles off: it is all a long way down the beach from the pavilion)
   const near = !inRoom();
   if (near && p.z < ELV.z + 110 && p.z > HOUSE_Z - 160) { if (!elvMan) loadElvMan(); if (!elvPup) loadElvPuppet(); }
-  if (near && p.z < ELV.z + 40 && p.z > HOUSE_Z - 150) { if (!elvFieldMesh) buildElvField(); elvFieldShow(); if (elvFieldMesh && !elvTrail) { elvTrail = 'pending'; warmStep('elv trail', buildElvTrail); } }
-  if (near && p.z < -628.5 && p.z > HOUSE_Z - 150) { if (!houseWorld) loadHouse(); houseSeen = true; }   // (where it was asked for before Elvédor moved on, 2026-10-18: as far ahead of the house as ever — built at boot now, first SHOWN here)
+  if (near && p.z < HOUSE_Z + 230 && p.z > HOUSE_Z - 150) { if (!elvFieldMesh) buildElvField(); elvFieldShow();   // (from 230 m, not 40 m before Elvédor's mark: the dead trees and the gully's dressing came into sight half-lit through the fog — the same pop, 2026-11-25)
+    if (elvFieldMesh && !elvTrail) { elvTrail = 'pending'; warmStep('elv trail', buildElvTrail); } }
+  /* (NO POP — 2026-11-25, the owner, with a still of it up on the cliff: "i can see this spawn in". It was loaded AND first shown at
+   * z −628.5, 88 m short of it, where the fog (≈0.014) still lets a fifth of it through: it appeared whole, on the skyline. Now it is
+   * loaded 230 m out and shown from 200 m, where the fog has it all but gone — it comes up out of the murk as you walk.) */
+  if (near && p.z < HOUSE_Z + 230 && p.z > HOUSE_Z - 150) { if (!houseWorld) loadHouse(); houseSeen = true; }   // (where it was asked for before Elvédor moved on, 2026-10-18: as far ahead of the house as ever — built at boot now, first SHOWN here)
   if (houseWorld) houseWorld.visible = houseSeen && !inRoom() && Math.abs(p.z - HOUSE_Z) < 200;
   if (houseReady && !houseWalls && Math.abs(p.z - HOUSE_Z) < 170) fortWallsStep(3, HOUSE_SITE);
   if (houseWalls && !houseWorld.userData.dressed) {
@@ -134461,6 +138502,7 @@ function tmpWalk(p, feet) {
   const lx = p.x - TMP_X, lz = p.z - TMP_Z, r = Math.hypot(lx, lz);
   if (r > TMP_WALK_R) { p.x = TMP_X + lx * TMP_WALK_R / r; p.z = TMP_Z + lz * TMP_WALK_R / r; }
 }
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { tmpCellTopS: (lx, lz) => tmpCellTop(lx, lz), tmpPushOutS: (p, feet) => tmpPushOut(p, feet), tmpGS: () => tmpG && { solid: tmpG.solidN, tall: tmpG.tallN } }));
 function tmpClampPlayer() {
   if (!inTemple || !tmpReady || !tmpModuleIn) return false;
   const p = camera.position;
@@ -134702,13 +138744,22 @@ function tmpBuild(gltf, X, H, ax, sandTex) {
 function tmpBuildSolids(root, byName, inv) {
   const n = Math.round(TMP_GRID_R * 2 / TMP_CELL), cell = new Float32Array(n * n).fill(-1e9), E = -1e8;
   const A = new THREE.Vector3(), B = new THREE.Vector3(), C = new THREE.Vector3(), Pp = new THREE.Vector3();
+  const over = new Map();
   let solidN = 0;
   const mark = (x, y, z) => {
     const i = Math.floor((x + TMP_GRID_R) / TMP_CELL), j = Math.floor((z + TMP_GRID_R) / TMP_CELL);
     if (i < 0 || j < 0 || i >= n || j >= n) return;
     const g = tmpFloorAt(x, z);
-    if (y < g + 0.3 || y > g + 2.4) return;             // under the knee, or over the head: not in the way
-    const k = j * n + i; if (cell[k] < E) solidN++;
+    if (y < g + 0.3) return;                            // under the knee: not in the way
+    const k = j * n + i;
+    /* (OVER THE HEAD IS KEPT, by height — 2026-11-26, the owner, a still from INSIDE a pillar three metres up its stepped base: "AS FOR
+     * THE FINAL BOSS I SHOULD NOT CLIP THROUGH THE PILLARS EVER". Stone over 2.4 m was dropped here as "not in the way", so a column's
+     * cell knew a top of 2.4 m at most: climb its base's steps (each under a step's height) and from two metres up the shaft was no
+     * longer solid to you. What is over the head is now noted per cell in half-metre bands, and below a solid cell's top is carried
+     * up through every band that follows on from it — the shaft, all 40 m of it — while the ring far overhead, with open air under
+     * it, still blocks nothing on the floor.) */
+    if (y > g + 2.4) { let bz = over.get(k); if (!bz) over.set(k, bz = new Uint8Array(128)); bz[Math.min(127, Math.floor((y - g) * 2))] = 1; return; }
+    if (cell[k] < E) solidN++;
     cell[k] = Math.max(cell[k], y);
   };
   for (const name of ['temple002_2', 'temple006_6']) {   // (the three fallen columns, .007–.009, are out of the pack: 2026-11-18, room for the fight)
@@ -134749,7 +138800,55 @@ function tmpBuildSolids(root, byName, inv) {
     if (no < E) continue;
     fill[k] = Math.min(w, e, s, no); solidN++;
   }
-  tmpG.cell = fill; tmpG.cn = n; tmpG.solidN = solidN;
+  /* a solid cell's top carried up through the stone that follows on over it (bands at most a metre apart) — AFTER the fill: a
+   * column's shaft stands on its stepped base, so its own cells have no stone at all between the knee and the head and are solid
+   * only as the base's inside. Then what a tall shell encloses is as tall as the shell: the middle of the shaft. */
+  let tall = 0;
+  for (const [k, bz] of over) {
+    const i = k % n, j = (k - i) / n, cxl = (i + 0.5) * TMP_CELL - TMP_GRID_R, czl = (j + 0.5) * TMP_CELL - TMP_GRID_R, g = tmpFloorAt(cxl, czl);
+    if (fill[k] < E) {
+      /* (a shaft's cell the base does not enclose: stone that begins within reach over the base — under 4 m — is a wall from there
+       * up. Only in the pillars' own ring: nothing else in the room may grow a wall out of an overhang.) */
+      const rr = Math.hypot(cxl, czl); if (rr < KING_PILLARS.face - 2 || rr > KING_PILLARS.face + 7) continue;
+      let lb = -1; for (let q = 4; q <= 7; q++) if (bz[q]) { lb = q; break; }
+      if (lb < 0) continue;
+      fill[k] = g + lb * 0.5; solidN++;
+    }
+    let b = Math.max(3, Math.floor((fill[k] - g) * 2)), up = false;
+    for (;;) { if (b + 1 < 128 && bz[b + 1]) b += 1; else if (b + 2 < 128 && bz[b + 2]) b += 2; else break; up = true; }
+    if (up) { fill[k] = Math.max(fill[k], g + (b + 1) * 0.5); tall++; }
+  }
+  const raised = new Float32Array(fill);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const k = j * n + i, T0 = fill[k]; if (T0 < E) continue;
+    let m = Infinity, ok = true;
+    for (const st of [-1, 1, -n, n]) {
+      let f = -1;
+      for (let d = 1; d <= reach; d++) { const q = k + st * d; if (q < 0 || q >= n * n || ((st === 1 || st === -1) && Math.floor(q / n) !== j)) break; if (fill[q] > T0 + 1) { f = fill[q]; break; } }
+      if (f < 0) { ok = false; break; }
+      m = Math.min(m, f);
+    }
+    if (ok) { raised[k] = m; tall++; }
+  }
+  /* AND A SHAFT HAS NO HOLES IN IT. Measured (`tools/tmppillar.js`): three of the eleven were still walked through from three metres
+   * up — their shells are sparse on this grid (fluted, a quarter-metre cell) and what a sparse shell encloses is not "enclosed" along
+   * a row or a column. So the tall cells in the pillars' ring are CLOSED: grown by 1.25 m and shrunk back by the same, which fills
+   * every gap and hollow under 2.5 m across and leaves the shafts' outlines where they were (they stand five metres and more apart). */
+  {
+    const RC = 5, tallM = new Uint8Array(n * n), dil = new Uint8Array(n * n), lo = KING_PILLARS.face - 3, hi = KING_PILLARS.face + 8;
+    const c0 = Math.max(RC, Math.floor((TMP_GRID_R - hi) / TMP_CELL) - RC), c1 = Math.min(n - 1 - RC, Math.ceil((TMP_GRID_R + hi) / TMP_CELL) + RC);
+    const inRing = (i, j) => { const x = (i + 0.5) * TMP_CELL - TMP_GRID_R, z = (j + 0.5) * TMP_CELL - TMP_GRID_R, r = Math.hypot(x, z); return r > lo && r < hi; };
+    for (let j = c0; j <= c1; j++) for (let i = c0; i <= c1; i++) { const k = j * n + i; if (raised[k] > E && inRing(i, j) && raised[k] > tmpFloorAt((i + 0.5) * TMP_CELL - TMP_GRID_R, (j + 0.5) * TMP_CELL - TMP_GRID_R) + 4) tallM[k] = 1; }
+    for (let j = c0; j <= c1; j++) for (let i = c0; i <= c1; i++) { if (!tallM[j * n + i]) continue; for (let dj = -RC; dj <= RC; dj++) for (let di = -RC; di <= RC; di++) dil[(j + dj) * n + i + di] = 1; }
+    for (let j = c0; j <= c1; j++) for (let i = c0; i <= c1; i++) {
+      const k = j * n + i; if (tallM[k] || !dil[k]) continue;
+      let all = true; for (let dj = -RC; dj <= RC && all; dj++) for (let di = -RC; di <= RC; di++) if (!dil[(j + dj) * n + i + di]) { all = false; break; }
+      if (!all) continue;
+      if (raised[k] < E) solidN++;
+      raised[k] = tmpFloorAt((i + 0.5) * TMP_CELL - TMP_GRID_R, (j + 0.5) * TMP_CELL - TMP_GRID_R) + 16; tall++;
+    }
+  }
+  tmpG.cell = raised; tmpG.cn = n; tmpG.solidN = solidN; tmpG.tallN = tall;
 }
 // a soft round puff, drawn once into a small canvas (the game's own way: small, quantised, nearest)
 /* A SEA OF CLOUD: layered sheets of drifting noise, lit from above (bright crowns, grey hollows), and a HOLE in them whose
@@ -135628,24 +139727,33 @@ bunkerFloorAt = (x, z, y) => (inTemple && tmpReady && Math.abs(x - TMP_X) < 400 
  *              his feet, 'leap' off it and down onto you (Mutant Jump Attack), the slam, and 'slamRec' — no cutscene, no float;
  *   'dying'    the Being Electrocuted take's fall (no lightning: the owner's word), the light gathering in him, and 'gone':
  *              he bursts into a bright light and comes apart (`kingExplode`); then the stats (`showEnd`). */
-const KING_RAG = {
-  Character1_Hips: 'CC_Base_Hip_02', Character1_Spine: 'CC_Base_Waist_033', Character1_Spine1: 'CC_Base_Spine01_034', Character1_Spine2: 'CC_Base_Spine02_035',
-  Character1_Neck: 'CC_Base_NeckTwist01_036', Character1_Head: 'CC_Base_Head_038',
-  Character1_RightShoulder: 'CC_Base_R_Clavicle_073', Character1_RightArm: 'CC_Base_R_Upperarm_074', Character1_RightForeArm: 'CC_Base_R_Forearm_077', Character1_RightHand: 'CC_Base_R_Hand_081',
-  Character1_LeftShoulder: 'CC_Base_L_Clavicle_049', Character1_LeftArm: 'CC_Base_L_Upperarm_050', Character1_LeftForeArm: 'CC_Base_L_Forearm_051', Character1_LeftHand: 'CC_Base_L_Hand_055',
-  Character1_RightUpLeg: 'CC_Base_R_Thigh_018', Character1_RightLeg: 'CC_Base_R_Calf_021', Character1_RightFoot: 'CC_Base_R_Foot_022', Character1_RightToeBase: 'CC_Base_R_ToeBase_023',
-  Character1_LeftUpLeg: 'CC_Base_L_Thigh_04', Character1_LeftLeg: 'CC_Base_L_Calf_05', Character1_LeftFoot: 'CC_Base_L_Foot_06', Character1_LeftToeBase: 'CC_Base_L_ToeBase_08',
-};
+/* THE SCOURGER (2026-11-25, the owner: "the final boss has been pissing me off this whole time take him out and add this guy take out
+ * all the animations except the run up the pillars and smash down plus the death animation. use the animations that come with this
+ * character as well for walking and the plunge attack … make sure the rig is correct … there is also a rare knockback and stand back
+ * up animation in there"). DM-913's "Scourger Rig" (CC-BY-4.0, README), a winged, tailed thing on a bird's legs with an axe in his
+ * right hand, packed by `tools/scourger_pack.py`: his control rig rebuilt from the bones that move his skin, his body bones under
+ * Mixamo's HumanIK names (so the map is the identity), his own four clips re-baked onto it (idle, walk, plunge, rear), 2.6 m. The
+ * Ancient King's body and every move of his are gone but the four the owner kept — the sprint to the pillar, the wall run, the slam
+ * off it (`king-moves.json`) and the electrocuted fall into the burst; the rest are the owner's Mesh2Motion clips
+ * (`assets/scourge-moves.json`, `ntar_moves.py -- scourge`). Retargeted with NO alignment (`noAlign`: both bind in a T; his legs
+ * keep their own shape). The machinery — the descent, the fight, the hunt, the pillar, the death — is the king's, under his name. */
+const KING_RAG = {};
+for (const n of ['Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head', 'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand', 'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
+  'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase', 'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase']) KING_RAG['Character1_' + n] = 'Character1_' + n;
 const KING_JOINTS = {
-  hip: 'CC_Base_Hip_02', waist: 'CC_Base_Waist_033', chest: 'CC_Base_Spine02_035', neck: 'CC_Base_NeckTwist01_036', head: 'CC_Base_Head_038',
-  clavL: 'CC_Base_L_Clavicle_049', clavR: 'CC_Base_R_Clavicle_073', armL: 'CC_Base_L_Upperarm_050', armR: 'CC_Base_R_Upperarm_074',
-  foreL: 'CC_Base_L_Forearm_051', foreR: 'CC_Base_R_Forearm_077', thighL: 'CC_Base_L_Thigh_04', thighR: 'CC_Base_R_Thigh_018',
-  calfL: 'CC_Base_L_Calf_05', calfR: 'CC_Base_R_Calf_021', footL: 'CC_Base_L_Foot_06', footR: 'CC_Base_R_Foot_022',
+  hip: 'Character1_Hips', waist: 'Character1_Spine', chest: 'Character1_Spine2', neck: 'Character1_Neck', head: 'Character1_Head',
+  clavL: 'Character1_LeftShoulder', clavR: 'Character1_RightShoulder', armL: 'Character1_LeftArm', armR: 'Character1_RightArm',
+  foreL: 'Character1_LeftForeArm', foreR: 'Character1_RightForeArm', thighL: 'Character1_LeftUpLeg', thighR: 'Character1_RightUpLeg',
+  calfL: 'Character1_LeftLeg', calfR: 'Character1_RightLeg', footL: 'Character1_LeftFoot', footR: 'Character1_RightFoot',
 };
+const KING_KEEP = ['kSprint', 'wallRun', 'kShock'];   // (of the king's moves, the owner's: the run to the pillar, the climb, the death; the slam off it is his own plunge now, `kingOwnClips`)
+const SCOURGE_MOVES_URL = 'assets/scourge-moves.json';
+let scourgeMoves = null, scourgeMovesAsked = false;
 // his moves are fetched with his room, not at boot (`ROOM_FILES.tmp` names the file); he is made once they are in
 const KING_MOVES_URL = 'assets/king-moves.json';
 let kingMoves = null, kingMovesLate = null, kingMovesAsked = false;
 function kingMovesFetch() {
+  if (!scourgeMovesAsked) { scourgeMovesAsked = true; bwFetch(SCOURGE_MOVES_URL, 106).then((buf) => { try { scourgeMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { console.warn('[king] the scourge moves did not parse', e); } }, (e) => console.warn('[king] the scourge moves did not load', e)); }
   if (kingMovesAsked) return; kingMovesAsked = true;
   bwFetch(KING_MOVES_URL, 886).then((buf) => {
     try { kingMoves = JSON.parse(new TextDecoder().decode(buf)); } catch (e) { console.warn('[king] his moves did not parse', e); return; }
@@ -135653,17 +139761,179 @@ function kingMovesFetch() {
   }, (e) => console.warn('[king] his moves did not load', e));
 }
 // the pack's reels (the knight's: his flinches, the parry's reel, the fall and the get-up) under his own, which win on a name
-function authorKingClips(u, m) {
+// (the king's four the owner kept, and the owner's Mesh2Motion clips; his own idle, walk, plunge and rear come in with his file)
+function authorKingClips(u, m, gltf) {
   const R = poseRig(u, m, null, KING_JOINTS, {});
-  const clips = tavRetargetAll(u, R, () => kingMoves, (f) => { kingMovesLate = f; });
+  const clips = [], take = (data) => { if (data) for (const c of ntarRetarget(u, m, R.bones, R.bind, R.J, R.hipUp, R.hipPos, data)) clips.push(c); };
+  take(kingMoves ? { fps: kingMoves.fps, clips: Object.fromEntries(KING_KEEP.filter((k) => kingMoves.clips[k]).map((k) => [k, kingMoves.clips[k]])) } : null);
+  take(scourgeMoves);
+  kingLayerIdle(clips, gltf);
+  kingOwnClips(clips, gltf);
   installLife(u, m, KING_JOINTS);
   return clips;
+}
+/* HIS WINGS (2026-11-26, the owner: "use his wings flapping in the sketchfab animations so he can float down and not be stuck in the
+ * random pose he should fly down then land on entry … he should do his slam down from the sketchfab animation too"). Of his own four
+ * clips only the PLUNGE flies: he springs at f20, is in the air f24-f58 (his hips 2.1-2.7 m up) beating his wings twice, and comes down
+ * at f62 with the axe into the ground at f67. Out of it:
+ *   sFly   one wing-beat of the air, f40-f56, looped — its last six frames eased into the six before f40, so it closes on itself (no
+ *          pair of frames in the air matches closer than 24°, measured). The descent floats down in it (`kingBeginDescent`).
+ *   sLand  f54 to the end: down out of the air onto his feet and the axe into the floor, then up into his stance (`KING_LAND0`).
+ *   kSlam  the whole plunge, under the name the pillar's leap asks for (`KING_SLAM`): the gather on the lip, the air, the slam. */
+const KING_STALK_YAW = 119;
+function kingLoopClip(src, name, f0, f1, N, fps = 30) {
+  const L = f1 - f0, tracks = [], A = new THREE.Quaternion(), B = new THREE.Quaternion();
+  for (const t of src.tracks) {
+    const ip = t.createInterpolant(), k = t.getValueSize(), q = t.ValueTypeName === 'quaternion';
+    const times = new Float32Array(L + 1), vals = new Float32Array((L + 1) * k);
+    for (let i = 0; i <= L; i++) {
+      const ii = i === L ? 0 : i, r = Array.from(ip.evaluate((f0 + ii) / fps)), w = ii >= L - N ? (ii - (L - N)) / N : 0;
+      if (w > 0) {
+        const r2 = ip.evaluate((f0 + ii - L) / fps);
+        if (q) { A.fromArray(r); B.fromArray(r2); A.slerp(B, w); A.toArray(r); } else for (let c = 0; c < k; c++) r[c] += (r2[c] - r[c]) * w;
+      }
+      times[i] = i / fps; vals.set(r, i * k);
+    }
+    tracks.push(new t.constructor(t.name, times, vals));
+  }
+  return new THREE.AnimationClip(name, L / fps, tracks);
+}
+const KING_POSE = { up: new Map(), jaw: new Map() };
+/* HE RUNS ON HIS OWN LEGS (2026-11-26, the owner: "ALSO FIX THIS LEGS WHEN HE RUNS ITS BAD IMPROVE HIS ANIMATIONS TO MATCH HIS RIG
+ * BETTER"). Both his runs are a MAN's (Mesh2Motion's stealth run, the king's Mixamo sprint) on a bird's legs: filmed side-on
+ * (`tools/scourgestrip.js`), the stalk tips him nearly flat with his legs trailing out behind, the sprint straightens them into a
+ * man's long strides — and his rig's middle knees, leg bases and toes, which no man has, stood in their bind through both. His own
+ * walk is the only clip made for those legs. So each run keeps its rhythm, its arms and its spine, and its HIPS and LEGS are drawn
+ * toward his walk's, step for step: the walk's one cycle (41 frames) laid over the run's, lined up on which leg is forward (the
+ * thighs' turn against each other, the offset that fits best); the thighs, shins, feet and toes 0.65 of the way to the walk's, the
+ * hips' lean half way and their height half way; and the joints only he has take the walk's whole. */
+const KING_GAIT = { cyc: 41 / 30, legs: 0.65, hips: 0.5 };
+function kingRunLikeWalk(clip, walk) {
+  const D = clip.duration, CY = KING_GAIT.cyc, N = 32, Q = THREE.Quaternion;
+  const wT = new Map(walk.tracks.map((t) => [t.name, t])), ips = new Map();
+  const at = (t, time, out) => { let ip = ips.get(t); if (!ip) ips.set(t, ip = t.createInterpolant()); const r = ip.evaluate(time); return out ? out.fromArray(r) : r; };
+  const cL = clip.tracks.find((t) => t.name === 'Character1_LeftUpLeg.quaternion'), cR = clip.tracks.find((t) => t.name === 'Character1_RightUpLeg.quaternion');
+  const wL = wT.get('Character1_LeftUpLeg.quaternion'), wR = wT.get('Character1_RightUpLeg.quaternion');
+  if (!cL || !cR || !wL || !wR) return;
+  // which leg is forward, through each cycle: the thighs' turn against each other (the same bones, so the same axes)
+  const a = new Q(), b = new Q(), sig = (L, R, dur, t0) => { const o = []; for (let i = 0; i < N; i++) { at(L, t0 + dur * i / N, a); at(R, t0 + dur * i / N, b); a.multiply(b.invert()); if (a.w < 0) { a.x = -a.x; a.y = -a.y; a.z = -a.z; } o.push([a.x, a.y, a.z]); } return o; };
+  const sw = sig(wL, wR, CY, 0), sr = sig(cL, cR, D, 0);
+  let ax = 0, bv = -1; for (let c = 0; c < 3; c++) { const m = sw.reduce((q, v) => q + v[c], 0) / N, va = sw.reduce((q, v) => q + (v[c] - m) * (v[c] - m), 0); if (va > bv) { bv = va; ax = c; } }
+  const mw = sw.reduce((q, v) => q + v[ax], 0) / N, mr = sr.reduce((q, v) => q + v[ax], 0) / N;
+  let off = 0, best = -Infinity; for (let k = 0; k < N; k++) { let c = 0; for (let i = 0; i < N; i++) c += (sr[i][ax] - mr) * (sw[(i + k) % N][ax] - mw); if (c > best) { best = c; off = k; } }
+  const wTime = (t) => ((t / D + off / N) % 1) * CY;
+  const LEG = /^Character1_(Left|Right)(UpLeg|Leg|Foot|ToeBase)\.quaternion$/, OWN = /^(Main_Knee|LegBase|InnerToe|OutterToe|Toe\d)/;
+  for (const t of clip.tracks) {
+    const w = LEG.test(t.name) ? KING_GAIT.legs : t.name === 'Character1_Hips.quaternion' ? KING_GAIT.hips : 0, wt = wT.get(t.name);
+    if (w > 0 && wt) for (let i = 0; i < t.times.length; i++) { a.fromArray(t.values, i * 4); at(wt, wTime(t.times[i]), b); a.slerp(b, w); a.toArray(t.values, i * 4); }
+    if (t.name === 'Character1_Hips.position' && wt) for (let i = 0; i < t.times.length; i++) { const r = at(wt, wTime(t.times[i])); t.values[i * 3 + 1] += (r[1] - t.values[i * 3 + 1]) * KING_GAIT.hips; }
+  }
+  /* (and his weapon arm CARRIES it: a man sprinting pumps his arms, and with three metres of polearm in the fist that was its blade
+   * through the floor twice a stride — each joint of that arm held 0.75 of the way to where it is on average through the cycle) */
+  for (const bn of ['RightShoulder', 'RightArm', 'RightForeArm', 'RightHand']) {
+    const t = clip.tracks.find((x) => x.name === 'Character1_' + bn + '.quaternion'); if (!t) continue;
+    const m = new Q(0, 0, 0, 0), n4 = t.times.length; a.fromArray(t.values, 0);
+    for (let i = 0; i < n4; i++) { b.fromArray(t.values, i * 4); if (b.dot(a) < 0) { b.x = -b.x; b.y = -b.y; b.z = -b.z; b.w = -b.w; } m.x += b.x; m.y += b.y; m.z += b.z; m.w += b.w; }
+    m.normalize();
+    for (let i = 0; i < n4; i++) { b.fromArray(t.values, i * 4).slerp(m, 0.75); b.toArray(t.values, i * 4); }
+  }
+  // the joints only he has: his walk's, whole, on the run's own frames
+  const ref = clip.tracks.find((t) => t.name === 'Character1_Hips.quaternion'), have = new Set(clip.tracks.map((t) => t.name));
+  if (ref) for (const [nm, wt] of wT) {
+    if (!OWN.test(nm) || !nm.endsWith('.quaternion')) continue;
+    const vals = new Float32Array(ref.times.length * 4); for (let i = 0; i < ref.times.length; i++) { const r = at(wt, wTime(ref.times[i])); vals[i * 4] = r[0]; vals[i * 4 + 1] = r[1]; vals[i * 4 + 2] = r[2]; vals[i * 4 + 3] = r[3]; }
+    const nt = new wt.constructor(nm, ref.times, vals);
+    if (have.has(nm)) clip.tracks[clip.tracks.findIndex((x) => x.name === nm)] = nt; else clip.tracks.push(nt);
+  }
+  KING.gait = (KING.gait || '') + clip.name + ' off ' + off + '/' + N + ' axis ' + 'xyz'[ax] + ' | ';
+}
+// `src` from frame f0 up to f1 and back, eased at both ends (a cosine), N samples a cycle: a loop with no seam
+function kingPingClip(src, name, f0, f1, N, fps = 30, only = null) {
+  const dur = 2 * (f1 - f0) / fps * 1.15, tracks = [];
+  for (const t of src.tracks) {
+    const ip = t.createInterpolant(), k = t.getValueSize(), times = new Float32Array(N + 1), vals = new Float32Array((N + 1) * k);
+    const still = only && !only.test(t.name);   // (`only`: the tracks that move; the rest hold the pose of the middle frame)
+    for (let i = 0; i <= N; i++) {
+      const f = still ? (f0 + f1) / 2 : f0 + (f1 - f0) * (0.5 - 0.5 * Math.cos(2 * Math.PI * (i % N) / N)), r = ip.evaluate(f / fps);
+      times[i] = dur * i / N; for (let c = 0; c < k; c++) vals[i * k + c] = r[c];
+    }
+    tracks.push(new t.constructor(t.name, times, vals));
+  }
+  return new THREE.AnimationClip(name, dur, tracks);
+}
+function kingOwnClips(clips, gltf) {
+  /* (THE STALKING RUN TURNED TO HIS FRONT: Mesh2Motion's Run_Stealth came on its Unreal skeleton (`glb_split.py --ue`) and the packer
+   * read its forward off frame 0's toes, 119° off — he ran it side-on, hips turned past his shoulder (`tools/scourgeface.js`: his
+   * hips' facing over the cycle 46-76 where his walk and the sprint read ±13 off his idle's). The whole run turned back about the
+   * up axis, on the hips' track — everything rides on the hips) */
+  const sk = clips.find((c) => c.name === 'sStalk'), ht = sk && sk.tracks.find((t) => t.name === 'Character1_Hips.quaternion');
+  if (ht) {
+    const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), KING_STALK_YAW * Math.PI / 180), q = new THREE.Quaternion();
+    for (let i = 0; i < ht.values.length; i += 4) { q.fromArray(ht.values, i).premultiply(qy); q.toArray(ht.values, i); }
+  }
+  { const wk = gltf && (gltf.animations || []).find((c) => c.name === 'walk'); if (wk) for (const nm of ['sStalk', 'kSprint']) { const c = clips.find((x) => x.name === nm); if (c) kingRunLikeWalk(c, wk); } }
+  const pl = gltf && (gltf.animations || []).find((c) => c.name === 'plunge'); if (!pl) return;
+  // (two poses of his own, for the fight's layer — `kingRigLife`: his wings up, f48 of the plunge; his jaw open, f36)
+  for (const t of pl.tracks) {
+    if (!t.name.endsWith('.quaternion')) continue; const bn = t.name.slice(0, -11), ip = t.createInterpolant();
+    if (/^(Wing|Feathers)/.test(bn)) KING_POSE.up.set(bn, new THREE.Quaternion().fromArray(ip.evaluate(48 / 30)));
+    if (/^(Jaw|Tongue)/.test(bn)) KING_POSE.jaw.set(bn, new THREE.Quaternion().fromArray(ip.evaluate(36 / 30)));
+  }
+  /* (SMOOTH — 2026-11-26, the owner: "he shouldnt be stuttering like that when flying down either". The loop was one beat f40-f56 with
+   * its last six frames eased onto the six before f40 — poses 24° and more apart, crossed in a fifth of a second, twice a second: a
+   * hitch every beat. Now HALF a beat, there and back: f40 is the bottom of his stroke and f50 the top (his wings and his hips both
+   * turn round there — nearly still), run up and back down on a cosine, so it closes on itself exactly and never changes speed at once.) */
+  /* (AND ONLY HIS WINGS — the owner, the same day: "HIS ENTRANCE HES TWITCHING ALOT IT SHOULD BE SMOOTH WITH JUST HIS WINGS FLAPPING".
+   * There and back took his whole body with it: his hips, legs, arms and tail rocked a third of a metre every beat, all the way
+   * down. Now his body holds the one pose of the stroke's middle and only his wings and their feathers beat.) */
+  clips.push(kingPingClip(pl, 'sFly', 40, 50, 28, 30, /^(Wing|Feathers)/));
+  /* (THE SWOOP — 2026-11-26, the owner: "final boss walk and all animations are still bad improve these"; before it, "FIX THIS LEGS WHEN
+   * HE RUNS ITS BAD", "fix the rig an dutilize it to its fullest potential". A long hunt was a man's sprint on a winged raptor's legs.
+   * From far off he comes ON HIS WINGS now: the entrance's beat (only his wings move), his body tipped forward about his hips the way
+   * he flies at you, his hips carried low so his feet trail a hand over the floor, a little rise and fall with each stroke.) */
+  { const sw = kingPingClip(pl, 'sSwoop', 40, 50, 28, 30, /^(Wing|Feathers)/), hq = sw.tracks.find((t) => t.name === 'Character1_Hips.quaternion'), hp = sw.tracks.find((t) => t.name === 'Character1_Hips.position');
+    const id = (gltf.animations || []).find((c) => c.name === 'idle'), ip = id && id.tracks.find((t) => t.name === 'Character1_Hips.position');
+    if (hq && hp) {
+      const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), KING_SWOOP.pitch), q = new THREE.Quaternion(), n = hp.values.length / 3, y0 = ip ? ip.values[1] : 0.725;
+      for (let i = 0; i < hq.values.length; i += 4) { q.fromArray(hq.values, i).premultiply(qx); q.toArray(hq.values, i); }
+      for (let i = 0; i < n; i++) { hp.values[i * 3] = 0; hp.values[i * 3 + 1] = y0 * KING_SWOOP.lift + y0 * KING_SWOOP.bob * Math.sin(2 * Math.PI * (i % (n - 1)) / (n - 1) - 0.9); hp.values[i * 3 + 2] = 0; }
+      clips.push(sw);
+    } }
+  clips.push(sliceClip(pl, 'sLand', 54 / 30, pl.duration));   // (`sliceClip`, not three's subclip: that drops every track with no key in the window — his constant ones)
+  const sl = pl.clone(); sl.name = 'kSlam'; clips.push(sl);
+}
+const KING_SWOOP = { pitch: 0.48, lift: 2.0, bob: 0.07, from: 9 };   // (the tip forward, rad; his hips' height over his idle's; the stroke's rise and fall; hunts from further than this are flown)
+// HIS RUN, drawn each time he sets off (the owner: "use the walk animation from here too … try this run with his old one too
+// sometimes"): the low stalking run (Mesh2Motion's Run_Stealth, `sStalk`) two times in three, the king's sprint the third
+const kingRunClip = (u) => (u.clips.sStalk && Math.random() < 0.67 ? 'sStalk' : 'kSprint');
+/* WHAT A MAN DOES NOT HAVE (2026-11-25): a man's clips drive a man's bones; on the Scourger his wings, his tail, his fingers and his
+ * jaw stood frozen in their bind through every one of them (filmed, `tools/kingclips.js`: wings flat out, the axe hand open). They
+ * take his OWN idle's motion instead, looped through the clip — the wings breathing, the tail alive, the fist closed on the axe. */
+const KING_LAYER_RE = /^(Wing|Feathers|Tail|Jaw|Tongue|Eye|MFinger|SubPinky|Pinky|InexFinger|IndexFinger|Thumb)/;
+function kingLayerIdle(clips, gltf) {
+  const idle = gltf && (gltf.animations || []).find((c) => c.name === 'idle'); if (!idle) return;
+  const src = new Map(); for (const t of idle.tracks) if (KING_LAYER_RE.test(t.name)) src.set(t.name, t);
+  const D = idle.duration, out = [];
+  for (const c of clips) {
+    let n = 0;
+    for (let i = 0; i < c.tracks.length; i++) {
+      const t = c.tracks[i], st = src.get(t.name); if (!st) continue;
+      const ip = st.createInterpolant(), k = st.getValueSize(), tm = t.times, vals = new Float32Array(tm.length * k);
+      for (let f = 0; f < tm.length; f++) { const r = ip.evaluate(tm[f] % D); for (let q = 0; q < k; q++) vals[f * k + q] = r[q]; }
+      c.tracks[i] = new t.constructor(t.name, tm, vals); n++;
+    }
+    out.push(c.name + ':' + n);
+  }
+  KING.layered = out.join(' ');
 }
 MUT_KINDS.king = Object.assign({}, KN_BASE, {
   /* 2.6 m (his file's 3.2 at 0.8125, `fixScale`). He was 3.4: these are a man's takes against a man, and at 3.4 m his
    * uppercut came through 2.7 m up, his kick 2.6, his knee 3.5 — over your head, every one (the owner, 2026-11-20: "he never
    * even hit me"). At 2.6 they arrive at your head and chest. */
-  glb: 'assets/ancient-king.glb', fixScale: 0.8125, boneGaps: true, kingBody: true,
+  /* (BIGGER — 2026-11-26, the owner: "the final boss needs to be bigger … he should be menacing in size and stature": 1.3 of his
+   * file, 3.4 m to the crown, a head and a half over you hunched; every stand-off is measured off his drawn axe, `kingMeasureBlows`) */
+  glb: 'assets/scourger.glb', fixScale: 1.3, noAlign: true, flatten: ['Character1_Hips'], kingBody: true,
+  alignRoll: { Character1_RightHand: [-79, 'MFinger1_R'], Character1_LeftHand: [77, 'MFinger1_L'] },   // (his fists' roll onto a man's: `ntarRetarget`)   // (the Scourger, 2.6 m in his file: `tools/scourger_pack.py`)
   c13Body: false, fortBody: false, preParse: false, solo: true,
   pre: null, author: authorKingClips, joints: KING_JOINTS, rag: KING_RAG, cutout: true,
   drive: (u, dt) => kingDrive(u, dt), onDeath: (u) => kingDeath(u), postClip: (u, saved) => kingPersona(u, saved),
@@ -135671,8 +139941,8 @@ MUT_KINDS.king = Object.assign({}, KN_BASE, {
    * feet, nearly every opening taken, strings four deep and six once he is angry, a poise that breaks late and mends fast, a
    * parry window under the pack's. What keeps him fair is the same as ever: every blow is the animator's own take at its own
    * speed, the tell is the wind-up you can see, and each contact can be guarded or parried on its beat. */
-  h: 2.6, hp: 230, dmg: 1, hitR: 0.85,   // (230: 180 until 2026-11-21, the owner: "make the final boss harder and more aggressive")
-  /* (the rest of this line was inside the comment above from 2026-11-21 to 11-22: no body, reach or lunge stop of his own) */ body: 0.5, lungeStop: 1.2, landSlop: 0.45, limbR: 0.40, foeLimbR: 0.62, closeBody: true, stopPick: 0.6,
+  h: 3.4, hp: 320, dmg: 1, hitR: 1.1,   // (320: "GIVE FINAL BOSS MORE HEALTH TOO", 2026-11-26; 230 before)   // (230: 180 until 2026-11-21, the owner: "make the final boss harder and more aggressive")
+  /* (the rest of this line was inside the comment above from 2026-11-21 to 11-22: no body, reach or lunge stop of his own) */ body: 0.65, lungeStop: 1.2, landSlop: 0.45, limbR: 0.45, foeLimbR: 0.75, closeBody: true, stopPick: 0.6,
   /* (2026-11-20, round 3, the owner: "MAKE ALL HIS HITS ACTUALLY CONNECT". Studied frame by frame, `tools/kingstudy.js`: from
    * his stand-off every blow went through your face — kick 0.10 m, bicycle 0.06-0.14, uppercut 0.14-0.28 — and every miss was
    * thrown from 1.8-2.1 m with the closing starting 0.18 s before the contact at 2.6 m/s, so he arrived half a metre short.
@@ -135684,95 +139954,168 @@ MUT_KINDS.king = Object.assign({}, KN_BASE, {
   /* (HARDER AND MORE AGGRESSIVE — 2026-11-21, the owner: "make the final boss harder and more aggressive": he presses harder,
    * takes more of the openings you leave, strings six deep (eight angry), backs off less and for less long, waits less between
    * strings; 230 of him. Every blow is still its own take with its own wind-up to read and its own beat to guard or parry.) */
-  speedK: 1.8, aggr: 6.4, press: 1.35, chainMax: 6, opening: 0.24,
+  /* (BACK AND FORTH — 2026-11-26, the owner: "i want this to feel like a sekiro fight back and fourth". Turns, not a siege: his strings
+   * four deep (six angry, were six and eight), and each one ends in an opening that is yours — 0.6 s (0.45 angry, were 0.24 and 0.16);
+   * outside it he turns half your blows on his axe (`block`, was 0.28) and comes straight back off it (`dealerBlock`); and his
+   * blows are read and deflected on the pack's own window (`parryK` 1, was 0.85) — the parry is the fight's verb, the riposte its prize) */
+  speedK: 1.8, aggr: 6.4, press: 1.35, chainMax: 4, opening: 0.6,
   circle: 0.04, step: 0.05, feint: 0, sizeUp: 0.02, restless: 0.5, regroup: 0.06, regroupT: [0.35, 0.65], sideKeep: 0.45,
-  velGait: true, gaitBands: true, gaitMax: 1.6, smoothMove: true, noSkate: true, lungeMax: 2.6, stepBack: 0,
-  gaitToes: ['CC_Base_L_ToeBase_08', 'CC_Base_R_ToeBase_023'],
+  velGait: true, gaitBands: true, gaitMax: 1.6, smoothMove: true, noSkate: true, lungeMax: 3.4, stepBack: 0, gaitLo: 0.7, gaitHi: 1.3,   // (a blow chained from too far closes at his own stride, 1.3 of a man's — the quick cut chained from 3 m fell short at 2.6. No `stepBack`: it slid him backwards through his wind-ups, and inside his reach the haft is a blow all the same, `kingLands`. HIS GAITS AT THEIR OWN PACE (`gaitLo`/`gaitHi`, 2026-11-26, "fix his walk animations too they look weird"): his walk covers 1.14 m/s, and it was stretched to 1.8 of that before a run took over — played at a third of its own pace. Now neither is stretched past 1.3 nor slowed under 0.7: between a walk and a run he WALKS, heavy, at his walk's pace)
+  gaitToes: ['Character1_LeftToeBase', 'Character1_RightToeBase'],
   turnMax: 3.8, yawK: 0.8, aimK: 0.5, aimFront: 0.32, aimDrop: 0.05, hitFront: 0.3, hitOnScreen: true, fade: 0.3,
-  poise: 30, poiseBack: 3.4, poiseWait: 0.7, parryK: 0.85, recoilK: 0.4, stunK: 0.6, block: 0.28,
+  poise: 30, poiseBack: 3.4, poiseWait: 0.7, parryK: 1.0, recoilK: 0.4, stunK: 0.6, block: 0.5,
   /* (a block costs a quarter of your bar and a little: now every blow of his arrives, the old 0.8 — two thirds of the bar for
    * his kick — broke your guard on the second blow of every string, and the third went through. Measured, `kingduel.js &guard=1`) */
   blockCost: 0.55,
   fidgetK: 0.02, fidgetGap: 4.0, gapRate: 1.25,
-  knockClip: 'knockOut', riseClip: 'getUp', knockAfter: 5, knockLapse: 7, knock: { fall: 1.27, lie: 0.34, rise: 1.33, land: 0.78, slide: null },
+  /* (the owner's "rare knockback and stand back up": Hit_Knockback thrown off his feet, LayToIdle up into his stance — `knockAfter`
+   * 9 of your blows inside `knockLapse` 12 s, so it comes seldom) */
+  knockClip: 'sKnock', riseClip: 'sRise', knockAfter: 9, knockLapse: 12, knock: { fall: 0.55, lie: 0.6, rise: 1.45, land: 0.4, slide: null },
   // limbs: 0 his right arm, 1 his left, 2 his right leg, 3 his left (the leg's chain runs to the toe, the knee in it)
   rig: { arm: KING_RAG.Character1_RightArm, fore: KING_RAG.Character1_RightForeArm, hand: KING_RAG.Character1_RightHand,
          armL: KING_RAG.Character1_LeftArm, foreL: KING_RAG.Character1_LeftForeArm, handL: KING_RAG.Character1_LeftHand, head: KING_RAG.Character1_Head,
          limbs: [[KING_RAG.Character1_RightUpLeg, KING_RAG.Character1_RightLeg, KING_RAG.Character1_RightFoot, KING_RAG.Character1_RightToeBase],
-                 [KING_RAG.Character1_LeftUpLeg, KING_RAG.Character1_LeftLeg, KING_RAG.Character1_LeftFoot, KING_RAG.Character1_LeftToeBase]] },
+                 [KING_RAG.Character1_LeftUpLeg, KING_RAG.Character1_LeftLeg, KING_RAG.Character1_LeftFoot, KING_RAG.Character1_LeftToeBase],
+                 ['TailBase', 'Tail_005', 'Tail_010', 'Tail']] },   // (4: the Scourger's tail — his "rear attack" is a tail strike behind him)
   // stone under a lit sky: his own maps, a breath of lift, a faint cold edge (METALNESS IS A TRAP)
-  emis: 0.05, rim: [0.03, 0.03, 0.036], gamma: 1.0,
+  /* (SEEN — 2026-11-26, the owner: "make him more visible in the black and white setting": graded as the fight grades it, his dark
+   * hide and feathers were one black shape on the dark floor. His maps lifted (gamma under 1 raises the darks, not the lights), more of
+   * their own light, and a pale edge where his outline turns from you — the overcast behind him: `tools/scourgelook.js`) */
+  emis: 0.3, rim: [0.28, 0.28, 0.3], gamma: 0.75,
   matMore: (mm) => { mm.roughness = 0.82; },
-  anim: { idle: 'kIdle', walk: 'kWalk', run: 'kRun', roar: 'kIdle', die: 'kShock', back: 'kWalk', rate: 1.0, lean: 0.03, strafeK: 1.0 },
-  gaits: { walk: ['kWalk'], run: ['kRun', 'kSprint'], idle: ['kIdle'], strafeL: ['kStrWL', 'kStrL'], strafeR: ['kStrWR', 'kStrR'] },
-  alias: { idle: 'kIdle', idle2: 'kIdle', walk2: 'kWalk', run2: 'kSprint', roar: 'kIdle', roar2: 'kIdle', die2: 'kShock', back: 'kWalk', calm: 'kIdle',
-           strafeL: 'kStrWL', strafeR: 'kStrWR', hit: 'hit', hitBig: 'hitBig', hitSide: 'hitSide', hitBack: 'hitBack', hitHead: 'hitHead', parry: 'parry',
-           block: 'block', blockC: 'blockC' },
-  stunClip: 'parry', first: 'kIdle', sleepIdle: 'kIdle', wakeAt: 0,
+  /* his own idle and walk (his file's), the king's sprint for his run; the owner's clips for the guard, the reels and the dodges. The
+   * king's names the rest of his code still asks by (`kIdle`, `hover`, `knockOut` …) answer to these. */
+  anim: { idle: 'idle', walk: 'walk', run: 'kSprint', roar: 'idle', die: 'kShock', back: 'walk', rate: 1.0, lean: 0.03, strafeK: 1.0 },   // (back: his walk run backwards — it was the dodge's hop, looped)
+  gaits: { walk: ['walk'], run: ['sStalk', 'sStalk', 'kSprint'], idle: ['idle', 'sIdleW'], strafeL: ['walk'], strafeR: ['walk'] },   // (the stalking run two times in three: `kingRunClip`)
+  alias: { idle2: 'sIdleW', walk2: 'walk', run2: 'kSprint', roar: 'idle', roar2: 'idle', die2: 'kShock', back: 'walk', calm: 'idle',
+           strafeL: 'walk', strafeR: 'walk', hit: 'sDodgeB', hitBig: 'sDodgeB', hitSide: 'sDodgeL', hitBack: 'sDodgeB', hitHead: 'sDodgeB', parry: 'sBlock',
+           block: 'sBlock', blockC: 'sBlock',
+           kIdle: 'idle', kWalk: 'walk', kRun: 'kSprint', hover: 'sFly', kJump: 'sLand', knockOut: 'sKnock', getUp: 'sRise',
+           kTurnL: 'walk', kTurnR: 'walk', kTurn90L: 'walk', kTurn90R: 'walk', kStrWL: 'walk', kStrWR: 'walk' },
+  stunClip: 'sDodgeB', first: 'idle', sleepIdle: 'idle', wakeAt: 0,
   voice: { f: 0.48, growl: 1.7, rasp: 1.3, throat: 'bellow' },
   use: {},
   // AT HALF OF HIM HE STOPS HOLDING BACK: quicker feet, quicker hands, longer strings (`kingRage` is the light of it)
-  rage: { aggr: 8.0, speedK: 2.15, press: 1.5, chainMax: 8, windK: 0.82, poiseBack: 4.6, circle: 0.01, feint: 0, opening: 0.16 },
-  onRage: (u) => kingRage(u), rageClip: 'kIdle', rageDur: 0.5,
+  rage: { aggr: 8.0, speedK: 2.15, press: 1.5, chainMax: 6, windK: 0.82, poiseBack: 4.6, circle: 0.01, feint: 0, opening: 0.45 },
+  onRage: (u) => kingRage(u), rageClip: 'idle', rageDur: 0.5,
 });
-/* HIS BLOWS, each its own take, with the contacts measured off it (`tools/ntar_moves.py -- king` logs every local maximum of
- * the hands', knees' and toes' speed; the frame each striking end is moving fastest, as a fraction of the take):
- *   the uppercut     a left jab at 0.137 and the right hand up through you at 0.466;
- *   the knee combo   the flying knee at 0.266 (the punch beside it four frames earlier is the same blow), then the right fist
- *                    at 0.405 and the left at 0.481 — a leap that crosses four metres of its own (`rm`);
- *   the kicks        the high one at 0.625, off a step and a turn (3.9 m of its own travel);
- *   the bicycle      a quick double off the floor, the right foot at 0.44 and the left at its end;
- *   the assassination the low kick to your legs at 0.277 and the right hand at 0.649 — the slowest, and two of your four.
- * Played at their own speed or a touch over (`rate`); a single blow holds its wind-up a beat (`natHold`), a string does not
- * (its first contact is the tell). */
+/* HIS BLOWS (2026-11-25, the Scourger): his own plunge and rear attack, and the owner's Mesh2Motion clips — the big overhead into a
+ * lunge, the dash (the hunt's arrival), the quick cut, the stepping cut and the string. Each contact is where the striking end (the
+ * axe's head for the right arm, `kingAxeTip`; the claws for the left) is moving fastest in front of him (`FARM`-style, measured:
+ * `tools/scourgeclips.js`, `SCOURGE_HIT`). His pillar slam is the king's (`kSlam`, `KING_SLAM`). */
+// (measured with his fists rolled true and the axe at KING_AXE_K, `tools/scourgeclips.js&prof=`: the axe's head through the space
+// in front of him at a man's head, fastest — the overhead 52 m/s at 0.325, the dash 124 at 0.20, the quick cut 84 at 0.43, the string's
+// three, his plunge coming down at 0.60; his "rear attack" is his TAIL whipped round behind him, 32 m/s at 0.52, `&end=Tail`)
+// (RE-MEASURED 2026-11-26 with the axe IN his fist — it had hung 1.22 m off it, and every head path above was that floating axe's —
+// and, through the man's clips, in the sword hold `kingAxeHold` turns it to: where the head crosses in front of him, on the clip alone.
+// The overhead 2.1 m up and 3.1 out at 0.313; the quick cut chest-high 1.9 out at 0.404; the stepping cut's low sweep 0.412; the dash's
+// whip 3 m out at 0.195; the string's three at 0.087, 0.42 (both overhead) and 0.54 (low); his plunge's head coming down through a
+// man's height 1.5 m out at 0.585, before it goes into the floor)
+// (AGAIN, later the same day, off the BLADE: what was measured above as the head was the haft's butt — `kingAxeTip`. With the blade
+// the striking end and the long grip through the sword clips: the overhead 0.319 (2.05 m up, 4.4 out), the dash 0.20, the quick cut
+// 0.415, the stepping cut 0.425, the string 0.087 / 0.41 / 0.537; his own plunge brings the blade from 5.7 m up to the floor 3 m in
+// front of him at 0.595 in his own hold; in the long grip the fight keeps, through a man's height 4 m out at 0.612)
+const SCOURGE_HIT = { plunge: [0.612], rear: [0.52], sAtk: [0.319], sDash: [0.20], sCutB: [0.415], sCutC: [0.425], sCombo: [0.087, 0.41, 0.537] };
 {
-  const P = (clip, hit, o) => Object.assign({ clip, hit, rate: 1.0, fluid: true, strike: 0.2, reach: 3.0, lunge: 0.5, stop: 2.2, limbs: [0, 1], dmg: 1, guardK: 1.5, chain: null }, o || {});
-  /* (2026-11-21, the owner: "MAKE HIS ANIMATIONS MORE UNIQUE … FIND A WAY TO MAKE THEM LOOK LIKE NOT STOCK MIXAMO ANIMATIONS"):
-   * the single blows retimed the way an animator works a mocap take — drawn back eased, a held beat at the cock (the tell),
-   * the strike accelerating into the contact frame, the follow-through leaving it at that speed and settling (`natHold`,
-   * `mutClipTime`'s fluid curve). The contact frame is the same frame; only the time round it is his. */
-  MUT_ATTACKS.kgUpper = P('kUpper', 0.466, { natHold: 0.10, cockF: 0.62, rate: 1.12, dmg: 2, guardK: 1.3, chain: 'kgKick', chainP: 0.62 });   // (its jab at 0.137 is a feint: thrown before he has stepped in, it never reaches you — not a contact)
-  MUT_ATTACKS.kgKnee = P('kKnee', 0.266, { more: [0.405, 0.481], rate: 1.05, limbs: [0, 1, 2], reach: 5.6, minDist: 3.0, hold: true, chain: 'kgUpper', chainP: 0.30 });
-  MUT_ATTACKS.kgKick = P('kKick', 0.625, { natHold: 0.10, cockF: 0.7, rate: 1.08, limbs: [2, 3], dmg: 2, guardK: 1.25, reach: 4.8, chain: 'kg360', chainP: 0.45 });   // (into the bicycle at 0.6 until 2026-11-21: "HE DOES THE BYCICLE KICK WAY TOO MUCH")
-  /* THE BICYCLE, FLOWN (2026-11-20, the owner: "he does it too fast he should fly and kick a few times"). The take is one
-   * cycle of the move made to loop — 17 frames, a kick a foot — and played once it was two kicks in 0.7 s. `kBikeAir`
-   * (`tools/king_bike_loop.py`) is the cycle three times: six kicks, right, left, right, left, right, left, at 0.7 of its
-   * speed — 2.3 s off the floor, a kick every 0.38 s, him lifted and driving at you through it (`kingAirBike`). Each kick
-   * is its own contact; a quarter of the guard each would be one and a half bars, so each costs a little (`guardK`), and
-   * the health is the string's, not six blows' (`comboGrace`: the kicks between still land — the flash, the knock). */
-  /* (2026-11-21, the owner: "MAKE THE BICYLCE KICK BETTER ITS TOO LONG AND HARD TO READ AS AN ATTACK": six kicks over 2.3 s
-   * read as a dance. Two cycles now — four kicks, `king_bike_loop.py 2` — at 0.8: 1.3 s off the floor, and a hop into it you
-   * can read, `kingAirBike`) */
-  const BIKE = { more: [15, 23, 31].map((i) => i / 32), rate: 0.8, limbs: [2, 3], guardK: 0.5, airBike: true };
-  MUT_ATTACKS.kgBike = P('kBikeAir', 7 / 32, Object.assign({}, BIKE, { chain: 'kgUpper', chainP: 0.55 }));
-  // (the bicycle thrown out of a flat-out run — `kingHuntStep`: the gap crossed in the air, never drawn in the ordinary way)
-  MUT_ATTACKS.kgRun = P('kBikeAir', 7 / 32, Object.assign({}, BIKE, { hold: true, air: 0.33, lunge: 3, minDist: 2.0, reach: 3.4, chain: 'kgUpper', chainP: 0.5 }));
-  MUT_ATTACKS.kgAssn = P('kAssn', 0.277, { more: [0.649], rate: 1.12, limbs: [0, 2], dmg: 2, guardK: 1.4, chain: 'kgKick', chainP: 0.5 });
-  /* MORE OF HIM (2026-11-21, the owner: "HE DOES THE BYCICLE KICK WAY TOO MUCH THAT SHOULD BE KINDA RARE ADD MORE ANIMATIONS WHERE
-   * SOME FALL SHORT JUST MAKE THEM GOOD"): three takes of the owner's, contacts off `ntar_moves.py -- king`'s PEAKS —
-   *   the flying kick   out of his sprint (`kingHuntStep`): off one foot, the other through your chest at f8 of 45;
-   *   the crescent kick the right leg swept up and round and down through you, its toe fastest at f30 of 63;
-   *   the 360           round on his heel, the right forearm through your head at f20 of 52. */
-  MUT_ATTACKS.kgFly = P('kFlyKick', 8 / 45, { rate: 0.95, limbs: [2, 3], dmg: 2, guardK: 1.2, hold: true, air: 0.30, lunge: 3, minDist: 2.0, reach: 3.8, chain: 'kgUpper', chainP: 0.45 });
-  MUT_ATTACKS.kgCres = P('kCrescent', 30 / 63, { natHold: 0.09, cockF: 0.7, rate: 1.12, limbs: [2, 3], dmg: 1, guardK: 1.2, chain: 'kgUpper', chainP: 0.4 });
-  MUT_ATTACKS.kg360 = P('k360', 20 / 52, { natHold: 0.10, cockF: 0.58, rate: 1.05, limbs: [0, 1], dmg: 2, guardK: 1.3, chain: 'kgAssn', chainP: 0.3 });
-  /* AND TWO MORE OF HIM, his hands (2026-11-21, the owner: "give him some other animations too when fighting"): the knight pack's
-   * straight right and its two-handed swipe, which he carries under his own takes (`tavRetargetAll`) and never threw — quick
-   * openers and string links, their contacts the pack's own measured frames (`MUT_ATTACKS.kPunch` 0.56, `kSwipe` 0.60) */
-  MUT_ATTACKS.kgPunch = P('kPunch', 0.56, { natHold: 0.06, cockF: 0.5, rate: 1.1, limbs: [0], dmg: 1, guardK: 1.0, chain: 'kgSwipe', chainP: 0.6 });
-  MUT_ATTACKS.kgSwipe = P('kSwipe', 0.60, { natHold: 0.08, cockF: 0.55, rate: 1.05, limbs: [0, 1], dmg: 2, guardK: 1.2, chain: 'kgUpper', chainP: 0.5 });
-  /* (each closes to its stand-off through its wind-up, `lunge` with `lungeLead`, eased by `smoothMove` — not the dark knight's
-   * recorded step, `dkRootMotion`, which now asks a blow for `rmStop` tables these do not have: with `rm` set and no lunge he
-   * stood where the wind-up began and the blow came down short) */
-  for (const k of ['kgKick', 'kgAssn', 'kgUpper', 'kgBike', 'kgCres', 'kg360', 'kgPunch', 'kgSwipe']) MUT_ATTACKS[k].lunge = 1.6;
-  // where he stands for each (his stand-off from you as the blow lands)
-  const STOP = { kgUpper: 2.0, kgKnee: 2.2, kgKick: 2.3, kgBike: 2.0, kgAssn: 2.0, kgRun: 2.0, kgFly: 2.0, kgCres: 2.1, kg360: 2.0, kgPunch: 1.8, kgSwipe: 1.9 };
-  for (const k in STOP) { const A = MUT_ATTACKS[k]; A.stop = STOP[k]; A.reach = Math.max(A.hold ? A.reach : 0, STOP[k] + 0.6); }
-  for (const k in STOP) { MUT_ATTACKS[k].w = 0.1; MUT_KINDS.king.alias[k] = MUT_ATTACKS[k].clip; }
-  // (the stand-offs above are first guesses: `kingMeasureBlows` sets each from where the blow's own limb reaches, once his clips are in)
-  /* (no knee combo: a flying knee whose blows come down 2.5 m up never touches you whatever he does — measured, `kingreach.js`) */
-  // (the bicycle 0.24 until 2026-11-21: now about one blow in seventeen, and never two within 20 s — `kingBikeOK`)
-  MUT_KINDS.king.use = { kgUpper: 0.20, kgKick: 0.17, kgAssn: 0.13, kgCres: 0.14, kg360: 0.14, kgPunch: 0.14, kgSwipe: 0.13, kgBike: 0.06, kgRun: 0, kgFly: 0 };
+  const P = (clip, o) => { const h = SCOURGE_HIT[clip]; return Object.assign({ clip, hit: h[0], more: h.length > 1 ? h.slice(1) : undefined, rate: 1.0, fluid: true, strike: 0.2, reach: 3.0, lunge: 1.6, stop: 2.0, limbs: [0, 1], dmg: 1, guardK: 1.3, chain: null, w: 0.1 }, o || {}); };
+  MUT_ATTACKS.kgPlunge = P('plunge', { limbs: [0], guardK: 1.5, chain: 'kgCutB', chainP: 0.35 });   // (his own: the owner's "plunge attack")
+  MUT_ATTACKS.kgRear = P('rear', { limbs: [4], rearStrike: true, guardK: 1.3, chain: 'kgAtk', chainP: 0.3 });   // (the tail, behind him: he turns his back to throw it — `kingMeasureBlows`, `kingChoose`)
+  /* (READ BEFORE THEY LAND — 2026-11-26, the owner: "make his moves more readable": each of the owner's cuts is held at the top of its
+   * wind-up — the blade drawn back, his wings up and his jaw open (`kingRigLife`) — a fifth of a second and more before it lets go at
+   * its own speed (`natHold`; the overhead 0.22 s, the cuts 0.16-0.18; they were 0.06-0.08 or nothing). The string runs at 0.9.) */
+  MUT_ATTACKS.kgAtk = P('sAtk', { natHold: 0.22, cockF: 0.75, limbs: [0], guardK: 1.4, chain: 'kgCutC', chainP: 0.4 });
+  MUT_ATTACKS.kgCutB = P('sCutB', { natHold: 0.18, cockF: 0.7, rate: 0.9, limbs: [0], guardK: 1.0, chain: 'kgCombo', chainP: 0.45 });
+  MUT_ATTACKS.kgCutC = P('sCutC', { natHold: 0.16, cockF: 0.7, limbs: [0], guardK: 1.2, chain: 'kgCutB', chainP: 0.4 });
+  MUT_ATTACKS.kgCombo = P('sCombo', { rate: 0.9, limbs: [0], guardK: 1.0, chain: 'kgPlunge', chainP: 0.3 });
+  // (out of his run at you — `kingHuntStep` — the dash's cut, the gap crossed in it)
+  MUT_ATTACKS.kgDash = P('sDash', { hold: true, lunge: 3, minDist: 2.0, reach: 3.8, limbs: [0], guardK: 1.2, chain: 'kgCutB', chainP: 0.45 });
+  const STOP = { kgPlunge: 2.0, kgRear: 2.0, kgAtk: 2.0, kgCutB: 1.9, kgCutC: 2.0, kgCombo: 1.9, kgDash: 2.0 };
+  for (const k in STOP) { const A = MUT_ATTACKS[k]; A.stop = STOP[k]; A.reach = Math.max(A.hold ? A.reach : 0, STOP[k] + 0.6); MUT_KINDS.king.alias[k] = A.clip; }
+  // (the stand-offs are first guesses: `kingMeasureBlows` sets each from where the blow's own striking end reaches, once his clips are in)
+  MUT_KINDS.king.use = { kgPlunge: 0.20, kgRear: 0.08, kgAtk: 0.18, kgCutB: 0.14, kgCutC: 0.16, kgCombo: 0.18, kgDash: 0 };
+}
+/* HIS AXE'S HEAD, the right arm's striking end (`mutLimbs` reads `u.bones.tip`): the point of his axe's mesh farthest from his
+ * hand, as a marker on the axe, once he is dressed */
+/* HIS AXE AS THE SKETCHFAB FILE HAS IT (2026-11-26, the owner: "his weapon is the wrong way hes holding the blade side look at the
+ * sketchfab and make it exact please"). Rendered beside the original (`scratchpad/refrender.py`, his Idle): it is a long-hafted
+ * thing — a ball and a crescent blade at one end, a long bare haft at the other — and he holds it a third of the way from the
+ * HEAD: the ball and the blade hang below his fist (out of its THUMB side), the bare haft trails up behind him (out of the little
+ * finger's). I had taken "the point of it farthest from his hand" for its head: that is the BUTT of the haft. Every blow was
+ * measured off the butt, it was shortened to 0.72 about his grip, and through the sword clips it was turned half round in his fist
+ * to put the butt out in front — the blade at his fist, a stick swung at you. Now:
+ *   - full size, where the file hangs it (`KING_AXE_K` 1);
+ *   - its STRIKING END is the head: the middle of what lies in the last sixth of its length from the butt (`u.kAxeTip`);
+ *   - TWO HOLDS, and no turning: his own clips hold it exactly as the file does; through a man's sword clips his fist slides down
+ *     the haft to `KING_BUTT` from its butt — a polearm's long grip — eased by how much of him the man's clips have
+ *     (`kingAxeHold`). (It has to: held where the file holds it, 1.7 m of bare haft stands out of the BACK of his fist, and in a
+ *     sword's guard that is 34-57 cm of it through the floor, `tools/scourgeaxe.js`.) The blade is then ~1.9 m from his fist in his
+ *     file's metres, 2.5 m at his size: his cuts are a polearm's sweeps. */
+const KING_AXE_K = 1, KING_BUTT = 0.5;
+function kingAxeTip(u) {
+  if (u.kAxeTip !== undefined || !u.model || !u.bones) return;
+  u.kAxeTip = null;
+  let axe = null; u.model.traverse((o) => { if (!axe && o.isMesh && /axe/i.test(o.name)) axe = o; });
+  const hand = u.model.getObjectByName('Character1_RightHand'), knk = u.model.getObjectByName('MFinger1_R');
+  if (!axe || !hand || !knk || !axe.geometry || !axe.parent) return;
+  u.model.updateMatrixWorld(true); axe.updateMatrix();
+  // everything in his HAND's frame (the axe's parent): the palm, the haft's two ends, the grip
+  const pos = axe.geometry.attributes.position, toP = axe.parent.matrixWorld.clone().invert(), v = new THREE.Vector3();
+  const P_ = (o) => o.getWorldPosition(new THREE.Vector3()).applyMatrix4(toP), V = (i) => v.fromBufferAttribute(pos, i).applyMatrix4(axe.matrix);
+  const palm = P_(hand).add(P_(knk)).multiplyScalar(0.5);
+  let butt = null, bd = -1, grip = null, gd = Infinity;
+  for (let i = 0; i < pos.count; i++) { V(i); const d = v.distanceToSquared(palm); if (d > bd) { bd = d; butt = v.clone(); } if (d < gd) { gd = d; grip = v.clone(); } }
+  let L = 0; for (let i = 0; i < pos.count; i++) L = Math.max(L, V(i).distanceTo(butt));
+  const head = new THREE.Vector3(); let hn = 0;
+  for (let i = 0; i < pos.count; i++) if (V(i).distanceTo(butt) > L * 0.84) { head.add(v); hn++; }
+  head.multiplyScalar(1 / Math.max(1, hn));
+  const tip = new THREE.Object3D(); tip.name = 'scourgerAxeTip'; tip.position.copy(head).applyMatrix4(axe.matrix.clone().invert()); axe.add(tip);
+  u.bones.tip = tip; u.limbs = null; u.kAxeTip = tip;
+  const Lb = head.distanceTo(grip);
+  /* THE HAFT'S OWN LINE, from the butt to his grip (it is CURVED: slid down a straight line to the head it left his fist by 61 cm,
+   * `tools/scourgeinhand.js`): the middle of its cross-section every few centimetres along butt -> head, in his hand's frame as the
+   * file hangs it. The long grip puts the point of that line `KING_BUTT` from the butt where the file's grip is, turned so the haft
+   * runs through his fist the way it did. */
+  const ax = head.clone().sub(butt).normalize(), tG = grip.clone().sub(butt).dot(ax), NB = 28, bw = (tG + 0.25) / NB;
+  const cl = Array.from({ length: NB + 1 }, () => ({ p: new THREE.Vector3(), n: 0 }));
+  for (let i = 0; i < pos.count; i++) { const t = V(i).clone().sub(butt).dot(ax); const k = Math.round(t / bw); if (k >= 0 && k <= NB) { cl[k].p.add(v); cl[k].n++; } }
+  for (const c of cl) if (c.n) c.p.multiplyScalar(1 / c.n);
+  for (let k = 0; k <= NB; k++) if (!cl[k].n) {   // (a stretch of bare haft with no vertex in it: straight between its neighbours)
+    let a = k - 1, b2 = k + 1; while (a >= 0 && !cl[a].n) a--; while (b2 <= NB && !cl[b2].n) b2++;
+    if (a >= 0 && b2 <= NB) cl[k].p.lerpVectors(cl[a].p, cl[b2].p, (k - a) / (b2 - a)); else cl[k].p.copy(cl[a >= 0 ? a : b2].p);
+  }
+  // (the head's far edge too, for the floor: `kingAxeFloor`)
+  let far = null, fd = -1; for (let i = 0; i < pos.count; i++) { const d = V(i).distanceToSquared(butt); if (d > fd) { fd = d; far = v.clone(); } }
+  const tipFar = new THREE.Object3D(); tipFar.position.copy(far).applyMatrix4(axe.matrix.clone().invert()); axe.add(tipFar); u.kAxeFar = tipFar;
+  u.kAxeHold = { axe, p0: axe.position.clone(), q0: axe.quaternion.clone(), cl: cl.map((c) => c.p), bw, tG, tL: Math.min(tG, KING_BUTT), w: -1, len: L, blade: Lb,
+    C0: new THREE.Vector3(), T0: new THREE.Vector3() };
+  kingHaftAt(u.kAxeHold, tG, u.kAxeHold.C0, u.kAxeHold.T0);
+}
+// the haft's middle and its way (butt -> head) at `t` along it
+function kingHaftAt(H, t, outP, outT) {
+  const x = THREE.MathUtils.clamp(t / H.bw, 0, H.cl.length - 1.001), k = Math.floor(x), f = x - k;
+  outP.lerpVectors(H.cl[k], H.cl[k + 1], f);
+  const a = Math.max(0, k - 1), b2 = Math.min(H.cl.length - 1, k + 2);
+  outT.subVectors(H.cl[b2], H.cl[a]).normalize();
+}
+const _khC = new THREE.Vector3(), _khT = new THREE.Vector3(), _khQ = new THREE.Quaternion();
+/* WHICH HOLD, BY WHAT HE IS DOING — not by the clip (2026-11-26). By the clip, the haft ran 1.2 m through his fist at the start and
+ * the end of every blow (his own idle and walk between the owner's cuts). He comes down and stands as the file holds it; from the
+ * moment the fight is on he has the long grip and keeps it — one slide, as he rises out of his landing. */
+const KING_OWN_HOLD = new Set(['wait', 'ready', 'descend']);
+function kingAxeHold(u, w) {
+  const H = u.kAxeHold; if (!H) return;
+  if (w === undefined) {
+    const want = KING_OWN_HOLD.has(KING.mode) ? 0 : 1, now = performance.now() * 0.001, dt = Math.min(0.05, Math.max(0, now - (H.at || now))); H.at = now;
+    w = H.w < 0 ? want : H.w + THREE.MathUtils.clamp(want - H.w, -dt * 2.2, dt * 2.2);
+  }
+  if (Math.abs(w - H.w) < 1e-4) return;
+  H.w = w;
+  // (the haft slid through his fist: the point of its line `t` from the butt where the file's grip is, its way there the grip's way)
+  const e = w * w * (3 - 2 * w); kingHaftAt(H, H.tG + (H.tL - H.tG) * e, _khC, _khT);
+  _khQ.setFromUnitVectors(_khT, H.T0);
+  H.axe.quaternion.copy(_khQ).multiply(H.q0);
+  H.axe.position.copy(H.p0).sub(_khC).applyQuaternion(_khQ).add(H.C0);
+  H.axe.updateMatrixWorld(true);
 }
 
 const KING = { u: null, mode: 'wait', mt: 0, yaw: 0, spot: new THREE.Vector3(), cd: 6, climbCd: 18, climbs: 0, look: false, dead: false, placed: false, landing: false, thud: false };
@@ -135786,7 +140129,7 @@ const KING_PILLARS = { n: 11, a0: THREE.MathUtils.degToRad(21), face: 23.0, lipR
  * the light, the cloud coming away off him; a long glide down, a hang a hand over the floor, and the settle — 62 → 53 m, the
  * glide 7.5 → 10 s, the gathering before it 1.6 → 2.4 s. */
 const KING_FROM = 53, KING_HOVER = 0.8, KING_DESC = 10, KING_MIST_IN = 2.4, KING_TRIGGER = TMP_POD_R * 0.9, KING_CLOUD = 50, KING_HANG = 0.9;
-const KING_LAND0 = 1.13;          // (the jump's clip time, s, just before its feet come down: f34 of 66; down at f40, settled by f60)
+const KING_LAND0 = 8 / 30;        // (`sLand` from the air to his feet on the floor: his plunge's f54 → f62, `kingOwnClips`)
 const KING_SHOCK_RATE = 1.25;     // the electrocution, a quarter over its own speed: 6.2 s of it
 const KFX = { built: false, fade: 1, fadeU: { value: 1 }, beam: null, lamp: null, mist: null, mistK: 0, mistAt: new THREE.Vector3(), dark: 0, sun: 0, beamK: 0, flash: 0,
   at: new THREE.Vector3(), ball: null, cloud: null, glowS: null, open: 0, glow: 0, wisps: [], wi: 0, wispT: 0, pushT: -1, push: new THREE.Vector2(), stirT: 0, rim: 0 };
@@ -135869,13 +140212,14 @@ function kingTick(dt) {
   if (!tmpReady) return;
   kingMovesFetch();
   if (!KING.u) {
-    if (!kingMoves || !knightMoves || !ntarMoves) return;      // (all his clips in before he is made: the fight's names are aliased once, as he is dressed)
+    if (!kingMoves || !scourgeMoves) return;      // (all his clips in before he is made: the fight's names are aliased once, as he is dressed)
     KING.u = makeMutant(TMP_X, TMP_Z, 'king', kFloor(TMP_X, TMP_Z));
     KING.u.g.visible = false;
     return;
   }
   const u = KING.u;
   if (!u.ready || !u.mixer) return;
+  kingAxeTip(u);
   kingFxBuild(u);
   if (!KING.fadeSet) kingFadeSetup(u);
   /* HIS MAPS UP AHEAD OF HIM (2026-11-21, the perf pass): the descent's first frame uploaded 32 textures together (28 ms,
@@ -135946,7 +140290,7 @@ function kingBeginDescent(u) {
   cineHold = true; dialogHead = null; dialogTarget = KFX.mistAt.clone(); dialogFov = 50;
   if (held) dropHeld();
   u.g.position.set(KING.spot.x, top, KING.spot.z); u.g.visible = false;
-  kingPlay(u, 'hover', true); if (u.cur) { u.cur.stopFading(); u.cur.setEffectiveWeight(1); }
+  kingPlay(u, 'hover', true, 0.85); if (u.cur) { u.cur.stopFading(); u.cur.setEffectiveWeight(1); }   // (his wings beating, slower than his leap's: `sFly`, about a beat a second)
   KING.yaw = kingToYou(u) + 0.9; u.g.rotation.set(0, KING.yaw, 0);
   kingSkipArm();
 }
@@ -135980,14 +140324,15 @@ function kingDescentDone(u, skipped) {
 function kingDescendStep(u, dt) {
   const t = KING.mt, tIn = KING_MIST_IN, tEnd = tIn + KING_DESC, tTouch = tEnd + KING_HANG + 0.5;
   if (kingCut) kingCut.t = t;
-  const fl = KING.spot.y, top = fl + KING_FROM, low = fl + KING_HOVER + 0.5, cy = fl + KING_CLOUD, sm = THREE.MathUtils.smoothstep;
+  /* (ON HIS WINGS — 2026-11-26: the flight holds his body up in itself, his hips 3 m and more over his feet, so the glide brings his
+   * FEET's mark down to the floor and the wings hold him over it; then he drops out of the air onto his feet, `sLand`) */
+  const fl = KING.spot.y, top = fl + KING_FROM, low = fl, cy = fl + KING_CLOUD, sm = THREE.MathUtils.smoothstep;
   // THE GLIDE: out of the cloud as slowly as he goes into the floor (smootherstep: no speed at either end), then a hang — the
   // hover's own breathing — a hand over the floor, and down onto his feet
   let y;
   if (t < tIn) y = top;
   else if (t < tEnd) { const q = (t - tIn) / KING_DESC, e = q * q * q * (q * (q * 6 - 15) + 10); y = top + (low - top) * e; }
-  else if (t < tEnd + KING_HANG) y = low + 0.1 * Math.sin((t - tEnd) / KING_HANG * Math.PI);
-  else y = low + (fl - low) * kingSmooth((t - tEnd - KING_HANG) / 0.5);
+  else y = low + 0.1 * Math.sin(Math.min(1, (t - tEnd) / KING_HANG) * Math.PI);
   u.g.position.set(KING.spot.x, Math.max(fl, y), KING.spot.z);
   // HE COMES THROUGH IT: dissolved in over the cloud's depth — none of him over its top, all of him under its last sheet
   /* (SLOWLY OUT OF IT — 2026-11-21, the owner: "his reveal needs to be more viually interesting and he should slowly emerge from the
@@ -136013,8 +140358,8 @@ function kingDescendStep(u, dt) {
   else if (!dialogHead && u.bones && u.bones.head) dialogHead = u.bones.head;
   // (wide on the cloud; as he comes through it, in on him — 50 m up he is a figure in the light, not a speck — and holding)
   dialogFov = t < tIn + 0.6 ? 60 : t < tIn + 3 ? THREE.MathUtils.lerp(60, 24, sm(t, tIn + 0.6, tIn + 3)) : THREE.MathUtils.lerp(24, 30, sm(t, tIn + 3, tEnd - 2)) - 3 * sm(t, tEnd - 2, tEnd + 0.6);
-  // and his legs: out of the hover into the jump's landing as his feet come down — he lands on them
-  if (!KING.landing && t >= tTouch - 0.2) { KING.landing = true; kingPlay(u, 'kJump', false, 1, KING_LAND0); }
+  // and down: out of the air onto his feet, the axe into the floor (his plunge's own landing, `sLand`) — he lands on them at tTouch
+  if (!KING.landing && t >= tTouch - KING_LAND0) { KING.landing = true; kingPlay(u, 'kJump', false, 1, 0); }   // (eased in from the beat it caught him in: both are his air)
   if (!KING.thud && t >= tTouch) {
     KING.thud = true;
     addTrauma(0.45); fovKick = Math.max(fovKick, 4); airGust = Math.max(airGust, 1.4);
@@ -136022,7 +140367,7 @@ function kingDescendStep(u, dt) {
     kingDust(KING.spot.x, fl, KING.spot.z, 1.4, { slow: true, out: 1.25, grit: 0.6, ringK: 1.4 });
     KFX.pushT = 0; KFX.push.set(KING.spot.x - TMP_X, KING.spot.z - TMP_Z);      // (and the ground mist blown back off the floor round him)
   }
-  if (KING.landing && t >= tTouch + 0.75 && u.cur === u.clips.kJump) kingPlay(u, 'kIdle', true);
+  if (KING.landing && t >= tTouch + 1.35 && u.cur === u.clips.sLand) kingPlay(u, 'kIdle', true);
   if (t >= tTouch + 2.1) kingDescentDone(u, false);
 }
 // a wisp of the cloud off him: soft, pale, hanging where it came away, spreading and going
@@ -136053,9 +140398,125 @@ function kingWisp(u) {
  * (`kingMeasureBlows`, `kingLands`); the look at a third through a blow. Not while his clips are measured. */
 const KP = { w: 0, look: new THREE.Vector2(), last: 0, t: 0, avg: {}, lp: new THREE.Vector3() };
 const _kpQ = new THREE.Quaternion(), _kpA = new THREE.Vector3(), _kpB = new THREE.Vector3(), _kpU = new THREE.Vector3(0, 1, 0);
+/* HIS AXE STOPS AT THE FLOOR (2026-11-26). A man's sword clips end their cuts low, and his axe is longer than their sword: four of
+ * them put its head 21-26 cm into the floor (`tools/scourgeaxe.js`). Where the head would go under, his wrist turns it up about the
+ * line across the haft, just enough to lay it on the sand — it skims and drags instead of going through. A layer like the rest
+ * (put back next frame); the blow's contact is measured before it and drawn after it, both above the floor. */
+const _kxT = new THREE.Vector3(), _kxH = new THREE.Vector3(), _kxD = new THREE.Vector3(), _kxX = new THREE.Vector3(), _kxQ = new THREE.Quaternion();
+function kingAxeFloor(u, saved) {
+  const tip = u.kAxeTip, hand = u.kfHand || (u.kfHand = u.model.getObjectByName('Character1_RightHand'));
+  if (!tip || !hand || !inTemple) return;
+  u.g.updateMatrixWorld(true);
+  tip.getWorldPosition(_kxT); hand.getWorldPosition(_kxH);
+  if (u.kAxeFar) { u.kAxeFar.getWorldPosition(_kxD); if (_kxD.y < _kxT.y) _kxT.copy(_kxD); }   // (whichever of the head's middle and its far edge is lower)
+  const fl = kFloor(_kxT.x, _kxT.z) + 0.03;
+  if (_kxT.y >= fl) return;
+  _kxD.subVectors(_kxT, _kxH); const L = _kxD.length(); if (L < 0.2) return;
+  const e0 = Math.asin(THREE.MathUtils.clamp(_kxD.y / L, -1, 1)), e1 = Math.asin(THREE.MathUtils.clamp((fl - _kxH.y) / L, -1, 1));
+  _kxX.crossVectors(_kxD, _kpU); if (_kxX.lengthSq() < 1e-6) return; _kxX.normalize();
+  saved.push({ b: hand, q: hand.quaternion.clone() });
+  minoTurnBone(hand, _kxQ.setFromAxisAngle(_kxX, e1 - e0)); hand.updateMatrixWorld(true);
+}
+/* HIS WINGS, HIS JAW AND HIS TAIL IN THE FIGHT (2026-11-26, the owner: "fix the rig and utilize it to its fullest potential … make
+ * his moves more readable"). A man's clips drive a man's bones: through every cut of the owner's his wings only breathed (his
+ * idle's, laid in), his jaw hung shut and his tail trailed. Each is now part of the blow, out of poses of his OWN (`KING_POSE`):
+ *   WINGS  rise as he winds a blow up — the bigger the wind-up the higher (a tell you can read from across the ring) — and are
+ *          thrown down as it lands; half up and swept while he runs you down; flared when he is staggered; a little higher angry.
+ *   JAW    opens through the wind-up and widest on the blow.
+ *   TAIL   swings against his turns, and across behind him as he moves — three joints of it, each a little later than the last.
+ * Not through his own winged clips (the plunge, the slam, the tail whip — they have their own), nor on the ground. */
+const KRL = { w: 0, jaw: 0, yaw: null, sway: [0, 0, 0], t: 0, last: 0 };
+const _krlQ = new THREE.Quaternion();
+/* HIS WINGS CARRIED AS HE CARRIES THEM (2026-11-26, the owner: "final boss walk and all animations are still bad"). Filmed from the side
+ * (`tools/scourgefilm.js`) his wings were three different things from one second to the next: high over his back in his own walk,
+ * hanging down behind him in the stalking run, flat along his spine through a dash. Their bones hang off his chest (`Spine2`), his own
+ * clips hold that chest forward like a raptor's and a man's clips hold it upright, bend it double and throw it about — and the wings
+ * went wherever the chest went. So through a man's clip the four bones his wings root in (`Wing1`, `WingBase`, each side) are held
+ * where HIS OWN IDLE carries them, measured in his body's frame and not his chest's (the idle's own slow sway with it), turned with
+ * him when he turns (the chest's turn about his up axis only), and raised toward the plunge's high pose by the wind-up weight
+ * (`KRL.w`) as before; four fifths of the way, so a blow still pulls at them. Eased in and out over a fifth of a second; not through
+ * his own clips, which have them right. */
+const KWC = { c: 0 }, _kwcA = new THREE.Quaternion(), _kwcB = new THREE.Quaternion(), _kwcF = new THREE.Quaternion(), _kwcS = new THREE.Quaternion(), _kwcT = new THREE.Quaternion();
+function kingCarryInit(u) {
+  const id = u.clips.idle && u.clips.idle.getClip(), pl = u.clips.plunge && u.clips.plunge.getClip(); if (!id || !pl) return { ok: false };
+  const chainN = ['Character1_Hips', 'Character1_Spine', 'Character1_Spine1', 'Spine3', 'Character1_Spine2'], rootN = ['Wing1_L', 'Wing1_R', 'WingBase_L', 'Wingbase_R'];
+  const ipOf = (clip, n) => { const t = clip.tracks.find((t) => t.name === n + '.quaternion'); return t ? t.createInterpolant() : null; };
+  const chain = chainN.map((n) => ipOf(id, n)), roots = rootN.map((n) => ({ b: u.model.getObjectByName(n), ip: ipOf(id, n), up: new THREE.Quaternion() })).filter((r) => r.b && r.ip);
+  const hips = u.model.getObjectByName('Character1_Hips'), sp2 = u.model.getObjectByName('Character1_Spine2');
+  if (chain.some((c) => !c) || !roots.length || !hips || !sp2) return { ok: false };
+  // where the plunge carries them at their highest (f48), in his body's frame
+  const q = new THREE.Quaternion(), a = new THREE.Quaternion();
+  q.identity(); for (const n of chainN) { const ip = ipOf(pl, n); if (ip) q.multiply(a.fromArray(ip.evaluate(48 / 30))); }
+  for (const r of roots) { const ip = ipOf(pl, r.b.name); r.up.copy(q); if (ip) r.up.multiply(a.fromArray(ip.evaluate(48 / 30))); }
+  return { ok: true, chain, roots, F: hips.parent, sp2, dur: id.duration };
+}
+function kingWingCarry(u, saved, dt, own) {
+  KWC.c += ((own ? 0 : 0.8) - KWC.c) * Math.min(1, dt * 5);
+  if (KWC.c < 0.01) return;
+  const C = u.kwc || (u.kwc = kingCarryInit(u)); if (!C.ok) return;
+  const t = KRL.t % C.dur;
+  _kwcA.identity(); for (const ip of C.chain) _kwcA.multiply(_kwcB.fromArray(ip.evaluate(t)));          // his chest in his body's frame, as his idle holds it
+  C.F.getWorldQuaternion(_kwcF); C.sp2.getWorldQuaternion(_kwcS);
+  // the chest's turn about his up axis since then: his wings turn with him, and do not tip or roll with him
+  _kwcT.copy(_kwcF).invert().multiply(_kwcS).multiply(_kwcB.copy(_kwcA).invert()); { const l = Math.hypot(_kwcT.y, _kwcT.w) || 1; _kwcT.set(0, _kwcT.y / l, 0, _kwcT.w / l); }
+  _kwcS.invert();
+  for (const r of C.roots) {
+    _kwcB.copy(_kwcA).multiply(_krlQ.fromArray(r.ip.evaluate(t)));                                     // the wing's root in his body's frame, at rest
+    if (KRL.w > 0.01) _kwcB.slerp(r.up, KRL.w);                                                        // … raised through a wind-up
+    _kwcB.premultiply(_kwcT).premultiply(_kwcF).premultiply(_kwcS);                                       // … turned with him, into the world, into his chest's frame
+    saved.push({ b: r.b, q: r.b.quaternion.clone() }); r.b.quaternion.slerp(_kwcB, KWC.c);
+  }
+}
+function kingRigLife(u, saved) {
+  const now = performance.now() * 0.001, dt = Math.min(0.05, Math.max(0, now - (KRL.last || now))); KRL.last = now; KRL.t += dt;
+  const st = u.st, M = KING.mode, cn = u.cur ? u.cur.getClip().name : '';
+  const own = cn === 'plunge' || cn === 'kSlam' || cn === 'rear' || cn === 'sFly' || cn === 'sSwoop' || cn === 'sLand' || (st.down || 0) > 0;
+  const A = st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
+  let wW = 0, wJ = 0, rate = 5;
+  if (!own) {
+    if (A) { const q = st.atk / Math.max(0.05, A.wind);
+      if (q < 1) { wW = (0.35 + 0.4 * Math.min(1, A.wind / 0.7)) * Math.min(1, q * 1.6); wJ = 0.6 * q; rate = 7; }   // rising through the wind-up
+      else if (st.atk < A.wind + 0.22) { wW = 0; wJ = 1; rate = 22; }                                             // thrown down as it lands
+      else { wW = 0.08; wJ = 0.3; rate = 5; } }
+    else if (M === 'hunt') { wW = 0.3; wJ = 0.35; }
+    else if (st.stun > 0 || st.recoil > 0) { wW = 0.5; wJ = 0.8; rate = 14; }
+    if (st.raged) wW += 0.1;
+  }
+  KRL.w += (wW - KRL.w) * Math.min(1, dt * rate); KRL.jaw += (wJ - KRL.jaw) * Math.min(1, dt * (wJ > KRL.jaw ? 12 : 4));
+  const L = u.krlB || (u.krlB = { up: [...KING_POSE.up].map(([n, q]) => ({ b: u.model.getObjectByName(n), q })).filter((x) => x.b), jaw: [...KING_POSE.jaw].map(([n, q]) => ({ b: u.model.getObjectByName(n), q })).filter((x) => x.b),
+    tail: ['TailBase', 'Tail_004', 'Tail_009'].map((n) => u.model.getObjectByName(n)).filter(Boolean) });
+  if (KRL.w > 0.01) for (const x of L.up) { saved.push({ b: x.b, q: x.b.quaternion.clone() }); x.b.quaternion.slerp(x.q, KRL.w); }
+  if (KRL.jaw > 0.01) for (const x of L.jaw) { saved.push({ b: x.b, q: x.b.quaternion.clone() }); x.b.quaternion.slerp(x.q, KRL.jaw); }
+  kingWingCarry(u, saved, dt, own || cn === 'idle' || cn === 'walk');
+  /* (A WIND-UP IS HELD, NOT FROZEN: filmed, the dash's draw was one identical frame for half a second and more — the hold that makes
+   * it readable (`natHold`) is a stopped clip. Through the draw his chest winds a little further round against the blow and he
+   * shakes with the strain of it, more as it comes; gone the moment it is loosed (the blow's own path and its contact are the
+   * clip's, untouched).) */
+  { let coil = 0; if (!own && A) { const q = st.atk / Math.max(0.05, A.wind); if (q < 1) coil = q; }
+    KRL.coil = (KRL.coil || 0) + (coil - (KRL.coil || 0)) * Math.min(1, dt * (coil > (KRL.coil || 0) ? 6 : 26));
+    if (KRL.coil > 0.01) { const sp = u.krlSp || (u.krlSp = ['Character1_Spine1', 'Character1_Spine2'].map((n) => u.model.getObjectByName(KING_RAG[n] || n)).filter(Boolean));
+      const k = KRL.coil, sh = Math.sin(KRL.t * 41) * 0.011 * k * k + Math.sin(KRL.t * 27.3) * 0.007 * k * k;
+      u.g.updateMatrixWorld(true);
+      for (const b of sp) { saved.push({ b, q: b.quaternion.clone() }); minoTurnBone(b, _krlQ.setFromAxisAngle(_kpU, -0.07 * k + sh)); b.updateMatrixWorld(true); } } }
+  // the tail: against his turn (how fast he is turning), each joint easing after the one before it
+  const yaw = u.g.rotation.y + (u.model.rotation.y || 0);
+  let om = 0; if (KRL.yaw !== null && dt > 1e-4) { om = Math.atan2(Math.sin(yaw - KRL.yaw), Math.cos(yaw - KRL.yaw)) / dt; } KRL.yaw = yaw;
+  const want = own ? 0 : THREE.MathUtils.clamp(-om * 0.09, -0.4, 0.4) + 0.05 * Math.sin(KRL.t * 1.7);
+  let prev = want;
+  for (let i = 0; i < L.tail.length; i++) {
+    KRL.sway[i] += (prev - KRL.sway[i]) * Math.min(1, dt * (6 - i * 1.5)); prev = KRL.sway[i];
+    if (Math.abs(KRL.sway[i]) < 0.004) continue;
+    const b = L.tail[i]; saved.push({ b, q: b.quaternion.clone() });
+    u.g.updateMatrixWorld(true); minoTurnBone(b, _krlQ.setFromAxisAngle(_kpU, KRL.sway[i])); b.updateMatrixWorld(true);
+  }
+}
 function kingPersona(u, saved) {
-  if (!u.kgMeasured || !u.st.alive || !u.model) return;
+  if (!u.model) return;
+  kingAxeHold(u);
+  if (u.st.alive) kingAxeFloor(u, saved);
+  if (!u.kgMeasured || !u.st.alive) return;
   const M = KING.mode; if (M !== 'fight' && M !== 'hunt' && M !== 'ready') { KP.w = 0; return; }
+  kingRigLife(u, saved);
   const now = performance.now() * 0.001, dt = Math.min(0.05, Math.max(0, now - (KP.last || now))); KP.last = now; KP.t += dt;
   const st = u.st, busy = st.atk >= 0 || (st.down || 0) > 0 || st.stun > 0 || st.recoil > 0 || st.struck;
   KP.w += ((busy ? 0 : 1) - KP.w) * Math.min(1, dt * 7);
@@ -136080,32 +140541,31 @@ function kingPersona(u, saved) {
     a.slerp(b.quaternion, Math.min(1, dt * 1.2));
     if (walk > 0.01) b.quaternion.slerp(a, 0.35 * walk);
   }
-  // the look: at your eye, from his head, in his own frame; lagged, capped, shared down the neck
-  R.Head.getWorldPosition(_kpB);
-  const c = camera.position, dx = c.x - _kpB.x, dz = c.z - _kpB.z;
-  let dy = Math.atan2(dx, dz) - yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-  const tYaw = THREE.MathUtils.clamp(dy, -0.95, 0.95), tPit = THREE.MathUtils.clamp(Math.atan2(c.y - _kpB.y, Math.hypot(dx, dz)), -0.35, 0.3);
-  KP.look.x += (tYaw - KP.look.x) * Math.min(1, dt * 4.5); KP.look.y += (tPit - KP.look.y) * Math.min(1, dt * 4.5);
-  const lw = 0.35 + 0.65 * w;
-  turn(R.Neck, _kpU, KP.look.x * 0.35 * lw); turn(R.Head, _kpU, KP.look.x * 0.65 * lw);
-  turn(R.Head, lat, -KP.look.y * 0.7 * lw);
+  /* (NO LOOK OF ITS OWN — 2026-11-26, the owner: "HIS HEAD KEEPS SPINNING AROUND WEIRD LOOK INTO THIS". This layer turned his neck and
+   * head to your eye by up to 0.95 rad — ON TOP of the life layer's own look (`lifeApply`: 0.72 rad, on the same two bones): up to
+   * 96° between them, past you; and where the life layer lets its look go once you are behind him, this one held its limit, so
+   * as you came round his back it swung from one shoulder to the other. One look now, the life layer's.) */
 }
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { kingMeasureBlowsS: () => { const u = KING.u; return u ? (kingMeasureBlows(u), KING.blows) : null; }, kingAxeHoldS: (u, w) => kingAxeHold(u, w) }));
 function kingMeasureBlows(u) {
   const RAG = u.kind.rag, bone = (n) => u.model.getObjectByName(RAG['Character1_' + n]);
   const CH = [['RightArm', 'RightForeArm', 'RightHand'], ['LeftArm', 'LeftForeArm', 'LeftHand'], ['RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'], ['LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase']].map((c) => c.map(bone));
+  if (u.kAxeTip && CH[0]) CH[0].push(u.kAxeTip);   // (the Scourger's axe: the right arm strikes with its head, `kingAxeTip`)
+  { const tl = ['TailBase', 'Tail_005', 'Tail_010', 'Tail'].map((n) => u.model.getObjectByName(n)); if (tl[3]) CH.push(tl); }   // (4: his tail, as `kind.rig.limbs` has it)
   const ws = new Map(); for (const k in u.clips) { const x = u.clips[k]; if (!ws.has(x)) ws.set(x, [x.weight, x.time, x.enabled]); }
   const inv = new THREE.Matrix4(), v = new THREE.Vector3(), out = [];
   for (const k in u.atk) {
     const A = u.atk[k], a = u.clips[A.clip]; if (!a) continue;
     const was = a.isScheduled();
-    for (const [x] of ws) x.weight = x === a ? 1 : 0;
+    for (const [x] of ws) { x.weight = x === a ? 1 : 0; if (x !== a) x.enabled = false; }   // (and the rest OUT of the mix: a fade still running — his idle coming in as he is made — keeps its own weight whatever `weight` says, and the Scourger's quick cut measured 0.65 m up and 69° round, posed at 1.6 m and 16°)
     if (!was) a.play();
-    a.enabled = true; a.paused = false; a.setEffectiveWeight(1); a.time = a.getClip().duration * A.hit; u.mixer.update(0); u.g.updateMatrixWorld(true); inv.copy(u.g.matrixWorld).invert();
+    a.enabled = true; a.paused = false; a.setEffectiveWeight(1); a.time = a.getClip().duration * A.hit; (u.mixer.rawUpdate || u.mixer.update).call(u.mixer, 0); kingAxeHold(u, 1); /* (the CLIP alone: the life layer over it is his idle's, eased out through every blow — posed through it, the overhead's head measured a metre low) */ u.g.updateMatrixWorld(true); inv.copy(u.g.matrixWorld).invert();
     if (!was) a.stop();
     let best = null;
-    for (const li of A.limbs || [0, 1]) for (const bn of CH[li] || []) { if (!bn) continue; bn.getWorldPosition(v).applyMatrix4(inv); const r = Math.hypot(v.x, v.z); if (!best || r > best.r) best = { r, x: v.x, z: v.z, y: v.y }; }
+    for (const li of A.limbs || [0, 1]) for (const bn of (li === 0 && u.kAxeTip ? [u.kAxeTip] : CH[li] || [])) { if (!bn) continue;   // (the axe arm strikes with the axe's HEAD: his fist is often farther out to his side than the head it swings across in front of him — the quick cut turned him 69° to bring his hand to you)
+      bn.getWorldPosition(v).applyMatrix4(inv); const r = Math.hypot(v.x, v.z); if (!best || r > best.r) best = { r, x: v.x, z: v.z, y: v.y }; }
     if (!best) continue;
-    A.faceOff = -Math.atan2(best.x, Math.max(0.05, best.z));
+    A.faceOff = -Math.atan2(best.x, A.rearStrike ? best.z : Math.max(0.05, best.z));   // (`rearStrike`: a blow struck BEHIND him — the Scourger's tail — turns his back to you)
     A.stop = Math.max(0.95, best.r + 0.42); A.reach = Math.max(A.hold ? A.reach : 0, A.stop + 0.45);   // (he throws it from where his closing can still make the stand-off: the owner, "he should know when hes close to hit")
     out.push(k + ' reach ' + best.r.toFixed(2) + ' h ' + best.y.toFixed(2) + ' turn ' + (A.faceOff * 57.3).toFixed(0) + ' stop ' + A.stop.toFixed(2));
   }
@@ -136182,7 +140642,7 @@ function kingDrive(u, dt) {
        * uppercut came down 6.7 m behind you — `kingstudy.js &flee=5.71`) */
       if (A && u.st.atk < A.wind - 0.12) { const d = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z); if (d > A.reach + 1.6 && kingHuntStart(u)) return true; } }
     kingAirBike(u, dt);
-    if (u.kind.use) u.kind.use.kgBike = kingBikeOK() ? 0.06 : 0;   // (rare: out of the draw for 20 s after one)
+
     KING.yaw = u.g.rotation.y;
     return kingChoose(u, dt);
   }
@@ -136213,9 +140673,11 @@ function kingChoose(u, dt) {
   // UP A PILLAR AT HALF OF HIM, once, and down on you from it (the owner, 2026-11-20: "he should do this half health")
   if (KING.climbs === 0 && frac <= 0.5) return kingRunStart(u);
   // OVER YOUR HEAD, from three and a half to eight metres, now and then
-  if (KING.cd <= 0) {
-    if (dist > 3.5 && dist < 8 && Math.random() < 0.4 && kingFlipStart(u)) return true;
-    KING.cd = 2.5;
+  // (no flip: the Scourger keeps only the king's pillar and his death of the king's own moves — the owner, 2026-11-25)
+  // YOU BEHIND HIM, CLOSE: the tail, at once (his "rear attack"), not the turn round first
+  if (u.atk.kgRear && dist < 3.0 && (KING.rearCd = (KING.rearCd || 0) - dt) <= 0) {
+    const fy = u.g.rotation.y, ty = Math.atan2(c.x - p.x, c.z - p.z); let dy = ty - fy; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    if (Math.abs(dy) > 2.0) { KING.rearCd = 4; st.forceSwing = 'kgRear'; st.openT = 0; mutToken = u; return false; }
   }
   // RUN YOU DOWN: anywhere in the desert, faster than you can sprint (the owner: "he should get you anywhere in the desert")
   if ((dist > KING_HUNT.from || (dist > 2.2 && kingLineBlocked(u))) && kingHuntStart(u)) return true;   // (and round a pillar that stands between)
@@ -136229,7 +140691,7 @@ function kingTakeOver(u) {
 }
 
 // ---- THE HUNT: flat out at you (Fast Run) from wherever you have got to, and out of the run straight into a blow
-const KING_HUNT = { from: 4.6, to: 2.1, sp: 7.8 };          // (you sprint at 5.71: `RUN_SPEED`)
+const KING_HUNT = { from: 5.6, to: 3.4, sp: 7.8 };          // (you sprint at 5.71: `RUN_SPEED`; 3.4: the Scourger's dash lands from 3.5 m, his axe in his fist — `kingMeasureBlows`)
 function kingHuntStart(u) {
   kingTakeOver(u);
   KING.huntP = null; KING.huntChk = 0;
@@ -136237,8 +140699,12 @@ function kingHuntStart(u) {
   /* (2026-11-21 round two, the owner: "HIS RUN ANIMATIONS SHOULDNT SLOW DOWN HE SHOULD RUN FAST LIKE THE ANIMATION WAS": the
    * matching went the wrong way — the clip slowed to his gathering speed. Now the clip at its own flat-out pace from the first
    * stride, and HIM at that pace too: no gathering ramp, no easing into the last stride — up to the mark and into the blow.) */
-  const a = kingPlay(u, 'kSprint', true), cs = (u.clipSpeed && u.clipSpeed.kSprint) || KING_HUNT.sp;
-  if (a) a.timeScale = THREE.MathUtils.clamp(KING_HUNT.sp / cs, 0.8, 1.5);
+  KING.swoop = !!u.clips.sSwoop && Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) > KING_SWOOP.from;   // (from far off, on his wings: `KING_SWOOP`)
+  const rc = KING.swoop ? 'sSwoop' : kingRunClip(u), a = kingPlay(u, rc, true), cs = (u.clipSpeed && u.clipSpeed[rc]) || KING_HUNT.sp;
+  // (AT THE RUN'S OWN PACE: the king's sprint covers 5.5 m/s and was played at 1.4 of itself to make 7.8 — now each run a little over
+  // its own stride, never slower than outruns you (6.3; you sprint at 5.71), never over the stalk's 8.6)
+  KING.huntSp = THREE.MathUtils.clamp(cs * 1.12, 6.3, 8.6);
+  if (a) a.timeScale = THREE.MathUtils.clamp(KING.huntSp / cs, 0.8, 1.3);
   return true;
 }
 /* ROUND THE STONE (2026-11-20): the hunt ran straight at you, and with a pillar between he pressed into it for the run's
@@ -136269,7 +140735,7 @@ function kingHuntStep(u, dt) {
   const dir = kingSteer(u, dx, dz, 2.2, _kSt);
   { let dy = Math.atan2(dir.x, dir.z) - KING.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); KING.yaw += Math.sign(dy) * Math.min(Math.abs(dy) * Math.min(1, dt * 9), 6.5 * dt); u.g.rotation.set(0, KING.yaw, 0); }   // (round to where he runs no faster than a man turns: 25 rad/s measured, a snap)
   const blocked = d < 30 && kingLineBlocked(u);
-  const s = Math.min(KING_HUNT.sp * dt, blocked ? 99 : Math.max(0, d - KING_HUNT.to + 0.3));   // (flat out to the mark: the take's pace, `kingHuntStart`)
+  const s = Math.min((KING.huntSp || KING_HUNT.sp) * dt, blocked ? 99 : Math.max(0, d - KING_HUNT.to + 0.3));   // (flat out to the mark: the take's pace, `kingHuntStart`)
   const hx = p.x, hz = p.z;
   // (never into the stone: the whole step, or along it on one axis, or none — `KING_PUSH_MAX`)
   { const nx = p.x + dir.x * s, nz = p.z + dir.z * s;
@@ -136278,7 +140744,8 @@ function kingHuntStep(u, dt) {
     else if (!kingSolidAt(p.x, nz, p.y)) p.z = nz; }
   u.mvS = { x: (p.x - hx) / Math.max(dt, 1e-4), z: (p.z - hz) / Math.max(dt, 1e-4) };   // (his speed, for the leap out of it)
   kingClampUnit(u, p);
-  if ((u.st.stepT = (u.st.stepT || 0) - dt) <= 0) { u.st.stepT = 0.3; sfxMutStep(d, u.kind.voice); kingDust(p.x - dir.x * 0.4, p.y, p.z - dir.z * 0.4, 0.16, { out: 0.45, up: 0.5, grit: 0.35, r: 0.3 }); }   // (a little of the floor kicked up behind each stride)
+  if (KING.swoop) { if ((u.st.stepT = (u.st.stepT || 0) - dt) <= 0) { u.st.stepT = 0.7; try { sfxWingBeat(p, 1.7); } catch (e) {} kingDust(p.x, p.y, p.z, 0.2, { out: 0.9, up: 0.3, grit: 0.3, r: 0.5 }); } }   // (his wings' beat and the floor blown out from under him, not footfalls)
+  else if ((u.st.stepT = (u.st.stepT || 0) - dt) <= 0) { u.st.stepT = 0.3; sfxMutStep(d, u.kind.voice); kingDust(p.x - dir.x * 0.4, p.y, p.z - dir.z * 0.4, 0.16, { out: 0.45, up: 0.5, grit: 0.35, r: 0.3 }); }   // (a little of the floor kicked up behind each stride)
   // (stuck all the same — a corner the feeler cannot see round: back to the fight, which draws again)
   KING.huntP = KING.huntP || p.clone();
   if ((KING.huntChk = (KING.huntChk || 0) + dt) > 1.0) { const moved = p.distanceTo(KING.huntP); KING.huntP.copy(p); KING.huntChk = 0; if (moved < 1.5 && d > KING_HUNT.to + 0.5) { KING.avoid = -(KING.avoid || 1); } }
@@ -136287,7 +140754,7 @@ function kingHuntStep(u, dt) {
      * only now and then the flown bicycle (`kgRun`: a quarter of the time, never inside 20 s of the last — "HE DOES THE
      * BYCICLE KICK WAY TOO MUCH THAT SHOULD BE KINDA RARE", 2026-11-21: every hunt ended in it) */
     kingBackToFight(u, false);
-    const K = kingBikeOK() && Math.random() < 0.25 ? 'kgRun' : 'kgFly';
+    const K = 'kgDash';   // (the Scourger: the owner's dash cut, out of the run — the king's flying kick and bicycle are gone)
     if (u.atk[K] && u.clips[K]) {
       const st = u.st; st.swing = K; st.atk = 0; st.chained = false; st.chainN = 0; st.wait = 0; st.lastSwing = K; st.side = 0; st.sideT = 0; st.sizing = false; st.landed = false;
       mutToken = u; sfxMutTell(d, u.atk[K].wind, u.kind.voice);
@@ -136335,7 +140802,7 @@ function kingBackToFight(u, attack = true) {
   kingPlay(u, 'kIdle', true);
   KING.mode = 'fight'; KING.mt = 0; u.st.puppet = false; u.st.cool = attack ? 0 : Math.max(u.st.cool || 0, 0.15);
   // (out of the flip, round and straight into you: the turn is the tell, the blow follows it — not a breather)
-  if (attack) { u.st.forceSwing = Math.random() < 0.5 ? 'kgKick' : 'kgUpper'; u.st.openT = 0; mutToken = u; }
+  if (attack) { u.st.forceSwing = Math.random() < 0.5 ? 'kgPlunge' : 'kgAtk'; u.st.openT = 0; mutToken = u; }
 }
 
 // ---- UP A PILLAR: flat out to the foot of the nearest one, up its face, three seconds on the ring's lip
@@ -136347,7 +140814,7 @@ function kingRunStart(u) {
   KING.pa = best; KING.mode = 'run'; KING.mt = 0; KING.vS = undefined;
   const R = KING_PILLARS.face - 1.6;
   KING.rB = new THREE.Vector3(TMP_X + Math.sin(best) * R, 0, TMP_Z + Math.cos(best) * R);
-  kingPlay(u, 'kSprint', true);
+  kingPlay(u, kingRunClip(u), true);
   KING.climbs++; KING.climbCd = 28 + Math.random() * 10; KING.cd = 4;
   sfxAt(p.x, p.z, () => sfxMutRoar(0.4, u.kind.voice), { ref: 10, far: 80 });
   return true;
@@ -136405,7 +140872,10 @@ function kingPerchStep(u, dt) {
  * stood as he left it (a beat of lead, inside the pillars) — and the slam on its own frame (f47): the ground shakes, the sand goes
  * up in a ring, and anything inside four metres of it is hit for two (guarded, it is a block). Then the clip's own recovery: an
  * opening, and he can be cut in it. */
-const KING_SLAM = { off: 18 / 30, land: 47 / 30, air: 1.9, hop: 6, R: 4.0, dmg: 2 };
+/* (HIS OWN — 2026-11-26, the owner: "he should do his slam down from the sketchfab animation too": `kSlam` is his plunge now,
+ * `kingOwnClips` — the gather to f20, the air f20-f64 stretched over the fall, and down on his feet with the axe into the floor; the
+ * ring of it 4.8 m, he is 1.3 of what he was) */
+const KING_SLAM = { off: 20 / 30, land: 64 / 30, air: 1.9, hop: 6, R: 4.8, dmg: 1 };   // (every blow of his 2 → 1, 2026-11-25: "STOP MAKING THE FINAL BOSS HIT FOR 2")
 function kingLeapStart(u) {
   const c = camera.position, p = u.g.position;
   KING.mode = 'leap'; KING.mt = 0; KING.l0 = p.clone(); KING.lAir = false; KING.lHit = false;

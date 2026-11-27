@@ -164,3 +164,18 @@ mode only.
 thin wall the nearest face can be the far one. A push that crosses is undone — but a body put INSIDE something (a
 restore, a teleport) can only get out by crossing, so after 0.35 s held the push is let through (`pushHeld`, per walk).
 `shovePlayer` (a creature's body shoving you) also refuses a shove that crosses drawn stone in those three rooms.
+
+## 2026-11-26 — Bradley's injecting line out; "myles went invisible" not reproduced
+- `BRADLY_SCRIPT.blood` ("Injecting the horseshoe blood …") and the question into it are gone (the owner: "TAKE OUT BRADELYS WHOLE
+  INJECTING HORESHOE CRAB BLOOD LINE"); `needle` is his last word and carries what `blood` did (arms `bradlyScurry`, waits for a click).
+- **Myles invisible — NOT reproduced.** `tools/minoseen.js` (XIII: hidden while he waits, 6 meshes drawn as your ally) and
+  `tools/minofort.js` (the first castle's farmer fight, 60 s, the camera kept on him: drawn at every check, hips within 0.2 m of his
+  group). PROBE TRAP: `cullUnitModels` hides `u.model` of anything outside the view — a probe that is not looking at him reads him
+  "hidden". By design he is not drawn while `MINO.stage === 'with'` and you are on the beach or in a room (`updateMinotaur`). Ask
+  the owner where it happened (which castle, after a checkpoint load, after a kick?).
+- The owner: "First castle". Still NOT reproduced there, five ways: the farmers' fight 60 s with the camera on him
+  (`tools/minofort.js`, which also traps any write hiding his model and logs its stack); a checkpoint saved at his side and the
+  game reloaded as a checkpoint load (`tools/minoload.js`); through the gate mid-fade (`tools/minogate.js` — `minoJoin` already
+  calls `minoWhole`); culled while on screen (`tools/minoedge.js`: 188 culls in 360 frames of a full turn, none with a joint of his
+  in the picture); dying (he cannot: your blows skip an ally, `hurtMutantCore`; the castle's men stop at `MINO_FLOOR`).
+  Next, from the owner: what had just happened (a kick near him? the fight's end? the gate?), and whether a reload brought him back.

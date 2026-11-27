@@ -15,10 +15,12 @@ b.addToInventory(b.hookItem); if (b.state().equipped !== b.hookItem.name) b.togg
 for (let i = 0; i < 80; i++) { b.frame(1); await sleep(50); }
 w.__clockOn(); w.__adv(30);
 for (let i = 0; i < 60 && !b.hookThrowS(1); i++) { b.HK.st = 'idle'; w.__adv(2); await sleep(100); } b.HK.st = 'idle';
-const C = b.camera, T = b.THREE, S0 = C.position.clone(); log('at', AT, S0.toArray().map((v) => v.toFixed(1)).join(','));
+const C = b.camera, T = b.THREE;
+if (AT === 'beach' && Q.get('p')) { const [px, pz] = Q.get('p').split(',').map(Number); C.position.set(px, 1.7 + (b.groundUnder ? Math.max(0, b.groundUnder(px, pz) || 0) : 0), pz); b.camBaseY = C.position.y; for (let i = 0; i < 40; i++) { w.__adv(1); } try { b.updateFarPropsS && b.updateFarPropsS(); } catch (e) {} }
+const S0 = C.position.clone(); log('at', AT, S0.toArray().map((v) => v.toFixed(1)).join(','));
 const rc = new T.Raycaster(); rc.camera = C;
 const drawn = (O, D, far) => { rc.set(O, D); rc.far = far; const hs = rc.intersectObjects(b.scene.children, true); for (const h of hs) { const o = h.object; let vis = o.visible; for (let a = o.parent; a && vis; a = a.parent) vis = a.visible; if (!vis || !o.isMesh || o.isSprite || o.isPoints || o.name === 'hitProxy') continue; const m = Array.isArray(o.material) ? o.material[0] : o.material; if (m && ((m.transparent && m.opacity < 0.35) || m.visible === false || m.colorWrite === false)) continue; return h; } return null; };
-let n = 0, ghosts = 0; const kinds = {}, shown = [];
+let n = 0, ghosts = 0, through = 0; const kinds = {}, shown = [], thr = {}, thrShown = [];
 const spots = [[0, 0], [4, 0], [-4, 0], [0, 4], [0, -4]];
 for (const [dx, dz] of spots) for (let a = 0; a < 16; a++) for (const el of [-20, -5, 10, 25, 45, 65]) {
   C.position.set(S0.x + dx, S0.y, S0.z + dz); b.camBaseY = C.position.y;
@@ -31,7 +33,35 @@ for (const [dx, dz] of spots) for (let a = 0; a < 16; a++) for (const el of [-20
   const D = b.HK.aim.clone(), O = C.position.clone(), dv = drawn(O, D, to.t + 30);
   const short = dv ? dv.distance - to.t : 99;
   if (to.kind === 'foe' || to.kind === 'gull' || to.kind === 'pile') continue;
+  // (and the other way: a drawn face down the line nearer than where the iron arrives — it went through it)
+  { const endT = b.HK.end.distanceTo(O); if (dv && dv.distance < endT - 0.3 && dv.distance > 0.4) { through++; const nm = (dv.object.name || dv.object.type) + (dv.object.parent ? '<' + (dv.object.parent.name || '') : ''); thr[nm] = (thr[nm] || 0) + 1; if (thrShown.length < 10) thrShown.push(`yaw ${(yaw * 57.3).toFixed(0)} el ${el}: through ${nm} at ${dv.distance.toFixed(1)}, landed ${endT.toFixed(1)} (${to.kind})`); } }
   if (short > 0.6) { ghosts++; const k = to.kind + (to.surface ? ':' + to.surface : '') + (to.hit && to.hit.object ? ':' + (to.hit.object.name || to.hit.object.type) : ''); kinds[k] = (kinds[k] || 0) + 1; if (shown.length < 10) shown.push(`${k} at t ${to.t.toFixed(1)} (drawn at ${dv ? dv.distance.toFixed(1) : 'none'}) yaw ${a * 22.5} el ${el} from ${dx},${dz} pt ${to.point.toArray().map((v) => v.toFixed(1)).join(',')}`); }
 }
-log('throws', n, '| caught short of anything drawn', ghosts, JSON.stringify(kinds));
+/* (&walls=1, 2026-11-25, the owner: "the hook is going through walls in the castle fix this it should connect with every surface it
+ * hits"): stood UP AGAINST the walls — down each of 32 bearings to the first drawn face at the eye, then back to a body's width
+ * from it (0.32 m) — and thrown at that wall and along it, at 7 pitches; a drawn face down the line nearer than where the iron
+ * ends, counted however near (the pass above skips the first 0.4 m). */
+if (Q.get('walls') === '1') {
+  let wn = 0, wthr = 0; const wk = {}, wsh = [];
+  for (const [sx, sz] of [[0, 0], [6, 0], [-6, 0], [0, 6], [0, -6], [10, 4], [-10, -4]]) for (let a = 0; a < 32; a++) {
+    const yaw = a / 32 * Math.PI * 2, Dh = new T.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const O0 = new T.Vector3(S0.x + sx, S0.y, S0.z + sz), hit = drawn(O0, Dh, 14); if (!hit || hit.distance < 0.6) continue;
+    const at = O0.clone().addScaledVector(Dh, hit.distance - 0.32);
+    for (const [dy, el] of [[0, -10], [0, 5], [0, 25], [0, 50], [0.35, 5], [-0.35, 5], [0.7, 15]]) {
+      C.position.copy(at); b.camBaseY = C.position.y;
+      b.look(yaw + dy, el * Math.PI / 180); C.updateMatrixWorld(true);
+      b.HK.st = 'idle'; b.HK.cd = 0; b.HK.armT = -1;
+      if (!b.hookThrowS(1)) continue;
+      const to = b.HK.to; b.HK.st = 'idle'; if (b.HK.links) b.HK.links.visible = false;
+      if (!to || !to.point || to.kind === 'foe') continue;
+      wn++;
+      const O = C.position.clone(), D = b.HK.aim.clone(), endT = b.HK.end.distanceTo(O), dv = drawn(O, D, endT + 2);
+      if (dv && dv.distance < endT - 0.15) { wthr++; const nm = (dv.object.name || dv.object.type) + '<' + (dv.object.parent ? dv.object.parent.name || '' : ''); wk[nm] = (wk[nm] || 0) + 1;
+        if (wsh.length < 12) wsh.push(`at ${at.x.toFixed(1)},${at.z.toFixed(1)} yaw ${(yaw + dy).toFixed(2)} el ${el}: drawn at ${dv.distance.toFixed(2)}, iron ends ${endT.toFixed(2)} (${to.kind}${to.surface ? ':' + to.surface : ''})`); }
+    }
+  }
+  log('AGAINST THE WALLS: throws', wn, '| through something drawn', wthr, JSON.stringify(wk)); for (const x of wsh) log('  wall-through:', x);
+}
+log('throws', n, '| caught short of anything drawn', ghosts, JSON.stringify(kinds), '| flew THROUGH something drawn', through, JSON.stringify(thr));
+for (const s of thrShown) log('  through:', s);
 for (const s of shown) log('  ', s);
