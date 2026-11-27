@@ -4133,3 +4133,10 @@ The KICK's get-up was the glitch, all of it inside `ragOutAll`'s blend from how 
   in one frame.
 - After (24-28 get-ups a run, kick + clip, farmers out in the first castle's fight): floats 0, worst joint move 0.15-0.25 m a frame
   on almost all (was 0.6-1.6 m); tavern three on the floor after.
+
+## 2026-11-26 — the life layer's restore is LAST-SAVED-FIRST (`installLife`)
+A bone saved twice in one frame — by `lifeApply` and again by a kind's `postClip` after the life layer turned it — was put back
+first-saved-first, so it kept the life layer's turn. three's mixer writes a bone only when its keyed value changes, so on any still
+pose (a one-frame idle, a held wind-up, constant tracks) the look, breath and lean were stacked again every frame: the Scourger's head
+and chest rolled round (`temple.md`, same date). Now restored in reverse. A layer must still save every bone before it touches it.
+`kind.stopFloor` (swing pick, beside `stopPick`): how much weight is left to a blow drawn far from its own stand-off (default 0.15).

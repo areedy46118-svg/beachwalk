@@ -668,3 +668,56 @@ strip of a single clip: it shows what the layers do together.
   24 swings, 22 took health (kgDash 1 of 2, kgCutB 5 of 6, the rest all), 0 errors — the tremble does not move a contact.
 - NOT done: the weapon idle (`sIdleW`) and the dash's deep lunge are still a man's poses on his legs; he still never uses his
   own walk when you back away (the hunt takes over at 5.6 m). The swoop's last pitch (0.48) was not re-filmed.
+
+## 2026-11-26 (late) — the Scourger: the spin, the axe through him, his own walk, the snaps, harder
+The owner: "the final boss rig is off fix him now. his weapon clips through his body too. his walk and run look sideways and awkward
+fix it. i need this guy to move fluid and seamless … make him more aggressive and fix his head and chest spinning vertically around";
+then, with a screenshot of the stalking run head-on: "look this animation right here change to his sketchfab walk".
+New probes: `tools/scourgerig.js` (the real fight on the clock, per clip: hips against facing and travel, chest and head in his
+group's frame with their axes taken off his own idle, the head's/chest's turn per frame, axe vertices inside him; `&tiles=1` stills
+of the worst), `tools/scourgeclipspin.js` (every clip on the clip alone and with every layer; axe against `u.kac`'s capsules),
+`tools/scourgeprofile.js` (how much of him moves each 1/15 s: held stretches), `tools/scourgeendpop.js` (key-to-key jumps: snaps at a
+clip's ends), `tools/scourgefront.js` (clips head-on through the game's camera: which clip is the owner's screenshot), `tools/_with.js`
+(a probe run with window switches set first). PROBE TRAP: posing clip after clip on a paused mixer, three's mixer writes a bone only
+when its keyed value CHANGES — flush its two accumulators to different numbers first (`bd.buffer.fill(0, vs, 2vs); fill(1, 2vs, 3vs)`),
+never NaN (an action with no weight mixes the stale accumulator in and NaNs the bone).
+- **THE SPIN WAS A RESTORE-ORDER BUG** (`installLife`, every kind): the layers' saved bones were put back FIRST-SAVED-FIRST. `lifeApply`
+  saves his neck/head/chest, `kingPersona` saves them again after the life layer turned them, so the restore left them at the second
+  save — the clip PLUS the life layer. And three writes a bone only when its keyed value changes: through any still pose (his weapon
+  idle — one frame held 2 s — the wings-only beat, every `natHold` wind-up) nothing overwrote it, and the look, the breath and the
+  lean were added again every frame. Measured: his head turned 11°/frame on average through the weapon idle, chest 30-130° off the
+  clip. Now LAST-SAVED-FIRST: 0-1°/frame. Any kind whose `postClip` re-saves a bone the life layer saved had the same drift.
+- **The weapon idle is out** (`gaits.idle`, `alias.idle2`): `sIdleW` is a single held frame and a man's bladed stance, hips 35° and
+  chest 48° off the way he faces — "his stance oddly sideways". His own idle.
+- **HIS OWN WALK FOR EVERY PACE, AS AUTHORED** (`kingRunClip`, `KING_WALK_K` 1, `kingHuntGait`): the stalk and the sprint are no
+  longer played. (For an hour it was his walk at 2.2× its pace; the owner: "just use the final boss walk animation from sketchfab this
+  one is not working".) His file's walk at its own pace — the gait within 15 % of it (`gaitLo` 0.85 / `gaitHi` = `gaitMax` 1.15,
+  the feet matched), and NO LAYER over it: `kingRigLife` treats it as one of his own clips (no wings raised, no tail swung) and
+  `kingPersonaLayers` eases off it (`asIs`); only the life layer's breath and look remain. It covers 1.14 m/s, so the ground is
+  his wings': a hunt from over `KING_SWOOP.from` (7 m, was 9) is flown, and a walked one takes off once you are past 7 m or it has
+  lost 0.4 m on you after 1.2 s (`KING.huntD0`). The pillar run is flown. Measured: walking, hips 1° off his travel (p90 5);
+  `kingstudy.js` 21 swings, 23 health taken.
+- **THE AXE NEVER THROUGH HIM** (`kingAxeClear`, `kingAxeClearInit`, `KAC_PAIRS`): capsules for his trunk, neck, head and legs, each
+  as thick as his own skin round that bone (70th percentile, read once off his skinned mesh); the axe sampled as 40 slices of its
+  own mesh, each slice's middle and three farthest-out vertices (the haft's centreline `cl` runs only butt -> grip, and the
+  crescent is broad — the line alone missed the blade in his thigh); where any of it is inside (radius + 5 cm) his wrist turns it
+  out about the line from his fist, the deepest first, six passes, ≤ 1.4 rad, every frame afresh (an eased solve kept turning the
+  old way as the clip turned the haft another way and put it back in). Runs LAST in `kingPersona` (the arms' carry, the breath and the
+  coil after it put the haft back through his chest — `kingPersonaLayers` now holds those). NOT THROUGH A BLOW: eased out at 8/s
+  while he swings — with it on, the haft sweeping close across him set the wrist turning mid-cut and 3 of 24 blows landed (the cut a
+  metre off your face at its own stand-off); off through blows, 28 health from 23 swings. Measured on the clips: the reels 18-67
+  vertices inside him -> 0-16, the guard 11 -> 0, the tail whip 8 -> 0; the get-up's sitting part still pinches the haft between
+  his legs (~25: the wrist alone cannot free it).
+- **THE SNAPS** (`KING_RETIME`, `kingRetime`, `kingMapT`, `kingRemapHits`): the stepping cut's last key was its first pose again
+  (695° summed in 1/30 s against a median 99 — a pop the instant it ended); the dash and the guard started on a pose not their
+  motion's (246/42, 99/17); the dash lay still in its lunge 0.53 s and took 0.6 s to rise. Piecewise time maps, resampled at 30 fps:
+  the keys cut, the lunge 0.22 s, the rise a little quicker. Contact fractions move with them (`kingRemapHits`, before `naturalSwings`).
+  TRAP: that first-key snap in the dash whipped the blade through your face 0.25 s early — the old study's first "hit" every run,
+  whose knock-back then spaced the standing camera for every blow after. Don't read the old 22-of-24 as all clean.
+- **His range**: the hunt now ends at the dash's own measured stand-off (`kingHuntTo`, 4.24 m; it was 3.4 and the clean dash put its
+  blade 0.6 m behind your head); `stopFloor` 0.02 (new kind knob in the swing pick, default 0.15): a blow far from its own
+  stand-off is all but never drawn (the plunge from 3.1 m with its stand-off at 4.8 went behind your head).
+- **Harder**: `aggr` 7.6 (6.4), `press` 1.5, strings 5 deep (7 angry), the opening 0.38 s (0.26 angry), `circle` 0.02, `regroup`
+  0.04, `sizeUp` 0.01, `KING_HUNT.from` 5.2, the tail 3 s apart.
+- Measured after: `kingstudy.js &secs=60` 23 swings, 28 health taken, every blow 0.05-0.3 m off your face; `kingfight.js` end to
+  end 0 errors (descent, knockdown/rise, the flown pillar run, climb, slam, death, credits).

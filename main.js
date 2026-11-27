@@ -50237,7 +50237,7 @@ function updateMutantUnit(u, dt) {
             let w = u.kind.use[k];
             /* (`kind.stopPick`: a blow measured for a stand-off is thrown at about that stand-off — the dark knight's, from
              * 1.8 to 3.0, and up close his long ones landed past you, 2026-10-19 round 4; weighted, never ruled out) */
-            if (u.kind.stopPick && AK.stop) w *= 0.15 + 0.85 * Math.exp(-Math.pow((dist - AK.stop) / u.kind.stopPick, 2));
+            if (u.kind.stopPick && AK.stop) { const fl = u.kind.stopFloor ?? 0.15; w *= fl + (1 - fl) * Math.exp(-Math.pow((dist - AK.stop) / u.kind.stopPick, 2)); }   // (`stopFloor`: how much of a far-off blow's weight is left — the Scourger's 0.02, 2026-11-26)
             /* (`kind.warpPick`: a swing that carries him, `A.rmFrom`, is thrown from where its stretched or shrunk step lands
              * it — the dark knight's, 2026-10-29: the long strings from five and six metres, the cuts in place from two) */
             if (u.kind.warpPick && AK.rmFrom) { const o = Math.max(0, AK.rmFrom[0] - dist, dist - AK.rmFrom[1]); if (o > 0.15) continue; w *= 0.05 + 0.95 * Math.exp(-Math.pow(o / 0.45, 2)); }   // (out of its own ground by more than a hand: not drawn at all, 2026-11-16 — weighted down, the paladin still threw a sweep meant for 2.7-3.3 m from 4.1)
@@ -91697,8 +91697,13 @@ function installLife(u, m, J) {
   let fkReady = !fk.length;
   const upd = u.mixer.update.bind(u.mixer);
   u.mixer.rawUpdate = upd;                      // the clips alone, for anything that measures a pose
+  /* (put back LAST SAVED FIRST — 2026-11-26, the Scourger: "fix his head and chest spinning vertically around". A bone saved twice —
+   * by this layer and again by a kind's own after this one turned it (`kingPersona` keeps his neck, head and chest) — was put back
+   * in the order saved, so it ended on the SECOND save: the clip plus this layer's turn. three's mixer writes a bone only when its
+   * keyed value changes, so through any still pose (his weapon idle, a held wind-up, the wings-only beat) nothing overwrote it and
+   * the look, the breath and the lean were added again every frame — his chest and head rolled round and round.) */
   u.mixer.update = (dt) => {
-    for (const s of saved) { s.b.quaternion.copy(s.q); if (s.p) s.b.position.copy(s.p); }
+    for (let i = saved.length - 1; i >= 0; i--) { const s = saved[i]; s.b.quaternion.copy(s.q); if (s.p) s.b.position.copy(s.p); }
     saved.length = 0;
     if (!fkReady) fkReady = fkIdle();
     upd(dt);
@@ -139837,7 +139842,38 @@ function kingPingClip(src, name, f0, f1, N, fps = 30, only = null) {
   }
   return new THREE.AnimationClip(name, dur, tracks);
 }
+/* CLIPS RETIMED AT THEIR ENDS AND THROUGH A DEAD HOLD (2026-11-26, the owner: "i need this guy to move fluid and seamless").
+ * Measured off each clip's keys (`tools/scourgeendpop.js`, `tools/scourgeprofile.js`): the stepping cut's LAST key is its first
+ * pose again — the whole of him jumped 695° (summed over his trunk and limbs, median 99) the instant the blow ended; the dash and the
+ * guard START on a pose that is not their motion's (246 against 42, 99 against 17); and the dash, once its blade is out, lies in a
+ * deep lunge 0.53 s with nothing moving (10-48 a sample against 200-1200), then takes 0.6 s to stand. Each is a piecewise map of new
+ * time -> the clip's own, resampled at 30 fps: the snapping keys cut off, the dead lunge squeezed to 0.22 s and the rise a little
+ * quicker. `kingRemapHits` moves the blows' contact fractions with them (each lands on the same frame of the take). */
+const KING_RETIME = {
+  sDash: [[0, 1 / 30], [0.437, 0.47], [0.657, 1.0], [1.107, 1.6]],
+  sCutB: [[0, 0], [0.5, 0.5]],
+  sBlock: [[0, 1 / 30], [1.167, 1.2]],
+};
+const kingMapT = (map, t, from, to) => { for (let i = 1; i < map.length; i++) if (t <= map[i][from] || i === map.length - 1) { const a = map[i - 1], c = map[i], f = (t - a[from]) / ((c[from] - a[from]) || 1); return a[to] + (c[to] - a[to]) * Math.max(0, Math.min(1, f)); } return t; };
+function kingRetime(clip, map) {
+  const D = map[map.length - 1][0], N = Math.max(2, Math.round(D * 30)), tracks = [];
+  for (const t of clip.tracks) {
+    const ip = t.createInterpolant(), k = t.getValueSize(), times = new Float32Array(N + 1), vals = new Float32Array((N + 1) * k);
+    for (let i = 0; i <= N; i++) { const tn = D * i / N; times[i] = tn; vals.set(ip.evaluate(kingMapT(map, tn, 0, 1)), i * k); }
+    tracks.push(new t.constructor(t.name, times, vals));
+  }
+  return new THREE.AnimationClip(clip.name, D, tracks);
+}
+// (each blow's contact, and the string's later ones, onto the retimed clip: the same frame of the take)
+function kingRemapHits(u) {
+  for (const k in u.atk) {
+    const A = u.atk[k], map = KING_RETIME[A.clip]; if (!map || A._kt) continue;
+    const dO = map[map.length - 1][1], dN = map[map.length - 1][0], f = (x) => kingMapT(map, x * dO, 1, 0) / dN;
+    A.hit = f(A.hit); if (A.more) A.more = A.more.map(f); A._kt = true;
+  }
+}
 function kingOwnClips(clips, gltf) {
+  for (const nm in KING_RETIME) { const i = clips.findIndex((c) => c.name === nm); if (i >= 0) clips[i] = kingRetime(clips[i], KING_RETIME[nm]); }
   /* (THE STALKING RUN TURNED TO HIS FRONT: Mesh2Motion's Run_Stealth came on its Unreal skeleton (`glb_split.py --ue`) and the packer
    * read its forward off frame 0's toes, 119° off — he ran it side-on, hips turned past his shoulder (`tools/scourgeface.js`: his
    * hips' facing over the cycle 46-76 where his walk and the sprint read ±13 off his idle's). The whole run turned back about the
@@ -139878,10 +139914,15 @@ function kingOwnClips(clips, gltf) {
   clips.push(sliceClip(pl, 'sLand', 54 / 30, pl.duration));   // (`sliceClip`, not three's subclip: that drops every track with no key in the window — his constant ones)
   const sl = pl.clone(); sl.name = 'kSlam'; clips.push(sl);
 }
-const KING_SWOOP = { pitch: 0.48, lift: 2.0, bob: 0.07, from: 9 };   // (the tip forward, rad; his hips' height over his idle's; the stroke's rise and fall; hunts from further than this are flown)
+const KING_SWOOP = { pitch: 0.48, lift: 2.0, bob: 0.07, from: 7 };   // (from 9 until his walk went back to its own pace, 2026-11-26)   // (the tip forward, rad; his hips' height over his idle's; the stroke's rise and fall; hunts from further than this are flown)
 // HIS RUN, drawn each time he sets off (the owner: "use the walk animation from here too … try this run with his old one too
 // sometimes"): the low stalking run (Mesh2Motion's Run_Stealth, `sStalk`) two times in three, the king's sprint the third
-const kingRunClip = (u) => (u.clips.sStalk && Math.random() < 0.67 ? 'sStalk' : 'kSprint');
+/* (HIS OWN WALK, NOT A MAN'S RUN — 2026-11-26, the owner, with a screenshot of the stalking run head-on: "look this animation right
+ * here change to his sketchfab walk". On the ground he walks his own walk now, driven hard (`KING_WALK_K` of its pace, the feet
+ * matched to the floor); from further than `KING_SWOOP.from` he comes on his wings, and a walked hunt you run out of takes off
+ * (`kingHuntStep`). The stalk and the sprint are no longer played.) */
+const KING_WALK_K = 1;   // (2.2 for an hour; the owner, 2026-11-26: "just use the final boss walk animation from sketchfab this one is not working" — his file's walk AS AUTHORED: its own pace, no layer over it, `kingRigLife`/`kingPersonaLayers`)
+const kingRunClip = (u) => 'walk';
 /* WHAT A MAN DOES NOT HAVE (2026-11-25): a man's clips drive a man's bones; on the Scourger his wings, his tail, his fingers and his
  * jaw stood frozen in their bind through every one of them (filmed, `tools/kingclips.js`: wings flat out, the axe hand open). They
  * take his OWN idle's motion instead, looped through the clip — the wings breathing, the tail alive, the fist closed on the axe. */
@@ -139918,7 +139959,7 @@ MUT_KINDS.king = Object.assign({}, KN_BASE, {
    * parry window under the pack's. What keeps him fair is the same as ever: every blow is the animator's own take at its own
    * speed, the tell is the wind-up you can see, and each contact can be guarded or parried on its beat. */
   h: 3.4, hp: 320, dmg: 1, hitR: 1.1,   // (320: "GIVE FINAL BOSS MORE HEALTH TOO", 2026-11-26; 230 before)   // (230: 180 until 2026-11-21, the owner: "make the final boss harder and more aggressive")
-  /* (the rest of this line was inside the comment above from 2026-11-21 to 11-22: no body, reach or lunge stop of his own) */ body: 0.65, lungeStop: 1.2, landSlop: 0.45, limbR: 0.45, foeLimbR: 0.75, closeBody: true, stopPick: 0.6,
+  /* (the rest of this line was inside the comment above from 2026-11-21 to 11-22: no body, reach or lunge stop of his own) */ body: 0.65, lungeStop: 1.2, landSlop: 0.45, limbR: 0.45, foeLimbR: 0.75, closeBody: true, stopPick: 0.6, stopFloor: 0.02,   /* (stopFloor — 2026-11-26: his polearm's blows reach 1.8-4.5 m, and the plunge drawn from 3.1 m with its stand-off at 4.8 put the blade behind your head: a blow far from its own stand-off is all but never drawn) */
   /* (2026-11-20, round 3, the owner: "MAKE ALL HIS HITS ACTUALLY CONNECT". Studied frame by frame, `tools/kingstudy.js`: from
    * his stand-off every blow went through your face — kick 0.10 m, bicycle 0.06-0.14, uppercut 0.14-0.28 — and every miss was
    * thrown from 1.8-2.1 m with the closing starting 0.18 s before the contact at 2.6 m/s, so he arrived half a metre short.
@@ -139934,9 +139975,12 @@ MUT_KINDS.king = Object.assign({}, KN_BASE, {
    * four deep (six angry, were six and eight), and each one ends in an opening that is yours — 0.6 s (0.45 angry, were 0.24 and 0.16);
    * outside it he turns half your blows on his axe (`block`, was 0.28) and comes straight back off it (`dealerBlock`); and his
    * blows are read and deflected on the pack's own window (`parryK` 1, was 0.85) — the parry is the fight's verb, the riposte its prize) */
-  speedK: 1.8, aggr: 6.4, press: 1.35, chainMax: 4, opening: 0.6,
-  circle: 0.04, step: 0.05, feint: 0, sizeUp: 0.02, restless: 0.5, regroup: 0.06, regroupT: [0.35, 0.65], sideKeep: 0.45,
-  velGait: true, gaitBands: true, gaitMax: 1.6, smoothMove: true, noSkate: true, lungeMax: 3.4, stepBack: 0, gaitLo: 0.7, gaitHi: 1.3,   // (a blow chained from too far closes at his own stride, 1.3 of a man's — the quick cut chained from 3 m fell short at 2.6. No `stepBack`: it slid him backwards through his wind-ups, and inside his reach the haft is a blow all the same, `kingLands`. HIS GAITS AT THEIR OWN PACE (`gaitLo`/`gaitHi`, 2026-11-26, "fix his walk animations too they look weird"): his walk covers 1.14 m/s, and it was stretched to 1.8 of that before a run took over — played at a third of its own pace. Now neither is stretched past 1.3 nor slowed under 0.7: between a walk and a run he WALKS, heavy, at his walk's pace)
+  /* (MORE AGGRESSIVE — 2026-11-26, the owner: "make him more aggressive": strings five deep (seven angry), the opening after one
+   * 0.38 s (0.26 angry; it is still yours — a parry or one cut), his breath between blows back quicker (`aggr`), he gives ground and
+   * circles a third as often, and from further off he comes at once (`KING_HUNT.from`); his dash no longer lies in its lunge.) */
+  speedK: 1.8, aggr: 7.6, press: 1.5, chainMax: 5, opening: 0.38,
+  circle: 0.02, step: 0.05, feint: 0, sizeUp: 0.01, restless: 0.5, regroup: 0.04, regroupT: [0.3, 0.55], sideKeep: 0.45,
+  velGait: true, gaitBands: true, gaitMax: 1.15, smoothMove: true, noSkate: true, lungeMax: 3.4, stepBack: 0, gaitLo: 0.85, gaitHi: 1.15,   /* (his walk is his only gait, played within 15 % of its own pace — as authored, `KING_WALK_K`) */   // (a blow chained from too far closes at his own stride, 1.3 of a man's — the quick cut chained from 3 m fell short at 2.6. No `stepBack`: it slid him backwards through his wind-ups, and inside his reach the haft is a blow all the same, `kingLands`. HIS GAITS AT THEIR OWN PACE (`gaitLo`/`gaitHi`, 2026-11-26, "fix his walk animations too they look weird"): his walk covers 1.14 m/s, and it was stretched to 1.8 of that before a run took over — played at a third of its own pace. Now neither is stretched past 1.3 nor slowed under 0.7: between a walk and a run he WALKS, heavy, at his walk's pace)
   gaitToes: ['Character1_LeftToeBase', 'Character1_RightToeBase'],
   turnMax: 3.8, yawK: 0.8, aimK: 0.5, aimFront: 0.32, aimDrop: 0.05, hitFront: 0.3, hitOnScreen: true, fade: 0.3,
   poise: 30, poiseBack: 3.4, poiseWait: 0.7, parryK: 1.0, recoilK: 0.4, stunK: 0.6, block: 0.5,
@@ -139961,18 +140005,21 @@ MUT_KINDS.king = Object.assign({}, KN_BASE, {
   matMore: (mm) => { mm.roughness = 0.82; },
   /* his own idle and walk (his file's), the king's sprint for his run; the owner's clips for the guard, the reels and the dodges. The
    * king's names the rest of his code still asks by (`kIdle`, `hover`, `knockOut` …) answer to these. */
-  anim: { idle: 'idle', walk: 'walk', run: 'kSprint', roar: 'idle', die: 'kShock', back: 'walk', rate: 1.0, lean: 0.03, strafeK: 1.0 },   // (back: his walk run backwards — it was the dodge's hop, looped)
-  gaits: { walk: ['walk'], run: ['sStalk', 'sStalk', 'kSprint'], idle: ['idle', 'sIdleW'], strafeL: ['walk'], strafeR: ['walk'] },   // (the stalking run two times in three: `kingRunClip`)
-  alias: { idle2: 'sIdleW', walk2: 'walk', run2: 'kSprint', roar: 'idle', roar2: 'idle', die2: 'kShock', back: 'walk', calm: 'idle',
+  anim: { idle: 'idle', walk: 'walk', run: 'walk', roar: 'idle', die: 'kShock', back: 'walk', rate: 1.0, lean: 0.03, strafeK: 1.0 },   // (back: his walk run backwards — it was the dodge's hop, looped)
+  /* (NOT THE WEAPON IDLE — 2026-11-26, the owner: "his stance oddly sideways to the player". `sIdleW` is one frame held 2 s — not a
+   * bone moves in it — and it is a man's bladed stance: hips 35° and chest 48° turned off the way he faces, measured in the fight
+   * (`tools/scourgerig.js`), stood in for up to 4 s at a time. His own idle breathes, faces you square and carries the axe clear.) */
+  gaits: { walk: ['walk'], run: ['walk'], idle: ['idle'], strafeL: ['walk'], strafeR: ['walk'] },   // (his own walk for every pace: `kingRunClip`)
+  alias: { idle2: 'idle', walk2: 'walk', run2: 'walk', roar: 'idle', roar2: 'idle', die2: 'kShock', back: 'walk', calm: 'idle',
            strafeL: 'walk', strafeR: 'walk', hit: 'sDodgeB', hitBig: 'sDodgeB', hitSide: 'sDodgeL', hitBack: 'sDodgeB', hitHead: 'sDodgeB', parry: 'sBlock',
            block: 'sBlock', blockC: 'sBlock',
-           kIdle: 'idle', kWalk: 'walk', kRun: 'kSprint', hover: 'sFly', kJump: 'sLand', knockOut: 'sKnock', getUp: 'sRise',
+           kIdle: 'idle', kWalk: 'walk', kRun: 'walk', hover: 'sFly', kJump: 'sLand', knockOut: 'sKnock', getUp: 'sRise',
            kTurnL: 'walk', kTurnR: 'walk', kTurn90L: 'walk', kTurn90R: 'walk', kStrWL: 'walk', kStrWR: 'walk' },
   stunClip: 'sDodgeB', first: 'idle', sleepIdle: 'idle', wakeAt: 0,
   voice: { f: 0.48, growl: 1.7, rasp: 1.3, throat: 'bellow' },
   use: {},
   // AT HALF OF HIM HE STOPS HOLDING BACK: quicker feet, quicker hands, longer strings (`kingRage` is the light of it)
-  rage: { aggr: 8.0, speedK: 2.15, press: 1.5, chainMax: 6, windK: 0.82, poiseBack: 4.6, circle: 0.01, feint: 0, opening: 0.45 },
+  rage: { aggr: 9.5, speedK: 2.2, press: 1.7, chainMax: 7, windK: 0.8, poiseBack: 4.6, circle: 0.005, feint: 0, opening: 0.26 },
   onRage: (u) => kingRage(u), rageClip: 'idle', rageDur: 0.5,
 });
 /* HIS BLOWS (2026-11-25, the Scourger): his own plunge and rear attack, and the owner's Mesh2Motion clips — the big overhead into a
@@ -140393,6 +140440,88 @@ function kingAxeFloor(u, saved) {
   saved.push({ b: hand, q: hand.quaternion.clone() });
   minoTurnBone(hand, _kxQ.setFromAxisAngle(_kxX, e1 - e0)); hand.updateMatrixWorld(true);
 }
+/* HIS AXE NEVER THROUGH HIM (2026-11-26, the owner: "his weapon clips through his body too"). Three metres of polearm in a fist
+ * driven by a man's clips: through the reels and the get-up the haft went through his own thigh, neck and chest — measured on the
+ * clips alone (`tools/scourgeclipspin.js`): the side reels 18-51 of its vertices inside him, the back reel 18, the rise 21, the guard
+ * 11. His trunk, neck, head and legs are capsules, each as thick as his own skin round that bone (the 70th percentile of its
+ * vertices' distance, read once off his mesh); the haft's centreline and the blade are sampled along it; where any of it is inside
+ * him, his wrist turns it out about the line from his fist, the deepest point first, six passes at most, never over 1.4 rad —
+ * every frame afresh (an eased one kept turning the old way as the clip turned the haft another, and put it back in). A layer like the rest; the blows themselves are clear of him already
+ * (0 inside on every cut, measured), so a contact is not moved. */
+const KAC_PAIRS = [['Character1_Hips', 'Character1_Spine'], ['Character1_Spine', 'Character1_Spine1'], ['Character1_Spine1', 'Spine3'], ['Spine3', 'Character1_Spine2'], ['Character1_Spine2', 'Character1_Neck'],
+  ['Character1_Neck', 'Character1_Head'], ['Character1_Head', null], ['Character1_LeftUpLeg', 'Character1_LeftLeg'], ['Character1_RightUpLeg', 'Character1_RightLeg'], ['Character1_LeftLeg', 'Character1_LeftFoot'], ['Character1_RightLeg', 'Character1_RightFoot']];
+const _kacP = new THREE.Vector3(), _kacH = new THREE.Vector3(), _kacN = new THREE.Vector3(), _kacX = new THREE.Vector3(), _kacV = new THREE.Vector3(), _kacQ = new THREE.Quaternion(), _kacR = new THREE.Quaternion(), _kacB = new THREE.Quaternion();
+function kingAxeClearInit(u) {
+  const H = u.kAxeHold, M = u.model, hand = M.getObjectByName('Character1_RightHand'); if (!H || !hand) return { ok: false };
+  let body = null; M.traverse((o) => { if (o.isSkinnedMesh && (!body || o.geometry.attributes.position.count > body.geometry.attributes.position.count)) body = o; });
+  if (!body) return { ok: false };
+  M.updateMatrixWorld(true); body.skeleton.update();
+  const caps = KAC_PAIRS.map(([a, c]) => ({ a: M.getObjectByName(a), c: c ? M.getObjectByName(c) : null, ds: [], r: 0, A: new THREE.Vector3(), C: new THREE.Vector3() })).filter((k) => k.a && (k.c || k.c === null));
+  const byBone = new Map(caps.map((k) => [k.a, k]));
+  const sk = body.skeleton, si = body.geometry.attributes.skinIndex, sw = body.geometry.attributes.skinWeight, pos = body.geometry.attributes.position, v = new THREE.Vector3();
+  for (const k of caps) { k.a.getWorldPosition(k.A); if (k.c) k.c.getWorldPosition(k.C); else k.C.copy(k.A); }
+  for (let i = 0; i < pos.count; i += 3) {
+    let bi = 0, bw = -1; for (let c = 0; c < 4; c++) { const w = sw.getComponent(i, c); if (w > bw) { bw = w; bi = si.getComponent(i, c); } }
+    const k = byBone.get(sk.bones[bi]); if (!k) continue;
+    body.getVertexPosition(i, v); v.applyMatrix4(body.matrixWorld); k.ds.push(kacSegD(v, k.A, k.C));
+  }
+  for (const k of caps) { k.ds.sort((x, y) => x - y); k.r = k.ds.length ? k.ds[Math.floor(k.ds.length * 0.7)] : 0.1; k.ds = null; }
+  /* the axe itself, in its own frame: cut into 40 slices along it (butt -> head), each slice's middle and the three of its
+   * vertices farthest out from it — the haft and the blade's full width (its centreline alone runs only butt -> grip, and the
+   * crescent is broad: through the side reels the blade's edge was in his thigh with the line clear) */
+  const m0 = new THREE.Matrix4().compose(H.p0, H.q0, H.axe.scale).invert(), pts = [], ag = H.axe.geometry.attributes.position;
+  const butt = H.cl[0].clone().applyMatrix4(m0), tip = u.kAxeFar ? u.kAxeFar.position.clone() : (u.kAxeTip ? u.kAxeTip.position.clone() : null);
+  if (tip) {
+    const ax = tip.clone().sub(butt), L = ax.length(); ax.normalize(); const NS = 40, bins = Array.from({ length: NS }, () => []);
+    for (let i = 0; i < ag.count; i++) { v.fromBufferAttribute(ag, i); const k = Math.max(0, Math.min(NS - 1, Math.floor(v.clone().sub(butt).dot(ax) / L * NS))); bins[k].push(v.clone()); }
+    for (const bn of bins) {
+      if (!bn.length) continue; const c = bn.reduce((s, p) => s.add(p), new THREE.Vector3()).multiplyScalar(1 / bn.length); pts.push(c);
+      bn.sort((p, q) => q.distanceToSquared(c) - p.distanceToSquared(c)); const far = [];
+      for (const p of bn) { if (far.length >= 3) break; if (p.distanceTo(c) > 0.04 && far.every((f) => f.distanceTo(p) > 0.06)) far.push(p); }
+      pts.push(...far);
+    }
+  }
+  return { ok: true, hand, axe: H.axe, caps: caps.filter((k) => k.r > 0.02), pts, r: new THREE.Quaternion(), on: 0, at: 0 };
+}
+function kacSegD(p, a, c, out) {
+  _kacV.subVectors(c, a); const L2 = _kacV.lengthSq(), t = L2 > 1e-8 ? Math.max(0, Math.min(1, _kacX.subVectors(p, a).dot(_kacV) / L2)) : 0;
+  const q = (out || _kacX).copy(a).addScaledVector(_kacV, t); return p.distanceTo(q);
+}
+function kingAxeClear(u, saved) {
+  if (!u.kAxeHold || u.rag) return;   // (through his knockdown too: it is his clips, sKnock and sRise)
+  const C = u.kac || (u.kac = kingAxeClearInit(u)); if (!C.ok) return;
+  const hand = C.hand;
+  /* (NOT THROUGH A BLOW: his blows are clear of him on the clip, and with the margin the haft sweeping close across him set his
+   * wrist turning mid-cut — measured, `kingstudy.js`: 3 of 24 took health, the cut at its own stand-off a metre off your face.
+   * Eased out as a blow starts and back in after it, 8/s.) */
+  const now = performance.now() * 0.001, dt = Math.min(0.05, Math.max(0, now - (C.at || now))); C.at = now;
+  C.w = (C.w ?? 1) + (((u.st.atk >= 0 && u.st.alive) ? 0 : 1) - (C.w ?? 1)) * Math.min(1, dt * 8);
+  if (C.w < 0.02) return;
+  u.g.updateMatrixWorld(true);
+  for (const k of C.caps) { k.a.getWorldPosition(k.A); if (k.c) k.c.getWorldPosition(k.C); else k.C.copy(k.A); }
+  let total = 0, saved1 = false; const q0 = _kacR.copy(hand.quaternion);
+  for (let it = 0; it < 6; it++) {
+    hand.getWorldPosition(_kacH);
+    let best = 0, bx = 0, by = 0, bz = 0, nx = 0, ny = 0, nz = 0;
+    for (const lp of C.pts) {
+      _kacP.copy(lp).applyMatrix4(C.axe.matrixWorld);
+      const L = _kacP.distanceTo(_kacH); if (L < 0.32) continue;
+      for (const k of C.caps) {
+        const d = kacSegD(_kacP, k.A, k.C, _kacN), R = k.r + 0.05; if (d >= R) continue;
+        const ang = (R - d) / L; if (ang <= best) continue;
+        best = ang; bx = _kacP.x; by = _kacP.y; bz = _kacP.z;
+        if (d > 1e-4) { nx = (_kacP.x - _kacN.x) / d; ny = (_kacP.y - _kacN.y) / d; nz = (_kacP.z - _kacN.z) / d; } else { nx = 0; ny = 1; nz = 0; }
+      }
+    }
+    if (best <= 0) break;
+    _kacX.set(bx - _kacH.x, by - _kacH.y, bz - _kacH.z).cross(_kacN.set(nx, ny, nz)); if (_kacX.lengthSq() < 1e-8) break; _kacX.normalize();
+    const a = Math.min(best * 1.15 + 0.015, 1.4 - total); if (a <= 0) break; total += a;
+    if (!saved1) { saved.push({ b: hand, q: hand.quaternion.clone() }); saved1 = true; }
+    minoTurnBone(hand, _kacQ.setFromAxisAngle(_kacX, a)); hand.updateMatrixWorld(true);
+  }
+  if (saved1 && C.w < 0.999) { hand.quaternion.copy(_kacB.copy(q0).slerp(hand.quaternion, C.w)); hand.updateMatrixWorld(true); }
+  C.on = total;
+}
 /* HIS WINGS, HIS JAW AND HIS TAIL IN THE FIGHT (2026-11-26, the owner: "fix the rig and utilize it to its fullest potential … make
  * his moves more readable"). A man's clips drive a man's bones: through every cut of the owner's his wings only breathed (his
  * idle's, laid in), his jaw hung shut and his tail trailed. Each is now part of the blow, out of poses of his OWN (`KING_POSE`):
@@ -140446,7 +140575,7 @@ function kingWingCarry(u, saved, dt, own) {
 function kingRigLife(u, saved) {
   const now = performance.now() * 0.001, dt = Math.min(0.05, Math.max(0, now - (KRL.last || now))); KRL.last = now; KRL.t += dt;
   const st = u.st, M = KING.mode, cn = u.cur ? u.cur.getClip().name : '';
-  const own = cn === 'plunge' || cn === 'kSlam' || cn === 'rear' || cn === 'sFly' || cn === 'sSwoop' || cn === 'sLand' || (st.down || 0) > 0;
+  const own = cn === 'plunge' || cn === 'kSlam' || cn === 'rear' || cn === 'sFly' || cn === 'sSwoop' || cn === 'sLand' || cn === 'walk' || (st.down || 0) > 0;   // (`walk`: his file's walk as authored — no wings raised, no tail swung over it)
   const A = st.atk >= 0 && u.atk ? u.atk[st.swing] : null;
   let wW = 0, wJ = 0, rate = 5;
   if (!own) {
@@ -140486,16 +140615,23 @@ function kingRigLife(u, saved) {
     u.g.updateMatrixWorld(true); minoTurnBone(b, _krlQ.setFromAxisAngle(_kpU, KRL.sway[i])); b.updateMatrixWorld(true);
   }
 }
+/* (the axe's two corrections LAST, after everything that turns his trunk and arms — the arms' carry, the breath and the coil turned
+ * his weapon arm after the clearance had laid the haft clear of him, and put it back through his chest) */
 function kingPersona(u, saved) {
   if (!u.model) return;
   kingAxeHold(u);
+  kingPersonaLayers(u, saved);
+  if (u.st.alive && u.kgMeasured) kingAxeClear(u, saved);
   if (u.st.alive) kingAxeFloor(u, saved);
+}
+function kingPersonaLayers(u, saved) {
   if (!u.kgMeasured || !u.st.alive) return;
   const M = KING.mode; if (M !== 'fight' && M !== 'hunt' && M !== 'ready') { KP.w = 0; return; }
   kingRigLife(u, saved);
   const now = performance.now() * 0.001, dt = Math.min(0.05, Math.max(0, now - (KP.last || now))); KP.last = now; KP.t += dt;
   const st = u.st, busy = st.atk >= 0 || (st.down || 0) > 0 || st.stun > 0 || st.recoil > 0 || st.struck;
-  KP.w += ((busy ? 0 : 1) - KP.w) * Math.min(1, dt * 7);
+  const asIs = !!u.cur && u.cur.getClip().name === 'walk';   // (his file's walk as authored: this layer eases off it)
+  KP.w += ((busy || asIs ? 0 : 1) - KP.w) * Math.min(1, dt * 7);
   const R = u.kpB || (u.kpB = Object.fromEntries(['Spine1', 'Spine2', 'Neck', 'Head', 'LeftArm', 'RightArm'].map((n) => [n, u.model.getObjectByName(KING_RAG['Character1_' + n])])));
   if (!R.Head || !R.Neck) return;
   const keep = (b) => { if (b) saved.push({ b, q: b.quaternion.clone() }); };
@@ -140506,8 +140642,8 @@ function kingPersona(u, saved) {
   const turn = (b, axis, a) => { if (b && Math.abs(a) > 1e-5) { minoTurnBone(b, _kpQ.setFromAxisAngle(axis, a)); b.updateMatrixWorld(true); } };
   const w = KP.w;
   // the bearing, and the breath (the breath under everything)
-  turn(R.Spine2, lat, -0.06 * w + 0.012 * Math.sin(KP.t * 1.25));
-  if (M === 'hunt') turn(R.Spine1, lat, 0.11);       // (into the sprint from the waist: a man running someone down, not jogging upright)
+  turn(R.Spine2, lat, (-0.06 + 0.012 * Math.sin(KP.t * 1.25)) * w);
+  if (M === 'hunt' && !asIs) turn(R.Spine1, lat, 0.11);       // (into the sprint from the waist: a man running someone down, not jogging upright)
   turn(R.Neck, lat, 0.09 * w);
   // the arms held in on the walk
   const walk = THREE.MathUtils.smoothstep(v, 0.3, 1.6) * w;
@@ -140522,7 +140658,7 @@ function kingPersona(u, saved) {
    * 96° between them, past you; and where the life layer lets its look go once you are behind him, this one held its limit, so
    * as you came round his back it swung from one shoulder to the other. One look now, the life layer's.) */
 }
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { kingMeasureBlowsS: () => { const u = KING.u; return u ? (kingMeasureBlows(u), KING.blows) : null; }, kingAxeHoldS: (u, w) => kingAxeHold(u, w) }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { kingMeasureBlowsS: () => { const u = KING.u; return u ? (kingMeasureBlows(u), KING.blows) : null; }, kingAxeHoldS: (u, w) => kingAxeHold(u, w), kingAxeClearS: (u, sv) => kingAxeClear(u, sv) }));
 function kingMeasureBlows(u) {
   const RAG = u.kind.rag, bone = (n) => u.model.getObjectByName(RAG['Character1_' + n]);
   const CH = [['RightArm', 'RightForeArm', 'RightHand'], ['LeftArm', 'LeftForeArm', 'LeftHand'], ['RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'], ['LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase']].map((c) => c.map(bone));
@@ -140599,7 +140735,7 @@ function kingAirBike(u, dt) {
   }
 }
 function kingDrive(u, dt) {
-  if (!u.natDone) u.natDone = naturalSwings(u);
+  if (!u.natDone) { kingRemapHits(u); u.natDone = naturalSwings(u); }
   if (u.natDone && !u.kgMeasured) u.kgMeasured = kingMeasureBlows(u);
 
   if (!(inTemple && tmpReady)) { u.g.visible = false; return true; }
@@ -140653,7 +140789,7 @@ function kingChoose(u, dt) {
   // YOU BEHIND HIM, CLOSE: the tail, at once (his "rear attack"), not the turn round first
   if (u.atk.kgRear && dist < 3.0 && (KING.rearCd = (KING.rearCd || 0) - dt) <= 0) {
     const fy = u.g.rotation.y, ty = Math.atan2(c.x - p.x, c.z - p.z); let dy = ty - fy; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-    if (Math.abs(dy) > 2.0) { KING.rearCd = 4; st.forceSwing = 'kgRear'; st.openT = 0; mutToken = u; return false; }
+    if (Math.abs(dy) > 2.0) { KING.rearCd = 3; st.forceSwing = 'kgRear'; st.openT = 0; mutToken = u; return false; }
   }
   // RUN YOU DOWN: anywhere in the desert, faster than you can sprint (the owner: "he should get you anywhere in the desert")
   if ((dist > KING_HUNT.from || (dist > 2.2 && kingLineBlocked(u))) && kingHuntStart(u)) return true;   // (and round a pillar that stands between)
@@ -140667,7 +140803,10 @@ function kingTakeOver(u) {
 }
 
 // ---- THE HUNT: flat out at you (Fast Run) from wherever you have got to, and out of the run straight into a blow
-const KING_HUNT = { from: 5.6, to: 3.4, sp: 7.8 };          // (you sprint at 5.71: `RUN_SPEED`; 3.4: the Scourger's dash lands from 3.5 m, his axe in his fist — `kingMeasureBlows`)
+const KING_HUNT = { from: 5.2, to: 3.4, sp: 7.8 };          // (from 5.6 until 2026-11-26's "more aggressive"; you sprint at 5.71: `RUN_SPEED`; 3.4: the Scourger's dash lands from 3.5 m, his axe in his fist — `kingMeasureBlows`)
+/* (the hunt ends where his dash lands you, not a guess: its measured stand-off, `kingMeasureBlows` — 4.3 m with the polearm in his
+ * fist; out of the old 3.4 the clean dash put its blade 0.6 m behind your head, 2026-11-26) */
+const kingHuntTo = (u) => Math.max(KING_HUNT.to, ((u.atk && u.atk.kgDash && u.atk.kgDash.stop) || 0) - 0.1);
 function kingHuntStart(u) {
   kingTakeOver(u);
   KING.huntP = null; KING.huntChk = 0;
@@ -140676,12 +140815,20 @@ function kingHuntStart(u) {
    * matching went the wrong way — the clip slowed to his gathering speed. Now the clip at its own flat-out pace from the first
    * stride, and HIM at that pace too: no gathering ramp, no easing into the last stride — up to the mark and into the blow.) */
   KING.swoop = !!u.clips.sSwoop && Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z) > KING_SWOOP.from;   // (from far off, on his wings: `KING_SWOOP`)
-  const rc = KING.swoop ? 'sSwoop' : kingRunClip(u), a = kingPlay(u, rc, true), cs = (u.clipSpeed && u.clipSpeed[rc]) || KING_HUNT.sp;
+  KING.huntD0 = Math.hypot(camera.position.x - u.g.position.x, camera.position.z - u.g.position.z);
+  kingHuntGait(u, KING.swoop ? 'sSwoop' : kingRunClip(u));
+  return true;
+}
+function kingHuntGait(u, rc) {
+  const a = kingPlay(u, rc, true);
+  if (rc === 'walk') {   // (his own walk at `KING_WALK_K` of its own pace, and him at the pace it covers: no skating)
+    const cs = (u.clipSpeed && u.clipSpeed.walk) || 1.14; KING.huntSp = cs * KING_WALK_K; if (a) a.timeScale = KING_WALK_K; return;
+  }
+  const cs = (u.clipSpeed && u.clipSpeed[rc]) || KING_HUNT.sp;
   // (AT THE RUN'S OWN PACE: the king's sprint covers 5.5 m/s and was played at 1.4 of itself to make 7.8 — now each run a little over
   // its own stride, never slower than outruns you (6.3; you sprint at 5.71), never over the stalk's 8.6)
   KING.huntSp = THREE.MathUtils.clamp(cs * 1.12, 6.3, 8.6);
   if (a) a.timeScale = THREE.MathUtils.clamp(KING.huntSp / cs, 0.8, 1.3);
-  return true;
 }
 /* ROUND THE STONE (2026-11-20): the hunt ran straight at you, and with a pillar between he pressed into it for the run's
  * whole 25 s — four times over, measured (`tools/kingbot.js`), after his slam put a pillar between you. The way ahead is
@@ -140708,10 +140855,11 @@ function kingLineBlocked(u) {
 const _kSt = new THREE.Vector3();
 function kingHuntStep(u, dt) {
   const p = u.g.position, c = camera.position, dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz) || 1;
+  if (!KING.swoop && u.clips.sSwoop && (d > KING_SWOOP.from || (KING.mt > 1.2 && d > (KING.huntD0 || 99) + 0.4))) { KING.swoop = true; kingHuntGait(u, 'sSwoop'); }   // (you got out past his walk, or it is losing ground on you: he takes to the air)
   const dir = kingSteer(u, dx, dz, 2.2, _kSt);
   { let dy = Math.atan2(dir.x, dir.z) - KING.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); KING.yaw += Math.sign(dy) * Math.min(Math.abs(dy) * Math.min(1, dt * 9), 6.5 * dt); u.g.rotation.set(0, KING.yaw, 0); }   // (round to where he runs no faster than a man turns: 25 rad/s measured, a snap)
   const blocked = d < 30 && kingLineBlocked(u);
-  const s = Math.min((KING.huntSp || KING_HUNT.sp) * dt, blocked ? 99 : Math.max(0, d - KING_HUNT.to + 0.3));   // (flat out to the mark: the take's pace, `kingHuntStart`)
+  const to = kingHuntTo(u), s = Math.min((KING.huntSp || KING_HUNT.sp) * dt, blocked ? 99 : Math.max(0, d - to + 0.3));   // (flat out to the mark: the take's pace, `kingHuntStart`)
   const hx = p.x, hz = p.z;
   // (never into the stone: the whole step, or along it on one axis, or none — `KING_PUSH_MAX`)
   { const nx = p.x + dir.x * s, nz = p.z + dir.z * s;
@@ -140725,7 +140873,7 @@ function kingHuntStep(u, dt) {
   // (stuck all the same — a corner the feeler cannot see round: back to the fight, which draws again)
   KING.huntP = KING.huntP || p.clone();
   if ((KING.huntChk = (KING.huntChk || 0) + dt) > 1.0) { const moved = p.distanceTo(KING.huntP); KING.huntP.copy(p); KING.huntChk = 0; if (moved < 1.5 && d > KING_HUNT.to + 0.5) { KING.avoid = -(KING.avoid || 1); } }
-  if (d <= KING_HUNT.to && !blocked || KING.mt > 12) {
+  if (d <= to && !blocked || KING.mt > 12) {
     /* in range: out of the run and into the air at you, the last of the gap crossed in it — the flying kick (`kgFly`), and
      * only now and then the flown bicycle (`kgRun`: a quarter of the time, never inside 20 s of the last — "HE DOES THE
      * BYCICLE KICK WAY TOO MUCH THAT SHOULD BE KINDA RARE", 2026-11-21: every hunt ended in it) */
@@ -140790,7 +140938,7 @@ function kingRunStart(u) {
   KING.pa = best; KING.mode = 'run'; KING.mt = 0; KING.vS = undefined;
   const R = KING_PILLARS.face - 1.6;
   KING.rB = new THREE.Vector3(TMP_X + Math.sin(best) * R, 0, TMP_Z + Math.cos(best) * R);
-  kingPlay(u, kingRunClip(u), true);
+  kingPlay(u, u.clips.sSwoop ? 'sSwoop' : kingRunClip(u), true);   // (to the pillar's foot on his wings: his walk would take him the whole fight)
   KING.climbs++; KING.climbCd = 28 + Math.random() * 10; KING.cd = 4;
   sfxAt(p.x, p.z, () => sfxMutRoar(0.4, u.kind.voice), { ref: 10, far: 80 });
   return true;
