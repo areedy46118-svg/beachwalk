@@ -1428,3 +1428,14 @@ same version are dropped (a GL program keeps its uniform values). `sewLampsToFog
 After: `setValueV4fArray` gone from the slow frames' profile. Some 20-30 ms frames remain on the first lap; they look like GPU
 (the profile is matrices and state, a few samples). This fix is the whole game's — the tavern and the castle carry the same two
 arrays on every material.
+
+## 2026-11-26 — the lair's rags are canvas again (nothing non-commercial ships)
+
+The owner, planning a Steam release: "take that head out for good and the rags". Frice's "rags pack" (CC-BY-NC-4.0,
+`assets/rags.glb`, `tools/rags_pack.py`) is deleted; the nest in `sewBuildLair` is the old hand-made bed once more —
+22 `rag()` planes with `ragTex`/`clothMats` laid on `nestH` (pressed into the same 0.55 m `hollow` the pack's drape used,
+so where it lies curled still sits in a dip), and six small scraps dragged off across the floor on `groundAt`. They are
+`bake`d like the rest of the lair, so the sewer's light pass reaches them (the pack had to be lifted by hand with an
+emissive map because it landed after that pass). Rendered headless (`lairLook2`): no errors, the bed reads as dark torn
+cloth over the mound — darker than the pack was. `assets/head.glb` (the CC-BY-NC severed head, unused since 2026-10-15)
+and `tools/head_pack.py` are deleted too; the README credits for both are gone.

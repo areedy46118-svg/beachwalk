@@ -92091,6 +92091,29 @@ MUT_ATTACKS.dSwipe = { wind: 0.60, strike: 0.16, recover: 0.38, hit: 0.600, reac
 MUT_ATTACKS.dButt  = { wind: 0.50, strike: 0.12, recover: 0.42, hit: 0.547, reach: 1.90, lunge: 1.7, chain: 'dSwipe', chainP: 0.50, w: 0.24, guardK: 1.20, plain: true, stop: 1.05, real: true, cock: 0.44, clipRate: 1.15 };
 MUT_ATTACKS.dSpin  = { wind: 0.86, strike: 0.24, recover: 0.56, hit: 0.620, reach: 2.90, lunge: 0.5, chain: 'dSwipe', chainP: 0.45, w: 0.22, hold: true, guardK: 1.40, limbs: [0, 1], real: true, cock: 0.44, clipRate: 1.25 };
 MUT_ATTACKS.dJump  = { wind: 1.05, strike: 0.20, recover: 0.62, hit: 0.640, reach: 5.00, lunge: 4.8, chain: 'dSwipe', chainP: 0.60, w: 0.20, dmg: 2, hold: true, guardK: 1.70, minDist: 3.0, twoHanded: true, stop: 1.50 };
+/* THEIR OWN BLOWS (2026-11-26, the owner: "give the drunk and wong some animations that work better they fight bad and slide around too
+ * much"). Wong's punch was the knight's Mutant Punch — a monster's overarm haymaker on a barman — his kick the alien's ground sweep and
+ * his spin a swordsman's 360 with the arm out for a blade he does not hold; the drunk's spin was that same 360 and his leap a mutant's
+ * two-fisted jump attack. They are real unarmed Mixamo takes now, each with the contact frame MEASURED off the take as packed (the
+ * frame the striking end moves fastest: `tools/ntar_moves.py`'s CONTACT, `-- wong` / `-- drunk`): Wong's uppercut off a dip (`wUpper`,
+ * right hand at 0.466), his crescent kick — capoeira's meia-lua, the leg swept round through you (`wCres`, right foot at 0.448) — and a
+ * front kick into the body (`wKickF`, right foot at 0.488), with his jab and the flying kick kept; the drunk's wide overarm haymaker IS
+ * the Mutant Punch (`dHay` → `kPunch`, its measured 0.560) and the uppercut is his own copy (`dUpper`). Pace and damage are the old
+ * blows': the same wind-ups, the same damage in the same slots (the crescent takes the sweep's 2), the same share of the choice. */
+MUT_ATTACKS.wUpper = { wind: 0.40, strike: 0.13, recover: 0.34, hit: 0.466, reach: 2.05, lunge: 1.2, chain: 'wJab', chainP: 0.66, w: 0.28, guardK: 0.95, limbs: [0], real: true, cock: 0.42, clipRate: 1.15, stop: 0.80 };
+MUT_ATTACKS.wCres  = { wind: 0.86, strike: 0.18, recover: 0.50, hit: 0.448, reach: 2.70, lunge: 1.0, chain: 'wUpper', chainP: 0.45, w: 0.18, dmg: 2, guardK: 1.35, limbs: [2], real: true, cock: 0.46, clipRate: 1.10, stop: 1.40 };
+MUT_ATTACKS.wKickF = { wind: 0.60, strike: 0.15, recover: 0.42, hit: 0.488, reach: 2.40, lunge: 1.0, chain: 'wJab', chainP: 0.50, w: 0.18, guardK: 1.10, limbs: [2], real: true, cock: 0.44, clipRate: 1.15, stop: 1.30 };
+MUT_ATTACKS.wJab.chain = 'wKickF'; MUT_ATTACKS.wFly.chain = 'wUpper';
+MUT_ATTACKS.dHay   = { wind: 0.80, strike: 0.16, recover: 0.42, hit: 0.560, reach: 2.20, lunge: 0.55, chain: 'dButt', chainP: 0.55, w: 0.30, guardK: 1.15, limbs: [0], real: true, cock: 0.42, clipRate: 1.0, stop: 1.40 };
+MUT_ATTACKS.dUpper = { wind: 0.70, strike: 0.14, recover: 0.46, hit: 0.466, reach: 2.10, lunge: 0.55, chain: 'dSwipe', chainP: 0.45, w: 0.20, guardK: 1.10, limbs: [0], real: true, cock: 0.42, clipRate: 0.95, stop: 1.30 };
+/* AND THEIR FEET CARRY THEM TO A BLOW, NOT THE LUNGE (the same day, "slide around too much"). A lunge moves the body at a fixed speed
+ * through the wind-up while the take's own feet stay planted: a man skating in on a punch thrown flat-footed. None of these takes
+ * steps INTO its blow (measured off the packed travel at the contact: the Mutant Punch 0.00 m, the drunk's swipe 0.02, both kicks under 0.1 m; the uppercut's
+ * root swings 1.5 m SIDEWAYS as he turns into it, which is no step toward anyone — the dark knight's `rm` would have carried him
+ * across the room), so they take no lunge and are thrown from just past where they land (`reach` = `stop` + 0.45): he WALKS in first,
+ * on a walk whose rate is his real speed (`gaitBySpeed`), and plants. A follow-up no longer skates 2.4 m/s in after a blow that put
+ * you out of reach (`noSkate`), and Wong's au leaves the line by what the take travels (0.88 m), not 1.5. */
+for (const k of ['wUpper', 'wCres', 'wKickF', 'wJab', 'dHay', 'dUpper', 'dSwipe']) { const A = MUT_ATTACKS[k]; A.lunge = 0; A.stop = A.stop || 0.95; A.reach = A.stop + 0.45; }
 /* (A DRUNK YOU CAN READ — 2026-11-26, the owner: "the drunk in the tavern needs better animations i cant read him and they dont
  * connect". Measured, `tools/tavfight.js &who=drunk`: his hands DID reach you when a blow landed (0.13 m median) — but from 0.66 m
  * off, inside your own view: a swipe's 1.4 m lunge from its 2.4 m reach ended with him in your face and the arm passing under
@@ -92161,11 +92184,11 @@ const TAV_CAST_COMMON = {
 MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
   glb: 'assets/wong.glb', cutout: true, faceFix: 0, facingRef: 'mixamo',
   h: 1.80, hp: 15, speedK: 0.95, aggr: 2.60, chainMax: 3, poise: 7, block: 0.28,
-  use: { wPunch: 0.28, wJab: 0.24, wKick: 0.20, wSpin: 0.16, wFly: 0.12 },
+  use: { wUpper: 0.28, wJab: 0.24, wKickF: 0.18, wCres: 0.18, wFly: 0.12 },   // (his own unarmed blows: `MUT_ATTACKS.wUpper`, 2026-11-26)
   /* AND HIS DODGE IS THE AU, NOT THE ALIEN'S MACACO. A barman who fights
    * capoeira leaves the LINE rather than stepping back down it — measured on
    * the windowed clip, 1.13 s and 1.19 m of it sideways. */
-  dodgeClip: 'ginga', dodgeSide: 1.50, dodgeT: 1.08, dodgeRate: 1.0,
+  dodgeClip: 'ginga', dodgeSide: 0.88, dodgeT: 1.08, dodgeRate: 1.0, noSkate: true,   // (0.88: the take's own au, 2026-11-26 — 1.50 skated the rest)
   rig: { arm: 'CC_Base_R_Upperarm_080', fore: 'CC_Base_R_Forearm_081', hand: 'CC_Base_R_Hand_085',
          armL: 'CC_Base_L_Upperarm_052', foreL: 'CC_Base_L_Forearm_053', handL: 'CC_Base_L_Hand_057', head: 'CC_Base_Head_038',
          limbs: [['CC_Base_R_Thigh_018', 'CC_Base_R_Calf_019', 'CC_Base_R_Foot_021', 'CC_Base_R_ToeBase_022']] },
@@ -92193,7 +92216,7 @@ MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
   gaits: { walk: ['walk'], run: ['run'], idle: ['idle'], strafeL: ['strafeL'], strafeR: ['strafeR'] },
   stepClip: ['sideL', 'sideR'],
   alias: { idle2: 'idle', walk2: 'walk', run2: 'run', roar2: 'block', die: 'hitBig', die2: 'hitBig', back: 'walk', calm: 'idle',
-           wPunch: 'kPunch', wKick: 'nSweep', wSpin: 'k360', wFly: 'wFlyC' },
+           wFly: 'wFlyC' },
   provoke: tavProvoke,
   voice: { f: 1.05, growl: 0.55, rasp: 1.0, throat: 'wet' },
 });
@@ -92203,8 +92226,8 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
    * pushed him past four — on a run clip whose own ground speed is 2.42, so
    * his feet were driven at twice speed and scrubbed anyway. He is slower
    * than you now and presses harder for it. */
-  h: 1.92, hp: 18, speedK: 0.62, aggr: 3.20, chainMax: 4, poise: 8, block: 0.14,
-  use: { dSwipe: 0.34, dButt: 0.26, dSpin: 0.20, dJump: 0.20 },
+  h: 1.92, hp: 18, speedK: 0.62, aggr: 3.20, chainMax: 4, poise: 8, block: 0.14, noSkate: true,
+  use: { dSwipe: 0.30, dHay: 0.28, dButt: 0.22, dUpper: 0.20 },   // (the haymaker and the uppercut for the swordsman's spin and the mutant's leap, 2026-11-26)
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
          armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
          limbs: [['thigh_r', 'calf_r', 'foot_r', 'ball_r']] },
@@ -92247,7 +92270,7 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
    * what he may now travel at. */
   gaits: { walk: ['walk'], run: ['run'], idle: ['idle', 'idleB', 'idleC'], strafeL: ['walkTurn'], strafeR: ['backTurn'] },
   alias: { idle2: 'idleB', walk2: 'walk', run2: 'run', roar2: 'talk', die2: 'die', back: 'back', calm: 'idle',
-           strafeL: 'walkTurn', strafeR: 'backTurn', dSwipe: 'kSwipe', dSpin: 'k360', dJump: 'kJump' },
+           strafeL: 'walkTurn', strafeR: 'backTurn', dSwipe: 'kSwipe', dHay: 'kPunch' },
   provoke: tavProvoke,
   voice: { f: 0.78, growl: 1.35, rasp: 1.25, throat: 'bellow' },
 });
@@ -105031,62 +105054,15 @@ function sewBuildLair(W, bake, brickBig, conc, X, Z, OW, OH) {
       }
       g.computeVertexNormals(); bake(g, m);
     };
-    /* THE BED IS THE OWNER'S RAGS (2026-11-18: "add some of these rags in the lair like the creatures sleeps on them"):
-     * Frice's rags pack (`assets/rags.glb`, `tools/rags_pack.py`) in place of the canvas planes. Each is DRAPED, not set
-     * down: every vertex is laid on the ground under it (the nest's mound, the floor) at its own fold height over the
-     * cloth's lowest point, so a rag follows what it lies on and nothing floats; they overlap in layers a few millimetres
-     * apart, and in the middle the heap is pressed down into a hollow — where it lies, curled. A few smaller ones are
-     * dragged off across the floor. (The draw: one merged mesh.) */
+    /* THE BED IS CANVAS AGAIN (2026-11-26, the owner: "take that head out for good and the rags"): Frice's rags pack
+     * (CC-BY-NC — it could not ship in anything sold) is gone, and the nest is the game's own torn canvas planes once
+     * more — `rag()` with `ragTex`, nothing loaded. Each is laid on the nest's mound in its own thin layer, pressed into
+     * the same hollow in the middle where it lies curled; a few small scraps are dragged off across the floor. */
     {
-      void rag;      // (the canvas planes are gone; the helper stays for nothing else to break)
-      bwGlb('assets/rags.glb', (gltf) => {
-        gltf.scene.updateMatrixWorld(true);
-        const src = []; let mat = null;
-        gltf.scene.traverse((o) => { if (o.isMesh) { const g = o.geometry.clone().applyMatrix4(o.matrixWorld); g.computeBoundingBox(); src.push(g); mat = mat || o.material; } });
-        if (!src.length) return;
-        const hollow = (x, z) => { const r = Math.hypot(x - bx, z - bz) / 0.55; return r >= 1 ? 0 : 0.05 * (1 - r * r) * (1 - r * r); };
-        const geos = [];
-        const drape = (g0, x, z, size, yaw, layer) => {
-          const g = g0.clone(), bb = g.boundingBox, sz = bb.getSize(new THREE.Vector3()), c = bb.getCenter(new THREE.Vector3());
-          const flatAxis = sz.y <= sz.x && sz.y <= sz.z ? 1 : sz.z <= sz.x ? 2 : 0;           // its thin side is "up"
-          if (flatAxis === 2) g.rotateX(-Math.PI / 2); else if (flatAxis === 0) g.rotateZ(Math.PI / 2);
-          g.computeBoundingBox(); const b2 = g.boundingBox, s2 = b2.getSize(new THREE.Vector3()), c2 = b2.getCenter(new THREE.Vector3());
-          const k = size / Math.max(s2.x, s2.z);
-          g.translate(-c2.x, -b2.min.y, -c2.z); g.scale(k, k * 0.55, k); g.rotateY(yaw);         // (its folds a little flatter: it has been lain on)
-          const P = g.attributes.position;
-          for (let i = 0; i < P.count; i++) {
-            const wx = x + P.getX(i), wz = z + P.getZ(i);
-            P.setXYZ(i, wx, groundAt(wx, wz) - hollow(wx, wz) + P.getY(i) + 0.004 + layer * 0.006, wz);
-          }
-          g.computeVertexNormals();
-          for (const kk of Object.keys(g.attributes)) if (kk !== 'position' && kk !== 'normal' && kk !== 'uv') g.deleteAttribute(kk);
-          geos.push(g.index ? g.toNonIndexed() : g);
-        };
-        // (two of the five are BUNCHED, a third as tall as wide: laid flat like the sheets they stood up as dark slabs. The
-        // sheets make the bed; one bundle is pushed up at its head, where it lies with its head)
-        const thin = (g) => { const z = g.boundingBox.getSize(new THREE.Vector3()); const v = [z.x, z.y, z.z].sort((p, q) => p - q); return v[0] / v[2]; };
-        const sheets = src.filter((g) => thin(g) < 0.25), bundles = src.filter((g) => thin(g) >= 0.25);
-        const sh = sheets.length ? sheets : src;
-        // the bed: seven sheets over the nest, the biggest first and under, turned every way
-        for (let i = 0; i < 7; i++) {
-          const a = rnd() * 6.283, r = i === 0 ? 0 : Math.sqrt(rnd()) * 0.55;
-          drape(sh[i % sh.length], bx + Math.cos(a) * r, bz + Math.sin(a) * r, i < 2 ? 1.8 : 1.1 + rnd() * 0.45, rnd() * 6.283, i);   // (larger: 2026-11-18, the owner)
-        }
-        if (bundles.length) drape(bundles[0], bx - 0.35, bz - 0.3, 0.8, rnd() * 6.283, 7);      // (in the corner side of it, against the walls)
-        // and three sheets pulled off it across the floor, smaller (clear of the walls)
-        for (let i = 0; i < 3; i++) {
-          const a = rnd() * 6.283, r = NEST_R + 0.3 + rnd() * 1.1, x = bx + Math.cos(a) * r, z = bz + Math.sin(a) * r;
-          if (x < L.X0 + 0.4 || x > L.X1 - 0.4 || z < L.Z0 + 0.4 || z > L.Z1 - 0.4) continue;
-          drape(sh[(i + 1) % sh.length], x, z, 0.7 + rnd() * 0.25, rnd() * 6.283, 0);
-        }
-        let g = null; try { g = mergeGeometries(geos, false); } catch (e) { g = null; }
-        // filthy: its own weave darkened and browned, lit by the room, a little of its own map handed back so it is not a black shape
-        // (lifted off its own map like everything the sewer's light pass touched — it lands after that pass ran, and at 0x15110c
-        // the bed was a black hole in the floor)
-        const m = mat.clone(); m.color = new THREE.Color(0xa69a84); m.metalness = 0; m.roughness = 1; m.side = THREE.DoubleSide;
-        m.emissive = new THREE.Color(0x4a3f30); m.emissiveMap = m.map;
-        if (g) { const me = new THREE.Mesh(g, m); me.raycast = () => {}; me.name = 'lairRags'; W.add(me); }
-      }, undefined, () => {});
+      const hollow = (x, z) => { const r = Math.hypot(x - bx, z - bz) / 0.55; return r >= 1 ? 0 : 0.05 * (1 - r * r) * (1 - r * r); };
+      for (let i = 0; i < 22; i++) { const a = rnd() * 6.283, r = Math.sqrt(rnd()) * 0.8; rag(bx + Math.cos(a) * r, bz + Math.sin(a) * r, 0.55 + rnd() * 0.55, 0.45 + rnd() * 0.5, rnd() * 6.28, clothMats[i % clothMats.length], (ox, oz) => F + nestH(ox, oz) - hollow(ox, oz) + i * 0.0015); }
+      // (a few scraps dragged out of it, small and crumpled — flat and square they read as grey tiles on the floor)
+      for (let i = 0; i < 6; i++) { const a = rnd() * 6.283, r = NEST_R + 0.2 + rnd() * 1.4, x = bx + Math.cos(a) * r, z = bz + Math.sin(a) * r; if (x < L.X0 + 0.3 || x > L.X1 - 0.3 || z < L.Z0 + 0.3 || z > L.Z1 - 0.3) continue; rag(x, z, 0.14 + rnd() * 0.16, 0.1 + rnd() * 0.12, rnd() * 6.28, clothMats[(i * 3) % clothMats.length], (ox, oz) => groundAt(ox, oz), 0.05); }
     }
     /* (the gore stays: wet meat, flattened onto whatever is under it) */
     const goreM = new THREE.MeshStandardMaterial({ color: 0x5e0e0a, roughness: 0.38, metalness: 0, emissive: 0x1c0302, flatShading: true });

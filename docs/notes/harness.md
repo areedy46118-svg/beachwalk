@@ -593,3 +593,16 @@ One probe for "is the castle whole": missing clips per kind, InstancedMeshes ove
 `info.reset()` before each frame, or the count is the last pass's only), walkers stood still against a solid prop, a kick on a
 resting body, the console. Its first version counted a kick's hit every frame the kick was down ("struck 1347"): clear
 `KICK.lastHit` when you read it. zsh does not split `$files` into words — build a contact sheet's file list in Python (`glob`).
+
+## 2026-11-26 — CPU profiles of a probe, headless (`tools/cpuprof.py`)
+Nothing here could say WHICH function a frame's spike was in. `tools/cpuprof.py <scenario> --q '&…'` runs a probe in a headless
+Chrome of its own with the DevTools protocol's sampling profiler on (standard-library Python, a hand-rolled websocket, port
+`--dbg` 9344, the probe's server on `--port` 4244; it waits for any other headless Chrome like `probe.sh`). The probe brackets the
+work it wants profiled with `console.profile(title)` / `console.profileEnd(title)`; every pair comes back as
+`Profiler.consoleProfileFinished`.
+- **A profile's length is the profiler's, not the work's**: each start/stop costs ~270 ms whatever is inside, so 300 one-frame
+  profiles take minutes and filtering on their duration keeps all of them. The probe says which to read: it times the work itself and
+  logs `[PB] SPIKE <title> <ms>`; the tool holds the last eight profiles and prints the named one (inclusive and self time per
+  function:line). `--min 0` prints every profile.
+- Its stdout is block-buffered into a file: run it in the foreground, or read the file only once it exits.
+- Example: `tools/tavlag.js &still=1&prof=1` (300 still frames at the tavern window, profiled one by one).

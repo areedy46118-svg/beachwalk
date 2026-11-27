@@ -120,6 +120,13 @@ WONG_CLIPS = [
     ('Sword_Regular_Combo',  'mSwCombo', 'a string of cuts', ''),
     ('Sword_Dash_RM',        'mSwDash',  'a dash in with a cut', ''),
     ('Flying Kick',           'wFlyC',   'off the ground, both feet', ''),
+    # (2026-11-26, the owner: "give the drunk and wong some animations that work better they fight bad and slide around too much".
+    # His punch was the knight's Mutant Punch — a monster's haymaker — his kick the alien's sweep and his spin a swordsman's 360.
+    # Three unarmed Mixamo takes out of ~/Desktop/BEACHWALK ASSETS (NTAR_SRC) instead: built with
+    # NTAR_SRC="$HOME/Desktop/BEACHWALK ASSETS" NTAR_ONLY=wUpper,wCres,wKickF blender -b -P tools/ntar_moves.py -- wong)
+    ('Surprise Uppercut',       'wUpper', 'the uppercut, off a dip', ''),
+    ('Inside Crescent Kick',    'wCres',  'the half-moon kick, the leg swept round through you', ''),
+    ('Kicking',                 'wKickF', 'a front kick into the body', ''),
     # (2026-11-26, the owner: "HERES SOME STAND ANIMATIONS FOR PEOPLE BUT MAKE THEM FLUID AND SEAMLESS IF USED" — four Mixamo get-ups,
     # loose in ~/Downloads: the man kicked over and thrown as a ragdoll gets up by whichever starts nearest how he lies, `kickRagRise`)
     ('Stand Up',              'mStandA',   'up off the floor, one way', ''),
@@ -151,6 +158,10 @@ DRUNK_CLIPS = [
     ('backward walking turn',     'backTurn', 'a turn walking backwards', 'Male Drunk Pack'),
     ('drunk running left turn',   'runTurnL', 'a turn in the run', 'Male Drunk Pack'),
     ('run backward arc right',    'runArcR',  'the run, backwards and round', 'Male Drunk Pack'),
+    # (2026-11-26: the same request. His spin was a swordsman's 360 with the arm out and his leap a mutant's; a drunk swings wide and
+    # low: the haymaker is the knight's Mutant Punch, aliased, and this uppercut is his own.
+    # NTAR_SRC="$HOME/Desktop/BEACHWALK ASSETS" NTAR_ONLY=dUpper blender -b -P tools/ntar_moves.py -- drunk)
+    ('Surprise Uppercut',         'dUpper',   'the uppercut, off a dip', ''),
 ]
 # ---- AND THE ORC AT THE BAR CARRIES THE GREAT SWORD PACK WHOLE. Oscar
 # Creativo's orc arrives with a two-handed sword weighted to a bone under his
@@ -489,7 +500,10 @@ if SET in ('wong', 'drunk'):
     # fight wants — the last second, which travels 0.88 m SIDEWAYS and is the
     # au itself. That is a dodge: it leaves the line rather than stepping
     # back down it.
-    WINDOW = {'wFlyC': (0, 30), 'ginga': (84, 118), 'mc1': (24, 142)}   # (mc1: its first 0.8 s is a settle before the raise — a man standing about before the first blow, 2026-11-23)
+    WINDOW = {'wFlyC': (0, 30), 'ginga': (84, 118), 'mc1': (24, 142)}
+    # (the four unarmed blows of 2026-11-26: their contact is the frame the striking end moves fastest, either hand or either foot)
+    for _c in ('wUpper', 'wCres', 'wKickF', 'dUpper'):
+        CONTACT[_c] = ('LeftHand', 'RightHand', 'LeftToeBase', 'RightToeBase')   # (mc1: its first 0.8 s is a settle before the raise — a man standing about before the first blow, 2026-11-23)
     # AND A BODY THAT LEAVES THE VERTICAL KEEPS ITS OWN TURN — `knockOut`'s
     # lesson: the au takes him onto his hands, and a world-Y de-yaw applied
     # to a horizontal body is a roll about its own length.

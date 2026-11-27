@@ -1133,9 +1133,8 @@ numerals are the owner's own marker drawings (`assets/hud/`, cut into masks by
 loop round the selection are drawn with the same marker (`assets/hud/pk-*`, built by
 `tools/hand_pack_pack.py` from the hotbar photo's strokes). The water ball's drop
 (`assets/hud/drop-crayon.png`) is a pastel scribble drawn by `tools/drop_crayon.py`.
-The rags the thing in the sewer sleeps on are "rags pack" by Frice
-(https://sketchfab.com/3d-models/rags-pack-b5dfec6e7fda4450822024bd06662ff4, CC-BY-NC-4.0;
-`assets/rags.glb`, repacked by `tools/rags_pack.py`). The lair's flies are the owner's
+The rags the thing in the sewer sleeps on are the game's own torn canvas, drawn in code
+(Frice's CC-BY-NC "rags pack" was taken out 2026-11-26 so nothing non-commercial ships). The lair's flies are the owner's
 "Flies Buzzing and Circling" (`assets/flies-bed.m4a`, looped by `tools/flies_pack.py`).
 The rat that bursts out in the lair screams with the owner's "no-copyright" (`assets/lair-rat.m4a`,
 its leading half-second of silence trimmed).
@@ -1869,18 +1868,6 @@ timing.
 
 ["CRAB 001"](https://www.cgtrader.com/free-3d-models) by
 [artofmickey](https://www.cgtrader.com/artofmickey), CGTrader free model.
-
-
-**Severed head** — the captain, on the hook over the wreck's hatch. *No longer
-in the game (2026-10-15): only his key hangs there now. `assets/head.glb` and
-`tools/head_pack.py` are unused and can be deleted.*
-
-This work is based on ["Severed head"](https://sketchfab.com/3d-models/severed-head-65103457564048b7a89d177e550181ae)
-by [alexrmartinez](https://sketchfab.com/alexrmartinez) licensed under
-[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/). **Non-commercial**:
-this build is a personal one, and the licence does not allow the model in
-anything sold. `assets/head.glb` is the scan cut to 20k triangles by
-`tools/head_pack.py`.
 
 
 **Screwdriver** — the one on the crate table by the drain's grate. "CC0 -
