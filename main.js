@@ -1058,7 +1058,12 @@ let speedK = () => 1;
  * this rather than taking `n` as read. It answers 1 until the ring section
  * replaces it, the way the other two do. */
 let dmgTakeK = () => 1;
-const JUMP_V = 4.3;
+/* THE JUMP (2026-11-26, the owner: "make the base jump a little higher then an upgrade to make it more high in the shop. dont make it
+ * unbalanced"). 4.3 until then: the feet 0.616 m up, and with the walk's step catch (`ROCK_STEP` 0.42) 1.03 m the tallest ledge you
+ * could gain — the climbs were laid out to that (undercroft.md, lighthouse.md: the tavern's 1.15 m crate wants the stool). 4.5 lifts
+ * them 0.675 m (+6 cm); the trader's `jumpUp` 5.0, 0.83 m (+22 cm): a 1.25 m ledge, not a wall or a roof. */
+const JUMP_V = 4.5, JUMP_V_UP = 5.0;
+let jumpUp = false;   // (bought from the trader: `TRADER_STOCK.jumpUp` 0, which is how a save brings it back)
 const P_GRAV = 15;
 const MOON_DIR = new THREE.Vector3(-0.28, 0.12, -1).normalize();
 const HALF_PI = Math.PI / 2 - 0.01;
@@ -33241,10 +33246,16 @@ fetch('assets/hud/kick-leg.json').then((r) => r.json()).then((m) => {
   });
 }).catch((e) => console.warn('[kick] his leg did not load', e));
 const KICK_SEQ = [0, 1, 2, 3, 3, 3, 3, 2, 1, 0], KICK_FPS = 15, KICK_STRIKE = 3, KICK_DROP = 3;   // (frames of the sheet; the sole out on the 4th)
+/* MORE RESPONSIVE (2026-11-26, the owner: "make the kick more responsive"): the leg comes up to the strike at 30 frames a second, not
+ * 15 — the sole is out 0.10 s after the key, not 0.20 — and holds and comes down as before; a press while the last kick still plays
+ * or cools is held `KICK_BUF` s and thrown the moment it can be. What it costs is unchanged (`KICK_STAM`, a fifth of the bar). */
+const KICK_UP_FPS = 30, KICK_BUF = 0.3;
+const kickFP = (t) => { const tu = KICK_STRIKE / KICK_UP_FPS; return t < tu ? t * KICK_UP_FPS : KICK_STRIKE + (t - tu) * KICK_FPS; };
 const KICK_STAM = 0.2;   // (a fifth of the bar a kick: `startKick`)
 const KICK_PROP = 7.0;   // (the weight a kick breaks a prop with: wood, clay, a sack, produce — not stone, `CP_MAT`)
-const KICK_TALL = 2.9, KICK_X = 0.04, KICK_Y = 0.3, KICK_CD = 0.75, KICK_REACH = 2.0, KICK_DMG = 1;   // (2.15 tall and centred: filmed, the leg read thin and low on a wide screen)
+const KICK_TALL = 2.9, KICK_X = 0.04, KICK_Y = 0.3, KICK_CD = 0.65, KICK_REACH = 2.0, KICK_DMG = 1;   // (2.15 tall and centred: filmed, the leg read thin and low on a wide screen)
 function startKick() {
+  if (KICK.ready && (KICK.on || KICK.cd > 0)) { KICK.buf = KICK_BUF; return false; }   // (held over: `kickTick` throws it)
   if (!KICK.ready || KICK.on || KICK.cd > 0 || TAUNT.on || HG.on || peeking || inspecting || frozen() || dying || deepNoHands) return false;
   /* (A KICK COSTS YOU — 2026-11-26, the owner: "the kick should take a decent amount of stamina so you cant spam it". A fifth of the bar
    * (a light swing is 0.04, a full charge 0.08), in or out of a fight; with less than half that left, or winded, there is no kick —
@@ -33427,16 +33438,17 @@ function kickMan(u) {
 }
 function kickTick(dt) {
   if (KICK.cd > 0) KICK.cd = Math.max(0, KICK.cd - dt);
+  if (KICK.buf > 0) { KICK.buf -= dt; if (!KICK.on && KICK.cd <= 0) { KICK.buf = 0; startKick(); } }
   if (!KICK.on) return;
   if (peeking || dying || HG.on || inspecting) { KICK.on = false; kickLeg.visible = false; return; }
   KICK.t += dt;
-  const M = KICK.m, fi = Math.floor(KICK.t * KICK_FPS);
+  const M = KICK.m, fp = kickFP(KICK.t), fi = Math.floor(fp);
   if (fi >= KICK_SEQ.length + KICK_DROP) { KICK.on = false; kickLeg.visible = false; return; }
   if (!KICK.struck && fi >= KICK_STRIKE) { KICK.struck = true; kickStrike(); }
   if (fi !== KICK.lumF && fi % 3 === 1) { KICK.lumF = fi; HAND_LUM.want = kickLeg.material.uniforms; HAND_LUM.rects = KICK_LUM_RECTS; HAND_LUM.ease = 0.5; }   // (and again as it plays: `KICK_LUM_RECTS`)
   const f = M.frames[KICK_SEQ[Math.min(fi, KICK_SEQ.length - 1)]], u = kickLeg.material.uniforms;
   // in from below and out again below: the first frame rises the last third of the way, the end slides away
-  const drop = fi < 1 ? 0.35 * (1 - KICK.t * KICK_FPS) : fi >= KICK_SEQ.length - 2 ? 0.55 * (KICK.t * KICK_FPS - (KICK_SEQ.length - 2)) : 0;
+  const drop = fi < 1 ? 0.35 * (1 - fp) : fi >= KICK_SEQ.length - 2 ? 0.55 * (fp - (KICK_SEQ.length - 2)) : 0;
   camera.updateMatrixWorld(true);
   const t = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), k = PH_D * t, s = KICK_TALL / M.H;
   const X = KICK_X + s * (f[4] - M.W / 2), Y = KICK_Y - s * (f[5] - M.H / 2) - drop;
@@ -56570,7 +56582,7 @@ function update(dt, rawDt = dt) {
   // jumping out of a crouch stands you up first, if there is room to
   if (jumpBuf > 0 && coyote > 0 && canMove && crouching && headroomClear()) crouching = false;
   if (jumpBuf > 0 && coyote > 0 && canMove && !crouching) {
-    vy = JUMP_V; onGround = false; coyote = 0; jumpBuf = 0;
+    vy = jumpUp ? JUMP_V_UP : JUMP_V; onGround = false; coyote = 0; jumpBuf = 0;
     vmImpulse(1.5);                     // the tool hangs back as you leave the ground
   }
   /* AND A JUMP INTO A PEW BREAKS THE PEW, LANDED ON OR NOT. You cannot land
@@ -57506,6 +57518,7 @@ function updateRestore(dt) {
   if (f.trader) { const ammo0 = TRADER_STOCK.ammo; Object.assign(TRADER_STOCK, f.trader); const av = f.ammoV || 0; if (av < 2) TRADER_STOCK.ammo = ammo0; else if (av < 3) TRADER_STOCK.ammo = (f.trader.ammo || 0) >= 5 ? 1 : 0; }   // v2 stocked five: untouched is one, bought from is none
   if (typeof f.ammo === 'number') { magAmmo = f.ammo; magSpare = f.spare || 0; }
   if (Array.isArray(f.sgCh)) { sgCh = f.sgCh.map((c) => (c === 1 ? 1 : c === 2 ? 2 : 0)); sgSpare = f.sgSpare || 0; }
+  jumpUp = (TRADER_STOCK.jumpUp ?? 1) <= 0;   // (the trader's higher jump, bought: a save from before it has it in stock)
   if (f.trader && f.trader.shotgun === undefined) TRADER_STOCK.shotgun = 1;   // a save from before the double
   if (f.trader && f.trader.shells2 !== undefined) TRADER_STOCK.shells2 = f.trader.shells2 >= 5 ? 1 : 0;   // saves stocked five pairs: untouched is the one pair, bought from is none
   delete TRADER_STOCK.shells;                                                      // the box of six he no longer sells
@@ -62824,11 +62837,11 @@ let shopAt = 1;                       // which of them you are buying from
  * for two jars, five boxes of them, the last thing you can buy before the
  * castle. `AMMO_V` marks a save that knows this, so an older one that
  * recorded the empty box gets the stock back. */
-const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 1, ring: 1, spliff: 6, packSpace: 1, ringSlot: 1, shotgun: 1, shells2: 1 };   // ONE box of six, the owner's word; and ONE pair of shells (2026-10-09: "only let purchasing shotgun ammo be once")
+const TRADER_STOCK = { glow: 1, water: 2, gun: 1, ammo: 1, ring: 1, spliff: 6, packSpace: 1, ringSlot: 1, jumpUp: 1, shotgun: 1, shells2: 1 };   // ONE box of six, the owner's word; and ONE pair of shells (2026-10-09: "only let purchasing shotgun ammo be once")
 const AMMO_V = 3;
 /* THE OWNER'S PRICES. The menu's labels read this table rather than spelling
  * a number out, so a price is one line here and nothing else. */
-const TRADER_PRICE = { glow: 1, water: 1, gun: 6, ammo: 2, ring: 5, spliff: 1, packSpace: 4, ringSlot: 6, shotgun: 10, shells2: 5 };
+const TRADER_PRICE = { glow: 1, water: 1, gun: 6, ammo: 2, ring: 5, spliff: 1, packSpace: 4, ringSlot: 6, jumpUp: 5, shotgun: 10, shells2: 5 };
 /* SHORT, BECAUSE IT SITS IN A COLUMN. "2 blood jars" beside a name in a
  * list is half the row; the header already says what the currency is. */
 const priceTag = (what) => {
@@ -62925,6 +62938,11 @@ function traderBuy(what) {
     RING_SLOTS = 3;
     renderRings(); renderPack();
     traderSaid = 'Another finger. Try not to lose this one.';
+  } else if (what === 'jumpUp') {
+    if (jumpUp) { traderSaid = 'Any higher and you would not come down.'; return; }
+    spendJars(price); TRADER_STOCK.jumpUp--;
+    jumpUp = true;
+    traderSaid = 'Spring in the soles. Mind your head.';
   } else if (what === 'spliff') {
     spendJars(price); TRADER_STOCK.spliff--;
     gainSpliff(1);
@@ -63007,6 +63025,12 @@ function drawUpgradeIcon(kind) {
     g.globalAlpha = 1;
     g.font = '600 34px ui-monospace, Menlo, monospace'; g.textAlign = 'center';
     g.fillText('+4', 128, 206);
+  } else if (kind === 'jump') {
+    // a ground line, a figure's arc over it and the arrow up
+    g.globalAlpha = 0.45; g.fillRect(40, 200, 176, 6); g.globalAlpha = 1;
+    g.lineWidth = 8; g.setLineDash([14, 12]);
+    g.beginPath(); g.moveTo(52, 196); g.quadraticCurveTo(128, 30, 204, 196); g.stroke(); g.setLineDash([]);
+    g.fillRect(122, 86, 12, 74); g.beginPath(); g.moveTo(100, 96); g.lineTo(128, 58); g.lineTo(156, 96); g.closePath(); g.fill();
   } else {
     // a ring and a plus
     g.lineWidth = 14;
@@ -63019,6 +63043,7 @@ function drawUpgradeIcon(kind) {
   return c.toDataURL();
 }
 const packSpaceIconItem = { name: 'Bigger Pack', icon: drawUpgradeIcon('pack') };
+const jumpUpIconItem = { name: 'Higher Jump', icon: drawUpgradeIcon('jump') };
 // six brass rounds standing in two rows, the upgrades' own tile
 /* A .44 ROUND, BUILT. The scan's six loose rounds are one dark texel of
  * the gun's own map and the brass was eight-sided stubs: "the bullets don't
@@ -63260,6 +63285,8 @@ const UPGRADE_ROWS = [
     desc: 'He stitches four more pockets into your pack. Sixteen slots instead of twelve, for good.' },
   { key: 'ringSlot', item: () => ringSlotIconItem, name: 'Extra Ring Slot', sum: 'Wear 3 rings instead of 2',
     desc: 'A third finger to wear a ring on. Every ring you wear counts, so this is a third ring working for you.' },
+  { key: 'jumpUp', item: () => jumpUpIconItem, name: 'Higher Jump', sum: 'Jump about a quarter higher',
+    desc: 'Springs in your soles. You jump about a quarter higher, for good: onto ledges a step out of reach, and down on whoever is under you.' },
 ];
 /* AND HE BUYS. The same list and the same pane: what he will take off you,
  * how many you have, and what he gives for one. A fang is a jar. */
@@ -63415,6 +63442,7 @@ const shopHad = (r) => {
   if (r.key === 'glow') return inventory.includes(glowstickItem);
   if (r.key === 'packSpace') return INV_MAX > 12;
   if (r.key === 'ringSlot') return RING_SLOTS > 2;
+  if (r.key === 'jumpUp') return jumpUp;
   return false;                    // water and spliffs stack: you may always buy another
 };
 const shopOut = (r) => TRADER_STOCK[r.key] <= 0;
@@ -101000,6 +101028,8 @@ function updateGargoyles(dt) {
   updateGargRaid();
 }
 queueMicrotask(() => window.__bw && Object.defineProperty(window.__bw, 'magAmmo', { get: () => magAmmo, set: (v) => { magAmmo = v; }, configurable: true }));
+// (the jump, the trader's higher jump and the kick's clock, for `tools/jumpkick.js`)
+queueMicrotask(() => window.__bw && (Object.defineProperty(window.__bw, 'jumpUp', { get: () => jumpUp, set: (v) => { jumpUp = v; }, configurable: true }), Object.defineProperty(window.__bw, 'bloodJarsS', { get: () => bloodJars, set: (v) => { bloodJars = v; }, configurable: true }), Object.assign(window.__bw, { keysS: keys, traderBuyS: (k) => traderBuy(k), TRADER_STOCKS: TRADER_STOCK, shopHadS: (k) => shopHad({ key: k }), kickFPS: kickFP, JUMP_VS: [JUMP_V, JUMP_V_UP] })));
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { gargBodyTurnT: gargBodyTurn, gargKeyS: () => gargKey, gargTakeKey: () => { const K = gargKey; if (!K) return; const it = interactables.find((x) => x.root === K.g); if (it && it.data && it.data.onActivate) it.data.onActivate(); else if (it && it.onActivate) it.onActivate(); }, gargSaveS: () => (GARG.phase === 2 ? (GARG.keyTaken ? 3 : 2) : 0), gargKeyItem }));
 queueMicrotask(() => window.__bw && Object.assign(window.__bw, { gargRaidS: () => gargRaid, gargRaidStart, gargRaidClear, GARG, placeGargoyles, gargTryDoor, gargFindPerches, gargLockedS: () => gargLocked(), gargLegal, gargSpot,
   gargStrikePose, gargRouteDbg: (u) => { const G = gargGrid(), aim = gargAim(u, new THREE.Vector3()), at = gargSpot(aim.x, aim.z, aim.y - 0.6, 3.1, Math.atan2(u.g.position.x - aim.x, u.g.position.z - aim.z), new THREE.Vector3()); const D = at ? gargDistFrom(G, at) : null, c = gargCell(G, u.g.position.x, u.g.position.z), gc = at ? gargCell(G, at.x, at.z) : -1; const r = at ? gargRoute(u, at, new THREE.Vector3()) : null;

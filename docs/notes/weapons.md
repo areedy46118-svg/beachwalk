@@ -3456,3 +3456,20 @@ CHAIN again (6-14 m by charge; see "IT WAS THE END OF THE CHAIN" above — the t
 crosshair is on nothing (`DC`), where it runs out and falls as before. `HOOK_LINKS` 220 → 420 (32 m of chain).
 `tools/hookfar.js`: a tap at a wall 15.6 m off bites it on the drawn point. NOT re-tuned: the haul of a body from 30 m takes
 2.5 s at `HOOK_BACK`; a zip to a wall 30 m off is allowed.
+
+## 2026-11-26 (late) — the kick quicker to the sole, a press held over; the jump a little higher, and the trader's higher jump
+The owner: "make the kick more responsive. make the base jump a little higher then an upgrade to make it more high in the shop. dont
+make it unbalanced". `tools/jumpkick.js` (beach, on the clock): a jump by the real key, the upgrade bought through `traderBuy`, the
+same jump again, and the kick's timing and its held press.
+- **The kick** (`KICK_UP_FPS` 30, `kickFP`, `KICK_BUF` 0.3): the leg up to the strike at 30 frames a second (was 15) — the sole out
+  0.100 s after the key (was 0.20) — then held and down at 15 as before; the whole kick 0.72 s (0.87). A press while one still plays
+  or cools is held 0.3 s and thrown the moment it can be (`KICK.buf`, `kickTick`): pressed 0.5 s into a kick, the next starts as it
+  ends. `KICK_CD` 0.65 (0.75; the kick's own length is what spaces them now). The cost is unchanged — `KICK_STAM` 0.2 of the bar, so
+  five in a row and you are winded.
+- **The jump** (`JUMP_V` 4.3 -> 4.5, `JUMP_V_UP` 5.0, `jumpUp`): the climbs are laid out to the old 0.616 m lift + `ROCK_STEP` 0.42
+  (undercroft.md: 1.03 m the tallest ledge; lighthouse.md: the tavern's 1.15 m crate wants the stool). The base is +6 cm (0.675 m
+  by the arithmetic; measured at the eye 0.635), the upgrade +22 cm (0.83 m; eye 0.789, a 1.25 m ledge at most — no wall or roof).
+- **The trader's upgrade** (`UPGRADE_ROWS` 'jumpUp' "Higher Jump", `TRADER_STOCK.jumpUp` 1, `TRADER_PRICE` 5 — between the pack's 4
+  and the ring slot's 6; `drawUpgradeIcon('jump')`): bought, the stock is 0, and a save carries it in `trader` — the restore sets
+  `jumpUp` from that stock (an old save has it in stock: not bought). It takes no slot (`shopNeedsSlot`). Measured: 7 jars -> 2,
+  owned, a second buy refused. Harness: `__bw.jumpUp`, `bloodJarsS`, `keysS`, `traderBuyS`, `TRADER_STOCKS`, `shopHadS`, `kickFPS`.
