@@ -4152,3 +4152,10 @@ and chest rolled round (`temple.md`, same date). Now restored in reverse. A laye
 - After: kick get-ups' worst joint 0.15-0.25 m in one frame on most (was 0.4-0.6), far fewer frames over 0.12 m. LEFT: the frame he is
   counted up still shows a 0.2-0.45 m hand or toe on some (`dfOut`, the stand-up → walk hand-over), and one rare 2.5 m toe at a blend's
   start (`mStandD`) — not traced.
+
+## 2026-11-27 — a dead body sleeps only once it is LYING
+A still of a farmer frozen sitting up at an angle by the pavilion's gate: "THE BODIES NEED TO STOP DOING THIS … LET THEM FALL DOWN".
+`updateMutRagdoll`'s "down 0.9 s and dead: he lies still" put the body to sleep 0.9 s after touching the floor WHATEVER its shape —
+measured (`tools/gatefarm.js`, `body t` lines): asleep with his head 0.56 m over his hips, propped on his own bent legs for good. It
+now asks `lying` too; a body not yet lying goes on to the limp and the ease down already there, and sleeps when it lies (head 0.20,
+hips 0.24 after).

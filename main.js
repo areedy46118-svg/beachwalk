@@ -30664,7 +30664,13 @@ function kickFeel(k) {
   const m = THREE.MathUtils.clamp(((KICK.mom || 1) - 1) / 0.6, 0, 1);
   if (onGround) { camera.getWorldDirection(_kfeelD); _kfeelD.y = 0; if (_kfeelD.lengthSq() > 1e-6) { _kfeelD.normalize(); velocity.addScaledVector(_kfeelD, -1.2 * k); } }
   hitstop = Math.max(hitstop, (0.05 + 0.05 * m) * Math.min(1, k));
+  /* (THE AIR KICK THAT LANDS THROWS YOU BACK UP — 2026-11-27, the owner: "MAKE UPON SUCCESSFUL JUMP KICK YOU PROPEL HIGHER TO BE ABLE TO
+   * CHAIN KICKS MID AIR UNTIL STAMINA IS OUT". Kicked off him: up at `KICK_POGO` (about 0.9 m more), and the rest of this kick may be cut
+   * short `KICK_CHAIN` s after the contact — a press held over (`KICK.buf`) throws the next one at once, still in the air. Each still costs
+   * `KICK_STAM`: five, and you are winded and fall.) */
+  if (KICK.air && !onGround) { vy = Math.max(vy, KICK_POGO); KICK.cd = 0; KICK.chainOK = true; KICK.chain = KICK_CHAIN; KICK.pogos = (KICK.pogos || 0) + 1; }
 }
+const KICK_POGO = 5.2, KICK_CHAIN = 0.14;
 const _kfeelD = new THREE.Vector3();
 function sfxKickHit(k = 1) {
   if (KICK && KICK.on && !KICK.felt) { KICK.felt = true; try { kickFeel(k); } catch (e) {} }
@@ -33367,7 +33373,7 @@ function startKick() {
    * a breath out instead.) */
   if (exhausted || stamina < KICK_STAM * 0.5) { const n = performance.now(); if (n - (KICK.gasp || 0) > 900) { KICK.gasp = n; try { sfxGasp(); flashPrompt('<b>OUT OF BREATH</b>', 700); } catch (e) {} } return false; }
   stamina = Math.max(0, stamina - KICK_STAM); if (stamina <= 0.001) exhausted = true;
-  KICK.on = true; KICK.t = 0; KICK.struck = false; KICK.cd = KICK_CD;
+  KICK.on = true; KICK.t = 0; KICK.struck = false; KICK.cd = KICK_CD; KICK.chainOK = false;
   camera.getWorldDirection(_hgD); _hgP.copy(camera.position).addScaledVector(_hgD, 0.6);
   handTint(_hgP, kickLeg.material.uniforms, KICK_LUM_RECTS);
   try { playSample('katSwing', 0.42, 0.08, 0.62); } catch (e) {}   // (the blade's whoosh, low and slow: a leg through the air)
@@ -33548,6 +33554,9 @@ function kickMan(u) {
 function kickTick(dt) {
   if (KICK.cd > 0) KICK.cd = Math.max(0, KICK.cd - dt);
   if (KICK.buf > 0) { KICK.buf -= dt; if (!KICK.on && KICK.cd <= 0) { KICK.buf = 0; startKick(); } }
+  // (a kick off a man in the air: its tail cut for the next, held press — `kickFeel`'s pogo)
+  if (KICK.on && KICK.chainOK) { KICK.chain -= dt; if (KICK.chain <= 0 && KICK.buf > 0) { KICK.on = false; kickLeg.visible = false; KICK.cd = 0; KICK.chainOK = false; KICK.buf = 0; startKick(); } }
+  if (!KICK.on) KICK.chainOK = false;
   if (!KICK.on) return;
   if (peeking || dying || HG.on || inspecting) { KICK.on = false; kickLeg.visible = false; return; }
   KICK.t += dt;
@@ -49454,7 +49463,11 @@ function updateMutRagdoll(u, dt) {
     }
     if (!r.leashed && r.t > 1.5 && down && lying) { r.leashed = true; for (const q of r.parts) if (!q.home) q.home = q.p.clone(); }
     if (r.t > RAG_REST && down && lying && !ragThroeLive(r)) { r.asleep = true; r.done = true; }
-    if ((r.downT || 0) > 0.9 && !r.holdI && !ragThroeLive(r) && !(u.st && u.st.alive)) { r.asleep = true; r.done = true; }   // (down a second and a half and dead: he lies still — 2026-11-26)
+    /* (down a second and a half and dead: he lies still — 2026-11-26 — but only LYING. 2026-11-27, the owner, a still of a farmer frozen
+     * sitting up at an angle by the pavilion's gate: "THE BODIES NEED TO STOP DOING THIS … LET THEM FALL DOWN". This put a body to sleep
+     * 0.9 s after it touched the floor whatever its shape — measured, `tools/gatefarm.js`: asleep with his head 0.56 m over his hips,
+     * propped on his own bent legs for good. A body not yet lying goes limp and is eased down (above) and sleeps when it lies.) */
+    if ((r.downT || 0) > 0.9 && lying && !r.holdI && !ragThroeLive(r) && !(u.st && u.st.alive)) { r.asleep = true; r.done = true; }
     if (r.t > 5.5 && down && lying && !ragThroeLive(r)) { r.asleep = true; r.done = true; }      // and nothing is solved for ever (it was fourteen seconds of solving a body that would not lie down)
     if (r.t > 9) { r.asleep = true; r.done = true; }                          // by now the slump has put it on the floor
     if (!r.landed && r.t > 0.6 && down) r.landed = true;                       // (a body set down gently is down too: it kept the throw's flight cap for good)
@@ -49833,7 +49846,10 @@ function updateMutantUnit(u, dt) {
     // (behind the dune, the gully's floor, the lot's and the house's: the one at its feet, not the top storey — and a
     // swing's own travel that carried it off the land into a bank is undone here, before its feet sink into it)
     if (elvReady && p.x > CLIFF_BLOCK_X + 0.5 && !elvInLand(p.x, p.z)) elvUnitClamp(u, p);
-    const ty = (elvReady && p.x > CLIFF_BLOCK_X - 0.6 && elvInLand(p.x, p.z) ? elvLandFloorAt(p.x, p.z, p.y, 0.45) : null) ?? beachGroundAt(p.x, p.z);      // in the shallows it stands on the seabed, as it always did
+    let ty = (elvReady && p.x > CLIFF_BLOCK_X - 0.6 && elvInLand(p.x, p.z) ? elvLandFloorAt(p.x, p.z, p.y, 0.45) : null) ?? beachGroundAt(p.x, p.z);      // in the shallows it stands on the seabed, as it always did
+    /* (and the pavilion's front steps — 2026-11-27, the owner: "THE FARMERS LEGS CLIP THROUGH THE STAIRS TOO": the sand's height under
+     * them was 0 where the steps come up 0.1-0.3 m to the gate; near the pavilion the floor is `groundUnder`'s, which knows them) */
+    if (Math.hypot(p.x - MUSH_X, p.z - MUSH_Z) < 12) { const st = groundUnder(p.x, p.z, p.y + 0.6); if (Number.isFinite(st) && st > ty && st < p.y + 0.7) ty = st; }
     const dy = ty - p.y, ad = Math.abs(dy);
     // up a bank it keeps pace with a run (a slope climbed at a sprint rises three metres a second); down it settles
     const rate = dy > 0 ? Math.max(ad * dt * 22, 7 * dt) : Math.max(ad * dt * 10, 3.5 * dt);
@@ -120738,18 +120754,24 @@ function gateFarmProvoke(quiet) {
 }
 function gateFarmHead(u) { return (u.bones && u.bones.head) || (u.model && u.kind.file && u.model.getObjectByName(FJ(u.kind.file, 'Head'))) || u.g; }
 // the leaf's middle, from its bars (`MGATE.cols`), a stride out on the sand side, and the way to face it
+var GATE_FARM_REACH = 0.72;   // (the axe chop's head lands 0.76 m out: stood here it meets the bars)
 function gateFarmBangSpot() {
   if (!MGATE || !MGATE.cols || !MGATE.cols.length) return null;
   let x = 0, z = 0; for (const c of MGATE.cols) { x += c.x; z += c.z; } x /= MGATE.cols.length; z /= MGATE.cols.length;
-  return { x: x - 0.95, z, yaw: Math.PI / 2 };
+  return { x: x - GATE_FARM_REACH, z, yaw: Math.PI / 2 };
 }
-function gateFarmBang(u) {
-  const G = GATE_FARM, p = u.g.position, d = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+const _gfTip = new THREE.Vector3();
+function gateFarmBang(u, at = null) {
+  const G = GATE_FARM, p = at || u.g.position, d = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
   /* (heard only once you are near — the owner: "with sound effect you start hearing when close": nothing past 28 m, coming up
    * as you walk in, and the bars' own rattle only inside 14 m) */
   G.bangs = (G.bangs || 0) + 1;
-  if (d < 28) try { playSampleAt('metalHit', p.x + 0.9, p.z, { gain: 1.4 * Math.min(1, (28 - d) / 10), ref: 5, far: 28, rate: 0.82 + Math.random() * 0.12, jitter: 0.05 }); } catch (e) {}
+  // (iron on iron, two of the owner's takes laid together — the heavy body of it and the bright strike — each a little different)
+  const near = Math.min(1, (28 - d) / 10), bx = at ? p.x : p.x + 0.9;
+  if (d < 28) try { playSampleAt('metalHeavy', bx, p.z, { gain: 1.25 * near, ref: 5, far: 28, rate: 0.78 + Math.random() * 0.14, jitter: 0.04 });
+                    playSampleAt('metalHit', bx, p.z, { gain: 0.9 * near, ref: 5, far: 28, rate: 0.9 + Math.random() * 0.2, jitter: 0.06, delay: 0.012 }); } catch (e) {}
   if (d < 14) try { sfxGateRattle(); } catch (e) {}
+  if (at && d < 40) try { worldSparks(at, 5 + (Math.random() * 4 | 0)); } catch (e) {}
   if (!gateOpen) G.shake = 0.05;
 }
 function updateGateFarmers(dt) {
@@ -120788,7 +120810,20 @@ function updateGateFarmers(dt) {
   if (!live.length) return;
   // a load after you had talked to them: they are angry already, the moment you are near
   if (G.loaded) { if (live.some((u) => Math.hypot(u.g.position.x - c.x, u.g.position.z - c.z) < 14)) gateFarmProvoke(true); return; }
-  if (G.talked) return;                             // (asked: the answer, and the box going, wake them — `GATE_FARM_NPC.onLeave`)
+  /* (asked, and the answer still to come — 2026-11-27, the owner: "GIVE THE FARMERS AT THE GATE BETTER IDLE STANCE WHEN TALKING FOR THE
+   * SITUATION": the one who asked shakes his tool at you (`rShake`), the other stands squared up behind his (`mSwIdle`), both
+   * turned on you; the answer's shout wakes them, `GATE_FARM_NPC.onLeave`) */
+  if (G.talked) {
+    for (const u of live) {
+      const p = u.g.position, want = Math.atan2(c.x - p.x, c.z - p.z), dy = Math.atan2(Math.sin(want - u.g.rotation.y), Math.cos(want - u.g.rotation.y));
+      u.g.rotation.y += THREE.MathUtils.clamp(dy, -5 * dt, 5 * dt);
+      const nm = u === G.speaker && u.clips.rShake ? 'rShake' : u.clips.mSwIdle ? 'mSwIdle' : u.kind.anim.idle;
+      u.holdAnim = true;
+      if (u.cur !== u.clips[nm]) { const pa = mutPlay(u, nm, true); if (pa) { pa.paused = false; pa.timeScale = 1; } }
+      u.mixer.update(dt);
+    }
+    return;
+  }
   let nearest = null, nd = Infinity;
   for (const u of live) {
     if (u.st.awake || u.kickRag) continue;
@@ -120802,8 +120837,16 @@ function updateGateFarmers(dt) {
       const nm = u.clips.mChop ? 'mChop' : u.clips.mCut ? 'mCut' : null;
       if (nm) {
         clip = nm; rate = 0.9;
-        const a = u.clips[nm], f = a && u.cur === a ? a.time / a.getClip().duration : 0;
-        if (F.bangA !== null && F.bangA !== undefined && F.bangA < 0.8 && f >= 0.8) gateFarmBang(u);   // (the blow lands where the chop's head comes down)
+        /* (THE KNOCK IS WHERE THE IRON MEETS THE IRON — 2026-11-27, the owner: "MAKE THE GATE KNOCK MATCH THE FARMERS MOVEMENTS WITH BETTER
+         * KNOCKING SOUNDS TRACING WHEN HE ACTUALLY KNOCKS". It rang at 0.8 of the chop, and he stood 0.95 m off the bars where the axe's
+         * head lands 0.76 m out (the game's own measure of this chop: `A.axChop`, the head at 0.84 of the clip — `hmChop`'s note) — so it
+         * rang early and on air. He stands where the head reaches the iron (`gateFarmBangSpot`, 0.72 m), and the blow lands on the
+         * contact frame of the chop he is playing, at the head: the ring, sparks, the bars' shudder. (`u.bones.tip` was tried: in this
+         * held pose it sat at his own body, its furthest 0.98 m short of the bars.) */
+        const a = u.clips[nm], f = a && u.cur === a ? a.time / a.getClip().duration : 0, hitF = (u.atk && u.atk.axChop && u.atk.axChop.hit) || 0.84;
+        if (F.bangA !== null && F.bangA !== undefined && F.bangA < hitF && f >= hitF) {
+          const B2 = gateFarmBangSpot(); gateFarmBang(u, B2 ? _gfTip.set(B2.x + GATE_FARM_REACH + 0.02, 1.15, B2.z) : null);
+        }
         F.bangA = u.cur === a ? f : null;
       }
     }
@@ -120824,7 +120867,7 @@ function updateGateFarmers(dt) {
   }
   // within reach of words: the nearer one asks
   if (nearest && nd < 6.5 && !dialogOpen && !dying && introDone && !frozen()) {
-    G.talked = true;
+    G.talked = true; G.speaker = nearest;
     GATE_FARM_NPC.sprite = gateFarmHead(nearest); GATE_FARM_NPC.head = GATE_FARM_NPC.sprite;
     startDialog('start', GATE_FARM_NPC);
   }

@@ -18,16 +18,31 @@ if (Q.get('look')) {
     b.updateFarProps && b.updateFarProps(); C.updateMatrixWorld(true); shot('gate_' + nm, 640, 1.4);
   }
 }
+if (Q.get('steps')) {
+  // the floor where the farmers stand: the player stood on each spot (dropped from above), his feet read
+  b.settings.devMode = true; for (let i = 0; i < 300 && !b.state().introDone; i++) { b.introDone = true; b.frame(2); await sleep(20); } w.__clockOn();
+  const spots = [[10.2, -480.1], [10.0, -480.1], [9.6, -480.1], [9.2, -480.1], [8.6, -480.1], [8.4, -481], [7.2, -478.9], [7.2, -483.2], [9.4, -478.5], [9.4, -482.5]];
+  const out = [];
+  for (const [x, z] of spots) { C.position.set(x, 4.0, z); b.camBaseY = 4.0; for (let i = 0; i < 90; i++) { C.position.x = x; C.position.z = z; w.__adv(1); } out.push(x + ',' + z + ': feet ' + (b.camBaseY - 1.7).toFixed(2) + ' | groundUnder ' + b.groundUnderS(x, z, 3).toFixed(2)); }
+  log('FLOOR at the farmers spots:', out.join(' || '));
+}
 if (Q.get('fight')) {
   // walk down to them from 40 m up the beach, watching them pace; then the question, 'No', the fight, both killed, the jars
   b.settings.devMode = true; for (let i = 0; i < 300 && !b.state().introDone; i++) { try { b.skipTakes && b.skipTakes(); } catch (e) {} b.introDone = true; b.frame(2); await sleep(20); } log('introDone', b.state().introDone); w.__clockOn();
   const G = b.GATE_FARMS; const errs = []; w.addEventListener('error', (e) => errs.push(String(e.message).slice(0, 160)));
   let z = -440; C.position.set(8.0, 1.7, z); b.camBaseY = 1.7;
   for (let i = 0; i < 600 && !(G.units.length === 2 && G.units.every((u) => u.model && u.clips)); i++) { C.position.set(8.0, 1.7, z); b.look(Math.PI, 0); w.__adv(1); if (i % 20 === 0) await sleep(30); }
+  log('CLIPS', G.units.map((u) => u.kindName + ': ' + Object.keys(u.clips).filter((k) => !/^(f|k[A-Z]|nS|uK)/.test(k)).join(',')).join(' || '), '| anim', JSON.stringify(G.units[0].kind.anim));
   log('built', G.built, 'units', G.units.length, 'models', G.units.map((u) => !!u.model).join(','), '| kinds', G.units.map((u) => u.kindName + ':' + (u.kind.tool || '-')).join(' '));
   const zs = G.units.map(() => [99, -999]);
   for (let f = 0; f < 60 * 6; f++) { C.position.set(8.0, 1.7, z); b.look(Math.PI, -0.05); w.__adv(1); G.units.forEach((u, k) => { zs[k][0] = Math.min(zs[k][0], u.g.position.z); zs[k][1] = Math.max(zs[k][1], u.g.position.z); }); }
-  log('the banger: at', (G.units[0].g.position.x).toFixed(2), (G.units[0].g.position.z).toFixed(2), 'yaw', G.units[0].g.rotation.y.toFixed(2), '| clip', G.units[0].cur && G.units[0].cur.getClip().name, '| blows in 6 s', G.bangs || 0, '| gate pivot y', b.mushHouse.gate.pivot.rotation.y.toFixed(3));
+  { // a still at the blow: from the sand side, his chop meeting the bars
+    const u0 = G.units[0], a0 = u0.cur; let got = false;
+    const place = () => { C.position.set(u0.g.position.x - 7, 1.6, u0.g.position.z - 10.5); b.camBaseY = 1.6; b.lookAt(u0.g.position.x + 0.5, 1.2, u0.g.position.z); C.fov = 16; C.updateProjectionMatrix(); };
+    for (let i = 0; i < 300 && !got; i++) { const n0 = G.bangs || 0; place(); w.__adv(1); if ((G.bangs || 0) > n0) got = true; }
+    place(); C.updateMatrixWorld(true); { const v = u0.g.position.clone(); v.y += 1.2; v.project(C); log('BLOW STILL: him visible', u0.g.visible, 'model', u0.model && u0.model.visible, '| on screen at', v.x.toFixed(2), v.y.toFixed(2), v.z.toFixed(2), '| cam', C.position.x.toFixed(1), C.position.z.toFixed(1), 'him', u0.g.position.x.toFixed(1), u0.g.position.z.toFixed(1)); } shot('blow', 640, 1.5); C.fov = 60; C.updateProjectionMatrix();
+    C.position.set(8.0, 1.7, -440); }
+  log('the banger: at', (G.units[0].g.position.x).toFixed(2), 'feet y', G.units[0].g.position.y.toFixed(2), 'floor', b.groundUnderS(G.units[0].g.position.x, G.units[0].g.position.z, 2).toFixed(2),  (G.units[0].g.position.z).toFixed(2), 'yaw', G.units[0].g.rotation.y.toFixed(2), '| clip', G.units[0].cur && G.units[0].cur.getClip().name, '| blows in 6 s', G.bangs || 0, '| tool head vs the bars at each blow (m)', JSON.stringify(G.bangLog || []), '| nearest the head came to the bars', (G.tipMax ?? -99).toFixed(2), 'm', '| gate pivot y', b.mushHouse.gate.pivot.rotation.y.toFixed(3));
   log('pacing 6 s at 40 m: z ranges', zs.map((r) => r.map((v) => v.toFixed(1)).join('..')).join(' | '), '| clips', G.units.map((u) => u.cur && u.cur.getClip().name).join(','), '| visible', G.units.map((u) => u.g.visible).join(','));
   C.position.set(4.5, 1.7, -473); b.lookAt(9.5, 1.2, -481); for (let i = 0; i < 4; i++) w.__adv(1); C.updateMatrixWorld(true); shot('pace', 640, 1.4);
   // walk in
@@ -36,12 +51,31 @@ if (Q.get('fight')) {
   log('asked', !!asked, asked ? 'at z ' + asked.z.toFixed(1) : '', '| text', (w.document.getElementById('dialog-text') || {}).textContent);
   for (let i = 0; i < 90; i++) { w.__adv(1); await sleep(16); }   // (the line types on a real timer)
   C.updateMatrixWorld(true); shot('asked', 640, 1.4);
+  { const t0 = G.units.map((u) => u.cur ? u.cur.time : 0); for (let i = 0; i < 30; i++) { w.__adv(1); await sleep(16); } log('WHILE ASKED: clips', G.units.map((u, k) => u.kindName + ' ' + (u.cur && u.cur.getClip().name) + ' moved ' + ((u.cur ? u.cur.time : 0) - t0[k]).toFixed(2) + 's').join(' | '), '| speaker', G.speaker && G.speaker.kindName); }
   const btns = [...w.document.querySelectorAll('#dialog-choices button')]; log('choices', btns.map((x) => x.textContent).join('/'));
   const no = btns.find((x) => /No/.test(x.textContent)); if (no) no.click();
   for (let i = 0; i < 40; i++) { w.__adv(1); await sleep(16); }
   log('answered: text', (w.document.getElementById('dialog-text') || {}).textContent);
   for (let i = 0; i < 300 && b.state().dialogOpen; i++) { w.__adv(1); await sleep(16); }
   log('dialog closed', !b.state().dialogOpen, '| awake', G.units.map((u) => u.st.awake).join(','), 'angry', G.angry);
+  if (Q.get('air')) {
+    // a jump at the nearer one, a kick at the top, and kick held on (pressed every 8 frames) for 4 s: the bounces, your height, stamina
+    const u = G.units.slice().sort((p, q) => p.g.position.distanceTo(C.position) - q.g.position.distanceTo(C.position))[0], P = u.g.position;
+    for (const v of G.units) { v.st.cool = 99; v.st.atk = -1; }   // (held still, so the kick is the thing measured)
+    C.position.set(P.x, 1.7 + P.y, P.z + 1.1); b.camBaseY = C.position.y; b.lookAt(P.x, P.y + 0.9, P.z); for (let i = 0; i < 4; i++) w.__adv(1);
+    const K = b.kickS(); K.pogos = 0; const st0 = b.stamina; let starts = 0, wasOn = false, top = 0, air = 0, rows = [];
+    const key = (c, on) => w.dispatchEvent(new w.KeyboardEvent(on ? 'keydown' : 'keyup', { code: c, key: c }));
+    key('Space', true); w.__adv(1); key('Space', false);
+    for (let f = 0; f < 240; f++) {
+      const tgt = G.units.filter((v) => v.st.alive).sort((p, q) => p.g.position.distanceTo(C.position) - q.g.position.distanceTo(C.position))[0];
+      if (tgt) b.lookAt(tgt.g.position.x, tgt.g.position.y + 0.9, tgt.g.position.z);
+      if (f >= 12 && f % 8 === 0) { key('KeyQ', true); w.__adv(1); key('KeyQ', false); } else w.__adv(1);
+      if (K.on && !wasOn) starts++; wasOn = K.on;
+      const feet = b.camBaseY - 1.7 - (b.groundUnderS(C.position.x, C.position.z, b.camBaseY) || 0); top = Math.max(top, feet); if (!b.state().onGround) air++;
+      if (f % 20 === 19) rows.push((f / 60).toFixed(1) + 's feet ' + feet.toFixed(2) + (b.state().onGround ? 'g' : 'a') + ' pogos ' + K.pogos + ' stam ' + b.stamina.toFixed(2));
+    }
+    log('AIR CHAIN: kicks started', starts, '| bounces off a man', K.pogos, '| highest feet', top.toFixed(2), 'm | frames in the air', air, 'of 240 | stamina', st0.toFixed(2), '->', b.stamina.toFixed(2), '|', rows.join(' | '));
+  }
   if (Q.get('kick')) {
     // a real kick (Q) on the nearer one from 1.2 m: the view punch, the hold, the step back
     const u = G.units.slice().sort((p, q) => p.g.position.distanceTo(C.position) - q.g.position.distanceTo(C.position))[0], P = u.g.position;
@@ -62,7 +96,7 @@ if (Q.get('fight')) {
   b.settings.devMode = true;
   const jars0 = b.interactables ? b.interactables.filter((it) => /jar/i.test(typeof it.label === 'function' ? it.label() : it.label || '')).length : -1;
   for (let k = 0; k < 120 && G.units.some((u) => u.st.alive); k++) { for (const u of G.units) { if (!u.st.alive) continue; u.st.block = 0; u.st.parryT = 0; try { b.hurtMutantS(u, 3); } catch (e) { log('kill err', e.message); break; } } w.__adv(2); }
-  for (let i = 0; i < 240; i++) w.__adv(1);
+  for (let f = 0; f < 480; f++) { w.__adv(1); if (f % 60 === 59) log('  body t', ((f + 1) / 60).toFixed(1), G.units.map((u) => { const r = u.rag, H = r && (r.byName['Character1_Hips'] || r.parts[0]), Hd = r && r.byName['Character1_Head']; return u.kindName + (r ? ' hips ' + H.p.y.toFixed(2) + ' head ' + (Hd ? Hd.p.y.toFixed(2) : '-') + ' x ' + H.p.x.toFixed(2) + ' z ' + H.p.z.toFixed(2) + ' asleep ' + !!r.asleep + ' done ' + !!r.done + ' downT ' + (r.downT || 0).toFixed(2) + (r.mus ? ' MUS' : '') + (r.holdI ? ' HOLD' : '') : ' NO RAG, clip ' + (u.cur && u.cur.getClip().name) + ' y ' + u.g.position.y.toFixed(2)); }).join(' | ')); }
   const jars1 = b.interactables ? b.interactables.filter((it) => /jar/i.test(typeof it.label === 'function' ? it.label() : it.label || '')).length : -1;
   log('killed: alive', G.units.map((u) => u.st.alive).join(','), '| jars to take', jars0, '->', jars1, '| jar flags', G.units.map((u) => u.gf.jar).join(','));
   C.position.set(G.units[0].g.position.x - 3, 1.7, G.units[0].g.position.z + 3); b.lookAt(G.units[0].g.position.x, 0.3, G.units[0].g.position.z); for (let i = 0; i < 3; i++) w.__adv(1); C.updateMatrixWorld(true); shot('dead', 640, 1.4);

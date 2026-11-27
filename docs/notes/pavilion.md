@@ -620,3 +620,12 @@ you start hearing when close".
   the pack's.
 - Measured: the blows 4 in 6 s; asked at 6.5 m; "LIAR!"; a 15 s fight (dev mode off) 14 swings, 6 hurt you; both killed, 2 jars.
   PROBE TRAPS: the dialogue types on REAL timers (sleep between frames to see its choices); a fight in dev mode holds swings.
+- **(2026-11-27)** "THE BODIES NEED TO STOP DOING THIS … LET THEM FALL DOWN", "BETTER IDLE STANCE WHEN TALKING", "MAKE THE GATE KNOCK MATCH
+  THE FARMERS MOVEMENTS … TRACING WHEN HE ACTUALLY KNOCKS". The frozen body was the ragdoll's sleep rule for every death (creatures.md,
+  same date). While asked: the one who asked shakes his tool at you (`rShake`, `G.speaker`), the other stands squared up (`mSwIdle`),
+  both turned on you, animated by `updateGateFarmers` itself. The knock: he stands `GATE_FARM_REACH` 0.72 m off the bars (the axe
+  chop's head lands 0.76 out — he stood 0.95 and it rang on air), and it rings on the chop's own contact (`u.atk.axChop.hit`, 0.84,
+  not 0.8) at the head: `metalHeavy` + `metalHit` 12 ms after, pitches varied, the rattle inside 14 m, 5-8 `worldSparks`, the shudder.
+  `u.bones.tip` was tried to trace the head: in this held pose it sits at his body (its furthest 0.98 m short of the bars).
+  PROBE TRAP: a still taken the instant the camera moves in from far shows him with `model.visible` false (the distance cull runs
+  next frame); and within 11 m he stops chopping to glare at the lens — the blow's still is from 12 m with a long lens.

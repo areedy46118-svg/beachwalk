@@ -3500,3 +3500,12 @@ double (its "30.8 m/s at the hop" was that, not the game).
   `KICK.mom`. `__bw.vpS()`, `hitstopS()`, `kickS()`. `tools/gatefarm.js &fight=1&kick=1` measures it.
 - **The jump**: `JUMP_V` 4.5 → 5.0 (what the upgrade was, 0.83 m), `JUMP_V_UP` 5.0 → 5.45 (+15.5 cm again, 0.985 m: a 1.40 m ledge
   with `ROCK_STEP`). The shop's line says "about a fifth higher". Climbs laid out to the old lift are now easier, none harder.
+
+## 2026-11-27 — the air kick's pogo: chain kicks in the air until you are winded
+"MAKE UPON SUCCESSFUL JUMP KICK YOU PROPEL HIGHER TO BE ABLE TO CHAIN KICKS MID AIR UNTIL STAMINA IS OUT". In `kickFeel` (once per
+kick that connects): in the air (`KICK.air` and not `onGround`) `vy` goes to at least `KICK_POGO` 5.2 (≈0.9 m more), `KICK.cd` 0,
+and `KICK.chainOK` with `KICK.chain` `KICK_CHAIN` 0.14 s: `kickTick` cuts the rest of that kick for a press held over (`KICK.buf`) and
+throws the next at once. Stamina gates it as it gates every kick (`KICK_STAM` 0.2: five, then "OUT OF BREATH"). `KICK.pogos` counts.
+`tools/gatefarm.js &fight=1&air=1` (a jump at a gate farmer, Q every 8 frames for 4 s): 5 kicks, 2 bounces off men, feet to 1.97 m
+(a plain jump 0.83), 87 of 240 frames airborne, stamina 1.00 → 0.22; with both men kicked away the rest whiffed and you came down.
+A beach creature within 12 m of the pavilion stands on `groundUnder` (its front steps), not only `beachGroundAt` (pavilion.md).
