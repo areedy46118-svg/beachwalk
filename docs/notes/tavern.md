@@ -1386,3 +1386,17 @@ his turning; the swings, hurts, contact gap, `u.tavReachZ`), `tools/tavblows.js`
   kick lands at body height, so ~0.6 m from the eye is right); body speed through every blow 0.00-0.01 m/s (Wong's punch dragged
   him 3.6 m/s before). The PLANTED TOE still moves 0.6-0.8 m/s in his own frame through the kicks — the take's hips travel is not
   baked (the packer's rule for every set) — a foot lock is the next step if it still reads as sliding.
+
+## 2026-11-26 (late) — the body out of the window stops where it hits; no flash back inside
+"make there bodies hit the ground harder when they fall out the window they just slide around the ground they should hit right
+where they land like a ragdoll. the bodies spawn back in the tavern for a second too." `tools/tavkick.js &secs=12` logs, after the
+landing, how far his hips go and every frame his DRAWN hips are inside the hall (and per frame around the landing: rag, kickRag,
+alive, struck, the clip, drawn vs ragdoll hips).
+- **THE FLASH WAS THE DYING FRAMES.** `tavFallTick` kills him on the landing; `killMutant` sets `struck` and `updateMutantUnit`'s
+  struck branch held him at `hitFrom` on his MIXER until the hit-stop ran out — 5 frames of his drawn body back at the railing
+  (y +0.5, z -12.5..-12.8) while his ragdoll lay 16 m below. A man already a ragdoll is now stepped as one through those frames (in
+  the struck branch, for every death, not only here). And a death 17 m below you keeps your world: `tavFallTick` restores `hitstop`,
+  `trauma` and `killSlow` round the kill and finishes it at once. Measured: 0 frames inside (was 5).
+- **THE SLIDE**: the landing bleeds his run along the ground (to 15 % at the hit, then 35-75 % a frame for 1.5 s) and drives him down
+  0.06 m; plus `sfxBodySlam` and `sfxBoneClatter` from where he hit. Measured: 0.02-0.10 m after the hit. Kicked from the railing
+  he flies ~14 m and comes down in the SEA, whose floor is a flat plane — the skate across it was the "slide around the ground".

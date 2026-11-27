@@ -49124,6 +49124,11 @@ function updateMutantUnit(u, dt) {
    * looking at is the reason the world has stopped. Driven off `hitstop` and
    * not off dt, because dt is what hitstop scales. */
   if (u.st.struck) {
+    /* (A BODY ALREADY THROWN STAYS THROWN — 2026-11-26, the owner: "the bodies spawn back in the tavern for a second too". A man killed
+     * while he is a ragdoll — on the rocks under the tavern's window, or kicked down and finished — was held for the dying frames at
+     * `hitFrom` on his mixer: his drawn body snapped back to where he last stood, inside, for 5 frames, while his ragdoll waited
+     * 17 m below. He goes on as the ragdoll through them.) */
+    if (u.rag) { updateMutRagdoll(u, dt); if (hitstop <= 0) finishMutant(u); return; }
     const e = 1 - THREE.MathUtils.clamp(hitstop / MUT_HIT_STOP, 0, 1);
     p.copy(u.hitFrom).addScaledVector(u.hitDir, 0.30 * e);
     u.mixer.update(0);
@@ -89925,7 +89930,14 @@ function tavFallTick(dt = 1 / 60) {
       if (u.model) u.model.traverse((o) => { const M = o.material; if (M && M.emissiveIntensity !== undefined && !M.userData.tavMoon) { M.userData.tavMoon = true; M.emissiveIntensity = Math.max(M.emissiveIntensity, 0.2) * 6; } });   // (out under the moon: the hall's torches lit him, and out here he was a black speck — his own maps lifted, a uniform, no recompile)
       if (st.alive) try { sfxMutRoar(Math.hypot(camera.position.x - H.p.x, camera.position.z - H.p.z) * 0.5, u.kind.voice); } catch (e) {}
     }
-    if (st.fellHit) continue;
+    /* (AND HE STAYS WHERE HE HITS — 2026-11-26, the owner: "make there bodies hit the ground harder when they fall out the window they
+     * just slide around the ground they should hit right where they land like a ragdoll". The ragdoll's ground keeps a thrown body's
+     * run along a slope; out here the landing takes it: for a second and a half after it every part's run along the ground is bled
+     * away fast, so he stops in a heap where he came down.) */
+    if (st.fellHit) {
+      if ((st.fellStop = (st.fellStop || 0) + dt) < 1.5) for (const q of u.rag.parts) { const k = 0.35 + 0.4 * (st.fellStop / 1.5); q.pp.x = q.p.x - (q.p.x - q.pp.x) * k; q.pp.z = q.p.z - (q.p.z - q.pp.z) * k; }
+      continue;
+    }
     st.fellT += dt;
     const G = tavOutFloor(H.p.x, H.p.z, H.p.y), wet = TAV_YARD.sea;
     /* (THE LANDING IS WHERE ANY OF HIM TOUCHES, not only where the floor under his hips is: on the rock under the wall a man came
@@ -89933,11 +89945,13 @@ function tavFallTick(dt = 1 / 60) {
      * was tried and was wrong: his hips jerk on his own limbs in the air, and it killed the orc half way down.) */
     const fl0 = TAV_Y + TAV_FLOOR, touch = H.p.y < fl0 - 2 && u.rag.parts.some((q) => q.floor !== undefined && q.floor < fl0 - 2 && q.p.y - (q.r || 0.1) <= q.floor + 0.08);
     if (H.p.y > G + 0.8 && !touch && st.fellT < 8) continue;
-    st.fellHit = true;
+    st.fellHit = true; st.fellStop = 0;
+    // (the hit itself: his run along the ground gone at once, and the whole of him driven down into it — a body arriving, not landing)
+    for (const q of u.rag.parts) { q.pp.x = q.p.x - (q.p.x - q.pp.x) * 0.15; q.pp.z = q.p.z - (q.p.z - q.pp.z) * 0.15; q.pp.y = Math.max(q.pp.y, q.p.y + 0.06); }
     const d = Math.hypot(camera.position.x - H.p.x, camera.position.y - H.p.y, camera.position.z - H.p.z);
     if (wet) { try { sfxSplash(Math.max(0.25, 1.3 / (1 + d / 14))); sfxDeepThud(d * 0.8); } catch (e) {} }          // (into the sea: the splash, from as far off as it is)
     else {
-      try { sfxDeepThud(d * 0.45); sfxCpThud(H.p.x, H.p.z, 1.5, true); } catch (e) {}
+      try { sfxDeepThud(d * 0.45); sfxCpThud(H.p.x, H.p.z, 1.5, true); sfxAt(H.p.x, H.p.z, () => { sfxBodySlam(1.4, H.p); sfxBoneClatter(6); }); } catch (e) {}   // (and the body's own slam and its bones, heard from where it hit)
       try { sprayBlood(H.p.x, G + 0.3, H.p.z, 0, -1, 26, 3.2); sprayBlood(H.p.x, G + 0.3, H.p.z, 0.7, 0.7, 14, 2.4); } catch (e) {}
       tavOutStain(H.p.x, H.p.z, G);
       try { spawnPuffs(H.p.x, H.p.z, 7, 0, -1, G + 0.08); } catch (e) {}
@@ -89945,7 +89959,11 @@ function tavFallTick(dt = 1 / 60) {
     if (st.alive) {
       u.kickRag = null; st.riseFrom = null; st.riseClipNow = null; u.ragOut = null;
       st.killFling = 0.01; u.lastHitMine = true; st.hp = 0;
-      try { killMutant(u); } catch (e) { st.alive = false; }
+      /* (yours, for the count — but seventeen metres below you it does not stop your world: no freeze, no shake, no slow beat, and
+       * no dying frames held, he is a body already: `finishMutant` now) */
+      const hs0 = hitstop, tr0 = trauma, ks0 = killSlow;
+      try { killMutant(u); if (st.struck && st.alive) finishMutant(u); } catch (e) { st.alive = false; }
+      hitstop = hs0; trauma = tr0; killSlow = ks0;
     }
   }
 }
