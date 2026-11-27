@@ -1920,3 +1920,25 @@ draw a GL error belongs to, set `localStorage.bwGlDbg` before the load: every `r
 and walking up the finer levels came in one by one — the texture visibly arriving. A mesh with a `map`/`emissiveMap` is measured at
 half its distance (`e.tex`), so its levels change where a cell is under half a pixel. NOT confirmed on the owner's cave (which mesh
 it is was not identified); `?lod=0` in his pane is the A/B if it is still seen.
+
+## 2026-11-26 (night) — every checkpoint's load: what a black waits on that is not where you are
+The owner: "do an over all performance pass now with everything new. make load times as short as poissible all checkpoints".
+`tools/loadall.sh` (23 checkpoints) before and after, playable s (one run each, ±0.4 run to run): **c13 12.12 → 4.97**,
+**beach-900 8.42 → 4.31** (worst frame after 202 → 43), beach-300 4.76 → 3.85, beach-60 5.24 → 4.93, tav 6.52 → 6.89 (its
+256 ms first frame after the black → 40: the route grid, tavern.md), the rest unchanged within noise (bunker 6.9 — its black
+lifts ~4.2, then the Dealer's greeting; fort 7.1, keep 5.5). The gate's timeline now says WHY: `bootGateS()` gives `owedWhy`
+(which warm), `here` (the camera, each warm's distance, `warmOwedHere`'s answer) and `castWho` (who the cast gate waits on and
+for what: `nomodel`, `parLate`, `clipsN`); `tools/loadall.html` prints them in `&tl=1` timelines (`O[…]`, `cast[…]`).
+- **A CHECKPOINT WAITED ON WARMS A KILOMETRE AWAY.** `warmOwed()` holds the black until the drain's, the pavilion's, the bunker's
+  and the undercroft's warms are done — Castle XIII and the beach at -900 sat on the BUNKER's (its model ~100 files down the parse
+  queue). `warmOwedHere()` (checkpoint loads only, `instantStart`): each holds only within `WARM_NEAR_R` 280 m of you (the bunker
+  also when `inBunker`, the undercroft within 400 m of `UC_X/UC_Z`); a first load from the title still waits for all.
+- **THE CAST GATE WAITED ON THE FAR CHAIN.** `castBootOwed` holds the black (to `CAST_WAIT_MAX` 10 s) until everyone within 45 m is
+  whole; `castLoading`'s `bwSoon` moved their DOWNLOADS up but their PARSES stayed at the back of the far chain. `makeMutant`: a
+  body made within 60 m (a square, as the gate asks) of the save's spot (`BW_FROM.pos`, new) is `urgent` — parsed on the near
+  chain — and a farmer's five mocap packs (`FARM_MOCAP`) are `bwFetchSoon`'d. A unit made at one place and stood at another says
+  where it will stand: `mutMakeAt` (the gargoyles are made 60 m off for their save keys, then perched).
+- **Tried and backed out**: holding the far parse chain while the black counts its settled frames. The look round needs the
+  castles' files, which are ranked far while being in view — c13 went 8.2 → 13.3 s.
+- **Left**: the fort's last ~1.5 s is the castle props' site build (`CP.sites.fort.built` in `bootLeft`) after their near files
+  are in; the tavern's ~1 s is the drinkers' bodies (`tavCastOwed`).

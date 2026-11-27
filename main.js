@@ -255,7 +255,7 @@ const BW_FROM = (() => {
      * out a fight: measured, `probes.js cpAfterLoad`, the fort's 43 props stood before the reload and none 30 s after it.) */
     if (d.room === 'fort' || d.room === 'c13' || d.room === 'thr') { first.add('assets/castle-props-a.glb'); first.add('assets/castle-props-b.glb'); first.add('assets/castle-props-c.glb'); }
     if (d.room === 'fort') first.add('assets/brazier.glb');
-    return { walked, first, room: d.room || null };
+    return { walked, first, room: d.room || null, pos: Array.isArray(d.pos) ? d.pos.slice(0, 3) : null };   // (`pos`: whoever stands near it is made first, `makeMutant`)
   } catch (e) { return null; }
 })();
 /* EVERY MAP HELD TO 2048 (2026-11-22, the owner: "i want this game to run perfectly on all computers even if they arent that good",
@@ -1067,7 +1067,10 @@ let dmgTakeK = () => 1;
  * unbalanced"). 4.3 until then: the feet 0.616 m up, and with the walk's step catch (`ROCK_STEP` 0.42) 1.03 m the tallest ledge you
  * could gain — the climbs were laid out to that (undercroft.md, lighthouse.md: the tavern's 1.15 m crate wants the stool). 4.5 lifts
  * them 0.675 m (+6 cm); the trader's `jumpUp` 5.0, 0.83 m (+22 cm): a 1.25 m ledge, not a wall or a roof. */
-const JUMP_V = 4.5, JUMP_V_UP = 5.0;
+/* (AND THE UPGRADE IS THE START NOW — 2026-11-26, the owner: "make the upgraded jump height the starting height then add the upgrade
+ * amount for sale". Everyone jumps 5.0 (0.83 m), and the trader's springs add the same 15.5 cm again: 5.45, 0.985 m — a 1.40 m ledge
+ * with the step catch.) */
+const JUMP_V = 5.0, JUMP_V_UP = 5.45;
 let jumpUp = false;   // (bought from the trader: `TRADER_STOCK.jumpUp` 0, which is how a save brings it back)
 const P_GRAV = 15;
 const MOON_DIR = new THREE.Vector3(-0.28, 0.12, -1).normalize();
@@ -11591,6 +11594,24 @@ const BOOT_HOLD_WARM_MAX = 6500;   // and at most this long for the rooms' own w
 function warmOwed() {
   return !!(warmSteps.length || warmBlock || !drainWarmed || !mushWarmed || !bunkerWarmed
     || (!ucWarmed && ucWarm));
+}
+/* AND A CHECKPOINT WAITS ONLY ON WHAT IS NEAR IT (2026-11-26, the owner: "make load times as short as poissible all checkpoints").
+ * Measured, `tools/loadall.sh` with the gate's reasons (`bootGateS().owedWhy`): Castle XIII's checkpoint held its black to 11.6-12.1
+ * s and the beach's at -900 to 8.2-8.4 s with everything they show long in — waiting on the BUNKER's warm (and the undercroft's),
+ * a kilometre back up the beach, whose model was still ~100 files down a parse queue that drains three a second. On a checkpoint
+ * the drain's, the pavilion's, the bunker's and the undercroft's warms hold the black only when you come back within reach of
+ * them (or inside them: the bunker is under its hatch, the undercroft is its room); the rest warm behind you, paced, as every far
+ * warm already does. A first load from the title still waits for all of it. */
+const WARM_NEAR_R = 280;
+function warmOwedHere() {
+  try {
+    const near = (x, z, r = WARM_NEAR_R) => Math.hypot(camera.position.x - x, camera.position.z - z) < r;
+    return !!(warmSteps.length || warmBlock
+      || (!drainWarmed && near(DRAIN_X, DRAIN_Z))
+      || (!mushWarmed && near(MUSH_X, MUSH_Z))
+      || (!bunkerWarmed && (near(HATCH_X, HATCH_Z) || !!inBunker))
+      || (!ucWarmed && ucWarm && near(UC_X, UC_Z, 400)));
+  } catch (e) { return warmOwed(); }   // (a constant not yet declared on the very first frames: the old rule)
 }        // ms of black at most — a checkpoint should be back fast; what is left warms behind you
 const BOOT_FADE = 0.6;   // (a load comes up out of the black, it does not cut in)
 /* AND THE DEADLINE IS THE WALL CLOCK, NOT ACCUMULATED FRAME TIME. The chain
@@ -11677,7 +11698,7 @@ function updateBootHold(dt) {
    * black was slammed back to 1, then let go at 0.2 — a flash, every time. The hold is asked only BEFORE the fade
    * begins; whatever is still owed after that is paid in the open. */
   const fading = bootHold < 1;
-  let hold = !fading && !capped && (roomWarm || !queueDone || (fastLoad ? nearBlock : warmOwed()) || (!!bootStageHold && el < BOOT_HOLD_WARM_MAX && bootStageHold()));
+  let hold = !fading && !capped && (roomWarm || !queueDone || (fastLoad ? nearBlock : instantStart ? warmOwedHere() : warmOwed()) || (!!bootStageHold && el < BOOT_HOLD_WARM_MAX && bootStageHold()));
   if (!fading && !hold && !capped && !bootLookDone) {
     bootLookDone = true; updateFarProps(); startLookWarm(); hold = true;
     // (a fast checkpoint: the far rest is paced from HERE, or it runs flat out under the black and the thirty settled frames below never come)
@@ -11698,7 +11719,7 @@ function updateBootHold(dt) {
   if (!fading && !hold && !capped && fastLoad && castBootOwed(el)) hold = true;
   bootPrevT = now;
   if (bootHoldBar) {
-    const B = bootHoldBar, n = left + (roomWarm ? 3 : 0) + (warmOwed() ? 2 : 0) + (bootLookDone ? 0 : 1) + Math.max(0, 30 - bootSmoothN) / 10;
+    const B = bootHoldBar, n = left + (roomWarm ? 3 : 0) + ((instantStart ? warmOwedHere() : warmOwed()) ? 2 : 0) + (bootLookDone ? 0 : 1) + Math.max(0, 30 - bootSmoothN) / 10;
     B.total = Math.max(B.total, n);
     B.shown = Math.max(B.shown, Math.min(1, 1 - n / B.total));
     B.fill.style.transform = 'scaleX(' + Math.max(0.02, B.shown).toFixed(3) + ')';
@@ -19650,6 +19671,8 @@ function hookZipStart() {
   HK.toCubby = inC13 && c13CubbyHas(HK.p, 0.3);
   HK.st = 'zip'; HK.t = 0; HK.zipA = (HK.zipA || new THREE.Vector3()).copy(HK.p); HK.zipT = 0; HK.zipStuck = 0; HK.zipLast = d; HK.zipUsed = true; HK.slack = 0;
   HK.zipV = HK.zipV || new THREE.Vector3(); HK.zipV.set(0, 0, 0); HK.zipPk = 0;
+  HK.zipVy = vy;   // (the climb or the drop eases from what you had: `hookZipMove`)
+  HK.zipFrom = Math.hypot(velocity.x + (HK.carry ? HK.carry.x : 0), velocity.z + (HK.carry ? HK.carry.z : 0));   // (the speed you threw it at: the pull takes you on from there, `hookZipMove`)
   sfxChainRattle(c.x, c.z, 0.6, 1.1); sfxChainPayout(c.x, c.z, 0.8);
   playSample('katSwing', 0.75, 0.04, 0.5);
   fovKick = Math.max(fovKick, 7); addTrauma(0.12); vmImpulse(-0.9);
@@ -19710,9 +19733,19 @@ function hookZipMove(dt, canMove) {
   // (stopped on the way — something in between, a clamp — or there)
   if (HK.zipLast - d < 0.25 * Math.min(HOOK_ZIP.max, 7 + HOOK_ZIP.max * HK.zipT / HOOK_ZIP.ramp) * dt) HK.zipStuck += dt; else HK.zipStuck = 0;
   HK.zipLast = d;
-  if (d < HOOK_ZIP.stop || HK.zipT > HOOK_ZIP.max_t || HK.zipStuck > 0.12 || !canMove || !hookHeld()) { hookZipEnd(d < HOOK_ZIP.stop + 0.6); return; }
+  if (d < HOOK_ZIP.stop || HK.zipT > HOOK_ZIP.max_t || HK.zipStuck > 0.12 || !canMove || !hookHeld()) {
+    hookZipEnd(d < HOOK_ZIP.stop + 0.6);
+    /* (AND NO DEAD FRAME AT THE HAND-OFF: on the frame the pull ended neither it nor the carry moved you — measured 11.0 → 1.7 → 9.4
+     * m/s across three frames, a hitch at the end of every zip. The carry takes this frame too.) */
+    if (canMove && HK.carry && HK.carry.lengthSq() > 0.0004 && HK.zipStuck <= 0.12) hookStepSolid(HK.carry.x * dt, HK.carry.z * dt);
+    return;
+  }
   HK.zipT += dt;
-  const sp = Math.min(HOOK_ZIP.max, 7 + (HOOK_ZIP.max - 7) * Math.min(1, HK.zipT / HOOK_ZIP.ramp));
+  /* (SMOOTH OFF THE MARK — 2026-11-26, the owner: "use the hook to move fast and make it seem smoother to do". Measured frame by frame,
+   * `tools/hooksmooth.js`: a pull took you from standing to 8.2 m/s in one frame, then ramped. It begins at the speed you had when it
+   * bit (`zipFrom`, never under 2.5) and comes up to its own on an ease-out over `ramp`: a surge, not a snap.) */
+  const r0 = Math.min(1, HK.zipT / HOOK_ZIP.ramp), e0 = 1 - (1 - r0) * (1 - r0), from = THREE.MathUtils.clamp(HK.zipFrom || 0, 2.5, HOOK_ZIP.max);
+  const sp = from + (HOOK_ZIP.max - from) * e0;
   _hzD.multiplyScalar(1 / d);
   HK.zipV.set(_hzD.x * sp, _hzD.y * sp, _hzD.z * sp);
   /* (NOTHING OF A CASTLE IS FLOWN THROUGH — 2026-11-22, the owner: "using the hook in the castle i shouldnt clip through high parts
@@ -19731,7 +19764,16 @@ function hookZipMove(dt, canMove) {
   }
   hookStepSolid(HK.zipV.x * dt, HK.zipV.z * dt);
   HK.zipPk = Math.max(HK.zipPk || 0, Math.hypot(HK.zipV.x, HK.zipV.z));   // (its fastest across the ground: what it carries you on with, `hookZipEnd`)
-  vy = Math.max(HK.zipV.y, HOOK_ZIP.down) + P_GRAV * dt;                  // (the climb or the drop is the chain's; gravity is taken back out this frame)
+  /* (the climb or the drop is the chain's; gravity is taken back out this frame) — and it is eased, 60 m/s² at most: the last frames
+   * of a pull at a point below you snapped your fall from 0 to the chain's -8.6 m/s in one frame, a drop you felt in your stomach) */
+  { const want = Math.max(HK.zipV.y, HOOK_ZIP.down), cur = HK.zipVy === undefined ? want : HK.zipVy;
+    HK.zipVy = cur + THREE.MathUtils.clamp(want - cur, -60 * dt, 60 * dt); }
+  vy = HK.zipVy + P_GRAV * dt;
+  /* (AND IT SKIMS THE GROUND, NOT GRINDS IT: hauled at a point down on the sand ahead the chain drove you into it, and every lump of
+   * the beach pushed back — 20 → 12 → 17 → 11 m/s and the view bucking ±4 m/s up and down, frame to frame. A pull whose feet are
+   * within a stride of the ground under them lifts them just off it, unless its point is right there under you.) */
+  { const feet = camBaseY - playerEye(), gy = groundY;
+    if (feet - gy < 0.55 && HK.zipA.y > gy - 0.3 && d > HOOK_ZIP.stop + 1.2) { vy = Math.max(vy, 1.6 * Math.min(1, (0.55 - (feet - gy)) / 0.3)); HK.zipVy = vy - P_GRAV * dt; } }   // (the eased climb follows the lift, or it snaps back to the chain's drop when the lift lets go)
   onGround = false;
   fovKick = Math.max(fovKick, 4 + 3 * Math.min(1, sp / HOOK_ZIP.max));
   if ((HK.zipRt = (HK.zipRt || 0) - dt) <= 0) { HK.zipRt = 0.16; sfxChainRattle(c.x, c.z, 0.18, 0.55); }
@@ -30615,7 +30657,17 @@ function loadSamples() {
 // plays a random one from the bank; returns false if nothing has loaded yet
 // a locked door tried, where it is (`doorLocked`, the owner's latch); the old knock if the file has not come in
 // the kick landing, on whatever it met (`kickHit`, the owner's); a thud until it has loaded. `k` scales it: a body full, a prop less
+/* A KICK THAT LANDS IS FELT (2026-11-26, "improve the feel of the kicks"): once per kick, from its impact — the view punched up and
+ * rolled off the kicking leg, a step back off what you kicked when you are on your feet (it pushes you as you push it), and a hold
+ * on the frame that grows with the speed you brought into it (`KICK.mom`, the slide's and the hook's carry). */
+function kickFeel(k) {
+  const m = THREE.MathUtils.clamp(((KICK.mom || 1) - 1) / 0.6, 0, 1);
+  if (onGround) { camera.getWorldDirection(_kfeelD); _kfeelD.y = 0; if (_kfeelD.lengthSq() > 1e-6) { _kfeelD.normalize(); velocity.addScaledVector(_kfeelD, -1.2 * k); } }
+  hitstop = Math.max(hitstop, (0.05 + 0.05 * m) * Math.min(1, k));
+}
+const _kfeelD = new THREE.Vector3();
 function sfxKickHit(k = 1) {
+  if (KICK && KICK.on && !KICK.felt) { KICK.felt = true; try { kickFeel(k); } catch (e) {} }
   if (playSample('kickHit', 0.95 * k, 0.06, 0.96 + Math.random() * 0.08)) return;
   sfxKillThud(0.7 * k);
 }
@@ -32540,6 +32592,15 @@ function slideStart() {
   return true;
 }
 const _shakePrev = new THREE.Vector3();
+/* THE VIEW PUNCH (2026-11-26, the owner: "improve the feel of the kicks as well. enhance the physics and make the game enjoyable"). The
+ * shake moves the lens; a blow that lands should TURN it — a sharp tip and a roll that spring straight back (stiff, near-critically
+ * damped: in and out in about a quarter second), the way a melee hit reads in Half-Life. `viewPunch(pitch, roll)` adds to it; the
+ * frame takes last frame's off before anything else touches the look and puts this frame's on after the shake. A look written in
+ * between (the mouse) simply drops the old punch: it never accumulates. */
+let vpP = 0, vpR = 0, vpVP = 0, vpVR = 0, vpOn = false;
+const _vpQ = new THREE.Quaternion(), _vpInv = new THREE.Quaternion(), _vpLeft = new THREE.Quaternion(), _vpE = new THREE.Euler(0, 0, 0, 'YXZ');
+function viewPunch(p, r) { vpVP += p * 64; vpVR += r * 64; }   // (an impulse: `p` rad comes out as about its own size at the peak — 16 gave a fifth of it, measured 0.8° for a 2.6° ask)
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { vpS: () => [+vpP.toFixed(4), +vpR.toFixed(4)], hitstopS: () => +hitstop.toFixed(3), kickS: () => KICK }));
 let shakeT = 0;
 const knockback = new THREE.Vector3();
 function addTrauma(v) { trauma = Math.min(1, trauma + v); }
@@ -33315,6 +33376,7 @@ function startKick() {
 const kickBoss = (u) => !!(u.kind.kingBody || u.kind.boss || u.kind.bossDeath || (u.kind.hp || 0) >= 40 || (u.kind.h || 1.8) >= 2.6);
 const _kkD = new THREE.Vector3(), _kkC = new THREE.Vector3(), _kkT = new THREE.Vector3();
 function kickStrike() {
+  KICK.felt = false;
   camera.getWorldDirection(_kkD); _kkD.y = 0; if (_kkD.lengthSq() < 1e-6) return; _kkD.normalize();
   const c = camera.position, feet = c.y - playerEye();
   /* (A JUMP KICK — 2026-11-26, the owner: "make jump kicks more likely to knock someone down and they go further", "I SHOULD BE ABLE TO
@@ -40205,6 +40267,11 @@ const _packMid = new THREE.Vector3(), _packQ = new THREE.Quaternion(), _packM = 
     new THREE.MeshStandardMaterial({ color: 0x59606f, roughness: 1, flatShading: true, emissive: 0x14171f }));
   stone.position.set(8.6, 0.28, PACK_Z + 4.2);
   dressStone(stone, makeProp(stone, 'stone', { radius: 0.3, restH: 0.28, bounce: 0.12, friction: 0.6 }), 2, 0.58);
+  // and one on the sand a few strides before the two farmers at the pavilion's gate (`GATE_FARM`: they pace at z -478..-484)
+  const gs = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28, 0),
+    new THREE.MeshStandardMaterial({ color: 0x59606f, roughness: 1, flatShading: true, emissive: 0x14171f }));
+  gs.position.set(8.9, 0.26, -470.5);
+  dressStone(gs, makeProp(gs, 'stone', { radius: 0.28, restH: 0.26, bounce: 0.12, friction: 0.6 }), 1, 0.55);
 
   const glass = new THREE.MeshStandardMaterial({
     color: 0x2f6f5c, roughness: 0.25, transparent: true, opacity: 0.7, emissive: 0x0c2b22,
@@ -41980,6 +42047,7 @@ const MUSH_LEAN = 0.06;                     // how far a frame the pavilion's in
 function updateMushroom(dt) {
   const M = MUSH;
   updateGate(dt);
+  updateGateFarmers(dt);                          // (the two farmers outside it: `GATE_FARM`)
   const dx = camera.position.x - MUSH_X, dz = camera.position.z - MUSH_Z;
   let d = Math.hypot(dx, dz);
   const ang = Math.atan2(dx, dz);
@@ -44113,6 +44181,7 @@ function retireUnit(u) {
   u.st.alive = false; u.st.awake = false; u.st.deadT = 999; u.rag = null;
   u.g.visible = false; u.g.removeFromParent();
 }
+var mutMakeAt = null;   // (set round a `makeMutant` whose body is made at one place and stood at another: `placeGargoyles`)
 function makeMutant(x, z, kindName, y = 0) {
   const kind = MUT_KINDS[kindName];
   const g = new THREE.Group();
@@ -44184,7 +44253,17 @@ function makeMutant(x, z, kindName, y = 0) {
   const src = kind.glb || 'assets/mutant.glb';
   if (!mutGlbWait[src]) mutGlbWait[src] = bwFetch(src);
   /* the tavern's people are built when the hall is, and are wanted when it is: their copies first, under the black */
-  const urgent = !!kind.tav || !!kind.urgentBody;   // (and a companion at your side: `cmar`'s `urgentBody`)
+  /* (AND ANYONE STANDING WHERE A CHECKPOINT PUTS YOU — 2026-11-26, "make load times as short as poissible all checkpoints". The
+   * black waits for everyone within 45 m to be whole (`castBootOwed`); their downloads were moved up (`bwSoon`) but their PARSES
+   * stayed at the back of the far chain, ninety files deep: Castle XIII's checkpoint and the beach's at -900 held their black to
+   * the ten-second cap on the castles' farmers and gargoyles. A body made within 60 m of the save's spot is parsed on the near chain.) */
+  const ax = mutMakeAt ? mutMakeAt.x : x, az = mutMakeAt ? mutMakeAt.z : z;   // (`mutMakeAt`: where it will stand, for one made elsewhere and moved — the gargoyles)
+  const atSave = !!(BW_FROM && BW_FROM.pos && Math.abs(ax - BW_FROM.pos[0]) < 60 && Math.abs(az - BW_FROM.pos[2]) < 60);   // (a square, as the gate asks: `castLoading` — Castle XIII's gargoyles stand 45-60 m off on the diagonal)
+  const urgent = !!kind.tav || !!kind.urgentBody || atSave;   // (and a companion at your side: `cmar`'s `urgentBody`)
+  /* (and a farmer's motion capture is five packs, not his GLB — knight's, orc's, demon's, Wong's, the drunk's (`FARM_MOCAP`): at the
+   * fort's and the tavern's checkpoints the black held 2 s on `parLate` with every body in, those packs still waiting their far
+   * turn to download. Near the save they go to the front too.) */
+  if (atSave && kind.farmer) for (const m of ['assets/knight-moves.json', 'assets/orc-moves.json', 'assets/demon-moves.json', 'assets/wong-moves.json', 'assets/drunk-moves.json']) bwFetchSoon(m);
   if (urgent) bwFetchSoon(src);
   const loader = new GLTFLoader();
   /* AND THE PARSES ARE SPREAD OVER FRAMES, NOT FIRED TOGETHER. Twenty-three
@@ -48499,7 +48578,14 @@ function kickRagRise(u) {
   u.hitFrom.copy(u.g.position);
   if (tf) { u.hitFrom.x -= tf.x * cf + tf.y * sf; u.hitFrom.z -= -tf.x * sf + tf.y * cf; }
   S.cool = Math.max(S.cool || 0, S.riseDur + 0.4);
-  u.ragOut = { t: 0, T: u.kickRiseRoar ? 0.95 : 0.55, snap, root, hb };   // (0.55, was 0.34: at that his hands and toes crossed the gap at 12 m/s — a snap, not a roll, 2026-11-26)   // (a roar has no lying start: the body is drawn up out of how it lay, slowly)
+  /* (AS LONG AS THE BODY HAS FAR TO GO — 2026-11-26, the owner: "fix the farmers ragdolls they glitch when standing up". The blend from
+   * how the ragdoll lies into the stand-up's first frame was 0.55 s whatever the distance: when the nearest of the four stand-ups
+   * still lay otherwise, a head or a hand crossed 2-4 m of it in 33 frames — 0.13-0.18 m a frame for half a second, a body whipped
+   * into place (`tools/riseall.js &pops=1`). The time now grows with the farthest any joint has to go, so nothing of him moves
+   * faster than ~3.5 m/s: a near match is as quick as before, a far one a slower roll into it.) */
+  let far = 0; u.model.updateMatrixWorld(true);
+  for (const q of r.parts) if (q.bone) { q.bone.getWorldPosition(_krA); far = Math.max(far, _krA.distanceTo(q.p)); }
+  u.ragOut = { t: 0, T: u.kickRiseRoar ? 0.95 : THREE.MathUtils.clamp(far / 3.5, 0.55, 1.3), snap, root, hb, far };   // (0.55, was 0.34: at that his hands and toes crossed the gap at 12 m/s — a snap, not a roll, 2026-11-26)   // (a roar has no lying start: the body is drawn up out of how it lay, slowly)
 }
 /* THE LIFT LET GO WITH THE CLIP, NOT ON A FRAME (2026-11-26, the owner: "FIX THIS BUG THEY ARE ALWAYS FLAOTING WHEN THEY GET UP LIKE
  * FEET ABOVE THE GROUND"). Through a get-up his group is held down (or up) so the clip's lowest bone lies on the floor (`dfLift`,
@@ -49827,7 +49913,16 @@ function updateMutantUnit(u, dt) {
     if (!u.st.riseFrom) { u.st.riseFrom = p.clone(); u.st.riseFrom.y -= (u.dfLift || 0); u.st.riseFloor = u.st.riseFrom.y; }
     const tr = clipTravelAt(u, u.st.riseClipNow, k), c = Math.cos(yaw), sn = Math.sin(yaw);
     p.copy(u.st.riseFrom); p.y += (u.dfLift || 0); if (tr) { p.x += tr.x * c + tr.y * sn; p.z += -tr.x * sn + tr.y * c; }
-    const cx = p.x, cz = p.z; mutClampX(u, p, dt); u.st.riseFrom.x += p.x - cx; u.st.riseFrom.z += p.z - cz;
+    /* (AND NOT SHOVED ALONG THE FLOOR WHILE HE GETS UP — 2026-11-26, "fix the farmers ragdolls they glitch when standing up". The room's
+     * clamp was asked every frame of the rise and its push carried into where the rise began: a ragdoll that came to rest against a
+     * wall, a prop or a castle edge left his origin inside it, and the clamp's damped push slid the whole getting-up body 0.08 m a
+     * frame — 4.8 m/s across the ground for a second and more, on 498 of 555 rise frames (`tools/riseall.js`, `__riseDbg`). Through
+     * the rise only a real escape (over a metre: a body thrown outside the room) is put back; up, his walk and the clamp settle the rest.) */
+    const cx = p.x, cz = p.z; mutClampX(u, p, dt);
+    const push = Math.hypot(p.x - cx, p.z - cz);
+    if (window.__riseDbg) window.__riseDbg.push([u.kindName, +push.toFixed(3)]);
+    if (push > 1.0) { const k = 0.025 / push; p.x = cx + (p.x - cx) * k; p.z = cz + (p.z - cz) * k; u.st.riseFrom.x += p.x - cx; u.st.riseFrom.z += p.z - cz; }   // (an escape is walked back in at 1.5 m/s, never snapped: a 1.09 m correction in one frame was a visible jump)
+    else { p.x = cx; p.z = cz; }
     // and he comes round to you over the last third, once mostly up
     if (k > 0.66) { const want = Math.atan2(camera.position.x - p.x, camera.position.z - p.z), e = (k - 0.66) / 0.34; u.g.rotation.y = yaw + _angDiff(want, yaw) * e * e * (3 - 2 * e); }
     mutAnim(u, dt, 0);
@@ -57168,6 +57263,9 @@ function update(dt, rawDt = dt) {
     );
     camera.position.add(_shakePrev);
   }
+  /* (no view punch here any more — 2026-11-27, the owner, a still with the lens rolled most of a quarter turn in a castle fight: "the camera
+   * tilting has to go what the hell just happened". It was undone each frame only when nothing else had written the look since; in a
+   * fight something did, the roll was never taken back, and every kick stacked another on it.) */
 
   /* AND THE BAR GROWS WITH IT. Drawing a bigger reserve inside the same
    * 150 px would be a ring that changes a number you cannot see: the strip
@@ -57486,7 +57584,7 @@ function saveCheckpoint(spot) {
       // the island's gulls you have put down, and the achievement for all of them
       gullsDown: isleBirds.length ? isleBirds.map((B, i) => (B.m.visible ? -1 : i)).filter((i) => i >= 0) : (isleBirdsDown || []), gullSlayer, crustyLight, skDone, skDead, skName, skInk, marLh: MAR.lhDone ? 1 : 0,
       // the snorkeler's key (0 not given, 1 on the sand, 2 taken) and the pavilion gate it opens
-      lostKey: snorkKey.state, mushGate: mushGateUnlocked,
+      lostKey: snorkKey.state, mushGate: mushGateUnlocked, gateFarm: GATE_FARM && GATE_FARM.talked ? 1 : 0,   // (`gateFarm`: you have talked to the two at it — on a load they are angry already)
       // and the catacombs' own, which the skull key turns
       catDoor: catDoorOpen,
       tavStore: tavStoreOpen,         // the tavern's storeroom, opened with its key
@@ -57975,6 +58073,7 @@ function updateRestore(dt) {
   if (f.lostKey === 1 && snorkKey.state === 0) { snorkMet = true; lostKeyLie(LOST_KEY_AT.x, LOST_KEY_AT.z, true); }
   else if (f.lostKey === 2) { snorkMet = true; snorkKey.state = 2; }
   if (f.mushGate || (f.lostKey === undefined && bz < MUSH_Z - 12)) mushGateUnlocked = true;
+  if (GATE_FARM) { GATE_FARM.talked = GATE_FARM.loaded = !!f.gateFarm; GATE_FARM.angry = false; }   // (the question once a game: `updateGateFarmers`)
   if (f.gullSlayer) gullSlayer = true;
   if (f.crustyLight) crustyLight = true;
   if (f.skDone) skDone = true; if (f.skDead) skDead = true; if (f.skName) skName = String(f.skName); if (Array.isArray(f.skInk)) skInk = f.skInk;   // (the sketchbook's: what you drew and its name)
@@ -63731,8 +63830,8 @@ const UPGRADE_ROWS = [
     desc: 'He stitches four more pockets into your pack. Sixteen slots instead of twelve, for good.' },
   { key: 'ringSlot', item: () => ringSlotIconItem, name: 'Extra Ring Slot', sum: 'Wear 3 rings instead of 2',
     desc: 'A third finger to wear a ring on. Every ring you wear counts, so this is a third ring working for you.' },
-  { key: 'jumpUp', item: () => jumpUpIconItem, name: 'Higher Jump', sum: 'Jump about a quarter higher',
-    desc: 'Springs in your soles. You jump about a quarter higher, for good: onto ledges a step out of reach, and down on whoever is under you.' },
+  { key: 'jumpUp', item: () => jumpUpIconItem, name: 'Higher Jump', sum: 'Jump about a fifth higher',
+    desc: 'Springs in your soles. You jump about a fifth higher, for good: onto ledges a step out of reach, and down on whoever is under you.' },
 ];
 /* AND HE BUYS. The same list and the same pane: what he will take off you,
  * how many you have, and what he gives for one. A fang is a jar. */
@@ -100081,7 +100180,7 @@ function placeGargoyles() {
   for (let i = 0; i < P.length; i++) {
     const p = P[i];
     // (made at a fixed place so its save key is the same every game; then put on its perch)
-    const u = makeMutant(+(C13_X - 60 - i * 2).toFixed(1), +C13_Z.toFixed(1), 'gargoyle', p.y);
+    mutMakeAt = p; let u; try { u = makeMutant(+(C13_X - 60 - i * 2).toFixed(1), +C13_Z.toFixed(1), 'gargoyle', p.y); } finally { mutMakeAt = null; }
     u.g.rotation.order = 'YXZ';
     u.gp = { i, perch: p, mode: 'perch', t: 0, vel: new THREE.Vector3(), seed: Math.random() * 100, eyes: 0, hp0: u.kind.hp, tgt: null };
     gargPerch(u);
@@ -120588,6 +120687,148 @@ function updateTavLookout(dt) {
   if (u.cur !== a) { const p = mutPlay(u, u.kind.anim.idle, true); if (p) { p.paused = false; p.timeScale = 1; } }
   u.mixer.update(dt);
 }
+/* ---- TWO AT THE PAVILION'S GATE (2026-11-26, the owner: "put two farmers outside the pavillion at the gate mad pacing around and
+ * they say "Is this your place?" you say "Yes" they go "GET HIM!" if you say "No" they go "LIAR!" and attack. make them each drop a
+ * jar. put a rock to throw at them shortly before them."). Two of the castle's farmers, each with his own tool, out on the sand in
+ * front of the yard's gate (its hinge at x 10.9, z -480.8; the sea is −X), pacing up and down two short lines in opposite step,
+ * turning at the ends with a beat of standing. Within 11 m they stop and stand facing you; within 6.5 m the nearer one asks —
+ * `GATE_FARM_NPC` — and whatever you answer, both come for you once the box goes. Hit either of them first and they come anyway.
+ * Each throws a jar out of his coat as he dies (Elvédor's way: `dropJar` with `fly`). Their save keys are their spawn spots, so a
+ * dead one stays dead; that you have talked rides the save (`gateFarm`), and on a load they are angry already. The stone to throw
+ * is laid with the pavilion (`GATE_FARM_STONE`). Units are made lazily, on the first frame within 260 m of the gate, the tavern's
+ * lookout's way (a `var`: the frame can run before this line). */
+var GATE_FARM = { built: false, talked: false, loaded: false, angry: false, units: [], at: { x: 10.9, z: -480.8 },
+  /* (the owner, the same night: "make one farmer banging on his gate" — the axe man stands at the iron and chops at it, the rake man
+   * paces; `bang`: at the gate's leaf, facing it, his overhead chop on a loop, and each blow rings the bars and shakes them) */
+  lines: [{ x: 9.9, z0: -481.3, z1: -481.3, from: 0, ph: 0, bang: true }, { x: 7.2, z0: -478.9, z1: -483.2, from: 5, ph: 0.5 }], shake: 0, bangT: 0 };
+function gateFarmKind(i, from) {
+  const name = 'gateFarmer' + i;
+  if (MUT_KINDS[name]) return name;
+  const b = MUT_KINDS['farmer' + from]; if (!b) return null;
+  MUT_KINDS[name] = Object.assign({}, b, {
+    fortBody: false, tav: false, frenzy: false, wakeAt: 0, solo: true,     // (out on the beach: not the fort's walls, not the hall's, not the beach's pack)
+    provoke: () => gateFarmProvoke(true), sleepIdle: null, first: b.anim.idle,
+  });
+  return name;
+}
+const GATE_FARM_NPC = {
+  name: 'Farmer',
+  script: {
+    start: { text: 'Is this your place?', choices: [{ label: 'Yes', to: 'yes' }, { label: 'No', to: 'no' }] },
+    yes: { text: 'GET HIM!', rate: 24, choices: [], hint: '', end: 1300, enter: () => gateFarmShout() },
+    no: { text: 'LIAR!', rate: 24, choices: [], hint: '', end: 1300, enter: () => gateFarmShout() },
+  },
+  sprite: null, head: null, fov: 40,
+  onLeave: () => gateFarmProvoke(false),
+};
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { GATE_FARMS: GATE_FARM, gateFarmProvokeS: (q) => gateFarmProvoke(q) }));
+function gateFarmShout() {
+  for (const u of GATE_FARM.units) if (u.st.alive) try { farmVox('shout', u.kind.voice, { x: u.g.position.x, z: u.g.position.z, force: true, p: 1 }); } catch (e) {}
+}
+function gateFarmProvoke(quiet) {
+  const G = GATE_FARM; if (G.angry) return;
+  G.angry = true; G.talked = true;
+  for (const u of G.units) {
+    if (!u.st.alive || u.retired) continue;
+    u.st.awake = true; u.st.mine = true; u.st.foe = null; u.st.cool = 0.5 + Math.random() * 0.4; u.st.step = 0;
+    u.holdAnim = false;
+    u.st.roar = 0.5; u.st.roarClip = u.kind.anim.roar;
+  }
+  if (!quiet) gateFarmShout();
+}
+function gateFarmHead(u) { return (u.bones && u.bones.head) || (u.model && u.kind.file && u.model.getObjectByName(FJ(u.kind.file, 'Head'))) || u.g; }
+// the leaf's middle, from its bars (`MGATE.cols`), a stride out on the sand side, and the way to face it
+function gateFarmBangSpot() {
+  if (!MGATE || !MGATE.cols || !MGATE.cols.length) return null;
+  let x = 0, z = 0; for (const c of MGATE.cols) { x += c.x; z += c.z; } x /= MGATE.cols.length; z /= MGATE.cols.length;
+  return { x: x - 0.95, z, yaw: Math.PI / 2 };
+}
+function gateFarmBang(u) {
+  const G = GATE_FARM, p = u.g.position, d = Math.hypot(camera.position.x - p.x, camera.position.z - p.z);
+  /* (heard only once you are near — the owner: "with sound effect you start hearing when close": nothing past 28 m, coming up
+   * as you walk in, and the bars' own rattle only inside 14 m) */
+  G.bangs = (G.bangs || 0) + 1;
+  if (d < 28) try { playSampleAt('metalHit', p.x + 0.9, p.z, { gain: 1.4 * Math.min(1, (28 - d) / 10), ref: 5, far: 28, rate: 0.82 + Math.random() * 0.12, jitter: 0.05 }); } catch (e) {}
+  if (d < 14) try { sfxGateRattle(); } catch (e) {}
+  if (!gateOpen) G.shake = 0.05;
+}
+function updateGateFarmers(dt) {
+  const G = GATE_FARM; if (!G) return;
+  // the iron shivers on its hinge after each blow (only while it is shut: an open gate is `updateGate`'s)
+  if (G.shake > 0.002 && MGATE && MGATE.pivot && !gateOpen && gateT === 0) { G.bangT += dt; MGATE.pivot.rotation.y = MGATE.shut + Math.sin(G.bangT * 55) * G.shake; G.shake *= Math.exp(-dt * 9); if (G.shake <= 0.002) MGATE.pivot.rotation.y = MGATE.shut; }
+  const c = camera.position, dzG = Math.abs(c.z - G.at.z);
+  if (!G.built) {
+    if (dzG > 260 || inRoom()) return;
+    try {
+      const names = G.lines.map((L, i) => gateFarmKind(i, L.from)); if (names.some((n) => !n)) return;
+      G.built = true;
+      G.lines.forEach((L, i) => {
+        const u = makeMutant(L.x, L.z0, names[i], 0);   // (made where it stands, so its save key is the same every game)
+        u.gf = { L, dir: Math.sign(L.z1 - L.z0), wait: L.ph, jar: false };
+        u.packList = G.units;                           // (its own two, not the castle's street: `farmArm`'s `packList`)
+        u.g.visible = false;
+        G.units.push(u);
+      });
+    } catch (e) { G.built = false; return; }           // (a constant not yet read, on the very first frames: next frame)
+  }
+  const near = dzG < 170 && !inRoom();
+  for (const u of G.units) {
+    if (u.retired) continue;
+    if (!u.st.alive || u.rag) u.g.visible = near || !!u.rag; else u.g.visible = near;
+    // each throws a jar out of his coat as he goes down (`elvDie`'s toss)
+    if (!u.st.alive && !u.gf.jar) {
+      u.gf.jar = true;
+      const H = u.rag && (u.rag.byName['Character1_Hips'] || u.rag.parts[0]), p = H ? H.p : u.g.position, a = Math.random() * Math.PI * 2, s = 1.2 + Math.random() * 0.8;
+      const x = p.x + Math.cos(a) * 0.4, z = p.z + Math.sin(a) * 0.4;
+      try { dropJar(x, z, groundUnder(x, z) + 0.02, null, null, { y: Math.max(p.y, 0) + 1.1, vx: Math.cos(a) * s, vy: 2.8 + Math.random() * 1.2, vz: Math.sin(a) * s }); } catch (e) {}
+    }
+  }
+  if (G.angry || !near) return;
+  const live = G.units.filter((u) => u.st.alive && !u.retired && u.model && u.mixer && u.clips);
+  if (!live.length) return;
+  // a load after you had talked to them: they are angry already, the moment you are near
+  if (G.loaded) { if (live.some((u) => Math.hypot(u.g.position.x - c.x, u.g.position.z - c.z) < 14)) gateFarmProvoke(true); return; }
+  if (G.talked) return;                             // (asked: the answer, and the box going, wake them — `GATE_FARM_NPC.onLeave`)
+  let nearest = null, nd = Infinity;
+  for (const u of live) {
+    if (u.st.awake || u.kickRag) continue;
+    const p = u.g.position, dx = c.x - p.x, dz = c.z - p.z, d = Math.hypot(dx, dz), F = u.gf;
+    if (d < nd) { nd = d; nearest = u; }
+    let clip = u.kind.anim.idle, yaw = u.g.rotation.y, rate = 1;
+    if (d < 11) { yaw = Math.atan2(dx, dz); F.wait = 0.4; F.bangA = null; }        // you: he stops and stands glaring at you
+    else if (F.L.bang) {
+      // at the iron: stood in front of the leaf's middle, facing it, chopping
+      const B = gateFarmBangSpot(); if (B) { p.x += (B.x - p.x) * Math.min(1, dt * 4); p.z += (B.z - p.z) * Math.min(1, dt * 4); yaw = B.yaw; }
+      const nm = u.clips.mChop ? 'mChop' : u.clips.mCut ? 'mCut' : null;
+      if (nm) {
+        clip = nm; rate = 0.9;
+        const a = u.clips[nm], f = a && u.cur === a ? a.time / a.getClip().duration : 0;
+        if (F.bangA !== null && F.bangA !== undefined && F.bangA < 0.8 && f >= 0.8) gateFarmBang(u);   // (the blow lands where the chop's head comes down)
+        F.bangA = u.cur === a ? f : null;
+      }
+    }
+    else if (F.wait > 0) F.wait -= dt;                                               // the beat at the end of the line
+    else {
+      const sp = 1.35, want = F.dir > 0 ? Math.max(F.L.z0, F.L.z1) : Math.min(F.L.z0, F.L.z1);
+      p.z += F.dir * sp * dt; yaw = F.dir > 0 ? 0 : Math.PI; clip = u.kind.anim.walk || clip;
+      const cs = u.clipSpeed && u.clipSpeed[clip]; if (cs > 0.2) rate = THREE.MathUtils.clamp(sp / cs, 0.6, 1.6);   // (the feet at the body's pace)
+      if ((F.dir > 0 && p.z >= want) || (F.dir < 0 && p.z <= want)) { p.z = want; F.dir = -F.dir; F.wait = 0.5 + Math.random() * 0.7; }
+    }
+    const dy = Math.atan2(Math.sin(yaw - u.g.rotation.y), Math.cos(yaw - u.g.rotation.y));
+    u.g.rotation.y += THREE.MathUtils.clamp(dy, -6 * dt, 6 * dt);
+    u.holdAnim = true;
+    const a = u.clips[clip] || u.clips[u.kind.anim.idle];
+    if (a && u.cur !== a) { const pa = mutPlay(u, clip, true); if (pa) { pa.paused = false; } }
+    if (u.cur) u.cur.timeScale = rate;
+    u.mixer.update(dt);
+  }
+  // within reach of words: the nearer one asks
+  if (nearest && nd < 6.5 && !dialogOpen && !dying && introDone && !frozen()) {
+    G.talked = true;
+    GATE_FARM_NPC.sprite = gateFarmHead(nearest); GATE_FARM_NPC.head = GATE_FARM_NPC.sprite;
+    startDialog('start', GATE_FARM_NPC);
+  }
+}
 function tavDancerProvoke(src) {
   for (const d of tavDancers) {
     if (!d.st.alive || d.st.awake) continue;
@@ -138356,7 +138597,7 @@ window.__bw = {
    * without waiting on a pane nobody is looking at. */
   frame: (n = 1) => { for (let i = 0; i < n; i++) animateFrame(); },
   physProps, cullUnits, rebuildCullUnits, cullBeyondFog, updateFarProps, updateHover, updateLightPool,   // (the perf pass, 2026-10-30: per-frame work, for timing it)
-  bootGateS: () => ({ hold: bootHold, holdT: bootHoldT ? Math.round(performance.now() - bootHoldT) : 0, left: bootLeft(), all: startLeft(), roomRestore: !!roomRestore, restore: !!restore, warmBlock: !!warmBlock, roomWarm: roomWarm ? roomWarm.view + '/' + roomWarm.i + '/' + roomWarm.tex.length : 0, look: bootLookDone, smooth: bootSmoothN, idle: bootIdleSince ? Math.round(performance.now() - bootIdleSince) : 0, owed: warmOwed(), stage: !!bootStageHold && bootStageHold(), deathWait }),
+  bootGateS: () => ({ hold: bootHold, holdT: bootHoldT ? Math.round(performance.now() - bootHoldT) : 0, left: bootLeft(), all: startLeft(), roomRestore: !!roomRestore, restore: !!restore, warmBlock: !!warmBlock, roomWarm: roomWarm ? roomWarm.view + '/' + roomWarm.i + '/' + roomWarm.tex.length : 0, look: bootLookDone, smooth: bootSmoothN, idle: bootIdleSince ? Math.round(performance.now() - bootIdleSince) : 0, castWho: (() => { try { const c = camera.position, o = []; for (const u of mutants) { if (u.retired || !u.st || !u.st.alive || !u.g || Math.abs(u.g.position.x - c.x) > 45 || Math.abs(u.g.position.z - c.z) > 45) continue; if (!u.model || u.parLate || u.clipsPending > 0) o.push(u.kindName + (u.model ? '' : ':nomodel') + (u.parLate ? ':parLate' : '') + (u.clipsPending > 0 ? ':clips' + u.clipsPending : '')); } return o.slice(0, 6).join(','); } catch (e) { return 'ERR'; } })(), owed: warmOwed(), here: (() => { try { const near = (x, z) => Math.hypot(camera.position.x - x, camera.position.z - z) | 0; return 'is' + (instantStart ? 1 : 0) + ' z' + (camera.position.z | 0) + ' h' + near(HATCH_X, HATCH_Z) + ' m' + near(MUSH_X, MUSH_Z) + ' d' + near(DRAIN_X, DRAIN_Z) + ' u' + near(UC_X, UC_Z) + ' ->' + warmOwedHere(); } catch (e) { return 'ERR ' + e.message; } })(), owedWhy: (warmSteps.length ? 'steps' + warmSteps.length + ':' + (warmSteps[0] && warmSteps[0].name || '') + ' ' : '') + (warmBlock ? 'block ' : '') + (!drainWarmed ? 'drain ' : '') + (!mushWarmed ? 'mush ' : '') + (!bunkerWarmed ? 'bunker ' : '') + (!ucWarmed && ucWarm ? 'uc' : ''), stage: !!bootStageHold && bootStageHold(), deathWait }),
   /* The lamp pool, for a still: a frozen loop never points the twelve at
    * anything, so a hand-placed camera renders an unlit room. */
   lamps: () => updateLightPool(),

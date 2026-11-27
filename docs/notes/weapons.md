@@ -3473,3 +3473,30 @@ same jump again, and the kick's timing and its held press.
   and the ring slot's 6; `drawUpgradeIcon('jump')`): bought, the stock is 0, and a save carries it in `trader` — the restore sets
   `jumpUp` from that stock (an old save has it in stock: not bought). It takes no slot (`shopNeedsSlot`). Measured: 7 jars -> 2,
   owned, a second buy refused. Harness: `__bw.jumpUp`, `bloodJarsS`, `keysS`, `traderBuyS`, `TRADER_STOCKS`, `shopHadS`, `kickFPS`.
+
+## 2026-11-26 (night) — the hook's pull smooth end to end; the kick's view punch; the jump's upgrade is the start
+"test the game and use the movement like a speedrunner use th hook to move fast and make it seem smoother to do … improve the feel of
+the kicks", then "make the upgraded jump height the starting height then add the upgrade amount for sale".
+`tools/hooksmooth.js` (the momentum probe's hook throw, logged EVERY frame: ground and vertical speed, the carry; `SMOOTH` the
+biggest frame-to-frame change). PROBE TRAP in `tools/momentum.js`: its `tap` runs two frames, so the sample after a tapped hop reads
+double (its "30.8 m/s at the hop" was that, not the game).
+- **The start**: from standing to 8.2 m/s in one frame, then a ramp. `HK.zipFrom` (your speed when it bit, min 2.5) eased out to
+  `HOOK_ZIP.max` over `ramp`: 4.8, 6.7, 8.5 … 17.5.
+- **Grinding**: hauled at a point on the sand ahead you were driven into it and every lump pushed back — 20 → 12 → 17 → 11 m/s and
+  ±4 m/s vertical, frame to frame. Feet within 0.55 m of `groundY` and the point not right under you: `vy` lifted to ≤ 1.6, so you skim.
+- **The hand-off**: the frame the pull ended moved you by neither it nor the carry (11.0 → 1.7 → 9.4 m/s): `hookZipMove` steps the
+  carry on that frame too. Now 11.5 → 10.6 → 10.3, the carry easing 10.3 → 8.5 with no wobble (the wobble was the grinding's).
+- **The drop**: the last frames of a pull at a point below snapped your fall 0 → -8.6 m/s in one frame. `HK.zipVy` eases at 60
+  m/s² (kept in step with the skim's lift, or it snapped back to the chain's drop when the lift let go): -1.0, -2.2 … -6.8.
+  Biggest frame-to-frame change across a whole pull: 9.4 → 4.8 m/s (the first frame off standing).
+- **REMOVED THE SAME NIGHT** (the owner, a still with the lens rolled most of a quarter turn: "the camera tilting has to go"): its
+  undo ran only when nothing had written the look since the frame before; in a fight something does, so the roll was never taken back and
+  every kick stacked another. Nothing turns `camera.quaternion` for a kick now (`viewPunch` is left uncalled); a lens effect has to be put
+  on just for the render and taken off right after, never left on the camera. Measured after: 0.00° roll through six kicks.
+- ~~**The view punch**~~ (`viewPunch(pitch, roll)`, `vpP/vpR`, spring K 260, ζ 0.78): undone at the frame's start beside `_shakePrev`
+  (only if nobody wrote the look since — the mouse's write drops it, it never builds up), applied after the shake; not while dying or
+  in a dialogue. `kickFeel` (once per kick, from `sfxKickHit`; `KICK.felt` reset in `kickStrike`): the view punched 3.1° up and 2.1°
+  rolled, back in ~0.25 s after the hold; 1.2 m/s back off what you kicked on the ground (0.17 m); the hold 0.05-0.10 s by
+  `KICK.mom`. `__bw.vpS()`, `hitstopS()`, `kickS()`. `tools/gatefarm.js &fight=1&kick=1` measures it.
+- **The jump**: `JUMP_V` 4.5 → 5.0 (what the upgrade was, 0.83 m), `JUMP_V_UP` 5.0 → 5.45 (+15.5 cm again, 0.985 m: a 1.40 m ledge
+  with `ROCK_STEP`). The shop's line says "about a fifth higher". Climbs laid out to the old lift are now easier, none harder.

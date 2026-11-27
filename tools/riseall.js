@@ -6,6 +6,7 @@
  * who floats never does) and his group over the floor. Floors by `standFloorS` (the castle's own walking floor).
  *   PB_PORT=4241 PB_WAIT=1500 sh tools/probe.sh 'evalFile&f=/tools/riseall.js' <out> */
 const Q = new URLSearchParams(location.search), N = +(Q.get('n') || 3);
+w.__riseDbg = [];
 const ev = async (f) => w.eval(await (await fetch(f + '?' + Date.now())).text());
 await ev('/tools/fortboot.js'); log('boot', JSON.stringify(await w.__fortBoot()));
 await ev('/tools/burntest.js'); b.settings.devMode = true; w.__clockOn();
@@ -54,4 +55,5 @@ for (let round = 0; round < N; round++) for (const how of ['kick', 'clip']) for 
 for (const r of rows) log(r);
 for (const r of popRows) log('JUMPS', r);
 log('get-ups', tot, '| floating', bad);
+{ const D = w.__riseDbg || [], big = D.filter((x) => x[1] > 0.02); log('RISE CLAMP: frames', D.length, '| clamp pushes over 2 cm', big.length, '| biggest', D.reduce((m, x) => Math.max(m, x[1]), 0).toFixed(3), '| mean of those', big.length ? (big.reduce((a, x) => a + x[1], 0) / big.length).toFixed(3) : 0); }
 log('DONE');

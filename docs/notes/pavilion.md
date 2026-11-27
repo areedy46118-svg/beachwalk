@@ -602,3 +602,21 @@ column) INWARD is undone unless it goes through the gate's own opening with the 
 below the upper room (`H_ROOM` − 0.4), so over the wall's top on the chain counts; the pull is ended, its carry dropped. Out
 is always free; a move over 2 m in a frame is a placing (a load, the dungeon's door), not a step. `tools/yardbar.js`: over the
 top and at the shut gate — outside; the gate open — in.
+
+## 2026-11-26 (night) — two farmers at the gate (`GATE_FARM`, `updateGateFarmers`, `tools/gatefarm.js`)
+The owner: two farmers "outside the pavillion at the gate mad pacing around", "Is this your place?" — Yes: "GET HIM!", No: "LIAR!" —
+and they attack; each drops a jar; a rock to throw shortly before them; then "make one farmer banging on his gate" "with sound effect
+you start hearing when close".
+- Two castle farmer kinds copied (`gateFarmKind`: farmer0 the axe, farmer5 the rake) with `fortBody`/`tav` off and `solo` on (out of
+  the beach pack's logic), `wakeAt` 0, their own `provoke`. Made lazily within 260 m (`makeMutant` at fixed spots: stable save keys),
+  `packList` their own two; drawn within 170 m and not in a room.
+- **The axe man** stands a stride out from the leaf's middle (`gateFarmBangSpot`, off `MGATE.cols`), facing the iron, `mChop` on a
+  loop at 0.9; at 0.8 of the clip (`gateFarmBang`) `metalHit` (heard only inside 28 m, louder as you come in), `sfxGateRattle`
+  inside 14 m, and the shut leaf shivers on its hinge (`G.shake`, only while `gateT` is 0). **The rake man** paces x 7.2, z -478.9 ..
+  -483.2 on his walk (rate fitted to his real 1.35 m/s), a 0.5-1.2 s beat at each end. Within 11 m both stop and face you.
+- Within 6.5 m the nearer asks (`GATE_FARM_NPC`); the answer's line shouts (`farmVox('shout')`), and the box going (`onLeave`) wakes
+  both. Hit one first: both come. `gateFarm` in the save: on a load after talking, they are angry already within 14 m (`loaded`).
+- Each throws a blood jar out of his body as he dies (`dropJar` with `fly`, `u.gf.jar`). The stone: `gs` at (8.9, -470.5), laid with
+  the pack's.
+- Measured: the blows 4 in 6 s; asked at 6.5 m; "LIAR!"; a 15 s fight (dev mode off) 14 swings, 6 hurt you; both killed, 2 jars.
+  PROBE TRAPS: the dialogue types on REAL timers (sleep between frames to see its choices); a fight in dev mode holds swings.

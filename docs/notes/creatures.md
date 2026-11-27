@@ -4140,3 +4140,15 @@ first-saved-first, so it kept the life layer's turn. three's mixer writes a bone
 pose (a one-frame idle, a held wind-up, constant tracks) the look, breath and lean were stacked again every frame: the Scourger's head
 and chest rolled round (`temple.md`, same date). Now restored in reverse. A layer must still save every bone before it touches it.
 `kind.stopFloor` (swing pick, beside `stopPick`): how much weight is left to a blow drawn far from its own stand-off (default 0.15).
+
+## 2026-11-26 (night, later) — a kicked man no longer slides across the floor getting up
+"fix the farmers ragdolls they glitch when standing up". `tools/riseall.js &pops=1` (+ `__riseDbg`, `RISE CLAMP`).
+- **THE SLIDE WAS THE ROOM'S CLAMP**: the rise branch (`riseClipNow`) asks `mutClampX` every frame and carried its push into
+  `riseFrom`; a ragdoll at rest against a wall, a prop or a castle edge left the origin inside it, and the damped push slid the whole
+  getting-up body 0.08 m a frame (4.8 m/s) — on 498 of 555 rise frames. Through the rise the push is ignored; over a metre (an escape:
+  thrown out of the room) it is walked back at 2.5 cm a frame, never snapped (a 1.09 m one-frame correction showed as a jump).
+- **The blend into the stand-up is as long as the body has to go**: `ragOut.T` = the farthest any ragdoll part is from the stand-up's
+  first-frame bone / 3.5 m/s, 0.55-1.3 s (it was 0.55 always: a head crossing 2-4 m at 0.13-0.18 m a frame).
+- After: kick get-ups' worst joint 0.15-0.25 m in one frame on most (was 0.4-0.6), far fewer frames over 0.12 m. LEFT: the frame he is
+  counted up still shows a 0.2-0.45 m hand or toe on some (`dfOut`, the stand-up → walk hand-over), and one rare 2.5 m toe at a blend's
+  start (`mStandD`) — not traced.
