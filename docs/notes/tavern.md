@@ -1236,3 +1236,167 @@ not whole). `CAST_WAIT_MAX` 5 → 10 s (a slow machine parses a body in seconds)
   ground in the tavern"): falling, the walk looks for the floor from where the feet WERE (`tavPrevFeet`, ≤ 3 m up), so a long
   frame or a hard drop past `TAV_AIR` lands on the flags, not the ground under the building. `tools/tavfall.js` (hook pulls at
   16×5 from 26 spots, at 60 fps and at 12–20 fps; drops from 2–6 m on 120–250 ms frames): 0 under the flags.
+
+## 2026-11-26 — the tavern's men punch; two at a time; the drunk fights from where you can see him
+"the drunk in the tavern needs better animations i cant read him and they dont connect and the farmers in there should punch cuz
+they have no weapons they barely hit me. the tavern was lagging very bad as well". `tools/tavfight.js &who=drinkers|dancers|drunk|all`.
+- **Fists** (`tavFistKit`, spread into `tavDrinkerKind` and `tavDancerKind`): a tavern man is a copy of a castle farmer and kept
+  that farmer's `use` resolved against HIS tool — the axe's great cuts with an empty hand. His temperament's `moves` are resolved
+  again against `FARM_MOVES.fist` (fsPunch/fsJab/fsHook/fsSwipe/fsKick/fsKick2), idle pools a man's (not `mSwIdle`).
+- **Two at a time** (`tavSwarmOK`, the kind's `swarm`): they shared the beach's one turn (`mutToken`) — four drinkers threw 5 blows
+  in 40 s, two of them none, stood 1.2 m off. Now one may swing out of turn while fewer than two others are mid-blow and none
+  began in the last third of a second: 45 blows, 23 landed in 40 s on a player standing still. A deliberate rise in how hard the
+  room hits (the owner asked).
+- **The drunk**: his hands DID reach you at the hurt (0.13 m median) but from 0.66 m, inside your view, clips at 1.15-1.25×.
+  `dSwipe`/`dButt`/`dSpin`: lunges cut (0.55/0.8/0.3), `stop` 1.45/1.30/1.6, `clipRate` 1.0, winds 0.80/0.66/1.10. After, on
+  the open floor: he fights from 1.15-1.4 m, 22 blows / 21 landed in 40 s, contact median 0.49 m. Not re-authored: no new clips.
+- **The lag was not reproduced headless**: 1.8-3.5 ms a frame median, worst 12-30 ms, 240-400 draw calls, through every one of
+  these fights. If it is still there, `?fps` in the owner's pane while it happens is the next reading.
+- **PROBE TRAPS**: pinned beside the bar the drunk cannot reach you and circles at 2.9 m for ever (it looks like a stalled AI);
+  pinned at one man's own position you are inside him. Stand on the open floor in front of the dancers.
+
+## The window at the end of the hall (2026-11-26, `buildTavWindow`, `buildTavRail`, `tavPlayerOut`)
+
+The owner: make the door at the hall's end "a window that shows outside the tavern high up … i want to be able to kick enemies
+out of this window and they fall to their death", then "make it a wooden railing that breaks make the textures and break sound
+good", "no its the right side of the tavern not looking over the hoist", "make the player die if falling out the window too".
+
+- **The opening.** The scan's door (leaves, grate, frame: a flat cluster 13.19-13.35 m down the hall, `tools/tavwin.js`) and the
+  alcove behind it are cut out of the scan's index (226 faces). A **1.1 m sill did not work**: a kicked man's hips went over and
+  his shins caught, and his legs pulled him back in every time. It is a hoist door now: a 0.2 m stone threshold, **ghost**
+  (`bwGhost`), so no wall or floor index sees it.
+- **The tavern's floor rule takes any drawn top for floor** (`keepFloorAt` trustDrawn). Anything you add at the window that is
+  not a ghost becomes a wall a ragdoll can't pass and a top it lies on. The railing's first version stopped kicked men dead even
+  once it was broken, because the index keeps what it was built with. The railing and posts are ghosts and collide only through
+  `tavRailBody`.
+- **The fall.** Past the end wall, the ragdoll floor is 400 m down (`tavOutside`, in both of `updateMutRagdoll`'s floor
+  branches), and so is a gib's (`updateGibs`). `tavFallTick` kills a man 2.5 m under the floor and hides him 30 m under.
+  `kickMan` throws a man at the window when it is within 3.6 m and ahead (`tavWindowAhead`). `tavWindowThrow` seeds every part at
+  4.2 + 1.7·d m/s. A flat 6 m/s from the edge of the reach laid him down 0.5 m short of the lip.
+- **The railing.** Oak, using the room's own way of drawing wood: a canvas grain (`tavRailTex`), unlit, `toneMapped` off, and
+  shading by face in vertex colours. It has three posts and two bays, each bay one merged mesh. A part moving over 2.4 m/s (or a
+  `kfly` body) breaks a bay. A slower one is held at its face. Your kick (`tavRailKick`, in `kickStrike` before the braziers) and
+  a swing (`tavRailStrike`, at the top of `glassStrike`) break one too. Rails snap in 2-3 pieces and balusters in 1-2, and about
+  78 % go out. The sound is the recorded `woodPlankBreak` with `woodFurnBreak` 35 ms under it, plus the crunch. The posts stand.
+  It is whole again on every entry (`tavRailMend` in `startTavern`).
+  - **Gib traps learned here.** The rubble batch stripped every attribute but position, normal and uv, so vertex-coloured
+    pieces settled black; it now keeps `color` when the material uses it. A gib settles with its x/z tilt zeroed, so a piece
+    turned upright in its geometry lands standing on end. Build it lying down and turn the mesh instead.
+- **You.** A whole bay or a post holds you at local z -12.75 (`tavWindowStop`). A broken bay lets you out: past -12.93 (the
+  hall's last walk cell is -12.95), `tavPlayerOut` takes over the frame. It drops the floor 400 m, carries the step on, and won't
+  let you back under the floor. At 24 m down it is the landing: thuds, trauma, `damagePlayer(999)` and `playerDied`. In dev mode
+  it puts you back at your last spot in the hall. `clampPlayerToRoom`'s tavern branch returns while `tavOut` is set, or it
+  snaps you back to `tavLastSpot`.
+- **The view** (`tavVista`) is a radius-320 BackSide sphere round the window. Its shader samples a cube caught once per entry
+  under the entry cut (`tavVistaCapture`), while you still stand on the keep's terrace. **Caught from inside the hall, the cube
+  is black**, because the outside is culled there. The capture point is keep-local (5, 25, 0), off the building's +X face, which
+  stands at x 0.7-1.7 at that height (`tools/keepface.js`). That is the keep's RIGHT side as you come up from the dock (`tools/keepsides.js`).
+  The direction map is `vec3(-d.z, d.y, d.x)` (hall -Z → keep +X). A checkpoint loaded into the hall never runs the cut, so it
+  shows the drawn fallback: stars, a moon, black sea.
+  - The keep's `Object_24` is its 168 m starfield dome. The grey bar you see at the top left of the window is the hall's own
+    moon shaft (`buildTavMoon`) against the sky, not the keep.
+- Tools: `tools/tavwintest.js` (bodies out, your stop, railing breaks, stills; `&cap=1`, `&kw=`), `tools/tavfall.js` (you, held /
+  out / dead / dev mode), `tools/tavview.js` (the view as the cut catches it), `tools/keepsides.js`, `tools/keepface.js`, `tools/keepray.js`.
+
+## The window, later the same day: a real outside, the man at the railing, posts that break (2026-11-26)
+
+The owner: "they keep spawnig back up once kicked you should see outside and watch there bodies fall and hit the ground with
+impact and ragdoll physics simply make it a window outside", "where that window is in relation to the tavern should actually be
+able to see outside like it would be if you went in the tavern and looked out that window exactly. think of the tavern outside and
+inside together as one", "improve the texture of the railing there and make the posts break too", "add a knight standing looking
+over the balcony you can run and kick off" — "i meant farmer". This supersedes the sections above on the 400 m fall, the hiding
+30 m under and the caught view (`tavVista` is only the fallback now).
+
+- **"SPAWNING BACK UP" WAS THE RAGDOLL'S RESCUE** (`updateMutRagdoll`): a part more than 20 m from `u.g.position` is read as a
+  broken solve and EVERY part is set back at the unit's spot. A man falling out of a window passes 20 m in two seconds.
+  `tools/tavlook.js &kill=1` showed hips at z -29.2, then -12.8. A tavern body outside (`r.tav && tavOutside`) is exempt.
+- **WHICH SIDE.** The hall is the keep's inside: you walk in at the terrace door going keep -Z, which is hall +X, so the hall's
+  -Z end wall is the keep's **-X face**. That is the building's own right-hand side, and the face the owner aimed at from the
+  shore under it ("the right side of the tavern not looking over the hoist"). I read "right" as +X first (from the dock, your
+  right) and pointed the view the wrong way. When someone names a side of a building, work out the geometry through its door.
+- **THE OUTSIDE IS THE KEEP'S OWN** (`buildTavKeepOutside`, `TAV_YARD`): every mesh under `keepWorld` gets a second `Mesh` on the
+  SAME geometry, turned -90° about Y under `tavWorld`, so keep-local (A -8.35, floorK 16.1, B 0) sits at the window's outer edge.
+  The keep's -X face stands at x -8.0 to -8.2 there (`tools/keepland.js`). Faces are kept only past the wall's plane; a face
+  crossing it is kept only under the hall's floor, or if it is the sky's or the sea's shader. That leaves 14 meshes and about
+  48k of the keep's 164k faces. A checkpoint loaded into the hall calls `loadKeep()` and builds it when it is in; until then the
+  stand-in shelf and `tavVista` show.
+  - **The hall relights every `MeshBasicMaterial` under `tavWorld` by its torches** (`tavRelightAll`), so anything unlit you
+    put outside goes black. Mark the material `userData.tavOwnLight` (the yard's twins, the stand-in rock).
+  - The keep's rock and timber are lit `MeshPhysicalMaterial`s and stood black in the hall (its lights are ducked, the keep's
+    own are not there). Each gets an unlit twin with the same map under a night tint (0.50, 0.50, 0.74). The sky dome and the
+    sea are shaders with their own light and are shared as they are. The two fogs are nearly the same violet.
+- **THE GROUND IS THE KEEP'S** (`tavOutFloor`): hall-local → keep-local (kx = A + (hz - edge), kz = B - (hx - cx)), then
+  `keepDrawnFloor` on `KEEP_SITE` for the highest face under the body, else the keep's sea (`KEEP_SEA` - 0.3). `TAV_YARD.sea`
+  says which the last answer was. kx is clamped past the plane: a query inside the building found its floors, and you "landed"
+  on the threshold and died there. The rock is 6 m down right under the wall; the sea is 17 m down a few metres out.
+- **THE LANDING** (`tavFallTick`): a man cries out as his hips pass the edge, his maps are lifted ×6 (the torches lit him, and
+  outside he was a black speck), and he dies when ANY part of him touches its floor more than 2 m under the hall's (or his hips
+  come within 0.8 m of theirs; 8 s is the backstop). On rock: thuds, blood, a stain, dust. In the sea: the splash.
+  - Hips-only missed a man hung across a ledge over a steep face (`keepDrawnFloor` skips steep faces, so his hips had no floor
+    short of the sea). "Lost two thirds of his speed" was wrong too: his hips jerk on his own limbs in the air, and it killed
+    the orc half way down.
+  - A body that breaks a bay is given 4.2 m/s outward on every part; damped instead, it lay on the threshold and got up inside.
+- **You** (`tavPlayerOut`): on the threshold the floor is its own top; past the edge it is `tavOutFloor`, and a landing after
+  2.5 m or more of fall kills (5.6 m onto the rock under the wall, measured). Dev mode puts you back.
+- **The railing**: `tavRailTex` is dark worn oak now (256×64: growth bands, grain bent round three knots, pores, scuffs, dark
+  arrises). Each post is a stump that stays and a post over it that snaps off with the first bay beside it to go.
+- **The man at the railing** (`buildTavLookout`, `tavLookoutKind`): one of the hall's farmers (bare-handed, `wakeAt` 0) held at
+  the middle of the right bay, facing out, on his idle (the dancers' way of holding a man). `tavCastOwed` waits on him at the
+  door. A kick from behind throws him (`tavWindowAhead` now aims at the opening's nearest point, not its middle, so a man at one
+  side goes straight out). Hit any other way, he turns and fights.
+- Measured (`tools/tavlook.js`, `tools/tavwintest.js`, `tools/tavfall.js`): the farmer out at 0.33 s, dead in the sea at 2.75 s,
+  17.3 m down; the orc 3.07 s; Wong on the rock at 6.5 m, 2.90 s; all still lying there 12 s on. You: held by a whole railing,
+  out through a broken bay, dead at 1.70 s.
+- Tools added: `tools/tavlook.js` (`&kill=1`), `tools/tavyard.js`, `tools/keepland.js`, `tools/keepwin.js`, `tools/keepparts.js`,
+  `tools/keepsides.js`, `tools/keepface.js`, `tools/keepray.js`.
+
+## 2026-11-26 (night) — the man at the railing goes out limp; the kick-out's hitch; the view's light; Wong's and the drunk's blows
+"fix the window lag when kicking out. make him actyally fall like a ragdoll out the window he slides down on his feet just have him
+naturally hit the ground. make wong and the drunks hits connect better visually its bad", and a still looking down past the broken
+railing: "fix this laggy ass part too and the textures here". Probes: `tools/tavkick.js` (a real Q press on him: &case=behind|angle|
+side, the frame's real time, his posture every half second), `tools/tavout.js` (the outside weighed, shown/hidden, `&edge=1` stills
+from the broken bay), `tools/tavslide.js` (a 40 s fight: per clip, body speed, the planted toe's skate in the world and in HIS frame,
+his turning; the swings, hurts, contact gap, `u.tavReachZ`), `tools/tavblows.js` (each blow posed at cock / contact / after, and
+`AIM`: each end's bearing from his hips at the contact, 0 = straight ahead), `tools/cpuprof.py` (see harness.md).
+- **HE WAS HELD IN ONE PIECE.** `kickRagStart` keeps a kicked man braced (`r.holdI`) so he can get up; out of the window his head stayed
+  1.0-1.3 m over his feet the whole 2.5 s fall. `tavWindowThrow` lets the hold go and throws his top harder than his feet (0.55 →
+  1.3 of the throw by height): measured, he is head-down by 1 s (head 0.3-0.6 m UNDER his feet) and lands as a body.
+- **THE HITCH WAS THE ROUTE GRID, NOT THE VIEW.** The keep's outside is 50k faces, 0.4-1.1 ms. The worst frame of a kick-out (16-18
+  ms) was `tavGrid` rebuilt whole in one frame (`keepWallNear` × 2,400 cells), and every smashed table/chair and moved plank asks for
+  it again. `tavGridTick` (in `updateTavern`): the first build on your first frame in the hall (behind the entry's black), a rebuild
+  ~1 ms a frame while the old grid serves (`TAV_G.job`). Worst kick-out frame now 9.7-12 ms. A side-kick on him (`case=side`) does
+  NOT throw him (`tavWindowAhead` wants the kick toward the opening) — he turns and fights; left as it was.
+- **The outside's copies were never culled** (`frustumCulled = false` on all of them): now culled; the sky and the sea, which surround
+  you, are not. **Its light:** under one flat tint the rock was a teal-black shape and the pale stone a white smear; each copy's
+  geometry now carries the moon baked into vertex colours (`shade`: 0.55 fill + 0.70 · n·`MOON_DIR` in the keep's frame + 0.28 sky).
+  Better, not transformed — the rock's own map is dark; if the owner still dislikes it, the next step is the keep's own lit
+  materials with a light of their own in the hall's layer.
+- **WONG'S AND THE DRUNK'S BLOWS WERE AIMED SIDEWAYS BY THE PACKER.** De-yawing a strike throws away the turn that aims it: at the
+  contact Wong's front kick and crescent pointed 52° off him, the uppercut 64-68°. `tools/ntar_moves.py` `STRIKE_ALIGN`: the take
+  keeps its own turn and the body is eased round so the striking end (its CONTACT bone) points straight ahead at the contact frame,
+  unwound with the take's end turn after; `STRIKE_TRIM` (degrees, measured in the game with `AIM` after a first pass) takes up the
+  game's own per-take facing fix (`fixQ`: these three downloads rest 52-68° from Mixamo's). Every blow now 0-8° off ahead at
+  contact. The drunk has his own aimed copies of the haymaker (`dHay`, Mutant Punch, contact 0.243) and swipe (`dSwipe2`, 0.508;
+  `dSwipe` aliases it) — the knight's are de-yawed and stay his. The flying kick was tried and put back: its fastest foot is the
+  take-off.
+- **AND THEY STOP WHERE THEY REACH YOU** (`tavReachSet`, `kind.reachSet`): each swing posed at its contact on HIS body, the striking
+  end read in his frame, `stop` = its reach + 0.24 (hand) / 0.34 (foot) / 0.22 (head), min 0.78, `reach` = stop + 0.45; a two-handed
+  blow takes whichever hand is further out. No lunges on them (none of these takes steps into its blow), `noSkate`, the au 0.88 m.
+  40 s each, a player standing still: Wong 13 hurts (0 on the hand-set stand-offs), the drunk 25; contact median 0.57 / 0.50 m (a
+  kick lands at body height, so ~0.6 m from the eye is right); body speed through every blow 0.00-0.01 m/s (Wong's punch dragged
+  him 3.6 m/s before). The PLANTED TOE still moves 0.6-0.8 m/s in his own frame through the kicks — the take's hips travel is not
+  baked (the packer's rule for every set) — a foot lock is the next step if it still reads as sliding.
+
+## 2026-11-26 (late) — the body out of the window stops where it hits; no flash back inside
+"make there bodies hit the ground harder when they fall out the window they just slide around the ground they should hit right
+where they land like a ragdoll. the bodies spawn back in the tavern for a second too." `tools/tavkick.js &secs=12` logs, after the
+landing, how far his hips go and every frame his DRAWN hips are inside the hall (and per frame around the landing: rag, kickRag,
+alive, struck, the clip, drawn vs ragdoll hips).
+- **THE FLASH WAS THE DYING FRAMES.** `tavFallTick` kills him on the landing; `killMutant` sets `struck` and `updateMutantUnit`'s
+  struck branch held him at `hitFrom` on his MIXER until the hit-stop ran out — 5 frames of his drawn body back at the railing
+  (y +0.5, z -12.5..-12.8) while his ragdoll lay 16 m below. A man already a ragdoll is now stepped as one through those frames (in
+  the struck branch, for every death, not only here). And a death 17 m below you keeps your world: `tavFallTick` restores `hitstop`,
+  `trauma` and `killSlow` round the kill and finishes it at once. Measured: 0 frames inside (was 5).
+- **THE SLIDE**: the landing bleeds his run along the ground (to 15 % at the hit, then 35-75 % a frame for 1.5 s) and drives him down
+  0.06 m; plus `sfxBodySlam` and `sfxBoneClatter` from where he hit. Measured: 0.02-0.10 m after the hit. Kicked from the railing
+  he flies ~14 m and comes down in the SEA, whose floor is a flat plane — the skate across it was the "slide around the ground".

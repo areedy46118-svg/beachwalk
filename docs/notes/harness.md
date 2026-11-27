@@ -578,3 +578,31 @@ Headless Chrome's frames stop (0 % CPU, no further log, `CVDisplayLinkCreateWith
 goes to sleep: a full `musictest` stopped after its 7th scenario, a `loadall` printed nothing for 20 minutes. It is not the game.
 Kill it (`pkill -f "<outdir>/prof"`) and run again when the screen is awake; do not wake the owner's screen to do it.
 Also: `[PB]` stills in `tools/probe.html` are the outer page; the GAME is the iframe — its DOM is `w.document` (`#blackout`).
+
+## 2026-11-23 — a "before" still while the tree is already changed
+
+Never stash or check out (other sessions share the tree). For a before/after, build a throwaway root in the scratchpad:
+symlink every top-level entry of the repo except `main.js`, write the old `main.js` there (the current file with only your
+own blocks swapped back from `git show HEAD:main.js`), and run `sh <root>/tools/probe.sh …` — it `cd`s to the root it was
+started from, so `serve.py` serves the old game with every asset and tool of the new one. A still is a render with nothing
+run after it: `b.lookAt` is applied by the loop a frame late, so aim with `camera.lookAt` right before `shot()`.
+
+## 2026-11-25 — `tools/scan.js`, the castle scan
+One probe for "is the castle whole": missing clips per kind, InstancedMeshes over their buffers, the props laid, a fight
+(`&secs=`, you cutting and kicking, real ms a frame, draw calls summed over a frame's passes — `renderer.info.autoReset` off and
+`info.reset()` before each frame, or the count is the last pass's only), walkers stood still against a solid prop, a kick on a
+resting body, the console. Its first version counted a kick's hit every frame the kick was down ("struck 1347"): clear
+`KICK.lastHit` when you read it. zsh does not split `$files` into words — build a contact sheet's file list in Python (`glob`).
+
+## 2026-11-26 — CPU profiles of a probe, headless (`tools/cpuprof.py`)
+Nothing here could say WHICH function a frame's spike was in. `tools/cpuprof.py <scenario> --q '&…'` runs a probe in a headless
+Chrome of its own with the DevTools protocol's sampling profiler on (standard-library Python, a hand-rolled websocket, port
+`--dbg` 9344, the probe's server on `--port` 4244; it waits for any other headless Chrome like `probe.sh`). The probe brackets the
+work it wants profiled with `console.profile(title)` / `console.profileEnd(title)`; every pair comes back as
+`Profiler.consoleProfileFinished`.
+- **A profile's length is the profiler's, not the work's**: each start/stop costs ~270 ms whatever is inside, so 300 one-frame
+  profiles take minutes and filtering on their duration keeps all of them. The probe says which to read: it times the work itself and
+  logs `[PB] SPIKE <title> <ms>`; the tool holds the last eight profiles and prints the named one (inclusive and self time per
+  function:line). `--min 0` prints every profile.
+- Its stdout is block-buffered into a file: run it in the foreground, or read the file only once it exits.
+- Example: `tools/tavlag.js &still=1&prof=1` (300 still frames at the tavern window, profiled one by one).

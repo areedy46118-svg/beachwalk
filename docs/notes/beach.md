@@ -217,9 +217,10 @@ on the cut were both tried and cut: naming the thing is less frightening
 than the tide keeping its counsel, and the splash read as a bug.
 
 **Digging.** `crosshairGroundPoint()` raycasts the crosshair onto `sand`.
-`digImpact()` stamps `digHoles` (flat crater decal) + `digPits` (sunk 3D
-cone) + `digMounds` (spoil), spawns `spawnPuffs()` sand chunks, and plays
-`sfxDigImpact()`. Pools recycle after `DIG_POOL` (20).
+`digImpact()` stamps `digHoles` (a lit height-field decal) + `digMounds`
+(a crescent of spoil) — see "THE MARK A STRIKE LEAVES" below; the sunk cone
+is gone — spawns `spawnPuffs()` sand, and plays `sfxDigImpact()`. Pools
+recycle after `DIG_POOL` (32).
 
 **Opening.** Title card is bare "BEACHWALK" + controls. `beginGame()` (on
 the overlay click) requests pointer lock *on the gesture*, then runs the
@@ -3729,3 +3730,300 @@ you or your companion kill. do not give them a description either. characters i 
 - **His head out of the washer** ("make sure the marionettes head doesnt clip through when getting out of the washer"): in the
   leap, while the head is behind the door's line + 0.26 it is held under `CEL_WASH_TOP` (0.762, the opening's top) − 0.19.
   `tools/washer.js` logs the highest head over the drum: 0.65 → 0.60.
+
+## The Enemy Log, every kind (2026-11-23)
+"some enemies dont show up make it so they all do then. also make the ones you found a different shade." / "they should appear
+immediately in it after the kill no bugs". `tools/elogall.js` makes every kind, kills it, reads the log the frame of the blow,
+draws each likeness in the box (pixel count + a contact sheet), then drops them all and makes them again as after a load.
+- **HALF THE KINDS DREW NOTHING BUT THEIR SHADOW** (hulk, spindle, runt, bloat, the Dealer, the headland's thing, samurai, the
+  hunter, Wong, the orc, knMan, the paladin, Skrim, Elvédor, the puppets, the king, half the farmers): the likeness is a copy of
+  `u.model` as it is, and the game's culling had its ROOT (the GLB's `Scene`) hidden at that moment — `visible` is copied, so
+  the box's renderer drew the 2-triangle shadow and nothing else (`tools/elogwhy2.js`: calls 1, tris 2). `elogShowAll` shows
+  every container (not a mesh: a cut limb or a proxy keeps its own) at mount and whenever the root is found hidden again.
+- **ON THE BLOW, NOT AT THE END OF THE DEATH**: `elogKill` is called from `killMutant` (before the flash, the body whole), once a
+  body (`u.elogDone`); `finishMutant` keeps its call as the fallback for a death that skipped the blow. Also from `mutBleedOut`
+  (a bleed-out was never logged), and `catPutDown` is reached after it (the catacombs' hunter, `undying`, never reached
+  `finishMutant`). The crawler's young was excluded as `kind.baby` — it is killed (`babyHurt` → `killMutant`): counted.
+- **THE OTHER FOUR** (`ELOG_OTHER`): the wreck's gulls (`killGull`), the pliosaur (`plioDie`), the sewer's thing
+  (`sewElectrocute`), Skrim's crying heads (`cryKill`, `crySummonDie`) — none are `mutants`. `elogOther(k)`: counted, and the
+  likeness from the live model (`live()`: gull bones to rest, the sewer thing's to `sewMon.bind`, the pliosaur's and the heads'
+  idle clips) or, after a load before that place is built, from its own file (`bwGlb(url)`, parsed for the log alone).
+- **THE FARMERS' COPIES** (`gargRaidN`, `tavDrinkerN`, `tavDancerN`) log as the farmer they were made from (`elogKey`).
+- **THE WHOLE ROSTER, FOUND IN ITS OWN SHADE**: `elogRoster()` — crab, gull, every `MUT_KINDS` enemy in the order they are made
+  (not `friendly`/`ally`, not the farmers' copies, not `whaleBody`: the gut's demons and parasites were taken out with their files
+  2026-10-29), `epup`, then pliosaur, sewer thing, heads; numbered, "N of M found" over it. Found: warm (`.elog-row.found`, amber
+  bar, ×count, can be picked); not yet: dim "???", no count, disabled.
+- **AFTER A LOAD** every likeness is made again from a stand-in: the picked one first, then the rest one at a time while the log
+  is open (`elogFrame`), each stand-in's file moved to the front of the queue (`bwFetchSoon` AFTER `makeMutant` queues it — before,
+  it moves nothing): Myles's file, ranked by his place down the walk, had waited past the 30 s and his box said "…" for good. A
+  likeness that failed is tried again each time the log is opened.
+- **ONE LINE A BODY** ("same models with different weapons can go only one each"): the castle's twenty are five bodies
+  (`FARM_ROSTER` files ka, hd, ol, kn, kw) — logged as `farm_<file>` (`elogKindKey`), with the raid's and the tavern's copies.
+  A save's old `farmerN` lines are summed into their body by `elogNorm` at first use — NOT in `elogLoad`, which a restore can
+  run before the module has read `FARM_ROSTER`/`MUT_KINDS` (a const read there is a dead-zone crash that takes the page). A
+  body's stand-in after a load is its first farmer (`elogMakeKind`); `epup`'s kind is made on first use (`epupKind`). 41 on the
+  roster now. A kill selects its line (the log opens on what you killed last).
+- **NOT YET KILLED: A FLAT BLACK SILHOUETTE** ("a black silhouette that isnt 3d … once they are killed it shows their model you
+  can spin around"): `assets/elog-shadows.png` (75 KB, 41 cells) + `.json` (cells by key), drawn off the game by
+  `sh tools/elogshadows.sh` — each kind's stand-in in its idle 0.5 s in, black (`overrideMaterial`), alpha made hard, cropped,
+  at the narrowest of six turns (a spear across a man made him a third the height: `farm_hd`, `farm_kw`). RE-RUN IT when a kind
+  is added or a model changes. In the box (`elogSilShow`): a 2D canvas over it, the 3D canvas and its hint hidden; every row
+  can be picked, the unfound ones show their outline and "???". `tools/elogsil.js` checks both (stills).
+- **OFF THE LOG** (2026-11-23: "take this guy out hes not in game anyone not in game can go from the log and delete their model",
+  "take out companions from the enemy log too"): `elogOut(k)` — `ELOG_COMPANIONS` (Myles `minotaur`, the marionette `cmar`) and any
+  kind marked `gone` — never logged, never on the roster, a save's old lines dropped (`elogNorm`). The headland's thing (`scp`,
+  `SCP_ON` false since long ago) was still MADE at every boot (its 1.1 MB file fetched and parsed) to be retired the next line:
+  `assets/scp096.glb` deleted, `scp096` a stand-in with the fields his code reads, his ASSET_REACH line and README credit gone; to
+  bring him back, git and `SCP_ON`. Every other kind on the roster checked as made somewhere and not retired. 38 on the log now;
+  silhouettes redrawn (`tools/elogshadows.sh`) with the farmers' new weapons.
+
+## The moon's real face (2026-11-23)
+"use this for the moon model make it blend well with the game fit it in the style keep everything looking the same just improve the
+moon with this keep lighting the same" (RenderX's "moon", CC-BY-4.0: a sphere under one 8192 × 4096 map).
+- The sky shader already draws the moon (a screen-space disc, `uMoonNdc`/`uMoonR`, its normal `n`, a terminator `L`, limb, earthshine,
+  halo, clouds over it); only its SURFACE was invented (noise maria, seven craters). Now `uMoonMap` (`assets/moon-map.jpg`, 512 × 256
+  grey, autocontrast 0.5 %, 59 KB) is read at the disc's longitude and latitude (`atan(n.x, n.z)`, `asin(n.y)`: the near side to you,
+  north up, east to your right) and its brightness laid between the moon's own maria and highland colours — every light term after it
+  untouched. `uMoonMapK` is 0 until the map is in (the drawn face). The model's 20 MB of geometry and texture are not used.
+- `tools/moonmap.js`: the moon cropped with the map and without, and the whole view.
+
+**THE MARK A STRIKE LEAVES (2026-11-23, the owner: "improve the marks in the ground when hitting the sand").** `stampDigHole`
+(every swing that lands on sand — `digImpactCore`, the hook) laid a painted crater decal, an open cone sunk under it and a grey
+cone of spoil. **The beach is an OPAQUE PLANE at y = 0, so nothing below it is ever drawn**: the sunk cone showed only as its
+rim — a heptagon ring standing out of the sand round a black hole — which is the "random shapes" the owner saw. Now:
+`digHoles` is a `ShaderMaterial` decal (1.8 m, per-instance `aDig` = born, length, half-width, seed) that shades a height field
+(the gouge, a lip heaved up round it and piled at the front, a fan of clods) from the moon's side in the mark's own frame, on
+a 2 cm grid, with a short shadow march for the lip and the floor darkened (damp, out of the light). Its blending is
+`One, SrcAlpha`: **out = rgb + beach x alpha** — alpha darkens what is there (so it keeps the beach's grain, wet tint, moon
+road), rgb ADDS moonlight in the lit sand's colour. A pure 2x multiply was tried first and could not lift dark navy sand far
+enough to read as a rim catching the moon. **Everything is linear here**: a 0.5x darkening only reads as ~0.7x on screen, so
+the contrasts (`AMB` 0.26, floor x0.15–0.3, rim add x4.6) look loud in the code and quiet in the frame. `digMounds` is a faceted
+crescent of spoil (`digSpoilGeo`) in the beach's own `sandShader`, patched for instancing (`vWorldPos` with `instanceMatrix`)
+and with its map/bump/emissive uv in world space at the beach's density. A blade (`opts.blade`, `isBlade()`) cuts a long
+narrow slot sprayed both ways and heaps nothing; `opts.P` makes a harder swing longer and deeper. **The blade's ray is cast at
+the plane, and a bank stands over it**: drifts, berms and the sand round rocks are above y = 0, and a mark laid at 0.03
+there was buried (the first probe spot, x 8 z -40, sits on one). The stamp asks `beachGroundAt` and tilts to its slope.
+Marks soften from 150 s to 420 s and fade beyond 20–42 m; pool 32. `tools/sandmarks.js` (via `evalFile`) finds a bank-free
+stretch itself and takes stills at the game's FOV and through a 32° lens (`-g` = brightened 2.4x, to see the forms).
+
+## Driftwood takes a swing and hits a crab (2026-11-23)
+The owner: "make it so you can hit or throw these pieces of driftwood too or throw at an enemy" — "all driftwood". Every
+piece was already a prop you can grab and throw; what was missing: a blade went THROUGH the wood and dug the sand under it,
+and a thrown thing never hurt a crab (`thrownHits` walked `mutants` only; crabs are their own list).
+- `makeProp(…, 'driftwood')` tags `prop.drift` — all three sources (the seeded wrack logs and roots, the spawn's log, the
+  snorkeler's).
+- `digImpactCore` asks `driftSwingHit()` (a raycast at the pieces within reach) before the solids: nearer than the sand
+  and any solid, `driftStruck(h, P)` plays wood (`sfxPropHit('wood')`, `hitWood`, the blade's own sample), throws pale chips
+  (`spawnPuffs` tint 0.5) and knocks the piece along the swing by `k = clamp(0.42 / radius, 0.3, 1.2)` (a 1.3 m log is
+  radius 0.36, a big root 0.6-0.8), waking it (`asleep = false`); over 3.2 m/s across the ground it counts as a throw.
+- `thrownHits`: a driftwood piece's reach is `min(0.5, radius / 2)` wider (a two-metre root hits past its middle); then the
+  crabs — the same blow through `hurtCrab` (1, or 2 over 9 m/s), and a sleeping one is woken the ordinary way (`called`).
+  NOTE: `CRAB_HP` is 2 and an ordinary throw leaves the hand at 16 m/s, so a thrown log kills a crab outright.
+- `tools/driftwood.js` (devMode, the real swing via `startDig(0.6)` with the toy shovel): a root of radius 0.62 hit at
+  1.4 m — peak 4.5 m/s, moved 1.10 m, 0 marks dug; the same swing at bare sand dug 1; a piece thrown at the loner 3 m off
+  at 12 m/s — hp 2 → 0 on frame 10; 1.5 m to the side — no hit. No console errors.
+
+## 2026-11-23 — the three come up out of the sea (the pack's swim-in)
+"improve the 3 crabs coming out of the water cutscene". Measured first (`tools/packcut.js`, dev mode off, the real trigger,
+a still every 0.4 s at the game's lens and at 30°): every crab's clip time stayed 0.00 through the whole cut — `packCut`
+is `frozen()` and `updateCrabUnit` returns at `if (frozen()) return;` before `crabAnim`, so they slid in as rigid poses;
+all three were hidden (`submersionAt` < 0.92 is only the last 1.5 m of surf) until ~3.4 s, so the camera spent three
+seconds on empty water; and the rear-up only ran after the camera let go. Now, in `updatePack`, looks only (same 3.4 s +
+0.75 s, same spots, same wake-up after):
+- **Drawn the whole way; the opaque sea hides what is under it.** Each sinks LESS as it comes (`sink` 1.6 → 1.15 → 0.6 by
+  progress, through `beachRestY`), so its back breaks the surface a little past halfway (~2.2 s) and it walks up out of the
+  surf. The moment its shell top passes `waterSurfaceAt`: `sfxPackSurface` (moved from the old pop-in) + a sheet
+  (`spawnSplash` x30), then drips every ~0.15 s while it still wades.
+- **Animated** with `u.mixer` driven here: the walk clip at 0.9-2.5x by its speed; from 95 % of the swim the attack clip
+  is held at `PACK_REAR_T` (0.42 of its length, claws up — the tell) rising through the hold, so the rear is ON camera.
+  At release the AI's own `crabAnim` cross-fades from there.
+- **Each its own line**: a sine weave of 0.55 m in z and a yaw wobble, both gone by arrival; in the last beat each turns
+  to face you (forward is local −z: yaw = atan2(−dx, −dz)).
+- **The lens leans in**: `packFov` (`PACK_FOV` 52, never wider than the setting) in `updateDialogCam`'s `wantFov` chain at
+  rate 1.6, cleared at release so the frame's own ease takes it home. A `var`: the lens code is read by the loop, which
+  can run before the module reaches the declaration. Aim lowered to y 0.25.
+
+## The sketchbook after the drowning, and what you drew on the island's pier (2026-11-23)
+The owner: after the snorkeler's rescue and before the wash, back in the intro room — the syringe empty, hazy, coming to,
+a slight zoom on his blank sketchbook (his photo, `assets/sketchbook.jpg`, from `~/Downloads/IMG_7239.HEIC`, EXIF-turned
+upright), a floating retro pen for a cursor, "DRAW A CHARACTER FOR YOUR BOOK", E to confirm, "NAME CHARACTER", Enter, then
+drowsy, head on the table with a thud, black, the wash. At the lighthouse pier the drawing as a sprite of its own lines;
+talk ("Hello!" / "What the hell are you?" → its name → "Kill me."), hit it → flinch → fade → "Existence is pain."
+- **Where it runs**: the deep's black (`deep.ph` 'black' → at `WASH_BLACK`, once a game unless `skDone`) becomes
+  `'sketch'` (`skStart`); `skTick(rawDt)` from that case drives it; on its end the deep goes back to 'black' at
+  `WASH_BLACK − 1.4` and on to the wash as before. **A probe of it must `b.setDeepLockS(true)`**: the hook sets `deepLock`
+  on the way in, and without it `updateDeep` returns as soon as `inDeep` goes false at the black — stuck there for ever.
+- **The room again**: `tbStart(true)` — the title's own builder, re-run mid-game: TB state reset (`gone`, `ready`,
+  `rainAudio`, `bolt`), drawn into `#sk-room` (z 10, under `#blackout` 11 and the lids 12, so the black and `eyeLids` work
+  over it), no `icLoad`, `TB.reprise` (no call, no title frame, `skRoomCam` drives the lens: a sinking, swaying push toward
+  the desk), the syringe `setFill(0)`. `tbStop` as ever (and it hides `#sk-room`).
+- **The page**: `#sk` (z 10, after the room), a `.stage` the photo's 600:800 shape at 100vh scaled ×1.5 about the book, an
+  ink canvas over it. Strokes are kept in the PHOTO'S PIXELS (`skToPhoto` through `getBoundingClientRect`, so the slow zoom
+  and the sway cost nothing), clipped to `SK_PAGE` (the paper's quad, measured off the photo's white). E needs
+  `SK_MIN_INK` (160 px of line). The pointer is let go (`exitPointerLock`; the pointerlockchange → menu branch knows
+  `SK.on`), the scene owns the keys (`skKey` on window CAPTURE; the name box's own handlers stop its keys short of the
+  game), and Enter on the name re-asks the lock (a keydown is a gesture). No page-flip or body-fall SAMPLES exist —
+  `sfxHeadDesk` is synthesized (a 92 → 38 Hz body blow, low-passed knock, and `sfxThud`).
+- **Load order (bit twice)**: the frame loop and a restore both run before the module is read that far — `skDone/skDead/
+  skName/skInk` and `SK`, `SK_FIG`, `SK_NPC` are declared up by `packTipDone`; the restore builds the figure in a microtask.
+- **The figure** (`skFigBuild`, `skFigTex`): the strokes redrawn on a canvas cut to their bounds, lines 4.5 % of the
+  drawing's size, **WHITE** on the pier (owner: "draw in black but it shows up white when u see it there") though black on the
+  page; a plane stood on its feet, 1.75 m, turned to you each frame (`skFigTick`), `MeshBasicMaterial`, toneMapped off.
+  `SK_SPOT` (-17.55, 15.65, -1249.52): from his screenshot's readout (feet -14.39, 15.65, -1249.33, look 1.19 — the readout
+  is world x, feet y, z and `lookEuler.y`); the boards end 4.2 m along that look, so 3 m out and a metre left — in front of
+  the lamp post, black on black, it vanished. `groundUnder` gives the boards when the island is up, else the measured y.
+- **Talk / hit**: `addInteractable(…, 'npc', { far: 4.5 })`, label "Talk to <name>"; `SK_NPC` script. `skStrike` in
+  `digImpactCore` (after the crow): flinch 0.5 s (shake, squash), fade 2.2 s rising, gone; `skDead` → the toast
+  ('Rare achievement unlocked', '50 - Existence is pain.') and `RARE_ACHIEVEMENTS`. Saved: `skDone, skDead, skName, skInk`.
+- `tools/sketchtest.js`: the whole path (drown → room → a stick figure by pointer events → E → "Gerald" → slam → wash →
+  island → talk label → strike → achievement), with stills of the room, the page and the pier.
+
+### The sketchbook, round two (2026-11-23, the owner: "the textbook scenes after the seamonster just froze the game" / "its stuck like this" / "i couldnt even esc and reload checkpoint which i always should. there should also be a checkpoint at the start of this cutscene" / "the textbook should be show on the table like the intro too. make sure no syringes and other props are colliding on the table here too")
+- **The freeze was a hidden page.** `#sk` (the book, the words, the pen) and `#sk-room` (the room) were both z-index 10, and
+  `#sk-room` is made by `tbStart` AFTER `#sk` exists, so it painted over it: the scene was waiting in 'draw' for ink on a page
+  nobody could see. The headless test drew blind and passed. `#sk-room` is 9 now. **A still composed in the probe is not
+  the screen**: the old `pageShot` drew the photo and the ink itself, so the layering was never looked at.
+- **Escape is the menu in the scene.** `skKey` toggles `openMenu`/`closeMenu` (the deep's update returns while the menu
+  is open, so the scene holds); `closeMenu` does not take the mouse back while `SK.on`. Trap: a window keydown listener
+  hears a key BEFORE a later-registered CAPTURE listener on the window (it is the target: registration order), so the
+  game's main key handler ran first — in the drag fallback it opened the menu and `skKey` shut it again. The main
+  handler now returns while `SK.on` (`SK` moved up beside `menuOpen` so it can be asked there).
+- **A checkpoint at its start** (`skCheckpoint`, as the room comes up): `saveCheckpoint` then the save patched — standing
+  where the sea left you, room null, `flags.skAt = [washX]`, `deepDone` still false. Loaded: `skOwed`, and the frame loop
+  (beside `handGrabTick`, once `deepLive`) runs `skResume` — deepLock on, the needle laid, `deep.ph = 'sketch'`, `skStart`.
+  The wash's own save (`endDeep`) writes over it. `tools/sketchload.js` tests the menu and the reload.
+- **The book is on the desk** (`skDeskBuild` from `tbBuild` when `TB.reprise`): the photo squared up (`skRectify`,
+  bilinear from `SK_BOOK_Q`, the whole book to the wire) onto a 0.40 x 0.30 m page on a dark board at the call's book spot
+  (x 1.955, z 2.19), layer 2, drawn sharp in its own pass over the retro room (`tbRender`) like the call's syringe; a
+  touch of emissive (`SK_BOOK_GLOW`) so it reads. Drawing is a ray through `TB.cam` onto the page (`skToBook`, layer 2);
+  strokes are in page units (`SK_BOOK_W` x `SK_BOOK_H`; the canvas is twice that); `skBookToScreen` is the harness's way
+  back. The camera (`skRoomCam`) goes from the title view to over the book, leans in slowly, and the slump goes down into it.
+- **Nothing on anything** (`skDeskTidy`, the second time only — the call's desk is as he approved it): the phone where the
+  call's clip lays it, the empty syringe beside the book, then every desk thing as a plan capsule (PCA of its vertices:
+  axis, half-length, half-width; `skCapsule`) pushed off the book's box, the phone and each other (`skSegDist`) and kept on
+  the desk. The default phone spot (1.6, 2.56) is under one of the dropped syringes — the call never shows that because
+  `icPlaceProps` moves the phone; the reprise skipped it, which was the owner's "colliding".
+- `tbStop`'s teardown threw on the cans (a material LIST: `o.material.map` is Array's `map`), so the room's renderer and
+  canvas were never let go — after the intro too. Fixed.
+- (later the same day, the owner: "enter to confirm instead" / "after you enter the drawing your cursor is seen all over again
+  its dissapearing on the textbook" / "i saw a glimpse of the textbook when coming back to the beach"): the name box sits
+  under NAME CHARACTER, above the book; the bottom hint is `Enter Confirm` there (lit once something is typed; E is a letter
+  of a name); the pen stays shown while naming; a click while naming puts the focus back in the box, and Enter with the box
+  let go of still names it. `skEnd` hides `#sk-room` and the room's canvas at once — `tbStop`'s own hide waits on its 4 s
+  teardown, and the wash lifts the black 1.4 s after the slam.
+
+## The pier figure at the pen's width (2026-11-23)
+The owner: "make the drawing same thickness when you see them at the lighthouse just have it white how it is". `skFigTex`
+drew the strokes at ~4.5% of the drawing's size (about four times the pen) to read from the pier's foot; now `lw = 3.1`
+page units, the same as `skInkStyle`, white still, on a 1024 canvas so the thin line keeps a few texels (measured: a 120-unit
+figure → 468 x 1024, the line ~11 texels). Reads fine from 3 m on the pier (`tools/devarts.js`'s still).
+- (2026-11-23, "it should say enter to confirm when drawing your character") Enter confirms the drawing too, and the hint
+  reads "Enter Confirm" from the start (`skBuild`, `skStart`): one key for both steps; E does nothing in the scene now. The
+  probes (`sketchreal`, `sketchload`, `sketchtest`) send Enter. `sketchload` after: drawn, Enter, "Pat", Enter → the wash.
+
+## 2026-11-23 (night) — the workshop puppets' voices
+The owner, five bounces from "well guy audio/Bounced Files" ("puppet attacking sound", "puppet taking damage sound", "puppet
+getting injected sound", "puppet rare phrase", and "puppet audio" — the October file the fire puppet's six pleas and scream
+were already cut from, left as it is): "use these for the puppet sounds they are labeled".
+- Cut by `tools/farmer_voice_pack.py "<Bounced Files>" "puppet attacking sound=pup-attack" "puppet taking damage sound=pup-hurt"
+  "puppet getting injected sound=pup-inject" "puppet rare phrase=pup-phrase"` → 17 / 18 / 1 (2.9 s) / 2 takes, 516 KB.
+- `MUT_KINDS.cpup.voice` is `farm: true, vox: PUP_VOX` now (still `mute`: that keeps the synth's tell/roar/laugh off; the
+  farm path is `sfxMutHit`'s and the swing's, neither asks `mute`). ONE voice object for the eight, so one mouth: a cry cuts a
+  grunt; seven at you are not seven voices. `swing` p 0.8 at the wind's end; `hurt` every landed blow; `shout` (the rare
+  phrase) off `cpPhraseTick` (fight 1–2, a puppet up and fighting, 6–12 s for the first, then 16–32 s, p 0.6, gap 16).
+  `pupInject` at the needle's stab in `cpInjectTick` (t 0.45), from the bench, into the room's hush.
+- The marionette (`cmar`) is untouched: his voice is the synth throat still.
+- Probe `tools/pupvox.js` (wraps `AudioBufferSourceNode.start` and names each buffer by its bank, `__bw.sampleBanksS`): the
+  injection at 0.5 s, grunts on his swings, a cry on struck blows, the phrase at 10 s. Trap: `__adv` runs game time faster
+  than the audio context's real clock, so `own`/`gap` (seconds of `currentTime`) eat blows a probe lands 2.5 game-seconds
+  apart — 2 of 3 cried there; in play each one can.
+
+## 2026-11-25 — the house on the cliff no longer pops in
+"i can see this spawn in" (a still from the beach below Elvédor's house). The house is built at boot (2026-11-15) but was SHOWN only once
+you crossed z −628.5 (`houseSeen`), 88 m short of it — at the fog's ~0.014-0.019 a fifth of it still shows there, so it appeared whole on
+the skyline; the gully's dressing and the dead trees (`elvFieldShow`) likewise from `ELV.z` + 40 (−600). Both now from `HOUSE_Z` + 230;
+the house's own `|dz| < 200` holds it back to 200 m, where the fog passes 0.0 % (`tools/housepop.js`: shown at z −520, 198 m). No load
+moved: only when they are drawn.
+
+## 2026-11-25 — the marionette is hit when he stands in a blow (`marCaught`)
+- "THE MARIONETTE RARELY TAKES DAMAGE I FEEL LIKE". Measured before touching anything:
+  - `tools/marhurt.js &free=1` (three runts loose at you both, 60 s): he took about 60 blows a minute and you about 33.
+  - `tools/marfort.js` (the garrison's natural fight, him with you): him 6 blows (7 hp) a minute, you 8 (9), the men on him 25 %.
+  So where a creature CAN be put on him it is, and its blows land (`marLandsOn` is fine). The hole is everything that never can:
+  - the crabs have no foe but you (`updateCrabUnit` only ever calls `damagePlayer`);
+  - every boss and sided fight is shut out of `marAggroOK` on purpose (so the share-out keeps your difficulty).
+  In those he fought beside you and nothing touched him.
+- Now a blow thrown at YOU also lands on him on its contact frame, when he is within its reach (`A.reach` + 0.25, at most 2.4)
+  and in front of the thing (cos > 0.35 of its facing; a crab's claws, no cone; within 1.2 m of its height). It is called:
+  - beside `sfxMutSwing` in the swing's contact for every kind on the common path (`!u.st.foe`);
+  - from the crab's `CRAB_WIND`.
+  What is aimed at you is untouched, so your fight is as hard as it was. After: three crabs, him 20 blows a minute, you 45 (he had
+  none). The castle: him 8 (10 hp), you 14. The king's own moves (slam etc.) are their own code and still pass him by.
+- TRAPS in measuring it:
+  - `__adv(n)` runs n FRAMES, not ms: `__adv(1000/60)` ran a minute as seventeen.
+  - Dev mode stops every creature swinging at you (0 swings): keep it off and put your health back with `setHp`.
+  - Topping his `st.hp` over `kind.hp` counted the clamp as a blow every frame: put him back to `kind.hp` under 8 instead.
+
+## 2026-11-25 — the marionette back after a checkpoint load
+- "the marionette didnt respawn too when reloading checkpoint each checkpoint should save exactly where you left off". The save
+  had him right (`marSt` 'with', `marHp`). Two things lost him on the load into the castle (`tools/marckpt.js`, `&where=fort|beach`):
+  - He was made on the FIRST frame, at the camera as it stood: the start spawn, 1179 m from the castle. A save written in a room
+    holds you there behind the black until the room is up (`roomRestore`). Now `updateMarionette` waits while `roomRestore` is
+    set, and he is made at your side.
+  - His body never came, still none 12 s on. `marionette.glb` is ranked by the beach's distance and parses on the FAR chain,
+    behind the whole world's far rest. `cmar.urgentBody` puts his copy on the near chain, as the tavern's people are (`kind.tav`).
+    It is 250 KB.
+- After: in the castle he is made 0.75 s in, has his body at 2 s, beside you, with the saved hp (17 of 26), then goes for the men.
+  On the beach he has his body at 0.25 s, 1.6 m off, hp 17.
+
+## 2026-11-25 — "make sure he doesnt clip through anything i shouldnt clip through this either"
+The owner's still: his eye inside the face of a big dark rock by the shore, the sea to his right (looking back up the beach).
+- **`tools/clipscan.js`** walks the player down the whole beach (z 70 → -1330, 30 m stops) and, for every drawn still mesh in the
+  walk band, every half-metre column: the stretches of it INSIDE the stone (crossings of both windings, by parity — a sunk scan is
+  open below, so an odd count starts inside), and whether stone stands between the knee and the top of the head (ground +0.6 …
+  +1.95) with no collider there that stops a body (the walk's own rule: a top more than a step over the feet, a `floorY` under the
+  head). `&rocks=1` only rock meshes — **a room built of open planes (the wreck, the house at z -218) reads floor and ceiling as
+  one solid**, its own walk grid holds you there. `&v=1` per mesh, `&why=1` the first uncovered cells with their crossings.
+- TRAPS building it: `WADE_X`/`CLIFF_BLOCK_X` are not on `__bw` (undefined made the band NaN and the scan saw nothing for two
+  runs — "0 uncovered" was a blind scan); three's `Raycaster` returns NOTHING on most of these meshes (use the triangles, as
+  `vRayTop` does); the ground is `beachGroundAt`, not 0 (the cave rocks stand on an apron).
+- What it found: **the beach's rock is held.** Every formation's stone from knee to head height has a collider over it
+  (`fillRockGaps` from above, plus the formations' discs). The two cave rocks are held too, except their MOUTHS' lips: stone about
+  a metre over the sand in the corridor up to "To crawl in", which is open on purpose (`rockShellColliders`' `inMouth`). A fill
+  for stone leaning out at chest and eye height (`fillStoneGaps`: a disc wherever a column's inside stretch reaches knee-to-head)
+  was written and measured — it found nothing to add on the formations or the cave rocks once the walk's own rule was used, so it
+  was taken out again (it would have indexed 340k triangles at load for nothing). The scan stays, to re-check after new rocks.
+- Left: one cell in the surf at the wreck's mossy rock (x -3, beyond the wading clamp).
+- NOT pinned: where the owner's still was taken. If it is somewhere the scan reports clean, it is off the band (the headland, the
+  island, behind the dune) or he was higher than the sand (a jump, a ledge): read `__bw.camera.position` in his pane next time.
+
+## 2026-11-25 (later) — the marionette can die: more on him, blows count 2.2×
+- "the marionette needs to be able to actually die he barely takes damage and no one fights him barely". `tools/marfort.js
+  &fight=1&die=1&secs=120`: the castle garrison's natural fight, you killing the nearest man in reach every 2.5 s, his health
+  his own. BEFORE: the men were on him 20 % of the time (mostly chasing him, mean 6 m off) and he ended the fight at 22 of 26 —
+  4 blows in all. He was never healed (no regen), but nothing was ever going to finish him.
+- `marBalance`:
+  - reaches from 20 m (14);
+  - takes him on at 0.85 when he is the nearer (0.7), 0.6 about level (0.4), and 0.2 even when you are the nearer (0);
+  - the cap is still half of what is awake (`marAggroRoom`).
+- `MAR_HURT_K` 2.2: `hurtMutantCore` multiplies any creature's blow on him (`from` set), and `marCaught` goes through it too.
+- AFTER, two runs: men on him 45 % / 40 %, 6 / 5 blows, and he ended at 10.6 / 12.8 of 26 — half of him gone in one castle fight,
+  so the next one can finish him. Your blows taken in that fight: 0 before and after (standing at the gate). Three beach runts
+  (`marhurt.js &free=1`, immortal): him 58 blows = 130 hp a minute, you 38 (34 before).
+
+## 2026-11-25 (night) — out of the cellar before him, he is still on his swing; the puppets louder and more often
+- "the swing didnt spawn fix this it should always be there", "when running out before the marionette he should still just be on the
+  swing". The swing is built with the yard every time; what was missing was HIM: he is put on it at the end of his escape from the
+  washer (`updateCelEscape`, `MAR.st` 'none' → 'swing'), which runs only in the cellar — up the steps while he was kicking in it, or
+  mid-escape, and the swing stood empty. `cellarLeave` now finishes it once the washer has begun to kick (celWash 1 → 2, the door
+  down, `MAR.st` 'swing'). `tools/marswing.js`: out with the washer kicking → MAR swing, door 1.42, the swing drawn, him on its seat.
+- Puppets: `sfxPupBreak` 1.35 → 2.3 (falloff d/12 → d/16), the crack 0.45 → 0.75; `PUP_VOX` swing p 0.8 → 1, own 0.45 → 0.3, gap 0.15
+  → 0.1, hurt own 0.25 → 0.18, the phrase every 10–19 s (16–32) at p 0.75.
+
+## 2026-11-26 — the moon's shafts not drawn on walls
+"light rays should not go through walls i see this mainly at the castle entrance". The post pass's `shafts()` gathers the bright
+sky near the moon's (or the lighthouse lamp's) place on the screen and adds it along the line to every pixel — the dark wall in
+front of the moon as much as the air beside it. Now each pixel's own luminance scales what it takes: under a quarter of the
+pass's threshold it keeps 0.16, near the threshold all of it. NOT confirmed at the owner's exact view (`tools/castlerays.js`'s
+spots did not put the moon in frame); if it is still seen, ask for a screenshot — the other candidate is a pooled lamp lighting a
+wall face through stone (point lights cast no shadows here).

@@ -517,3 +517,207 @@ deck+2.6). `templeFlight` (fixed again: `TC.g` is gone, it reads `TC.crow`): 38.
 - The thunder under every slam 0.8 → 0.3 of the ceiling (past the sliders), the rage's 0.6 → 0.3.
 - The descent's dissolve over 14 m of his fall (5.6: about a second), so he comes slowly out of the cloud; a skipped descent
   (Enter) raises him out of a swirl of mist on the spot over 1.8 s (`KING.emerge`, in `kingFxShow`) rather than dropping him in.
+- (2026-11-25) "STOP MAKING THE FINAL BOSS HIT FOR 2": every king blow that did 2 (`kgUpper`, `kgKick`, `kgAssn`, `kgFly`, `kg360`,
+  `kgSwipe`, `KING_SLAM`) does 1.
+
+## 2026-11-25 — the Scourger replaces the Ancient King
+The owner: "the final boss has been pissing me off this whole time take him out and add this guy take out all the animations except
+the run up the pillars and smash down plus the death animation. use the animations that come with this character as well for walking
+and the plunge attack … make sure the rig is correct you have it wrong alot … there is also a rare knockback and stand back up
+animation in there". The king's MACHINERY stays (`MUT_KINDS.king`, `KING`, the descent, the hunt, the pillar, the torn-off hook, the
+death and the burst, all under the king's names); his body and moves are swapped.
+- **The body**: DM-913's "Scourger Rig" (CC-BY-4.0, README), `tools/scourger_pack.py` → `assets/scourger.glb` 1.9 MB (see creatures.md
+  for the rig). Winged, tailed, bird-legged, an axe in his right fist; 2.6 m to the crown; `fixScale: 1` (the file is in metres).
+  `KING_RAG`/`KING_JOINTS` are `Character1_*` (the packer renamed his body bones to the HumanIK names: the map is the identity).
+- **The moves**: his own `idle`, `walk`, `plunge`, `rear` (in his file); of the king's, only `KING_KEEP` = kSprint, wallRun, kSlam,
+  kShock (`king-moves.json`); the owner's twelve Mesh2Motion clips (`assets/scourge-moves.json`: sDodgeB/L/R, sKnock, sRise, sIdleW,
+  sAtk, sBlock, sDash, sCutB, sCutC, sCombo). `kingTick` waits for both moves files; `ROOM_FILES.tmp` names them (the king's .glb is
+  no longer fetched; the file is still in `assets/`). The king's clip names the rest of his code asks for (`kIdle`, `hover`, `kJump`,
+  `knockOut`, `getUp`, `kTurn*` …) are ALIASES onto the new clips: the descent floats down in his idle, wings out.
+- **His blows** (`SCOURGE_HIT`, `tools/scourgeclips.js &prof=`): kgPlunge (his own, 0.63), kgRear (his TAIL — "Rear Attack" is a tail
+  whip round behind him, 32 m/s at 0.52, `&end=Tail`; limb 4, `rearStrike`: he turns his BACK to throw it, −167°; and when you are
+  close behind him he throws it at once, `kingChoose`, 4 s apart), kgAtk (the big overhead, 0.325), kgCutB (0.431), kgCutC (0.405, a
+  low cut across the body), kgCombo (0.094 + more), kgDash (the hunt's arrival, 0.20, in place of the flying kick). No flip (gone from
+  `kingChoose`); `kingBackToFight` forces the plunge or the overhead. The rare knockdown: knockClip sKnock, riseClip sRise,
+  `knockAfter` 9 inside `knockLapse` 12 s.
+- **The axe is his striking end** (`kingAxeTip`: a marker at the axe mesh's point farthest from his hand → `u.bones.tip`, read by
+  `mutLimbs`/`kingLands`; `kingMeasureBlows` takes the axe arm by its HEAD alone — at the quick cut's contact his fist is out at his
+  side and farther from his middle than the head it swings across in front of him: by the farthest point he was turned 69° to bring
+  his FIST to you). `KING_AXE_K` 0.72: shortened about his grip (the axe is ~1.6 m from fist to head where the clips swing a sword;
+  the cuts that end point-down dug its head 10-33 cm into the floor).
+- **Measured** (`tools/kingstudy.js`, 40 s): standing, 15 of 17 swings took health (18 health), strafing 13 of 17; every blow 0.06-0.25
+  m off your face when it lands. `tools/kingfight.js` end to end (the flip section is now the forced knockdown): the descent, 10 swings
+  in 20 s, knockdown rise at 1.15 s / up at 2.5 s, the pillar (run 4 s, up to 43.6, perch, leap, slam, fighting at 12.7 s), the death
+  into the burst and the stats — 0 errors. `tools/kinghookwall.js`: torn off at the hook, sKnock → sRise → the overhead.
+- `kingMeasureBlows` now takes everything but the blow's own action OUT of the mix while it poses (`enabled = false`): it was
+  harmless here, but a fade still running keeps its weight whatever `.weight` says.
+
+## 2026-11-26 — the Scourger: the axe in his fist, bigger, his wings, his own slam, a stalking run, back and forth
+The owner, with `~/Downloads/exported-model-4.glb`: "the final boss needs to be bigger and actually hold his weapon it floats beside
+him … use his wings flapping in the sketchfab animations so he can float down … he should fly down then land on entry … make him more
+visible in the black and white setting … use the walk animation from here too. he should do his slam down from the sketchfab
+animation too. try this run with his old one too sometimes … i want this to feel like a sekiro fight back and fourth".
+- **THE AXE FLOATED 1.22 m OFF HIS FIST, in every clip** (`tools/scourgelook.js`: nearest axe point to the palm). The packer parented
+  it to the hand "at rest" while the pose bones still held the LAST FRAME IT HAD KEYED (setting `animation_data.action = None` leaves
+  every pose bone's loc/rot where the keying put it). Fixed in `tools/scourger_pack.py` (pose bones to identity before the
+  parent_set); repacked (its docstring now carries the glbquant + gzip steps). 0.04 m now. **Every head path, contact and stand-off
+  measured before this was the floating axe's** — `KING_AXE_K` (0.72) is kept on the true length: 1.68 m from palm to head at full
+  size, which puts the head 19 cm into the floor in his own idle.
+- **TWO HOLDS** (`kingAxeHold`, `KING_OWN_HOLD`, `tools/scourgegrip.js`): his own clips hold it like an ice pick — the head out of
+  the little-finger side (haft · index→little knuckle 0.99) — which is right for his plunge (head-first into the floor). A man's sword
+  leaves the fist on the THUMB side; through the owner's sword clips the ice-pick head trailed behind and under him. The other hold is
+  the axe turned half round about his palm's normal through the grip; eased between by the weights of the actions IN THE MIX
+  (`a.isScheduled()` — every action of his reads `enabled` at weight 1 while stopped: counted that way, his idle came out 57%
+  turned). On a change between his clips and a man's he turns it over in his hand. `kingMeasureBlows` sets the hold per blow.
+- **`kingMeasureBlows` NOW POSES ON THE CLIP ALONE** (`u.mixer.rawUpdate`): `u.mixer.update` is wrapped by `installLife` (the life
+  layer, then `postClip`), and through it the overhead's head measured a metre lower than the clip puts it.
+- `SCOURGE_HIT` re-picked where the head crosses in front of him (`tools/scourgeclips.js &prof=`): the overhead 0.313 (2.1 m up, 3.1
+  out), the quick cut 0.404, the stepping cut 0.412, the dash 0.195, the string 0.087 / 0.42 / 0.54, the plunge 0.585. Stand-offs 1.5-3.9
+  m, every turn 0-24° (were up to 89°). `KING_HUNT.to` 2.1 → 3.4 (the dash out of the run landed 1.6 m inside its stand-off), his
+  `stepBack` 2.2 and `lungeMax` 3.4 (his stride is 1.3 of a man's). `kingAxeFloor`: where the head would go under the floor his wrist
+  turns it up onto it (four of the sword clips put it 21-26 cm under).
+- **BIGGER**: `fixScale` 1.3 (it IS the model's scale for a fixScale kind), `h` 3.4, body/hitR/limbR up with him. `KING_SLAM.R` 4.8.
+- **SEEN**: `gamma` 0.75, `emis` 0.3 (his own map), `rim` 0.28 — graded as the fight grades it he was one black shape on the floor.
+- **HIS WINGS** (`kingOwnClips`): of his four clips only the plunge flies (sprung at f20, airborne f24-f58, two wing-beats, down f62,
+  the axe in the floor f67). `sFly` = one beat f40-f56 looped, its last 6 frames eased into the 6 before f40 (no two airborne frames
+  match closer than 24°); `sLand` = f54 to the end (`sliceClip` — three's subclip drops constant tracks); `kSlam` = the whole plunge
+  (the king's slam is out of `KING_KEEP`; `KING_SLAM` off f20, land f64). The descent glides his FEET's mark to the floor while the
+  flight holds his body 3 m up on his wings, hangs, and drops in `sLand` (`KING_LAND0` 8/30 before the touch).
+- **THE STALKING RUN** (`sStalk`, Mesh2Motion "Run_Stealth"): on Mesh2Motion's UNREAL skeleton and skinned — `tools/glb_split.py --ue`
+  renames the joints to Mixamo's and drops the mesh. The packer read its forward 119° off (`tools/scourgeface.js`: his hips faced
+  46-76 against his walk's ±3); `KING_STALK_YAW` turns the whole run back on its hips track. His run is `kingRunClip`: the stalk two
+  times in three, the king's sprint the third (the hunt, the pillar run, the run gait).
+- **BACK AND FORTH**: strings 4 deep (6 angry), each ending in a 0.6 s opening (0.45 angry); outside it he turns half your blows
+  (`block` 0.5) and comes straight off the block; your parry window the pack's own (`parryK` 1).
+- Measured: `kingstudy.js` 40 s standing 14 of 18 swings took health, strafing 16 of 17; `kingfight.js` end to end 0 errors (descent,
+  11 swings in 24 s, knockdown, pillar run/climb/leap/slam, death, stats); `kingentry.js` stills of the fly-down and landing.
+
+## 2026-11-26 (later) — the Scourger again: the axe the right way round, in his fist; smoother; readable; his rig used
+The owner: "the final boss animations need to feel smoother he should[n't] be stuttering like that when flying down either. his
+weapon is the wrong way hes holding the blade side look at the sketchfab and make it exact please. make his moves more readable. fix
+his walk animations too they look weird. fix the rig an dutilize it to its fullest potential" — and "make sure the axe is in his hand".
+- **WHAT I HAD AS ITS HEAD WAS ITS BUTT** (the notes above about an "ice-pick hold" and a half turn are WRONG). Rendered beside the
+  source: a polearm, 2.45 m along the haft in his file's metres — a ball and a crescent blade at one end, 0.77 from his fist out of
+  its THUMB side; 1.68 of bare haft out of the back. `kingAxeTip` now: full size (`KING_AXE_K` 1), the striking end = the middle of
+  the last sixth of it from the butt (`u.kAxeTip`), its far edge too (`u.kAxeFar`, for `kingAxeFloor`).
+- **TWO HOLDS, a slide not a turn** (`kingAxeHold`, `kingHaftAt`, `KING_BUTT` 0.5): the file's own; and the long grip — the haft slid
+  through his fist ALONG ITS OWN CENTRELINE (it is curved) to half a metre from the butt, turned so it runs through the fist as it
+  did. By what he is doing (`KING_OWN_HOLD`: wait / ready / descend keep the file's; everything else the long grip), eased at 2.2/s:
+  one slide as he rises from his landing. `tools/scourgeinhand.js`: palm to the axe 4.6-5.7 cm in every clip, both holds, mid-slide.
+- `SCOURGE_HIT` off the blade, long grip: plunge 0.612, sAtk 0.319, sDash 0.20, sCutB 0.415, sCutC 0.425, sCombo 0.087/0.41/0.537.
+  Stand-offs 2.8-5 m (a polearm). `stepBack` is OFF again (it slid him backwards through wind-ups).
+- **The fly-down's stutter**: the flap was one beat with its last 6 frames eased onto 6 others 24° away — a hitch a beat.
+  `kingPingClip`: half a beat (f40 the bottom of the stroke, f50 the top), there and back on a cosine — no seam.
+- **Readable**: `natHold` 0.22 (overhead) / 0.16-0.18 (cuts), the string at 0.9; `kingRigLife` (in `kingPersona`): his WINGS rise
+  through each wind-up (higher for a longer one) and are thrown down as it lands, half up in the hunt, flared in a stagger; his JAW
+  opens with them; his TAIL swings against his turns, three joints each later than the last. Poses of his own (`KING_POSE`, from
+  the plunge: wings f48, jaw f36). Not through his own winged clips.
+- **His walk**: his own walk covers 1.14 m/s and was stretched to 1.8× before a run took over at 0.3× (`velGaitAnim`). `gaitLo` 0.7 /
+  `gaitHi` 1.3 (new kind knob); backing up is his walk reversed (was the dodge's hop looped); the hunt runs each clip a little over
+  its own stride (`KING.huntSp`: the king's sprint 6.3 m/s, the stalk 8.6) — the sprint had been played at 1.4×.
+  NOT measured: `tools/scourgewalk.js` never caught him on his walk (at 4.5 m he swings in place, at 7 m he hunts).
+- Measured after: `kingstudy.js` 15 of 16 swings took health; `kingfight.js` and `kingentry.js` 0 errors.
+
+## 2026-11-26 (night) — you could walk into the pillars; his runs on his own legs; the entrance still; one look; 320
+The owner: "AS FOR THE FINAL BOSS I SHOULD NOT CLIP THROUGH THE PILLARS EVER. ALSO FIX THIS LEGS WHEN HE RUNS ITS BAD IMPROVE HIS
+ANIMATIONS TO MATCH HIS RIG BETTER. HIS ENTRANCE HES TWITCHING ALOT IT SHOULD BE SMOOTH WITH JUST HIS WINGS FLAPPING. ALSO HIS
+HEAD KEEPS SPINNING AROUND WEIRD … MAKE IT YOU CAN KICK THE FINAL BOSS WHEN HES DOWN TOO. GIVE FINAL BOSS MORE HEALTH TOO."
+- **THE PILLARS WERE 2.4 m TALL TO THE GRID** (`tmpBuildSolids`): stone over head height was dropped as "not in the way", and a
+  shaft stands on its stepped base, so its own cells had NO stone between knee and head — solid only as the base's inside, at
+  the base's 2.3 m. Up the base's steps (each under `ROCK_STEP`) and from 2 m the shaft was air. Now: stone over the head is
+  kept per cell in half-metre bands (`over`); after the fill, a solid cell's top is carried up through the bands that follow on;
+  a shaft cell the base does not enclose is solid from where its stone begins (under 4 m, the pillars' ring only); what a tall
+  shell encloses is raised; and the tall cells in the ring are CLOSED (grown and shrunk 1.25 m — three shafts' shells were
+  sparse on a 0.25 m grid). Tops 16-36 m. `tools/tmppillar.js`: 198 walks at the 11 pillars, feet 0-8 m up, never in or within
+  0.15 m of the stone. The same grid answers the hook, the ball and his own clamp: `kingfight.js` still runs, climb / perch at
+  43.6 / leap / slam. PROBE TRAP: a walker pushed out of a round thing slides ROUND it — "ended past it" is not "went through".
+- **HIS RUNS ON HIS OWN LEGS** (`kingRunLikeWalk`, `KING_GAIT`, `tools/scourgestrip.js`): sStalk and kSprint keep their rhythm,
+  arms and spine; hips' lean and height half way, and thighs/shins/feet/toes 0.65 of the way, to his own walk's — its one cycle
+  (41 frames; the clip is two) laid over the run's, lined up on which leg is forward (thigh-against-thigh, best offset); his
+  middle knees, leg bases and toes take the walk's whole (no man has them: they stood in their bind). The weapon arm is held
+  0.75 to its mean through the cycle (the sprint's pump put the blade through the floor twice a stride).
+- **The entrance**: `kingPingClip(…, only)` — only `Wing*`/`Feathers*` beat; everything else holds the middle frame's pose.
+- **His head**: `kingPersona`'s own look is OUT — it stacked on `lifeApply`'s (0.95 + 0.72 rad on the same neck and head, and it
+  held its limit behind him where the life layer lets go: side to side as you circled).
+- **Kicked when down**: the kick itself now takes a man who is down (the ragdoll session's change); for a boss already down it
+  hurts and shoves and may NOT knock him down again over the first (`kickMan`). **hp 320** (230).
+- Not re-measured after these: `kingstudy.js` hit rates (the runs and the look do not touch a blow's contact).
+
+## 2026-11-26 (evening) — the Scourger filmed: his wings carried, the swoop, a wind-up that is not frozen
+The owner: "final boss walk and all animations are still bad improve these". `tools/scourgefilm.js` films the REAL fight from the
+side on the clock (you backing away, then circling), a frame every few ticks, each tile labelled with his clip. Use it before any
+strip of a single clip: it shows what the layers do together.
+- **What the film showed.** Backing away from 6 m he never walks: 203 of 260 frames were `sDash`, the rest a 0.4 s hunt and the
+  weapon idle. His wings were three different things from one second to the next: high in his own walk, hanging in `sStalk`,
+  flat along his spine through a dash.
+- **Why.** His wing bones (`Wing1_L/R`, `WingBase_L`, `Wingbase_R`) hang off `Character1_Spine2`. His own clips hold that chest
+  forward like a raptor's; a man's clips hold it upright and throw it about, and the wings (his idle's LOCAL tracks, laid into
+  every retargeted clip by `kingLayerIdle`) went wherever the chest went.
+- **`kingWingCarry`** (in `kingRigLife`): through a man's clip the four wing roots are held where his own idle carries them in
+  his BODY's frame (the idle's chest chain evaluated on the same clock, so its slow sway stays), turned with him by the chest's
+  twist about his up axis only, and raised toward the plunge's f48 pose by the wind-up weight `KRL.w`. Weight 0.8, eased at 5/s;
+  off through his own clips (`idle`, `walk`, `plunge`, `rear`, `sFly`, `sSwoop`, `sLand`, `kSlam`) and while he is down.
+- **The swoop** (`sSwoop`, `KING_SWOOP`): a hunt that starts from more than 9 m is flown. It is the entrance's wing beat
+  (`kingPingClip` f40-f50, wings only) with the hips' track premultiplied by a 0.48 rad pitch about X (0.6 dived him nose-down) and their height set to
+  2.0× his idle's with a small bob. In the hunt it beats `sfxWingBeat` and blows dust, in place of footfalls. Shorter hunts keep
+  the owner's two runs (`kingRunClip`). Its pace is the hunt's own (8.6 m/s), so nothing about the fight's timing moved.
+- **A held wind-up is not a frozen one**: the dash's draw was one identical frame for over half a second (`natHold` stops the
+  clip). Through a draw his two spine joints wind up to 0.07 rad against the blow and shake with it (41 and 27 Hz, growing with
+  the square of the draw), gone at 26/s when it is loosed. The blow's path and `SCOURGE_HIT` are untouched.
+- Measured after: `kingfight.js` end to end, 0 errors (entrance, knockdown and rise, climb, death, credits). `kingstudy.js &secs=60`:
+  24 swings, 22 took health (kgDash 1 of 2, kgCutB 5 of 6, the rest all), 0 errors — the tremble does not move a contact.
+- NOT done: the weapon idle (`sIdleW`) and the dash's deep lunge are still a man's poses on his legs; he still never uses his
+  own walk when you back away (the hunt takes over at 5.6 m). The swoop's last pitch (0.48) was not re-filmed.
+
+## 2026-11-26 (late) — the Scourger: the spin, the axe through him, his own walk, the snaps, harder
+The owner: "the final boss rig is off fix him now. his weapon clips through his body too. his walk and run look sideways and awkward
+fix it. i need this guy to move fluid and seamless … make him more aggressive and fix his head and chest spinning vertically around";
+then, with a screenshot of the stalking run head-on: "look this animation right here change to his sketchfab walk".
+New probes: `tools/scourgerig.js` (the real fight on the clock, per clip: hips against facing and travel, chest and head in his
+group's frame with their axes taken off his own idle, the head's/chest's turn per frame, axe vertices inside him; `&tiles=1` stills
+of the worst), `tools/scourgeclipspin.js` (every clip on the clip alone and with every layer; axe against `u.kac`'s capsules),
+`tools/scourgeprofile.js` (how much of him moves each 1/15 s: held stretches), `tools/scourgeendpop.js` (key-to-key jumps: snaps at a
+clip's ends), `tools/scourgefront.js` (clips head-on through the game's camera: which clip is the owner's screenshot), `tools/_with.js`
+(a probe run with window switches set first). PROBE TRAP: posing clip after clip on a paused mixer, three's mixer writes a bone only
+when its keyed value CHANGES — flush its two accumulators to different numbers first (`bd.buffer.fill(0, vs, 2vs); fill(1, 2vs, 3vs)`),
+never NaN (an action with no weight mixes the stale accumulator in and NaNs the bone).
+- **THE SPIN WAS A RESTORE-ORDER BUG** (`installLife`, every kind): the layers' saved bones were put back FIRST-SAVED-FIRST. `lifeApply`
+  saves his neck/head/chest, `kingPersona` saves them again after the life layer turned them, so the restore left them at the second
+  save — the clip PLUS the life layer. And three writes a bone only when its keyed value changes: through any still pose (his weapon
+  idle — one frame held 2 s — the wings-only beat, every `natHold` wind-up) nothing overwrote it, and the look, the breath and the
+  lean were added again every frame. Measured: his head turned 11°/frame on average through the weapon idle, chest 30-130° off the
+  clip. Now LAST-SAVED-FIRST: 0-1°/frame. Any kind whose `postClip` re-saves a bone the life layer saved had the same drift.
+- **The weapon idle is out** (`gaits.idle`, `alias.idle2`): `sIdleW` is a single held frame and a man's bladed stance, hips 35° and
+  chest 48° off the way he faces — "his stance oddly sideways". His own idle.
+- **HIS OWN WALK FOR EVERY PACE, AS AUTHORED** (`kingRunClip`, `KING_WALK_K` 1, `kingHuntGait`): the stalk and the sprint are no
+  longer played. (For an hour it was his walk at 2.2× its pace; the owner: "just use the final boss walk animation from sketchfab this
+  one is not working".) His file's walk at its own pace — the gait within 15 % of it (`gaitLo` 0.85 / `gaitHi` = `gaitMax` 1.15,
+  the feet matched), and NO LAYER over it: `kingRigLife` treats it as one of his own clips (no wings raised, no tail swung) and
+  `kingPersonaLayers` eases off it (`asIs`); only the life layer's breath and look remain. It covers 1.14 m/s, so the ground is
+  his wings': a hunt from over `KING_SWOOP.from` (7 m, was 9) is flown, and a walked one takes off once you are past 7 m or it has
+  lost 0.4 m on you after 1.2 s (`KING.huntD0`). The pillar run is flown. Measured: walking, hips 1° off his travel (p90 5);
+  `kingstudy.js` 21 swings, 23 health taken.
+- **THE AXE NEVER THROUGH HIM** (`kingAxeClear`, `kingAxeClearInit`, `KAC_PAIRS`): capsules for his trunk, neck, head and legs, each
+  as thick as his own skin round that bone (70th percentile, read once off his skinned mesh); the axe sampled as 40 slices of its
+  own mesh, each slice's middle and three farthest-out vertices (the haft's centreline `cl` runs only butt -> grip, and the
+  crescent is broad — the line alone missed the blade in his thigh); where any of it is inside (radius + 5 cm) his wrist turns it
+  out about the line from his fist, the deepest first, six passes, ≤ 1.4 rad, every frame afresh (an eased solve kept turning the
+  old way as the clip turned the haft another way and put it back in). Runs LAST in `kingPersona` (the arms' carry, the breath and the
+  coil after it put the haft back through his chest — `kingPersonaLayers` now holds those). NOT THROUGH A BLOW: eased out at 8/s
+  while he swings — with it on, the haft sweeping close across him set the wrist turning mid-cut and 3 of 24 blows landed (the cut a
+  metre off your face at its own stand-off); off through blows, 28 health from 23 swings. Measured on the clips: the reels 18-67
+  vertices inside him -> 0-16, the guard 11 -> 0, the tail whip 8 -> 0; the get-up's sitting part still pinches the haft between
+  his legs (~25: the wrist alone cannot free it).
+- **THE SNAPS** (`KING_RETIME`, `kingRetime`, `kingMapT`, `kingRemapHits`): the stepping cut's last key was its first pose again
+  (695° summed in 1/30 s against a median 99 — a pop the instant it ended); the dash and the guard started on a pose not their
+  motion's (246/42, 99/17); the dash lay still in its lunge 0.53 s and took 0.6 s to rise. Piecewise time maps, resampled at 30 fps:
+  the keys cut, the lunge 0.22 s, the rise a little quicker. Contact fractions move with them (`kingRemapHits`, before `naturalSwings`).
+  TRAP: that first-key snap in the dash whipped the blade through your face 0.25 s early — the old study's first "hit" every run,
+  whose knock-back then spaced the standing camera for every blow after. Don't read the old 22-of-24 as all clean.
+- **His range**: the hunt now ends at the dash's own measured stand-off (`kingHuntTo`, 4.24 m; it was 3.4 and the clean dash put its
+  blade 0.6 m behind your head); `stopFloor` 0.02 (new kind knob in the swing pick, default 0.15): a blow far from its own
+  stand-off is all but never drawn (the plunge from 3.1 m with its stand-off at 4.8 went behind your head).
+- **Harder**: `aggr` 7.6 (6.4), `press` 1.5, strings 5 deep (7 angry), the opening 0.38 s (0.26 angry), `circle` 0.02, `regroup`
+  0.04, `sizeUp` 0.01, `KING_HUNT.from` 5.2, the tail 3 s apart.
+- Measured after: `kingstudy.js &secs=60` 23 swings, 28 health taken, every blow 0.05-0.3 m off your face; `kingfight.js` end to
+  end 0 errors (descent, knockdown/rise, the flown pillar run, climb, slam, death, credits).

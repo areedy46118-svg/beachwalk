@@ -311,7 +311,7 @@ if (M === 'duel') {
         if (s.atk > A.wind - 0.1 && s.atk < A.wind + A.strike) {
           L.cur.eye = Math.min(L.cur.eye, hp.distanceTo(cam));
           if (L.hp && me.farmTool) { const vv = hp.clone().sub(L.hp), q = me.farmTool.getWorldQuaternion(new me.g.quaternion.constructor()), ax = new V3(0, 1, 0).applyQuaternion(q), fc = new V3(1, 0, 0).applyQuaternion(q);
-            vv.addScaledVector(ax, -vv.dot(ax)); if (vv.length() > 0.006) { const dd = vv.normalize().dot(fc); L.cur.lead += dd; L.cur.alead = (L.cur.alead || 0) + Math.abs(dd); L.cur.n++; } }
+            vv.addScaledVector(ax, -vv.dot(ax)); if (vv.length() > 0.006) { const dd = vv.normalize().dot(fc); L.cur.lead += dd; L.cur.alead = (L.cur.alead || 0) + Math.abs(dd); L.cur.n++; if (s.atk <= A.wind + 0.01 && s.atk > A.wind - 0.12 && !(b.hitstop > 0)) { L.cur.ap = (L.cur.ap || 0) + Math.abs(dd); L.cur.apn = (L.cur.apn || 0) + 1; } } }
         }
         if ((me.hitAt || 0) !== L.cur.hat) L.cur.land = true;
         L.hp = hp;
@@ -319,12 +319,12 @@ if (M === 'duel') {
       if (Q.get('trace') && A && tip && me.farmTool && L.hp0) { const hp = tip.getWorldPosition(new V3()), vv = hp.clone().sub(L.hp0), q = me.farmTool.getWorldQuaternion(new me.g.quaternion.constructor()), ax = new V3(0, 1, 0).applyQuaternion(q), fc = new V3(1, 0, 0).applyQuaternion(q), along = vv.dot(ax); vv.addScaledVector(ax, -along);
         if (got < 3) log('TR', s.swing, 't-wind', (s.atk - A.wind).toFixed(3), 'perp m/s', (vv.length() * 60).toFixed(2), 'along m/s', (along * 60).toFixed(2), 'lead', vv.length() > 1e-4 ? vv.clone().normalize().dot(fc).toFixed(2) : '-', 'roll', (me.farmRoll ? me.farmRoll.ang : 0).toFixed(2), 'eye', hp.distanceTo(cam).toFixed(2)); }
       if (tip) L.hp0 = tip.getWorldPosition(new V3());
-      if (!A && L.cur) { const c = L.cur, r = R[c.k] || (R[c.k] = { n: 0, land: 0, eye: [], lead: [], d: [] }); r.n++; if (c.land) r.land++; if (c.eye < 9) r.eye.push(c.eye); if (c.n) { r.lead.push(c.lead / c.n); (r.alead || (r.alead = [])).push(c.alead / c.n); } r.d.push(c.d0); got++; L.cur = null; }
+      if (!A && L.cur) { const c = L.cur, r = R[c.k] || (R[c.k] = { n: 0, land: 0, eye: [], lead: [], d: [] }); r.n++; if (c.land) r.land++; if (c.eye < 9) r.eye.push(c.eye); if (c.apn) (r.ap || (r.ap = [])).push(c.ap / c.apn); if (c.n) { r.lead.push(c.lead / c.n); (r.alead || (r.alead = [])).push(c.alead / c.n); } r.d.push(c.d0); got++; L.cur = null; }
       L.atk = s.atk; L.sw = s.swing; last.set(me, L);
     }
     const med = (a) => { a = a.slice().sort((x, y) => x - y); return a.length ? a[a.length >> 1].toFixed(2) : '-'; };
     log('DUEL', tool, 'blows', got, 'in', (f / 60).toFixed(0), 's');
-    for (const k of Object.keys(R).sort()) { const r = R[k]; log('  ', k.padEnd(9), 'n', r.n, 'landed', r.land, '| head to eye median', med(r.eye), 'min', r.eye.length ? Math.min(...r.eye).toFixed(2) : '-', '| edge leads', med(r.lead), 'either edge', med(r.alead || []), 'after its first', med(r.lead.slice(1)), '| from', med(r.d)); }
+    for (const k of Object.keys(R).sort()) { const r = R[k]; log('  ', k.padEnd(9), 'n', r.n, 'landed', r.land, '| EDGE-FIRST COMING IN', r.ap ? med(r.ap) : '-', '| head to eye median', med(r.eye), 'min', r.eye.length ? Math.min(...r.eye).toFixed(2) : '-', '| edge leads', med(r.lead), 'either edge', med(r.alead || []), 'after its first', med(r.lead.slice(1)), '| from', med(r.d)); }
     const me = units().find((u) => u.kind.tool === tool && u.farmReachZ); if (me) log('   Z', JSON.stringify(me.farmReachZ));
   }
 }

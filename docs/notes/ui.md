@@ -1650,3 +1650,54 @@ and the clip 1.12 × the screen's height (`TAUNT_TALL`), played at 12 fps × 1.1
   scheduled sounds are silenced by ducking the effects bus (`menuDucked`; the audio watchdog and the sfx slider leave it alone
   while ducked). `tools/menuhold.js`.
 - The pack's ring circles 84 → 100 px, the heading 0.9 → 1.08 rem (paper: 1.2 → 1.42). The row's height is the keychain's 240.
+
+## The water ball's drop in the HUD's hand (2026-11-23)
+The owner: "make the water icon better have it match the game style its too corny and cartoonish". The first drop was an SVG
+with a blue gradient, a white highlight curve, a pulsing glow and a scale-bounce pop — none of which the rest of the HUD does.
+The HUD's language is the owner's marker ink as alpha masks coloured by CSS (`hand_hud_pack.py`), dark glass inside, moonlight
+ink at ~0.55, the fill rising like the blood in the health boxes. There is no drop in his sheets, so `tools/drop_ink.py`
+draws one procedurally the same way (one seeded marker line, width swelling, ends crossing past the tip) into
+`assets/hud/drop-ink.png` + `drop-shape.png` (64 x 80, 2x). `#seadrop` is now `.glass > .water` (masked by the shape, the
+water `scaleY(var(--k))`) + `.ink`; ready turns the ink white like a held slot's, the moment back brightens the water once
+(`sdBack`), no glow, no bounce. Stroke width to match the slots: ~3.7 px at 2x (the slots' ink is ~4 px in their 144 px
+cells, drawn at 72). A still of the states: `tools/dropshot.html` (lifts the CSS out of index.html) under headless Chrome
+`--screenshot`.
+**Then, the same night: crayon.** The owner sent a screenshot of a stock site's oil-pastel blue drop (behind its signup wall):
+"use this as the icon but make it a little lighter blue to stand out". The stock picture itself was not used (it is licensed);
+`tools/drop_crayon.py` draws one in that manner — thousands of short pastel strokes in a hatch, darker at the rim, a light
+pool low in the belly, pale specks of paper tooth, a fibrous edge — in a lighter sky-to-sea blue, `assets/hud/drop-crayon.png`
+(72 x 90, drawn 36 x 45). The marker version (`drop_ink.py`, `drop-ink`/`drop-shape`) was deleted. `#seadrop` is `.dry` (the same
+image, grey and dark) under `.wet` (full colour, `clip-path: inset(calc((1 - var(--k)) * 100%) 0 0 0)`, uncovered from the
+bottom up; `--k` starts at 0.1 on the throw so the round foot shows). The elongated tip wanted `sin(t/2)^1.75` in the teardrop.
+**And lit when full** ("make it light up a little when full"): `.ready .wet` brightness 1.18 saturate 1.1, and `#seadrop.ready` adds a third drop-shadow, its own blue (110,185,255,0.55) at 7 px, over the dark ones; `sdBack` lands on the lit filter, not on none.
+
+## The whale's artifact gold in the pack (2026-11-23)
+The owner: "make whale artifact be outline yellow like the rest of the artifacts are in the pack". The flame's and the sea's
+items set their own `fire`/`sea` class loose; `art` (gold) was only a WEAPON with an artifact set in it, so the whale's,
+loose, had a plain frame. `art` now also when `item === whaleArtItem`, in the pack (`renderPack`'s className) and the
+hotbar (`renderHotbar`'s toggle). Measured: its cell `--c` #ffd46a beside #ff9a3c and #7fe0f2.
+
+## 2026-11-25 — the kick on Q (`KICK`, `kickLeg`, `tools/kick_pack.py`)
+The owner, IMG_7253: "add this kick like the hands retro for when you hit q … knock enemies off balance … if it a death kill make them
+fly further … a kick like in other games like dark messiah that knocks people over and they get back up sometimes too. bosses should not
+be knocked over easy". His right leg cut out of the clip the taunt's way (`retro`, `assets/hud/kick-leg.webp` + `.json`, 7 KB) — but
+Vision's foreground model found the leg on 2 of 7 frames (motion blur), so `kick_pack.py` cuts by COLOUR: navy trousers (measured
+(59,59,65)…(91,88,100): dark, B > R + 0.012, B ≥ G), joined to the bottom edge, left of the black cabinet (x < 0.62), plus the white sock
+at their top end. Frames 37-40 only (41-43, the leg coming down, cut ragged in their light): played UP, held, and back DOWN the same
+frames (`KICK_SEQ`, 15 fps), sliding off the bottom. Laid as his phone had it, `KICK_TALL` 2.9 half-heights and raised `KICK_Y` 0.3 (2.15
+and centred read thin and low on a wide screen). The taunt's shader and its light read off the frame (`handTint`).
+- Q was "put the weapon away" (and close the inspect) — it is the kick now; Q still closes the inspect; the weapon's slot key puts it away.
+- The strike on its 4th frame (`kickStrike`): the nearest man in front (±50°) in reach (2 m + his body), not through a wall (the line to
+  his chest against what is drawn — `ehpBlocked`, the walk grid, called a man in the street blocked). His guard does not stop it
+  (`block` 0). 1 hurt; the active body struck at the chest along the kick (`larHit` 1.6), a shove (`flinchPush` 4.6 m/s), his blow
+  broken off, a 0.65 s stagger; DOWN by `mutKnockdown` 32 % (55 % caught winding up) — and up again. A kick that kills: `killFling`
+  0.95 (the dark knight's throw). A BOSS (`kickBoss`: kingBody/boss/bossDeath, hp ≥ 40 or 2.6 m+) is moved (1.1), stunned 0.12 s, its
+  blow not broken, down 3 %. Nothing to kick: the nearest castle prop on the floor in front breaks (`KICK_PROP` 7 against `CP_MAT`:
+  wood, clay, sacks, produce — the stone well and fountain hold), else the blade's world strikes down the kick's line.
+- FARMERS CAN GO DOWN now: `FARM_BASE` `knockClip: 'mKnock', riseClip: 'mGetUp'` (the knight pack's reels they already carried) at the
+  knight base's timings; nothing else knocks them (no `knockAfter`/`knockHeavy`/`knockP`).
+- `tools/kick.js` (the castle street: 14 kicks, kills, the paladin): of the men struck 3 of 7 went down and got up 2.9 s later, the
+  rest shoved 0.5-0.9 m and stunned 0.65 s; a killing kick threw the body 3.8 m, hips 1.4 m up; the paladin down 0 of 8, moved
+  0.1-0.9 m. `tools/kickprop.js`: pail, barrel, stall, tub broken; the well holds. PROBE TRAPS: `b.look(Math.PI, …)` faces +z — the
+  man at −z was BEHIND the kick (aim with `lookAt`); a farmer you put in front walks back to his place (hold him until the strike);
+  the next kick refused while the last still plays (`KICK.on`).

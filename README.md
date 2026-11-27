@@ -14,6 +14,10 @@ python3 serve.py 4173
 Then open <http://localhost:4173> and click to begin. Any static server works
 (`npx serve`, VS Code Live Server, …) — `serve.py` is just dependency-free.
 
+On an older computer, tick **Low graphics mode** in the menu (it is never on by itself); the choice is remembered on
+that machine. Open
+<http://localhost:4173/?fps> to see the frame rate, the render scale and the GPU in the top-left corner.
+
 ## Controls
 
 | Input | Action |
@@ -95,6 +99,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **Physics objects** — driftwood, a pail, a glass float, a stone, a can.
   Click to grab & carry (HL2 / Amnesia style), click again to throw, `G` to
   drop. A tiny custom rigid-body sim (gravity, ground bounce/friction, walls).
+  Every piece of driftwood on the beach also takes a swing — a wood knock, pale
+  chips, and it is knocked along the blow (a short log jumps, a big root
+  shifts) — and a thrown or batted piece hurts whatever it reaches, the crabs
+  included.
 - **Inventory + equipping** — a vertical hotbar on the **left** that appears
   once you pick something up. Items either **use** (the bottle → reads the
   note, `NOTE_TEXT`; the crab → examine view; the syringe → examine, or draw
@@ -125,9 +133,12 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
   the shovel and it auto-equips: a first-person **bare hand and forearm**,
   fist closed around the shaft (aspect-aware so it stays framed at any window
   shape), and **click digs wherever the crosshair is pointing** — a layered
-  synth *shff → crunch → grain-spray* sound, a detailed crater (irregular
-  pit, dark undercut bowl, shovel gouges, scattered clods) with a real 3D
-  sunk cone + spoil mound, and a burst of tumbling low-poly sand chunks.
+  synth *shff → crunch → grain-spray* sound, a mark shaped by the swing (a
+  scooped hollow with its lip heaved up and a fan of thrown clods for a spade,
+  a long narrow slot sprayed both ways for a blade — lit by the moon on the
+  beach's own sand, with a faceted crescent of spoil at its front rim), and a
+  burst of thrown sand. A crab cut down comes apart as itself: its legs, its
+  claws and its cracked shell, in its own colours.
 - **The Military Shovel is in a case** — an olive equipment case on the desk
   in the bunker, stencilled E-TOOL, that reads LOCKED until the Blue Blood
   Dealer is dead and opens on `E` after. The shovel lies in its foam. It is
@@ -411,6 +422,10 @@ endless; the lighthouse is a fixed landmark at `LH_Z` (≈ 1.2 km away).
 - **The city** — pushed far back and heavily fogged so you can only just make
   out rooflines and a scattering of lit windows, under a faint sodium
   light-pollution wash that lifts over the cliff ridge.
+- **The castle's men** fight with swords and axes out of a weapon pack, held
+  in the fist with the edge or the bit leading each stroke. Now and then a
+  knight carries a shield slung on his back: hit him from behind and it is
+  knocked off and clatters away, and that blow does not hurt him.
 - **The castles are one road, and the lighthouse is its end** — in at the
   first castle's gate (the farmers' fight), out of its back door and through
   a battlemented curtain wall across the bluff into Castle XIII's north court
@@ -736,9 +751,14 @@ runs up the stairs. Outside, he is waiting on the swing in front of the house.
 Ask him "You okay?" or "What are you?" and he hops off and follows you. He
 fights beside you until he breaks.
 
-The pack has an **Enemy Log** beside it: every kind of thing you or a companion have killed,
-named if it is someone you have spoken to (else ???), standing in its idle in a box you can
-drag to turn and scroll to look closer.
+The pack has an **Enemy Log** beside it: every kind of enemy in the game, numbered. One you
+have not killed yet is dim, and shows as a flat black silhouette. Once you or a companion kill
+one, its line turns warm with a count, and its model stands in its idle in a box you can drag
+to turn and scroll to look closer. It is named if it is someone you have spoken to, else ???.
+Men of the same body share one line, whatever weapon they carry.
+
+Take him all the way up the lighthouse and he says goodbye at the top: the beach is his home.
+He goes back down to his swing, and only then will the call of the crow work up there.
 
 ## The bunker
 
@@ -1065,7 +1085,17 @@ by [Kaan Tezcan](https://sketchfab.com/kaanTezcan) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Ancient King who comes down
 into the desert temple (`assets/ancient-king.glb`, packed by `tools/gltfpack.py` and
 `tools/glbquant.py`: textures to 512, normal maps to 128, metal-rough dropped, gzipped; his
-own hover motion kept). The light he comes down in is built in the game.
+own hover motion kept). The light he comes down in is built in the game. (Since 2026-11-25 he is out
+of the game: the final boss is the Scourger, below. The file is still in `assets/`.)
+
+This work is based on ["Scourger Rig"](https://sketchfab.com/3d-models/scourger-rig-deb9b27965064f85a7f482599f5a69a8)
+by [DM-913](https://sketchfab.com/SuperKapoo913) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the Scourger, the final boss, who comes down
+into the desert temple (`assets/scourger.glb`, packed by `tools/scourger_pack.py`: his control rig rebuilt
+from the bones that move his skin, his own four clips re-baked onto it, decimated to 25k triangles,
+textures to 1024 / 512, metal dropped, quantised by `tools/glbquant.py`, gzipped). His fighting moves
+are the owner's Mesh2Motion clips (`assets/scourge-moves.json`) and three of the Ancient King's; he flies
+down on his own plunge's wing-beats and slams down off the pillar in it.
 
 This work is based on ["Bedroom"](https://sketchfab.com/3d-models/bedroom-13df3d6c33014cccaad3ae8c1f251f6a)
 by [jimbogies](https://sketchfab.com/jimbogies) licensed under
@@ -1075,6 +1105,13 @@ roughness maps dropped, textures to 256, the photo in the frame on the desk
 replaced with the owner's own). The storm, the rain, the light through the window,
 the syringe and the phone on the desk are built in the game; the plate and cup are
 taken off the desk and its draped table replaced with a bigger plain one, for the call.
+
+This work is based on ["Brazier"](https://sketchfab.com/3d-models/brazier-e6a152f5bc944ec1a3dfe06dad495dbe)
+by [Helley](https://sketchfab.com/Helley) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/) — the braziers in the first castle's street
+(`assets/brazier.glb`, packed by `tools/brazier_pack.py`: textures to 512 / 256, normal and metal maps
+dropped, gzipped). Their fire, smoke, embers and light, and the coals they spill when knocked over, are
+built in the game.
 
 This work is based on ["Fiji Water Bottle"](https://sketchfab.com/3d-models/fiji-water-bottle-219204daeb2f446ebbc3837df97e0a8a)
 by [Diego T. Yamaguchi](https://sketchfab.com/freshlybaked) licensed under
@@ -1123,10 +1160,10 @@ The health boxes, the stamina bar, the hotbar's frames and the blood-jar count's
 numerals are the owner's own marker drawings (`assets/hud/`, cut into masks by
 `tools/hand_hud_pack.py`); the pack's frames, rules, buttons, ring circles and the
 loop round the selection are drawn with the same marker (`assets/hud/pk-*`, built by
-`tools/hand_pack_pack.py` from the hotbar photo's strokes).
-The rags the thing in the sewer sleeps on are "rags pack" by Frice
-(https://sketchfab.com/3d-models/rags-pack-b5dfec6e7fda4450822024bd06662ff4, CC-BY-NC-4.0;
-`assets/rags.glb`, repacked by `tools/rags_pack.py`). The lair's flies are the owner's
+`tools/hand_pack_pack.py` from the hotbar photo's strokes). The water ball's drop
+(`assets/hud/drop-crayon.png`) is a pastel scribble drawn by `tools/drop_crayon.py`.
+The rags the thing in the sewer sleeps on are the game's own torn canvas, drawn in code
+(Frice's CC-BY-NC "rags pack" was taken out 2026-11-26 so nothing non-commercial ships). The lair's flies are the owner's
 "Flies Buzzing and Circling" (`assets/flies-bed.m4a`, looped by `tools/flies_pack.py`).
 The rat that bursts out in the lair screams with the owner's "no-copyright" (`assets/lair-rat.m4a`,
 its leading half-second of silence trimmed).
@@ -1862,18 +1899,6 @@ timing.
 [artofmickey](https://www.cgtrader.com/artofmickey), CGTrader free model.
 
 
-**Severed head** — the captain, on the hook over the wreck's hatch. *No longer
-in the game (2026-10-15): only his key hangs there now. `assets/head.glb` and
-`tools/head_pack.py` are unused and can be deleted.*
-
-This work is based on ["Severed head"](https://sketchfab.com/3d-models/severed-head-65103457564048b7a89d177e550181ae)
-by [alexrmartinez](https://sketchfab.com/alexrmartinez) licensed under
-[CC-BY-NC-4.0](http://creativecommons.org/licenses/by-nc/4.0/). **Non-commercial**:
-this build is a personal one, and the licence does not allow the model in
-anything sold. `assets/head.glb` is the scan cut to 20k triangles by
-`tools/head_pack.py`.
-
-
 **Screwdriver** — the one on the crate table by the drain's grate. "CC0 -
 Screwdriver" (Sketchfab), CC0 — public domain, no attribution required; the
 owner supplied it as `~/Desktop/Shipwreck/Screwdriver/`. `assets/screwdriver.glb`
@@ -1889,16 +1914,24 @@ one bird cut to 1.8k triangles, 256 px, with wing-beat shape keys, by
 `tools/gull_pack.py`.
 
 
-**SCP-096 Reanimated** — the thing sitting on the lane in front of the
-lighthouse. It is the first asset here that arrived with a whole fight
-already animated: `attack1`, `attackjump`, `attackrun`, `attackrunstart`,
-`idle_rage`, `panicstart`, `teslagatehit` and `die` are the creature's own
-clips out of SCP: Containment Breach. `assets/scp096.glb` is the scan through
-`tools/gltfpack.py` with twelve of its thirty-seven clips kept
-(`--clips`), 6.3k triangles and its own two maps.
+**moon** — the face of the moon in the sky. Only the model's map is used:
+`assets/moon-map.jpg` is its 8192 × 4096 equirectangular map cut to 512 × 256
+grey, read on the moon the sky already draws (its size, terminator, limb,
+earthshine and halo as they were) and laid on the moon's own two colours.
 
-This work is based on ["SCP-096 Reanimated"](https://sketchfab.com/3d-models/scp-096-reanimated-9e0b35c9485d4b51864a232e9653cc3a)
-by [Sealife Fan 3](https://sketchfab.com/SealifeFan3) licensed under
+This work is based on ["moon"](https://sketchfab.com/3d-models/moon-26cc0b7878bb4d919b68e2be399db466)
+by [RenderX](https://sketchfab.com/RenderX) licensed under
+[CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
+
+
+**Stylized Medieval Weapon Pack** — the castle men's swords and axes, and the
+shields on the rare knights' backs (the pack's sheath is not used).
+`assets/farm-weapons.glb` is three swords, three axes and three shields laid
+on the game's weapon convention by `tools/weapons_pack.py`, 1.3k triangles
+at most each, colour maps only at 512.
+
+This work is based on ["Stylized Medieval Weapon Pack"](https://sketchfab.com/3d-models/stylized-medieval-weapon-pack-e88fb2f729ec4e80886ad8e8448d7476)
+by [Atakhani](https://sketchfab.com/Atakhani) licensed under
 [CC-BY-4.0](http://creativecommons.org/licenses/by/4.0/).
 
 
@@ -2036,4 +2069,4 @@ by [Alexei Ostapenko](https://sketchfab.com/alexanders823) licensed under
 seaward post (`assets/crow.glb`), and the giant one that takes Henry off the lighthouse's jetty.
 
 The crows at the dock (`assets/dock-crow-*.m4a`) are cut from the owner's own "Crow Sound Effect" recording.
-- **Castle props**: "Southern Gothic Scene Props" (https://sketchfab.com/3d-models/southern-gothic-scene-props-b2191c2fd25541f1be5e2b756123d922) by PickledCactusAlan, and "Medieval Market Asset Pack" (https://sketchfab.com/3d-models/medieval-market-asset-pack-006ffc4ac5f34a1782f567b07e6605f2) by vmatthew, both CC-BY-4.0 — barrels, crates, sacks, carts, pots and produce through both castles and the throne room, all breakable (`assets/castle-props-a.glb`, `-b.glb`).
+- **Castle props**: "Southern Gothic Scene Props" (https://sketchfab.com/3d-models/southern-gothic-scene-props-b2191c2fd25541f1be5e2b756123d922) by PickledCactusAlan, and "Medieval Market Asset Pack" (https://sketchfab.com/3d-models/medieval-market-asset-pack-006ffc4ac5f34a1782f567b07e6605f2) by vmatthew, both CC-BY-4.0 — barrels, crates, sacks, carts, pots and produce through both castles and the throne room, all breakable (`assets/castle-props-a.glb`, `-b.glb`); and "Medieval Props" (https://sketchfab.com/3d-models/medieval-props-e69777fa47244434b337488b97cecd0e) by Daniel Vicente, CC-BY-4.0 — the first castle's two trees in their planters, its fountain, well, market stall, tub, pail, pots and bowls (`assets/castle-props-c.glb`).

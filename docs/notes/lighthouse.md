@@ -1052,3 +1052,22 @@ foot, the sea side, close), `isleStairMat` (what the treads are made of, and the
 - The achievement (`crustyLight`, `marCrustyCheck`): him with you, alive and shown, on the island past `ISLE_BR.x0` (the
   drawbridge's land end) — "50 - Bring lil crusty to the lighthouse."; on the save, in `RARE_ACHIEVEMENTS`. (Harness trap: a
   getter put on `__bw` through `Object.assign` is read ONCE — use a function.)
+
+## 2026-11-23 — the marionette's goodbye at the top
+The owner's script: at the top with him — he is in sight on the gallery looking over the water, turns his head: "Wow, I never
+thought I’d see the tall light. Thank you." → "Sure" / "Let’s keep going" → "Sorry, but I can’t leave. The beach is and always
+will be home, plus I want to start surfing classes." → "K" ("K? I’ll just get going.") / "That’s amazing bud" ("Thank you") →
+he leaves down the lighthouse; the achievement then; the crow call only after.
+- `MAR_LH` (by the marionette's code): `marCrustyCheck` no longer gives the achievement on the drawbridge — it starts the scene
+  (`marLhBegin`) the first frame `atLighthouseTop()` with him `'with'`. The ladder is a cut, so he is PUT there: on the ring at
+  `MAR_LH_R` 2.3, `MAR_LH_OFF` 0.62 rad round from you on the side your look leans, facing straight out; your look turned to
+  within 0.32 rad of him and tipped to −0.2 so all of him is at the rail (measured 32° off your look, 1.7 m).
+- `marLhStep`: 'look' (1.1 s out over the water, then his head round onto you, `marLook`), 'talk' at 1.75 s (`startDialog('lh',
+  MAR_LH_NPC)`), 'leave' on the talk's close however it closes (`onLeave` → `marLhBye`: `MAR.lhDone`, the achievement): round
+  the gallery away from you to behind the lantern (> 2.5 rad round from you, ~3 s) → `marLhGone` → `marRestore('swing')`, home.
+- **THE GALLERY IS NO FLOOR OF THE ISLAND'S WALK**: `marPost` put him back on `MAR.legal` every frame — he "walked" in place. The
+  scene keeps `MAR.legal` with him.
+- **THE HORN WAITS**: `crowCallFromTop` returns while `marLhHold()` (him `'with'`, on the isle, not dead, scene not done — even
+  while he is still being made after a load). Covers all three ways it is blown up top.
+- Saved: `marLh` (`MAR.lhDone`) beside `crustyLight`. `tools/marlh.js` (&ans=k|amazing, &shots=1): the placing, each line and
+  answer, the horn refused before and during, the achievement, the walk off, home, the horn after.

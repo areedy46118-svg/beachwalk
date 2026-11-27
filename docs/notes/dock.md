@@ -638,3 +638,16 @@ eyes and scream with its mouth open then fly away." Alexei Ostapenko's "Crow" (S
 - **The crow's scare, a little down again** (2026-11-17, "TURN DOWN A CROW SCARE A LITTLE"): `CROW_SCREAM_PEAK` 0.20 → 0.16,
   `CROW_STORM.loud` 0.38 → 0.30. Measured (`tools/crowlevel.sh`): the scream 0.19 (was 0.21), the thunder 0.38 (was
   0.42), everything else there 0.07. Neither follows its number one to one any more (the sub and the noise under them).
+
+## The very old fisherman's voice (2026-11-23)
+The owner's "New Recording 6.m4a" (7.9 s, a phone recording): "trim these and make them the fisher dialog sounds dont have
+them too loud". Four takes (0.5–1.15, 1.9–2.75, 3.7–4.8, 5.65–7.25 s) over ~-50 dB room hiss. `farmer_voice_pack.py`'s
+`silencedetect` (per-sample) found ONE gap in it at -42 dB / 0.18 s: the hiss's peaks break every silence. So
+`tools/fisher_voice_pack.py` cuts on the 50 ms RMS envelope (on at -38 dB, gaps under 0.25 s merged), same pre/post/fades
+as the farmers', levelled to -20 dB RMS (2 under the other banks) → `assets/fisher-talk1..4.m4a`, 66 KB.
+Played by `fisherVox()` through `farmVox` (`FISHER_VOICE` = `{ vox: FISHER_VOX }`, no unit: x/z from `fishSprite`), on every
+new line of his with words in `showDialogNode` (`dialogScript === FISHERMAN_SCRIPT`, `*…*` silent), gain 1.5 (Skrim's and
+Myles's talk are 2.4): at 1.5 m that is 1.2 against their 1.9. `farmVox` refuses a take while the mouth's last one is still
+going at the same `pri` — clicking through a line quickly was silent for Skrim and Myles too — so `fisherVox` drops the
+mouth's `pri` to 0 first and a new line always cuts the last off. Probe: `tools/fishervox.js` (the camera has to be stood
+by him: `far` 40 from the spawn is beyond it).

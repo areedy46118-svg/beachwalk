@@ -3668,3 +3668,475 @@ own distance ×1.6. After: blows in most seconds, 2 idle seconds in 40. TRAP: `s
 third before); not one you cut in the last 2 s, not mid-blow; the castle's men too when it is you they fight. On him 5–9 s, then
 back to you if you are nearer by half, he is 10 m off it, or he has not hit it and is 3.5 m off (`marAggroTick`). `marFoes` reach
 18 → 24 m. `tools/marfight.js` (logs `MAR.bal` and the mean on him): standing together in the castle street, 0.6 → 1.1–1.7 of 5.3.
+
+**A CRAB COMES APART AS ITSELF (2026-11-23, the owner of the old gibs: "i hate how its just random shapes").** `burstCrab`
+threw sixteen primitives in the procedural crab's red — not the scanned crab on screen. `crabPieces(u)` bakes the GLB's skin
+in its death pose (one pass over 6772 verts, the `bakeLimb` formula), gives every triangle to its bone's piece by majority of
+`skinDom`, and makes: a piece per leg chain (root `Bone` has 8 chains of 4; 45 % snap again at the 3rd bone) and three
+carapace plates cut on ragged lines in the crab's own frame. Legs are turned onto X so they land lying down. Measured: 3 body
+plates (1.6–2k tris), 11–12 leg pieces, burst 8 ms, next frame 3–4 ms. Facts about the model: **GLTFLoader strips the dots
+from bone names** (`L.Bone.001` → `LBone001`), so it is walked by structure, not by name; the root bone owns 2813 of the
+6772 verts, leg roots included, so a plate keeps stubs of legs; the material is `doubleSided` in the file, so a cracked
+plate is not see-through from the break and needs no clone. Pieces carry `bleed: false`, so they fold into the rubble when
+they settle on dry sand. The old solids stay as the fallback before the model has arrived. `tools/crabgibs.js` — and a probe
+that bursts a crab must leave it as `finishCrab` does (`crabState.alive = false`), or the update shows the sleeping crab
+again on top of its own remains.
+
+## 2026-11-23 — the blow where it landed, and the way it was going (`BLOW`)
+The owner, with a clip of another game's knights reeling off each cut: "make the ragdoll physics during a fight more
+reactionary to the direction you hit the enemy … more fun and possibly a cool death … the impact and slices be exactly where
+they are hit at". Before: every reel, shove, spray, chip and death throw went down YOUR LINE OF SIGHT (`camera.getWorldDirection`
+→ `u.hitDir`) from the BODY'S MIDDLE (`u.g.position` + a height), whatever the blade did.
+- **The record** (`u.blow`: `off` from his feet, `d` the edge's travel in the world, `at`, `P`). `bladeSweep` calls
+  `blowFromBlade` on contact: the grip→tip line ON THE SCREEN against his spine's projected line (feet to crown), the height
+  where they cross (a blade along him — an overhead — by its tip); from your eye to that point of his spine, the surface found
+  by `blowRecord` (the ray against a slim cylinder round the capsule's axis, `kind.body`·0.85). The edge's travel is the middle
+  blade marker's screen motion that frame (`cur[2..3] - prev`), turned to the world with the camera's right/up, plus a quarter
+  forward. MEASURED TRAP: the first sample to touch the hit capsule (generous: it stands for reach) is the low end of a diagonal
+  cut — chest-aimed cuts recorded the SHINS (h 0.08–0.34); the crossing gives 0.69 for the chest, 0.42 the waist, 0.89 the head,
+  0.28 low. The crosshair's own fan, with no sweep: `blowRecordAim` (the aim line, `swingTravel`: across by `slashDir` /
+  `katBack`, down for `digOverhead`, in for a thrust).
+- **The scope** (`blowBegin`/`blowEnd`, `BLOW`): `hurtMutantAt` opens it for a blow of yours whose record is < 400 ms old,
+  `finishMutant` (now a wrapper of `finishMutantCore`) for the death, < 1.6 s. Inside it: `blowHitDir` gives `u.hitDir` =
+  0.6·your forward + the cut's sideways part (≈ −0.78, −0.63 for a right-to-left cut down −z) — the same distance of reel and
+  shove, a different line; `sprayBlood` from the cut along the edge (a spray thrown back toward you comes out the far side);
+  `bleedMutant` and `woundMutant`'s chips from the cut; `blowNearestLimb` picks the limb a killing cut takes (the nearest bone
+  middle within 0.55 m) and puts it first in the farmers' cut-apart pool.
+- **The cut, on his skin** (rebuilt the same night: "MAKE SURE THESE CHANGES ARE GOOD AND NOT CHEAP", "MAKE AS REALISTIC AS
+  POSSIBLE"). FIRST TRY, REJECTED ON THE STILLS: a white additive card across the body and a dark card on the nearest bone — from
+  the eye the card read as a bar drawn over the screen, and the mark, placed on the cylinder that stands for the body, was inside
+  the mesh or off it: invisible in every close look. NOW (`blowSurface`, `cutTris`, `cutRayHit`, `cutRibbon`, `slashHit`):
+  the body's SKINNED triangles as posed this frame (`getVertexPosition` + `matrixWorld`; a rigid mesh — his sword — is not his
+  skin and is skipped when he has skinned ones), those within ~0.75 m of the contact; 11 rays from your eye through points along
+  the edge's line across the screen; each hit gives a point, the face's normal (turned to you) and the bone with the heaviest
+  skin weight at that face. `BLOW.p` becomes the middle hit — the blood starts on the skin. A RIBBON runs through the hits,
+  pointed at both ends, broken where the line leaves his outline, jumps in depth or turns too sharply (a new piece), EACH PIECE
+  `attach`ed to the bone most of its points were cut into — all on one bone, a piece cut into his hand trailed in the air when
+  the hand moved (magenta debug still). Cost, real clock (`tools/woundlook.js&cost=1`; the probe's `__clockOn` fakes
+  `performance.now` inside the game — time from the outer page): 0.4 ms on a farmer (834 triangles near), 1.5–1.75 ms on a beach
+  mutant (6.1k), once per landed blow, inside its hitstop.
+- **The wound** (`cutMats`, Phong, flat, compiled once against the scene's lights when a fight is near — `cutWarm` — never on
+  a blow's frame; per-mark clones share the program): NO GLOW — a white glint on the arms read as two white blobs, so it went;
+  lit like him, a wet specular; it OPENS (alphaTest 0.92 → 0.12 over 0.12 s on a core-dark texture: a hairline parting); fresh
+  0xb8180f with a little wet sheen going to 0x7c0f0a over 4 s (at 0x5c0a07 it vanished into a dark coat by 2 s); it BLEEDS:
+  drops off random ribbon vertices, 17/s (26 heavy) shared by the pieces' lengths, falling off over 2.2–2.8 s, landing and
+  soaking in as any drop; wood pale grain, stone chalk, neither bleeds; 12 s, the last 3 fading.
+- **The spray off a cut is fine** (`sprayBlood` under `BLOW`): 1.6× the drops at about half the size — the body's middle's big
+  drops, now leaving the skin a metre from your eye, read as red shards close up.
+- **The flinch** (`mutFlinch`/`lifeApply`): every kind with a life layer now (not mid-swing on the kinds that never had
+  `flinch`, and without the shove — that stays the farmers'); bent at the height it landed (`hy`: the head's share up top, the
+  waist's low), twisted by the blow's own turning force about his spine ((contact − middle) × edge, `tw`), the knees giving more
+  under an overhead. Measured: shoulders turn 12–19° the way the edge went. **FIXED IN PASSING**: `lifeTurn` works in `_lfA`,
+  and the flinch handed it `_lfA` as its axis — the first call turned the axis into the waist's parent's frame and every bend
+  after went about that, since the flinch was written. It has its own `_flAx` now.
+- **The death** (`mutRagdoll`): what was nearest the cut takes most of the throw (a low one 0.85 of the way to it, else 0.6),
+  and every part gets the spin that blow would give it (ω = (contact − middle) × edge, v += ω × (part − middle)·(2.4 + 2.8·power));
+  an overhead drives what it hit down. A heavy cut's kill has its own first-flight cap (`heavyCut`: vmax 10.5, travel 13), as
+  the mace's does — the common 6.5 clipped it to a light's. Measured (`tools/hitdir.js`): a head cut throws the body 1.6–2 m
+  along the cut, the head 2.4 to the feet's 1.0; a low cut takes the feet out ahead of the head (the farmer: head 0.98, feet 1.70).
+- **The beat** (`killSlow`, `KILL_SLOW` 0.36 s): a heavy that kills, after the hitstop, the world at 0.32 of its speed easing
+  to 1 — not while any other one is mid-swing at you.
+- Probe: `tools/hitdir.js&k=farmer1|pale` (real katana swings, `startDig`): per cut the contact's height, the edge, the push,
+  the twist, the shoulders' turn; per kill the throw, the head and feet along the cut, what came off; stills.
+- **(2026-11-24) The cut marks are OUT** ("take the visual slashes out look how bad it looks", with the dark knight in the Enemy
+  Log wearing red strips — on armour the ribbons stood off the plates as tape, and being on his bones the Log's copy wore them):
+  `slashHit` keeps only an invisible point on the bone the blade met that bleeds there for ~2 s (`cutMarks`, `slashTick`). The skin
+  point for the blood (`blowSurface`) stays. The first-hit 191 ms hitch was the wound shaders compiling — gone with them.
+- **A castle's stone under a dead body**: the castles stand on the beach, off the room grid, so a body killed in a court took the
+  SAND's floor (`updateMutRagdoll`): a man on paving at 0.22 lay at 0.17. A ragdoll with `r.fort` (FORT/C13/THR/CEL) asks
+  `keepFloorAt` on its site per joint, with the rule against a floor jumping up under a joint already below it.
+- **The freeze on a blow, eased** ("every hit is laggy … make it feel smoother"): an ordinary hit's is `hitConnect`'s 0.03·k (27–40 ms,
+  unchanged); a kill's `MUT_HIT_STOP` 0.09 → 0.06 (katana 0.13 → 0.10); a knockdown's 0.14 → 0.10; a heavy kill's slow beat
+  `KILL_SLOW` 0.36 → 0.24 s at 0.45 of speed easing up (was 0.32). Damage and the enemies' timing are untouched. Frame cost on a
+  landed blow in the castle 5–11 ms (`tools/castlecut.js`).
+
+## 2026-11-24 — exact cuts, the mace's crush, the fall blown apart, and the dying with a mind of their own
+"make heavy hitting a farmer in the fall animation his body explodes into pieces mid animation … the cuts through bodies to be an
+exact hit. the mace should just crush the bodies more but have it so hitting body parts effect the death. … more realistic physic …
+like halfsword where they have a mind of their own and can all die uniquely do this for every fight". (The farmers' own swings went
+to the grip session.)
+- **EXACT CUTS** (`blowCutParts`): `blowSurface`'s rays record the bone with the heaviest skin weight at each face they met; kept on
+  the creature (`u.blow.cutBones`, middle first). Read as pieces: hand/forearm/fingers → forearm, arm/shoulder → arm,
+  thigh/shin/foot → leg, neck/head → head, the trunk → `MUT_BISECT`; and a cut that landed at the head (`BLOW.h` > 0.8) is the
+  head's (the farmers' hood skin is weighted to the spine). A blade's killing cut takes the middle piece (heavy always, a cut 75 %)
+  and a heavy every piece it crossed (≤ 3), through the middle only on a heavy. With a cut on record the farmers' cut-apart takes
+  only what was crossed (≤ 4 heavy, ≤ 2 cut) — no random limbs. Without one (a spade, a shot, a throw) the old luck.
+- **THE MACE CRUSHES** (`maceCrushBody`, after the kill's bursts): the head as before (`burstHead`); the trunk (or an overhead) a cone
+  of meat and bone chips out the far side, the chest pouring, a spurt, blood on the ground; low, the leg it met (by the cut record,
+  else a side) broken off at the knee in pieces. A mace never takes the farmers' cut-apart limbs or the random sever (measured:
+  a chest blow had taken both arms and a leg by that luck).
+- **THE FALL BLOWN APART** (`zDieStrike`, in `digImpactCore` after `blade.first`): a man dying on his feet (`u.zDie`) is found by the
+  aim line like any body; a HEAVY (or an overhead) ends the clip and takes him apart along the swing — `blastApart` at 0.9 with
+  `killBlast` 0.85 (its flight caps), the crossed pieces severed too, `mutRagdoll` 2.6, the kill's freeze and slow beat; a cut
+  topples him early along it and takes what it crossed. Measured: head, both arms, both legs off, 79 pieces.
+- **THE THROES** (`ragThroeInit` at the end of `mutRagdoll`, `ragThroeStep` each solver substep after the integration): for every
+  ragdoll death of a man-sized body with its head and middle on (not stone, wood, a `deathClip` boss, the king, blown apart or
+  flung): by the wound's height and chance — head: limp 62 % else TWITCH; trunk: CLUTCH 38, WRITHE 22, REACH 18, CRAWL 12, limp 10;
+  low: CRAWL 45, WRITHE 23, CLUTCH 18, limp 14 (a mace's crawl half the time a writhe). Starts 0.55-1.1 s in, lasts 1.5-4.6 s,
+  strength 0.75-1.35 fading. CLUTCH: the hands sprung to the wound (kept as an offset from the chest), the feet drawn up; WRITHE:
+  a kick to a random end every 0.12-0.28 s (set as a velocity: `pp`); REACH: one hand up toward you, held, dropped; CRAWL: a hand
+  out along the ground away from you, then the chest, head and hips SLID to it — moved, not pushed: the ground's friction ate every
+  force (measured 0.00 m). No sleep while one moves (`ragThroeLive`), and a raised hand is not "standing" for the slump.
+  A farmer's voice groans once as it starts. Probe: `tools/deathlab.js` (fresh men on the beach, katana and mace at heights,
+  the fall; what the cut crossed, what came off, the throe, a hand's approach to the wound, the crawl; stills every 24 frames).
+
+## 2026-11-24 (later) — hit reactions that move what was hit; wounds that stay; fewer limbs off
+"i need 5 and make it good. have enemies stop just blowing into all limbs off and have the wounds react to where hit."
+- **SPRINGS ON THE BONES** (`lifeHit` from `mutFlinch`, `lifeSprings` at the end of `lifeApply`): every bone of the trunk, head and
+  limbs (`SPR_KEYS`) holds an angle and a spin (world axes). A blow with a contact (`BLOW`) gives each the spin its own lever would:
+  (contact − pivot)̂ × the edge's travel, × `mag` (8.5 + 9·P; 2.6 + 3.4·P swung bones 3-5°: a twitch), × its share — the bones the
+  contact is ON by distance to each bone's segment (σ 0.26 m), and the trunk always ≥ 0.32 from wherever it landed. Integrated
+  each frame (two substeps above 70 fps' step): stiffness/damping/most turn — trunk 150/15/0.45 rad, head 140/10/0.65, limbs
+  95/9/0.8 — so it rings once and settles; zeroed below 0.003 rad. The old whole-body flinch is kept at 0.6 where springs take the
+  blow. MID-SWING the right (weapon) arm's bones take none (what a blow does is read off that arm). Measured (`tools/hitreact.js`):
+  9-18° on the struck limb or trunk, the head 7-9°; stills: the shoulder thrown back and the chest turned, a heavy to the belly
+  doubling him, a knee buckling.
+- **A LIFE FOR EVERY MAN-SHAPED RIG** (after `mutStartPose` in the dress): the shared Character1 rig (the beach's mutants and the
+  rest) had no life layer, so no flinch, no springs; one is installed (bones by `ragBone`) where the head, chest and right arm
+  resolve and the kind has none (`kind.noLife` refuses). Their breath and their look at you come with it.
+- **WOUNDS THAT STAY** (`S.wound`, `lifeWounds`): each landed blow adds 0.22 + 0.2·P to the region of the bone it was ON — an ARM
+  hangs (a turn of the upper arm toward down, 0.3 rad at full) and its forearm trembles (not the weapon arm while it swings), a
+  LEG limps (hips tipped and dropped to that side in time with the stride, the knee bent), the TRUNK folds (chest 0.17, waist
+  0.09 rad forward), the HEAD tilts. Looks only.
+- **FEWER LIMBS OFF**: a cut with a record takes the crossed piece 45 % (was 75), a heavy ≤ 2 crossed (3); the farmers' exact
+  cut-apart ≤ 2 on a heavy and none on a cut (4 / 2); their random cut-apart none to two (two to four), through the middle
+  0.3 / 0.08 (0.65 / 0.32); the old sever 0.25 / 0.3 (0.42 / 0.55); overkill head burst 0.25 (0.55); the Bloody Blade's extras
+  1 + 25 % on a heavy, 25 % on a cut (2-3 / 1-2); the shotgun's `blastApart` 1 + 2.6k (1 + 4k). The fall blown apart is unchanged.
+
+## 2026-11-25 — more of it: bigger reactions, the stumble, and the body bump
+"I WANT MORE OF #5 FOR ALL ENEMIES … THEY SHOULD REACT QUITE A BIT. IS THERE ANYWAY WE CAN GET GTA LIKE PHYSICS WHERE CHARACTERS CAN KIND OF
+RAGDOLL AND STUMBLE UPON BEING HURT? OR THEY REACT TO ME RUNNING INTO THEM WITH THEIR BODY LIKE GTA?"
+- **Bigger, looser** (`lifeHit`, `SPR_TUNE`): `mag` 13 + 14·P (was 8.5 + 9·P), spin cap 20; trunk 140/11/0.62 rad, head 130/8/0.85,
+  limbs 85/6.5/1.05. Measured (`tools/hitreact.js`): 21-30° on the struck bones (9-18 before).
+- **THE STUMBLE** (in `mutFlinch`, for every kind now — not only `flinch` ones — not mid-swing, not a `bossDeath`, stone, or anything
+  over 2.8 m): the blow's momentum as a root shove (`flinchPush` v (1.6 | 1.3) + 3.2·P, decay 5.5: a heavy ~0.8 m), the legs stepping
+  off the body's own velocity where the kind has `velGait`, the springs leaning him, the knees going (`flinch.dn` 1.1) on a heavy or a
+  low blow. A man FIGHTING you stumbles 0.66 as far and his `cool` is cut to 0.3: the full stumble took the garrison's blows from ~35 a
+  minute to ~29 (`tools/fightread.js`); after, 3.3 / 4.7 hurts a minute, 35 / 28 blows (before any of this: 3.1, 34.7). Not easier.
+- **THE BUMP** (`playerBumpTick` → `bumpBody`, from the frame loop): you at a man-sized body (not mid-swing, down, held, a boss, stone,
+  wood, a gargoyle, the minotaur, over 2.8 m), within his body + 0.35, moving at him over 2.08 m/s and over 2.6 overall: k = (speed −
+  2.6) / 3.2 in 0.15..1 — a walk (3.4) a shoulder-check, a sprint (5.7) a stagger: shoved 0.8 + 3·k m/s along your line, the springs hit
+  at his chest on your side (P 0.5·k), the flinch thrown back, a grunt over k 0.5; you lose 60 % of your speed into him, a jolt and a
+  thud. Once a second a body. Awake or asleep (the shove runs before the sleep checks). TRAP: a probe cannot hold `velocity` — the
+  run rewrites it each frame before the bump looks — so `__bw.bumpBodyS(u, dir, speed)` calls the shove as the run would.
+
+## 2026-11-25 — any blow takes a falling man apart, over the top
+"have it more of a comically exaggerated explosion into pieces when hitting a farmer in the death animation make any hit do it not
+just heavies". `zDieStrike`: every blow blows him apart now — `blastApart` at 1.6 (a heavy 1.9, past its old top of 0.9: more
+limbs, the head, half again the meat), the swing's crossed parts cut off and thrown at 2.6 + K, through the middle 60 %, every gib
+from it popped UP 2.5–7 m/s and 25 % further along (`gibs` from its length before), a fountain of blood out of the middle, the body
+flung 2.9 (heavy 3.4). `deathlab.js &only=fall`: a light katana blow mid-fall — head and five limbs off, 96 gibs.
+
+## 2026-11-25 — bodies on the beach meet the rocks
+"make sure he doesnt clip through anything". The beach branch of `mutClampX` held a creature between the surf and the cliff and
+NOTHING else: a mutant chasing you round a formation walked through it, a shove (`flinchPush`, `bumpBody`) carried it in, and a
+ragdoll on the sand knew only the cliff. Now:
+- `unitRockClamp(u, p)` (after the x clamp, |x| < 400): pushed out of `rockColliders` like you are (r = body·0.45 ≤ 0.5, feet its
+  origin, head +1.6), via `solidBlocks` (the push-out's own skips as a yes/no). Only a body that stood CLEAR last frame
+  (`u._rkOk`): one placed in the stone on purpose is left there.
+- the ragdoll: each joint's floor is a rock's top under it (`rockGroundAt` from its underside), and each joint is pushed out of
+  the rocks in the substep (`pushOutOfSolids`, its radius, its underside as feet), keeping 30 % of its speed — not for `r.fort`
+  (the castle's own walls), `r.gut`, `r.room`; NOT gated on `bf === null`, because the headland's ridge has a floor grid.
+- Measured (`tools/shoverock.js`, a `pale` on open sand by a stone at z -389, `__rkOff` the old): a body thrown dead at it went
+  1.2 m into the stone before (1.07 at rest), 0.03 after (0.00 at rest); chased at you behind it, he walked through it before
+  (0.53 m in) and goes round it after (0.00).
+- TRAP: a FARMER is not a beach body — `fortBody` sends him through `fortClampUnit` and his ragdoll carries `r.fort`, so a probe of
+  this with `farmer1` measures nothing. And `shot` is already declared by `burntest.js`: a probe's own still helper needs a name.
+
+## 2026-11-25 — powered ragdolls: a body that tries to stay up; weight where a body has it
+The owner asked what would make the physics "feel and look amazing", then "Yes, build them" to the first two ideas: a powered ragdoll
+(muscles pulling to a pose, weakening) and the weapon's momentum at the contact.
+- **Weights** (`ragPartW`, the ragdoll's `w`, an inverse mass in every constraint): hips 0.42, spine 0.5, thighs 0.6, shoulders 0.7,
+  head 0.75, neck/upper arms/shins 0.85, forearms/feet 1.0, hands/toes 1.25 — it was 1 for all but the hips (0.5) and the head (0.8).
+- **Muscles** (`ragMuscleInit` from `mutRagdoll`, `ragMuscleStep` each substep before the constraints): each joint pulled toward where
+  it stood in the death pose, carried in his own frame (`ragFrame`: hips, up the spine, across the hips) so the pull keeps his shape,
+  never his place or heading; damped (`MUS_DAMP` 0.75 of the correction moves his last place too). The chest is held over the hips
+  and the hips at 0.88 of their standing height (`MUS_HOLD` 0.22) while his legs hold — and THE HOLD MUST TAKE THE FALL OUT OF HIM:
+  correcting position alone left gravity's speed in, he sank through it (chest 1.17 → 0.75 m in 0.4 s); the downward speed and the
+  chest's lean off the hips are bled off by the same measure (`MUS_HOLD_DAMP` 0.97 — at 0.55 the hold hopped him 0.4 m up). It all
+  fades over `T` (0.7–1.5 s), the legs first (`legT`); where the blow landed is weakest; ONLY WITH HIS FEET UNDER HIM (`M.air`: a
+  farmer's kill throws him whole, and held to his shape in the air he flew as a plank). Never for a body blown apart, flung, slammed
+  from above, cut in half, stone, wood, or over 2.7 m. The throes wait for it (`throe.start` ≥ 0.85 T).
+- **Stagger deaths** (`stag`, in `mutRagdoll`): about half the kills by a light blow of yours (not a heavy, the mace, shot, a fling;
+  `window.__bwStag` forces it for a probe) push him back whole and low (ragEven 0.8, the kick × 0.36, almost no lift) and his
+  muscles last longer (×1.35, `T` 1.1–1.9 s, the legs to 0.65–0.85 of it). Measured (`deathlab.js &only=stand`, the chest and hips
+  over the floor every 0.1 s): before, down flat by 0.4–0.6 s; now the hips held at 0.55–0.75 m for 0.6–0.9 s — a cut through the
+  legs sags him to his knees, then down. A chest cut still folds him at the waist before he drops; a stronger chest hold is the
+  next thing to try. `window.__bwZDieAll = 0` keeps a farmer from dying on his feet, for a probe; `__musDbg` logs each muscle set-up.
+- (later, 2026-11-25) **"the death animations now they float away"**: the hold bled the fall's speed off while ANY foot touched, and
+  a body lying down has its feet on the ground — it was held up and let down slowly. Now balance is lost for good (`M.fell`) once the
+  chest is under 0.6 of its standing height or the spine is past ~55° off upright: the hold stops and the muscles let go in 0.25 s.
+  Measured (`deathlab.js &only=stand`): sagging 0.5 s, down by 0.6–1.2 s, no hover.
+
+## 2026-11-25 — an active body on the living (`larHit`/`larApply`)
+"Mix bone physics with procedurally animation … Make the enemies self balanced active ragdolls. Throwing things at enemies should also
+affect them like this." Every flinching blow (and a shoulder at a run, `bumpBody`, and a thrown thing) makes a living man's upper body
+a short physical body over his clip: a particle at each joint from the hips up (`LAR_KEYS`, the life layer's bone map `B`, so every rig),
+seeded where the clip has them; the blow's momentum put in round where it landed (Gaussian 0.4 m, 15 % everywhere); the joints kept
+at the clip's lengths (3 passes, the hips the clip's and fixed — he stands on his own feet, the stumble carries the hips); MUSCLES to
+the clip's pose, 0.06 at the blow growing to 0.56 (he is knocked off his pose and rights himself). Written over the clip each frame
+right after `lifeApply` (inside the mixer's wrapper, so the life layer's `saved` restores it) as turns of each bone toward its
+particles, weight (1 − t/T)^1.4, T 0.5–0.95 s; capped per joint (`LAR_CAP`: trunk 28°, neck 35°, clavicles 23°, arms 50° — uncapped a
+forearm went 77°). Never while he swings: a swing that starts ends it in 0.1 s. `tools/larcheck.js` (`window.__larDbg`): 8 blows of 10,
+2502 bone-frames turned. Thrown things: `throwHit` round `thrownHits`' blow — the reel, the stumble and the active body go along the
+thing's flight, P from its speed (v/9, ≤ 1.3), the springs told where it struck.
+
+## 2026-11-25 (night) — the dead stop flying about; the head only where it was hit; a cut takes what it crossed
+- **"they still fly around after death"** (and "THE FARMERS FLOAT AROUND AFTER DEATH PROLLY OTHER NPCS TOO"). On the beach nothing did
+  (`deathlab.js` now logs FLIGHT: hips never over standing height, still by 1.5 s). In the castle (`castlecut.js &zd=1`, FLIGHT and "the
+  fast one"), every man who DIES ON HIS FEET then whirled a leg at the solver's speed cap (7 m/s) from 1.5 s on, never counted as down,
+  never slept for 9 s. Not the throes, not the muscles, not the new weights, not the castle's walls (each switched off: `__noThroe`,
+  `__musOff`, `__ragOldW`, `__noFortWall`). IT WAS THE KNEE'S BEND LIMIT: the clip ends kneeling, the knee folded far past the 90° the
+  limit allows, and every substep it drove the leg straight against the floor and his own trunk. A bend that starts broken now keeps
+  the angle it died with as its limit (`min` = the lesser of the limit and 0.98 of the start). After: the highest joint 0.3 m (was ~1).
+  Also `ragAntiPump` at the start and end of every substep after 0.7 s: a joint more than 2.5 m/s faster than the hips (3.5 while the
+  throes kick) loses the excess, and once the hips have been still half a second the body is damped to settle. Left: a body lying
+  across a step's edge (floors 0.10 / 0.28) still jitters between the two floors a while.
+- **"WHEN HITTING ONLY A MUTANTS LEGS HIS HEAD FLIES OFF"**: the overkill heavy and the Bloody Blade burst the head on a roll anywhere;
+  now only if the blow on record crossed the head or neck or landed at 0.72 of his height (`blowNearHead`).
+- **"IF SWIPING OUT LEGS THE LEGS SHOULD CUT OFF"**: a killing cut took what it crossed only half the time on a light; now always, up
+  to two pieces (only a heavy through the trunk). `deathlab`: a sweep at the shins took both legs.
+- (late, 2026-11-25) **"MORE ACTIVE SELF BALANCING RAGDOLLS EVERY DEATH SHOULD LOOK AND FEEL UNIQUE"**: each death draws its own strength
+  (`k` 0.8–1.35), which knee goes first (`legL`/`legR`), a STEP to catch himself (`M.step`: while his legs hold and his hips are driven
+  over 0.55 m/s, the foot furthest behind is brought through and set down ahead on a lifted arc, every 0.22–0.34 s) and what his hands
+  do as his balance goes (`reflex`: brace out to the ground the way he falls, 62 %, or clutch the wound; 0.5 s). `deathlab.js
+  &only=stand` logs STEPS and the hands: steps 1 each, brace/clutch seen; castle deaths settle (FLIGHT ≤ 0.6 m, nothing fast late).
+
+## A Mesh2Motion GLB through `tools/ntar_moves.py` (2026-11-25)
+- Exported "Skeleton + Animations", Mixamo-named: no skin, so Blender's glTF importer makes every joint an EMPTY.
+  `import_glb_as_armature` builds an armature: each bone's rest matrix = the joint's rest (the node TRS put through the importer's
+  Y-up→Z-up: t (x,−z,y), q (w,x,−z,y), s (x,z,y) — Blender's positions then agreed with a direct read of the file to the mm), named
+  `mixamorig:<Joint>`, held on its empty by Copy Transforms. A clip entry finds `<name>.glb` when `<name>.fbx` is missing.
+- THE REST IS NOT A BIND. The file's node TRS is a fighting stance, and the game aligns a rig ONCE on one clip's rest (`retargetMoves`:
+  `any` — Mixamo's bind, the same in every FBX of a pack) with every clip's D on top: D from the stance put every bone off by the stance
+  (the left arm straight up through the whole cut). So D is re-measured from the bind (`mc1`'s rest in the same JSON): the pelvis,
+  spine, neck and head by FULL frames (up the bone, across the hips / the shoulders), the hands by full frames (wrist→middle knuckle,
+  index→little knuckle), the rest by direction; the rest written is `mc1`'s. The hips' rise and fall is about his STANDING height
+  (the legs' length), not the stance's crouch.
+- The bind's hands are NOT palms-flat-thumbs-forward: assumed so, the fist came out rolled +72° (right) / −77° (left) on every frame
+  of both clips (`tools/swhand.js` beside the GLB's own fingers, `scratchpad/swhand.py`). `GLB_ROLL` turns the reference by that:
+  after, the roll is 0–2°, arms 0–8° off; what is left of the knuckle line (20–25°) is the farmer's hand shape, not a roll.
+- KEEP_YAW for a swing whose hips wind and come back (swAtk: 71° and back to 0): de-yawing it took the body's turn out of the cut.
+
+## A Sketchfab control rig, and a man's clips on a creature (2026-11-25, the Scourger: `tools/scourger_pack.py`)
+- **CHECK WHAT EACH DEFORMING BONE HANGS OFF.** The Scourger's glTF is a Blender control rig baked out: Chest off `Chest IK`, Head off
+  `Head IK`, Spine2/3 off `SpineParent*` (siblings, not children), Main Thigh off the IK leg's Thigh. A retarget that drives the
+  mapped bones leaves such a bone's POSITION with its control parent: bend the spine and the chest stays put. The packer RECORDS every
+  clip as world poses with the control rig still driving it, rebuilds the rig from the weighted bones under ANATOMICAL parents
+  (`PARENT`, else the nearest kept ancestor), and keys the clips back (local = new parent's pose⁻¹ · own): 0.0000 m off on replay.
+  An unskinned mesh under a bone (his axe on an `Axe` node under Hand.R) is removed by a "skinned meshes only" filter — look for them.
+- **`kind.noAlign`** (`ntarRetarget`): no alignment, W = D · his bind. Right when both rigs bind in a T (the arms and spine need none)
+  and the target's limbs are not a man's: aligned, his bird legs (thigh forward, shin back, a long upright foot) were folded straight.
+- **`kind.alignRoll`** — but the HANDS need their roll: his bind's fists are rolled −79° (right) / +77° (left) off a Mixamo hand
+  (measured against the Mesh2Motion skeleton itself: `tools/scourgehand.js` beside `swhand.py`, `rollcmp.py` — the same method that
+  found the farmers' 72°). Without it the axe came out of his fist sideways and swept round him at hip height. After: fists 0-5°.
+- **What a man does not have** (`kingLayerIdle`): his wings, tail, fingers and jaw are not in a man's clip and stood frozen in their bind;
+  his own idle's tracks for those bones are laid into every retargeted clip, looped (`KING_LAYER_RE`).
+- **A GLB's "lying" was wrong** (`ntar_moves.py` `lieAz`): it reads the hips' +Y as up the spine, which is a Blender BONE axis; a GLB's
+  joint axes are the file's — every Mesh2Motion clip read "flat 1.00". Now measured on the hips as they would stand on the bind.
+- Several animations in one Mesh2Motion GLB: `tools/glb_split.py` writes one GLB a clip for the packer.
+
+## 2026-11-25 — the farmers' dead "float around": they skated upright
+The owner: "farmers bodies still float around after death this should never happen". Measured in REAL fights (`tools/fightread.js
+&dead=1`: every man from the frame he dies — hips over the floor, lowest joint, drift after 3 s, the DRAWN floor by a ray down, and
+the fall's glide while still upright) and forced deaths (`tools/bodyfloat.js &how=hurt,cut,zdie,ball,blast,mace,gun,over`): after
+3 s every body lay still on the floor (drawn and walked floors agree, 0.03 in the street). What floats is the FALL: still upright a
+dying man slid a median 1.68 m (to 3.06) in 0.4 s with his boots sliding as far. Three causes: `ragEven` 0.55 kicked the feet with the
+chest; the skid (`r.slide`, friction 0.012 for a body's first second) let the feet go too; the throw's lift took the boots off the
+floor's grip. Now: `ragEven` 0.1; a foot keeps `RAG_FRICTION` through the skid (`q.foot`); a farmer's boots take 15 % of an ordinary
+throw and no lift (blast/shot/mace still take him whole); a farmer's throw weighted by height SQUARED (he tips, the hips do not
+lead); a stagger's push 0.36 → 0.22, its evenness 0.8 → 0.3. After: glide median ~1.35 m (others 1.33, staggers 1.53) — better, not
+gone: the man was walking in at ~3.1 m/s when struck (`vBefore`) and that carries. If the owner still sees it, ask where and what
+killed him; the next lever is the inherited speed.
+
+## 2026-11-25 — planted feet: the dying go OVER their feet (`ragPlantInit`, `ragPlantStep`)
+"improve the physics as well", after "farmers bodies still float around after death". The last lever was not the inherited speed
+but the SOLVER: a foot on the floor is one light particle on the end of a leg, and twelve constraint passes drag it after hips
+leaving at 3-6 m/s — friction strips its speed each pass and the next pass moves it again, so the body travels upright. Now, for
+the first 0.55-0.9 s of an ordinary death, a foot that is on the floor is PLANTED: its x,z held (`q.anch`, set in the ground
+pass; it may always lift) and its inverse mass cut to 5 % (`q.w0` keeps the old one), so the leg's constraints move the hips
+round the ankles instead of the ankle after the hips. A foot lets go when the catch step takes it (and plants again where it is
+set down — `M.step.q`, its toe with it), when it is lifted 0.12 m clear, when the hips-to-foot distance passes 1.07 × the leg's
+own length (hit too hard to stand on — that foot only, for good), and all of them when the hips are under half the height they
+died at or the time is out. NOT for a body that is thrown (`killBlast`, `killFling` — the kick's kill too — `killMace`, a heavy
+cut), one bisected, a blow under 0.42 of his height (the legs were what it took), stone/wood/anything over 2.7 m, or in water.
+`window.__plantOff` turns it off for a probe.
+- Measured, `tools/deathlab.js &only=topple` (side-on stills every 7 frames; `&plantoff=1` the old way), four light kills each:
+  the hips came to rest 0.92 / 1.15 / 1.05 / 1.01 m from where he died, against 2.07 / 1.24 / 2.11 / 2.20 m; on film the old one
+  hangs at a lean for ~1 s sliding, the new one is down in ~0.6 s over his own blood. In a real castle fight
+  (`fightread.js &secs=120&dead=1`, 12 deaths): upright glide median 1.06 m (was 1.3-1.6), feet slid a median 0.55 m (was
+  1.2-1.8; a catch step counts as slide in that number), 0 floating.
+- The "upright glide" reading has a floor of ~0.7 m: a man toppling round his ankles carries his hips that far before they are
+  under 0.6 m. Do not chase it to zero.
+- A farmer's hips stand at ~0.7 m, not 0.95 (measured: "hips highest 0.71"). Height thresholds written for a 1.8 m man are high
+  for them.
+- A body in a castle is also put out of the court's solid props now (trees, well, fountain, stall): see `castle.md`, same date.
+
+## 2026-11-26 — a body stays where it falls; the throes cut back; the beach mutants' bite out
+- "bodies keep flying and sliding around on the ground after they are killed … looks cheap". Measured (`deathlab.js &k=pale`, new
+  `ONCE DOWN` line: from the hips' first time under 0.45 m): hips slid on 0.1-0.8 m (2 m after a mace kill), a limb 1-2.8 m,
+  still moving at ~4 s. Planted feet were not it (`&plantoff=1` the same). Now `r.downT` (time since the hips came down) and from
+  0.1 s every particle's speed ACROSS the ground is multiplied each substep by `dK` (0.94 falling to 0.55 by 0.4 s); up/down left
+  to gravity. After: hips 0.1-0.4 m (one 0.74), most bodies still by ~2-3.5 s (a clutch's hands move on, on purpose).
+- The throes (`ragThroeInit`): CRAWL (moves the whole body along the floor by construction) and WRITHE/TWITCH (a limb thrown at
+  2-3 m/s every fraction of a second) are gone — a crawl or writhe becomes a clutch six times in ten, else nothing. CLUTCH and
+  REACH stay.
+- "TAKE THE MUTANTS LITTLE BITE ANIMATION OUT ITS BAD": `attack2`/`attack2M` (the model's 1.5 s snap) deleted from the `use` of
+  pale, red, dark, hulk, spindle, runt, crooked, bloat (after `MUT_KINDS`, before `makeMutant`; chains into it drop). The clip
+  stays: `st.threw` uses its first half.
+
+## 2026-11-26 (later) — kicked over as one piece and up again; deaths that hold and stumble; a fixed solver step
+The owner, with a Dark Messiah reel: "the bodies should not be flailing around after death and all ragdolls fold so quick make
+them hold their integrity and stumble to fall but sometimes they dont make the deaths unique. have it so kicking sometimes
+knocks the enemy into a ragdoll that flings but holds integrity then stands up after it to fight again."
+- **`kickRagStart` / `kickRagStep` / `kickRagRise` / `ragOutAll`**: the kick's knockdown roll (32 %, 55 % mid-swing) now throws a
+  LIVING man as the dead's ragdoll — `mutRagdoll` under a borrowed `killFling` 0.3 (flags put back at once), seeds halved, and
+  `r.holdI` (`ragHoldStep`): every joint held to the pose he was kicked in, in his hips' frame, at 0.16 (0.4 of it once down
+  0.25 s). `u.kickRag` returns the unit's update early (after the dead branch). Down 0.7 s (or 3.4 s all told) → rise: bones'
+  local turns and the hips' world place/turn snapped, `u.rag` dropped, the rise clip posed at frame 0 with the group at yaw 0,
+  the yaw solved as (ragdoll hips→head azimuth) − (clip's, measured on the bones that frame), the group shifted so the hips
+  coincide, then the knockdown's own rise: `st.down = KN.rise`, `knockYaw = yaw`, `riseYaw = 0`, `hitFrom` = place − the fall
+  clip's whole travel (the down code rebuilds the place from it). `u.ragOut` eases the joints over 0.34 s before the draw.
+  Measured (`tools/kickkill.js &dirs=&down=4`): flew 2.7-2.9 m, a ragdoll 1.15 s, the frame it let go a joint jumped 0.01-0.04 m,
+  on his feet at 2.4 s, alive. Kinds with no `riseClip`, or over 2.7 m, or a boss: the old clip knockdown. Killed in the air he
+  is a body from that frame (`holdI` dropped when not alive).
+- **Deaths**: `ragMuscleInit` — one in seven has no muscles (`window.__musNone`), the rest hold 1.0-1.9 s (was 0.75-1.5), knees
+  0.55-0.9 of it (was 0.4-0.7), 20 % stronger; staggers 6 in 10 (`__bwStag`). The THROES ARE OFF (`ragThroeInit` returns unless
+  `window.__throeOn`): nothing moves once he is down.
+- **`ragBlowStart` zeroes `r.downT`**: with the settle left on, a struck or kicked body moved 0.02 m. After: 0.40-0.44 m.
+- **A FIXED STEP** (`RAG_H` 1/180 s, time banked in `r.acc`, ≤ 9 steps a frame; `window.__ragVar` the old way): the solver took
+  three substeps a frame whatever the frame was, and friction, damping, the settle and the muscles are all per substep — so a
+  body behaved differently at 30, 60 and 120 fps, and every probe here runs at 60. `motion` is scaled to three steps' worth for
+  the sleep test. `tools/ragrate.js` (same throw at 30/60/120): NOT conclusive — the pose at the kill differs run to run — but
+  the old step slept a body at 1.2 s at 120 fps with its hips 0.43 m up. If the owner still sees sliding, ask his frame rate.
+- **PROBE TRAP**: films from a camera 4 m off at the castle's default FOV are too small and dark to judge a body by; use
+  `deathlab`'s `snap` (FOV 55, 3.4 m, on the beach).
+
+## 2026-11-26 (night) — the physics-tuning skill's tunnel test on the kick; bodies still; mutants kicked over; floating get-ups
+The owner installed (from his paste) `~/.claude/skills/physics-tuning`; what of it applied here: the fixed step (`RAG_H`, done
+earlier), the TUNNEL TEST and SLEEPING. (a5c-ai's "game-physics" skill he linked is an empty stub — not installed.)
+- **Tunnel test** (`tools/kicktunnel.js &air=1`): men kick-killed straight at the nearest drawn wall (16 directions round the chest).
+  Through castle stone: 4 of 8 ground kicks, 6 of 8 jump kicks went 7-13 m past. The walls are FACES; `keepWallNear`'s push-out
+  went along (joint − nearest point), i.e. out the FAR side once a joint had stepped past — the skill's own gotcha. The push now
+  takes the side the joint came from (`pp`), and a step longer than its radius is also asked at its middle. After: no whole body
+  through; a hand or foot tip past (1-2 joints). The kill kick toned down too (`killFling` 0.8, air 1.1; ×1.1).
+  **PROBE TRAP**: `worldDrawnHit` also hits the beach's `sand` mesh UNDER the castle (520 m strip, hidden by the paving) — exclude
+  it (`hit.object === b.sand` failed: compare its texture, `sand-diff.jpg`).
+- **Bodies still** ("the bodies still roll around after death"): `dK` floors at 0.3 (was 0.55); from 0.45 s down an upward speed
+  is bled too (`dKy` — a roll is a body going up over its shoulder); a body down 1.4 s and dead (no `holdI`, no throe) sleeps
+  `done`. `deathlab.js`: still by 1.4-2.4 s (was ~4), hips 0.1-0.3 m once down.
+- **Mutants kicked over** ("not as much as farmers"): a kind with no knock clips is thrown by `kickRagStart` (12 % / 22 %
+  mid-swing / 45 % jump kick) and rises INTO ITS ROAR (`kickRiseRoar`: no candidates, yaw at you, `ragOut` 0.95 s, `riseDur` 1.3).
+  `tools/kickmut.js`: thrown on the 2nd-3rd jump kick, ~5 m, up at 3.7-4.5 s.
+- **Floating get-ups** ("after getting kicked the farmers get up floating feet above the ground"): two of the owner's stand-ups end
+  with the ankles 0.09 / 0.2 m over the clip's origin. `downFloorKeep(u, floorY, settle)` may now LOWER him (`settle` ramps
+  0.35→0.8 of the rise), and the rise ends with `p.y = riseFloor`. The clip knockdown's floor is `hitFrom.y` (its height is rebuilt
+  from it each frame — reading `p.y − dfLift` there drifted). After: ankles 0.05 m at the end, 0.10 m (a normal stance) after.
+- **Kicked bodies break props** at less (`R.kfly`: joints from 1.4 m/s, force 4 + 1.6·sp; solid ones from hips 3 m/s).
+- **(2026-11-26) A PROP PARENTED IN BLENDER AFTER KEYING IS PARENTED TO THE LAST KEYED POSE.** Clearing the action leaves every pose
+  bone's loc/rot where the keying left it; `parent_set(keep_transform)` then measured the axe's rest place against a hand out in a
+  clip, and in the game it hung 1.22 m off his fist. Reset `matrix_basis` first. Measure a held prop as the nearest point of it to
+  the palm, in every clip — it should read the same small number in all of them.
+- **A WEAPON'S HOLD IS PART OF THE CLIP — AND KNOW WHICH END IS THE HEAD FIRST.** (Corrected the same day.) I took the point of the
+  Scourger's axe farthest from his hand for its head; it is the BUTT of a long haft (he holds it a third of the way from the head).
+  Render the prop beside the source before measuring anything off it (`scratchpad/refrender.py`: Blender, Workbench, the source's own
+  Idle). A clip authored for a sword wants the blade out of the thumb side AND the fist near the butt: for a polearm held near its
+  head that is a SLIDE along the haft, not a turn — along the haft's own centreline if it is curved (`kingHaftAt`; down a straight
+  line it left his fist by 61 cm). Tie the hold to what he is DOING, not to the clip, or the haft runs through his fist at every blow.
+  Check with the palm-to-prop gap in every clip and mid-change (`tools/scourgeinhand.js`).
+- **`u.mixer.update` IS NOT THE CLIP** on any kind with `installLife`: it is the clip + the life layer + `postClip`. Anything that
+  poses to measure uses `u.mixer.rawUpdate`.
+- **MESH2MOTION HAS TWO SKELETONS.** Its "Run_Stealth" export was Unreal-named (pelvis, spine_01, thigh_l, ball_l …) and skinned:
+  `tools/glb_split.py --ue`. The packer's GLB path lines it up by positions, but read its forward 119° wrong off frame 0's toes —
+  check every new clip's facing (`tools/scourgeface.js`) before trusting it.
+
+## 2026-11-26 (late) — floating get-ups, again: the wrong floor, and a rise with nothing on the ground
+The owner, a still in the tavern (a man hanging in the air by a table): "when they get up they are floating fix this now".
+`tools/riseup.js` (`&at=tav` the tavern's three, `&at=fort` the farmers; `&how=kick|clip`; each half-second's LOWEST foot and the
+whole body's lowest bone over the floor at his standing level). Two causes, both in the KICK's rise (`kickRagRise`); the clip
+knockdown (`mutKnockdown`) was on the floor already (feet 0.14-0.24 m at most, mid-step).
+- **THE FLOOR HIS HIPS TOUCHED IS NOT THE FLOOR HE STANDS ON.** The rise stood him on `Hq.floor` — the ragdoll hips' own floor,
+  and in a room a joint asks `bunkerFloorAt` at its OWN height: a table top under a body that went over one, an upper storey for
+  one thrown high beside it. Measured: the drunk began his get-up 4.2 m up; Wong 0.77 m up (a table's height) and stayed there,
+  blocking in the air — nothing in a room makes a living man fall. Now `kickRag.y0` (his group's height when kicked) and the floor
+  is `groundUnder(hips, y0 + 0.45)`: the floor he was on, or a lower one off an edge; never one over his head.
+- **THE STAND-UPS LIFT THE WHOLE BODY OFF THEIR OWN ORIGIN.** A third of the way through `mStandA`/`mStandC` every bone — hands and
+  feet — was 0.55-0.75 m over the floor, and `downFloorKeep` only lowered him over the last of the rise (`settle` 0.35→0.8). It
+  lowers from the start now (0.04→0.18, eased in while `ragOut` blends the pose): lowest bone −0.01…0.14 m through the rise.
+- NOT fixed here (the ragdoll session's): the orc's first get-up frames have a foot 0.5 m UNDER the floor for ~0.3 s (the
+  `ragOut` blend runs after `downFloorKeep` measured); `farmer2` in the probe never rises (a parked farmer — the probe's, not a bug
+  seen in play).
+
+## 2026-11-26 (latest) — bodies meet the tavern's walls and furniture; a man getting up kicked again; a cheaper solver
+Forwarded by the Scourger session, the owner's words: "when bodies kicked through tables or anything breakable they should break
+improve the breakable in the tavern too. the farmers bodies fall though the walla and ground way too much they should hit them with
+colliders every single vsible texture they should hit not clip through anything. when getting up they can be kicked again too. make
+them less laggy ragdolls please."
+- **The tavern had no walls for a body.** `r.fort` (the wall index a ragdoll is held by) was set for the castles, the throne room and
+  the cellar only; a body in the tavern met its floor (`bunkerFloorAt`) and nothing else. Now `TAV_SITE` for a `kind.tav` body in
+  the tavern (its `tavWalls` index; the side-of-the-face fix applies there too), and `r.tav`.
+- **Tables and chairs** (`ragTavFurniture`, once a substep): a joint inside a standing table's plan and at its top's height — fast
+  (2 m/s for a kicked body, `kfly`; 3.2 otherwise) the table goes (`smashTavTable`, by him), slow it LIES on the top (the joint's
+  floor is the top); a chair met at 1.6 / 2.6 m/s goes (`smashTavChair`).
+- **Kicked again on the way up**: `kickStrike` no longer skips a man who is down (`st.down`) — only one already in the kick's
+  ragdoll; `kickMan` sends a man who is down or rising straight back into it (`kickRagStart`), which now drops what was left of his
+  rise (`riseFrom`, `riseClipNow`, `ragOut`, the floor lift). A body in the ragdoll is kicked as a body (`ragKick`).
+- **Cheaper**: the walls, rocks, the gut's and the rooms' walls and the court's solid props were asked for every joint on all 12
+  constraint passes of every substep (~800 wall lookups a body a frame). Now on passes 0, 4, 8 and 11 (`wallIt`;
+  `window.__ragWallAll` for the old); the floor clamp keeps every pass. `tools/ragcost.js` (eight killed at once, the first 40 frames):
+  ~0.9 ms a falling body before, ~0.4 after (noisy: 10 bodies 14.9 ms mean against 7 bodies 8.6). With bodies asleep 0.9 s after
+  they are down (the same day) a heap costs nothing after a second.
+- **The blend out of the ragdoll** (`ragOutAll`) asks the floor again of the pose as drawn: half-way between how he lay and the get-up's
+  first frame a foot went 0.5 m under (the orc). `tools/riseup.js &at=tav` (the Scourger session's): the drunk and the orc stand
+  within ~0.1 m. LEFT: Wong kicked over rises on `mStandA` held 0.7-0.8 m off the floor (the wong-moves stand-ups on his CC rig);
+  the clip knockdown is fine.
+
+## 2026-11-26 (late, again) — the float on getting up was the END of the rise: a lift dropped on one frame
+(Corrects the section above: the wrong floor was real in the tavern, but it was not "always".) The owner, in the first castle:
+"FIX THIS BUG THEY ARE ALWAYS FLAOTING WHEN THEY GET UP LIKE FEET ABOVE THE GROUND". `tools/riseall.js` (every farmer OUT in the
+fight, put down by the kick's ragdoll and by the clip knockdown where he stands, `&trace=1` a frame-by-frame of foot / lowest bone /
+group / `dfLift` / clip) — one man at his spawn (`riseup.js`) had not shown it.
+- **THE STAND-UPS RIDE UP OFF THEIR OWN ORIGIN** — `mStandD` by 1.5 m by its end, the others 0.1-0.7, `mGetUp` 0.12 — and
+  `downFloorKeep` holds the group DOWN by that much (`dfLift` negative). The frame he counted as up: `p.y = riseFloor; dfLift = 0`,
+  with the stand-up's pose still in the mix fading into his walk. He popped up by the whole lift and sank back over the fade: feet
+  1.12 m in the air that frame after `mStandD`, 0.65 the next; 0.14 m after `mGetUp`. Every get-up, both ways down.
+- **`dfOutStart` / `dfOutStep`** (top of `ragOutAll`): the group goes to the floor as before and the same offset is carried on
+  `u.model.position.y` × the get-up clip's share of the mix (its weight is what blends its raised hips into the walk's), gone
+  when the clip is. Called from both releases. NOTHING ELSE may write a farmer's `model.position.y` (the king's bike, the
+  puppets' leaps and the gargoyles do, on their own kinds).
+- The kick-rise lowers from its first frame (`downFloorKeep(…, 1)`, and `kickRagRise`'s first placement lowers as well as lifts):
+  the ramp had him 0.65 m up a quarter second in. `standFloorAt(site, x, z, y0)`: `keepFloorAt` on the body's own site (a castle,
+  the tavern) at the level he was on, else `groundUnder` (which does not know a castle's paving).
+- A `dfLift` still on record 0.5 s after he is up is dropped (some men's walk had them on its own floor with −0.09…−0.18 still
+  recorded: nothing to see, but the next knockdown took its floor from `p.y − dfLift`).
+- After: 16-20 get-ups a run, no pop (feet ≤ 0.31 m in the half-second after — a step), lowest bone ≤ 0.2 m through the rise.
+
+## 2026-11-26 (night) — "glitchy when standing up": the blend from the ragdoll into the stand-up
+The owner: "the bodies are all glitchy when standing up especially the farmers fix this now". `tools/riseall.js &pops=1` now logs
+the biggest one-frame move of any drawn joint (world, the rig's `Root`/`Armature` left out — it moves with the group, unseen),
+`&pophow=kick|clip` and a frame trace round the worst. The clip knockdown was clean (its 0.15-0.2 m frames are arms flung in the fall).
+The KICK's get-up was the glitch, all of it inside `ragOutAll`'s blend from how the ragdoll lay into the stand-up's first pose:
+- **The blend ran on the WALL CLOCK** (`_roDt`), not the game's dt: through a hitstop or the kill's slow-motion, and on a probe's
+  fixed clock, it raced. Now `ragOutAll(Math.min(0.05, dt))`.
+- **It blended from its own last answer** when the mixer had not written that frame: a toe 1.2 m in one frame and back. Each bone's
+  clip value is kept (`O.cq`), refreshed only when the bone no longer holds what the blend wrote (`O.lw`).
+- **Slerp flipped round the short way** mid-blend for a joint near a half turn from its clip pose: `rqSlerpFixed` (no short-way
+  flip), the clip value's sign kept continuous frame to frame.
+- **0.34 s was a snap** (hands and toes at ~12 m/s): `T` 0.55.
+- **THE HEIGHT** (the real fight): through the blend his hips are anchored in the WORLD where the ragdoll lay, so moving his group
+  moves the drawn pose only by the blend's share; height set off the drawn pose chased itself (floats 0.3-0.9 m, 10 cm bobbing),
+  and `downFloorKeep` read last frame's blend. Now, in `ragOutAll`: the group is set so the get-up's OWN pose (fresh from the mixer,
+  before the blend) lies on the floor; after the blend, anything drawn under the floor lifts only the drawn hips. The rise branch
+  calls `downFloorKeep` only when `!u.ragOut`. `dfBonesOf(u)` builds the bone list for both (it was only built inside
+  `downFloorKeep`, so with that kept out of the blend the floor check never ran — my own regression, found by the trace).
+- `dfOut` fades over at least 0.3 s (`max(clip share, 1 − t/0.3)`): a get-up whose clip had already left the mix dropped its lift
+  in one frame.
+- After (24-28 get-ups a run, kick + clip, farmers out in the first castle's fight): floats 0, worst joint move 0.15-0.25 m a frame
+  on almost all (was 0.6-1.6 m); tavern three on the floor after.
+
+## 2026-11-26 — the life layer's restore is LAST-SAVED-FIRST (`installLife`)
+A bone saved twice in one frame — by `lifeApply` and again by a kind's `postClip` after the life layer turned it — was put back
+first-saved-first, so it kept the life layer's turn. three's mixer writes a bone only when its keyed value changes, so on any still
+pose (a one-frame idle, a held wind-up, constant tracks) the look, breath and lean were stacked again every frame: the Scourger's head
+and chest rolled round (`temple.md`, same date). Now restored in reverse. A layer must still save every bone before it touches it.
+`kind.stopFloor` (swing pick, beside `stopPick`): how much weight is left to a blow drawn far from its own stand-off (default 0.15).

@@ -9532,3 +9532,60 @@ export async function wreckStuck({ w, b, log, sleep }) {
     log(nm, 'places', pts, 'inside something (skipped)', inside, 'TRAPS', traps.length, traps.slice(0, 12).join(' '), '| tight (2-3 ways out)', tight.length, tight.slice(0, 12).join(' '));
   }
 }
+
+// WHAT A FRAME COSTS AT EACH RENDER SCALE (and with the Low graphics setting, once there is one): whole frames, each one
+// waited out on the GPU with a one-pixel read, at a few stations down the beach. `&fw=1920&fh=1080` sets the game's window.
+export async function gpuCost({ w, b, log, sleep }) {
+  const R = b.renderer, gl = R.getContext(), px = new Uint8Array(4), C = b.camera;
+  for (let i = 0; i < 400 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
+  b.settings.devMode = true;
+  for (let i = 0; i < 90 * 60 && !b.state().introDone; i++) { b.frame(1); if (i % 20 === 0) await sleep(1); }
+  w.requestAnimationFrame = () => 0;
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  log('gpu', dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : '?', 'css', w.innerWidth + 'x' + w.innerHeight, 'introDone', b.state().introDone);
+  const Q = new URLSearchParams(w.parent.location.search);
+  const ks = (Q.get('ks') || '0.62,0.5,0.42,0.35,0.3').split(',').map(Number);
+  const modes = (Q.get('modes') || 'high').split(',');
+  const time = (n) => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t = []; for (let i = 0; i < n; i++) { const t0 = performance.now(); b.frame(1); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); t.push(performance.now() - t0); } t.sort((a, c) => a - c); return t[n >> 1]; };
+  for (const z of (Q.get('zs') || '-60,-200,-600').split(',').map(Number)) {
+    C.position.set(4, C.position.y, z); b.look(0, -0.04);
+    for (let i = 0; i < 120; i++) b.frame(1);
+    const row = [];
+    for (const m of modes) for (const k of ks) {
+      if (b.setGfx) b.setGfx(m, false);
+      R.setPixelRatio(k); R.setSize(w.innerWidth, w.innerHeight);
+      time(10); let best = 1e9; for (let r = 0; r < 3; r++) best = Math.min(best, time(20));
+      const cpu = []; for (let i = 0; i < 20; i++) { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const t0 = performance.now(); b.frame(1); cpu.push(performance.now() - t0); } cpu.sort((a, c) => a - c);
+      R.info.autoReset = false; R.info.reset(); b.frame(1); const calls = R.info.render.calls, tris = R.info.render.triangles; R.info.autoReset = true;
+      row.push(m + '@' + k + ' ' + best.toFixed(2) + 'ms cpu ' + cpu[10].toFixed(2) + ' calls ' + calls + ' tris ' + (tris / 1000).toFixed(0) + 'k');
+    }
+    log('z', z, '|', row.join(' | '));
+    if (Q.get('who')) { if (!w.__whoDraws) w.eval(await (await fetch('/tools/perf.js?' + Date.now())).text()); const r = w.__whoDraws(14); log('   who', r.calls, r.tris, JSON.stringify(r.top)); log('   shadows', R.shadowMap.enabled, 'fogDist', b.scene.fog && b.scene.fog.density, 'far', C.far); }
+  }
+}
+
+// THE CASTLE'S BREAKABLES AFTER A CHECKPOINT LOAD (2026-11-25, the owner: "i reloaded a castle checkpoint and all the breakables
+// were gone"). In through the gate (its autosave), how many props stand and are drawn; the death's reload; the same, every second.
+export async function cpAfterLoad({ w, b, log, sleep, shot }) {
+  for (let k = 0; k < 300 && !b.state().introDone; k++) { try { if (!b.state().started) b.beginGame(); } catch (e) {} b.frame(3); await sleep(30); }
+  b.settings.devMode = false; b.loadFort();
+  for (let i = 0; i < 120 && !(b.fortRdy() && b.fortWallsReady()); i++) { b.frame(1); await sleep(250); }
+  b.skipTakes(); b.placeOutOfFort('gate'); for (let i = 0; i < 30; i++) { b.frame(1); await sleep(100); }
+  b.skipTakes(); b.startFort(1); for (let i = 0; i < 40; i++) { b.frame(1); await sleep(60); }
+  const tell = (B, lab) => {
+    const S = B.CP.sites.fort; if (!S) return log(lab, 'no fort site; asked', B.CP.asked, 'kit', B.CP.ready);
+    const alive = S.props.filter((P) => !P.dead).length;
+    let drawn = 0; if (S.group) S.group.traverse((o) => { if (o.isInstancedMesh && o.visible) drawn += o.count; });
+    let gv = true; for (let o = S.group; o; o = o.parent) if (!o.visible) gv = false;
+    log(lab, 'asked', B.CP.asked, 'kit', B.CP.ready, 'built', S.built, 'props', S.props.length, 'standing', alive, 'instances', drawn, 'group shown', gv, 'in scene', !!(S.group && S.group.parent), 'inFort', B.roomFlags().inFort, 'black', (+(B === b ? w : w2).document.getElementById('blackout').style.opacity || 0).toFixed(2));
+  };
+  let w2 = null;
+  for (let i = 0; i < 200 && !(b.CP.sites.fort && b.CP.sites.fort.built); i++) { b.frame(1); await sleep(50); }
+  tell(b, 'before');
+  const f = document.querySelector('iframe');
+  sessionStorage.setItem('beachwalk.load', 'checkpoint'); sessionStorage.setItem('beachwalk.skipIntro', '1');
+  f.contentWindow.location.reload(); await sleep(1500);
+  for (let i = 0; i < 300; i++) { await sleep(100); try { w2 = f.contentWindow; if (w2.__bw && w2.__bw.CP) break; } catch (e) {} }
+  const B = w2.__bw;
+  for (let s = 1; s <= 40; s++) { await sleep(250); tell(B, 'after ' + (s / 4) + ' s'); }
+}

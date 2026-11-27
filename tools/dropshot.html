@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8">
+<!-- The water ball's drop in its states, for a still (tools/drop_crayon.py's drop; the CSS is index.html's own, lifted from it).
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --screenshot=out.png --window-size=520,170 http://localhost:4227/tools/dropshot.html -->
+<style id="css"></style>
+<style>
+  body { margin: 0; height: 170px; background: radial-gradient(ellipse at 50% 120%, #2b3444, #0b0e15 70%); font: 11px ui-monospace, Menlo, monospace; color: #8b93a3; }
+  .cell { position: absolute; top: 28px; width: 100px; height: 120px; }
+  .cell span { position: absolute; bottom: 0; left: 0; right: 0; text-align: center; }
+  .cell #seadrop, .cell .sd { position: absolute !important; left: 34px; top: 10px; right: auto !important; bottom: auto !important; transform: scale(1.4) !important; transform-origin: left top !important; }
+</style>
+<body>
+<script>
+(async () => {
+  const html = await (await fetch('/index.html')).text();
+  const m = html.match(/  \/\* \(IN CRAYON[\s\S]*?@keyframes sdBack[^\n]*\n/);
+  document.getElementById('css').textContent = m[0].replace(/#seadrop/g, '.sd').replace(/assets\//g, '/assets/');
+  const st = [['empty', '0.1', 'show'], ['filling', '0.5', 'show'], ['nearly', '0.85', 'show'], ['ready', '1', 'show ready'], ['the moment back', '1', 'show ready pop']];
+  st.forEach(([t, k, c], i) => {
+    const d = document.createElement('div'); d.className = 'cell'; d.style.left = (i * 100 + 10) + 'px';
+    d.innerHTML = '<div class="sd ' + c + '" style="--k:' + k + '"><div class="dry"></div><div class="wet"></div></div><span>' + t + '</span>';
+    document.body.appendChild(d);
+  });
+  document.querySelectorAll('.pop .wet').forEach((w) => { w.style.animation = 'none'; w.style.filter = 'brightness(1.5) saturate(1.1)'; });
+})();
+</script>

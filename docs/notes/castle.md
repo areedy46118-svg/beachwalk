@@ -2329,3 +2329,590 @@ his back, feet 0.24 m, a roll to a knee from 0.8 s, standing at 1.5. His death (
   the back and both sides: held; out of the doorway: down to the street).
 - **The hook bites any castle face** ("i cant hook up … or the castle"): the trace knew XIII by its walking band; `hookThrow` now asks
   the site's face grid (`siteRay`) down the line too.
+
+## 2026-11-23 — the garrison's weapons out of a pack; their grip; the rare knights' shields
+"make these the weapons for the farmers. dont use the sheath model. put a shield on rare knights backs … break off if hit from
+behind them with good physics grab the puppets break sound too … the farmers are not holding their weapons properly make sure the
+handle are actually in their hands and the weapon faces and swings the right way … improve everything about the farmers".
+- **THE PACK** (Atakhani, CC-BY-4.0): `tools/weapons_pack.py` → `assets/farm-weapons.glb` (438 KB shipped): 3 swords, 3 axes
+  (single-bitted), 3 shields, no sheath; each on `farmWeapon`'s convention (butt at 0, handle +Y, edge +X) with `hi`, `grip`
+  (a sword against its guard, an axe 0.11 up the haft), `guard` in its extras; ≤1300 tris; colour maps only, 512 JPEG.
+- **ROLE ≠ WEAPON**: `kind.tool` is still the role (strokes, cant, `FARM_CARRY` by what he holds, roll), `kind.wkey` the model —
+  swordsmen one of three swords, axemen one of three axes, the mace role the heaviest axe (`Axe_01`), the spear role a sword to
+  thrust with (the pack has no spear, no mace). Reach re-derives itself from the new tips (`farmReachSet`). `u.farmW` is the man's
+  own weapon; every reader of `FARM_TOOLS[u.kind.tool]` reads it. `farmWeapon(key, role)` falls back to the built ones.
+- **`kind.waitFor`** (`makeMutant`): a farmer is dressed only once the weapons file is in. **TRAP PAID**: the first version put the
+  wait INSIDE the parse chain (`bwParseLater`) — the weapons file parses on that same one chain, queued behind the very farmers
+  waiting for it: 20 men, 0 bodies. The dress now waits outside the chain.
+- **TRAP**: three's GLTFLoader sanitizes node names — Blender's `Axe_01.001` arrives as `Axe_01001`: every lookup missed and every
+  man held the built weapon (`tools/farmwpn.js` lists each man's wanted model and what he holds).
+- **THE WRIST TURNS, NOT THE WEAPON IN THE FIST** (`farmCarry`): the carry turned the weapon about the grip inside a hand the run
+  put elsewhere — fingers 11-47° round the handle between blows (180 = wrapped, `garrison.js&m=inhand`). Now the seat→carry turn is
+  put on the hand bone (up to `FARM_WRIST_MAX` 100°, the rest in the fist), restored if no clip wrote the hand since (or it winds
+  on). After: the handle 1.0-2.5 cm from the hand's middle, fingertips 1.5-3 cm off it, wrapped 52-134° between blows, 113-174° in.
+- **ONE BIT LEADS**: the pack's axes have one bit (`two` false): the roll is not axial (`/1`, up to half a turn, fixed at the swing's
+  start, eased in through the draw) and each stroke's FIRST throw is seeded from `farmRollMeasure` on his own clip less the seat's
+  roll (the learned angle only came from the first throw: 0.10 / −0.15 bit-first on firsts). Duels (`m=duel&tools=…`, one role a
+  run — all roles in one run cuts down the others first): sword 12/12 land, head 0.12-0.35 from your eye, either edge 0.63-0.81;
+  axe 13/14, bit-first 0.15-0.61; mace role 14/14 0.03-0.65; spear role (sword) 10/12, 0.08-0.20. Natural fight 12 hurts a
+  minute (as before), blows 0.18-0.24 from your eye. `tools/garrison.js&m=film&tool=axe|sword` for the strokes.
+- **THE SHIELDS** (`farmShield`, `farmShieldTake`): a `kn`/`ka` farmer (9 of 20) carries one with `FARM_SHIELD_P` 0.22 a man, drawn
+  once a game (`FARM_SHIELD_ROLL`) — ~2 a fight; on his Spine2, behind his back, face out (the packer's `face`), leaning in, 0.74 m
+  tall. A blow from behind (attacker in the back half off his chest's facing, dot < −0.3), yours or a companion's, is spent on it:
+  off whole into `gibs` as a level group with the shield turned face-up inside it (so the gib's "lie flat" lays it on its back),
+  thrown away from the blow and up, spinning, landing on `keepFloorAt` with a metal knock; `sfxPupBreak`; your hitstop and shake.
+  `tools/farmshield.js` (`window.__bwAllShields` gives every knight one): health 4 → 4 from behind, 4 → 3 from the front; stills.
+
+## 2026-11-23 (later) — held at an angle; blows that come in front of your face; the gargoyles alone at the door
+"the farmers weapons need to be like they are actually holding them … they dont stick up straight when held … they dont even swing the
+blade at you and their moves dont connect to the player". FILMED FROM YOUR EYE first this time: `tools/farmpov.js&tools=<role>&n=<k>`
+(one role a run — the others are cut down), crops round him at full resolution, and per landed blow: the blade's share of the screen,
+its middle on screen, the tip's distance from your eye, and how far ACROSS your view the blade lies (90° = its whole length, 0 = end-on).
+- **WHAT IT SHOWED**: the carry stood swords 55° and axes 70° up off level (a torch); and every blow's POINT was driven at your eye —
+  `aimBar` turns the arm about the shoulder so the tip points at the target, `FARM_REACH_GAP` stood him so the tip stopped 0.25 from
+  your eye, and a blow counted from 0.85 under your eye up: the blade arrived end-on into the lens (17° across for swords, 28° axes).
+- **THE CARRY** (`FARM_CARRY`): a sword in a guard, point at the man in front a little high (f .84 u .46 r −.12, the manuals'
+  "plough"); an axe (and the mace role's) haft forward at about 45° (f .66 u .62). The wrist takes it (`farmCarry`, 2026-11-23 above).
+- **IN FRONT OF YOUR FACE**: `aimFront` 0.42 (aimed at a point that far toward him from your eye), `hitFront` 0.30 → 0.42 (judged
+  there), `FARM_REACH_GAP` 0.25 → 0.40 (`mCutC` 0.42 → 0.55), `bodyLowArm` 0.85 → 0.40 (a hand blow counts only from your neck up).
+  After: every role lands 4-8 of its blows in a duel; heads 0.33-0.39 m in front of your eye (were 0.18-0.24); natural fight 14
+  hurts a minute (12). The blade at the moment it counts is still mostly end-on (sword 17-23°, axe 28-34°): `aimK` 1.0 sweeps it a
+  little more across but the swordsman landed 5 of 8 — kept at 2.0. A blade that crosses your whole view as it lands needs strokes
+  made for it (the mocap cuts come in at the body); not done.
+- **THE GARGOYLES WITHOUT MYLES** ("if not with myles just have the gargoyles attack when youre near the locked door"): in
+  `updateGargoyles`, phase 0, Myles not `with` (or with and still being made): within `GARG_NEAR_DOOR` 5.5 m of the arch door's
+  middle they wake (`gargWake`). With him, the door is still tried and his scene plays. `tools/gargdoor.js`: perched at 6.5 m, down at 5.
+
+## 2026-11-23 (night) — the garrison's cuts, laid out for your eye (`farmSwingIK`)
+"make new swings" / "THEY HAVE TO FEEL BETTER WHEN FIGHTING" / "TEST IT AS YOU MAKE THEM MAKE SURE THEY ARE SMOOTH".
+- **WHY NEW**: every captured cut ended with the weapon's point at your eye (the aim turns the arm about the shoulder so the TIP points
+  at the target): 17-28° across your view as it landed — a dot, never a blade going by.
+- **THE CUTS** (`FARM_IK`: axCut/hmCut/rkCut a forehand diagonal, …CutD a backhand diagonal, …CutC flat, …Chop overhead): each frame
+  of the stroke, a path laid out against where you are — `C` 0.40 m in front of your eye at its height (`FARM_IK_FRONT`), a quadratic
+  through it from `FARM_IK_PATH`'s start (a chamber high or wide on one side) to its end (low on the other), in (his right, up, toward
+  him); the blade's striking point (62 % of the weapon from the wrist for a sword, 86 % for an axe) on it; the blade square to the
+  path's travel and to the line to you, canted toward him (`FARM_IK_CANT` 0.70) so an arm can hold it, the grip end the side nearer his
+  shoulder (chosen once a swing); the edge — the axe's bit — leading (a sword's edge chosen ONCE a swing: re-chosen every frame it
+  flipped). Two bones put his wrist there (elbow out and down); the hand is turned to hold the weapon so (`B.q`, the seat, is the
+  weapon's frame in the hand). Eased in from his clip through the wind (0.15-0.7 of it), the sweep over the strike ±`FARM_IK_LEAD`
+  0.09 s (a 0.10 s strike swept two metres in six frames) with `C` at its middle, eased out through the recovery. The stroke's
+  timing, footwork, legs, body and left arm are its own; the arm is not aimed (`noAim`); `farmToolRoll` stands aside (`farmIKOn`);
+  he stands `FARM_IK_STOP` 1.55 off (1.42 made the men close longer and throw fewer).
+- **SMOOTH** (`farmArmSmooth`, last thing in `farmCarryAll` for every armed man out): shoulder, elbow and wrist each turn at most
+  `FARM_IK_RATE` 24 rad/s from where they were DRAWN last frame through the blow, `FARM_ARM_RATE` 11 outside it (the captured strokes'
+  chambers snapped up at 0.4 m of tip a frame, and their first frames cut in hard from the walk). The blow's test reads the true pose.
+- **MEASURED** (`tools/farmpov.js&tools=<role>&n=8`, SWEEP / SMOOTH / SUMMARY): sword 6-8 of 8 land, the blade 62-65° across your
+  view as it lands and 79-82° in the quarter-second before; axe 8/8, 53-55° / 63-67°; mace role 7/8, 57° / 64°; the spear role's
+  thrusts stay thrusts (26°, as a thrust is). Worst frame: hand 26-31° a frame, tip ≤ 0.56 m (in the strike itself, or the body's own
+  lunge and turn). Natural fight (`garrison.js&m=fight`, 60 s): 8-13 hurts, 10-16 blows thrown — the spread run to run is that wide;
+  12-14 before. Filmed: the chamber over the shoulder (the tell), out wide, down and across in front of you, through low.
+
+## 2026-11-23 (late) — the owner's combos for the garrison; the rare death on his feet
+"use these for the farmers make sure the weapons are held correctly like the screenshot you still have them horrible make the zombie
+death animation for them but make it rare and they ragdoll after completing the death animation" (Mixamo "Standing Melee Combo Attack"
+Ver. 1/2/3 — a club in the fist in Mixamo's preview — and "Zombie Death", loose in ~/Downloads; Ver. 2-2 is the same take as Ver. 2).
+- **THE CUTS WERE A GREAT SWORD'S**: every farmer's cut (`axCut…hmChop`) was the orc's Great Sword Pack — two-handed slashes — on a
+  one-handed weapon. Now `wcCombo1-3` (clips `mCombo1-3`, packed into the farmers' own set: `tools/ntar_moves.py -- wong`,
+  `NTAR_ONLY=mc1,mc2,mc3,zDie`; `mc1` windowed from frame 24 — its first 0.8 s was a settle before the raise). Every weapon man's cut,
+  chop, swipe and the spear role's cuts are combos (`FARM_MOVES`); kicks, spins, leaps, the spear's thrust and lunge as they were, and
+  what those chain into is a combo too. The laid-out cuts (`farmSwingIK`) are no longer thrown by anyone with a weapon.
+- **EACH BLOW TIMED** (`FARM_COMBO`, measured `tools/farmcombo.js`: the passes of the head through the space in front of him at a man's
+  head, fast, most squarely in front): mc1 0.325 (the overhead) + 0.545 (the sweep), mc2 0.25 + 0.575, mc3 0.356 — the first is `hit`,
+  the rest `more` (one swing, several contacts). Played at `FARM_COMBO_RATE` 1.25 (at 1.0 a combo was 3-4 s and the street fight fell
+  to 5-8 hurts a minute); `aimArmK` 0.35 (the arm's aim a third as strong: the sweeps are the point). The retarget takes only the hips'
+  rise and fall, so a clip's "travel" (mc1 3.07 m) never moves him.
+- **THE HOLD** filmed against the owner's screenshot (`tools/farmcombo.js &turns=-0.7,0,0.7`, the seat turned in the fist about the
+  palm's normal, `farmSeatTurnS`): at the seat as it is the weapon rises straight up out of the raised fist (his left picture) and lies
+  level along the arm held out (his right); turned either way it is off the arm or a stick. Kept.
+- **MEASURED**: duel (`garrison.js&m=duel`): sword 12/12 land, head 0.36-0.45 m from your eye, edge first 0.68-0.85; axe 12/12, 0.33-0.43,
+  0.51-0.70 (bit first). From your eye (`farmpov.js`): the weapon sweeps 0.41-0.51 screen heights across you in the quarter-second
+  before it lands, 78° across your view; tip ≤ 0.45 m a frame (in the sweep). Natural fight 3-10 hurts a minute in four runs (the
+  spread run to run is that wide); two of the three combos land twice.
+- **DYING ON HIS FEET** (`farmZDieRoll`/`Start`/`Step`, `FARM_ZDIE_P` 0.14): in `finishMutant`, a farmer not taken apart by shot, a round
+  through the head or the mace — nothing severed, not thrown — plays `mZDie` (2.9 s; his hips held over where he stood, so he falls
+  where he was hit, not into you), stepped from the dead branch of `updateMutantUnit`, and at 0.94 of it `mutRagdoll` from that pose,
+  barely pushed (0.12). `window.__bwZDieAll` forces it; `tools/farmzdie.js`: the clip from 0.1 s, the ragdoll at 2.62, hips moved 0.00 m.
+
+## 2026-11-24 — the grip like the owner's picture; the death on his feet onto the floor
+The owner, with a picture of a low-poly knight (the handle through his closed fist, guard on top, pommel under, the blade rising
+forward and up): "the farmers still hold their weapons so wrong … weapons should be in the hands exactly like this". Measured on the
+picture: handle ~132° off the forearm, blade ~50° up. `tools/farmgrip.js` (men out in the street, up to two a weapon: rest, guard,
+walking in, mid-blow — handle-vs-forearm, blade up, stills) found:
+- **The carry turned the weapon INSIDE THE FIST** once the wrist had taken 100°: handle 81–143° off the forearm man to man. Now never
+  (`farmCarry`'s "rest in the fist" branch is off). The wrist's turn is split about the forearm's own line (swing–twist): the ROLL
+  (forearm and wrist turning together — it never changes the handle's angle in the fist) is free (`FARM_ROLL_MAX` π; at 92° a man
+  walking in carried his sword point-down), the BEND off the forearm `FARM_BEND_MAX` 0.75 (43°).
+- **The spear role holds a pack sword**, and the spear grip laid its handle along the forearm: 33–38°, blade at the ground. A pack
+  weapon is seated by what it is (`spearGrip` only for the built rake; `cantK` the weapon's), and his `rkThrust`/`rkLunge` cock the
+  point at whom he drives it (`farmCarry`'s `thrust`: toward the foe, a little high, bend up to `FARM_BEND_THRUST` 54°).
+- **THE CANT SIGN TRAP**: positive `FARM_CANT` leans the blade toward the HAND (48° off the forearm, the blade at the ground at rest);
+  the big wrist turn had hidden it. −0.47 (the picture's 132° in the seat itself) laid the blade back along the forearm through the
+  combos (144–178°): the clips are a club held SQUARE. So the seat is near square (sword −0.12, 101°) and the picture's angle at rest is
+  the wrist cocking up in the carry; an axe 0.20 (its head leads the chop — at −0.12 heads passed 0.59 m off your eye and 9/14 blows
+  landed in a duel). `FARM_CARRY` sword/axe/hammer f .62 u .77 (50° up; the sword's was 28°).
+- **MEASURED AFTER**: rest/guard/walking 45–55° up, handle 99–133° off the forearm; through the blows 90–148° (a fist round a handle);
+  the thrust 61–137°. Duels (`garrison.js&m=duel&tools=…`): sword 12/13 land, axe 11/11. `farmpov.js&tools=sword`: blade 84° across
+  your view as it lands. One idle holds the hand behind his back — the blade cannot point forward from there without crossing him,
+  and stays as it hangs (guard 80° up).
+- **DIES ON HIS FEET, INTO THE FLOOR** ("the fall animation for farmers he fell through the floor"): `farmZDieStep` — the capture's
+  hips come down further than his body is long: his lowest joint went 0.68–0.94 m under the paving (`tools/castlecut.js&zd=1`). Each
+  frame after the clip poses him his hips are lifted by however far the lowest non-finger bone (`u.zBones`) is under his feet + 8 cm.
+  After: 0.00–0.07 m.
+
+## 2026-11-24 (later) — the blows with the new grip, edge-first at you
+"now that the farmers are holding there weapons right now readjust their hit animations so the blade hits the player and is swung at
+the player like that". (The grip as it stands: `FARM_CANT` sword −0.12, axe/hammer 0.20 — not −0.47, see above.)
+- **A NEW MEASURE**, `garrison.js&m=duel` "EDGE-FIRST COMING IN": |edge · head's travel square to the handle| over the 0.12 s INTO the
+  contact, not counting held frames (`b.hitstop`). The old "edge leads" averaged the whole strike — the freeze's frames (the head moving
+  by noise) and the follow-through out of you — and read 0.55-0.66 while the approach was already 0.85-1.0.
+- **THE LEARNED ROLL WAS MAKING IT WORSE** (`farmToolRoll`; `trace=1`): a blade that came in 0.85-1.0 edge-first on its first blow (no
+  turn yet) came in 0.29-0.95 on the second, with a learned 0.75 rad turn — it learned from the follow-through and the hitstop frames.
+  Now it learns only from the approach (`t` in [contact − 0.12, contact + 0.02], not `hitstopFrame`).
+- **EACH CUT OF A COMBO HAS ITS OWN EDGE**: contacts `[A.wind, ...A.moreT]`; the cut in play is the one whose midpoint to the next has
+  not passed; each learns its own turn (`learn[swing#j]`), the first seeded from `farmRollMeasure` for a one-bit axe; the wrist turns
+  from one cut's angle to the next between them.
+- **MEASURED** (duels): coming in edge-first sword 0.94-0.95, axe 0.96-0.97, the spear role's cuts 0.91 (its thrust 0.90); heads
+  0.29-0.51 m from your eye; landing sword 10/12, axe 13/13, spear role 11/14 (as before, within the run-to-run spread). From your eye
+  (`farmpov.js`): the blade 61-69° across your view as it lands, half the screen, centred, the tip 0.5 m off; the axe's chop comes down
+  bit-first onto you, the sword's edge first.
+
+## 2026-11-24 — the first castle's breakables: lit like the court, twice as many, put on purpose
+"make the breakables look better in the castle and have more of them just put them smart like on purpose". Filmed first
+(`probes.js castleProps&site=fort`): 4 scenes / 16 props, black against stone lit by its own map.
+- **Lit**: every prop's emissive (its map) raised a third and warmed — gothic atlas 0x5c4a35 → 0x7d6247, market 0x433628 → 0x5f4b36,
+  produce 0x3a2a20 → 0x52392a.
+- **Anchors** (`CP_SITE_DEFS.fort.anchors` → `fortPropAnchors`, laid in `cpBuildSteps` after the wall scenes): ten spots down the
+  street's middle line (`fortStreetAt` t 0.08 + 0.092·i, alternate sides) — BARRICADES (new scene: sandbags in a line, a crate with
+  a box on it, a broken cart on its side, a sack) laid ACROSS the street 2.2 m off its middle, so a way round stays open, and
+  crates / barrels / sacks / a table 3 m off it facing in; and a STORE (new scene: barrels, a keg, a crate with a box, a sack, a
+  bucket) 2.6 m from each fire on the side away from the street's middle. Their own rule (`fortAnchorAvoid`): the gate 8 m, the
+  back door 5, a house's doorway 2.6, every other door, the fires 2.0. The wall strip's farmers' doors 4.5 → 3.4 m; fort `max`
+  10 → 16 scenes, `singles` 7 → 12.
+- Result: 11 scenes / 42 props (from 630 spots; the wall strip's doors and gate still refuse ~450). Creatures still smash through
+  any of them (`cpUnitCrush`); you are held off by them (`cpPushPlayer`).
+
+## 2026-11-24 (night) — the garrison reads the fight
+"do 7 but dont make the fight easier": enemies that back off a step when badly hurt and come back, flank instead of queuing in front,
+flinch or hesitate at a feint, break off or rush when an ally falls. All in `farmMobHold`/`updateDemonPack`'s farmer branch except the
+guard read, which is every humanoid with a life layer (`packReadGuard`, from `raiseGuard`). Each pays for itself with a blow that takes
+the turn whoever holds it (`packRush`: role 'press', `revengeUntil` +1.8 s, `cool` 0, `wait` 99).
+- **Back-off** (`farmBackOff`, in the press branch): a presser at ≤ 40 % of his health, within 1.6 s of the blow that did it, not mid-swing,
+  steps back out of reach for 0.6–0.9 s (2 m/s easing, facing you, his velocity gait walking it backwards), once a life (`st.bkDone`),
+  then `packRush`.
+- **Flank** (`farmPressFlank`): the farmers' pressers (2-3) take slots spread evenly round you from the nearest one's line; each not in a
+  blow is walked along the circle toward its slot while it closes (the belly's rule; farmers had been left out by `belly = !A[0].farm`),
+  clamped to the castle (`fortClampUnit`).
+- **An ally falls** (`packAllyFell`, end of `killMutant`): every awake farmer within 5.5 m — 55 % rush at once (and some roar), the rest
+  flinch back from the body (a holder's `flinch` act; a presser a half-step `bkT` 0.45) and rush 0.75 s later (`st.rushAt`).
+- **Feint / guard read** (`packReadGuard`): a cut or a held charge left for the guard is a feint: a man in the first 80 % of his wind within
+  3.6 m flinches (60 %) and his wind starts over 0.16 s; a guard raised into a wind-up is checked by 30 % (0.10 s).
+- `window.__bwNoRead` turns the four off for a probe. **MEASURED** (`tools/fightread.js`, 90 s × 3 each way: you cut at the nearest every
+  ~1.3 s, feint a quarter of the time, guard men winding up at you): reading on — hurts taken 3.1 a minute (off 2.0), blows thrown 34.7
+  (33.6), your kills 7.6 (8.9), 3-5 back-offs and 7-13 rushes a run, the pressers spread 100-154° round you. Harder, not easier.
+- The natural fight with you not fighting back (`garrison.js&m=fight`) is unchanged within its spread: 7 and 7 hurts a minute (8 and 4).
+
+## 2026-11-25 — the breakables after a castle checkpoint
+"i reloaded a castle checkpoint and all the breakables were gone". `castle-props-a/b.glb` are asked only when a castle is placed
+(`loadCastleProps`), so on a load they ranked as the far rest, and the far rest waits out a fight in a castle: `probes.js
+cpAfterLoad` (in through the gate, the death's reload) had 43 props before, the kit still not parsed 30 s after. Now both files
+are in `BW_FROM.first` for a save in 'fort', 'c13' or 'thr', and `bootLeft` counts one more while the castle you are in has asked
+for its props and its site is not built — built 0.25 s into the fade they popped in. After: built at 3.5 s under full black, the
+black lifting at 4 s (it lifted at 3.25 before, with nothing in the street).
+
+## 2026-11-24 (night, later) — the farmers a little harder
+"make the farmers a little harder too". `FARM_BASE` only (every farmer kind inherits it), no more damage:
+- `windK` 0.96 → 0.87 (their wind-ups ~10 % quicker: an opening is punished sooner), `aggr` 2.2 → 2.4, `chainMax` 2 → 3 (a follow-up more
+  often);
+- `recoilK` 0.95 → 0.8 (a reel is shorter: fewer free hits after a stagger), `poiseBack` 1.4 → 1.8 (the pool refills sooner);
+- `block` 0 → 0.15 (a light blow from the front, while he is ready, is guarded now and then — `dealerBlock`; never the blow that woke him);
+- `bursts` 2 → 3, `pressT` 5 → 6 (a presser stays on you for three blows): the guard and the quicker recovery alone cost the fight its
+  pressure (blows thrown 31.8 → 30.5 a minute, hurts 2.9 → 2.0).
+MEASURED (`tools/fightread.js`, 90 s × 3, you cutting, feinting and guarding): before (with the stumble change) — hurts taken 2.9 a
+minute, blows thrown 31.8, your kills 8.2; after — hurts 3.1, blows thrown 35.3 (+11 %), your kills 7.3 (−11 %). The hurts barely move
+because the probe's player guards most wind-ups; the run-to-run spread on hurts is wide (0.7-4.7).
+- (2026-11-25) "take out the sandbags": `sandbag`/`sandbag1` out of `CP_KINDS` (never built); the `sacks` scene is three sacks,
+  the `barricade` two crates (a box on the first), the cart and a sack.
+
+## 2026-11-24 (latest) — the handle IN the fist; axes up the haft and carried; the blade to you
+"Make sure the farmers hand is on the handle of the sword … The farmers hand on the axe handle could be a little further up … the sword
+is floating by his [hand] … fix farmers hits too the blade rarely touches the player". `tools/farmgrip.js` now frames the fist square to
+the handle (`*_square`, `*_square2`, 0.3 m off) — seen that way the old sword showed its whole grip, pommel to guard, with the glove
+behind it.
+- **THE SEAT IS THE FIST'S SKIN, NOT ITS BONES** (`farmSeatTool`): the garrison's thick mitten curls one finger chain, and the curled
+  bones' middle is IN the fingers — a handle put there ran along their outside. The fist's middle is now the centroid of every body
+  vertex whose heaviest weight is the hand or a bone under it, posed closed; the handle goes through it (`FARM_SEAT_IN` 1).
+- **A sword a fist's width under its guard** (`farmWeaponModel`: `guard − 0.085`, the packer's was −0.06): the mitten closed over the
+  cross itself; now the guard sits on top of the fist, the pommel under it.
+- **An axe a quarter of the way up its haft** (was the packer's 0.11 m from the heel; a third took so much reach that two combos fell
+  short of you) and **seated like the sword** (`FARM_CANT` axe −0.12, not 0.2: leaned to the hand, the wrist could not lift it off a
+  hanging arm — two axemen held theirs straight down in guard, −73°). After: every axe 44-54° up in guard and walking in.
+- **THE BLADE TO YOU**: aimed 0.22 m in front of your eye (`aimFront`, was 0.42) and each man stood so his head reaches 0.22 from it
+  (`FARM_REACH_GAP`, was 0.40); judged where it always was (`hitFront` 0.42 — a head driven in passes it; judged at 0.30 the axe's
+  first combo landed 4 of 6); the second combo, which sweeps in short, may stand to 0.72 (`FARM_STOP_MIN_CLIP.mCombo2`).
+  MEASURED (duels): head to your eye median 0.50-0.53 → 0.37-0.43 m, nearest 0.21-0.35; landed sword 10/11 → 10/11, axe 8/12 → 9/12
+  (the second combo stays the weak one, 1 of 2-3, as it was for the sword before).
+
+## 2026-11-25 — "i got stuck right here" (the first castle, by the round tower): not reproduced; the overlay now says more
+His where-am-I: castle, feet 13.90, 1.13, -15.02, look -1.16. His screenshot (`images/6.webp` in the session that got it): rough
+stone close on the right, and on the left the beach's sand, the shoreline and a long wall far off — open beach.
+- **`tools/fortwalkout.js`** (the fort booted, the farmers put away): stands you on a spot and walks out 24 ways a second each
+  through the real update; why a 10 cm step would be refused (floor / mask / a face / crossed / off main / a prop); jumps each way
+  and tries to walk out from the landing (`&jump=0` off); walks in from the raised floor beside it and presses into the corner
+  (`&arrive=0` off); `&faces=1` every steep face of the wall index near it in plan; `&fmap=x0,x1,z0,z1` the floors; `&top=H` a
+  still from straight above; `&views=` / `&exact=1` / `&cands=x,z;…` stills at his eye; the beach's `rockColliders` near it; the
+  overlay's text. TRAP: the game is in the probe page's iframe — `w.document`, not `document`.
+- What the probe's castle has there: a thin alley between a house's back wall and the curtain wall, where the curtain meets the
+  round tower (overhead still). Walls 0.27 m south (the curtain's inner face) and 0.26 m east, a third face 0.49 m west standing
+  out from the curtain — a pocket. From it: 11 of 24 ways walk out 1.2-3 m (north, back the way in); into it nothing moves,
+  correctly (`keepWallPush` takes the step back — drawn stone is there). No trap after a jump from it, none walking in from the
+  1.13 floor beside it. The floor there is 0.94: his 1.13 means he was 0.2 m up — a jump, or the hook's pull.
+- What it does NOT have: his view. Rendered at his eye and look (and at every reading of the overlay's pixel digits, and across
+  the curtain at 12 spots), it is stone on every side, the castle drawn. Ruled out: `cullCastleUnseen` (it hides only XIII, the
+  island, the vista, the rock surf), the fort's placement (fixed, unchanged), the beach's rock push-out after the castle's clamp
+  (no `rockColliders` within 25 m), the beach's x clamp (`!inFort`), the hook's pull (it asks `siteRay` and ends in
+  `clampPlayerToRoom`). The overlay is written at the START of a frame and the picture at its end, so a frame that ended
+  somewhere else shows a picture of there over the numbers of here.
+- So `updateWhereAmI` now adds, in a castle, `drawn yes/NO` (`fortWorld.visible`) and any of bunker / deep / c13 / dun / sewer /
+  notReady / noWalls that is on — the ways the castle can be hidden while its walls still hold you (`fortWorld.visible` needs
+  `!inRoom()`, and `inRoom()` has `inBunker` and `inDeep`, which the overlay's room names never showed). The next screenshot of
+  this says which.
+- (later) The other session read his pane after: he was on the beach then, the fort hidden (`fortWorld.visible` false), no room
+  flag on — the state was gone. Tried next: the hook, the one mover that runs after the castle's walk and in the air (he was
+  0.2 m up, and holds it in the shot). `&hook=1`: from the spot and from the corner, jumped and the real throw (`hookThrowS`)
+  each of 24 ways at two pitches, a second and a half watched: no frame ended off the castle's courts. Not it, from there.
+  Unexplained still; the overlay's `drawn` line is the way to catch it.
+
+## 2026-11-25 — the farmers' combos SWUNG at you (the owner: "the blade never visually connects… you can't even tell you're being attacked")
+
+**Measured first (`tools/farmarc.js`, one role per run: `&tools=sword|axe|rake&tag=before|after`).** For each attack and each of its
+contacts (`[A.wind, ...A.moreT]`) it logs the blade's ARC through the 0.6 s into the contact (the angle the hand→tip line swept), its
+NEAREST APPROACH to the eye within ±0.06 s of the contact, where he stood, whether it landed, the IK's error and how far its target sat
+from his shoulder; and four stills from your eye (wind 40 %, contact −0.15, contact, +0.18). Before: the combos' first cuts swept 34–39°
+at 0.38–0.42 m (the capture lifts the blade and drops it beside you); combo 2 swept 133-138° but at 1.1-1.8 m (it cut the air where he
+stood, 1.6–1.9 m off). The capture's travel is the actor's, not his, so its cuts reached for you from where he started.
+
+**What changed (`farmSwingIK`, combos only; damage, windows, `A.wind`/`moreT`/`strike` untouched):**
+- `FARM_IK_COMBO` lays each combo out as cuts: combo1 chop then flat, combo2 diag then back, combo3 diag. `FARM_IK_PATH_C` holds them
+  in HIS SHOULDER's frame (his right, up, toward you), each from a chamber high behind to low on the far side. A chamber laid out from
+  the target was 1.3 m off his shoulder, 0.6–0.8 m beyond arm and blade: the arm found the path in the last tenth of a second, a 40° swing.
+- Each cut's bezier passes `C` (0.18 m in front of the eye, `FARM_IK_FRONT_C`) ON its contact frame, the sweep `FARM_IK_LEAD_C` 0.16 s
+  either side. Between two cuts the blade goes back up over the top to the next chamber, not back through you.
+- THE STEP IN: through each cut's wind he closes to `FARM_IK_COMBO_STOP` (1.05 m) at ≤3.6 m/s, also judged by his SHOULDER
+  (`FARM_IK_SHO_STOP` 0.78), never nearer than `FARM_IK_COMBO_MIN` (0.8). By the feet alone, combo 2's first cut still fell 0.5 m short:
+  its capture leans back into the wind and carried the shoulder 0.4 m further off, with its target 1.2–1.3 m from it.
+- `farmReachSet` gives the combos `noAim`, `stop` 1.05, `reach` 1.78. `farmArmSmooth`'s blow window covers every contact.
+
+**After (median arc, nearest to the eye at contact):**
+
+| weapon | attack | contact | arc | nearest | was |
+|---|---|---|---|---|---|
+| sword | combo 1 | 0 | 105° | 0.12 m | 34°, 0.38 m |
+| sword | combo 1 | 1 | 104° | 0.14 m | 141°, 0.98 m |
+| sword | combo 2 | 0 | 92° | 0.24 m | 133°, 0.36 m |
+| sword | combo 2 | 1 | 115° | 0.34 m | 84°, 0.12 m |
+| sword | combo 3 | 0 | 102° | 0.14 m | — |
+| axe | combo 1 | 0 | 89° | 0.18 m | 39°, 0.42 m |
+| axe | combo 1 | 1 | 118° | 0.20 m | 145°, 0.88 m |
+| axe | combo 2 | 0 | 83° | 0.32 m | 138°, 1.08 m |
+| axe | combo 2 | 1 | 114° | 0.25 m | 85°, 1.84 m |
+| axe | combo 3 | 0 | 82° | 0.17 m | — |
+| rake | combo 1 | 0 / 1 | 97° / 101° | 0.10 / 0.20 m | — |
+| rake | combo 2 | 0 / 1 | 75° / 87° | 0.34 / 0.15 m | — |
+| rake | combo 3 | 0 | 84° | 0.21 m | 89°, 0.40 m |
+
+Every cut landed in the measured runs, and the duels (`garrison.js&m=duel`) landed sword 11/11 and axe 14/14. The camera's near plane is
+0.1 m: `C` nearer than ~0.15 puts the blade through the lens. Left as they were: the kicks (no weapon, ~50°, they land with the foot),
+and the rake's `rkThrust` (a thrust, ~40–70° of the haft's line but straight at you, 0.15–0.25 m). The sheet is
+`tmp-preview/farmer-swings-before-after.jpg`.
+
+## 2026-11-25 (later) — the bit LEADS and faces you (the owner, on the AFTER axe combo 2 contact: "the blade of the axe it turned to the left it should be facing right at the player when swung at him … same with the other axe shots")
+
+**Measured** (`tools/farmarc.js` now logs, per contact, EDGE vs TRAVEL — the angle between the edge (the weapon's local +X, square to
+its haft) and the head's motion over three frames, median through contact −0.12 … +0.02 s, hitstop frames left out — and EDGE vs YOUR
+EYE on the contact frame, from the middle of the bit). The pack's edge IS local +X on every model (`tools/edgedir.js`: Axe_02/03 one
+bit at +X; Axe_01 a bit either side, centroid on the haft; the swords' widest axis X). Before: 30-90° off the travel, and at the
+contact the bit faced AWAY from you, 107-147°.
+
+**Why, in order of size:**
+1. The laid-out cut passed `C` sweeping ACROSS your face, 30-90° off the line to your eye: a bit along its travel was side-on to you.
+   A swing turns about his shoulder, so where it travels at you its reach is square to its travel: `C` is now on the circle over his
+   shoulder and your eye (Thales), tilted off the line between them the way the cut falls (`FARM_EDGE_IN`), and the cut is two
+   pieces — the APPROACH, round from the chamber with its control on the line in (`FARM_EDGE_INL` behind `C`), gathering speed,
+   arriving along it on the contact frame; the FOLLOW-THROUGH from `C` peeled off low past you (pulled 0.12 back off the line, so
+   never on through the lens). A fixed tilt instead had the flat cut and the backhand travelling ALONG his reach: missed by 0.45-0.65.
+2. The haft: square to the travel AND to you is undefined once a cut comes at you. Now out from his shoulder through the striking
+   point, square to the travel, folded off that line (about the travel's square, head up) so the wrist stands `FARM_IK_WRIST_R` 0.5
+   off his shoulder.
+3. `FARM_IK_RATE` 24 → 60 rad/s inside the blow: at 24 the hand trailed the new cuts 0.4-0.7 m (off: the edge 3-18°, the hand on its
+   path to 0.03). Check `farmpov.js` SMOOTH after any change here.
+4. `farmEdgeSet` (in `farmCarryAll`, after `farmArmSmooth` — the last thing to move the arm): the weapon is turned about its own haft
+   (the grip does not move) until its edge lies along the cut's travel, ≤ `FARM_EDGE_RATE` 45 rad/s; a two-edged blade with the nearer
+   edge. Steered by the CUT's line, not the head's measured motion: the arm's catching-up jitters the head 0-68° frame to frame at up to
+   25 m/s, and a bit chasing that twitched ±60° a frame. (A blend onto the line to your eye through the last 0.2 s turned it off its
+   travel while the cut still curved in: dropped. The cut comes in at you, so along its travel IS at you on the contact.)
+5. Axe_01 is double-bitted (`farmTwoBits`: steel > 0.1 m either side of the haft high on the head) — marked one-bit it came in with the
+   back bit at you. And an axe strikes with its BIT: `fikLen` 0.86 of the haft for every axe (`farmIsSword`; it had become the sword's
+   0.62 the moment Axe_01 went two-edged), and `C` held back by the bit's own reach off the haft (`farmBitW`, ~0.21), so the EDGE stops
+   at `FRONT` and not 0.2 m nearer — the edge was at 0.02 m from the eye with the haft at 0.22.
+6. The step-in keeps an axe's shoulder a bit's width further off and steps BACK (≤2 m/s) when his shoulder is too near for the cut to
+   be folded in (at 0.56 m the hand missed its path by 0.44).
+
+**After (Axe_01, k=10):** edge vs your eye at contact 0-7° on 16 of 18 blows (25°, 86° the two left); edge vs travel median 10-27°;
+hand on its path 0.04-0.08 m on most; the bit's edge 0.18-0.29 m from your eye; every cut landed.
+
+## 2026-11-25 (later still) — more health, a little harder; the carry no longer follows you round
+
+**Health and pace** (the owner: "make the farmers and paladin more health and a little harder of a fight" — fight tuning at his word):
+`FARM_HP_K` 1.3 on every role's own hp (rounded: 3→4, 4→5, 5→7, 6→8, 8→10); FARM_BASE `windK` 0.87→0.84, `aggr` 2.4→2.6, `block`
+0.15→0.2; the paladin (`MUT_KINDS.darkKnight`) hp 90→117, `aggr` 4.2→4.6. Measured, `fightread.js&secs=90` per minute: blows thrown
+28.7→30.7, your kills 7.3→4.7, hurts you took 4.7→4.7. The paladin (`dkMove`, 40 s a mode, still/strafe/drift): swings 15/15/17→
+18/12/16, landed 1/7/9→12/9/9 (one run each: noisy).
+
+**The carry no longer follows you round** (the owner: "their weapons should [not] be twisting all over when they look different
+directions its held how its held"). `farmCarry` held the weapon AT you whenever he was awake: as you moved round him and he looked
+about, the wrist wound it round to keep it on you (the weapon never moves IN the fist; the wrist does). Now only a thrust is held at
+you; the carry follows his chest's facing, eased (`u.fcyYaw`, dt·6). `tools/farmlook.js` (you circling 60 s, every armed man out of a
+swing; `&old=1` puts the old carry back via `window.__bwCarryAtFoe` for the comparison): frames turning > 6° in one 2303→1372; turn
+against his chest p90 566→348 °/s, p99 1037→866. What is left is in the full carry while awake (median 62, p90 322 °/s): the run's
+arm pump coming through where the wrist's bend is capped (`FARM_BEND_MAX` 0.75 — the grip the owner asked for on 2026-11-24, handle
+~132° off the forearm). Tried and reverted: a rate cap on the carry's wrist turn (5 rad/s) — it let the pump through instead of
+cancelling it, 218 °/s median against the chest.
+
+**The view cap (same day).** Square to his reach (Thales) put an axe's contact 64° off the line to you — above the picture on a chop,
+beside it on a flat cut: it came at your eye from outside the frame. `FARM_EDGE_TILT_COS` caps the tilt. At 32° the cut runs along
+his reach again (hand 0.2-0.5 m off its path, arcs 59-73°); at 50° (kept): arcs 68-86°, edge vs travel mostly 9-21°, edge vs your eye
+≤ 20° on most contacts but 70-88° on the blows whose hand misses its path by > 0.25 m. The uncapped version measured best (0-7° at
+the eye on 16 of 18) but was out of view. OPEN: in the close stills (`tmp-preview/farmer-edges-after.jpg`) some contacts show the
+bit's FACE where the probe reads the edge within ~15° of the eye — not yet explained; check the probe's edge (local +X of
+`u.farmTool`, measured per model by `tools/edgedir.js`) against a still before trusting either.
+
+**Resolved: the face in the stills (same day, later).** The edge axis was right — the geometry says so for all six (`tools/edgedir.js`
+FLAT: each head's / blade's thinnest axis is local Z, so the flat's normal is Z and the edge X). What the stills showed was the HIT'S
+HOLD: measured frame by frame (`farmarc.js&frames=1`: flat-to-your-line-of-sight / bit distance / the setter's error / its target's
+angle), edge-on (0-10°) up to the contact, then through the ~0.2 s hold (hitstop + the slow) the bit turned 50-85° flat to you. Two
+causes, both mine: (1) the follow-through took over on the contact frame with a travel up to 90° off the line the cut came in on, and
+the edge follows the travel — now the line in is kept through the hold and eased into the follow-through's (`_fikM.lerp(_fikI, …)`);
+(2) 0.22 m from your eye, a bit sliding a few cm on through the hold turns that line 30-60° off your sight — now from the contact the
+edge points from where the bit IS to your eye, easing back onto its travel (`kH`). The eye a cut aims at is also held from its
+contact (`u.fikEye`): a landed blow knocks your view back. `farmEdgeSet` itself measured exact (0° from its target) throughout.
+Also a probe bug: the second blow's stills fired right after the first's follow-through (`L.shDone` now).
+
+**Final (k=10):** at the contact, edge vs your eye — axe 1-19°, sword 0-14° (sword combo 2's second cut 47°, 79° the outlier); the
+close stills from your eye, flat to your line of sight: sword 2-8°, axe 13-18° (axe combo 1's second blow 34°). Edge vs travel 9-27°.
+Arcs 68-106°; every blow landed. Sheet: `tmp-preview/farmer-edges-after.jpg`.
+
+## 2026-11-25 (night) — the owner's video: Mesh2Motion's Sword_Attack and Idle_Sword on the garrison
+"add this move for the farmers make sure they hold their weapons and swing like the video … fix his weapon holding … use the idle too
+on farmers … make their skeletons and bodies be exactly like that video". Two Mesh2Motion exports (Mixamo naming, skeleton + animation,
+GLB: `~/Downloads/exported-model-2.glb` = Sword_Attack → `swAtk`, `exported-model.glb` = Idle_Sword → `swIdle`) packed into the
+farmers' own set (`NTAR_ONLY=swAtk blender -b -P tools/ntar_moves.py -- wong`; the GLB path is in creatures.md). The video was
+`~/Downloads/D96A58A1-…mov` (a screen recording can't be read where macOS saves it — the owner moved it).
+- `A.wcSwAtk` (clip `mSwAtk`): the axe's, hammer's and sword's `chop`, and the sword's `hook` (the brawler has no chop). Played as
+  the capture swings it (NOT in `FARM_IK_COMBO`): the owner asked for the video's swing. `FARM_SWATK.hit` 0.28 — the overhead coming
+  down in front at head height, 29 m/s (`tools/farmcombo.js&clips=mSwAtk`; 0.45, a guess, landed 0/8 at 0.52 m off your eye).
+  `tools/farmarc.js&tools=axe&only=wcSwAtk`: 8/8 land, nearest 0.03–0.13 m, he stands ~0.9–1.0 m.
+- THE BIT: `farmEdgeSet` steers by the HEAD'S OWN TRAVEL for this one (eased, `u.fswVel`) — a clip's arm is smooth; it was the IK's
+  catching up that made measured travel jitter. Edge vs travel 6–35° (median per blow). Edge vs your eye at contact stays 47–87°:
+  the video's chop comes DOWN past your face, and its bit faces down its stroke. Left so (it is the video's swing).
+- THE IDLE: `gaits.idle`, `anim.idle` AND `first` are `mSwIdle` for every armed man — `first` is what a man standing guard plays
+  (`mutStartPose`), and FARM_BASE's `first: 'idle'` is the garrison model's OWN idle (1.40 s, 42 tracks), not an alias of anything.
+  `farmCarry` is off while it plays (`farmSwClipK` > 0.4): the video's hand holds the weapon, not the carry's wrist turn.
+- THE GRIP: with the fist retargeted true, the handle still sat at the owner's 11-24 seat (~132° off the forearm): the axe stood up
+  out of the fist at the guard. `farmSwSeat` turns the seat `FARM_SW_SEAT` 0.73 rad about the palm's normal (grip point held) while
+  either clip plays (weights of EVERY action on those clips — the idle plays under its alias; the list is redrawn when late clips
+  arrive, `u.fswN`), eased at 5/s; every other move keeps the owner's seat. Run for every armed man in `farmCarryAll`, out or not,
+  and for XIII's four. Filmed at 0 / ±0.73 beside the video (`farmcombo.js&turns=`): +0.73 nearest on 4 of 6 frames.
+- Hidden men (standing guard, not out) are `g.visible = false`: nothing of theirs runs in `farmCarryAll`; the seat turns when shown.
+- Probes: `tools/swhand.js` (the fist against the GLB's, pelvis frame), `tools/swidle.js` (who stands in what, the seat, stills).
+
+## 2026-11-25 (later) — every weapon man swings the owner's Mesh2Motion set
+"the new swing i added for the farmers is the best yet adjust the other moves accordingly they are horrible". The rest of the owner's
+sword set (`~/Downloads/exported-model-3.glb`, split by `tools/glb_split.py` into /tmp/scourge_src) packed into the farmers' own set:
+`NTAR_SRC=/tmp/scourge_src NTAR_ONLY=mSwB,mSwC,mSwCombo,mSwDash blender -b -P tools/ntar_moves.py -- wong` (KEEP_YAW for all four).
+- `wcSwC` (Sword_Regular_C, hit 0.175), `wcSwCombo` (Sword_Regular_Combo, hit 0.087 + more 0.419), `wcSwDash` (Sword_Dash, 0.206,
+  hold/minDist 2.5 like the old leaps), with `wcSwAtk`: every axe/hammer/sword man's cut, string, swipe, spin, leap, punch, jab, hook
+  (`FARM_MOVES`), and the spearman's cuts (his thrust and lunge kept). `FARM_SW_SET` gives them the clip-driven edge
+  (`farmEdgeSet`, to their LAST contact); `farmSwClipK` the video's grip and no carry. The laid-out combos (`wcCombo1-3`,
+  `farmSwingIK`) are no longer thrown. `mSwB` (Sword_Regular_B) is packed, unused: its blade is fastest on its last frame — half a cut.
+- Contacts with the grip turned: `tools/farmcombo.js &clips=… &seat=0.73`. Retimed after a live test: Regular_C at 0.40 (low, close)
+  landed 0/7 → 0.175 4/6; the combo's third pass (0.963, the clip's end) fell 1.8 m short → dropped.
+- Live (`farmarc.js &only=wcSwC,wcSwCombo,wcSwAtk,wcSwDash`): combo 6/6 both cuts (0.07-0.14 m), the big cut 8/8, Regular_C 4/6.
+  The dash needs you 2.5 m+ off: not seen in these runs. Natural fight (`fightread.js`): blows 46/min (was ~30: shorter clips),
+  hurts 4.0/min (4.7).
+
+## 2026-11-25 (night) — Daniel Vicente's "Medieval Props" in the first castle (`assets/castle-props-c.glb`)
+"add the big tree from this prop and maybe one little tree in the first section of the castle. spread the rest of the props around the
+castle but make it make sense and be breakable make the old breakable have chemistry with them"; then "make sure trees have their
+planters in the castle".
+- PACK (`~/Downloads/medieval_props`, CC-BY-4.0, README): `scratchpad/medsplit.py` in Blender — three of its meshes were several props
+  (the crate/barrel/pot set, the tub and a pail, bowls and plates): split by loose parts and grouped back by overlapping plan boxes
+  (2 cm); and THE TREES ARE THREE PIECES EACH in the pack's own layout — the trunk, its crown (the "willow" is the big tree's hanging
+  green, the "bush" the little tree's leaves) and a round planter (the "plates") — joined back as `MP_TreeBigFull`/`MP_TreeSmallFull`.
+  `gltfpack.py --tex 512 --normal-tex 256 --drop-mr --keep-uv` then `tools/glb_fixtex.py` (gltfpack left four textures naming the
+  dropped metal/roughness images and the transmission's — GLTFLoader: "Cannot read properties of undefined (reading 'uri')"). 2.1 MB.
+- KINDS (`CP_KINDS`, src 'c'): mpBarrel/mpCrate/mpPot/mpTub/mpPail/mpBowls/mpPlate/mpDish (wood, clay), mpStall (wood boards), mpWell,
+  mpFountain (`stone`, new in `CP_MAT`: brk 7.5, the gargoyles' crack and smack), mpTreeBig (7.5 m) / mpTreeSmall (4.2 m) FIXED: never
+  broken, no proxy (the crown would catch swings and throws), you and the men held off the PLANTER's rim (`trunk` 1.57 / 0.82),
+  spaced and fitted by it (`cpFits`, `cpUnitCrush`, `cpPushPlayer`), exempt from the street-only roof rule (the crown is over the
+  eaves anyway). MATERIAL TRAP: the well's and fountain's came in BLEND (the source's glass water): cut by `alphaTest` to nothing, and
+  three loads a BLEND material with `depthWrite` false — drawn behind the paving. Only `leaf` kinds are cut; every 'c' material writes
+  depth. A missing third file no longer takes the whole castle's props with it (`cpMakeKinds` skips a kind whose file is absent; the
+  kit waits for c or its failure).
+- SCENES: `market` (the stall, a full produce crate, melons, the new pot and an old, a box with bowls on it), `well` (pail, tub, an old
+  bucket, a barrel), `fountain` (pail, barrel), `treeBig`/`treeSmall`; the new barrel/crate/pail/pot/bowls/plate mixed into the old
+  `barrels`, `crates`, `pottery`, `table` picks and the singles. The trees and the fountain are laid FIRST (`A.first`, before the wall
+  strip — after it a crate already stood where each would go), each at the first spot down the first stretch clear of the gate, doors
+  and fires with open, level paving round its rim (`fortPropAnchors`), in order (big tree, little tree, fountain).
+- Result (`tools/cptrees.js`, `castleProps&site=fort&back=8`): 12 scenes / 33 props — both trees in their planters, the fountain, the
+  stall, the well. The layout's seeded draws shifted with the new kinds, so the old scenes moved a little too.
+
+## 2026-11-25 — the scan's fixes to the props; bodies against them
+- `solid: true` (stall, well, fountain): a walker is pushed round it in `cpUnitCrush` as he is round a tree, instead of
+  breaking it by walking into it — the scan's fight had the garrison flatten the market stall and the well on their way to
+  you. Only a blow, a kick (wood only — `KICK_PROP` 7.0 against `CP_MAT.stone.brk` 7.5) or a body thrown hard breaks them;
+  `cpRagHits` asks the material's own `brk` now and never breaks a `fixed` one.
+- THREE MORE THINGS BROKE THE FOUNTAIN, found by `window.__cpWhy` (set it to `[]`: `cpBreak` pushes the kind, the force and its
+  callers; `cpRagHits` the body's kind, fling, hips' and joint's speed). (1) A man falling dead beside it: a limb at 5 m/s was
+  force 9 against stone's 7.5 — a `solid` prop now asks the BODY's speed, its hips at 7.5 m/s or more (a kick's kill, the dark
+  knight's fling, the shot), not a joint's. (2) A man who died at its rim: his joints are put out of it in his first frame and
+  that displacement read as 8-18 m/s — nothing counts in a body's first 0.15 s. (3) Any blade: `glassStrike` fed every
+  `onImpact` a flat 12 — a castle prop's proxy (`cp: true`) now gets `5 + digPower * 9`, so a click breaks wood, clay and sacks
+  and the stone wants a third of a charge; below it the stone answers with `sfxGargSmack`. After, `scan.js &secs=60`: solid
+  ones broken none, walkers held against one none.
+- One fountain and one well a castle: the strip loop could draw the scene again after `fortPropAnchors` had laid one.
+- A RAGDOLL IS HELD OUT OF THEM (`cpS` in `updateMutRagdoll`, the site from `cpSiteOf(r.fort)`): the fixed and solid props
+  within 5 m of the hips, found once a frame; each joint pushed out radially — a tree's planter radius (`trunk`) up to 12 % of
+  its height and 0.28 of it above (the trunk), a solid prop's `max(hx, hz) * 0.85` to its top. The speed INTO it comes back at
+  0.3 and the speed ALONG it is kept at 0.8, so a body slides round a well; the castle's own stone (`keepWallNear`) still turns
+  the whole velocity back at 0.3 — left alone, it was measured as it is.
+- Farmers asked for a `roar` clip they do not have (`mutIdle`'s flourish; silent no-op, one warning a session): aliased to
+  `rBeat` in `FARM_BASE.alias`.
+
+## 2026-11-26 (later) — a man dying on his feet is hit where he is
+"i cant hit the knights alot when in there death animation": the armoured farmers' standing death (`farmZDie`) was tested in
+`zDieStrike` by `meleeSkin`/`meleeT` — the living's upright capsule on `u.g.position`; folding to his knees and over, he was not in it.
+Now the aim line against his big bones as the clip has them (head, chest, hips, arms, hands, legs, feet) at 0.36 + 0.12·P. Measured
+(`tools/zdiehit.js`, every kill forced to the standing death): 0.3 s, 0.8 s and 1.4 s in (chest 1.13 → 0.54 m up) — HIT each time.
+(The ragdoll's own hit test, `digImpactCore`'s "the dead" by joints, was fine; `tools/knightdead.js`, `r.hitN`.)
+
+## 2026-11-26 (night) — the first castle cleared, boards not spikes, walk through them, planters to stand on
+The owner: "the fountain the well and seed bags from the castle first section can go. make the breakables more realistic pieces its
+just ai spikeyness right now … move the trees closer to the middle and have it so you can walk on the planters the trees shouldnt
+block the lighthouse view when you step in … need better wood breaking sound effects. make it so i walk through any breakable".
+- Fort scenes: no `well`, `fountain`, `sacks`; anchors' `sacks` → `crates`; any `/sack/i` kind refused in `cpLayScene` for 'fort'.
+- **Wood breaks into BOARDS** (`cpPlanks`): the old pieces were patches of the prop's surface triangles (long triangles across a
+  bin made spikes, hollow behind). Now 6-14 boxes the prop's own width/depth/height (staves upright for a barrel), a hand wide, a
+  thumb thick, plus 4-7 splinters, each wearing a narrow strip of the prop's own UV span (its wood). `window.__cpShells` for the
+  old. Non-wood keeps shells with triangles longer than ~0.55 of the prop's half-size dropped.
+- **Sounds**: recorded wood from the owner's library (`/Volumes/T7 BLACK/Drums/sound/physics/wood`, 11 files → `assets/wood-crate-
+  break1-5`, `wood-plank-break1-4`, `wood-furniture-break1-2`, ~150 KB): crates/boxes, furniture, everything else planks. NOTE: these
+  (and `door-locked`) look like Half-Life 2's sounds — told the owner to check the licence before shipping.
+- **Walk through**: `cpPushPlayer` no longer stops you at a breakable — it breaks (7.5) as you walk into it. Trees: their planters
+  are a FLOOR (`cpPlanterTop`: the rim's outer ring, measured 0.48 m on the big tree; a step up of ≤ 0.52 is taken) and the trunk
+  (0.28 of `trunk`) is what is solid once you are on or stepping up.
+- Trees placed further down the street (t 0.42-0.85 / 0.3-0.95) and nearer its middle (1.1-3.0 m off) — out of the view through the
+  gate. The small tree found NO spot in that band in the probe (`tools/cpbreaks.js`): only the big one stands. If the owner wants
+  it back, widen its band or relax `fortAnchorAvoid` there.
+
+## 2026-11-26 (late) — the braziers; the tree to Castle XIII; wood that lands like wood
+Forwarded from the Scourger session (the owner's words): "make these lanterns look way better and be breakable make hitting guys into
+these sets them on fire for a sec and does the fire damage have them make a taking damage sound when this hapen too. they can be
+kicked in. move the tree near the door to the second part of the church. improve the breakables again as well."
+- **Braziers** (`fortBraziers`, `makeBrazier`, `brazierTopple`, `brazierTick`, `brazierBurn`, `brazierStrike`): the five in the
+  first castle's street were a flat orange disc on a baked tripod. Each is its own group now (not baked; 25 meshes): a lathed
+  hammered bowl with a rolled lip, a stem with a collar, three splayed feet, sixteen coal lumps each with its own emissive heat, its
+  own `keepFirePoints` flame and its pooled light (`lamp.base`). Knocked over by your swing (aim line within 0.55 m of its bowl,
+  `digImpactCore` before `castleStrike`), a kick (in reach in front), a ragdoll joint through its bowl's height at ≥ 1.2 m/s, or a
+  living man DRIVEN into it (a `flinchPush` over 1, a recoil, down, or > 2.6 m/s): it tips about its foot along the push in 0.5 s,
+  its flames go out, its coals become `cpAddBody` pieces thrown along and cool, its light fades over 1.5 s, and it stops blocking
+  (`prop.r` 0). A living man driven or thrown into a STANDING one burns: `st.burn` 1.5 s (the flaming weapons' own flames and
+  trickle), half a point at once, `sfxFlameSear` + his hurt cry (`sfxMutHit`, `farmVox('hurt')`); once per 0.9 s.
+  `tools/brazier.js`: kicked → over, light fading; a farmer shoved in → burning, 5.0 → 4.32 hp, the brazier over. Not saved: a
+  load stands them up again.
+- **The tree** "near the door" is out of the first section (`fortPropAnchors` lays no trees unless `window.__fortTrees`) and is the
+  first scene of Castle XIII's court (`CP_SITE_DEFS.c13.scenes`). READ: "the second part of the church" was taken as the castle's
+  second section, Castle XIII — if the owner meant the undercroft's church, it is not a props site and needs its own anchor.
+- **Wood landing**: pieces knock with the owner's library's recorded plank/box impacts (`woodImpactHard` ×5, `woodImpactSoft` ×2,
+  7 files, ~60 KB) in `cpKnock` instead of the synth tick.
+
+## 2026-11-26 (late) — everyone drops lifeless
+The owner, again: "bodies need to just die when they die they keep sliding around on the ground fix this now ive asked a million
+times and the mutants on the beach fly into the sky sometimes when dying everyone should just drop lifeless". In `mutRagdoll`, after
+the blow's spin: an ordinary kill (not shot, fling, mace or a kick's kill) keeps 0.42 of its throw and spin across the ground and
+`min(v.y·0.35, 0.6)` up — the SPIN was what sent a tall mutant's head upward; the mace's sideways crush 0.55 and lift ≤ 1.6. No
+muscles (`__musNone` default 1) and no staggers (`__bwStag` 0): the hold-and-stumble of the day before is off, by the owner's word.
+Down: `dK` 0.8 → 0.05 by 0.33 s; asleep at 0.9 s down. `deathlab.js`: katana kills down in 0.3-0.6 s, 0.6-1.1 m from where they
+stood, still by 1.1-1.4 s; nothing rises over standing height. The dead-body hit test widened to 0.55 + 0.2·P ("i cant hit the
+farmers in their death animation"). Knocked-down farmers' ankles through the rise 0.02-0.18 m (`tools/knockrise.js`).
+
+## 2026-11-26 (latest) — the braziers made to look like braziers; the stall turned round
+- "MAKE THESE BRAZZIERS LOOK WAY BETTER" (a close still of the first rebuild: a flat hoop, flat yellow polygons, a stick): `makeBrazier`
+  now — a hammered-iron canvas picture (`bzIronTex`: dents, scale, rust; not metal, there is no env map) on a smooth 28-sided
+  LATHE bowl with a rolled lip, a thick band and eight rivets round its waist, a TWISTED stem (a 12-row cylinder turned 9 rad up its
+  length — `setX`/`setZ`: three r160 has no `setXZ`, and that one call THREW INSIDE castle.glb's parse and built no braziers at all),
+  two collars, three `TubeGeometry` legs curling out to flattened ball feet; a domed coal bed and ten lumps lit by an emissive CRACK
+  picture (`bzCoalTex`: black lumps, orange-yellow seams), breathing (`coalMat.emissiveIntensity` in `brazierTick`); and real fire —
+  `flameEmit` into `flameWorld` (the flaming weapons' tongues: 70 a second within 14 m, 30 to 32 m, 8 % of them embers), the old
+  `keepFirePoints` card kept small (k 0.7). Knocked over, the dome and the fire go and the coals cool. `tools/bzlook.js`.
+- "rotate this around so the desk faces the other way": the first castle's market stall (`mpStall`) is laid at `yaw + π`
+  (`cpLayScene`, fort only).
+
+## The breakables quieter; the owner's tree and boxes on the first square's left side (2026-11-26)
+
+- **Volume**: every castle breakable's sound (its break, `cpBreakSound`, and its pieces' knocks, `cpKnock`) now goes through a
+  fader of its own, `CP_VOL` 0.62 (`cpSnd` sets `cpScope`; `sfxOutBase` hands out `cpBus`, the way footsteps use `stepBus`).
+  Tune that one number. The brazier's iron (`metalHeavy`) is not on it.
+- **The square's left side** (entering from the gate, walking -z, -x is left): the row of three chained doors at about
+  (-16.7, 22.8), (-18.4, 15.6), (-18.2, 19.4) and the fire at (-13.7, 12.5). Its paving was bare because the wall strip keeps
+  3.4 m off every farmer's door (`CP_SITE_DEFS.fort.avoid`). Two `crates` anchors at x -14.8, z 20.4 / 17.6, normal +x, now
+  stand there. A third at z 14.6 does not take, because it is too near the fire.
+- **The big tree** where the owner stood (FEET -11.23, 10.50, LOOK 1.95 rad): the corner he faced is the fire's own spot and is
+  about 1 m off the wall at x ≈ -15.7, so the planter (trunk 1.57, `cpFits` asks trunk×1.05 open and keepWallNear trunk×1.1) does
+  not fit there. `tools/fortspot.js` maps where a big tree fits (T) and where a crate fits (c) on that side. The anchors try four
+  spots within a metre of each other; (-13, 10) is the one that takes, about 1.8 m ahead-right of his feet, 3 m from the fire.
+- `tools/fortmap.js` dumps the first castle as text: the street spine, the doors, the fires, every prop laid, a 1.5 m grid of open
+  and avoided paving, the anchors' results, and stills from his spot and of the door row. Exports added for it: `cpSiteDefsS`,
+  `fortAnchorAvoidS`, `fortGeoS`, `cpFitsS`.
+- The position overlay's "castle" frame is FORT_X/FORT_Y/FORT_Z (`whereEl`, ~line 995): his FEET numbers are local to that.
+
+## The owner's brazier model; none clipped in anything; its break sound (2026-11-26)
+
+The owner's words: "use this for the braziers make sure they dont spawn clipped in anything and make them on fire. give them a break
+sound too". The model is "Brazier" by Helley (Sketchfab, CC-BY-4.0; README credit). `tools/brazier_pack.py` (Blender, `-b -P`)
+turns `scene.gltf` (2048² maps, ~19 MB) into `assets/brazier.glb`: colour 512 JPEG, glow 256 JPEG, normal and metal/rough maps
+dropped (metal 0, rough 0.85), feet at y 0, centred, 1.73 m tall, 0.85 m across the legs. Then gzipped like every other .glb
+(195 → 116 KB).
+- **Swap**: `bzLoadModel` (`bwGlb`, from `buildFortLife`; preloaded with a castle checkpoint) → `bzDress(B)` per brazier. It
+  clones the scene with its own material per brazier, so each one's logs cool alone. The material is metal 0, emissive white over
+  its own emissive map (only the logs glow), `retroTex` on both maps. The drawn brazier is GONE (the owner: "take out the old claude brazier tho"):
+  `makeBrazier` now builds only the group and ten coal lumps, hidden in the cage, that `brazierTopple` throws out. `bzIronTex`,
+  the dome and `coalMat` are deleted. Until the model is in, a brazier shows nothing: its flame cards are hidden and
+  `brazierTick` emits no fire (`B.model`). The fire is `fireY` 1.34 (on the logs, inside the cage) and
+  `fireR` 0.16. The flame cards are lifted to match; the light is at 2.05. `B.logMat` breathes like the coals and joins `B.dying`
+  when it goes over. Fire was made fuller (90/36 a second near/far, bigger and longer tongues) so it shows over the bars.
+- **Not clipped**: at `buildFortLife` time the castle's walls are NOT indexed (`FORT_SITE.walls` is null), so nothing could ask a
+  wall. `bzSettle` runs once from `cpBuildSite('fort')` as soon as `D.ready()`, before any prop is laid. `bzSpotOk` asks for:
+  level floor and open sky all round the feet (0.5 m ring), no wall within 0.6 m from 0.1 to 2.2 m up (`keepWallNear`), farmer
+  doors ≥ 2.2 m, no door face within 1 m (`cpFeatNear` + `cpFortDoorMats`), the gate's 8 m and the back door's 5 m, and other
+  braziers ≥ 4.5 m. A brazier that fails moves to the nearest spot that passes (rings of 0.25 m out to 3.5 m; at each ring, the
+  spot nearest the street's middle). `bzMoveTo` moves the group, `F.c`, the lamp, `fortLife.props[i]` and `fortAir.fires[i]`.
+  Measured (`tools/bzmodel.js`): four kept, one moved 0.25 m, none stuck. Props are laid after and keep 2 m off them.
+- **The tree's anchors keep 3 m off a fire** (2.4 let the willow's crown hang over the flames). So the owner's tree is now at
+  about (-13.5, 9), not (-13, 10).
+- **Break sound**: `sfxBrazierBreak` layers metalHeavy, metalHit (low), metalRattle (the cage), woodCrateBreak (the logs) and the
+  sear. `sfxBrazierLand` plays a low metalHeavy plus a scrape when it hits the paving (tipT crossing 0.5 s). Both go through
+  `playSampleAt`, NOT the castle breakables' quieter fader.
+
+## No boxes in the middle of the fight (2026-11-26)
+
+The owner's words, with a still of a crate with a box on it standing in the open paving among the farmers: "take out the boxes in the
+middle of the fight".
+- That stack (crateRoped + box1 at about (-1.6, 16.0), 1.8 m from the street's middle line) was laid by the WALL STRIP, not by
+  the street anchors: the strip found some edge out there. So the rule is on the items. In `cpLayScene`, the first castle refuses
+  any `crate|crateRoped|crateOpen|mpCrate|box1-3` whose spot is within 3.2 m of `FARM_SPINE` (`fortMidD`, castle frame). What
+  stood on one goes with it, and a scene left with fewer than two is not laid. `produceCrate` (the market's) is not on the list.
+- The street's own anchors (`fortPropAnchors` `cyc`) lost their barricades (a crate across the street every few metres) and their
+  crate stacks. They keep barrels, a table, and barrels where the 'store' was (a store is a crate with a box on it). The stores
+  beside each fire (the other `fortPropAnchors` loop) and the crates by the chained doors stay.
+- Measured after (`tools/fortmap.js`, BOXES line, each box's distance off the middle line): nearest a crate stack at (1.4, -4.5),
+  3.7 m off the middle against the east houses. Every other box is the market's produce crates or the door-row stacks at 8-10 m.

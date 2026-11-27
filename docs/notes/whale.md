@@ -1475,3 +1475,19 @@ all audio in the wahale better".
   chain go the frame its thrower is hidden, retired, dead (not his hang chain, which falls on its own), or `SKRIM.stage` is
   'gone', or its end is non-finite (the old NaN-after-a-kill bug, which threw every frame); and a chain whose step throws is let
   go instead of the frame.
+- (2026-11-25) "give skrim slightly more health": hp 200 → 230. Nothing else.
+
+## 2026-11-26 — Skrim off his chain: the landing went through the floor
+The owner: "make skrims animation jumping off the chain smoother and look better … especially whne he lands".
+`tools/skrimflip.js` (the flip forced by sending no heads; every frame: hips / lowest toe over the floor, hips' speed, the mix, the
+biggest one-frame move of any joint; a side-on strip every 0.12 s).
+- **Under the floor.** `flipOff` carries his feet 1.36 m under its own origin by the landing, so his group rides 1.36 m over the
+  floor; when the clip ended the group was put ON the floor at once with the flip's pose still in the mix: every joint moved
+  1.37 m in one frame, hips 0.93 m under the floor, up out of it at 7 m/s over the 0.3 s fade into `land`. Also: half a second
+  dead in the crouch first (1.47 → 2.0 s), and `land` starts tall (hips 0.87) and squats again to 0.61 — two squats.
+- Now (`skrimFlipStart`/`skrimFlipStep`, `SK_LAND_FROM`, `SK_FLIP_EARLY/SIT/UP`, `skrimToesLo`): joints eased out of the hang's
+  pose over 0.26 s (`u.ragOut` — the kicked men's); feet down 0.1 s earlier in the clip and his TOES HELD on the floor from that
+  frame (the group follows them: the clip's last sink is his knees giving, 14 cm); 0.16 s in the crouch, then the flip's crouch
+  frozen and faded over 0.42 s into `land` taken up at its lowest (0.55 s in) — one rise; the toe-hold eases to his standing
+  feet's height so the hand-over to `k.rise` has no step. Measured: toes 0.00 from 1.37 s, hips 0.38 → 0.82 monotonic, standing
+  at 2.0 s (was 3.1), no joint under the floor.

@@ -1799,3 +1799,124 @@ quality settings". So nothing here is a setting and nothing changes the look.
 - **TRAP, 2026-11-22: a backtick in a comment INSIDE a GLSL template literal ends the template** — "// from `FOG_LAMPS`" in
   `fog_fragment` was a SyntaxError that took the whole module: a black screen on every load (the owner's "reload from my
   checkpoint … black screen"). After touching a shader string, load the page headless (`tools/bootok.js`) before anything else.
+
+## 2026-11-23 — the call lagged again: the image release ran under it
+"the cutscene lags bad when clicking start fix this". `tools/callhitch.js &list=1`: 114-130 frames over 25 ms through the call, worst
+59, every 0.25-0.27 s like a clock from ~11 s and solidly from 26 s, none compiling or uploading anything. It was `imgRelTick` (the
+2026-11-22 memory pass): twenty seconds after the title's uploads it began swapping each released map's ImageBitmap for a half-size
+copy, two every 250 ms — and `createImageBitmap(bitmap, {resizeWidth…})` of a 2048 map costs the main thread 25-48 ms. Held under the
+call: 2 frames over 25 ms. Now `imgRelQuiet()`: on the title (`!started`: at once, 1.5 s after the upload, every 120 ms), behind a full
+black (`blackoutEl` ≥ 0.98), with the pack or a menu open; never under the call or the intro (`introHoldNow`) or in play. After: 1 frame
+over 25 ms through the call and the waves. On the title 109 maps released (191 MB) before START lights; the rest (not drawn yet) wait
+for a black or a menu once they are — the memory saved comes a little later in play than it did, the frames do not pay for it.
+`tools/imgrelq.js` counts them. NOTE for the next memory pass: anything done to a bitmap on the main thread is a frame.
+
+## The call's "thousand sketches" (2026-11-23, "level the thousands sketches again it still seems loud that phrase")
+Word times rebuilt (`SpeechTranscriber`, the Swift in beach.md's call notes): "Dude, I have like a 1000 sketches right here." is
+57.6-60.1 s of `assets/intro/call.m4a` — the 2026-11-22 cut (−4.5 dB) was at 44-51 s, which is "a few more days … until Friday", not it.
+That line measured −22.8 dB active, peak −4.1 dBFS, the loudest of the call (his others −25.3/−27.3, the caller's −23.7…−28). Shaped by
+word (ffmpeg `volume` eval=frame, a piecewise-linear dB curve with ~0.1 s ramps): "Dude" −3, "I have like a 1000" −5, "sketches right
+here" −2 → −26.6 dB, peak −9.0; everything else within 0.1 dB; sample-aligned (0 offset); AAC 128k.
+
+## 2026-11-23 — Low graphics, the dynamic resolution on a slow Mac, `?fps`
+The owner's game "ran awful" on a 2018 Mac mini (Intel UHD Graphics 630, Chrome or Safari from a GitHub clone) — a GPU
+about a twentieth of this M4 Pro. Measured here with `sh tools/probe.sh gpuCost` (`PB_WIN=1940,1120`,
+`PB_Q='&fw=1920&fh=1080&ks=0.62,0.42,0.3&modes=high,low&zs=-60,-200,-600&who=1'`): whole frames each waited out with a
+one-pixel `readPixels`, against `b.frame(1)` alone for the CPU.
+- On the beach a frame is ~4-8 ms: 1.2-4.5 ms ours on the CPU, ~2-3 ms GPU; 160-320 draws and **400-800k triangles**
+  (the wreck 131k at z -60, the isle 78k from everywhere — a skyline, kept — a 183k group at z -600, the fort 304k and
+  the fish tree 100k near z -1000). Shadows are off; the camera's far plane is 5000.
+- **The render scale is only about a third of the GPU.** 0.62 → 0.42 saved 0.7-0.8 ms; 0.3 a little more. Low (0.42 and
+  no ground mist) took the GPU share from 2.8 to 1.7 ms at z -600. What is left is mostly vertices.
+- **THE DYNAMIC RESOLUTION NEVER MOVED ON A SLOW MAC.** Without `EXT_disjoint_timer_query_webgl2` (Chrome on macOS has none)
+  a window only counted as slow with no frame over 60 ms in it — and at fifteen a second every frame is over 60 ms. Now a
+  window whose MEDIAN interval is over budget counts as well (a stall moves the worst, not the median).
+- **Low graphics** (`gfxLow`, the menu's "Low graphics mode", `beachwalk.gfx` in localStorage, per
+  machine, never in `beachwalk.settings`): start at `GFX_LOW_K` 0.42, floor `GFX_LOW_MIN` 0.3, the ground mist's march
+  skipped (`FOG_GROUND.w` 0). NEVER on by itself (2026-11-23, the owner: "dont have it automatically on" — it used to pick
+  itself where the GPU's name said Intel / SwiftShader / llvmpipe / software; `gfxWeakGPU` is gone). `drsFloor()` / `drsCeil()` replace DRS_MIN / RETRO_SCALE in `drsTick`.
+- **`?fps` on the address** puts fps, the frame's median and worst, our CPU share, the scale and buffer size, the setting
+  and the GPU's name in the top-left corner. It is how a reading comes back from a machine that is not this one.
+- Next, if Low is still not enough there: the triangles (a LOD or a shorter draw for the big scans on Low), not the pixels.
+
+## 2026-11-23 — the potato pass: far detail (LOD) and the hover's near pass
+The owner sent a devlog ("Optimizing my Game so it Runs on a Potato", Bloodthief, Godot) and asked for the same here. What
+each of its points is in THIS game, so the next pass does not redo the mapping:
+- occlusion culling → `cullBeyondFog`, `farProps`, `cullWorldInHall`, `cullCastleUnseen`, `cullUnitModels` (all there);
+- baked lighting → no shadows, 6 pooled point lights, emissive-lit scans, `bakeStatic` merges (there);
+- enemy path/animation throttles → measured cheap here (`mixcost.js`: mixers 0.01-0.25 ms; off-view mutants hidden);
+- shader compilation → the warm system (`warmCompile`, `warmBeachDrawCompile`, `updateHeldWarm`) — there, and the hard part;
+- graphics API → WebGL on ANGLE/Metal; `gfxLow` is the menu's "Low graphics mode", off unless ticked (the parent pass, above);
+- threaded loading, render-resolution setting, SSAO off → `bgRun` budgets / `texUp` / parse-later, DRS + Low (there).
+So the two things done were the two not covered:
+- **FAR DETAIL** (`lodTick`, "FAR DETAIL" banner before `bakeStatic`). Big static meshes (≥ `LOD_MIN_TRIS` 3000, not
+  skinned/instanced/ShaderMaterial, not the recentring tiles) get vertex-clustered levels at cells `LOD_CELLS`
+  (0.06 → 4.8 m), built in a Blob WORKER only when something visible wants one, kept only if a third smaller than the finer
+  level; a level is drawn where its cell is under 1 px (2 on Low) from the nearest point of the mesh's box, so DRS dropping
+  makes things coarse sooner. **The coarse geometry is on the mesh ONLY between `lodBegin()` and `lodEnd()` round the one
+  `renderer.render` in `animateFrame`** — the castles, keep, catacombs and island build their wall indexes from the meshes'
+  geometry from 250 m out (`fortWallsStep`), so a lasting swap would have given them walls of blocks. A still taken with
+  `renderer.render` outside the frame draws the whole shapes; wrap it in `__bw.lodBegin()/lodEnd()`. Measured
+  (`tools/lodcost.js`, 1920x1080, M4 Pro): triangles z -60 558 → 459k, -450 732 → 586k, -600 607 → 399k, -900 781 → 622k;
+  on Low at scale 0.3: 559 → 406k, 733 → 552k, 608 → 387k, 781 → 573k. ~190 meshes found, 38-94 levels kept, built in
+  0.5-1.1 s per stretch, no frame over 33 ms while building (worst 27-28 ms, once). Stills on/off differ only where the surf
+  moved between them. The M4's GPU time does not move (it was never vertex-bound) — the saving is for the Intel GPUs the
+  Low graphics pass found vertex-bound. `?lod=0` / `__bw.lodOn(false)` for an A/B; `__bw.lodS()` for the counts.
+- **The sea is NOT coarsened on Low**, deliberately: its 115k triangles are the biggest single mesh, but a coarser grid was
+  built and reverted once already (its horizon becomes a staircase), and the owner's look comes first.
+- **The hover's near pass** (`hoverNearScan`, before `updateHover`): the crosshair ray was cast at every interactable in the
+  game every frame (~8 % of our CPU at z -300). Now every 8 frames, or at once on a 2 m camera jump, each is marked `_far`
+  when no mesh of it comes within its reach + 3 m; instanced/skinned meshes are always asked. `tools/hovernear.js` (A/B with
+  `&off=1`): 95 placements, the same hover at 93, the other two a mirrored pair = run-to-run noise (a filter can only remove a
+  hover). After: `updateHover` is out of the profile's top 40.
+- Left: steady-state CPU is now mostly three's per-draw cost (`renderObject`/`setProgram` 30-45 % of samples) — draw calls,
+  which the earlier merges already cut; the next lever there is more merging, not throttles.
+
+**Nothing circular in `userData` (2026-11-23, "i cant pick up a shell").** The far-detail pass marked each mesh on its list
+with `userData.lodE` = its entry, which points back at the mesh. `Object3D.clone` copies userData through
+`JSON.parse(JSON.stringify())`, so cloning any such mesh threw "Converting circular structure to JSON" — and the pickup
+hand (`handGrabGhost`) clones what it takes, so the reach died mid-frame and nothing the walk had registered could be
+picked up (no prompt problem: the hover still said "Take the shell"). The list now lives in a WeakSet (`lodReg`). Rule:
+anything bookkeeping keeps about a mesh goes in a WeakMap/WeakSet, never in its userData. `tools/shellpick.js` takes
+the beach's shells headless; the frame error shows in `chrome.err` as `[bw] threw inside frame`.
+
+## 2026-11-24 — lag in the castle fight (`tools/fightlag.js`)
+The owner: "look for any lag too and eliminate it in this fight". The garrison's natural fight with you killing a man every 0.7-2 s
+(real katana swings, mostly heavies), every frame timed on the OUTER clock (the probe's `__clockOn` fakes the game's `performance.now`)
+and the JS sampler (`new w.Profiler`, the dev server's `Document-Policy: js-profiling`) over the run.
+- **No frame over 25 ms in 75 s** on this machine; the game's JS is ~1 ms of a 4-5 ms frame (render the rest). `updateSpray` is the top
+  self entry (~0.16-0.2 ms a frame) — small. The other session's `blowSurface`/`cutTris` (~0.4 ms a kill), `ragThroeStep` (inside
+  `updateMutRagdoll`, ~0.05 ms a frame) and `worldDrawnHit` (not seen) do not show as spikes.
+- **WHAT GREW: THE DRAWS.** `renderer.info` with `autoReset` off (a frame is several renders; the last is a 1-call pass): ~410 draws at
+  the start, ~490 after 16 kills, and the 95th-percentile frame went 4.6 → 9.4 ms over the minute. Every chunk of meat and bone stayed a
+  mesh of its own for its whole life: the rubble (`sleepGib`) only took pieces with `bleed === false`. Now settled gore folds in too after
+  a second at rest (not a crypt's crumbling bone), and the rubble is keyed by how a material LOOKS (`rubbleMatKey`: type, colours, maps,
+  finish), not its uuid — each gore piece carries its own copy of the same meat, so keyed by uuid every chunk was still a rubble mesh of
+  its own (83 after 12 kills). After: loose gore pieces 79 → 2-5, the 95th percentile 6.0-6.6 ms over the same minute.
+- Left: the castle props' broken pieces (`cpAddBody`, capped at `CP_MAX_BODIES`, kickable on purpose) are each a draw.
+
+## 2026-11-25 — `worldDrawnHit` cheap: the water ball's lag
+"the water ball lags the game when shot". `tools/sealag.js` (real time per frame from the probe page, the game's clock fake): one
+`worldDrawnHit` was 12 ms on the beach and 39 ms in the first castle — it raycast the whole scene and dropped the sea and the sand
+AFTER testing every triangle of them; the free ball asks it every frame (frames 2-5 → 18-45 ms, a first throw's worst 106), and the
+hook's throw three or four times. The castle's three big meshes (118k/54k/28k triangles) and a 115k shader sheet were 35 ms. Now
+`wdCandidates` (the shown, drawn, still meshes, swept every 0.5 s or on a change of place; never the sea, sand, creatures, what
+you hold), a bounds test first, and any mesh of `WD_BIG` (6000) triangles or more asked through its own world-space triangle grid
+(`wdGrid`, built once, rebuilt if it moved; `wdGridHit` marches the line half a cell at a time, Möller–Trumbore with three's side
+rule, the face's local normal and material handed back as three's would be, for `stampScar`). Grids built under a black
+(`wdWarmGrids` from `cpTick`: the boot, a castle's cut). After: the call 0.01 ms on the beach, 2 ms in the castle; a flying ball's
+frame 3 ms (beach) and 8 ms (castle) against 2.5 and 4.6 with none. `hookghost.js &at=fort&walls=1`: the same answers (1 of 1264;
+0 short, 0 through).
+
+## 2026-11-25 — "glDrawElementsInstanced: Vertex buffer is not big enough" was the warm-up's
+Twice a session in the console. The shader warm-up (`walk` in the warm pass) shows every mesh once and gives an InstancedMesh
+with `count` 0 a count of 1 so it compiles; a batch BUILT for no instances (`instanceMatrix.count` 0) has no first instance and
+the driver refused the draw. It asks only one whose buffer has room now. `tools/glerr.js`: 0 refused draws after. To find WHICH
+draw a GL error belongs to, set `localStorage.bwGlDbg` before the load: every `renderBufferDirect` is followed by
+`gl.getError()` and the offenders land in `window.__glErrs` (slow — a probe's switch only).
+
+## 2026-11-26 (night) — far detail goes coarse half as soon on a textured mesh
+"i see the textures of this cave spawning in": a coarse LOD level averages its merged vertices' UVs, so a painted surface smears,
+and walking up the finer levels came in one by one — the texture visibly arriving. A mesh with a `map`/`emissiveMap` is measured at
+half its distance (`e.tex`), so its levels change where a cell is under half a pixel. NOT confirmed on the owner's cave (which mesh
+it is was not identified); `?lod=0` in his pane is the A/B if it is still seen.

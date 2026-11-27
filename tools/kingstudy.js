@@ -30,6 +30,9 @@ if (Q.get('only')) { const o = {}; for (const k of Q.get('only').split(',')) o[k
 if (GUARD) { b.addToInventory(b.katanaItem); if (b.state().equipped !== b.katanaItem.name) b.toggleEquip(b.katanaItem); w.__adv(30); }
 const RAG = u.kind.rag, bone = (n) => u.model.getObjectByName(RAG['Character1_' + n]);
 const chains = [['RightArm', 'RightForeArm', 'RightHand'], ['LeftArm', 'LeftForeArm', 'LeftHand'], ['RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase'], ['LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase']].map((c) => c.map(bone));
+// (the Scourger, 2026-11-25: his axe arm strikes with the axe's head, and chain 4 is his tail — as the game's own `mutLimbs` has them)
+if (u.kAxeTip) chains[0].push(u.kAxeTip);
+{ const tl = ['TailBase', 'Tail_005', 'Tail_010', 'Tail'].map((n) => u.model.getObjectByName(n)); if (tl[3]) chains.push(tl); }
 const _a = new T.Vector3(), _b = new T.Vector3(), _p = new T.Vector3(), _f = new T.Vector3(), _c = new T.Vector3();
 const face = () => { C.getWorldDirection(_f); return _c.copy(C.position).addScaledVector(_f, 0.25); };
 function near(i) {
