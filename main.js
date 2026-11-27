@@ -12535,7 +12535,7 @@ window.addEventListener('keydown', (e) => {
      * cancel. C sits off W's finger, and it is the key the game names now. */
     // standing up is refused while there is something over your head — you
     // used to stand under the pier and get teleported out from under it
-    if (!frozen() && (!crouching || headroomClear())) crouching = !crouching;
+    if (!frozen() && (!crouching || headroomClear())) { if (!crouching) slideStart(); crouching = !crouching; }   // (running: a slide, `slideStart`)
   } else if (e.code === 'KeyE' || e.code === 'KeyF' || e.code === 'Enter' || e.code === 'NumpadEnter') {
     // Enter is an alias for E throughout: people reach for it on a prompt
     if (inspecting) { if (inspectEquip) inspectEquip(); return; }
@@ -19619,7 +19619,7 @@ function hookBite(h) {
  * or after `HOOK_ZIP.max_t`), carried on by the pull and lifted a little off a wall, and the chain comes home. Once a time in
  * the air (`HK.zipUsed`, cleared when you land). It moves you the way a shove does — through every clamp and push-out after
  * it (`clampPlayerToRoom`, the solids), so a pull into stone stops at the stone. */
-const HOOK_ZIP = { max: 17, ramp: 0.25, stop: 1.9, max_t: 1.1, min: 2.6, carry: 0.55, down: -8 };
+const HOOK_ZIP = { max: 17, ramp: 0.25, stop: 1.9, max_t: 1.1, min: 2.6, carry: 0.6, down: -8, airFade: 0.35 };   // (carry 0.55 and an air fade of 1.6/s until 2026-11-26's momentum: "keep momentum like half life with the hooks boost")
 const _hzD = new THREE.Vector3();
 function hookFloorAt(x, z) {
   if (inTemple) return TMP_Y + tmpFloorAt(x - TMP_X, z - TMP_Z);
@@ -19644,7 +19644,7 @@ function hookZipStart() {
   if (hookNoZipAt(c, HK.p)) return false;
   HK.toCubby = inC13 && c13CubbyHas(HK.p, 0.3);
   HK.st = 'zip'; HK.t = 0; HK.zipA = (HK.zipA || new THREE.Vector3()).copy(HK.p); HK.zipT = 0; HK.zipStuck = 0; HK.zipLast = d; HK.zipUsed = true; HK.slack = 0;
-  HK.zipV = HK.zipV || new THREE.Vector3(); HK.zipV.set(0, 0, 0);
+  HK.zipV = HK.zipV || new THREE.Vector3(); HK.zipV.set(0, 0, 0); HK.zipPk = 0;
   sfxChainRattle(c.x, c.z, 0.6, 1.1); sfxChainPayout(c.x, c.z, 0.8);
   playSample('katSwing', 0.75, 0.04, 0.5);
   fovKick = Math.max(fovKick, 7); addTrauma(0.12); vmImpulse(-0.9);
@@ -19655,7 +19655,7 @@ function hookZipEnd(arrived) {
   if (HK.toCubby) { HK.toCubby = false; if (c13CubbyStep()) { HK.st = 'back'; HK.t = HOOK_LIE; HK.recall = true; HK.recallAt = performance.now(); HK.slack = 0.3; return; } }
   const v = HK.zipV;
   HK.carry = HK.carry || new THREE.Vector3();
-  HK.carry.set(v.x * HOOK_ZIP.carry, 0, v.z * HOOK_ZIP.carry);              // (on past where you let go, a little)
+  { const h = Math.hypot(v.x, v.z), k = h > 0.3 ? (HK.zipPk || h) * HOOK_ZIP.carry / h : HOOK_ZIP.carry; HK.carry.set(v.x * k, 0, v.z * k); }   // (on past where you let go: `carry` of the pull at its FASTEST, its way the way it was going — it eases in at the end, and its speed there was half of it)
   const up = HK.zipA.y > camera.position.y - 0.5;
   vy = up ? Math.max(vy * 0.4, 3.4) : Math.max(Math.min(vy, 2), -3);       // (off a wall or a ledge, up over it; at the floor, down onto it)
   onGround = false;
@@ -19697,7 +19697,7 @@ function hookZipMove(dt, canMove) {
     if (S) { const L = HK.carry.length(), c = camera.position, feet = camBaseY - playerEye(); _hkD.copy(HK.carry).multiplyScalar(1 / L);
       for (const y of [feet + 0.25, c.y + 0.14]) if (siteRay(S, _hkW.set(c.x, y, c.z), _hkD, L * dt + 0.4) !== null) { HK.carry.set(0, 0, 0); break; } }
     if (HK.carry.lengthSq() > 0.0004) hookStepSolid(HK.carry.x * dt, HK.carry.z * dt);
-    HK.carry.multiplyScalar(Math.exp(-dt * (onGround ? 9 : 1.6)));
+    HK.carry.multiplyScalar(Math.exp(-dt * (onGround ? (groundT > BHOP_T ? 9 : 0.35) : HOOK_ZIP.airFade)));   // (on the ground only once the hop's window is past: jump again and it goes with you)
   }
   if (onGround && HK.st !== 'zip') HK.zipUsed = false;
   if (HK.st !== 'zip') return;
@@ -19725,6 +19725,7 @@ function hookZipMove(dt, canMove) {
     }
   }
   hookStepSolid(HK.zipV.x * dt, HK.zipV.z * dt);
+  HK.zipPk = Math.max(HK.zipPk || 0, Math.hypot(HK.zipV.x, HK.zipV.z));   // (its fastest across the ground: what it carries you on with, `hookZipEnd`)
   vy = Math.max(HK.zipV.y, HOOK_ZIP.down) + P_GRAV * dt;                  // (the climb or the drop is the chain's; gravity is taken back out this frame)
   onGround = false;
   fovKick = Math.max(fovKick, 4 + 3 * Math.min(1, sp / HOOK_ZIP.max));
@@ -32495,6 +32496,28 @@ let killSlow = 0; const KILL_SLOW = 0.24;   // after a heavy that kills, the wor
 let landDip = 0;                    // camera sink on landing, eased back out
 let coyote = 0, jumpBuf = 0;        // late-jump grace / early-press memory
 const COYOTE_TIME = 0.12, JUMP_BUFFER = 0.14;
+/* MOMENTUM (2026-11-26, the owner: "keep momentum like half life with the hooks boost so its fun to move around and slide into jump
+ * kicks"). In the AIR the walk is not steered to your keys at once: what you took off with you keep (no keys: all of it), and the
+ * keys bend it at `AIR_CTRL` of the ground's grip (a fifth). Air is past the coyote's grace, so a slope that drops a frame under
+ * you is still ground. On landing the ground's grip comes back over `BHOP_T`: jump again inside it and the speed goes with you
+ * (the hook's carry too, `hookZipMove`). `groundT`: how long you have been on the ground. */
+const AIR_CTRL = 0.2, BHOP_T = 0.12;
+let groundT = 0;
+/* THE SLIDE: C (the crouch) pressed while you are running on the ground — down low and on along the way you were going, faster than
+ * the run for a moment (`SLIDE.boost` of your speed, never under `SLIDE.min`) and easing off over `SLIDE.dur`; you steer it a
+ * little. Jump out of it and the speed is the jump's (above). A kick in it is a slide kick: low, and it lands like a jump kick
+ * (`kickStrike`). It costs a little breath (`SLIDE.stam`) and not again for `SLIDE.cd`. */
+const _slT = new THREE.Vector3();
+const SLIDE = { t: -1, cd: 0, sp: 0, dir: new THREE.Vector3(), dur: 0.75, boost: 1.18, min: 6.6, stam: 0.08, cdT: 0.55, steer: 1.6 };
+function slideStart() {
+  const hs = Math.hypot(velocity.x, velocity.z);
+  if (SLIDE.t >= 0 || SLIDE.cd > 0 || !onGround || hs < WALK_SPEED * 1.15 || exhausted || stamina < SLIDE.stam || frozen()) return false;
+  stamina = Math.max(0, stamina - SLIDE.stam);
+  SLIDE.t = 0; SLIDE.sp = Math.max(hs * SLIDE.boost, SLIDE.min); SLIDE.dir.set(velocity.x / hs, 0, velocity.z / hs);
+  fovKick = Math.max(fovKick, 3.5); addTrauma(0.05);
+  try { playSample('katSwing', 0.32, 0.06, 0.38); } catch (e) {}
+  return true;
+}
 const _shakePrev = new THREE.Vector3();
 let shakeT = 0;
 const knockback = new THREE.Vector3();
@@ -33276,7 +33299,10 @@ function kickStrike() {
   /* (A JUMP KICK — 2026-11-26, the owner: "make jump kicks more likely to knock someone down and they go further", "I SHOULD BE ABLE TO
    * JUMP OFF LEDGES AND KICK PEOPLE MID AIR TOO IN THE DIRECTION I KICK THEM". In the air when the sole goes out: it reaches a man
    * up to 2.4 m below your feet (off a ledge onto him), a little further out, and lands with your weight behind it — `KICK.air`.) */
-  KICK.air = !onGround || !!KICK.forceAir;   // (`forceAir`: a probe's jump kick, `tools/kicktunnel.js &air=1`)
+  KICK.air = !onGround || !!KICK.forceAir || SLIDE.t >= 0;   // (`forceAir`: a probe's jump kick, `tools/kicktunnel.js &air=1`; a SLIDE kick lands as one)
+  /* (AND YOUR SPEED BEHIND IT — 2026-11-26, "slide into jump kicks": a kick thrown at more than a run throws the man further, up to
+   * 1.6× at 9 m/s and over — the hook's carry counts. Only how far: what it hurts and how often it puts him down are the kick's.) */
+  { const hs = Math.hypot(velocity.x + (HK.carry ? HK.carry.x : 0), velocity.z + (HK.carry ? HK.carry.z : 0)); KICK.mom = THREE.MathUtils.clamp(1 + (hs - RUN_SPEED) / (9 - RUN_SPEED) * 0.6, 1, 1.6); }
   const below = KICK.air ? 2.4 : 1.2, reachX = KICK.air ? 0.6 : 0;
   let best = null, bd = Infinity;
   const DB = typeof window !== 'undefined' && Array.isArray(window.__kickDbg) ? window.__kickDbg : null;
@@ -33405,7 +33431,7 @@ function kickMan(u) {
      * and a farmer could roll his on-his-feet death (`farmZDieRoll`) instead of the throw. The record is let go, and a fling
      * never dies standing.) */
     if (BLOW.u === u) BLOW.on = false;
-    u.st.killFling = KICK.air ? 1.1 : 0.8; u.st.kickKill = true;   // (toned down, 2026-11-26: "TONE THE KILL KICKS DOWN A BIT" — 1.5 / 1.1 before) u.hitDir.copy(_kkD); u.lastHitMine = true;   // (`kickKill`: his boots go with him, `updateMutRagdoll`'s ground pass)
+    u.st.killFling = (KICK.air ? 1.1 : 0.8) * (KICK.mom || 1); u.st.kickKill = true;   // (toned down, 2026-11-26: "TONE THE KILL KICKS DOWN A BIT" — 1.5 / 1.1 before) u.hitDir.copy(_kkD); u.lastHitMine = true;   // (`kickKill`: his boots go with him, `updateMutRagdoll`'s ground pass)
     hurtMutant(u, KICK_DMG, 1);
     if (u.st.alive && !u.st.struck && u.st.hp > 0) u.st.killFling = 0;   // (`struck`: dying — `alive` goes false a beat later — 2026-11-26) (he took it and lived — armour, a ward: the throw is not left on him for the next blow to spend)
   } else {
@@ -33413,7 +33439,7 @@ function kickMan(u) {
     if (!u.st.alive) return;
     // off balance: the active body struck at the chest along the kick, and shoved — a stride and more; a boss is moved, not taken
     const _toWin = !boss && tavWindowAhead(u, _kkD);
-    if (!boss && (((u.st.down || 0) > 0 || u.st.knocked) || _toWin) && kickRagStart(u, _kkD.x, _kkD.z, _toWin ? 1.8 : KICK.air ? 1.5 : 1)) {   // (and at the tavern's window from close by: out of it, `tavWindowAhead`)
+    if (!boss && (((u.st.down || 0) > 0 || u.st.knocked) || _toWin) && kickRagStart(u, _kkD.x, _kkD.z, (_toWin ? 1.8 : KICK.air ? 1.5 : 1) * (KICK.mom || 1))) {   // (and at the tavern's window from close by: out of it, `tavWindowAhead`)
       if (_toWin) tavWindowThrow(u, _kkD);
       sfxKickHit(1); try { sfxMutHit(u.kind.voice); } catch (e) {} addTrauma(0.35); hitstop = Math.max(hitstop, 0.06);
       KICK.lastHit = { u, boss, killed: false, down: true, rag: true }; return;
@@ -33429,8 +33455,8 @@ function kickMan(u) {
     /* (AND THE MUTANTS, NOW AND THEN — 2026-11-26, the owner: "make mutants get knocked over by some kicks too not as much as farmers".
      * A kind with no knockdown clips is thrown as the one-piece ragdoll (`kickRagStart`) and rises into its roar, `kickRagRise`.) */
     const mutOver = !u.kind.knockClip && !boss && u.clips && (u.clips.roar || u.clips.idle) && (u.kind.h || 1.8) <= 2.7 && !u.kind.stone && !u.kind.wood;
-    if (mutOver && Math.random() < (KICK.air ? 0.45 : was ? 0.22 : 0.12)) { kickRagStart(u, _kkD.x, _kkD.z, KICK.air ? 1.5 : 0.9); }
-    else if (u.kind.knockClip && u.clips && u.clips[u.kind.knockClip] && u.clipAz && !(boss && (u.st.down || 0) > 0) && Math.random() < pDown) {   /* (a boss already down is kicked where he lies — hurt and shoved, never knocked down a second time over the first: "MAKE IT YOU CAN KICK THE FINAL BOSS WHEN HES DOWN TOO", 2026-11-26) */ if (boss || !kickRagStart(u, _kkD.x, _kkD.z, KICK.air ? 1.7 : 1)) mutKnockdown(u); }   // (thrown as one piece, and up again: `kickRagStart`)
+    if (mutOver && Math.random() < (KICK.air ? 0.45 : was ? 0.22 : 0.12)) { kickRagStart(u, _kkD.x, _kkD.z, (KICK.air ? 1.5 : 0.9) * (KICK.mom || 1)); }
+    else if (u.kind.knockClip && u.clips && u.clips[u.kind.knockClip] && u.clipAz && !(boss && (u.st.down || 0) > 0) && Math.random() < pDown) {   /* (a boss already down is kicked where he lies — hurt and shoved, never knocked down a second time over the first: "MAKE IT YOU CAN KICK THE FINAL BOSS WHEN HES DOWN TOO", 2026-11-26) */ if (boss || !kickRagStart(u, _kkD.x, _kkD.z, (KICK.air ? 1.7 : 1) * (KICK.mom || 1))) mutKnockdown(u); }   // (thrown as one piece, and up again: `kickRagStart`)
   }
   sfxKickHit(boss ? 0.85 : 1); try { sfxMutHit(u.kind.voice); } catch (e) {}
   addTrauma(boss ? 0.22 : 0.4); hitstop = Math.max(hitstop, 0.07); fovKick = Math.max(fovKick, 4);
@@ -56450,9 +56476,15 @@ function update(dt, rawDt = dt) {
    * across the screen. The move-based check only ran while the pointer was
    * free. `mouseBtns` is the window's own capture listener and is the truth. */
   if (blocking && !(mouseBtns & 2)) blocking = false;
-  crouchT += ((crouching ? 1 : 0) - crouchT) * Math.min(1, dt * 11);
-  if (crouchT < 0.001) crouchT = 0;
-  if (crouchT > 0.999) crouchT = 1;
+  { const eye0 = playerEye();
+    crouchT += ((crouching ? 1 : 0) - crouchT) * Math.min(1, dt * 11);
+    if (crouchT < 0.001) crouchT = 0;
+    if (crouchT > 0.999) crouchT = 1;
+    /* (IN THE AIR YOUR FEET STAY WHERE THEY ARE as you come up out of a crouch — 2026-11-26, "slide into jump kicks": the feet are the
+     * eye less the eye's height, so a jump out of a crouch (it stands you up, `crouching` off) had the eye's height grow under a
+     * camera that had not, the feet went under the sand the next frame, and the ground took the jump back — vy 4.2 -> 0, measured,
+     * `tools/momentum.js`. Every jump from a crouch was eaten; a jump out of a slide is one.) */
+    if (!onGround) { const de = playerEye() - eye0; camBaseY += de; camera.position.y += de; } }
   const spd = (running ? RUN_SPEED : WALK_SPEED) * settings.walkSpeed * speedK() * (1 - crouchT * 0.55)
     * (elvCarrying ? 0.78 : 1)          // a man in your arms: you go a little slower (2026-10-16, the owner)
     /* and a club that heavy: you carry it a little slower, swing it slower still, and raised for the slam you all but
@@ -56463,7 +56495,30 @@ function update(dt, rawDt = dt) {
   forward.y = 0; forward.normalize();
   right.crossVectors(forward, camera.up).normalize();
   const target = new THREE.Vector3().addScaledVector(forward, move.y).addScaledVector(right, move.x).multiplyScalar(spd);
-  velocity.lerp(target, 1 - Math.pow(0.0016, dt));
+  // (the ground's grip, the air's — `AIR_CTRL`, `BHOP_T`: momentum)
+  const airborne = !onGround && coyote <= 0;
+  groundT = onGround ? groundT + dt : 0;
+  const grip = airborne ? (moving ? AIR_CTRL : 0) : Math.min(1, 0.15 + groundT / BHOP_T);
+  if (grip > 0) {
+    if (airborne) {
+      // (in the air the keys bend the way you are going; they do not brake a speed you have over theirs)
+      const hs = Math.hypot(velocity.x, velocity.z), ts = target.length();
+      velocity.lerp(target, 1 - Math.pow(0.0016, dt * grip));
+      const ns = Math.hypot(velocity.x, velocity.z), keep = Math.max(ts, hs);
+      if (ns > 1e-4 && ns < keep && hs > ts) velocity.multiplyScalar(keep / ns);
+    } else velocity.lerp(target, 1 - Math.pow(0.0016, dt * grip));
+  }
+  // the slide (`SLIDE`, `slideStart`): it owns the velocity while it runs, as the step does
+  SLIDE.cd = Math.max(0, SLIDE.cd - dt);
+  if (SLIDE.t >= 0) {
+    SLIDE.t += dt;
+    if (!canMove || !crouching || airborne || SLIDE.t >= SLIDE.dur) { SLIDE.t = -1; SLIDE.cd = SLIDE.cdT; }
+    else {
+      if (moving && target.lengthSq() > 1e-6) { _slT.copy(target).normalize(); SLIDE.dir.lerp(_slT, Math.min(1, dt * SLIDE.steer)).normalize(); }
+      const q = SLIDE.t / SLIDE.dur, sp = SLIDE.sp * (1 - 0.55 * Math.pow(q, 1.4));
+      velocity.set(SLIDE.dir.x * sp, 0, SLIDE.dir.z * sp);
+    }
+  }
   if (maceRings.length) maceRingTick(dt);   // (the mace's shockwave rings)
   /* THE STEP OWNS THE VELOCITY WHILE IT RUNS, so nothing you are holding on
    * WASD can steer it half way through — a step you can turn mid-flight is a
@@ -138212,7 +138267,7 @@ window.__bw = {
   openMenu, closeMenu, showEnd, bwGlb, CP, cpBreak, loadCastleProps, CP_SITE_DEFS, loadC13, loadThrone, mutRagdoll, fortClampUnitS: fortClampUnit, cpMutants: () => mutants, renderItemIcon, stampFoot, startDig, toggleEquip, spawnPuffs, spawnSplash, stampDigHole, beginGame,
   openInspect, closeInspect, startExtraction,
   get shovelItem() { return shovelItem; }, get crabItem() { return crabItem; }, get syringeItem() { return syringeItem; }, get jarItem() { return jarItem; }, get weddingItem() { return weddingItem; }, wearRing, get speedK() { return speedK(); },
-  state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), hp, equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
+  state: () => ({ started, locked, fallbackLook, introDone, noteOpen, menuOpen, dialogOpen, inspecting, extracting, crabBled, dying, ended, onGround, crouching, slideT: +SLIDE.t.toFixed(2), vy: +vy.toFixed(2), get combat() { return inCombat(); }, stamina: +stamina.toFixed(2), exhausted, digT: +digT.toFixed(2), hp, equipped: equipped && equipped.name, held: held && held.mesh.name, hovered: hovered && hovered.label, inv: inventory.map(i => i.name) }),
   music: () => (musicEl ? { paused: musicEl.paused, t: +musicEl.currentTime.toFixed(1), env: musicEnvGain ? +musicEnvGain.gain.value.toFixed(3) : null, vol: musicVolGain ? +musicVolGain.gain.value.toFixed(2) : null } : { musicEl: null }),
 };
 

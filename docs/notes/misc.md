@@ -179,3 +179,27 @@ restore, a teleport) can only get out by crossing, so after 0.35 s held the push
   calls `minoWhole`); culled while on screen (`tools/minoedge.js`: 188 culls in 360 frames of a full turn, none with a joint of his
   in the picture); dying (he cannot: your blows skip an ally, `hurtMutantCore`; the castle's men stop at `MINO_FLOOR`).
   Next, from the owner: what had just happened (a kick near him? the fight's end? the gate?), and whether a reload brought him back.
+
+## 2026-11-26 — momentum: the air keeps your speed, the slide, the hook's carry, the slide kick; a crouch no longer eats a jump
+The owner: "keep momentum like half life with the hooks boost so its fun to move around and slide into jump kicks", then "keep momentum
+for jumps too". `tools/momentum.js` (open beach, on the clock, real key events): a running jump with the keys let go, the slide and a
+jump out of it, a kick in a slide, the hook thrown in the air at the sand. PROBE TRAP: C is a TOGGLE — a "stand up" tap after a jump
+that already stood you up crouches you again (`state().crouching` now says which).
+- **The air keeps your speed** (`AIR_CTRL` 0.2, `BHOP_T` 0.12, `groundT`): the walk's velocity was eased to your keys at the ground's
+  grip in the air too — a jump kept nothing. Now airborne (past the coyote's 0.12 s, so a slope that drops a frame under you is still
+  ground) no keys hold all of it, and keys bend it at a fifth of the grip without braking a speed over theirs. On landing the grip
+  comes back over 0.12 s: a hop inside it keeps the speed. Measured: run 5.7, in the air 6.1 held, hop on landing 5.9 held.
+- **The slide** (`SLIDE`, `slideStart`, C while running on the ground at over 1.15× the walk): 1.18× your speed (never under 6.6
+  m/s) along the way you were going, easing to 0.45 of it over 0.75 s, steered a little (1.6/s); 0.08 of the stamina bar, 0.55 s
+  before the next. It owns the velocity as the step does; standing up, leaving the ground or a take ends it. Measured: 6.8 -> 5.1
+  m/s, 3.2 m in 0.5 s.
+- **A JUMP OUT OF A CROUCH WAS EATEN** (every one, long before the slide): the jump stands you up, the eye's height grows as `crouchT`
+  eases, and the feet are the eye less that height — the next frame they were under the sand and the ground took the jump back (vy
+  4.2 -> 0). In the air the eye's change now moves `camBaseY` with it (the feet stay). The slide's jump: 4.4 m/s held through the air.
+- **The hook's carry** (`HOOK_ZIP.carry` 0.6, `airFade` 0.35, `HK.zipPk`): it was 0.55 of the pull's speed AT THE END — where it
+  eases in, half its peak — fading 1.6/s in the air and 9 on the ground. Now 0.6 of the pull's FASTEST across the ground, fading
+  0.35/s in the air and on the ground only once the hop's window is past. Measured: a 17.9 m/s pull carried on at 8-10 m/s through
+  the air and a hop, 16.5 m in all (11.6 before).
+- **The slide kick, your speed behind a kick** (`KICK.air` in a slide; `KICK.mom`): a kick in a slide lands as a jump kick (85 %
+  down); a kick at more than a run throws the man further — ×1 at the run to ×1.6 at 9 m/s, the hook's carry counted. Only the
+  throw (`kickRagStart`'s `far`, `killFling`): what it hurts and how often it downs are the kick's own. Bosses unchanged.
