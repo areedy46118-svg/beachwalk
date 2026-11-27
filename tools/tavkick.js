@@ -2,6 +2,7 @@
  * ragdoll off"). `tools/tavlook.js` calls `kickMan` straight; this presses Q, so the kick goes through `startKick` → `kickTick` →
  * `kickStrike`'s choice of man, from where you would stand: &case=behind (1.2 m straight behind), &case=angle (1.3 m behind, 35°
  * off), &case=side (beside him at the rail, kicking across), &case=far (2.1 m back, the reach's edge).
+ *   python3 -I tools/cpuprof.py 'evalFile&f=/tools/tavkick.js' --q '&case=behind&prof=1'   (the slow frames' own profiles)
  *   PB_PORT=4245 PB_WAIT=600 PB_Q='&case=angle' sh tools/probe.sh 'evalFile&f=/tools/tavkick.js' <out> */
 w.eval(await (await fetch('/tools/burntest.js?' + Date.now())).text());
 for (let i = 0; i < 400 && b.bootLeft().parsing > 0; i++) { b.frame(1); await sleep(30); }
@@ -23,15 +24,28 @@ w.__kickDbg = [];
 const key = (t) => w.document.dispatchEvent(new w.KeyboardEvent(t, { code: 'KeyQ', key: 'q', bubbles: true }));
 key('keydown'); put(); w.__adv(1); key('keyup');
 let ragAt = null, out = null, dead = null, low = 0;
+const QQ = new URLSearchParams(w.parent.location.search), R = b.renderer, gl = R.getContext(), px = new Uint8Array(4), FT = [], spk = [], big = [], PF = QQ.get('prof'), PF0 = +(QQ.get('pf0') || 0), PF1 = +(QQ.get('pf1') || 240);
+let progs0 = R.info.programs ? R.info.programs.length : 0;
+// (the frame's real time, the GPU synced by a one-pixel read: "fix the window lag when kicking out")
 for (let f = 0; f < 60 * 6; f++) {
-  if (f < 30) put(); w.__adv(1);
+  if (f < 30) put();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  if (PF && f >= PF0 && f < PF1) console.profile('kick #' + f);
+  const t0 = performance.now(); w.__adv(1); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const ms = performance.now() - t0; FT.push(ms);
+  if (PF && f >= PF0 && f < PF1) { console.profileEnd('kick #' + f); if (ms > 9) log('SPIKE', 'kick #' + f, ms.toFixed(1)); }
+  if (ms > 9) spk.push((f / 60).toFixed(2) + ':' + ms.toFixed(1));
+  { const np = R.info.programs ? R.info.programs.length : 0; if (ms > 18 || np !== progs0) big.push((f / 60).toFixed(2) + ':' + ms.toFixed(1) + (np !== progs0 ? ' +' + (np - progs0) + ' programs' : '')); progs0 = np; }
   if (ragAt === null && (u.rag || u.kickRag)) ragAt = (f / 60).toFixed(2);
   const H = u.rag && (u.rag.byName['Character1_Hips'] || u.rag.parts[0]);
   if (H) low = Math.min(low, H.p.y - fl);
   if (H && out === null && b.tavOutsideS(H.p.x, H.p.z)) out = (f / 60).toFixed(2);
   if (dead === null && !u.st.alive) dead = (f / 60).toFixed(2);
+  if (f % 30 === 29 && u.rag) { const r = u.rag, nm = (n) => r.byName[n] || null, Hd = nm('Character1_Head'), Ft = nm('Character1_LeftFoot') || nm('Character1_RightFoot');
+    log('   t', ((f + 1) / 60).toFixed(1), '| hips', H ? (H.p.y - fl).toFixed(2) : '-', 'head', Hd ? (Hd.p.y - fl).toFixed(2) : '-', 'foot', Ft ? (Ft.p.y - fl).toFixed(2) : '-', '| upright', Hd && Ft ? (Hd.p.y - Ft.p.y).toFixed(2) : '-', '| holdI', !!r.holdI, 'kfly', !!r.kfly, 'downT', (r.downT || 0).toFixed(2), '| z', H ? (H.p.z - Z).toFixed(2) : '-'); }
   if (f === 20) log('  0.33 s | rag', !!u.rag, 'kickRag', !!u.kickRag, '| awake', u.st.awake, 'hp', u.st.hp, '| clip', u.cur ? u.cur.getClip().name : '-', '| g', (P.x - X).toFixed(2), (P.z - Z).toFixed(2));
 }
+{ const so = FT.slice().sort((x, y) => x - y); log('  FRAMES median', so[so.length >> 1].toFixed(1), 'p95', so[(so.length * 0.95) | 0].toFixed(1), 'worst', so[so.length - 1].toFixed(1), '| over 9 ms at', spk.slice(0, 24).join(' ')); }
+log('  BIG frames / new shader programs', big.join(' | '));
 log('  kick dbg', JSON.stringify(w.__kickDbg.slice(0, 6)));
 log('RESULT', cs, '| ragdoll at', ragAt, '| out at', out, '| lowest hips', low.toFixed(1), '| dead at', dead, '| bays down', b.tavRailS().bays.map((B) => B.dead).join(','), '| now awake', u.st.awake, 'alive', u.st.alive, 'g', (P.x - X).toFixed(2), (P.z - Z).toFixed(2));
 log('DONE');

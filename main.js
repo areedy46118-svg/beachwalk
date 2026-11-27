@@ -89659,9 +89659,27 @@ function buildTavKeepOutside() {
   /* (ITS OWN LIGHT: the keep's rock and timber are lit materials, and in the hall the night's lights are ducked and the keep's own
    * are not here — the copy stood black against its sky. Each takes an unlit twin with the same map, under a night's tint; the
    * sky's and the sea's shaders are their own light and are shared as they are.) */
-  const twins = new Map(), tint = new THREE.Color().setRGB(0.50, 0.50, 0.74);
+  /* (AND LIT BY THE MOON — 2026-11-26, the owner, with a still looking down past the broken railing: "fix … the textures here". Under
+   * one flat tint the rock was a dark teal shape with no faces to it and the pale stone a white smear. Each copy's geometry now
+   * carries the moon's light baked into its vertex colours — the keep's own `MOON_DIR` in the keep's frame, a little sky from above,
+   * the rest in shadow — so the rock has lit faces and dark ones and its map reads; it costs nothing a frame.) */
+  const twins = new Map(), tint = new THREE.Color().setRGB(0.70, 0.70, 0.88);
+  const Lk = MOON_DIR.clone().transformDirection(inv), _n = new THREE.Vector3(), _nm = new THREE.Matrix3();
+  const shade = (g, M, vc) => {
+    const N = g.attributes.normal; if (!N) return g;
+    _nm.getNormalMatrix(M);
+    const C0 = vc && g.attributes.color, col = new Float32Array(N.count * 3);
+    for (let i = 0; i < N.count; i++) {
+      _n.fromBufferAttribute(N, i).applyMatrix3(_nm).normalize();
+      const k = 0.55 + 0.70 * Math.max(0, _n.dot(Lk)) + 0.28 * Math.max(0, _n.y);   // (the faces toward the window face away from the low moon: the fill has to carry them, measured in stills)
+      col[i * 3] = k * (C0 ? C0.getX(i) : 1); col[i * 3 + 1] = k * (C0 ? C0.getY(i) : 1); col[i * 3 + 2] = k * (C0 ? C0.getZ(i) : 1);
+    }
+    const s = new THREE.BufferGeometry(); for (const a in g.attributes) if (a !== 'color') s.setAttribute(a, g.attributes[a]);
+    s.setAttribute('color', new THREE.BufferAttribute(col, 3)); if (g.index) s.setIndex(g.index);
+    return s;
+  };
   const twin = (M) => { if (M.isShaderMaterial) return M; let b = twins.get(M);
-    if (!b) { b = new THREE.MeshBasicMaterial({ map: M.map || null, side: M.side, transparent: M.transparent, opacity: M.opacity, alphaTest: M.alphaTest, depthWrite: M.depthWrite, vertexColors: M.vertexColors });
+    if (!b) { b = new THREE.MeshBasicMaterial({ map: M.map || null, side: M.side, transparent: M.transparent, opacity: M.opacity, alphaTest: M.alphaTest, depthWrite: M.depthWrite, vertexColors: true });
       if (!M.map && M.color) b.color.copy(M.color); b.color.multiply(tint); b.name = 'tavOut:' + (M.name || ''); b.userData.tavOwnLight = true; twins.set(M, b); }
     return b; };
   let nm = 0, nt = 0;
@@ -89680,7 +89698,8 @@ function buildTavKeepOutside() {
     if (!keep.length) return;
     let g = o.geometry;
     if (!all) { g = new THREE.BufferGeometry(); for (const k in o.geometry.attributes) g.setAttribute(k, o.geometry.attributes[k]); g.setIndex(keep); }
-    const m = new THREE.Mesh(g, twin(o.material)); m.matrixAutoUpdate = false; m.matrix.copy(M); m.frustumCulled = false; m.renderOrder = o.renderOrder;
+    if (!loose) { if (!g.attributes.normal) { if (g === o.geometry) g = g.clone(); g.computeVertexNormals(); } g = shade(g, M, !!o.material.vertexColors); }   // (the moon's light in it: above)
+    const m = new THREE.Mesh(g, twin(o.material)); m.matrixAutoUpdate = false; m.matrix.copy(M); m.frustumCulled = !loose; m.renderOrder = o.renderOrder;   // (culled like anything else, 2026-11-26 — every piece of it was drawn whichever way you looked, into the hall too; the sky and the sea, which surround you, are not)
     m.userData.bwGhost = true; m.userData.noBake = true; m.raycast = () => {}; m.name = 'tavOut:' + o.name; G.add(m); nm++; nt += keep.length / 3;
   });
   tavWorld.add(G); O.G = G; O.on = true;
@@ -89951,7 +89970,17 @@ function tavWindowThrow(u, D) {
   const p = u.g.position, wx = TAV_X + THREE.MathUtils.clamp(p.x - TAV_X, TAV_WIN.sx0 + 0.45, TAV_WIN.sx1 - 0.45), wz = TAV_Z + TAV_WIN.cz, dx = wx - p.x, dz = wz - p.z, d = Math.hypot(dx, dz) || 1;
   const ox = (dx / d) * 0.7 + D.x * 0.3, oz = (dz / d) * 0.7 + D.z * 0.3, ol = Math.hypot(ox, oz) || 1;
   const sp = 4.2 + 1.7 * d;   /* (farther off, harder: 6.0 m/s from 1.3 m slid a man 3 m, so from the reach's edge, 3.6 m, he lay down short of the lip) */
-  for (const q of r.parts) q.seed = new THREE.Vector3((ox / ol) * sp, 2.4, (oz / ol) * sp);   // (the ragdoll's own first-step velocity: `updateMutRagdoll`)
+  /* AND HE GOES OUT LIMP, TOPPLING (2026-11-26, the owner: "make him actyally fall like a ragdoll out the window he slides down on his
+   * feet just have him naturally hit the ground"). `kickRagStart` holds a kicked man in one piece (`r.holdI`) so he can get up again —
+   * measured, `tools/tavkick.js`: through the whole 2.5 s fall his head stayed 1.0-1.3 m over his feet, a man standing on air going
+   * down the wall. Out of a window there is no getting up: the hold is let go, and his top is thrown harder than his feet (which
+   * the threshold catches), so he tips over the edge head first and comes down the way a body does. */
+  r.holdI = null;
+  let y0 = Infinity, y1 = -Infinity; for (const q of r.parts) { y0 = Math.min(y0, q.p.y); y1 = Math.max(y1, q.p.y); }
+  for (const q of r.parts) {
+    const h = THREE.MathUtils.clamp((q.p.y - y0) / Math.max(0.5, y1 - y0), 0, 1), k = 0.55 + 0.75 * h;   // (feet 0.55, head 1.3 of the throw)
+    q.seed = new THREE.Vector3((ox / ol) * sp * k, 2.4 - 0.9 * h, (oz / ol) * sp * k);   // (the ragdoll's own first-step velocity: `updateMutRagdoll`)
+  }
 }
 function tavWindowAhead(u, D) {
   if (!inTavern || !u || !u.g) return false;
@@ -90181,6 +90210,8 @@ function updateTavern(dt) {
   updateTavDrinkers(dt);
   updateTavDancers(dt);
   updateTavLookout(dt);
+  tavGridTick();                                  // (the routes' floor: built behind the entry's black, re-read a slice a frame)
+  for (const q of tavCast()) if (q.kind.reachSet && !q.tavReachDone) tavReachSet(q);   // (their blows' stand-offs, measured once their clips are in)
   tavThrownHits();
   tavCrush(dt);
   const p = camera.position, S = TAV_SITE;
@@ -92109,7 +92140,7 @@ MUT_ATTACKS.wUpper = { wind: 0.40, strike: 0.13, recover: 0.34, hit: 0.466, reac
 MUT_ATTACKS.wCres  = { wind: 0.86, strike: 0.18, recover: 0.50, hit: 0.448, reach: 2.70, lunge: 1.0, chain: 'wUpper', chainP: 0.45, w: 0.18, dmg: 2, guardK: 1.35, limbs: [2], real: true, cock: 0.46, clipRate: 1.10, stop: 1.40 };
 MUT_ATTACKS.wKickF = { wind: 0.60, strike: 0.15, recover: 0.42, hit: 0.488, reach: 2.40, lunge: 1.0, chain: 'wJab', chainP: 0.50, w: 0.18, guardK: 1.10, limbs: [2], real: true, cock: 0.44, clipRate: 1.15, stop: 1.30 };
 MUT_ATTACKS.wJab.chain = 'wKickF'; MUT_ATTACKS.wFly.chain = 'wUpper';
-MUT_ATTACKS.dHay   = { wind: 0.80, strike: 0.16, recover: 0.42, hit: 0.560, reach: 2.20, lunge: 0.55, chain: 'dButt', chainP: 0.55, w: 0.30, guardK: 1.15, limbs: [0], real: true, cock: 0.42, clipRate: 1.0, stop: 1.40 };
+MUT_ATTACKS.dHay   = { wind: 0.80, strike: 0.16, recover: 0.42, hit: 0.243, reach: 2.20, lunge: 0.55, chain: 'dButt', chainP: 0.55, w: 0.30, guardK: 1.15, limbs: [0], real: true, cock: 0.42, clipRate: 1.0, stop: 1.40 };
 MUT_ATTACKS.dUpper = { wind: 0.70, strike: 0.14, recover: 0.46, hit: 0.466, reach: 2.10, lunge: 0.55, chain: 'dSwipe', chainP: 0.45, w: 0.20, guardK: 1.10, limbs: [0], real: true, cock: 0.42, clipRate: 0.95, stop: 1.30 };
 /* AND THEIR FEET CARRY THEM TO A BLOW, NOT THE LUNGE (the same day, "slide around too much"). A lunge moves the body at a fixed speed
  * through the wind-up while the take's own feet stay planted: a man skating in on a punch thrown flat-footed. None of these takes
@@ -92118,6 +92149,7 @@ MUT_ATTACKS.dUpper = { wind: 0.70, strike: 0.14, recover: 0.46, hit: 0.466, reac
  * across the room), so they take no lunge and are thrown from just past where they land (`reach` = `stop` + 0.45): he WALKS in first,
  * on a walk whose rate is his real speed (`gaitBySpeed`), and plants. A follow-up no longer skates 2.4 m/s in after a blow that put
  * you out of reach (`noSkate`), and Wong's au leaves the line by what the take travels (0.88 m), not 1.5. */
+MUT_ATTACKS.dSwipe.hit = 0.508;   // (his own `dSwipe2`, its contact measured as packed)
 for (const k of ['wUpper', 'wCres', 'wKickF', 'wJab', 'dHay', 'dUpper', 'dSwipe']) { const A = MUT_ATTACKS[k]; A.lunge = 0; A.stop = A.stop || 0.95; A.reach = A.stop + 0.45; }
 /* (A DRUNK YOU CAN READ — 2026-11-26, the owner: "the drunk in the tavern needs better animations i cant read him and they dont
  * connect". Measured, `tools/tavfight.js &who=drunk`: his hands DID reach you when a blow landed (0.13 m median) — but from 0.66 m
@@ -92193,7 +92225,7 @@ MUT_KINDS.wong = Object.assign({}, TAV_CAST_COMMON, {
   /* AND HIS DODGE IS THE AU, NOT THE ALIEN'S MACACO. A barman who fights
    * capoeira leaves the LINE rather than stepping back down it — measured on
    * the windowed clip, 1.13 s and 1.19 m of it sideways. */
-  dodgeClip: 'ginga', dodgeSide: 0.88, dodgeT: 1.08, dodgeRate: 1.0, noSkate: true,   // (0.88: the take's own au, 2026-11-26 — 1.50 skated the rest)
+  dodgeClip: 'ginga', dodgeSide: 0.88, dodgeT: 1.08, dodgeRate: 1.0, noSkate: true, reachSet: true,   // (0.88: the take's own au, 2026-11-26 — 1.50 skated the rest)
   rig: { arm: 'CC_Base_R_Upperarm_080', fore: 'CC_Base_R_Forearm_081', hand: 'CC_Base_R_Hand_085',
          armL: 'CC_Base_L_Upperarm_052', foreL: 'CC_Base_L_Forearm_053', handL: 'CC_Base_L_Hand_057', head: 'CC_Base_Head_038',
          limbs: [['CC_Base_R_Thigh_018', 'CC_Base_R_Calf_019', 'CC_Base_R_Foot_021', 'CC_Base_R_ToeBase_022']] },
@@ -92231,7 +92263,7 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
    * pushed him past four — on a run clip whose own ground speed is 2.42, so
    * his feet were driven at twice speed and scrubbed anyway. He is slower
    * than you now and presses harder for it. */
-  h: 1.92, hp: 18, speedK: 0.62, aggr: 3.20, chainMax: 4, poise: 8, block: 0.14, noSkate: true,
+  h: 1.92, hp: 18, speedK: 0.62, aggr: 3.20, chainMax: 4, poise: 8, block: 0.14, noSkate: true, reachSet: true,
   use: { dSwipe: 0.30, dHay: 0.28, dButt: 0.22, dUpper: 0.20 },   // (the haymaker and the uppercut for the swordsman's spin and the mutant's leap, 2026-11-26)
   rig: { arm: 'upperarm_r', fore: 'lowerarm_r', hand: 'hand_r',
          armL: 'upperarm_l', foreL: 'lowerarm_l', handL: 'hand_l', head: 'head',
@@ -92275,10 +92307,48 @@ MUT_KINDS.drunk = Object.assign({}, TAV_CAST_COMMON, {
    * what he may now travel at. */
   gaits: { walk: ['walk'], run: ['run'], idle: ['idle', 'idleB', 'idleC'], strafeL: ['walkTurn'], strafeR: ['backTurn'] },
   alias: { idle2: 'idleB', walk2: 'walk', run2: 'run', roar2: 'talk', die2: 'die', back: 'back', calm: 'idle',
-           strafeL: 'walkTurn', strafeR: 'backTurn', dSwipe: 'kSwipe', dHay: 'kPunch' },
+           strafeL: 'walkTurn', strafeR: 'backTurn', dSwipe: 'dSwipe2' },   // (his own copies, aimed at their contact: `tools/ntar_moves.py` STRIKE_ALIGN)
   provoke: tavProvoke,
   voice: { f: 0.78, growl: 1.35, rasp: 1.25, throat: 'bellow' },
 });
+/* AND EACH BLOW IS THROWN FROM WHERE IT REACHES YOU (2026-11-26, the owner: "make wong and the drunks hits connect better visually its
+ * bad"). The stand-offs above were written by hand, per swing, for clips they were not measured on. Like the farmers' (`farmReachSet`):
+ * once his clips are in, each of his swings is posed at its contact frame on HIS body and the striking end (the hand, the foot, the
+ * head of a headbutt — `A.limbs`, `A.plain`) is read in his own frame; he stops where that end arrives `TAV_REACH_GAP` short of your
+ * eye (a foot, which lands under the picture, a little further). How a blow is scored is untouched. */
+const TAV_REACH_GAP = { hand: 0.24, foot: 0.34, head: 0.22 }, TAV_STOP_MIN = 0.78;
+function tavReachSet(u) {
+  if (u.tavReachDone || !u.mixer || !u.clips || !u.atk || !u.model) return;
+  const R = u.kind.rig || {}, bone = (n) => { let f = null; if (n) u.model.traverse((o) => { if (!f && o.isBone && o.name === n) f = o; }); return f; };
+  const hand = bone(R.hand), handL = bone(R.handL), toe = bone(R.limbs && R.limbs[0] && R.limbs[0][3]), head = bone(R.head);
+  if (!hand || !toe) return;
+  const clipOf = (k) => { const A = u.atk[k]; return u.clips[k] || (A && A.clip && u.clips[A.clip]) || (u.kind.alias && u.clips[u.kind.alias[k]]); };
+  for (const k in u.atk) if (u.atk[k].hit > 0.05 && !clipOf(k)) return;        // (a clip still to be retargeted: `knightMovesLate` — next frame)
+  u.tavReachDone = true;
+  const saved = [];
+  for (const k in u.clips) { const a = u.clips[k]; saved.push([a, a.time, a.enabled, a.paused, a.getEffectiveWeight(), a.isRunning() || u.mixer._isActiveAction(a)]); }
+  const rot = u.model.rotation.y, inv = new THREE.Matrix4(), v = new THREE.Vector3(), out = {};
+  for (const k in u.atk) {
+    const A = u.atk[k], a = clipOf(k);
+    if (!a || !(A.hit > 0.05) || A.minDist || A.hold) continue;                   // (a leap is thrown from its own distance)
+    const end = A.plain ? head : (A.limbs || [0]).includes(2) ? toe : (A.limbs || [0]).includes(1) && !(A.limbs || []).includes(0) ? handL : hand;
+    if (!end) continue;
+    for (const x of Object.values(u.clips)) { x.stop(); x.enabled = false; x.setEffectiveWeight(0); }
+    a.reset(); a.play(); a.enabled = true; a.setEffectiveWeight(1); a.paused = true; u.model.rotation.y = 0;
+    a.time = a.getClip().duration * A.hit; u.mixer.update(0); u.g.updateMatrixWorld(true);
+    inv.copy(u.g.matrixWorld).invert(); end.getWorldPosition(v).applyMatrix4(inv);
+    if (end === hand && handL && (A.limbs || []).includes(1)) { const vl = handL.getWorldPosition(new THREE.Vector3()).applyMatrix4(inv); if (vl.z > v.z) v.copy(vl); }   // (a two-handed blow lands with whichever hand is out in front: the drunk's swipe is his left)
+    const gap = end === toe ? TAV_REACH_GAP.foot : end === head ? TAV_REACH_GAP.head : TAV_REACH_GAP.hand;
+    if (!(v.z > 0.15)) continue;                                                // (an end not out in front at the contact: left as written)
+    A.stop = Math.max(TAV_STOP_MIN, v.z + gap); A.reach = A.stop + 0.45;
+    out[k] = +A.stop.toFixed(2);
+    a.stop(); a.enabled = false; a.setEffectiveWeight(0);
+  }
+  for (const [a, t, en, pa, wt, run] of saved) { if (run) a.play(); a.time = t; a.enabled = en; a.paused = pa; a.setEffectiveWeight(wt); }
+  u.model.rotation.y = rot; u.mixer.update(0);
+  const rs = Object.values(u.atk).filter((A) => !A.minDist).map((A) => A.reach); if (rs.length) u.maxReach = Math.max(...rs);
+  u.tavReachZ = out;
+}
 MUT_KINDS.orc = Object.assign({}, TAV_CAST_COMMON, {
   glb: 'assets/orc.glb', faceFix: 0,
   h: 2.15, hp: 24, speedK: 0.80, aggr: 2.20, chainMax: 3, poise: 10, block: 0.30,
@@ -120259,16 +120329,17 @@ function tavClear(x, z, dx, dz, len, feet) {
  * -19.5). */
 const TAV_G = { cell: 0.35, body: 0.60, x0: -19.6, z0: -12.6, x1: 0.6, z1: 8.6, w: 0, h: 0, free: null, dirty: true };
 const TAV_DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-function tavGrid() {
-  if (TAV_G.free && !TAV_G.dirty) return TAV_G;
-  const C = TAV_G.cell, fy = TAV_Y + TAV_FLOOR;
-  TAV_G.w = Math.ceil((TAV_G.x1 - TAV_G.x0) / C) + 1;
-  TAV_G.h = Math.ceil((TAV_G.z1 - TAV_G.z0) / C) + 1;
-  const free = new Uint8Array(TAV_G.w * TAV_G.h);
-  for (let i = 0; i < TAV_G.w; i++) for (let j = 0; j < TAV_G.h; j++) {
+/* AND A CHANGED FLOOR IS RE-READ A SLICE A FRAME (2026-11-26, the owner: "fix the window lag when kicking out"). Measured,
+ * `tools/tavkick.js` + `tools/cpuprof.py`: the worst frame of a kick out of the window was this grid rebuilt whole, 9-18 ms in one
+ * frame (`keepWallNear` on 2,400 cells), and every smashed table, chair and moved plank asks for it again mid-fight. Now the first
+ * build is on your first frame in the hall (behind the entry's black, `tavGridTick`), and a rebuild runs about a millisecond a
+ * frame while the old grid goes on serving; the new one replaces it whole when it is done. */
+function tavGridCell(free, k) {
+  const C = TAV_G.cell, fy = TAV_Y + TAV_FLOOR, i = k % TAV_G.w, j = (k - i) / TAV_G.w;
+  {
     const x = TAV_X + TAV_G.x0 + i * C, z = TAV_Z + TAV_G.z0 + j * C;
     const st = keepStandAt(x, z, fy + 0.35, 0.55, TAV_SITE);
-    if (!st || Math.abs(st.f - fy) > 0.7) continue;
+    if (!st || Math.abs(st.f - fy) > 0.7) return;
     /* AND THE GRID HAS TO BE THE BODY'S, NOT A POINT'S. At 0.34 the route
      * threaded gaps a fighter is too wide for: measured, the drunk won the
      * bar fight, set off after the player, and ground to a halt 7.1 m short
@@ -120277,9 +120348,30 @@ function tavGrid() {
      * because the progress test just re-issues it. Asked at the body's own
      * width the arena is 1,279 cells of 1,486 and every one of them can be
      * stood in. */
-    if (keepWallNear(x, z, TAV_G.body, st.f + 0.40, st.f + 1.55, TAV_SITE)) continue;
+    if (keepWallNear(x, z, TAV_G.body, st.f + 0.40, st.f + 1.55, TAV_SITE)) return;
     free[j * TAV_G.w + i] = 1;
   }
+}
+function tavGridFill(J, ms) {
+  const t0 = performance.now();
+  while (J.k < J.free.length) { tavGridCell(J.free, J.k++); if ((J.k & 15) === 0 && performance.now() - t0 > ms) return false; }
+  return true;
+}
+function tavGrid() {
+  if (TAV_G.free) return TAV_G;                       // (dirty: the old grid serves until `tavGridTick` has the new one)
+  TAV_G.w = Math.ceil((TAV_G.x1 - TAV_G.x0) / TAV_G.cell) + 1;
+  TAV_G.h = Math.ceil((TAV_G.z1 - TAV_G.z0) / TAV_G.cell) + 1;
+  const J = { free: new Uint8Array(TAV_G.w * TAV_G.h), k: 0 };
+  tavGridFill(J, Infinity); tavGridLabel(J.free); TAV_G.dirty = false; TAV_G.job = null;
+  return TAV_G;
+}
+function tavGridTick() {
+  if (!inTavern || !tavBuilt) return;
+  if (!TAV_G.free) { tavGrid(); return; }
+  if (TAV_G.dirty) { TAV_G.job = { free: new Uint8Array(TAV_G.w * TAV_G.h), k: 0 }; TAV_G.dirty = false; }   // (changed again mid-rebuild: start over)
+  if (TAV_G.job && tavGridFill(TAV_G.job, 1.0)) { tavGridLabel(TAV_G.job.free); TAV_G.job = null; tavPropEpoch++; }
+}
+function tavGridLabel(free) {
   /* AND THE FLOOR IS NOT ALL ONE PIECE. Flooded from Wong's own spot behind
    * the counter, 17 of the hall's 1,304 walkable cells are reachable: the
    * barman's pocket is 0.65 m by 3 and shut on every side, which is the
@@ -120307,8 +120399,7 @@ function tavGrid() {
     L++;
   }
   for (let k = 0; k < free.length; k++) if (lab[k] === best) main[k] = 1;
-  TAV_G.free = free; TAV_G.main = main; TAV_G.mainN = bestN; TAV_G.dirty = false;
-  return TAV_G;
+  TAV_G.free = free; TAV_G.main = main; TAV_G.mainN = bestN;
 }
 // the nearest cell of the arena to a cell that is not on it
 function tavMainNear(G, i0, j0) {

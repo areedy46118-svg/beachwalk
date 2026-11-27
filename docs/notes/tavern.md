@@ -1349,3 +1349,40 @@ over the balcony you can run and kick off" — "i meant farmer". This supersedes
   out through a broken bay, dead at 1.70 s.
 - Tools added: `tools/tavlook.js` (`&kill=1`), `tools/tavyard.js`, `tools/keepland.js`, `tools/keepwin.js`, `tools/keepparts.js`,
   `tools/keepsides.js`, `tools/keepface.js`, `tools/keepray.js`.
+
+## 2026-11-26 (night) — the man at the railing goes out limp; the kick-out's hitch; the view's light; Wong's and the drunk's blows
+"fix the window lag when kicking out. make him actyally fall like a ragdoll out the window he slides down on his feet just have him
+naturally hit the ground. make wong and the drunks hits connect better visually its bad", and a still looking down past the broken
+railing: "fix this laggy ass part too and the textures here". Probes: `tools/tavkick.js` (a real Q press on him: &case=behind|angle|
+side, the frame's real time, his posture every half second), `tools/tavout.js` (the outside weighed, shown/hidden, `&edge=1` stills
+from the broken bay), `tools/tavslide.js` (a 40 s fight: per clip, body speed, the planted toe's skate in the world and in HIS frame,
+his turning; the swings, hurts, contact gap, `u.tavReachZ`), `tools/tavblows.js` (each blow posed at cock / contact / after, and
+`AIM`: each end's bearing from his hips at the contact, 0 = straight ahead), `tools/cpuprof.py` (see harness.md).
+- **HE WAS HELD IN ONE PIECE.** `kickRagStart` keeps a kicked man braced (`r.holdI`) so he can get up; out of the window his head stayed
+  1.0-1.3 m over his feet the whole 2.5 s fall. `tavWindowThrow` lets the hold go and throws his top harder than his feet (0.55 →
+  1.3 of the throw by height): measured, he is head-down by 1 s (head 0.3-0.6 m UNDER his feet) and lands as a body.
+- **THE HITCH WAS THE ROUTE GRID, NOT THE VIEW.** The keep's outside is 50k faces, 0.4-1.1 ms. The worst frame of a kick-out (16-18
+  ms) was `tavGrid` rebuilt whole in one frame (`keepWallNear` × 2,400 cells), and every smashed table/chair and moved plank asks for
+  it again. `tavGridTick` (in `updateTavern`): the first build on your first frame in the hall (behind the entry's black), a rebuild
+  ~1 ms a frame while the old grid serves (`TAV_G.job`). Worst kick-out frame now 9.7-12 ms. A side-kick on him (`case=side`) does
+  NOT throw him (`tavWindowAhead` wants the kick toward the opening) — he turns and fights; left as it was.
+- **The outside's copies were never culled** (`frustumCulled = false` on all of them): now culled; the sky and the sea, which surround
+  you, are not. **Its light:** under one flat tint the rock was a teal-black shape and the pale stone a white smear; each copy's
+  geometry now carries the moon baked into vertex colours (`shade`: 0.55 fill + 0.70 · n·`MOON_DIR` in the keep's frame + 0.28 sky).
+  Better, not transformed — the rock's own map is dark; if the owner still dislikes it, the next step is the keep's own lit
+  materials with a light of their own in the hall's layer.
+- **WONG'S AND THE DRUNK'S BLOWS WERE AIMED SIDEWAYS BY THE PACKER.** De-yawing a strike throws away the turn that aims it: at the
+  contact Wong's front kick and crescent pointed 52° off him, the uppercut 64-68°. `tools/ntar_moves.py` `STRIKE_ALIGN`: the take
+  keeps its own turn and the body is eased round so the striking end (its CONTACT bone) points straight ahead at the contact frame,
+  unwound with the take's end turn after; `STRIKE_TRIM` (degrees, measured in the game with `AIM` after a first pass) takes up the
+  game's own per-take facing fix (`fixQ`: these three downloads rest 52-68° from Mixamo's). Every blow now 0-8° off ahead at
+  contact. The drunk has his own aimed copies of the haymaker (`dHay`, Mutant Punch, contact 0.243) and swipe (`dSwipe2`, 0.508;
+  `dSwipe` aliases it) — the knight's are de-yawed and stay his. The flying kick was tried and put back: its fastest foot is the
+  take-off.
+- **AND THEY STOP WHERE THEY REACH YOU** (`tavReachSet`, `kind.reachSet`): each swing posed at its contact on HIS body, the striking
+  end read in his frame, `stop` = its reach + 0.24 (hand) / 0.34 (foot) / 0.22 (head), min 0.78, `reach` = stop + 0.45; a two-handed
+  blow takes whichever hand is further out. No lunges on them (none of these takes steps into its blow), `noSkate`, the au 0.88 m.
+  40 s each, a player standing still: Wong 13 hurts (0 on the hand-set stand-offs), the drunk 25; contact median 0.57 / 0.50 m (a
+  kick lands at body height, so ~0.6 m from the eye is right); body speed through every blow 0.00-0.01 m/s (Wong's punch dragged
+  him 3.6 m/s before). The PLANTED TOE still moves 0.6-0.8 m/s in his own frame through the kicks — the take's hips travel is not
+  baked (the packer's rule for every set) — a foot lock is the next step if it still reads as sliding.

@@ -160,8 +160,11 @@ DRUNK_CLIPS = [
     ('run backward arc right',    'runArcR',  'the run, backwards and round', 'Male Drunk Pack'),
     # (2026-11-26: the same request. His spin was a swordsman's 360 with the arm out and his leap a mutant's; a drunk swings wide and
     # low: the haymaker is the knight's Mutant Punch, aliased, and this uppercut is his own.
-    # NTAR_SRC="$HOME/Desktop/BEACHWALK ASSETS" NTAR_ONLY=dUpper blender -b -P tools/ntar_moves.py -- drunk)
+    # NTAR_SRC="$HOME/Desktop/BEACHWALK ASSETS" NTAR_ONLY=dUpper,dHay,dSwipe2 blender -b -P tools/ntar_moves.py -- drunk)
     ('Surprise Uppercut',         'dUpper',   'the uppercut, off a dip', ''),
+    # (and his haymaker and swipe as his own copies, aimed at their contact — `STRIKE_ALIGN`; the knight's are de-yawed)
+    ('Mutant Punch',              'dHay',     'the haymaker, overarm', ''),
+    ('Mutant Swiping',            'dSwipe2',  'the swipe across', ''),
 ]
 # ---- AND THE ORC AT THE BAR CARRIES THE GREAT SWORD PACK WHOLE. Oscar
 # Creativo's orc arrives with a two-handed sword weighted to a bone under his
@@ -500,10 +503,12 @@ if SET in ('wong', 'drunk'):
     # fight wants — the last second, which travels 0.88 m SIDEWAYS and is the
     # au itself. That is a dodge: it leaves the line rather than stepping
     # back down it.
-    WINDOW = {'wFlyC': (0, 30), 'ginga': (84, 118), 'mc1': (24, 142)}
-    # (the four unarmed blows of 2026-11-26: their contact is the frame the striking end moves fastest, either hand or either foot)
-    for _c in ('wUpper', 'wCres', 'wKickF', 'dUpper'):
-        CONTACT[_c] = ('LeftHand', 'RightHand', 'LeftToeBase', 'RightToeBase')   # (mc1: its first 0.8 s is a settle before the raise — a man standing about before the first blow, 2026-11-23)
+    WINDOW = {'wFlyC': (0, 30), 'ginga': (84, 118), 'mc1': (24, 142)}   # (mc1: its first 0.8 s is a settle before the raise — a man standing about before the first blow, 2026-11-23)
+    # (the unarmed blows of 2026-11-26: their contact is the frame the striking end moves fastest, either hand or either foot)
+    for _c in ('wUpper', 'wCres', 'wKickF', 'dUpper', 'dHay', 'dSwipe2'):
+        CONTACT[_c] = ('LeftHand', 'RightHand', 'LeftToeBase', 'RightToeBase')
+    STRIKE_ALIGN = {'wUpper', 'wCres', 'wKickF', 'dUpper', 'dHay', 'dSwipe2'}   # (not the flying kick: its fastest foot is the take-off, frame 1, not the kick — tried and put back)
+    STRIKE_TRIM = {'wUpper': -64, 'wCres': 52, 'wKickF': 52, 'dUpper': -68}
     # AND A BODY THAT LEAVES THE VERTICAL KEEPS ITS OWN TURN — `knockOut`'s
     # lesson: the au takes him onto his hands, and a world-Y de-yaw applied
     # to a horizontal body is a roll about its own length.
@@ -766,6 +771,15 @@ if SET == 'scourge':
 if 'HIP_FROM_TAKE' not in globals(): HIP_FROM_TAKE = set()
 if 'TAKE_FROM_ACTION' not in globals(): TAKE_FROM_ACTION = False
 if 'RAMP_YAW' not in globals(): RAMP_YAW = set()
+# ---- A STRIKE AIMED AT ITS CONTACT (2026-11-26, the owner: "make wong and the drunks hits connect better visually"). De-yawing a
+# blow throws away the turn that aims it: Wong's front kick went out 60 degrees to his side, the uppercut and the crescent landed
+# with the limb out beside him. A clip named here keeps its own turn, and the whole body is eased round by the angle that puts the
+# striking end (its CONTACT bone, fastest at the contact) straight ahead of his hips AT the contact frame — none at the first
+# frame, all of it at the contact, unwound with whatever turn the take ends on over the rest. The game aims +Z at you.
+if 'STRIKE_ALIGN' not in globals(): STRIKE_ALIGN = set()
+# (and a trim, degrees, measured IN THE GAME after the first pass, `tools/tavblows.js` AIM: the game turns each take by the yaw between
+# its rest hips and Mixamo's (`fixQ`), which differs by download — these three came out of one 52-68 degrees off ahead)
+if 'STRIKE_TRIM' not in globals(): STRIKE_TRIM = {}
 # A clip whose hips are measured from its LAST frame, not its first: it
 # begins on the floor and ends standing, so the stance is at the END.
 if 'HIP_ZERO_END' not in globals(): HIP_ZERO_END = {'getUp'}
@@ -991,7 +1005,7 @@ def main():
         y0 = hipyaw(0)
         drift = math.degrees((hipyaw(end) - y0 + math.pi) % (2 * math.pi) - math.pi)
         swing = max(abs(math.degrees((hipyaw(i) - y0 + math.pi) % (2 * math.pi) - math.pi)) for i in range(end + 1))
-        flat = name not in KEEP_YAW and (name in FORCE_FLAT_YAW or abs(drift) > 40)
+        flat = name not in KEEP_YAW and name not in STRIKE_ALIGN and (name in FORCE_FLAT_YAW or abs(drift) > 40)
         log('   root yaw: swings to %.0f deg, ends %+.0f deg  -> %s' % (swing, drift, 'DE-YAWED' if flat else 'kept'))
 
         # ---- rest, and every frame, in three's frame
@@ -1075,6 +1089,34 @@ def main():
             log('   GLB: D re-measured from the bind (mc1); standing hips %.2f, the stance\'s %.2f' % (stand, restPos['Hips'].y))
             hy0 = stand
         endTurn = (hipyaw(end) - y0 + math.pi) % (2 * math.pi) - math.pi
+        alignA, alignI = 0.0, None
+        if name in STRIKE_ALIGN:
+            cb2 = CONTACT.get(name); cb2 = (cb2,) if isinstance(cb2, str) else (cb2 or ())
+            cb2 = [c for c in cb2 if (pref + c) in arm.pose.bones]
+            if cb2:
+                tp2, hp2 = {c: [] for c in cb2}, []
+                for i in range(end + 1):
+                    sc.frame_set(f0 + w0 + i)
+                    for c in cb2: tp2[c].append(CONV @ (MW @ arm.pose.bones[pref + c].matrix).to_translation())
+                    hp2.append(CONV @ (MW @ arm.pose.bones[pref + 'Hips'].matrix).to_translation())
+                b2, i2, c2 = 0, 0, cb2[0]
+                for c in cb2:
+                    for i in range(1, end + 1):
+                        sp = (tp2[c][i] - tp2[c][i - 1]).length
+                        if sp > b2: b2, i2, c2 = sp, i, c
+                dv = tp2[c2][i2] - hp2[i2]
+                if math.hypot(dv.x, dv.z) > 0.12:
+                    alignA, alignI = -math.atan2(dv.x, dv.z) + math.radians(STRIKE_TRIM.get(name, 0)), i2
+                log('   strike aim: %s at frame %d, %.0f deg off ahead -> turned %+.0f deg at the contact, the end\'s %+.0f deg unwound'
+                    % (c2, i2, math.degrees(math.atan2(dv.x, dv.z)), math.degrees(alignA), math.degrees(endTurn)))
+
+        def alignAt(i):
+            if alignI is None: return 0.0
+            def sm(t):
+                t = max(0.0, min(1.0, t)); return t * t * (3 - 2 * t)
+            if i <= alignI: return alignA * sm(i / max(1, alignI))
+            u = sm((i - alignI) / max(1, end - alignI))
+            return alignA * (1 - u) - endTurn * u
 
         def ramp(i):
             t = max(0.0, min(1.0, (i / max(1, end) - 0.5) / 0.5))
@@ -1082,6 +1124,7 @@ def main():
         for i in range(end + 1):
             # de-yaw about the hips' start, if this clip turns and should not
             undo = Quaternion((0, 1, 0), -(hipyaw(i) - y0)) if flat else Quaternion()
+            if name in STRIKE_ALIGN: undo = Quaternion((0, 1, 0), alignAt(i))
             if not flat and name in RAMP_YAW:
                 undo = Quaternion((0, 1, 0), -endTurn * ramp(i))
             for b in bones:

@@ -21,8 +21,13 @@ const pose = (name, f) => {
   u.mixer.update(0); u.g.updateMatrixWorld(true);
   return a;
 };
+const RG = u.kind.rig, bn = (n) => { let f = null; u.model.traverse((o) => { if (!f && o.isBone && o.name === n) f = o; }); return f; };
+const ends = { hand: bn(RG.hand), handL: bn(RG.handL), toe: bn(RG.limbs[0][3]), head: bn(RG.head) }, inv = new T.Matrix4(), vv = new T.Vector3(), hp = new T.Vector3();
+const hipsB = (() => { let f = null; u.model.traverse((o) => { if (!f && o.isBone && /hip|pelvis/i.test(o.name)) f = o; }); return f; })();
 for (const k of keys) {
   const A = b.MUT_ATTACKS[k], hit = A ? A.hit : 0.5;
+  if (pose(k, hit)) { u.g.updateMatrixWorld(true); inv.copy(u.g.matrixWorld).invert(); hipsB.getWorldPosition(hp).applyMatrix4(inv);
+    log('AIM', k, Object.entries(ends).map(([n, e]) => { e.getWorldPosition(vv).applyMatrix4(inv); vv.sub(hp); return n + ' ' + (Math.atan2(vv.x, vv.z) * 180 / Math.PI).toFixed(0) + 'deg ' + Math.hypot(vv.x, vv.z).toFixed(2) + 'm'; }).join(' | ')); }
   for (const [tag, f] of [['cock', Math.max(0, hit - 0.18)], ['hit', hit], ['after', Math.min(0.98, hit + 0.15)]]) {
     if (!pose(k, f)) { log('NO CLIP', k); break; }
     C.fov = 60; C.updateProjectionMatrix();
