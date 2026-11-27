@@ -4159,3 +4159,18 @@ A still of a farmer frozen sitting up at an angle by the pavilion's gate: "THE B
 measured (`tools/gatefarm.js`, `body t` lines): asleep with his head 0.56 m over his hips, propped on his own bent legs for good. It
 now asks `lying` too; a body not yet lying goes on to the limp and the ease down already there, and sleeps when it lies (head 0.20,
 hips 0.24 after).
+
+## 2026-11-27 — the farmers' ragdolls against Half-Life 2: what was measured, the shove
+"make the farmers ragdoll physics like half life 2". `tools/ragphys.js` (open beach, a fresh farmer per death — a light katana cut, a
+heavy mace, a kick that kills — `&n=` each, `&walk=1` then walks through each settled body by the real W key): knees and elbows bent
+the wrong way (against the pelvis's forward, and the knee against its own foot's way), the slide once down, the time to stillness,
+jitter after, lying, travel; and walked through, how far he moved and the fastest joint.
+- **The solver is already Source's shape** (particles, distance constraints, a braced trunk, bend minimums, self-collision, weights
+  by part, `RAG_G` 17.5 ≈ HL2's 15.2). Lying flat at the end, still in 1-3.4 s, slide once down 0.1 m (cuts) to 0.5-0.85 m (mace, kicks).
+- **TRIED AND BACKED OUT: a knee hinge** (knee kept in front of the hip–ankle line by its own foot's way, it 0.66 forward, hip and
+  ankle 0.17 back). Measured by the same foot rule, knees at rest went 0-0.09 m wrong → 0.18-0.24: moving the knee and ankle turns the
+  foot that defines "front", and it fed on itself. A real hinge needs the knee's own axis carried from the bind, not read off the toe.
+- **YOU SHOVE WHAT YOU WALK INTO** (`updateMutRagdoll`, before the solve): a dead body's joints inside your width (`PLAYER_R` + its
+  radius), feet to waist, are put out of you along the line from you, up to your stride's step a frame, with 0.15 of your walk left on
+  them as speed; asleep, the body is woken and settles again. Walked through at a walk: hips 0.7-0.8 m (1.5×/0.25 gave 0.9-1.2, too
+  light), a joint to 1.1 m, the fastest joint 3 m/s (nothing flung), asleep again after. `r.shoves` counts.

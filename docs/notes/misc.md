@@ -203,3 +203,45 @@ that already stood you up crouches you again (`state().crouching` now says which
 - **The slide kick, your speed behind a kick** (`KICK.air` in a slide; `KICK.mom`): a kick in a slide lands as a jump kick (85 %
   down); a kick at more than a run throws the man further — ×1 at the run to ×1.6 at 9 m/s, the hook's carry counted. Only the
   throw (`kickRagStart`'s `far`, `killFling`): what it hurts and how often it downs are the kick's own. Bosses unchanged.
+
+## 2026-11-27 — movement feel: the jump's shape, the landing, air braking, landed speed, the slide's cap, the kick and your momentum
+The owner: "do one more pass just to improve movement smoothness and feel. the jump and momentum. see what good physics based games and
+doing. make the kick feel good in relation to this." Measured with `tools/movefeel.js` (open beach, on the clock, real keys; nine
+tests). PROBE TRAP: speed read off the camera's position carries the SHAKE (trauma moves `camera.position`) and reads as a stutter
+that is not there — the probe reads the walk's own velocity (`__bw.velS()`); `__bw.landS()` is the landing spring.
+What the genre does that we now do too: a hang at the top and a harder fall (most platformers; not Quake/Source, whose jump is a
+plain parabola), air control that can brake (Quake/Source), speed kept through a landing (Titanfall/Apex slide-hops) with a cap on
+what chaining gains, a kick that takes your speed and gives it to the man (Dark Messiah, Dying Light's dropkick).
+- **Jump height is FIXED on purpose** (tap = hold, 0.789 m sampled): every ledge is laid out to it, and first-person games keep the
+  impulse fixed. No variable-height jump.
+- **The jump's shape** (`GRAV_HANG` 0.6 while falling slower than `GRAV_HANG_V` 1.0 m/s, then `GRAV_FALL` 1.38; the rise untouched):
+  same top, same 0.60 s in the air for a level jump (so gaps are unchanged: a running jump still lands 3.78 m on), but the top hangs
+  (height every 4 frames 0.79 0.78 0.72 0.57 0.33; before 0.79 0.77 0.68 0.51 0.26) and you land at 5.1 m/s, not 4.7. A long fall
+  is faster (4.5 m: 0.78 -> 0.72 s). There is no fall damage. Off while the hook pulls (`HK.st === 'zip'`: its `vy` pre-adds
+  `P_GRAV * dt`, so the two must stay the same number) and in the deep.
+- **The landing is a spring** (`landDip`/`landV`, `LAND_K` 200, `LAND_D` 17.5; struck with 0.54 of the landing speed, max 3.6): the
+  lens used to jump 0.108 m down in the one landing frame and ease back. Now it sinks to 0.075 m over 4 frames and comes back with
+  0.004 m of rebound. Any landing over 1.2 m/s, not only hard ones. The old instant `landDip = Math.max(...)` setters (the stomp, the
+  slam) still work: the spring brings them home.
+- **Air braking**: the air branch put your speed back whatever the keys said, so S held in the air did nothing (5.7 m/s to the
+  landing). Now the more the keys oppose your motion the less is put back: S held from take-off leaves 2.5 m/s after 0.3 s. A turn
+  across your way still keeps all of it.
+- **Landed speed bleeds, it is not snatched** (`momKeep`, `MOM_BLEED` 2.0/s): set by a landing only; while you keep pressing within
+  60° of your motion, speed over what your keys ask decays by half in ~0.35 s instead of at the ground's grip (half in 0.1 s). Cleared
+  by letting go, turning away, a slide or a dodge step — so a step or a blow's shove is not stretched.
+- **The slide's boost runs out** (`SLIDE.top` 1.75 runs): it was 1.18× of whatever you had, so slide → jump → slide on landing grew
+  without limit (6.7 7.5 8.2 9.1 10.0 11.2 m/s, camera-measured, and on up). The gain now fades to nothing at 1.75× the run:
+  5.7 6.3 6.8 7.2 7.6 7.8 8.0, levelling off. A speed already over that (the hook's) is kept, not boosted.
+- **Speed opens the lens** (`speedFov`, `SPEED_FOV` 5°): nothing at a run, 5° at twice it, eased at 4/s.
+- **A kick at nothing no longer stops the clock at a run**: a whiff meets the sand a stride on (by design) and took the blade's
+  hitstop plus `kickFeel`'s hold and its 0.9 m/s step back — three frozen frames mid-run. At over a walk, or in the air, the scuff
+  holds nothing and steps you nowhere (`KICK.scuff`); the puff and the sound stay. Measured: speed flat at 5.7 through the kick.
+- **The kick spends your speed into the man** (`KICK.along`, `KICK_GIVE` 0.75, `KICK_SPEND` 0.62): his shove is 4.6 + 0.75 × your
+  speed along the kick (at a run he went 2.55 m, was 1.80), and 62 % of that speed leaves you on the frame it lands (5.5 -> 0.9
+  m/s, back to a run in ~0.5 s) — before, you ran into him a third of a second later. In the air you come off him at ~1.9 m/s
+  forward while the pogo lifts you. Bosses' shove unchanged (1.1). Damage, stun and knockdown odds are untouched.
+- **You go with the kick** (`KICK_LUNGE` 1.6): thrown in the air it carries you at what you look at, up to 1.6 m/s more and never
+  past 1.1 runs; on your feet, stood or walking (under 2.2 m/s), 1.2 m/s forward that the grip takes back in a hand's width.
+  The air chain (`tools/gatefarm.js &fight=1&air=1`): 5 kicks, 3 bounces (was 2), feet to 2.95 m (was 1.97).
+- Unchanged, checked: `tools/momentum.js` (jump 6.1 held, slide 6.8 -> 5.1, the hook's carry 10.4 -> 8.1), start/stop (0.33 s each
+  way), the 17 music scenarios.

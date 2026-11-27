@@ -1073,6 +1073,13 @@ let dmgTakeK = () => 1;
 const JUMP_V = 5.0, JUMP_V_UP = 5.45;
 let jumpUp = false;   // (bought from the trader: `TRADER_STOCK.jumpUp` 0, which is how a save brings it back)
 const P_GRAV = 15;
+/* THE JUMP'S SHAPE (2026-11-27, the owner: "improve movement smoothness and feel. the jump and momentum"). It was one gravity up and
+ * down: a parabola, 0.30 s each way. The rise is untouched — the same height to the millimetre, every ledge in the game is laid out
+ * to it — but the top HANGS a moment (`GRAV_HANG` of the pull while you are falling slower than `GRAV_HANG_V`) and then you come
+ * down harder (`GRAV_FALL`): the time a level jump is in the air is the same within a frame (0.667 -> 0.674 s), so a gap you could
+ * clear you still clear, and a kick thrown at the top has longer to land. Not while the hook has you (its pull is its own), nor
+ * in the deep. */
+const GRAV_HANG = 0.6, GRAV_HANG_V = 1.0, GRAV_FALL = 1.38;
 const MOON_DIR = new THREE.Vector3(-0.28, 0.12, -1).normalize();
 const HALF_PI = Math.PI / 2 - 0.01;
 
@@ -22679,6 +22686,7 @@ function stampScar(hit, surface) {
  * a real knock, the blade jars, and the thing you struck goes white for the
  * frozen frames. Sand gets none of this; sand is not a hit. */
 let fovKick = 0;
+let speedFov = 0; const SPEED_FOV = 5;
 function hitConnect(P, k) {
   if (inCat) catNoiseAt(camera.position.x, camera.position.z, 26);   // and a blade on stone rings through the whole place
   if (equipped === militaryItem && P >= 0.5) playSample('milHeavy', 1.0, 0.04);   // a heavy, on steel
@@ -30134,6 +30142,9 @@ function updateDialogCam(dt) {
    * has to help, and a fifth of the field of view is about what a pistol's
    * own sight picture buys. It comes off the setting rather than off a
    * constant, so it is the same zoom at any field of view the owner picks. */
+  /* (and it opens a little with your speed: nothing at a run, `SPEED_FOV` degrees at twice it — a slide's jump, the hook's carry) */
+  { const run = RUN_SPEED * settings.walkSpeed, hsF = Math.hypot(velocity.x + (HK.carry ? HK.carry.x : 0), velocity.z + (HK.carry ? HK.carry.z : 0));
+    speedFov += (THREE.MathUtils.clamp((hsF - run * 1.12) / (run * 0.9), 0, 1) * SPEED_FOV - speedFov) * Math.min(1, dt * 4); }
   const wantFov = (mutCutFov > 0 ? mutCutFov
     : packCut && packFov > 0 ? packFov
     : tmpCut ? tmpCut.fov
@@ -30147,7 +30158,7 @@ function updateDialogCam(dt) {
     : helmFovK > 0.001 ? THREE.MathUtils.lerp(settings.fov, Math.min(settings.fov, HELM_FOV), helmFovK)
     : wkFovK > 0.001 ? THREE.MathUtils.lerp(settings.fov, Math.min(settings.fov, WK_FOV), wkFovK)
     : crowFovK > 0.001 ? THREE.MathUtils.lerp(settings.fov, Math.min(settings.fov, crowFov), crowFovK)
-    : settings.fov) + fovKick
+    : settings.fov) + fovKick + speedFov
     - settings.fov * (equipped && equipped.shotgun ? SG_ZOOM : MAG_ZOOM) * magAim;
   // and it arrives at a gun's pace, not a conversation's
   const rate = mutCutFov > 0 ? 14 : packCut && packFov > 0 ? 1.6 : tmpCut ? tmpCut.fovRate : keyCut ? 3.2 : crabCut ? 2.2 : thrCut ? (thrCut.fovRate || 4.5) : wbFareCut ? (wbFareCut.fovRate || 1.6) : hjCut && hjCut.fovRate ? hjCut.fovRate : peeking ? 2.6 : magAim > 0.002 ? 13 : crowFovK > 0.001 ? 14 : 3.5;
@@ -30661,8 +30672,20 @@ function loadSamples() {
  * rolled off the kicking leg, a step back off what you kicked when you are on your feet (it pushes you as you push it), and a hold
  * on the frame that grows with the speed you brought into it (`KICK.mom`, the slide's and the hook's carry). */
 function kickFeel(k) {
+  if (KICK.scuff) return;
   const m = THREE.MathUtils.clamp(((KICK.mom || 1) - 1) / 0.6, 0, 1);
-  if (onGround) { camera.getWorldDirection(_kfeelD); _kfeelD.y = 0; if (_kfeelD.lengthSq() > 1e-6) { _kfeelD.normalize(); velocity.addScaledVector(_kfeelD, -1.2 * k); } }
+  /* (AND THE KICK SPENDS YOUR SPEED INTO HIM — 2026-11-27, the owner: "make the kick feel good in relation to this", the momentum.
+   * A kick at a run shoved a man 0.8 m and left you at 6 m/s: you ran into him a third of a second later (your speed 5.3 -> 1.1 in
+   * a frame against his body: `tools/movefeel.js` 7). Now what you bring goes INTO him (`KICK.along`, his shove in `kickMan`) and
+   * out of you: `KICK_SPEND` of your speed along the kick is gone on the frame it lands — on your feet your keys have it back in a
+   * third of a second, behind him; in the air you come off him rising, not through him. Only off a man: the sand takes nothing.) */
+  camera.getWorldDirection(_kfeelD); _kfeelD.y = 0;
+  if (_kfeelD.lengthSq() > 1e-6) {
+    _kfeelD.normalize();
+    const al = KICK.onMan ? Math.max(0, velocity.x * _kfeelD.x + velocity.z * _kfeelD.z) : 0;
+    if (onGround) velocity.addScaledVector(_kfeelD, -1.2 * k - al * KICK_SPEND * Math.min(1, k));
+    else if (KICK.air && al > 0) velocity.addScaledVector(_kfeelD, -al * KICK_SPEND);
+  }
   hitstop = Math.max(hitstop, (0.05 + 0.05 * m) * Math.min(1, k));
   /* (THE AIR KICK THAT LANDS THROWS YOU BACK UP — 2026-11-27, the owner: "MAKE UPON SUCCESSFUL JUMP KICK YOU PROPEL HIGHER TO BE ABLE TO
    * CHAIN KICKS MID AIR UNTIL STAMINA IS OUT". Kicked off him: up at `KICK_POGO` (about 0.9 m more), and the rest of this kick may be cut
@@ -30670,7 +30693,7 @@ function kickFeel(k) {
    * `KICK_STAM`: five, and you are winded and fall.) */
   if (KICK.air && !onGround) { vy = Math.max(vy, KICK_POGO); KICK.cd = 0; KICK.chainOK = true; KICK.chain = KICK_CHAIN; KICK.pogos = (KICK.pogos || 0) + 1; }
 }
-const KICK_POGO = 5.2, KICK_CHAIN = 0.14;
+const KICK_POGO = 5.2, KICK_CHAIN = 0.14, KICK_SPEND = 0.62, KICK_GIVE = 0.75, KICK_LUNGE = 1.6;
 const _kfeelD = new THREE.Vector3();
 function sfxKickHit(k = 1) {
   if (KICK && KICK.on && !KICK.felt) { KICK.felt = true; try { kickFeel(k); } catch (e) {} }
@@ -32572,7 +32595,13 @@ let trauma = 0;                     // 0..1, decays; shake is trauma squared
 let hitstop = 0;                    // seconds of near-frozen time after a hit
 let hitstopFrame = false;           // this frame's dt was scaled by it (true on the frame it drains to zero, too)
 let killSlow = 0; const KILL_SLOW = 0.24;   // after a heavy that kills, the world's slow beat (`killMutant`; 0.36 at a third of speed until 2026-11-24, "laggy")
-let landDip = 0;                    // camera sink on landing, eased back out
+let landDip = 0, landV = 0;         // camera sink on landing: a spring (`LAND_K`), struck by the landing's speed
+/* (THE LANDING IS A SPRING — 2026-11-27, "movement smoothness": it put the lens 0.11 m down in the ONE frame you landed and eased it
+ * back, a step you could see. Now the landing's speed goes into a spring: the eye keeps going down a moment as your knees take it
+ * (0.08 m after a jump, more off a ledge), comes back and settles, nothing jumping. Any landing, not only a hard one. `momKeep`:
+ * you came down faster than your keys ask — see the ground's grip in `update`.) */
+const LAND_K = 200, LAND_D = 17.5, MOM_BLEED = 2.0;
+let momKeep = false;
 let coyote = 0, jumpBuf = 0;        // late-jump grace / early-press memory
 const COYOTE_TIME = 0.12, JUMP_BUFFER = 0.14;
 /* MOMENTUM (2026-11-26, the owner: "keep momentum like half life with the hooks boost so its fun to move around and slide into jump
@@ -32587,12 +32616,17 @@ let groundT = 0;
  * little. Jump out of it and the speed is the jump's (above). A kick in it is a slide kick: low, and it lands like a jump kick
  * (`kickStrike`). It costs a little breath (`SLIDE.stam`) and not again for `SLIDE.cd`. */
 const _slT = new THREE.Vector3();
-const SLIDE = { t: -1, cd: 0, sp: 0, dir: new THREE.Vector3(), dur: 0.75, boost: 1.18, min: 6.6, stam: 0.08, cdT: 0.55, steer: 1.6 };
+const SLIDE = { t: -1, cd: 0, sp: 0, dir: new THREE.Vector3(), dur: 0.75, boost: 1.18, min: 6.6, stam: 0.08, cdT: 0.55, steer: 1.6, top: 1.75 };
 function slideStart() {
   const hs = Math.hypot(velocity.x, velocity.z);
   if (SLIDE.t >= 0 || SLIDE.cd > 0 || !onGround || hs < WALK_SPEED * 1.15 || exhausted || stamina < SLIDE.stam || frozen()) return false;
   stamina = Math.max(0, stamina - SLIDE.stam);
-  SLIDE.t = 0; SLIDE.sp = Math.max(hs * SLIDE.boost, SLIDE.min); SLIDE.dir.set(velocity.x / hs, 0, velocity.z / hs);
+  /* (THE BOOST RUNS OUT — 2026-11-27: it was 1.18x of whatever you had, every time, so a slide, a jump out of it and a slide on
+   * landing went 6.7, 7.5, 8.2, 9.1, 10.0, 11.2 m/s and on up with no end: measured, `tools/movefeel.js` 9. The gain now fades from
+   * all of it at a run to none at `SLIDE.top` runs (10.7 m/s): slide-hops build to about that and hold it; a speed over it —
+   * the hook's — is kept, not added to.) */
+  const run = RUN_SPEED * settings.walkSpeed * speedK(), gain = THREE.MathUtils.clamp((run * SLIDE.top - hs) / (run * (SLIDE.top - 1)), 0, 1);
+  SLIDE.t = 0; SLIDE.sp = Math.max(hs * (1 + (SLIDE.boost - 1) * gain), SLIDE.min); SLIDE.dir.set(velocity.x / hs, 0, velocity.z / hs);
   fovKick = Math.max(fovKick, 3.5); addTrauma(0.05);
   try { playSample('katSwing', 0.32, 0.06, 0.38); } catch (e) {}
   return true;
@@ -32606,7 +32640,7 @@ const _shakePrev = new THREE.Vector3();
 let vpP = 0, vpR = 0, vpVP = 0, vpVR = 0, vpOn = false;
 const _vpQ = new THREE.Quaternion(), _vpInv = new THREE.Quaternion(), _vpLeft = new THREE.Quaternion(), _vpE = new THREE.Euler(0, 0, 0, 'YXZ');
 function viewPunch(p, r) { vpVP += p * 64; vpVR += r * 64; }   // (an impulse: `p` rad comes out as about its own size at the peak — 16 gave a fifth of it, measured 0.8° for a 2.6° ask)
-queueMicrotask(() => window.__bw && Object.assign(window.__bw, { vpS: () => [+vpP.toFixed(4), +vpR.toFixed(4)], hitstopS: () => +hitstop.toFixed(3), kickS: () => KICK }));
+queueMicrotask(() => window.__bw && Object.assign(window.__bw, { vpS: () => [+vpP.toFixed(4), +vpR.toFixed(4)], hitstopS: () => +hitstop.toFixed(3), kickS: () => KICK, velS: () => [velocity.x, velocity.z], landS: () => [+landDip.toFixed(4), +landV.toFixed(3)] }));
 let shakeT = 0;
 const knockback = new THREE.Vector3();
 function addTrauma(v) { trauma = Math.min(1, trauma + v); }
@@ -33374,6 +33408,13 @@ function startKick() {
   if (exhausted || stamina < KICK_STAM * 0.5) { const n = performance.now(); if (n - (KICK.gasp || 0) > 900) { KICK.gasp = n; try { sfxGasp(); flashPrompt('<b>OUT OF BREATH</b>', 700); } catch (e) {} } return false; }
   stamina = Math.max(0, stamina - KICK_STAM); if (stamina <= 0.001) exhausted = true;
   KICK.on = true; KICK.t = 0; KICK.struck = false; KICK.cd = KICK_CD; KICK.chainOK = false;
+  /* (YOU GO WITH IT — 2026-11-27: in the air a kick carries you at what you are looking at, up to `KICK_LUNGE` m/s more along the
+   * look and never past a run and a tenth by it — a jump kick reaches, and a chain of them follows the next man; on your feet,
+   * stood or walking, the weight goes forward with the leg, a hand's width.) */
+  { camera.getWorldDirection(_kfeelD); _kfeelD.y = 0;
+    if (_kfeelD.lengthSq() > 1e-6 && !crouching && stepT < 0) { _kfeelD.normalize();
+      const al = velocity.x * _kfeelD.x + velocity.z * _kfeelD.z, top = onGround ? 2.2 : RUN_SPEED * settings.walkSpeed * 1.1;
+      if (al < top) velocity.addScaledVector(_kfeelD, Math.min(onGround ? 1.2 : KICK_LUNGE, top - al)); } }
   camera.getWorldDirection(_hgD); _hgP.copy(camera.position).addScaledVector(_hgD, 0.6);
   handTint(_hgP, kickLeg.material.uniforms, KICK_LUM_RECTS);
   try { playSample('katSwing', 0.42, 0.08, 0.62); } catch (e) {}   // (the blade's whoosh, low and slow: a leg through the air)
@@ -33382,8 +33423,9 @@ function startKick() {
 const kickBoss = (u) => !!(u.kind.kingBody || u.kind.boss || u.kind.bossDeath || (u.kind.hp || 0) >= 40 || (u.kind.h || 1.8) >= 2.6);
 const _kkD = new THREE.Vector3(), _kkC = new THREE.Vector3(), _kkT = new THREE.Vector3();
 function kickStrike() {
-  KICK.felt = false;
+  KICK.felt = false; KICK.onMan = false; KICK.along = 0; KICK.scuff = false;
   camera.getWorldDirection(_kkD); _kkD.y = 0; if (_kkD.lengthSq() < 1e-6) return; _kkD.normalize();
+  KICK.along = Math.max(0, (velocity.x + (HK.carry ? HK.carry.x : 0)) * _kkD.x + (velocity.z + (HK.carry ? HK.carry.z : 0)) * _kkD.z);   // (your speed along the kick: it goes into him, `kickMan`)
   const c = camera.position, feet = c.y - playerEye();
   /* (A JUMP KICK — 2026-11-26, the owner: "make jump kicks more likely to knock someone down and they go further", "I SHOULD BE ABLE TO
    * JUMP OFF LEDGES AND KICK PEOPLE MID AIR TOO IN THE DIRECTION I KICK THEM". In the air when the sole goes out: it reaches a man
@@ -33504,13 +33546,19 @@ function kickStrike() {
   const lookT = _aimD.y < -0.2 ? (c.y - feet) / -_aimD.y : Infinity;
   if (!(lookT < L * 1.3)) _aimD.copy(_kkT).multiplyScalar(1 / L);
   aimFarOver = Math.min(KICK_REACH + 0.6, lookT < L * 1.3 ? lookT + 0.2 : L * 1.3); digPower = 0.7;
-  KSTRIKE.on = true; let hit = false;
+  KSTRIKE.on = true; let hit = false; const hs0 = hitstop, fast = Math.hypot(velocity.x, velocity.z) > WALK_SPEED * 1.15 || !onGround;
   try { hit = digImpactCore(); } catch (e) { console.warn('[kick] strike', e); }
   finally { KSTRIKE.on = false; aimFarOver = 0; _aimD.copy(keep); digPower = kp; }
   KICK.lastWorld = hit;
-  if (hit) { sfxKickHit(0.75); addTrauma(0.18); }
+  /* (AND THE SAND DOES NOT STOP THE CLOCK ON A MAN RUNNING — 2026-11-27: a kick at nothing meets the sand a stride on, by design,
+   * and took the blade's hold for it: three frames of the world stood still in the middle of a run, your speed 6.1 -> 1.9 -> 6.1
+   * (`tools/movefeel.js` 6). At more than a walk, or in the air, the boot's scuff holds nothing.) */
+  if (fast) hitstop = hs0;
+  KICK.scuff = fast;                                    // (and `kickFeel` neither holds the frame nor steps you back for it)
+  if (hit) { sfxKickHit(0.75); addTrauma(fast ? 0.08 : 0.18); }
 }
 function kickMan(u) {
+  KICK.onMan = true;
   const boss = kickBoss(u), was = u.st.atk >= 0, B = u.life && u.life.B;
   (B && (B.chest || B.waist) ? (B.chest || B.waist).getWorldPosition(_kkC) : _kkC.copy(u.g.position).setY(u.g.position.y + (u.kind.h || 1.8) * 0.55));
   u.st.block = 0; u.st.parryT = 0;                                   // (a kick goes through a guard: that is what it is for)
@@ -33536,7 +33584,7 @@ function kickMan(u) {
     const _wasAtk = u.st.atk; if (!boss) u.st.atk = -1;
     try { larHit(u, _kkC, _kkT.copy(_kkD).setY(0.15), boss ? 0.5 : 1.6); } catch (e) {}
     if (boss && _wasAtk >= 0) u.st.atk = _wasAtk;
-    u.st.flinchPush = { x: _kkD.x, z: _kkD.z, v: boss ? 1.1 : 4.6, d: 5.5 };
+    u.st.flinchPush = { x: _kkD.x, z: _kkD.z, v: boss ? 1.1 : 4.6 + (KICK.along || 0) * KICK_GIVE, d: 5.5 };   // (and your speed with it: at a run 9.2, about 1.7 m — `kickFeel`)
     if (!boss) { u.st.atk = -1; u.st.chainAt = -1; u.st.chained = false; u.st.stun = Math.max(u.st.stun || 0, 0.65); u.st.cool = Math.max(u.st.cool || 0, 0.8); }
     else u.st.stun = Math.max(u.st.stun || 0, 0.12);
     // over, now and then — more often caught mid-swing; a boss almost never
@@ -48069,7 +48117,7 @@ function mutRagdoll(u, dirX, dirZ, power) {
     // (measured: 14 m/s off the blade and up to 4 lifted, the body was down in 0.6 s and stopped where it fell, 5.4 m off.
     // Higher, so it is in the air for over a second and goes down the street, and a little harder)
     // (a boot's kill goes further and flatter: "go flying in the direction kicked" — `kickKill`)
-    if (rFL > 0.05) { const kf = (11 + rFL * 6) * (0.55 + kw * 0.45) * (u.st.kickKill ? 1.1 : 1); v.x = dirX * kf + (Math.random() - 0.5) * 1.2; v.z = dirZ * kf + (Math.random() - 0.5) * 1.2; v.y = 3.2 + rFL * (2.6 + h * 1.6); }
+    if (rFL > 0.05) { const fk = (u.st && u.st.killFlingK) || 1, kf = (11 + rFL * 6) * (0.55 + kw * 0.45) * (u.st.kickKill ? 1.1 : 1) * fk; v.x = dirX * kf + (Math.random() - 0.5) * 1.2 * fk; v.z = dirZ * kf + (Math.random() - 0.5) * 1.2 * fk; v.y = (3.2 + rFL * (2.6 + h * 1.6)) * Math.sqrt(fk); }   // (`killFlingK`: a throw of the same shape, smaller — the .44's, `magRoundHits`)
     // (the mace: a body blow lifts him off the ground and over; a slam drives him down into it)
     if (MCk !== null) { if (u.st.killOh) { v.y = -1.5 - (1 - h) * 0.5; } else { if (MCk > 0.38) v.y += 2.0 + h * 1.2; else v.y += 1.0 + (1 - h) * 2.0; v.x *= 1.25; v.z *= 1.25; } }
     /* AND NO BODY GOES UP LIKE A ROCKET (2026-10-18, the owner, not for the first time: "THE MUTANTS BODIES NEED TO STOP
@@ -49018,6 +49066,26 @@ function updateMutRagdoll(u, dt) {
       if (r.wetY === null || r.wetY === undefined || Math.abs(wy - r.wetY) > 0.12) { r.asleep = false; r.wetY = wy; }
     }
   }
+  /* (YOU SHOVE WHAT YOU WALK INTO — 2026-11-27, the owner: "make the farmers ragdoll physics like half life 2". A Source corpse is a
+   * thing in the world: walk into it and its limbs are pushed out of your way and dragged a little along your stride, and the rest of
+   * him follows through his joints. Here you passed through every body as through smoke. Any joint of a dead body inside your
+   * width, between your feet and your waist, is put out of you along the line from you to it, with a fraction of your stride on it;
+   * a body asleep is woken for it and settles again. `__bw.ragShoveS`.) */
+  if (!(u.st && u.st.alive) && hip0 && !dying) {
+    const c = camera.position, sp = Math.hypot(velocity.x, velocity.z);
+    if (sp > 0.5 && Math.abs(hip0.p.x - c.x) < 2.6 && Math.abs(hip0.p.z - c.z) < 2.6) {
+      const feet = camBaseY - playerEye(); let shoved = 0;
+      for (const q of r.parts) {
+        if (q.p.y < feet - 0.15 || q.p.y > feet + 1.1) continue;
+        const dx = q.p.x - c.x, dz = q.p.z - c.z, d = Math.hypot(dx, dz) || 1e-4, R = PLAYER_R + q.r;
+        if (d >= R) continue;
+        const nx = dx / d, nz = dz / d, k = Math.min(R - d, sp * dt * 1.0), ax = nx * k + velocity.x * dt * 0.15, az = nz * k + velocity.z * dt * 0.15;   // (a body is heavy: walked through at 1.5 / 0.25 it went 0.9-1.2 m, at these about two thirds of that)
+        q.p.x += ax; q.p.z += az; q.pp.x += ax * 0.7; q.pp.z += az * 0.7;   // (moved, and a little of it left on as its speed)
+        shoved++;
+      }
+      if (shoved) { if (r.asleep || r.done) { r.asleep = false; r.done = false; r.t = Math.min(r.t, 3.5); r.downT = 0; } r.shoves = (r.shoves || 0) + 1; }
+    }
+  }
   if (!r.asleep) {
     /* (A FIXED STEP — 2026-11-26. The solver took three substeps a frame whatever the frame was: at 30 fps each was 1/90 s, at 120
      * 1/360, and the floor's friction, the air's damping, the settle and the muscles are all applied PER substep — so a body
@@ -49099,7 +49167,8 @@ function updateMutRagdoll(u, dt) {
      * every particle's speed ACROSS the ground is bled off, harder each moment (to 55 % a substep by 0.4 s), and up and down is
      * left to gravity and the floor: he lands, rolls a little, and lies still. */
     if (hip0 && hip0.floor !== undefined && hip0.p.y - hip0.floor < 0.45) r.downT = (r.downT || 0) + dt;
-    const dK = (r.downT || 0) > 0.08 ? Math.max(0.05, 0.8 - ((r.downT || 0) - 0.08) * 3.0) : 1;   // (2026-11-26, "they keep sliding around on the ground fix this now": stopped in a quarter second)   // (0.7 floor: the hips still slid 0.5 m; 0.55: "the bodies still roll around after death", 2026-11-26)
+    const dK = r.t < (r.shotT || 0) ? 0.95 : (r.downT || 0) > 0.08 ? Math.max(0.05, 0.8 - ((r.downT || 0) - 0.08) * 3.0) : 1;   // (`shotT`: a round into a body lying there, `magShootCorpse` — it goes a hand or two along the round, then stops)
+      // (2026-11-26, "they keep sliding around on the ground fix this now": stopped in a quarter second)   // (0.7 floor: the hips still slid 0.5 m; 0.55: "the bodies still roll around after death", 2026-11-26)
     const dKy = (r.downT || 0) > 0.45 ? Math.max(0.5, 1 - ((r.downT || 0) - 0.45) * 1.2) : 1;   // (and, once he has been down a moment, up and down too: a roll is a body going up over its own shoulder)
     for (let s = 0; s < nSub; s++) {
       if (r.t > 0.7) ragAntiPump(r, h);                                 // (what the last substep's passes pumped into a limb, off before it is carried on: `ragAntiPump`)
@@ -56998,11 +57067,27 @@ function update(dt, rawDt = dt) {
   if (grip > 0) {
     if (airborne) {
       // (in the air the keys bend the way you are going; they do not brake a speed you have over theirs)
+      const hs = Math.hypot(velocity.x, velocity.z), ts = target.length(), velX0 = velocity.x, velZ0 = velocity.z;
+      velocity.lerp(target, 1 - Math.pow(0.0016, dt * grip));
+      /* (AND AGAINST THE WAY YOU ARE GOING THEY DO — 2026-11-27: the speed was put back whatever the keys said, so holding S in the
+       * air did nothing at all, 6.1 m/s to the landing: measured, `tools/movefeel.js` 5. Across your way the speed is still all
+       * kept (a turn); the more the keys are against it the less is put back, and dead against it nothing is — about half gone
+       * in a third of a second.) */
+      const ns = Math.hypot(velocity.x, velocity.z), keep = Math.max(ts, hs);
+      if (ns > 1e-4 && ns < keep && hs > ts) { const al = ts > 1e-4 ? (velX0 * target.x + velZ0 * target.z) / (hs * ts) : 0; velocity.multiplyScalar((ns + (keep - ns) * Math.max(0, Math.min(1, 1 + al * 1.25))) / ns); }
+    } else {
+      /* (AND WHAT YOU LAND WITH IS NOT TAKEN OFF YOU AT THE DOOR: faster than your keys ask and still pressing on the way you are
+       * going — out of a slide's jump, off the hook, down a drop — the extra bleeds away at `MOM_BLEED` (half in a third of a
+       * second) instead of the grip's seventh. The keys let go, turned across or against it: the grip, as ever. `momKeep` is
+       * set by a landing alone, so a dodge step or a blow's shove is not stretched.) */
       const hs = Math.hypot(velocity.x, velocity.z), ts = target.length();
       velocity.lerp(target, 1 - Math.pow(0.0016, dt * grip));
-      const ns = Math.hypot(velocity.x, velocity.z), keep = Math.max(ts, hs);
-      if (ns > 1e-4 && ns < keep && hs > ts) velocity.multiplyScalar(keep / ns);
-    } else velocity.lerp(target, 1 - Math.pow(0.0016, dt * grip));
+      if (momKeep) {
+        const ns = Math.hypot(velocity.x, velocity.z), cs = ns > 1e-4 && ts > 1e-4 ? (velocity.x * target.x + velocity.z * target.z) / (ns * ts) : 0;
+        if (!(moving && hs > ts * 1.03 && cs > 0.5) || SLIDE.t >= 0 || stepT >= 0) momKeep = false;
+        else { const want = ts + (hs - ts) * Math.exp(-MOM_BLEED * dt); if (ns < want) velocity.multiplyScalar(want / ns); }
+      }
+    }
   }
   // the slide (`SLIDE`, `slideStart`): it owns the velocity while it runs, as the step does
   SLIDE.cd = Math.max(0, SLIDE.cd - dt);
@@ -57160,7 +57245,7 @@ function update(dt, rawDt = dt) {
    * apart along the way you were going. */
   // (and the dodge step counts: in the fight Space IS the step, so that is the jump you have)
   if ((!onGround || stepT >= 0) && inBunker && !tableBroken) stompWorkTable();
-  vy -= P_GRAV * dt;
+  vy -= ((HK.st === 'zip' || vy >= 0 || inDeep) ? P_GRAV : vy > -GRAV_HANG_V ? P_GRAV * GRAV_HANG : P_GRAV * GRAV_FALL) * dt;   // (`GRAV_HANG`: the jump's shape)
   camBaseY += vy * dt;
   if (vy > 0 || inCel || (HK.st === 'zip' && castleSiteHere())) playerHeadClamp();      // (and in the cellar's house on every frame: a step up the stairs lifts the eye with no speed, under its headers — 2026-11-22, "my head clipped through the ceiling")                 // (rising: never up through a ceiling — the hook's pull above all, `playerHeadClamp`)
   const floorLimit = playerEye() + groundY;
@@ -57189,18 +57274,18 @@ function update(dt, rawDt = dt) {
     // landing's gate — and it still has to break the pew, so the stomp is
     // asked on ANY landing from the air, scaled by how hard it was.
     if (!onGround && vy < -1.6) stompBreakables(Math.min(1, -vy / 12));
+    if (!onGround) { if (vy < -1.2) landV = Math.max(landV, Math.min(3.6, -vy * 0.54)); momKeep = true; }
     if (!onGround && vy < -3.5) {
       // land with some weight behind it — the tool keeps going after you stop
       const force = Math.min(1, -vy / 12);
-      landDip = Math.max(landDip, 0.06 + force * 0.16);
-      addTrauma(force * 0.25);
+      addTrauma(force * 0.2);
       vmImpulse(-1.1 - force * 2.4);
       if (playerWading()) sfxSplash(0.9);
       else stepSnd(() => { if (!placeStep()) sfxStep(); });
     }
     camBaseY = floorLimit; vy = 0; onGround = true;
   }
-  landDip *= Math.max(0, 1 - 7.5 * dt);
+  { const h = Math.min(dt, 1 / 30); landV += (-LAND_K * landDip - LAND_D * landV) * h; landDip += landV * h; if (Math.abs(landDip) < 2e-4 && Math.abs(landV) < 2e-3) { landDip = 0; landV = 0; } }
   parryGlow = Math.max(0, parryGlow - dt * 1.6);
   // the window burns down whether or not anything came at you
   if (blocking && blockStart > 0 && parryCool <= 0
@@ -64515,7 +64600,8 @@ function playerExecuted() {
 const MAG_CAP = 6;                  // six chambers
 const MAG_SHOT = 0.50;              // seconds a shot owns the gun (the clip is 0.567)
 const MAG_RELOAD = 2.7;             // and a reload: roll, crane out, brass out, loader in, twist, flick shut
-const MAG_DMG = 14;                 // what a .44 does: the katana's heavy is 3
+const MAG_DMG = 16;                 // what a .44 does: the katana's heavy is 3 (14 until 2026-11-27, the owner: "make our weapons more effective" — a 15-point farmer now drops to one in the chest)
+const MAG_FLING = 0.45;   // (the .44's kill: the street throw's shape at this share of its speed — `killFlingK`, ~1.7 m along the round. As a plain `killFling` any value over 0.05 threw him 5-8 m: that door starts at 11 m/s. `window.__magFling` is `tools/gunfeel.js`'s)
 const MAG_HEAD = 2.2;               // and what it does to a head
 const MAG_RANGE = 80;               // how far the bullet is traced
 const MAG_LEN = 0.42;               // an 8-inch Model 29 is 0.35; a view model is always drawn over
@@ -65219,6 +65305,83 @@ function magTrace(dir, O = null, R = MAG_R, pad = 0) {
 /* (AND A ROUND MEETS HIM WHERE HE IS DRAWN — 2026-11-25, the owner, after the water ball and the hook: "map all enemies hit boxes
  * better like that too". The gun's and the sawn-off's body test is the capsule above; a body it reports is asked again on his skin
  * (`projBodyHit`, a thin line for a round), and a round that only grazed the capsule goes on past him to whatever is behind.) */
+const _mgO2 = new THREE.Vector3(), _mgCh = new THREE.Vector3();
+// the nearest joint of a dead body on the round's line before `maxT` (each joint a ball of its own radius and a little)
+/* A ROUND INTO A BODY ON THE GROUND: shoved along the round from where it went in, the parts near it most (the sawn-off's own seed,
+ * `sgBlastCorpse`, at one pellet's weight and nothing cut off), and it skids a moment. It moved a body 0.2 m through `ragHit`. */
+function magShootCorpse(u, q, d) {
+  const r = u.rag; if (!r) return;
+  ragBlowStart(r);
+  for (const o of r.parts) {
+    const dd = o.p.distanceTo(q.p), w = Math.max(0.5, 1 / (1 + dd * 2.2));   // (all of him a little, as the boot's: seeded near the wound alone, the rest's grip held it — 0.15 m)
+    o.seed = new THREE.Vector3((d.x * MAG_CORPSE + (Math.random() - 0.5) * 1.0) * w, Math.min(1.4, 1.3 * w), (d.z * MAG_CORPSE + (Math.random() - 0.5) * 1.0) * w);
+  }
+  r.kickT = r.t + 0.35; r.shotT = r.t + 0.3;
+  playSample('fleshHit', 0.9, 0.05, 0.8);
+  sprayBlood(q.p.x, q.p.y, q.p.z, d.x, d.z, 6, 1.0);
+  stampBlood(q.p.x, q.p.z, 0.4 + Math.random() * 0.3, q.p.y);
+}
+const MAG_CORPSE = 8.0;
+/* WHAT ELSE IS ON THE ROUND'S LINE, nearer than `far`: a loose body (`physProps`, its own faces, never the big invisible sphere it
+ * is aimed at by — that would stop a round meant for the man behind the bottle) or a crate. */
+const _mgPR = new THREE.Raycaster();
+function magPropHit(o, d, far) {
+  _mgPR.set(o, d); _mgPR.far = far; let best = null;
+  const real = (xs) => xs.find((x) => x.object.name !== 'hitProxy' && x.object.visible);
+  for (const p of physProps) {
+    if (p.dead || p.held || p.pinned || !p.mesh.parent || !p.mesh.visible || (p.room && !p.room())) continue;
+    const m = p.mesh.position; if (Math.hypot(m.x - o.x, m.z - o.z) > far + 3) continue;
+    const x = real(_mgPR.intersectObject(p.mesh, true));
+    if (x && (!best || x.distance < best.t)) best = { t: x.distance, prop: p, point: x.point };
+  }
+  for (const c of crates) {
+    if (c.broken || !c.group.parent || !c.group.visible) continue;
+    const m = c.group.position; if (Math.hypot(m.x - o.x, m.z - o.z) > far + 3) continue;
+    const x = real(_mgPR.intersectObject(c.group, true));
+    if (x && (!best || x.distance < best.t)) best = { t: x.distance, crate: c, point: x.point };
+  }
+  return best;
+}
+function magPropStruck(ph, d) {
+  const pt = ph.point;
+  if (ph.crate) { flashMats(ph.crate.group); breakCrate(ph.crate, 0.8); return; }
+  const p = ph.prop;
+  if (p.onImpact) { p.onImpact(12); return; }
+  /* a loose thing: off along the round, the smaller the faster (a pebble flies, a board shifts), turning as it goes */
+  propShot(p, d, 1);
+  sfxPropHit(p.drift ? 'wood' : 'rock', 8);
+  spawnPuffs(pt.x, pt.z, 3, -d.x, -d.z, pt.y, 0x9aa3ae);
+}
+function propShot(p, d, k) {
+  const s = Math.min(6.5, Math.max(1.8, 0.95 / Math.max(0.1, p.radius))) * k;
+  p.asleep = false; p.slT = 0; p.slStill = 0; p.slAwake = 0;
+  p.vel.x += d.x * s; p.vel.z += d.z * s; p.vel.y += Math.max(0, d.y * s) + (1.0 + Math.random() * 0.8) * Math.min(1, k);
+  p.angVel.set((Math.random() - 0.5) * 16 * k, (Math.random() - 0.5) * 16 * k, (Math.random() - 0.5) * 16 * k);
+}
+/* AND A GUN MOVES THE MAN FIRING IT (2026-11-27, the owner: "physics of shooting"): a push back off the muzzle, little on your feet
+ * (the kick's own door: `velocity`) and more in the air, which keeps it; and looking down, the sawn-off's charge lifts you — `lift`
+ * caps what a shot can make of your rise, so two barrels break a fall rather than fly you over a wall. */
+const _gsD = new THREE.Vector3();
+function gunSelfPush(g, a, lift) {
+  if (inDeep || deepLock) return;
+  camera.getWorldDirection(_gsD);
+  const dn = -_gsD.y, k = onGround ? g : a;
+  velocity.x -= _gsD.x * k; velocity.z -= _gsD.z * k;
+  if (!onGround && lift > 0 && dn > 0.3) vy = Math.max(vy, Math.min(vy + lift * dn, lift * 0.8));
+}
+function magCorpseHit(o, dir, maxT) {
+  let best = null, bt = maxT;
+  for (const u of mutants) {
+    const r = u.rag; if (!r || (u.st && u.st.alive) || !u.g.visible) continue;
+    const hp = r.parts[0]; if (!hp || Math.abs(hp.p.x - o.x) > maxT + 3 || Math.abs(hp.p.z - o.z) > maxT + 3) continue;
+    for (const q of r.parts) {
+      _mgCh.subVectors(q.p, o); const t = _mgCh.dot(dir); if (t < 0.2 || t > bt) continue;
+      const d2 = _mgCh.lengthSq() - t * t, rr = (q.r || 0.08) + 0.05; if (d2 > rr * rr) continue;
+      bt = t; best = { u, q, t };
+    }
+  }
+  return best;
+}
 function magTraceSkin(dir, O = null, R = MAG_R, pad = 0, rad = 0.05) {
   const had = magSkip, tmp = new Set(had || []);
   const o = O ? O.clone() : camera.getWorldPosition(new THREE.Vector3()), dn = dir.clone().normalize();
@@ -65291,9 +65454,9 @@ function magFire() {
    * goes into the look itself, so a string of them walks up off whatever
    * you were shooting at and you have to pull it back down. That is the
    * difference between a gun with recoil and a gun with a shake. */
-  magKickV += 27.0 - magAim * 5.4;
-  magYawV += (Math.random() - 0.5) * 15.0;
-  const up = 0.108 + Math.random() * 0.030 - magAim * 0.040;
+  magKickV += 31.0 - magAim * 5.4;             // (27 and 0.108 until 2026-11-27, the owner: "more impact/recoil")
+  magYawV += (Math.random() - 0.5) * 17.0;
+  const up = 0.124 + Math.random() * 0.032 - magAim * 0.040;
   gunNudge(up, (Math.random() - 0.5) * 0.034);
   /* AND MOST OF THE CLIMB COMES BACK, WHICH IS WHAT MAKES IT A RECOIL AND
    * NOT A CATAPULT. A permanent nudge is the right idea and at two and a
@@ -65306,13 +65469,14 @@ function magFire() {
   magClimb += up * 0.80;
   addTrauma(1.70);
   fovKick = Math.max(fovKick, 19.0);
-  vmImpulse(-3.4);
-  magGlare();                                // and the frame takes the light
+  vmImpulse(-4.1);
+  magGlare(0.36);                            // and the frame takes the light
   /* AND THE WORLD STOPS FOR A FRAME AND A HALF. Every other confirm in this
    * game buys its weight with held time — the parry, the poise break, the
    * two-tonne knight — and a gun that goes off with no beat under it reads
    * as a pop whatever the sound does. */
   hitstop = Math.max(hitstop, 0.115);
+  gunSelfPush(0.55, 1.1, 0);                 // and it moves you: `gunSelfPush`
 
   /* AND DOWN THE SIGHTS THERE IS NO SPREAD AT ALL. A cone that is merely
    * small is still a cone: at twenty metres a fortieth of a degree is a
@@ -65332,6 +65496,16 @@ function magFire() {
   magSkip = new Set(); let passK = 1, kills = 0;
   for (let pass = 0; pass <= MAG_PASS; pass++) {
     const h = magTraceSkin(_mgSp);
+    /* (and a body on the ground is a thing a round strikes: shot, a corpse is shoved and opened where it is hit, as a blade does —
+     * `ragHit` — and the round stops in it. Before, rounds passed through the dead as through air.) */
+    /* (and what is not a body: a bottle, a jar, a crate or a castle's stall breaks to a round as it does to the sawn-off's charge, and a
+     * loose thing — a stone, a board, a shell — is knocked off along it. Before, a round went through all of them as through air:
+     * `magPropHit`, 2026-11-27, the owner: "physics of shooting") */
+    if (pass === 0) {
+      const o = camera.getWorldPosition(_mgO2), far = h ? h.t : MAG_R, ph = magPropHit(o, _mgSp, far), cc = magCorpseHit(o, _mgSp, ph ? ph.t : far);
+      if (cc) { magShootCorpse(cc.u, cc.q, _mgSp); break; }
+      if (ph) { magPropStruck(ph, _mgSp); break; }
+    }
     const r = magRoundHits(h, passK, pass);
     if (r === 'kill') kills++;
     if (!r || !h || h.kind !== 'foe') break;
@@ -65372,11 +65546,22 @@ function magRoundHits(h, k, pass) {
     const dmg = Math.max(1, Math.round(MAG_DMG * (h.head ? MAG_HEAD : 1) * k));
     const was = h.u.st.alive;
     if (h.u.kind && h.u.kind.skrim) skrimShot(h.u, _mgSp);         // (shot off his chain: `SK_HANG`)
+    /* (AND THE ROUND MOVES WHAT IT HITS — 2026-11-27, the owner: "make the gunplay way better … more impact/recoil". A .44 dropped a man
+     * where he stood — it is a light blow to the death's throw (P 0.5: "falls where he stood") — and a round that did not kill moved
+     * nothing. Now a kill is thrown along the round (`killFling`, the kick's own door, by what the round still carries) and a round
+     * that does not kill shoves him back along it, a stagger you see land (`flinchPush`).) */
+    const B0 = !!(h.u.kind && (h.u.kind.bossDeath || (h.u.kind.h || 1.8) >= 2.6));
+    if (h.u.kind && !B0) { h.u.hitDir.set(_mgSp.x, 0, _mgSp.z).normalize(); h.u.st.killFling = Math.max(h.u.st.killFling || 0, 0.06); h.u.st.killFlingK = (window.__magFling ?? MAG_FLING) * k; }
     if (h.u.kind) { gunRound = true; try { hurtMutant(h.u, dmg, 0.5); } finally { gunRound = false; } flameGunBurn(h.u); } else hurtCrab(h.u, 4, 0.5);   // (a gun holding the Flame: what it hits catches)
+    if (h.u.kind && h.u.st.alive && !h.u.st.struck) { h.u.st.killFling = 0; h.u.st.killFlingK = 0; }   // (no push of its own: his hit reel already carries a man ~1.65 m back along the round — measured, `tools/gunfeel.js`; a push on top changed nothing)
     if (h.u.kind && h.u.kind.gunStun && !h.u.kind.baby && h.u.st.alive) gunStun(h.u);
     if (h.head) { hitstop = Math.max(hitstop, 0.09); addTrauma(0.22); }
+    /* (and you hear it land and see it go in: a low knock under his cry and a puff back toward you off the wound — only flesh: not
+     * the puppets' wood or the stone men) */
+    const meat = h.u.kind && !h.u.kind.stone && !(h.u.kind.voice && h.u.kind.voice.wood);
+    if (meat && h.point) { sprayBlood(h.point.x, h.point.y, h.point.z, -_mgSp.x, -_mgSp.z, 3, 0.55); if (audioCtx) sgThump(audioCtx.currentTime + 0.01, 340, 0.13, 0.42 * k); }
     // and out of the far side of him: a spray off his back along the line of the round
-    if (pass < MAG_PASS && h.point) sprayBlood(h.point.x + _mgSp.x * 0.35, h.point.y, h.point.z + _mgSp.z * 0.35, _mgSp.x, _mgSp.z, 3, 1.2);
+    if (meat && pass < MAG_PASS && h.point) sprayBlood(h.point.x + _mgSp.x * 0.35, h.point.y, h.point.z + _mgSp.z * 0.35, _mgSp.x, _mgSp.z, 3, 1.2);
     return was && !h.u.st.alive ? 'kill' : true;
   }
   if (h.kind === 'solid') {
@@ -65800,8 +65985,8 @@ function updateAmmoReadout() {
  * to do it.
  * ===================================================================== */
 const SG_PELLETS = 9;
-const SG_PELLET_DMG = 3.6;            // nine of them a stride away is 32, a little over two .44s in one trigger pull (3.1 → 28 until 2026-11-15, the owner: "make the shotgun hit a little harder")
-const SG_FULL = 4.5, SG_FAR = 24;     // the charge holds together to here, and is a fifth of itself by there
+const SG_PELLET_DMG = 4.2;            // (3.6 until 2026-11-27: "more effective") nine of them a stride away is 32, a little over two .44s in one trigger pull (3.1 → 28 until 2026-11-15, the owner: "make the shotgun hit a little harder")
+const SG_FULL = 5.5, SG_FAR = 24;     // (4.5 until 2026-11-27) the charge holds together to here, and is a fifth of itself by there
 const SG_SPREAD = 0.085;              // radians, from the hip
 const SG_SPREAD_ADS = 0.055;          // and down the rib: tighter, never tight — a shotgun stays a shotgun
 /* THE CHARGE IS WIDER THAN NINE LINES. Nine rays in a five-degree cone find
@@ -66293,6 +66478,7 @@ function sgFire() {
    * came apart: a delay you could see, which reads as lag, not weight. The
    * shot stalls the world for a blink; the kill is in the next frame.) */
   hitstop = Math.max(hitstop, 0.05);
+  gunSelfPush(1.5 - magAim * 0.4, 3.0, 4.0);   // and it shoves you back, and up if you fire it at your feet in the air
   sgMuzzleSmoke(fwd); sgMuzzleSparks();
 
   /* THE PATTERN: nine pellets, one dead on the crosshair and eight in a cone
@@ -66302,7 +66488,7 @@ function sgFire() {
   const spread = SG_SPREAD * (1 - magAim) + SG_SPREAD_ADS * magAim;
   _sgRt.crossVectors(fwd, camera.up).normalize();
   _sgUp.crossVectors(_sgRt, fwd).normalize();
-  const foes = new Map(), bodies = new Map(), props = new Set(), boxes = new Set();
+  const foes = new Map(), bodies = new Map(), props = new Set(), boxes = new Set(), loose = new Map();
   let plioSg = 0, plioPt = null;
   const gulls = new Set(); const hpanes = new Set();
   let scars = 0, solid = null, solidT = Infinity;
@@ -66326,6 +66512,13 @@ function sgFire() {
       const x = digRay.intersectObject(p.mesh, true)[0];
       if (x && (!best || x.distance < best.t)) best = { t: x.distance, prop: p, point: x.point };
     }
+    // and what is only loose — a stone, a board, a shell: knocked off by the pellets that found it (`propShot`, the .44's own)
+    for (const p of physProps) {
+      if (p.onImpact || p.dead || p.held || p.pinned || !p.mesh.parent || !p.mesh.visible || (p.room && !p.room())) continue;
+      const m = p.mesh.position; if (Math.hypot(m.x - _mgO.x, m.z - _mgO.z) > (best ? best.t : SG_FAR) + 3) continue;
+      const x = digRay.intersectObject(p.mesh, true).find((x) => x.object.name !== 'hitProxy' && x.object.visible);
+      if (x && (!best || x.distance < best.t)) best = { t: x.distance, loose: p, point: x.point };
+    }
     for (const c of crates) {
       if (c.broken) continue;
       const x = digRay.intersectObject(c.group, true)[0];
@@ -66334,6 +66527,7 @@ function sgFire() {
     if (!best) continue;
     if (best.body) { const B = bodies.get(best.body) || { u: best.body, q: best.q, n: 0 }; B.n++; bodies.set(best.body, B); continue; }
     if (best.prop) { props.add(best.prop); continue; }
+    if (best.loose) { const L = loose.get(best.loose) || { n: 0, t: best.t, pt: best.point }; L.n++; loose.set(best.loose, L); continue; }
     if (best.crate) { boxes.add(best.crate); continue; }
     const H = best.h;
     if (H.kind === 'cry') { if (H.h.mode !== 'dead' && H.h.mode !== 'still') { _aimD.copy(_sgP); cryKill(H.h, 0.9); } continue; }   // (his crabs: `magTrace`)
@@ -66373,6 +66567,7 @@ function sgFire() {
   for (const [u, A] of foes) sgHitFoe(u, A, fwd);
   for (const B of bodies.values()) sgBlastCorpse(B.u, B.q, B.n, fwd);
   for (const p of props) p.onImpact(14);
+  for (const [p, L] of loose) { propShot(p, fwd, Math.min(1.7, 0.5 + L.n * 0.22) * Math.max(0.3, sgFall(L.t))); sfxPropHit(p.drift ? 'wood' : 'rock', 9); spawnPuffs(L.pt.x, L.pt.z, 3, -fwd.x, -fwd.z, L.pt.y, 0x9aa3ae); }
   for (const c of boxes) { flashMats(c.group); breakCrate(c, 1.0); }
   if (solid) sfxPropHit(solid.surface || 'rock', 9);
 }
